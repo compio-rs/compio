@@ -1,0 +1,23 @@
+[package]
+name = "compio"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cfg-if = "1"
+once_cell = "1"
+slab = "0.4"
+async-task = "4"
+futures-util = "0.3"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.48", features = [
+    "Win32_Foundation",
+    "Win32_Networking_WinSock",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+] }
+aligned-array = "1"
+widestring = "1"
