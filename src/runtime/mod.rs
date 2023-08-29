@@ -1,6 +1,7 @@
-use crate::driver::{Driver, OpCode, Poller};
+use crate::driver::{Driver, OpCode, Poller, RawFd};
 use async_task::{Runnable, Task};
 use futures_util::future::Either;
+use once_cell::sync::Lazy as LazyLock;
 use slab::Slab;
 use std::{
     cell::RefCell,
@@ -10,6 +11,12 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
+pub(crate) static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| Runtime::new().unwrap());
+
+pub fn start<F: Future>(future: F) -> F::Output {
+    RUNTIME.block_on(future)
+}
+
 pub struct Runtime {
     driver: Driver,
     ops: RefCell<Slab<RawOp>>,
@@ -17,6 +24,9 @@ pub struct Runtime {
     wakers: RefCell<HashMap<usize, Waker>>,
     results: RefCell<HashMap<usize, (io::Result<usize>, RawOp)>>,
 }
+
+unsafe impl Send for Runtime {}
+unsafe impl Sync for Runtime {}
 
 impl Runtime {
     pub fn new() -> io::Result<Self> {
@@ -30,7 +40,7 @@ impl Runtime {
     }
 
     unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> (Runnable, Task<F::Output>) {
-        let schedule = move |runnable| self.runnables.borrow_mut().push_back(runnable);
+        let schedule = move |runnable| RUNTIME.runnables.borrow_mut().push_back(runnable);
         let (runnable, task) = async_task::spawn_unchecked(future, schedule);
         (runnable, task)
     }
@@ -66,8 +76,8 @@ impl Runtime {
         }
     }
 
-    pub fn driver(&self) -> &Driver {
-        &self.driver
+    pub fn attach(&self, fd: RawFd) -> io::Result<()> {
+        self.driver.attach(fd)
     }
 
     pub fn submit<T: OpCode>(&self, op: T) -> impl Future<Output = (io::Result<usize>, T)> {
@@ -79,20 +89,25 @@ impl Runtime {
             let op = ops.remove(user_data);
             Either::Left(ready((res, unsafe { op.into_inner::<T>() })))
         } else {
-            let (runnable, task) = unsafe {
-                self.spawn_unchecked(poll_fn(move |cx| {
-                    if let Some((res, op)) = self.results.borrow_mut().remove(&user_data) {
-                        Poll::Ready((res, op.into_inner::<T>()))
-                    } else {
-                        self.wakers
-                            .borrow_mut()
-                            .insert(user_data, cx.waker().clone());
-                        Poll::Pending
-                    }
-                }))
-            };
+            let (runnable, task) =
+                unsafe { self.spawn_unchecked(poll_fn(move |cx| RUNTIME.poll(cx, user_data))) };
             runnable.schedule();
             Either::Right(task)
+        }
+    }
+
+    pub(crate) fn poll<T: OpCode>(
+        &self,
+        cx: &mut Context,
+        user_data: usize,
+    ) -> Poll<(io::Result<usize>, T)> {
+        if let Some((res, op)) = self.results.borrow_mut().remove(&user_data) {
+            Poll::Ready((res, unsafe { op.into_inner::<T>() }))
+        } else {
+            self.wakers
+                .borrow_mut()
+                .insert(user_data, cx.waker().clone());
+            Poll::Pending
         }
     }
 }

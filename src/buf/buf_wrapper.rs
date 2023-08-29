@@ -6,15 +6,17 @@ pub struct BufWrapper<T> {
     buffer: T,
 }
 
-impl<T: IoBuf> WrapBuf for BufWrapper<T> {
-    type Buffer = T;
+impl<T> IntoInner for BufWrapper<T> {
+    type Inner = T;
 
-    fn new(buffer: Self::Buffer) -> Self {
-        Self { buffer }
-    }
-
-    fn into_inner(self) -> Self::Buffer {
+    fn into_inner(self) -> Self::Inner {
         self.buffer
+    }
+}
+
+impl<T: IoBuf> WrapBuf for BufWrapper<T> {
+    fn new(buffer: T) -> Self {
+        Self { buffer }
     }
 }
 
@@ -65,15 +67,17 @@ pub struct VectoredBufWrapper<T> {
     buffer: Vec<T>,
 }
 
-impl<T: IoBuf> WrapBuf for VectoredBufWrapper<T> {
-    type Buffer = Vec<T>;
+impl<T> IntoInner for VectoredBufWrapper<T> {
+    type Inner = Vec<T>;
 
-    fn new(buffer: Self::Buffer) -> Self {
-        Self { buffer }
-    }
-
-    fn into_inner(self) -> Self::Buffer {
+    fn into_inner(self) -> Self::Inner {
         self.buffer
+    }
+}
+
+impl<T: IoBuf> WrapBuf for VectoredBufWrapper<T> {
+    fn new(buffer: Vec<T>) -> Self {
+        Self { buffer }
     }
 }
 

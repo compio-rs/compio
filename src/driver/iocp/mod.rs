@@ -114,6 +114,7 @@ impl Poller for Driver {
     }
 }
 
+#[repr(C)]
 struct Overlapped {
     #[allow(dead_code)]
     pub base: OVERLAPPED,

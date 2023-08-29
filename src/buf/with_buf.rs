@@ -1,10 +1,23 @@
 use std::io::{IoSlice, IoSliceMut};
 
-pub trait WrapBuf {
-    type Buffer;
+use crate::BufResult;
 
-    fn new(buffer: Self::Buffer) -> Self;
-    fn into_inner(self) -> Self::Buffer;
+pub trait IntoInner {
+    type Inner;
+
+    fn into_inner(self) -> Self::Inner;
+}
+
+impl<T: IntoInner, O> IntoInner for BufResult<O, T> {
+    type Inner = BufResult<O, T::Inner>;
+
+    fn into_inner(self) -> Self::Inner {
+        (self.0, self.1.into_inner())
+    }
+}
+
+pub trait WrapBuf: IntoInner {
+    fn new(buffer: Self::Inner) -> Self;
 }
 
 pub trait WrapBufMut {
