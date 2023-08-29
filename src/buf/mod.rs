@@ -15,3 +15,5 @@ pub(crate) use with_buf::*;
 
 mod buf_wrapper;
 pub(crate) use buf_wrapper::*;
+
+pub use with_buf::IntoInner;

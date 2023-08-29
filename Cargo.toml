@@ -25,5 +25,10 @@ widestring = "1"
 
 [features]
 default = []
+runtime = []
 read_buf = []
 nightly = ["read_buf"]
+
+[[example]]
+name = "basic"
+required-features = ["runtime"]

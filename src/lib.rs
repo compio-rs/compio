@@ -5,6 +5,8 @@ pub mod buf;
 pub mod driver;
 pub mod fs;
 pub mod op;
+
+#[cfg(feature = "runtime")]
 pub mod task;
 
 /// A specialized `Result` type for operations with buffers.

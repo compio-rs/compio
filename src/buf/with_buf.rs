@@ -1,10 +1,12 @@
+use crate::BufResult;
 use std::io::{IoSlice, IoSliceMut};
 
-use crate::BufResult;
-
+/// Trait to get the inner buffer of an operation or a result.
 pub trait IntoInner {
+    /// The inner type.
     type Inner;
 
+    /// Get the inner buffer.
     fn into_inner(self) -> Self::Inner;
 }
 

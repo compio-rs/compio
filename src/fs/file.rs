@@ -1,10 +1,13 @@
+#[cfg(feature = "runtime")]
 use crate::{
     buf::{IntoInner, IoBuf, IoBufMut},
-    driver::{fs::FileInner, AsRawFd, FromRawFd, IntoRawFd, RawFd},
-    fs::OpenOptions,
     op::{BufResultExt, ReadAt, WriteAt},
     task::RUNTIME,
     BufResult,
+};
+use crate::{
+    driver::{fs::FileInner, AsRawFd, FromRawFd, IntoRawFd, RawFd},
+    fs::OpenOptions,
 };
 use std::{io, path::Path};
 
@@ -21,6 +24,7 @@ pub struct File {
 impl File {
     pub(crate) fn with_options(path: impl AsRef<Path>, options: OpenOptions) -> io::Result<Self> {
         let inner = FileInner::with_options(path, options.0)?;
+        #[cfg(feature = "runtime")]
         RUNTIME.with(|runtime| runtime.attach(inner.as_raw_fd()))?;
         Ok(Self { inner })
     }
@@ -68,6 +72,7 @@ impl File {
     ///
     /// If this function encounters any form of I/O or other error, an error
     /// variant will be returned. The buffer is returned on error.
+    #[cfg(feature = "runtime")]
     pub async fn read_at<T: IoBufMut>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
         let op = ReadAt::new(self.as_raw_fd(), pos, buffer);
         RUNTIME
@@ -100,6 +105,7 @@ impl File {
     ///
     /// It is **not** considered an error if the entire buffer could not be
     /// written to this writer.
+    #[cfg(feature = "runtime")]
     pub async fn write_at<T: IoBuf>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
         let op = WriteAt::new(self.as_raw_fd(), pos, buffer);
         RUNTIME
