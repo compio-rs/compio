@@ -1,5 +1,5 @@
 use crate::{
-    buf::{IoBuf, IoBufMut, WithBuf, WithBufMut},
+    buf::{AsBuf, AsBufMut, IoBuf, IoBufMut},
     driver::OpCode,
     op::{ReadAt, WriteAt},
 };
@@ -36,7 +36,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
         }
         let mut read = 0;
         let slice = self.buffer.as_buf_mut();
-        ReadFile(
+        let res = ReadFile(
             self.fd as _,
             slice.as_mut_ptr() as _,
             slice.len() as _,
@@ -55,7 +55,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
         }
         let mut written = 0;
         let slice = self.buffer.as_buf();
-        WriteFile(
+        let res = WriteFile(
             self.fd as _,
             slice.as_ptr() as _,
             slice.len() as _,
