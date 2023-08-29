@@ -13,11 +13,15 @@ use std::{
 
 pub(crate) static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| Runtime::new().unwrap());
 
-pub fn start<F: Future>(future: F) -> F::Output {
+pub fn block_on<F: Future>(future: F) -> F::Output {
     RUNTIME.block_on(future)
 }
 
-pub struct Runtime {
+pub fn spawn<F: Future + 'static>(future: F) -> Task<F::Output> {
+    RUNTIME.spawn(future)
+}
+
+pub(crate) struct Runtime {
     driver: Driver,
     ops: RefCell<Slab<RawOp>>,
     runnables: RefCell<VecDeque<Runnable>>,
@@ -39,13 +43,13 @@ impl Runtime {
         })
     }
 
-    unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> (Runnable, Task<F::Output>) {
-        let schedule = move |runnable| RUNTIME.runnables.borrow_mut().push_back(runnable);
+    unsafe fn spawn_unchecked<F: Future>(&'static self, future: F) -> (Runnable, Task<F::Output>) {
+        let schedule = move |runnable| self.runnables.borrow_mut().push_back(runnable);
         let (runnable, task) = async_task::spawn_unchecked(future, schedule);
         (runnable, task)
     }
 
-    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+    pub fn block_on<F: Future>(&'static self, future: F) -> F::Output {
         let (runnable, task) = unsafe { self.spawn_unchecked(future) };
         let waker = runnable.waker();
         runnable.schedule();
@@ -76,11 +80,17 @@ impl Runtime {
         }
     }
 
-    pub fn attach(&self, fd: RawFd) -> io::Result<()> {
+    pub fn spawn<F: Future + 'static>(&'static self, future: F) -> Task<F::Output> {
+        let (runnable, task) = unsafe { self.spawn_unchecked(future) };
+        runnable.schedule();
+        task
+    }
+
+    pub fn attach(&'static self, fd: RawFd) -> io::Result<()> {
         self.driver.attach(fd)
     }
 
-    pub fn submit<T: OpCode>(&self, op: T) -> impl Future<Output = (io::Result<usize>, T)> {
+    pub fn submit<T: OpCode>(&'static self, op: T) -> impl Future<Output = (io::Result<usize>, T)> {
         let mut ops = self.ops.borrow_mut();
         let user_data = ops.insert(RawOp::new(op));
         let op = ops.get_mut(user_data).unwrap();
@@ -90,14 +100,14 @@ impl Runtime {
             Either::Left(ready((res, unsafe { op.into_inner::<T>() })))
         } else {
             let (runnable, task) =
-                unsafe { self.spawn_unchecked(poll_fn(move |cx| RUNTIME.poll(cx, user_data))) };
+                unsafe { self.spawn_unchecked(poll_fn(move |cx| self.poll(cx, user_data))) };
             runnable.schedule();
             Either::Right(task)
         }
     }
 
     pub(crate) fn poll<T: OpCode>(
-        &self,
+        &'static self,
         cx: &mut Context,
         user_data: usize,
     ) -> Poll<(io::Result<usize>, T)> {
