@@ -3,7 +3,7 @@ use crate::{
     driver::{fs::FileInner, AsRawFd, FromRawFd, IntoRawFd, RawFd},
     fs::OpenOptions,
     op::{BufResultExt, ReadAt, WriteAt},
-    runtime::RUNTIME,
+    task::RUNTIME,
     BufResult,
 };
 use std::{io, path::Path};
@@ -15,7 +15,7 @@ pub struct File {
 impl File {
     pub fn with_options(path: impl AsRef<Path>, options: OpenOptions) -> io::Result<Self> {
         let inner = FileInner::with_options(path, options.0)?;
-        RUNTIME.attach(inner.as_raw_fd())?;
+        RUNTIME.with(|runtime| runtime.attach(inner.as_raw_fd()))?;
         Ok(Self { inner })
     }
 
@@ -65,7 +65,7 @@ impl File {
     pub async fn read_at<T: IoBufMut>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
         let op = ReadAt::new(self.as_raw_fd(), pos, buffer);
         RUNTIME
-            .submit(op)
+            .with(|runtime| runtime.submit(op))
             .await
             .into_inner()
             .map_advanced()
@@ -96,7 +96,11 @@ impl File {
     /// written to this writer.
     pub async fn write_at<T: IoBuf>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
         let op = WriteAt::new(self.as_raw_fd(), pos, buffer);
-        RUNTIME.submit(op).await.into_inner().into_inner()
+        RUNTIME
+            .with(|runtime| runtime.submit(op))
+            .await
+            .into_inner()
+            .into_inner()
     }
 }
 

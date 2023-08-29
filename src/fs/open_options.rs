@@ -19,7 +19,7 @@ use std::{fs::OpenOptions as StdOpenOptions, io, path::Path};
 /// Opening a file to read:
 ///
 /// ```no_run
-/// use tokio_iocp::fs::OpenOptions;
+/// use compio::fs::OpenOptions;
 ///
 /// let file = OpenOptions::new().read(true).open("foo.txt").unwrap();
 /// ```
@@ -28,7 +28,7 @@ use std::{fs::OpenOptions as StdOpenOptions, io, path::Path};
 /// doesn't exist:
 ///
 /// ```no_run
-/// use tokio_iocp::fs::OpenOptions;
+/// use compio::fs::OpenOptions;
 ///
 /// let file = OpenOptions::new()
 ///             .read(true)

@@ -1,7 +1,6 @@
 use crate::driver::{Driver, OpCode, Poller, RawFd};
 use async_task::{Runnable, Task};
 use futures_util::future::Either;
-use once_cell::sync::Lazy as LazyLock;
 use slab::Slab;
 use std::{
     cell::RefCell,
@@ -11,16 +10,6 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-pub(crate) static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| Runtime::new().unwrap());
-
-pub fn block_on<F: Future>(future: F) -> F::Output {
-    RUNTIME.block_on(future)
-}
-
-pub fn spawn<F: Future + 'static>(future: F) -> Task<F::Output> {
-    RUNTIME.spawn(future)
-}
-
 pub(crate) struct Runtime {
     driver: Driver,
     ops: RefCell<Slab<RawOp>>,
@@ -28,9 +17,6 @@ pub(crate) struct Runtime {
     wakers: RefCell<HashMap<usize, Waker>>,
     results: RefCell<HashMap<usize, (io::Result<usize>, RawOp)>>,
 }
-
-unsafe impl Send for Runtime {}
-unsafe impl Sync for Runtime {}
 
 impl Runtime {
     pub fn new() -> io::Result<Self> {
@@ -43,13 +29,13 @@ impl Runtime {
         })
     }
 
-    unsafe fn spawn_unchecked<F: Future>(&'static self, future: F) -> (Runnable, Task<F::Output>) {
+    unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> (Runnable, Task<F::Output>) {
         let schedule = move |runnable| self.runnables.borrow_mut().push_back(runnable);
         let (runnable, task) = async_task::spawn_unchecked(future, schedule);
         (runnable, task)
     }
 
-    pub fn block_on<F: Future>(&'static self, future: F) -> F::Output {
+    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
         let (runnable, task) = unsafe { self.spawn_unchecked(future) };
         let waker = runnable.waker();
         runnable.schedule();
@@ -80,17 +66,17 @@ impl Runtime {
         }
     }
 
-    pub fn spawn<F: Future + 'static>(&'static self, future: F) -> Task<F::Output> {
+    pub fn spawn<F: Future + 'static>(&self, future: F) -> Task<F::Output> {
         let (runnable, task) = unsafe { self.spawn_unchecked(future) };
         runnable.schedule();
         task
     }
 
-    pub fn attach(&'static self, fd: RawFd) -> io::Result<()> {
+    pub fn attach(&self, fd: RawFd) -> io::Result<()> {
         self.driver.attach(fd)
     }
 
-    pub fn submit<T: OpCode>(&'static self, op: T) -> impl Future<Output = (io::Result<usize>, T)> {
+    pub fn submit<T: OpCode>(&self, op: T) -> impl Future<Output = (io::Result<usize>, T)> {
         let mut ops = self.ops.borrow_mut();
         let user_data = ops.insert(RawOp::new(op));
         let op = ops.get_mut(user_data).unwrap();
@@ -107,7 +93,7 @@ impl Runtime {
     }
 
     pub(crate) fn poll<T: OpCode>(
-        &'static self,
+        &self,
         cx: &mut Context,
         user_data: usize,
     ) -> Poll<(io::Result<usize>, T)> {

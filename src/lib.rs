@@ -1,8 +1,11 @@
+#![doc = include_str!("../README.md")]
+#![warn(missing_docs)]
+
 pub mod buf;
 pub mod driver;
 pub mod fs;
 pub mod op;
-pub mod runtime;
+pub mod task;
 
 /// A specialized `Result` type for operations with buffers.
 ///

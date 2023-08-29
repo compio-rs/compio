@@ -1,7 +1,7 @@
 use compio::fs::OpenOptions;
 
 fn main() {
-    let buffer = compio::runtime::block_on(async {
+    let buffer = compio::task::block_on(async {
         let file = OpenOptions::new().read(true).open("Cargo.toml").unwrap();
         let (read, buffer) = file.read_at(Vec::with_capacity(1024), 0).await;
         let read = read.unwrap();

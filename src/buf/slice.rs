@@ -14,7 +14,7 @@ use std::ops::{Deref, DerefMut};
 /// Creating a slice
 ///
 /// ```
-/// use tokio_iocp::buf::IoBuf;
+/// use compio::buf::IoBuf;
 ///
 /// let buf = b"hello world";
 /// let slice = buf.slice(..5);
