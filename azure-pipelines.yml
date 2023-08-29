@@ -1,14 +1,19 @@
-# Starter pipeline
-# Start with a minimal pipeline that you can customize to build and deploy your code.
-# Add steps that build, run tests, deploy, and more:
-# https://aka.ms/yaml
-
 trigger:
-- master
+  branches:
+    include:
+      - master
 
-pool:
-  vmImage: ubuntu-latest
+jobs:
+- job: Test
+  strategy:
+    matrix:
+      windows:
+        image: windows-latest
+      linux:
+        image: ubuntu-latest
+  pool:
+    vmImage: $(image)
 
-steps:
-- script: cargo test --all-features
-  displayName: Test
+  steps:
+  - script: cargo +nightly test --all-features
+    displayName: Test
