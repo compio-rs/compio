@@ -20,21 +20,42 @@ use windows_sys::Win32::{
 pub(crate) mod fs;
 mod op;
 
+/// On windows, handle and socket are in the same size.
+/// Both of them could be attached to an IOCP.
+/// Therefore, both could be seen as fd;
 pub type RawFd = RawHandle;
 
+/// Extracts raw fds.
 pub trait AsRawFd {
+    /// Extracts the raw fd.
     fn as_raw_fd(&self) -> RawFd;
 }
 
+/// Contruct IO objects from raw fds.
 pub trait FromRawFd {
+    /// Constructs a new IO object from the specified raw fd.
+    ///
+    /// # Safety
+    ///
+    /// The `fd` passed in must:
+    ///   - be a valid open handle or socket,
+    ///   - be opened with `FILE_FLAG_OVERLAPPED` if it's a file handle.
     unsafe fn from_raw_fd(fd: RawFd) -> Self;
 }
 
+/// Consumes an object and acquire ownership of its raw fd.
 pub trait IntoRawFd {
+    /// Consumes this object, returning the raw underlying fd.
     fn into_raw_fd(self) -> RawFd;
 }
 
+/// Abstract of IOCP operations.
 pub trait OpCode {
+    /// Perform Windows API call with given pointer to overlapped struct.
+    ///
+    /// # Safety
+    ///
+    /// `self` must be alive until the operation completes.
     unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>>;
 }
 
@@ -44,11 +65,13 @@ impl<T: OpCode + ?Sized> OpCode for &mut T {
     }
 }
 
+/// Low-level driver of IOCP.
 pub struct Driver {
     port: OwnedHandle,
 }
 
 impl Driver {
+    /// Create a new IOCP.
     pub fn new() -> io::Result<Self> {
         let port = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0) };
         let port = OwnedHandle::try_from(unsafe { HandleOrNull::from_raw_handle(port as _) })

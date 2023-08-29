@@ -2,6 +2,7 @@
 
 A thread-per-core Rust runtime with IOCP/io_uring.
 The name comes from "completion-based IO".
+This crate is inspired by [monoio](https://github.com/bytedance/monoio/).
 
 ## Why not Tokio?
 

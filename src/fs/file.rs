@@ -8,12 +8,18 @@ use crate::{
 };
 use std::{io, path::Path};
 
+/// A reference to an open file on the filesystem.
+///
+/// An instance of a `File` can be read and/or written depending on what options
+/// it was opened with. The `File` type provides **positional** read and write
+/// operations. The file does not maintain an internal cursor. The caller is
+/// required to specify an offset when issuing an operation.
 pub struct File {
     inner: FileInner,
 }
 
 impl File {
-    pub fn with_options(path: impl AsRef<Path>, options: OpenOptions) -> io::Result<Self> {
+    pub(crate) fn with_options(path: impl AsRef<Path>, options: OpenOptions) -> io::Result<Self> {
         let inner = FileInner::with_options(path, options.0)?;
         RUNTIME.with(|runtime| runtime.attach(inner.as_raw_fd()))?;
         Ok(Self { inner })
