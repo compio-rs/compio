@@ -15,3 +15,13 @@ This is mainly because that no public APIs to control IOCP in `mio`,
 and `tokio` won't public APIs to control `mio` before `mio` reaches 1.0.
 
 ## Quick start
+```rust,no_run
+let buffer = compio::task::block_on(async {
+    let file = compio::fs::OpenOptions::new().read(true).open("Cargo.toml").unwrap();
+    let (read, buffer) = file.read_at(Vec::with_capacity(1024), 0).await;
+    let read = read.unwrap();
+    assert_eq!(read, buffer.len());
+    String::from_utf8(buffer).unwrap()
+});
+println!("{}", buffer);
+```
