@@ -1,0 +1,21 @@
+trigger:
+  branches:
+    include:
+      - master
+
+jobs:
+- job: Test
+  strategy:
+    matrix:
+      windows:
+        image: windows-latest
+      linux:
+        image: ubuntu-latest
+  pool:
+    vmImage: $(image)
+
+  steps:
+  - script: |
+      rustup toolchain install nightly
+      cargo +nightly test --all-features
+    displayName: Test
