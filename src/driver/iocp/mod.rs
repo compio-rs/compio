@@ -3,7 +3,7 @@ use std::{
     io,
     os::windows::{
         io::HandleOrNull,
-        prelude::{AsRawHandle, OwnedHandle},
+        prelude::{AsRawHandle, OwnedHandle, RawHandle},
     },
     ptr::null_mut,
     task::Poll,
@@ -17,9 +17,22 @@ use windows_sys::Win32::{
     },
 };
 
-pub use std::os::windows::prelude::RawHandle as RawFd;
-
+pub(crate) mod fs;
 mod op;
+
+pub type RawFd = RawHandle;
+
+pub trait AsRawFd {
+    fn as_raw_fd(&self) -> RawFd;
+}
+
+pub trait FromRawFd {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self;
+}
+
+pub trait IntoRawFd {
+    fn into_raw_fd(self) -> RawFd;
+}
 
 pub trait OpCode {
     unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>>;
