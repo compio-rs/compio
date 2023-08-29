@@ -15,5 +15,7 @@ jobs:
     vmImage: $(image)
 
   steps:
-  - script: cargo +nightly test --all-features
+  - script: |
+      rustup toolchain install nightly
+      cargo +nightly test --all-features
     displayName: Test
