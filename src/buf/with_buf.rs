@@ -1,5 +1,8 @@
 use crate::BufResult;
-use std::io::{IoSlice, IoSliceMut};
+use std::{
+    io::{IoSlice, IoSliceMut},
+    ops::Deref,
+};
 
 /// Trait to get the inner buffer of an operation or a result.
 pub trait IntoInner {
@@ -26,18 +29,35 @@ pub trait WrapBufMut {
     fn set_init(&mut self, len: usize);
 }
 
-pub trait WithBuf: WrapBuf {
-    fn with_buf<R>(&self, f: impl FnOnce(*const u8, usize) -> R) -> R;
+pub trait AsBuf: WrapBuf {
+    fn as_buf(&self) -> &[u8];
 }
 
-pub trait WithBufMut: WrapBufMut + WithBuf {
-    fn with_buf_mut<R>(&mut self, f: impl FnOnce(*mut u8, usize) -> R) -> R;
+pub trait AsBufMut: WrapBufMut + AsBuf {
+    fn as_buf_mut(&mut self) -> &mut [u8];
 }
 
-pub trait WithWsaBuf: WrapBuf {
-    fn with_wsa_buf<R>(&self, f: impl FnOnce(*const IoSlice, usize) -> R) -> R;
+pub trait AsIoSlices: WrapBuf {
+    fn as_io_slices(&self) -> OneOrVec<IoSlice>;
 }
 
-pub trait WithWsaBufMut: WrapBufMut + WithWsaBuf {
-    fn with_wsa_buf_mut<R>(&mut self, f: impl FnOnce(*const IoSliceMut, usize) -> R) -> R;
+pub trait AsIoSlicesMut: WrapBufMut + AsIoSlices {
+    fn as_io_slices_mut(&mut self) -> OneOrVec<IoSliceMut>;
+}
+
+#[derive(Debug)]
+pub enum OneOrVec<T> {
+    One(T),
+    Vec(Vec<T>),
+}
+
+impl<T> Deref for OneOrVec<T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::One(one) => std::slice::from_ref(one),
+            Self::Vec(vec) => vec,
+        }
+    }
 }

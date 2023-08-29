@@ -1,5 +1,5 @@
 use crate::{
-    buf::{IoBuf, IoBufMut, WithBuf, WithBufMut},
+    buf::{AsBuf, AsBufMut, IoBuf, IoBufMut},
     driver::OpCode,
     op::{ReadAt, WriteAt},
 };
@@ -11,20 +11,18 @@ use io_uring::{
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
     fn create_entry(&mut self) -> Entry {
-        self.buffer.with_buf_mut(|ptr, len| {
-            Read::new(Fd(self.fd), ptr, len as _)
-                .offset(self.offset as _)
-                .build()
-        })
+        let slice = self.buffer.as_buf_mut();
+        Read::new(Fd(self.fd), slice.as_mut_ptr(), slice.len() as _)
+            .offset(self.offset as _)
+            .build()
     }
 }
 
 impl<T: IoBuf> OpCode for WriteAt<T> {
-    fn create_entry(&mut self) -> io_uring::squeue::Entry {
-        self.buffer.with_buf(|ptr, len| {
-            Write::new(Fd(self.fd), ptr, len as _)
-                .offset(self.offset as _)
-                .build()
-        })
+    fn create_entry(&mut self) -> Entry {
+        let slice = self.buffer.as_buf();
+        Write::new(Fd(self.fd), slice.as_ptr(), slice.len() as _)
+            .offset(self.offset as _)
+            .build()
     }
 }

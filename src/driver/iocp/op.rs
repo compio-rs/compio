@@ -35,9 +35,14 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
             overlapped.Anonymous.Anonymous.OffsetHigh = (self.offset >> 32) as _;
         }
         let mut read = 0;
-        let res = self
-            .buffer
-            .with_buf_mut(|ptr, len| ReadFile(self.fd as _, ptr as _, len as _, &mut read, optr));
+        let slice = self.buffer.as_buf_mut();
+        ReadFile(
+            self.fd as _,
+            slice.as_mut_ptr() as _,
+            slice.len() as _,
+            &mut read,
+            optr,
+        );
         win32_result(res, read)
     }
 }
@@ -49,9 +54,14 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
             overlapped.Anonymous.Anonymous.OffsetHigh = (self.offset >> 32) as _;
         }
         let mut written = 0;
-        let res = self
-            .buffer
-            .with_buf(|ptr, len| WriteFile(self.fd as _, ptr as _, len as _, &mut written, optr));
+        let slice = self.buffer.as_buf();
+        WriteFile(
+            self.fd as _,
+            slice.as_ptr() as _,
+            slice.len() as _,
+            &mut written,
+            optr,
+        );
         win32_result(res, written)
     }
 }

@@ -20,9 +20,9 @@ impl<T: IoBuf> WrapBuf for BufWrapper<T> {
     }
 }
 
-impl<T: IoBuf> WithBuf for BufWrapper<T> {
-    fn with_buf<R>(&self, f: impl FnOnce(*const u8, usize) -> R) -> R {
-        f(self.buffer.as_buf_ptr(), self.buffer.buf_len())
+impl<T: IoBuf> AsBuf for BufWrapper<T> {
+    fn as_buf(&self) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(self.buffer.as_buf_ptr(), self.buffer.buf_len()) }
     }
 }
 
@@ -32,33 +32,26 @@ impl<T: IoBufMut> WrapBufMut for BufWrapper<T> {
     }
 }
 
-impl<T: IoBufMut> WithBufMut for BufWrapper<T> {
-    fn with_buf_mut<R>(&mut self, f: impl FnOnce(*mut u8, usize) -> R) -> R {
-        f(
-            unsafe { self.buffer.as_buf_mut_ptr().add(self.buffer.buf_len()) },
-            self.buffer.buf_capacity() - self.buffer.buf_len(),
-        )
-    }
-}
-
-impl<T: IoBuf> WithWsaBuf for BufWrapper<T> {
-    fn with_wsa_buf<R>(&self, f: impl FnOnce(*const IoSlice, usize) -> R) -> R {
-        let buffer = IoSlice::new(unsafe {
-            std::slice::from_raw_parts(self.buffer.as_buf_ptr(), self.buffer.buf_len())
-        });
-        f(&buffer, 1)
-    }
-}
-
-impl<T: IoBufMut> WithWsaBufMut for BufWrapper<T> {
-    fn with_wsa_buf_mut<R>(&mut self, f: impl FnOnce(*const IoSliceMut, usize) -> R) -> R {
-        let buffer = IoSliceMut::new(unsafe {
+impl<T: IoBufMut> AsBufMut for BufWrapper<T> {
+    fn as_buf_mut(&mut self) -> &mut [u8] {
+        unsafe {
             std::slice::from_raw_parts_mut(
                 self.buffer.as_buf_mut_ptr().add(self.buffer.buf_len()),
                 self.buffer.buf_capacity() - self.buffer.buf_len(),
             )
-        });
-        f(&buffer, 1)
+        }
+    }
+}
+
+impl<T: IoBuf> AsIoSlices for BufWrapper<T> {
+    fn as_io_slices(&self) -> OneOrVec<IoSlice> {
+        OneOrVec::One(IoSlice::new(self.as_buf()))
+    }
+}
+
+impl<T: IoBufMut> AsIoSlicesMut for BufWrapper<T> {
+    fn as_io_slices_mut(&mut self) -> OneOrVec<IoSliceMut> {
+        OneOrVec::One(IoSliceMut::new(self.as_buf_mut()))
     }
 }
 
@@ -81,16 +74,18 @@ impl<T: IoBuf> WrapBuf for VectoredBufWrapper<T> {
     }
 }
 
-impl<T: IoBuf> WithWsaBuf for VectoredBufWrapper<T> {
-    fn with_wsa_buf<R>(&self, f: impl FnOnce(*const IoSlice, usize) -> R) -> R {
-        let buffers = self
-            .buffer
-            .iter()
-            .map(|buf| {
-                IoSlice::new(unsafe { std::slice::from_raw_parts(buf.as_buf_ptr(), buf.buf_len()) })
-            })
-            .collect::<Vec<_>>();
-        f(buffers.as_ptr(), buffers.len())
+impl<T: IoBuf> AsIoSlices for VectoredBufWrapper<T> {
+    fn as_io_slices(&self) -> OneOrVec<IoSlice> {
+        OneOrVec::Vec(
+            self.buffer
+                .iter()
+                .map(|buf| {
+                    IoSlice::new(unsafe {
+                        std::slice::from_raw_parts(buf.as_buf_ptr(), buf.buf_len())
+                    })
+                })
+                .collect(),
+        )
     }
 }
 
@@ -109,20 +104,20 @@ impl<T: IoBufMut> WrapBufMut for VectoredBufWrapper<T> {
     }
 }
 
-impl<T: IoBufMut> WithWsaBufMut for VectoredBufWrapper<T> {
-    fn with_wsa_buf_mut<R>(&mut self, f: impl FnOnce(*const IoSliceMut, usize) -> R) -> R {
-        let buffers = self
-            .buffer
-            .iter_mut()
-            .map(|buf| {
-                IoSliceMut::new(unsafe {
-                    std::slice::from_raw_parts_mut(
-                        buf.as_buf_mut_ptr().add(buf.buf_len()),
-                        buf.buf_capacity() - buf.buf_len(),
-                    )
+impl<T: IoBufMut> AsIoSlicesMut for VectoredBufWrapper<T> {
+    fn as_io_slices_mut(&mut self) -> OneOrVec<IoSliceMut> {
+        OneOrVec::Vec(
+            self.buffer
+                .iter_mut()
+                .map(|buf| {
+                    IoSliceMut::new(unsafe {
+                        std::slice::from_raw_parts_mut(
+                            buf.as_buf_mut_ptr().add(buf.buf_len()),
+                            buf.buf_capacity() - buf.buf_len(),
+                        )
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
-        f(buffers.as_ptr(), buffers.len())
+                .collect(),
+        )
     }
 }
