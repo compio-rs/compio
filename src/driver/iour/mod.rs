@@ -11,7 +11,9 @@ pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 pub(crate) mod fs;
 mod op;
 
+/// Abstraction of io-uring operations.
 pub trait OpCode {
+    /// Create submission entry.
     fn create_entry(&mut self) -> squeue::Entry;
 }
 
@@ -21,15 +23,18 @@ impl<T: OpCode + ?Sized> OpCode for &mut T {
     }
 }
 
+/// Low-level driver of io-uring.
 pub struct Driver {
     inner: IoUring,
 }
 
 impl Driver {
+    /// Create a new io-uring driver with 1024 entries.
     pub fn new() -> io::Result<Self> {
         Self::with_entries(1024)
     }
 
+    /// Create a new io-uring driver with specified entries.
     pub fn with_entries(entries: u32) -> io::Result<Self> {
         Ok(Self {
             inner: IoUring::new(entries)?,

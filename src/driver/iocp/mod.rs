@@ -49,7 +49,7 @@ pub trait IntoRawFd {
     fn into_raw_fd(self) -> RawFd;
 }
 
-/// Abstract of IOCP operations.
+/// Abstraction of IOCP operations.
 pub trait OpCode {
     /// Perform Windows API call with given pointer to overlapped struct.
     ///
