@@ -90,15 +90,11 @@ impl Poller for Driver {
         }
     }
 
-    unsafe fn push(
-        &self,
-        op: &mut (impl OpCode + 'static),
-        user_data: usize,
-    ) -> Poll<io::Result<usize>> {
+    unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()> {
         self.operations
             .borrow_mut()
             .push_back((op, Overlapped::new(user_data)));
-        Poll::Pending
+        Ok(())
     }
 
     fn poll(&self, timeout: Option<Duration>) -> io::Result<Entry> {
@@ -112,10 +108,7 @@ impl Poller for Driver {
             };
             if let Poll::Ready(result) = result {
                 let overlapped = unsafe { Box::from_raw(overlapped_ptr) };
-                return Ok(Entry {
-                    result,
-                    user_data: overlapped.user_data,
-                });
+                return Ok(Entry::new(overlapped.user_data, result));
             }
         }
         let mut transferred = 0;
@@ -147,10 +140,7 @@ impl Poller for Driver {
             Ok(transferred as usize)
         };
         let overlapped = unsafe { Box::from_raw(overlapped_ptr.cast::<Overlapped>()) };
-        Ok(Entry {
-            result,
-            user_data: overlapped.user_data,
-        })
+        Ok(Entry::new(overlapped.user_data, result))
     }
 }
 

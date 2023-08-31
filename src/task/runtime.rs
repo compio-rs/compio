@@ -82,14 +82,17 @@ impl Runtime {
         let user_data = ops.insert(RawOp::new(op));
         let op = ops.get_mut(user_data).unwrap();
         let res = unsafe { self.driver.push(op.as_mut::<T>(), user_data) };
-        if let Poll::Ready(res) = res {
-            let op = ops.remove(user_data);
-            Either::Left(ready((res, unsafe { op.into_inner::<T>() })))
-        } else {
-            let (runnable, task) =
-                unsafe { self.spawn_unchecked(poll_fn(move |cx| self.poll(cx, user_data))) };
-            runnable.schedule();
-            Either::Right(task)
+        match res {
+            Ok(()) => {
+                let (runnable, task) =
+                    unsafe { self.spawn_unchecked(poll_fn(move |cx| self.poll(cx, user_data))) };
+                runnable.schedule();
+                Either::Left(task)
+            }
+            Err(e) => {
+                let op = ops.remove(user_data);
+                Either::Right(ready((Err(e), unsafe { op.into_inner::<T>() })))
+            }
         }
     }
 
