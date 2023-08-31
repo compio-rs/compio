@@ -55,14 +55,12 @@ impl Runtime {
             }
             let entry = self.driver.poll(None).unwrap();
             let op = self.ops.borrow_mut().remove(entry.user_data());
-            self.wakers
-                .borrow_mut()
-                .remove(&entry.user_data())
-                .unwrap()
-                .wake();
-            self.results
-                .borrow_mut()
-                .insert(entry.user_data(), (entry.into_result(), op));
+            if let Some(waker) = self.wakers.borrow_mut().remove(&entry.user_data()) {
+                waker.wake();
+                self.results
+                    .borrow_mut()
+                    .insert(entry.user_data(), (entry.into_result(), op));
+            }
         }
     }
 
@@ -76,23 +74,29 @@ impl Runtime {
         self.driver.attach(fd)
     }
 
-    pub fn submit<T: OpCode>(&self, op: T) -> impl Future<Output = (io::Result<usize>, T)> {
+    pub fn submit<T: OpCode + 'static>(
+        &self,
+        op: T,
+    ) -> impl Future<Output = (io::Result<usize>, T)> {
         let mut ops = self.ops.borrow_mut();
         let user_data = ops.insert(RawOp::new(op));
         let op = ops.get_mut(user_data).unwrap();
-        let res = self.driver.submit(unsafe { op.as_mut::<T>() }, user_data);
-        if let Poll::Ready(res) = res {
-            let op = ops.remove(user_data);
-            Either::Left(ready((res, unsafe { op.into_inner::<T>() })))
-        } else {
-            let (runnable, task) =
-                unsafe { self.spawn_unchecked(poll_fn(move |cx| self.poll(cx, user_data))) };
-            runnable.schedule();
-            Either::Right(task)
+        let res = unsafe { self.driver.push(op.as_mut::<T>(), user_data) };
+        match res {
+            Ok(()) => {
+                let (runnable, task) =
+                    unsafe { self.spawn_unchecked(poll_fn(move |cx| self.poll(cx, user_data))) };
+                runnable.schedule();
+                Either::Left(task)
+            }
+            Err(e) => {
+                let op = ops.remove(user_data);
+                Either::Right(ready((Err(e), unsafe { op.into_inner::<T>() })))
+            }
         }
     }
 
-    pub(crate) fn poll<T: OpCode>(
+    pub fn poll<T: OpCode>(
         &self,
         cx: &mut Context,
         user_data: usize,

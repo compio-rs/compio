@@ -1,5 +1,7 @@
 use crate::driver::{Entry, Poller};
 use std::{
+    cell::RefCell,
+    collections::VecDeque,
     io,
     os::windows::{
         io::HandleOrNull,
@@ -59,15 +61,10 @@ pub trait OpCode {
     unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>>;
 }
 
-impl<T: OpCode + ?Sized> OpCode for &mut T {
-    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        (**self).operate(optr)
-    }
-}
-
 /// Low-level driver of IOCP.
 pub struct Driver {
     port: OwnedHandle,
+    operations: RefCell<VecDeque<(*mut dyn OpCode, Overlapped)>>,
 }
 
 impl Driver {
@@ -76,7 +73,10 @@ impl Driver {
         let port = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0) };
         let port = OwnedHandle::try_from(unsafe { HandleOrNull::from_raw_handle(port as _) })
             .map_err(|_| io::Error::last_os_error())?;
-        Ok(Self { port })
+        Ok(Self {
+            port,
+            operations: RefCell::default(),
+        })
     }
 }
 
@@ -90,17 +90,27 @@ impl Poller for Driver {
         }
     }
 
-    fn submit(&self, mut op: impl OpCode, user_data: usize) -> Poll<io::Result<usize>> {
-        let overlapped = Box::new(Overlapped::new(user_data));
-        let optr = Box::leak(overlapped);
-        let res = unsafe { op.operate(optr as *mut Overlapped as *mut OVERLAPPED) };
-        if res.is_ready() {
-            let _ = unsafe { Box::from_raw(optr) };
-        }
-        res
+    unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()> {
+        self.operations
+            .borrow_mut()
+            .push_back((op, Overlapped::new(user_data)));
+        Ok(())
     }
 
     fn poll(&self, timeout: Option<Duration>) -> io::Result<Entry> {
+        while let Some((op, overlapped)) = self.operations.borrow_mut().pop_front() {
+            let overlapped = Box::new(overlapped);
+            let overlapped_ptr = Box::leak(overlapped);
+            let result = unsafe {
+                op.as_mut()
+                    .unwrap()
+                    .operate(overlapped_ptr as *mut _ as *mut OVERLAPPED)
+            };
+            if let Poll::Ready(result) = result {
+                let overlapped = unsafe { Box::from_raw(overlapped_ptr) };
+                return Ok(Entry::new(overlapped.user_data, result));
+            }
+        }
         let mut transferred = 0;
         let mut key = 0;
         let mut overlapped_ptr = null_mut();
@@ -130,10 +140,7 @@ impl Poller for Driver {
             Ok(transferred as usize)
         };
         let overlapped = unsafe { Box::from_raw(overlapped_ptr.cast::<Overlapped>()) };
-        Ok(Entry {
-            result,
-            user_data: overlapped.user_data,
-        })
+        Ok(Entry::new(overlapped.user_data, result))
     }
 }
 

@@ -4,7 +4,7 @@ use io_uring::{
     types::{SubmitArgs, Timespec},
     IoUring,
 };
-use std::{io, task::Poll, time::Duration};
+use std::{io, time::Duration};
 
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 
@@ -15,12 +15,6 @@ mod op;
 pub trait OpCode {
     /// Create submission entry.
     fn create_entry(&mut self) -> squeue::Entry;
-}
-
-impl<T: OpCode + ?Sized> OpCode for &mut T {
-    fn create_entry(&mut self) -> squeue::Entry {
-        (**self).create_entry()
-    }
 }
 
 /// Low-level driver of io-uring.
@@ -47,10 +41,13 @@ impl Poller for Driver {
         Ok(())
     }
 
-    fn submit(&self, mut op: impl OpCode, user_data: usize) -> Poll<io::Result<usize>> {
+    unsafe fn push(&self, op: &mut impl OpCode, user_data: usize) -> io::Result<()> {
         let entry = op.create_entry().user_data(user_data as _);
-        unsafe { self.inner.submission_shared().push(&entry) }.unwrap();
-        Poll::Pending
+        if self.inner.submission_shared().is_full() {
+            self.inner.submit()?;
+        }
+        self.inner.submission_shared().push(&entry).unwrap();
+        Ok(())
     }
 
     fn poll(&self, timeout: Option<Duration>) -> io::Result<Entry> {
@@ -69,10 +66,7 @@ impl Poller for Driver {
         } else {
             Ok(result as _)
         };
-        Ok(Entry {
-            user_data: entry.user_data() as _,
-            result,
-        })
+        Ok(Entry::new(entry.user_data() as _, result))
     }
 }
 

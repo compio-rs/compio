@@ -1,7 +1,7 @@
 //! The platform-specified driver.
 //! Some types differ by compilation target.
 
-use std::{io, task::Poll, time::Duration};
+use std::{io, time::Duration};
 
 cfg_if::cfg_if! {
     if #[cfg(target_os = "windows")] {
@@ -21,9 +21,13 @@ pub trait Poller {
     /// Attach an fd to the driver.
     fn attach(&self, fd: RawFd) -> io::Result<()>;
 
-    /// Submit an operation with user-defined data.
+    /// Push an operation with user-defined data.
     /// The data could be retrived from [`Entry`] when polling.
-    fn submit(&self, op: impl OpCode, user_data: usize) -> Poll<io::Result<usize>>;
+    ///
+    /// # Safety
+    ///
+    /// `op` should be alive until [`Poller::poll`] returns its result.
+    unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()>;
 
     /// Poll the driver with an optional timeout.
     /// If no timeout specified, the call will block.
@@ -37,6 +41,10 @@ pub struct Entry {
 }
 
 impl Entry {
+    pub(crate) fn new(user_data: usize, result: io::Result<usize>) -> Self {
+        Self { user_data, result }
+    }
+
     /// The user-defined data passed to [`Poller::submit`].
     pub fn user_data(&self) -> usize {
         self.user_data
