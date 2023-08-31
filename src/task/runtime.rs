@@ -55,14 +55,12 @@ impl Runtime {
             }
             let entry = self.driver.poll(None).unwrap();
             let op = self.ops.borrow_mut().remove(entry.user_data());
-            self.wakers
-                .borrow_mut()
-                .remove(&entry.user_data())
-                .unwrap()
-                .wake();
-            self.results
-                .borrow_mut()
-                .insert(entry.user_data(), (entry.into_result(), op));
+            if let Some(waker) = self.wakers.borrow_mut().remove(&entry.user_data()) {
+                waker.wake();
+                self.results
+                    .borrow_mut()
+                    .insert(entry.user_data(), (entry.into_result(), op));
+            }
         }
     }
 
