@@ -21,9 +21,17 @@ pub trait Poller {
     /// Attach an fd to the driver.
     fn attach(&self, fd: RawFd) -> io::Result<()>;
 
-    /// Submit an operation with user-defined data.
+    /// Push an operation with user-defined data.
     /// The data could be retrived from [`Entry`] when polling.
-    fn submit(&self, op: impl OpCode, user_data: usize) -> Poll<io::Result<usize>>;
+    ///
+    /// # Safety
+    ///
+    /// `op` should be alive until [`Poller::poll`] returns its result.
+    unsafe fn push(
+        &self,
+        op: &mut (impl OpCode + 'static),
+        user_data: usize,
+    ) -> Poll<io::Result<usize>>;
 
     /// Poll the driver with an optional timeout.
     /// If no timeout specified, the call will block.

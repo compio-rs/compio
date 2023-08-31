@@ -17,12 +17,6 @@ pub trait OpCode {
     fn create_entry(&mut self) -> squeue::Entry;
 }
 
-impl<T: OpCode + ?Sized> OpCode for &mut T {
-    fn create_entry(&mut self) -> squeue::Entry {
-        (**self).create_entry()
-    }
-}
-
 /// Low-level driver of io-uring.
 pub struct Driver {
     inner: IoUring,
@@ -47,7 +41,7 @@ impl Poller for Driver {
         Ok(())
     }
 
-    fn submit(&self, mut op: impl OpCode, user_data: usize) -> Poll<io::Result<usize>> {
+    fn push(&self, mut op: &mut impl OpCode, user_data: usize) -> Poll<io::Result<usize>> {
         let entry = op.create_entry().user_data(user_data as _);
         unsafe { self.inner.submission_shared().push(&entry) }.unwrap();
         Poll::Pending

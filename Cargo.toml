@@ -52,5 +52,9 @@ name = "basic"
 required-features = ["runtime"]
 
 [[test]]
+name = "driver"
+required-features = ["runtime"]
+
+[[test]]
 name = "file"
 required-features = ["runtime"]

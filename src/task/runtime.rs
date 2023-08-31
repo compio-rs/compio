@@ -74,11 +74,14 @@ impl Runtime {
         self.driver.attach(fd)
     }
 
-    pub fn submit<T: OpCode>(&self, op: T) -> impl Future<Output = (io::Result<usize>, T)> {
+    pub fn submit<T: OpCode + 'static>(
+        &self,
+        op: T,
+    ) -> impl Future<Output = (io::Result<usize>, T)> {
         let mut ops = self.ops.borrow_mut();
         let user_data = ops.insert(RawOp::new(op));
         let op = ops.get_mut(user_data).unwrap();
-        let res = self.driver.submit(unsafe { op.as_mut::<T>() }, user_data);
+        let res = unsafe { self.driver.push(op.as_mut::<T>(), user_data) };
         if let Poll::Ready(res) = res {
             let op = ops.remove(user_data);
             Either::Left(ready((res, unsafe { op.into_inner::<T>() })))
@@ -90,7 +93,7 @@ impl Runtime {
         }
     }
 
-    pub(crate) fn poll<T: OpCode>(
+    pub fn poll<T: OpCode>(
         &self,
         cx: &mut Context,
         user_data: usize,

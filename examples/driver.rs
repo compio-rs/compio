@@ -7,8 +7,8 @@ fn main() {
     let file = compio::fs::File::open("Cargo.toml").unwrap();
     driver.attach(file.as_raw_fd()).unwrap();
 
-    let mut op = compio::op::ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(1024));
-    let res = match driver.submit(&mut op, 0) {
+    let mut op = compio::op::ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(4096));
+    let res = match unsafe { driver.push(&mut op, 0) } {
         Poll::Ready(res) => res,
         Poll::Pending => {
             let entry = driver.poll(None).unwrap();
