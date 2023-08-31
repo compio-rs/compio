@@ -41,9 +41,9 @@ impl Poller for Driver {
         Ok(())
     }
 
-    fn push(&self, mut op: &mut impl OpCode, user_data: usize) -> Poll<io::Result<usize>> {
+    unsafe fn push(&self, op: &mut impl OpCode, user_data: usize) -> Poll<io::Result<usize>> {
         let entry = op.create_entry().user_data(user_data as _);
-        unsafe { self.inner.submission_shared().push(&entry) }.unwrap();
+        self.inner.submission_shared().push(&entry).unwrap();
         Poll::Pending
     }
 
