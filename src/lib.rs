@@ -1,4 +1,5 @@
-#![doc = include_str!("../README.md")]
+//!
+#![cfg_attr(feature = "runtime", doc = include_str!("../README.md"))]
 #![cfg_attr(feature = "read_buf", feature(read_buf))]
 #![warn(missing_docs)]
 
