@@ -34,7 +34,7 @@ unsafe fn win32_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
         match error {
             ERROR_IO_PENDING => Poll::Pending,
             0 | ERROR_IO_INCOMPLETE | ERROR_HANDLE_EOF | ERROR_PIPE_CONNECTED | ERROR_NO_DATA => {
-                Poll::Ready(Ok(0))
+                Poll::Ready(Ok(transferred as _))
             }
             _ => Poll::Ready(Err(io::Error::from_raw_os_error(error as _))),
         }
