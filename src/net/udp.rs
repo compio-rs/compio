@@ -51,7 +51,7 @@ use crate::{buf::*, *};
 /// ```
 /// Send and receive packets without connecting:
 ///
-/// ```no_run
+/// ```
 /// use compio::net::UdpSocket;
 /// use std::net::SocketAddr;
 /// use socket2::SockAddr;

@@ -1,11 +1,13 @@
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 use std::{io, net::Shutdown};
 
+#[cfg(all(feature = "runtime", target_os = "windows"))]
+use crate::op::{RecvFrom, RecvResultExt};
 #[cfg(feature = "runtime")]
 use crate::{
     buf::{IntoInner, IoBuf, IoBufMut},
     driver::AsRawFd,
-    op::{Accept, BufResultExt, Connect, Recv, RecvFrom, RecvResultExt, Send, SendTo},
+    op::{Accept, BufResultExt, Connect, Recv, Send, SendTo},
     task::RUNTIME,
     BufResult,
 };
@@ -149,7 +151,7 @@ impl Socket {
             .into_inner()
     }
 
-    #[cfg(feature = "runtime")]
+    #[cfg(all(feature = "runtime", target_os = "windows"))]
     pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SockAddr), T> {
         let op = RecvFrom::new(self.as_raw_fd(), buffer);
         RUNTIME
@@ -158,6 +160,11 @@ impl Socket {
             .into_inner()
             .map_addr()
             .map_advanced()
+    }
+
+    #[cfg(all(feature = "runtime", target_os = "linux"))]
+    pub async fn recv_from<T: IoBufMut>(&self, mut buffer: T) -> BufResult<(usize, SockAddr), T> {
+        (self.socket.recv_from(buffer.as_uninit_slice()), buffer).map_advanced()
     }
 
     #[cfg(feature = "runtime")]
