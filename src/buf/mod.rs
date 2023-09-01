@@ -10,10 +10,19 @@ pub use io_buf::*;
 mod slice;
 pub use slice::*;
 
-mod with_buf;
-pub(crate) use with_buf::*;
+/// Trait to get the inner buffer of an operation or a result.
+pub trait IntoInner {
+    /// The inner type.
+    type Inner;
 
-mod buf_wrapper;
-pub(crate) use buf_wrapper::*;
+    /// Get the inner buffer.
+    fn into_inner(self) -> Self::Inner;
+}
 
-pub use with_buf::IntoInner;
+impl<T: IntoInner, O> IntoInner for crate::BufResult<O, T> {
+    type Inner = crate::BufResult<O, T::Inner>;
+
+    fn into_inner(self) -> Self::Inner {
+        (self.0, self.1.into_inner())
+    }
+}

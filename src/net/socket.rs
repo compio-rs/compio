@@ -5,10 +5,7 @@ use std::{io, net::Shutdown};
 #[cfg(feature = "runtime")]
 use crate::{
     buf::{IntoInner, IoBuf, IoBufMut},
-    op::{
-        Accept, BufResultExt, Connect, Recv, RecvFrom, RecvFromVectored, RecvResultExt,
-        RecvVectored, Send, SendTo, SendToVectored, SendVectored,
-    },
+    op::{Accept, BufResultExt, Connect, Recv, RecvFrom, RecvResultExt, Send, SendTo},
     task::RUNTIME,
     BufResult,
 };
@@ -48,13 +45,13 @@ impl Socket {
 
     #[cfg(target_os = "linux")]
     #[allow(dead_code)]
-    pub fn protocol(&self) -> io::Result<Protocol> {
+    pub fn protocol(&self) -> io::Result<Option<Protocol>> {
         self.socket.protocol()
     }
 
     #[cfg(target_os = "windows")]
     #[allow(dead_code)]
-    pub fn protocol(&self) -> io::Result<Protocol> {
+    pub fn protocol(&self) -> io::Result<Option<Protocol>> {
         use windows_sys::Win32::Networking::WinSock::{
             getsockopt, SOL_SOCKET, SO_PROTOCOL_INFO, WSAPROTOCOL_INFOW,
         };
@@ -73,7 +70,10 @@ impl Socket {
         if res != 0 {
             Err(io::Error::last_os_error())
         } else {
-            Ok(Protocol::from(info.iProtocol))
+            match info.iProtocol {
+                0 => Ok(None),
+                p => Ok(Protocol::from(p)),
+            }
         }
     }
 
@@ -106,6 +106,17 @@ impl Socket {
         res.map(|_| ())
     }
 
+    #[cfg(all(feature = "runtime", target_os = "linux"))]
+    pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
+        use std::os::fd::FromRawFd;
+
+        let op = Accept::new(self.as_raw_fd());
+        let (res, op) = RUNTIME.with(|runtime| runtime.submit(op)).await;
+        let accept_sock = Self::from_socket2(unsafe { Socket2::from_raw_fd(res? as _) })?;
+        let addr = op.into_addr();
+        Ok((accept_sock, addr))
+    }
+
     #[cfg(all(feature = "runtime", target_os = "windows"))]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         let local_addr = self.local_addr()?;
@@ -125,18 +136,6 @@ impl Socket {
             .await
             .into_inner()
             .map_advanced()
-            .into_inner()
-    }
-
-    #[cfg(feature = "runtime")]
-    pub async fn recv_vectored<T: IoBufMut>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
-        let op = RecvVectored::new(self.as_raw_fd(), buffer);
-        RUNTIME
-            .with(|runtime| runtime.submit(op))
-            .await
-            .into_inner()
-            .map_advanced()
-            .into_inner()
     }
 
     #[cfg(feature = "runtime")]
@@ -145,17 +144,6 @@ impl Socket {
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
-            .into_inner()
-            .into_inner()
-    }
-
-    #[cfg(feature = "runtime")]
-    pub async fn send_vectored<T: IoBuf>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
-        let op = SendVectored::new(self.as_raw_fd(), buffer);
-        RUNTIME
-            .with(|runtime| runtime.submit(op))
-            .await
-            .into_inner()
             .into_inner()
     }
 
@@ -168,22 +156,6 @@ impl Socket {
             .into_inner()
             .map_addr()
             .map_advanced()
-            .into_inner()
-    }
-
-    #[cfg(feature = "runtime")]
-    pub async fn recv_from_vectored<T: IoBufMut>(
-        &self,
-        buffer: Vec<T>,
-    ) -> BufResult<(usize, SockAddr), Vec<T>> {
-        let op = RecvFromVectored::new(self.as_raw_fd(), buffer);
-        RUNTIME
-            .with(|runtime| runtime.submit(op))
-            .await
-            .into_inner()
-            .map_addr()
-            .map_advanced()
-            .into_inner()
     }
 
     #[cfg(feature = "runtime")]
@@ -192,21 +164,6 @@ impl Socket {
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
-            .into_inner()
-            .into_inner()
-    }
-
-    #[cfg(feature = "runtime")]
-    pub async fn send_to_vectored<T: IoBuf>(
-        &self,
-        buffer: Vec<T>,
-        addr: &SockAddr,
-    ) -> BufResult<usize, Vec<T>> {
-        let op = SendToVectored::new(self.as_raw_fd(), buffer, addr.clone());
-        RUNTIME
-            .with(|runtime| runtime.submit(op))
-            .await
-            .into_inner()
             .into_inner()
     }
 }

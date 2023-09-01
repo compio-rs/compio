@@ -13,7 +13,7 @@ fn main() {
     assert_eq!(entry.user_data(), 0);
 
     let n = entry.into_result().unwrap();
-    let mut buffer = op.into_inner().into_inner();
+    let mut buffer = op.into_inner();
     unsafe {
         buffer.set_len(n);
     }

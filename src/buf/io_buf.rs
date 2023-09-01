@@ -1,3 +1,5 @@
+use std::mem::MaybeUninit;
+
 use crate::buf::*;
 
 /// An IOCP compatible buffer.
@@ -35,6 +37,11 @@ pub unsafe trait IoBuf: 'static {
     ///
     /// For [`Vec`], this is identical to `capacity()`.
     fn buf_capacity(&self) -> usize;
+
+    /// Get the initialized part of the buffer.
+    fn as_slice(&self) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(self.as_buf_ptr(), self.buf_len()) }
+    }
 
     /// Returns a view of the buffer with the specified range.
     ///
@@ -224,6 +231,16 @@ pub unsafe trait IoBufMut: IoBuf {
     /// The implementation must ensure that, while the `tokio-iocp` runtime
     /// owns the value, the pointer returned **does not** change.
     fn as_buf_mut_ptr(&mut self) -> *mut u8;
+
+    /// Get the uninitialized part of the buffer.
+    fn as_uninit_slice(&mut self) -> &mut [MaybeUninit<u8>] {
+        unsafe {
+            std::slice::from_raw_parts_mut(
+                self.as_buf_mut_ptr().add(self.buf_len()) as _,
+                self.buf_capacity() - self.buf_len(),
+            )
+        }
+    }
 
     /// Updates the number of initialized bytes.
     ///

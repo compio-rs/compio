@@ -81,7 +81,6 @@ impl File {
             .await
             .into_inner()
             .map_advanced()
-            .into_inner()
     }
 
     /// Write a buffer into this file at the specified offset, returning how
@@ -112,7 +111,6 @@ impl File {
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
-            .into_inner()
             .into_inner()
     }
 }

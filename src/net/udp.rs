@@ -51,7 +51,7 @@ use crate::{buf::*, *};
 /// ```
 /// Send and receive packets without connecting:
 ///
-/// ```
+/// ```no_run
 /// use compio::net::UdpSocket;
 /// use std::net::SocketAddr;
 /// use socket2::SockAddr;
@@ -148,25 +148,11 @@ impl UdpSocket {
         self.inner.recv(buffer).await
     }
 
-    /// Receives a packet of data from the socket into the buffer, returning the original buffer and
-    /// quantity of data received.
-    #[cfg(feature = "runtime")]
-    pub async fn recv_vectored<T: IoBufMut>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
-        self.inner.recv_vectored(buffer).await
-    }
-
     /// Sends some data to the socket from the buffer, returning the original buffer and
     /// quantity of data sent.
     #[cfg(feature = "runtime")]
     pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.send(buffer).await
-    }
-
-    /// Sends some data to the socket from the buffer, returning the original buffer and
-    /// quantity of data sent.
-    #[cfg(feature = "runtime")]
-    pub async fn send_vectored<T: IoBuf>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
-        self.inner.send_vectored(buffer).await
     }
 
     /// Receives a single datagram message on the socket. On success, returns
@@ -176,32 +162,11 @@ impl UdpSocket {
         self.inner.recv_from(buffer).await
     }
 
-    /// Receives a single datagram message on the socket. On success, returns
-    /// the number of bytes received and the origin.
-    #[cfg(feature = "runtime")]
-    pub async fn recv_from_vectored<T: IoBufMut>(
-        &self,
-        buffer: Vec<T>,
-    ) -> BufResult<(usize, SockAddr), Vec<T>> {
-        self.inner.recv_from_vectored(buffer).await
-    }
-
     /// Sends data on the socket to the given address. On success, returns the
     /// number of bytes sent.
     #[cfg(feature = "runtime")]
     pub async fn send_to<T: IoBuf>(&self, buffer: T, addr: &SockAddr) -> BufResult<usize, T> {
         self.inner.send_to(buffer, addr).await
-    }
-
-    /// Sends data on the socket to the given address. On success, returns the
-    /// number of bytes sent.
-    #[cfg(feature = "runtime")]
-    pub async fn send_to_vectored<T: IoBuf>(
-        &self,
-        buffer: Vec<T>,
-        addr: &SockAddr,
-    ) -> BufResult<usize, Vec<T>> {
-        self.inner.send_to_vectored(buffer, addr).await
     }
 }
 
