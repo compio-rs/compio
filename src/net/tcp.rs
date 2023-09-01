@@ -89,6 +89,8 @@ impl TcpListener {
     }
 }
 
+impl_raw_fd!(TcpListener, inner);
+
 /// A TCP stream between a local and a remote socket.
 ///
 /// A TCP stream can either be created by connecting to an endpoint, via the
@@ -122,7 +124,7 @@ impl TcpStream {
             socket_addr.set_port(0);
             let bind_addr = SockAddr::from(socket_addr);
             let socket = Socket::bind(&bind_addr, Type::STREAM, Some(Protocol::TCP))?;
-            socket.connect(&addr).await?;
+            socket.connect_async(&addr).await?;
             Ok(Self { inner: socket })
         })
         .await
@@ -175,3 +177,5 @@ impl TcpStream {
         self.inner.send_vectored(buffer).await
     }
 }
+
+impl_raw_fd!(TcpStream, inner);

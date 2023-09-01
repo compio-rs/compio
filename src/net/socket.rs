@@ -1,7 +1,10 @@
 use crate::{
     buf::{IntoInner, IoBuf, IoBufMut},
     driver::AsRawFd,
-    op::{Accept, BufResultExt, Connect, Recv, RecvVectored, Send, SendVectored},
+    op::{
+        Accept, BufResultExt, Connect, Recv, RecvFrom, RecvFromVectored, RecvResultExt,
+        RecvVectored, Send, SendTo, SendToVectored, SendVectored,
+    },
     task::RUNTIME,
     BufResult,
 };
@@ -87,8 +90,12 @@ impl Socket {
         self.socket.shutdown(how)
     }
 
+    pub fn connect(&self, addr: &SockAddr) -> io::Result<()> {
+        self.socket.connect(addr)
+    }
+
     #[cfg(feature = "runtime")]
-    pub async fn connect(&self, addr: &SockAddr) -> io::Result<()> {
+    pub async fn connect_async(&self, addr: &SockAddr) -> io::Result<()> {
         let op = Connect::new(self.as_raw_fd(), addr.clone());
         let (res, _) = RUNTIME.with(|runtime| runtime.submit(op)).await;
         res.map(|_| ())
@@ -140,6 +147,53 @@ impl Socket {
     #[cfg(feature = "runtime")]
     pub async fn send_vectored<T: IoBuf>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
         let op = SendVectored::new(self.as_raw_fd(), buffer);
+        RUNTIME
+            .with(|runtime| runtime.submit(op))
+            .await
+            .into_inner()
+            .into_inner()
+    }
+
+    pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SockAddr), T> {
+        let op = RecvFrom::new(self.as_raw_fd(), buffer);
+        RUNTIME
+            .with(|runtime| runtime.submit(op))
+            .await
+            .into_inner()
+            .map_addr()
+            .map_advanced()
+            .into_inner()
+    }
+
+    pub async fn recv_from_vectored<T: IoBufMut>(
+        &self,
+        buffer: Vec<T>,
+    ) -> BufResult<(usize, SockAddr), Vec<T>> {
+        let op = RecvFromVectored::new(self.as_raw_fd(), buffer);
+        RUNTIME
+            .with(|runtime| runtime.submit(op))
+            .await
+            .into_inner()
+            .map_addr()
+            .map_advanced()
+            .into_inner()
+    }
+
+    pub async fn send_to<T: IoBuf>(&self, buffer: T, addr: &SockAddr) -> BufResult<usize, T> {
+        let op = SendTo::new(self.as_raw_fd(), buffer, addr.clone());
+        RUNTIME
+            .with(|runtime| runtime.submit(op))
+            .await
+            .into_inner()
+            .into_inner()
+    }
+
+    pub async fn send_to_vectored<T: IoBuf>(
+        &self,
+        buffer: Vec<T>,
+        addr: &SockAddr,
+    ) -> BufResult<usize, Vec<T>> {
+        let op = SendToVectored::new(self.as_raw_fd(), buffer, addr.clone());
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await

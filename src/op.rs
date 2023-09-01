@@ -8,7 +8,7 @@ use crate::{
         AsIoSlices, AsIoSlicesMut, BufWrapper, IntoInner, IoBuf, IoBufMut, VectoredBufWrapper,
         WrapBuf, WrapBufMut,
     },
-    driver::RawFd,
+    driver::{sockaddr_storage, RawFd},
     BufResult,
 };
 use socket2::SockAddr;
@@ -32,6 +32,25 @@ impl<T: WrapBufMut, O> BufResultExt for BufResult<(usize, O), T> {
         if let Ok((init, _)) = &res {
             buffer.set_init(*init);
         }
+        (res, buffer)
+    }
+}
+
+pub trait RecvResultExt {
+    type RecvFromResult;
+
+    fn map_addr(self) -> Self::RecvFromResult;
+}
+
+impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, i32)> {
+    type RecvFromResult = BufResult<(usize, SockAddr), T>;
+
+    fn map_addr(self) -> Self::RecvFromResult {
+        let (res, (buffer, addr_buffer, addr_size)) = self;
+        let res = res.map(|res| {
+            let addr = unsafe { SockAddr::new(addr_buffer, addr_size) };
+            (res, addr)
+        });
         (res, buffer)
     }
 }
@@ -134,6 +153,35 @@ pub type Recv<T> = RecvImpl<BufWrapper<T>>;
 /// Receive data with vectored buffer.
 pub type RecvVectored<T> = RecvImpl<VectoredBufWrapper<T>>;
 
+pub struct RecvFromImpl<T: AsIoSlicesMut> {
+    pub(crate) fd: RawFd,
+    pub(crate) buffer: T,
+    pub(crate) addr: sockaddr_storage,
+    pub(crate) addr_len: i32,
+}
+
+impl<T: AsIoSlicesMut> RecvFromImpl<T> {
+    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
+        Self {
+            fd,
+            buffer: T::new(buffer),
+            addr: unsafe { std::mem::zeroed() },
+            addr_len: std::mem::size_of::<sockaddr_storage>() as _,
+        }
+    }
+}
+
+impl<T: AsIoSlicesMut> IntoInner for RecvFromImpl<T> {
+    type Inner = (T, sockaddr_storage, i32);
+
+    fn into_inner(self) -> Self::Inner {
+        (self.buffer, self.addr, self.addr_len)
+    }
+}
+
+pub type RecvFrom<T> = RecvFromImpl<BufWrapper<T>>;
+pub type RecvFromVectored<T> = RecvFromImpl<VectoredBufWrapper<T>>;
+
 /// Send data to remote.
 pub struct SendImpl<T: AsIoSlices> {
     pub(crate) fd: RawFd,
@@ -162,3 +210,30 @@ impl<T: AsIoSlices> IntoInner for SendImpl<T> {
 pub type Send<T> = SendImpl<BufWrapper<T>>;
 /// Send data with vectored buffer.
 pub type SendVectored<T> = SendImpl<VectoredBufWrapper<T>>;
+
+pub struct SendToImpl<T: AsIoSlices> {
+    pub(crate) fd: RawFd,
+    pub(crate) buffer: T,
+    pub(crate) addr: SockAddr,
+}
+
+impl<T: AsIoSlices> SendToImpl<T> {
+    pub fn new(fd: RawFd, buffer: T::Inner, addr: SockAddr) -> Self {
+        Self {
+            fd,
+            buffer: T::new(buffer),
+            addr,
+        }
+    }
+}
+
+impl<T: AsIoSlices> IntoInner for SendToImpl<T> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+pub type SendTo<T> = SendToImpl<BufWrapper<T>>;
+pub type SendToVectored<T> = SendToImpl<VectoredBufWrapper<T>>;

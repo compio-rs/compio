@@ -18,9 +18,9 @@ use windows_sys::{
             ERROR_PIPE_CONNECTED,
         },
         Networking::WinSock::{
-            WSAIoctl, WSARecv, WSASend, LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS,
-            SIO_GET_EXTENSION_FUNCTION_POINTER, SOCKADDR, SOCKADDR_STORAGE, WSAID_ACCEPTEX,
-            WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS,
+            WSAIoctl, WSARecv, WSARecvFrom, WSASend, WSASendTo, LPFN_ACCEPTEX, LPFN_CONNECTEX,
+            LPFN_GETACCEPTEXSOCKADDRS, SIO_GET_EXTENSION_FUNCTION_POINTER, SOCKADDR,
+            SOCKADDR_STORAGE, WSAID_ACCEPTEX, WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS,
         },
         Storage::FileSystem::{ReadFile, WriteFile},
         System::IO::OVERLAPPED,
@@ -223,6 +223,45 @@ impl<T: AsIoSlices> OpCode for SendImpl<T> {
             buffer.len() as _,
             &mut sent,
             0,
+            optr,
+            None,
+        );
+        winsock_result(res, sent)
+    }
+}
+
+impl<T: AsIoSlicesMut> OpCode for RecvFromImpl<T> {
+    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let buffer = self.buffer.as_io_slices_mut();
+        let mut flags = 0;
+        let mut received = 0;
+        let res = WSARecvFrom(
+            self.fd as _,
+            buffer.as_ptr() as _,
+            buffer.len() as _,
+            &mut received,
+            &mut flags,
+            &mut self.addr as *mut _ as *mut SOCKADDR,
+            &mut self.addr_len,
+            optr,
+            None,
+        );
+        winsock_result(res, received)
+    }
+}
+
+impl<T: AsIoSlices> OpCode for SendToImpl<T> {
+    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let buffer = self.buffer.as_io_slices();
+        let mut sent = 0;
+        let res = WSASendTo(
+            self.fd as _,
+            buffer.as_ptr() as _,
+            buffer.len() as _,
+            &mut sent,
+            0,
+            self.addr.as_ptr(),
+            self.addr.len(),
             optr,
             None,
         );
