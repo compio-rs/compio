@@ -57,17 +57,19 @@ use crate::{buf::*, *};
 /// use socket2::SockAddr;
 ///
 /// compio::task::block_on(async {
-///     let first_addr: SockAddr = "127.0.0.1:2401".parse::<SocketAddr>().unwrap().into();
-///     let second_addr: SockAddr = "127.0.0.1:8080".parse::<SocketAddr>().unwrap().into();
+///     let first_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+///     let second_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
 ///
 ///     // bind sockets
-///     let socket = UdpSocket::bind(&first_addr).unwrap();
-///     let other_socket = UdpSocket::bind(&second_addr).unwrap();
+///     let socket = UdpSocket::bind(first_addr).unwrap();
+///     let first_addr = socket.local_addr().unwrap();
+///     let other_socket = UdpSocket::bind(second_addr).unwrap();
+///     let second_addr = other_socket.local_addr().unwrap();
 ///
 ///     let buf = Vec::with_capacity(32);
 ///
 ///     // write data
-///     let (result, _) = socket.send_to("hello world", &second_addr).await;
+///     let (result, _) = socket.send_to("hello world", &SockAddr::from(second_addr)).await;
 ///     result.unwrap();
 ///
 ///     // read data

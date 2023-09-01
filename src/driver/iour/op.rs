@@ -90,8 +90,10 @@ impl<T: IoBufMut> OpCode for RecvFrom<T> {
 impl<T: IoBuf> OpCode for SendTo<T> {
     #[allow(clippy::no_effect)]
     fn create_entry(&mut self) -> Entry {
-        self.fd;
-        let _ = &self.addr;
-        unimplemented!()
+        let buffer = self.buffer.as_slice();
+        opcode::SendZc::new(Fd(self.fd), buffer.as_ptr(), buffer.len() as _)
+            .dest_addr(self.addr.as_ptr())
+            .dest_addr_len(self.addr.len())
+            .build()
     }
 }
