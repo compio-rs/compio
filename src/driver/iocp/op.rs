@@ -27,16 +27,29 @@ use windows_sys::{
     },
 };
 
+unsafe fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
+    let error = GetLastError();
+    assert_ne!(error, 0);
+    match error {
+        ERROR_IO_PENDING => Poll::Pending,
+        ERROR_IO_INCOMPLETE | ERROR_HANDLE_EOF | ERROR_PIPE_CONNECTED | ERROR_NO_DATA => {
+            Poll::Ready(Ok(transferred as _))
+        }
+        _ => Poll::Ready(Err(io::Error::from_raw_os_error(error as _))),
+    }
+}
+
 unsafe fn win32_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     if res == 0 {
-        let error = GetLastError();
-        match error {
-            ERROR_IO_PENDING => Poll::Pending,
-            0 | ERROR_IO_INCOMPLETE | ERROR_HANDLE_EOF | ERROR_PIPE_CONNECTED | ERROR_NO_DATA => {
-                Poll::Ready(Ok(transferred as _))
-            }
-            _ => Poll::Ready(Err(io::Error::from_raw_os_error(error as _))),
-        }
+        winapi_result(transferred)
+    } else {
+        Poll::Ready(Ok(transferred as _))
+    }
+}
+
+unsafe fn winsock_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
+    if res != 0 {
+        winapi_result(transferred)
     } else {
         Poll::Ready(Ok(transferred as _))
     }
@@ -193,7 +206,7 @@ impl<T: AsIoSlicesMut> OpCode for RecvImpl<T> {
             optr,
             None,
         );
-        win32_result(res, received)
+        winsock_result(res, received)
     }
 }
 
@@ -210,6 +223,6 @@ impl<T: AsIoSlices> OpCode for SendImpl<T> {
             optr,
             None,
         );
-        win32_result(res, sent)
+        winsock_result(res, sent)
     }
 }
