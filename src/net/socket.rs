@@ -1,10 +1,10 @@
-use crate::driver::AsRawFd;
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 use std::{io, net::Shutdown};
 
 #[cfg(feature = "runtime")]
 use crate::{
     buf::{IntoInner, IoBuf, IoBufMut},
+    driver::AsRawFd,
     op::{Accept, BufResultExt, Connect, Recv, RecvFrom, RecvResultExt, Send, SendTo},
     task::RUNTIME,
     BufResult,
@@ -52,6 +52,8 @@ impl Socket {
     #[cfg(target_os = "windows")]
     #[allow(dead_code)]
     pub fn protocol(&self) -> io::Result<Option<Protocol>> {
+        #[allow(unused_imports)]
+        use crate::driver::AsRawFd;
         use windows_sys::Win32::Networking::WinSock::{
             getsockopt, SOL_SOCKET, SO_PROTOCOL_INFO, WSAPROTOCOL_INFOW,
         };
