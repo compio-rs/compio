@@ -77,11 +77,12 @@ impl TcpListener {
     /// ```
     /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     /// use compio::net::TcpListener;
+    /// use socket2::SockAddr;
     ///
     /// let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
     ///
     /// let addr = listener.local_addr().expect("Couldn't get local address");
-    /// assert_eq!(addr, SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080)));
+    /// assert_eq!(addr, SockAddr::from(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080))));
     /// ```
     pub fn local_addr(&self) -> io::Result<SockAddr> {
         self.inner.local_addr()
