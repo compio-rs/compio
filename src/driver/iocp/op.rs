@@ -232,6 +232,34 @@ impl<T: IoBuf> OpCode for Send<T> {
     }
 }
 
+/// Receive data and source address.
+pub struct RecvFrom<T: IoBufMut> {
+    pub(crate) fd: RawFd,
+    pub(crate) buffer: T,
+    pub(crate) addr: sockaddr_storage,
+    pub(crate) addr_len: socklen_t,
+}
+
+impl<T: IoBufMut> RecvFrom<T> {
+    /// Create [`RecvFrom`].
+    pub fn new(fd: RawFd, buffer: T) -> Self {
+        Self {
+            fd,
+            buffer,
+            addr: unsafe { std::mem::zeroed() },
+            addr_len: std::mem::size_of::<sockaddr_storage>() as _,
+        }
+    }
+}
+
+impl<T: IoBufMut> IntoInner for RecvFrom<T> {
+    type Inner = (T, sockaddr_storage, socklen_t);
+
+    fn into_inner(self) -> Self::Inner {
+        (self.buffer, self.addr, self.addr_len)
+    }
+}
+
 impl<T: IoBufMut> OpCode for RecvFrom<T> {
     unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let buffer = IoSliceMut::new(unsafe {
@@ -251,6 +279,28 @@ impl<T: IoBufMut> OpCode for RecvFrom<T> {
             None,
         );
         winsock_result(res, received)
+    }
+}
+
+/// Send data to specified address.
+pub struct SendTo<T: IoBuf> {
+    pub(crate) fd: RawFd,
+    pub(crate) buffer: T,
+    pub(crate) addr: SockAddr,
+}
+
+impl<T: IoBuf> SendTo<T> {
+    /// Create [`SendTo`].
+    pub fn new(fd: RawFd, buffer: T, addr: SockAddr) -> Self {
+        Self { fd, buffer, addr }
+    }
+}
+
+impl<T: IoBuf> IntoInner for SendTo<T> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
     }
 }
 

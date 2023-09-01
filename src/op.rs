@@ -52,6 +52,8 @@ impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t)> {
     }
 }
 
+pub use crate::driver::op::{Accept, RecvFrom, SendTo};
+
 /// Read a file at specified position into specified buffer.
 #[derive(Debug)]
 pub struct ReadAt<T: IoBufMut> {
@@ -97,8 +99,6 @@ impl<T: IoBuf> IntoInner for WriteAt<T> {
         self.buffer
     }
 }
-
-pub use crate::driver::op::Accept;
 
 /// Connect to a remote address.
 pub struct Connect {
@@ -148,60 +148,6 @@ impl<T: IoBuf> Send<T> {
 }
 
 impl<T: IoBuf> IntoInner for Send<T> {
-    type Inner = T;
-
-    fn into_inner(self) -> Self::Inner {
-        self.buffer
-    }
-}
-
-/// Receive data and source address.
-///
-/// ## Platform-specific
-///
-/// * Linux: There's no recvfrom in io-uring.
-pub struct RecvFrom<T: IoBufMut> {
-    pub(crate) fd: RawFd,
-    pub(crate) buffer: T,
-    pub(crate) addr: sockaddr_storage,
-    pub(crate) addr_len: socklen_t,
-}
-
-impl<T: IoBufMut> RecvFrom<T> {
-    /// Create [`RecvFrom`].
-    pub fn new(fd: RawFd, buffer: T) -> Self {
-        Self {
-            fd,
-            buffer,
-            addr: unsafe { std::mem::zeroed() },
-            addr_len: std::mem::size_of::<sockaddr_storage>() as _,
-        }
-    }
-}
-
-impl<T: IoBufMut> IntoInner for RecvFrom<T> {
-    type Inner = (T, sockaddr_storage, socklen_t);
-
-    fn into_inner(self) -> Self::Inner {
-        (self.buffer, self.addr, self.addr_len)
-    }
-}
-
-/// Send data to specified address.
-pub struct SendTo<T: IoBuf> {
-    pub(crate) fd: RawFd,
-    pub(crate) buffer: T,
-    pub(crate) addr: SockAddr,
-}
-
-impl<T: IoBuf> SendTo<T> {
-    /// Create [`SendTo`].
-    pub fn new(fd: RawFd, buffer: T, addr: SockAddr) -> Self {
-        Self { fd, buffer, addr }
-    }
-}
-
-impl<T: IoBuf> IntoInner for SendTo<T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {

@@ -159,10 +159,6 @@ impl UdpSocket {
 
     /// Receives a single datagram message on the socket. On success, returns
     /// the number of bytes received and the origin.
-    ///
-    /// ## Platform-specific
-    ///
-    /// * Linux: There's no recvfrom in io-uring. Here we use a blocking implementation.
     #[cfg(feature = "runtime")]
     pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SockAddr), T> {
         self.inner.recv_from(buffer).await

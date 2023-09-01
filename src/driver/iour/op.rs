@@ -1,7 +1,7 @@
 use crate::{
-    buf::{IoBuf, IoBufMut},
+    buf::{IntoInner, IoBuf, IoBufMut},
     driver::{OpCode, RawFd},
-    op::{Connect, ReadAt, Recv, RecvFrom, Send, SendTo, WriteAt},
+    op::{Connect, ReadAt, Recv, Send, WriteAt},
 };
 use io_uring::{opcode, squeue::Entry, types::Fd};
 use libc::{sockaddr_storage, socklen_t};
@@ -79,11 +79,84 @@ impl<T: IoBuf> OpCode for Send<T> {
     }
 }
 
+/// Receive data and source address.
+pub struct RecvFrom<T: IoBufMut> {
+    pub(crate) fd: RawFd,
+    pub(crate) buffer: T,
+    pub(crate) addr: sockaddr_storage,
+    slice: libc::iovec,
+    msg: libc::msghdr,
+}
+
+impl<T: IoBufMut> RecvFrom<T> {
+    /// Create [`RecvFrom`].
+    pub fn new(fd: RawFd, buffer: T) -> Self {
+        Self {
+            fd,
+            buffer,
+            addr: unsafe { std::mem::zeroed() },
+            slice: unsafe { std::mem::zeroed() },
+            msg: unsafe { std::mem::zeroed() },
+        }
+    }
+}
+
+impl<T: IoBufMut> IntoInner for RecvFrom<T> {
+    type Inner = (T, sockaddr_storage, socklen_t);
+
+    fn into_inner(self) -> Self::Inner {
+        (self.buffer, self.addr, self.msg.msg_namelen)
+    }
+}
+
 impl<T: IoBufMut> OpCode for RecvFrom<T> {
     #[allow(clippy::no_effect)]
     fn create_entry(&mut self) -> Entry {
-        self.fd;
-        unimplemented!()
+        let buffer = self.buffer.as_uninit_slice();
+        self.slice = libc::iovec {
+            iov_base: buffer.as_mut_ptr() as _,
+            iov_len: buffer.len(),
+        };
+        self.msg = libc::msghdr {
+            msg_name: &mut self.addr as *mut _ as _,
+            msg_namelen: 128,
+            msg_iov: &mut self.slice,
+            msg_iovlen: 1,
+            msg_control: std::ptr::null_mut(),
+            msg_controllen: 0,
+            msg_flags: 0,
+        };
+        opcode::RecvMsg::new(Fd(self.fd), &mut self.msg).build()
+    }
+}
+
+/// Send data to specified address.
+pub struct SendTo<T: IoBuf> {
+    pub(crate) fd: RawFd,
+    pub(crate) buffer: T,
+    pub(crate) addr: SockAddr,
+    slice: libc::iovec,
+    msg: libc::msghdr,
+}
+
+impl<T: IoBuf> SendTo<T> {
+    /// Create [`SendTo`].
+    pub fn new(fd: RawFd, buffer: T, addr: SockAddr) -> Self {
+        Self {
+            fd,
+            buffer,
+            addr,
+            slice: unsafe { std::mem::zeroed() },
+            msg: unsafe { std::mem::zeroed() },
+        }
+    }
+}
+
+impl<T: IoBuf> IntoInner for SendTo<T> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
     }
 }
 
@@ -91,9 +164,19 @@ impl<T: IoBuf> OpCode for SendTo<T> {
     #[allow(clippy::no_effect)]
     fn create_entry(&mut self) -> Entry {
         let buffer = self.buffer.as_slice();
-        opcode::SendZc::new(Fd(self.fd), buffer.as_ptr(), buffer.len() as _)
-            .dest_addr(self.addr.as_ptr())
-            .dest_addr_len(self.addr.len())
-            .build()
+        self.slice = libc::iovec {
+            iov_base: buffer.as_ptr() as *const _ as _,
+            iov_len: buffer.len(),
+        };
+        self.msg = libc::msghdr {
+            msg_name: self.addr.as_ptr() as _,
+            msg_namelen: self.addr.len(),
+            msg_iov: &mut self.slice,
+            msg_iovlen: 1,
+            msg_control: std::ptr::null_mut(),
+            msg_controllen: 0,
+            msg_flags: 0,
+        };
+        opcode::SendMsg::new(Fd(self.fd), &self.msg).build()
     }
 }
