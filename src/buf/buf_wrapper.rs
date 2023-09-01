@@ -1,5 +1,8 @@
 use crate::buf::*;
-use std::io::{IoSlice, IoSliceMut};
+use std::{
+    io::{IoSlice, IoSliceMut},
+    ops::{Deref, DerefMut},
+};
 
 #[derive(Debug)]
 pub struct BufWrapper<T> {
@@ -20,38 +23,39 @@ impl<T: IoBuf> WrapBuf for BufWrapper<T> {
     }
 }
 
-impl<T: IoBuf> AsBuf for BufWrapper<T> {
-    fn as_buf(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(self.buffer.as_buf_ptr(), self.buffer.buf_len()) }
-    }
-}
-
 impl<T: IoBufMut> WrapBufMut for BufWrapper<T> {
     fn set_init(&mut self, len: usize) {
         self.buffer.set_buf_init(len)
     }
 }
 
-impl<T: IoBufMut> AsBufMut for BufWrapper<T> {
-    fn as_buf_mut(&mut self) -> &mut [u8] {
-        unsafe {
-            std::slice::from_raw_parts_mut(
-                self.buffer.as_buf_mut_ptr().add(self.buffer.buf_len()),
-                self.buffer.buf_capacity() - self.buffer.buf_len(),
-            )
-        }
-    }
-}
-
 impl<T: IoBuf> AsIoSlices for BufWrapper<T> {
-    fn as_io_slices(&self) -> OneOrVec<IoSlice> {
-        OneOrVec::One(IoSlice::new(self.as_buf()))
+    unsafe fn as_io_slices(&self) -> OneOrVec<IoSlice<'static>> {
+        OneOrVec::One(IoSlice::new(
+            &*(self.buffer.as_slice() as *const _ as *const _),
+        ))
     }
 }
 
 impl<T: IoBufMut> AsIoSlicesMut for BufWrapper<T> {
-    fn as_io_slices_mut(&mut self) -> OneOrVec<IoSliceMut> {
-        OneOrVec::One(IoSliceMut::new(self.as_buf_mut()))
+    unsafe fn as_io_slices_mut(&mut self) -> OneOrVec<IoSliceMut<'static>> {
+        OneOrVec::One(IoSliceMut::new(
+            &mut *(self.buffer.as_uninit_slice() as *mut _ as *mut _),
+        ))
+    }
+}
+
+impl<T> Deref for BufWrapper<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.buffer
+    }
+}
+
+impl<T> DerefMut for BufWrapper<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.buffer
     }
 }
 
@@ -75,15 +79,11 @@ impl<T: IoBuf> WrapBuf for VectoredBufWrapper<T> {
 }
 
 impl<T: IoBuf> AsIoSlices for VectoredBufWrapper<T> {
-    fn as_io_slices(&self) -> OneOrVec<IoSlice> {
+    unsafe fn as_io_slices(&self) -> OneOrVec<IoSlice<'static>> {
         OneOrVec::Vec(
             self.buffer
                 .iter()
-                .map(|buf| {
-                    IoSlice::new(unsafe {
-                        std::slice::from_raw_parts(buf.as_buf_ptr(), buf.buf_len())
-                    })
-                })
+                .map(|buf| IoSlice::new(&*(buf.as_slice() as *const _ as *const _)))
                 .collect(),
         )
     }
@@ -105,18 +105,11 @@ impl<T: IoBufMut> WrapBufMut for VectoredBufWrapper<T> {
 }
 
 impl<T: IoBufMut> AsIoSlicesMut for VectoredBufWrapper<T> {
-    fn as_io_slices_mut(&mut self) -> OneOrVec<IoSliceMut> {
+    unsafe fn as_io_slices_mut(&mut self) -> OneOrVec<IoSliceMut<'static>> {
         OneOrVec::Vec(
             self.buffer
                 .iter_mut()
-                .map(|buf| {
-                    IoSliceMut::new(unsafe {
-                        std::slice::from_raw_parts_mut(
-                            buf.as_buf_mut_ptr().add(buf.buf_len()),
-                            buf.buf_capacity() - buf.buf_len(),
-                        )
-                    })
-                })
+                .map(|buf| IoSliceMut::new(&mut *(buf.as_uninit_slice() as *mut _ as *mut _)))
                 .collect(),
         )
     }

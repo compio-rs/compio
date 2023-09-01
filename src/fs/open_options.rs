@@ -11,7 +11,7 @@ use std::{fs::OpenOptions as StdOpenOptions, io, path::Path};
 /// Generally speaking, when using `OpenOptions`, you'll first call
 /// [`OpenOptions::new`], then chain calls to methods to set each option, then
 /// call [`OpenOptions::open`], passing the path of the file you're trying to
-/// open. This will give you a [`IoResult`] with a [`File`] inside that you
+/// open. This will give you a [`std::io::Result`] with a [`File`] inside that you
 /// can further operate on.
 ///
 /// # Examples
@@ -42,10 +42,6 @@ pub struct OpenOptions(pub(crate) StdOpenOptions);
 
 impl OpenOptions {
     /// Creates a blank new set of options ready for configuration.
-    ///
-    /// All options are initially set to `false`.
-    /// We internally set [`FILE_FLAG_OVERLAPPED`] flag to make sure
-    /// IOCP support is enabled.
     #[allow(clippy::new_without_default)]
     #[must_use]
     pub fn new() -> Self {

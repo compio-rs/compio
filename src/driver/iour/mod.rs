@@ -6,10 +6,12 @@ use io_uring::{
 };
 use std::{io, time::Duration};
 
+pub use libc::{sockaddr_storage, socklen_t};
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 
 pub(crate) mod fs;
-mod op;
+pub(crate) mod net;
+pub(crate) mod op;
 
 /// Abstraction of io-uring operations.
 pub trait OpCode {

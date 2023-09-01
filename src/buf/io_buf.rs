@@ -1,3 +1,5 @@
+use std::mem::MaybeUninit;
+
 use crate::buf::*;
 
 /// An IOCP compatible buffer.
@@ -13,16 +15,16 @@ use crate::buf::*;
 pub unsafe trait IoBuf: 'static {
     /// Returns a raw pointer to the vector’s buffer.
     ///
-    /// This method is to be used by the `tokio-iocp` runtime and it is not
+    /// This method is to be used by the `compio` runtime and it is not
     /// expected for users to call it directly.
     ///
-    /// The implementation must ensure that, while the `tokio-iocp` runtime
+    /// The implementation must ensure that, while the `compio` runtime
     /// owns the value, the pointer returned **does not** change.
     fn as_buf_ptr(&self) -> *const u8;
 
     /// Number of initialized bytes.
     ///
-    /// This method is to be used by the `tokio-iocp` runtime and it is not
+    /// This method is to be used by the `compio` runtime and it is not
     /// expected for users to call it directly.
     ///
     /// For [`Vec`], this is identical to `len()`.
@@ -30,11 +32,16 @@ pub unsafe trait IoBuf: 'static {
 
     /// Total size of the buffer, including uninitialized memory, if any.
     ///
-    /// This method is to be used by the `tokio-iocp` runtime and it is not
+    /// This method is to be used by the `compio` runtime and it is not
     /// expected for users to call it directly.
     ///
     /// For [`Vec`], this is identical to `capacity()`.
     fn buf_capacity(&self) -> usize;
+
+    /// Get the initialized part of the buffer.
+    fn as_slice(&self) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(self.as_buf_ptr(), self.buf_len()) }
+    }
 
     /// Returns a view of the buffer with the specified range.
     ///
@@ -218,12 +225,22 @@ unsafe impl IoBuf for std::io::BorrowedBuf<'static> {
 pub unsafe trait IoBufMut: IoBuf {
     /// Returns a raw mutable pointer to the vector’s buffer.
     ///
-    /// This method is to be used by the `tokio-iocp` runtime and it is not
+    /// This method is to be used by the `compio` runtime and it is not
     /// expected for users to call it directly.
     ///
-    /// The implementation must ensure that, while the `tokio-iocp` runtime
+    /// The implementation must ensure that, while the `compio` runtime
     /// owns the value, the pointer returned **does not** change.
     fn as_buf_mut_ptr(&mut self) -> *mut u8;
+
+    /// Get the uninitialized part of the buffer.
+    fn as_uninit_slice(&mut self) -> &mut [MaybeUninit<u8>] {
+        unsafe {
+            std::slice::from_raw_parts_mut(
+                self.as_buf_mut_ptr().add(self.buf_len()) as _,
+                self.buf_capacity() - self.buf_len(),
+            )
+        }
+    }
 
     /// Updates the number of initialized bytes.
     ///
