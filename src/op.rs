@@ -92,23 +92,27 @@ impl<T: IoBuf> IntoInner for WriteAt<T> {
 
 pub use crate::driver::op::Accept;
 
+/// Connect to a remote address.
 pub struct Connect {
     pub(crate) fd: RawFd,
     pub(crate) addr: SockAddr,
 }
 
 impl Connect {
+    /// Create [`Connect`]. `fd` should be bound.
     pub fn new(fd: RawFd, addr: SockAddr) -> Self {
         Self { fd, addr }
     }
 }
 
+/// Receive data from remote.
 pub struct RecvImpl<T: AsIoSlicesMut> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
 }
 
 impl<T: AsIoSlicesMut> RecvImpl<T> {
+    /// Create [`Recv`] or [`RecvVectored`].
     pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
         Self {
             fd,
@@ -125,15 +129,19 @@ impl<T: AsIoSlicesMut> IntoInner for RecvImpl<T> {
     }
 }
 
+/// Receive data with one buffer.
 pub type Recv<T> = RecvImpl<BufWrapper<T>>;
+/// Receive data with vectored buffer.
 pub type RecvVectored<T> = RecvImpl<VectoredBufWrapper<T>>;
 
+/// Send data to remote.
 pub struct SendImpl<T: AsIoSlices> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
 }
 
 impl<T: AsIoSlices> SendImpl<T> {
+    /// Create [`Send`] or [`SendVectored`].
     pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
         Self {
             fd,
@@ -150,5 +158,7 @@ impl<T: AsIoSlices> IntoInner for SendImpl<T> {
     }
 }
 
+/// Send data with one buffer.
 pub type Send<T> = SendImpl<BufWrapper<T>>;
+/// Send data with vectored buffer.
 pub type SendVectored<T> = SendImpl<VectoredBufWrapper<T>>;

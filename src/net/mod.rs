@@ -1,3 +1,7 @@
+//! Network related.
+//!
+//! Currently, TCP/UnixStream are implemented.
+
 mod socket;
 pub(crate) use socket::*;
 
@@ -5,12 +9,54 @@ mod tcp;
 pub use tcp::*;
 
 use socket2::SockAddr;
-use std::{future::Future, io};
+use std::{
+    future::Future,
+    io,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs},
+};
 
+/// A trait for objects which can be converted or resolved to one or more
+/// [`SockAddr`] values.
+///
+/// See [`ToSocketAddrs`].
 pub trait ToSockAddrs {
+    /// See [`ToSocketAddrs::Iter`].
     type Iter: Iterator<Item = SockAddr>;
 
+    /// See [`ToSocketAddrs::to_socket_addrs`].
     fn to_sock_addrs(&self) -> io::Result<Self::Iter>;
+}
+
+// impl_to_sock_addrs_for_into_socket_addr
+macro_rules! itsafisa {
+    ($t:ty) => {
+        impl ToSockAddrs for $t {
+            type Iter =
+                std::iter::Map<<$t as std::net::ToSocketAddrs>::Iter, fn(SocketAddr) -> SockAddr>;
+
+            fn to_sock_addrs(&self) -> io::Result<Self::Iter> {
+                std::net::ToSocketAddrs::to_socket_addrs(self)
+                    .map(|iter| iter.map(SockAddr::from as _))
+            }
+        }
+    };
+}
+
+itsafisa!(SocketAddr);
+itsafisa!(SocketAddrV4);
+itsafisa!(SocketAddrV6);
+itsafisa!(str);
+itsafisa!(String);
+itsafisa!((IpAddr, u16));
+itsafisa!((Ipv4Addr, u16));
+itsafisa!((Ipv6Addr, u16));
+itsafisa!((String, u16));
+
+impl ToSockAddrs for (&str, u16) {
+    type Iter = std::iter::Map<std::vec::IntoIter<SocketAddr>, fn(SocketAddr) -> SockAddr>;
+    fn to_sock_addrs(&self) -> io::Result<Self::Iter> {
+        ToSocketAddrs::to_socket_addrs(self).map(|iter| iter.map(SockAddr::from as _))
+    }
 }
 
 impl ToSockAddrs for SockAddr {

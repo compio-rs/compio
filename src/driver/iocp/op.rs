@@ -117,6 +117,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
 static ACCEPT_EX: OnceLock<LPFN_ACCEPTEX> = OnceLock::new();
 static GET_ADDRS: OnceLock<LPFN_GETACCEPTEXSOCKADDRS> = OnceLock::new();
 
+/// Accept a connection.
 pub struct Accept {
     pub(crate) fd: RawFd,
     pub(crate) accept_fd: RawFd,
@@ -124,6 +125,7 @@ pub struct Accept {
 }
 
 impl Accept {
+    /// Create [`Accept`]. `accept_fd` should not be bound.
     pub fn new(fd: RawFd, accept_fd: RawFd) -> Self {
         Self {
             fd,
@@ -132,6 +134,7 @@ impl Accept {
         }
     }
 
+    /// Get the remote address from the inner buffer.
     pub fn into_addr(self) -> io::Result<SockAddr> {
         let get_addrs_fn = GET_ADDRS
             .get_or_try_init(|| unsafe { get_wsa_fn(self.fd, WSAID_GETACCEPTEXSOCKADDRS) })?;
