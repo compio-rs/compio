@@ -13,6 +13,7 @@ use std::{
 };
 use windows_sys::Win32::{
     Foundation::{GetLastError, ERROR_HANDLE_EOF, INVALID_HANDLE_VALUE, WAIT_TIMEOUT},
+    Networking::WinSock::{WSAStartup, WSADATA},
     System::{
         Threading::INFINITE,
         IO::{CreateIoCompletionPort, GetQueuedCompletionStatus, OVERLAPPED},
@@ -72,6 +73,7 @@ pub struct Driver {
 impl Driver {
     /// Create a new IOCP.
     pub fn new() -> io::Result<Self> {
+        init();
         let port = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0) };
         let port = OwnedHandle::try_from(unsafe { HandleOrNull::from_raw_handle(port as _) })
             .map_err(|_| io::Error::last_os_error())?;
@@ -160,4 +162,15 @@ impl Overlapped {
             user_data,
         }
     }
+}
+
+fn init() {
+    let mut data: WSADATA = unsafe { std::mem::zeroed() };
+    let ret = unsafe {
+        WSAStartup(
+            0x202, // version 2.2
+            &mut data,
+        )
+    };
+    assert_eq!(ret, 0);
 }

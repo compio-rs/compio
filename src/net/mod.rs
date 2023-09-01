@@ -1,101 +1,78 @@
-use crate::{
-    driver::AsRawFd,
-    op::{Accept, Connect},
-    task::RUNTIME,
-};
-use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
-use std::io;
+mod socket;
+pub(crate) use socket::*;
 
-pub struct Socket {
-    pub(crate) socket: Socket2,
+mod tcp;
+pub use tcp::*;
+
+use socket2::SockAddr;
+use std::{future::Future, io};
+
+pub trait ToSockAddrs {
+    type Iter: Iterator<Item = SockAddr>;
+
+    fn to_sock_addrs(&self) -> io::Result<Self::Iter>;
 }
 
-impl Socket {
-    pub fn from_socket2(socket: Socket2) -> io::Result<Self> {
-        socket.set_nonblocking(true)?;
-        let this = Self { socket };
-        #[cfg(feature = "runtime")]
-        RUNTIME.with(|runtime| runtime.attach(this.as_raw_fd()))?;
-        Ok(this)
+impl ToSockAddrs for SockAddr {
+    type Iter = std::option::IntoIter<SockAddr>;
+
+    fn to_sock_addrs(&self) -> io::Result<Self::Iter> {
+        Ok(Some(self.clone()).into_iter())
     }
+}
 
-    pub fn as_socket2(&self) -> &Socket2 {
-        &self.socket
+impl<'a> ToSockAddrs for &'a [SockAddr] {
+    type Iter = std::iter::Cloned<std::slice::Iter<'a, SockAddr>>;
+
+    fn to_sock_addrs(&self) -> io::Result<Self::Iter> {
+        Ok(self.iter().cloned())
     }
+}
 
-    pub fn into_socket2(self) -> Socket2 {
-        self.socket
+impl<T: ToSockAddrs + ?Sized> ToSockAddrs for &T {
+    type Iter = T::Iter;
+
+    fn to_sock_addrs(&self) -> io::Result<Self::Iter> {
+        (**self).to_sock_addrs()
     }
+}
 
-    pub fn peer_addr(&self) -> io::Result<SockAddr> {
-        self.socket.peer_addr()
-    }
-
-    pub fn local_addr(&self) -> io::Result<SockAddr> {
-        self.socket.local_addr()
-    }
-
-    pub fn r#type(&self) -> io::Result<Type> {
-        self.socket.r#type()
-    }
-
-    #[cfg(target_os = "linux")]
-    pub fn protocol(&self) -> io::Result<Protocol> {
-        self.socket.protocol()
-    }
-
-    #[cfg(target_os = "windows")]
-    pub fn protocol(&self) -> io::Result<Protocol> {
-        use windows_sys::Win32::Networking::WinSock::{
-            getsockopt, SOL_SOCKET, SO_PROTOCOL_INFO, WSAPROTOCOL_INFOW,
-        };
-
-        let mut info: WSAPROTOCOL_INFOW = unsafe { std::mem::zeroed() };
-        let mut info_len = std::mem::size_of_val(&info) as _;
-        let res = unsafe {
-            getsockopt(
-                self.as_raw_fd() as _,
-                SOL_SOCKET,
-                SO_PROTOCOL_INFO,
-                &mut info as *mut _ as *mut _,
-                &mut info_len,
-            )
-        };
-        if res != 0 {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(Protocol::from(info.iProtocol))
+fn each_addr<T>(
+    addr: impl ToSockAddrs,
+    mut f: impl FnMut(SockAddr) -> io::Result<T>,
+) -> io::Result<T> {
+    let addrs = addr.to_sock_addrs()?;
+    let mut last_err = None;
+    for addr in addrs {
+        match f(addr) {
+            Ok(l) => return Ok(l),
+            Err(e) => last_err = Some(e),
         }
     }
+    Err(last_err.unwrap_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "could not resolve to any addresses",
+        )
+    }))
+}
 
-    pub fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
-        let socket = Socket2::new(addr.domain(), ty, protocol)?;
-        socket.bind(addr)?;
-        Self::from_socket2(socket)
+async fn each_addr_async<T, F: Future<Output = io::Result<T>>>(
+    addr: impl ToSockAddrs,
+    mut f: impl FnMut(SockAddr) -> F,
+) -> io::Result<T> {
+    let addrs = addr.to_sock_addrs()?;
+    let mut last_err = None;
+    for addr in addrs {
+        match f(addr).await {
+            Ok(l) => return Ok(l),
+            Err(e) => last_err = Some(e),
+        }
     }
-
-    pub fn listen(&self, backlog: i32) -> io::Result<()> {
-        self.socket.listen(backlog)
-    }
-
-    #[cfg(feature = "runtime")]
-    pub async fn connect(&self, addr: &SockAddr) -> io::Result<()> {
-        let op = Connect::new(self.as_raw_fd(), addr.clone());
-        let (res, _) = RUNTIME.with(|runtime| runtime.submit(op)).await;
-        res.map(|_| ())
-    }
-
-    #[cfg(all(feature = "runtime", target_os = "windows"))]
-    pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
-        use std::os::windows::prelude::AsRawSocket;
-
-        let local_addr = self.local_addr()?;
-        let accept_sock =
-            Socket2::new(local_addr.domain(), self.r#type()?, Some(self.protocol()?))?;
-        let op = Accept::new(self.as_raw_fd(), accept_sock.as_raw_socket() as _);
-        let (res, op) = RUNTIME.with(|runtime| runtime.submit(op)).await;
-        res?;
-        let addr = op.into_addr()?;
-        Ok((Self::from_socket2(accept_sock)?, addr))
-    }
+    Err(last_err.unwrap_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "could not resolve to any addresses",
+        )
+    }))
 }

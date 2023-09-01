@@ -1,8 +1,9 @@
 use crate::{
-    buf::{AsBuf, AsBufMut, IoBuf, IoBufMut},
+    buf::{AsBuf, AsBufMut, AsIoSlices, AsIoSlicesMut, IoBuf, IoBufMut},
     driver::{OpCode, RawFd},
     op::*,
 };
+use aligned_array::{Aligned, A4};
 use once_cell::sync::OnceCell as OnceLock;
 use socket2::SockAddr;
 use std::{
@@ -18,7 +19,7 @@ use windows_sys::{
             ERROR_PIPE_CONNECTED,
         },
         Networking::WinSock::{
-            WSAIoctl, LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS,
+            WSAIoctl, WSARecv, WSASend, LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS,
             SIO_GET_EXTENSION_FUNCTION_POINTER, SOCKADDR, SOCKADDR_STORAGE, WSAID_ACCEPTEX,
             WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS,
         },
@@ -104,10 +105,12 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
 static ACCEPT_EX: OnceLock<LPFN_ACCEPTEX> = OnceLock::new();
 static GET_ADDRS: OnceLock<LPFN_GETACCEPTEXSOCKADDRS> = OnceLock::new();
 
+pub const MAX_ADDR_SIZE: usize = std::mem::size_of::<SOCKADDR_STORAGE>();
+
 pub struct Accept {
     pub(crate) fd: RawFd,
     pub(crate) accept_fd: RawFd,
-    pub(crate) buffer: SOCKADDR_STORAGE,
+    pub(crate) buffer: Aligned<A4, [u8; MAX_ADDR_SIZE * 2]>,
 }
 
 impl Accept {
@@ -115,7 +118,7 @@ impl Accept {
         Self {
             fd,
             accept_fd,
-            buffer: unsafe { std::mem::zeroed() },
+            buffer: Aligned([0; MAX_ADDR_SIZE * 2]),
         }
     }
 
@@ -130,15 +133,15 @@ impl Accept {
             (get_addrs_fn.unwrap())(
                 &self.buffer as *const _ as *const _,
                 0,
-                0,
-                std::mem::size_of_val(&self.buffer) as _,
+                MAX_ADDR_SIZE as _,
+                MAX_ADDR_SIZE as _,
                 &mut local_addr,
                 &mut local_addr_len,
                 &mut remote_addr,
                 &mut remote_addr_len,
             );
         }
-        Ok(unsafe { SockAddr::new(self.buffer, remote_addr_len) })
+        Ok(unsafe { SockAddr::new(*remote_addr.cast::<SOCKADDR_STORAGE>(), remote_addr_len) })
     }
 }
 
@@ -151,8 +154,8 @@ impl OpCode for Accept {
             self.accept_fd as _,
             &mut self.buffer as *mut _ as *mut _,
             0,
-            0,
-            std::mem::size_of_val(&self.buffer) as _,
+            MAX_ADDR_SIZE as _,
+            MAX_ADDR_SIZE as _,
             &mut received,
             optr,
         );
@@ -174,6 +177,41 @@ impl OpCode for Connect {
             0,
             &mut sent,
             optr,
+        );
+        win32_result(res, sent)
+    }
+}
+
+impl<T: AsIoSlicesMut> OpCode for RecvImpl<T> {
+    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let buffer = self.buffer.as_io_slices_mut();
+        let mut flags = 0;
+        let mut received = 0;
+        let res = WSARecv(
+            self.fd as _,
+            buffer.as_ptr() as _,
+            buffer.len() as _,
+            &mut received,
+            &mut flags,
+            optr,
+            None,
+        );
+        win32_result(res, received)
+    }
+}
+
+impl<T: AsIoSlices> OpCode for SendImpl<T> {
+    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let buffer = self.buffer.as_io_slices();
+        let mut sent = 0;
+        let res = WSASend(
+            self.fd as _,
+            buffer.as_ptr() as _,
+            buffer.len() as _,
+            &mut sent,
+            0,
+            optr,
+            None,
         );
         win32_result(res, sent)
     }
