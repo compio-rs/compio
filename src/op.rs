@@ -156,6 +156,10 @@ impl<T: IoBuf> IntoInner for Send<T> {
 }
 
 /// Receive data and source address.
+///
+/// ## Platform-specific
+///
+/// * Linux: There's no recvfrom in io-uring.
 pub struct RecvFrom<T: IoBufMut> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,

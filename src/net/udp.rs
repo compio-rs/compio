@@ -7,7 +7,7 @@ use crate::{buf::*, *};
 /// A UDP socket.
 ///
 /// UDP is "connectionless", unlike TCP. Meaning, regardless of what address you've bound to, a `UdpSocket`
-/// is free to communicate with many different remotes. In tokio there are basically two main ways to use `UdpSocket`:
+/// is free to communicate with many different remotes. There are basically two main ways to use `UdpSocket`:
 ///
 /// * one to many: [`bind`](`UdpSocket::bind`) and use [`send_to`](`UdpSocket::send_to`)
 ///   and [`recv_from`](`UdpSocket::recv_from`) to communicate with many different addresses
@@ -159,6 +159,10 @@ impl UdpSocket {
 
     /// Receives a single datagram message on the socket. On success, returns
     /// the number of bytes received and the origin.
+    ///
+    /// ## Platform-specific
+    ///
+    /// * Linux: There's no recvfrom in io-uring. Here we use a blocking implementation.
     #[cfg(feature = "runtime")]
     pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SockAddr), T> {
         self.inner.recv_from(buffer).await
