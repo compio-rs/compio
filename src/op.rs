@@ -151,7 +151,9 @@ impl<T: AsIoSlicesMut> IntoInner for RecvImpl<T> {
     }
 }
 
+/// Receive data with one buffer.
 pub type Recv<T> = RecvImpl<BufWrapper<T>>;
+/// Receive data with vectored buffer.
 pub type RecvVectored<T> = RecvImpl<VectoredBufWrapper<T>>;
 
 /// Send data to remote.
@@ -180,11 +182,17 @@ impl<T: AsIoSlices> IntoInner for SendImpl<T> {
     }
 }
 
+/// Send data with one buffer.
 pub type Send<T> = SendImpl<BufWrapper<T>>;
+/// Send data with vectored buffer.
 pub type SendVectored<T> = SendImpl<VectoredBufWrapper<T>>;
 
+/// Receive data and address with one buffer.
 pub type RecvFrom<T> = RecvFromImpl<BufWrapper<T>>;
+/// Receive data and address with vectored buffer.
 pub type RecvFromVectored<T> = RecvFromImpl<VectoredBufWrapper<T>>;
 
+/// Send data to address with one buffer.
 pub type SendTo<T> = SendToImpl<BufWrapper<T>>;
+/// Send data to address with vectored buffer.
 pub type SendToVectored<T> = SendToImpl<VectoredBufWrapper<T>>;
