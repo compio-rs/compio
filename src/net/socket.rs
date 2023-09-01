@@ -1,6 +1,10 @@
+use crate::driver::AsRawFd;
+use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
+use std::{io, net::Shutdown};
+
+#[cfg(feature = "runtime")]
 use crate::{
     buf::{IntoInner, IoBuf, IoBufMut},
-    driver::AsRawFd,
     op::{
         Accept, BufResultExt, Connect, Recv, RecvFrom, RecvFromVectored, RecvResultExt,
         RecvVectored, Send, SendTo, SendToVectored, SendVectored,
@@ -8,8 +12,6 @@ use crate::{
     task::RUNTIME,
     BufResult,
 };
-use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
-use std::{io, net::Shutdown};
 
 pub struct Socket {
     pub(crate) socket: Socket2,
@@ -39,16 +41,19 @@ impl Socket {
         self.socket.local_addr()
     }
 
+    #[allow(dead_code)]
     pub fn r#type(&self) -> io::Result<Type> {
         self.socket.r#type()
     }
 
     #[cfg(target_os = "linux")]
+    #[allow(dead_code)]
     pub fn protocol(&self) -> io::Result<Protocol> {
         self.socket.protocol()
     }
 
     #[cfg(target_os = "windows")]
+    #[allow(dead_code)]
     pub fn protocol(&self) -> io::Result<Protocol> {
         use windows_sys::Win32::Networking::WinSock::{
             getsockopt, SOL_SOCKET, SO_PROTOCOL_INFO, WSAPROTOCOL_INFOW,
@@ -154,6 +159,7 @@ impl Socket {
             .into_inner()
     }
 
+    #[cfg(feature = "runtime")]
     pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SockAddr), T> {
         let op = RecvFrom::new(self.as_raw_fd(), buffer);
         RUNTIME
@@ -165,6 +171,7 @@ impl Socket {
             .into_inner()
     }
 
+    #[cfg(feature = "runtime")]
     pub async fn recv_from_vectored<T: IoBufMut>(
         &self,
         buffer: Vec<T>,
@@ -179,6 +186,7 @@ impl Socket {
             .into_inner()
     }
 
+    #[cfg(feature = "runtime")]
     pub async fn send_to<T: IoBuf>(&self, buffer: T, addr: &SockAddr) -> BufResult<usize, T> {
         let op = SendTo::new(self.as_raw_fd(), buffer, addr.clone());
         RUNTIME
@@ -188,6 +196,7 @@ impl Socket {
             .into_inner()
     }
 
+    #[cfg(feature = "runtime")]
     pub async fn send_to_vectored<T: IoBuf>(
         &self,
         buffer: Vec<T>,

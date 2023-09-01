@@ -1,7 +1,7 @@
 //! The async operations.
 //! Types in this mod represents the low-level operations passed to kernel.
 //! The operation itself doesn't perform anything.
-//! You need to pass them to [`compio::driver::Driver`], and poll the driver.
+//! You need to pass them to [`crate::driver::Driver`], and poll the driver.
 
 use crate::{
     buf::{

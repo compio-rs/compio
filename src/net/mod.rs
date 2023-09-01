@@ -106,6 +106,7 @@ fn each_addr<T>(
     }))
 }
 
+#[allow(dead_code)]
 async fn each_addr_async<T, F: Future<Output = io::Result<T>>>(
     addr: impl ToSockAddrs,
     mut f: impl FnMut(SockAddr) -> F,

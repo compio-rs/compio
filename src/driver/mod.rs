@@ -45,7 +45,7 @@ impl Entry {
         Self { user_data, result }
     }
 
-    /// The user-defined data passed to [`Poller::submit`].
+    /// The user-defined data passed to [`Poller::push`].
     pub fn user_data(&self) -> usize {
         self.user_data
     }

@@ -1,10 +1,9 @@
-use crate::{
-    buf::*,
-    net::{Socket, *},
-    *,
-};
+use crate::net::{Socket, *};
 use socket2::{Protocol, Type};
 use std::net::Shutdown;
+
+#[cfg(feature = "runtime")]
+use crate::{buf::*, *};
 
 /// A TCP socket server, listening for connections.
 ///
