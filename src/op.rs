@@ -4,17 +4,21 @@
 //! You need to pass them to [`crate::driver::Driver`], and poll the driver.
 
 use crate::{
-    buf::{IntoInner, IoBuf, IoBufMut},
+    buf::{
+        AsIoSlices, AsIoSlicesMut, BufWrapper, IntoInner, IoBuf, IoBufMut, OneOrVec,
+        VectoredBufWrapper, WrapBuf,
+    },
     driver::{sockaddr_storage, socklen_t, RawFd},
     BufResult,
 };
 use socket2::SockAddr;
+use std::io::{IoSlice, IoSliceMut};
 
 pub(crate) trait BufResultExt {
     fn map_advanced(self) -> Self;
 }
 
-impl<T: IoBufMut> BufResultExt for BufResult<usize, T> {
+impl<T: AsIoSlicesMut> BufResultExt for BufResult<usize, T> {
     fn map_advanced(self) -> Self {
         let (res, buffer) = self;
         let (res, buffer) = (res.map(|res| (res, ())), buffer).map_advanced();
@@ -23,11 +27,11 @@ impl<T: IoBufMut> BufResultExt for BufResult<usize, T> {
     }
 }
 
-impl<T: IoBufMut, O> BufResultExt for BufResult<(usize, O), T> {
+impl<T: AsIoSlicesMut, O> BufResultExt for BufResult<(usize, O), T> {
     fn map_advanced(self) -> Self {
         let (res, mut buffer) = self;
         if let Ok((init, _)) = &res {
-            buffer.set_buf_init(*init);
+            buffer.set_init(*init);
         }
         (res, buffer)
     }
@@ -52,25 +56,29 @@ impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t)> {
     }
 }
 
-pub use crate::driver::op::{Accept, RecvFrom, SendTo};
+pub use crate::driver::op::{Accept, RecvFromImpl, SendToImpl};
 
 /// Read a file at specified position into specified buffer.
 #[derive(Debug)]
 pub struct ReadAt<T: IoBufMut> {
     pub(crate) fd: RawFd,
     pub(crate) offset: usize,
-    pub(crate) buffer: T,
+    pub(crate) buffer: BufWrapper<T>,
 }
 
 impl<T: IoBufMut> ReadAt<T> {
     /// Create [`ReadAt`].
     pub fn new(fd: RawFd, offset: usize, buffer: T) -> Self {
-        Self { fd, offset, buffer }
+        Self {
+            fd,
+            offset,
+            buffer: BufWrapper::new(buffer),
+        }
     }
 }
 
 impl<T: IoBufMut> IntoInner for ReadAt<T> {
-    type Inner = T;
+    type Inner = BufWrapper<T>;
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
@@ -82,18 +90,22 @@ impl<T: IoBufMut> IntoInner for ReadAt<T> {
 pub struct WriteAt<T: IoBuf> {
     pub(crate) fd: RawFd,
     pub(crate) offset: usize,
-    pub(crate) buffer: T,
+    pub(crate) buffer: BufWrapper<T>,
 }
 
 impl<T: IoBuf> WriteAt<T> {
     /// Create [`WriteAt`].
     pub fn new(fd: RawFd, offset: usize, buffer: T) -> Self {
-        Self { fd, offset, buffer }
+        Self {
+            fd,
+            offset,
+            buffer: BufWrapper::new(buffer),
+        }
     }
 }
 
 impl<T: IoBuf> IntoInner for WriteAt<T> {
-    type Inner = T;
+    type Inner = BufWrapper<T>;
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
@@ -114,43 +126,65 @@ impl Connect {
 }
 
 /// Receive data from remote.
-pub struct Recv<T: IoBufMut> {
+pub struct RecvImpl<T: AsIoSlicesMut> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
+    pub(crate) slices: OneOrVec<IoSliceMut<'static>>,
 }
 
-impl<T: IoBufMut> Recv<T> {
+impl<T: AsIoSlicesMut> RecvImpl<T> {
     /// Create [`Recv`].
-    pub fn new(fd: RawFd, buffer: T) -> Self {
-        Self { fd, buffer }
+    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
+        Self {
+            fd,
+            buffer: T::new(buffer),
+            slices: OneOrVec::One(IoSliceMut::new(&mut [])),
+        }
     }
 }
 
-impl<T: IoBufMut> IntoInner for Recv<T> {
+impl<T: AsIoSlicesMut> IntoInner for RecvImpl<T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
     }
 }
+
+pub type Recv<T> = RecvImpl<BufWrapper<T>>;
+pub type RecvVectored<T> = RecvImpl<VectoredBufWrapper<T>>;
 
 /// Send data to remote.
-pub struct Send<T: IoBuf> {
+pub struct SendImpl<T: AsIoSlices> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
+    pub(crate) slices: OneOrVec<IoSlice<'static>>,
 }
 
-impl<T: IoBuf> Send<T> {
+impl<T: AsIoSlices> SendImpl<T> {
     /// Create [`Send`].
-    pub fn new(fd: RawFd, buffer: T) -> Self {
-        Self { fd, buffer }
+    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
+        Self {
+            fd,
+            buffer: T::new(buffer),
+            slices: OneOrVec::One(IoSlice::new(&[])),
+        }
     }
 }
 
-impl<T: IoBuf> IntoInner for Send<T> {
+impl<T: AsIoSlices> IntoInner for SendImpl<T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
     }
 }
+
+pub type Send<T> = SendImpl<BufWrapper<T>>;
+pub type SendVectored<T> = SendImpl<VectoredBufWrapper<T>>;
+
+pub type RecvFrom<T> = RecvFromImpl<BufWrapper<T>>;
+pub type RecvFromVectored<T> = RecvFromImpl<VectoredBufWrapper<T>>;
+
+pub type SendTo<T> = SendToImpl<BufWrapper<T>>;
+pub type SendToVectored<T> = SendToImpl<VectoredBufWrapper<T>>;

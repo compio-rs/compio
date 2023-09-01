@@ -1,7 +1,9 @@
+use std::io::{IoSlice, IoSliceMut};
+
 use crate::{
-    buf::{IntoInner, IoBuf, IoBufMut},
+    buf::{AsIoSlices, AsIoSlicesMut, IntoInner, IoBuf, IoBufMut, OneOrVec},
     driver::{OpCode, RawFd},
-    op::{Connect, ReadAt, Recv, Send, WriteAt},
+    op::{Connect, ReadAt, RecvImpl, SendImpl, WriteAt},
 };
 use io_uring::{opcode, squeue::Entry, types::Fd};
 use libc::{sockaddr_storage, socklen_t};
@@ -65,43 +67,53 @@ impl OpCode for Connect {
     }
 }
 
-impl<T: IoBufMut> OpCode for Recv<T> {
+impl<T: AsIoSlicesMut> OpCode for RecvImpl<T> {
     fn create_entry(&mut self) -> Entry {
-        let buffer = self.buffer.as_uninit_slice();
-        opcode::Recv::new(Fd(self.fd), buffer.as_ptr() as _, buffer.len() as _).build()
+        self.slices = unsafe { self.buffer.as_io_slices_mut() };
+        opcode::Readv::new(
+            Fd(self.fd),
+            self.slices.as_ptr() as _,
+            self.slices.len() as _,
+        )
+        .build()
     }
 }
 
-impl<T: IoBuf> OpCode for Send<T> {
+impl<T: AsIoSlices> OpCode for SendImpl<T> {
     fn create_entry(&mut self) -> Entry {
-        let buffer = self.buffer.as_slice();
-        opcode::Send::new(Fd(self.fd), buffer.as_ptr(), buffer.len() as _).build()
+        self.slices = unsafe { self.buffer.as_io_slices() };
+        opcode::Writev::new(
+            Fd(self.fd),
+            self.slices.as_ptr() as _,
+            self.slices.len() as _,
+        )
+        .build()
     }
 }
 
 /// Receive data and source address.
-pub struct RecvFrom<T: IoBufMut> {
+pub struct RecvFromImpl<T: AsIoSlicesMut> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
     pub(crate) addr: sockaddr_storage,
-    slice: libc::iovec,
+    pub(crate) slices: OneOrVec<IoSliceMut<'static>>,
     msg: libc::msghdr,
 }
 
-impl<T: IoBufMut> RecvFrom<T> {
+impl<T: AsIoSlicesMut> RecvFromImpl<T> {
     /// Create [`RecvFrom`].
-    pub fn new(fd: RawFd, buffer: T) -> Self {
+    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
         Self {
             fd,
-            buffer,
+            buffer: T::new(buffer),
             addr: unsafe { std::mem::zeroed() },
-            slice: unsafe { std::mem::zeroed() },
+            slices: OneOrVec::One(IoSliceMut::new(&mut [])),
             msg: unsafe { std::mem::zeroed() },
         }
     }
 }
 
-impl<T: IoBufMut> IntoInner for RecvFrom<T> {
+impl<T: AsIoSlicesMut> IntoInner for RecvFromImpl<T> {
     type Inner = (T, sockaddr_storage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
@@ -109,19 +121,15 @@ impl<T: IoBufMut> IntoInner for RecvFrom<T> {
     }
 }
 
-impl<T: IoBufMut> OpCode for RecvFrom<T> {
+impl<T: AsIoSlicesMut> OpCode for RecvFromImpl<T> {
     #[allow(clippy::no_effect)]
     fn create_entry(&mut self) -> Entry {
-        let buffer = self.buffer.as_uninit_slice();
-        self.slice = libc::iovec {
-            iov_base: buffer.as_mut_ptr() as _,
-            iov_len: buffer.len(),
-        };
+        self.slices = unsafe { self.buffer.as_io_slices_mut() };
         self.msg = libc::msghdr {
             msg_name: &mut self.addr as *mut _ as _,
             msg_namelen: 128,
-            msg_iov: &mut self.slice,
-            msg_iovlen: 1,
+            msg_iov: self.slices.as_mut_ptr() as _,
+            msg_iovlen: self.slices.len(),
             msg_control: std::ptr::null_mut(),
             msg_controllen: 0,
             msg_flags: 0,
@@ -131,28 +139,28 @@ impl<T: IoBufMut> OpCode for RecvFrom<T> {
 }
 
 /// Send data to specified address.
-pub struct SendTo<T: IoBuf> {
+pub struct SendToImpl<T: AsIoSlices> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
-    slice: libc::iovec,
+    pub(crate) slices: OneOrVec<IoSlice<'static>>,
     msg: libc::msghdr,
 }
 
-impl<T: IoBuf> SendTo<T> {
+impl<T: AsIoSlices> SendToImpl<T> {
     /// Create [`SendTo`].
-    pub fn new(fd: RawFd, buffer: T, addr: SockAddr) -> Self {
+    pub fn new(fd: RawFd, buffer: T::Inner, addr: SockAddr) -> Self {
         Self {
             fd,
-            buffer,
+            buffer: T::new(buffer),
             addr,
-            slice: unsafe { std::mem::zeroed() },
+            slices: OneOrVec::One(IoSlice::new(&[])),
             msg: unsafe { std::mem::zeroed() },
         }
     }
 }
 
-impl<T: IoBuf> IntoInner for SendTo<T> {
+impl<T: AsIoSlices> IntoInner for SendToImpl<T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -160,19 +168,15 @@ impl<T: IoBuf> IntoInner for SendTo<T> {
     }
 }
 
-impl<T: IoBuf> OpCode for SendTo<T> {
+impl<T: AsIoSlices> OpCode for SendToImpl<T> {
     #[allow(clippy::no_effect)]
     fn create_entry(&mut self) -> Entry {
-        let buffer = self.buffer.as_slice();
-        self.slice = libc::iovec {
-            iov_base: buffer.as_ptr() as *const _ as _,
-            iov_len: buffer.len(),
-        };
+        self.slices = unsafe { self.buffer.as_io_slices() };
         self.msg = libc::msghdr {
             msg_name: self.addr.as_ptr() as _,
             msg_namelen: self.addr.len(),
-            msg_iov: &mut self.slice,
-            msg_iovlen: 1,
+            msg_iov: self.slices.as_mut_ptr() as _,
+            msg_iovlen: self.slices.len(),
             msg_control: std::ptr::null_mut(),
             msg_controllen: 0,
             msg_flags: 0,
