@@ -3,7 +3,6 @@ use crate::{
     driver::{OpCode, RawFd},
     op::*,
 };
-use aligned_array::{Aligned, A4};
 use once_cell::sync::OnceCell as OnceLock;
 use socket2::SockAddr;
 use std::{
@@ -105,12 +104,10 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
 static ACCEPT_EX: OnceLock<LPFN_ACCEPTEX> = OnceLock::new();
 static GET_ADDRS: OnceLock<LPFN_GETACCEPTEXSOCKADDRS> = OnceLock::new();
 
-pub const MAX_ADDR_SIZE: usize = std::mem::size_of::<SOCKADDR_STORAGE>();
-
 pub struct Accept {
     pub(crate) fd: RawFd,
     pub(crate) accept_fd: RawFd,
-    pub(crate) buffer: Aligned<A4, [u8; MAX_ADDR_SIZE * 2]>,
+    pub(crate) buffer: SOCKADDR_STORAGE,
 }
 
 impl Accept {
@@ -118,7 +115,7 @@ impl Accept {
         Self {
             fd,
             accept_fd,
-            buffer: Aligned([0; MAX_ADDR_SIZE * 2]),
+            buffer: unsafe { std::mem::zeroed() },
         }
     }
 
@@ -133,8 +130,8 @@ impl Accept {
             (get_addrs_fn.unwrap())(
                 &self.buffer as *const _ as *const _,
                 0,
-                MAX_ADDR_SIZE as _,
-                MAX_ADDR_SIZE as _,
+                0,
+                std::mem::size_of_val(&self.buffer) as _,
                 &mut local_addr,
                 &mut local_addr_len,
                 &mut remote_addr,
@@ -154,8 +151,8 @@ impl OpCode for Accept {
             self.accept_fd as _,
             &mut self.buffer as *mut _ as *mut _,
             0,
-            MAX_ADDR_SIZE as _,
-            MAX_ADDR_SIZE as _,
+            0,
+            std::mem::size_of_val(&self.buffer) as _,
             &mut received,
             optr,
         );
