@@ -11,6 +11,9 @@ pub use tcp::*;
 mod udp;
 pub use udp::*;
 
+mod unix;
+pub use unix::*;
+
 use socket2::SockAddr;
 use std::{
     future::Future,

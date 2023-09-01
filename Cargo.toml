@@ -54,6 +54,10 @@ required-features = ["runtime"]
 name = "net"
 required-features = ["runtime"]
 
+[[example]]
+name = "unix"
+required-features = ["runtime"]
+
 [[test]]
 name = "driver"
 required-features = ["runtime"]
