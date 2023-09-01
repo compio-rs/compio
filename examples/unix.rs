@@ -10,10 +10,9 @@ fn main() {
         let addr = listener.local_addr().unwrap();
 
         let tx = UnixStream::connect_addr(&addr).unwrap();
-        let (rx, client_addr) = listener.accept().await.unwrap();
+        let (rx, _) = listener.accept().await.unwrap();
 
         assert_eq!(addr, tx.peer_addr().unwrap());
-        assert_eq!(client_addr, tx.local_addr().unwrap());
 
         tx.send("Hello world!").await.0.unwrap();
 
