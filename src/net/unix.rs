@@ -56,6 +56,7 @@ impl UnixListener {
     /// This function will yield once a new Unix domain socket connection
     /// is established. When established, the corresponding [`UnixStream`] and
     /// will be returned.
+    #[cfg(feature = "runtime")]
     pub async fn accept(&self) -> io::Result<(UnixStream, SockAddr)> {
         let (socket, addr) = self.inner.accept().await?;
         let stream = UnixStream { inner: socket };
@@ -132,24 +133,28 @@ impl UnixStream {
 
     /// Receives a packet of data from the socket into the buffer, returning the original buffer and
     /// quantity of data received.
+    #[cfg(feature = "runtime")]
     pub async fn recv<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.recv(buffer).await
     }
 
     /// Receives a packet of data from the socket into the buffer, returning the original buffer and
     /// quantity of data received.
+    #[cfg(feature = "runtime")]
     pub async fn recv_vectored<T: IoBufMut>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
         self.inner.recv_vectored(buffer).await
     }
 
     /// Sends some data to the socket from the buffer, returning the original buffer and
     /// quantity of data sent.
+    #[cfg(feature = "runtime")]
     pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.send(buffer).await
     }
 
     /// Sends some data to the socket from the buffer, returning the original buffer and
     /// quantity of data sent.
+    #[cfg(feature = "runtime")]
     pub async fn send_vectored<T: IoBuf>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
         self.inner.send_vectored(buffer).await
     }
