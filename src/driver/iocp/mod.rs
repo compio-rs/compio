@@ -23,7 +23,9 @@ pub(crate) mod fs;
 pub(crate) mod net;
 pub(crate) mod op;
 
-pub use windows_sys::Win32::Networking::WinSock::SOCKADDR_STORAGE as sockaddr_storage;
+pub use windows_sys::Win32::Networking::WinSock::{
+    socklen_t, SOCKADDR_STORAGE as sockaddr_storage,
+};
 
 /// On windows, handle and socket are in the same size.
 /// Both of them could be attached to an IOCP.

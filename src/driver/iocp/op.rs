@@ -1,12 +1,12 @@
 use crate::{
-    buf::{AsBuf, AsBufMut, AsIoSlices, AsIoSlicesMut, IoBuf, IoBufMut},
+    buf::{IoBuf, IoBufMut},
     driver::{OpCode, RawFd},
     op::*,
 };
 use once_cell::sync::OnceCell as OnceLock;
 use socket2::SockAddr;
 use std::{
-    io,
+    io::{self, IoSlice, IoSliceMut},
     ptr::{null, null_mut},
     task::Poll,
 };
@@ -83,7 +83,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
             overlapped.Anonymous.Anonymous.OffsetHigh = (self.offset >> 32) as _;
         }
         let mut read = 0;
-        let slice = self.buffer.as_buf_mut();
+        let slice = self.buffer.as_uninit_slice();
         let res = ReadFile(
             self.fd as _,
             slice.as_mut_ptr() as _,
@@ -102,7 +102,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
             overlapped.Anonymous.Anonymous.OffsetHigh = (self.offset >> 32) as _;
         }
         let mut written = 0;
-        let slice = self.buffer.as_buf();
+        let slice = self.buffer.as_slice();
         let res = WriteFile(
             self.fd as _,
             slice.as_ptr() as _,
@@ -195,15 +195,17 @@ impl OpCode for Connect {
     }
 }
 
-impl<T: AsIoSlicesMut> OpCode for RecvImpl<T> {
+impl<T: IoBufMut> OpCode for Recv<T> {
     unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let buffer = self.buffer.as_io_slices_mut();
+        let buffer = IoSliceMut::new(unsafe {
+            &mut *(self.buffer.as_uninit_slice() as *mut _ as *mut [u8])
+        });
         let mut flags = 0;
         let mut received = 0;
         let res = WSARecv(
             self.fd as _,
-            buffer.as_ptr() as _,
-            buffer.len() as _,
+            &buffer as *const _ as _,
+            1,
             &mut received,
             &mut flags,
             optr,
@@ -213,14 +215,14 @@ impl<T: AsIoSlicesMut> OpCode for RecvImpl<T> {
     }
 }
 
-impl<T: AsIoSlices> OpCode for SendImpl<T> {
+impl<T: IoBuf> OpCode for Send<T> {
     unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let buffer = self.buffer.as_io_slices();
+        let buffer = IoSlice::new(self.buffer.as_slice());
         let mut sent = 0;
         let res = WSASend(
             self.fd as _,
-            buffer.as_ptr() as _,
-            buffer.len() as _,
+            &buffer as *const _ as _,
+            1,
             &mut sent,
             0,
             optr,
@@ -230,15 +232,17 @@ impl<T: AsIoSlices> OpCode for SendImpl<T> {
     }
 }
 
-impl<T: AsIoSlicesMut> OpCode for RecvFromImpl<T> {
+impl<T: IoBufMut> OpCode for RecvFrom<T> {
     unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let buffer = self.buffer.as_io_slices_mut();
+        let buffer = IoSliceMut::new(unsafe {
+            &mut *(self.buffer.as_uninit_slice() as *mut _ as *mut [u8])
+        });
         let mut flags = 0;
         let mut received = 0;
         let res = WSARecvFrom(
             self.fd as _,
-            buffer.as_ptr() as _,
-            buffer.len() as _,
+            &buffer as *const _ as _,
+            1,
             &mut received,
             &mut flags,
             &mut self.addr as *mut _ as *mut SOCKADDR,
@@ -250,14 +254,14 @@ impl<T: AsIoSlicesMut> OpCode for RecvFromImpl<T> {
     }
 }
 
-impl<T: AsIoSlices> OpCode for SendToImpl<T> {
+impl<T: IoBuf> OpCode for SendTo<T> {
     unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let buffer = self.buffer.as_io_slices();
+        let buffer = IoSlice::new(self.buffer.as_slice());
         let mut sent = 0;
         let res = WSASendTo(
             self.fd as _,
-            buffer.as_ptr() as _,
-            buffer.len() as _,
+            &buffer as *const _ as _,
+            1,
             &mut sent,
             0,
             self.addr.as_ptr(),

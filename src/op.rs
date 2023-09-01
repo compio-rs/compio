@@ -5,10 +5,9 @@
 
 use crate::{
     buf::{IntoInner, IoBuf, IoBufMut},
-    driver::{sockaddr_storage, RawFd},
+    driver::{sockaddr_storage, socklen_t, RawFd},
     BufResult,
 };
-use libc::socklen_t;
 use socket2::SockAddr;
 
 pub(crate) trait BufResultExt {
