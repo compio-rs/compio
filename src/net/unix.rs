@@ -43,7 +43,7 @@ impl UnixListener {
         Self::bind_addr(&SockAddr::unix(path)?)
     }
 
-    /// Creates a new [`UnixListener`] with [`UnixSocketAddr`], which will be bound to the specified file path.
+    /// Creates a new [`UnixListener`] with [`SockAddr`], which will be bound to the specified file path.
     /// The file path cannot yet exist, and will be cleaned up upon dropping [`UnixListener`]
     pub fn bind_addr(addr: &SockAddr) -> io::Result<Self> {
         let socket = Socket::bind(addr, Type::STREAM, None)?;
