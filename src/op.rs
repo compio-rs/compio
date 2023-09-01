@@ -8,6 +8,7 @@ use crate::{
     driver::RawFd,
     BufResult,
 };
+use socket2::SockAddr;
 
 pub(crate) trait BufResultExt {
     fn map_advanced(self) -> Self;
@@ -83,5 +84,18 @@ impl<T: IoBuf> IntoInner for WriteAt<T> {
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
+    }
+}
+
+pub use crate::driver::op::Accept;
+
+pub struct Connect {
+    pub(crate) fd: RawFd,
+    pub(crate) addr: SockAddr,
+}
+
+impl Connect {
+    pub fn new(fd: RawFd, addr: SockAddr) -> Self {
+        Self { fd, addr }
     }
 }

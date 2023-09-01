@@ -20,7 +20,8 @@ use windows_sys::Win32::{
 };
 
 pub(crate) mod fs;
-mod op;
+pub(crate) mod net;
+pub(crate) mod op;
 
 /// On windows, handle and socket are in the same size.
 /// Both of them could be attached to an IOCP.
@@ -41,7 +42,8 @@ pub trait FromRawFd {
     ///
     /// The `fd` passed in must:
     ///   - be a valid open handle or socket,
-    ///   - be opened with `FILE_FLAG_OVERLAPPED` if it's a file handle.
+    ///   - be opened with `FILE_FLAG_OVERLAPPED` if it's a file handle,
+    ///   - have been attached to a driver.
     unsafe fn from_raw_fd(fd: RawFd) -> Self;
 }
 

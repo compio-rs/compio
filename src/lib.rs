@@ -6,6 +6,7 @@
 pub mod buf;
 pub mod driver;
 pub mod fs;
+pub mod net;
 pub mod op;
 
 #[cfg(feature = "runtime")]
