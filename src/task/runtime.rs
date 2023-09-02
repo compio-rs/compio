@@ -13,9 +13,8 @@ use std::{
 
 pub(crate) struct Runtime {
     driver: Driver,
-    ops: RefCell<Slab<RawOp>>,
     runnables: RefCell<VecDeque<Runnable>>,
-    wakers: RefCell<HashMap<usize, Waker>>,
+    op_runtime: RefCell<OpRuntime>,
     results: RefCell<HashMap<usize, (io::Result<usize>, RawOp)>>,
 }
 
@@ -23,9 +22,8 @@ impl Runtime {
     pub fn new() -> io::Result<Self> {
         Ok(Self {
             driver: Driver::new()?,
-            ops: RefCell::default(),
             runnables: RefCell::default(),
-            wakers: RefCell::default(),
+            op_runtime: RefCell::default(),
             results: RefCell::default(),
         })
     }
@@ -72,9 +70,8 @@ impl Runtime {
         &self,
         op: T,
     ) -> impl Future<Output = (io::Result<usize>, T)> {
-        let mut ops = self.ops.borrow_mut();
-        let user_data = ops.insert(RawOp::new(op));
-        let op = ops.get_mut(user_data).unwrap();
+        let mut op_runtime = self.op_runtime.borrow_mut();
+        let (user_data, op) = op_runtime.insert(op);
         let res = unsafe { self.driver.push(op.as_mut::<T>(), user_data) };
         match res {
             Ok(()) => {
@@ -85,7 +82,7 @@ impl Runtime {
                 Either::Left(task)
             }
             Err(e) => {
-                let op = ops.remove(user_data);
+                let (op, _) = op_runtime.remove(user_data);
                 Either::Right(ready((Err(e), unsafe { op.into_inner::<T>() })))
             }
         }
@@ -99,17 +96,17 @@ impl Runtime {
         if let Some((res, op)) = self.results.borrow_mut().remove(&user_data) {
             Poll::Ready((res, unsafe { op.into_inner::<T>() }))
         } else {
-            self.wakers
+            self.op_runtime
                 .borrow_mut()
-                .insert(user_data, cx.waker().clone());
+                .update_waker(user_data, cx.waker().clone());
             Poll::Pending
         }
     }
 
     fn poll(&self) {
         let entry = self.driver.poll(None).unwrap();
-        let op = self.ops.borrow_mut().remove(entry.user_data());
-        if let Some(waker) = self.wakers.borrow_mut().remove(&entry.user_data()) {
+        let (op, waker) = self.op_runtime.borrow_mut().remove(entry.user_data());
+        if let Some(waker) = waker {
             waker.wake();
             self.results
                 .borrow_mut()
@@ -139,5 +136,29 @@ impl RawOp {
 impl Drop for RawOp {
     fn drop(&mut self) {
         drop(unsafe { Box::from_raw(self.0) })
+    }
+}
+
+#[derive(Default)]
+struct OpRuntime {
+    ops: Slab<RawOp>,
+    wakers: HashMap<usize, Waker>,
+}
+
+impl OpRuntime {
+    pub fn insert<T: OpCode + 'static>(&mut self, op: T) -> (usize, &mut RawOp) {
+        let user_data = self.ops.insert(RawOp::new(op));
+        let op = unsafe { self.ops.get_unchecked_mut(user_data) };
+        (user_data, op)
+    }
+
+    pub fn update_waker(&mut self, user_data: usize, waker: Waker) {
+        self.wakers.insert(user_data, waker);
+    }
+
+    pub fn remove(&mut self, user_data: usize) -> (RawOp, Option<Waker>) {
+        let op = self.ops.remove(user_data);
+        let waker = self.wakers.remove(&user_data);
+        (op, waker)
     }
 }
