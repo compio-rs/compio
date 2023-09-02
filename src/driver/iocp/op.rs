@@ -24,7 +24,7 @@ use windows_sys::{
             WSAID_GETACCEPTEXSOCKADDRS,
         },
         Storage::FileSystem::{ReadFile, WriteFile},
-        System::IO::OVERLAPPED,
+        System::{Pipes::ConnectNamedPipe, IO::OVERLAPPED},
     },
 };
 
@@ -321,5 +321,24 @@ impl<T: AsIoSlices> OpCode for SendToImpl<T> {
             None,
         );
         winsock_result(res, sent)
+    }
+}
+
+/// Connect a named pipe server.
+pub struct ConnectNamedPipe {
+    pub(crate) fd: RawFd,
+}
+
+impl ConnectNamedPipe {
+    /// Create [`ConnectNamedPipe`].
+    pub fn new(fd: RawFd) -> Self {
+        Self { fd }
+    }
+}
+
+impl OpCode for ConnectNamedPipe {
+    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let res = ConnectNamedPipe(self.fd as _, optr);
+        win32_result(res, 0)
     }
 }
