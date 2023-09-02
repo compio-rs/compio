@@ -1,5 +1,5 @@
 //!
-#![cfg_attr(feature = "runtime", doc = include_str!("../README.md"))]
+#![doc = include_str!("../README.md")]
 #![cfg_attr(feature = "read_buf", feature(read_buf))]
 #![warn(missing_docs)]
 
@@ -8,6 +8,9 @@ pub mod driver;
 pub mod fs;
 pub mod net;
 pub mod op;
+
+#[cfg(target_os = "windows")]
+pub mod named_pipe;
 
 #[cfg(feature = "runtime")]
 pub mod task;

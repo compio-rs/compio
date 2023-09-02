@@ -58,6 +58,9 @@ impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t)> {
 
 pub use crate::driver::op::{Accept, RecvFromImpl, SendToImpl};
 
+#[cfg(target_os = "windows")]
+pub use crate::driver::op::ConnectNamedPipe;
+
 /// Read a file at specified position into specified buffer.
 #[derive(Debug)]
 pub struct ReadAt<T: IoBufMut> {
