@@ -25,7 +25,9 @@ slab = "0.4"
 socket2 = { version = "0.5", features = ["all"] }
 
 [dev-dependencies]
+criterion = { version = "0.5", features = ["async_tokio"] }
 tempfile = "3"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 widestring = "1"
@@ -59,3 +61,11 @@ nightly = ["read_buf"]
 [[example]]
 name = "tick"
 required-features = ["time"]
+
+[[bench]]
+name = "fs"
+harness = false
+
+[[bench]]
+name = "net"
+harness = false
