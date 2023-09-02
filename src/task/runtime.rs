@@ -1,9 +1,6 @@
 use crate::{
     driver::{Driver, OpCode, Poller, RawFd},
-    task::{
-        op::{OpFuture, OpRuntime, RawOp},
-        time::{TimerFuture, TimerRuntime},
-    },
+    task::op::{OpFuture, OpRuntime, RawOp},
 };
 use async_task::{Runnable, Task};
 use futures_util::future::Either;
@@ -13,13 +10,16 @@ use std::{
     future::{ready, Future},
     io,
     task::{Context, Poll},
-    time::Duration,
 };
+
+#[cfg(feature = "time")]
+use crate::task::time::{TimerFuture, TimerRuntime};
 
 pub(crate) struct Runtime {
     driver: Driver,
     runnables: RefCell<VecDeque<Runnable>>,
     op_runtime: RefCell<OpRuntime>,
+    #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
     results: RefCell<HashMap<usize, (io::Result<usize>, RawOp)>>,
 }
@@ -30,6 +30,7 @@ impl Runtime {
             driver: Driver::new()?,
             runnables: RefCell::default(),
             op_runtime: RefCell::default(),
+            #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
             results: RefCell::default(),
         })
@@ -93,7 +94,8 @@ impl Runtime {
         }
     }
 
-    pub fn create_timer(&self, delay: Duration) -> impl Future<Output = ()> {
+    #[cfg(feature = "time")]
+    pub fn create_timer(&self, delay: std::time::Duration) -> impl Future<Output = ()> {
         let mut timer_runtime = self.timer_runtime.borrow_mut();
         if let Some(key) = timer_runtime.insert(delay) {
             Either::Left(TimerFuture::new(key))
@@ -106,6 +108,7 @@ impl Runtime {
         self.op_runtime.borrow_mut().cancel(user_data);
     }
 
+    #[cfg(feature = "time")]
     pub fn cancel_timer(&self, key: usize) {
         self.timer_runtime.borrow_mut().cancel(key);
     }
@@ -125,6 +128,7 @@ impl Runtime {
         }
     }
 
+    #[cfg(feature = "time")]
     pub fn poll_timer(&self, cx: &mut Context, key: usize) -> Poll<()> {
         let mut timer_runtime = self.timer_runtime.borrow_mut();
         if timer_runtime.contains(key) {
@@ -136,7 +140,11 @@ impl Runtime {
     }
 
     fn poll(&self) {
-        match self.driver.poll(self.timer_runtime.borrow().min_timeout()) {
+        #[cfg(not(feature = "time"))]
+        let timeout = None;
+        #[cfg(feature = "time")]
+        let timeout = self.timer_runtime.borrow().min_timeout();
+        match self.driver.poll(timeout) {
             Ok(entry) => {
                 let (op, waker) = self.op_runtime.borrow_mut().remove(entry.user_data());
                 if let Some(waker) = waker {
@@ -152,6 +160,7 @@ impl Runtime {
                 }
             }
         }
+        #[cfg(feature = "time")]
         self.timer_runtime.borrow_mut().wake();
     }
 }

@@ -17,6 +17,7 @@ mod runtime;
 use runtime::Runtime;
 
 mod op;
+#[cfg(feature = "time")]
 mod time;
 
 thread_local! {

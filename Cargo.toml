@@ -42,27 +42,14 @@ io-uring = "0.6"
 libc = "0.2"
 
 [features]
-default = []
+default = ["runtime"]
 runtime = []
+time = ["runtime"]
+all = ["time"]
+
 read_buf = []
 nightly = ["read_buf"]
 
 [[example]]
-name = "basic"
-required-features = ["runtime"]
-
-[[example]]
-name = "net"
-required-features = ["runtime"]
-
-[[example]]
-name = "unix"
-required-features = ["runtime"]
-
-[[test]]
-name = "driver"
-required-features = ["runtime"]
-
-[[test]]
-name = "file"
-required-features = ["runtime"]
+name = "tick"
+required-features = ["time"]

@@ -11,7 +11,7 @@ pub mod op;
 
 #[cfg(feature = "runtime")]
 pub mod task;
-#[cfg(feature = "runtime")]
+#[cfg(feature = "time")]
 pub mod time;
 
 /// A specialized `Result` type for operations with buffers.
