@@ -5,9 +5,11 @@ use slab::Slab;
 use std::{
     cell::RefCell,
     collections::{HashMap, VecDeque},
-    future::{poll_fn, ready, Future},
+    future::{ready, Future},
     io,
+    marker::PhantomData,
     mem::ManuallyDrop,
+    pin::Pin,
     task::{Context, Poll, Waker},
 };
 
@@ -75,9 +77,7 @@ impl Runtime {
         let res = unsafe { self.driver.push(op.as_mut::<T>(), user_data) };
         match res {
             Ok(()) => {
-                let (runnable, task) = unsafe {
-                    self.spawn_unchecked(poll_fn(move |cx| self.poll_task(cx, user_data)))
-                };
+                let (runnable, task) = unsafe { self.spawn_unchecked(OpFuture::new(user_data)) };
                 runnable.schedule();
                 Either::Left(task)
             }
@@ -86,6 +86,10 @@ impl Runtime {
                 Either::Right(ready((Err(e), unsafe { op.into_inner::<T>() })))
             }
         }
+    }
+
+    pub fn cancel_op(&self, user_data: usize) {
+        self.op_runtime.borrow_mut().cancel(user_data);
     }
 
     fn poll_task<T: OpCode>(
@@ -156,9 +160,50 @@ impl OpRuntime {
         self.wakers.insert(user_data, waker);
     }
 
+    pub fn cancel(&mut self, user_data: usize) {
+        self.wakers.remove(&user_data);
+    }
+
     pub fn remove(&mut self, user_data: usize) -> (RawOp, Option<Waker>) {
         let op = self.ops.remove(user_data);
         let waker = self.wakers.remove(&user_data);
         (op, waker)
+    }
+}
+
+#[derive(Debug)]
+struct OpFuture<T: OpCode> {
+    user_data: usize,
+    completed: bool,
+    _p: PhantomData<T>,
+}
+
+impl<T: OpCode> OpFuture<T> {
+    pub fn new(user_data: usize) -> Self {
+        Self {
+            user_data,
+            completed: false,
+            _p: PhantomData,
+        }
+    }
+}
+
+impl<T: OpCode> Future for OpFuture<T> {
+    type Output = (io::Result<usize>, T);
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let res = crate::task::RUNTIME.with(|runtime| runtime.poll_task(cx, self.user_data));
+        if res.is_ready() {
+            unsafe { self.get_unchecked_mut() }.completed = true;
+        }
+        res
+    }
+}
+
+impl<T: OpCode> Drop for OpFuture<T> {
+    fn drop(&mut self) {
+        if self.completed {
+            crate::task::RUNTIME.with(|runtime| runtime.cancel_op(self.user_data))
+        }
     }
 }
