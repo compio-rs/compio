@@ -55,11 +55,6 @@ impl<T> Slice<T> {
     pub fn as_inner_mut(&mut self) -> &mut T {
         &mut self.buffer
     }
-
-    /// Returns the underlying buffer.
-    pub fn into_inner(self) -> T {
-        self.buffer
-    }
 }
 
 fn deref<T: IoBuf>(buffer: &T) -> &[u8] {
@@ -109,5 +104,13 @@ unsafe impl<T: IoBufMut> IoBufMut for Slice<T> {
 
     fn set_buf_init(&mut self, len: usize) {
         self.buffer.set_buf_init(len)
+    }
+}
+
+impl<T> IntoInner for Slice<T> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
     }
 }
