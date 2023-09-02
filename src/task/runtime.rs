@@ -7,6 +7,7 @@ use std::{
     collections::{HashMap, VecDeque},
     future::{poll_fn, ready, Future},
     io,
+    mem::ManuallyDrop,
     task::{Context, Poll, Waker},
 };
 
@@ -53,14 +54,7 @@ impl Runtime {
             if let Poll::Ready(res) = task.as_mut().poll(&mut cx) {
                 return res;
             }
-            let entry = self.driver.poll(None).unwrap();
-            let op = self.ops.borrow_mut().remove(entry.user_data());
-            if let Some(waker) = self.wakers.borrow_mut().remove(&entry.user_data()) {
-                waker.wake();
-                self.results
-                    .borrow_mut()
-                    .insert(entry.user_data(), (entry.into_result(), op));
-            }
+            self.poll();
         }
     }
 
@@ -84,8 +78,9 @@ impl Runtime {
         let res = unsafe { self.driver.push(op.as_mut::<T>(), user_data) };
         match res {
             Ok(()) => {
-                let (runnable, task) =
-                    unsafe { self.spawn_unchecked(poll_fn(move |cx| self.poll(cx, user_data))) };
+                let (runnable, task) = unsafe {
+                    self.spawn_unchecked(poll_fn(move |cx| self.poll_task(cx, user_data)))
+                };
                 runnable.schedule();
                 Either::Left(task)
             }
@@ -96,7 +91,7 @@ impl Runtime {
         }
     }
 
-    pub fn poll<T: OpCode>(
+    fn poll_task<T: OpCode>(
         &self,
         cx: &mut Context,
         user_data: usize,
@@ -110,21 +105,39 @@ impl Runtime {
             Poll::Pending
         }
     }
+
+    fn poll(&self) {
+        let entry = self.driver.poll(None).unwrap();
+        let op = self.ops.borrow_mut().remove(entry.user_data());
+        if let Some(waker) = self.wakers.borrow_mut().remove(&entry.user_data()) {
+            waker.wake();
+            self.results
+                .borrow_mut()
+                .insert(entry.user_data(), (entry.into_result(), op));
+        }
+    }
 }
 
-struct RawOp(*mut ());
+struct RawOp(*mut dyn OpCode);
 
 impl RawOp {
-    pub fn new(op: impl OpCode) -> Self {
+    pub fn new(op: impl OpCode + 'static) -> Self {
         let op = Box::new(op);
-        Self(Box::leak(op) as *mut _ as *mut ())
+        Self(Box::leak(op as Box<dyn OpCode>))
     }
 
     pub unsafe fn as_mut<T: OpCode>(&mut self) -> &mut T {
-        unsafe { (self.0 as *mut T).as_mut() }.unwrap()
+        &mut *(self.0 as *mut T)
     }
 
     pub unsafe fn into_inner<T: OpCode>(self) -> T {
-        *Box::from_raw(self.0 as *mut T)
+        let this = ManuallyDrop::new(self);
+        *Box::from_raw(this.0 as *mut T)
+    }
+}
+
+impl Drop for RawOp {
+    fn drop(&mut self) {
+        drop(unsafe { Box::from_raw(self.0) })
     }
 }
