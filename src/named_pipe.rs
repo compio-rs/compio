@@ -2,13 +2,7 @@
 //!
 //! The infrastructure of the code comes from [`tokio::net::windows`].
 
-use crate::{
-    buf::*,
-    driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd},
-    op::{BufResultExt, ConnectNamedPipe, ReadAt, WriteAt},
-    task::RUNTIME,
-    *,
-};
+use crate::driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{
     ffi::{c_void, OsStr},
     io,
@@ -34,6 +28,14 @@ use windows_sys::Win32::{
         },
         SystemServices::ACCESS_SYSTEM_SECURITY,
     },
+};
+
+#[cfg(feature = "runtime")]
+use crate::{
+    buf::*,
+    op::{BufResultExt, ConnectNamedPipe, ReadAt, WriteAt},
+    task::RUNTIME,
+    *,
 };
 
 /// A [Windows named pipe] server.
@@ -103,6 +105,7 @@ pub struct NamedPipeServer {
 
 impl NamedPipeServer {
     pub(crate) fn from_handle(handle: OwnedHandle) -> io::Result<Self> {
+        #[cfg(feature = "runtime")]
         RUNTIME.with(|runtime| runtime.attach(handle.as_raw_handle() as _))?;
         Ok(Self { handle })
     }
@@ -163,6 +166,7 @@ impl NamedPipeServer {
     /// // Use the connected client...
     /// # std::io::Result::Ok(()) });
     /// ```
+    #[cfg(feature = "runtime")]
     pub async fn connect(&self) -> io::Result<()> {
         let op = ConnectNamedPipe::new(self.as_raw_fd());
         RUNTIME.with(|runtime| runtime.submit(op)).await.0?;
@@ -210,6 +214,7 @@ impl NamedPipeServer {
 
     /// Read some bytes from the pipe into the specified
     /// buffer, returning how many bytes were read.
+    #[cfg(feature = "runtime")]
     pub async fn read<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
         let op = ReadAt::new(self.as_raw_fd(), 0, buffer);
         RUNTIME
@@ -221,6 +226,7 @@ impl NamedPipeServer {
     }
 
     /// Write a buffer into the pipe, returning how many bytes were written.
+    #[cfg(feature = "runtime")]
     pub async fn write<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
         let op = WriteAt::new(self.as_raw_fd(), 0, buffer);
         RUNTIME
@@ -295,6 +301,7 @@ pub struct NamedPipeClient {
 
 impl NamedPipeClient {
     pub(crate) fn from_handle(handle: OwnedHandle) -> io::Result<Self> {
+        #[cfg(feature = "runtime")]
         RUNTIME.with(|runtime| runtime.attach(handle.as_raw_handle() as _))?;
         Ok(Self { handle })
     }
@@ -325,6 +332,7 @@ impl NamedPipeClient {
 
     /// Read some bytes from the pipe into the specified
     /// buffer, returning how many bytes were read.
+    #[cfg(feature = "runtime")]
     pub async fn read<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
         let op = ReadAt::new(self.as_raw_fd(), 0, buffer);
         RUNTIME
@@ -336,6 +344,7 @@ impl NamedPipeClient {
     }
 
     /// Write a buffer into the pipe, returning how many bytes were written.
+    #[cfg(feature = "runtime")]
     pub async fn write<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
         let op = WriteAt::new(self.as_raw_fd(), 0, buffer);
         RUNTIME
