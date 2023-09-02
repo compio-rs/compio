@@ -74,6 +74,13 @@ fn udp(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("udp");
 
+    // The socket may be dropped by firewall when the number is too large.
+    #[cfg(target_os = "linux")]
+    group
+        .sample_size(16)
+        .measurement_time(std::time::Duration::from_millis(2))
+        .warm_up_time(std::time::Duration::from_millis(2));
+
     group.bench_function("tokio", |b| {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
