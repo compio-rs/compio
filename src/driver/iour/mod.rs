@@ -56,7 +56,16 @@ impl Poller for Driver {
         if let Some(duration) = timeout {
             let timespec = timespec(duration);
             let args = SubmitArgs::new().timespec(&timespec);
-            self.inner.submitter().submit_with_args(1, &args)?;
+            match self.inner.submitter().submit_with_args(1, &args) {
+                Ok(res) => Ok(res),
+                Err(e) => {
+                    if e.raw_os_error() == Some(libc::ETIME) {
+                        Err(io::Error::new(io::ErrorKind::TimedOut, e))
+                    } else {
+                        Err(e)
+                    }
+                }
+            }?;
         } else {
             // Submit and Wait without timeout
             self.inner.submit_and_wait(1)?;

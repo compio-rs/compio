@@ -1,20 +1,26 @@
-use crate::driver::{Driver, OpCode, Poller, RawFd};
+use crate::{
+    driver::{Driver, OpCode, Poller, RawFd},
+    task::{
+        op::{OpFuture, OpRuntime, RawOp},
+        time::{TimerFuture, TimerRuntime},
+    },
+};
 use async_task::{Runnable, Task};
 use futures_util::future::Either;
-use slab::Slab;
 use std::{
     cell::RefCell,
     collections::{HashMap, VecDeque},
-    future::{poll_fn, ready, Future},
+    future::{ready, Future},
     io,
-    task::{Context, Poll, Waker},
+    task::{Context, Poll},
+    time::Duration,
 };
 
 pub(crate) struct Runtime {
     driver: Driver,
-    ops: RefCell<Slab<RawOp>>,
     runnables: RefCell<VecDeque<Runnable>>,
-    wakers: RefCell<HashMap<usize, Waker>>,
+    op_runtime: RefCell<OpRuntime>,
+    timer_runtime: RefCell<TimerRuntime>,
     results: RefCell<HashMap<usize, (io::Result<usize>, RawOp)>>,
 }
 
@@ -22,9 +28,9 @@ impl Runtime {
     pub fn new() -> io::Result<Self> {
         Ok(Self {
             driver: Driver::new()?,
-            ops: RefCell::default(),
             runnables: RefCell::default(),
-            wakers: RefCell::default(),
+            op_runtime: RefCell::default(),
+            timer_runtime: RefCell::new(TimerRuntime::new()),
             results: RefCell::default(),
         })
     }
@@ -53,14 +59,7 @@ impl Runtime {
             if let Poll::Ready(res) = task.as_mut().poll(&mut cx) {
                 return res;
             }
-            let entry = self.driver.poll(None).unwrap();
-            let op = self.ops.borrow_mut().remove(entry.user_data());
-            if let Some(waker) = self.wakers.borrow_mut().remove(&entry.user_data()) {
-                waker.wake();
-                self.results
-                    .borrow_mut()
-                    .insert(entry.user_data(), (entry.into_result(), op));
-            }
+            self.poll();
         }
     }
 
@@ -78,25 +77,40 @@ impl Runtime {
         &self,
         op: T,
     ) -> impl Future<Output = (io::Result<usize>, T)> {
-        let mut ops = self.ops.borrow_mut();
-        let user_data = ops.insert(RawOp::new(op));
-        let op = ops.get_mut(user_data).unwrap();
+        let mut op_runtime = self.op_runtime.borrow_mut();
+        let (user_data, op) = op_runtime.insert(op);
         let res = unsafe { self.driver.push(op.as_mut::<T>(), user_data) };
         match res {
             Ok(()) => {
-                let (runnable, task) =
-                    unsafe { self.spawn_unchecked(poll_fn(move |cx| self.poll(cx, user_data))) };
+                let (runnable, task) = unsafe { self.spawn_unchecked(OpFuture::new(user_data)) };
                 runnable.schedule();
                 Either::Left(task)
             }
             Err(e) => {
-                let op = ops.remove(user_data);
+                let (op, _) = op_runtime.remove(user_data);
                 Either::Right(ready((Err(e), unsafe { op.into_inner::<T>() })))
             }
         }
     }
 
-    pub fn poll<T: OpCode>(
+    pub fn create_timer(&self, delay: Duration) -> impl Future<Output = ()> {
+        let mut timer_runtime = self.timer_runtime.borrow_mut();
+        if let Some(key) = timer_runtime.insert(delay) {
+            Either::Left(TimerFuture::new(key))
+        } else {
+            Either::Right(ready(()))
+        }
+    }
+
+    pub fn cancel_op(&self, user_data: usize) {
+        self.op_runtime.borrow_mut().cancel(user_data);
+    }
+
+    pub fn cancel_timer(&self, key: usize) {
+        self.timer_runtime.borrow_mut().cancel(key);
+    }
+
+    pub fn poll_task<T: OpCode>(
         &self,
         cx: &mut Context,
         user_data: usize,
@@ -104,27 +118,40 @@ impl Runtime {
         if let Some((res, op)) = self.results.borrow_mut().remove(&user_data) {
             Poll::Ready((res, unsafe { op.into_inner::<T>() }))
         } else {
-            self.wakers
+            self.op_runtime
                 .borrow_mut()
-                .insert(user_data, cx.waker().clone());
+                .update_waker(user_data, cx.waker().clone());
             Poll::Pending
         }
     }
-}
 
-struct RawOp(*mut ());
-
-impl RawOp {
-    pub fn new(op: impl OpCode) -> Self {
-        let op = Box::new(op);
-        Self(Box::leak(op) as *mut _ as *mut ())
+    pub fn poll_timer(&self, cx: &mut Context, key: usize) -> Poll<()> {
+        let mut timer_runtime = self.timer_runtime.borrow_mut();
+        if timer_runtime.contains(key) {
+            timer_runtime.update_waker(key, cx.waker().clone());
+            Poll::Pending
+        } else {
+            Poll::Ready(())
+        }
     }
 
-    pub unsafe fn as_mut<T: OpCode>(&mut self) -> &mut T {
-        unsafe { (self.0 as *mut T).as_mut() }.unwrap()
-    }
-
-    pub unsafe fn into_inner<T: OpCode>(self) -> T {
-        *Box::from_raw(self.0 as *mut T)
+    fn poll(&self) {
+        match self.driver.poll(self.timer_runtime.borrow().min_timeout()) {
+            Ok(entry) => {
+                let (op, waker) = self.op_runtime.borrow_mut().remove(entry.user_data());
+                if let Some(waker) = waker {
+                    waker.wake();
+                    self.results
+                        .borrow_mut()
+                        .insert(entry.user_data(), (entry.into_result(), op));
+                }
+            }
+            Err(e) => {
+                if e.kind() != io::ErrorKind::TimedOut {
+                    panic!("{:?}", e);
+                }
+            }
+        }
+        self.timer_runtime.borrow_mut().wake();
     }
 }
