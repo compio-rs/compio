@@ -52,7 +52,10 @@ unsafe fn winsock_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> 
     if res != 0 {
         winapi_result(transferred)
     } else {
-        Poll::Ready(Ok(transferred as _))
+        // send & recv functions may return immediately, indicate that the task is
+        // completed, but the overlapped result is also posted to the IOCP.
+        // To make our driver easy, simply return Pending and query the result later.
+        Poll::Pending
     }
 }
 
