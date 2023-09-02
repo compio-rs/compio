@@ -1,13 +1,13 @@
 [package]
 name = "compio"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Berrysoft <Strawberry_Str@hotmail.com"]
 readme = "README.md"
 license = "MIT"
 description = "completion based async runtime"
 categories = ["asynchronous", "network-programming"]
-keywords = ["async", "fs", "iocp", "io-uring"]
+keywords = ["async", "fs", "net", "iocp", "io-uring"]
 repository = "https://github.com/Berrysoft/compio"
 
 [package.metadata.docs.rs]
