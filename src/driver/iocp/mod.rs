@@ -1,7 +1,6 @@
 use crate::driver::{Entry, Poller};
+use crossbeam_queue::SegQueue;
 use std::{
-    cell::RefCell,
-    collections::VecDeque,
     io,
     os::windows::{
         io::HandleOrNull,
@@ -15,7 +14,10 @@ use windows_sys::Win32::{
     Foundation::{GetLastError, ERROR_HANDLE_EOF, INVALID_HANDLE_VALUE, WAIT_TIMEOUT},
     System::{
         Threading::INFINITE,
-        IO::{CreateIoCompletionPort, GetQueuedCompletionStatus, OVERLAPPED},
+        IO::{
+            CreateIoCompletionPort, GetQueuedCompletionStatus, PostQueuedCompletionStatus,
+            OVERLAPPED,
+        },
     },
 };
 
@@ -70,8 +72,11 @@ pub trait OpCode {
 /// Low-level driver of IOCP.
 pub struct Driver {
     port: OwnedHandle,
-    operations: RefCell<VecDeque<(*mut dyn OpCode, Overlapped)>>,
+    operations: SegQueue<(*mut dyn OpCode, Overlapped)>,
 }
+
+unsafe impl Send for Driver {}
+unsafe impl Sync for Driver {}
 
 impl Driver {
     /// Create a new IOCP.
@@ -81,7 +86,7 @@ impl Driver {
             .map_err(|_| io::Error::last_os_error())?;
         Ok(Self {
             port,
-            operations: RefCell::default(),
+            operations: SegQueue::default(),
         })
     }
 }
@@ -97,14 +102,30 @@ impl Poller for Driver {
     }
 
     unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()> {
-        self.operations
-            .borrow_mut()
-            .push_back((op, Overlapped::new(user_data)));
+        self.operations.push((op, Overlapped::new(user_data)));
         Ok(())
     }
 
+    fn post(&self, user_data: usize, result: usize) -> io::Result<()> {
+        let overlapped = Box::new(Overlapped::new(user_data));
+        let overlapped_ptr = Box::leak(overlapped);
+        let res = unsafe {
+            PostQueuedCompletionStatus(
+                self.port.as_raw_handle() as _,
+                result as _,
+                0,
+                overlapped_ptr as *mut _ as *mut OVERLAPPED,
+            )
+        };
+        if res == 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    }
+
     fn poll(&self, timeout: Option<Duration>) -> io::Result<Entry> {
-        while let Some((op, overlapped)) = self.operations.borrow_mut().pop_front() {
+        while let Some((op, overlapped)) = self.operations.pop() {
             let overlapped = Box::new(overlapped);
             let overlapped_ptr = Box::leak(overlapped);
             let result = unsafe {

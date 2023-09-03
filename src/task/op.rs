@@ -36,15 +36,19 @@ impl Drop for RawOp {
 
 #[derive(Default)]
 pub struct OpRuntime {
-    ops: Slab<RawOp>,
+    ops: Slab<Option<RawOp>>,
     wakers: HashMap<usize, Waker>,
 }
 
 impl OpRuntime {
     pub fn insert<T: OpCode + 'static>(&mut self, op: T) -> (usize, &mut RawOp) {
-        let user_data = self.ops.insert(RawOp::new(op));
+        let user_data = self.ops.insert(Some(RawOp::new(op)));
         let op = unsafe { self.ops.get_unchecked_mut(user_data) };
-        (user_data, op)
+        (user_data, op.as_mut().unwrap())
+    }
+
+    pub fn insert_dummy(&mut self) -> usize {
+        self.ops.insert(None)
     }
 
     pub fn update_waker(&mut self, user_data: usize, waker: Waker) {
@@ -55,10 +59,14 @@ impl OpRuntime {
         self.wakers.remove(&user_data);
     }
 
-    pub fn remove(&mut self, user_data: usize) -> (RawOp, Option<Waker>) {
-        let op = self.ops.remove(user_data);
-        let waker = self.wakers.remove(&user_data);
-        (op, waker)
+    pub fn remove(&mut self, user_data: usize) -> (Option<RawOp>, Option<Waker>) {
+        if self.ops.contains(user_data) {
+            let op = self.ops.remove(user_data);
+            let waker = self.wakers.remove(&user_data);
+            (op, waker)
+        } else {
+            (None, None)
+        }
     }
 }
 

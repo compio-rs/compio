@@ -12,6 +12,8 @@ pub mod op;
 #[cfg(target_os = "windows")]
 pub mod named_pipe;
 
+#[cfg(feature = "signal")]
+pub mod signal;
 #[cfg(feature = "runtime")]
 pub mod task;
 #[cfg(feature = "time")]

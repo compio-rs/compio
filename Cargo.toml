@@ -30,6 +30,7 @@ tempfile = "3"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
+crossbeam-queue = "0.3"
 widestring = "1"
 windows-sys = { version = "0.48", features = [
     "Win32_Foundation",
@@ -52,15 +53,16 @@ libc = "0.2"
 [features]
 default = ["runtime"]
 runtime = []
+signal = ["runtime"]
 time = ["runtime"]
-all = ["time"]
+all = ["time", "signal"]
 
 read_buf = []
 nightly = ["read_buf"]
 
 [[example]]
 name = "tick"
-required-features = ["time"]
+required-features = ["time", "signal"]
 
 [[bench]]
 name = "fs"
