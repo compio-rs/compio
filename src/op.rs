@@ -136,7 +136,7 @@ pub struct RecvImpl<T: AsIoSlicesMut> {
 }
 
 impl<T: AsIoSlicesMut> RecvImpl<T> {
-    /// Create [`Recv`].
+    /// Create [`Recv`] or [`RecvVectored`].
     pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
         Self {
             fd,
@@ -167,7 +167,7 @@ pub struct SendImpl<T: AsIoSlices> {
 }
 
 impl<T: AsIoSlices> SendImpl<T> {
-    /// Create [`Send`].
+    /// Create [`Send`] or [`SendVectored`].
     pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
         Self {
             fd,

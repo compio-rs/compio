@@ -1,13 +1,12 @@
-use std::io::{IoSlice, IoSliceMut};
-
 use crate::{
     buf::{AsIoSlices, AsIoSlicesMut, IntoInner, IoBuf, IoBufMut, OneOrVec},
     driver::{OpCode, RawFd},
-    op::{Connect, ReadAt, RecvImpl, SendImpl, WriteAt},
+    op::*,
 };
 use io_uring::{opcode, squeue::Entry, types::Fd};
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
+use std::io::{IoSlice, IoSliceMut};
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
     fn create_entry(&mut self) -> Entry {
@@ -101,7 +100,7 @@ pub struct RecvFromImpl<T: AsIoSlicesMut> {
 }
 
 impl<T: AsIoSlicesMut> RecvFromImpl<T> {
-    /// Create [`RecvFrom`].
+    /// Create [`RecvFrom`] or [`RecvFromVectored`].
     pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
         Self {
             fd,
@@ -148,7 +147,7 @@ pub struct SendToImpl<T: AsIoSlices> {
 }
 
 impl<T: AsIoSlices> SendToImpl<T> {
-    /// Create [`SendTo`].
+    /// Create [`SendTo`] or [`SendToVectored`].
     pub fn new(fd: RawFd, buffer: T::Inner, addr: SockAddr) -> Self {
         Self {
             fd,
