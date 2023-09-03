@@ -1,19 +1,24 @@
 use crate::driver::{Entry, Poller};
 use crossbeam_queue::SegQueue;
 use std::{
+    ffi::c_void,
     io,
     os::windows::{
         io::HandleOrNull,
         prelude::{AsRawHandle, OwnedHandle, RawHandle},
     },
-    ptr::null_mut,
+    ptr::{null, null_mut},
     task::Poll,
     time::Duration,
 };
 use windows_sys::Win32::{
-    Foundation::{GetLastError, ERROR_HANDLE_EOF, INVALID_HANDLE_VALUE, WAIT_TIMEOUT},
+    Foundation::{
+        GetLastError, RtlNtStatusToDosError, ERROR_HANDLE_EOF, INVALID_HANDLE_VALUE, NTSTATUS,
+        STATUS_SUCCESS, WAIT_TIMEOUT,
+    },
     System::{
         Threading::INFINITE,
+        WindowsProgramming::{FILE_INFORMATION_CLASS, IO_STATUS_BLOCK},
         IO::{
             CreateIoCompletionPort, GetQueuedCompletionStatus, PostQueuedCompletionStatus,
             OVERLAPPED,
@@ -91,8 +96,54 @@ impl Driver {
     }
 }
 
+fn deattach_iocp(fd: RawFd) -> io::Result<()> {
+    #[link(name = "ntdll")]
+    extern "system" {
+        fn NtSetInformationFile(
+            FileHandle: usize,
+            IoStatusBlock: *mut IO_STATUS_BLOCK,
+            FileInformation: *const c_void,
+            Length: u32,
+            FileInformationClass: FILE_INFORMATION_CLASS,
+        ) -> NTSTATUS;
+    }
+    #[allow(non_upper_case_globals)]
+    const FileReplaceCompletionInformation: FILE_INFORMATION_CLASS = 61;
+    #[repr(C)]
+    #[allow(non_camel_case_types)]
+    #[allow(non_snake_case)]
+    struct FILE_COMPLETION_INFORMATION {
+        Port: usize,
+        Key: *const c_void,
+    }
+
+    let mut block = unsafe { std::mem::zeroed() };
+    let info = FILE_COMPLETION_INFORMATION {
+        Port: 0,
+        Key: null(),
+    };
+    unsafe {
+        NtSetInformationFile(
+            fd as _,
+            &mut block,
+            &info as *const _ as _,
+            std::mem::size_of_val(&info) as _,
+            FileReplaceCompletionInformation,
+        )
+    };
+    let res = unsafe { block.Anonymous.Status };
+    if res != STATUS_SUCCESS {
+        Err(io::Error::from_raw_os_error(unsafe {
+            RtlNtStatusToDosError(res) as _
+        }))
+    } else {
+        Ok(())
+    }
+}
+
 impl Poller for Driver {
     fn attach(&self, fd: RawFd) -> io::Result<()> {
+        deattach_iocp(fd)?;
         let port = unsafe { CreateIoCompletionPort(fd as _, self.port.as_raw_handle() as _, 0, 0) };
         if port == 0 {
             Err(io::Error::last_os_error())
