@@ -69,7 +69,7 @@ use crate::{buf::*, *};
 ///     let buf = Vec::with_capacity(32);
 ///
 ///     // write data
-///     let (result, _) = socket.send_to("hello world", &SockAddr::from(second_addr)).await;
+///     let (result, _) = socket.send_to("hello world", SockAddr::from(second_addr)).await;
 ///     result.unwrap();
 ///
 ///     // read data
@@ -191,8 +191,15 @@ impl UdpSocket {
     /// Sends data on the socket to the given address. On success, returns the
     /// number of bytes sent.
     #[cfg(feature = "runtime")]
-    pub async fn send_to<T: IoBuf>(&self, buffer: T, addr: &SockAddr) -> BufResult<usize, T> {
-        self.inner.send_to(buffer, addr).await
+    pub async fn send_to<T: IoBuf>(
+        &self,
+        buffer: T,
+        addr: impl ToSockAddrs,
+    ) -> BufResult<usize, T> {
+        each_addr_async_buf(addr, buffer, |addr, buffer| async move {
+            self.inner.send_to(buffer, &addr).await
+        })
+        .await
     }
 
     /// Sends data on the socket to the given address. On success, returns the
@@ -201,9 +208,12 @@ impl UdpSocket {
     pub async fn send_to_vectored<T: IoBuf>(
         &self,
         buffer: Vec<T>,
-        addr: &SockAddr,
+        addr: impl ToSockAddrs,
     ) -> BufResult<usize, Vec<T>> {
-        self.inner.send_to_vectored(buffer, addr).await
+        each_addr_async_buf(addr, buffer, |addr, buffer| async move {
+            self.inner.send_to_vectored(buffer, &addr).await
+        })
+        .await
     }
 }
 

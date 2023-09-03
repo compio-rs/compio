@@ -26,6 +26,7 @@ socket2 = { version = "0.5", features = ["all"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }
+futures-channel = "0.3"
 tempfile = "3"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt"] }
 
