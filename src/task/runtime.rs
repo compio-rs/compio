@@ -37,6 +37,7 @@ impl Runtime {
         })
     }
 
+    #[allow(dead_code)]
     pub fn driver(&self) -> &Driver {
         &self.driver
     }
@@ -99,6 +100,7 @@ impl Runtime {
         }
     }
 
+    #[allow(dead_code)]
     pub fn submit_dummy(&self) -> usize {
         self.op_runtime.borrow_mut().insert_dummy()
     }
@@ -137,6 +139,7 @@ impl Runtime {
         }
     }
 
+    #[allow(dead_code)]
     pub fn poll_dummy(&self, cx: &mut Context, user_data: usize) -> Poll<io::Result<usize>> {
         if let Some((res, _)) = self.results.borrow_mut().remove(&user_data) {
             Poll::Ready(res)
