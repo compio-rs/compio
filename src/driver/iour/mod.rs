@@ -1,7 +1,8 @@
 use crate::driver::{Entry, Poller};
 use io_uring::{
+    opcode::MsgRingData,
     squeue,
-    types::{SubmitArgs, Timespec},
+    types::{Fd, SubmitArgs, Timespec},
     IoUring,
 };
 use std::{io, time::Duration};
@@ -36,6 +37,14 @@ impl Driver {
             inner: IoUring::new(entries)?,
         })
     }
+
+    unsafe fn push_entry(&self, entry: io_uring::squeue::Entry) -> io::Result<()> {
+        if self.inner.submission_shared().is_full() {
+            self.inner.submit()?;
+        }
+        self.inner.submission_shared().push(&entry).unwrap();
+        Ok(())
+    }
 }
 
 impl Poller for Driver {
@@ -45,11 +54,18 @@ impl Poller for Driver {
 
     unsafe fn push(&self, op: &mut impl OpCode, user_data: usize) -> io::Result<()> {
         let entry = op.create_entry().user_data(user_data as _);
-        if self.inner.submission_shared().is_full() {
-            self.inner.submit()?;
-        }
-        self.inner.submission_shared().push(&entry).unwrap();
-        Ok(())
+        self.push_entry(entry)
+    }
+
+    fn post(&self, user_data: usize, result: usize) -> io::Result<()> {
+        let entry = MsgRingData::new(
+            Fd(self.inner.as_raw_fd()),
+            result as i32,
+            user_data as _,
+            None,
+        )
+        .build();
+        unsafe { self.push_entry(entry) }
     }
 
     fn poll(&self, timeout: Option<Duration>) -> io::Result<Entry> {
@@ -59,7 +75,7 @@ impl Poller for Driver {
             match self.inner.submitter().submit_with_args(1, &args) {
                 Ok(res) => Ok(res),
                 Err(e) => {
-                    if e.raw_os_error() == Some(libc::ETIME) {
+                    if matches!(e.raw_os_error(), Some(libc::ETIME) | Some(libc::EINTR)) {
                         Err(io::Error::new(io::ErrorKind::TimedOut, e))
                     } else {
                         Err(e)

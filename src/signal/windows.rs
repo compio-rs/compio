@@ -111,27 +111,27 @@ impl Drop for CtrlEvent {
     }
 }
 
-/// Creates a new listener which receives “ctrl-break” notifications sent to the process.
+/// Creates a new listener which receives "ctrl-break" notifications sent to the process.
 pub fn ctrl_break() -> CtrlEvent {
     CtrlEvent::new(CTRL_BREAK_EVENT)
 }
 
-/// Creates a new listener which receives “ctrl-close” notifications sent to the process.
+/// Creates a new listener which receives "ctrl-close" notifications sent to the process.
 pub fn ctrl_close() -> CtrlEvent {
     CtrlEvent::new(CTRL_CLOSE_EVENT)
 }
 
-/// Creates a new listener which receives “ctrl-c” notifications sent to the process.
+/// Creates a new listener which receives "ctrl-c" notifications sent to the process.
 pub fn ctrl_c() -> CtrlEvent {
     CtrlEvent::new(CTRL_C_EVENT)
 }
 
-/// Creates a new listener which receives “ctrl-logoff” notifications sent to the process.
+/// Creates a new listener which receives "ctrl-logoff" notifications sent to the process.
 pub fn ctrl_logoff() -> CtrlEvent {
     CtrlEvent::new(CTRL_LOGOFF_EVENT)
 }
 
-/// Creates a new listener which receives “ctrl-shutdown” notifications sent to the process.
+/// Creates a new listener which receives "ctrl-shutdown" notifications sent to the process.
 pub fn ctrl_shutdown() -> CtrlEvent {
     CtrlEvent::new(CTRL_SHUTDOWN_EVENT)
 }

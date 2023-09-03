@@ -18,3 +18,12 @@ pub mod windows;
 
 #[cfg(target_os = "windows")]
 pub use windows::ctrl_c;
+
+#[cfg(target_os = "linux")]
+pub mod unix;
+
+/// Completes when a "ctrl-c" notification is sent to the process.
+#[cfg(target_os = "linux")]
+pub fn ctrl_c() -> unix::SignalEvent {
+    unix::signal(libc::SIGINT)
+}
