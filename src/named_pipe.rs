@@ -145,7 +145,7 @@ impl NamedPipeServer {
     /// # Cancel safety
     ///
     /// This method is cancellation safe in the sense that if it is used as the
-    /// event in a [`select!`](crate::select) statement and some other branch
+    /// event in a [`select!`](futures_util::select) statement and some other branch
     /// completes first, then no connection events have been lost.
     ///
     /// [`ConnectNamedPipe`]: https://docs.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-connectnamedpipe
@@ -914,14 +914,6 @@ impl ServerOptions {
     ///
     /// [`CreateNamedPipe`]: https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createnamedpipea
     ///
-    /// # Errors
-    ///
-    /// This errors if called outside of a [Tokio Runtime], or in a runtime that
-    /// has not [enabled I/O], or if any OS-specific I/O errors occur.
-    ///
-    /// [Tokio Runtime]: crate::runtime::Runtime
-    /// [enabled I/O]: crate::runtime::Builder::enable_io
-    ///
     /// # Examples
     ///
     /// ```
@@ -944,14 +936,6 @@ impl ServerOptions {
     /// This is the same as [`create`] except that it supports providing the raw
     /// pointer to a structure of [`SECURITY_ATTRIBUTES`] which will be passed
     /// as the `lpSecurityAttributes` argument to [`CreateFile`].
-    ///
-    /// # Errors
-    ///
-    /// This errors if called outside of a [Tokio Runtime], or in a runtime that
-    /// has not [enabled I/O], or if any OS-specific I/O errors occur.
-    ///
-    /// [Tokio Runtime]: crate::runtime::Runtime
-    /// [enabled I/O]: crate::runtime::Builder::enable_io
     ///
     /// # Safety
     ///
@@ -1132,9 +1116,6 @@ impl ClientOptions {
     ///
     /// # Errors
     ///
-    /// This errors if called outside of a [Tokio Runtime], or in a runtime that
-    /// has not [enabled I/O], or if any OS-specific I/O errors occur.
-    ///
     /// There are a few errors you need to take into account when creating a
     /// named pipe on the client side:
     ///
@@ -1145,8 +1126,6 @@ impl ClientOptions {
     ///   examples for how to check for this error.
     ///
     /// [`ERROR_PIPE_BUSY`]: https://docs.rs/windows-sys/latest/windows_sys/Win32/Foundation/constant.ERROR_PIPE_BUSY.html
-    /// [enabled I/O]: crate::runtime::Builder::enable_io
-    /// [Tokio Runtime]: crate::runtime::Runtime
     ///
     /// A connect loop that waits until a pipe becomes available looks like
     /// this:

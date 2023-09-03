@@ -349,7 +349,7 @@ pub struct ConnectNamedPipe {
 }
 
 impl ConnectNamedPipe {
-    /// Create [`ConnectNamedPipe`].
+    /// Create [`ConnectNamedPipe`](struct@ConnectNamedPipe).
     pub fn new(fd: RawFd) -> Self {
         Self { fd }
     }
