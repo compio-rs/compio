@@ -93,7 +93,10 @@ impl Future for SignalEvent {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         RUNTIME
             .with(|runtime| runtime.poll_dummy(cx, self.user_data))
-            .map(|res| res.map(|_| ()))
+            .map(|res| {
+                unregister(self.sig, self.handler_key);
+                res.map(|_| ())
+            })
     }
 }
 
