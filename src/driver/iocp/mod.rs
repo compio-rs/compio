@@ -159,13 +159,13 @@ impl Poller for Driver {
 
     fn post(&self, user_data: usize, result: usize) -> io::Result<()> {
         let overlapped = Box::new(Overlapped::new(user_data));
-        let overlapped_ptr = Box::leak(overlapped);
+        let overlapped_ptr = Box::into_raw(overlapped);
         let res = unsafe {
             PostQueuedCompletionStatus(
                 self.port.as_raw_handle() as _,
                 result as _,
                 0,
-                overlapped_ptr as *mut _ as *mut OVERLAPPED,
+                overlapped_ptr as *mut OVERLAPPED,
             )
         };
         if res == 0 {
@@ -178,11 +178,11 @@ impl Poller for Driver {
     fn poll(&self, timeout: Option<Duration>) -> io::Result<Entry> {
         while let Some((op, overlapped)) = self.operations.pop() {
             let overlapped = Box::new(overlapped);
-            let overlapped_ptr = Box::leak(overlapped);
+            let overlapped_ptr = Box::into_raw(overlapped);
             let result = unsafe {
                 op.as_mut()
                     .unwrap()
-                    .operate(overlapped_ptr as *mut _ as *mut OVERLAPPED)
+                    .operate(overlapped_ptr as *mut OVERLAPPED)
             };
             if let Poll::Ready(result) = result {
                 let overlapped = unsafe { Box::from_raw(overlapped_ptr) };
