@@ -15,7 +15,7 @@ pub struct RawOp(*mut dyn OpCode);
 impl RawOp {
     pub fn new(op: impl OpCode + 'static) -> Self {
         let op = Box::new(op);
-        Self(Box::leak(op as Box<dyn OpCode>))
+        Self(Box::into_raw(op as Box<dyn OpCode>))
     }
 
     pub unsafe fn as_mut<T: OpCode>(&mut self) -> &mut T {
