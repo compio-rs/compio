@@ -29,6 +29,9 @@ pub trait Poller {
     /// `op` should be alive until [`Poller::poll`] returns its result.
     unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()>;
 
+    /// Post an operation result to the driver.
+    fn post(&self, user_data: usize, result: usize) -> io::Result<()>;
+
     /// Poll the driver with an optional timeout.
     /// If no timeout specified, the call will block.
     fn poll(&self, timeout: Option<Duration>) -> io::Result<Entry>;

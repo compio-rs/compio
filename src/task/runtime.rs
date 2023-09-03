@@ -1,6 +1,7 @@
 use crate::{
     driver::{Driver, OpCode, Poller, RawFd},
     task::op::{OpFuture, OpRuntime, RawOp},
+    BufResult,
 };
 use async_task::{Runnable, Task};
 use futures_util::future::Either;
@@ -21,7 +22,7 @@ pub(crate) struct Runtime {
     op_runtime: RefCell<OpRuntime>,
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
-    results: RefCell<HashMap<usize, (io::Result<usize>, RawOp)>>,
+    results: RefCell<HashMap<usize, BufResult<usize, Option<RawOp>>>>,
 }
 
 impl Runtime {
@@ -34,6 +35,10 @@ impl Runtime {
             timer_runtime: RefCell::new(TimerRuntime::new()),
             results: RefCell::default(),
         })
+    }
+
+    pub fn driver(&self) -> &Driver {
+        &self.driver
     }
 
     unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> (Runnable, Task<F::Output>) {
@@ -89,9 +94,13 @@ impl Runtime {
             }
             Err(e) => {
                 let (op, _) = op_runtime.remove(user_data);
-                Either::Right(ready((Err(e), unsafe { op.into_inner::<T>() })))
+                Either::Right(ready((Err(e), unsafe { op.unwrap().into_inner::<T>() })))
             }
         }
+    }
+
+    pub fn submit_dummy(&self) -> usize {
+        self.op_runtime.borrow_mut().insert_dummy()
     }
 
     #[cfg(feature = "time")]
@@ -119,7 +128,18 @@ impl Runtime {
         user_data: usize,
     ) -> Poll<(io::Result<usize>, T)> {
         if let Some((res, op)) = self.results.borrow_mut().remove(&user_data) {
-            Poll::Ready((res, unsafe { op.into_inner::<T>() }))
+            Poll::Ready((res, unsafe { op.unwrap().into_inner::<T>() }))
+        } else {
+            self.op_runtime
+                .borrow_mut()
+                .update_waker(user_data, cx.waker().clone());
+            Poll::Pending
+        }
+    }
+
+    pub fn poll_dummy(&self, cx: &mut Context, user_data: usize) -> Poll<io::Result<usize>> {
+        if let Some((res, _)) = self.results.borrow_mut().remove(&user_data) {
+            Poll::Ready(res)
         } else {
             self.op_runtime
                 .borrow_mut()
