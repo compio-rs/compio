@@ -130,6 +130,37 @@ async fn each_addr_async<T, F: Future<Output = io::Result<T>>>(
     }))
 }
 
+#[allow(dead_code)]
+async fn each_addr_async_buf<T, B, F: Future<Output = BufResult<T, B>>>(
+    addr: impl ToSockAddrs,
+    mut buffer: B,
+    mut f: impl FnMut(SockAddr, B) -> F,
+) -> BufResult<T, B> {
+    match addr.to_sock_addrs() {
+        Ok(addrs) => {
+            let mut last_err = None;
+            let mut res;
+            for addr in addrs {
+                (res, buffer) = f(addr, buffer).await;
+                match res {
+                    Ok(l) => return (Ok(l), buffer),
+                    Err(e) => last_err = Some(e),
+                }
+            }
+            (
+                Err(last_err.unwrap_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "could not resolve to any addresses",
+                    )
+                })),
+                buffer,
+            )
+        }
+        Err(e) => (Err(e), buffer),
+    }
+}
+
 macro_rules! impl_raw_fd {
     ($t:ty, $inner:ident) => {
         impl crate::driver::AsRawFd for $t {
@@ -153,3 +184,5 @@ macro_rules! impl_raw_fd {
 }
 
 pub(crate) use impl_raw_fd;
+
+use crate::BufResult;

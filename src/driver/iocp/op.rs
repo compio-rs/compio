@@ -18,10 +18,10 @@ use windows_sys::{
             ERROR_PIPE_CONNECTED,
         },
         Networking::WinSock::{
-            socklen_t, WSAIoctl, WSARecv, WSARecvFrom, WSASend, WSASendTo, LPFN_ACCEPTEX,
-            LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS, SIO_GET_EXTENSION_FUNCTION_POINTER,
-            SOCKADDR, SOCKADDR_STORAGE, WSAID_ACCEPTEX, WSAID_CONNECTEX,
-            WSAID_GETACCEPTEXSOCKADDRS,
+            setsockopt, socklen_t, WSAIoctl, WSARecv, WSARecvFrom, WSASend, WSASendTo,
+            LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS,
+            SIO_GET_EXTENSION_FUNCTION_POINTER, SOCKADDR, SOCKADDR_STORAGE, SOL_SOCKET,
+            SO_UPDATE_ACCEPT_CONTEXT, WSAID_ACCEPTEX, WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS,
         },
         Storage::FileSystem::{ReadFile, WriteFile},
         System::{Pipes::ConnectNamedPipe, IO::OVERLAPPED},
@@ -140,6 +140,22 @@ impl Accept {
 
     /// Get the remote address from the inner buffer.
     pub fn into_addr(self) -> io::Result<SockAddr> {
+        // Record the addrs.
+        {
+            let res = unsafe {
+                setsockopt(
+                    self.accept_fd as _,
+                    SOL_SOCKET,
+                    SO_UPDATE_ACCEPT_CONTEXT,
+                    &self.fd as *const _ as _,
+                    std::mem::size_of_val(&self.fd) as _,
+                )
+            };
+            if res != 0 {
+                return Err(io::Error::last_os_error());
+            }
+        }
+
         let get_addrs_fn = GET_ADDRS
             .get_or_try_init(|| unsafe { get_wsa_fn(self.fd, WSAID_GETACCEPTEXSOCKADDRS) })?;
         let mut local_addr: *mut SOCKADDR = null_mut();
