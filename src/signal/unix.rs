@@ -11,7 +11,7 @@ use std::{
     future::Future,
     io,
     pin::Pin,
-    sync::{Mutex, Once},
+    sync::Mutex,
     task::{Context, Poll},
 };
 
@@ -31,17 +31,17 @@ unsafe extern "C" fn signal_handler(sig: i32) {
     }
 }
 
-static INIT: Once = Once::new();
+unsafe fn init(sig: i32) {
+    libc::signal(sig, signal_handler as *const () as usize);
+}
 
-fn init() {
-    for sig in 0..libc::SIGRTMAX() {
-        unsafe {
-            libc::signal(sig, signal_handler as *const () as usize);
-        }
-    }
+unsafe fn uninit(sig: i32) {
+    libc::signal(sig, libc::SIG_DFL);
 }
 
 fn register(sig: i32, f: impl FnOnce() + Send + Sync + 'static) -> usize {
+    unsafe { init(sig) };
+
     let mut handler = HANDLER.lock().unwrap();
     handler.entry(sig).or_default().insert(Box::new(f))
 }
@@ -52,7 +52,11 @@ fn unregister(sig: i32, key: usize) {
         if handlers.contains(key) {
             let _ = handlers.remove(key);
         }
+        if !handlers.is_empty() {
+            return;
+        }
     }
+    unsafe { uninit(sig) };
 }
 
 /// Represents a listener to unix signal event.
@@ -65,8 +69,6 @@ pub struct SignalEvent {
 
 impl SignalEvent {
     pub(crate) fn new(sig: i32) -> Self {
-        INIT.call_once(init);
-
         let user_data = RUNTIME.with(|runtime| runtime.submit_dummy());
         let handler_key = RUNTIME.with(|runtime| {
             // Safety: the runtime is thread-local static, and the driver is send & sync.

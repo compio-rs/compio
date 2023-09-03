@@ -60,9 +60,13 @@ impl OpRuntime {
     }
 
     pub fn remove(&mut self, user_data: usize) -> (Option<RawOp>, Option<Waker>) {
-        let op = self.ops.remove(user_data);
-        let waker = self.wakers.remove(&user_data);
-        (op, waker)
+        if self.ops.contains(user_data) {
+            let op = self.ops.remove(user_data);
+            let waker = self.wakers.remove(&user_data);
+            (op, waker)
+        } else {
+            (None, None)
+        }
     }
 }
 
