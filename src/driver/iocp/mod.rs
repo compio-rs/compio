@@ -3,24 +3,22 @@ use crossbeam_queue::SegQueue;
 use std::{
     ffi::c_void,
     io,
+    mem::MaybeUninit,
     os::windows::{
         io::HandleOrNull,
         prelude::{AsRawHandle, OwnedHandle, RawHandle},
     },
-    ptr::{null, null_mut},
+    ptr::null,
     task::Poll,
     time::Duration,
 };
 use windows_sys::Win32::{
-    Foundation::{
-        GetLastError, RtlNtStatusToDosError, ERROR_HANDLE_EOF, INVALID_HANDLE_VALUE, NTSTATUS,
-        STATUS_SUCCESS, WAIT_TIMEOUT,
-    },
+    Foundation::{RtlNtStatusToDosError, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_SUCCESS},
     System::{
         Threading::INFINITE,
         WindowsProgramming::{FILE_INFORMATION_CLASS, IO_STATUS_BLOCK},
         IO::{
-            CreateIoCompletionPort, GetQueuedCompletionStatus, PostQueuedCompletionStatus,
+            CreateIoCompletionPort, GetQueuedCompletionStatusEx, PostQueuedCompletionStatus,
             OVERLAPPED,
         },
     },
@@ -175,7 +173,15 @@ impl Poller for Driver {
         }
     }
 
-    fn poll(&self, timeout: Option<Duration>) -> io::Result<Entry> {
+    fn poll(
+        &self,
+        timeout: Option<Duration>,
+        entries: &mut [MaybeUninit<Entry>],
+    ) -> io::Result<usize> {
+        if entries.is_empty() {
+            return Ok(0);
+        }
+        let mut entries_offset = 0;
         while let Some((op, overlapped)) = self.operations.pop() {
             let overlapped = Box::new(overlapped);
             let overlapped_ptr = Box::into_raw(overlapped);
@@ -186,39 +192,58 @@ impl Poller for Driver {
             };
             if let Poll::Ready(result) = result {
                 let overlapped = unsafe { Box::from_raw(overlapped_ptr) };
-                return Ok(Entry::new(overlapped.user_data, result));
+                let entry = Entry::new(overlapped.user_data, result);
+                // Its OK because if entries is empty, it returns early.
+                entries[entries_offset].write(entry);
+                entries_offset += 1;
+                if entries_offset >= entries.len() {
+                    break;
+                }
             }
         }
-        let mut transferred = 0;
-        let mut key = 0;
-        let mut overlapped_ptr = null_mut();
+        if entries_offset > 0 {
+            return Ok(entries_offset);
+        }
+
+        let mut iocp_entries = Vec::with_capacity(entries.len());
+        let mut recv_count = 0;
         let timeout = match timeout {
             Some(timeout) => timeout.as_millis() as u32,
             None => INFINITE,
         };
         let res = unsafe {
-            GetQueuedCompletionStatus(
+            GetQueuedCompletionStatusEx(
                 self.port.as_raw_handle() as _,
-                &mut transferred,
-                &mut key,
-                &mut overlapped_ptr,
+                iocp_entries.as_mut_ptr(),
+                entries.len() as _,
+                &mut recv_count,
                 timeout,
+                0,
             )
         };
-        let result = if res == 0 {
-            let error = unsafe { GetLastError() };
-            if overlapped_ptr.is_null() {
-                return Err(io::Error::from_raw_os_error(error as _));
-            }
-            match error {
-                WAIT_TIMEOUT | ERROR_HANDLE_EOF => Ok(0),
-                _ => Err(io::Error::from_raw_os_error(error as _)),
-            }
-        } else {
-            Ok(transferred as usize)
-        };
-        let overlapped = unsafe { Box::from_raw(overlapped_ptr.cast::<Overlapped>()) };
-        Ok(Entry::new(overlapped.user_data, result))
+        if res == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        unsafe {
+            iocp_entries.set_len(recv_count as _);
+        }
+        let iocp_len = iocp_entries.len();
+        debug_assert!(iocp_len <= entries.len());
+
+        for (iocp_entry, entry) in iocp_entries.into_iter().zip(entries) {
+            let transferred = iocp_entry.dwNumberOfBytesTransferred;
+            let overlapped_ptr = iocp_entry.lpOverlapped;
+            let overlapped = unsafe { Box::from_raw(overlapped_ptr.cast::<Overlapped>()) };
+            let res = if iocp_entry.Internal == STATUS_SUCCESS as usize {
+                Ok(transferred as _)
+            } else {
+                Err(io::Error::from_raw_os_error(unsafe {
+                    RtlNtStatusToDosError(iocp_entry.Internal as _)
+                } as _))
+            };
+            entry.write(Entry::new(overlapped.user_data, res));
+        }
+        Ok(iocp_len)
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::{
-    driver::{Driver, OpCode, Poller, RawFd},
+    driver::{Driver, Entry, OpCode, Poller, RawFd},
     task::op::{OpFuture, OpRuntime, RawOp},
     BufResult,
 };
@@ -10,6 +10,7 @@ use std::{
     collections::{HashMap, VecDeque},
     future::{ready, Future},
     io,
+    mem::MaybeUninit,
     task::{Context, Poll},
 };
 
@@ -167,14 +168,20 @@ impl Runtime {
         let timeout = None;
         #[cfg(feature = "time")]
         let timeout = self.timer_runtime.borrow().min_timeout();
-        match self.driver.poll(timeout) {
-            Ok(entry) => {
-                let (op, waker) = self.op_runtime.borrow_mut().remove(entry.user_data());
-                if let Some(waker) = waker {
-                    waker.wake();
-                    self.results
-                        .borrow_mut()
-                        .insert(entry.user_data(), (entry.into_result(), op));
+
+        const UNINIT_ENTRY: MaybeUninit<Entry> = MaybeUninit::uninit();
+        let mut entries = [UNINIT_ENTRY; 16];
+        match self.driver.poll(timeout, &mut entries) {
+            Ok(len) => {
+                for entry in &mut entries[..len] {
+                    let entry = unsafe { std::mem::replace(entry, UNINIT_ENTRY).assume_init() };
+                    let (op, waker) = self.op_runtime.borrow_mut().remove(entry.user_data());
+                    if let Some(waker) = waker {
+                        waker.wake();
+                        self.results
+                            .borrow_mut()
+                            .insert(entry.user_data(), (entry.into_result(), op));
+                    }
                 }
             }
             Err(e) => {

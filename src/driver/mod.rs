@@ -1,7 +1,7 @@
 //! The platform-specified driver.
 //! Some types differ by compilation target.
 
-use std::{io, time::Duration};
+use std::{io, mem::MaybeUninit, time::Duration};
 
 cfg_if::cfg_if! {
     if #[cfg(target_os = "windows")] {
@@ -49,7 +49,7 @@ cfg_if::cfg_if! {
 /// // write data
 /// let mut op = op::Send::new(socket.as_raw_fd(), "hello world");
 /// unsafe { driver.push(&mut op, 1) }.unwrap();
-/// let entry = driver.poll(None).unwrap();
+/// let entry = driver.poll_one(None).unwrap();
 /// assert_eq!(entry.user_data(), 1);
 /// entry.into_result().unwrap();
 ///
@@ -57,7 +57,7 @@ cfg_if::cfg_if! {
 /// let buf = Vec::with_capacity(32);
 /// let mut op = op::Recv::new(other_socket.as_raw_fd(), buf);
 /// unsafe { driver.push(&mut op, 2) }.unwrap();
-/// let entry = driver.poll(None).unwrap();
+/// let entry = driver.poll_one(None).unwrap();
 /// assert_eq!(entry.user_data(), 2);
 /// let n_bytes = entry.into_result().unwrap();
 /// let mut buf = op.into_inner().into_inner();
@@ -82,10 +82,27 @@ pub trait Poller {
 
     /// Poll the driver with an optional timeout.
     /// If no timeout specified, the call will block.
-    fn poll(&self, timeout: Option<Duration>) -> io::Result<Entry>;
+    fn poll(
+        &self,
+        timeout: Option<Duration>,
+        entries: &mut [MaybeUninit<Entry>],
+    ) -> io::Result<usize>;
+
+    /// Poll the driver and get only one entry back.
+    /// If no timeout specified, the call will block.
+    ///
+    /// See [`Poller::poll`].
+    fn poll_one(&self, timeout: Option<Duration>) -> io::Result<Entry> {
+        let mut entry = MaybeUninit::uninit();
+        let polled = self.poll(timeout, std::slice::from_mut(&mut entry))?;
+        debug_assert_eq!(polled, 1);
+        let entry = unsafe { entry.assume_init() };
+        Ok(entry)
+    }
 }
 
 /// An completed entry returned from kernel.
+#[derive(Debug)]
 pub struct Entry {
     user_data: usize,
     result: io::Result<usize>,
@@ -104,5 +121,17 @@ impl Entry {
     /// The result of the operation.
     pub fn into_result(self) -> io::Result<usize> {
         self.result
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{Driver, Poller};
+
+    #[test]
+    fn poll_zero() {
+        let driver = Driver::new().unwrap();
+        let polled = driver.poll(None, &mut []).unwrap();
+        assert_eq!(polled, 0);
     }
 }
