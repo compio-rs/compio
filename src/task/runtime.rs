@@ -1,13 +1,12 @@
 use crate::{
     driver::{Driver, Entry, OpCode, Poller, RawFd},
-    task::op::{OpFuture, OpRuntime, RawOp},
-    BufResult,
+    task::op::{OpFuture, OpRuntime},
 };
 use async_task::{Runnable, Task};
 use futures_util::future::Either;
 use std::{
     cell::RefCell,
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
     future::{ready, Future},
     io,
     mem::MaybeUninit,
@@ -23,7 +22,6 @@ pub(crate) struct Runtime {
     op_runtime: RefCell<OpRuntime>,
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
-    results: RefCell<HashMap<usize, BufResult<usize, Option<RawOp>>>>,
 }
 
 impl Runtime {
@@ -34,7 +32,6 @@ impl Runtime {
             op_runtime: RefCell::default(),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
-            results: RefCell::default(),
         })
     }
 
@@ -95,8 +92,8 @@ impl Runtime {
                 Either::Left(task)
             }
             Err(e) => {
-                let (op, _) = op_runtime.remove(user_data);
-                Either::Right(ready((Err(e), unsafe { op.unwrap().into_inner::<T>() })))
+                let op = op_runtime.remove(user_data);
+                Either::Right(ready((Err(e), unsafe { op.op.unwrap().into_inner::<T>() })))
             }
         }
     }
@@ -130,24 +127,26 @@ impl Runtime {
         cx: &mut Context,
         user_data: usize,
     ) -> Poll<(io::Result<usize>, T)> {
-        if let Some((res, op)) = self.results.borrow_mut().remove(&user_data) {
-            Poll::Ready((res, unsafe { op.unwrap().into_inner::<T>() }))
+        let mut op_runtime = self.op_runtime.borrow_mut();
+        if op_runtime.has_result(user_data) {
+            let op = op_runtime.remove(user_data);
+            Poll::Ready((op.result.unwrap(), unsafe {
+                op.op.unwrap().into_inner::<T>()
+            }))
         } else {
-            self.op_runtime
-                .borrow_mut()
-                .update_waker(user_data, cx.waker().clone());
+            op_runtime.update_waker(user_data, cx.waker().clone());
             Poll::Pending
         }
     }
 
     #[allow(dead_code)]
     pub fn poll_dummy(&self, cx: &mut Context, user_data: usize) -> Poll<io::Result<usize>> {
-        if let Some((res, _)) = self.results.borrow_mut().remove(&user_data) {
-            Poll::Ready(res)
+        let mut op_runtime = self.op_runtime.borrow_mut();
+        if op_runtime.has_result(user_data) {
+            let op = op_runtime.remove(user_data);
+            Poll::Ready(op.result.unwrap())
         } else {
-            self.op_runtime
-                .borrow_mut()
-                .update_waker(user_data, cx.waker().clone());
+            op_runtime.update_waker(user_data, cx.waker().clone());
             Poll::Pending
         }
     }
@@ -175,13 +174,9 @@ impl Runtime {
             Ok(len) => {
                 for entry in &mut entries[..len] {
                     let entry = unsafe { std::mem::replace(entry, UNINIT_ENTRY).assume_init() };
-                    let (op, waker) = self.op_runtime.borrow_mut().remove(entry.user_data());
-                    if let Some(waker) = waker {
-                        waker.wake();
-                        self.results
-                            .borrow_mut()
-                            .insert(entry.user_data(), (entry.into_result(), op));
-                    }
+                    self.op_runtime
+                        .borrow_mut()
+                        .update_result(entry.user_data(), entry.into_result());
                 }
             }
             Err(e) => {
