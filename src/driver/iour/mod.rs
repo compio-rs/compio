@@ -5,7 +5,7 @@ use io_uring::{
     types::{Fd, SubmitArgs, Timespec},
     IoUring,
 };
-use std::{io, time::Duration};
+use std::{cell::UnsafeCell, io, marker::PhantomData, time::Duration};
 
 pub use libc::{sockaddr_storage, socklen_t};
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
@@ -23,6 +23,8 @@ pub trait OpCode {
 /// Low-level driver of io-uring.
 pub struct Driver {
     inner: IoUring,
+    // Using inner mut.
+    _p: PhantomData<UnsafeCell<()>>,
 }
 
 impl Driver {
@@ -35,6 +37,7 @@ impl Driver {
     pub fn with_entries(entries: u32) -> io::Result<Self> {
         Ok(Self {
             inner: IoUring::new(entries)?,
+            _p: PhantomData,
         })
     }
 
