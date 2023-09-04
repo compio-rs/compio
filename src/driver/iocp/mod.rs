@@ -193,13 +193,18 @@ impl Poller for Driver {
             if let Poll::Ready(result) = result {
                 let overlapped = unsafe { Box::from_raw(overlapped_ptr) };
                 let entry = Entry::new(overlapped.user_data, result);
+                // Its OK because if entries is empty, it returns early.
                 entries[entries_offset].write(entry);
                 entries_offset += 1;
+                if entries_offset >= entries.len() {
+                    break;
+                }
             }
         }
         if entries_offset > 0 {
             return Ok(entries_offset);
         }
+
         let mut iocp_entries = Vec::with_capacity(entries.len());
         let mut recv_count = 0;
         let timeout = match timeout {
@@ -222,16 +227,16 @@ impl Poller for Driver {
         unsafe {
             iocp_entries.set_len(recv_count as _);
         }
+        let iocp_len = iocp_entries.len();
+        debug_assert!(iocp_len <= entries.len());
 
-        for entry in iocp_entries {
-            let transferred = entry.dwNumberOfBytesTransferred;
-            let overlapped_ptr = entry.lpOverlapped;
+        for (iocp_entry, entry) in iocp_entries.into_iter().zip(entries) {
+            let transferred = iocp_entry.dwNumberOfBytesTransferred;
+            let overlapped_ptr = iocp_entry.lpOverlapped;
             let overlapped = unsafe { Box::from_raw(overlapped_ptr.cast::<Overlapped>()) };
-            let entry = Entry::new(overlapped.user_data, Ok(transferred as _));
-            entries[entries_offset].write(entry);
-            entries_offset += 1;
+            entry.write(Entry::new(overlapped.user_data, Ok(transferred as _)));
         }
-        Ok(entries_offset)
+        Ok(iocp_len)
     }
 }
 
