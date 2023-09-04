@@ -234,7 +234,14 @@ impl Poller for Driver {
             let transferred = iocp_entry.dwNumberOfBytesTransferred;
             let overlapped_ptr = iocp_entry.lpOverlapped;
             let overlapped = unsafe { Box::from_raw(overlapped_ptr.cast::<Overlapped>()) };
-            entry.write(Entry::new(overlapped.user_data, Ok(transferred as _)));
+            let res = if iocp_entry.Internal == STATUS_SUCCESS as usize {
+                Ok(transferred as _)
+            } else {
+                Err(io::Error::from_raw_os_error(unsafe {
+                    RtlNtStatusToDosError(iocp_entry.Internal as _)
+                } as _))
+            };
+            entry.write(Entry::new(overlapped.user_data, res));
         }
         Ok(iocp_len)
     }
