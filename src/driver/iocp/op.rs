@@ -48,13 +48,22 @@ unsafe fn win32_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     }
 }
 
+// read, write, send and recv functions may return immediately, indicate that the task is
+// completed, but the overlapped result is also posted to the IOCP.
+// To make our driver easy, simply return Pending and query the result later.
+
+unsafe fn win32_pending_result(res: i32) -> Poll<io::Result<usize>> {
+    if res == 0 {
+        winapi_result(0)
+    } else {
+        Poll::Pending
+    }
+}
+
 unsafe fn winsock_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     if res != 0 {
         winapi_result(transferred)
     } else {
-        // send & recv functions may return immediately, indicate that the task is
-        // completed, but the overlapped result is also posted to the IOCP.
-        // To make our driver easy, simply return Pending and query the result later.
         Poll::Pending
     }
 }
@@ -86,16 +95,15 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
             overlapped.Anonymous.Anonymous.Offset = (self.offset & 0xFFFFFFFF) as _;
             overlapped.Anonymous.Anonymous.OffsetHigh = (self.offset >> 32) as _;
         }
-        let mut read = 0;
         let slice = self.buffer.as_uninit_slice();
         let res = ReadFile(
             self.fd as _,
             slice.as_mut_ptr() as _,
             slice.len() as _,
-            &mut read,
+            null_mut(),
             optr,
         );
-        win32_result(res, read)
+        win32_pending_result(res)
     }
 }
 
@@ -105,16 +113,15 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
             overlapped.Anonymous.Anonymous.Offset = (self.offset & 0xFFFFFFFF) as _;
             overlapped.Anonymous.Anonymous.OffsetHigh = (self.offset >> 32) as _;
         }
-        let mut written = 0;
         let slice = self.buffer.as_slice();
         let res = WriteFile(
             self.fd as _,
             slice.as_ptr() as _,
             slice.len() as _,
-            &mut written,
+            null_mut(),
             optr,
         );
-        win32_result(res, written)
+        win32_pending_result(res)
     }
 }
 
