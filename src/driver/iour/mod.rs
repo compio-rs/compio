@@ -7,7 +7,7 @@ use io_uring::{
     types::{Fd, SubmitArgs, Timespec},
     IoUring,
 };
-use std::{io, mem::MaybeUninit, time::Duration};
+use std::{cell::RefCell, io, marker::PhantomData, mem::MaybeUninit, time::Duration};
 
 pub use libc::{sockaddr_storage, socklen_t};
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
@@ -27,6 +27,7 @@ pub struct Driver {
     inner: IoUring,
     squeue: SegQueue<squeue::Entry>,
     cqueue: SegQueue<Entry>,
+    _p: PhantomData<RefCell<()>>,
 }
 
 impl Driver {
@@ -41,6 +42,7 @@ impl Driver {
             inner: IoUring::new(entries)?,
             squeue: SegQueue::default(),
             cqueue: SegQueue::default(),
+            _p: PhantomData,
         })
     }
 
