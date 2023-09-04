@@ -178,6 +178,9 @@ impl Poller for Driver {
         timeout: Option<Duration>,
         entries: &mut [MaybeUninit<Entry>],
     ) -> io::Result<usize> {
+        if entries.is_empty() {
+            return Ok(0);
+        }
         let mut entries_offset = 0;
         while let Some((op, overlapped)) = self.operations.pop() {
             let overlapped = Box::new(overlapped);

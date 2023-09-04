@@ -76,6 +76,9 @@ impl Poller for Driver {
         timeout: Option<Duration>,
         entries: &mut [MaybeUninit<Entry>],
     ) -> io::Result<usize> {
+        if entries.is_empty() {
+            return Ok(0);
+        }
         {
             let mut cqe = unsafe { self.inner.completion_shared() };
             if !cqe.is_empty() {
