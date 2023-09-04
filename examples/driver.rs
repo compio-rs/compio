@@ -1,5 +1,7 @@
-use compio::buf::IntoInner;
-use compio::driver::{AsRawFd, Driver, Poller};
+use compio::{
+    buf::IntoInner,
+    driver::{AsRawFd, Driver, Poller},
+};
 
 fn main() {
     let driver = Driver::new().unwrap();
@@ -9,7 +11,7 @@ fn main() {
     let mut op = compio::op::ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(4096));
     unsafe { driver.push(&mut op, 0) }.unwrap();
 
-    let entry = driver.poll(None).unwrap();
+    let entry = driver.poll_one(None).unwrap();
     assert_eq!(entry.user_data(), 0);
 
     let n = entry.into_result().unwrap();
