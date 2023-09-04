@@ -94,7 +94,7 @@ impl Driver {
     }
 }
 
-fn deattach_iocp(fd: RawFd) -> io::Result<()> {
+fn detach_iocp(fd: RawFd) -> io::Result<()> {
     #[link(name = "ntdll")]
     extern "system" {
         fn NtSetInformationFile(
@@ -141,7 +141,7 @@ fn deattach_iocp(fd: RawFd) -> io::Result<()> {
 
 impl Poller for Driver {
     fn attach(&self, fd: RawFd) -> io::Result<()> {
-        deattach_iocp(fd)?;
+        detach_iocp(fd)?;
         let port = unsafe { CreateIoCompletionPort(fd as _, self.port.as_raw_handle() as _, 0, 0) };
         if port == 0 {
             Err(io::Error::last_os_error())
