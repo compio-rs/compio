@@ -13,8 +13,12 @@ use std::{
     time::Duration,
 };
 use windows_sys::Win32::{
-    Foundation::{RtlNtStatusToDosError, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_SUCCESS},
+    Foundation::{
+        RtlNtStatusToDosError, FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING,
+        STATUS_SUCCESS,
+    },
     System::{
+        SystemServices::ERROR_SEVERITY_ERROR,
         Threading::INFINITE,
         WindowsProgramming::{FILE_INFORMATION_CLASS, IO_STATUS_BLOCK},
         IO::{
@@ -139,6 +143,14 @@ fn detach_iocp(fd: RawFd) -> io::Result<()> {
     }
 }
 
+fn ntstatus_from_win32(x: i32) -> NTSTATUS {
+    if x <= 0 {
+        x
+    } else {
+        (x & 0x0000FFFF) | (FACILITY_NTWIN32 << 16) as NTSTATUS | ERROR_SEVERITY_ERROR as NTSTATUS
+    }
+}
+
 impl Poller for Driver {
     fn attach(&self, fd: RawFd) -> io::Result<()> {
         detach_iocp(fd)?;
@@ -181,7 +193,6 @@ impl Poller for Driver {
         if entries.is_empty() {
             return Ok(0);
         }
-        let mut entries_offset = 0;
         while let Some((op, overlapped)) = self.operations.pop() {
             let overlapped = Box::new(overlapped);
             let overlapped_ptr = Box::into_raw(overlapped);
@@ -191,18 +202,19 @@ impl Poller for Driver {
                     .operate(overlapped_ptr as *mut OVERLAPPED)
             };
             if let Poll::Ready(result) = result {
-                let overlapped = unsafe { Box::from_raw(overlapped_ptr) };
-                let entry = Entry::new(overlapped.user_data, result);
-                // Its OK because if entries is empty, it returns early.
-                entries[entries_offset].write(entry);
-                entries_offset += 1;
-                if entries_offset >= entries.len() {
-                    break;
+                unsafe {
+                    if let Err(e) = &result {
+                        (*overlapped_ptr).base.Internal =
+                            ntstatus_from_win32(e.raw_os_error().unwrap_or_default()) as _;
+                    }
+                    PostQueuedCompletionStatus(
+                        self.port.as_raw_handle() as _,
+                        result.unwrap_or_default() as _,
+                        0,
+                        overlapped_ptr as *mut OVERLAPPED,
+                    );
                 }
             }
-        }
-        if entries_offset > 0 {
-            return Ok(entries_offset);
         }
 
         let mut iocp_entries = Vec::with_capacity(entries.len());
@@ -234,11 +246,14 @@ impl Poller for Driver {
             let transferred = iocp_entry.dwNumberOfBytesTransferred;
             let overlapped_ptr = iocp_entry.lpOverlapped;
             let overlapped = unsafe { Box::from_raw(overlapped_ptr.cast::<Overlapped>()) };
-            let res = if iocp_entry.Internal == STATUS_SUCCESS as usize {
+            let res = if matches!(
+                overlapped.base.Internal as NTSTATUS,
+                STATUS_SUCCESS | STATUS_PENDING
+            ) {
                 Ok(transferred as _)
             } else {
                 Err(io::Error::from_raw_os_error(unsafe {
-                    RtlNtStatusToDosError(iocp_entry.Internal as _)
+                    RtlNtStatusToDosError(overlapped.base.Internal as _)
                 } as _))
             };
             entry.write(Entry::new(overlapped.user_data, res));
