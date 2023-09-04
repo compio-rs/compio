@@ -85,12 +85,7 @@ impl OpRuntime {
     }
 
     pub fn has_result(&mut self, key: usize) -> bool {
-        if let Some(op) = self.ops.get_mut(key) {
-            if op.result.is_some() {
-                return true;
-            }
-        }
-        false
+        self.ops.get_mut(key).unwrap().result.is_some()
     }
 
     pub fn cancel(&mut self, key: usize) {
