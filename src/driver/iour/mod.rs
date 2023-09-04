@@ -48,6 +48,15 @@ impl Driver {
         self.inner.submission_shared().push(&entry).unwrap();
         Ok(())
     }
+
+    unsafe fn poll_entries(&self, entries: &mut [MaybeUninit<Entry>]) -> usize {
+        let cqe = unsafe { self.inner.completion_shared() };
+        let len = cqe.len().min(entries.len());
+        for (iour_entry, entry) in cqe.zip(entries) {
+            entry.write(create_entry(iour_entry));
+        }
+        len
+    }
 }
 
 impl Poller for Driver {
@@ -79,16 +88,9 @@ impl Poller for Driver {
         if entries.is_empty() {
             return Ok(0);
         }
-        {
-            let mut cqe = unsafe { self.inner.completion_shared() };
-            if !cqe.is_empty() {
-                let len = entries.len().min(cqe.len());
-                for entry in entries {
-                    let iour_entry = cqe.next().unwrap();
-                    entry.write(create_entry(iour_entry));
-                }
-                return Ok(len);
-            }
+        let len = unsafe { self.poll_entries(entries) };
+        if len > 0 {
+            return Ok(len);
         }
         if let Some(duration) = timeout {
             let timespec = timespec(duration);
@@ -107,11 +109,7 @@ impl Poller for Driver {
             // Submit and Wait without timeout
             self.inner.submit_and_wait(1)?;
         }
-        let cqe = unsafe { self.inner.completion_shared() };
-        let len = cqe.len();
-        for (iour_entry, entry) in cqe.zip(entries) {
-            entry.write(create_entry(iour_entry));
-        }
+        let len = unsafe { self.poll_entries(entries) };
         Ok(len)
     }
 }
