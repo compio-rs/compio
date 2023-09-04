@@ -73,3 +73,7 @@ harness = false
 [[bench]]
 name = "net"
 harness = false
+
+[[bench]]
+name = "named_pipe"
+harness = false

@@ -3,7 +3,7 @@ fn main() {
     {
         use compio::named_pipe::{ClientOptions, ServerOptions};
 
-        const PIPE_NAME: &str = r"\\.\pipe\tokio-iocp-named-pipe";
+        const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe";
 
         compio::task::block_on(async {
             let server = ServerOptions::new()
