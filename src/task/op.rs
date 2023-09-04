@@ -71,10 +71,10 @@ impl OpRuntime {
 }
 
 #[derive(Debug)]
-pub struct OpFuture<T: OpCode> {
+pub struct OpFuture<T: OpCode + 'static> {
     user_data: usize,
     completed: bool,
-    _p: PhantomData<T>,
+    _p: PhantomData<&'static T>,
 }
 
 impl<T: OpCode> OpFuture<T> {
@@ -93,7 +93,7 @@ impl<T: OpCode> Future for OpFuture<T> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let res = crate::task::RUNTIME.with(|runtime| runtime.poll_task(cx, self.user_data));
         if res.is_ready() {
-            unsafe { self.get_unchecked_mut() }.completed = true;
+            self.get_mut().completed = true;
         }
         res
     }

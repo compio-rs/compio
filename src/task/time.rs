@@ -121,7 +121,7 @@ impl Future for TimerFuture {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let res = crate::task::RUNTIME.with(|runtime| runtime.poll_timer(cx, self.key));
         if res.is_ready() {
-            unsafe { self.get_unchecked_mut() }.completed = true;
+            self.get_mut().completed = true;
         }
         res
     }
