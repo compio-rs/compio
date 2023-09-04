@@ -1,6 +1,6 @@
 use slab::Slab;
 use std::{
-    collections::{BinaryHeap, HashMap},
+    collections::BinaryHeap,
     future::Future,
     pin::Pin,
     task::{Context, Poll, Waker},
@@ -35,9 +35,8 @@ impl Ord for TimerEntry {
 
 pub struct TimerRuntime {
     time: Instant,
-    tasks: Slab<()>,
+    tasks: Slab<Option<Waker>>,
     wheel: BinaryHeap<TimerEntry>,
-    wakers: HashMap<usize, Option<Waker>>,
 }
 
 impl TimerRuntime {
@@ -46,12 +45,11 @@ impl TimerRuntime {
             time: Instant::now(),
             tasks: Slab::default(),
             wheel: BinaryHeap::default(),
-            wakers: HashMap::default(),
         }
     }
 
     pub fn contains(&self, key: usize) -> bool {
-        self.wakers.contains_key(&key)
+        self.tasks.contains(key)
     }
 
     pub fn insert(&mut self, mut delay: Duration) -> Option<usize> {
@@ -59,20 +57,19 @@ impl TimerRuntime {
             return None;
         }
         let elapsed = self.time.elapsed();
-        let key = self.tasks.insert(());
+        let key = self.tasks.insert(None);
         delay += elapsed;
         let entry = TimerEntry { key, delay };
         self.wheel.push(entry);
-        self.wakers.insert(key, None);
         Some(key)
     }
 
     pub fn update_waker(&mut self, key: usize, waker: Waker) {
-        self.wakers.insert(key, Some(waker));
+        *self.tasks.get_mut(key).unwrap() = Some(waker);
     }
 
     pub fn cancel(&mut self, key: usize) {
-        self.wakers.remove(&key);
+        self.tasks.remove(key);
     }
 
     pub fn min_timeout(&self) -> Option<Duration> {
@@ -90,7 +87,7 @@ impl TimerRuntime {
         let elapsed = self.time.elapsed();
         while let Some(entry) = self.wheel.pop() {
             if entry.delay <= elapsed {
-                if let Some(waker) = self.wakers.remove(&entry.key).flatten() {
+                if let Some(waker) = self.tasks.remove(entry.key) {
                     waker.wake();
                 }
             } else {

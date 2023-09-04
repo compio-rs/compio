@@ -1,7 +1,6 @@
 use crate::driver::OpCode;
 use slab::Slab;
 use std::{
-    collections::HashMap,
     future::Future,
     io,
     marker::PhantomData,
@@ -34,39 +33,72 @@ impl Drop for RawOp {
     }
 }
 
+pub struct RegisteredOp {
+    pub op: Option<RawOp>,
+    pub waker: Option<Waker>,
+    pub result: Option<io::Result<usize>>,
+    pub cancelled: bool,
+}
+
+impl RegisteredOp {
+    fn new(op: Option<RawOp>) -> Self {
+        Self {
+            op,
+            waker: None,
+            result: None,
+            cancelled: false,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct OpRuntime {
-    ops: Slab<Option<RawOp>>,
-    wakers: HashMap<usize, Waker>,
+    ops: Slab<RegisteredOp>,
 }
 
 impl OpRuntime {
     pub fn insert<T: OpCode + 'static>(&mut self, op: T) -> (usize, &mut RawOp) {
-        let user_data = self.ops.insert(Some(RawOp::new(op)));
+        let user_data = self.ops.insert(RegisteredOp::new(Some(RawOp::new(op))));
         let op = unsafe { self.ops.get_unchecked_mut(user_data) };
-        (user_data, op.as_mut().unwrap())
+        (user_data, op.op.as_mut().unwrap())
     }
 
     pub fn insert_dummy(&mut self) -> usize {
-        self.ops.insert(None)
+        self.ops.insert(RegisteredOp::new(None))
     }
 
-    pub fn update_waker(&mut self, user_data: usize, waker: Waker) {
-        self.wakers.insert(user_data, waker);
-    }
-
-    pub fn cancel(&mut self, user_data: usize) {
-        self.wakers.remove(&user_data);
-    }
-
-    pub fn remove(&mut self, user_data: usize) -> (Option<RawOp>, Option<Waker>) {
-        if self.ops.contains(user_data) {
-            let op = self.ops.remove(user_data);
-            let waker = self.wakers.remove(&user_data);
-            (op, waker)
-        } else {
-            (None, None)
+    pub fn update_waker(&mut self, key: usize, waker: Waker) {
+        if let Some(op) = self.ops.get_mut(key) {
+            op.waker = Some(waker);
         }
+    }
+
+    pub fn update_result(&mut self, key: usize, result: io::Result<usize>) {
+        let op = self.ops.get_mut(key).unwrap();
+        if let Some(waker) = op.waker.take() {
+            waker.wake();
+        }
+        op.result = Some(result);
+        if op.cancelled {
+            self.remove(key);
+        }
+    }
+
+    pub fn has_result(&mut self, key: usize) -> bool {
+        if let Some(op) = self.ops.get_mut(key) {
+            if op.result.is_some() {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn cancel(&mut self, key: usize) {
+        self.ops.get_mut(key).unwrap().cancelled = true;
+    }
+
+    pub fn remove(&mut self, key: usize) -> RegisteredOp {
+        self.ops.remove(key)
     }
 }
 
