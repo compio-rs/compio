@@ -1,6 +1,7 @@
+use std::time::Duration;
+
 use compio::{signal::ctrl_c, time::interval};
 use futures_util::{select, FutureExt};
-use std::time::Duration;
 
 fn main() {
     compio::task::block_on(async {

@@ -1,5 +1,6 @@
-use crate::fs::File;
 use std::{fs::OpenOptions as StdOpenOptions, io, path::Path};
+
+use crate::fs::File;
 
 /// Options and flags which can be used to configure how a file is opened.
 ///
@@ -11,8 +12,8 @@ use std::{fs::OpenOptions as StdOpenOptions, io, path::Path};
 /// Generally speaking, when using `OpenOptions`, you'll first call
 /// [`OpenOptions::new`], then chain calls to methods to set each option, then
 /// call [`OpenOptions::open`], passing the path of the file you're trying to
-/// open. This will give you a [`std::io::Result`] with a [`File`] inside that you
-/// can further operate on.
+/// open. This will give you a [`std::io::Result`] with a [`File`] inside that
+/// you can further operate on.
 ///
 /// # Examples
 ///
@@ -31,11 +32,11 @@ use std::{fs::OpenOptions as StdOpenOptions, io, path::Path};
 /// use compio::fs::OpenOptions;
 ///
 /// let file = OpenOptions::new()
-///             .read(true)
-///             .write(true)
-///             .create(true)
-///             .open("foo.txt")
-///             .unwrap();
+///     .read(true)
+///     .write(true)
+///     .create(true)
+///     .open("foo.txt")
+///     .unwrap();
 /// ```
 #[derive(Debug, Clone)]
 pub struct OpenOptions(pub(crate) StdOpenOptions);
@@ -79,7 +80,8 @@ impl OpenOptions {
 
     /// Sets the option to create a new file, or open it if it already exists.
     ///
-    /// In order for the file to be created, [`OpenOptions::write`] access must be used.
+    /// In order for the file to be created, [`OpenOptions::write`] access must
+    /// be used.
     pub fn create(mut self, create: bool) -> Self {
         self.0.create(create);
         self
@@ -87,8 +89,9 @@ impl OpenOptions {
 
     /// Sets the option to create a new file, failing if it already exists.
     ///
-    /// No file is allowed to exist at the target location, also no (dangling) symlink. In this
-    /// way, if the call succeeds, the file returned is guaranteed to be new.
+    /// No file is allowed to exist at the target location, also no (dangling)
+    /// symlink. In this way, if the call succeeds, the file returned is
+    /// guaranteed to be new.
     ///
     /// This option is useful because it is atomic. Otherwise between checking
     /// whether a file exists and creating a new one, the file may have been

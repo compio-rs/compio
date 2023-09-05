@@ -1,5 +1,6 @@
-use crate::buf::*;
 use std::ops::{Deref, DerefMut};
+
+use crate::buf::*;
 
 /// An owned view into a contiguous sequence of bytes.
 ///

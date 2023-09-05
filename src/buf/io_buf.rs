@@ -244,8 +244,8 @@ pub unsafe trait IoBufMut: IoBuf {
 
     /// Updates the number of initialized bytes.
     ///
-    /// The specified `len` plus [`IoBuf::buf_len`] becomes the new value returned by
-    /// [`IoBuf::buf_len`].
+    /// The specified `len` plus [`IoBuf::buf_len`] becomes the new value
+    /// returned by [`IoBuf::buf_len`].
     fn set_buf_init(&mut self, len: usize);
 }
 

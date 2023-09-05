@@ -21,13 +21,14 @@ cfg_if::cfg_if! {
 /// # Examples
 ///
 /// ```
+/// use std::net::SocketAddr;
+///
 /// use compio::{
 ///     buf::IntoInner,
 ///     driver::{AsRawFd, Driver, Poller},
 ///     net::UdpSocket,
 ///     op,
 /// };
-/// use std::net::SocketAddr;
 ///
 /// let first_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
 /// let second_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
@@ -90,7 +91,8 @@ pub trait Poller {
 
     /// Poll the driver with an optional timeout.
     ///
-    /// If there are already tasks completed, this method will return immediately.
+    /// If there are already tasks completed, this method will return
+    /// immediately.
     ///
     /// If there are no tasks completed, this call will block and wait.
     /// If no timeout specified, it will block forever.

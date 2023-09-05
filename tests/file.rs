@@ -1,5 +1,6 @@
-use compio::fs::File;
 use std::io::prelude::*;
+
+use compio::fs::File;
 use tempfile::NamedTempFile;
 
 const HELLO: &[u8] = b"hello world...";

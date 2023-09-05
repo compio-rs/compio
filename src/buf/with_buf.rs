@@ -1,8 +1,9 @@
-use crate::buf::IntoInner;
 use std::{
     io::{IoSlice, IoSliceMut},
     ops::{Deref, DerefMut},
 };
+
+use crate::buf::IntoInner;
 
 pub trait WrapBuf: IntoInner {
     fn new(buffer: Self::Inner) -> Self;

@@ -1,13 +1,15 @@
-use crate::net::{Socket, *};
-use socket2::{Domain, Type};
 use std::{net::Shutdown, path::Path};
 
+use socket2::{Domain, Type};
+
+use crate::net::{Socket, *};
 #[cfg(feature = "runtime")]
 use crate::{buf::*, *};
 
 /// A Unix socket server, listening for connections.
 ///
-/// You can accept a new connection by using the [`UnixListener::accept`] method.
+/// You can accept a new connection by using the [`UnixListener::accept`]
+/// method.
 ///
 /// # Examples
 ///
@@ -37,14 +39,16 @@ pub struct UnixListener {
 }
 
 impl UnixListener {
-    /// Creates a new [`UnixListener`], which will be bound to the specified file path.
-    /// The file path cannot yet exist, and will be cleaned up upon dropping [`UnixListener`]
+    /// Creates a new [`UnixListener`], which will be bound to the specified
+    /// file path. The file path cannot yet exist, and will be cleaned up
+    /// upon dropping [`UnixListener`]
     pub fn bind(path: impl AsRef<Path>) -> io::Result<Self> {
         Self::bind_addr(SockAddr::unix(path)?)
     }
 
-    /// Creates a new [`UnixListener`] with [`SockAddr`], which will be bound to the specified file path.
-    /// The file path cannot yet exist, and will be cleaned up upon dropping [`UnixListener`]
+    /// Creates a new [`UnixListener`] with [`SockAddr`], which will be bound to
+    /// the specified file path. The file path cannot yet exist, and will be
+    /// cleaned up upon dropping [`UnixListener`]
     pub fn bind_addr(addr: impl ToSockAddrs) -> io::Result<Self> {
         each_addr(addr, |addr| {
             let socket = Socket::bind(&addr, Type::STREAM, None)?;
@@ -98,15 +102,15 @@ pub struct UnixStream {
 
 impl UnixStream {
     /// Opens a Unix connection to the specified file path. There must be a
-    /// [`UnixListener`] or equivalent listening on the corresponding Unix domain socket
-    /// to successfully connect and return a `UnixStream`.
+    /// [`UnixListener`] or equivalent listening on the corresponding Unix
+    /// domain socket to successfully connect and return a `UnixStream`.
     pub fn connect(path: impl AsRef<Path>) -> io::Result<Self> {
         Self::connect_addr(SockAddr::unix(path)?)
     }
 
     /// Opens a Unix connection to the specified address. There must be a
-    /// [`UnixListener`] or equivalent listening on the corresponding Unix domain socket
-    /// to successfully connect and return a `UnixStream`.
+    /// [`UnixListener`] or equivalent listening on the corresponding Unix
+    /// domain socket to successfully connect and return a `UnixStream`.
     pub fn connect_addr(addr: impl ToSockAddrs) -> io::Result<Self> {
         each_addr(addr, |addr| {
             let socket = Socket::new(Domain::UNIX, Type::STREAM, None)?;
@@ -135,15 +139,15 @@ impl UnixStream {
         self.inner.shutdown(how)
     }
 
-    /// Receives a packet of data from the socket into the buffer, returning the original buffer and
-    /// quantity of data received.
+    /// Receives a packet of data from the socket into the buffer, returning the
+    /// original buffer and quantity of data received.
     #[cfg(feature = "runtime")]
     pub async fn recv<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.recv(buffer).await
     }
 
-    /// Sends some data to the socket from the buffer, returning the original buffer and
-    /// quantity of data sent.
+    /// Sends some data to the socket from the buffer, returning the original
+    /// buffer and quantity of data sent.
     #[cfg(feature = "runtime")]
     pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.send(buffer).await

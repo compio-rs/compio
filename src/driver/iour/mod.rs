@@ -1,15 +1,16 @@
-use crate::driver::{Entry, Poller};
+#[doc(no_inline)]
+pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
+use std::{cell::RefCell, io, marker::PhantomData, mem::MaybeUninit, time::Duration};
+
 use crossbeam_queue::SegQueue;
 use io_uring::{
     cqueue, squeue,
     types::{SubmitArgs, Timespec},
     IoUring,
 };
-use std::{cell::RefCell, io, marker::PhantomData, mem::MaybeUninit, time::Duration};
-
 pub(crate) use libc::{sockaddr_storage, socklen_t};
-#[doc(no_inline)]
-pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
+
+use crate::driver::{Entry, Poller};
 
 pub(crate) mod fs;
 pub(crate) mod net;

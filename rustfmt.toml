@@ -1,0 +1,19 @@
+unstable_features = true
+
+version = "Two"
+
+group_imports = "StdExternalCrate"
+imports_granularity = "Crate"
+reorder_imports = true
+
+wrap_comments = true
+normalize_comments = true
+
+reorder_impl_items = true
+condense_wildcard_suffixes = true
+enum_discrim_align_threshold = 20
+use_field_init_shorthand = true
+
+format_strings = true
+format_code_in_doc_comments = true
+format_macro_matchers = true

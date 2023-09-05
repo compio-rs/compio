@@ -1,21 +1,23 @@
-use crate::net::{Socket, *};
-use socket2::{Protocol, Type};
 use std::net::Shutdown;
 
+use socket2::{Protocol, Type};
+
+use crate::net::{Socket, *};
 #[cfg(feature = "runtime")]
 use crate::{buf::*, *};
 
 /// A TCP socket server, listening for connections.
 ///
-/// You can accept a new connection by using the [`accept`](`TcpListener::accept`)
-/// method.
+/// You can accept a new connection by using the
+/// [`accept`](`TcpListener::accept`) method.
 ///
 /// # Examples
 ///
 /// ```
+/// use std::net::SocketAddr;
+///
 /// use compio::net::{TcpListener, TcpStream};
 /// use socket2::SockAddr;
-/// use std::net::SocketAddr;
 ///
 /// let addr: SockAddr = "127.0.0.1:2345".parse::<SocketAddr>().unwrap().into();
 ///
@@ -40,7 +42,8 @@ pub struct TcpListener {
 }
 
 impl TcpListener {
-    /// Creates a new `TcpListener`, which will be bound to the specified address.
+    /// Creates a new `TcpListener`, which will be bound to the specified
+    /// address.
     ///
     /// The returned listener is ready for accepting connections.
     ///
@@ -75,13 +78,20 @@ impl TcpListener {
     ///
     /// ```
     /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+    ///
     /// use compio::net::TcpListener;
     /// use socket2::SockAddr;
     ///
     /// let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
     ///
     /// let addr = listener.local_addr().expect("Couldn't get local address");
-    /// assert_eq!(addr, SockAddr::from(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080))));
+    /// assert_eq!(
+    ///     addr,
+    ///     SockAddr::from(SocketAddr::V4(SocketAddrV4::new(
+    ///         Ipv4Addr::new(127, 0, 0, 1),
+    ///         8080
+    ///     )))
+    /// );
     /// ```
     pub fn local_addr(&self) -> io::Result<SockAddr> {
         self.inner.local_addr()
@@ -98,8 +108,9 @@ impl_raw_fd!(TcpListener, inner);
 /// # Examples
 ///
 /// ```no_run
-/// use compio::net::TcpStream;
 /// use std::net::SocketAddr;
+///
+/// use compio::net::TcpStream;
 ///
 /// compio::task::block_on(async {
 ///     // Connect to a peer
@@ -148,15 +159,15 @@ impl TcpStream {
         self.inner.shutdown(how)
     }
 
-    /// Receives a packet of data from the socket into the buffer, returning the original buffer and
-    /// quantity of data received.
+    /// Receives a packet of data from the socket into the buffer, returning the
+    /// original buffer and quantity of data received.
     #[cfg(feature = "runtime")]
     pub async fn recv<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.recv(buffer).await
     }
 
-    /// Sends some data to the socket from the buffer, returning the original buffer and
-    /// quantity of data sent.
+    /// Sends some data to the socket from the buffer, returning the original
+    /// buffer and quantity of data sent.
     #[cfg(feature = "runtime")]
     pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.send(buffer).await

@@ -1,8 +1,9 @@
-use crate::buf::*;
 use std::{
     io::{IoSlice, IoSliceMut},
     ops::{Deref, DerefMut},
 };
+
+use crate::buf::*;
 
 #[derive(Debug)]
 pub struct BufWrapper<T> {

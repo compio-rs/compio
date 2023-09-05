@@ -1,6 +1,5 @@
 //! Utilities for tracking time.
 
-use futures_util::{select, FutureExt};
 use std::{
     error::Error,
     fmt::Display,
@@ -8,10 +7,12 @@ use std::{
     time::{Duration, Instant},
 };
 
+use futures_util::{select, FutureExt};
+
 /// Waits until `duration` has elapsed.
 ///
-/// Equivalent to [`sleep_until(Instant::now() + duration)`](sleep_until). An asynchronous
-/// analog to [`std::thread::sleep`].
+/// Equivalent to [`sleep_until(Instant::now() + duration)`](sleep_until). An
+/// asynchronous analog to [`std::thread::sleep`].
 ///
 /// To run something regularly on a schedule, see [`interval`].
 ///
@@ -20,8 +21,9 @@ use std::{
 /// Wait 100ms and print "100 ms have elapsed".
 ///
 /// ```
-/// use compio::time::sleep;
 /// use std::time::Duration;
+///
+/// use compio::time::sleep;
 ///
 /// compio::task::block_on(async {
 ///     sleep(Duration::from_millis(100)).await;
@@ -43,8 +45,9 @@ pub async fn sleep(duration: Duration) {
 /// Wait 100ms and print "100 ms have elapsed".
 ///
 /// ```
-/// use compio::time::sleep_until;
 /// use std::time::{Duration, Instant};
+///
+/// use compio::time::sleep_until;
 ///
 /// compio::task::block_on(async {
 ///     sleep_until(Instant::now() + Duration::from_millis(100)).await;
@@ -144,8 +147,9 @@ impl Interval {
 /// # Examples
 ///
 /// ```
-/// use compio::time::interval;
 /// use std::time::Duration;
+///
+/// use compio::time::interval;
 ///
 /// compio::task::block_on(async {
 ///     let mut interval = interval(Duration::from_millis(10));
@@ -170,8 +174,9 @@ impl Interval {
 /// seconds.
 ///
 /// ```no_run
-/// use compio::time::{interval, sleep};
 /// use std::time::Duration;
+///
+/// use compio::time::{interval, sleep};
 ///
 /// async fn task_that_takes_a_second() {
 ///     println!("hello");
@@ -206,8 +211,9 @@ pub fn interval(period: Duration) -> Interval {
 /// # Examples
 ///
 /// ```
-/// use compio::time::interval_at;
 /// use std::time::{Duration, Instant};
+///
+/// use compio::time::interval_at;
 ///
 /// compio::task::block_on(async {
 ///     let start = Instant::now() + Duration::from_millis(50);

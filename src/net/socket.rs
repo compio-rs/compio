@@ -1,5 +1,6 @@
-use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 use std::{io, net::Shutdown};
+
+use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
 #[cfg(feature = "runtime")]
 use crate::{
@@ -55,11 +56,12 @@ impl Socket {
     #[cfg(target_os = "windows")]
     #[allow(dead_code)]
     pub fn protocol(&self) -> io::Result<Option<Protocol>> {
-        #[allow(unused_imports)]
-        use crate::driver::AsRawFd;
         use windows_sys::Win32::Networking::WinSock::{
             getsockopt, SOL_SOCKET, SO_PROTOCOL_INFO, WSAPROTOCOL_INFOW,
         };
+
+        #[allow(unused_imports)]
+        use crate::driver::AsRawFd;
 
         let mut info: WSAPROTOCOL_INFOW = unsafe { std::mem::zeroed() };
         let mut info_len = std::mem::size_of_val(&info) as _;

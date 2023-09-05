@@ -1,4 +1,3 @@
-use slab::Slab;
 use std::{
     collections::BinaryHeap,
     future::Future,
@@ -6,6 +5,8 @@ use std::{
     task::{Context, Poll, Waker},
     time::{Duration, Instant},
 };
+
+use slab::Slab;
 
 #[derive(Debug)]
 struct TimerEntry {

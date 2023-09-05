@@ -1,12 +1,14 @@
+use std::io::{IoSlice, IoSliceMut};
+
+use io_uring::{opcode, squeue::Entry, types::Fd};
+use libc::{sockaddr_storage, socklen_t};
+use socket2::SockAddr;
+
 use crate::{
     buf::{AsIoSlices, AsIoSlicesMut, IntoInner, IoBuf, IoBufMut, OneOrVec},
     driver::{OpCode, RawFd},
     op::*,
 };
-use io_uring::{opcode, squeue::Entry, types::Fd};
-use libc::{sockaddr_storage, socklen_t};
-use socket2::SockAddr;
-use std::io::{IoSlice, IoSliceMut};
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
     fn create_entry(&mut self) -> Entry {

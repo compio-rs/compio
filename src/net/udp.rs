@@ -1,25 +1,30 @@
-use crate::net::{Socket, *};
 use socket2::{Protocol, Type};
 
+use crate::net::{Socket, *};
 #[cfg(feature = "runtime")]
 use crate::{buf::*, *};
 
 /// A UDP socket.
 ///
-/// UDP is "connectionless", unlike TCP. Meaning, regardless of what address you've bound to, a `UdpSocket`
-/// is free to communicate with many different remotes. There are basically two main ways to use `UdpSocket`:
+/// UDP is "connectionless", unlike TCP. Meaning, regardless of what address
+/// you've bound to, a `UdpSocket` is free to communicate with many different
+/// remotes. There are basically two main ways to use `UdpSocket`:
 ///
-/// * one to many: [`bind`](`UdpSocket::bind`) and use [`send_to`](`UdpSocket::send_to`)
-///   and [`recv_from`](`UdpSocket::recv_from`) to communicate with many different addresses
-/// * one to one: [`connect`](`UdpSocket::connect`) and associate with a single address, using [`send`](`UdpSocket::send`)
-///   and [`recv`](`UdpSocket::recv`) to communicate only with that remote address
+/// * one to many: [`bind`](`UdpSocket::bind`) and use
+///   [`send_to`](`UdpSocket::send_to`) and
+///   [`recv_from`](`UdpSocket::recv_from`) to communicate with many different
+///   addresses
+/// * one to one: [`connect`](`UdpSocket::connect`) and associate with a single
+///   address, using [`send`](`UdpSocket::send`) and [`recv`](`UdpSocket::recv`)
+///   to communicate only with that remote address
 ///
 /// # Examples
 /// Bind and connect a pair of sockets and send a packet:
 ///
 /// ```
-/// use compio::net::UdpSocket;
 /// use std::net::SocketAddr;
+///
+/// use compio::net::UdpSocket;
 ///
 /// compio::task::block_on(async {
 ///     let first_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
@@ -52,8 +57,9 @@ use crate::{buf::*, *};
 /// Send and receive packets without connecting:
 ///
 /// ```
-/// use compio::net::UdpSocket;
 /// use std::net::SocketAddr;
+///
+/// use compio::net::UdpSocket;
 /// use socket2::SockAddr;
 ///
 /// compio::task::block_on(async {
@@ -69,7 +75,9 @@ use crate::{buf::*, *};
 ///     let buf = Vec::with_capacity(32);
 ///
 ///     // write data
-///     let (result, _) = socket.send_to("hello world", SockAddr::from(second_addr)).await;
+///     let (result, _) = socket
+///         .send_to("hello world", SockAddr::from(second_addr))
+///         .await;
 ///     result.unwrap();
 ///
 ///     // read data
@@ -106,19 +114,28 @@ impl UdpSocket {
         super::each_addr(addr, |addr| self.inner.connect(&addr))
     }
 
-    /// Returns the socket address of the remote peer this socket was connected to.
+    /// Returns the socket address of the remote peer this socket was connected
+    /// to.
     ///
     /// # Examples
     ///
     /// ```no_run
-    /// use compio::net::UdpSocket;
     /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+    ///
+    /// use compio::net::UdpSocket;
     /// use socket2::SockAddr;
     ///
     /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
-    /// socket.connect("192.168.0.1:41203").expect("couldn't connect to address");
-    /// assert_eq!(socket.peer_addr().unwrap(),
-    ///            SockAddr::from(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(192, 168, 0, 1), 41203))));
+    /// socket
+    ///     .connect("192.168.0.1:41203")
+    ///     .expect("couldn't connect to address");
+    /// assert_eq!(
+    ///     socket.peer_addr().unwrap(),
+    ///     SockAddr::from(SocketAddr::V4(SocketAddrV4::new(
+    ///         Ipv4Addr::new(192, 168, 0, 1),
+    ///         41203
+    ///     )))
+    /// );
     /// ```
     pub fn peer_addr(&self) -> io::Result<SockAddr> {
         self.inner.peer_addr()
@@ -129,8 +146,9 @@ impl UdpSocket {
     /// # Example
     ///
     /// ```
-    /// use compio::net::UdpSocket;
     /// use std::net::SocketAddr;
+    ///
+    /// use compio::net::UdpSocket;
     /// use socket2::SockAddr;
     ///
     /// let addr: SockAddr = "127.0.0.1:8080".parse::<SocketAddr>().unwrap().into();
@@ -143,29 +161,29 @@ impl UdpSocket {
         self.inner.local_addr()
     }
 
-    /// Receives a packet of data from the socket into the buffer, returning the original buffer and
-    /// quantity of data received.
+    /// Receives a packet of data from the socket into the buffer, returning the
+    /// original buffer and quantity of data received.
     #[cfg(feature = "runtime")]
     pub async fn recv<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.recv(buffer).await
     }
 
-    /// Receives a packet of data from the socket into the buffer, returning the original buffer and
-    /// quantity of data received.
+    /// Receives a packet of data from the socket into the buffer, returning the
+    /// original buffer and quantity of data received.
     #[cfg(feature = "runtime")]
     pub async fn recv_vectored<T: IoBufMut>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
         self.inner.recv_vectored(buffer).await
     }
 
-    /// Sends some data to the socket from the buffer, returning the original buffer and
-    /// quantity of data sent.
+    /// Sends some data to the socket from the buffer, returning the original
+    /// buffer and quantity of data sent.
     #[cfg(feature = "runtime")]
     pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.send(buffer).await
     }
 
-    /// Sends some data to the socket from the buffer, returning the original buffer and
-    /// quantity of data sent.
+    /// Sends some data to the socket from the buffer, returning the original
+    /// buffer and quantity of data sent.
     #[cfg(feature = "runtime")]
     pub async fn send_vectored<T: IoBuf>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
         self.inner.send_vectored(buffer).await

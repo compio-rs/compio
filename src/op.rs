@@ -3,6 +3,10 @@
 //! The operation itself doesn't perform anything.
 //! You need to pass them to [`crate::driver::Driver`], and poll the driver.
 
+use std::io::{IoSlice, IoSliceMut};
+
+use socket2::SockAddr;
+
 use crate::{
     buf::{
         AsIoSlices, AsIoSlicesMut, BufWrapper, IntoInner, IoBuf, IoBufMut, OneOrVec,
@@ -11,8 +15,6 @@ use crate::{
     driver::{sockaddr_storage, socklen_t, RawFd},
     BufResult,
 };
-use socket2::SockAddr;
-use std::io::{IoSlice, IoSliceMut};
 
 pub(crate) trait BufResultExt {
     fn map_advanced(self) -> Self;
@@ -56,10 +58,9 @@ impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t)> {
     }
 }
 
-pub use crate::driver::op::{Accept, RecvFromImpl, SendToImpl};
-
 #[cfg(target_os = "windows")]
 pub use crate::driver::op::ConnectNamedPipe;
+pub use crate::driver::op::{Accept, RecvFromImpl, SendToImpl};
 
 /// Read a file at specified position into specified buffer.
 #[derive(Debug)]

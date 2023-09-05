@@ -2,7 +2,6 @@
 //!
 //! The infrastructure of the code comes from tokio.
 
-use crate::driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{
     ffi::{c_void, OsStr},
     io,
@@ -11,6 +10,7 @@ use std::{
     },
     ptr::null_mut,
 };
+
 use widestring::U16CString;
 use windows_sys::Win32::{
     Foundation::{GENERIC_READ, GENERIC_WRITE},
@@ -30,6 +30,7 @@ use windows_sys::Win32::{
     },
 };
 
+use crate::driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 #[cfg(feature = "runtime")]
 use crate::{
     buf::*,
@@ -55,6 +56,7 @@ use crate::{
 ///
 /// ```no_run
 /// use std::io;
+///
 /// use compio::named_pipe::ServerOptions;
 ///
 /// const PIPE_NAME: &str = r"\\.\pipe\named-pipe-idiomatic-server";
@@ -84,7 +86,7 @@ use crate::{
 ///         server = ServerOptions::new().create(PIPE_NAME)?;
 ///
 ///         let client = compio::task::spawn(async move {
-///             /* use the connected client */
+///             // use the connected client
 /// #           Ok::<_, std::io::Error>(())
 ///         });
 /// #       if true { break } // needed for type inference to work
@@ -93,7 +95,7 @@ use crate::{
 ///     Ok::<_, io::Error>(())
 /// });
 ///
-/// /* do something else not server related here */
+/// // do something else not server related here
 /// # Ok(()) }
 /// ```
 ///
@@ -145,8 +147,8 @@ impl NamedPipeServer {
     /// # Cancel safety
     ///
     /// This method is cancellation safe in the sense that if it is used as the
-    /// event in a [`select!`](futures_util::select) statement and some other branch
-    /// completes first, then no connection events have been lost.
+    /// event in a [`select!`](futures_util::select) statement and some other
+    /// branch completes first, then no connection events have been lost.
     ///
     /// [`ConnectNamedPipe`]: https://docs.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-connectnamedpipe
     ///
@@ -183,13 +185,9 @@ impl NamedPipeServer {
     /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-disconnect";
     ///
     /// # compio::task::block_on(async move {
-    /// let server = ServerOptions::new()
-    ///     .create(PIPE_NAME)
-    ///     .unwrap();
+    /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
     ///
-    /// let mut client = ClientOptions::new()
-    ///     .open(PIPE_NAME)
-    ///     .unwrap();
+    /// let mut client = ClientOptions::new().open(PIPE_NAME).unwrap();
     ///
     /// // Wait for a client to become connected.
     /// server.connect().await.unwrap();
@@ -272,6 +270,7 @@ impl IntoRawFd for NamedPipeServer {
 ///
 /// ```no_run
 /// use std::time::Duration;
+///
 /// use compio::{named_pipe::ClientOptions, time};
 /// use windows_sys::Win32::Foundation::ERROR_PIPE_BUSY;
 ///
@@ -288,7 +287,7 @@ impl IntoRawFd for NamedPipeServer {
 ///     time::sleep(Duration::from_millis(50)).await;
 /// };
 ///
-/// /* use the connected client */
+/// // use the connected client
 /// # Ok(()) });
 /// ```
 ///
@@ -315,8 +314,7 @@ impl NamedPipeClient {
     /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-client-info";
     ///
     /// # compio::task::block_on(async move {
-    /// let client = ClientOptions::new()
-    ///     .open(PIPE_NAME)?;
+    /// let client = ClientOptions::new().open(PIPE_NAME)?;
     ///
     /// let client_info = client.info()?;
     ///
@@ -433,7 +431,8 @@ impl ServerOptions {
     /// The default pipe mode is [`PipeMode::Byte`]. See [`PipeMode`] for
     /// documentation of what each mode means.
     ///
-    /// This corresponds to specifying `PIPE_TYPE_` and `PIPE_READMODE_` in  [`dwPipeMode`].
+    /// This corresponds to specifying `PIPE_TYPE_` and `PIPE_READMODE_` in
+    /// [`dwPipeMode`].
     ///
     /// [`dwPipeMode`]: https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createnamedpipea
     pub fn pipe_mode(&mut self, pipe_mode: PipeMode) -> &mut Self {
@@ -455,6 +454,7 @@ impl ServerOptions {
     ///
     /// ```
     /// use std::io;
+    ///
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-access-inbound-err1";
@@ -465,9 +465,7 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let e = ClientOptions::new()
-    ///     .open(PIPE_NAME)
-    ///     .unwrap_err();
+    /// let e = ClientOptions::new().open(PIPE_NAME).unwrap_err();
     ///
     /// assert_eq!(e.kind(), io::ErrorKind::PermissionDenied);
     /// # })
@@ -478,6 +476,7 @@ impl ServerOptions {
     ///
     /// ```
     /// use std::io;
+    ///
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-access-inbound-err2";
@@ -488,10 +487,7 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let mut client = ClientOptions::new()
-    ///     .write(false)
-    ///     .open(PIPE_NAME)
-    ///     .unwrap();
+    /// let mut client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
@@ -507,6 +503,7 @@ impl ServerOptions {
     ///
     /// ```
     /// use std::io;
+    ///
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-access-inbound";
@@ -517,10 +514,7 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let mut client = ClientOptions::new()
-    ///     .write(false)
-    ///     .open(PIPE_NAME)
-    ///     .unwrap();
+    /// let mut client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
@@ -556,6 +550,7 @@ impl ServerOptions {
     ///
     /// ```
     /// use std::io;
+    ///
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-access-outbound-err1";
@@ -566,9 +561,7 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let e = ClientOptions::new()
-    ///     .open(PIPE_NAME)
-    ///     .unwrap_err();
+    /// let e = ClientOptions::new().open(PIPE_NAME).unwrap_err();
     ///
     /// assert_eq!(e.kind(), io::ErrorKind::PermissionDenied);
     /// # })
@@ -579,6 +572,7 @@ impl ServerOptions {
     ///
     /// ```
     /// use std::io;
+    ///
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-access-outbound-err2";
@@ -589,10 +583,7 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let mut client = ClientOptions::new()
-    ///     .read(false)
-    ///     .open(PIPE_NAME)
-    ///     .unwrap();
+    /// let mut client = ClientOptions::new().read(false).open(PIPE_NAME).unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
@@ -618,10 +609,7 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let mut client = ClientOptions::new()
-    ///     .read(false)
-    ///     .open(PIPE_NAME)
-    ///     .unwrap();
+    /// let mut client = ClientOptions::new().read(false).open(PIPE_NAME).unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
@@ -665,6 +653,7 @@ impl ServerOptions {
     ///
     /// ```
     /// use std::io;
+    ///
     /// use compio::named_pipe::ServerOptions;
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-first-instance-error";
@@ -689,6 +678,7 @@ impl ServerOptions {
     ///
     /// ```
     /// use std::io;
+    ///
     /// use compio::named_pipe::ServerOptions;
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-first-instance";
@@ -714,7 +704,8 @@ impl ServerOptions {
         self
     }
 
-    /// Requests permission to modify the pipe's discretionary access control list.
+    /// Requests permission to modify the pipe's discretionary access control
+    /// list.
     ///
     /// This corresponds to setting [`WRITE_DAC`] in dwOpenMode.
     ///
@@ -754,7 +745,6 @@ impl ServerOptions {
     ///
     /// # })
     /// ```
-    ///
     /// ```
     /// use std::{io, ptr};
     //
@@ -789,7 +779,7 @@ impl ServerOptions {
     ///
     /// # })
     /// ```
-    ///
+    /// 
     /// [`WRITE_DAC`]: https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createnamedpipea
     pub fn write_dac(&mut self, requested: bool) -> &mut Self {
         self.write_dac = requested;
@@ -844,7 +834,8 @@ impl ServerOptions {
     ///
     /// ```
     /// use std::io;
-    /// use compio::named_pipe::{ServerOptions, ClientOptions};
+    ///
+    /// use compio::named_pipe::{ClientOptions, ServerOptions};
     /// use windows_sys::Win32::Foundation::ERROR_PIPE_BUSY;
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-max-instances";
@@ -1030,7 +1021,7 @@ impl ClientOptions {
     /// Creates a new named pipe builder with the default settings.
     ///
     /// ```
-    /// use compio::named_pipe::{ServerOptions, ClientOptions};
+    /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-client-new";
     ///
@@ -1051,7 +1042,8 @@ impl ClientOptions {
 
     /// If the client supports reading data. This is enabled by default.
     ///
-    /// This corresponds to setting [`GENERIC_READ`] in the call to [`CreateFile`].
+    /// This corresponds to setting [`GENERIC_READ`] in the call to
+    /// [`CreateFile`].
     ///
     /// [`GENERIC_READ`]: https://docs.microsoft.com/en-us/windows/win32/secauthz/generic-access-rights
     /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew
@@ -1062,7 +1054,8 @@ impl ClientOptions {
 
     /// If the created pipe supports writing data. This is enabled by default.
     ///
-    /// This corresponds to setting [`GENERIC_WRITE`] in the call to [`CreateFile`].
+    /// This corresponds to setting [`GENERIC_WRITE`] in the call to
+    /// [`CreateFile`].
     ///
     /// [`GENERIC_WRITE`]: https://docs.microsoft.com/en-us/windows/win32/secauthz/generic-access-rights
     /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew
@@ -1122,8 +1115,8 @@ impl ClientOptions {
     /// * [`std::io::ErrorKind::NotFound`] - This indicates that the named pipe
     ///   does not exist. Presumably the server is not up.
     /// * [`ERROR_PIPE_BUSY`] - This error is raised when the named pipe exists,
-    ///   but the server is not currently waiting for a connection. Please see the
-    ///   examples for how to check for this error.
+    ///   but the server is not currently waiting for a connection. Please see
+    ///   the examples for how to check for this error.
     ///
     /// [`ERROR_PIPE_BUSY`]: https://docs.rs/windows-sys/latest/windows_sys/Win32/Foundation/constant.ERROR_PIPE_BUSY.html
     ///
@@ -1132,6 +1125,7 @@ impl ClientOptions {
     ///
     /// ```no_run
     /// use std::time::Duration;
+    ///
     /// use compio::{named_pipe::ClientOptions, time};
     /// use windows_sys::Win32::Foundation::ERROR_PIPE_BUSY;
     ///

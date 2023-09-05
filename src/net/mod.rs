@@ -12,14 +12,14 @@ mod udp;
 pub use udp::*;
 
 mod unix;
-pub use unix::*;
-
-use socket2::SockAddr;
 use std::{
     future::Future,
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs},
 };
+
+use socket2::SockAddr;
+pub use unix::*;
 
 /// A trait for objects which can be converted or resolved to one or more
 /// [`SockAddr`] values.
@@ -60,6 +60,7 @@ itsafisa!((String, u16));
 
 impl ToSockAddrs for (&str, u16) {
     type Iter = std::iter::Map<std::vec::IntoIter<SocketAddr>, fn(SocketAddr) -> SockAddr>;
+
     fn to_sock_addrs(&self) -> io::Result<Self::Iter> {
         ToSocketAddrs::to_socket_addrs(self).map(|iter| iter.map(SockAddr::from as _))
     }
