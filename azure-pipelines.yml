@@ -19,3 +19,29 @@ jobs:
       rustup toolchain install nightly
       cargo +nightly test --all-features
     displayName: Test
+
+- job: Wine Test
+  pool:
+    vmImage: ubuntu-latest
+
+  steps:
+  - script: |
+      echo "nightly" > rust-toolchain
+      docker run --rm -it -v $(pwd):/io -w /io messense/cargo-xwin cargo xwin test --all-features
+    displayName: Test
+
+- job: Doc
+  strategy:
+    matrix:
+      windows:
+        image: windows-latest
+      linux:
+        image: ubuntu-latest
+  pool:
+    vmImage: $(image)
+
+  steps:
+  - script: |
+      rustup toolchain install nightly
+      cargo +nightly doc --all-features --no-deps
+    displayName: Build docs
