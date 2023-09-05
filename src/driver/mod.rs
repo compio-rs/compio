@@ -89,7 +89,12 @@ pub trait Poller {
     fn post(&self, user_data: usize, result: usize) -> io::Result<()>;
 
     /// Poll the driver with an optional timeout.
-    /// If no timeout specified, the call will block.
+    ///
+    /// If there are already tasks completed, this method will return immediately.
+    ///
+    /// If there are no tasks completed, this call will block and wait.
+    /// If no timeout specified, it will block forever.
+    /// To interrupt the blocking, see [`Poller::post`].
     fn poll(
         &self,
         timeout: Option<Duration>,
@@ -97,7 +102,6 @@ pub trait Poller {
     ) -> io::Result<usize>;
 
     /// Poll the driver and get only one entry back.
-    /// If no timeout specified, the call will block.
     ///
     /// See [`Poller::poll`].
     fn poll_one(&self, timeout: Option<Duration>) -> io::Result<Entry> {
