@@ -17,6 +17,7 @@
 pub mod windows;
 
 #[cfg(target_os = "windows")]
+#[doc(no_inline)]
 pub use windows::ctrl_c;
 
 #[cfg(target_os = "linux")]

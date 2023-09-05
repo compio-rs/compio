@@ -1,6 +1,6 @@
 //! [Windows named pipes](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipes).
 //!
-//! The infrastructure of the code comes from [`tokio::net::windows`].
+//! The infrastructure of the code comes from tokio.
 
 use crate::driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{

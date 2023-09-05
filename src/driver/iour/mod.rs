@@ -9,7 +9,8 @@ use io_uring::{
 };
 use std::{cell::RefCell, io, marker::PhantomData, mem::MaybeUninit, time::Duration};
 
-pub use libc::{sockaddr_storage, socklen_t};
+pub(crate) use libc::{sockaddr_storage, socklen_t};
+#[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 
 pub(crate) mod fs;

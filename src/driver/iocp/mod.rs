@@ -32,7 +32,7 @@ pub(crate) mod fs;
 pub(crate) mod net;
 pub(crate) mod op;
 
-pub use windows_sys::Win32::Networking::WinSock::{
+pub(crate) use windows_sys::Win32::Networking::WinSock::{
     socklen_t, SOCKADDR_STORAGE as sockaddr_storage,
 };
 
