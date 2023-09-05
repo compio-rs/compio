@@ -27,7 +27,7 @@ jobs:
   steps:
   - script: |
       echo "nightly" > rust-toolchain
-      docker run --rm -it -v $(pwd):/io -w /io messense/cargo-xwin cargo xwin test --all-features
+      docker run --rm -t -v $(pwd):/io -w /io messense/cargo-xwin cargo xwin test --all-features
     displayName: Test
 
 - job: Doc
