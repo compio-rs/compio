@@ -36,13 +36,23 @@ jobs:
     displayName: Test
 
 - job: Test_Wine
+  strategy:
+    matrix:
+      x86:
+        target: i686-pc-windows-msvc
+      x64:
+        target: x86_64-pc-windows-msvc
   pool:
     vmImage: ubuntu-latest
 
   steps:
   - script: |
-      echo "nightly" > rust-toolchain
-      docker run --rm -t -v $(pwd):/io -w /io messense/cargo-xwin cargo xwin test --all-features --target x86_64-pc-windows-msvc -Z doctest-xcompile
+      cat <<EOT >> test.sh
+      rustup toolchain install nightly
+      rustup target install $(target)
+      cargo +nightly xwin test --all-features --target $(target) -Z doctest-xcompile
+      EOT
+      docker run --rm -t -v $(pwd):/io -w /io messense/cargo-xwin bash test.sh
     displayName: Test
 
 - job: Doc
