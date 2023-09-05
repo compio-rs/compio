@@ -1,5 +1,6 @@
-use crate::driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{io, path::Path};
+
+use crate::driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 
 pub struct FileInner {
     file: std::fs::File,

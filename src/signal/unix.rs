@@ -1,11 +1,5 @@
 //! Unix-specific types for signal handling.
 
-use crate::{
-    driver::{Driver, Poller},
-    task::RUNTIME,
-};
-use once_cell::unsync::Lazy as LazyCell;
-use slab::Slab;
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -13,6 +7,14 @@ use std::{
     io,
     pin::Pin,
     task::{Context, Poll},
+};
+
+use once_cell::unsync::Lazy as LazyCell;
+use slab::Slab;
+
+use crate::{
+    driver::{Driver, Poller},
+    task::RUNTIME,
 };
 
 thread_local! {

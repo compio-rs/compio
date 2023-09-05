@@ -1,15 +1,11 @@
-use crate::{
-    buf::{AsIoSlices, AsIoSlicesMut, IntoInner, IoBuf, IoBufMut},
-    driver::{OpCode, RawFd},
-    op::*,
-};
-use once_cell::sync::OnceCell as OnceLock;
-use socket2::SockAddr;
 use std::{
     io,
     ptr::{null, null_mut},
     task::Poll,
 };
+
+use once_cell::sync::OnceCell as OnceLock;
+use socket2::SockAddr;
 use windows_sys::{
     core::GUID,
     Win32::{
@@ -26,6 +22,12 @@ use windows_sys::{
         Storage::FileSystem::{ReadFile, WriteFile},
         System::{Pipes::ConnectNamedPipe, IO::OVERLAPPED},
     },
+};
+
+use crate::{
+    buf::{AsIoSlices, AsIoSlicesMut, IntoInner, IoBuf, IoBufMut},
+    driver::{OpCode, RawFd},
+    op::*,
 };
 
 unsafe fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
@@ -48,8 +50,8 @@ unsafe fn win32_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     }
 }
 
-// read, write, send and recv functions may return immediately, indicate that the task is
-// completed, but the overlapped result is also posted to the IOCP.
+// read, write, send and recv functions may return immediately, indicate that
+// the task is completed, but the overlapped result is also posted to the IOCP.
 // To make our driver easy, simply return Pending and query the result later.
 
 unsafe fn win32_pending_result(res: i32) -> Poll<io::Result<usize>> {

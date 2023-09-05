@@ -1,5 +1,6 @@
 //! The runtime of compio.
-//! We don't expose the runtime struct because there could be only one runtime in each thread.
+//! We don't expose the runtime struct because there could be only one runtime
+//! in each thread.
 //!
 //! ```
 //! let ans = compio::task::block_on(async {
@@ -9,9 +10,10 @@
 //! assert_eq!(ans, 42);
 //! ```
 
+use std::future::Future;
+
 use async_task::Task;
 use once_cell::unsync::Lazy as LazyCell;
-use std::future::Future;
 
 mod runtime;
 use runtime::Runtime;

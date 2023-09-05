@@ -1,9 +1,3 @@
-use crate::{
-    driver::{Driver, Entry, OpCode, Poller, RawFd},
-    task::op::{OpFuture, OpRuntime},
-};
-use async_task::{Runnable, Task};
-use futures_util::future::Either;
 use std::{
     cell::RefCell,
     collections::VecDeque,
@@ -13,8 +7,15 @@ use std::{
     task::{Context, Poll},
 };
 
+use async_task::{Runnable, Task};
+use futures_util::future::Either;
+
 #[cfg(feature = "time")]
 use crate::task::time::{TimerFuture, TimerRuntime};
+use crate::{
+    driver::{Driver, Entry, OpCode, Poller, RawFd},
+    task::op::{OpFuture, OpRuntime},
+};
 
 pub(crate) struct Runtime {
     driver: Driver,

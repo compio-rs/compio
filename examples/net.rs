@@ -1,5 +1,6 @@
-use compio::net::{TcpListener, TcpStream};
 use std::net::Ipv4Addr;
+
+use compio::net::{TcpListener, TcpStream};
 
 fn main() {
     compio::task::block_on(async {

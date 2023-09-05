@@ -1,4 +1,3 @@
-use crate::driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{
     io,
     os::windows::prelude::{
@@ -6,7 +5,10 @@ use std::{
     },
     path::Path,
 };
+
 use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
+
+use crate::driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 
 pub struct FileInner {
     handle: OwnedHandle,

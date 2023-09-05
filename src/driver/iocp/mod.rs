@@ -1,5 +1,3 @@
-use crate::driver::{Entry, Poller};
-use crossbeam_queue::SegQueue;
 use std::{
     ffi::c_void,
     io,
@@ -12,6 +10,8 @@ use std::{
     task::Poll,
     time::Duration,
 };
+
+use crossbeam_queue::SegQueue;
 use windows_sys::Win32::{
     Foundation::{
         RtlNtStatusToDosError, FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING,
@@ -27,6 +27,8 @@ use windows_sys::Win32::{
         },
     },
 };
+
+use crate::driver::{Entry, Poller};
 
 pub(crate) mod fs;
 pub(crate) mod net;

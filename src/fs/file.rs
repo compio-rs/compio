@@ -1,7 +1,3 @@
-use crate::{
-    driver::{fs::FileInner, AsRawFd, FromRawFd, IntoRawFd, RawFd},
-    fs::OpenOptions,
-};
 use std::{io, path::Path};
 
 #[cfg(feature = "runtime")]
@@ -10,6 +6,10 @@ use crate::{
     op::{BufResultExt, ReadAt, WriteAt},
     task::RUNTIME,
     BufResult,
+};
+use crate::{
+    driver::{fs::FileInner, AsRawFd, FromRawFd, IntoRawFd, RawFd},
+    fs::OpenOptions,
 };
 
 /// A reference to an open file on the filesystem.

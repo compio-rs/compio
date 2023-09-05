@@ -28,7 +28,7 @@ fn send_to() {
         const MSG: &str = "foo bar baz";
 
         macro_rules! must_success {
-            ($r: expr, $expect_addr: expr) => {
+            ($r:expr, $expect_addr:expr) => {
                 let res = $r;
                 assert_eq!(res.0.unwrap().1, $expect_addr);
                 assert_eq!(res.1, MSG.as_bytes());

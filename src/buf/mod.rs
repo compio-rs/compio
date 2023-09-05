@@ -1,8 +1,8 @@
 //! Utilities for working with buffers.
 //!
 //! IOCP APIs require passing ownership of buffers to the runtime. The
-//! crate defines [`IoBuf`] and [`IoBufMut`] traits which are implemented by buffer
-//! types that respect the IOCP contract.
+//! crate defines [`IoBuf`] and [`IoBufMut`] traits which are implemented by
+//! buffer types that respect the IOCP contract.
 
 mod io_buf;
 pub use io_buf::*;

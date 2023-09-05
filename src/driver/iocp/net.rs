@@ -1,8 +1,9 @@
+use std::os::windows::prelude::{AsRawSocket, FromRawSocket, IntoRawSocket};
+
 use crate::{
     driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd},
     net::Socket,
 };
-use std::os::windows::prelude::{AsRawSocket, FromRawSocket, IntoRawSocket};
 
 impl AsRawFd for Socket {
     fn as_raw_fd(&self) -> RawFd {

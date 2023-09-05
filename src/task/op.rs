@@ -1,5 +1,3 @@
-use crate::driver::OpCode;
-use slab::Slab;
 use std::{
     future::Future,
     io,
@@ -8,6 +6,10 @@ use std::{
     pin::Pin,
     task::{Context, Poll, Waker},
 };
+
+use slab::Slab;
+
+use crate::driver::OpCode;
 
 pub struct RawOp(*mut dyn OpCode);
 
