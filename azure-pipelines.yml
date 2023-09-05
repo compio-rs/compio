@@ -4,7 +4,42 @@ trigger:
       - master
 
 jobs:
-- job: Test
+- job: Test_Windows
+  strategy:
+    matrix:
+      x86:
+        target: i686-pc-windows-msvc
+      x64:
+        target: x86_64-pc-windows-msvc
+      x64-gnu:
+        target: x86_64-pc-windows-gnu
+  pool:
+    vmImage: windows-latest
+
+  steps:
+  - script: |
+      rustup toolchain install nightly
+      rustup +nightly target install $(target)
+      cargo +nightly test --all-features --target $(target) -Z doctest-xcompile
+    displayName: Test
+
+- job: Test_Ubuntu
+  strategy:
+    matrix:
+      focal:
+        image: ubuntu-20.04
+      jammy:
+        image: ubuntu-22.04
+  pool:
+    vmImage: $(image)
+
+  steps:
+  - script: |
+      rustup toolchain install nightly
+      cargo +nightly test --all-features
+    displayName: Test
+
+- job: Doc
   strategy:
     matrix:
       windows:
@@ -17,5 +52,5 @@ jobs:
   steps:
   - script: |
       rustup toolchain install nightly
-      cargo +nightly test --all-features
-    displayName: Test
+      cargo +nightly doc --all-features --no-deps
+    displayName: Build docs
