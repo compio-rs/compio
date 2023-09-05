@@ -11,10 +11,10 @@ jobs:
         target: i686-pc-windows-msvc
       x64:
         target: x86_64-pc-windows-msvc
-      # x86-gnu:
-      #   target: i686-pc-windows-gnu
-      # x64-gnu:
-      #   target: x86_64-pc-windows-gnu
+      x86-gnu:
+        target: i686-pc-windows-gnu
+      x64-gnu:
+        target: x86_64-pc-windows-gnu
   pool:
     vmImage: windows-latest
 
