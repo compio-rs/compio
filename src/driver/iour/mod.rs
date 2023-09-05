@@ -1,10 +1,8 @@
 use crate::driver::{Entry, Poller};
 use crossbeam_queue::SegQueue;
 use io_uring::{
-    cqueue,
-    opcode::MsgRingData,
-    squeue,
-    types::{Fd, SubmitArgs, Timespec},
+    cqueue, squeue,
+    types::{SubmitArgs, Timespec},
     IoUring,
 };
 use std::{cell::RefCell, io, marker::PhantomData, mem::MaybeUninit, time::Duration};
@@ -114,14 +112,7 @@ impl Poller for Driver {
     }
 
     fn post(&self, user_data: usize, result: usize) -> io::Result<()> {
-        let entry = MsgRingData::new(
-            Fd(self.inner.as_raw_fd()),
-            result as i32,
-            user_data as _,
-            None,
-        )
-        .build();
-        self.squeue.push(entry);
+        self.cqueue.push(Entry::new(user_data, Ok(result)));
         Ok(())
     }
 
