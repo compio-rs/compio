@@ -21,7 +21,7 @@ jobs:
   steps:
   - script: |
       rustup toolchain install nightly
-      rustup target install $(target)
+      rustup +nightly target install $(target)
       cargo +nightly test --all-features --target $(target) -Z doctest-xcompile
     displayName: Test
 
@@ -49,7 +49,7 @@ jobs:
   - script: |
       cat <<EOT >> test.sh
       rustup toolchain install nightly
-      rustup target install $(target)
+      rustup +nightly target install $(target)
       cargo +nightly xwin test --all-features --target $(target) -Z doctest-xcompile
       EOT
       docker run --rm -t -v $(pwd):/io -w /io messense/cargo-xwin bash test.sh
