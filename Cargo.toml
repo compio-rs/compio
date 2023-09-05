@@ -2,7 +2,7 @@
 name = "compio"
 version = "0.3.0"
 edition = "2021"
-authors = ["Berrysoft <Strawberry_Str@hotmail.com"]
+authors = ["Berrysoft <Strawberry_Str@hotmail.com>"]
 readme = "README.md"
 license = "MIT"
 description = "completion based async runtime"
