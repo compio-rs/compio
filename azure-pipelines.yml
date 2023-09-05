@@ -4,15 +4,29 @@ trigger:
       - master
 
 jobs:
-- job: Test
+- job: Test_Windows
   strategy:
     matrix:
-      windows:
-        image: windows-latest
-      linux:
-        image: ubuntu-latest
+      x86:
+        target: i686-pc-windows-msvc
+      x64:
+        target: x86_64-pc-windows-msvc
+      # x86-gnu:
+      #   target: i686-pc-windows-gnu
+      # x64-gnu:
+      #   target: x86_64-pc-windows-gnu
   pool:
-    vmImage: $(image)
+    vmImage: windows-latest
+
+  steps:
+  - script: |
+      rustup toolchain install nightly
+      cargo +nightly test --all-features --target $(target) -Z doctest-xcompile
+    displayName: Test
+
+- job: Test_Ubuntu
+  pool:
+    vmImage: ubuntu-latest
 
   steps:
   - script: |
@@ -20,14 +34,14 @@ jobs:
       cargo +nightly test --all-features
     displayName: Test
 
-- job: Wine_Test
+- job: Test_Wine
   pool:
     vmImage: ubuntu-latest
 
   steps:
   - script: |
       echo "nightly" > rust-toolchain
-      docker run --rm -t -v $(pwd):/io -w /io messense/cargo-xwin cargo xwin test --all-features
+      docker run --rm -t -v $(pwd):/io -w /io messense/cargo-xwin cargo xwin test --all-features --target x86_64-pc-windows-msvc -Z doctest-xcompile
     displayName: Test
 
 - job: Doc
