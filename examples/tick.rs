@@ -4,7 +4,7 @@ use std::time::Duration;
 
 fn main() {
     compio::task::block_on(async {
-        let mut interval = interval(Duration::from_secs(1));
+        let mut interval = interval(Duration::from_secs(2));
         let mut ctrlc = ctrl_c();
         loop {
             let ctrlc = std::pin::pin!(&mut ctrlc);

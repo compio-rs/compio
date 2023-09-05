@@ -1,11 +1,13 @@
 use crate::driver::{Entry, Poller};
+use crossbeam_queue::SegQueue;
 use io_uring::{
+    cqueue,
     opcode::MsgRingData,
     squeue,
     types::{Fd, SubmitArgs, Timespec},
     IoUring,
 };
-use std::{cell::UnsafeCell, io, marker::PhantomData, mem::MaybeUninit, time::Duration};
+use std::{cell::RefCell, io, marker::PhantomData, mem::MaybeUninit, time::Duration};
 
 pub use libc::{sockaddr_storage, socklen_t};
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
@@ -23,8 +25,9 @@ pub trait OpCode {
 /// Low-level driver of io-uring.
 pub struct Driver {
     inner: IoUring,
-    // Using inner mut.
-    _p: PhantomData<UnsafeCell<()>>,
+    squeue: SegQueue<squeue::Entry>,
+    cqueue: SegQueue<Entry>,
+    _p: PhantomData<RefCell<()>>,
 }
 
 impl Driver {
@@ -37,23 +40,62 @@ impl Driver {
     pub fn with_entries(entries: u32) -> io::Result<Self> {
         Ok(Self {
             inner: IoUring::new(entries)?,
+            squeue: SegQueue::default(),
+            cqueue: SegQueue::default(),
             _p: PhantomData,
         })
     }
 
-    unsafe fn push_entry(&self, entry: io_uring::squeue::Entry) -> io::Result<()> {
-        if self.inner.submission_shared().is_full() {
-            self.inner.submit()?;
+    unsafe fn submit(&self, timeout: Option<Duration>) -> io::Result<()> {
+        let mut inner_squeue = self.inner.submission_shared();
+        // Anyway we need to submit once, no matter there are entries in squeue.
+        loop {
+            while !inner_squeue.is_full() {
+                if let Some(entry) = self.squeue.pop() {
+                    inner_squeue.push(&entry).unwrap();
+                } else {
+                    break;
+                }
+            }
+            inner_squeue.sync();
+
+            let res = if self.squeue.is_empty() {
+                // Last part of submission queue, wait till timeout.
+                if let Some(duration) = timeout {
+                    let timespec = timespec(duration);
+                    let args = SubmitArgs::new().timespec(&timespec);
+                    self.inner.submitter().submit_with_args(1, &args)
+                } else {
+                    self.inner.submit_and_wait(1)
+                }
+            } else {
+                self.inner.submit()
+            };
+            match res {
+                Ok(_) => Ok(()),
+                Err(e) => match e.raw_os_error() {
+                    Some(libc::ETIME) => Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)),
+                    Some(libc::EBUSY) => Ok(()),
+                    _ => Err(e),
+                },
+            }?;
+            inner_squeue.sync();
+
+            for entry in self.inner.completion_shared() {
+                self.cqueue.push(create_entry(entry));
+            }
+
+            if self.squeue.is_empty() && inner_squeue.is_empty() {
+                break;
+            }
         }
-        self.inner.submission_shared().push(&entry).unwrap();
         Ok(())
     }
 
-    unsafe fn poll_entries(&self, entries: &mut [MaybeUninit<Entry>]) -> usize {
-        let cqe = unsafe { self.inner.completion_shared() };
-        let len = cqe.len().min(entries.len());
-        for (iour_entry, entry) in cqe.zip(entries) {
-            entry.write(create_entry(iour_entry));
+    fn poll_entries(&self, entries: &mut [MaybeUninit<Entry>]) -> usize {
+        let len = self.cqueue.len().min(entries.len());
+        for entry in &mut entries[..len] {
+            entry.write(self.cqueue.pop().unwrap());
         }
         len
     }
@@ -66,7 +108,8 @@ impl Poller for Driver {
 
     unsafe fn push(&self, op: &mut impl OpCode, user_data: usize) -> io::Result<()> {
         let entry = op.create_entry().user_data(user_data as _);
-        self.push_entry(entry)
+        self.squeue.push(entry);
+        Ok(())
     }
 
     fn post(&self, user_data: usize, result: usize) -> io::Result<()> {
@@ -77,7 +120,8 @@ impl Poller for Driver {
             None,
         )
         .build();
-        unsafe { self.push_entry(entry) }
+        self.squeue.push(entry);
+        Ok(())
     }
 
     fn poll(
@@ -88,33 +132,17 @@ impl Poller for Driver {
         if entries.is_empty() {
             return Ok(0);
         }
-        let len = unsafe { self.poll_entries(entries) };
+        let len = self.poll_entries(entries);
         if len > 0 {
             return Ok(len);
         }
-        if let Some(duration) = timeout {
-            let timespec = timespec(duration);
-            let args = SubmitArgs::new().timespec(&timespec);
-            match self.inner.submitter().submit_with_args(1, &args) {
-                Ok(res) => Ok(res),
-                Err(e) => {
-                    if matches!(e.raw_os_error(), Some(libc::ETIME) | Some(libc::EINTR)) {
-                        Err(io::Error::new(io::ErrorKind::TimedOut, e))
-                    } else {
-                        Err(e)
-                    }
-                }
-            }?;
-        } else {
-            // Submit and Wait without timeout
-            self.inner.submit_and_wait(1)?;
-        }
-        let len = unsafe { self.poll_entries(entries) };
+        unsafe { self.submit(timeout) }?;
+        let len = self.poll_entries(entries);
         Ok(len)
     }
 }
 
-fn create_entry(entry: io_uring::cqueue::Entry) -> Entry {
+fn create_entry(entry: cqueue::Entry) -> Entry {
     let result = entry.result();
     let result = if result < 0 {
         Err(io::Error::from_raw_os_error(-result))
