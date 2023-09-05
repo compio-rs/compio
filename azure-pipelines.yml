@@ -20,7 +20,7 @@ jobs:
       cargo +nightly test --all-features
     displayName: Test
 
-- job: Wine Test
+- job: Wine_Test
   pool:
     vmImage: ubuntu-latest
 
