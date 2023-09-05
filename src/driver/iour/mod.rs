@@ -48,7 +48,8 @@ impl Driver {
 
     unsafe fn submit(&self, timeout: Option<Duration>) -> io::Result<()> {
         let mut inner_squeue = self.inner.submission_shared();
-        while !self.squeue.is_empty() || !inner_squeue.is_empty() {
+        // Anyway we need to submit once, no matter there are entries in squeue.
+        loop {
             while !inner_squeue.is_full() {
                 if let Some(entry) = self.squeue.pop() {
                     inner_squeue.push(&entry).unwrap();
@@ -73,9 +74,7 @@ impl Driver {
             match res {
                 Ok(_) => Ok(()),
                 Err(e) => match e.raw_os_error() {
-                    Some(libc::ETIME) | Some(libc::EINTR) => {
-                        Err(io::Error::new(io::ErrorKind::TimedOut, e))
-                    }
+                    Some(libc::ETIME) => Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)),
                     Some(libc::EBUSY) => Ok(()),
                     _ => Err(e),
                 },
@@ -84,6 +83,10 @@ impl Driver {
 
             for entry in self.inner.completion_shared() {
                 self.cqueue.push(create_entry(entry));
+            }
+
+            if self.squeue.is_empty() && inner_squeue.is_empty() {
+                break;
             }
         }
         Ok(())

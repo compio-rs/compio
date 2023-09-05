@@ -179,11 +179,10 @@ impl Runtime {
                         .update_result(entry.user_data(), entry.into_result());
                 }
             }
-            Err(e) => {
-                if e.kind() != io::ErrorKind::TimedOut {
-                    panic!("{:?}", e);
-                }
-            }
+            Err(e) => match e.kind() {
+                io::ErrorKind::TimedOut | io::ErrorKind::Interrupted => {}
+                _ => panic!("{:?}", e),
+            },
         }
         #[cfg(feature = "time")]
         self.timer_runtime.borrow_mut().wake();

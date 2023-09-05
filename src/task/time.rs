@@ -87,8 +87,10 @@ impl TimerRuntime {
         let elapsed = self.time.elapsed();
         while let Some(entry) = self.wheel.pop() {
             if entry.delay <= elapsed {
-                if let Some(waker) = self.tasks.remove(entry.key) {
-                    waker.wake();
+                if self.tasks.contains(entry.key) {
+                    if let Some(waker) = self.tasks.remove(entry.key) {
+                        waker.wake();
+                    }
                 }
             } else {
                 self.wheel.push(entry);
