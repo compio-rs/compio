@@ -1,7 +1,7 @@
 //! Unix-specific types for signal handling.
 
 #[cfg(feature = "lazy_cell")]
-use std::sync::LazyCell;
+use std::cell::LazyCell;
 use std::{
     cell::RefCell,
     collections::HashMap,

@@ -1,7 +1,8 @@
 //!
 #![doc = include_str!("../README.md")]
 #![cfg_attr(feature = "read_buf", feature(read_buf))]
-#![cfg_attr(feature = "nightly", feature(lazy_cell))]
+#![cfg_attr(feature = "lazy_cell", feature(lazy_cell))]
+#![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
 #![warn(missing_docs)]
 
 pub mod buf;

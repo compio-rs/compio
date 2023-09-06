@@ -60,8 +60,9 @@ time = ["runtime"]
 all = ["time", "signal"]
 
 lazy_cell = []
+once_cell_try = []
 read_buf = []
-nightly = ["read_buf", "lazy_cell"]
+nightly = ["read_buf", "lazy_cell", "once_cell_try"]
 stable = ["dep:once_cell"]
 
 [[example]]
