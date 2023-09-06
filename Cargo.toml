@@ -54,15 +54,15 @@ libc = "0.2"
 
 [features]
 default = ["runtime"]
-# for Rust < 1.70
-once_cell = ["dep:once_cell"]
 runtime = ["dep:async-task", "dep:futures-util", "dep:slab"]
 signal = ["runtime"]
 time = ["runtime"]
 all = ["time", "signal"]
 
+lazy_cell = []
 read_buf = []
-nightly = ["read_buf"]
+nightly = ["read_buf", "lazy_cell"]
+stable = ["dep:once_cell"]
 
 [[example]]
 name = "tick"
