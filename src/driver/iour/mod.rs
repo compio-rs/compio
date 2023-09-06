@@ -2,7 +2,6 @@
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{cell::RefCell, io, marker::PhantomData, mem::MaybeUninit, time::Duration};
 
-use crossbeam_queue::SegQueue;
 use io_uring::{
     cqueue, squeue,
     types::{SubmitArgs, Timespec},
@@ -10,6 +9,7 @@ use io_uring::{
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 
+use super::queue::Queue;
 use crate::driver::{Entry, Poller};
 
 pub(crate) mod fs;
@@ -25,8 +25,8 @@ pub trait OpCode {
 /// Low-level driver of io-uring.
 pub struct Driver {
     inner: IoUring,
-    squeue: SegQueue<squeue::Entry>,
-    cqueue: SegQueue<Entry>,
+    squeue: Queue<squeue::Entry>,
+    cqueue: Queue<Entry>,
     _p: PhantomData<RefCell<()>>,
 }
 
@@ -40,8 +40,8 @@ impl Driver {
     pub fn with_entries(entries: u32) -> io::Result<Self> {
         Ok(Self {
             inner: IoUring::new(entries)?,
-            squeue: SegQueue::default(),
-            cqueue: SegQueue::default(),
+            squeue: Queue::with_capacity(entries as usize),
+            cqueue: Queue::with_capacity(entries as usize),
             _p: PhantomData,
         })
     }

@@ -11,7 +11,6 @@ use std::{
     time::Duration,
 };
 
-use crossbeam_queue::SegQueue;
 use windows_sys::Win32::{
     Foundation::{
         RtlNtStatusToDosError, FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING,
@@ -28,6 +27,7 @@ use windows_sys::Win32::{
     },
 };
 
+use super::queue::Queue;
 use crate::driver::{Entry, Poller};
 
 pub(crate) mod fs;
@@ -81,13 +81,15 @@ pub trait OpCode {
 /// Low-level driver of IOCP.
 pub struct Driver {
     port: OwnedHandle,
-    operations: SegQueue<(*mut dyn OpCode, Overlapped)>,
+    operations: Queue<(*mut dyn OpCode, Overlapped)>,
 }
 
 unsafe impl Send for Driver {}
 unsafe impl Sync for Driver {}
 
 impl Driver {
+    const DEFAULT_CAPACITY: usize = 1024;
+
     /// Create a new IOCP.
     pub fn new() -> io::Result<Self> {
         let port = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0) };
@@ -95,7 +97,7 @@ impl Driver {
             .map_err(|_| io::Error::last_os_error())?;
         Ok(Self {
             port,
-            operations: SegQueue::default(),
+            operations: Queue::with_capacity(Self::DEFAULT_CAPACITY),
         })
     }
 }
