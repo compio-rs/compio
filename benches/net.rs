@@ -46,22 +46,11 @@ fn tcp(c: &mut Criterion) {
             let tx = compio::net::TcpStream::connect(addr);
             let rx = listener.accept();
             let (tx, (rx, _)) = futures_util::try_join!(tx, rx).unwrap();
-            {
-                let mut pos = 0;
-                while pos < PACKET_LEN {
-                    let (res, _) = tx.send(&PACKET[pos..]).await;
-                    pos += res.unwrap();
-                }
-            }
-            {
-                let mut buffer = Vec::with_capacity(PACKET_LEN);
-                let mut res;
-                while buffer.len() < PACKET_LEN {
-                    (res, buffer) = rx.recv(buffer).await;
-                    res.unwrap();
-                }
-                buffer
-            }
+            tx.send_all(PACKET).await.0.unwrap();
+            let buffer = Vec::with_capacity(PACKET_LEN);
+            let (recv, buffer) = rx.recv_exact(buffer).await;
+            recv.unwrap();
+            buffer
         })
     });
 
