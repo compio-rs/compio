@@ -168,6 +168,12 @@ impl UdpSocket {
         self.inner.recv(buffer).await
     }
 
+    /// Receives exact number of bytes from the socket.
+    #[cfg(feature = "runtime")]
+    pub async fn recv_exact<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+        self.inner.recv_exact(buffer).await
+    }
+
     /// Receives a packet of data from the socket into the buffer, returning the
     /// original buffer and quantity of data received.
     #[cfg(feature = "runtime")]
@@ -180,6 +186,12 @@ impl UdpSocket {
     #[cfg(feature = "runtime")]
     pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.send(buffer).await
+    }
+
+    /// Sends all data to the socket.
+    #[cfg(feature = "runtime")]
+    pub async fn send_all<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
+        self.inner.send_all(buffer).await
     }
 
     /// Sends some data to the socket from the buffer, returning the original

@@ -147,6 +147,33 @@ impl Socket {
     }
 
     #[cfg(feature = "runtime")]
+    pub async fn recv_exact<T: IoBufMut>(&self, mut buffer: T) -> BufResult<usize, T> {
+        let need = buffer.as_uninit_slice().len();
+        let mut total_read = 0;
+        let mut read;
+        while total_read < need {
+            (read, buffer) = self.recv(buffer).await;
+            match read {
+                Ok(read) => {
+                    total_read += read;
+                }
+                Err(e) => return (Err(e), buffer),
+            }
+        }
+        if total_read < need {
+            (
+                Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "failed to fill whole buffer",
+                )),
+                buffer,
+            )
+        } else {
+            (Ok(total_read), buffer)
+        }
+    }
+
+    #[cfg(feature = "runtime")]
     pub async fn recv_vectored<T: IoBufMut>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
         let op = RecvVectored::new(self.as_raw_fd(), buffer);
         RUNTIME
@@ -165,6 +192,21 @@ impl Socket {
             .await
             .into_inner()
             .into_inner()
+    }
+
+    #[cfg(feature = "runtime")]
+    pub async fn send_all<T: IoBuf>(&self, mut buffer: T) -> BufResult<usize, T> {
+        let buf_len = buffer.buf_len();
+        let mut total_written = 0;
+        while total_written < buf_len {
+            let (written, buffer_slice) = self.send(buffer.slice(total_written..)).await;
+            buffer = buffer_slice.into_inner();
+            match written {
+                Ok(written) => total_written += written,
+                Err(e) => return (Err(e), buffer),
+            }
+        }
+        (Ok(total_written), buffer)
     }
 
     #[cfg(feature = "runtime")]
