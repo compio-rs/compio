@@ -183,7 +183,7 @@ impl NamedPipeServer {
     /// # compio::task::block_on(async move {
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
     ///
-    /// let mut client = ClientOptions::new().open(PIPE_NAME).unwrap();
+    /// let client = ClientOptions::new().open(PIPE_NAME).unwrap();
     ///
     /// // Wait for a client to become connected.
     /// server.connect().await.unwrap();
@@ -213,10 +213,22 @@ impl NamedPipeServer {
         self.handle.read_at(buffer, 0).await
     }
 
+    /// Read the exact number of bytes from the pipe.
+    #[cfg(feature = "runtime")]
+    pub async fn read_exact<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+        self.handle.read_exact_at(buffer, 0).await
+    }
+
     /// Write a buffer into the pipe, returning how many bytes were written.
     #[cfg(feature = "runtime")]
     pub async fn write<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
         self.handle.write_at(buffer, 0).await
+    }
+
+    /// Write all bytes into the pipe.
+    #[cfg(feature = "runtime")]
+    pub async fn write_all<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
+        self.handle.write_all_at(buffer, 0).await
     }
 }
 
@@ -320,10 +332,22 @@ impl NamedPipeClient {
         self.handle.read_at(buffer, 0).await
     }
 
+    /// Read the exact number of bytes from the pipe.
+    #[cfg(feature = "runtime")]
+    pub async fn read_exact<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+        self.handle.read_exact_at(buffer, 0).await
+    }
+
     /// Write a buffer into the pipe, returning how many bytes were written.
     #[cfg(feature = "runtime")]
     pub async fn write<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
         self.handle.write_at(buffer, 0).await
+    }
+
+    /// Write all bytes into the pipe.
+    #[cfg(feature = "runtime")]
+    pub async fn write_all<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
+        self.handle.write_all_at(buffer, 0).await
     }
 }
 
@@ -461,7 +485,7 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let mut client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
+    /// let client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
@@ -483,19 +507,19 @@ impl ServerOptions {
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-inbound";
     ///
     /// # compio::task::block_on(async move {
-    /// let mut server = ServerOptions::new()
+    /// let server = ServerOptions::new()
     ///     .access_inbound(false)
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let mut client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
+    /// let client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
-    /// let write = server.write("ping");
+    /// let write = server.write_all("ping");
     ///
-    /// let mut buf = Vec::with_capacity(4);
-    /// let read = client.read(buf);
+    /// let buf = Vec::with_capacity(4);
+    /// let read = client.read_exact(buf);
     ///
     /// let ((write, _), (read, buf)) = futures_util::join!(write, read);
     /// write.unwrap();
@@ -557,11 +581,11 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let mut client = ClientOptions::new().read(false).open(PIPE_NAME).unwrap();
+    /// let client = ClientOptions::new().read(false).open(PIPE_NAME).unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
-    /// let mut buf = Vec::with_capacity(4);
+    /// let buf = Vec::with_capacity(4);
     /// let e = client.read(buf).await.0.unwrap_err();
     /// assert_eq!(e.kind(), io::ErrorKind::PermissionDenied);
     /// # })
@@ -578,19 +602,19 @@ impl ServerOptions {
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-outbound";
     ///
     /// # compio::task::block_on(async move {
-    /// let mut server = ServerOptions::new()
+    /// let server = ServerOptions::new()
     ///     .access_outbound(false)
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let mut client = ClientOptions::new().read(false).open(PIPE_NAME).unwrap();
+    /// let client = ClientOptions::new().read(false).open(PIPE_NAME).unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
-    /// let write = client.write("ping");
+    /// let write = client.write_all("ping");
     ///
-    /// let mut buf = Vec::with_capacity(4);
-    /// let read = server.read(buf);
+    /// let buf = Vec::with_capacity(4);
+    /// let read = server.read_exact(buf);
     ///
     /// let ((write, _), (read, buf)) = futures_util::join!(write, read);
     /// write.unwrap();

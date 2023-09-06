@@ -14,9 +14,9 @@ fn main() {
 
             server.connect().await.unwrap();
 
-            let write = server.write("Hello world!");
-            let buffer = Vec::with_capacity(64);
-            let read = client.read(buffer);
+            let write = server.write_all("Hello world!");
+            let buffer = Vec::with_capacity(12);
+            let read = client.read_exact(buffer);
 
             let ((write, _), (read, buffer)) = futures_util::join!(write, read);
             write.unwrap();
