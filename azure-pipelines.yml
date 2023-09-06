@@ -42,7 +42,7 @@ jobs:
           cargo +nightly test --features all,nightly
         displayName: TestNightly
       - script: |
-          cargo test --features all,stable --target $(target) -Z doctest-xcompile
+          cargo test --features all,stable
         displayName: TestStable
 
   - job: Doc
