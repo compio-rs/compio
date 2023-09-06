@@ -20,10 +20,10 @@ jobs:
       - script: |
           rustup toolchain install nightly
           rustup +nightly target install $(target)
-          cargo +nightly test --features=all,nightly --target $(target) -Z doctest-xcompile
+          cargo +nightly test --features=all,nightly --no-default-features --target $(target) -Z doctest-xcompile
         displayName: TestNightly
       - script: |
-          cargo test --features all,stable --target $(target)
+          cargo test --features all --target $(target)
         displayName: TestStable
 
   - job: Test_Ubuntu
@@ -39,10 +39,10 @@ jobs:
     steps:
       - script: |
           rustup toolchain install nightly
-          cargo +nightly test --features all,nightly
+          cargo +nightly test --features all,nightly --no-default-features
         displayName: TestNightly
       - script: |
-          cargo test --features all,stable
+          cargo test --features all
         displayName: TestStable
 
   - job: Doc
@@ -58,5 +58,5 @@ jobs:
     steps:
       - script: |
           rustup toolchain install nightly
-          cargo +nightly doc --features all,nightly --no-deps
+          cargo +nightly doc --features all --no-deps
         displayName: Build docs

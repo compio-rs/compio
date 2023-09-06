@@ -53,7 +53,7 @@ io-uring = "0.6"
 libc = "0.2"
 
 [features]
-default = ["runtime"]
+default = ["runtime", "stable"]
 runtime = ["dep:async-task", "dep:futures-util", "dep:slab"]
 signal = ["runtime"]
 time = ["runtime"]
