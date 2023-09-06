@@ -130,9 +130,16 @@ impl TcpStream {
     #[cfg(feature = "runtime")]
     pub async fn connect(addr: impl ToSockAddrs) -> io::Result<Self> {
         super::each_addr_async(addr, |addr| async move {
-            let mut socket_addr = addr.as_socket().unwrap();
-            socket_addr.set_port(0);
-            let bind_addr = SockAddr::from(socket_addr);
+            let bind_addr = if addr.is_ipv4() {
+                SockAddr::from(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+            } else if addr.is_ipv6() {
+                SockAddr::from(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 0, 0, 0))
+            } else {
+                return Err(io::Error::new(
+                    io::ErrorKind::AddrNotAvailable,
+                    "Unsupported address domain.",
+                ));
+            };
             let socket = Socket::bind(&bind_addr, Type::STREAM, Some(Protocol::TCP))?;
             socket.connect_async(&addr).await?;
             Ok(Self { inner: socket })
