@@ -40,18 +40,18 @@ use crate::{buf::*, *};
 ///     socket.connect(second_addr).unwrap();
 ///     other_socket.connect(first_addr).unwrap();
 ///
-///     let buf = Vec::with_capacity(32);
+///     let buf = Vec::with_capacity(12);
 ///
 ///     // write data
-///     let (result, _) = socket.send("hello world").await;
+///     let (result, _) = socket.send_all("Hello world!").await;
 ///     result.unwrap();
 ///
 ///     // read data
-///     let (result, buf) = other_socket.recv(buf).await;
+///     let (result, buf) = other_socket.recv_exact(buf).await;
 ///     let n_bytes = result.unwrap();
 ///
 ///     assert_eq!(n_bytes, buf.len());
-///     assert_eq!(buf, b"hello world");
+///     assert_eq!(buf, b"Hello world!");
 /// });
 /// ```
 /// Send and receive packets without connecting:

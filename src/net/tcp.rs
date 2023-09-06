@@ -30,9 +30,9 @@ use crate::{buf::*, *};
 ///
 ///     let (tx, (rx, _)) = futures_util::try_join!(tx_fut, rx_fut).unwrap();
 ///
-///     tx.send("test").await.0.unwrap();
+///     tx.send_all("test").await.0.unwrap();
 ///
-///     let (_, buf) = rx.recv(Vec::with_capacity(4)).await;
+///     let (_, buf) = rx.recv_exact(Vec::with_capacity(4)).await;
 ///
 ///     assert_eq!(buf, b"test");
 /// });

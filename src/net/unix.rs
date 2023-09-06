@@ -26,9 +26,9 @@ use crate::{buf::*, *};
 ///     let tx = UnixStream::connect(&sock_file).unwrap();
 ///     let (rx, _) = listener.accept().await.unwrap();
 ///
-///     tx.send("test").await.0.unwrap();
+///     tx.send_all("test").await.0.unwrap();
 ///
-///     let (res, buf) = rx.recv(Vec::with_capacity(4)).await;
+///     let (res, buf) = rx.recv_exact(Vec::with_capacity(4)).await;
 ///     res.unwrap();
 ///
 ///     assert_eq!(buf, b"test");
