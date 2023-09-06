@@ -5,9 +5,7 @@
 use std::{
     ffi::{c_void, OsStr},
     io,
-    os::windows::prelude::{
-        AsRawHandle, FromRawHandle, HandleOrInvalid, IntoRawHandle, OwnedHandle, RawHandle,
-    },
+    os::windows::prelude::{AsRawHandle, HandleOrInvalid, IntoRawHandle, OwnedHandle},
     ptr::null_mut,
 };
 
@@ -30,13 +28,11 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 #[cfg(feature = "runtime")]
+use crate::{buf::*, op::ConnectNamedPipe, task::RUNTIME, *};
 use crate::{
-    buf::*,
-    op::{BufResultExt, ConnectNamedPipe, ReadAt, WriteAt},
-    task::RUNTIME,
-    *,
+    driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd},
+    fs::File,
 };
 
 /// A [Windows named pipe] server.
@@ -102,14 +98,14 @@ use crate::{
 /// [Windows named pipe]: https://docs.microsoft.com/en-us/windows/win32/ipc/named-pipes
 #[derive(Debug)]
 pub struct NamedPipeServer {
-    handle: OwnedHandle,
+    handle: File,
 }
 
 impl NamedPipeServer {
     pub(crate) fn from_handle(handle: OwnedHandle) -> io::Result<Self> {
         #[cfg(feature = "runtime")]
         RUNTIME.with(|runtime| runtime.attach(handle.as_raw_handle() as _))?;
-        Ok(Self { handle })
+        Ok(unsafe { Self::from_raw_fd(handle.into_raw_handle()) })
     }
 
     /// Retrieves information about the named pipe the server is associated
@@ -214,44 +210,33 @@ impl NamedPipeServer {
     /// buffer, returning how many bytes were read.
     #[cfg(feature = "runtime")]
     pub async fn read<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        let op = ReadAt::new(self.as_raw_fd(), 0, buffer);
-        RUNTIME
-            .with(|runtime| runtime.submit(op))
-            .await
-            .into_inner()
-            .map_advanced()
-            .into_inner()
+        self.handle.read_at(buffer, 0).await
     }
 
     /// Write a buffer into the pipe, returning how many bytes were written.
     #[cfg(feature = "runtime")]
     pub async fn write<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        let op = WriteAt::new(self.as_raw_fd(), 0, buffer);
-        RUNTIME
-            .with(|runtime| runtime.submit(op))
-            .await
-            .into_inner()
-            .into_inner()
+        self.handle.write_at(buffer, 0).await
     }
 }
 
 impl AsRawFd for NamedPipeServer {
     fn as_raw_fd(&self) -> RawFd {
-        self.handle.as_raw_handle() as _
+        self.handle.as_raw_fd()
     }
 }
 
 impl FromRawFd for NamedPipeServer {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
         Self {
-            handle: OwnedHandle::from_raw_handle(fd as _),
+            handle: File::from_raw_fd(fd),
         }
     }
 }
 
 impl IntoRawFd for NamedPipeServer {
-    fn into_raw_fd(self) -> RawHandle {
-        self.handle.into_raw_handle() as _
+    fn into_raw_fd(self) -> RawFd {
+        self.handle.into_raw_fd()
     }
 }
 
@@ -295,14 +280,14 @@ impl IntoRawFd for NamedPipeServer {
 /// [Windows named pipe]: https://docs.microsoft.com/en-us/windows/win32/ipc/named-pipes
 #[derive(Debug)]
 pub struct NamedPipeClient {
-    handle: OwnedHandle,
+    handle: File,
 }
 
 impl NamedPipeClient {
     pub(crate) fn from_handle(handle: OwnedHandle) -> io::Result<Self> {
         #[cfg(feature = "runtime")]
         RUNTIME.with(|runtime| runtime.attach(handle.as_raw_handle() as _))?;
-        Ok(Self { handle })
+        Ok(unsafe { Self::from_raw_fd(handle.into_raw_handle()) })
     }
 
     /// Retrieves information about the named pipe the client is associated
@@ -332,44 +317,33 @@ impl NamedPipeClient {
     /// buffer, returning how many bytes were read.
     #[cfg(feature = "runtime")]
     pub async fn read<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        let op = ReadAt::new(self.as_raw_fd(), 0, buffer);
-        RUNTIME
-            .with(|runtime| runtime.submit(op))
-            .await
-            .into_inner()
-            .map_advanced()
-            .into_inner()
+        self.handle.read_at(buffer, 0).await
     }
 
     /// Write a buffer into the pipe, returning how many bytes were written.
     #[cfg(feature = "runtime")]
     pub async fn write<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        let op = WriteAt::new(self.as_raw_fd(), 0, buffer);
-        RUNTIME
-            .with(|runtime| runtime.submit(op))
-            .await
-            .into_inner()
-            .into_inner()
+        self.handle.write_at(buffer, 0).await
     }
 }
 
 impl AsRawFd for NamedPipeClient {
     fn as_raw_fd(&self) -> RawFd {
-        self.handle.as_raw_handle() as _
+        self.handle.as_raw_fd()
     }
 }
 
 impl FromRawFd for NamedPipeClient {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
         Self {
-            handle: OwnedHandle::from_raw_handle(fd as _),
+            handle: File::from_raw_fd(fd),
         }
     }
 }
 
 impl IntoRawFd for NamedPipeClient {
-    fn into_raw_fd(self) -> RawHandle {
-        self.handle.into_raw_handle() as _
+    fn into_raw_fd(self) -> RawFd {
+        self.handle.into_raw_fd()
     }
 }
 
@@ -1285,7 +1259,7 @@ pub struct PipeInfo {
 }
 
 /// Internal function to get the info out of a raw named pipe.
-unsafe fn named_pipe_info(handle: RawHandle) -> io::Result<PipeInfo> {
+unsafe fn named_pipe_info(handle: RawFd) -> io::Result<PipeInfo> {
     let mut flags = 0;
     let mut out_buffer_size = 0;
     let mut in_buffer_size = 0;

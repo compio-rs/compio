@@ -19,6 +19,7 @@ use crate::{
 /// it was opened with. The `File` type provides **positional** read and write
 /// operations. The file does not maintain an internal cursor. The caller is
 /// required to specify an offset when issuing an operation.
+#[derive(Debug)]
 pub struct File {
     pub(crate) inner: std::fs::File,
 }
