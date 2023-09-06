@@ -1,4 +1,4 @@
-use std::{io, path::Path};
+use std::{fs::Metadata, io, path::Path};
 
 #[cfg(feature = "runtime")]
 use crate::{
@@ -8,7 +8,7 @@ use crate::{
     BufResult,
 };
 use crate::{
-    driver::{fs::FileInner, AsRawFd, FromRawFd, IntoRawFd, RawFd},
+    driver::{fs::file_with_options, AsRawFd},
     fs::OpenOptions,
     op::Sync,
 };
@@ -20,15 +20,17 @@ use crate::{
 /// operations. The file does not maintain an internal cursor. The caller is
 /// required to specify an offset when issuing an operation.
 pub struct File {
-    inner: FileInner,
+    pub(crate) inner: std::fs::File,
 }
 
 impl File {
     pub(crate) fn with_options(path: impl AsRef<Path>, options: OpenOptions) -> io::Result<Self> {
-        let inner = FileInner::with_options(path, options.0)?;
+        let this = Self {
+            inner: file_with_options(path, options.0)?,
+        };
         #[cfg(feature = "runtime")]
-        RUNTIME.with(|runtime| runtime.attach(inner.as_raw_fd()))?;
-        Ok(Self { inner })
+        RUNTIME.with(|runtime| runtime.attach(this.as_raw_fd()))?;
+        Ok(this)
     }
 
     /// Attempts to open a file in read-only mode.
@@ -50,6 +52,11 @@ impl File {
             .write(true)
             .truncate(true)
             .open(path)
+    }
+
+    /// Queries metadata about the underlying file.
+    pub fn metadata(&self) -> io::Result<Metadata> {
+        self.inner.metadata()
     }
 
     /// Read some bytes at the specified offset from the file into the specified
@@ -85,6 +92,87 @@ impl File {
             .into_inner()
     }
 
+    /// Read the exact number of bytes required to fill `buffer`.
+    ///
+    /// This function reads as many bytes as necessary to completely fill the
+    /// uninitialized space of specified `buffer`.
+    ///
+    /// # Errors
+    ///
+    /// If this function encounters an "end of file" before completely filling
+    /// the buffer, it returns an error of the kind
+    /// [`ErrorKind::UnexpectedEof`]. The contents of `buffer` are unspecified
+    /// in this case.
+    ///
+    /// If any other read error is encountered then this function immediately
+    /// returns. The contents of `buffer` are unspecified in this case.
+    ///
+    /// If this function returns an error, it is unspecified how many bytes it
+    /// has read, but it will never read more than would be necessary to
+    /// completely fill the buffer.
+    #[cfg(feature = "runtime")]
+    pub async fn read_exact_at<T: IoBufMut>(
+        &self,
+        mut buffer: T,
+        pos: usize,
+    ) -> BufResult<usize, T> {
+        let need = buffer.as_uninit_slice().len();
+        let mut total_read = 0;
+        let mut read;
+        while total_read < need {
+            (read, buffer) = self.read_at(buffer, pos + total_read).await;
+            match read {
+                Ok(0) => break,
+                Ok(read) => {
+                    total_read += read;
+                }
+                Err(e) => return (Err(e), buffer),
+            }
+        }
+        if total_read < need {
+            (
+                Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "failed to fill whole buffer",
+                )),
+                buffer,
+            )
+        } else {
+            (Ok(total_read), buffer)
+        }
+    }
+
+    /// Read all bytes until EOF in this source, placing them into `buffer`.
+    ///
+    /// All bytes read from this source will be appended to the specified buffer
+    /// `buffer`. This function will continuously call [`read_at()`] to append
+    /// more data to `buffer` until [`read_at()`] returns [`Ok(0)`].
+    ///
+    /// If successful, this function will return the total number of bytes read.
+    #[cfg(feature = "runtime")]
+    pub async fn read_to_end_at(
+        &self,
+        mut buffer: Vec<u8>,
+        pos: usize,
+    ) -> BufResult<usize, Vec<u8>> {
+        let mut total_read = 0;
+        let mut read;
+        loop {
+            (read, buffer) = self.read_at(buffer, pos + total_read).await;
+            match read {
+                Ok(0) => break,
+                Ok(read) => {
+                    total_read += read;
+                    if buffer.len() == buffer.capacity() {
+                        buffer.reserve(32);
+                    }
+                }
+                Err(e) => return (Err(e), buffer),
+            }
+        }
+        (Ok(total_read), buffer)
+    }
+
     /// Write a buffer into this file at the specified offset, returning how
     /// many bytes were written.
     ///
@@ -117,6 +205,30 @@ impl File {
             .into_inner()
     }
 
+    /// Attempts to write an entire buffer into this writer.
+    ///
+    /// This method will continuously call [`write_at`] until there is no more
+    /// data to be written. This method will not return until the entire
+    /// buffer has been successfully written or such an error occurs.
+    ///
+    /// If the buffer contains no data, this will never call [`write_at`].
+    #[cfg(feature = "runtime")]
+    pub async fn write_all_at<T: IoBuf>(&self, mut buffer: T, pos: usize) -> BufResult<usize, T> {
+        let buf_len = buffer.buf_len();
+        let mut total_written = 0;
+        while total_written < buf_len {
+            let (written, buffer_slice) = self
+                .write_at(buffer.slice(total_written..), pos + total_written)
+                .await;
+            buffer = buffer_slice.into_inner();
+            match written {
+                Ok(written) => total_written += written,
+                Err(e) => return (Err(e), buffer),
+            }
+        }
+        (Ok(total_written), buffer)
+    }
+
     #[cfg(feature = "runtime")]
     async fn sync_impl(&self, datasync: bool) -> io::Result<()> {
         let op = Sync::new(self.as_raw_fd(), datasync);
@@ -147,25 +259,5 @@ impl File {
     #[cfg(feature = "runtime")]
     pub async fn sync_data(&self) -> io::Result<()> {
         self.sync_impl(true).await
-    }
-}
-
-impl AsRawFd for File {
-    fn as_raw_fd(&self) -> RawFd {
-        self.inner.as_raw_fd()
-    }
-}
-
-impl FromRawFd for File {
-    unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self {
-            inner: FileInner::from_raw_fd(fd),
-        }
-    }
-}
-
-impl IntoRawFd for File {
-    fn into_raw_fd(self) -> RawFd {
-        self.inner.into_raw_fd()
     }
 }

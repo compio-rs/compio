@@ -14,8 +14,8 @@ use std::{
 use crossbeam_queue::SegQueue;
 use windows_sys::Win32::{
     Foundation::{
-        RtlNtStatusToDosError, FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING,
-        STATUS_SUCCESS,
+        RtlNtStatusToDosError, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_NO_DATA,
+        FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING, STATUS_SUCCESS,
     },
     System::{
         SystemServices::ERROR_SEVERITY_ERROR,
@@ -254,9 +254,11 @@ impl Poller for Driver {
             ) {
                 Ok(transferred as _)
             } else {
-                Err(io::Error::from_raw_os_error(unsafe {
-                    RtlNtStatusToDosError(overlapped.base.Internal as _)
-                } as _))
+                let error = unsafe { RtlNtStatusToDosError(overlapped.base.Internal as _) };
+                match error {
+                    ERROR_IO_INCOMPLETE | ERROR_HANDLE_EOF | ERROR_NO_DATA => Ok(0),
+                    _ => Err(io::Error::from_raw_os_error(error as _)),
+                }
             };
             entry.write(Entry::new(overlapped.user_data, res));
         }

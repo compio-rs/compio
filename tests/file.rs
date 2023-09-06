@@ -7,7 +7,7 @@ const HELLO: &[u8] = b"hello world...";
 
 async fn read_hello(file: &File) {
     let buf = Vec::with_capacity(1024);
-    let (res, buf) = file.read_at(buf, 0).await;
+    let (res, buf) = file.read_to_end_at(buf, 0).await;
     let n = res.unwrap();
 
     assert_eq!(n, HELLO.len());
@@ -32,7 +32,7 @@ fn basic_write() {
 
         let file = File::create(tempfile.path()).unwrap();
 
-        file.write_at(HELLO, 0).await.0.unwrap();
+        file.write_all_at(HELLO, 0).await.0.unwrap();
         file.sync_all().await.unwrap();
 
         let file = std::fs::read(tempfile.path()).unwrap();
@@ -64,7 +64,7 @@ fn drop_open() {
         // Do something else
         let file = File::create(tempfile.path()).unwrap();
 
-        file.write_at(HELLO, 0).await.0.unwrap();
+        file.write_all_at(HELLO, 0).await.0.unwrap();
 
         let file = std::fs::read(tempfile.path()).unwrap();
         assert_eq!(file, HELLO);
