@@ -1,6 +1,10 @@
 use std::io::{IoSlice, IoSliceMut};
 
-use io_uring::{opcode, squeue::Entry, types::Fd};
+use io_uring::{
+    opcode,
+    squeue::Entry,
+    types::{Fd, FsyncFlags},
+};
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
@@ -24,6 +28,18 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
         let slice = self.buffer.as_slice();
         opcode::Write::new(Fd(self.fd), slice.as_ptr(), slice.len() as _)
             .offset(self.offset as _)
+            .build()
+    }
+}
+
+impl OpCode for Sync {
+    fn create_entry(&mut self) -> Entry {
+        opcode::Fsync::new(Fd(self.fd))
+            .flags(if self.datasync {
+                FsyncFlags::DATASYNC
+            } else {
+                FsyncFlags::empty()
+            })
             .build()
     }
 }
