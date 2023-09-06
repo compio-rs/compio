@@ -116,6 +116,27 @@ impl<T: IoBuf> IntoInner for WriteAt<T> {
     }
 }
 
+/// Sync data to the disk.
+pub struct Sync {
+    pub(crate) fd: RawFd,
+    #[allow(dead_code)]
+    pub(crate) datasync: bool,
+}
+
+impl Sync {
+    /// Create [`Sync`].
+    ///
+    /// If `datasync` is `true`, the file metadata may not be synchronized.
+    ///
+    /// ## Platform specific
+    ///
+    /// * IOCP: it is synchronized operation, and calls `FlushFileBuffers`.
+    /// * io-uring: `fdatasync` if `datasync` specified, otherwise `fsync`.
+    pub fn new(fd: RawFd, datasync: bool) -> Self {
+        Self { fd, datasync }
+    }
+}
+
 /// Connect to a remote address.
 pub struct Connect {
     pub(crate) fd: RawFd,

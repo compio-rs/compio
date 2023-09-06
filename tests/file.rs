@@ -33,6 +33,7 @@ fn basic_write() {
         let file = File::create(tempfile.path()).unwrap();
 
         file.write_at(HELLO, 0).await.0.unwrap();
+        file.sync_all().await.unwrap();
 
         let file = std::fs::read(tempfile.path()).unwrap();
         assert_eq!(file, HELLO);

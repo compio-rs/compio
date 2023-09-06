@@ -10,6 +10,7 @@ use crate::{
 use crate::{
     driver::{fs::FileInner, AsRawFd, FromRawFd, IntoRawFd, RawFd},
     fs::OpenOptions,
+    op::Sync,
 };
 
 /// A reference to an open file on the filesystem.
@@ -114,6 +115,38 @@ impl File {
             .await
             .into_inner()
             .into_inner()
+    }
+
+    #[cfg(feature = "runtime")]
+    async fn sync_impl(&self, datasync: bool) -> io::Result<()> {
+        let op = Sync::new(self.as_raw_fd(), datasync);
+        RUNTIME.with(|runtime| runtime.submit(op)).await.0?;
+        Ok(())
+    }
+
+    /// Attempts to sync all OS-internal metadata to disk.
+    ///
+    /// This function will attempt to ensure that all in-memory data reaches the
+    /// filesystem before returning.
+    #[cfg(feature = "runtime")]
+    pub async fn sync_all(&self) -> io::Result<()> {
+        self.sync_impl(false).await
+    }
+
+    /// This function is similar to [`sync_all`], except that it might not
+    /// synchronize file metadata to the filesystem.
+    ///
+    /// This is intended for use cases that must synchronize content, but don't
+    /// need the metadata on disk. The goal of this method is to reduce disk
+    /// operations.
+    ///
+    /// Note that some platforms may simply implement this in terms of
+    /// [`sync_all`].
+    ///
+    /// [`sync_all`]: File::sync_all
+    #[cfg(feature = "runtime")]
+    pub async fn sync_data(&self) -> io::Result<()> {
+        self.sync_impl(true).await
     }
 }
 

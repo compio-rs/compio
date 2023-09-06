@@ -19,7 +19,7 @@ use windows_sys::{
             SIO_GET_EXTENSION_FUNCTION_POINTER, SOCKADDR, SOCKADDR_STORAGE, SOL_SOCKET,
             SO_UPDATE_ACCEPT_CONTEXT, WSAID_ACCEPTEX, WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS,
         },
-        Storage::FileSystem::{ReadFile, WriteFile},
+        Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile},
         System::{Pipes::ConnectNamedPipe, IO::OVERLAPPED},
     },
 };
@@ -130,6 +130,13 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
             optr,
         );
         win32_pending_result(res)
+    }
+}
+
+impl OpCode for Sync {
+    unsafe fn operate(&mut self, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let res = FlushFileBuffers(self.fd as _);
+        win32_result(res, 0)
     }
 }
 
