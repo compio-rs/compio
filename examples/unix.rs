@@ -14,10 +14,10 @@ fn main() {
 
         assert_eq!(addr, tx.peer_addr().unwrap());
 
-        tx.send("Hello world!").await.0.unwrap();
+        tx.send_all("Hello world!").await.0.unwrap();
 
-        let buffer = Vec::with_capacity(64);
-        let (n, buffer) = rx.recv(buffer).await;
+        let buffer = Vec::with_capacity(12);
+        let (n, buffer) = rx.recv_exact(buffer).await;
         n.unwrap();
         println!("{}", String::from_utf8(buffer).unwrap());
     });
