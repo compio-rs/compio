@@ -23,7 +23,7 @@ jobs:
           cargo +nightly test --features=all,nightly --target $(target) -Z doctest-xcompile
         displayName: TestNightly
       - script: |
-          cargo test --features all,stable --target $(target) -Z doctest-xcompile
+          cargo test --features all,stable --target $(target)
         displayName: TestStable
 
   - job: Test_Ubuntu
