@@ -114,7 +114,7 @@ impl NamedPipeServer {
     /// ```no_run
     /// use compio::named_pipe::{PipeEnd, PipeMode, ServerOptions};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-server-info";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-server-info";
     ///
     /// # compio::task::block_on(async move {
     /// let server = ServerOptions::new()
@@ -178,7 +178,7 @@ impl NamedPipeServer {
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     /// use windows_sys::Win32::Foundation::ERROR_PIPE_NOT_CONNECTED;
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-disconnect";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-disconnect";
     ///
     /// # compio::task::block_on(async move {
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
@@ -296,7 +296,7 @@ impl NamedPipeClient {
     /// ```no_run
     /// use compio::named_pipe::{ClientOptions, PipeEnd, PipeMode};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-client-info";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-client-info";
     ///
     /// # compio::task::block_on(async move {
     /// let client = ClientOptions::new().open(PIPE_NAME)?;
@@ -377,7 +377,7 @@ impl ServerOptions {
     /// ```
     /// use compio::named_pipe::ServerOptions;
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-new";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-new";
     ///
     /// # compio::task::block_on(async move {
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
@@ -431,7 +431,7 @@ impl ServerOptions {
     ///
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-access-inbound-err1";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-inbound-err1";
     ///
     /// # compio::task::block_on(async move {
     /// let _server = ServerOptions::new()
@@ -453,7 +453,7 @@ impl ServerOptions {
     ///
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-access-inbound-err2";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-inbound-err2";
     ///
     /// # compio::task::block_on(async move {
     /// let server = ServerOptions::new()
@@ -480,7 +480,7 @@ impl ServerOptions {
     ///
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-access-inbound";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-inbound";
     ///
     /// # compio::task::block_on(async move {
     /// let mut server = ServerOptions::new()
@@ -527,7 +527,7 @@ impl ServerOptions {
     ///
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-access-outbound-err1";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-outbound-err1";
     ///
     /// # compio::task::block_on(async move {
     /// let server = ServerOptions::new()
@@ -549,7 +549,7 @@ impl ServerOptions {
     ///
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-access-outbound-err2";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-outbound-err2";
     ///
     /// # compio::task::block_on(async move {
     /// let server = ServerOptions::new()
@@ -575,7 +575,7 @@ impl ServerOptions {
     /// ```
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-access-outbound";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-outbound";
     ///
     /// # compio::task::block_on(async move {
     /// let mut server = ServerOptions::new()
@@ -630,7 +630,7 @@ impl ServerOptions {
     ///
     /// use compio::named_pipe::ServerOptions;
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-first-instance-error";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-first-instance-error";
     ///
     /// # compio::task::block_on(async move {
     /// let server1 = ServerOptions::new()
@@ -655,7 +655,7 @@ impl ServerOptions {
     ///
     /// use compio::named_pipe::ServerOptions;
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-first-instance";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-first-instance";
     ///
     /// # compio::task::block_on(async move {
     /// let mut builder = ServerOptions::new();
@@ -812,7 +812,7 @@ impl ServerOptions {
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     /// use windows_sys::Win32::Foundation::ERROR_PIPE_BUSY;
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-max-instances";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-max-instances";
     ///
     /// # compio::task::block_on(async move {
     /// let mut server = ServerOptions::new();
@@ -884,7 +884,7 @@ impl ServerOptions {
     /// ```
     /// use compio::named_pipe::ServerOptions;
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-create";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-create";
     ///
     /// # compio::task::block_on(async move {
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
@@ -997,7 +997,7 @@ impl ClientOptions {
     /// ```
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-client-new";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-client-new";
     ///
     /// # compio::task::block_on(async move {
     /// // Server must be created in order for the client creation to succeed.
