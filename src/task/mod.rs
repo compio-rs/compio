@@ -10,9 +10,12 @@
 //! assert_eq!(ans, 42);
 //! ```
 
+#[cfg(not(feature = "once_cell"))]
+use std::cell::OnceCell as LazyCell;
 use std::future::Future;
 
 use async_task::Task;
+#[cfg(feature = "once_cell")]
 use once_cell::unsync::Lazy as LazyCell;
 
 mod runtime;

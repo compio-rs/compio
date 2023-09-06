@@ -1,9 +1,12 @@
+#[cfg(not(feature = "once_cell"))]
+use std::sync::OnceLock;
 use std::{
     io,
     ptr::{null, null_mut},
     task::Poll,
 };
 
+#[cfg(feature = "once_cell")]
 use once_cell::sync::OnceCell as OnceLock;
 use socket2::SockAddr;
 use windows_sys::{

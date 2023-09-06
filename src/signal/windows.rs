@@ -1,5 +1,7 @@
 //! Windows-specific types for signal handling.
 
+#[cfg(not(feature = "once_cell"))]
+use std::sync::OnceLock;
 use std::{
     collections::HashMap,
     future::Future,
@@ -9,6 +11,7 @@ use std::{
     task::{Context, Poll},
 };
 
+#[cfg(feature = "once_cell")]
 use once_cell::sync::Lazy as LazyLock;
 use slab::Slab;
 use windows_sys::Win32::{
