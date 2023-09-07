@@ -43,11 +43,11 @@ use crate::{buf::*, *};
 ///     let buf = Vec::with_capacity(12);
 ///
 ///     // write data
-///     let (result, _) = socket.send_all("Hello world!").await;
+///     let (result, _) = socket.send("Hello world!").await;
 ///     result.unwrap();
 ///
 ///     // read data
-///     let (result, buf) = other_socket.recv_exact(buf).await;
+///     let (result, buf) = other_socket.recv(buf).await;
 ///     let n_bytes = result.unwrap();
 ///
 ///     assert_eq!(n_bytes, buf.len());
