@@ -86,7 +86,7 @@ impl Runtime {
     ) -> impl Future<Output = (io::Result<usize>, T)> {
         let mut op_runtime = self.op_runtime.borrow_mut();
         let (user_data, op) = op_runtime.insert(op);
-        let res = unsafe { self.driver.push(op.as_mut::<T>(), user_data) };
+        let res = unsafe { self.driver.push(op.as_mut::<T>(), *user_data) };
         match res {
             Ok(()) => {
                 let (runnable, task) = unsafe { self.spawn_unchecked(OpFuture::new(user_data)) };

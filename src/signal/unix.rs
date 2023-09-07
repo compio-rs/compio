@@ -94,7 +94,7 @@ impl SignalEvent {
                     .as_ref()
                     .unwrap_unchecked()
             };
-            register(sig, move || driver.post(user_data, 0).unwrap())
+            register(sig, move || driver.post(*user_data, 0).unwrap())
         });
         Self {
             sig,

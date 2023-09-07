@@ -88,7 +88,7 @@ impl CtrlEvent {
                     .as_ref()
                     .unwrap_unchecked()
             };
-            register(ctrltype, move || driver.post(user_data, 0).unwrap())
+            register(ctrltype, move || driver.post(*user_data, 0).unwrap())
         });
         Self {
             ctrltype,

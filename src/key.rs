@@ -9,10 +9,7 @@ impl<T> Unpin for Key<T> {}
 
 impl<T> Clone for Key<T> {
     fn clone(&self) -> Self {
-        Self {
-            user_data: self.user_data,
-            _p: std::marker::PhantomData,
-        }
+        *self
     }
 }
 

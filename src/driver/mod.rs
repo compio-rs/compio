@@ -3,8 +3,6 @@
 
 use std::{io, mem::MaybeUninit, time::Duration};
 
-use crate::Key;
-
 cfg_if::cfg_if! {
     if #[cfg(target_os = "windows")] {
         mod iocp;
@@ -51,7 +49,7 @@ cfg_if::cfg_if! {
 ///
 /// // write data
 /// let mut op = op::Send::new(socket.as_raw_fd(), "hello world");
-/// unsafe { driver.push(&mut op, Key::new(1)) }.unwrap();
+/// unsafe { driver.push(&mut op, 1) }.unwrap();
 /// let entry = driver.poll_one(None).unwrap();
 /// assert_eq!(entry.user_data(), 1);
 /// entry.into_result().unwrap();
@@ -59,7 +57,7 @@ cfg_if::cfg_if! {
 /// // read data
 /// let buf = Vec::with_capacity(32);
 /// let mut op = op::Recv::new(other_socket.as_raw_fd(), buf);
-/// unsafe { driver.push(&mut op, Key::new(2)) }.unwrap();
+/// unsafe { driver.push(&mut op, 2) }.unwrap();
 /// let entry = driver.poll_one(None).unwrap();
 /// assert_eq!(entry.user_data(), 2);
 /// let n_bytes = entry.into_result().unwrap();
@@ -82,7 +80,7 @@ pub trait Poller {
     /// # Safety
     ///
     /// - `op` should be alive until [`Poller::poll`] returns its result.
-    unsafe fn push<T: OpCode + 'static>(&self, op: &mut T, user_data: Key<T>) -> io::Result<()>;
+    unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()>;
 
     /// Post an operation result to the driver.
     ///
@@ -93,7 +91,7 @@ pub trait Poller {
     /// * io-uring: it won't interrupt [`Poller::poll`].
     /// You need to send a signal to the polling thread to interrupt the driver.
     /// [`Poller::poll`] will then return with [`io::ErrorKind::Interrupted`].
-    fn post<T>(&self, user_data: Key<T>, result: usize) -> io::Result<()>;
+    fn post(&self, user_data: usize, result: usize) -> io::Result<()>;
 
     /// Poll the driver with an optional timeout.
     ///

@@ -10,7 +10,7 @@ fn main() {
     driver.attach(file.as_raw_fd()).unwrap();
 
     let mut op = compio::op::ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(4096));
-    unsafe { driver.push(&mut op, Key::new(0)) }.unwrap();
+    unsafe { driver.push(&mut op, 0) }.unwrap();
 
     let entry = driver.poll_one(None).unwrap();
     assert_eq!(entry.user_data(), 0);
