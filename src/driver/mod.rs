@@ -70,6 +70,10 @@ cfg_if::cfg_if! {
 /// ```
 pub trait Poller {
     /// Attach an fd to the driver.
+    ///
+    /// ## Platform specific
+    /// * IOCP: it will be attached to the IOCP completion port.
+    /// * io-uring: it will do nothing and return `Ok(())`
     fn attach(&self, fd: RawFd) -> io::Result<()>;
 
     /// Push an operation with user-defined data.
