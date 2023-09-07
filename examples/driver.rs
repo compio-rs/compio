@@ -1,7 +1,6 @@
 use compio::{
     buf::IntoInner,
     driver::{AsRawFd, Driver, Poller},
-    Key,
 };
 
 fn main() {
