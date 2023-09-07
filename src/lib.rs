@@ -10,7 +10,7 @@ mod key;
 pub mod net;
 pub mod op;
 
-pub use key::Key;
+pub(crate) use key::Key;
 
 #[cfg(target_os = "windows")]
 pub mod named_pipe;

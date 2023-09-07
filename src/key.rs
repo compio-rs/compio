@@ -29,11 +29,6 @@ impl<T> Key<T> {
             _p: std::marker::PhantomData,
         }
     }
-
-    /// Get the user data.
-    pub fn user_data(&self) -> usize {
-        self.user_data
-    }
 }
 
 impl Key<()> {

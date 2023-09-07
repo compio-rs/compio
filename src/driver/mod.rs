@@ -27,7 +27,7 @@ cfg_if::cfg_if! {
 ///     buf::IntoInner,
 ///     driver::{AsRawFd, Driver, Poller},
 ///     net::UdpSocket,
-///     op, Key,
+///     op,
 /// };
 ///
 /// let first_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
