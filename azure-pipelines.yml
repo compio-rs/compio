@@ -4,53 +4,59 @@ trigger:
       - master
 
 jobs:
-- job: Test_Windows
-  strategy:
-    matrix:
-      x86:
-        target: i686-pc-windows-msvc
-      x64:
-        target: x86_64-pc-windows-msvc
-      x64-gnu:
-        target: x86_64-pc-windows-gnu
-  pool:
-    vmImage: windows-latest
+  - job: Test_Windows
+    strategy:
+      matrix:
+        x86:
+          target: i686-pc-windows-msvc
+        x64:
+          target: x86_64-pc-windows-msvc
+        x64-gnu:
+          target: x86_64-pc-windows-gnu
+    pool:
+      vmImage: windows-latest
 
-  steps:
-  - script: |
-      rustup toolchain install nightly
-      rustup +nightly target install $(target)
-      cargo +nightly test --all-features --target $(target) -Z doctest-xcompile
-    displayName: Test
+    steps:
+      - script: |
+          rustup toolchain install nightly
+          rustup +nightly target install $(target)
+          cargo +nightly test --features=all,nightly --no-default-features --target $(target) -Z doctest-xcompile
+        displayName: TestNightly
+      - script: |
+          cargo test --features all --target $(target)
+        displayName: TestStable
 
-- job: Test_Ubuntu
-  strategy:
-    matrix:
-      focal:
-        image: ubuntu-20.04
-      jammy:
-        image: ubuntu-22.04
-  pool:
-    vmImage: $(image)
+  - job: Test_Ubuntu
+    strategy:
+      matrix:
+        focal:
+          image: ubuntu-20.04
+        jammy:
+          image: ubuntu-22.04
+    pool:
+      vmImage: $(image)
 
-  steps:
-  - script: |
-      rustup toolchain install nightly
-      cargo +nightly test --all-features
-    displayName: Test
+    steps:
+      - script: |
+          rustup toolchain install nightly
+          cargo +nightly test --features all,nightly --no-default-features
+        displayName: TestNightly
+      - script: |
+          cargo test --features all
+        displayName: TestStable
 
-- job: Doc
-  strategy:
-    matrix:
-      windows:
-        image: windows-latest
-      linux:
-        image: ubuntu-latest
-  pool:
-    vmImage: $(image)
+  - job: Doc
+    strategy:
+      matrix:
+        windows:
+          image: windows-latest
+        linux:
+          image: ubuntu-latest
+    pool:
+      vmImage: $(image)
 
-  steps:
-  - script: |
-      rustup toolchain install nightly
-      cargo +nightly doc --all-features --no-deps
-    displayName: Build docs
+    steps:
+      - script: |
+          rustup toolchain install nightly
+          cargo +nightly doc --features all --no-deps
+        displayName: Build docs

@@ -1,5 +1,7 @@
 //! Unix-specific types for signal handling.
 
+#[cfg(feature = "lazy_cell")]
+use std::cell::LazyCell;
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -9,6 +11,7 @@ use std::{
     task::{Context, Poll},
 };
 
+#[cfg(not(feature = "lazy_cell"))]
 use once_cell::unsync::Lazy as LazyCell;
 use slab::Slab;
 
