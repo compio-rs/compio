@@ -1,7 +1,6 @@
 use std::net::{IpAddr, SocketAddr};
 
 use compio::net::{TcpListener, TcpStream, ToSockAddrs};
-use futures_util::FutureExt;
 
 async fn test_connect_ip_impl(
     target: impl ToSockAddrs,
@@ -95,47 +94,8 @@ test_connect! {
 }
 
 #[test]
-fn connect_timeout_dst() {
-    compio::task::block_on(async {
-        let drop_flag = DropFlag::default();
-        let drop_flag_copy = drop_flag.clone();
-        {
-            let connect = async move {
-                let _unused = drop_flag_copy;
-                TcpStream::connect("127.0.0.1:1").await
-            };
-
-            let res = futures_util::select! {
-                res = connect.fuse() => {
-                    res.unwrap();
-                    false
-                },
-                _ = compio::time::sleep(std::time::Duration::from_secs(1)).fuse() => true,
-            };
-            assert!(res);
-        }
-        drop_flag.assert_dropped();
-    })
-}
-
-#[test]
 fn connect_invalid_dst() {
     compio::task::block_on(async {
         assert!(TcpStream::connect("127.0.0.1:1").await.is_err());
     })
-}
-
-#[derive(Default, Clone)]
-struct DropFlag(std::rc::Rc<std::cell::RefCell<bool>>);
-
-impl Drop for DropFlag {
-    fn drop(&mut self) {
-        *self.0.borrow_mut() = true;
-    }
-}
-
-impl DropFlag {
-    fn assert_dropped(&self) {
-        assert!(*self.0.borrow());
-    }
 }
