@@ -27,8 +27,7 @@ use windows_sys::Win32::{
     },
 };
 
-use super::queue::Queue;
-use crate::driver::{Entry, Poller};
+use crate::driver::{queue::Queue, Entry, Poller};
 
 pub(crate) mod fs;
 pub(crate) mod net;

@@ -9,8 +9,7 @@ use io_uring::{
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 
-use super::queue::Queue;
-use crate::driver::{Entry, Poller};
+use crate::driver::{queue::Queue, Entry, Poller};
 
 pub(crate) mod fs;
 pub(crate) mod net;
