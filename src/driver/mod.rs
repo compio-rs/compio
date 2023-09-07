@@ -29,7 +29,7 @@ cfg_if::cfg_if! {
 ///     buf::IntoInner,
 ///     driver::{AsRawFd, Driver, Poller},
 ///     net::UdpSocket,
-///     op,
+///     op, Key,
 /// };
 ///
 /// let first_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
@@ -51,7 +51,7 @@ cfg_if::cfg_if! {
 ///
 /// // write data
 /// let mut op = op::Send::new(socket.as_raw_fd(), "hello world");
-/// unsafe { driver.push(&mut op, 1) }.unwrap();
+/// unsafe { driver.push(&mut op, Key::new(1)) }.unwrap();
 /// let entry = driver.poll_one(None).unwrap();
 /// assert_eq!(entry.user_data(), 1);
 /// entry.into_result().unwrap();
@@ -59,7 +59,7 @@ cfg_if::cfg_if! {
 /// // read data
 /// let buf = Vec::with_capacity(32);
 /// let mut op = op::Recv::new(other_socket.as_raw_fd(), buf);
-/// unsafe { driver.push(&mut op, 2) }.unwrap();
+/// unsafe { driver.push(&mut op, Key::new(2)) }.unwrap();
 /// let entry = driver.poll_one(None).unwrap();
 /// assert_eq!(entry.user_data(), 2);
 /// let n_bytes = entry.into_result().unwrap();
