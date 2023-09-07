@@ -3,6 +3,8 @@
 
 use std::{io, mem::MaybeUninit, time::Duration};
 
+use crate::Key;
+
 cfg_if::cfg_if! {
     if #[cfg(target_os = "windows")] {
         mod iocp;
@@ -75,8 +77,8 @@ pub trait Poller {
     ///
     /// # Safety
     ///
-    /// `op` should be alive until [`Poller::poll`] returns its result.
-    unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()>;
+    /// - `op` should be alive until [`Poller::poll`] returns its result.
+    unsafe fn push<T: OpCode + 'static>(&self, op: &mut T, user_data: Key<T>) -> io::Result<()>;
 
     /// Post an operation result to the driver.
     ///
@@ -87,7 +89,7 @@ pub trait Poller {
     /// * io-uring: it won't interrupt [`Poller::poll`].
     /// You need to send a signal to the polling thread to interrupt the driver.
     /// [`Poller::poll`] will then return with [`io::ErrorKind::Interrupted`].
-    fn post(&self, user_data: usize, result: usize) -> io::Result<()>;
+    fn post<T: OpCode>(&self, user_data: Key<T>, result: usize) -> io::Result<()>;
 
     /// Poll the driver with an optional timeout.
     ///

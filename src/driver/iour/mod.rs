@@ -10,7 +10,10 @@ use io_uring::{
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 
-use crate::driver::{Entry, Poller};
+use crate::{
+    driver::{Entry, Poller},
+    Key,
+};
 
 pub(crate) mod fs;
 pub(crate) mod net;
@@ -106,14 +109,14 @@ impl Poller for Driver {
         Ok(())
     }
 
-    unsafe fn push(&self, op: &mut impl OpCode, user_data: usize) -> io::Result<()> {
-        let entry = op.create_entry().user_data(user_data as _);
+    unsafe fn push<T: OpCode + 'static>(&self, op: &mut T, user_data: Key<T>) -> io::Result<()> {
+        let entry = op.create_entry().user_data(*user_data as _);
         self.squeue.push(entry);
         Ok(())
     }
 
-    fn post(&self, user_data: usize, result: usize) -> io::Result<()> {
-        self.cqueue.push(Entry::new(user_data, Ok(result)));
+    fn post<T: OpCode>(&self, user_data: Key<T>, result: usize) -> io::Result<()> {
+        self.cqueue.push(Entry::new(*user_data, Ok(result)));
         Ok(())
     }
 

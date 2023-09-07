@@ -28,7 +28,10 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::driver::{Entry, Poller};
+use crate::{
+    driver::{Entry, Poller},
+    Key,
+};
 
 pub(crate) mod fs;
 pub(crate) mod net;
@@ -164,13 +167,13 @@ impl Poller for Driver {
         }
     }
 
-    unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()> {
-        self.operations.push((op, Overlapped::new(user_data)));
+    unsafe fn push<T: OpCode + 'static>(&self, op: &mut T, user_data: Key<T>) -> io::Result<()> {
+        self.operations.push((op, Overlapped::new(*user_data)));
         Ok(())
     }
 
-    fn post(&self, user_data: usize, result: usize) -> io::Result<()> {
-        let overlapped = Box::new(Overlapped::new(user_data));
+    fn post<T: OpCode>(&self, user_data: Key<T>, result: usize) -> io::Result<()> {
+        let overlapped = Box::new(Overlapped::new(*user_data));
         let overlapped_ptr = Box::into_raw(overlapped);
         let res = unsafe {
             PostQueuedCompletionStatus(

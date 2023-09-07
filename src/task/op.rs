@@ -9,7 +9,7 @@ use std::{
 
 use slab::Slab;
 
-use crate::driver::OpCode;
+use crate::{driver::OpCode, key::Key};
 
 pub struct RawOp(*mut dyn OpCode);
 
@@ -54,29 +54,30 @@ impl RegisteredOp {
 }
 
 #[derive(Default)]
-pub struct OpRuntime {
+pub(crate) struct OpRuntime {
     ops: Slab<RegisteredOp>,
 }
 
 impl OpRuntime {
-    pub fn insert<T: OpCode + 'static>(&mut self, op: T) -> (usize, &mut RawOp) {
+    pub fn insert<T: OpCode + 'static>(&mut self, op: T) -> (Key<T>, &mut RawOp) {
         let user_data = self.ops.insert(RegisteredOp::new(Some(RawOp::new(op))));
         let op = unsafe { self.ops.get_unchecked_mut(user_data) };
-        (user_data, op.op.as_mut().unwrap())
+        // Safety: `user_data` corresponds to `op` inserted which has type `T`.
+        (unsafe { Key::new(user_data) }, op.op.as_mut().unwrap())
     }
 
-    pub fn insert_dummy(&mut self) -> usize {
-        self.ops.insert(RegisteredOp::new(None))
+    pub fn insert_dummy(&mut self) -> Key<()> {
+        Key::new_dummy(self.ops.insert(RegisteredOp::new(None)))
     }
 
-    pub fn update_waker(&mut self, key: usize, waker: Waker) {
-        if let Some(op) = self.ops.get_mut(key) {
+    pub fn update_waker<T>(&mut self, key: Key<T>, waker: Waker) {
+        if let Some(op) = self.ops.get_mut(*key) {
             op.waker = Some(waker);
         }
     }
 
-    pub fn update_result(&mut self, key: usize, result: io::Result<usize>) {
-        let op = self.ops.get_mut(key).unwrap();
+    pub fn update_result<T>(&mut self, key: Key<T>, result: io::Result<usize>) {
+        let op = self.ops.get_mut(*key).unwrap();
         if let Some(waker) = op.waker.take() {
             waker.wake();
         }
@@ -86,28 +87,28 @@ impl OpRuntime {
         }
     }
 
-    pub fn has_result(&mut self, key: usize) -> bool {
-        self.ops.get_mut(key).unwrap().result.is_some()
+    pub fn has_result<T>(&mut self, key: Key<T>) -> bool {
+        self.ops.get_mut(*key).unwrap().result.is_some()
     }
 
-    pub fn cancel(&mut self, key: usize) {
-        self.ops.get_mut(key).unwrap().cancelled = true;
+    pub fn cancel<T>(&mut self, key: Key<T>) {
+        self.ops.get_mut(*key).unwrap().cancelled = true;
     }
 
-    pub fn remove(&mut self, key: usize) -> RegisteredOp {
-        self.ops.remove(key)
+    pub fn remove<T>(&mut self, key: Key<T>) -> RegisteredOp {
+        self.ops.remove(*key)
     }
 }
 
 #[derive(Debug)]
 pub struct OpFuture<T: OpCode + 'static> {
-    user_data: usize,
+    user_data: Key<T>,
     completed: bool,
     _p: PhantomData<&'static T>,
 }
 
 impl<T: OpCode> OpFuture<T> {
-    pub fn new(user_data: usize) -> Self {
+    pub fn new(user_data: Key<T>) -> Self {
         Self {
             user_data,
             completed: false,
