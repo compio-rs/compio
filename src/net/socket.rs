@@ -110,7 +110,16 @@ impl Socket {
     pub async fn connect_async(&self, addr: &SockAddr) -> io::Result<()> {
         let op = Connect::new(self.as_raw_fd(), addr.clone());
         let (res, _) = RUNTIME.with(|runtime| runtime.submit(op)).await;
-        res.map(|_| ())
+        #[cfg(target_os = "windows")]
+        {
+            use crate::driver::op::socket_update_connect_context;
+
+            res.and_then(|_| socket_update_connect_context(self.as_raw_fd()))
+        }
+        #[cfg(target_os = "linux")]
+        {
+            res.map(|_| ())
+        }
     }
 
     #[cfg(all(feature = "runtime", target_os = "linux"))]
@@ -126,12 +135,15 @@ impl Socket {
 
     #[cfg(all(feature = "runtime", target_os = "windows"))]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
+        use crate::driver::op::socket_update_accept_context;
+
         let local_addr = self.local_addr()?;
         let accept_sock = Self::new(local_addr.domain(), self.r#type()?, self.protocol()?)?;
         let op = Accept::new(self.as_raw_fd(), accept_sock.as_raw_fd() as _);
         let (res, op) = RUNTIME.with(|runtime| runtime.submit(op)).await;
         res?;
         let addr = op.into_addr()?;
+        socket_update_accept_context(self.as_raw_fd(), accept_sock.as_raw_fd())?;
         Ok((accept_sock, addr))
     }
 
@@ -144,6 +156,33 @@ impl Socket {
             .into_inner()
             .map_advanced()
             .into_inner()
+    }
+
+    #[cfg(feature = "runtime")]
+    pub async fn recv_exact<T: IoBufMut>(&self, mut buffer: T) -> BufResult<usize, T> {
+        let need = buffer.as_uninit_slice().len();
+        let mut total_read = 0;
+        let mut read;
+        while total_read < need {
+            (read, buffer) = self.recv(buffer).await;
+            match read {
+                Ok(read) => {
+                    total_read += read;
+                }
+                Err(e) => return (Err(e), buffer),
+            }
+        }
+        if total_read < need {
+            (
+                Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "failed to fill whole buffer",
+                )),
+                buffer,
+            )
+        } else {
+            (Ok(total_read), buffer)
+        }
     }
 
     #[cfg(feature = "runtime")]
@@ -165,6 +204,21 @@ impl Socket {
             .await
             .into_inner()
             .into_inner()
+    }
+
+    #[cfg(feature = "runtime")]
+    pub async fn send_all<T: IoBuf>(&self, mut buffer: T) -> BufResult<usize, T> {
+        let buf_len = buffer.buf_len();
+        let mut total_written = 0;
+        while total_written < buf_len {
+            let (written, buffer_slice) = self.send(buffer.slice(total_written..)).await;
+            buffer = buffer_slice.into_inner();
+            match written {
+                Ok(written) => total_written += written,
+                Err(e) => return (Err(e), buffer),
+            }
+        }
+        (Ok(total_written), buffer)
     }
 
     #[cfg(feature = "runtime")]

@@ -63,23 +63,14 @@ fn basic(c: &mut Criterion) {
 
                 server.connect().await.unwrap();
 
-                let write = async {
-                    let mut pos = 0;
-                    while pos < PACKET_LEN {
-                        let (res, _) = server.write(&PACKET[pos..]).await;
-                        pos += res.unwrap();
-                    }
-                };
-                let read = async {
-                    let mut buffer = Vec::with_capacity(PACKET_LEN);
-                    let mut res;
-                    while buffer.len() < PACKET_LEN {
-                        (res, buffer) = client.read(buffer).await;
-                        res.unwrap();
-                    }
-                    buffer
-                };
-                futures_util::join!(write, read);
+                let write = server.write_all(PACKET);
+
+                let buffer = Vec::with_capacity(PACKET_LEN);
+                let read = client.read_exact(buffer);
+
+                let ((write, _), (read, _)) = futures_util::join!(write, read);
+                write.unwrap();
+                read.unwrap();
             }
         })
     });

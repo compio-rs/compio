@@ -44,16 +44,9 @@ fn read(c: &mut Criterion) {
     group.bench_function("iocp", |b| {
         b.to_async(CompioRuntime).iter(|| async {
             let file = compio::fs::File::open("Cargo.toml").unwrap();
-            let mut buffer = Vec::with_capacity(1024);
-            loop {
-                let old_len = buffer.len();
-                let (n, sbuf) = file.read_at(buffer, old_len).await;
-                buffer = sbuf;
-                let n = n.unwrap();
-                if n == 0 {
-                    break;
-                }
-            }
+            let buffer = Vec::with_capacity(1024);
+            let (n, buffer) = file.read_to_end_at(buffer, 0).await;
+            n.unwrap();
             buffer
         })
     });
@@ -94,11 +87,8 @@ fn write(c: &mut Criterion) {
         let temp_file = NamedTempFile::new().unwrap();
         b.to_async(CompioRuntime).iter(|| async {
             let file = compio::fs::File::create(temp_file.path()).unwrap();
-            let mut pos = 0;
-            while pos < CONTENT.len() {
-                let (res, _) = file.write_at(&CONTENT[pos..], pos).await;
-                pos += res.unwrap();
-            }
+            let (res, _) = file.write_all_at(CONTENT, 0).await;
+            res.unwrap();
         })
     });
 

@@ -57,7 +57,7 @@ impl Accept {
         Self {
             fd,
             buffer: unsafe { std::mem::zeroed() },
-            addr_len: 0,
+            addr_len: std::mem::size_of::<sockaddr_storage>() as _,
         }
     }
 
@@ -71,7 +71,7 @@ impl OpCode for Accept {
     fn create_entry(&mut self) -> Entry {
         opcode::Accept::new(
             Fd(self.fd),
-            &mut self.buffer as *mut _ as *mut _,
+            &mut self.buffer as *mut sockaddr_storage as *mut libc::sockaddr,
             &mut self.addr_len,
         )
         .build()

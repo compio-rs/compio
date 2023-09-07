@@ -30,9 +30,9 @@ use crate::{buf::*, *};
 ///
 ///     let (tx, (rx, _)) = futures_util::try_join!(tx_fut, rx_fut).unwrap();
 ///
-///     tx.send("test").await.0.unwrap();
+///     tx.send_all("test").await.0.unwrap();
 ///
-///     let (_, buf) = rx.recv(Vec::with_capacity(4)).await;
+///     let (_, buf) = rx.recv_exact(Vec::with_capacity(4)).await;
 ///
 ///     assert_eq!(buf, b"test");
 /// });
@@ -130,9 +130,16 @@ impl TcpStream {
     #[cfg(feature = "runtime")]
     pub async fn connect(addr: impl ToSockAddrs) -> io::Result<Self> {
         super::each_addr_async(addr, |addr| async move {
-            let mut socket_addr = addr.as_socket().unwrap();
-            socket_addr.set_port(0);
-            let bind_addr = SockAddr::from(socket_addr);
+            let bind_addr = if addr.is_ipv4() {
+                SockAddr::from(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+            } else if addr.is_ipv6() {
+                SockAddr::from(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 0, 0, 0))
+            } else {
+                return Err(io::Error::new(
+                    io::ErrorKind::AddrNotAvailable,
+                    "Unsupported address domain.",
+                ));
+            };
             let socket = Socket::bind(&bind_addr, Type::STREAM, Some(Protocol::TCP))?;
             socket.connect_async(&addr).await?;
             Ok(Self { inner: socket })
@@ -166,11 +173,37 @@ impl TcpStream {
         self.inner.recv(buffer).await
     }
 
+    /// Receives exact number of bytes from the socket.
+    #[cfg(feature = "runtime")]
+    pub async fn recv_exact<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+        self.inner.recv_exact(buffer).await
+    }
+
+    /// Receives a packet of data from the socket into the buffer, returning the
+    /// original buffer and quantity of data received.
+    #[cfg(feature = "runtime")]
+    pub async fn recv_vectored<T: IoBufMut>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
+        self.inner.recv_vectored(buffer).await
+    }
+
     /// Sends some data to the socket from the buffer, returning the original
     /// buffer and quantity of data sent.
     #[cfg(feature = "runtime")]
     pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.send(buffer).await
+    }
+
+    /// Sends all data to the socket.
+    #[cfg(feature = "runtime")]
+    pub async fn send_all<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
+        self.inner.send_all(buffer).await
+    }
+
+    /// Sends some data to the socket from the buffer, returning the original
+    /// buffer and quantity of data sent.
+    #[cfg(feature = "runtime")]
+    pub async fn send_vectored<T: IoBuf>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
+        self.inner.send_vectored(buffer).await
     }
 }
 

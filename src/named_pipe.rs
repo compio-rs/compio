@@ -5,9 +5,7 @@
 use std::{
     ffi::{c_void, OsStr},
     io,
-    os::windows::prelude::{
-        AsRawHandle, FromRawHandle, HandleOrInvalid, IntoRawHandle, OwnedHandle, RawHandle,
-    },
+    os::windows::prelude::{AsRawHandle, HandleOrInvalid, IntoRawHandle, OwnedHandle},
     ptr::null_mut,
 };
 
@@ -30,13 +28,11 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 #[cfg(feature = "runtime")]
+use crate::{buf::*, op::ConnectNamedPipe, task::RUNTIME, *};
 use crate::{
-    buf::*,
-    op::{BufResultExt, ConnectNamedPipe, ReadAt, WriteAt},
-    task::RUNTIME,
-    *,
+    driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd},
+    fs::File,
 };
 
 /// A [Windows named pipe] server.
@@ -102,14 +98,14 @@ use crate::{
 /// [Windows named pipe]: https://docs.microsoft.com/en-us/windows/win32/ipc/named-pipes
 #[derive(Debug)]
 pub struct NamedPipeServer {
-    handle: OwnedHandle,
+    handle: File,
 }
 
 impl NamedPipeServer {
     pub(crate) fn from_handle(handle: OwnedHandle) -> io::Result<Self> {
         #[cfg(feature = "runtime")]
         RUNTIME.with(|runtime| runtime.attach(handle.as_raw_handle() as _))?;
-        Ok(Self { handle })
+        Ok(unsafe { Self::from_raw_fd(handle.into_raw_handle()) })
     }
 
     /// Retrieves information about the named pipe the server is associated
@@ -118,7 +114,7 @@ impl NamedPipeServer {
     /// ```no_run
     /// use compio::named_pipe::{PipeEnd, PipeMode, ServerOptions};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-server-info";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-server-info";
     ///
     /// # compio::task::block_on(async move {
     /// let server = ServerOptions::new()
@@ -182,12 +178,12 @@ impl NamedPipeServer {
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     /// use windows_sys::Win32::Foundation::ERROR_PIPE_NOT_CONNECTED;
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-disconnect";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-disconnect";
     ///
     /// # compio::task::block_on(async move {
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
     ///
-    /// let mut client = ClientOptions::new().open(PIPE_NAME).unwrap();
+    /// let client = ClientOptions::new().open(PIPE_NAME).unwrap();
     ///
     /// // Wait for a client to become connected.
     /// server.connect().await.unwrap();
@@ -214,44 +210,45 @@ impl NamedPipeServer {
     /// buffer, returning how many bytes were read.
     #[cfg(feature = "runtime")]
     pub async fn read<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        let op = ReadAt::new(self.as_raw_fd(), 0, buffer);
-        RUNTIME
-            .with(|runtime| runtime.submit(op))
-            .await
-            .into_inner()
-            .map_advanced()
-            .into_inner()
+        self.handle.read_at(buffer, 0).await
+    }
+
+    /// Read the exact number of bytes from the pipe.
+    #[cfg(feature = "runtime")]
+    pub async fn read_exact<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+        self.handle.read_exact_at(buffer, 0).await
     }
 
     /// Write a buffer into the pipe, returning how many bytes were written.
     #[cfg(feature = "runtime")]
     pub async fn write<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        let op = WriteAt::new(self.as_raw_fd(), 0, buffer);
-        RUNTIME
-            .with(|runtime| runtime.submit(op))
-            .await
-            .into_inner()
-            .into_inner()
+        self.handle.write_at(buffer, 0).await
+    }
+
+    /// Write all bytes into the pipe.
+    #[cfg(feature = "runtime")]
+    pub async fn write_all<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
+        self.handle.write_all_at(buffer, 0).await
     }
 }
 
 impl AsRawFd for NamedPipeServer {
     fn as_raw_fd(&self) -> RawFd {
-        self.handle.as_raw_handle() as _
+        self.handle.as_raw_fd()
     }
 }
 
 impl FromRawFd for NamedPipeServer {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
         Self {
-            handle: OwnedHandle::from_raw_handle(fd as _),
+            handle: File::from_raw_fd(fd),
         }
     }
 }
 
 impl IntoRawFd for NamedPipeServer {
-    fn into_raw_fd(self) -> RawHandle {
-        self.handle.into_raw_handle() as _
+    fn into_raw_fd(self) -> RawFd {
+        self.handle.into_raw_fd()
     }
 }
 
@@ -295,14 +292,14 @@ impl IntoRawFd for NamedPipeServer {
 /// [Windows named pipe]: https://docs.microsoft.com/en-us/windows/win32/ipc/named-pipes
 #[derive(Debug)]
 pub struct NamedPipeClient {
-    handle: OwnedHandle,
+    handle: File,
 }
 
 impl NamedPipeClient {
     pub(crate) fn from_handle(handle: OwnedHandle) -> io::Result<Self> {
         #[cfg(feature = "runtime")]
         RUNTIME.with(|runtime| runtime.attach(handle.as_raw_handle() as _))?;
-        Ok(Self { handle })
+        Ok(unsafe { Self::from_raw_fd(handle.into_raw_handle()) })
     }
 
     /// Retrieves information about the named pipe the client is associated
@@ -311,7 +308,7 @@ impl NamedPipeClient {
     /// ```no_run
     /// use compio::named_pipe::{ClientOptions, PipeEnd, PipeMode};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-client-info";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-client-info";
     ///
     /// # compio::task::block_on(async move {
     /// let client = ClientOptions::new().open(PIPE_NAME)?;
@@ -332,44 +329,45 @@ impl NamedPipeClient {
     /// buffer, returning how many bytes were read.
     #[cfg(feature = "runtime")]
     pub async fn read<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        let op = ReadAt::new(self.as_raw_fd(), 0, buffer);
-        RUNTIME
-            .with(|runtime| runtime.submit(op))
-            .await
-            .into_inner()
-            .map_advanced()
-            .into_inner()
+        self.handle.read_at(buffer, 0).await
+    }
+
+    /// Read the exact number of bytes from the pipe.
+    #[cfg(feature = "runtime")]
+    pub async fn read_exact<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+        self.handle.read_exact_at(buffer, 0).await
     }
 
     /// Write a buffer into the pipe, returning how many bytes were written.
     #[cfg(feature = "runtime")]
     pub async fn write<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        let op = WriteAt::new(self.as_raw_fd(), 0, buffer);
-        RUNTIME
-            .with(|runtime| runtime.submit(op))
-            .await
-            .into_inner()
-            .into_inner()
+        self.handle.write_at(buffer, 0).await
+    }
+
+    /// Write all bytes into the pipe.
+    #[cfg(feature = "runtime")]
+    pub async fn write_all<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
+        self.handle.write_all_at(buffer, 0).await
     }
 }
 
 impl AsRawFd for NamedPipeClient {
     fn as_raw_fd(&self) -> RawFd {
-        self.handle.as_raw_handle() as _
+        self.handle.as_raw_fd()
     }
 }
 
 impl FromRawFd for NamedPipeClient {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
         Self {
-            handle: OwnedHandle::from_raw_handle(fd as _),
+            handle: File::from_raw_fd(fd),
         }
     }
 }
 
 impl IntoRawFd for NamedPipeClient {
-    fn into_raw_fd(self) -> RawHandle {
-        self.handle.into_raw_handle() as _
+    fn into_raw_fd(self) -> RawFd {
+        self.handle.into_raw_fd()
     }
 }
 
@@ -403,7 +401,7 @@ impl ServerOptions {
     /// ```
     /// use compio::named_pipe::ServerOptions;
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-new";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-new";
     ///
     /// # compio::task::block_on(async move {
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
@@ -457,7 +455,7 @@ impl ServerOptions {
     ///
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-access-inbound-err1";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-inbound-err1";
     ///
     /// # compio::task::block_on(async move {
     /// let _server = ServerOptions::new()
@@ -479,7 +477,7 @@ impl ServerOptions {
     ///
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-access-inbound-err2";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-inbound-err2";
     ///
     /// # compio::task::block_on(async move {
     /// let server = ServerOptions::new()
@@ -487,7 +485,7 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let mut client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
+    /// let client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
@@ -506,22 +504,22 @@ impl ServerOptions {
     ///
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-access-inbound";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-inbound";
     ///
     /// # compio::task::block_on(async move {
-    /// let mut server = ServerOptions::new()
+    /// let server = ServerOptions::new()
     ///     .access_inbound(false)
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let mut client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
+    /// let client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
-    /// let write = server.write("ping");
+    /// let write = server.write_all("ping");
     ///
-    /// let mut buf = Vec::with_capacity(4);
-    /// let read = client.read(buf);
+    /// let buf = Vec::with_capacity(4);
+    /// let read = client.read_exact(buf);
     ///
     /// let ((write, _), (read, buf)) = futures_util::join!(write, read);
     /// write.unwrap();
@@ -553,7 +551,7 @@ impl ServerOptions {
     ///
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-access-outbound-err1";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-outbound-err1";
     ///
     /// # compio::task::block_on(async move {
     /// let server = ServerOptions::new()
@@ -575,7 +573,7 @@ impl ServerOptions {
     ///
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-access-outbound-err2";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-outbound-err2";
     ///
     /// # compio::task::block_on(async move {
     /// let server = ServerOptions::new()
@@ -583,11 +581,11 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let mut client = ClientOptions::new().read(false).open(PIPE_NAME).unwrap();
+    /// let client = ClientOptions::new().read(false).open(PIPE_NAME).unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
-    /// let mut buf = Vec::with_capacity(4);
+    /// let buf = Vec::with_capacity(4);
     /// let e = client.read(buf).await.0.unwrap_err();
     /// assert_eq!(e.kind(), io::ErrorKind::PermissionDenied);
     /// # })
@@ -601,22 +599,22 @@ impl ServerOptions {
     /// ```
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-access-outbound";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-outbound";
     ///
     /// # compio::task::block_on(async move {
-    /// let mut server = ServerOptions::new()
+    /// let server = ServerOptions::new()
     ///     .access_outbound(false)
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let mut client = ClientOptions::new().read(false).open(PIPE_NAME).unwrap();
+    /// let client = ClientOptions::new().read(false).open(PIPE_NAME).unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
-    /// let write = client.write("ping");
+    /// let write = client.write_all("ping");
     ///
-    /// let mut buf = Vec::with_capacity(4);
-    /// let read = server.read(buf);
+    /// let buf = Vec::with_capacity(4);
+    /// let read = server.read_exact(buf);
     ///
     /// let ((write, _), (read, buf)) = futures_util::join!(write, read);
     /// write.unwrap();
@@ -656,7 +654,7 @@ impl ServerOptions {
     ///
     /// use compio::named_pipe::ServerOptions;
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-first-instance-error";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-first-instance-error";
     ///
     /// # compio::task::block_on(async move {
     /// let server1 = ServerOptions::new()
@@ -681,7 +679,7 @@ impl ServerOptions {
     ///
     /// use compio::named_pipe::ServerOptions;
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-first-instance";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-first-instance";
     ///
     /// # compio::task::block_on(async move {
     /// let mut builder = ServerOptions::new();
@@ -838,7 +836,7 @@ impl ServerOptions {
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     /// use windows_sys::Win32::Foundation::ERROR_PIPE_BUSY;
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-max-instances";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-max-instances";
     ///
     /// # compio::task::block_on(async move {
     /// let mut server = ServerOptions::new();
@@ -910,7 +908,7 @@ impl ServerOptions {
     /// ```
     /// use compio::named_pipe::ServerOptions;
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-create";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-create";
     ///
     /// # compio::task::block_on(async move {
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
@@ -1023,7 +1021,7 @@ impl ClientOptions {
     /// ```
     /// use compio::named_pipe::{ClientOptions, ServerOptions};
     ///
-    /// const PIPE_NAME: &str = r"\\.\pipe\tokio-named-pipe-client-new";
+    /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-client-new";
     ///
     /// # compio::task::block_on(async move {
     /// // Server must be created in order for the client creation to succeed.
@@ -1285,7 +1283,7 @@ pub struct PipeInfo {
 }
 
 /// Internal function to get the info out of a raw named pipe.
-unsafe fn named_pipe_info(handle: RawHandle) -> io::Result<PipeInfo> {
+unsafe fn named_pipe_info(handle: RawFd) -> io::Result<PipeInfo> {
     let mut flags = 0;
     let mut out_buffer_size = 0;
     let mut in_buffer_size = 0;

@@ -3,22 +3,20 @@
 //! Currently, TCP/UDP/Unix socket are implemented.
 
 mod socket;
-pub(crate) use socket::*;
-
 mod tcp;
-pub use tcp::*;
-
 mod udp;
-pub use udp::*;
-
 mod unix;
+
 use std::{
     future::Future,
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs},
 };
 
+pub(crate) use socket::*;
 use socket2::SockAddr;
+pub use tcp::*;
+pub use udp::*;
 pub use unix::*;
 
 /// A trait for objects which can be converted or resolved to one or more
