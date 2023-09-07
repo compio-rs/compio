@@ -3,15 +3,12 @@ use std::{fs::Metadata, io, path::Path};
 #[cfg(feature = "runtime")]
 use crate::{
     buf::{IntoInner, IoBuf, IoBufMut},
-    op::{BufResultExt, ReadAt, WriteAt},
+    driver::AsRawFd,
+    op::{BufResultExt, ReadAt, Sync, WriteAt},
     task::RUNTIME,
     BufResult,
 };
-use crate::{
-    driver::{fs::file_with_options, AsRawFd},
-    fs::OpenOptions,
-    op::Sync,
-};
+use crate::{driver::fs::file_with_options, fs::OpenOptions};
 
 /// A reference to an open file on the filesystem.
 ///

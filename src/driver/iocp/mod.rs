@@ -27,7 +27,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::driver::{queue::Queue, Entry, Poller};
+use crate::driver::{queue_with_capacity, Entry, Poller, Queue};
 
 pub(crate) mod fs;
 pub(crate) mod net;
@@ -96,7 +96,7 @@ impl Driver {
             .map_err(|_| io::Error::last_os_error())?;
         Ok(Self {
             port,
-            operations: Queue::with_capacity(Self::DEFAULT_CAPACITY),
+            operations: queue_with_capacity(Self::DEFAULT_CAPACITY),
         })
     }
 }

@@ -144,23 +144,6 @@ impl OpCode for Sync {
     }
 }
 
-pub fn socket_update_accept_context(fd: RawFd, accept_fd: RawFd) -> io::Result<()> {
-    let res = unsafe {
-        setsockopt(
-            accept_fd as _,
-            SOL_SOCKET,
-            SO_UPDATE_ACCEPT_CONTEXT,
-            &fd as *const _ as _,
-            std::mem::size_of_val(&fd) as _,
-        )
-    };
-    if res != 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
-}
-
 static ACCEPT_EX: OnceLock<LPFN_ACCEPTEX> = OnceLock::new();
 static GET_ADDRS: OnceLock<LPFN_GETACCEPTEXSOCKADDRS> = OnceLock::new();
 
@@ -178,6 +161,24 @@ impl Accept {
             fd,
             accept_fd,
             buffer: unsafe { std::mem::zeroed() },
+        }
+    }
+
+    /// Update accept context.
+    pub fn update_context(&self) -> io::Result<()> {
+        let res = unsafe {
+            setsockopt(
+                self.accept_fd as _,
+                SOL_SOCKET,
+                SO_UPDATE_ACCEPT_CONTEXT,
+                &self.fd as *const _ as _,
+                std::mem::size_of_val(&self.fd) as _,
+            )
+        };
+        if res != 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
         }
     }
 
@@ -223,16 +224,27 @@ impl OpCode for Accept {
     }
 }
 
-pub fn socket_update_connect_context(fd: RawFd) -> io::Result<()> {
-    let res = unsafe { setsockopt(fd as _, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, null(), 0) };
-    if res != 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
+static CONNECT_EX: OnceLock<LPFN_CONNECTEX> = OnceLock::new();
+
+impl Connect {
+    /// Update connect context.
+    pub fn update_context(&self) -> io::Result<()> {
+        let res = unsafe {
+            setsockopt(
+                self.fd as _,
+                SOL_SOCKET,
+                SO_UPDATE_CONNECT_CONTEXT,
+                null(),
+                0,
+            )
+        };
+        if res != 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
     }
 }
-
-static CONNECT_EX: OnceLock<LPFN_CONNECTEX> = OnceLock::new();
 
 impl OpCode for Connect {
     unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {

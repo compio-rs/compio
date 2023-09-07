@@ -109,12 +109,12 @@ impl Socket {
     #[cfg(feature = "runtime")]
     pub async fn connect_async(&self, addr: &SockAddr) -> io::Result<()> {
         let op = Connect::new(self.as_raw_fd(), addr.clone());
-        let (res, _) = RUNTIME.with(|runtime| runtime.submit(op)).await;
+        let (res, _op) = RUNTIME.with(|runtime| runtime.submit(op)).await;
         #[cfg(target_os = "windows")]
         {
-            use crate::driver::op::socket_update_connect_context;
-
-            res.and_then(|_| socket_update_connect_context(self.as_raw_fd()))
+            res?;
+            _op.update_context()?;
+            Ok(())
         }
         #[cfg(target_os = "linux")]
         {
@@ -135,15 +135,13 @@ impl Socket {
 
     #[cfg(all(feature = "runtime", target_os = "windows"))]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
-        use crate::driver::op::socket_update_accept_context;
-
         let local_addr = self.local_addr()?;
         let accept_sock = Self::new(local_addr.domain(), self.r#type()?, self.protocol()?)?;
         let op = Accept::new(self.as_raw_fd(), accept_sock.as_raw_fd() as _);
         let (res, op) = RUNTIME.with(|runtime| runtime.submit(op)).await;
         res?;
+        op.update_context()?;
         let addr = op.into_addr()?;
-        socket_update_accept_context(self.as_raw_fd(), accept_sock.as_raw_fd())?;
         Ok((accept_sock, addr))
     }
 

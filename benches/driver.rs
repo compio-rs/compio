@@ -12,7 +12,7 @@ fn create_and_post_1024(c: &mut Criterion) {
 
             let driver = Driver::new().expect("created");
             for i in 0..1024_usize {
-                let _ = driver.post(i, 0).expect("succeeded");
+                driver.post(i, 0).expect("succeeded");
             }
         })
     });
