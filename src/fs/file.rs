@@ -3,15 +3,12 @@ use std::{fs::Metadata, io, path::Path};
 #[cfg(feature = "runtime")]
 use crate::{
     buf::{IntoInner, IoBuf, IoBufMut},
-    op::{BufResultExt, ReadAt, WriteAt},
+    driver::AsRawFd,
+    op::{BufResultExt, ReadAt, Sync, WriteAt},
     task::RUNTIME,
     BufResult,
 };
-use crate::{
-    driver::{fs::file_with_options, AsRawFd},
-    fs::OpenOptions,
-    op::Sync,
-};
+use crate::{driver::fs::file_with_options, fs::OpenOptions};
 
 /// A reference to an open file on the filesystem.
 ///
@@ -111,6 +108,8 @@ impl File {
     /// If this function returns an error, it is unspecified how many bytes it
     /// has read, but it will never read more than would be necessary to
     /// completely fill the buffer.
+    ///
+    /// [`ErrorKind::UnexpectedEof`]: io::ErrorKind::UnexpectedEof
     #[cfg(feature = "runtime")]
     pub async fn read_exact_at<T: IoBufMut>(
         &self,
@@ -150,6 +149,8 @@ impl File {
     /// more data to `buffer` until [`read_at()`] returns [`Ok(0)`].
     ///
     /// If successful, this function will return the total number of bytes read.
+    ///
+    /// [`read_at()`]: File::read_at
     #[cfg(feature = "runtime")]
     pub async fn read_to_end_at(
         &self,
@@ -213,6 +214,8 @@ impl File {
     /// buffer has been successfully written or such an error occurs.
     ///
     /// If the buffer contains no data, this will never call [`write_at`].
+    ///
+    /// [`write_at`]: File::write_at
     #[cfg(feature = "runtime")]
     pub async fn write_all_at<T: IoBuf>(&self, mut buffer: T, pos: usize) -> BufResult<usize, T> {
         let buf_len = buffer.buf_len();

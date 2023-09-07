@@ -9,7 +9,7 @@ use io_uring::{
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 
-use crate::driver::{queue::Queue, Entry, Poller};
+use crate::driver::{queue_with_capacity, Entry, Poller, Queue};
 
 pub(crate) mod fs;
 pub(crate) mod net;
@@ -39,8 +39,8 @@ impl Driver {
     pub fn with_entries(entries: u32) -> io::Result<Self> {
         Ok(Self {
             inner: IoUring::new(entries)?,
-            squeue: Queue::with_capacity(entries as usize),
-            cqueue: Queue::with_capacity(entries as usize),
+            squeue: queue_with_capacity(entries as usize),
+            cqueue: queue_with_capacity(entries as usize),
             _p: PhantomData,
         })
     }

@@ -3,8 +3,6 @@
 
 use std::{io, mem::MaybeUninit, time::Duration};
 
-mod queue;
-
 cfg_if::cfg_if! {
     if #[cfg(target_os = "windows")] {
         mod iocp;
@@ -12,6 +10,26 @@ cfg_if::cfg_if! {
     } else if #[cfg(target_os = "linux")] {
         mod iour;
         pub use iour::*;
+    }
+}
+
+cfg_if::cfg_if! {
+    if #[cfg(feature = "sync-queue")] {
+        pub(crate) use crossbeam_queue::SegQueue as Queue;
+    } else {
+        mod queue;
+        pub(crate) use queue::Queue;
+    }
+}
+
+pub(crate) fn queue_with_capacity<T>(_capacity: usize) -> Queue<T> {
+    #[cfg(feature = "sync-queue")]
+    {
+        Queue::new()
+    }
+    #[cfg(not(feature = "sync-queue"))]
+    {
+        Queue::with_capacity(_capacity)
     }
 }
 
