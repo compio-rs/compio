@@ -105,7 +105,7 @@ impl Poller for Driver {
         Ok(())
     }
 
-    unsafe fn push(&self, op: &mut impl OpCode, user_data: usize) -> io::Result<()> {
+    unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()> {
         let entry = op.create_entry().user_data(user_data as _);
         self.squeue.push(entry);
         Ok(())

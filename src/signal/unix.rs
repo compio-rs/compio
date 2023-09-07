@@ -18,6 +18,7 @@ use slab::Slab;
 use crate::{
     driver::{Driver, Poller},
     task::RUNTIME,
+    Key,
 };
 
 thread_local! {
@@ -82,7 +83,7 @@ fn unregister(sig: i32, key: usize) {
 #[derive(Debug)]
 pub struct SignalEvent {
     sig: i32,
-    user_data: usize,
+    user_data: Key<()>,
     handler_key: usize,
 }
 
@@ -96,7 +97,7 @@ impl SignalEvent {
                     .as_ref()
                     .unwrap_unchecked()
             };
-            register(sig, move || driver.post(user_data, 0).unwrap())
+            register(sig, move || driver.post(*user_data, 0).unwrap())
         });
         Self {
             sig,

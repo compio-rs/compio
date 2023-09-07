@@ -88,6 +88,10 @@ pub(crate) fn queue_with_capacity<T>(_capacity: usize) -> Queue<T> {
 /// ```
 pub trait Poller {
     /// Attach an fd to the driver.
+    ///
+    /// ## Platform specific
+    /// * IOCP: it will be attached to the IOCP completion port.
+    /// * io-uring: it will do nothing and return `Ok(())`
     fn attach(&self, fd: RawFd) -> io::Result<()>;
 
     /// Push an operation with user-defined data.
@@ -95,7 +99,7 @@ pub trait Poller {
     ///
     /// # Safety
     ///
-    /// `op` should be alive until [`Poller::poll`] returns its result.
+    /// - `op` should be alive until [`Poller::poll`] returns its result.
     unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()>;
 
     /// Post an operation result to the driver.

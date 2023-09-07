@@ -25,6 +25,7 @@ use windows_sys::Win32::{
 use crate::{
     driver::{Driver, Poller},
     task::RUNTIME,
+    Key,
 };
 
 #[allow(clippy::type_complexity)]
@@ -74,7 +75,7 @@ fn unregister(ctrltype: u32, key: usize) {
 #[derive(Debug)]
 pub struct CtrlEvent {
     ctrltype: u32,
-    user_data: usize,
+    user_data: Key<()>,
     handler_key: usize,
 }
 
@@ -90,7 +91,7 @@ impl CtrlEvent {
                     .as_ref()
                     .unwrap_unchecked()
             };
-            register(ctrltype, move || driver.post(user_data, 0).unwrap())
+            register(ctrltype, move || driver.post(*user_data, 0).unwrap())
         });
         Self {
             ctrltype,

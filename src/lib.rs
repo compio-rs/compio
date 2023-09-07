@@ -8,8 +8,11 @@
 pub mod buf;
 pub mod driver;
 pub mod fs;
+mod key;
 pub mod net;
 pub mod op;
+
+pub(crate) use key::Key;
 
 #[cfg(target_os = "windows")]
 pub mod named_pipe;

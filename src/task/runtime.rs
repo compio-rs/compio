@@ -15,6 +15,7 @@ use crate::task::time::{TimerFuture, TimerRuntime};
 use crate::{
     driver::{Driver, Entry, OpCode, Poller, RawFd},
     task::op::{OpFuture, OpRuntime},
+    Key,
 };
 
 pub(crate) struct Runtime {
@@ -85,7 +86,7 @@ impl Runtime {
     ) -> impl Future<Output = (io::Result<usize>, T)> {
         let mut op_runtime = self.op_runtime.borrow_mut();
         let (user_data, op) = op_runtime.insert(op);
-        let res = unsafe { self.driver.push(op.as_mut::<T>(), user_data) };
+        let res = unsafe { self.driver.push(op.as_mut::<T>(), *user_data) };
         match res {
             Ok(()) => {
                 let (runnable, task) = unsafe { self.spawn_unchecked(OpFuture::new(user_data)) };
@@ -100,7 +101,7 @@ impl Runtime {
     }
 
     #[allow(dead_code)]
-    pub fn submit_dummy(&self) -> usize {
+    pub fn submit_dummy(&self) -> Key<()> {
         self.op_runtime.borrow_mut().insert_dummy()
     }
 
@@ -114,7 +115,7 @@ impl Runtime {
         }
     }
 
-    pub fn cancel_op(&self, user_data: usize) {
+    pub fn cancel_op<T>(&self, user_data: Key<T>) {
         self.op_runtime.borrow_mut().cancel(user_data);
     }
 
@@ -126,13 +127,15 @@ impl Runtime {
     pub fn poll_task<T: OpCode>(
         &self,
         cx: &mut Context,
-        user_data: usize,
+        user_data: Key<T>,
     ) -> Poll<(io::Result<usize>, T)> {
         let mut op_runtime = self.op_runtime.borrow_mut();
         if op_runtime.has_result(user_data) {
             let op = op_runtime.remove(user_data);
             Poll::Ready((op.result.unwrap(), unsafe {
-                op.op.unwrap().into_inner::<T>()
+                op.op
+                    .expect("`poll_task` called on dummy Op")
+                    .into_inner::<T>()
             }))
         } else {
             op_runtime.update_waker(user_data, cx.waker().clone());
@@ -141,7 +144,7 @@ impl Runtime {
     }
 
     #[allow(dead_code)]
-    pub fn poll_dummy(&self, cx: &mut Context, user_data: usize) -> Poll<io::Result<usize>> {
+    pub fn poll_dummy(&self, cx: &mut Context, user_data: Key<()>) -> Poll<io::Result<usize>> {
         let mut op_runtime = self.op_runtime.borrow_mut();
         if op_runtime.has_result(user_data) {
             let op = op_runtime.remove(user_data);
@@ -177,7 +180,7 @@ impl Runtime {
                     let entry = unsafe { std::mem::replace(entry, UNINIT_ENTRY).assume_init() };
                     self.op_runtime
                         .borrow_mut()
-                        .update_result(entry.user_data(), entry.into_result());
+                        .update_result(Key::new_dummy(entry.user_data()), entry.into_result());
                 }
             }
             Err(e) => match e.kind() {
