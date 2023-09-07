@@ -172,7 +172,7 @@ impl Poller for Driver {
         Ok(())
     }
 
-    fn post<T: OpCode>(&self, user_data: Key<T>, result: usize) -> io::Result<()> {
+    fn post<T>(&self, user_data: Key<T>, result: usize) -> io::Result<()> {
         let overlapped = Box::new(Overlapped::new(*user_data));
         let overlapped_ptr = Box::into_raw(overlapped);
         let res = unsafe {

@@ -115,7 +115,7 @@ impl Poller for Driver {
         Ok(())
     }
 
-    fn post<T: OpCode>(&self, user_data: Key<T>, result: usize) -> io::Result<()> {
+    fn post<T>(&self, user_data: Key<T>, result: usize) -> io::Result<()> {
         self.cqueue.push(Entry::new(*user_data, Ok(result)));
         Ok(())
     }

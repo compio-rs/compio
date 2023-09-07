@@ -93,7 +93,7 @@ pub trait Poller {
     /// * io-uring: it won't interrupt [`Poller::poll`].
     /// You need to send a signal to the polling thread to interrupt the driver.
     /// [`Poller::poll`] will then return with [`io::ErrorKind::Interrupted`].
-    fn post<T: OpCode>(&self, user_data: Key<T>, result: usize) -> io::Result<()>;
+    fn post<T>(&self, user_data: Key<T>, result: usize) -> io::Result<()>;
 
     /// Poll the driver with an optional timeout.
     ///
