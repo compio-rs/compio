@@ -1,6 +1,6 @@
 use std::io::prelude::*;
 
-use compio::fs::File;
+use compio::{driver::AsRawFd, fs::File, task::register_attached_files};
 use tempfile::NamedTempFile;
 
 const HELLO: &[u8] = b"hello world...";
@@ -21,6 +21,7 @@ fn basic_read() {
         tempfile.write_all(HELLO).unwrap();
 
         let file = File::open(tempfile.path()).unwrap();
+        register_attached_files().unwrap();
         read_hello(&file).await;
     });
 }
@@ -31,6 +32,8 @@ fn basic_write() {
         let tempfile = tempfile();
 
         let file = File::create(tempfile.path()).unwrap();
+
+        register_attached_files().unwrap();
 
         file.write_all_at(HELLO, 0).await.0.unwrap();
         file.sync_all().await.unwrap();
@@ -48,6 +51,8 @@ fn cancel_read() {
 
         let file = File::open(tempfile.path()).unwrap();
 
+        register_attached_files().unwrap();
+
         // Poll the future once, then cancel it
         poll_once(async { read_hello(&file).await }).await;
 
@@ -63,6 +68,7 @@ fn drop_open() {
 
         // Do something else
         let file = File::create(tempfile.path()).unwrap();
+        register_attached_files().unwrap();
 
         file.write_all_at(HELLO, 0).await.0.unwrap();
 

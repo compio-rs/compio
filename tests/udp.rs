@@ -1,4 +1,4 @@
-use compio::net::UdpSocket;
+use compio::{net::UdpSocket, task::register_attached_files};
 
 #[test]
 fn connect() {
@@ -10,6 +10,8 @@ fn connect() {
 
         let active = UdpSocket::bind("127.0.0.1:0").unwrap();
         let active_addr = active.local_addr().unwrap();
+
+        register_attached_files().unwrap();
 
         active.connect(&passive_addr).unwrap();
         active.send(MSG).await.0.unwrap();
@@ -49,6 +51,8 @@ fn send_to() {
 
         let active = UdpSocket::bind("127.0.0.1:0").unwrap();
         let active_addr = active.local_addr().unwrap();
+
+        register_attached_files().unwrap();
 
         active.send_to(MSG, &passive01_addr).await.0.unwrap();
         active.send_to(MSG, &passive1_addr).await.0.unwrap();

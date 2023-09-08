@@ -1,8 +1,12 @@
-use compio::net::{TcpListener, TcpStream, ToSockAddrs};
+use compio::{
+    net::{TcpListener, TcpStream, ToSockAddrs},
+    task::register_attached_files,
+};
 
 async fn test_impl(addr: impl ToSockAddrs) {
     let listener = TcpListener::bind(addr).unwrap();
     let addr = listener.local_addr().unwrap();
+    register_attached_files().unwrap();
     let (tx, rx) = futures_channel::oneshot::channel();
     compio::task::spawn(async move {
         let (socket, _) = listener.accept().await.unwrap();

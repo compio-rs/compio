@@ -12,7 +12,7 @@ use crate::{
         AsIoSlices, AsIoSlicesMut, BufWrapper, IntoInner, IoBuf, IoBufMut, OneOrVec,
         VectoredBufWrapper, WrapBuf,
     },
-    driver::{sockaddr_storage, socklen_t, RawFd},
+    driver::{sockaddr_storage, socklen_t, RegisteredFd},
     BufResult,
 };
 
@@ -65,14 +65,14 @@ pub use crate::driver::op::{Accept, RecvFromImpl, SendToImpl};
 /// Read a file at specified position into specified buffer.
 #[derive(Debug)]
 pub struct ReadAt<T: IoBufMut> {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: RegisteredFd,
     pub(crate) offset: usize,
     pub(crate) buffer: BufWrapper<T>,
 }
 
 impl<T: IoBufMut> ReadAt<T> {
     /// Create [`ReadAt`].
-    pub fn new(fd: RawFd, offset: usize, buffer: T) -> Self {
+    pub fn new(fd: RegisteredFd, offset: usize, buffer: T) -> Self {
         Self {
             fd,
             offset,
@@ -92,14 +92,14 @@ impl<T: IoBufMut> IntoInner for ReadAt<T> {
 /// Write a file at specified position from specified buffer.
 #[derive(Debug)]
 pub struct WriteAt<T: IoBuf> {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: RegisteredFd,
     pub(crate) offset: usize,
     pub(crate) buffer: BufWrapper<T>,
 }
 
 impl<T: IoBuf> WriteAt<T> {
     /// Create [`WriteAt`].
-    pub fn new(fd: RawFd, offset: usize, buffer: T) -> Self {
+    pub fn new(fd: RegisteredFd, offset: usize, buffer: T) -> Self {
         Self {
             fd,
             offset,
@@ -118,7 +118,7 @@ impl<T: IoBuf> IntoInner for WriteAt<T> {
 
 /// Sync data to the disk.
 pub struct Sync {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: RegisteredFd,
     #[allow(dead_code)]
     pub(crate) datasync: bool,
 }
@@ -132,34 +132,34 @@ impl Sync {
     ///
     /// * IOCP: it is synchronized operation, and calls `FlushFileBuffers`.
     /// * io-uring: `fdatasync` if `datasync` specified, otherwise `fsync`.
-    pub fn new(fd: RawFd, datasync: bool) -> Self {
+    pub fn new(fd: RegisteredFd, datasync: bool) -> Self {
         Self { fd, datasync }
     }
 }
 
 /// Connect to a remote address.
 pub struct Connect {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: RegisteredFd,
     pub(crate) addr: SockAddr,
 }
 
 impl Connect {
     /// Create [`Connect`]. `fd` should be bound.
-    pub fn new(fd: RawFd, addr: SockAddr) -> Self {
+    pub fn new(fd: RegisteredFd, addr: SockAddr) -> Self {
         Self { fd, addr }
     }
 }
 
 /// Receive data from remote.
 pub struct RecvImpl<T: AsIoSlicesMut> {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: RegisteredFd,
     pub(crate) buffer: T,
     pub(crate) slices: OneOrVec<IoSliceMut<'static>>,
 }
 
 impl<T: AsIoSlicesMut> RecvImpl<T> {
     /// Create [`Recv`] or [`RecvVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
+    pub fn new(fd: RegisteredFd, buffer: T::Inner) -> Self {
         Self {
             fd,
             buffer: T::new(buffer),
@@ -183,14 +183,14 @@ pub type RecvVectored<T> = RecvImpl<VectoredBufWrapper<T>>;
 
 /// Send data to remote.
 pub struct SendImpl<T: AsIoSlices> {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: RegisteredFd,
     pub(crate) buffer: T,
     pub(crate) slices: OneOrVec<IoSlice<'static>>,
 }
 
 impl<T: AsIoSlices> SendImpl<T> {
     /// Create [`Send`] or [`SendVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
+    pub fn new(fd: RegisteredFd, buffer: T::Inner) -> Self {
         Self {
             fd,
             buffer: T::new(buffer),

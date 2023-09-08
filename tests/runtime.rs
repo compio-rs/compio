@@ -1,4 +1,4 @@
-use compio::{buf::*, fs::File};
+use compio::{buf::*, fs::File, task::register_attached_files};
 use tempfile::NamedTempFile;
 
 // Ignore this test because we need to keep the buffer until
@@ -47,6 +47,7 @@ fn drop_on_complete() {
 
     let file = compio::task::block_on(async {
         let file = File::open(tempfile.path()).unwrap();
+        register_attached_files().unwrap();
         file.read_at(
             MyBuf {
                 data: Vec::with_capacity(64 * 1024),
@@ -71,6 +72,7 @@ fn too_many_submissions() {
 
     compio::task::block_on(async {
         let file = File::create(tempfile.path()).unwrap();
+        register_attached_files().unwrap();
         for _ in 0..600 {
             poll_once(async {
                 file.write_at("hello world", 0).await.0.unwrap();

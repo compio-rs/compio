@@ -1,8 +1,11 @@
 use socket2::{Protocol, Type};
 
-use crate::net::{Socket, *};
 #[cfg(feature = "runtime")]
 use crate::{buf::*, *};
+use crate::{
+    driver::RegisteredFd,
+    net::{Socket, *},
+};
 
 /// A UDP socket.
 ///
@@ -91,6 +94,7 @@ use crate::{buf::*, *};
 /// ```
 pub struct UdpSocket {
     inner: Socket,
+    registered_fd: RegisteredFd,
 }
 
 impl UdpSocket {
@@ -99,6 +103,7 @@ impl UdpSocket {
         super::each_addr(addr, |addr| {
             Ok(Self {
                 inner: Socket::bind(&addr, Type::DGRAM, Some(Protocol::UDP))?,
+                registered_fd: RegisteredFd::UNREGISTERED,
             })
         })
     }

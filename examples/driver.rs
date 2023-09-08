@@ -6,9 +6,9 @@ use compio::{
 fn main() {
     let driver = Driver::new().unwrap();
     let file = compio::fs::File::open("Cargo.toml").unwrap();
-    driver.attach(file.as_raw_fd()).unwrap();
+    let registered_fd = driver.attach(file.as_raw_fd()).unwrap();
 
-    let mut op = compio::op::ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(4096));
+    let mut op = compio::op::ReadAt::new(registered_fd, 0, Vec::with_capacity(4096));
     unsafe { driver.push(&mut op, 0) }.unwrap();
 
     let entry = driver.poll_one(None).unwrap();

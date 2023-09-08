@@ -2,9 +2,12 @@ use std::{net::Shutdown, path::Path};
 
 use socket2::{Domain, Type};
 
-use crate::net::{Socket, *};
 #[cfg(feature = "runtime")]
 use crate::{buf::*, *};
+use crate::{
+    driver::RegisteredFd,
+    net::{Socket, *},
+};
 
 /// A Unix socket server, listening for connections.
 ///
@@ -36,6 +39,7 @@ use crate::{buf::*, *};
 /// ```
 pub struct UnixListener {
     inner: Socket,
+    registered_fd: RegisteredFd,
 }
 
 impl UnixListener {
@@ -53,7 +57,10 @@ impl UnixListener {
         each_addr(addr, |addr| {
             let socket = Socket::bind(&addr, Type::STREAM, None)?;
             socket.listen(1024)?;
-            Ok(UnixListener { inner: socket })
+            Ok(UnixListener {
+                inner: socket,
+                registered_fd: RegisteredFd::UNREGISTERED,
+            })
         })
     }
 
@@ -65,7 +72,10 @@ impl UnixListener {
     #[cfg(feature = "runtime")]
     pub async fn accept(&self) -> io::Result<(UnixStream, SockAddr)> {
         let (socket, addr) = self.inner.accept().await?;
-        let stream = UnixStream { inner: socket };
+        let stream = UnixStream {
+            inner: socket,
+            registered_fd: RegisteredFd::UNREGISTERED,
+        };
         Ok((stream, addr))
     }
 
@@ -98,6 +108,7 @@ impl_raw_fd!(UnixListener, inner);
 /// ```
 pub struct UnixStream {
     inner: Socket,
+    registered_fd: RegisteredFd,
 }
 
 impl UnixStream {
@@ -115,7 +126,10 @@ impl UnixStream {
         each_addr(addr, |addr| {
             let socket = Socket::new(Domain::UNIX, Type::STREAM, None)?;
             socket.connect(&addr)?;
-            let unix_stream = UnixStream { inner: socket };
+            let unix_stream = UnixStream {
+                inner: socket,
+                registered_fd: RegisteredFd::UNREGISTERED,
+            };
             Ok(unix_stream)
         })
     }

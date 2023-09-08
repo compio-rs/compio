@@ -12,7 +12,7 @@
 
 #[cfg(feature = "lazy_cell")]
 use std::cell::LazyCell;
-use std::future::Future;
+use std::{future::Future, io};
 
 use async_task::Task;
 #[cfg(not(feature = "lazy_cell"))]
@@ -69,4 +69,9 @@ pub fn block_on<F: Future>(future: F) -> F::Output {
 /// ```
 pub fn spawn<F: Future + 'static>(future: F) -> Task<F::Output> {
     RUNTIME.with(|runtime| runtime.spawn(future))
+}
+
+/// Register file descriptors attached to the runtime
+pub fn register_attached_files() -> io::Result<()> {
+    RUNTIME.with(|runtime| runtime.register_attached_files())
 }

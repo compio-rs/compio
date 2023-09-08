@@ -8,7 +8,7 @@ use crate::{
     task::RUNTIME,
     BufResult,
 };
-use crate::{fs::OpenOptions, impl_raw_fd};
+use crate::{driver::RegisteredFd, fs::OpenOptions, impl_raw_fd};
 
 /// A reference to an open file on the filesystem.
 ///
@@ -19,6 +19,7 @@ use crate::{fs::OpenOptions, impl_raw_fd};
 #[derive(Debug)]
 pub struct File {
     inner: std::fs::File,
+    registered_fd: RegisteredFd,
 }
 
 #[cfg(target_os = "windows")]
@@ -46,9 +47,15 @@ impl File {
     pub(crate) fn with_options(path: impl AsRef<Path>, options: OpenOptions) -> io::Result<Self> {
         let this = Self {
             inner: file_with_options(path, options.0)?,
+            registered_fd: RegisteredFd::UNREGISTERED,
         };
         #[cfg(feature = "runtime")]
-        RUNTIME.with(|runtime| runtime.attach(this.as_raw_fd()))?;
+        let this = {
+            let attached_fd = RUNTIME.with(|runtime| runtime.attach(this.as_raw_fd()))?;
+            let mut this = this;
+            this.registered_fd = attached_fd;
+            this
+        };
         Ok(this)
     }
 
@@ -102,7 +109,7 @@ impl File {
     /// variant will be returned. The buffer is returned on error.
     #[cfg(feature = "runtime")]
     pub async fn read_at<T: IoBufMut>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
-        let op = ReadAt::new(self.as_raw_fd(), pos, buffer);
+        let op = ReadAt::new(self.registered_fd, pos, buffer);
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
@@ -220,7 +227,7 @@ impl File {
     /// written to this writer.
     #[cfg(feature = "runtime")]
     pub async fn write_at<T: IoBuf>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
-        let op = WriteAt::new(self.as_raw_fd(), pos, buffer);
+        let op = WriteAt::new(self.registered_fd, pos, buffer);
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
@@ -256,7 +263,7 @@ impl File {
 
     #[cfg(feature = "runtime")]
     async fn sync_impl(&self, datasync: bool) -> io::Result<()> {
-        let op = Sync::new(self.as_raw_fd(), datasync);
+        let op = Sync::new(self.registered_fd, datasync);
         RUNTIME.with(|runtime| runtime.submit(op)).await.0?;
         Ok(())
     }

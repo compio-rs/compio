@@ -2,9 +2,12 @@ use std::net::Shutdown;
 
 use socket2::{Protocol, Type};
 
-use crate::net::{Socket, *};
 #[cfg(feature = "runtime")]
 use crate::{buf::*, *};
+use crate::{
+    driver::RegisteredFd,
+    net::{Socket, *},
+};
 
 /// A TCP socket server, listening for connections.
 ///
@@ -39,6 +42,7 @@ use crate::{buf::*, *};
 /// ```
 pub struct TcpListener {
     inner: Socket,
+    registered_fd: RegisteredFd,
 }
 
 impl TcpListener {
@@ -53,7 +57,10 @@ impl TcpListener {
         super::each_addr(addr, |addr| {
             let socket = Socket::bind(&addr, Type::STREAM, Some(Protocol::TCP))?;
             socket.listen(128)?;
-            Ok(Self { inner: socket })
+            Ok(Self {
+                inner: socket,
+                registered_fd: RegisteredFd::UNREGISTERED,
+            })
         })
     }
 
@@ -65,7 +72,10 @@ impl TcpListener {
     #[cfg(feature = "runtime")]
     pub async fn accept(&self) -> io::Result<(TcpStream, SockAddr)> {
         let (socket, addr) = self.inner.accept().await?;
-        let stream = TcpStream { inner: socket };
+        let stream = TcpStream {
+            inner: socket,
+            registered_fd: RegisteredFd::UNREGISTERED,
+        };
         Ok((stream, addr))
     }
 
@@ -123,12 +133,15 @@ impl_raw_fd!(TcpListener, inner);
 /// ```
 pub struct TcpStream {
     inner: Socket,
+    registered_fd: RegisteredFd,
 }
 
 impl TcpStream {
     /// Opens a TCP connection to a remote host.
     #[cfg(feature = "runtime")]
     pub async fn connect(addr: impl ToSockAddrs) -> io::Result<Self> {
+        use crate::task::register_attached_files;
+
         super::each_addr_async(addr, |addr| async move {
             let socket = if cfg!(target_os = "windows") {
                 let bind_addr = if addr.is_ipv4() {
@@ -145,8 +158,12 @@ impl TcpStream {
             } else {
                 Socket::new(addr.domain(), Type::STREAM, Some(Protocol::TCP))?
             };
+            register_attached_files()?;
             socket.connect_async(&addr).await?;
-            Ok(Self { inner: socket })
+            Ok(Self {
+                inner: socket,
+                registered_fd: RegisteredFd::UNREGISTERED,
+            })
         })
         .await
     }

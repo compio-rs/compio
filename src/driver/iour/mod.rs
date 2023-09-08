@@ -1,6 +1,13 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{cell::RefCell, io, marker::PhantomData, mem::MaybeUninit, time::Duration};
+use std::{
+    cell::{RefCell, UnsafeCell},
+    io,
+    marker::PhantomData,
+    mem::MaybeUninit,
+    num::Wrapping,
+    time::Duration,
+};
 
 use io_uring::{
     cqueue, squeue,
@@ -9,7 +16,11 @@ use io_uring::{
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 
-use crate::driver::{queue_with_capacity, Entry, Poller, Queue};
+use crate::driver::{
+    queue_with_capacity,
+    registered_fd::{DriverRegisteredFileDescriptors, RegisteredFd, RegisteredFileDescriptors},
+    Entry, Poller, Queue,
+};
 
 pub(crate) mod op;
 
@@ -24,6 +35,8 @@ pub struct Driver {
     inner: IoUring,
     squeue: Queue<squeue::Entry>,
     cqueue: Queue<Entry>,
+    attached_files: UnsafeCell<Vec<RawFd>>,
+    last_attached_file_idx: UnsafeCell<Wrapping<u32>>,
     _p: PhantomData<RefCell<()>>,
 }
 
@@ -39,6 +52,8 @@ impl Driver {
             inner: IoUring::new(entries)?,
             squeue: queue_with_capacity(entries as usize),
             cqueue: queue_with_capacity(entries as usize),
+            attached_files: UnsafeCell::new(vec![-1 as RawFd; 1024]),
+            last_attached_file_idx: UnsafeCell::new(Wrapping(u32::MAX)),
             _p: PhantomData,
         })
     }
@@ -99,8 +114,20 @@ impl Driver {
 }
 
 impl Poller for Driver {
-    fn attach(&self, _fd: RawFd) -> io::Result<()> {
-        Ok(())
+    fn attach(&self, fd: RawFd) -> io::Result<RegisteredFd> {
+        // SAFETY: we expect single thread execution
+        Ok(unsafe {
+            let idx: &mut Wrapping<u32> = &mut *self.last_attached_file_idx.get();
+            *idx += Wrapping(1);
+            let slots: &mut Vec<RawFd> = &mut *self.attached_files.get();
+            if let Some(file_slot) = slots.get_mut(idx.0 as usize) {
+                *file_slot = fd
+            } else {
+                // push and resize
+                slots.push(fd)
+            }
+            RegisteredFd::new(idx.0)
+        })
     }
 
     unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()> {
@@ -146,4 +173,23 @@ fn timespec(duration: std::time::Duration) -> Timespec {
     Timespec::new()
         .sec(duration.as_secs())
         .nsec(duration.subsec_nanos())
+}
+
+impl RegisteredFileDescriptors for Driver {
+    fn register_attached_files(&self) -> io::Result<()> {
+        let attached_files = unsafe { &*self.attached_files.get() };
+        self.inner.submitter().register_files(attached_files)
+    }
+}
+
+impl DriverRegisteredFileDescriptors for Driver {
+    // reference to registered files slice
+    fn registered_files(&self) -> &[RawFd] {
+        unsafe { &*self.attached_files.get() }
+    }
+
+    // mutable reference to registered files slice
+    fn registered_files_mut(&self) -> &mut [RawFd] {
+        unsafe { &mut *self.attached_files.get() }
+    }
 }

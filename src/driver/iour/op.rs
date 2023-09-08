@@ -3,30 +3,34 @@ use std::io::{IoSlice, IoSliceMut};
 use io_uring::{
     opcode,
     squeue::Entry,
-    types::{Fd, FsyncFlags},
+    types::{Fixed, FsyncFlags},
 };
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
 use crate::{
     buf::{AsIoSlices, AsIoSlicesMut, IntoInner, IoBuf, IoBufMut, OneOrVec},
-    driver::{OpCode, RawFd},
+    driver::{OpCode, RegisteredFd},
     op::*,
 };
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
     fn create_entry(&mut self) -> Entry {
         let slice = self.buffer.as_uninit_slice();
-        opcode::Read::new(Fd(self.fd), slice.as_mut_ptr() as _, slice.len() as _)
-            .offset(self.offset as _)
-            .build()
+        opcode::Read::new(
+            Fixed(u32::from(self.fd)),
+            slice.as_mut_ptr() as _,
+            slice.len() as _,
+        )
+        .offset(self.offset as _)
+        .build()
     }
 }
 
 impl<T: IoBuf> OpCode for WriteAt<T> {
     fn create_entry(&mut self) -> Entry {
         let slice = self.buffer.as_slice();
-        opcode::Write::new(Fd(self.fd), slice.as_ptr(), slice.len() as _)
+        opcode::Write::new(Fixed(u32::from(self.fd)), slice.as_ptr(), slice.len() as _)
             .offset(self.offset as _)
             .build()
     }
@@ -34,7 +38,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
 
 impl OpCode for Sync {
     fn create_entry(&mut self) -> Entry {
-        opcode::Fsync::new(Fd(self.fd))
+        opcode::Fsync::new(Fixed(u32::from(self.fd)))
             .flags(if self.datasync {
                 FsyncFlags::DATASYNC
             } else {
@@ -46,14 +50,14 @@ impl OpCode for Sync {
 
 /// Accept a connection.
 pub struct Accept {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: RegisteredFd,
     pub(crate) buffer: sockaddr_storage,
     pub(crate) addr_len: socklen_t,
 }
 
 impl Accept {
     /// Create [`Accept`].
-    pub fn new(fd: RawFd) -> Self {
+    pub fn new(fd: RegisteredFd) -> Self {
         Self {
             fd,
             buffer: unsafe { std::mem::zeroed() },
@@ -70,7 +74,7 @@ impl Accept {
 impl OpCode for Accept {
     fn create_entry(&mut self) -> Entry {
         opcode::Accept::new(
-            Fd(self.fd),
+            Fixed(u32::from(self.fd)),
             &mut self.buffer as *mut sockaddr_storage as *mut libc::sockaddr,
             &mut self.addr_len,
         )
@@ -80,7 +84,12 @@ impl OpCode for Accept {
 
 impl OpCode for Connect {
     fn create_entry(&mut self) -> Entry {
-        opcode::Connect::new(Fd(self.fd), self.addr.as_ptr(), self.addr.len()).build()
+        opcode::Connect::new(
+            Fixed(u32::from(self.fd)),
+            self.addr.as_ptr(),
+            self.addr.len(),
+        )
+        .build()
     }
 }
 
@@ -88,7 +97,7 @@ impl<T: AsIoSlicesMut> OpCode for RecvImpl<T> {
     fn create_entry(&mut self) -> Entry {
         self.slices = unsafe { self.buffer.as_io_slices_mut() };
         opcode::Readv::new(
-            Fd(self.fd),
+            Fixed(u32::from(self.fd)),
             self.slices.as_ptr() as _,
             self.slices.len() as _,
         )
@@ -100,7 +109,7 @@ impl<T: AsIoSlices> OpCode for SendImpl<T> {
     fn create_entry(&mut self) -> Entry {
         self.slices = unsafe { self.buffer.as_io_slices() };
         opcode::Writev::new(
-            Fd(self.fd),
+            Fixed(u32::from(self.fd)),
             self.slices.as_ptr() as _,
             self.slices.len() as _,
         )
@@ -110,7 +119,7 @@ impl<T: AsIoSlices> OpCode for SendImpl<T> {
 
 /// Receive data and source address.
 pub struct RecvFromImpl<T: AsIoSlicesMut> {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: RegisteredFd,
     pub(crate) buffer: T,
     pub(crate) addr: sockaddr_storage,
     pub(crate) slices: OneOrVec<IoSliceMut<'static>>,
@@ -119,7 +128,7 @@ pub struct RecvFromImpl<T: AsIoSlicesMut> {
 
 impl<T: AsIoSlicesMut> RecvFromImpl<T> {
     /// Create [`RecvFrom`] or [`RecvFromVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
+    pub fn new(fd: RegisteredFd, buffer: T::Inner) -> Self {
         Self {
             fd,
             buffer: T::new(buffer),
@@ -151,13 +160,13 @@ impl<T: AsIoSlicesMut> OpCode for RecvFromImpl<T> {
             msg_controllen: 0,
             msg_flags: 0,
         };
-        opcode::RecvMsg::new(Fd(self.fd), &mut self.msg).build()
+        opcode::RecvMsg::new(Fixed(u32::from(self.fd)), &mut self.msg).build()
     }
 }
 
 /// Send data to specified address.
 pub struct SendToImpl<T: AsIoSlices> {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: RegisteredFd,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
     pub(crate) slices: OneOrVec<IoSlice<'static>>,
@@ -166,7 +175,7 @@ pub struct SendToImpl<T: AsIoSlices> {
 
 impl<T: AsIoSlices> SendToImpl<T> {
     /// Create [`SendTo`] or [`SendToVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner, addr: SockAddr) -> Self {
+    pub fn new(fd: RegisteredFd, buffer: T::Inner, addr: SockAddr) -> Self {
         Self {
             fd,
             buffer: T::new(buffer),
@@ -198,6 +207,6 @@ impl<T: AsIoSlices> OpCode for SendToImpl<T> {
             msg_controllen: 0,
             msg_flags: 0,
         };
-        opcode::SendMsg::new(Fd(self.fd), &self.msg).build()
+        opcode::SendMsg::new(Fixed(u32::from(self.fd)), &self.msg).build()
     }
 }

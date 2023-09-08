@@ -6,10 +6,9 @@
 ///
 /// It's not `Send` and not `Sync`
 use std::{
-    io,
+    io::{self},
     marker::PhantomData,
-    mem::{transmute, MaybeUninit},
-    os::fd::{IntoRawFd, OwnedFd, RawFd},
+    os::fd::RawFd,
 };
 
 use super::Poller;
@@ -28,13 +27,11 @@ pub struct RegisteredFd {
 }
 
 impl RegisteredFd {
-    // not allocated slot for registered file descriptors
-    // we use this value instead of -1 because we work with unsigned offset values
-    // the value is outside of the i32 range used by Linux kernel
-    const NOT_ALLOCATED: Self = Self::new(u32::MAX);
+    /// Value used before file descriptor is registered
+    pub const UNREGISTERED: Self = Self::new(u32::MAX);
 
-    // private
-    const fn new(fd_idx: RawFd) -> Self {
+    /// Construct registered file descriptor from the provided offset index
+    pub const fn new(fd_idx: u32) -> Self {
         Self {
             fd_idx,
             _nor_send_nor_sync: PhantomData,
@@ -42,76 +39,78 @@ impl RegisteredFd {
     }
 }
 
+impl From<RegisteredFd> for u32 {
+    fn from(other: RegisteredFd) -> u32 {
+        other.fd_idx
+    }
+}
+
+/// Update to registered fd array
 #[repr(transparent)]
 pub struct RegisteredFdUpdate(RawFd);
 
 impl RegisteredFdUpdate {
-    const SKIP_UPDATE: RegisteredFdUpdate = -2;
-    const UNREGISTER: RegisteredFdUpdate = -1;
+    /// Used to skip update of registered file descriptor
+    pub const SKIP_UPDATE: RegisteredFdUpdate = RegisteredFdUpdate(-2 as RawFd);
+    /// Removes fd from the array of registered file descriptors
+    pub const UNREGISTER: RegisteredFdUpdate = RegisteredFdUpdate(-1 as RawFd);
 
-    pub const fn unregister() -> Self {
-        Self::UNREGISTER
-    }
-
-    pub const fn skip() -> Self {
-        Self::SKIP_UPDATE
-    }
-
-    pub const fn replace(replacement: RegisteredFd) -> Self {
-        Self(replacement.into_raw_fd())
+    /// Replaces on registered fd by another
+    pub const fn replace(replacement: RawFd) -> Self {
+        Self(replacement)
     }
 }
 
 /// Public registration API
 pub trait RegisteredFileDescriptors: Poller {
-    /// Allocate boxed array of raw fds, initialized with -1 (not allocated)
-    /// value
+    /// Register atached files synchronously
     ///
-    /// Use cases:
-    /// * Runtime registers empty descriptor storage
-    /// * Runtime could preallocate descriptor storage and let user to
-    ///   initialize it
-    /// incrementally
-    /// * drivers for platforms that don't support registered
-    /// files could emulate it on top of this storage
-    fn allocate_file_descriptors<const N: usize>(&mut self) -> Box<[RawFd; N]> {
-        // Create an uninitialized array of `MaybeUninit`. The `assume_init` is
-        // safe because the type we are claiming to have initialized here is a
-        // bunch of `MaybeUninit`s, which do not require initialization.
-        let mut data: Box<[MaybeUninit<RawFd>; N]> = unsafe { MaybeUninit::uninit().assume_init() };
+    /// On Linux will block until all inflight operations will finish
+    fn register_attached_files(&self) -> io::Result<()>;
+    // /// Register files synchronously
+    // ///
+    // /// On Linux will block until all inflight operations will finish
+    // // fn register_raw_files(&self, fds: &[RawFd]) -> io::Result<()>;
+    // /// Replace registered files synchronously
+    // ///
+    // /// On Linux will block until all inflight operations will finish
+    // fn register_files_update(&self, offset: u32, fds: &[RegisteredFdUpdate]) ->
+    // io::Result<()>;
 
-        // Dropping a `MaybeUninit` does nothing, so if there is a panic during this
-        // loop, we have a memory leak, but there is no memory safety issue.
-        for elem in &mut data[..] {
-            elem.write(RegisteredFd::NOT_ALLOCATED);
-        }
+    // /// Replace registered files asynchronously
+    // ///
+    // /// The owned fds slice with the underlying allocation will be returned by a
+    // /// runtime method when operation is completed
+    // fn push_register_files_update(
+    //     &self,
+    //     offset: u32,
+    //     fds: Slice<Box<[RegisteredFdUpdate]>>,
+    //     user_data: usize,
+    // ) -> io::Result<()>;
+}
 
-        // SAFETY: Everything is initialized. Transmute the array to the
-        // initialized type.
-        unsafe { transmute::<_, Box<[RawFd; N]>>(data) }
+// Internal registration API emulated by driver
+#[doc(hidden)]
+pub(super) trait DriverRegisteredFileDescriptors: Poller {
+    // reference to registered files slice
+    fn registered_files(&self) -> &[RawFd];
+    // mutable reference to registered files slice
+    fn registered_files_mut(&self) -> &mut [RawFd];
+
+    fn register_attached_files(&self) -> io::Result<()> {
+        // by default registered_fd index is written during attachment
+        Ok(())
     }
 
-    /// Register owned files synchronously
-    ///
-    /// Userspace descriptors will be closed after registration unless driver
-    /// emulates registration
-    fn register_files<const N: usize>(fds: [OwnedFd; N]) -> io::Result<()> {}
-    /// Register owned files synchronously. Boxed slice variant
-    ///
-    /// Userspace descriptors will be closed after registration unless driver
-    /// emulates registration
-    fn register_boxed_files(fds: Box<[OwnedFd]>) -> io::Result<()> {}
-    /// Register files synchronously
-    ///
-    /// On Linux will block until all inflight operations will finish
-    fn register_raw_files(fds: &[RawFd]) -> io::Result<()> {}
-    /// Replace registered files synchronously
-    ///
-    /// On Linux will block until all inflight operations will finish
-    fn register_files_update(offset: u32, fds: &[RegisteredFdUpdate]) {}
-    /// Replace registered files asynchronously
-    ///
-    /// The owned fds slice with the underlying allocation will be returned by a
-    /// runtime method when operation is completed
-    fn push_register_files_update(offset: u32, fds: Slice<Box<[RegisteredFdUpdate]>>) {}
+    fn register_files_update(&self, _offset: u32, _fds: &[RegisteredFdUpdate]) -> io::Result<()> {
+        unimplemented!()
+    }
+    fn push_register_files_update(
+        &self,
+        _offset: u32,
+        _fds: Slice<Box<[RegisteredFdUpdate]>>,
+        _user_data: usize,
+    ) -> io::Result<()> {
+        unimplemented!()
+    }
 }

@@ -96,7 +96,7 @@ pub trait Poller {
     /// ## Platform specific
     /// * IOCP: it will be attached to the IOCP completion port.
     /// * io-uring: it will do nothing and return `Ok(())`
-    fn attach(&self, fd: RawFd) -> io::Result<()>;
+    fn attach(&self, fd: RawFd) -> io::Result<RegisteredFd>;
 
     /// Push an operation with user-defined data.
     /// The data could be retrived from [`Entry`] when polling.

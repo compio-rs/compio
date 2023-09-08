@@ -118,6 +118,7 @@ pub trait OpCode {
 pub struct Driver {
     port: OwnedHandle,
     operations: Queue<(*mut dyn OpCode, Overlapped)>,
+    attached_files: UnsafeCell<Vec<RawFd>>,
 }
 
 unsafe impl Send for Driver {}
@@ -301,6 +302,18 @@ impl Poller for Driver {
             entry.write(Entry::new(overlapped.user_data, res));
         }
         Ok(iocp_len)
+    }
+}
+
+impl DriverRegisteredFileDescriptors for Driver {
+    // reference to registered files slice
+    fn registered_files(&self) -> &[RawFd] {
+        unsafe { &*self.attached_files.get() }
+    }
+
+    // mutable reference to registered files slice
+    fn registered_files_mut(&self) -> &mut [RawFd] {
+        unsafe { &mut *self.attached_files.get() }
     }
 }
 
