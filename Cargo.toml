@@ -58,8 +58,9 @@ io-uring = "0.6"
 libc = "0.2"
 
 # Other platform dependencies
-[target.'cfg(not(any(target_os = "windows", target_os = "linux")))'.dependencies]
-mio = "0.8.8"
+[target.'cfg(all(not(target_os = "linux"), unix))'.dependencies]
+mio = { version = "0.8.8", features = ["os-ext"] }
+slab = { version = "0.4" }
 
 [features]
 default = ["runtime"]

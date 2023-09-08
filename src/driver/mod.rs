@@ -10,9 +10,9 @@ cfg_if::cfg_if! {
     } else if #[cfg(target_os = "linux")] {
         mod iour;
         pub use iour::*;
-    } else {
+    } else if #[cfg(all(not(target_os = "linux"), unix))]{
         mod mio;
-        pub use mio::*;
+        pub use self::mio::*;
     }
 }
 
@@ -82,7 +82,7 @@ pub trait Poller {
     ///
     /// # Safety
     ///
-    /// - `op` should be alive until [`Poller::poll`] returns its result.
+    /// `op` should be alive until [`Poller::poll`] returns its result.
     unsafe fn push(&mut self, op: &mut (impl OpCode + 'static), user_data: usize)
     -> io::Result<()>;
 
