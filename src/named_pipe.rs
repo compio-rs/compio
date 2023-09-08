@@ -31,8 +31,9 @@ use windows_sys::Win32::{
 #[cfg(feature = "runtime")]
 use crate::{buf::*, op::ConnectNamedPipe, task::RUNTIME, *};
 use crate::{
-    driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd},
+    driver::{AsRawFd, FromRawFd, RawFd},
     fs::File,
+    impl_raw_fd,
 };
 
 /// A [Windows named pipe] server.
@@ -232,25 +233,7 @@ impl NamedPipeServer {
     }
 }
 
-impl AsRawFd for NamedPipeServer {
-    fn as_raw_fd(&self) -> RawFd {
-        self.handle.as_raw_fd()
-    }
-}
-
-impl FromRawFd for NamedPipeServer {
-    unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self {
-            handle: File::from_raw_fd(fd),
-        }
-    }
-}
-
-impl IntoRawFd for NamedPipeServer {
-    fn into_raw_fd(self) -> RawFd {
-        self.handle.into_raw_fd()
-    }
-}
+impl_raw_fd!(NamedPipeServer, handle);
 
 /// A [Windows named pipe] client.
 ///
@@ -351,25 +334,7 @@ impl NamedPipeClient {
     }
 }
 
-impl AsRawFd for NamedPipeClient {
-    fn as_raw_fd(&self) -> RawFd {
-        self.handle.as_raw_fd()
-    }
-}
-
-impl FromRawFd for NamedPipeClient {
-    unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self {
-            handle: File::from_raw_fd(fd),
-        }
-    }
-}
-
-impl IntoRawFd for NamedPipeClient {
-    fn into_raw_fd(self) -> RawFd {
-        self.handle.into_raw_fd()
-    }
-}
+impl_raw_fd!(NamedPipeClient, handle);
 
 /// A builder structure for construct a named pipe with named pipe-specific
 /// options. This is required to use for named pipe servers who wants to modify

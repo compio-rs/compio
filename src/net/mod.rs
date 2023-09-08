@@ -19,6 +19,8 @@ pub use tcp::*;
 pub use udp::*;
 pub use unix::*;
 
+use crate::BufResult;
+
 /// A trait for objects which can be converted or resolved to one or more
 /// [`SockAddr`] values.
 ///
@@ -159,29 +161,3 @@ async fn each_addr_async_buf<T, B, F: Future<Output = BufResult<T, B>>>(
         Err(e) => (Err(e), buffer),
     }
 }
-
-macro_rules! impl_raw_fd {
-    ($t:ty, $inner:ident) => {
-        impl crate::driver::AsRawFd for $t {
-            fn as_raw_fd(&self) -> crate::driver::RawFd {
-                self.$inner.as_raw_fd()
-            }
-        }
-        impl crate::driver::FromRawFd for $t {
-            unsafe fn from_raw_fd(fd: crate::driver::RawFd) -> Self {
-                Self {
-                    $inner: crate::driver::FromRawFd::from_raw_fd(fd),
-                }
-            }
-        }
-        impl crate::driver::IntoRawFd for $t {
-            fn into_raw_fd(self) -> crate::driver::RawFd {
-                self.$inner.into_raw_fd()
-            }
-        }
-    };
-}
-
-pub(crate) use impl_raw_fd;
-
-use crate::BufResult;

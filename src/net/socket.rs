@@ -2,6 +2,7 @@ use std::{io, net::Shutdown};
 
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
+use crate::impl_raw_fd;
 #[cfg(feature = "runtime")]
 use crate::{
     buf::{IntoInner, IoBuf, IoBufMut},
@@ -15,7 +16,7 @@ use crate::{
 };
 
 pub struct Socket {
-    pub(crate) socket: Socket2,
+    socket: Socket2,
 }
 
 impl Socket {
@@ -24,14 +25,6 @@ impl Socket {
         #[cfg(feature = "runtime")]
         RUNTIME.with(|runtime| runtime.attach(this.as_raw_fd()))?;
         Ok(this)
-    }
-
-    pub fn as_socket2(&self) -> &Socket2 {
-        &self.socket
-    }
-
-    pub fn into_socket2(self) -> Socket2 {
-        self.socket
     }
 
     pub fn peer_addr(&self) -> io::Result<SockAddr> {
@@ -280,3 +273,5 @@ impl Socket {
             .into_inner()
     }
 }
+
+impl_raw_fd!(Socket, socket);
