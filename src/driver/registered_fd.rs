@@ -95,7 +95,12 @@ pub trait RegisteredFileDescriptors: Poller {
     ///
     /// Userspace descriptors will be closed after registration unless driver
     /// emulates registration
-    fn register_files(fds: IntoIterator<Item = OwnedFd>) -> io::Result<()> {}
+    fn register_files<const N: usize>(fds: [OwnedFd; N]) -> io::Result<()> {}
+    /// Register owned files synchronously. Boxed slice variant
+    ///
+    /// Userspace descriptors will be closed after registration unless driver
+    /// emulates registration
+    fn register_boxed_files(fds: Box<[OwnedFd]>) -> io::Result<()> {}
     /// Register files synchronously
     ///
     /// On Linux will block until all inflight operations will finish
