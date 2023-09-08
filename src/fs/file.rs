@@ -8,7 +8,7 @@ use crate::{
     task::RUNTIME,
     BufResult,
 };
-use crate::{driver::fs::file_with_options, fs::OpenOptions};
+use crate::{fs::OpenOptions, impl_raw_fd};
 
 /// A reference to an open file on the filesystem.
 ///
@@ -18,7 +18,28 @@ use crate::{driver::fs::file_with_options, fs::OpenOptions};
 /// required to specify an offset when issuing an operation.
 #[derive(Debug)]
 pub struct File {
-    pub(crate) inner: std::fs::File,
+    inner: std::fs::File,
+}
+
+#[cfg(target_os = "windows")]
+fn file_with_options(
+    path: impl AsRef<Path>,
+    mut options: std::fs::OpenOptions,
+) -> io::Result<std::fs::File> {
+    use std::os::windows::prelude::OpenOptionsExt;
+
+    use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
+
+    options.custom_flags(FILE_FLAG_OVERLAPPED);
+    options.open(path)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn file_with_options(
+    path: impl AsRef<Path>,
+    options: std::fs::OpenOptions,
+) -> io::Result<std::fs::File> {
+    options.open(path)
 }
 
 impl File {
@@ -265,3 +286,5 @@ impl File {
         self.sync_impl(true).await
     }
 }
+
+impl_raw_fd!(File, inner);

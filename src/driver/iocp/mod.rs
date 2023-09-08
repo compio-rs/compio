@@ -4,7 +4,10 @@ use std::{
     mem::MaybeUninit,
     os::windows::{
         io::HandleOrNull,
-        prelude::{AsRawHandle, OwnedHandle, RawHandle},
+        prelude::{
+            AsRawHandle, AsRawSocket, FromRawHandle, FromRawSocket, IntoRawHandle, IntoRawSocket,
+            OwnedHandle, RawHandle,
+        },
     },
     ptr::null,
     task::Poll,
@@ -29,8 +32,6 @@ use windows_sys::Win32::{
 
 use crate::driver::{queue_with_capacity, Entry, Poller, Queue};
 
-pub(crate) mod fs;
-pub(crate) mod net;
 pub(crate) mod op;
 
 pub(crate) use windows_sys::Win32::Networking::WinSock::{
@@ -65,6 +66,42 @@ pub trait FromRawFd {
 pub trait IntoRawFd {
     /// Consumes this object, returning the raw underlying fd.
     fn into_raw_fd(self) -> RawFd;
+}
+
+impl AsRawFd for std::fs::File {
+    fn as_raw_fd(&self) -> RawFd {
+        self.as_raw_handle()
+    }
+}
+
+impl AsRawFd for socket2::Socket {
+    fn as_raw_fd(&self) -> RawFd {
+        self.as_raw_socket() as _
+    }
+}
+
+impl FromRawFd for std::fs::File {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
+        Self::from_raw_handle(fd)
+    }
+}
+
+impl FromRawFd for socket2::Socket {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
+        Self::from_raw_socket(fd as _)
+    }
+}
+
+impl IntoRawFd for std::fs::File {
+    fn into_raw_fd(self) -> RawFd {
+        self.into_raw_handle()
+    }
+}
+
+impl IntoRawFd for socket2::Socket {
+    fn into_raw_fd(self) -> RawFd {
+        self.into_raw_socket() as _
+    }
 }
 
 /// Abstraction of IOCP operations.

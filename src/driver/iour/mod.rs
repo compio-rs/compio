@@ -11,8 +11,6 @@ pub(crate) use libc::{sockaddr_storage, socklen_t};
 
 use crate::driver::{queue_with_capacity, Entry, Poller, Queue};
 
-pub(crate) mod fs;
-pub(crate) mod net;
 pub(crate) mod op;
 
 /// Abstraction of io-uring operations.
