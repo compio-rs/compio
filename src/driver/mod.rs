@@ -1,7 +1,11 @@
 //! The platform-specified driver.
 //! Some types differ by compilation target.
 
+mod registered_fd;
+
 use std::{io, mem::MaybeUninit, time::Duration};
+
+pub use registered_fd::{RegisteredFd, RegisteredFdUpdate, RegisteredFileDescriptors};
 
 cfg_if::cfg_if! {
     if #[cfg(target_os = "windows")] {
