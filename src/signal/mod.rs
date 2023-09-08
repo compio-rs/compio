@@ -25,6 +25,6 @@ pub mod unix;
 
 /// Completes when a "ctrl-c" notification is sent to the process.
 #[cfg(target_os = "linux")]
-pub fn ctrl_c() -> unix::SignalEvent {
-    unix::signal(libc::SIGINT)
+pub async fn ctrl_c() -> std::io::Result<()> {
+    unix::signal(libc::SIGINT).await
 }

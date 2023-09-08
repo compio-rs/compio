@@ -4,37 +4,31 @@
 use std::cell::LazyCell;
 use std::{
     cell::RefCell,
-    collections::HashMap,
-    future::Future,
+    collections::{HashMap, HashSet},
     io,
-    pin::Pin,
-    task::{Context, Poll},
+    os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd},
 };
 
 #[cfg(not(feature = "lazy_cell"))]
 use once_cell::unsync::Lazy as LazyCell;
-use slab::Slab;
 
-use crate::{
-    driver::{Driver, Poller},
-    task::RUNTIME,
-    Key,
-};
+use crate::{op::ReadAt, task::RUNTIME};
 
 thread_local! {
     #[allow(clippy::type_complexity)]
-    static HANDLER: LazyCell<RefCell<HashMap<i32, Slab<Box<dyn FnOnce()>>>>> =
+    static HANDLER: LazyCell<RefCell<HashMap<i32, HashSet<RawFd>>>> =
         LazyCell::new(|| RefCell::new(HashMap::new()));
 }
 
 unsafe extern "C" fn signal_handler(sig: i32) {
     HANDLER.with(|handler| {
         let mut handler = handler.borrow_mut();
-        if let Some(handlers) = handler.get_mut(&sig) {
-            if !handlers.is_empty() {
-                let handlers = std::mem::replace(handlers, Slab::new());
-                for (_, handler) in handlers {
-                    handler();
+        if let Some(fds) = handler.get_mut(&sig) {
+            if !fds.is_empty() {
+                let fds = std::mem::take(fds);
+                for fd in fds {
+                    let data = 1u64;
+                    libc::write(fd, &data as *const _ as *const _, 8);
                 }
             }
         }
@@ -49,26 +43,17 @@ unsafe fn uninit(sig: i32) {
     libc::signal(sig, libc::SIG_DFL);
 }
 
-fn register(sig: i32, f: impl FnOnce() + 'static) -> usize {
+fn register(sig: i32, fd: RawFd) {
     unsafe { init(sig) };
-
-    HANDLER.with(|handler| {
-        handler
-            .borrow_mut()
-            .entry(sig)
-            .or_default()
-            .insert(Box::new(f))
-    })
+    HANDLER.with(|handler| handler.borrow_mut().entry(sig).or_default().insert(fd));
 }
 
-fn unregister(sig: i32, key: usize) {
+fn unregister(sig: i32, fd: RawFd) {
     let need_uninit = HANDLER.with(|handler| {
         let mut handler = handler.borrow_mut();
-        if let Some(handlers) = handler.get_mut(&sig) {
-            if handlers.contains(key) {
-                let _ = handlers.remove(key);
-            }
-            if !handlers.is_empty() {
+        if let Some(fds) = handler.get_mut(&sig) {
+            fds.remove(&fd);
+            if !fds.is_empty() {
                 return false;
             }
         }
@@ -81,53 +66,36 @@ fn unregister(sig: i32, key: usize) {
 
 /// Represents a listener to unix signal event.
 #[derive(Debug)]
-pub struct SignalEvent {
+pub struct SignalFd {
     sig: i32,
-    user_data: Key<()>,
-    handler_key: usize,
+    fd: OwnedFd,
 }
 
-impl SignalEvent {
-    pub(crate) fn new(sig: i32) -> Self {
-        let user_data = RUNTIME.with(|runtime| runtime.submit_dummy());
-        let handler_key = RUNTIME.with(|runtime| {
-            // Safety: the runtime is thread-local static.
-            let driver = unsafe {
-                (runtime.driver() as *const Driver)
-                    .as_ref()
-                    .unwrap_unchecked()
-            };
-            register(sig, move || driver.post(*user_data, 0).unwrap())
-        });
-        Self {
-            sig,
-            user_data,
-            handler_key,
+impl SignalFd {
+    pub(crate) fn new(sig: i32) -> io::Result<Self> {
+        let fd = unsafe { libc::eventfd(0, 0) };
+        if fd < 0 {
+            return Err(io::Error::last_os_error());
         }
+        register(sig, fd);
+        let fd = unsafe { OwnedFd::from_raw_fd(fd) };
+        Ok(Self { sig, fd })
     }
 }
 
-impl Future for SignalEvent {
-    type Output = io::Result<()>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        RUNTIME
-            .with(|runtime| runtime.poll_dummy(cx, self.user_data))
-            .map(|res| {
-                unregister(self.sig, self.handler_key);
-                res.map(|_| ())
-            })
-    }
-}
-
-impl Drop for SignalEvent {
+impl Drop for SignalFd {
     fn drop(&mut self) {
-        unregister(self.sig, self.handler_key);
+        unregister(self.sig, self.fd.as_raw_fd());
     }
 }
 
 /// Creates a new listener which will receive notifications when the current
 /// process receives the specified signal.
-pub fn signal(sig: i32) -> SignalEvent {
-    SignalEvent::new(sig)
+pub async fn signal(sig: i32) -> io::Result<()> {
+    let fd = SignalFd::new(sig)?;
+    let buffer = Vec::with_capacity(8);
+    let op = ReadAt::new(fd.fd.as_raw_fd(), 0, buffer);
+    let (res, _) = RUNTIME.with(|runtime| runtime.submit(op)).await;
+    res?;
+    Ok(())
 }
