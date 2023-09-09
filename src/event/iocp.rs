@@ -6,21 +6,26 @@ use crate::{
     task::{OpFuture, RUNTIME},
 };
 
+/// An event that won't wake until [`EventHandle::notify`] is called
+/// successfully.
 #[derive(Debug)]
 pub struct Event {
     user_data: Key<()>,
 }
 
 impl Event {
+    /// Create [`Event`].
     pub fn new() -> io::Result<Self> {
         let user_data = RUNTIME.with(|runtime| runtime.submit_dummy());
         Ok(Self { user_data })
     }
 
+    /// Get a notify handle.
     pub fn handle(&self) -> EventHandle {
         EventHandle::new(&self.user_data)
     }
 
+    /// Wait for [`EventHandle::nofity`] called.
     pub async fn wait(&self) -> io::Result<()> {
         let future = OpFuture::new(self.user_data);
         future.await?;
@@ -28,6 +33,7 @@ impl Event {
     }
 }
 
+/// A handle to [`Event`].
 pub struct EventHandle<'a> {
     user_data: usize,
     handle: RawFd,
@@ -47,6 +53,7 @@ impl<'a> EventHandle<'a> {
         }
     }
 
+    /// Notify the event.
     pub fn notify(&self) -> io::Result<()> {
         post_driver(self.handle, self.user_data, Ok(0))
     }

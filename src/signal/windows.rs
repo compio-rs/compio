@@ -4,11 +4,8 @@
 use std::sync::LazyLock;
 use std::{
     collections::HashMap,
-    future::Future,
     io,
-    pin::Pin,
     sync::{Mutex, Once},
-    task::{Context, Poll},
 };
 
 #[cfg(not(feature = "lazy_cell"))]
@@ -22,12 +19,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{
-    driver::{Driver, Poller},
-    event::{Event, EventHandle},
-    task::RUNTIME,
-    Key,
-};
+use crate::event::{Event, EventHandle};
 
 #[allow(clippy::type_complexity)]
 static HANDLER: LazyLock<Mutex<HashMap<u32, Slab<EventHandle<'static>>>>> =
