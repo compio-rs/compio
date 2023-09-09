@@ -22,6 +22,7 @@ mod runtime;
 use runtime::Runtime;
 
 mod op;
+pub(crate) use op::OpFuture;
 #[cfg(feature = "time")]
 mod time;
 

@@ -116,6 +116,7 @@ impl Runtime {
     }
 
     pub fn cancel_op<T>(&self, user_data: Key<T>) {
+        self.driver.cancel(*user_data);
         self.op_runtime.borrow_mut().cancel(user_data);
     }
 

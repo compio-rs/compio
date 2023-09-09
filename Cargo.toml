@@ -19,7 +19,6 @@ targets = ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"]
 async-task = { version = "4", optional = true }
 bytes = { version = "1", optional = true }
 cfg-if = "1"
-crossbeam-queue = { version = "0.3", optional = true }
 futures-util = { version = "0.3", optional = true }
 # may be excluded from linking if the unstable equivalent is used
 once_cell = "1"
@@ -56,8 +55,8 @@ libc = "0.2"
 [features]
 default = ["runtime"]
 runtime = ["dep:async-task", "dep:futures-util", "dep:slab"]
-sync-queue = ["dep:crossbeam-queue"]
-signal = ["runtime", "sync-queue"]
+event = ["runtime"]
+signal = ["event"]
 time = ["runtime"]
 all = ["time", "signal"]
 
@@ -80,8 +79,4 @@ harness = false
 
 [[bench]]
 name = "named_pipe"
-harness = false
-
-[[bench]]
-name = "driver"
 harness = false

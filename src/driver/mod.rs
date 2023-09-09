@@ -13,26 +13,6 @@ cfg_if::cfg_if! {
     }
 }
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "sync-queue")] {
-        pub(crate) use crossbeam_queue::SegQueue as Queue;
-    } else {
-        mod queue;
-        pub(crate) use queue::Queue;
-    }
-}
-
-pub(crate) fn queue_with_capacity<T>(_capacity: usize) -> Queue<T> {
-    #[cfg(feature = "sync-queue")]
-    {
-        Queue::new()
-    }
-    #[cfg(not(feature = "sync-queue"))]
-    {
-        Queue::with_capacity(_capacity)
-    }
-}
-
 /// An abstract of [`Driver`].
 /// It contains some low-level actions of completion-based IO.
 ///
@@ -102,16 +82,8 @@ pub trait Poller {
     /// - `op` should be alive until [`Poller::poll`] returns its result.
     unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()>;
 
-    /// Post an operation result to the driver.
-    ///
-    /// ## Platform specific
-    ///
-    /// * IOCP: it will interrupt [`Poller::poll`].
-    /// [`Poller::poll`] will return successfully.
-    /// * io-uring: it won't interrupt [`Poller::poll`].
-    /// You need to send a signal to the polling thread to interrupt the driver.
-    /// [`Poller::poll`] will then return with [`io::ErrorKind::Interrupted`].
-    fn post(&self, user_data: usize, result: usize) -> io::Result<()>;
+    /// Cancel an operation with the pushed user-defined data.
+    fn cancel(&self, user_data: usize);
 
     /// Poll the driver with an optional timeout.
     ///

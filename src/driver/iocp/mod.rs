@@ -1,4 +1,6 @@
 use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet, VecDeque},
     ffi::c_void,
     io,
     mem::MaybeUninit,
@@ -30,7 +32,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::driver::{queue_with_capacity, Entry, Poller, Queue};
+use crate::driver::{Entry, Poller};
 
 pub(crate) mod op;
 
@@ -117,11 +119,10 @@ pub trait OpCode {
 /// Low-level driver of IOCP.
 pub struct Driver {
     port: OwnedHandle,
-    operations: Queue<(*mut dyn OpCode, Overlapped)>,
+    operations: RefCell<VecDeque<(*mut dyn OpCode, Overlapped)>>,
+    submit_map: RefCell<HashMap<usize, *mut OVERLAPPED>>,
+    cancelled: RefCell<HashSet<*mut OVERLAPPED>>,
 }
-
-unsafe impl Send for Driver {}
-unsafe impl Sync for Driver {}
 
 impl Driver {
     const DEFAULT_CAPACITY: usize = 1024;
@@ -133,9 +134,47 @@ impl Driver {
             .map_err(|_| io::Error::last_os_error())?;
         Ok(Self {
             port,
-            operations: queue_with_capacity(Self::DEFAULT_CAPACITY),
+            operations: RefCell::new(VecDeque::with_capacity(Self::DEFAULT_CAPACITY)),
+            submit_map: RefCell::default(),
+            cancelled: RefCell::default(),
         })
     }
+}
+
+fn post_driver_raw(
+    handle: RawFd,
+    result: io::Result<usize>,
+    overlapped_ptr: *mut OVERLAPPED,
+) -> io::Result<()> {
+    if let Err(e) = &result {
+        unsafe {
+            (*overlapped_ptr).Internal =
+                ntstatus_from_win32(e.raw_os_error().unwrap_or_default()) as _;
+        }
+    }
+    let res = unsafe {
+        PostQueuedCompletionStatus(
+            handle as _,
+            result.unwrap_or_default() as _,
+            0,
+            overlapped_ptr,
+        )
+    };
+    if res == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+pub(crate) fn post_driver(
+    handle: RawFd,
+    user_data: usize,
+    result: io::Result<usize>,
+) -> io::Result<()> {
+    let overlapped = Box::new(Overlapped::new(user_data));
+    let overlapped_ptr = Box::into_raw(overlapped);
+    post_driver_raw(handle, result, overlapped_ptr.cast())
 }
 
 fn detach_iocp(fd: RawFd) -> io::Result<()> {
@@ -203,25 +242,16 @@ impl Poller for Driver {
     }
 
     unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()> {
-        self.operations.push((op, Overlapped::new(user_data)));
+        self.operations
+            .borrow_mut()
+            .push_back((op, Overlapped::new(user_data)));
         Ok(())
     }
 
-    fn post(&self, user_data: usize, result: usize) -> io::Result<()> {
-        let overlapped = Box::new(Overlapped::new(user_data));
-        let overlapped_ptr = Box::into_raw(overlapped);
-        let res = unsafe {
-            PostQueuedCompletionStatus(
-                self.port.as_raw_handle() as _,
-                result as _,
-                0,
-                overlapped_ptr as *mut OVERLAPPED,
-            )
-        };
-        if res == 0 {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(())
+    fn cancel(&self, user_data: usize) {
+        if let Some(ptr) = self.submit_map.borrow_mut().remove(&user_data) {
+            // TODO: should we call CancelIoEx?
+            self.cancelled.borrow_mut().insert(ptr);
         }
     }
 
@@ -233,27 +263,17 @@ impl Poller for Driver {
         if entries.is_empty() {
             return Ok(0);
         }
-        while let Some((op, overlapped)) = self.operations.pop() {
+        while let Some((op, overlapped)) = self.operations.borrow_mut().pop_front() {
             let overlapped = Box::new(overlapped);
+            let user_data = overlapped.user_data;
             let overlapped_ptr = Box::into_raw(overlapped);
-            let result = unsafe {
-                op.as_mut()
-                    .unwrap()
-                    .operate(overlapped_ptr as *mut OVERLAPPED)
-            };
+            let result = unsafe { op.as_mut().unwrap().operate(overlapped_ptr.cast()) };
             if let Poll::Ready(result) = result {
-                unsafe {
-                    if let Err(e) = &result {
-                        (*overlapped_ptr).base.Internal =
-                            ntstatus_from_win32(e.raw_os_error().unwrap_or_default()) as _;
-                    }
-                    PostQueuedCompletionStatus(
-                        self.port.as_raw_handle() as _,
-                        result.unwrap_or_default() as _,
-                        0,
-                        overlapped_ptr as *mut OVERLAPPED,
-                    );
-                }
+                post_driver_raw(self.port.as_raw_handle(), result, overlapped_ptr.cast())?;
+            } else {
+                self.submit_map
+                    .borrow_mut()
+                    .insert(user_data, overlapped_ptr.cast());
             }
         }
 
@@ -286,6 +306,9 @@ impl Poller for Driver {
             let transferred = iocp_entry.dwNumberOfBytesTransferred;
             let overlapped_ptr = iocp_entry.lpOverlapped;
             let overlapped = unsafe { Box::from_raw(overlapped_ptr.cast::<Overlapped>()) };
+            if self.cancelled.borrow_mut().remove(&overlapped_ptr) {
+                continue;
+            }
             let res = if matches!(
                 overlapped.base.Internal as NTSTATUS,
                 STATUS_SUCCESS | STATUS_PENDING
@@ -301,6 +324,12 @@ impl Poller for Driver {
             entry.write(Entry::new(overlapped.user_data, res));
         }
         Ok(iocp_len)
+    }
+}
+
+impl AsRawFd for Driver {
+    fn as_raw_fd(&self) -> RawFd {
+        self.port.as_raw_handle()
     }
 }
 

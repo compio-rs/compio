@@ -6,9 +6,9 @@ use futures_util::{select, FutureExt};
 fn main() {
     compio::task::block_on(async {
         let mut interval = interval(Duration::from_secs(2));
-        let mut ctrlc = ctrl_c();
         loop {
-            let ctrlc = std::pin::pin!(&mut ctrlc);
+            let mut ctrlc = ctrl_c();
+            let ctrlc = std::pin::pin!(ctrlc);
             select! {
                 res = ctrlc.fuse() => {
                     res.unwrap();
