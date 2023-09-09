@@ -61,6 +61,7 @@ libc = "0.2"
 [target.'cfg(all(not(target_os = "linux"), unix))'.dependencies]
 mio = { version = "0.8.8", features = ["os-ext"] }
 slab = { version = "0.4" }
+libc = "0.2"
 
 [features]
 default = ["runtime"]
