@@ -28,7 +28,7 @@ impl Event {
         EventHandle::new(self.fd.as_fd())
     }
 
-    /// Wait for [`EventHandle::nofity`] called.
+    /// Wait for [`EventHandle::notify`] called.
     pub async fn wait(&self) -> io::Result<()> {
         let buffer = Vec::with_capacity(8);
         let op = ReadAt::new(self.as_raw_fd(), 0, buffer);
