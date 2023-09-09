@@ -20,13 +20,49 @@ This is mainly because that no public APIs to control IOCP in `mio`,
 and `tokio` won't public APIs to control `mio` before `mio` reaches 1.0.
 
 ## Quick start
+
+With `runtime` feature enabled, we can use the high level APIs to perform fs & net IO.
 ```rust,no_run
-let buffer = compio::task::block_on(async {
-    let file = compio::fs::OpenOptions::new().read(true).open("Cargo.toml").unwrap();
+use compio::{fs::File, task::block_on};
+
+let buffer = block_on(async {
+    let file = File::open("Cargo.toml").unwrap();
     let (read, buffer) = file.read_at(Vec::with_capacity(1024), 0).await;
     let read = read.unwrap();
     assert_eq!(read, buffer.len());
     String::from_utf8(buffer).unwrap()
 });
 println!("{}", buffer);
+```
+
+While you can also control the low-level driver manually:
+```rust,no_run
+use compio::{
+    buf::IntoInner,
+    driver::{AsRawFd, Driver, Poller},
+    fs::File,
+    op::ReadAt,
+};
+
+let driver = Driver::new().unwrap();
+let file = File::open("Cargo.toml").unwrap();
+// Attach the `RawFd` to driver first.
+driver.attach(file.as_raw_fd()).unwrap();
+
+// Create operation and push it to the driver.
+let mut op = ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(4096));
+unsafe { driver.push(&mut op, 0) }.unwrap();
+
+// Poll the driver and wait for IO completed.
+let entry = driver.poll_one(None).unwrap();
+assert_eq!(entry.user_data(), 0);
+
+// Resize the buffer by return value.
+let n = entry.into_result().unwrap();
+let mut buffer = op.into_inner().into_inner();
+unsafe {
+    buffer.set_len(n);
+}
+
+println!("{}", String::from_utf8(buffer).unwrap());
 ```
