@@ -167,6 +167,7 @@ fn post_driver_raw(
     }
 }
 
+#[cfg(feature = "event")]
 pub(crate) fn post_driver(
     handle: RawFd,
     user_data: usize,

@@ -1,10 +1,16 @@
-use std::{net::Shutdown, path::Path};
+use std::{io, net::Shutdown, path::Path};
 
-use socket2::{Domain, Type};
+use socket2::{Domain, SockAddr, Type};
 
-use crate::net::{Socket, *};
 #[cfg(feature = "runtime")]
-use crate::{buf::*, *};
+use crate::{
+    buf::{IoBuf, IoBufMut},
+    BufResult,
+};
+use crate::{
+    impl_raw_fd,
+    net::{Socket, ToSockAddrs},
+};
 
 /// A Unix socket server, listening for connections.
 ///
@@ -50,7 +56,7 @@ impl UnixListener {
     /// the specified file path. The file path cannot yet exist, and will be
     /// cleaned up upon dropping [`UnixListener`]
     pub fn bind_addr(addr: impl ToSockAddrs) -> io::Result<Self> {
-        each_addr(addr, |addr| {
+        super::each_addr(addr, |addr| {
             let socket = Socket::bind(&addr, Type::STREAM, None)?;
             socket.listen(1024)?;
             Ok(UnixListener { inner: socket })
@@ -112,7 +118,7 @@ impl UnixStream {
     /// [`UnixListener`] or equivalent listening on the corresponding Unix
     /// domain socket to successfully connect and return a `UnixStream`.
     pub fn connect_addr(addr: impl ToSockAddrs) -> io::Result<Self> {
-        each_addr(addr, |addr| {
+        super::each_addr(addr, |addr| {
             let socket = Socket::new(Domain::UNIX, Type::STREAM, None)?;
             socket.connect(&addr)?;
             let unix_stream = UnixStream { inner: socket };

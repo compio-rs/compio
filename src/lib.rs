@@ -8,17 +8,18 @@
 pub mod buf;
 pub mod driver;
 pub mod fs;
-mod key;
 pub mod net;
 pub mod op;
-
-pub(crate) use key::Key;
 
 #[cfg(target_os = "windows")]
 pub mod named_pipe;
 
 #[cfg(feature = "event")]
 pub mod event;
+#[cfg(feature = "runtime")]
+mod key;
+#[cfg(feature = "runtime")]
+pub(crate) use key::Key;
 #[cfg(feature = "signal")]
 pub mod signal;
 #[cfg(feature = "runtime")]
