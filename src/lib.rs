@@ -8,19 +8,24 @@
 pub mod buf;
 pub mod driver;
 pub mod fs;
-mod key;
+
 pub mod net;
 pub mod op;
 
-pub(crate) use key::Key;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "runtime")] {
+        pub mod task;
+        mod key;
+        use key::Key;
+    }
+}
 
 #[cfg(target_os = "windows")]
 pub mod named_pipe;
 
 #[cfg(feature = "signal")]
 pub mod signal;
-#[cfg(feature = "runtime")]
-pub mod task;
+
 #[cfg(feature = "time")]
 pub mod time;
 
