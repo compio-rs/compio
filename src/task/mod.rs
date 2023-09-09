@@ -18,13 +18,12 @@ use async_task::Task;
 #[cfg(not(feature = "lazy_cell"))]
 use once_cell::unsync::Lazy as LazyCell;
 
-mod runtime;
+pub(crate) mod runtime;
 use runtime::Runtime;
 
-mod op;
-pub(crate) use op::OpFuture;
+pub(crate) mod op;
 #[cfg(feature = "time")]
-mod time;
+pub(crate) mod time;
 
 thread_local! {
     pub(crate) static RUNTIME: LazyCell<Runtime> = LazyCell::new(|| Runtime::new().unwrap());

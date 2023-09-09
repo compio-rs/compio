@@ -3,7 +3,7 @@ use std::{io, marker::PhantomData};
 use crate::{
     driver::{post_driver, AsRawFd, RawFd},
     key::Key,
-    task::{OpFuture, RUNTIME},
+    task::{op::OpFuture, RUNTIME},
 };
 
 /// An event that won't wake until [`EventHandle::notify`] is called
@@ -25,7 +25,7 @@ impl Event {
         EventHandle::new(&self.user_data)
     }
 
-    /// Wait for [`EventHandle::nofity`] called.
+    /// Wait for [`EventHandle::notify`] called.
     pub async fn wait(&self) -> io::Result<()> {
         let future = OpFuture::new(self.user_data);
         future.await?;

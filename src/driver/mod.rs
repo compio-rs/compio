@@ -92,7 +92,9 @@ pub trait Poller {
     ///
     /// If there are no tasks completed, this call will block and wait.
     /// If no timeout specified, it will block forever.
-    /// To interrupt the blocking, see [`Poller::post`].
+    /// To interrupt the blocking, see [`Event`].
+    ///
+    /// [`Event`]: crate::event::Event
     fn poll(
         &self,
         timeout: Option<Duration>,

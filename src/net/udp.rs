@@ -1,8 +1,16 @@
-use socket2::{Protocol, Type};
+use std::io;
 
-use crate::net::{Socket, *};
+use socket2::{Protocol, SockAddr, Type};
+
 #[cfg(feature = "runtime")]
-use crate::{buf::*, *};
+use crate::{
+    buf::{IoBuf, IoBufMut},
+    BufResult,
+};
+use crate::{
+    impl_raw_fd,
+    net::{Socket, ToSockAddrs},
+};
 
 /// A UDP socket.
 ///
@@ -214,7 +222,7 @@ impl UdpSocket {
         buffer: T,
         addr: impl ToSockAddrs,
     ) -> BufResult<usize, T> {
-        each_addr_async_buf(addr, buffer, |addr, buffer| async move {
+        super::each_addr_async_buf(addr, buffer, |addr, buffer| async move {
             self.inner.send_to(buffer, &addr).await
         })
         .await
@@ -228,7 +236,7 @@ impl UdpSocket {
         buffer: Vec<T>,
         addr: impl ToSockAddrs,
     ) -> BufResult<usize, Vec<T>> {
-        each_addr_async_buf(addr, buffer, |addr, buffer| async move {
+        super::each_addr_async_buf(addr, buffer, |addr, buffer| async move {
             self.inner.send_to_vectored(buffer, &addr).await
         })
         .await

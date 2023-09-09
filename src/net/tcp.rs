@@ -1,10 +1,16 @@
-use std::net::Shutdown;
+use std::{io, net::Shutdown};
 
-use socket2::{Protocol, Type};
+use socket2::{Protocol, SockAddr, Type};
 
-use crate::net::{Socket, *};
 #[cfg(feature = "runtime")]
-use crate::{buf::*, *};
+use crate::{
+    buf::{IoBuf, IoBufMut},
+    BufResult,
+};
+use crate::{
+    impl_raw_fd,
+    net::{Socket, ToSockAddrs},
+};
 
 /// A TCP socket server, listening for connections.
 ///
@@ -129,6 +135,8 @@ impl TcpStream {
     /// Opens a TCP connection to a remote host.
     #[cfg(feature = "runtime")]
     pub async fn connect(addr: impl ToSockAddrs) -> io::Result<Self> {
+        use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6};
+
         super::each_addr_async(addr, |addr| async move {
             let socket = if cfg!(target_os = "windows") {
                 let bind_addr = if addr.is_ipv4() {
