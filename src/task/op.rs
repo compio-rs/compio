@@ -101,13 +101,13 @@ impl OpRuntime {
 }
 
 #[derive(Debug)]
-pub struct OpFuture<T: OpCode + 'static> {
+pub struct OpFuture<T: 'static> {
     user_data: Key<T>,
     completed: bool,
     _p: PhantomData<&'static T>,
 }
 
-impl<T: OpCode> OpFuture<T> {
+impl<T> OpFuture<T> {
     pub fn new(user_data: Key<T>) -> Self {
         Self {
             user_data,
@@ -129,7 +129,19 @@ impl<T: OpCode> Future for OpFuture<T> {
     }
 }
 
-impl<T: OpCode> Drop for OpFuture<T> {
+impl Future for OpFuture<()> {
+    type Output = io::Result<usize>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let res = crate::task::RUNTIME.with(|runtime| runtime.poll_dummy(cx, self.user_data));
+        if res.is_ready() {
+            self.get_mut().completed = true;
+        }
+        res
+    }
+}
+
+impl<T> Drop for OpFuture<T> {
     fn drop(&mut self) {
         if !self.completed {
             crate::task::RUNTIME.with(|runtime| runtime.cancel_op(self.user_data))

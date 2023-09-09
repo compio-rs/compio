@@ -24,12 +24,13 @@ use windows_sys::Win32::{
 
 use crate::{
     driver::{Driver, Poller},
+    event::{Event, EventHandle},
     task::RUNTIME,
     Key,
 };
 
 #[allow(clippy::type_complexity)]
-static HANDLER: LazyLock<Mutex<HashMap<u32, Slab<Box<dyn FnOnce() + Send + Sync>>>>> =
+static HANDLER: LazyLock<Mutex<HashMap<u32, Slab<EventHandle<'static>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 unsafe extern "system" fn ctrl_event_handler(ctrltype: u32) -> BOOL {
@@ -38,7 +39,7 @@ unsafe extern "system" fn ctrl_event_handler(ctrltype: u32) -> BOOL {
         if !handlers.is_empty() {
             let handlers = std::mem::replace(handlers, Slab::new());
             for (_, handler) in handlers {
-                handler();
+                handler.notify().ok();
             }
             return 1;
         }
@@ -57,9 +58,12 @@ fn init() -> io::Result<()> {
     }
 }
 
-fn register(ctrltype: u32, f: impl FnOnce() + Send + Sync + 'static) -> usize {
+fn register(ctrltype: u32, e: &Event) -> usize {
     let mut handler = HANDLER.lock().unwrap();
-    handler.entry(ctrltype).or_default().insert(Box::new(f))
+    let handle = e.handle();
+    // Safety: we will unregister on drop.
+    let handle: EventHandle<'static> = unsafe { std::mem::transmute(handle) };
+    handler.entry(ctrltype).or_default().insert(handle)
 }
 
 fn unregister(ctrltype: u32, key: usize) {
@@ -73,41 +77,27 @@ fn unregister(ctrltype: u32, key: usize) {
 
 /// Represents a listener to console CTRL event.
 #[derive(Debug)]
-pub struct CtrlEvent {
+struct CtrlEvent {
     ctrltype: u32,
-    user_data: Key<()>,
+    event: Event,
     handler_key: usize,
 }
 
 impl CtrlEvent {
-    pub(crate) fn new(ctrltype: u32) -> Self {
+    pub(crate) fn new(ctrltype: u32) -> io::Result<Self> {
         INIT.call_once(|| init().unwrap());
 
-        let user_data = RUNTIME.with(|runtime| runtime.submit_dummy());
-        let handler_key = RUNTIME.with(|runtime| {
-            // Safety: the runtime is thread-local static, and the driver is send & sync.
-            let driver = unsafe {
-                (runtime.driver() as *const Driver)
-                    .as_ref()
-                    .unwrap_unchecked()
-            };
-            register(ctrltype, move || driver.post(*user_data, 0).unwrap())
-        });
-        Self {
+        let event = Event::new()?;
+        let handler_key = register(ctrltype, &event);
+        Ok(Self {
             ctrltype,
-            user_data,
+            event,
             handler_key,
-        }
+        })
     }
-}
 
-impl Future for CtrlEvent {
-    type Output = io::Result<()>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        RUNTIME
-            .with(|runtime| runtime.poll_dummy(cx, self.user_data))
-            .map(|res| res.map(|_| ()))
+    pub async fn wait(&self) -> io::Result<()> {
+        self.event.wait().await
     }
 }
 
@@ -117,32 +107,37 @@ impl Drop for CtrlEvent {
     }
 }
 
+async fn ctrl_event(ctrltype: u32) -> io::Result<()> {
+    let event = CtrlEvent::new(ctrltype)?;
+    event.wait().await
+}
+
 /// Creates a new listener which receives "ctrl-break" notifications sent to the
 /// process.
-pub fn ctrl_break() -> CtrlEvent {
-    CtrlEvent::new(CTRL_BREAK_EVENT)
+pub async fn ctrl_break() -> io::Result<()> {
+    ctrl_event(CTRL_BREAK_EVENT).await
 }
 
 /// Creates a new listener which receives "ctrl-close" notifications sent to the
 /// process.
-pub fn ctrl_close() -> CtrlEvent {
-    CtrlEvent::new(CTRL_CLOSE_EVENT)
+pub async fn ctrl_close() -> io::Result<()> {
+    ctrl_event(CTRL_CLOSE_EVENT).await
 }
 
 /// Creates a new listener which receives "ctrl-c" notifications sent to the
 /// process.
-pub fn ctrl_c() -> CtrlEvent {
-    CtrlEvent::new(CTRL_C_EVENT)
+pub async fn ctrl_c() -> io::Result<()> {
+    ctrl_event(CTRL_C_EVENT).await
 }
 
 /// Creates a new listener which receives "ctrl-logoff" notifications sent to
 /// the process.
-pub fn ctrl_logoff() -> CtrlEvent {
-    CtrlEvent::new(CTRL_LOGOFF_EVENT)
+pub async fn ctrl_logoff() -> io::Result<()> {
+    ctrl_event(CTRL_LOGOFF_EVENT).await
 }
 
 /// Creates a new listener which receives "ctrl-shutdown" notifications sent to
 /// the process.
-pub fn ctrl_shutdown() -> CtrlEvent {
-    CtrlEvent::new(CTRL_SHUTDOWN_EVENT)
+pub async fn ctrl_shutdown() -> io::Result<()> {
+    ctrl_event(CTRL_SHUTDOWN_EVENT).await
 }
