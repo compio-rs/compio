@@ -3,7 +3,9 @@ pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{cell::RefCell, io, marker::PhantomData, mem::MaybeUninit, time::Duration};
 
 use io_uring::{
-    cqueue, squeue,
+    cqueue,
+    opcode::AsyncCancel,
+    squeue,
     types::{SubmitArgs, Timespec},
     IoUring,
 };
@@ -79,7 +81,18 @@ impl Driver {
             inner_squeue.sync();
 
             for entry in self.inner.completion_shared() {
-                self.cqueue.push(create_entry(entry));
+                let entry = create_entry(entry);
+                if entry.user_data() == u64::MAX as _ {
+                    // This is a cancel operation.
+                    continue;
+                }
+                if let Err(e) = &entry.result {
+                    if e.raw_os_error() == Some(libc::ECANCELED) {
+                        // This operation is cancelled.
+                        continue;
+                    }
+                }
+                self.cqueue.push(entry);
             }
 
             if self.squeue.is_empty() && inner_squeue.is_empty() {
@@ -109,9 +122,9 @@ impl Poller for Driver {
         Ok(())
     }
 
-    fn post(&self, user_data: usize, result: usize) -> io::Result<()> {
-        self.cqueue.push(Entry::new(user_data, Ok(result)));
-        Ok(())
+    fn cancel(&self, user_data: usize) {
+        self.squeue
+            .push(AsyncCancel::new(user_data as _).build().user_data(u64::MAX));
     }
 
     fn poll(
