@@ -80,7 +80,3 @@ harness = false
 [[bench]]
 name = "named_pipe"
 harness = false
-
-[[bench]]
-name = "driver"
-harness = false

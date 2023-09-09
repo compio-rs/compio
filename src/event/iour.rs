@@ -5,12 +5,15 @@ use std::{
 
 use crate::{impl_raw_fd, op::ReadAt, task::RUNTIME};
 
+/// An event that won't wake until [`EventHandle::notify`] is called
+/// successfully.
 #[derive(Debug)]
 pub struct Event {
     fd: OwnedFd,
 }
 
 impl Event {
+    /// Create [`Event`].
     pub fn new() -> io::Result<Self> {
         let fd = unsafe { libc::eventfd(0, 0) };
         if fd < 0 {
@@ -20,10 +23,12 @@ impl Event {
         Ok(Self { fd })
     }
 
+    /// Get a notify handle.
     pub fn handle(&self) -> EventHandle {
         EventHandle::new(self.fd.as_fd())
     }
 
+    /// Wait for [`EventHandle::nofity`] called.
     pub async fn wait(&self) -> io::Result<()> {
         let buffer = Vec::with_capacity(8);
         let op = ReadAt::new(self.as_raw_fd(), 0, buffer);
@@ -35,6 +40,7 @@ impl Event {
 
 impl_raw_fd!(Event, fd);
 
+/// A handle to [`Event`].
 pub struct EventHandle<'a> {
     fd: BorrowedFd<'a>,
 }
@@ -44,6 +50,7 @@ impl<'a> EventHandle<'a> {
         Self { fd }
     }
 
+    /// Notify the event.
     pub fn notify(&self) -> io::Result<()> {
         let data = 1u64;
         let res = unsafe {

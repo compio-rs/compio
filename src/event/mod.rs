@@ -1,3 +1,7 @@
+//! Asynchronous events.
+//!
+//! Only for waking up the driver.
+
 cfg_if::cfg_if! {
     if #[cfg(target_os = "windows")] {
         mod iocp;

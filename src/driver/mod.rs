@@ -82,6 +82,7 @@ pub trait Poller {
     /// - `op` should be alive until [`Poller::poll`] returns its result.
     unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()>;
 
+    /// Cancel an operation with the pushed user-defined data.
     fn cancel(&self, user_data: usize);
 
     /// Poll the driver with an optional timeout.

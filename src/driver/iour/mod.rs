@@ -68,6 +68,7 @@ impl Driver {
             } else {
                 self.inner.submit()
             };
+            inner_squeue.sync();
             match res {
                 Ok(_) => Ok(()),
                 Err(e) => match e.raw_os_error() {
