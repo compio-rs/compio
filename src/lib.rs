@@ -17,6 +17,8 @@ pub(crate) use key::Key;
 #[cfg(target_os = "windows")]
 pub mod named_pipe;
 
+#[cfg(feature = "event")]
+pub mod event;
 #[cfg(feature = "signal")]
 pub mod signal;
 #[cfg(feature = "runtime")]

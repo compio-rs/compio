@@ -4,19 +4,19 @@
 use std::cell::LazyCell;
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     io,
-    os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd},
+    os::fd::{AsRawFd, RawFd},
 };
 
 #[cfg(not(feature = "lazy_cell"))]
 use once_cell::unsync::Lazy as LazyCell;
 
-use crate::{op::ReadAt, task::RUNTIME};
+use crate::event::{Event, EventHandle};
 
 thread_local! {
     #[allow(clippy::type_complexity)]
-    static HANDLER: LazyCell<RefCell<HashMap<i32, HashSet<RawFd>>>> =
+    static HANDLER: LazyCell<RefCell<HashMap<i32, HashMap<RawFd, EventHandle<'static>>>>> =
         LazyCell::new(|| RefCell::new(HashMap::new()));
 }
 
@@ -26,9 +26,8 @@ unsafe extern "C" fn signal_handler(sig: i32) {
         if let Some(fds) = handler.get_mut(&sig) {
             if !fds.is_empty() {
                 let fds = std::mem::take(fds);
-                for fd in fds {
-                    let data = 1u64;
-                    libc::write(fd, &data as *const _ as *const _, 8);
+                for (_, fd) in fds {
+                    fd.notify().ok();
                 }
             }
         }
@@ -43,9 +42,19 @@ unsafe fn uninit(sig: i32) {
     libc::signal(sig, libc::SIG_DFL);
 }
 
-fn register(sig: i32, fd: RawFd) {
+fn register(sig: i32, fd: &Event) {
     unsafe { init(sig) };
-    HANDLER.with(|handler| handler.borrow_mut().entry(sig).or_default().insert(fd));
+    let raw_fd = fd.as_raw_fd();
+    let handle = fd.handle();
+    // Safety: we will unregister on drop.
+    let handle: EventHandle<'static> = unsafe { std::mem::transmute(handle) };
+    HANDLER.with(|handler| {
+        handler
+            .borrow_mut()
+            .entry(sig)
+            .or_default()
+            .insert(raw_fd, handle)
+    });
 }
 
 fn unregister(sig: i32, fd: RawFd) {
@@ -66,20 +75,20 @@ fn unregister(sig: i32, fd: RawFd) {
 
 /// Represents a listener to unix signal event.
 #[derive(Debug)]
-pub struct SignalFd {
+struct SignalFd {
     sig: i32,
-    fd: OwnedFd,
+    fd: Event,
 }
 
 impl SignalFd {
-    pub(crate) fn new(sig: i32) -> io::Result<Self> {
-        let fd = unsafe { libc::eventfd(0, 0) };
-        if fd < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        register(sig, fd);
-        let fd = unsafe { OwnedFd::from_raw_fd(fd) };
+    fn new(sig: i32) -> io::Result<Self> {
+        let fd = Event::new()?;
+        register(sig, &fd);
         Ok(Self { sig, fd })
+    }
+
+    async fn wait(&self) -> io::Result<()> {
+        self.fd.wait().await
     }
 }
 
@@ -93,9 +102,5 @@ impl Drop for SignalFd {
 /// process receives the specified signal.
 pub async fn signal(sig: i32) -> io::Result<()> {
     let fd = SignalFd::new(sig)?;
-    let buffer = Vec::with_capacity(8);
-    let op = ReadAt::new(fd.fd.as_raw_fd(), 0, buffer);
-    let (res, _) = RUNTIME.with(|runtime| runtime.submit(op)).await;
-    res?;
-    Ok(())
+    fd.wait().await
 }

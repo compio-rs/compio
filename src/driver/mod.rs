@@ -13,26 +13,6 @@ cfg_if::cfg_if! {
     }
 }
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "sync-queue")] {
-        pub(crate) use crossbeam_queue::SegQueue as Queue;
-    } else {
-        mod queue;
-        pub(crate) use queue::Queue;
-    }
-}
-
-pub(crate) fn queue_with_capacity<T>(_capacity: usize) -> Queue<T> {
-    #[cfg(feature = "sync-queue")]
-    {
-        Queue::new()
-    }
-    #[cfg(not(feature = "sync-queue"))]
-    {
-        Queue::with_capacity(_capacity)
-    }
-}
-
 /// An abstract of [`Driver`].
 /// It contains some low-level actions of completion-based IO.
 ///
