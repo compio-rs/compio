@@ -2,6 +2,8 @@
 //! Some types differ by compilation target.
 
 use std::{io, mem::MaybeUninit, time::Duration};
+#[cfg(unix)]
+mod unix_op;
 
 cfg_if::cfg_if! {
     if #[cfg(target_os = "windows")] {
