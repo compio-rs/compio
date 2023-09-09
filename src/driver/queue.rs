@@ -11,14 +11,14 @@ impl<T> Queue<T> {
     pub fn push(&self, value: T) {
         unsafe {
             // SAFETY: we expect that only single thread uses the queue
-            (&mut *self.0.get()).push_back(value);
+            (*self.0.get()).push_back(value);
         }
     }
 
     pub fn pop(&self) -> Option<T> {
         unsafe {
             // SAFETY: we expect that only single thread uses the queue
-            (&mut *self.0.get()).pop_front()
+            (*self.0.get()).pop_front()
         }
     }
 
@@ -26,7 +26,7 @@ impl<T> Queue<T> {
     pub fn len(&self) -> usize {
         unsafe {
             // SAFETY: we expect that only single thread uses the queue
-            (&*self.0.get()).len()
+            (*self.0.get()).len()
         }
     }
 
@@ -34,7 +34,7 @@ impl<T> Queue<T> {
     pub fn is_empty(&self) -> bool {
         unsafe {
             // SAFETY: we expect that only single thread uses the queue
-            (&*self.0.get()).is_empty()
+            (*self.0.get()).is_empty()
         }
     }
 }
