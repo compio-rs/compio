@@ -1,6 +1,8 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{cell::RefCell, collections::VecDeque, io, mem::MaybeUninit, time::Duration};
+use std::{
+    cell::RefCell, collections::VecDeque, io, mem::MaybeUninit, ops::ControlFlow, time::Duration,
+};
 
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use mio::{
@@ -22,7 +24,7 @@ pub trait OpCode {
 
     /// Perform the operation after received corresponding
     /// event.
-    fn on_event(&mut self, event: &Event) -> io::Result<usize>;
+    fn on_event(&mut self, event: &Event) -> io::Result<ControlFlow<usize>>;
 }
 
 /// Result of [`OpCode::pre_submit`].
@@ -70,6 +72,7 @@ struct DriverInner {
 }
 
 /// Entry in squeue
+#[derive(Debug)]
 struct MioEntry {
     op: *mut dyn OpCode,
     user_data: usize,
@@ -171,16 +174,24 @@ impl DriverInner {
     /// cqueue.
     fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         self.poll.poll(&mut self.events, timeout)?;
-
+        // println!("events: {:?}", self.events);
         for event in &self.events {
             let token = event.token();
             let entry = self
                 .waiting
                 .get_mut(token.0)
                 .expect("Unknown token returned by mio"); // XXX: Should this be silently ignored?
-            let res = entry.op_mut().on_event(event);
-
-            self.cqueue.push_back(Entry::new(entry.user_data, res))
+            match entry.op_mut().on_event(event) {
+                Ok(ControlFlow::Continue(_)) => {}
+                Ok(ControlFlow::Break(res)) => {
+                    self.cqueue.push_back(Entry::new(entry.user_data, Ok(res)));
+                    self.waiting.remove(token.0);
+                }
+                Err(err) => {
+                    self.cqueue.push_back(Entry::new(entry.user_data, Err(err)));
+                    self.waiting.remove(token.0);
+                }
+            }
         }
         Ok(())
     }
@@ -210,8 +221,9 @@ impl Poller for Driver {
     fn cancel(&self, user_data: usize) {
         let mut inner = self.inner();
 
-        let Some(entry) = inner.waiting.try_remove(user_data)
-            else { return };
+        let Some(entry) = inner.waiting.try_remove(user_data) else {
+            return;
+        };
         inner
             .poll
             .registry()

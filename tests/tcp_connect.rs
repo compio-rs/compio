@@ -51,7 +51,10 @@ async fn test_connect_impl<A: ToSockAddrs>(mapping: impl FnOnce(&TcpListener) ->
     };
 
     let client = async {
-        assert!(TcpStream::connect(addr).await.is_ok());
+        match TcpStream::connect(addr).await {
+            Ok(_) => (),
+            Err(e) => panic!("Failed to connect: {}", e),
+        }
     };
 
     futures_util::join!(server, client);

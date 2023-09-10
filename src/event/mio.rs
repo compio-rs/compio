@@ -15,7 +15,8 @@ pub struct Event {
 impl Event {
     /// Create [`Event`].
     pub fn new() -> io::Result<Self> {
-        let (sender, _) = mio::unix::pipe::new()?;
+        let (sender, receiver) = mio::unix::pipe::new()?;
+        receiver.into_raw_fd(); // Preventing from closing.
 
         Ok(Self {
             fd: unsafe { OwnedFd::from_raw_fd(sender.into_raw_fd()) },

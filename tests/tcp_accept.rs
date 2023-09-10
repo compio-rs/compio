@@ -19,6 +19,7 @@ macro_rules! test_accept {
         $(
             #[test]
             fn $ident() {
+                println!("Testing {}...", stringify!($ident));
                 compio::task::block_on(test_impl($target))
             }
         )*
