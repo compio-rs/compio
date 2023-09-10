@@ -1,6 +1,12 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{collections::VecDeque, io, mem::MaybeUninit, ops::ControlFlow, time::Duration};
+use std::{
+    collections::{HashMap, VecDeque},
+    io,
+    mem::MaybeUninit,
+    ops::ControlFlow,
+    time::Duration,
+};
 
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use mio::{
@@ -8,7 +14,6 @@ use mio::{
     unix::SourceFd,
     Events, Interest, Poll, Token,
 };
-use slab::Slab;
 
 use crate::driver::{Entry, Poller};
 
@@ -63,7 +68,7 @@ pub struct Driver {
     cqueue: VecDeque<Entry>,
     events: Events,
     poll: Poll,
-    waiting: Slab<WaitEntry>,
+    waiting: HashMap<usize, WaitEntry>,
 }
 
 /// Entry in squeue
@@ -124,20 +129,20 @@ impl Driver {
             cqueue: VecDeque::with_capacity(entries),
             events: Events::with_capacity(entries),
             poll: Poll::new()?,
-            waiting: Slab::new(),
+            waiting: HashMap::new(),
         })
     }
 }
 
 impl Driver {
     fn submit(&mut self, entry: MioEntry, arg: WaitArg) -> io::Result<()> {
-        let slot = self.waiting.vacant_entry();
-        let token = Token(slot.key());
+        let token = Token(entry.user_data);
 
         SourceFd(&arg.fd).register(self.poll.registry(), token, arg.interest)?;
 
         // Only insert the entry after it was registered successfully
-        slot.insert(WaitEntry::new(entry, arg));
+        self.waiting
+            .insert(entry.user_data, WaitEntry::new(entry, arg));
 
         Ok(())
     }
@@ -170,17 +175,23 @@ impl Driver {
             let token = event.token();
             let entry = self
                 .waiting
-                .get_mut(token.0)
+                .get_mut(&token.0)
                 .expect("Unknown token returned by mio"); // XXX: Should this be silently ignored?
             match entry.op_mut().on_event(event) {
                 Ok(ControlFlow::Continue(_)) => {}
                 Ok(ControlFlow::Break(res)) => {
                     self.cqueue.push_back(Entry::new(entry.user_data, Ok(res)));
-                    self.waiting.remove(token.0);
+                    self.poll
+                        .registry()
+                        .deregister(&mut SourceFd(&entry.arg.fd))?;
+                    self.waiting.remove(&token.0);
                 }
                 Err(err) => {
                     self.cqueue.push_back(Entry::new(entry.user_data, Err(err)));
-                    self.waiting.remove(token.0);
+                    self.poll
+                        .registry()
+                        .deregister(&mut SourceFd(&entry.arg.fd))?;
+                    self.waiting.remove(&token.0);
                 }
             }
         }
@@ -211,7 +222,7 @@ impl Poller for Driver {
     }
 
     fn cancel(&mut self, user_data: usize) {
-        let Some(entry) = self.waiting.try_remove(user_data) else {
+        let Some(entry) = self.waiting.remove(&user_data) else {
             return;
         };
         self.poll
