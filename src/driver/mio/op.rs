@@ -206,16 +206,7 @@ impl<T: AsIoSlices> OpCode for SendImpl<T> {
 
 impl<T: AsIoSlicesMut> OpCode for RecvFromImpl<T> {
     fn pre_submit(&mut self) -> io::Result<Decision> {
-        self.slices = unsafe { self.buffer.as_io_slices_mut() };
-        self.msg = libc::msghdr {
-            msg_name: &mut self.addr as *mut _ as _,
-            msg_namelen: 128,
-            msg_iov: self.slices.as_mut_ptr() as _,
-            msg_iovlen: self.slices.len() as _,
-            msg_control: std::ptr::null_mut(),
-            msg_controllen: 0,
-            msg_flags: 0,
-        };
+        self.set_msg();
         syscall_or_wait_readable!(recvmsg(self.fd, &mut self.msg, 0), self.fd)
     }
 
@@ -228,16 +219,7 @@ impl<T: AsIoSlicesMut> OpCode for RecvFromImpl<T> {
 
 impl<T: AsIoSlices> OpCode for SendToImpl<T> {
     fn pre_submit(&mut self) -> io::Result<Decision> {
-        self.slices = unsafe { self.buffer.as_io_slices() };
-        self.msg = libc::msghdr {
-            msg_name: &mut self.addr as *mut _ as _,
-            msg_namelen: 128,
-            msg_iov: self.slices.as_mut_ptr() as _,
-            msg_iovlen: self.slices.len() as _,
-            msg_control: std::ptr::null_mut(),
-            msg_controllen: 0,
-            msg_flags: 0,
-        };
+        self.set_msg();
         syscall_or_wait_writable!(sendmsg(self.fd, &self.msg, 0), self.fd)
     }
 

@@ -86,16 +86,7 @@ impl<T: AsIoSlices> OpCode for SendImpl<T> {
 impl<T: AsIoSlicesMut> OpCode for RecvFromImpl<T> {
     #[allow(clippy::no_effect)]
     fn create_entry(&mut self) -> Entry {
-        self.slices = unsafe { self.buffer.as_io_slices_mut() };
-        self.msg = libc::msghdr {
-            msg_name: &mut self.addr as *mut _ as _,
-            msg_namelen: 128,
-            msg_iov: self.slices.as_mut_ptr() as _,
-            msg_iovlen: self.slices.len(),
-            msg_control: std::ptr::null_mut(),
-            msg_controllen: 0,
-            msg_flags: 0,
-        };
+        self.set_msg();
         opcode::RecvMsg::new(Fd(self.fd), &mut self.msg).build()
     }
 }
@@ -103,16 +94,7 @@ impl<T: AsIoSlicesMut> OpCode for RecvFromImpl<T> {
 impl<T: AsIoSlices> OpCode for SendToImpl<T> {
     #[allow(clippy::no_effect)]
     fn create_entry(&mut self) -> Entry {
-        self.slices = unsafe { self.buffer.as_io_slices() };
-        self.msg = libc::msghdr {
-            msg_name: self.addr.as_ptr() as _,
-            msg_namelen: self.addr.len(),
-            msg_iov: self.slices.as_mut_ptr() as _,
-            msg_iovlen: self.slices.len(),
-            msg_control: std::ptr::null_mut(),
-            msg_controllen: 0,
-            msg_flags: 0,
-        };
+        self.set_msg();
         opcode::SendMsg::new(Fd(self.fd), &self.msg).build()
     }
 }

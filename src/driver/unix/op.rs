@@ -51,6 +51,19 @@ impl<T: AsIoSlicesMut> RecvFromImpl<T> {
             msg: unsafe { std::mem::zeroed() },
         }
     }
+
+    pub(crate) fn set_msg(&mut self) {
+        self.slices = unsafe { self.buffer.as_io_slices_mut() };
+        self.msg = libc::msghdr {
+            msg_name: &mut self.addr as *mut _ as _,
+            msg_namelen: std::mem::size_of_val(&self.addr) as _,
+            msg_iov: self.slices.as_mut_ptr() as _,
+            msg_iovlen: self.slices.len() as _,
+            msg_control: std::ptr::null_mut(),
+            msg_controllen: 0,
+            msg_flags: 0,
+        };
+    }
 }
 
 impl<T: AsIoSlicesMut> IntoInner for RecvFromImpl<T> {
@@ -80,6 +93,19 @@ impl<T: AsIoSlices> SendToImpl<T> {
             slices: OneOrVec::One(IoSlice::new(&[])),
             msg: unsafe { std::mem::zeroed() },
         }
+    }
+
+    pub(crate) fn set_msg(&mut self) {
+        self.slices = unsafe { self.buffer.as_io_slices() };
+        self.msg = libc::msghdr {
+            msg_name: self.addr.as_ptr() as _,
+            msg_namelen: self.addr.len(),
+            msg_iov: self.slices.as_mut_ptr() as _,
+            msg_iovlen: self.slices.len() as _,
+            msg_control: std::ptr::null_mut(),
+            msg_controllen: 0,
+            msg_flags: 0,
+        };
     }
 }
 
