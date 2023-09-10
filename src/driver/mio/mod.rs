@@ -170,7 +170,6 @@ impl Driver {
     /// cqueue.
     fn poll_impl(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         self.poll.poll(&mut self.events, timeout)?;
-        // println!("events: {:?}", self.events);
         for event in &self.events {
             let token = event.token();
             let entry = self
@@ -178,22 +177,20 @@ impl Driver {
                 .get_mut(&token.0)
                 .expect("Unknown token returned by mio"); // XXX: Should this be silently ignored?
             match entry.op_mut().on_event(event) {
-                Ok(ControlFlow::Continue(_)) => {}
+                Ok(ControlFlow::Continue(_)) => {
+                    continue;
+                }
                 Ok(ControlFlow::Break(res)) => {
                     self.cqueue.push_back(Entry::new(entry.user_data, Ok(res)));
-                    self.poll
-                        .registry()
-                        .deregister(&mut SourceFd(&entry.arg.fd))?;
-                    self.waiting.remove(&token.0);
                 }
                 Err(err) => {
                     self.cqueue.push_back(Entry::new(entry.user_data, Err(err)));
-                    self.poll
-                        .registry()
-                        .deregister(&mut SourceFd(&entry.arg.fd))?;
-                    self.waiting.remove(&token.0);
                 }
             }
+            self.poll
+                .registry()
+                .deregister(&mut SourceFd(&entry.arg.fd))?;
+            self.waiting.remove(&token.0);
         }
         Ok(())
     }

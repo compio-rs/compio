@@ -9,7 +9,7 @@ use crate::{
     op::*,
 };
 
-/// Helper macro to execute a system call that returns an `io::Result`.
+/// Helper macro to execute a system call
 macro_rules! syscall {
     ($fn: ident ( $($arg: expr),* $(,)* ) ) => {{
         #[allow(unused_unsafe)]
@@ -20,43 +20,26 @@ macro_rules! syscall {
             Ok(res as usize)
         }
     }};
-}
-
-/// Helper macro to execute a system call that returns an `io::Result`.
-macro_rules! syscall_break {
-    ($fn: ident ( $($arg: expr),* $(,)* ) ) => {{
-        #[allow(unused_unsafe)]
-        let res = unsafe { ::libc::$fn($($arg, )*) };
-        if res == -1 {
-            Err(::std::io::Error::last_os_error())
-        } else {
-            Ok(ControlFlow::Break(res as _))
-        }
-    }};
-}
-
-/// Execute a system call, if would block, wait for it to be readable.
-macro_rules! syscall_or_wait_writable {
-    ($fn: ident ( $($arg: expr),* $(,)* ), $fd:expr) => {{
+    (break $fn: ident ( $($arg: expr),* $(,)* )) => {
+        syscall!( $fn ( $($arg, )* )).map(ControlFlow::Break)
+    };
+    ($fn: ident ( $($arg: expr),* $(,)* ) or wait_writable($fd:expr)) => {
         match syscall!( $fn ( $($arg, )* )) {
             Ok(fd) => Ok(Decision::Completed(fd)),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock || e.raw_os_error().map_or(false, |code| code == libc::EINPROGRESS)
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock || e.raw_os_error() == Some(libc::EINPROGRESS)
                    => Ok(Decision::wait_writable($fd)),
             Err(e) => Err(e),
         }
-    }};
-}
-
-/// Execute a system call, if would block, wait for it to be writable.
-macro_rules! syscall_or_wait_readable {
-    ($fn: ident ( $($arg: expr),* $(,)* ), $fd:expr) => {{
+    };
+    ($fn: ident ( $($arg: expr),* $(,)* ) or wait_readable($fd:expr)) => {
         match syscall!( $fn ( $($arg, )* )) {
             Ok(fd) => Ok(Decision::Completed(fd)),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock || e.raw_os_error().map_or(false, |code| code == libc::EINPROGRESS)
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock || e.raw_os_error() == Some(libc::EINPROGRESS)
                    => Ok(Decision::wait_readable($fd)),
             Err(e) => Err(e),
         }
-    }};
+    }
+
 }
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
@@ -69,12 +52,14 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
 
         let slice = self.buffer.as_uninit_slice();
 
-        syscall_break!(pread(
-            self.fd,
-            slice.as_mut_ptr() as _,
-            slice.len() as _,
-            self.offset as _
-        ))
+        syscall!(
+            break pread(
+                self.fd,
+                slice.as_mut_ptr() as _,
+                slice.len() as _,
+                self.offset as _
+            )
+        )
     }
 }
 
@@ -88,12 +73,14 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
 
         let slice = self.buffer.as_slice();
 
-        syscall_break!(pwrite(
-            self.fd,
-            slice.as_ptr() as _,
-            slice.len() as _,
-            self.offset as _
-        ))
+        syscall!(
+            break pwrite(
+                self.fd,
+                slice.as_ptr() as _,
+                slice.len() as _,
+                self.offset as _
+            )
+        )
     }
 }
 
@@ -109,13 +96,12 @@ impl OpCode for Sync {
 
 impl OpCode for Accept {
     fn pre_submit(&mut self) -> io::Result<Decision> {
-        syscall_or_wait_readable!(
+        syscall!(
             accept(
                 self.fd,
                 &mut self.buffer as *mut _ as *mut _,
                 &mut self.addr_len
-            ),
-            self.fd
+            ) or wait_readable(self.fd)
         )
     }
 
@@ -128,13 +114,7 @@ impl OpCode for Accept {
             &mut self.addr_len
         )) {
             Ok(fd) => Ok(ControlFlow::Break(fd)),
-            Err(e)
-                if e.kind() == io::ErrorKind::WouldBlock
-                    || e.raw_os_error()
-                        .map_or(false, |code| code == libc::EINPROGRESS) =>
-            {
-                Ok(ControlFlow::Continue(()))
-            }
+            Err(e) if e.raw_os_error() == Some(libc::EINPROGRESS) => Ok(ControlFlow::Continue(())),
             Err(e) => Err(e),
         }
     }
@@ -142,9 +122,8 @@ impl OpCode for Accept {
 
 impl OpCode for Connect {
     fn pre_submit(&mut self) -> io::Result<Decision> {
-        syscall_or_wait_writable!(
-            connect(self.fd, self.addr.as_ptr(), self.addr.len()),
-            self.fd
+        syscall!(
+            connect(self.fd, self.addr.as_ptr(), self.addr.len()) or wait_writable(self.fd)
         )
     }
 
@@ -179,11 +158,7 @@ impl<T: AsIoSlicesMut> OpCode for RecvImpl<T> {
         debug_assert!(event.is_readable());
 
         self.slices = unsafe { self.buffer.as_io_slices_mut() };
-        syscall_break!(readv(
-            self.fd,
-            self.slices.as_ptr() as _,
-            self.slices.len() as _,
-        ))
+        syscall!(break readv(self.fd, self.slices.as_ptr() as _, self.slices.len() as _,))
     }
 }
 
@@ -196,36 +171,32 @@ impl<T: AsIoSlices> OpCode for SendImpl<T> {
         debug_assert!(event.is_writable());
 
         self.slices = unsafe { self.buffer.as_io_slices() };
-        syscall_break!(writev(
-            self.fd,
-            self.slices.as_ptr() as _,
-            self.slices.len() as _,
-        ))
+        syscall!(break writev(self.fd, self.slices.as_ptr() as _, self.slices.len() as _,))
     }
 }
 
 impl<T: AsIoSlicesMut> OpCode for RecvFromImpl<T> {
     fn pre_submit(&mut self) -> io::Result<Decision> {
         self.set_msg();
-        syscall_or_wait_readable!(recvmsg(self.fd, &mut self.msg, 0), self.fd)
+        syscall!(recvmsg(self.fd, &mut self.msg, 0) or wait_readable(self.fd))
     }
 
     fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_readable());
 
-        syscall_break!(recvmsg(self.fd, &mut self.msg, 0))
+        syscall!(break recvmsg(self.fd, &mut self.msg, 0))
     }
 }
 
 impl<T: AsIoSlices> OpCode for SendToImpl<T> {
     fn pre_submit(&mut self) -> io::Result<Decision> {
         self.set_msg();
-        syscall_or_wait_writable!(sendmsg(self.fd, &self.msg, 0), self.fd)
+        syscall!(sendmsg(self.fd, &self.msg, 0) or wait_writable(self.fd))
     }
 
     fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
-        assert!(event.is_writable());
+        debug_assert!(event.is_writable());
 
-        syscall_break!(sendmsg(self.fd, &self.msg, 0))
+        syscall!(break sendmsg(self.fd, &self.msg, 0))
     }
 }
