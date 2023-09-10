@@ -4,7 +4,7 @@ use compio::{
 };
 
 fn main() {
-    let driver = Driver::new().unwrap();
+    let mut driver = Driver::new().unwrap();
     let file = compio::fs::File::open("Cargo.toml").unwrap();
     driver.attach(file.as_raw_fd()).unwrap();
 

@@ -1,5 +1,4 @@
 use std::{
-    cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
     ffi::c_void,
     io,
@@ -119,9 +118,9 @@ pub trait OpCode {
 /// Low-level driver of IOCP.
 pub struct Driver {
     port: OwnedHandle,
-    operations: RefCell<VecDeque<(*mut dyn OpCode, Overlapped)>>,
-    submit_map: RefCell<HashMap<usize, *mut OVERLAPPED>>,
-    cancelled: RefCell<HashSet<*mut OVERLAPPED>>,
+    operations: VecDeque<(*mut dyn OpCode, Overlapped)>,
+    submit_map: HashMap<usize, *mut OVERLAPPED>,
+    cancelled: HashSet<*mut OVERLAPPED>,
 }
 
 impl Driver {
@@ -134,9 +133,9 @@ impl Driver {
             .map_err(|_| io::Error::last_os_error())?;
         Ok(Self {
             port,
-            operations: RefCell::new(VecDeque::with_capacity(Self::DEFAULT_CAPACITY)),
-            submit_map: RefCell::default(),
-            cancelled: RefCell::default(),
+            operations: VecDeque::with_capacity(Self::DEFAULT_CAPACITY),
+            submit_map: HashMap::default(),
+            cancelled: HashSet::default(),
         })
     }
 }
@@ -232,7 +231,7 @@ fn ntstatus_from_win32(x: i32) -> NTSTATUS {
 }
 
 impl Poller for Driver {
-    fn attach(&self, fd: RawFd) -> io::Result<()> {
+    fn attach(&mut self, fd: RawFd) -> io::Result<()> {
         detach_iocp(fd)?;
         let port = unsafe { CreateIoCompletionPort(fd as _, self.port.as_raw_handle() as _, 0, 0) };
         if port == 0 {
@@ -242,29 +241,31 @@ impl Poller for Driver {
         }
     }
 
-    unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()> {
-        self.operations
-            .borrow_mut()
-            .push_back((op, Overlapped::new(user_data)));
+    unsafe fn push(
+        &mut self,
+        op: &mut (impl OpCode + 'static),
+        user_data: usize,
+    ) -> io::Result<()> {
+        self.operations.push_back((op, Overlapped::new(user_data)));
         Ok(())
     }
 
-    fn cancel(&self, user_data: usize) {
-        if let Some(ptr) = self.submit_map.borrow_mut().remove(&user_data) {
+    fn cancel(&mut self, user_data: usize) {
+        if let Some(ptr) = self.submit_map.remove(&user_data) {
             // TODO: should we call CancelIoEx?
-            self.cancelled.borrow_mut().insert(ptr);
+            self.cancelled.insert(ptr);
         }
     }
 
     fn poll(
-        &self,
+        &mut self,
         timeout: Option<Duration>,
         entries: &mut [MaybeUninit<Entry>],
     ) -> io::Result<usize> {
         if entries.is_empty() {
             return Ok(0);
         }
-        while let Some((op, overlapped)) = self.operations.borrow_mut().pop_front() {
+        while let Some((op, overlapped)) = self.operations.pop_front() {
             let overlapped = Box::new(overlapped);
             let user_data = overlapped.user_data;
             let overlapped_ptr = Box::into_raw(overlapped);
@@ -272,9 +273,7 @@ impl Poller for Driver {
             if let Poll::Ready(result) = result {
                 post_driver_raw(self.port.as_raw_handle(), result, overlapped_ptr.cast())?;
             } else {
-                self.submit_map
-                    .borrow_mut()
-                    .insert(user_data, overlapped_ptr.cast());
+                self.submit_map.insert(user_data, overlapped_ptr.cast());
             }
         }
 
@@ -307,7 +306,7 @@ impl Poller for Driver {
             let transferred = iocp_entry.dwNumberOfBytesTransferred;
             let overlapped_ptr = iocp_entry.lpOverlapped;
             let overlapped = unsafe { Box::from_raw(overlapped_ptr.cast::<Overlapped>()) };
-            if self.cancelled.borrow_mut().remove(&overlapped_ptr) {
+            if self.cancelled.remove(&overlapped_ptr) {
                 continue;
             }
             let res = if matches!(

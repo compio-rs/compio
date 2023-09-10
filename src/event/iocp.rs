@@ -1,7 +1,7 @@
 use std::{io, marker::PhantomData};
 
 use crate::{
-    driver::{post_driver, AsRawFd, RawFd},
+    driver::{post_driver, RawFd},
     key::Key,
     task::{op::OpFuture, RUNTIME},
 };
@@ -45,7 +45,7 @@ unsafe impl Sync for EventHandle<'_> {}
 
 impl<'a> EventHandle<'a> {
     pub(crate) fn new(user_data: &'a Key<()>) -> Self {
-        let handle = RUNTIME.with(|runtime| runtime.driver().as_raw_fd());
+        let handle = RUNTIME.with(|runtime| runtime.raw_driver());
         Self {
             user_data: **user_data,
             handle,
