@@ -3,7 +3,7 @@
 
 use std::{io, mem::MaybeUninit, time::Duration};
 #[cfg(unix)]
-mod unix_op;
+mod unix;
 
 cfg_if::cfg_if! {
     if #[cfg(target_os = "windows")] {

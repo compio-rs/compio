@@ -2,7 +2,7 @@ use std::{io, ops::ControlFlow};
 
 use mio::event::Event;
 
-pub use crate::driver::unix_op::*;
+pub use crate::driver::unix::op::*;
 use crate::{
     buf::{AsIoSlices, AsIoSlicesMut, IoBuf, IoBufMut},
     driver::{Decision, OpCode},

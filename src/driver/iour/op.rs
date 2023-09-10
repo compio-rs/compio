@@ -5,7 +5,7 @@ use io_uring::{
 };
 use libc::sockaddr_storage;
 
-pub use crate::driver::unix_op::*;
+pub use crate::driver::unix::op::*;
 use crate::{
     buf::{AsIoSlices, AsIoSlicesMut, IoBuf, IoBufMut},
     driver::OpCode,
