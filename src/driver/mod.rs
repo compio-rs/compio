@@ -84,7 +84,8 @@ pub trait Poller {
     ///
     /// # Safety
     ///
-    /// `op` should be alive until [`Poller::poll`] returns its result.
+    /// - `op` should be alive until [`Poller::poll`] returns its result.
+    /// - `user_data` should be unique.
     unsafe fn push(&mut self, op: &mut (impl OpCode + 'static), user_data: usize)
     -> io::Result<()>;
 
