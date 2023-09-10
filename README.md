@@ -44,7 +44,7 @@ use compio::{
     op::ReadAt,
 };
 
-let driver = Driver::new().unwrap();
+let mut driver = Driver::new().unwrap();
 let file = File::open("Cargo.toml").unwrap();
 // Attach the `RawFd` to driver first.
 driver.attach(file.as_raw_fd()).unwrap();

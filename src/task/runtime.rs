@@ -13,13 +13,13 @@ use futures_util::future::Either;
 #[cfg(feature = "time")]
 use crate::task::time::{TimerFuture, TimerRuntime};
 use crate::{
-    driver::{Driver, Entry, OpCode, Poller, RawFd},
+    driver::{AsRawFd, Driver, Entry, OpCode, Poller, RawFd},
     task::op::{OpFuture, OpRuntime},
     Key,
 };
 
 pub(crate) struct Runtime {
-    driver: Driver,
+    driver: RefCell<Driver>,
     runnables: RefCell<VecDeque<Runnable>>,
     op_runtime: RefCell<OpRuntime>,
     #[cfg(feature = "time")]
@@ -29,7 +29,7 @@ pub(crate) struct Runtime {
 impl Runtime {
     pub fn new() -> io::Result<Self> {
         Ok(Self {
-            driver: Driver::new()?,
+            driver: RefCell::new(Driver::new()?),
             runnables: RefCell::default(),
             op_runtime: RefCell::default(),
             #[cfg(feature = "time")]
@@ -38,8 +38,8 @@ impl Runtime {
     }
 
     #[allow(dead_code)]
-    pub fn driver(&self) -> &Driver {
-        &self.driver
+    pub fn raw_driver(&self) -> RawFd {
+        self.driver.borrow().as_raw_fd()
     }
 
     unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> (Runnable, Task<F::Output>) {
@@ -77,7 +77,7 @@ impl Runtime {
     }
 
     pub fn attach(&self, fd: RawFd) -> io::Result<()> {
-        self.driver.attach(fd)
+        self.driver.borrow_mut().attach(fd)
     }
 
     pub fn submit<T: OpCode + 'static>(
@@ -86,7 +86,7 @@ impl Runtime {
     ) -> impl Future<Output = (io::Result<usize>, T)> {
         let mut op_runtime = self.op_runtime.borrow_mut();
         let (user_data, op) = op_runtime.insert(op);
-        let res = unsafe { self.driver.push(op.as_mut::<T>(), *user_data) };
+        let res = unsafe { self.driver.borrow_mut().push(op.as_mut::<T>(), *user_data) };
         match res {
             Ok(()) => {
                 let (runnable, task) = unsafe { self.spawn_unchecked(OpFuture::new(user_data)) };
@@ -116,7 +116,7 @@ impl Runtime {
     }
 
     pub fn cancel_op<T>(&self, user_data: Key<T>) {
-        self.driver.cancel(*user_data);
+        self.driver.borrow_mut().cancel(*user_data);
         self.op_runtime.borrow_mut().cancel(user_data);
     }
 
@@ -175,7 +175,7 @@ impl Runtime {
 
         const UNINIT_ENTRY: MaybeUninit<Entry> = MaybeUninit::uninit();
         let mut entries = [UNINIT_ENTRY; 16];
-        match self.driver.poll(timeout, &mut entries) {
+        match self.driver.borrow_mut().poll(timeout, &mut entries) {
             Ok(len) => {
                 for entry in &mut entries[..len] {
                     let entry = unsafe { std::mem::replace(entry, UNINIT_ENTRY).assume_init() };

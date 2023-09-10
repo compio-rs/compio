@@ -43,7 +43,7 @@ cfg_if::cfg_if! {
 /// socket.connect(second_addr).unwrap();
 /// other_socket.connect(first_addr).unwrap();
 ///
-/// let driver = Driver::new().unwrap();
+/// let mut driver = Driver::new().unwrap();
 /// driver.attach(socket.as_raw_fd()).unwrap();
 /// driver.attach(other_socket.as_raw_fd()).unwrap();
 ///
@@ -72,7 +72,7 @@ pub trait Poller {
     /// ## Platform specific
     /// * IOCP: it will be attached to the IOCP completion port.
     /// * io-uring: it will do nothing and return `Ok(())`
-    fn attach(&self, fd: RawFd) -> io::Result<()>;
+    fn attach(&mut self, fd: RawFd) -> io::Result<()>;
 
     /// Push an operation with user-defined data.
     /// The data could be retrived from [`Entry`] when polling.
@@ -80,10 +80,11 @@ pub trait Poller {
     /// # Safety
     ///
     /// - `op` should be alive until [`Poller::poll`] returns its result.
-    unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()>;
+    unsafe fn push(&mut self, op: &mut (impl OpCode + 'static), user_data: usize)
+    -> io::Result<()>;
 
     /// Cancel an operation with the pushed user-defined data.
-    fn cancel(&self, user_data: usize);
+    fn cancel(&mut self, user_data: usize);
 
     /// Poll the driver with an optional timeout.
     ///
@@ -96,7 +97,7 @@ pub trait Poller {
     ///
     /// [`Event`]: crate::event::Event
     fn poll(
-        &self,
+        &mut self,
         timeout: Option<Duration>,
         entries: &mut [MaybeUninit<Entry>],
     ) -> io::Result<usize>;
@@ -104,7 +105,7 @@ pub trait Poller {
     /// Poll the driver and get only one entry back.
     ///
     /// See [`Poller::poll`].
-    fn poll_one(&self, timeout: Option<Duration>) -> io::Result<Entry> {
+    fn poll_one(&mut self, timeout: Option<Duration>) -> io::Result<Entry> {
         let mut entry = MaybeUninit::uninit();
         let polled = self.poll(timeout, std::slice::from_mut(&mut entry))?;
         debug_assert_eq!(polled, 1);
