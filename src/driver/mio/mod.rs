@@ -229,8 +229,9 @@ impl Poller for Driver {
         if entries.is_empty() {
             return Ok(0);
         }
-        if self.poll_completed(entries) > 0 {
-            return Ok(entries.len());
+        let len = self.poll_completed(entries);
+        if len > 0 {
+            return Ok(len);
         }
         self.poll_impl(timeout)?;
         Ok(self.poll_completed(entries))
