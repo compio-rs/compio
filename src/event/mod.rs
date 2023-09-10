@@ -9,7 +9,7 @@ cfg_if::cfg_if! {
     } else if #[cfg(target_os = "linux")] {
         mod iour;
         pub use iour::*;
-    } else if #[cfg(all(unix, not(target_os = "linux")))] {
+    } else if #[cfg(unix)] {
         mod mio;
         pub use self::mio::*;
     }
