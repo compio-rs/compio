@@ -1,6 +1,6 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{cell::RefCell, collections::VecDeque, io, mem::MaybeUninit, time::Duration};
+use std::{collections::VecDeque, io, mem::MaybeUninit, time::Duration};
 
 use io_uring::{
     cqueue,
@@ -24,8 +24,8 @@ pub trait OpCode {
 /// Low-level driver of io-uring.
 pub struct Driver {
     inner: IoUring,
-    squeue: RefCell<VecDeque<squeue::Entry>>,
-    cqueue: RefCell<VecDeque<Entry>>,
+    squeue: VecDeque<squeue::Entry>,
+    cqueue: VecDeque<Entry>,
 }
 
 impl Driver {
@@ -38,25 +38,27 @@ impl Driver {
     pub fn with_entries(entries: u32) -> io::Result<Self> {
         Ok(Self {
             inner: IoUring::new(entries)?,
-            squeue: RefCell::new(VecDeque::with_capacity(entries as usize)),
-            cqueue: RefCell::new(VecDeque::with_capacity(entries as usize)),
+            squeue: VecDeque::with_capacity(entries as usize),
+            cqueue: VecDeque::with_capacity(entries as usize),
         })
     }
 
-    unsafe fn submit(&self, timeout: Option<Duration>) -> io::Result<()> {
+    fn submit(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         // Anyway we need to submit once, no matter there are entries in squeue.
         loop {
-            let mut inner_squeue = self.inner.submission_shared();
-            while !inner_squeue.is_full() {
-                if let Some(entry) = self.squeue.borrow_mut().pop_front() {
-                    inner_squeue.push(&entry).unwrap();
-                } else {
-                    break;
+            {
+                let mut inner_squeue = self.inner.submission();
+                while !inner_squeue.is_full() {
+                    if let Some(entry) = self.squeue.pop_front() {
+                        unsafe { inner_squeue.push(&entry) }.unwrap();
+                    } else {
+                        break;
+                    }
                 }
+                inner_squeue.sync();
             }
-            inner_squeue.sync();
 
-            let res = if self.squeue.borrow().is_empty() {
+            let res = if self.squeue.is_empty() {
                 // Last part of submission queue, wait till timeout.
                 if let Some(duration) = timeout {
                     let timespec = timespec(duration);
@@ -68,7 +70,6 @@ impl Driver {
             } else {
                 self.inner.submit()
             };
-            inner_squeue.sync();
             match res {
                 Ok(_) => Ok(()),
                 Err(e) => match e.raw_os_error() {
@@ -78,7 +79,7 @@ impl Driver {
                 },
             }?;
 
-            for entry in self.inner.completion_shared() {
+            for entry in self.inner.completion() {
                 let entry = create_entry(entry);
                 if entry.user_data() == u64::MAX as _ {
                     // This is a cancel operation.
@@ -90,45 +91,47 @@ impl Driver {
                         continue;
                     }
                 }
-                self.cqueue.borrow_mut().push_back(entry);
+                self.cqueue.push_back(entry);
             }
 
-            if self.squeue.borrow().is_empty() && inner_squeue.is_empty() {
+            if self.squeue.is_empty() && self.inner.submission().is_empty() {
                 break;
             }
         }
         Ok(())
     }
 
-    fn poll_entries(&self, entries: &mut [MaybeUninit<Entry>]) -> usize {
-        let mut cqueue = self.cqueue.borrow_mut();
-        let len = cqueue.len().min(entries.len());
+    fn poll_entries(&mut self, entries: &mut [MaybeUninit<Entry>]) -> usize {
+        let len = self.cqueue.len().min(entries.len());
         for entry in &mut entries[..len] {
-            entry.write(cqueue.pop_front().unwrap());
+            entry.write(self.cqueue.pop_front().unwrap());
         }
         len
     }
 }
 
 impl Poller for Driver {
-    fn attach(&self, _fd: RawFd) -> io::Result<()> {
+    fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
         Ok(())
     }
 
-    unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()> {
+    unsafe fn push(
+        &mut self,
+        op: &mut (impl OpCode + 'static),
+        user_data: usize,
+    ) -> io::Result<()> {
         let entry = op.create_entry().user_data(user_data as _);
-        self.squeue.borrow_mut().push_back(entry);
+        self.squeue.push_back(entry);
         Ok(())
     }
 
-    fn cancel(&self, user_data: usize) {
+    fn cancel(&mut self, user_data: usize) {
         self.squeue
-            .borrow_mut()
             .push_back(AsyncCancel::new(user_data as _).build().user_data(u64::MAX));
     }
 
     fn poll(
-        &self,
+        &mut self,
         timeout: Option<Duration>,
         entries: &mut [MaybeUninit<Entry>],
     ) -> io::Result<usize> {
@@ -139,9 +142,15 @@ impl Poller for Driver {
         if len > 0 {
             return Ok(len);
         }
-        unsafe { self.submit(timeout) }?;
+        self.submit(timeout)?;
         let len = self.poll_entries(entries);
         Ok(len)
+    }
+}
+
+impl AsRawFd for Driver {
+    fn as_raw_fd(&self) -> RawFd {
+        self.inner.as_raw_fd()
     }
 }
 
