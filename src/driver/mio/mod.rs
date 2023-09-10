@@ -136,14 +136,14 @@ impl Driver {
 }
 
 impl DriverInner {
-    fn submit(&mut self, entry: MioEntry, meta: WaitArg) -> io::Result<()> {
+    fn submit(&mut self, entry: MioEntry, arg: WaitArg) -> io::Result<()> {
         let slot = self.waiting.vacant_entry();
         let token = Token(slot.key());
 
-        SourceFd(&meta.fd).register(self.poll.registry(), token, meta.interest)?;
+        SourceFd(&arg.fd).register(self.poll.registry(), token, arg.interest)?;
 
         // Only insert the entry after it was registered successfully
-        slot.insert(WaitEntry::new(entry, meta));
+        slot.insert(WaitEntry::new(entry, arg));
 
         Ok(())
     }
@@ -152,8 +152,8 @@ impl DriverInner {
     fn submit_squeue(&mut self) -> io::Result<()> {
         while let Some(mut entry) = self.squeue.pop_front() {
             match entry.op_mut().pre_submit() {
-                Ok(Decision::Wait(meta)) => {
-                    self.submit(entry, meta)?;
+                Ok(Decision::Wait(arg)) => {
+                    self.submit(entry, arg)?;
                 }
                 Ok(Decision::Completed(res)) => {
                     self.cqueue.push_back(Entry::new(entry.user_data, Ok(res)));
