@@ -71,11 +71,13 @@ jobs:
           image: windows-latest
         linux:
           image: ubuntu-latest
+        macos:
+          image: macOS-latest
     pool:
       vmImage: $(image)
 
     steps:
       - script: |
           rustup toolchain install nightly
-          cargo +nightly doc --features all --no-deps
+          cargo +nightly doc --all-features --no-deps
         displayName: Build docs
