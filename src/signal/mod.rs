@@ -20,11 +20,11 @@ pub mod windows;
 #[doc(no_inline)]
 pub use windows::ctrl_c;
 
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 pub mod unix;
 
 /// Completes when a "ctrl-c" notification is sent to the process.
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 pub async fn ctrl_c() -> std::io::Result<()> {
     unix::signal(libc::SIGINT).await
 }

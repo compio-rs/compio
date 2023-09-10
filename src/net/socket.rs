@@ -118,13 +118,13 @@ impl Socket {
             _op.update_context()?;
             Ok(())
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(unix)]
         {
             res.map(|_| ())
         }
     }
 
-    #[cfg(all(feature = "runtime", target_os = "linux"))]
+    #[cfg(all(feature = "runtime", unix))]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         use std::os::fd::FromRawFd;
 
