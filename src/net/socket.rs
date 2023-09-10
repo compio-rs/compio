@@ -78,16 +78,10 @@ impl Socket {
     }
 
     pub fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
-        #[cfg(not(unix))]
-        {
-            Self::from_socket2(Socket2::new(domain, ty, protocol)?)
-        }
+        let socket = Socket2::new(domain, ty, protocol)?;
         #[cfg(unix)]
-        {
-            let socket = Socket2::new(domain, ty, protocol)?;
-            socket.set_nonblocking(true)?;
-            Self::from_socket2(socket)
-        }
+        socket.set_nonblocking(true)?;
+        Self::from_socket2(socket)
     }
 
     pub fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
