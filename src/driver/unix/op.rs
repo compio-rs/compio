@@ -3,6 +3,8 @@ use std::io::{IoSlice, IoSliceMut};
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
+#[cfg(doc)]
+use crate::op::*;
 use crate::{
     buf::{AsIoSlices, AsIoSlicesMut, IntoInner, OneOrVec},
     driver::RawFd,
