@@ -1,8 +1,6 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{
-    cell::RefCell, collections::VecDeque, io, mem::MaybeUninit, ops::ControlFlow, time::Duration,
-};
+use std::{collections::VecDeque, io, mem::MaybeUninit, ops::ControlFlow, time::Duration};
 
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use mio::{
@@ -60,10 +58,7 @@ pub struct WaitArg {
 }
 
 /// Low-level driver of mio.
-pub struct Driver(RefCell<DriverInner>);
-
-/// Inner state of [`Driver`].
-struct DriverInner {
+pub struct Driver {
     squeue: VecDeque<MioEntry>,
     cqueue: VecDeque<Entry>,
     events: Events,
@@ -124,21 +119,17 @@ impl Driver {
     pub fn with_entries(entries: u32) -> io::Result<Self> {
         let entries = entries as usize; // for the sake of consistency, use u32 like iour
 
-        Ok(Self(RefCell::new(DriverInner {
+        Ok(Self {
             squeue: VecDeque::with_capacity(entries),
             cqueue: VecDeque::with_capacity(entries),
             events: Events::with_capacity(entries),
             poll: Poll::new()?,
             waiting: Slab::new(),
-        })))
-    }
-
-    fn inner(&self) -> std::cell::RefMut<'_, DriverInner> {
-        self.0.borrow_mut()
+        })
     }
 }
 
-impl DriverInner {
+impl Driver {
     fn submit(&mut self, entry: MioEntry, arg: WaitArg) -> io::Result<()> {
         let slot = self.waiting.vacant_entry();
         let token = Token(slot.key());
@@ -172,7 +163,7 @@ impl DriverInner {
 
     /// Poll all events from mio, call `perform` on op and push them into
     /// cqueue.
-    fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+    fn poll_impl(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         self.poll.poll(&mut self.events, timeout)?;
         // println!("events: {:?}", self.events);
         for event in &self.events {
@@ -206,46 +197,48 @@ impl DriverInner {
 }
 
 impl Poller for Driver {
-    fn attach(&self, _fd: RawFd) -> io::Result<()> {
+    fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
         Ok(())
     }
 
-    unsafe fn push(&self, op: &mut (impl OpCode + 'static), user_data: usize) -> io::Result<()> {
-        self.0
-            .borrow_mut()
-            .squeue
-            .push_back(MioEntry::new(op, user_data));
+    unsafe fn push(
+        &mut self,
+        op: &mut (impl OpCode + 'static),
+        user_data: usize,
+    ) -> io::Result<()> {
+        self.squeue.push_back(MioEntry::new(op, user_data));
         Ok(())
     }
 
-    fn cancel(&self, user_data: usize) {
-        let mut inner = self.inner();
-
-        let Some(entry) = inner.waiting.try_remove(user_data) else {
+    fn cancel(&mut self, user_data: usize) {
+        let Some(entry) = self.waiting.try_remove(user_data) else {
             return;
         };
-        inner
-            .poll
+        self.poll
             .registry()
             .deregister(&mut SourceFd(&entry.arg.fd))
             .ok();
     }
 
     fn poll(
-        &self,
+        &mut self,
         timeout: Option<Duration>,
         entries: &mut [MaybeUninit<Entry>],
     ) -> io::Result<usize> {
-        let mut inner = self.inner();
-
-        inner.submit_squeue()?;
+        self.submit_squeue()?;
         if entries.is_empty() {
             return Ok(0);
         }
-        if inner.poll_completed(entries) > 0 {
+        if self.poll_completed(entries) > 0 {
             return Ok(entries.len());
         }
-        inner.poll(timeout)?;
-        Ok(inner.poll_completed(entries))
+        self.poll_impl(timeout)?;
+        Ok(self.poll_completed(entries))
+    }
+}
+
+impl AsRawFd for Driver {
+    fn as_raw_fd(&self) -> RawFd {
+        self.poll.as_raw_fd()
     }
 }
