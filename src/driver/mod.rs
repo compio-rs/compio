@@ -17,8 +17,9 @@ cfg_if::cfg_if! {
         pub use self::mio::*;
     }
 }
+pub mod error;
 mod registered_fd;
-pub use registered_fd::RegisteredFileDescriptors;
+pub use registered_fd::{AsRegisteredFd, RegisteredFd, RegisteredFileDescriptors};
 
 /// An abstract of [`Driver`].
 /// It contains some low-level actions of completion-based IO.
@@ -32,7 +33,7 @@ pub use registered_fd::RegisteredFileDescriptors;
 ///
 /// use compio::{
 ///     buf::IntoInner,
-///     driver::{AsRawFd, Driver, Poller},
+///     driver::{AsRawFd, Driver, Poller, RegisteredFileDescriptors},
 ///     net::UdpSocket,
 ///     op,
 /// };
@@ -51,11 +52,15 @@ pub use registered_fd::RegisteredFileDescriptors;
 /// other_socket.connect(first_addr).unwrap();
 ///
 /// let mut driver = Driver::new().unwrap();
-/// driver.attach(socket.as_raw_fd()).unwrap();
-/// driver.attach(other_socket.as_raw_fd()).unwrap();
+/// let socket_fd = driver.reserve_free_registered_fd().unwrap();
+/// driver.register_fd(socket_fd, socket.as_raw_fd()).unwrap();
+/// let other_socket_fd = driver.reserve_free_registered_fd().unwrap();
+/// driver
+///     .register_fd(other_socket_fd, other_socket.as_raw_fd())
+///     .unwrap();
 ///
 /// // write data
-/// let mut op = op::Send::new(socket.as_raw_fd(), "hello world");
+/// let mut op = op::Send::new(socket_fd, "hello world");
 /// unsafe { driver.push(&mut op, 1) }.unwrap();
 /// let entry = driver.poll_one(None).unwrap();
 /// assert_eq!(entry.user_data(), 1);
@@ -63,7 +68,7 @@ pub use registered_fd::RegisteredFileDescriptors;
 ///
 /// // read data
 /// let buf = Vec::with_capacity(32);
-/// let mut op = op::Recv::new(other_socket.as_raw_fd(), buf);
+/// let mut op = op::Recv::new(other_socket_fd, buf);
 /// unsafe { driver.push(&mut op, 2) }.unwrap();
 /// let entry = driver.poll_one(None).unwrap();
 /// assert_eq!(entry.user_data(), 2);
@@ -74,13 +79,6 @@ pub use registered_fd::RegisteredFileDescriptors;
 /// assert_eq!(buf, b"hello world");
 /// ```
 pub trait Poller {
-    /// Attach an fd to the driver.
-    ///
-    /// ## Platform specific
-    /// * IOCP: it will be attached to the IOCP completion port.
-    /// * io-uring/mio: it will do nothing and return `Ok(())`
-    fn attach(&mut self, fd: RawFd) -> io::Result<()>;
-
     /// Push an operation with user-defined data.
     /// The data could be retrived from [`Entry`] when polling.
     ///
@@ -88,11 +86,10 @@ pub trait Poller {
     ///
     /// * `op` should be alive until [`Poller::poll`] returns its result.
     /// * `user_data` should be unique.
-    unsafe fn push(&mut self, op: &mut (impl OpCode + 'static), user_data: usize)
-    -> io::Result<()>;
+    unsafe fn push(&mut self, op: &mut (impl OpCode + 'static), user_data: u64) -> io::Result<()>;
 
     /// Cancel an operation with the pushed user-defined data.
-    fn cancel(&mut self, user_data: usize);
+    fn cancel(&mut self, user_data: u64);
 
     /// Poll the driver with an optional timeout.
     ///
@@ -125,17 +122,17 @@ pub trait Poller {
 /// An completed entry returned from kernel.
 #[derive(Debug)]
 pub struct Entry {
-    user_data: usize,
+    user_data: u64,
     result: io::Result<usize>,
 }
 
 impl Entry {
-    pub(crate) fn new(user_data: usize, result: io::Result<usize>) -> Self {
+    pub(crate) fn new(user_data: u64, result: io::Result<usize>) -> Self {
         Self { user_data, result }
     }
 
     /// The user-defined data passed to [`Poller::push`].
-    pub fn user_data(&self) -> usize {
+    pub fn user_data(&self) -> u64 {
         self.user_data
     }
 

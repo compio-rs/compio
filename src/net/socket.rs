@@ -2,11 +2,10 @@ use std::{io, net::Shutdown};
 
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
-use crate::impl_registered_fd;
+use crate::driver::{AsRawFd, AsRegisteredFd, RawFd, RegisteredFd};
 #[cfg(feature = "runtime")]
 use crate::{
     buf::{IntoInner, IoBuf, IoBufMut},
-    driver::AsRawFd,
     op::{
         Accept, BufResultExt, Connect, Recv, RecvFrom, RecvFromVectored, RecvResultExt,
         RecvVectored, Send, SendTo, SendToVectored, SendVectored,
@@ -17,13 +16,17 @@ use crate::{
 
 pub struct Socket {
     socket: Socket2,
+    registered_fd: RegisteredFd,
 }
 
 impl Socket {
     pub fn from_socket2(socket: Socket2) -> io::Result<Self> {
-        let this = Self { socket };
         #[cfg(feature = "runtime")]
-        RUNTIME.with(|runtime| runtime.attach(this.as_raw_fd()))?;
+        let registered_fd = RUNTIME.with(|runtime| runtime.register_fd(socket.as_raw_fd()))?;
+        let this = Self {
+            socket,
+            registered_fd,
+        };
         Ok(this)
     }
 
@@ -60,7 +63,7 @@ impl Socket {
         let mut info_len = std::mem::size_of_val(&info) as _;
         let res = unsafe {
             getsockopt(
-                self.as_raw_fd() as _,
+                self.registered_fd as _,
                 SOL_SOCKET,
                 SO_PROTOCOL_INFO,
                 &mut info as *mut _ as *mut _,
@@ -104,7 +107,7 @@ impl Socket {
 
     #[cfg(feature = "runtime")]
     pub async fn connect_async(&self, addr: &SockAddr) -> io::Result<()> {
-        let op = Connect::new(self.as_raw_fd(), addr.clone());
+        let op = Connect::new(self.registered_fd, addr.clone());
         let (res, _op) = RUNTIME.with(|runtime| runtime.submit(op)).await;
         #[cfg(target_os = "windows")]
         {
@@ -122,7 +125,7 @@ impl Socket {
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         use std::os::fd::FromRawFd;
 
-        let op = Accept::new(self.as_raw_fd());
+        let op = Accept::new(self.registered_fd);
         let (res, op) = RUNTIME.with(|runtime| runtime.submit(op)).await;
         let accept_sock = Self::from_socket2(unsafe { Socket2::from_raw_fd(res? as _) })?;
         let addr = op.into_addr();
@@ -133,7 +136,7 @@ impl Socket {
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         let local_addr = self.local_addr()?;
         let accept_sock = Self::new(local_addr.domain(), self.r#type()?, self.protocol()?)?;
-        let op = Accept::new(self.as_raw_fd(), accept_sock.as_raw_fd() as _);
+        let op = Accept::new(accept_sock.as_raw_fd() as _);
         let (res, op) = RUNTIME.with(|runtime| runtime.submit(op)).await;
         res?;
         op.update_context()?;
@@ -143,7 +146,7 @@ impl Socket {
 
     #[cfg(feature = "runtime")]
     pub async fn recv<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        let op = Recv::new(self.as_raw_fd(), buffer);
+        let op = Recv::new(self.registered_fd, buffer);
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
@@ -181,7 +184,7 @@ impl Socket {
 
     #[cfg(feature = "runtime")]
     pub async fn recv_vectored<T: IoBufMut>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
-        let op = RecvVectored::new(self.as_raw_fd(), buffer);
+        let op = RecvVectored::new(self.registered_fd, buffer);
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
@@ -192,7 +195,7 @@ impl Socket {
 
     #[cfg(feature = "runtime")]
     pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        let op = Send::new(self.as_raw_fd(), buffer);
+        let op = Send::new(self.registered_fd, buffer);
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
@@ -217,7 +220,7 @@ impl Socket {
 
     #[cfg(feature = "runtime")]
     pub async fn send_vectored<T: IoBuf>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
-        let op = SendVectored::new(self.as_raw_fd(), buffer);
+        let op = SendVectored::new(self.registered_fd, buffer);
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
@@ -227,7 +230,7 @@ impl Socket {
 
     #[cfg(feature = "runtime")]
     pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SockAddr), T> {
-        let op = RecvFrom::new(self.as_raw_fd(), buffer);
+        let op = RecvFrom::new(self.registered_fd, buffer);
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
@@ -242,7 +245,7 @@ impl Socket {
         &self,
         buffer: Vec<T>,
     ) -> BufResult<(usize, SockAddr), Vec<T>> {
-        let op = RecvFromVectored::new(self.as_raw_fd(), buffer);
+        let op = RecvFromVectored::new(self.registered_fd, buffer);
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
@@ -254,7 +257,7 @@ impl Socket {
 
     #[cfg(feature = "runtime")]
     pub async fn send_to<T: IoBuf>(&self, buffer: T, addr: &SockAddr) -> BufResult<usize, T> {
-        let op = SendTo::new(self.as_raw_fd(), buffer, addr.clone());
+        let op = SendTo::new(self.registered_fd, buffer, addr.clone());
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
@@ -268,7 +271,7 @@ impl Socket {
         buffer: Vec<T>,
         addr: &SockAddr,
     ) -> BufResult<usize, Vec<T>> {
-        let op = SendToVectored::new(self.as_raw_fd(), buffer, addr.clone());
+        let op = SendToVectored::new(self.registered_fd, buffer, addr.clone());
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
@@ -277,4 +280,14 @@ impl Socket {
     }
 }
 
-impl_registered_fd!(Socket, socket);
+impl AsRegisteredFd for Socket {
+    fn as_registered_fd(&self) -> RegisteredFd {
+        self.registered_fd
+    }
+}
+
+impl AsRawFd for Socket {
+    fn as_raw_fd(&self) -> RawFd {
+        self.socket.as_raw_fd()
+    }
+}

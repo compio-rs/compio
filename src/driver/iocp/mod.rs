@@ -15,6 +15,7 @@ use std::{
     time::Duration,
 };
 
+use bitvec::prelude::{bitbox, BitBox};
 use windows_sys::Win32::{
     Foundation::{
         RtlNtStatusToDosError, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_NO_DATA,
@@ -123,6 +124,9 @@ pub trait OpCode {
 pub struct Driver {
     port: OwnedHandle,
     operations: VecDeque<(NonNull<dyn OpCode>, Overlapped)>,
+    registered_files: Box<[Rawfd]>,
+    registered_fd_bits: BitBox,
+    registered_fd_search_from: u32,
     submit_map: HashMap<usize, *mut OVERLAPPED>,
     cancelled: HashSet<*mut OVERLAPPED>,
 }
@@ -138,6 +142,9 @@ impl Driver {
         Ok(Self {
             port,
             operations: VecDeque::with_capacity(Self::DEFAULT_CAPACITY),
+            registered_files: vec![UNREGISTERED; DEFAULT_CAPACITY].into_boxed_slice(),
+            registered_fd_bits: bitbox![0; DEFAULT_CAPACITY],
+            registered_fd_search_from: 0,
             submit_map: HashMap::default(),
             cancelled: HashSet::default(),
         })
@@ -167,12 +174,26 @@ unsafe fn post_driver_raw(
     } else {
         Ok(())
     }
+
+    /// Attach an fd to the driver.
+    ///
+    /// ## Platform specific
+    /// * IOCP: it will be attached to the IOCP completion port.
+
+    fn attach(&mut self, fd: RawFd) -> io::Result<()> {
+        let port = unsafe { CreateIoCompletionPort(fd as _, self.port.as_raw_handle() as _, 0, 0) };
+        if port == 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[cfg(feature = "event")]
 pub(crate) fn post_driver(
     handle: RawFd,
-    user_data: usize,
+    user_data: u64,
     result: io::Result<usize>,
 ) -> io::Result<()> {
     let overlapped = Box::new(Overlapped::new(user_data));
@@ -233,29 +254,12 @@ fn ntstatus_from_win32(x: i32) -> NTSTATUS {
 }
 
 impl Poller for Driver {
-    fn attach(&mut self, fd: RawFd) -> io::Result<()> {
-        unsafe {
-            detach_iocp(fd as _)?;
-        }
-        let port = unsafe { CreateIoCompletionPort(fd as _, self.port.as_raw_handle() as _, 0, 0) };
-        if port == 0 {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(())
-        }
-    }
-
-    unsafe fn push(
-        &mut self,
-        op: &mut (impl OpCode + 'static),
-        user_data: usize,
-    ) -> io::Result<()> {
-        self.operations
-            .push_back((NonNull::from(op), Overlapped::new(user_data)));
+    unsafe fn push(&mut self, op: &mut (impl OpCode + 'static), user_data: u64) -> io::Result<()> {
+        self.operations.push_back((op, Overlapped::new(user_data)));
         Ok(())
     }
 
-    fn cancel(&mut self, user_data: usize) {
+    fn cancel(&mut self, user_data: u64) {
         if let Some(ptr) = self.submit_map.remove(&user_data) {
             // TODO: should we call CancelIoEx?
             self.cancelled.insert(ptr);
@@ -340,15 +344,64 @@ impl AsRawFd for Driver {
     }
 }
 
+impl RegisteredFileAllocator for Driver {
+    // bit slice of registered fds
+    fn registered_bit_slice(&mut self) -> &BitSlice {
+        self.registered_fd_bits.as_bitslice()
+    }
+
+    fn registered_bit_slice_mut(&mut self) -> &mut BitSlice {
+        self.registered_fd_bits.as_mut_bitslice()
+    }
+
+    // where to start the next search for free registered fd
+    fn registered_fd_search_from(&self) -> u32 {
+        self.registered_fd_search_from
+    }
+
+    fn registered_fd_search_from_mut(&mut self) -> &mut u32 {
+        &mut self.registered_fd_search_from
+    }
+}
+
+impl RegisteredFileDescriptors for Driver {
+    fn register_files_update(&mut self, offset: u32, fds: &[RawFd]) -> io::Result<usize> {
+        _ = <Self as FDRegistry>::register_files_update(self, offset, fds)?;
+        // out of range is validated
+        for (idx, fd) in fds.enumerate() {
+            match fd {
+                UNREGISTERED => {
+                    let registered_fd =
+                        RegisteredFd::new(offset + u32::try_from(idx).expect("in u32 range"));
+                    unsafe { detach_iocp(self.get_raw_fd(registered_fd)) }?;
+                }
+                SKIP_UPDATE => {}
+                _ => self.attach(fd)?,
+            }
+        }
+        <Self as RegisteredFileAllocator>::register_files_update(self, offset, fds)
+    }
+}
+
+impl FDRegistry for Driver {
+    fn registered_files(&self) -> RawFd {
+        &self.registered_files
+    }
+
+    fn registered_files_mut(&mut self) -> &mut [RawFd] {
+        &mut self.registered_files
+    }
+}
+
 #[repr(C)]
 struct Overlapped {
     #[allow(dead_code)]
     pub base: OVERLAPPED,
-    pub user_data: usize,
+    pub user_data: u64,
 }
 
 impl Overlapped {
-    pub fn new(user_data: usize) -> Self {
+    pub fn new(user_data: u64) -> Self {
         Self {
             base: unsafe { std::mem::zeroed() },
             user_data,

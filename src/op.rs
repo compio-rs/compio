@@ -96,9 +96,9 @@ pub(crate) struct UnregisteredReadAt<T: IoBufMut> {
     pub(crate) buffer: BufWrapper<T>,
 }
 
-impl<T: IoBufMut> ReadAt<T> {
-    /// Create [`ReadAt`].
-    pub fn new(fd: RawFd, offset: usize, buffer: T) -> Self {
+impl<T: IoBufMut> UnregisteredReadAt<T> {
+    // Create [`UnregisteredReadAt`].
+    pub(crate) fn new(fd: RawFd, offset: usize, buffer: T) -> Self {
         Self {
             fd,
             offset,
@@ -107,7 +107,7 @@ impl<T: IoBufMut> ReadAt<T> {
     }
 }
 
-impl<T: IoBufMut> IntoInner for ReadAt<T> {
+impl<T: IoBufMut> IntoInner for UnregisteredReadAt<T> {
     type Inner = BufWrapper<T>;
 
     fn into_inner(self) -> Self::Inner {

@@ -64,21 +64,24 @@ impl OpRuntime {
         let user_data = self.ops.insert(RegisteredOp::new(Some(RawOp::new(op))));
         let op = unsafe { self.ops.get_unchecked_mut(user_data) };
         // Safety: `user_data` corresponds to `op` inserted which has type `T`.
-        (unsafe { Key::new(user_data) }, op.op.as_mut().unwrap())
+        (
+            unsafe { Key::new(user_data as u64) },
+            op.op.as_mut().unwrap(),
+        )
     }
 
     pub fn insert_dummy(&mut self) -> Key<()> {
-        Key::new_dummy(self.ops.insert(RegisteredOp::new(None)))
+        Key::new_dummy(self.ops.insert(RegisteredOp::new(None)) as u64)
     }
 
     pub fn update_waker<T>(&mut self, key: Key<T>, waker: Waker) {
-        if let Some(op) = self.ops.get_mut(*key) {
+        if let Some(op) = self.ops.get_mut(usize::try_from(*key).expect("in range")) {
             op.waker = Some(waker);
         }
     }
 
     pub fn update_result<T>(&mut self, key: Key<T>, result: io::Result<usize>) {
-        if let Some(op) = self.ops.get_mut(*key) {
+        if let Some(op) = self.ops.get_mut(usize::try_from(*key).expect("in range")) {
             if let Some(waker) = op.waker.take() {
                 waker.wake();
             }
@@ -91,19 +94,19 @@ impl OpRuntime {
 
     pub fn has_result<T>(&mut self, key: Key<T>) -> bool {
         self.ops
-            .get_mut(*key)
+            .get_mut(usize::try_from(*key).expect("in range"))
             .map(|op| op.result.is_some())
             .unwrap_or_default()
     }
 
     pub fn cancel<T>(&mut self, key: Key<T>) {
-        if let Some(ops) = self.ops.get_mut(*key) {
+        if let Some(ops) = self.ops.get_mut(usize::try_from(*key).expect("in range")) {
             ops.cancelled = true;
         }
     }
 
     pub fn remove<T>(&mut self, key: Key<T>) -> RegisteredOp {
-        self.ops.remove(*key)
+        self.ops.remove(usize::try_from(*key).expect("in range"))
     }
 }
 

@@ -3,12 +3,12 @@ use std::{fs::Metadata, io, path::Path};
 #[cfg(feature = "runtime")]
 use crate::{
     buf::{IntoInner, IoBuf, IoBufMut},
-    driver::AsRawFd,
+    driver::{AsRawFd, RawFd, RegisteredFd},
     op::{BufResultExt, ReadAt, Sync, WriteAt},
     task::RUNTIME,
     BufResult,
 };
-use crate::{fs::OpenOptions, impl_registered_fd};
+use crate::{driver::AsRegisteredFd, fs::OpenOptions};
 
 /// A reference to an open file on the filesystem.
 ///
@@ -19,6 +19,7 @@ use crate::{fs::OpenOptions, impl_registered_fd};
 #[derive(Debug)]
 pub struct File {
     inner: std::fs::File,
+    registered_fd: RegisteredFd,
 }
 
 #[cfg(target_os = "windows")]
@@ -43,20 +44,28 @@ fn file_with_options(
 }
 
 impl File {
-    pub(crate) fn with_options(path: impl AsRef<Path>, options: OpenOptions) -> io::Result<Self> {
+    #[cfg(feature = "runtime")]
+    pub(crate) async fn with_options(
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+    ) -> io::Result<Self> {
+        // TODO: implement OpenAt operation
+        let inner = file_with_options(path, options.0)?;
+        let registered_fd = RUNTIME.with(|runtime| runtime.register_fd(inner.as_raw_fd()))?;
+
         let this = Self {
-            inner: file_with_options(path, options.0)?,
+            inner,
+            registered_fd,
         };
-        #[cfg(feature = "runtime")]
-        RUNTIME.with(|runtime| runtime.attach(this.as_raw_fd()))?;
         Ok(this)
     }
 
     /// Attempts to open a file in read-only mode.
     ///
     /// See the [`OpenOptions::open`] method for more details.
-    pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
-        OpenOptions::new().read(true).open(path)
+    #[cfg(feature = "runtime")]
+    pub async fn open(path: impl AsRef<Path>) -> io::Result<Self> {
+        OpenOptions::new().read(true).open(path).await
     }
 
     /// Opens a file in write-only mode.
@@ -65,16 +74,19 @@ impl File {
     /// and will truncate it if it does.
     ///
     /// See the [`OpenOptions::open`] function for more details.
-    pub fn create(path: impl AsRef<Path>) -> io::Result<Self> {
+    #[cfg(feature = "runtime")]
+    pub async fn create(path: impl AsRef<Path>) -> io::Result<Self> {
         OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
             .open(path)
+            .await
     }
 
     /// Queries metadata about the underlying file.
-    pub fn metadata(&self) -> io::Result<Metadata> {
+    #[cfg(feature = "runtime")]
+    pub async fn metadata(&self) -> io::Result<Metadata> {
         self.inner.metadata()
     }
 
@@ -102,7 +114,7 @@ impl File {
     /// variant will be returned. The buffer is returned on error.
     #[cfg(feature = "runtime")]
     pub async fn read_at<T: IoBufMut>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
-        let op = ReadAt::new(self.as_raw_fd(), pos, buffer);
+        let op = ReadAt::new(self.registered_fd, pos, buffer);
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
@@ -220,7 +232,7 @@ impl File {
     /// written to this writer.
     #[cfg(feature = "runtime")]
     pub async fn write_at<T: IoBuf>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
-        let op = WriteAt::new(self.as_raw_fd(), pos, buffer);
+        let op = WriteAt::new(self.registered_fd, pos, buffer);
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
@@ -256,7 +268,7 @@ impl File {
 
     #[cfg(feature = "runtime")]
     async fn sync_impl(&self, datasync: bool) -> io::Result<()> {
-        let op = Sync::new(self.as_raw_fd(), datasync);
+        let op = Sync::new(self.registered_fd, datasync);
         RUNTIME.with(|runtime| runtime.submit(op)).await.0?;
         Ok(())
     }
@@ -287,4 +299,13 @@ impl File {
     }
 }
 
-impl_registered_fd!(File, inner);
+impl AsRawFd for File {
+    fn as_raw_fd(&self) -> RawFd {
+        self.inner.as_raw_fd()
+    }
+}
+impl AsRegisteredFd for File {
+    fn as_registered_fd(&self) -> RegisteredFd {
+        self.registered_fd
+    }
+}

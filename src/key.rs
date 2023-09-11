@@ -1,7 +1,7 @@
 /// A typed wrapper for key of Ops submitted into driver
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Key<T> {
-    user_data: usize,
+    user_data: u64,
     _p: std::marker::PhantomData<fn(T)>,
 }
 
@@ -23,7 +23,7 @@ impl<T> Key<T> {
     ///
     /// Caller needs to ensure that `T` does correspond to `user_data` in driver
     /// this `Key` is created with.
-    pub unsafe fn new(user_data: usize) -> Self {
+    pub unsafe fn new(user_data: u64) -> Self {
         Self {
             user_data,
             _p: std::marker::PhantomData,
@@ -33,14 +33,14 @@ impl<T> Key<T> {
 
 impl Key<()> {
     /// Create a new dummy `Key` with the given user data
-    pub fn new_dummy(user_data: usize) -> Self {
+    pub fn new_dummy(user_data: u64) -> Self {
         // Safety: `()` is not `OpCode` so this won't be used to poll data from drivers.
         unsafe { Self::new(user_data) }
     }
 }
 
 impl<T> std::ops::Deref for Key<T> {
-    type Target = usize;
+    type Target = u64;
 
     fn deref(&self) -> &Self::Target {
         &self.user_data

@@ -46,7 +46,7 @@ fn drop_on_complete() {
     std::io::Write::write_all(&mut file, &vec).unwrap();
 
     let file = compio::task::block_on(async {
-        let file = File::open(tempfile.path()).unwrap();
+        let file = File::open(tempfile.path()).await.unwrap();
         file.read_at(
             MyBuf {
                 data: Vec::with_capacity(64 * 1024),
@@ -70,7 +70,7 @@ fn too_many_submissions() {
     let tempfile = tempfile();
 
     compio::task::block_on(async {
-        let file = File::create(tempfile.path()).unwrap();
+        let file = File::create(tempfile.path()).await.unwrap();
         for _ in 0..600 {
             poll_once(async {
                 file.write_at("hello world", 0).await.0.unwrap();

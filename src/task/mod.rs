@@ -34,7 +34,7 @@ thread_local! {
 /// ```
 /// compio::task::block_on(async {
 ///     // Open a file
-///     let file = compio::fs::File::open("Cargo.toml").unwrap();
+///     let file = compio::fs::File::open("Cargo.toml").await.unwrap();
 ///
 ///     let buf = Vec::with_capacity(4096);
 ///     // Read some data, the buffer is passed by ownership and

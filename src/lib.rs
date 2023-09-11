@@ -42,26 +42,11 @@ macro_rules! impl_registered_fd {
                 self.$inner.as_registered_fd()
             }
         }
-        // when is it needed?
-        //
-        // ideally driver should consume all fds (including OwnedFds) and user should
-        // operate only with registered fds impl crate::driver::FromRegisteredFd for $t
-        // {     unsafe fn from_registered_fd(fd: crate::driver::RegisteredFd) -> Self {
-        //         Self {
-        //             $inner: crate::driver::FromRegisteredFd::from_registered_fd(fd),
-        //         }
-        //     }
-        // }
-        // when is it needed?
-        //
-        // ideally driver should consume all fds (including OwnedFds) and user should
-        // operate only with registered fds
-
-        // impl crate::driver::IntoRawFd for $t {
-        //     fn into_raw_fd(self) -> crate::driver::RawFd {
-        //         self.$inner.into_raw_fd()
-        //     }
-        // }
+        impl crate::driver::AsRawFd for $t {
+            fn as_raw_fd(&self) -> crate::driver::RawFd {
+                self.$inner.as_raw_fd()
+            }
+        }
     };
 }
 

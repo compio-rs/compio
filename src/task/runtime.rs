@@ -13,7 +13,9 @@ use futures_util::future::Either;
 #[cfg(feature = "time")]
 use crate::task::time::{TimerFuture, TimerRuntime};
 use crate::{
-    driver::{AsRawFd, Driver, Entry, OpCode, Poller, RawFd},
+    driver::{
+        AsRawFd, Driver, Entry, OpCode, Poller, RawFd, RegisteredFd, RegisteredFileDescriptors,
+    },
     task::op::{OpFuture, OpRuntime},
     Key,
 };
@@ -77,8 +79,11 @@ impl Runtime {
         task
     }
 
-    pub fn attach(&self, fd: RawFd) -> io::Result<()> {
-        self.driver.borrow_mut().attach(fd)
+    pub fn register_fd(&self, fd: RawFd) -> io::Result<RegisteredFd> {
+        let mut driver = self.driver.borrow_mut();
+        let registered_fd = driver.reserve_free_registered_fd()?;
+        _ = driver.register_fd(registered_fd, fd)?;
+        Ok(registered_fd)
     }
 
     pub fn submit<T: OpCode + 'static>(

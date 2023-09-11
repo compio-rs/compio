@@ -31,7 +31,7 @@ With `runtime` feature enabled, we can use the high level APIs to perform fs & n
 use compio::{fs::File, task::block_on};
 
 let buffer = block_on(async {
-    let file = File::open("Cargo.toml").unwrap();
+    let file = File::open("Cargo.toml").await.unwrap();
     let (read, buffer) = file.read_at(Vec::with_capacity(1024), 0).await;
     let read = read.unwrap();
     assert_eq!(read, buffer.len());
@@ -45,18 +45,20 @@ While you can also control the low-level driver manually:
 ```rust,no_run
 use compio::{
     buf::IntoInner,
-    driver::{AsRawFd, Driver, Poller},
+    driver::{AsRawFd, AsRegisteredFd, Driver, Poller, RegisteredFileDescriptors},
     fs::File,
     op::ReadAt,
 };
 
 let mut driver = Driver::new().unwrap();
-let file = File::open("Cargo.toml").unwrap();
-// Attach the `RawFd` to driver first.
-driver.attach(file.as_raw_fd()).unwrap();
+// TODO: implement OpenAt op
+let file = File::open("Cargo.toml").await.unwrap();
+// Register the `RawFd` in the driver first.
+let registered_fd = driver.reserve_free_registered_fd().unwrap();
+driver.register_fd(registered_fd, file.as_raw_fd()).unwrap();
 
 // Create operation and push it to the driver.
-let mut op = ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(4096));
+let mut op = ReadAt::new(registered_fd, 0, Vec::with_capacity(4096));
 unsafe { driver.push(&mut op, 0) }.unwrap();
 
 // Poll the driver and wait for IO completed.

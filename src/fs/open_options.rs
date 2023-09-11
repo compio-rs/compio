@@ -22,7 +22,9 @@ use crate::fs::File;
 /// ```no_run
 /// use compio::fs::OpenOptions;
 ///
-/// let file = OpenOptions::new().read(true).open("foo.txt").unwrap();
+/// compio::task::block_on(async {
+///     let file = OpenOptions::new().read(true).open("foo.txt").await.unwrap();
+/// })
 /// ```
 ///
 /// Opening a file for both reading and writing, as well as creating it if it
@@ -31,12 +33,15 @@ use crate::fs::File;
 /// ```no_run
 /// use compio::fs::OpenOptions;
 ///
-/// let file = OpenOptions::new()
-///     .read(true)
-///     .write(true)
-///     .create(true)
-///     .open("foo.txt")
-///     .unwrap();
+/// compio::task::block_on(async {
+///     let file = OpenOptions::new()
+///         .read(true)
+///         .write(true)
+///         .create(true)
+///         .open("foo.txt")
+///         .await
+///         .unwrap();
+/// })
 /// ```
 #[derive(Debug, Clone)]
 pub struct OpenOptions(pub(crate) StdOpenOptions);
@@ -113,7 +118,8 @@ impl OpenOptions {
     /// Opens a file at `path` with the options specified by `self`.
     ///
     /// See [`std::fs::OpenOptions::open`].
-    pub fn open(self, path: impl AsRef<Path>) -> io::Result<File> {
-        File::with_options(path, self)
+    #[cfg(feature = "runtime")]
+    pub async fn open(self, path: impl AsRef<Path>) -> io::Result<File> {
+        File::with_options(path, self).await
     }
 }

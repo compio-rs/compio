@@ -2,15 +2,20 @@
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{collections::VecDeque, io, mem::MaybeUninit, time::Duration};
 
+use bitvec::prelude::{bitbox, BitBox, BitSlice};
 use io_uring::{
     cqueue,
-    opcode::AsyncCancel,
+    opcode::{self, AsyncCancel},
     squeue,
     types::{SubmitArgs, Timespec},
-    IoUring,
+    IoUring, Probe,
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 
+use super::{
+    registered_fd::{RegisteredFileAllocator, UNREGISTERED},
+    RegisteredFileDescriptors,
+};
 use crate::driver::{Entry, Poller};
 
 pub(crate) mod op;
@@ -26,20 +31,34 @@ pub struct Driver {
     inner: IoUring,
     squeue: VecDeque<squeue::Entry>,
     cqueue: VecDeque<Entry>,
+    registered_fd_bits: BitBox,
+    registered_fd_search_from: u32,
 }
 
 impl Driver {
     /// Create a new io-uring driver with 1024 entries.
     pub fn new() -> io::Result<Self> {
-        Self::with_entries(1024)
+        Self::with(1024, 1024)
     }
 
     /// Create a new io-uring driver with specified entries.
-    pub fn with_entries(entries: u32) -> io::Result<Self> {
+    pub fn with(entries: u32, files_to_register: u32) -> io::Result<Self> {
+        let inner = IoUring::new(entries)?;
+        let submitter = inner.submitter();
+        let mut probe = Probe::new();
+        submitter.register_probe(&mut probe)?;
+        if probe.is_supported(opcode::Socket::CODE) {
+            // register_files_sparse available since Linux 5.19
+            submitter.register_files_sparse(files_to_register)?;
+        } else {
+            submitter.register_files(&vec![UNREGISTERED; files_to_register as usize])?;
+        }
         Ok(Self {
-            inner: IoUring::new(entries)?,
+            inner,
             squeue: VecDeque::with_capacity(entries as usize),
             cqueue: VecDeque::with_capacity(entries as usize),
+            registered_fd_bits: bitbox![0; files_to_register as usize],
+            registered_fd_search_from: 0,
         })
     }
 
@@ -81,7 +100,7 @@ impl Driver {
 
             for entry in self.inner.completion() {
                 let entry = create_entry(entry);
-                if entry.user_data() == u64::MAX as _ {
+                if entry.user_data() == u64::MAX {
                     // This is a cancel operation.
                     continue;
                 }
@@ -111,23 +130,15 @@ impl Driver {
 }
 
 impl Poller for Driver {
-    fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
-        Ok(())
-    }
-
-    unsafe fn push(
-        &mut self,
-        op: &mut (impl OpCode + 'static),
-        user_data: usize,
-    ) -> io::Result<()> {
-        let entry = op.create_entry().user_data(user_data as _);
+    unsafe fn push(&mut self, op: &mut (impl OpCode + 'static), user_data: u64) -> io::Result<()> {
+        let entry = op.create_entry().user_data(user_data);
         self.squeue.push_back(entry);
         Ok(())
     }
 
-    fn cancel(&mut self, user_data: usize) {
+    fn cancel(&mut self, user_data: u64) {
         self.squeue
-            .push_back(AsyncCancel::new(user_data as _).build().user_data(u64::MAX));
+            .push_back(AsyncCancel::new(user_data).build().user_data(u64::MAX));
     }
 
     fn poll(
@@ -151,6 +162,34 @@ impl Poller for Driver {
 impl AsRawFd for Driver {
     fn as_raw_fd(&self) -> RawFd {
         self.inner.as_raw_fd()
+    }
+}
+
+impl RegisteredFileAllocator for Driver {
+    // bit slice of registered fds
+    fn registered_bit_slice(&mut self) -> &BitSlice {
+        self.registered_fd_bits.as_bitslice()
+    }
+
+    fn registered_bit_slice_mut(&mut self) -> &mut BitSlice {
+        self.registered_fd_bits.as_mut_bitslice()
+    }
+
+    // where to start the next search for free registered fd
+    fn registered_fd_search_from(&self) -> u32 {
+        self.registered_fd_search_from
+    }
+
+    fn registered_fd_search_from_mut(&mut self) -> &mut u32 {
+        &mut self.registered_fd_search_from
+    }
+}
+
+impl RegisteredFileDescriptors for Driver {
+    fn register_files_update(&mut self, offset: u32, fds: &[RawFd]) -> io::Result<usize> {
+        let res = self.inner.submitter().register_files_update(offset, fds)?;
+        _ = <Self as RegisteredFileAllocator>::register_files_update(self, offset, fds)?;
+        Ok(res)
     }
 }
 

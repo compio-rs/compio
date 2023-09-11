@@ -1,9 +1,9 @@
 use std::{
     io,
-    os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd},
+    os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd},
 };
 
-use crate::{impl_raw_fd, op::UnregisteredReadAt, task::RUNTIME};
+use crate::{op::UnregisteredReadAt, task::RUNTIME};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
@@ -36,14 +36,18 @@ impl Event {
         // events like SIGINT / SIGTERM handlers, that typically do process shutdown
         //
         // but registration could be useful for repeated user events
-        let op = UnregisteredReadAt::new(self.as_raw_fd(), 0, buffer);
+        let op = UnregisteredReadAt::new(self.fd.as_raw_fd(), 0, buffer);
         let (res, _) = RUNTIME.with(|runtime| runtime.submit(op)).await;
         res?;
         Ok(())
     }
 }
 
-impl_raw_fd!(Event, fd);
+impl AsRawFd for Event {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd.as_raw_fd()
+    }
+}
 
 /// A handle to [`Event`].
 pub struct EventHandle<'a> {

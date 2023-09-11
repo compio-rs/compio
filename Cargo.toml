@@ -35,8 +35,10 @@ targets = [
 # Shared dependencies for all platforms
 [dependencies]
 async-task = { version = "4", optional = true }
+bitvec = "1"
 bytes = { version = "1", optional = true }
 cfg-if = "1"
+strum = { version = "0.25", features = ["derive"] }
 futures-util = { version = "0.3", optional = true }
 # may be excluded from linking if the unstable equivalent is used
 once_cell = "1"
