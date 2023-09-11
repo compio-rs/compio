@@ -76,7 +76,7 @@ pub trait Poller {
     ///
     /// ## Platform specific
     /// * IOCP: it will be attached to the IOCP completion port.
-    /// * io-uring: it will do nothing and return `Ok(())`
+    /// * io-uring/mio: it will do nothing and return `Ok(())`
     fn attach(&mut self, fd: RawFd) -> io::Result<()>;
 
     /// Push an operation with user-defined data.
@@ -84,8 +84,8 @@ pub trait Poller {
     ///
     /// # Safety
     ///
-    /// - `op` should be alive until [`Poller::poll`] returns its result.
-    /// - `user_data` should be unique.
+    /// * `op` should be alive until [`Poller::poll`] returns its result.
+    /// * `user_data` should be unique.
     unsafe fn push(&mut self, op: &mut (impl OpCode + 'static), user_data: usize)
     -> io::Result<()>;
 
