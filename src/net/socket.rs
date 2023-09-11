@@ -138,10 +138,15 @@ impl Socket {
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         let local_addr = self.local_addr()?;
         let accept_sock = Self::new(local_addr.domain(), self.r#type()?, self.protocol()?)?;
-        let op = Accept::new(self.registered_fd, accept_sock.as_registered_fd());
+        let op = Accept::new(
+            self.registered_fd,
+            self.as_raw_fd(),
+            accept_sock.as_registered_fd(),
+            accept_sock.as_raw_fd(),
+        );
         let (res, op) = RUNTIME.with(|runtime| runtime.submit(op)).await;
         res?;
-        op.update_context(self.as_raw_fd(), accept_sock.as_raw_fd())?;
+        op.update_context()?;
         let addr = op.into_addr(accept_sock.as_raw_fd())?;
         Ok((accept_sock, addr))
     }

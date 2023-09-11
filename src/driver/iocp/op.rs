@@ -162,29 +162,38 @@ static GET_ADDRS: OnceLock<LPFN_GETACCEPTEXSOCKADDRS> = OnceLock::new();
 /// Accept a connection.
 pub struct Accept {
     pub(crate) fd: RegisteredFd,
+    raw_fd: RawFd,
     pub(crate) accept_fd: RegisteredFd,
+    raw_accept_fd: RawFd,
     pub(crate) buffer: SOCKADDR_STORAGE,
 }
 
 impl Accept {
     /// Create [`Accept`]. `accept_fd` should not be bound.
-    pub fn new(fd: RegisteredFd, accept_fd: RegisteredFd) -> Self {
+    pub fn new(
+        fd: RegisteredFd,
+        raw_fd: RawFd,
+        accept_fd: RegisteredFd,
+        raw_accept_fd: RawFd,
+    ) -> Self {
         Self {
             fd,
+            raw_fd,
             accept_fd,
+            raw_accept_fd,
             buffer: unsafe { std::mem::zeroed() },
         }
     }
 
     /// Update accept context.
-    pub fn update_context(&self, raw_fd: RawFd, raw_accept_fd: RawFd) -> io::Result<()> {
+    pub fn update_context(&self) -> io::Result<()> {
         let res = unsafe {
             setsockopt(
-                raw_accept_fd as _,
+                self.raw_accept_fd as _,
                 SOL_SOCKET,
                 SO_UPDATE_ACCEPT_CONTEXT,
-                raw_fd as *const _ as _,
-                std::mem::size_of_val(&raw_fd) as _,
+                self.raw_fd as *const _ as _,
+                std::mem::size_of_val(&self.raw_fd) as _,
             )
         };
         if res != 0 {
@@ -197,7 +206,7 @@ impl Accept {
     /// Get the remote address from the inner buffer.
     pub fn into_addr(self, raw_fd: RawFd) -> io::Result<SockAddr> {
         let get_addrs_fn = GET_ADDRS
-            .get_or_try_init(|| unsafe { get_wsa_fn(raw_fd, WSAID_GETACCEPTEXSOCKADDRS) })?
+            .get_or_try_init(|| unsafe { get_wsa_fn(self.raw_fd, WSAID_GETACCEPTEXSOCKADDRS) })?
             .ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::Unsupported,
@@ -230,18 +239,15 @@ impl OpCode for Accept {
         optr: *mut OVERLAPPED,
         fd_registry: &Driver,
     ) -> Poll<io::Result<usize>> {
-        let raw_fd = fd_registry.get_raw_fd(self.fd);
-        let raw_accept_fd = fd_registry.get_raw_fd(self.accept_fd);
-
         let accept_fn = ACCEPT_EX
-            .get_or_try_init(|| get_wsa_fn(raw_fd, WSAID_ACCEPTEX))?
+            .get_or_try_init(|| get_wsa_fn(self.raw_fd, WSAID_ACCEPTEX))?
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::Unsupported, "cannot retrieve AcceptEx")
             })?;
         let mut received = 0;
         let res = accept_fn(
-            raw_fd as _,
-            raw_accept_fd as _,
+            self.raw_fd as _,
+            self.raw_accept_fd as _,
             &mut self.buffer as *mut _ as *mut _,
             0,
             0,
