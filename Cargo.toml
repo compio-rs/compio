@@ -10,12 +10,9 @@ categories = ["asynchronous", "filesystem", "network-programming"]
 keywords = [
     "async",
     "fs",
-    "io",
     "iocp",
     "io-uring",
-    "mio",
     "net",
-    "non-blocking",
 ]
 repository = "https://github.com/Berrysoft/compio"
 
