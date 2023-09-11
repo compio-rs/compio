@@ -195,9 +195,9 @@ impl Accept {
     }
 
     /// Get the remote address from the inner buffer.
-    pub fn into_addr(self, raw_accept_fd: RawFd) -> io::Result<SockAddr> {
+    pub fn into_addr(self, raw_fd: RawFd) -> io::Result<SockAddr> {
         let get_addrs_fn = GET_ADDRS
-            .get_or_try_init(|| unsafe { get_wsa_fn(raw_accept_fd, WSAID_GETACCEPTEXSOCKADDRS) })?
+            .get_or_try_init(|| unsafe { get_wsa_fn(raw_fd, WSAID_GETACCEPTEXSOCKADDRS) })?
             .ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::Unsupported,
