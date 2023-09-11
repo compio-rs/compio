@@ -82,7 +82,9 @@ impl Socket {
 
     pub fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
         let socket = Socket2::new(domain, ty, protocol)?;
-        #[cfg(unix)]
+        // on Linux and Window we use native completion-based IO interfaces and are not
+        // interested to receive EAGAIN/EWOULDBLOCK as accept result
+        #[cfg(all(unix, not(target_os = "linux")))]
         socket.set_nonblocking(true)?;
         Self::from_socket2(socket)
     }
