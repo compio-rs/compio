@@ -7,19 +7,19 @@ use socket2::SockAddr;
 use crate::op::*;
 use crate::{
     buf::{AsIoSlices, AsIoSlicesMut, IntoInner, OneOrVec},
-    driver::RawFd,
+    driver::RegisteredFd,
 };
 
 /// Accept a connection.
 pub struct Accept {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: RegisteredFd,
     pub(crate) buffer: sockaddr_storage,
     pub(crate) addr_len: socklen_t,
 }
 
 impl Accept {
     /// Create [`Accept`].
-    pub fn new(fd: RawFd) -> Self {
+    pub fn new(fd: RegisteredFd) -> Self {
         Self {
             fd,
             buffer: unsafe { std::mem::zeroed() },
@@ -35,7 +35,7 @@ impl Accept {
 
 /// Receive data and source address.
 pub struct RecvFromImpl<T: AsIoSlicesMut> {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: RegisteredFd,
     pub(crate) buffer: T,
     pub(crate) addr: sockaddr_storage,
     pub(crate) slices: OneOrVec<IoSliceMut<'static>>,
@@ -44,7 +44,7 @@ pub struct RecvFromImpl<T: AsIoSlicesMut> {
 
 impl<T: AsIoSlicesMut> RecvFromImpl<T> {
     /// Create [`RecvFrom`] or [`RecvFromVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
+    pub fn new(fd: RegisteredFd, buffer: T::Inner) -> Self {
         Self {
             fd,
             buffer: T::new(buffer),
@@ -78,7 +78,7 @@ impl<T: AsIoSlicesMut> IntoInner for RecvFromImpl<T> {
 
 /// Send data to specified address.
 pub struct SendToImpl<T: AsIoSlices> {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: RegisteredFd,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
     pub(crate) slices: OneOrVec<IoSlice<'static>>,
@@ -87,7 +87,7 @@ pub struct SendToImpl<T: AsIoSlices> {
 
 impl<T: AsIoSlices> SendToImpl<T> {
     /// Create [`SendTo`] or [`SendToVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner, addr: SockAddr) -> Self {
+    pub fn new(fd: RegisteredFd, buffer: T::Inner, addr: SockAddr) -> Self {
         Self {
             fd,
             buffer: T::new(buffer),

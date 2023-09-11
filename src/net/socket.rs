@@ -2,7 +2,7 @@ use std::{io, net::Shutdown};
 
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
-use crate::impl_raw_fd;
+use crate::impl_registered_fd;
 #[cfg(feature = "runtime")]
 use crate::{
     buf::{IntoInner, IoBuf, IoBufMut},
@@ -277,4 +277,4 @@ impl Socket {
     }
 }
 
-impl_raw_fd!(Socket, socket);
+impl_registered_fd!(Socket, socket);

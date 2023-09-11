@@ -3,7 +3,7 @@ use std::{
     os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd},
 };
 
-use crate::{impl_raw_fd, op::ReadAt, task::RUNTIME};
+use crate::{impl_raw_fd, op::UnregisteredReadAt, task::RUNTIME};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
@@ -31,7 +31,12 @@ impl Event {
     /// Wait for [`EventHandle::notify`] called.
     pub async fn wait(&self) -> io::Result<()> {
         let buffer = Vec::with_capacity(8);
-        let op = ReadAt::new(self.as_raw_fd(), 0, buffer);
+        // TODO: should we have registered and unregistered events?
+        // eventfd file descriptor registration is not useful for once in lifetime
+        // events like SIGINT / SIGTERM handlers, that typically do process shutdown
+        //
+        // but registration could be useful for repeated user events
+        let op = UnregisteredReadAt::new(self.as_raw_fd(), 0, buffer);
         let (res, _) = RUNTIME.with(|runtime| runtime.submit(op)).await;
         res?;
         Ok(())

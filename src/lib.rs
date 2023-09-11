@@ -35,26 +35,34 @@ pub mod time;
 /// successfully.
 pub type BufResult<T, B> = (std::io::Result<T>, B);
 
-macro_rules! impl_raw_fd {
+macro_rules! impl_registered_fd {
     ($t:ty, $inner:ident) => {
-        impl crate::driver::AsRawFd for $t {
-            fn as_raw_fd(&self) -> crate::driver::RawFd {
-                self.$inner.as_raw_fd()
+        impl crate::driver::AsRegisteredFd for $t {
+            fn as_registered_fd(&self) -> crate::driver::RegisteredFd {
+                self.$inner.as_registered_fd()
             }
         }
-        impl crate::driver::FromRawFd for $t {
-            unsafe fn from_raw_fd(fd: crate::driver::RawFd) -> Self {
-                Self {
-                    $inner: crate::driver::FromRawFd::from_raw_fd(fd),
-                }
-            }
-        }
-        impl crate::driver::IntoRawFd for $t {
-            fn into_raw_fd(self) -> crate::driver::RawFd {
-                self.$inner.into_raw_fd()
-            }
-        }
+        // when is it needed?
+        //
+        // ideally driver should consume all fds (including OwnedFds) and user should
+        // operate only with registered fds impl crate::driver::FromRegisteredFd for $t
+        // {     unsafe fn from_registered_fd(fd: crate::driver::RegisteredFd) -> Self {
+        //         Self {
+        //             $inner: crate::driver::FromRegisteredFd::from_registered_fd(fd),
+        //         }
+        //     }
+        // }
+        // when is it needed?
+        //
+        // ideally driver should consume all fds (including OwnedFds) and user should
+        // operate only with registered fds
+
+        // impl crate::driver::IntoRawFd for $t {
+        //     fn into_raw_fd(self) -> crate::driver::RawFd {
+        //         self.$inner.into_raw_fd()
+        //     }
+        // }
     };
 }
 
-pub(crate) use impl_raw_fd;
+pub(crate) use impl_registered_fd;

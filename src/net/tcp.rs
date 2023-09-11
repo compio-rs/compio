@@ -8,7 +8,7 @@ use crate::{
     BufResult,
 };
 use crate::{
-    impl_raw_fd,
+    impl_registered_fd,
     net::{Socket, ToSockAddrs},
 };
 
@@ -104,7 +104,7 @@ impl TcpListener {
     }
 }
 
-impl_raw_fd!(TcpListener, inner);
+impl_registered_fd!(TcpListener, inner);
 
 /// A TCP stream between a local and a remote socket.
 ///
@@ -219,4 +219,4 @@ impl TcpStream {
     }
 }
 
-impl_raw_fd!(TcpStream, inner);
+impl_registered_fd!(TcpStream, inner);

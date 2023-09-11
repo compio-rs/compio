@@ -1,7 +1,7 @@
 use io_uring::{
     opcode,
     squeue::Entry,
-    types::{Fd, FsyncFlags},
+    types::{Fixed, FsyncFlags},
 };
 use libc::sockaddr_storage;
 
@@ -9,13 +9,15 @@ pub use crate::driver::unix::op::*;
 use crate::{
     buf::{AsIoSlices, AsIoSlicesMut, IoBuf, IoBufMut},
     driver::OpCode,
+    buf::{AsIoSlices, AsIoSlicesMut, IntoInner, IoBuf, IoBufMut, OneOrVec},
+    driver::{OpCode, RegisteredFd},
     op::*,
 };
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
     fn create_entry(&mut self) -> Entry {
         let slice = self.buffer.as_uninit_slice();
-        opcode::Read::new(Fd(self.fd), slice.as_mut_ptr() as _, slice.len() as _)
+        opcode::Read::new(Fixed(u32::from(self.fd), slice.as_mut_ptr() as _, slice.len() as _)
             .offset(self.offset as _)
             .build()
     }
@@ -24,7 +26,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
 impl<T: IoBuf> OpCode for WriteAt<T> {
     fn create_entry(&mut self) -> Entry {
         let slice = self.buffer.as_slice();
-        opcode::Write::new(Fd(self.fd), slice.as_ptr(), slice.len() as _)
+        opcode::Write::new(Fixed(u32::from(self.fd)), slice.as_ptr(), slice.len() as _)
             .offset(self.offset as _)
             .build()
     }
@@ -32,7 +34,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
 
 impl OpCode for Sync {
     fn create_entry(&mut self) -> Entry {
-        opcode::Fsync::new(Fd(self.fd))
+        opcode::Fsync::new(Fixed(u32::from(self.fd))
             .flags(if self.datasync {
                 FsyncFlags::DATASYNC
             } else {

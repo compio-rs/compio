@@ -8,7 +8,7 @@ use crate::{
     BufResult,
 };
 use crate::{
-    impl_raw_fd,
+    impl_registered_fd,
     net::{Socket, ToSockAddrs},
 };
 
@@ -81,7 +81,7 @@ impl UnixListener {
     }
 }
 
-impl_raw_fd!(UnixListener, inner);
+impl_registered_fd!(UnixListener, inner);
 
 /// A Unix stream between two local sockets on Windows & WSL.
 ///
@@ -186,4 +186,4 @@ impl UnixStream {
     }
 }
 
-impl_raw_fd!(UnixStream, inner);
+impl_registered_fd!(UnixStream, inner);

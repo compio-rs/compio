@@ -8,7 +8,7 @@ use crate::{
     task::RUNTIME,
     BufResult,
 };
-use crate::{fs::OpenOptions, impl_raw_fd};
+use crate::{fs::OpenOptions, impl_registered_fd};
 
 /// A reference to an open file on the filesystem.
 ///
@@ -287,4 +287,4 @@ impl File {
     }
 }
 
-impl_raw_fd!(File, inner);
+impl_registered_fd!(File, inner);

@@ -31,7 +31,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::driver::{Entry, Poller};
+use crate::driver::{Entry, Poller, RegisteredFileDescriptors};
 
 pub(crate) mod op;
 
@@ -112,7 +112,11 @@ pub trait OpCode {
     /// # Safety
     ///
     /// `self` must be alive until the operation completes.
-    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>>;
+    unsafe fn operate(
+        &mut self,
+        optr: *mut OVERLAPPED,
+        fd_registry: impl RegisteredFileDescriptors,
+    ) -> Poll<io::Result<usize>>;
 }
 
 /// Low-level driver of IOCP.
@@ -270,7 +274,7 @@ impl Poller for Driver {
             let overlapped = Box::new(overlapped);
             let user_data = overlapped.user_data;
             let overlapped_ptr = Box::into_raw(overlapped);
-            let result = unsafe { op.as_mut().operate(overlapped_ptr.cast()) };
+            let result = unsafe { op.as_mut().unwrap().operate(overlapped_ptr.cast(), self) };
             if let Poll::Ready(result) = result {
                 unsafe {
                     post_driver_raw(self.port.as_raw_handle(), result, overlapped_ptr.cast())?;

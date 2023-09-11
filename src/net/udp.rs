@@ -8,7 +8,7 @@ use crate::{
     BufResult,
 };
 use crate::{
-    impl_raw_fd,
+    impl_registered_fd,
     net::{Socket, ToSockAddrs},
 };
 
@@ -243,4 +243,4 @@ impl UdpSocket {
     }
 }
 
-impl_raw_fd!(UdpSocket, inner);
+impl_registered_fd!(UdpSocket, inner);

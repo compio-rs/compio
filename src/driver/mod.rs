@@ -17,6 +17,8 @@ cfg_if::cfg_if! {
         pub use self::mio::*;
     }
 }
+mod registered_fd;
+pub use registered_fd::RegisteredFileDescriptors;
 
 /// An abstract of [`Driver`].
 /// It contains some low-level actions of completion-based IO.
