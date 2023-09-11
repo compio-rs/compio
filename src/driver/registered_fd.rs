@@ -24,6 +24,8 @@ pub struct RegisteredFd {
 }
 
 impl RegisteredFd {
+    pub(crate) const UNREGISTERED: RegisteredFd = RegisteredFd::new(u32::MAX);
+
     /// Construct registered file descriptor from the chosen offset index
     pub const fn new(fd_idx: u32) -> Self {
         Self {
@@ -46,9 +48,17 @@ pub trait AsRegisteredFd {
 }
 
 /// Used to skip update of registered file descriptor
+#[cfg(unix)]
 pub const SKIP_UPDATE: RawFd = -2 as RawFd;
+/// Used to skip update of registered file descriptor
+#[cfg(windows)]
+pub const SKIP_UPDATE: RawFd = (windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE - 1) as RawFd;
 /// Removes fd from the array of registered file descriptors
+#[cfg(unix)]
 pub const UNREGISTERED: RawFd = -1 as RawFd;
+/// Used to skip update of registered file descriptor
+#[cfg(windows)]
+pub const UNREGISTERED: RawFd = windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE as RawFd;
 
 /// Public registration API
 pub trait RegisteredFileDescriptors: RegisteredFileAllocator {

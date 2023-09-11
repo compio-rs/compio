@@ -35,7 +35,7 @@ impl Event {
 
 /// A handle to [`Event`].
 pub struct EventHandle<'a> {
-    user_data: usize,
+    user_data: u64,
     handle: RawFd,
     _p: PhantomData<&'a Event>,
 }

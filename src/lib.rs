@@ -42,12 +42,32 @@ macro_rules! impl_registered_fd {
                 self.$inner.as_registered_fd()
             }
         }
+    };
+}
+
+pub(crate) use impl_registered_fd;
+
+macro_rules! impl_raw_fd {
+    ($t:ty, $inner:ident) => {
         impl crate::driver::AsRawFd for $t {
             fn as_raw_fd(&self) -> crate::driver::RawFd {
                 self.$inner.as_raw_fd()
             }
         }
+        impl crate::driver::FromRawFd for $t {
+            unsafe fn from_raw_fd(fd: crate::driver::RawFd) -> Self {
+                Self {
+                    $inner: crate::driver::FromRawFd::from_raw_fd(fd),
+                    registered_fd: crate::driver::RegisteredFd::UNREGISTERED,
+                }
+            }
+        }
+        impl crate::driver::IntoRawFd for $t {
+            fn into_raw_fd(self) -> crate::driver::RawFd {
+                self.$inner.into_raw_fd()
+            }
+        }
     };
 }
 
-pub(crate) use impl_registered_fd;
+pub(crate) use impl_raw_fd;

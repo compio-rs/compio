@@ -31,9 +31,9 @@ use windows_sys::Win32::{
 #[cfg(feature = "runtime")]
 use crate::{buf::*, op::ConnectNamedPipe, task::RUNTIME, *};
 use crate::{
-    driver::{AsRawFd, FromRawFd, RawFd},
+    driver::{AsRawFd, FromRawFd, RawFd, RegisteredFd},
     fs::File,
-    impl_registered_fd,
+    impl_raw_fd, impl_registered_fd,
 };
 
 /// A [Windows named pipe] server.
@@ -100,13 +100,21 @@ use crate::{
 #[derive(Debug)]
 pub struct NamedPipeServer {
     handle: File,
+    registered_fd: RegisteredFd,
 }
 
 impl NamedPipeServer {
     pub(crate) fn from_handle(handle: OwnedHandle) -> io::Result<Self> {
+        let this = unsafe { Self::from_raw_fd(handle.into_raw_handle()) };
         #[cfg(feature = "runtime")]
-        RUNTIME.with(|runtime| runtime.attach(handle.as_raw_handle() as _))?;
-        Ok(unsafe { Self::from_raw_fd(handle.into_raw_handle()) })
+        let this = {
+            let registered_fd =
+                RUNTIME.with(|runtime| runtime.register_fd(this.as_raw_fd() as _))?;
+            let mut this = this;
+            this.registered_fd = registered_fd;
+            this
+        };
+        Ok(this)
     }
 
     /// Retrieves information about the named pipe the server is associated
@@ -167,7 +175,7 @@ impl NamedPipeServer {
     /// ```
     #[cfg(feature = "runtime")]
     pub async fn connect(&self) -> io::Result<()> {
-        let op = ConnectNamedPipe::new(self.as_raw_fd());
+        let op = ConnectNamedPipe::new(self.registered_fd);
         RUNTIME.with(|runtime| runtime.submit(op)).await.0?;
         Ok(())
     }
@@ -234,6 +242,7 @@ impl NamedPipeServer {
 }
 
 impl_registered_fd!(NamedPipeServer, handle);
+impl_raw_fd!(NamedPipeServer, handle);
 
 /// A [Windows named pipe] client.
 ///
@@ -276,13 +285,21 @@ impl_registered_fd!(NamedPipeServer, handle);
 #[derive(Debug)]
 pub struct NamedPipeClient {
     handle: File,
+    registered_fd: RegisteredFd,
 }
 
 impl NamedPipeClient {
     pub(crate) fn from_handle(handle: OwnedHandle) -> io::Result<Self> {
+        let this = unsafe { Self::from_raw_fd(handle.into_raw_handle()) };
         #[cfg(feature = "runtime")]
-        RUNTIME.with(|runtime| runtime.attach(handle.as_raw_handle() as _))?;
-        Ok(unsafe { Self::from_raw_fd(handle.into_raw_handle()) })
+        let this = {
+            let registered_fd =
+                RUNTIME.with(|runtime| runtime.register_fd(this.as_raw_fd() as _))?;
+            let mut this = this;
+            this.registered_fd = registered_fd;
+            this
+        };
+        Ok(this)
     }
 
     /// Retrieves information about the named pipe the client is associated

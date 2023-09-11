@@ -8,6 +8,7 @@ use crate::{
     BufResult,
 };
 use crate::{
+    driver::{AsRawFd, RawFd},
     impl_registered_fd,
     net::{Socket, ToSockAddrs},
 };
@@ -244,3 +245,9 @@ impl UdpSocket {
 }
 
 impl_registered_fd!(UdpSocket, inner);
+
+impl AsRawFd for UdpSocket {
+    fn as_raw_fd(&self) -> RawFd {
+        self.inner.as_raw_fd()
+    }
+}

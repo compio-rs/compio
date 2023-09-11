@@ -30,7 +30,7 @@ use windows_sys::{
 
 use crate::{
     buf::{AsIoSlices, AsIoSlicesMut, IntoInner, IoBuf, IoBufMut},
-    driver::{registered_fd::FDRegistry, OpCode, RawFd},
+    driver::{registered_fd::FDRegistry, Driver, OpCode, RawFd, RegisteredFd},
     op::*,
 };
 
@@ -99,7 +99,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
     unsafe fn operate(
         &mut self,
         optr: *mut OVERLAPPED,
-        fd_registry: impl FDRegistry,
+        fd_registry: &Driver,
     ) -> Poll<io::Result<usize>> {
         if let Some(overlapped) = optr.as_mut() {
             overlapped.Anonymous.Anonymous.Offset = (self.offset & 0xFFFFFFFF) as _;
@@ -124,7 +124,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
     unsafe fn operate(
         &mut self,
         optr: *mut OVERLAPPED,
-        fd_registry: impl FDRegistry,
+        fd_registry: &Driver,
     ) -> Poll<io::Result<usize>> {
         if let Some(overlapped) = optr.as_mut() {
             overlapped.Anonymous.Anonymous.Offset = (self.offset & 0xFFFFFFFF) as _;
@@ -149,7 +149,7 @@ impl OpCode for Sync {
     unsafe fn operate(
         &mut self,
         _optr: *mut OVERLAPPED,
-        fd_registry: impl FDRegistry,
+        fd_registry: &Driver,
     ) -> Poll<io::Result<usize>> {
         let res = FlushFileBuffers(fd_registry.get_raw_fd(self.fd) as _);
         win32_result(res, 0)
@@ -177,15 +177,14 @@ impl Accept {
     }
 
     /// Update accept context.
-    pub fn update_context(&self) -> io::Result<()> {
+    pub fn update_context(&self, raw_fd: RawFd, raw_accept_fd: RawFd) -> io::Result<()> {
         let res = unsafe {
-            let raw_fd = &fd_registry.get_raw_fd(self.fd);
             setsockopt(
-                fd_registry.get_raw_fd(self.accept_fd) as _,
+                raw_accept_fd as _,
                 SOL_SOCKET,
                 SO_UPDATE_ACCEPT_CONTEXT,
                 raw_fd as *const _ as _,
-                std::mem::size_of_val(raw_fd) as _,
+                std::mem::size_of_val(&raw_fd) as _,
             )
         };
         if res != 0 {
@@ -196,11 +195,9 @@ impl Accept {
     }
 
     /// Get the remote address from the inner buffer.
-    pub fn into_addr(self) -> io::Result<SockAddr> {
+    pub fn into_addr(self, raw_accept_fd: RawFd) -> io::Result<SockAddr> {
         let get_addrs_fn = GET_ADDRS
-            .get_or_try_init(|| unsafe {
-                get_wsa_fn(fd_registry.get_raw_fd(self.fd), WSAID_GETACCEPTEXSOCKADDRS)
-            })?
+            .get_or_try_init(|| unsafe { get_wsa_fn(raw_accept_fd, WSAID_GETACCEPTEXSOCKADDRS) })?
             .ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::Unsupported,
@@ -231,17 +228,20 @@ impl OpCode for Accept {
     unsafe fn operate(
         &mut self,
         optr: *mut OVERLAPPED,
-        fd_registry: impl FDRegistry,
+        fd_registry: &Driver,
     ) -> Poll<io::Result<usize>> {
+        let raw_fd = fd_registry.get_raw_fd(self.fd);
+        let raw_accept_fd = fd_registry.get_raw_fd(self.accept_fd);
+
         let accept_fn = ACCEPT_EX
-            .get_or_try_init(|| get_wsa_fn(fd_registry.get_raw_fd(self.fd), WSAID_ACCEPTEX))?
+            .get_or_try_init(|| get_wsa_fn(raw_fd, WSAID_ACCEPTEX))?
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::Unsupported, "cannot retrieve AcceptEx")
             })?;
         let mut received = 0;
         let res = accept_fn(
-            self.fd as _,
-            self.accept_fd as _,
+            raw_fd as _,
+            raw_accept_fd as _,
             &mut self.buffer as *mut _ as *mut _,
             0,
             0,
@@ -257,16 +257,8 @@ static CONNECT_EX: OnceLock<LPFN_CONNECTEX> = OnceLock::new();
 
 impl Connect {
     /// Update connect context.
-    pub fn update_context(&self) -> io::Result<()> {
-        let res = unsafe {
-            setsockopt(
-                self.fd as _,
-                SOL_SOCKET,
-                SO_UPDATE_CONNECT_CONTEXT,
-                null(),
-                0,
-            )
-        };
+    pub fn update_context(&self, fd: RawFd) -> io::Result<()> {
+        let res = unsafe { setsockopt(fd as _, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, null(), 0) };
         if res != 0 {
             Err(io::Error::last_os_error())
         } else {
@@ -279,16 +271,17 @@ impl OpCode for Connect {
     unsafe fn operate(
         &mut self,
         optr: *mut OVERLAPPED,
-        fd_registry: impl FDRegistry,
+        fd_registry: &Driver,
     ) -> Poll<io::Result<usize>> {
+        let raw_fd = fd_registry.get_raw_fd(self.fd);
         let connect_fn = CONNECT_EX
-            .get_or_try_init(|| get_wsa_fn(fd_registry.get_raw_fd(self.fd), WSAID_CONNECTEX))?
+            .get_or_try_init(|| get_wsa_fn(raw_fd, WSAID_CONNECTEX))?
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::Unsupported, "cannot retrieve ConnectEx")
             })?;
         let mut sent = 0;
         let res = connect_fn(
-            self.fd as _,
+            raw_fd as _,
             self.addr.as_ptr(),
             self.addr.len(),
             null(),
@@ -304,7 +297,7 @@ impl<T: AsIoSlicesMut> OpCode for RecvImpl<T> {
     unsafe fn operate(
         &mut self,
         optr: *mut OVERLAPPED,
-        fd_registry: impl FDRegistry,
+        fd_registry: &Driver,
     ) -> Poll<io::Result<usize>> {
         self.slices = self.buffer.as_io_slices_mut();
         let mut flags = 0;
@@ -326,7 +319,7 @@ impl<T: AsIoSlices> OpCode for SendImpl<T> {
     unsafe fn operate(
         &mut self,
         optr: *mut OVERLAPPED,
-        fd_registry: impl FDRegistry,
+        fd_registry: &Driver,
     ) -> Poll<io::Result<usize>> {
         self.slices = self.buffer.as_io_slices();
         let mut sent = 0;
@@ -375,7 +368,7 @@ impl<T: AsIoSlicesMut> OpCode for RecvFromImpl<T> {
     unsafe fn operate(
         &mut self,
         optr: *mut OVERLAPPED,
-        fd_registry: impl FDRegistry,
+        fd_registry: &Driver,
     ) -> Poll<io::Result<usize>> {
         let buffer = self.buffer.as_io_slices_mut();
         let mut flags = 0;
@@ -425,7 +418,7 @@ impl<T: AsIoSlices> OpCode for SendToImpl<T> {
     unsafe fn operate(
         &mut self,
         optr: *mut OVERLAPPED,
-        fd_registry: impl FDRegistry,
+        fd_registry: &Driver,
     ) -> Poll<io::Result<usize>> {
         let buffer = self.buffer.as_io_slices();
         let mut sent = 0;
@@ -460,7 +453,7 @@ impl OpCode for ConnectNamedPipe {
     unsafe fn operate(
         &mut self,
         optr: *mut OVERLAPPED,
-        fd_registry: impl FDRegistry,
+        fd_registry: &Driver,
     ) -> Poll<io::Result<usize>> {
         let res = Pipes::ConnectNamedPipe(fd_registry.get_raw_fd(self.fd) as _, optr);
         win32_result(res, 0)

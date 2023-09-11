@@ -3,12 +3,12 @@ use std::{fs::Metadata, io, path::Path};
 #[cfg(feature = "runtime")]
 use crate::{
     buf::{IntoInner, IoBuf, IoBufMut},
-    driver::{AsRawFd, RawFd, RegisteredFd},
+    driver::{AsRawFd, RegisteredFd},
     op::{BufResultExt, ReadAt, Sync, WriteAt},
     task::RUNTIME,
     BufResult,
 };
-use crate::{driver::AsRegisteredFd, fs::OpenOptions};
+use crate::{driver::AsRegisteredFd, fs::OpenOptions, impl_raw_fd};
 
 /// A reference to an open file on the filesystem.
 ///
@@ -294,11 +294,8 @@ impl File {
     }
 }
 
-impl AsRawFd for File {
-    fn as_raw_fd(&self) -> RawFd {
-        self.inner.as_raw_fd()
-    }
-}
+impl_raw_fd!(File, inner);
+
 impl AsRegisteredFd for File {
     fn as_registered_fd(&self) -> RegisteredFd {
         self.registered_fd

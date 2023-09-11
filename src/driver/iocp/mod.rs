@@ -15,7 +15,7 @@ use std::{
     time::Duration,
 };
 
-use bitvec::prelude::{bitbox, BitBox};
+use bitvec::prelude::{bitbox, BitBox, BitSlice};
 use windows_sys::Win32::{
     Foundation::{
         RtlNtStatusToDosError, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_NO_DATA,
@@ -33,8 +33,8 @@ use windows_sys::Win32::{
 };
 
 use crate::driver::{
-    registered_fd::{FDRegistry, RegisteredFileAllocator},
-    Entry, Poller, RegisteredFileDescriptors,
+    registered_fd::{FDRegistry, RegisteredFileAllocator, SKIP_UPDATE, UNREGISTERED},
+    Entry, Poller, RegisteredFd, RegisteredFileDescriptors,
 };
 
 pub(crate) mod op;
@@ -119,7 +119,7 @@ pub trait OpCode {
     unsafe fn operate(
         &mut self,
         optr: *mut OVERLAPPED,
-        fd_registry: impl RegisteredFileDescriptors,
+        fd_registry: &Driver,
     ) -> Poll<io::Result<usize>>;
 }
 
@@ -127,10 +127,10 @@ pub trait OpCode {
 pub struct Driver {
     port: OwnedHandle,
     operations: VecDeque<(NonNull<dyn OpCode>, Overlapped)>,
-    registered_files: Box<[Rawfd]>,
+    registered_files: Box<[RawFd]>,
     registered_fd_bits: BitBox,
     registered_fd_search_from: u32,
-    submit_map: HashMap<usize, *mut OVERLAPPED>,
+    submit_map: HashMap<u64, *mut OVERLAPPED>,
     cancelled: HashSet<*mut OVERLAPPED>,
 }
 
@@ -145,12 +145,26 @@ impl Driver {
         Ok(Self {
             port,
             operations: VecDeque::with_capacity(Self::DEFAULT_CAPACITY),
-            registered_files: vec![UNREGISTERED; DEFAULT_CAPACITY].into_boxed_slice(),
-            registered_fd_bits: bitbox![0; DEFAULT_CAPACITY],
+            registered_files: vec![UNREGISTERED; Self::DEFAULT_CAPACITY].into_boxed_slice(),
+            registered_fd_bits: bitbox![0; Self::DEFAULT_CAPACITY],
             registered_fd_search_from: 0,
             submit_map: HashMap::default(),
             cancelled: HashSet::default(),
         })
+    }
+
+    /// Attach an fd to the driver.
+    ///
+    /// ## Platform specific
+    /// * IOCP: it will be attached to the IOCP completion port.
+
+    fn attach(&mut self, fd: RawFd) -> io::Result<()> {
+        let port = unsafe { CreateIoCompletionPort(fd as _, self.port.as_raw_handle() as _, 0, 0) };
+        if port == 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -176,20 +190,6 @@ unsafe fn post_driver_raw(
         Err(io::Error::last_os_error())
     } else {
         Ok(())
-    }
-
-    /// Attach an fd to the driver.
-    ///
-    /// ## Platform specific
-    /// * IOCP: it will be attached to the IOCP completion port.
-
-    fn attach(&mut self, fd: RawFd) -> io::Result<()> {
-        let port = unsafe { CreateIoCompletionPort(fd as _, self.port.as_raw_handle() as _, 0, 0) };
-        if port == 0 {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(())
-        }
     }
 }
 
@@ -258,7 +258,8 @@ fn ntstatus_from_win32(x: i32) -> NTSTATUS {
 
 impl Poller for Driver {
     unsafe fn push(&mut self, op: &mut (impl OpCode + 'static), user_data: u64) -> io::Result<()> {
-        self.operations.push_back((op, Overlapped::new(user_data)));
+        self.operations
+            .push_back((NonNull::from(op), Overlapped::new(user_data)));
         Ok(())
     }
 
@@ -281,7 +282,7 @@ impl Poller for Driver {
             let overlapped = Box::new(overlapped);
             let user_data = overlapped.user_data;
             let overlapped_ptr = Box::into_raw(overlapped);
-            let result = unsafe { op.as_mut().unwrap().operate(overlapped_ptr.cast(), self) };
+            let result = unsafe { op.as_mut().operate(overlapped_ptr.cast(), self) };
             if let Poll::Ready(result) = result {
                 unsafe {
                     post_driver_raw(self.port.as_raw_handle(), result, overlapped_ptr.cast())?;
@@ -371,15 +372,15 @@ impl RegisteredFileDescriptors for Driver {
     fn register_files_update(&mut self, offset: u32, fds: &[RawFd]) -> io::Result<usize> {
         _ = <Self as FDRegistry>::register_files_update(self, offset, fds)?;
         // out of range is validated
-        for (idx, fd) in fds.enumerate() {
-            match fd {
+        for (idx, fd) in fds.iter().enumerate() {
+            match *fd {
                 UNREGISTERED => {
                     let registered_fd =
                         RegisteredFd::new(offset + u32::try_from(idx).expect("in u32 range"));
-                    unsafe { detach_iocp(self.get_raw_fd(registered_fd)) }?;
+                    unsafe { detach_iocp(self.get_raw_fd(registered_fd) as usize) }?;
                 }
                 SKIP_UPDATE => {}
-                _ => self.attach(fd)?,
+                _ => self.attach(*fd)?,
             }
         }
         <Self as RegisteredFileAllocator>::register_files_update(self, offset, fds)

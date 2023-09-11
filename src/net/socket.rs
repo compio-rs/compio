@@ -63,7 +63,7 @@ impl Socket {
         let mut info_len = std::mem::size_of_val(&info) as _;
         let res = unsafe {
             getsockopt(
-                self.registered_fd as _,
+                self.socket.as_raw_fd() as _,
                 SOL_SOCKET,
                 SO_PROTOCOL_INFO,
                 &mut info as *mut _ as *mut _,
@@ -114,7 +114,7 @@ impl Socket {
         #[cfg(target_os = "windows")]
         {
             res?;
-            _op.update_context()?;
+            _op.update_context(self.as_raw_fd())?;
             Ok(())
         }
         #[cfg(unix)]
@@ -138,11 +138,11 @@ impl Socket {
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         let local_addr = self.local_addr()?;
         let accept_sock = Self::new(local_addr.domain(), self.r#type()?, self.protocol()?)?;
-        let op = Accept::new(accept_sock.as_raw_fd() as _);
+        let op = Accept::new(self.registered_fd, accept_sock.as_registered_fd());
         let (res, op) = RUNTIME.with(|runtime| runtime.submit(op)).await;
         res?;
-        op.update_context()?;
-        let addr = op.into_addr()?;
+        op.update_context(self.as_raw_fd(), accept_sock.as_raw_fd())?;
+        let addr = op.into_addr(accept_sock.as_raw_fd())?;
         Ok((accept_sock, addr))
     }
 
