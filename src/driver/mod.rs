@@ -75,8 +75,9 @@ pub trait Poller {
     /// Attach an fd to the driver.
     ///
     /// ## Platform specific
-    /// * IOCP: it will be attached to the IOCP completion port.
-    /// * io-uring: it will do nothing and return `Ok(())`
+    /// * IOCP: it will be attached to the IOCP completion port. It is not
+    ///   supported to attach a handle to multiple drivers on Wine.
+    /// * io-uring/mio: it will do nothing and return `Ok(())`.
     fn attach(&mut self, fd: RawFd) -> io::Result<()>;
 
     /// Push an operation with user-defined data.

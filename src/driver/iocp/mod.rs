@@ -232,7 +232,8 @@ fn ntstatus_from_win32(x: i32) -> NTSTATUS {
 
 impl Poller for Driver {
     fn attach(&mut self, fd: RawFd) -> io::Result<()> {
-        detach_iocp(fd)?;
+        // Wine doesn't support the replacement.
+        detach_iocp(fd).ok();
         let port = unsafe { CreateIoCompletionPort(fd as _, self.port.as_raw_handle() as _, 0, 0) };
         if port == 0 {
             Err(io::Error::last_os_error())
