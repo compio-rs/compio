@@ -105,7 +105,7 @@ impl<T: AsIoSlicesMut> OpCode for RecvFromImpl<T> {
     #[allow(clippy::no_effect)]
     fn create_entry(&mut self) -> Entry {
         self.set_msg();
-        opcode::RecvMsg::new(Fd(self.fd), &mut self.msg).build()
+        opcode::RecvMsg::new(Fixed(u32::from(self.fd)), &mut self.msg).build()
     }
 }
 

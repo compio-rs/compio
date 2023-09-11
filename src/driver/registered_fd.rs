@@ -16,7 +16,7 @@ use crate::driver::{error::Error, RawFd};
 /// Concurrent operations could copy it.
 /// If previously registered fd has become unregistered subsequent registered fd
 /// usage could result in IO error
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RegisteredFd {
     // 31 bit fd idx
     fd_idx: u32,
@@ -177,7 +177,7 @@ pub trait RegisteredFileAllocator {
 // Platforms that don't have system provided file descriptor registry use
 // driver emulated one
 #[doc(hidden)]
-pub(super) trait FDRegistry: RegisteredFileDescriptors {
+pub(super) trait FDRegistry {
     fn registered_files(&self) -> &[RawFd];
     fn registered_files_mut(&mut self) -> &mut [RawFd];
 

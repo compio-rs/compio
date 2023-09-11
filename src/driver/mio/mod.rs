@@ -8,6 +8,7 @@ use std::{
     time::Duration,
 };
 
+use bitvec::prelude::{bitbox, BitBox, BitSlice};
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use mio::{
     event::{Event, Source},
@@ -15,7 +16,10 @@ use mio::{
     Events, Interest, Poll, Token,
 };
 
-use crate::driver::{Entry, Poller};
+use crate::driver::{
+    registered_fd::{FDRegistry, RegisteredFileAllocator, RegisteredFileDescriptors, UNREGISTERED},
+    Entry, Poller,
+};
 
 pub(crate) mod op;
 
@@ -23,11 +27,15 @@ pub(crate) mod op;
 pub trait OpCode {
     /// Perform the operation before submit, and return [`Decision`] to
     /// indicate whether submitting the operation to mio is required.
-    fn pre_submit(&mut self) -> io::Result<Decision>;
+    fn pre_submit(&mut self, fd_registry: &FilesRegistry) -> io::Result<Decision>;
 
     /// Perform the operation after received corresponding
     /// event.
-    fn on_event(&mut self, event: &Event) -> io::Result<ControlFlow<usize>>;
+    fn on_event(
+        &mut self,
+        event: &Event,
+        fd_registry: &FilesRegistry,
+    ) -> io::Result<ControlFlow<usize>>;
 }
 
 /// Result of [`OpCode::pre_submit`].
@@ -62,26 +70,34 @@ pub struct WaitArg {
     interest: Interest,
 }
 
+/// Holds registered file descriptors
+pub struct FilesRegistry {
+    registered_files: Box<[RawFd]>,
+}
+
 /// Low-level driver of mio.
 pub struct Driver {
     squeue: VecDeque<MioEntry>,
     cqueue: VecDeque<Entry>,
     events: Events,
     poll: Poll,
-    waiting: HashMap<usize, WaitEntry>,
+    waiting: HashMap<u64, WaitEntry>,
+    registered_fd_bits: BitBox,
+    registered_fd_search_from: u32,
+    files_registry: FilesRegistry,
 }
 
 /// Entry in squeue
 #[derive(Debug)]
 struct MioEntry {
     op: *mut dyn OpCode,
-    user_data: usize,
+    user_data: u64,
 }
 
 impl MioEntry {
     /// Safety: Caller mut guarantee that the op will live until it is
     /// completed.
-    unsafe fn new(op: &mut (impl OpCode + 'static), user_data: usize) -> Self {
+    unsafe fn new(op: &mut (impl OpCode + 'static), user_data: u64) -> Self {
         Self {
             op: op as *mut dyn OpCode,
             user_data,
@@ -97,7 +113,7 @@ impl MioEntry {
 struct WaitEntry {
     op: *mut dyn OpCode,
     arg: WaitArg,
-    user_data: usize,
+    user_data: u64,
 }
 
 impl WaitEntry {
@@ -115,14 +131,17 @@ impl WaitEntry {
 }
 
 impl Driver {
+    const DEFAULT_CAPACITY: u32 = 1024;
+
     /// Create a new mio driver with 1024 entries.
     pub fn new() -> io::Result<Self> {
-        Self::with_entries(1024)
+        Self::with_entries(Self::DEFAULT_CAPACITY, Self::DEFAULT_CAPACITY)
     }
 
     /// Create a new mio driver with the given number of entries.
-    pub fn with_entries(entries: u32) -> io::Result<Self> {
+    pub fn with_entries(entries: u32, files_to_register: u32) -> io::Result<Self> {
         let entries = entries as usize; // for the sake of consistency, use u32 like iour
+        let files_to_register = files_to_register as usize;
 
         Ok(Self {
             squeue: VecDeque::with_capacity(entries),
@@ -130,13 +149,18 @@ impl Driver {
             events: Events::with_capacity(entries),
             poll: Poll::new()?,
             waiting: HashMap::new(),
+            registered_fd_bits: bitbox![0; files_to_register],
+            registered_fd_search_from: 0,
+            files_registry: FilesRegistry {
+                registered_files: vec![UNREGISTERED; files_to_register].into_boxed_slice(),
+            },
         })
     }
 }
 
 impl Driver {
     fn submit(&mut self, entry: MioEntry, arg: WaitArg) -> io::Result<()> {
-        let token = Token(entry.user_data);
+        let token = Token(usize::try_from(entry.user_data).expect("in u64 range"));
 
         SourceFd(&arg.fd).register(self.poll.registry(), token, arg.interest)?;
 
@@ -150,7 +174,7 @@ impl Driver {
     /// Register all operations in the squeue to mio.
     fn submit_squeue(&mut self) -> io::Result<()> {
         while let Some(mut entry) = self.squeue.pop_front() {
-            match entry.op_mut().pre_submit() {
+            match entry.op_mut().pre_submit(&mut self.files_registry) {
                 Ok(Decision::Wait(arg)) => {
                     self.submit(entry, arg)?;
                 }
@@ -174,9 +198,9 @@ impl Driver {
             let token = event.token();
             let entry = self
                 .waiting
-                .get_mut(&token.0)
+                .get_mut(&(token.0 as u64))
                 .expect("Unknown token returned by mio"); // XXX: Should this be silently ignored?
-            match entry.op_mut().on_event(event) {
+            match { entry.op_mut().on_event(event, &mut self.files_registry) } {
                 Ok(ControlFlow::Continue(_)) => {
                     continue;
                 }
@@ -190,7 +214,7 @@ impl Driver {
             self.poll
                 .registry()
                 .deregister(&mut SourceFd(&entry.arg.fd))?;
-            self.waiting.remove(&token.0);
+            self.waiting.remove(&(token.0 as u64));
         }
         Ok(())
     }
@@ -205,20 +229,12 @@ impl Driver {
 }
 
 impl Poller for Driver {
-    fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
-        Ok(())
-    }
-
-    unsafe fn push(
-        &mut self,
-        op: &mut (impl OpCode + 'static),
-        user_data: usize,
-    ) -> io::Result<()> {
+    unsafe fn push(&mut self, op: &mut (impl OpCode + 'static), user_data: u64) -> io::Result<()> {
         self.squeue.push_back(MioEntry::new(op, user_data));
         Ok(())
     }
 
-    fn cancel(&mut self, user_data: usize) {
+    fn cancel(&mut self, user_data: u64) {
         let Some(entry) = self.waiting.remove(&user_data) else {
             return;
         };
@@ -249,5 +265,46 @@ impl Poller for Driver {
 impl AsRawFd for Driver {
     fn as_raw_fd(&self) -> RawFd {
         self.poll.as_raw_fd()
+    }
+}
+
+impl RegisteredFileAllocator for Driver {
+    // bit slice of registered fds
+    fn registered_bit_slice(&mut self) -> &BitSlice {
+        self.registered_fd_bits.as_bitslice()
+    }
+
+    fn registered_bit_slice_mut(&mut self) -> &mut BitSlice {
+        self.registered_fd_bits.as_mut_bitslice()
+    }
+
+    // where to start the next search for free registered fd
+    fn registered_fd_search_from(&self) -> u32 {
+        self.registered_fd_search_from
+    }
+
+    fn registered_fd_search_from_mut(&mut self) -> &mut u32 {
+        &mut self.registered_fd_search_from
+    }
+}
+
+impl RegisteredFileDescriptors for Driver {
+    fn register_files_update(&mut self, offset: u32, fds: &[RawFd]) -> io::Result<usize> {
+        _ = <FilesRegistry as FDRegistry>::register_files_update(
+            &mut self.files_registry,
+            offset,
+            fds,
+        )?;
+        <Self as RegisteredFileAllocator>::register_files_update(self, offset, fds)
+    }
+}
+
+impl FDRegistry for FilesRegistry {
+    fn registered_files(&self) -> &[RawFd] {
+        &self.registered_files
+    }
+
+    fn registered_files_mut(&mut self) -> &mut [RawFd] {
+        &mut self.registered_files
     }
 }

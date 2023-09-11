@@ -2,8 +2,13 @@
 //! Some types differ by compilation target.
 
 use std::{io, mem::MaybeUninit, time::Duration};
+pub mod error;
+pub(self) mod registered_fd;
 #[cfg(unix)]
 mod unix;
+pub use registered_fd::{
+    AsRegisteredFd, RegisteredFd, RegisteredFileDescriptors, SKIP_UPDATE, UNREGISTERED,
+};
 
 cfg_if::cfg_if! {
     if #[cfg(target_os = "windows")] {
@@ -17,9 +22,6 @@ cfg_if::cfg_if! {
         pub use self::mio::*;
     }
 }
-pub mod error;
-mod registered_fd;
-pub use registered_fd::{AsRegisteredFd, RegisteredFd, RegisteredFileDescriptors};
 
 /// An abstract of [`Driver`].
 /// It contains some low-level actions of completion-based IO.

@@ -1,11 +1,15 @@
 use std::{
     io,
-    os::fd::{AsRawFd, BorrowedFd, RawFd},
+    os::fd::{AsRawFd, BorrowedFd},
 };
 
 use mio::unix::pipe::{Receiver, Sender};
 
-use crate::{op::Recv, task::RUNTIME};
+use crate::{
+    driver::{AsRegisteredFd, RegisteredFd},
+    op::Recv,
+    task::RUNTIME,
+};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
@@ -13,14 +17,20 @@ use crate::{op::Recv, task::RUNTIME};
 pub struct Event {
     sender: Sender,
     receiver: Receiver,
+    registered_fd: RegisteredFd,
 }
 
 impl Event {
     /// Create [`Event`].
     pub fn new() -> io::Result<Self> {
         let (sender, receiver) = mio::unix::pipe::new()?;
+        let registered_fd = RUNTIME.with(|runtime| runtime.register_fd(receiver.as_raw_fd()))?;
 
-        Ok(Self { sender, receiver })
+        Ok(Self {
+            sender,
+            receiver,
+            registered_fd,
+        })
     }
 
     /// Get a notify handle.
@@ -32,16 +42,16 @@ impl Event {
     pub async fn wait(&self) -> io::Result<()> {
         let buffer = Vec::with_capacity(8);
         // Trick: Recv uses readv which doesn't seek.
-        let op = Recv::new(self.receiver.as_raw_fd(), buffer);
+        let op = Recv::new(self.registered_fd, buffer);
         let (res, _) = RUNTIME.with(|runtime| runtime.submit(op)).await;
         res?;
         Ok(())
     }
 }
 
-impl AsRawFd for Event {
-    fn as_raw_fd(&self) -> RawFd {
-        self.receiver.as_raw_fd()
+impl AsRegisteredFd for Event {
+    fn as_registered_fd(&self) -> RegisteredFd {
+        self.registered_fd
     }
 }
 

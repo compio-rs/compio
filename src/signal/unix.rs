@@ -2,21 +2,19 @@
 
 #[cfg(feature = "lazy_cell")]
 use std::cell::LazyCell;
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    io,
-    os::fd::{AsRawFd, RawFd},
-};
+use std::{cell::RefCell, collections::HashMap, io};
 
 #[cfg(not(feature = "lazy_cell"))]
 use once_cell::unsync::Lazy as LazyCell;
 
-use crate::event::{Event, EventHandle};
+use crate::{
+    driver::{AsRegisteredFd, RegisteredFd},
+    event::{Event, EventHandle},
+};
 
 thread_local! {
     #[allow(clippy::type_complexity)]
-    static HANDLER: LazyCell<RefCell<HashMap<i32, HashMap<RawFd, EventHandle<'static>>>>> =
+    static HANDLER: LazyCell<RefCell<HashMap<i32, HashMap<RegisteredFd, EventHandle<'static>>>>> =
         LazyCell::new(|| RefCell::new(HashMap::new()));
 }
 
@@ -44,7 +42,7 @@ unsafe fn uninit(sig: i32) {
 
 fn register(sig: i32, fd: &Event) {
     unsafe { init(sig) };
-    let raw_fd = fd.as_raw_fd();
+    let registered_fd = fd.as_registered_fd();
     let handle = fd.handle();
     // Safety: we will unregister on drop.
     let handle: EventHandle<'static> = unsafe { std::mem::transmute(handle) };
@@ -53,11 +51,11 @@ fn register(sig: i32, fd: &Event) {
             .borrow_mut()
             .entry(sig)
             .or_default()
-            .insert(raw_fd, handle)
+            .insert(registered_fd, handle)
     });
 }
 
-fn unregister(sig: i32, fd: RawFd) {
+fn unregister(sig: i32, fd: RegisteredFd) {
     let need_uninit = HANDLER.with(|handler| {
         let mut handler = handler.borrow_mut();
         if let Some(fds) = handler.get_mut(&sig) {
@@ -94,7 +92,7 @@ impl SignalFd {
 
 impl Drop for SignalFd {
     fn drop(&mut self) {
-        unregister(self.sig, self.fd.as_raw_fd());
+        unregister(self.sig, self.fd.as_registered_fd());
     }
 }
 

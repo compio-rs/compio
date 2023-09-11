@@ -5,7 +5,7 @@ use mio::event::Event;
 pub use crate::driver::unix::op::*;
 use crate::{
     buf::{AsIoSlices, AsIoSlicesMut, IoBuf, IoBufMut},
-    driver::{Decision, OpCode},
+    driver::{mio::FilesRegistry, registered_fd::FDRegistry, Decision, OpCode},
     op::*,
 };
 
@@ -43,18 +43,22 @@ macro_rules! syscall {
 }
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
-    fn pre_submit(&mut self) -> io::Result<Decision> {
-        Ok(Decision::wait_readable(self.fd))
+    fn pre_submit(&mut self, fd_registry: &FilesRegistry) -> io::Result<Decision> {
+        Ok(Decision::wait_readable(fd_registry.get_raw_fd(self.fd)))
     }
 
-    fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(
+        &mut self,
+        event: &Event,
+        fd_registry: &FilesRegistry,
+    ) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_readable());
 
         let slice = self.buffer.as_uninit_slice();
 
         syscall!(
             break pread(
-                self.fd,
+                fd_registry.get_raw_fd(self.fd),
                 slice.as_mut_ptr() as _,
                 slice.len() as _,
                 self.offset as _
@@ -64,18 +68,22 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
 }
 
 impl<T: IoBuf> OpCode for WriteAt<T> {
-    fn pre_submit(&mut self) -> io::Result<Decision> {
-        Ok(Decision::wait_writable(self.fd))
+    fn pre_submit(&mut self, fd_registry: &FilesRegistry) -> io::Result<Decision> {
+        Ok(Decision::wait_writable(fd_registry.get_raw_fd(self.fd)))
     }
 
-    fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(
+        &mut self,
+        event: &Event,
+        fd_registry: &FilesRegistry,
+    ) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_writable());
 
         let slice = self.buffer.as_slice();
 
         syscall!(
             break pwrite(
-                self.fd,
+                fd_registry.get_raw_fd(self.fd),
                 slice.as_ptr() as _,
                 slice.len() as _,
                 self.offset as _
@@ -85,31 +93,41 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
 }
 
 impl OpCode for Sync {
-    fn pre_submit(&mut self) -> io::Result<Decision> {
-        Ok(Decision::Completed(syscall!(fsync(self.fd))?))
+    fn pre_submit(&mut self, fd_registry: &FilesRegistry) -> io::Result<Decision> {
+        Ok(Decision::Completed(syscall!(fsync(
+            fd_registry.get_raw_fd(self.fd)
+        ))?))
     }
 
-    fn on_event(&mut self, _: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(
+        &mut self,
+        _: &Event,
+        _fd_registry: &FilesRegistry,
+    ) -> std::io::Result<ControlFlow<usize>> {
         unreachable!("Sync operation should not be submitted to mio")
     }
 }
 
 impl OpCode for Accept {
-    fn pre_submit(&mut self) -> io::Result<Decision> {
+    fn pre_submit(&mut self, fd_registry: &FilesRegistry) -> io::Result<Decision> {
         syscall!(
             accept(
-                self.fd,
+                fd_registry.get_raw_fd(self.fd),
                 &mut self.buffer as *mut _ as *mut _,
                 &mut self.addr_len
-            ) or wait_readable(self.fd)
+            ) or wait_readable(fd_registry.get_raw_fd(self.fd))
         )
     }
 
-    fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(
+        &mut self,
+        event: &Event,
+        fd_registry: &FilesRegistry,
+    ) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_readable());
 
         match syscall!(accept(
-            self.fd,
+            fd_registry.get_raw_fd(self.fd),
             &mut self.buffer as *mut _ as *mut _,
             &mut self.addr_len
         )) {
@@ -121,20 +139,24 @@ impl OpCode for Accept {
 }
 
 impl OpCode for Connect {
-    fn pre_submit(&mut self) -> io::Result<Decision> {
+    fn pre_submit(&mut self, fd_registry: &FilesRegistry) -> io::Result<Decision> {
         syscall!(
-            connect(self.fd, self.addr.as_ptr(), self.addr.len()) or wait_writable(self.fd)
+            connect(fd_registry.get_raw_fd(self.fd), self.addr.as_ptr(), self.addr.len()) or wait_writable(fd_registry.get_raw_fd(self.fd))
         )
     }
 
-    fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(
+        &mut self,
+        event: &Event,
+        fd_registry: &FilesRegistry,
+    ) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_writable());
 
         let mut err: libc::c_int = 0;
         let mut err_len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
 
         syscall!(getsockopt(
-            self.fd,
+            fd_registry.get_raw_fd(self.fd),
             libc::SOL_SOCKET,
             libc::SO_ERROR,
             &mut err as *mut _ as *mut _,
@@ -150,53 +172,81 @@ impl OpCode for Connect {
 }
 
 impl<T: AsIoSlicesMut> OpCode for RecvImpl<T> {
-    fn pre_submit(&mut self) -> io::Result<Decision> {
-        Ok(Decision::wait_readable(self.fd))
+    fn pre_submit(&mut self, fd_registry: &FilesRegistry) -> io::Result<Decision> {
+        Ok(Decision::wait_readable(fd_registry.get_raw_fd(self.fd)))
     }
 
-    fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(
+        &mut self,
+        event: &Event,
+        fd_registry: &FilesRegistry,
+    ) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_readable());
 
         self.slices = unsafe { self.buffer.as_io_slices_mut() };
-        syscall!(break readv(self.fd, self.slices.as_ptr() as _, self.slices.len() as _,))
+        syscall!(
+            break readv(
+                fd_registry.get_raw_fd(self.fd),
+                self.slices.as_ptr() as _,
+                self.slices.len() as _,
+            )
+        )
     }
 }
 
 impl<T: AsIoSlices> OpCode for SendImpl<T> {
-    fn pre_submit(&mut self) -> io::Result<Decision> {
-        Ok(Decision::wait_writable(self.fd))
+    fn pre_submit(&mut self, fd_registry: &FilesRegistry) -> io::Result<Decision> {
+        Ok(Decision::wait_writable(fd_registry.get_raw_fd(self.fd)))
     }
 
-    fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(
+        &mut self,
+        event: &Event,
+        fd_registry: &FilesRegistry,
+    ) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_writable());
 
         self.slices = unsafe { self.buffer.as_io_slices() };
-        syscall!(break writev(self.fd, self.slices.as_ptr() as _, self.slices.len() as _,))
+        syscall!(
+            break writev(
+                fd_registry.get_raw_fd(self.fd),
+                self.slices.as_ptr() as _,
+                self.slices.len() as _,
+            )
+        )
     }
 }
 
 impl<T: AsIoSlicesMut> OpCode for RecvFromImpl<T> {
-    fn pre_submit(&mut self) -> io::Result<Decision> {
+    fn pre_submit(&mut self, fd_registry: &FilesRegistry) -> io::Result<Decision> {
         self.set_msg();
-        syscall!(recvmsg(self.fd, &mut self.msg, 0) or wait_readable(self.fd))
+        syscall!(recvmsg(fd_registry.get_raw_fd(self.fd), &mut self.msg, 0) or wait_readable(fd_registry.get_raw_fd(self.fd)))
     }
 
-    fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(
+        &mut self,
+        event: &Event,
+        fd_registry: &FilesRegistry,
+    ) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_readable());
 
-        syscall!(break recvmsg(self.fd, &mut self.msg, 0))
+        syscall!(break recvmsg(fd_registry.get_raw_fd(self.fd), &mut self.msg, 0))
     }
 }
 
 impl<T: AsIoSlices> OpCode for SendToImpl<T> {
-    fn pre_submit(&mut self) -> io::Result<Decision> {
+    fn pre_submit(&mut self, fd_registry: &FilesRegistry) -> io::Result<Decision> {
         self.set_msg();
-        syscall!(sendmsg(self.fd, &self.msg, 0) or wait_writable(self.fd))
+        syscall!(sendmsg(fd_registry.get_raw_fd(self.fd), &self.msg, 0) or wait_writable(fd_registry.get_raw_fd(self.fd)))
     }
 
-    fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(
+        &mut self,
+        event: &Event,
+        fd_registry: &FilesRegistry,
+    ) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_writable());
 
-        syscall!(break sendmsg(self.fd, &self.msg, 0))
+        syscall!(break sendmsg(fd_registry.get_raw_fd(self.fd), &self.msg, 0))
     }
 }

@@ -32,7 +32,10 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::driver::{Entry, Poller, RegisteredFileDescriptors};
+use crate::driver::{
+    registered_fd::{FDRegistry, RegisteredFileAllocator},
+    Entry, Poller, RegisteredFileDescriptors,
+};
 
 pub(crate) mod op;
 
@@ -384,7 +387,7 @@ impl RegisteredFileDescriptors for Driver {
 }
 
 impl FDRegistry for Driver {
-    fn registered_files(&self) -> RawFd {
+    fn registered_files(&self) -> &[RawFd] {
         &self.registered_files
     }
 

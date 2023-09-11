@@ -15,7 +15,7 @@ use crate::{
         AsIoSlices, AsIoSlicesMut, BufWrapper, IntoInner, IoBuf, IoBufMut, OneOrVec,
         VectoredBufWrapper, WrapBuf,
     },
-    driver::{sockaddr_storage, socklen_t, RawFd, RegisteredFd},
+    driver::{sockaddr_storage, socklen_t, RegisteredFd},
     BufResult,
 };
 
@@ -88,32 +88,6 @@ impl<T: IoBufMut> IntoInner for ReadAt<T> {
     }
 }
 
-// Read unregistered file at specified position into specified buffer.
-#[derive(Debug)]
-pub(crate) struct UnregisteredReadAt<T: IoBufMut> {
-    pub(crate) fd: RawFd,
-    pub(crate) offset: usize,
-    pub(crate) buffer: BufWrapper<T>,
-}
-
-impl<T: IoBufMut> UnregisteredReadAt<T> {
-    // Create [`UnregisteredReadAt`].
-    pub(crate) fn new(fd: RawFd, offset: usize, buffer: T) -> Self {
-        Self {
-            fd,
-            offset,
-            buffer: BufWrapper::new(buffer),
-        }
-    }
-}
-
-impl<T: IoBufMut> IntoInner for UnregisteredReadAt<T> {
-    type Inner = BufWrapper<T>;
-
-    fn into_inner(self) -> Self::Inner {
-        self.buffer
-    }
-}
 /// Write a file at specified position from specified buffer.
 #[derive(Debug)]
 pub struct WriteAt<T: IoBuf> {
