@@ -92,8 +92,8 @@ impl TcpListener {
     ///
     /// let addr = listener.local_addr().expect("Couldn't get local address");
     /// assert_eq!(
-    ///     addr,
-    ///     SockAddr::from(SocketAddr::V4(SocketAddrV4::new(
+    ///     addr.as_socket().unwrap(),
+    ///     SocketAddr::from(SocketAddr::V4(SocketAddrV4::new(
     ///         Ipv4Addr::new(127, 0, 0, 1),
     ///         8080
     ///     )))

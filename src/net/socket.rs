@@ -78,7 +78,10 @@ impl Socket {
     }
 
     pub fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
-        Self::from_socket2(Socket2::new(domain, ty, protocol)?)
+        let socket = Socket2::new(domain, ty, protocol)?;
+        #[cfg(unix)]
+        socket.set_nonblocking(true)?;
+        Self::from_socket2(socket)
     }
 
     pub fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
@@ -109,13 +112,13 @@ impl Socket {
             _op.update_context()?;
             Ok(())
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(unix)]
         {
             res.map(|_| ())
         }
     }
 
-    #[cfg(all(feature = "runtime", target_os = "linux"))]
+    #[cfg(all(feature = "runtime", unix))]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         use std::os::fd::FromRawFd;
 

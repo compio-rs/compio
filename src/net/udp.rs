@@ -159,10 +159,10 @@ impl UdpSocket {
     /// use compio::net::UdpSocket;
     /// use socket2::SockAddr;
     ///
-    /// let addr: SockAddr = "127.0.0.1:8080".parse::<SocketAddr>().unwrap().into();
+    /// let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
     /// let sock = UdpSocket::bind(&addr).unwrap();
     /// // the address the socket is bound to
-    /// let local_addr = sock.local_addr().unwrap();
+    /// let local_addr = sock.local_addr().unwrap().as_socket().unwrap();
     /// assert_eq!(local_addr, addr);
     /// ```
     pub fn local_addr(&self) -> io::Result<SockAddr> {

@@ -2,6 +2,8 @@
 //! Some types differ by compilation target.
 
 use std::{io, mem::MaybeUninit, time::Duration};
+#[cfg(unix)]
+mod unix;
 
 cfg_if::cfg_if! {
     if #[cfg(target_os = "windows")] {
@@ -10,6 +12,9 @@ cfg_if::cfg_if! {
     } else if #[cfg(target_os = "linux")] {
         mod iour;
         pub use iour::*;
+    } else if #[cfg(unix)]{
+        mod mio;
+        pub use self::mio::*;
     }
 }
 
@@ -80,6 +85,7 @@ pub trait Poller {
     /// # Safety
     ///
     /// - `op` should be alive until [`Poller::poll`] returns its result.
+    /// - `user_data` should be unique.
     unsafe fn push(&mut self, op: &mut (impl OpCode + 'static), user_data: usize)
     -> io::Result<()>;
 

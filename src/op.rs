@@ -7,6 +7,9 @@ use std::io::{IoSlice, IoSliceMut};
 
 use socket2::SockAddr;
 
+#[cfg(target_os = "windows")]
+pub use crate::driver::op::ConnectNamedPipe;
+pub use crate::driver::op::{Accept, RecvFromImpl, SendToImpl};
 use crate::{
     buf::{
         AsIoSlices, AsIoSlicesMut, BufWrapper, IntoInner, IoBuf, IoBufMut, OneOrVec,
@@ -57,10 +60,6 @@ impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t)> {
         (res, buffer)
     }
 }
-
-#[cfg(target_os = "windows")]
-pub use crate::driver::op::ConnectNamedPipe;
-pub use crate::driver::op::{Accept, RecvFromImpl, SendToImpl};
 
 /// Read a file at specified position into specified buffer.
 #[derive(Debug)]

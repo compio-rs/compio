@@ -5,7 +5,7 @@
 [![docs.rs](https://img.shields.io/badge/docs.rs-compio-latest)](https://docs.rs/compio)
 [![Azure DevOps builds](https://strawberry-vs.visualstudio.com/compio/_apis/build/status/Berrysoft.compio?branch=master)](https://strawberry-vs.visualstudio.com/compio/_build)
 
-A thread-per-core Rust runtime with IOCP/io_uring.
+A thread-per-core Rust runtime with IOCP/io_uring/mio.
 The name comes from "completion-based IO".
 This crate is inspired by [monoio](https://github.com/bytedance/monoio/).
 
@@ -22,6 +22,7 @@ and `tokio` won't public APIs to control `mio` before `mio` reaches 1.0.
 ## Quick start
 
 With `runtime` feature enabled, we can use the high level APIs to perform fs & net IO.
+
 ```rust,no_run
 use compio::{fs::File, task::block_on};
 
@@ -36,6 +37,7 @@ println!("{}", buffer);
 ```
 
 While you can also control the low-level driver manually:
+
 ```rust,no_run
 use compio::{
     buf::IntoInner,

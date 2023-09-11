@@ -45,6 +45,25 @@ jobs:
           cargo test --features all
         displayName: TestStable
 
+  - job: Test_Mac
+    strategy:
+      matrix:
+        ventura:
+          image: macOS-13
+        monterey:
+          image: macOS-12
+    pool:
+      vmImage: $(image)
+
+    steps:
+      - script: |
+          rustup toolchain install nightly
+          cargo +nightly test --features all,nightly --no-default-features
+        displayName: TestNightly
+      - script: |
+          cargo test --features all
+        displayName: TestStable
+
   - job: Doc
     strategy:
       matrix:
@@ -52,11 +71,13 @@ jobs:
           image: windows-latest
         linux:
           image: ubuntu-latest
+        macos:
+          image: macOS-latest
     pool:
       vmImage: $(image)
 
     steps:
       - script: |
           rustup toolchain install nightly
-          cargo +nightly doc --features all --no-deps
+          cargo +nightly doc --all-features --no-deps
         displayName: Build docs
