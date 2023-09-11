@@ -40,6 +40,7 @@ pub struct EventHandle<'a> {
     _p: PhantomData<&'a Event>,
 }
 
+// Safety: IOCP handle is thread safe.
 unsafe impl Send for EventHandle<'_> {}
 unsafe impl Sync for EventHandle<'_> {}
 

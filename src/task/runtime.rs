@@ -42,6 +42,7 @@ impl Runtime {
         self.driver.borrow().as_raw_fd()
     }
 
+    // Safety: the return runnable should be scheduled.
     unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> (Runnable, Task<F::Output>) {
         let schedule = move |runnable| self.runnables.borrow_mut().push_back(runnable);
         let (runnable, task) = async_task::spawn_unchecked(future, schedule);
@@ -95,6 +96,7 @@ impl Runtime {
             }
             Err(e) => {
                 let op = op_runtime.remove(user_data);
+                // Safety: we ensure the type of op.
                 Either::Right(ready((Err(e), unsafe { op.op.unwrap().into_inner::<T>() })))
             }
         }

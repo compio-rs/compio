@@ -4,6 +4,7 @@ use std::{
     marker::PhantomData,
     mem::ManuallyDrop,
     pin::Pin,
+    ptr::NonNull,
     task::{Context, Poll, Waker},
 };
 
@@ -11,27 +12,27 @@ use slab::Slab;
 
 use crate::{driver::OpCode, key::Key};
 
-pub struct RawOp(*mut dyn OpCode);
+pub struct RawOp(NonNull<dyn OpCode>);
 
 impl RawOp {
     pub fn new(op: impl OpCode + 'static) -> Self {
         let op = Box::new(op);
-        Self(Box::into_raw(op as Box<dyn OpCode>))
+        Self(unsafe { NonNull::new_unchecked(Box::into_raw(op as Box<dyn OpCode>)) })
     }
 
     pub unsafe fn as_mut<T: OpCode>(&mut self) -> &mut T {
-        &mut *(self.0 as *mut T)
+        self.0.cast().as_mut()
     }
 
     pub unsafe fn into_inner<T: OpCode>(self) -> T {
         let this = ManuallyDrop::new(self);
-        *Box::from_raw(this.0 as *mut T)
+        *Box::from_raw(this.0.cast().as_ptr())
     }
 }
 
 impl Drop for RawOp {
     fn drop(&mut self) {
-        drop(unsafe { Box::from_raw(self.0) })
+        drop(unsafe { Box::from_raw(self.0.as_ptr()) })
     }
 }
 
@@ -77,22 +78,28 @@ impl OpRuntime {
     }
 
     pub fn update_result<T>(&mut self, key: Key<T>, result: io::Result<usize>) {
-        let op = self.ops.get_mut(*key).unwrap();
-        if let Some(waker) = op.waker.take() {
-            waker.wake();
-        }
-        op.result = Some(result);
-        if op.cancelled {
-            self.remove(key);
+        if let Some(op) = self.ops.get_mut(*key) {
+            if let Some(waker) = op.waker.take() {
+                waker.wake();
+            }
+            op.result = Some(result);
+            if op.cancelled {
+                self.remove(key);
+            }
         }
     }
 
     pub fn has_result<T>(&mut self, key: Key<T>) -> bool {
-        self.ops.get_mut(*key).unwrap().result.is_some()
+        self.ops
+            .get_mut(*key)
+            .map(|op| op.result.is_some())
+            .unwrap_or_default()
     }
 
     pub fn cancel<T>(&mut self, key: Key<T>) {
-        self.ops.get_mut(*key).unwrap().cancelled = true;
+        if let Some(ops) = self.ops.get_mut(*key) {
+            ops.cancelled = true;
+        }
     }
 
     pub fn remove<T>(&mut self, key: Key<T>) -> RegisteredOp {

@@ -26,7 +26,7 @@ pub(crate) mod op;
 pub(crate) mod time;
 
 thread_local! {
-    pub(crate) static RUNTIME: LazyCell<Runtime> = LazyCell::new(|| Runtime::new().unwrap());
+    pub(crate) static RUNTIME: LazyCell<Runtime> = LazyCell::new(|| Runtime::new().expect("cannot create compio runtime"));
 }
 
 /// Start a compio runtime and block on the future till it completes.

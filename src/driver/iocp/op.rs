@@ -185,13 +185,19 @@ impl Accept {
     /// Get the remote address from the inner buffer.
     pub fn into_addr(self) -> io::Result<SockAddr> {
         let get_addrs_fn = GET_ADDRS
-            .get_or_try_init(|| unsafe { get_wsa_fn(self.fd, WSAID_GETACCEPTEXSOCKADDRS) })?;
+            .get_or_try_init(|| unsafe { get_wsa_fn(self.fd, WSAID_GETACCEPTEXSOCKADDRS) })?
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "cannot retrieve GetAcceptExSockAddrs",
+                )
+            })?;
         let mut local_addr: *mut SOCKADDR = null_mut();
         let mut local_addr_len = 0;
         let mut remote_addr: *mut SOCKADDR = null_mut();
         let mut remote_addr_len = 0;
         unsafe {
-            (get_addrs_fn.unwrap())(
+            get_addrs_fn(
                 &self.buffer as *const _ as *const _,
                 0,
                 0,
@@ -208,9 +214,13 @@ impl Accept {
 
 impl OpCode for Accept {
     unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let accept_fn = ACCEPT_EX.get_or_try_init(|| get_wsa_fn(self.fd, WSAID_ACCEPTEX))?;
+        let accept_fn = ACCEPT_EX
+            .get_or_try_init(|| get_wsa_fn(self.fd, WSAID_ACCEPTEX))?
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::Unsupported, "cannot retrieve AcceptEx")
+            })?;
         let mut received = 0;
-        let res = accept_fn.unwrap()(
+        let res = accept_fn(
             self.fd as _,
             self.accept_fd as _,
             &mut self.buffer as *mut _ as *mut _,
@@ -248,9 +258,13 @@ impl Connect {
 
 impl OpCode for Connect {
     unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let connect_fn = CONNECT_EX.get_or_try_init(|| get_wsa_fn(self.fd, WSAID_CONNECTEX))?;
+        let connect_fn = CONNECT_EX
+            .get_or_try_init(|| get_wsa_fn(self.fd, WSAID_CONNECTEX))?
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::Unsupported, "cannot retrieve ConnectEx")
+            })?;
         let mut sent = 0;
-        let res = connect_fn.unwrap()(
+        let res = connect_fn(
             self.fd as _,
             self.addr.as_ptr(),
             self.addr.len(),

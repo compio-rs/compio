@@ -66,7 +66,9 @@ impl TimerRuntime {
     }
 
     pub fn update_waker(&mut self, key: usize, waker: Waker) {
-        *self.tasks.get_mut(key).unwrap() = Some(waker);
+        if let Some(w) = self.tasks.get_mut(key) {
+            *w = Some(waker);
+        }
     }
 
     pub fn cancel(&mut self, key: usize) {

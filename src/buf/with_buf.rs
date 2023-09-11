@@ -14,10 +14,20 @@ pub trait WrapBufMut {
 }
 
 pub trait AsIoSlices: WrapBuf {
+    /// # Safety
+    ///
+    /// The return slice will not live longer than self.
+    /// It is static to provide convience from writing self-referenced
+    /// structure.
     unsafe fn as_io_slices(&self) -> OneOrVec<IoSlice<'static>>;
 }
 
 pub trait AsIoSlicesMut: WrapBufMut + AsIoSlices {
+    /// # Safety
+    ///
+    /// The return slice will not live longer than self.
+    /// It is static to provide convience from writing self-referenced
+    /// structure.
     unsafe fn as_io_slices_mut(&mut self) -> OneOrVec<IoSliceMut<'static>>;
 }
 
