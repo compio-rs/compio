@@ -26,6 +26,30 @@ jobs:
           cargo test --features all --target $(target)
         displayName: TestStable
 
+  - job: Test_Wine
+    strategy:
+      matrix:
+        x64:
+          target: x86_64-pc-windows-msvc
+    pool:
+      vmImage: ubuntu-latest
+
+    steps:
+      - script: |
+          cat <<EOT >> test_nightly.sh
+          rustup toolchain install nightly
+          rustup +nightly target install $(target)
+          cargo +nightly xwin test --features=all,nightly --target $(target) -Z doctest-xcompile
+          EOT
+          docker run --rm -t -v $(pwd):/io -w /io messense/cargo-xwin bash test_nightly.sh
+        displayName: TestNightly
+      - script: |
+          cat <<EOT >> test_stable.sh
+          cargo xwin test --features=all --target $(target)
+          EOT
+          docker run --rm -t -v $(pwd):/io -w /io messense/cargo-xwin bash test_stable.sh
+        displayName: TestNightly
+
   - job: Test_Ubuntu
     strategy:
       matrix:
