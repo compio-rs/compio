@@ -44,13 +44,12 @@ fn file_with_options(
 }
 
 impl File {
-    #[cfg(feature = "runtime")]
-    pub(crate) async fn with_options(
-        path: impl AsRef<Path>,
-        options: OpenOptions,
-    ) -> io::Result<Self> {
+    pub(crate) fn with_options(path: impl AsRef<Path>, options: OpenOptions) -> io::Result<Self> {
         // TODO: implement OpenAt operation
         let inner = file_with_options(path, options.0)?;
+        #[cfg(not(feature = "runtime"))]
+        let registered_fd = crate::driver::UNREGISTERED;
+        #[cfg(feature = "runtime")]
         let registered_fd = RUNTIME.with(|runtime| runtime.register_fd(inner.as_raw_fd()))?;
 
         let this = Self {
@@ -63,9 +62,8 @@ impl File {
     /// Attempts to open a file in read-only mode.
     ///
     /// See the [`OpenOptions::open`] method for more details.
-    #[cfg(feature = "runtime")]
-    pub async fn open(path: impl AsRef<Path>) -> io::Result<Self> {
-        OpenOptions::new().read(true).open(path).await
+    pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
+        OpenOptions::new().read(true).open(path)
     }
 
     /// Opens a file in write-only mode.
@@ -74,19 +72,16 @@ impl File {
     /// and will truncate it if it does.
     ///
     /// See the [`OpenOptions::open`] function for more details.
-    #[cfg(feature = "runtime")]
-    pub async fn create(path: impl AsRef<Path>) -> io::Result<Self> {
+    pub fn create(path: impl AsRef<Path>) -> io::Result<Self> {
         OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
             .open(path)
-            .await
     }
 
     /// Queries metadata about the underlying file.
-    #[cfg(feature = "runtime")]
-    pub async fn metadata(&self) -> io::Result<Metadata> {
+    pub fn metadata(&self) -> io::Result<Metadata> {
         self.inner.metadata()
     }
 

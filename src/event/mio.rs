@@ -16,6 +16,8 @@ use crate::{
 #[derive(Debug)]
 pub struct Event {
     sender: Sender,
+    // we use receiver's raw fd
+    #[allow(dead_code)]
     receiver: Receiver,
     registered_fd: RegisteredFd,
 }

@@ -34,7 +34,7 @@ fn read(c: &mut Criterion) {
         b.to_async(&runtime).iter(|| async {
             use tokio::io::AsyncReadExt;
 
-            let mut file = tokio::fs::File::open("Cargo.toml").await.unwrap();
+            let mut file = tokio::fs::File::open("Cargo.toml").unwrap();
             let mut buffer = Vec::with_capacity(1024);
             file.read_to_end(&mut buffer).await.unwrap();
             buffer
@@ -78,7 +78,7 @@ fn write(c: &mut Criterion) {
         b.to_async(&runtime).iter(|| async {
             use tokio::io::AsyncWriteExt;
 
-            let mut file = tokio::fs::File::create(temp_file.path()).await.unwrap();
+            let mut file = tokio::fs::File::create(temp_file.path()).unwrap();
             file.write_all(CONTENT).await.unwrap();
         })
     });
