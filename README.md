@@ -12,12 +12,16 @@ This crate is inspired by [monoio](https://github.com/bytedance/monoio/).
 ## Why not Tokio?
 
 Tokio is a great generic-propose async runtime.
-However, it is poll-based, and even uses [undocumented APIs](https://notgull.github.io/device-afd/) on Windows.
+However, it is poll-based, and even uses [undocumented APIs](https://notgull.net/device-afd/) on Windows.
 We would like some new high-level APIs to perform IOCP/io_uring.
 
 Unlike `tokio-uring`, this runtime isn't Tokio-based.
 This is mainly because that no public APIs to control IOCP in `mio`,
 and `tokio` won't public APIs to control `mio` before `mio` reaches 1.0.
+
+## Why not monoio/tokio-uring?
+
+They don't support Windows.
 
 ## Quick start
 
