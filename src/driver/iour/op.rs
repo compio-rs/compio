@@ -1,7 +1,7 @@
 use io_uring::{
     opcode,
     squeue::Entry,
-    types::{Fd, Fixed, FsyncFlags},
+    types::{Fixed, FsyncFlags},
 };
 use libc::sockaddr_storage;
 
@@ -22,15 +22,6 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
         )
         .offset(self.offset as _)
         .build()
-    }
-}
-
-impl<T: IoBufMut> OpCode for UnregisteredReadAt<T> {
-    fn create_entry(&mut self) -> Entry {
-        let slice = self.buffer.as_uninit_slice();
-        opcode::Read::new(Fd(self.fd), slice.as_mut_ptr() as _, slice.len() as _)
-            .offset(self.offset as _)
-            .build()
     }
 }
 

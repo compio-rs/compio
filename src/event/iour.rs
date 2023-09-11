@@ -1,9 +1,13 @@
 use std::{
     io,
-    os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd},
+    os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd},
 };
 
-use crate::{op::ReadAt, task::RUNTIME};
+use crate::{
+    driver::{AsRegisteredFd, RegisteredFd},
+    op::ReadAt,
+    task::RUNTIME,
+};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
