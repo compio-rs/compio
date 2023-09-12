@@ -54,8 +54,11 @@ impl Socket {
 
     pub fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
         let socket = Socket2::new(domain, ty, protocol)?;
-        // on Linux and Windows we use native completion-based IO interfaces and are not
-        // interested to receive EAGAIN/EWOULDBLOCK as accept result
+        // On Linux we use blocking socket
+        // Newer kernels have the patch that allows to arm io_uring poll mechanism for
+        // non blocking socket when there is no connections in listen queue
+        //
+        // https://patchwork.kernel.org/project/linux-block/patch/f999615b-205c-49b7-b272-c4e42e45e09d@kernel.dk/#22949861
         #[cfg(all(unix, not(target_os = "linux")))]
         socket.set_nonblocking(true)?;
         Ok(Self::from_socket2(socket))
