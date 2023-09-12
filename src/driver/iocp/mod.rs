@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    ffi::c_void,
     io,
     mem::MaybeUninit,
     os::windows::{
@@ -10,7 +9,7 @@ use std::{
             OwnedHandle, RawHandle,
         },
     },
-    ptr::{null, NonNull},
+    ptr::NonNull,
     task::Poll,
     time::Duration,
 };
@@ -23,7 +22,6 @@ use windows_sys::Win32::{
     System::{
         SystemServices::ERROR_SEVERITY_ERROR,
         Threading::INFINITE,
-        WindowsProgramming::{FILE_INFORMATION_CLASS, IO_STATUS_BLOCK},
         IO::{
             CreateIoCompletionPort, GetQueuedCompletionStatusEx, PostQueuedCompletionStatus,
             OVERLAPPED,
@@ -176,50 +174,6 @@ pub(crate) fn post_driver(
     unsafe { post_driver_raw(handle, result, overlapped_ptr.cast()) }
 }
 
-unsafe fn detach_iocp(fd: usize) -> io::Result<()> {
-    #[link(name = "ntdll")]
-    extern "system" {
-        fn NtSetInformationFile(
-            FileHandle: usize,
-            IoStatusBlock: *mut IO_STATUS_BLOCK,
-            FileInformation: *const c_void,
-            Length: u32,
-            FileInformationClass: FILE_INFORMATION_CLASS,
-        ) -> NTSTATUS;
-    }
-    #[allow(non_upper_case_globals)]
-    const FileReplaceCompletionInformation: FILE_INFORMATION_CLASS = 61;
-    #[repr(C)]
-    #[allow(non_camel_case_types)]
-    #[allow(non_snake_case)]
-    struct FILE_COMPLETION_INFORMATION {
-        Port: usize,
-        Key: *const c_void,
-    }
-
-    let mut block = std::mem::zeroed();
-    let info = FILE_COMPLETION_INFORMATION {
-        Port: 0,
-        Key: null(),
-    };
-
-    NtSetInformationFile(
-        fd as _,
-        &mut block,
-        &info as *const _ as _,
-        std::mem::size_of_val(&info) as _,
-        FileReplaceCompletionInformation,
-    );
-    let res = block.Anonymous.Status;
-    if res != STATUS_SUCCESS {
-        Err(io::Error::from_raw_os_error(unsafe {
-            RtlNtStatusToDosError(res) as _
-        }))
-    } else {
-        Ok(())
-    }
-}
-
 fn ntstatus_from_win32(x: i32) -> NTSTATUS {
     if x <= 0 {
         x
@@ -230,9 +184,6 @@ fn ntstatus_from_win32(x: i32) -> NTSTATUS {
 
 impl Poller for Driver {
     fn attach(&mut self, fd: RawFd) -> io::Result<()> {
-        unsafe {
-            detach_iocp(fd as _)?;
-        }
         let port = unsafe { CreateIoCompletionPort(fd as _, self.port.as_raw_handle() as _, 0, 0) };
         if port == 0 {
             Err(io::Error::last_os_error())

@@ -104,9 +104,16 @@ pub struct NamedPipeServer {
 
 impl NamedPipeServer {
     pub(crate) fn from_handle(handle: OwnedHandle) -> io::Result<Self> {
-        #[cfg(feature = "runtime")]
-        RUNTIME.with(|runtime| runtime.attach(handle.as_raw_handle() as _))?;
         Ok(unsafe { Self::from_raw_fd(handle.into_raw_handle()) })
+    }
+
+    /// Creates a new independently owned handle to the underlying file handle.
+    ///
+    /// It does not clear the attach state.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        Ok(Self {
+            handle: self.handle.try_clone()?,
+        })
     }
 
     /// Retrieves information about the named pipe the server is associated
@@ -167,6 +174,7 @@ impl NamedPipeServer {
     /// ```
     #[cfg(feature = "runtime")]
     pub async fn connect(&self) -> io::Result<()> {
+        self.handle.attach()?;
         let op = ConnectNamedPipe::new(self.as_raw_fd());
         RUNTIME.with(|runtime| runtime.submit(op)).await.0?;
         Ok(())
@@ -280,9 +288,16 @@ pub struct NamedPipeClient {
 
 impl NamedPipeClient {
     pub(crate) fn from_handle(handle: OwnedHandle) -> io::Result<Self> {
-        #[cfg(feature = "runtime")]
-        RUNTIME.with(|runtime| runtime.attach(handle.as_raw_handle() as _))?;
         Ok(unsafe { Self::from_raw_fd(handle.into_raw_handle()) })
+    }
+
+    /// Creates a new independently owned handle to the underlying file handle.
+    ///
+    /// It does not clear the attach state.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        Ok(Self {
+            handle: self.handle.try_clone()?,
+        })
     }
 
     /// Retrieves information about the named pipe the client is associated

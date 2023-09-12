@@ -63,6 +63,15 @@ impl TcpListener {
         })
     }
 
+    /// Creates a new independently owned handle to the underlying socket.
+    ///
+    /// It does not clear the attach state.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        Ok(Self {
+            inner: self.inner.try_clone()?,
+        })
+    }
+
     /// Accepts a new incoming connection from this listener.
     ///
     /// This function will yield once a new TCP connection is established. When
@@ -157,6 +166,15 @@ impl TcpStream {
             Ok(Self { inner: socket })
         })
         .await
+    }
+
+    /// Creates a new independently owned handle to the underlying socket.
+    ///
+    /// It does not clear the attach state.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        Ok(Self {
+            inner: self.inner.try_clone()?,
+        })
     }
 
     /// Returns the socket address of the remote peer of this TCP connection.

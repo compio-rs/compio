@@ -122,6 +122,15 @@ impl UdpSocket {
         super::each_addr(addr, |addr| self.inner.connect(&addr))
     }
 
+    /// Creates a new independently owned handle to the underlying socket.
+    ///
+    /// It does not clear the attach state.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        Ok(Self {
+            inner: self.inner.try_clone()?,
+        })
+    }
+
     /// Returns the socket address of the remote peer this socket was connected
     /// to.
     ///

@@ -20,6 +20,10 @@ pub mod event;
 mod key;
 #[cfg(feature = "runtime")]
 pub(crate) use key::Key;
+#[cfg(feature = "runtime")]
+mod attacher;
+#[cfg(feature = "runtime")]
+pub(crate) use attacher::Attacher;
 #[cfg(feature = "signal")]
 pub mod signal;
 #[cfg(feature = "runtime")]
@@ -35,8 +39,28 @@ pub mod time;
 /// successfully.
 pub type BufResult<T, B> = (std::io::Result<T>, B);
 
+#[cfg(feature = "runtime")]
+macro_rules! buf_try {
+    ($e:expr) => {{
+        match $e {
+            (Ok(res), buf) => (res, buf),
+            (Err(e), buf) => return (Err(e), buf),
+        }
+    }};
+    ($e:expr, $b:expr) => {{
+        let buf = $b;
+        match $e {
+            Ok(res) => (res, buf),
+            Err(e) => return (Err(e), buf),
+        }
+    }};
+}
+
+#[cfg(feature = "runtime")]
+pub(crate) use buf_try;
+
 macro_rules! impl_raw_fd {
-    ($t:ty, $inner:ident) => {
+    ($t:ty, $inner:ident $(, $attacher:ident)?) => {
         impl crate::driver::AsRawFd for $t {
             fn as_raw_fd(&self) -> crate::driver::RawFd {
                 self.$inner.as_raw_fd()
@@ -46,6 +70,10 @@ macro_rules! impl_raw_fd {
             unsafe fn from_raw_fd(fd: crate::driver::RawFd) -> Self {
                 Self {
                     $inner: crate::driver::FromRawFd::from_raw_fd(fd),
+                    $(
+                        #[cfg(feature = "runtime")]
+                        $attacher: crate::Attacher::new(),
+                    )?
                 }
             }
         }

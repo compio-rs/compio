@@ -1,8 +1,71 @@
-use compio::{buf::*, fs::File};
+use std::net::Ipv4Addr;
+
+use compio::{
+    buf::*,
+    fs::File,
+    net::{TcpListener, TcpStream},
+};
 use tempfile::NamedTempFile;
 
-// Ignore this test because we need to keep the buffer until
-// the operation succeeds.
+#[test]
+fn multi_threading() {
+    const DATA: &str = "Hello world!";
+
+    compio::task::block_on(async {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let (tx, (rx, _)) =
+            futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
+
+        tx.send_all(DATA).await.0.unwrap();
+
+        let rx = SendWrapper(rx);
+        if let Err(e) = std::thread::spawn(move || {
+            compio::task::block_on(async {
+                let buffer = Vec::with_capacity(DATA.len());
+                let (n, buffer) = rx.recv_exact(buffer).await;
+                assert_eq!(n.unwrap(), buffer.len());
+                assert_eq!(DATA, String::from_utf8(buffer).unwrap());
+            });
+        })
+        .join()
+        {
+            std::panic::resume_unwind(e)
+        }
+    });
+}
+
+#[test]
+fn try_clone() {
+    const DATA: &str = "Hello world!";
+
+    compio::task::block_on(async {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let (tx, (rx, _)) =
+            futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
+
+        let tx = tx.try_clone().unwrap();
+        tx.send_all(DATA).await.0.unwrap();
+
+        let rx = SendWrapper(rx.try_clone().unwrap());
+        if let Err(e) = std::thread::spawn(move || {
+            compio::task::block_on(async {
+                let buffer = Vec::with_capacity(DATA.len());
+                let (n, buffer) = rx.recv_exact(buffer).await;
+                assert_eq!(n.unwrap(), buffer.len());
+                assert_eq!(DATA, String::from_utf8(buffer).unwrap());
+            });
+        })
+        .join()
+        {
+            std::panic::resume_unwind(e)
+        }
+    });
+}
+
 #[test]
 fn drop_on_complete() {
     use std::sync::Arc;
@@ -94,4 +157,16 @@ async fn poll_once(future: impl std::future::Future) {
         Poll::Ready(())
     })
     .await;
+}
+
+struct SendWrapper<T>(pub T);
+
+unsafe impl<T> Send for SendWrapper<T> {}
+
+impl<T> std::ops::Deref for SendWrapper<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
