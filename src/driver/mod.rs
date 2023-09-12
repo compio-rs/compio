@@ -142,3 +142,17 @@ impl Entry {
         self.result
     }
 }
+
+/// Trait that allows to process all completed operations and clear all
+/// completed entries
+pub trait BatchCompleter {
+    /// Iterator type over completed entries
+    type Iter<'a>: Iterator<Item = &'a Entry>
+    where
+        Self: 'a;
+
+    /// Iterate over all completed entries
+    fn completions(&self) -> Self::Iter<'_>;
+    /// Clear all completed entries
+    fn clear(&mut self);
+}

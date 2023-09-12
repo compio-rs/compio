@@ -1,7 +1,7 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{vec_deque, HashMap, VecDeque},
     io,
     mem::MaybeUninit,
     ops::ControlFlow,
@@ -15,7 +15,7 @@ use mio::{
     Events, Interest, Poll, Token,
 };
 
-use crate::driver::{Entry, Poller};
+use crate::driver::{BatchCompleter, Entry, Poller};
 
 pub(crate) mod op;
 
@@ -249,5 +249,17 @@ impl Poller for Driver {
 impl AsRawFd for Driver {
     fn as_raw_fd(&self) -> RawFd {
         self.poll.as_raw_fd()
+    }
+}
+
+impl BatchCompleter for Driver {
+    type Iter<'a> = vec_deque::Iter<'a, Entry>;
+
+    fn completions(&self) -> Self::Iter<'_> {
+        self.cqueue.iter()
+    }
+
+    fn clear(&mut self) {
+        self.cqueue.clear()
     }
 }

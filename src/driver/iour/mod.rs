@@ -1,6 +1,11 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{collections::VecDeque, io, mem::MaybeUninit, time::Duration};
+use std::{
+    collections::{vec_deque, VecDeque},
+    io,
+    mem::MaybeUninit,
+    time::Duration,
+};
 
 use io_uring::{
     cqueue,
@@ -11,7 +16,7 @@ use io_uring::{
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 
-use crate::driver::{Entry, Poller};
+use crate::driver::{BatchCompleter, Entry, Poller};
 
 pub(crate) mod op;
 
@@ -196,6 +201,18 @@ impl Poller for Driver {
         self.submit(timeout)?;
         let len = self.poll_entries(entries);
         Ok(len)
+    }
+}
+
+impl BatchCompleter for Driver {
+    type Iter<'a> = vec_deque::Iter<'a, Entry>;
+
+    fn completions(&self) -> Self::Iter<'_> {
+        self.cqueue.iter()
+    }
+
+    fn clear(&mut self) {
+        self.cqueue.clear()
     }
 }
 
