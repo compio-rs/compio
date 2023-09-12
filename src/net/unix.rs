@@ -63,6 +63,13 @@ impl UnixListener {
         })
     }
 
+    /// Creates a new independently owned handle to the underlying socket.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        Ok(Self {
+            inner: self.inner.try_clone()?,
+        })
+    }
+
     /// Accepts a new incoming connection from this listener.
     ///
     /// This function will yield once a new Unix domain socket connection
@@ -123,6 +130,13 @@ impl UnixStream {
             socket.connect(&addr)?;
             let unix_stream = UnixStream { inner: socket };
             Ok(unix_stream)
+        })
+    }
+
+    /// Creates a new independently owned handle to the underlying socket.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        Ok(Self {
+            inner: self.inner.try_clone()?,
         })
     }
 

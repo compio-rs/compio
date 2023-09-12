@@ -23,18 +23,21 @@ pub struct Socket {
 }
 
 impl Socket {
-    pub fn from_socket2(socket: Socket2) -> io::Result<Self> {
-        let this = Self {
+    pub fn from_socket2(socket: Socket2) -> Self {
+        Self {
             socket,
             #[cfg(feature = "runtime")]
             attacher: Attacher::new(),
-        };
-        Ok(this)
+        }
     }
 
     #[cfg(feature = "runtime")]
     pub(crate) fn attach(&self) -> io::Result<()> {
         self.attacher.attach(self)
+    }
+
+    pub fn try_clone(&self) -> io::Result<Self> {
+        Ok(Self::from_socket2(self.socket.try_clone()?))
     }
 
     pub fn peer_addr(&self) -> io::Result<SockAddr> {
@@ -59,7 +62,7 @@ impl Socket {
         let socket = Socket2::new(domain, ty, protocol)?;
         #[cfg(unix)]
         socket.set_nonblocking(true)?;
-        Self::from_socket2(socket)
+        Ok(Self::from_socket2(socket))
     }
 
     pub fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
@@ -104,7 +107,9 @@ impl Socket {
         self.attach()?;
         let op = Accept::new(self.as_raw_fd());
         let (res, op) = RUNTIME.with(|runtime| runtime.submit(op)).await;
-        let accept_sock = Self::from_socket2(unsafe { Socket2::from_raw_fd(res? as _) })?;
+        let accept_sock = unsafe { Socket2::from_raw_fd(res? as _) };
+        accept_sock.set_nonblocking(true)?;
+        let accept_sock = Self::from_socket2(accept_sock);
         let addr = op.into_addr();
         Ok((accept_sock, addr))
     }

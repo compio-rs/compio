@@ -81,6 +81,17 @@ impl File {
         self.attacher.attach(self)
     }
 
+    /// Creates a new `File` instance that shares the same underlying file
+    /// handle as the existing `File` instance. This is useful when sending the
+    /// file handle to another thread.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        Ok(Self {
+            inner: self.inner.try_clone()?,
+            #[cfg(feature = "runtime")]
+            attacher: Attacher::new(),
+        })
+    }
+
     /// Queries metadata about the underlying file.
     pub fn metadata(&self) -> io::Result<Metadata> {
         self.inner.metadata()

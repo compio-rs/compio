@@ -107,6 +107,13 @@ impl NamedPipeServer {
         Ok(unsafe { Self::from_raw_fd(handle.into_raw_handle()) })
     }
 
+    /// Creates a new independently owned handle to the underlying file handle.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        Ok(Self {
+            handle: self.handle.try_clone()?,
+        })
+    }
+
     /// Retrieves information about the named pipe the server is associated
     /// with.
     ///
@@ -280,6 +287,13 @@ pub struct NamedPipeClient {
 impl NamedPipeClient {
     pub(crate) fn from_handle(handle: OwnedHandle) -> io::Result<Self> {
         Ok(unsafe { Self::from_raw_fd(handle.into_raw_handle()) })
+    }
+
+    /// Creates a new independently owned handle to the underlying file handle.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        Ok(Self {
+            handle: self.handle.try_clone()?,
+        })
     }
 
     /// Retrieves information about the named pipe the client is associated
