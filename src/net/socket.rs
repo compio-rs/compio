@@ -52,16 +52,6 @@ impl Socket {
         self.socket.local_addr()
     }
 
-    #[allow(dead_code)]
-    pub fn r#type(&self) -> io::Result<Type> {
-        self.socket.r#type()
-    }
-
-    #[allow(dead_code)]
-    pub fn protocol(&self) -> io::Result<Option<Protocol>> {
-        self.socket.protocol()
-    }
-
     pub fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
         let socket = Socket2::new(domain, ty, protocol)?;
         #[cfg(unix)]
@@ -122,7 +112,11 @@ impl Socket {
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         self.attach()?;
         let local_addr = self.local_addr()?;
-        let accept_sock = Self::new(local_addr.domain(), self.r#type()?, self.protocol()?)?;
+        let accept_sock = Self::new(
+            local_addr.domain(),
+            self.socket.r#type()?,
+            self.socket.protocol()?,
+        )?;
         let op = Accept::new(self.as_raw_fd(), accept_sock.as_raw_fd() as _);
         let (res, op) = RUNTIME.with(|runtime| runtime.submit(op)).await;
         res?;
