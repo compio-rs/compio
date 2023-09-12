@@ -60,7 +60,9 @@ let mut op = ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(4096));
 unsafe { driver.push(&mut op, 0) }.unwrap();
 
 // Poll the driver and wait for IO completed.
-let entry = driver.poll_one(None).unwrap();
+driver.poll(None).unwrap();
+let mut completed_entries = driver.completions();
+let entry = completed_entries.next().unwrap();
 assert_eq!(entry.user_data(), 0);
 
 // Resize the buffer by return value.
@@ -71,4 +73,5 @@ unsafe {
 }
 
 println!("{}", String::from_utf8(buffer).unwrap());
+assert!(completed_entries.next().is_none())
 ```

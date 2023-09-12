@@ -3,7 +3,6 @@ pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{
     collections::{vec_deque, HashMap, VecDeque},
     io,
-    mem::MaybeUninit,
     ops::ControlFlow,
     time::Duration,
 };
@@ -15,7 +14,7 @@ use mio::{
     Events, Interest, Poll, Token,
 };
 
-use crate::driver::{BatchCompleter, Entry, Poller};
+use crate::driver::{Entry, Poller};
 
 pub(crate) mod op;
 
@@ -194,14 +193,6 @@ impl Driver {
         }
         Ok(())
     }
-
-    fn poll_completed(&mut self, entries: &mut [MaybeUninit<Entry>]) -> usize {
-        let len = self.cqueue.len().min(entries.len());
-        for entry in &mut entries[..len] {
-            entry.write(self.cqueue.pop_front().unwrap());
-        }
-        len
-    }
 }
 
 impl Poller for Driver {
@@ -228,38 +219,23 @@ impl Poller for Driver {
             .ok();
     }
 
-    fn poll(
-        &mut self,
-        timeout: Option<Duration>,
-        entries: &mut [MaybeUninit<Entry>],
-    ) -> io::Result<usize> {
+    fn poll(&mut self, timeout: Option<Duration>) -> io::Result<usize> {
         self.submit_squeue()?;
-        if entries.is_empty() {
-            return Ok(0);
-        }
-        let len = self.poll_completed(entries);
+        let len = self.cqueue.len();
         if len > 0 {
             return Ok(len);
         }
         self.poll_impl(timeout)?;
-        Ok(self.poll_completed(entries))
+        Ok(self.cqueue.len())
+    }
+
+    fn completions(&mut self) -> vec_deque::Drain<'_, Entry> {
+        self.cqueue.drain(..)
     }
 }
 
 impl AsRawFd for Driver {
     fn as_raw_fd(&self) -> RawFd {
         self.poll.as_raw_fd()
-    }
-}
-
-impl BatchCompleter for Driver {
-    type Iter<'a> = vec_deque::Iter<'a, Entry>;
-
-    fn completions(&self) -> Self::Iter<'_> {
-        self.cqueue.iter()
-    }
-
-    fn clear(&mut self) {
-        self.cqueue.clear()
     }
 }

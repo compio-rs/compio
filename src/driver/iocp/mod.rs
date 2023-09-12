@@ -1,8 +1,7 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{vec_deque, HashMap, HashSet, VecDeque},
     ffi::c_void,
     io,
-    mem::MaybeUninit,
     os::windows::{
         io::HandleOrNull,
         prelude::{
@@ -26,7 +25,7 @@ use windows_sys::Win32::{
         WindowsProgramming::{FILE_INFORMATION_CLASS, IO_STATUS_BLOCK},
         IO::{
             CreateIoCompletionPort, GetQueuedCompletionStatusEx, PostQueuedCompletionStatus,
-            OVERLAPPED,
+            OVERLAPPED, OVERLAPPED_ENTRY,
         },
     },
 };
@@ -119,6 +118,8 @@ pub trait OpCode {
 pub struct Driver {
     port: OwnedHandle,
     operations: VecDeque<(NonNull<dyn OpCode>, Overlapped)>,
+    iocp_entries: Vec<OVERLAPPED_ENTRY>,
+    cqueue: VecDeque<Entry>,
     submit_map: HashMap<usize, *mut OVERLAPPED>,
     cancelled: HashSet<*mut OVERLAPPED>,
 }
@@ -134,6 +135,8 @@ impl Driver {
         Ok(Self {
             port,
             operations: VecDeque::with_capacity(Self::DEFAULT_CAPACITY),
+            iocp_entries: Vec::with_capacity(Self::DEFAULT_CAPACITY),
+            cqueue: VecDeque::with_capacity(Self::DEFAULT_CAPACITY),
             submit_map: HashMap::default(),
             cancelled: HashSet::default(),
         })
@@ -258,14 +261,7 @@ impl Poller for Driver {
         }
     }
 
-    fn poll(
-        &mut self,
-        timeout: Option<Duration>,
-        entries: &mut [MaybeUninit<Entry>],
-    ) -> io::Result<usize> {
-        if entries.is_empty() {
-            return Ok(0);
-        }
+    fn poll(&mut self, timeout: Option<Duration>) -> io::Result<usize> {
         while let Some((mut op, overlapped)) = self.operations.pop_front() {
             let overlapped = Box::new(overlapped);
             let user_data = overlapped.user_data;
@@ -280,7 +276,6 @@ impl Poller for Driver {
             }
         }
 
-        let mut iocp_entries = Vec::with_capacity(entries.len());
         let mut recv_count = 0;
         let timeout = match timeout {
             Some(timeout) => timeout.as_millis() as u32,
@@ -289,8 +284,8 @@ impl Poller for Driver {
         let res = unsafe {
             GetQueuedCompletionStatusEx(
                 self.port.as_raw_handle() as _,
-                iocp_entries.as_mut_ptr(),
-                entries.len() as _,
+                self.iocp_entries.as_mut_ptr(),
+                self.iocp_entries.capacity() as _,
                 &mut recv_count,
                 timeout,
                 0,
@@ -300,33 +295,39 @@ impl Poller for Driver {
             return Err(io::Error::last_os_error());
         }
         unsafe {
-            iocp_entries.set_len(recv_count as _);
+            self.iocp_entries.set_len(recv_count as _);
         }
-        let iocp_len = iocp_entries.len();
-        debug_assert!(iocp_len <= entries.len());
+        let iocp_len = self.iocp_entries.len();
+        debug_assert!(iocp_len <= self.iocp_entries.capacity());
 
-        for (iocp_entry, entry) in iocp_entries.into_iter().zip(entries) {
+        let completed_entries = self.iocp_entries.iter_mut().filter_map(|iocp_entry| {
             let transferred = iocp_entry.dwNumberOfBytesTransferred;
             let overlapped_ptr = iocp_entry.lpOverlapped;
             let overlapped = unsafe { Box::from_raw(overlapped_ptr.cast::<Overlapped>()) };
             if self.cancelled.remove(&overlapped_ptr) {
-                continue;
-            }
-            let res = if matches!(
-                overlapped.base.Internal as NTSTATUS,
-                STATUS_SUCCESS | STATUS_PENDING
-            ) {
-                Ok(transferred as _)
+                None
             } else {
-                let error = unsafe { RtlNtStatusToDosError(overlapped.base.Internal as _) };
-                match error {
-                    ERROR_IO_INCOMPLETE | ERROR_HANDLE_EOF | ERROR_NO_DATA => Ok(0),
-                    _ => Err(io::Error::from_raw_os_error(error as _)),
-                }
-            };
-            entry.write(Entry::new(overlapped.user_data, res));
-        }
+                let res = if matches!(
+                    overlapped.base.Internal as NTSTATUS,
+                    STATUS_SUCCESS | STATUS_PENDING
+                ) {
+                    Ok(transferred as _)
+                } else {
+                    let error = unsafe { RtlNtStatusToDosError(overlapped.base.Internal as _) };
+                    match error {
+                        ERROR_IO_INCOMPLETE | ERROR_HANDLE_EOF | ERROR_NO_DATA => Ok(0),
+                        _ => Err(io::Error::from_raw_os_error(error as _)),
+                    }
+                };
+                Some(Entry::new(overlapped.user_data, res))
+            }
+        });
+        self.cqueue.extend(completed_entries);
         Ok(iocp_len)
+    }
+
+    fn completions(&mut self) -> vec_deque::Drain<'_, Entry> {
+        self.cqueue.drain(..)
     }
 }
 

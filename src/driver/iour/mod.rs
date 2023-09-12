@@ -3,7 +3,6 @@ pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{
     collections::{vec_deque, VecDeque},
     io,
-    mem::MaybeUninit,
     time::Duration,
 };
 
@@ -16,7 +15,7 @@ use io_uring::{
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 
-use crate::driver::{BatchCompleter, Entry, Poller};
+use crate::driver::{Entry, Poller};
 
 pub(crate) mod op;
 
@@ -153,14 +152,6 @@ impl Driver {
         }
         inner_squeue.sync();
     }
-
-    fn poll_entries(&mut self, entries: &mut [MaybeUninit<Entry>]) -> usize {
-        let len = self.cqueue.len().min(entries.len());
-        for entry in &mut entries[..len] {
-            entry.write(self.cqueue.pop_front().unwrap());
-        }
-        len
-    }
 }
 
 impl Poller for Driver {
@@ -186,33 +177,17 @@ impl Poller for Driver {
         );
     }
 
-    fn poll(
-        &mut self,
-        timeout: Option<Duration>,
-        entries: &mut [MaybeUninit<Entry>],
-    ) -> io::Result<usize> {
-        if entries.is_empty() {
-            return Ok(0);
-        }
-        let len = self.poll_entries(entries);
+    fn poll(&mut self, timeout: Option<Duration>) -> io::Result<usize> {
+        let len = self.cqueue.len();
         if len > 0 {
             return Ok(len);
         }
         self.submit(timeout)?;
-        let len = self.poll_entries(entries);
-        Ok(len)
-    }
-}
-
-impl BatchCompleter for Driver {
-    type Iter<'a> = vec_deque::Iter<'a, Entry>;
-
-    fn completions(&self) -> Self::Iter<'_> {
-        self.cqueue.iter()
+        Ok(self.cqueue.len())
     }
 
-    fn clear(&mut self) {
-        self.cqueue.clear()
+    fn completions(&mut self) -> vec_deque::Drain<'_, Entry> {
+        self.cqueue.drain(..)
     }
 }
 

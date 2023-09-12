@@ -1,7 +1,7 @@
 //! The platform-specified driver.
 //! Some types differ by compilation target.
 
-use std::{io, mem::MaybeUninit, time::Duration};
+use std::{collections::vec_deque, io, time::Duration};
 #[cfg(unix)]
 mod unix;
 
@@ -55,15 +55,24 @@ cfg_if::cfg_if! {
 /// // write data
 /// let mut op = op::Send::new(socket.as_raw_fd(), "hello world");
 /// unsafe { driver.push(&mut op, 1) }.unwrap();
-/// let entry = driver.poll_one(None).unwrap();
+/// driver.poll(None).unwrap();
+/// let mut completed_entries = driver.completions();
+/// let entry = completed_entries.next().unwrap();
 /// assert_eq!(entry.user_data(), 1);
 /// entry.into_result().unwrap();
+/// assert!(completed_entries.next().is_none());
+/// // all entries are processesed - drop mutable reference to completion queue
+/// drop(completed_entries);
 ///
 /// // read data
 /// let buf = Vec::with_capacity(32);
 /// let mut op = op::Recv::new(other_socket.as_raw_fd(), buf);
 /// unsafe { driver.push(&mut op, 2) }.unwrap();
-/// let entry = driver.poll_one(None).unwrap();
+/// driver.poll(None).unwrap();
+/// let mut completed_entries = driver.completions();
+/// let entry = completed_entries.next().unwrap();
+/// assert!(completed_entries.next().is_none());
+/// drop(completed_entries);
 /// assert_eq!(entry.user_data(), 2);
 /// let n_bytes = entry.into_result().unwrap();
 /// let mut buf = op.into_inner().into_inner();
@@ -101,23 +110,13 @@ pub trait Poller {
     /// If no timeout specified, it will block forever.
     /// To interrupt the blocking, see [`Event`].
     ///
-    /// [`Event`]: crate::event::Event
-    fn poll(
-        &mut self,
-        timeout: Option<Duration>,
-        entries: &mut [MaybeUninit<Entry>],
-    ) -> io::Result<usize>;
-
-    /// Poll the driver and get only one entry back.
+    /// Use `completions` method to process completed entries
     ///
-    /// See [`Poller::poll`].
-    fn poll_one(&mut self, timeout: Option<Duration>) -> io::Result<Entry> {
-        let mut entry = MaybeUninit::uninit();
-        let polled = self.poll(timeout, std::slice::from_mut(&mut entry))?;
-        debug_assert_eq!(polled, 1);
-        let entry = unsafe { entry.assume_init() };
-        Ok(entry)
-    }
+    /// [`Event`]: crate::event::Event
+    fn poll(&mut self, timeout: Option<Duration>) -> io::Result<usize>;
+
+    /// Take completed entries queue to process batch of completions
+    fn completions(&mut self) -> vec_deque::Drain<'_, Entry>;
 }
 
 /// An completed entry returned from kernel.
@@ -141,18 +140,4 @@ impl Entry {
     pub fn into_result(self) -> io::Result<usize> {
         self.result
     }
-}
-
-/// Trait that allows to process all completed operations and clear all
-/// completed entries
-pub trait BatchCompleter {
-    /// Iterator type over completed entries
-    type Iter<'a>: Iterator<Item = &'a Entry>
-    where
-        Self: 'a;
-
-    /// Iterate over all completed entries
-    fn completions(&self) -> Self::Iter<'_>;
-    /// Clear all completed entries
-    fn clear(&mut self);
 }

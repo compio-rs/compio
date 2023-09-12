@@ -3,7 +3,6 @@ use std::{
     collections::VecDeque,
     future::{ready, Future},
     io,
-    mem::MaybeUninit,
     task::{Context, Poll},
 };
 
@@ -13,7 +12,7 @@ use futures_util::future::Either;
 #[cfg(feature = "time")]
 use crate::task::time::{TimerFuture, TimerRuntime};
 use crate::{
-    driver::{AsRawFd, Driver, Entry, OpCode, Poller, RawFd},
+    driver::{AsRawFd, Driver, OpCode, Poller, RawFd},
     task::op::{OpFuture, OpRuntime},
     Key,
 };
@@ -175,12 +174,11 @@ impl Runtime {
         #[cfg(feature = "time")]
         let timeout = self.timer_runtime.borrow().min_timeout();
 
-        const UNINIT_ENTRY: MaybeUninit<Entry> = MaybeUninit::uninit();
-        let mut entries = [UNINIT_ENTRY; 16];
-        match self.driver.borrow_mut().poll(timeout, &mut entries) {
-            Ok(len) => {
-                for entry in &mut entries[..len] {
-                    let entry = unsafe { std::mem::replace(entry, UNINIT_ENTRY).assume_init() };
+        let mut driver = self.driver.borrow_mut();
+        match driver.poll(timeout) {
+            Ok(_len) => {
+                let cqueue = driver.completions();
+                for entry in cqueue {
                     self.op_runtime
                         .borrow_mut()
                         .update_result(Key::new_dummy(entry.user_data()), entry.into_result());
