@@ -3,10 +3,11 @@ use std::{fs::Metadata, io, path::Path};
 #[cfg(feature = "runtime")]
 use crate::{
     buf::{IntoInner, IoBuf, IoBufMut},
+    buf_try,
     driver::AsRawFd,
     op::{BufResultExt, ReadAt, Sync, WriteAt},
     task::RUNTIME,
-    BufResult,
+    Attacher, BufResult,
 };
 use crate::{fs::OpenOptions, impl_raw_fd};
 
@@ -19,6 +20,8 @@ use crate::{fs::OpenOptions, impl_raw_fd};
 #[derive(Debug)]
 pub struct File {
     inner: std::fs::File,
+    #[cfg(feature = "runtime")]
+    attacher: Attacher,
 }
 
 #[cfg(target_os = "windows")]
@@ -46,9 +49,9 @@ impl File {
     pub(crate) fn with_options(path: impl AsRef<Path>, options: OpenOptions) -> io::Result<Self> {
         let this = Self {
             inner: file_with_options(path, options.0)?,
+            #[cfg(feature = "runtime")]
+            attacher: Attacher::new(),
         };
-        #[cfg(feature = "runtime")]
-        RUNTIME.with(|runtime| runtime.attach(this.as_raw_fd()))?;
         Ok(this)
     }
 
@@ -71,6 +74,11 @@ impl File {
             .write(true)
             .truncate(true)
             .open(path)
+    }
+
+    #[cfg(feature = "runtime")]
+    pub(crate) fn attach(&self) -> io::Result<()> {
+        self.attacher.attach(self)
     }
 
     /// Queries metadata about the underlying file.
@@ -102,6 +110,7 @@ impl File {
     /// variant will be returned. The buffer is returned on error.
     #[cfg(feature = "runtime")]
     pub async fn read_at<T: IoBufMut>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
+        let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = ReadAt::new(self.as_raw_fd(), pos, buffer);
         RUNTIME
             .with(|runtime| runtime.submit(op))
@@ -141,26 +150,22 @@ impl File {
         let mut total_read = 0;
         let mut read;
         while total_read < need {
-            (read, buffer) = self.read_at(buffer, pos + total_read).await;
-            match read {
-                Ok(0) => break,
-                Ok(read) => {
-                    total_read += read;
-                }
-                Err(e) => return (Err(e), buffer),
+            (read, buffer) = buf_try!(self.read_at(buffer, pos + total_read).await);
+            if read == 0 {
+                break;
+            } else {
+                total_read += read;
             }
         }
-        if total_read < need {
-            (
-                Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "failed to fill whole buffer",
-                )),
-                buffer,
-            )
+        let res = if total_read < need {
+            Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "failed to fill whole buffer",
+            ))
         } else {
-            (Ok(total_read), buffer)
-        }
+            Ok(total_read)
+        };
+        (res, buffer)
     }
 
     /// Read all bytes until EOF in this source, placing them into `buffer`.
@@ -181,16 +186,14 @@ impl File {
         let mut total_read = 0;
         let mut read;
         loop {
-            (read, buffer) = self.read_at(buffer, pos + total_read).await;
-            match read {
-                Ok(0) => break,
-                Ok(read) => {
-                    total_read += read;
-                    if buffer.len() == buffer.capacity() {
-                        buffer.reserve(32);
-                    }
+            (read, buffer) = buf_try!(self.read_at(buffer, pos + total_read).await);
+            if read == 0 {
+                break;
+            } else {
+                total_read += read;
+                if buffer.len() == buffer.capacity() {
+                    buffer.reserve(32);
                 }
-                Err(e) => return (Err(e), buffer),
             }
         }
         (Ok(total_read), buffer)
@@ -220,6 +223,7 @@ impl File {
     /// written to this writer.
     #[cfg(feature = "runtime")]
     pub async fn write_at<T: IoBuf>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
+        let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = WriteAt::new(self.as_raw_fd(), pos, buffer);
         RUNTIME
             .with(|runtime| runtime.submit(op))
@@ -241,21 +245,21 @@ impl File {
     pub async fn write_all_at<T: IoBuf>(&self, mut buffer: T, pos: usize) -> BufResult<usize, T> {
         let buf_len = buffer.buf_len();
         let mut total_written = 0;
+        let mut written;
         while total_written < buf_len {
-            let (written, buffer_slice) = self
-                .write_at(buffer.slice(total_written..), pos + total_written)
-                .await;
-            buffer = buffer_slice.into_inner();
-            match written {
-                Ok(written) => total_written += written,
-                Err(e) => return (Err(e), buffer),
-            }
+            (written, buffer) = buf_try!(
+                self.write_at(buffer.slice(total_written..), pos + total_written)
+                    .await
+                    .into_inner()
+            );
+            total_written += written;
         }
         (Ok(total_written), buffer)
     }
 
     #[cfg(feature = "runtime")]
     async fn sync_impl(&self, datasync: bool) -> io::Result<()> {
+        self.attach()?;
         let op = Sync::new(self.as_raw_fd(), datasync);
         RUNTIME.with(|runtime| runtime.submit(op)).await.0?;
         Ok(())
@@ -287,4 +291,4 @@ impl File {
     }
 }
 
-impl_raw_fd!(File, inner);
+impl_raw_fd!(File, inner, attacher);
