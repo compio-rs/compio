@@ -7,7 +7,7 @@ use once_cell::sync::OnceCell as OnceLock;
 
 use crate::{driver::AsRawFd, task::RUNTIME};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Attacher {
     once: OnceLock<()>,
 }

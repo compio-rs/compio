@@ -46,19 +46,16 @@ fn try_clone() {
         let (tx, (rx, _)) =
             futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
 
+        let tx = tx.try_clone().unwrap();
         tx.send_all(DATA).await.0.unwrap();
-
-        let (n, buffer) = rx.recv_exact(Vec::with_capacity(6)).await;
-        assert_eq!(n.unwrap(), buffer.len());
-        assert_eq!(DATA[..6], String::from_utf8(buffer).unwrap());
 
         let rx = rx.try_clone().unwrap();
         if let Err(e) = std::thread::spawn(move || {
             compio::task::block_on(async {
-                let buffer = Vec::with_capacity(DATA.len() - 6);
+                let buffer = Vec::with_capacity(DATA.len());
                 let (n, buffer) = rx.recv_exact(buffer).await;
                 assert_eq!(n.unwrap(), buffer.len());
-                assert_eq!(DATA[6..], String::from_utf8(buffer).unwrap());
+                assert_eq!(DATA, String::from_utf8(buffer).unwrap());
             });
         })
         .join()

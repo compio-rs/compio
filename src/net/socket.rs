@@ -37,7 +37,11 @@ impl Socket {
     }
 
     pub fn try_clone(&self) -> io::Result<Self> {
-        Ok(Self::from_socket2(self.socket.try_clone()?))
+        Ok(Self {
+            socket: self.socket.try_clone()?,
+            #[cfg(feature = "runtime")]
+            attacher: self.attacher.clone(),
+        })
     }
 
     pub fn peer_addr(&self) -> io::Result<SockAddr> {

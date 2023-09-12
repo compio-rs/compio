@@ -88,7 +88,7 @@ impl File {
         Ok(Self {
             inner: self.inner.try_clone()?,
             #[cfg(feature = "runtime")]
-            attacher: Attacher::new(),
+            attacher: self.attacher.clone(),
         })
     }
 
