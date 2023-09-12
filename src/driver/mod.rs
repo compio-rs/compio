@@ -75,8 +75,10 @@ pub trait Poller {
     /// Attach an fd to the driver.
     ///
     /// ## Platform specific
-    /// * IOCP: it will be attached to the IOCP completion port. An fd could
-    ///   only be attached to one driver, and could only be attached once.
+    /// * IOCP: it will be attached to the completion port. An fd could only be
+    ///   attached to one driver, and could only be attached once, even if you
+    ///   `try_clone` it. It will cause unexpected result to attach the handle
+    ///   with one driver and push an op to another driver.
     /// * io-uring/mio: it will do nothing and return `Ok(())`
     fn attach(&mut self, fd: RawFd) -> io::Result<()>;
 

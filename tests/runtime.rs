@@ -20,6 +20,7 @@ fn multi_threading() {
 
         tx.send_all(DATA).await.0.unwrap();
 
+        let rx = SendWrapper(rx);
         if let Err(e) = std::thread::spawn(move || {
             compio::task::block_on(async {
                 let buffer = Vec::with_capacity(DATA.len());
@@ -49,7 +50,7 @@ fn try_clone() {
         let tx = tx.try_clone().unwrap();
         tx.send_all(DATA).await.0.unwrap();
 
-        let rx = rx.try_clone().unwrap();
+        let rx = SendWrapper(rx.try_clone().unwrap());
         if let Err(e) = std::thread::spawn(move || {
             compio::task::block_on(async {
                 let buffer = Vec::with_capacity(DATA.len());
@@ -156,4 +157,16 @@ async fn poll_once(future: impl std::future::Future) {
         Poll::Ready(())
     })
     .await;
+}
+
+struct SendWrapper<T>(pub T);
+
+unsafe impl<T> Send for SendWrapper<T> {}
+
+impl<T> std::ops::Deref for SendWrapper<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
