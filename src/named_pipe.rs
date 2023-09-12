@@ -108,6 +108,8 @@ impl NamedPipeServer {
     }
 
     /// Creates a new independently owned handle to the underlying file handle.
+    ///
+    /// It does not clear the attach state.
     pub fn try_clone(&self) -> io::Result<Self> {
         Ok(Self {
             handle: self.handle.try_clone()?,
@@ -290,6 +292,8 @@ impl NamedPipeClient {
     }
 
     /// Creates a new independently owned handle to the underlying file handle.
+    ///
+    /// It does not clear the attach state.
     pub fn try_clone(&self) -> io::Result<Self> {
         Ok(Self {
             handle: self.handle.try_clone()?,

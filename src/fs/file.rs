@@ -82,8 +82,9 @@ impl File {
     }
 
     /// Creates a new `File` instance that shares the same underlying file
-    /// handle as the existing `File` instance. This is useful when sending the
-    /// file handle to another thread.
+    /// handle as the existing `File` instance.
+    ///
+    /// It does not clear the attach state.
     pub fn try_clone(&self) -> io::Result<Self> {
         Ok(Self {
             inner: self.inner.try_clone()?,

@@ -64,6 +64,8 @@ impl UnixListener {
     }
 
     /// Creates a new independently owned handle to the underlying socket.
+    ///
+    /// It does not clear the attach state.
     pub fn try_clone(&self) -> io::Result<Self> {
         Ok(Self {
             inner: self.inner.try_clone()?,
@@ -134,6 +136,8 @@ impl UnixStream {
     }
 
     /// Creates a new independently owned handle to the underlying socket.
+    ///
+    /// It does not clear the attach state.
     pub fn try_clone(&self) -> io::Result<Self> {
         Ok(Self {
             inner: self.inner.try_clone()?,
