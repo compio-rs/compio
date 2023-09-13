@@ -45,7 +45,12 @@ impl Driver {
         })
     }
 
-    fn submit(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+    fn submit(
+        &mut self,
+        timeout: Option<Duration>,
+        entries: &mut [MaybeUninit<Entry>],
+    ) -> io::Result<usize> {
+        let mut entries = EntriesVec::new(entries);
         // Anyway we need to submit once, no matter there are entries in squeue.
         loop {
             self.flush_submissions();
@@ -79,13 +84,13 @@ impl Driver {
                     (..) => Some(create_entry(entry)),
                 }
             });
-            self.cqueue.extend(completed_entries);
+            self.cqueue.extend(entries.extend(completed_entries));
 
             if self.squeue.is_empty() && self.inner.submission().is_empty() {
                 break;
             }
         }
-        Ok(())
+        Ok(entries.entries_len())
     }
 
     fn flush_submissions(&mut self) {
@@ -165,9 +170,7 @@ impl Poller for Driver {
         if len > 0 {
             return Ok(len);
         }
-        self.submit(timeout)?;
-        let len = self.poll_entries(entries);
-        Ok(len)
+        self.submit(timeout, entries)
     }
 }
 
@@ -191,4 +194,32 @@ fn timespec(duration: std::time::Duration) -> Timespec {
     Timespec::new()
         .sec(duration.as_secs())
         .nsec(duration.subsec_nanos())
+}
+
+struct EntriesVec<'a> {
+    entries: &'a mut [MaybeUninit<Entry>],
+    index: usize,
+}
+
+impl<'a> EntriesVec<'a> {
+    pub fn new(entries: &'a mut [MaybeUninit<Entry>]) -> Self {
+        Self { entries, index: 0 }
+    }
+
+    pub fn extend(&mut self, iter: impl IntoIterator<Item = Entry>) -> impl Iterator<Item = Entry> {
+        let mut iter = iter.into_iter();
+        while self.index < self.entries.len() {
+            if let Some(entry) = iter.next() {
+                self.entries[self.index].write(entry);
+                self.index += 1;
+            } else {
+                break;
+            }
+        }
+        iter
+    }
+
+    pub fn entries_len(&self) -> usize {
+        self.index
+    }
 }
