@@ -24,7 +24,7 @@ use windows_sys::Win32::{
         Threading::INFINITE,
         IO::{
             CreateIoCompletionPort, GetQueuedCompletionStatusEx, PostQueuedCompletionStatus,
-            OVERLAPPED,
+            OVERLAPPED, OVERLAPPED_ENTRY,
         },
     },
 };
@@ -217,7 +217,7 @@ impl Poller for Driver {
         if entries.is_empty() {
             return Ok(0);
         }
-        while let Some((mut op, overlapped)) = self.operations.pop_front() {
+        for (mut op, overlapped) in self.operations.drain(..) {
             let overlapped = Box::new(overlapped);
             let user_data = overlapped.user_data;
             let overlapped_ptr = Box::into_raw(overlapped);
@@ -231,7 +231,8 @@ impl Poller for Driver {
             }
         }
 
-        let mut iocp_entries = Vec::with_capacity(entries.len());
+        const UNINIT_ENTRY: MaybeUninit<OVERLAPPED_ENTRY> = MaybeUninit::uninit();
+        let mut iocp_entries = [UNINIT_ENTRY; Self::DEFAULT_CAPACITY];
         let mut recv_count = 0;
         let timeout = match timeout {
             Some(timeout) => timeout.as_millis() as u32,
@@ -240,8 +241,8 @@ impl Poller for Driver {
         let res = unsafe {
             GetQueuedCompletionStatusEx(
                 self.port.as_raw_handle() as _,
-                iocp_entries.as_mut_ptr(),
-                entries.len() as _,
+                iocp_entries[0].as_mut_ptr(),
+                entries.len().min(iocp_entries.len()) as _,
                 &mut recv_count,
                 timeout,
                 0,
@@ -250,13 +251,11 @@ impl Poller for Driver {
         if res == 0 {
             return Err(io::Error::last_os_error());
         }
-        unsafe {
-            iocp_entries.set_len(recv_count as _);
-        }
-        let iocp_len = iocp_entries.len();
-        debug_assert!(iocp_len <= entries.len());
+        let recv_count = recv_count as usize;
+        debug_assert!(recv_count <= entries.len());
 
-        for (iocp_entry, entry) in iocp_entries.into_iter().zip(entries) {
+        for (iocp_entry, entry) in iocp_entries.into_iter().zip(&mut entries[..recv_count]) {
+            let iocp_entry = unsafe { iocp_entry.assume_init() };
             let transferred = iocp_entry.dwNumberOfBytesTransferred;
             let overlapped_ptr = iocp_entry.lpOverlapped;
             let overlapped = unsafe { Box::from_raw(overlapped_ptr.cast::<Overlapped>()) };
@@ -277,7 +276,7 @@ impl Poller for Driver {
             };
             entry.write(Entry::new(overlapped.user_data, res));
         }
-        Ok(iocp_len)
+        Ok(recv_count)
     }
 }
 
