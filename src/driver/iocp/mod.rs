@@ -126,12 +126,17 @@ impl Driver {
 
     /// Create a new IOCP.
     pub fn new() -> io::Result<Self> {
+        Self::with_entries(Self::DEFAULT_CAPACITY as _)
+    }
+
+    /// Create a new IOCP driver with the given number of capacity.
+    pub fn with_entries(entries: u32) -> io::Result<Self> {
         let port = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0) };
         let port = OwnedHandle::try_from(unsafe { HandleOrNull::from_raw_handle(port as _) })
             .map_err(|_| io::Error::last_os_error())?;
         Ok(Self {
             port,
-            operations: VecDeque::with_capacity(Self::DEFAULT_CAPACITY),
+            operations: VecDeque::with_capacity(entries as _),
             submit_map: HashMap::default(),
             cancelled: HashSet::default(),
         })
