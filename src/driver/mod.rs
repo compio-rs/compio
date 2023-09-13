@@ -199,4 +199,12 @@ impl<const N: usize, T> Iterator for Entries<N, T> {
             // Safety: copied from core::array::IntoIter
             .map(|i| unsafe { self.entries.get_unchecked(i).assume_init_read() })
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.range.size_hint()
+    }
+
+    fn count(self) -> usize {
+        self.range.count()
+    }
 }

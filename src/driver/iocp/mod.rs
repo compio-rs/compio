@@ -29,7 +29,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::driver::{Entry, Poller};
+use crate::driver::{Entries, Entry, Poller};
 
 pub(crate) mod op;
 
@@ -231,8 +231,7 @@ impl Poller for Driver {
             }
         }
 
-        const UNINIT_ENTRY: MaybeUninit<OVERLAPPED_ENTRY> = MaybeUninit::uninit();
-        let mut iocp_entries = [UNINIT_ENTRY; Self::DEFAULT_CAPACITY];
+        let mut iocp_entries = Entries::<{ Self::DEFAULT_CAPACITY }, OVERLAPPED_ENTRY>::new();
         let mut recv_count = 0;
         let timeout = match timeout {
             Some(timeout) => timeout.as_millis() as u32,
@@ -241,8 +240,8 @@ impl Poller for Driver {
         let res = unsafe {
             GetQueuedCompletionStatusEx(
                 self.port.as_raw_handle() as _,
-                iocp_entries[0].as_mut_ptr(),
-                entries.len().min(iocp_entries.len()) as _,
+                iocp_entries.as_mut_slice().as_mut_ptr() as _,
+                entries.len().min(Self::DEFAULT_CAPACITY) as _,
                 &mut recv_count,
                 timeout,
                 0,
@@ -252,10 +251,12 @@ impl Poller for Driver {
             return Err(io::Error::last_os_error());
         }
         let recv_count = recv_count as usize;
+        unsafe {
+            iocp_entries.set_len(recv_count);
+        }
         debug_assert!(recv_count <= entries.len());
 
-        for (iocp_entry, entry) in iocp_entries.into_iter().zip(&mut entries[..recv_count]) {
-            let iocp_entry = unsafe { iocp_entry.assume_init() };
+        for (iocp_entry, entry) in iocp_entries.zip(&mut entries[..recv_count]) {
             let transferred = iocp_entry.dwNumberOfBytesTransferred;
             let overlapped_ptr = iocp_entry.lpOverlapped;
             let overlapped = unsafe { Box::from_raw(overlapped_ptr.cast::<Overlapped>()) };
