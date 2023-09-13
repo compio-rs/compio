@@ -197,8 +197,8 @@ impl Driver {
 
     fn poll_completed(&mut self, entries: &mut [MaybeUninit<Entry>]) -> usize {
         let len = self.cqueue.len().min(entries.len());
-        for entry in &mut entries[..len] {
-            entry.write(self.cqueue.pop_front().unwrap());
+        for (entry, cqe) in entries.iter_mut().zip(self.cqueue.drain(..len)) {
+            entry.write(cqe);
         }
         len
     }
