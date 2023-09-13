@@ -217,7 +217,7 @@ impl Poller for Driver {
         if entries.is_empty() {
             return Ok(0);
         }
-        for (mut op, overlapped) in self.operations.drain(..) {
+        while let Some((mut op, overlapped)) = self.operations.pop_front() {
             let overlapped = Box::new(overlapped);
             let user_data = overlapped.user_data;
             let overlapped_ptr = Box::into_raw(overlapped);
