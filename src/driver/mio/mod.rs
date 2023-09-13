@@ -3,7 +3,6 @@ pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{
     collections::{HashMap, VecDeque},
     io,
-    mem::MaybeUninit,
     ops::ControlFlow,
     time::Duration,
 };
@@ -65,7 +64,6 @@ pub struct WaitArg {
 /// Low-level driver of mio.
 pub struct Driver {
     squeue: VecDeque<MioEntry>,
-    cqueue: VecDeque<Entry>,
     events: Events,
     poll: Poll,
     waiting: HashMap<usize, WaitEntry>,
@@ -126,7 +124,6 @@ impl Driver {
 
         Ok(Self {
             squeue: VecDeque::with_capacity(entries),
-            cqueue: VecDeque::with_capacity(entries),
             events: Events::with_capacity(entries),
             poll: Poll::new()?,
             waiting: HashMap::new(),
@@ -148,22 +145,25 @@ impl Driver {
     }
 
     /// Register all operations in the squeue to mio.
-    fn submit_squeue(&mut self) -> io::Result<()> {
+    fn submit_squeue(&mut self, entries: &mut impl Extend<Entry>) -> io::Result<bool> {
+        let mut extended = false;
         while let Some(mut entry) = self.squeue.pop_front() {
             match entry.op_mut().pre_submit() {
                 Ok(Decision::Wait(arg)) => {
                     self.submit(entry, arg)?;
                 }
                 Ok(Decision::Completed(res)) => {
-                    self.cqueue.push_back(Entry::new(entry.user_data, Ok(res)));
+                    entries.extend(Some(Entry::new(entry.user_data, Ok(res))));
+                    extended = true;
                 }
                 Err(err) => {
-                    self.cqueue.push_back(Entry::new(entry.user_data, Err(err)));
+                    entries.extend(Some(Entry::new(entry.user_data, Err(err))));
+                    extended = true;
                 }
             }
         }
 
-        Ok(())
+        Ok(extended)
     }
 
     /// Poll all events from mio, call `perform` on op and push them into
@@ -171,9 +171,8 @@ impl Driver {
     fn poll_impl(
         &mut self,
         timeout: Option<Duration>,
-        entries: &mut [MaybeUninit<Entry>],
-    ) -> io::Result<usize> {
-        let mut entries = EntriesVec::new(entries);
+        entries: &mut impl Extend<Entry>,
+    ) -> io::Result<()> {
         self.poll.poll(&mut self.events, timeout)?;
         for event in &self.events {
             let token = event.token();
@@ -190,20 +189,10 @@ impl Driver {
                 .registry()
                 .deregister(&mut SourceFd(&entry.arg.fd))?;
             let entry = Entry::new(entry.user_data, res);
-            if let Some(entry) = entries.push_back(entry) {
-                self.cqueue.push_back(entry);
-            }
+            entries.extend(Some(entry));
             self.waiting.remove(&token.0);
         }
-        Ok(entries.entries_len())
-    }
-
-    fn poll_completed(&mut self, entries: &mut [MaybeUninit<Entry>]) -> usize {
-        let len = self.cqueue.len().min(entries.len());
-        for (entry, cqe) in entries.iter_mut().zip(self.cqueue.drain(..len)) {
-            entry.write(cqe);
-        }
-        len
+        Ok(())
     }
 }
 
@@ -234,47 +223,28 @@ impl Poller for Driver {
     fn poll(
         &mut self,
         timeout: Option<Duration>,
-        entries: &mut [MaybeUninit<Entry>],
-    ) -> io::Result<usize> {
-        self.submit_squeue()?;
-        if entries.is_empty() {
-            return Ok(0);
+        entries: &mut impl Extend<Entry>,
+    ) -> io::Result<()> {
+        let extended = self.submit_squeue(entries)?;
+        if !extended {
+            self.poll_impl(timeout, entries)?;
+
+            // See if there are remaining entries.
+            loop {
+                if let Err(e) = self.poll_impl(Some(Duration::ZERO), entries) {
+                    match e.kind() {
+                        io::ErrorKind::TimedOut => break,
+                        _ => return Err(e),
+                    }
+                }
+            }
         }
-        let len = self.poll_completed(entries);
-        if len > 0 {
-            return Ok(len);
-        }
-        self.poll_impl(timeout, entries)
+        Ok(())
     }
 }
 
 impl AsRawFd for Driver {
     fn as_raw_fd(&self) -> RawFd {
         self.poll.as_raw_fd()
-    }
-}
-
-struct EntriesVec<'a> {
-    entries: &'a mut [MaybeUninit<Entry>],
-    index: usize,
-}
-
-impl<'a> EntriesVec<'a> {
-    pub fn new(entries: &'a mut [MaybeUninit<Entry>]) -> Self {
-        Self { entries, index: 0 }
-    }
-
-    pub fn push_back(&mut self, entry: Entry) -> Option<Entry> {
-        if self.index < self.entries.len() {
-            self.entries[self.index].write(entry);
-            self.index += 1;
-            None
-        } else {
-            Some(entry)
-        }
-    }
-
-    pub fn entries_len(&self) -> usize {
-        self.index
     }
 }
