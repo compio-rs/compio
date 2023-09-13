@@ -173,7 +173,7 @@ impl Driver {
         timeout: Option<Duration>,
         entries: &mut [MaybeUninit<Entry>],
     ) -> io::Result<usize> {
-        let entries = EntriesVec::new(entries);
+        let mut entries = EntriesVec::new(entries);
         self.poll.poll(&mut self.events, timeout)?;
         for event in &self.events {
             let token = event.token();
