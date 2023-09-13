@@ -107,3 +107,7 @@ harness = false
 [[bench]]
 name = "named_pipe"
 harness = false
+
+[[test]]
+name = "event"
+required-features = ["event"]
