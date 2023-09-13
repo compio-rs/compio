@@ -80,7 +80,7 @@ mio = { version = "0.8", features = ["os-ext"] }
 libc = "0.2"
 
 [features]
-default = ["runtime"]
+default = ["runtime", "event"]
 runtime = ["dep:async-task", "dep:futures-util", "dep:slab"]
 event = ["runtime"]
 signal = ["event"]
