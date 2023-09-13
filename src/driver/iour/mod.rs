@@ -99,7 +99,8 @@ impl Driver {
             // can't flush
             return;
         }
-        if self.squeue.len() <= inner_squeue.capacity() - inner_squeue.len() {
+        let remain_space = inner_squeue.capacity() - inner_squeue.len();
+        if self.squeue.len() <= remain_space {
             // inner queue has enough space for all entries
             // use batched submission optimization
             let (s1, s2) = self.squeue.as_slices();
@@ -115,12 +116,8 @@ impl Driver {
         } else {
             // deque has more items than the IO ring could fit
             // push one by one
-            while !inner_squeue.is_full() {
-                if let Some(entry) = self.squeue.pop_front() {
-                    unsafe { inner_squeue.push(&entry) }.expect("queue has enough space");
-                } else {
-                    break;
-                }
+            for entry in self.squeue.drain(..remain_space) {
+                unsafe { inner_squeue.push(&entry) }.expect("queue has enough space");
             }
         }
         inner_squeue.sync();
