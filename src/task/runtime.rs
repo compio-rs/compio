@@ -8,11 +8,12 @@ use std::{
 
 use async_task::{Runnable, Task};
 use futures_util::future::Either;
+use smallvec::SmallVec;
 
 #[cfg(feature = "time")]
 use crate::task::time::{TimerFuture, TimerRuntime};
 use crate::{
-    driver::{AsRawFd, Driver, OpCode, Poller, RawFd},
+    driver::{AsRawFd, Driver, Entry, OpCode, Poller, RawFd},
     task::op::{OpFuture, OpRuntime},
     Key,
 };
@@ -174,8 +175,9 @@ impl Runtime {
         #[cfg(feature = "time")]
         let timeout = self.timer_runtime.borrow().min_timeout();
 
-        match self.driver.borrow_mut().poll_entries::<1024>(timeout) {
-            Ok(entries) => {
+        let mut entries = SmallVec::<[Entry; 1024]>::new();
+        match self.driver.borrow_mut().poll(timeout, &mut entries) {
+            Ok(_) => {
                 for entry in entries {
                     self.op_runtime
                         .borrow_mut()

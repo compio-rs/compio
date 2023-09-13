@@ -1,7 +1,7 @@
 //! The platform-specified driver.
 //! Some types differ by compilation target.
 
-use std::{io, mem::MaybeUninit, ops::Range, time::Duration};
+use std::{io, time::Duration};
 #[cfg(unix)]
 mod unix;
 
@@ -28,9 +28,10 @@ cfg_if::cfg_if! {
 /// ```
 /// use std::net::SocketAddr;
 ///
+/// use arrayvec::ArrayVec;
 /// use compio::{
 ///     buf::IntoInner,
-///     driver::{AsRawFd, Driver, Poller},
+///     driver::{AsRawFd, Driver, Entry, Poller},
 ///     net::UdpSocket,
 ///     op,
 /// };
@@ -52,10 +53,13 @@ cfg_if::cfg_if! {
 /// driver.attach(socket.as_raw_fd()).unwrap();
 /// driver.attach(other_socket.as_raw_fd()).unwrap();
 ///
+/// let mut entries = ArrayVec::<Entry, 1>::new();
+///
 /// // write data
 /// let mut op = op::Send::new(socket.as_raw_fd(), "hello world");
 /// unsafe { driver.push(&mut op, 1) }.unwrap();
-/// let entry = driver.poll_one(None).unwrap();
+/// driver.poll(None, &mut entries).unwrap();
+/// let entry = entries.drain(..).next().unwrap();
 /// assert_eq!(entry.user_data(), 1);
 /// entry.into_result().unwrap();
 ///
@@ -63,7 +67,8 @@ cfg_if::cfg_if! {
 /// let buf = Vec::with_capacity(32);
 /// let mut op = op::Recv::new(other_socket.as_raw_fd(), buf);
 /// unsafe { driver.push(&mut op, 2) }.unwrap();
-/// let entry = driver.poll_one(None).unwrap();
+/// driver.poll(None, &mut entries).unwrap();
+/// let entry = entries.drain(..).next().unwrap();
 /// assert_eq!(entry.user_data(), 2);
 /// let n_bytes = entry.into_result().unwrap();
 /// let mut buf = op.into_inner().into_inner();
@@ -108,34 +113,8 @@ pub trait Poller {
     fn poll(
         &mut self,
         timeout: Option<Duration>,
-        entries: &mut [MaybeUninit<Entry>],
-    ) -> io::Result<usize>;
-
-    /// Poll the driver and get only one entry back.
-    ///
-    /// See [`Poller::poll`].
-    fn poll_one(&mut self, timeout: Option<Duration>) -> io::Result<Entry> {
-        let mut entry = MaybeUninit::uninit();
-        let polled = self.poll(timeout, std::slice::from_mut(&mut entry))?;
-        debug_assert_eq!(polled, 1);
-        let entry = unsafe { entry.assume_init() };
-        Ok(entry)
-    }
-
-    /// Poll the driver and get multiple entries back.
-    ///
-    /// See [`Poller::poll`].
-    fn poll_entries<const N: usize>(
-        &mut self,
-        timeout: Option<Duration>,
-    ) -> io::Result<Entries<N>> {
-        let mut entries = Entries::new();
-        let polled = self.poll(timeout, entries.as_mut_slice())?;
-        unsafe {
-            entries.set_len(polled);
-        }
-        Ok(entries)
-    }
+        entries: &mut impl Extend<Entry>,
+    ) -> io::Result<()>;
 }
 
 /// An completed entry returned from kernel.
@@ -158,53 +137,5 @@ impl Entry {
     /// The result of the operation.
     pub fn into_result(self) -> io::Result<usize> {
         self.result
-    }
-}
-
-/// An iterator that contains the polled entries.
-#[derive(Debug)]
-pub struct Entries<const N: usize, T = Entry> {
-    entries: [MaybeUninit<T>; N],
-    range: Range<usize>,
-}
-
-impl<const N: usize, T> Entries<N, T> {
-    const EMPTY_ENTRY: MaybeUninit<T> = MaybeUninit::uninit();
-
-    pub(crate) fn new() -> Self {
-        Self {
-            entries: [Self::EMPTY_ENTRY; N],
-            range: 0..0,
-        }
-    }
-
-    pub(crate) fn as_mut_slice(&mut self) -> &mut [MaybeUninit<T>] {
-        &mut self.entries
-    }
-
-    /// # Safety
-    ///
-    /// The caller should ensure that [`Poller::poll`] returned such length.
-    pub(crate) unsafe fn set_len(&mut self, len: usize) {
-        self.range = 0..len;
-    }
-}
-
-impl<const N: usize, T> Iterator for Entries<N, T> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.range
-            .next()
-            // Safety: copied from core::array::IntoIter
-            .map(|i| unsafe { self.entries.get_unchecked(i).assume_init_read() })
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.range.size_hint()
-    }
-
-    fn count(self) -> usize {
-        self.range.count()
     }
 }
