@@ -115,7 +115,7 @@ impl Socket {
         let accept_sock = Self::new(
             local_addr.domain(),
             self.socket.r#type()?,
-            self.socket.protocol()?,
+            None,
         )?;
         let op = Accept::new(self.as_raw_fd(), accept_sock.as_raw_fd() as _);
         let (res, op) = RUNTIME.with(|runtime| runtime.submit(op)).await;
