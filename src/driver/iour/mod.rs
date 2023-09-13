@@ -29,6 +29,8 @@ pub struct Driver {
 }
 
 impl Driver {
+    const CANCEL: u64 = u64::MAX;
+
     /// Create a new io-uring driver with 1024 entries.
     pub fn new() -> io::Result<Self> {
         Self::with_entries(1024)
@@ -46,17 +48,7 @@ impl Driver {
     fn submit(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         // Anyway we need to submit once, no matter there are entries in squeue.
         loop {
-            {
-                let mut inner_squeue = self.inner.submission();
-                while !inner_squeue.is_full() {
-                    if let Some(entry) = self.squeue.pop_front() {
-                        unsafe { inner_squeue.push(&entry) }.unwrap();
-                    } else {
-                        break;
-                    }
-                }
-                inner_squeue.sync();
-            }
+            self.flush_submissions();
 
             let res = if self.squeue.is_empty() {
                 // Last part of submission queue, wait till timeout.
@@ -79,20 +71,15 @@ impl Driver {
                 },
             }?;
 
-            for entry in self.inner.completion() {
-                let entry = create_entry(entry);
-                if entry.user_data() == u64::MAX as _ {
-                    // This is a cancel operation.
-                    continue;
+            let completed_entries = self.inner.completion().filter_map(|entry| {
+                const SYSCALL_ECANCELED: i32 = -libc::ECANCELED;
+                match (entry.user_data(), entry.result()) {
+                    // Cancel or cancelled operation.
+                    (Self::CANCEL, _) | (_, SYSCALL_ECANCELED) => None,
+                    (..) => Some(create_entry(entry)),
                 }
-                if let Err(e) = &entry.result {
-                    if e.raw_os_error() == Some(libc::ECANCELED) {
-                        // This operation is cancelled.
-                        continue;
-                    }
-                }
-                self.cqueue.push_back(entry);
-            }
+            });
+            self.cqueue.extend(completed_entries);
 
             if self.squeue.is_empty() && self.inner.submission().is_empty() {
                 break;
@@ -101,10 +88,43 @@ impl Driver {
         Ok(())
     }
 
+    fn flush_submissions(&mut self) {
+        let mut inner_squeue = self.inner.submission();
+        if inner_squeue.is_full() {
+            // can't flush
+            return;
+        }
+        if self.squeue.len() <= inner_squeue.capacity() - inner_squeue.len() {
+            // inner queue has enough space for all entries
+            // use batched submission optimization
+            let (s1, s2) = self.squeue.as_slices();
+            unsafe {
+                inner_squeue
+                    .push_multiple(s1)
+                    .expect("queue has enough space");
+                inner_squeue
+                    .push_multiple(s2)
+                    .expect("queue has enough space");
+            }
+            self.squeue.clear();
+        } else {
+            // deque has more items than the IO ring could fit
+            // push one by one
+            while !inner_squeue.is_full() {
+                if let Some(entry) = self.squeue.pop_front() {
+                    unsafe { inner_squeue.push(&entry) }.expect("queue has enough space");
+                } else {
+                    break;
+                }
+            }
+        }
+        inner_squeue.sync();
+    }
+
     fn poll_entries(&mut self, entries: &mut [MaybeUninit<Entry>]) -> usize {
         let len = self.cqueue.len().min(entries.len());
-        for entry in &mut entries[..len] {
-            entry.write(self.cqueue.pop_front().unwrap());
+        for (entry, cqe) in entries.iter_mut().zip(self.cqueue.drain(..len)) {
+            entry.write(cqe);
         }
         len
     }
@@ -126,8 +146,11 @@ impl Poller for Driver {
     }
 
     fn cancel(&mut self, user_data: usize) {
-        self.squeue
-            .push_back(AsyncCancel::new(user_data as _).build().user_data(u64::MAX));
+        self.squeue.push_back(
+            AsyncCancel::new(user_data as _)
+                .build()
+                .user_data(Self::CANCEL),
+        );
     }
 
     fn poll(
