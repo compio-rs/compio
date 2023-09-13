@@ -1,6 +1,6 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{collections::VecDeque, io, mem::MaybeUninit, time::Duration};
+use std::{collections::VecDeque, io, time::Duration};
 
 use io_uring::{
     cqueue,
@@ -25,7 +25,6 @@ pub trait OpCode {
 pub struct Driver {
     inner: IoUring,
     squeue: VecDeque<squeue::Entry>,
-    cqueue: VecDeque<Entry>,
 }
 
 impl Driver {
@@ -41,56 +40,31 @@ impl Driver {
         Ok(Self {
             inner: IoUring::new(entries)?,
             squeue: VecDeque::with_capacity(entries as usize),
-            cqueue: VecDeque::with_capacity(entries as usize),
         })
     }
 
-    fn submit(
-        &mut self,
-        timeout: Option<Duration>,
-        entries: &mut [MaybeUninit<Entry>],
-    ) -> io::Result<usize> {
-        let mut entries = EntriesVec::new(entries);
-        // Anyway we need to submit once, no matter there are entries in squeue.
-        loop {
-            self.flush_submissions();
-
-            let res = if self.squeue.is_empty() {
-                // Last part of submission queue, wait till timeout.
-                if let Some(duration) = timeout {
-                    let timespec = timespec(duration);
-                    let args = SubmitArgs::new().timespec(&timespec);
-                    self.inner.submitter().submit_with_args(1, &args)
-                } else {
-                    self.inner.submit_and_wait(1)
-                }
+    // Auto means that it choose to wait or not automatically.
+    fn submit_auto(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+        let res = if self.squeue.is_empty() {
+            // Last part of submission queue, wait till timeout.
+            if let Some(duration) = timeout {
+                let timespec = timespec(duration);
+                let args = SubmitArgs::new().timespec(&timespec);
+                self.inner.submitter().submit_with_args(1, &args)
             } else {
-                self.inner.submit()
-            };
-            match res {
-                Ok(_) => Ok(()),
-                Err(e) => match e.raw_os_error() {
-                    Some(libc::ETIME) => Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)),
-                    Some(libc::EBUSY) => Ok(()),
-                    _ => Err(e),
-                },
-            }?;
-
-            let completed_entries = self.inner.completion().filter_map(|entry| {
-                const SYSCALL_ECANCELED: i32 = -libc::ECANCELED;
-                match (entry.user_data(), entry.result()) {
-                    // Cancel or cancelled operation.
-                    (Self::CANCEL, _) | (_, SYSCALL_ECANCELED) => None,
-                    (..) => Some(create_entry(entry)),
-                }
-            });
-            self.cqueue.extend(entries.extend(completed_entries));
-
-            if self.squeue.is_empty() && self.inner.submission().is_empty() {
-                break;
+                self.inner.submit_and_wait(1)
             }
+        } else {
+            self.inner.submit()
+        };
+        match res {
+            Ok(_) => Ok(()),
+            Err(e) => match e.raw_os_error() {
+                Some(libc::ETIME) => Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)),
+                Some(libc::EBUSY) => Ok(()),
+                _ => Err(e),
+            },
         }
-        Ok(entries.entries_len())
     }
 
     fn flush_submissions(&mut self) {
@@ -123,12 +97,16 @@ impl Driver {
         inner_squeue.sync();
     }
 
-    fn poll_entries(&mut self, entries: &mut [MaybeUninit<Entry>]) -> usize {
-        let len = self.cqueue.len().min(entries.len());
-        for (entry, cqe) in entries.iter_mut().zip(self.cqueue.drain(..len)) {
-            entry.write(cqe);
-        }
-        len
+    fn poll_entries(&mut self, entries: &mut impl Extend<Entry>) {
+        let completed_entries = self.inner.completion().filter_map(|entry| {
+            const SYSCALL_ECANCELED: i32 = -libc::ECANCELED;
+            match (entry.user_data(), entry.result()) {
+                // Cancel or cancelled operation.
+                (Self::CANCEL, _) | (_, SYSCALL_ECANCELED) => None,
+                (..) => Some(create_entry(entry)),
+            }
+        });
+        entries.extend(completed_entries);
     }
 }
 
@@ -158,16 +136,21 @@ impl Poller for Driver {
     fn poll(
         &mut self,
         timeout: Option<Duration>,
-        entries: &mut [MaybeUninit<Entry>],
-    ) -> io::Result<usize> {
-        if entries.is_empty() {
-            return Ok(0);
+        entries: &mut impl Extend<Entry>,
+    ) -> io::Result<()> {
+        // Anyway we need to submit once, no matter there are entries in squeue.
+        loop {
+            self.flush_submissions();
+
+            self.submit_auto(timeout)?;
+
+            self.poll_entries(entries);
+
+            if self.squeue.is_empty() && self.inner.submission().is_empty() {
+                break;
+            }
         }
-        let len = self.poll_entries(entries);
-        if len > 0 {
-            return Ok(len);
-        }
-        self.submit(timeout, entries)
+        Ok(())
     }
 }
 
@@ -191,32 +174,4 @@ fn timespec(duration: std::time::Duration) -> Timespec {
     Timespec::new()
         .sec(duration.as_secs())
         .nsec(duration.subsec_nanos())
-}
-
-struct EntriesVec<'a> {
-    entries: &'a mut [MaybeUninit<Entry>],
-    index: usize,
-}
-
-impl<'a> EntriesVec<'a> {
-    pub fn new(entries: &'a mut [MaybeUninit<Entry>]) -> Self {
-        Self { entries, index: 0 }
-    }
-
-    pub fn extend(&mut self, iter: impl IntoIterator<Item = Entry>) -> impl Iterator<Item = Entry> {
-        let mut iter = iter.into_iter();
-        while self.index < self.entries.len() {
-            if let Some(entry) = iter.next() {
-                self.entries[self.index].write(entry);
-                self.index += 1;
-            } else {
-                break;
-            }
-        }
-        iter
-    }
-
-    pub fn entries_len(&self) -> usize {
-        self.index
-    }
 }
