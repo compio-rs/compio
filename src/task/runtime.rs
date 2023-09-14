@@ -3,6 +3,7 @@ use std::{
     collections::VecDeque,
     future::{ready, Future},
     io,
+    ptr::NonNull,
     task::{Context, Poll},
 };
 
@@ -13,14 +14,15 @@ use smallvec::SmallVec;
 #[cfg(feature = "time")]
 use crate::task::time::{TimerFuture, TimerRuntime};
 use crate::{
-    driver::{AsRawFd, Driver, Entry, OpCode, Poller, RawFd},
-    task::op::{OpFuture, OpRuntime},
+    driver::{AsRawFd, Driver, Entry, OpCode, Operation, Poller, RawFd},
+    task::op::{OpFuture, OpRuntime, RawOp},
     Key,
 };
 
 pub(crate) struct Runtime {
     driver: RefCell<Driver>,
     runnables: RefCell<VecDeque<Runnable>>,
+    squeue: RefCell<VecDeque<(usize, NonNull<RawOp>)>>,
     op_runtime: RefCell<OpRuntime>,
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
@@ -31,6 +33,7 @@ impl Runtime {
         Ok(Self {
             driver: RefCell::new(Driver::new()?),
             runnables: RefCell::default(),
+            squeue: RefCell::default(),
             op_runtime: RefCell::default(),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
@@ -87,19 +90,10 @@ impl Runtime {
     ) -> impl Future<Output = (io::Result<usize>, T)> {
         let mut op_runtime = self.op_runtime.borrow_mut();
         let (user_data, op) = op_runtime.insert(op);
-        let res = unsafe { self.driver.borrow_mut().push(op.as_mut::<T>(), *user_data) };
-        match res {
-            Ok(()) => {
-                let (runnable, task) = unsafe { self.spawn_unchecked(OpFuture::new(user_data)) };
-                runnable.schedule();
-                Either::Left(task)
-            }
-            Err(e) => {
-                let op = op_runtime.remove(user_data);
-                // Safety: we ensure the type of op.
-                Either::Right(ready((Err(e), unsafe { op.op.unwrap().into_inner::<T>() })))
-            }
-        }
+        self.squeue
+            .borrow_mut()
+            .push_back((*user_data, NonNull::from(op)));
+        self.spawn(OpFuture::new(user_data))
     }
 
     #[allow(dead_code)]
@@ -175,8 +169,18 @@ impl Runtime {
         #[cfg(feature = "time")]
         let timeout = self.timer_runtime.borrow().min_timeout();
 
+        let mut squeue = self.squeue.borrow_mut();
+        let mut ops = std::iter::from_fn(|| {
+            squeue.pop_front().map(|(user_data, mut op)| {
+                Operation::new_dyn(unsafe { op.as_mut() }.as_dyn_mut(), user_data)
+            })
+        });
         let mut entries = SmallVec::<[Entry; 1024]>::new();
-        match self.driver.borrow_mut().poll(timeout, &mut entries) {
+        match unsafe {
+            self.driver
+                .borrow_mut()
+                .poll(timeout, &mut ops, &mut entries)
+        } {
             Ok(_) => {
                 for entry in entries {
                     self.op_runtime

@@ -24,6 +24,10 @@ impl RawOp {
         self.0.cast().as_mut()
     }
 
+    pub fn as_dyn_mut(&mut self) -> &mut dyn OpCode {
+        unsafe { self.0.as_mut() }
+    }
+
     pub unsafe fn into_inner<T: OpCode>(self) -> T {
         let this = ManuallyDrop::new(self);
         *Box::from_raw(this.0.cast().as_ptr())

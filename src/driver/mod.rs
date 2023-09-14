@@ -31,7 +31,7 @@ cfg_if::cfg_if! {
 /// use arrayvec::ArrayVec;
 /// use compio::{
 ///     buf::IntoInner,
-///     driver::{AsRawFd, Driver, Entry, Poller},
+///     driver::{AsRawFd, Driver, Entry, Operation, Poller},
 ///     net::UdpSocket,
 ///     op,
 /// };
@@ -53,27 +53,46 @@ cfg_if::cfg_if! {
 /// driver.attach(socket.as_raw_fd()).unwrap();
 /// driver.attach(other_socket.as_raw_fd()).unwrap();
 ///
-/// let mut entries = ArrayVec::<Entry, 1>::new();
-///
 /// // write data
-/// let mut op = op::Send::new(socket.as_raw_fd(), "hello world");
-/// unsafe { driver.push(&mut op, 1) }.unwrap();
-/// driver.poll(None, &mut entries).unwrap();
-/// let entry = entries.drain(..).next().unwrap();
-/// assert_eq!(entry.user_data(), 1);
-/// entry.into_result().unwrap();
+/// let mut op_write = op::Send::new(socket.as_raw_fd(), "hello world");
 ///
 /// // read data
 /// let buf = Vec::with_capacity(32);
-/// let mut op = op::Recv::new(other_socket.as_raw_fd(), buf);
-/// unsafe { driver.push(&mut op, 2) }.unwrap();
-/// driver.poll(None, &mut entries).unwrap();
-/// let entry = entries.drain(..).next().unwrap();
-/// assert_eq!(entry.user_data(), 2);
-/// let n_bytes = entry.into_result().unwrap();
-/// let mut buf = op.into_inner().into_inner();
-/// unsafe { buf.set_len(n_bytes) };
+/// let mut op_read = op::Recv::new(other_socket.as_raw_fd(), buf);
 ///
+/// let ops = [
+///     Operation::new(&mut op_write, 1),
+///     Operation::new(&mut op_read, 2),
+/// ];
+/// let mut entries = ArrayVec::<Entry, 2>::new();
+/// unsafe {
+///     driver
+///         .poll(None, &mut ops.into_iter(), &mut entries)
+///         .unwrap()
+/// };
+/// while entries.len() < 2 {
+///     unsafe {
+///         driver
+///             .poll(None, &mut [].into_iter(), &mut entries)
+///             .unwrap()
+///     };
+/// }
+///
+/// let mut n_bytes = 0;
+/// for entry in entries {
+///     match entry.user_data() {
+///         1 => {
+///             entry.into_result().unwrap();
+///         }
+///         2 => {
+///             n_bytes = entry.into_result().unwrap();
+///         }
+///         _ => unreachable!(),
+///     }
+/// }
+///
+/// let mut buf = op_read.into_inner().into_inner();
+/// unsafe { buf.set_len(n_bytes) };
 /// assert_eq!(buf, b"hello world");
 /// ```
 pub trait Poller {
@@ -86,16 +105,6 @@ pub trait Poller {
     ///   with one driver and push an op to another driver.
     /// * io-uring/mio: it will do nothing and return `Ok(())`
     fn attach(&mut self, fd: RawFd) -> io::Result<()>;
-
-    /// Push an operation with user-defined data.
-    /// The data could be retrived from [`Entry`] when polling.
-    ///
-    /// # Safety
-    ///
-    /// * `op` should be alive until [`Poller::poll`] returns its result.
-    /// * `user_data` should be unique.
-    unsafe fn push(&mut self, op: &mut (impl OpCode + 'static), user_data: usize)
-    -> io::Result<()>;
 
     /// Cancel an operation with the pushed user-defined data.
     fn cancel(&mut self, user_data: usize);
@@ -110,11 +119,46 @@ pub trait Poller {
     /// To interrupt the blocking, see [`Event`].
     ///
     /// [`Event`]: crate::event::Event
-    fn poll(
+    ///
+    /// # Safety
+    ///
+    /// * `op` should be alive until [`Poller::poll`] returns its result.
+    /// * `user_data` should be unique.
+    unsafe fn poll<'a>(
         &mut self,
         timeout: Option<Duration>,
+        ops: &mut impl Iterator<Item = Operation<'a>>,
         entries: &mut impl Extend<Entry>,
     ) -> io::Result<()>;
+}
+
+pub struct Operation<'a> {
+    op: &'a mut dyn OpCode,
+    user_data: usize,
+}
+
+impl<'a> Operation<'a> {
+    pub fn new(op: &'a mut impl OpCode, user_data: usize) -> Self {
+        Self { op, user_data }
+    }
+
+    pub fn new_dyn(op: &'a mut dyn OpCode, user_data: usize) -> Self {
+        Self { op, user_data }
+    }
+
+    pub fn opcode_mut(&mut self) -> &mut dyn OpCode {
+        self.op
+    }
+
+    pub fn user_data(&self) -> usize {
+        self.user_data
+    }
+}
+
+impl<'a, O: OpCode> From<(&'a mut O, usize)> for Operation<'a> {
+    fn from((op, user_data): (&'a mut O, usize)) -> Self {
+        Self::new(op, user_data)
+    }
 }
 
 /// An completed entry returned from kernel.

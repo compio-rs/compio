@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet},
     io,
     os::windows::{
         io::HandleOrNull,
@@ -8,7 +8,6 @@ use std::{
             OwnedHandle, RawHandle,
         },
     },
-    ptr::NonNull,
     task::Poll,
     time::Duration,
 };
@@ -29,7 +28,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::driver::{Entry, Poller};
+use crate::driver::{Entry, Operation, Poller};
 
 pub(crate) mod op;
 
@@ -116,7 +115,6 @@ pub trait OpCode {
 /// Low-level driver of IOCP.
 pub struct Driver {
     port: OwnedHandle,
-    operations: VecDeque<(NonNull<dyn OpCode>, Overlapped)>,
     submit_map: HashMap<usize, *mut OVERLAPPED>,
     cancelled: HashSet<*mut OVERLAPPED>,
 }
@@ -126,17 +124,11 @@ impl Driver {
 
     /// Create a new IOCP.
     pub fn new() -> io::Result<Self> {
-        Self::with_entries(Self::DEFAULT_CAPACITY as _)
-    }
-
-    /// Create a new IOCP driver with the given number of capacity.
-    pub fn with_entries(entries: u32) -> io::Result<Self> {
         let port = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0) };
         let port = OwnedHandle::try_from(unsafe { HandleOrNull::from_raw_handle(port as _) })
             .map_err(|_| io::Error::last_os_error())?;
         Ok(Self {
             port,
-            operations: VecDeque::with_capacity(entries as _),
             submit_map: HashMap::default(),
             cancelled: HashSet::default(),
         })
@@ -249,16 +241,6 @@ impl Poller for Driver {
         }
     }
 
-    unsafe fn push(
-        &mut self,
-        op: &mut (impl OpCode + 'static),
-        user_data: usize,
-    ) -> io::Result<()> {
-        self.operations
-            .push_back((NonNull::from(op), Overlapped::new(user_data)));
-        Ok(())
-    }
-
     fn cancel(&mut self, user_data: usize) {
         if let Some(ptr) = self.submit_map.remove(&user_data) {
             // TODO: should we call CancelIoEx?
@@ -266,16 +248,17 @@ impl Poller for Driver {
         }
     }
 
-    fn poll(
+    unsafe fn poll<'a>(
         &mut self,
         timeout: Option<Duration>,
+        ops: &mut impl Iterator<Item = Operation<'a>>,
         entries: &mut impl Extend<Entry>,
     ) -> io::Result<()> {
-        while let Some((mut op, overlapped)) = self.operations.pop_front() {
-            let overlapped = Box::new(overlapped);
+        for mut operation in ops {
+            let overlapped = Box::new(Overlapped::new(operation.user_data()));
             let user_data = overlapped.user_data;
             let overlapped_ptr = Box::into_raw(overlapped);
-            let result = unsafe { op.as_mut().operate(overlapped_ptr.cast()) };
+            let result = unsafe { operation.opcode_mut().operate(overlapped_ptr.cast()) };
             if let Poll::Ready(result) = result {
                 unsafe {
                     post_driver_raw(self.port.as_raw_handle(), result, overlapped_ptr.cast())?;
