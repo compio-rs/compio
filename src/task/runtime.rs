@@ -1,28 +1,27 @@
 use std::{
     cell::RefCell,
     collections::VecDeque,
-    future::{ready, Future},
+    future::Future,
     io,
     ptr::NonNull,
     task::{Context, Poll},
 };
 
 use async_task::{Runnable, Task};
-use futures_util::future::Either;
 use smallvec::SmallVec;
 
 #[cfg(feature = "time")]
 use crate::task::time::{TimerFuture, TimerRuntime};
 use crate::{
     driver::{AsRawFd, Driver, Entry, OpCode, Operation, Poller, RawFd},
-    task::op::{OpFuture, OpRuntime, RawOp},
+    task::op::{OpFuture, OpRuntime},
     Key,
 };
 
 pub(crate) struct Runtime {
     driver: RefCell<Driver>,
     runnables: RefCell<VecDeque<Runnable>>,
-    squeue: RefCell<VecDeque<(usize, NonNull<RawOp>)>>,
+    squeue: RefCell<VecDeque<usize>>,
     op_runtime: RefCell<OpRuntime>,
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
@@ -89,10 +88,8 @@ impl Runtime {
         op: T,
     ) -> impl Future<Output = (io::Result<usize>, T)> {
         let mut op_runtime = self.op_runtime.borrow_mut();
-        let (user_data, op) = op_runtime.insert(op);
-        self.squeue
-            .borrow_mut()
-            .push_back((*user_data, NonNull::from(op)));
+        let user_data = op_runtime.insert(op);
+        self.squeue.borrow_mut().push_back(*user_data);
         self.spawn(OpFuture::new(user_data))
     }
 
@@ -103,11 +100,13 @@ impl Runtime {
 
     #[cfg(feature = "time")]
     pub fn create_timer(&self, delay: std::time::Duration) -> impl Future<Output = ()> {
+        use futures_util::future::Either;
+
         let mut timer_runtime = self.timer_runtime.borrow_mut();
         if let Some(key) = timer_runtime.insert(delay) {
             Either::Left(TimerFuture::new(key))
         } else {
-            Either::Right(ready(()))
+            Either::Right(std::future::ready(()))
         }
     }
 
@@ -171,7 +170,9 @@ impl Runtime {
 
         let mut squeue = self.squeue.borrow_mut();
         let mut ops = std::iter::from_fn(|| {
-            squeue.pop_front().map(|(user_data, mut op)| {
+            squeue.pop_front().map(|user_data| {
+                let mut op = NonNull::from(self.op_runtime.borrow_mut().get_raw_op(user_data));
+                // Safety: op won't outlive.
                 Operation::new_dyn(unsafe { op.as_mut() }.as_dyn_mut(), user_data)
             })
         });

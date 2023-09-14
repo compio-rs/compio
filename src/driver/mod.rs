@@ -122,8 +122,8 @@ pub trait Poller {
     ///
     /// # Safety
     ///
-    /// * `op` should be alive until [`Poller::poll`] returns its result.
-    /// * `user_data` should be unique.
+    /// * Operations should be alive until [`Poller::poll`] returns its result.
+    /// * User defined data should be unique.
     unsafe fn poll<'a>(
         &mut self,
         timeout: Option<Duration>,
@@ -132,24 +132,29 @@ pub trait Poller {
     ) -> io::Result<()>;
 }
 
+/// An operation with a unique user defined data.
 pub struct Operation<'a> {
     op: &'a mut dyn OpCode,
     user_data: usize,
 }
 
 impl<'a> Operation<'a> {
+    /// Create [`Operation`].
     pub fn new(op: &'a mut impl OpCode, user_data: usize) -> Self {
         Self { op, user_data }
     }
 
+    /// Create [`Operation`] from dyn [`OpCode`].
     pub fn new_dyn(op: &'a mut dyn OpCode, user_data: usize) -> Self {
         Self { op, user_data }
     }
 
+    /// Get the opcode inside.
     pub fn opcode_mut(&mut self) -> &mut dyn OpCode {
         self.op
     }
 
+    /// Get the user defined data.
     pub fn user_data(&self) -> usize {
         self.user_data
     }
