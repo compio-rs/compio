@@ -20,8 +20,8 @@ impl RawOp {
         Self(unsafe { NonNull::new_unchecked(Box::into_raw(op as Box<dyn OpCode>)) })
     }
 
-    pub unsafe fn as_mut<T: OpCode>(&mut self) -> &mut T {
-        self.0.cast().as_mut()
+    pub fn as_dyn_mut(&mut self) -> &mut dyn OpCode {
+        unsafe { self.0.as_mut() }
     }
 
     pub unsafe fn into_inner<T: OpCode>(self) -> T {
@@ -60,15 +60,18 @@ pub(crate) struct OpRuntime {
 }
 
 impl OpRuntime {
-    pub fn insert<T: OpCode + 'static>(&mut self, op: T) -> (Key<T>, &mut RawOp) {
+    pub fn insert<T: OpCode + 'static>(&mut self, op: T) -> Key<T> {
         let user_data = self.ops.insert(RegisteredOp::new(Some(RawOp::new(op))));
-        let op = unsafe { self.ops.get_unchecked_mut(user_data) };
         // Safety: `user_data` corresponds to `op` inserted which has type `T`.
-        (unsafe { Key::new(user_data) }, op.op.as_mut().unwrap())
+        unsafe { Key::new(user_data) }
     }
 
     pub fn insert_dummy(&mut self) -> Key<()> {
         Key::new_dummy(self.ops.insert(RegisteredOp::new(None)))
+    }
+
+    pub fn get_raw_op(&mut self, key: usize) -> &mut RawOp {
+        self.ops.get_mut(key).unwrap().op.as_mut().unwrap()
     }
 
     pub fn update_waker<T>(&mut self, key: Key<T>, waker: Waker) {

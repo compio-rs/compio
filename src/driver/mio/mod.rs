@@ -1,11 +1,6 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{
-    collections::{HashMap, VecDeque},
-    io,
-    ops::ControlFlow,
-    time::Duration,
-};
+use std::{collections::HashMap, io, ops::ControlFlow, ptr::NonNull, time::Duration};
 
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use mio::{
@@ -14,7 +9,7 @@ use mio::{
     Events, Interest, Poll, Token,
 };
 
-use crate::driver::{Entry, Poller};
+use crate::driver::{Entry, Operation, Poller};
 
 pub(crate) mod op;
 
@@ -63,52 +58,30 @@ pub struct WaitArg {
 
 /// Low-level driver of mio.
 pub struct Driver {
-    squeue: VecDeque<MioEntry>,
     events: Events,
     poll: Poll,
     waiting: HashMap<usize, WaitEntry>,
 }
 
-/// Entry in squeue
-#[derive(Debug)]
-struct MioEntry {
-    op: *mut dyn OpCode,
-    user_data: usize,
-}
-
-impl MioEntry {
-    /// Safety: Caller mut guarantee that the op will live until it is
-    /// completed.
-    unsafe fn new(op: &mut (impl OpCode + 'static), user_data: usize) -> Self {
-        Self {
-            op: op as *mut dyn OpCode,
-            user_data,
-        }
-    }
-
-    fn op_mut(&mut self) -> &mut dyn OpCode {
-        unsafe { &mut *self.op }
-    }
-}
-
 /// Entry waiting for events
 struct WaitEntry {
-    op: *mut dyn OpCode,
+    op: NonNull<dyn OpCode>,
     arg: WaitArg,
     user_data: usize,
 }
 
 impl WaitEntry {
-    fn new(mio_entry: MioEntry, arg: WaitArg) -> Self {
-        Self {
-            op: mio_entry.op,
-            arg,
-            user_data: mio_entry.user_data,
-        }
+    fn new(mut mio_entry: Operation, arg: WaitArg) -> Self {
+        let user_data = mio_entry.user_data();
+        // Safety: to make the borrow checker happy
+        let op = NonNull::from(unsafe {
+            std::mem::transmute::<_, &'static mut dyn OpCode>(mio_entry.opcode_mut())
+        });
+        Self { op, arg, user_data }
     }
 
     fn op_mut(&mut self) -> &mut dyn OpCode {
-        unsafe { &mut *self.op }
+        unsafe { self.op.as_mut() }
     }
 }
 
@@ -123,7 +96,6 @@ impl Driver {
         let entries = entries as usize; // for the sake of consistency, use u32 like iour
 
         Ok(Self {
-            squeue: VecDeque::with_capacity(entries),
             events: Events::with_capacity(entries),
             poll: Poll::new()?,
             waiting: HashMap::new(),
@@ -132,7 +104,7 @@ impl Driver {
 }
 
 impl Driver {
-    fn submit(&mut self, entry: MioEntry, arg: WaitArg) -> io::Result<()> {
+    fn submit(&mut self, entry: Operation, arg: WaitArg) -> io::Result<()> {
         let token = Token(entry.user_data);
 
         SourceFd(&arg.fd).register(self.poll.registry(), token, arg.interest)?;
@@ -145,10 +117,14 @@ impl Driver {
     }
 
     /// Register all operations in the squeue to mio.
-    fn submit_squeue(&mut self, entries: &mut impl Extend<Entry>) -> io::Result<bool> {
+    fn submit_squeue<'a>(
+        &mut self,
+        ops: &mut impl Iterator<Item = Operation<'a>>,
+        entries: &mut impl Extend<Entry>,
+    ) -> io::Result<bool> {
         let mut extended = false;
-        while let Some(mut entry) = self.squeue.pop_front() {
-            match entry.op_mut().pre_submit() {
+        for mut entry in ops {
+            match entry.opcode_mut().pre_submit() {
                 Ok(Decision::Wait(arg)) => {
                     self.submit(entry, arg)?;
                 }
@@ -204,15 +180,6 @@ impl Poller for Driver {
         Ok(())
     }
 
-    unsafe fn push(
-        &mut self,
-        op: &mut (impl OpCode + 'static),
-        user_data: usize,
-    ) -> io::Result<()> {
-        self.squeue.push_back(MioEntry::new(op, user_data));
-        Ok(())
-    }
-
     fn cancel(&mut self, user_data: usize) {
         let Some(entry) = self.waiting.remove(&user_data) else {
             return;
@@ -223,12 +190,13 @@ impl Poller for Driver {
             .ok();
     }
 
-    fn poll(
+    unsafe fn poll<'a>(
         &mut self,
         timeout: Option<Duration>,
+        ops: &mut impl Iterator<Item = Operation<'a>>,
         entries: &mut impl Extend<Entry>,
     ) -> io::Result<()> {
-        let extended = self.submit_squeue(entries)?;
+        let extended = self.submit_squeue(ops, entries)?;
         if !extended {
             self.poll_impl(timeout, entries)?;
 

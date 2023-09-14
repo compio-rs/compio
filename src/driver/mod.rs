@@ -53,27 +53,43 @@ cfg_if::cfg_if! {
 /// driver.attach(socket.as_raw_fd()).unwrap();
 /// driver.attach(other_socket.as_raw_fd()).unwrap();
 ///
-/// let mut entries = ArrayVec::<Entry, 1>::new();
-///
 /// // write data
-/// let mut op = op::Send::new(socket.as_raw_fd(), "hello world");
-/// unsafe { driver.push(&mut op, 1) }.unwrap();
-/// driver.poll(None, &mut entries).unwrap();
-/// let entry = entries.drain(..).next().unwrap();
-/// assert_eq!(entry.user_data(), 1);
-/// entry.into_result().unwrap();
+/// let mut op_write = op::Send::new(socket.as_raw_fd(), "hello world");
 ///
 /// // read data
 /// let buf = Vec::with_capacity(32);
-/// let mut op = op::Recv::new(other_socket.as_raw_fd(), buf);
-/// unsafe { driver.push(&mut op, 2) }.unwrap();
-/// driver.poll(None, &mut entries).unwrap();
-/// let entry = entries.drain(..).next().unwrap();
-/// assert_eq!(entry.user_data(), 2);
-/// let n_bytes = entry.into_result().unwrap();
-/// let mut buf = op.into_inner().into_inner();
-/// unsafe { buf.set_len(n_bytes) };
+/// let mut op_read = op::Recv::new(other_socket.as_raw_fd(), buf);
 ///
+/// let ops = [(&mut op_write, 1).into(), (&mut op_read, 2).into()];
+/// let mut entries = ArrayVec::<Entry, 2>::new();
+/// unsafe {
+///     driver
+///         .poll(None, &mut ops.into_iter(), &mut entries)
+///         .unwrap()
+/// };
+/// while entries.len() < 2 {
+///     unsafe {
+///         driver
+///             .poll(None, &mut [].into_iter(), &mut entries)
+///             .unwrap()
+///     };
+/// }
+///
+/// let mut n_bytes = 0;
+/// for entry in entries {
+///     match entry.user_data() {
+///         1 => {
+///             entry.into_result().unwrap();
+///         }
+///         2 => {
+///             n_bytes = entry.into_result().unwrap();
+///         }
+///         _ => unreachable!(),
+///     }
+/// }
+///
+/// let mut buf = op_read.into_inner().into_inner();
+/// unsafe { buf.set_len(n_bytes) };
 /// assert_eq!(buf, b"hello world");
 /// ```
 pub trait Poller {
@@ -87,22 +103,17 @@ pub trait Poller {
     /// * io-uring/mio: it will do nothing and return `Ok(())`
     fn attach(&mut self, fd: RawFd) -> io::Result<()>;
 
-    /// Push an operation with user-defined data.
-    /// The data could be retrived from [`Entry`] when polling.
-    ///
-    /// # Safety
-    ///
-    /// * `op` should be alive until [`Poller::poll`] returns its result.
-    /// * `user_data` should be unique.
-    unsafe fn push(&mut self, op: &mut (impl OpCode + 'static), user_data: usize)
-    -> io::Result<()>;
-
     /// Cancel an operation with the pushed user-defined data.
+    ///
+    /// The cancellation is not reliable. The underlying operation may continue,
+    /// but just don't return from [`Poller::poll`]. Therefore, although an
+    /// operation is cancelled, you should not reuse its `user_data`.
     fn cancel(&mut self, user_data: usize);
 
     /// Poll the driver with an optional timeout.
     ///
-    /// If there are already tasks completed, this method will return
+    /// The operations in `ops` may not be totally consumed. This method will
+    /// try its best to consume them, but if an error occurs, it will return
     /// immediately.
     ///
     /// If there are no tasks completed, this call will block and wait.
@@ -110,11 +121,57 @@ pub trait Poller {
     /// To interrupt the blocking, see [`Event`].
     ///
     /// [`Event`]: crate::event::Event
-    fn poll(
+    ///
+    /// # Safety
+    ///
+    /// * Operations should be alive until [`Poller::poll`] returns its result.
+    /// * User defined data should be unique.
+    unsafe fn poll<'a>(
         &mut self,
         timeout: Option<Duration>,
+        ops: &mut impl Iterator<Item = Operation<'a>>,
         entries: &mut impl Extend<Entry>,
     ) -> io::Result<()>;
+}
+
+/// An operation with a unique user defined data.
+pub struct Operation<'a> {
+    op: &'a mut dyn OpCode,
+    user_data: usize,
+}
+
+impl<'a> Operation<'a> {
+    /// Create [`Operation`].
+    pub fn new(op: &'a mut impl OpCode, user_data: usize) -> Self {
+        Self { op, user_data }
+    }
+
+    /// Create [`Operation`] from dyn [`OpCode`].
+    pub fn new_dyn(op: &'a mut dyn OpCode, user_data: usize) -> Self {
+        Self { op, user_data }
+    }
+
+    /// Get the opcode inside.
+    pub fn opcode_mut(&mut self) -> &mut dyn OpCode {
+        self.op
+    }
+
+    /// Get the user defined data.
+    pub fn user_data(&self) -> usize {
+        self.user_data
+    }
+}
+
+impl<'a, O: OpCode> From<(&'a mut O, usize)> for Operation<'a> {
+    fn from((op, user_data): (&'a mut O, usize)) -> Self {
+        Self::new(op, user_data)
+    }
+}
+
+impl<'a> From<(&'a mut dyn OpCode, usize)> for Operation<'a> {
+    fn from((op, user_data): (&'a mut dyn OpCode, usize)) -> Self {
+        Self::new_dyn(op, user_data)
+    }
 }
 
 /// An completed entry returned from kernel.
