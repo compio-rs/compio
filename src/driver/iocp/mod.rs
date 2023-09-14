@@ -258,11 +258,9 @@ impl Poller for Driver {
             let overlapped = Box::new(Overlapped::new(operation.user_data()));
             let user_data = overlapped.user_data;
             let overlapped_ptr = Box::into_raw(overlapped);
-            let result = unsafe { operation.opcode_mut().operate(overlapped_ptr.cast()) };
+            let result = operation.opcode_mut().operate(overlapped_ptr.cast());
             if let Poll::Ready(result) = result {
-                unsafe {
-                    post_driver_raw(self.port.as_raw_handle(), result, overlapped_ptr.cast())?;
-                }
+                post_driver_raw(self.port.as_raw_handle(), result, overlapped_ptr.cast())?;
             } else {
                 self.submit_map.insert(user_data, overlapped_ptr.cast());
             }
