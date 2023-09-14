@@ -60,10 +60,7 @@ cfg_if::cfg_if! {
 /// let buf = Vec::with_capacity(32);
 /// let mut op_read = op::Recv::new(other_socket.as_raw_fd(), buf);
 ///
-/// let ops = [
-///     (&mut op_write, 1).into(),
-///     (&mut op_read, 2).into(),
-/// ];
+/// let ops = [(&mut op_write, 1).into(), (&mut op_read, 2).into()];
 /// let mut entries = ArrayVec::<Entry, 2>::new();
 /// unsafe {
 ///     driver
