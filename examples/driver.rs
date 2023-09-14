@@ -1,6 +1,7 @@
+use arrayvec::ArrayVec;
 use compio::{
     buf::IntoInner,
-    driver::{AsRawFd, Driver, Poller},
+    driver::{AsRawFd, Driver, Entry, Poller},
 };
 
 fn main() {
@@ -11,7 +12,9 @@ fn main() {
     let mut op = compio::op::ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(4096));
     unsafe { driver.push(&mut op, 0) }.unwrap();
 
-    let entry = driver.poll_one(None).unwrap();
+    let mut entries = ArrayVec::<Entry, 1>::new();
+    driver.poll(None, &mut entries).unwrap();
+    let entry = entries.drain(..).next().unwrap();
     assert_eq!(entry.user_data(), 0);
 
     let n = entry.into_result().unwrap();

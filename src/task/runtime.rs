@@ -3,12 +3,12 @@ use std::{
     collections::VecDeque,
     future::{ready, Future},
     io,
-    mem::MaybeUninit,
     task::{Context, Poll},
 };
 
 use async_task::{Runnable, Task};
 use futures_util::future::Either;
+use smallvec::SmallVec;
 
 #[cfg(feature = "time")]
 use crate::task::time::{TimerFuture, TimerRuntime};
@@ -175,12 +175,10 @@ impl Runtime {
         #[cfg(feature = "time")]
         let timeout = self.timer_runtime.borrow().min_timeout();
 
-        const UNINIT_ENTRY: MaybeUninit<Entry> = MaybeUninit::uninit();
-        let mut entries = [UNINIT_ENTRY; 16];
+        let mut entries = SmallVec::<[Entry; 1024]>::new();
         match self.driver.borrow_mut().poll(timeout, &mut entries) {
-            Ok(len) => {
-                for entry in &mut entries[..len] {
-                    let entry = unsafe { std::mem::replace(entry, UNINIT_ENTRY).assume_init() };
+            Ok(_) => {
+                for entry in entries {
                     self.op_runtime
                         .borrow_mut()
                         .update_result(Key::new_dummy(entry.user_data()), entry.into_result());

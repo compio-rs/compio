@@ -3,7 +3,6 @@ pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{
     collections::{HashMap, VecDeque},
     io,
-    mem::MaybeUninit,
     ops::ControlFlow,
     time::Duration,
 };
@@ -65,7 +64,6 @@ pub struct WaitArg {
 /// Low-level driver of mio.
 pub struct Driver {
     squeue: VecDeque<MioEntry>,
-    cqueue: VecDeque<Entry>,
     events: Events,
     poll: Poll,
     waiting: HashMap<usize, WaitEntry>,
@@ -126,7 +124,6 @@ impl Driver {
 
         Ok(Self {
             squeue: VecDeque::with_capacity(entries),
-            cqueue: VecDeque::with_capacity(entries),
             events: Events::with_capacity(entries),
             poll: Poll::new()?,
             waiting: HashMap::new(),
@@ -148,59 +145,57 @@ impl Driver {
     }
 
     /// Register all operations in the squeue to mio.
-    fn submit_squeue(&mut self) -> io::Result<()> {
+    fn submit_squeue(&mut self, entries: &mut impl Extend<Entry>) -> io::Result<bool> {
+        let mut extended = false;
         while let Some(mut entry) = self.squeue.pop_front() {
             match entry.op_mut().pre_submit() {
                 Ok(Decision::Wait(arg)) => {
                     self.submit(entry, arg)?;
                 }
                 Ok(Decision::Completed(res)) => {
-                    self.cqueue.push_back(Entry::new(entry.user_data, Ok(res)));
+                    entries.extend(Some(Entry::new(entry.user_data, Ok(res))));
+                    extended = true;
                 }
                 Err(err) => {
-                    self.cqueue.push_back(Entry::new(entry.user_data, Err(err)));
+                    entries.extend(Some(Entry::new(entry.user_data, Err(err))));
+                    extended = true;
                 }
             }
         }
 
-        Ok(())
+        Ok(extended)
     }
 
     /// Poll all events from mio, call `perform` on op and push them into
     /// cqueue.
-    fn poll_impl(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+    fn poll_impl(
+        &mut self,
+        timeout: Option<Duration>,
+        entries: &mut impl Extend<Entry>,
+    ) -> io::Result<()> {
         self.poll.poll(&mut self.events, timeout)?;
+        if timeout.is_some() && self.events.is_empty() {
+            return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
+        }
         for event in &self.events {
             let token = event.token();
             let entry = self
                 .waiting
                 .get_mut(&token.0)
                 .expect("Unknown token returned by mio"); // XXX: Should this be silently ignored?
-            match entry.op_mut().on_event(event) {
-                Ok(ControlFlow::Continue(_)) => {
-                    continue;
-                }
-                Ok(ControlFlow::Break(res)) => {
-                    self.cqueue.push_back(Entry::new(entry.user_data, Ok(res)));
-                }
-                Err(err) => {
-                    self.cqueue.push_back(Entry::new(entry.user_data, Err(err)));
-                }
-            }
+            let res = match entry.op_mut().on_event(event) {
+                Ok(ControlFlow::Continue(_)) => continue,
+                Ok(ControlFlow::Break(res)) => Ok(res),
+                Err(err) => Err(err),
+            };
             self.poll
                 .registry()
                 .deregister(&mut SourceFd(&entry.arg.fd))?;
+            let entry = Entry::new(entry.user_data, res);
+            entries.extend(Some(entry));
             self.waiting.remove(&token.0);
         }
         Ok(())
-    }
-
-    fn poll_completed(&mut self, entries: &mut [MaybeUninit<Entry>]) -> usize {
-        let len = self.cqueue.len().min(entries.len());
-        for entry in &mut entries[..len] {
-            entry.write(self.cqueue.pop_front().unwrap());
-        }
-        len
     }
 }
 
@@ -231,18 +226,23 @@ impl Poller for Driver {
     fn poll(
         &mut self,
         timeout: Option<Duration>,
-        entries: &mut [MaybeUninit<Entry>],
-    ) -> io::Result<usize> {
-        self.submit_squeue()?;
-        if entries.is_empty() {
-            return Ok(0);
+        entries: &mut impl Extend<Entry>,
+    ) -> io::Result<()> {
+        let extended = self.submit_squeue(entries)?;
+        if !extended {
+            self.poll_impl(timeout, entries)?;
+
+            // See if there are remaining entries.
+            loop {
+                if let Err(e) = self.poll_impl(Some(Duration::ZERO), entries) {
+                    match e.kind() {
+                        io::ErrorKind::TimedOut => break,
+                        _ => return Err(e),
+                    }
+                }
+            }
         }
-        let len = self.poll_completed(entries);
-        if len > 0 {
-            return Ok(len);
-        }
-        self.poll_impl(timeout)?;
-        Ok(self.poll_completed(entries))
+        Ok(())
     }
 }
 

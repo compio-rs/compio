@@ -1,7 +1,7 @@
 //! The platform-specified driver.
 //! Some types differ by compilation target.
 
-use std::{io, mem::MaybeUninit, time::Duration};
+use std::{io, time::Duration};
 #[cfg(unix)]
 mod unix;
 
@@ -28,9 +28,10 @@ cfg_if::cfg_if! {
 /// ```
 /// use std::net::SocketAddr;
 ///
+/// use arrayvec::ArrayVec;
 /// use compio::{
 ///     buf::IntoInner,
-///     driver::{AsRawFd, Driver, Poller},
+///     driver::{AsRawFd, Driver, Entry, Poller},
 ///     net::UdpSocket,
 ///     op,
 /// };
@@ -52,10 +53,13 @@ cfg_if::cfg_if! {
 /// driver.attach(socket.as_raw_fd()).unwrap();
 /// driver.attach(other_socket.as_raw_fd()).unwrap();
 ///
+/// let mut entries = ArrayVec::<Entry, 1>::new();
+///
 /// // write data
 /// let mut op = op::Send::new(socket.as_raw_fd(), "hello world");
 /// unsafe { driver.push(&mut op, 1) }.unwrap();
-/// let entry = driver.poll_one(None).unwrap();
+/// driver.poll(None, &mut entries).unwrap();
+/// let entry = entries.drain(..).next().unwrap();
 /// assert_eq!(entry.user_data(), 1);
 /// entry.into_result().unwrap();
 ///
@@ -63,7 +67,8 @@ cfg_if::cfg_if! {
 /// let buf = Vec::with_capacity(32);
 /// let mut op = op::Recv::new(other_socket.as_raw_fd(), buf);
 /// unsafe { driver.push(&mut op, 2) }.unwrap();
-/// let entry = driver.poll_one(None).unwrap();
+/// driver.poll(None, &mut entries).unwrap();
+/// let entry = entries.drain(..).next().unwrap();
 /// assert_eq!(entry.user_data(), 2);
 /// let n_bytes = entry.into_result().unwrap();
 /// let mut buf = op.into_inner().into_inner();
@@ -108,19 +113,8 @@ pub trait Poller {
     fn poll(
         &mut self,
         timeout: Option<Duration>,
-        entries: &mut [MaybeUninit<Entry>],
-    ) -> io::Result<usize>;
-
-    /// Poll the driver and get only one entry back.
-    ///
-    /// See [`Poller::poll`].
-    fn poll_one(&mut self, timeout: Option<Duration>) -> io::Result<Entry> {
-        let mut entry = MaybeUninit::uninit();
-        let polled = self.poll(timeout, std::slice::from_mut(&mut entry))?;
-        debug_assert_eq!(polled, 1);
-        let entry = unsafe { entry.assume_init() };
-        Ok(entry)
-    }
+        entries: &mut impl Extend<Entry>,
+    ) -> io::Result<()>;
 }
 
 /// An completed entry returned from kernel.
