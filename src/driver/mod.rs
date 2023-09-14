@@ -107,6 +107,10 @@ pub trait Poller {
     fn attach(&mut self, fd: RawFd) -> io::Result<()>;
 
     /// Cancel an operation with the pushed user-defined data.
+    ///
+    /// The cancellation is not reliable. The underlying operation may continue,
+    /// but just don't return from [`Poller::poll`]. Therefore, although an
+    /// operation is cancelled, you should not reuse its `user_data`.
     fn cancel(&mut self, user_data: usize);
 
     /// Poll the driver with an optional timeout.
