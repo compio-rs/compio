@@ -13,7 +13,7 @@ use smallvec::SmallVec;
 #[cfg(feature = "time")]
 use crate::task::time::{TimerFuture, TimerRuntime};
 use crate::{
-    driver::{AsRawFd, Driver, Entry, OpCode, Operation, Poller, RawFd},
+    driver::{AsRawFd, Driver, Entry, OpCode, Poller, RawFd},
     task::op::{OpFuture, OpRuntime},
     Key,
 };
@@ -173,7 +173,7 @@ impl Runtime {
             squeue.pop_front().map(|user_data| {
                 let mut op = NonNull::from(self.op_runtime.borrow_mut().get_raw_op(user_data));
                 // Safety: op won't outlive.
-                Operation::new_dyn(unsafe { op.as_mut() }.as_dyn_mut(), user_data)
+                (unsafe { op.as_mut() }.as_dyn_mut(), user_data).into()
             })
         });
         let mut entries = SmallVec::<[Entry; 1024]>::new();

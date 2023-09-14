@@ -31,7 +31,7 @@ cfg_if::cfg_if! {
 /// use arrayvec::ArrayVec;
 /// use compio::{
 ///     buf::IntoInner,
-///     driver::{AsRawFd, Driver, Entry, Operation, Poller},
+///     driver::{AsRawFd, Driver, Entry, Poller},
 ///     net::UdpSocket,
 ///     op,
 /// };
@@ -61,8 +61,8 @@ cfg_if::cfg_if! {
 /// let mut op_read = op::Recv::new(other_socket.as_raw_fd(), buf);
 ///
 /// let ops = [
-///     Operation::new(&mut op_write, 1),
-///     Operation::new(&mut op_read, 2),
+///     (&mut op_write, 1).into(),
+///     (&mut op_read, 2).into(),
 /// ];
 /// let mut entries = ArrayVec::<Entry, 2>::new();
 /// unsafe {
@@ -115,7 +115,8 @@ pub trait Poller {
 
     /// Poll the driver with an optional timeout.
     ///
-    /// If there are already tasks completed, this method will return
+    /// The operations in `ops` may not be totally consumed. This method will
+    /// try its best to consume them, but if an error occurs, it will return
     /// immediately.
     ///
     /// If there are no tasks completed, this call will block and wait.
@@ -167,6 +168,12 @@ impl<'a> Operation<'a> {
 impl<'a, O: OpCode> From<(&'a mut O, usize)> for Operation<'a> {
     fn from((op, user_data): (&'a mut O, usize)) -> Self {
         Self::new(op, user_data)
+    }
+}
+
+impl<'a> From<(&'a mut dyn OpCode, usize)> for Operation<'a> {
+    fn from((op, user_data): (&'a mut dyn OpCode, usize)) -> Self {
+        Self::new_dyn(op, user_data)
     }
 }
 
