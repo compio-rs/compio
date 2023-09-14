@@ -41,7 +41,7 @@ fn read(c: &mut Criterion) {
         })
     });
 
-    group.bench_function("iocp", |b| {
+    group.bench_function("compio", |b| {
         b.to_async(CompioRuntime).iter(|| async {
             let file = compio::fs::File::open("Cargo.toml").unwrap();
             let buffer = Vec::with_capacity(1024);
