@@ -45,18 +45,16 @@ impl Runtime {
     }
 
     // Safety: the return runnable should be scheduled.
-    unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> (Runnable, Task<F::Output>) {
+    unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
         let schedule = move |runnable| self.runnables.borrow_mut().push_back(runnable);
         let (runnable, task) = async_task::spawn_unchecked(future, schedule);
-        (runnable, task)
+        runnable.schedule();
+        task
     }
 
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
-        let (runnable, task) = unsafe { self.spawn_unchecked(future) };
-        let waker = runnable.waker();
-        runnable.schedule();
-        let mut cx = Context::from_waker(&waker);
-        let mut task = std::pin::pin!(task);
+        let mut result = None;
+        unsafe { self.spawn_unchecked(async { result = Some(future.await) }) }.detach();
         loop {
             loop {
                 let next_task = self.runnables.borrow_mut().pop_front();
@@ -66,17 +64,15 @@ impl Runtime {
                     break;
                 }
             }
-            if let Poll::Ready(res) = task.as_mut().poll(&mut cx) {
-                return res;
+            if let Some(result) = result.take() {
+                return result;
             }
             self.poll();
         }
     }
 
     pub fn spawn<F: Future + 'static>(&self, future: F) -> Task<F::Output> {
-        let (runnable, task) = unsafe { self.spawn_unchecked(future) };
-        runnable.schedule();
-        task
+        unsafe { self.spawn_unchecked(future) }
     }
 
     pub fn attach(&self, fd: RawFd) -> io::Result<()> {
