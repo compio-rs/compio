@@ -45,9 +45,8 @@ test_connect_ip! {
 async fn test_connect_impl<A: ToSockAddrs>(mapping: impl FnOnce(&TcpListener) -> A) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = mapping(&listener);
-
     let server = async {
-        assert!(listener.accept().await.is_ok());
+        listener.accept().await.unwrap();
     };
 
     let client = async {
