@@ -1,6 +1,12 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{collections::HashMap, io, ops::ControlFlow, ptr::NonNull, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    io,
+    ops::ControlFlow,
+    ptr::NonNull,
+    time::Duration,
+};
 
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use mio::{
@@ -61,6 +67,7 @@ pub struct Driver {
     events: Events,
     poll: Poll,
     waiting: HashMap<usize, WaitEntry>,
+    cancelled: HashSet<usize>,
 }
 
 /// Entry waiting for events
@@ -99,20 +106,22 @@ impl Driver {
             events: Events::with_capacity(entries),
             poll: Poll::new()?,
             waiting: HashMap::new(),
+            cancelled: HashSet::new(),
         })
     }
 }
 
 impl Driver {
     fn submit(&mut self, entry: Operation, arg: WaitArg) -> io::Result<()> {
-        let token = Token(entry.user_data);
+        if !self.cancelled.remove(&entry.user_data) {
+            let token = Token(entry.user_data);
 
-        SourceFd(&arg.fd).register(self.poll.registry(), token, arg.interest)?;
+            SourceFd(&arg.fd).register(self.poll.registry(), token, arg.interest)?;
 
-        // Only insert the entry after it was registered successfully
-        self.waiting
-            .insert(entry.user_data, WaitEntry::new(entry, arg));
-
+            // Only insert the entry after it was registered successfully
+            self.waiting
+                .insert(entry.user_data, WaitEntry::new(entry, arg));
+        }
         Ok(())
     }
 
@@ -181,13 +190,14 @@ impl Poller for Driver {
     }
 
     fn cancel(&mut self, user_data: usize) {
-        let Some(entry) = self.waiting.remove(&user_data) else {
-            return;
-        };
-        self.poll
-            .registry()
-            .deregister(&mut SourceFd(&entry.arg.fd))
-            .ok();
+        if let Some(entry) = self.waiting.remove(&user_data) {
+            self.poll
+                .registry()
+                .deregister(&mut SourceFd(&entry.arg.fd))
+                .ok();
+        } else {
+            self.cancelled.insert(user_data);
+        }
     }
 
     unsafe fn poll<'a>(
