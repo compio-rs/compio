@@ -159,9 +159,6 @@ impl Driver {
         entries: &mut impl Extend<Entry>,
     ) -> io::Result<()> {
         self.poll.poll(&mut self.events, timeout)?;
-        if timeout.is_some() && self.events.is_empty() {
-            return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
-        }
         for event in &self.events {
             let token = event.token();
             let entry = self
