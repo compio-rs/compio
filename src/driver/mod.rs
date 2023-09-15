@@ -145,12 +145,7 @@ pub struct Operation<'a> {
 
 impl<'a> Operation<'a> {
     /// Create [`Operation`].
-    pub fn new(op: &'a mut impl OpCode, user_data: usize) -> Self {
-        Self { op, user_data }
-    }
-
-    /// Create [`Operation`] from dyn [`OpCode`].
-    pub fn new_dyn(op: &'a mut dyn OpCode, user_data: usize) -> Self {
+    pub fn new(op: &'a mut dyn OpCode, user_data: usize) -> Self {
         Self { op, user_data }
     }
 
@@ -173,7 +168,7 @@ impl<'a, O: OpCode> From<(&'a mut O, usize)> for Operation<'a> {
 
 impl<'a> From<(&'a mut dyn OpCode, usize)> for Operation<'a> {
     fn from((op, user_data): (&'a mut dyn OpCode, usize)) -> Self {
-        Self::new_dyn(op, user_data)
+        Self::new(op, user_data)
     }
 }
 
@@ -189,7 +184,7 @@ impl Entry {
         Self { user_data, result }
     }
 
-    /// The user-defined data passed to [`Poller::push`].
+    /// The user-defined data passed to [`Operation`].
     pub fn user_data(&self) -> usize {
         self.user_data
     }
