@@ -19,6 +19,9 @@ use crate::driver::{Entry, Operation, Poller};
 
 pub(crate) mod op;
 
+/// Invalid file descriptor value could be used as an initial value of uninitialized file descriptor
+pub const INVALID_FD: RawFd = -1;
+
 /// Abstraction of operations.
 pub trait OpCode {
     /// Perform the operation before submit, and return [`Decision`] to

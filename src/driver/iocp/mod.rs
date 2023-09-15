@@ -41,6 +41,9 @@ pub(crate) use windows_sys::Win32::Networking::WinSock::{
 /// Therefore, both could be seen as fd.
 pub type RawFd = RawHandle;
 
+/// Invalid file descriptor value could be used as an initial value of uninitialized file descriptor
+pub const INVALID_FD: RawFd = INVALID_HANDLE_VALUE;
+
 /// Extracts raw fds.
 pub trait AsRawFd {
     /// Extracts the raw fd.
