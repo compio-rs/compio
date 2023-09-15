@@ -1,6 +1,10 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{collections::VecDeque, io, time::Duration};
+use std::{
+    collections::{HashSet, VecDeque},
+    io,
+    time::Duration,
+};
 
 use io_uring::{
     cqueue,
@@ -24,7 +28,8 @@ pub trait OpCode {
 /// Low-level driver of io-uring.
 pub struct Driver {
     inner: IoUring,
-    cancelled: VecDeque<u64>,
+    cancel_queue: VecDeque<u64>,
+    cancelled: HashSet<u64>,
 }
 
 impl Driver {
@@ -39,7 +44,8 @@ impl Driver {
     pub fn with_entries(entries: u32) -> io::Result<Self> {
         Ok(Self {
             inner: IoUring::new(entries)?,
-            cancelled: VecDeque::default(),
+            cancel_queue: VecDeque::default(),
+            cancelled: HashSet::default(),
         })
     }
 
@@ -86,7 +92,7 @@ impl Driver {
             }
         }
         while !inner_squeue.is_full() {
-            if let Some(user_data) = self.cancelled.pop_front() {
+            if let Some(user_data) = self.cancel_queue.pop_front() {
                 let entry = AsyncCancel::new(user_data).build().user_data(Self::CANCEL);
                 unsafe { inner_squeue.push(&entry) }.expect("queue has enough space");
             } else {
@@ -102,13 +108,16 @@ impl Driver {
 
     fn poll_entries(&mut self, entries: &mut impl Extend<Entry>) {
         const SYSCALL_ECANCELED: i32 = -libc::ECANCELED;
-        let completed_entries =
-            self.inner
-                .completion()
-                .filter_map(|entry| match (entry.user_data(), entry.result()) {
-                    (Self::CANCEL, _) | (_, SYSCALL_ECANCELED) => None,
-                    _ => Some(create_entry(entry)),
-                });
+
+        let completed_entries = self.inner.completion().filter_map(|entry| {
+            if self.cancelled.remove(&entry.user_data()) {
+                return None;
+            }
+            match (entry.user_data(), entry.result()) {
+                (Self::CANCEL, _) | (_, SYSCALL_ECANCELED) => None,
+                _ => Some(create_entry(entry)),
+            }
+        });
         entries.extend(completed_entries);
     }
 }
@@ -119,7 +128,8 @@ impl Poller for Driver {
     }
 
     fn cancel(&mut self, user_data: usize) {
-        self.cancelled.push_back(user_data as _);
+        self.cancel_queue.push_back(user_data as _);
+        self.cancelled.insert(user_data as _);
     }
 
     unsafe fn poll<'a>(

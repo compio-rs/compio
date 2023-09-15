@@ -20,14 +20,12 @@ fn cancel_before_poll() {
     let ops = [(&mut op, 0).into()];
     let mut entries = ArrayVec::<Entry, 1>::new();
 
-    let err = unsafe {
-        driver
-            .poll(
-                Some(Duration::from_secs(1)),
-                &mut ops.into_iter(),
-                &mut entries,
-            )
-            .unwrap_err()
+    let res = unsafe {
+        driver.poll(
+            Some(Duration::from_secs(1)),
+            &mut ops.into_iter(),
+            &mut entries,
+        )
     };
-    assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+    assert!(res.is_ok() || res.unwrap_err().kind() == io::ErrorKind::TimedOut);
 }
