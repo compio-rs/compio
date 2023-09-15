@@ -44,7 +44,21 @@ macro_rules! syscall {
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
     fn pre_submit(&mut self) -> io::Result<Decision> {
-        Ok(Decision::wait_readable(self.fd))
+        if cfg!(any(
+            target_os = "linux",
+            target_os = "android",
+            target_os = "illumos"
+        )) {
+            let slice = self.buffer.as_uninit_slice();
+            Ok(Decision::Completed(syscall!(pread(
+                self.fd,
+                slice.as_mut_ptr() as _,
+                slice.len() as _,
+                self.offset as _
+            ))?))
+        } else {
+            Ok(Decision::wait_readable(self.fd))
+        }
     }
 
     fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
@@ -65,7 +79,21 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
 
 impl<T: IoBuf> OpCode for WriteAt<T> {
     fn pre_submit(&mut self) -> io::Result<Decision> {
-        Ok(Decision::wait_writable(self.fd))
+        if cfg!(any(
+            target_os = "linux",
+            target_os = "android",
+            target_os = "illumos"
+        )) {
+            let slice = self.buffer.as_slice();
+            Ok(Decision::Completed(syscall!(pwrite(
+                self.fd,
+                slice.as_ptr() as _,
+                slice.len() as _,
+                self.offset as _
+            ))?))
+        } else {
+            Ok(Decision::wait_writable(self.fd))
+        }
     }
 
     fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {

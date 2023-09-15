@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     io,
     os::windows::{
         io::HandleOrNull,
@@ -115,8 +115,7 @@ pub trait OpCode {
 /// Low-level driver of IOCP.
 pub struct Driver {
     port: OwnedHandle,
-    submit_map: HashMap<usize, *mut OVERLAPPED>,
-    cancelled: HashSet<*mut OVERLAPPED>,
+    cancelled: HashSet<usize>,
 }
 
 impl Driver {
@@ -124,12 +123,16 @@ impl Driver {
 
     /// Create a new IOCP.
     pub fn new() -> io::Result<Self> {
+        Self::with_entries(Self::DEFAULT_CAPACITY as _)
+    }
+
+    /// The same as [`Driver::new`].
+    pub fn with_entries(_entries: u32) -> io::Result<Self> {
         let port = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0) };
         let port = OwnedHandle::try_from(unsafe { HandleOrNull::from_raw_handle(port as _) })
             .map_err(|_| io::Error::last_os_error())?;
         Ok(Self {
             port,
-            submit_map: HashMap::default(),
             cancelled: HashSet::default(),
         })
     }
@@ -168,7 +171,7 @@ impl Driver {
         let transferred = iocp_entry.dwNumberOfBytesTransferred;
         let overlapped_ptr = iocp_entry.lpOverlapped;
         let overlapped = unsafe { Box::from_raw(overlapped_ptr.cast::<Overlapped>()) };
-        if self.cancelled.remove(&overlapped_ptr) {
+        if self.cancelled.remove(&overlapped.user_data) {
             return None;
         }
         let res = if matches!(
@@ -242,10 +245,7 @@ impl Poller for Driver {
     }
 
     fn cancel(&mut self, user_data: usize) {
-        if let Some(ptr) = self.submit_map.remove(&user_data) {
-            // TODO: should we call CancelIoEx?
-            self.cancelled.insert(ptr);
-        }
+        self.cancelled.insert(user_data);
     }
 
     unsafe fn poll<'a>(
@@ -255,14 +255,13 @@ impl Poller for Driver {
         entries: &mut impl Extend<Entry>,
     ) -> io::Result<()> {
         for mut operation in ops {
-            let overlapped = Box::new(Overlapped::new(operation.user_data()));
-            let user_data = overlapped.user_data;
-            let overlapped_ptr = Box::into_raw(overlapped);
-            let result = operation.opcode_mut().operate(overlapped_ptr.cast());
-            if let Poll::Ready(result) = result {
-                post_driver_raw(self.port.as_raw_handle(), result, overlapped_ptr.cast())?;
-            } else {
-                self.submit_map.insert(user_data, overlapped_ptr.cast());
+            if !self.cancelled.remove(&operation.user_data()) {
+                let overlapped = Box::new(Overlapped::new(operation.user_data()));
+                let overlapped_ptr = Box::into_raw(overlapped);
+                let result = operation.opcode_mut().operate(overlapped_ptr.cast());
+                if let Poll::Ready(result) = result {
+                    post_driver_raw(self.port.as_raw_handle(), result, overlapped_ptr.cast())?;
+                }
             }
         }
 

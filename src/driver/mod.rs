@@ -108,6 +108,9 @@ pub trait Poller {
     /// The cancellation is not reliable. The underlying operation may continue,
     /// but just don't return from [`Poller::poll`]. Therefore, although an
     /// operation is cancelled, you should not reuse its `user_data`.
+    ///
+    /// It is well-defined to cancel before polling. If the submitted operation
+    /// contains a cancelled user-defined data, the operation will be ignored.
     fn cancel(&mut self, user_data: usize);
 
     /// Poll the driver with an optional timeout.
