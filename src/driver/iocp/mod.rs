@@ -123,6 +123,11 @@ impl Driver {
 
     /// Create a new IOCP.
     pub fn new() -> io::Result<Self> {
+        Self::with_entries(Self::DEFAULT_CAPACITY as _)
+    }
+
+    /// The same as [`Driver::new`].
+    pub fn with_entries(_entries: u32) -> io::Result<Self> {
         let port = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0) };
         let port = OwnedHandle::try_from(unsafe { HandleOrNull::from_raw_handle(port as _) })
             .map_err(|_| io::Error::last_os_error())?;
