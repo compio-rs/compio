@@ -1,9 +1,11 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{collections::HashSet, io, time::Duration};
+use std::{collections::VecDeque, io, time::Duration};
 
 use io_uring::{
-    cqueue, squeue,
+    cqueue,
+    opcode::AsyncCancel,
+    squeue,
     types::{SubmitArgs, Timespec},
     IoUring,
 };
@@ -22,10 +24,12 @@ pub trait OpCode {
 /// Low-level driver of io-uring.
 pub struct Driver {
     inner: IoUring,
-    cancelled: HashSet<u64>,
+    cancelled: VecDeque<u64>,
 }
 
 impl Driver {
+    const CANCEL: u64 = u64::MAX;
+
     /// Create a new io-uring driver with 1024 entries.
     pub fn new() -> io::Result<Self> {
         Self::with_entries(1024)
@@ -35,7 +39,7 @@ impl Driver {
     pub fn with_entries(entries: u32) -> io::Result<Self> {
         Ok(Self {
             inner: IoUring::new(entries)?,
-            cancelled: HashSet::default(),
+            cancelled: VecDeque::default(),
         })
     }
 
@@ -64,7 +68,8 @@ impl Driver {
     }
 
     fn flush_submissions<'a>(&mut self, ops: &mut impl Iterator<Item = Operation<'a>>) -> bool {
-        let mut ended = false;
+        let mut ended_ops = false;
+        let mut ended_cancel = false;
 
         let mut inner_squeue = self.inner.submission();
 
@@ -76,24 +81,34 @@ impl Driver {
                     .user_data(op.user_data() as _);
                 unsafe { inner_squeue.push(&entry) }.expect("queue has enough space");
             } else {
-                ended = true;
+                ended_ops = true;
+                break;
+            }
+        }
+        while !inner_squeue.is_full() {
+            if let Some(user_data) = self.cancelled.pop_front() {
+                let entry = AsyncCancel::new(user_data).build().user_data(Self::CANCEL);
+                unsafe { inner_squeue.push(&entry) }.expect("queue has enough space");
+            } else {
+                ended_cancel = true;
                 break;
             }
         }
 
         inner_squeue.sync();
 
-        ended
+        ended_ops && ended_cancel
     }
 
     fn poll_entries(&mut self, entries: &mut impl Extend<Entry>) {
-        let completed_entries = self.inner.completion().filter_map(|entry| {
-            if self.cancelled.remove(&entry.user_data()) {
-                None
-            } else {
-                Some(create_entry(entry))
-            }
-        });
+        const SYSCALL_ECANCELED: i32 = -libc::ECANCELED;
+        let completed_entries =
+            self.inner
+                .completion()
+                .filter_map(|entry| match (entry.user_data(), entry.result()) {
+                    (Self::CANCEL, _) | (_, SYSCALL_ECANCELED) => None,
+                    _ => Some(create_entry(entry)),
+                });
         entries.extend(completed_entries);
     }
 }
@@ -104,7 +119,7 @@ impl Poller for Driver {
     }
 
     fn cancel(&mut self, user_data: usize) {
-        self.cancelled.insert(user_data as _);
+        self.cancelled.push_back(user_data as _);
     }
 
     unsafe fn poll<'a>(
@@ -113,9 +128,10 @@ impl Poller for Driver {
         ops: &mut impl Iterator<Item = Operation<'a>>,
         entries: &mut impl Extend<Entry>,
     ) -> io::Result<()> {
+        let mut ops = ops.fuse();
         // Anyway we need to submit once, no matter there are entries in squeue.
         loop {
-            let ended = self.flush_submissions(ops);
+            let ended = self.flush_submissions(&mut ops);
 
             self.submit_auto(timeout, ended)?;
 
