@@ -206,16 +206,6 @@ impl Poller for Driver {
         let extended = self.submit_squeue(ops, entries)?;
         if !extended {
             self.poll_impl(timeout, entries)?;
-
-            // See if there are remaining entries.
-            loop {
-                if let Err(e) = self.poll_impl(Some(Duration::ZERO), entries) {
-                    match e.kind() {
-                        io::ErrorKind::TimedOut => break,
-                        _ => return Err(e),
-                    }
-                }
-            }
         }
         Ok(())
     }
