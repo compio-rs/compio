@@ -57,7 +57,7 @@ impl Driver {
             Ok(_) => Ok(()),
             Err(e) => match e.raw_os_error() {
                 Some(libc::ETIME) => Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)),
-                Some(libc::EBUSY) => Ok(()),
+                Some(libc::EBUSY) | Some(libc::EAGAIN) => Ok(()),
                 _ => Err(e),
             },
         }
