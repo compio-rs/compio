@@ -149,11 +149,6 @@ impl<'a> Operation<'a> {
         Self { op, user_data }
     }
 
-    /// Get the opcode inside.
-    pub fn opcode_mut(&mut self) -> &mut dyn OpCode {
-        self.op
-    }
-
     /// Get the pinned opcode.
     ///
     /// # Safety
