@@ -4,6 +4,7 @@ use std::{
     collections::{HashMap, HashSet},
     io,
     ops::ControlFlow,
+    pin::Pin,
     ptr::NonNull,
     time::Duration,
 };
@@ -23,11 +24,11 @@ pub(crate) mod op;
 pub trait OpCode {
     /// Perform the operation before submit, and return [`Decision`] to
     /// indicate whether submitting the operation to mio is required.
-    fn pre_submit(&mut self) -> io::Result<Decision>;
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision>;
 
     /// Perform the operation after received corresponding
     /// event.
-    fn on_event(&mut self, event: &Event) -> io::Result<ControlFlow<usize>>;
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> io::Result<ControlFlow<usize>>;
 }
 
 /// Result of [`OpCode::pre_submit`].
@@ -82,13 +83,15 @@ impl WaitEntry {
         let user_data = mio_entry.user_data();
         // Safety: to make the borrow checker happy
         let op = NonNull::from(unsafe {
-            std::mem::transmute::<_, &'static mut dyn OpCode>(mio_entry.opcode_mut())
+            std::mem::transmute::<_, &'static mut dyn OpCode>(
+                mio_entry.opcode_pin().get_unchecked_mut(),
+            )
         });
         Self { op, arg, user_data }
     }
 
-    fn op_mut(&mut self) -> &mut dyn OpCode {
-        unsafe { self.op.as_mut() }
+    fn op_pin(&mut self) -> Pin<&mut dyn OpCode> {
+        unsafe { Pin::new_unchecked(self.op.as_mut()) }
     }
 }
 
@@ -133,7 +136,7 @@ impl Driver {
     ) -> io::Result<bool> {
         let mut extended = false;
         for mut entry in ops {
-            match entry.opcode_mut().pre_submit() {
+            match unsafe { entry.opcode_pin() }.pre_submit() {
                 Ok(Decision::Wait(arg)) => {
                     self.submit(entry, arg)?;
                 }
@@ -165,7 +168,7 @@ impl Driver {
                 .waiting
                 .get_mut(&token.0)
                 .expect("Unknown token returned by mio"); // XXX: Should this be silently ignored?
-            let res = match entry.op_mut().on_event(event) {
+            let res = match entry.op_pin().on_event(event) {
                 Ok(ControlFlow::Continue(_)) => continue,
                 Ok(ControlFlow::Break(res)) => Ok(res),
                 Err(err) => Err(err),
