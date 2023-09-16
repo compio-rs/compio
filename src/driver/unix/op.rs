@@ -33,6 +33,58 @@ impl Accept {
     }
 }
 
+/// Receive data from remote.
+pub struct RecvImpl<T: AsIoSlicesMut> {
+    pub(crate) fd: RawFd,
+    pub(crate) buffer: T,
+    pub(crate) slices: OneOrVec<IoSliceMut<'static>>,
+}
+
+impl<T: AsIoSlicesMut> RecvImpl<T> {
+    /// Create [`Recv`] or [`RecvVectored`].
+    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
+        Self {
+            fd,
+            buffer: T::new(buffer),
+            slices: OneOrVec::One(IoSliceMut::new(&mut [])),
+        }
+    }
+}
+
+impl<T: AsIoSlicesMut> IntoInner for RecvImpl<T> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+/// Send data to remote.
+pub struct SendImpl<T: AsIoSlices> {
+    pub(crate) fd: RawFd,
+    pub(crate) buffer: T,
+    pub(crate) slices: OneOrVec<IoSlice<'static>>,
+}
+
+impl<T: AsIoSlices> SendImpl<T> {
+    /// Create [`Send`] or [`SendVectored`].
+    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
+        Self {
+            fd,
+            buffer: T::new(buffer),
+            slices: OneOrVec::One(IoSlice::new(&[])),
+        }
+    }
+}
+
+impl<T: AsIoSlices> IntoInner for SendImpl<T> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
 /// Receive data and source address.
 pub struct RecvFromImpl<T: AsIoSlicesMut> {
     pub(crate) fd: RawFd,

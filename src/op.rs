@@ -3,18 +3,13 @@
 //! The operation itself doesn't perform anything.
 //! You need to pass them to [`crate::driver::Driver`], and poll the driver.
 
-use std::io::{IoSlice, IoSliceMut};
-
 use socket2::SockAddr;
 
 #[cfg(target_os = "windows")]
 pub use crate::driver::op::ConnectNamedPipe;
-pub use crate::driver::op::{Accept, RecvFromImpl, SendToImpl};
+pub use crate::driver::op::{Accept, RecvFromImpl, RecvImpl, SendImpl, SendToImpl};
 use crate::{
-    buf::{
-        AsIoSlices, AsIoSlicesMut, BufWrapper, IntoInner, IoBuf, IoBufMut, OneOrVec,
-        VectoredBufWrapper, WrapBuf,
-    },
+    buf::{AsIoSlicesMut, BufWrapper, IntoInner, IoBuf, IoBufMut, VectoredBufWrapper, WrapBuf},
     driver::{sockaddr_storage, socklen_t, RawFd},
     BufResult,
 };
@@ -150,62 +145,10 @@ impl Connect {
     }
 }
 
-/// Receive data from remote.
-pub struct RecvImpl<T: AsIoSlicesMut> {
-    pub(crate) fd: RawFd,
-    pub(crate) buffer: T,
-    pub(crate) slices: OneOrVec<IoSliceMut<'static>>,
-}
-
-impl<T: AsIoSlicesMut> RecvImpl<T> {
-    /// Create [`Recv`] or [`RecvVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
-        Self {
-            fd,
-            buffer: T::new(buffer),
-            slices: OneOrVec::One(IoSliceMut::new(&mut [])),
-        }
-    }
-}
-
-impl<T: AsIoSlicesMut> IntoInner for RecvImpl<T> {
-    type Inner = T;
-
-    fn into_inner(self) -> Self::Inner {
-        self.buffer
-    }
-}
-
 /// Receive data with one buffer.
 pub type Recv<T> = RecvImpl<BufWrapper<T>>;
 /// Receive data with vectored buffer.
 pub type RecvVectored<T> = RecvImpl<VectoredBufWrapper<T>>;
-
-/// Send data to remote.
-pub struct SendImpl<T: AsIoSlices> {
-    pub(crate) fd: RawFd,
-    pub(crate) buffer: T,
-    pub(crate) slices: OneOrVec<IoSlice<'static>>,
-}
-
-impl<T: AsIoSlices> SendImpl<T> {
-    /// Create [`Send`] or [`SendVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
-        Self {
-            fd,
-            buffer: T::new(buffer),
-            slices: OneOrVec::One(IoSlice::new(&[])),
-        }
-    }
-}
-
-impl<T: AsIoSlices> IntoInner for SendImpl<T> {
-    type Inner = T;
-
-    fn into_inner(self) -> Self::Inner {
-        self.buffer
-    }
-}
 
 /// Send data with one buffer.
 pub type Send<T> = SendImpl<BufWrapper<T>>;

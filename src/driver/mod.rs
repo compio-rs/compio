@@ -1,7 +1,7 @@
 //! The platform-specified driver.
 //! Some types differ by compilation target.
 
-use std::{io, time::Duration};
+use std::{io, pin::Pin, time::Duration};
 #[cfg(unix)]
 mod unix;
 
@@ -152,6 +152,15 @@ impl<'a> Operation<'a> {
     /// Get the opcode inside.
     pub fn opcode_mut(&mut self) -> &mut dyn OpCode {
         self.op
+    }
+
+    /// Get the pinned opcode.
+    ///
+    /// # Safety
+    ///
+    /// The caller should guarantee that the opcode is pinned.
+    pub unsafe fn opcode_pin(&mut self) -> Pin<&mut dyn OpCode> {
+        Pin::new_unchecked(self.op)
     }
 
     /// Get the user defined data.
