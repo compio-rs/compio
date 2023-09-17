@@ -79,7 +79,7 @@ struct WaitEntry {
 }
 
 impl WaitEntry {
-    fn new(mut mio_entry: Operation, arg: WaitArg) -> Self {
+    fn new(mio_entry: Operation, arg: WaitArg) -> Self {
         let user_data = mio_entry.user_data();
         // Safety: to make the borrow checker happy
         let op = NonNull::from(unsafe {

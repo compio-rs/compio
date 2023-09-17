@@ -169,7 +169,7 @@ impl Runtime {
             squeue.pop_front().map(|user_data| {
                 let mut op = NonNull::from(self.op_runtime.borrow_mut().get_raw_op(user_data));
                 // Safety: op won't outlive.
-                (unsafe { op.as_mut() }.as_dyn_mut(), user_data).into()
+                (unsafe { op.as_mut() }.as_pin(), user_data).into()
             })
         });
         let mut entries = SmallVec::<[Entry; 1024]>::new();
