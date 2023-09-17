@@ -1,111 +1,62 @@
-use std::{
-    io::{IoSlice, IoSliceMut},
-    marker::PhantomData,
-    ops::{Deref, DerefMut},
-};
+use std::io::{IoSlice, IoSliceMut};
 
 use crate::buf::*;
 
 #[derive(Debug)]
-pub struct BufWrapper<'arena, T: 'arena> {
-    buffer: T,
-    _lifetime: PhantomData<&'arena ()>,
+pub struct VectoredBufWrapper<'arena, T: 'arena> {
+    buffers: Box<[T]>,
+    io_slices: Box<[IoSlice<'arena>]>,
+    io_slices_mut: Box<[IoSliceMut<'arena>]>,
 }
 
 // The buffer won't be extended.
-impl<'arena, T: IoBuf<'arena>> Unpin for BufWrapper<'arena, T> {}
+impl<'arena, T: IoBuf<'arena>> Unpin for VectoredBufWrapper<'arena, T> {}
 
-impl<'arena, T> IntoInner for BufWrapper<'arena, T> {
-    type Inner = T;
+impl<T> IntoInner for VectoredBufWrapper<'_, T> {
+    type Inner = Box<[T]>;
 
     fn into_inner(self) -> Self::Inner {
-        self.buffer
+        self.buffers
     }
 }
 
-impl<'arena, T: IoBuf<'arena>> WrapBuf for BufWrapper<'arena, T> {
-    fn new(buffer: T) -> Self {
+impl<'arena, T: IoBuf<'arena>> From<Box<[T]>> for VectoredBufWrapper<'arena, T> {
+    fn from(buffers: Box<[T]>) -> Self {
+        let io_slices: Box<[IoSlice<'arena>]> = unsafe {
+            buffers
+                .iter()
+                .map(|buf| IoSlice::new(&*(buf.as_slice() as *const _ as *const _)))
+                .collect::<Vec<_>>()
+                .into_boxed_slice()
+        };
+        let io_slices_mut: Box<[IoSliceMut<'arena>]> = unsafe {
+            buffers
+                .iter()
+                .map(|buf| IoSliceMut::new(&mut *(buf.as_slice() as *const _ as *const _)))
+                .collect::<Vec<_>>()
+                .into_boxed_slice()
+        };
         Self {
-            buffer,
-            _lifetime: PhantomData,
+            buffers,
+            io_slices,
+            io_slices_mut,
         }
     }
 }
 
-impl<'arena, T: IoBufMut<'arena>> WrapBufMut for BufWrapper<'arena, T> {
-    fn set_init(&mut self, len: usize) {
-        self.buffer.set_buf_init(len)
+impl<'arena, T: IoBuf<'arena>> AsIoSlices for VectoredBufWrapper<'arena, T> {
+    unsafe fn as_io_slices(&self) -> OneOrSlice<IoSlice<'arena>> {
+        OneOrSlice::Slice(self.io_slices)
     }
 }
 
-impl<'arena, T: IoBuf<'arena>> AsIoSlices for BufWrapper<'arena, T> {
-    unsafe fn as_io_slices(&self) -> OneOrVec<IoSlice<'_>> {
-        OneOrVec::One(IoSlice::new(
-            &*(self.buffer.as_slice() as *const _ as *const _),
-        ))
+impl<'arena, T: IoBufMut<'arena>> AsIoSlicesMut for VectoredBufWrapper<'arena, T> {
+    unsafe fn as_io_slices_mut(&mut self) -> OneOrSlice<IoSliceMut<'arena>> {
+        OneOrSlice::Slice(self.io_slices_mut)
     }
-}
 
-impl<'arena, T: IoBufMut<'arena>> AsIoSlicesMut for BufWrapper<'arena, T> {
-    unsafe fn as_io_slices_mut(&mut self) -> OneOrVec<IoSliceMut<'_>> {
-        OneOrVec::One(IoSliceMut::new(
-            &mut *(self.buffer.as_uninit_slice() as *mut _ as *mut _),
-        ))
-    }
-}
-
-impl<'arena, T> Deref for BufWrapper<'arena, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.buffer
-    }
-}
-
-impl<'arena, T> DerefMut for BufWrapper<'arena, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.buffer
-    }
-}
-
-#[derive(Debug)]
-pub struct VectoredBufWrapper<T> {
-    buffer: Vec<T>,
-}
-
-// The buffer won't be extended.
-impl<T: IoBuf<'static>> Unpin for VectoredBufWrapper<T> {}
-
-impl<T> IntoInner for VectoredBufWrapper<T> {
-    // we require vec from global allocator and 'static lifetime until allocator_api
-    // becomes stable
-    type Inner = Vec<T>;
-
-    fn into_inner(self) -> Self::Inner {
-        self.buffer
-    }
-}
-
-impl<T: IoBuf<'static>> WrapBuf for VectoredBufWrapper<T> {
-    fn new(buffer: Vec<T>) -> Self {
-        Self { buffer }
-    }
-}
-
-impl<T: IoBuf<'static>> AsIoSlices for VectoredBufWrapper<T> {
-    unsafe fn as_io_slices(&self) -> OneOrVec<IoSlice<'static>> {
-        OneOrVec::Vec(
-            self.buffer
-                .iter()
-                .map(|buf| IoSlice::new(&*(buf.as_slice() as *const _ as *const _)))
-                .collect(),
-        )
-    }
-}
-
-impl<T: IoBufMut<'static>> WrapBufMut for VectoredBufWrapper<T> {
     fn set_init(&mut self, mut len: usize) {
-        for buf in self.buffer.iter_mut() {
+        for buf in self.buffers.iter_mut() {
             let capacity = buf.buf_capacity();
             if len >= capacity {
                 buf.set_buf_init(capacity);
@@ -115,16 +66,5 @@ impl<T: IoBufMut<'static>> WrapBufMut for VectoredBufWrapper<T> {
                 len = 0;
             }
         }
-    }
-}
-
-impl<T: IoBufMut<'static>> AsIoSlicesMut for VectoredBufWrapper<T> {
-    unsafe fn as_io_slices_mut(&mut self) -> OneOrVec<IoSliceMut<'static>> {
-        OneOrVec::Vec(
-            self.buffer
-                .iter_mut()
-                .map(|buf| IoSliceMut::new(&mut *(buf.as_uninit_slice() as *mut _ as *mut _)))
-                .collect(),
-        )
     }
 }

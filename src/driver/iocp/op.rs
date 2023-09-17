@@ -122,7 +122,7 @@ impl<'arena, T: IoBufMut<'arena>> OpCode for ReadAt<'arena, T> {
     }
 }
 
-impl<'arena, T: IoBuf> OpCode for WriteAt<'arena, T> {
+impl<'arena, T: IoBuf<'arena>> OpCode for WriteAt<'arena, T> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         if let Some(overlapped) = optr.as_mut() {
             overlapped.Anonymous.Anonymous.Offset = (self.offset & 0xFFFFFFFF) as _;
@@ -285,11 +285,8 @@ pub struct RecvImpl<T: AsIoSlicesMut + Unpin> {
 
 impl<T: AsIoSlicesMut + Unpin> RecvImpl<T> {
     /// Create [`Recv`] or [`RecvVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
-        Self {
-            fd,
-            buffer: T::new(buffer),
-        }
+    pub fn new(fd: RawFd, buffer: T) -> Self {
+        Self { fd, buffer }
     }
 }
 
@@ -303,11 +300,12 @@ impl<T: AsIoSlicesMut + Unpin> IntoInner for RecvImpl<T> {
 
 impl<T: AsIoSlicesMut + Unpin> OpCode for RecvImpl<T> {
     unsafe fn operate(mut self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let fd = self.fd;
         let slices = self.buffer.as_io_slices_mut();
         let mut flags = 0;
         let mut received = 0;
         let res = WSARecv(
-            self.fd as _,
+            fd as _,
             slices.as_ptr() as _,
             slices.len() as _,
             &mut received,
@@ -327,11 +325,8 @@ pub struct SendImpl<T: AsIoSlices + Unpin> {
 
 impl<T: AsIoSlices + Unpin> SendImpl<T> {
     /// Create [`Send`] or [`SendVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
-        Self {
-            fd,
-            buffer: T::new(buffer),
-        }
+    pub fn new(fd: RawFd, buffer: T) -> Self {
+        Self { fd, buffer }
     }
 }
 
@@ -370,10 +365,10 @@ pub struct RecvFromImpl<T: AsIoSlicesMut + Unpin> {
 
 impl<T: AsIoSlicesMut + Unpin> RecvFromImpl<T> {
     /// Create [`RecvFrom`] or [`RecvFromVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
+    pub fn new(fd: RawFd, buffer: T) -> Self {
         Self {
             fd,
-            buffer: T::new(buffer),
+            buffer,
             addr: unsafe { std::mem::zeroed() },
             addr_len: std::mem::size_of::<SOCKADDR_STORAGE>() as _,
         }
@@ -390,11 +385,12 @@ impl<T: AsIoSlicesMut + Unpin> IntoInner for RecvFromImpl<T> {
 
 impl<T: AsIoSlicesMut + Unpin> OpCode for RecvFromImpl<T> {
     unsafe fn operate(mut self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let fd = self.fd;
         let buffer = self.buffer.as_io_slices_mut();
         let mut flags = 0;
         let mut received = 0;
         let res = WSARecvFrom(
-            self.fd as _,
+            fd as _,
             buffer.as_ptr() as _,
             buffer.len() as _,
             &mut received,
@@ -417,12 +413,8 @@ pub struct SendToImpl<T: AsIoSlices> {
 
 impl<T: AsIoSlices> SendToImpl<T> {
     /// Create [`SendTo`] or [`SendToVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner, addr: SockAddr) -> Self {
-        Self {
-            fd,
-            buffer: T::new(buffer),
-            addr,
-        }
+    pub fn new(fd: RawFd, buffer: T, addr: SockAddr) -> Self {
+        Self { fd, buffer, addr }
     }
 }
 

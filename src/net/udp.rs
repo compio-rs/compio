@@ -4,7 +4,7 @@ use socket2::{Protocol, SockAddr, Type};
 
 #[cfg(feature = "runtime")]
 use crate::{
-    buf::{IoBuf, IoBufMut},
+    buf::{IoBuf, IoBufMut, VectoredBufWrapper},
     BufResult,
 };
 use crate::{
@@ -190,8 +190,8 @@ impl UdpSocket {
     #[cfg(feature = "runtime")]
     pub async fn recv_vectored<T: IoBufMut<'static>>(
         &self,
-        buffer: Vec<T>,
-    ) -> BufResult<usize, Vec<T>> {
+        buffer: VectoredBufWrapper<'static, T>,
+    ) -> BufResult<usize, VectoredBufWrapper<'static, T>> {
         self.inner.recv_vectored(buffer).await
     }
 
@@ -207,8 +207,8 @@ impl UdpSocket {
     #[cfg(feature = "runtime")]
     pub async fn send_vectored<T: IoBuf<'static>>(
         &self,
-        buffer: Vec<T>,
-    ) -> BufResult<usize, Vec<T>> {
+        buffer: VectoredBufWrapper<'static, T>,
+    ) -> BufResult<usize, VectoredBufWrapper<'static, T>> {
         self.inner.send_vectored(buffer).await
     }
 
@@ -227,8 +227,8 @@ impl UdpSocket {
     #[cfg(feature = "runtime")]
     pub async fn recv_from_vectored<T: IoBufMut<'static>>(
         &self,
-        buffer: Vec<T>,
-    ) -> BufResult<(usize, SockAddr), Vec<T>> {
+        buffer: VectoredBufWrapper<'static, T>,
+    ) -> BufResult<(usize, SockAddr), VectoredBufWrapper<'static, T>> {
         self.inner.recv_from_vectored(buffer).await
     }
 
@@ -251,9 +251,9 @@ impl UdpSocket {
     #[cfg(feature = "runtime")]
     pub async fn send_to_vectored<T: IoBuf<'static>>(
         &self,
-        buffer: Vec<T>,
+        buffer: VectoredBufWrapper<'static, T>,
         addr: impl ToSockAddrs,
-    ) -> BufResult<usize, Vec<T>> {
+    ) -> BufResult<usize, VectoredBufWrapper<'static, T>> {
         super::each_addr_async_buf(addr, buffer, |addr, buffer| async move {
             self.inner.send_to_vectored(buffer, &addr).await
         })

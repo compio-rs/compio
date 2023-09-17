@@ -4,7 +4,7 @@ use socket2::{Domain, SockAddr, Type};
 
 #[cfg(feature = "runtime")]
 use crate::{
-    buf::{IoBuf, IoBufMut},
+    buf::{IoBuf, IoBufMut, VectoredBufWrapper},
     BufResult,
 };
 use crate::{
@@ -181,8 +181,8 @@ impl UnixStream {
     #[cfg(feature = "runtime")]
     pub async fn recv_vectored<T: IoBufMut<'static>>(
         &self,
-        buffer: Vec<T>,
-    ) -> BufResult<usize, Vec<T>> {
+        buffer: VectoredBufWrapper<'static, T>,
+    ) -> BufResult<usize, VectoredBufWrapper<'static, T>> {
         self.inner.recv_vectored(buffer).await
     }
 
@@ -204,8 +204,8 @@ impl UnixStream {
     #[cfg(feature = "runtime")]
     pub async fn send_vectored<T: IoBuf<'static>>(
         &self,
-        buffer: Vec<T>,
-    ) -> BufResult<usize, Vec<T>> {
+        buffer: VectoredBufWrapper<'static, T>,
+    ) -> BufResult<usize, VectoredBufWrapper<'static, T>> {
         self.inner.send_vectored(buffer).await
     }
 }

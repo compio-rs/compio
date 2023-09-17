@@ -135,7 +135,6 @@ impl File {
             .await
             .into_inner()
             .map_advanced()
-            .into_inner()
     }
 
     /// Read the exact number of bytes required to fill `buffer`.
@@ -246,7 +245,6 @@ impl File {
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
-            .into_inner()
             .into_inner()
     }
 

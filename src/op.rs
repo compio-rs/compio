@@ -3,13 +3,15 @@
 //! The operation itself doesn't perform anything.
 //! You need to pass them to [`crate::driver::Driver`], and poll the driver.
 
+use std::marker::PhantomData;
+
 use socket2::SockAddr;
 
 #[cfg(target_os = "windows")]
 pub use crate::driver::op::ConnectNamedPipe;
 pub use crate::driver::op::{Accept, RecvFromImpl, RecvImpl, SendImpl, SendToImpl};
 use crate::{
-    buf::{AsIoSlicesMut, BufWrapper, IntoInner, IoBuf, IoBufMut, VectoredBufWrapper, WrapBuf},
+    buf::{AsIoSlicesMut, IntoInner, IoBuf, IoBufMut, VectoredBufWrapper},
     driver::{sockaddr_storage, socklen_t, RawFd},
     BufResult,
 };
@@ -63,7 +65,8 @@ impl<'arena, T: 'arena> RecvResultExt
 pub struct ReadAt<'arena, T: IoBufMut<'arena>> {
     pub(crate) fd: RawFd,
     pub(crate) offset: usize,
-    pub(crate) buffer: BufWrapper<'arena, T>,
+    pub(crate) buffer: T,
+    _lifetime: PhantomData<&'arena ()>,
 }
 
 impl<'arena, T: IoBufMut<'arena>> ReadAt<'arena, T> {
@@ -72,13 +75,14 @@ impl<'arena, T: IoBufMut<'arena>> ReadAt<'arena, T> {
         Self {
             fd,
             offset,
-            buffer: BufWrapper::new(buffer),
+            buffer,
+            _lifetime: PhantomData,
         }
     }
 }
 
 impl<'arena, T: IoBufMut<'arena>> IntoInner for ReadAt<'arena, T> {
-    type Inner = BufWrapper<'arena, T>;
+    type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
@@ -90,7 +94,8 @@ impl<'arena, T: IoBufMut<'arena>> IntoInner for ReadAt<'arena, T> {
 pub struct WriteAt<'arena, T: IoBuf<'arena>> {
     pub(crate) fd: RawFd,
     pub(crate) offset: usize,
-    pub(crate) buffer: BufWrapper<'arena, T>,
+    pub(crate) buffer: T,
+    _lifetime: PhantomData<&'arena ()>,
 }
 
 impl<'arena, T: IoBuf<'arena>> WriteAt<'arena, T> {
@@ -99,13 +104,14 @@ impl<'arena, T: IoBuf<'arena>> WriteAt<'arena, T> {
         Self {
             fd,
             offset,
-            buffer: BufWrapper::new(buffer),
+            buffer,
+            _lifetime: PhantomData,
         }
     }
 }
 
 impl<'arena, T: IoBuf<'arena>> IntoInner for WriteAt<'arena, T> {
-    type Inner = BufWrapper<'arena, T>;
+    type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
@@ -148,21 +154,21 @@ impl Connect {
 }
 
 /// Receive data with one buffer.
-pub type Recv<'arena, T> = RecvImpl<BufWrapper<'arena, T>>;
+pub type Recv<T> = RecvImpl<T>;
 /// Receive data with vectored buffer.
-pub type RecvVectored<T> = RecvImpl<VectoredBufWrapper<T>>;
+pub type RecvVectored<'arena, T> = RecvImpl<VectoredBufWrapper<'arena, T>>;
 
 /// Send data with one buffer.
-pub type Send<'arena, T> = SendImpl<BufWrapper<'arena, T>>;
+pub type Send<T> = SendImpl<T>;
 /// Send data with vectored buffer.
-pub type SendVectored<T> = SendImpl<VectoredBufWrapper<T>>;
+pub type SendVectored<'arena, T> = SendImpl<VectoredBufWrapper<'arena, T>>;
 
 /// Receive data and address with one buffer.
-pub type RecvFrom<'arena, T> = RecvFromImpl<BufWrapper<'arena, T>>;
+pub type RecvFrom<T> = RecvFromImpl<T>;
 /// Receive data and address with vectored buffer.
-pub type RecvFromVectored<T> = RecvFromImpl<VectoredBufWrapper<T>>;
+pub type RecvFromVectored<'arena, T> = RecvFromImpl<VectoredBufWrapper<'arena, T>>;
 
 /// Send data to address with one buffer.
-pub type SendTo<'arena, T> = SendToImpl<BufWrapper<'arena, T>>;
+pub type SendTo<T> = SendToImpl<T>;
 /// Send data to address with vectored buffer.
-pub type SendToVectored<T> = SendToImpl<VectoredBufWrapper<T>>;
+pub type SendToVectored<'arena, T> = SendToImpl<VectoredBufWrapper<'arena, T>>;

@@ -64,13 +64,8 @@ impl OpCode for Connect {
 
 impl<T: AsIoSlicesMut + Unpin> OpCode for RecvImpl<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
-        self.slices = unsafe { self.buffer.as_io_slices_mut() };
-        opcode::Readv::new(
-            Fd(self.fd),
-            self.slices.as_ptr() as _,
-            self.slices.len() as _,
-        )
-        .build()
+        let mut slices = unsafe { self.buffer.as_io_slices_mut() };
+        opcode::Readv::new(Fd(self.fd), slices.as_ptr() as _, slices.len() as _).build()
     }
 }
 

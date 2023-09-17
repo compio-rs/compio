@@ -214,25 +214,25 @@ impl NamedPipeServer {
     /// Read some bytes from the pipe into the specified
     /// buffer, returning how many bytes were read.
     #[cfg(feature = "runtime")]
-    pub async fn read<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn read<T: IoBufMut<'static>>(&self, buffer: T) -> BufResult<usize, T> {
         self.handle.read_at(buffer, 0).await
     }
 
     /// Read the exact number of bytes from the pipe.
     #[cfg(feature = "runtime")]
-    pub async fn read_exact<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn read_exact<T: IoBufMut<'static>>(&self, buffer: T) -> BufResult<usize, T> {
         self.handle.read_exact_at(buffer, 0).await
     }
 
     /// Write a buffer into the pipe, returning how many bytes were written.
     #[cfg(feature = "runtime")]
-    pub async fn write<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn write<T: IoBuf<'static>>(&self, buffer: T) -> BufResult<usize, T> {
         self.handle.write_at(buffer, 0).await
     }
 
     /// Write all bytes into the pipe.
     #[cfg(feature = "runtime")]
-    pub async fn write_all<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn write_all<T: IoBuf<'static>>(&self, buffer: T) -> BufResult<usize, T> {
         self.handle.write_all_at(buffer, 0).await
     }
 }
@@ -322,25 +322,25 @@ impl NamedPipeClient {
     /// Read some bytes from the pipe into the specified
     /// buffer, returning how many bytes were read.
     #[cfg(feature = "runtime")]
-    pub async fn read<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn read<T: IoBufMut<'static>>(&self, buffer: T) -> BufResult<usize, T> {
         self.handle.read_at(buffer, 0).await
     }
 
     /// Read the exact number of bytes from the pipe.
     #[cfg(feature = "runtime")]
-    pub async fn read_exact<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn read_exact<T: IoBufMut<'static>>(&self, buffer: T) -> BufResult<usize, T> {
         self.handle.read_exact_at(buffer, 0).await
     }
 
     /// Write a buffer into the pipe, returning how many bytes were written.
     #[cfg(feature = "runtime")]
-    pub async fn write<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn write<T: IoBuf<'static>>(&self, buffer: T) -> BufResult<usize, T> {
         self.handle.write_at(buffer, 0).await
     }
 
     /// Write all bytes into the pipe.
     #[cfg(feature = "runtime")]
-    pub async fn write_all<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn write_all<T: IoBuf<'static>>(&self, buffer: T) -> BufResult<usize, T> {
         self.handle.write_all_at(buffer, 0).await
     }
 }

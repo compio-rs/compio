@@ -1,12 +1,10 @@
-use std::io::{IoSlice, IoSliceMut};
-
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
 #[cfg(doc)]
 use crate::op::*;
 use crate::{
-    buf::{AsIoSlices, AsIoSlicesMut, IntoInner, OneOrVec},
+    buf::{AsIoSlices, AsIoSlicesMut, IntoInner},
     driver::RawFd,
 };
 
@@ -41,11 +39,8 @@ pub struct RecvImpl<T: AsIoSlicesMut + Unpin> {
 
 impl<T: AsIoSlicesMut + Unpin> RecvImpl<T> {
     /// Create [`Recv`] or [`RecvVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
-        Self {
-            fd,
-            buffer: T::new(buffer),
-        }
+    pub fn new(fd: RawFd, buffer: T) -> Self {
+        Self { fd, buffer }
     }
 }
 
@@ -65,11 +60,8 @@ pub struct SendImpl<T: AsIoSlices + Unpin> {
 
 impl<T: AsIoSlices + Unpin> SendImpl<T> {
     /// Create [`Send`] or [`SendVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
-        Self {
-            fd,
-            buffer: T::new(buffer),
-        }
+    pub fn new(fd: RawFd, buffer: T) -> Self {
+        Self { fd, buffer }
     }
 }
 
@@ -91,10 +83,10 @@ pub struct RecvFromImpl<T: AsIoSlicesMut + Unpin> {
 
 impl<T: AsIoSlicesMut + Unpin> RecvFromImpl<T> {
     /// Create [`RecvFrom`] or [`RecvFromVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
+    pub fn new(fd: RawFd, buffer: T) -> Self {
         Self {
             fd,
-            buffer: T::new(buffer),
+            buffer,
             addr: unsafe { std::mem::zeroed() },
             msg: unsafe { std::mem::zeroed() },
         }
@@ -132,10 +124,10 @@ pub struct SendToImpl<T: AsIoSlices + Unpin> {
 
 impl<T: AsIoSlices + Unpin> SendToImpl<T> {
     /// Create [`SendTo`] or [`SendToVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner, addr: SockAddr) -> Self {
+    pub fn new(fd: RawFd, buffer: T, addr: SockAddr) -> Self {
         Self {
             fd,
-            buffer: T::new(buffer),
+            buffer,
             addr,
             msg: unsafe { std::mem::zeroed() },
         }
