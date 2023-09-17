@@ -1,7 +1,7 @@
 use arrayvec::ArrayVec;
 use compio::{
     buf::IntoInner,
-    driver::{AsRawFd, Driver, Entry, Operation, Poller},
+    driver::{AsRawFd, Driver, Entry, Poller},
 };
 
 fn main() {
@@ -10,7 +10,7 @@ fn main() {
     driver.attach(file.as_raw_fd()).unwrap();
 
     let mut op = compio::op::ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(4096));
-    let ops = unsafe { [Operation::new_unchecked(&mut op, 0)] };
+    let ops = [(&mut op, 0).into()];
 
     let mut entries = ArrayVec::<Entry, 1>::new();
     unsafe {

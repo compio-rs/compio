@@ -255,7 +255,7 @@ impl Poller for Driver {
         ops: &mut impl Iterator<Item = Operation<'a>>,
         entries: &mut impl Extend<Entry>,
     ) -> io::Result<()> {
-        for operation in ops {
+        for mut operation in ops {
             if !self.cancelled.remove(&operation.user_data()) {
                 let overlapped = Box::new(Overlapped::new(operation.user_data()));
                 let overlapped_ptr = Box::into_raw(overlapped);

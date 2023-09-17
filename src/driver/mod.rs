@@ -31,7 +31,7 @@ cfg_if::cfg_if! {
 /// use arrayvec::ArrayVec;
 /// use compio::{
 ///     buf::IntoInner,
-///     driver::{AsRawFd, Driver, Entry, Operation, Poller},
+///     driver::{AsRawFd, Driver, Entry, Poller},
 ///     net::UdpSocket,
 ///     op,
 /// };
@@ -60,12 +60,7 @@ cfg_if::cfg_if! {
 /// let buf = Vec::with_capacity(32);
 /// let mut op_read = op::Recv::new(other_socket.as_raw_fd(), buf);
 ///
-/// let ops = unsafe {
-///     [
-///         Operation::new_unchecked(&mut op_write, 1),
-///         Operation::new_unchecked(&mut op_read, 2),
-///     ]
-/// };
+/// let ops = [(&mut op_write, 1).into(), (&mut op_read, 2).into()];
 /// let mut entries = ArrayVec::<Entry, 2>::new();
 /// unsafe {
 ///     driver
@@ -144,27 +139,14 @@ pub trait Poller {
 
 /// An operation with a unique user defined data.
 pub struct Operation<'a> {
-    op: Pin<&'a mut dyn OpCode>,
+    op: &'a mut dyn OpCode,
     user_data: usize,
 }
 
 impl<'a> Operation<'a> {
     /// Create [`Operation`].
-    pub fn new(op: Pin<&'a mut dyn OpCode>, user_data: usize) -> Self {
+    pub fn new(op: &'a mut dyn OpCode, user_data: usize) -> Self {
         Self { op, user_data }
-    }
-
-    /// Create [`Operation`] from raw mut reference.
-    ///
-    /// # Safety
-    ///
-    /// The caller should guarentee that the opcode won't be moved until the
-    /// task completes.
-    pub unsafe fn new_unchecked(op: &'a mut dyn OpCode, user_data: usize) -> Self {
-        Self {
-            op: Pin::new_unchecked(op),
-            user_data,
-        }
     }
 
     /// Get the pinned opcode.
@@ -172,8 +154,8 @@ impl<'a> Operation<'a> {
     /// # Safety
     ///
     /// The caller should guarantee that the opcode is pinned.
-    pub fn opcode_pin(self) -> Pin<&'a mut dyn OpCode> {
-        self.op
+    pub unsafe fn opcode_pin(&mut self) -> Pin<&mut dyn OpCode> {
+        Pin::new_unchecked(self.op)
     }
 
     /// Get the user defined data.
@@ -182,14 +164,14 @@ impl<'a> Operation<'a> {
     }
 }
 
-impl<'a, O: OpCode> From<(Pin<&'a mut O>, usize)> for Operation<'a> {
-    fn from((op, user_data): (Pin<&'a mut O>, usize)) -> Self {
+impl<'a, O: OpCode> From<(&'a mut O, usize)> for Operation<'a> {
+    fn from((op, user_data): (&'a mut O, usize)) -> Self {
         Self::new(op, user_data)
     }
 }
 
-impl<'a> From<(Pin<&'a mut dyn OpCode>, usize)> for Operation<'a> {
-    fn from((op, user_data): (Pin<&'a mut dyn OpCode>, usize)) -> Self {
+impl<'a> From<(&'a mut dyn OpCode, usize)> for Operation<'a> {
+    fn from((op, user_data): (&'a mut dyn OpCode, usize)) -> Self {
         Self::new(op, user_data)
     }
 }

@@ -20,9 +20,8 @@ impl RawOp {
         Self(unsafe { NonNull::new_unchecked(Box::into_raw(op as Box<dyn OpCode>)) })
     }
 
-    pub fn as_pin(&mut self) -> Pin<&mut dyn OpCode> {
-        // Safety: we are sure it won't be moved.
-        unsafe { Pin::new_unchecked(self.0.as_mut()) }
+    pub fn as_dyn_mut(&mut self) -> &mut dyn OpCode {
+        unsafe { self.0.as_mut() }
     }
 
     pub unsafe fn into_inner<T: OpCode>(self) -> T {

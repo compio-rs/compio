@@ -2,7 +2,7 @@ use std::{io, time::Duration};
 
 use arrayvec::ArrayVec;
 use compio::{
-    driver::{AsRawFd, Driver, Entry, Operation, Poller},
+    driver::{AsRawFd, Driver, Entry, Poller},
     fs::File,
     op::ReadAt,
 };
@@ -17,7 +17,7 @@ fn cancel_before_poll() {
     driver.cancel(0);
 
     let mut op = ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(8));
-    let ops = unsafe { [Operation::new_unchecked(&mut op, 0)] };
+    let ops = [(&mut op, 0).into()];
     let mut entries = ArrayVec::<Entry, 1>::new();
 
     let res = unsafe {

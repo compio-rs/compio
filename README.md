@@ -46,7 +46,7 @@ While you can also control the low-level driver manually:
 use arrayvec::ArrayVec;
 use compio::{
     buf::IntoInner,
-    driver::{AsRawFd, Driver, Entry, Operation, Poller},
+    driver::{AsRawFd, Driver, Entry, Poller},
     fs::File,
     op::ReadAt,
 };
@@ -58,7 +58,7 @@ driver.attach(file.as_raw_fd()).unwrap();
 
 // Create operation and push it to the driver.
 let mut op = ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(4096));
-let ops = unsafe { [Operation::new_unchecked(&mut op, 0)] };
+let ops = [(&mut op, 0).into()];
 
 // Poll the driver and wait for IO completed.
 let mut entries = ArrayVec::<Entry, 1>::new();
