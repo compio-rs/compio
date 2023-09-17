@@ -3,6 +3,7 @@ pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{
     collections::{HashSet, VecDeque},
     io,
+    pin::Pin,
     time::Duration,
 };
 
@@ -22,7 +23,7 @@ pub(crate) mod op;
 /// Abstraction of io-uring operations.
 pub trait OpCode {
     /// Create submission entry.
-    fn create_entry(&mut self) -> squeue::Entry;
+    fn create_entry(self: Pin<&mut Self>) -> squeue::Entry;
 }
 
 /// Low-level driver of io-uring.
@@ -81,8 +82,7 @@ impl Driver {
 
         while !inner_squeue.is_full() {
             if let Some(mut op) = ops.next() {
-                let entry = op
-                    .opcode_mut()
+                let entry = unsafe { op.opcode_pin() }
                     .create_entry()
                     .user_data(op.user_data() as _);
                 unsafe { inner_squeue.push(&entry) }.expect("queue has enough space");

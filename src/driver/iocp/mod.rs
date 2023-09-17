@@ -8,6 +8,7 @@ use std::{
             OwnedHandle, RawHandle,
         },
     },
+    pin::Pin,
     task::Poll,
     time::Duration,
 };
@@ -109,7 +110,7 @@ pub trait OpCode {
     /// # Safety
     ///
     /// `self` must be alive until the operation completes.
-    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>>;
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>>;
 }
 
 /// Low-level driver of IOCP.
@@ -258,7 +259,8 @@ impl Poller for Driver {
             if !self.cancelled.remove(&operation.user_data()) {
                 let overlapped = Box::new(Overlapped::new(operation.user_data()));
                 let overlapped_ptr = Box::into_raw(overlapped);
-                let result = operation.opcode_mut().operate(overlapped_ptr.cast());
+                let op = operation.opcode_pin();
+                let result = op.operate(overlapped_ptr.cast());
                 if let Poll::Ready(result) = result {
                     post_driver_raw(self.port.as_raw_handle(), result, overlapped_ptr.cast())?;
                 }

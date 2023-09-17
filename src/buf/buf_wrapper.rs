@@ -10,6 +10,9 @@ pub struct BufWrapper<T> {
     buffer: T,
 }
 
+// The buffer won't be extended.
+impl<T: IoBuf> Unpin for BufWrapper<T> {}
+
 impl<T> IntoInner for BufWrapper<T> {
     type Inner = T;
 
@@ -64,6 +67,9 @@ impl<T> DerefMut for BufWrapper<T> {
 pub struct VectoredBufWrapper<T> {
     buffer: Vec<T>,
 }
+
+// The buffer won't be extended.
+impl<T: IoBuf> Unpin for VectoredBufWrapper<T> {}
 
 impl<T> IntoInner for VectoredBufWrapper<T> {
     type Inner = Vec<T>;

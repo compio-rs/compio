@@ -1,3 +1,5 @@
+use std::pin::Pin;
+
 use io_uring::{
     opcode,
     squeue::Entry,
@@ -13,16 +15,17 @@ use crate::{
 };
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
-    fn create_entry(&mut self) -> Entry {
+    fn create_entry(mut self: Pin<&mut Self>) -> Entry {
+        let fd = Fd(self.fd);
         let slice = self.buffer.as_uninit_slice();
-        opcode::Read::new(Fd(self.fd), slice.as_mut_ptr() as _, slice.len() as _)
+        opcode::Read::new(fd, slice.as_mut_ptr() as _, slice.len() as _)
             .offset(self.offset as _)
             .build()
     }
 }
 
 impl<T: IoBuf> OpCode for WriteAt<T> {
-    fn create_entry(&mut self) -> Entry {
+    fn create_entry(self: Pin<&mut Self>) -> Entry {
         let slice = self.buffer.as_slice();
         opcode::Write::new(Fd(self.fd), slice.as_ptr(), slice.len() as _)
             .offset(self.offset as _)
@@ -31,7 +34,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
 }
 
 impl OpCode for Sync {
-    fn create_entry(&mut self) -> Entry {
+    fn create_entry(self: Pin<&mut Self>) -> Entry {
         opcode::Fsync::new(Fd(self.fd))
             .flags(if self.datasync {
                 FsyncFlags::DATASYNC
@@ -43,7 +46,7 @@ impl OpCode for Sync {
 }
 
 impl OpCode for Accept {
-    fn create_entry(&mut self) -> Entry {
+    fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         opcode::Accept::new(
             Fd(self.fd),
             &mut self.buffer as *mut sockaddr_storage as *mut libc::sockaddr,
@@ -54,13 +57,13 @@ impl OpCode for Accept {
 }
 
 impl OpCode for Connect {
-    fn create_entry(&mut self) -> Entry {
+    fn create_entry(self: Pin<&mut Self>) -> Entry {
         opcode::Connect::new(Fd(self.fd), self.addr.as_ptr(), self.addr.len()).build()
     }
 }
 
-impl<T: AsIoSlicesMut> OpCode for RecvImpl<T> {
-    fn create_entry(&mut self) -> Entry {
+impl<T: AsIoSlicesMut + Unpin> OpCode for RecvImpl<T> {
+    fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         self.slices = unsafe { self.buffer.as_io_slices_mut() };
         opcode::Readv::new(
             Fd(self.fd),
@@ -71,8 +74,8 @@ impl<T: AsIoSlicesMut> OpCode for RecvImpl<T> {
     }
 }
 
-impl<T: AsIoSlices> OpCode for SendImpl<T> {
-    fn create_entry(&mut self) -> Entry {
+impl<T: AsIoSlices + Unpin> OpCode for SendImpl<T> {
+    fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         self.slices = unsafe { self.buffer.as_io_slices() };
         opcode::Writev::new(
             Fd(self.fd),
@@ -83,17 +86,17 @@ impl<T: AsIoSlices> OpCode for SendImpl<T> {
     }
 }
 
-impl<T: AsIoSlicesMut> OpCode for RecvFromImpl<T> {
+impl<T: AsIoSlicesMut + Unpin> OpCode for RecvFromImpl<T> {
     #[allow(clippy::no_effect)]
-    fn create_entry(&mut self) -> Entry {
+    fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         self.set_msg();
         opcode::RecvMsg::new(Fd(self.fd), &mut self.msg).build()
     }
 }
 
-impl<T: AsIoSlices> OpCode for SendToImpl<T> {
+impl<T: AsIoSlices + Unpin> OpCode for SendToImpl<T> {
     #[allow(clippy::no_effect)]
-    fn create_entry(&mut self) -> Entry {
+    fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         self.set_msg();
         opcode::SendMsg::new(Fd(self.fd), &self.msg).build()
     }
