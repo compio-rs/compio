@@ -3,7 +3,7 @@ pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{
     collections::{HashSet, VecDeque},
     io,
-    pin::Pin,
+    marker::PhantomData,
     time::Duration,
 };
 
@@ -23,17 +23,18 @@ pub(crate) mod op;
 /// Abstraction of io-uring operations.
 pub trait OpCode {
     /// Create submission entry.
-    fn create_entry(self: Pin<&mut Self>) -> squeue::Entry;
+    fn create_entry(&mut self) -> squeue::Entry;
 }
 
 /// Low-level driver of io-uring.
-pub struct Driver {
+pub struct Driver<'arena> {
     inner: IoUring,
     cancel_queue: VecDeque<u64>,
     cancelled: HashSet<u64>,
+    _lifetime: PhantomData<&'arena ()>,
 }
 
-impl Driver {
+impl<'arena> Driver<'arena> {
     const CANCEL: u64 = u64::MAX;
 
     /// Create a new io-uring driver with 1024 entries.
@@ -47,6 +48,7 @@ impl Driver {
             inner: IoUring::new(entries)?,
             cancel_queue: VecDeque::default(),
             cancelled: HashSet::default(),
+            _lifetime: PhantomData,
         })
     }
 
@@ -74,7 +76,7 @@ impl Driver {
         }
     }
 
-    fn flush_submissions<'a>(&mut self, ops: &mut impl Iterator<Item = Operation<'a>>) -> bool {
+    fn flush_submissions(&mut self, ops: &mut impl Iterator<Item = Operation<'arena>>) -> bool {
         let mut ended_ops = false;
         let mut ended_cancel = false;
 
@@ -82,9 +84,8 @@ impl Driver {
 
         while !inner_squeue.is_full() {
             if let Some(mut op) = ops.next() {
-                let entry = unsafe { op.opcode_pin() }
-                    .create_entry()
-                    .user_data(op.user_data() as _);
+                // SAFETY: operation buffers are Unpin, pinning is not required
+                let entry = op.opcode().create_entry().user_data(op.user_data() as _);
                 unsafe { inner_squeue.push(&entry) }.expect("queue has enough space");
             } else {
                 ended_ops = true;
@@ -122,7 +123,7 @@ impl Driver {
     }
 }
 
-impl Poller for Driver {
+impl<'arena> Poller<'arena> for Driver<'arena> {
     fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
         Ok(())
     }
@@ -132,10 +133,10 @@ impl Poller for Driver {
         self.cancelled.insert(user_data as _);
     }
 
-    unsafe fn poll<'a>(
+    unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        ops: &mut impl Iterator<Item = Operation<'a>>,
+        ops: &mut impl Iterator<Item = Operation<'arena>>,
         entries: &mut impl Extend<Entry>,
     ) -> io::Result<()> {
         let mut ops = ops.fuse();
@@ -155,7 +156,7 @@ impl Poller for Driver {
     }
 }
 
-impl AsRawFd for Driver {
+impl AsRawFd for Driver<'_> {
     fn as_raw_fd(&self) -> RawFd {
         self.inner.as_raw_fd()
     }

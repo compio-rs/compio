@@ -19,7 +19,7 @@ use crate::{
 };
 
 pub(crate) struct Runtime {
-    driver: RefCell<Driver>,
+    driver: RefCell<Driver<'static>>,
     runnables: RefCell<VecDeque<Runnable>>,
     squeue: RefCell<VecDeque<usize>>,
     op_runtime: RefCell<OpRuntime>,

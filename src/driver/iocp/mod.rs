@@ -1,11 +1,13 @@
 use std::{
     collections::HashSet,
     io,
-    os::windows::prelude::{
-        AsRawHandle, AsRawSocket, FromRawHandle, FromRawSocket, IntoRawHandle, IntoRawSocket,
-        OwnedHandle, RawHandle,
+    marker::PhantomData,
+    os::windows::{
+        prelude::{
+            AsRawHandle, AsRawSocket, FromRawHandle, FromRawSocket, IntoRawHandle, IntoRawSocket,
+            OwnedHandle, RawHandle,
+        },
     },
-    pin::Pin,
     task::Poll,
     time::Duration,
 };
@@ -109,17 +111,18 @@ pub trait OpCode {
     ///
     /// # Safety
     ///
-    /// `self` must be alive until the operation completes.
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>>;
+    /// `self` attributes must be Unpin to ensure safe operation.
+    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>>;
 }
 
 /// Low-level driver of IOCP.
-pub struct Driver {
+pub struct Driver<'arena> {
     port: OwnedHandle,
     cancelled: HashSet<usize>,
+    _lifetime: PhantomData<&'arena ()>,
 }
 
-impl Driver {
+impl<'arena> Driver<'arena> {
     const DEFAULT_CAPACITY: usize = 1024;
 
     /// Create a new IOCP.
@@ -134,6 +137,7 @@ impl Driver {
         Ok(Self {
             port,
             cancelled: HashSet::default(),
+            _lifetime: PhantomData,
         })
     }
 
@@ -231,7 +235,7 @@ fn ntstatus_from_win32(x: i32) -> NTSTATUS {
     }
 }
 
-impl Poller for Driver {
+impl<'arena> Poller<'arena> for Driver<'arena> {
     fn attach(&mut self, fd: RawFd) -> io::Result<()> {
         syscall!(
             BOOL,
@@ -244,17 +248,18 @@ impl Poller for Driver {
         self.cancelled.insert(user_data);
     }
 
-    unsafe fn poll<'a>(
+    unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        ops: &mut impl Iterator<Item = Operation<'a>>,
+        ops: &mut impl Iterator<Item = Operation<'arena>>,
         entries: &mut impl Extend<Entry>,
     ) -> io::Result<()> {
         for mut operation in ops {
             if !self.cancelled.remove(&operation.user_data()) {
                 let overlapped = Box::new(Overlapped::new(operation.user_data()));
                 let overlapped_ptr = Box::into_raw(overlapped);
-                let op = operation.opcode_pin();
+                // we require Unpin buffers - so no need to pin
+                let op = operation.opcode();
                 let result = op.operate(overlapped_ptr.cast());
                 if let Poll::Ready(result) = result {
                     post_driver_raw(self.port.as_raw_handle(), result, overlapped_ptr.cast())?;
@@ -263,7 +268,8 @@ impl Poller for Driver {
         }
 
         // Prevent stack growth.
-        let mut iocp_entries = ArrayVec::<OVERLAPPED_ENTRY, { Self::DEFAULT_CAPACITY }>::new();
+        const CAP: usize = Driver::DEFAULT_CAPACITY;
+        let mut iocp_entries = ArrayVec::<OVERLAPPED_ENTRY, CAP>::new();
         self.poll_impl(timeout, &mut iocp_entries)?;
         entries.extend(iocp_entries.drain(..).filter_map(|e| self.create_entry(e)));
 
@@ -284,7 +290,7 @@ impl Poller for Driver {
     }
 }
 
-impl AsRawFd for Driver {
+impl AsRawFd for Driver<'_> {
     fn as_raw_fd(&self) -> RawFd {
         self.port.as_raw_handle()
     }

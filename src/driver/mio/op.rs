@@ -1,4 +1,4 @@
-use std::{io, ops::ControlFlow, pin::Pin};
+use std::{io, ops::ControlFlow};
 
 use mio::event::Event;
 
@@ -11,13 +11,14 @@ use crate::{
 };
 
 impl<'arena, T: IoBufMut<'arena>> OpCode for ReadAt<'arena, T> {
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
+    fn pre_submit(&mut self) -> io::Result<Decision> {
         if cfg!(any(
             target_os = "linux",
             target_os = "android",
             target_os = "illumos"
         )) {
             let fd = self.fd;
+            // SAFETY: slice into buffer is Unpin
             let slice = self.buffer.as_uninit_slice();
             Ok(Decision::Completed(syscall!(pread(
                 fd,
@@ -30,10 +31,11 @@ impl<'arena, T: IoBufMut<'arena>> OpCode for ReadAt<'arena, T> {
         }
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_readable());
 
         let fd = self.fd;
+        // SAFETY: slice into buffer is Unpin
         let slice = self.buffer.as_uninit_slice();
 
         syscall!(
@@ -48,7 +50,7 @@ impl<'arena, T: IoBufMut<'arena>> OpCode for ReadAt<'arena, T> {
 }
 
 impl<'arena, T: IoBuf<'arena>> OpCode for WriteAt<'arena, T> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    fn pre_submit(&mut self) -> io::Result<Decision> {
         if cfg!(any(
             target_os = "linux",
             target_os = "android",
@@ -66,9 +68,10 @@ impl<'arena, T: IoBuf<'arena>> OpCode for WriteAt<'arena, T> {
         }
     }
 
-    fn on_event(self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_writable());
 
+        // SAFETY: buffer is Unpin
         let slice = self.buffer.as_slice();
 
         syscall!(
@@ -83,17 +86,18 @@ impl<'arena, T: IoBuf<'arena>> OpCode for WriteAt<'arena, T> {
 }
 
 impl OpCode for Sync {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    fn pre_submit(&mut self) -> io::Result<Decision> {
         Ok(Decision::Completed(syscall!(fsync(self.fd))? as _))
     }
 
-    fn on_event(self: Pin<&mut Self>, _: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(&mut self, _: &Event) -> std::io::Result<ControlFlow<usize>> {
         unreachable!("Sync operation should not be submitted to mio")
     }
 }
 
 impl OpCode for Accept {
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
+    fn pre_submit(&mut self) -> io::Result<Decision> {
+        // SAFETY: buffer is Unpin
         syscall!(
             accept(
                 self.fd,
@@ -103,7 +107,7 @@ impl OpCode for Accept {
         )
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_readable());
 
         match syscall!(accept(
@@ -119,13 +123,13 @@ impl OpCode for Accept {
 }
 
 impl OpCode for Connect {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    fn pre_submit(&mut self) -> io::Result<Decision> {
         syscall!(
             connect(self.fd, self.addr.as_ptr(), self.addr.len()) or wait_writable(self.fd)
         )
     }
 
-    fn on_event(self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_writable());
 
         let mut err: libc::c_int = 0;
@@ -147,53 +151,55 @@ impl OpCode for Connect {
     }
 }
 
-impl<T: AsIoSlicesMut> OpCode for RecvImpl<T> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+impl<'arena, T: AsIoSlicesMut<'arena>> OpCode for RecvImpl<'arena, T> {
+    fn pre_submit(&mut self) -> io::Result<Decision> {
         Ok(Decision::wait_readable(self.fd))
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_readable());
 
         let fd = self.fd;
+        // SAFETY: IoSliceMut is Unpin
         let mut slices = unsafe { self.buffer.as_io_slices_mut() };
         syscall!(break readv(fd, slices.as_mut_ptr() as _, slices.len() as _,))
     }
 }
 
-impl<T: AsIoSlices> OpCode for SendImpl<T> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+impl<'arena, T: AsIoSlices<'arena>> OpCode for SendImpl<'arena, T> {
+    fn pre_submit(&mut self) -> io::Result<Decision> {
         Ok(Decision::wait_writable(self.fd))
     }
 
-    fn on_event(self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_writable());
 
+        // SAFETY: IoSlice is Unpin
         let slices = unsafe { self.buffer.as_io_slices() };
         syscall!(break writev(self.fd, slices.as_ptr() as _, slices.len() as _,))
     }
 }
 
-impl<T: AsIoSlicesMut> OpCode for RecvFromImpl<T> {
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
+impl<'arena, T: AsIoSlicesMut<'arena>> OpCode for RecvFromImpl<'arena, T> {
+    fn pre_submit(&mut self) -> io::Result<Decision> {
         self.set_msg();
         syscall!(recvmsg(self.fd, &mut self.msg, 0) or wait_readable(self.fd))
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_readable());
 
         syscall!(break recvmsg(self.fd, &mut self.msg, 0))
     }
 }
 
-impl<T: AsIoSlices> OpCode for SendToImpl<T> {
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
+impl<'arena, T: AsIoSlices<'arena>> OpCode for SendToImpl<'arena, T> {
+    fn pre_submit(&mut self) -> io::Result<Decision> {
         self.set_msg();
         syscall!(sendmsg(self.fd, &self.msg, 0) or wait_writable(self.fd))
     }
 
-    fn on_event(self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_writable());
 
         syscall!(break sendmsg(self.fd, &self.msg, 0))

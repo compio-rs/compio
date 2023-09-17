@@ -4,8 +4,6 @@ use std::{
     collections::{HashMap, HashSet},
     io,
     ops::ControlFlow,
-    pin::Pin,
-    ptr::NonNull,
     time::Duration,
 };
 
@@ -24,11 +22,11 @@ pub(crate) mod op;
 pub trait OpCode {
     /// Perform the operation before submit, and return [`Decision`] to
     /// indicate whether submitting the operation to mio is required.
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision>;
+    fn pre_submit(self: &mut Self) -> io::Result<Decision>;
 
     /// Perform the operation after received corresponding
     /// event.
-    fn on_event(self: Pin<&mut Self>, event: &Event) -> io::Result<ControlFlow<usize>>;
+    fn on_event(self: &mut Self, event: &Event) -> io::Result<ControlFlow<usize>>;
 }
 
 /// Result of [`OpCode::pre_submit`].
@@ -64,38 +62,28 @@ pub struct WaitArg {
 }
 
 /// Low-level driver of mio.
-pub struct Driver {
+pub struct Driver<'arena> {
     events: Events,
     poll: Poll,
-    waiting: HashMap<usize, WaitEntry>,
+    waiting: HashMap<usize, WaitEntry<'arena>>,
     cancelled: HashSet<usize>,
 }
 
 /// Entry waiting for events
-struct WaitEntry {
-    op: NonNull<dyn OpCode>,
+struct WaitEntry<'arena> {
+    op: &'arena mut dyn OpCode,
     arg: WaitArg,
     user_data: usize,
 }
 
-impl WaitEntry {
-    fn new(mut mio_entry: Operation, arg: WaitArg) -> Self {
-        let user_data = mio_entry.user_data();
-        // Safety: to make the borrow checker happy
-        let op = NonNull::from(unsafe {
-            std::mem::transmute::<_, &'static mut dyn OpCode>(
-                mio_entry.opcode_pin().get_unchecked_mut(),
-            )
-        });
+impl<'arena> WaitEntry<'arena> {
+    fn new(mio_entry: Operation<'arena>, arg: WaitArg) -> Self {
+        let (op, user_data): (&'arena mut dyn OpCode, usize) = mio_entry.into();
         Self { op, arg, user_data }
-    }
-
-    fn op_pin(&mut self) -> Pin<&mut dyn OpCode> {
-        unsafe { Pin::new_unchecked(self.op.as_mut()) }
     }
 }
 
-impl Driver {
+impl<'arena> Driver<'arena> {
     /// Create a new mio driver with 1024 entries.
     pub fn new() -> io::Result<Self> {
         Self::with_entries(1024)
@@ -112,10 +100,8 @@ impl Driver {
             cancelled: HashSet::new(),
         })
     }
-}
 
-impl Driver {
-    fn submit(&mut self, entry: Operation, arg: WaitArg) -> io::Result<()> {
+    fn submit(&mut self, entry: Operation<'arena>, arg: WaitArg) -> io::Result<()> {
         if !self.cancelled.remove(&entry.user_data) {
             let token = Token(entry.user_data);
 
@@ -129,14 +115,15 @@ impl Driver {
     }
 
     /// Register all operations in the squeue to mio.
-    fn submit_squeue<'a>(
+    fn submit_squeue(
         &mut self,
-        ops: &mut impl Iterator<Item = Operation<'a>>,
+        ops: &mut impl Iterator<Item = Operation<'arena>>,
         entries: &mut impl Extend<Entry>,
     ) -> io::Result<bool> {
         let mut extended = false;
         for mut entry in ops {
-            match unsafe { entry.opcode_pin() }.pre_submit() {
+            // io buffers are Unpin so no need to pin
+            match entry.opcode().pre_submit() {
                 Ok(Decision::Wait(arg)) => {
                     self.submit(entry, arg)?;
                 }
@@ -168,7 +155,7 @@ impl Driver {
                 .waiting
                 .get_mut(&token.0)
                 .expect("Unknown token returned by mio"); // XXX: Should this be silently ignored?
-            let res = match entry.op_pin().on_event(event) {
+            let res = match entry.op.on_event(event) {
                 Ok(ControlFlow::Continue(_)) => continue,
                 Ok(ControlFlow::Break(res)) => Ok(res),
                 Err(err) => Err(err),
@@ -184,7 +171,7 @@ impl Driver {
     }
 }
 
-impl Poller for Driver {
+impl<'arena> Poller<'arena> for Driver<'arena> {
     fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
         Ok(())
     }
@@ -200,10 +187,10 @@ impl Poller for Driver {
         }
     }
 
-    unsafe fn poll<'a>(
+    unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        ops: &mut impl Iterator<Item = Operation<'a>>,
+        ops: &mut impl Iterator<Item = Operation<'arena>>,
         entries: &mut impl Extend<Entry>,
     ) -> io::Result<()> {
         let extended = self.submit_squeue(ops, entries)?;
@@ -214,7 +201,7 @@ impl Poller for Driver {
     }
 }
 
-impl AsRawFd for Driver {
+impl AsRawFd for Driver<'_> {
     fn as_raw_fd(&self) -> RawFd {
         self.poll.as_raw_fd()
     }

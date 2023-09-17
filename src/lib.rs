@@ -155,19 +155,3 @@ macro_rules! vec_alloc {
 }
 
 pub(crate) use vec_alloc;
-
-#[cfg(not(feature = "allocator_api"))]
-macro_rules! vec_alloc_lifetime {
-    () => {
-        'static
-    };
-}
-
-#[cfg(feature = "allocator_api")]
-macro_rules! vec_alloc_lifetime {
-    () => {
-        'a
-    };
-}
-
-pub(crate) use vec_alloc_lifetime;

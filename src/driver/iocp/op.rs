@@ -3,7 +3,6 @@ use std::sync::OnceLock;
 use std::{
     io,
     marker::PhantomData,
-    pin::Pin,
     ptr::{null, null_mut},
     task::Poll,
 };
@@ -102,7 +101,7 @@ unsafe fn get_wsa_fn<F>(handle: RawFd, fguid: GUID) -> io::Result<Option<F>> {
 }
 
 impl<'arena, T: IoBufMut<'arena>> OpCode for ReadAt<'arena, T> {
-    unsafe fn operate(mut self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         if let Some(overlapped) = optr.as_mut() {
             overlapped.Anonymous.Anonymous.Offset = (self.offset & 0xFFFFFFFF) as _;
             #[cfg(target_pointer_width = "64")]
@@ -111,6 +110,7 @@ impl<'arena, T: IoBufMut<'arena>> OpCode for ReadAt<'arena, T> {
             }
         }
         let fd = self.fd as _;
+        // SAFETY: buffer is Unpin
         let slice = self.buffer.as_uninit_slice();
         let res = ReadFile(
             fd,
@@ -124,7 +124,7 @@ impl<'arena, T: IoBufMut<'arena>> OpCode for ReadAt<'arena, T> {
 }
 
 impl<'arena, T: IoBuf<'arena>> OpCode for WriteAt<'arena, T> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         if let Some(overlapped) = optr.as_mut() {
             overlapped.Anonymous.Anonymous.Offset = (self.offset & 0xFFFFFFFF) as _;
             #[cfg(target_pointer_width = "64")]
@@ -132,6 +132,7 @@ impl<'arena, T: IoBuf<'arena>> OpCode for WriteAt<'arena, T> {
                 overlapped.Anonymous.Anonymous.OffsetHigh = (self.offset >> 32) as _;
             }
         }
+        // SAFETY: buffer is Unpin
         let slice = self.buffer.as_slice();
         let res = WriteFile(
             self.fd as _,
@@ -145,7 +146,7 @@ impl<'arena, T: IoBuf<'arena>> OpCode for WriteAt<'arena, T> {
 }
 
 impl OpCode for Sync {
-    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(&mut self, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let res = FlushFileBuffers(self.fd as _);
         win32_result(res, 0)
     }
@@ -217,7 +218,7 @@ impl Accept {
 }
 
 impl OpCode for Accept {
-    unsafe fn operate(mut self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let accept_fn = ACCEPT_EX
             .get_or_try_init(|| get_wsa_fn(self.fd, WSAID_ACCEPTEX))?
             .ok_or_else(|| {
@@ -258,7 +259,7 @@ impl Connect {
 }
 
 impl OpCode for Connect {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let connect_fn = CONNECT_EX
             .get_or_try_init(|| get_wsa_fn(self.fd, WSAID_CONNECTEX))?
             .ok_or_else(|| {
@@ -267,6 +268,7 @@ impl OpCode for Connect {
         let mut sent = 0;
         let res = connect_fn(
             self.fd as _,
+            // SAFETY: SockAddr is Unpin - https://docs.rs/socket2/latest/socket2/struct.SockAddr.html#impl-Unpin-for-SockAddr
             self.addr.as_ptr(),
             self.addr.len(),
             null(),
@@ -305,8 +307,9 @@ impl<'arena, T: AsIoSlicesMut<'arena>> IntoInner for RecvImpl<'arena, T> {
 }
 
 impl<'arena, T: AsIoSlicesMut<'arena>> OpCode for RecvImpl<'arena, T> {
-    unsafe fn operate(mut self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd;
+        // SAFETY: buffer is Unpin, IoSliceMut is Unpin as well
         let slices = self.buffer.as_io_slices_mut();
         let mut flags = 0;
         let mut received = 0;
@@ -350,7 +353,8 @@ impl<'arena, T: AsIoSlices<'arena>> IntoInner for SendImpl<'arena, T> {
 }
 
 impl<'arena, T: AsIoSlices<'arena>> OpCode for SendImpl<'arena, T> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        // SAFETY: buffer is Unpin, IoSlice is Unpin as well
         let slices = self.buffer.as_io_slices();
         let mut sent = 0;
         let res = WSASend(
@@ -397,8 +401,9 @@ impl<'arena, T: AsIoSlicesMut<'arena>> IntoInner for RecvFromImpl<'arena, T> {
 }
 
 impl<'arena, T: AsIoSlicesMut<'arena>> OpCode for RecvFromImpl<'arena, T> {
-    unsafe fn operate(mut self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd;
+        // SAFETY: buffer is Unpin, IoSliceMut is Unpin as well
         let buffer = self.buffer.as_io_slices_mut();
         let mut flags = 0;
         let mut received = 0;
@@ -446,7 +451,8 @@ impl<'arena, T: AsIoSlices<'arena>> IntoInner for SendToImpl<'arena, T> {
 }
 
 impl<'arena, T: AsIoSlices<'arena>> OpCode for SendToImpl<'arena, T> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        // SAFETY: buffer is Unpin, IoSliceMut is Unpin as well
         let buffer = self.buffer.as_io_slices();
         let mut sent = 0;
         let res = WSASendTo(
@@ -477,7 +483,7 @@ impl ConnectNamedPipe {
 }
 
 impl OpCode for ConnectNamedPipe {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let res = ConnectNamedPipe(self.fd as _, optr);
         win32_result(res, 0)
     }

@@ -107,6 +107,7 @@ impl<'arena, T: AsIoSlicesMut<'arena>> RecvFromImpl<'arena, T> {
     }
 
     pub(crate) fn set_msg(&mut self) {
+        // SAFETY: IoSliceMut is Unpin
         let mut slices = unsafe { self.buffer.as_io_slices_mut() };
         self.msg = libc::msghdr {
             msg_name: &mut self.addr as *mut _ as _,
@@ -150,11 +151,12 @@ impl<'arena, T: AsIoSlices<'arena>> SendToImpl<'arena, T> {
     }
 
     pub(crate) fn set_msg(&mut self) {
-        let mut slices = unsafe { self.buffer.as_io_slices() };
+        // SAFETY: IoSlice is Unpin
+        let slices = unsafe { self.buffer.as_io_slices() };
         self.msg = libc::msghdr {
             msg_name: self.addr.as_ptr() as _,
             msg_namelen: self.addr.len(),
-            msg_iov: slices.as_mut_ptr() as _,
+            msg_iov: slices.as_ptr() as _,
             msg_iovlen: slices.len() as _,
             msg_control: std::ptr::null_mut(),
             msg_controllen: 0,

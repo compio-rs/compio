@@ -1,7 +1,7 @@
 //! The platform-specified driver.
 //! Some types differ by compilation target.
 
-use std::{io, pin::Pin, time::Duration};
+use std::{io, time::Duration};
 #[cfg(unix)]
 mod unix;
 
@@ -22,6 +22,8 @@ cfg_if::cfg_if! {
 /// It contains some low-level actions of completion-based IO.
 ///
 /// You don't need them unless you are controlling a [`Driver`] yourself.
+///
+/// The driver could hold references into IO buffers. Their lifetime is 'arena.
 ///
 /// # Examples
 ///
@@ -88,11 +90,11 @@ cfg_if::cfg_if! {
 ///     }
 /// }
 ///
-/// let mut buf = op_read.into_inner().into_inner();
+/// let mut buf = op_read.into_inner();
 /// unsafe { buf.set_len(n_bytes) };
 /// assert_eq!(buf, b"hello world");
 /// ```
-pub trait Poller {
+pub trait Poller<'arena> {
     /// Attach an fd to the driver.
     ///
     /// ## Platform specific
@@ -129,10 +131,10 @@ pub trait Poller {
     ///
     /// * Operations should be alive until [`Poller::poll`] returns its result.
     /// * User defined data should be unique.
-    unsafe fn poll<'a>(
+    unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        ops: &mut impl Iterator<Item = Operation<'a>>,
+        ops: &mut impl Iterator<Item = Operation<'arena>>,
         entries: &mut impl Extend<Entry>,
     ) -> io::Result<()>;
 }
@@ -149,13 +151,9 @@ impl<'a> Operation<'a> {
         Self { op, user_data }
     }
 
-    /// Get the pinned opcode.
-    ///
-    /// # Safety
-    ///
-    /// The caller should guarantee that the opcode is pinned.
-    pub unsafe fn opcode_pin(&mut self) -> Pin<&mut dyn OpCode> {
-        Pin::new_unchecked(self.op)
+    /// Get the opcode.
+    pub fn opcode(&mut self) -> &mut dyn OpCode {
+        self.op
     }
 
     /// Get the user defined data.
@@ -173,6 +171,12 @@ impl<'a, O: OpCode> From<(&'a mut O, usize)> for Operation<'a> {
 impl<'a> From<(&'a mut dyn OpCode, usize)> for Operation<'a> {
     fn from((op, user_data): (&'a mut dyn OpCode, usize)) -> Self {
         Self::new(op, user_data)
+    }
+}
+
+impl<'a> From<Operation<'a>> for (&'a mut dyn OpCode, usize) {
+    fn from(other: Operation<'a>) -> Self {
+        (other.op, other.user_data)
     }
 }
 

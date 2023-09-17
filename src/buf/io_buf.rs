@@ -2,7 +2,7 @@
 use std::alloc::Allocator;
 use std::mem::MaybeUninit;
 
-use crate::{buf::*, vec_alloc, vec_alloc_lifetime};
+use crate::{buf::*, vec_alloc};
 
 /// An IOCP compatible buffer.
 ///
@@ -14,7 +14,10 @@ use crate::{buf::*, vec_alloc, vec_alloc_lifetime};
 /// Buffers passed to IOCP operations must reference a stable memory
 /// region. While the runtime holds ownership to a buffer, the pointer returned
 /// by `as_buf_ptr` must remain valid even if the `IoBuf` value is moved.
-pub unsafe trait IoBuf<'arena>: 'arena {
+///
+/// Unpin trait bound expresses the memory region stability even in presence of
+/// buffer movements.
+pub unsafe trait IoBuf<'arena>: Unpin + 'arena {
     /// Returns a raw pointer to the vector’s buffer.
     ///
     /// This method is to be used by the `compio` runtime and it is not
@@ -85,8 +88,7 @@ pub unsafe trait IoBuf<'arena>: 'arena {
     }
 }
 
-unsafe impl<#[cfg(feature = "allocator_api")] 'a, A: Allocator + Unpin + vec_alloc_lifetime!()>
-    IoBuf<vec_alloc_lifetime!()> for vec_alloc!(u8, A)
+unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf<'static> for vec_alloc!(u8, A)
 {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
@@ -101,7 +103,7 @@ unsafe impl<#[cfg(feature = "allocator_api")] 'a, A: Allocator + Unpin + vec_all
     }
 }
 
-unsafe impl IoBuf for &'static mut [u8] {
+unsafe impl IoBuf<'static> for &'static mut [u8] {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -253,7 +255,7 @@ pub unsafe trait IoBufMut<'arena>: IoBuf<'arena> {
     fn set_buf_init(&mut self, len: usize);
 }
 
-unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + vec_alloc_lifetime!()> IoBufMut<vec_alloc_lifetime!()>
+unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut<'static>
     for vec_alloc!(u8, A)
 {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
@@ -265,7 +267,7 @@ unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + vec_alloc_l
     }
 }
 
-unsafe impl<a> IoBufMut<a> for &'a mut [u8] {
+unsafe impl IoBufMut<'static> for &'static mut [u8] {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.as_mut_ptr()
     }
