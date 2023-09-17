@@ -62,7 +62,7 @@ impl OpCode for Connect {
     }
 }
 
-impl<'arena: 'slice, 'slice, T: AsIoSlicesMut + Unpin + 'arena> OpCode for RecvImpl<'arena, 'slice, T> {
+impl<T: AsIoSlicesMut + Unpin> OpCode for RecvImpl<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         self.slices = unsafe { self.buffer.as_io_slices_mut() };
         opcode::Readv::new(
@@ -74,19 +74,14 @@ impl<'arena: 'slice, 'slice, T: AsIoSlicesMut + Unpin + 'arena> OpCode for RecvI
     }
 }
 
-impl<'arena: slice, 'slice, T: AsIoSlices + Unpin + 'arena> OpCode for SendImpl<'arena, 'slice, T> {
+impl<T: AsIoSlices + Unpin> OpCode for SendImpl<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
-        self.slices = unsafe { self.buffer.as_io_slices() };
-        opcode::Writev::new(
-            Fd(self.fd),
-            self.slices.as_ptr() as _,
-            self.slices.len() as _,
-        )
-        .build()
+        let slices = unsafe { self.buffer.as_io_slices() };
+        opcode::Writev::new(Fd(self.fd), slices.as_ptr() as _, slices.len() as _).build()
     }
 }
 
-impl<'arena: 'slice, T: AsIoSlicesMut + Unpin + 'arena> OpCode for RecvFromImpl<'arena, 'slice, T> {
+impl<T: AsIoSlicesMut + Unpin> OpCode for RecvFromImpl<T> {
     #[allow(clippy::no_effect)]
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         self.set_msg();
@@ -94,7 +89,7 @@ impl<'arena: 'slice, T: AsIoSlicesMut + Unpin + 'arena> OpCode for RecvFromImpl<
     }
 }
 
-impl<'arena: 'slice, 'slice, T: AsIoSlices + Unpin + 'arena> OpCode for SendToImpl<'arena, 'slice, T> {
+impl<T: AsIoSlices + Unpin> OpCode for SendToImpl<T> {
     #[allow(clippy::no_effect)]
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         self.set_msg();

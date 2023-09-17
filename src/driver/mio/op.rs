@@ -147,33 +147,34 @@ impl OpCode for Connect {
     }
 }
 
-impl<'slice, T: AsIoSlicesMut + Unpin + 'slice> OpCode for RecvImpl<'slice, T> {
+impl<T: AsIoSlicesMut + Unpin> OpCode for RecvImpl<T> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_readable(self.fd))
     }
 
-    fn on_event(mut self: Pin<&'slice, mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_readable());
 
-        self.slices = unsafe { self.buffer.as_io_slices_mut() };
-        syscall!(break readv(self.fd, self.slices.as_ptr() as _, self.slices.len() as _,))
+        let fd = self.fd;
+        let mut slices = unsafe { self.buffer.as_io_slices_mut() };
+        syscall!(break readv(fd, slices.as_mut_ptr() as _, slices.len() as _,))
     }
 }
 
-impl<'slice, T: AsIoSlices + Unpin + 'slice> OpCode for SendImpl<'slice, T> {
+impl<T: AsIoSlices + Unpin> OpCode for SendImpl<T> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_writable(self.fd))
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
         debug_assert!(event.is_writable());
 
-        self.slices = unsafe { self.buffer.as_io_slices() };
-        syscall!(break writev(self.fd, self.slices.as_ptr() as _, self.slices.len() as _,))
+        let slices = unsafe { self.buffer.as_io_slices() };
+        syscall!(break writev(self.fd, slices.as_ptr() as _, slices.len() as _,))
     }
 }
 
-impl<'slice, T: AsIoSlicesMut + Unpin + 'slice> OpCode for RecvFromImpl<'slice, T> {
+impl<T: AsIoSlicesMut + Unpin> OpCode for RecvFromImpl<T> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         self.set_msg();
         syscall!(recvmsg(self.fd, &mut self.msg, 0) or wait_readable(self.fd))
@@ -186,7 +187,7 @@ impl<'slice, T: AsIoSlicesMut + Unpin + 'slice> OpCode for RecvFromImpl<'slice, 
     }
 }
 
-impl<'slice, T: AsIoSlices + Unpin + 'slice> OpCode for SendToImpl<'slice, T> {
+impl<T: AsIoSlices + Unpin> OpCode for SendToImpl<T> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         self.set_msg();
         syscall!(sendmsg(self.fd, &self.msg, 0) or wait_writable(self.fd))

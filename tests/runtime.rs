@@ -77,7 +77,7 @@ fn drop_on_complete() {
         _ref_cnt: Arc<()>,
     }
 
-    unsafe impl IoBuf for MyBuf {
+    unsafe impl IoBuf<'static> for MyBuf {
         fn as_buf_ptr(&self) -> *const u8 {
             self.data.as_buf_ptr()
         }
@@ -91,7 +91,7 @@ fn drop_on_complete() {
         }
     }
 
-    unsafe impl IoBufMut for MyBuf {
+    unsafe impl IoBufMut<'static> for MyBuf {
         fn as_buf_mut_ptr(&mut self) -> *mut u8 {
             self.data.as_buf_mut_ptr()
         }
