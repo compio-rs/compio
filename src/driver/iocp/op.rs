@@ -2,6 +2,7 @@
 use std::sync::OnceLock;
 use std::{
     io,
+    marker::PhantomData,
     pin::Pin,
     ptr::{null, null_mut},
     task::Poll,
@@ -278,19 +279,24 @@ impl OpCode for Connect {
 }
 
 /// Receive data from remote.
-pub struct RecvImpl<T: AsIoSlicesMut + Unpin> {
+pub struct RecvImpl<'arena, T: AsIoSlicesMut<'arena>> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
+    _lifetime: PhantomData<&'arena ()>,
 }
 
-impl<T: AsIoSlicesMut + Unpin> RecvImpl<T> {
+impl<'arena, T: AsIoSlicesMut<'arena>> RecvImpl<'arena, T> {
     /// Create [`Recv`] or [`RecvVectored`].
     pub fn new(fd: RawFd, buffer: T) -> Self {
-        Self { fd, buffer }
+        Self {
+            fd,
+            buffer,
+            _lifetime: PhantomData,
+        }
     }
 }
 
-impl<T: AsIoSlicesMut + Unpin> IntoInner for RecvImpl<T> {
+impl<'arena, T: AsIoSlicesMut<'arena>> IntoInner for RecvImpl<'arena, T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -298,7 +304,7 @@ impl<T: AsIoSlicesMut + Unpin> IntoInner for RecvImpl<T> {
     }
 }
 
-impl<T: AsIoSlicesMut + Unpin> OpCode for RecvImpl<T> {
+impl<'arena, T: AsIoSlicesMut<'arena>> OpCode for RecvImpl<'arena, T> {
     unsafe fn operate(mut self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd;
         let slices = self.buffer.as_io_slices_mut();
@@ -318,19 +324,24 @@ impl<T: AsIoSlicesMut + Unpin> OpCode for RecvImpl<T> {
 }
 
 /// Send data to remote.
-pub struct SendImpl<T: AsIoSlices + Unpin> {
+pub struct SendImpl<'arena, T: AsIoSlices<'arena>> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
+    _lifetime: PhantomData<&'arena ()>,
 }
 
-impl<T: AsIoSlices + Unpin> SendImpl<T> {
+impl<'arena, T: AsIoSlices<'arena>> SendImpl<'arena, T> {
     /// Create [`Send`] or [`SendVectored`].
     pub fn new(fd: RawFd, buffer: T) -> Self {
-        Self { fd, buffer }
+        Self {
+            fd,
+            buffer,
+            _lifetime: PhantomData,
+        }
     }
 }
 
-impl<T: AsIoSlices + Unpin> IntoInner for SendImpl<T> {
+impl<'arena, T: AsIoSlices<'arena>> IntoInner for SendImpl<'arena, T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -338,7 +349,7 @@ impl<T: AsIoSlices + Unpin> IntoInner for SendImpl<T> {
     }
 }
 
-impl<T: AsIoSlices + Unpin> OpCode for SendImpl<T> {
+impl<'arena, T: AsIoSlices<'arena>> OpCode for SendImpl<'arena, T> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let slices = self.buffer.as_io_slices();
         let mut sent = 0;
@@ -356,14 +367,15 @@ impl<T: AsIoSlices + Unpin> OpCode for SendImpl<T> {
 }
 
 /// Receive data and source address.
-pub struct RecvFromImpl<T: AsIoSlicesMut + Unpin> {
+pub struct RecvFromImpl<'arena, T: AsIoSlicesMut<'arena>> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
     pub(crate) addr: SOCKADDR_STORAGE,
     pub(crate) addr_len: socklen_t,
+    _lifetime: PhantomData<&'arena ()>,
 }
 
-impl<T: AsIoSlicesMut + Unpin> RecvFromImpl<T> {
+impl<'arena, T: AsIoSlicesMut<'arena>> RecvFromImpl<'arena, T> {
     /// Create [`RecvFrom`] or [`RecvFromVectored`].
     pub fn new(fd: RawFd, buffer: T) -> Self {
         Self {
@@ -371,11 +383,12 @@ impl<T: AsIoSlicesMut + Unpin> RecvFromImpl<T> {
             buffer,
             addr: unsafe { std::mem::zeroed() },
             addr_len: std::mem::size_of::<SOCKADDR_STORAGE>() as _,
+            _lifetime: PhantomData,
         }
     }
 }
 
-impl<T: AsIoSlicesMut + Unpin> IntoInner for RecvFromImpl<T> {
+impl<'arena, T: AsIoSlicesMut<'arena>> IntoInner for RecvFromImpl<'arena, T> {
     type Inner = (T, SOCKADDR_STORAGE, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
@@ -383,7 +396,7 @@ impl<T: AsIoSlicesMut + Unpin> IntoInner for RecvFromImpl<T> {
     }
 }
 
-impl<T: AsIoSlicesMut + Unpin> OpCode for RecvFromImpl<T> {
+impl<'arena, T: AsIoSlicesMut<'arena>> OpCode for RecvFromImpl<'arena, T> {
     unsafe fn operate(mut self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd;
         let buffer = self.buffer.as_io_slices_mut();
@@ -405,20 +418,26 @@ impl<T: AsIoSlicesMut + Unpin> OpCode for RecvFromImpl<T> {
 }
 
 /// Send data to specified address.
-pub struct SendToImpl<T: AsIoSlices> {
+pub struct SendToImpl<'arena, T: AsIoSlices<'arena>> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
+    _lifetime: PhantomData<&'arena ()>,
 }
 
-impl<T: AsIoSlices> SendToImpl<T> {
+impl<'arena, T: AsIoSlices<'arena>> SendToImpl<'arena, T> {
     /// Create [`SendTo`] or [`SendToVectored`].
     pub fn new(fd: RawFd, buffer: T, addr: SockAddr) -> Self {
-        Self { fd, buffer, addr }
+        Self {
+            fd,
+            buffer,
+            addr,
+            _lifetime: PhantomData,
+        }
     }
 }
 
-impl<T: AsIoSlices> IntoInner for SendToImpl<T> {
+impl<'arena, T: AsIoSlices<'arena>> IntoInner for SendToImpl<'arena, T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -426,7 +445,7 @@ impl<T: AsIoSlices> IntoInner for SendToImpl<T> {
     }
 }
 
-impl<T: AsIoSlices> OpCode for SendToImpl<T> {
+impl<'arena, T: AsIoSlices<'arena>> OpCode for SendToImpl<'arena, T> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let buffer = self.buffer.as_io_slices();
         let mut sent = 0;

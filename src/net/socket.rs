@@ -139,7 +139,6 @@ impl Socket {
             .await
             .into_inner()
             .map_advanced()
-            .into_inner()
     }
 
     #[cfg(feature = "runtime")]
@@ -184,7 +183,6 @@ impl Socket {
             .with(|runtime| runtime.submit(op))
             .await
             .into_inner()
-            .into_inner()
     }
 
     #[cfg(feature = "runtime")]
@@ -226,7 +224,6 @@ impl Socket {
             .into_inner()
             .map_addr()
             .map_advanced()
-            .into_inner()
     }
 
     #[cfg(feature = "runtime")]
@@ -255,7 +252,6 @@ impl Socket {
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
-            .into_inner()
             .into_inner()
     }
 

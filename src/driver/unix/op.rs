@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
@@ -32,19 +34,24 @@ impl Accept {
 }
 
 /// Receive data from remote.
-pub struct RecvImpl<T: AsIoSlicesMut + Unpin> {
+pub struct RecvImpl<'arena, T: AsIoSlicesMut<'arena>> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
+    _lifetime: PhantomData<&'arena ()>,
 }
 
-impl<T: AsIoSlicesMut + Unpin> RecvImpl<T> {
+impl<'arena, T: AsIoSlicesMut<'arena>> RecvImpl<'arena, T> {
     /// Create [`Recv`] or [`RecvVectored`].
     pub fn new(fd: RawFd, buffer: T) -> Self {
-        Self { fd, buffer }
+        Self {
+            fd,
+            buffer,
+            _lifetime: PhantomData,
+        }
     }
 }
 
-impl<T: AsIoSlicesMut + Unpin> IntoInner for RecvImpl<T> {
+impl<'arena, T: AsIoSlicesMut<'arena>> IntoInner for RecvImpl<'arena, T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -53,19 +60,24 @@ impl<T: AsIoSlicesMut + Unpin> IntoInner for RecvImpl<T> {
 }
 
 /// Send data to remote.
-pub struct SendImpl<T: AsIoSlices + Unpin> {
+pub struct SendImpl<'arena, T: AsIoSlices<'arena>> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
+    _lifetime: PhantomData<&'arena ()>,
 }
 
-impl<T: AsIoSlices + Unpin> SendImpl<T> {
+impl<'arena, T: AsIoSlices<'arena>> SendImpl<'arena, T> {
     /// Create [`Send`] or [`SendVectored`].
     pub fn new(fd: RawFd, buffer: T) -> Self {
-        Self { fd, buffer }
+        Self {
+            fd,
+            buffer,
+            _lifetime: PhantomData,
+        }
     }
 }
 
-impl<T: AsIoSlices + Unpin> IntoInner for SendImpl<T> {
+impl<'arena, T: AsIoSlices<'arena>> IntoInner for SendImpl<'arena, T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -74,14 +86,15 @@ impl<T: AsIoSlices + Unpin> IntoInner for SendImpl<T> {
 }
 
 /// Receive data and source address.
-pub struct RecvFromImpl<T: AsIoSlicesMut + Unpin> {
+pub struct RecvFromImpl<'arena, T: AsIoSlicesMut<'arena>> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
     pub(crate) addr: sockaddr_storage,
     pub(crate) msg: libc::msghdr,
+    _lifetime: PhantomData<&'arena ()>,
 }
 
-impl<T: AsIoSlicesMut + Unpin> RecvFromImpl<T> {
+impl<'arena, T: AsIoSlicesMut<'arena>> RecvFromImpl<'arena, T> {
     /// Create [`RecvFrom`] or [`RecvFromVectored`].
     pub fn new(fd: RawFd, buffer: T) -> Self {
         Self {
@@ -89,6 +102,7 @@ impl<T: AsIoSlicesMut + Unpin> RecvFromImpl<T> {
             buffer,
             addr: unsafe { std::mem::zeroed() },
             msg: unsafe { std::mem::zeroed() },
+            _lifetime: PhantomData,
         }
     }
 
@@ -106,7 +120,7 @@ impl<T: AsIoSlicesMut + Unpin> RecvFromImpl<T> {
     }
 }
 
-impl<T: AsIoSlicesMut + Unpin> IntoInner for RecvFromImpl<T> {
+impl<'arena, T: AsIoSlicesMut<'arena>> IntoInner for RecvFromImpl<'arena, T> {
     type Inner = (T, sockaddr_storage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
@@ -115,14 +129,15 @@ impl<T: AsIoSlicesMut + Unpin> IntoInner for RecvFromImpl<T> {
 }
 
 /// Send data to specified address.
-pub struct SendToImpl<T: AsIoSlices + Unpin> {
+pub struct SendToImpl<'arena, T: AsIoSlices<'arena>> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
     pub(crate) msg: libc::msghdr,
+    _lifetime: PhantomData<&'arena ()>,
 }
 
-impl<T: AsIoSlices + Unpin> SendToImpl<T> {
+impl<'arena, T: AsIoSlices<'arena>> SendToImpl<'arena, T> {
     /// Create [`SendTo`] or [`SendToVectored`].
     pub fn new(fd: RawFd, buffer: T, addr: SockAddr) -> Self {
         Self {
@@ -130,6 +145,7 @@ impl<T: AsIoSlices + Unpin> SendToImpl<T> {
             buffer,
             addr,
             msg: unsafe { std::mem::zeroed() },
+            _lifetime: PhantomData,
         }
     }
 
@@ -147,7 +163,7 @@ impl<T: AsIoSlices + Unpin> SendToImpl<T> {
     }
 }
 
-impl<T: AsIoSlices + Unpin> IntoInner for SendToImpl<T> {
+impl<'arena, T: AsIoSlices<'arena>> IntoInner for SendToImpl<'arena, T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {

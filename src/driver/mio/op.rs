@@ -147,7 +147,7 @@ impl OpCode for Connect {
     }
 }
 
-impl<T: AsIoSlicesMut + Unpin> OpCode for RecvImpl<T> {
+impl<T: AsIoSlicesMut> OpCode for RecvImpl<T> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_readable(self.fd))
     }
@@ -161,7 +161,7 @@ impl<T: AsIoSlicesMut + Unpin> OpCode for RecvImpl<T> {
     }
 }
 
-impl<T: AsIoSlices + Unpin> OpCode for SendImpl<T> {
+impl<T: AsIoSlices> OpCode for SendImpl<T> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_writable(self.fd))
     }
@@ -174,7 +174,7 @@ impl<T: AsIoSlices + Unpin> OpCode for SendImpl<T> {
     }
 }
 
-impl<T: AsIoSlicesMut + Unpin> OpCode for RecvFromImpl<T> {
+impl<T: AsIoSlicesMut> OpCode for RecvFromImpl<T> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         self.set_msg();
         syscall!(recvmsg(self.fd, &mut self.msg, 0) or wait_readable(self.fd))
@@ -187,7 +187,7 @@ impl<T: AsIoSlicesMut + Unpin> OpCode for RecvFromImpl<T> {
     }
 }
 
-impl<T: AsIoSlices + Unpin> OpCode for SendToImpl<T> {
+impl<T: AsIoSlices> OpCode for SendToImpl<T> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         self.set_msg();
         syscall!(sendmsg(self.fd, &self.msg, 0) or wait_writable(self.fd))

@@ -2,15 +2,13 @@ use std::io::{IoSlice, IoSliceMut};
 
 use crate::buf::*;
 
+/// Fixed slice of IO buffers.
 #[derive(Debug)]
 pub struct VectoredBufWrapper<'arena, T: 'arena> {
     buffers: Box<[T]>,
     io_slices: Box<[IoSlice<'arena>]>,
     io_slices_mut: Box<[IoSliceMut<'arena>]>,
 }
-
-// The buffer won't be extended.
-impl<'arena, T: IoBuf<'arena>> Unpin for VectoredBufWrapper<'arena, T> {}
 
 impl<T> IntoInner for VectoredBufWrapper<'_, T> {
     type Inner = Box<[T]>;
@@ -32,7 +30,7 @@ impl<'arena, T: IoBuf<'arena>> From<Box<[T]>> for VectoredBufWrapper<'arena, T> 
         let io_slices_mut: Box<[IoSliceMut<'arena>]> = unsafe {
             buffers
                 .iter()
-                .map(|buf| IoSliceMut::new(&mut *(buf.as_slice() as *const _ as *const _)))
+                .map(|buf| IoSliceMut::new(&mut *(buf.as_slice() as *const _ as *mut _)))
                 .collect::<Vec<_>>()
                 .into_boxed_slice()
         };
@@ -44,15 +42,15 @@ impl<'arena, T: IoBuf<'arena>> From<Box<[T]>> for VectoredBufWrapper<'arena, T> 
     }
 }
 
-impl<'arena, T: IoBuf<'arena>> AsIoSlices for VectoredBufWrapper<'arena, T> {
+impl<'arena, T: IoBuf<'arena>> AsIoSlices<'arena> for VectoredBufWrapper<'arena, T> {
     unsafe fn as_io_slices(&self) -> OneOrSlice<IoSlice<'arena>> {
-        OneOrSlice::Slice(self.io_slices)
+        OneOrSlice::Slice(&self.io_slices)
     }
 }
 
-impl<'arena, T: IoBufMut<'arena>> AsIoSlicesMut for VectoredBufWrapper<'arena, T> {
-    unsafe fn as_io_slices_mut(&mut self) -> OneOrSlice<IoSliceMut<'arena>> {
-        OneOrSlice::Slice(self.io_slices_mut)
+impl<'arena, T: IoBufMut<'arena>> AsIoSlicesMut<'arena> for VectoredBufWrapper<'arena, T> {
+    unsafe fn as_io_slices_mut(&mut self) -> OneOrSliceMut<IoSliceMut<'arena>> {
+        OneOrSliceMut::Slice(&mut self.io_slices_mut)
     }
 
     fn set_init(&mut self, mut len: usize) {

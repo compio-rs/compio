@@ -2,10 +2,8 @@
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Key<T> {
     user_data: usize,
-    _p: std::marker::PhantomData<fn(T)>,
+    _not_send_not_sync: std::marker::PhantomData<*const T>,
 }
-
-impl<T> Unpin for Key<T> {}
 
 impl<T> Clone for Key<T> {
     fn clone(&self) -> Self {
@@ -26,7 +24,7 @@ impl<T> Key<T> {
     pub unsafe fn new(user_data: usize) -> Self {
         Self {
             user_data,
-            _p: std::marker::PhantomData,
+            _not_send_not_sync: std::marker::PhantomData,
         }
     }
 }

@@ -20,7 +20,7 @@ pub(crate) trait BufResultExt {
     fn map_advanced(self) -> Self;
 }
 
-impl<'arena, T: AsIoSlicesMut> BufResultExt for BufResult<'arena, usize, T> {
+impl<'arena, T: AsIoSlicesMut<'arena>> BufResultExt for BufResult<'arena, usize, T> {
     fn map_advanced(self) -> Self {
         let (res, buffer) = self;
         let (res, buffer) = (res.map(|res| (res, ())), buffer).map_advanced();
@@ -29,7 +29,7 @@ impl<'arena, T: AsIoSlicesMut> BufResultExt for BufResult<'arena, usize, T> {
     }
 }
 
-impl<'arena, T: AsIoSlicesMut, O> BufResultExt for BufResult<'arena, (usize, O), T> {
+impl<'arena, T: AsIoSlicesMut<'arena>, O> BufResultExt for BufResult<'arena, (usize, O), T> {
     fn map_advanced(self) -> Self {
         let (res, mut buffer) = self;
         if let Ok((init, _)) = &res {
@@ -154,21 +154,21 @@ impl Connect {
 }
 
 /// Receive data with one buffer.
-pub type Recv<T> = RecvImpl<T>;
+pub type Recv<'arena, T> = RecvImpl<'arena, T>;
 /// Receive data with vectored buffer.
-pub type RecvVectored<'arena, T> = RecvImpl<VectoredBufWrapper<'arena, T>>;
+pub type RecvVectored<'arena, T> = RecvImpl<'arena, VectoredBufWrapper<'arena, T>>;
 
 /// Send data with one buffer.
-pub type Send<T> = SendImpl<T>;
+pub type Send<'arena, T> = SendImpl<'arena, T>;
 /// Send data with vectored buffer.
-pub type SendVectored<'arena, T> = SendImpl<VectoredBufWrapper<'arena, T>>;
+pub type SendVectored<'arena, T> = SendImpl<'arena, VectoredBufWrapper<'arena, T>>;
 
 /// Receive data and address with one buffer.
-pub type RecvFrom<T> = RecvFromImpl<T>;
+pub type RecvFrom<'arena, T> = RecvFromImpl<'arena, T>;
 /// Receive data and address with vectored buffer.
-pub type RecvFromVectored<'arena, T> = RecvFromImpl<VectoredBufWrapper<'arena, T>>;
+pub type RecvFromVectored<'arena, T> = RecvFromImpl<'arena, VectoredBufWrapper<'arena, T>>;
 
 /// Send data to address with one buffer.
-pub type SendTo<T> = SendToImpl<T>;
+pub type SendTo<'arena, T> = SendToImpl<'arena, T>;
 /// Send data to address with vectored buffer.
-pub type SendToVectored<'arena, T> = SendToImpl<VectoredBufWrapper<'arena, T>>;
+pub type SendToVectored<'arena, T> = SendToImpl<'arena, VectoredBufWrapper<'arena, T>>;
