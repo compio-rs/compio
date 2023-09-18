@@ -100,25 +100,18 @@ macro_rules! syscall {
             Ok(res as usize)
         }
     }};
+    // The below branches are used by mio driver.
     (break $fn: ident ( $($arg: expr),* $(,)* )) => {
-        syscall!( $fn ( $($arg, )* )).map(ControlFlow::Break)
+        syscall!( $fn ( $($arg, )* )).map(::std::ops::ControlFlow::Break)
     };
-    ($fn: ident ( $($arg: expr),* $(,)* ) or wait_writable($fd:expr)) => {
+    ($fn: ident ( $($arg: expr),* $(,)* ) or $f:ident($fd:expr)) => {
         match syscall!( $fn ( $($arg, )* )) {
-            Ok(fd) => Ok(Decision::Completed(fd)),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock || e.raw_os_error() == Some(libc::EINPROGRESS)
-                   => Ok(Decision::wait_writable($fd)),
+            Ok(fd) => Ok($crate::driver::Decision::Completed(fd)),
+            Err(e) if e.kind() == ::std::io::ErrorKind::WouldBlock || e.raw_os_error() == Some(::libc::EINPROGRESS)
+                   => Ok($crate::driver::Decision::$f($fd)),
             Err(e) => Err(e),
         }
     };
-    ($fn: ident ( $($arg: expr),* $(,)* ) or wait_readable($fd:expr)) => {
-        match syscall!( $fn ( $($arg, )* )) {
-            Ok(fd) => Ok(Decision::Completed(fd)),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock || e.raw_os_error() == Some(libc::EINPROGRESS)
-                   => Ok(Decision::wait_readable($fd)),
-            Err(e) => Err(e),
-        }
-    }
 }
 
 #[cfg(unix)]
