@@ -40,7 +40,7 @@ socket2 = { version = ">=0.5.4", features = ["all"] }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
-bumpalo = { version = "3", features = ["allocator_api"] }
+bumpalo = "3"
 criterion = { version = "0.5", features = ["async_tokio"] }
 futures-channel = "0.3"
 arrayvec = "0.7"
@@ -85,7 +85,7 @@ signal = ["event"]
 time = ["runtime"]
 all = ["time", "signal"]
 
-allocator_api = []
+allocator_api = ["bumpalo/allocator_api"]
 lazy_cell = []
 once_cell_try = []
 read_buf = []
