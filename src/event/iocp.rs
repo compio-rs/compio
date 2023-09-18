@@ -21,8 +21,8 @@ impl Event {
     }
 
     /// Get a notify handle.
-    pub fn handle(&self) -> EventHandle {
-        EventHandle::new(&self.user_data)
+    pub fn handle(&self) -> io::Result<EventHandle> {
+        Ok(EventHandle::new(&self.user_data))
     }
 
     /// Wait for [`EventHandle::notify`] called.

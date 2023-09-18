@@ -49,10 +49,10 @@ fn init() -> io::Result<()> {
     }
 }
 
-fn register(ctrltype: u32, e: &Event) -> usize {
+fn register(ctrltype: u32, e: &Event) -> io::Result<usize> {
     let mut handler = HANDLER.lock().unwrap();
-    let handle = e.handle();
-    handler.entry(ctrltype).or_default().insert(handle)
+    let handle = e.handle()?;
+    Ok(handler.entry(ctrltype).or_default().insert(handle))
 }
 
 fn unregister(ctrltype: u32, key: usize) {
@@ -77,7 +77,7 @@ impl CtrlEvent {
         INIT.call_once(|| init().unwrap());
 
         let event = Event::new()?;
-        let handler_key = register(ctrltype, &event);
+        let handler_key = register(ctrltype, &event)?;
         Ok(Self {
             ctrltype,
             event,
