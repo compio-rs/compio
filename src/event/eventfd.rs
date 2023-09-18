@@ -1,6 +1,6 @@
 use std::{
     io,
-    os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd},
+    os::fd::{AsRawFd, FromRawFd, OwnedFd},
 };
 
 use crate::{impl_raw_fd, op::Recv, syscall, task::RUNTIME};
