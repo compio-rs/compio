@@ -3,7 +3,7 @@ use std::{
     os::fd::{AsRawFd, FromRawFd, OwnedFd},
 };
 
-use crate::{impl_raw_fd, op::ReadAt, task::RUNTIME};
+use crate::{impl_raw_fd, op::Recv, task::RUNTIME};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
@@ -31,7 +31,8 @@ impl Event {
     /// Wait for [`EventHandle::notify`] called.
     pub async fn wait(&self) -> io::Result<()> {
         let buffer = Vec::with_capacity(8);
-        let op = ReadAt::new(self.as_raw_fd(), 0, buffer);
+        // Trick: Recv uses readv which doesn't seek.
+        let op = Recv::new(self.as_raw_fd(), buffer);
         let (res, _) = RUNTIME.with(|runtime| runtime.submit(op)).await;
         res?;
         Ok(())

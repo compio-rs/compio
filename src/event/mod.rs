@@ -6,11 +6,11 @@ cfg_if::cfg_if! {
     if #[cfg(target_os = "windows")] {
         mod iocp;
         pub use iocp::*;
-    } else if #[cfg(target_os = "linux")] {
-        mod iour;
-        pub use iour::*;
+    } else if #[cfg(any(target_os = "linux", target_os = "android"))] {
+        mod eventfd;
+        pub use eventfd::*;
     } else if #[cfg(unix)] {
-        mod mio;
-        pub use self::mio::*;
+        mod pipe;
+        pub use self::pipe::*;
     }
 }
