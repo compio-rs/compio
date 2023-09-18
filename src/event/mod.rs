@@ -11,6 +11,6 @@ cfg_if::cfg_if! {
         pub use eventfd::*;
     } else if #[cfg(unix)] {
         mod pipe;
-        pub use self::pipe::*;
+        pub use pipe::*;
     }
 }
