@@ -161,7 +161,7 @@ impl<'arena, T: AsIoSlicesMut<'arena>> OpCode for RecvImpl<'arena, T> {
 
         let fd = self.fd;
         // SAFETY: IoSliceMut is Unpin
-        let mut slices = unsafe { self.buffer.as_io_slices_mut() };
+        let slices = unsafe { self.buffer.as_io_slices_mut() };
         syscall!(break readv(fd, slices.as_mut_ptr() as _, slices.len() as _,))
     }
 }
@@ -182,8 +182,9 @@ impl<'arena, T: AsIoSlices<'arena>> OpCode for SendImpl<'arena, T> {
 
 impl<'arena, T: AsIoSlicesMut<'arena>> OpCode for RecvFromImpl<'arena, T> {
     fn pre_submit(&mut self) -> io::Result<Decision> {
-        self.set_msg();
-        syscall!(recvmsg(self.fd, &mut self.msg, 0) or wait_readable(self.fd))
+        let fd = self.fd;
+        let msg = self.set_msg();
+        syscall!(recvmsg(fd, msg, 0) or wait_readable(fd))
     }
 
     fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {
@@ -195,8 +196,9 @@ impl<'arena, T: AsIoSlicesMut<'arena>> OpCode for RecvFromImpl<'arena, T> {
 
 impl<'arena, T: AsIoSlices<'arena>> OpCode for SendToImpl<'arena, T> {
     fn pre_submit(&mut self) -> io::Result<Decision> {
-        self.set_msg();
-        syscall!(sendmsg(self.fd, &self.msg, 0) or wait_writable(self.fd))
+        let fd = self.fd;
+        let msg = self.set_msg();
+        syscall!(sendmsg(fd, msg, 0) or wait_writable(fd))
     }
 
     fn on_event(&mut self, event: &Event) -> std::io::Result<ControlFlow<usize>> {

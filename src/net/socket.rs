@@ -5,12 +5,12 @@ use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 use crate::impl_raw_fd;
 #[cfg(feature = "runtime")]
 use crate::{
-    buf::{IntoInner, IoBuf, IoBufMut, VectoredBufWrapper},
+    buf::{BufWrapper, BufWrapperMut, IntoInner, IoBuf, IoBufMut, VectoredBufWrapper},
     buf_try,
     driver::AsRawFd,
     op::{
-        Accept, BufResultExt, Connect, Recv, RecvFrom, RecvFromVectored, RecvResultExt,
-        RecvVectored, Send, SendTo, SendToVectored, SendVectored,
+        Accept, Connect, Recv, RecvFrom, RecvFromVectored, RecvResultExt, RecvVectored, Send,
+        SendTo, SendToVectored, SendVectored, UpdateBufferLen,
     },
     task::RUNTIME,
     Attacher, BufResult,
@@ -133,12 +133,13 @@ impl Socket {
     #[cfg(feature = "runtime")]
     pub async fn recv<T: IoBufMut<'static>>(&self, buffer: T) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
-        let op = Recv::new(self.as_raw_fd(), buffer);
+        let op = Recv::new(self.as_raw_fd(), BufWrapperMut::from(buffer));
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
             .into_inner()
-            .map_advanced()
+            .update_buffer_len()
+            .into_inner()
     }
 
     #[cfg(feature = "runtime")]
@@ -172,16 +173,17 @@ impl Socket {
             .with(|runtime| runtime.submit(op))
             .await
             .into_inner()
-            .map_advanced()
+            .update_buffer_len()
     }
 
     #[cfg(feature = "runtime")]
     pub async fn send<T: IoBuf<'static>>(&self, buffer: T) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
-        let op = Send::new(self.as_raw_fd(), buffer);
+        let op = Send::new(self.as_raw_fd(), BufWrapper::from(buffer));
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
+            .into_inner()
             .into_inner()
     }
 
@@ -217,13 +219,14 @@ impl Socket {
         buffer: T,
     ) -> BufResult<(usize, SockAddr), T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
-        let op = RecvFrom::new(self.as_raw_fd(), buffer);
+        let op = RecvFrom::new(self.as_raw_fd(), BufWrapperMut::from(buffer));
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
             .into_inner()
             .map_addr()
-            .map_advanced()
+            .update_buffer_len()
+            .into_inner()
     }
 
     #[cfg(feature = "runtime")]
@@ -238,7 +241,7 @@ impl Socket {
             .await
             .into_inner()
             .map_addr()
-            .map_advanced()
+            .update_buffer_len()
     }
 
     #[cfg(feature = "runtime")]
@@ -248,10 +251,11 @@ impl Socket {
         addr: &SockAddr,
     ) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
-        let op = SendTo::new(self.as_raw_fd(), buffer, addr.clone());
+        let op = SendTo::new(self.as_raw_fd(), BufWrapper::from(buffer), addr.clone());
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
+            .into_inner()
             .into_inner()
     }
 

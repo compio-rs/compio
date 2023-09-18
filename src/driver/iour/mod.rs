@@ -85,7 +85,8 @@ impl<'arena> Driver<'arena> {
         while !inner_squeue.is_full() {
             if let Some(mut op) = ops.next() {
                 // SAFETY: operation buffers are Unpin, pinning is not required
-                let entry = op.opcode().create_entry().user_data(op.user_data() as _);
+                let user_data = op.user_data();
+                let entry = op.opcode().create_entry().user_data(user_data as _);
                 unsafe { inner_squeue.push(&entry) }.expect("queue has enough space");
             } else {
                 ended_ops = true;

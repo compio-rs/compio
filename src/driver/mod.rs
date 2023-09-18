@@ -32,7 +32,7 @@ cfg_if::cfg_if! {
 ///
 /// use arrayvec::ArrayVec;
 /// use compio::{
-///     buf::IntoInner,
+///     buf::{BufWrapper, BufWrapperMut, IntoInner},
 ///     driver::{AsRawFd, Driver, Entry, Poller},
 ///     net::UdpSocket,
 ///     op,
@@ -56,11 +56,11 @@ cfg_if::cfg_if! {
 /// driver.attach(other_socket.as_raw_fd()).unwrap();
 ///
 /// // write data
-/// let mut op_write = op::Send::new(socket.as_raw_fd(), "hello world");
+/// let mut op_write = op::Send::new(socket.as_raw_fd(), BufWrapper::from("hello world"));
 ///
 /// // read data
 /// let buf = Vec::with_capacity(32);
-/// let mut op_read = op::Recv::new(other_socket.as_raw_fd(), buf);
+/// let mut op_read = op::Recv::new(other_socket.as_raw_fd(), BufWrapperMut::from(buf));
 ///
 /// let ops = [(&mut op_write, 1).into(), (&mut op_read, 2).into()];
 /// let mut entries = ArrayVec::<Entry, 2>::new();
@@ -90,7 +90,7 @@ cfg_if::cfg_if! {
 ///     }
 /// }
 ///
-/// let mut buf = op_read.into_inner();
+/// let mut buf = op_read.into_inner().into_inner();
 /// unsafe { buf.set_len(n_bytes) };
 /// assert_eq!(buf, b"hello world");
 /// ```

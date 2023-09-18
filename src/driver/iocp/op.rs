@@ -290,6 +290,7 @@ pub struct RecvImpl<'arena, T: AsIoSlicesMut<'arena>> {
 impl<'arena, T: AsIoSlicesMut<'arena>> RecvImpl<'arena, T> {
     /// Create [`Recv`] or [`RecvVectored`].
     pub fn new(fd: RawFd, buffer: T) -> Self {
+        // SAFETY: buffer is Unpin, IoSliceMut is Unpin as well
         Self {
             fd,
             buffer,
@@ -308,9 +309,9 @@ impl<'arena, T: AsIoSlicesMut<'arena>> IntoInner for RecvImpl<'arena, T> {
 
 impl<'arena, T: AsIoSlicesMut<'arena>> OpCode for RecvImpl<'arena, T> {
     unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        // SAFETY: IoSliceMut is Unpin
+        let slices = unsafe { self.buffer.as_io_slices_mut() };
         let fd = self.fd;
-        // SAFETY: buffer is Unpin, IoSliceMut is Unpin as well
-        let slices = self.buffer.as_io_slices_mut();
         let mut flags = 0;
         let mut received = 0;
         let res = WSARecv(
@@ -355,7 +356,7 @@ impl<'arena, T: AsIoSlices<'arena>> IntoInner for SendImpl<'arena, T> {
 impl<'arena, T: AsIoSlices<'arena>> OpCode for SendImpl<'arena, T> {
     unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         // SAFETY: buffer is Unpin, IoSlice is Unpin as well
-        let slices = self.buffer.as_io_slices();
+        let slices = unsafe { self.buffer.as_io_slices() };
         let mut sent = 0;
         let res = WSASend(
             self.fd as _,
@@ -404,13 +405,13 @@ impl<'arena, T: AsIoSlicesMut<'arena>> OpCode for RecvFromImpl<'arena, T> {
     unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd;
         // SAFETY: buffer is Unpin, IoSliceMut is Unpin as well
-        let buffer = self.buffer.as_io_slices_mut();
+        let slices = unsafe { self.buffer.as_io_slices_mut() };
         let mut flags = 0;
         let mut received = 0;
         let res = WSARecvFrom(
             fd as _,
-            buffer.as_ptr() as _,
-            buffer.len() as _,
+            slices.as_ptr() as _,
+            slices.len() as _,
             &mut received,
             &mut flags,
             &mut self.addr as *mut _ as *mut SOCKADDR,
@@ -453,12 +454,12 @@ impl<'arena, T: AsIoSlices<'arena>> IntoInner for SendToImpl<'arena, T> {
 impl<'arena, T: AsIoSlices<'arena>> OpCode for SendToImpl<'arena, T> {
     unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         // SAFETY: buffer is Unpin, IoSliceMut is Unpin as well
-        let buffer = self.buffer.as_io_slices();
+        let slices = unsafe { self.buffer.as_io_slices() };
         let mut sent = 0;
         let res = WSASendTo(
             self.fd as _,
-            buffer.as_ptr() as _,
-            buffer.len() as _,
+            slices.as_ptr() as _,
+            slices.len() as _,
             &mut sent,
             0,
             self.addr.as_ptr(),

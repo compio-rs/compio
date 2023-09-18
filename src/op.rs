@@ -11,29 +11,63 @@ use socket2::SockAddr;
 pub use crate::driver::op::ConnectNamedPipe;
 pub use crate::driver::op::{Accept, RecvFromImpl, RecvImpl, SendImpl, SendToImpl};
 use crate::{
-    buf::{AsIoSlicesMut, IntoInner, IoBuf, IoBufMut, VectoredBufWrapper},
+    buf::{AsIoSlicesMut, BufWrapperMut, IntoInner, IoBuf, IoBufMut, VectoredBufWrapper},
     driver::{sockaddr_storage, socklen_t, RawFd},
     BufResult,
 };
 
-pub(crate) trait BufResultExt {
-    fn map_advanced(self) -> Self;
+/// Helper trait to update buffer length after kernel updated the buffer
+pub trait UpdateBufferLen {
+    /// Update length of wrapped buffer
+    fn update_buffer_len(self) -> Self;
 }
 
-impl<'arena, T: AsIoSlicesMut<'arena>> BufResultExt for BufResult<'arena, usize, T> {
-    fn map_advanced(self) -> Self {
-        let (res, buffer) = self;
-        let (res, buffer) = (res.map(|res| (res, ())), buffer).map_advanced();
-        let res = res.map(|(res, _)| res);
+macro_rules! impl_update_buffer_len {
+    ($t:ident) => {
+        impl<'arena, T: IoBufMut<'arena>> UpdateBufferLen
+            for BufResult<'arena, usize, $t<'arena, T>>
+        {
+            fn update_buffer_len(self) -> Self {
+                let (res, mut buffer) = self;
+                if let Ok(init) = &res {
+                    buffer.set_init(*init);
+                }
+                (res, buffer)
+            }
+        }
+
+        impl<'arena, T: IoBufMut<'arena>, O> UpdateBufferLen
+            for BufResult<'arena, (usize, O), $t<'arena, T>>
+        {
+            fn update_buffer_len(self) -> Self {
+                let (res, mut buffer) = self;
+                if let Ok((init, _)) = &res {
+                    buffer.set_init(*init);
+                }
+                (res, buffer)
+            }
+        }
+    };
+}
+
+impl_update_buffer_len!(VectoredBufWrapper);
+impl_update_buffer_len!(BufWrapperMut);
+
+impl<'arena, T: IoBufMut<'arena>> UpdateBufferLen for BufResult<'arena, usize, T> {
+    fn update_buffer_len(self) -> Self {
+        let (res, mut buffer) = self;
+        if let Ok(init) = &res {
+            buffer.set_buf_init(*init);
+        }
         (res, buffer)
     }
 }
 
-impl<'arena, T: AsIoSlicesMut<'arena>, O> BufResultExt for BufResult<'arena, (usize, O), T> {
-    fn map_advanced(self) -> Self {
+impl<'arena, T: IoBufMut<'arena>, O> UpdateBufferLen for BufResult<'arena, (usize, O), T> {
+    fn update_buffer_len(self) -> Self {
         let (res, mut buffer) = self;
         if let Ok((init, _)) = &res {
-            buffer.set_init(*init);
+            buffer.set_buf_init(*init);
         }
         (res, buffer)
     }

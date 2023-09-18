@@ -106,18 +106,23 @@ impl<'arena, T: AsIoSlicesMut<'arena>> RecvFromImpl<'arena, T> {
         }
     }
 
-    pub(crate) fn set_msg(&mut self) {
+    pub(crate) fn set_msg(&mut self) -> &mut libc::msghdr {
         // SAFETY: IoSliceMut is Unpin
-        let mut slices = unsafe { self.buffer.as_io_slices_mut() };
+        let (slices, len) = unsafe {
+            let slices = self.buffer.as_io_slices_mut();
+            let len = slices.len();
+            (slices.as_mut_ptr(), len)
+        };
         self.msg = libc::msghdr {
             msg_name: &mut self.addr as *mut _ as _,
             msg_namelen: std::mem::size_of_val(&self.addr) as _,
-            msg_iov: slices.as_mut_ptr() as _,
-            msg_iovlen: slices.len() as _,
+            msg_iov: slices as _,
+            msg_iovlen: len as _,
             msg_control: std::ptr::null_mut(),
             msg_controllen: 0,
             msg_flags: 0,
         };
+        &mut self.msg
     }
 }
 
@@ -150,18 +155,23 @@ impl<'arena, T: AsIoSlices<'arena>> SendToImpl<'arena, T> {
         }
     }
 
-    pub(crate) fn set_msg(&mut self) {
+    pub(crate) fn set_msg(&mut self) -> &libc::msghdr {
         // SAFETY: IoSlice is Unpin
-        let slices = unsafe { self.buffer.as_io_slices() };
+        let (slices, len) = unsafe {
+            let slices = self.buffer.as_io_slices();
+            let len = slices.len();
+            (slices.as_ptr(), len)
+        };
         self.msg = libc::msghdr {
             msg_name: self.addr.as_ptr() as _,
             msg_namelen: self.addr.len(),
-            msg_iov: slices.as_ptr() as _,
-            msg_iovlen: slices.len() as _,
+            msg_iov: slices as _,
+            msg_iovlen: len as _,
             msg_control: std::ptr::null_mut(),
             msg_controllen: 0,
             msg_flags: 0,
         };
+        &self.msg
     }
 }
 

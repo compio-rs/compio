@@ -67,7 +67,7 @@ impl OpCode for Connect {
 impl<'arena, T: AsIoSlicesMut<'arena>> OpCode for RecvImpl<'arena, T> {
     fn create_entry(&mut self) -> Entry {
         // SAFETY: IoSliceMut is Unpin
-        let mut slices = unsafe { self.buffer.as_io_slices_mut() };
+        let slices = unsafe { self.buffer.as_io_slices_mut() };
         opcode::Readv::new(Fd(self.fd), slices.as_mut_ptr() as _, slices.len() as _).build()
     }
 }
@@ -83,15 +83,17 @@ impl<'arena, T: AsIoSlices<'arena>> OpCode for SendImpl<'arena, T> {
 impl<'arena, T: AsIoSlicesMut<'arena>> OpCode for RecvFromImpl<'arena, T> {
     #[allow(clippy::no_effect)]
     fn create_entry(&mut self) -> Entry {
-        self.set_msg();
-        opcode::RecvMsg::new(Fd(self.fd), &mut self.msg).build()
+        let fd = self.fd;
+        let msg = self.set_msg();
+        opcode::RecvMsg::new(Fd(fd), msg as *mut _).build()
     }
 }
 
 impl<'arena, T: AsIoSlices<'arena>> OpCode for SendToImpl<'arena, T> {
     #[allow(clippy::no_effect)]
     fn create_entry(&mut self) -> Entry {
-        self.set_msg();
-        opcode::SendMsg::new(Fd(self.fd), &self.msg).build()
+        let fd = self.fd;
+        let msg = self.set_msg();
+        opcode::SendMsg::new(Fd(fd), msg).build()
     }
 }

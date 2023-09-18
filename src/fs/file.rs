@@ -7,7 +7,7 @@ use crate::{
     buf::{IntoInner, IoBuf, IoBufMut},
     buf_try,
     driver::AsRawFd,
-    op::{BufResultExt, ReadAt, Sync, WriteAt},
+    op::{ReadAt, Sync, WriteAt},
     task::RUNTIME,
     Attacher, BufResult,
 };
@@ -128,13 +128,15 @@ impl File {
         buffer: T,
         pos: usize,
     ) -> BufResult<usize, T> {
+        use crate::op::UpdateBufferLen;
+
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = ReadAt::new(self.as_raw_fd(), pos, buffer);
         RUNTIME
             .with(|runtime| runtime.submit(op))
             .await
             .into_inner()
-            .map_advanced()
+            .update_buffer_len()
     }
 
     /// Read the exact number of bytes required to fill `buffer`.
