@@ -90,33 +90,24 @@ pub(crate) use impl_raw_fd;
 
 #[cfg(target_os = "windows")]
 macro_rules! syscall {
-    (BOOL, $fn: ident ( $($arg: expr),* $(,)* )) => {{
+    ($fn: ident ( $($arg: expr),* $(,)* ), $op: tt $rhs: expr) => {{
         #[allow(unused_unsafe)]
         let res = unsafe { $fn($($arg, )*) };
-        if res == 0 {
+        if res $op $rhs {
             Err(::std::io::Error::last_os_error())
         } else {
             Ok(res)
         }
     }};
-    (SOCKET, $fn: ident ( $($arg: expr),* $(,)* )) => {{
-        #[allow(unused_unsafe)]
-        let res = unsafe { $fn($($arg, )*) };
-        if res != 0 {
-            Err(::std::io::Error::last_os_error())
-        } else {
-            Ok(res)
-        }
-    }};
-    (HANDLE, $fn: ident ( $($arg: expr),* $(,)* )) => {{
-        #[allow(unused_unsafe)]
-        let res = unsafe { $fn($($arg, )*) };
-        if res == ::windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
-            Err(::std::io::Error::last_os_error())
-        } else {
-            Ok(res)
-        }
-    }};
+    (BOOL, $fn: ident ( $($arg: expr),* $(,)* )) => {
+        $crate::syscall!($fn($($arg, )*), == 0)
+    };
+    (SOCKET, $fn: ident ( $($arg: expr),* $(,)* )) => {
+        $crate::syscall!($fn($($arg, )*), != 0)
+    };
+    (HANDLE, $fn: ident ( $($arg: expr),* $(,)* )) => {
+        $crate::syscall!($fn($($arg, )*), == ::windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE)
+    };
 }
 
 /// Helper macro to execute a system call
@@ -133,10 +124,10 @@ macro_rules! syscall {
     }};
     // The below branches are used by mio driver.
     (break $fn: ident ( $($arg: expr),* $(,)* )) => {
-        syscall!( $fn ( $($arg, )* )).map(::std::ops::ControlFlow::Break)
+        $crate::syscall!( $fn ( $($arg, )* )).map(::std::ops::ControlFlow::Break)
     };
     ($fn: ident ( $($arg: expr),* $(,)* ) or $f:ident($fd:expr)) => {
-        match syscall!( $fn ( $($arg, )* )) {
+        match $crate::syscall!( $fn ( $($arg, )* )) {
             Ok(fd) => Ok($crate::driver::Decision::Completed(fd)),
             Err(e) if e.kind() == ::std::io::ErrorKind::WouldBlock || e.raw_os_error() == Some(::libc::EINPROGRESS)
                    => Ok($crate::driver::Decision::$f($fd)),

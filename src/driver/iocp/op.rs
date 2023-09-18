@@ -36,6 +36,7 @@ use crate::{
     syscall,
 };
 
+#[inline]
 unsafe fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
     let error = GetLastError();
     assert_ne!(error, 0);
@@ -48,6 +49,7 @@ unsafe fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
     }
 }
 
+#[inline]
 unsafe fn win32_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     if res == 0 {
         winapi_result(transferred)
@@ -60,6 +62,7 @@ unsafe fn win32_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
 // the task is completed, but the overlapped result is also posted to the IOCP.
 // To make our driver easy, simply return Pending and query the result later.
 
+#[inline]
 unsafe fn win32_pending_result(res: i32) -> Poll<io::Result<usize>> {
     if res == 0 {
         winapi_result(0)
@@ -68,6 +71,7 @@ unsafe fn win32_pending_result(res: i32) -> Poll<io::Result<usize>> {
     }
 }
 
+#[inline]
 unsafe fn winsock_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     if res != 0 {
         winapi_result(transferred)
