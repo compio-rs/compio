@@ -1,25 +1,32 @@
 use std::{
     io,
-    os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
+    os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd},
 };
 
-use mio::unix::pipe::Receiver;
-
-use crate::{impl_raw_fd, op::Recv, task::RUNTIME};
+use crate::{impl_raw_fd, op::Recv, syscall, task::RUNTIME};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
 #[derive(Debug)]
 pub struct Event {
     sender: OwnedFd,
-    receiver: Receiver,
+    receiver: OwnedFd,
 }
 
 impl Event {
     /// Create [`Event`].
     pub fn new() -> io::Result<Self> {
-        let (sender, receiver) = mio::unix::pipe::new()?;
-        let sender = unsafe { OwnedFd::from_raw_fd(sender.into_raw_fd()) };
+        let mut fds = [-1, -1];
+        syscall!(pipe(fds.as_mut_ptr()))?;
+        let receiver = unsafe { OwnedFd::from_raw_fd(fds[0]) };
+        let sender = unsafe { OwnedFd::from_raw_fd(fds[1]) };
+
+        syscall!(fcntl(receiver.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK))?;
+        syscall!(fcntl(receiver.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
+
+        syscall!(fcntl(sender.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK))?;
+        syscall!(fcntl(sender.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
+
         Ok(Self { sender, receiver })
     }
 
@@ -57,19 +64,9 @@ impl EventHandle {
 
     /// Notify the event.
     pub fn notify(&self) -> io::Result<()> {
-        let data = 1u64;
-        let res = unsafe {
-            libc::write(
-                self.fd.as_raw_fd(),
-                &data as *const _ as *const _,
-                std::mem::size_of::<u64>(),
-            )
-        };
-        if res < 0 {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(())
-        }
+        let data = &[1];
+        syscall!(write(self.fd.as_raw_fd(), data.as_ptr() as _, 1))?;
+        Ok(())
     }
 }
 

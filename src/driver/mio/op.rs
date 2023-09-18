@@ -7,40 +7,8 @@ use crate::{
     buf::{AsIoSlices, AsIoSlicesMut, IoBuf, IoBufMut},
     driver::{Decision, OpCode},
     op::*,
+    syscall,
 };
-
-/// Helper macro to execute a system call
-macro_rules! syscall {
-    ($fn: ident ( $($arg: expr),* $(,)* ) ) => {{
-        #[allow(unused_unsafe)]
-        let res = unsafe { ::libc::$fn($($arg, )*) };
-        if res == -1 {
-            Err(::std::io::Error::last_os_error())
-        } else {
-            Ok(res as usize)
-        }
-    }};
-    (break $fn: ident ( $($arg: expr),* $(,)* )) => {
-        syscall!( $fn ( $($arg, )* )).map(ControlFlow::Break)
-    };
-    ($fn: ident ( $($arg: expr),* $(,)* ) or wait_writable($fd:expr)) => {
-        match syscall!( $fn ( $($arg, )* )) {
-            Ok(fd) => Ok(Decision::Completed(fd)),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock || e.raw_os_error() == Some(libc::EINPROGRESS)
-                   => Ok(Decision::wait_writable($fd)),
-            Err(e) => Err(e),
-        }
-    };
-    ($fn: ident ( $($arg: expr),* $(,)* ) or wait_readable($fd:expr)) => {
-        match syscall!( $fn ( $($arg, )* )) {
-            Ok(fd) => Ok(Decision::Completed(fd)),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock || e.raw_os_error() == Some(libc::EINPROGRESS)
-                   => Ok(Decision::wait_readable($fd)),
-            Err(e) => Err(e),
-        }
-    }
-
-}
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
