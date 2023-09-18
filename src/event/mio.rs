@@ -5,7 +5,7 @@ use std::{
 
 use mio::unix::pipe::Receiver;
 
-use crate::{op::Recv, task::RUNTIME};
+use crate::{impl_raw_fd, op::Recv, task::RUNTIME};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
@@ -72,3 +72,5 @@ impl EventHandle {
         }
     }
 }
+
+impl_raw_fd!(EventHandle, fd);
