@@ -18,8 +18,8 @@ impl<T> IntoInner for VectoredBufWrapper<'_, T> {
     }
 }
 
-impl<'arena, T: IoBuf<'arena>> From<Box<[T]>> for VectoredBufWrapper<'arena, T> {
-    fn from(buffers: Box<[T]>) -> Self {
+impl<'arena, T: IoBufMut<'arena>> From<Box<[T]>> for VectoredBufWrapper<'arena, T> {
+    fn from(mut buffers: Box<[T]>) -> Self {
         let io_slices: Box<[IoSlice<'arena>]> = unsafe {
             buffers
                 .iter()
@@ -29,8 +29,8 @@ impl<'arena, T: IoBuf<'arena>> From<Box<[T]>> for VectoredBufWrapper<'arena, T> 
         };
         let io_slices_mut: Box<[IoSliceMut<'arena>]> = unsafe {
             buffers
-                .iter()
-                .map(|buf| IoSliceMut::new(&mut *(buf.as_slice() as *const _ as *mut _)))
+                .iter_mut()
+                .map(|buf| IoSliceMut::new(&mut *(buf.as_uninit_slice() as *mut _ as *mut _)))
                 .collect::<Vec<_>>()
                 .into_boxed_slice()
         };
