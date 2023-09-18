@@ -2,7 +2,7 @@
 use std::alloc::Allocator;
 use std::mem::MaybeUninit;
 
-use crate::{buf::*, vec_alloc};
+use crate::{buf::*, vec_alloc, vec_alloc_lifetime};
 
 /// An IOCP compatible buffer.
 ///
@@ -14,7 +14,7 @@ use crate::{buf::*, vec_alloc};
 /// Buffers passed to IOCP operations must reference a stable memory
 /// region. While the runtime holds ownership to a buffer, the pointer returned
 /// by `as_buf_ptr` must remain valid even if the `IoBuf` value is moved.
-pub unsafe trait IoBuf: 'static {
+pub unsafe trait IoBuf<'arena>: 'arena {
     /// Returns a raw pointer to the vector’s buffer.
     ///
     /// This method is to be used by the `compio` runtime and it is not
@@ -85,7 +85,9 @@ pub unsafe trait IoBuf: 'static {
     }
 }
 
-unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf for vec_alloc!(u8, A) {
+unsafe impl<#[cfg(feature = "allocator_api")] 'a, A: Allocator + Unpin + vec_alloc_lifetime!()>
+    IoBuf<vec_alloc_lifetime!()> for vec_alloc!(u8, A)
+{
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -113,7 +115,7 @@ unsafe impl IoBuf for &'static mut [u8] {
     }
 }
 
-unsafe impl IoBuf for &'static [u8] {
+unsafe impl<'a> IoBuf<'a> for &'a [u8] {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -127,7 +129,7 @@ unsafe impl IoBuf for &'static [u8] {
     }
 }
 
-unsafe impl IoBuf for String {
+unsafe impl IoBuf<'static> for String {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -141,7 +143,7 @@ unsafe impl IoBuf for String {
     }
 }
 
-unsafe impl IoBuf for &'static mut str {
+unsafe impl<'a> IoBuf<'a> for &'a mut str {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -155,22 +157,7 @@ unsafe impl IoBuf for &'static mut str {
     }
 }
 
-unsafe impl IoBuf for &'static str {
-    fn as_buf_ptr(&self) -> *const u8 {
-        self.as_ptr()
-    }
-
-    fn buf_len(&self) -> usize {
-        self.len()
-    }
-
-    fn buf_capacity(&self) -> usize {
-        self.len()
-    }
-}
-
-#[cfg(feature = "bytes")]
-unsafe impl IoBuf for bytes::Bytes {
+unsafe impl<'a> IoBuf<'a> for &'a str {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -185,7 +172,22 @@ unsafe impl IoBuf for bytes::Bytes {
 }
 
 #[cfg(feature = "bytes")]
-unsafe impl IoBuf for bytes::BytesMut {
+unsafe impl IoBuf<'static> for bytes::Bytes {
+    fn as_buf_ptr(&self) -> *const u8 {
+        self.as_ptr()
+    }
+
+    fn buf_len(&self) -> usize {
+        self.len()
+    }
+
+    fn buf_capacity(&self) -> usize {
+        self.len()
+    }
+}
+
+#[cfg(feature = "bytes")]
+unsafe impl IoBuf<'static> for bytes::BytesMut {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -200,7 +202,7 @@ unsafe impl IoBuf for bytes::BytesMut {
 }
 
 #[cfg(feature = "read_buf")]
-unsafe impl IoBuf for std::io::BorrowedBuf<'static> {
+unsafe impl IoBuf<'arena> for std::io::BorrowedBuf<'arena> {
     fn as_buf_ptr(&self) -> *const u8 {
         self.filled().as_ptr()
     }
@@ -224,7 +226,7 @@ unsafe impl IoBuf for std::io::BorrowedBuf<'static> {
 /// Buffers passed to IOCP operations must reference a stable memory
 /// region. While the runtime holds ownership to a buffer, the pointer returned
 /// by `as_buf_mut_ptr` must remain valid even if the `IoBufMut` value is moved.
-pub unsafe trait IoBufMut: IoBuf {
+pub unsafe trait IoBufMut<'arena>: IoBuf<'arena> {
     /// Returns a raw mutable pointer to the vector’s buffer.
     ///
     /// This method is to be used by the `compio` runtime and it is not
@@ -251,7 +253,7 @@ pub unsafe trait IoBufMut: IoBuf {
     fn set_buf_init(&mut self, len: usize);
 }
 
-unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut
+unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + vec_alloc_lifetime!()> IoBufMut<vec_alloc_lifetime!()>
     for vec_alloc!(u8, A)
 {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
@@ -263,7 +265,7 @@ unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut
     }
 }
 
-unsafe impl IoBufMut for &'static mut [u8] {
+unsafe impl<a> IoBufMut<a> for &'a mut [u8] {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.as_mut_ptr()
     }
@@ -274,7 +276,7 @@ unsafe impl IoBufMut for &'static mut [u8] {
 }
 
 #[cfg(feature = "bytes")]
-unsafe impl IoBufMut for bytes::BytesMut {
+unsafe impl IoBufMut<'static> for bytes::BytesMut {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.as_mut_ptr()
     }
@@ -285,7 +287,7 @@ unsafe impl IoBufMut for bytes::BytesMut {
 }
 
 #[cfg(feature = "read_buf")]
-unsafe impl IoBufMut for std::io::BorrowedBuf<'static> {
+unsafe impl IoBufMut<'arena> for std::io::BorrowedBuf<'arena> {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.filled().as_ptr() as _
     }

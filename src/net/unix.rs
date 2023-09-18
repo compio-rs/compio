@@ -166,40 +166,46 @@ impl UnixStream {
     /// Receives a packet of data from the socket into the buffer, returning the
     /// original buffer and quantity of data received.
     #[cfg(feature = "runtime")]
-    pub async fn recv<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn recv<T: IoBufMut<'static>>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.recv(buffer).await
     }
 
     /// Receives exact number of bytes from the socket.
     #[cfg(feature = "runtime")]
-    pub async fn recv_exact<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn recv_exact<T: IoBufMut<'static>>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.recv_exact(buffer).await
     }
 
     /// Receives a packet of data from the socket into the buffer, returning the
     /// original buffer and quantity of data received.
     #[cfg(feature = "runtime")]
-    pub async fn recv_vectored<T: IoBufMut>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
+    pub async fn recv_vectored<T: IoBufMut<'static>>(
+        &self,
+        buffer: Vec<T>,
+    ) -> BufResult<usize, Vec<T>> {
         self.inner.recv_vectored(buffer).await
     }
 
     /// Sends some data to the socket from the buffer, returning the original
     /// buffer and quantity of data sent.
     #[cfg(feature = "runtime")]
-    pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn send<T: IoBuf<'static>>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.send(buffer).await
     }
 
     /// Sends all data to the socket.
     #[cfg(feature = "runtime")]
-    pub async fn send_all<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn send_all<T: IoBuf<'static>>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.send_all(buffer).await
     }
 
     /// Sends some data to the socket from the buffer, returning the original
     /// buffer and quantity of data sent.
     #[cfg(feature = "runtime")]
-    pub async fn send_vectored<T: IoBuf>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
+    pub async fn send_vectored<T: IoBuf<'static>>(
+        &self,
+        buffer: Vec<T>,
+    ) -> BufResult<usize, Vec<T>> {
         self.inner.send_vectored(buffer).await
     }
 }

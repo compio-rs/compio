@@ -14,7 +14,7 @@ use crate::{
     op::*,
 };
 
-impl<T: IoBufMut> OpCode for ReadAt<T> {
+impl<'arena, T: IoBufMut<'arena>> OpCode for ReadAt<'arena, T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         let fd = Fd(self.fd);
         let slice = self.buffer.as_uninit_slice();
@@ -24,7 +24,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
     }
 }
 
-impl<T: IoBuf> OpCode for WriteAt<T> {
+impl<'arena, T: IoBuf<'arena>> OpCode for WriteAt<'arena, T> {
     fn create_entry(self: Pin<&mut Self>) -> Entry {
         let slice = self.buffer.as_slice();
         opcode::Write::new(Fd(self.fd), slice.as_ptr(), slice.len() as _)
@@ -62,7 +62,7 @@ impl OpCode for Connect {
     }
 }
 
-impl<T: AsIoSlicesMut + Unpin> OpCode for RecvImpl<T> {
+impl<'arena: 'slice, 'slice, T: AsIoSlicesMut + Unpin + 'arena> OpCode for RecvImpl<'arena, 'slice, T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         self.slices = unsafe { self.buffer.as_io_slices_mut() };
         opcode::Readv::new(
@@ -74,7 +74,7 @@ impl<T: AsIoSlicesMut + Unpin> OpCode for RecvImpl<T> {
     }
 }
 
-impl<T: AsIoSlices + Unpin> OpCode for SendImpl<T> {
+impl<'arena: slice, 'slice, T: AsIoSlices + Unpin + 'arena> OpCode for SendImpl<'arena, 'slice, T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         self.slices = unsafe { self.buffer.as_io_slices() };
         opcode::Writev::new(
@@ -86,7 +86,7 @@ impl<T: AsIoSlices + Unpin> OpCode for SendImpl<T> {
     }
 }
 
-impl<T: AsIoSlicesMut + Unpin> OpCode for RecvFromImpl<T> {
+impl<'arena: 'slice, T: AsIoSlicesMut + Unpin + 'arena> OpCode for RecvFromImpl<'arena, 'slice, T> {
     #[allow(clippy::no_effect)]
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         self.set_msg();
@@ -94,7 +94,7 @@ impl<T: AsIoSlicesMut + Unpin> OpCode for RecvFromImpl<T> {
     }
 }
 
-impl<T: AsIoSlices + Unpin> OpCode for SendToImpl<T> {
+impl<'arena: 'slice, 'slice, T: AsIoSlices + Unpin + 'arena> OpCode for SendToImpl<'arena, 'slice, T> {
     #[allow(clippy::no_effect)]
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         self.set_msg();

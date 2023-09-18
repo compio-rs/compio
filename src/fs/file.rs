@@ -123,7 +123,11 @@ impl File {
     /// If this function encounters any form of I/O or other error, an error
     /// variant will be returned. The buffer is returned on error.
     #[cfg(feature = "runtime")]
-    pub async fn read_at<T: IoBufMut>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
+    pub async fn read_at<T: IoBufMut<'static>>(
+        &self,
+        buffer: T,
+        pos: usize,
+    ) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = ReadAt::new(self.as_raw_fd(), pos, buffer);
         RUNTIME
@@ -155,7 +159,7 @@ impl File {
     ///
     /// [`ErrorKind::UnexpectedEof`]: io::ErrorKind::UnexpectedEof
     #[cfg(feature = "runtime")]
-    pub async fn read_exact_at<T: IoBufMut>(
+    pub async fn read_exact_at<T: IoBufMut<'static>>(
         &self,
         mut buffer: T,
         pos: usize,
@@ -236,7 +240,7 @@ impl File {
     /// It is **not** considered an error if the entire buffer could not be
     /// written to this writer.
     #[cfg(feature = "runtime")]
-    pub async fn write_at<T: IoBuf>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
+    pub async fn write_at<T: IoBuf<'static>>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = WriteAt::new(self.as_raw_fd(), pos, buffer);
         RUNTIME
@@ -256,7 +260,11 @@ impl File {
     ///
     /// [`write_at`]: File::write_at
     #[cfg(feature = "runtime")]
-    pub async fn write_all_at<T: IoBuf>(&self, mut buffer: T, pos: usize) -> BufResult<usize, T> {
+    pub async fn write_all_at<T: IoBuf<'static>>(
+        &self,
+        mut buffer: T,
+        pos: usize,
+    ) -> BufResult<usize, T> {
         let buf_len = buffer.buf_len();
         let mut total_written = 0;
         let mut written;

@@ -28,7 +28,10 @@ pub trait OpCode {
 
     /// Perform the operation after received corresponding
     /// event.
-    fn on_event(self: Pin<&mut Self>, event: &Event) -> io::Result<ControlFlow<usize>>;
+    fn on_event<'slice>(
+        self: Pin<&'slice mut Self>,
+        event: &Event,
+    ) -> io::Result<ControlFlow<usize>>;
 }
 
 /// Result of [`OpCode::pre_submit`].

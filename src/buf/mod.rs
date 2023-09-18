@@ -25,8 +25,8 @@ pub trait IntoInner {
     fn into_inner(self) -> Self::Inner;
 }
 
-impl<T: IntoInner, O> IntoInner for crate::BufResult<O, T> {
-    type Inner = crate::BufResult<O, T::Inner>;
+impl<'arena, T: IntoInner, O> IntoInner for crate::BufResult<'arena, O, T> {
+    type Inner = crate::BufResult<'arena, O, T::Inner>;
 
     fn into_inner(self) -> Self::Inner {
         (self.0, self.1.into_inner())

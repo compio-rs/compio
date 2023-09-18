@@ -132,11 +132,11 @@ async fn each_addr_async<T, F: Future<Output = io::Result<T>>>(
 }
 
 #[allow(dead_code)]
-async fn each_addr_async_buf<T, B, F: Future<Output = BufResult<T, B>>>(
+async fn each_addr_async_buf<'arena, T, B: 'arena, F: Future<Output = BufResult<'arena, T, B>>>(
     addr: impl ToSockAddrs,
     mut buffer: B,
     mut f: impl FnMut(SockAddr, B) -> F,
-) -> BufResult<T, B> {
+) -> BufResult<'arena, T, B> {
     match addr.to_sock_addrs() {
         Ok(addrs) => {
             let mut last_err = None;

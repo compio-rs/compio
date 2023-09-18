@@ -58,15 +58,15 @@ impl<T> Slice<T> {
     }
 }
 
-fn deref<T: IoBuf>(buffer: &T) -> &[u8] {
+fn deref<'arena, T: IoBuf<'arena>>(buffer: &T) -> &[u8] {
     unsafe { std::slice::from_raw_parts(buffer.as_buf_ptr(), buffer.buf_len()) }
 }
 
-fn deref_mut<T: IoBufMut>(buffer: &mut T) -> &mut [u8] {
+fn deref_mut<'arena, T: IoBufMut<'arena>>(buffer: &mut T) -> &mut [u8] {
     unsafe { std::slice::from_raw_parts_mut(buffer.as_buf_mut_ptr(), buffer.buf_len()) }
 }
 
-impl<T: IoBuf> Deref for Slice<T> {
+impl<'arena, T: IoBuf<'arena>> Deref for Slice<T> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -76,7 +76,7 @@ impl<T: IoBuf> Deref for Slice<T> {
     }
 }
 
-impl<T: IoBufMut> DerefMut for Slice<T> {
+impl<'arena, T: IoBufMut<'arena>> DerefMut for Slice<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         let bytes = deref_mut(&mut self.buffer);
         let end = self.end.min(bytes.len());
@@ -84,7 +84,7 @@ impl<T: IoBufMut> DerefMut for Slice<T> {
     }
 }
 
-unsafe impl<T: IoBuf> IoBuf for Slice<T> {
+unsafe impl<'arena, T: IoBuf<'arena>> IoBuf<'arena> for Slice<T> {
     fn as_buf_ptr(&self) -> *const u8 {
         deref(&self.buffer)[self.begin..].as_ptr()
     }
@@ -98,7 +98,7 @@ unsafe impl<T: IoBuf> IoBuf for Slice<T> {
     }
 }
 
-unsafe impl<T: IoBufMut> IoBufMut for Slice<T> {
+unsafe impl<'arena, T: IoBufMut<'arena>> IoBufMut<'arena> for Slice<T> {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         deref_mut(&mut self.buffer)[self.begin..].as_mut_ptr()
     }

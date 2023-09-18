@@ -38,7 +38,7 @@ pub mod time;
 /// require passing ownership of a buffer to the runtime. When the operation
 /// completes, the buffer is returned whether or not the operation completed
 /// successfully.
-pub type BufResult<T, B> = (std::io::Result<T>, B);
+pub type BufResult<'arena, T, B: 'arena> = (std::io::Result<T>, B);
 
 #[cfg(feature = "runtime")]
 macro_rules! buf_try {
@@ -155,3 +155,19 @@ macro_rules! vec_alloc {
 }
 
 pub(crate) use vec_alloc;
+
+#[cfg(not(feature = "allocator_api"))]
+macro_rules! vec_alloc_lifetime {
+    () => {
+        'static
+    };
+}
+
+#[cfg(feature = "allocator_api")]
+macro_rules! vec_alloc_lifetime {
+    () => {
+        'a
+    };
+}
+
+pub(crate) use vec_alloc_lifetime;

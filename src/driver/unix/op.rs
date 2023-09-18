@@ -34,13 +34,13 @@ impl Accept {
 }
 
 /// Receive data from remote.
-pub struct RecvImpl<T: AsIoSlicesMut + Unpin> {
+pub struct RecvImpl<'slice, T: AsIoSlicesMut + Unpin + 'slice> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
-    pub(crate) slices: OneOrVec<IoSliceMut<'static>>,
+    pub(crate) slices: OneOrVec<IoSliceMut<'slice>>,
 }
 
-impl<T: AsIoSlicesMut + Unpin> RecvImpl<T> {
+impl<'slice, T: AsIoSlicesMut + Unpin> RecvImpl<'slice, T> {
     /// Create [`Recv`] or [`RecvVectored`].
     pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
         Self {
@@ -51,7 +51,7 @@ impl<T: AsIoSlicesMut + Unpin> RecvImpl<T> {
     }
 }
 
-impl<T: AsIoSlicesMut + Unpin> IntoInner for RecvImpl<T> {
+impl<'slice, T: AsIoSlicesMut + Unpin> IntoInner for RecvImpl<'slice, T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -60,13 +60,13 @@ impl<T: AsIoSlicesMut + Unpin> IntoInner for RecvImpl<T> {
 }
 
 /// Send data to remote.
-pub struct SendImpl<T: AsIoSlices + Unpin> {
+pub struct SendImpl<'slice, T: AsIoSlices + Unpin + 'slice> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
-    pub(crate) slices: OneOrVec<IoSlice<'static>>,
+    pub(crate) slices: OneOrVec<IoSlice<'slice>>,
 }
 
-impl<T: AsIoSlices + Unpin> SendImpl<T> {
+impl<'slice, T: AsIoSlices + Unpin> SendImpl<'slice, T> {
     /// Create [`Send`] or [`SendVectored`].
     pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
         Self {
@@ -77,7 +77,7 @@ impl<T: AsIoSlices + Unpin> SendImpl<T> {
     }
 }
 
-impl<T: AsIoSlices + Unpin> IntoInner for SendImpl<T> {
+impl<'slice, T: AsIoSlices + Unpin + 'slice> IntoInner for SendImpl<'slice, T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -86,15 +86,15 @@ impl<T: AsIoSlices + Unpin> IntoInner for SendImpl<T> {
 }
 
 /// Receive data and source address.
-pub struct RecvFromImpl<T: AsIoSlicesMut + Unpin> {
+pub struct RecvFromImpl<'slice, T: AsIoSlicesMut + Unpin + 'slice> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
     pub(crate) addr: sockaddr_storage,
-    pub(crate) slices: OneOrVec<IoSliceMut<'static>>,
+    pub(crate) slices: OneOrVec<IoSliceMut<'slice>>,
     pub(crate) msg: libc::msghdr,
 }
 
-impl<T: AsIoSlicesMut + Unpin> RecvFromImpl<T> {
+impl<'slice, T: AsIoSlicesMut + Unpin + 'slice> RecvFromImpl<'slice, T> {
     /// Create [`RecvFrom`] or [`RecvFromVectored`].
     pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
         Self {
@@ -120,7 +120,7 @@ impl<T: AsIoSlicesMut + Unpin> RecvFromImpl<T> {
     }
 }
 
-impl<T: AsIoSlicesMut + Unpin> IntoInner for RecvFromImpl<T> {
+impl<'slice, T: AsIoSlicesMut + Unpin + 'slice> IntoInner for RecvFromImpl<'slice, T> {
     type Inner = (T, sockaddr_storage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
@@ -129,15 +129,15 @@ impl<T: AsIoSlicesMut + Unpin> IntoInner for RecvFromImpl<T> {
 }
 
 /// Send data to specified address.
-pub struct SendToImpl<T: AsIoSlices + Unpin> {
+pub struct SendToImpl<'slice, T: AsIoSlices + Unpin + 'slice> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
-    pub(crate) slices: OneOrVec<IoSlice<'static>>,
+    pub(crate) slices: OneOrVec<IoSlice<'slice>>,
     pub(crate) msg: libc::msghdr,
 }
 
-impl<T: AsIoSlices + Unpin> SendToImpl<T> {
+impl<'slice, T: AsIoSlices + Unpin + 'slice> SendToImpl<'slice, T> {
     /// Create [`SendTo`] or [`SendToVectored`].
     pub fn new(fd: RawFd, buffer: T::Inner, addr: SockAddr) -> Self {
         Self {
@@ -163,7 +163,7 @@ impl<T: AsIoSlices + Unpin> SendToImpl<T> {
     }
 }
 
-impl<T: AsIoSlices + Unpin> IntoInner for SendToImpl<T> {
+impl<'slice, T: AsIoSlices + Unpin + 'slice> IntoInner for SendToImpl<'slice, T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
