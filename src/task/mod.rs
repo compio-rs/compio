@@ -10,13 +10,9 @@
 //! assert_eq!(ans, 42);
 //! ```
 
-#[cfg(feature = "lazy_cell")]
-use std::cell::LazyCell;
 use std::future::Future;
 
 use async_task::Task;
-#[cfg(not(feature = "lazy_cell"))]
-use once_cell::unsync::Lazy as LazyCell;
 
 pub(crate) mod runtime;
 use runtime::Runtime;
@@ -26,7 +22,7 @@ pub(crate) mod op;
 pub(crate) mod time;
 
 thread_local! {
-    pub(crate) static RUNTIME: LazyCell<Runtime> = LazyCell::new(|| Runtime::new().expect("cannot create compio runtime"));
+    pub(crate) static RUNTIME: Runtime = Runtime::new().expect("cannot create compio runtime");
 }
 
 /// Start a compio runtime and block on the future till it completes.

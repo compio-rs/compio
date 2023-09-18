@@ -1,7 +1,5 @@
 //! Unix-specific types for signal handling.
 
-#[cfg(feature = "lazy_cell")]
-use std::cell::LazyCell;
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -9,15 +7,12 @@ use std::{
     os::fd::{AsRawFd, RawFd},
 };
 
-#[cfg(not(feature = "lazy_cell"))]
-use once_cell::unsync::Lazy as LazyCell;
-
 use crate::event::{Event, EventHandle};
 
 thread_local! {
     #[allow(clippy::type_complexity)]
-    static HANDLER: LazyCell<RefCell<HashMap<i32, HashMap<RawFd, EventHandle<'static>>>>> =
-        LazyCell::new(|| RefCell::new(HashMap::new()));
+    static HANDLER: RefCell<HashMap<i32, HashMap<RawFd, EventHandle<'static>>>> =
+        RefCell::new(HashMap::new());
 }
 
 unsafe extern "C" fn signal_handler(sig: i32) {
