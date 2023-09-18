@@ -74,7 +74,7 @@ libc = "0.2"
 
 # Other platform dependencies
 [target.'cfg(all(not(target_os = "linux"), unix))'.dependencies]
-mio = "0.8"
+mio = { version = "0.8", features = ["os-ext"] }
 libc = "0.2"
 
 [features]
