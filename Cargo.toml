@@ -84,10 +84,11 @@ signal = ["event"]
 time = ["runtime"]
 all = ["time", "signal"]
 
+allocator_api = []
 lazy_cell = []
 once_cell_try = []
 read_buf = []
-nightly = ["read_buf", "lazy_cell", "once_cell_try"]
+nightly = ["allocator_api", "lazy_cell", "once_cell_try", "read_buf"]
 
 [[example]]
 name = "tick"

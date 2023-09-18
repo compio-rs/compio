@@ -1,8 +1,9 @@
 //!
 #![doc = include_str!("../README.md")]
-#![cfg_attr(feature = "read_buf", feature(read_buf))]
+#![cfg_attr(feature = "allocator_api", feature(allocator_api))]
 #![cfg_attr(feature = "lazy_cell", feature(lazy_cell))]
 #![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
+#![cfg_attr(feature = "read_buf", feature(read_buf))]
 #![warn(missing_docs)]
 
 pub mod buf;
