@@ -10,8 +10,7 @@ use std::{
 use crate::event::{Event, EventHandle};
 
 thread_local! {
-    #[allow(clippy::type_complexity)]
-    static HANDLER: RefCell<HashMap<i32, HashMap<RawFd, EventHandle<'static>>>> =
+    static HANDLER: RefCell<HashMap<i32, HashMap<RawFd, EventHandle>>> =
         RefCell::new(HashMap::new());
 }
 
@@ -37,12 +36,10 @@ unsafe fn uninit(sig: i32) {
     libc::signal(sig, libc::SIG_DFL);
 }
 
-fn register(sig: i32, fd: &Event) {
+fn register(sig: i32, fd: &Event) -> io::Result<()> {
     unsafe { init(sig) };
     let raw_fd = fd.as_raw_fd();
-    let handle = fd.handle();
-    // Safety: we will unregister on drop.
-    let handle: EventHandle<'static> = unsafe { std::mem::transmute(handle) };
+    let handle = fd.handle()?;
     HANDLER.with(|handler| {
         handler
             .borrow_mut()
@@ -50,6 +47,7 @@ fn register(sig: i32, fd: &Event) {
             .or_default()
             .insert(raw_fd, handle)
     });
+    Ok(())
 }
 
 fn unregister(sig: i32, fd: RawFd) {
@@ -78,7 +76,7 @@ struct SignalFd {
 impl SignalFd {
     fn new(sig: i32) -> io::Result<Self> {
         let fd = Event::new()?;
-        register(sig, &fd);
+        register(sig, &fd)?;
         Ok(Self { sig, fd })
     }
 

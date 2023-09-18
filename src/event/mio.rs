@@ -1,9 +1,9 @@
 use std::{
     io,
-    os::fd::{AsRawFd, BorrowedFd, RawFd},
+    os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
 };
 
-use mio::unix::pipe::{Receiver, Sender};
+use mio::unix::pipe::Receiver;
 
 use crate::{op::Recv, task::RUNTIME};
 
@@ -11,7 +11,7 @@ use crate::{op::Recv, task::RUNTIME};
 /// successfully.
 #[derive(Debug)]
 pub struct Event {
-    sender: Sender,
+    sender: OwnedFd,
     receiver: Receiver,
 }
 
@@ -19,13 +19,13 @@ impl Event {
     /// Create [`Event`].
     pub fn new() -> io::Result<Self> {
         let (sender, receiver) = mio::unix::pipe::new()?;
-
+        let sender = unsafe { OwnedFd::from_raw_fd(sender.into_raw_fd()) };
         Ok(Self { sender, receiver })
     }
 
     /// Get a notify handle.
-    pub fn handle(&self) -> EventHandle {
-        EventHandle::new(unsafe { BorrowedFd::borrow_raw(self.sender.as_raw_fd()) })
+    pub fn handle(&self) -> io::Result<EventHandle> {
+        Ok(EventHandle::new(self.sender.try_clone()?))
     }
 
     /// Wait for [`EventHandle::notify`] called.
@@ -46,12 +46,12 @@ impl AsRawFd for Event {
 }
 
 /// A handle to [`Event`].
-pub struct EventHandle<'a> {
-    fd: BorrowedFd<'a>,
+pub struct EventHandle {
+    fd: OwnedFd,
 }
 
-impl<'a> EventHandle<'a> {
-    pub(crate) fn new(fd: BorrowedFd<'a>) -> Self {
+impl EventHandle {
+    pub(crate) fn new(fd: OwnedFd) -> Self {
         Self { fd }
     }
 

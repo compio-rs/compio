@@ -4,7 +4,7 @@ use compio::event::Event;
 fn event_handle() {
     compio::task::block_on(async {
         let event = Event::new().unwrap();
-        let handle = event.handle();
+        let handle = event.handle().unwrap();
         std::thread::scope(|scope| {
             scope.spawn(|| handle.notify().unwrap());
         });
