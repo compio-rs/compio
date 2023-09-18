@@ -21,8 +21,7 @@ use windows_sys::Win32::{
 
 use crate::event::{Event, EventHandle};
 
-#[allow(clippy::type_complexity)]
-static HANDLER: LazyLock<Mutex<HashMap<u32, Slab<EventHandle<'static>>>>> =
+static HANDLER: LazyLock<Mutex<HashMap<u32, Slab<EventHandle>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 unsafe extern "system" fn ctrl_event_handler(ctrltype: u32) -> BOOL {
@@ -53,8 +52,6 @@ fn init() -> io::Result<()> {
 fn register(ctrltype: u32, e: &Event) -> usize {
     let mut handler = HANDLER.lock().unwrap();
     let handle = e.handle();
-    // Safety: we will unregister on drop.
-    let handle: EventHandle<'static> = unsafe { std::mem::transmute(handle) };
     handler.entry(ctrltype).or_default().insert(handle)
 }
 
