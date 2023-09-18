@@ -1,6 +1,6 @@
 use std::{
     io,
-    os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd},
+    os::fd::{AsRawFd, FromRawFd, OwnedFd},
 };
 
 use crate::{impl_raw_fd, op::ReadAt, task::RUNTIME};
@@ -24,8 +24,8 @@ impl Event {
     }
 
     /// Get a notify handle.
-    pub fn handle(&self) -> EventHandle {
-        EventHandle::new(self.fd.as_fd())
+    pub fn handle(&self) -> io::Result<EventHandle> {
+        Ok(EventHandle::new(self.fd.try_clone()?))
     }
 
     /// Wait for [`EventHandle::notify`] called.
@@ -41,12 +41,12 @@ impl Event {
 impl_raw_fd!(Event, fd);
 
 /// A handle to [`Event`].
-pub struct EventHandle<'a> {
-    fd: BorrowedFd<'a>,
+pub struct EventHandle {
+    fd: OwnedFd,
 }
 
-impl<'a> EventHandle<'a> {
-    pub(crate) fn new(fd: BorrowedFd<'a>) -> Self {
+impl EventHandle {
+    pub(crate) fn new(fd: OwnedFd) -> Self {
         Self { fd }
     }
 
@@ -67,3 +67,5 @@ impl<'a> EventHandle<'a> {
         }
     }
 }
+
+impl_raw_fd!(EventHandle, fd);

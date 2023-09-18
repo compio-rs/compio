@@ -1,4 +1,4 @@
-use std::{io, marker::PhantomData};
+use std::io;
 
 use crate::{
     driver::{post_driver, RawFd},
@@ -21,8 +21,8 @@ impl Event {
     }
 
     /// Get a notify handle.
-    pub fn handle(&self) -> EventHandle {
-        EventHandle::new(&self.user_data)
+    pub fn handle(&self) -> io::Result<EventHandle> {
+        Ok(EventHandle::new(&self.user_data))
     }
 
     /// Wait for [`EventHandle::notify`] called.
@@ -34,23 +34,21 @@ impl Event {
 }
 
 /// A handle to [`Event`].
-pub struct EventHandle<'a> {
+pub struct EventHandle {
     user_data: usize,
     handle: RawFd,
-    _p: PhantomData<&'a Event>,
 }
 
 // Safety: IOCP handle is thread safe.
-unsafe impl Send for EventHandle<'_> {}
-unsafe impl Sync for EventHandle<'_> {}
+unsafe impl Send for EventHandle {}
+unsafe impl Sync for EventHandle {}
 
-impl<'a> EventHandle<'a> {
-    pub(crate) fn new(user_data: &'a Key<()>) -> Self {
+impl EventHandle {
+    pub(crate) fn new(user_data: &Key<()>) -> Self {
         let handle = RUNTIME.with(|runtime| runtime.raw_driver());
         Self {
             user_data: **user_data,
             handle,
-            _p: PhantomData,
         }
     }
 
