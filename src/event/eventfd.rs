@@ -3,7 +3,7 @@ use std::{
     os::fd::{AsRawFd, FromRawFd, OwnedFd},
 };
 
-use crate::{impl_raw_fd, op::ReadAt, task::RUNTIME};
+use crate::{impl_raw_fd, op::Recv, syscall, task::RUNTIME};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
@@ -15,10 +15,7 @@ pub struct Event {
 impl Event {
     /// Create [`Event`].
     pub fn new() -> io::Result<Self> {
-        let fd = unsafe { libc::eventfd(0, 0) };
-        if fd < 0 {
-            return Err(io::Error::last_os_error());
-        }
+        let fd = syscall!(eventfd(0, 0))?;
         let fd = unsafe { OwnedFd::from_raw_fd(fd) };
         Ok(Self { fd })
     }
@@ -31,7 +28,8 @@ impl Event {
     /// Wait for [`EventHandle::notify`] called.
     pub async fn wait(&self) -> io::Result<()> {
         let buffer = Vec::with_capacity(8);
-        let op = ReadAt::new(self.as_raw_fd(), 0, buffer);
+        // Trick: Recv uses readv which doesn't seek.
+        let op = Recv::new(self.as_raw_fd(), buffer);
         let (res, _) = RUNTIME.with(|runtime| runtime.submit(op)).await;
         res?;
         Ok(())
@@ -53,18 +51,12 @@ impl EventHandle {
     /// Notify the event.
     pub fn notify(&self) -> io::Result<()> {
         let data = 1u64;
-        let res = unsafe {
-            libc::write(
-                self.fd.as_raw_fd(),
-                &data as *const _ as *const _,
-                std::mem::size_of::<u64>(),
-            )
-        };
-        if res < 0 {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(())
-        }
+        syscall!(write(
+            self.fd.as_raw_fd(),
+            &data as *const _ as *const _,
+            std::mem::size_of::<u64>(),
+        ))?;
+        Ok(())
     }
 }
 

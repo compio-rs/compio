@@ -5,7 +5,7 @@
 use std::{
     ffi::{c_void, OsStr},
     io,
-    os::windows::prelude::{AsRawHandle, HandleOrInvalid, IntoRawHandle, OwnedHandle},
+    os::windows::prelude::{AsRawHandle, FromRawHandle, IntoRawHandle, OwnedHandle},
     ptr::null_mut,
 };
 
@@ -207,12 +207,8 @@ impl NamedPipeServer {
     /// # })
     /// ```
     pub fn disconnect(&self) -> io::Result<()> {
-        let res = unsafe { DisconnectNamedPipe(self.as_raw_fd() as _) };
-        if res == 0 {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(())
-        }
+        syscall!(BOOL, DisconnectNamedPipe(self.as_raw_fd() as _))?;
+        Ok(())
     }
 
     /// Read some bytes from the pipe into the specified
@@ -959,19 +955,21 @@ impl ServerOptions {
             mode
         };
 
-        let h = CreateNamedPipeW(
-            addr.as_ptr(),
-            open_mode,
-            pipe_mode,
-            self.max_instances,
-            self.out_buffer_size,
-            self.in_buffer_size,
-            self.default_timeout,
-            attrs as *mut _,
-        );
+        let h = syscall!(
+            HANDLE,
+            CreateNamedPipeW(
+                addr.as_ptr(),
+                open_mode,
+                pipe_mode,
+                self.max_instances,
+                self.out_buffer_size,
+                self.in_buffer_size,
+                self.default_timeout,
+                attrs as *mut _,
+            )
+        )?;
 
-        let h = OwnedHandle::try_from(HandleOrInvalid::from_raw_handle(h as _))
-            .map_err(|_| io::Error::last_os_error())?;
+        let h = OwnedHandle::from_raw_handle(h as _);
 
         NamedPipeServer::from_handle(h)
     }
@@ -1167,27 +1165,27 @@ impl ClientOptions {
         // we have access to windows_sys it ultimately doesn't hurt to use
         // `CreateFile` explicitly since it allows the use of our already
         // well-structured wide `addr` to pass into CreateFileW.
-        let h = CreateFileW(
-            addr.as_ptr(),
-            desired_access,
-            0,
-            attrs as *mut _,
-            OPEN_EXISTING,
-            self.get_flags(),
-            0,
-        );
+        let h = syscall!(
+            HANDLE,
+            CreateFileW(
+                addr.as_ptr(),
+                desired_access,
+                0,
+                attrs as *mut _,
+                OPEN_EXISTING,
+                self.get_flags(),
+                0,
+            )
+        )?;
 
-        let h = OwnedHandle::try_from(HandleOrInvalid::from_raw_handle(h as _))
-            .map_err(|_| io::Error::last_os_error())?;
+        let h = OwnedHandle::from_raw_handle(h as _);
 
         if matches!(self.pipe_mode, PipeMode::Message) {
             let mode = PIPE_READMODE_MESSAGE;
-            let result =
-                SetNamedPipeHandleState(h.as_raw_handle() as _, &mode, null_mut(), null_mut());
-
-            if result == 0 {
-                return Err(io::Error::last_os_error());
-            }
+            syscall!(
+                BOOL,
+                SetNamedPipeHandleState(h.as_raw_handle() as _, &mode, null_mut(), null_mut())
+            )?;
         }
 
         NamedPipeClient::from_handle(h)
@@ -1269,17 +1267,16 @@ unsafe fn named_pipe_info(handle: RawFd) -> io::Result<PipeInfo> {
     let mut in_buffer_size = 0;
     let mut max_instances = 0;
 
-    let result = GetNamedPipeInfo(
-        handle as _,
-        &mut flags,
-        &mut out_buffer_size,
-        &mut in_buffer_size,
-        &mut max_instances,
-    );
-
-    if result == 0 {
-        return Err(io::Error::last_os_error());
-    }
+    syscall!(
+        BOOL,
+        GetNamedPipeInfo(
+            handle as _,
+            &mut flags,
+            &mut out_buffer_size,
+            &mut in_buffer_size,
+            &mut max_instances,
+        )
+    )?;
 
     let mut end = PipeEnd::Client;
     let mut mode = PipeMode::Byte;

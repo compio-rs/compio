@@ -3,23 +3,23 @@ use std::{
     os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
 };
 
-use mio::unix::pipe::Receiver;
-
-use crate::{impl_raw_fd, op::Recv, task::RUNTIME};
+use crate::{impl_raw_fd, op::Recv, syscall, task::RUNTIME};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
 #[derive(Debug)]
 pub struct Event {
     sender: OwnedFd,
-    receiver: Receiver,
+    receiver: OwnedFd,
 }
 
 impl Event {
     /// Create [`Event`].
     pub fn new() -> io::Result<Self> {
         let (sender, receiver) = mio::unix::pipe::new()?;
+        sender.set_nonblocking(false)?;
         let sender = unsafe { OwnedFd::from_raw_fd(sender.into_raw_fd()) };
+        let receiver = unsafe { OwnedFd::from_raw_fd(receiver.into_raw_fd()) };
         Ok(Self { sender, receiver })
     }
 
@@ -30,7 +30,7 @@ impl Event {
 
     /// Wait for [`EventHandle::notify`] called.
     pub async fn wait(&self) -> io::Result<()> {
-        let buffer = Vec::with_capacity(8);
+        let buffer = Vec::with_capacity(1);
         // Trick: Recv uses readv which doesn't seek.
         let op = Recv::new(self.receiver.as_raw_fd(), buffer);
         let (res, _) = RUNTIME.with(|runtime| runtime.submit(op)).await;
@@ -57,19 +57,9 @@ impl EventHandle {
 
     /// Notify the event.
     pub fn notify(&self) -> io::Result<()> {
-        let data = 1u64;
-        let res = unsafe {
-            libc::write(
-                self.fd.as_raw_fd(),
-                &data as *const _ as *const _,
-                std::mem::size_of::<u64>(),
-            )
-        };
-        if res < 0 {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(())
-        }
+        let data = &[1];
+        syscall!(write(self.fd.as_raw_fd(), data.as_ptr() as _, 1))?;
+        Ok(())
     }
 }
 

@@ -7,40 +7,8 @@ use crate::{
     buf::{AsIoSlices, AsIoSlicesMut, IoBuf, IoBufMut},
     driver::{Decision, OpCode},
     op::*,
+    syscall,
 };
-
-/// Helper macro to execute a system call
-macro_rules! syscall {
-    ($fn: ident ( $($arg: expr),* $(,)* ) ) => {{
-        #[allow(unused_unsafe)]
-        let res = unsafe { ::libc::$fn($($arg, )*) };
-        if res == -1 {
-            Err(::std::io::Error::last_os_error())
-        } else {
-            Ok(res as usize)
-        }
-    }};
-    (break $fn: ident ( $($arg: expr),* $(,)* )) => {
-        syscall!( $fn ( $($arg, )* )).map(ControlFlow::Break)
-    };
-    ($fn: ident ( $($arg: expr),* $(,)* ) or wait_writable($fd:expr)) => {
-        match syscall!( $fn ( $($arg, )* )) {
-            Ok(fd) => Ok(Decision::Completed(fd)),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock || e.raw_os_error() == Some(libc::EINPROGRESS)
-                   => Ok(Decision::wait_writable($fd)),
-            Err(e) => Err(e),
-        }
-    };
-    ($fn: ident ( $($arg: expr),* $(,)* ) or wait_readable($fd:expr)) => {
-        match syscall!( $fn ( $($arg, )* )) {
-            Ok(fd) => Ok(Decision::Completed(fd)),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock || e.raw_os_error() == Some(libc::EINPROGRESS)
-                   => Ok(Decision::wait_readable($fd)),
-            Err(e) => Err(e),
-        }
-    }
-
-}
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
@@ -56,7 +24,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
                 slice.as_mut_ptr() as _,
                 slice.len() as _,
                 self.offset as _
-            ))?))
+            ))? as _))
         } else {
             Ok(Decision::wait_readable(self.fd))
         }
@@ -92,7 +60,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
                 slice.as_ptr() as _,
                 slice.len() as _,
                 self.offset as _
-            ))?))
+            ))? as _))
         } else {
             Ok(Decision::wait_writable(self.fd))
         }
@@ -116,7 +84,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
 
 impl OpCode for Sync {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::Completed(syscall!(fsync(self.fd))?))
+        Ok(Decision::Completed(syscall!(fsync(self.fd))? as _))
     }
 
     fn on_event(self: Pin<&mut Self>, _: &Event) -> std::io::Result<ControlFlow<usize>> {
@@ -143,7 +111,7 @@ impl OpCode for Accept {
             &mut self.buffer as *mut _ as *mut _,
             &mut self.addr_len
         )) {
-            Ok(fd) => Ok(ControlFlow::Break(fd)),
+            Ok(fd) => Ok(ControlFlow::Break(fd as _)),
             Err(e) if e.raw_os_error() == Some(libc::EINPROGRESS) => Ok(ControlFlow::Continue(())),
             Err(e) => Err(e),
         }
