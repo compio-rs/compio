@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "allocator_api", feature(allocator_api))]
+
 use std::net::Ipv4Addr;
 
 use compio::{
@@ -141,6 +143,38 @@ fn too_many_submissions() {
             .await;
         }
     });
+}
+
+#[test]
+#[cfg(feature = "allocator_api")]
+fn arena() {
+    use std::{
+        alloc::{AllocError, Allocator, Layout},
+        ptr::NonNull,
+    };
+
+    thread_local! {
+        static ALLOCATOR: bumpalo::Bump = bumpalo::Bump::new();
+    }
+
+    struct ArenaAllocator;
+
+    unsafe impl Allocator for ArenaAllocator {
+        fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+            ALLOCATOR.with(|alloc| alloc.allocate(layout))
+        }
+
+        unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+            ALLOCATOR.with(|alloc| alloc.deallocate(ptr, layout))
+        }
+    }
+
+    compio::task::block_on(async {
+        let file = File::open("Cargo.toml").unwrap();
+        let (read, buffer) = file.read_to_end_at(Vec::new_in(ArenaAllocator), 0).await;
+        let read = read.unwrap();
+        assert_eq!(buffer.len(), read);
+    })
 }
 
 fn tempfile() -> NamedTempFile {

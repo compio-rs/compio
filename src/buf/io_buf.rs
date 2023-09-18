@@ -2,7 +2,7 @@
 use std::alloc::Allocator;
 use std::mem::MaybeUninit;
 
-use crate::buf::*;
+use crate::{buf::*, vec_alloc};
 
 /// An IOCP compatible buffer.
 ///
@@ -85,23 +85,7 @@ pub unsafe trait IoBuf: 'static {
     }
 }
 
-#[cfg(not(feature = "allocator_api"))]
-unsafe impl IoBuf for Vec<u8> {
-    fn as_buf_ptr(&self) -> *const u8 {
-        self.as_ptr()
-    }
-
-    fn buf_len(&self) -> usize {
-        self.len()
-    }
-
-    fn buf_capacity(&self) -> usize {
-        self.capacity()
-    }
-}
-
-#[cfg(feature = "allocator_api")]
-unsafe impl<A: Allocator + 'static> IoBuf for Vec<u8, A> {
+unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf for vec_alloc!(u8, A) {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -267,19 +251,9 @@ pub unsafe trait IoBufMut: IoBuf {
     fn set_buf_init(&mut self, len: usize);
 }
 
-#[cfg(not(feature = "allocator_api"))]
-unsafe impl IoBufMut for Vec<u8> {
-    fn as_buf_mut_ptr(&mut self) -> *mut u8 {
-        self.as_mut_ptr()
-    }
-
-    fn set_buf_init(&mut self, len: usize) {
-        unsafe { self.set_len(len + self.buf_len()) };
-    }
-}
-
-#[cfg(feature = "allocator_api")]
-unsafe impl<A: Allocator + 'static> IoBufMut for Vec<u8, A> {
+unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut
+    for vec_alloc!(u8, A)
+{
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.as_mut_ptr()
     }

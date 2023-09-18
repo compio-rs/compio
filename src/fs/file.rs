@@ -1,3 +1,5 @@
+#[cfg(feature = "allocator_api")]
+use std::alloc::Allocator;
 use std::{fs::Metadata, io, path::Path};
 
 #[cfg(feature = "runtime")]
@@ -9,7 +11,7 @@ use crate::{
     task::RUNTIME,
     Attacher, BufResult,
 };
-use crate::{fs::OpenOptions, impl_raw_fd};
+use crate::{fs::OpenOptions, impl_raw_fd, vec_alloc};
 
 /// A reference to an open file on the filesystem.
 ///
@@ -190,11 +192,11 @@ impl File {
     ///
     /// [`read_at()`]: File::read_at
     #[cfg(feature = "runtime")]
-    pub async fn read_to_end_at(
+    pub async fn read_to_end_at<#[cfg(feature = "allocator_api")] A: Allocator + 'static>(
         &self,
-        mut buffer: Vec<u8>,
+        mut buffer: vec_alloc!(u8, A),
         pos: usize,
-    ) -> BufResult<usize, Vec<u8>> {
+    ) -> BufResult<usize, vec_alloc!(u8, A)> {
         let mut total_read = 0;
         let mut read;
         loop {

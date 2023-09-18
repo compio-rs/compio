@@ -87,3 +87,19 @@ macro_rules! impl_raw_fd {
 }
 
 pub(crate) use impl_raw_fd;
+
+#[cfg(not(feature = "allocator_api"))]
+macro_rules! vec_alloc {
+    ($t:ident, $a:ident) => {
+        Vec<$t>
+    };
+}
+
+#[cfg(feature = "allocator_api")]
+macro_rules! vec_alloc {
+    ($t:ident, $a:ident) => {
+        Vec<$t, $a>
+    };
+}
+
+pub(crate) use vec_alloc;

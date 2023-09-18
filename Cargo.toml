@@ -40,6 +40,7 @@ socket2 = { version = ">=0.5.4", features = ["all"] }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
+bumpalo = { version = "3", features = ["allocator_api"] }
 criterion = { version = "0.5", features = ["async_tokio"] }
 futures-channel = "0.3"
 arrayvec = "0.7"
