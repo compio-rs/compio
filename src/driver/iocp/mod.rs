@@ -1,12 +1,9 @@
 use std::{
     collections::HashSet,
     io,
-    os::windows::{
-        io::HandleOrNull,
-        prelude::{
-            AsRawHandle, AsRawSocket, FromRawHandle, FromRawSocket, IntoRawHandle, IntoRawSocket,
-            OwnedHandle, RawHandle,
-        },
+    os::windows::prelude::{
+        AsRawHandle, AsRawSocket, FromRawHandle, FromRawSocket, IntoRawHandle, IntoRawSocket,
+        OwnedHandle, RawHandle,
     },
     pin::Pin,
     task::Poll,
@@ -29,7 +26,10 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::driver::{Entry, Operation, Poller};
+use crate::{
+    driver::{Entry, Operation, Poller},
+    syscall,
+};
 
 pub(crate) mod op;
 
@@ -129,9 +129,8 @@ impl Driver {
 
     /// The same as [`Driver::new`].
     pub fn with_entries(_entries: u32) -> io::Result<Self> {
-        let port = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0) };
-        let port = OwnedHandle::try_from(unsafe { HandleOrNull::from_raw_handle(port as _) })
-            .map_err(|_| io::Error::last_os_error())?;
+        let port = syscall!(BOOL, CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0))?;
+        let port = unsafe { OwnedHandle::from_raw_handle(port as _) };
         Ok(Self {
             port,
             cancelled: HashSet::default(),
@@ -149,7 +148,8 @@ impl Driver {
             Some(timeout) => timeout.as_millis() as u32,
             None => INFINITE,
         };
-        let res = unsafe {
+        syscall!(
+            BOOL,
             GetQueuedCompletionStatusEx(
                 self.port.as_raw_handle() as _,
                 iocp_entries.as_mut_ptr(),
@@ -158,10 +158,7 @@ impl Driver {
                 timeout,
                 0,
             )
-        };
-        if res == 0 {
-            return Err(io::Error::last_os_error());
-        }
+        )?;
         unsafe {
             iocp_entries.set_len(recv_count as _);
         }
@@ -203,17 +200,16 @@ unsafe fn post_driver_raw(
     if let Err(e) = &result {
         (*overlapped_ptr).Internal = ntstatus_from_win32(e.raw_os_error().unwrap_or_default()) as _;
     }
-    let res = PostQueuedCompletionStatus(
-        handle as _,
-        result.unwrap_or_default() as _,
-        0,
-        overlapped_ptr,
-    );
-    if res == 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
+    syscall!(
+        BOOL,
+        PostQueuedCompletionStatus(
+            handle as _,
+            result.unwrap_or_default() as _,
+            0,
+            overlapped_ptr,
+        )
+    )?;
+    Ok(())
 }
 
 #[cfg(feature = "event")]
@@ -237,12 +233,11 @@ fn ntstatus_from_win32(x: i32) -> NTSTATUS {
 
 impl Poller for Driver {
     fn attach(&mut self, fd: RawFd) -> io::Result<()> {
-        let port = unsafe { CreateIoCompletionPort(fd as _, self.port.as_raw_handle() as _, 0, 0) };
-        if port == 0 {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(())
-        }
+        syscall!(
+            BOOL,
+            CreateIoCompletionPort(fd as _, self.port.as_raw_handle() as _, 0, 0)
+        )?;
+        Ok(())
     }
 
     fn cancel(&mut self, user_data: usize) {

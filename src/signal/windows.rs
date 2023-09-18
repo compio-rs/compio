@@ -19,7 +19,10 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::event::{Event, EventHandle};
+use crate::{
+    event::{Event, EventHandle},
+    syscall,
+};
 
 static HANDLER: LazyLock<Mutex<HashMap<u32, Slab<EventHandle>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -41,12 +44,8 @@ unsafe extern "system" fn ctrl_event_handler(ctrltype: u32) -> BOOL {
 static INIT: Once = Once::new();
 
 fn init() -> io::Result<()> {
-    let res = unsafe { SetConsoleCtrlHandler(Some(ctrl_event_handler), 1) };
-    if res == 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
+    syscall!(BOOL, SetConsoleCtrlHandler(Some(ctrl_event_handler), 1))?;
+    Ok(())
 }
 
 fn register(ctrltype: u32, e: &Event) -> io::Result<usize> {

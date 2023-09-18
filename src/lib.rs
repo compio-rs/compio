@@ -88,6 +88,37 @@ macro_rules! impl_raw_fd {
 
 pub(crate) use impl_raw_fd;
 
+#[cfg(target_os = "windows")]
+macro_rules! syscall {
+    (BOOL, $fn: ident ( $($arg: expr),* $(,)* )) => {{
+        #[allow(unused_unsafe)]
+        let res = unsafe { $fn($($arg, )*) };
+        if res == 0 {
+            Err(::std::io::Error::last_os_error())
+        } else {
+            Ok(res)
+        }
+    }};
+    (SOCKET, $fn: ident ( $($arg: expr),* $(,)* )) => {{
+        #[allow(unused_unsafe)]
+        let res = unsafe { $fn($($arg, )*) };
+        if res != 0 {
+            Err(::std::io::Error::last_os_error())
+        } else {
+            Ok(res)
+        }
+    }};
+    (HANDLE, $fn: ident ( $($arg: expr),* $(,)* )) => {{
+        #[allow(unused_unsafe)]
+        let res = unsafe { $fn($($arg, )*) };
+        if res == ::windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+            Err(::std::io::Error::last_os_error())
+        } else {
+            Ok(res)
+        }
+    }};
+}
+
 /// Helper macro to execute a system call
 #[cfg(unix)]
 macro_rules! syscall {
@@ -114,7 +145,6 @@ macro_rules! syscall {
     };
 }
 
-#[cfg(unix)]
 pub(crate) use syscall;
 
 #[cfg(not(feature = "allocator_api"))]

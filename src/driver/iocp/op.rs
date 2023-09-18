@@ -33,6 +33,7 @@ use crate::{
     buf::{AsIoSlices, AsIoSlicesMut, IntoInner, IoBuf, IoBufMut},
     driver::{OpCode, RawFd},
     op::*,
+    syscall,
 };
 
 unsafe fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
@@ -78,22 +79,21 @@ unsafe fn winsock_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> 
 unsafe fn get_wsa_fn<F>(handle: RawFd, fguid: GUID) -> io::Result<Option<F>> {
     let mut fptr = None;
     let mut returned = 0;
-    let res = WSAIoctl(
-        handle as _,
-        SIO_GET_EXTENSION_FUNCTION_POINTER,
-        std::ptr::addr_of!(fguid).cast(),
-        std::mem::size_of_val(&fguid) as _,
-        std::ptr::addr_of_mut!(fptr).cast(),
-        std::mem::size_of::<F>() as _,
-        &mut returned,
-        null_mut(),
-        None,
-    );
-    if res == 0 {
-        Ok(fptr)
-    } else {
-        Err(io::Error::last_os_error())
-    }
+    syscall!(
+        SOCKET,
+        WSAIoctl(
+            handle as _,
+            SIO_GET_EXTENSION_FUNCTION_POINTER,
+            std::ptr::addr_of!(fguid).cast(),
+            std::mem::size_of_val(&fguid) as _,
+            std::ptr::addr_of_mut!(fptr).cast(),
+            std::mem::size_of::<F>() as _,
+            &mut returned,
+            null_mut(),
+            None,
+        )
+    )?;
+    Ok(fptr)
 }
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
@@ -168,7 +168,8 @@ impl Accept {
 
     /// Update accept context.
     pub fn update_context(&self) -> io::Result<()> {
-        let res = unsafe {
+        syscall!(
+            SOCKET,
             setsockopt(
                 self.accept_fd as _,
                 SOL_SOCKET,
@@ -176,12 +177,8 @@ impl Accept {
                 &self.fd as *const _ as _,
                 std::mem::size_of_val(&self.fd) as _,
             )
-        };
-        if res != 0 {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(())
-        }
+        )?;
+        Ok(())
     }
 
     /// Get the remote address from the inner buffer.
@@ -241,7 +238,8 @@ static CONNECT_EX: OnceLock<LPFN_CONNECTEX> = OnceLock::new();
 impl Connect {
     /// Update connect context.
     pub fn update_context(&self) -> io::Result<()> {
-        let res = unsafe {
+        syscall!(
+            SOCKET,
             setsockopt(
                 self.fd as _,
                 SOL_SOCKET,
@@ -249,12 +247,8 @@ impl Connect {
                 null(),
                 0,
             )
-        };
-        if res != 0 {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(())
-        }
+        )?;
+        Ok(())
     }
 }
 
