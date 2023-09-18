@@ -88,7 +88,7 @@ pub unsafe trait IoBuf<'arena>: Unpin + 'arena {
     }
 }
 
-unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf<'static>
+unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoBuf<'static>
     for vec_alloc!(u8, A)
 {
     fn as_buf_ptr(&self) -> *const u8 {
@@ -256,7 +256,7 @@ pub unsafe trait IoBufMut<'arena>: IoBuf<'arena> {
     fn set_buf_init(&mut self, len: usize);
 }
 
-unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut<'static>
+unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoBufMut<'static>
     for vec_alloc!(u8, A)
 {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {

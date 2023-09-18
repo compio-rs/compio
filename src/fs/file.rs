@@ -197,7 +197,7 @@ impl File {
     ///
     /// [`read_at()`]: File::read_at
     #[cfg(feature = "runtime")]
-    pub async fn read_to_end_at<#[cfg(feature = "allocator_api")] A: Allocator + 'static>(
+    pub async fn read_to_end_at<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static>(
         &self,
         mut buffer: vec_alloc!(u8, A),
         pos: usize,
