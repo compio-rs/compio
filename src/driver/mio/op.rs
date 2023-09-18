@@ -24,7 +24,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
                 slice.as_mut_ptr() as _,
                 slice.len() as _,
                 self.offset as _
-            ))?))
+            ))? as _))
         } else {
             Ok(Decision::wait_readable(self.fd))
         }
@@ -60,7 +60,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
                 slice.as_ptr() as _,
                 slice.len() as _,
                 self.offset as _
-            ))?))
+            ))? as _))
         } else {
             Ok(Decision::wait_writable(self.fd))
         }
@@ -84,7 +84,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
 
 impl OpCode for Sync {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::Completed(syscall!(fsync(self.fd))?))
+        Ok(Decision::Completed(syscall!(fsync(self.fd))? as _))
     }
 
     fn on_event(self: Pin<&mut Self>, _: &Event) -> std::io::Result<ControlFlow<usize>> {
@@ -111,7 +111,7 @@ impl OpCode for Accept {
             &mut self.buffer as *mut _ as *mut _,
             &mut self.addr_len
         )) {
-            Ok(fd) => Ok(ControlFlow::Break(fd)),
+            Ok(fd) => Ok(ControlFlow::Break(fd as _)),
             Err(e) if e.raw_os_error() == Some(libc::EINPROGRESS) => Ok(ControlFlow::Continue(())),
             Err(e) => Err(e),
         }

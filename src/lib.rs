@@ -119,16 +119,18 @@ macro_rules! syscall {
         if res == -1 {
             Err(::std::io::Error::last_os_error())
         } else {
-            Ok(res as usize)
+            Ok(res)
         }
     }};
     // The below branches are used by mio driver.
     (break $fn: ident ( $($arg: expr),* $(,)* )) => {
-        $crate::syscall!( $fn ( $($arg, )* )).map(::std::ops::ControlFlow::Break)
+        $crate::syscall!( $fn ( $($arg, )* )).map(
+            |res| ::std::ops::ControlFlow::Break(res as usize)
+        )
     };
     ($fn: ident ( $($arg: expr),* $(,)* ) or $f:ident($fd:expr)) => {
         match $crate::syscall!( $fn ( $($arg, )* )) {
-            Ok(fd) => Ok($crate::driver::Decision::Completed(fd)),
+            Ok(fd) => Ok($crate::driver::Decision::Completed(fd as usize)),
             Err(e) if e.kind() == ::std::io::ErrorKind::WouldBlock || e.raw_os_error() == Some(::libc::EINPROGRESS)
                    => Ok($crate::driver::Decision::$f($fd)),
             Err(e) => Err(e),
