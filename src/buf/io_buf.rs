@@ -88,7 +88,8 @@ pub unsafe trait IoBuf<'arena>: Unpin + 'arena {
     }
 }
 
-unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf<'static> for vec_alloc!(u8, A)
+unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf<'static>
+    for vec_alloc!(u8, A)
 {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
@@ -204,7 +205,7 @@ unsafe impl IoBuf<'static> for bytes::BytesMut {
 }
 
 #[cfg(feature = "read_buf")]
-unsafe impl IoBuf<'arena> for std::io::BorrowedBuf<'arena> {
+unsafe impl<'arena> IoBuf<'arena> for std::io::BorrowedBuf<'arena> {
     fn as_buf_ptr(&self) -> *const u8 {
         self.filled().as_ptr()
     }
@@ -289,7 +290,7 @@ unsafe impl IoBufMut<'static> for bytes::BytesMut {
 }
 
 #[cfg(feature = "read_buf")]
-unsafe impl IoBufMut<'arena> for std::io::BorrowedBuf<'arena> {
+unsafe impl<'arena> IoBufMut<'arena> for std::io::BorrowedBuf<'arena> {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.filled().as_ptr() as _
     }
