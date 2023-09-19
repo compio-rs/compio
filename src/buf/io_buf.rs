@@ -214,6 +214,21 @@ unsafe impl IoBuf for std::io::BorrowedBuf<'static> {
     }
 }
 
+#[cfg(feature = "arrayvec")]
+unsafe impl<const N: usize> IoBuf for arrayvec::ArrayVec<u8, N> {
+    fn as_buf_ptr(&self) -> *const u8 {
+        self.as_ptr()
+    }
+
+    fn buf_len(&self) -> usize {
+        self.len()
+    }
+
+    fn buf_capacity(&self) -> usize {
+        self.capacity()
+    }
+}
+
 /// A mutable IOCP compatible buffer.
 ///
 /// The `IoBufMut` trait is implemented by buffer types that can be passed to
@@ -292,5 +307,16 @@ unsafe impl IoBufMut for std::io::BorrowedBuf<'static> {
 
     fn set_buf_init(&mut self, len: usize) {
         unsafe { self.unfilled().advance(len) };
+    }
+}
+
+#[cfg(feature = "arrayvec")]
+unsafe impl<const N: usize> IoBufMut for arrayvec::ArrayVec<u8, N> {
+    fn as_buf_mut_ptr(&mut self) -> *mut u8 {
+        self.as_mut_ptr()
+    }
+
+    fn set_buf_init(&mut self, len: usize) {
+        unsafe { self.set_len(len + self.buf_len()) };
     }
 }

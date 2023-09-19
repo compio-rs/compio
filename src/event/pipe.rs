@@ -3,6 +3,8 @@ use std::{
     os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
 };
 
+use arrayvec::ArrayVec;
+
 use crate::{impl_raw_fd, op::Recv, syscall, task::RUNTIME};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
@@ -30,7 +32,7 @@ impl Event {
 
     /// Wait for [`EventHandle::notify`] called.
     pub async fn wait(&self) -> io::Result<()> {
-        let buffer = Vec::with_capacity(1);
+        let buffer = ArrayVec::<u8, 1>::new();
         // Trick: Recv uses readv which doesn't seek.
         let op = Recv::new(self.receiver.as_raw_fd(), buffer);
         let (res, _) = RUNTIME.with(|runtime| runtime.submit(op)).await;

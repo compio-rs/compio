@@ -28,6 +28,7 @@ targets = [
 
 # Shared dependencies for all platforms
 [dependencies]
+arrayvec = { version = "0.7", optional = true }
 async-task = { version = "4", optional = true }
 bytes = { version = "1", optional = true }
 cfg-if = "1"
@@ -80,7 +81,7 @@ libc = "0.2"
 [features]
 default = ["runtime"]
 runtime = ["dep:async-task", "dep:futures-util", "dep:slab", "dep:smallvec"]
-event = ["runtime"]
+event = ["runtime", "arrayvec"]
 signal = ["event"]
 time = ["runtime"]
 all = ["time", "signal"]
