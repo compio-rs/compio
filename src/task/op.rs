@@ -13,7 +13,7 @@ use crate::{
 };
 
 #[derive(Default)]
-pub struct RegisteredOp {
+pub(crate) struct RegisteredOp {
     pub op: Option<RawOp>,
     pub waker: Option<Waker>,
     pub result: Option<io::Result<usize>>,

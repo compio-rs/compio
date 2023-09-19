@@ -164,12 +164,16 @@ impl PollDriver {
         self.driver.cancel(user_data);
     }
 
+    /// Push an operation into the driver, and return the unique key, called
+    /// user-defined data, associated with it.
     pub fn push(&mut self, op: impl OpCode + 'static) -> usize {
         let user_data = self.ops.insert(RawOp::new(op));
         self.squeue.push_back(user_data);
         user_data
     }
 
+    /// Poll the driver and get completed entries.
+    /// You need to call [`PollDriver::pop`] to get the pushed operations.
     pub fn poll(
         &mut self,
         timeout: Option<Duration>,
@@ -192,6 +196,7 @@ impl PollDriver {
         Ok(())
     }
 
+    /// Get the pushed operations from the completion entries.
     pub fn pop<'a>(
         &'a mut self,
         entries: &'a mut impl Iterator<Item = Entry>,
@@ -215,6 +220,7 @@ impl AsRawFd for PollDriver {
     }
 }
 
+/// Contains the operation and the user_data.
 pub struct OwnedOperation {
     op: RawOp,
     user_data: usize,
@@ -225,18 +231,20 @@ impl OwnedOperation {
         Self { op, user_data }
     }
 
-    pub fn op_mut(&mut self) -> &mut RawOp {
-        &mut self.op
-    }
-
-    pub fn into_inner(self) -> RawOp {
+    pub(crate) fn into_inner(self) -> RawOp {
         self.op
     }
 
+    /// Restore the original operation.
+    ///
+    /// # Safety
+    ///
+    /// The caller should guarantee that the type is right.
     pub unsafe fn into_op<T: OpCode>(self) -> T {
         self.op.into_inner()
     }
 
+    /// The same user_data when the operation is pushed into the driver.
     pub fn user_data(&self) -> usize {
         self.user_data
     }
@@ -299,7 +307,7 @@ impl Entry {
     }
 }
 
-pub struct RawOp(NonNull<dyn OpCode>);
+pub(crate) struct RawOp(NonNull<dyn OpCode>);
 
 impl RawOp {
     pub(crate) fn new(op: impl OpCode + 'static) -> Self {
