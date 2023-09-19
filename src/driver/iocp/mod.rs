@@ -285,7 +285,7 @@ impl AsRawFd for Driver {
 }
 
 #[repr(C)]
-struct Overlapped {
+pub(crate) struct Overlapped {
     #[allow(dead_code)]
     pub base: OVERLAPPED,
     pub user_data: usize,

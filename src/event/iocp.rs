@@ -1,7 +1,9 @@
-use std::io;
+use std::{io, pin::Pin, task::Poll};
+
+use windows_sys::Win32::System::IO::OVERLAPPED;
 
 use crate::{
-    driver::{op::NopPending, post_driver, RawFd},
+    driver::{post_driver, OpCode, Overlapped, RawFd},
     key::Key,
     task::{op::OpFuture, RUNTIME},
 };
@@ -44,7 +46,7 @@ unsafe impl Send for EventHandle {}
 unsafe impl Sync for EventHandle {}
 
 impl EventHandle {
-    pub(crate) fn new(user_data: &Key<NopPending>) -> Self {
+    fn new(user_data: &Key<NopPending>) -> Self {
         let handle = RUNTIME.with(|runtime| runtime.raw_driver());
         Self {
             user_data: **user_data,
@@ -55,5 +57,22 @@ impl EventHandle {
     /// Notify the event.
     pub fn notify(&self) -> io::Result<()> {
         post_driver(self.handle, self.user_data, Ok(0))
+    }
+}
+
+#[derive(Debug)]
+struct NopPending {}
+
+impl NopPending {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl OpCode for NopPending {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        // This ptr will not be released by the driver.
+        let _ = Box::from_raw(optr.cast::<Overlapped>());
+        Poll::Pending
     }
 }
