@@ -3,6 +3,8 @@ use std::{
     os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
 };
 
+use arrayvec::ArrayVec;
+
 use crate::{impl_raw_fd, op::Recv, syscall, task::RUNTIME};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
@@ -30,17 +32,7 @@ impl Event {
 
     /// Wait for [`EventHandle::notify`] called.
     pub async fn wait(&self) -> io::Result<()> {
-        #[cfg(not(feature = "read_buf"))]
-        let buffer = Vec::with_capacity(1);
-        // Safety: we only write to this buffer, but never read it. Therefore it should
-        // be safe no matter how does the system write it.
-        #[cfg(feature = "read_buf")]
-        let buffer = unsafe {
-            use std::{io::BorrowedBuf, mem::MaybeUninit};
-
-            static mut BUFFER: [MaybeUninit<u8>; 1] = [MaybeUninit::uninit(); 1];
-            BorrowedBuf::from(BUFFER.as_mut_slice())
-        };
+        let buffer = ArrayVec::<u8, 1>::new();
         // Trick: Recv uses readv which doesn't seek.
         let op = Recv::new(self.receiver.as_raw_fd(), buffer);
         let (res, _) = RUNTIME.with(|runtime| runtime.submit(op)).await;
