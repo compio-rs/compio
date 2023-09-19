@@ -9,9 +9,9 @@ use crate::{
     driver::AsRawFd,
     op::{BufResultExt, ReadAt, Sync, WriteAt},
     task::RUNTIME,
-    Attacher, BufResult,
+    vec_alloc, Attacher, BufResult,
 };
-use crate::{fs::OpenOptions, impl_raw_fd, vec_alloc};
+use crate::{fs::OpenOptions, impl_raw_fd};
 
 /// A reference to an open file on the filesystem.
 ///
@@ -261,11 +261,10 @@ impl File {
         let mut total_written = 0;
         let mut written;
         while total_written < buf_len {
-            (written, buffer) = buf_try!(
-                self.write_at(buffer.slice(total_written..), pos + total_written)
-                    .await
-                    .into_inner()
-            );
+            (written, buffer) = buf_try!(self
+                .write_at(buffer.slice(total_written..), pos + total_written)
+                .await
+                .into_inner());
             total_written += written;
         }
         (Ok(total_written), buffer)

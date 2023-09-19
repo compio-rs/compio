@@ -112,6 +112,7 @@ macro_rules! syscall {
 
 /// Helper macro to execute a system call
 #[cfg(unix)]
+#[allow(unused_macros)]
 macro_rules! syscall {
     ($fn: ident ( $($arg: expr),* $(,)* ) ) => {{
         #[allow(unused_unsafe)]
@@ -138,6 +139,7 @@ macro_rules! syscall {
     };
 }
 
+#[allow(unused_imports)]
 pub(crate) use syscall;
 
 #[cfg(not(feature = "allocator_api"))]

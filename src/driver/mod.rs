@@ -241,7 +241,7 @@ impl OwnedOperation {
     ///
     /// The caller should guarantee that the type is right.
     pub unsafe fn into_op<T: OpCode>(self) -> T {
-        self.op.into_inner()
+        self.into_inner().into_inner()
     }
 
     /// The same user_data when the operation is pushed into the driver.
