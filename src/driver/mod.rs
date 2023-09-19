@@ -51,20 +51,18 @@ trait Poller {
     ) -> io::Result<()>;
 }
 
-/// An abstract of [`Driver`].
-/// It contains some low-level actions of completion-based IO.
-///
-/// You don't need them unless you are controlling a [`Driver`] yourself.
+/// Low-level actions of completion-based IO.
+/// It owns the operations to keep the driver safe.
 ///
 /// # Examples
 ///
 /// ```
-/// use std::net::SocketAddr;
+/// use std::{mem::MaybeUninit, net::SocketAddr};
 ///
 /// use arrayvec::ArrayVec;
 /// use compio::{
 ///     buf::IntoInner,
-///     driver::{AsRawFd, Driver, Entry, Poller},
+///     driver::{AsRawFd, Entry, PollDriver},
 ///     net::UdpSocket,
 ///     op,
 /// };
@@ -82,46 +80,42 @@ trait Poller {
 /// socket.connect(second_addr).unwrap();
 /// other_socket.connect(first_addr).unwrap();
 ///
-/// let mut driver = Driver::new().unwrap();
+/// let mut driver = PollDriver::new().unwrap();
 /// driver.attach(socket.as_raw_fd()).unwrap();
 /// driver.attach(other_socket.as_raw_fd()).unwrap();
 ///
 /// // write data
-/// let mut op_write = op::Send::new(socket.as_raw_fd(), "hello world");
+/// let op_write = op::Send::new(socket.as_raw_fd(), "hello world");
+/// let key_write = driver.push(op_write);
 ///
 /// // read data
 /// let buf = Vec::with_capacity(32);
-/// let mut op_read = op::Recv::new(other_socket.as_raw_fd(), buf);
+/// let op_read = op::Recv::new(other_socket.as_raw_fd(), buf);
+/// let key_read = driver.push(op_read);
 ///
-/// let ops = [(&mut op_write, 1).into(), (&mut op_read, 2).into()];
 /// let mut entries = ArrayVec::<Entry, 2>::new();
-/// unsafe {
-///     driver
-///         .poll(None, &mut ops.into_iter(), &mut entries)
-///         .unwrap()
-/// };
+///
 /// while entries.len() < 2 {
-///     unsafe {
-///         driver
-///             .poll(None, &mut [].into_iter(), &mut entries)
-///             .unwrap()
-///     };
+///     driver.poll(None, &mut entries).unwrap();
 /// }
 ///
 /// let mut n_bytes = 0;
-/// for entry in entries {
-///     match entry.user_data() {
-///         1 => {
-///             entry.into_result().unwrap();
-///         }
-///         2 => {
-///             n_bytes = entry.into_result().unwrap();
-///         }
-///         _ => unreachable!(),
+/// let mut buf = MaybeUninit::uninit();
+/// for (res, op) in driver.pop(&mut entries.into_iter()) {
+///     let key = op.user_data();
+///     if key == key_write {
+///         res.unwrap();
+///     } else if key == key_read {
+///         n_bytes = res.unwrap();
+///         buf.write(
+///             unsafe { op.into_op::<op::Recv<Vec<u8>>>() }
+///                 .into_inner()
+///                 .into_inner(),
+///         );
 ///     }
 /// }
 ///
-/// let mut buf = op_read.into_inner().into_inner();
+/// let mut buf = unsafe { buf.assume_init() };
 /// unsafe { buf.set_len(n_bytes) };
 /// assert_eq!(buf, b"hello world");
 /// ```
@@ -132,10 +126,12 @@ pub struct PollDriver {
 }
 
 impl PollDriver {
+    /// Create [`PollDriver`] with 1024 entries.
     pub fn new() -> io::Result<Self> {
         Self::with_entries(1024)
     }
 
+    /// Create [`PollDriver`] with specified entries.
     pub fn with_entries(entries: u32) -> io::Result<Self> {
         Ok(Self {
             driver: Driver::new(entries)?,
@@ -235,6 +231,10 @@ impl OwnedOperation {
 
     pub fn into_inner(self) -> RawOp {
         self.op
+    }
+
+    pub unsafe fn into_op<T: OpCode>(self) -> T {
+        self.op.into_inner()
     }
 
     pub fn user_data(&self) -> usize {

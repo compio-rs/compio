@@ -35,7 +35,7 @@ cfg-if = "1"
 futures-util = { version = "0.3", optional = true }
 # may be excluded from linking if the unstable equivalent is used
 once_cell = "1"
-slab = { version = "0.4", optional = true }
+slab = "0.4"
 smallvec = { version = "1", optional = true }
 socket2 = { version = ">=0.5.4", features = ["all"] }
 
@@ -80,7 +80,7 @@ libc = "0.2"
 
 [features]
 default = ["runtime"]
-runtime = ["dep:async-task", "dep:futures-util", "dep:slab", "dep:smallvec"]
+runtime = ["dep:async-task", "dep:futures-util", "dep:smallvec"]
 event = ["runtime", "arrayvec"]
 signal = ["event"]
 time = ["runtime"]

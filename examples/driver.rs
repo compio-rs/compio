@@ -19,7 +19,7 @@ fn main() {
     let n = res.unwrap();
     assert_eq!(op.user_data(), user_data);
 
-    let mut buffer = unsafe { op.into_inner().into_inner::<ReadAt<Vec<u8>>>() }
+    let mut buffer = unsafe { op.into_op::<ReadAt<Vec<u8>>>() }
         .into_inner()
         .into_inner();
     unsafe {
