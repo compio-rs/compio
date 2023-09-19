@@ -1,7 +1,11 @@
 //! The platform-specified driver.
 //! Some types differ by compilation target.
 
-use std::{io, pin::Pin, time::Duration};
+use std::{collections::VecDeque, io, mem::ManuallyDrop, pin::Pin, ptr::NonNull, time::Duration};
+
+use slab::Slab;
+
+use crate::BufResult;
 #[cfg(unix)]
 mod unix;
 
@@ -16,6 +20,35 @@ cfg_if::cfg_if! {
         mod mio;
         pub use self::mio::*;
     }
+}
+
+trait Poller {
+    fn attach(&mut self, fd: RawFd) -> io::Result<()>;
+
+    fn cancel(&mut self, user_data: usize);
+
+    /// Poll the driver with an optional timeout.
+    ///
+    /// The operations in `ops` may not be totally consumed. This method will
+    /// try its best to consume them, but if an error occurs, it will return
+    /// immediately.
+    ///
+    /// If there are no tasks completed, this call will block and wait.
+    /// If no timeout specified, it will block forever.
+    /// To interrupt the blocking, see [`Event`].
+    ///
+    /// [`Event`]: crate::event::Event
+    ///
+    /// # Safety
+    ///
+    /// * Operations should be alive until [`Poller::poll`] returns its result.
+    /// * User defined data should be unique.
+    unsafe fn poll<'a>(
+        &mut self,
+        timeout: Option<Duration>,
+        ops: &mut impl Iterator<Item = Operation<'a>>,
+        entries: &mut impl Extend<Entry>,
+    ) -> io::Result<()>;
 }
 
 /// An abstract of [`Driver`].
@@ -92,7 +125,25 @@ cfg_if::cfg_if! {
 /// unsafe { buf.set_len(n_bytes) };
 /// assert_eq!(buf, b"hello world");
 /// ```
-pub trait Poller {
+pub struct PollDriver {
+    driver: Driver,
+    ops: Slab<RawOp>,
+    squeue: VecDeque<usize>,
+}
+
+impl PollDriver {
+    pub fn new() -> io::Result<Self> {
+        Self::with_entries(1024)
+    }
+
+    pub fn with_entries(entries: u32) -> io::Result<Self> {
+        Ok(Self {
+            driver: Driver::new(entries)?,
+            ops: Slab::with_capacity(entries as _),
+            squeue: VecDeque::with_capacity(entries as _),
+        })
+    }
+
     /// Attach an fd to the driver.
     ///
     /// ## Platform specific
@@ -101,7 +152,9 @@ pub trait Poller {
     ///   `try_clone` it. It will cause unexpected result to attach the handle
     ///   with one driver and push an op to another driver.
     /// * io-uring/mio: it will do nothing and return `Ok(())`
-    fn attach(&mut self, fd: RawFd) -> io::Result<()>;
+    pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
+        self.driver.attach(fd)
+    }
 
     /// Cancel an operation with the pushed user-defined data.
     ///
@@ -111,46 +164,94 @@ pub trait Poller {
     ///
     /// It is well-defined to cancel before polling. If the submitted operation
     /// contains a cancelled user-defined data, the operation will be ignored.
-    fn cancel(&mut self, user_data: usize);
+    pub fn cancel(&mut self, user_data: usize) {
+        self.driver.cancel(user_data);
+    }
 
-    /// Poll the driver with an optional timeout.
-    ///
-    /// The operations in `ops` may not be totally consumed. This method will
-    /// try its best to consume them, but if an error occurs, it will return
-    /// immediately.
-    ///
-    /// If there are no tasks completed, this call will block and wait.
-    /// If no timeout specified, it will block forever.
-    /// To interrupt the blocking, see [`Event`].
-    ///
-    /// [`Event`]: crate::event::Event
-    ///
-    /// # Safety
-    ///
-    /// * Operations should be alive until [`Poller::poll`] returns its result.
-    /// * User defined data should be unique.
-    unsafe fn poll<'a>(
+    pub fn push(&mut self, op: impl OpCode + 'static) -> usize {
+        let user_data = self.ops.insert(RawOp::new(op));
+        self.squeue.push_back(user_data);
+        user_data
+    }
+
+    pub fn poll(
         &mut self,
         timeout: Option<Duration>,
-        ops: &mut impl Iterator<Item = Operation<'a>>,
         entries: &mut impl Extend<Entry>,
-    ) -> io::Result<()>;
+    ) -> io::Result<()> {
+        let mut iter = std::iter::from_fn(|| {
+            self.squeue.pop_front().map(|user_data| {
+                let op = self
+                    .ops
+                    .get_mut(user_data)
+                    .expect("the squeue should be valid");
+                let op = Operation::new(op.as_dyn_mut(), user_data);
+                unsafe { std::mem::transmute::<_, Operation<'static>>(op) }
+            })
+        });
+        unsafe {
+            self.driver.poll(timeout, &mut iter, entries)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn pop<'a>(
+        &'a mut self,
+        entries: &'a mut impl Iterator<Item = Entry>,
+    ) -> impl Iterator<Item = BufResult<usize, OwnedOperation>> + 'a {
+        std::iter::from_fn(|| {
+            entries.next().map(|entry| {
+                let op = self
+                    .ops
+                    .try_remove(entry.user_data())
+                    .expect("the entry should be valid");
+                let op = OwnedOperation::new(op, entry.user_data());
+                (entry.into_result(), op)
+            })
+        })
+    }
 }
 
-/// An operation with a unique user defined data.
-pub struct Operation<'a> {
+impl AsRawFd for PollDriver {
+    fn as_raw_fd(&self) -> RawFd {
+        self.driver.as_raw_fd()
+    }
+}
+
+pub struct OwnedOperation {
+    op: RawOp,
+    user_data: usize,
+}
+
+impl OwnedOperation {
+    pub(crate) fn new(op: RawOp, user_data: usize) -> Self {
+        Self { op, user_data }
+    }
+
+    pub fn op_mut(&mut self) -> &mut RawOp {
+        &mut self.op
+    }
+
+    pub fn into_inner(self) -> RawOp {
+        self.op
+    }
+
+    pub fn user_data(&self) -> usize {
+        self.user_data
+    }
+}
+
+struct Operation<'a> {
     op: &'a mut dyn OpCode,
     user_data: usize,
 }
 
 impl<'a> Operation<'a> {
-    /// Create [`Operation`].
     pub fn new(op: &'a mut dyn OpCode, user_data: usize) -> Self {
         Self { op, user_data }
     }
 
-    /// Get the pinned opcode.
-    ///
     /// # Safety
     ///
     /// The caller should guarantee that the opcode is pinned.
@@ -158,7 +259,6 @@ impl<'a> Operation<'a> {
         Pin::new_unchecked(self.op)
     }
 
-    /// Get the user defined data.
     pub fn user_data(&self) -> usize {
         self.user_data
     }
@@ -196,5 +296,29 @@ impl Entry {
     /// The result of the operation.
     pub fn into_result(self) -> io::Result<usize> {
         self.result
+    }
+}
+
+pub struct RawOp(NonNull<dyn OpCode>);
+
+impl RawOp {
+    pub(crate) fn new(op: impl OpCode + 'static) -> Self {
+        let op = Box::new(op);
+        Self(unsafe { NonNull::new_unchecked(Box::into_raw(op as Box<dyn OpCode>)) })
+    }
+
+    pub(crate) fn as_dyn_mut(&mut self) -> &mut dyn OpCode {
+        unsafe { self.0.as_mut() }
+    }
+
+    pub unsafe fn into_inner<T: OpCode>(self) -> T {
+        let this = ManuallyDrop::new(self);
+        *Box::from_raw(this.0.cast().as_ptr())
+    }
+}
+
+impl Drop for RawOp {
+    fn drop(&mut self) {
+        drop(unsafe { Box::from_raw(self.0.as_ptr()) })
     }
 }

@@ -1,28 +1,27 @@
 use arrayvec::ArrayVec;
 use compio::{
     buf::IntoInner,
-    driver::{AsRawFd, Driver, Entry, Poller},
+    driver::{AsRawFd, Entry, PollDriver},
+    op::ReadAt,
 };
 
 fn main() {
-    let mut driver = Driver::new().unwrap();
+    let mut driver = PollDriver::new().unwrap();
     let file = compio::fs::File::open("Cargo.toml").unwrap();
     driver.attach(file.as_raw_fd()).unwrap();
 
-    let mut op = compio::op::ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(4096));
-    let ops = [(&mut op, 0).into()];
+    let op = ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(4096));
+    let user_data = driver.push(op);
 
     let mut entries = ArrayVec::<Entry, 1>::new();
-    unsafe {
-        driver
-            .poll(None, &mut ops.into_iter(), &mut entries)
-            .unwrap();
-    }
-    let entry = entries.drain(..).next().unwrap();
-    assert_eq!(entry.user_data(), 0);
+    driver.poll(None, &mut entries).unwrap();
+    let (res, op) = driver.pop(&mut entries.into_iter()).next().unwrap();
+    let n = res.unwrap();
+    assert_eq!(op.user_data(), user_data);
 
-    let n = entry.into_result().unwrap();
-    let mut buffer = op.into_inner().into_inner();
+    let mut buffer = unsafe { op.into_inner().into_inner::<ReadAt<Vec<u8>>>() }
+        .into_inner()
+        .into_inner();
     unsafe {
         buffer.set_len(n);
     }

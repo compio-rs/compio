@@ -1,7 +1,7 @@
 use std::io;
 
 use crate::{
-    driver::{post_driver, RawFd},
+    driver::{op::NopPending, post_driver, RawFd},
     key::Key,
     task::{op::OpFuture, RUNTIME},
 };
@@ -10,13 +10,13 @@ use crate::{
 /// successfully.
 #[derive(Debug)]
 pub struct Event {
-    user_data: Key<()>,
+    user_data: Key<NopPending>,
 }
 
 impl Event {
     /// Create [`Event`].
     pub fn new() -> io::Result<Self> {
-        let user_data = RUNTIME.with(|runtime| runtime.submit_dummy());
+        let user_data = RUNTIME.with(|runtime| runtime.submit_raw(NopPending::new()));
         Ok(Self { user_data })
     }
 
@@ -28,7 +28,7 @@ impl Event {
     /// Wait for [`EventHandle::notify`] called.
     pub async fn wait(&self) -> io::Result<()> {
         let future = OpFuture::new(self.user_data);
-        future.await?;
+        future.await.0?;
         Ok(())
     }
 }
@@ -44,7 +44,7 @@ unsafe impl Send for EventHandle {}
 unsafe impl Sync for EventHandle {}
 
 impl EventHandle {
-    pub(crate) fn new(user_data: &Key<()>) -> Self {
+    pub(crate) fn new(user_data: &Key<NopPending>) -> Self {
         let handle = RUNTIME.with(|runtime| runtime.raw_driver());
         Self {
             user_data: **user_data,

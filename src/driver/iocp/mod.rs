@@ -114,7 +114,7 @@ pub trait OpCode {
 }
 
 /// Low-level driver of IOCP.
-pub struct Driver {
+pub(crate) struct Driver {
     port: OwnedHandle,
     cancelled: HashSet<usize>,
 }
@@ -122,13 +122,7 @@ pub struct Driver {
 impl Driver {
     const DEFAULT_CAPACITY: usize = 1024;
 
-    /// Create a new IOCP.
-    pub fn new() -> io::Result<Self> {
-        Self::with_entries(Self::DEFAULT_CAPACITY as _)
-    }
-
-    /// The same as [`Driver::new`].
-    pub fn with_entries(_entries: u32) -> io::Result<Self> {
+    pub fn new(_entries: u32) -> io::Result<Self> {
         let port = syscall!(BOOL, CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0))?;
         let port = unsafe { OwnedHandle::from_raw_handle(port as _) };
         Ok(Self {

@@ -31,7 +31,7 @@ use windows_sys::{
 
 use crate::{
     buf::{AsIoSlices, AsIoSlicesMut, IntoInner, IoBuf, IoBufMut},
-    driver::{OpCode, RawFd},
+    driver::{iocp::Overlapped, OpCode, RawFd},
     op::*,
     syscall,
 };
@@ -469,5 +469,22 @@ impl OpCode for ConnectNamedPipe {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let res = ConnectNamedPipe(self.fd as _, optr);
         win32_result(res, 0)
+    }
+}
+
+#[derive(Debug)]
+pub struct NopPending {}
+
+impl NopPending {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl OpCode for NopPending {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        // This ptr will not be released by the driver.
+        let _ = Box::from_raw(optr.cast::<Overlapped>());
+        Poll::Pending
     }
 }
