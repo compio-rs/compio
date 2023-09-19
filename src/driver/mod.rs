@@ -155,7 +155,7 @@ impl PollDriver {
     /// Cancel an operation with the pushed user-defined data.
     ///
     /// The cancellation is not reliable. The underlying operation may continue,
-    /// but just don't return from [`Poller::poll`]. Therefore, although an
+    /// but just don't return from [`PollDriver::poll`]. Therefore, although an
     /// operation is cancelled, you should not reuse its `user_data`.
     ///
     /// It is well-defined to cancel before polling. If the submitted operation
@@ -296,7 +296,7 @@ impl Entry {
         Self { user_data, result }
     }
 
-    /// The user-defined data passed to [`Operation`].
+    /// The user-defined data returned by [`PollDriver::push`].
     pub fn user_data(&self) -> usize {
         self.user_data
     }
