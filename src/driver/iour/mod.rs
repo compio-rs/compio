@@ -27,7 +27,7 @@ pub trait OpCode {
 }
 
 /// Low-level driver of io-uring.
-pub struct Driver {
+pub(crate) struct Driver {
     inner: IoUring,
     cancel_queue: VecDeque<u64>,
     cancelled: HashSet<u64>,
@@ -36,13 +36,7 @@ pub struct Driver {
 impl Driver {
     const CANCEL: u64 = u64::MAX;
 
-    /// Create a new io-uring driver with 1024 entries.
-    pub fn new() -> io::Result<Self> {
-        Self::with_entries(1024)
-    }
-
-    /// Create a new io-uring driver with specified entries.
-    pub fn with_entries(entries: u32) -> io::Result<Self> {
+    pub fn new(entries: u32) -> io::Result<Self> {
         Ok(Self {
             inner: IoUring::new(entries)?,
             cancel_queue: VecDeque::default(),

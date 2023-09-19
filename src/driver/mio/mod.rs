@@ -64,7 +64,7 @@ pub struct WaitArg {
 }
 
 /// Low-level driver of mio.
-pub struct Driver {
+pub(crate) struct Driver {
     events: Events,
     poll: Poll,
     waiting: HashMap<usize, WaitEntry>,
@@ -96,13 +96,7 @@ impl WaitEntry {
 }
 
 impl Driver {
-    /// Create a new mio driver with 1024 entries.
-    pub fn new() -> io::Result<Self> {
-        Self::with_entries(1024)
-    }
-
-    /// Create a new mio driver with the given number of entries.
-    pub fn with_entries(entries: u32) -> io::Result<Self> {
+    pub fn new(entries: u32) -> io::Result<Self> {
         let entries = entries as usize; // for the sake of consistency, use u32 like iour
 
         Ok(Self {
