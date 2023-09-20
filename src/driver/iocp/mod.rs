@@ -108,6 +108,8 @@ impl IntoRawFd for socket2::Socket {
 pub trait OpCode {
     /// Perform Windows API call with given pointer to overlapped struct.
     ///
+    /// It is always safe to cast `optr` to a pointer to [`Overlapped`].
+    ///
     /// # Safety
     ///
     /// `self` must be alive until the operation completes.
@@ -283,15 +285,18 @@ fn ntstatus_from_win32(x: i32) -> NTSTATUS {
         (x & 0x0000FFFF) | (FACILITY_NTWIN32 << 16) as NTSTATUS | ERROR_SEVERITY_ERROR as NTSTATUS
     }
 }
+
+/// The overlapped struct we actually used for IOCP.
 #[repr(C)]
-pub(crate) struct Overlapped {
-    #[allow(dead_code)]
+pub struct Overlapped {
+    /// The base [`OVERLAPPED`].
     pub base: OVERLAPPED,
+    /// The registered user defined data.
     pub user_data: usize,
 }
 
 impl Overlapped {
-    pub fn new(user_data: usize) -> Self {
+    pub(crate) fn new(user_data: usize) -> Self {
         Self {
             base: unsafe { std::mem::zeroed() },
             user_data,
