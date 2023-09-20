@@ -1,7 +1,7 @@
 //! The platform-specified driver.
 //! Some types differ by compilation target.
 
-use std::{collections::VecDeque, io, mem::ManuallyDrop, pin::Pin, ptr::NonNull, time::Duration};
+use std::{collections::VecDeque, io, time::Duration};
 
 use slab::Slab;
 
@@ -138,7 +138,10 @@ impl Proactor {
     /// Push an operation into the driver, and return the unique key, called
     /// user-defined data, associated with it.
     pub fn push(&mut self, op: impl OpCode + 'static) -> usize {
-        let user_data = self.ops.insert(RawOp::new(op));
+        let entry = self.ops.vacant_entry();
+        let user_data = entry.key();
+        let op = RawOp::new(user_data, op);
+        entry.insert(op);
         self.squeue.push_back(user_data);
         user_data
     }
@@ -232,29 +235,5 @@ impl Entry {
     /// The result of the operation.
     pub fn into_result(self) -> io::Result<usize> {
         self.result
-    }
-}
-
-pub(crate) struct RawOp(NonNull<dyn OpCode>);
-
-impl RawOp {
-    pub(crate) fn new(op: impl OpCode + 'static) -> Self {
-        let op = Box::new(op);
-        Self(unsafe { NonNull::new_unchecked(Box::into_raw(op as Box<dyn OpCode>)) })
-    }
-
-    pub(crate) fn as_pin(&mut self) -> Pin<&mut dyn OpCode> {
-        unsafe { Pin::new_unchecked(self.0.as_mut()) }
-    }
-
-    pub unsafe fn into_inner<T: OpCode>(self) -> T {
-        let this = ManuallyDrop::new(self);
-        *Box::from_raw(this.0.cast().as_ptr())
-    }
-}
-
-impl Drop for RawOp {
-    fn drop(&mut self) {
-        drop(unsafe { Box::from_raw(self.0.as_ptr()) })
     }
 }
