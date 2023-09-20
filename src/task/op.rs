@@ -2,7 +2,6 @@ use std::{
     collections::HashMap,
     future::Future,
     io,
-    marker::PhantomData,
     pin::Pin,
     task::{Context, Poll, Waker},
 };
@@ -26,12 +25,12 @@ pub(crate) struct OpRuntime {
 }
 
 impl OpRuntime {
-    pub fn update_waker<T>(&mut self, key: Key<T>, waker: Waker) {
-        self.ops.entry(*key).or_default().waker = Some(waker);
+    pub fn update_waker(&mut self, key: usize, waker: Waker) {
+        self.ops.entry(key).or_default().waker = Some(waker);
     }
 
-    pub fn update_result<T>(&mut self, key: Key<T>, raw_op: RawOp, result: io::Result<usize>) {
-        let op = self.ops.entry(*key).or_default();
+    pub fn update_result(&mut self, key: usize, raw_op: RawOp, result: io::Result<usize>) {
+        let op = self.ops.entry(key).or_default();
         if let Some(waker) = op.waker.take() {
             waker.wake();
         }
@@ -42,27 +41,26 @@ impl OpRuntime {
         }
     }
 
-    pub fn has_result<T>(&mut self, key: Key<T>) -> bool {
+    pub fn has_result(&mut self, key: usize) -> bool {
         self.ops
             .get_mut(&key)
             .map(|op| op.result.is_some())
             .unwrap_or_default()
     }
 
-    pub fn cancel<T>(&mut self, key: Key<T>) {
-        self.ops.entry(*key).or_default().cancelled = true;
+    pub fn cancel(&mut self, key: usize) {
+        self.ops.entry(key).or_default().cancelled = true;
     }
 
-    pub fn remove<T>(&mut self, key: Key<T>) -> RegisteredOp {
+    pub fn remove(&mut self, key: usize) -> RegisteredOp {
         self.ops.remove(&key).unwrap()
     }
 }
 
 #[derive(Debug)]
-pub struct OpFuture<T: 'static> {
+pub struct OpFuture<T> {
     user_data: Key<T>,
     completed: bool,
-    _p: PhantomData<&'static T>,
 }
 
 impl<T> OpFuture<T> {
@@ -70,7 +68,6 @@ impl<T> OpFuture<T> {
         Self {
             user_data,
             completed: false,
-            _p: PhantomData,
         }
     }
 }

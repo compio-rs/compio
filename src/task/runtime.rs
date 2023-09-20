@@ -103,7 +103,7 @@ impl Runtime {
 
     pub fn cancel_op<T>(&self, user_data: Key<T>) {
         self.driver.borrow_mut().cancel(*user_data);
-        self.op_runtime.borrow_mut().cancel(user_data);
+        self.op_runtime.borrow_mut().cancel(*user_data);
     }
 
     #[cfg(feature = "time")]
@@ -117,15 +117,15 @@ impl Runtime {
         user_data: Key<T>,
     ) -> Poll<(io::Result<usize>, T)> {
         let mut op_runtime = self.op_runtime.borrow_mut();
-        if op_runtime.has_result(user_data) {
-            let op = op_runtime.remove(user_data);
+        if op_runtime.has_result(*user_data) {
+            let op = op_runtime.remove(*user_data);
             Poll::Ready((op.result.unwrap(), unsafe {
                 op.op
                     .expect("`poll_task` called on dummy Op")
                     .into_inner::<T>()
             }))
         } else {
-            op_runtime.update_waker(user_data, cx.waker().clone());
+            op_runtime.update_waker(*user_data, cx.waker().clone());
             Poll::Pending
         }
     }
@@ -153,7 +153,7 @@ impl Runtime {
             Ok(_) => {
                 for (res, op) in driver.pop(&mut entries.into_iter()) {
                     self.op_runtime.borrow_mut().update_result(
-                        Key::new_dummy(op.user_data()),
+                        op.user_data(),
                         op.into_inner(),
                         res,
                     );
