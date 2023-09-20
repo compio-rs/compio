@@ -31,14 +31,6 @@ impl<T> Key<T> {
     }
 }
 
-impl Key<()> {
-    /// Create a new dummy `Key` with the given user data
-    pub fn new_dummy(user_data: usize) -> Self {
-        // Safety: `()` is not `OpCode` so this won't be used to poll data from drivers.
-        unsafe { Self::new(user_data) }
-    }
-}
-
 impl<T> std::ops::Deref for Key<T> {
     type Target = usize;
 

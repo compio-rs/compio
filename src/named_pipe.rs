@@ -33,7 +33,7 @@ use crate::{buf::*, op::ConnectNamedPipe, task::RUNTIME, *};
 use crate::{
     driver::{AsRawFd, FromRawFd, RawFd},
     fs::File,
-    impl_raw_fd,
+    impl_raw_fd, syscall,
 };
 
 /// A [Windows named pipe] server.
