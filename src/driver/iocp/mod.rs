@@ -1,11 +1,13 @@
 use std::{
     collections::HashSet,
     io,
+    mem::ManuallyDrop,
     os::windows::prelude::{
         AsRawHandle, AsRawSocket, FromRawHandle, FromRawSocket, IntoRawHandle, IntoRawSocket,
         OwnedHandle, RawHandle,
     },
     pin::Pin,
+    ptr::{null_mut, NonNull},
     task::Poll,
     time::Duration,
 };
@@ -27,10 +29,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{
-    driver::{Entry, RawOp},
-    syscall,
-};
+use crate::{driver::Entry, syscall};
 
 pub(crate) mod op;
 
@@ -163,25 +162,35 @@ impl Driver {
     }
 
     fn create_entry(&mut self, iocp_entry: OVERLAPPED_ENTRY) -> Option<Entry> {
-        let transferred = iocp_entry.dwNumberOfBytesTransferred;
-        let overlapped_ptr = iocp_entry.lpOverlapped;
-        let overlapped = unsafe { Box::from_raw(overlapped_ptr.cast::<Overlapped>()) };
-        if self.cancelled.remove(&overlapped.user_data) {
-            return None;
-        }
-        let res = if matches!(
-            overlapped.base.Internal as NTSTATUS,
-            STATUS_SUCCESS | STATUS_PENDING
-        ) {
-            Ok(transferred as _)
-        } else {
-            let error = unsafe { RtlNtStatusToDosError(overlapped.base.Internal as _) };
-            match error {
-                ERROR_IO_INCOMPLETE | ERROR_HANDLE_EOF | ERROR_NO_DATA => Ok(0),
-                _ => Err(io::Error::from_raw_os_error(error as _)),
+        if iocp_entry.lpOverlapped.is_null() {
+            let user_data = iocp_entry.lpCompletionKey;
+            if self.cancelled.remove(&user_data) {
+                None
+            } else {
+                Some(Entry::new(user_data, Ok(0)))
             }
-        };
-        Some(Entry::new(overlapped.user_data, res))
+        } else {
+            let transferred = iocp_entry.dwNumberOfBytesTransferred;
+            // Any thin pointer is OK because we don't use the type of opcode.
+            let overlapped_ptr: *mut Overlapped<()> = iocp_entry.lpOverlapped.cast();
+            let overlapped = unsafe { &*overlapped_ptr };
+            if self.cancelled.remove(&overlapped.user_data) {
+                return None;
+            }
+            let res = if matches!(
+                overlapped.base.Internal as NTSTATUS,
+                STATUS_SUCCESS | STATUS_PENDING
+            ) {
+                Ok(transferred as _)
+            } else {
+                let error = unsafe { RtlNtStatusToDosError(overlapped.base.Internal as _) };
+                match error {
+                    ERROR_IO_INCOMPLETE | ERROR_HANDLE_EOF | ERROR_NO_DATA => Ok(0),
+                    _ => Err(io::Error::from_raw_os_error(error as _)),
+                }
+            };
+            Some(Entry::new(overlapped.user_data, res))
+        }
     }
 
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
@@ -205,9 +214,8 @@ impl Driver {
     ) -> io::Result<()> {
         for user_data in ops {
             if !self.cancelled.remove(&user_data) {
-                let overlapped = Box::new(Overlapped::new(user_data));
-                let overlapped_ptr = Box::into_raw(overlapped);
-                let op = registry[user_data].as_pin();
+                let overlapped_ptr = registry[user_data].as_mut_ptr();
+                let op = registry[user_data].as_op_pin();
                 let result = op.operate(overlapped_ptr.cast());
                 if let Poll::Ready(result) = result {
                     post_driver_raw(self.port.as_raw_handle(), result, overlapped_ptr.cast())?;
@@ -267,15 +275,12 @@ unsafe fn post_driver_raw(
     Ok(())
 }
 
-#[cfg(feature = "event")]
-pub(crate) fn post_driver(
-    handle: RawFd,
-    user_data: usize,
-    result: io::Result<usize>,
-) -> io::Result<()> {
-    let overlapped = Box::new(Overlapped::new(user_data));
-    let overlapped_ptr = Box::into_raw(overlapped);
-    unsafe { post_driver_raw(handle, result, overlapped_ptr.cast()) }
+pub(crate) fn post_driver_nop(handle: RawFd, user_data: usize) -> io::Result<()> {
+    syscall!(
+        BOOL,
+        PostQueuedCompletionStatus(handle as _, 0, user_data, null_mut())
+    )?;
+    Ok(())
 }
 
 fn ntstatus_from_win32(x: i32) -> NTSTATUS {
@@ -288,18 +293,46 @@ fn ntstatus_from_win32(x: i32) -> NTSTATUS {
 
 /// The overlapped struct we actually used for IOCP.
 #[repr(C)]
-pub struct Overlapped {
+pub struct Overlapped<T: ?Sized> {
     /// The base [`OVERLAPPED`].
     pub base: OVERLAPPED,
     /// The registered user defined data.
     pub user_data: usize,
+    /// The opcode.
+    /// The user should guarantee the type is correct.
+    pub op: T,
 }
 
-impl Overlapped {
-    pub(crate) fn new(user_data: usize) -> Self {
+impl<T> Overlapped<T> {
+    pub(crate) fn new(user_data: usize, op: T) -> Self {
         Self {
             base: unsafe { std::mem::zeroed() },
             user_data,
+            op,
         }
+    }
+}
+
+pub(crate) struct RawOp(NonNull<Overlapped<dyn OpCode>>);
+
+impl RawOp {
+    pub(crate) fn new(user_data: usize, op: impl OpCode + 'static) -> Self {
+        let op = Overlapped::new(user_data, op);
+        let op = Box::new(op) as Box<Overlapped<dyn OpCode>>;
+        Self(unsafe { NonNull::new_unchecked(Box::into_raw(op)) })
+    }
+
+    pub(crate) fn as_op_pin(&mut self) -> Pin<&mut dyn OpCode> {
+        unsafe { Pin::new_unchecked(&mut self.0.as_mut().op) }
+    }
+
+    pub(crate) fn as_mut_ptr(&mut self) -> *mut Overlapped<dyn OpCode> {
+        self.0.as_ptr()
+    }
+
+    pub unsafe fn into_inner<T: OpCode>(self) -> T {
+        let this = ManuallyDrop::new(self);
+        let this: Box<Overlapped<T>> = Box::from_raw(this.0.cast().as_ptr());
+        this.op
     }
 }

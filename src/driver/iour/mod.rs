@@ -17,9 +17,10 @@ use io_uring::{
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use slab::Slab;
 
-use crate::driver::{Entry, RawOp};
+use crate::driver::Entry;
 
 pub(crate) mod op;
+pub(crate) use crate::driver::unix::RawOp;
 
 /// Abstraction of io-uring operations.
 pub trait OpCode {

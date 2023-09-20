@@ -3,7 +3,7 @@ use std::{io, pin::Pin, task::Poll};
 use windows_sys::Win32::System::IO::OVERLAPPED;
 
 use crate::{
-    driver::{post_driver, OpCode, Overlapped, RawFd},
+    driver::{post_driver_nop, OpCode, RawFd},
     key::Key,
     task::{op::OpFuture, RUNTIME},
 };
@@ -56,7 +56,7 @@ impl EventHandle {
 
     /// Notify the event.
     pub fn notify(&self) -> io::Result<()> {
-        post_driver(self.handle, self.user_data, Ok(0))
+        post_driver_nop(self.handle, self.user_data)
     }
 }
 
@@ -70,9 +70,7 @@ impl NopPending {
 }
 
 impl OpCode for NopPending {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        // This ptr will not be released by the driver.
-        let _ = Box::from_raw(optr.cast::<Overlapped>());
+    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         Poll::Pending
     }
 }
