@@ -162,14 +162,14 @@ impl Proactor {
     pub fn pop<'a>(
         &'a mut self,
         entries: &'a mut impl Iterator<Item = Entry>,
-    ) -> impl Iterator<Item = BufResult<usize, OwnedOperation>> + 'a {
+    ) -> impl Iterator<Item = BufResult<usize, Operation>> + 'a {
         std::iter::from_fn(|| {
             entries.next().map(|entry| {
                 let op = self
                     .ops
                     .try_remove(entry.user_data())
                     .expect("the entry should be valid");
-                let op = OwnedOperation::new(op, entry.user_data());
+                let op = Operation::new(op, entry.user_data());
                 (entry.into_result(), op)
             })
         })
@@ -183,12 +183,12 @@ impl AsRawFd for Proactor {
 }
 
 /// Contains the operation and the user_data.
-pub struct OwnedOperation {
+pub struct Operation {
     op: RawOp,
     user_data: usize,
 }
 
-impl OwnedOperation {
+impl Operation {
     pub(crate) fn new(op: RawOp, user_data: usize) -> Self {
         Self { op, user_data }
     }
