@@ -22,35 +22,6 @@ cfg_if::cfg_if! {
     }
 }
 
-trait Poller {
-    fn attach(&mut self, fd: RawFd) -> io::Result<()>;
-
-    fn cancel(&mut self, user_data: usize);
-
-    /// Poll the driver with an optional timeout.
-    ///
-    /// The operations in `ops` may not be totally consumed. This method will
-    /// try its best to consume them, but if an error occurs, it will return
-    /// immediately.
-    ///
-    /// If there are no tasks completed, this call will block and wait.
-    /// If no timeout specified, it will block forever.
-    /// To interrupt the blocking, see [`Event`].
-    ///
-    /// [`Event`]: crate::event::Event
-    ///
-    /// # Safety
-    ///
-    /// * Operations should be alive until [`Poller::poll`] returns its result.
-    /// * User defined data should be unique.
-    unsafe fn poll<'a>(
-        &mut self,
-        timeout: Option<Duration>,
-        ops: &mut impl Iterator<Item = Operation<'a>>,
-        entries: &mut impl Extend<Entry>,
-    ) -> io::Result<()>;
-}
-
 /// Low-level actions of completion-based IO.
 /// It owns the operations to keep the driver safe.
 ///
@@ -62,7 +33,7 @@ trait Poller {
 /// use arrayvec::ArrayVec;
 /// use compio::{
 ///     buf::IntoInner,
-///     driver::{AsRawFd, Entry, PollDriver},
+///     driver::{AsRawFd, Entry, Proactor},
 ///     net::UdpSocket,
 ///     op,
 /// };
@@ -80,7 +51,7 @@ trait Poller {
 /// socket.connect(second_addr).unwrap();
 /// other_socket.connect(first_addr).unwrap();
 ///
-/// let mut driver = PollDriver::new().unwrap();
+/// let mut driver = Proactor::new().unwrap();
 /// driver.attach(socket.as_raw_fd()).unwrap();
 /// driver.attach(other_socket.as_raw_fd()).unwrap();
 ///
@@ -119,19 +90,19 @@ trait Poller {
 /// unsafe { buf.set_len(n_bytes) };
 /// assert_eq!(buf, b"hello world");
 /// ```
-pub struct PollDriver {
+pub struct Proactor {
     driver: Driver,
     ops: Slab<RawOp>,
     squeue: VecDeque<usize>,
 }
 
-impl PollDriver {
-    /// Create [`PollDriver`] with 1024 entries.
+impl Proactor {
+    /// Create [`Proactor`] with 1024 entries.
     pub fn new() -> io::Result<Self> {
         Self::with_entries(1024)
     }
 
-    /// Create [`PollDriver`] with specified entries.
+    /// Create [`Proactor`] with specified entries.
     pub fn with_entries(entries: u32) -> io::Result<Self> {
         Ok(Self {
             driver: Driver::new(entries)?,
@@ -155,7 +126,7 @@ impl PollDriver {
     /// Cancel an operation with the pushed user-defined data.
     ///
     /// The cancellation is not reliable. The underlying operation may continue,
-    /// but just don't return from [`PollDriver::poll`]. Therefore, although an
+    /// but just don't return from [`Proactor::poll`]. Therefore, although an
     /// operation is cancelled, you should not reuse its `user_data`.
     ///
     /// It is well-defined to cancel before polling. If the submitted operation
@@ -173,26 +144,17 @@ impl PollDriver {
     }
 
     /// Poll the driver and get completed entries.
-    /// You need to call [`PollDriver::pop`] to get the pushed operations.
+    /// You need to call [`Proactor::pop`] to get the pushed operations.
     pub fn poll(
         &mut self,
         timeout: Option<Duration>,
         entries: &mut impl Extend<Entry>,
     ) -> io::Result<()> {
-        let mut iter = std::iter::from_fn(|| {
-            self.squeue.pop_front().map(|user_data| {
-                let op = self
-                    .ops
-                    .get_mut(user_data)
-                    .expect("the squeue should be valid");
-                let op = Operation::new(op.as_dyn_mut(), user_data);
-                unsafe { std::mem::transmute::<_, Operation<'static>>(op) }
-            })
-        });
+        let mut iter = std::iter::from_fn(|| self.squeue.pop_front());
         unsafe {
-            self.driver.poll(timeout, &mut iter, entries)?;
+            self.driver
+                .poll(timeout, &mut iter, entries, &mut self.ops)?;
         }
-
         Ok(())
     }
 
@@ -214,7 +176,7 @@ impl PollDriver {
     }
 }
 
-impl AsRawFd for PollDriver {
+impl AsRawFd for Proactor {
     fn as_raw_fd(&self) -> RawFd {
         self.driver.as_raw_fd()
     }
@@ -250,40 +212,6 @@ impl OwnedOperation {
     }
 }
 
-struct Operation<'a> {
-    op: &'a mut dyn OpCode,
-    user_data: usize,
-}
-
-impl<'a> Operation<'a> {
-    pub fn new(op: &'a mut dyn OpCode, user_data: usize) -> Self {
-        Self { op, user_data }
-    }
-
-    /// # Safety
-    ///
-    /// The caller should guarantee that the opcode is pinned.
-    pub unsafe fn opcode_pin(&mut self) -> Pin<&mut dyn OpCode> {
-        Pin::new_unchecked(self.op)
-    }
-
-    pub fn user_data(&self) -> usize {
-        self.user_data
-    }
-}
-
-impl<'a, O: OpCode> From<(&'a mut O, usize)> for Operation<'a> {
-    fn from((op, user_data): (&'a mut O, usize)) -> Self {
-        Self::new(op, user_data)
-    }
-}
-
-impl<'a> From<(&'a mut dyn OpCode, usize)> for Operation<'a> {
-    fn from((op, user_data): (&'a mut dyn OpCode, usize)) -> Self {
-        Self::new(op, user_data)
-    }
-}
-
 /// An completed entry returned from kernel.
 #[derive(Debug)]
 pub struct Entry {
@@ -296,7 +224,7 @@ impl Entry {
         Self { user_data, result }
     }
 
-    /// The user-defined data returned by [`PollDriver::push`].
+    /// The user-defined data returned by [`Proactor::push`].
     pub fn user_data(&self) -> usize {
         self.user_data
     }
@@ -315,8 +243,8 @@ impl RawOp {
         Self(unsafe { NonNull::new_unchecked(Box::into_raw(op as Box<dyn OpCode>)) })
     }
 
-    pub(crate) fn as_dyn_mut(&mut self) -> &mut dyn OpCode {
-        unsafe { self.0.as_mut() }
+    pub(crate) fn as_pin(&mut self) -> Pin<&mut dyn OpCode> {
+        unsafe { Pin::new_unchecked(self.0.as_mut()) }
     }
 
     pub unsafe fn into_inner<T: OpCode>(self) -> T {

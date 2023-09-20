@@ -12,13 +12,13 @@ use smallvec::SmallVec;
 #[cfg(feature = "time")]
 use crate::task::time::{TimerFuture, TimerRuntime};
 use crate::{
-    driver::{AsRawFd, Entry, OpCode, PollDriver, RawFd},
+    driver::{AsRawFd, Entry, OpCode, Proactor, RawFd},
     task::op::{OpFuture, OpRuntime},
     Key,
 };
 
 pub(crate) struct Runtime {
-    driver: RefCell<PollDriver>,
+    driver: RefCell<Proactor>,
     runnables: RefCell<VecDeque<Runnable>>,
     op_runtime: RefCell<OpRuntime>,
     #[cfg(feature = "time")]
@@ -28,7 +28,7 @@ pub(crate) struct Runtime {
 impl Runtime {
     pub fn new() -> io::Result<Self> {
         Ok(Self {
-            driver: RefCell::new(PollDriver::new()?),
+            driver: RefCell::new(Proactor::new()?),
             runnables: RefCell::default(),
             op_runtime: RefCell::default(),
             #[cfg(feature = "time")]

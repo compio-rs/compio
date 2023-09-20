@@ -11,6 +11,7 @@ use std::{
 };
 
 use arrayvec::ArrayVec;
+use slab::Slab;
 use windows_sys::Win32::{
     Foundation::{
         RtlNtStatusToDosError, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_NO_DATA,
@@ -27,7 +28,7 @@ use windows_sys::Win32::{
 };
 
 use crate::{
-    driver::{Entry, Operation, Poller},
+    driver::{Entry, RawOp},
     syscall,
 };
 
@@ -180,6 +181,64 @@ impl Driver {
         };
         Some(Entry::new(overlapped.user_data, res))
     }
+
+    pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
+        syscall!(
+            BOOL,
+            CreateIoCompletionPort(fd as _, self.port.as_raw_handle() as _, 0, 0)
+        )?;
+        Ok(())
+    }
+
+    pub fn cancel(&mut self, user_data: usize) {
+        self.cancelled.insert(user_data);
+    }
+
+    pub unsafe fn poll(
+        &mut self,
+        timeout: Option<Duration>,
+        ops: &mut impl Iterator<Item = usize>,
+        entries: &mut impl Extend<Entry>,
+        registry: &mut Slab<RawOp>,
+    ) -> io::Result<()> {
+        for user_data in ops {
+            if !self.cancelled.remove(&user_data) {
+                let overlapped = Box::new(Overlapped::new(user_data));
+                let overlapped_ptr = Box::into_raw(overlapped);
+                let op = registry[user_data].as_pin();
+                let result = op.operate(overlapped_ptr.cast());
+                if let Poll::Ready(result) = result {
+                    post_driver_raw(self.port.as_raw_handle(), result, overlapped_ptr.cast())?;
+                }
+            }
+        }
+
+        // Prevent stack growth.
+        let mut iocp_entries = ArrayVec::<OVERLAPPED_ENTRY, { Self::DEFAULT_CAPACITY }>::new();
+        self.poll_impl(timeout, &mut iocp_entries)?;
+        entries.extend(iocp_entries.drain(..).filter_map(|e| self.create_entry(e)));
+
+        // See if there are remaining entries.
+        loop {
+            match self.poll_impl(Some(Duration::ZERO), &mut iocp_entries) {
+                Ok(()) => {
+                    entries.extend(iocp_entries.drain(..).filter_map(|e| self.create_entry(e)));
+                }
+                Err(e) => match e.kind() {
+                    io::ErrorKind::TimedOut => break,
+                    _ => return Err(e),
+                },
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl AsRawFd for Driver {
+    fn as_raw_fd(&self) -> RawFd {
+        self.port.as_raw_handle()
+    }
 }
 
 /// # Safety
@@ -224,66 +283,6 @@ fn ntstatus_from_win32(x: i32) -> NTSTATUS {
         (x & 0x0000FFFF) | (FACILITY_NTWIN32 << 16) as NTSTATUS | ERROR_SEVERITY_ERROR as NTSTATUS
     }
 }
-
-impl Poller for Driver {
-    fn attach(&mut self, fd: RawFd) -> io::Result<()> {
-        syscall!(
-            BOOL,
-            CreateIoCompletionPort(fd as _, self.port.as_raw_handle() as _, 0, 0)
-        )?;
-        Ok(())
-    }
-
-    fn cancel(&mut self, user_data: usize) {
-        self.cancelled.insert(user_data);
-    }
-
-    unsafe fn poll<'a>(
-        &mut self,
-        timeout: Option<Duration>,
-        ops: &mut impl Iterator<Item = Operation<'a>>,
-        entries: &mut impl Extend<Entry>,
-    ) -> io::Result<()> {
-        for mut operation in ops {
-            if !self.cancelled.remove(&operation.user_data()) {
-                let overlapped = Box::new(Overlapped::new(operation.user_data()));
-                let overlapped_ptr = Box::into_raw(overlapped);
-                let op = operation.opcode_pin();
-                let result = op.operate(overlapped_ptr.cast());
-                if let Poll::Ready(result) = result {
-                    post_driver_raw(self.port.as_raw_handle(), result, overlapped_ptr.cast())?;
-                }
-            }
-        }
-
-        // Prevent stack growth.
-        let mut iocp_entries = ArrayVec::<OVERLAPPED_ENTRY, { Self::DEFAULT_CAPACITY }>::new();
-        self.poll_impl(timeout, &mut iocp_entries)?;
-        entries.extend(iocp_entries.drain(..).filter_map(|e| self.create_entry(e)));
-
-        // See if there are remaining entries.
-        loop {
-            match self.poll_impl(Some(Duration::ZERO), &mut iocp_entries) {
-                Ok(()) => {
-                    entries.extend(iocp_entries.drain(..).filter_map(|e| self.create_entry(e)));
-                }
-                Err(e) => match e.kind() {
-                    io::ErrorKind::TimedOut => break,
-                    _ => return Err(e),
-                },
-            }
-        }
-
-        Ok(())
-    }
-}
-
-impl AsRawFd for Driver {
-    fn as_raw_fd(&self) -> RawFd {
-        self.port.as_raw_handle()
-    }
-}
-
 #[repr(C)]
 pub(crate) struct Overlapped {
     #[allow(dead_code)]

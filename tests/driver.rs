@@ -2,14 +2,14 @@ use std::{io, time::Duration};
 
 use arrayvec::ArrayVec;
 use compio::{
-    driver::{AsRawFd, Entry, PollDriver},
+    driver::{AsRawFd, Entry, Proactor},
     fs::File,
     op::ReadAt,
 };
 
 #[test]
 fn cancel_before_poll() {
-    let mut driver = PollDriver::new().unwrap();
+    let mut driver = Proactor::new().unwrap();
 
     let file = File::open("Cargo.toml").unwrap();
     driver.attach(file.as_raw_fd()).unwrap();

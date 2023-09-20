@@ -1,12 +1,12 @@
 use arrayvec::ArrayVec;
 use compio::{
     buf::IntoInner,
-    driver::{AsRawFd, Entry, PollDriver},
+    driver::{AsRawFd, Entry, Proactor},
     op::ReadAt,
 };
 
 fn main() {
-    let mut driver = PollDriver::new().unwrap();
+    let mut driver = Proactor::new().unwrap();
     let file = compio::fs::File::open("Cargo.toml").unwrap();
     driver.attach(file.as_raw_fd()).unwrap();
 
