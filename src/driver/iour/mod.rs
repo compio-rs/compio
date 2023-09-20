@@ -15,8 +15,9 @@ use io_uring::{
     IoUring,
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
+use slab::Slab;
 
-use crate::driver::{Entry, Operation, Poller};
+use crate::driver::{Entry, RawOp};
 
 pub(crate) mod op;
 
@@ -68,17 +69,20 @@ impl Driver {
         }
     }
 
-    fn flush_submissions<'a>(&mut self, ops: &mut impl Iterator<Item = Operation<'a>>) -> bool {
+    fn flush_submissions(
+        &mut self,
+        ops: &mut impl Iterator<Item = usize>,
+        registry: &mut Slab<RawOp>,
+    ) -> bool {
         let mut ended_ops = false;
         let mut ended_cancel = false;
 
         let mut inner_squeue = self.inner.submission();
 
         while !inner_squeue.is_full() {
-            if let Some(mut op) = ops.next() {
-                let entry = unsafe { op.opcode_pin() }
-                    .create_entry()
-                    .user_data(op.user_data() as _);
+            if let Some(user_data) = ops.next() {
+                let op = registry[user_data].as_pin();
+                let entry = op.create_entry().user_data(user_data as _);
                 unsafe { inner_squeue.push(&entry) }.expect("queue has enough space");
             } else {
                 ended_ops = true;
@@ -114,28 +118,27 @@ impl Driver {
         });
         entries.extend(completed_entries);
     }
-}
 
-impl Poller for Driver {
-    fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
+    pub fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
         Ok(())
     }
 
-    fn cancel(&mut self, user_data: usize) {
+    pub fn cancel(&mut self, user_data: usize) {
         self.cancel_queue.push_back(user_data as _);
         self.cancelled.insert(user_data as _);
     }
 
-    unsafe fn poll<'a>(
+    pub unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        ops: &mut impl Iterator<Item = Operation<'a>>,
+        ops: &mut impl Iterator<Item = usize>,
         entries: &mut impl Extend<Entry>,
+        registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
         let mut ops = ops.fuse();
         // Anyway we need to submit once, no matter there are entries in squeue.
         loop {
-            let ended = self.flush_submissions(&mut ops);
+            let ended = self.flush_submissions(&mut ops, registry);
 
             self.submit_auto(timeout, ended)?;
 

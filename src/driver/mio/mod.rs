@@ -5,7 +5,6 @@ use std::{
     io,
     ops::ControlFlow,
     pin::Pin,
-    ptr::NonNull,
     time::Duration,
 };
 
@@ -15,8 +14,9 @@ use mio::{
     unix::SourceFd,
     Events, Interest, Poll, Token,
 };
+use slab::Slab;
 
-use crate::driver::{Entry, Operation, Poller};
+use crate::driver::{Entry, RawOp};
 
 pub(crate) mod op;
 
@@ -73,25 +73,13 @@ pub(crate) struct Driver {
 
 /// Entry waiting for events
 struct WaitEntry {
-    op: NonNull<dyn OpCode>,
     arg: WaitArg,
     user_data: usize,
 }
 
 impl WaitEntry {
-    fn new(mut mio_entry: Operation, arg: WaitArg) -> Self {
-        let user_data = mio_entry.user_data();
-        // Safety: to make the borrow checker happy
-        let op = NonNull::from(unsafe {
-            std::mem::transmute::<_, &'static mut dyn OpCode>(
-                mio_entry.opcode_pin().get_unchecked_mut(),
-            )
-        });
-        Self { op, arg, user_data }
-    }
-
-    fn op_pin(&mut self) -> Pin<&mut dyn OpCode> {
-        unsafe { Pin::new_unchecked(self.op.as_mut()) }
+    fn new(user_data: usize, arg: WaitArg) -> Self {
+        Self { arg, user_data }
     }
 }
 
@@ -109,37 +97,39 @@ impl Driver {
 }
 
 impl Driver {
-    fn submit(&mut self, entry: Operation, arg: WaitArg) -> io::Result<()> {
-        if !self.cancelled.remove(&entry.user_data) {
-            let token = Token(entry.user_data);
+    fn submit(&mut self, user_data: usize, arg: WaitArg) -> io::Result<()> {
+        if !self.cancelled.remove(&user_data) {
+            let token = Token(user_data);
 
             SourceFd(&arg.fd).register(self.poll.registry(), token, arg.interest)?;
 
             // Only insert the entry after it was registered successfully
             self.waiting
-                .insert(entry.user_data, WaitEntry::new(entry, arg));
+                .insert(user_data, WaitEntry::new(user_data, arg));
         }
         Ok(())
     }
 
     /// Register all operations in the squeue to mio.
-    fn submit_squeue<'a>(
+    fn submit_squeue(
         &mut self,
-        ops: &mut impl Iterator<Item = Operation<'a>>,
+        ops: &mut impl Iterator<Item = usize>,
         entries: &mut impl Extend<Entry>,
+        registry: &mut Slab<RawOp>,
     ) -> io::Result<bool> {
         let mut extended = false;
-        for mut entry in ops {
-            match unsafe { entry.opcode_pin() }.pre_submit() {
+        for user_data in ops {
+            let op = registry[user_data].as_pin();
+            match op.pre_submit() {
                 Ok(Decision::Wait(arg)) => {
-                    self.submit(entry, arg)?;
+                    self.submit(user_data, arg)?;
                 }
                 Ok(Decision::Completed(res)) => {
-                    entries.extend(Some(Entry::new(entry.user_data, Ok(res))));
+                    entries.extend(Some(Entry::new(user_data, Ok(res))));
                     extended = true;
                 }
                 Err(err) => {
-                    entries.extend(Some(Entry::new(entry.user_data, Err(err))));
+                    entries.extend(Some(Entry::new(user_data, Err(err))));
                     extended = true;
                 }
             }
@@ -154,6 +144,7 @@ impl Driver {
         &mut self,
         timeout: Option<Duration>,
         entries: &mut impl Extend<Entry>,
+        registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
         self.poll.poll(&mut self.events, timeout)?;
         for event in &self.events {
@@ -162,7 +153,8 @@ impl Driver {
                 .waiting
                 .get_mut(&token.0)
                 .expect("Unknown token returned by mio"); // XXX: Should this be silently ignored?
-            let res = match entry.op_pin().on_event(event) {
+            let op = registry[entry.user_data].as_pin();
+            let res = match op.on_event(event) {
                 Ok(ControlFlow::Continue(_)) => continue,
                 Ok(ControlFlow::Break(res)) => Ok(res),
                 Err(err) => Err(err),
@@ -176,14 +168,12 @@ impl Driver {
         }
         Ok(())
     }
-}
 
-impl Poller for Driver {
-    fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
+    pub fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
         Ok(())
     }
 
-    fn cancel(&mut self, user_data: usize) {
+    pub fn cancel(&mut self, user_data: usize) {
         if let Some(entry) = self.waiting.remove(&user_data) {
             self.poll
                 .registry()
@@ -194,15 +184,16 @@ impl Poller for Driver {
         }
     }
 
-    unsafe fn poll<'a>(
+    pub unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        ops: &mut impl Iterator<Item = Operation<'a>>,
+        ops: &mut impl Iterator<Item = usize>,
         entries: &mut impl Extend<Entry>,
+        registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
-        let extended = self.submit_squeue(ops, entries)?;
+        let extended = self.submit_squeue(ops, entries, registry)?;
         if !extended {
-            self.poll_impl(timeout, entries)?;
+            self.poll_impl(timeout, entries, registry)?;
         }
         Ok(())
     }
