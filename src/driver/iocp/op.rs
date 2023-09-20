@@ -37,8 +37,8 @@ use crate::{
 };
 
 #[inline]
-unsafe fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
-    let error = GetLastError();
+fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
+    let error = unsafe { GetLastError() };
     assert_ne!(error, 0);
     match error {
         ERROR_IO_PENDING => Poll::Pending,
@@ -50,7 +50,7 @@ unsafe fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
 }
 
 #[inline]
-unsafe fn win32_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
+fn win32_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     if res == 0 {
         winapi_result(transferred)
     } else {
@@ -63,7 +63,7 @@ unsafe fn win32_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
 // To make our driver easy, simply return Pending and query the result later.
 
 #[inline]
-unsafe fn win32_pending_result(res: i32) -> Poll<io::Result<usize>> {
+fn win32_pending_result(res: i32) -> Poll<io::Result<usize>> {
     if res == 0 {
         winapi_result(0)
     } else {
@@ -72,7 +72,7 @@ unsafe fn win32_pending_result(res: i32) -> Poll<io::Result<usize>> {
 }
 
 #[inline]
-unsafe fn winsock_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
+fn winsock_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     if res != 0 {
         winapi_result(transferred)
     } else {
@@ -80,7 +80,7 @@ unsafe fn winsock_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> 
     }
 }
 
-unsafe fn get_wsa_fn<F>(handle: RawFd, fguid: GUID) -> io::Result<Option<F>> {
+fn get_wsa_fn<F>(handle: RawFd, fguid: GUID) -> io::Result<Option<F>> {
     let mut fptr = None;
     let mut returned = 0;
     syscall!(
@@ -188,7 +188,7 @@ impl Accept {
     /// Get the remote address from the inner buffer.
     pub fn into_addr(self) -> io::Result<SockAddr> {
         let get_addrs_fn = GET_ADDRS
-            .get_or_try_init(|| unsafe { get_wsa_fn(self.fd, WSAID_GETACCEPTEXSOCKADDRS) })?
+            .get_or_try_init(|| get_wsa_fn(self.fd, WSAID_GETACCEPTEXSOCKADDRS))?
             .ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::Unsupported,

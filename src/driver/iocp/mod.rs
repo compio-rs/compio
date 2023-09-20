@@ -108,6 +108,8 @@ pub trait OpCode {
     /// Perform Windows API call with given pointer to overlapped struct.
     ///
     /// It is always safe to cast `optr` to a pointer to [`Overlapped`].
+    /// However, for safety reasons, you should be careful to use the `op` field
+    /// of it. Instead, you should use `self`.
     ///
     /// # Safety
     ///
@@ -163,6 +165,7 @@ impl Driver {
 
     fn create_entry(&mut self, iocp_entry: OVERLAPPED_ENTRY) -> Option<Entry> {
         if iocp_entry.lpOverlapped.is_null() {
+            // This entry is posted by `post_driver_nop`.
             let user_data = iocp_entry.lpCompletionKey;
             if self.cancelled.remove(&user_data) {
                 None

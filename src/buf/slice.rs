@@ -103,7 +103,7 @@ unsafe impl<T: IoBufMut> IoBufMut for Slice<T> {
         deref_mut(&mut self.buffer)[self.begin..].as_mut_ptr()
     }
 
-    fn set_buf_init(&mut self, len: usize) {
+    unsafe fn set_buf_init(&mut self, len: usize) {
         self.buffer.set_buf_init(len)
     }
 }

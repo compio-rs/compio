@@ -10,7 +10,7 @@ pub trait WrapBuf: IntoInner {
 }
 
 pub trait WrapBufMut {
-    fn set_init(&mut self, len: usize);
+    unsafe fn set_init(&mut self, len: usize);
 }
 
 pub trait AsIoSlices: WrapBuf {

@@ -31,7 +31,9 @@ impl<T: AsIoSlicesMut, O> BufResultExt for BufResult<(usize, O), T> {
     fn map_advanced(self) -> Self {
         let (res, mut buffer) = self;
         if let Ok((init, _)) = &res {
-            buffer.set_init(*init);
+            unsafe {
+                buffer.set_init(*init);
+            }
         }
         (res, buffer)
     }

@@ -28,7 +28,7 @@ impl<T: IoBuf> WrapBuf for BufWrapper<T> {
 }
 
 impl<T: IoBufMut> WrapBufMut for BufWrapper<T> {
-    fn set_init(&mut self, len: usize) {
+    unsafe fn set_init(&mut self, len: usize) {
         self.buffer.set_buf_init(len)
     }
 }
@@ -97,7 +97,7 @@ impl<T: IoBuf> AsIoSlices for VectoredBufWrapper<T> {
 }
 
 impl<T: IoBufMut> WrapBufMut for VectoredBufWrapper<T> {
-    fn set_init(&mut self, mut len: usize) {
+    unsafe fn set_init(&mut self, mut len: usize) {
         for buf in self.buffer.iter_mut() {
             let capacity = buf.buf_capacity();
             if len >= capacity {

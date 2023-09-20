@@ -96,7 +96,7 @@ fn drop_on_complete() {
             self.data.as_buf_mut_ptr()
         }
 
-        fn set_buf_init(&mut self, pos: usize) {
+        unsafe fn set_buf_init(&mut self, pos: usize) {
             self.data.set_buf_init(pos);
         }
     }

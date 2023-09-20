@@ -263,7 +263,11 @@ pub unsafe trait IoBufMut: IoBuf {
     ///
     /// The specified `len` plus [`IoBuf::buf_len`] becomes the new value
     /// returned by [`IoBuf::buf_len`].
-    fn set_buf_init(&mut self, len: usize);
+    ///
+    /// # Safety
+    ///
+    /// `len` should be less or equal than `buf_capacity() - buf_len()`.
+    unsafe fn set_buf_init(&mut self, len: usize);
 }
 
 unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut
@@ -273,8 +277,8 @@ unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut
         self.as_mut_ptr()
     }
 
-    fn set_buf_init(&mut self, len: usize) {
-        unsafe { self.set_len(len + self.buf_len()) };
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        self.set_len(len + self.buf_len());
     }
 }
 
@@ -283,7 +287,7 @@ unsafe impl IoBufMut for &'static mut [u8] {
         self.as_mut_ptr()
     }
 
-    fn set_buf_init(&mut self, len: usize) {
+    unsafe fn set_buf_init(&mut self, len: usize) {
         debug_assert!(len == 0)
     }
 }
@@ -294,8 +298,8 @@ unsafe impl IoBufMut for bytes::BytesMut {
         self.as_mut_ptr()
     }
 
-    fn set_buf_init(&mut self, len: usize) {
-        unsafe { self.set_len(len + self.buf_len()) };
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        self.set_len(len + self.buf_len());
     }
 }
 
@@ -305,8 +309,8 @@ unsafe impl IoBufMut for std::io::BorrowedBuf<'static> {
         self.filled().as_ptr() as _
     }
 
-    fn set_buf_init(&mut self, len: usize) {
-        unsafe { self.unfilled().advance(len) };
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        self.unfilled().advance(len);
     }
 }
 
@@ -316,7 +320,7 @@ unsafe impl<const N: usize> IoBufMut for arrayvec::ArrayVec<u8, N> {
         self.as_mut_ptr()
     }
 
-    fn set_buf_init(&mut self, len: usize) {
-        unsafe { self.set_len(len + self.buf_len()) };
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        self.set_len(len + self.buf_len());
     }
 }
