@@ -138,7 +138,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
         win32_pending_result(res)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd, optr)
     }
 }
@@ -163,7 +163,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
         win32_pending_result(res)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd, optr)
     }
 }
@@ -174,7 +174,7 @@ impl OpCode for Sync {
         win32_result(res, 0)
     }
 
-    fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
+    unsafe fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
         Ok(())
     }
 }
@@ -265,7 +265,7 @@ impl OpCode for Accept {
         win32_result(res, received)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd, optr)
     }
 }
@@ -309,7 +309,7 @@ impl OpCode for Connect {
         win32_result(res, sent)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd, optr)
     }
 }
@@ -355,7 +355,7 @@ impl<T: AsIoSlicesMut + Unpin> OpCode for RecvImpl<T> {
         winsock_result(res, received)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd, optr)
     }
 }
@@ -400,7 +400,7 @@ impl<T: AsIoSlices + Unpin> OpCode for SendImpl<T> {
         winsock_result(res, sent)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd, optr)
     }
 }
@@ -452,7 +452,7 @@ impl<T: AsIoSlicesMut + Unpin> OpCode for RecvFromImpl<T> {
         winsock_result(res, received)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd, optr)
     }
 }
@@ -501,7 +501,7 @@ impl<T: AsIoSlices> OpCode for SendToImpl<T> {
         winsock_result(res, sent)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd, optr)
     }
 }
@@ -524,7 +524,7 @@ impl OpCode for ConnectNamedPipe {
         win32_result(res, 0)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd, optr)
     }
 }

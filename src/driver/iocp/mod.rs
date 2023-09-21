@@ -108,12 +108,13 @@ impl IntoRawFd for socket2::Socket {
 pub trait OpCode {
     /// Perform Windows API call with given pointer to overlapped struct.
     ///
-    /// It is always safe to cast `optr` to a pointer to [`Overlapped`].
+    /// It is always safe to cast `optr` to a pointer to
+    /// [`Overlapped<Self>`].
     ///
     /// # Safety
     ///
     /// * `self` must be alive until the operation completes.
-    /// * You should not use [`Overlapped::op`].
+    /// * Should not use [`Overlapped::op`].
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>>;
 
     /// Cancel the async IO operation.
@@ -121,7 +122,11 @@ pub trait OpCode {
     /// Usually it calls [`CancelIoEx`].
     ///
     /// [`CancelIoEx`]: windows_sys::Windows::Win32::System::IO::CancelIoEx
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()>;
+    ///
+    /// # Safety
+    ///
+    /// * Should not use [`Overlapped::op`].
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()>;
 }
 
 /// Low-level driver of IOCP.
@@ -214,7 +219,8 @@ impl Driver {
         if let Some(op) = registry.get_mut(user_data) {
             let overlapped_ptr = op.as_mut_ptr();
             let op = op.as_op_pin();
-            op.cancel(overlapped_ptr.cast()).ok();
+            // It's OK to fail to cancel.
+            unsafe { op.cancel(overlapped_ptr.cast()) }.ok();
         }
     }
 

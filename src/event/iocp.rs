@@ -74,7 +74,7 @@ impl OpCode for NopPending {
         Poll::Pending
     }
 
-    fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
+    unsafe fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
         Ok(())
     }
 }
