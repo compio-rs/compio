@@ -20,9 +20,7 @@ fn cancel_before_poll() {
     let key = driver.push(op);
 
     let mut entries = ArrayVec::<Entry, 1>::new();
-    driver
-        .poll(Some(Duration::from_secs(1)), &mut entries)
-        .unwrap();
+    driver.poll(None, &mut entries).unwrap();
     let (res, op) = driver.pop(&mut entries.into_iter()).next().unwrap();
     assert_eq!(op.user_data(), key);
 

@@ -152,6 +152,9 @@ impl Driver {
         registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
         self.poll.poll(&mut self.events, timeout)?;
+        if self.events.is_empty() && timeout.is_some() {
+            return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
+        }
         for event in &self.events {
             let token = event.token();
             let entry = self
@@ -174,13 +177,17 @@ impl Driver {
         Ok(())
     }
 
-    fn poll_cancel(&mut self, entries: &mut impl Extend<Entry>) {
-        entries.extend(self.cancel_queue.drain(..).map(|user_data| {
-            Entry::new(
-                user_data,
-                Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)),
-            )
-        }))
+    fn poll_cancel(&mut self, entries: &mut impl Extend<Entry>) -> bool {
+        let has_cancel = !self.cancel_queue.is_empty();
+        if has_cancel {
+            entries.extend(self.cancel_queue.drain(..).map(|user_data| {
+                Entry::new(
+                    user_data,
+                    Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)),
+                )
+            }))
+        }
+        has_cancel
     }
 
     pub fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
@@ -206,11 +213,11 @@ impl Driver {
         entries: &mut impl Extend<Entry>,
         registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
-        let extended = self.submit_squeue(ops, entries, registry)?;
+        let mut extended = self.submit_squeue(ops, entries, registry)?;
+        extended |= self.poll_cancel(entries);
         if !extended {
             self.poll_impl(timeout, entries, registry)?;
         }
-        self.poll_cancel(entries);
         Ok(())
     }
 }
