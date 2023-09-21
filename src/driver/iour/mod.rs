@@ -1,11 +1,6 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{
-    collections::{HashSet, VecDeque},
-    io,
-    pin::Pin,
-    time::Duration,
-};
+use std::{collections::VecDeque, io, pin::Pin, time::Duration};
 
 use io_uring::{
     cqueue,
@@ -32,7 +27,6 @@ pub trait OpCode {
 pub(crate) struct Driver {
     inner: IoUring,
     cancel_queue: VecDeque<u64>,
-    cancelled: HashSet<u64>,
 }
 
 impl Driver {
@@ -42,7 +36,6 @@ impl Driver {
         Ok(Self {
             inner: IoUring::new(entries)?,
             cancel_queue: VecDeque::default(),
-            cancelled: HashSet::default(),
         })
     }
 
@@ -106,15 +99,13 @@ impl Driver {
     }
 
     fn poll_entries(&mut self, entries: &mut impl Extend<Entry>) {
-        let completed_entries = self.inner.completion().filter_map(|entry| {
-            if self.cancelled.remove(&entry.user_data()) {
-                return None;
-            }
-            match (entry.user_data(), entry.result()) {
-                (Self::CANCEL, _) => None,
-                _ => Some(create_entry(entry)),
-            }
-        });
+        let completed_entries =
+            self.inner
+                .completion()
+                .filter_map(|entry| match entry.user_data() {
+                    Self::CANCEL => None,
+                    _ => Some(create_entry(entry)),
+                });
         entries.extend(completed_entries);
     }
 
@@ -124,7 +115,6 @@ impl Driver {
 
     pub fn cancel(&mut self, user_data: usize) {
         self.cancel_queue.push_back(user_data as _);
-        self.cancelled.insert(user_data as _);
     }
 
     pub unsafe fn poll(

@@ -21,5 +21,11 @@ fn cancel_before_poll() {
 
     let mut entries = ArrayVec::<Entry, 1>::new();
     let res = driver.poll(Some(Duration::from_secs(1)), &mut entries);
-    assert!(res.is_ok() || res.unwrap_err().kind() == io::ErrorKind::TimedOut);
+    if let Err(e) = res {
+        assert_eq!(e.kind(), io::ErrorKind::TimedOut);
+    } else {
+        let entry = entries.drain(..).next().unwrap();
+        let res = entry.into_result();
+        assert!(res.is_ok() || res.unwrap_err().kind() == io::ErrorKind::TimedOut);
+    }
 }
