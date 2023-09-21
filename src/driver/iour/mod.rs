@@ -106,14 +106,12 @@ impl Driver {
     }
 
     fn poll_entries(&mut self, entries: &mut impl Extend<Entry>) {
-        const SYSCALL_ECANCELED: i32 = -libc::ECANCELED;
-
         let completed_entries = self.inner.completion().filter_map(|entry| {
             if self.cancelled.remove(&entry.user_data()) {
                 return None;
             }
             match (entry.user_data(), entry.result()) {
-                (Self::CANCEL, _) | (_, SYSCALL_ECANCELED) => None,
+                (Self::CANCEL, _) => None,
                 _ => Some(create_entry(entry)),
             }
         });
@@ -162,7 +160,12 @@ impl AsRawFd for Driver {
 fn create_entry(entry: cqueue::Entry) -> Entry {
     let result = entry.result();
     let result = if result < 0 {
-        Err(io::Error::from_raw_os_error(-result))
+        let result = if result == -libc::ECANCELED {
+            libc::ETIMEDOUT
+        } else {
+            -result
+        };
+        Err(io::Error::from_raw_os_error(result))
     } else {
         Ok(result as _)
     };
