@@ -17,15 +17,25 @@ fn cancel_before_poll() {
     driver.cancel(0);
 
     let op = ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(8));
-    driver.push(op);
+    let key = driver.push(op);
 
     let mut entries = ArrayVec::<Entry, 1>::new();
-    let res = driver.poll(Some(Duration::from_secs(1)), &mut entries);
-    if let Err(e) = res {
-        assert_eq!(e.kind(), io::ErrorKind::TimedOut);
-    } else {
-        let entry = entries.drain(..).next().unwrap();
-        let res = entry.into_result();
-        assert!(res.is_ok() || res.unwrap_err().kind() == io::ErrorKind::TimedOut);
-    }
+    driver
+        .poll(Some(Duration::from_secs(1)), &mut entries)
+        .unwrap();
+    let (res, op) = driver.pop(&mut entries.into_iter()).next().unwrap();
+    assert_eq!(op.user_data(), key);
+
+    assert!(res.is_ok() || res.unwrap_err().kind() == io::ErrorKind::TimedOut);
+}
+
+#[test]
+fn timeout() {
+    let mut driver = Proactor::new().unwrap();
+
+    let mut entries = ArrayVec::<Entry, 1>::new();
+    let err = driver
+        .poll(Some(Duration::from_secs(1)), &mut entries)
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::TimedOut);
 }
