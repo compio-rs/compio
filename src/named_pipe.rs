@@ -29,7 +29,7 @@ use windows_sys::Win32::{
 };
 
 #[cfg(feature = "runtime")]
-use crate::{buf::*, op::ConnectNamedPipe, task::RUNTIME, *};
+use crate::{buf::*, op::ConnectNamedPipe, task::submit, *};
 use crate::{
     driver::{AsRawFd, FromRawFd, RawFd},
     fs::File,
@@ -176,7 +176,7 @@ impl NamedPipeServer {
     pub async fn connect(&self) -> io::Result<()> {
         self.handle.attach()?;
         let op = ConnectNamedPipe::new(self.as_raw_fd());
-        RUNTIME.with(|runtime| runtime.submit(op)).await.0?;
+        submit(op).await.0?;
         Ok(())
     }
 

@@ -14,7 +14,7 @@ use crate::task::time::{TimerFuture, TimerRuntime};
 use crate::{
     driver::{AsRawFd, Entry, OpCode, Proactor, RawFd},
     task::op::{OpFuture, OpRuntime},
-    Key,
+    BufResult, Key,
 };
 
 pub(crate) struct Runtime {
@@ -81,12 +81,9 @@ impl Runtime {
         unsafe { Key::<T>::new(user_data) }
     }
 
-    pub fn submit<T: OpCode + 'static>(
-        &self,
-        op: T,
-    ) -> impl Future<Output = (io::Result<usize>, T)> {
+    pub fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
         let user_data = self.submit_raw(op);
-        self.spawn(OpFuture::new(user_data))
+        OpFuture::new(user_data)
     }
 
     #[cfg(feature = "time")]

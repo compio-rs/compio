@@ -8,7 +8,7 @@ use crate::{
     buf_try,
     driver::AsRawFd,
     op::{BufResultExt, ReadAt, Sync, WriteAt},
-    task::RUNTIME,
+    task::submit,
     vec_alloc, Attacher, BufResult,
 };
 use crate::{fs::OpenOptions, impl_raw_fd};
@@ -126,12 +126,7 @@ impl File {
     pub async fn read_at<T: IoBufMut>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = ReadAt::new(self.as_raw_fd(), pos, buffer);
-        RUNTIME
-            .with(|runtime| runtime.submit(op))
-            .await
-            .into_inner()
-            .map_advanced()
-            .into_inner()
+        submit(op).await.into_inner().map_advanced().into_inner()
     }
 
     /// Read the exact number of bytes required to fill `buffer`.
@@ -239,11 +234,7 @@ impl File {
     pub async fn write_at<T: IoBuf>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = WriteAt::new(self.as_raw_fd(), pos, buffer);
-        RUNTIME
-            .with(|runtime| runtime.submit(op))
-            .await
-            .into_inner()
-            .into_inner()
+        submit(op).await.into_inner().into_inner()
     }
 
     /// Attempts to write an entire buffer into this writer.
@@ -261,10 +252,11 @@ impl File {
         let mut total_written = 0;
         let mut written;
         while total_written < buf_len {
-            (written, buffer) = buf_try!(self
-                .write_at(buffer.slice(total_written..), pos + total_written)
-                .await
-                .into_inner());
+            (written, buffer) = buf_try!(
+                self.write_at(buffer.slice(total_written..), pos + total_written)
+                    .await
+                    .into_inner()
+            );
             total_written += written;
         }
         (Ok(total_written), buffer)
@@ -274,7 +266,7 @@ impl File {
     async fn sync_impl(&self, datasync: bool) -> io::Result<()> {
         self.attach()?;
         let op = Sync::new(self.as_raw_fd(), datasync);
-        RUNTIME.with(|runtime| runtime.submit(op)).await.0?;
+        submit(op).await.0?;
         Ok(())
     }
 
