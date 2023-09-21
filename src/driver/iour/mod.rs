@@ -1,11 +1,6 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{
-    collections::{HashSet, VecDeque},
-    io,
-    pin::Pin,
-    time::Duration,
-};
+use std::{collections::VecDeque, io, pin::Pin, time::Duration};
 
 use io_uring::{
     cqueue,
@@ -32,7 +27,6 @@ pub trait OpCode {
 pub(crate) struct Driver {
     inner: IoUring,
     cancel_queue: VecDeque<u64>,
-    cancelled: HashSet<u64>,
 }
 
 impl Driver {
@@ -42,7 +36,6 @@ impl Driver {
         Ok(Self {
             inner: IoUring::new(entries)?,
             cancel_queue: VecDeque::default(),
-            cancelled: HashSet::default(),
         })
     }
 
@@ -106,17 +99,13 @@ impl Driver {
     }
 
     fn poll_entries(&mut self, entries: &mut impl Extend<Entry>) {
-        const SYSCALL_ECANCELED: i32 = -libc::ECANCELED;
-
-        let completed_entries = self.inner.completion().filter_map(|entry| {
-            if self.cancelled.remove(&entry.user_data()) {
-                return None;
-            }
-            match (entry.user_data(), entry.result()) {
-                (Self::CANCEL, _) | (_, SYSCALL_ECANCELED) => None,
-                _ => Some(create_entry(entry)),
-            }
-        });
+        let completed_entries =
+            self.inner
+                .completion()
+                .filter_map(|entry| match entry.user_data() {
+                    Self::CANCEL => None,
+                    _ => Some(create_entry(entry)),
+                });
         entries.extend(completed_entries);
     }
 
@@ -124,9 +113,8 @@ impl Driver {
         Ok(())
     }
 
-    pub fn cancel(&mut self, user_data: usize) {
+    pub fn cancel(&mut self, user_data: usize, _registry: &mut Slab<RawOp>) {
         self.cancel_queue.push_back(user_data as _);
-        self.cancelled.insert(user_data as _);
     }
 
     pub unsafe fn poll(
@@ -162,7 +150,12 @@ impl AsRawFd for Driver {
 fn create_entry(entry: cqueue::Entry) -> Entry {
     let result = entry.result();
     let result = if result < 0 {
-        Err(io::Error::from_raw_os_error(-result))
+        let result = if result == -libc::ECANCELED {
+            libc::ETIMEDOUT
+        } else {
+            -result
+        };
+        Err(io::Error::from_raw_os_error(result))
     } else {
         Ok(result as _)
     };

@@ -1,7 +1,7 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     io,
     ops::ControlFlow,
     pin::Pin,
@@ -70,6 +70,7 @@ pub(crate) struct Driver {
     poll: Poll,
     waiting: HashMap<usize, WaitEntry>,
     cancelled: HashSet<usize>,
+    cancel_queue: VecDeque<usize>,
 }
 
 /// Entry waiting for events
@@ -93,13 +94,16 @@ impl Driver {
             poll: Poll::new()?,
             waiting: HashMap::new(),
             cancelled: HashSet::new(),
+            cancel_queue: VecDeque::new(),
         })
     }
 }
 
 impl Driver {
     fn submit(&mut self, user_data: usize, arg: WaitArg) -> io::Result<()> {
-        if !self.cancelled.remove(&user_data) {
+        if self.cancelled.remove(&user_data) {
+            self.cancel_queue.push_back(user_data);
+        } else {
             let token = Token(user_data);
 
             SourceFd(&arg.fd).register(self.poll.registry(), token, arg.interest)?;
@@ -148,6 +152,9 @@ impl Driver {
         registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
         self.poll.poll(&mut self.events, timeout)?;
+        if self.events.is_empty() && timeout.is_some() {
+            return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
+        }
         for event in &self.events {
             let token = event.token();
             let entry = self
@@ -170,16 +177,30 @@ impl Driver {
         Ok(())
     }
 
+    fn poll_cancel(&mut self, entries: &mut impl Extend<Entry>) -> bool {
+        let has_cancel = !self.cancel_queue.is_empty();
+        if has_cancel {
+            entries.extend(self.cancel_queue.drain(..).map(|user_data| {
+                Entry::new(
+                    user_data,
+                    Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)),
+                )
+            }))
+        }
+        has_cancel
+    }
+
     pub fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
         Ok(())
     }
 
-    pub fn cancel(&mut self, user_data: usize) {
+    pub fn cancel(&mut self, user_data: usize, _registry: &mut Slab<RawOp>) {
         if let Some(entry) = self.waiting.remove(&user_data) {
             self.poll
                 .registry()
                 .deregister(&mut SourceFd(&entry.arg.fd))
                 .ok();
+            self.cancel_queue.push_back(user_data);
         } else {
             self.cancelled.insert(user_data);
         }
@@ -192,7 +213,8 @@ impl Driver {
         entries: &mut impl Extend<Entry>,
         registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
-        let extended = self.submit_squeue(ops, entries, registry)?;
+        let mut extended = self.submit_squeue(ops, entries, registry)?;
+        extended |= self.poll_cancel(entries);
         if !extended {
             self.poll_impl(timeout, entries, registry)?;
         }

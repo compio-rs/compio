@@ -132,7 +132,7 @@ impl Proactor {
     /// It is well-defined to cancel before polling. If the submitted operation
     /// contains a cancelled user-defined data, the operation will be ignored.
     pub fn cancel(&mut self, user_data: usize) {
-        self.driver.cancel(user_data);
+        self.driver.cancel(user_data, &mut self.ops);
     }
 
     /// Push an operation into the driver, and return the unique key, called

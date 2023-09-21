@@ -17,7 +17,8 @@ use slab::Slab;
 use windows_sys::Win32::{
     Foundation::{
         RtlNtStatusToDosError, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_NO_DATA,
-        FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING, STATUS_SUCCESS,
+        ERROR_OPERATION_ABORTED, FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING,
+        STATUS_SUCCESS,
     },
     System::{
         SystemServices::ERROR_SEVERITY_ERROR,
@@ -107,14 +108,25 @@ impl IntoRawFd for socket2::Socket {
 pub trait OpCode {
     /// Perform Windows API call with given pointer to overlapped struct.
     ///
-    /// It is always safe to cast `optr` to a pointer to [`Overlapped`].
-    /// However, for safety reasons, you should be careful to use the `op` field
-    /// of it. Instead, you should use `self`.
+    /// It is always safe to cast `optr` to a pointer to
+    /// [`Overlapped<Self>`].
     ///
     /// # Safety
     ///
-    /// `self` must be alive until the operation completes.
+    /// * `self` must be alive until the operation completes.
+    /// * Should not use [`Overlapped::op`].
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>>;
+
+    /// Cancel the async IO operation.
+    ///
+    /// Usually it calls [`CancelIoEx`].
+    ///
+    /// [`CancelIoEx`]: windows_sys::Windows::Win32::System::IO::CancelIoEx
+    ///
+    /// # Safety
+    ///
+    /// * Should not use [`Overlapped::op`].
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()>;
 }
 
 /// Low-level driver of IOCP.
@@ -167,19 +179,17 @@ impl Driver {
         if iocp_entry.lpOverlapped.is_null() {
             // This entry is posted by `post_driver_nop`.
             let user_data = iocp_entry.lpCompletionKey;
-            if self.cancelled.remove(&user_data) {
-                None
+            let result = if self.cancelled.remove(&user_data) {
+                Err(io::Error::from_raw_os_error(ERROR_OPERATION_ABORTED as _))
             } else {
-                Some(Entry::new(user_data, Ok(0)))
-            }
+                Ok(0)
+            };
+            Some(Entry::new(user_data, result))
         } else {
             let transferred = iocp_entry.dwNumberOfBytesTransferred;
             // Any thin pointer is OK because we don't use the type of opcode.
             let overlapped_ptr: *mut Overlapped<()> = iocp_entry.lpOverlapped.cast();
             let overlapped = unsafe { &*overlapped_ptr };
-            if self.cancelled.remove(&overlapped.user_data) {
-                return None;
-            }
             let res = if matches!(
                 overlapped.base.Internal as NTSTATUS,
                 STATUS_SUCCESS | STATUS_PENDING
@@ -204,8 +214,14 @@ impl Driver {
         Ok(())
     }
 
-    pub fn cancel(&mut self, user_data: usize) {
+    pub fn cancel(&mut self, user_data: usize, registry: &mut Slab<RawOp>) {
         self.cancelled.insert(user_data);
+        if let Some(op) = registry.get_mut(user_data) {
+            let overlapped_ptr = op.as_mut_ptr();
+            let op = op.as_op_pin();
+            // It's OK to fail to cancel.
+            unsafe { op.cancel(overlapped_ptr.cast()) }.ok();
+        }
     }
 
     pub unsafe fn poll(
@@ -216,13 +232,17 @@ impl Driver {
         registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
         for user_data in ops {
-            if !self.cancelled.remove(&user_data) {
-                let overlapped_ptr = registry[user_data].as_mut_ptr();
-                let op = registry[user_data].as_op_pin();
-                let result = op.operate(overlapped_ptr.cast());
-                if let Poll::Ready(result) = result {
-                    post_driver_raw(self.port.as_raw_handle(), result, overlapped_ptr.cast())?;
-                }
+            let overlapped_ptr = registry[user_data].as_mut_ptr();
+            let op = registry[user_data].as_op_pin();
+            let result = if self.cancelled.remove(&user_data) {
+                Poll::Ready(Err(io::Error::from_raw_os_error(
+                    ERROR_OPERATION_ABORTED as _,
+                )))
+            } else {
+                op.operate(overlapped_ptr.cast())
+            };
+            if let Poll::Ready(result) = result {
+                post_driver_raw(self.port.as_raw_handle(), result, overlapped_ptr.cast())?;
             }
         }
 
