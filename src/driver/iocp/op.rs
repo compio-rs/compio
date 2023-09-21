@@ -14,8 +14,8 @@ use windows_sys::{
     core::GUID,
     Win32::{
         Foundation::{
-            GetLastError, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_IO_PENDING, ERROR_NO_DATA,
-            ERROR_PIPE_CONNECTED,
+            GetLastError, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_IO_PENDING, ERROR_NOT_FOUND,
+            ERROR_NO_DATA, ERROR_PIPE_CONNECTED,
         },
         Networking::WinSock::{
             setsockopt, socklen_t, WSAIoctl, WSARecv, WSARecvFrom, WSASend, WSASendTo,
@@ -25,7 +25,10 @@ use windows_sys::{
             WSAID_GETACCEPTEXSOCKADDRS,
         },
         Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile},
-        System::{Pipes::ConnectNamedPipe, IO::OVERLAPPED},
+        System::{
+            Pipes::ConnectNamedPipe,
+            IO::{CancelIoEx, OVERLAPPED},
+        },
     },
 };
 
@@ -80,6 +83,20 @@ fn winsock_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     }
 }
 
+#[inline]
+fn cancel(handle: RawFd, optr: *mut OVERLAPPED) -> io::Result<()> {
+    match syscall!(BOOL, CancelIoEx(handle as _, optr)) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            if e.raw_os_error() == Some(ERROR_NOT_FOUND as _) {
+                Ok(())
+            } else {
+                Err(e)
+            }
+        }
+    }
+}
+
 fn get_wsa_fn<F>(handle: RawFd, fguid: GUID) -> io::Result<Option<F>> {
     let mut fptr = None;
     let mut returned = 0;
@@ -120,6 +137,10 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
         );
         win32_pending_result(res)
     }
+
+    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd, optr)
+    }
 }
 
 impl<T: IoBuf> OpCode for WriteAt<T> {
@@ -141,12 +162,20 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
         );
         win32_pending_result(res)
     }
+
+    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd, optr)
+    }
 }
 
 impl OpCode for Sync {
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let res = FlushFileBuffers(self.fd as _);
         win32_result(res, 0)
+    }
+
+    fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
+        Ok(())
     }
 }
 
@@ -235,6 +264,10 @@ impl OpCode for Accept {
         );
         win32_result(res, received)
     }
+
+    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd, optr)
+    }
 }
 
 static CONNECT_EX: OnceLock<LPFN_CONNECTEX> = OnceLock::new();
@@ -274,6 +307,10 @@ impl OpCode for Connect {
             optr,
         );
         win32_result(res, sent)
+    }
+
+    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd, optr)
     }
 }
 
@@ -317,6 +354,10 @@ impl<T: AsIoSlicesMut + Unpin> OpCode for RecvImpl<T> {
         );
         winsock_result(res, received)
     }
+
+    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd, optr)
+    }
 }
 
 /// Send data to remote.
@@ -357,6 +398,10 @@ impl<T: AsIoSlices + Unpin> OpCode for SendImpl<T> {
             None,
         );
         winsock_result(res, sent)
+    }
+
+    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd, optr)
     }
 }
 
@@ -406,6 +451,10 @@ impl<T: AsIoSlicesMut + Unpin> OpCode for RecvFromImpl<T> {
         );
         winsock_result(res, received)
     }
+
+    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd, optr)
+    }
 }
 
 /// Send data to specified address.
@@ -451,6 +500,10 @@ impl<T: AsIoSlices> OpCode for SendToImpl<T> {
         );
         winsock_result(res, sent)
     }
+
+    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd, optr)
+    }
 }
 
 /// Connect a named pipe server.
@@ -469,5 +522,9 @@ impl OpCode for ConnectNamedPipe {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let res = ConnectNamedPipe(self.fd as _, optr);
         win32_result(res, 0)
+    }
+
+    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd, optr)
     }
 }

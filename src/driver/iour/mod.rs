@@ -113,7 +113,7 @@ impl Driver {
         Ok(())
     }
 
-    pub fn cancel(&mut self, user_data: usize) {
+    pub fn cancel(&mut self, user_data: usize, _registry: &mut Slab<RawOp>) {
         self.cancel_queue.push_back(user_data as _);
     }
 

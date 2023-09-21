@@ -109,13 +109,19 @@ pub trait OpCode {
     /// Perform Windows API call with given pointer to overlapped struct.
     ///
     /// It is always safe to cast `optr` to a pointer to [`Overlapped`].
-    /// However, for safety reasons, you should be careful to use the `op` field
-    /// of it. Instead, you should use `self`.
     ///
     /// # Safety
     ///
-    /// `self` must be alive until the operation completes.
+    /// * `self` must be alive until the operation completes.
+    /// * You should not use [`Overlapped::op`].
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>>;
+
+    /// Cancel the async IO operation.
+    ///
+    /// Usually it calls [`CancelIoEx`].
+    ///
+    /// [`CancelIoEx`]: windows_sys::Windows::Win32::System::IO::CancelIoEx
+    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()>;
 }
 
 /// Low-level driver of IOCP.
@@ -203,8 +209,13 @@ impl Driver {
         Ok(())
     }
 
-    pub fn cancel(&mut self, user_data: usize) {
+    pub fn cancel(&mut self, user_data: usize, registry: &mut Slab<RawOp>) {
         self.cancelled.insert(user_data);
+        if let Some(op) = registry.get_mut(user_data) {
+            let overlapped_ptr = op.as_mut_ptr();
+            let op = op.as_op_pin();
+            op.cancel(overlapped_ptr.cast()).ok();
+        }
     }
 
     pub unsafe fn poll(

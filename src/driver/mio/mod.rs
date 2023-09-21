@@ -187,7 +187,7 @@ impl Driver {
         Ok(())
     }
 
-    pub fn cancel(&mut self, user_data: usize) {
+    pub fn cancel(&mut self, user_data: usize, _registry: &mut Slab<RawOp>) {
         if let Some(entry) = self.waiting.remove(&user_data) {
             self.poll
                 .registry()
