@@ -119,9 +119,7 @@ pub trait OpCode {
 
     /// Cancel the async IO operation.
     ///
-    /// Usually it calls [`CancelIoEx`].
-    ///
-    /// [`CancelIoEx`]: windows_sys::Windows::Win32::System::IO::CancelIoEx
+    /// Usually it calls `CancelIoEx`.
     ///
     /// # Safety
     ///
