@@ -10,16 +10,21 @@
 //! assert_eq!(ans, 42);
 //! ```
 
-use std::future::Future;
-
-use async_task::Task;
-
 pub(crate) mod runtime;
 use runtime::Runtime;
 
 pub(crate) mod op;
 #[cfg(feature = "time")]
 pub(crate) mod time;
+
+use std::{future::Future, io};
+
+use async_task::Task;
+
+use crate::{
+    driver::{OpCode, RawFd},
+    BufResult,
+};
 
 thread_local! {
     pub(crate) static RUNTIME: Runtime = Runtime::new().expect("cannot create compio runtime");
@@ -65,4 +70,19 @@ pub fn block_on<F: Future>(future: F) -> F::Output {
 /// ```
 pub fn spawn<F: Future + 'static>(future: F) -> Task<F::Output> {
     RUNTIME.with(|runtime| runtime.spawn(future))
+}
+
+/// Attach a raw file descriptor/handle/socket to the runtime.
+///
+/// You only need this when authoring your own high-level APIs. High-level
+/// resources in this crate are attached automatically.
+pub fn attach(fd: RawFd) -> io::Result<()> {
+    RUNTIME.with(|runtime| runtime.attach(fd))
+}
+
+/// Submit an operation to the runtime.
+///
+/// You only need this when authoring your own [`OpCode`].
+pub fn submit<T: OpCode + 'static>(op: T) -> impl Future<Output = BufResult<usize, T>> {
+    RUNTIME.with(|runtime| runtime.submit(op))
 }

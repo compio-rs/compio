@@ -5,7 +5,7 @@ use std::{io, marker::PhantomData};
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 
-use crate::{driver::AsRawFd, task::RUNTIME};
+use crate::{driver::AsRawFd, task::attach};
 
 /// Attach a handle to the driver of current thread.
 ///
@@ -29,8 +29,7 @@ impl Attacher {
     }
 
     pub fn attach(&self, source: &impl AsRawFd) -> io::Result<()> {
-        self.once
-            .get_or_try_init(|| RUNTIME.with(|runtime| runtime.attach(source.as_raw_fd())))?;
+        self.once.get_or_try_init(|| attach(source.as_raw_fd()))?;
         Ok(())
     }
 }

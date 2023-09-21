@@ -5,7 +5,7 @@ use std::{
 
 use arrayvec::ArrayVec;
 
-use crate::{impl_raw_fd, op::Recv, syscall, task::RUNTIME};
+use crate::{impl_raw_fd, op::Recv, syscall, task::submit};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
@@ -32,7 +32,7 @@ impl Event {
         let buffer = ArrayVec::<u8, 8>::new();
         // Trick: Recv uses readv which doesn't seek.
         let op = Recv::new(self.as_raw_fd(), buffer);
-        let (res, _) = RUNTIME.with(|runtime| runtime.submit(op)).await;
+        let (res, _) = submit(op).await;
         res?;
         Ok(())
     }

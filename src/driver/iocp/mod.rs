@@ -298,6 +298,7 @@ unsafe fn post_driver_raw(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub(crate) fn post_driver_nop(handle: RawFd, user_data: usize) -> io::Result<()> {
     syscall!(
         BOOL,
