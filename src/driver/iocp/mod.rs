@@ -58,7 +58,7 @@ pub trait FromRawFd {
     /// The `fd` passed in must:
     ///   - be a valid open handle or socket,
     ///   - be opened with `FILE_FLAG_OVERLAPPED` if it's a file handle,
-    ///   - have been attached to a driver.
+    ///   - have not been attached to a driver.
     unsafe fn from_raw_fd(fd: RawFd) -> Self;
 }
 
