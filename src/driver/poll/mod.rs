@@ -80,10 +80,17 @@ struct FdQueue {
 }
 
 impl FdQueue {
-    pub fn push_interest(&mut self, user_data: usize, interest: Interest) {
+    pub fn push_back_interest(&mut self, user_data: usize, interest: Interest) {
         match interest {
             Interest::Readable => self.read_queue.push_back(user_data),
             Interest::Writable => self.write_queue.push_back(user_data),
+        }
+    }
+
+    pub fn push_front_interest(&mut self, user_data: usize, interest: Interest) {
+        match interest {
+            Interest::Readable => self.read_queue.push_front(user_data),
+            Interest::Writable => self.write_queue.push_front(user_data),
         }
     }
 
@@ -94,15 +101,15 @@ impl FdQueue {
         event
     }
 
-    pub fn pop_interest(&mut self, event: &Event) -> usize {
+    pub fn pop_interest(&mut self, event: &Event) -> (usize, Interest) {
         if event.readable {
             if let Some(user_data) = self.read_queue.pop_front() {
-                return user_data;
+                return (user_data, Interest::Readable);
             }
         }
         if event.writable {
             if let Some(user_data) = self.write_queue.pop_front() {
-                return user_data;
+                return (user_data, Interest::Writable);
             }
         }
         unreachable!("should receive event when no interest")
@@ -140,7 +147,7 @@ impl Driver {
         } else {
             let need_add = !self.registry.contains_key(&arg.fd);
             let queue = self.registry.entry(arg.fd).or_default();
-            queue.push_interest(user_data, arg.interest);
+            queue.push_back_interest(user_data, arg.interest);
             // We use fd as the key.
             let event = queue.event(arg.fd as usize);
             unsafe {
@@ -205,23 +212,29 @@ impl Driver {
                 .registry
                 .get_mut(&fd)
                 .expect("the fd should be attached");
-            let user_data = queue.pop_interest(&event);
-            let renew_event = queue.event(fd as _);
-            unsafe {
-                let fd = BorrowedFd::borrow_raw(fd);
-                self.poll.modify(fd, renew_event)?;
-            }
+            let (user_data, interest) = queue.pop_interest(&event);
             if self.cancelled.remove(&user_data) {
                 entries.extend(Some(entry_cancelled(user_data)));
             } else {
                 let op = registry[user_data].as_pin();
                 let res = match op.on_event(&event) {
-                    Ok(ControlFlow::Continue(_)) => continue,
-                    Ok(ControlFlow::Break(res)) => Ok(res),
-                    Err(err) => Err(err),
+                    Ok(ControlFlow::Continue(_)) => {
+                        // The operation should go back to the front.
+                        queue.push_front_interest(user_data, interest);
+                        None
+                    }
+                    Ok(ControlFlow::Break(res)) => Some(Ok(res)),
+                    Err(err) => Some(Err(err)),
                 };
-                let entry = Entry::new(user_data, res);
-                entries.extend(Some(entry));
+                if let Some(res) = res {
+                    let entry = Entry::new(user_data, res);
+                    entries.extend(Some(entry));
+                }
+            }
+            let renew_event = queue.event(fd as _);
+            unsafe {
+                let fd = BorrowedFd::borrow_raw(fd);
+                self.poll.modify(fd, renew_event)?;
             }
         }
         Ok(())
