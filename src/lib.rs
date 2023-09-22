@@ -123,7 +123,7 @@ macro_rules! syscall {
             Ok(res)
         }
     }};
-    // The below branches are used by mio driver.
+    // The below branches are used by polling driver.
     (break $fn: ident ( $($arg: expr),* $(,)* )) => {
         $crate::syscall!( $fn ( $($arg, )* )).map(
             |res| ::std::ops::ControlFlow::Break(res as usize)
