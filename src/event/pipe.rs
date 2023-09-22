@@ -1,6 +1,6 @@
 use std::{
     io,
-    os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
+    os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd},
 };
 
 use arrayvec::ArrayVec;
@@ -18,10 +18,14 @@ pub struct Event {
 impl Event {
     /// Create [`Event`].
     pub fn new() -> io::Result<Self> {
-        let (sender, receiver) = mio::unix::pipe::new()?;
-        sender.set_nonblocking(false)?;
-        let sender = unsafe { OwnedFd::from_raw_fd(sender.into_raw_fd()) };
-        let receiver = unsafe { OwnedFd::from_raw_fd(receiver.into_raw_fd()) };
+        let mut fds = [-1, -1];
+        syscall!(pipe(fds.as_mut_ptr()))?;
+        let receiver = unsafe { OwnedFd::from_raw_fd(fds[0]) };
+        let sender = unsafe { OwnedFd::from_raw_fd(fds[1]) };
+
+        syscall!(fcntl(receiver.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
+        syscall!(fcntl(receiver.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK))?;
+        syscall!(fcntl(sender.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
         Ok(Self { sender, receiver })
     }
 

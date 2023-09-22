@@ -1,6 +1,6 @@
 use std::{io, ops::ControlFlow, pin::Pin};
 
-use mio::event::Event;
+use polling::Event;
 
 pub use crate::driver::unix::op::*;
 use crate::{
@@ -31,7 +31,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
     }
 
     fn on_event(mut self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
-        debug_assert!(event.is_readable());
+        debug_assert!(event.readable);
 
         let fd = self.fd;
         let slice = self.buffer.as_uninit_slice();
@@ -67,7 +67,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
     }
 
     fn on_event(self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
-        debug_assert!(event.is_writable());
+        debug_assert!(event.writable);
 
         let slice = self.buffer.as_slice();
 
@@ -88,7 +88,7 @@ impl OpCode for Sync {
     }
 
     fn on_event(self: Pin<&mut Self>, _: &Event) -> std::io::Result<ControlFlow<usize>> {
-        unreachable!("Sync operation should not be submitted to mio")
+        unreachable!("Sync operation should not be submitted to polling")
     }
 }
 
@@ -104,7 +104,7 @@ impl OpCode for Accept {
     }
 
     fn on_event(mut self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
-        debug_assert!(event.is_readable());
+        debug_assert!(event.readable);
 
         match syscall!(accept(
             self.fd,
@@ -126,7 +126,7 @@ impl OpCode for Connect {
     }
 
     fn on_event(self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
-        debug_assert!(event.is_writable());
+        debug_assert!(event.writable);
 
         let mut err: libc::c_int = 0;
         let mut err_len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
@@ -153,7 +153,7 @@ impl<T: AsIoSlicesMut + Unpin> OpCode for RecvImpl<T> {
     }
 
     fn on_event(mut self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
-        debug_assert!(event.is_readable());
+        debug_assert!(event.readable);
 
         self.slices = unsafe { self.buffer.as_io_slices_mut() };
         syscall!(break readv(self.fd, self.slices.as_ptr() as _, self.slices.len() as _,))
@@ -166,7 +166,7 @@ impl<T: AsIoSlices + Unpin> OpCode for SendImpl<T> {
     }
 
     fn on_event(mut self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
-        debug_assert!(event.is_writable());
+        debug_assert!(event.writable);
 
         self.slices = unsafe { self.buffer.as_io_slices() };
         syscall!(break writev(self.fd, self.slices.as_ptr() as _, self.slices.len() as _,))
@@ -180,7 +180,7 @@ impl<T: AsIoSlicesMut + Unpin> OpCode for RecvFromImpl<T> {
     }
 
     fn on_event(mut self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
-        debug_assert!(event.is_readable());
+        debug_assert!(event.readable);
 
         syscall!(break recvmsg(self.fd, &mut self.msg, 0))
     }
@@ -193,7 +193,7 @@ impl<T: AsIoSlices + Unpin> OpCode for SendToImpl<T> {
     }
 
     fn on_event(self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
-        debug_assert!(event.is_writable());
+        debug_assert!(event.writable);
 
         syscall!(break sendmsg(self.fd, &self.msg, 0))
     }

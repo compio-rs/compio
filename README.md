@@ -5,7 +5,7 @@
 [![docs.rs](https://img.shields.io/badge/docs.rs-compio-latest)](https://docs.rs/compio)
 [![Azure DevOps builds](https://strawberry-vs.visualstudio.com/compio/_apis/build/status/Berrysoft.compio?branch=master)](https://strawberry-vs.visualstudio.com/compio/_build)
 
-A thread-per-core Rust runtime with IOCP/io_uring/mio.
+A thread-per-core Rust runtime with IOCP/io_uring/polling.
 The name comes from "completion-based IO".
 This crate is inspired by [monoio](https://github.com/bytedance/monoio/).
 

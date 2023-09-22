@@ -1,19 +1,16 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashSet, VecDeque},
     io,
+    num::NonZeroUsize,
     ops::ControlFlow,
     pin::Pin,
     time::Duration,
 };
 
 pub(crate) use libc::{sockaddr_storage, socklen_t};
-use mio::{
-    event::{Event, Source},
-    unix::SourceFd,
-    Events, Interest, Poll, Token,
-};
+use polling::{Event, Events, Poller};
 use slab::Slab;
 
 use crate::driver::Entry;
@@ -24,7 +21,7 @@ pub(crate) use crate::driver::unix::RawOp;
 /// Abstraction of operations.
 pub trait OpCode {
     /// Perform the operation before submit, and return [`Decision`] to
-    /// indicate whether submitting the operation to mio is required.
+    /// indicate whether submitting the operation to polling is required.
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision>;
 
     /// Perform the operation after received corresponding
@@ -42,57 +39,53 @@ pub enum Decision {
 
 impl Decision {
     /// Decide to wait for the given fd with the given interest.
-    pub fn wait_for(fd: RawFd, interest: Interest) -> Self {
-        Self::Wait(WaitArg { fd, interest })
+    pub fn wait_for(fd: RawFd, readable: bool, writable: bool) -> Self {
+        Self::Wait(WaitArg {
+            fd,
+            readable,
+            writable,
+        })
     }
 
     /// Decide to wait for the given fd to be readable.
     pub fn wait_readable(fd: RawFd) -> Self {
-        Self::wait_for(fd, Interest::READABLE)
+        Self::wait_for(fd, true, false)
     }
 
     /// Decide to wait for the given fd to be writable.
     pub fn wait_writable(fd: RawFd) -> Self {
-        Self::wait_for(fd, Interest::WRITABLE)
+        Self::wait_for(fd, false, true)
     }
 }
 
-/// Meta of mio operations.
+/// Meta of polling operations.
 #[derive(Debug, Clone, Copy)]
 pub struct WaitArg {
     fd: RawFd,
-    interest: Interest,
+    readable: bool,
+    writable: bool,
 }
 
-/// Low-level driver of mio.
+/// Low-level driver of polling.
 pub(crate) struct Driver {
     events: Events,
-    poll: Poll,
-    waiting: HashMap<usize, WaitEntry>,
+    poll: Poller,
     cancelled: HashSet<usize>,
     cancel_queue: VecDeque<usize>,
-}
-
-/// Entry waiting for events
-struct WaitEntry {
-    arg: WaitArg,
-    user_data: usize,
-}
-
-impl WaitEntry {
-    fn new(user_data: usize, arg: WaitArg) -> Self {
-        Self { arg, user_data }
-    }
 }
 
 impl Driver {
     pub fn new(entries: u32) -> io::Result<Self> {
         let entries = entries as usize; // for the sake of consistency, use u32 like iour
+        let events = if entries == 0 {
+            Events::new()
+        } else {
+            Events::with_capacity(NonZeroUsize::new(entries).unwrap())
+        };
 
         Ok(Self {
-            events: Events::with_capacity(entries),
-            poll: Poll::new()?,
-            waiting: HashMap::new(),
+            events,
+            poll: Poller::new()?,
             cancelled: HashSet::new(),
             cancel_queue: VecDeque::new(),
         })
@@ -104,18 +97,17 @@ impl Driver {
         if self.cancelled.remove(&user_data) {
             self.cancel_queue.push_back(user_data);
         } else {
-            let token = Token(user_data);
-
-            SourceFd(&arg.fd).register(self.poll.registry(), token, arg.interest)?;
-
-            // Only insert the entry after it was registered successfully
-            self.waiting
-                .insert(user_data, WaitEntry::new(user_data, arg));
+            let mut event = Event::none(user_data);
+            event.readable = arg.readable;
+            event.writable = arg.writable;
+            unsafe {
+                self.poll.add(arg.fd, event)?;
+            }
         }
         Ok(())
     }
 
-    /// Register all operations in the squeue to mio.
+    /// Register all operations in the squeue to polling.
     fn submit_squeue(
         &mut self,
         ops: &mut impl Iterator<Item = usize>,
@@ -143,7 +135,7 @@ impl Driver {
         Ok(extended)
     }
 
-    /// Poll all events from mio, call `perform` on op and push them into
+    /// Poll all events from polling, call `perform` on op and push them into
     /// cqueue.
     fn poll_impl(
         &mut self,
@@ -151,28 +143,23 @@ impl Driver {
         entries: &mut impl Extend<Entry>,
         registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
-        self.poll.poll(&mut self.events, timeout)?;
+        self.poll.wait(&mut self.events, timeout)?;
         if self.events.is_empty() && timeout.is_some() {
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
         }
-        for event in &self.events {
-            let token = event.token();
-            let entry = self
-                .waiting
-                .get_mut(&token.0)
-                .expect("Unknown token returned by mio"); // XXX: Should this be silently ignored?
-            let op = registry[entry.user_data].as_pin();
-            let res = match op.on_event(event) {
-                Ok(ControlFlow::Continue(_)) => continue,
-                Ok(ControlFlow::Break(res)) => Ok(res),
-                Err(err) => Err(err),
-            };
-            self.poll
-                .registry()
-                .deregister(&mut SourceFd(&entry.arg.fd))?;
-            let entry = Entry::new(entry.user_data, res);
-            entries.extend(Some(entry));
-            self.waiting.remove(&token.0);
+        for event in self.events.iter() {
+            if self.cancelled.remove(&event.key) {
+                self.cancel_queue.push_back(event.key);
+            } else {
+                let op = registry[event.key].as_pin();
+                let res = match op.on_event(&event) {
+                    Ok(ControlFlow::Continue(_)) => continue,
+                    Ok(ControlFlow::Break(res)) => Ok(res),
+                    Err(err) => Err(err),
+                };
+                let entry = Entry::new(event.key, res);
+                entries.extend(Some(entry));
+            }
         }
         Ok(())
     }
@@ -195,15 +182,7 @@ impl Driver {
     }
 
     pub fn cancel(&mut self, user_data: usize, _registry: &mut Slab<RawOp>) {
-        if let Some(entry) = self.waiting.remove(&user_data) {
-            self.poll
-                .registry()
-                .deregister(&mut SourceFd(&entry.arg.fd))
-                .ok();
-            self.cancel_queue.push_back(user_data);
-        } else {
-            self.cancelled.insert(user_data);
-        }
+        self.cancelled.insert(user_data);
     }
 
     pub unsafe fn poll(

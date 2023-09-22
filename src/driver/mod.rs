@@ -17,8 +17,8 @@ cfg_if::cfg_if! {
         mod iour;
         pub use iour::*;
     } else if #[cfg(unix)]{
-        mod mio;
-        pub use self::mio::*;
+        mod poll;
+        pub use poll::*;
     }
 }
 
@@ -118,7 +118,7 @@ impl Proactor {
     ///   attached to one driver, and could only be attached once, even if you
     ///   `try_clone` it. It will cause unexpected result to attach the handle
     ///   with one driver and push an op to another driver.
-    /// * io-uring/mio: it will do nothing and return `Ok(())`
+    /// * io-uring/polling: it will do nothing and return `Ok(())`
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
         self.driver.attach(fd)
     }
