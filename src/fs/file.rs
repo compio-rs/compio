@@ -42,8 +42,18 @@ fn file_with_options(
 #[cfg(not(target_os = "windows"))]
 fn file_with_options(
     path: impl AsRef<Path>,
-    options: std::fs::OpenOptions,
+    mut options: std::fs::OpenOptions,
 ) -> io::Result<std::fs::File> {
+    use std::os::unix::prelude::OpenOptionsExt;
+
+    // Don't set nonblocking with epoll.
+    if cfg!(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "illumos"
+    ))) {
+        options.custom_flags(libc::O_NONBLOCK);
+    }
     options.open(path)
 }
 
@@ -252,11 +262,10 @@ impl File {
         let mut total_written = 0;
         let mut written;
         while total_written < buf_len {
-            (written, buffer) = buf_try!(
-                self.write_at(buffer.slice(total_written..), pos + total_written)
-                    .await
-                    .into_inner()
-            );
+            (written, buffer) = buf_try!(self
+                .write_at(buffer.slice(total_written..), pos + total_written)
+                .await
+                .into_inner());
             total_written += written;
         }
         (Ok(total_written), buffer)
