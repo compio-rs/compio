@@ -59,7 +59,7 @@ impl Socket {
         // non blocking socket when there is no connections in listen queue
         //
         // https://patchwork.kernel.org/project/linux-block/patch/f999615b-205c-49b7-b272-c4e42e45e09d@kernel.dk/#22949861
-        #[cfg(all(unix, not(target_os = "linux")))]
+        #[cfg(all(unix, not(all(target_os = "linux", feature = "io-uring"))))]
         socket.set_nonblocking(true)?;
         Ok(Self::from_socket2(socket))
     }

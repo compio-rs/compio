@@ -1,11 +1,19 @@
 //! The platform-specified driver.
 //! Some types differ by compilation target.
 
+#[cfg(all(
+    target_os = "linux",
+    not(feature = "io-uring"),
+    not(feature = "polling")
+))]
+compile_error!("You must choose one of these features: [\"io-uring\", \"polling\"]");
+
 use std::{collections::VecDeque, io, time::Duration};
 
 use slab::Slab;
 
 use crate::BufResult;
+
 #[cfg(unix)]
 mod unix;
 
@@ -13,10 +21,10 @@ cfg_if::cfg_if! {
     if #[cfg(target_os = "windows")] {
         mod iocp;
         pub use iocp::*;
-    } else if #[cfg(target_os = "linux")] {
+    } else if #[cfg(all(target_os = "linux", feature = "io-uring"))] {
         mod iour;
         pub use iour::*;
-    } else if #[cfg(unix)]{
+    } else if #[cfg(unix)] {
         mod poll;
         pub use poll::*;
     }
