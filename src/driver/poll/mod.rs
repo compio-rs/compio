@@ -1,10 +1,11 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     io,
     num::NonZeroUsize,
     ops::ControlFlow,
+    os::fd::BorrowedFd,
     pin::Pin,
     time::Duration,
 };
@@ -39,39 +40,81 @@ pub enum Decision {
 
 impl Decision {
     /// Decide to wait for the given fd with the given interest.
-    pub fn wait_for(fd: RawFd, readable: bool, writable: bool) -> Self {
-        Self::Wait(WaitArg {
-            fd,
-            readable,
-            writable,
-        })
+    pub fn wait_for(fd: RawFd, interest: Interest) -> Self {
+        Self::Wait(WaitArg { fd, interest })
     }
 
     /// Decide to wait for the given fd to be readable.
     pub fn wait_readable(fd: RawFd) -> Self {
-        Self::wait_for(fd, true, false)
+        Self::wait_for(fd, Interest::Readable)
     }
 
     /// Decide to wait for the given fd to be writable.
     pub fn wait_writable(fd: RawFd) -> Self {
-        Self::wait_for(fd, false, true)
+        Self::wait_for(fd, Interest::Writable)
     }
 }
 
 /// Meta of polling operations.
 #[derive(Debug, Clone, Copy)]
 pub struct WaitArg {
-    fd: RawFd,
-    readable: bool,
-    writable: bool,
+    /// The raw fd of the operation.
+    pub fd: RawFd,
+    /// The interest to be registered.
+    pub interest: Interest,
+}
+
+/// The interest of the operation
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Interest {
+    /// Represents a read operation.
+    Readable,
+    /// Represents a write operation.
+    Writable,
+}
+
+#[derive(Debug, Default)]
+struct FdQueue {
+    read_queue: VecDeque<usize>,
+    write_queue: VecDeque<usize>,
+}
+
+impl FdQueue {
+    pub fn push_interest(&mut self, user_data: usize, interest: Interest) {
+        match interest {
+            Interest::Readable => self.read_queue.push_back(user_data),
+            Interest::Writable => self.write_queue.push_back(user_data),
+        }
+    }
+
+    pub fn event(&self, key: usize) -> Event {
+        let mut event = Event::all(key);
+        event.readable = !self.read_queue.is_empty();
+        event.writable = !self.write_queue.is_empty();
+        event
+    }
+
+    pub fn pop_interest(&mut self, event: &Event) -> usize {
+        if event.readable {
+            if let Some(user_data) = self.read_queue.pop_front() {
+                return user_data;
+            }
+        }
+        if event.writable {
+            if let Some(user_data) = self.write_queue.pop_front() {
+                return user_data;
+            }
+        }
+        unreachable!("should receive event when no interest")
+    }
 }
 
 /// Low-level driver of polling.
 pub(crate) struct Driver {
     events: Events,
     poll: Poller,
+    registry: HashMap<RawFd, FdQueue>,
     cancelled: HashSet<usize>,
-    cancel_queue: VecDeque<usize>,
 }
 
 impl Driver {
@@ -86,25 +129,33 @@ impl Driver {
         Ok(Self {
             events,
             poll: Poller::new()?,
+            registry: HashMap::new(),
             cancelled: HashSet::new(),
-            cancel_queue: VecDeque::new(),
         })
     }
-}
 
-impl Driver {
-    fn submit(&mut self, user_data: usize, arg: WaitArg) -> io::Result<()> {
+    fn submit(&mut self, user_data: usize, arg: WaitArg) -> io::Result<bool> {
         if self.cancelled.remove(&user_data) {
-            self.cancel_queue.push_back(user_data);
+            Ok(false)
         } else {
-            let mut event = Event::none(user_data);
-            event.readable = arg.readable;
-            event.writable = arg.writable;
+            let need_add = !self.registry.contains_key(&arg.fd);
+            let queue = self
+                .registry
+                .get_mut(&arg.fd)
+                .expect("the fd should be attached");
+            queue.push_interest(user_data, arg.interest);
+            // We use fd as the key.
+            let event = queue.event(arg.fd as usize);
             unsafe {
-                self.poll.add(arg.fd, event)?;
+                if need_add {
+                    self.poll.add(arg.fd, event)?;
+                } else {
+                    let fd = BorrowedFd::borrow_raw(arg.fd);
+                    self.poll.modify(fd, event)?;
+                }
             }
+            Ok(true)
         }
-        Ok(())
     }
 
     /// Register all operations in the squeue to polling.
@@ -119,7 +170,11 @@ impl Driver {
             let op = registry[user_data].as_pin();
             match op.pre_submit() {
                 Ok(Decision::Wait(arg)) => {
-                    self.submit(user_data, arg)?;
+                    let succeeded = self.submit(user_data, arg)?;
+                    if !succeeded {
+                        entries.extend(Some(entry_cancelled(user_data)));
+                        extended = true;
+                    }
                 }
                 Ok(Decision::Completed(res)) => {
                     entries.extend(Some(Entry::new(user_data, Ok(res))));
@@ -148,36 +203,35 @@ impl Driver {
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
         }
         for event in self.events.iter() {
-            if self.cancelled.remove(&event.key) {
-                self.cancel_queue.push_back(event.key);
+            let fd = event.key as RawFd;
+            let queue = self
+                .registry
+                .get_mut(&fd)
+                .expect("the fd should be attached");
+            let user_data = queue.pop_interest(&event);
+            let renew_event = queue.event(fd as _);
+            unsafe {
+                let fd = BorrowedFd::borrow_raw(fd);
+                self.poll.modify(fd, renew_event)?;
+            }
+            if self.cancelled.remove(&user_data) {
+                entries.extend(Some(entry_cancelled(user_data)));
             } else {
-                let op = registry[event.key].as_pin();
+                let op = registry[user_data].as_pin();
                 let res = match op.on_event(&event) {
                     Ok(ControlFlow::Continue(_)) => continue,
                     Ok(ControlFlow::Break(res)) => Ok(res),
                     Err(err) => Err(err),
                 };
-                let entry = Entry::new(event.key, res);
+                let entry = Entry::new(user_data, res);
                 entries.extend(Some(entry));
             }
         }
         Ok(())
     }
 
-    fn poll_cancel(&mut self, entries: &mut impl Extend<Entry>) -> bool {
-        let has_cancel = !self.cancel_queue.is_empty();
-        if has_cancel {
-            entries.extend(self.cancel_queue.drain(..).map(|user_data| {
-                Entry::new(
-                    user_data,
-                    Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)),
-                )
-            }))
-        }
-        has_cancel
-    }
-
-    pub fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
+    pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
+        self.registry.entry(fd).or_default();
         Ok(())
     }
 
@@ -192,8 +246,7 @@ impl Driver {
         entries: &mut impl Extend<Entry>,
         registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
-        let mut extended = self.submit_squeue(ops, entries, registry)?;
-        extended |= self.poll_cancel(entries);
+        let extended = self.submit_squeue(ops, entries, registry)?;
         if !extended {
             self.poll_impl(timeout, entries, registry)?;
         }
@@ -205,4 +258,22 @@ impl AsRawFd for Driver {
     fn as_raw_fd(&self) -> RawFd {
         self.poll.as_raw_fd()
     }
+}
+
+impl Drop for Driver {
+    fn drop(&mut self) {
+        for fd in self.registry.keys() {
+            unsafe {
+                let fd = BorrowedFd::borrow_raw(*fd);
+                self.poll.delete(fd).ok();
+            }
+        }
+    }
+}
+
+fn entry_cancelled(user_data: usize) -> Entry {
+    Entry::new(
+        user_data,
+        Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)),
+    )
 }

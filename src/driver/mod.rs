@@ -118,7 +118,8 @@ impl Proactor {
     ///   attached to one driver, and could only be attached once, even if you
     ///   `try_clone` it. It will cause unexpected result to attach the handle
     ///   with one driver and push an op to another driver.
-    /// * io-uring/polling: it will do nothing and return `Ok(())`
+    /// * io-uring: it will do nothing and return `Ok(())`.
+    /// * polling: it will initialize the internal interest queue for the fd.
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
         self.driver.attach(fd)
     }
