@@ -70,7 +70,8 @@ windows-sys = { version = "0.48", features = ["Win32_Security_Authorization"] }
 
 # Linux specific dependencies
 [target.'cfg(target_os = "linux")'.dependencies]
-io-uring = "0.6"
+io-uring = { version = "0.6", optional = true }
+polling = { version = "3", optional = true }
 libc = "0.2"
 
 # Other platform dependencies
@@ -79,7 +80,7 @@ polling = "3"
 libc = "0.2"
 
 [features]
-default = ["runtime"]
+default = ["runtime", "io-uring"]
 runtime = ["dep:async-task", "dep:futures-util", "dep:smallvec"]
 event = ["runtime", "arrayvec"]
 signal = ["event"]

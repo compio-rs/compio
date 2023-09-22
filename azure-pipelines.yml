@@ -20,7 +20,7 @@ jobs:
       - script: |
           rustup toolchain install nightly
           rustup +nightly target install $(target)
-          cargo +nightly test --features=all,nightly --no-default-features --target $(target) -Z doctest-xcompile
+          cargo +nightly test --features=all,nightly --target $(target) -Z doctest-xcompile
         displayName: TestNightly
       - script: |
           cargo test --features all --target $(target)
@@ -39,11 +39,19 @@ jobs:
     steps:
       - script: |
           rustup toolchain install nightly
-          cargo +nightly test --features all,nightly --no-default-features
+          cargo +nightly test --features all,nightly
         displayName: TestNightly
       - script: |
           cargo test --features all
         displayName: TestStable
+
+      - script: |
+          rustup toolchain install nightly
+          cargo +nightly test --features all,polling,nightly --no-default-features
+        displayName: TestNightly-polling
+      - script: |
+          cargo test --features all,polling --no-default-features
+        displayName: TestStable-polling
 
   - job: Test_Mac
     strategy:
@@ -58,7 +66,7 @@ jobs:
     steps:
       - script: |
           rustup toolchain install nightly
-          cargo +nightly test --features all,nightly --no-default-features
+          cargo +nightly test --features all,nightly
         displayName: TestNightly
       - script: |
           cargo test --features all
