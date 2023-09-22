@@ -37,3 +37,22 @@ fn timeout() {
         .unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::TimedOut);
 }
+
+#[test]
+fn register_multiple() {
+    const TASK_LEN: usize = 5;
+
+    let mut driver = Proactor::new().unwrap();
+
+    let file = File::open("Cargo.toml").unwrap();
+    driver.attach(file.as_raw_fd()).unwrap();
+
+    for _i in 0..TASK_LEN {
+        driver.push(ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(1024)));
+    }
+
+    let mut entries = ArrayVec::<Entry, TASK_LEN>::new();
+    while entries.len() < TASK_LEN {
+        driver.poll(None, &mut entries).unwrap();
+    }
+}
