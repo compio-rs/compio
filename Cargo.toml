@@ -1,6 +1,6 @@
 [package]
 name = "compio"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 authors = ["Berrysoft <Strawberry_Str@hotmail.com>"]
 readme = "README.md"
