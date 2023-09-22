@@ -139,10 +139,7 @@ impl Driver {
             Ok(false)
         } else {
             let need_add = !self.registry.contains_key(&arg.fd);
-            let queue = self
-                .registry
-                .get_mut(&arg.fd)
-                .expect("the fd should be attached");
+            let queue = self.registry.entry(arg.fd).or_default();
             queue.push_interest(user_data, arg.interest);
             // We use fd as the key.
             let event = queue.event(arg.fd as usize);
@@ -230,8 +227,7 @@ impl Driver {
         Ok(())
     }
 
-    pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
-        self.registry.entry(fd).or_default();
+    pub fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
         Ok(())
     }
 
