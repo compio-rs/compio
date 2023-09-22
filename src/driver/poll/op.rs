@@ -1,4 +1,4 @@
-use std::{io, ops::ControlFlow, pin::Pin};
+use std::{io, pin::Pin, task::Poll};
 
 use polling::Event;
 
@@ -30,7 +30,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
         }
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
         let fd = self.fd;
@@ -66,7 +66,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
         }
     }
 
-    fn on_event(self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.writable);
 
         let slice = self.buffer.as_slice();
@@ -87,7 +87,7 @@ impl OpCode for Sync {
         Ok(Decision::Completed(syscall!(fsync(self.fd))? as _))
     }
 
-    fn on_event(self: Pin<&mut Self>, _: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
         unreachable!("Sync operation should not be submitted to polling")
     }
 }
@@ -103,18 +103,16 @@ impl OpCode for Accept {
         )
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
-        match syscall!(accept(
-            self.fd,
-            &mut self.buffer as *mut _ as *mut _,
-            &mut self.addr_len
-        )) {
-            Ok(fd) => Ok(ControlFlow::Break(fd as _)),
-            Err(e) if e.raw_os_error() == Some(libc::EINPROGRESS) => Ok(ControlFlow::Continue(())),
-            Err(e) => Err(e),
-        }
+        syscall!(
+            break accept(
+                self.fd,
+                &mut self.buffer as *mut _ as *mut _,
+                &mut self.addr_len
+            )
+        )
     }
 }
 
@@ -125,7 +123,7 @@ impl OpCode for Connect {
         )
     }
 
-    fn on_event(self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.writable);
 
         let mut err: libc::c_int = 0;
@@ -139,11 +137,12 @@ impl OpCode for Connect {
             &mut err_len
         ))?;
 
-        if err == 0 {
-            Ok(ControlFlow::Break(0))
+        let res = if err == 0 {
+            Ok(0)
         } else {
             Err(io::Error::from_raw_os_error(err))
-        }
+        };
+        Poll::Ready(res)
     }
 }
 
@@ -152,7 +151,7 @@ impl<T: AsIoSlicesMut + Unpin> OpCode for RecvImpl<T> {
         Ok(Decision::wait_readable(self.fd))
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
         self.slices = unsafe { self.buffer.as_io_slices_mut() };
@@ -165,7 +164,7 @@ impl<T: AsIoSlices + Unpin> OpCode for SendImpl<T> {
         Ok(Decision::wait_writable(self.fd))
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.writable);
 
         self.slices = unsafe { self.buffer.as_io_slices() };
@@ -179,7 +178,7 @@ impl<T: AsIoSlicesMut + Unpin> OpCode for RecvFromImpl<T> {
         syscall!(recvmsg(self.fd, &mut self.msg, 0) or wait_readable(self.fd))
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
         syscall!(break recvmsg(self.fd, &mut self.msg, 0))
@@ -192,7 +191,7 @@ impl<T: AsIoSlices + Unpin> OpCode for SendToImpl<T> {
         syscall!(sendmsg(self.fd, &self.msg, 0) or wait_writable(self.fd))
     }
 
-    fn on_event(self: Pin<&mut Self>, event: &Event) -> std::io::Result<ControlFlow<usize>> {
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.writable);
 
         syscall!(break sendmsg(self.fd, &self.msg, 0))

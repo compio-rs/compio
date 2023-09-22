@@ -4,9 +4,9 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     io,
     num::NonZeroUsize,
-    ops::ControlFlow,
     os::fd::BorrowedFd,
     pin::Pin,
+    task::Poll,
     time::Duration,
 };
 
@@ -27,7 +27,7 @@ pub trait OpCode {
 
     /// Perform the operation after received corresponding
     /// event.
-    fn on_event(self: Pin<&mut Self>, event: &Event) -> io::Result<ControlFlow<usize>>;
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>>;
 }
 
 /// Result of [`OpCode::pre_submit`].
@@ -218,13 +218,12 @@ impl Driver {
             } else {
                 let op = registry[user_data].as_pin();
                 let res = match op.on_event(&event) {
-                    Ok(ControlFlow::Continue(_)) => {
+                    Poll::Pending => {
                         // The operation should go back to the front.
                         queue.push_front_interest(user_data, interest);
                         None
                     }
-                    Ok(ControlFlow::Break(res)) => Some(Ok(res)),
-                    Err(err) => Some(Err(err)),
+                    Poll::Ready(res) => Some(res),
                 };
                 if let Some(res) = res {
                     let entry = Entry::new(user_data, res);

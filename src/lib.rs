@@ -125,16 +125,18 @@ macro_rules! syscall {
     }};
     // The below branches are used by polling driver.
     (break $fn: ident ( $($arg: expr),* $(,)* )) => {
-        $crate::syscall!( $fn ( $($arg, )* )).map(
-            |res| ::std::ops::ControlFlow::Break(res as usize)
-        )
+        match $crate::syscall!( $fn ( $($arg, )* )) {
+            Ok(fd) => ::std::task::Poll::Ready(Ok(fd as usize)),
+            Err(e) if e.kind() == ::std::io::ErrorKind::WouldBlock || e.raw_os_error() == Some(::libc::EINPROGRESS)
+                   => ::std::task::Poll::Pending,
+            Err(e) => ::std::task::Poll::Ready(Err(e)),
+        }
     };
     ($fn: ident ( $($arg: expr),* $(,)* ) or $f:ident($fd:expr)) => {
-        match $crate::syscall!( $fn ( $($arg, )* )) {
-            Ok(fd) => Ok($crate::driver::Decision::Completed(fd as usize)),
-            Err(e) if e.kind() == ::std::io::ErrorKind::WouldBlock || e.raw_os_error() == Some(::libc::EINPROGRESS)
-                   => Ok($crate::driver::Decision::$f($fd)),
-            Err(e) => Err(e),
+        match $crate::syscall!( break $fn ( $($arg, )* )) {
+            ::std::task::Poll::Pending => Ok($crate::driver::Decision::$f($fd)),
+            ::std::task::Poll::Ready(Ok(res)) => Ok($crate::driver::Decision::Completed(res)),
+            ::std::task::Poll::Ready(Err(e)) => Err(e),
         }
     };
 }
