@@ -1,5 +1,5 @@
 //!
-#![doc = include_str!("../README.md")]
+#![doc = include_str!("../../README.md")]
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
 #![cfg_attr(feature = "lazy_cell", feature(lazy_cell))]
 #![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
