@@ -21,6 +21,38 @@ pub use unix::*;
 
 use crate::BufResult;
 
+#[cfg(target_os = "windows")]
+fn init() {
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+
+    INIT.call_once(|| {
+        // Initialize winsock through the standard library by just creating a
+        // dummy socket. Whether this is successful or not we drop the result as
+        // libstd will be sure to have initialized winsock.
+        let _ = std::net::UdpSocket::bind("127.0.0.1:34254");
+    });
+}
+
+#[cfg(target_os = "windows")]
+pub async fn resolve_sock_addrs(host: impl AsRef<str>, port: u16) -> io::Result<Vec<SockAddr>> {
+    // We need to call `init` because this method may be called before any socket
+    // created.
+    init();
+
+    let host = widestring::U16CString::from_str(host)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let op = crate::op::ResolveSockAddrs::new(host, port);
+    let (res, op) = crate::task::submit(op).await;
+    res.map(|_| op.sock_addrs())
+}
+
+#[cfg(unix)]
+pub async fn resolve_sock_addrs(host: impl AsRef<str>, port: u16) -> io::Result<Vec<SockAddr>> {
+    ToSockAddrs::to_sock_addrs(&(host.as_ref(), port)).map(|iter| iter.collect())
+}
+
 /// A trait for objects which can be converted or resolved to one or more
 /// [`SockAddr`] values.
 ///

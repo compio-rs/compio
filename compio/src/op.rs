@@ -5,9 +5,9 @@
 
 use socket2::SockAddr;
 
-#[cfg(target_os = "windows")]
-pub use crate::driver::op::ConnectNamedPipe;
 pub use crate::driver::op::{Accept, RecvFromImpl, RecvImpl, SendImpl, SendToImpl};
+#[cfg(target_os = "windows")]
+pub use crate::driver::op::{ConnectNamedPipe, ResolveSockAddrs};
 use crate::{
     buf::{AsIoSlicesMut, BufWrapper, IntoInner, IoBuf, IoBufMut, VectoredBufWrapper, WrapBuf},
     driver::{sockaddr_storage, socklen_t, RawFd},

@@ -2,6 +2,7 @@
 use std::sync::OnceLock;
 use std::{
     io,
+    mem::MaybeUninit,
     pin::Pin,
     ptr::{null, null_mut},
     task::Poll,
@@ -10,19 +11,21 @@ use std::{
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 use socket2::SockAddr;
+use widestring::U16CString;
 use windows_sys::{
     core::GUID,
     Win32::{
         Foundation::{
             GetLastError, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_IO_PENDING, ERROR_NOT_FOUND,
-            ERROR_NO_DATA, ERROR_PIPE_CONNECTED,
+            ERROR_NO_DATA, ERROR_PIPE_CONNECTED, HANDLE,
         },
         Networking::WinSock::{
-            setsockopt, socklen_t, WSAIoctl, WSARecv, WSARecvFrom, WSASend, WSASendTo,
-            LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS,
-            SIO_GET_EXTENSION_FUNCTION_POINTER, SOCKADDR, SOCKADDR_STORAGE, SOL_SOCKET,
-            SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, WSAID_ACCEPTEX, WSAID_CONNECTEX,
-            WSAID_GETACCEPTEXSOCKADDRS,
+            setsockopt, socklen_t, FreeAddrInfoExW, GetAddrInfoExCancel, GetAddrInfoExW, WSAIoctl,
+            WSARecv, WSARecvFrom, WSASend, WSASendTo, ADDRINFOEXW, AF_UNSPEC, IPPROTO_TCP,
+            LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS, NS_ALL,
+            SIO_GET_EXTENSION_FUNCTION_POINTER, SOCKADDR, SOCKADDR_STORAGE, SOCK_STREAM,
+            SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, WSAID_ACCEPTEX,
+            WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS,
         },
         Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile},
         System::{
@@ -526,5 +529,88 @@ impl OpCode for ConnectNamedPipe {
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd, optr)
+    }
+}
+
+pub struct ResolveSockAddrs {
+    pub(crate) host: U16CString,
+    pub(crate) port: u16,
+    result: *mut ADDRINFOEXW,
+    handle: HANDLE,
+}
+
+impl ResolveSockAddrs {
+    pub fn new(host: impl Into<U16CString>, port: u16) -> Self {
+        Self {
+            host: host.into(),
+            port,
+            result: null_mut(),
+            handle: 0,
+        }
+    }
+
+    pub fn sock_addrs(&self) -> Vec<SockAddr> {
+        let mut addrs = vec![];
+        let mut result = self.result;
+        while let Some(info) = unsafe { result.as_ref() } {
+            unsafe {
+                let mut buffer = MaybeUninit::<SOCKADDR_STORAGE>::zeroed();
+                std::slice::from_raw_parts_mut::<u8>(buffer.as_mut_ptr().cast(), info.ai_addrlen)
+                    .copy_from_slice(std::slice::from_raw_parts::<u8>(
+                        info.ai_addr.cast(),
+                        info.ai_addrlen,
+                    ));
+                let buffer = buffer.assume_init();
+                let addr = SockAddr::new(buffer, info.ai_addrlen as _);
+                let addr = if let Some(mut addr) = addr.as_socket() {
+                    addr.set_port(self.port);
+                    SockAddr::from(addr)
+                } else {
+                    addr
+                };
+                addrs.push(addr);
+            }
+            result = info.ai_next;
+        }
+        addrs
+    }
+}
+
+impl OpCode for ResolveSockAddrs {
+    unsafe fn operate(mut self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let mut hints: ADDRINFOEXW = std::mem::zeroed();
+        hints.ai_family = AF_UNSPEC as _;
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_protocol = IPPROTO_TCP;
+        let res = GetAddrInfoExW(
+            self.host.as_ptr(),
+            null(),
+            NS_ALL,
+            null(),
+            &hints,
+            &mut self.result,
+            null(),
+            optr,
+            None,
+            &mut self.handle,
+        );
+        winsock_result(res, 0)
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
+        let res = GetAddrInfoExCancel(&self.handle);
+        if res != 0 {
+            Err(io::Error::from_raw_os_error(res))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Drop for ResolveSockAddrs {
+    fn drop(&mut self) {
+        if !self.result.is_null() {
+            unsafe { FreeAddrInfoExW(self.result) }
+        }
     }
 }
