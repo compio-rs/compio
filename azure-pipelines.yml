@@ -87,5 +87,5 @@ jobs:
     steps:
       - script: |
           rustup toolchain install nightly
-          cargo +nightly doc --workspace-features --no-deps
+          cargo +nightly doc --workspace --all-features --no-deps
         displayName: Build docs

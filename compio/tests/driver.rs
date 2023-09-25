@@ -1,7 +1,7 @@
 use std::{io, time::Duration};
 
-use arrayvec::ArrayVec;
 use compio::{
+    buf::arrayvec::ArrayVec,
     driver::{AsRawFd, Entry, Proactor},
     fs::File,
     op::ReadAt,

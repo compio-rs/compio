@@ -38,9 +38,8 @@ cfg_if::cfg_if! {
 /// ```
 /// use std::{mem::MaybeUninit, net::SocketAddr};
 ///
-/// use arrayvec::ArrayVec;
 /// use compio::{
-///     buf::IntoInner,
+///     buf::{arrayvec::ArrayVec, IntoInner},
 ///     driver::{AsRawFd, Entry, Proactor},
 ///     net::UdpSocket,
 ///     op,

@@ -29,7 +29,7 @@ use windows_sys::Win32::{
 };
 
 #[cfg(feature = "runtime")]
-use crate::{buf::*, op::ConnectNamedPipe, task::submit, *};
+use crate::{buf::*, op::ConnectNamedPipe, task::submit};
 use crate::{
     driver::{AsRawFd, FromRawFd, RawFd},
     fs::File,
