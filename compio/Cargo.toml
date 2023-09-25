@@ -28,16 +28,19 @@ targets = [
 
 # Shared dependencies for all platforms
 [dependencies]
-arrayvec = { version = "0.7", optional = true }
-async-task = { version = "4", optional = true }
-bytes = { version = "1", optional = true }
+# Workspace dependencies
+compio-buf = { path = "../compio-buf" }
+
+# Utils
 cfg-if = "1"
-futures-util = { version = "0.3", optional = true }
-# may be excluded from linking if the unstable equivalent is used
-once_cell = "1"
+once_cell = "1" # may be excluded from linking if the unstable equivalent is used
 slab = "0.4"
-smallvec = { version = "1", optional = true }
 socket2 = { version = ">=0.5.4", features = ["all"] }
+
+# Runtime dependencies for all platforms
+smallvec = { version = "1", optional = true }
+async-task = { version = "4", optional = true }
+futures-util = { version = "0.3", optional = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
@@ -81,16 +84,18 @@ libc = "0.2"
 
 [features]
 default = ["runtime", "io-uring"]
+io-uring = ["dep:io-uring"]
 runtime = ["dep:async-task", "dep:futures-util", "dep:smallvec"]
-event = ["runtime", "arrayvec"]
+event = ["runtime", "compio-buf/arrayvec"]
 signal = ["event"]
 time = ["runtime"]
 all = ["time", "signal"]
 
-allocator_api = ["bumpalo/allocator_api"]
+# Nightly features
+allocator_api = ["bumpalo/allocator_api", "compio-buf/allocator_api"]
 lazy_cell = []
 once_cell_try = []
-read_buf = []
+read_buf = ["compio-buf/read_buf"]
 nightly = ["allocator_api", "lazy_cell", "once_cell_try", "read_buf"]
 
 [[example]]

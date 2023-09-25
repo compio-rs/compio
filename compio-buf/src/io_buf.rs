@@ -2,18 +2,19 @@
 use std::alloc::Allocator;
 use std::mem::MaybeUninit;
 
-use crate::{buf::*, vec_alloc};
+use crate::*;
 
-/// An IOCP compatible buffer.
+/// A trait for buffers.
 ///
 /// The `IoBuf` trait is implemented by buffer types that can be passed to
-/// IOCP operations. Users will not need to use this trait directly.
+/// compio operations. Users will not need to use this trait directly.
 ///
 /// # Safety
 ///
-/// Buffers passed to IOCP operations must reference a stable memory
-/// region. While the runtime holds ownership to a buffer, the pointer returned
-/// by `as_buf_ptr` must remain valid even if the `IoBuf` value is moved.
+/// Buffers passed to compio operations must refer to a stable memory region.
+/// While the runtime holds ownership to a buffer, the pointer returned
+/// by `as_buf_ptr` must remain valid even if the `IoBuf` value is moved, i.e.,
+/// the type implementing `IoBuf` should point to somewhere else.
 pub unsafe trait IoBuf: 'static {
     /// Returns a raw pointer to the vector’s buffer.
     ///
@@ -229,14 +230,14 @@ unsafe impl<const N: usize> IoBuf for arrayvec::ArrayVec<u8, N> {
     }
 }
 
-/// A mutable IOCP compatible buffer.
+/// A mutable compio compatible buffer.
 ///
 /// The `IoBufMut` trait is implemented by buffer types that can be passed to
-/// IOCP operations. Users will not need to use this trait directly.
+/// compio operations. Users will not need to use this trait directly.
 ///
 /// # Safety
 ///
-/// Buffers passed to IOCP operations must reference a stable memory
+/// Buffers passed to compio operations must reference a stable memory
 /// region. While the runtime holds ownership to a buffer, the pointer returned
 /// by `as_buf_mut_ptr` must remain valid even if the `IoBufMut` value is moved.
 pub unsafe trait IoBufMut: IoBuf {

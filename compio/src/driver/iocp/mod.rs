@@ -12,7 +12,6 @@ use std::{
     time::Duration,
 };
 
-use arrayvec::ArrayVec;
 use slab::Slab;
 use windows_sys::Win32::{
     Foundation::{
@@ -30,7 +29,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{driver::Entry, syscall};
+use crate::{buf::arrayvec::ArrayVec, driver::Entry, syscall};
 
 pub(crate) mod op;
 

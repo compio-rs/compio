@@ -4,12 +4,12 @@ use std::{fs::Metadata, io, path::Path};
 
 #[cfg(feature = "runtime")]
 use crate::{
-    buf::{IntoInner, IoBuf, IoBufMut},
+    buf::{vec_alloc, IntoInner, IoBuf, IoBufMut},
     buf_try,
     driver::AsRawFd,
     op::{BufResultExt, ReadAt, Sync, WriteAt},
     task::submit,
-    vec_alloc, Attacher, BufResult,
+    Attacher, BufResult,
 };
 use crate::{fs::OpenOptions, impl_raw_fd};
 
@@ -262,10 +262,11 @@ impl File {
         let mut total_written = 0;
         let mut written;
         while total_written < buf_len {
-            (written, buffer) = buf_try!(self
-                .write_at(buffer.slice(total_written..), pos + total_written)
-                .await
-                .into_inner());
+            (written, buffer) = buf_try!(
+                self.write_at(buffer.slice(total_written..), pos + total_written)
+                    .await
+                    .into_inner()
+            );
             total_written += written;
         }
         (Ok(total_written), buffer)

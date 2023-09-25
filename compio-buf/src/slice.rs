@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::buf::*;
+use crate::*;
 
 /// An owned view into a contiguous sequence of bytes.
 ///
@@ -38,7 +38,7 @@ impl<T> Slice<T> {
         self.begin
     }
 
-    /// Ofset in the underlying buffer at which this slice ends.
+    /// Offset in the underlying buffer at which this slice ends.
     pub fn end(&self) -> usize {
         self.end
     }
