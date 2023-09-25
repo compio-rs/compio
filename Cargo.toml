@@ -1,7 +1,6 @@
 [workspace]
 members = [
   "compio",
-  "compio-buf",
-  #
+  "compio-buf"
 ]
 resolver = "2"

@@ -37,6 +37,7 @@ pub trait IntoInner {
 
 #[cfg(not(feature = "allocator_api"))]
 #[macro_export]
+#[doc(hidden)]
 macro_rules! vec_alloc {
     ($t:ident, $a:ident) => {
         Vec<$t>
@@ -45,6 +46,7 @@ macro_rules! vec_alloc {
 
 #[cfg(feature = "allocator_api")]
 #[macro_export]
+#[doc(hidden)]
 macro_rules! vec_alloc {
     ($t:ident, $a:ident) => {
         Vec<$t, $a>
