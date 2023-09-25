@@ -14,6 +14,7 @@ arrayvec = ["dep:arrayvec"]
 bumpalo = ["dep:bumpalo"]
 bytes = ["dep:bytes"]
 
-# Unstable features
+# Nightly features
 allocator_api = ["bumpalo/allocator_api"]
 read_buf = []
+nightly = ["allocator_api", "read_buf"]

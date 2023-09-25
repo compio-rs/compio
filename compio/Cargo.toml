@@ -91,10 +91,11 @@ signal = ["event"]
 time = ["runtime"]
 all = ["time", "signal"]
 
-allocator_api = ["bumpalo/allocator_api"]
+# Nightly features
+allocator_api = ["bumpalo/allocator_api", "compio-buf/allocator_api"]
 lazy_cell = []
 once_cell_try = []
-read_buf = []
+read_buf = ["compio-buf/read_buf"]
 nightly = ["allocator_api", "lazy_cell", "once_cell_try", "read_buf"]
 
 [[example]]
