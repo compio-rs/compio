@@ -29,7 +29,7 @@ targets = [
 # Shared dependencies for all platforms
 [dependencies]
 # Workspace dependencies
-compio-buf = { path = "../compio-buf" }
+compio-buf = { workspace = true }
 
 # Utils
 cfg-if = "1"
@@ -47,13 +47,14 @@ futures-util = { version = "0.3", optional = true }
 bumpalo = "3"
 criterion = { version = "0.5", features = ["async_tokio"] }
 futures-channel = "0.3"
+compio-buf = { workspace = true, features = ["arrayvec"] }
 arrayvec = "0.7"
 tempfile = "3"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt"] }
 
 # Windows specific dependencies
 [target.'cfg(target_os = "windows")'.dependencies]
-arrayvec = "0.7"
+compio-buf = { workspace = true, features = ["arrayvec"] }
 widestring = "1"
 windows-sys = { version = "0.48", features = [
     "Win32_Foundation",

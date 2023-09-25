@@ -4,3 +4,6 @@ members = [
     "compio-buf"
 ]
 resolver = "2"
+
+[workspace.dependencies]
+compio-buf = { path = "./compio-buf" }
