@@ -1,0 +1,19 @@
+[package]
+name = "compio-buf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bumpalo = { version = "3", optional = true }
+arrayvec = { version = "0.7", optional = true }
+bytes = { version = "1", optional = true }
+
+[features]
+# Dependencies
+arrayvec = ["dep:arrayvec"]
+bumpalo = ["dep:bumpalo"]
+bytes = ["dep:bytes"]
+
+# Unstable features
+allocator_api = ["bumpalo/allocator_api"]
+read_buf = []

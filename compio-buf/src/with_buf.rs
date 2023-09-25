@@ -3,13 +3,17 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use crate::buf::IntoInner;
+use crate::IntoInner;
 
+/// Wrap the given inner buffer with `Self`.
 pub trait WrapBuf: IntoInner {
     fn new(buffer: Self::Inner) -> Self;
 }
 
 pub trait WrapBufMut {
+    /// # Safety
+    ///
+    /// The caller must ensure that the buffer len is initialized.
     unsafe fn set_init(&mut self, len: usize);
 }
 
@@ -17,7 +21,7 @@ pub trait AsIoSlices: WrapBuf {
     /// # Safety
     ///
     /// The return slice will not live longer than self.
-    /// It is static to provide convience from writing self-referenced
+    /// It is static to provide convenience from writing self-referenced
     /// structure.
     unsafe fn as_io_slices(&self) -> OneOrVec<IoSlice<'static>>;
 }
@@ -26,7 +30,7 @@ pub trait AsIoSlicesMut: WrapBufMut + AsIoSlices {
     /// # Safety
     ///
     /// The return slice will not live longer than self.
-    /// It is static to provide convience from writing self-referenced
+    /// It is static to provide convenience from writing self-referenced
     /// structure.
     unsafe fn as_io_slices_mut(&mut self) -> OneOrVec<IoSliceMut<'static>>;
 }

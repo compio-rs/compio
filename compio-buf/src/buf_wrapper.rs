@@ -3,7 +3,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use crate::buf::*;
+use crate::*;
 
 #[derive(Debug)]
 pub struct BufWrapper<T> {
