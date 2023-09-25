@@ -1,5 +1,5 @@
 use compio::{
-    buf::{arrayvec::Arrayvec, IntoInner},
+    buf::{arrayvec::ArrayVec, IntoInner},
     driver::{AsRawFd, Entry, Proactor},
     op::ReadAt,
 };

@@ -54,7 +54,7 @@ pub unsafe trait IoBuf: 'static {
     /// # Examples
     ///
     /// ```
-    /// use compio::buf::IoBuf;
+    /// use compio_buf::IoBuf;
     ///
     /// let buf = b"hello world";
     /// buf.slice(5..10);
