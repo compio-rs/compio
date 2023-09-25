@@ -3,9 +3,7 @@ use std::{
     os::fd::{AsRawFd, FromRawFd, OwnedFd},
 };
 
-use arrayvec::ArrayVec;
-
-use crate::{impl_raw_fd, op::Recv, syscall, task::submit};
+use crate::{buf::arrayvec::ArrayVec, impl_raw_fd, op::Recv, syscall, task::submit};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
