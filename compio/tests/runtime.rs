@@ -97,7 +97,7 @@ fn drop_on_complete() {
         }
     }
 
-    unsafe impl SetBufInit for MyBuf {
+    impl SetBufInit for MyBuf {
         unsafe fn set_buf_init(&mut self, pos: usize) {
             self.data.set_buf_init(pos);
         }

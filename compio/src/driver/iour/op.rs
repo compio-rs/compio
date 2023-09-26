@@ -107,7 +107,6 @@ impl<T: IoBuf> OpCode for SendVectored<T> {
     }
 }
 
-/// Receive data and source address.
 struct RecvFromImpl<T> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
@@ -147,12 +146,14 @@ impl<T> IntoInner for RecvFromImpl<T> {
     }
 }
 
+/// Receive data and source address.
 pub struct RecvFrom<T: IoBufMut> {
     base: RecvFromImpl<T>,
     slice: [IoSliceMut<'static>; 1],
 }
 
 impl<T: IoBufMut> RecvFrom<T> {
+    /// Create [`RecvFrom`].
     pub fn new(fd: RawFd, buffer: T) -> Self {
         Self {
             base: RecvFromImpl::new(fd, buffer),
@@ -177,12 +178,14 @@ impl<T: IoBufMut> IntoInner for RecvFrom<T> {
     }
 }
 
+/// Receive data and source address into vectored buffer.
 pub struct RecvFromVectored<T: IoBufMut> {
     base: RecvFromImpl<Vec<T>>,
     slice: Vec<IoSliceMut<'static>>,
 }
 
 impl<T: IoBufMut> RecvFromVectored<T> {
+    /// Create [`RecvFromVectored`].
     pub fn new(fd: RawFd, buffer: Vec<T>) -> Self {
         Self {
             base: RecvFromImpl::new(fd, buffer),
@@ -207,7 +210,6 @@ impl<T: IoBufMut> IntoInner for RecvFromVectored<T> {
     }
 }
 
-/// Send data to specified address.
 struct SendToImpl<T> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
@@ -247,12 +249,14 @@ impl<T> IntoInner for SendToImpl<T> {
     }
 }
 
+/// Send data to specified address.
 pub struct SendTo<T: IoBuf> {
     base: SendToImpl<T>,
     slice: [IoSlice<'static>; 1],
 }
 
 impl<T: IoBuf> SendTo<T> {
+    /// Create [`SendTo`].
     pub fn new(fd: RawFd, buffer: T, addr: SockAddr) -> Self {
         Self {
             base: SendToImpl::new(fd, buffer, addr),
@@ -277,12 +281,14 @@ impl<T: IoBuf> IntoInner for SendTo<T> {
     }
 }
 
+/// Send data to specified address from vectored buffer.
 pub struct SendToVectored<T: IoBuf> {
     base: SendToImpl<Vec<T>>,
     slice: Vec<IoSlice<'static>>,
 }
 
 impl<T: IoBuf> SendToVectored<T> {
+    /// Create [`SendToVectored`].
     pub fn new(fd: RawFd, buffer: Vec<T>, addr: SockAddr) -> Self {
         Self {
             base: SendToImpl::new(fd, buffer, addr),

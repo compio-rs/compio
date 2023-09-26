@@ -1,5 +1,6 @@
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
 #![cfg_attr(feature = "read_buf", feature(read_buf))]
+#![warn(missing_docs)]
 
 //! Utilities for working with buffers.
 //!

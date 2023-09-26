@@ -52,6 +52,7 @@ impl<T: IoBufMut> IntoInner for Recv<T> {
     }
 }
 
+/// Receive data from remote into vectored buffer.
 pub struct RecvVectored<T: IoBufMut> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: Vec<T>,
@@ -59,6 +60,7 @@ pub struct RecvVectored<T: IoBufMut> {
 }
 
 impl<T: IoBufMut> RecvVectored<T> {
+    /// Create [`RecvVectored`].
     pub fn new(fd: RawFd, buffer: Vec<T>) -> Self {
         Self {
             fd,
@@ -97,7 +99,7 @@ impl<T: IoBuf> IntoInner for Send<T> {
     }
 }
 
-/// Send data to remote.
+/// Send data to remote from vectored buffer.
 pub struct SendVectored<T: IoBuf> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: Vec<T>,

@@ -104,7 +104,7 @@ unsafe impl<T: IoBufMut> IoBufMut for Slice<T> {
     }
 }
 
-unsafe impl<T: SetBufInit> SetBufInit for Slice<T> {
+impl<T: SetBufInit> SetBufInit for Slice<T> {
     unsafe fn set_buf_init(&mut self, len: usize) {
         self.buffer.set_buf_init(len)
     }

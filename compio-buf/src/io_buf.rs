@@ -311,7 +311,8 @@ unsafe impl<const N: usize> IoBufMut for arrayvec::ArrayVec<u8, N> {
     }
 }
 
-pub unsafe trait SetBufInit {
+/// A helper trait for `set_len` like methods.
+pub trait SetBufInit {
     /// Updates the number of initialized bytes.
     ///
     /// The specified `len` plus [`IoBuf::buf_len`] becomes the new value
@@ -323,7 +324,7 @@ pub unsafe trait SetBufInit {
     unsafe fn set_buf_init(&mut self, len: usize);
 }
 
-unsafe impl<T: IoBuf + SetBufInit> SetBufInit for Vec<T> {
+impl<T: IoBuf + SetBufInit> SetBufInit for Vec<T> {
     unsafe fn set_buf_init(&mut self, mut len: usize) {
         for buf in self {
             let capacity = buf.buf_capacity();
@@ -338,7 +339,7 @@ unsafe impl<T: IoBuf + SetBufInit> SetBufInit for Vec<T> {
     }
 }
 
-unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> SetBufInit
+impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> SetBufInit
     for vec_alloc!(u8, A)
 {
     unsafe fn set_buf_init(&mut self, len: usize) {
@@ -347,21 +348,21 @@ unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> Se
 }
 
 #[cfg(feature = "bytes")]
-unsafe impl SetBufInit for bytes::BytesMut {
+impl SetBufInit for bytes::BytesMut {
     unsafe fn set_buf_init(&mut self, len: usize) {
         self.set_len(len + self.buf_len());
     }
 }
 
 #[cfg(feature = "read_buf")]
-unsafe impl SetBufInit for std::io::BorrowedBuf<'static> {
+impl SetBufInit for std::io::BorrowedBuf<'static> {
     unsafe fn set_buf_init(&mut self, len: usize) {
         self.unfilled().advance(len);
     }
 }
 
 #[cfg(feature = "arrayvec")]
-unsafe impl<const N: usize> SetBufInit for arrayvec::ArrayVec<u8, N> {
+impl<const N: usize> SetBufInit for arrayvec::ArrayVec<u8, N> {
     unsafe fn set_buf_init(&mut self, len: usize) {
         self.set_len(len + self.buf_len());
     }
