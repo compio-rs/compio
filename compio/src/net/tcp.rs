@@ -4,7 +4,7 @@ use socket2::{Protocol, SockAddr, Type};
 
 #[cfg(feature = "runtime")]
 use crate::{
-    buf::{IoBuf, IoBufMut},
+    buf::{IoBuf, IoBufMut, SetBufInit},
     BufResult,
 };
 use crate::{
@@ -199,20 +199,23 @@ impl TcpStream {
     /// Receives a packet of data from the socket into the buffer, returning the
     /// original buffer and quantity of data received.
     #[cfg(feature = "runtime")]
-    pub async fn recv<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn recv<T: IoBufMut + SetBufInit>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.recv(buffer).await
     }
 
     /// Receives exact number of bytes from the socket.
     #[cfg(feature = "runtime")]
-    pub async fn recv_exact<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn recv_exact<T: IoBufMut + SetBufInit>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.recv_exact(buffer).await
     }
 
     /// Receives a packet of data from the socket into the buffer, returning the
     /// original buffer and quantity of data received.
     #[cfg(feature = "runtime")]
-    pub async fn recv_vectored<T: IoBufMut>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
+    pub async fn recv_vectored<T: IoBufMut + SetBufInit>(
+        &self,
+        buffer: Vec<T>,
+    ) -> BufResult<usize, Vec<T>> {
         self.inner.recv_vectored(buffer).await
     }
 

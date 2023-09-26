@@ -18,9 +18,7 @@ fn main() {
     let n = res.unwrap();
     assert_eq!(op.user_data(), user_data);
 
-    let mut buffer = unsafe { op.into_op::<ReadAt<Vec<u8>>>() }
-        .into_inner()
-        .into_inner();
+    let mut buffer = unsafe { op.into_op::<ReadAt<Vec<u8>>>() }.into_inner();
     unsafe {
         buffer.set_len(n);
     }

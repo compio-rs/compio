@@ -95,7 +95,9 @@ fn drop_on_complete() {
         fn as_buf_mut_ptr(&mut self) -> *mut u8 {
             self.data.as_buf_mut_ptr()
         }
+    }
 
+    unsafe impl SetBufInit for MyBuf {
         unsafe fn set_buf_init(&mut self, pos: usize) {
             self.data.set_buf_init(pos);
         }

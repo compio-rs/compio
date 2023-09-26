@@ -20,12 +20,6 @@ pub use io_buf::*;
 mod slice;
 pub use slice::*;
 
-mod with_buf;
-pub use with_buf::*;
-
-mod buf_wrapper;
-pub use buf_wrapper::*;
-
 /// Trait to get the inner buffer of an operation or a result.
 pub trait IntoInner {
     /// The inner type.

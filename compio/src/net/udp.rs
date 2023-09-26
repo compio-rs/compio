@@ -4,7 +4,7 @@ use socket2::{Protocol, SockAddr, Type};
 
 #[cfg(feature = "runtime")]
 use crate::{
-    buf::{IoBuf, IoBufMut},
+    buf::{IoBuf, IoBufMut, SetBufInit},
     BufResult,
 };
 use crate::{
@@ -181,14 +181,17 @@ impl UdpSocket {
     /// Receives a packet of data from the socket into the buffer, returning the
     /// original buffer and quantity of data received.
     #[cfg(feature = "runtime")]
-    pub async fn recv<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn recv<T: IoBufMut + SetBufInit>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.recv(buffer).await
     }
 
     /// Receives a packet of data from the socket into the buffer, returning the
     /// original buffer and quantity of data received.
     #[cfg(feature = "runtime")]
-    pub async fn recv_vectored<T: IoBufMut>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
+    pub async fn recv_vectored<T: IoBufMut + SetBufInit>(
+        &self,
+        buffer: Vec<T>,
+    ) -> BufResult<usize, Vec<T>> {
         self.inner.recv_vectored(buffer).await
     }
 
@@ -209,14 +212,17 @@ impl UdpSocket {
     /// Receives a single datagram message on the socket. On success, returns
     /// the number of bytes received and the origin.
     #[cfg(feature = "runtime")]
-    pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SockAddr), T> {
+    pub async fn recv_from<T: IoBufMut + SetBufInit>(
+        &self,
+        buffer: T,
+    ) -> BufResult<(usize, SockAddr), T> {
         self.inner.recv_from(buffer).await
     }
 
     /// Receives a single datagram message on the socket. On success, returns
     /// the number of bytes received and the origin.
     #[cfg(feature = "runtime")]
-    pub async fn recv_from_vectored<T: IoBufMut>(
+    pub async fn recv_from_vectored<T: IoBufMut + SetBufInit>(
         &self,
         buffer: Vec<T>,
     ) -> BufResult<(usize, SockAddr), Vec<T>> {

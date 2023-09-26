@@ -3,13 +3,17 @@
 //! The operation itself doesn't perform anything.
 //! You need to pass them to [`crate::driver::Proactor`], and poll the driver.
 
+use compio_buf::SetBufInit;
 use socket2::SockAddr;
 
 #[cfg(target_os = "windows")]
 pub use crate::driver::op::ConnectNamedPipe;
-pub use crate::driver::op::{Accept, RecvFromImpl, RecvImpl, SendImpl, SendToImpl};
+pub use crate::driver::op::{
+    Accept, Recv, RecvFrom, RecvFromVectored, RecvVectored, Send, SendTo, SendToVectored,
+    SendVectored,
+};
 use crate::{
-    buf::{AsIoSlicesMut, BufWrapper, IntoInner, IoBuf, IoBufMut, VectoredBufWrapper, WrapBuf},
+    buf::{IntoInner, IoBuf, IoBufMut},
     driver::{sockaddr_storage, socklen_t, RawFd},
     BufResult,
 };
@@ -18,7 +22,7 @@ pub(crate) trait BufResultExt {
     fn map_advanced(self) -> Self;
 }
 
-impl<T: AsIoSlicesMut> BufResultExt for BufResult<usize, T> {
+impl<T: SetBufInit> BufResultExt for BufResult<usize, T> {
     fn map_advanced(self) -> Self {
         let (res, buffer) = self;
         let (res, buffer) = (res.map(|res| (res, ())), buffer).map_advanced();
@@ -27,12 +31,12 @@ impl<T: AsIoSlicesMut> BufResultExt for BufResult<usize, T> {
     }
 }
 
-impl<T: AsIoSlicesMut, O> BufResultExt for BufResult<(usize, O), T> {
+impl<T: SetBufInit, O> BufResultExt for BufResult<(usize, O), T> {
     fn map_advanced(self) -> Self {
         let (res, mut buffer) = self;
         if let Ok((init, _)) = &res {
             unsafe {
-                buffer.set_init(*init);
+                buffer.set_buf_init(*init);
             }
         }
         (res, buffer)
@@ -63,22 +67,18 @@ impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t)> {
 pub struct ReadAt<T: IoBufMut> {
     pub(crate) fd: RawFd,
     pub(crate) offset: usize,
-    pub(crate) buffer: BufWrapper<T>,
+    pub(crate) buffer: T,
 }
 
 impl<T: IoBufMut> ReadAt<T> {
     /// Create [`ReadAt`].
     pub fn new(fd: RawFd, offset: usize, buffer: T) -> Self {
-        Self {
-            fd,
-            offset,
-            buffer: BufWrapper::new(buffer),
-        }
+        Self { fd, offset, buffer }
     }
 }
 
 impl<T: IoBufMut> IntoInner for ReadAt<T> {
-    type Inner = BufWrapper<T>;
+    type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
@@ -90,22 +90,18 @@ impl<T: IoBufMut> IntoInner for ReadAt<T> {
 pub struct WriteAt<T: IoBuf> {
     pub(crate) fd: RawFd,
     pub(crate) offset: usize,
-    pub(crate) buffer: BufWrapper<T>,
+    pub(crate) buffer: T,
 }
 
 impl<T: IoBuf> WriteAt<T> {
     /// Create [`WriteAt`].
     pub fn new(fd: RawFd, offset: usize, buffer: T) -> Self {
-        Self {
-            fd,
-            offset,
-            buffer: BufWrapper::new(buffer),
-        }
+        Self { fd, offset, buffer }
     }
 }
 
 impl<T: IoBuf> IntoInner for WriteAt<T> {
-    type Inner = BufWrapper<T>;
+    type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
@@ -146,23 +142,3 @@ impl Connect {
         Self { fd, addr }
     }
 }
-
-/// Receive data with one buffer.
-pub type Recv<T> = RecvImpl<BufWrapper<T>>;
-/// Receive data with vectored buffer.
-pub type RecvVectored<T> = RecvImpl<VectoredBufWrapper<T>>;
-
-/// Send data with one buffer.
-pub type Send<T> = SendImpl<BufWrapper<T>>;
-/// Send data with vectored buffer.
-pub type SendVectored<T> = SendImpl<VectoredBufWrapper<T>>;
-
-/// Receive data and address with one buffer.
-pub type RecvFrom<T> = RecvFromImpl<BufWrapper<T>>;
-/// Receive data and address with vectored buffer.
-pub type RecvFromVectored<T> = RecvFromImpl<VectoredBufWrapper<T>>;
-
-/// Send data to address with one buffer.
-pub type SendTo<T> = SendToImpl<BufWrapper<T>>;
-/// Send data to address with vectored buffer.
-pub type SendToVectored<T> = SendToImpl<VectoredBufWrapper<T>>;
