@@ -4,7 +4,7 @@ use std::{fs::Metadata, io, path::Path};
 
 #[cfg(feature = "runtime")]
 use crate::{
-    buf::{vec_alloc, IntoInner, IoBuf, IoBufMut, SetBufInit},
+    buf::{vec_alloc, IntoInner, IoBuf, IoBufMut},
     buf_try,
     driver::AsRawFd,
     op::{BufResultExt, ReadAt, Sync, WriteAt},
@@ -133,11 +133,7 @@ impl File {
     /// If this function encounters any form of I/O or other error, an error
     /// variant will be returned. The buffer is returned on error.
     #[cfg(feature = "runtime")]
-    pub async fn read_at<T: IoBufMut + SetBufInit>(
-        &self,
-        buffer: T,
-        pos: usize,
-    ) -> BufResult<usize, T> {
+    pub async fn read_at<T: IoBufMut>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = ReadAt::new(self.as_raw_fd(), pos, buffer);
         submit(op).await.into_inner().map_advanced()
@@ -164,7 +160,7 @@ impl File {
     ///
     /// [`ErrorKind::UnexpectedEof`]: io::ErrorKind::UnexpectedEof
     #[cfg(feature = "runtime")]
-    pub async fn read_exact_at<T: IoBufMut + SetBufInit>(
+    pub async fn read_exact_at<T: IoBufMut>(
         &self,
         mut buffer: T,
         pos: usize,

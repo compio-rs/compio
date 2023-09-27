@@ -5,7 +5,7 @@ use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 use crate::impl_raw_fd;
 #[cfg(feature = "runtime")]
 use crate::{
-    buf::{IntoInner, IoBuf, IoBufMut, SetBufInit},
+    buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     buf_try,
     driver::AsRawFd,
     op::{
@@ -135,14 +135,14 @@ impl Socket {
     }
 
     #[cfg(feature = "runtime")]
-    pub async fn recv<T: IoBufMut + SetBufInit>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn recv<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = Recv::new(self.as_raw_fd(), buffer);
         submit(op).await.into_inner().map_advanced()
     }
 
     #[cfg(feature = "runtime")]
-    pub async fn recv_exact<T: IoBufMut + SetBufInit>(&self, mut buffer: T) -> BufResult<usize, T> {
+    pub async fn recv_exact<T: IoBufMut>(&self, mut buffer: T) -> BufResult<usize, T> {
         let need = buffer.as_uninit_slice().len();
         let mut total_read = 0;
         let mut read;
@@ -162,10 +162,7 @@ impl Socket {
     }
 
     #[cfg(feature = "runtime")]
-    pub async fn recv_vectored<T: IoBufMut + SetBufInit>(
-        &self,
-        buffer: Vec<T>,
-    ) -> BufResult<usize, Vec<T>> {
+    pub async fn recv_vectored<T: IoVectoredBufMut>(&self, buffer: T) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = RecvVectored::new(self.as_raw_fd(), buffer);
         submit(op).await.into_inner().map_advanced()
@@ -192,27 +189,24 @@ impl Socket {
     }
 
     #[cfg(feature = "runtime")]
-    pub async fn send_vectored<T: IoBuf>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
+    pub async fn send_vectored<T: IoVectoredBuf>(&self, buffer: T) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = SendVectored::new(self.as_raw_fd(), buffer);
         submit(op).await.into_inner()
     }
 
     #[cfg(feature = "runtime")]
-    pub async fn recv_from<T: IoBufMut + SetBufInit>(
-        &self,
-        buffer: T,
-    ) -> BufResult<(usize, SockAddr), T> {
+    pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SockAddr), T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = RecvFrom::new(self.as_raw_fd(), buffer);
         submit(op).await.into_inner().map_addr().map_advanced()
     }
 
     #[cfg(feature = "runtime")]
-    pub async fn recv_from_vectored<T: IoBufMut + SetBufInit>(
+    pub async fn recv_from_vectored<T: IoVectoredBufMut>(
         &self,
-        buffer: Vec<T>,
-    ) -> BufResult<(usize, SockAddr), Vec<T>> {
+        buffer: T,
+    ) -> BufResult<(usize, SockAddr), T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = RecvFromVectored::new(self.as_raw_fd(), buffer);
         submit(op).await.into_inner().map_addr().map_advanced()
@@ -226,11 +220,11 @@ impl Socket {
     }
 
     #[cfg(feature = "runtime")]
-    pub async fn send_to_vectored<T: IoBuf>(
+    pub async fn send_to_vectored<T: IoVectoredBuf>(
         &self,
-        buffer: Vec<T>,
+        buffer: T,
         addr: &SockAddr,
-    ) -> BufResult<usize, Vec<T>> {
+    ) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = SendToVectored::new(self.as_raw_fd(), buffer, addr.clone());
         submit(op).await.into_inner()

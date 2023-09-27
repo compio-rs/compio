@@ -33,7 +33,7 @@ use windows_sys::{
 };
 
 use crate::{
-    buf::{AsIoSlices, AsIoSlicesMut, IntoInner, IoBuf, IoBufMut},
+    buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     driver::{OpCode, RawFd},
     op::*,
     syscall,
@@ -355,27 +355,27 @@ impl<T: IoBufMut> OpCode for Recv<T> {
 }
 
 /// Receive data from remote into vectored buffer.
-pub struct RecvVectored<T: IoBufMut> {
+pub struct RecvVectored<T: IoVectoredBufMut> {
     pub(crate) fd: RawFd,
-    pub(crate) buffer: Vec<T>,
+    pub(crate) buffer: T,
 }
 
-impl<T: IoBufMut> RecvVectored<T> {
+impl<T: IoVectoredBufMut> RecvVectored<T> {
     /// Create [`RecvVectored`].
-    pub fn new(fd: RawFd, buffer: Vec<T>) -> Self {
+    pub fn new(fd: RawFd, buffer: T) -> Self {
         Self { fd, buffer }
     }
 }
 
-impl<T: IoBufMut> IntoInner for RecvVectored<T> {
-    type Inner = Vec<T>;
+impl<T: IoVectoredBufMut> IntoInner for RecvVectored<T> {
+    type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
     }
 }
 
-impl<T: IoBufMut> OpCode for RecvVectored<T> {
+impl<T: IoVectoredBufMut> OpCode for RecvVectored<T> {
     unsafe fn operate(mut self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let slices = self.buffer.as_io_slices_mut();
         let mut flags = 0;
@@ -437,27 +437,27 @@ impl<T: IoBuf> OpCode for Send<T> {
 }
 
 /// Send data to remote from vectored buffer.
-pub struct SendVectored<T: IoBuf> {
+pub struct SendVectored<T: IoVectoredBuf> {
     pub(crate) fd: RawFd,
-    pub(crate) buffer: Vec<T>,
+    pub(crate) buffer: T,
 }
 
-impl<T: IoBuf> SendVectored<T> {
+impl<T: IoVectoredBuf> SendVectored<T> {
     /// Create [`SendVectored`].
-    pub fn new(fd: RawFd, buffer: Vec<T>) -> Self {
+    pub fn new(fd: RawFd, buffer: T) -> Self {
         Self { fd, buffer }
     }
 }
 
-impl<T: IoBuf> IntoInner for SendVectored<T> {
-    type Inner = Vec<T>;
+impl<T: IoVectoredBuf> IntoInner for SendVectored<T> {
+    type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
     }
 }
 
-impl<T: IoBuf> OpCode for SendVectored<T> {
+impl<T: IoVectoredBuf> OpCode for SendVectored<T> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let slices = self.buffer.as_io_slices();
         let mut sent = 0;
@@ -531,16 +531,16 @@ impl<T: IoBufMut> OpCode for RecvFrom<T> {
 }
 
 /// Receive data and source address into vectored buffer.
-pub struct RecvFromVectored<T: IoBufMut> {
+pub struct RecvFromVectored<T: IoVectoredBufMut> {
     pub(crate) fd: RawFd,
-    pub(crate) buffer: Vec<T>,
+    pub(crate) buffer: T,
     pub(crate) addr: SOCKADDR_STORAGE,
     pub(crate) addr_len: socklen_t,
 }
 
-impl<T: IoBufMut> RecvFromVectored<T> {
+impl<T: IoVectoredBufMut> RecvFromVectored<T> {
     /// Create [`RecvFromVectored`].
-    pub fn new(fd: RawFd, buffer: Vec<T>) -> Self {
+    pub fn new(fd: RawFd, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -550,15 +550,15 @@ impl<T: IoBufMut> RecvFromVectored<T> {
     }
 }
 
-impl<T: IoBufMut> IntoInner for RecvFromVectored<T> {
-    type Inner = (Vec<T>, SOCKADDR_STORAGE, socklen_t);
+impl<T: IoVectoredBufMut> IntoInner for RecvFromVectored<T> {
+    type Inner = (T, SOCKADDR_STORAGE, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
         (self.buffer, self.addr, self.addr_len)
     }
 }
 
-impl<T: IoBufMut> OpCode for RecvFromVectored<T> {
+impl<T: IoVectoredBufMut> OpCode for RecvFromVectored<T> {
     unsafe fn operate(mut self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let buffer = self.buffer.as_io_slices_mut();
         let mut flags = 0;
@@ -628,28 +628,28 @@ impl<T: IoBuf> OpCode for SendTo<T> {
 }
 
 /// Send data to specified address from vectored buffer.
-pub struct SendToVectored<T: IoBuf> {
+pub struct SendToVectored<T: IoVectoredBuf> {
     pub(crate) fd: RawFd,
-    pub(crate) buffer: Vec<T>,
+    pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
 }
 
-impl<T: IoBuf> SendToVectored<T> {
+impl<T: IoVectoredBuf> SendToVectored<T> {
     /// Create [`SendToVectored`].
-    pub fn new(fd: RawFd, buffer: Vec<T>, addr: SockAddr) -> Self {
+    pub fn new(fd: RawFd, buffer: T, addr: SockAddr) -> Self {
         Self { fd, buffer, addr }
     }
 }
 
-impl<T: IoBuf> IntoInner for SendToVectored<T> {
-    type Inner = Vec<T>;
+impl<T: IoVectoredBuf> IntoInner for SendToVectored<T> {
+    type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
     }
 }
 
-impl<T: IoBuf> OpCode for SendToVectored<T> {
+impl<T: IoVectoredBuf> OpCode for SendToVectored<T> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let buffer = self.buffer.as_io_slices();
         let mut sent = 0;

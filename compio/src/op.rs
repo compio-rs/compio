@@ -3,7 +3,6 @@
 //! The operation itself doesn't perform anything.
 //! You need to pass them to [`crate::driver::Proactor`], and poll the driver.
 
-use compio_buf::SetBufInit;
 use socket2::SockAddr;
 
 #[cfg(target_os = "windows")]
@@ -13,7 +12,7 @@ pub use crate::driver::op::{
     SendVectored,
 };
 use crate::{
-    buf::{IntoInner, IoBuf, IoBufMut},
+    buf::{IntoInner, IoBuf, IoBufMut, SetBufInit},
     driver::{sockaddr_storage, socklen_t, RawFd},
     BufResult,
 };

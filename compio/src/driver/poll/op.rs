@@ -10,7 +10,7 @@ use socket2::SockAddr;
 
 pub use crate::driver::unix::op::*;
 use crate::{
-    buf::{AsIoSlices, AsIoSlicesMut, IoBuf, IoBufMut},
+    buf::{IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     driver::{sockaddr_storage, socklen_t, Decision, OpCode, RawFd},
     op::*,
     syscall,
@@ -166,7 +166,7 @@ impl<T: IoBufMut> OpCode for Recv<T> {
     }
 }
 
-impl<T: IoBufMut> OpCode for RecvVectored<T> {
+impl<T: IoVectoredBufMut> OpCode for RecvVectored<T> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_readable(self.fd))
     }
@@ -192,7 +192,7 @@ impl<T: IoBuf> OpCode for Send<T> {
     }
 }
 
-impl<T: IoBuf> OpCode for SendVectored<T> {
+impl<T: IoVectoredBuf> OpCode for SendVectored<T> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_writable(self.fd))
     }
@@ -268,17 +268,17 @@ impl<T: IoBufMut> IntoInner for RecvFrom<T> {
 }
 
 /// Receive data and source address into vectored buffer.
-pub struct RecvFromVectored<T: IoBufMut> {
+pub struct RecvFromVectored<T: IoVectoredBufMut> {
     pub(crate) fd: RawFd,
-    pub(crate) buffer: Vec<T>,
+    pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSliceMut<'static>>,
     pub(crate) addr: sockaddr_storage,
     pub(crate) msg: libc::msghdr,
 }
 
-impl<T: IoBufMut> RecvFromVectored<T> {
+impl<T: IoVectoredBufMut> RecvFromVectored<T> {
     /// Create [`RecvFromVectored`].
-    pub fn new(fd: RawFd, buffer: Vec<T>) -> Self {
+    pub fn new(fd: RawFd, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -302,7 +302,7 @@ impl<T: IoBufMut> RecvFromVectored<T> {
     }
 }
 
-impl<T: IoBufMut> OpCode for RecvFromVectored<T> {
+impl<T: IoVectoredBufMut> OpCode for RecvFromVectored<T> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         self.set_msg();
         syscall!(recvmsg(self.fd, &mut self.msg, 0) or wait_readable(self.fd))
@@ -315,8 +315,8 @@ impl<T: IoBufMut> OpCode for RecvFromVectored<T> {
     }
 }
 
-impl<T: IoBufMut> IntoInner for RecvFromVectored<T> {
-    type Inner = (Vec<T>, sockaddr_storage, socklen_t);
+impl<T: IoVectoredBufMut> IntoInner for RecvFromVectored<T> {
+    type Inner = (T, sockaddr_storage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
         (self.buffer, self.addr, self.msg.msg_namelen)
@@ -378,17 +378,17 @@ impl<T: IoBuf> IntoInner for SendTo<T> {
 }
 
 /// Send data to specified address from vectored buffer.
-pub struct SendToVectored<T: IoBuf> {
+pub struct SendToVectored<T: IoVectoredBuf> {
     pub(crate) fd: RawFd,
-    pub(crate) buffer: Vec<T>,
+    pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
     pub(crate) slices: Vec<IoSlice<'static>>,
     pub(crate) msg: libc::msghdr,
 }
 
-impl<T: IoBuf> SendToVectored<T> {
+impl<T: IoVectoredBuf> SendToVectored<T> {
     /// Create [`SendToVectored`].
-    pub fn new(fd: RawFd, buffer: Vec<T>, addr: SockAddr) -> Self {
+    pub fn new(fd: RawFd, buffer: T, addr: SockAddr) -> Self {
         Self {
             fd,
             buffer,
@@ -412,7 +412,7 @@ impl<T: IoBuf> SendToVectored<T> {
     }
 }
 
-impl<T: IoBuf> OpCode for SendToVectored<T> {
+impl<T: IoVectoredBuf> OpCode for SendToVectored<T> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         self.set_msg();
         syscall!(sendmsg(self.fd, &self.msg, 0) or wait_writable(self.fd))
@@ -425,8 +425,8 @@ impl<T: IoBuf> OpCode for SendToVectored<T> {
     }
 }
 
-impl<T: IoBuf> IntoInner for SendToVectored<T> {
-    type Inner = Vec<T>;
+impl<T: IoVectoredBuf> IntoInner for SendToVectored<T> {
+    type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
