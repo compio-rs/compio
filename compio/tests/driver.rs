@@ -56,5 +56,8 @@ fn register_multiple() {
     let mut entries = ArrayVec::<Entry, TASK_LEN>::new();
     while entries.len() < TASK_LEN {
         driver.poll(None, &mut entries).unwrap();
+        for entry in entries.iter_mut() {
+            let _ = entry.take_result().unwrap();
+        }
     }
 }

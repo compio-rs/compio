@@ -239,4 +239,9 @@ impl Entry {
     pub fn into_result(self) -> io::Result<usize> {
         self.result
     }
+
+    /// Take the result of the operation and replace entry.result with `Ok(0)`.
+    pub fn take_result(&mut self) -> io::Result<usize> {
+        std::mem::replace(&mut self.result, Ok(0))
+    }
 }
