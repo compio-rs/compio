@@ -13,23 +13,14 @@ use crate::{driver::AsRawFd, task::attach};
 /// itself is Send & Sync. We mark it !Send & !Sync to warn users, making them
 /// ensure that they are using it in the correct thread.
 #[derive(Debug, Clone)]
-pub struct Attacher {
-    // Make it thread safe.
-    once: OnceLock<()>,
-    // Make it !Send & !Sync.
-    _p: PhantomData<*mut ()>,
-}
+pub struct Attacher {}
 
 impl Attacher {
     pub const fn new() -> Self {
-        Self {
-            once: OnceLock::new(),
-            _p: PhantomData,
-        }
+        Self {}
     }
 
     pub fn attach(&self, source: &impl AsRawFd) -> io::Result<()> {
-        self.once.get_or_try_init(|| attach(source.as_raw_fd()))?;
-        Ok(())
+        attach(source.as_raw_fd())
     }
 }

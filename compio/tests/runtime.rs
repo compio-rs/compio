@@ -22,7 +22,7 @@ fn multi_threading() {
 
         tx.send_all(DATA).await.0.unwrap();
 
-        let rx = SendWrapper(rx);
+        // let rx = SendWrapper(rx);
         if let Err(e) = std::thread::spawn(move || {
             compio::task::block_on(async {
                 rx.attach().unwrap();
@@ -53,7 +53,7 @@ fn try_clone() {
         let tx = tx.try_clone().unwrap();
         tx.send_all(DATA).await.0.unwrap();
 
-        let rx = SendWrapper(rx.try_clone().unwrap());
+        // let rx = SendWrapper(rx.try_clone().unwrap());
         if let Err(e) = std::thread::spawn(move || {
             compio::task::block_on(async {
                 rx.attach().unwrap();
