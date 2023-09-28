@@ -450,7 +450,7 @@ impl<const N: usize> SetBufInit for arrayvec::ArrayVec<u8, N> {
 
 impl<T: IoVectoredBufMut> SetBufInit for T
 where
-    T::Item: IoBufMut,
+    T::Item: SetBufInit,
 {
     unsafe fn set_buf_init(&mut self, mut len: usize) {
         for buf in self.buf_iter_mut() {
