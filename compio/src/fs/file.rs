@@ -98,10 +98,11 @@ impl File {
     ///
     /// It does not clear the attach state.
     pub fn try_clone(&self) -> io::Result<Self> {
+        let inner = self.inner.try_clone()?;
         Ok(Self {
-            inner: self.inner.try_clone()?,
             #[cfg(feature = "runtime")]
-            attacher: self.attacher.clone(),
+            attacher: self.attacher.try_clone(&inner)?,
+            inner,
         })
     }
 
