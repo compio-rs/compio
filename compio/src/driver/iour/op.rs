@@ -107,18 +107,16 @@ impl<T: IoVectoredBuf> OpCode for SendVectored<T> {
     }
 }
 
-struct RecvFromImpl<T> {
+struct RecvFromHeader {
     pub(crate) fd: RawFd,
-    pub(crate) buffer: T,
     pub(crate) addr: sockaddr_storage,
     pub(crate) msg: libc::msghdr,
 }
 
-impl<T> RecvFromImpl<T> {
-    pub fn new(fd: RawFd, buffer: T) -> Self {
+impl RecvFromHeader {
+    pub fn new(fd: RawFd) -> Self {
         Self {
             fd,
-            buffer,
             addr: unsafe { std::mem::zeroed() },
             msg: unsafe { std::mem::zeroed() },
         }
@@ -136,19 +134,16 @@ impl<T> RecvFromImpl<T> {
         };
         opcode::RecvMsg::new(Fd(self.fd), &mut self.msg).build()
     }
-}
 
-impl<T> IntoInner for RecvFromImpl<T> {
-    type Inner = (T, sockaddr_storage, socklen_t);
-
-    fn into_inner(self) -> Self::Inner {
-        (self.buffer, self.addr, self.msg.msg_namelen)
+    pub fn into_addr(self) -> (sockaddr_storage, socklen_t) {
+        (self.addr, self.msg.msg_namelen)
     }
 }
 
 /// Receive data and source address.
 pub struct RecvFrom<T: IoBufMut> {
-    base: RecvFromImpl<T>,
+    header: RecvFromHeader,
+    buffer: T,
     slice: [IoSliceMut<'static>; 1],
 }
 
@@ -156,7 +151,8 @@ impl<T: IoBufMut> RecvFrom<T> {
     /// Create [`RecvFrom`].
     pub fn new(fd: RawFd, buffer: T) -> Self {
         Self {
-            base: RecvFromImpl::new(fd, buffer),
+            header: RecvFromHeader::new(fd),
+            buffer,
             slice: [IoSliceMut::new(&mut [])],
         }
     }
@@ -165,8 +161,8 @@ impl<T: IoBufMut> RecvFrom<T> {
 impl<T: IoBufMut> OpCode for RecvFrom<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         let this = &mut *self;
-        this.slice[0] = unsafe { this.base.buffer.as_io_slice_mut() };
-        this.base.create_entry(&mut this.slice)
+        this.slice[0] = unsafe { this.buffer.as_io_slice_mut() };
+        this.header.create_entry(&mut this.slice)
     }
 }
 
@@ -174,13 +170,15 @@ impl<T: IoBufMut> IntoInner for RecvFrom<T> {
     type Inner = (T, sockaddr_storage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
-        self.base.into_inner()
+        let (addr, addr_len) = self.header.into_addr();
+        (self.buffer, addr, addr_len)
     }
 }
 
 /// Receive data and source address into vectored buffer.
 pub struct RecvFromVectored<T: IoVectoredBufMut> {
-    base: RecvFromImpl<T>,
+    header: RecvFromHeader,
+    buffer: T,
     slice: Vec<IoSliceMut<'static>>,
 }
 
@@ -188,7 +186,8 @@ impl<T: IoVectoredBufMut> RecvFromVectored<T> {
     /// Create [`RecvFromVectored`].
     pub fn new(fd: RawFd, buffer: T) -> Self {
         Self {
-            base: RecvFromImpl::new(fd, buffer),
+            header: RecvFromHeader::new(fd),
+            buffer,
             slice: vec![],
         }
     }
@@ -197,8 +196,8 @@ impl<T: IoVectoredBufMut> RecvFromVectored<T> {
 impl<T: IoVectoredBufMut> OpCode for RecvFromVectored<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         let this = &mut *self;
-        this.slice = unsafe { this.base.buffer.as_io_slices_mut() };
-        this.base.create_entry(&mut this.slice)
+        this.slice = unsafe { this.buffer.as_io_slices_mut() };
+        this.header.create_entry(&mut this.slice)
     }
 }
 
@@ -206,22 +205,21 @@ impl<T: IoVectoredBufMut> IntoInner for RecvFromVectored<T> {
     type Inner = (T, sockaddr_storage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
-        self.base.into_inner()
+        let (addr, addr_len) = self.header.into_addr();
+        (self.buffer, addr, addr_len)
     }
 }
 
-struct SendToImpl<T> {
+struct SendToHeader {
     pub(crate) fd: RawFd,
-    pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
     pub(crate) msg: libc::msghdr,
 }
 
-impl<T> SendToImpl<T> {
-    pub fn new(fd: RawFd, buffer: T, addr: SockAddr) -> Self {
+impl SendToHeader {
+    pub fn new(fd: RawFd, addr: SockAddr) -> Self {
         Self {
             fd,
-            buffer,
             addr,
             msg: unsafe { std::mem::zeroed() },
         }
@@ -241,17 +239,10 @@ impl<T> SendToImpl<T> {
     }
 }
 
-impl<T> IntoInner for SendToImpl<T> {
-    type Inner = T;
-
-    fn into_inner(self) -> Self::Inner {
-        self.buffer
-    }
-}
-
 /// Send data to specified address.
 pub struct SendTo<T: IoBuf> {
-    base: SendToImpl<T>,
+    header: SendToHeader,
+    buffer: T,
     slice: [IoSlice<'static>; 1],
 }
 
@@ -259,7 +250,8 @@ impl<T: IoBuf> SendTo<T> {
     /// Create [`SendTo`].
     pub fn new(fd: RawFd, buffer: T, addr: SockAddr) -> Self {
         Self {
-            base: SendToImpl::new(fd, buffer, addr),
+            header: SendToHeader::new(fd, addr),
+            buffer,
             slice: [IoSlice::new(&[])],
         }
     }
@@ -268,8 +260,8 @@ impl<T: IoBuf> SendTo<T> {
 impl<T: IoBuf> OpCode for SendTo<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         let this = &mut *self;
-        this.slice[0] = unsafe { this.base.buffer.as_io_slice() };
-        this.base.create_entry(&mut this.slice)
+        this.slice[0] = unsafe { this.buffer.as_io_slice() };
+        this.header.create_entry(&mut this.slice)
     }
 }
 
@@ -277,13 +269,14 @@ impl<T: IoBuf> IntoInner for SendTo<T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
-        self.base.into_inner()
+        self.buffer
     }
 }
 
 /// Send data to specified address from vectored buffer.
 pub struct SendToVectored<T: IoVectoredBuf> {
-    base: SendToImpl<T>,
+    header: SendToHeader,
+    buffer: T,
     slice: Vec<IoSlice<'static>>,
 }
 
@@ -291,7 +284,8 @@ impl<T: IoVectoredBuf> SendToVectored<T> {
     /// Create [`SendToVectored`].
     pub fn new(fd: RawFd, buffer: T, addr: SockAddr) -> Self {
         Self {
-            base: SendToImpl::new(fd, buffer, addr),
+            header: SendToHeader::new(fd, addr),
+            buffer,
             slice: vec![],
         }
     }
@@ -300,8 +294,8 @@ impl<T: IoVectoredBuf> SendToVectored<T> {
 impl<T: IoVectoredBuf> OpCode for SendToVectored<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         let this = &mut *self;
-        this.slice = unsafe { this.base.buffer.as_io_slices() };
-        this.base.create_entry(&mut this.slice)
+        this.slice = unsafe { this.buffer.as_io_slices() };
+        this.header.create_entry(&mut this.slice)
     }
 }
 
@@ -309,6 +303,6 @@ impl<T: IoVectoredBuf> IntoInner for SendToVectored<T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
-        self.base.into_inner()
+        self.buffer
     }
 }
