@@ -1,11 +1,14 @@
+mod item_fn;
+
 mod main_fn;
 use main_fn::CompioMain;
 
 mod test_fn;
+use test_fn::CompioTest;
+
 use proc_macro::TokenStream;
 use quote::ToTokens;
 use syn::parse_macro_input;
-use test_fn::CompioTest;
 
 #[proc_macro_attribute]
 pub fn main(_args: TokenStream, item: TokenStream) -> TokenStream {
