@@ -20,7 +20,10 @@ impl Event {
     pub fn new() -> io::Result<Self> {
         let fd = syscall!(eventfd(0, 0))?;
         let fd = unsafe { OwnedFd::from_raw_fd(fd) };
-        Ok(Self { fd })
+        Ok(Self {
+            fd,
+            attacher: Attacher::new(),
+        })
     }
 
     /// Get a notify handle.
