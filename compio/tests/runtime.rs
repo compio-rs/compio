@@ -139,7 +139,6 @@ async fn too_many_submissions() {
     }
 }
 
-#[test]
 #[cfg(feature = "allocator_api")]
 #[compio_macros::test]
 async fn arena() {
