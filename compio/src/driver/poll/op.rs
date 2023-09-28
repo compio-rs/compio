@@ -18,11 +18,7 @@ use crate::{
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
-        if cfg!(any(
-            target_os = "linux",
-            target_os = "android",
-            target_os = "illumos"
-        )) {
+        if cfg!(any(target_os = "linux", target_os = "android")) {
             let fd = self.fd;
             let slice = self.buffer.as_uninit_slice();
             Ok(Decision::Completed(syscall!(pread(
@@ -55,11 +51,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
 
 impl<T: IoBuf> OpCode for WriteAt<T> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        if cfg!(any(
-            target_os = "linux",
-            target_os = "android",
-            target_os = "illumos"
-        )) {
+        if cfg!(any(target_os = "linux", target_os = "android")) {
             let slice = self.buffer.as_slice();
             Ok(Decision::Completed(syscall!(pwrite(
                 self.fd,

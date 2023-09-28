@@ -32,4 +32,20 @@ impl Attacher {
         self.once.get_or_try_init(|| attach(source.as_raw_fd()))?;
         Ok(())
     }
+
+    pub fn is_attached(&self) -> bool {
+        self.once.get().is_some()
+    }
+
+    pub fn try_clone(&self, source: &impl AsRawFd) -> io::Result<Self> {
+        if cfg!(target_os = "windows") {
+            Ok(self.clone())
+        } else {
+            let new_self = Self::new();
+            if self.is_attached() {
+                new_self.attach(source)?;
+            }
+            Ok(new_self)
+        }
+    }
 }

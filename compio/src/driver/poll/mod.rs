@@ -14,7 +14,7 @@ pub(crate) use libc::{sockaddr_storage, socklen_t};
 use polling::{Event, Events, Poller};
 use slab::Slab;
 
-use crate::driver::Entry;
+use crate::{driver::Entry, syscall};
 
 pub(crate) mod op;
 pub(crate) use crate::driver::unix::RawOp;
@@ -112,7 +112,7 @@ impl FdQueue {
                 return (user_data, Interest::Writable);
             }
         }
-        unreachable!("should receive event when no interest")
+        unreachable!("should not receive event when no interest")
     }
 }
 
@@ -145,18 +145,16 @@ impl Driver {
         if self.cancelled.remove(&user_data) {
             Ok(false)
         } else {
-            let need_add = !self.registry.contains_key(&arg.fd);
-            let queue = self.registry.entry(arg.fd).or_default();
+            let queue = self
+                .registry
+                .get_mut(&arg.fd)
+                .expect("the fd should be attached");
             queue.push_back_interest(user_data, arg.interest);
             // We use fd as the key.
             let event = queue.event(arg.fd as usize);
             unsafe {
-                if need_add {
-                    self.poll.add(arg.fd, event)?;
-                } else {
-                    let fd = BorrowedFd::borrow_raw(arg.fd);
-                    self.poll.modify(fd, event)?;
-                }
+                let fd = BorrowedFd::borrow_raw(arg.fd);
+                self.poll.modify(fd, event)?;
             }
             Ok(true)
         }
@@ -239,7 +237,18 @@ impl Driver {
         Ok(())
     }
 
-    pub fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
+    pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
+        if cfg!(any(target_os = "linux", target_os = "android")) {
+            let mut stat = unsafe { std::mem::zeroed() };
+            syscall!(fstat(fd, &mut stat))?;
+            if matches!(stat.st_mode & libc::S_IFMT, libc::S_IFREG | libc::S_IFDIR) {
+                return Ok(());
+            }
+        }
+        self.registry.entry(fd).or_default();
+        unsafe {
+            self.poll.add(fd, Event::none(0))?;
+        }
         Ok(())
     }
 

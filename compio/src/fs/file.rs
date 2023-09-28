@@ -47,11 +47,7 @@ fn file_with_options(
     use std::os::unix::prelude::OpenOptionsExt;
 
     // Don't set nonblocking with epoll.
-    if cfg!(not(any(
-        target_os = "linux",
-        target_os = "android",
-        target_os = "illumos"
-    ))) {
+    if cfg!(not(any(target_os = "linux", target_os = "android"))) {
         options.custom_flags(libc::O_NONBLOCK);
     }
     options.open(path)
@@ -98,10 +94,11 @@ impl File {
     ///
     /// It does not clear the attach state.
     pub fn try_clone(&self) -> io::Result<Self> {
+        let inner = self.inner.try_clone()?;
         Ok(Self {
-            inner: self.inner.try_clone()?,
             #[cfg(feature = "runtime")]
-            attacher: self.attacher.clone(),
+            attacher: self.attacher.try_clone(&inner)?,
+            inner,
         })
     }
 
@@ -264,11 +261,10 @@ impl File {
         let mut total_written = 0;
         let mut written;
         while total_written < buf_len {
-            (written, buffer) = buf_try!(
-                self.write_at(buffer.slice(total_written..), pos + total_written)
-                    .await
-                    .into_inner()
-            );
+            (written, buffer) = buf_try!(self
+                .write_at(buffer.slice(total_written..), pos + total_written)
+                .await
+                .into_inner());
             total_written += written;
         }
         (Ok(total_written), buffer)

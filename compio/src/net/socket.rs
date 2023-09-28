@@ -37,10 +37,11 @@ impl Socket {
     }
 
     pub fn try_clone(&self) -> io::Result<Self> {
+        let socket = self.socket.try_clone()?;
         Ok(Self {
-            socket: self.socket.try_clone()?,
             #[cfg(feature = "runtime")]
-            attacher: self.attacher.clone(),
+            attacher: self.attacher.try_clone(&socket)?,
+            socket,
         })
     }
 
