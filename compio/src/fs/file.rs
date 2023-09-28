@@ -64,6 +64,8 @@ impl File {
             #[cfg(feature = "runtime")]
             attacher: Attacher::new(),
         };
+        #[cfg(feature = "runtime")]
+        this.attach()?;
         Ok(this)
     }
 
@@ -134,7 +136,6 @@ impl File {
     /// variant will be returned. The buffer is returned on error.
     #[cfg(feature = "runtime")]
     pub async fn read_at<T: IoBufMut>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = ReadAt::new(self.as_raw_fd(), pos, buffer);
         submit(op).await.into_inner().map_advanced()
     }
@@ -244,7 +245,6 @@ impl File {
     /// written to this writer.
     #[cfg(feature = "runtime")]
     pub async fn write_at<T: IoBuf>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = WriteAt::new(self.as_raw_fd(), pos, buffer);
         submit(op).await.into_inner()
     }
@@ -276,7 +276,6 @@ impl File {
 
     #[cfg(feature = "runtime")]
     async fn sync_impl(&self, datasync: bool) -> io::Result<()> {
-        self.attach()?;
         let op = Sync::new(self.as_raw_fd(), datasync);
         submit(op).await.0?;
         Ok(())

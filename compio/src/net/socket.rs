@@ -65,7 +65,10 @@ impl Socket {
         )) {
             socket.set_nonblocking(true)?;
         }
-        Ok(Self::from_socket2(socket))
+        let this = Self::from_socket2(socket);
+        #[cfg(feature = "runtime")]
+        this.attach()?;
+        Ok(this)
     }
 
     pub fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
@@ -88,7 +91,6 @@ impl Socket {
 
     #[cfg(feature = "runtime")]
     pub async fn connect_async(&self, addr: &SockAddr) -> io::Result<()> {
-        self.attach()?;
         let op = Connect::new(self.as_raw_fd(), addr.clone());
         let (res, _op) = submit(op).await;
         #[cfg(target_os = "windows")]
@@ -107,7 +109,6 @@ impl Socket {
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         use std::os::fd::FromRawFd;
 
-        self.attach()?;
         let op = Accept::new(self.as_raw_fd());
         let (res, op) = submit(op).await;
         let accept_sock = unsafe { Socket2::from_raw_fd(res? as _) };
@@ -119,7 +120,6 @@ impl Socket {
 
     #[cfg(all(feature = "runtime", target_os = "windows"))]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
-        self.attach()?;
         let local_addr = self.local_addr()?;
         let accept_sock = Self::new(
             local_addr.domain(),
@@ -136,7 +136,6 @@ impl Socket {
 
     #[cfg(feature = "runtime")]
     pub async fn recv<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = Recv::new(self.as_raw_fd(), buffer);
         submit(op).await.into_inner().map_advanced()
     }
@@ -163,14 +162,12 @@ impl Socket {
 
     #[cfg(feature = "runtime")]
     pub async fn recv_vectored<T: IoVectoredBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = RecvVectored::new(self.as_raw_fd(), buffer);
         submit(op).await.into_inner().map_advanced()
     }
 
     #[cfg(feature = "runtime")]
     pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = Send::new(self.as_raw_fd(), buffer);
         submit(op).await.into_inner()
     }
@@ -190,14 +187,12 @@ impl Socket {
 
     #[cfg(feature = "runtime")]
     pub async fn send_vectored<T: IoVectoredBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = SendVectored::new(self.as_raw_fd(), buffer);
         submit(op).await.into_inner()
     }
 
     #[cfg(feature = "runtime")]
     pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SockAddr), T> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = RecvFrom::new(self.as_raw_fd(), buffer);
         submit(op).await.into_inner().map_addr().map_advanced()
     }
@@ -207,14 +202,12 @@ impl Socket {
         &self,
         buffer: T,
     ) -> BufResult<(usize, SockAddr), T> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = RecvFromVectored::new(self.as_raw_fd(), buffer);
         submit(op).await.into_inner().map_addr().map_advanced()
     }
 
     #[cfg(feature = "runtime")]
     pub async fn send_to<T: IoBuf>(&self, buffer: T, addr: &SockAddr) -> BufResult<usize, T> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = SendTo::new(self.as_raw_fd(), buffer, addr.clone());
         submit(op).await.into_inner()
     }
@@ -225,7 +218,6 @@ impl Socket {
         buffer: T,
         addr: &SockAddr,
     ) -> BufResult<usize, T> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = SendToVectored::new(self.as_raw_fd(), buffer, addr.clone());
         submit(op).await.into_inner()
     }
