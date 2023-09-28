@@ -14,7 +14,7 @@ pub(crate) use libc::{sockaddr_storage, socklen_t};
 use polling::{Event, Events, Poller};
 use slab::Slab;
 
-use crate::driver::Entry;
+use crate::{driver::Entry, syscall};
 
 pub(crate) mod op;
 pub(crate) use crate::driver::unix::RawOp;
@@ -238,6 +238,13 @@ impl Driver {
     }
 
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
+        if cfg!(any(target_os = "linux", target_os = "android")) {
+            let mut stat = unsafe { std::mem::zeroed() };
+            syscall!(fstat(fd, &mut stat))?;
+            if matches!(stat.st_mode & libc::S_IFMT, libc::S_IFREG | libc::S_IFDIR) {
+                return Ok(());
+            }
+        }
         self.registry.entry(fd).or_default();
         unsafe {
             self.poll.add(fd, Event::none(0))?;
