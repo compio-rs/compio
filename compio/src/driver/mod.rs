@@ -122,7 +122,9 @@ impl Proactor {
     ///   `try_clone` it. It will cause unexpected result to attach the handle
     ///   with one driver and push an op to another driver.
     /// * io-uring: it will do nothing and return `Ok(())`.
-    /// * polling: it will initialize inner queue and register to the driver.
+    /// * polling: it will initialize inner queue and register to the driver. On
+    ///   Linux and Android, if the fd is a normal file or a directory, this
+    ///   method will do nothing.
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
         self.driver.attach(fd)
     }
