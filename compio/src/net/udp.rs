@@ -4,7 +4,7 @@ use socket2::{Protocol, SockAddr, Type};
 
 #[cfg(feature = "runtime")]
 use crate::{
-    buf::{IoBuf, IoBufMut},
+    buf::{IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     BufResult,
 };
 use crate::{
@@ -188,7 +188,7 @@ impl UdpSocket {
     /// Receives a packet of data from the socket into the buffer, returning the
     /// original buffer and quantity of data received.
     #[cfg(feature = "runtime")]
-    pub async fn recv_vectored<T: IoBufMut>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
+    pub async fn recv_vectored<T: IoVectoredBufMut>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.recv_vectored(buffer).await
     }
 
@@ -202,7 +202,7 @@ impl UdpSocket {
     /// Sends some data to the socket from the buffer, returning the original
     /// buffer and quantity of data sent.
     #[cfg(feature = "runtime")]
-    pub async fn send_vectored<T: IoBuf>(&self, buffer: Vec<T>) -> BufResult<usize, Vec<T>> {
+    pub async fn send_vectored<T: IoVectoredBuf>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.send_vectored(buffer).await
     }
 
@@ -216,10 +216,10 @@ impl UdpSocket {
     /// Receives a single datagram message on the socket. On success, returns
     /// the number of bytes received and the origin.
     #[cfg(feature = "runtime")]
-    pub async fn recv_from_vectored<T: IoBufMut>(
+    pub async fn recv_from_vectored<T: IoVectoredBufMut>(
         &self,
-        buffer: Vec<T>,
-    ) -> BufResult<(usize, SockAddr), Vec<T>> {
+        buffer: T,
+    ) -> BufResult<(usize, SockAddr), T> {
         self.inner.recv_from_vectored(buffer).await
     }
 
@@ -240,11 +240,11 @@ impl UdpSocket {
     /// Sends data on the socket to the given address. On success, returns the
     /// number of bytes sent.
     #[cfg(feature = "runtime")]
-    pub async fn send_to_vectored<T: IoBuf>(
+    pub async fn send_to_vectored<T: IoVectoredBuf>(
         &self,
-        buffer: Vec<T>,
+        buffer: T,
         addr: impl ToSockAddrs,
-    ) -> BufResult<usize, Vec<T>> {
+    ) -> BufResult<usize, T> {
         super::each_addr_async_buf(addr, buffer, |addr, buffer| async move {
             self.inner.send_to_vectored(buffer, &addr).await
         })

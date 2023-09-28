@@ -136,7 +136,7 @@ impl File {
     pub async fn read_at<T: IoBufMut>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = ReadAt::new(self.as_raw_fd(), pos, buffer);
-        submit(op).await.into_inner().map_advanced().into_inner()
+        submit(op).await.into_inner().map_advanced()
     }
 
     /// Read the exact number of bytes required to fill `buffer`.
@@ -197,7 +197,9 @@ impl File {
     ///
     /// [`read_at()`]: File::read_at
     #[cfg(feature = "runtime")]
-    pub async fn read_to_end_at<#[cfg(feature = "allocator_api")] A: Allocator + 'static>(
+    pub async fn read_to_end_at<
+        #[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static,
+    >(
         &self,
         mut buffer: vec_alloc!(u8, A),
         pos: usize,
@@ -244,7 +246,7 @@ impl File {
     pub async fn write_at<T: IoBuf>(&self, buffer: T, pos: usize) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = WriteAt::new(self.as_raw_fd(), pos, buffer);
-        submit(op).await.into_inner().into_inner()
+        submit(op).await.into_inner()
     }
 
     /// Attempts to write an entire buffer into this writer.

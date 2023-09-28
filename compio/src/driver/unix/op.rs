@@ -1,14 +1,12 @@
 use std::io::{IoSlice, IoSliceMut};
 
+use compio_buf::{IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
 #[cfg(doc)]
 use crate::op::*;
-use crate::{
-    buf::{AsIoSlices, AsIoSlicesMut, IntoInner, OneOrVec},
-    driver::RawFd,
-};
+use crate::{buf::IntoInner, driver::RawFd};
 
 /// Accept a connection.
 pub struct Accept {
@@ -34,24 +32,45 @@ impl Accept {
 }
 
 /// Receive data from remote.
-pub struct RecvImpl<T: AsIoSlicesMut + Unpin> {
+pub struct Recv<T: IoBufMut> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
-    pub(crate) slices: OneOrVec<IoSliceMut<'static>>,
 }
 
-impl<T: AsIoSlicesMut + Unpin> RecvImpl<T> {
-    /// Create [`Recv`] or [`RecvVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
+impl<T: IoBufMut> Recv<T> {
+    /// Create [`Recv`].
+    pub fn new(fd: RawFd, buffer: T) -> Self {
+        Self { fd, buffer }
+    }
+}
+
+impl<T: IoBufMut> IntoInner for Recv<T> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+/// Receive data from remote into vectored buffer.
+pub struct RecvVectored<T: IoVectoredBufMut> {
+    pub(crate) fd: RawFd,
+    pub(crate) buffer: T,
+    pub(crate) slices: Vec<IoSliceMut<'static>>,
+}
+
+impl<T: IoVectoredBufMut> RecvVectored<T> {
+    /// Create [`RecvVectored`].
+    pub fn new(fd: RawFd, buffer: T) -> Self {
         Self {
             fd,
-            buffer: T::new(buffer),
-            slices: OneOrVec::One(IoSliceMut::new(&mut [])),
+            buffer,
+            slices: vec![],
         }
     }
 }
 
-impl<T: AsIoSlicesMut + Unpin> IntoInner for RecvImpl<T> {
+impl<T: IoVectoredBufMut> IntoInner for RecvVectored<T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -60,24 +79,19 @@ impl<T: AsIoSlicesMut + Unpin> IntoInner for RecvImpl<T> {
 }
 
 /// Send data to remote.
-pub struct SendImpl<T: AsIoSlices + Unpin> {
+pub struct Send<T: IoBuf> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
-    pub(crate) slices: OneOrVec<IoSlice<'static>>,
 }
 
-impl<T: AsIoSlices + Unpin> SendImpl<T> {
-    /// Create [`Send`] or [`SendVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
-        Self {
-            fd,
-            buffer: T::new(buffer),
-            slices: OneOrVec::One(IoSlice::new(&[])),
-        }
+impl<T: IoBuf> Send<T> {
+    /// Create [`Send`].
+    pub fn new(fd: RawFd, buffer: T) -> Self {
+        Self { fd, buffer }
     }
 }
 
-impl<T: AsIoSlices + Unpin> IntoInner for SendImpl<T> {
+impl<T: IoBuf> IntoInner for Send<T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -85,85 +99,25 @@ impl<T: AsIoSlices + Unpin> IntoInner for SendImpl<T> {
     }
 }
 
-/// Receive data and source address.
-pub struct RecvFromImpl<T: AsIoSlicesMut + Unpin> {
+/// Send data to remote from vectored buffer.
+pub struct SendVectored<T: IoVectoredBuf> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
-    pub(crate) addr: sockaddr_storage,
-    pub(crate) slices: OneOrVec<IoSliceMut<'static>>,
-    pub(crate) msg: libc::msghdr,
+    pub(crate) slices: Vec<IoSlice<'static>>,
 }
 
-impl<T: AsIoSlicesMut + Unpin> RecvFromImpl<T> {
-    /// Create [`RecvFrom`] or [`RecvFromVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner) -> Self {
+impl<T: IoVectoredBuf> SendVectored<T> {
+    /// Create [`SendVectored`].
+    pub fn new(fd: RawFd, buffer: T) -> Self {
         Self {
             fd,
-            buffer: T::new(buffer),
-            addr: unsafe { std::mem::zeroed() },
-            slices: OneOrVec::One(IoSliceMut::new(&mut [])),
-            msg: unsafe { std::mem::zeroed() },
+            buffer,
+            slices: vec![],
         }
     }
-
-    pub(crate) fn set_msg(&mut self) {
-        self.slices = unsafe { self.buffer.as_io_slices_mut() };
-        self.msg = libc::msghdr {
-            msg_name: &mut self.addr as *mut _ as _,
-            msg_namelen: std::mem::size_of_val(&self.addr) as _,
-            msg_iov: self.slices.as_mut_ptr() as _,
-            msg_iovlen: self.slices.len() as _,
-            msg_control: std::ptr::null_mut(),
-            msg_controllen: 0,
-            msg_flags: 0,
-        };
-    }
 }
 
-impl<T: AsIoSlicesMut + Unpin> IntoInner for RecvFromImpl<T> {
-    type Inner = (T, sockaddr_storage, socklen_t);
-
-    fn into_inner(self) -> Self::Inner {
-        (self.buffer, self.addr, self.msg.msg_namelen)
-    }
-}
-
-/// Send data to specified address.
-pub struct SendToImpl<T: AsIoSlices + Unpin> {
-    pub(crate) fd: RawFd,
-    pub(crate) buffer: T,
-    pub(crate) addr: SockAddr,
-    pub(crate) slices: OneOrVec<IoSlice<'static>>,
-    pub(crate) msg: libc::msghdr,
-}
-
-impl<T: AsIoSlices + Unpin> SendToImpl<T> {
-    /// Create [`SendTo`] or [`SendToVectored`].
-    pub fn new(fd: RawFd, buffer: T::Inner, addr: SockAddr) -> Self {
-        Self {
-            fd,
-            buffer: T::new(buffer),
-            addr,
-            slices: OneOrVec::One(IoSlice::new(&[])),
-            msg: unsafe { std::mem::zeroed() },
-        }
-    }
-
-    pub(crate) fn set_msg(&mut self) {
-        self.slices = unsafe { self.buffer.as_io_slices() };
-        self.msg = libc::msghdr {
-            msg_name: self.addr.as_ptr() as _,
-            msg_namelen: self.addr.len(),
-            msg_iov: self.slices.as_mut_ptr() as _,
-            msg_iovlen: self.slices.len() as _,
-            msg_control: std::ptr::null_mut(),
-            msg_controllen: 0,
-            msg_flags: 0,
-        };
-    }
-}
-
-impl<T: AsIoSlices + Unpin> IntoInner for SendToImpl<T> {
+impl<T: IoVectoredBuf> IntoInner for SendVectored<T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {

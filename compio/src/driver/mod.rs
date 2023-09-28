@@ -85,11 +85,7 @@ cfg_if::cfg_if! {
 ///         res.unwrap();
 ///     } else if key == key_read {
 ///         n_bytes = res.unwrap();
-///         buf.write(
-///             unsafe { op.into_op::<op::Recv<Vec<u8>>>() }
-///                 .into_inner()
-///                 .into_inner(),
-///         );
+///         buf.write(unsafe { op.into_op::<op::Recv<Vec<u8>>>() }.into_inner());
 ///     }
 /// }
 ///
