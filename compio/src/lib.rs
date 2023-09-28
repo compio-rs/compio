@@ -30,6 +30,8 @@ pub(crate) use attacher::Attacher;
 #[cfg(feature = "signal")]
 pub mod signal;
 #[cfg(feature = "runtime")]
+pub use compio_macros::*;
+#[cfg(feature = "runtime")]
 pub mod task;
 #[cfg(feature = "time")]
 pub mod time;
