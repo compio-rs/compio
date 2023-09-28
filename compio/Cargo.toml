@@ -91,7 +91,7 @@ macros = ["dep:compio-macros", "runtime"]
 event = ["runtime", "compio-buf/arrayvec"]
 signal = ["event"]
 time = ["runtime"]
-all = ["time", "signal"]
+all = ["time", "macros", "signal"]
 
 # Nightly features
 allocator_api = ["bumpalo/allocator_api", "compio-buf/allocator_api"]
@@ -102,7 +102,7 @@ nightly = ["allocator_api", "lazy_cell", "once_cell_try", "read_buf"]
 
 [[example]]
 name = "tick"
-required-features = ["time", "signal"]
+required-features = ["time", "signal", "macros"]
 
 [[bench]]
 name = "fs"
