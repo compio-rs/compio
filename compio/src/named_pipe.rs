@@ -284,7 +284,10 @@ pub struct NamedPipeClient {
 
 impl NamedPipeClient {
     pub(crate) fn from_handle(handle: OwnedHandle) -> io::Result<Self> {
-        Ok(unsafe { Self::from_raw_fd(handle.into_raw_handle()) })
+        let this = unsafe { Self::from_raw_fd(handle.into_raw_handle()) };
+        #[cfg(feature="runtime")]
+        this.handle.attach();
+        Ok(this)
     }
 
     /// Creates a new independently owned handle to the underlying file handle.
@@ -753,7 +756,7 @@ impl ServerOptions {
     ///
     /// # })
     /// ```
-    /// 
+    ///
     /// [`WRITE_DAC`]: https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createnamedpipea
     pub fn write_dac(&mut self, requested: bool) -> &mut Self {
         self.write_dac = requested;
