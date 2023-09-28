@@ -31,6 +31,7 @@ use crate::{
 ///
 ///     let tx = UnixStream::connect(&sock_file).unwrap();
 ///     let (rx, _) = listener.accept().await.unwrap();
+///     rx.attach().unwrap();
 ///
 ///     tx.send_all("test").await.0.unwrap();
 ///

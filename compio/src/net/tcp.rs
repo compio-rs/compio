@@ -35,6 +35,7 @@ use crate::{
 ///     let rx_fut = listener.accept();
 ///
 ///     let (tx, (rx, _)) = futures_util::try_join!(tx_fut, rx_fut).unwrap();
+///     rx.attach().unwrap();
 ///
 ///     tx.send_all("test").await.0.unwrap();
 ///
