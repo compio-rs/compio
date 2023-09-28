@@ -104,8 +104,25 @@ nightly = ["allocator_api", "lazy_cell", "once_cell_try", "read_buf"]
 
 
 [[example]]
+name = "basic"
+required-features = ["macros"]
+
+[[example]]
+name = "named_pipe"
+required-features = ["macros"]
+
+[[example]]
+name = "net"
+required-features = ["macros"]
+
+[[example]]
+name = "unix"
+required-features = ["macros"]
+
+[[example]]
 name = "tick"
-required-features = ["time", "signal"]
+required-features = ["time", "signal", "macros"]
+
 
 [[bench]]
 name = "fs"
