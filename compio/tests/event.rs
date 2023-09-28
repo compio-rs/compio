@@ -1,13 +1,11 @@
 use compio::event::Event;
 
-#[test]
-fn event_handle() {
-    compio::task::block_on(async {
-        let event = Event::new().unwrap();
-        let handle = event.handle().unwrap();
-        std::thread::spawn(move || {
-            handle.notify().unwrap();
-        });
-        event.wait().await.unwrap();
+#[compio_macros::test]
+async fn event_handle() {
+    let event = Event::new().unwrap();
+    let handle = event.handle().unwrap();
+    std::thread::spawn(move || {
+        handle.notify().unwrap();
     });
+    event.wait().await.unwrap();
 }
