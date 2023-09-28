@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "compio",
-    "compio-buf"
+    "compio-buf",
+    "compio-macros"
 ]
 resolver = "2"
 
