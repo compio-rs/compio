@@ -21,11 +21,11 @@ fn multi_threading() {
             futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
 
         tx.send_all(DATA).await.0.unwrap();
-        rx.attach().unwrap();
 
         // let rx = SendWrapper(rx);
         if let Err(e) = std::thread::spawn(move || {
             compio::task::block_on(async {
+                rx.attach().unwrap();
                 let buffer = Vec::with_capacity(DATA.len());
                 let (n, buffer) = rx.recv_exact(buffer).await;
                 assert_eq!(n.unwrap(), buffer.len());
@@ -50,13 +50,14 @@ fn try_clone() {
         let (tx, (rx, _)) =
             futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
 
-        rx.attach().unwrap();
+        // rx.attach().unwrap();
         let tx = tx.try_clone().unwrap();
         tx.send_all(DATA).await.0.unwrap();
 
         // let rx = SendWrapper(rx.try_clone().unwrap());
         if let Err(e) = std::thread::spawn(move || {
             compio::task::block_on(async {
+                rx.attach().unwrap();
                 let buffer = Vec::with_capacity(DATA.len());
                 let (n, buffer) = rx.recv_exact(buffer).await;
                 assert_eq!(n.unwrap(), buffer.len());

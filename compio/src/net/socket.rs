@@ -47,6 +47,12 @@ impl Socket {
     }
 
     pub fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
+        let this = Self::new_not_attached(domain, ty, protocol)?;
+        #[cfg(feature = "runtime")]
+        this.attach()?;
+        Ok(this)
+    }
+    pub fn new_not_attached(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
         let socket = Socket2::new(domain, ty, protocol)?;
         // On Linux we use blocking socket
         // Newer kernels have the patch that allows to arm io_uring poll mechanism for
@@ -60,8 +66,6 @@ impl Socket {
             socket.set_nonblocking(true)?;
         }
         let this = Self::from_socket2(socket);
-        #[cfg(feature = "runtime")]
-        this.attach()?;
         Ok(this)
     }
 
@@ -115,7 +119,7 @@ impl Socket {
     #[cfg(all(feature = "runtime", target_os = "windows"))]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         let local_addr = self.local_addr()?;
-        let accept_sock = Self::new(
+        let accept_sock = Self::new_not_attached(
             local_addr.domain(),
             self.socket.r#type()?,
             self.socket.protocol()?,
