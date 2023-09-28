@@ -13,9 +13,10 @@ async fn test_connect_ip_impl(
     let (tx, rx) = futures_channel::oneshot::channel();
 
     compio::task::spawn(async move {
-        let (socket, addr) = listener.accept().await.unwrap();
-        assert_eq!(addr, socket.peer_addr().unwrap());
-        assert!(tx.send(socket).is_ok());
+        let (stream, addr) = listener.accept().await.unwrap();
+        stream.attach().unwrap();
+        assert_eq!(addr, stream.peer_addr().unwrap());
+        assert!(tx.send(stream).is_ok());
     })
     .detach();
 

@@ -25,6 +25,7 @@ fn multi_threading() {
         let rx = SendWrapper(rx);
         if let Err(e) = std::thread::spawn(move || {
             compio::task::block_on(async {
+                rx.attach().unwrap();
                 let buffer = Vec::with_capacity(DATA.len());
                 let (n, buffer) = rx.recv_exact(buffer).await;
                 assert_eq!(n.unwrap(), buffer.len());
@@ -55,6 +56,7 @@ fn try_clone() {
         let rx = SendWrapper(rx.try_clone().unwrap());
         if let Err(e) = std::thread::spawn(move || {
             compio::task::block_on(async {
+                rx.attach().unwrap();
                 let buffer = Vec::with_capacity(DATA.len());
                 let (n, buffer) = rx.recv_exact(buffer).await;
                 assert_eq!(n.unwrap(), buffer.len());

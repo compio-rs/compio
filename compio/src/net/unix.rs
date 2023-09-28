@@ -123,6 +123,11 @@ impl UnixStream {
         Self::connect_addr(SockAddr::unix(path)?)
     }
 
+    #[cfg(feature = "runtime")]
+    pub fn attach(&self) -> io::Result<()> {
+        self.inner.attach()
+    }
+
     /// Opens a Unix connection to the specified address. There must be a
     /// [`UnixListener`] or equivalent listening on the corresponding Unix
     /// domain socket to successfully connect and return a `UnixStream`.

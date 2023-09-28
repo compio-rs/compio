@@ -15,6 +15,7 @@ fn accept_read_write() -> std::io::Result<()> {
 
         let client = UnixStream::connect(&sock_path)?;
         let (server, _) = listener.accept().await?;
+        server.attach()?;
 
         let write_len = client.send_all("hello").await.0?;
         assert_eq!(write_len, 5);
@@ -43,6 +44,7 @@ fn shutdown() -> std::io::Result<()> {
 
         let client = UnixStream::connect(&sock_path)?;
         let (server, _) = listener.accept().await?;
+        server.attach()?;
 
         // Shut down the client
         client.shutdown(Shutdown::Both)?;

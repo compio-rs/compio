@@ -5,8 +5,9 @@ async fn test_impl(addr: impl ToSockAddrs) {
     let addr = listener.local_addr().unwrap();
     let (tx, rx) = futures_channel::oneshot::channel();
     compio::task::spawn(async move {
-        let (socket, _) = listener.accept().await.unwrap();
-        assert!(tx.send(socket).is_ok());
+        let (stream, _) = listener.accept().await.unwrap();
+        stream.attach().unwrap();
+        assert!(tx.send(stream).is_ok());
     })
     .detach();
     let cli = TcpStream::connect(&addr).await.unwrap();

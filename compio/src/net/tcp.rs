@@ -168,6 +168,11 @@ impl TcpStream {
         .await
     }
 
+    #[cfg(feature = "runtime")]
+    pub fn attach(&self) -> io::Result<()> {
+        self.inner.attach()
+    }
+
     /// Creates a new independently owned handle to the underlying socket.
     ///
     /// It does not clear the attach state.
