@@ -30,7 +30,7 @@ targets = [
 [dependencies]
 # Workspace dependencies
 compio-buf = { workspace = true }
-compio-macros = { workspace = true }
+compio-macros = { path = "../compio-macros", optional = true }
 
 # Utils
 cfg-if = "1"
@@ -87,6 +87,7 @@ libc = "0.2"
 default = ["runtime", "io-uring"]
 io-uring = ["dep:io-uring"]
 runtime = ["dep:async-task", "dep:futures-util", "dep:smallvec"]
+macros = ["compio-macros"]
 event = ["runtime", "compio-buf/arrayvec"]
 signal = ["event"]
 time = ["runtime"]

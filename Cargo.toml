@@ -8,4 +8,3 @@ resolver = "2"
 
 [workspace.dependencies]
 compio-buf = { path = "./compio-buf" }
-compio-macros = { path = "./compio-macros" }
