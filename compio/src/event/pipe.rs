@@ -3,7 +3,9 @@ use std::{
     os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd},
 };
 
-use crate::{buf::arrayvec::ArrayVec, impl_raw_fd, op::Recv, syscall, task::submit};
+use crate::{
+    attacher::Attacher, buf::arrayvec::ArrayVec, impl_raw_fd, op::Recv, syscall, task::submit,
+};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
@@ -11,6 +13,7 @@ use crate::{buf::arrayvec::ArrayVec, impl_raw_fd, op::Recv, syscall, task::submi
 pub struct Event {
     sender: OwnedFd,
     receiver: OwnedFd,
+    attacher: Attacher,
 }
 
 impl Event {
@@ -24,7 +27,11 @@ impl Event {
         syscall!(fcntl(receiver.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
         syscall!(fcntl(receiver.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK))?;
         syscall!(fcntl(sender.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
-        Ok(Self { sender, receiver })
+        Ok(Self {
+            sender,
+            receiver,
+            attacher: Attacher::new(),
+        })
     }
 
     /// Get a notify handle.
@@ -34,6 +41,7 @@ impl Event {
 
     /// Wait for [`EventHandle::notify`] called.
     pub async fn wait(&self) -> io::Result<()> {
+        self.attacher.attach(&self.receiver)?;
         let buffer = ArrayVec::<u8, 1>::new();
         // Trick: Recv uses readv which doesn't seek.
         let op = Recv::new(self.receiver.as_raw_fd(), buffer);
