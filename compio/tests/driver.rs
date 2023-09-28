@@ -12,6 +12,7 @@ fn cancel_before_poll() {
     let mut driver = Proactor::new().unwrap();
 
     let file = File::open("Cargo.toml").unwrap();
+    #[cfg(not(feature = "runtime"))]
     driver.attach(file.as_raw_fd()).unwrap();
 
     driver.cancel(0);
@@ -45,6 +46,7 @@ fn register_multiple() {
     let mut driver = Proactor::new().unwrap();
 
     let file = File::open("Cargo.toml").unwrap();
+    #[cfg(not(feature = "runtime"))]
     driver.attach(file.as_raw_fd()).unwrap();
 
     for _i in 0..TASK_LEN {

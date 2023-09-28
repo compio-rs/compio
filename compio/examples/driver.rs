@@ -7,6 +7,7 @@ use compio::{
 fn main() {
     let mut driver = Proactor::new().unwrap();
     let file = compio::fs::File::open("Cargo.toml").unwrap();
+    #[cfg(not(feature = "runtime"))]
     driver.attach(file.as_raw_fd()).unwrap();
 
     let op = ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(4096));
