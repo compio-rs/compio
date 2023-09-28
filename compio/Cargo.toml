@@ -43,14 +43,13 @@ smallvec = { version = "1", optional = true }
 async-task = { version = "4", optional = true }
 futures-util = { version = "0.3", optional = true }
 
-
-
 # Shared dev dependencies for all platforms
 [dev-dependencies]
 bumpalo = "3"
 criterion = { version = "0.5", features = ["async_tokio"] }
 futures-channel = "0.3"
 compio-buf = { workspace = true, features = ["arrayvec"] }
+compio-macro = { workspace = true }
 tempfile = "3"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt"] }
 
