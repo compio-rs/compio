@@ -59,7 +59,9 @@ cfg_if::cfg_if! {
 /// other_socket.connect(first_addr).unwrap();
 ///
 /// let mut driver = Proactor::new().unwrap();
+/// #[cfg(not(feature="runtime"))]
 /// driver.attach(socket.as_raw_fd()).unwrap();
+/// #[cfg(not(feature="runtime"))]
 /// driver.attach(other_socket.as_raw_fd()).unwrap();
 ///
 /// // write data

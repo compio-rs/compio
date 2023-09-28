@@ -286,7 +286,7 @@ impl NamedPipeClient {
     pub(crate) fn from_handle(handle: OwnedHandle) -> io::Result<Self> {
         let this = unsafe { Self::from_raw_fd(handle.into_raw_handle()) };
         #[cfg(feature="runtime")]
-        this.handle.attach();
+        this.handle.attach()?;
         Ok(this)
     }
 
