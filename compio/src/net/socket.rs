@@ -114,6 +114,7 @@ impl Socket {
         let accept_sock = unsafe { Socket2::from_raw_fd(res? as _) };
         accept_sock.set_nonblocking(true)?;
         let accept_sock = Self::from_socket2(accept_sock);
+        let _ = accept_sock.attach()?;
         let addr = op.into_addr();
         Ok((accept_sock, addr))
     }
