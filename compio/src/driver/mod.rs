@@ -114,13 +114,13 @@ impl Proactor {
         })
     }
 
-    /// Attach an fd to the driver.
+    /// Attach an fd to the driver. It will cause unexpected result to attach
+    /// the handle with one driver and push an op to another driver.
     ///
     /// ## Platform specific
     /// * IOCP: it will be attached to the completion port. An fd could only be
     ///   attached to one driver, and could only be attached once, even if you
-    ///   `try_clone` it. It will cause unexpected result to attach the handle
-    ///   with one driver and push an op to another driver.
+    ///   `try_clone` it.
     /// * io-uring: it will do nothing and return `Ok(())`.
     /// * polling: it will initialize inner queue and register to the driver. On
     ///   Linux and Android, if the fd is a normal file or a directory, this
