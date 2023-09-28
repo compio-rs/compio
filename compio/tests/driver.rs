@@ -50,7 +50,7 @@ fn register_multiple() {
     driver.attach(file.as_raw_fd()).unwrap();
 
     for _i in 0..TASK_LEN {
-        driver.push(ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(1024)));
+        driver.push(ReadAt::new(file.as_raw_fd(), 1, Vec::with_capacity(1024)));
     }
 
     let mut entries = ArrayVec::<Entry, TASK_LEN>::new();
