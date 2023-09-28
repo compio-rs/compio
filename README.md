@@ -25,19 +25,20 @@ They don't support Windows.
 
 ## Quick start
 
-With `runtime` feature enabled, we can use the high level APIs to perform fs & net IO.
+With `macros` feature enabled, we can use the high level APIs to perform fs & net IO.
 
 ```rust,no_run
-use compio::{fs::File, task::block_on};
+use compio::fs::File;
 
-let buffer = block_on(async {
+#[compio::main]
+async fn main() {
     let file = File::open("Cargo.toml").unwrap();
     let (read, buffer) = file.read_to_end_at(Vec::with_capacity(1024), 0).await;
     let read = read.unwrap();
     assert_eq!(read, buffer.len());
-    String::from_utf8(buffer).unwrap()
-});
-println!("{}", buffer);
+    let buffer = String::from_utf8(buffer).unwrap();
+    println!("{}", buffer);
+}
 ```
 
 While you can also control the low-level driver manually. See `driver` example of the repo.
