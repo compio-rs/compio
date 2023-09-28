@@ -39,6 +39,8 @@ fn timeout() {
     assert_eq!(err.kind(), io::ErrorKind::TimedOut);
 }
 
+// non blocking ReadFile on Windows requires file opened with CreateFile
+#[cfg(not(windows))]
 #[test]
 fn register_multiple() {
     const TASK_LEN: usize = 5;
