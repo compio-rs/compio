@@ -6,7 +6,7 @@ pub(crate) struct CompioMain {
     pub attrs: Vec<Attribute>,
     pub vis: Visibility,
     pub sig: Signature,
-    pub block: TokenStream,
+    pub body: TokenStream,
 }
 
 impl Parse for CompioMain {
@@ -14,7 +14,7 @@ impl Parse for CompioMain {
         let outer_attrs = input.call(Attribute::parse_outer)?;
         let vis: Visibility = input.parse()?;
         let mut sig: Signature = input.parse()?;
-        let block: TokenStream = input.parse()?;
+        let body: TokenStream = input.parse()?;
 
         if let None = sig.asyncness {
             return Err(syn::Error::new_spanned(
@@ -34,7 +34,7 @@ impl Parse for CompioMain {
             attrs: outer_attrs,
             vis,
             sig,
-            block,
+            body,
         })
     }
 }
@@ -48,9 +48,9 @@ impl ToTokens for CompioMain {
         );
         self.vis.to_tokens(tokens);
         self.sig.to_tokens(tokens);
-        let body = &self.block;
+        let block = &self.body;
         tokens.append_all(quote!({
-            compio::task::block_on(async move #body)
+            compio::task::block_on(async move #block)
         }));
     }
 }
