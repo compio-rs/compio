@@ -2,7 +2,7 @@ use std::net::Shutdown;
 
 use compio::net::{UnixListener, UnixStream};
 
-#[compio_macros::test]
+#[compio::test]
 async fn accept_read_write() -> std::io::Result<()> {
     let dir = tempfile::Builder::new()
         .prefix("compio-uds-tests")
@@ -28,7 +28,7 @@ async fn accept_read_write() -> std::io::Result<()> {
     Ok(())
 }
 
-#[compio_macros::test]
+#[compio::test]
 async fn shutdown() -> std::io::Result<()> {
     let dir = tempfile::Builder::new()
         .prefix("compio-uds-tests")

@@ -14,7 +14,7 @@ async fn read_hello(file: &File) {
     assert_eq!(&buf, HELLO);
 }
 
-#[compio_macros::test]
+#[compio::test]
 async fn basic_read() {
     let mut tempfile = tempfile();
     tempfile.write_all(HELLO).unwrap();
@@ -23,7 +23,7 @@ async fn basic_read() {
     read_hello(&file).await;
 }
 
-#[compio_macros::test]
+#[compio::test]
 async fn basic_write() {
     let tempfile = tempfile();
 
@@ -36,7 +36,7 @@ async fn basic_write() {
     assert_eq!(file, HELLO);
 }
 
-#[compio_macros::test]
+#[compio::test]
 async fn cancel_read() {
     let mut tempfile = tempfile();
     tempfile.write_all(HELLO).unwrap();
@@ -49,7 +49,7 @@ async fn cancel_read() {
     read_hello(&file).await;
 }
 
-#[compio_macros::test]
+#[compio::test]
 async fn drop_open() {
     let tempfile = tempfile();
     let _ = File::create(tempfile.path());

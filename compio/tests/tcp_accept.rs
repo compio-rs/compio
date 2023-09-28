@@ -17,7 +17,7 @@ async fn test_impl(addr: impl ToSockAddrs) {
 macro_rules! test_accept {
     ($(($ident:ident, $target:expr),)*) => {
         $(
-            #[compio_macros::test]
+            #[compio::test]
             async fn $ident() {
                 println!("Testing {}...", stringify!($ident));
                 test_impl($target).await;
