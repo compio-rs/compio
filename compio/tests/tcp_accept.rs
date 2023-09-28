@@ -17,10 +17,10 @@ async fn test_impl(addr: impl ToSockAddrs) {
 macro_rules! test_accept {
     ($(($ident:ident, $target:expr),)*) => {
         $(
-            #[test]
-            fn $ident() {
+            #[compio::test]
+            async fn $ident() {
                 println!("Testing {}...", stringify!($ident));
-                compio::task::block_on(test_impl($target))
+                test_impl($target).await;
             }
         )*
     };
