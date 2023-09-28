@@ -30,7 +30,7 @@ targets = [
 [dependencies]
 # Workspace dependencies
 compio-buf = { workspace = true }
-compio-macros = { path = "../compio-macros", optional = true }
+compio-macros = { workspace = true, optional = true }
 
 # Utils
 cfg-if = "1"
@@ -42,6 +42,8 @@ socket2 = { version = ">=0.5.4", features = ["all"] }
 smallvec = { version = "1", optional = true }
 async-task = { version = "4", optional = true }
 futures-util = { version = "0.3", optional = true }
+
+
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
@@ -100,9 +102,10 @@ once_cell_try = []
 read_buf = ["compio-buf/read_buf"]
 nightly = ["allocator_api", "lazy_cell", "once_cell_try", "read_buf"]
 
+
 [[example]]
 name = "tick"
-required-features = ["time", "signal", "macros"]
+required-features = ["time", "signal"]
 
 [[bench]]
 name = "fs"
