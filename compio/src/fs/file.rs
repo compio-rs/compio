@@ -261,10 +261,11 @@ impl File {
         let mut total_written = 0;
         let mut written;
         while total_written < buf_len {
-            (written, buffer) = buf_try!(self
-                .write_at(buffer.slice(total_written..), pos + total_written)
-                .await
-                .into_inner());
+            (written, buffer) = buf_try!(
+                self.write_at(buffer.slice(total_written..), pos + total_written)
+                    .await
+                    .into_inner()
+            );
             total_written += written;
         }
         (Ok(total_written), buffer)

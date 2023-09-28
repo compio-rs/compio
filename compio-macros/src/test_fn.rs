@@ -13,7 +13,7 @@ impl Parse for CompioTest {
         let mut sig: Signature = input.parse()?;
         let body: TokenStream = input.parse()?;
 
-        if let None = sig.asyncness {
+        if sig.asyncness.is_none() {
             return Err(syn::Error::new_spanned(
                 sig.ident,
                 "the `async` keyword is missing from the function declaration",
