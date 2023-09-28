@@ -21,6 +21,7 @@ fn multi_threading() {
             futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
 
         tx.send_all(DATA).await.0.unwrap();
+        rx.attach().unwrap();
 
         // let rx = SendWrapper(rx);
         if let Err(e) = std::thread::spawn(move || {
@@ -53,6 +54,7 @@ fn try_clone() {
         // rx.attach().unwrap();
         let tx = tx.try_clone().unwrap();
         tx.send_all(DATA).await.0.unwrap();
+        rx.attach().unwrap();
 
         // let rx = SendWrapper(rx.try_clone().unwrap());
         if let Err(e) = std::thread::spawn(move || {
