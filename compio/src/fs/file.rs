@@ -22,8 +22,6 @@ use crate::{fs::OpenOptions, impl_raw_fd};
 #[derive(Debug)]
 pub struct File {
     inner: std::fs::File,
-    #[cfg(feature = "runtime")]
-    attacher: Attacher,
 }
 
 #[cfg(target_os = "windows")]
@@ -61,8 +59,6 @@ impl File {
     pub(crate) fn with_options(path: impl AsRef<Path>, options: OpenOptions) -> io::Result<Self> {
         let this = Self {
             inner: file_with_options(path, options.0)?,
-            #[cfg(feature = "runtime")]
-            attacher: Attacher::new(),
         };
         #[cfg(feature = "runtime")]
         this.attach()?;
@@ -92,7 +88,7 @@ impl File {
 
     #[cfg(feature = "runtime")]
     pub(crate) fn attach(&self) -> io::Result<()> {
-        self.attacher.attach(self)
+        Attacher::attach(self)
     }
 
     /// Creates a new `File` instance that shares the same underlying file
@@ -102,8 +98,6 @@ impl File {
     pub fn try_clone(&self) -> io::Result<Self> {
         Ok(Self {
             inner: self.inner.try_clone()?,
-            #[cfg(feature = "runtime")]
-            attacher: self.attacher.clone(),
         })
     }
 
@@ -307,4 +301,4 @@ impl File {
     }
 }
 
-impl_raw_fd!(File, inner, attacher);
+impl_raw_fd!(File, inner);

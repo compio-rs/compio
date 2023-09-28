@@ -65,10 +65,6 @@ macro_rules! impl_raw_fd {
             unsafe fn from_raw_fd(fd: crate::driver::RawFd) -> Self {
                 Self {
                     $inner: crate::driver::FromRawFd::from_raw_fd(fd),
-                    $(
-                        #[cfg(feature = "runtime")]
-                        $attacher: crate::Attacher::new(),
-                    )?
                 }
             }
         }

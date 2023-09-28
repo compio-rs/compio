@@ -16,11 +16,7 @@ use crate::{driver::AsRawFd, task::attach};
 pub struct Attacher {}
 
 impl Attacher {
-    pub const fn new() -> Self {
-        Self {}
-    }
-
-    pub fn attach(&self, source: &impl AsRawFd) -> io::Result<()> {
+    pub fn attach(source: &impl AsRawFd) -> io::Result<()> {
         attach(source.as_raw_fd())
     }
 }

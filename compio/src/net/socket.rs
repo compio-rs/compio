@@ -18,29 +18,23 @@ use crate::{
 
 pub struct Socket {
     socket: Socket2,
-    #[cfg(feature = "runtime")]
-    attacher: Attacher,
 }
 
 impl Socket {
     pub fn from_socket2(socket: Socket2) -> Self {
         Self {
             socket,
-            #[cfg(feature = "runtime")]
-            attacher: Attacher::new(),
         }
     }
 
     #[cfg(feature = "runtime")]
     pub(crate) fn attach(&self) -> io::Result<()> {
-        self.attacher.attach(self)
+        Attacher::attach(self)
     }
 
     pub fn try_clone(&self) -> io::Result<Self> {
         Ok(Self {
             socket: self.socket.try_clone()?,
-            #[cfg(feature = "runtime")]
-            attacher: self.attacher.clone(),
         })
     }
 
@@ -223,4 +217,4 @@ impl Socket {
     }
 }
 
-impl_raw_fd!(Socket, socket, attacher);
+impl_raw_fd!(Socket, socket);
