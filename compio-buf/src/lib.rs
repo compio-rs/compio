@@ -63,3 +63,20 @@ impl<T: IntoInner, O> IntoInner for BufResult<O, T> {
         (self.0, self.1.into_inner())
     }
 }
+
+#[macro_export]
+macro_rules! buf_try {
+    ($e:expr) => {{
+        match $e {
+            (Ok(res), buf) => (res, buf),
+            (Err(e), buf) => return (Err(e), buf),
+        }
+    }};
+    ($e:expr, $b:expr) => {{
+        let buf = $b;
+        match $e {
+            Ok(res) => (res, buf),
+            Err(e) => return (Err(e), buf),
+        }
+    }};
+}

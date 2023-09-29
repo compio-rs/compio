@@ -2,16 +2,15 @@
 use std::alloc::Allocator;
 use std::{fs::Metadata, io, path::Path};
 
+use compio_driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 #[cfg(feature = "runtime")]
-use crate::{
-    buf::{vec_alloc, IntoInner, IoBuf, IoBufMut},
-    buf_try,
-    driver::AsRawFd,
-    op::{BufResultExt, ReadAt, Sync, WriteAt},
-    task::submit,
-    Attacher, BufResult,
+use ::{
+    compio_buf::{buf_try, vec_alloc, BufResult, IntoInner, IoBuf, IoBufMut},
+    compio_driver::op::{BufResultExt, ReadAt, Sync, WriteAt},
+    compio_runtime::{submit, Attacher},
 };
-use crate::{fs::OpenOptions, impl_raw_fd};
+
+use crate::OpenOptions;
 
 /// A reference to an open file on the filesystem.
 ///
@@ -305,4 +304,24 @@ impl File {
     }
 }
 
-impl_raw_fd!(File, inner, attacher);
+impl AsRawFd for File {
+    fn as_raw_fd(&self) -> RawFd {
+        self.inner.as_raw_fd()
+    }
+}
+
+impl FromRawFd for File {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
+        Self {
+            inner: FromRawFd::from_raw_fd(fd),
+            #[cfg(feature = "runtime")]
+            attacher: compio_runtime::Attacher::new(),
+        }
+    }
+}
+
+impl IntoRawFd for File {
+    fn into_raw_fd(self) -> RawFd {
+        self.inner.into_raw_fd()
+    }
+}

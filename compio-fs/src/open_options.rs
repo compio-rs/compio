@@ -1,6 +1,6 @@
 use std::{fs::OpenOptions as StdOpenOptions, io, path::Path};
 
-use crate::fs::File;
+use crate::File;
 
 /// Options and flags which can be used to configure how a file is opened.
 ///

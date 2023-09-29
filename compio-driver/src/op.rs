@@ -14,7 +14,7 @@ pub use crate::sys::op::{
 };
 use crate::{sockaddr_storage, socklen_t, RawFd};
 
-pub(crate) trait BufResultExt {
+pub trait BufResultExt {
     fn map_advanced(self) -> Self;
 }
 

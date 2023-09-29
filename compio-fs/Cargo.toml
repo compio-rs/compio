@@ -1,0 +1,25 @@
+[package]
+name = "compio-fs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Workspace dependencies
+compio-buf = { workspace = true, optional = true }
+compio-driver = { workspace = true }
+compio-runtime = { workspace = true, optional = true }
+
+# Windows specific dependencies
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.48", features = ["Win32_Storage_FileSystem"] }
+
+# Unix specific dependencies
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[features]
+runtime = ["dep:compio-buf", "dep:compio-runtime"]
+
+# Nightly features
+allocator_api = []
+nightly = ["allocator_api", "compio-buf?/allocator_api"]

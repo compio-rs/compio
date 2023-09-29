@@ -1,5 +1,5 @@
 [package]
-name = "compio-task"
+name = "compio-runtime"
 version = "0.1.0"
 edition = "2021"
 
