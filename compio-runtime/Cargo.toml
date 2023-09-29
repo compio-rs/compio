@@ -24,7 +24,7 @@ windows-sys = { version = "0.48", features = ["Win32_System_IO"] }
 libc = "0.2"
 
 [features]
-event = ["dep:cfg-if"]
+event = ["dep:cfg-if", "compio-buf/arrayvec"]
 time = ["dep:slab"]
 
 # Nightly features

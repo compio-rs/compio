@@ -1,7 +1,6 @@
 use compio::{
     buf::{arrayvec::ArrayVec, IntoInner},
-    driver::{AsRawFd, Entry, Proactor},
-    op::ReadAt,
+    driver::{op::ReadAt, AsRawFd, Entry, Proactor},
 };
 
 fn main() {

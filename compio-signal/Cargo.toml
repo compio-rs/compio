@@ -23,5 +23,6 @@ libc = "0.2"
 
 [features]
 # Nightly features
+lazy_cell = []
 once_cell_try = []
-nightly = ["once_cell_try"]
+nightly = ["lazy_cell", "once_cell_try"]

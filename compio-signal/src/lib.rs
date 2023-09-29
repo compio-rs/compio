@@ -13,6 +13,8 @@
 //! })
 //! ```
 
+#![cfg_attr(feature = "lazy_cell", feature(lazy_cell))]
+
 #[cfg(target_os = "windows")]
 pub mod windows;
 

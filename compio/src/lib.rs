@@ -1,27 +1,30 @@
 //!
 #![doc = include_str!("../../README.md")]
-#![cfg_attr(feature = "allocator_api", feature(allocator_api))]
-#![cfg_attr(feature = "lazy_cell", feature(lazy_cell))]
-#![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
-#![cfg_attr(feature = "read_buf", feature(read_buf))]
 #![warn(missing_docs)]
 
-pub mod fs;
-pub mod net;
-
-pub use buf::BufResult;
+#[doc(no_inline)]
 pub use compio_buf as buf;
-
+#[doc(no_inline)]
+pub use compio_driver as driver;
+#[doc(no_inline)]
+pub use compio_fs as fs;
 #[cfg(target_os = "windows")]
-pub mod named_pipe;
-
-#[cfg(feature = "runtime")]
-mod attacher;
-#[cfg(feature = "event")]
-pub mod event;
-#[cfg(feature = "runtime")]
-pub(crate) use attacher::Attacher;
-#[cfg(feature = "signal")]
-pub mod signal;
+#[doc(no_inline)]
+pub use compio_fs::named_pipe;
 #[cfg(feature = "macros")]
+#[doc(no_inline)]
 pub use compio_macros::*;
+#[doc(no_inline)]
+pub use compio_net as net;
+#[cfg(feature = "runtime")]
+#[doc(no_inline)]
+pub use compio_runtime as task;
+#[cfg(feature = "event")]
+#[doc(no_inline)]
+pub use compio_runtime::event;
+#[cfg(feature = "time")]
+#[doc(no_inline)]
+pub use compio_runtime::time;
+#[cfg(feature = "signal")]
+#[doc(no_inline)]
+pub use compio_signal as signal;

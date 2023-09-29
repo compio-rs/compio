@@ -114,67 +114,6 @@ macro_rules! impl_raw_fd {
 
 /// Low-level actions of completion-based IO.
 /// It owns the operations to keep the driver safe.
-///
-/// # Examples
-///
-/// ```
-/// use std::{mem::MaybeUninit, net::SocketAddr};
-///
-/// use compio::{
-///     buf::{arrayvec::ArrayVec, IntoInner},
-///     driver::{AsRawFd, Entry, Proactor},
-///     net::UdpSocket,
-///     op,
-/// };
-///
-/// let first_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-/// let second_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-///
-/// // bind sockets
-/// let socket = UdpSocket::bind(first_addr).unwrap();
-/// let first_addr = socket.local_addr().unwrap();
-/// let other_socket = UdpSocket::bind(second_addr).unwrap();
-/// let second_addr = other_socket.local_addr().unwrap();
-///
-/// // connect sockets
-/// socket.connect(second_addr).unwrap();
-/// other_socket.connect(first_addr).unwrap();
-///
-/// let mut driver = Proactor::new().unwrap();
-/// driver.attach(socket.as_raw_fd()).unwrap();
-/// driver.attach(other_socket.as_raw_fd()).unwrap();
-///
-/// // write data
-/// let op_write = op::Send::new(socket.as_raw_fd(), "hello world");
-/// let key_write = driver.push(op_write);
-///
-/// // read data
-/// let buf = Vec::with_capacity(32);
-/// let op_read = op::Recv::new(other_socket.as_raw_fd(), buf);
-/// let key_read = driver.push(op_read);
-///
-/// let mut entries = ArrayVec::<Entry, 2>::new();
-///
-/// while entries.len() < 2 {
-///     driver.poll(None, &mut entries).unwrap();
-/// }
-///
-/// let mut n_bytes = 0;
-/// let mut buf = MaybeUninit::uninit();
-/// for (res, op) in driver.pop(&mut entries.into_iter()) {
-///     let key = op.user_data();
-///     if key == key_write {
-///         res.unwrap();
-///     } else if key == key_read {
-///         n_bytes = res.unwrap();
-///         buf.write(unsafe { op.into_op::<op::Recv<Vec<u8>>>() }.into_inner());
-///     }
-/// }
-///
-/// let mut buf = unsafe { buf.assume_init() };
-/// unsafe { buf.set_len(n_bytes) };
-/// assert_eq!(buf, b"hello world");
-/// ```
 pub struct Proactor {
     driver: Driver,
     ops: Slab<RawOp>,
