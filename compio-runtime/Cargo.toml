@@ -9,12 +9,22 @@ compio-driver = { workspace = true }
 compio-buf = { workspace = true }
 
 async-task = "4"
+cfg-if = { version = "1", optional = true }
 futures-util = "0.3"
 once_cell = "1"
 slab = { version = "0.4", optional = true }
 smallvec = "1"
 
+# Windows specific dependencies
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.48", features = ["Win32_System_IO"] }
+
+# Unix specific dependencies
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [features]
+event = ["dep:cfg-if"]
 time = ["dep:slab"]
 
 # Nightly features

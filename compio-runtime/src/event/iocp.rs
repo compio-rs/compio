@@ -1,12 +1,9 @@
-use std::{io, pin::Pin, task::Poll};
+use std::{io, pin::Pin, ptr::null_mut, task::Poll};
 
-use windows_sys::Win32::System::IO::OVERLAPPED;
+use compio_driver::{syscall, OpCode, RawFd};
+use windows_sys::Win32::System::IO::{PostQueuedCompletionStatus, OVERLAPPED};
 
-use crate::{
-    driver::{post_driver_nop, OpCode, RawFd},
-    key::Key,
-    task::{op::OpFuture, RUNTIME},
-};
+use crate::{key::Key, runtime::op::OpFuture, RUNTIME};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
@@ -58,6 +55,14 @@ impl EventHandle {
     pub fn notify(&self) -> io::Result<()> {
         post_driver_nop(self.handle, self.user_data)
     }
+}
+
+fn post_driver_nop(handle: RawFd, user_data: usize) -> io::Result<()> {
+    syscall!(
+        BOOL,
+        PostQueuedCompletionStatus(handle as _, 0, user_data, null_mut())
+    )?;
+    Ok(())
 }
 
 #[derive(Debug)]

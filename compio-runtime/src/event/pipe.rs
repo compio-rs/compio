@@ -3,9 +3,10 @@ use std::{
     os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd},
 };
 
-use crate::{
-    attacher::Attacher, buf::arrayvec::ArrayVec, impl_raw_fd, op::Recv, syscall, task::submit,
-};
+use compio_buf::arrayvec::ArrayVec;
+use compio_driver::{op::Recv, syscall};
+
+use crate::{attacher::Attacher, submit};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
@@ -74,5 +75,3 @@ impl EventHandle {
         Ok(())
     }
 }
-
-impl_raw_fd!(EventHandle, fd);

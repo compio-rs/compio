@@ -16,6 +16,9 @@
 mod attacher;
 mod key;
 pub(crate) mod runtime;
+
+#[cfg(feature = "event")]
+pub mod event;
 #[cfg(feature = "time")]
 pub mod time;
 

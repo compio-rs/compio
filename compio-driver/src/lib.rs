@@ -36,6 +36,7 @@ cfg_if::cfg_if! {
 pub use sys::*;
 
 #[cfg(target_os = "windows")]
+#[macro_export]
 macro_rules! syscall {
     ($fn: ident ( $($arg: expr),* $(,)* ), $op: tt $rhs: expr) => {{
         #[allow(unused_unsafe)]
@@ -59,7 +60,7 @@ macro_rules! syscall {
 
 /// Helper macro to execute a system call
 #[cfg(unix)]
-#[allow(unused_macros)]
+#[macro_export]
 macro_rules! syscall {
     ($fn: ident ( $($arg: expr),* $(,)* ) ) => {{
         #[allow(unused_unsafe)]
@@ -87,9 +88,6 @@ macro_rules! syscall {
         }
     };
 }
-
-#[allow(unused_imports)]
-pub(crate) use syscall;
 
 /// Low-level actions of completion-based IO.
 /// It owns the operations to keep the driver safe.

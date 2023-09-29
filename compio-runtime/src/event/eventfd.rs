@@ -1,11 +1,12 @@
 use std::{
     io,
-    os::fd::{AsRawFd, FromRawFd, OwnedFd},
+    os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd},
 };
 
-use crate::{
-    attacher::Attacher, buf::arrayvec::ArrayVec, impl_raw_fd, op::Recv, syscall, task::submit,
-};
+use compio_buf::arrayvec::ArrayVec;
+use compio_driver::{op::Recv, syscall};
+
+use crate::{attacher::Attacher, submit};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
@@ -43,7 +44,11 @@ impl Event {
     }
 }
 
-impl_raw_fd!(Event, fd, attacher);
+impl AsRawFd for Event {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd.as_raw_fd()
+    }
+}
 
 /// A handle to [`Event`].
 pub struct EventHandle {
@@ -66,5 +71,3 @@ impl EventHandle {
         Ok(())
     }
 }
-
-impl_raw_fd!(EventHandle, fd);

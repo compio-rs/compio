@@ -296,15 +296,6 @@ unsafe fn post_driver_raw(
     Ok(())
 }
 
-#[allow(dead_code)]
-pub(crate) fn post_driver_nop(handle: RawFd, user_data: usize) -> io::Result<()> {
-    syscall!(
-        BOOL,
-        PostQueuedCompletionStatus(handle as _, 0, user_data, null_mut())
-    )?;
-    Ok(())
-}
-
 fn ntstatus_from_win32(x: i32) -> NTSTATUS {
     if x <= 0 {
         x
