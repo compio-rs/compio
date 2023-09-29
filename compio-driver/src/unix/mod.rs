@@ -7,15 +7,15 @@ use std::{mem::ManuallyDrop, pin::Pin, ptr::NonNull};
 
 use crate::OpCode;
 
-pub(crate) struct RawOp(NonNull<dyn OpCode>);
+pub struct RawOp(NonNull<dyn OpCode>);
 
 impl RawOp {
-    pub(crate) fn new(_user_data: usize, op: impl OpCode + 'static) -> Self {
+    pub fn new(_user_data: usize, op: impl OpCode + 'static) -> Self {
         let op = Box::new(op);
         Self(unsafe { NonNull::new_unchecked(Box::into_raw(op as Box<dyn OpCode>)) })
     }
 
-    pub(crate) fn as_pin(&mut self) -> Pin<&mut dyn OpCode> {
+    pub fn as_pin(&mut self) -> Pin<&mut dyn OpCode> {
         unsafe { Pin::new_unchecked(self.0.as_mut()) }
     }
 

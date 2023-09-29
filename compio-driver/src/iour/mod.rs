@@ -15,7 +15,7 @@ use slab::Slab;
 use crate::Entry;
 
 pub(crate) mod op;
-pub(crate) use crate::unix::RawOp;
+pub use crate::unix::RawOp;
 
 /// Abstraction of io-uring operations.
 pub trait OpCode {

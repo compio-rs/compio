@@ -6,10 +6,9 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-use crate::{
-    driver::{OpCode, RawOp},
-    key::Key,
-};
+use compio_driver::{OpCode, RawOp};
+
+use crate::key::Key;
 
 #[derive(Default)]
 pub(crate) struct RegisteredOp {
@@ -76,7 +75,7 @@ impl<T: OpCode> Future for OpFuture<T> {
     type Output = (io::Result<usize>, T);
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let res = crate::task::RUNTIME.with(|runtime| runtime.poll_task(cx, self.user_data));
+        let res = crate::RUNTIME.with(|runtime| runtime.poll_task(cx, self.user_data));
         if res.is_ready() {
             self.get_mut().completed = true;
         }
@@ -87,7 +86,7 @@ impl<T: OpCode> Future for OpFuture<T> {
 impl<T> Drop for OpFuture<T> {
     fn drop(&mut self) {
         if !self.completed {
-            crate::task::RUNTIME.with(|runtime| runtime.cancel_op(self.user_data))
+            crate::RUNTIME.with(|runtime| runtime.cancel_op(self.user_data))
         }
     }
 }

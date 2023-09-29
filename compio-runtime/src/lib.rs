@@ -10,21 +10,19 @@
 //! assert_eq!(ans, 42);
 //! ```
 
-pub(crate) mod runtime;
-use runtime::Runtime;
-
-pub(crate) mod op;
 #[cfg(feature = "time")]
-pub(crate) mod time;
+pub mod time;
+
+mod key;
+pub(crate) mod runtime;
 
 use std::{future::Future, io};
 
 use async_task::Task;
-
-use crate::{
-    driver::{OpCode, RawFd},
-    BufResult,
-};
+use compio_buf::BufResult;
+use compio_driver::{OpCode, RawFd};
+pub(crate) use key::Key;
+use runtime::Runtime;
 
 thread_local! {
     pub(crate) static RUNTIME: Runtime = Runtime::new().expect("cannot create compio runtime");

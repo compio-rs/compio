@@ -17,7 +17,7 @@ use slab::Slab;
 use crate::{syscall, Entry};
 
 pub(crate) mod op;
-pub(crate) use crate::unix::RawOp;
+pub use crate::unix::RawOp;
 
 /// Abstraction of operations.
 pub trait OpCode {

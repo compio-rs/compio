@@ -1,6 +1,8 @@
 //! The platform-specified driver.
 //! Some types differ by compilation target.
 
+#![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
+
 #[cfg(all(
     target_os = "linux",
     not(feature = "io-uring"),
@@ -260,7 +262,7 @@ impl Operation {
         Self { op, user_data }
     }
 
-    pub(crate) fn into_inner(self) -> RawOp {
+    pub fn into_inner(self) -> RawOp {
         self.op
     }
 

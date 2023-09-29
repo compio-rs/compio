@@ -1,0 +1,17 @@
+[package]
+name = "compio-task"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Workspace dependencies
+compio-driver = { workspace = true }
+compio-buf = { workspace = true }
+
+async-task = "4"
+futures-util = "0.3"
+slab = { version = "0.4", optional = true }
+smallvec = "1"
+
+[features]
+time = ["dep:slab"]

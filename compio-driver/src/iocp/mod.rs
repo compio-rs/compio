@@ -335,20 +335,20 @@ impl<T> Overlapped<T> {
     }
 }
 
-pub(crate) struct RawOp(NonNull<Overlapped<dyn OpCode>>);
+pub struct RawOp(NonNull<Overlapped<dyn OpCode>>);
 
 impl RawOp {
-    pub(crate) fn new(user_data: usize, op: impl OpCode + 'static) -> Self {
+    pub fn new(user_data: usize, op: impl OpCode + 'static) -> Self {
         let op = Overlapped::new(user_data, op);
         let op = Box::new(op) as Box<Overlapped<dyn OpCode>>;
         Self(unsafe { NonNull::new_unchecked(Box::into_raw(op)) })
     }
 
-    pub(crate) fn as_op_pin(&mut self) -> Pin<&mut dyn OpCode> {
+    pub fn as_op_pin(&mut self) -> Pin<&mut dyn OpCode> {
         unsafe { Pin::new_unchecked(&mut self.0.as_mut().op) }
     }
 
-    pub(crate) fn as_mut_ptr(&mut self) -> *mut Overlapped<dyn OpCode> {
+    pub fn as_mut_ptr(&mut self) -> *mut Overlapped<dyn OpCode> {
         self.0.as_ptr()
     }
 

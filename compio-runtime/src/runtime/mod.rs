@@ -7,13 +7,17 @@ use std::{
 };
 
 use async_task::{Runnable, Task};
+use compio_driver::{AsRawFd, Entry, OpCode, Proactor, RawFd};
 use smallvec::SmallVec;
 
+pub(crate) mod op;
 #[cfg(feature = "time")]
-use crate::task::time::{TimerFuture, TimerRuntime};
+pub(crate) mod time;
+
+#[cfg(feature = "time")]
+use crate::runtime::time::{TimerFuture, TimerRuntime};
 use crate::{
-    driver::{AsRawFd, Entry, OpCode, Proactor, RawFd},
-    task::op::{OpFuture, OpRuntime},
+    runtime::op::{OpFuture, OpRuntime},
     BufResult, Key,
 };
 

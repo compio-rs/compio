@@ -15,24 +15,16 @@ pub use compio_buf as buf;
 #[cfg(target_os = "windows")]
 pub mod named_pipe;
 
-#[cfg(feature = "event")]
-pub mod event;
-#[cfg(feature = "runtime")]
-mod key;
-#[cfg(feature = "runtime")]
-pub(crate) use key::Key;
 #[cfg(feature = "runtime")]
 mod attacher;
+#[cfg(feature = "event")]
+pub mod event;
 #[cfg(feature = "runtime")]
 pub(crate) use attacher::Attacher;
 #[cfg(feature = "signal")]
 pub mod signal;
 #[cfg(feature = "macros")]
 pub use compio_macros::*;
-#[cfg(feature = "runtime")]
-pub mod task;
-#[cfg(feature = "time")]
-pub mod time;
 
 #[cfg(feature = "runtime")]
 macro_rules! buf_try {

@@ -31,7 +31,7 @@ use futures_util::{select, FutureExt};
 /// })
 /// ```
 pub async fn sleep(duration: Duration) {
-    crate::task::RUNTIME
+    crate::RUNTIME
         .with(|runtime| runtime.create_timer(duration))
         .await
 }

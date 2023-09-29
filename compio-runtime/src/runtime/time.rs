@@ -121,7 +121,7 @@ impl Future for TimerFuture {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let res = crate::task::RUNTIME.with(|runtime| runtime.poll_timer(cx, self.key));
+        let res = crate::RUNTIME.with(|runtime| runtime.poll_timer(cx, self.key));
         if res.is_ready() {
             self.get_mut().completed = true;
         }
@@ -132,7 +132,7 @@ impl Future for TimerFuture {
 impl Drop for TimerFuture {
     fn drop(&mut self) {
         if !self.completed {
-            crate::task::RUNTIME.with(|runtime| runtime.cancel_timer(self.key));
+            crate::RUNTIME.with(|runtime| runtime.cancel_timer(self.key));
         }
     }
 }
