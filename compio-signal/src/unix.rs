@@ -7,7 +7,7 @@ use std::{
     os::fd::{AsRawFd, RawFd},
 };
 
-use crate::event::{Event, EventHandle};
+use compio_runtime::event::{Event, EventHandle};
 
 thread_local! {
     static HANDLER: RefCell<HashMap<i32, HashMap<RawFd, EventHandle>>> =

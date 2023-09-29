@@ -7,6 +7,7 @@ members = [
     "compio-macros",
     "compio-fs",
     "compio-net",
+    "compio-signal",
 ]
 resolver = "2"
 
@@ -17,3 +18,4 @@ compio-runtime = { path = "./compio-runtime" }
 compio-macros = { path = "./compio-macros" }
 compio-fs = { path = "./compio-fs" }
 compio-net = { path = "./compio-net" }
+compio-signal = { path = "./compio-signal" }

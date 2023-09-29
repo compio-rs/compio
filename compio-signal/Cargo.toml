@@ -1,0 +1,27 @@
+[package]
+name = "compio-signal"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Workspace dependencies
+compio-runtime = { workspace = true, features = ["event"] }
+
+# Windows specific dependencies
+[target.'cfg(target_os = "windows")'.dependencies]
+compio-driver = { workspace = true }
+once_cell = "1"
+slab = "0.4"
+windows-sys = { version = "0.48", features = [
+    "Win32_Foundation",
+    "Win32_System_Console",
+] }
+
+# Unix specific dependencies
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[features]
+# Nightly features
+once_cell_try = []
+nightly = ["once_cell_try"]

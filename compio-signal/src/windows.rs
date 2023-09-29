@@ -8,6 +8,8 @@ use std::{
     sync::{Mutex, Once},
 };
 
+use compio_driver::syscall;
+use compio_runtime::event::{Event, EventHandle};
 #[cfg(not(feature = "lazy_cell"))]
 use once_cell::sync::Lazy as LazyLock;
 use slab::Slab;
@@ -17,11 +19,6 @@ use windows_sys::Win32::{
         SetConsoleCtrlHandler, CTRL_BREAK_EVENT, CTRL_CLOSE_EVENT, CTRL_C_EVENT, CTRL_LOGOFF_EVENT,
         CTRL_SHUTDOWN_EVENT,
     },
-};
-
-use crate::{
-    event::{Event, EventHandle},
-    syscall,
 };
 
 static HANDLER: LazyLock<Mutex<HashMap<u32, Slab<EventHandle>>>> =
