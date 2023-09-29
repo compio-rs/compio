@@ -89,6 +89,29 @@ macro_rules! syscall {
     };
 }
 
+#[macro_export]
+macro_rules! impl_raw_fd {
+    ($t:ty, $inner:ident) => {
+        impl $crate::AsRawFd for $t {
+            fn as_raw_fd(&self) -> $crate::RawFd {
+                self.$inner.as_raw_fd()
+            }
+        }
+        impl $crate::FromRawFd for $t {
+            unsafe fn from_raw_fd(fd: $crate::RawFd) -> Self {
+                Self {
+                    $inner: $crate::FromRawFd::from_raw_fd(fd),
+                }
+            }
+        }
+        impl $crate::IntoRawFd for $t {
+            fn into_raw_fd(self) -> $crate::RawFd {
+                self.$inner.into_raw_fd()
+            }
+        }
+    };
+}
+
 /// Low-level actions of completion-based IO.
 /// It owns the operations to keep the driver safe.
 ///

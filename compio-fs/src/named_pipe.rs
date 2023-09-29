@@ -9,6 +9,7 @@ use std::{
     ptr::null_mut,
 };
 
+use compio_driver::{AsRawFd, FromRawFd, RawFd};
 use widestring::U16CString;
 use windows_sys::Win32::{
     Foundation::{GENERIC_READ, GENERIC_WRITE},
@@ -27,14 +28,14 @@ use windows_sys::Win32::{
         SystemServices::ACCESS_SYSTEM_SECURITY,
     },
 };
-
 #[cfg(feature = "runtime")]
-use crate::{buf::*, op::ConnectNamedPipe, task::submit};
-use crate::{
-    driver::{AsRawFd, FromRawFd, RawFd},
-    fs::File,
-    impl_raw_fd, syscall,
+use ::{
+    compio_buf::{BufResult, IoBuf, IoBufMut},
+    compio_driver::{impl_raw_fd, op::ConnectNamedPipe, syscall},
+    compio_runtime::submit,
 };
+
+use crate::File;
 
 /// A [Windows named pipe] server.
 ///

@@ -11,7 +11,17 @@ compio-runtime = { workspace = true, optional = true }
 
 # Windows specific dependencies
 [target.'cfg(target_os = "windows")'.dependencies]
-windows-sys = { version = "0.48", features = ["Win32_Storage_FileSystem"] }
+widestring = "1"
+windows-sys = { version = "0.48", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Pipes",
+    "Win32_System_SystemServices",
+] }
+
+# Windows specific dev dependencies
+[target.'cfg(target_os = "windows")'.dev-dependencies]
+windows-sys = { version = "0.48", features = ["Win32_Security_Authorization"] }
 
 # Unix specific dependencies
 [target.'cfg(unix)'.dependencies]
