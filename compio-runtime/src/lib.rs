@@ -10,15 +10,19 @@
 //! assert_eq!(ans, 42);
 //! ```
 
-#[cfg(feature = "time")]
-pub mod time;
+#![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
+#![warn(missing_docs)]
 
+mod attacher;
 mod key;
 pub(crate) mod runtime;
+#[cfg(feature = "time")]
+pub mod time;
 
 use std::{future::Future, io};
 
 use async_task::Task;
+pub use attacher::Attacher;
 use compio_buf::BufResult;
 use compio_driver::{OpCode, RawFd};
 pub(crate) use key::Key;

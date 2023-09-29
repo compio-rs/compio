@@ -2,6 +2,7 @@
 //! Some types differ by compilation target.
 
 #![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
+#![warn(missing_docs)]
 
 #[cfg(all(
     target_os = "linux",

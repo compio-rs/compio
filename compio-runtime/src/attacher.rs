@@ -2,10 +2,11 @@
 use std::sync::OnceLock;
 use std::{io, marker::PhantomData};
 
+use compio_driver::AsRawFd;
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 
-use crate::{driver::AsRawFd, task::attach};
+use crate::attach;
 
 /// Attach a handle to the driver of current thread.
 ///
