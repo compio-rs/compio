@@ -5,7 +5,7 @@ pub(crate) mod op;
 
 use std::{mem::ManuallyDrop, pin::Pin, ptr::NonNull};
 
-use crate::driver::OpCode;
+use crate::OpCode;
 
 pub(crate) struct RawOp(NonNull<dyn OpCode>);
 

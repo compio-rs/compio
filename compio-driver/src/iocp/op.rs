@@ -7,6 +7,7 @@ use std::{
     task::Poll,
 };
 
+use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 use socket2::SockAddr;
@@ -32,12 +33,7 @@ use windows_sys::{
     },
 };
 
-use crate::{
-    buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
-    driver::{OpCode, RawFd},
-    op::*,
-    syscall,
-};
+use crate::{op::*, syscall, OpCode, RawFd};
 
 #[inline]
 fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {

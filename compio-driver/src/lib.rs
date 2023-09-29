@@ -10,25 +10,83 @@ compile_error!("You must choose one of these features: [\"io-uring\", \"polling\
 
 use std::{collections::VecDeque, io, time::Duration};
 
+use compio_buf::BufResult;
 use slab::Slab;
 
-use crate::BufResult;
-
+pub mod op;
 #[cfg(unix)]
 mod unix;
 
 cfg_if::cfg_if! {
     if #[cfg(target_os = "windows")] {
-        mod iocp;
-        pub use iocp::*;
+        #[path = "iocp/mod.rs"]
+        mod sys;
     } else if #[cfg(all(target_os = "linux", feature = "io-uring"))] {
-        mod iour;
-        pub use iour::*;
+        #[path = "iour/mod.rs"]
+        mod sys;
     } else if #[cfg(unix)] {
-        mod poll;
-        pub use poll::*;
+        #[path = "poll/mod.rs"]
+        mod sys;
     }
 }
+
+pub use sys::*;
+
+#[cfg(target_os = "windows")]
+macro_rules! syscall {
+    ($fn: ident ( $($arg: expr),* $(,)* ), $op: tt $rhs: expr) => {{
+        #[allow(unused_unsafe)]
+        let res = unsafe { $fn($($arg, )*) };
+        if res $op $rhs {
+            Err(::std::io::Error::last_os_error())
+        } else {
+            Ok(res)
+        }
+    }};
+    (BOOL, $fn: ident ( $($arg: expr),* $(,)* )) => {
+        $crate::syscall!($fn($($arg, )*), == 0)
+    };
+    (SOCKET, $fn: ident ( $($arg: expr),* $(,)* )) => {
+        $crate::syscall!($fn($($arg, )*), != 0)
+    };
+    (HANDLE, $fn: ident ( $($arg: expr),* $(,)* )) => {
+        $crate::syscall!($fn($($arg, )*), == ::windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE)
+    };
+}
+
+/// Helper macro to execute a system call
+#[cfg(unix)]
+#[allow(unused_macros)]
+macro_rules! syscall {
+    ($fn: ident ( $($arg: expr),* $(,)* ) ) => {{
+        #[allow(unused_unsafe)]
+        let res = unsafe { ::libc::$fn($($arg, )*) };
+        if res == -1 {
+            Err(::std::io::Error::last_os_error())
+        } else {
+            Ok(res)
+        }
+    }};
+    // The below branches are used by polling driver.
+    (break $fn: ident ( $($arg: expr),* $(,)* )) => {
+        match $crate::syscall!( $fn ( $($arg, )* )) {
+            Ok(fd) => ::std::task::Poll::Ready(Ok(fd as usize)),
+            Err(e) if e.kind() == ::std::io::ErrorKind::WouldBlock || e.raw_os_error() == Some(::libc::EINPROGRESS)
+                   => ::std::task::Poll::Pending,
+            Err(e) => ::std::task::Poll::Ready(Err(e)),
+        }
+    };
+    ($fn: ident ( $($arg: expr),* $(,)* ) or $f:ident($fd:expr)) => {
+        match $crate::syscall!( break $fn ( $($arg, )* )) {
+            ::std::task::Poll::Pending => Ok($crate::Decision::$f($fd)),
+            ::std::task::Poll::Ready(Ok(res)) => Ok($crate::Decision::Completed(res)),
+            ::std::task::Poll::Ready(Err(e)) => Err(e),
+        }
+    };
+}
+
+#[allow(unused_imports)]
+pub(crate) use syscall;
 
 /// Low-level actions of completion-based IO.
 /// It owns the operations to keep the driver safe.

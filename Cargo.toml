@@ -1,9 +1,5 @@
 [workspace]
-members = [
-    "compio",
-    "compio-buf",
-    "compio-macros"
-]
+members = ["compio", "compio-buf", "compio-driver", "compio-macros"]
 resolver = "2"
 
 [workspace.dependencies]

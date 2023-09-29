@@ -4,17 +4,12 @@ use std::{
     task::Poll,
 };
 
-use compio_buf::IntoInner;
+use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use polling::Event;
 use socket2::SockAddr;
 
-pub use crate::driver::unix::op::*;
-use crate::{
-    buf::{IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
-    driver::{sockaddr_storage, socklen_t, Decision, OpCode, RawFd},
-    op::*,
-    syscall,
-};
+pub use crate::unix::op::*;
+use crate::{op::*, sockaddr_storage, socklen_t, syscall, Decision, OpCode, RawFd};
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {

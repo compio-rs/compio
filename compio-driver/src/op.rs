@@ -3,19 +3,16 @@
 //! The operation itself doesn't perform anything.
 //! You need to pass them to [`crate::driver::Proactor`], and poll the driver.
 
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
 use socket2::SockAddr;
 
 #[cfg(target_os = "windows")]
-pub use crate::driver::op::ConnectNamedPipe;
-pub use crate::driver::op::{
+pub use crate::sys::op::ConnectNamedPipe;
+pub use crate::sys::op::{
     Accept, Recv, RecvFrom, RecvFromVectored, RecvVectored, Send, SendTo, SendToVectored,
     SendVectored,
 };
-use crate::{
-    buf::{IntoInner, IoBuf, IoBufMut, SetBufInit},
-    driver::{sockaddr_storage, socklen_t, RawFd},
-    BufResult,
-};
+use crate::{sockaddr_storage, socklen_t, RawFd};
 
 pub(crate) trait BufResultExt {
     fn map_advanced(self) -> Self;

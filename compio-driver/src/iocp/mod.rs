@@ -12,6 +12,7 @@ use std::{
     time::Duration,
 };
 
+use compio_buf::arrayvec::ArrayVec;
 use slab::Slab;
 use windows_sys::Win32::{
     Foundation::{
@@ -29,7 +30,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{buf::arrayvec::ArrayVec, driver::Entry, syscall};
+use crate::{syscall, Entry};
 
 pub(crate) mod op;
 

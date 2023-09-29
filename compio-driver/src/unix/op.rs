@@ -1,12 +1,12 @@
 use std::io::{IoSlice, IoSliceMut};
 
-use compio_buf::{IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
 #[cfg(doc)]
 use crate::op::*;
-use crate::{buf::IntoInner, driver::RawFd};
+use crate::RawFd;
 
 /// Accept a connection.
 pub struct Accept {

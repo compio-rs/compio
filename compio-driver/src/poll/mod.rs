@@ -14,10 +14,10 @@ pub(crate) use libc::{sockaddr_storage, socklen_t};
 use polling::{Event, Events, Poller};
 use slab::Slab;
 
-use crate::{driver::Entry, syscall};
+use crate::{syscall, Entry};
 
 pub(crate) mod op;
-pub(crate) use crate::driver::unix::RawOp;
+pub(crate) use crate::unix::RawOp;
 
 /// Abstraction of operations.
 pub trait OpCode {

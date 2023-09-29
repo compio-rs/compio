@@ -4,7 +4,7 @@ use std::{
     pin::Pin,
 };
 
-use compio_buf::IntoInner;
+use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use io_uring::{
     opcode,
     squeue::Entry,
@@ -13,12 +13,8 @@ use io_uring::{
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
-pub use crate::driver::unix::op::*;
-use crate::{
-    buf::{IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
-    driver::OpCode,
-    op::*,
-};
+pub use crate::unix::op::*;
+use crate::{op::*, OpCode};
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
