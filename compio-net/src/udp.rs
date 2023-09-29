@@ -1,16 +1,11 @@
 use std::io;
 
+#[cfg(feature = "runtime")]
+use ::compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_driver::impl_raw_fd;
 use socket2::{Protocol, SockAddr, Type};
 
-#[cfg(feature = "runtime")]
-use crate::{
-    buf::{IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
-    BufResult,
-};
-use crate::{
-    impl_raw_fd,
-    net::{Socket, ToSockAddrs},
-};
+use crate::{Socket, ToSockAddrs};
 
 /// A UDP socket.
 ///

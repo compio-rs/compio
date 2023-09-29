@@ -39,7 +39,7 @@ impl<T: SetBufInit, O> BufResultExt for BufResult<(usize, O), T> {
     }
 }
 
-pub(crate) trait RecvResultExt {
+pub trait RecvResultExt {
     type RecvFromResult;
 
     fn map_addr(self) -> Self::RecvFromResult;

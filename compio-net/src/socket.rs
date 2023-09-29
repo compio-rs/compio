@@ -1,19 +1,15 @@
 use std::{io, net::Shutdown};
 
+use compio_driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
-
-use crate::impl_raw_fd;
 #[cfg(feature = "runtime")]
-use crate::{
-    buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
-    buf_try,
-    driver::AsRawFd,
-    op::{
+use ::{
+    compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
+    compio_driver::op::{
         Accept, BufResultExt, Connect, Recv, RecvFrom, RecvFromVectored, RecvResultExt,
         RecvVectored, Send, SendTo, SendToVectored, SendVectored,
     },
-    task::submit,
-    Attacher, BufResult,
+    compio_runtime::{submit, Attacher},
 };
 
 pub struct Socket {
@@ -106,8 +102,6 @@ impl Socket {
 
     #[cfg(all(feature = "runtime", unix))]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
-        use std::os::fd::FromRawFd;
-
         self.attach()?;
         let op = Accept::new(self.as_raw_fd());
         let (res, op) = submit(op).await;
@@ -232,4 +226,24 @@ impl Socket {
     }
 }
 
-impl_raw_fd!(Socket, socket, attacher);
+impl AsRawFd for Socket {
+    fn as_raw_fd(&self) -> RawFd {
+        self.socket.as_raw_fd()
+    }
+}
+
+impl FromRawFd for Socket {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
+        Self {
+            socket: FromRawFd::from_raw_fd(fd),
+            #[cfg(feature = "runtime")]
+            attacher: compio_runtime::Attacher::new(),
+        }
+    }
+}
+
+impl IntoRawFd for Socket {
+    fn into_raw_fd(self) -> RawFd {
+        self.socket.into_raw_fd()
+    }
+}

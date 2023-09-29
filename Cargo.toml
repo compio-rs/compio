@@ -6,6 +6,7 @@ members = [
     "compio-runtime",
     "compio-macros",
     "compio-fs",
+    "compio-net",
 ]
 resolver = "2"
 
@@ -15,3 +16,4 @@ compio-driver = { path = "./compio-driver" }
 compio-runtime = { path = "./compio-runtime" }
 compio-macros = { path = "./compio-macros" }
 compio-fs = { path = "./compio-fs" }
+compio-net = { path = "./compio-net" }

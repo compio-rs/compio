@@ -13,13 +13,12 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs},
 };
 
+use compio_buf::BufResult;
 pub(crate) use socket::*;
 use socket2::SockAddr;
 pub use tcp::*;
 pub use udp::*;
 pub use unix::*;
-
-use crate::BufResult;
 
 /// A trait for objects which can be converted or resolved to one or more
 /// [`SockAddr`] values.

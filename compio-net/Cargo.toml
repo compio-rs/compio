@@ -1,0 +1,15 @@
+[package]
+name = "compio-net"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Workspace dependencies
+compio-buf = { workspace = true, optional = true }
+compio-driver = { workspace = true }
+compio-runtime = { workspace = true, optional = true }
+
+socket2 = { version = "0.5", features = ["all"] }
+
+[features]
+runtime = ["dep:compio-buf", "dep:compio-runtime"]
