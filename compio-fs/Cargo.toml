@@ -14,6 +14,7 @@ compio-runtime = { workspace = true, optional = true }
 widestring = "1"
 windows-sys = { version = "0.48", features = [
     "Win32_Foundation",
+    "Win32_Security",
     "Win32_Storage_FileSystem",
     "Win32_System_Pipes",
     "Win32_System_SystemServices",
