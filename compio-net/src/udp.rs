@@ -27,9 +27,9 @@ use crate::{Socket, ToSockAddrs};
 /// ```
 /// use std::net::SocketAddr;
 ///
-/// use compio::net::UdpSocket;
+/// use compio_net::UdpSocket;
 ///
-/// compio::task::block_on(async {
+/// compio_runtime::block_on(async {
 ///     let first_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
 ///     let second_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
 ///
@@ -46,12 +46,10 @@ use crate::{Socket, ToSockAddrs};
 ///     let buf = Vec::with_capacity(12);
 ///
 ///     // write data
-///     let (result, _) = socket.send("Hello world!").await;
-///     result.unwrap();
+///     socket.send("Hello world!").await.unwrap();
 ///
 ///     // read data
-///     let (result, buf) = other_socket.recv(buf).await;
-///     let n_bytes = result.unwrap();
+///     let (n_bytes, buf) = other_socket.recv(buf).await.unwrap();
 ///
 ///     assert_eq!(n_bytes, buf.len());
 ///     assert_eq!(buf, b"Hello world!");
@@ -62,10 +60,10 @@ use crate::{Socket, ToSockAddrs};
 /// ```
 /// use std::net::SocketAddr;
 ///
-/// use compio::net::UdpSocket;
+/// use compio_net::UdpSocket;
 /// use socket2::SockAddr;
 ///
-/// compio::task::block_on(async {
+/// compio_runtime::block_on(async {
 ///     let first_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
 ///     let second_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
 ///
@@ -78,14 +76,13 @@ use crate::{Socket, ToSockAddrs};
 ///     let buf = Vec::with_capacity(32);
 ///
 ///     // write data
-///     let (result, _) = socket
+///     socket
 ///         .send_to("hello world", SockAddr::from(second_addr))
-///         .await;
-///     result.unwrap();
+///         .await
+///         .unwrap();
 ///
 ///     // read data
-///     let (result, buf) = other_socket.recv_from(buf).await;
-///     let (n_bytes, addr) = result.unwrap();
+///     let ((n_bytes, addr), buf) = other_socket.recv_from(buf).await.unwrap();
 ///
 ///     assert_eq!(addr, first_addr);
 ///     assert_eq!(n_bytes, buf.len());
@@ -134,7 +131,7 @@ impl UdpSocket {
     /// ```no_run
     /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     ///
-    /// use compio::net::UdpSocket;
+    /// use compio_net::UdpSocket;
     /// use socket2::SockAddr;
     ///
     /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
@@ -160,7 +157,7 @@ impl UdpSocket {
     /// ```
     /// use std::net::SocketAddr;
     ///
-    /// use compio::net::UdpSocket;
+    /// use compio_net::UdpSocket;
     /// use socket2::SockAddr;
     ///
     /// let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();

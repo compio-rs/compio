@@ -1,9 +1,9 @@
 use std::{io, net::Shutdown};
 
-use compio_driver::impl_raw_fd;
-use socket2::{Protocol, SockAddr, Type};
 #[cfg(feature = "runtime")]
 use ::compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_driver::impl_raw_fd;
+use socket2::{Protocol, SockAddr, Type};
 
 use crate::{Socket, ToSockAddrs};
 
@@ -17,14 +17,14 @@ use crate::{Socket, ToSockAddrs};
 /// ```
 /// use std::net::SocketAddr;
 ///
-/// use compio::net::{TcpListener, TcpStream};
+/// use compio_net::{TcpListener, TcpStream};
 /// use socket2::SockAddr;
 ///
 /// let addr: SockAddr = "127.0.0.1:2345".parse::<SocketAddr>().unwrap().into();
 ///
 /// let listener = TcpListener::bind(&addr).unwrap();
 ///
-/// compio::task::block_on(async move {
+/// compio_runtime::block_on(async move {
 ///     let tx_fut = TcpStream::connect(&addr);
 ///
 ///     let rx_fut = listener.accept();
@@ -33,7 +33,7 @@ use crate::{Socket, ToSockAddrs};
 ///
 ///     tx.send_all("test").await.0.unwrap();
 ///
-///     let (_, buf) = rx.recv_exact(Vec::with_capacity(4)).await;
+///     let (_, buf) = rx.recv_exact(Vec::with_capacity(4)).await.unwrap();
 ///
 ///     assert_eq!(buf, b"test");
 /// });
@@ -89,7 +89,7 @@ impl TcpListener {
     /// ```
     /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     ///
-    /// use compio::net::TcpListener;
+    /// use compio_net::TcpListener;
     /// use socket2::SockAddr;
     ///
     /// let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
@@ -120,15 +120,14 @@ impl_raw_fd!(TcpListener, inner);
 /// ```no_run
 /// use std::net::SocketAddr;
 ///
-/// use compio::net::TcpStream;
+/// use compio_net::TcpStream;
 ///
-/// compio::task::block_on(async {
+/// compio_runtime::block_on(async {
 ///     // Connect to a peer
 ///     let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
 ///
 ///     // Write some data.
-///     let (result, _) = stream.send("hello world!").await;
-///     result.unwrap();
+///     stream.send("hello world!").await.unwrap();
 /// })
 /// ```
 pub struct TcpStream {

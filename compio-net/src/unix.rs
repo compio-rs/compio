@@ -15,13 +15,13 @@ use crate::{Socket, ToSockAddrs};
 /// # Examples
 ///
 /// ```
-/// use compio::net::{UnixListener, UnixStream};
+/// use compio_net::{UnixListener, UnixStream};
 /// use tempfile::tempdir;
 ///
 /// let dir = tempdir().unwrap();
 /// let sock_file = dir.path().join("unix-server.sock");
 ///
-/// compio::task::block_on(async move {
+/// compio_runtime::block_on(async move {
 ///     let listener = UnixListener::bind(&sock_file).unwrap();
 ///
 ///     let tx = UnixStream::connect(&sock_file).unwrap();
@@ -29,8 +29,7 @@ use crate::{Socket, ToSockAddrs};
 ///
 ///     tx.send_all("test").await.0.unwrap();
 ///
-///     let (res, buf) = rx.recv_exact(Vec::with_capacity(4)).await;
-///     res.unwrap();
+///     let (_, buf) = rx.recv_exact(Vec::with_capacity(4)).await.unwrap();
 ///
 ///     assert_eq!(buf, b"test");
 /// });
@@ -95,15 +94,14 @@ impl_raw_fd!(UnixListener, inner);
 /// # Examples
 ///
 /// ```no_run
-/// use compio::net::UnixStream;
+/// use compio_net::UnixStream;
 ///
-/// compio::task::block_on(async {
+/// compio_runtime::block_on(async {
 ///     // Connect to a peer
 ///     let mut stream = UnixStream::connect("unix-server.sock").unwrap();
 ///
 ///     // Write some data.
-///     let (result, _) = stream.send("hello world!").await;
-///     result.unwrap();
+///     stream.send("hello world!").await.unwrap();
 /// })
 /// ```
 pub struct UnixStream {
