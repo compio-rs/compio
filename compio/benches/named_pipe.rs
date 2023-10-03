@@ -7,7 +7,7 @@ struct CompioRuntime;
 
 impl AsyncExecutor for CompioRuntime {
     fn block_on<T>(&self, future: impl std::future::Future<Output = T>) -> T {
-        compio::task::block_on(future)
+        compio::runtime::block_on(future)
     }
 }
 
@@ -56,7 +56,7 @@ fn basic(c: &mut Criterion) {
             {
                 use compio::{
                     buf::BufResult,
-                    named_pipe::{ClientOptions, ServerOptions},
+                    fs::named_pipe::{ClientOptions, ServerOptions},
                 };
 
                 const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe";

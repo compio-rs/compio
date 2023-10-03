@@ -27,7 +27,7 @@ They don't support Windows.
 
 With `macros` feature enabled, we can use the high level APIs to perform fs & net IO.
 
-```rust,no_run
+```rust
 use compio::fs::File;
 
 #[compio::main]

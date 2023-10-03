@@ -3,7 +3,7 @@ use std::time::Duration;
 use compio::{signal::ctrl_c, time::interval};
 use futures_util::{select, FutureExt};
 
-#[compio::main]
+#[compio::main(crate = "compio")]
 async fn main() {
     let mut interval = interval(Duration::from_secs(2));
     loop {

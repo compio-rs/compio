@@ -1,10 +1,10 @@
-#[compio::main]
+#[compio::main(crate = "compio")]
 async fn main() {
     #[cfg(target_os = "windows")]
     {
         use compio::{
             buf::BufResult,
-            named_pipe::{ClientOptions, ServerOptions},
+            fs::named_pipe::{ClientOptions, ServerOptions},
         };
 
         const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe";

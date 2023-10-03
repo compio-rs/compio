@@ -1,6 +1,6 @@
 use compio::fs::OpenOptions;
 
-#[compio::main]
+#[compio::main(crate = "compio")]
 async fn main() {
     let file = OpenOptions::new().read(true).open("Cargo.toml").unwrap();
     let (read, buffer) = file

@@ -1,7 +1,7 @@
 use std::{io, mem::MaybeUninit, net::SocketAddr, time::Duration};
 
 use compio::{
-    buf::{arrayvec::ArrayVec, IntoInner},
+    buf::{arrayvec::ArrayVec, BufResult, IntoInner},
     driver::{
         op::{ReadAt, Recv, Send},
         AsRawFd, Entry, Proactor,
@@ -9,7 +9,6 @@ use compio::{
     fs::File,
     net::UdpSocket,
 };
-use compio_buf::BufResult;
 
 #[test]
 fn udp_io() {

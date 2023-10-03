@@ -2,7 +2,7 @@ use std::net::Ipv4Addr;
 
 use compio::net::{TcpListener, TcpStream};
 
-#[compio::main]
+#[compio::main(crate = "compio")]
 async fn main() {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     let addr = listener.local_addr().unwrap();
