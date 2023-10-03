@@ -1,6 +1,6 @@
 use std::{io, pin::Pin, ptr::null_mut, task::Poll};
 
-use compio_driver::{syscall, OpCode, RawFd};
+use compio_driver::{syscall, AsRawFd, OpCode, RawFd};
 use windows_sys::Win32::System::IO::{PostQueuedCompletionStatus, OVERLAPPED};
 
 use crate::{key::Key, runtime::op::OpFuture, RUNTIME};
@@ -44,7 +44,7 @@ unsafe impl Sync for EventHandle {}
 
 impl EventHandle {
     fn new(user_data: &Key<NopPending>) -> Self {
-        let handle = RUNTIME.with(|runtime| runtime.raw_driver());
+        let handle = RUNTIME.with(|runtime| runtime.as_raw_fd());
         Self {
             user_data: **user_data,
             handle,

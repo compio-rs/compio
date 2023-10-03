@@ -40,11 +40,6 @@ impl Runtime {
         })
     }
 
-    #[allow(dead_code)]
-    pub fn raw_driver(&self) -> RawFd {
-        self.driver.borrow().as_raw_fd()
-    }
-
     // Safety: the return runnable should be scheduled.
     unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
         let schedule = move |runnable| self.runnables.borrow_mut().push_back(runnable);
@@ -167,5 +162,11 @@ impl Runtime {
         }
         #[cfg(feature = "time")]
         self.timer_runtime.borrow_mut().wake();
+    }
+}
+
+impl AsRawFd for Runtime {
+    fn as_raw_fd(&self) -> RawFd {
+        self.driver.borrow().as_raw_fd()
     }
 }
