@@ -23,9 +23,9 @@ use futures_util::{select, FutureExt};
 /// ```
 /// use std::time::Duration;
 ///
-/// use compio::time::sleep;
+/// use compio_runtime::time::sleep;
 ///
-/// compio::task::block_on(async {
+/// compio_runtime::block_on(async {
 ///     sleep(Duration::from_millis(100)).await;
 ///     println!("100 ms have elapsed");
 /// })
@@ -47,9 +47,9 @@ pub async fn sleep(duration: Duration) {
 /// ```
 /// use std::time::{Duration, Instant};
 ///
-/// use compio::time::sleep_until;
+/// use compio_runtime::time::sleep_until;
 ///
-/// compio::task::block_on(async {
+/// compio_runtime::block_on(async {
 ///     sleep_until(Instant::now() + Duration::from_millis(100)).await;
 ///     println!("100 ms have elapsed");
 /// })
@@ -149,9 +149,9 @@ impl Interval {
 /// ```
 /// use std::time::Duration;
 ///
-/// use compio::time::interval;
+/// use compio_runtime::time::interval;
 ///
-/// compio::task::block_on(async {
+/// compio_runtime::block_on(async {
 ///     let mut interval = interval(Duration::from_millis(10));
 ///
 ///     interval.tick().await; // ticks immediately
@@ -176,14 +176,14 @@ impl Interval {
 /// ```no_run
 /// use std::time::Duration;
 ///
-/// use compio::time::{interval, sleep};
+/// use compio_runtime::time::{interval, sleep};
 ///
 /// async fn task_that_takes_a_second() {
 ///     println!("hello");
 ///     sleep(Duration::from_secs(1)).await
 /// }
 ///
-/// compio::task::block_on(async {
+/// compio_runtime::block_on(async {
 ///     let mut interval = interval(Duration::from_secs(2));
 ///     for _i in 0..5 {
 ///         interval.tick().await;
@@ -213,9 +213,9 @@ pub fn interval(period: Duration) -> Interval {
 /// ```
 /// use std::time::{Duration, Instant};
 ///
-/// use compio::time::interval_at;
+/// use compio_runtime::time::interval_at;
 ///
-/// compio::task::block_on(async {
+/// compio_runtime::block_on(async {
 ///     let start = Instant::now() + Duration::from_millis(50);
 ///     let mut interval = interval_at(start, Duration::from_millis(10));
 ///

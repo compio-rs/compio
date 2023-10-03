@@ -3,7 +3,7 @@
 //! in each thread.
 //!
 //! ```
-//! let ans = compio::task::block_on(async {
+//! let ans = compio_runtime::block_on(async {
 //!     println!("Hello world!");
 //!     42
 //! });
@@ -36,24 +36,6 @@ thread_local! {
 }
 
 /// Start a compio runtime and block on the future till it completes.
-///
-/// ```
-/// compio::task::block_on(async {
-///     // Open a file
-///     let file = compio::fs::File::open("Cargo.toml").unwrap();
-///
-///     let buf = Vec::with_capacity(4096);
-///     // Read some data, the buffer is passed by ownership and
-///     // submitted to the kernel. When the operation completes,
-///     // we get the buffer back.
-///     let (res, buf) = file.read_at(buf, 0).await;
-///     let n = res.unwrap();
-///     assert_eq!(n, buf.len());
-///
-///     // Display the contents
-///     println!("{:?}", &buf);
-/// })
-/// ```
 pub fn block_on<F: Future>(future: F) -> F::Output {
     RUNTIME.with(|runtime| runtime.block_on(future))
 }
@@ -64,8 +46,8 @@ pub fn block_on<F: Future>(future: F) -> F::Output {
 /// There is no guarantee that a spawned task will execute to completion.
 ///
 /// ```
-/// compio::task::block_on(async {
-///     let task = compio::task::spawn(async {
+/// compio_runtime::block_on(async {
+///     let task = compio_runtime::spawn(async {
 ///         println!("Hello from a spawned task!");
 ///         42
 ///     });
