@@ -1,7 +1,17 @@
 [package]
 name = "compio-fs"
 version = "0.1.0"
-edition = "2021"
+description = "Filesystem IO for compio"
+categories = ["asynchronous", "filesystem"]
+keywords = ["async", "fs"]
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 # Workspace dependencies

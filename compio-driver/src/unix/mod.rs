@@ -11,7 +11,7 @@ use crate::OpCode;
 pub struct RawOp(NonNull<dyn OpCode>);
 
 impl RawOp {
-    pub fn new(_user_data: usize, op: impl OpCode + 'static) -> Self {
+    pub(crate) fn new(_user_data: usize, op: impl OpCode + 'static) -> Self {
         let op = Box::new(op);
         Self(unsafe { NonNull::new_unchecked(Box::into_raw(op as Box<dyn OpCode>)) })
     }

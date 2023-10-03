@@ -330,7 +330,7 @@ impl<T> Overlapped<T> {
 pub struct RawOp(NonNull<Overlapped<dyn OpCode>>);
 
 impl RawOp {
-    pub fn new(user_data: usize, op: impl OpCode + 'static) -> Self {
+    pub(crate) fn new(user_data: usize, op: impl OpCode + 'static) -> Self {
         let op = Overlapped::new(user_data, op);
         let op = Box::new(op) as Box<Overlapped<dyn OpCode>>;
         Self(unsafe { NonNull::new_unchecked(Box::into_raw(op)) })

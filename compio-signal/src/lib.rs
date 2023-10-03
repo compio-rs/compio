@@ -14,6 +14,7 @@
 //! ```
 
 #![cfg_attr(feature = "lazy_cell", feature(lazy_cell))]
+#![warn(missing_docs)]
 
 #[cfg(target_os = "windows")]
 pub mod windows;

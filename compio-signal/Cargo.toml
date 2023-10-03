@@ -1,7 +1,17 @@
 [package]
 name = "compio-signal"
 version = "0.1.0"
-edition = "2021"
+description = "Signal handling for compio"
+categories = ["asynchronous"]
+keywords = ["async", "signal"]
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 # Workspace dependencies

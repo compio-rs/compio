@@ -11,6 +11,13 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+edition = "2021"
+authors = ["Berrysoft <Strawberry_Str@hotmail.com>"]
+readme = "README.md"
+license = "MIT"
+repository = "https://github.com/compio-rs/compio"
+
 [workspace.dependencies]
 compio-buf = { path = "./compio-buf" }
 compio-driver = { path = "./compio-driver" }

@@ -1,7 +1,13 @@
 [package]
 name = "compio-macros"
 version = "0.1.0"
-edition = "2021"
+description = "proc macro of compio"
+categories = ["asynchronous"]
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
 
 [lib]
 proc-macro = true

@@ -2,6 +2,8 @@
 //!
 //! Currently, TCP/UDP/Unix socket are implemented.
 
+#![warn(missing_docs)]
+
 mod socket;
 mod tcp;
 mod udp;
