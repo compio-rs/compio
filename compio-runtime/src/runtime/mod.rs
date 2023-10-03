@@ -116,11 +116,11 @@ impl Runtime {
         &self,
         cx: &mut Context,
         user_data: Key<T>,
-    ) -> Poll<(io::Result<usize>, T)> {
+    ) -> Poll<BufResult<usize, T>> {
         let mut op_runtime = self.op_runtime.borrow_mut();
         if op_runtime.has_result(*user_data) {
             let op = op_runtime.remove(*user_data);
-            Poll::Ready((op.result.unwrap(), unsafe {
+            Poll::Ready(BufResult(op.result.unwrap(), unsafe {
                 op.op
                     .expect("`poll_task` called on dummy Op")
                     .into_inner::<T>()
@@ -152,7 +152,7 @@ impl Runtime {
         let mut driver = self.driver.borrow_mut();
         match driver.poll(timeout, &mut entries) {
             Ok(_) => {
-                for (res, op) in driver.pop(&mut entries.into_iter()) {
+                for BufResult(res, op) in driver.pop(&mut entries.into_iter()) {
                     self.op_runtime.borrow_mut().update_result(
                         op.user_data(),
                         op.into_inner(),

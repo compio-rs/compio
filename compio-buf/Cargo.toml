@@ -17,4 +17,5 @@ bytes = ["dep:bytes"]
 # Nightly features
 allocator_api = ["bumpalo/allocator_api"]
 read_buf = []
-nightly = ["allocator_api", "read_buf"]
+try_trait_v2 = []
+nightly = ["allocator_api", "read_buf", "try_trait_v2"]

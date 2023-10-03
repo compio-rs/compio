@@ -20,8 +20,8 @@ async fn accept_read_write() -> std::io::Result<()> {
     drop(client);
 
     let buf = Vec::with_capacity(5);
-    let (res, buf) = server.recv_exact(buf).await;
-    assert_eq!(res.unwrap(), 5);
+    let (res, buf) = server.recv_exact(buf).await.unwrap();
+    assert_eq!(res, 5);
     assert_eq!(&buf[..], b"hello");
     let len = server.recv(buf).await.0?;
     assert_eq!(len, 0);

@@ -5,11 +5,11 @@ edition = "2021"
 
 [dependencies]
 # Workspace dependencies
-compio-buf = { workspace = true, optional = true }
+compio-buf = { workspace = true }
 compio-driver = { workspace = true }
 compio-runtime = { workspace = true, optional = true }
 
 socket2 = { version = "0.5", features = ["all"] }
 
 [features]
-runtime = ["dep:compio-buf", "dep:compio-runtime"]
+runtime = ["dep:compio-runtime"]

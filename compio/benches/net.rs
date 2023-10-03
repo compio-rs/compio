@@ -48,8 +48,7 @@ fn tcp(c: &mut Criterion) {
             let (tx, (rx, _)) = futures_util::try_join!(tx, rx).unwrap();
             tx.send_all(PACKET).await.0.unwrap();
             let buffer = Vec::with_capacity(PACKET_LEN);
-            let (recv, buffer) = rx.recv_exact(buffer).await;
-            recv.unwrap();
+            let (_, buffer) = rx.recv_exact(buffer).await.unwrap();
             buffer
         })
     });
@@ -116,16 +115,14 @@ fn udp(c: &mut Criterion) {
             {
                 let mut pos = 0;
                 while pos < PACKET_LEN {
-                    let (res, _) = tx.send(&PACKET[pos..]).await;
-                    pos += res.unwrap();
+                    let (res, _) = tx.send(&PACKET[pos..]).await.unwrap();
+                    pos += res;
                 }
             }
             {
                 let mut buffer = Vec::with_capacity(PACKET_LEN);
-                let mut res;
                 while buffer.len() < PACKET_LEN {
-                    (res, buffer) = rx.recv(buffer).await;
-                    res.unwrap();
+                    (_, buffer) = rx.recv(buffer).await.unwrap();
                 }
                 buffer
             }

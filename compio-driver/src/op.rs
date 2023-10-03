@@ -20,22 +20,20 @@ pub trait BufResultExt {
 
 impl<T: SetBufInit> BufResultExt for BufResult<usize, T> {
     fn map_advanced(self) -> Self {
-        let (res, buffer) = self;
-        let (res, buffer) = (res.map(|res| (res, ())), buffer).map_advanced();
-        let res = res.map(|(res, _)| res);
-        (res, buffer)
+        self.map_res(|res| (res, ()))
+            .map_advanced()
+            .map_res(|(res, _)| res)
     }
 }
 
 impl<T: SetBufInit, O> BufResultExt for BufResult<(usize, O), T> {
     fn map_advanced(self) -> Self {
-        let (res, mut buffer) = self;
-        if let Ok((init, _)) = &res {
+        self.map(|(init, obj), mut buffer| {
             unsafe {
-                buffer.set_buf_init(*init);
+                buffer.set_buf_init(init);
             }
-        }
-        (res, buffer)
+            ((init, obj), buffer)
+        })
     }
 }
 
@@ -49,12 +47,13 @@ impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t)> {
     type RecvFromResult = BufResult<(usize, SockAddr), T>;
 
     fn map_addr(self) -> Self::RecvFromResult {
-        let (res, (buffer, addr_buffer, addr_size)) = self;
-        let res = res.map(|res| {
-            let addr = unsafe { SockAddr::new(addr_buffer, addr_size) };
-            (res, addr)
-        });
-        (res, buffer)
+        self.map2(
+            |res, (buffer, addr_buffer, addr_size)| {
+                let addr = unsafe { SockAddr::new(addr_buffer, addr_size) };
+                ((res, addr), buffer)
+            },
+            |(buffer, ..)| buffer,
+        )
     }
 }
 

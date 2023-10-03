@@ -9,7 +9,7 @@ use std::{
     ptr::null_mut,
 };
 
-use compio_driver::{AsRawFd, FromRawFd, RawFd};
+use compio_driver::{impl_raw_fd, syscall, AsRawFd, FromRawFd, RawFd};
 use widestring::U16CString;
 use windows_sys::Win32::{
     Foundation::{GENERIC_READ, GENERIC_WRITE},
@@ -31,7 +31,7 @@ use windows_sys::Win32::{
 #[cfg(feature = "runtime")]
 use ::{
     compio_buf::{BufResult, IoBuf, IoBufMut},
-    compio_driver::{impl_raw_fd, op::ConnectNamedPipe, syscall},
+    compio_driver::op::ConnectNamedPipe,
     compio_runtime::submit,
 };
 

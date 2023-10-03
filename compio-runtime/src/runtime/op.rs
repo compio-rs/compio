@@ -6,6 +6,7 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
+use compio_buf::BufResult;
 use compio_driver::{OpCode, RawOp};
 
 use crate::key::Key;
@@ -72,7 +73,7 @@ impl<T> OpFuture<T> {
 }
 
 impl<T: OpCode> Future for OpFuture<T> {
-    type Output = (io::Result<usize>, T);
+    type Output = BufResult<usize, T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let res = crate::RUNTIME.with(|runtime| runtime.poll_task(cx, self.user_data));

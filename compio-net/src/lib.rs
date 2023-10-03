@@ -141,13 +141,13 @@ async fn each_addr_async_buf<T, B, F: Future<Output = BufResult<T, B>>>(
             let mut last_err = None;
             let mut res;
             for addr in addrs {
-                (res, buffer) = f(addr, buffer).await;
+                BufResult(res, buffer) = f(addr, buffer).await;
                 match res {
-                    Ok(l) => return (Ok(l), buffer),
+                    Ok(l) => return BufResult(Ok(l), buffer),
                     Err(e) => last_err = Some(e),
                 }
             }
-            (
+            BufResult(
                 Err(last_err.unwrap_or_else(|| {
                     io::Error::new(
                         io::ErrorKind::InvalidInput,
@@ -157,6 +157,6 @@ async fn each_addr_async_buf<T, B, F: Future<Output = BufResult<T, B>>>(
                 buffer,
             )
         }
-        Err(e) => (Err(e), buffer),
+        Err(e) => BufResult(Err(e), buffer),
     }
 }

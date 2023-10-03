@@ -180,7 +180,7 @@ impl File {
         } else {
             Ok(total_read)
         };
-        (res, buffer)
+        BufResult(res, buffer)
     }
 
     /// Read all bytes until EOF in this source, placing them into `buffer`.
@@ -213,7 +213,7 @@ impl File {
                 }
             }
         }
-        (Ok(total_read), buffer)
+        BufResult(Ok(total_read), buffer)
     }
 
     /// Write a buffer into this file at the specified offset, returning how
@@ -267,7 +267,7 @@ impl File {
             );
             total_written += written;
         }
-        (Ok(total_written), buffer)
+        BufResult(Ok(total_written), buffer)
     }
 
     #[cfg(feature = "runtime")]

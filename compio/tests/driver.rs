@@ -9,6 +9,7 @@ use compio::{
     fs::File,
     net::UdpSocket,
 };
+use compio_buf::BufResult;
 
 #[test]
 fn udp_io() {
@@ -46,7 +47,7 @@ fn udp_io() {
 
     let mut n_bytes = 0;
     let mut buf = MaybeUninit::uninit();
-    for (res, op) in driver.pop(&mut entries.into_iter()) {
+    for BufResult(res, op) in driver.pop(&mut entries.into_iter()) {
         let key = op.user_data();
         if key == key_write {
             res.unwrap();
@@ -75,7 +76,7 @@ fn cancel_before_poll() {
 
     let mut entries = ArrayVec::<Entry, 1>::new();
     driver.poll(None, &mut entries).unwrap();
-    let (res, op) = driver.pop(&mut entries.into_iter()).next().unwrap();
+    let BufResult(res, op) = driver.pop(&mut entries.into_iter()).next().unwrap();
     assert_eq!(op.user_data(), key);
 
     assert!(res.is_ok() || res.unwrap_err().kind() == io::ErrorKind::TimedOut);

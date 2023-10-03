@@ -87,7 +87,7 @@ impl Socket {
     pub async fn connect_async(&self, addr: &SockAddr) -> io::Result<()> {
         self.attach()?;
         let op = Connect::new(self.as_raw_fd(), addr.clone());
-        let (res, _op) = submit(op).await;
+        let BufResult(res, _op) = submit(op).await;
         #[cfg(target_os = "windows")]
         {
             res?;
@@ -104,7 +104,7 @@ impl Socket {
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         self.attach()?;
         let op = Accept::new(self.as_raw_fd());
-        let (res, op) = submit(op).await;
+        let BufResult(res, op) = submit(op).await;
         let accept_sock = unsafe { Socket2::from_raw_fd(res? as _) };
         accept_sock.set_nonblocking(true)?;
         let accept_sock = Self::from_socket2(accept_sock);
@@ -122,7 +122,7 @@ impl Socket {
             self.socket.protocol()?,
         )?;
         let op = Accept::new(self.as_raw_fd(), accept_sock.as_raw_fd() as _);
-        let (res, op) = submit(op).await;
+        let BufResult(res, op) = submit(op).await;
         res?;
         op.update_context()?;
         let addr = op.into_addr()?;
@@ -153,7 +153,7 @@ impl Socket {
         } else {
             Ok(total_read)
         };
-        (res, buffer)
+        BufResult(res, buffer)
     }
 
     #[cfg(feature = "runtime")]
@@ -180,7 +180,7 @@ impl Socket {
                 buf_try!(self.send(buffer.slice(total_written..)).await.into_inner());
             total_written += written;
         }
-        (Ok(total_written), buffer)
+        BufResult(Ok(total_written), buffer)
     }
 
     #[cfg(feature = "runtime")]

@@ -13,8 +13,11 @@ fn main() {
 
     let mut entries = ArrayVec::<Entry, 1>::new();
     driver.poll(None, &mut entries).unwrap();
-    let (res, op) = driver.pop(&mut entries.into_iter()).next().unwrap();
-    let n = res.unwrap();
+    let (n, op) = driver
+        .pop(&mut entries.into_iter())
+        .next()
+        .unwrap()
+        .unwrap();
     assert_eq!(op.user_data(), user_data);
 
     let mut buffer = unsafe { op.into_op::<ReadAt<Vec<u8>>>() }.into_inner();

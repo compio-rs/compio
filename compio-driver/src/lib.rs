@@ -200,7 +200,7 @@ impl Proactor {
                     .try_remove(entry.user_data())
                     .expect("the entry should be valid");
                 let op = Operation::new(op, entry.user_data());
-                (entry.into_result(), op)
+                BufResult(entry.into_result(), op)
             })
         })
     }

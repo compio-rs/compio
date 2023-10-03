@@ -3,7 +3,7 @@ use std::{
     os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd},
 };
 
-use compio_buf::arrayvec::ArrayVec;
+use compio_buf::{arrayvec::ArrayVec, BufResult};
 use compio_driver::{op::Recv, syscall};
 
 use crate::{attacher::Attacher, submit};
@@ -46,7 +46,7 @@ impl Event {
         let buffer = ArrayVec::<u8, 1>::new();
         // Trick: Recv uses readv which doesn't seek.
         let op = Recv::new(self.receiver.as_raw_fd(), buffer);
-        let (res, _) = submit(op).await;
+        let BufResult(res, _) = submit(op).await;
         res?;
         Ok(())
     }

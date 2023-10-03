@@ -17,7 +17,6 @@ async fn main() {
     tx.send_all("Hello world!").await.0.unwrap();
 
     let buffer = Vec::with_capacity(12);
-    let (n, buffer) = rx.recv_exact(buffer).await;
-    n.unwrap();
+    let (_, buffer) = rx.recv_exact(buffer).await.unwrap();
     println!("{}", String::from_utf8(buffer).unwrap());
 }
