@@ -14,14 +14,17 @@ use crate::IntoInner;
 pub struct BufResult<T, B>(pub io::Result<T>, pub B);
 
 impl<T, B> BufResult<T, B> {
+    /// Returns [`true`] if the result is [`Ok`].
     pub const fn is_ok(&self) -> bool {
         self.0.is_ok()
     }
 
+    /// Returns [`true`] if the result is [`Err`].
     pub const fn is_err(&self) -> bool {
         self.0.is_err()
     }
 
+    /// Maps the result part, and allows updating the buffer.
     #[inline]
     pub fn map<U>(self, f: impl FnOnce(T, B) -> (U, B)) -> BufResult<U, B> {
         match self.0 {
@@ -33,6 +36,7 @@ impl<T, B> BufResult<T, B> {
         }
     }
 
+    /// Maps the result part, and allows changing the buffer type.
     #[inline]
     pub fn map2<U, C>(
         self,
@@ -48,21 +52,25 @@ impl<T, B> BufResult<T, B> {
         }
     }
 
+    /// Maps the result part, and keeps the buffer unchanged.
     #[inline]
     pub fn map_res<U>(self, f: impl FnOnce(T) -> U) -> BufResult<U, B> {
         BufResult(self.0.map(f), self.1)
     }
 
+    /// Maps the buffer part, and keeps the result unchanged.
     #[inline]
     pub fn map_buffer<C>(self, f: impl FnOnce(B) -> C) -> BufResult<T, C> {
         BufResult(self.0, f(self.1))
     }
 
+    /// Returns the contained [`Ok`] value, consuming the `self` value.
     #[inline]
     pub fn expect(self, msg: &str) -> (T, B) {
         (self.0.expect(msg), self.1)
     }
 
+    /// Returns the contained [`Ok`] value, consuming the `self` value.
     #[inline]
     pub fn unwrap(self) -> (T, B) {
         (self.0.unwrap(), self.1)
@@ -91,7 +99,6 @@ impl<T: IntoInner, O> IntoInner for BufResult<O, T> {
 
 /// ```
 /// # use compio_buf::BufResult;
-///
 /// fn foo() -> BufResult<i32, i32> {
 ///     let (a, b) = BufResult(Ok(1), 2)?;
 ///     assert_eq!(a, 1);
@@ -112,7 +119,6 @@ impl<T, B> FromResidual<BufResult<Infallible, B>> for BufResult<T, B> {
 
 /// ```
 /// # use compio_buf::BufResult;
-///
 /// fn foo() -> std::io::Result<i32> {
 ///     let (a, b) = BufResult(Ok(1), 2)?;
 ///     assert_eq!(a, 1);
@@ -156,7 +162,6 @@ impl<T, B> Residual<(T, B)> for BufResult<Infallible, B> {
 /// A helper macro to imitate the behavior of try trait `?`.
 /// ```
 /// # use compio_buf::{buf_try, BufResult};
-///
 /// fn foo() -> BufResult<i32, i32> {
 ///     let (a, b) = buf_try!(BufResult(Ok(1), 2));
 ///     assert_eq!(a, 1);
