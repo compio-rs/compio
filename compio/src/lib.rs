@@ -2,20 +2,12 @@
 #![doc = include_str!("../../README.md")]
 #![warn(missing_docs)]
 
-#[doc(no_inline)]
-pub use compio_buf as buf;
-#[doc(no_inline)]
-pub use compio_driver as driver;
-#[doc(no_inline)]
-pub use compio_fs as fs;
 #[cfg(target_os = "windows")]
 #[doc(no_inline)]
 pub use compio_fs::named_pipe;
 #[cfg(feature = "macros")]
 #[doc(no_inline)]
 pub use compio_macros::*;
-#[doc(no_inline)]
-pub use compio_net as net;
 #[cfg(feature = "runtime")]
 #[doc(no_inline)]
 pub use compio_runtime as task;
@@ -28,3 +20,10 @@ pub use compio_runtime::time;
 #[cfg(feature = "signal")]
 #[doc(no_inline)]
 pub use compio_signal as signal;
+#[doc(no_inline)]
+pub use {
+    compio_buf::{self as buf, BufResult},
+    compio_driver as driver,
+    compio_fs::{self as fs},
+    compio_net as net,
+};

@@ -29,7 +29,7 @@ use windows_sys::Win32::{
     },
 };
 #[cfg(feature = "runtime")]
-use ::{
+use {
     compio_buf::{BufResult, IoBuf, IoBufMut},
     compio_driver::op::ConnectNamedPipe,
     compio_runtime::submit,

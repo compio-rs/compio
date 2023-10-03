@@ -1,7 +1,7 @@
 use std::{io, net::Shutdown, path::Path};
 
 #[cfg(feature = "runtime")]
-use ::compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use socket2::{Domain, SockAddr, Type};
 

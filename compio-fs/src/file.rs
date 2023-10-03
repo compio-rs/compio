@@ -4,7 +4,7 @@ use std::{fs::Metadata, io, path::Path};
 
 use compio_driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 #[cfg(feature = "runtime")]
-use ::{
+use {
     compio_buf::{buf_try, vec_alloc, BufResult, IntoInner, IoBuf, IoBufMut},
     compio_driver::op::{BufResultExt, ReadAt, Sync, WriteAt},
     compio_runtime::{submit, Attacher},

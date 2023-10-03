@@ -3,7 +3,7 @@ use std::{io, net::Shutdown};
 use compio_driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 #[cfg(feature = "runtime")]
-use ::{
+use {
     compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     compio_driver::op::{
         Accept, BufResultExt, Connect, Recv, RecvFrom, RecvFromVectored, RecvResultExt,
