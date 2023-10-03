@@ -5,10 +5,10 @@
 //! Print on "ctrl-c" notification.
 //!
 //! ```rust,no_run
-//! use compio::signal;
+//! use compio_signal::ctrl_c;
 //!
-//! compio::task::block_on(async {
-//!     signal::ctrl_c().await.unwrap();
+//! compio_runtime::block_on(async {
+//!     ctrl_c().await.unwrap();
 //!     println!("ctrl-c received!");
 //! })
 //! ```
