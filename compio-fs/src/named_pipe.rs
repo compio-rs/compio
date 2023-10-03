@@ -55,7 +55,7 @@ use crate::File;
 /// ```no_run
 /// use std::io;
 ///
-/// use compio::named_pipe::ServerOptions;
+/// use compio_fs::named_pipe::ServerOptions;
 ///
 /// const PIPE_NAME: &str = r"\\.\pipe\named-pipe-idiomatic-server";
 ///
@@ -71,7 +71,7 @@ use crate::File;
 ///     .create(PIPE_NAME)?;
 ///
 /// // Spawn the server loop.
-/// let server = compio::task::block_on(async move {
+/// let server = compio_runtime::block_on(async move {
 ///     loop {
 ///         // Wait for a client to connect.
 ///         let connected = server.connect().await?;
@@ -83,7 +83,7 @@ use crate::File;
 ///         // `io::ErrorKind::NotFound`.
 ///         server = ServerOptions::new().create(PIPE_NAME)?;
 ///
-///         let client = compio::task::spawn(async move {
+///         let client = compio_runtime::spawn(async move {
 ///             // use the connected client
 /// #           Ok::<_, std::io::Error>(())
 ///         });
@@ -121,11 +121,11 @@ impl NamedPipeServer {
     /// with.
     ///
     /// ```no_run
-    /// use compio::named_pipe::{PipeEnd, PipeMode, ServerOptions};
+    /// use compio_fs::named_pipe::{PipeEnd, PipeMode, ServerOptions};
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-server-info";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let server = ServerOptions::new()
     ///     .pipe_mode(PipeMode::Message)
     ///     .max_instances(5)
@@ -160,11 +160,11 @@ impl NamedPipeServer {
     /// # Example
     ///
     /// ```no_run
-    /// use compio::named_pipe::ServerOptions;
+    /// use compio_fs::named_pipe::ServerOptions;
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\mynamedpipe";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let pipe = ServerOptions::new().create(PIPE_NAME)?;
     ///
     /// // Wait for a client to connect.
@@ -185,12 +185,12 @@ impl NamedPipeServer {
     /// process.
     ///
     /// ```
-    /// use compio::named_pipe::{ClientOptions, ServerOptions};
+    /// use compio_fs::named_pipe::{ClientOptions, ServerOptions};
     /// use windows_sys::Win32::Foundation::ERROR_PIPE_NOT_CONNECTED;
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-disconnect";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
     ///
     /// let client = ClientOptions::new().open(PIPE_NAME).unwrap();
@@ -256,12 +256,13 @@ impl_raw_fd!(NamedPipeServer, handle);
 /// ```no_run
 /// use std::time::Duration;
 ///
-/// use compio::{named_pipe::ClientOptions, time};
+/// use compio_fs::named_pipe::ClientOptions;
+/// use compio_runtime::time;
 /// use windows_sys::Win32::Foundation::ERROR_PIPE_BUSY;
 ///
 /// const PIPE_NAME: &str = r"\\.\pipe\named-pipe-idiomatic-client";
 ///
-/// # compio::task::block_on(async move {
+/// # compio_runtime::block_on(async move {
 /// let client = loop {
 ///     match ClientOptions::new().open(PIPE_NAME) {
 ///         Ok(client) => break client,
@@ -301,11 +302,11 @@ impl NamedPipeClient {
     /// with.
     ///
     /// ```no_run
-    /// use compio::named_pipe::{ClientOptions, PipeEnd, PipeMode};
+    /// use compio_fs::named_pipe::{ClientOptions, PipeEnd, PipeMode};
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-client-info";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let client = ClientOptions::new().open(PIPE_NAME)?;
     ///
     /// let client_info = client.info()?;
@@ -376,11 +377,11 @@ impl ServerOptions {
     /// Creates a new named pipe builder with the default settings.
     ///
     /// ```
-    /// use compio::named_pipe::ServerOptions;
+    /// use compio_fs::named_pipe::ServerOptions;
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-new";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
     /// # })
     /// ```
@@ -430,11 +431,11 @@ impl ServerOptions {
     /// ```
     /// use std::io;
     ///
-    /// use compio::named_pipe::{ClientOptions, ServerOptions};
+    /// use compio_fs::named_pipe::{ClientOptions, ServerOptions};
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-inbound-err1";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let _server = ServerOptions::new()
     ///     .access_inbound(false)
     ///     .create(PIPE_NAME)
@@ -452,11 +453,11 @@ impl ServerOptions {
     /// ```
     /// use std::io;
     ///
-    /// use compio::named_pipe::{ClientOptions, ServerOptions};
+    /// use compio_fs::named_pipe::{ClientOptions, ServerOptions};
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-inbound-err2";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let server = ServerOptions::new()
     ///     .access_inbound(false)
     ///     .create(PIPE_NAME)
@@ -479,11 +480,12 @@ impl ServerOptions {
     /// ```
     /// use std::io;
     ///
-    /// use compio::named_pipe::{ClientOptions, ServerOptions};
+    /// use compio_buf::BufResult;
+    /// use compio_fs::named_pipe::{ClientOptions, ServerOptions};
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-inbound";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let server = ServerOptions::new()
     ///     .access_inbound(false)
     ///     .create(PIPE_NAME)
@@ -498,7 +500,7 @@ impl ServerOptions {
     /// let buf = Vec::with_capacity(4);
     /// let read = client.read_exact(buf);
     ///
-    /// let ((write, _), (read, buf)) = futures_util::join!(write, read);
+    /// let (BufResult(write, _), BufResult(read, buf)) = futures_util::join!(write, read);
     /// write.unwrap();
     /// let read = read.unwrap();
     ///
@@ -526,11 +528,11 @@ impl ServerOptions {
     /// ```
     /// use std::io;
     ///
-    /// use compio::named_pipe::{ClientOptions, ServerOptions};
+    /// use compio_fs::named_pipe::{ClientOptions, ServerOptions};
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-outbound-err1";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let server = ServerOptions::new()
     ///     .access_outbound(false)
     ///     .create(PIPE_NAME)
@@ -548,11 +550,11 @@ impl ServerOptions {
     /// ```
     /// use std::io;
     ///
-    /// use compio::named_pipe::{ClientOptions, ServerOptions};
+    /// use compio_fs::named_pipe::{ClientOptions, ServerOptions};
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-outbound-err2";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let server = ServerOptions::new()
     ///     .access_outbound(false)
     ///     .create(PIPE_NAME)
@@ -574,11 +576,12 @@ impl ServerOptions {
     /// communication.
     ///
     /// ```
-    /// use compio::named_pipe::{ClientOptions, ServerOptions};
+    /// use compio_buf::BufResult;
+    /// use compio_fs::named_pipe::{ClientOptions, ServerOptions};
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-outbound";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let server = ServerOptions::new()
     ///     .access_outbound(false)
     ///     .create(PIPE_NAME)
@@ -593,7 +596,7 @@ impl ServerOptions {
     /// let buf = Vec::with_capacity(4);
     /// let read = server.read_exact(buf);
     ///
-    /// let ((write, _), (read, buf)) = futures_util::join!(write, read);
+    /// let (BufResult(write, _), BufResult(read, buf)) = futures_util::join!(write, read);
     /// write.unwrap();
     /// let read = read.unwrap();
     ///
@@ -629,11 +632,11 @@ impl ServerOptions {
     /// ```
     /// use std::io;
     ///
-    /// use compio::named_pipe::ServerOptions;
+    /// use compio_fs::named_pipe::ServerOptions;
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-first-instance-error";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let server1 = ServerOptions::new()
     ///     .first_pipe_instance(true)
     ///     .create(PIPE_NAME)
@@ -654,11 +657,11 @@ impl ServerOptions {
     /// ```
     /// use std::io;
     ///
-    /// use compio::named_pipe::ServerOptions;
+    /// use compio_fs::named_pipe::ServerOptions;
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-first-instance";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let mut builder = ServerOptions::new();
     /// builder.first_pipe_instance(true);
     ///
@@ -688,17 +691,20 @@ impl ServerOptions {
     ///
     /// ```
     /// use std::{io, ptr};
-    //
-    /// use compio::{driver::AsRawFd, named_pipe::ServerOptions};
-    /// use windows_sys::{
-    ///     Win32::Foundation::ERROR_SUCCESS,
-    ///     Win32::Security::DACL_SECURITY_INFORMATION,
-    ///     Win32::Security::Authorization::{SetSecurityInfo, SE_KERNEL_OBJECT},
+    ///
+    /// use compio_driver::AsRawFd;
+    /// use compio_fs::named_pipe::ServerOptions;
+    /// use windows_sys::Win32::{
+    ///     Foundation::ERROR_SUCCESS,
+    ///     Security::{
+    ///         Authorization::{SetSecurityInfo, SE_KERNEL_OBJECT},
+    ///         DACL_SECURITY_INFORMATION,
+    ///     },
     /// };
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\write_dac_pipe";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let mut pipe_template = ServerOptions::new();
     /// pipe_template.write_dac(true);
     /// let pipe = pipe_template.create(PIPE_NAME).unwrap();
@@ -722,17 +728,20 @@ impl ServerOptions {
     /// ```
     /// ```
     /// use std::{io, ptr};
-    //
-    /// use compio::{driver::AsRawFd, named_pipe::ServerOptions};
-    /// use windows_sys::{
-    ///     Win32::Foundation::ERROR_ACCESS_DENIED,
-    ///     Win32::Security::DACL_SECURITY_INFORMATION,
-    ///     Win32::Security::Authorization::{SetSecurityInfo, SE_KERNEL_OBJECT},
+    ///
+    /// use compio_driver::AsRawFd;
+    /// use compio_fs::named_pipe::ServerOptions;
+    /// use windows_sys::Win32::{
+    ///     Foundation::ERROR_ACCESS_DENIED,
+    ///     Security::{
+    ///         Authorization::{SetSecurityInfo, SE_KERNEL_OBJECT},
+    ///         DACL_SECURITY_INFORMATION,
+    ///     },
     /// };
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\write_dac_pipe_fail";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let mut pipe_template = ServerOptions::new();
     /// pipe_template.write_dac(false);
     /// let pipe = pipe_template.create(PIPE_NAME).unwrap();
@@ -754,7 +763,7 @@ impl ServerOptions {
     ///
     /// # })
     /// ```
-    /// 
+    ///
     /// [`WRITE_DAC`]: https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createnamedpipea
     pub fn write_dac(&mut self, requested: bool) -> &mut Self {
         self.write_dac = requested;
@@ -810,12 +819,12 @@ impl ServerOptions {
     /// ```
     /// use std::io;
     ///
-    /// use compio::named_pipe::{ClientOptions, ServerOptions};
+    /// use compio_fs::named_pipe::{ClientOptions, ServerOptions};
     /// use windows_sys::Win32::Foundation::ERROR_PIPE_BUSY;
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-max-instances";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let mut server = ServerOptions::new();
     /// server.max_instances(2);
     ///
@@ -841,9 +850,9 @@ impl ServerOptions {
     /// you do not wish to set an instance limit, leave it unspecified.
     ///
     /// ```should_panic
-    /// use compio::named_pipe::ServerOptions;
+    /// use compio_fs::named_pipe::ServerOptions;
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let builder = ServerOptions::new().max_instances(255);
     /// # })
     /// ```
@@ -883,11 +892,11 @@ impl ServerOptions {
     /// # Examples
     ///
     /// ```
-    /// use compio::named_pipe::ServerOptions;
+    /// use compio_fs::named_pipe::ServerOptions;
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-create";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
     /// # })
     /// ```
@@ -998,11 +1007,11 @@ impl ClientOptions {
     /// Creates a new named pipe builder with the default settings.
     ///
     /// ```
-    /// use compio::named_pipe::{ClientOptions, ServerOptions};
+    /// use compio_fs::named_pipe::{ClientOptions, ServerOptions};
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-client-new";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// // Server must be created in order for the client creation to succeed.
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
     /// let client = ClientOptions::new().open(PIPE_NAME).unwrap();
@@ -1103,12 +1112,13 @@ impl ClientOptions {
     /// ```no_run
     /// use std::time::Duration;
     ///
-    /// use compio::{named_pipe::ClientOptions, time};
+    /// use compio_fs::named_pipe::ClientOptions;
+    /// use compio_runtime::time;
     /// use windows_sys::Win32::Foundation::ERROR_PIPE_BUSY;
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\mynamedpipe";
     ///
-    /// # compio::task::block_on(async move {
+    /// # compio_runtime::block_on(async move {
     /// let client = loop {
     ///     match ClientOptions::new().open(PIPE_NAME) {
     ///         Ok(client) => break client,

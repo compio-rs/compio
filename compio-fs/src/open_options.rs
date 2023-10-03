@@ -20,7 +20,7 @@ use crate::File;
 /// Opening a file to read:
 ///
 /// ```no_run
-/// use compio::fs::OpenOptions;
+/// use compio_fs::OpenOptions;
 ///
 /// let file = OpenOptions::new().read(true).open("foo.txt").unwrap();
 /// ```
@@ -29,7 +29,7 @@ use crate::File;
 /// doesn't exist:
 ///
 /// ```no_run
-/// use compio::fs::OpenOptions;
+/// use compio_fs::OpenOptions;
 ///
 /// let file = OpenOptions::new()
 ///     .read(true)

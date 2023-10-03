@@ -1,6 +1,9 @@
+use std::io;
 #[cfg(feature = "try_trait_v2")]
-use std::ops::{ControlFlow, FromResidual, Residual, Try};
-use std::{convert::Infallible, io};
+use std::{
+    convert::Infallible,
+    ops::{ControlFlow, FromResidual, Residual, Try},
+};
 
 use crate::IntoInner;
 

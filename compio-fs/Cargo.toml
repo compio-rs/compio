@@ -28,6 +28,11 @@ windows-sys = { version = "0.48", features = ["Win32_Security_Authorization"] }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Shared dev dependencies for all platforms
+[dev-dependencies]
+compio-runtime = { workspace = true, features = ["time"] }
+futures-util = "0.3"
+
 [features]
 runtime = ["dep:compio-buf", "dep:compio-runtime"]
 
