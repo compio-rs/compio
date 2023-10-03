@@ -7,6 +7,7 @@ use std::{mem::ManuallyDrop, pin::Pin, ptr::NonNull};
 
 use crate::OpCode;
 
+#[doc(hidden)]
 pub struct RawOp(NonNull<dyn OpCode>);
 
 impl RawOp {
@@ -19,6 +20,8 @@ impl RawOp {
         unsafe { Pin::new_unchecked(self.0.as_mut()) }
     }
 
+    /// # Safety
+    /// The caller should ensure the correct type.
     pub unsafe fn into_inner<T: OpCode>(self) -> T {
         let this = ManuallyDrop::new(self);
         *Box::from_raw(this.0.cast().as_ptr())

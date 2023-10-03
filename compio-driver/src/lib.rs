@@ -37,6 +37,7 @@ pub use sys::*;
 
 #[cfg(target_os = "windows")]
 #[macro_export]
+#[doc(hidden)]
 macro_rules! syscall {
     ($fn: ident ( $($arg: expr),* $(,)* ), $op: tt $rhs: expr) => {{
         #[allow(unused_unsafe)]
@@ -61,6 +62,7 @@ macro_rules! syscall {
 /// Helper macro to execute a system call
 #[cfg(unix)]
 #[macro_export]
+#[doc(hidden)]
 macro_rules! syscall {
     ($fn: ident ( $($arg: expr),* $(,)* ) ) => {{
         #[allow(unused_unsafe)]
@@ -90,6 +92,7 @@ macro_rules! syscall {
 }
 
 #[macro_export]
+#[doc(hidden)]
 macro_rules! impl_raw_fd {
     ($t:ty, $inner:ident) => {
         impl $crate::AsRawFd for $t {
@@ -223,6 +226,7 @@ impl Operation {
         Self { op, user_data }
     }
 
+    #[doc(hidden)]
     pub fn into_inner(self) -> RawOp {
         self.op
     }

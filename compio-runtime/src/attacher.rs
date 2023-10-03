@@ -22,6 +22,7 @@ pub struct Attacher {
 }
 
 impl Attacher {
+    /// Create [`Attacher`].
     pub const fn new() -> Self {
         Self {
             once: OnceLock::new(),
@@ -29,15 +30,24 @@ impl Attacher {
         }
     }
 
+    /// Attach the source. This method could be called many times, but if the
+    /// action fails, the error will only return once.
     pub fn attach(&self, source: &impl AsRawFd) -> io::Result<()> {
         self.once.get_or_try_init(|| attach(source.as_raw_fd()))?;
         Ok(())
     }
 
+    /// Check if [`attach`] has been called.
     pub fn is_attached(&self) -> bool {
         self.once.get().is_some()
     }
 
+    /// Try clone self with the cloned source. The attach state will be
+    /// reserved.
+    ///
+    /// ## Platform specific
+    /// * io-uring/polling: it will try to attach in the current thread if
+    ///   needed.
     pub fn try_clone(&self, source: &impl AsRawFd) -> io::Result<Self> {
         if cfg!(target_os = "windows") {
             Ok(self.clone())

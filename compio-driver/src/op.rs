@@ -14,7 +14,9 @@ pub use crate::sys::op::{
 };
 use crate::{sockaddr_storage, socklen_t, RawFd};
 
+/// Trait to update the buffer length inside the [`BufResult`].
 pub trait BufResultExt {
+    /// Call [`SetBufInit::set_buf_init`] if the result is [`Ok`].
     fn map_advanced(self) -> Self;
 }
 
@@ -37,9 +39,12 @@ impl<T: SetBufInit, O> BufResultExt for BufResult<(usize, O), T> {
     }
 }
 
+/// Helper trait for [`RecvFrom`] and [`RecvFromVectored`].
 pub trait RecvResultExt {
+    /// The mapped result.
     type RecvFromResult;
 
+    /// Create [`SockAddr`] if the result is [`Ok`].
     fn map_addr(self) -> Self::RecvFromResult;
 }
 

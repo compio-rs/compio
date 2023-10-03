@@ -7,7 +7,7 @@ use std::{
         OwnedHandle, RawHandle,
     },
     pin::Pin,
-    ptr::{null_mut, NonNull},
+    ptr::NonNull,
     task::Poll,
     time::Duration,
 };
@@ -326,6 +326,7 @@ impl<T> Overlapped<T> {
     }
 }
 
+#[doc(hidden)]
 pub struct RawOp(NonNull<Overlapped<dyn OpCode>>);
 
 impl RawOp {
@@ -343,6 +344,8 @@ impl RawOp {
         self.0.as_ptr()
     }
 
+    /// # Safety
+    /// The caller should ensure the correct type.
     pub unsafe fn into_inner<T: OpCode>(self) -> T {
         let this = ManuallyDrop::new(self);
         let this: Box<Overlapped<T>> = Box::from_raw(this.0.cast().as_ptr());
