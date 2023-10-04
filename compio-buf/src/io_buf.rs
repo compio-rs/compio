@@ -49,6 +49,11 @@ pub unsafe trait IoBuf: Unpin + 'static {
         unsafe { std::slice::from_raw_parts(self.as_buf_ptr(), self.buf_len()) }
     }
 
+    /// # Safety
+    ///
+    /// The return slice will not live longer than self.
+    /// It is static to provide convenience from writing self-referenced
+    /// structure.
     #[doc(hidden)]
     unsafe fn as_io_slice(&self) -> IoSlice<'static> {
         IoSlice::new(std::mem::transmute(self.as_slice()))
@@ -270,6 +275,11 @@ pub unsafe trait IoBufMut: IoBuf + SetBufInit {
         }
     }
 
+    /// # Safety
+    ///
+    /// The return slice will not live longer than self.
+    /// It is static to provide convenience from writing self-referenced
+    /// structure.
     #[doc(hidden)]
     unsafe fn as_io_slice_mut(&mut self) -> IoSliceMut<'static> {
         IoSliceMut::new(std::mem::transmute(self.as_uninit_slice()))
@@ -322,6 +332,7 @@ pub unsafe trait IoVectoredBuf: Unpin + 'static {
     /// The return slice will not live longer than self.
     /// It is static to provide convenience from writing self-referenced
     /// structure.
+    #[doc(hidden)]
     unsafe fn as_io_slices(&self) -> Vec<IoSlice<'static>>;
 
     /// An iterator of the inner buffers.
@@ -372,6 +383,7 @@ pub unsafe trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
     /// The return slice will not live longer than self.
     /// It is static to provide convenience from writing self-referenced
     /// structure.
+    #[doc(hidden)]
     unsafe fn as_io_slices_mut(&mut self) -> Vec<IoSliceMut<'static>>;
 
     /// A mutable iterator of the inner buffers.
