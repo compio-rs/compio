@@ -156,51 +156,6 @@ impl Driver {
         Ok(())
     }
 
-    /// Poll all events from polling, call `perform` on op and push them into
-    /// cqueue.
-    fn poll_impl(
-        &mut self,
-        timeout: Option<Duration>,
-        entries: &mut impl Extend<Entry>,
-        registry: &mut Slab<RawOp>,
-    ) -> io::Result<()> {
-        self.poll.wait(&mut self.events, timeout)?;
-        if self.events.is_empty() && timeout.is_some() {
-            return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
-        }
-        for event in self.events.iter() {
-            let fd = event.key as RawFd;
-            let queue = self
-                .registry
-                .get_mut(&fd)
-                .expect("the fd should be attached");
-            let (user_data, interest) = queue.pop_interest(&event);
-            if self.cancelled.remove(&user_data) {
-                entries.extend(Some(entry_cancelled(user_data)));
-            } else {
-                let op = registry[user_data].as_pin();
-                let res = match op.on_event(&event) {
-                    Poll::Pending => {
-                        // The operation should go back to the front.
-                        queue.push_front_interest(user_data, interest);
-                        None
-                    }
-                    Poll::Ready(res) => Some(res),
-                };
-                if let Some(res) = res {
-                    let entry = Entry::new(user_data, res);
-                    entries.extend(Some(entry));
-                }
-            }
-            let renew_event = queue.event(fd as _);
-            unsafe {
-                let fd = BorrowedFd::borrow_raw(fd);
-                self.poll.modify(fd, renew_event)?;
-            }
-        }
-        Ok(())
-    }
-
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
         if cfg!(any(target_os = "linux", target_os = "android")) {
             let mut stat = unsafe { std::mem::zeroed() };
@@ -242,7 +197,38 @@ impl Driver {
         entries: &mut impl Extend<Entry>,
         registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
-        self.poll_impl(timeout, entries, registry)?;
+        self.poll.wait(&mut self.events, timeout)?;
+        if self.events.is_empty() && timeout.is_some() {
+            return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
+        }
+        for event in self.events.iter() {
+            let fd = event.key as RawFd;
+            let queue = self
+                .registry
+                .get_mut(&fd)
+                .expect("the fd should be attached");
+            let (user_data, interest) = queue.pop_interest(&event);
+            if self.cancelled.remove(&user_data) {
+                entries.extend(Some(entry_cancelled(user_data)));
+            } else {
+                let op = registry[user_data].as_pin();
+                let res = match op.on_event(&event) {
+                    Poll::Pending => {
+                        // The operation should go back to the front.
+                        queue.push_front_interest(user_data, interest);
+                        None
+                    }
+                    Poll::Ready(res) => Some(res),
+                };
+                if let Some(res) = res {
+                    let entry = Entry::new(user_data, res);
+                    entries.extend(Some(entry));
+                }
+            }
+            let renew_event = queue.event(fd as _);
+            let fd = BorrowedFd::borrow_raw(fd);
+            self.poll.modify(fd, renew_event)?;
+        }
         Ok(())
     }
 }
