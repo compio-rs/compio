@@ -47,7 +47,6 @@ windows-sys = { version = "0.48", features = [
     "Win32_System_Console",
     "Win32_System_IO",
     "Win32_System_Pipes",
-    "Win32_System_SystemServices",
     "Win32_System_Threading",
 ] }
 

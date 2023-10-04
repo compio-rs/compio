@@ -1,6 +1,6 @@
 use std::{io, pin::Pin, ptr::null_mut, task::Poll};
 
-use compio_driver::{syscall, AsRawFd, OpCode, RawFd};
+use compio_driver::{syscall, AsRawFd, OpCode, PushEntry, RawFd};
 use windows_sys::Win32::System::IO::{PostQueuedCompletionStatus, OVERLAPPED};
 
 use crate::{key::Key, runtime::op::OpFuture, RUNTIME};
@@ -16,6 +16,10 @@ impl Event {
     /// Create [`Event`].
     pub fn new() -> io::Result<Self> {
         let user_data = RUNTIME.with(|runtime| runtime.submit_raw(NopPending::new()));
+        let user_data = match user_data {
+            PushEntry::Pending(user_data) => user_data,
+            PushEntry::Ready(_) => unreachable!("NopPending always returns Pending"),
+        };
         Ok(Self { user_data })
     }
 

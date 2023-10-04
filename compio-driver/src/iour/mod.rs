@@ -1,6 +1,6 @@
 #[doc(no_inline)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{collections::VecDeque, io, pin::Pin, time::Duration};
+use std::{collections::VecDeque, io, pin::Pin, task::Poll, time::Duration};
 
 use io_uring::{
     cqueue,
@@ -27,6 +27,7 @@ pub trait OpCode {
 pub(crate) struct Driver {
     inner: IoUring,
     cancel_queue: VecDeque<u64>,
+    squeue: VecDeque<usize>,
 }
 
 impl Driver {
@@ -36,6 +37,7 @@ impl Driver {
         Ok(Self {
             inner: IoUring::new(entries)?,
             cancel_queue: VecDeque::default(),
+            squeue: VecDeque::with_capacity(entries as usize),
         })
     }
 
@@ -63,11 +65,9 @@ impl Driver {
         }
     }
 
-    fn flush_submissions(
-        &mut self,
-        ops: &mut impl Iterator<Item = usize>,
-        registry: &mut Slab<RawOp>,
-    ) -> bool {
+    fn flush_submissions(&mut self, registry: &mut Slab<RawOp>) -> bool {
+        let mut ops = std::iter::from_fn(|| self.squeue.pop_front()).fuse();
+
         let mut ended_ops = false;
         let mut ended_cancel = false;
 
@@ -117,17 +117,20 @@ impl Driver {
         self.cancel_queue.push_back(user_data as _);
     }
 
+    pub fn push(&mut self, user_data: usize, _op: &mut RawOp) -> Poll<io::Result<usize>> {
+        self.squeue.push_back(user_data);
+        Poll::Pending
+    }
+
     pub unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        ops: &mut impl Iterator<Item = usize>,
         entries: &mut impl Extend<Entry>,
         registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
-        let mut ops = ops.fuse();
         // Anyway we need to submit once, no matter there are entries in squeue.
         loop {
-            let ended = self.flush_submissions(&mut ops, registry);
+            let ended = self.flush_submissions(registry);
 
             self.submit_auto(timeout, ended)?;
 

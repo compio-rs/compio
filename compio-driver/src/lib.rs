@@ -11,7 +11,7 @@
 ))]
 compile_error!("You must choose one of these features: [\"io-uring\", \"polling\"]");
 
-use std::{collections::VecDeque, io, time::Duration};
+use std::{io, task::Poll, time::Duration};
 
 use compio_buf::BufResult;
 use slab::Slab;
@@ -115,12 +115,37 @@ macro_rules! impl_raw_fd {
     };
 }
 
+/// The return type of [`Proactor::push`].
+pub enum PushEntry<K, R> {
+    /// The operation is pushed to the submission queue.
+    Pending(K),
+    /// The operation is ready and returns.
+    Ready(R),
+}
+
+impl<K, R> PushEntry<K, R> {
+    /// Map the [`PushEntry::Pending`] branch.
+    pub fn map_pending<L>(self, f: impl FnOnce(K) -> L) -> PushEntry<L, R> {
+        match self {
+            Self::Pending(k) => PushEntry::Pending(f(k)),
+            Self::Ready(r) => PushEntry::Ready(r),
+        }
+    }
+
+    /// Map the [`PushEntry::Ready`] branch.
+    pub fn map_ready<S>(self, f: impl FnOnce(R) -> S) -> PushEntry<K, S> {
+        match self {
+            Self::Pending(k) => PushEntry::Pending(k),
+            Self::Ready(r) => PushEntry::Ready(f(r)),
+        }
+    }
+}
+
 /// Low-level actions of completion-based IO.
 /// It owns the operations to keep the driver safe.
 pub struct Proactor {
     driver: Driver,
     ops: Slab<RawOp>,
-    squeue: VecDeque<usize>,
 }
 
 impl Proactor {
@@ -134,7 +159,6 @@ impl Proactor {
         Ok(Self {
             driver: Driver::new(entries)?,
             ops: Slab::with_capacity(entries as _),
-            squeue: VecDeque::with_capacity(entries as _),
         })
     }
 
@@ -167,13 +191,18 @@ impl Proactor {
 
     /// Push an operation into the driver, and return the unique key, called
     /// user-defined data, associated with it.
-    pub fn push(&mut self, op: impl OpCode + 'static) -> usize {
+    pub fn push<T: OpCode + 'static>(&mut self, op: T) -> PushEntry<usize, BufResult<usize, T>> {
         let entry = self.ops.vacant_entry();
         let user_data = entry.key();
         let op = RawOp::new(user_data, op);
-        entry.insert(op);
-        self.squeue.push_back(user_data);
-        user_data
+        let op = entry.insert(op);
+        match self.driver.push(user_data, op) {
+            Poll::Pending => PushEntry::Pending(user_data),
+            Poll::Ready(res) => {
+                let op = self.ops.remove(user_data);
+                PushEntry::Ready(BufResult(res, unsafe { op.into_inner::<T>() }))
+            }
+        }
     }
 
     /// Poll the driver and get completed entries.
@@ -183,10 +212,8 @@ impl Proactor {
         timeout: Option<Duration>,
         entries: &mut impl Extend<Entry>,
     ) -> io::Result<()> {
-        let mut iter = std::iter::from_fn(|| self.squeue.pop_front());
         unsafe {
-            self.driver
-                .poll(timeout, &mut iter, entries, &mut self.ops)?;
+            self.driver.poll(timeout, entries, &mut self.ops)?;
         }
         Ok(())
     }

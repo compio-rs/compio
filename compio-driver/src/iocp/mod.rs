@@ -17,16 +17,11 @@ use slab::Slab;
 use windows_sys::Win32::{
     Foundation::{
         RtlNtStatusToDosError, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_NO_DATA,
-        ERROR_OPERATION_ABORTED, FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING,
-        STATUS_SUCCESS,
+        ERROR_OPERATION_ABORTED, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING, STATUS_SUCCESS,
     },
     System::{
-        SystemServices::ERROR_SEVERITY_ERROR,
         Threading::INFINITE,
-        IO::{
-            CreateIoCompletionPort, GetQueuedCompletionStatusEx, PostQueuedCompletionStatus,
-            OVERLAPPED, OVERLAPPED_ENTRY,
-        },
+        IO::{CreateIoCompletionPort, GetQueuedCompletionStatusEx, OVERLAPPED, OVERLAPPED_ENTRY},
     },
 };
 
@@ -222,28 +217,23 @@ impl Driver {
         }
     }
 
+    pub fn push(&mut self, user_data: usize, op: &mut RawOp) -> Poll<io::Result<usize>> {
+        if self.cancelled.remove(&user_data) {
+            Poll::Ready(Err(io::Error::from_raw_os_error(
+                ERROR_OPERATION_ABORTED as _,
+            )))
+        } else {
+            let optr = op.as_mut_ptr();
+            unsafe { op.as_op_pin().operate(optr.cast()) }
+        }
+    }
+
     pub unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        ops: &mut impl Iterator<Item = usize>,
         entries: &mut impl Extend<Entry>,
-        registry: &mut Slab<RawOp>,
+        _registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
-        for user_data in ops {
-            let overlapped_ptr = registry[user_data].as_mut_ptr();
-            let op = registry[user_data].as_op_pin();
-            let result = if self.cancelled.remove(&user_data) {
-                Poll::Ready(Err(io::Error::from_raw_os_error(
-                    ERROR_OPERATION_ABORTED as _,
-                )))
-            } else {
-                op.operate(overlapped_ptr.cast())
-            };
-            if let Poll::Ready(result) = result {
-                post_driver_raw(self.port.as_raw_handle(), result, overlapped_ptr.cast())?;
-            }
-        }
-
         // Prevent stack growth.
         let mut iocp_entries = ArrayVec::<OVERLAPPED_ENTRY, { Self::DEFAULT_CAPACITY }>::new();
         self.poll_impl(timeout, &mut iocp_entries)?;
@@ -269,38 +259,6 @@ impl Driver {
 impl AsRawFd for Driver {
     fn as_raw_fd(&self) -> RawFd {
         self.port.as_raw_handle()
-    }
-}
-
-/// # Safety
-///
-/// * The handle should be valid.
-/// * The overlapped_ptr should be non-null.
-unsafe fn post_driver_raw(
-    handle: RawFd,
-    result: io::Result<usize>,
-    overlapped_ptr: *mut OVERLAPPED,
-) -> io::Result<()> {
-    if let Err(e) = &result {
-        (*overlapped_ptr).Internal = ntstatus_from_win32(e.raw_os_error().unwrap_or_default()) as _;
-    }
-    syscall!(
-        BOOL,
-        PostQueuedCompletionStatus(
-            handle as _,
-            result.unwrap_or_default() as _,
-            0,
-            overlapped_ptr,
-        )
-    )?;
-    Ok(())
-}
-
-fn ntstatus_from_win32(x: i32) -> NTSTATUS {
-    if x <= 0 {
-        x
-    } else {
-        (x & 0x0000FFFF) | (FACILITY_NTWIN32 << 16) as NTSTATUS | ERROR_SEVERITY_ERROR as NTSTATUS
     }
 }
 

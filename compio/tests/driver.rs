@@ -9,6 +9,7 @@ use compio::{
     fs::File,
     net::UdpSocket,
 };
+use compio_driver::PushEntry;
 
 #[test]
 fn udp_io() {
@@ -29,23 +30,45 @@ fn udp_io() {
     driver.attach(socket.as_raw_fd()).unwrap();
     driver.attach(other_socket.as_raw_fd()).unwrap();
 
+    // operations need to wait
+    let mut need_wait = 0;
+
     // write data
     let op_write = Send::new(socket.as_raw_fd(), "hello world");
-    let key_write = driver.push(op_write);
+    let key_write = match driver.push(op_write) {
+        PushEntry::Pending(key) => {
+            need_wait += 1;
+            key
+        }
+        PushEntry::Ready(res) => {
+            res.unwrap();
+            usize::MAX
+        }
+    };
 
     // read data
     let buf = Vec::with_capacity(32);
     let op_read = Recv::new(other_socket.as_raw_fd(), buf);
-    let key_read = driver.push(op_read);
+    let mut n_bytes = 0;
+    let mut buf = MaybeUninit::uninit();
+    let key_read = match driver.push(op_read) {
+        PushEntry::Pending(key) => {
+            need_wait += 1;
+            key
+        }
+        PushEntry::Ready(BufResult(res, op)) => {
+            n_bytes = res.unwrap();
+            buf.write(op.into_inner());
+            usize::MAX
+        }
+    };
 
     let mut entries = ArrayVec::<Entry, 2>::new();
 
-    while entries.len() < 2 {
+    while entries.len() < need_wait {
         driver.poll(None, &mut entries).unwrap();
     }
 
-    let mut n_bytes = 0;
-    let mut buf = MaybeUninit::uninit();
     for BufResult(res, op) in driver.pop(&mut entries.into_iter()) {
         let key = op.user_data();
         if key == key_write {
@@ -71,12 +94,21 @@ fn cancel_before_poll() {
     driver.cancel(0);
 
     let op = ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(8));
-    let key = driver.push(op);
-
-    let mut entries = ArrayVec::<Entry, 1>::new();
-    driver.poll(None, &mut entries).unwrap();
-    let BufResult(res, op) = driver.pop(&mut entries.into_iter()).next().unwrap();
-    assert_eq!(op.user_data(), key);
+    let BufResult(res, _) = match driver.push(op) {
+        PushEntry::Ready(res) => res,
+        PushEntry::Pending(key) => {
+            let mut entries = ArrayVec::<Entry, 1>::new();
+            driver.poll(None, &mut entries).unwrap();
+            driver
+                .pop(&mut entries.into_iter())
+                .next()
+                .unwrap()
+                .map_buffer(|op| {
+                    assert_eq!(op.user_data(), key);
+                    unsafe { op.into_op() }
+                })
+        }
+    };
 
     assert!(res.is_ok() || res.unwrap_err().kind() == io::ErrorKind::TimedOut);
 }
