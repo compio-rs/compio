@@ -19,8 +19,10 @@ use windows_sys::Win32::{
         RtlNtStatusToDosError, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_NO_DATA,
         ERROR_OPERATION_ABORTED, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING, STATUS_SUCCESS,
     },
+    Storage::FileSystem::SetFileCompletionNotificationModes,
     System::{
         Threading::INFINITE,
+        WindowsProgramming::{FILE_SKIP_COMPLETION_PORT_ON_SUCCESS, FILE_SKIP_SET_EVENT_ON_HANDLE},
         IO::{CreateIoCompletionPort, GetQueuedCompletionStatusEx, OVERLAPPED, OVERLAPPED_ENTRY},
     },
 };
@@ -203,6 +205,13 @@ impl Driver {
         syscall!(
             BOOL,
             CreateIoCompletionPort(fd as _, self.port.as_raw_handle() as _, 0, 0)
+        )?;
+        syscall!(
+            BOOL,
+            SetFileCompletionNotificationModes(
+                fd as _,
+                (FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE) as _
+            )
         )?;
         Ok(())
     }
