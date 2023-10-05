@@ -1,13 +1,14 @@
 use std::{
     cell::RefCell,
     collections::VecDeque,
-    future::Future,
+    future::{ready, Future},
     io,
     task::{Context, Poll},
 };
 
 use async_task::{Runnable, Task};
-use compio_driver::{AsRawFd, Entry, OpCode, Proactor, RawFd};
+use compio_driver::{AsRawFd, Entry, OpCode, Proactor, PushEntry, RawFd};
+use futures_util::future::Either;
 use smallvec::SmallVec;
 
 pub(crate) mod op;
@@ -75,20 +76,22 @@ impl Runtime {
         self.driver.borrow_mut().attach(fd)
     }
 
-    pub fn submit_raw<T: OpCode + 'static>(&self, op: T) -> Key<T> {
-        let user_data = self.driver.borrow_mut().push(op);
-        unsafe { Key::<T>::new(user_data) }
+    pub fn submit_raw<T: OpCode + 'static>(&self, op: T) -> PushEntry<Key<T>, BufResult<usize, T>> {
+        self.driver
+            .borrow_mut()
+            .push(op)
+            .map_pending(|user_data| unsafe { Key::<T>::new(user_data) })
     }
 
     pub fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
-        let user_data = self.submit_raw(op);
-        OpFuture::new(user_data)
+        match self.submit_raw(op) {
+            PushEntry::Pending(user_data) => Either::Left(OpFuture::new(user_data)),
+            PushEntry::Ready(res) => Either::Right(ready(res)),
+        }
     }
 
     #[cfg(feature = "time")]
     pub fn create_timer(&self, delay: std::time::Duration) -> impl Future<Output = ()> {
-        use futures_util::future::Either;
-
         let mut timer_runtime = self.timer_runtime.borrow_mut();
         if let Some(key) = timer_runtime.insert(delay) {
             Either::Left(TimerFuture::new(key))

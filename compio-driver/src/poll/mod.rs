@@ -142,60 +142,57 @@ impl Driver {
         })
     }
 
-    fn submit(&mut self, user_data: usize, arg: WaitArg) -> io::Result<bool> {
-        if self.cancelled.remove(&user_data) {
-            Ok(false)
-        } else {
-            let queue = self
-                .registry
-                .get_mut(&arg.fd)
-                .expect("the fd should be attached");
-            queue.push_back_interest(user_data, arg.interest);
-            // We use fd as the key.
-            let event = queue.event(arg.fd as usize);
-            unsafe {
-                let fd = BorrowedFd::borrow_raw(arg.fd);
-                self.poll.modify(fd, event)?;
-            }
-            Ok(true)
+    fn submit(&mut self, user_data: usize, arg: WaitArg) -> io::Result<()> {
+        let queue = self
+            .registry
+            .get_mut(&arg.fd)
+            .expect("the fd should be attached");
+        queue.push_back_interest(user_data, arg.interest);
+        // We use fd as the key.
+        let event = queue.event(arg.fd as usize);
+        unsafe {
+            let fd = BorrowedFd::borrow_raw(arg.fd);
+            self.poll.modify(fd, event)?;
         }
+        Ok(())
     }
 
-    /// Register all operations in the squeue to polling.
-    fn submit_squeue(
-        &mut self,
-        ops: &mut impl Iterator<Item = usize>,
-        entries: &mut impl Extend<Entry>,
-        registry: &mut Slab<RawOp>,
-    ) -> io::Result<bool> {
-        let mut extended = false;
-        for user_data in ops {
-            let op = registry[user_data].as_pin();
+    pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
+        if cfg!(any(target_os = "linux", target_os = "android")) {
+            let mut stat = unsafe { std::mem::zeroed() };
+            syscall!(fstat(fd, &mut stat))?;
+            if matches!(stat.st_mode & libc::S_IFMT, libc::S_IFREG | libc::S_IFDIR) {
+                return Ok(());
+            }
+        }
+        self.registry.entry(fd).or_default();
+        unsafe {
+            self.poll.add(fd, Event::none(0))?;
+        }
+        Ok(())
+    }
+
+    pub fn cancel(&mut self, user_data: usize, _registry: &mut Slab<RawOp>) {
+        self.cancelled.insert(user_data);
+    }
+
+    pub fn push(&mut self, user_data: usize, op: &mut RawOp) -> Poll<io::Result<usize>> {
+        if self.cancelled.remove(&user_data) {
+            Poll::Ready(Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)))
+        } else {
+            let op = op.as_pin();
             match op.pre_submit() {
                 Ok(Decision::Wait(arg)) => {
-                    let succeeded = self.submit(user_data, arg)?;
-                    if !succeeded {
-                        entries.extend(Some(entry_cancelled(user_data)));
-                        extended = true;
-                    }
+                    self.submit(user_data, arg)?;
+                    Poll::Pending
                 }
-                Ok(Decision::Completed(res)) => {
-                    entries.extend(Some(Entry::new(user_data, Ok(res))));
-                    extended = true;
-                }
-                Err(err) => {
-                    entries.extend(Some(Entry::new(user_data, Err(err))));
-                    extended = true;
-                }
+                Ok(Decision::Completed(res)) => Poll::Ready(Ok(res)),
+                Err(err) => Poll::Ready(Err(err)),
             }
         }
-
-        Ok(extended)
     }
 
-    /// Poll all events from polling, call `perform` on op and push them into
-    /// cqueue.
-    fn poll_impl(
+    pub unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
         entries: &mut impl Extend<Entry>,
@@ -230,43 +227,8 @@ impl Driver {
                 }
             }
             let renew_event = queue.event(fd as _);
-            unsafe {
-                let fd = BorrowedFd::borrow_raw(fd);
-                self.poll.modify(fd, renew_event)?;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
-        if cfg!(any(target_os = "linux", target_os = "android")) {
-            let mut stat = unsafe { std::mem::zeroed() };
-            syscall!(fstat(fd, &mut stat))?;
-            if matches!(stat.st_mode & libc::S_IFMT, libc::S_IFREG | libc::S_IFDIR) {
-                return Ok(());
-            }
-        }
-        self.registry.entry(fd).or_default();
-        unsafe {
-            self.poll.add(fd, Event::none(0))?;
-        }
-        Ok(())
-    }
-
-    pub fn cancel(&mut self, user_data: usize, _registry: &mut Slab<RawOp>) {
-        self.cancelled.insert(user_data);
-    }
-
-    pub unsafe fn poll(
-        &mut self,
-        timeout: Option<Duration>,
-        ops: &mut impl Iterator<Item = usize>,
-        entries: &mut impl Extend<Entry>,
-        registry: &mut Slab<RawOp>,
-    ) -> io::Result<()> {
-        let extended = self.submit_squeue(ops, entries, registry)?;
-        if !extended {
-            self.poll_impl(timeout, entries, registry)?;
+            let fd = BorrowedFd::borrow_raw(fd);
+            self.poll.modify(fd, renew_event)?;
         }
         Ok(())
     }
