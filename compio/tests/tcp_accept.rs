@@ -4,7 +4,7 @@ async fn test_impl(addr: impl ToSockAddrs) {
     let listener = TcpListener::bind(addr).unwrap();
     let addr = listener.local_addr().unwrap();
     let (tx, rx) = futures_channel::oneshot::channel();
-    compio::task::spawn(async move {
+    compio::runtime::spawn(async move {
         let (socket, _) = listener.accept().await.unwrap();
         assert!(tx.send(socket).is_ok());
     })

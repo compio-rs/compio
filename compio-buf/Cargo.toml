@@ -1,7 +1,17 @@
 [package]
 name = "compio-buf"
 version = "0.1.0"
-edition = "2021"
+description = "buffer trait for completion based async IO"
+categories = ["asynchronous"]
+keywords = ["async"]
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 bumpalo = { version = "3", optional = true }
@@ -17,4 +27,5 @@ bytes = ["dep:bytes"]
 # Nightly features
 allocator_api = ["bumpalo/allocator_api"]
 read_buf = []
-nightly = ["allocator_api", "read_buf"]
+try_trait_v2 = []
+nightly = ["allocator_api", "read_buf", "try_trait_v2"]

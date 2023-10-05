@@ -23,10 +23,10 @@ async fn multi_threading() {
 
     let rx = SendWrapper(rx);
     if let Err(e) = std::thread::spawn(move || {
-        compio::task::block_on(async {
+        compio::runtime::block_on(async {
             let buffer = Vec::with_capacity(DATA.len());
-            let (n, buffer) = rx.recv_exact(buffer).await;
-            assert_eq!(n.unwrap(), buffer.len());
+            let (n, buffer) = rx.recv_exact(buffer).await.unwrap();
+            assert_eq!(n, buffer.len());
             assert_eq!(DATA, String::from_utf8(buffer).unwrap());
         });
     })
@@ -51,10 +51,10 @@ async fn try_clone() {
 
     let rx = SendWrapper(rx.try_clone().unwrap());
     if let Err(e) = std::thread::spawn(move || {
-        compio::task::block_on(async {
+        compio::runtime::block_on(async {
             let buffer = Vec::with_capacity(DATA.len());
-            let (n, buffer) = rx.recv_exact(buffer).await;
-            assert_eq!(n.unwrap(), buffer.len());
+            let (n, buffer) = rx.recv_exact(buffer).await.unwrap();
+            assert_eq!(n, buffer.len());
             assert_eq!(DATA, String::from_utf8(buffer).unwrap());
         });
     })
@@ -166,8 +166,10 @@ async fn arena() {
     }
 
     let file = File::open("Cargo.toml").unwrap();
-    let (read, buffer) = file.read_to_end_at(Vec::new_in(ArenaAllocator), 0).await;
-    let read = read.unwrap();
+    let (read, buffer) = file
+        .read_to_end_at(Vec::new_in(ArenaAllocator), 0)
+        .await
+        .unwrap();
     assert_eq!(buffer.len(), read);
 }
 

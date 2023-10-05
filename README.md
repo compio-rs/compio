@@ -27,14 +27,13 @@ They don't support Windows.
 
 With `macros` feature enabled, we can use the high level APIs to perform fs & net IO.
 
-```rust,no_run
+```rust
 use compio::fs::File;
 
 #[compio::main]
 async fn main() {
     let file = File::open("Cargo.toml").unwrap();
-    let (read, buffer) = file.read_to_end_at(Vec::with_capacity(1024), 0).await;
-    let read = read.unwrap();
+    let (read, buffer) = file.read_to_end_at(Vec::with_capacity(1024), 0).await.unwrap();
     assert_eq!(read, buffer.len());
     let buffer = String::from_utf8(buffer).unwrap();
     println!("{}", buffer);

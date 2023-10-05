@@ -1,8 +1,11 @@
-#[compio::main]
+#[compio::main(crate = "compio")]
 async fn main() {
     #[cfg(target_os = "windows")]
     {
-        use compio::named_pipe::{ClientOptions, ServerOptions};
+        use compio::{
+            buf::BufResult,
+            fs::named_pipe::{ClientOptions, ServerOptions},
+        };
 
         const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe";
 
@@ -18,7 +21,7 @@ async fn main() {
         let buffer = Vec::with_capacity(12);
         let read = client.read_exact(buffer);
 
-        let ((write, _), (read, buffer)) = futures_util::join!(write, read);
+        let (BufResult(write, _), BufResult(read, buffer)) = futures_util::join!(write, read);
         write.unwrap();
         read.unwrap();
         println!("{}", String::from_utf8(buffer).unwrap());

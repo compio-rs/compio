@@ -2,9 +2,19 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, ToTokens, TokenStreamExt};
 use syn::{parse::Parse, AttrStyle, Attribute, Signature, Visibility};
 
-use crate::item_fn::RawBodyItemFn;
+use crate::{
+    item_fn::{RawAttr, RawBodyItemFn},
+    retrieve_runtime_mod,
+};
 
 pub(crate) struct CompioMain(pub RawBodyItemFn);
+
+impl CompioMain {
+    pub fn with_args(mut self, args: RawAttr) -> Self {
+        self.0.set_args(args.inner_attrs);
+        self
+    }
+}
 
 impl Parse for CompioMain {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
@@ -42,8 +52,9 @@ impl ToTokens for CompioMain {
         self.0.vis.to_tokens(tokens);
         self.0.sig.to_tokens(tokens);
         let block = &self.0.body;
+        let runtime_mod = self.0.crate_name().unwrap_or_else(retrieve_runtime_mod);
         tokens.append_all(quote!({
-            compio::task::block_on(async move #block)
+            #runtime_mod::block_on(async move #block)
         }));
     }
 }

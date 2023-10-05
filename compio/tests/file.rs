@@ -7,8 +7,7 @@ const HELLO: &[u8] = b"hello world...";
 
 async fn read_hello(file: &File) {
     let buf = Vec::with_capacity(1024);
-    let (res, buf) = file.read_to_end_at(buf, 0).await;
-    let n = res.unwrap();
+    let (n, buf) = file.read_to_end_at(buf, 0).await.unwrap();
 
     assert_eq!(n, HELLO.len());
     assert_eq!(&buf, HELLO);

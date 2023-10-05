@@ -13,8 +13,7 @@ async fn connect() {
     active.connect(&passive_addr).unwrap();
     active.send(MSG).await.0.unwrap();
 
-    let (res, buffer) = passive.recv(Vec::with_capacity(20)).await;
-    res.unwrap();
+    let (_, buffer) = passive.recv(Vec::with_capacity(20)).await.unwrap();
     assert_eq!(MSG.as_bytes(), &buffer);
     assert_eq!(active.local_addr().unwrap(), active_addr);
     assert_eq!(active.peer_addr().unwrap(), passive_addr);

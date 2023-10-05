@@ -2,10 +2,27 @@
 members = [
     "compio",
     "compio-buf",
-    "compio-macros"
+    "compio-driver",
+    "compio-runtime",
+    "compio-macros",
+    "compio-fs",
+    "compio-net",
+    "compio-signal",
 ]
 resolver = "2"
 
+[workspace.package]
+edition = "2021"
+authors = ["Berrysoft <Strawberry_Str@hotmail.com>"]
+readme = "README.md"
+license = "MIT"
+repository = "https://github.com/compio-rs/compio"
+
 [workspace.dependencies]
 compio-buf = { path = "./compio-buf" }
+compio-driver = { path = "./compio-driver" }
+compio-runtime = { path = "./compio-runtime" }
 compio-macros = { path = "./compio-macros" }
+compio-fs = { path = "./compio-fs" }
+compio-net = { path = "./compio-net" }
+compio-signal = { path = "./compio-signal" }

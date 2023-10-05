@@ -8,7 +8,7 @@ struct CompioRuntime;
 
 impl AsyncExecutor for CompioRuntime {
     fn block_on<T>(&self, future: impl std::future::Future<Output = T>) -> T {
-        compio::task::block_on(future)
+        compio::runtime::block_on(future)
     }
 }
 
@@ -45,8 +45,7 @@ fn read(c: &mut Criterion) {
         b.to_async(CompioRuntime).iter(|| async {
             let file = compio::fs::File::open("Cargo.toml").unwrap();
             let buffer = Vec::with_capacity(1024);
-            let (n, buffer) = file.read_to_end_at(buffer, 0).await;
-            n.unwrap();
+            let (_, buffer) = file.read_to_end_at(buffer, 0).await.unwrap();
             buffer
         })
     });
@@ -87,8 +86,7 @@ fn write(c: &mut Criterion) {
         let temp_file = NamedTempFile::new().unwrap();
         b.to_async(CompioRuntime).iter(|| async {
             let file = compio::fs::File::create(temp_file.path()).unwrap();
-            let (res, _) = file.write_all_at(CONTENT, 0).await;
-            res.unwrap();
+            file.write_all_at(CONTENT, 0).await.unwrap();
         })
     });
 
