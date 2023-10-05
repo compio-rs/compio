@@ -17,6 +17,7 @@ use slab::Slab;
 use crate::{syscall, Entry};
 
 pub(crate) mod op;
+#[doc(hidden)]
 pub use crate::unix::RawOp;
 
 /// Abstraction of operations.

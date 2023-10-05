@@ -21,25 +21,21 @@
 
 #![warn(missing_docs)]
 
-#[cfg(feature = "macros")]
 #[doc(no_inline)]
+pub use buf::BufResult;
+#[cfg(feature = "macros")]
 pub use compio_macros::*;
 #[cfg(feature = "runtime")]
-#[doc(no_inline)]
+#[doc(inline)]
 pub use compio_runtime as runtime;
+#[cfg(feature = "signal")]
+#[doc(inline)]
+pub use compio_signal as signal;
 #[cfg(feature = "event")]
 #[doc(no_inline)]
-pub use compio_runtime::event;
+pub use runtime::event;
 #[cfg(feature = "time")]
 #[doc(no_inline)]
-pub use compio_runtime::time;
-#[cfg(feature = "signal")]
-#[doc(no_inline)]
-pub use compio_signal as signal;
-#[doc(no_inline)]
-pub use {
-    compio_buf::{self as buf, BufResult},
-    compio_driver as driver,
-    compio_fs::{self as fs},
-    compio_net as net,
-};
+pub use runtime::time;
+#[doc(inline)]
+pub use {compio_buf as buf, compio_driver as driver, compio_fs as fs, compio_net as net};

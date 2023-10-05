@@ -15,6 +15,7 @@ use slab::Slab;
 use crate::Entry;
 
 pub(crate) mod op;
+#[doc(hidden)]
 pub use crate::unix::RawOp;
 
 /// Abstraction of io-uring operations.
