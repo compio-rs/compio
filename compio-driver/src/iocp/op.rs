@@ -57,25 +57,12 @@ fn win32_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     }
 }
 
-// read, write, send and recv functions may return immediately, indicate that
-// the task is completed, but the overlapped result is also posted to the IOCP.
-// To make our driver easy, simply return Pending and query the result later.
-
-#[inline]
-fn win32_pending_result(res: i32) -> Poll<io::Result<usize>> {
-    if res == 0 {
-        winapi_result(0)
-    } else {
-        Poll::Pending
-    }
-}
-
 #[inline]
 fn winsock_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     if res != 0 {
         winapi_result(transferred)
     } else {
-        Poll::Pending
+        Poll::Ready(Ok(transferred as _))
     }
 }
 
@@ -124,14 +111,15 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
         }
         let fd = self.fd as _;
         let slice = self.buffer.as_uninit_slice();
+        let mut transferred = 0;
         let res = ReadFile(
             fd,
             slice.as_mut_ptr() as _,
             slice.len() as _,
-            null_mut(),
+            &mut transferred,
             optr,
         );
-        win32_pending_result(res)
+        win32_result(res, transferred)
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
@@ -149,14 +137,15 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
             }
         }
         let slice = self.buffer.as_slice();
+        let mut transferred = 0;
         let res = WriteFile(
             self.fd as _,
             slice.as_ptr() as _,
             slice.len() as _,
-            null_mut(),
+            &mut transferred,
             optr,
         );
-        win32_pending_result(res)
+        win32_result(res, transferred)
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
@@ -335,14 +324,15 @@ impl<T: IoBufMut> OpCode for Recv<T> {
     unsafe fn operate(mut self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd as _;
         let slice = self.buffer.as_uninit_slice();
+        let mut transferred = 0;
         let res = ReadFile(
             fd,
             slice.as_mut_ptr() as _,
             slice.len() as _,
-            null_mut(),
+            &mut transferred,
             optr,
         );
-        win32_pending_result(res)
+        win32_result(res, transferred)
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
@@ -417,14 +407,15 @@ impl<T: IoBuf> IntoInner for Send<T> {
 impl<T: IoBuf> OpCode for Send<T> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let slice = self.buffer.as_slice();
+        let mut transferred = 0;
         let res = WriteFile(
             self.fd as _,
             slice.as_ptr() as _,
             slice.len() as _,
-            null_mut(),
+            &mut transferred,
             optr,
         );
-        win32_pending_result(res)
+        win32_result(res, transferred)
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {

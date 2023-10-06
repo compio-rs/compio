@@ -72,7 +72,7 @@ async fn poll_once(future: impl std::future::Future) {
     let mut future = pin!(future);
 
     poll_fn(|cx| {
-        assert!(future.as_mut().poll(cx).is_pending());
+        let _ = future.as_mut().poll(cx);
         Poll::Ready(())
     })
     .await;
