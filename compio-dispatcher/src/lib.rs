@@ -1,6 +1,6 @@
-use std::{io, panic::resume_unwind, sync::Arc, thread::JoinHandle};
+use std::{future::Future, io, panic::resume_unwind, sync::Arc, thread::JoinHandle};
 
-use async_channel::{unbounded, Sender};
+use crossbeam_channel::{unbounded, SendError, Sender};
 
 pub struct Dispatcher<T> {
     sender: Sender<SendWrapper<T>>,
@@ -8,9 +8,9 @@ pub struct Dispatcher<T> {
 }
 
 impl<T: 'static> Dispatcher<T> {
-    pub fn new<F: Fn(T) -> io::Result<()>>(
+    pub fn new<F: Future<Output = io::Result<()>>, W: Fn(T) -> F>(
         n: usize,
-        f: impl (Fn(usize) -> F) + Send + Sync + 'static,
+        f: impl (Fn(usize) -> W) + Send + Sync + 'static,
     ) -> Self {
         let f = Arc::new(f);
         let (sender, receiver) = unbounded::<SendWrapper<T>>();
@@ -21,12 +21,10 @@ impl<T: 'static> Dispatcher<T> {
                     let f = f.clone();
                     std::thread::spawn(move || {
                         let f = f(i);
-                        compio_runtime::block_on(async {
-                            while let Ok(value) = receiver.recv().await {
-                                f(value.0)?;
-                            }
-                            Ok(())
-                        })
+                        while let Ok(value) = receiver.recv() {
+                            compio_runtime::block_on(async { f(value.0).await })?;
+                        }
+                        Ok(())
                     })
                 }
             })
@@ -34,14 +32,17 @@ impl<T: 'static> Dispatcher<T> {
         Self { sender, threads }
     }
 
+    pub fn dispatch(&self, value: T) -> Result<(), SendError<T>> {
+        self.sender
+            .send(SendWrapper(value))
+            .map_err(|e| SendError(e.0.0))
+    }
+
     pub fn join(self) -> Vec<io::Result<()>> {
-        self.sender.close();
+        drop(self.sender);
         self.threads
             .into_iter()
-            .map(|thread| match thread.join() {
-                Ok(res) => res,
-                Err(e) => resume_unwind(e),
-            })
+            .map(|thread| thread.join().unwrap_or_else(|e| resume_unwind(e)))
             .collect()
     }
 }

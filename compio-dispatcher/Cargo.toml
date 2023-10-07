@@ -14,4 +14,4 @@ repository = { workspace = true }
 # Workspace dependencies
 compio-runtime = { workspace = true }
 
-async-channel = "1"
+crossbeam-channel = "0.5"
