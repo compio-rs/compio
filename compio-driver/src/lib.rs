@@ -253,18 +253,13 @@ impl Operation {
         Self { op, user_data }
     }
 
-    #[doc(hidden)]
-    pub fn into_inner(self) -> RawOp {
-        self.op
-    }
-
     /// Restore the original operation.
     ///
     /// # Safety
     ///
     /// The caller should guarantee that the type is right.
     pub unsafe fn into_op<T: OpCode>(self) -> T {
-        self.into_inner().into_inner()
+        self.op.into_inner()
     }
 
     /// The same user_data when the operation is pushed into the driver.

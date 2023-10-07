@@ -293,8 +293,7 @@ impl<T> Overlapped<T> {
     }
 }
 
-#[doc(hidden)]
-pub struct RawOp(NonNull<Overlapped<dyn OpCode>>);
+pub(crate) struct RawOp(NonNull<Overlapped<dyn OpCode>>);
 
 impl RawOp {
     pub(crate) fn new(user_data: usize, op: impl OpCode + 'static) -> Self {
