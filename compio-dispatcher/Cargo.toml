@@ -1,0 +1,17 @@
+[package]
+name = "compio-dispatcher"
+version = "0.1.0"
+description = "Multithreading dispatcher for compio"
+categories = ["asynchronous"]
+keywords = ["async", "runtime"]
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+# Workspace dependencies
+compio-runtime = { workspace = true }
+
+async-channel = "1"
