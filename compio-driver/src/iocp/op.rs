@@ -7,6 +7,7 @@ use std::{
     task::Poll,
 };
 
+use aligned_array::{Aligned, A8};
 use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
@@ -167,11 +168,14 @@ impl OpCode for Sync {
 static ACCEPT_EX: OnceLock<LPFN_ACCEPTEX> = OnceLock::new();
 static GET_ADDRS: OnceLock<LPFN_GETACCEPTEXSOCKADDRS> = OnceLock::new();
 
+const ACCEPT_ADDR_BUFFER_SIZE: usize = std::mem::size_of::<SOCKADDR_STORAGE>() + 16;
+const ACCEPT_BUFFER_SIZE: usize = ACCEPT_ADDR_BUFFER_SIZE * 2;
+
 /// Accept a connection.
 pub struct Accept {
     pub(crate) fd: RawFd,
     pub(crate) accept_fd: RawFd,
-    pub(crate) buffer: SOCKADDR_STORAGE,
+    pub(crate) buffer: Aligned<A8, [u8; ACCEPT_BUFFER_SIZE]>,
 }
 
 impl Accept {
@@ -217,8 +221,8 @@ impl Accept {
             get_addrs_fn(
                 &self.buffer as *const _ as *const _,
                 0,
-                0,
-                std::mem::size_of_val(&self.buffer) as _,
+                ACCEPT_ADDR_BUFFER_SIZE as _,
+                ACCEPT_ADDR_BUFFER_SIZE as _,
                 &mut local_addr,
                 &mut local_addr_len,
                 &mut remote_addr,
@@ -240,10 +244,10 @@ impl OpCode for Accept {
         let res = accept_fn(
             self.fd as _,
             self.accept_fd as _,
-            &mut self.buffer as *mut _ as *mut _,
+            self.buffer.as_mut_ptr() as _,
             0,
-            0,
-            std::mem::size_of_val(&self.buffer) as _,
+            ACCEPT_ADDR_BUFFER_SIZE as _,
+            ACCEPT_ADDR_BUFFER_SIZE as _,
             &mut received,
             optr,
         );
