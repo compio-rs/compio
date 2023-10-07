@@ -7,8 +7,7 @@ use std::{mem::ManuallyDrop, pin::Pin, ptr::NonNull};
 
 use crate::OpCode;
 
-#[doc(hidden)]
-pub struct RawOp(NonNull<dyn OpCode>);
+pub(crate) struct RawOp(NonNull<dyn OpCode>);
 
 impl RawOp {
     pub(crate) fn new(_user_data: usize, op: impl OpCode + 'static) -> Self {

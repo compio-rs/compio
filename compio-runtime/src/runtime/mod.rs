@@ -118,11 +118,13 @@ impl Runtime {
         let mut op_runtime = self.op_runtime.borrow_mut();
         if op_runtime.has_result(*user_data) {
             let op = op_runtime.remove(*user_data);
-            Poll::Ready(BufResult(op.result.unwrap(), unsafe {
-                op.op
-                    .expect("`poll_task` called on dummy Op")
-                    .into_inner::<T>()
-            }))
+            let res = self
+                .driver
+                .borrow_mut()
+                .pop(&mut op.entry.into_iter())
+                .next()
+                .expect("the result should have come");
+            Poll::Ready(res.map_buffer(|op| unsafe { op.into_op::<T>() }))
         } else {
             op_runtime.update_waker(*user_data, cx.waker().clone());
             Poll::Pending
@@ -150,12 +152,10 @@ impl Runtime {
         let mut driver = self.driver.borrow_mut();
         match driver.poll(timeout, &mut entries) {
             Ok(_) => {
-                for BufResult(res, op) in driver.pop(&mut entries.into_iter()) {
-                    self.op_runtime.borrow_mut().update_result(
-                        op.user_data(),
-                        op.into_inner(),
-                        res,
-                    );
+                for entry in entries {
+                    self.op_runtime
+                        .borrow_mut()
+                        .update_result(entry.user_data(), entry);
                 }
             }
             Err(e) => match e.kind() {
