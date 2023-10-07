@@ -25,7 +25,12 @@ They don't support Windows.
 
 ## Quick start
 
-With `macros` feature enabled, we can use the high level APIs to perform fs & net IO.
+Add `compio` as dependency:
+
+```
+compio = { version = "0.8.0", features = ["macros"] }
+```
+Then we can use high level APIs to perform filesystem & net IO.
 
 ```rust
 use compio::fs::File;
@@ -40,4 +45,4 @@ async fn main() {
 }
 ```
 
-While you can also control the low-level driver manually. See `driver` example of the repo.
+You can also control the low-level driver manually. See `driver` example of the repo.

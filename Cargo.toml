@@ -19,10 +19,10 @@ license = "MIT"
 repository = "https://github.com/compio-rs/compio"
 
 [workspace.dependencies]
-compio-buf = { path = "./compio-buf" }
-compio-driver = { path = "./compio-driver" }
-compio-runtime = { path = "./compio-runtime" }
-compio-macros = { path = "./compio-macros" }
-compio-fs = { path = "./compio-fs" }
-compio-net = { path = "./compio-net" }
-compio-signal = { path = "./compio-signal" }
+compio-buf = { path = "./compio-buf", version = "0.1.0" }
+compio-driver = { path = "./compio-driver", version = "0.1.0" }
+compio-runtime = { path = "./compio-runtime", version = "0.1.0" }
+compio-macros = { path = "./compio-macros", version = "0.1.0" }
+compio-fs = { path = "./compio-fs", version = "0.1.0" }
+compio-net = { path = "./compio-net", version = "0.1.0" }
+compio-signal = { path = "./compio-signal", version = "0.1.0" }
