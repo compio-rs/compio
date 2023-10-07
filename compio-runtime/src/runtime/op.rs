@@ -1,21 +1,19 @@
 use std::{
     collections::HashMap,
     future::Future,
-    io,
     pin::Pin,
     task::{Context, Poll, Waker},
 };
 
 use compio_buf::BufResult;
-use compio_driver::{OpCode, RawOp};
+use compio_driver::{Entry, OpCode};
 
 use crate::key::Key;
 
 #[derive(Default)]
 pub(crate) struct RegisteredOp {
-    pub op: Option<RawOp>,
     pub waker: Option<Waker>,
-    pub result: Option<io::Result<usize>>,
+    pub entry: Option<Entry>,
     pub cancelled: bool,
 }
 
@@ -29,13 +27,12 @@ impl OpRuntime {
         self.ops.entry(key).or_default().waker = Some(waker);
     }
 
-    pub fn update_result(&mut self, key: usize, raw_op: RawOp, result: io::Result<usize>) {
+    pub fn update_result(&mut self, key: usize, entry: Entry) {
         let op = self.ops.entry(key).or_default();
         if let Some(waker) = op.waker.take() {
             waker.wake();
         }
-        op.op = Some(raw_op);
-        op.result = Some(result);
+        op.entry = Some(entry);
         if op.cancelled {
             self.remove(key);
         }
@@ -44,7 +41,7 @@ impl OpRuntime {
     pub fn has_result(&mut self, key: usize) -> bool {
         self.ops
             .get_mut(&key)
-            .map(|op| op.result.is_some())
+            .map(|op| op.entry.is_some())
             .unwrap_or_default()
     }
 
