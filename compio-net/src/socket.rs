@@ -102,7 +102,12 @@ impl Socket {
         let op = Accept::new(self.as_raw_fd());
         let BufResult(res, op) = submit(op).await;
         let accept_sock = unsafe { Socket2::from_raw_fd(res? as _) };
-        accept_sock.set_nonblocking(true)?;
+        if cfg!(all(
+            unix,
+            not(all(target_os = "linux", feature = "io-uring"))
+        )) {
+            accept_sock.set_nonblocking(true)?;
+        }
         let accept_sock = Self::from_socket2(accept_sock);
         let addr = op.into_addr();
         Ok((accept_sock, addr))

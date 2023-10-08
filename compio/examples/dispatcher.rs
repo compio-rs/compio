@@ -14,13 +14,12 @@ async fn main() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let dispatcher = Dispatcher::new(THREAD_NUM);
-    spawn(async move {
+    let task = spawn(async move {
         for i in 0..CLIENT_NUM {
             let cli = TcpStream::connect(&addr).await.unwrap();
             cli.send_all(format!("Hello world {}!", i)).await.unwrap();
         }
-    })
-    .detach();
+    });
     for _i in 0..CLIENT_NUM {
         let (srv, _) = listener.accept().await.unwrap();
         let srv = Unattached::new(srv).unwrap();
@@ -36,6 +35,7 @@ async fn main() {
             })
             .unwrap();
     }
+    task.await;
     for res in dispatcher.join() {
         res.unwrap();
     }

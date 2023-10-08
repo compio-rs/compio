@@ -15,15 +15,14 @@ async fn listener_dispatch() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let dispatcher = Dispatcher::new(THREAD_NUM);
-    spawn(async move {
+    let task = spawn(async move {
         let mut futures = FuturesUnordered::from_iter((0..CLIENT_NUM).map(|_| async {
             let cli = TcpStream::connect(&addr).await.unwrap();
             cli.send_all("Hello world!").await.unwrap();
             cli.shutdown(std::net::Shutdown::Both).unwrap();
         }));
         while let Some(()) = futures.next().await {}
-    })
-    .detach();
+    });
     for _i in 0..CLIENT_NUM {
         let (srv, _) = listener.accept().await.unwrap();
         let srv = Unattached::new(srv).unwrap();
@@ -39,6 +38,7 @@ async fn listener_dispatch() {
             })
             .unwrap();
     }
+    task.await;
     for res in dispatcher.join() {
         res.unwrap();
     }
