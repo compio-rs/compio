@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use compio::{
     buf::{arrayvec::ArrayVec, IntoInner},
     dispatcher::Dispatcher,
@@ -14,7 +16,9 @@ async fn listener_dispatch() {
 
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
-    let dispatcher = Dispatcher::new(THREAD_NUM);
+    let dispatcher = Dispatcher::builder()
+        .worker_threads(NonZeroUsize::new(THREAD_NUM).unwrap())
+        .build();
     let task = spawn(async move {
         let mut futures = FuturesUnordered::from_iter((0..CLIENT_NUM).map(|_| async {
             let cli = TcpStream::connect(&addr).await.unwrap();

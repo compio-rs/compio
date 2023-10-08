@@ -2,7 +2,13 @@
 
 #![warn(missing_docs)]
 
-use std::{future::Future, io, panic::resume_unwind, thread::JoinHandle};
+use std::{
+    future::Future,
+    io,
+    num::NonZeroUsize,
+    panic::resume_unwind,
+    thread::{available_parallelism, JoinHandle},
+};
 
 use crossbeam_channel::{unbounded, SendError, Sender};
 use futures_util::{future::LocalBoxFuture, FutureExt};
@@ -17,7 +23,7 @@ pub struct Dispatcher {
 
 impl Dispatcher {
     /// Create the dispatcher with specified number of threads.
-    pub fn new(n: usize) -> Self {
+    pub(crate) fn new(n: usize) -> Self {
         let (sender, receiver) = unbounded::<BoxClosure<'static>>();
         let threads = (0..n)
             .map({
@@ -33,6 +39,11 @@ impl Dispatcher {
             })
             .collect();
         Self { sender, threads }
+    }
+
+    /// Create a builder to build a dispatcher.
+    pub fn builder() -> DispatcherBuilder {
+        DispatcherBuilder::default()
     }
 
     /// Dispatch a task to the threads.
@@ -56,5 +67,39 @@ impl Dispatcher {
             .into_iter()
             .map(|thread| thread.join().unwrap_or_else(|e| resume_unwind(e)))
             .collect()
+    }
+}
+
+/// A builder for [`Dispatcher`].
+#[derive(Debug)]
+pub struct DispatcherBuilder {
+    nthreads: usize,
+}
+
+impl DispatcherBuilder {
+    /// Create a builder with default settings.
+    pub fn new() -> Self {
+        Self {
+            nthreads: available_parallelism().map(|n| n.get()).unwrap_or(1),
+        }
+    }
+
+    /// Set the number of worker threads of the dispatcher. The default value is
+    /// the CPU number. If the CPU number could not be retrieved, the
+    /// default value is 1.
+    pub fn worker_threads(mut self, nthreads: NonZeroUsize) -> Self {
+        self.nthreads = nthreads.get();
+        self
+    }
+
+    /// Build the [`Dispatcher`].
+    pub fn build(self) -> Dispatcher {
+        Dispatcher::new(self.nthreads)
+    }
+}
+
+impl Default for DispatcherBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }
