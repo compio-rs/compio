@@ -1,28 +1,25 @@
-use std::{future::Future, io, panic::resume_unwind, sync::Arc, thread::JoinHandle};
+use std::{future::Future, io, panic::resume_unwind, thread::JoinHandle};
 
 use crossbeam_channel::{unbounded, SendError, Sender};
+use futures_util::{future::LocalBoxFuture, FutureExt};
 
-pub struct Dispatcher<T> {
-    sender: Sender<SendWrapper<T>>,
+type BoxClosure<'a> = Box<dyn (FnOnce() -> LocalBoxFuture<'a, io::Result<()>>) + Send>;
+
+pub struct Dispatcher {
+    sender: Sender<BoxClosure<'static>>,
     threads: Vec<JoinHandle<io::Result<()>>>,
 }
 
-impl<T: 'static> Dispatcher<T> {
-    pub fn new<F: Future<Output = io::Result<()>>, W: Fn(T) -> F>(
-        n: usize,
-        f: impl (Fn(usize) -> W) + Send + Sync + 'static,
-    ) -> Self {
-        let f = Arc::new(f);
-        let (sender, receiver) = unbounded::<SendWrapper<T>>();
+impl Dispatcher {
+    pub fn new(n: usize) -> Self {
+        let (sender, receiver) = unbounded::<BoxClosure<'static>>();
         let threads = (0..n)
             .map({
-                |i| {
+                |_| {
                     let receiver = receiver.clone();
-                    let f = f.clone();
                     std::thread::spawn(move || {
-                        let f = f(i);
-                        while let Ok(value) = receiver.recv() {
-                            compio_runtime::block_on(async { f(value.0).await })?;
+                        while let Ok(f) = receiver.recv() {
+                            compio_runtime::block_on(f())?;
                         }
                         Ok(())
                     })
@@ -32,10 +29,12 @@ impl<T: 'static> Dispatcher<T> {
         Self { sender, threads }
     }
 
-    pub fn dispatch(&self, value: T) -> Result<(), SendError<T>> {
+    pub fn dispatch<F: Future<Output = io::Result<()>> + 'static>(
+        &self,
+        f: impl (FnOnce() -> F) + Send + 'static,
+    ) -> Result<(), SendError<BoxClosure<'static>>> {
         self.sender
-            .send(SendWrapper(value))
-            .map_err(|e| SendError(e.0.0))
+            .send(Box::new(move || f().boxed_local()) as BoxClosure<'static>)
     }
 
     pub fn join(self) -> Vec<io::Result<()>> {
@@ -46,7 +45,3 @@ impl<T: 'static> Dispatcher<T> {
             .collect()
     }
 }
-
-struct SendWrapper<T>(pub T);
-
-unsafe impl<T> Send for SendWrapper<T> {}

@@ -1,8 +1,8 @@
 use compio::{
-    buf::arrayvec::ArrayVec,
+    buf::{arrayvec::ArrayVec, IntoInner},
     dispatcher::Dispatcher,
     net::{TcpListener, TcpStream},
-    runtime::spawn,
+    runtime::{spawn, Unattached},
     BufResult,
 };
 use futures_util::{stream::FuturesUnordered, StreamExt};
@@ -14,14 +14,7 @@ async fn listener_dispatch() {
 
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
-    let dispatcher = Dispatcher::new(THREAD_NUM, |_| {
-        |srv: TcpStream| async move {
-            let BufResult(res, buf) = srv.recv_exact(ArrayVec::<u8, 12>::new()).await;
-            res?;
-            assert_eq!(buf.as_slice(), b"Hello world!");
-            Ok(())
-        }
-    });
+    let dispatcher = Dispatcher::new(THREAD_NUM);
     spawn(async move {
         let mut futures = FuturesUnordered::from_iter((0..CLIENT_NUM).map(|_| async {
             let cli = TcpStream::connect(&addr).await.unwrap();
@@ -33,7 +26,18 @@ async fn listener_dispatch() {
     .detach();
     for _i in 0..CLIENT_NUM {
         let (srv, _) = listener.accept().await.unwrap();
-        dispatcher.dispatch(srv).unwrap();
+        let srv = Unattached::new(srv).unwrap();
+        dispatcher
+            .dispatch(move || {
+                let srv = srv.into_inner();
+                async move {
+                    let BufResult(res, buf) = srv.recv_exact(ArrayVec::<u8, 12>::new()).await;
+                    res?;
+                    assert_eq!(buf.as_slice(), b"Hello world!");
+                    Ok(())
+                }
+            })
+            .unwrap();
     }
     for res in dispatcher.join() {
         res.unwrap();

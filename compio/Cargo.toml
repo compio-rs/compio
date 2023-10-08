@@ -103,6 +103,9 @@ required-features = ["macros"]
 name = "tick"
 required-features = ["time", "signal", "macros"]
 
+[[example]]
+name = "dispatcher"
+required-features = ["macros", "dispatcher"]
 
 [[bench]]
 name = "fs"
@@ -119,3 +122,7 @@ harness = false
 [[test]]
 name = "event"
 required-features = ["event"]
+
+[[test]]
+name = "dispatcher"
+required-features = ["dispatcher"]

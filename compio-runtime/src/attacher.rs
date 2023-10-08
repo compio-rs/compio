@@ -2,6 +2,7 @@
 use std::sync::OnceLock;
 use std::{io, marker::PhantomData};
 
+use compio_buf::IntoInner;
 use compio_driver::AsRawFd;
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
@@ -59,4 +60,61 @@ impl Attacher {
             Ok(new_self)
         }
     }
+}
+
+/// Represents an attachable resource to driver.
+pub trait Attachable {
+    /// Attach self to the global driver.
+    fn attach(&self) -> io::Result<()>;
+
+    /// Check if [`Attachable::attach`] has been called.
+    fn is_attached(&self) -> bool;
+}
+
+/// A [`Send`] wrapper for attachable resource that has not been attached. The
+/// resource should be able to send to another thread before attaching.
+pub struct Unattached<T: Attachable>(T);
+
+impl<T: Attachable> Unattached<T> {
+    /// Create the [`Unattached`] wrapper, or fail if the resource has already
+    /// been attached.
+    pub fn new(a: T) -> Result<Self, T> {
+        if a.is_attached() { Err(a) } else { Ok(Self(a)) }
+    }
+
+    /// Create [`Unattached`] without checking.
+    ///
+    /// # Safety
+    ///
+    /// The caller should ensure that the resource has not been attached.
+    pub unsafe fn new_unchecked(a: T) -> Self {
+        Self(a)
+    }
+}
+
+impl<T: Attachable> IntoInner for Unattached<T> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.0
+    }
+}
+
+unsafe impl<T: Attachable> Send for Unattached<T> {}
+unsafe impl<T: Attachable> Sync for Unattached<T> {}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! impl_attachable {
+    ($t:ty, $inner:ident) => {
+        impl $crate::Attachable for $t {
+            fn attach(&self) -> ::std::io::Result<()> {
+                self.$inner.attach()
+            }
+
+            fn is_attached(&self) -> bool {
+                self.$inner.is_attached()
+            }
+        }
+    };
 }

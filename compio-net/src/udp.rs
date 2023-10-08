@@ -1,9 +1,12 @@
 use std::io;
 
-#[cfg(feature = "runtime")]
-use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use socket2::{Protocol, SockAddr, Type};
+#[cfg(feature = "runtime")]
+use {
+    compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
+    compio_runtime::impl_attachable,
+};
 
 use crate::{Socket, ToSockAddrs};
 
@@ -89,6 +92,7 @@ use crate::{Socket, ToSockAddrs};
 ///     assert_eq!(buf, b"hello world");
 /// });
 /// ```
+#[derive(Debug)]
 pub struct UdpSocket {
     inner: Socket,
 }
@@ -245,3 +249,6 @@ impl UdpSocket {
 }
 
 impl_raw_fd!(UdpSocket, inner);
+
+#[cfg(feature = "runtime")]
+impl_attachable!(UdpSocket, inner);

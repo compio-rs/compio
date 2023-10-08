@@ -1,9 +1,12 @@
 use std::{io, net::Shutdown};
 
-#[cfg(feature = "runtime")]
-use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use socket2::{Protocol, SockAddr, Type};
+#[cfg(feature = "runtime")]
+use {
+    compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
+    compio_runtime::impl_attachable,
+};
 
 use crate::{Socket, ToSockAddrs};
 
@@ -38,6 +41,7 @@ use crate::{Socket, ToSockAddrs};
 ///     assert_eq!(buf, b"test");
 /// });
 /// ```
+#[derive(Debug)]
 pub struct TcpListener {
     inner: Socket,
 }
@@ -110,6 +114,9 @@ impl TcpListener {
 
 impl_raw_fd!(TcpListener, inner);
 
+#[cfg(feature = "runtime")]
+impl_attachable!(TcpListener, inner);
+
 /// A TCP stream between a local and a remote socket.
 ///
 /// A TCP stream can either be created by connecting to an endpoint, via the
@@ -130,6 +137,7 @@ impl_raw_fd!(TcpListener, inner);
 ///     stream.send("hello world!").await.unwrap();
 /// })
 /// ```
+#[derive(Debug)]
 pub struct TcpStream {
     inner: Socket,
 }
@@ -232,3 +240,6 @@ impl TcpStream {
 }
 
 impl_raw_fd!(TcpStream, inner);
+
+#[cfg(feature = "runtime")]
+impl_attachable!(TcpStream, inner);

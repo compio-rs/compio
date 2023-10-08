@@ -1,9 +1,12 @@
 use std::{io, net::Shutdown, path::Path};
 
-#[cfg(feature = "runtime")]
-use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use socket2::{Domain, SockAddr, Type};
+#[cfg(feature = "runtime")]
+use {
+    compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
+    compio_runtime::impl_attachable,
+};
 
 use crate::{Socket, ToSockAddrs};
 
@@ -34,6 +37,7 @@ use crate::{Socket, ToSockAddrs};
 ///     assert_eq!(buf, b"test");
 /// });
 /// ```
+#[derive(Debug)]
 pub struct UnixListener {
     inner: Socket,
 }
@@ -86,6 +90,9 @@ impl UnixListener {
 
 impl_raw_fd!(UnixListener, inner);
 
+#[cfg(feature = "runtime")]
+impl_attachable!(UnixListener, inner);
+
 /// A Unix stream between two local sockets on Windows & WSL.
 ///
 /// A Unix stream can either be created by connecting to an endpoint, via the
@@ -104,6 +111,7 @@ impl_raw_fd!(UnixListener, inner);
 ///     stream.send("hello world!").await.unwrap();
 /// })
 /// ```
+#[derive(Debug)]
 pub struct UnixStream {
     inner: Socket,
 }
@@ -198,3 +206,6 @@ impl UnixStream {
 }
 
 impl_raw_fd!(UnixStream, inner);
+
+#[cfg(feature = "runtime")]
+impl_attachable!(UnixStream, inner);

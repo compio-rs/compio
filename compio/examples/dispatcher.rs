@@ -1,7 +1,8 @@
 use compio::{
+    buf::IntoInner,
     dispatcher::Dispatcher,
     net::{TcpListener, TcpStream},
-    runtime::spawn,
+    runtime::{spawn, Unattached},
     BufResult,
 };
 
@@ -12,14 +13,7 @@ async fn main() {
 
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
-    let dispatcher = Dispatcher::new(THREAD_NUM, |_| {
-        |srv: TcpStream| async move {
-            let BufResult(res, buf) = srv.recv(Vec::with_capacity(20)).await;
-            res?;
-            println!("{}", std::str::from_utf8(&buf).unwrap());
-            Ok(())
-        }
-    });
+    let dispatcher = Dispatcher::new(THREAD_NUM);
     spawn(async move {
         for i in 0..CLIENT_NUM {
             let cli = TcpStream::connect(&addr).await.unwrap();
@@ -29,7 +23,18 @@ async fn main() {
     .detach();
     for _i in 0..CLIENT_NUM {
         let (srv, _) = listener.accept().await.unwrap();
-        dispatcher.dispatch(srv).unwrap();
+        let srv = Unattached::new(srv).unwrap();
+        dispatcher
+            .dispatch(move || {
+                let srv = srv.into_inner();
+                async move {
+                    let BufResult(res, buf) = srv.recv(Vec::with_capacity(20)).await;
+                    res?;
+                    println!("{}", std::str::from_utf8(&buf).unwrap());
+                    Ok(())
+                }
+            })
+            .unwrap();
     }
     for res in dispatcher.join() {
         res.unwrap();

@@ -32,7 +32,7 @@ use windows_sys::Win32::{
 use {
     compio_buf::{BufResult, IoBuf, IoBufMut},
     compio_driver::op::ConnectNamedPipe,
-    compio_runtime::submit,
+    compio_runtime::{impl_attachable, submit, Attachable},
 };
 
 use crate::File;
@@ -167,7 +167,7 @@ impl NamedPipeServer {
     /// ```
     #[cfg(feature = "runtime")]
     pub async fn connect(&self) -> io::Result<()> {
-        self.handle.attach()?;
+        self.attach()?;
         let op = ConnectNamedPipe::new(self.as_raw_fd());
         submit(op).await.0?;
         Ok(())
@@ -231,6 +231,9 @@ impl NamedPipeServer {
 }
 
 impl_raw_fd!(NamedPipeServer, handle);
+
+#[cfg(feature = "runtime")]
+impl_attachable!(NamedPipeServer, handle);
 
 /// A [Windows named pipe] client.
 ///
@@ -340,6 +343,9 @@ impl NamedPipeClient {
 }
 
 impl_raw_fd!(NamedPipeClient, handle);
+
+#[cfg(feature = "runtime")]
+impl_attachable!(NamedPipeClient, handle);
 
 /// A builder structure for construct a named pipe with named pipe-specific
 /// options. This is required to use for named pipe servers who wants to modify
