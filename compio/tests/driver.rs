@@ -133,12 +133,19 @@ fn register_multiple() {
     let file = File::open("Cargo.toml").unwrap();
     driver.attach(file.as_raw_fd()).unwrap();
 
+    let mut need_wait = 0;
+
     for _i in 0..TASK_LEN {
-        driver.push(ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(1024)));
+        match driver.push(ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(1024))) {
+            PushEntry::Pending(_) => need_wait += 1,
+            PushEntry::Ready(res) => {
+                res.unwrap();
+            }
+        }
     }
 
     let mut entries = ArrayVec::<Entry, TASK_LEN>::new();
-    while entries.len() < TASK_LEN {
+    while entries.len() < need_wait {
         driver.poll(None, &mut entries).unwrap();
     }
 }
