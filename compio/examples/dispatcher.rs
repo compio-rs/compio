@@ -35,6 +35,8 @@ async fn main() {
             })
             .unwrap();
     }
+    // Dispatcher::join is a blocking call, which may block the main thread. We need
+    // to wait for the client first.
     task.await;
     for res in dispatcher.join() {
         res.unwrap();
