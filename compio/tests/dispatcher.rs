@@ -19,7 +19,6 @@ async fn listener_dispatch() {
         let mut futures = FuturesUnordered::from_iter((0..CLIENT_NUM).map(|_| async {
             let cli = TcpStream::connect(&addr).await.unwrap();
             cli.send_all("Hello world!").await.unwrap();
-            cli.shutdown(std::net::Shutdown::Both).unwrap();
         }));
         while let Some(()) = futures.next().await {}
     });
