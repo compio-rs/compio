@@ -23,30 +23,26 @@ pub struct Dispatcher {
 
 impl Dispatcher {
     /// Create the dispatcher with specified number of threads.
-    pub(crate) fn new_impl(
-        n: usize,
-        stack_size: Option<usize>,
-        mut names: Option<Box<dyn FnMut(usize) -> String>>,
-    ) -> io::Result<Self> {
+    pub(crate) fn new_impl(mut builder: DispatcherBuilder) -> io::Result<Self> {
         let (sender, receiver) = unbounded::<BoxClosure<'static>>();
-        let threads = (0..n)
+        let threads = (0..builder.nthreads)
             .map({
                 |index| {
                     let receiver = receiver.clone();
 
-                    let builder = std::thread::Builder::new();
-                    let builder = if let Some(s) = stack_size {
-                        builder.stack_size(s)
+                    let thread_builder = std::thread::Builder::new();
+                    let thread_builder = if let Some(s) = builder.stack_size {
+                        thread_builder.stack_size(s)
                     } else {
-                        builder
+                        thread_builder
                     };
-                    let builder = if let Some(f) = &mut names {
-                        builder.name(f(index))
+                    let thread_builder = if let Some(f) = &mut builder.names {
+                        thread_builder.name(f(index))
                     } else {
-                        builder
+                        thread_builder
                     };
 
-                    builder.spawn(move || {
+                    thread_builder.spawn(move || {
                         while let Ok(f) = receiver.recv() {
                             compio_runtime::block_on(f())?;
                         }
@@ -131,7 +127,7 @@ impl DispatcherBuilder {
 
     /// Build the [`Dispatcher`].
     pub fn build(self) -> io::Result<Dispatcher> {
-        Dispatcher::new_impl(self.nthreads, self.stack_size, self.names)
+        Dispatcher::new_impl(self)
     }
 }
 
