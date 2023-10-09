@@ -23,13 +23,30 @@ pub struct Dispatcher {
 
 impl Dispatcher {
     /// Create the dispatcher with specified number of threads.
-    pub(crate) fn new(n: usize) -> Self {
+    pub(crate) fn new_impl(
+        n: usize,
+        stack_size: Option<usize>,
+        mut names: Option<Box<dyn FnMut(usize) -> String>>,
+    ) -> io::Result<Self> {
         let (sender, receiver) = unbounded::<BoxClosure<'static>>();
         let threads = (0..n)
             .map({
-                |_| {
+                |index| {
                     let receiver = receiver.clone();
-                    std::thread::spawn(move || {
+
+                    let builder = std::thread::Builder::new();
+                    let builder = if let Some(s) = stack_size {
+                        builder.stack_size(s)
+                    } else {
+                        builder
+                    };
+                    let builder = if let Some(f) = &mut names {
+                        builder.name(f(index))
+                    } else {
+                        builder
+                    };
+
+                    builder.spawn(move || {
                         while let Ok(f) = receiver.recv() {
                             compio_runtime::block_on(f())?;
                         }
@@ -37,8 +54,13 @@ impl Dispatcher {
                     })
                 }
             })
-            .collect();
-        Self { sender, threads }
+            .collect::<io::Result<Vec<_>>>()?;
+        Ok(Self { sender, threads })
+    }
+
+    /// Create the dispatcher with default config.
+    pub fn new() -> io::Result<Self> {
+        Self::builder().build()
     }
 
     /// Create a builder to build a dispatcher.
@@ -71,9 +93,10 @@ impl Dispatcher {
 }
 
 /// A builder for [`Dispatcher`].
-#[derive(Debug)]
 pub struct DispatcherBuilder {
     nthreads: usize,
+    stack_size: Option<usize>,
+    names: Option<Box<dyn FnMut(usize) -> String>>,
 }
 
 impl DispatcherBuilder {
@@ -81,6 +104,8 @@ impl DispatcherBuilder {
     pub fn new() -> Self {
         Self {
             nthreads: available_parallelism().map(|n| n.get()).unwrap_or(1),
+            stack_size: None,
+            names: None,
         }
     }
 
@@ -92,9 +117,21 @@ impl DispatcherBuilder {
         self
     }
 
+    /// Set the size of stack of the worker threads.
+    pub fn stack_size(mut self, s: usize) -> Self {
+        self.stack_size = Some(s);
+        self
+    }
+
+    /// Provide a function to assign names to the worker threads.
+    pub fn thread_names(mut self, f: impl (FnMut(usize) -> String) + 'static) -> Self {
+        self.names = Some(Box::new(f) as _);
+        self
+    }
+
     /// Build the [`Dispatcher`].
-    pub fn build(self) -> Dispatcher {
-        Dispatcher::new(self.nthreads)
+    pub fn build(self) -> io::Result<Dispatcher> {
+        Dispatcher::new_impl(self.nthreads, self.stack_size, self.names)
     }
 }
 

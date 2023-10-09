@@ -17,7 +17,8 @@ async fn main() {
     let addr = listener.local_addr().unwrap();
     let dispatcher = Dispatcher::builder()
         .worker_threads(NonZeroUsize::new(THREAD_NUM).unwrap())
-        .build();
+        .build()
+        .unwrap();
     let task = spawn(async move {
         for i in 0..CLIENT_NUM {
             let cli = TcpStream::connect(&addr).await.unwrap();
