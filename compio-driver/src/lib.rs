@@ -172,7 +172,10 @@ impl Proactor {
     /// * io-uring: it will do nothing and return `Ok(())`.
     /// * polling: it will initialize inner queue and register to the driver. On
     ///   Linux and Android, if the fd is a normal file or a directory, this
-    ///   method will do nothing.
+    ///   method will do nothing. For other fd and systems, you should only call
+    ///   this method once for a specific resource. If this method is called
+    ///   twice with the same fd, we assume that the old fd has been closed, and
+    ///   it's a new fd.
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
         self.driver.attach(fd)
     }

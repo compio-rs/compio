@@ -114,6 +114,11 @@ impl FdQueue {
         }
         unreachable!("should not receive event when no interest")
     }
+
+    pub fn clear(&mut self) {
+        self.read_queue.clear();
+        self.write_queue.clear();
+    }
 }
 
 /// Low-level driver of polling.
@@ -164,9 +169,17 @@ impl Driver {
                 return Ok(());
             }
         }
-        self.registry.entry(fd).or_default();
+        let queue = self.registry.entry(fd).or_default();
         unsafe {
-            self.poll.add(fd, Event::none(0))?;
+            match self.poll.add(fd, Event::none(0)) {
+                Ok(()) => {}
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                    queue.clear();
+                    let fd = BorrowedFd::borrow_raw(fd);
+                    self.poll.modify(fd, Event::none(0))?;
+                }
+                Err(e) => return Err(e),
+            }
         }
         Ok(())
     }
