@@ -7,6 +7,7 @@ use compio::{
     runtime::{spawn, Unattached},
     BufResult,
 };
+use futures_util::{stream::FuturesUnordered, StreamExt};
 
 #[compio::main(crate = "compio")]
 async fn main() {
@@ -20,10 +21,14 @@ async fn main() {
         .build()
         .unwrap();
     let task = spawn(async move {
-        for i in 0..CLIENT_NUM {
-            let cli = TcpStream::connect(&addr).await.unwrap();
-            cli.send_all(format!("Hello world {}!", i)).await.unwrap();
-        }
+        let mut futures = FuturesUnordered::from_iter((0..CLIENT_NUM).map(|i| {
+            let addr = &addr;
+            async move {
+                let cli = TcpStream::connect(addr).await.unwrap();
+                cli.send_all(format!("Hello world {}!", i)).await.unwrap();
+            }
+        }));
+        while let Some(()) = futures.next().await {}
     });
     for _i in 0..CLIENT_NUM {
         let (srv, _) = listener.accept().await.unwrap();
