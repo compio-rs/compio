@@ -97,5 +97,5 @@ test_connect! {
 
 #[compio::test]
 async fn connect_invalid_dst() {
-    assert!(TcpStream::connect("127.0.0.1:1").await.is_err());
+    assert!(TcpStream::connect("127.0.0.0:0").await.is_err());
 }
