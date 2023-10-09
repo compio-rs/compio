@@ -36,6 +36,7 @@ compio-macros = { workspace = true, optional = true }
 compio-fs = { workspace = true }
 compio-net = { workspace = true }
 compio-signal = { workspace = true, optional = true }
+compio-dispatcher = { workspace = true, optional = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
@@ -56,7 +57,8 @@ macros = ["dep:compio-macros", "runtime"]
 event = ["compio-runtime/event", "runtime"]
 signal = ["dep:compio-signal", "event"]
 time = ["compio-runtime/time", "runtime"]
-all = ["time", "macros", "signal"]
+dispatcher = ["dep:compio-dispatcher", "runtime"]
+all = ["time", "macros", "signal", "dispatcher"]
 
 # Nightly features
 allocator_api = [
@@ -101,6 +103,9 @@ required-features = ["macros"]
 name = "tick"
 required-features = ["time", "signal", "macros"]
 
+[[example]]
+name = "dispatcher"
+required-features = ["macros", "dispatcher"]
 
 [[bench]]
 name = "fs"
@@ -117,3 +122,7 @@ harness = false
 [[test]]
 name = "event"
 required-features = ["event"]
+
+[[test]]
+name = "dispatcher"
+required-features = ["dispatcher"]

@@ -27,7 +27,7 @@ pub trait OpCode {
 pub(crate) struct Driver {
     inner: IoUring,
     cancel_queue: VecDeque<u64>,
-    squeue: VecDeque<usize>,
+    squeue: VecDeque<squeue::Entry>,
 }
 
 impl Driver {
@@ -65,18 +65,14 @@ impl Driver {
         }
     }
 
-    fn flush_submissions(&mut self, registry: &mut Slab<RawOp>) -> bool {
-        let mut ops = std::iter::from_fn(|| self.squeue.pop_front()).fuse();
-
+    fn flush_submissions(&mut self) -> bool {
         let mut ended_ops = false;
         let mut ended_cancel = false;
 
         let mut inner_squeue = self.inner.submission();
 
         while !inner_squeue.is_full() {
-            if let Some(user_data) = ops.next() {
-                let op = registry[user_data].as_pin();
-                let entry = op.create_entry().user_data(user_data as _);
+            if let Some(entry) = self.squeue.pop_front() {
                 unsafe { inner_squeue.push(&entry) }.expect("queue has enough space");
             } else {
                 ended_ops = true;
@@ -117,8 +113,10 @@ impl Driver {
         self.cancel_queue.push_back(user_data as _);
     }
 
-    pub fn push(&mut self, user_data: usize, _op: &mut RawOp) -> Poll<io::Result<usize>> {
-        self.squeue.push_back(user_data);
+    pub fn push(&mut self, user_data: usize, op: &mut RawOp) -> Poll<io::Result<usize>> {
+        let op = op.as_pin();
+        self.squeue
+            .push_back(op.create_entry().user_data(user_data as _));
         Poll::Pending
     }
 
@@ -126,11 +124,11 @@ impl Driver {
         &mut self,
         timeout: Option<Duration>,
         entries: &mut impl Extend<Entry>,
-        registry: &mut Slab<RawOp>,
+        _registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
         // Anyway we need to submit once, no matter there are entries in squeue.
         loop {
-            let ended = self.flush_submissions(registry);
+            let ended = self.flush_submissions();
 
             self.submit_auto(timeout, ended)?;
 

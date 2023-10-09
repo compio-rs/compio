@@ -9,9 +9,10 @@ use {
         Accept, BufResultExt, Connect, Recv, RecvFrom, RecvFromVectored, RecvResultExt,
         RecvVectored, Send, SendTo, SendToVectored, SendVectored,
     },
-    compio_runtime::{submit, Attacher},
+    compio_runtime::{submit, Attachable, Attacher},
 };
 
+#[derive(Debug)]
 pub struct Socket {
     socket: Socket2,
     #[cfg(feature = "runtime")]
@@ -25,11 +26,6 @@ impl Socket {
             #[cfg(feature = "runtime")]
             attacher: Attacher::new(),
         }
-    }
-
-    #[cfg(feature = "runtime")]
-    pub(crate) fn attach(&self) -> io::Result<()> {
-        self.attacher.attach(self)
     }
 
     pub fn try_clone(&self) -> io::Result<Self> {
@@ -106,7 +102,12 @@ impl Socket {
         let op = Accept::new(self.as_raw_fd());
         let BufResult(res, op) = submit(op).await;
         let accept_sock = unsafe { Socket2::from_raw_fd(res? as _) };
-        accept_sock.set_nonblocking(true)?;
+        if cfg!(all(
+            unix,
+            not(all(target_os = "linux", feature = "io-uring"))
+        )) {
+            accept_sock.set_nonblocking(true)?;
+        }
         let accept_sock = Self::from_socket2(accept_sock);
         let addr = op.into_addr();
         Ok((accept_sock, addr))
@@ -245,5 +246,16 @@ impl FromRawFd for Socket {
 impl IntoRawFd for Socket {
     fn into_raw_fd(self) -> RawFd {
         self.socket.into_raw_fd()
+    }
+}
+
+#[cfg(feature = "runtime")]
+impl Attachable for Socket {
+    fn attach(&self) -> io::Result<()> {
+        self.attacher.attach(self)
+    }
+
+    fn is_attached(&self) -> bool {
+        self.attacher.is_attached()
     }
 }

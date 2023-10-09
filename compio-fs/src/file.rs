@@ -7,7 +7,7 @@ use compio_driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use {
     compio_buf::{buf_try, vec_alloc, BufResult, IntoInner, IoBuf, IoBufMut},
     compio_driver::op::{BufResultExt, ReadAt, Sync, WriteAt},
-    compio_runtime::{submit, Attacher},
+    compio_runtime::{submit, Attachable, Attacher},
 };
 
 use crate::OpenOptions;
@@ -81,11 +81,6 @@ impl File {
             .write(true)
             .truncate(true)
             .open(path)
-    }
-
-    #[cfg(feature = "runtime")]
-    pub(crate) fn attach(&self) -> io::Result<()> {
-        self.attacher.attach(self)
     }
 
     /// Creates a new `File` instance that shares the same underlying file
@@ -323,5 +318,16 @@ impl FromRawFd for File {
 impl IntoRawFd for File {
     fn into_raw_fd(self) -> RawFd {
         self.inner.into_raw_fd()
+    }
+}
+
+#[cfg(feature = "runtime")]
+impl Attachable for File {
+    fn attach(&self) -> io::Result<()> {
+        self.attacher.attach(self)
+    }
+
+    fn is_attached(&self) -> bool {
+        self.attacher.is_attached()
     }
 }

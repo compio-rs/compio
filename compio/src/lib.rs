@@ -23,6 +23,9 @@
 
 #[doc(no_inline)]
 pub use buf::BufResult;
+#[cfg(feature = "dispatcher")]
+#[doc(inline)]
+pub use compio_dispatcher as dispatcher;
 #[cfg(feature = "macros")]
 pub use compio_macros::*;
 #[cfg(feature = "runtime")]
