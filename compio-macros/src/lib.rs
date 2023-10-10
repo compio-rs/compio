@@ -33,7 +33,7 @@ fn retrieve_runtime_mod() -> proc_macro2::TokenStream {
             let ident = Ident::new(&name, Span::call_site());
             quote!(::#ident::runtime)
         }
-        Err(_) => match crate_name("compio_runtime") {
+        Err(_) => match crate_name("compio-runtime") {
             Ok(FoundCrate::Itself) => quote!(crate),
             Ok(FoundCrate::Name(name)) => {
                 let ident = Ident::new(&name, Span::call_site());
