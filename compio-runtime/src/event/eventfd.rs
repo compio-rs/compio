@@ -19,7 +19,7 @@ pub struct Event {
 impl Event {
     /// Create [`Event`].
     pub fn new() -> io::Result<Self> {
-        let fd = syscall!(eventfd(0, 0))?;
+        let fd = syscall!(eventfd(0, libc::EFD_CLOEXEC))?;
         let fd = unsafe { OwnedFd::from_raw_fd(fd) };
         Ok(Self {
             fd,

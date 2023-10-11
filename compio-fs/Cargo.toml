@@ -33,6 +33,7 @@ windows-sys = { version = "0.48", features = [
 # Unix specific dependencies
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+os_pipe = "1"
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]

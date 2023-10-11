@@ -2,7 +2,7 @@
 
 use std::{io, os::unix::fs::FileTypeExt, path::Path};
 
-use compio_driver::{impl_raw_fd, syscall, AsRawFd, FromRawFd};
+use compio_driver::{impl_raw_fd, syscall, AsRawFd, FromRawFd, IntoRawFd};
 #[cfg(feature = "runtime")]
 use {
     compio_buf::{BufResult, IoBuf, IoBufMut},
@@ -14,21 +14,20 @@ use crate::File;
 /// Creates a pair of anonymous pipe.
 ///
 /// ```
-/// use compio_fs::pipe::pipe;
+/// use compio_fs::pipe::anon_pipe;
 ///
 /// # compio_runtime::block_on(async {
-/// let (rx, tx) = pipe().unwrap();
+/// let (rx, tx) = anon_pipe().unwrap();
 ///
 /// tx.write_all("Hello world!").await.unwrap();
 /// let (_, buf) = rx.read_exact(Vec::with_capacity(12)).await.unwrap();
 /// assert_eq!(&buf, b"Hello world!");
 /// # });
 /// ```
-pub fn pipe() -> io::Result<(Receiver, Sender)> {
-    let mut fds = [-1, -1];
-    syscall!(pipe(fds.as_mut_ptr()))?;
-    let receiver = unsafe { Receiver::from_raw_fd(fds[0]) };
-    let sender = unsafe { Sender::from_raw_fd(fds[1]) };
+pub fn anon_pipe() -> io::Result<(Receiver, Sender)> {
+    let (receiver, sender) = os_pipe::pipe()?;
+    let receiver = Receiver::from_file(unsafe { File::from_raw_fd(receiver.into_raw_fd()) })?;
+    let sender = Sender::from_file(unsafe { File::from_raw_fd(sender.into_raw_fd()) })?;
     Ok((receiver, sender))
 }
 
@@ -315,9 +314,7 @@ pub struct Sender {
 
 impl Sender {
     pub(crate) fn from_file(file: File) -> io::Result<Sender> {
-        if cfg!(not(all(target_os = "linux", feature = "io-uring"))) {
-            set_nonblocking(&file)?;
-        }
+        set_nonblocking(&file)?;
         Ok(Sender { file })
     }
 
@@ -413,9 +410,7 @@ pub struct Receiver {
 
 impl Receiver {
     pub(crate) fn from_file(file: File) -> io::Result<Receiver> {
-        if cfg!(not(all(target_os = "linux", feature = "io-uring"))) {
-            set_nonblocking(&file)?;
-        }
+        set_nonblocking(&file)?;
         Ok(Receiver { file })
     }
 
@@ -444,16 +439,14 @@ fn is_fifo(file: &File) -> io::Result<bool> {
 }
 
 /// Sets file's flags with O_NONBLOCK by fcntl.
-fn set_nonblocking(file: &File) -> io::Result<()> {
-    let fd = file.as_raw_fd();
-
-    let current_flags = syscall!(fcntl(fd, libc::F_GETFL))?;
-
-    let flags = current_flags | libc::O_NONBLOCK;
-
-    if flags != current_flags {
-        syscall!(fcntl(fd, libc::F_SETFL, flags))?;
+fn set_nonblocking(file: &impl AsRawFd) -> io::Result<()> {
+    if cfg!(not(all(target_os = "linux", feature = "io-uring"))) {
+        let fd = file.as_raw_fd();
+        let current_flags = syscall!(fcntl(fd, libc::F_GETFL))?;
+        let flags = current_flags | libc::O_NONBLOCK;
+        if flags != current_flags {
+            syscall!(fcntl(fd, libc::F_SETFL, flags))?;
+        }
     }
-
     Ok(())
 }
