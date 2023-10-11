@@ -26,7 +26,6 @@ pub trait OpCode {
 /// Low-level driver of io-uring.
 pub(crate) struct Driver {
     inner: IoUring,
-    cancel_queue: VecDeque<u64>,
     squeue: VecDeque<squeue::Entry>,
 }
 
@@ -36,7 +35,6 @@ impl Driver {
     pub fn new(entries: u32) -> io::Result<Self> {
         Ok(Self {
             inner: IoUring::new(entries)?,
-            cancel_queue: VecDeque::default(),
             squeue: VecDeque::with_capacity(entries as usize),
         })
     }
@@ -67,31 +65,34 @@ impl Driver {
 
     fn flush_submissions(&mut self) -> bool {
         let mut ended_ops = false;
-        let mut ended_cancel = false;
 
         let mut inner_squeue = self.inner.submission();
 
         while !inner_squeue.is_full() {
-            if let Some(entry) = self.squeue.pop_front() {
+            if self.squeue.len() <= inner_squeue.capacity() - inner_squeue.len() {
+                let (s1, s2) = self.squeue.as_slices();
+                unsafe {
+                    inner_squeue
+                        .push_multiple(s1)
+                        .expect("queue has enough space");
+                    inner_squeue
+                        .push_multiple(s2)
+                        .expect("queue has enough space");
+                }
+                self.squeue.clear();
+                ended_ops = true;
+                break;
+            } else if let Some(entry) = self.squeue.pop_front() {
                 unsafe { inner_squeue.push(&entry) }.expect("queue has enough space");
             } else {
                 ended_ops = true;
                 break;
             }
         }
-        while !inner_squeue.is_full() {
-            if let Some(user_data) = self.cancel_queue.pop_front() {
-                let entry = AsyncCancel::new(user_data).build().user_data(Self::CANCEL);
-                unsafe { inner_squeue.push(&entry) }.expect("queue has enough space");
-            } else {
-                ended_cancel = true;
-                break;
-            }
-        }
 
         inner_squeue.sync();
 
-        ended_ops && ended_cancel
+        ended_ops
     }
 
     fn poll_entries(&mut self, entries: &mut impl Extend<Entry>) {
@@ -110,7 +111,11 @@ impl Driver {
     }
 
     pub fn cancel(&mut self, user_data: usize, _registry: &mut Slab<RawOp>) {
-        self.cancel_queue.push_back(user_data as _);
+        self.squeue.push_back(
+            AsyncCancel::new(user_data as _)
+                .build()
+                .user_data(Self::CANCEL),
+        );
     }
 
     pub fn push(&mut self, user_data: usize, op: &mut RawOp) -> Poll<io::Result<usize>> {
