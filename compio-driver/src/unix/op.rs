@@ -4,9 +4,27 @@ use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
-#[cfg(doc)]
-use crate::op::*;
-use crate::RawFd;
+use crate::{op::*, RawFd};
+
+impl<T: IoBufMut> ReadAt<T> {
+    pub(crate) fn offset(&self) -> u64 {
+        if self.offset == usize::MAX {
+            u64::MAX
+        } else {
+            self.offset as _
+        }
+    }
+}
+
+impl<T: IoBuf> WriteAt<T> {
+    pub(crate) fn offset(&self) -> u64 {
+        if self.offset == usize::MAX {
+            u64::MAX
+        } else {
+            self.offset as _
+        }
+    }
+}
 
 /// Accept a connection.
 pub struct Accept {
