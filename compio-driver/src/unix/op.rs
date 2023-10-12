@@ -1,6 +1,6 @@
-use std::io::{IoSlice, IoSliceMut};
-
-use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{
+    IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
+};
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
@@ -56,7 +56,7 @@ impl<T: IoBufMut> IntoInner for Recv<T> {
 pub struct RecvVectored<T: IoVectoredBufMut> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
-    pub(crate) slices: Vec<IoSliceMut<'static>>,
+    pub(crate) slices: Vec<IoSliceMut>,
 }
 
 impl<T: IoVectoredBufMut> RecvVectored<T> {
@@ -103,7 +103,7 @@ impl<T: IoBuf> IntoInner for Send<T> {
 pub struct SendVectored<T: IoVectoredBuf> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
-    pub(crate) slices: Vec<IoSlice<'static>>,
+    pub(crate) slices: Vec<IoSlice>,
 }
 
 impl<T: IoVectoredBuf> SendVectored<T> {

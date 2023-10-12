@@ -1,9 +1,6 @@
 #[cfg(feature = "allocator_api")]
 use std::alloc::Allocator;
-use std::{
-    io::{IoSlice, IoSliceMut},
-    mem::MaybeUninit,
-};
+use std::mem::MaybeUninit;
 
 use crate::*;
 
@@ -51,12 +48,12 @@ pub unsafe trait IoBuf: Unpin + 'static {
 
     /// # Safety
     ///
-    /// The return slice will not live longer than self.
+    /// The return slice will not live longer than `Self`.
     /// It is static to provide convenience from writing self-referenced
     /// structure.
     #[doc(hidden)]
-    unsafe fn as_io_slice(&self) -> IoSlice<'static> {
-        IoSlice::new(std::mem::transmute(self.as_slice()))
+    unsafe fn as_io_slice(&self) -> IoSlice {
+        IoSlice::from_slice(self.as_slice())
     }
 
     /// Returns a view of the buffer with the specified range.
@@ -297,8 +294,8 @@ pub unsafe trait IoBufMut: IoBuf + SetBufInit {
     /// It is static to provide convenience from writing self-referenced
     /// structure.
     #[doc(hidden)]
-    unsafe fn as_io_slice_mut(&mut self) -> IoSliceMut<'static> {
-        IoSliceMut::new(std::mem::transmute(self.as_uninit_slice()))
+    unsafe fn as_io_slice_mut(&mut self) -> IoSliceMut {
+        IoSliceMut::from_uninit(self.as_uninit_slice())
     }
 }
 
@@ -349,7 +346,7 @@ pub unsafe trait IoVectoredBuf: Unpin + 'static {
     /// It is static to provide convenience from writing self-referenced
     /// structure.
     #[doc(hidden)]
-    unsafe fn as_io_slices(&self) -> Vec<IoSlice<'static>>;
+    unsafe fn as_io_slices(&self) -> Vec<IoSlice>;
 
     /// An iterator of the inner buffers.
     fn buf_iter(&self) -> Self::Iter<'_>;
@@ -360,7 +357,7 @@ macro_rules! iivbfs {
         type Item = $tn;
         type Iter<'a> = std::slice::Iter<'a, Self::Item>;
 
-        unsafe fn as_io_slices(&self) -> Vec<IoSlice<'static>> {
+        unsafe fn as_io_slices(&self) -> Vec<IoSlice> {
             self.buf_iter().map(|buf| buf.as_io_slice()).collect()
         }
 
@@ -400,7 +397,7 @@ pub unsafe trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
     /// It is static to provide convenience from writing self-referenced
     /// structure.
     #[doc(hidden)]
-    unsafe fn as_io_slices_mut(&mut self) -> Vec<IoSliceMut<'static>>;
+    unsafe fn as_io_slices_mut(&mut self) -> Vec<IoSliceMut>;
 
     /// A mutable iterator of the inner buffers.
     fn buf_iter_mut(&mut self) -> Self::IterMut<'_>;
@@ -410,7 +407,7 @@ macro_rules! iivbfs_mut {
     () => {
         type IterMut<'a> = std::slice::IterMut<'a, Self::Item>;
 
-        unsafe fn as_io_slices_mut(&mut self) -> Vec<IoSliceMut<'static>> {
+        unsafe fn as_io_slices_mut(&mut self) -> Vec<IoSliceMut> {
             self.buf_iter_mut()
                 .map(|buf| buf.as_io_slice_mut())
                 .collect()
