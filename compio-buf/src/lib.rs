@@ -7,6 +7,7 @@
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
 #![cfg_attr(feature = "read_buf", feature(read_buf))]
 #![cfg_attr(feature = "try_trait_v2", feature(try_trait_v2, try_trait_v2_residual))]
+#![feature(return_position_impl_trait_in_trait)]
 #![warn(missing_docs)]
 
 #[cfg(feature = "arrayvec")]
