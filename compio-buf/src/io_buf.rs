@@ -49,6 +49,7 @@ pub unsafe trait IoBuf: Unpin + 'static {
         unsafe { std::slice::from_raw_parts(self.as_buf_ptr(), self.buf_len()) }
     }
 
+    /// Create an [`IoSlice`] of this buffer.
     fn as_io_slice(&self) -> IoSlice {
         IoSlice::new(self.as_slice())
     }
@@ -294,6 +295,7 @@ pub unsafe trait IoBufMut: IoBuf + SetBufInit {
         }
     }
 
+    /// Create an [`IoSliceMut`] of the uninitialized part of the buffer.
     fn as_io_slice_mut(&mut self) -> IoSliceMut {
         IoSliceMut::new(unsafe { std::mem::transmute(self.as_uninit_slice()) })
     }
@@ -343,7 +345,10 @@ unsafe impl<const N: usize> IoBufMut for arrayvec::ArrayVec<u8, N> {
 ///
 /// See [`IoBuf`].
 pub unsafe trait IoVectoredBuf: Unpin + 'static {
-    fn as_io_slices(&self) -> impl Iterator<Item = IoSlice>;
+    /// An iterator for the [`IoSlice`]s of the buffers.
+    fn as_io_slices(&self) -> impl Iterator<Item = IoSlice> {
+        self.as_dyn_bufs().map(|buf| buf.as_io_slice())
+    }
 
     /// # Safety
     ///
@@ -356,15 +361,38 @@ pub unsafe trait IoVectoredBuf: Unpin + 'static {
             .collect()
     }
 
-    fn bufs_count(&self) -> usize {
-        self.as_io_slices().count()
+    /// Iterate the inner buffers.
+    fn as_dyn_bufs(&self) -> impl Iterator<Item = &dyn IoBuf>;
+
+    /// Create an owned iterator to make it easy to pass this vectored buffer as
+    /// a regular buffer.
+    ///
+    /// ```
+    /// use compio_buf::{IoBuf, IoVectoredBuf};
+    ///
+    /// let bufs = [vec![1u8, 2], vec![3, 4]];
+    /// let iter = bufs.owned_iter().unwrap();
+    /// assert_eq!(iter.as_slice(), &[1, 2]);
+    /// let iter = iter.next().unwrap();
+    /// assert_eq!(iter.as_slice(), &[3, 4]);
+    /// let iter = iter.next();
+    /// assert!(iter.is_err());
+    /// ```
+    ///
+    /// The time complexity of the returned iterator depends on the
+    /// implementation of [`Iterator::nth`] of [`IoVectoredBuf::as_dyn_bufs`].
+    fn owned_iter(self) -> Result<OwnedBufIter<Self>, Self>
+    where
+        Self: Sized,
+    {
+        OwnedBufIter::new(self, 0)
     }
 }
 
 macro_rules! iivbfs {
     ($tn:ident) => {
-        fn as_io_slices(&self) -> impl Iterator<Item = IoSlice> {
-            self.iter().map(|buf| buf.as_io_slice())
+        fn as_dyn_bufs(&self) -> impl Iterator<Item = &dyn IoBuf> {
+            self.iter().map(|buf| buf as &dyn IoBuf)
         }
     };
 }
@@ -390,7 +418,10 @@ unsafe impl<T: IoBuf, const N: usize> IoVectoredBuf for arrayvec::ArrayVec<T, N>
 ///
 /// See [`IoBufMut`].
 pub unsafe trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
-    fn as_io_slices_mut(&mut self) -> impl Iterator<Item = IoSliceMut>;
+    /// An iterator for the [`IoSliceMut`]s of the buffers.
+    fn as_io_slices_mut(&mut self) -> impl Iterator<Item = IoSliceMut> {
+        self.as_dyn_mut_bufs().map(|buf| buf.as_io_slice_mut())
+    }
 
     /// # Safety
     ///
@@ -402,12 +433,15 @@ pub unsafe trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
             .map(|buf| std::mem::transmute(buf))
             .collect()
     }
+
+    /// Iterate the inner buffers.
+    fn as_dyn_mut_bufs(&mut self) -> impl Iterator<Item = &mut dyn IoBufMut>;
 }
 
 macro_rules! iivbfs_mut {
     () => {
-        fn as_io_slices_mut(&mut self) -> impl Iterator<Item = IoSliceMut> {
-            self.iter_mut().map(|buf| buf.as_io_slice_mut())
+        fn as_dyn_mut_bufs(&mut self) -> impl Iterator<Item = &mut dyn IoBufMut> {
+            self.iter_mut().map(|buf| buf as &mut dyn IoBufMut)
         }
     };
 }
