@@ -18,6 +18,10 @@ bumpalo = { version = "3", optional = true }
 arrayvec = { version = "0.7", optional = true }
 bytes = { version = "1", optional = true }
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+
 [features]
 # Dependencies
 arrayvec = ["dep:arrayvec"]
