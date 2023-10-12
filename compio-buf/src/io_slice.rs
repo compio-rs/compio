@@ -53,6 +53,9 @@ mod sys {
     }
 }
 
+#[cfg(not(any(unix, windows)))]
+compile_error!("`IoSlice` only available on unix and windows");
+
 /// An unsafe `'static` slice of bytes to interact with os api.
 ///
 /// Like [`IoSliceMut`] in `std`, `IoSlice` guarantees the ABI compatability
