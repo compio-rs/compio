@@ -1,6 +1,13 @@
 [package]
 name = "compio-io"
 version = "0.1.0"
-edition = "2021"
+categories = ["asynchronous"]
+keywords = ["async", "io"]
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
 
 [dependencies]
+compio-buf = { workspace = true }
