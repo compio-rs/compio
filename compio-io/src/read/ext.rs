@@ -1,7 +1,6 @@
 use crate::{AsyncRead, IoResult};
 
-macro_rules! read_fn {
-    ($t:ty) => {};
+macro_rules! read_scalar {
     ($t:ty, $be:ident, $le:ident) => {
         ::paste::paste! {
             #[doc = concat!("Read a big endian `", stringify!($t), "` from the underlying reader.")]
@@ -30,16 +29,16 @@ macro_rules! read_fn {
 }
 
 pub trait AsyncReadExt: AsyncRead {
-    read_fn!(u8, from_be_bytes, from_le_bytes);
-    read_fn!(u16, from_be_bytes, from_le_bytes);
-    read_fn!(u32, from_be_bytes, from_le_bytes);
-    read_fn!(u64, from_be_bytes, from_le_bytes);
-    read_fn!(u128, from_be_bytes, from_le_bytes);
-    read_fn!(i8, from_be_bytes, from_le_bytes);
-    read_fn!(i16, from_be_bytes, from_le_bytes);
-    read_fn!(i32, from_be_bytes, from_le_bytes);
-    read_fn!(i64, from_be_bytes, from_le_bytes);
-    read_fn!(i128, from_be_bytes, from_le_bytes);
-    read_fn!(f32, from_be_bytes, from_le_bytes);
-    read_fn!(f64, from_be_bytes, from_le_bytes);
+    read_scalar!(u8, from_be_bytes, from_le_bytes);
+    read_scalar!(u16, from_be_bytes, from_le_bytes);
+    read_scalar!(u32, from_be_bytes, from_le_bytes);
+    read_scalar!(u64, from_be_bytes, from_le_bytes);
+    read_scalar!(u128, from_be_bytes, from_le_bytes);
+    read_scalar!(i8, from_be_bytes, from_le_bytes);
+    read_scalar!(i16, from_be_bytes, from_le_bytes);
+    read_scalar!(i32, from_be_bytes, from_le_bytes);
+    read_scalar!(i64, from_be_bytes, from_le_bytes);
+    read_scalar!(i128, from_be_bytes, from_le_bytes);
+    read_scalar!(f32, from_be_bytes, from_le_bytes);
+    read_scalar!(f64, from_be_bytes, from_le_bytes);
 }

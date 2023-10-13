@@ -1,4 +1,6 @@
-use compio_buf::{BufResult, IoBuf, IoVectoredBuf};
+use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoVectoredBuf};
+
+use crate::IoResult;
 
 mod buf;
 mod ext;
@@ -18,6 +20,23 @@ pub trait AsyncWrite {
     /// Like `write`, except that it write bytes from a buffer implements
     /// [`IoVectoredBuf`] into the source.
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T>;
+
+    async fn flush(&mut self) -> IoResult<()>;
+
+    async fn shutdown(&mut self) -> IoResult<()>;
+
+    /// Write the entire contents of a buffer into this writer.
+    async fn write_all<T: IoBuf>(&mut self, mut buffer: T) -> BufResult<usize, T> {
+        let buf_len = buffer.buf_len();
+        let mut total_written = 0;
+        while total_written < buf_len {
+            let written;
+            (written, buffer) =
+                buf_try!(self.write(buffer.slice(total_written..)).await.into_inner());
+            total_written += written;
+        }
+        BufResult(Ok(total_written), buffer)
+    }
 }
 
 impl<A: AsyncWrite + ?Sized> AsyncWrite for &mut A {
@@ -28,6 +47,14 @@ impl<A: AsyncWrite + ?Sized> AsyncWrite for &mut A {
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         (**self).write_vectored(buf).await
     }
+
+    async fn flush(&mut self) -> IoResult<()> {
+        (**self).flush().await
+    }
+
+    async fn shutdown(&mut self) -> IoResult<()> {
+        (**self).shutdown().await
+    }
 }
 
 impl<A: AsyncWrite + ?Sized> AsyncWrite for Box<A> {
@@ -37,6 +64,14 @@ impl<A: AsyncWrite + ?Sized> AsyncWrite for Box<A> {
 
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         (**self).write_vectored(buf).await
+    }
+
+    async fn flush(&mut self) -> IoResult<()> {
+        (**self).flush().await
+    }
+
+    async fn shutdown(&mut self) -> IoResult<()> {
+        (**self).shutdown().await
     }
 }
 
@@ -59,6 +94,14 @@ impl AsyncWrite for &mut [u8] {
         }
         BufResult(Ok(written), buf)
     }
+
+    async fn flush(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+
+    async fn shutdown(&mut self) -> IoResult<()> {
+        Ok(())
+    }
 }
 
 /// Write is implemented for `Vec<u8>` by appending to the vector. The vector
@@ -76,6 +119,14 @@ impl AsyncWrite for Vec<u8> {
             self.extend_from_slice(buf.as_slice());
         }
         BufResult(Ok(len), buf)
+    }
+
+    async fn flush(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+
+    async fn shutdown(&mut self) -> IoResult<()> {
+        Ok(())
     }
 }
 
