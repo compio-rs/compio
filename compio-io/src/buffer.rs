@@ -87,14 +87,14 @@ impl Buffer {
     /// The buffer needs to be filled
     #[inline]
     pub fn need_fill(&self) -> bool {
-        // XXX: Better way to determine if we need to fill the buffer
+        // TODO: Better way to determine if we need to fill the buffer
         let buf = self.buf();
         buf.len() < buf.capacity() / 3
     }
 
     /// The buffer needs to be flushed
     pub fn need_flush(&self) -> bool {
-        // XXX: Better way to determine if we need to flush the buffer
+        // TODO: Better way to determine if we need to flush the buffer
         let buf = self.buf();
         buf.len() > buf.capacity() * 2 / 3
     }
