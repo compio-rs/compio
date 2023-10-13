@@ -1,6 +1,6 @@
 use std::{io::Cursor, rc::Rc, sync::Arc};
 
-use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBufMut, SetBufInit};
+use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBufMut};
 
 mod buf;
 mod ext;
@@ -23,10 +23,10 @@ pub trait AsyncRead {
     /// [`IoVectoredBufMut`].
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V>
     where
-        V::Item: IoBufMut + SetBufInit;
+        V::Item: IoBufMut;
 
     /// Read the exact number of bytes required to fill the buf.
-    async fn read_exact<T: IoBufMut + SetBufInit>(&mut self, mut buf: T) -> BufResult<usize, T> {
+    async fn read_exact<T: IoBufMut>(&mut self, mut buf: T) -> BufResult<usize, T> {
         let len = buf.buf_capacity() - buf.buf_len();
         let mut read = 0;
         while read < len {
@@ -56,7 +56,7 @@ pub trait AsyncRead {
     /// Read the exact number of bytes required to fill the vector buf.
     async fn read_vectored_exact<T: IoVectoredBufMut>(&mut self, mut buf: T) -> BufResult<usize, T>
     where
-        T::Item: IoBufMut + SetBufInit,
+        T::Item: IoBufMut,
     {
         let len = buf
             .buf_iter_mut()
@@ -95,7 +95,7 @@ macro_rules! impl_read {
 
                 async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T>
                 where
-                    T::Item: IoBufMut + SetBufInit,
+                    T::Item: IoBufMut,
                 {
                     (**self).read_vectored(buf).await
                 }
@@ -113,7 +113,7 @@ impl<A: AsRef<[u8]>> AsyncRead for Cursor<A> {
 
     async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T>
     where
-        T::Item: IoBufMut + SetBufInit,
+        T::Item: IoBufMut,
     {
         self.get_ref().as_ref().read_vectored(buf).await
     }
@@ -128,7 +128,7 @@ impl AsyncRead for &[u8] {
 
     async fn read_vectored<T: IoVectoredBufMut>(&mut self, mut buf: T) -> BufResult<usize, T>
     where
-        T::Item: IoBufMut + SetBufInit,
+        T::Item: IoBufMut,
     {
         let mut this = *self; // An immutable slice to track the read position
 
