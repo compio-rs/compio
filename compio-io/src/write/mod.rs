@@ -136,10 +136,18 @@ impl AsyncWrite for Vec<u8> {
 pub trait AsyncWriteAt {
     /// Like `write`, except that it writes at a specified position.
     async fn write_at<T: IoBuf>(&mut self, buf: T, pos: usize) -> BufResult<usize, T>;
+
+    /// Like `write_at`, except that it tries to write the entire contents of
+    /// the buffer into this writer.
+    async fn write_all_at<T: IoBuf>(&mut self, buf: T, pos: usize) -> BufResult<usize, T>;
 }
 
 impl<A: AsyncWriteAt + ?Sized> AsyncWriteAt for &mut A {
     async fn write_at<T: IoBuf>(&mut self, buf: T, pos: usize) -> BufResult<usize, T> {
         (**self).write_at(buf, pos).await
+    }
+
+    async fn write_all_at<T: IoBuf>(&mut self, buf: T, pos: usize) -> BufResult<usize, T> {
+        (**self).write_all_at(buf, pos).await
     }
 }
