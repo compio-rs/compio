@@ -159,7 +159,7 @@ impl<T: IoVectoredBufMut> OpCode for RecvVectored<T> {
     fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
-        self.slices = unsafe { self.buffer.as_io_slices_mut_static() };
+        self.slices = unsafe { self.buffer.as_io_slices_mut() };
         syscall!(break readv(self.fd, self.slices.as_ptr() as _, self.slices.len() as _))
     }
 }
@@ -185,7 +185,7 @@ impl<T: IoVectoredBuf> OpCode for SendVectored<T> {
     fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.writable);
 
-        self.slices = unsafe { self.buffer.as_io_slices_static() };
+        self.slices = unsafe { self.buffer.as_io_slices() };
         syscall!(break writev(self.fd, self.slices.as_ptr() as _, self.slices.len() as _))
     }
 }
@@ -274,7 +274,7 @@ impl<T: IoVectoredBufMut> RecvFromVectored<T> {
     }
 
     fn set_msg(&mut self) {
-        self.slices = unsafe { self.buffer.as_io_slices_mut_static() };
+        self.slices = unsafe { self.buffer.as_io_slices_mut() };
         self.msg = libc::msghdr {
             msg_name: &mut self.addr as *mut _ as _,
             msg_namelen: std::mem::size_of_val(&self.addr) as _,
@@ -384,7 +384,7 @@ impl<T: IoVectoredBuf> SendToVectored<T> {
     }
 
     fn set_msg(&mut self) {
-        self.slices = unsafe { self.buffer.as_io_slices_static() };
+        self.slices = unsafe { self.buffer.as_io_slices() };
         self.msg = libc::msghdr {
             msg_name: &mut self.addr as *mut _ as _,
             msg_namelen: std::mem::size_of_val(&self.addr) as _,

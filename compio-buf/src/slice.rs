@@ -127,7 +127,7 @@ pub struct OwnedBufIter<T> {
 
 impl<T: IoVectoredBuf> OwnedBufIter<T> {
     pub(crate) fn new(bufs: T, nth: usize) -> Result<Self, T> {
-        if bufs.as_io_slices().nth(nth).is_none() {
+        if bufs.as_dyn_bufs().nth(nth).is_none() {
             Err(bufs)
         } else {
             Ok(Self { bufs, nth })

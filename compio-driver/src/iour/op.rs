@@ -72,7 +72,7 @@ impl<T: IoBufMut> OpCode for Recv<T> {
 
 impl<T: IoVectoredBufMut> OpCode for RecvVectored<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
-        self.slices = unsafe { self.buffer.as_io_slices_mut_static() };
+        self.slices = unsafe { self.buffer.as_io_slices_mut() };
         opcode::Readv::new(
             Fd(self.fd),
             self.slices.as_ptr() as _,
@@ -91,7 +91,7 @@ impl<T: IoBuf> OpCode for Send<T> {
 
 impl<T: IoVectoredBuf> OpCode for SendVectored<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
-        self.slices = unsafe { self.buffer.as_io_slices_static() };
+        self.slices = unsafe { self.buffer.as_io_slices() };
         opcode::Writev::new(
             Fd(self.fd),
             self.slices.as_ptr() as _,
@@ -156,7 +156,7 @@ impl<T: IoBufMut> RecvFrom<T> {
 impl<T: IoBufMut> OpCode for RecvFrom<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         let this = &mut *self;
-        this.slice[0] = unsafe { this.buffer.as_io_slice_mut_static() };
+        this.slice[0] = unsafe { this.buffer.as_io_slice_mut() };
         this.header.create_entry(&mut this.slice)
     }
 }
@@ -191,7 +191,7 @@ impl<T: IoVectoredBufMut> RecvFromVectored<T> {
 impl<T: IoVectoredBufMut> OpCode for RecvFromVectored<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         let this = &mut *self;
-        this.slice = unsafe { this.buffer.as_io_slices_mut_static() };
+        this.slice = unsafe { this.buffer.as_io_slices_mut() };
         this.header.create_entry(&mut this.slice)
     }
 }
@@ -256,7 +256,7 @@ impl<T: IoBuf> SendTo<T> {
 impl<T: IoBuf> OpCode for SendTo<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         let this = &mut *self;
-        this.slice[0] = unsafe { this.buffer.as_io_slice_static() };
+        this.slice[0] = unsafe { this.buffer.as_io_slice() };
         this.header.create_entry(&mut this.slice)
     }
 }
@@ -290,7 +290,7 @@ impl<T: IoVectoredBuf> SendToVectored<T> {
 impl<T: IoVectoredBuf> OpCode for SendToVectored<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         let this = &mut *self;
-        this.slice = unsafe { this.buffer.as_io_slices_static() };
+        this.slice = unsafe { this.buffer.as_io_slices() };
         this.header.create_entry(&mut this.slice)
     }
 }
