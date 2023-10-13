@@ -1,8 +1,11 @@
 use compio_buf::{BufResult, IoBuf, IoVectoredBuf};
 
 mod buf;
+mod ext;
 
 pub use buf::*;
+pub use ext::*;
+
 /// # AsyncWrite
 ///
 /// Async write with a ownership of a buffer
@@ -27,6 +30,54 @@ impl<A: AsyncWrite + ?Sized> AsyncWrite for &mut A {
     }
 }
 
+impl<A: AsyncWrite + ?Sized> AsyncWrite for Box<A> {
+    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        (**self).write(buf).await
+    }
+
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        (**self).write_vectored(buf).await
+    }
+}
+
+impl AsyncWrite for &mut [u8] {
+    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        let n = buf.buf_len().min(self.len());
+        self[..n].copy_from_slice(&buf.as_slice()[..n]);
+        BufResult(Ok(n), buf)
+    }
+
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        let mut written = 0;
+        for buf in buf.buf_iter() {
+            let len = buf.buf_len().min(self.len() - written);
+            self[written..written + len].copy_from_slice(&buf.as_slice()[..len]);
+            written += len;
+            if written == self.len() {
+                break;
+            }
+        }
+        BufResult(Ok(written), buf)
+    }
+}
+
+/// Write is implemented for `Vec<u8>` by appending to the vector. The vector
+/// will grow as needed.
+impl AsyncWrite for Vec<u8> {
+    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        self.extend_from_slice(buf.as_slice());
+        BufResult(Ok(buf.buf_len()), buf)
+    }
+
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        let len = buf.buf_iter().map(|b| b.buf_len()).sum();
+        self.reserve(len);
+        for buf in buf.buf_iter() {
+            self.extend_from_slice(buf.as_slice());
+        }
+        BufResult(Ok(len), buf)
+    }
+}
 
 /// # AsyncWriteAt
 ///
