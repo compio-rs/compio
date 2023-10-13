@@ -55,8 +55,8 @@ pub unsafe trait IoBuf: Unpin + 'static {
     /// The return slice will not live longer than `Self`.
     /// It is static to provide convenience from writing self-referenced
     /// structure.
-    unsafe fn as_io_slice_static(&self) -> IoSlice<'static> {
-        std::mem::transmute(self.as_io_slice())
+    unsafe fn as_io_slice(&self) -> IoSlice {
+        IoSlice::from_slice(self.as_slice())
     }
 
     /// Returns a view of the buffer with the specified range.
@@ -300,8 +300,8 @@ pub unsafe trait IoBufMut: IoBuf + SetBufInit {
     /// The return slice will not live longer than self.
     /// It is static to provide convenience from writing self-referenced
     /// structure.
-    unsafe fn as_io_slice_mut_static(&mut self) -> IoSliceMut<'static> {
-        std::mem::transmute(self.as_io_slice_mut())
+    unsafe fn as_io_slice_mut(&mut self) -> IoSliceMut {
+        IoSliceMut::from_uninit(self.as_uninit_slice())
     }
 }
 
@@ -347,11 +347,7 @@ pub unsafe trait IoVectoredBuf: Unpin + 'static {
     /// The return slice will not live longer than self.
     /// It is static to provide convenience from writing self-referenced
     /// structure.
-    unsafe fn as_io_slices_static(&self) -> Vec<IoSlice<'static>> {
-        self.as_io_slices()
-            .map(|buf| std::mem::transmute(buf))
-            .collect()
-    }
+    unsafe fn as_io_slices(&self) -> Vec<IoSlice>;
 
     fn bufs_count(&self) -> usize {
         self.as_io_slices().count()
