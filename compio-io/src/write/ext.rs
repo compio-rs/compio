@@ -48,6 +48,17 @@ macro_rules! loop_write {
 }
 
 pub trait AsyncWriteExt: AsyncWrite {
+    /// Creates a "by reference" adaptor for this instance of [`AsyncWrite`].
+    ///
+    /// The returned adapter also implements [`AsyncWrite`] and will simply
+    /// borrow this current writer.
+    fn by_ref(&mut self) -> &mut Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+
     /// Write the entire contents of a buffer into this writer.
     async fn write_all<T: IoBuf>(&mut self, mut buf: T) -> BufResult<usize, T> {
         loop_write!(

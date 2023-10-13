@@ -1,6 +1,6 @@
 use compio_buf::{buf_try, BufResult, IoBufMut, IoVectoredBufMut};
 
-use crate::{util::unfilled_err, AsyncRead, AsyncReadAt, IoResult};
+use crate::{util::unfilled_err, AsyncRead, AsyncReadAt, IoResult, Take};
 
 /// Shared code for read a scalar value from the underlying reader.
 macro_rules! read_scalar {
@@ -55,6 +55,17 @@ macro_rules! loop_read {
 }
 
 pub trait AsyncReadExt: AsyncRead {
+    /// Creates a "by reference" adaptor for this instance of [`AsyncRead`].
+    ///
+    /// The returned adapter also implements [`AsyncRead`] and will simply
+    /// borrow this current reader.
+    fn by_ref(&mut self) -> &mut Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+
     /// Read the exact number of bytes required to fill the buf.
     async fn read_exact<T: IoBufMut>(&mut self, mut buf: T) -> BufResult<usize, T> {
         loop_read!(buf, buf.buf_capacity() - buf.buf_len(), loop self.read(buf));
@@ -64,10 +75,11 @@ pub trait AsyncReadExt: AsyncRead {
     async fn read_all(&mut self) -> IoResult<Vec<u8>> {
         let mut buf = Vec::<u8>::with_capacity(128);
         let mut n = 0;
+
         while n != 0 {
             (n, buf) = buf_try!(@try self.read(buf).await);
             if buf.len() == buf.capacity() {
-                buf.reserve(buf.capacity() * 2);
+                buf.reserve(buf.capacity());
             }
         }
 
@@ -86,6 +98,13 @@ pub trait AsyncReadExt: AsyncRead {
                 .sum(),
             loop self.read_vectored(buf)
         );
+    }
+
+    fn take(self, limit: u64) -> Take<Self>
+    where
+        Self: Sized,
+    {
+        Take::new(self, limit)
     }
 
     read_scalar!(u8, from_be_bytes, from_le_bytes);
