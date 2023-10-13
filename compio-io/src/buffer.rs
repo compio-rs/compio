@@ -1,4 +1,5 @@
-use std::future::Future;
+use core::fmt;
+use std::{fmt::Debug, future::Future};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, SetBufInit};
 
@@ -143,5 +144,16 @@ impl Buffer {
     #[inline]
     fn buf(&self) -> &Vec<u8> {
         &self.inner().buf
+    }
+}
+
+impl Debug for Buffer {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let inner = self.inner();
+        fmt.debug_struct("Buffer")
+            .field("capacity", &inner.buf_capacity())
+            .field("init", &inner.buf_len())
+            .field("progress", &inner.pos)
+            .finish()
     }
 }

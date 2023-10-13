@@ -63,6 +63,18 @@ impl<A: AsRef<[u8]>> AsyncRead for Cursor<A> {
     }
 }
 
+impl<const T: usize> AsyncRead for [u8; T] {
+    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
+        (&self[..]).read(buf).await
+    }
+}
+
+impl<const T: usize> AsyncRead for &[u8; T] {
+    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
+        (&self[..]).read(buf).await
+    }
+}
+
 impl AsyncRead for &[u8] {
     async fn read<T: IoBufMut>(&mut self, mut buf: T) -> BufResult<usize, T> {
         let len = slice_to_buf(self, &mut buf);

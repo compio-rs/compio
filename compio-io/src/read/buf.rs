@@ -29,6 +29,7 @@ impl<A: AsyncBufRead + ?Sized> AsyncBufRead for &mut A {
     }
 }
 
+#[derive(Debug)]
 pub struct BufReader<R> {
     reader: R,
     buf: Buffer,

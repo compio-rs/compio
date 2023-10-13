@@ -8,6 +8,7 @@ use crate::{
     AsyncWrite, IoResult,
 };
 
+#[derive(Debug)]
 pub struct BufWriter<W> {
     writer: W,
     buf: Buffer,
