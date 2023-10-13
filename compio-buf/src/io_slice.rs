@@ -95,8 +95,8 @@ impl IoSlice {
     }
 
     /// Get the pointer to the buffer.
-    pub fn as_ptr(&self) -> *const MaybeUninit<u8> {
-        self.0.as_ptr()
+    pub fn as_ptr(&self) -> *const u8 {
+        self.0.as_ptr() as _
     }
 
     /// Get the length of the buffer.
@@ -155,7 +155,7 @@ impl IoSliceMut {
     }
 
     /// Get the pointer to the buffer.
-    pub fn as_ptr(&self) -> *const MaybeUninit<u8> {
+    pub fn as_ptr(&self) -> *mut MaybeUninit<u8> {
         self.0.as_ptr()
     }
 
