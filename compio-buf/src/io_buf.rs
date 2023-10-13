@@ -47,10 +47,7 @@ pub unsafe trait IoBuf: Unpin + 'static {
     }
 
     /// Create an [`IoSlice`] of this buffer.
-    fn as_io_slice(&self) -> IoSlice {
-        IoSlice::new(self.as_slice())
-    }
-
+    ///
     /// # Safety
     ///
     /// The return slice will not live longer than `Self`.
@@ -293,10 +290,7 @@ pub unsafe trait IoBufMut: IoBuf + SetBufInit {
     }
 
     /// Create an [`IoSliceMut`] of the uninitialized part of the buffer.
-    fn as_io_slice_mut(&mut self) -> IoSliceMut {
-        IoSliceMut::new(unsafe { std::mem::transmute(self.as_uninit_slice()) })
-    }
-
+    ///
     /// # Safety
     ///
     /// The return slice will not live longer than self.
@@ -343,16 +337,15 @@ unsafe impl<const N: usize> IoBufMut for arrayvec::ArrayVec<u8, N> {
 /// See [`IoBuf`].
 pub unsafe trait IoVectoredBuf: Unpin + 'static {
     /// An iterator for the [`IoSlice`]s of the buffers.
-    fn as_io_slices(&self) -> impl Iterator<Item = IoSlice> {
-        self.as_dyn_bufs().map(|buf| buf.as_io_slice())
-    }
-
+    ///
     /// # Safety
     ///
     /// The return slice will not live longer than self.
     /// It is static to provide convenience from writing self-referenced
     /// structure.
-    unsafe fn as_io_slices(&self) -> Vec<IoSlice>;
+    unsafe fn as_io_slices(&self) -> Vec<IoSlice> {
+        self.as_dyn_bufs().map(|buf| buf.as_io_slice()).collect()
+    }
 
     /// Iterate the inner buffers.
     fn as_dyn_bufs(&self) -> impl Iterator<Item = &dyn IoBuf>;
@@ -412,18 +405,15 @@ unsafe impl<T: IoBuf, const N: usize> IoVectoredBuf for arrayvec::ArrayVec<T, N>
 /// See [`IoBufMut`].
 pub unsafe trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
     /// An iterator for the [`IoSliceMut`]s of the buffers.
-    fn as_io_slices_mut(&mut self) -> impl Iterator<Item = IoSliceMut> {
-        self.as_dyn_mut_bufs().map(|buf| buf.as_io_slice_mut())
-    }
-
+    ///
     /// # Safety
     ///
     /// The return slice will not live longer than self.
     /// It is static to provide convenience from writing self-referenced
     /// structure.
-    unsafe fn as_io_slices_mut_static(&mut self) -> Vec<IoSliceMut<'static>> {
-        self.as_io_slices_mut()
-            .map(|buf| std::mem::transmute(buf))
+    unsafe fn as_io_slices_mut(&mut self) -> Vec<IoSliceMut> {
+        self.as_dyn_mut_bufs()
+            .map(|buf| buf.as_io_slice_mut())
             .collect()
     }
 
