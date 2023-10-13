@@ -67,6 +67,15 @@ impl<T, B> BufResult<T, B> {
         BufResult(self.0, f(self.1))
     }
 
+    /// Updating the result type and modifying the buffer.
+    #[inline]
+    pub fn and_then<U>(self, f: impl FnOnce(T, B) -> (io::Result<U>, B)) -> BufResult<U, B> {
+        match self.0 {
+            Ok(res) => BufResult::from(f(res, self.1)),
+            Err(e) => BufResult(Err(e), self.1),
+        }
+    }
+
     /// Returns the contained [`Ok`] value, consuming the `self` value.
     #[inline]
     pub fn expect(self, msg: &str) -> (T, B) {
