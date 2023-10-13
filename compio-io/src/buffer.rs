@@ -121,10 +121,10 @@ impl Buffer {
     }
 
     #[inline]
-    pub fn advance(&mut self, amt: usize) {
-        debug_assert!(self.inner().pos + amt <= self.inner().buf_capacity());
+    pub fn advance(&mut self, amount: usize) {
+        debug_assert!(self.inner().pos + amount <= self.inner().buf_capacity());
 
-        self.inner_mut().pos += amt;
+        self.inner_mut().pos += amount;
     }
 
     #[inline]

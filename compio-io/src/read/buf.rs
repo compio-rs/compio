@@ -24,8 +24,8 @@ impl<A: AsyncBufRead + ?Sized> AsyncBufRead for &mut A {
         (**self).fill_buf().await
     }
 
-    fn consume(&mut self, amt: usize) {
-        (**self).consume(amt)
+    fn consume(&mut self, amount: usize) {
+        (**self).consume(amount)
     }
 }
 
@@ -53,9 +53,8 @@ impl<R> BufReader<R> {
 }
 
 impl<R: AsyncRead> AsyncRead for BufReader<R> {
-    async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
-        let mut slice;
-        (slice, buf) = buf_try!(self.fill_buf().await, buf);
+    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
+        let (mut slice, buf) = buf_try!(self.fill_buf().await, buf);
         slice.read(buf).await.map_res(|res| {
             self.consume(res);
             res
@@ -90,7 +89,7 @@ impl<R: AsyncRead> AsyncBufRead for BufReader<R> {
         Ok(buf.slice())
     }
 
-    fn consume(&mut self, amt: usize) {
-        self.buf.advance(amt)
+    fn consume(&mut self, amount: usize) {
+        self.buf.advance(amount)
     }
 }

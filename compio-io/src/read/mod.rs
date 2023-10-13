@@ -35,13 +35,14 @@ macro_rules! impl_read {
     ($($ty:ty),*) => {
         $(
             impl<A: AsyncRead + ?Sized> AsyncRead for $ty {
+                #[inline(always)]
                 async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
                     (**self).read(buf).await
                 }
 
+                #[inline(always)]
                 async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T>
-                where
-                    T::Item: IoBufMut,
+
                 {
                     (**self).read_vectored(buf).await
                 }
@@ -53,31 +54,33 @@ macro_rules! impl_read {
 impl_read!(&mut A, Box<A>);
 
 impl<A: AsRef<[u8]>> AsyncRead for Cursor<A> {
+    #[inline]
     async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
         self.get_ref().as_ref().read(buf).await
     }
 
-    async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T>
-    where
-        T::Item: IoBufMut,
-    {
+    #[inline]
+    async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
         self.get_ref().as_ref().read_vectored(buf).await
     }
 }
 
 impl<const T: usize> AsyncRead for [u8; T] {
+    #[inline]
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         (&self[..]).read(buf).await
     }
 }
 
 impl<const T: usize> AsyncRead for &[u8; T] {
+    #[inline]
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         (&self[..]).read(buf).await
     }
 }
 
 impl AsyncRead for &[u8] {
+    #[inline]
     async fn read<T: IoBufMut>(&mut self, mut buf: T) -> BufResult<usize, T> {
         let len = slice_to_buf(self, &mut buf);
 
