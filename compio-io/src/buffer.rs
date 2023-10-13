@@ -118,6 +118,8 @@ impl Buffer {
 
     #[inline]
     pub fn advance(&mut self, amt: usize) {
+        debug_assert!(self.inner().pos + amt <= self.inner().buf_capacity());
+
         self.inner_mut().pos += amt;
     }
 
@@ -128,6 +130,8 @@ impl Buffer {
 
     #[inline]
     fn restore_buf(&mut self, buf: Inner) {
+        debug_assert!(self.0.is_none());
+
         self.0 = Some(buf);
     }
 
