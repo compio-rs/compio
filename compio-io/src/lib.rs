@@ -5,5 +5,7 @@ mod read;
 mod util;
 mod write;
 
+pub(crate) use std::io::Result as IoResult;
+
 pub use read::*;
 pub use write::*;

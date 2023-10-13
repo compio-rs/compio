@@ -10,4 +10,5 @@ license = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-compio-buf = { workspace = true }
+compio-buf = { workspace = true, features = ["arrayvec"] }
+paste = "1.0.14"
