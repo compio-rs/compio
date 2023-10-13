@@ -150,6 +150,8 @@ impl AsyncRead for &[u8] {
 pub trait AsyncReadAt {
     /// Like `read`, except that it reads at a specified position.
     async fn read_at<T: IoBufMut>(&self, buf: T, pos: usize) -> BufResult<usize, T>;
+
+    async fn read_exact_at<T: IoBufMut>(&self, buf: T, pos: usize) -> BufResult<usize, T>;
 }
 
 macro_rules! impl_read_at {
@@ -158,6 +160,10 @@ macro_rules! impl_read_at {
             impl<A: AsyncReadAt + ?Sized> AsyncReadAt for $ty {
                 async fn read_at<T: IoBufMut>(&self, buf: T, pos: usize) -> BufResult<usize, T> {
                     (**self).read_at(buf, pos).await
+                }
+
+                async fn read_exact_at<T: IoBufMut>(&self, buf: T, pos: usize) -> BufResult<usize, T> {
+                    (**self).read_exact_at(buf, pos).await
                 }
             }
         )*
