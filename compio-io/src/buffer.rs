@@ -1,3 +1,7 @@
+//! A utility buffer type to implement [`BufReader`] and [`BufWriter`]
+//!
+//! [`BufReader`]: crate::read::BufReader
+//! [`BufWriter`]: crate::write::BufWriter
 use core::fmt;
 use std::{fmt::Debug, future::Future};
 
