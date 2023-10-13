@@ -1,10 +1,8 @@
-use std::{
-    io::{self, IoSlice, IoSliceMut},
-    pin::Pin,
-    task::Poll,
-};
+use std::{io, pin::Pin, task::Poll};
 
-use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{
+    IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
+};
 use polling::Event;
 use socket2::SockAddr;
 
@@ -258,7 +256,7 @@ impl<T: IoBufMut> IntoInner for RecvFrom<T> {
 pub struct RecvFromVectored<T: IoVectoredBufMut> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
-    pub(crate) slices: Vec<IoSliceMut<'static>>,
+    pub(crate) slices: Vec<IoSliceMut>,
     pub(crate) addr: sockaddr_storage,
     pub(crate) msg: libc::msghdr,
 }
@@ -369,7 +367,7 @@ pub struct SendToVectored<T: IoVectoredBuf> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
-    pub(crate) slices: Vec<IoSlice<'static>>,
+    pub(crate) slices: Vec<IoSlice>,
     pub(crate) msg: libc::msghdr,
 }
 
