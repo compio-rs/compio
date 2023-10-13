@@ -197,4 +197,8 @@ macro_rules! buf_try {
             Err(e) => return $crate::BufResult(Err(e), buf),
         }
     }};
+    (@try $e:expr) => {{
+        let $crate::BufResult(res, buf) = $e;
+        (res?, buf)
+    }};
 }

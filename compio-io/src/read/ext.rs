@@ -1,4 +1,4 @@
-use compio_buf::{buf_try, BufResult, IoBuf, IoBufMut, IoVectoredBufMut};
+use compio_buf::{buf_try, BufResult, IoBufMut, IoVectoredBufMut};
 
 use crate::{util::unfilled_err, AsyncRead, AsyncReadAt, IoResult};
 
@@ -58,6 +58,20 @@ pub trait AsyncReadExt: AsyncRead {
     /// Read the exact number of bytes required to fill the buf.
     async fn read_exact<T: IoBufMut>(&mut self, mut buf: T) -> BufResult<usize, T> {
         loop_read!(buf, buf.buf_capacity() - buf.buf_len(), loop self.read(buf));
+    }
+
+    /// Read all bytes until underlying reader returns 0.
+    async fn read_all(&mut self) -> IoResult<Vec<u8>> {
+        let mut buf = Vec::<u8>::with_capacity(128);
+        let mut n = 0;
+        while n != 0 {
+            (n, buf) = buf_try!(@try self.read(buf).await);
+            if buf.len() == buf.capacity() {
+                buf.reserve(buf.capacity() * 2);
+            }
+        }
+
+        Ok(buf)
     }
 
     /// Read the exact number of bytes required to fill the vector buf.
