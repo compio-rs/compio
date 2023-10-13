@@ -13,7 +13,7 @@ pub trait AsyncWrite {
 
     /// Like `write`, except that it write bytes from a buffer implements
     /// [`IoVectoredBuf`] into the source.
-    async fn writev<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T>;
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T>;
 }
 
 impl<A: AsyncWrite + ?Sized> AsyncWrite for &mut A {
@@ -21,8 +21,8 @@ impl<A: AsyncWrite + ?Sized> AsyncWrite for &mut A {
         (**self).write(buf).await
     }
 
-    async fn writev<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        (**self).writev(buf).await
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        (**self).write_vectored(buf).await
     }
 }
 

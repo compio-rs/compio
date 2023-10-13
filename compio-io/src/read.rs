@@ -13,7 +13,7 @@ pub trait AsyncRead {
 
     /// Like `read`, except that it reads into a type implements
     /// [`IoVectoredBufMut`].
-    async fn readv<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T>;
+    async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T>;
 }
 
 impl<A: AsyncRead + ?Sized> AsyncRead for &mut A {
@@ -21,8 +21,8 @@ impl<A: AsyncRead + ?Sized> AsyncRead for &mut A {
         (**self).read(buf).await
     }
 
-    async fn readv<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
-        (**self).readv(buf).await
+    async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
+        (**self).read_vectored(buf).await
     }
 }
 /// # AsyncReadAt
