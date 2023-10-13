@@ -367,35 +367,41 @@ pub unsafe trait IoVectoredBuf: Unpin + 'static {
     ///
     /// The time complexity of the returned iterator depends on the
     /// implementation of [`Iterator::nth`] of [`IoVectoredBuf::as_dyn_bufs`].
-    fn owned_iter(self) -> Result<OwnedBufIter<Self>, Self>
+    fn owned_iter(self) -> Result<OwnedBufIterator<impl OwnedBufIteratorInner<Inner = Self>>, Self>
     where
-        Self: Sized,
-    {
-        OwnedBufIter::new(self, 0)
-    }
+        Self: Sized;
 }
 
 macro_rules! iivbfs {
-    ($tn:ident) => {
+    () => {
         fn as_dyn_bufs(&self) -> impl Iterator<Item = &dyn IoBuf> {
             self.iter().map(|buf| buf as &dyn IoBuf)
+        }
+
+        fn owned_iter(
+            self,
+        ) -> Result<OwnedBufIterator<impl OwnedBufIteratorInner<Inner = Self>>, Self>
+        where
+            Self: Sized,
+        {
+            IndexedBufIterInner::new(self, 0).map(OwnedBufIterator::new)
         }
     };
 }
 
 unsafe impl<T: IoBuf, const N: usize> IoVectoredBuf for [T; N] {
-    iivbfs!(T);
+    iivbfs!();
 }
 
 unsafe impl<T: IoBuf, #[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static>
     IoVectoredBuf for vec_alloc!(T, A)
 {
-    iivbfs!(T);
+    iivbfs!();
 }
 
 #[cfg(feature = "arrayvec")]
 unsafe impl<T: IoBuf, const N: usize> IoVectoredBuf for arrayvec::ArrayVec<T, N> {
-    iivbfs!(T);
+    iivbfs!();
 }
 
 /// A trait for mutable vectored buffers.
@@ -421,27 +427,79 @@ pub unsafe trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
     fn as_dyn_mut_bufs(&mut self) -> impl Iterator<Item = &mut dyn IoBufMut>;
 }
 
-macro_rules! iivbfs_mut {
-    () => {
-        fn as_dyn_mut_bufs(&mut self) -> impl Iterator<Item = &mut dyn IoBufMut> {
-            self.iter_mut().map(|buf| buf as &mut dyn IoBufMut)
-        }
-    };
-}
-
 unsafe impl<T: IoBufMut, const N: usize> IoVectoredBufMut for [T; N] {
-    iivbfs_mut!();
+    fn as_dyn_mut_bufs(&mut self) -> impl Iterator<Item = &mut dyn IoBufMut> {
+        self.iter_mut().map(|buf| buf as &mut dyn IoBufMut)
+    }
 }
 
 unsafe impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static>
     IoVectoredBufMut for vec_alloc!(T, A)
 {
-    iivbfs_mut!();
+    fn as_dyn_mut_bufs(&mut self) -> impl Iterator<Item = &mut dyn IoBufMut> {
+        self.iter_mut().map(|buf| buf as &mut dyn IoBufMut)
+    }
 }
 
 #[cfg(feature = "arrayvec")]
 unsafe impl<T: IoBufMut, const N: usize> IoVectoredBufMut for arrayvec::ArrayVec<T, N> {
-    iivbfs_mut!();
+    fn as_dyn_mut_bufs(&mut self) -> impl Iterator<Item = &mut dyn IoBufMut> {
+        self.iter_mut().map(|buf| buf as &mut dyn IoBufMut)
+    }
+}
+
+/// A trait for vectored buffers that could be indexed.
+pub trait IoIndexedBuf: IoVectoredBuf {
+    /// Get the buffer with specific index.
+    fn buf_nth(&self, n: usize) -> Option<&dyn IoBuf>;
+}
+
+impl<T: IoBuf, const N: usize> IoIndexedBuf for [T; N] {
+    fn buf_nth(&self, n: usize) -> Option<&dyn IoBuf> {
+        self.get(n).map(|b| b as _)
+    }
+}
+
+impl<T: IoBuf, #[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoIndexedBuf
+    for vec_alloc!(T, A)
+{
+    fn buf_nth(&self, n: usize) -> Option<&dyn IoBuf> {
+        self.get(n).map(|b| b as _)
+    }
+}
+
+#[cfg(feature = "arrayvec")]
+impl<T: IoBuf, const N: usize> IoIndexedBuf for arrayvec::ArrayVec<T, N> {
+    fn buf_nth(&self, n: usize) -> Option<&dyn IoBuf> {
+        self.get(n).map(|b| b as _)
+    }
+}
+
+/// A trait for mutable vectored buffers that could be indexed.
+pub trait IoIndexedBufMut: IoVectoredBufMut + IoIndexedBuf {
+    /// Get the mutable buffer with specific index.
+    fn buf_nth_mut(&mut self, n: usize) -> Option<&mut dyn IoBufMut>;
+}
+
+impl<T: IoBufMut, const N: usize> IoIndexedBufMut for [T; N] {
+    fn buf_nth_mut(&mut self, n: usize) -> Option<&mut dyn IoBufMut> {
+        self.get_mut(n).map(|b| b as _)
+    }
+}
+
+impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoIndexedBufMut
+    for vec_alloc!(T, A)
+{
+    fn buf_nth_mut(&mut self, n: usize) -> Option<&mut dyn IoBufMut> {
+        self.get_mut(n).map(|b| b as _)
+    }
+}
+
+#[cfg(feature = "arrayvec")]
+impl<T: IoBufMut, const N: usize> IoIndexedBufMut for arrayvec::ArrayVec<T, N> {
+    fn buf_nth_mut(&mut self, n: usize) -> Option<&mut dyn IoBufMut> {
+        self.get_mut(n).map(|b| b as _)
+    }
 }
 
 /// A helper trait for `set_len` like methods.
