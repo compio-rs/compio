@@ -12,6 +12,3 @@ repository = { workspace = true }
 [dependencies]
 compio-buf = { workspace = true, features = ["arrayvec"] }
 paste = "1.0.14"
-
-[dev-dependencies]
-compio = { path = "../compio", features = ["all"] }
