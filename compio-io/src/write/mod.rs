@@ -1,4 +1,4 @@
-use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoVectoredBuf};
+use compio_buf::{BufResult, IoBuf, IoVectoredBuf};
 
 use crate::IoResult;
 
@@ -24,19 +24,6 @@ pub trait AsyncWrite {
     async fn flush(&mut self) -> IoResult<()>;
 
     async fn shutdown(&mut self) -> IoResult<()>;
-
-    /// Write the entire contents of a buffer into this writer.
-    async fn write_all<T: IoBuf>(&mut self, mut buffer: T) -> BufResult<usize, T> {
-        let buf_len = buffer.buf_len();
-        let mut total_written = 0;
-        while total_written < buf_len {
-            let written;
-            (written, buffer) =
-                buf_try!(self.write(buffer.slice(total_written..)).await.into_inner());
-            total_written += written;
-        }
-        BufResult(Ok(total_written), buffer)
-    }
 }
 
 impl<A: AsyncWrite + ?Sized> AsyncWrite for &mut A {
