@@ -14,7 +14,7 @@ macro_rules! unfilled_err {
 pub(crate) use unfilled_err;
 
 #[inline]
-fn copy(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> usize {
+pub fn copy(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> usize {
     let len = src.len().min(dst.len());
     unsafe {
         std::ptr::copy_nonoverlapping(src.as_ptr() as _, dst.as_mut_ptr(), len);
@@ -30,3 +30,6 @@ pub(crate) fn slice_to_buf(src: &[u8], buf: &mut impl IoBufMut) -> usize {
 
     len
 }
+
+pub(crate) const DEFAULT_BUF_SIZE: usize = 8 * 1024;
+pub(crate) const MISSING_BUF: &str = "The buffer was submitted for io and never returned";

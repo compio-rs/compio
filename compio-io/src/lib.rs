@@ -1,6 +1,7 @@
 //! # Compio IO
 #![feature(async_fn_in_trait)] // Remove this when AFIT is stable
 
+mod buffer;
 mod read;
 mod util;
 mod write;

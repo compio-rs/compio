@@ -23,7 +23,10 @@ pub trait AsyncRead {
     /// [`IoVectoredBufMut`].
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V>
     where
-        V::Item: IoBufMut;
+        V::Item: IoBufMut,
+    {
+        todo!("Wait for buf refactor")
+    }
 }
 
 macro_rules! impl_read {
