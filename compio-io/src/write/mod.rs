@@ -1,7 +1,8 @@
-use std::io::Result as IoResult;
-
 use compio_buf::{BufResult, IoBuf, IoVectoredBuf};
 
+mod buf;
+
+pub use buf::*;
 /// # AsyncWrite
 ///
 /// Async write with a ownership of a buffer
@@ -26,6 +27,7 @@ impl<A: AsyncWrite + ?Sized> AsyncWrite for &mut A {
     }
 }
 
+
 /// # AsyncWriteAt
 ///
 /// Async write with a ownership of a buffer and a position
@@ -37,19 +39,5 @@ pub trait AsyncWriteAt {
 impl<A: AsyncWriteAt + ?Sized> AsyncWriteAt for &mut A {
     async fn write_at<T: IoBuf>(&mut self, buf: T, pos: usize) -> BufResult<usize, T> {
         (**self).write_at(buf, pos).await
-    }
-}
-
-/// # AsyncBufWrite
-///
-/// Async write with buffered content
-pub trait AsyncBufWrite: AsyncWrite {
-    /// Try write data and get a reference to the internal buffer
-    async fn flush_buf(&mut self) -> IoResult<()>;
-}
-
-impl<A: AsyncBufWrite + ?Sized> AsyncBufWrite for &mut A {
-    async fn flush_buf(&mut self) -> IoResult<()> {
-        (**self).flush_buf().await
     }
 }
