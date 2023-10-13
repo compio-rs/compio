@@ -1,6 +1,8 @@
 use std::{io, pin::Pin, task::Poll};
 
-use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{
+    IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
+};
 use polling::Event;
 use socket2::SockAddr;
 
