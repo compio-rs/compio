@@ -9,6 +9,7 @@ members = [
     "compio-net",
     "compio-signal",
     "compio-dispatcher",
+    "compio-io",
 ]
 resolver = "2"
 
