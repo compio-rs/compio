@@ -1,7 +1,8 @@
-use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBufMut};
+use compio_buf::{buf_try, BufResult, IoBuf, IoBufMut, IoVectoredBufMut};
 
-use crate::{AsyncRead, AsyncReadAt, IoResult};
+use crate::{util::unfilled_err, AsyncRead, AsyncReadAt, IoResult};
 
+/// Shared code for read a scalar value from the underlying reader.
 macro_rules! read_scalar {
     ($t:ty, $be:ident, $le:ident) => {
         ::paste::paste! {
@@ -30,33 +31,33 @@ macro_rules! read_scalar {
     };
 }
 
+/// Shared code for loop reading until reaching a certain length.
+macro_rules! loop_read {
+    ($buf:ident,$len:expr,loop $read_expr:expr) => {
+        loop_read!($buf, $len, read, loop $read_expr)
+    };
+    ($buf:ident,$len:expr,$tracker:ident, loop $read_expr:expr) => {
+        let mut $tracker = 0;
+        let len = $len;
+
+        while $tracker < len {
+            ($tracker, $buf) = buf_try!($read_expr.await.and_then(|n, mut b| {
+                if n == 0 {
+                    (unfilled_err!(), b)
+                } else {
+                    unsafe { b.set_buf_init(n) };
+                    (Ok($tracker + n), b)
+                }
+            }));
+        }
+        return BufResult(Ok($tracker), $buf)
+    };
+}
+
 pub trait AsyncReadExt: AsyncRead {
     /// Read the exact number of bytes required to fill the buf.
     async fn read_exact<T: IoBufMut>(&mut self, mut buf: T) -> BufResult<usize, T> {
-        let len = buf.buf_capacity() - buf.buf_len();
-        let mut read = 0;
-        while read < len {
-            let BufResult(result, buf_returned) = self.read(buf).await;
-            buf = buf_returned;
-            match result {
-                Ok(0) => {
-                    return BufResult(
-                        Err(std::io::Error::new(
-                            std::io::ErrorKind::UnexpectedEof,
-                            "failed to fill whole buffer",
-                        )),
-                        buf,
-                    );
-                }
-                Ok(n) => {
-                    read += n;
-                    unsafe { buf.set_buf_init(read) };
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(e) => return BufResult(Err(e), buf),
-            }
-        }
-        BufResult(Ok(read), buf)
+        loop_read!(buf, buf.buf_capacity() - buf.buf_len(), loop self.read(buf));
     }
 
     /// Read the exact number of bytes required to fill the vector buf.
@@ -64,30 +65,13 @@ pub trait AsyncReadExt: AsyncRead {
     where
         T::Item: IoBufMut,
     {
-        let len = buf
-            .buf_iter_mut()
-            .map(|x| x.buf_capacity() - x.buf_len())
-            .sum();
-        let mut read = 0;
-        while read < len {
-            let BufResult(res, buf_returned) = self.read_vectored(buf).await;
-            buf = buf_returned;
-            match res {
-                Ok(0) => {
-                    return BufResult(
-                        Err(std::io::Error::new(
-                            std::io::ErrorKind::UnexpectedEof,
-                            "failed to fill whole buffer",
-                        )),
-                        buf,
-                    );
-                }
-                Ok(n) => read += n,
-                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(e) => return BufResult(Err(e), buf),
-            }
-        }
-        BufResult(Ok(read), buf)
+        loop_read!(
+            buf,
+            buf.buf_iter_mut()
+                .map(|x| x.buf_capacity() - x.buf_len())
+                .sum(),
+            loop self.read_vectored(buf)
+        );
     }
 
     read_scalar!(u8, from_be_bytes, from_le_bytes);
@@ -103,3 +87,16 @@ pub trait AsyncReadExt: AsyncRead {
     read_scalar!(f32, from_be_bytes, from_le_bytes);
     read_scalar!(f64, from_be_bytes, from_le_bytes);
 }
+
+pub trait AsyncReadAtExt: AsyncReadAt {
+    async fn read_exact_at<T: IoBufMut>(&self, mut buf: T, pos: usize) -> BufResult<usize, T> {
+        loop_read!(
+            buf,
+            buf.buf_capacity() - buf.buf_len(),
+            read,
+            loop self.read_at(buf, pos + read)
+        );
+    }
+}
+
+impl<A: AsyncReadAt> AsyncReadAtExt for A {}

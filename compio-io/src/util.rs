@@ -2,6 +2,17 @@ use std::mem::MaybeUninit;
 
 use compio_buf::IoBufMut;
 
+macro_rules! unfilled_err {
+    () => {
+        Err(::std::io::Error::new(
+            ::std::io::ErrorKind::UnexpectedEof,
+            "failed to fill whole buffer",
+        ))
+    };
+}
+
+pub(crate) use unfilled_err;
+
 #[inline]
 fn copy(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> usize {
     let len = src.len().min(dst.len());

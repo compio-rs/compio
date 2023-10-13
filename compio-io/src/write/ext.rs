@@ -2,6 +2,7 @@ use compio_buf::{buf_try, BufResult, IntoInner, IoBuf};
 
 use crate::{AsyncWrite, AsyncWriteAt, IoResult};
 
+/// Shared code for write a scalar value into the underlying writer.
 macro_rules! write_scalar {
     ($t:ty, $be:ident, $le:ident) => {
         ::paste::paste! {
@@ -32,18 +33,29 @@ macro_rules! write_scalar {
     };
 }
 
+/// Shared code for loop writing until all contents are written.
+macro_rules! loop_write {
+    ($buf:ident, $len:expr, $needle:ident,loop $expr_expr:expr) => {
+        let len = $len;
+        let mut $needle = 0;
+
+        while $needle < len {
+            ($needle, $buf) = buf_try!($expr_expr.await.into_inner().map_res(|n| $needle + n));
+        }
+
+        return BufResult(Ok($needle), $buf);
+    };
+}
+
 pub trait AsyncWriteExt: AsyncWrite {
     /// Write the entire contents of a buffer into this writer.
-    async fn write_all<T: IoBuf>(&mut self, mut buffer: T) -> BufResult<usize, T> {
-        let buf_len = buffer.buf_len();
-        let mut total_written = 0;
-        while total_written < buf_len {
-            let written;
-            (written, buffer) =
-                buf_try!(self.write(buffer.slice(total_written..)).await.into_inner());
-            total_written += written;
-        }
-        BufResult(Ok(total_written), buffer)
+    async fn write_all<T: IoBuf>(&mut self, mut buf: T) -> BufResult<usize, T> {
+        loop_write!(
+            buf,
+            buf.buf_len(),
+            needle,
+            loop self.write(buf.slice(needle..))
+        );
     }
 
     write_scalar!(u8, to_be_bytes, to_le_bytes);
@@ -59,3 +71,20 @@ pub trait AsyncWriteExt: AsyncWrite {
     write_scalar!(f32, to_be_bytes, to_le_bytes);
     write_scalar!(f64, to_be_bytes, to_le_bytes);
 }
+
+impl<A: AsyncWrite> AsyncWriteExt for A {}
+
+pub trait AsyncWriteAtExt: AsyncWriteAt {
+    /// Like `write_at`, except that it tries to write the entire contents of
+    /// the buffer into this writer.
+    async fn write_all_at<T: IoBuf>(&mut self, mut buf: T, pos: usize) -> BufResult<usize, T> {
+        loop_write!(
+            buf,
+            buf.buf_len(),
+            needle,
+            loop self.write_at(buf.slice(needle..), pos + needle)
+        );
+    }
+}
+
+impl<A: AsyncWriteAt> AsyncWriteAtExt for A {}
