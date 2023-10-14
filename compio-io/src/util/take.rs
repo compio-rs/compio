@@ -2,6 +2,7 @@ use compio_buf::{buf_try, BufResult, IntoInner, IoBufMut};
 
 use crate::{AsyncBufRead, AsyncRead, IoResult};
 
+/// Read up to a limit number of bytes from reader.
 #[derive(Debug)]
 pub struct Take<R> {
     reader: R,

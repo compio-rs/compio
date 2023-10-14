@@ -4,11 +4,9 @@ use compio_buf::{BufResult, IoBufMut, IoVectoredBufMut};
 
 mod buf;
 mod ext;
-mod util;
 
 pub use buf::*;
 pub use ext::*;
-pub use util::*;
 
 use crate::util::slice_to_buf;
 

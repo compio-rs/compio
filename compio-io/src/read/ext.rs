@@ -1,6 +1,17 @@
 use compio_buf::{buf_try, BufResult, IoBufMut, IoVectoredBufMut};
 
-use crate::{util::unfilled_err, AsyncRead, AsyncReadAt, IoResult, Take};
+use crate::{util::Take, AsyncRead, AsyncReadAt, IoResult};
+
+/// Error returned when the buffer is not filled but underlying reader returns
+/// 0 on read.
+macro_rules! unfilled_err {
+    () => {
+        Err(::std::io::Error::new(
+            ::std::io::ErrorKind::UnexpectedEof,
+            "failed to fill whole buffer",
+        ))
+    };
+}
 
 /// Shared code for read a scalar value from the underlying reader.
 macro_rules! read_scalar {
