@@ -6,6 +6,9 @@ pub use take::Take;
 mod null;
 pub use null::{null, Null};
 
+mod repeat;
+pub use repeat::{repeat, Repeat};
+
 mod internal;
 pub(crate) use internal::*;
 
@@ -23,9 +26,7 @@ use crate::{buffer::Buffer, AsyncRead, AsyncWrite, AsyncWriteExt, IoResult};
 /// This is an asynchronous version of [`std::io::copy`][std].
 ///
 /// A heap-allocated copy buffer with 8 KB is created to take data from the
-/// reader to the writer, check [`copy_buf`] if you want an alternative for
-/// [`AsyncBufRead`]. You can use `copy_buf` with [`BufReader`] to change the
-/// buffer capacity.
+/// reader to the writer.
 pub async fn copy<'a, R: AsyncRead, W: AsyncWrite>(
     reader: &'a mut R,
     writer: &'a mut W,
