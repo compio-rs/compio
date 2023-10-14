@@ -52,11 +52,10 @@ macro_rules! loop_read {
         let len = $len;
 
         while $tracker < len {
-            ($tracker, $buf) = buf_try!($read_expr.await.and_then(|n, mut b| {
+            ($tracker, $buf) = buf_try!($read_expr.await.and_then(|n, b| {
                 if n == 0 {
                     (unfilled_err!(), b)
                 } else {
-                    unsafe { b.set_buf_init(n) };
                     (Ok($tracker + n), b)
                 }
             }));
