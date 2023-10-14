@@ -1,6 +1,6 @@
 use compio::event::Event;
 
-#[compio::test]
+#[compio_macros::test]
 async fn event_handle() {
     let event = Event::new().unwrap();
     let handle = event.handle().unwrap();

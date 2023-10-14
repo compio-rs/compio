@@ -9,7 +9,7 @@ use compio::{
 };
 use futures_util::{stream::FuturesUnordered, StreamExt};
 
-#[compio::test]
+#[compio_macros::test]
 async fn listener_dispatch() {
     const THREAD_NUM: usize = 5;
     const CLIENT_NUM: usize = 10;

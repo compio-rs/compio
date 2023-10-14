@@ -10,7 +10,7 @@ use compio::{
 use compio_runtime::Unattached;
 use tempfile::NamedTempFile;
 
-#[compio::test]
+#[compio_macros::test]
 async fn multi_threading() {
     const DATA: &str = "Hello world!";
 
@@ -38,7 +38,7 @@ async fn multi_threading() {
     }
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn try_clone() {
     const DATA: &str = "Hello world!";
 
@@ -67,7 +67,7 @@ async fn try_clone() {
     }
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn drop_on_complete() {
     use std::sync::Arc;
 
@@ -131,7 +131,7 @@ async fn drop_on_complete() {
     drop(file);
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn too_many_submissions() {
     let tempfile = tempfile();
 
@@ -145,7 +145,7 @@ async fn too_many_submissions() {
 }
 
 #[cfg(feature = "allocator_api")]
-#[compio::test]
+#[compio_macros::test]
 async fn arena() {
     use std::{
         alloc::{AllocError, Allocator, Layout},

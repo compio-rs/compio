@@ -40,11 +40,13 @@ compio-dispatcher = { workspace = true, optional = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
+compio-buf = { workspace = true, features = ["arrayvec"] }
+compio-macros = { workspace = true }
+
 bumpalo = "3"
 criterion = { version = "0.5", features = ["async_tokio"] }
 futures-util = "0.3"
 futures-channel = "0.3"
-compio-buf = { workspace = true, features = ["arrayvec"] }
 tempfile = "3"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt"] }
 
