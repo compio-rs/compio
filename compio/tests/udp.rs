@@ -1,6 +1,6 @@
 use compio::net::UdpSocket;
 
-#[compio::test]
+#[compio_macros::test]
 async fn connect() {
     const MSG: &str = "foo bar baz";
 
@@ -19,7 +19,7 @@ async fn connect() {
     assert_eq!(active.peer_addr().unwrap(), passive_addr);
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn send_to() {
     const MSG: &str = "foo bar baz";
 

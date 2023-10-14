@@ -29,7 +29,7 @@ async fn test_connect_ip_impl(
 macro_rules! test_connect_ip {
     ($(($ident:ident, $target:expr, $addr_f:path),)*) => {
         $(
-            #[compio::test]
+            #[compio_macros::test]
             async fn $ident() {
                 test_connect_ip_impl($target, $addr_f).await;
             }
@@ -62,7 +62,7 @@ async fn test_connect_impl<A: ToSockAddrs>(mapping: impl FnOnce(&TcpListener) ->
 macro_rules! test_connect {
     ($(($ident:ident, $mapping:tt),)*) => {
         $(
-            #[compio::test]
+            #[compio_macros::test]
             async fn $ident() {
                 #[allow(unused_parens)]
                 test_connect_impl($mapping).await;
@@ -95,7 +95,7 @@ test_connect! {
     })),
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn connect_invalid_dst() {
     assert!(TcpStream::connect("127.0.0.0:0").await.is_err());
 }
