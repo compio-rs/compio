@@ -40,7 +40,7 @@ pub trait AsyncRead {
 }
 
 macro_rules! impl_read {
-    ($($ty:ty),*) => {
+    (@ptr $($ty:ty),*) => {
         $(
             impl<A: AsyncRead + ?Sized> AsyncRead for $ty {
                 #[inline(always)]
@@ -57,56 +57,33 @@ macro_rules! impl_read {
             }
         )*
     };
+
+    (@slice $ty:ty, for $($tt:tt)*) => {
+        impl<$($tt)*> AsyncRead for $ty {
+            #[inline(always)]
+            async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
+                (&self[..]).read(buf).await
+            }
+        }
+    };
+
+    (@string $($ty:ty),*) => {
+        $(
+            impl AsyncRead for $ty {
+                #[inline(always)]
+                async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
+                    self.as_bytes().read(buf).await
+                }
+            }
+        )*
+    };
 }
 
-impl_read!(&mut A, Box<A>);
-
-impl<A: AsRef<[u8]>> AsyncRead for Cursor<A> {
-    #[inline]
-    async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
-        self.get_ref().as_ref().read(buf).await
-    }
-
-    #[inline]
-    async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
-        self.get_ref().as_ref().read_vectored(buf).await
-    }
-}
-
-impl<const T: usize> AsyncRead for [u8; T] {
-    #[inline]
-    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        (&self[..]).read(buf).await
-    }
-}
-
-impl<const T: usize> AsyncRead for &[u8; T] {
-    #[inline]
-    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        (&self[..]).read(buf).await
-    }
-}
-
-impl AsyncRead for String {
-    #[inline]
-    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        self.as_bytes().read(buf).await
-    }
-}
-
-impl AsyncRead for &String {
-    #[inline]
-    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        self.as_bytes().read(buf).await
-    }
-}
-
-impl AsyncRead for &'_ str {
-    #[inline]
-    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        self.as_bytes().read(buf).await
-    }
-}
+impl_read!(@ptr &mut A, Box<A>);
+impl_read!(@slice [u8], for);
+impl_read!(@slice [u8; LEN], for const LEN: usize);
+impl_read!(@slice &[u8; LEN], for const LEN: usize);
+impl_read!(@string String, &'_ str, &String);
 
 impl AsyncRead for &[u8] {
     #[inline]
