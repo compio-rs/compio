@@ -85,6 +85,36 @@ impl_read!(@slice [u8; LEN], for const LEN: usize);
 impl_read!(@slice &[u8; LEN], for const LEN: usize);
 impl_read!(@string String, &'_ str, &String);
 
+impl<A: AsRef<[u8]>> AsyncRead for Cursor<A> {
+    #[inline]
+    async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
+        let len = self.position().min(self.get_ref().as_ref().len() as u64);
+        let (n, buf) = buf_try!((&self.get_ref().as_ref()[(len as usize)..]).read(buf).await);
+        let pos = (self.position() as usize).checked_add(n).expect("overflow");
+
+        debug_assert!(pos <= self.get_ref().as_ref().len());
+
+        self.set_position(pos as u64);
+        BufResult(Ok(n), buf)
+    }
+
+    #[inline]
+    async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
+        let len = self.position().min(self.get_ref().as_ref().len() as u64);
+        let (n, buf) = buf_try!(
+            (&self.get_ref().as_ref()[(len as usize)..])
+                .read_vectored(buf)
+                .await
+        );
+        let pos = (self.position() as usize).checked_add(n).expect("overflow");
+
+        debug_assert!(pos <= self.get_ref().as_ref().len());
+
+        self.set_position(pos as u64);
+        BufResult(Ok(n), buf)
+    }
+}
+
 impl AsyncRead for &[u8] {
     #[inline]
     async fn read<T: IoBufMut>(&mut self, mut buf: T) -> BufResult<usize, T> {
