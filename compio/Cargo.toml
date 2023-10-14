@@ -34,6 +34,7 @@ compio-driver = { workspace = true }
 compio-runtime = { workspace = true, optional = true }
 compio-macros = { workspace = true, optional = true }
 compio-fs = { workspace = true }
+compio-io = { workspace = true }
 compio-net = { workspace = true }
 compio-signal = { workspace = true, optional = true }
 compio-dispatcher = { workspace = true, optional = true }
