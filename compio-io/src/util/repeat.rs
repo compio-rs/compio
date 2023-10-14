@@ -4,6 +4,26 @@ use compio_buf::BufResult;
 
 use crate::{AsyncBufRead, AsyncRead, IoResult};
 
+/// A reader that infinitely repeats one byte constructed via [`repeat`].
+///
+/// All reads from this reader will succeed by filling the specified buffer with
+/// the given byte.
+///
+/// # Examples
+///
+/// ```rust
+/// # #[compio_macros::main] async fn main() {
+/// use compio_io::{self, AsyncRead, AsyncReadExt};
+///
+/// let (len, buffer) = compio_io::repeat(42)
+///     .read(Vec::with_capacity(3))
+///     .await
+///     .unwrap();
+///
+/// assert_eq!(buffer.as_slice(), [42, 42, 42]);
+/// assert_eq!(len, 3);
+/// # }
+/// ```
 pub struct Repeat(u8);
 
 impl AsyncRead for Repeat {

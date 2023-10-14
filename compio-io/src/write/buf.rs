@@ -8,6 +8,24 @@ use crate::{
     AsyncWrite, IoResult,
 };
 
+/// Wraps a writer and buffers its output.
+///
+/// It can be excessively inefficient to work directly with something that
+/// implements [`AsyncWrite`].  A `BufWriter<W>` keeps an in-memory buffer of
+/// data and writes it to an underlying writer in large, infrequent batches.
+//
+/// `BufWriter<W>` can improve the speed of programs that make *small* and
+/// *repeated* write calls to the same file or network socket. It does not
+/// help when writing very large amounts at once, or writing just one or a few
+/// times. It also provides no advantage when writing to a destination that is
+/// in memory, like a `Vec<u8>`.
+///
+/// Dropping `BufWriter<W>` also discards any bytes left in the buffer, so it is
+/// critical to call [`flush`] before `BufWriter<W>` is dropped. Calling
+/// [`flush`] ensures that the buffer is empty and thus no data is lost.
+///
+/// [`flush`]: #method.flush
+
 #[derive(Debug)]
 pub struct BufWriter<W> {
     writer: W,
@@ -57,7 +75,7 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
             .buf
             .with(|mut w| {
                 let mut written = 0;
-                for buf in buf.buf_iter() {
+                for buf in buf.as_dyn_bufs() {
                     written += slice_to_buf(buf.as_slice(), &mut w);
 
                     if w.buf_len() == w.buf_capacity() {
@@ -83,7 +101,7 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
         buf.advance(len);
 
         if buf.all_done() {
-            buf.clear();
+            buf.reset();
         }
 
         Ok(())
