@@ -62,7 +62,36 @@ impl<A: AsyncWrite + ?Sized> AsyncWrite for Box<A> {
     }
 }
 
-impl AsyncWrite for &mut [u8] {
+impl AsyncWrite for [u8] {
+    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        let n = buf.buf_len().min(self.len());
+        self[..n].copy_from_slice(&buf.as_slice()[..n]);
+        BufResult(Ok(n), buf)
+    }
+
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        let mut written = 0;
+        for buf in buf.as_dyn_bufs() {
+            let len = buf.buf_len().min(self.len() - written);
+            self[written..written + len].copy_from_slice(&buf.as_slice()[..len]);
+            written += len;
+            if written == self.len() {
+                break;
+            }
+        }
+        BufResult(Ok(written), buf)
+    }
+
+    async fn flush(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+
+    async fn shutdown(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+}
+
+impl<const LEN: usize> AsyncWrite for [u8; LEN] {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         let n = buf.buf_len().min(self.len());
         self[..n].copy_from_slice(&buf.as_slice()[..n]);

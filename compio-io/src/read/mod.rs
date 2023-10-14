@@ -87,6 +87,27 @@ impl<const T: usize> AsyncRead for &[u8; T] {
     }
 }
 
+impl AsyncRead for String {
+    #[inline]
+    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
+        self.as_bytes().read(buf).await
+    }
+}
+
+impl AsyncRead for &String {
+    #[inline]
+    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
+        self.as_bytes().read(buf).await
+    }
+}
+
+impl AsyncRead for &'_ str {
+    #[inline]
+    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
+        self.as_bytes().read(buf).await
+    }
+}
+
 impl AsyncRead for &[u8] {
     #[inline]
     async fn read<T: IoBufMut>(&mut self, mut buf: T) -> BufResult<usize, T> {
