@@ -15,42 +15,50 @@ pub struct Inner {
 }
 
 impl Inner {
+    #[inline]
     fn all_done(&self) -> bool {
         self.buf.len() == self.pos
     }
 
     /// Move pos & init needle to 0
-    fn clear(&mut self) {
+    #[inline]
+    fn reset(&mut self) {
         self.pos = 0;
         unsafe { self.buf.set_len(0) };
     }
 
+    #[inline]
     fn slice(&self) -> &[u8] {
         &self.buf[self.pos..]
     }
 }
 
 unsafe impl IoBuf for Inner {
+    #[inline]
     fn as_buf_ptr(&self) -> *const u8 {
         self.buf.as_ptr()
     }
 
+    #[inline]
     fn buf_len(&self) -> usize {
         self.buf.len()
     }
 
+    #[inline]
     fn buf_capacity(&self) -> usize {
         self.buf.capacity()
     }
 }
 
 impl SetBufInit for Inner {
+    #[inline]
     unsafe fn set_buf_init(&mut self, len: usize) {
         self.buf.set_len(len);
     }
 }
 
 unsafe impl IoBufMut for Inner {
+    #[inline]
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.buf.as_mut_ptr()
     }
@@ -104,8 +112,8 @@ impl Buffer {
     }
 
     #[inline]
-    pub fn clear(&mut self) {
-        self.inner_mut().clear();
+    pub fn reset(&mut self) {
+        self.inner_mut().reset();
     }
 
     /// Execute a funcition with ownership of the buffer, and restore the buffer
@@ -115,25 +123,29 @@ impl Buffer {
         Fut: Future<Output = BufResult<R, Inner>>,
         F: FnOnce(Inner) -> Fut,
     {
-        let BufResult(res, buf) = func(self.take_buf()).await;
-        self.restore_buf(buf);
+        let BufResult(res, buf) = func(self.take_inner()).await;
+        self.restore_inner(buf);
         res
     }
 
+    /// Mark some bytes as read by advancing the progress tracker, return a
+    /// `bool` indicating if all bytes are read.
     #[inline]
-    pub fn advance(&mut self, amount: usize) {
+    pub fn advance(&mut self, amount: usize) -> bool {
         debug_assert!(self.inner().pos + amount <= self.inner().buf_capacity());
 
-        self.inner_mut().pos += amount;
+        let inner = self.inner_mut();
+        inner.pos += amount;
+        inner.all_done()
     }
 
     #[inline]
-    fn take_buf(&mut self) -> Inner {
+    fn take_inner(&mut self) -> Inner {
         self.0.take().expect(MISSING_BUF)
     }
 
     #[inline]
-    fn restore_buf(&mut self, buf: Inner) {
+    fn restore_inner(&mut self, buf: Inner) {
         debug_assert!(self.0.is_none());
 
         self.0 = Some(buf);

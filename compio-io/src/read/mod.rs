@@ -17,15 +17,25 @@ pub trait AsyncRead {
     /// Read some bytes from this source into the [`IoBufMut`] buffer and return
     /// a [`BufResult`], consisting of the buffer and a [`usize`] indicating
     /// how many bytes were read.
+
+    /// # Caution
+    ///
+    /// Implementor **MUST** update the buffer init via
+    /// [`SetBufInit::set_buf_init`] after reading, and no furthur update should
+    /// be made by caller.
+    ///
+    /// [`SetBufInit::set_buf_init`]: compio_buf::SetBufInit::set_buf_init
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B>;
 
     /// Like `read`, except that it reads into a type implements
     /// [`IoVectoredBufMut`].
-    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V>
-    where
-        V::Item: IoBufMut,
-    {
-        todo!("Wait for buf refactor")
+    ///
+    /// # Caution
+    ///
+    /// Implementor **MUST** update the buffer init via
+    /// [`SetBufInit::set_buf_init`] after reading.
+    ///
+    /// [`SetBufInit::set_buf_init`]: compio_buf::SetBufInit::set_buf_init
     }
 }
 

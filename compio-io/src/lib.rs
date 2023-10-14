@@ -2,7 +2,7 @@
 //!
 //! This crate provides traits and utilities for completion-based IO.
 //!
-//! ## Fundamentation
+//! ## Fundamental
 //!
 //! - [`AsyncRead`]: Async read into a buffer implements [`IoBufMut`]
 //! - [`AsyncWrite`]: Async write from a buffer implements [`IoBuf`]
@@ -28,21 +28,27 @@
 //! # #[compio_macros::main] async fn main() {
 //!
 //! let mut reader = "Hello, world!".as_bytes();
-//! let buf = Vec::with_capacity(20);
-//! let BufResult(res, buf) = reader.read(buf).await;
+//! let (res, buf) = reader.read(Vec::with_capacity(20)).await.unwrap();
 //!
 //! assert!(buf.as_slice() == reader);
 //! assert!(res.unwrap() == 13);
 //! # }
-#![feature(async_fn_in_trait)] // Remove this when AFIT is stable
+// Remove this when AFIT is stable
+#![feature(async_fn_in_trait)]
+// This is OK as we're thread-per-core which doesn't need `Send` or other auto trait on anonymous
+// future
+#![allow(async_fn_in_trait)]
 
 mod buffer;
 mod read;
-mod util;
+pub mod util;
 mod write;
 
-pub(crate) use std::io::Result as IoResult;
+pub(crate) type IoResult<T> = std::io::Result<T>;
 
+#[doc(inline)]
 pub use compio_buf as buf;
 pub use read::*;
+#[doc(inline)]
+pub use util::{copy, null, repeat};
 pub use write::*;

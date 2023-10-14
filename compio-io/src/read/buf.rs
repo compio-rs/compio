@@ -79,7 +79,7 @@ impl<R: AsyncRead> AsyncBufRead for BufReader<R> {
         let Self { reader, buf } = self;
 
         if buf.all_done() {
-            buf.clear()
+            buf.reset()
         }
 
         if buf.need_fill() {
@@ -90,6 +90,6 @@ impl<R: AsyncRead> AsyncBufRead for BufReader<R> {
     }
 
     fn consume(&mut self, amount: usize) {
-        self.buf.advance(amount)
+        self.buf.advance(amount);
     }
 }

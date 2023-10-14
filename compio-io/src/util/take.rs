@@ -20,7 +20,7 @@ impl<T> Take<T> {
     /// # Note
     ///
     /// This instance may reach `EOF` after reading fewer bytes than indicated
-    /// by this method if the underlying [`Read`] instance reaches EOF.
+    /// by this method if the underlying [`AsyncRead`] instance reaches EOF.
     pub fn limit(&self) -> u64 {
         self.limit
     }
