@@ -31,7 +31,7 @@
 //! let (res, buf) = reader.read(Vec::with_capacity(20)).await.unwrap();
 //!
 //! assert!(buf.as_slice() == reader);
-//! assert!(res.unwrap() == 13);
+//! assert!(res == 13);
 //! # }
 // Remove this when AFIT is stable
 #![feature(async_fn_in_trait)]
