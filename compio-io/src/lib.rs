@@ -33,10 +33,8 @@
 //! assert!(buf.as_slice() == reader);
 //! assert!(res == 13);
 //! # }
-// Remove this when AFIT is stable
-#![feature(async_fn_in_trait)]
-// This is OK as we're thread-per-core which doesn't need `Send` or other auto trait on anonymous
-// future
+
+// This is OK as we're thread-per-core and don't need `Send` or other auto trait on anonymous future
 #![allow(async_fn_in_trait)]
 
 mod buffer;
