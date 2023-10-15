@@ -423,11 +423,39 @@ pub unsafe trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
 
     /// Iterate the inner buffers.
     fn as_dyn_mut_bufs(&mut self) -> impl Iterator<Item = &mut dyn IoBufMut>;
+
+    /// Create an owned iterator to make it easy to pass this vectored buffer as
+    /// a regular buffer.
+    ///
+    /// ```
+    /// use compio_buf::{IoBuf, IoVectoredBufMut};
+    ///
+    /// let bufs = [vec![1u8, 2], vec![3, 4]];
+    /// let iter = bufs.owned_iter_mut().unwrap();
+    /// assert_eq!(iter.as_slice(), &[1, 2]);
+    /// let iter = iter.next().unwrap();
+    /// assert_eq!(iter.as_slice(), &[3, 4]);
+    /// let iter = iter.next();
+    /// assert!(iter.is_err());
+    /// ```
+    ///
+    /// The time complexity of the returned iterator depends on the
+    /// implementation of [`Iterator::nth`] of [`IoVectoredBuf::as_dyn_bufs`].
+    fn owned_iter_mut(self) -> Result<OwnedIter<impl OwnedIteratorMut<Inner = Self>>, Self>
+    where
+        Self: Sized;
 }
 
 unsafe impl<T: IoBufMut, const N: usize> IoVectoredBufMut for [T; N] {
     fn as_dyn_mut_bufs(&mut self) -> impl Iterator<Item = &mut dyn IoBufMut> {
         self.iter_mut().map(|buf| buf as &mut dyn IoBufMut)
+    }
+
+    fn owned_iter_mut(self) -> Result<OwnedIter<impl OwnedIteratorMut<Inner = Self>>, Self>
+    where
+        Self: Sized,
+    {
+        IndexedIter::new(self, 0).map(OwnedIter::new)
     }
 }
 
@@ -437,12 +465,26 @@ unsafe impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + Unpin 
     fn as_dyn_mut_bufs(&mut self) -> impl Iterator<Item = &mut dyn IoBufMut> {
         self.iter_mut().map(|buf| buf as &mut dyn IoBufMut)
     }
+
+    fn owned_iter_mut(self) -> Result<OwnedIter<impl OwnedIteratorMut<Inner = Self>>, Self>
+    where
+        Self: Sized,
+    {
+        IndexedIter::new(self, 0).map(OwnedIter::new)
+    }
 }
 
 #[cfg(feature = "arrayvec")]
 unsafe impl<T: IoBufMut, const N: usize> IoVectoredBufMut for arrayvec::ArrayVec<T, N> {
     fn as_dyn_mut_bufs(&mut self) -> impl Iterator<Item = &mut dyn IoBufMut> {
         self.iter_mut().map(|buf| buf as &mut dyn IoBufMut)
+    }
+
+    fn owned_iter_mut(self) -> Result<OwnedIter<impl OwnedIteratorMut<Inner = Self>>, Self>
+    where
+        Self: Sized,
+    {
+        IndexedIter::new(self, 0).map(OwnedIter::new)
     }
 }
 
