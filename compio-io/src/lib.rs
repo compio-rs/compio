@@ -5,13 +5,25 @@
 //! ## Fundamental
 //!
 //! - [`AsyncRead`]: Async read into a buffer implements [`IoBufMut`]
+//! - [`AsyncReadAt`]: Async read into a buffer implements [`IoBufMut`] with
+//!   offset
 //! - [`AsyncWrite`]: Async write from a buffer implements [`IoBuf`]
+//! - [`AsyncWriteAt`]: Async write from a buffer implements [`IoBuf`] with
+//!   offset
 //!
 //! ## Buffered IO
 //!
 //! - [`AsyncBufRead`]: Trait of async read with buffered content
 //! - [`BufReader`]: An async reader with internal buffer
 //! - [`BufWriter`]: An async writer with internal buffer
+//!
+//! ## Extension
+//!
+//! - [`AsyncReadExt`]: Extension trait for [`AsyncRead`]
+//! - [`AsyncReadAtExt`]: Extension trait for [`AsyncReadAt`]
+//! - [`AsyncWriteExt`]: Extension trait for [`AsyncWrite`]
+//! - [`AsyncWriteAtExt`]: Extension trait for [`AsyncWriteAt`]
+//!
 //!
 //! [`IoBufMut`]: compio_buf::IoBufMut
 //! [`IoBuf`]: compio_buf::IoBuf
