@@ -19,9 +19,10 @@
 //! # })
 //! ```
 
+#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![warn(missing_docs)]
 
-#[doc(no_inline)]
+#[doc(inline)]
 pub use buf::BufResult;
 #[cfg(feature = "dispatcher")]
 #[doc(inline)]
@@ -35,10 +36,10 @@ pub use compio_runtime as runtime;
 #[doc(inline)]
 pub use compio_signal as signal;
 #[cfg(feature = "event")]
-#[doc(no_inline)]
+#[doc(inline)]
 pub use runtime::event;
 #[cfg(feature = "time")]
-#[doc(no_inline)]
+#[doc(inline)]
 pub use runtime::time;
 #[doc(inline)]
 pub use {compio_buf as buf, compio_driver as driver, compio_fs as fs, compio_net as net};

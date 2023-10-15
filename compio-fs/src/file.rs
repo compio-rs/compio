@@ -25,7 +25,7 @@ pub struct File {
     attacher: Attacher,
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(windows)]
 fn file_with_options(
     path: impl AsRef<Path>,
     mut options: std::fs::OpenOptions,
@@ -38,7 +38,7 @@ fn file_with_options(
     options.open(path)
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(windows))]
 fn file_with_options(
     path: impl AsRef<Path>,
     mut options: std::fs::OpenOptions,

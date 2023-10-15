@@ -6,7 +6,7 @@
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
 use socket2::SockAddr;
 
-#[cfg(target_os = "windows")]
+#[cfg(windows)]
 pub use crate::sys::op::ConnectNamedPipe;
 pub use crate::sys::op::{
     Accept, Recv, RecvFrom, RecvFromVectored, RecvVectored, Send, SendTo, SendToVectored,

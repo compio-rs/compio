@@ -12,6 +12,7 @@ repository = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true
+rustdoc-args = ["--cfg docsrs"]
 
 [dependencies]
 # Workspace dependencies
@@ -20,7 +21,7 @@ compio-driver = { workspace = true }
 compio-runtime = { workspace = true, optional = true }
 
 # Windows specific dependencies
-[target.'cfg(target_os = "windows")'.dependencies]
+[target.'cfg(windows)'.dependencies]
 widestring = "1"
 windows-sys = { version = "0.48", features = [
     "Win32_Foundation",
@@ -31,7 +32,7 @@ windows-sys = { version = "0.48", features = [
 ] }
 
 # Windows specific dev dependencies
-[target.'cfg(target_os = "windows")'.dev-dependencies]
+[target.'cfg(windows)'.dev-dependencies]
 windows-sys = { version = "0.48", features = ["Win32_Security_Authorization"] }
 
 # Unix specific dependencies

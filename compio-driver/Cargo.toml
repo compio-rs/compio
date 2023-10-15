@@ -12,6 +12,7 @@ repository = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true
+rustdoc-args = ["--cfg docsrs"]
 default-target = "x86_64-pc-windows-msvc"
 targets = [
     "x86_64-pc-windows-msvc",
@@ -36,7 +37,7 @@ slab = "0.4"
 socket2 = { version = "0.5", features = ["all"] }
 
 # Windows specific dependencies
-[target.'cfg(target_os = "windows")'.dependencies]
+[target.'cfg(windows)'.dependencies]
 compio-buf = { workspace = true, features = ["arrayvec"] }
 # may be excluded from linking if the unstable equivalent is used
 aligned-array = "1"

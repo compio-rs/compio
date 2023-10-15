@@ -12,13 +12,14 @@ repository = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true
+rustdoc-args = ["--cfg docsrs"]
 
 [dependencies]
 # Workspace dependencies
 compio-runtime = { workspace = true, features = ["event"] }
 
 # Windows specific dependencies
-[target.'cfg(target_os = "windows")'.dependencies]
+[target.'cfg(windows)'.dependencies]
 compio-driver = { workspace = true }
 once_cell = "1"
 slab = "0.4"

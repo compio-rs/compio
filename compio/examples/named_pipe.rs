@@ -1,6 +1,6 @@
 #[compio::main(crate = "compio")]
 async fn main() {
-    #[cfg(target_os = "windows")]
+    #[cfg(windows)]
     {
         use compio::{
             buf::BufResult,

@@ -4,16 +4,20 @@
 //! crate defines [`IoBuf`] and [`IoBufMut`] traits which are implemented by
 //! buffer types that respect the safety contract.
 
+#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
 #![cfg_attr(feature = "read_buf", feature(read_buf))]
 #![cfg_attr(feature = "try_trait_v2", feature(try_trait_v2, try_trait_v2_residual))]
 #![warn(missing_docs)]
 
 #[cfg(feature = "arrayvec")]
+#[doc(inline)]
 pub use arrayvec;
 #[cfg(feature = "bumpalo")]
+#[doc(inline)]
 pub use bumpalo;
 #[cfg(feature = "bytes")]
+#[doc(inline)]
 pub use bytes;
 
 mod io_slice;

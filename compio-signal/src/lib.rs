@@ -13,10 +13,11 @@
 //! })
 //! ```
 
+#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![cfg_attr(feature = "lazy_cell", feature(lazy_cell))]
 #![warn(missing_docs)]
 
-#[cfg(target_os = "windows")]
+#[cfg(windows)]
 pub mod windows;
 
 #[cfg(unix)]
@@ -24,7 +25,7 @@ pub mod unix;
 
 /// Completes when a "ctrl-c" notification is sent to the process.
 pub async fn ctrl_c() -> std::io::Result<()> {
-    #[cfg(target_os = "windows")]
+    #[cfg(windows)]
     {
         windows::ctrl_c().await
     }

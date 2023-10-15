@@ -1,6 +1,7 @@
 //! The platform-specified driver.
 //! Some types differ by compilation target.
 
+#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
 #![warn(missing_docs)]
 
@@ -18,10 +19,11 @@ use slab::Slab;
 
 pub mod op;
 #[cfg(unix)]
+#[cfg_attr(docsrs, doc(cfg(all())))]
 mod unix;
 
 cfg_if::cfg_if! {
-    if #[cfg(target_os = "windows")] {
+    if #[cfg(windows)] {
         #[path = "iocp/mod.rs"]
         mod sys;
     } else if #[cfg(all(target_os = "linux", feature = "io-uring"))] {
@@ -35,7 +37,7 @@ cfg_if::cfg_if! {
 
 pub use sys::*;
 
-#[cfg(target_os = "windows")]
+#[cfg(windows)]
 #[macro_export]
 #[doc(hidden)]
 macro_rules! syscall {
