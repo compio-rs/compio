@@ -95,6 +95,11 @@ pub unsafe trait IoBuf: Unpin + 'static {
 
         Slice::new(self, begin, end)
     }
+
+    /// Indicate wether the buffer has been filled (uninit portion is empty)
+    fn filled(&self) -> bool {
+        self.buf_len() == self.buf_capacity()
+    }
 }
 
 unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoBuf
@@ -284,9 +289,14 @@ pub unsafe trait IoBufMut: IoBuf + SetBufInit {
         unsafe {
             std::slice::from_raw_parts_mut(
                 self.as_buf_mut_ptr().add(self.buf_len()) as _,
-                self.buf_capacity() - self.buf_len(),
+                self.uninit_len(),
             )
         }
+    }
+
+    /// Get number of bytes in the uninitialized part of the buffer.
+    fn uninit_len(&self) -> usize {
+        self.buf_capacity() - self.buf_len()
     }
 
     /// Create an [`IoSliceMut`] of the uninitialized part of the buffer.
@@ -367,7 +377,7 @@ pub unsafe trait IoVectoredBuf: Unpin + 'static {
     ///
     /// The time complexity of the returned iterator depends on the
     /// implementation of [`Iterator::nth`] of [`IoVectoredBuf::as_dyn_bufs`].
-    fn owned_iter(self) -> Result<OwnedIter<impl OwnedIterator<Inner = Self>>, Self>
+    fn owned_iter(self) -> Result<OwnedIter<impl OwnedIterator<Inner = Self> + Unpin>, Self>
     where
         Self: Sized;
 }
@@ -441,7 +451,7 @@ pub unsafe trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
     ///
     /// The time complexity of the returned iterator depends on the
     /// implementation of [`Iterator::nth`] of [`IoVectoredBuf::as_dyn_bufs`].
-    fn owned_iter_mut(self) -> Result<OwnedIter<impl OwnedIteratorMut<Inner = Self>>, Self>
+    fn owned_iter_mut(self) -> Result<OwnedIter<impl OwnedIteratorMut<Inner = Self> + Unpin>, Self>
     where
         Self: Sized;
 }
@@ -451,7 +461,7 @@ unsafe impl<T: IoBufMut, const N: usize> IoVectoredBufMut for [T; N] {
         self.iter_mut().map(|buf| buf as &mut dyn IoBufMut)
     }
 
-    fn owned_iter_mut(self) -> Result<OwnedIter<impl OwnedIteratorMut<Inner = Self>>, Self>
+    fn owned_iter_mut(self) -> Result<OwnedIter<impl OwnedIteratorMut<Inner = Self> + Unpin>, Self>
     where
         Self: Sized,
     {
