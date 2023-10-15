@@ -83,7 +83,7 @@ pub trait AsyncWriteExt: AsyncWrite {
     write_scalar!(f64, to_be_bytes, to_le_bytes);
 }
 
-impl<A: AsyncWrite> AsyncWriteExt for A {}
+impl<A: AsyncWrite + ?Sized> AsyncWriteExt for A {}
 
 pub trait AsyncWriteAtExt: AsyncWriteAt {
     /// Like `write_at`, except that it tries to write the entire contents of

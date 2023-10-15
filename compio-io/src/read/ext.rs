@@ -131,7 +131,7 @@ pub trait AsyncReadExt: AsyncRead {
     read_scalar!(f64, from_be_bytes, from_le_bytes);
 }
 
-impl<A: AsyncRead> AsyncReadExt for A {}
+impl<A: AsyncRead + ?Sized> AsyncReadExt for A {}
 
 pub trait AsyncReadAtExt: AsyncReadAt {
     async fn read_exact_at<T: IoBufMut>(&self, mut buf: T, pos: usize) -> BufResult<usize, T> {
