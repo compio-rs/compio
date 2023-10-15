@@ -1,6 +1,6 @@
 use std::{io::Cursor, rc::Rc, sync::Arc};
 
-use compio_buf::{BufResult, IoBufMut, IoVectoredBufMut};
+use compio_buf::{buf_try, BufResult, IntoInner, IoBufMut, IoVectoredBufMut};
 
 mod buf;
 mod ext;
@@ -17,7 +17,7 @@ pub trait AsyncRead {
     /// Read some bytes from this source into the [`IoBufMut`] buffer and return
     /// a [`BufResult`], consisting of the buffer and a [`usize`] indicating
     /// how many bytes were read.
-
+    ///
     /// # Caution
     ///
     /// Implementor **MUST** update the buffer init via
@@ -30,12 +30,53 @@ pub trait AsyncRead {
     /// Like `read`, except that it reads into a type implements
     /// [`IoVectoredBufMut`].
     ///
+    /// The default implementation will try to read into the buffers in order,
+    /// and stop whenever the reader returns an error, `Ok(0)`, or a length
+    /// less than the length of the buf passed in, meaning it's possible that
+    /// not all buffer space is filled. If guaranteed full read is desired,
+    /// it is recommended to use [`AsyncReadExt::read_vectored_exact`]
+    /// instead.
+    ///
     /// # Caution
     ///
     /// Implementor **MUST** update the buffer init via
     /// [`SetBufInit::set_buf_init`] after reading.
     ///
     /// [`SetBufInit::set_buf_init`]: compio_buf::SetBufInit::set_buf_init
+    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V>
+    where
+        V: Unpin + 'static,
+    {
+        let mut iter = match buf.owned_iter_mut() {
+            Ok(buf) => buf,
+            Err(buf) => return BufResult(Ok(0), buf),
+        };
+        let mut total = 0;
+
+        loop {
+            let len = iter.uninit_len();
+            if len == 0 {
+                continue;
+            }
+
+            match self.read(iter).await {
+                BufResult(Ok(n), ret) => {
+                    iter = ret;
+                    if n == 0 || n < len {
+                        break;
+                    }
+                    total += n;
+                }
+                BufResult(Err(e), iter) => return BufResult(Err(e), iter.into_inner()),
+            };
+
+            match iter.next() {
+                Ok(next) => iter = next,
+                Err(buf) => return BufResult(Ok(total), buf),
+            }
+        }
+
+        BufResult(Ok(total), iter.into_inner())
     }
 }
 
@@ -123,13 +164,10 @@ impl AsyncRead for &[u8] {
         BufResult(Ok(len), buf)
     }
 
-    async fn read_vectored<T: IoVectoredBufMut>(&mut self, mut buf: T) -> BufResult<usize, T>
-    where
-        T::Item: IoBufMut,
-    {
+    async fn read_vectored<T: IoVectoredBufMut>(&mut self, mut buf: T) -> BufResult<usize, T> {
         let mut this = *self; // An immutable slice to track the read position
 
-        for buf in buf.buf_iter_mut() {
+        for buf in buf.as_dyn_mut_bufs() {
             let n = slice_to_buf(this, buf);
             this = &this[n..];
             if this.is_empty() {

@@ -1,4 +1,4 @@
-use compio_buf::{buf_try, BufResult, IntoInner, IoBuf};
+use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoVectoredBuf};
 
 use crate::{AsyncWrite, AsyncWriteAt, IoResult};
 
@@ -34,13 +34,24 @@ macro_rules! write_scalar {
 }
 
 /// Shared code for loop writing until all contents are written.
-macro_rules! loop_write {
+macro_rules! loop_write_all {
     ($buf:ident, $len:expr, $needle:ident,loop $expr_expr:expr) => {
         let len = $len;
         let mut $needle = 0;
 
         while $needle < len {
-            ($needle, $buf) = buf_try!($expr_expr.await.into_inner().map_res(|n| $needle + n));
+            let n;
+            (n, $buf) = buf_try!($expr_expr.await.into_inner());
+            if n == 0 {
+                return BufResult(
+                    Err(::std::io::Error::new(
+                        ::std::io::ErrorKind::WriteZero,
+                        "failed to write whole buffer",
+                    )),
+                    $buf,
+                );
+            }
+            $needle += n;
         }
 
         return BufResult(Ok($needle), $buf);
@@ -61,12 +72,41 @@ pub trait AsyncWriteExt: AsyncWrite {
 
     /// Write the entire contents of a buffer into this writer.
     async fn write_all<T: IoBuf>(&mut self, mut buf: T) -> BufResult<usize, T> {
-        loop_write!(
+        loop_write_all!(
             buf,
             buf.buf_len(),
             needle,
             loop self.write(buf.slice(needle..))
         );
+    }
+
+    /// Write the entire contents of a buffer into this writer. Like
+    /// [`AsyncWrite::write_vectored`], except that it tries to write the entire
+    /// contents of the buffer into this writer.
+    async fn write_all_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        let mut iter = match buf.owned_iter() {
+            Ok(iter) => iter,
+            Err(buf) => return BufResult(Ok(0), buf),
+        };
+        let mut total = 0;
+
+        loop {
+            if iter.buf_len() == 0 {
+                continue;
+            }
+            match self.write_all(iter).await {
+                BufResult(Ok(n), ret) => {
+                    iter = ret;
+                    total += n;
+                }
+                BufResult(Err(e), ret) => return BufResult(Err(e), ret.into_inner()),
+            }
+
+            match iter.next() {
+                Ok(next) => iter = next,
+                Err(buf) => return BufResult(Ok(total), buf),
+            }
+        }
     }
 
     write_scalar!(u8, to_be_bytes, to_le_bytes);
@@ -89,7 +129,7 @@ pub trait AsyncWriteAtExt: AsyncWriteAt {
     /// Like `write_at`, except that it tries to write the entire contents of
     /// the buffer into this writer.
     async fn write_all_at<T: IoBuf>(&mut self, mut buf: T, pos: usize) -> BufResult<usize, T> {
-        loop_write!(
+        loop_write_all!(
             buf,
             buf.buf_len(),
             needle,
@@ -98,4 +138,4 @@ pub trait AsyncWriteAtExt: AsyncWriteAt {
     }
 }
 
-impl<A: AsyncWriteAt> AsyncWriteAtExt for A {}
+impl<A: AsyncWriteAt + ?Sized> AsyncWriteAtExt for A {}
