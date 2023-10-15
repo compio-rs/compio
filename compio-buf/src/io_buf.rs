@@ -46,14 +46,17 @@ pub unsafe trait IoBuf: Unpin + 'static {
         unsafe { std::slice::from_raw_parts(self.as_buf_ptr(), self.buf_len()) }
     }
 
+    fn as_io_slice(&self) -> IoSlice {
+        IoSlice::new(self.as_slice())
+    }
+
     /// # Safety
     ///
     /// The return slice will not live longer than `Self`.
     /// It is static to provide convenience from writing self-referenced
     /// structure.
-    #[doc(hidden)]
-    unsafe fn as_io_slice(&self) -> IoSlice {
-        IoSlice::from_slice(self.as_slice())
+    unsafe fn as_io_slice_static(&self) -> IoSlice<'static> {
+        std::mem::transmute(self.as_io_slice())
     }
 
     /// Returns a view of the buffer with the specified range.
@@ -288,14 +291,17 @@ pub unsafe trait IoBufMut: IoBuf + SetBufInit {
         }
     }
 
+    fn as_io_slice_mut(&mut self) -> IoSliceMut {
+        IoSliceMut::new(unsafe { std::mem::transmute(self.as_uninit_slice()) })
+    }
+
     /// # Safety
     ///
     /// The return slice will not live longer than self.
     /// It is static to provide convenience from writing self-referenced
     /// structure.
-    #[doc(hidden)]
-    unsafe fn as_io_slice_mut(&mut self) -> IoSliceMut {
-        IoSliceMut::from_uninit(self.as_uninit_slice())
+    unsafe fn as_io_slice_mut_static(&mut self) -> IoSliceMut<'static> {
+        std::mem::transmute(self.as_io_slice_mut())
     }
 }
 
@@ -334,35 +340,28 @@ unsafe impl<const N: usize> IoBufMut for arrayvec::ArrayVec<u8, N> {
 ///
 /// See [`IoBuf`].
 pub unsafe trait IoVectoredBuf: Unpin + 'static {
-    /// The inner buffer type.
-    type Item: IoBuf;
-
-    /// The iterator type returned by [`IoVectoredBuf::buf_iter`].
-    type Iter<'a>: Iterator<Item = &'a Self::Item>;
+    fn as_io_slices(&self) -> impl Iterator<Item = IoSlice>;
 
     /// # Safety
     ///
     /// The return slice will not live longer than self.
     /// It is static to provide convenience from writing self-referenced
     /// structure.
-    #[doc(hidden)]
-    unsafe fn as_io_slices(&self) -> Vec<IoSlice>;
+    unsafe fn as_io_slices_static(&self) -> Vec<IoSlice<'static>> {
+        self.as_io_slices()
+            .map(|buf| std::mem::transmute(buf))
+            .collect()
+    }
 
-    /// An iterator of the inner buffers.
-    fn buf_iter(&self) -> Self::Iter<'_>;
+    fn bufs_count(&self) -> usize {
+        self.as_io_slices().count()
+    }
 }
 
 macro_rules! iivbfs {
     ($tn:ident) => {
-        type Item = $tn;
-        type Iter<'a> = std::slice::Iter<'a, Self::Item>;
-
-        unsafe fn as_io_slices(&self) -> Vec<IoSlice> {
-            self.buf_iter().map(|buf| buf.as_io_slice()).collect()
-        }
-
-        fn buf_iter(&self) -> Self::Iter<'_> {
-            self.iter()
+        fn as_io_slices(&self) -> impl Iterator<Item = IoSlice> {
+            self.iter().map(|buf| buf.as_io_slice())
         }
     };
 }
@@ -388,33 +387,24 @@ unsafe impl<T: IoBuf, const N: usize> IoVectoredBuf for arrayvec::ArrayVec<T, N>
 ///
 /// See [`IoBufMut`].
 pub unsafe trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
-    /// The iterator type returned by [`IoVectoredBufMut::buf_iter_mut`].
-    type IterMut<'a>: Iterator<Item = &'a mut Self::Item>;
+    fn as_io_slices_mut(&mut self) -> impl Iterator<Item = IoSliceMut>;
 
     /// # Safety
     ///
     /// The return slice will not live longer than self.
     /// It is static to provide convenience from writing self-referenced
     /// structure.
-    #[doc(hidden)]
-    unsafe fn as_io_slices_mut(&mut self) -> Vec<IoSliceMut>;
-
-    /// A mutable iterator of the inner buffers.
-    fn buf_iter_mut(&mut self) -> Self::IterMut<'_>;
+    unsafe fn as_io_slices_mut_static(&mut self) -> Vec<IoSliceMut<'static>> {
+        self.as_io_slices_mut()
+            .map(|buf| std::mem::transmute(buf))
+            .collect()
+    }
 }
 
 macro_rules! iivbfs_mut {
     () => {
-        type IterMut<'a> = std::slice::IterMut<'a, Self::Item>;
-
-        unsafe fn as_io_slices_mut(&mut self) -> Vec<IoSliceMut> {
-            self.buf_iter_mut()
-                .map(|buf| buf.as_io_slice_mut())
-                .collect()
-        }
-
-        fn buf_iter_mut(&mut self) -> Self::IterMut<'_> {
-            self.iter_mut()
+        fn as_io_slices_mut(&mut self) -> impl Iterator<Item = IoSliceMut> {
+            self.iter_mut().map(|buf| buf.as_io_slice_mut())
         }
     };
 }
@@ -473,20 +463,39 @@ impl<const N: usize> SetBufInit for arrayvec::ArrayVec<u8, N> {
     }
 }
 
-impl<T: IoVectoredBufMut> SetBufInit for T
-where
-    T::Item: SetBufInit,
+impl<T: IoBufMut, const N: usize> SetBufInit for [T; N] {
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        default_set_buf_init(self.iter_mut(), len)
+    }
+}
+
+impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> SetBufInit
+    for vec_alloc!(T, A)
 {
-    unsafe fn set_buf_init(&mut self, mut len: usize) {
-        for buf in self.buf_iter_mut() {
-            let capacity = buf.buf_capacity();
-            if len >= capacity {
-                buf.set_buf_init(capacity);
-                len -= capacity;
-            } else {
-                buf.set_buf_init(len);
-                len = 0;
-            }
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        default_set_buf_init(self.iter_mut(), len)
+    }
+}
+
+#[cfg(feature = "arrayvec")]
+impl<T: IoBufMut, const N: usize> SetBufInit for arrayvec::ArrayVec<T, N> {
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        default_set_buf_init(self.iter_mut(), len)
+    }
+}
+
+unsafe fn default_set_buf_init<'a, B: IoBufMut>(
+    iter: impl IntoIterator<Item = &'a mut B>,
+    mut len: usize,
+) {
+    for buf in iter {
+        let capacity = buf.buf_capacity();
+        if len >= capacity {
+            buf.set_buf_init(capacity);
+            len -= capacity;
+        } else {
+            buf.set_buf_init(len);
+            len = 0;
         }
     }
 }
