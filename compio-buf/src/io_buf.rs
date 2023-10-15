@@ -367,7 +367,7 @@ pub unsafe trait IoVectoredBuf: Unpin + 'static {
     ///
     /// The time complexity of the returned iterator depends on the
     /// implementation of [`Iterator::nth`] of [`IoVectoredBuf::as_dyn_bufs`].
-    fn owned_iter(self) -> Result<OwnedBufIterator<impl OwnedBufIteratorInner<Inner = Self>>, Self>
+    fn owned_iter(self) -> Result<OwnedIter<impl OwnedIterator<Inner = Self>>, Self>
     where
         Self: Sized;
 }
@@ -378,13 +378,11 @@ macro_rules! iivbfs {
             self.iter().map(|buf| buf as &dyn IoBuf)
         }
 
-        fn owned_iter(
-            self,
-        ) -> Result<OwnedBufIterator<impl OwnedBufIteratorInner<Inner = Self>>, Self>
+        fn owned_iter(self) -> Result<OwnedIter<impl OwnedIterator<Inner = Self>>, Self>
         where
             Self: Sized,
         {
-            IndexedBufIterInner::new(self, 0).map(OwnedBufIterator::new)
+            IndexedIter::new(self, 0).map(OwnedIter::new)
         }
     };
 }
