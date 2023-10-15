@@ -188,7 +188,7 @@ pub trait AsyncReadAt {
 }
 
 macro_rules! impl_read_at {
-    ($($ty:ty),*) => {
+    (@ptr $($ty:ty),*) => {
         $(
             impl<A: AsyncReadAt + ?Sized> AsyncReadAt for $ty {
                 async fn read_at<T: IoBufMut>(&self, buf: T, pos: usize) -> BufResult<usize, T> {
@@ -197,6 +197,18 @@ macro_rules! impl_read_at {
             }
         )*
     };
+
+    (@slice $($(const $len:ident =>)? $ty:ty), *) => {
+        $(
+            impl<$(const $len: usize)?> AsyncReadAt for $ty {
+                async fn read_at<T: IoBufMut>(&self, mut buf: T, pos: usize) -> BufResult<usize, T> {
+                    let len = slice_to_buf(&self[pos..], &mut buf);
+                    BufResult(Ok(len), buf)
+                }
+            }
+        )*
+    }
 }
 
-impl_read_at!(&A, &mut A, Box<A>, Rc<A>, Arc<A>);
+impl_read_at!(@ptr &A, &mut A, Box<A>, Rc<A>, Arc<A>);
+impl_read_at!(@slice [u8], const LEN => [u8; LEN]);

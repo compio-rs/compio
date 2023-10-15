@@ -84,41 +84,33 @@ macro_rules! impl_write {
             }
         )*
     };
-    (@cursor $($ty:ty),*) => {
-        $(
-            impl AsyncWrite for Cursor<$ty> {
-                async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-                    let res = <Cursor<$ty> as std::io::Write>::write(self, buf.as_slice());
-                    BufResult(res, buf)
-                }
-
-                async fn flush(&mut self) -> IoResult<()> { Ok(()) }
-                async fn shutdown(&mut self) -> IoResult<()> { Ok(()) }
-            }
-        )*
-    };
-    (@cursor LEN => $($ty:ty),*) => {
-        $(
-            impl<const LEN: usize> AsyncWrite for Cursor<$ty> {
-                async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-                    let pos = self.position() as usize;
-                    let slice = buf.as_slice();
-                    let n = slice.len().min(LEN - pos);
-                    self.get_mut()[pos..pos+n].copy_from_slice(&slice[..n]);
-                    self.set_position((pos + n) as u64);
-                    BufResult(Ok(n), buf)
-                }
-
-                async fn flush(&mut self) -> IoResult<()> { Ok(()) }
-                async fn shutdown(&mut self) -> IoResult<()> { Ok(()) }
-            }
-        )*
-    }
 }
 
 impl_write!(@ptr &mut A, Box<A>);
-impl_write!(@cursor &mut [u8], Box<[u8]>);
-impl_write!(@cursor LEN => [u8; LEN], Box<[u8; LEN]>);
+
+impl<A: AsMut<[u8]>> AsyncWrite for Cursor<A> {
+    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        let pos = self.position();
+        let inner = self.get_mut().as_mut();
+        let mut new = Cursor::new(inner);
+        new.set_position(pos);
+        match std::io::Write::write(&mut new, buf.as_slice()) {
+            Ok(res) => {
+                self.set_position(pos + res as u64);
+                BufResult(Ok(res), buf)
+            }
+            Err(e) => BufResult(Err(e), buf),
+        }
+    }
+
+    async fn flush(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+
+    async fn shutdown(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+}
 
 /// Write is implemented for `Vec<u8>` by appending to the vector. The vector
 /// will grow as needed.
@@ -154,8 +146,41 @@ pub trait AsyncWriteAt {
     async fn write_at<T: IoBuf>(&mut self, buf: T, pos: usize) -> BufResult<usize, T>;
 }
 
-impl<A: AsyncWriteAt + ?Sized> AsyncWriteAt for &mut A {
+macro_rules! impl_write_at {
+    (@ptr $($ty:ty),*) => {
+        $(
+            impl<A: AsyncWriteAt + ?Sized> AsyncWriteAt for $ty {
+                async fn write_at<T: IoBuf>(&mut self, buf: T, pos: usize) -> BufResult<usize, T> {
+                    (**self).write_at(buf, pos).await
+                }
+            }
+        )*
+    };
+    (@slice $($(const $len:ident =>)? $ty:ty),*) => {
+        $(
+            impl<$(const $len: usize)?> AsyncWriteAt for $ty {
+                async fn write_at<T: IoBuf>(&mut self, buf: T, pos: usize) -> BufResult<usize, T> {
+                    let slice = buf.as_slice();
+                    let n = slice.len().min(self.len() - pos);
+                    self[pos..pos + n].copy_from_slice(&slice[..n]);
+                    BufResult(Ok(n), buf)
+                }
+            }
+        )*
+    }
+}
+
+impl_write_at!(@ptr &mut A, Box<A>);
+impl_write_at!(@slice [u8], const LEN => [u8; LEN]);
+
+impl AsyncWriteAt for Vec<u8> {
     async fn write_at<T: IoBuf>(&mut self, buf: T, pos: usize) -> BufResult<usize, T> {
-        (**self).write_at(buf, pos).await
+        let slice = buf.as_slice();
+        let n = slice.len().min(self.len() - pos);
+        self[pos..pos + n].copy_from_slice(&slice[..n]);
+        if n < slice.len() {
+            self.extend_from_slice(&slice[n..]);
+        }
+        BufResult(Ok(n), buf)
     }
 }
