@@ -1,3 +1,5 @@
+use std::io::Cursor;
+
 use compio_buf::{BufResult, IntoInner, IoBuf, IoVectoredBuf};
 
 use crate::IoResult;
@@ -60,99 +62,63 @@ pub trait AsyncWrite {
     async fn shutdown(&mut self) -> IoResult<()>;
 }
 
-impl<A: AsyncWrite + ?Sized> AsyncWrite for &mut A {
-    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        (**self).write(buf).await
-    }
+macro_rules! impl_write {
+    (@ptr $($ty:ty),*) => {
+        $(
+            impl<A: AsyncWrite + ?Sized> AsyncWrite for $ty {
+                async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+                    (**self).write(buf).await
+                }
 
-    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        (**self).write_vectored(buf).await
-    }
+                async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+                    (**self).write_vectored(buf).await
+                }
 
-    async fn flush(&mut self) -> IoResult<()> {
-        (**self).flush().await
-    }
+                async fn flush(&mut self) -> IoResult<()> {
+                    (**self).flush().await
+                }
 
-    async fn shutdown(&mut self) -> IoResult<()> {
-        (**self).shutdown().await
-    }
-}
-
-impl<A: AsyncWrite + ?Sized> AsyncWrite for Box<A> {
-    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        (**self).write(buf).await
-    }
-
-    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        (**self).write_vectored(buf).await
-    }
-
-    async fn flush(&mut self) -> IoResult<()> {
-        (**self).flush().await
-    }
-
-    async fn shutdown(&mut self) -> IoResult<()> {
-        (**self).shutdown().await
-    }
-}
-
-impl AsyncWrite for [u8] {
-    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let n = buf.buf_len().min(self.len());
-        self[..n].copy_from_slice(&buf.as_slice()[..n]);
-        BufResult(Ok(n), buf)
-    }
-
-    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let mut written = 0;
-        for buf in buf.as_dyn_bufs() {
-            let len = buf.buf_len().min(self.len() - written);
-            self[written..written + len].copy_from_slice(&buf.as_slice()[..len]);
-            written += len;
-            if written == self.len() {
-                break;
+                async fn shutdown(&mut self) -> IoResult<()> {
+                    (**self).shutdown().await
+                }
             }
-        }
-        BufResult(Ok(written), buf)
-    }
+        )*
+    };
+    (@cursor $($ty:ty),*) => {
+        $(
+            impl AsyncWrite for Cursor<$ty> {
+                async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+                    let res = <Cursor<$ty> as std::io::Write>::write(self, buf.as_slice());
+                    BufResult(res, buf)
+                }
 
-    async fn flush(&mut self) -> IoResult<()> {
-        Ok(())
-    }
-
-    async fn shutdown(&mut self) -> IoResult<()> {
-        Ok(())
-    }
-}
-
-impl<const LEN: usize> AsyncWrite for [u8; LEN] {
-    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let n = buf.buf_len().min(self.len());
-        self[..n].copy_from_slice(&buf.as_slice()[..n]);
-        BufResult(Ok(n), buf)
-    }
-
-    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let mut written = 0;
-        for buf in buf.as_dyn_bufs() {
-            let len = buf.buf_len().min(self.len() - written);
-            self[written..written + len].copy_from_slice(&buf.as_slice()[..len]);
-            written += len;
-            if written == self.len() {
-                break;
+                async fn flush(&mut self) -> IoResult<()> { Ok(()) }
+                async fn shutdown(&mut self) -> IoResult<()> { Ok(()) }
             }
-        }
-        BufResult(Ok(written), buf)
-    }
+        )*
+    };
+    (@cursor LEN => $($ty:ty),*) => {
+        $(
+            impl<const LEN: usize> AsyncWrite for Cursor<$ty> {
+                async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+                    let pos = self.position() as usize;
+                    let slice = buf.as_slice();
+                    let n = slice.len().min(LEN - pos);
+                    self.get_mut()[pos..pos+n].copy_from_slice(&slice[..n]);
+                    self.set_position((pos + n) as u64);
+                    BufResult(Ok(n), buf)
+                }
 
-    async fn flush(&mut self) -> IoResult<()> {
-        Ok(())
-    }
-
-    async fn shutdown(&mut self) -> IoResult<()> {
-        Ok(())
+                async fn flush(&mut self) -> IoResult<()> { Ok(()) }
+                async fn shutdown(&mut self) -> IoResult<()> { Ok(()) }
+            }
+        )*
     }
 }
+
+impl_write!(@ptr &mut A, Box<A>);
+impl_write!(@cursor &mut [u8], Box<[u8]>);
+impl_write!(@cursor LEN => [u8; LEN], Box<[u8; LEN]>);
 
 /// Write is implemented for `Vec<u8>` by appending to the vector. The vector
 /// will grow as needed.
@@ -164,7 +130,7 @@ impl AsyncWrite for Vec<u8> {
 
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         let len = buf.as_dyn_bufs().map(|b| b.buf_len()).sum();
-        self.reserve(len);
+        self.reserve(len - self.len());
         for buf in buf.as_dyn_bufs() {
             self.extend_from_slice(buf.as_slice());
         }
