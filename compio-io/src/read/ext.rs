@@ -54,6 +54,9 @@ macro_rules! loop_read_exact {
     };
 }
 
+/// Implemented as an extension trait, adding utility methods to all
+/// [`AsyncRead`] types. Callers will tend to import this trait instead of
+/// [`AsyncRead`].
 pub trait AsyncReadExt: AsyncRead {
     /// Creates a "by reference" adaptor for this instance of [`AsyncRead`].
     ///
@@ -115,6 +118,14 @@ pub trait AsyncReadExt: AsyncRead {
         }
     }
 
+    /// Creates an adaptor which reads at most `limit` bytes from it.
+    ///
+    /// This function returns a new instance of `AsyncRead` which will read
+    /// at most `limit` bytes, after which it will always return EOF
+    /// (`Ok(0)`). Any read errors will not count towards the number of
+    /// bytes read and future calls to [`read()`] may succeed.
+    ///
+    /// [`read()`]: AsyncRead::read
     fn take(self, limit: u64) -> Take<Self>
     where
         Self: Sized,
@@ -138,7 +149,30 @@ pub trait AsyncReadExt: AsyncRead {
 
 impl<A: AsyncRead + ?Sized> AsyncReadExt for A {}
 
+/// Implemented as an extension trait, adding utility methods to all
+/// [`AsyncReadAt`] types. Callers will tend to import this trait instead of
+/// [`AsyncReadAt`].
 pub trait AsyncReadAtExt: AsyncReadAt {
+    /// Read the exact number of bytes required to fill `buffer`.
+    ///
+    /// This function reads as many bytes as necessary to completely fill the
+    /// uninitialized space of specified `buffer`.
+    ///
+    /// # Errors
+    ///
+    /// If this function encounters an "end of file" before completely filling
+    /// the buffer, it returns an error of the kind
+    /// [`ErrorKind::UnexpectedEof`]. The contents of `buffer` are unspecified
+    /// in this case.
+    ///
+    /// If any other read error is encountered then this function immediately
+    /// returns. The contents of `buffer` are unspecified in this case.
+    ///
+    /// If this function returns an error, it is unspecified how many bytes it
+    /// has read, but it will never read more than would be necessary to
+    /// completely fill the buffer.
+    ///
+    /// [`ErrorKind::UnexpectedEof`]: std::io::ErrorKind::UnexpectedEof
     async fn read_exact_at<T: IoBufMut>(&self, mut buf: T, pos: usize) -> BufResult<usize, T> {
         loop_read_exact!(
             buf,

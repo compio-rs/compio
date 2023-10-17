@@ -58,6 +58,9 @@ macro_rules! loop_write_all {
     };
 }
 
+/// Implemented as an extension trait, adding utility methods to all
+/// [`AsyncWrite`] types. Callers will tend to import this trait instead of
+/// [`AsyncWrite`].
 pub trait AsyncWriteExt: AsyncWrite {
     /// Creates a "by reference" adaptor for this instance of [`AsyncWrite`].
     ///
@@ -125,6 +128,9 @@ pub trait AsyncWriteExt: AsyncWrite {
 
 impl<A: AsyncWrite + ?Sized> AsyncWriteExt for A {}
 
+/// Implemented as an extension trait, adding utility methods to all
+/// [`AsyncWriteAt`] types. Callers will tend to import this trait instead of
+/// [`AsyncWriteAt`].
 pub trait AsyncWriteAtExt: AsyncWriteAt {
     /// Like `write_at`, except that it tries to write the entire contents of
     /// the buffer into this writer.

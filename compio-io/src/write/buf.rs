@@ -1,6 +1,6 @@
 use std::future::ready;
 
-use compio_buf::{buf_try, BufResult, IoBuf};
+use compio_buf::{buf_try, BufResult, IntoInner, IoBuf};
 
 use crate::{
     buffer::Buffer,
@@ -24,7 +24,7 @@ use crate::{
 /// critical to call [`flush`] before `BufWriter<W>` is dropped. Calling
 /// [`flush`] ensures that the buffer is empty and thus no data is lost.
 ///
-/// [`flush`]: #method.flush
+/// [`flush`]: AsyncWrite::flush
 
 #[derive(Debug)]
 pub struct BufWriter<W> {
@@ -33,15 +33,14 @@ pub struct BufWriter<W> {
 }
 
 impl<W> BufWriter<W> {
+    /// Creates a new `BufWriter` with a default buffer capacity. The default is
+    /// currently 8 KB, but may change in the future.
     pub fn new(writer: W) -> Self {
-        Self::with_capacity(writer, DEFAULT_BUF_SIZE)
+        Self::with_capacity(DEFAULT_BUF_SIZE, writer)
     }
 
-    pub fn into_inner(self) -> W {
-        self.writer
-    }
-
-    pub fn with_capacity(writer: W, cap: usize) -> Self {
+    /// Creates a new `BufWriter` with the specified buffer capacity.
+    pub fn with_capacity(cap: usize, writer: W) -> Self {
         Self {
             writer,
             buf: Buffer::with_capacity(cap),
@@ -110,5 +109,13 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
     async fn shutdown(&mut self) -> IoResult<()> {
         self.flush().await?;
         self.writer.shutdown().await
+    }
+}
+
+impl<W> IntoInner for BufWriter<W> {
+    type Inner = W;
+
+    fn into_inner(self) -> Self::Inner {
+        self.writer
     }
 }

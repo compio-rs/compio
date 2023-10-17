@@ -57,8 +57,12 @@ pub trait AsyncWrite {
         }
     }
 
+    /// Attempts to flush the object, ensuring that any buffered data reach
+    /// their destination.
     async fn flush(&mut self) -> IoResult<()>;
 
+    /// Initiates or attempts to shut down this writer, returning success when
+    /// the I/O connection has completely shut down.
     async fn shutdown(&mut self) -> IoResult<()>;
 }
 

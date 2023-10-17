@@ -1,4 +1,4 @@
-use compio_buf::{buf_try, BufResult, IoBufMut, IoVectoredBufMut};
+use compio_buf::{buf_try, BufResult, IntoInner, IoBufMut, IoVectoredBufMut};
 
 use crate::{buffer::Buffer, util::DEFAULT_BUF_SIZE, AsyncRead, IoResult};
 /// # AsyncBufRead
@@ -54,15 +54,14 @@ pub struct BufReader<R> {
 }
 
 impl<R> BufReader<R> {
+    /// Creates a new `BufReader` with a default buffer capacity. The default is
+    /// currently 8 KB, but may change in the future.
     pub fn new(reader: R) -> Self {
-        Self::with_capacity(reader, DEFAULT_BUF_SIZE)
+        Self::with_capacity(DEFAULT_BUF_SIZE, reader)
     }
 
-    pub fn into_inner(self) -> R {
-        self.reader
-    }
-
-    pub fn with_capacity(reader: R, cap: usize) -> Self {
+    /// Creates a new `BufReader` with the specified buffer capacity.
+    pub fn with_capacity(cap: usize, reader: R) -> Self {
         Self {
             reader,
             buf: Buffer::with_capacity(cap),
@@ -105,5 +104,13 @@ impl<R: AsyncRead> AsyncBufRead for BufReader<R> {
 
     fn consume(&mut self, amount: usize) {
         self.buf.advance(amount);
+    }
+}
+
+impl<R> IntoInner for BufReader<R> {
+    type Inner = R;
+
+    fn into_inner(self) -> Self::Inner {
+        self.reader
     }
 }

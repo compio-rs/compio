@@ -80,6 +80,7 @@
 //!
 //! [`Cursor`]: std::io::Cursor
 
+#![warn(missing_docs)]
 // This is OK as we're thread-per-core and don't need `Send` or other auto trait on anonymous future
 #![allow(async_fn_in_trait)]
 

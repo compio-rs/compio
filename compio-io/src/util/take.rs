@@ -10,7 +10,7 @@ pub struct Take<R> {
 }
 
 impl<T> Take<T> {
-    pub fn new(reader: T, limit: u64) -> Self {
+    pub(crate) fn new(reader: T, limit: u64) -> Self {
         Self { reader, limit }
     }
 

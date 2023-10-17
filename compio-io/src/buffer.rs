@@ -2,8 +2,10 @@
 //!
 //! [`BufReader`]: crate::read::BufReader
 //! [`BufWriter`]: crate::write::BufWriter
-use core::fmt;
-use std::{fmt::Debug, future::Future};
+use std::{
+    fmt::{self, Debug},
+    future::Future,
+};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, SetBufInit};
 

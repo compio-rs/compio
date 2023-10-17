@@ -1,6 +1,6 @@
 use crate::*;
 
-/// The inner implementation of a [`OwnedBufIterator`].
+/// The inner implementation of a [`OwnedIter`].
 pub trait OwnedIterator: IntoInner + Sized {
     /// Get the next iterator. Will return Err with the inner buffer if it
     /// reaches the end.
@@ -10,7 +10,7 @@ pub trait OwnedIterator: IntoInner + Sized {
     fn current(&self) -> &dyn IoBuf;
 }
 
-/// The mutable part of inner implementation of a [`OwnedBufIterator`].
+/// The mutable part of inner implementation of a [`OwnedIter`].
 pub trait OwnedIteratorMut: OwnedIterator {
     /// Get the current mutable buffer.
     fn current_mut(&mut self) -> &mut dyn IoBufMut;
@@ -22,7 +22,7 @@ pub trait OwnedIteratorMut: OwnedIterator {
 pub struct OwnedIter<I: OwnedIterator>(I);
 
 impl<I: OwnedIterator> OwnedIter<I> {
-    /// Create [`OwnedBufIterator`] from inner impls.
+    /// Create [`OwnedIter`] from inner impls.
     pub fn new(inner: I) -> Self {
         Self(inner)
     }
