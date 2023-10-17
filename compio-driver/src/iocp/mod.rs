@@ -179,7 +179,7 @@ impl Driver {
             } else {
                 Ok(0)
             };
-            Some(Entry::new(user_data, result))
+            Some(Entry::new(user_data, result, 0))
         } else {
             let transferred = iocp_entry.dwNumberOfBytesTransferred;
             // Any thin pointer is OK because we don't use the type of opcode.
@@ -197,7 +197,7 @@ impl Driver {
                     _ => Err(io::Error::from_raw_os_error(error as _)),
                 }
             };
-            Some(Entry::new(overlapped.user_data, res))
+            Some(Entry::new(overlapped.user_data, res, 0))
         }
     }
 
