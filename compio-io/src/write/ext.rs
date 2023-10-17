@@ -134,12 +134,12 @@ impl<A: AsyncWrite + ?Sized> AsyncWriteExt for A {}
 pub trait AsyncWriteAtExt: AsyncWriteAt {
     /// Like `write_at`, except that it tries to write the entire contents of
     /// the buffer into this writer.
-    async fn write_all_at<T: IoBuf>(&mut self, mut buf: T, pos: usize) -> BufResult<usize, T> {
+    async fn write_all_at<T: IoBuf>(&mut self, mut buf: T, pos: u64) -> BufResult<usize, T> {
         loop_write_all!(
             buf,
             buf.buf_len(),
             needle,
-            loop self.write_at(buf.slice(needle..), pos + needle)
+            loop self.write_at(buf.slice(needle..), pos + needle as u64)
         );
     }
 }

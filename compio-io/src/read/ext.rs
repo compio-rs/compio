@@ -173,12 +173,12 @@ pub trait AsyncReadAtExt: AsyncReadAt {
     /// completely fill the buffer.
     ///
     /// [`ErrorKind::UnexpectedEof`]: std::io::ErrorKind::UnexpectedEof
-    async fn read_exact_at<T: IoBufMut>(&self, mut buf: T, pos: usize) -> BufResult<usize, T> {
+    async fn read_exact_at<T: IoBufMut>(&self, mut buf: T, pos: u64) -> BufResult<usize, T> {
         loop_read_exact!(
             buf,
             buf.buf_capacity() - buf.buf_len(),
             read,
-            loop self.read_at(buf, pos + read)
+            loop self.read_at(buf, pos + read as u64)
         );
     }
 }
