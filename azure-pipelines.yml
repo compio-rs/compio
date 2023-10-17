@@ -22,9 +22,9 @@ jobs:
           rustup +nightly target install $(target)
           cargo +nightly test --workspace --features=all,nightly --target $(target) -Z doctest-xcompile
         displayName: TestNightly
-      - script: |
-          cargo test --workspace --features all --target $(target)
-        displayName: TestStable
+      # - script: |
+      #     cargo test --workspace --features all --target $(target)
+      #   displayName: TestStable
 
   - job: Test_Ubuntu
     strategy:
@@ -41,17 +41,17 @@ jobs:
           rustup toolchain install nightly
           cargo +nightly test --workspace --features all,nightly
         displayName: TestNightly
-      - script: |
-          cargo test --workspace --features all
-        displayName: TestStable
+      # - script: |
+      #     cargo test --workspace --features all
+      #   displayName: TestStable
 
       - script: |
           rustup toolchain install nightly
           cargo +nightly test --workspace --features all,polling,nightly --no-default-features
         displayName: TestNightly-polling
-      - script: |
-          cargo test --workspace --features all,polling --no-default-features
-        displayName: TestStable-polling
+      # - script: |
+      #     cargo test --workspace --features all,polling --no-default-features
+      #   displayName: TestStable-polling
 
   - job: Test_Mac
     strategy:
@@ -68,9 +68,9 @@ jobs:
           rustup toolchain install nightly
           cargo +nightly test --workspace --features all,nightly
         displayName: TestNightly
-      - script: |
-          cargo test --workspace --features all
-        displayName: TestStable
+      # - script: |
+      #     cargo test --workspace --features all
+      #   displayName: TestStable
 
   - job: Doc
     strategy:

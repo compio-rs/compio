@@ -1,0 +1,19 @@
+[package]
+name = "compio-io"
+version = "0.1.0"
+categories = ["asynchronous"]
+keywords = ["async", "io"]
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+compio-buf = { workspace = true, features = ["arrayvec"] }
+paste = "1.0.14"
+
+[dev-dependencies]
+compio-runtime = { workspace = true }
+compio-macros = { workspace = true }
+compio-driver = { workspace = true, features = ["io-uring"] }

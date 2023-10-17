@@ -31,6 +31,7 @@ mod sys {
 
     // Copied from std
     #[repr(C)]
+    #[allow(clippy::upper_case_acronyms)]
     struct WSABUF {
         pub len: u32,
         pub buf: *mut MaybeUninit<u8>,
