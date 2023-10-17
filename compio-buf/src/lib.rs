@@ -11,13 +11,10 @@
 #![warn(missing_docs)]
 
 #[cfg(feature = "arrayvec")]
-#[doc(inline)]
 pub use arrayvec;
 #[cfg(feature = "bumpalo")]
-#[doc(inline)]
 pub use bumpalo;
 #[cfg(feature = "bytes")]
-#[doc(inline)]
 pub use bytes;
 
 mod io_slice;

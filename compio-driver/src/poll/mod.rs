@@ -1,4 +1,3 @@
-#[doc(inline)]
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{
