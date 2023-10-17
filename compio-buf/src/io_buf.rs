@@ -382,34 +382,46 @@ pub unsafe trait IoVectoredBuf: Unpin + 'static {
         Self: Sized;
 }
 
-macro_rules! iivbfs {
-    () => {
-        fn as_dyn_bufs(&self) -> impl Iterator<Item = &dyn IoBuf> {
-            self.iter().map(|buf| buf as &dyn IoBuf)
-        }
-
-        fn owned_iter(self) -> Result<OwnedIter<impl OwnedIterator<Inner = Self>>, Self>
-        where
-            Self: Sized,
-        {
-            IndexedIter::new(self, 0).map(OwnedIter::new)
-        }
-    };
-}
-
 unsafe impl<T: IoBuf, const N: usize> IoVectoredBuf for [T; N] {
-    iivbfs!();
+    fn as_dyn_bufs(&self) -> impl Iterator<Item = &dyn IoBuf> {
+        self.iter().map(|buf| buf as &dyn IoBuf)
+    }
+
+    fn owned_iter(self) -> Result<OwnedIter<impl OwnedIterator<Inner = Self>>, Self>
+    where
+        Self: Sized,
+    {
+        IndexedIter::new(self, 0).map(OwnedIter::new)
+    }
 }
 
 unsafe impl<T: IoBuf, #[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static>
     IoVectoredBuf for vec_alloc!(T, A)
 {
-    iivbfs!();
+    fn as_dyn_bufs(&self) -> impl Iterator<Item = &dyn IoBuf> {
+        self.iter().map(|buf| buf as &dyn IoBuf)
+    }
+
+    fn owned_iter(self) -> Result<OwnedIter<impl OwnedIterator<Inner = Self>>, Self>
+    where
+        Self: Sized,
+    {
+        IndexedIter::new(self, 0).map(OwnedIter::new)
+    }
 }
 
 #[cfg(feature = "arrayvec")]
 unsafe impl<T: IoBuf, const N: usize> IoVectoredBuf for arrayvec::ArrayVec<T, N> {
-    iivbfs!();
+    fn as_dyn_bufs(&self) -> impl Iterator<Item = &dyn IoBuf> {
+        self.iter().map(|buf| buf as &dyn IoBuf)
+    }
+
+    fn owned_iter(self) -> Result<OwnedIter<impl OwnedIterator<Inner = Self>>, Self>
+    where
+        Self: Sized,
+    {
+        IndexedIter::new(self, 0).map(OwnedIter::new)
+    }
 }
 
 /// A trait for mutable vectored buffers.
