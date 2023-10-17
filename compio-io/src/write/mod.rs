@@ -147,14 +147,14 @@ impl AsyncWrite for Vec<u8> {
 /// Async write with a ownership of a buffer and a position
 pub trait AsyncWriteAt {
     /// Like `write`, except that it writes at a specified position.
-    async fn write_at<T: IoBuf>(&mut self, buf: T, pos: usize) -> BufResult<usize, T>;
+    async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T>;
 }
 
 macro_rules! impl_write_at {
     (@ptr $($ty:ty),*) => {
         $(
             impl<A: AsyncWriteAt + ?Sized> AsyncWriteAt for $ty {
-                async fn write_at<T: IoBuf>(&mut self, buf: T, pos: usize) -> BufResult<usize, T> {
+                async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
                     (**self).write_at(buf, pos).await
                 }
             }
@@ -163,7 +163,8 @@ macro_rules! impl_write_at {
     (@slice $($(const $len:ident =>)? $ty:ty),*) => {
         $(
             impl<$(const $len: usize)?> AsyncWriteAt for $ty {
-                async fn write_at<T: IoBuf>(&mut self, buf: T, pos: usize) -> BufResult<usize, T> {
+                async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
+                    let pos = pos as usize;
                     let slice = buf.as_slice();
                     let n = slice.len().min(self.len() - pos);
                     self[pos..pos + n].copy_from_slice(&slice[..n]);
@@ -178,7 +179,8 @@ impl_write_at!(@ptr &mut A, Box<A>);
 impl_write_at!(@slice [u8], const LEN => [u8; LEN]);
 
 impl AsyncWriteAt for Vec<u8> {
-    async fn write_at<T: IoBuf>(&mut self, buf: T, pos: usize) -> BufResult<usize, T> {
+    async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
+        let pos = pos as usize;
         let slice = buf.as_slice();
         let n = slice.len().min(self.len() - pos);
         self[pos..pos + n].copy_from_slice(&slice[..n]);

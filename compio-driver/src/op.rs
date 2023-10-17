@@ -66,13 +66,13 @@ impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t)> {
 #[derive(Debug)]
 pub struct ReadAt<T: IoBufMut> {
     pub(crate) fd: RawFd,
-    pub(crate) offset: usize,
+    pub(crate) offset: u64,
     pub(crate) buffer: T,
 }
 
 impl<T: IoBufMut> ReadAt<T> {
     /// Create [`ReadAt`].
-    pub fn new(fd: RawFd, offset: usize, buffer: T) -> Self {
+    pub fn new(fd: RawFd, offset: u64, buffer: T) -> Self {
         Self { fd, offset, buffer }
     }
 }
@@ -89,13 +89,13 @@ impl<T: IoBufMut> IntoInner for ReadAt<T> {
 #[derive(Debug)]
 pub struct WriteAt<T: IoBuf> {
     pub(crate) fd: RawFd,
-    pub(crate) offset: usize,
+    pub(crate) offset: u64,
     pub(crate) buffer: T,
 }
 
 impl<T: IoBuf> WriteAt<T> {
     /// Create [`WriteAt`].
-    pub fn new(fd: RawFd, offset: usize, buffer: T) -> Self {
+    pub fn new(fd: RawFd, offset: u64, buffer: T) -> Self {
         Self { fd, offset, buffer }
     }
 }

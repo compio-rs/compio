@@ -57,12 +57,13 @@ fn basic(c: &mut Criterion) {
                 use compio::{
                     buf::BufResult,
                     fs::named_pipe::{ClientOptions, ServerOptions},
+                    io::{AsyncReadExt, AsyncWriteExt},
                 };
 
                 const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe";
 
-                let server = ServerOptions::new().create(PIPE_NAME).unwrap();
-                let client = ClientOptions::new().open(PIPE_NAME).unwrap();
+                let mut server = ServerOptions::new().create(PIPE_NAME).unwrap();
+                let mut client = ClientOptions::new().open(PIPE_NAME).unwrap();
 
                 server.connect().await.unwrap();
 

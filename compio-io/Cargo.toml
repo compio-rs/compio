@@ -17,3 +17,8 @@ paste = "1.0.14"
 compio-runtime = { workspace = true }
 compio-macros = { workspace = true }
 compio-driver = { workspace = true, features = ["io-uring"] }
+
+[features]
+# Nightly features
+allocator_api = []
+nightly = ["allocator_api", "compio-buf/allocator_api"]

@@ -6,7 +6,7 @@
 //! ## Quick start
 //! ```rust
 //! # compio::runtime::block_on(async {
-//! use compio::fs::File;
+//! use compio::{fs::File, io::AsyncReadAtExt};
 //!
 //! let file = File::open("Cargo.toml").unwrap();
 //! let (read, buffer) = file
@@ -27,6 +27,8 @@ pub use buf::BufResult;
 #[cfg(feature = "dispatcher")]
 #[doc(inline)]
 pub use compio_dispatcher as dispatcher;
+#[cfg(feature = "io")]
+pub use compio_io as io;
 #[cfg(feature = "macros")]
 pub use compio_macros::*;
 #[cfg(feature = "runtime")]

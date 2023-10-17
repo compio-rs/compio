@@ -184,14 +184,14 @@ impl AsyncRead for &[u8] {
 /// Async read with a ownership of a buffer and a position
 pub trait AsyncReadAt {
     /// Like `read`, except that it reads at a specified position.
-    async fn read_at<T: IoBufMut>(&self, buf: T, pos: usize) -> BufResult<usize, T>;
+    async fn read_at<T: IoBufMut>(&self, buf: T, pos: u64) -> BufResult<usize, T>;
 }
 
 macro_rules! impl_read_at {
     (@ptr $($ty:ty),*) => {
         $(
             impl<A: AsyncReadAt + ?Sized> AsyncReadAt for $ty {
-                async fn read_at<T: IoBufMut>(&self, buf: T, pos: usize) -> BufResult<usize, T> {
+                async fn read_at<T: IoBufMut>(&self, buf: T, pos: u64) -> BufResult<usize, T> {
                     (**self).read_at(buf, pos).await
                 }
             }
@@ -201,8 +201,8 @@ macro_rules! impl_read_at {
     (@slice $($(const $len:ident =>)? $ty:ty), *) => {
         $(
             impl<$(const $len: usize)?> AsyncReadAt for $ty {
-                async fn read_at<T: IoBufMut>(&self, mut buf: T, pos: usize) -> BufResult<usize, T> {
-                    let len = slice_to_buf(&self[pos..], &mut buf);
+                async fn read_at<T: IoBufMut>(&self, mut buf: T, pos: u64) -> BufResult<usize, T> {
+                    let len = slice_to_buf(&self[pos as usize..], &mut buf);
                     BufResult(Ok(len), buf)
                 }
             }

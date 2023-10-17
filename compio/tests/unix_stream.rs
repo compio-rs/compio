@@ -1,6 +1,7 @@
-use std::net::Shutdown;
-
-use compio::net::{UnixListener, UnixStream};
+use compio::{
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    net::{UnixListener, UnixStream},
+};
 
 #[compio_macros::test]
 async fn accept_read_write() -> std::io::Result<()> {
@@ -12,18 +13,18 @@ async fn accept_read_write() -> std::io::Result<()> {
 
     let listener = UnixListener::bind(&sock_path)?;
 
-    let client = UnixStream::connect(&sock_path)?;
-    let (server, _) = listener.accept().await?;
+    let mut client = UnixStream::connect(&sock_path)?;
+    let (mut server, _) = listener.accept().await?;
 
-    let write_len = client.send_all("hello").await.0?;
+    let write_len = client.write_all("hello").await.0?;
     assert_eq!(write_len, 5);
     drop(client);
 
     let buf = Vec::with_capacity(5);
-    let (res, buf) = server.recv_exact(buf).await.unwrap();
+    let (res, buf) = server.read_exact(buf).await.unwrap();
     assert_eq!(res, 5);
     assert_eq!(&buf[..], b"hello");
-    let len = server.recv(buf).await.0?;
+    let len = server.read(buf).await.0?;
     assert_eq!(len, 0);
     Ok(())
 }
@@ -38,13 +39,13 @@ async fn shutdown() -> std::io::Result<()> {
 
     let listener = UnixListener::bind(&sock_path)?;
 
-    let client = UnixStream::connect(&sock_path)?;
-    let (server, _) = listener.accept().await?;
+    let mut client = UnixStream::connect(&sock_path)?;
+    let (mut server, _) = listener.accept().await?;
 
     // Shut down the client
-    client.shutdown(Shutdown::Both)?;
+    client.shutdown().await?;
     // Read from the server should return 0 to indicate the channel has been closed.
-    let n = server.recv(Vec::with_capacity(1)).await.0?;
+    let n = server.read(Vec::with_capacity(1)).await.0?;
     assert_eq!(n, 0);
     Ok(())
 }

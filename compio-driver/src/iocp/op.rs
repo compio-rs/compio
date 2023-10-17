@@ -105,10 +105,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
     unsafe fn operate(mut self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         if let Some(overlapped) = optr.as_mut() {
             overlapped.Anonymous.Anonymous.Offset = (self.offset & 0xFFFFFFFF) as _;
-            #[cfg(target_pointer_width = "64")]
-            {
-                overlapped.Anonymous.Anonymous.OffsetHigh = (self.offset >> 32) as _;
-            }
+            overlapped.Anonymous.Anonymous.OffsetHigh = (self.offset >> 32) as _;
         }
         let fd = self.fd as _;
         let slice = self.buffer.as_uninit_slice();
@@ -132,10 +129,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         if let Some(overlapped) = optr.as_mut() {
             overlapped.Anonymous.Anonymous.Offset = (self.offset & 0xFFFFFFFF) as _;
-            #[cfg(target_pointer_width = "64")]
-            {
-                overlapped.Anonymous.Anonymous.OffsetHigh = (self.offset >> 32) as _;
-            }
+            overlapped.Anonymous.Anonymous.OffsetHigh = (self.offset >> 32) as _;
         }
         let slice = self.buffer.as_slice();
         let mut transferred = 0;
