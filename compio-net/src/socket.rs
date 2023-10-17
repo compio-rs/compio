@@ -84,7 +84,7 @@ impl Socket {
         self.attach()?;
         let op = Connect::new(self.as_raw_fd(), addr.clone());
         let BufResult(res, _op) = submit(op).await;
-        #[cfg(target_os = "windows")]
+        #[cfg(windows)]
         {
             res?;
             _op.update_context()?;
@@ -113,7 +113,7 @@ impl Socket {
         Ok((accept_sock, addr))
     }
 
-    #[cfg(all(feature = "runtime", target_os = "windows"))]
+    #[cfg(all(feature = "runtime", windows))]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         self.attach()?;
         let local_addr = self.local_addr()?;

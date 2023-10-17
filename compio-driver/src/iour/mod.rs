@@ -1,4 +1,4 @@
-#[doc(no_inline)]
+#[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{collections::VecDeque, io, pin::Pin, task::Poll, time::Duration};
 

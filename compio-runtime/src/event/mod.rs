@@ -3,7 +3,7 @@
 //! Only for waking up the driver.
 
 cfg_if::cfg_if! {
-    if #[cfg(target_os = "windows")] {
+    if #[cfg(windows)] {
         mod iocp;
         pub use iocp::*;
     } else if #[cfg(any(

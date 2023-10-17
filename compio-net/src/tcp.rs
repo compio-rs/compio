@@ -149,7 +149,7 @@ impl TcpStream {
         use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6};
 
         super::each_addr_async(addr, |addr| async move {
-            let socket = if cfg!(target_os = "windows") {
+            let socket = if cfg!(windows) {
                 let bind_addr = if addr.is_ipv4() {
                     SockAddr::from(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
                 } else if addr.is_ipv6() {

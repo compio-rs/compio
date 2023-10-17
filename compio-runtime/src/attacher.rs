@@ -50,7 +50,7 @@ impl Attacher {
     /// * io-uring/polling: it will try to attach in the current thread if
     ///   needed.
     pub fn try_clone(&self, source: &impl AsRawFd) -> io::Result<Self> {
-        if cfg!(target_os = "windows") {
+        if cfg!(windows) {
             Ok(self.clone())
         } else {
             let new_self = Self::new();

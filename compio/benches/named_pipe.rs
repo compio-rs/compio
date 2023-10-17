@@ -25,7 +25,7 @@ fn basic(c: &mut Criterion) {
             .build()
             .unwrap();
         b.to_async(&runtime).iter(|| async {
-            #[cfg(target_os = "windows")]
+            #[cfg(windows)]
             {
                 use tokio::{
                     io::{AsyncReadExt, AsyncWriteExt},
@@ -52,7 +52,7 @@ fn basic(c: &mut Criterion) {
 
     group.bench_function("compio", |b| {
         b.to_async(CompioRuntime).iter(|| async {
-            #[cfg(target_os = "windows")]
+            #[cfg(windows)]
             {
                 use compio::{
                     buf::BufResult,
