@@ -1,6 +1,9 @@
 use std::io::prelude::*;
 
-use compio::fs::File;
+use compio::{
+    fs::File,
+    io::{AsyncReadAtExt, AsyncWriteAtExt},
+};
 use tempfile::NamedTempFile;
 
 const HELLO: &[u8] = b"hello world...";
@@ -26,7 +29,7 @@ async fn basic_read() {
 async fn basic_write() {
     let tempfile = tempfile();
 
-    let file = File::create(tempfile.path()).unwrap();
+    let mut file = File::create(tempfile.path()).unwrap();
 
     file.write_all_at(HELLO, 0).await.0.unwrap();
     file.sync_all().await.unwrap();
@@ -54,7 +57,7 @@ async fn drop_open() {
     let _ = File::create(tempfile.path());
 
     // Do something else
-    let file = File::create(tempfile.path()).unwrap();
+    let mut file = File::create(tempfile.path()).unwrap();
 
     file.write_all_at(HELLO, 0).await.0.unwrap();
 

@@ -18,6 +18,7 @@ rustdoc-args = ["--cfg docsrs"]
 # Workspace dependencies
 compio-buf = { workspace = true, optional = true }
 compio-driver = { workspace = true }
+compio-io = { workspace = true, optional = true }
 compio-runtime = { workspace = true, optional = true }
 
 # Windows specific dependencies
@@ -45,8 +46,4 @@ compio-runtime = { workspace = true, features = ["time"] }
 futures-util = "0.3"
 
 [features]
-runtime = ["dep:compio-buf", "dep:compio-runtime"]
-
-# Nightly features
-allocator_api = []
-nightly = ["allocator_api", "compio-buf?/allocator_api"]
+runtime = ["dep:compio-buf", "dep:compio-io", "dep:compio-runtime"]

@@ -5,6 +5,7 @@ use std::net::Ipv4Addr;
 use compio::{
     buf::*,
     fs::File,
+    io::{AsyncReadAt, AsyncReadAtExt, AsyncWriteAt},
     net::{TcpListener, TcpStream},
 };
 use compio_runtime::Unattached;
@@ -135,7 +136,7 @@ async fn drop_on_complete() {
 async fn too_many_submissions() {
     let tempfile = tempfile();
 
-    let file = File::create(tempfile.path()).unwrap();
+    let mut file = File::create(tempfile.path()).unwrap();
     for _ in 0..600 {
         poll_once(async {
             file.write_at("hello world", 0).await.0.unwrap();

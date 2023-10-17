@@ -68,7 +68,7 @@ all = ["time", "macros", "signal", "dispatcher"]
 allocator_api = [
     "bumpalo/allocator_api",
     "compio-buf/allocator_api",
-    "compio-fs/allocator_api",
+    "compio-io/allocator_api",
 ]
 lazy_cell = ["compio-signal?/lazy_cell"]
 once_cell_try = [

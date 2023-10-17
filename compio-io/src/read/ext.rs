@@ -1,4 +1,7 @@
-use compio_buf::{buf_try, BufResult, IntoInner, IoBufMut, IoVectoredBufMut};
+#[cfg(feature = "allocator_api")]
+use std::alloc::Allocator;
+
+use compio_buf::{buf_try, vec_alloc, BufResult, IntoInner, IoBufMut, IoVectoredBufMut};
 
 use crate::{util::Take, AsyncRead, AsyncReadAt, IoResult};
 
@@ -180,6 +183,36 @@ pub trait AsyncReadAtExt: AsyncReadAt {
             read,
             loop self.read_at(buf, pos + read as u64)
         );
+    }
+
+    /// Read all bytes until EOF in this source, placing them into `buffer`.
+    ///
+    /// All bytes read from this source will be appended to the specified buffer
+    /// `buffer`. This function will continuously call [`read_at()`] to append
+    /// more data to `buffer` until [`read_at()`] returns [`Ok(0)`].
+    ///
+    /// If successful, this function will return the total number of bytes read.
+    ///
+    /// [`read_at()`]: AsyncReadAt::read_at
+    async fn read_to_end_at<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static>(
+        &self,
+        mut buffer: vec_alloc!(u8, A),
+        pos: u64,
+    ) -> BufResult<usize, vec_alloc!(u8, A)> {
+        let mut total_read = 0;
+        let mut read;
+        loop {
+            (read, buffer) = buf_try!(self.read_at(buffer, pos + total_read).await);
+            if read == 0 {
+                break;
+            } else {
+                total_read += read as u64;
+                if buffer.len() == buffer.capacity() {
+                    buffer.reserve(32);
+                }
+            }
+        }
+        BufResult(Ok(total_read as usize), buffer)
     }
 }
 

@@ -1,7 +1,6 @@
 //! Filesystem manipulation operations.
 
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
-#![cfg_attr(feature = "allocator_api", feature(allocator_api))]
 #![warn(missing_docs)]
 
 mod file;

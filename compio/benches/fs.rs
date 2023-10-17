@@ -43,6 +43,8 @@ fn read(c: &mut Criterion) {
 
     group.bench_function("compio", |b| {
         b.to_async(CompioRuntime).iter(|| async {
+            use compio::io::AsyncReadAtExt;
+
             let file = compio::fs::File::open("Cargo.toml").unwrap();
             let buffer = Vec::with_capacity(1024);
             let (_, buffer) = file.read_to_end_at(buffer, 0).await.unwrap();
@@ -85,7 +87,9 @@ fn write(c: &mut Criterion) {
     group.bench_function("compio", |b| {
         let temp_file = NamedTempFile::new().unwrap();
         b.to_async(CompioRuntime).iter(|| async {
-            let file = compio::fs::File::create(temp_file.path()).unwrap();
+            use compio::io::AsyncWriteAtExt;
+
+            let mut file = compio::fs::File::create(temp_file.path()).unwrap();
             file.write_all_at(CONTENT, 0).await.unwrap();
         })
     });

@@ -6,7 +6,7 @@
 //! ## Quick start
 //! ```rust
 //! # compio::runtime::block_on(async {
-//! use compio::fs::File;
+//! use compio::{fs::File, io::AsyncReadAtExt};
 //!
 //! let file = File::open("Cargo.toml").unwrap();
 //! let (read, buffer) = file
@@ -42,4 +42,6 @@ pub use runtime::event;
 #[doc(no_inline)]
 pub use runtime::time;
 #[doc(inline)]
-pub use {compio_buf as buf, compio_driver as driver, compio_fs as fs, compio_net as net};
+pub use {
+    compio_buf as buf, compio_driver as driver, compio_fs as fs, compio_io as io, compio_net as net,
+};
