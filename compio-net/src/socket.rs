@@ -1,4 +1,4 @@
-use std::{io, net::Shutdown};
+use std::io;
 
 use compio_driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
@@ -70,10 +70,6 @@ impl Socket {
 
     pub fn listen(&self, backlog: i32) -> io::Result<()> {
         self.socket.listen(backlog)
-    }
-
-    pub fn shutdown_std(&self, how: Shutdown) -> io::Result<()> {
-        self.socket.shutdown(how)
     }
 
     pub fn connect(&self, addr: &SockAddr) -> io::Result<()> {
@@ -204,7 +200,7 @@ impl AsyncWrite for Socket {
     }
 
     async fn shutdown(&mut self) -> io::Result<()> {
-        self.shutdown_std(Shutdown::Write)
+        self.socket.shutdown(std::net::Shutdown::Write)
     }
 }
 
