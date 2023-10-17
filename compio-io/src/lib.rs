@@ -32,7 +32,8 @@
 //! ### Read
 //!
 //! ```
-//! use compio_io::{buf::BufResult, AsyncRead};
+//! use compio_buf::BufResult;
+//! use compio_io::AsyncRead;
 //! # #[compio_macros::main] async fn main() {
 //!
 //! let mut reader = "Hello, world!".as_bytes();
@@ -52,7 +53,8 @@
 //! ```
 //! use std::io::Cursor;
 //!
-//! use compio_io::{buf::BufResult, AsyncWrite};
+//! use compio_buf::BufResult;
+//! use compio_io::AsyncWrite;
 //! # #[compio_macros::main] async fn main() {
 //!
 //! let mut writer = Cursor::new([0; 6]);
@@ -68,7 +70,8 @@
 //! append the content to the end:
 //!
 //! ```
-//! use compio_io::{buf::BufResult, AsyncWrite};
+//! use compio_buf::BufResult;
+//! use compio_io::AsyncWrite;
 //! # #[compio_macros::main] async fn main() {
 //!
 //! let mut writer = vec![1, 2, 3];
@@ -91,9 +94,6 @@ mod write;
 
 pub(crate) type IoResult<T> = std::io::Result<T>;
 
-#[doc(inline)]
-pub use compio_buf as buf;
 pub use read::*;
-#[doc(inline)]
 pub use util::{copy, null, repeat};
 pub use write::*;
