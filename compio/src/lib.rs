@@ -27,6 +27,8 @@ pub use buf::BufResult;
 #[cfg(feature = "dispatcher")]
 #[doc(inline)]
 pub use compio_dispatcher as dispatcher;
+#[cfg(feature = "io")]
+pub use compio_io as io;
 #[cfg(feature = "macros")]
 pub use compio_macros::*;
 #[cfg(feature = "runtime")]
@@ -42,6 +44,4 @@ pub use runtime::event;
 #[doc(no_inline)]
 pub use runtime::time;
 #[doc(inline)]
-pub use {
-    compio_buf as buf, compio_driver as driver, compio_fs as fs, compio_io as io, compio_net as net,
-};
+pub use {compio_buf as buf, compio_driver as driver, compio_fs as fs, compio_net as net};

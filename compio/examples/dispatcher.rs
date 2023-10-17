@@ -3,6 +3,7 @@ use std::num::NonZeroUsize;
 use compio::{
     buf::IntoInner,
     dispatcher::Dispatcher,
+    io::{AsyncRead, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     runtime::{spawn, Unattached},
     BufResult,
@@ -24,8 +25,8 @@ async fn main() {
         let mut futures = FuturesUnordered::from_iter((0..CLIENT_NUM).map(|i| {
             let addr = &addr;
             async move {
-                let cli = TcpStream::connect(addr).await.unwrap();
-                cli.send_all(format!("Hello world {}!", i)).await.unwrap();
+                let mut cli = TcpStream::connect(addr).await.unwrap();
+                cli.write_all(format!("Hello world {}!", i)).await.unwrap();
             }
         }));
         while let Some(()) = futures.next().await {}
@@ -35,9 +36,9 @@ async fn main() {
         let srv = Unattached::new(srv).unwrap();
         dispatcher
             .dispatch(move || {
-                let srv = srv.into_inner();
+                let mut srv = srv.into_inner();
                 async move {
-                    let BufResult(res, buf) = srv.recv(Vec::with_capacity(20)).await;
+                    let BufResult(res, buf) = srv.read(Vec::with_capacity(20)).await;
                     res?;
                     println!("{}", std::str::from_utf8(&buf).unwrap());
                     Ok(())

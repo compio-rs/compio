@@ -5,7 +5,7 @@ use std::net::Ipv4Addr;
 use compio::{
     buf::*,
     fs::File,
-    io::{AsyncReadAt, AsyncReadAtExt, AsyncWriteAt},
+    io::{AsyncReadAt, AsyncReadAtExt, AsyncReadExt, AsyncWriteAt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
 use compio_runtime::Unattached;
@@ -18,17 +18,17 @@ async fn multi_threading() {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     let addr = listener.local_addr().unwrap();
 
-    let (tx, (rx, _)) =
+    let (mut tx, (rx, _)) =
         futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
 
-    tx.send_all(DATA).await.0.unwrap();
+    tx.write_all(DATA).await.0.unwrap();
 
     let rx = Unattached::new(rx).unwrap();
     if let Err(e) = std::thread::spawn(move || {
-        let rx = rx.into_inner();
+        let mut rx = rx.into_inner();
         compio::runtime::block_on(async {
             let buffer = Vec::with_capacity(DATA.len());
-            let (n, buffer) = rx.recv_exact(buffer).await.unwrap();
+            let (n, buffer) = rx.read_exact(buffer).await.unwrap();
             assert_eq!(n, buffer.len());
             assert_eq!(DATA, String::from_utf8(buffer).unwrap());
         });
@@ -49,15 +49,15 @@ async fn try_clone() {
     let (tx, (rx, _)) =
         futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
 
-    let tx = tx.try_clone().unwrap();
-    tx.send_all(DATA).await.0.unwrap();
+    let mut tx = tx.try_clone().unwrap();
+    tx.write_all(DATA).await.0.unwrap();
 
     let rx = Unattached::new(rx.try_clone().unwrap()).unwrap();
     if let Err(e) = std::thread::spawn(move || {
-        let rx = rx.into_inner();
+        let mut rx = rx.into_inner();
         compio::runtime::block_on(async {
             let buffer = Vec::with_capacity(DATA.len());
-            let (n, buffer) = rx.recv_exact(buffer).await.unwrap();
+            let (n, buffer) = rx.read_exact(buffer).await.unwrap();
             assert_eq!(n, buffer.len());
             assert_eq!(DATA, String::from_utf8(buffer).unwrap());
         });
