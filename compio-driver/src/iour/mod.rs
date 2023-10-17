@@ -165,7 +165,7 @@ fn create_entry(entry: cqueue::Entry) -> Entry {
     } else {
         Ok(result as _)
     };
-    Entry::new(entry.user_data() as _, result)
+    Entry::new(entry.user_data() as _, result, entry.flags())
 }
 
 fn timespec(duration: std::time::Duration) -> Timespec {

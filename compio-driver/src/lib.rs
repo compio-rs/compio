@@ -278,16 +278,26 @@ impl Operation {
 pub struct Entry {
     user_data: usize,
     result: io::Result<usize>,
+    flags: u32,
 }
 
 impl Entry {
-    pub(crate) fn new(user_data: usize, result: io::Result<usize>) -> Self {
-        Self { user_data, result }
+    pub(crate) fn new(user_data: usize, result: io::Result<usize>, flags: u32) -> Self {
+        Self {
+            user_data,
+            result,
+            flags,
+        }
     }
 
     /// The user-defined data returned by [`Proactor::push`].
     pub fn user_data(&self) -> usize {
         self.user_data
+    }
+
+    /// The entry flags
+    pub fn flags(&self) -> u32 {
+        self.flags
     }
 
     /// The result of the operation.

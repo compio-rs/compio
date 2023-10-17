@@ -234,7 +234,7 @@ impl Driver {
                     Poll::Ready(res) => Some(res),
                 };
                 if let Some(res) = res {
-                    let entry = Entry::new(user_data, res);
+                    let entry = Entry::new(user_data, res, 0);
                     entries.extend(Some(entry));
                 }
             }
@@ -267,5 +267,6 @@ fn entry_cancelled(user_data: usize) -> Entry {
     Entry::new(
         user_data,
         Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)),
+        0,
     )
 }
