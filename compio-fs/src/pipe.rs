@@ -447,10 +447,7 @@ impl AsyncRead for Receiver {
     async fn read_vectored<V: compio_buf::IoVectoredBufMut>(
         &mut self,
         buffer: V,
-    ) -> BufResult<usize, V>
-    where
-        V: Unpin + 'static,
-    {
+    ) -> BufResult<usize, V> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = RecvVectored::new(self.as_raw_fd(), buffer);
         submit(op).await.into_inner().map_advanced()
