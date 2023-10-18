@@ -202,10 +202,7 @@ impl AsyncRead for TcpStream {
         self.inner.read(buf).await
     }
 
-    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V>
-    where
-        V: Unpin + 'static,
-    {
+    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
         self.inner.read_vectored(buf).await
     }
 }

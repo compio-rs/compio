@@ -8,6 +8,58 @@ use socket2::SockAddr;
 use crate::op::*;
 use crate::RawFd;
 
+pub struct ReadVectoredAt<T: IoVectoredBufMut> {
+    pub(crate) fd: RawFd,
+    pub(crate) offset: u64,
+    pub(crate) buffer: T,
+    pub(crate) slices: Vec<IoSliceMut>,
+}
+
+impl<T: IoVectoredBufMut> ReadVectoredAt<T> {
+    pub fn new(fd: RawFd, offset: u64, buffer: T) -> Self {
+        Self {
+            fd,
+            offset,
+            buffer,
+            slices: vec![],
+        }
+    }
+}
+
+impl<T: IoVectoredBufMut> IntoInner for ReadVectoredAt<T> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+pub struct WriteVectoredAt<T: IoVectoredBuf> {
+    pub(crate) fd: RawFd,
+    pub(crate) offset: u64,
+    pub(crate) buffer: T,
+    pub(crate) slices: Vec<IoSlice>,
+}
+
+impl<T: IoVectoredBuf> WriteVectoredAt<T> {
+    pub fn new(fd: RawFd, offset: u64, buffer: T) -> Self {
+        Self {
+            fd,
+            offset,
+            buffer,
+            slices: vec![],
+        }
+    }
+}
+
+impl<T: IoVectoredBuf> IntoInner for WriteVectoredAt<T> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
 /// Accept a connection.
 pub struct Accept {
     pub(crate) fd: RawFd,

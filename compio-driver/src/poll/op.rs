@@ -3,6 +3,14 @@ use std::{io, pin::Pin, task::Poll};
 use compio_buf::{
     IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
 };
+use libc::{
+    accept, connect, fsync, getsockopt, read, readv, recvfrom, recvmsg, sendmsg, sendto, write,
+    writev,
+};
+#[cfg(not(any(target_os = "linux", target_os = "android", target_os = "hurd")))]
+use libc::{pread, preadv, pwrite, pwritev};
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "hurd"))]
+use libc::{pread64 as pread, preadv64 as preadv, pwrite64 as pwrite, pwritev64 as pwritev};
 use polling::Event;
 use socket2::SockAddr;
 
@@ -42,6 +50,35 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
     }
 }
 
+impl<T: IoVectoredBufMut> OpCode for ReadVectoredAt<T> {
+    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
+        self.slices = unsafe { self.buffer.as_io_slices_mut() };
+        if cfg!(any(target_os = "linux", target_os = "android")) {
+            Ok(Decision::Completed(syscall!(preadv(
+                self.fd,
+                self.slices.as_ptr() as _,
+                self.slices.len() as _,
+                self.offset as _
+            ))? as _))
+        } else {
+            Ok(Decision::wait_readable(self.fd))
+        }
+    }
+
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+        debug_assert!(event.readable);
+
+        syscall!(
+            break preadv(
+                self.fd,
+                self.slices.as_ptr() as _,
+                self.slices.len() as _,
+                self.offset as _
+            )
+        )
+    }
+}
+
 impl<T: IoBuf> OpCode for WriteAt<T> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         if cfg!(any(target_os = "linux", target_os = "android")) {
@@ -67,6 +104,35 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
                 self.fd,
                 slice.as_ptr() as _,
                 slice.len() as _,
+                self.offset as _
+            )
+        )
+    }
+}
+
+impl<T: IoVectoredBuf> OpCode for WriteVectoredAt<T> {
+    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
+        self.slices = unsafe { self.buffer.as_io_slices() };
+        if cfg!(any(target_os = "linux", target_os = "android")) {
+            Ok(Decision::Completed(syscall!(pwritev(
+                self.fd,
+                self.slices.as_ptr() as _,
+                self.slices.len() as _,
+                self.offset as _
+            ))? as _))
+        } else {
+            Ok(Decision::wait_writable(self.fd))
+        }
+    }
+
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+        debug_assert!(event.writable);
+
+        syscall!(
+            break pwritev(
+                self.fd,
+                self.slices.as_ptr() as _,
+                self.slices.len() as _,
                 self.offset as _
             )
         )

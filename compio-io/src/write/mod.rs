@@ -148,6 +148,39 @@ impl AsyncWrite for Vec<u8> {
 pub trait AsyncWriteAt {
     /// Like `write`, except that it writes at a specified position.
     async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T>;
+
+    async fn write_vectored_at<T: IoVectoredBuf>(
+        &mut self,
+        buf: T,
+        pos: u64,
+    ) -> BufResult<usize, T> {
+        let mut iter = match buf.owned_iter() {
+            Ok(iter) => iter,
+            Err(buf) => return BufResult(Ok(0), buf),
+        };
+        let mut total = 0;
+
+        loop {
+            if iter.buf_len() == 0 {
+                continue;
+            }
+            match self.write_at(iter, pos + total).await {
+                BufResult(Ok(n), ret) => {
+                    iter = ret;
+                    if n == 0 || n < iter.buf_len() {
+                        return BufResult(Ok(total as _), iter.into_inner());
+                    }
+                    total += n as u64;
+                }
+                BufResult(Err(e), ret) => return BufResult(Err(e), ret.into_inner()),
+            }
+
+            match iter.next() {
+                Ok(next) => iter = next,
+                Err(buf) => return BufResult(Ok(total as _), buf),
+            }
+        }
+    }
 }
 
 macro_rules! impl_write_at {

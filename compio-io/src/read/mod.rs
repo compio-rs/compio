@@ -43,10 +43,7 @@ pub trait AsyncRead {
     /// [`SetBufInit::set_buf_init`] after reading.
     ///
     /// [`SetBufInit::set_buf_init`]: compio_buf::SetBufInit::set_buf_init
-    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V>
-    where
-        V: Unpin + 'static,
-    {
+    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
         let mut iter = match buf.owned_iter_mut() {
             Ok(buf) => buf,
             Err(buf) => return BufResult(Ok(0), buf),
@@ -185,6 +182,39 @@ impl AsyncRead for &[u8] {
 pub trait AsyncReadAt {
     /// Like `read`, except that it reads at a specified position.
     async fn read_at<T: IoBufMut>(&self, buf: T, pos: u64) -> BufResult<usize, T>;
+
+    async fn read_vectored_at<T: IoVectoredBufMut>(&self, buf: T, pos: u64) -> BufResult<usize, T> {
+        let mut iter = match buf.owned_iter_mut() {
+            Ok(buf) => buf,
+            Err(buf) => return BufResult(Ok(0), buf),
+        };
+        let mut total = 0;
+
+        loop {
+            let len = iter.uninit_len();
+            if len == 0 {
+                continue;
+            }
+
+            match self.read_at(iter, pos + total).await {
+                BufResult(Ok(n), ret) => {
+                    iter = ret;
+                    if n == 0 || n < len {
+                        break;
+                    }
+                    total += n as u64;
+                }
+                BufResult(Err(e), iter) => return BufResult(Err(e), iter.into_inner()),
+            };
+
+            match iter.next() {
+                Ok(next) => iter = next,
+                Err(buf) => return BufResult(Ok(total as _), buf),
+            }
+        }
+
+        BufResult(Ok(total as _), iter.into_inner())
+    }
 }
 
 macro_rules! impl_read_at {

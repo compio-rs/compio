@@ -1,9 +1,11 @@
 use std::{fs::Metadata, io, path::Path};
 
+#[cfg(all(feature = "runtime", unix))]
+use compio_driver::op::{ReadVectoredAt, WriteVectoredAt};
 use compio_driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 #[cfg(feature = "runtime")]
 use {
-    compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut},
+    compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     compio_driver::op::{BufResultExt, ReadAt, Sync, WriteAt},
     compio_io::{AsyncReadAt, AsyncWriteAt},
     compio_runtime::{submit, Attachable, Attacher},
@@ -141,6 +143,17 @@ impl AsyncReadAt for File {
         let op = ReadAt::new(self.as_raw_fd(), pos, buffer);
         submit(op).await.into_inner().map_advanced()
     }
+
+    #[cfg(unix)]
+    async fn read_vectored_at<T: IoVectoredBufMut>(
+        &self,
+        buffer: T,
+        pos: u64,
+    ) -> BufResult<usize, T> {
+        let ((), buffer) = buf_try!(self.attach(), buffer);
+        let op = ReadVectoredAt::new(self.as_raw_fd(), pos, buffer);
+        submit(op).await.into_inner().map_advanced()
+    }
 }
 
 #[cfg(feature = "runtime")]
@@ -148,6 +161,17 @@ impl AsyncWriteAt for File {
     async fn write_at<T: IoBuf>(&mut self, buffer: T, pos: u64) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = WriteAt::new(self.as_raw_fd(), pos, buffer);
+        submit(op).await.into_inner()
+    }
+
+    #[cfg(unix)]
+    async fn write_vectored_at<T: IoVectoredBuf>(
+        &mut self,
+        buffer: T,
+        pos: u64,
+    ) -> BufResult<usize, T> {
+        let ((), buffer) = buf_try!(self.attach(), buffer);
+        let op = WriteVectoredAt::new(self.as_raw_fd(), pos, buffer);
         submit(op).await.into_inner()
     }
 }
