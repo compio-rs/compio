@@ -5,7 +5,7 @@ use std::net::Ipv4Addr;
 use compio::{
     buf::*,
     fs::File,
-    io::{AsyncReadAt, AsyncReadAtExt, AsyncReadExt, AsyncWriteAt, AsyncWriteExt},
+    io::{AsyncReadAt, AsyncReadExt, AsyncWriteAt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
 use compio_runtime::Unattached;
@@ -152,6 +152,8 @@ async fn arena() {
         alloc::{AllocError, Allocator, Layout},
         ptr::NonNull,
     };
+
+    use compio::io::AsyncReadAtExt;
 
     thread_local! {
         static ALLOCATOR: bumpalo::Bump = bumpalo::Bump::new();

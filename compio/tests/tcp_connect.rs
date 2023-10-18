@@ -8,7 +8,7 @@ async fn test_connect_ip_impl(
 ) {
     let listener = TcpListener::bind(target).unwrap();
     let addr = listener.local_addr().unwrap();
-    assert!(assert_fn(&addr.as_socket().unwrap()));
+    assert!(assert_fn(&addr));
 
     let (tx, rx) = futures_channel::oneshot::channel();
 
@@ -73,24 +73,24 @@ macro_rules! test_connect {
 
 test_connect! {
     (ip_string, (|listener: &TcpListener| {
-        format!("127.0.0.1:{}", listener.local_addr().unwrap().as_socket().unwrap().port())
+        format!("127.0.0.1:{}", listener.local_addr().unwrap().port())
     })),
     (ip_str, (|listener: &TcpListener| {
-        let s = format!("127.0.0.1:{}", listener.local_addr().unwrap().as_socket().unwrap().port());
+        let s = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
         let slice: &str = &*Box::leak(s.into_boxed_str());
         slice
     })),
     (ip_port_tuple, (|listener: &TcpListener| {
-        let addr = listener.local_addr().unwrap().as_socket().unwrap();
+        let addr = listener.local_addr().unwrap();
         (addr.ip(), addr.port())
     })),
     (ip_port_tuple_ref, (|listener: &TcpListener| {
-        let addr = listener.local_addr().unwrap().as_socket().unwrap();
+        let addr = listener.local_addr().unwrap();
         let tuple_ref: &(IpAddr, u16) = &*Box::leak(Box::new((addr.ip(), addr.port())));
         tuple_ref
     })),
     (ip_str_port_tuple, (|listener: &TcpListener| {
-        let addr = listener.local_addr().unwrap().as_socket().unwrap();
+        let addr = listener.local_addr().unwrap();
         ("127.0.0.1", addr.port())
     })),
 }
