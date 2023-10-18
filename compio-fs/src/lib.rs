@@ -11,3 +11,6 @@ pub use open_options::*;
 
 #[cfg(windows)]
 pub mod named_pipe;
+
+#[cfg(unix)]
+pub mod pipe;

@@ -45,6 +45,7 @@ windows-sys = { version = "0.48", features = ["Win32_System_IO"] }
 
 # Unix specific dependencies
 [target.'cfg(unix)'.dependencies]
+os_pipe = "1"
 libc = "0.2"
 
 [features]
