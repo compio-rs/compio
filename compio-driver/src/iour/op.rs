@@ -19,7 +19,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
         let fd = Fd(self.fd);
         let slice = self.buffer.as_uninit_slice();
         opcode::Read::new(fd, slice.as_mut_ptr() as _, slice.len() as _)
-            .offset(self.offset())
+            .offset(self.offset)
             .build()
     }
 }
@@ -28,7 +28,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
     fn create_entry(self: Pin<&mut Self>) -> Entry {
         let slice = self.buffer.as_slice();
         opcode::Write::new(Fd(self.fd), slice.as_ptr(), slice.len() as _)
-            .offset(self.offset())
+            .offset(self.offset)
             .build()
     }
 }

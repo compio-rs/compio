@@ -6,26 +6,6 @@ use socket2::SockAddr;
 
 use crate::{op::*, RawFd};
 
-impl<T: IoBufMut> ReadAt<T> {
-    pub(crate) fn offset(&self) -> u64 {
-        if self.offset == usize::MAX {
-            u64::MAX
-        } else {
-            self.offset as _
-        }
-    }
-}
-
-impl<T: IoBuf> WriteAt<T> {
-    pub(crate) fn offset(&self) -> u64 {
-        if self.offset == usize::MAX {
-            u64::MAX
-        } else {
-            self.offset as _
-        }
-    }
-}
-
 /// Accept a connection.
 pub struct Accept {
     pub(crate) fd: RawFd,

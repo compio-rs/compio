@@ -18,7 +18,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
                 fd,
                 slice.as_mut_ptr() as _,
                 slice.len() as _,
-                self.offset()
+                self.offset as _
             ))? as _))
         } else {
             Ok(Decision::wait_readable(self.fd))
@@ -31,7 +31,14 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
         let fd = self.fd;
         let slice = self.buffer.as_uninit_slice();
 
-        syscall!(break pread(fd, slice.as_mut_ptr() as _, slice.len() as _, self.offset()))
+        syscall!(
+            break pread(
+                fd,
+                slice.as_mut_ptr() as _,
+                slice.len() as _,
+                self.offset as _
+            )
+        )
     }
 }
 
@@ -43,7 +50,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
                 self.fd,
                 slice.as_ptr() as _,
                 slice.len() as _,
-                self.offset()
+                self.offset as _
             ))? as _))
         } else {
             Ok(Decision::wait_writable(self.fd))
@@ -60,7 +67,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
                 self.fd,
                 slice.as_ptr() as _,
                 slice.len() as _,
-                self.offset()
+                self.offset as _
             )
         )
     }
