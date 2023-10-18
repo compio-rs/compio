@@ -1,7 +1,7 @@
-use std::io;
+use std::{io, net::SocketAddr};
 
 use compio_driver::impl_raw_fd;
-use socket2::{Protocol, SockAddr, Type};
+use socket2::{Protocol, Type};
 #[cfg(feature = "runtime")]
 use {
     compio_buf::{buf_try, BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
@@ -145,14 +145,13 @@ impl UdpSocket {
     ///     .expect("couldn't connect to address");
     /// assert_eq!(
     ///     socket.peer_addr().unwrap(),
-    ///     SockAddr::from(SocketAddr::V4(SocketAddrV4::new(
-    ///         Ipv4Addr::new(192, 168, 0, 1),
-    ///         41203
-    ///     )))
+    ///     SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(192, 168, 0, 1), 41203))
     /// );
     /// ```
-    pub fn peer_addr(&self) -> io::Result<SockAddr> {
-        self.inner.peer_addr()
+    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
+        self.inner
+            .peer_addr()
+            .map(|addr| addr.as_socket().expect("should be SocketAddr"))
     }
 
     /// Returns the local address that this socket is bound to.
@@ -168,11 +167,13 @@ impl UdpSocket {
     /// let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
     /// let sock = UdpSocket::bind(&addr).unwrap();
     /// // the address the socket is bound to
-    /// let local_addr = sock.local_addr().unwrap().as_socket().unwrap();
+    /// let local_addr = sock.local_addr().unwrap();
     /// assert_eq!(local_addr, addr);
     /// ```
-    pub fn local_addr(&self) -> io::Result<SockAddr> {
-        self.inner.local_addr()
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.inner
+            .local_addr()
+            .map(|addr| addr.as_socket().expect("should be SocketAddr"))
     }
 
     /// Receives a packet of data from the socket into the buffer, returning the
@@ -206,8 +207,11 @@ impl UdpSocket {
     /// Receives a single datagram message on the socket. On success, returns
     /// the number of bytes received and the origin.
     #[cfg(feature = "runtime")]
-    pub async fn recv_from<T: IoBufMut>(&mut self, buffer: T) -> BufResult<(usize, SockAddr), T> {
-        self.inner.recv_from(buffer).await
+    pub async fn recv_from<T: IoBufMut>(&mut self, buffer: T) -> BufResult<(usize, SocketAddr), T> {
+        self.inner
+            .recv_from(buffer)
+            .await
+            .map_res(|(n, addr)| (n, addr.as_socket().expect("should be SocketAddr")))
     }
 
     /// Receives a single datagram message on the socket. On success, returns
@@ -216,8 +220,11 @@ impl UdpSocket {
     pub async fn recv_from_vectored<T: IoVectoredBufMut>(
         &mut self,
         buffer: T,
-    ) -> BufResult<(usize, SockAddr), T> {
-        self.inner.recv_from_vectored(buffer).await
+    ) -> BufResult<(usize, SocketAddr), T> {
+        self.inner
+            .recv_from_vectored(buffer)
+            .await
+            .map_res(|(n, addr)| (n, addr.as_socket().expect("should be SocketAddr")))
     }
 
     /// Sends data on the socket to the given address. On success, returns the

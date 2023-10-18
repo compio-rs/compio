@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, net::SocketAddr};
 
 use compio_driver::impl_raw_fd;
 use socket2::{Protocol, SockAddr, Type};
@@ -79,10 +79,10 @@ impl TcpListener {
     /// established, the corresponding [`TcpStream`] and the remote peer's
     /// address will be returned.
     #[cfg(feature = "runtime")]
-    pub async fn accept(&self) -> io::Result<(TcpStream, SockAddr)> {
+    pub async fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
         let (socket, addr) = self.inner.accept().await?;
         let stream = TcpStream { inner: socket };
-        Ok((stream, addr))
+        Ok((stream, addr.as_socket().expect("should be SocketAddr")))
     }
 
     /// Returns the local address that this listener is bound to.
@@ -102,15 +102,14 @@ impl TcpListener {
     ///
     /// let addr = listener.local_addr().expect("Couldn't get local address");
     /// assert_eq!(
-    ///     addr.as_socket().unwrap(),
-    ///     SocketAddr::from(SocketAddr::V4(SocketAddrV4::new(
-    ///         Ipv4Addr::new(127, 0, 0, 1),
-    ///         8080
-    ///     )))
+    ///     addr,
+    ///     SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080))
     /// );
     /// ```
-    pub fn local_addr(&self) -> io::Result<SockAddr> {
-        self.inner.local_addr()
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.inner
+            .local_addr()
+            .map(|addr| addr.as_socket().expect("should be SocketAddr"))
     }
 }
 
@@ -183,13 +182,17 @@ impl TcpStream {
     }
 
     /// Returns the socket address of the remote peer of this TCP connection.
-    pub fn peer_addr(&self) -> io::Result<SockAddr> {
-        self.inner.peer_addr()
+    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
+        self.inner
+            .peer_addr()
+            .map(|addr| addr.as_socket().expect("should be SocketAddr"))
     }
 
     /// Returns the socket address of the local half of this TCP connection.
-    pub fn local_addr(&self) -> io::Result<SockAddr> {
-        self.inner.local_addr()
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.inner
+            .local_addr()
+            .map(|addr| addr.as_socket().expect("should be SocketAddr"))
     }
 }
 
