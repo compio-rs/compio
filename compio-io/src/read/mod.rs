@@ -180,9 +180,11 @@ impl AsyncRead for &[u8] {
 ///
 /// Async read with a ownership of a buffer and a position
 pub trait AsyncReadAt {
-    /// Like `read`, except that it reads at a specified position.
+    /// Like [`AsyncRead::read`], except that it reads at a specified position.
     async fn read_at<T: IoBufMut>(&self, buf: T, pos: u64) -> BufResult<usize, T>;
 
+    /// Like [`AsyncRead::read_vectored`], except that it reads at a specified
+    /// position.
     async fn read_vectored_at<T: IoVectoredBufMut>(&self, buf: T, pos: u64) -> BufResult<usize, T> {
         let mut iter = match buf.owned_iter_mut() {
             Ok(buf) => buf,

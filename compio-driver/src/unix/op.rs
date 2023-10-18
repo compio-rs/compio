@@ -8,6 +8,7 @@ use socket2::SockAddr;
 use crate::op::*;
 use crate::RawFd;
 
+/// Read a file at specified position into vectored buffer.
 pub struct ReadVectoredAt<T: IoVectoredBufMut> {
     pub(crate) fd: RawFd,
     pub(crate) offset: u64,
@@ -16,6 +17,7 @@ pub struct ReadVectoredAt<T: IoVectoredBufMut> {
 }
 
 impl<T: IoVectoredBufMut> ReadVectoredAt<T> {
+    /// Create [`ReadVectoredAt`].
     pub fn new(fd: RawFd, offset: u64, buffer: T) -> Self {
         Self {
             fd,
@@ -34,6 +36,7 @@ impl<T: IoVectoredBufMut> IntoInner for ReadVectoredAt<T> {
     }
 }
 
+/// Write a file at specified position from vectored buffer.
 pub struct WriteVectoredAt<T: IoVectoredBuf> {
     pub(crate) fd: RawFd,
     pub(crate) offset: u64,
@@ -42,6 +45,7 @@ pub struct WriteVectoredAt<T: IoVectoredBuf> {
 }
 
 impl<T: IoVectoredBuf> WriteVectoredAt<T> {
+    /// Create [`WriteVectoredAt`]
     pub fn new(fd: RawFd, offset: u64, buffer: T) -> Self {
         Self {
             fd,

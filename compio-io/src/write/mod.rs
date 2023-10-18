@@ -146,9 +146,12 @@ impl AsyncWrite for Vec<u8> {
 ///
 /// Async write with a ownership of a buffer and a position
 pub trait AsyncWriteAt {
-    /// Like `write`, except that it writes at a specified position.
+    /// Like [`AsyncWrite::write`], except that it writes at a specified
+    /// position.
     async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T>;
 
+    /// Like [`AsyncWrite::write_vectored`], except that it writes at a
+    /// specified position.
     async fn write_vectored_at<T: IoVectoredBuf>(
         &mut self,
         buf: T,
