@@ -3,6 +3,7 @@
 use std::{io, os::unix::fs::FileTypeExt, path::Path};
 
 use compio_driver::{impl_raw_fd, syscall, AsRawFd, FromRawFd, IntoRawFd};
+use libc::fcntl;
 #[cfg(feature = "runtime")]
 use {
     compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut},
