@@ -1,7 +1,7 @@
 use std::{io, net::SocketAddr};
 
 use compio_driver::impl_raw_fd;
-use socket2::{Protocol, SockAddr, Type};
+use socket2::{Protocol, Type};
 #[cfg(feature = "runtime")]
 use {
     compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
@@ -149,6 +149,8 @@ impl TcpStream {
     #[cfg(feature = "runtime")]
     pub async fn connect(addr: impl ToSockAddrs) -> io::Result<Self> {
         use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6};
+
+        use socket2::SockAddr;
 
         super::each_addr_async(addr, |addr| async move {
             let socket = if cfg!(windows) {
