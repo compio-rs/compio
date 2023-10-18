@@ -60,14 +60,12 @@ macro_rules! loop_read_exact {
 macro_rules! loop_read_vectored {
     (
         $buf:ident,
-        $len:ident,
         $tracker:ident :
         $tracker_ty:ty,
-        $res:ident,
         $iter:ident,loop
         $read_expr:expr
     ) => {
-        loop_read_vectored!($buf, $len, $tracker: $tracker_ty, $res, $iter, loop $read_expr, break None)
+        loop_read_vectored!($buf, len, $tracker: $tracker_ty, res, $iter, loop $read_expr, break None)
     };
     (
         $buf:ident,
@@ -159,10 +157,7 @@ pub trait AsyncReadExt: AsyncRead {
 
     /// Read the exact number of bytes required to fill the vectored buf.
     async fn read_vectored_exact<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
-        loop_read_vectored!(
-            buf, len, total: usize, n, iter,
-            loop self.read_exact(iter)
-        )
+        loop_read_vectored!(buf, total: usize, iter, loop self.read_exact(iter))
     }
 
     /// Creates an adaptor which reads at most `limit` bytes from it.
@@ -253,10 +248,7 @@ pub trait AsyncReadAtExt: AsyncReadAt {
         buf: T,
         pos: u64,
     ) -> BufResult<usize, T> {
-        loop_read_vectored!(
-            buf, len, total: u64, n, iter,
-            loop self.read_exact_at(iter, pos + total)
-        )
+        loop_read_vectored!(buf, total: u64, iter, loop self.read_exact_at(iter, pos + total))
     }
 }
 

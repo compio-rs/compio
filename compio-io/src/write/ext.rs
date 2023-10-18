@@ -63,11 +63,10 @@ macro_rules! loop_write_vectored {
         $buf:ident,
         $tracker:ident :
         $tracker_ty:ty,
-        $res:ident,
         $iter:ident,loop
         $read_expr:expr
     ) => {
-        loop_write_vectored!($buf, $tracker: $tracker_ty, $res, $iter, loop $read_expr, break None)
+        loop_write_vectored!($buf, $tracker: $tracker_ty, res, $iter, loop $read_expr, break None)
     };
     (
         $buf:ident,
@@ -137,7 +136,7 @@ pub trait AsyncWriteExt: AsyncWrite {
     /// [`AsyncWrite::write_vectored`], except that it tries to write the entire
     /// contents of the buffer into this writer.
     async fn write_vectored_all<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        loop_write_vectored!(buf, total: usize, n, iter, loop self.write_all(iter))
+        loop_write_vectored!(buf, total: usize, iter, loop self.write_all(iter))
     }
 
     write_scalar!(u8, to_be_bytes, to_le_bytes);
@@ -178,7 +177,7 @@ pub trait AsyncWriteAtExt: AsyncWriteAt {
         buf: T,
         pos: u64,
     ) -> BufResult<usize, T> {
-        loop_write_vectored!(buf, total: u64, n, iter, loop self.write_all_at(iter, pos + total))
+        loop_write_vectored!(buf, total: u64, iter, loop self.write_all_at(iter, pos + total))
     }
 }
 
