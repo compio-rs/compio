@@ -52,6 +52,10 @@ futures-channel = "0.3"
 tempfile = "3"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt"] }
 
+# Unix specific dev dependencies
+[target.'cfg(unix)'.dev-dependencies]
+nix = { version = "0.27", features = ["fs"] }
+
 [features]
 default = ["runtime", "io-uring"]
 io-uring = ["compio-driver/io-uring"]
