@@ -6,7 +6,7 @@ use compio_driver::{impl_raw_fd, syscall, AsRawFd, FromRawFd, IntoRawFd};
 use libc::fcntl;
 #[cfg(feature = "runtime")]
 use {
-    compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut},
+    compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     compio_driver::op::{BufResultExt, Recv, RecvVectored, Send, SendVectored},
     compio_io::{AsyncRead, AsyncWrite},
     compio_runtime::{impl_attachable, submit, Attachable},
@@ -332,10 +332,7 @@ impl AsyncWrite for Sender {
         submit(op).await.into_inner()
     }
 
-    async fn write_vectored<T: compio_buf::IoVectoredBuf>(
-        &mut self,
-        buffer: T,
-    ) -> BufResult<usize, T> {
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = SendVectored::new(self.as_raw_fd(), buffer);
         submit(op).await.into_inner()
@@ -444,10 +441,7 @@ impl AsyncRead for Receiver {
         submit(op).await.into_inner().map_advanced()
     }
 
-    async fn read_vectored<V: compio_buf::IoVectoredBufMut>(
-        &mut self,
-        buffer: V,
-    ) -> BufResult<usize, V> {
+    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buffer: V) -> BufResult<usize, V> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = RecvVectored::new(self.as_raw_fd(), buffer);
         submit(op).await.into_inner().map_advanced()
