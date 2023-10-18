@@ -4,7 +4,9 @@ use compio_buf::{
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
-use crate::{op::*, RawFd};
+#[cfg(doc)]
+use crate::op::*;
+use crate::RawFd;
 
 /// Accept a connection.
 pub struct Accept {

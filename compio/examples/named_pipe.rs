@@ -1,12 +1,13 @@
+use compio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    BufResult,
+};
+
 #[compio::main(crate = "compio")]
 async fn main() {
     #[cfg(windows)]
     {
-        use compio::{
-            buf::BufResult,
-            fs::named_pipe::{ClientOptions, ServerOptions},
-            io::{AsyncReadExt, AsyncWriteExt},
-        };
+        use compio::fs::named_pipe::{ClientOptions, ServerOptions};
 
         const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe";
 
@@ -29,7 +30,7 @@ async fn main() {
     }
     #[cfg(unix)]
     {
-        use compio::{buf::IntoInner, fs::pipe::OpenOptions, runtime::Unattached, BufResult};
+        use compio::{buf::IntoInner, fs::pipe::OpenOptions, runtime::Unattached};
         use nix::{sys::stat::Mode, unistd::mkfifo};
         use tempfile::tempdir;
 
@@ -38,7 +39,7 @@ async fn main() {
 
         mkfifo(&file, Mode::S_IRWXU).unwrap();
 
-        let (rx, tx) = std::thread::scope(|s| {
+        let (mut rx, mut tx) = std::thread::scope(|s| {
             let rx = s.spawn(|| {
                 Unattached::new(OpenOptions::new().open_receiver(&file).unwrap()).unwrap()
             });

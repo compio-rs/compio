@@ -5,8 +5,10 @@ use std::{io, os::unix::fs::FileTypeExt, path::Path};
 use compio_driver::{impl_raw_fd, syscall, AsRawFd, FromRawFd, IntoRawFd};
 #[cfg(feature = "runtime")]
 use {
-    compio_buf::{BufResult, IoBuf, IoBufMut},
-    compio_runtime::impl_attachable,
+    compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut},
+    compio_driver::op::{BufResultExt, Recv, Send},
+    compio_io::{AsyncRead, AsyncWrite},
+    compio_runtime::{impl_attachable, submit, Attachable},
 };
 
 use crate::File;
@@ -15,9 +17,10 @@ use crate::File;
 ///
 /// ```
 /// use compio_fs::pipe::anon_pipe;
+/// use compio_io::{AsyncReadExt, AsyncWriteExt};
 ///
 /// # compio_runtime::block_on(async {
-/// let (rx, tx) = anon_pipe().unwrap();
+/// let (mut rx, mut tx) = anon_pipe().unwrap();
 ///
 /// tx.write_all("Hello world!").await.unwrap();
 /// let (_, buf) = rx.read_exact(Vec::with_capacity(12)).await.unwrap();
@@ -292,6 +295,7 @@ enum PipeEnd {
 ///
 /// ```
 /// use compio_fs::pipe;
+/// use compio_io::AsyncWriteExt;
 ///
 /// const FIFO_NAME: &str = "path/to/a/fifo";
 ///
@@ -317,17 +321,22 @@ impl Sender {
         set_nonblocking(&file)?;
         Ok(Sender { file })
     }
+}
 
-    /// Write a buffer into the pipe, returning how many bytes were written.
-    #[cfg(feature = "runtime")]
-    pub async fn write<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        self.file.write_at(buffer, usize::MAX).await
+#[cfg(feature = "runtime")]
+impl AsyncWrite for Sender {
+    async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
+        let ((), buffer) = buf_try!(self.attach(), buffer);
+        let op = Send::new(self.as_raw_fd(), buffer);
+        submit(op).await.into_inner()
     }
 
-    /// Write all bytes into the pipe.
-    #[cfg(feature = "runtime")]
-    pub async fn write_all<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        self.file.write_all_at(buffer, usize::MAX).await
+    async fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+
+    async fn shutdown(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 
@@ -349,6 +358,7 @@ impl_attachable!(Sender, file);
 ///
 /// use compio_buf::BufResult;
 /// use compio_fs::pipe;
+/// use compio_io::AsyncReadExt;
 ///
 /// const FIFO_NAME: &str = "path/to/a/fifo";
 ///
@@ -386,6 +396,7 @@ impl_attachable!(Sender, file);
 ///
 /// ```
 /// use compio_fs::pipe;
+/// use compio_io::AsyncReadExt;
 ///
 /// const FIFO_NAME: &str = "path/to/a/fifo";
 ///
@@ -413,18 +424,14 @@ impl Receiver {
         set_nonblocking(&file)?;
         Ok(Receiver { file })
     }
+}
 
-    /// Read some bytes from the pipe into the specified
-    /// buffer, returning how many bytes were read.
-    #[cfg(feature = "runtime")]
-    pub async fn read<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        self.file.read_at(buffer, usize::MAX).await
-    }
-
-    /// Read the exact number of bytes from the pipe.
-    #[cfg(feature = "runtime")]
-    pub async fn read_exact<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        self.file.read_exact_at(buffer, usize::MAX).await
+#[cfg(feature = "runtime")]
+impl AsyncRead for Receiver {
+    async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
+        let ((), buffer) = buf_try!(self.attach(), buffer);
+        let op = Recv::new(self.as_raw_fd(), buffer);
+        submit(op).await.into_inner().map_advanced()
     }
 }
 
