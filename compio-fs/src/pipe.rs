@@ -65,7 +65,7 @@ pub fn anonymous() -> io::Result<(Receiver, Sender)> {
 ///
 /// Opening a [`Sender`] on Linux when you are sure the file is a FIFO:
 ///
-/// ```
+/// ```ignore
 /// use compio_fs::pipe;
 /// use nix::{sys::stat::Mode, unistd::mkfifo};
 ///
@@ -293,7 +293,7 @@ enum PipeEnd {
 /// Note that using read-write access mode with FIFO files is not defined by
 /// the POSIX standard and it is only guaranteed to work on Linux.
 ///
-/// ```
+/// ```ignore
 /// use compio_fs::pipe;
 /// use compio_io::AsyncWriteExt;
 ///
@@ -394,7 +394,7 @@ impl_attachable!(Sender, file);
 /// Note that using read-write access mode with FIFO files is not defined by
 /// the POSIX standard and it is only guaranteed to work on Linux.
 ///
-/// ```
+/// ```ignore
 /// use compio_fs::pipe;
 /// use compio_io::AsyncReadExt;
 ///
