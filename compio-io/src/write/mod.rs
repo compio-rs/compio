@@ -5,6 +5,7 @@ use compio_buf::{BufResult, IntoInner, IoBuf, IoVectoredBuf};
 use crate::IoResult;
 
 mod buf;
+#[macro_use]
 mod ext;
 
 pub use buf::*;
@@ -29,32 +30,13 @@ pub trait AsyncWrite {
     /// guaranteed full write is desired, it is recommended to use
     /// [`AsyncWriteExt::write_all_vectored`] instead.
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let mut iter = match buf.owned_iter() {
-            Ok(iter) => iter,
-            Err(buf) => return BufResult(Ok(0), buf),
-        };
-        let mut total = 0;
-
-        loop {
-            if iter.buf_len() == 0 {
-                continue;
+        loop_write_vectored!(buf, total: usize, n, iter, loop self.write(iter),
+            break if n == 0 || n < iter.buf_len() {
+                Some(Ok(total))
+            } else {
+                None
             }
-            match self.write(iter).await {
-                BufResult(Ok(n), ret) => {
-                    iter = ret;
-                    if n == 0 || n < iter.buf_len() {
-                        return BufResult(Ok(total), iter.into_inner());
-                    }
-                    total += n;
-                }
-                BufResult(Err(e), ret) => return BufResult(Err(e), ret.into_inner()),
-            }
-
-            match iter.next() {
-                Ok(next) => iter = next,
-                Err(buf) => return BufResult(Ok(total), buf),
-            }
-        }
+        )
     }
 
     /// Attempts to flush the object, ensuring that any buffered data reach
@@ -157,32 +139,13 @@ pub trait AsyncWriteAt {
         buf: T,
         pos: u64,
     ) -> BufResult<usize, T> {
-        let mut iter = match buf.owned_iter() {
-            Ok(iter) => iter,
-            Err(buf) => return BufResult(Ok(0), buf),
-        };
-        let mut total = 0;
-
-        loop {
-            if iter.buf_len() == 0 {
-                continue;
+        loop_write_vectored!(buf, total: u64, n, iter, loop self.write_at(iter, pos + total),
+            break if n == 0 || n < iter.buf_len() {
+                Some(Ok(total as usize))
+            } else {
+                None
             }
-            match self.write_at(iter, pos + total).await {
-                BufResult(Ok(n), ret) => {
-                    iter = ret;
-                    if n == 0 || n < iter.buf_len() {
-                        return BufResult(Ok(total as _), iter.into_inner());
-                    }
-                    total += n as u64;
-                }
-                BufResult(Err(e), ret) => return BufResult(Err(e), ret.into_inner()),
-            }
-
-            match iter.next() {
-                Ok(next) => iter = next,
-                Err(buf) => return BufResult(Ok(total as _), buf),
-            }
-        }
+        )
     }
 }
 
@@ -192,6 +155,10 @@ macro_rules! impl_write_at {
             impl<A: AsyncWriteAt + ?Sized> AsyncWriteAt for $ty {
                 async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
                     (**self).write_at(buf, pos).await
+                }
+
+                async fn write_vectored_at<T: IoVectoredBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
+                    (**self).write_vectored_at(buf, pos).await
                 }
             }
         )*
