@@ -5,6 +5,7 @@ use std::{
 
 use compio_buf::{arrayvec::ArrayVec, BufResult};
 use compio_driver::{op::Recv, syscall};
+use libc::{eventfd, write};
 
 use crate::{attacher::Attacher, submit};
 
