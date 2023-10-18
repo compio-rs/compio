@@ -16,18 +16,18 @@ use crate::File;
 /// Creates a pair of anonymous pipe.
 ///
 /// ```
-/// use compio_fs::pipe::anon_pipe;
+/// use compio_fs::pipe::anonymous;
 /// use compio_io::{AsyncReadExt, AsyncWriteExt};
 ///
 /// # compio_runtime::block_on(async {
-/// let (mut rx, mut tx) = anon_pipe().unwrap();
+/// let (mut rx, mut tx) = anonymous().unwrap();
 ///
 /// tx.write_all("Hello world!").await.unwrap();
 /// let (_, buf) = rx.read_exact(Vec::with_capacity(12)).await.unwrap();
 /// assert_eq!(&buf, b"Hello world!");
 /// # });
 /// ```
-pub fn anon_pipe() -> io::Result<(Receiver, Sender)> {
+pub fn anonymous() -> io::Result<(Receiver, Sender)> {
     let (receiver, sender) = os_pipe::pipe()?;
     let receiver = Receiver::from_file(unsafe { File::from_raw_fd(receiver.into_raw_fd()) })?;
     let sender = Sender::from_file(unsafe { File::from_raw_fd(sender.into_raw_fd()) })?;
