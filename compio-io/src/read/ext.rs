@@ -92,10 +92,10 @@ macro_rules! loop_read_vectored {
             match $read_expr.await {
                 BufResult(Ok($res), ret) => {
                     $iter = ret;
+                    $tracker += $res as $tracker_ty;
                     if let Some(res) = $judge_expr {
                         return BufResult(res, $iter.into_inner());
                     }
-                    $tracker += $res as $tracker_ty;
                 }
                 BufResult(Err(e), $iter) => return BufResult(Err(e), $iter.into_inner()),
             };

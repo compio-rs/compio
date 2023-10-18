@@ -80,6 +80,11 @@ macro_rules! impl_read {
             async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
                 (&self[..]).read(buf).await
             }
+
+            #[inline(always)]
+            async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
+                (&self[..]).read_vectored(buf).await
+            }
         }
     };
 
@@ -89,6 +94,11 @@ macro_rules! impl_read {
                 #[inline(always)]
                 async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
                     self.as_bytes().read(buf).await
+                }
+
+                #[inline(always)]
+                async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
+                    self.as_bytes().read_vectored(buf).await
                 }
             }
         )*
