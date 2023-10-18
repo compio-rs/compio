@@ -4,6 +4,7 @@
 //! crate defines [`IoBuf`] and [`IoBufMut`] traits which are implemented by
 //! buffer types that respect the safety contract.
 
+#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
 #![cfg_attr(feature = "read_buf", feature(read_buf))]
 #![cfg_attr(feature = "try_trait_v2", feature(try_trait_v2, try_trait_v2_residual))]
@@ -16,6 +17,9 @@ pub use bumpalo;
 #[cfg(feature = "bytes")]
 pub use bytes;
 
+mod io_slice;
+pub use io_slice::*;
+
 mod buf_result;
 pub use buf_result::*;
 
@@ -24,6 +28,9 @@ pub use io_buf::*;
 
 mod slice;
 pub use slice::*;
+
+mod iter;
+pub use iter::*;
 
 /// Trait to get the inner buffer of an operation or a result.
 pub trait IntoInner {

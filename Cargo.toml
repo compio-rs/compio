@@ -9,6 +9,7 @@ members = [
     "compio-net",
     "compio-signal",
     "compio-dispatcher",
+    "compio-io",
 ]
 resolver = "2"
 
@@ -25,6 +26,7 @@ compio-driver = { path = "./compio-driver", version = "0.1.0", default-features 
 compio-runtime = { path = "./compio-runtime", version = "0.1.0" }
 compio-macros = { path = "./compio-macros", version = "0.1.0" }
 compio-fs = { path = "./compio-fs", version = "0.1.0" }
+compio-io = { path = "./compio-io", version = "0.1.0" }
 compio-net = { path = "./compio-net", version = "0.1.0" }
 compio-signal = { path = "./compio-signal", version = "0.1.0" }
 compio-dispatcher = { path = "./compio-dispatcher", version = "0.1.0" }

@@ -12,15 +12,17 @@ repository = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true
+rustdoc-args = ["--cfg docsrs"]
 
 [dependencies]
 # Workspace dependencies
 compio-buf = { workspace = true, optional = true }
 compio-driver = { workspace = true }
+compio-io = { workspace = true, optional = true }
 compio-runtime = { workspace = true, optional = true }
 
 # Windows specific dependencies
-[target.'cfg(target_os = "windows")'.dependencies]
+[target.'cfg(windows)'.dependencies]
 widestring = "1"
 windows-sys = { version = "0.48", features = [
     "Win32_Foundation",
@@ -29,6 +31,10 @@ windows-sys = { version = "0.48", features = [
     "Win32_System_Pipes",
     "Win32_System_SystemServices",
 ] }
+
+# Windows specific dev dependencies
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.48", features = ["Win32_Security_Authorization"] }
 
 # Unix specific dependencies
 [target.'cfg(unix)'.dependencies]
@@ -49,8 +55,4 @@ windows-sys = { version = "0.48", features = ["Win32_Security_Authorization"] }
 nix = { version = "0.27", features = ["fs"] }
 
 [features]
-runtime = ["dep:compio-buf", "dep:compio-runtime"]
-
-# Nightly features
-allocator_api = []
-nightly = ["allocator_api", "compio-buf?/allocator_api"]
+runtime = ["dep:compio-buf", "dep:compio-io", "dep:compio-runtime"]

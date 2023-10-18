@@ -33,7 +33,7 @@ compio = { version = "0.8.0", features = ["macros"] }
 Then we can use high level APIs to perform filesystem & net IO.
 
 ```rust
-use compio::fs::File;
+use compio::{fs::File, io::AsyncReadAtExt};
 
 #[compio::main]
 async fn main() {

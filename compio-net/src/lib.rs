@@ -2,6 +2,7 @@
 //!
 //! Currently, TCP/UDP/Unix socket are implemented.
 
+#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![warn(missing_docs)]
 
 mod socket;

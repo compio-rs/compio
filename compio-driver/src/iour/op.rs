@@ -1,10 +1,8 @@
-use std::{
-    io::{IoSlice, IoSliceMut},
-    os::fd::RawFd,
-    pin::Pin,
-};
+use std::{os::fd::RawFd, pin::Pin};
 
-use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{
+    IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
+};
 use io_uring::{
     opcode,
     squeue::Entry,
@@ -140,7 +138,7 @@ impl RecvFromHeader {
 pub struct RecvFrom<T: IoBufMut> {
     header: RecvFromHeader,
     buffer: T,
-    slice: [IoSliceMut<'static>; 1],
+    slice: [IoSliceMut; 1],
 }
 
 impl<T: IoBufMut> RecvFrom<T> {
@@ -149,7 +147,8 @@ impl<T: IoBufMut> RecvFrom<T> {
         Self {
             header: RecvFromHeader::new(fd),
             buffer,
-            slice: [IoSliceMut::new(&mut [])],
+            // SAFETY: We never use this slice.
+            slice: [unsafe { IoSliceMut::from_slice(&mut []) }],
         }
     }
 }
@@ -175,7 +174,7 @@ impl<T: IoBufMut> IntoInner for RecvFrom<T> {
 pub struct RecvFromVectored<T: IoVectoredBufMut> {
     header: RecvFromHeader,
     buffer: T,
-    slice: Vec<IoSliceMut<'static>>,
+    slice: Vec<IoSliceMut>,
 }
 
 impl<T: IoVectoredBufMut> RecvFromVectored<T> {
@@ -239,7 +238,7 @@ impl SendToHeader {
 pub struct SendTo<T: IoBuf> {
     header: SendToHeader,
     buffer: T,
-    slice: [IoSlice<'static>; 1],
+    slice: [IoSlice; 1],
 }
 
 impl<T: IoBuf> SendTo<T> {
@@ -248,7 +247,8 @@ impl<T: IoBuf> SendTo<T> {
         Self {
             header: SendToHeader::new(fd, addr),
             buffer,
-            slice: [IoSlice::new(&[])],
+            // SAFETY: We never use this slice.
+            slice: [unsafe { IoSlice::from_slice(&[]) }],
         }
     }
 }
@@ -273,7 +273,7 @@ impl<T: IoBuf> IntoInner for SendTo<T> {
 pub struct SendToVectored<T: IoVectoredBuf> {
     header: SendToHeader,
     buffer: T,
-    slice: Vec<IoSlice<'static>>,
+    slice: Vec<IoSlice>,
 }
 
 impl<T: IoVectoredBuf> SendToVectored<T> {

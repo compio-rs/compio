@@ -32,6 +32,7 @@ use windows_sys::Win32::{
 use {
     compio_buf::{BufResult, IoBuf, IoBufMut},
     compio_driver::op::ConnectNamedPipe,
+    compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt},
     compio_runtime::{impl_attachable, submit, Attachable},
 };
 
@@ -178,6 +179,7 @@ impl NamedPipeServer {
     ///
     /// ```
     /// use compio_fs::named_pipe::{ClientOptions, ServerOptions};
+    /// use compio_io::AsyncWrite;
     /// use windows_sys::Win32::Foundation::ERROR_PIPE_NOT_CONNECTED;
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-disconnect";
@@ -185,7 +187,7 @@ impl NamedPipeServer {
     /// # compio_runtime::block_on(async move {
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
     ///
-    /// let client = ClientOptions::new().open(PIPE_NAME).unwrap();
+    /// let mut client = ClientOptions::new().open(PIPE_NAME).unwrap();
     ///
     /// // Wait for a client to become connected.
     /// server.connect().await.unwrap();
@@ -203,30 +205,29 @@ impl NamedPipeServer {
         syscall!(BOOL, DisconnectNamedPipe(self.as_raw_fd() as _))?;
         Ok(())
     }
+}
 
-    /// Read some bytes from the pipe into the specified
-    /// buffer, returning how many bytes were read.
-    #[cfg(feature = "runtime")]
-    pub async fn read<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+#[cfg(feature = "runtime")]
+impl AsyncRead for NamedPipeServer {
+    async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
+        // The position is ignored.
         self.handle.read_at(buffer, 0).await
     }
+}
 
-    /// Read the exact number of bytes from the pipe.
-    #[cfg(feature = "runtime")]
-    pub async fn read_exact<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        self.handle.read_exact_at(buffer, 0).await
-    }
-
-    /// Write a buffer into the pipe, returning how many bytes were written.
-    #[cfg(feature = "runtime")]
-    pub async fn write<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
+#[cfg(feature = "runtime")]
+impl AsyncWrite for NamedPipeServer {
+    async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
+        // The position is ignored.
         self.handle.write_at(buffer, 0).await
     }
 
-    /// Write all bytes into the pipe.
-    #[cfg(feature = "runtime")]
-    pub async fn write_all<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        self.handle.write_all_at(buffer, 0).await
+    async fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+
+    async fn shutdown(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 
@@ -315,30 +316,29 @@ impl NamedPipeClient {
         // Safety: we're ensuring the lifetime of the named pipe.
         unsafe { named_pipe_info(self.as_raw_fd()) }
     }
+}
 
-    /// Read some bytes from the pipe into the specified
-    /// buffer, returning how many bytes were read.
-    #[cfg(feature = "runtime")]
-    pub async fn read<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+#[cfg(feature = "runtime")]
+impl AsyncRead for NamedPipeClient {
+    async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
+        // The position is ignored.
         self.handle.read_at(buffer, 0).await
     }
+}
 
-    /// Read the exact number of bytes from the pipe.
-    #[cfg(feature = "runtime")]
-    pub async fn read_exact<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        self.handle.read_exact_at(buffer, 0).await
-    }
-
-    /// Write a buffer into the pipe, returning how many bytes were written.
-    #[cfg(feature = "runtime")]
-    pub async fn write<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
+#[cfg(feature = "runtime")]
+impl AsyncWrite for NamedPipeClient {
+    async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
+        // The position is ignored.
         self.handle.write_at(buffer, 0).await
     }
 
-    /// Write all bytes into the pipe.
-    #[cfg(feature = "runtime")]
-    pub async fn write_all<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        self.handle.write_all_at(buffer, 0).await
+    async fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+
+    async fn shutdown(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 
@@ -452,6 +452,7 @@ impl ServerOptions {
     /// use std::io;
     ///
     /// use compio_fs::named_pipe::{ClientOptions, ServerOptions};
+    /// use compio_io::AsyncWrite;
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-inbound-err2";
     ///
@@ -461,7 +462,7 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
+    /// let mut client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
@@ -480,16 +481,17 @@ impl ServerOptions {
     ///
     /// use compio_buf::BufResult;
     /// use compio_fs::named_pipe::{ClientOptions, ServerOptions};
+    /// use compio_io::{AsyncReadExt, AsyncWriteExt};
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-inbound";
     ///
     /// # compio_runtime::block_on(async move {
-    /// let server = ServerOptions::new()
+    /// let mut server = ServerOptions::new()
     ///     .access_inbound(false)
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
+    /// let mut client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
@@ -549,6 +551,7 @@ impl ServerOptions {
     /// use std::io;
     ///
     /// use compio_fs::named_pipe::{ClientOptions, ServerOptions};
+    /// use compio_io::AsyncRead;
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-outbound-err2";
     ///
@@ -558,7 +561,7 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let client = ClientOptions::new().read(false).open(PIPE_NAME).unwrap();
+    /// let mut client = ClientOptions::new().read(false).open(PIPE_NAME).unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
@@ -576,16 +579,17 @@ impl ServerOptions {
     /// ```
     /// use compio_buf::BufResult;
     /// use compio_fs::named_pipe::{ClientOptions, ServerOptions};
+    /// use compio_io::{AsyncReadExt, AsyncWriteExt};
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-outbound";
     ///
     /// # compio_runtime::block_on(async move {
-    /// let server = ServerOptions::new()
+    /// let mut server = ServerOptions::new()
     ///     .access_outbound(false)
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let client = ClientOptions::new().read(false).open(PIPE_NAME).unwrap();
+    /// let mut client = ClientOptions::new().read(false).open(PIPE_NAME).unwrap();
     ///
     /// server.connect().await.unwrap();
     ///

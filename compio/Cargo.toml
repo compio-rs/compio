@@ -13,6 +13,7 @@ repository = { workspace = true }
 [package.metadata.docs.rs]
 all-features = true
 default-target = "x86_64-pc-windows-msvc"
+rustdoc-args = ["--cfg docsrs"]
 targets = [
     "x86_64-pc-windows-msvc",
     "x86_64-unknown-linux-gnu",
@@ -34,17 +35,20 @@ compio-driver = { workspace = true }
 compio-runtime = { workspace = true, optional = true }
 compio-macros = { workspace = true, optional = true }
 compio-fs = { workspace = true }
+compio-io = { workspace = true, optional = true }
 compio-net = { workspace = true }
 compio-signal = { workspace = true, optional = true }
 compio-dispatcher = { workspace = true, optional = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
+compio-buf = { workspace = true, features = ["arrayvec"] }
+compio-macros = { workspace = true }
+
 bumpalo = "3"
 criterion = { version = "0.5", features = ["async_tokio"] }
 futures-util = "0.3"
 futures-channel = "0.3"
-compio-buf = { workspace = true, features = ["arrayvec"] }
 tempfile = "3"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt"] }
 
@@ -56,7 +60,13 @@ nix = { version = "0.27", features = ["fs"] }
 default = ["runtime", "io-uring"]
 io-uring = ["compio-driver/io-uring"]
 polling = ["compio-driver/polling"]
-runtime = ["dep:compio-runtime", "compio-fs/runtime", "compio-net/runtime"]
+io = ["dep:compio-io"]
+runtime = [
+    "dep:compio-runtime",
+    "compio-fs/runtime",
+    "compio-net/runtime",
+    "io",
+]
 macros = ["dep:compio-macros", "runtime"]
 event = ["compio-runtime/event", "runtime"]
 signal = ["dep:compio-signal", "event"]
@@ -68,7 +78,7 @@ all = ["time", "macros", "signal", "dispatcher"]
 allocator_api = [
     "bumpalo/allocator_api",
     "compio-buf/allocator_api",
-    "compio-fs/allocator_api",
+    "compio-io?/allocator_api",
 ]
 lazy_cell = ["compio-signal?/lazy_cell"]
 once_cell_try = [

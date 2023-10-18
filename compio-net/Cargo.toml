@@ -12,11 +12,13 @@ repository = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true
+rustdoc-args = ["--cfg docsrs"]
 
 [dependencies]
 # Workspace dependencies
 compio-buf = { workspace = true }
 compio-driver = { workspace = true }
+compio-io = { workspace = true, optional = true }
 compio-runtime = { workspace = true, optional = true }
 
 socket2 = { version = "0.5", features = ["all"] }
@@ -27,4 +29,4 @@ futures-util = "0.3"
 tempfile = "3"
 
 [features]
-runtime = ["dep:compio-runtime"]
+runtime = ["dep:compio-io", "dep:compio-runtime"]

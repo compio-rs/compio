@@ -1,10 +1,11 @@
-use std::{io, net::Shutdown, path::Path};
+use std::{io, path::Path};
 
 use compio_driver::impl_raw_fd;
 use socket2::{Domain, SockAddr, Type};
 #[cfg(feature = "runtime")]
 use {
     compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
+    compio_io::{AsyncRead, AsyncWrite},
     compio_runtime::impl_attachable,
 };
 
@@ -18,6 +19,7 @@ use crate::{Socket, ToSockAddrs};
 /// # Examples
 ///
 /// ```
+/// use compio_io::{AsyncReadExt, AsyncWriteExt};
 /// use compio_net::{UnixListener, UnixStream};
 /// use tempfile::tempdir;
 ///
@@ -27,12 +29,12 @@ use crate::{Socket, ToSockAddrs};
 /// compio_runtime::block_on(async move {
 ///     let listener = UnixListener::bind(&sock_file).unwrap();
 ///
-///     let tx = UnixStream::connect(&sock_file).unwrap();
-///     let (rx, _) = listener.accept().await.unwrap();
+///     let mut tx = UnixStream::connect(&sock_file).unwrap();
+///     let (mut rx, _) = listener.accept().await.unwrap();
 ///
-///     tx.send_all("test").await.0.unwrap();
+///     tx.write_all("test").await.0.unwrap();
 ///
-///     let (_, buf) = rx.recv_exact(Vec::with_capacity(4)).await.unwrap();
+///     let (_, buf) = rx.read_exact(Vec::with_capacity(4)).await.unwrap();
 ///
 ///     assert_eq!(buf, b"test");
 /// });
@@ -101,6 +103,7 @@ impl_attachable!(UnixListener, inner);
 /// # Examples
 ///
 /// ```no_run
+/// use compio_io::AsyncWrite;
 /// use compio_net::UnixStream;
 ///
 /// compio_runtime::block_on(async {
@@ -108,7 +111,7 @@ impl_attachable!(UnixListener, inner);
 ///     let mut stream = UnixStream::connect("unix-server.sock").unwrap();
 ///
 ///     // Write some data.
-///     stream.send("hello world!").await.unwrap();
+///     stream.write("hello world!").await.unwrap();
 /// })
 /// ```
 #[derive(Debug)]
@@ -154,54 +157,38 @@ impl UnixStream {
     pub fn local_addr(&self) -> io::Result<SockAddr> {
         self.inner.local_addr()
     }
+}
 
-    /// Shuts down the read, write, or both halves of this connection.
-    ///
-    /// This function will cause all pending and future I/O on the specified
-    /// portions to return immediately with an appropriate value (see the
-    /// documentation of [`Shutdown`]).
-    pub fn shutdown(&self, how: Shutdown) -> io::Result<()> {
-        self.inner.shutdown(how)
+#[cfg(feature = "runtime")]
+impl AsyncRead for UnixStream {
+    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
+        self.inner.read(buf).await
     }
 
-    /// Receives a packet of data from the socket into the buffer, returning the
-    /// original buffer and quantity of data received.
-    #[cfg(feature = "runtime")]
-    pub async fn recv<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        self.inner.recv(buffer).await
+    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V>
+    where
+        V: Unpin + 'static,
+    {
+        self.inner.read_vectored(buf).await
+    }
+}
+
+#[cfg(feature = "runtime")]
+impl AsyncWrite for UnixStream {
+    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        self.inner.write(buf).await
     }
 
-    /// Receives exact number of bytes from the socket.
-    #[cfg(feature = "runtime")]
-    pub async fn recv_exact<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        self.inner.recv_exact(buffer).await
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        self.inner.write_vectored(buf).await
     }
 
-    /// Receives a packet of data from the socket into the buffer, returning the
-    /// original buffer and quantity of data received.
-    #[cfg(feature = "runtime")]
-    pub async fn recv_vectored<T: IoVectoredBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        self.inner.recv_vectored(buffer).await
+    async fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush().await
     }
 
-    /// Sends some data to the socket from the buffer, returning the original
-    /// buffer and quantity of data sent.
-    #[cfg(feature = "runtime")]
-    pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        self.inner.send(buffer).await
-    }
-
-    /// Sends all data to the socket.
-    #[cfg(feature = "runtime")]
-    pub async fn send_all<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        self.inner.send_all(buffer).await
-    }
-
-    /// Sends some data to the socket from the buffer, returning the original
-    /// buffer and quantity of data sent.
-    #[cfg(feature = "runtime")]
-    pub async fn send_vectored<T: IoVectoredBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        self.inner.send_vectored(buffer).await
+    async fn shutdown(&mut self) -> io::Result<()> {
+        self.inner.shutdown().await
     }
 }
 

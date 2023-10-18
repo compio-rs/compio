@@ -1,4 +1,4 @@
-use compio::fs::OpenOptions;
+use compio::{fs::OpenOptions, io::AsyncReadAtExt};
 
 #[compio::main(crate = "compio")]
 async fn main() {
