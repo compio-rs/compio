@@ -1,0 +1,17 @@
+[package]
+name = "compio-util"
+version = "0.1.0"
+categories = ["asynchronous"]
+keywords = ["async", "iocp", "io-uring"]
+edition.workspace = true
+authors.workspace = true
+readme.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# Workspace dependencies
+compio-driver = { workspace = true }
+compio-runtime = { workspace = true }

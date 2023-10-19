@@ -10,6 +10,7 @@ members = [
     "compio-signal",
     "compio-dispatcher",
     "compio-io",
+    "compio-util"
 ]
 resolver = "2"
 
@@ -30,3 +31,4 @@ compio-io = { path = "./compio-io", version = "0.1.0" }
 compio-net = { path = "./compio-net", version = "0.1.0" }
 compio-signal = { path = "./compio-signal", version = "0.1.0" }
 compio-dispatcher = { path = "./compio-dispatcher", version = "0.1.0" }
+compio-util = { path = "./compio-util", version = "0.1.0" }
