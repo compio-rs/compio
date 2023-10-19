@@ -171,10 +171,7 @@ impl AsyncRead for Socket {
         submit(op).await.into_inner().map_advanced()
     }
 
-    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buffer: V) -> BufResult<usize, V>
-    where
-        V: Unpin + 'static,
-    {
+    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buffer: V) -> BufResult<usize, V> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = RecvVectored::new(self.as_raw_fd(), buffer);
         submit(op).await.into_inner().map_advanced()

@@ -24,12 +24,38 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
     }
 }
 
+impl<T: IoVectoredBufMut> OpCode for ReadVectoredAt<T> {
+    fn create_entry(mut self: Pin<&mut Self>) -> Entry {
+        self.slices = unsafe { self.buffer.as_io_slices_mut() };
+        opcode::Readv::new(
+            Fd(self.fd),
+            self.slices.as_ptr() as _,
+            self.slices.len() as _,
+        )
+        .offset(self.offset)
+        .build()
+    }
+}
+
 impl<T: IoBuf> OpCode for WriteAt<T> {
     fn create_entry(self: Pin<&mut Self>) -> Entry {
         let slice = self.buffer.as_slice();
         opcode::Write::new(Fd(self.fd), slice.as_ptr(), slice.len() as _)
             .offset(self.offset)
             .build()
+    }
+}
+
+impl<T: IoVectoredBuf> OpCode for WriteVectoredAt<T> {
+    fn create_entry(mut self: Pin<&mut Self>) -> Entry {
+        self.slices = unsafe { self.buffer.as_io_slices() };
+        opcode::Write::new(
+            Fd(self.fd),
+            self.slices.as_ptr() as _,
+            self.slices.len() as _,
+        )
+        .offset(self.offset)
+        .build()
     }
 }
 

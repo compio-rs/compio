@@ -164,7 +164,7 @@ impl Driver {
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
         if cfg!(any(target_os = "linux", target_os = "android")) {
             let mut stat = unsafe { std::mem::zeroed() };
-            syscall!(fstat(fd, &mut stat))?;
+            syscall!(libc::fstat(fd, &mut stat))?;
             if matches!(stat.st_mode & libc::S_IFMT, libc::S_IFREG | libc::S_IFDIR) {
                 return Ok(());
             }

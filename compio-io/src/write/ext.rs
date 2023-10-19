@@ -58,6 +58,55 @@ macro_rules! loop_write_all {
     };
 }
 
+macro_rules! loop_write_vectored {
+    (
+        $buf:ident,
+        $tracker:ident :
+        $tracker_ty:ty,
+        $iter:ident,loop
+        $read_expr:expr
+    ) => {
+        loop_write_vectored!($buf, $tracker: $tracker_ty, res, $iter, loop $read_expr, break None)
+    };
+    (
+        $buf:ident,
+        $tracker:ident :
+        $tracker_ty:ty,
+        $res:ident,
+        $iter:ident,loop
+        $read_expr:expr,break
+        $judge_expr:expr
+    ) => {{
+        let mut $iter = match $buf.owned_iter() {
+            Ok(buf) => buf,
+            Err(buf) => return BufResult(Ok(0), buf),
+        };
+        let mut $tracker: $tracker_ty = 0;
+
+        loop {
+            if $iter.buf_len() == 0 {
+                continue;
+            }
+
+            match $read_expr.await {
+                BufResult(Ok($res), ret) => {
+                    $iter = ret;
+                    $tracker += $res as $tracker_ty;
+                    if let Some(res) = $judge_expr {
+                        return BufResult(res, $iter.into_inner());
+                    }
+                }
+                BufResult(Err(e), $iter) => return BufResult(Err(e), $iter.into_inner()),
+            };
+
+            match $iter.next() {
+                Ok(next) => $iter = next,
+                Err(buf) => return BufResult(Ok($tracker as usize), buf),
+            }
+        }
+    }};
+}
+
 /// Implemented as an extension trait, adding utility methods to all
 /// [`AsyncWrite`] types. Callers will tend to import this trait instead of
 /// [`AsyncWrite`].
@@ -86,30 +135,8 @@ pub trait AsyncWriteExt: AsyncWrite {
     /// Write the entire contents of a buffer into this writer. Like
     /// [`AsyncWrite::write_vectored`], except that it tries to write the entire
     /// contents of the buffer into this writer.
-    async fn write_all_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let mut iter = match buf.owned_iter() {
-            Ok(iter) => iter,
-            Err(buf) => return BufResult(Ok(0), buf),
-        };
-        let mut total = 0;
-
-        loop {
-            if iter.buf_len() == 0 {
-                continue;
-            }
-            match self.write_all(iter).await {
-                BufResult(Ok(n), ret) => {
-                    iter = ret;
-                    total += n;
-                }
-                BufResult(Err(e), ret) => return BufResult(Err(e), ret.into_inner()),
-            }
-
-            match iter.next() {
-                Ok(next) => iter = next,
-                Err(buf) => return BufResult(Ok(total), buf),
-            }
-        }
+    async fn write_vectored_all<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        loop_write_vectored!(buf, total: usize, iter, loop self.write_all(iter))
     }
 
     write_scalar!(u8, to_be_bytes, to_le_bytes);
@@ -132,8 +159,8 @@ impl<A: AsyncWrite + ?Sized> AsyncWriteExt for A {}
 /// [`AsyncWriteAt`] types. Callers will tend to import this trait instead of
 /// [`AsyncWriteAt`].
 pub trait AsyncWriteAtExt: AsyncWriteAt {
-    /// Like `write_at`, except that it tries to write the entire contents of
-    /// the buffer into this writer.
+    /// Like [`AsyncWriteAt::write_at`], except that it tries to write the
+    /// entire contents of the buffer into this writer.
     async fn write_all_at<T: IoBuf>(&mut self, mut buf: T, pos: u64) -> BufResult<usize, T> {
         loop_write_all!(
             buf,
@@ -141,6 +168,16 @@ pub trait AsyncWriteAtExt: AsyncWriteAt {
             needle,
             loop self.write_at(buf.slice(needle..), pos + needle as u64)
         );
+    }
+
+    /// Like [`AsyncWriteAt::write_vectored_at`], expect that it tries to write
+    /// the entire contents of the buffer into this writer.
+    async fn write_vectored_all_at<T: IoVectoredBuf>(
+        &mut self,
+        buf: T,
+        pos: u64,
+    ) -> BufResult<usize, T> {
+        loop_write_vectored!(buf, total: u64, iter, loop self.write_all_at(iter, pos + total))
     }
 }
 

@@ -12,6 +12,8 @@ pub use crate::sys::op::{
     Accept, Recv, RecvFrom, RecvFromVectored, RecvVectored, Send, SendTo, SendToVectored,
     SendVectored,
 };
+#[cfg(unix)]
+pub use crate::sys::op::{ReadVectoredAt, WriteVectoredAt};
 use crate::{sockaddr_storage, socklen_t, RawFd};
 
 /// Trait to update the buffer length inside the [`BufResult`].
