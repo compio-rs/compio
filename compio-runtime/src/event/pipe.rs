@@ -5,7 +5,6 @@ use std::{
 
 use compio_buf::{arrayvec::ArrayVec, BufResult};
 use compio_driver::{op::Recv, syscall};
-use libc::{fcntl, pipe, write};
 
 use crate::{attacher::Attacher, submit};
 
@@ -25,7 +24,11 @@ impl Event {
         let receiver = unsafe { OwnedFd::from_raw_fd(receiver.into_raw_fd()) };
         let sender = unsafe { OwnedFd::from_raw_fd(sender.into_raw_fd()) };
 
-        syscall!(fcntl(receiver.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK))?;
+        syscall!(libc::fcntl(
+            receiver.as_raw_fd(),
+            libc::F_SETFL,
+            libc::O_NONBLOCK
+        ))?;
         Ok(Self {
             sender,
             receiver,
@@ -69,7 +72,7 @@ impl EventHandle {
     /// Notify the event.
     pub fn notify(&self) -> io::Result<()> {
         let data = &[1];
-        syscall!(write(self.fd.as_raw_fd(), data.as_ptr() as _, 1))?;
+        syscall!(libc::write(self.fd.as_raw_fd(), data.as_ptr() as _, 1))?;
         Ok(())
     }
 }

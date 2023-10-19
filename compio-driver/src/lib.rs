@@ -66,31 +66,30 @@ macro_rules! syscall {
 #[macro_export]
 #[doc(hidden)]
 macro_rules! syscall {
-    ($fn: ident ( $($arg: expr),* $(,)* ) ) => {{
-        #[allow(unused_unsafe)]
-        let res = unsafe { $fn($($arg, )*) };
-        if res == -1 {
-            Err(::std::io::Error::last_os_error())
-        } else {
-            Ok(res)
-        }
-    }};
-    // The below branches are used by polling driver.
-    (break $fn: ident ( $($arg: expr),* $(,)* )) => {
-        match $crate::syscall!( $fn ( $($arg, )* )) {
+    (break $e:expr) => {
+        match $crate::syscall!($e) {
             Ok(fd) => ::std::task::Poll::Ready(Ok(fd as usize)),
             Err(e) if e.kind() == ::std::io::ErrorKind::WouldBlock || e.raw_os_error() == Some(::libc::EINPROGRESS)
                    => ::std::task::Poll::Pending,
             Err(e) => ::std::task::Poll::Ready(Err(e)),
         }
     };
-    ($fn: ident ( $($arg: expr),* $(,)* ) or $f:ident($fd:expr)) => {
-        match $crate::syscall!( break $fn ( $($arg, )* )) {
+    ($e:expr, $f:ident($fd:expr)) => {
+        match $crate::syscall!(break $e) {
             ::std::task::Poll::Pending => Ok($crate::Decision::$f($fd)),
             ::std::task::Poll::Ready(Ok(res)) => Ok($crate::Decision::Completed(res)),
             ::std::task::Poll::Ready(Err(e)) => Err(e),
         }
     };
+    ($e:expr) => {{
+        #[allow(unused_unsafe)]
+        let res = unsafe { $e };
+        if res == -1 {
+            Err(::std::io::Error::last_os_error())
+        } else {
+            Ok(res)
+        }
+    }};
 }
 
 #[macro_export]

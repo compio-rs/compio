@@ -3,7 +3,6 @@
 use std::{io, os::unix::fs::FileTypeExt, path::Path};
 
 use compio_driver::{impl_raw_fd, syscall, AsRawFd, FromRawFd, IntoRawFd};
-use libc::fcntl;
 #[cfg(feature = "runtime")]
 use {
     compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
@@ -462,10 +461,10 @@ fn is_fifo(file: &File) -> io::Result<bool> {
 fn set_nonblocking(file: &impl AsRawFd) -> io::Result<()> {
     if cfg!(not(all(target_os = "linux", feature = "io-uring"))) {
         let fd = file.as_raw_fd();
-        let current_flags = syscall!(fcntl(fd, libc::F_GETFL))?;
+        let current_flags = syscall!(libc::fcntl(fd, libc::F_GETFL))?;
         let flags = current_flags | libc::O_NONBLOCK;
         if flags != current_flags {
-            syscall!(fcntl(fd, libc::F_SETFL, flags))?;
+            syscall!(libc::fcntl(fd, libc::F_SETFL, flags))?;
         }
     }
     Ok(())

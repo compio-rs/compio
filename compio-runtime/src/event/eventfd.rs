@@ -5,7 +5,6 @@ use std::{
 
 use compio_buf::{arrayvec::ArrayVec, BufResult};
 use compio_driver::{op::Recv, syscall};
-use libc::{eventfd, write};
 
 use crate::{attacher::Attacher, submit};
 
@@ -20,7 +19,7 @@ pub struct Event {
 impl Event {
     /// Create [`Event`].
     pub fn new() -> io::Result<Self> {
-        let fd = syscall!(eventfd(0, libc::EFD_CLOEXEC))?;
+        let fd = syscall!(libc::eventfd(0, libc::EFD_CLOEXEC))?;
         let fd = unsafe { OwnedFd::from_raw_fd(fd) };
         Ok(Self {
             fd,
@@ -64,7 +63,7 @@ impl EventHandle {
     /// Notify the event.
     pub fn notify(&self) -> io::Result<()> {
         let data = 1u64;
-        syscall!(write(
+        syscall!(libc::write(
             self.fd.as_raw_fd(),
             &data as *const _ as *const _,
             std::mem::size_of::<u64>(),
