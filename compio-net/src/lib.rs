@@ -3,6 +3,7 @@
 //! Currently, TCP/UDP/Unix socket are implemented.
 
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(feature = "generators", feature(generators))]
 #![warn(missing_docs)]
 
 mod resolve;

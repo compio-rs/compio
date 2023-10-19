@@ -80,6 +80,7 @@ allocator_api = [
     "compio-buf/allocator_api",
     "compio-io?/allocator_api",
 ]
+generators = ["compio-net/generators"]
 lazy_cell = ["compio-signal?/lazy_cell"]
 once_cell_try = [
     "compio-driver/once_cell_try",
@@ -90,6 +91,7 @@ read_buf = ["compio-buf/read_buf"]
 try_trait_v2 = ["compio-buf/try_trait_v2"]
 nightly = [
     "allocator_api",
+    "generators",
     "lazy_cell",
     "once_cell_try",
     "read_buf",
