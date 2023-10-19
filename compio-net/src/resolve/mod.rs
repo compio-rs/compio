@@ -10,7 +10,7 @@ pub async fn resolve_sock_addrs(
 ) -> io::Result<std::vec::IntoIter<SocketAddr>> {
     let op = compio_driver::op::ResolveSockAddrs::new(host, port);
     let (_, op) = compio_buf::buf_try!(@try compio_runtime::submit(op).await);
-    op.sock_addrs().map(|vec| vec.into_iter())
+    Ok(op.sock_addrs().into_iter())
 }
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
