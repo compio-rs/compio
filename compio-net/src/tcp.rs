@@ -10,7 +10,7 @@ use {
     socket2::SockAddr,
 };
 
-use crate::{Socket, ToSocketAddrsStream};
+use crate::{Socket, ToSocketAddrsAsync};
 
 /// A TCP socket server, listening for connections.
 ///
@@ -58,7 +58,7 @@ impl TcpListener {
     /// Binding with a port number of 0 will request that the OS assigns a port
     /// to this listener.
     #[cfg(feature = "runtime")]
-    pub async fn bind(addr: impl ToSocketAddrsStream) -> io::Result<Self> {
+    pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
         super::each_addr(addr, |addr| async move {
             let socket = Socket::bind(&SockAddr::from(addr), Type::STREAM, Some(Protocol::TCP))?;
             socket.listen(128)?;
@@ -152,7 +152,7 @@ pub struct TcpStream {
 impl TcpStream {
     /// Opens a TCP connection to a remote host.
     #[cfg(feature = "runtime")]
-    pub async fn connect(addr: impl ToSocketAddrsStream) -> io::Result<Self> {
+    pub async fn connect(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
         use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6};
 
         super::each_addr(addr, |addr| async move {

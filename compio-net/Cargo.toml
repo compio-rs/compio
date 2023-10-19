@@ -21,10 +21,11 @@ compio-driver = { workspace = true }
 compio-io = { workspace = true, optional = true }
 compio-runtime = { workspace = true, optional = true }
 
-async-stream = "0.3"
-stream-future = { version = "0.4", optional = true }
 futures-util = "0.3"
 socket2 = { version = "0.5", features = ["all"] }
+
+[target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
+libc = "0.2"
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
@@ -32,7 +33,3 @@ tempfile = "3"
 
 [features]
 runtime = ["dep:compio-io", "dep:compio-runtime"]
-
-# Nightly features
-generators = ["dep:stream-future"]
-nightly = ["generators"]
