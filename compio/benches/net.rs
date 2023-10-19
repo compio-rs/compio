@@ -7,7 +7,7 @@ struct CompioRuntime;
 
 impl AsyncExecutor for CompioRuntime {
     fn block_on<T>(&self, future: impl std::future::Future<Output = T>) -> T {
-        compio::task::block_on(future)
+        compio::runtime::block_on(future)
     }
 }
 
@@ -41,15 +41,16 @@ fn tcp(c: &mut Criterion) {
 
     group.bench_function("compio", |b| {
         b.to_async(CompioRuntime).iter(|| async {
+            use compio::io::{AsyncReadExt, AsyncWriteExt};
+
             let listener = compio::net::TcpListener::bind("127.0.0.1:0").unwrap();
             let addr = listener.local_addr().unwrap();
             let tx = compio::net::TcpStream::connect(addr);
             let rx = listener.accept();
-            let (tx, (rx, _)) = futures_util::try_join!(tx, rx).unwrap();
-            tx.send_all(PACKET).await.0.unwrap();
+            let (mut tx, (mut rx, _)) = futures_util::try_join!(tx, rx).unwrap();
+            tx.write_all(PACKET).await.0.unwrap();
             let buffer = Vec::with_capacity(PACKET_LEN);
-            let (recv, buffer) = rx.recv_exact(buffer).await;
-            recv.unwrap();
+            let (_, buffer) = rx.read_exact(buffer).await.unwrap();
             buffer
         })
     });
@@ -105,9 +106,9 @@ fn udp(c: &mut Criterion) {
 
     group.bench_function("compio", |b| {
         b.to_async(CompioRuntime).iter(|| async {
-            let rx = compio::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+            let mut rx = compio::net::UdpSocket::bind("127.0.0.1:0").unwrap();
             let addr_rx = rx.local_addr().unwrap();
-            let tx = compio::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+            let mut tx = compio::net::UdpSocket::bind("127.0.0.1:0").unwrap();
             let addr_tx = tx.local_addr().unwrap();
 
             rx.connect(addr_tx).unwrap();
@@ -116,16 +117,14 @@ fn udp(c: &mut Criterion) {
             {
                 let mut pos = 0;
                 while pos < PACKET_LEN {
-                    let (res, _) = tx.send(&PACKET[pos..]).await;
-                    pos += res.unwrap();
+                    let (res, _) = tx.send(&PACKET[pos..]).await.unwrap();
+                    pos += res;
                 }
             }
             {
                 let mut buffer = Vec::with_capacity(PACKET_LEN);
-                let mut res;
                 while buffer.len() < PACKET_LEN {
-                    (res, buffer) = rx.recv(buffer).await;
-                    res.unwrap();
+                    (_, buffer) = rx.recv(buffer).await.unwrap();
                 }
                 buffer
             }

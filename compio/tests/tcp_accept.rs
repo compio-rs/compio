@@ -4,7 +4,7 @@ async fn test_impl(addr: impl ToSockAddrs) {
     let listener = TcpListener::bind(addr).unwrap();
     let addr = listener.local_addr().unwrap();
     let (tx, rx) = futures_channel::oneshot::channel();
-    compio::task::spawn(async move {
+    compio::runtime::spawn(async move {
         let (socket, _) = listener.accept().await.unwrap();
         assert!(tx.send(socket).is_ok());
     })
@@ -17,10 +17,10 @@ async fn test_impl(addr: impl ToSockAddrs) {
 macro_rules! test_accept {
     ($(($ident:ident, $target:expr),)*) => {
         $(
-            #[test]
-            fn $ident() {
+            #[compio_macros::test]
+            async fn $ident() {
                 println!("Testing {}...", stringify!($ident));
-                compio::task::block_on(test_impl($target))
+                test_impl($target).await;
             }
         )*
     };

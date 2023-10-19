@@ -8,11 +8,11 @@ async fn test_connect_ip_impl(
 ) {
     let listener = TcpListener::bind(target).unwrap();
     let addr = listener.local_addr().unwrap();
-    assert!(assert_fn(&addr.as_socket().unwrap()));
+    assert!(assert_fn(&addr));
 
     let (tx, rx) = futures_channel::oneshot::channel();
 
-    compio::task::spawn(async move {
+    compio::runtime::spawn(async move {
         let (socket, addr) = listener.accept().await.unwrap();
         assert_eq!(addr, socket.peer_addr().unwrap());
         assert!(tx.send(socket).is_ok());
@@ -29,9 +29,9 @@ async fn test_connect_ip_impl(
 macro_rules! test_connect_ip {
     ($(($ident:ident, $target:expr, $addr_f:path),)*) => {
         $(
-            #[test]
-             fn $ident() {
-                compio::task::block_on(test_connect_ip_impl($target, $addr_f))
+            #[compio_macros::test]
+            async fn $ident() {
+                test_connect_ip_impl($target, $addr_f).await;
             }
         )*
     }
@@ -62,10 +62,10 @@ async fn test_connect_impl<A: ToSockAddrs>(mapping: impl FnOnce(&TcpListener) ->
 macro_rules! test_connect {
     ($(($ident:ident, $mapping:tt),)*) => {
         $(
-            #[test]
-            fn $ident() {
+            #[compio_macros::test]
+            async fn $ident() {
                 #[allow(unused_parens)]
-                compio::task::block_on(test_connect_impl($mapping))
+                test_connect_impl($mapping).await;
             }
         )*
     }
@@ -73,31 +73,29 @@ macro_rules! test_connect {
 
 test_connect! {
     (ip_string, (|listener: &TcpListener| {
-        format!("127.0.0.1:{}", listener.local_addr().unwrap().as_socket().unwrap().port())
+        format!("127.0.0.1:{}", listener.local_addr().unwrap().port())
     })),
     (ip_str, (|listener: &TcpListener| {
-        let s = format!("127.0.0.1:{}", listener.local_addr().unwrap().as_socket().unwrap().port());
+        let s = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
         let slice: &str = &*Box::leak(s.into_boxed_str());
         slice
     })),
     (ip_port_tuple, (|listener: &TcpListener| {
-        let addr = listener.local_addr().unwrap().as_socket().unwrap();
+        let addr = listener.local_addr().unwrap();
         (addr.ip(), addr.port())
     })),
     (ip_port_tuple_ref, (|listener: &TcpListener| {
-        let addr = listener.local_addr().unwrap().as_socket().unwrap();
+        let addr = listener.local_addr().unwrap();
         let tuple_ref: &(IpAddr, u16) = &*Box::leak(Box::new((addr.ip(), addr.port())));
         tuple_ref
     })),
     (ip_str_port_tuple, (|listener: &TcpListener| {
-        let addr = listener.local_addr().unwrap().as_socket().unwrap();
+        let addr = listener.local_addr().unwrap();
         ("127.0.0.1", addr.port())
     })),
 }
 
-#[test]
-fn connect_invalid_dst() {
-    compio::task::block_on(async {
-        assert!(TcpStream::connect("127.0.0.1:1").await.is_err());
-    })
+#[compio_macros::test]
+async fn connect_invalid_dst() {
+    assert!(TcpStream::connect("127.0.0.0:0").await.is_err());
 }

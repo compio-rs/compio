@@ -1,18 +1,19 @@
 [package]
 name = "compio"
-version = "0.7.0"
-edition = "2021"
-authors = ["Berrysoft <Strawberry_Str@hotmail.com>"]
-readme = "README.md"
-license = "MIT"
+version = "0.8.0"
 description = "completion based async runtime"
 categories = ["asynchronous", "filesystem", "network-programming"]
 keywords = ["async", "fs", "iocp", "io-uring", "net"]
-repository = "https://github.com/Berrysoft/compio"
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true
 default-target = "x86_64-pc-windows-msvc"
+rustdoc-args = ["--cfg docsrs"]
 targets = [
     "x86_64-pc-windows-msvc",
     "x86_64-unknown-linux-gnu",
@@ -28,74 +29,97 @@ targets = [
 
 # Shared dependencies for all platforms
 [dependencies]
-arrayvec = { version = "0.7", optional = true }
-async-task = { version = "4", optional = true }
-bytes = { version = "1", optional = true }
-cfg-if = "1"
-futures-util = { version = "0.3", optional = true }
-# may be excluded from linking if the unstable equivalent is used
-once_cell = "1"
-slab = "0.4"
-smallvec = { version = "1", optional = true }
-socket2 = { version = ">=0.5.4", features = ["all"] }
+# Workspace dependencies
+compio-buf = { workspace = true }
+compio-driver = { workspace = true }
+compio-runtime = { workspace = true, optional = true }
+compio-macros = { workspace = true, optional = true }
+compio-fs = { workspace = true }
+compio-io = { workspace = true, optional = true }
+compio-net = { workspace = true }
+compio-signal = { workspace = true, optional = true }
+compio-dispatcher = { workspace = true, optional = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
+compio-buf = { workspace = true, features = ["arrayvec"] }
+compio-macros = { workspace = true }
+
 bumpalo = "3"
 criterion = { version = "0.5", features = ["async_tokio"] }
+futures-util = "0.3"
 futures-channel = "0.3"
-arrayvec = "0.7"
 tempfile = "3"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt"] }
 
-# Windows specific dependencies
-[target.'cfg(target_os = "windows")'.dependencies]
-arrayvec = "0.7"
-widestring = "1"
-windows-sys = { version = "0.48", features = [
-    "Win32_Foundation",
-    "Win32_Networking_WinSock",
-    "Win32_Security",
-    "Win32_Storage_FileSystem",
-    "Win32_System_Console",
-    "Win32_System_IO",
-    "Win32_System_Pipes",
-    "Win32_System_SystemServices",
-    "Win32_System_Threading",
-] }
-
-# Windows specific dev dependencies
-[target.'cfg(target_os = "windows")'.dev-dependencies]
-windows-sys = { version = "0.48", features = ["Win32_Security_Authorization"] }
-
-# Linux specific dependencies
-[target.'cfg(target_os = "linux")'.dependencies]
-io-uring = { version = "0.6", optional = true }
-polling = { version = "3", optional = true }
-libc = "0.2"
-
-# Other platform dependencies
-[target.'cfg(all(not(target_os = "linux"), unix))'.dependencies]
-polling = "3"
-libc = "0.2"
+# Unix specific dev dependencies
+[target.'cfg(unix)'.dev-dependencies]
+nix = { version = "0.27", features = ["fs"] }
 
 [features]
 default = ["runtime", "io-uring"]
-runtime = ["dep:async-task", "dep:futures-util", "dep:smallvec"]
-event = ["runtime", "arrayvec"]
-signal = ["event"]
-time = ["runtime"]
-all = ["time", "signal"]
+io-uring = ["compio-driver/io-uring"]
+polling = ["compio-driver/polling"]
+io = ["dep:compio-io"]
+runtime = [
+    "dep:compio-runtime",
+    "compio-fs/runtime",
+    "compio-net/runtime",
+    "io",
+]
+macros = ["dep:compio-macros", "runtime"]
+event = ["compio-runtime/event", "runtime"]
+signal = ["dep:compio-signal", "event"]
+time = ["compio-runtime/time", "runtime"]
+dispatcher = ["dep:compio-dispatcher", "runtime"]
+all = ["time", "macros", "signal", "dispatcher"]
 
-allocator_api = ["bumpalo/allocator_api"]
-lazy_cell = []
-once_cell_try = []
-read_buf = []
-nightly = ["allocator_api", "lazy_cell", "once_cell_try", "read_buf"]
+# Nightly features
+allocator_api = [
+    "bumpalo/allocator_api",
+    "compio-buf/allocator_api",
+    "compio-io?/allocator_api",
+]
+lazy_cell = ["compio-signal?/lazy_cell"]
+once_cell_try = [
+    "compio-driver/once_cell_try",
+    "compio-runtime?/once_cell_try",
+    "compio-signal?/once_cell_try",
+]
+read_buf = ["compio-buf/read_buf"]
+try_trait_v2 = ["compio-buf/try_trait_v2"]
+nightly = [
+    "allocator_api",
+    "lazy_cell",
+    "once_cell_try",
+    "read_buf",
+    "try_trait_v2",
+]
+
+
+[[example]]
+name = "basic"
+required-features = ["macros"]
+
+[[example]]
+name = "named_pipe"
+required-features = ["macros"]
+
+[[example]]
+name = "net"
+required-features = ["macros"]
+
+[[example]]
+name = "unix"
+required-features = ["macros"]
 
 [[example]]
 name = "tick"
-required-features = ["time", "signal"]
+required-features = ["time", "signal", "macros"]
+
+[[example]]
+name = "dispatcher"
+required-features = ["macros", "dispatcher"]
 
 [[bench]]
 name = "fs"
@@ -112,3 +136,7 @@ harness = false
 [[test]]
 name = "event"
 required-features = ["event"]
+
+[[test]]
+name = "dispatcher"
+required-features = ["dispatcher"]

@@ -7,7 +7,7 @@ struct CompioRuntime;
 
 impl AsyncExecutor for CompioRuntime {
     fn block_on<T>(&self, future: impl std::future::Future<Output = T>) -> T {
-        compio::task::block_on(future)
+        compio::runtime::block_on(future)
     }
 }
 
@@ -25,7 +25,7 @@ fn basic(c: &mut Criterion) {
             .build()
             .unwrap();
         b.to_async(&runtime).iter(|| async {
-            #[cfg(target_os = "windows")]
+            #[cfg(windows)]
             {
                 use tokio::{
                     io::{AsyncReadExt, AsyncWriteExt},
@@ -52,14 +52,18 @@ fn basic(c: &mut Criterion) {
 
     group.bench_function("compio", |b| {
         b.to_async(CompioRuntime).iter(|| async {
-            #[cfg(target_os = "windows")]
+            #[cfg(windows)]
             {
-                use compio::named_pipe::{ClientOptions, ServerOptions};
+                use compio::{
+                    buf::BufResult,
+                    fs::named_pipe::{ClientOptions, ServerOptions},
+                    io::{AsyncReadExt, AsyncWriteExt},
+                };
 
                 const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe";
 
-                let server = ServerOptions::new().create(PIPE_NAME).unwrap();
-                let client = ClientOptions::new().open(PIPE_NAME).unwrap();
+                let mut server = ServerOptions::new().create(PIPE_NAME).unwrap();
+                let mut client = ClientOptions::new().open(PIPE_NAME).unwrap();
 
                 server.connect().await.unwrap();
 
@@ -68,7 +72,7 @@ fn basic(c: &mut Criterion) {
                 let buffer = Vec::with_capacity(PACKET_LEN);
                 let read = client.read_exact(buffer);
 
-                let ((write, _), (read, _)) = futures_util::join!(write, read);
+                let (BufResult(write, _), BufResult(read, _)) = futures_util::join!(write, read);
                 write.unwrap();
                 read.unwrap();
             }

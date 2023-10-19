@@ -1,0 +1,57 @@
+[package]
+name = "compio-runtime"
+version = "0.1.0"
+description = "high-level runtime for compio"
+categories = ["asynchronous"]
+keywords = ["async", "runtime"]
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+default-target = "x86_64-pc-windows-msvc"
+rustdoc-args = ["--cfg docsrs"]
+targets = [
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-ios",
+    "aarch64-linux-android",
+    "x86_64-unknown-dragonfly",
+    "x86_64-unknown-freebsd",
+    "x86_64-unknown-illumos",
+    "x86_64-unknown-netbsd",
+    "x86_64-unknown-openbsd",
+]
+
+[dependencies]
+# Workspace dependencies
+compio-driver = { workspace = true }
+compio-buf = { workspace = true }
+
+async-task = "4"
+cfg-if = { version = "1", optional = true }
+futures-util = "0.3"
+once_cell = "1"
+slab = { version = "0.4", optional = true }
+smallvec = "1"
+
+# Windows specific dependencies
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.48", features = ["Win32_System_IO"] }
+
+# Unix specific dependencies
+[target.'cfg(unix)'.dependencies]
+os_pipe = "1"
+libc = "0.2"
+
+[features]
+event = ["dep:cfg-if", "compio-buf/arrayvec"]
+time = ["dep:slab"]
+
+# Nightly features
+once_cell_try = []
+nightly = ["once_cell_try"]

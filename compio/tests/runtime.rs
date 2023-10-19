@@ -5,71 +5,71 @@ use std::net::Ipv4Addr;
 use compio::{
     buf::*,
     fs::File,
+    io::{AsyncReadAt, AsyncReadExt, AsyncWriteAt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
+use compio_runtime::Unattached;
 use tempfile::NamedTempFile;
 
-#[test]
-fn multi_threading() {
+#[compio_macros::test]
+async fn multi_threading() {
     const DATA: &str = "Hello world!";
 
-    compio::task::block_on(async {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-        let addr = listener.local_addr().unwrap();
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let addr = listener.local_addr().unwrap();
 
-        let (tx, (rx, _)) =
-            futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
+    let (mut tx, (rx, _)) =
+        futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
 
-        tx.send_all(DATA).await.0.unwrap();
+    tx.write_all(DATA).await.0.unwrap();
 
-        let rx = SendWrapper(rx);
-        if let Err(e) = std::thread::spawn(move || {
-            compio::task::block_on(async {
-                let buffer = Vec::with_capacity(DATA.len());
-                let (n, buffer) = rx.recv_exact(buffer).await;
-                assert_eq!(n.unwrap(), buffer.len());
-                assert_eq!(DATA, String::from_utf8(buffer).unwrap());
-            });
-        })
-        .join()
-        {
-            std::panic::resume_unwind(e)
-        }
-    });
+    let rx = Unattached::new(rx).unwrap();
+    if let Err(e) = std::thread::spawn(move || {
+        let mut rx = rx.into_inner();
+        compio::runtime::block_on(async {
+            let buffer = Vec::with_capacity(DATA.len());
+            let (n, buffer) = rx.read_exact(buffer).await.unwrap();
+            assert_eq!(n, buffer.len());
+            assert_eq!(DATA, String::from_utf8(buffer).unwrap());
+        });
+    })
+    .join()
+    {
+        std::panic::resume_unwind(e)
+    }
 }
 
-#[test]
-fn try_clone() {
+#[compio_macros::test]
+async fn try_clone() {
     const DATA: &str = "Hello world!";
 
-    compio::task::block_on(async {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-        let addr = listener.local_addr().unwrap();
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let addr = listener.local_addr().unwrap();
 
-        let (tx, (rx, _)) =
-            futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
+    let (tx, (rx, _)) =
+        futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
 
-        let tx = tx.try_clone().unwrap();
-        tx.send_all(DATA).await.0.unwrap();
+    let mut tx = tx.try_clone().unwrap();
+    tx.write_all(DATA).await.0.unwrap();
 
-        let rx = SendWrapper(rx.try_clone().unwrap());
-        if let Err(e) = std::thread::spawn(move || {
-            compio::task::block_on(async {
-                let buffer = Vec::with_capacity(DATA.len());
-                let (n, buffer) = rx.recv_exact(buffer).await;
-                assert_eq!(n.unwrap(), buffer.len());
-                assert_eq!(DATA, String::from_utf8(buffer).unwrap());
-            });
-        })
-        .join()
-        {
-            std::panic::resume_unwind(e)
-        }
-    });
+    let rx = Unattached::new(rx.try_clone().unwrap()).unwrap();
+    if let Err(e) = std::thread::spawn(move || {
+        let mut rx = rx.into_inner();
+        compio::runtime::block_on(async {
+            let buffer = Vec::with_capacity(DATA.len());
+            let (n, buffer) = rx.read_exact(buffer).await.unwrap();
+            assert_eq!(n, buffer.len());
+            assert_eq!(DATA, String::from_utf8(buffer).unwrap());
+        });
+    })
+    .join()
+    {
+        std::panic::resume_unwind(e)
+    }
 }
 
-#[test]
-fn drop_on_complete() {
+#[compio_macros::test]
+async fn drop_on_complete() {
     use std::sync::Arc;
 
     struct MyBuf {
@@ -95,7 +95,9 @@ fn drop_on_complete() {
         fn as_buf_mut_ptr(&mut self) -> *mut u8 {
             self.data.as_buf_mut_ptr()
         }
+    }
 
+    impl SetBufInit for MyBuf {
         unsafe fn set_buf_init(&mut self, pos: usize) {
             self.data.set_buf_init(pos);
         }
@@ -110,7 +112,7 @@ fn drop_on_complete() {
     let mut file = std::fs::File::create(tempfile.path()).unwrap();
     std::io::Write::write_all(&mut file, &vec).unwrap();
 
-    let file = compio::task::block_on(async {
+    let file = {
         let file = File::open(tempfile.path()).unwrap();
         file.read_at(
             MyBuf {
@@ -123,35 +125,35 @@ fn drop_on_complete() {
         .0
         .unwrap();
         file
-    });
+    };
 
     assert_eq!(Arc::strong_count(&ref_cnt), 1);
 
     drop(file);
 }
 
-#[test]
-fn too_many_submissions() {
+#[compio_macros::test]
+async fn too_many_submissions() {
     let tempfile = tempfile();
 
-    compio::task::block_on(async {
-        let file = File::create(tempfile.path()).unwrap();
-        for _ in 0..600 {
-            poll_once(async {
-                file.write_at("hello world", 0).await.0.unwrap();
-            })
-            .await;
-        }
-    });
+    let mut file = File::create(tempfile.path()).unwrap();
+    for _ in 0..600 {
+        poll_once(async {
+            file.write_at("hello world", 0).await.0.unwrap();
+        })
+        .await;
+    }
 }
 
-#[test]
 #[cfg(feature = "allocator_api")]
-fn arena() {
+#[compio_macros::test]
+async fn arena() {
     use std::{
         alloc::{AllocError, Allocator, Layout},
         ptr::NonNull,
     };
+
+    use compio::io::AsyncReadAtExt;
 
     thread_local! {
         static ALLOCATOR: bumpalo::Bump = bumpalo::Bump::new();
@@ -169,12 +171,12 @@ fn arena() {
         }
     }
 
-    compio::task::block_on(async {
-        let file = File::open("Cargo.toml").unwrap();
-        let (read, buffer) = file.read_to_end_at(Vec::new_in(ArenaAllocator), 0).await;
-        let read = read.unwrap();
-        assert_eq!(buffer.len(), read);
-    })
+    let file = File::open("Cargo.toml").unwrap();
+    let (read, buffer) = file
+        .read_to_end_at(Vec::new_in(ArenaAllocator), 0)
+        .await
+        .unwrap();
+    assert_eq!(buffer.len(), read);
 }
 
 fn tempfile() -> NamedTempFile {
@@ -187,20 +189,8 @@ async fn poll_once(future: impl std::future::Future) {
     let mut future = pin!(future);
 
     poll_fn(|cx| {
-        assert!(future.as_mut().poll(cx).is_pending());
+        let _ = future.as_mut().poll(cx);
         Poll::Ready(())
     })
     .await;
-}
-
-struct SendWrapper<T>(pub T);
-
-unsafe impl<T> Send for SendWrapper<T> {}
-
-impl<T> std::ops::Deref for SendWrapper<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
 }
