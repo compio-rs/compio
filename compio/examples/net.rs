@@ -7,7 +7,7 @@ use compio::{
 
 #[compio::main(crate = "compio")]
 async fn main() {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
 
     let (mut tx, (mut rx, _)) =

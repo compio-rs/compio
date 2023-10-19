@@ -15,7 +15,7 @@ async fn listener_dispatch() {
     const THREAD_NUM: usize = 5;
     const CLIENT_NUM: usize = 10;
 
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let dispatcher = Dispatcher::builder()
         .worker_threads(NonZeroUsize::new(THREAD_NUM).unwrap())

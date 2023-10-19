@@ -15,7 +15,7 @@ use tempfile::NamedTempFile;
 async fn multi_threading() {
     const DATA: &str = "Hello world!";
 
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
 
     let (mut tx, (rx, _)) =
@@ -43,7 +43,7 @@ async fn multi_threading() {
 async fn try_clone() {
     const DATA: &str = "Hello world!";
 
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
 
     let (tx, (rx, _)) =

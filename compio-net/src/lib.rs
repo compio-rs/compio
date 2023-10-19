@@ -5,128 +5,117 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![warn(missing_docs)]
 
+mod resolve;
 mod socket;
 mod tcp;
 mod udp;
 mod unix;
 
 use std::{
-    future::Future,
+    future::{ready, Future},
     io,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
 };
 
-use compio_buf::BufResult;
+use futures_util::{future::Either, Stream, StreamExt};
 pub(crate) use socket::*;
-use socket2::SockAddr;
 pub use tcp::*;
 pub use udp::*;
 pub use unix::*;
-
-#[cfg(windows)]
-pub async fn resolve_sock_addrs(host: &str, port: u16) -> io::Result<Vec<SockAddr>> {
-    let op = compio_driver::op::ResolveSockAddrs::new(host, port);
-    let (_, op) = compio_buf::buf_try!(@try compio_runtime::submit(op).await);
-    Ok(op.sock_addrs())
-}
 
 /// A trait for objects which can be converted or resolved to one or more
 /// [`SockAddr`] values.
 ///
 /// See [`ToSocketAddrs`].
-pub trait ToSockAddrs {
-    /// See [`ToSocketAddrs::Iter`].
-    type Iter: Iterator<Item = SockAddr>;
-
+pub trait IntoSocketAddrsStream {
     /// See [`ToSocketAddrs::to_socket_addrs`].
-    fn to_sock_addrs(&self) -> io::Result<Self::Iter>;
+    fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>>;
 }
 
 // impl_to_sock_addrs_for_into_socket_addr
 macro_rules! itsafisa {
     ($t:ty) => {
-        impl ToSockAddrs for $t {
-            type Iter =
-                std::iter::Map<<$t as std::net::ToSocketAddrs>::Iter, fn(SocketAddr) -> SockAddr>;
-
-            fn to_sock_addrs(&self) -> io::Result<Self::Iter> {
-                std::net::ToSocketAddrs::to_socket_addrs(self)
-                    .map(|iter| iter.map(SockAddr::from as _))
+        impl IntoSocketAddrsStream for $t {
+            fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>> {
+                futures_util::stream::once(ready(Ok(SocketAddr::from(self))))
             }
         }
     };
 }
 
-itsafisa!(SocketAddr);
 itsafisa!(SocketAddrV4);
 itsafisa!(SocketAddrV6);
-itsafisa!(str);
-itsafisa!(String);
 itsafisa!((IpAddr, u16));
 itsafisa!((Ipv4Addr, u16));
 itsafisa!((Ipv6Addr, u16));
-itsafisa!((String, u16));
 
-impl ToSockAddrs for (&str, u16) {
-    type Iter = std::iter::Map<std::vec::IntoIter<SocketAddr>, fn(SocketAddr) -> SockAddr>;
+impl IntoSocketAddrsStream for (&str, u16) {
+    fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>> {
+        let (host, port) = self;
+        if let Ok(addr) = host.parse::<Ipv4Addr>() {
+            return Either::Left(SocketAddr::from((addr, port)).into_socket_addrs_stream());
+        }
+        if let Ok(addr) = host.parse::<Ipv6Addr>() {
+            return Either::Left(SocketAddr::from((addr, port)).into_socket_addrs_stream());
+        }
 
-    fn to_sock_addrs(&self) -> io::Result<Self::Iter> {
-        ToSocketAddrs::to_socket_addrs(self).map(|iter| iter.map(SockAddr::from as _))
+        Either::Right(resolve::resolve_sock_addrs(host, port))
     }
 }
 
-impl ToSockAddrs for SockAddr {
-    type Iter = std::option::IntoIter<SockAddr>;
-
-    fn to_sock_addrs(&self) -> io::Result<Self::Iter> {
-        Ok(Some(self.clone()).into_iter())
+impl IntoSocketAddrsStream for &(String, u16) {
+    fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>> {
+        let (host, port) = self;
+        (host.as_str(), *port).into_socket_addrs_stream()
     }
 }
 
-impl<'a> ToSockAddrs for &'a [SockAddr] {
-    type Iter = std::iter::Cloned<std::slice::Iter<'a, SockAddr>>;
-
-    fn to_sock_addrs(&self) -> io::Result<Self::Iter> {
-        Ok(self.iter().cloned())
-    }
-}
-
-impl<T: ToSockAddrs + ?Sized> ToSockAddrs for &T {
-    type Iter = T::Iter;
-
-    fn to_sock_addrs(&self) -> io::Result<Self::Iter> {
-        (**self).to_sock_addrs()
-    }
-}
-
-fn each_addr<T>(
-    addr: impl ToSockAddrs,
-    mut f: impl FnMut(SockAddr) -> io::Result<T>,
-) -> io::Result<T> {
-    let addrs = addr.to_sock_addrs()?;
-    let mut last_err = None;
-    for addr in addrs {
-        match f(addr) {
-            Ok(l) => return Ok(l),
-            Err(e) => last_err = Some(e),
+impl IntoSocketAddrsStream for &str {
+    fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>> {
+        if let Ok(addr) = self.parse::<SocketAddr>() {
+            Either::Left(addr.into_socket_addrs_stream())
+        } else {
+            let (host, port_str) = self.rsplit_once(':').expect("invalid socket address");
+            let port: u16 = port_str.parse().expect("invalid port value");
+            Either::Right((host, port).into_socket_addrs_stream())
         }
     }
-    Err(last_err.unwrap_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "could not resolve to any addresses",
-        )
-    }))
 }
 
-#[allow(dead_code)]
-async fn each_addr_async<T, F: Future<Output = io::Result<T>>>(
-    addr: impl ToSockAddrs,
-    mut f: impl FnMut(SockAddr) -> F,
+impl IntoSocketAddrsStream for &String {
+    fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>> {
+        self.as_str().into_socket_addrs_stream()
+    }
+}
+
+impl IntoSocketAddrsStream for SocketAddr {
+    fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>> {
+        futures_util::stream::once(ready(Ok(self)))
+    }
+}
+
+impl<'a> IntoSocketAddrsStream for &'a [SocketAddr] {
+    fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>> {
+        futures_util::stream::iter(self.iter().map(|addr| Ok(*addr)))
+    }
+}
+
+impl<T: IntoSocketAddrsStream + Copy> IntoSocketAddrsStream for &T {
+    fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>> {
+        (*self).into_socket_addrs_stream()
+    }
+}
+
+#[cfg(feature = "runtime")]
+async fn each_addr<T, F: Future<Output = io::Result<T>>>(
+    addr: impl IntoSocketAddrsStream,
+    mut f: impl FnMut(SocketAddr) -> F,
 ) -> io::Result<T> {
-    let addrs = addr.to_sock_addrs()?;
+    let addrs = addr.into_socket_addrs_stream();
+    let mut addrs = std::pin::pin!(addrs);
     let mut last_err = None;
-    for addr in addrs {
+    while let Some(addr) = addrs.next().await {
+        let addr = addr?;
         match f(addr).await {
             Ok(l) => return Ok(l),
             Err(e) => last_err = Some(e),
@@ -138,35 +127,4 @@ async fn each_addr_async<T, F: Future<Output = io::Result<T>>>(
             "could not resolve to any addresses",
         )
     }))
-}
-
-#[allow(dead_code)]
-async fn each_addr_async_buf<T, B, F: Future<Output = BufResult<T, B>>>(
-    addr: impl ToSockAddrs,
-    mut buffer: B,
-    mut f: impl FnMut(SockAddr, B) -> F,
-) -> BufResult<T, B> {
-    match addr.to_sock_addrs() {
-        Ok(addrs) => {
-            let mut last_err = None;
-            let mut res;
-            for addr in addrs {
-                BufResult(res, buffer) = f(addr, buffer).await;
-                match res {
-                    Ok(l) => return BufResult(Ok(l), buffer),
-                    Err(e) => last_err = Some(e),
-                }
-            }
-            BufResult(
-                Err(last_err.unwrap_or_else(|| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        "could not resolve to any addresses",
-                    )
-                })),
-                buffer,
-            )
-        }
-        Err(e) => BufResult(Err(e), buffer),
-    }
 }

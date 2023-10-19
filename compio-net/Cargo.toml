@@ -21,11 +21,11 @@ compio-driver = { workspace = true }
 compio-io = { workspace = true, optional = true }
 compio-runtime = { workspace = true, optional = true }
 
+futures-util = "0.3"
 socket2 = { version = "0.5", features = ["all"] }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
-futures-util = "0.3"
 tempfile = "3"
 
 [features]

@@ -3,6 +3,7 @@ use std::sync::OnceLock;
 use std::{
     io,
     mem::MaybeUninit,
+    net::SocketAddr,
     pin::Pin,
     ptr::{null, null_mut},
     task::Poll,
@@ -706,7 +707,7 @@ impl ResolveSockAddrs {
     }
 
     /// Get the socket addrs.
-    pub fn sock_addrs(self) -> Vec<SockAddr> {
+    pub fn sock_addrs(self) -> Vec<SocketAddr> {
         let mut addrs = vec![];
         let mut result = self.result;
         while let Some(info) = unsafe { result.as_ref() } {
@@ -719,13 +720,10 @@ impl ResolveSockAddrs {
                     ));
                 let buffer = buffer.assume_init();
                 let addr = SockAddr::new(buffer, info.ai_addrlen as _);
-                let addr = if let Some(mut addr) = addr.as_socket() {
+                if let Some(mut addr) = addr.as_socket() {
                     addr.set_port(self.port);
-                    SockAddr::from(addr)
-                } else {
-                    addr
-                };
-                addrs.push(addr);
+                    addrs.push(addr)
+                }
             }
             result = info.ai_next;
         }
