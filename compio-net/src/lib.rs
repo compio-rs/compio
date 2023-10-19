@@ -7,6 +7,7 @@
 
 mod resolve;
 mod socket;
+mod stream;
 mod tcp;
 mod udp;
 mod unix;
@@ -27,17 +28,17 @@ pub use unix::*;
 /// [`SockAddr`] values.
 ///
 /// See [`ToSocketAddrs`].
-pub trait IntoSocketAddrsStream {
+pub trait ToSocketAddrsStream {
     /// See [`ToSocketAddrs::to_socket_addrs`].
-    fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>>;
+    fn to_socket_addrs_stream(&self) -> impl Stream<Item = io::Result<SocketAddr>>;
 }
 
 // impl_to_sock_addrs_for_into_socket_addr
 macro_rules! itsafisa {
     ($t:ty) => {
-        impl IntoSocketAddrsStream for $t {
-            fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>> {
-                futures_util::stream::once(ready(Ok(SocketAddr::from(self))))
+        impl ToSocketAddrsStream for $t {
+            fn to_socket_addrs_stream(&self) -> impl Stream<Item = io::Result<SocketAddr>> {
+                futures_util::stream::once(ready(Ok(SocketAddr::from(*self))))
             }
         }
     };
@@ -49,69 +50,73 @@ itsafisa!((IpAddr, u16));
 itsafisa!((Ipv4Addr, u16));
 itsafisa!((Ipv6Addr, u16));
 
-impl IntoSocketAddrsStream for (&str, u16) {
-    fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>> {
+impl ToSocketAddrsStream for (&str, u16) {
+    fn to_socket_addrs_stream(&self) -> impl Stream<Item = io::Result<SocketAddr>> {
         let (host, port) = self;
         if let Ok(addr) = host.parse::<Ipv4Addr>() {
-            return Either::Left(SocketAddr::from((addr, port)).into_socket_addrs_stream());
+            return Either::Left(Either::Left(futures_util::stream::once(ready(Ok(
+                SocketAddr::from((addr, *port)),
+            )))));
         }
         if let Ok(addr) = host.parse::<Ipv6Addr>() {
-            return Either::Left(SocketAddr::from((addr, port)).into_socket_addrs_stream());
+            return Either::Left(Either::Right(futures_util::stream::once(ready(Ok(
+                SocketAddr::from((addr, *port)),
+            )))));
         }
 
-        Either::Right(resolve::resolve_sock_addrs(host, port))
+        Either::Right(resolve::resolve_sock_addrs(host, *port))
     }
 }
 
-impl IntoSocketAddrsStream for &(String, u16) {
-    fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>> {
+impl ToSocketAddrsStream for (String, u16) {
+    fn to_socket_addrs_stream(&self) -> impl Stream<Item = io::Result<SocketAddr>> {
         let (host, port) = self;
-        (host.as_str(), *port).into_socket_addrs_stream()
+        stream::wrap_stream((host.as_str(), *port))
     }
 }
 
-impl IntoSocketAddrsStream for &str {
-    fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>> {
+impl ToSocketAddrsStream for str {
+    fn to_socket_addrs_stream(&self) -> impl Stream<Item = io::Result<SocketAddr>> {
         if let Ok(addr) = self.parse::<SocketAddr>() {
-            Either::Left(addr.into_socket_addrs_stream())
+            Either::Left(stream::wrap_stream(addr))
         } else {
             let (host, port_str) = self.rsplit_once(':').expect("invalid socket address");
             let port: u16 = port_str.parse().expect("invalid port value");
-            Either::Right((host, port).into_socket_addrs_stream())
+            Either::Right(stream::wrap_stream((host, port)))
         }
     }
 }
 
-impl IntoSocketAddrsStream for &String {
-    fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>> {
-        self.as_str().into_socket_addrs_stream()
+impl ToSocketAddrsStream for String {
+    fn to_socket_addrs_stream(&self) -> impl Stream<Item = io::Result<SocketAddr>> {
+        self.as_str().to_socket_addrs_stream()
     }
 }
 
-impl IntoSocketAddrsStream for SocketAddr {
-    fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>> {
-        futures_util::stream::once(ready(Ok(self)))
+impl ToSocketAddrsStream for SocketAddr {
+    fn to_socket_addrs_stream(&self) -> impl Stream<Item = io::Result<SocketAddr>> {
+        futures_util::stream::once(ready(Ok(*self)))
     }
 }
 
-impl<'a> IntoSocketAddrsStream for &'a [SocketAddr] {
-    fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>> {
+impl ToSocketAddrsStream for [SocketAddr] {
+    fn to_socket_addrs_stream(&self) -> impl Stream<Item = io::Result<SocketAddr>> {
         futures_util::stream::iter(self.iter().map(|addr| Ok(*addr)))
     }
 }
 
-impl<T: IntoSocketAddrsStream + Copy> IntoSocketAddrsStream for &T {
-    fn into_socket_addrs_stream(self) -> impl Stream<Item = io::Result<SocketAddr>> {
-        (*self).into_socket_addrs_stream()
+impl<T: ToSocketAddrsStream + ?Sized> ToSocketAddrsStream for &T {
+    fn to_socket_addrs_stream(&self) -> impl Stream<Item = io::Result<SocketAddr>> {
+        (**self).to_socket_addrs_stream()
     }
 }
 
 #[cfg(feature = "runtime")]
 async fn each_addr<T, F: Future<Output = io::Result<T>>>(
-    addr: impl IntoSocketAddrsStream,
+    addr: impl ToSocketAddrsStream,
     mut f: impl FnMut(SocketAddr) -> F,
 ) -> io::Result<T> {
-    let addrs = addr.into_socket_addrs_stream();
+    let addrs = addr.to_socket_addrs_stream();
     let mut addrs = std::pin::pin!(addrs);
     let mut last_err = None;
     while let Some(addr) = addrs.next().await {

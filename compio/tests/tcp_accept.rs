@@ -1,6 +1,6 @@
-use compio::net::{IntoSocketAddrsStream, TcpListener, TcpStream};
+use compio::net::{TcpListener, TcpStream, ToSocketAddrsStream};
 
-async fn test_impl(addr: impl IntoSocketAddrsStream) {
+async fn test_impl(addr: impl ToSocketAddrsStream) {
     let listener = TcpListener::bind(addr).await.unwrap();
     let addr = listener.local_addr().unwrap();
     let (tx, rx) = futures_channel::oneshot::channel();

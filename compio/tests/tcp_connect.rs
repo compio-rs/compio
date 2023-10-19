@@ -1,9 +1,9 @@
 use std::net::{IpAddr, SocketAddr};
 
-use compio::net::{IntoSocketAddrsStream, TcpListener, TcpStream};
+use compio::net::{TcpListener, TcpStream, ToSocketAddrsStream};
 
 async fn test_connect_ip_impl(
-    target: impl IntoSocketAddrsStream,
+    target: impl ToSocketAddrsStream,
     assert_fn: impl FnOnce(&SocketAddr) -> bool,
 ) {
     let listener = TcpListener::bind(target).await.unwrap();
@@ -42,7 +42,7 @@ test_connect_ip! {
     (connect_v6, "[::1]:0", SocketAddr::is_ipv6),
 }
 
-async fn test_connect_impl<A: IntoSocketAddrsStream>(mapping: impl FnOnce(&TcpListener) -> A) {
+async fn test_connect_impl<A: ToSocketAddrsStream>(mapping: impl FnOnce(&TcpListener) -> A) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = mapping(&listener);
     let server = async {
@@ -72,6 +72,9 @@ macro_rules! test_connect {
 }
 
 test_connect! {
+    (ip_string, (|listener: &TcpListener| {
+        format!("127.0.0.1:{}", listener.local_addr().unwrap().port())
+    })),
     (ip_str, (|listener: &TcpListener| {
         let s = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
         let slice: &str = &*Box::leak(s.into_boxed_str());

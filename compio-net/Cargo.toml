@@ -21,6 +21,7 @@ compio-driver = { workspace = true }
 compio-io = { workspace = true, optional = true }
 compio-runtime = { workspace = true, optional = true }
 
+async-stream = "0.3"
 futures-util = "0.3"
 socket2 = { version = "0.5", features = ["all"] }
 

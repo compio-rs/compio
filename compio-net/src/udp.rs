@@ -11,7 +11,7 @@ use {
     socket2::SockAddr,
 };
 
-use crate::{IntoSocketAddrsStream, Socket};
+use crate::{Socket, ToSocketAddrsStream};
 
 /// A UDP socket.
 ///
@@ -100,7 +100,7 @@ pub struct UdpSocket {
 impl UdpSocket {
     /// Creates a new UDP socket and attempt to bind it to the addr provided.
     #[cfg(feature = "runtime")]
-    pub async fn bind(addr: impl IntoSocketAddrsStream) -> io::Result<Self> {
+    pub async fn bind(addr: impl ToSocketAddrsStream) -> io::Result<Self> {
         super::each_addr(addr, |addr| async move {
             Ok(Self {
                 inner: Socket::bind(&SockAddr::from(addr), Type::DGRAM, Some(Protocol::UDP))?,
@@ -117,7 +117,7 @@ impl UdpSocket {
     /// that there is a remote server listening on the port, rather, such an
     /// error would only be detected after the first send.
     #[cfg(feature = "runtime")]
-    pub async fn connect(&self, addr: impl IntoSocketAddrsStream) -> io::Result<()> {
+    pub async fn connect(&self, addr: impl ToSocketAddrsStream) -> io::Result<()> {
         super::each_addr(addr, |addr| async move {
             self.inner.connect(&SockAddr::from(addr))
         })
@@ -245,9 +245,9 @@ impl UdpSocket {
     pub async fn send_to<T: IoBuf>(
         &mut self,
         buffer: T,
-        addr: impl IntoSocketAddrsStream,
+        addr: impl ToSocketAddrsStream,
     ) -> BufResult<usize, T> {
-        let addrs = addr.into_socket_addrs_stream();
+        let addrs = addr.to_socket_addrs_stream();
         let mut addrs = std::pin::pin!(addrs);
         if let Some(addr) = addrs.next().await {
             let (addr, buffer) = buf_try!(addr, buffer);
@@ -270,9 +270,9 @@ impl UdpSocket {
     pub async fn send_to_vectored<T: IoVectoredBuf>(
         &mut self,
         buffer: T,
-        addr: impl IntoSocketAddrsStream,
+        addr: impl ToSocketAddrsStream,
     ) -> BufResult<usize, T> {
-        let addrs = addr.into_socket_addrs_stream();
+        let addrs = addr.to_socket_addrs_stream();
         let mut addrs = std::pin::pin!(addrs);
         if let Some(addr) = addrs.next().await {
             let (addr, buffer) = buf_try!(addr, buffer);
