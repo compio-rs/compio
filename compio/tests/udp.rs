@@ -10,7 +10,7 @@ async fn connect() {
     let mut active = UdpSocket::bind("127.0.0.1:0").unwrap();
     let active_addr = active.local_addr().unwrap();
 
-    active.connect(&passive_addr).unwrap();
+    active.connect(passive_addr).unwrap();
     active.send(MSG).await.0.unwrap();
 
     let (_, buffer) = passive.recv(Vec::with_capacity(20)).await.unwrap();

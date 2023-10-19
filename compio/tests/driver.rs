@@ -74,7 +74,7 @@ fn udp_io() {
         if key == key_write {
             res.unwrap();
         } else if key == key_read {
-            n_bytes = res.unwrap();
+            n_bytes = res.unwrap().0;
             buf.write(unsafe { op.into_op::<Recv<Vec<u8>>>() }.into_inner());
         }
     }
@@ -107,6 +107,7 @@ fn cancel_before_poll() {
                     assert_eq!(op.user_data(), key);
                     unsafe { op.into_op() }
                 })
+                .map_res(|(res, _)| res)
         }
     };
 

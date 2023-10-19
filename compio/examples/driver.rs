@@ -15,7 +15,7 @@ fn main() {
         PushEntry::Pending(user_data) => {
             let mut entries = ArrayVec::<Entry, 1>::new();
             driver.poll(None, &mut entries).unwrap();
-            let (n, op) = driver
+            let ((n, _), op) = driver
                 .pop(&mut entries.into_iter())
                 .next()
                 .unwrap()
