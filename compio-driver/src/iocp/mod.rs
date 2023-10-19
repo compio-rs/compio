@@ -19,6 +19,7 @@ use windows_sys::Win32::{
         RtlNtStatusToDosError, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_NO_DATA,
         ERROR_OPERATION_ABORTED, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING, STATUS_SUCCESS,
     },
+    Networking::WinSock::{WSACleanup, WSAStartup, WSADATA},
     Storage::FileSystem::SetFileCompletionNotificationModes,
     System::{
         Threading::INFINITE,
@@ -134,6 +135,9 @@ impl Driver {
     const DEFAULT_CAPACITY: usize = 1024;
 
     pub fn new(_entries: u32) -> io::Result<Self> {
+        let mut data: WSADATA = unsafe { std::mem::zeroed() };
+        syscall!(SOCKET, WSAStartup(0x202, &mut data))?;
+
         let port = syscall!(BOOL, CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0))?;
         let port = unsafe { OwnedHandle::from_raw_handle(port as _) };
         Ok(Self {
@@ -271,11 +275,19 @@ impl AsRawFd for Driver {
     }
 }
 
+impl Drop for Driver {
+    fn drop(&mut self) {
+        syscall!(SOCKET, WSACleanup()).ok();
+    }
+}
+
 /// The overlapped struct we actually used for IOCP.
 #[repr(C)]
 pub struct Overlapped<T: ?Sized> {
     /// The base [`OVERLAPPED`].
     pub base: OVERLAPPED,
+    /// The IOCP handle that creates this struct.
+    pub iocp_handle: RawFd,
     /// The registered user defined data.
     pub user_data: usize,
     /// The opcode.
@@ -284,9 +296,10 @@ pub struct Overlapped<T: ?Sized> {
 }
 
 impl<T> Overlapped<T> {
-    pub(crate) fn new(user_data: usize, op: T) -> Self {
+    pub(crate) fn new(iocp_handle: RawFd, user_data: usize, op: T) -> Self {
         Self {
             base: unsafe { std::mem::zeroed() },
+            iocp_handle,
             user_data,
             op,
         }
@@ -296,8 +309,8 @@ impl<T> Overlapped<T> {
 pub(crate) struct RawOp(NonNull<Overlapped<dyn OpCode>>);
 
 impl RawOp {
-    pub(crate) fn new(user_data: usize, op: impl OpCode + 'static) -> Self {
-        let op = Overlapped::new(user_data, op);
+    pub(crate) fn new(iocp_handle: RawFd, user_data: usize, op: impl OpCode + 'static) -> Self {
+        let op = Overlapped::new(iocp_handle, user_data, op);
         let op = Box::new(op) as Box<Overlapped<dyn OpCode>>;
         Self(unsafe { NonNull::new_unchecked(Box::into_raw(op)) })
     }

@@ -5,12 +5,12 @@ pub(crate) mod op;
 
 use std::{mem::ManuallyDrop, pin::Pin, ptr::NonNull};
 
-use crate::OpCode;
+use crate::{OpCode, RawFd};
 
 pub(crate) struct RawOp(NonNull<dyn OpCode>);
 
 impl RawOp {
-    pub(crate) fn new(_user_data: usize, op: impl OpCode + 'static) -> Self {
+    pub(crate) fn new(_fd: RawFd, _user_data: usize, op: impl OpCode + 'static) -> Self {
         let op = Box::new(op);
         Self(unsafe { NonNull::new_unchecked(Box::into_raw(op as Box<dyn OpCode>)) })
     }

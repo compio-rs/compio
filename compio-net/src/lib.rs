@@ -23,6 +23,13 @@ pub use tcp::*;
 pub use udp::*;
 pub use unix::*;
 
+#[cfg(windows)]
+pub async fn resolve_sock_addrs(host: &str, port: u16) -> io::Result<Vec<SockAddr>> {
+    let op = compio_driver::op::ResolveSockAddrs::new(host, port);
+    let (_, op) = compio_buf::buf_try!(@try compio_runtime::submit(op).await);
+    Ok(op.sock_addrs())
+}
+
 /// A trait for objects which can be converted or resolved to one or more
 /// [`SockAddr`] values.
 ///

@@ -32,12 +32,12 @@ use windows_sys::{
         Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile},
         System::{
             Pipes::ConnectNamedPipe,
-            IO::{CancelIoEx, OVERLAPPED},
+            IO::{CancelIoEx, PostQueuedCompletionStatus, OVERLAPPED},
         },
     },
 };
 
-use crate::{op::*, syscall, OpCode, RawFd};
+use crate::{op::*, syscall, OpCode, Overlapped, RawFd};
 
 #[inline]
 fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
@@ -686,6 +686,7 @@ impl OpCode for ConnectNamedPipe {
     }
 }
 
+/// Resolve socket addrs.
 pub struct ResolveSockAddrs {
     pub(crate) host: U16CString,
     pub(crate) port: u16,
@@ -694,16 +695,18 @@ pub struct ResolveSockAddrs {
 }
 
 impl ResolveSockAddrs {
-    pub fn new(host: impl Into<U16CString>, port: u16) -> Self {
+    /// Create [`ResolveSockAddrs`].
+    pub fn new(host: &str, port: u16) -> Self {
         Self {
-            host: host.into(),
+            host: U16CString::from_str(host).expect("expect valid host name"),
             port,
             result: null_mut(),
             handle: 0,
         }
     }
 
-    pub fn sock_addrs(&self) -> Vec<SockAddr> {
+    /// Get the socket addrs.
+    pub fn sock_addrs(self) -> Vec<SockAddr> {
         let mut addrs = vec![];
         let mut result = self.result;
         while let Some(info) = unsafe { result.as_ref() } {
@@ -728,6 +731,22 @@ impl ResolveSockAddrs {
         }
         addrs
     }
+
+    unsafe extern "system" fn callback(
+        dwerror: u32,
+        dwbytes: u32,
+        lpoverlapped: *const OVERLAPPED,
+    ) {
+        let overlapped_ptr = lpoverlapped.cast::<Overlapped<Self>>().cast_mut();
+        if let Some(overlapped) = overlapped_ptr.as_mut() {
+            overlapped.base.Internal = dwerror as _;
+            syscall!(
+                BOOL,
+                PostQueuedCompletionStatus(overlapped.iocp_handle as _, dwbytes, 0, lpoverlapped)
+            )
+            .ok();
+        }
+    }
 }
 
 impl OpCode for ResolveSockAddrs {
@@ -745,7 +764,7 @@ impl OpCode for ResolveSockAddrs {
             &mut self.result,
             null(),
             optr,
-            None,
+            Some(Self::callback),
             &mut self.handle,
         );
         winsock_result(res, 0)

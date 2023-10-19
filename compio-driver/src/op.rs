@@ -6,12 +6,12 @@
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
 use socket2::SockAddr;
 
-#[cfg(windows)]
-pub use crate::sys::op::ConnectNamedPipe;
 pub use crate::sys::op::{
     Accept, Recv, RecvFrom, RecvFromVectored, RecvVectored, Send, SendTo, SendToVectored,
     SendVectored,
 };
+#[cfg(windows)]
+pub use crate::sys::op::{ConnectNamedPipe, ResolveSockAddrs};
 #[cfg(unix)]
 pub use crate::sys::op::{ReadVectoredAt, WriteVectoredAt};
 use crate::{sockaddr_storage, socklen_t, RawFd};
