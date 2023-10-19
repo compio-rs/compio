@@ -1,11 +1,11 @@
-use std::{os::fd::RawFd, pin::Pin};
+use std::{os::fd::RawFd, pin::Pin, ptr};
 
 use compio_buf::{
     IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
 };
 use io_uring::{
     opcode,
-    squeue::Entry,
+    squeue::{Entry, Flags},
     types::{Fd, FsyncFlags},
 };
 use libc::{sockaddr_storage, socklen_t};
@@ -79,6 +79,19 @@ impl<T: IoVectoredBufMut> OpCode for RecvVectored<T> {
             self.slices.len() as _,
         )
         .build()
+    }
+}
+
+impl OpCode for RecvWithRegisterBuffers {
+    fn create_entry(self: Pin<&mut Self>) -> Entry {
+        opcode::Recv::new(Fd(self.fd), ptr::null_mut(), self.buffers.buf_len() as _)
+            .buf_group(self.buffers.bgid())
+            .build()
+            .flags(Flags::BUFFER_SELECT)
+    }
+
+    fn set_flags(&mut self, flags: u32) {
+        self.flags.replace(flags);
     }
 }
 

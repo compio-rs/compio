@@ -12,15 +12,19 @@ use io_uring::{
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use slab::Slab;
 
+pub(crate) use crate::unix::RawOp;
 use crate::Entry;
 
 pub(crate) mod op;
-pub(crate) use crate::unix::RawOp;
+pub mod ring_mapped_buffers;
 
 /// Abstraction of io-uring operations.
 pub trait OpCode {
     /// Create submission entry.
     fn create_entry(self: Pin<&mut Self>) -> squeue::Entry;
+
+    /// Set flags from completion entry
+    fn set_flags(&mut self, _flags: u32) {}
 }
 
 /// Low-level driver of io-uring.
@@ -145,6 +149,10 @@ impl Driver {
         }
         Ok(())
     }
+
+    pub(crate) fn ring(&mut self) -> &mut IoUring {
+        &mut self.inner
+    }
 }
 
 impl AsRawFd for Driver {
@@ -168,7 +176,7 @@ fn create_entry(entry: cqueue::Entry) -> Entry {
     Entry::new(entry.user_data() as _, result, entry.flags())
 }
 
-fn timespec(duration: std::time::Duration) -> Timespec {
+fn timespec(duration: Duration) -> Timespec {
     Timespec::new()
         .sec(duration.as_secs())
         .nsec(duration.subsec_nanos())

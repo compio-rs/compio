@@ -14,6 +14,18 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![warn(missing_docs)]
 
+use std::{future::Future, io};
+
+use async_task::Task;
+pub use attacher::*;
+use compio_buf::BufResult;
+use compio_driver::{
+    ring_mapped_buffers::{Builder, RawRingMappedBuffers},
+    OpCode, RawFd,
+};
+pub(crate) use key::Key;
+use runtime::Runtime;
+
 mod attacher;
 mod key;
 pub(crate) mod runtime;
@@ -22,15 +34,6 @@ pub(crate) mod runtime;
 pub mod event;
 #[cfg(feature = "time")]
 pub mod time;
-
-use std::{future::Future, io};
-
-use async_task::Task;
-pub use attacher::*;
-use compio_buf::BufResult;
-use compio_driver::{OpCode, RawFd};
-pub(crate) use key::Key;
-use runtime::Runtime;
 
 thread_local! {
     pub(crate) static RUNTIME: Runtime = Runtime::new().expect("cannot create compio runtime");
@@ -73,4 +76,12 @@ pub fn attach(fd: RawFd) -> io::Result<()> {
 /// You only need this when authoring your own [`OpCode`].
 pub fn submit<T: OpCode + 'static>(op: T) -> impl Future<Output = BufResult<usize, T>> {
     RUNTIME.with(|runtime| runtime.submit(op))
+}
+
+pub fn register_ring_mapped_buffers(builder: Builder) -> io::Result<RawRingMappedBuffers> {
+    RUNTIME.with(|runtime| runtime.register_ring_mapped_buffers(builder))
+}
+
+pub fn unregister_ring_mapped_buffers(buffers: &mut RawRingMappedBuffers) -> io::Result<()> {
+    RUNTIME.with(|runtime| runtime.unregister_ring_mapped_buffers(buffers))
 }

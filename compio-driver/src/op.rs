@@ -8,6 +8,8 @@ use socket2::SockAddr;
 
 #[cfg(windows)]
 pub use crate::sys::op::ConnectNamedPipe;
+#[cfg(feature = "io-uring")]
+pub use crate::sys::op::RecvWithRegisterBuffers;
 pub use crate::sys::op::{
     Accept, Recv, RecvFrom, RecvFromVectored, RecvVectored, Send, SendTo, SendToVectored,
     SendVectored,

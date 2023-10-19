@@ -5,17 +5,18 @@
 #![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
 #![warn(missing_docs)]
 
+use std::{io, task::Poll, time::Duration};
+
+use compio_buf::BufResult;
+use slab::Slab;
+pub use sys::*;
+
 #[cfg(all(
     target_os = "linux",
     not(feature = "io-uring"),
     not(feature = "polling")
 ))]
 compile_error!("You must choose one of these features: [\"io-uring\", \"polling\"]");
-
-use std::{io, task::Poll, time::Duration};
-
-use compio_buf::BufResult;
-use slab::Slab;
 
 pub mod op;
 #[cfg(unix)]
@@ -34,8 +35,6 @@ cfg_if::cfg_if! {
         mod sys;
     }
 }
-
-pub use sys::*;
 
 #[cfg(windows)]
 #[macro_export]
@@ -227,7 +226,7 @@ impl Proactor {
     pub fn pop<'a>(
         &'a mut self,
         entries: &'a mut impl Iterator<Item = Entry>,
-    ) -> impl Iterator<Item = BufResult<usize, Operation>> + 'a {
+    ) -> impl Iterator<Item = BufResult<(usize, u32), Operation>> + 'a {
         std::iter::from_fn(|| {
             entries.next().map(|entry| {
                 let op = self
@@ -235,9 +234,14 @@ impl Proactor {
                     .try_remove(entry.user_data())
                     .expect("the entry should be valid");
                 let op = Operation::new(op, entry.user_data());
-                BufResult(entry.into_result(), op)
+                let flags = entry.flags();
+                BufResult(entry.into_result().map(|res| (res, flags)), op)
             })
         })
+    }
+
+    pub(crate) fn driver(&mut self) -> &mut Driver {
+        &mut self.driver
     }
 }
 

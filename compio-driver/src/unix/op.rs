@@ -1,3 +1,5 @@
+use std::io;
+
 use compio_buf::{
     IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
 };
@@ -6,7 +8,10 @@ use socket2::SockAddr;
 
 #[cfg(doc)]
 use crate::op::*;
-use crate::RawFd;
+use crate::{
+    sys::ring_mapped_buffers::{RawRingMappedBuffers, RingMappedBuffer},
+    RawFd,
+};
 
 /// Accept a connection.
 pub struct Accept {
@@ -75,6 +80,42 @@ impl<T: IoVectoredBufMut> IntoInner for RecvVectored<T> {
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
+    }
+}
+
+/// recv data from remote into register buffer.
+pub struct RecvWithRegisterBuffers {
+    pub(crate) fd: RawFd,
+    pub(crate) buffers: RawRingMappedBuffers,
+    pub(crate) flags: Option<u32>,
+}
+
+impl RecvWithRegisterBuffers {
+    /// Create [`RecvWithRegisterBuffers`]
+    pub fn new(fd: RawFd, buffers: RawRingMappedBuffers) -> Self {
+        Self {
+            fd,
+            buffers,
+            flags: None,
+        }
+    }
+
+    /// Get completion entry flags if it has
+    pub fn buf(&self, len: usize) -> io::Result<RingMappedBuffer> {
+        let flags = self
+            .flags
+            .expect("only call RecvWithRegisterBuffers::buf when completion entry is ok");
+
+        // Safety: len is completion entry result
+        unsafe { self.buffers.get_buf(len as _, flags) }
+    }
+}
+
+impl IntoInner for RecvWithRegisterBuffers {
+    type Inner = RawRingMappedBuffers;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffers
     }
 }
 

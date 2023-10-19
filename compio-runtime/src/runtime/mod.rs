@@ -7,13 +7,12 @@ use std::{
 };
 
 use async_task::{Runnable, Task};
-use compio_driver::{AsRawFd, Entry, OpCode, Proactor, PushEntry, RawFd};
+use compio_driver::{
+    ring_mapped_buffers::{Builder, RawRingMappedBuffers},
+    AsRawFd, Entry, OpCode, Proactor, PushEntry, RawFd,
+};
 use futures_util::future::Either;
 use smallvec::SmallVec;
-
-pub(crate) mod op;
-#[cfg(feature = "time")]
-pub(crate) mod time;
 
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerRuntime};
@@ -21,6 +20,10 @@ use crate::{
     runtime::op::{OpFuture, OpRuntime},
     BufResult, Key,
 };
+
+pub(crate) mod op;
+#[cfg(feature = "time")]
+pub(crate) mod time;
 
 pub(crate) struct Runtime {
     driver: RefCell<Proactor>,
@@ -124,7 +127,11 @@ impl Runtime {
                 .pop(&mut op.entry.into_iter())
                 .next()
                 .expect("the result should have come");
-            Poll::Ready(res.map_buffer(|op| unsafe { op.into_op::<T>() }))
+            let mut res = res.map_buffer(|op| unsafe { op.into_op::<T>() });
+            if let Ok((_, flags)) = &res.0 {
+                res.1.set_flags(*flags);
+            }
+            Poll::Ready(res.map_res(|(res, _)| res))
         } else {
             op_runtime.update_waker(*user_data, cx.waker().clone());
             Poll::Pending
@@ -165,6 +172,20 @@ impl Runtime {
         }
         #[cfg(feature = "time")]
         self.timer_runtime.borrow_mut().wake();
+    }
+
+    pub fn register_ring_mapped_buffers(
+        &self,
+        builder: Builder,
+    ) -> io::Result<RawRingMappedBuffers> {
+        builder.build(&mut self.driver.borrow_mut())
+    }
+
+    pub fn unregister_ring_mapped_buffers(
+        &self,
+        buffers: &mut RawRingMappedBuffers,
+    ) -> io::Result<()> {
+        buffers.unregister(&mut self.driver.borrow_mut())
     }
 }
 
