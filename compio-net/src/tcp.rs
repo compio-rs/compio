@@ -141,7 +141,7 @@ impl_attachable!(TcpListener, inner);
 /// ```
 #[derive(Debug)]
 pub struct TcpStream {
-    inner: Socket,
+    pub(crate) inner: Socket,
 }
 
 impl TcpStream {

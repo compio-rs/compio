@@ -20,6 +20,7 @@ compio-buf = { workspace = true }
 compio-driver = { workspace = true }
 compio-io = { workspace = true, optional = true }
 compio-runtime = { workspace = true, optional = true }
+compio-util = { workspace = true }
 
 socket2 = { version = "0.5", features = ["all"] }
 

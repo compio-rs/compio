@@ -95,7 +95,7 @@ use crate::{Socket, ToSockAddrs};
 /// ```
 #[derive(Debug)]
 pub struct UdpSocket {
-    inner: Socket,
+    pub(crate) inner: Socket,
 }
 
 impl UdpSocket {

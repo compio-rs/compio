@@ -1,5 +1,7 @@
 use std::io;
 
+#[cfg(all(feature = "runtime", target_os = "linux"))]
+use compio_driver::ring_mapped_buffers::{RawRingMappedBuffers, RingMappedBuffer};
 use compio_driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 #[cfg(feature = "runtime")]
@@ -7,7 +9,7 @@ use {
     compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     compio_driver::op::{
         Accept, BufResultExt, Connect, Recv, RecvFrom, RecvFromVectored, RecvResultExt,
-        RecvVectored, Send, SendTo, SendToVectored, SendVectored,
+        RecvVectored, RecvWithRegisterBuffers, Send, SendTo, SendToVectored, SendVectored,
     },
     compio_io::{AsyncRead, AsyncWrite},
     compio_runtime::{submit, Attachable, Attacher},
@@ -125,6 +127,21 @@ impl Socket {
         op.update_context()?;
         let addr = op.into_addr()?;
         Ok((accept_sock, addr))
+    }
+
+    #[cfg(all(feature = "runtime", target_os = "linux"))]
+    pub async fn recv_with_ring_mapped_buffers(
+        &self,
+        buffers: RawRingMappedBuffers,
+    ) -> BufResult<RingMappedBuffer, RawRingMappedBuffers> {
+        let (_, buffers) = buf_try!(self.attach(), buffers);
+        let op = RecvWithRegisterBuffers::new(self.as_raw_fd(), buffers);
+        let BufResult(res, op) = submit(op).await;
+
+        match res {
+            Err(err) => BufResult(Err(err), op.into_inner()),
+            Ok(n) => BufResult(op.buf(n), op.into_inner()),
+        }
     }
 
     #[cfg(feature = "runtime")]

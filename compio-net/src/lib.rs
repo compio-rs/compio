@@ -5,11 +5,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![warn(missing_docs)]
 
-mod socket;
-mod tcp;
-mod udp;
-mod unix;
-
 use std::{
     future::Future,
     io,
@@ -22,6 +17,13 @@ use socket2::SockAddr;
 pub use tcp::*;
 pub use udp::*;
 pub use unix::*;
+
+#[cfg(target_os = "linux")]
+pub mod linux_ext;
+mod socket;
+mod tcp;
+mod udp;
+mod unix;
 
 /// A trait for objects which can be converted or resolved to one or more
 /// [`SockAddr`] values.
