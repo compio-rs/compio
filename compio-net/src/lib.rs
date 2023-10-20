@@ -17,6 +17,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
 };
 
+use either::Either;
 pub(crate) use socket::*;
 pub use tcp::*;
 pub use udp::*;
@@ -56,23 +57,29 @@ itsafisa!((Ipv4Addr, u16));
 itsafisa!((Ipv6Addr, u16));
 
 impl ToSocketAddrsAsync for (&str, u16) {
-    type Iter = std::vec::IntoIter<SocketAddr>;
+    type Iter = Either<std::iter::Once<SocketAddr>, std::vec::IntoIter<SocketAddr>>;
 
     async fn to_socket_addrs_async(&self) -> io::Result<Self::Iter> {
         let (host, port) = self;
         if let Ok(addr) = host.parse::<Ipv4Addr>() {
-            return Ok(vec![SocketAddr::from((addr, *port))].into_iter());
+            return Ok(Either::Left(std::iter::once(SocketAddr::from((
+                addr, *port,
+            )))));
         }
         if let Ok(addr) = host.parse::<Ipv6Addr>() {
-            return Ok(vec![SocketAddr::from((addr, *port))].into_iter());
+            return Ok(Either::Left(std::iter::once(SocketAddr::from((
+                addr, *port,
+            )))));
         }
 
-        resolve::resolve_sock_addrs(host, *port).await
+        resolve::resolve_sock_addrs(host, *port)
+            .await
+            .map(Either::Right)
     }
 }
 
 impl ToSocketAddrsAsync for (String, u16) {
-    type Iter = std::vec::IntoIter<SocketAddr>;
+    type Iter = <(&'static str, u16) as ToSocketAddrsAsync>::Iter;
 
     async fn to_socket_addrs_async(&self) -> io::Result<Self::Iter> {
         (&*self.0, self.1).to_socket_addrs_async().await
@@ -80,11 +87,11 @@ impl ToSocketAddrsAsync for (String, u16) {
 }
 
 impl ToSocketAddrsAsync for str {
-    type Iter = std::vec::IntoIter<SocketAddr>;
+    type Iter = <(&'static str, u16) as ToSocketAddrsAsync>::Iter;
 
     async fn to_socket_addrs_async(&self) -> io::Result<Self::Iter> {
         if let Ok(addr) = self.parse::<SocketAddr>() {
-            return Ok(vec![addr].into_iter());
+            return Ok(Either::Left(std::iter::once(addr)));
         }
 
         let (host, port_str) = self.rsplit_once(':').expect("invalid socket address");
@@ -94,7 +101,7 @@ impl ToSocketAddrsAsync for str {
 }
 
 impl ToSocketAddrsAsync for String {
-    type Iter = std::vec::IntoIter<SocketAddr>;
+    type Iter = <(&'static str, u16) as ToSocketAddrsAsync>::Iter;
 
     async fn to_socket_addrs_async(&self) -> io::Result<Self::Iter> {
         self.as_str().to_socket_addrs_async().await

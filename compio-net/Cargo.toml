@@ -21,6 +21,7 @@ compio-driver = { workspace = true }
 compio-io = { workspace = true, optional = true }
 compio-runtime = { workspace = true, optional = true }
 
+either = "1"
 socket2 = { version = "0.5", features = ["all"] }
 
 [target.'cfg(windows)'.dependencies]
