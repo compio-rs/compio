@@ -1,16 +1,16 @@
 use std::{io, net::SocketAddr};
 
 use compio_driver::impl_raw_fd;
-use socket2::{Protocol, Type};
 #[cfg(feature = "runtime")]
 use {
+    crate::ToSocketAddrsAsync,
     compio_buf::{buf_try, BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     compio_io::{AsyncRead, AsyncWrite},
     compio_runtime::impl_attachable,
-    socket2::SockAddr,
+    socket2::{Protocol, SockAddr, Type},
 };
 
-use crate::{Socket, ToSocketAddrsAsync};
+use crate::Socket;
 
 /// A UDP socket.
 ///
