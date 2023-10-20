@@ -19,6 +19,7 @@ use windows_sys::Win32::{
         RtlNtStatusToDosError, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_NO_DATA,
         ERROR_OPERATION_ABORTED, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING, STATUS_SUCCESS,
     },
+    Networking::WinSock::{WSACleanup, WSAStartup, WSADATA},
     Storage::FileSystem::SetFileCompletionNotificationModes,
     System::{
         Threading::INFINITE,
@@ -134,6 +135,9 @@ impl Driver {
     const DEFAULT_CAPACITY: usize = 1024;
 
     pub fn new(_entries: u32) -> io::Result<Self> {
+        let mut data: WSADATA = unsafe { std::mem::zeroed() };
+        syscall!(SOCKET, WSAStartup(0x202, &mut data))?;
+
         let port = syscall!(BOOL, CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0))?;
         let port = unsafe { OwnedHandle::from_raw_handle(port as _) };
         Ok(Self {
@@ -268,6 +272,12 @@ impl Driver {
 impl AsRawFd for Driver {
     fn as_raw_fd(&self) -> RawFd {
         self.port.as_raw_handle()
+    }
+}
+
+impl Drop for Driver {
+    fn drop(&mut self) {
+        syscall!(SOCKET, WSACleanup()).ok();
     }
 }
 

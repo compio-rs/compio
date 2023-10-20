@@ -1,14 +1,17 @@
 use std::{fs::Metadata, io, path::Path};
 
-#[cfg(all(feature = "runtime", unix))]
-use compio_driver::op::{ReadVectoredAt, WriteVectoredAt};
 use compio_driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 #[cfg(feature = "runtime")]
 use {
-    compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
+    compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut},
     compio_driver::op::{BufResultExt, ReadAt, Sync, WriteAt},
     compio_io::{AsyncReadAt, AsyncWriteAt},
     compio_runtime::{submit, Attachable, Attacher},
+};
+#[cfg(all(feature = "runtime", unix))]
+use {
+    compio_buf::{IoVectoredBuf, IoVectoredBufMut},
+    compio_driver::op::{ReadVectoredAt, WriteVectoredAt},
 };
 
 use crate::OpenOptions;

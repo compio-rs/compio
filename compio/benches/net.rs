@@ -43,7 +43,7 @@ fn tcp(c: &mut Criterion) {
         b.to_async(CompioRuntime).iter(|| async {
             use compio::io::{AsyncReadExt, AsyncWriteExt};
 
-            let listener = compio::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let listener = compio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let addr = listener.local_addr().unwrap();
             let tx = compio::net::TcpStream::connect(addr);
             let rx = listener.accept();
@@ -106,13 +106,13 @@ fn udp(c: &mut Criterion) {
 
     group.bench_function("compio", |b| {
         b.to_async(CompioRuntime).iter(|| async {
-            let mut rx = compio::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+            let mut rx = compio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let addr_rx = rx.local_addr().unwrap();
-            let mut tx = compio::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+            let mut tx = compio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let addr_tx = tx.local_addr().unwrap();
 
-            rx.connect(addr_tx).unwrap();
-            tx.connect(addr_rx).unwrap();
+            rx.connect(addr_tx).await.unwrap();
+            tx.connect(addr_rx).await.unwrap();
 
             {
                 let mut pos = 0;

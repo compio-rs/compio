@@ -4,7 +4,7 @@ use std::{
 };
 
 use compio_buf::{arrayvec::ArrayVec, BufResult};
-use compio_driver::{op::Recv, syscall};
+use compio_driver::{impl_raw_fd, op::Recv, syscall};
 
 use crate::{attacher::Attacher, submit};
 
@@ -76,3 +76,5 @@ impl EventHandle {
         Ok(())
     }
 }
+
+impl_raw_fd!(EventHandle, fd);

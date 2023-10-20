@@ -1,12 +1,12 @@
 use std::net::{IpAddr, SocketAddr};
 
-use compio::net::{TcpListener, TcpStream, ToSockAddrs};
+use compio::net::{TcpListener, TcpStream, ToSocketAddrsAsync};
 
 async fn test_connect_ip_impl(
-    target: impl ToSockAddrs,
+    target: impl ToSocketAddrsAsync,
     assert_fn: impl FnOnce(&SocketAddr) -> bool,
 ) {
-    let listener = TcpListener::bind(target).unwrap();
+    let listener = TcpListener::bind(target).await.unwrap();
     let addr = listener.local_addr().unwrap();
     assert!(assert_fn(&addr));
 
@@ -42,8 +42,8 @@ test_connect_ip! {
     (connect_v6, "[::1]:0", SocketAddr::is_ipv6),
 }
 
-async fn test_connect_impl<A: ToSockAddrs>(mapping: impl FnOnce(&TcpListener) -> A) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+async fn test_connect_impl<A: ToSocketAddrsAsync>(mapping: impl FnOnce(&TcpListener) -> A) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = mapping(&listener);
     let server = async {
         listener.accept().await.unwrap();

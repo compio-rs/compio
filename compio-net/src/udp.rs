@@ -7,9 +7,10 @@ use {
     compio_buf::{buf_try, BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     compio_io::{AsyncRead, AsyncWrite},
     compio_runtime::impl_attachable,
+    socket2::SockAddr,
 };
 
-use crate::{Socket, ToSockAddrs};
+use crate::{Socket, ToSocketAddrsAsync};
 
 /// A UDP socket.
 ///
@@ -38,14 +39,14 @@ use crate::{Socket, ToSockAddrs};
 ///     let second_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
 ///
 ///     // bind sockets
-///     let mut socket = UdpSocket::bind(first_addr).unwrap();
+///     let mut socket = UdpSocket::bind(first_addr).await.unwrap();
 ///     let first_addr = socket.local_addr().unwrap();
-///     let mut other_socket = UdpSocket::bind(second_addr).unwrap();
+///     let mut other_socket = UdpSocket::bind(second_addr).await.unwrap();
 ///     let second_addr = other_socket.local_addr().unwrap();
 ///
 ///     // connect sockets
-///     socket.connect(second_addr).unwrap();
-///     other_socket.connect(first_addr).unwrap();
+///     socket.connect(second_addr).await.unwrap();
+///     other_socket.connect(first_addr).await.unwrap();
 ///
 ///     let buf = Vec::with_capacity(12);
 ///
@@ -72,18 +73,15 @@ use crate::{Socket, ToSockAddrs};
 ///     let second_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
 ///
 ///     // bind sockets
-///     let mut socket = UdpSocket::bind(first_addr).unwrap();
+///     let mut socket = UdpSocket::bind(first_addr).await.unwrap();
 ///     let first_addr = socket.local_addr().unwrap();
-///     let mut other_socket = UdpSocket::bind(second_addr).unwrap();
+///     let mut other_socket = UdpSocket::bind(second_addr).await.unwrap();
 ///     let second_addr = other_socket.local_addr().unwrap();
 ///
 ///     let buf = Vec::with_capacity(32);
 ///
 ///     // write data
-///     socket
-///         .send_to("hello world", SockAddr::from(second_addr))
-///         .await
-///         .unwrap();
+///     socket.send_to("hello world", second_addr).await.unwrap();
 ///
 ///     // read data
 ///     let ((n_bytes, addr), buf) = other_socket.recv_from(buf).await.unwrap();
@@ -100,12 +98,14 @@ pub struct UdpSocket {
 
 impl UdpSocket {
     /// Creates a new UDP socket and attempt to bind it to the addr provided.
-    pub fn bind(addr: impl ToSockAddrs) -> io::Result<Self> {
-        super::each_addr(addr, |addr| {
+    #[cfg(feature = "runtime")]
+    pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
+        super::each_addr(addr, |addr| async move {
             Ok(Self {
-                inner: Socket::bind(&addr, Type::DGRAM, Some(Protocol::UDP))?,
+                inner: Socket::bind(&SockAddr::from(addr), Type::DGRAM, Some(Protocol::UDP))?,
             })
         })
+        .await
     }
 
     /// Connects this UDP socket to a remote address, allowing the `send` and
@@ -115,8 +115,12 @@ impl UdpSocket {
     /// Note that usually, a successful `connect` call does not specify
     /// that there is a remote server listening on the port, rather, such an
     /// error would only be detected after the first send.
-    pub fn connect(&self, addr: impl ToSockAddrs) -> io::Result<()> {
-        super::each_addr(addr, |addr| self.inner.connect(&addr))
+    #[cfg(feature = "runtime")]
+    pub async fn connect(&self, addr: impl ToSocketAddrsAsync) -> io::Result<()> {
+        super::each_addr(addr, |addr| async move {
+            self.inner.connect(&SockAddr::from(addr))
+        })
+        .await
     }
 
     /// Creates a new independently owned handle to the underlying socket.
@@ -139,14 +143,19 @@ impl UdpSocket {
     /// use compio_net::UdpSocket;
     /// use socket2::SockAddr;
     ///
-    /// let socket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
+    /// # compio_runtime::block_on(async {
+    /// let socket = UdpSocket::bind("127.0.0.1:34254")
+    ///     .await
+    ///     .expect("couldn't bind to address");
     /// socket
     ///     .connect("192.168.0.1:41203")
+    ///     .await
     ///     .expect("couldn't connect to address");
     /// assert_eq!(
     ///     socket.peer_addr().unwrap(),
     ///     SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(192, 168, 0, 1), 41203))
     /// );
+    /// # });
     /// ```
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
         self.inner
@@ -164,11 +173,13 @@ impl UdpSocket {
     /// use compio_net::UdpSocket;
     /// use socket2::SockAddr;
     ///
+    /// # compio_runtime::block_on(async {
     /// let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-    /// let sock = UdpSocket::bind(&addr).unwrap();
+    /// let sock = UdpSocket::bind(&addr).await.unwrap();
     /// // the address the socket is bound to
     /// let local_addr = sock.local_addr().unwrap();
     /// assert_eq!(local_addr, addr);
+    /// # });
     /// ```
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.inner
@@ -233,11 +244,11 @@ impl UdpSocket {
     pub async fn send_to<T: IoBuf>(
         &mut self,
         buffer: T,
-        addr: impl ToSockAddrs,
+        addr: impl ToSocketAddrsAsync,
     ) -> BufResult<usize, T> {
-        let (mut addrs, buffer) = buf_try!(addr.to_sock_addrs(), buffer);
+        let (mut addrs, buffer) = buf_try!(addr.to_socket_addrs_async().await, buffer);
         if let Some(addr) = addrs.next() {
-            let (res, buffer) = buf_try!(self.inner.send_to(buffer, &addr).await);
+            let (res, buffer) = buf_try!(self.inner.send_to(buffer, &SockAddr::from(addr)).await);
             BufResult(Ok(res), buffer)
         } else {
             BufResult(
@@ -256,11 +267,15 @@ impl UdpSocket {
     pub async fn send_to_vectored<T: IoVectoredBuf>(
         &mut self,
         buffer: T,
-        addr: impl ToSockAddrs,
+        addr: impl ToSocketAddrsAsync,
     ) -> BufResult<usize, T> {
-        let (mut addrs, buffer) = buf_try!(addr.to_sock_addrs(), buffer);
+        let (mut addrs, buffer) = buf_try!(addr.to_socket_addrs_async().await, buffer);
         if let Some(addr) = addrs.next() {
-            let (res, buffer) = buf_try!(self.inner.send_to_vectored(buffer, &addr).await);
+            let (res, buffer) = buf_try!(
+                self.inner
+                    .send_to_vectored(buffer, &SockAddr::from(addr))
+                    .await
+            );
             BufResult(Ok(res), buffer)
         } else {
             BufResult(

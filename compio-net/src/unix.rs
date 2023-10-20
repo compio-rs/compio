@@ -9,7 +9,7 @@ use {
     compio_runtime::impl_attachable,
 };
 
-use crate::{Socket, ToSockAddrs};
+use crate::Socket;
 
 /// A Unix socket server, listening for connections.
 ///
@@ -49,18 +49,16 @@ impl UnixListener {
     /// file path. The file path cannot yet exist, and will be cleaned up
     /// upon dropping [`UnixListener`]
     pub fn bind(path: impl AsRef<Path>) -> io::Result<Self> {
-        Self::bind_addr(SockAddr::unix(path)?)
+        Self::bind_addr(&SockAddr::unix(path)?)
     }
 
     /// Creates a new [`UnixListener`] with [`SockAddr`], which will be bound to
     /// the specified file path. The file path cannot yet exist, and will be
     /// cleaned up upon dropping [`UnixListener`]
-    pub fn bind_addr(addr: impl ToSockAddrs) -> io::Result<Self> {
-        super::each_addr(addr, |addr| {
-            let socket = Socket::bind(&addr, Type::STREAM, None)?;
-            socket.listen(1024)?;
-            Ok(UnixListener { inner: socket })
-        })
+    pub fn bind_addr(addr: &SockAddr) -> io::Result<Self> {
+        let socket = Socket::bind(addr, Type::STREAM, None)?;
+        socket.listen(1024)?;
+        Ok(UnixListener { inner: socket })
     }
 
     /// Creates a new independently owned handle to the underlying socket.
@@ -124,19 +122,17 @@ impl UnixStream {
     /// [`UnixListener`] or equivalent listening on the corresponding Unix
     /// domain socket to successfully connect and return a `UnixStream`.
     pub fn connect(path: impl AsRef<Path>) -> io::Result<Self> {
-        Self::connect_addr(SockAddr::unix(path)?)
+        Self::connect_addr(&SockAddr::unix(path)?)
     }
 
     /// Opens a Unix connection to the specified address. There must be a
     /// [`UnixListener`] or equivalent listening on the corresponding Unix
     /// domain socket to successfully connect and return a `UnixStream`.
-    pub fn connect_addr(addr: impl ToSockAddrs) -> io::Result<Self> {
-        super::each_addr(addr, |addr| {
-            let socket = Socket::new(Domain::UNIX, Type::STREAM, None)?;
-            socket.connect(&addr)?;
-            let unix_stream = UnixStream { inner: socket };
-            Ok(unix_stream)
-        })
+    pub fn connect_addr(addr: &SockAddr) -> io::Result<Self> {
+        let socket = Socket::new(Domain::UNIX, Type::STREAM, None)?;
+        socket.connect(addr)?;
+        let unix_stream = UnixStream { inner: socket };
+        Ok(unix_stream)
     }
 
     /// Creates a new independently owned handle to the underlying socket.
