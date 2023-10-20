@@ -3,7 +3,6 @@
 //! Currently, TCP/UDP/Unix socket are implemented.
 
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
-#![cfg_attr(feature = "generators", feature(generators))]
 #![warn(missing_docs)]
 
 mod resolve;
@@ -40,10 +39,10 @@ pub trait ToSocketAddrsAsync {
 macro_rules! itsafisa {
     ($t:ty) => {
         impl ToSocketAddrsAsync for $t {
-            type Iter = std::option::IntoIter<SocketAddr>;
+            type Iter = std::iter::Once<SocketAddr>;
 
             async fn to_socket_addrs_async(&self) -> io::Result<Self::Iter> {
-                Ok(Some(SocketAddr::from(*self)).into_iter())
+                Ok(std::iter::once(SocketAddr::from(*self)))
             }
         }
     };
