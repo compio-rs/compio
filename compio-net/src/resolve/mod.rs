@@ -89,8 +89,8 @@ pub trait ToSocketAddrsAsync {
     async fn to_socket_addrs_async(&self) -> io::Result<Self::Iter>;
 }
 
-// impl_to_sock_addrs_for_into_socket_addr
-macro_rules! itsafisa {
+// impl_to_socket_addrs_async
+macro_rules! itsaa {
     ($t:ty) => {
         impl ToSocketAddrsAsync for $t {
             type Iter = std::iter::Once<SocketAddr>;
@@ -102,12 +102,12 @@ macro_rules! itsafisa {
     };
 }
 
-itsafisa!(SocketAddr);
-itsafisa!(SocketAddrV4);
-itsafisa!(SocketAddrV6);
-itsafisa!((IpAddr, u16));
-itsafisa!((Ipv4Addr, u16));
-itsafisa!((Ipv6Addr, u16));
+itsaa!(SocketAddr);
+itsaa!(SocketAddrV4);
+itsaa!(SocketAddrV6);
+itsaa!((IpAddr, u16));
+itsaa!((Ipv4Addr, u16));
+itsaa!((Ipv6Addr, u16));
 
 impl ToSocketAddrsAsync for (&str, u16) {
     type Iter = Either<std::iter::Once<SocketAddr>, std::vec::IntoIter<SocketAddr>>;
