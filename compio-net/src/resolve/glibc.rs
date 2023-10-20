@@ -1,5 +1,6 @@
 use std::{ffi::CString, io, net::SocketAddr, ops::DerefMut, pin::Pin, task::Poll};
 
+use compio_driver::{FromRawFd, IntoRawFd, RawFd};
 use compio_runtime::event::EventHandle;
 pub use libc::{addrinfo, sockaddr_storage, AF_UNSPEC, IPPROTO_TCP, SOCK_STREAM};
 
@@ -100,47 +101,47 @@ impl Drop for GaiControlBlock {
 
 pub struct AsyncResolver {
     name: CString,
+    port: u16,
     block: Pin<Box<GaiControlBlock>>,
 }
 
 impl AsyncResolver {
-    pub fn new(name: &str) -> io::Result<Self> {
+    pub fn new(name: &str, port: u16) -> io::Result<Self> {
         let name = CString::new(name)
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid host"))?;
         Ok(Self {
             name,
+            port,
             block: Box::pin(GaiControlBlock::new()),
         })
     }
 
     unsafe extern "C" fn callback(v: libc::sigval) {
-        let handle = v.sival_ptr as *const EventHandle;
-        if let Some(handle) = handle.as_ref() {
-            handle.notify().ok();
-        }
+        let handle = EventHandle::from_raw_fd(v.sival_ptr as RawFd);
+        handle.notify().ok();
     }
 
     pub unsafe fn call(
         &mut self,
         hints: &libc::addrinfo,
-        handle: &EventHandle,
+        handle: EventHandle,
     ) -> Poll<io::Result<()>> {
         self.block.block.ar_name = self.name.as_ptr();
         self.block.block.ar_request = hints;
 
         let mut block_ptr = self.block.deref_mut().as_mut_ptr();
-        let mut sevp: sigevent_thread = unsafe { std::mem::zeroed() };
-        sevp.sigev_value.sival_ptr = handle as *const EventHandle as _;
+        let mut sevp: sigevent_thread = std::mem::zeroed();
+        sevp.sigev_value.sival_ptr = handle.into_raw_fd() as _;
         sevp.sigev_notify = libc::SIGEV_THREAD;
         sevp.sigev_notify_function = Some(Self::callback);
 
-        gai_call(unsafe { getaddrinfo_a(GAI_NOWAIT, &mut block_ptr, 1, &mut sevp) })?;
+        gai_call(getaddrinfo_a(GAI_NOWAIT, &mut block_ptr, 1, &mut sevp))?;
         Poll::Pending
     }
 
-    pub unsafe fn addrs(&mut self, port: u16) -> io::Result<Vec<SocketAddr>> {
-        gai_call(unsafe { gai_error(self.block.deref_mut().as_mut_ptr()) })?;
+    pub unsafe fn addrs(&mut self) -> io::Result<std::vec::IntoIter<SocketAddr>> {
+        gai_call(gai_error(self.block.deref_mut().as_mut_ptr()))?;
 
-        Ok(super::to_addrs(self.block.block.ar_result, port))
+        Ok(super::to_addrs(self.block.block.ar_result, self.port))
     }
 }

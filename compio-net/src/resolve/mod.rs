@@ -1,13 +1,24 @@
-#[cfg(all(target_os = "linux", target_env = "gnu"))]
-#[path = "glibc.rs"]
-mod sys;
-#[cfg(windows)]
-#[path = "windows.rs"]
-mod sys;
+cfg_if::cfg_if! {
+    if #[cfg(windows)] {
+        #[path = "windows.rs"]
+        mod sys;
+    } else if #[cfg(all(target_os = "linux", target_env = "gnu"))] {
+        #[path = "glibc.rs"]
+        mod sys;
+    } else if #[cfg(unix)] {
+        #[path = "unix.rs"]
+        mod sys;
+    }
+}
 
-use std::{io, net::SocketAddr};
+use std::{
+    future::Future,
+    io,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
+};
 
-#[cfg(any(windows, all(target_os = "linux", target_env = "gnu")))]
+use either::Either;
+
 pub async fn resolve_sock_addrs(
     host: &str,
     port: u16,
@@ -16,7 +27,7 @@ pub async fn resolve_sock_addrs(
 
     use compio_runtime::event::Event;
 
-    let mut resolver = sys::AsyncResolver::new(host)?;
+    let mut resolver = sys::AsyncResolver::new(host, port)?;
     let mut hints: sys::addrinfo = unsafe { std::mem::zeroed() };
     hints.ai_family = sys::AF_UNSPEC as _;
     hints.ai_socktype = sys::SOCK_STREAM;
@@ -24,7 +35,7 @@ pub async fn resolve_sock_addrs(
 
     let event = Event::new()?;
     let handle = event.handle()?;
-    match unsafe { resolver.call(&hints, &handle) } {
+    match unsafe { resolver.call(&hints, handle) } {
         Poll::Ready(res) => {
             res?;
         }
@@ -33,11 +44,11 @@ pub async fn resolve_sock_addrs(
         }
     }
 
-    unsafe { resolver.addrs(port) }.map(|vec| vec.into_iter())
+    unsafe { resolver.addrs() }
 }
 
-#[cfg(any(windows, all(target_os = "linux", target_env = "gnu")))]
-fn to_addrs(mut result: *mut sys::addrinfo, port: u16) -> Vec<SocketAddr> {
+#[allow(unused)]
+fn to_addrs(mut result: *mut sys::addrinfo, port: u16) -> std::vec::IntoIter<SocketAddr> {
     use socket2::SockAddr;
 
     let mut addrs = vec![];
@@ -62,15 +73,131 @@ fn to_addrs(mut result: *mut sys::addrinfo, port: u16) -> Vec<SocketAddr> {
         }
         result = info.ai_next;
     }
-    addrs
+    addrs.into_iter()
 }
 
-#[cfg(all(unix, not(all(target_os = "linux", target_env = "gnu"))))]
-pub async fn resolve_sock_addrs(
-    host: &str,
-    port: u16,
-) -> io::Result<std::vec::IntoIter<SocketAddr>> {
-    use std::net::ToSocketAddrs;
+/// A trait for objects which can be converted or resolved to one or more
+/// [`SocketAddr`] values.
+///
+/// See [`std::net::ToSocketAddrs`].
+#[allow(async_fn_in_trait)]
+pub trait ToSocketAddrsAsync {
+    /// See [`std::net::ToSocketAddrs::Iter`].
+    type Iter: Iterator<Item = SocketAddr>;
 
-    (host, port).to_socket_addrs()
+    /// See [`std::net::ToSocketAddrs::to_socket_addrs`].
+    async fn to_socket_addrs_async(&self) -> io::Result<Self::Iter>;
+}
+
+macro_rules! impl_to_socket_addrs_async {
+    ($($t:ty),* $(,)?) => {
+        $(
+            impl ToSocketAddrsAsync for $t {
+                type Iter = std::iter::Once<SocketAddr>;
+
+                async fn to_socket_addrs_async(&self) -> io::Result<Self::Iter> {
+                    Ok(std::iter::once(SocketAddr::from(*self)))
+                }
+            }
+        )*
+    }
+}
+
+impl_to_socket_addrs_async![
+    SocketAddr,
+    SocketAddrV4,
+    SocketAddrV6,
+    (IpAddr, u16),
+    (Ipv4Addr, u16),
+    (Ipv6Addr, u16),
+];
+
+impl ToSocketAddrsAsync for (&str, u16) {
+    type Iter = Either<std::iter::Once<SocketAddr>, std::vec::IntoIter<SocketAddr>>;
+
+    async fn to_socket_addrs_async(&self) -> io::Result<Self::Iter> {
+        let (host, port) = self;
+        if let Ok(addr) = host.parse::<Ipv4Addr>() {
+            return Ok(Either::Left(std::iter::once(SocketAddr::from((
+                addr, *port,
+            )))));
+        }
+        if let Ok(addr) = host.parse::<Ipv6Addr>() {
+            return Ok(Either::Left(std::iter::once(SocketAddr::from((
+                addr, *port,
+            )))));
+        }
+
+        resolve_sock_addrs(host, *port).await.map(Either::Right)
+    }
+}
+
+impl ToSocketAddrsAsync for (String, u16) {
+    type Iter = <(&'static str, u16) as ToSocketAddrsAsync>::Iter;
+
+    async fn to_socket_addrs_async(&self) -> io::Result<Self::Iter> {
+        (&*self.0, self.1).to_socket_addrs_async().await
+    }
+}
+
+impl ToSocketAddrsAsync for str {
+    type Iter = <(&'static str, u16) as ToSocketAddrsAsync>::Iter;
+
+    async fn to_socket_addrs_async(&self) -> io::Result<Self::Iter> {
+        if let Ok(addr) = self.parse::<SocketAddr>() {
+            return Ok(Either::Left(std::iter::once(addr)));
+        }
+
+        let (host, port_str) = self
+            .rsplit_once(':')
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid socket address"))?;
+        let port: u16 = port_str
+            .parse()
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid port value"))?;
+        (host, port).to_socket_addrs_async().await
+    }
+}
+
+impl ToSocketAddrsAsync for String {
+    type Iter = <(&'static str, u16) as ToSocketAddrsAsync>::Iter;
+
+    async fn to_socket_addrs_async(&self) -> io::Result<Self::Iter> {
+        self.as_str().to_socket_addrs_async().await
+    }
+}
+
+impl<'a> ToSocketAddrsAsync for &'a [SocketAddr] {
+    type Iter = std::iter::Copied<std::slice::Iter<'a, SocketAddr>>;
+
+    async fn to_socket_addrs_async(&self) -> io::Result<Self::Iter> {
+        Ok(self.iter().copied())
+    }
+}
+
+impl<T: ToSocketAddrsAsync + ?Sized> ToSocketAddrsAsync for &T {
+    type Iter = T::Iter;
+
+    async fn to_socket_addrs_async(&self) -> io::Result<Self::Iter> {
+        (**self).to_socket_addrs_async().await
+    }
+}
+
+pub async fn each_addr<T, F: Future<Output = io::Result<T>>>(
+    addr: impl ToSocketAddrsAsync,
+    mut f: impl FnMut(SocketAddr) -> F,
+) -> io::Result<T> {
+    let addrs = addr.to_socket_addrs_async().await?;
+    let mut last_err = None;
+    for addr in addrs {
+        match f(addr).await {
+            Ok(l) => return Ok(l),
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(last_err.unwrap_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "could not resolve to any addresses",
+        )
+    }))
 }

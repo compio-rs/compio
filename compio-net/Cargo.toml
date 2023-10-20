@@ -21,6 +21,7 @@ compio-driver = { workspace = true }
 compio-io = { workspace = true, optional = true }
 compio-runtime = { workspace = true, optional = true }
 
+cfg-if = "1"
 either = "1"
 socket2 = { version = "0.5", features = ["all"] }
 
@@ -32,7 +33,7 @@ windows-sys = { version = "0.48", features = [
     "Win32_System_IO",
 ] }
 
-[target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
+[target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 # Shared dev dependencies for all platforms
