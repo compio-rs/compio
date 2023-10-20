@@ -286,8 +286,6 @@ impl Drop for Driver {
 pub struct Overlapped<T: ?Sized> {
     /// The base [`OVERLAPPED`].
     pub base: OVERLAPPED,
-    /// The IOCP handle that creates this struct.
-    pub iocp_handle: RawFd,
     /// The registered user defined data.
     pub user_data: usize,
     /// The opcode.
@@ -296,10 +294,9 @@ pub struct Overlapped<T: ?Sized> {
 }
 
 impl<T> Overlapped<T> {
-    pub(crate) fn new(iocp_handle: RawFd, user_data: usize, op: T) -> Self {
+    pub(crate) fn new(user_data: usize, op: T) -> Self {
         Self {
             base: unsafe { std::mem::zeroed() },
-            iocp_handle,
             user_data,
             op,
         }
@@ -309,8 +306,8 @@ impl<T> Overlapped<T> {
 pub(crate) struct RawOp(NonNull<Overlapped<dyn OpCode>>);
 
 impl RawOp {
-    pub(crate) fn new(iocp_handle: RawFd, user_data: usize, op: impl OpCode + 'static) -> Self {
-        let op = Overlapped::new(iocp_handle, user_data, op);
+    pub(crate) fn new(user_data: usize, op: impl OpCode + 'static) -> Self {
+        let op = Overlapped::new(user_data, op);
         let op = Box::new(op) as Box<Overlapped<dyn OpCode>>;
         Self(unsafe { NonNull::new_unchecked(Box::into_raw(op)) })
     }

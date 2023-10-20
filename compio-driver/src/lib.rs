@@ -196,10 +196,9 @@ impl Proactor {
     /// Push an operation into the driver, and return the unique key, called
     /// user-defined data, associated with it.
     pub fn push<T: OpCode + 'static>(&mut self, op: T) -> PushEntry<usize, BufResult<usize, T>> {
-        let fd = self.as_raw_fd();
         let entry = self.ops.vacant_entry();
         let user_data = entry.key();
-        let op = RawOp::new(fd, user_data, op);
+        let op = RawOp::new(user_data, op);
         let op = entry.insert(op);
         match self.driver.push(user_data, op) {
             Poll::Pending => PushEntry::Pending(user_data),
