@@ -89,25 +89,28 @@ pub trait ToSocketAddrsAsync {
     async fn to_socket_addrs_async(&self) -> io::Result<Self::Iter>;
 }
 
-// impl_to_socket_addrs_async
-macro_rules! itsaa {
-    ($t:ty) => {
-        impl ToSocketAddrsAsync for $t {
-            type Iter = std::iter::Once<SocketAddr>;
+macro_rules! impl_to_socket_addrs_async {
+    ($($t:ty),* $(,)?) => {
+        $(
+            impl ToSocketAddrsAsync for $t {
+                type Iter = std::iter::Once<SocketAddr>;
 
-            async fn to_socket_addrs_async(&self) -> io::Result<Self::Iter> {
-                Ok(std::iter::once(SocketAddr::from(*self)))
+                async fn to_socket_addrs_async(&self) -> io::Result<Self::Iter> {
+                    Ok(std::iter::once(SocketAddr::from(*self)))
+                }
             }
-        }
-    };
+        )*
+    }
 }
 
-itsaa!(SocketAddr);
-itsaa!(SocketAddrV4);
-itsaa!(SocketAddrV6);
-itsaa!((IpAddr, u16));
-itsaa!((Ipv4Addr, u16));
-itsaa!((Ipv6Addr, u16));
+impl_to_socket_addrs_async![
+    SocketAddr,
+    SocketAddrV4,
+    SocketAddrV6,
+    (IpAddr, u16),
+    (Ipv4Addr, u16),
+    (Ipv6Addr, u16),
+];
 
 impl ToSocketAddrsAsync for (&str, u16) {
     type Iter = Either<std::iter::Once<SocketAddr>, std::vec::IntoIter<SocketAddr>>;
