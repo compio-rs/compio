@@ -42,7 +42,7 @@ impl<'a> AsyncResolver<'a> {
     pub unsafe fn addrs(&mut self) -> io::Result<std::vec::IntoIter<SocketAddr>> {
         self.thread
             .take()
-            .unwrap()
+            .expect("the thread should have been spawned")
             .join()
             .unwrap_or_else(|e| resume_unwind(e))
     }
