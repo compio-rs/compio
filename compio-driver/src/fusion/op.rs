@@ -61,10 +61,7 @@ macro_rules! op {
                     }
                 }
             }
-
-
         }
-
 
         impl<$($ty: $trait),*> poll::OpCode for $name<$($ty),*> {
             fn pre_submit(self: std::pin::Pin<&mut Self>) -> std::io::Result<crate::Decision> {
@@ -84,9 +81,6 @@ macro_rules! op {
                 unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.create_entry()
             }
         }
-
-
-
     };
 }
 
