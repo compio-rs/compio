@@ -6,7 +6,7 @@ use socket2::SockAddr;
 
 #[cfg(doc)]
 use crate::op::*;
-use crate::RawFd;
+use crate::sys::RawFd;
 
 /// Read a file at specified position into vectored buffer.
 pub struct ReadVectoredAt<T: IoVectoredBufMut> {

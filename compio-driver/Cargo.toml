@@ -57,6 +57,7 @@ windows-sys = { version = "0.48", features = [
 io-uring = { version = "0.6", optional = true }
 polling = { version = "3", optional = true }
 libc = "0.2"
+paste = "1.0.14"
 
 # Other platform dependencies
 [target.'cfg(all(not(target_os = "linux"), unix))'.dependencies]

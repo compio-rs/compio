@@ -11,8 +11,9 @@ use io_uring::{
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
+use super::OpCode;
+use crate::op::*;
 pub use crate::unix::op::*;
-use crate::{op::*, OpCode};
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
