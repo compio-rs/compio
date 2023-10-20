@@ -145,8 +145,12 @@ impl ToSocketAddrsAsync for str {
             return Ok(Either::Left(std::iter::once(addr)));
         }
 
-        let (host, port_str) = self.rsplit_once(':').expect("invalid socket address");
-        let port: u16 = port_str.parse().expect("invalid port value");
+        let (host, port_str) = self
+            .rsplit_once(':')
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid socket address"))?;
+        let port: u16 = port_str
+            .parse()
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid port value"))?;
         (host, port).to_socket_addrs_async().await
     }
 }
