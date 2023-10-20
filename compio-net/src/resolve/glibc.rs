@@ -142,6 +142,6 @@ impl AsyncResolver {
     pub unsafe fn addrs(&mut self) -> io::Result<std::vec::IntoIter<SocketAddr>> {
         gai_call(gai_error(self.block.deref_mut().as_mut_ptr()))?;
 
-        Ok(super::to_addrs(self.block.block.ar_result, self.port).into_iter())
+        Ok(super::to_addrs(self.block.block.ar_result, self.port))
     }
 }

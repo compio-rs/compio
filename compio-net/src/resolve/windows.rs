@@ -81,7 +81,7 @@ impl AsyncResolver {
         }
     }
 
-    pub unsafe fn addrs(&mut self) -> io::Result<Vec<SocketAddr>> {
+    pub unsafe fn addrs(&mut self) -> io::Result<std::vec::IntoIter<SocketAddr>> {
         syscall!(SOCKET, GetAddrInfoExOverlappedResult(&self.overlapped.base))?;
         Ok(super::to_addrs(self.result, self.port))
     }

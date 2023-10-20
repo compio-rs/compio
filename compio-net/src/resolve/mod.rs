@@ -42,7 +42,7 @@ pub async fn resolve_sock_addrs(
 }
 
 #[allow(unused)]
-fn to_addrs(mut result: *mut sys::addrinfo, port: u16) -> Vec<SocketAddr> {
+fn to_addrs(mut result: *mut sys::addrinfo, port: u16) -> std::vec::IntoIter<SocketAddr> {
     use socket2::SockAddr;
 
     let mut addrs = vec![];
@@ -67,5 +67,5 @@ fn to_addrs(mut result: *mut sys::addrinfo, port: u16) -> Vec<SocketAddr> {
         }
         result = info.ai_next;
     }
-    addrs
+    addrs.into_iter()
 }
