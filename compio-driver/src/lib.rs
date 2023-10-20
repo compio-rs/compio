@@ -10,7 +10,7 @@
     not(feature = "io-uring"),
     not(feature = "polling")
 ))]
-compile_error!("You must choose one of these features: [\"io-uring\", \"polling\"]");
+compile_error!("You must choose at leaset one of these features: [\"io-uring\", \"polling\"]");
 
 use std::{io, task::Poll, time::Duration};
 
@@ -25,6 +25,9 @@ mod unix;
 cfg_if::cfg_if! {
     if #[cfg(windows)] {
         #[path = "iocp/mod.rs"]
+        mod sys;
+    } else if #[cfg(all(target_os = "linux", feature = "polling", feature = "io-uring"))] {
+        #[path = "fusion/mod.rs"]
         mod sys;
     } else if #[cfg(all(target_os = "linux", feature = "io-uring"))] {
         #[path = "iour/mod.rs"]
@@ -76,8 +79,8 @@ macro_rules! syscall {
     };
     ($e:expr, $f:ident($fd:expr)) => {
         match $crate::syscall!(break $e) {
-            ::std::task::Poll::Pending => Ok($crate::Decision::$f($fd)),
-            ::std::task::Poll::Ready(Ok(res)) => Ok($crate::Decision::Completed(res)),
+            ::std::task::Poll::Pending => Ok($crate::sys::Decision::$f($fd)),
+            ::std::task::Poll::Ready(Ok(res)) => Ok($crate::sys::Decision::Completed(res)),
             ::std::task::Poll::Ready(Err(e)) => Err(e),
         }
     };
