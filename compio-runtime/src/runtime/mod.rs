@@ -47,8 +47,13 @@ impl Runtime {
     // Safety: the return runnable should be scheduled.
     unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
         let schedule = move |runnable| {
-            if self.thread_id != std::thread::current().id() {
+            #[cold]
+            fn panic_send_guard() -> ! {
                 panic!("Cannot wake compio waker in different threads.");
+            }
+
+            if self.thread_id != std::thread::current().id() {
+                panic_send_guard();
             }
             self.runnables.borrow_mut().push_back(runnable);
         };
