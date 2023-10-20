@@ -22,15 +22,17 @@ use windows_sys::Win32::{
 
 pub struct AsyncResolver {
     name: U16CString,
+    port: u16,
     result: *mut ADDRINFOEXW,
     overlapped: GAIOverlapped,
 }
 
 impl AsyncResolver {
-    pub fn new(name: &str) -> io::Result<Self> {
+    pub fn new(name: &str, port: u16) -> io::Result<Self> {
         Ok(Self {
             name: U16CString::from_str(name)
                 .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid host name"))?,
+            port,
             result: null_mut(),
             overlapped: GAIOverlapped::new(),
         })
@@ -52,9 +54,9 @@ impl AsyncResolver {
     pub unsafe fn call(
         &mut self,
         hints: &ADDRINFOEXW,
-        handle: &EventHandle,
+        handle: EventHandle,
     ) -> Poll<io::Result<()>> {
-        self.overlapped.handle = handle;
+        self.overlapped.handle = Some(handle);
         let res = GetAddrInfoExW(
             self.name.as_ptr(),
             null(),
@@ -79,9 +81,9 @@ impl AsyncResolver {
         }
     }
 
-    pub unsafe fn addrs(&mut self, port: u16) -> io::Result<Vec<SocketAddr>> {
+    pub unsafe fn addrs(&mut self) -> io::Result<Vec<SocketAddr>> {
         syscall!(SOCKET, GetAddrInfoExOverlappedResult(&self.overlapped.base))?;
-        Ok(super::to_addrs(self.result, port))
+        Ok(super::to_addrs(self.result, self.port))
     }
 }
 
@@ -96,14 +98,14 @@ impl Drop for AsyncResolver {
 #[repr(C)]
 struct GAIOverlapped {
     base: OVERLAPPED,
-    handle: *const EventHandle,
+    handle: Option<EventHandle>,
 }
 
 impl GAIOverlapped {
     pub fn new() -> Self {
         Self {
             base: unsafe { std::mem::zeroed() },
-            handle: null(),
+            handle: None,
         }
     }
 }
