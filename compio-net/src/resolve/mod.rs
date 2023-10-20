@@ -1,24 +1,66 @@
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
-mod glibc;
+#[path = "glibc.rs"]
+mod sys;
+#[cfg(windows)]
+#[path = "windows.rs"]
+mod sys;
 
 use std::{io, net::SocketAddr};
 
-#[cfg(windows)]
+#[cfg(any(windows, all(target_os = "linux", target_env = "gnu")))]
 pub async fn resolve_sock_addrs(
     host: &str,
     port: u16,
 ) -> io::Result<std::vec::IntoIter<SocketAddr>> {
-    let op = compio_driver::op::ResolveSockAddrs::new(host, port);
-    let (_, op) = compio_buf::buf_try!(@try compio_runtime::submit(op).await);
-    Ok(op.sock_addrs().into_iter())
+    use std::task::Poll;
+
+    use compio_runtime::event::Event;
+
+    let mut resolver = sys::AsyncResolver::new(host)?;
+    let mut hints: sys::addrinfo = unsafe { std::mem::zeroed() };
+    hints.ai_family = sys::AF_UNSPEC as _;
+    hints.ai_socktype = sys::SOCK_STREAM;
+    hints.ai_protocol = sys::IPPROTO_TCP;
+
+    let event = Event::new()?;
+    let handle = event.handle()?;
+    match unsafe { resolver.call(&hints, &handle) } {
+        Poll::Ready(res) => {
+            res?;
+        }
+        Poll::Pending => {
+            event.wait().await?;
+        }
+    }
+
+    unsafe { resolver.addrs(port) }.map(|vec| vec.into_iter())
 }
 
-#[cfg(all(target_os = "linux", target_env = "gnu"))]
-pub async fn resolve_sock_addrs(
-    host: &str,
-    port: u16,
-) -> io::Result<std::vec::IntoIter<SocketAddr>> {
-    glibc::resolve(host, port).await.map(|vec| vec.into_iter())
+#[cfg(any(windows, all(target_os = "linux", target_env = "gnu")))]
+fn to_addrs(mut result: *mut sys::addrinfo, port: u16) -> Vec<SocketAddr> {
+    use std::mem::MaybeUninit;
+
+    use socket2::SockAddr;
+
+    let mut addrs = vec![];
+    while let Some(info) = unsafe { result.as_ref() } {
+        unsafe {
+            let mut buffer = MaybeUninit::<sys::sockaddr_storage>::zeroed();
+            std::slice::from_raw_parts_mut::<u8>(buffer.as_mut_ptr().cast(), info.ai_addrlen as _)
+                .copy_from_slice(std::slice::from_raw_parts::<u8>(
+                    info.ai_addr.cast(),
+                    info.ai_addrlen as _,
+                ));
+            let buffer = buffer.assume_init();
+            let addr = SockAddr::new(buffer, info.ai_addrlen as _);
+            if let Some(mut addr) = addr.as_socket() {
+                addr.set_port(port);
+                addrs.push(addr)
+            }
+        }
+        result = info.ai_next;
+    }
+    addrs
 }
 
 #[cfg(all(unix, not(all(target_os = "linux", target_env = "gnu"))))]

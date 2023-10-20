@@ -24,6 +24,14 @@ compio-runtime = { workspace = true, optional = true }
 futures-util = "0.3"
 socket2 = { version = "0.5", features = ["all"] }
 
+[target.'cfg(windows)'.dependencies]
+widestring = "1"
+windows-sys = { version = "0.48", features = [
+    "Win32_Foundation",
+    "Win32_Networking_WinSock",
+    "Win32_System_IO",
+] }
+
 [target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
 libc = "0.2"
 

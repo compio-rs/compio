@@ -41,7 +41,6 @@ socket2 = { version = "0.5", features = ["all"] }
 compio-buf = { workspace = true, features = ["arrayvec"] }
 aligned-array = "1"
 once_cell = "1"
-widestring = "1"
 windows-sys = { version = "0.48", features = [
     "Win32_Foundation",
     "Win32_Networking_WinSock",
