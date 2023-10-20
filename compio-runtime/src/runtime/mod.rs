@@ -4,6 +4,7 @@ use std::{
     future::{ready, Future},
     io,
     task::{Context, Poll},
+    thread::ThreadId,
 };
 
 use async_task::{Runnable, Task};
@@ -24,6 +25,7 @@ use crate::{
 
 pub(crate) struct Runtime {
     driver: RefCell<Proactor>,
+    thread_id: ThreadId,
     runnables: RefCell<VecDeque<Runnable>>,
     op_runtime: RefCell<OpRuntime>,
     #[cfg(feature = "time")]
@@ -34,6 +36,7 @@ impl Runtime {
     pub fn new() -> io::Result<Self> {
         Ok(Self {
             driver: RefCell::new(Proactor::new()?),
+            thread_id: std::thread::current().id(),
             runnables: RefCell::default(),
             op_runtime: RefCell::default(),
             #[cfg(feature = "time")]
@@ -43,7 +46,12 @@ impl Runtime {
 
     // Safety: the return runnable should be scheduled.
     unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
-        let schedule = move |runnable| self.runnables.borrow_mut().push_back(runnable);
+        let schedule = move |runnable| {
+            if self.thread_id != std::thread::current().id() {
+                panic!("Cannot wake compio waker in different threads.");
+            }
+            self.runnables.borrow_mut().push_back(runnable);
+        };
         let (runnable, task) = async_task::spawn_unchecked(future, schedule);
         runnable.schedule();
         task
