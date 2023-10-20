@@ -38,25 +38,27 @@ pub async fn resolve_sock_addrs(
 
 #[cfg(any(windows, all(target_os = "linux", target_env = "gnu")))]
 fn to_addrs(mut result: *mut sys::addrinfo, port: u16) -> Vec<SocketAddr> {
-    use std::mem::MaybeUninit;
-
     use socket2::SockAddr;
 
     let mut addrs = vec![];
     while let Some(info) = unsafe { result.as_ref() } {
-        unsafe {
-            let mut buffer = MaybeUninit::<sys::sockaddr_storage>::zeroed();
-            std::slice::from_raw_parts_mut::<u8>(buffer.as_mut_ptr().cast(), info.ai_addrlen as _)
-                .copy_from_slice(std::slice::from_raw_parts::<u8>(
-                    info.ai_addr.cast(),
-                    info.ai_addrlen as _,
-                ));
-            let buffer = buffer.assume_init();
-            let addr = SockAddr::new(buffer, info.ai_addrlen as _);
-            if let Some(mut addr) = addr.as_socket() {
-                addr.set_port(port);
-                addrs.push(addr)
-            }
+        let addr = unsafe {
+            SockAddr::try_init(|buffer, len| {
+                std::slice::from_raw_parts_mut::<u8>(buffer.cast(), info.ai_addrlen as _)
+                    .copy_from_slice(std::slice::from_raw_parts::<u8>(
+                        info.ai_addr.cast(),
+                        info.ai_addrlen as _,
+                    ));
+                *len = info.ai_addrlen as _;
+                Ok(())
+            })
+        }
+        // it is always Ok
+        .unwrap()
+        .1;
+        if let Some(mut addr) = addr.as_socket() {
+            addr.set_port(port);
+            addrs.push(addr)
         }
         result = info.ai_next;
     }
