@@ -192,6 +192,20 @@ impl IoBuf for &'static str {
     }
 }
 
+impl<const N: usize> IoBuf for [u8; N] {
+    fn as_buf_ptr(&self) -> *const u8 {
+        self.as_ptr()
+    }
+
+    fn buf_len(&self) -> usize {
+        N
+    }
+
+    fn buf_capacity(&self) -> usize {
+        N
+    }
+}
+
 #[cfg(feature = "bytes")]
 impl IoBuf for bytes::Bytes {
     fn as_buf_ptr(&self) -> *const u8 {
@@ -289,6 +303,18 @@ pub trait IoBufMut: IoBuf + SetBufInit {
 impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoBufMut
     for vec_alloc!(u8, A)
 {
+    fn as_buf_mut_ptr(&mut self) -> *mut u8 {
+        self.as_mut_ptr()
+    }
+}
+
+impl IoBufMut for &'static mut [u8] {
+    fn as_buf_mut_ptr(&mut self) -> *mut u8 {
+        self.as_mut_ptr()
+    }
+}
+
+impl<const N: usize> IoBufMut for [u8; N] {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.as_mut_ptr()
     }
@@ -549,6 +575,18 @@ impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> SetBufIni
         if self.buf_len() < len {
             self.set_len(len);
         }
+    }
+}
+
+impl SetBufInit for &'static mut [u8] {
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        debug_assert!(len <= self.len());
+    }
+}
+
+impl<const N: usize> SetBufInit for [u8; N] {
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        debug_assert!(len <= N);
     }
 }
 
