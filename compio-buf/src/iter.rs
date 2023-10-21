@@ -42,7 +42,7 @@ impl<I: OwnedIterator> IntoInner for OwnedIter<I> {
     }
 }
 
-unsafe impl<I: OwnedIterator + Unpin + 'static> IoBuf for OwnedIter<I> {
+impl<I: OwnedIterator + Unpin + 'static> IoBuf for OwnedIter<I> {
     fn as_buf_ptr(&self) -> *const u8 {
         self.0.current().as_buf_ptr()
     }
@@ -56,7 +56,7 @@ unsafe impl<I: OwnedIterator + Unpin + 'static> IoBuf for OwnedIter<I> {
     }
 }
 
-unsafe impl<I: OwnedIteratorMut + Unpin + 'static> IoBufMut for OwnedIter<I> {
+impl<I: OwnedIteratorMut + Unpin + 'static> IoBufMut for OwnedIter<I> {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.0.current_mut().as_buf_mut_ptr()
     }

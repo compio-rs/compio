@@ -1,6 +1,6 @@
 use std::{io::Cursor, rc::Rc, sync::Arc};
 
-use compio_buf::{buf_try, BufResult, IntoInner, IoBufMut, IoVectoredBufMut};
+use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut};
 
 mod buf;
 #[macro_use]
