@@ -18,7 +18,7 @@ pub use crate::unix::op::*;
 impl<T: IoBufMut> OpCode for ReadAt<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         let fd = Fd(self.fd);
-        let slice = self.buffer.as_uninit_slice();
+        let slice = self.buffer.as_mut_slice();
         opcode::Read::new(fd, slice.as_mut_ptr() as _, slice.len() as _)
             .offset(self.offset)
             .build()
@@ -92,7 +92,7 @@ impl OpCode for Connect {
 impl<T: IoBufMut> OpCode for Recv<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         let fd = self.fd;
-        let slice = self.buffer.as_uninit_slice();
+        let slice = self.buffer.as_mut_slice();
         opcode::Read::new(Fd(fd), slice.as_mut_ptr() as _, slice.len() as _).build()
     }
 }

@@ -6,15 +6,15 @@ use compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt};
 #[compio_macros::test]
 async fn io_read() {
     let mut src = "Hello, World";
-    let (len, buf) = src.read(Vec::with_capacity(10)).await.unwrap();
+    let (len, buf) = src.read(vec![1; 10]).await.unwrap();
 
     assert_eq!(len, 10);
     assert_eq!(buf, b"Hello, Wor");
 
-    let (len, buf) = src.read(Vec::with_capacity(20)).await.unwrap();
+    let (len, buf) = src.read(vec![0; 20]).await.unwrap();
     assert_eq!(len, 12);
-    assert_eq!(buf.len(), 12);
-    assert_eq!(buf, b"Hello, World");
+    assert_eq!(buf.len(), 20);
+    assert_eq!(&buf[..12], b"Hello, World");
 }
 
 #[compio_macros::test]
@@ -78,7 +78,7 @@ async fn readv() {
     assert_eq!(buf[1], b", wor");
 
     let (len, buf) = src
-        .read_vectored([Vec::with_capacity(5), Vec::with_capacity(10)])
+        .read_vectored([vec![0; 5], Vec::with_capacity(10)])
         .await
         .unwrap();
     assert_eq!(len, 12);
@@ -130,7 +130,7 @@ async fn readv_at() {
     assert!(buf[1].is_empty());
 
     let (len, buf) = SRC
-        .read_vectored_at([Vec::with_capacity(3), Vec::with_capacity(1)], 2)
+        .read_vectored_at([vec![0; 3], Vec::with_capacity(1)], 2)
         .await
         .unwrap();
 

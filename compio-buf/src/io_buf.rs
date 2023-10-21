@@ -8,21 +8,11 @@ use crate::*;
 ///
 /// The `IoBuf` trait is implemented by buffer types that can be passed to
 /// compio operations. Users will not need to use this trait directly.
-///
-/// # Safety
-///
-/// Buffers passed to compio operations must refer to a stable memory region.
-/// While the runtime holds ownership to a buffer, the pointer returned
-/// by `as_buf_ptr` must remain valid even if the `IoBuf` value is moved, i.e.,
-/// the type implementing `IoBuf` should point to somewhere else.
-pub unsafe trait IoBuf: Unpin + 'static {
+pub trait IoBuf: Unpin + 'static {
     /// Returns a raw pointer to the vector’s buffer.
     ///
     /// This method is to be used by the `compio` runtime and it is not
     /// expected for users to call it directly.
-    ///
-    /// The implementation must ensure that, while the `compio` runtime
-    /// owns the value, the pointer returned **does not** change.
     fn as_buf_ptr(&self) -> *const u8;
 
     /// Number of initialized bytes.
@@ -82,7 +72,7 @@ pub unsafe trait IoBuf: Unpin + 'static {
             Bound::Unbounded => 0,
         };
 
-        assert!(begin < self.buf_capacity());
+        assert!(begin <= self.buf_capacity());
 
         let end = match range.end_bound() {
             Bound::Included(&n) => n.checked_add(1).expect("out of range"),
@@ -102,9 +92,7 @@ pub unsafe trait IoBuf: Unpin + 'static {
     }
 }
 
-unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoBuf
-    for vec_alloc!(u8, A)
-{
+impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoBuf for vec_alloc!(u8, A) {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -118,7 +106,7 @@ unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> Io
     }
 }
 
-unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoBuf
+impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoBuf
     for box_alloc!([u8], A)
 {
     fn as_buf_ptr(&self) -> *const u8 {
@@ -134,7 +122,7 @@ unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> Io
     }
 }
 
-unsafe impl IoBuf for &'static mut [u8] {
+impl IoBuf for &'static mut [u8] {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -148,7 +136,7 @@ unsafe impl IoBuf for &'static mut [u8] {
     }
 }
 
-unsafe impl IoBuf for &'static [u8] {
+impl IoBuf for &'static [u8] {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -162,7 +150,7 @@ unsafe impl IoBuf for &'static [u8] {
     }
 }
 
-unsafe impl IoBuf for String {
+impl IoBuf for String {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -176,7 +164,7 @@ unsafe impl IoBuf for String {
     }
 }
 
-unsafe impl IoBuf for &'static mut str {
+impl IoBuf for &'static mut str {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -190,22 +178,7 @@ unsafe impl IoBuf for &'static mut str {
     }
 }
 
-unsafe impl IoBuf for &'static str {
-    fn as_buf_ptr(&self) -> *const u8 {
-        self.as_ptr()
-    }
-
-    fn buf_len(&self) -> usize {
-        self.len()
-    }
-
-    fn buf_capacity(&self) -> usize {
-        self.len()
-    }
-}
-
-#[cfg(feature = "bytes")]
-unsafe impl IoBuf for bytes::Bytes {
+impl IoBuf for &'static str {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -220,7 +193,22 @@ unsafe impl IoBuf for bytes::Bytes {
 }
 
 #[cfg(feature = "bytes")]
-unsafe impl IoBuf for bytes::BytesMut {
+impl IoBuf for bytes::Bytes {
+    fn as_buf_ptr(&self) -> *const u8 {
+        self.as_ptr()
+    }
+
+    fn buf_len(&self) -> usize {
+        self.len()
+    }
+
+    fn buf_capacity(&self) -> usize {
+        self.len()
+    }
+}
+
+#[cfg(feature = "bytes")]
+impl IoBuf for bytes::BytesMut {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -235,7 +223,7 @@ unsafe impl IoBuf for bytes::BytesMut {
 }
 
 #[cfg(feature = "read_buf")]
-unsafe impl IoBuf for std::io::BorrowedBuf<'static> {
+impl IoBuf for std::io::BorrowedBuf<'static> {
     fn as_buf_ptr(&self) -> *const u8 {
         self.filled().as_ptr()
     }
@@ -250,7 +238,7 @@ unsafe impl IoBuf for std::io::BorrowedBuf<'static> {
 }
 
 #[cfg(feature = "arrayvec")]
-unsafe impl<const N: usize> IoBuf for arrayvec::ArrayVec<u8, N> {
+impl<const N: usize> IoBuf for arrayvec::ArrayVec<u8, N> {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -274,29 +262,16 @@ unsafe impl<const N: usize> IoBuf for arrayvec::ArrayVec<u8, N> {
 /// Buffers passed to compio operations must reference a stable memory
 /// region. While the runtime holds ownership to a buffer, the pointer returned
 /// by `as_buf_mut_ptr` must remain valid even if the `IoBufMut` value is moved.
-pub unsafe trait IoBufMut: IoBuf + SetBufInit {
+pub trait IoBufMut: IoBuf + SetBufInit {
     /// Returns a raw mutable pointer to the vector’s buffer.
     ///
     /// This method is to be used by the `compio` runtime and it is not
     /// expected for users to call it directly.
-    ///
-    /// The implementation must ensure that, while the `compio` runtime
-    /// owns the value, the pointer returned **does not** change.
     fn as_buf_mut_ptr(&mut self) -> *mut u8;
 
     /// Get the uninitialized part of the buffer.
-    fn as_uninit_slice(&mut self) -> &mut [MaybeUninit<u8>] {
-        unsafe {
-            std::slice::from_raw_parts_mut(
-                self.as_buf_mut_ptr().add(self.buf_len()) as _,
-                self.uninit_len(),
-            )
-        }
-    }
-
-    /// Get number of bytes in the uninitialized part of the buffer.
-    fn uninit_len(&self) -> usize {
-        self.buf_capacity() - self.buf_len()
+    fn as_mut_slice(&mut self) -> &mut [MaybeUninit<u8>] {
+        unsafe { std::slice::from_raw_parts_mut(self.as_buf_mut_ptr().cast(), self.buf_capacity()) }
     }
 
     /// Create an [`IoSliceMut`] of the uninitialized part of the buffer.
@@ -307,11 +282,11 @@ pub unsafe trait IoBufMut: IoBuf + SetBufInit {
     /// It is static to provide convenience from writing self-referenced
     /// structure.
     unsafe fn as_io_slice_mut(&mut self) -> IoSliceMut {
-        IoSliceMut::from_uninit(self.as_uninit_slice())
+        IoSliceMut::from_uninit(self.as_mut_slice())
     }
 }
 
-unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoBufMut
+impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoBufMut
     for vec_alloc!(u8, A)
 {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
@@ -320,32 +295,28 @@ unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> Io
 }
 
 #[cfg(feature = "bytes")]
-unsafe impl IoBufMut for bytes::BytesMut {
+impl IoBufMut for bytes::BytesMut {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.as_mut_ptr()
     }
 }
 
 #[cfg(feature = "read_buf")]
-unsafe impl IoBufMut for std::io::BorrowedBuf<'static> {
+impl IoBufMut for std::io::BorrowedBuf<'static> {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.filled().as_ptr() as _
     }
 }
 
 #[cfg(feature = "arrayvec")]
-unsafe impl<const N: usize> IoBufMut for arrayvec::ArrayVec<u8, N> {
+impl<const N: usize> IoBufMut for arrayvec::ArrayVec<u8, N> {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.as_mut_ptr()
     }
 }
 
 /// A trait for vectored buffers.
-///
-/// # Safety
-///
-/// See [`IoBuf`].
-pub unsafe trait IoVectoredBuf: Unpin + 'static {
+pub trait IoVectoredBuf: Unpin + 'static {
     /// An iterator for the [`IoSlice`]s of the buffers.
     ///
     /// # Safety
@@ -382,7 +353,7 @@ pub unsafe trait IoVectoredBuf: Unpin + 'static {
         Self: Sized;
 }
 
-unsafe impl<T: IoBuf, const N: usize> IoVectoredBuf for [T; N] {
+impl<T: IoBuf, const N: usize> IoVectoredBuf for [T; N] {
     fn as_dyn_bufs(&self) -> impl Iterator<Item = &dyn IoBuf> {
         self.iter().map(|buf| buf as &dyn IoBuf)
     }
@@ -395,8 +366,8 @@ unsafe impl<T: IoBuf, const N: usize> IoVectoredBuf for [T; N] {
     }
 }
 
-unsafe impl<T: IoBuf, #[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static>
-    IoVectoredBuf for vec_alloc!(T, A)
+impl<T: IoBuf, #[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoVectoredBuf
+    for vec_alloc!(T, A)
 {
     fn as_dyn_bufs(&self) -> impl Iterator<Item = &dyn IoBuf> {
         self.iter().map(|buf| buf as &dyn IoBuf)
@@ -411,7 +382,7 @@ unsafe impl<T: IoBuf, #[cfg(feature = "allocator_api")] A: Allocator + Unpin + '
 }
 
 #[cfg(feature = "arrayvec")]
-unsafe impl<T: IoBuf, const N: usize> IoVectoredBuf for arrayvec::ArrayVec<T, N> {
+impl<T: IoBuf, const N: usize> IoVectoredBuf for arrayvec::ArrayVec<T, N> {
     fn as_dyn_bufs(&self) -> impl Iterator<Item = &dyn IoBuf> {
         self.iter().map(|buf| buf as &dyn IoBuf)
     }
@@ -425,11 +396,7 @@ unsafe impl<T: IoBuf, const N: usize> IoVectoredBuf for arrayvec::ArrayVec<T, N>
 }
 
 /// A trait for mutable vectored buffers.
-///
-/// # Safety
-///
-/// See [`IoBufMut`].
-pub unsafe trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
+pub trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
     /// An iterator for the [`IoSliceMut`]s of the buffers.
     ///
     /// # Safety
@@ -468,7 +435,7 @@ pub unsafe trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
         Self: Sized;
 }
 
-unsafe impl<T: IoBufMut, const N: usize> IoVectoredBufMut for [T; N] {
+impl<T: IoBufMut, const N: usize> IoVectoredBufMut for [T; N] {
     fn as_dyn_mut_bufs(&mut self) -> impl Iterator<Item = &mut dyn IoBufMut> {
         self.iter_mut().map(|buf| buf as &mut dyn IoBufMut)
     }
@@ -481,8 +448,8 @@ unsafe impl<T: IoBufMut, const N: usize> IoVectoredBufMut for [T; N] {
     }
 }
 
-unsafe impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static>
-    IoVectoredBufMut for vec_alloc!(T, A)
+impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoVectoredBufMut
+    for vec_alloc!(T, A)
 {
     fn as_dyn_mut_bufs(&mut self) -> impl Iterator<Item = &mut dyn IoBufMut> {
         self.iter_mut().map(|buf| buf as &mut dyn IoBufMut)
@@ -497,7 +464,7 @@ unsafe impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + Unpin 
 }
 
 #[cfg(feature = "arrayvec")]
-unsafe impl<T: IoBufMut, const N: usize> IoVectoredBufMut for arrayvec::ArrayVec<T, N> {
+impl<T: IoBufMut, const N: usize> IoVectoredBufMut for arrayvec::ArrayVec<T, N> {
     fn as_dyn_mut_bufs(&mut self) -> impl Iterator<Item = &mut dyn IoBufMut> {
         self.iter_mut().map(|buf| buf as &mut dyn IoBufMut)
     }
@@ -566,7 +533,8 @@ impl<T: IoBufMut, const N: usize> IoIndexedBufMut for arrayvec::ArrayVec<T, N> {
 
 /// A helper trait for `set_len` like methods.
 pub trait SetBufInit {
-    /// Updates the number of initialized bytes.
+    /// Set the buffer length. If `len` is less than the current length, nothing
+    /// will happen.
     ///
     /// # Safety
     ///
@@ -578,28 +546,37 @@ impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> SetBufIni
     for vec_alloc!(u8, A)
 {
     unsafe fn set_buf_init(&mut self, len: usize) {
-        self.set_len(len + self.buf_len());
+        if self.buf_len() < len {
+            self.set_len(len);
+        }
     }
 }
 
 #[cfg(feature = "bytes")]
 impl SetBufInit for bytes::BytesMut {
     unsafe fn set_buf_init(&mut self, len: usize) {
-        self.set_len(len + self.buf_len());
+        if self.buf_len() < len {
+            self.set_len(len);
+        }
     }
 }
 
 #[cfg(feature = "read_buf")]
 impl SetBufInit for std::io::BorrowedBuf<'static> {
     unsafe fn set_buf_init(&mut self, len: usize) {
-        self.unfilled().advance(len);
+        let current_len = self.buf_len();
+        if current_len < len {
+            self.unfilled().advance(len - current_len);
+        }
     }
 }
 
 #[cfg(feature = "arrayvec")]
 impl<const N: usize> SetBufInit for arrayvec::ArrayVec<u8, N> {
     unsafe fn set_buf_init(&mut self, len: usize) {
-        self.set_len(len + self.buf_len());
+        if self.buf_len() < len {
+            self.set_len(len);
+        }
     }
 }
 

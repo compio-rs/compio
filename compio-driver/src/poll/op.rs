@@ -17,7 +17,7 @@ pub use crate::unix::op::*;
 impl<T: IoBufMut> ReadAt<T> {
     unsafe fn call(&mut self) -> libc::ssize_t {
         let fd = self.fd;
-        let slice = self.buffer.as_uninit_slice();
+        let slice = self.buffer.as_mut_slice();
         pread(
             fd,
             slice.as_mut_ptr() as _,
@@ -199,7 +199,7 @@ impl<T: IoBufMut> OpCode for Recv<T> {
         debug_assert!(event.readable);
 
         let fd = self.fd;
-        let slice = self.buffer.as_uninit_slice();
+        let slice = self.buffer.as_mut_slice();
         syscall!(break libc::read(fd, slice.as_mut_ptr() as _, slice.len()))
     }
 }
@@ -264,7 +264,7 @@ impl<T: IoBufMut> RecvFrom<T> {
 
     unsafe fn call(&mut self) -> libc::ssize_t {
         let fd = self.fd;
-        let slice = self.buffer.as_uninit_slice();
+        let slice = self.buffer.as_mut_slice();
         libc::recvfrom(
             fd,
             slice.as_mut_ptr() as _,

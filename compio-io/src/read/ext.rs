@@ -1,7 +1,7 @@
 #[cfg(feature = "allocator_api")]
 use std::alloc::Allocator;
 
-use compio_buf::{buf_try, vec_alloc, BufResult, IntoInner, IoBufMut, IoVectoredBufMut};
+use compio_buf::{buf_try, vec_alloc, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut};
 
 use crate::{util::Take, AsyncRead, AsyncReadAt, IoResult};
 
@@ -36,18 +36,21 @@ macro_rules! read_scalar {
 
 /// Shared code for loop reading until reaching a certain length.
 macro_rules! loop_read_exact {
-    ($buf:ident,$len:expr,loop $read_expr:expr) => {
-        loop_read_exact!($buf, $len, read, loop $read_expr)
-    };
-    ($buf:ident,$len:expr,$tracker:ident, loop $read_expr:expr) => {
+    ($buf:ident, $len:expr, $tracker:ident,loop $read_expr:expr) => {
         let mut $tracker = 0;
         let len = $len;
 
         while $tracker < len {
-            ($tracker, $buf) = buf_try!($read_expr.await.and_then(|n, b| {
+            ($tracker, $buf) = buf_try!($read_expr.await.into_inner().and_then(|n, b| {
                 if n == 0 {
                     use ::std::io::{Error, ErrorKind};
-                    (Err(Error::new(ErrorKind::UnexpectedEof, "failed to fill whole buffer",)), b)
+                    (
+                        Err(Error::new(
+                            ErrorKind::UnexpectedEof,
+                            "failed to fill whole buffer",
+                        )),
+                        b,
+                    )
                 } else {
                     (Ok($tracker + n), b)
                 }
@@ -84,7 +87,7 @@ macro_rules! loop_read_vectored {
         let mut $tracker: $tracker_ty = 0;
 
         loop {
-            let $len = $iter.uninit_len();
+            let $len = $iter.buf_capacity();
             if $len == 0 {
                 continue;
             }
@@ -113,7 +116,7 @@ macro_rules! loop_read_to_end {
         let mut $tracker: $tracker_ty = 0;
         let mut read;
         loop {
-            (read, $buf) = buf_try!($read_expr.await);
+            (read, $buf) = buf_try!($read_expr.await.into_inner());
             if read == 0 {
                 break;
             } else {
@@ -144,7 +147,7 @@ pub trait AsyncReadExt: AsyncRead {
 
     /// Read the exact number of bytes required to fill the buf.
     async fn read_exact<T: IoBufMut>(&mut self, mut buf: T) -> BufResult<usize, T> {
-        loop_read_exact!(buf, buf.buf_capacity() - buf.buf_len(), loop self.read(buf));
+        loop_read_exact!(buf, buf.buf_capacity() - buf.buf_len(), read, loop self.read(buf.slice(read..)));
     }
 
     /// Read all bytes until underlying reader reaches `EOF`.
@@ -152,7 +155,7 @@ pub trait AsyncReadExt: AsyncRead {
         &mut self,
         mut buf: vec_alloc!(u8, A),
     ) -> BufResult<usize, vec_alloc!(u8, A)> {
-        loop_read_to_end!(buf, total: usize, loop self.read(buf))
+        loop_read_to_end!(buf, total: usize, loop self.read(buf.slice(total..)))
     }
 
     /// Read the exact number of bytes required to fill the vectored buf.
@@ -220,7 +223,7 @@ pub trait AsyncReadAtExt: AsyncReadAt {
             buf,
             buf.buf_capacity() - buf.buf_len(),
             read,
-            loop self.read_at(buf, pos + read as u64)
+            loop self.read_at(buf.slice(read..), pos + read as u64)
         );
     }
 
@@ -238,7 +241,7 @@ pub trait AsyncReadAtExt: AsyncReadAt {
         mut buffer: vec_alloc!(u8, A),
         pos: u64,
     ) -> BufResult<usize, vec_alloc!(u8, A)> {
-        loop_read_to_end!(buffer, total: u64, loop self.read_at(buffer, pos + total))
+        loop_read_to_end!(buffer, total: u64, loop self.read_at(buffer.slice(total as usize..), pos + total))
     }
 
     /// Like [`AsyncReadExt::read_vectored_exact`], expect that it reads at a

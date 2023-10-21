@@ -35,7 +35,7 @@ impl Inner {
     }
 }
 
-unsafe impl IoBuf for Inner {
+impl IoBuf for Inner {
     #[inline]
     fn as_buf_ptr(&self) -> *const u8 {
         self.buf.as_ptr()
@@ -55,11 +55,11 @@ unsafe impl IoBuf for Inner {
 impl SetBufInit for Inner {
     #[inline]
     unsafe fn set_buf_init(&mut self, len: usize) {
-        self.buf.set_len(len);
+        self.buf.set_buf_init(len);
     }
 }
 
-unsafe impl IoBufMut for Inner {
+impl IoBufMut for Inner {
     #[inline]
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.buf.as_mut_ptr()

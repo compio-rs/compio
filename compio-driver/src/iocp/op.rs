@@ -108,7 +108,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
             overlapped.Anonymous.Anonymous.OffsetHigh = (self.offset >> 32) as _;
         }
         let fd = self.fd as _;
-        let slice = self.buffer.as_uninit_slice();
+        let slice = self.buffer.as_mut_slice();
         let mut transferred = 0;
         let res = ReadFile(
             fd,
@@ -321,7 +321,7 @@ impl<T: IoBufMut> IntoInner for Recv<T> {
 impl<T: IoBufMut> OpCode for Recv<T> {
     unsafe fn operate(mut self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd as _;
-        let slice = self.buffer.as_uninit_slice();
+        let slice = self.buffer.as_mut_slice();
         let mut transferred = 0;
         let res = ReadFile(
             fd,
