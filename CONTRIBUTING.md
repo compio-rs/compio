@@ -9,12 +9,22 @@ use your help. If you have any question about Compio, feel free to join [our gro
 This guide will walk you through the process of contributing to Compio on following topics:
 
 - [General guidelines](#general-guidelines)
+  - [Style Guide](#style-guide)
 - [Contribute with issue](#contribute-with-issue)
 - [Contribute with pull request](#contribute-with-pull-request)
 
 ## General guidelines
 
 We adhere to [Rust Code of Conduct](https://www.rust-lang.org/policies/code-of-conduct). tl;dr: **be nice**. Before making any contribution, check existing issue and pull requests to avoid duplication of effort. Also, in case of bug, try updating to the latest version of Compio and/or rust might help.
+
+### Style Guide
+
+- Use `cargo fmt --all` with nightly toolchain to format your code (for nightly `rustfmt` features, see detail in [`rustfmt.toml`]).
+- Use `cargo clippy --all` to check any style/code problem.
+- Use [Angular Convention](https://github.com/angular/angular/blob/main/CONTRIBUTING.md#-commit-message-format) when making commits
+- When adding new crate, add `#![warn(missing_docs)]` at the top of `lib.rs`
+
+[`rustfmt.toml`]: https://github.com/compio-rs/compio/blob/master/rustfmt.toml
 
 ## Contribute with issue
 
@@ -25,13 +35,13 @@ It's also helpful if you can provide the following information:
 - A minimal reproducible example
 - The version of Compio you are using.
 - The version of Rust you are using.
-- Your environment (OS, etc).
+- Your environment (OS, Platform, etc).
 
 ## Contribute with pull request
 
-We welcome any code contributions. It's always welcome and recommended to open an issue to discuss on major changes before opening a PR. And please the following guidelines below:
+We welcome any code contributions. It's always welcome and recommended to open an issue to discuss on major changes before opening a PR. And pull requests should:
 
-- All PRs need to pass CI tests and style check. You can run `cargo test --all-features` and `cargo clippy  --all-features` locally to check.
-- All PRs need to be reviewed by at least one maintainer before getting merged.
-- Commit messages should follow [Angular Convention](https://github.com/angular/angular/blob/main/CONTRIBUTING.md#-commit-message-format).
-- In PR body, a description of what it does and why it is needed should be provided.
+- follow the [Style Guide](#style-guide).
+- pass CI tests and style check. You can run `cargo test --all-features` locally to test, but result may differ from CI depend on local environment -- it might be a good chance to contribute!
+- be reviewed by at least one maintainer before getting merged.
+- have a description of what it does and why it is needed in PR body.
