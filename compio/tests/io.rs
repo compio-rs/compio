@@ -169,7 +169,7 @@ async fn writev_at() {
 struct RepeatOne(u8);
 
 impl AsyncRead for RepeatOne {
-    async fn read<B: IoBufMut>(&mut self, mut buf: B) -> compio_buf::BufResult<usize, B> {
+    async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
         let slice = buf.as_mut_slice();
         if !slice.is_empty() {
             slice[0].write(self.0);
