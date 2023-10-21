@@ -17,6 +17,10 @@ This guide will walk you through the process of contributing to Compio on follow
 
 We adhere to [Rust Code of Conduct](https://www.rust-lang.org/policies/code-of-conduct). tl;dr: **be nice**. Before making any contribution, check existing issue and pull requests to avoid duplication of effort. Also, in case of bug, try updating to the latest version of Compio and/or rust might help.
 
+### Develop Guide
+
+- Use nightly toolchain to develop and run `rustup update` regularly. Compio does use nightly features, behind feature gate; so, when testing with `--all-features` flag, only nightly toolchain would work.
+
 ### Style Guide
 
 - Use `cargo fmt --all` with nightly toolchain to format your code (for nightly `rustfmt` features, see detail in [`rustfmt.toml`]).
