@@ -9,6 +9,7 @@ use your help. If you have any question about Compio, feel free to join [our gro
 This guide will walk you through the process of contributing to Compio on following topics:
 
 - [General guidelines](#general-guidelines)
+  - [Develop Guide](#develop-guide)
   - [Style Guide](#style-guide)
 - [Contribute with issue](#contribute-with-issue)
 - [Contribute with pull request](#contribute-with-pull-request)
