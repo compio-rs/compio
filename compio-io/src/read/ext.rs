@@ -116,14 +116,14 @@ macro_rules! loop_read_to_end {
         let mut $tracker: $tracker_ty = 0;
         let mut read;
         loop {
+            if $buf.len() == $buf.capacity() {
+                $buf.reserve(32);
+            }
             (read, $buf) = buf_try!($read_expr.await.into_inner());
             if read == 0 {
                 break;
             } else {
                 $tracker += read as $tracker_ty;
-                if $buf.len() == $buf.capacity() {
-                    $buf.reserve(32);
-                }
             }
         }
         BufResult(Ok($tracker as usize), $buf)
