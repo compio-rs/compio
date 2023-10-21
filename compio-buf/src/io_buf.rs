@@ -560,7 +560,7 @@ impl<T: IoBufMut, const N: usize> IoIndexedBufMut for arrayvec::ArrayVec<T, N> {
 /// A helper trait for `set_len` like methods.
 pub trait SetBufInit {
     /// Set the buffer length. If `len` is less than the current length, nothing
-    /// will happen.
+    /// should happen.
     ///
     /// # Safety
     ///
