@@ -161,6 +161,24 @@ impl AsyncReadAt for File {
 
 #[cfg(feature = "runtime")]
 impl AsyncWriteAt for File {
+    #[inline]
+    async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
+        (&*self).write_at(buf, pos).await
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    async fn write_vectored_at<T: IoVectoredBuf>(
+        &mut self,
+        buf: T,
+        pos: u64,
+    ) -> BufResult<usize, T> {
+        (&*self).write_vectored_at(buf, pos).await
+    }
+}
+
+#[cfg(feature = "runtime")]
+impl AsyncWriteAt for &File {
     async fn write_at<T: IoBuf>(&mut self, buffer: T, pos: u64) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = WriteAt::new(self.as_raw_fd(), pos, buffer);

@@ -209,6 +209,15 @@ impl NamedPipeServer {
 
 #[cfg(feature = "runtime")]
 impl AsyncRead for NamedPipeServer {
+    #[inline]
+    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
+        (&*self).read(buf).await
+    }
+}
+
+#[cfg(feature = "runtime")]
+impl AsyncRead for &NamedPipeServer {
+    #[inline]
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
         // The position is ignored.
         self.handle.read_at(buffer, 0).await
@@ -217,15 +226,36 @@ impl AsyncRead for NamedPipeServer {
 
 #[cfg(feature = "runtime")]
 impl AsyncWrite for NamedPipeServer {
-    async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        // The position is ignored.
-        self.handle.write_at(buffer, 0).await
+    #[inline]
+    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        (&*self).write(buf).await
     }
 
+    #[inline]
+    async fn flush(&mut self) -> io::Result<()> {
+        (&*self).flush().await
+    }
+
+    #[inline]
+    async fn shutdown(&mut self) -> io::Result<()> {
+        (&*self).shutdown().await
+    }
+}
+
+#[cfg(feature = "runtime")]
+impl AsyncWrite for &NamedPipeServer {
+    #[inline]
+    async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
+        // The position is ignored.
+        (&self.handle).write_at(buffer, 0).await
+    }
+
+    #[inline]
     async fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 
+    #[inline]
     async fn shutdown(&mut self) -> io::Result<()> {
         Ok(())
     }
@@ -320,6 +350,15 @@ impl NamedPipeClient {
 
 #[cfg(feature = "runtime")]
 impl AsyncRead for NamedPipeClient {
+    #[inline]
+    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
+        (&*self).read(buf).await
+    }
+}
+
+#[cfg(feature = "runtime")]
+impl AsyncRead for &NamedPipeClient {
+    #[inline]
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
         // The position is ignored.
         self.handle.read_at(buffer, 0).await
@@ -328,15 +367,36 @@ impl AsyncRead for NamedPipeClient {
 
 #[cfg(feature = "runtime")]
 impl AsyncWrite for NamedPipeClient {
-    async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        // The position is ignored.
-        self.handle.write_at(buffer, 0).await
+    #[inline]
+    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        (&*self).write(buf).await
     }
 
+    #[inline]
+    async fn flush(&mut self) -> io::Result<()> {
+        (&*self).flush().await
+    }
+
+    #[inline]
+    async fn shutdown(&mut self) -> io::Result<()> {
+        (&*self).shutdown().await
+    }
+}
+
+#[cfg(feature = "runtime")]
+impl AsyncWrite for &NamedPipeClient {
+    #[inline]
+    async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
+        // The position is ignored.
+        (&self.handle).write_at(buffer, 0).await
+    }
+
+    #[inline]
     async fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 
+    #[inline]
     async fn shutdown(&mut self) -> io::Result<()> {
         Ok(())
     }

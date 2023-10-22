@@ -325,6 +325,29 @@ impl Sender {
 
 #[cfg(feature = "runtime")]
 impl AsyncWrite for Sender {
+    #[inline]
+    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        (&*self).write(buf).await
+    }
+
+    #[inline]
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        (&*self).write_vectored(buf).await
+    }
+
+    #[inline]
+    async fn flush(&mut self) -> io::Result<()> {
+        (&*self).flush().await
+    }
+
+    #[inline]
+    async fn shutdown(&mut self) -> io::Result<()> {
+        (&*self).shutdown().await
+    }
+}
+
+#[cfg(feature = "runtime")]
+impl AsyncWrite for &Sender {
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = Send::new(self.as_raw_fd(), buffer);
@@ -337,10 +360,12 @@ impl AsyncWrite for Sender {
         submit(op).await.into_inner()
     }
 
+    #[inline]
     async fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 
+    #[inline]
     async fn shutdown(&mut self) -> io::Result<()> {
         Ok(())
     }
@@ -434,6 +459,17 @@ impl Receiver {
 
 #[cfg(feature = "runtime")]
 impl AsyncRead for Receiver {
+    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
+        (&*self).read(buf).await
+    }
+
+    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
+        (&*self).read_vectored(buf).await
+    }
+}
+
+#[cfg(feature = "runtime")]
+impl AsyncRead for &Receiver {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = Recv::new(self.as_raw_fd(), buffer);

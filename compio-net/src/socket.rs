@@ -9,7 +9,6 @@ use {
         Accept, BufResultExt, Connect, Recv, RecvFrom, RecvFromVectored, RecvResultExt,
         RecvVectored, Send, SendTo, SendToVectored, SendVectored,
     },
-    compio_io::{AsyncRead, AsyncWrite},
     compio_runtime::{submit, Attachable, Attacher},
 };
 
@@ -128,7 +127,40 @@ impl Socket {
     }
 
     #[cfg(feature = "runtime")]
-    pub async fn recv_from<T: IoBufMut>(&mut self, buffer: T) -> BufResult<(usize, SockAddr), T> {
+    pub fn shutdown(&self) -> io::Result<()> {
+        self.socket.shutdown(std::net::Shutdown::Write)
+    }
+
+    #[cfg(feature = "runtime")]
+    pub async fn recv<B: IoBufMut>(&self, buffer: B) -> BufResult<usize, B> {
+        let ((), buffer) = buf_try!(self.attach(), buffer);
+        let op = Recv::new(self.as_raw_fd(), buffer);
+        submit(op).await.into_inner().map_advanced()
+    }
+
+    #[cfg(feature = "runtime")]
+    pub async fn recv_vectored<V: IoVectoredBufMut>(&self, buffer: V) -> BufResult<usize, V> {
+        let ((), buffer) = buf_try!(self.attach(), buffer);
+        let op = RecvVectored::new(self.as_raw_fd(), buffer);
+        submit(op).await.into_inner().map_advanced()
+    }
+
+    #[cfg(feature = "runtime")]
+    pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
+        let ((), buffer) = buf_try!(self.attach(), buffer);
+        let op = Send::new(self.as_raw_fd(), buffer);
+        submit(op).await.into_inner()
+    }
+
+    #[cfg(feature = "runtime")]
+    pub async fn send_vectored<T: IoVectoredBuf>(&self, buffer: T) -> BufResult<usize, T> {
+        let ((), buffer) = buf_try!(self.attach(), buffer);
+        let op = SendVectored::new(self.as_raw_fd(), buffer);
+        submit(op).await.into_inner()
+    }
+
+    #[cfg(feature = "runtime")]
+    pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SockAddr), T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = RecvFrom::new(self.as_raw_fd(), buffer);
         submit(op).await.into_inner().map_addr().map_advanced()
@@ -136,7 +168,7 @@ impl Socket {
 
     #[cfg(feature = "runtime")]
     pub async fn recv_from_vectored<T: IoVectoredBufMut>(
-        &mut self,
+        &self,
         buffer: T,
     ) -> BufResult<(usize, SockAddr), T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
@@ -145,7 +177,7 @@ impl Socket {
     }
 
     #[cfg(feature = "runtime")]
-    pub async fn send_to<T: IoBuf>(&mut self, buffer: T, addr: &SockAddr) -> BufResult<usize, T> {
+    pub async fn send_to<T: IoBuf>(&self, buffer: T, addr: &SockAddr) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = SendTo::new(self.as_raw_fd(), buffer, addr.clone());
         submit(op).await.into_inner()
@@ -153,51 +185,13 @@ impl Socket {
 
     #[cfg(feature = "runtime")]
     pub async fn send_to_vectored<T: IoVectoredBuf>(
-        &mut self,
+        &self,
         buffer: T,
         addr: &SockAddr,
     ) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = SendToVectored::new(self.as_raw_fd(), buffer, addr.clone());
         submit(op).await.into_inner()
-    }
-}
-
-#[cfg(feature = "runtime")]
-impl AsyncRead for Socket {
-    async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
-        let op = Recv::new(self.as_raw_fd(), buffer);
-        submit(op).await.into_inner().map_advanced()
-    }
-
-    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buffer: V) -> BufResult<usize, V> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
-        let op = RecvVectored::new(self.as_raw_fd(), buffer);
-        submit(op).await.into_inner().map_advanced()
-    }
-}
-
-#[cfg(feature = "runtime")]
-impl AsyncWrite for Socket {
-    async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
-        let op = Send::new(self.as_raw_fd(), buffer);
-        submit(op).await.into_inner()
-    }
-
-    async fn write_vectored<T: IoVectoredBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
-        let op = SendVectored::new(self.as_raw_fd(), buffer);
-        submit(op).await.into_inner()
-    }
-
-    async fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-
-    async fn shutdown(&mut self) -> io::Result<()> {
-        self.socket.shutdown(std::net::Shutdown::Write)
     }
 }
 
