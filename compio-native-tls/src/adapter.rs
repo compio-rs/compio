@@ -7,6 +7,24 @@ use crate::{wrapper::StreamWrapper, TlsStream};
 
 /// A wrapper around a [`native_tls::TlsConnector`], providing an async
 /// `connect` method.
+///
+/// ```rust,no_run
+/// use compio_io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
+/// use compio_native_tls::TlsConnector;
+/// use compio_net::TcpStream;
+///
+/// # compio_runtime::block_on(async {
+/// let connector = TlsConnector::from(native_tls::TlsConnector::new().unwrap());
+///
+/// let stream = TcpStream::connect("www.bing.com:443").await.unwrap();
+/// let mut stream = connector.connect("www.bing.com", stream).await.unwrap();
+///
+/// stream.write_all("GET / HTTP/1.0\r\n\r\n").await.unwrap();
+/// stream.flush().await.unwrap();
+/// let (_, res) = stream.read_to_end(vec![]).await.unwrap();
+/// println!("{}", String::from_utf8_lossy(&res));
+/// # })
+/// ```
 #[derive(Debug, Clone)]
 pub struct TlsConnector(native_tls::TlsConnector);
 

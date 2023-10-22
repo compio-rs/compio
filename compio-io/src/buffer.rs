@@ -94,6 +94,12 @@ impl Buffer {
         self.inner().slice()
     }
 
+    /// If the inner buffer is empty.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.inner().as_slice().is_empty()
+    }
+
     /// All bytes in the buffer have been read
     #[inline]
     pub fn all_done(&self) -> bool {

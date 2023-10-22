@@ -1,6 +1,6 @@
 use std::io::{self, BufRead, Read, Write};
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
 use compio_io::{AsyncWriteExt, Buffer};
 
 const DEFAULT_BUF_SIZE: usize = 8 * 1024;
@@ -8,6 +8,7 @@ const DEFAULT_BUF_SIZE: usize = 8 * 1024;
 #[derive(Debug)]
 pub struct StreamWrapper<S> {
     stream: S,
+    need_read: bool,
     read_buffer: Buffer,
     write_buffer: Buffer,
 }
@@ -20,6 +21,7 @@ impl<S> StreamWrapper<S> {
     pub fn with_capacity(stream: S, cap: usize) -> Self {
         Self {
             stream,
+            need_read: false,
             read_buffer: Buffer::with_capacity(cap),
             write_buffer: Buffer::with_capacity(cap),
         }
@@ -50,7 +52,8 @@ impl<S> BufRead for StreamWrapper<S> {
             self.read_buffer.reset();
         }
 
-        if self.read_buffer.need_fill() {
+        if self.read_buffer.slice().is_empty() {
+            self.need_read = true;
             return Err(would_block("need to fill the read buffer"));
         }
 
@@ -76,6 +79,7 @@ impl<S> Write for StreamWrapper<S> {
                     inner.as_buf_mut_ptr().add(inner.buf_len()),
                     len,
                 );
+                inner.set_buf_init(inner.buf_len() + len);
             }
             BufResult(Ok(len), inner)
         })?;
@@ -84,7 +88,11 @@ impl<S> Write for StreamWrapper<S> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        Err(would_block("need to flush the write buffer"))
+        if !self.write_buffer.is_empty() {
+            Err(would_block("need to flush the write buffer"))
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -94,14 +102,17 @@ fn would_block(msg: &str) -> io::Error {
 
 impl<S: compio_io::AsyncRead> StreamWrapper<S> {
     pub async fn fill_read_buf(&mut self) -> io::Result<()> {
-        let stream = &mut self.stream;
-        self.read_buffer
-            .with(|b| async move {
-                let len = b.buf_len();
-                let b = b.slice(len..);
-                stream.read(b).await.into_inner()
-            })
-            .await?;
+        if self.need_read {
+            let stream = &mut self.stream;
+            self.read_buffer
+                .with(|b| async move {
+                    let len = b.buf_len();
+                    let b = b.slice(len..);
+                    stream.read(b).await.into_inner()
+                })
+                .await?;
+            self.need_read = false;
+        }
         Ok(())
     }
 }
@@ -109,8 +120,8 @@ impl<S: compio_io::AsyncRead> StreamWrapper<S> {
 impl<S: compio_io::AsyncWrite> StreamWrapper<S> {
     pub async fn flush_write_buf(&mut self) -> io::Result<()> {
         let stream = &mut self.stream;
-        let len = self.write_buffer.with(|b| stream.write_all(b)).await?;
-        self.write_buffer.advance(len);
+        self.write_buffer.with(|b| stream.write_all(b)).await?;
+        self.write_buffer.reset();
         Ok(())
     }
 }

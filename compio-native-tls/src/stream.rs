@@ -35,6 +35,10 @@ impl<S: AsyncRead> AsyncRead for TlsStream<S> {
         loop {
             let res = Read::read(&mut self.0, slice);
             match res {
+                Ok(res) => {
+                    unsafe { buf.set_buf_init(res) };
+                    return BufResult(Ok(res), buf);
+                }
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                     match self.0.get_mut().fill_read_buf().await {
                         Ok(_) => continue,
