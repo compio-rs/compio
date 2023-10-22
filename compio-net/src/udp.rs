@@ -4,8 +4,7 @@ use compio_driver::impl_raw_fd;
 #[cfg(feature = "runtime")]
 use {
     crate::ToSocketAddrsAsync,
-    compio_buf::{buf_try, BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
-    compio_io::{AsyncRead, AsyncWrite},
+    compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     compio_runtime::impl_attachable,
     socket2::{Protocol, SockAddr, Type},
 };
@@ -190,35 +189,35 @@ impl UdpSocket {
     /// Receives a packet of data from the socket into the buffer, returning the
     /// original buffer and quantity of data received.
     #[cfg(feature = "runtime")]
-    pub async fn recv<T: IoBufMut>(&mut self, buffer: T) -> BufResult<usize, T> {
-        self.inner.read(buffer).await
+    pub async fn recv<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+        self.inner.recv(buffer).await
     }
 
     /// Receives a packet of data from the socket into the buffer, returning the
     /// original buffer and quantity of data received.
     #[cfg(feature = "runtime")]
-    pub async fn recv_vectored<T: IoVectoredBufMut>(&mut self, buffer: T) -> BufResult<usize, T> {
-        self.inner.read_vectored(buffer).await
+    pub async fn recv_vectored<T: IoVectoredBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+        self.inner.recv_vectored(buffer).await
     }
 
     /// Sends some data to the socket from the buffer, returning the original
     /// buffer and quantity of data sent.
     #[cfg(feature = "runtime")]
-    pub async fn send<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        self.inner.write(buffer).await
+    pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
+        self.inner.send(buffer).await
     }
 
     /// Sends some data to the socket from the buffer, returning the original
     /// buffer and quantity of data sent.
     #[cfg(feature = "runtime")]
-    pub async fn send_vectored<T: IoVectoredBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        self.inner.write_vectored(buffer).await
+    pub async fn send_vectored<T: IoVectoredBuf>(&self, buffer: T) -> BufResult<usize, T> {
+        self.inner.send_vectored(buffer).await
     }
 
     /// Receives a single datagram message on the socket. On success, returns
     /// the number of bytes received and the origin.
     #[cfg(feature = "runtime")]
-    pub async fn recv_from<T: IoBufMut>(&mut self, buffer: T) -> BufResult<(usize, SocketAddr), T> {
+    pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SocketAddr), T> {
         self.inner
             .recv_from(buffer)
             .await
@@ -229,7 +228,7 @@ impl UdpSocket {
     /// the number of bytes received and the origin.
     #[cfg(feature = "runtime")]
     pub async fn recv_from_vectored<T: IoVectoredBufMut>(
-        &mut self,
+        &self,
         buffer: T,
     ) -> BufResult<(usize, SocketAddr), T> {
         self.inner
@@ -242,50 +241,30 @@ impl UdpSocket {
     /// number of bytes sent.
     #[cfg(feature = "runtime")]
     pub async fn send_to<T: IoBuf>(
-        &mut self,
+        &self,
         buffer: T,
         addr: impl ToSocketAddrsAsync,
     ) -> BufResult<usize, T> {
-        let (mut addrs, buffer) = buf_try!(addr.to_socket_addrs_async().await, buffer);
-        if let Some(addr) = addrs.next() {
-            let (res, buffer) = buf_try!(self.inner.send_to(buffer, &SockAddr::from(addr)).await);
-            BufResult(Ok(res), buffer)
-        } else {
-            BufResult(
-                Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "no addresses to send data to",
-                )),
-                buffer,
-            )
-        }
+        super::first_addr_buf(addr, buffer, |addr, buffer| async move {
+            self.inner.send_to(buffer, &SockAddr::from(addr)).await
+        })
+        .await
     }
 
     /// Sends data on the socket to the given address. On success, returns the
     /// number of bytes sent.
     #[cfg(feature = "runtime")]
     pub async fn send_to_vectored<T: IoVectoredBuf>(
-        &mut self,
+        &self,
         buffer: T,
         addr: impl ToSocketAddrsAsync,
     ) -> BufResult<usize, T> {
-        let (mut addrs, buffer) = buf_try!(addr.to_socket_addrs_async().await, buffer);
-        if let Some(addr) = addrs.next() {
-            let (res, buffer) = buf_try!(
-                self.inner
-                    .send_to_vectored(buffer, &SockAddr::from(addr))
-                    .await
-            );
-            BufResult(Ok(res), buffer)
-        } else {
-            BufResult(
-                Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "no addresses to send data to",
-                )),
-                buffer,
-            )
-        }
+        super::first_addr_buf(addr, buffer, |addr, buffer| async move {
+            self.inner
+                .send_to_vectored(buffer, &SockAddr::from(addr))
+                .await
+        })
+        .await
     }
 }
 

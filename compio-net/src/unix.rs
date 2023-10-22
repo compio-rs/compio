@@ -157,31 +157,73 @@ impl UnixStream {
 
 #[cfg(feature = "runtime")]
 impl AsyncRead for UnixStream {
+    #[inline]
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        self.inner.read(buf).await
+        (&*self).read(buf).await
     }
 
+    #[inline]
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
-        self.inner.read_vectored(buf).await
+        (&*self).read_vectored(buf).await
+    }
+}
+
+#[cfg(feature = "runtime")]
+impl AsyncRead for &UnixStream {
+    #[inline]
+    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
+        self.inner.recv(buf).await
+    }
+
+    #[inline]
+    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
+        self.inner.recv_vectored(buf).await
     }
 }
 
 #[cfg(feature = "runtime")]
 impl AsyncWrite for UnixStream {
+    #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        self.inner.write(buf).await
+        (&*self).write(buf).await
     }
 
+    #[inline]
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        self.inner.write_vectored(buf).await
+        (&*self).write_vectored(buf).await
     }
 
+    #[inline]
     async fn flush(&mut self) -> io::Result<()> {
-        self.inner.flush().await
+        (&*self).flush().await
     }
 
+    #[inline]
     async fn shutdown(&mut self) -> io::Result<()> {
-        self.inner.shutdown().await
+        (&*self).shutdown().await
+    }
+}
+
+#[cfg(feature = "runtime")]
+impl AsyncWrite for &UnixStream {
+    #[inline]
+    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        self.inner.send(buf).await
+    }
+
+    #[inline]
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        self.inner.send_vectored(buf).await
+    }
+
+    #[inline]
+    async fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+
+    #[inline]
+    async fn shutdown(&mut self) -> io::Result<()> {
+        self.inner.shutdown()
     }
 }
 
