@@ -106,9 +106,9 @@ fn udp(c: &mut Criterion) {
 
     group.bench_function("compio", |b| {
         b.to_async(CompioRuntime).iter(|| async {
-            let mut rx = compio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let rx = compio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let addr_rx = rx.local_addr().unwrap();
-            let mut tx = compio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let tx = compio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let addr_tx = tx.local_addr().unwrap();
 
             rx.connect(addr_tx).await.unwrap();

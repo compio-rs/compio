@@ -4,10 +4,10 @@ use compio::net::UdpSocket;
 async fn connect() {
     const MSG: &str = "foo bar baz";
 
-    let mut passive = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let passive = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let passive_addr = passive.local_addr().unwrap();
 
-    let mut active = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let active = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let active_addr = active.local_addr().unwrap();
 
     active.connect(passive_addr).await.unwrap();
@@ -31,19 +31,19 @@ async fn send_to() {
         };
     }
 
-    let mut passive1 = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let passive1 = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let passive1_addr = passive1.local_addr().unwrap();
 
     let passive01 = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
     let passive01_addr = passive01.local_addr().unwrap();
 
-    let mut passive2 = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let passive2 = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let passive2_addr = passive2.local_addr().unwrap();
 
-    let mut passive3 = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let passive3 = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let passive3_addr = passive3.local_addr().unwrap();
 
-    let mut active = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let active = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let active_addr = active.local_addr().unwrap();
 
     active.send_to(MSG, &passive01_addr).await.0.unwrap();
