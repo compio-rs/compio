@@ -95,8 +95,9 @@ async fn handshake<S: AsyncRead + AsyncWrite>(
             Err(e) => match e {
                 HandshakeError::Failure(e) => return Err(io::Error::new(io::ErrorKind::Other, e)),
                 HandshakeError::WouldBlock(mut mid_stream) => {
-                    mid_stream.get_mut().fill_read_buf().await?;
-                    mid_stream.get_mut().flush_write_buf().await?;
+                    if mid_stream.get_mut().flush_write_buf().await? == 0 {
+                        mid_stream.get_mut().fill_read_buf().await?;
+                    }
                     res = mid_stream.handshake();
                 }
             },
