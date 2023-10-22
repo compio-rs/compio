@@ -9,6 +9,7 @@ const DEFAULT_BUF_SIZE: usize = 8 * 1024;
 pub struct StreamWrapper<S> {
     stream: S,
     need_read: bool,
+    eof: bool,
     read_buffer: Buffer,
     write_buffer: Buffer,
 }
@@ -22,6 +23,7 @@ impl<S> StreamWrapper<S> {
         Self {
             stream,
             need_read: false,
+            eof: false,
             read_buffer: Buffer::with_capacity(cap),
             write_buffer: Buffer::with_capacity(cap),
         }
@@ -52,7 +54,7 @@ impl<S> BufRead for StreamWrapper<S> {
             self.read_buffer.reset();
         }
 
-        if self.read_buffer.slice().is_empty() {
+        if self.read_buffer.slice().is_empty() && !self.eof {
             self.need_read = true;
             return Err(would_block("need to fill the read buffer"));
         }
@@ -104,13 +106,17 @@ impl<S: compio_io::AsyncRead> StreamWrapper<S> {
     pub async fn fill_read_buf(&mut self) -> io::Result<()> {
         if self.need_read {
             let stream = &mut self.stream;
-            self.read_buffer
+            let len = self
+                .read_buffer
                 .with(|b| async move {
                     let len = b.buf_len();
                     let b = b.slice(len..);
                     stream.read(b).await.into_inner()
                 })
                 .await?;
+            if len == 0 {
+                self.eof = true;
+            }
             self.need_read = false;
         }
         Ok(())
