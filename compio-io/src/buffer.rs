@@ -79,6 +79,7 @@ impl IoBufMut for Inner {
 pub struct Buffer(Option<Inner>);
 
 impl Buffer {
+    /// Create a buffer with capacity.
     #[inline]
     pub fn with_capacity(cap: usize) -> Self {
         Self(Some(Inner {
@@ -87,6 +88,7 @@ impl Buffer {
         }))
     }
 
+    /// Get the initialized but not consumed part of the buffer.
     #[inline]
     pub fn slice(&self) -> &[u8] {
         self.inner().slice()
@@ -113,6 +115,7 @@ impl Buffer {
         buf.len() > buf.capacity() * 2 / 3
     }
 
+    /// Clear the inner buffer and reset the position to the start.
     #[inline]
     pub fn reset(&mut self) {
         self.inner_mut().reset();
@@ -130,6 +133,8 @@ impl Buffer {
         res
     }
 
+    /// Execute a funcition with ownership of the buffer, and restore the buffer
+    /// afterwards
     pub fn with_sync<R>(
         &mut self,
         func: impl FnOnce(Inner) -> BufResult<R, Inner>,

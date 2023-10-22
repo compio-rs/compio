@@ -13,6 +13,13 @@ fn filled(slice: &mut [MaybeUninit<u8>]) -> &mut [u8] {
     unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), slice.len()) }
 }
 
+/// A wrapper around an underlying raw stream which implements the TLS or SSL
+/// protocol.
+///
+/// A `TlsStream<S>` represents a handshake that has been completed successfully
+/// and both the server and the client are ready for receiving and sending
+/// data. Bytes read from a `TlsStream` are decrypted from `S` and bytes written
+/// to a `TlsStream` are encrypted when passing through to `S`.
 #[derive(Debug)]
 pub struct TlsStream<S>(native_tls::TlsStream<StreamWrapper<S>>);
 
