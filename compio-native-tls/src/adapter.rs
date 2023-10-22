@@ -91,7 +91,10 @@ async fn handshake<S: AsyncRead + AsyncWrite>(
 ) -> io::Result<TlsStream<S>> {
     loop {
         match res {
-            Ok(s) => return Ok(TlsStream::from(s)),
+            Ok(mut s) => {
+                s.get_mut().flush_write_buf().await?;
+                return Ok(TlsStream::from(s));
+            }
             Err(e) => match e {
                 HandshakeError::Failure(e) => return Err(io::Error::new(io::ErrorKind::Other, e)),
                 HandshakeError::WouldBlock(mut mid_stream) => {
