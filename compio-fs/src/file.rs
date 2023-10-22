@@ -106,7 +106,7 @@ impl File {
     }
 
     #[cfg(feature = "runtime")]
-    async fn sync_impl(&mut self, datasync: bool) -> io::Result<()> {
+    async fn sync_impl(&self, datasync: bool) -> io::Result<()> {
         self.attach()?;
         let op = Sync::new(self.as_raw_fd(), datasync);
         submit(op).await.0?;
@@ -118,7 +118,7 @@ impl File {
     /// This function will attempt to ensure that all in-memory data reaches the
     /// filesystem before returning.
     #[cfg(feature = "runtime")]
-    pub async fn sync_all(&mut self) -> io::Result<()> {
+    pub async fn sync_all(&self) -> io::Result<()> {
         self.sync_impl(false).await
     }
 
@@ -134,7 +134,7 @@ impl File {
     ///
     /// [`sync_all`]: File::sync_all
     #[cfg(feature = "runtime")]
-    pub async fn sync_data(&mut self) -> io::Result<()> {
+    pub async fn sync_data(&self) -> io::Result<()> {
         self.sync_impl(true).await
     }
 }
