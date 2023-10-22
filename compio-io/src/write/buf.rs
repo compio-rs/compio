@@ -5,7 +5,7 @@ use compio_buf::{buf_try, BufResult, IntoInner, IoBuf};
 use crate::{
     buffer::Buffer,
     util::{slice_to_buf, DEFAULT_BUF_SIZE},
-    AsyncWrite, IoResult,
+    AsyncWrite, AsyncWriteExt, IoResult,
 };
 
 /// Wraps a writer and buffers its output.
@@ -52,9 +52,11 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
     async fn write<T: IoBuf>(&mut self, mut buf: T) -> compio_buf::BufResult<usize, T> {
         let written = self
             .buf
-            .with(|mut w| {
+            .with(|w| {
+                let len = w.buf_len();
+                let mut w = w.slice(len..);
                 let written = slice_to_buf(buf.as_slice(), &mut w);
-                ready(BufResult(Ok(written), w))
+                ready(BufResult(Ok(written), w.into_inner()))
             })
             .await
             .expect("Closure always return Ok");
@@ -75,7 +77,10 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
             .with(|mut w| {
                 let mut written = 0;
                 for buf in buf.as_dyn_bufs() {
-                    written += slice_to_buf(buf.as_slice(), &mut w);
+                    let len = w.buf_len();
+                    let mut slice = w.slice(len..);
+                    written += slice_to_buf(buf.as_slice(), &mut slice);
+                    w = slice.into_inner();
 
                     if w.buf_len() == w.buf_capacity() {
                         break;
@@ -96,12 +101,8 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
     async fn flush(&mut self) -> IoResult<()> {
         let Self { writer, buf } = self;
 
-        let len = buf.with(|w| writer.write(w)).await?;
-        buf.advance(len);
-
-        if buf.all_done() {
-            buf.reset();
-        }
+        buf.with(|w| writer.write_all(w)).await?;
+        buf.reset();
 
         Ok(())
     }

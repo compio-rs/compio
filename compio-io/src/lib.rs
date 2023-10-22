@@ -95,6 +95,7 @@ mod write;
 
 pub(crate) type IoResult<T> = std::io::Result<T>;
 
+pub use buffer::Buffer;
 pub use read::*;
 pub use util::{copy, null, repeat};
 pub use write::*;

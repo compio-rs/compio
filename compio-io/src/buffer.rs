@@ -130,6 +130,15 @@ impl Buffer {
         res
     }
 
+    pub fn with_sync<R>(
+        &mut self,
+        func: impl FnOnce(Inner) -> BufResult<R, Inner>,
+    ) -> std::io::Result<R> {
+        let BufResult(res, buf) = func(self.take_inner());
+        self.restore_inner(buf);
+        res
+    }
+
     /// Mark some bytes as read by advancing the progress tracker, return a
     /// `bool` indicating if all bytes are read.
     #[inline]

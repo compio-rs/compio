@@ -10,6 +10,7 @@ members = [
     "compio-signal",
     "compio-dispatcher",
     "compio-io",
+    "compio-native-tls",
 ]
 resolver = "2"
 

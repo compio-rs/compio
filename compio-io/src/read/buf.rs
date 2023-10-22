@@ -1,4 +1,4 @@
-use compio_buf::{buf_try, BufResult, IntoInner, IoBufMut, IoVectoredBufMut};
+use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut};
 
 use crate::{buffer::Buffer, util::DEFAULT_BUF_SIZE, AsyncRead, IoResult};
 /// # AsyncBufRead
@@ -96,7 +96,12 @@ impl<R: AsyncRead> AsyncBufRead for BufReader<R> {
         }
 
         if buf.need_fill() {
-            buf.with(|b| reader.read(b)).await?;
+            buf.with(|b| async move {
+                let len = b.buf_len();
+                let b = b.slice(len..);
+                reader.read(b).await.into_inner()
+            })
+            .await?;
         }
 
         Ok(buf.slice())
