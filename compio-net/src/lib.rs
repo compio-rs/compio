@@ -13,9 +13,9 @@ mod udp;
 mod unix;
 
 #[cfg(feature = "runtime")]
-pub(crate) use resolve::each_addr;
-#[cfg(feature = "runtime")]
 pub use resolve::ToSocketAddrsAsync;
+#[cfg(feature = "runtime")]
+pub(crate) use resolve::{each_addr, first_addr_buf};
 pub(crate) use socket::*;
 pub use tcp::*;
 pub use udp::*;

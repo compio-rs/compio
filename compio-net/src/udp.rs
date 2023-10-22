@@ -4,7 +4,7 @@ use compio_driver::impl_raw_fd;
 #[cfg(feature = "runtime")]
 use {
     crate::ToSocketAddrsAsync,
-    compio_buf::{buf_try, BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
+    compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     compio_runtime::impl_attachable,
     socket2::{Protocol, SockAddr, Type},
 };
@@ -245,19 +245,10 @@ impl UdpSocket {
         buffer: T,
         addr: impl ToSocketAddrsAsync,
     ) -> BufResult<usize, T> {
-        let (mut addrs, buffer) = buf_try!(addr.to_socket_addrs_async().await, buffer);
-        if let Some(addr) = addrs.next() {
-            let (res, buffer) = buf_try!(self.inner.send_to(buffer, &SockAddr::from(addr)).await);
-            BufResult(Ok(res), buffer)
-        } else {
-            BufResult(
-                Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "no addresses to send data to",
-                )),
-                buffer,
-            )
-        }
+        super::first_addr_buf(addr, buffer, |addr, buffer| async move {
+            self.inner.send_to(buffer, &SockAddr::from(addr)).await
+        })
+        .await
     }
 
     /// Sends data on the socket to the given address. On success, returns the
@@ -268,23 +259,12 @@ impl UdpSocket {
         buffer: T,
         addr: impl ToSocketAddrsAsync,
     ) -> BufResult<usize, T> {
-        let (mut addrs, buffer) = buf_try!(addr.to_socket_addrs_async().await, buffer);
-        if let Some(addr) = addrs.next() {
-            let (res, buffer) = buf_try!(
-                self.inner
-                    .send_to_vectored(buffer, &SockAddr::from(addr))
-                    .await
-            );
-            BufResult(Ok(res), buffer)
-        } else {
-            BufResult(
-                Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "no addresses to send data to",
-                )),
-                buffer,
-            )
-        }
+        super::first_addr_buf(addr, buffer, |addr, buffer| async move {
+            self.inner
+                .send_to_vectored(buffer, &SockAddr::from(addr))
+                .await
+        })
+        .await
     }
 }
 

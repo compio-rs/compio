@@ -17,6 +17,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
 };
 
+use compio_buf::{buf_try, BufResult};
 use either::Either;
 
 pub async fn resolve_sock_addrs(
@@ -184,7 +185,7 @@ impl<T: ToSocketAddrsAsync + ?Sized> ToSocketAddrsAsync for &T {
 
 pub async fn each_addr<T, F: Future<Output = io::Result<T>>>(
     addr: impl ToSocketAddrsAsync,
-    mut f: impl FnMut(SocketAddr) -> F,
+    f: impl Fn(SocketAddr) -> F,
 ) -> io::Result<T> {
     let addrs = addr.to_socket_addrs_async().await?;
     let mut last_err = None;
@@ -200,4 +201,24 @@ pub async fn each_addr<T, F: Future<Output = io::Result<T>>>(
             "could not resolve to any addresses",
         )
     }))
+}
+
+pub async fn first_addr_buf<T, B, F: Future<Output = BufResult<T, B>>>(
+    addr: impl ToSocketAddrsAsync,
+    buffer: B,
+    f: impl FnOnce(SocketAddr, B) -> F,
+) -> BufResult<T, B> {
+    let (mut addrs, buffer) = buf_try!(addr.to_socket_addrs_async().await, buffer);
+    if let Some(addr) = addrs.next() {
+        let (res, buffer) = buf_try!(f(addr, buffer).await);
+        BufResult(Ok(res), buffer)
+    } else {
+        BufResult(
+            Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "could not operate on first address",
+            )),
+            buffer,
+        )
+    }
 }
