@@ -1,6 +1,8 @@
+#[cfg(feature = "allocator_api")]
+use std::alloc::Allocator;
 use std::{io::Cursor, rc::Rc, sync::Arc};
 
-use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut};
+use compio_buf::{buf_try, vec_alloc, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut};
 
 mod buf;
 #[macro_use]
@@ -111,36 +113,6 @@ impl_read!(@slice [u8; LEN], for const LEN: usize);
 impl_read!(@slice &[u8; LEN], for const LEN: usize);
 impl_read!(@string String, &'_ str, &String);
 
-impl<A: AsRef<[u8]>> AsyncRead for Cursor<A> {
-    #[inline]
-    async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
-        let len = self.position().min(self.get_ref().as_ref().len() as u64);
-        let (n, buf) = buf_try!((&self.get_ref().as_ref()[(len as usize)..]).read(buf).await);
-        let pos = (self.position() as usize).checked_add(n).expect("overflow");
-
-        debug_assert!(pos <= self.get_ref().as_ref().len());
-
-        self.set_position(pos as u64);
-        BufResult(Ok(n), buf)
-    }
-
-    #[inline]
-    async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
-        let len = self.position().min(self.get_ref().as_ref().len() as u64);
-        let (n, buf) = buf_try!(
-            (&self.get_ref().as_ref()[(len as usize)..])
-                .read_vectored(buf)
-                .await
-        );
-        let pos = (self.position() as usize).checked_add(n).expect("overflow");
-
-        debug_assert!(pos <= self.get_ref().as_ref().len());
-
-        self.set_position(pos as u64);
-        BufResult(Ok(n), buf)
-    }
-}
-
 impl AsyncRead for &[u8] {
     #[inline]
     async fn read<T: IoBufMut>(&mut self, mut buf: T) -> BufResult<usize, T> {
@@ -215,3 +187,31 @@ macro_rules! impl_read_at {
 
 impl_read_at!(@ptr &A, &mut A, Box<A>, Rc<A>, Arc<A>);
 impl_read_at!(@slice [u8], const LEN => [u8; LEN]);
+
+impl<#[cfg(feature = "allocator_api")] A: Allocator> AsyncReadAt for vec_alloc!(u8, A) {
+    async fn read_at<T: IoBufMut>(&self, buf: T, pos: u64) -> BufResult<usize, T> {
+        self.as_slice().read_at(buf, pos).await
+    }
+
+    async fn read_vectored_at<T: IoVectoredBufMut>(&self, buf: T, pos: u64) -> BufResult<usize, T> {
+        self.as_slice().read_vectored_at(buf, pos).await
+    }
+}
+
+impl<A: AsyncReadAt> AsyncRead for Cursor<A> {
+    #[inline]
+    async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
+        let pos = self.position();
+        let (n, buf) = buf_try!(self.get_ref().read_at(buf, pos).await);
+        self.set_position(pos + n as u64);
+        BufResult(Ok(n), buf)
+    }
+
+    #[inline]
+    async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
+        let pos = self.position();
+        let (n, buf) = buf_try!(self.get_ref().read_vectored_at(buf, pos).await);
+        self.set_position(pos + n as u64);
+        BufResult(Ok(n), buf)
+    }
+}
