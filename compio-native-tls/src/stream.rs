@@ -1,17 +1,9 @@
-use std::{
-    io::{self, Read, Write},
-    mem::MaybeUninit,
-};
+use std::{io, mem::MaybeUninit};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
 use compio_io::{AsyncRead, AsyncWrite};
 
 use crate::StreamWrapper;
-
-fn filled(slice: &mut [MaybeUninit<u8>]) -> &mut [u8] {
-    slice.fill(MaybeUninit::new(0));
-    unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), slice.len()) }
-}
 
 /// A wrapper around an underlying raw stream which implements the TLS or SSL
 /// protocol.
@@ -31,9 +23,12 @@ impl<S> From<native_tls::TlsStream<StreamWrapper<S>>> for TlsStream<S> {
 
 impl<S: AsyncRead> AsyncRead for TlsStream<S> {
     async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
-        let slice = filled(buf.as_mut_slice());
+        let slice: &mut [MaybeUninit<u8>] = buf.as_mut_slice();
+        slice.fill(MaybeUninit::new(0));
+        let slice =
+            unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), slice.len()) };
         loop {
-            let res = Read::read(&mut self.0, slice);
+            let res = io::Read::read(&mut self.0, slice);
             match res {
                 Ok(res) => {
                     unsafe { buf.set_buf_init(res) };
@@ -55,7 +50,7 @@ impl<S: AsyncWrite> AsyncWrite for TlsStream<S> {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         let slice = buf.as_slice();
         loop {
-            let res = Write::write(&mut self.0, slice);
+            let res = io::Write::write(&mut self.0, slice);
             match res {
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => match self.flush().await {
                     Ok(_) => continue,

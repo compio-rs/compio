@@ -52,13 +52,12 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
     async fn write<T: IoBuf>(&mut self, mut buf: T) -> compio_buf::BufResult<usize, T> {
         let written = self
             .buf
-            .with(|w| {
+            .with_sync(|w| {
                 let len = w.buf_len();
                 let mut w = w.slice(len..);
                 let written = slice_to_buf(buf.as_slice(), &mut w);
-                ready(BufResult(Ok(written), w.into_inner()))
+                BufResult(Ok(written), w.into_inner())
             })
-            .await
             .expect("Closure always return Ok");
 
         if self.buf.need_flush() {
