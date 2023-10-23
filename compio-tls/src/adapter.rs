@@ -10,8 +10,8 @@ use crate::{wrapper::StreamWrapper, TlsStream};
 ///
 /// ```rust
 /// use compio_io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
-/// use compio_native_tls::TlsConnector;
 /// use compio_net::TcpStream;
+/// use compio_tls::TlsConnector;
 ///
 /// # compio_runtime::block_on(async {
 /// let connector = TlsConnector::from(native_tls::TlsConnector::new().unwrap());

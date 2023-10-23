@@ -1,5 +1,5 @@
 [package]
-name = "compio-native-tls"
+name = "compio-tls"
 version = "0.1.0"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net", "tls"]
@@ -13,8 +13,11 @@ repository = { workspace = true }
 compio-buf = { workspace = true }
 compio-io = { workspace = true }
 
-native-tls = "0.2"
+native-tls = { version = "0.2", optional = true }
 
 [dev-dependencies]
 compio-net = { workspace = true, features = ["runtime"] }
 compio-runtime = { workspace = true }
+
+[features]
+default = ["native-tls"]
