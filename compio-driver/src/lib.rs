@@ -10,7 +10,7 @@
     not(feature = "io-uring"),
     not(feature = "polling")
 ))]
-compile_error!("You must choose at leaset one of these features: [\"io-uring\", \"polling\"]");
+compile_error!("You must choose at least one of these features: [\"io-uring\", \"polling\"]");
 
 use std::{io, task::Poll, time::Duration};
 
