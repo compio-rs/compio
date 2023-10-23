@@ -192,6 +192,34 @@ impl IoBuf for &'static str {
     }
 }
 
+impl<const N: usize> IoBuf for &'static [u8; N] {
+    fn as_buf_ptr(&self) -> *const u8 {
+        self.as_ptr()
+    }
+
+    fn buf_len(&self) -> usize {
+        N
+    }
+
+    fn buf_capacity(&self) -> usize {
+        N
+    }
+}
+
+impl<const N: usize> IoBuf for &'static mut [u8; N] {
+    fn as_buf_ptr(&self) -> *const u8 {
+        self.as_ptr()
+    }
+
+    fn buf_len(&self) -> usize {
+        N
+    }
+
+    fn buf_capacity(&self) -> usize {
+        N
+    }
+}
+
 impl<const N: usize> IoBuf for [u8; N] {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
@@ -309,6 +337,12 @@ impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoBufMut
 }
 
 impl IoBufMut for &'static mut [u8] {
+    fn as_buf_mut_ptr(&mut self) -> *mut u8 {
+        self.as_mut_ptr()
+    }
+}
+
+impl<const N: usize> IoBufMut for &'static mut [u8; N] {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.as_mut_ptr()
     }
@@ -581,6 +615,12 @@ impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> SetBufIni
 impl SetBufInit for &'static mut [u8] {
     unsafe fn set_buf_init(&mut self, len: usize) {
         debug_assert!(len <= self.len());
+    }
+}
+
+impl<const N: usize> SetBufInit for &'static mut [u8; N] {
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        debug_assert!(len <= N);
     }
 }
 
