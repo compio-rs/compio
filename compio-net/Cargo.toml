@@ -19,7 +19,7 @@ rustdoc-args = ["--cfg docsrs"]
 compio-buf = { workspace = true }
 compio-driver = { workspace = true }
 compio-io = { workspace = true, optional = true }
-compio-runtime = { workspace = true, optional = true }
+compio-runtime = { workspace = true, optional = true, features = ["event"] }
 
 cfg-if = "1"
 either = "1"

@@ -47,7 +47,7 @@ jobs:
 
       - script: |
           rustup toolchain install nightly
-          cargo +nightly test --workspace --features all,polling,nightly --no-default-features
+          cargo +nightly test --workspace --features all,polling,native-tls,nightly --no-default-features
         displayName: TestNightly-polling
       # - script: |
       #     cargo test --workspace --features all,polling --no-default-features
