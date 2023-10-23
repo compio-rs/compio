@@ -177,6 +177,7 @@ macro_rules! impl_read_at {
         $(
             impl<$(const $len: usize)?> AsyncReadAt for $ty {
                 async fn read_at<T: IoBufMut>(&self, mut buf: T, pos: u64) -> BufResult<usize, T> {
+                    let pos = pos.min(self.len() as u64);
                     let len = slice_to_buf(&self[pos as usize..], &mut buf);
                     BufResult(Ok(len), buf)
                 }

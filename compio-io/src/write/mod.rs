@@ -145,7 +145,7 @@ macro_rules! impl_write_at {
         $(
             impl<$(const $len: usize)?> AsyncWriteAt for $ty {
                 async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
-                    let pos = pos as usize;
+                    let pos = (pos as usize).min(self.len());
                     let slice = buf.as_slice();
                     let n = slice.len().min(self.len() - pos);
                     self[pos..pos + n].copy_from_slice(&slice[..n]);
@@ -163,12 +163,18 @@ impl<#[cfg(feature = "allocator_api")] A: Allocator> AsyncWriteAt for vec_alloc!
     async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
         let pos = pos as usize;
         let slice = buf.as_slice();
-        let n = slice.len().min(self.len() - pos);
-        self[pos..pos + n].copy_from_slice(&slice[..n]);
-        if n < slice.len() {
-            self.extend_from_slice(&slice[n..]);
+        if pos <= self.len() {
+            let n = slice.len().min(self.len() - pos);
+            self[pos..pos + n].copy_from_slice(&slice[..n]);
+            if n < slice.len() {
+                self.extend_from_slice(&slice[n..]);
+            }
+            BufResult(Ok(n), buf)
+        } else {
+            self.resize(pos, 0);
+            self.extend_from_slice(slice);
+            BufResult(Ok(slice.len()), buf)
         }
-        BufResult(Ok(n), buf)
     }
 }
 
