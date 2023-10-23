@@ -16,11 +16,11 @@ use crate::{wrapper::StreamWrapper, TlsStream};
 /// # compio_runtime::block_on(async {
 /// let connector = TlsConnector::from(native_tls::TlsConnector::new().unwrap());
 ///
-/// let stream = TcpStream::connect("www.bing.com:443").await.unwrap();
-/// let mut stream = connector.connect("www.bing.com", stream).await.unwrap();
+/// let stream = TcpStream::connect("www.example.com:443").await.unwrap();
+/// let mut stream = connector.connect("www.example.com", stream).await.unwrap();
 ///
 /// stream
-///     .write_all("GET / HTTP/1.1\r\nHost:www.bing.com\r\nConnection: close\r\n\r\n")
+///     .write_all("GET / HTTP/1.1\r\nHost:www.example.com\r\nConnection: close\r\n\r\n")
 ///     .await
 ///     .unwrap();
 /// stream.flush().await.unwrap();
