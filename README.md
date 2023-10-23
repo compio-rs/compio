@@ -30,6 +30,7 @@ Add `compio` as dependency:
 ```
 compio = { version = "0.8.0", features = ["macros"] }
 ```
+
 Then we can use high level APIs to perform filesystem & net IO.
 
 ```rust
@@ -46,3 +47,9 @@ async fn main() {
 ```
 
 You can also control the low-level driver manually. See `driver` example of the repo.
+
+## Contributing
+
+There are opportunities to contribute to Compio at any level. It doesn't matter if
+you are just getting started with Rust or are the most weathered expert, we can
+use your help. If you have any question about Compio, feel free to join our [telegram group](https://t.me/compio_rs). Before contributing, please checkout our [contributing guide](https://github.com/compio-rs/compio/blob/master/CONTRIBUTING.md).
