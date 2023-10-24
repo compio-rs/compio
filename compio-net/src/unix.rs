@@ -7,6 +7,7 @@ use {
     compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     compio_io::{AsyncRead, AsyncWrite},
     compio_runtime::impl_attachable,
+    std::future::Future,
 };
 
 use crate::Socket;
@@ -61,6 +62,13 @@ impl UnixListener {
         let socket = Socket::bind(addr, Type::STREAM, None).await?;
         socket.listen(1024)?;
         Ok(UnixListener { inner: socket })
+    }
+
+    /// Close the socket. If the returned future is dropped before polling, the
+    /// socket won't be closed.
+    #[cfg(feature = "runtime")]
+    pub fn close(self) -> impl Future<Output = io::Result<()>> {
+        self.inner.close()
     }
 
     /// Creates a new independently owned handle to the underlying socket.
@@ -137,6 +145,13 @@ impl UnixStream {
         socket.connect(addr)?;
         let unix_stream = UnixStream { inner: socket };
         Ok(unix_stream)
+    }
+
+    /// Close the socket. If the returned future is dropped before polling, the
+    /// socket won't be closed.
+    #[cfg(feature = "runtime")]
+    pub fn close(self) -> impl Future<Output = io::Result<()>> {
+        self.inner.close()
     }
 
     /// Creates a new independently owned handle to the underlying socket.

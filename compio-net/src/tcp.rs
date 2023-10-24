@@ -8,6 +8,7 @@ use {
     compio_io::{AsyncRead, AsyncWrite},
     compio_runtime::impl_attachable,
     socket2::{Protocol, SockAddr, Type},
+    std::future::Future,
 };
 
 use crate::Socket;
@@ -66,6 +67,13 @@ impl TcpListener {
             Ok(Self { inner: socket })
         })
         .await
+    }
+
+    /// Close the socket. If the returned future is dropped before polling, the
+    /// socket won't be closed.
+    #[cfg(feature = "runtime")]
+    pub fn close(self) -> impl Future<Output = io::Result<()>> {
+        self.inner.close()
     }
 
     /// Creates a new independently owned handle to the underlying socket.
@@ -177,6 +185,13 @@ impl TcpStream {
             Ok(Self { inner: socket })
         })
         .await
+    }
+
+    /// Close the socket. If the returned future is dropped before polling, the
+    /// socket won't be closed.
+    #[cfg(feature = "runtime")]
+    pub fn close(self) -> impl Future<Output = io::Result<()>> {
+        self.inner.close()
     }
 
     /// Creates a new independently owned handle to the underlying socket.
