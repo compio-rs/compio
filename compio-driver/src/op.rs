@@ -3,8 +3,10 @@
 //! The operation itself doesn't perform anything.
 //! You need to pass them to [`crate::Proactor`], and poll the driver.
 
+use std::net::Shutdown;
+
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
-use socket2::{Domain, Protocol, SockAddr, Type};
+use socket2::SockAddr;
 
 #[cfg(windows)]
 pub use crate::sys::op::ConnectNamedPipe;
@@ -144,21 +146,16 @@ impl Sync {
     }
 }
 
-/// Create a socket.
-pub struct CreateSocket {
-    pub(crate) domain: Domain,
-    pub(crate) ty: Type,
-    pub(crate) protocol: Option<Protocol>,
+/// Shutdown a socket.
+pub struct ShutdownSocket {
+    pub(crate) fd: RawFd,
+    pub(crate) how: Shutdown,
 }
 
-impl CreateSocket {
-    /// Create [`CreateSocket`].
-    pub fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> Self {
-        Self {
-            domain,
-            ty,
-            protocol,
-        }
+impl ShutdownSocket {
+    /// Create [`ShutdownSocket`].
+    pub fn new(fd: RawFd, how: Shutdown) -> Self {
+        Self { fd, how }
     }
 }
 

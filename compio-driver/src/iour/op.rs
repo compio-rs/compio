@@ -87,14 +87,9 @@ impl OpCode for Sync {
     }
 }
 
-impl OpCode for CreateSocket {
+impl OpCode for ShutdownSocket {
     fn create_entry(self: Pin<&mut Self>) -> Entry {
-        opcode::Socket::new(
-            self.domain.into(),
-            self.ty.into(),
-            self.protocol.map(|p| p.into()).unwrap_or_default(),
-        )
-        .build()
+        opcode::Shutdown::new(Fd(self.fd), self.how()).build()
     }
 }
 

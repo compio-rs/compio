@@ -61,8 +61,7 @@ impl TcpListener {
     #[cfg(feature = "runtime")]
     pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
         super::each_addr(addr, |addr| async move {
-            let socket =
-                Socket::bind(&SockAddr::from(addr), Type::STREAM, Some(Protocol::TCP)).await?;
+            let socket = Socket::bind(&SockAddr::from(addr), Type::STREAM, Some(Protocol::TCP))?;
             socket.listen(128)?;
             Ok(Self { inner: socket })
         })
@@ -177,9 +176,9 @@ impl TcpStream {
                         "Unsupported address domain.",
                     ));
                 };
-                Socket::bind(&bind_addr, Type::STREAM, Some(Protocol::TCP)).await?
+                Socket::bind(&bind_addr, Type::STREAM, Some(Protocol::TCP))?
             } else {
-                Socket::new(addr2.domain(), Type::STREAM, Some(Protocol::TCP)).await?
+                Socket::new(addr2.domain(), Type::STREAM, Some(Protocol::TCP))?
             };
             socket.connect_async(&addr2).await?;
             Ok(Self { inner: socket })
@@ -286,7 +285,7 @@ impl AsyncWrite for &TcpStream {
 
     #[inline]
     async fn shutdown(&mut self) -> io::Result<()> {
-        self.inner.shutdown()
+        self.inner.shutdown().await
     }
 }
 

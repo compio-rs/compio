@@ -82,8 +82,8 @@ mod driver_type {
             SendMsg::CODE,
             AsyncCancel::CODE,
             OpenAt::CODE,
-            Socket::CODE,
             Close::CODE,
+            Shutdown::CODE,
         ];
 
         Ok(())

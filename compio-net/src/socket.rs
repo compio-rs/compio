@@ -6,8 +6,8 @@ use socket2::{SockAddr, Socket as Socket2};
 use {
     compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     compio_driver::op::{
-        Accept, BufResultExt, CloseSocket, Connect, CreateSocket, Recv, RecvFrom, RecvFromVectored,
-        RecvResultExt, RecvVectored, Send, SendTo, SendToVectored, SendVectored,
+        Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored,
+        RecvResultExt, RecvVectored, Send, SendTo, SendToVectored, SendVectored, ShutdownSocket,
     },
     compio_runtime::{submit, Attachable, Attacher},
     socket2::{Domain, Protocol, Type},
@@ -22,7 +22,6 @@ pub struct Socket {
 }
 
 impl Socket {
-    #[allow(dead_code)]
     pub fn from_socket2(socket: Socket2) -> Self {
         Self {
             socket,
@@ -48,11 +47,8 @@ impl Socket {
         self.socket.local_addr()
     }
 
-    #[cfg(feature = "runtime")]
-    pub async fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
-        let op = CreateSocket::new(domain, ty, protocol);
-        let fd = submit(op).await.0?;
-        let socket = unsafe { Self::from_raw_fd(fd as _) };
+    pub fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
+        let socket = Socket2::new(domain, ty, protocol)?;
         // On Linux we use blocking socket
         // Newer kernels have the patch that allows to arm io_uring poll mechanism for
         // non blocking socket when there is no connections in listen queue
@@ -62,9 +58,9 @@ impl Socket {
             unix,
             not(all(target_os = "linux", feature = "io-uring"))
         )) {
-            socket.socket.set_nonblocking(true)?;
+            socket.set_nonblocking(true)?;
         }
-        Ok(socket)
+        Ok(Self::from_socket2(socket))
     }
 
     #[cfg(feature = "runtime")]
@@ -80,19 +76,16 @@ impl Socket {
         }
     }
 
-    #[cfg(feature = "runtime")]
-    pub async fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
-        let socket = Self::new(addr.domain(), ty, protocol).await?;
+    pub fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
+        let socket = Self::new(addr.domain(), ty, protocol)?;
         socket.socket.bind(addr)?;
         Ok(socket)
     }
 
-    #[allow(dead_code)]
     pub fn listen(&self, backlog: i32) -> io::Result<()> {
         self.socket.listen(backlog)
     }
 
-    #[allow(dead_code)]
     pub fn connect(&self, addr: &SockAddr) -> io::Result<()> {
         self.socket.connect(addr)
     }
@@ -150,8 +143,11 @@ impl Socket {
     }
 
     #[cfg(feature = "runtime")]
-    pub fn shutdown(&self) -> io::Result<()> {
-        self.socket.shutdown(std::net::Shutdown::Write)
+    pub async fn shutdown(&self) -> io::Result<()> {
+        self.attach()?;
+        let op = ShutdownSocket::new(self.as_raw_fd(), std::net::Shutdown::Write);
+        submit(op).await.0?;
+        Ok(())
     }
 
     #[cfg(feature = "runtime")]

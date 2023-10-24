@@ -14,7 +14,7 @@ use libc::{pread64 as pread, preadv64 as preadv, pwrite64 as pwrite, pwritev64 a
 use polling::Event;
 use socket2::SockAddr;
 
-use super::{sockaddr_storage, socklen_t, syscall, Decision, IntoRawFd, OpCode, RawFd};
+use super::{sockaddr_storage, socklen_t, syscall, Decision, OpCode, RawFd};
 use crate::op::*;
 pub use crate::unix::op::*;
 
@@ -165,10 +165,10 @@ impl OpCode for Sync {
     }
 }
 
-impl OpCode for CreateSocket {
+impl OpCode for ShutdownSocket {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Completed(
-            socket2::Socket::new(self.domain, self.ty, self.protocol)?.into_raw_fd() as _,
+            syscall!(libc::shutdown(self.fd, self.how()))? as _,
         ))
     }
 

@@ -1,4 +1,4 @@
-use std::ffi::CString;
+use std::{ffi::CString, net::Shutdown};
 
 use compio_buf::{
     IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
@@ -6,9 +6,7 @@ use compio_buf::{
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
-#[cfg(doc)]
-use crate::op::*;
-use crate::sys::RawFd;
+use crate::{op::*, sys::RawFd};
 
 /// Open or create a file with flags and mode.
 pub struct OpenFile {
@@ -77,6 +75,16 @@ impl<T: IoVectoredBuf> IntoInner for WriteVectoredAt<T> {
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
+    }
+}
+
+impl ShutdownSocket {
+    pub(crate) fn how(&self) -> i32 {
+        match self.how {
+            Shutdown::Write => libc::SHUT_WR,
+            Shutdown::Read => libc::SHUT_RD,
+            Shutdown::Both => libc::SHUT_RDWR,
+        }
     }
 }
 

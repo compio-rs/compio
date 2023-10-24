@@ -8,11 +8,11 @@ use tempfile::tempdir;
 async fn main() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("unix-example.sock");
-    let listener = UnixListener::bind(&path).await.unwrap();
+    let listener = UnixListener::bind(&path).unwrap();
 
     let addr = listener.local_addr().unwrap();
 
-    let mut tx = UnixStream::connect_addr(&addr).await.unwrap();
+    let mut tx = UnixStream::connect_addr(&addr).unwrap();
     let (mut rx, _) = listener.accept().await.unwrap();
 
     assert_eq!(addr, tx.peer_addr().unwrap());

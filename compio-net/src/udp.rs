@@ -102,8 +102,7 @@ impl UdpSocket {
     pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
         super::each_addr(addr, |addr| async move {
             Ok(Self {
-                inner: Socket::bind(&SockAddr::from(addr), Type::DGRAM, Some(Protocol::UDP))
-                    .await?,
+                inner: Socket::bind(&SockAddr::from(addr), Type::DGRAM, Some(Protocol::UDP))?,
             })
         })
         .await
