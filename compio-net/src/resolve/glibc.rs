@@ -2,7 +2,7 @@ use std::{ffi::CString, io, net::SocketAddr, ops::DerefMut, pin::Pin, task::Poll
 
 use compio_driver::{FromRawFd, IntoRawFd, RawFd};
 use compio_runtime::event::EventHandle;
-pub use libc::{addrinfo, sockaddr_storage, AF_UNSPEC, IPPROTO_TCP, SOCK_STREAM};
+pub use libc::{addrinfo, AF_UNSPEC, IPPROTO_TCP, SOCK_STREAM};
 
 #[repr(C)]
 #[allow(non_camel_case_types)]

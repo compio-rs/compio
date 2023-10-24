@@ -9,8 +9,7 @@ use compio_driver::syscall;
 use compio_runtime::event::EventHandle;
 use widestring::U16CString;
 pub use windows_sys::Win32::Networking::WinSock::{
-    ADDRINFOEXW as addrinfo, AF_UNSPEC, IPPROTO_TCP, SOCKADDR_STORAGE as sockaddr_storage,
-    SOCK_STREAM,
+    ADDRINFOEXW as addrinfo, AF_UNSPEC, IPPROTO_TCP, SOCK_STREAM,
 };
 use windows_sys::Win32::{
     Foundation::{GetLastError, ERROR_IO_PENDING},
