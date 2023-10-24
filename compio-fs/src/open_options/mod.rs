@@ -2,7 +2,7 @@
 #[path = "unix.rs"]
 mod sys;
 
-use std::{fs::OpenOptions as StdOpenOptions, io, path::Path};
+use std::{io, path::Path};
 
 use crate::File;
 

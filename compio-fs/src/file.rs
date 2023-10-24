@@ -4,9 +4,10 @@ use compio_driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 #[cfg(feature = "runtime")]
 use {
     compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut},
-    compio_driver::op::{BufResultExt, ReadAt, Sync, WriteAt},
+    compio_driver::op::{BufResultExt, CloseFile, ReadAt, Sync, WriteAt},
     compio_io::{AsyncReadAt, AsyncWriteAt},
     compio_runtime::{submit, Attachable, Attacher},
+    std::{future::Future, mem::ManuallyDrop},
 };
 #[cfg(all(feature = "runtime", unix))]
 use {
@@ -52,6 +53,21 @@ impl File {
             .truncate(true)
             .open(path)
             .await
+    }
+
+    /// Close the file. If the returned future is dropped before polling, the
+    /// file won't be closed.
+    #[cfg(feature = "runtime")]
+    pub fn close(self) -> impl Future<Output = io::Result<()>> {
+        // Make sure that self won't be dropped after `close` called.
+        // Users may call this method and drop the future immediately. In that way the
+        // `close` should be cancelled.
+        let this = ManuallyDrop::new(self);
+        async move {
+            let op = CloseFile::new(this.as_raw_fd());
+            submit(op).await.0?;
+            Ok(())
+        }
     }
 
     /// Creates a new `File` instance that shares the same underlying file

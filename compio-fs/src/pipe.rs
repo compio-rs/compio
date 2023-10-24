@@ -9,6 +9,7 @@ use {
     compio_driver::op::{BufResultExt, Recv, RecvVectored, Send, SendVectored},
     compio_io::{AsyncRead, AsyncWrite},
     compio_runtime::{impl_attachable, submit, Attachable},
+    std::future::Future,
 };
 
 use crate::File;
@@ -324,6 +325,13 @@ impl Sender {
         set_nonblocking(&file)?;
         Ok(Sender { file })
     }
+
+    /// Close the pipe. If the returned future is dropped before polling, the
+    /// pipe won't be closed.
+    #[cfg(feature = "runtime")]
+    pub fn close(self) -> impl Future<Output = io::Result<()>> {
+        self.file.close()
+    }
 }
 
 #[cfg(feature = "runtime")]
@@ -457,6 +465,13 @@ impl Receiver {
     pub(crate) fn from_file(file: File) -> io::Result<Receiver> {
         set_nonblocking(&file)?;
         Ok(Receiver { file })
+    }
+
+    /// Close the pipe. If the returned future is dropped before polling, the
+    /// pipe won't be closed.
+    #[cfg(feature = "runtime")]
+    pub fn close(self) -> impl Future<Output = io::Result<()>> {
+        self.file.close()
     }
 }
 
