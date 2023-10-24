@@ -1,21 +1,20 @@
-use std::{fs::Metadata, io, path::Path};
+use std::{fs::Metadata, io};
 
 use compio_driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 #[cfg(feature = "runtime")]
 use {
+    crate::OpenOptions,
     compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut},
     compio_driver::op::{BufResultExt, CloseFile, ReadAt, Sync, WriteAt},
     compio_io::{AsyncReadAt, AsyncWriteAt},
     compio_runtime::{submit, Attachable, Attacher},
-    std::{future::Future, mem::ManuallyDrop},
+    std::{future::Future, mem::ManuallyDrop, path::Path},
 };
 #[cfg(all(feature = "runtime", unix))]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
     compio_driver::op::{ReadVectoredAt, WriteVectoredAt},
 };
-
-use crate::OpenOptions;
 
 /// A reference to an open file on the filesystem.
 ///

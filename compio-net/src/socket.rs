@@ -1,7 +1,7 @@
 use std::io;
 
 use compio_driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
+use socket2::{SockAddr, Socket as Socket2};
 #[cfg(feature = "runtime")]
 use {
     compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
@@ -10,6 +10,7 @@ use {
         RecvResultExt, RecvVectored, Send, SendTo, SendToVectored, SendVectored,
     },
     compio_runtime::{submit, Attachable, Attacher},
+    socket2::{Domain, Protocol, Type},
     std::{future::Future, mem::ManuallyDrop},
 };
 
@@ -21,7 +22,7 @@ pub struct Socket {
 }
 
 impl Socket {
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn from_socket2(socket: Socket2) -> Self {
         Self {
             socket,
@@ -86,10 +87,12 @@ impl Socket {
         Ok(socket)
     }
 
+    #[allow(dead_code)]
     pub fn listen(&self, backlog: i32) -> io::Result<()> {
         self.socket.listen(backlog)
     }
 
+    #[allow(dead_code)]
     pub fn connect(&self, addr: &SockAddr) -> io::Result<()> {
         self.socket.connect(addr)
     }

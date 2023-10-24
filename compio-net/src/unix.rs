@@ -1,13 +1,14 @@
-use std::{io, path::Path};
+use std::io;
 
 use compio_driver::impl_raw_fd;
-use socket2::{Domain, SockAddr, Type};
+use socket2::SockAddr;
 #[cfg(feature = "runtime")]
 use {
     compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     compio_io::{AsyncRead, AsyncWrite},
     compio_runtime::impl_attachable,
-    std::future::Future,
+    socket2::{Domain, Type},
+    std::{future::Future, path::Path},
 };
 
 use crate::Socket;
