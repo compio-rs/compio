@@ -159,18 +159,25 @@ macro_rules! impl_write_at {
 impl_write_at!(@ptr &mut A, Box<A>);
 impl_write_at!(@slice [u8], const LEN => [u8; LEN]);
 
+/// This implementation aligns the behavior of files. If `pos` is larger than
+/// the vector length, the vectored will be extended, and the extended area will
+/// be filled with 0.
 impl<#[cfg(feature = "allocator_api")] A: Allocator> AsyncWriteAt for vec_alloc!(u8, A) {
     async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
         let pos = pos as usize;
         let slice = buf.as_slice();
         if pos <= self.len() {
             let n = slice.len().min(self.len() - pos);
-            self[pos..pos + n].copy_from_slice(&slice[..n]);
             if n < slice.len() {
+                self.reserve(slice.len() - n);
+                self[pos..pos + n].copy_from_slice(&slice[..n]);
                 self.extend_from_slice(&slice[n..]);
+            } else {
+                self[pos..pos + n].copy_from_slice(slice);
             }
             BufResult(Ok(n), buf)
         } else {
+            self.reserve(pos - self.len() + slice.len());
             self.resize(pos, 0);
             self.extend_from_slice(slice);
             BufResult(Ok(slice.len()), buf)
