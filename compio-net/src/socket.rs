@@ -132,8 +132,7 @@ impl Socket {
             local_addr.domain(),
             self.socket.r#type()?,
             self.socket.protocol()?,
-        )
-        .await?;
+        )?;
         let op = Accept::new(self.as_raw_fd(), accept_sock.as_raw_fd() as _);
         let BufResult(res, op) = submit(op).await;
         res?;

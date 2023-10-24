@@ -2,6 +2,7 @@
 use std::sync::OnceLock;
 use std::{
     io,
+    net::Shutdown,
     pin::Pin,
     ptr::{null, null_mut},
     task::Poll,
@@ -21,11 +22,11 @@ use windows_sys::{
             ERROR_NOT_FOUND, ERROR_NO_DATA, ERROR_PIPE_CONNECTED,
         },
         Networking::WinSock::{
-            closesocket, setsockopt, socklen_t, WSAIoctl, WSARecv, WSARecvFrom, WSASend, WSASendTo,
-            LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS,
-            SIO_GET_EXTENSION_FUNCTION_POINTER, SOCKADDR, SOCKADDR_STORAGE, SOL_SOCKET,
-            SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, WSAID_ACCEPTEX, WSAID_CONNECTEX,
-            WSAID_GETACCEPTEXSOCKADDRS,
+            closesocket, setsockopt, shutdown, socklen_t, WSAIoctl, WSARecv, WSARecvFrom, WSASend,
+            WSASendTo, LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS, SD_BOTH,
+            SD_RECEIVE, SD_SEND, SIO_GET_EXTENSION_FUNCTION_POINTER, SOCKADDR, SOCKADDR_STORAGE,
+            SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, WSAID_ACCEPTEX,
+            WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS,
         },
         Security::SECURITY_ATTRIBUTES,
         Storage::FileSystem::{
@@ -39,7 +40,7 @@ use windows_sys::{
     },
 };
 
-use crate::{op::*, syscall, IntoRawFd, OpCode, RawFd};
+use crate::{op::*, syscall, OpCode, RawFd};
 
 #[inline]
 fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
@@ -139,21 +140,18 @@ impl OpenFile {
 
 impl OpCode for OpenFile {
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        Poll::Ready(
-            syscall!(
-                HANDLE,
-                CreateFileW(
-                    self.path.as_ptr(),
-                    self.access_mode,
-                    self.share_mode,
-                    self.security_attributes,
-                    self.creation_mode,
-                    self.flags_and_attributes,
-                    0
-                )
+        Poll::Ready(Ok(syscall!(
+            HANDLE,
+            CreateFileW(
+                self.path.as_ptr(),
+                self.access_mode,
+                self.share_mode,
+                self.security_attributes,
+                self.creation_mode,
+                self.flags_and_attributes,
+                0
             )
-            .map(|res| res as _),
-        )
+        )? as _))
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
@@ -163,7 +161,7 @@ impl OpCode for OpenFile {
 
 impl OpCode for CloseFile {
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        Poll::Ready(syscall!(BOOL, CloseHandle(self.fd as _)).map(|res| res as _))
+        Poll::Ready(Ok(syscall!(BOOL, CloseHandle(self.fd as _))? as _))
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
@@ -220,7 +218,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
 
 impl OpCode for Sync {
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        Poll::Ready(syscall!(BOOL, FlushFileBuffers(self.fd as _)).map(|res| res as _))
+        Poll::Ready(Ok(syscall!(BOOL, FlushFileBuffers(self.fd as _))? as _))
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
@@ -228,12 +226,14 @@ impl OpCode for Sync {
     }
 }
 
-impl OpCode for CreateSocket {
+impl OpCode for ShutdownSocket {
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        Poll::Ready(
-            socket2::Socket::new(self.domain, self.ty, self.protocol)
-                .map(|socket| socket.into_raw_fd() as _),
-        )
+        let how = match self.how {
+            Shutdown::Write => SD_SEND,
+            Shutdown::Read => SD_RECEIVE,
+            Shutdown::Both => SD_BOTH,
+        };
+        Poll::Ready(Ok(syscall!(SOCKET, shutdown(self.fd as _, how))? as _))
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
@@ -243,7 +243,7 @@ impl OpCode for CreateSocket {
 
 impl OpCode for CloseSocket {
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        Poll::Ready(syscall!(SOCKET, closesocket(self.fd as _)).map(|res| res as _))
+        Poll::Ready(Ok(syscall!(SOCKET, closesocket(self.fd as _))? as _))
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
