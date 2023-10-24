@@ -30,7 +30,11 @@ async fn main() {
     }
     #[cfg(unix)]
     {
-        use compio::{buf::IntoInner, fs::pipe::OpenOptions, runtime::Unattached};
+        use compio::{
+            buf::IntoInner,
+            fs::pipe::OpenOptions,
+            runtime::{block_on, Unattached},
+        };
         use nix::{sys::stat::Mode, unistd::mkfifo};
         use tempfile::tempdir;
 
@@ -41,10 +45,11 @@ async fn main() {
 
         let (mut rx, mut tx) = std::thread::scope(|s| {
             let rx = s.spawn(|| {
-                Unattached::new(OpenOptions::new().open_receiver(&file).unwrap()).unwrap()
+                Unattached::new(block_on(OpenOptions::new().open_receiver(&file)).unwrap()).unwrap()
             });
-            let tx = s
-                .spawn(|| Unattached::new(OpenOptions::new().open_sender(&file).unwrap()).unwrap());
+            let tx = s.spawn(|| {
+                Unattached::new(block_on(OpenOptions::new().open_sender(&file)).unwrap()).unwrap()
+            });
             (
                 rx.join().unwrap().into_inner(),
                 tx.join().unwrap().into_inner(),

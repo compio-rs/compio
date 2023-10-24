@@ -26,7 +26,9 @@ use crate::File;
 /// ```no_run
 /// use compio_fs::OpenOptions;
 ///
+/// # compio_runtime::block_on(async {
 /// let file = OpenOptions::new().read(true).open("foo.txt").await.unwrap();
+/// # });
 /// ```
 ///
 /// Opening a file for both reading and writing, as well as creating it if it
@@ -35,6 +37,7 @@ use crate::File;
 /// ```no_run
 /// use compio_fs::OpenOptions;
 ///
+/// # compio_runtime::block_on(async {
 /// let file = OpenOptions::new()
 ///     .read(true)
 ///     .write(true)
@@ -42,6 +45,7 @@ use crate::File;
 ///     .open("foo.txt")
 ///     .await
 ///     .unwrap();
+/// # });
 /// ```
 #[derive(Debug, Clone)]
 pub struct OpenOptions(sys::OpenOptions);

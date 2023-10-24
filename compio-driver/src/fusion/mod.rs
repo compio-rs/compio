@@ -83,6 +83,7 @@ mod driver_type {
             AsyncCancel::CODE,
             OpenAt::CODE,
             Socket::CODE,
+            Close::CODE,
         ];
 
         Ok(())

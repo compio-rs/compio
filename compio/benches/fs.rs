@@ -45,7 +45,7 @@ fn read(c: &mut Criterion) {
         b.to_async(CompioRuntime).iter(|| async {
             use compio::io::AsyncReadAtExt;
 
-            let file = compio::fs::File::open("Cargo.toml").unwrap();
+            let file = compio::fs::File::open("Cargo.toml").await.unwrap();
             let buffer = Vec::with_capacity(1024);
             let (_, buffer) = file.read_to_end_at(buffer, 0).await.unwrap();
             buffer
@@ -89,7 +89,7 @@ fn write(c: &mut Criterion) {
         b.to_async(CompioRuntime).iter(|| async {
             use compio::io::AsyncWriteAtExt;
 
-            let mut file = compio::fs::File::create(temp_file.path()).unwrap();
+            let mut file = compio::fs::File::create(temp_file.path()).await.unwrap();
             file.write_all_at(CONTENT, 0).await.unwrap();
         })
     });

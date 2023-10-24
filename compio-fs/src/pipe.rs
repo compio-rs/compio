@@ -58,8 +58,8 @@ pub fn anonymous() -> io::Result<(Receiver, Sender)> {
 /// const FIFO_NAME: &str = "path/to/a/fifo";
 ///
 /// # async fn dox() -> std::io::Result<()> {
-/// let rx = pipe::OpenOptions::new().open_receiver(FIFO_NAME)?;
-/// let tx = pipe::OpenOptions::new().open_sender(FIFO_NAME)?;
+/// let rx = pipe::OpenOptions::new().open_receiver(FIFO_NAME).await?;
+/// let tx = pipe::OpenOptions::new().open_sender(FIFO_NAME).await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -114,9 +114,12 @@ impl OpenOptions {
     /// ```
     /// use compio_fs::pipe;
     ///
+    /// # compio_runtime::block_on(async {
     /// let tx = pipe::OpenOptions::new()
     ///     .read_write(true)
-    ///     .open_sender("path/to/a/fifo");
+    ///     .open_sender("path/to/a/fifo")
+    ///     .await;
+    /// # });
     /// ```
     ///
     /// Opening a resilient [`Receiver`] i.e. a reading pipe end which will not
@@ -128,9 +131,12 @@ impl OpenOptions {
     /// ```
     /// use compio_fs::pipe;
     ///
+    /// # compio_runtime::block_on(async {
     /// let tx = pipe::OpenOptions::new()
     ///     .read_write(true)
-    ///     .open_receiver("path/to/a/fifo");
+    ///     .open_receiver("path/to/a/fifo")
+    ///     .await;
+    /// # });
     /// ```
     #[cfg(target_os = "linux")]
     #[cfg_attr(docsrs, doc(cfg(target_os = "linux")))]
@@ -161,7 +167,8 @@ impl OpenOptions {
     /// mkfifo(FIFO_NAME, Mode::S_IRWXU)?;
     /// let rx = pipe::OpenOptions::new()
     ///     .unchecked(true)
-    ///     .open_receiver(FIFO_NAME)?;
+    ///     .open_receiver(FIFO_NAME)
+    ///     .await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -270,7 +277,7 @@ enum PipeEnd {
 /// # async fn dox() -> std::io::Result<()> {
 /// // Wait for a reader to open the file.
 /// let tx = loop {
-///     match pipe::OpenOptions::new().open_sender(FIFO_NAME) {
+///     match pipe::OpenOptions::new().open_sender(FIFO_NAME).await {
 ///         Ok(tx) => break tx,
 ///         Err(e) if e.raw_os_error() == Some(libc::ENXIO) => {}
 ///         Err(e) => return Err(e.into()),
@@ -405,7 +412,7 @@ impl_attachable!(Sender, file);
 /// const FIFO_NAME: &str = "path/to/a/fifo";
 ///
 /// # async fn dox() -> io::Result<()> {
-/// let mut rx = pipe::OpenOptions::new().open_receiver(FIFO_NAME)?;
+/// let mut rx = pipe::OpenOptions::new().open_receiver(FIFO_NAME).await?;
 /// loop {
 ///     let mut msg = Vec::with_capacity(256);
 ///     let BufResult(res, msg) = rx.read_exact(msg).await;
@@ -413,7 +420,7 @@ impl_attachable!(Sender, file);
 ///         Ok(_) => { /* handle the message */ }
 ///         Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
 ///             // Writing end has been closed, we should reopen the pipe.
-///             rx = pipe::OpenOptions::new().open_receiver(FIFO_NAME)?;
+///             rx = pipe::OpenOptions::new().open_receiver(FIFO_NAME).await?;
 ///         }
 ///         Err(e) => return Err(e.into()),
 ///     }

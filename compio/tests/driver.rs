@@ -1,4 +1,4 @@
-use std::{io, time::Duration};
+use std::{io, path::Path, time::Duration};
 
 use compio::{
     buf::{arrayvec::ArrayVec, BufResult},
@@ -7,11 +7,15 @@ use compio::{
 };
 use compio_driver::PushEntry;
 
+fn open_file(path: impl AsRef<Path>) -> io::Result<File> {
+    compio::runtime::block_on(File::open(path))
+}
+
 #[test]
 fn cancel_before_poll() {
     let mut driver = Proactor::new().unwrap();
 
-    let file = File::open("Cargo.toml").unwrap();
+    let file = open_file("Cargo.toml").unwrap();
     driver.attach(file.as_raw_fd()).unwrap();
 
     driver.cancel(0);
@@ -53,7 +57,7 @@ fn register_multiple() {
 
     let mut driver = Proactor::new().unwrap();
 
-    let file = File::open("Cargo.toml").unwrap();
+    let file = open_file("Cargo.toml").unwrap();
     driver.attach(file.as_raw_fd()).unwrap();
 
     let mut need_wait = 0;

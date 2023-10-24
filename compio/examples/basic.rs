@@ -2,7 +2,11 @@ use compio::{fs::OpenOptions, io::AsyncReadAtExt};
 
 #[compio::main(crate = "compio")]
 async fn main() {
-    let file = OpenOptions::new().read(true).open("Cargo.toml").unwrap();
+    let file = OpenOptions::new()
+        .read(true)
+        .open("Cargo.toml")
+        .await
+        .unwrap();
     let (read, buffer) = file
         .read_to_end_at(Vec::with_capacity(4096), 0)
         .await

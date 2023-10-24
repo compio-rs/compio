@@ -1,12 +1,14 @@
 use compio::{
     buf::{arrayvec::ArrayVec, IntoInner},
     driver::{op::ReadAt, AsRawFd, Entry, Proactor},
+    fs::File,
 };
 use compio_driver::PushEntry;
 
 fn main() {
     let mut driver = Proactor::new().unwrap();
-    let file = compio::fs::File::open("Cargo.toml").unwrap();
+    // Too hard to use OpenFile:(
+    let file = compio::runtime::block_on(File::open("Cargo.toml")).unwrap();
     driver.attach(file.as_raw_fd()).unwrap();
 
     let op = ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(4096));

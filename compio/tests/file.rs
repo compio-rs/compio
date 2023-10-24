@@ -21,7 +21,7 @@ async fn basic_read() {
     let mut tempfile = tempfile();
     tempfile.write_all(HELLO).unwrap();
 
-    let file = File::open(tempfile.path()).unwrap();
+    let file = File::open(tempfile.path()).await.unwrap();
     read_hello(&file).await;
 }
 
@@ -29,7 +29,7 @@ async fn basic_read() {
 async fn basic_write() {
     let tempfile = tempfile();
 
-    let mut file = File::create(tempfile.path()).unwrap();
+    let mut file = File::create(tempfile.path()).await.unwrap();
 
     file.write_all_at(HELLO, 0).await.0.unwrap();
     file.sync_all().await.unwrap();
@@ -43,7 +43,7 @@ async fn cancel_read() {
     let mut tempfile = tempfile();
     tempfile.write_all(HELLO).unwrap();
 
-    let file = File::open(tempfile.path()).unwrap();
+    let file = File::open(tempfile.path()).await.unwrap();
 
     // Poll the future once, then cancel it
     poll_once(async { read_hello(&file).await }).await;
@@ -54,10 +54,10 @@ async fn cancel_read() {
 #[compio_macros::test]
 async fn drop_open() {
     let tempfile = tempfile();
-    let _ = File::create(tempfile.path());
+    let _ = File::create(tempfile.path()).await;
 
     // Do something else
-    let mut file = File::create(tempfile.path()).unwrap();
+    let mut file = File::create(tempfile.path()).await.unwrap();
 
     file.write_all_at(HELLO, 0).await.0.unwrap();
 

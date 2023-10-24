@@ -1,4 +1,4 @@
-use std::{ffi::CStr, io, os::unix::prelude::OsStrExt, path::Path};
+use std::{ffi::CString, io, os::unix::prelude::OsStrExt, path::Path};
 
 use compio_driver::{op::OpenFile, FromRawFd, RawFd};
 use compio_runtime::submit;
@@ -91,14 +91,12 @@ impl OpenOptions {
         if cfg!(not(any(target_os = "linux", target_os = "android"))) {
             flags |= libc::O_NONBLOCK;
         }
-        let p = CStr::from_bytes_with_nul(p.as_ref().as_os_str().as_bytes())
-            .map_err(|_| {
-                io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "file name contained an unexpected NUL byte",
-                )
-            })?
-            .to_owned();
+        let p = CString::new(p.as_ref().as_os_str().as_bytes().to_vec()).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "file name contained an unexpected NUL byte",
+            )
+        })?;
         let op = OpenFile::new(p, flags, self.mode);
         let fd = submit(op).await.0? as RawFd;
         Ok(unsafe { File::from_raw_fd(fd) })
