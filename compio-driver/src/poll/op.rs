@@ -10,9 +10,21 @@ use libc::{pread64 as pread, preadv64 as preadv, pwrite64 as pwrite, pwritev64 a
 use polling::Event;
 use socket2::SockAddr;
 
-use super::{sockaddr_storage, socklen_t, syscall, Decision, OpCode, RawFd};
+use super::{sockaddr_storage, socklen_t, syscall, Decision, IntoRawFd, OpCode, RawFd};
 use crate::op::*;
 pub use crate::unix::op::*;
+
+impl OpCode for OpenFile {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::Completed(
+            syscall!(libc::open64(self.path.as_ptr(), self.flags, self.mode))? as _,
+        ))
+    }
+
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        unreachable!("OpenFile operation should not be submitted to polling")
+    }
+}
 
 impl<T: IoBufMut> ReadAt<T> {
     unsafe fn call(&mut self) -> libc::ssize_t {
@@ -134,6 +146,18 @@ impl OpCode for Sync {
 
     fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
         unreachable!("Sync operation should not be submitted to polling")
+    }
+}
+
+impl OpCode for CreateSocket {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::Completed(
+            socket2::Socket::new(self.domain, self.ty, self.protocol)?.into_raw_fd() as _,
+        ))
+    }
+
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        unreachable!("CreateSocket operation should not be submitted to polling")
     }
 }
 

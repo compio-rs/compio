@@ -15,6 +15,15 @@ use super::OpCode;
 use crate::op::*;
 pub use crate::unix::op::*;
 
+impl OpCode for OpenFile {
+    fn create_entry(self: Pin<&mut Self>) -> io_uring::squeue::Entry {
+        opcode::OpenAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())
+            .flags(self.flags)
+            .mode(self.mode)
+            .build()
+    }
+}
+
 impl<T: IoBufMut> OpCode for ReadAt<T> {
     fn create_entry(mut self: Pin<&mut Self>) -> Entry {
         let fd = Fd(self.fd);
@@ -69,6 +78,17 @@ impl OpCode for Sync {
                 FsyncFlags::empty()
             })
             .build()
+    }
+}
+
+impl OpCode for CreateSocket {
+    fn create_entry(self: Pin<&mut Self>) -> io_uring::squeue::Entry {
+        opcode::Socket::new(
+            self.domain.into(),
+            self.ty.into(),
+            self.protocol.map(|p| p.into()).unwrap_or_default(),
+        )
+        .build()
     }
 }
 

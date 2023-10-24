@@ -4,12 +4,12 @@
 //! You need to pass them to [`crate::Proactor`], and poll the driver.
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
-use socket2::SockAddr;
+use socket2::{Domain, Protocol, SockAddr, Type};
 
 #[cfg(windows)]
 pub use crate::sys::op::ConnectNamedPipe;
 pub use crate::sys::op::{
-    Accept, Recv, RecvFrom, RecvFromVectored, RecvVectored, Send, SendTo, SendToVectored,
+    Accept, OpenFile, Recv, RecvFrom, RecvFromVectored, RecvVectored, Send, SendTo, SendToVectored,
     SendVectored,
 };
 #[cfg(unix)]
@@ -129,6 +129,24 @@ impl Sync {
     /// * polling: it is synchronized `fdatasync` or `fsync`.
     pub fn new(fd: RawFd, datasync: bool) -> Self {
         Self { fd, datasync }
+    }
+}
+
+/// Create a socket.
+pub struct CreateSocket {
+    pub(crate) domain: Domain,
+    pub(crate) ty: Type,
+    pub(crate) protocol: Option<Protocol>,
+}
+
+impl CreateSocket {
+    /// Create [`CreateSocket`].
+    pub fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> Self {
+        Self {
+            domain,
+            ty,
+            protocol,
+        }
     }
 }
 
