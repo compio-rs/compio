@@ -27,9 +27,9 @@ use crate::Socket;
 /// let sock_file = dir.path().join("unix-server.sock");
 ///
 /// compio_runtime::block_on(async move {
-///     let listener = UnixListener::bind(&sock_file).unwrap();
+///     let listener = UnixListener::bind(&sock_file).await.unwrap();
 ///
-///     let mut tx = UnixStream::connect(&sock_file).unwrap();
+///     let mut tx = UnixStream::connect(&sock_file).await.unwrap();
 ///     let (mut rx, _) = listener.accept().await.unwrap();
 ///
 ///     tx.write_all("test").await.0.unwrap();
@@ -48,15 +48,17 @@ impl UnixListener {
     /// Creates a new [`UnixListener`], which will be bound to the specified
     /// file path. The file path cannot yet exist, and will be cleaned up
     /// upon dropping [`UnixListener`]
-    pub fn bind(path: impl AsRef<Path>) -> io::Result<Self> {
-        Self::bind_addr(&SockAddr::unix(path)?)
+    #[cfg(feature = "runtime")]
+    pub async fn bind(path: impl AsRef<Path>) -> io::Result<Self> {
+        Self::bind_addr(&SockAddr::unix(path)?).await
     }
 
     /// Creates a new [`UnixListener`] with [`SockAddr`], which will be bound to
     /// the specified file path. The file path cannot yet exist, and will be
     /// cleaned up upon dropping [`UnixListener`]
-    pub fn bind_addr(addr: &SockAddr) -> io::Result<Self> {
-        let socket = Socket::bind(addr, Type::STREAM, None)?;
+    #[cfg(feature = "runtime")]
+    pub async fn bind_addr(addr: &SockAddr) -> io::Result<Self> {
+        let socket = Socket::bind(addr, Type::STREAM, None).await?;
         socket.listen(1024)?;
         Ok(UnixListener { inner: socket })
     }
@@ -106,7 +108,7 @@ impl_attachable!(UnixListener, inner);
 ///
 /// compio_runtime::block_on(async {
 ///     // Connect to a peer
-///     let mut stream = UnixStream::connect("unix-server.sock").unwrap();
+///     let mut stream = UnixStream::connect("unix-server.sock").await.unwrap();
 ///
 ///     // Write some data.
 ///     stream.write("hello world!").await.unwrap();
@@ -121,15 +123,17 @@ impl UnixStream {
     /// Opens a Unix connection to the specified file path. There must be a
     /// [`UnixListener`] or equivalent listening on the corresponding Unix
     /// domain socket to successfully connect and return a `UnixStream`.
-    pub fn connect(path: impl AsRef<Path>) -> io::Result<Self> {
-        Self::connect_addr(&SockAddr::unix(path)?)
+    #[cfg(feature = "runtime")]
+    pub async fn connect(path: impl AsRef<Path>) -> io::Result<Self> {
+        Self::connect_addr(&SockAddr::unix(path)?).await
     }
 
     /// Opens a Unix connection to the specified address. There must be a
     /// [`UnixListener`] or equivalent listening on the corresponding Unix
     /// domain socket to successfully connect and return a `UnixStream`.
-    pub fn connect_addr(addr: &SockAddr) -> io::Result<Self> {
-        let socket = Socket::new(Domain::UNIX, Type::STREAM, None)?;
+    #[cfg(feature = "runtime")]
+    pub async fn connect_addr(addr: &SockAddr) -> io::Result<Self> {
+        let socket = Socket::new(Domain::UNIX, Type::STREAM, None).await?;
         socket.connect(addr)?;
         let unix_stream = UnixStream { inner: socket };
         Ok(unix_stream)

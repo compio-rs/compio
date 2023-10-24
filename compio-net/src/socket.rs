@@ -6,8 +6,8 @@ use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 use {
     compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     compio_driver::op::{
-        Accept, BufResultExt, Connect, Recv, RecvFrom, RecvFromVectored, RecvResultExt,
-        RecvVectored, Send, SendTo, SendToVectored, SendVectored,
+        Accept, BufResultExt, Connect, CreateSocket, Recv, RecvFrom, RecvFromVectored,
+        RecvResultExt, RecvVectored, Send, SendTo, SendToVectored, SendVectored,
     },
     compio_runtime::{submit, Attachable, Attacher},
 };
@@ -45,8 +45,11 @@ impl Socket {
         self.socket.local_addr()
     }
 
-    pub fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
-        let socket = Socket2::new(domain, ty, protocol)?;
+    #[cfg(feature = "runtime")]
+    pub async fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
+        let op = CreateSocket::new(domain, ty, protocol);
+        let fd = submit(op).await.0?;
+        let socket = unsafe { Self::from_raw_fd(fd as _) };
         // On Linux we use blocking socket
         // Newer kernels have the patch that allows to arm io_uring poll mechanism for
         // non blocking socket when there is no connections in listen queue
@@ -56,13 +59,14 @@ impl Socket {
             unix,
             not(all(target_os = "linux", feature = "io-uring"))
         )) {
-            socket.set_nonblocking(true)?;
+            socket.socket.set_nonblocking(true)?;
         }
-        Ok(Self::from_socket2(socket))
+        Ok(socket)
     }
 
-    pub fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
-        let socket = Self::new(addr.domain(), ty, protocol)?;
+    #[cfg(feature = "runtime")]
+    pub async fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
+        let socket = Self::new(addr.domain(), ty, protocol).await?;
         socket.socket.bind(addr)?;
         Ok(socket)
     }
