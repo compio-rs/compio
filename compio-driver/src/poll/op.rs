@@ -26,6 +26,16 @@ impl OpCode for OpenFile {
     }
 }
 
+impl OpCode for CloseFile {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::Completed(syscall!(libc::close(self.fd))? as _))
+    }
+
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        unreachable!("CloseFile operation should not be submitted to polling")
+    }
+}
+
 impl<T: IoBufMut> ReadAt<T> {
     unsafe fn call(&mut self) -> libc::ssize_t {
         let fd = self.fd;
@@ -158,6 +168,16 @@ impl OpCode for CreateSocket {
 
     fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
         unreachable!("CreateSocket operation should not be submitted to polling")
+    }
+}
+
+impl OpCode for CloseSocket {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::Completed(syscall!(libc::close(self.fd))? as _))
+    }
+
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        unreachable!("CloseSocket operation should not be submitted to polling")
     }
 }
 

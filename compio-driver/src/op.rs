@@ -64,6 +64,18 @@ impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t)> {
     }
 }
 
+/// Close the file fd.
+pub struct CloseFile {
+    pub(crate) fd: RawFd,
+}
+
+impl CloseFile {
+    /// Create [`CloseFile`].
+    pub fn new(fd: RawFd) -> Self {
+        Self { fd }
+    }
+}
+
 /// Read a file at specified position into specified buffer.
 #[derive(Debug)]
 pub struct ReadAt<T: IoBufMut> {
@@ -147,6 +159,18 @@ impl CreateSocket {
             ty,
             protocol,
         }
+    }
+}
+
+/// Close socket fd.
+pub struct CloseSocket {
+    pub(crate) fd: RawFd,
+}
+
+impl CloseSocket {
+    /// Create [`CloseSocket`].
+    pub fn new(fd: RawFd) -> Self {
+        Self { fd }
     }
 }
 

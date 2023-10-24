@@ -16,11 +16,17 @@ use crate::op::*;
 pub use crate::unix::op::*;
 
 impl OpCode for OpenFile {
-    fn create_entry(self: Pin<&mut Self>) -> io_uring::squeue::Entry {
+    fn create_entry(self: Pin<&mut Self>) -> Entry {
         opcode::OpenAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())
             .flags(self.flags)
             .mode(self.mode)
             .build()
+    }
+}
+
+impl OpCode for CloseFile {
+    fn create_entry(self: Pin<&mut Self>) -> Entry {
+        opcode::Close::new(Fd(self.fd)).build()
     }
 }
 
@@ -82,13 +88,19 @@ impl OpCode for Sync {
 }
 
 impl OpCode for CreateSocket {
-    fn create_entry(self: Pin<&mut Self>) -> io_uring::squeue::Entry {
+    fn create_entry(self: Pin<&mut Self>) -> Entry {
         opcode::Socket::new(
             self.domain.into(),
             self.ty.into(),
             self.protocol.map(|p| p.into()).unwrap_or_default(),
         )
         .build()
+    }
+}
+
+impl OpCode for CloseSocket {
+    fn create_entry(self: Pin<&mut Self>) -> Entry {
+        opcode::Close::new(Fd(self.fd)).build()
     }
 }
 
