@@ -44,24 +44,24 @@ pub use sys::*;
 #[macro_export]
 #[doc(hidden)]
 macro_rules! syscall {
-    ($fn: ident ( $($arg: expr),* $(,)* ), $op: tt $rhs: expr) => {{
+    (BOOL, $e:expr) => {
+        $crate::syscall!($e, == 0)
+    };
+    (SOCKET, $e:expr) => {
+        $crate::syscall!($e, != 0)
+    };
+    (HANDLE, $e:expr) => {
+        $crate::syscall!($e, == ::windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE)
+    };
+    ($e:expr, $op: tt $rhs: expr) => {{
         #[allow(unused_unsafe)]
-        let res = unsafe { $fn($($arg, )*) };
+        let res = unsafe { $e };
         if res $op $rhs {
             Err(::std::io::Error::last_os_error())
         } else {
             Ok(res)
         }
     }};
-    (BOOL, $fn: ident ( $($arg: expr),* $(,)* )) => {
-        $crate::syscall!($fn($($arg, )*), == 0)
-    };
-    (SOCKET, $fn: ident ( $($arg: expr),* $(,)* )) => {
-        $crate::syscall!($fn($($arg, )*), != 0)
-    };
-    (HANDLE, $fn: ident ( $($arg: expr),* $(,)* )) => {
-        $crate::syscall!($fn($($arg, )*), == ::windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE)
-    };
 }
 
 /// Helper macro to execute a system call

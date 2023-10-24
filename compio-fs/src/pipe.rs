@@ -217,16 +217,15 @@ impl OpenOptions {
 
     #[cfg(feature = "runtime")]
     async fn open(&self, path: &Path, pipe_end: PipeEnd) -> io::Result<File> {
-        let options = crate::OpenOptions::new()
+        let mut options = crate::OpenOptions::new();
+        options
             .read(pipe_end == PipeEnd::Receiver)
             .write(pipe_end == PipeEnd::Sender);
 
         #[cfg(target_os = "linux")]
-        let options = if self.read_write {
-            options.read(true).write(true)
-        } else {
-            options
-        };
+        if self.read_write {
+            options.read(true).write(true);
+        }
 
         let file = options.open(path).await?;
 

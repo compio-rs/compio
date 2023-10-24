@@ -3,6 +3,10 @@ use std::{io, pin::Pin, task::Poll};
 use compio_buf::{
     IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
 };
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+use libc::open;
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+use libc::open64 as open;
 #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "hurd")))]
 use libc::{pread, preadv, pwrite, pwritev};
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "hurd"))]
@@ -16,9 +20,11 @@ pub use crate::unix::op::*;
 
 impl OpCode for OpenFile {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::Completed(
-            syscall!(libc::open64(self.path.as_ptr(), self.flags, self.mode))? as _,
-        ))
+        Ok(Decision::Completed(syscall!(open(
+            self.path.as_ptr(),
+            self.flags,
+            self.mode as libc::c_int
+        ))? as _))
     }
 
     fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
