@@ -181,8 +181,9 @@ impl OpenOptions {
     /// If the file type check fails, this function will fail with
     /// `io::ErrorKind::InvalidInput`. This function may also fail with
     /// other standard OS errors.
-    pub fn open_receiver<P: AsRef<Path>>(&self, path: P) -> io::Result<Receiver> {
-        let file = self.open(path.as_ref(), PipeEnd::Receiver)?;
+    #[cfg(feature = "runtime")]
+    pub async fn open_receiver<P: AsRef<Path>>(&self, path: P) -> io::Result<Receiver> {
+        let file = self.open(path.as_ref(), PipeEnd::Receiver).await?;
         Receiver::from_file(file)
     }
 
@@ -200,12 +201,14 @@ impl OpenOptions {
     /// read-write access mode and the file is not currently open for
     /// reading, this function will fail with `ENXIO`. This function may
     /// also fail with other standard OS errors.
-    pub fn open_sender<P: AsRef<Path>>(&self, path: P) -> io::Result<Sender> {
-        let file = self.open(path.as_ref(), PipeEnd::Sender)?;
+    #[cfg(feature = "runtime")]
+    pub async fn open_sender<P: AsRef<Path>>(&self, path: P) -> io::Result<Sender> {
+        let file = self.open(path.as_ref(), PipeEnd::Sender).await?;
         Sender::from_file(file)
     }
 
-    fn open(&self, path: &Path, pipe_end: PipeEnd) -> io::Result<File> {
+    #[cfg(feature = "runtime")]
+    async fn open(&self, path: &Path, pipe_end: PipeEnd) -> io::Result<File> {
         let options = crate::OpenOptions::new()
             .read(pipe_end == PipeEnd::Receiver)
             .write(pipe_end == PipeEnd::Sender);
@@ -217,7 +220,7 @@ impl OpenOptions {
             options
         };
 
-        let file = options.open(path)?;
+        let file = options.open(path).await?;
 
         if !self.unchecked && !is_fifo(&file)? {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a pipe"));

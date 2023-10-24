@@ -1,3 +1,7 @@
+#[cfg(unix)]
+#[path = "unix.rs"]
+mod sys;
+
 use std::{fs::OpenOptions as StdOpenOptions, io, path::Path};
 
 use crate::File;
@@ -22,7 +26,7 @@ use crate::File;
 /// ```no_run
 /// use compio_fs::OpenOptions;
 ///
-/// let file = OpenOptions::new().read(true).open("foo.txt").unwrap();
+/// let file = OpenOptions::new().read(true).open("foo.txt").await.unwrap();
 /// ```
 ///
 /// Opening a file for both reading and writing, as well as creating it if it
@@ -36,17 +40,18 @@ use crate::File;
 ///     .write(true)
 ///     .create(true)
 ///     .open("foo.txt")
+///     .await
 ///     .unwrap();
 /// ```
 #[derive(Debug, Clone)]
-pub struct OpenOptions(pub(crate) StdOpenOptions);
+pub struct OpenOptions(sys::OpenOptions);
 
 impl OpenOptions {
     /// Creates a blank new set of options ready for configuration.
     #[allow(clippy::new_without_default)]
     #[must_use]
     pub fn new() -> Self {
-        Self(StdOpenOptions::new())
+        Self(sys::OpenOptions::new())
     }
 
     /// Sets the option for read access.
@@ -110,10 +115,34 @@ impl OpenOptions {
         self
     }
 
-    /// Opens a file at `path` with the options specified by `self`.
+    /// Pass custom flags to the `flags` argument of `open`.
     ///
-    /// See [`std::fs::OpenOptions::open`].
-    pub fn open(self, path: impl AsRef<Path>) -> io::Result<File> {
-        File::with_options(path, self)
+    /// The bits that define the access mode are masked out with `O_ACCMODE`, to
+    /// ensure they do not interfere with the access mode set by Rusts options.
+    ///
+    /// Custom flags can only set flags, not remove flags set by Rusts options.
+    /// This options overwrites any previously set custom flags.
+    #[cfg(unix)]
+    pub fn custom_flags(mut self, flags: i32) -> Self {
+        self.0.custom_flags(flags);
+        self
+    }
+
+    /// Sets the mode bits that a new file will be created with.
+    ///
+    /// If a new file is created as part of an `OpenOptions::open` call then
+    /// this specified `mode` will be used as the permission bits for the
+    /// new file. If no `mode` is set, the default of `0o666` will be used.
+    /// The operating system masks out bits with the system's `umask`, to
+    /// produce the final permissions.
+    #[cfg(unix)]
+    pub fn mode(mut self, mode: u32) -> Self {
+        self.0.mode(mode);
+        self
+    }
+
+    /// Opens a file at `path` with the options specified by `self`.
+    pub async fn open(self, path: impl AsRef<Path>) -> io::Result<File> {
+        self.0.open(path).await
     }
 }

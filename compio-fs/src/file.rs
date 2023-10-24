@@ -29,48 +29,13 @@ pub struct File {
     attacher: Attacher,
 }
 
-#[cfg(windows)]
-fn file_with_options(
-    path: impl AsRef<Path>,
-    mut options: std::fs::OpenOptions,
-) -> io::Result<std::fs::File> {
-    use std::os::windows::prelude::OpenOptionsExt;
-
-    use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
-
-    options.custom_flags(FILE_FLAG_OVERLAPPED);
-    options.open(path)
-}
-
-#[cfg(not(windows))]
-fn file_with_options(
-    path: impl AsRef<Path>,
-    mut options: std::fs::OpenOptions,
-) -> io::Result<std::fs::File> {
-    use std::os::unix::prelude::OpenOptionsExt;
-
-    // Don't set nonblocking with epoll.
-    if cfg!(not(any(target_os = "linux", target_os = "android"))) {
-        options.custom_flags(libc::O_NONBLOCK);
-    }
-    options.open(path)
-}
-
 impl File {
-    pub(crate) fn with_options(path: impl AsRef<Path>, options: OpenOptions) -> io::Result<Self> {
-        let this = Self {
-            inner: file_with_options(path, options.0)?,
-            #[cfg(feature = "runtime")]
-            attacher: Attacher::new(),
-        };
-        Ok(this)
-    }
-
     /// Attempts to open a file in read-only mode.
     ///
     /// See the [`OpenOptions::open`] method for more details.
-    pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
-        OpenOptions::new().read(true).open(path)
+    #[cfg(feature = "runtime")]
+    pub async fn open(path: impl AsRef<Path>) -> io::Result<Self> {
+        OpenOptions::new().read(true).open(path).await
     }
 
     /// Opens a file in write-only mode.
@@ -79,12 +44,14 @@ impl File {
     /// and will truncate it if it does.
     ///
     /// See the [`OpenOptions::open`] function for more details.
-    pub fn create(path: impl AsRef<Path>) -> io::Result<Self> {
+    #[cfg(feature = "runtime")]
+    pub async fn create(path: impl AsRef<Path>) -> io::Result<Self> {
         OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
             .open(path)
+            .await
     }
 
     /// Creates a new `File` instance that shares the same underlying file
