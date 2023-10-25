@@ -7,7 +7,7 @@ use std::{
 };
 
 use compio_runtime::event::EventHandle;
-pub use libc::{addrinfo, sockaddr_storage, AF_UNSPEC, IPPROTO_TCP, SOCK_STREAM};
+pub use libc::{addrinfo, AF_UNSPEC, IPPROTO_TCP, SOCK_STREAM};
 
 pub struct AsyncResolver<'a> {
     name: &'a str,

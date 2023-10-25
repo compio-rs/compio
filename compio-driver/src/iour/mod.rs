@@ -1,4 +1,5 @@
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
+#[allow(unused_imports)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{collections::VecDeque, io, pin::Pin, task::Poll, time::Duration};
 
