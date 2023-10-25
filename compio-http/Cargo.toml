@@ -1,0 +1,30 @@
+[package]
+name = "compio-http"
+version = "0.1.0"
+categories = ["asynchronous", "network-programming"]
+keywords = ["async", "net"]
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+compio-buf = { workspace = true }
+compio-io = { workspace = true }
+compio-net = { workspace = true, features = ["runtime"] }
+compio-tls = { workspace = true }
+
+native-tls = { version = "0.2", optional = true }
+
+http = "0.2"
+httparse = "1"
+
+[dev-dependencies]
+compio-runtime = { workspace = true }
+compio-macros = { workspace = true }
+
+[features]
+default = ["native-tls"]
+native-tls = ["compio-tls/native-tls", "dep:native-tls"]
+vendored = ["native-tls?/vendored"]
