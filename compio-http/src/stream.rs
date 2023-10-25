@@ -113,11 +113,14 @@ impl HttpStream {
                             *resp.body_mut() = buffer;
                             return Ok(resp);
                         }
-                        httparse::Status::Partial => continue 'read_loop,
+                        httparse::Status::Partial => {
+                            buffer.reserve(1024);
+                            continue 'read_loop;
+                        }
                     },
                     Err(e) => match e {
                         httparse::Error::TooManyHeaders => {
-                            header_buffer.resize(16, httparse::EMPTY_HEADER);
+                            header_buffer.resize(header_buffer.len() + 16, httparse::EMPTY_HEADER);
                             continue 'parse_loop;
                         }
                         _ => return Err(io::Error::new(io::ErrorKind::InvalidData, e)),

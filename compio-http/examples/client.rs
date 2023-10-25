@@ -10,7 +10,6 @@ async fn main() {
     *request.version_mut() = Version::HTTP_11;
     let headers = request.headers_mut();
     headers.append("Host", HeaderValue::from_str("www.example.com").unwrap());
-    headers.append("Connection", HeaderValue::from_str("close").unwrap());
     let response = client.execute(request).await.unwrap();
     let (parts, body) = response.into_parts();
     println!("{:?}", parts);
