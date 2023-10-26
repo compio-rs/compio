@@ -87,7 +87,10 @@ impl Response {
     ///
     /// ```
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    /// let content = reqwest::get("http://httpbin.org/range/26")
+    /// let client = compio_http::Client::new();
+    /// let content = client
+    ///     .get("http://httpbin.org/range/26")
+    ///     .send()
     ///     .await?
     ///     .text()
     ///     .await?;
@@ -117,7 +120,10 @@ impl Response {
     ///
     /// ```
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    /// let content = reqwest::get("http://httpbin.org/range/26")
+    /// let client = compio_http::Client::new();
+    /// let content = client
+    ///     .get("http://httpbin.org/range/26")
+    ///     .send()
     ///     .await?
     ///     .text_with_charset("utf-8")
     ///     .await?;
@@ -153,10 +159,10 @@ impl Response {
     /// # Examples
     ///
     /// ```
-    /// # extern crate reqwest;
+    /// # extern crate compio_http;
     /// # extern crate serde;
     /// #
-    /// # use reqwest::Error;
+    /// # use compio_http::Error;
     /// # use serde::Deserialize;
     /// #
     /// // This `derive` requires the `serde` dependency.
@@ -166,7 +172,10 @@ impl Response {
     /// }
     ///
     /// # async fn run() -> Result<(), Error> {
-    /// let ip = reqwest::get("http://httpbin.org/ip")
+    /// let client = compio_http::Client::new();
+    /// let ip = client
+    ///     .get("http://httpbin.org/ip")
+    ///     .send()
     ///     .await?
     ///     .json::<Ip>()
     ///     .await?;
@@ -198,7 +207,13 @@ impl Response {
     ///
     /// ```
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    /// let bytes = reqwest::get("http://httpbin.org/ip").await?.bytes().await?;
+    /// let client = compio_http::Client::new();
+    /// let bytes = client
+    ///     .get("http://httpbin.org/ip")
+    ///     .send()
+    ///     .await?
+    ///     .bytes()
+    ///     .await?;
     ///
     /// println!("bytes: {:?}", bytes);
     /// # Ok(())

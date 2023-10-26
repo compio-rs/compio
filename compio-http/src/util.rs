@@ -1,4 +1,4 @@
-//! Code from reqwest.
+//! Code from compio_http.
 
 use hyper::{
     header::{Entry, HeaderValue, OccupiedEntry},

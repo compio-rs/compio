@@ -209,10 +209,10 @@ impl RequestBuilder {
     /// Enable HTTP basic authentication.
     ///
     /// ```rust
-    /// # use reqwest::Error;
+    /// # use compio_http::Error;
     ///
     /// # async fn run() -> Result<(), Error> {
-    /// let client = reqwest::Client::new();
+    /// let client = compio_http::Client::new();
     /// let resp = client
     ///     .delete("http://httpbin.org/delete")
     ///     .basic_auth("admin", Some("good password"))
@@ -311,14 +311,14 @@ impl RequestBuilder {
     /// header.
     ///
     /// ```rust
-    /// # use reqwest::Error;
+    /// # use compio_http::Error;
     /// # use std::collections::HashMap;
     /// #
     /// # async fn run() -> Result<(), Error> {
     /// let mut params = HashMap::new();
     /// params.insert("lang", "rust");
     ///
-    /// let client = reqwest::Client::new();
+    /// let client = compio_http::Client::new();
     /// let res = client
     ///     .post("http://httpbin.org")
     ///     .form(&params)
