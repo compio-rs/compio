@@ -34,6 +34,7 @@ url = "2"
 
 [dev-dependencies]
 compio-macros = { workspace = true }
+hyper = { version = "0.14", features = ["server", "tcp"] }
 
 [features]
 default = ["native-tls"]
