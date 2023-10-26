@@ -12,16 +12,17 @@ repository = { workspace = true }
 [dependencies]
 compio-buf = { workspace = true }
 compio-io = { workspace = true }
+compio-runtime = { workspace = true }
 compio-net = { workspace = true, features = ["runtime"] }
 compio-tls = { workspace = true }
 
 native-tls = { version = "0.2", optional = true }
 
-http = "0.2"
-httparse = "1"
+hyper = { version = "0.14", features = ["client", "http1"] }
+send_wrapper = { version = "0.6", features = ["futures"] }
+tokio = { version = "1", default-features = false }
 
 [dev-dependencies]
-compio-runtime = { workspace = true }
 compio-macros = { workspace = true }
 
 [features]

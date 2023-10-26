@@ -1,25 +1,37 @@
-use std::io;
-
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use compio_net::TcpStream;
-use compio_tls::{TlsConnector, TlsStream};
-use http::{
-    header::CONTENT_LENGTH, request, uri::Scheme, HeaderName, HeaderValue, Response, StatusCode,
-    Version,
+use std::{
+    future::Future,
+    io,
+    pin::Pin,
+    task::{Context, Poll},
 };
 
-pub enum HttpStream {
+use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_io::{AsyncRead, AsyncWrite};
+use compio_net::TcpStream;
+use compio_tls::{TlsConnector, TlsStream};
+use hyper::{
+    client::connect::{Connected, Connection},
+    Uri,
+};
+use send_wrapper::SendWrapper;
+
+enum HttpStreamInner {
     Tcp(TcpStream),
     Tls(TlsStream<TcpStream>),
 }
 
-impl HttpStream {
-    pub async fn new(scheme: &Scheme, host: &str, port: Option<u16>) -> io::Result<Self> {
-        match scheme.as_str() {
-            "http" => Ok(Self::Tcp(
-                TcpStream::connect((host, port.unwrap_or(80))).await?,
-            )),
+impl HttpStreamInner {
+    pub async fn new(uri: Uri) -> io::Result<Self> {
+        let scheme = uri.scheme_str().unwrap_or("http");
+        let host = uri
+            .host()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "should specify host"))?;
+        let port = uri.port_u16();
+        match scheme {
+            "http" => {
+                let stream = TcpStream::connect((host, port.unwrap_or(80))).await?;
+                Ok(Self::Tcp(stream))
+            }
             "https" => {
                 let stream = TcpStream::connect((host, port.unwrap_or(443))).await?;
                 let connector = TlsConnector::from(
@@ -34,104 +46,9 @@ impl HttpStream {
             )),
         }
     }
-
-    pub async fn write_request_parts(&mut self, parts: &request::Parts) -> io::Result<()> {
-        self.write_all(parts.method.to_string()).await.0?;
-        self.write_all(" ").await.0?;
-        self.write_all(
-            parts
-                .uri
-                .path_and_query()
-                .map(|s| s.to_string())
-                .unwrap_or_default(),
-        )
-        .await
-        .0?;
-        self.write_all(" ").await.0?;
-        self.write_all(format!("{:?}", parts.version)).await.0?;
-        self.write_all("\r\n").await.0?;
-        for (header_name, header_value) in &parts.headers {
-            self.write_all(header_name.to_string()).await.0?;
-            self.write_all(": ").await.0?;
-            self.write_all(header_value.as_bytes().to_vec()).await.0?;
-            self.write_all("\r\n").await.0?;
-        }
-        self.write_all("\r\n").await.0?;
-        Ok(())
-    }
-
-    pub async fn read_response(&mut self) -> io::Result<Response<Vec<u8>>> {
-        let mut buffer = Vec::with_capacity(1024);
-        'read_loop: loop {
-            let len = buffer.len();
-            let BufResult(res, slice) = self.read(buffer.slice(len..)).await;
-            res?;
-            buffer = slice.into_inner();
-
-            let mut header_buffer = vec![httparse::EMPTY_HEADER; 16];
-            'parse_loop: loop {
-                let mut response = httparse::Response::new(&mut header_buffer);
-                match response.parse(&buffer) {
-                    Ok(status) => match status {
-                        httparse::Status::Complete(len) => {
-                            let mut resp = Response::new(vec![]);
-                            *resp.version_mut() = match response.version.unwrap_or(1) {
-                                0 => Version::HTTP_10,
-                                1 => Version::HTTP_11,
-                                _ => Version::HTTP_09,
-                            };
-                            *resp.status_mut() = StatusCode::from_u16(response.code.unwrap_or(200))
-                                .expect("server should return a valid status code");
-                            let headers = resp.headers_mut();
-                            for header in response.headers {
-                                if !header.name.is_empty() {
-                                    let name = HeaderName::from_bytes(header.name.as_bytes())
-                                        .expect("server should return a valid header name");
-                                    let value = HeaderValue::from_bytes(header.value)
-                                        .expect("server should return a valid header value");
-                                    headers.append(name, value);
-                                }
-                            }
-                            let full_len = headers
-                                .get(CONTENT_LENGTH)
-                                .map(|v| {
-                                    std::str::from_utf8(v.as_bytes())
-                                        .expect("content length should be valid utf8")
-                                        .parse::<usize>()
-                                        .expect("content length should be a integer")
-                                })
-                                .expect("should contain content length");
-                            let mut buffer = buffer[len..].to_vec();
-                            let curr_len = buffer.len();
-                            if curr_len < full_len {
-                                buffer.reserve(full_len - curr_len);
-                                let BufResult(res, slice) =
-                                    self.read_exact(buffer.slice(curr_len..full_len)).await;
-                                res?;
-                                buffer = slice.into_inner();
-                            }
-                            *resp.body_mut() = buffer;
-                            return Ok(resp);
-                        }
-                        httparse::Status::Partial => {
-                            buffer.reserve(1024);
-                            continue 'read_loop;
-                        }
-                    },
-                    Err(e) => match e {
-                        httparse::Error::TooManyHeaders => {
-                            header_buffer.resize(header_buffer.len() + 16, httparse::EMPTY_HEADER);
-                            continue 'parse_loop;
-                        }
-                        _ => return Err(io::Error::new(io::ErrorKind::InvalidData, e)),
-                    },
-                }
-            }
-        }
-    }
 }
 
-impl AsyncRead for HttpStream {
+impl AsyncRead for HttpStreamInner {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         match self {
             Self::Tcp(s) => s.read(buf).await,
@@ -147,7 +64,7 @@ impl AsyncRead for HttpStream {
     }
 }
 
-impl AsyncWrite for HttpStream {
+impl AsyncWrite for HttpStreamInner {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         match self {
             Self::Tcp(s) => s.write(buf).await,
@@ -176,3 +93,92 @@ impl AsyncWrite for HttpStream {
         }
     }
 }
+
+type PinBoxFuture<T> = Pin<Box<dyn Future<Output = T>>>;
+
+pub struct HttpStream {
+    inner: HttpStreamInner,
+    read_future: Option<PinBoxFuture<BufResult<usize, Vec<u8>>>>,
+    write_future: Option<PinBoxFuture<BufResult<usize, Vec<u8>>>>,
+    flush_future: Option<PinBoxFuture<io::Result<()>>>,
+    shutdown_future: Option<PinBoxFuture<io::Result<()>>>,
+}
+
+impl HttpStream {
+    pub async fn new(uri: Uri) -> io::Result<Self> {
+        Ok(Self {
+            inner: HttpStreamInner::new(uri).await?,
+            read_future: None,
+            write_future: None,
+            flush_future: None,
+            shutdown_future: None,
+        })
+    }
+}
+
+macro_rules! poll_future {
+    ($f:expr, $cx:expr, $e:expr) => {{
+        let mut future = match $f.take() {
+            Some(f) => f,
+            None => Box::pin(SendWrapper::new($e)),
+        };
+        let f = future.as_mut();
+        match f.poll($cx) {
+            Poll::Pending => {
+                $f = Some(future);
+                return Poll::Pending;
+            }
+            Poll::Ready(res) => res,
+        }
+    }};
+}
+
+impl tokio::io::AsyncRead for HttpStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let inner: &'static mut HttpStreamInner = unsafe { &mut *(&mut self.inner as *mut _) };
+        let BufResult(res, inner_buf) = poll_future!(
+            self.read_future,
+            cx,
+            inner.read(Vec::with_capacity(unsafe { buf.unfilled_mut() }.len()))
+        );
+        res?;
+        buf.put_slice(&inner_buf);
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl tokio::io::AsyncWrite for HttpStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let inner: &'static mut HttpStreamInner = unsafe { &mut *(&mut self.inner as *mut _) };
+        let BufResult(res, _) = poll_future!(self.write_future, cx, inner.write(buf.to_vec()));
+        Poll::Ready(res)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let inner: &'static mut HttpStreamInner = unsafe { &mut *(&mut self.inner as *mut _) };
+        let res = poll_future!(self.flush_future, cx, inner.flush());
+        Poll::Ready(res)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let inner: &'static mut HttpStreamInner = unsafe { &mut *(&mut self.inner as *mut _) };
+        let res = poll_future!(self.shutdown_future, cx, inner.shutdown());
+        Poll::Ready(res)
+    }
+}
+
+impl Connection for HttpStream {
+    fn connected(&self) -> Connected {
+        Connected::new()
+    }
+}
+
+unsafe impl Send for HttpStream {}
