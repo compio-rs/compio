@@ -12,7 +12,7 @@ repository = { workspace = true }
 [dependencies]
 compio-buf = { workspace = true, features = ["bytes"] }
 compio-io = { workspace = true }
-compio-runtime = { workspace = true }
+compio-runtime = { workspace = true, features = ["time"] }
 compio-net = { workspace = true, features = ["runtime"] }
 compio-tls = { workspace = true }
 
@@ -41,3 +41,4 @@ default = ["native-tls"]
 native-tls = ["compio-tls/native-tls", "dep:native-tls"]
 vendored = ["native-tls?/vendored"]
 json = ["dep:serde_json"]
+all = ["json"]
