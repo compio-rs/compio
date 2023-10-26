@@ -129,6 +129,7 @@ impl<S: compio_io::AsyncWrite> StreamWrapper<S> {
         let stream = &mut self.stream;
         let len = self.write_buffer.with(|b| stream.write_all(b)).await?;
         self.write_buffer.reset();
+        stream.flush().await?;
         Ok(len)
     }
 }
