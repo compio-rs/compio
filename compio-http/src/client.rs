@@ -55,6 +55,36 @@ impl Client {
             url.into_url().map(|url| Request::new(method, url)),
         )
     }
+
+    /// Convenience method to make a `GET` request to a URL.
+    pub fn get<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+        self.request(Method::GET, url)
+    }
+
+    /// Convenience method to make a `POST` request to a URL.
+    pub fn post<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+        self.request(Method::POST, url)
+    }
+
+    /// Convenience method to make a `PUT` request to a URL.
+    pub fn put<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+        self.request(Method::PUT, url)
+    }
+
+    /// Convenience method to make a `PATCH` request to a URL.
+    pub fn patch<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+        self.request(Method::PATCH, url)
+    }
+
+    /// Convenience method to make a `DELETE` request to a URL.
+    pub fn delete<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+        self.request(Method::DELETE, url)
+    }
+
+    /// Convenience method to make a `HEAD` request to a URL.
+    pub fn head<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+        self.request(Method::HEAD, url)
+    }
 }
 
 #[derive(Debug)]
