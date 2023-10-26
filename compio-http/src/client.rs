@@ -1,9 +1,8 @@
 use std::rc::Rc;
 
 use hyper::{Body, Method, Uri};
-use url::Url;
 
-use crate::{CompioExecutor, Connector, Request, RequestBuilder, Response, Result};
+use crate::{CompioExecutor, Connector, IntoUrl, Request, RequestBuilder, Response, Result};
 
 /// An asynchronous `Client` to make Requests with.
 #[derive(Debug, Clone)]
@@ -50,8 +49,11 @@ impl Client {
     }
 
     /// Send a request with method and url.
-    pub fn request(&self, method: Method, url: Url) -> RequestBuilder {
-        RequestBuilder::from_parts(self.clone(), Request::new(method, url))
+    pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder {
+        RequestBuilder::new(
+            self.clone(),
+            url.into_url().map(|url| Request::new(method, url)),
+        )
     }
 }
 

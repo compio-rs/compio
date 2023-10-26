@@ -26,9 +26,7 @@ enum HttpStreamInner {
 impl HttpStreamInner {
     pub async fn new(uri: Uri) -> io::Result<Self> {
         let scheme = uri.scheme_str().unwrap_or("http");
-        let host = uri
-            .host()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "should specify host"))?;
+        let host = uri.host().expect("there should be host");
         let port = uri.port_u16();
         match scheme {
             "http" => {

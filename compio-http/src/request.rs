@@ -135,6 +135,10 @@ pub struct RequestBuilder {
 }
 
 impl RequestBuilder {
+    pub(crate) fn new(client: Client, request: Result<Request>) -> RequestBuilder {
+        RequestBuilder { client, request }
+    }
+
     /// Assemble a builder starting from an existing `Client` and a `Request`.
     pub fn from_parts(client: Client, request: Request) -> RequestBuilder {
         RequestBuilder {

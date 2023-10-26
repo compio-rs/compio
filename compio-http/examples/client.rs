@@ -5,7 +5,7 @@ use hyper::Method;
 async fn main() {
     let client = Client::new();
     let response = client
-        .request(Method::GET, "https://www.example.com/".parse().unwrap())
+        .request(Method::GET, "https://www.example.com/")
         .send()
         .await
         .unwrap();
