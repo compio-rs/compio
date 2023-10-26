@@ -18,9 +18,17 @@ compio-tls = { workspace = true }
 
 native-tls = { version = "0.2", optional = true }
 
+http = "0.2"
 hyper = { version = "0.14", features = ["client", "http1"] }
 send_wrapper = { version = "0.6", features = ["futures"] }
 tokio = { version = "1", default-features = false }
+
+base64 = "0.21"
+serde = "1"
+serde_json = { version = "1", optional = true }
+serde_urlencoded = "0.7"
+thiserror = "1"
+url = "2"
 
 [dev-dependencies]
 compio-macros = { workspace = true }
@@ -29,3 +37,4 @@ compio-macros = { workspace = true }
 default = ["native-tls"]
 native-tls = ["compio-tls/native-tls", "dep:native-tls"]
 vendored = ["native-tls?/vendored"]
+json = ["dep:serde_json"]

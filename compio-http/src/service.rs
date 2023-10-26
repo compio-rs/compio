@@ -5,10 +5,19 @@ use std::{
     task::{Context, Poll},
 };
 
-use hyper::{service::Service, Uri};
+use hyper::{rt::Executor, service::Service, Uri};
 use send_wrapper::SendWrapper;
 
 use crate::HttpStream;
+
+#[derive(Debug, Clone)]
+pub struct CompioExecutor;
+
+impl Executor<Pin<Box<dyn Future<Output = ()> + Send>>> for CompioExecutor {
+    fn execute(&self, fut: Pin<Box<dyn Future<Output = ()> + Send>>) {
+        compio_runtime::spawn(fut).detach()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Connector;
