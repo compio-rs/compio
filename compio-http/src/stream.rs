@@ -1,6 +1,7 @@
 use std::{
     future::Future,
     io,
+    ops::DerefMut,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -94,10 +95,10 @@ impl AsyncWrite for HttpStreamInner {
     }
 }
 
-type PinBoxFuture<T> = Pin<Box<dyn Future<Output = T>>>;
+type PinBoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
 pub struct HttpStream {
-    inner: HttpStreamInner,
+    inner: SendWrapper<HttpStreamInner>,
     read_future: Option<PinBoxFuture<BufResult<usize, Vec<u8>>>>,
     write_future: Option<PinBoxFuture<BufResult<usize, Vec<u8>>>>,
     flush_future: Option<PinBoxFuture<io::Result<()>>>,
@@ -107,7 +108,7 @@ pub struct HttpStream {
 impl HttpStream {
     pub async fn new(uri: Uri) -> io::Result<Self> {
         Ok(Self {
-            inner: HttpStreamInner::new(uri).await?,
+            inner: SendWrapper::new(HttpStreamInner::new(uri).await?),
             read_future: None,
             write_future: None,
             flush_future: None,
@@ -139,7 +140,8 @@ impl tokio::io::AsyncRead for HttpStream {
         cx: &mut Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        let inner: &'static mut HttpStreamInner = unsafe { &mut *(&mut self.inner as *mut _) };
+        let inner: &'static mut HttpStreamInner =
+            unsafe { &mut *(self.inner.deref_mut() as *mut _) };
         let BufResult(res, inner_buf) = poll_future!(
             self.read_future,
             cx,
@@ -157,19 +159,22 @@ impl tokio::io::AsyncWrite for HttpStream {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        let inner: &'static mut HttpStreamInner = unsafe { &mut *(&mut self.inner as *mut _) };
+        let inner: &'static mut HttpStreamInner =
+            unsafe { &mut *(self.inner.deref_mut() as *mut _) };
         let BufResult(res, _) = poll_future!(self.write_future, cx, inner.write(buf.to_vec()));
         Poll::Ready(res)
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let inner: &'static mut HttpStreamInner = unsafe { &mut *(&mut self.inner as *mut _) };
+        let inner: &'static mut HttpStreamInner =
+            unsafe { &mut *(self.inner.deref_mut() as *mut _) };
         let res = poll_future!(self.flush_future, cx, inner.flush());
         Poll::Ready(res)
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let inner: &'static mut HttpStreamInner = unsafe { &mut *(&mut self.inner as *mut _) };
+        let inner: &'static mut HttpStreamInner =
+            unsafe { &mut *(self.inner.deref_mut() as *mut _) };
         let res = poll_future!(self.shutdown_future, cx, inner.shutdown());
         Poll::Ready(res)
     }
@@ -180,5 +185,3 @@ impl Connection for HttpStream {
         Connected::new()
     }
 }
-
-unsafe impl Send for HttpStream {}
