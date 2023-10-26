@@ -10,7 +10,7 @@ license = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-compio-buf = { workspace = true }
+compio-buf = { workspace = true, features = ["bytes"] }
 compio-io = { workspace = true }
 compio-runtime = { workspace = true }
 compio-net = { workspace = true, features = ["runtime"] }
@@ -24,6 +24,8 @@ send_wrapper = { version = "0.6", features = ["futures"] }
 tokio = { version = "1", default-features = false }
 
 base64 = "0.21"
+encoding_rs = "0.8"
+mime = "0.3"
 serde = "1"
 serde_json = { version = "1", optional = true }
 serde_urlencoded = "0.7"

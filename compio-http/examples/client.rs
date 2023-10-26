@@ -6,12 +6,8 @@ async fn main() {
     let client = Client::new();
     let response = client
         .request(Method::GET, "https://www.example.com/".parse().unwrap())
+        .send()
         .await
         .unwrap();
-    let (parts, body) = response.into_parts();
-    println!("{:?}", parts);
-    println!(
-        "{}",
-        std::str::from_utf8(&hyper::body::to_bytes(body).await.unwrap()).unwrap()
-    );
+    println!("{}", response.text().await.unwrap());
 }

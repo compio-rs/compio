@@ -2,14 +2,15 @@ use std::{fmt::Display, time::Duration};
 
 use hyper::{
     header::{HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
-    Body, HeaderMap, Method, Response, Version,
+    Body, HeaderMap, Method, Version,
 };
 use serde::Serialize;
 use url::Url;
 
-use crate::{Client, Result};
+use crate::{Client, Response, Result};
 
 /// A request which can be executed with `Client::execute()`.
+#[derive(Debug)]
 pub struct Request {
     method: Method,
     url: Url,
@@ -127,6 +128,7 @@ impl Request {
 }
 
 /// A builder to construct the properties of a `Request`.
+#[derive(Debug)]
 pub struct RequestBuilder {
     client: Client,
     request: Result<Request>,
@@ -348,10 +350,6 @@ impl RequestBuilder {
 
     /// Send a JSON body.
     ///
-    /// # Optional
-    ///
-    /// This requires the optional `json` feature enabled.
-    ///
     /// # Errors
     ///
     /// Serialization can fail if `T`'s implementation of `Serialize` decides to
@@ -394,7 +392,7 @@ impl RequestBuilder {
 
     /// Constructs the Request and sends it to the target URL, returning a
     /// future Response.
-    pub async fn send(self) -> Result<Response<Body>> {
+    pub async fn send(self) -> Result<Response> {
         self.client.execute(self.request?).await
     }
 }

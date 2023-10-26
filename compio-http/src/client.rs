@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
-use hyper::{Body, Method, Response, Uri};
+use hyper::{Body, Method, Uri};
 use url::Url;
 
-use crate::{CompioExecutor, Connector, Request, Result};
+use crate::{CompioExecutor, Connector, Request, RequestBuilder, Response, Result};
 
 /// An asynchronous `Client` to make Requests with.
 #[derive(Debug, Clone)]
@@ -12,6 +12,7 @@ pub struct Client {
 }
 
 impl Client {
+    /// Create a client with default config.
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
@@ -24,7 +25,8 @@ impl Client {
         }
     }
 
-    pub async fn execute(&self, request: Request) -> Result<Response<Body>> {
+    /// Send a request and wait for a response.
+    pub async fn execute(&self, request: Request) -> Result<Response> {
         let (method, url, headers, body, timeout, version) = request.pieces();
         let mut request = hyper::Request::builder()
             .method(method)
@@ -44,12 +46,12 @@ impl Client {
         } else {
             future.await?
         };
-        Ok(res)
+        Ok(Response::new(res, url))
     }
 
-    pub async fn request(&self, method: Method, url: Url) -> Result<Response<Body>> {
-        let request = Request::new(method, url);
-        self.execute(request).await
+    /// Send a request with method and url.
+    pub fn request(&self, method: Method, url: Url) -> RequestBuilder {
+        RequestBuilder::from_parts(self.clone(), Request::new(method, url))
     }
 }
 
