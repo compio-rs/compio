@@ -14,7 +14,7 @@ struct CounterGuard(Arc<AtomicUsize>);
 
 impl Drop for CounterGuard {
     fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::Relaxed);
+        self.0.fetch_sub(1, Ordering::AcqRel);
     }
 }
 
@@ -24,7 +24,7 @@ fn worker(
     timeout: Duration,
 ) -> impl FnOnce() {
     move || {
-        counter.fetch_add(1, Ordering::Relaxed);
+        counter.fetch_add(1, Ordering::AcqRel);
         let _guard = CounterGuard(counter);
         while let Ok(f) = receiver.recv_timeout(timeout) {
             f();
@@ -57,7 +57,7 @@ impl AsyncifyPool {
             Ok(_) => true,
             Err(e) => match e {
                 TrySendError::Full(f) => {
-                    if self.counter.load(Ordering::Relaxed) >= self.thread_limit {
+                    if self.counter.load(Ordering::Acquire) >= self.thread_limit {
                         false
                     } else {
                         std::thread::spawn(worker(
