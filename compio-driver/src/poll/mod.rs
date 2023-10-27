@@ -221,14 +221,15 @@ impl Driver {
                     Ok(Decision::Completed(res)) => Poll::Ready(Ok(res)),
                     Err(err) => Poll::Ready(Err(err)),
                 }
-            } else {
-                self.push_blocking(user_data, op);
+            } else if self.push_blocking(user_data, op) {
                 Poll::Pending
+            } else {
+                Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
             }
         }
     }
 
-    fn push_blocking(&mut self, user_data: usize, op: &mut RawOp) {
+    fn push_blocking(&mut self, user_data: usize, op: &mut RawOp) -> bool {
         // Safety: the RawOp is not released before the operation returns.
         struct SendWrapper<T>(T);
         unsafe impl<T> Send for SendWrapper<T> {}

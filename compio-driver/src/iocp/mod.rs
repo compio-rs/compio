@@ -16,9 +16,9 @@ use compio_buf::arrayvec::ArrayVec;
 use slab::Slab;
 use windows_sys::Win32::{
     Foundation::{
-        RtlNtStatusToDosError, ERROR_BAD_COMMAND, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE,
-        ERROR_NO_DATA, ERROR_OPERATION_ABORTED, FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS,
-        STATUS_PENDING, STATUS_SUCCESS,
+        RtlNtStatusToDosError, ERROR_BAD_COMMAND, ERROR_BUSY, ERROR_HANDLE_EOF,
+        ERROR_IO_INCOMPLETE, ERROR_NO_DATA, ERROR_OPERATION_ABORTED, FACILITY_NTWIN32,
+        INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING, STATUS_SUCCESS,
     },
     Networking::WinSock::{WSACleanup, WSAStartup, WSADATA},
     Storage::FileSystem::SetFileCompletionNotificationModes,
@@ -264,14 +264,15 @@ impl Driver {
             let op_pin = op.as_op_pin();
             if op_pin.is_overlapped() {
                 unsafe { op_pin.operate(optr.cast()) }
-            } else {
-                self.push_blocking(op);
+            } else if self.push_blocking(op) {
                 Poll::Pending
+            } else {
+                Poll::Ready(Err(io::Error::from_raw_os_error(ERROR_BUSY as _)))
             }
         }
     }
 
-    fn push_blocking(&mut self, op: &mut RawOp) {
+    fn push_blocking(&mut self, op: &mut RawOp) -> bool {
         // Safety: the RawOp is not released before the operation returns.
         struct SendWrapper<T>(T);
         unsafe impl<T> Send for SendWrapper<T> {}
@@ -300,7 +301,7 @@ impl Driver {
                 PostQueuedCompletionStatus(handle, res.unwrap_or_default() as _, 0, optr.cast())
             )
             .ok();
-        });
+        })
     }
 
     pub unsafe fn poll(
