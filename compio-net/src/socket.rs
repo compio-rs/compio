@@ -1,7 +1,7 @@
 use std::io;
 
 use compio_driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use socket2::{SockAddr, Socket as Socket2};
+use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 #[cfg(feature = "runtime")]
 use {
     compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
@@ -10,7 +10,6 @@ use {
         RecvResultExt, RecvVectored, Send, SendTo, SendToVectored, SendVectored, ShutdownSocket,
     },
     compio_runtime::{submit, Attachable, Attacher},
-    socket2::{Domain, Protocol, Type},
     std::{future::Future, mem::ManuallyDrop},
 };
 
