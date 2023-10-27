@@ -14,4 +14,5 @@ async fn main() {
     assert_eq!(read, buffer.len());
     let buffer = String::from_utf8(buffer).unwrap();
     println!("{}", buffer);
+    file.close().await.unwrap();
 }

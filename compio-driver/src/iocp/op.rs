@@ -139,6 +139,10 @@ impl OpenFile {
 }
 
 impl OpCode for OpenFile {
+    fn is_overlapped(&self) -> bool {
+        false
+    }
+
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(syscall!(
             HANDLE,
@@ -160,6 +164,10 @@ impl OpCode for OpenFile {
 }
 
 impl OpCode for CloseFile {
+    fn is_overlapped(&self) -> bool {
+        false
+    }
+
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(syscall!(BOOL, CloseHandle(self.fd as _))? as _))
     }
@@ -217,6 +225,10 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
 }
 
 impl OpCode for Sync {
+    fn is_overlapped(&self) -> bool {
+        false
+    }
+
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(syscall!(BOOL, FlushFileBuffers(self.fd as _))? as _))
     }
@@ -227,6 +239,10 @@ impl OpCode for Sync {
 }
 
 impl OpCode for ShutdownSocket {
+    fn is_overlapped(&self) -> bool {
+        false
+    }
+
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let how = match self.how {
             Shutdown::Write => SD_SEND,
@@ -242,6 +258,10 @@ impl OpCode for ShutdownSocket {
 }
 
 impl OpCode for CloseSocket {
+    fn is_overlapped(&self) -> bool {
+        false
+    }
+
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(syscall!(SOCKET, closesocket(self.fd as _))? as _))
     }
