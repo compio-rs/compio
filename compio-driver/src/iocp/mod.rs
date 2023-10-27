@@ -390,9 +390,3 @@ impl RawOp {
         this.op
     }
 }
-
-impl Drop for RawOp {
-    fn drop(&mut self) {
-        drop(unsafe { Box::from_raw(self.0.as_ptr()) })
-    }
-}
