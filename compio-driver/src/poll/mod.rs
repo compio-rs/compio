@@ -6,6 +6,7 @@ use std::{
     num::NonZeroUsize,
     os::fd::BorrowedFd,
     pin::Pin,
+    ptr::NonNull,
     task::Poll,
     time::Duration,
 };
@@ -16,11 +17,22 @@ use slab::Slab;
 
 use crate::{syscall, Entry};
 
+#[path = "../asyncify.rs"]
+mod asyncify;
 pub(crate) mod op;
+
+use asyncify::AsyncifyPool;
+
 pub(crate) use crate::unix::RawOp;
 
 /// Abstraction of operations.
 pub trait OpCode {
+    /// Determines that the operation is really non-blocking defined by POSIX.
+    /// If not, the driver will try to operate it in another thread.
+    fn is_nonblocking(&self) -> bool {
+        true
+    }
+
     /// Perform the operation before submit, and return [`Decision`] to
     /// indicate whether submitting the operation to polling is required.
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision>;
@@ -127,6 +139,8 @@ pub(crate) struct Driver {
     poll: Poller,
     registry: HashMap<RawFd, FdQueue>,
     cancelled: HashSet<usize>,
+    pool: AsyncifyPool,
+    pool_completed: Vec<Entry>,
 }
 
 impl Driver {
@@ -143,6 +157,8 @@ impl Driver {
             poll: Poller::new()?,
             registry: HashMap::new(),
             cancelled: HashSet::new(),
+            pool: AsyncifyPool::new(),
+            pool_completed: vec![],
         })
     }
 
@@ -192,16 +208,44 @@ impl Driver {
         if self.cancelled.remove(&user_data) {
             Poll::Ready(Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)))
         } else {
-            let op = op.as_pin();
-            match op.pre_submit() {
-                Ok(Decision::Wait(arg)) => {
-                    self.submit(user_data, arg)?;
-                    Poll::Pending
+            let op_pin = op.as_pin();
+            if op_pin.is_nonblocking() {
+                match op_pin.pre_submit() {
+                    Ok(Decision::Wait(arg)) => {
+                        self.submit(user_data, arg)?;
+                        Poll::Pending
+                    }
+                    Ok(Decision::Completed(res)) => Poll::Ready(Ok(res)),
+                    Err(err) => Poll::Ready(Err(err)),
                 }
-                Ok(Decision::Completed(res)) => Poll::Ready(Ok(res)),
-                Err(err) => Poll::Ready(Err(err)),
+            } else {
+                self.push_blocking(user_data, op);
+                Poll::Pending
             }
         }
+    }
+
+    fn push_blocking(&mut self, user_data: usize, op: &mut RawOp) {
+        // Safety: the RawOp is not released before the operation returns.
+        struct SendWrapper<T>(T);
+        unsafe impl<T> Send for SendWrapper<T> {}
+
+        // Safety: the reference should not be null.
+        let op = SendWrapper(unsafe { NonNull::new_unchecked(op) });
+        let this: &'static mut Self = unsafe { &mut *(self as *mut Self) };
+        self.pool.dispatch(move || {
+            #[allow(clippy::redundant_locals)]
+            let mut op = op;
+            let op = unsafe { op.0.as_mut() };
+            let op_pin = op.as_pin();
+            let res = match op_pin.pre_submit() {
+                Ok(Decision::Wait(_)) => unreachable!("thie operation is not non-blocking"),
+                Ok(Decision::Completed(res)) => Ok(res),
+                Err(err) => Err(err),
+            };
+            this.pool_completed.push(Entry::new(user_data, res));
+            this.poll.notify().ok();
+        })
     }
 
     pub unsafe fn poll(
@@ -211,9 +255,10 @@ impl Driver {
         registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
         self.poll.wait(&mut self.events, timeout)?;
-        if self.events.is_empty() && timeout.is_some() {
+        if self.events.is_empty() && self.pool_completed.is_empty() && timeout.is_some() {
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
         }
+        entries.extend(self.pool_completed.drain(..));
         for event in self.events.iter() {
             let fd = event.key as RawFd;
             let queue = self

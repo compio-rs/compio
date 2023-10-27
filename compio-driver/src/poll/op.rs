@@ -19,6 +19,10 @@ use crate::op::*;
 pub use crate::unix::op::*;
 
 impl OpCode for OpenFile {
+    fn is_nonblocking(&self) -> bool {
+        false
+    }
+
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Completed(syscall!(open(
             self.path.as_ptr(),
@@ -33,6 +37,10 @@ impl OpCode for OpenFile {
 }
 
 impl OpCode for CloseFile {
+    fn is_nonblocking(&self) -> bool {
+        false
+    }
+
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Completed(syscall!(libc::close(self.fd))? as _))
     }
@@ -56,6 +64,10 @@ impl<T: IoBufMut> ReadAt<T> {
 }
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
+    fn is_nonblocking(&self) -> bool {
+        cfg!(not(any(target_os = "linux", target_os = "android")))
+    }
+
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         if cfg!(any(target_os = "linux", target_os = "android")) {
             Ok(Decision::Completed(syscall!(self.call())? as _))
@@ -84,6 +96,10 @@ impl<T: IoVectoredBufMut> ReadVectoredAt<T> {
 }
 
 impl<T: IoVectoredBufMut> OpCode for ReadVectoredAt<T> {
+    fn is_nonblocking(&self) -> bool {
+        cfg!(not(any(target_os = "linux", target_os = "android")))
+    }
+
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         if cfg!(any(target_os = "linux", target_os = "android")) {
             Ok(Decision::Completed(syscall!(self.call())? as _))
@@ -112,6 +128,10 @@ impl<T: IoBuf> WriteAt<T> {
 }
 
 impl<T: IoBuf> OpCode for WriteAt<T> {
+    fn is_nonblocking(&self) -> bool {
+        cfg!(not(any(target_os = "linux", target_os = "android")))
+    }
+
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         if cfg!(any(target_os = "linux", target_os = "android")) {
             Ok(Decision::Completed(syscall!(self.call())? as _))
@@ -140,6 +160,10 @@ impl<T: IoVectoredBuf> WriteVectoredAt<T> {
 }
 
 impl<T: IoVectoredBuf> OpCode for WriteVectoredAt<T> {
+    fn is_nonblocking(&self) -> bool {
+        cfg!(not(any(target_os = "linux", target_os = "android")))
+    }
+
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         if cfg!(any(target_os = "linux", target_os = "android")) {
             Ok(Decision::Completed(syscall!(self.call())? as _))
@@ -156,6 +180,10 @@ impl<T: IoVectoredBuf> OpCode for WriteVectoredAt<T> {
 }
 
 impl OpCode for Sync {
+    fn is_nonblocking(&self) -> bool {
+        false
+    }
+
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Completed(syscall!(libc::fsync(self.fd))? as _))
     }
@@ -166,6 +194,10 @@ impl OpCode for Sync {
 }
 
 impl OpCode for ShutdownSocket {
+    fn is_nonblocking(&self) -> bool {
+        false
+    }
+
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Completed(
             syscall!(libc::shutdown(self.fd, self.how()))? as _,
@@ -178,6 +210,10 @@ impl OpCode for ShutdownSocket {
 }
 
 impl OpCode for CloseSocket {
+    fn is_nonblocking(&self) -> bool {
+        false
+    }
+
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Completed(syscall!(libc::close(self.fd))? as _))
     }

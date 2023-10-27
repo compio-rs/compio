@@ -57,6 +57,7 @@ windows-sys = { version = "0.48", features = [
 # Linux specific dependencies
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = { version = "0.6", optional = true }
+crossbeam-channel = { version = "0.5", optional = true }
 polling = { version = "3", optional = true }
 libc = "0.2"
 paste = "1.0.14"
@@ -69,6 +70,7 @@ libc = "0.2"
 
 [features]
 default = ["io-uring"]
+polling = ["dep:polling", "dep:crossbeam-channel"]
 
 # Nightly features
 once_cell_try = []
