@@ -55,6 +55,18 @@ async fn io_write_at() {
 
     assert_eq!(len, 3);
     assert_eq!(dst, [0, 0, 1, 1, 4]);
+
+    let mut dst = [0u8; 5];
+    let (len, _) = dst.write_at(vec![1, 1, 4], 6).await.unwrap();
+
+    assert_eq!(len, 0);
+    assert_eq!(dst, [0, 0, 0, 0, 0]);
+
+    let mut dst = vec![];
+    let (len, _) = dst.write_at(vec![1, 1, 4], 5).await.unwrap();
+
+    assert_eq!(len, 3);
+    assert_eq!(dst, [0, 0, 0, 0, 0, 1, 1, 4]);
 }
 
 #[compio_macros::test]
@@ -70,6 +82,11 @@ async fn io_read_at() {
 
     assert_eq!(len, 3);
     assert_eq!(buf.as_slice(), [4, 5, 1]);
+
+    let (len, buf) = SRC.read_at(ArrayVec::<u8, 1>::new(), 7).await.unwrap();
+
+    assert_eq!(len, 0);
+    assert_eq!(buf.as_slice(), []);
 }
 
 #[compio_macros::test]

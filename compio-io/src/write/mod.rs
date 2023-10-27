@@ -1,6 +1,8 @@
+#[cfg(feature = "allocator_api")]
+use std::alloc::Allocator;
 use std::io::Cursor;
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoVectoredBuf};
+use compio_buf::{buf_try, vec_alloc, BufResult, IntoInner, IoBuf, IoVectoredBuf};
 
 use crate::IoResult;
 
@@ -74,30 +76,6 @@ macro_rules! impl_write {
 
 impl_write!(@ptr &mut A, Box<A>);
 
-impl<A: AsMut<[u8]>> AsyncWrite for Cursor<A> {
-    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let pos = self.position();
-        let inner = self.get_mut().as_mut();
-        let mut new = Cursor::new(inner);
-        new.set_position(pos);
-        match std::io::Write::write(&mut new, buf.as_slice()) {
-            Ok(res) => {
-                self.set_position(pos + res as u64);
-                BufResult(Ok(res), buf)
-            }
-            Err(e) => BufResult(Err(e), buf),
-        }
-    }
-
-    async fn flush(&mut self) -> IoResult<()> {
-        Ok(())
-    }
-
-    async fn shutdown(&mut self) -> IoResult<()> {
-        Ok(())
-    }
-}
-
 /// Write is implemented for `Vec<u8>` by appending to the vector. The vector
 /// will grow as needed.
 impl AsyncWrite for Vec<u8> {
@@ -167,7 +145,7 @@ macro_rules! impl_write_at {
         $(
             impl<$(const $len: usize)?> AsyncWriteAt for $ty {
                 async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
-                    let pos = pos as usize;
+                    let pos = (pos as usize).min(self.len());
                     let slice = buf.as_slice();
                     let n = slice.len().min(self.len() - pos);
                     self[pos..pos + n].copy_from_slice(&slice[..n]);
@@ -181,15 +159,52 @@ macro_rules! impl_write_at {
 impl_write_at!(@ptr &mut A, Box<A>);
 impl_write_at!(@slice [u8], const LEN => [u8; LEN]);
 
-impl AsyncWriteAt for Vec<u8> {
+/// This implementation aligns the behavior of files. If `pos` is larger than
+/// the vector length, the vectored will be extended, and the extended area will
+/// be filled with 0.
+impl<#[cfg(feature = "allocator_api")] A: Allocator> AsyncWriteAt for vec_alloc!(u8, A) {
     async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
         let pos = pos as usize;
         let slice = buf.as_slice();
-        let n = slice.len().min(self.len() - pos);
-        self[pos..pos + n].copy_from_slice(&slice[..n]);
-        if n < slice.len() {
-            self.extend_from_slice(&slice[n..]);
+        if pos <= self.len() {
+            let n = slice.len().min(self.len() - pos);
+            if n < slice.len() {
+                self.reserve(slice.len() - n);
+                self[pos..pos + n].copy_from_slice(&slice[..n]);
+                self.extend_from_slice(&slice[n..]);
+            } else {
+                self[pos..pos + n].copy_from_slice(slice);
+            }
+            BufResult(Ok(n), buf)
+        } else {
+            self.reserve(pos - self.len() + slice.len());
+            self.resize(pos, 0);
+            self.extend_from_slice(slice);
+            BufResult(Ok(slice.len()), buf)
         }
+    }
+}
+
+impl<A: AsyncWriteAt> AsyncWrite for Cursor<A> {
+    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        let pos = self.position();
+        let (n, buf) = buf_try!(self.get_mut().write_at(buf, pos).await);
+        self.set_position(pos + n as u64);
         BufResult(Ok(n), buf)
+    }
+
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        let pos = self.position();
+        let (n, buf) = buf_try!(self.get_mut().write_vectored_at(buf, pos).await);
+        self.set_position(pos + n as u64);
+        BufResult(Ok(n), buf)
+    }
+
+    async fn flush(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+
+    async fn shutdown(&mut self) -> IoResult<()> {
+        Ok(())
     }
 }
