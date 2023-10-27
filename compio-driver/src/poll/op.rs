@@ -185,7 +185,32 @@ impl OpCode for Sync {
     }
 
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::Completed(syscall!(libc::fsync(self.fd))? as _))
+        #[cfg(any(
+            target_os = "android",
+            target_os = "freebsd",
+            target_os = "fuchsia",
+            target_os = "illumos",
+            target_os = "linux",
+            target_os = "netbsd"
+        ))]
+        {
+            Ok(Decision::Completed(syscall!(if self.datasync {
+                libc::fdatasync(self.fd)
+            } else {
+                libc::fsync(self.fd)
+            })? as _))
+        }
+        #[cfg(not(any(
+            target_os = "android",
+            target_os = "freebsd",
+            target_os = "fuchsia",
+            target_os = "illumos",
+            target_os = "linux",
+            target_os = "netbsd"
+        )))]
+        {
+            Ok(Decision::Completed(syscall!(libc::fsync(self.fd))? as _))
+        }
     }
 
     fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {

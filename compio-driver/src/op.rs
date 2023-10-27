@@ -135,12 +135,6 @@ impl Sync {
     /// Create [`Sync`].
     ///
     /// If `datasync` is `true`, the file metadata may not be synchronized.
-    ///
-    /// ## Platform specific
-    ///
-    /// * IOCP: it is synchronized operation, and calls `FlushFileBuffers`.
-    /// * io-uring: `fdatasync` if `datasync` specified, otherwise `fsync`.
-    /// * polling: it is synchronized `fdatasync` or `fsync`.
     pub fn new(fd: RawFd, datasync: bool) -> Self {
         Self { fd, datasync }
     }
