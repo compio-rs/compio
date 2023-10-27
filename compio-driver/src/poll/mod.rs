@@ -8,10 +8,12 @@ use std::{
     os::fd::BorrowedFd,
     pin::Pin,
     ptr::NonNull,
+    sync::Arc,
     task::Poll,
     time::Duration,
 };
 
+use crossbeam_queue::SegQueue;
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use polling::{Event, Events, Poller};
 use slab::Slab;
@@ -137,11 +139,11 @@ impl FdQueue {
 /// Low-level driver of polling.
 pub(crate) struct Driver {
     events: Events,
-    poll: Poller,
+    poll: Arc<Poller>,
     registry: HashMap<RawFd, FdQueue>,
     cancelled: HashSet<usize>,
     pool: AsyncifyPool,
-    pool_completed: Vec<Entry>,
+    pool_completed: Arc<SegQueue<Entry>>,
 }
 
 impl Driver {
@@ -155,11 +157,11 @@ impl Driver {
 
         Ok(Self {
             events,
-            poll: Poller::new()?,
+            poll: Arc::new(Poller::new()?),
             registry: HashMap::new(),
             cancelled: HashSet::new(),
             pool: AsyncifyPool::new(),
-            pool_completed: vec![],
+            pool_completed: Arc::new(SegQueue::new()),
         })
     }
 
@@ -233,7 +235,8 @@ impl Driver {
 
         // Safety: the reference should not be null.
         let op = SendWrapper(unsafe { NonNull::new_unchecked(op) });
-        let this: &'static mut Self = unsafe { &mut *(self as *mut Self) };
+        let poll = self.poll.clone();
+        let completed = self.pool_completed.clone();
         self.pool.dispatch(move || {
             #[allow(clippy::redundant_locals)]
             let mut op = op;
@@ -244,8 +247,8 @@ impl Driver {
                 Ok(Decision::Completed(res)) => Ok(res),
                 Err(err) => Err(err),
             };
-            this.pool_completed.push(Entry::new(user_data, res));
-            this.poll.notify().ok();
+            completed.push(Entry::new(user_data, res));
+            poll.notify().ok();
         })
     }
 
@@ -259,7 +262,9 @@ impl Driver {
         if self.events.is_empty() && self.pool_completed.is_empty() && timeout.is_some() {
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
         }
-        entries.extend(self.pool_completed.drain(..));
+        while let Some(entry) = self.pool_completed.pop() {
+            entries.extend(Some(entry));
+        }
         for event in self.events.iter() {
             let fd = event.key as RawFd;
             let queue = self
