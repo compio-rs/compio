@@ -18,7 +18,7 @@ pub(crate) use libc::{sockaddr_storage, socklen_t};
 use polling::{Event, Events, Poller};
 use slab::Slab;
 
-use crate::{syscall, Entry};
+use crate::{syscall, Entry, ProactorBuilder};
 
 #[path = "../asyncify.rs"]
 mod asyncify;
@@ -147,8 +147,8 @@ pub(crate) struct Driver {
 }
 
 impl Driver {
-    pub fn new(entries: u32) -> io::Result<Self> {
-        let entries = entries as usize; // for the sake of consistency, use u32 like iour
+    pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
+        let entries = builder.capacity as usize; // for the sake of consistency, use u32 like iour
         let events = if entries == 0 {
             Events::new()
         } else {
@@ -160,7 +160,7 @@ impl Driver {
             poll: Arc::new(Poller::new()?),
             registry: HashMap::new(),
             cancelled: HashSet::new(),
-            pool: AsyncifyPool::new(),
+            pool: AsyncifyPool::new(builder.thread_pool_limit, builder.thread_pool_recv_timeout),
             pool_completed: Arc::new(SegQueue::new()),
         })
     }

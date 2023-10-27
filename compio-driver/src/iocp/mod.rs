@@ -33,7 +33,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{syscall, Entry};
+use crate::{syscall, Entry, ProactorBuilder};
 
 #[path = "../asyncify.rs"]
 mod asyncify;
@@ -157,7 +157,7 @@ pub(crate) struct Driver {
 impl Driver {
     const DEFAULT_CAPACITY: usize = 1024;
 
-    pub fn new(_entries: u32) -> io::Result<Self> {
+    pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         let mut data: WSADATA = unsafe { std::mem::zeroed() };
         syscall!(SOCKET, WSAStartup(0x202, &mut data))?;
 
@@ -166,7 +166,7 @@ impl Driver {
         Ok(Self {
             port,
             cancelled: HashSet::default(),
-            pool: AsyncifyPool::new(),
+            pool: AsyncifyPool::new(builder.thread_pool_limit, builder.thread_pool_recv_timeout),
         })
     }
 

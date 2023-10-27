@@ -18,11 +18,15 @@ impl Drop for CounterGuard {
     }
 }
 
-fn worker(receiver: Receiver<BoxClosure>, counter: Arc<AtomicUsize>) -> impl FnOnce() {
+fn worker(
+    receiver: Receiver<BoxClosure>,
+    counter: Arc<AtomicUsize>,
+    timeout: Duration,
+) -> impl FnOnce() {
     move || {
         counter.fetch_add(1, Ordering::Relaxed);
         let _guard = CounterGuard(counter);
-        while let Ok(f) = receiver.recv_timeout(Duration::from_secs(60)) {
+        while let Ok(f) = receiver.recv_timeout(timeout) {
             f();
         }
     }
@@ -32,15 +36,19 @@ pub struct AsyncifyPool {
     sender: Sender<BoxClosure>,
     receiver: Receiver<BoxClosure>,
     counter: Arc<AtomicUsize>,
+    thread_limit: usize,
+    recv_timeout: Duration,
 }
 
 impl AsyncifyPool {
-    pub fn new() -> Self {
+    pub fn new(thread_limit: usize, recv_timeout: Duration) -> Self {
         let (sender, receiver) = bounded(0);
         Self {
             sender,
             receiver,
             counter: Arc::new(AtomicUsize::new(0)),
+            thread_limit,
+            recv_timeout,
         }
     }
 
@@ -49,10 +57,14 @@ impl AsyncifyPool {
             Ok(_) => true,
             Err(e) => match e {
                 TrySendError::Full(f) => {
-                    if self.counter.load(Ordering::Relaxed) >= 256 {
+                    if self.counter.load(Ordering::Relaxed) >= self.thread_limit {
                         false
                     } else {
-                        std::thread::spawn(worker(self.receiver.clone(), self.counter.clone()));
+                        std::thread::spawn(worker(
+                            self.receiver.clone(),
+                            self.counter.clone(),
+                            self.recv_timeout,
+                        ));
                         self.sender.send(f).expect("the channel should not be full");
                         true
                     }

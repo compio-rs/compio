@@ -155,14 +155,18 @@ pub struct Proactor {
 impl Proactor {
     /// Create [`Proactor`] with 1024 entries.
     pub fn new() -> io::Result<Self> {
-        Self::with_entries(1024)
+        Self::builder().build()
     }
 
-    /// Create [`Proactor`] with specified entries.
-    pub fn with_entries(entries: u32) -> io::Result<Self> {
+    /// Create [`ProactorBuilder`] to config the proactor.
+    pub fn builder() -> ProactorBuilder {
+        ProactorBuilder::new()
+    }
+
+    fn with_builder(builder: &ProactorBuilder) -> io::Result<Self> {
         Ok(Self {
-            driver: Driver::new(entries)?,
-            ops: Slab::with_capacity(entries as _),
+            driver: Driver::new(builder)?,
+            ops: Slab::with_capacity(builder.capacity as _),
         })
     }
 
@@ -295,5 +299,55 @@ impl Entry {
     /// The result of the operation.
     pub fn into_result(self) -> io::Result<usize> {
         self.result
+    }
+}
+
+/// Builder for [`Proactor`].
+pub struct ProactorBuilder {
+    capacity: u32,
+    thread_pool_limit: usize,
+    thread_pool_recv_timeout: Duration,
+}
+
+impl Default for ProactorBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ProactorBuilder {
+    /// Create the builder with default config.
+    pub fn new() -> Self {
+        Self {
+            capacity: 1024,
+            thread_pool_limit: 256,
+            thread_pool_recv_timeout: Duration::from_secs(60),
+        }
+    }
+
+    /// Set the capacity of the inner event queue or submission queue, if
+    /// exists. The default value is 1024.
+    pub fn capacity(&mut self, capacity: u32) -> &mut Self {
+        self.capacity = capacity;
+        self
+    }
+
+    /// Set the thread number limit of the inner thread pool, if exists. The
+    /// default value is 256.
+    pub fn thread_pool_limit(&mut self, limit: usize) -> &mut Self {
+        self.thread_pool_limit = limit;
+        self
+    }
+
+    /// Set the waiting timeout of the inner thread, if exists. The default is
+    /// 60 seconds.
+    pub fn thread_pool_recv_timeout(&mut self, timeout: Duration) -> &mut Self {
+        self.thread_pool_recv_timeout = timeout;
+        self
+    }
+
+    /// Build the [`Proactor`].
+    pub fn build(&self) -> io::Result<Proactor> {
+        Proactor::with_builder(self)
     }
 }
