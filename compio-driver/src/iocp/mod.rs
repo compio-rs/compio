@@ -164,7 +164,7 @@ impl Driver {
         Ok(Self {
             port,
             cancelled: HashSet::default(),
-            pool: builder.create_pool(),
+            pool: builder.create_or_get_thread_pool(),
         })
     }
 

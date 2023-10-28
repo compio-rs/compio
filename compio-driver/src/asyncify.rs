@@ -36,6 +36,7 @@ fn worker(
 ///
 /// ## Platform specific
 /// * io-uring: the driver doesn't user this thread pool.
+#[derive(Debug)]
 pub struct AsyncifyPool {
     sender: Sender<BoxClosure>,
     receiver: Receiver<BoxClosure>,
@@ -58,7 +59,7 @@ impl AsyncifyPool {
         }
     }
 
-    /// Send a closure to another thread.
+    /// Send a closure to another thread. Usually the user should not use it.
     pub fn dispatch(&self, f: impl FnOnce() + Send + 'static) -> bool {
         match self.sender.try_send(Box::new(f) as BoxClosure) {
             Ok(_) => true,

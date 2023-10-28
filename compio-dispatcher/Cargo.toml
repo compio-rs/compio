@@ -12,6 +12,7 @@ repository = { workspace = true }
 
 [dependencies]
 # Workspace dependencies
+compio-driver = { workspace = true }
 compio-runtime = { workspace = true }
 
 crossbeam-channel = "0.5"

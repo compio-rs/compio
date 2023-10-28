@@ -10,6 +10,7 @@ use std::{
     thread::{available_parallelism, JoinHandle},
 };
 
+use compio_driver::ProactorBuilder;
 use crossbeam_channel::{unbounded, SendError, Sender};
 use futures_util::{future::LocalBoxFuture, FutureExt};
 
@@ -24,10 +25,16 @@ pub struct Dispatcher {
 impl Dispatcher {
     /// Create the dispatcher with specified number of threads.
     pub(crate) fn new_impl(mut builder: DispatcherBuilder) -> io::Result<Self> {
+        let mut proactor_builder = builder.proactor_builder;
+        // If the reused pool is not set, this call will set it.
+        proactor_builder.reuse_thread_pool(proactor_builder.create_or_get_thread_pool());
+
         let (sender, receiver) = unbounded::<BoxClosure<'static>>();
         let threads = (0..builder.nthreads)
             .map({
                 |index| {
+                    let proactor_builder = proactor_builder.clone();
+
                     let receiver = receiver.clone();
 
                     let thread_builder = std::thread::Builder::new();
@@ -43,6 +50,7 @@ impl Dispatcher {
                     };
 
                     thread_builder.spawn(move || {
+                        compio_runtime::config_proactor(proactor_builder);
                         while let Ok(f) = receiver.recv() {
                             compio_runtime::block_on(f())?;
                         }
@@ -93,6 +101,7 @@ pub struct DispatcherBuilder {
     nthreads: usize,
     stack_size: Option<usize>,
     names: Option<Box<dyn FnMut(usize) -> String>>,
+    proactor_builder: ProactorBuilder,
 }
 
 impl DispatcherBuilder {
@@ -102,6 +111,7 @@ impl DispatcherBuilder {
             nthreads: available_parallelism().map(|n| n.get()).unwrap_or(1),
             stack_size: None,
             names: None,
+            proactor_builder: ProactorBuilder::new(),
         }
     }
 
@@ -122,6 +132,12 @@ impl DispatcherBuilder {
     /// Provide a function to assign names to the worker threads.
     pub fn thread_names(mut self, f: impl (FnMut(usize) -> String) + 'static) -> Self {
         self.names = Some(Box::new(f) as _);
+        self
+    }
+
+    /// Set the proactor builder for the inner runtimes.
+    pub fn proactor_builder(mut self, builder: ProactorBuilder) -> Self {
+        self.proactor_builder = builder;
         self
     }
 

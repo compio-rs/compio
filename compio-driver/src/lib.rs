@@ -306,6 +306,7 @@ impl Entry {
 }
 
 /// Builder for [`Proactor`].
+#[derive(Debug, Clone)]
 pub struct ProactorBuilder {
     capacity: u32,
     thread_pool_limit: usize,
@@ -362,7 +363,8 @@ impl ProactorBuilder {
         self
     }
 
-    pub(crate) fn create_pool(&self) -> Arc<AsyncifyPool> {
+    /// Create or reuse the thread pool from the config.
+    pub fn create_or_get_thread_pool(&self) -> Arc<AsyncifyPool> {
         self.reuse_thread_pool.as_ref().cloned().unwrap_or_else(|| {
             Arc::new(AsyncifyPool::new(
                 self.thread_pool_limit,
