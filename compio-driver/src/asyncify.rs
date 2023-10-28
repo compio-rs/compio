@@ -32,6 +32,10 @@ fn worker(
     }
 }
 
+/// A thread pool to perform blocking operations in other threads.
+///
+/// ## Platform specific
+/// * io-uring: the driver doesn't user this thread pool.
 pub struct AsyncifyPool {
     sender: Sender<BoxClosure>,
     receiver: Receiver<BoxClosure>,
@@ -41,6 +45,8 @@ pub struct AsyncifyPool {
 }
 
 impl AsyncifyPool {
+    /// Create [`AsyncifyPool`] with thread number limit and channel receive
+    /// timeout.
     pub fn new(thread_limit: usize, recv_timeout: Duration) -> Self {
         let (sender, receiver) = bounded(0);
         Self {
@@ -52,7 +58,8 @@ impl AsyncifyPool {
         }
     }
 
-    pub fn dispatch(&mut self, f: impl FnOnce() + Send + 'static) -> bool {
+    /// Send a closure to another thread.
+    pub fn dispatch(&self, f: impl FnOnce() + Send + 'static) -> bool {
         match self.sender.try_send(Box::new(f) as BoxClosure) {
             Ok(_) => true,
             Err(e) => match e {

@@ -18,13 +18,9 @@ pub(crate) use libc::{sockaddr_storage, socklen_t};
 use polling::{Event, Events, Poller};
 use slab::Slab;
 
-use crate::{syscall, Entry, ProactorBuilder};
+use crate::{syscall, AsyncifyPool, Entry, ProactorBuilder};
 
-#[path = "../asyncify.rs"]
-mod asyncify;
 pub(crate) mod op;
-
-use asyncify::AsyncifyPool;
 
 pub(crate) use crate::unix::RawOp;
 
@@ -142,7 +138,7 @@ pub(crate) struct Driver {
     poll: Arc<Poller>,
     registry: HashMap<RawFd, FdQueue>,
     cancelled: HashSet<usize>,
-    pool: AsyncifyPool,
+    pool: Arc<AsyncifyPool>,
     pool_completed: Arc<SegQueue<Entry>>,
 }
 
@@ -160,7 +156,7 @@ impl Driver {
             poll: Arc::new(Poller::new()?),
             registry: HashMap::new(),
             cancelled: HashSet::new(),
-            pool: AsyncifyPool::new(builder.thread_pool_limit, builder.thread_pool_recv_timeout),
+            pool: builder.create_pool(),
             pool_completed: Arc::new(SegQueue::new()),
         })
     }

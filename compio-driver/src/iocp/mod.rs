@@ -8,6 +8,7 @@ use std::{
     },
     pin::Pin,
     ptr::NonNull,
+    sync::Arc,
     task::Poll,
     time::Duration,
 };
@@ -33,13 +34,10 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{syscall, Entry, ProactorBuilder};
+use crate::{syscall, AsyncifyPool, Entry, ProactorBuilder};
 
-#[path = "../asyncify.rs"]
-mod asyncify;
 pub(crate) mod op;
 
-use asyncify::AsyncifyPool;
 pub(crate) use windows_sys::Win32::Networking::WinSock::{
     socklen_t, SOCKADDR_STORAGE as sockaddr_storage,
 };
@@ -151,7 +149,7 @@ fn ntstatus_from_win32(x: i32) -> NTSTATUS {
 pub(crate) struct Driver {
     port: OwnedHandle,
     cancelled: HashSet<usize>,
-    pool: AsyncifyPool,
+    pool: Arc<AsyncifyPool>,
 }
 
 impl Driver {
@@ -166,7 +164,7 @@ impl Driver {
         Ok(Self {
             port,
             cancelled: HashSet::default(),
-            pool: AsyncifyPool::new(builder.thread_pool_limit, builder.thread_pool_recv_timeout),
+            pool: builder.create_pool(),
         })
     }
 

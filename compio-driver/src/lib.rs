@@ -12,7 +12,7 @@
 ))]
 compile_error!("You must choose at least one of these features: [\"io-uring\", \"polling\"]");
 
-use std::{io, task::Poll, time::Duration};
+use std::{io, sync::Arc, task::Poll, time::Duration};
 
 use compio_buf::BufResult;
 use slab::Slab;
@@ -21,6 +21,9 @@ pub mod op;
 #[cfg(unix)]
 #[cfg_attr(docsrs, doc(cfg(all())))]
 mod unix;
+
+mod asyncify;
+pub use asyncify::*;
 
 cfg_if::cfg_if! {
     if #[cfg(windows)] {
@@ -307,6 +310,7 @@ pub struct ProactorBuilder {
     capacity: u32,
     thread_pool_limit: usize,
     thread_pool_recv_timeout: Duration,
+    reuse_thread_pool: Option<Arc<AsyncifyPool>>,
 }
 
 impl Default for ProactorBuilder {
@@ -322,6 +326,7 @@ impl ProactorBuilder {
             capacity: 1024,
             thread_pool_limit: 256,
             thread_pool_recv_timeout: Duration::from_secs(60),
+            reuse_thread_pool: None,
         }
     }
 
@@ -334,6 +339,8 @@ impl ProactorBuilder {
 
     /// Set the thread number limit of the inner thread pool, if exists. The
     /// default value is 256.
+    ///
+    /// It will be ignored if `reuse_thread_pool` is set.
     pub fn thread_pool_limit(&mut self, limit: usize) -> &mut Self {
         self.thread_pool_limit = limit;
         self
@@ -341,9 +348,27 @@ impl ProactorBuilder {
 
     /// Set the waiting timeout of the inner thread, if exists. The default is
     /// 60 seconds.
+    ///
+    /// It will be ignored if `reuse_thread_pool` is set.
     pub fn thread_pool_recv_timeout(&mut self, timeout: Duration) -> &mut Self {
         self.thread_pool_recv_timeout = timeout;
         self
+    }
+
+    /// Set to reuse an existing [`AsyncifyPool`] in this proactor. It is in
+    /// [`Arc`] to share across threads.
+    pub fn reuse_thread_pool(&mut self, pool: Arc<AsyncifyPool>) -> &mut Self {
+        self.reuse_thread_pool = Some(pool);
+        self
+    }
+
+    pub(crate) fn create_pool(&self) -> Arc<AsyncifyPool> {
+        self.reuse_thread_pool.as_ref().cloned().unwrap_or_else(|| {
+            Arc::new(AsyncifyPool::new(
+                self.thread_pool_limit,
+                self.thread_pool_recv_timeout,
+            ))
+        })
     }
 
     /// Build the [`Proactor`].
