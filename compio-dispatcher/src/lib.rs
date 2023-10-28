@@ -7,10 +7,12 @@ use std::{
     io,
     num::NonZeroUsize,
     panic::resume_unwind,
+    sync::{Arc, Mutex},
     thread::{available_parallelism, JoinHandle},
 };
 
-use compio_driver::ProactorBuilder;
+use compio_driver::{AsyncifyPool, ProactorBuilder};
+use compio_runtime::event::Event;
 use crossbeam_channel::{unbounded, SendError, Sender};
 use futures_util::{future::LocalBoxFuture, FutureExt};
 
@@ -20,14 +22,16 @@ type BoxClosure<'a> = Box<dyn (FnOnce() -> LocalBoxFuture<'a, io::Result<()>>) +
 pub struct Dispatcher {
     sender: Sender<BoxClosure<'static>>,
     threads: Vec<JoinHandle<io::Result<()>>>,
+    pool: Arc<AsyncifyPool>,
 }
 
 impl Dispatcher {
     /// Create the dispatcher with specified number of threads.
     pub(crate) fn new_impl(mut builder: DispatcherBuilder) -> io::Result<Self> {
         let mut proactor_builder = builder.proactor_builder;
+        let pool = proactor_builder.create_or_get_thread_pool();
         // If the reused pool is not set, this call will set it.
-        proactor_builder.reuse_thread_pool(proactor_builder.create_or_get_thread_pool());
+        proactor_builder.reuse_thread_pool(pool.clone());
 
         let (sender, receiver) = unbounded::<BoxClosure<'static>>();
         let threads = (0..builder.nthreads)
@@ -59,7 +63,11 @@ impl Dispatcher {
                 }
             })
             .collect::<io::Result<Vec<_>>>()?;
-        Ok(Self { sender, threads })
+        Ok(Self {
+            sender,
+            threads,
+            pool,
+        })
     }
 
     /// Create the dispatcher with default config.
@@ -87,12 +95,25 @@ impl Dispatcher {
 
     /// Stop the dispatcher and wait for the threads to complete. If there is a
     /// thread panicked, this method will resume the panic.
-    pub fn join(self) -> Vec<io::Result<()>> {
+    pub async fn join(self) -> io::Result<Vec<io::Result<()>>> {
         drop(self.sender);
-        self.threads
-            .into_iter()
-            .map(|thread| thread.join().unwrap_or_else(|e| resume_unwind(e)))
-            .collect()
+        let results = Arc::new(Mutex::new(vec![]));
+        let event = Event::new()?;
+        let handle = event.handle()?;
+        self.pool.dispatch({
+            let results = results.clone();
+            move || {
+                *results.lock().unwrap() = self
+                    .threads
+                    .into_iter()
+                    .map(|thread| thread.join().unwrap_or_else(|e| resume_unwind(e)))
+                    .collect();
+                handle.notify().ok();
+            }
+        });
+        event.wait().await?;
+        let mut guard = results.lock().unwrap();
+        Ok(std::mem::take(guard.as_mut()))
     }
 }
 

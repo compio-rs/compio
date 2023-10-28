@@ -43,8 +43,8 @@ async fn listener_dispatch() {
             })
             .unwrap();
     }
-    task.await;
-    for res in dispatcher.join() {
+    let (_, results) = futures_util::join!(task, dispatcher.join());
+    for res in results.unwrap() {
         res.unwrap();
     }
 }

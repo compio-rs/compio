@@ -21,7 +21,7 @@ async fn main() {
         .worker_threads(NonZeroUsize::new(THREAD_NUM).unwrap())
         .build()
         .unwrap();
-    let task = spawn(async move {
+    spawn(async move {
         let mut futures = FuturesUnordered::from_iter((0..CLIENT_NUM).map(|i| {
             let addr = &addr;
             async move {
@@ -30,7 +30,8 @@ async fn main() {
             }
         }));
         while let Some(()) = futures.next().await {}
-    });
+    })
+    .detach();
     for _i in 0..CLIENT_NUM {
         let (srv, _) = listener.accept().await.unwrap();
         let srv = Unattached::new(srv).unwrap();
@@ -46,10 +47,7 @@ async fn main() {
             })
             .unwrap();
     }
-    // Dispatcher::join is a blocking call, which may block the main thread. We need
-    // to wait for the client first.
-    task.await;
-    for res in dispatcher.join() {
+    for res in dispatcher.join().await.unwrap() {
         res.unwrap();
     }
 }
