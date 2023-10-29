@@ -1,6 +1,6 @@
 //! Unix pipe types.
 
-use std::{io, os::unix::fs::FileTypeExt, path::Path};
+use std::io;
 
 use compio_driver::{impl_raw_fd, syscall, AsRawFd, FromRawFd, IntoRawFd};
 #[cfg(feature = "runtime")]
@@ -9,7 +9,7 @@ use {
     compio_driver::op::{BufResultExt, Recv, RecvVectored, Send, SendVectored},
     compio_io::{AsyncRead, AsyncWrite},
     compio_runtime::{impl_attachable, submit, Attachable},
-    std::future::Future,
+    std::{future::Future, path::Path},
 };
 
 use crate::File;
@@ -244,6 +244,7 @@ impl Default for OpenOptions {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg(feature = "runtime")]
 enum PipeEnd {
     Sender,
     Receiver,
@@ -513,7 +514,10 @@ impl_raw_fd!(Receiver, file);
 impl_attachable!(Receiver, file);
 
 /// Checks if file is a FIFO
+#[cfg(feature = "runtime")]
 fn is_fifo(file: &File) -> io::Result<bool> {
+    use std::os::unix::prelude::FileTypeExt;
+
     Ok(file.metadata()?.file_type().is_fifo())
 }
 
