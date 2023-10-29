@@ -52,9 +52,14 @@ futures-channel = "0.3"
 tempfile = "3"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt"] }
 
+[target.'cfg(windows)'.dev-dependencies]
+widestring = "1"
+windows-sys = { version = "0.48", features = ["Win32_Storage_FileSystem"] }
+
 # Unix specific dev dependencies
 [target.'cfg(unix)'.dev-dependencies]
 nix = { version = "0.27", features = ["fs"] }
+libc = "0.2"
 
 [features]
 default = ["runtime", "io-uring"]
