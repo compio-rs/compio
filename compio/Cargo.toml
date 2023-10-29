@@ -114,6 +114,10 @@ name = "unix"
 required-features = ["macros"]
 
 [[example]]
+name = "resolve"
+required-features = ["macros"]
+
+[[example]]
 name = "tick"
 required-features = ["time", "signal", "macros"]
 
