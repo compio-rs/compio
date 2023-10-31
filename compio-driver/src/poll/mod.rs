@@ -240,7 +240,7 @@ impl Driver {
             let op = unsafe { op.0.as_mut() };
             let op_pin = op.as_pin();
             let res = match op_pin.pre_submit() {
-                Ok(Decision::Wait(_)) => unreachable!("thie operation is not non-blocking"),
+                Ok(Decision::Wait(_)) => unreachable!("this operation is not non-blocking"),
                 Ok(Decision::Completed(res)) => Ok(res),
                 Err(err) => Err(err),
             };
