@@ -230,8 +230,7 @@ impl Driver {
         struct SendWrapper<T>(T);
         unsafe impl<T> Send for SendWrapper<T> {}
 
-        // Safety: the reference should not be null.
-        let op = SendWrapper(unsafe { NonNull::new_unchecked(op) });
+        let op = SendWrapper(NonNull::from(op));
         let poll = self.poll.clone();
         let completed = self.pool_completed.clone();
         self.pool.dispatch(move || {

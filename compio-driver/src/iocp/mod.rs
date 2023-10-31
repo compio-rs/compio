@@ -274,8 +274,7 @@ impl Driver {
         struct SendWrapper<T>(T);
         unsafe impl<T> Send for SendWrapper<T> {}
 
-        // Safety: the reference should not be null.
-        let optr = SendWrapper(unsafe { NonNull::new_unchecked(op) });
+        let optr = SendWrapper(NonNull::from(op));
         let handle = self.as_raw_fd() as _;
         self.pool.dispatch(move || {
             #[allow(clippy::redundant_locals)]
