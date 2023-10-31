@@ -391,6 +391,13 @@ impl ProactorBuilder {
         self
     }
 
+    /// Force reuse the thread pool for each proactor created by this builder,
+    /// even `reuse_thread_pool` is not set.
+    pub fn force_reuse_thread_pool(&mut self) -> &mut Self {
+        self.reuse_thread_pool(self.create_or_get_thread_pool());
+        self
+    }
+
     /// Create or reuse the thread pool from the config.
     pub fn create_or_get_thread_pool(&self) -> AsyncifyPool {
         self.pool_builder.create_or_reuse()

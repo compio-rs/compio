@@ -27,9 +27,8 @@ impl Dispatcher {
     /// Create the dispatcher with specified number of threads.
     pub(crate) fn new_impl(mut builder: DispatcherBuilder) -> io::Result<Self> {
         let mut proactor_builder = builder.proactor_builder;
+        proactor_builder.force_reuse_thread_pool();
         let pool = proactor_builder.create_or_get_thread_pool();
-        // If the reused pool is not set, this call will set it.
-        proactor_builder.reuse_thread_pool(pool.clone());
 
         let (sender, receiver) = unbounded::<DispatcherClosure>();
         let threads = (0..builder.nthreads)
