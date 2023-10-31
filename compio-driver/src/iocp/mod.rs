@@ -8,7 +8,6 @@ use std::{
     },
     pin::Pin,
     ptr::NonNull,
-    sync::Arc,
     task::Poll,
     time::Duration,
 };
@@ -149,7 +148,7 @@ fn ntstatus_from_win32(x: i32) -> NTSTATUS {
 pub(crate) struct Driver {
     port: OwnedHandle,
     cancelled: HashSet<usize>,
-    pool: Arc<AsyncifyPool>,
+    pool: AsyncifyPool,
 }
 
 impl Driver {

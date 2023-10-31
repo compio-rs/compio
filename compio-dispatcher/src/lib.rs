@@ -20,7 +20,7 @@ use futures_util::{future::LocalBoxFuture, FutureExt};
 pub struct Dispatcher {
     sender: Sender<DispatcherClosure>,
     threads: Vec<JoinHandle<()>>,
-    pool: Arc<AsyncifyPool>,
+    pool: AsyncifyPool,
 }
 
 impl Dispatcher {

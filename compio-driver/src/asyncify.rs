@@ -36,7 +36,7 @@ fn worker(
 ///
 /// ## Platform specific
 /// * io-uring: the driver doesn't user this thread pool.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AsyncifyPool {
     sender: Sender<BoxClosure>,
     receiver: Receiver<BoxClosure>,

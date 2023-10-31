@@ -12,7 +12,7 @@
 ))]
 compile_error!("You must choose at least one of these features: [\"io-uring\", \"polling\"]");
 
-use std::{io, sync::Arc, task::Poll, time::Duration};
+use std::{io, task::Poll, time::Duration};
 
 use compio_buf::BufResult;
 use slab::Slab;
@@ -311,7 +311,7 @@ pub struct ProactorBuilder {
     capacity: u32,
     thread_pool_limit: usize,
     thread_pool_recv_timeout: Duration,
-    reuse_thread_pool: Option<Arc<AsyncifyPool>>,
+    reuse_thread_pool: Option<AsyncifyPool>,
 }
 
 impl Default for ProactorBuilder {
@@ -358,18 +358,15 @@ impl ProactorBuilder {
 
     /// Set to reuse an existing [`AsyncifyPool`] in this proactor. It is in
     /// [`Arc`] to share across threads.
-    pub fn reuse_thread_pool(&mut self, pool: Arc<AsyncifyPool>) -> &mut Self {
+    pub fn reuse_thread_pool(&mut self, pool: AsyncifyPool) -> &mut Self {
         self.reuse_thread_pool = Some(pool);
         self
     }
 
     /// Create or reuse the thread pool from the config.
-    pub fn create_or_get_thread_pool(&self) -> Arc<AsyncifyPool> {
+    pub fn create_or_get_thread_pool(&self) -> AsyncifyPool {
         self.reuse_thread_pool.as_ref().cloned().unwrap_or_else(|| {
-            Arc::new(AsyncifyPool::new(
-                self.thread_pool_limit,
-                self.thread_pool_recv_timeout,
-            ))
+            AsyncifyPool::new(self.thread_pool_limit, self.thread_pool_recv_timeout)
         })
     }
 

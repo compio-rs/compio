@@ -138,7 +138,7 @@ pub(crate) struct Driver {
     poll: Arc<Poller>,
     registry: HashMap<RawFd, FdQueue>,
     cancelled: HashSet<usize>,
-    pool: Arc<AsyncifyPool>,
+    pool: AsyncifyPool,
     pool_completed: Arc<SegQueue<Entry>>,
 }
 
