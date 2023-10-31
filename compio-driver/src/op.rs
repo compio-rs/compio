@@ -3,13 +3,15 @@
 //! The operation itself doesn't perform anything.
 //! You need to pass them to [`crate::Proactor`], and poll the driver.
 
+use std::net::Shutdown;
+
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
 use socket2::SockAddr;
 
 #[cfg(windows)]
 pub use crate::sys::op::ConnectNamedPipe;
 pub use crate::sys::op::{
-    Accept, Recv, RecvFrom, RecvFromVectored, RecvVectored, Send, SendTo, SendToVectored,
+    Accept, OpenFile, Recv, RecvFrom, RecvFromVectored, RecvVectored, Send, SendTo, SendToVectored,
     SendVectored,
 };
 #[cfg(unix)]
@@ -61,6 +63,18 @@ impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t)> {
             },
             |(buffer, ..)| buffer,
         )
+    }
+}
+
+/// Close the file fd.
+pub struct CloseFile {
+    pub(crate) fd: RawFd,
+}
+
+impl CloseFile {
+    /// Create [`CloseFile`].
+    pub fn new(fd: RawFd) -> Self {
+        Self { fd }
     }
 }
 
@@ -121,14 +135,33 @@ impl Sync {
     /// Create [`Sync`].
     ///
     /// If `datasync` is `true`, the file metadata may not be synchronized.
-    ///
-    /// ## Platform specific
-    ///
-    /// * IOCP: it is synchronized operation, and calls `FlushFileBuffers`.
-    /// * io-uring: `fdatasync` if `datasync` specified, otherwise `fsync`.
-    /// * polling: it is synchronized `fdatasync` or `fsync`.
     pub fn new(fd: RawFd, datasync: bool) -> Self {
         Self { fd, datasync }
+    }
+}
+
+/// Shutdown a socket.
+pub struct ShutdownSocket {
+    pub(crate) fd: RawFd,
+    pub(crate) how: Shutdown,
+}
+
+impl ShutdownSocket {
+    /// Create [`ShutdownSocket`].
+    pub fn new(fd: RawFd, how: Shutdown) -> Self {
+        Self { fd, how }
+    }
+}
+
+/// Close socket fd.
+pub struct CloseSocket {
+    pub(crate) fd: RawFd,
+}
+
+impl CloseSocket {
+    /// Create [`CloseSocket`].
+    pub fn new(fd: RawFd) -> Self {
+        Self { fd }
     }
 }
 

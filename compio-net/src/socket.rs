@@ -6,10 +6,11 @@ use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 use {
     compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     compio_driver::op::{
-        Accept, BufResultExt, Connect, Recv, RecvFrom, RecvFromVectored, RecvResultExt,
-        RecvVectored, Send, SendTo, SendToVectored, SendVectored,
+        Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored,
+        RecvResultExt, RecvVectored, Send, SendTo, SendToVectored, SendVectored, ShutdownSocket,
     },
     compio_runtime::{submit, Attachable, Attacher},
+    std::{future::Future, mem::ManuallyDrop},
 };
 
 #[derive(Debug)]
@@ -127,8 +128,24 @@ impl Socket {
     }
 
     #[cfg(feature = "runtime")]
-    pub fn shutdown(&self) -> io::Result<()> {
-        self.socket.shutdown(std::net::Shutdown::Write)
+    pub fn close(self) -> impl Future<Output = io::Result<()>> {
+        // Make sure that self won't be dropped after `close` called.
+        // Users may call this method and drop the future immediately. In that way the
+        // `close` should be cancelled.
+        let this = ManuallyDrop::new(self);
+        async move {
+            let op = CloseSocket::new(this.as_raw_fd());
+            submit(op).await.0?;
+            Ok(())
+        }
+    }
+
+    #[cfg(feature = "runtime")]
+    pub async fn shutdown(&self) -> io::Result<()> {
+        self.attach()?;
+        let op = ShutdownSocket::new(self.as_raw_fd(), std::net::Shutdown::Write);
+        submit(op).await.0?;
+        Ok(())
     }
 
     #[cfg(feature = "runtime")]

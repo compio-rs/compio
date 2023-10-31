@@ -13,7 +13,7 @@ use io_uring::{
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use slab::Slab;
 
-use crate::Entry;
+use crate::{Entry, ProactorBuilder};
 
 pub(crate) mod op;
 pub(crate) use crate::unix::RawOp;
@@ -33,10 +33,10 @@ pub(crate) struct Driver {
 impl Driver {
     const CANCEL: u64 = u64::MAX;
 
-    pub fn new(entries: u32) -> io::Result<Self> {
+    pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         Ok(Self {
-            inner: IoUring::new(entries)?,
-            squeue: VecDeque::with_capacity(entries as usize),
+            inner: IoUring::new(builder.capacity)?,
+            squeue: VecDeque::with_capacity(builder.capacity as usize),
         })
     }
 

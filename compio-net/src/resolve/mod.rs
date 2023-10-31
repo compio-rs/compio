@@ -48,7 +48,7 @@ pub async fn resolve_sock_addrs(
     unsafe { resolver.addrs() }
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 fn to_addrs(mut result: *mut sys::addrinfo, port: u16) -> std::vec::IntoIter<SocketAddr> {
     use socket2::SockAddr;
 

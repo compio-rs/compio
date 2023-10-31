@@ -6,28 +6,36 @@ use std::{
     future::Future,
     io,
     num::NonZeroUsize,
-    panic::resume_unwind,
+    panic::{resume_unwind, UnwindSafe},
+    sync::{Arc, Mutex},
     thread::{available_parallelism, JoinHandle},
 };
 
-use crossbeam_channel::{unbounded, SendError, Sender};
+use compio_driver::{AsyncifyPool, ProactorBuilder};
+use compio_runtime::event::{Event, EventHandle};
+use crossbeam_channel::{unbounded, Sender};
 use futures_util::{future::LocalBoxFuture, FutureExt};
-
-type BoxClosure<'a> = Box<dyn (FnOnce() -> LocalBoxFuture<'a, io::Result<()>>) + Send>;
 
 /// The dispatcher. It manages the threads and dispatches the tasks.
 pub struct Dispatcher {
-    sender: Sender<BoxClosure<'static>>,
-    threads: Vec<JoinHandle<io::Result<()>>>,
+    sender: Sender<DispatcherClosure>,
+    threads: Vec<JoinHandle<()>>,
+    pool: AsyncifyPool,
 }
 
 impl Dispatcher {
     /// Create the dispatcher with specified number of threads.
     pub(crate) fn new_impl(mut builder: DispatcherBuilder) -> io::Result<Self> {
-        let (sender, receiver) = unbounded::<BoxClosure<'static>>();
+        let mut proactor_builder = builder.proactor_builder;
+        proactor_builder.force_reuse_thread_pool();
+        let pool = proactor_builder.create_or_get_thread_pool();
+
+        let (sender, receiver) = unbounded::<DispatcherClosure>();
         let threads = (0..builder.nthreads)
             .map({
                 |index| {
+                    let proactor_builder = proactor_builder.clone();
+
                     let receiver = receiver.clone();
 
                     let thread_builder = std::thread::Builder::new();
@@ -43,15 +51,26 @@ impl Dispatcher {
                     };
 
                     thread_builder.spawn(move || {
+                        let succeeded = compio_runtime::config_proactor(proactor_builder);
+                        debug_assert!(
+                            succeeded,
+                            "the runtime should not be created before proactor builder set"
+                        );
                         while let Ok(f) = receiver.recv() {
-                            compio_runtime::block_on(f())?;
+                            *f.result.lock().unwrap() = Some(std::panic::catch_unwind(move || {
+                                compio_runtime::block_on((f.func)());
+                            }));
+                            f.handle.notify().ok();
                         }
-                        Ok(())
                     })
                 }
             })
             .collect::<io::Result<Vec<_>>>()?;
-        Ok(Self { sender, threads })
+        Ok(Self {
+            sender,
+            threads,
+            pool,
+        })
     }
 
     /// Create the dispatcher with default config.
@@ -69,22 +88,54 @@ impl Dispatcher {
     /// The provided `f` should be [`Send`] because it will be send to another
     /// thread before calling. The return [`Future`] need not to be [`Send`]
     /// because it will be executed on only one thread.
-    pub fn dispatch<F: Future<Output = io::Result<()>> + 'static>(
+    pub fn dispatch<
+        F: Future<Output = ()> + 'static,
+        Fn: (FnOnce() -> F) + Send + UnwindSafe + 'static,
+    >(
         &self,
-        f: impl (FnOnce() -> F) + Send + 'static,
-    ) -> Result<(), SendError<BoxClosure<'static>>> {
+        f: Fn,
+    ) -> io::Result<DispatcherJoinHandle> {
+        let event = Event::new()?;
+        let handle = event.handle()?;
+        let join_handle = DispatcherJoinHandle::new(event);
+        let closure = DispatcherClosure {
+            handle,
+            result: join_handle.result.clone(),
+            func: Box::new(|| f().boxed_local()),
+        };
         self.sender
-            .send(Box::new(move || f().boxed_local()) as BoxClosure<'static>)
+            .send(closure)
+            .expect("the channel should not be disconnected");
+        Ok(join_handle)
     }
 
     /// Stop the dispatcher and wait for the threads to complete. If there is a
     /// thread panicked, this method will resume the panic.
-    pub fn join(self) -> Vec<io::Result<()>> {
+    pub async fn join(self) -> io::Result<()> {
         drop(self.sender);
-        self.threads
-            .into_iter()
-            .map(|thread| thread.join().unwrap_or_else(|e| resume_unwind(e)))
-            .collect()
+        let results = Arc::new(Mutex::new(vec![]));
+        let event = Event::new()?;
+        let handle = event.handle()?;
+        if let Err(f) = self.pool.dispatch({
+            let results = results.clone();
+            move || {
+                *results.lock().unwrap() = self
+                    .threads
+                    .into_iter()
+                    .map(|thread| thread.join())
+                    .collect();
+                handle.notify().ok();
+            }
+        }) {
+            std::thread::spawn(f);
+        }
+        event.wait().await?;
+        let mut guard = results.lock().unwrap();
+        for res in std::mem::take::<Vec<std::thread::Result<()>>>(guard.as_mut()) {
+            // The thread should not panic.
+            res.unwrap_or_else(|e| resume_unwind(e));
+        }
+        Ok(())
     }
 }
 
@@ -93,6 +144,7 @@ pub struct DispatcherBuilder {
     nthreads: usize,
     stack_size: Option<usize>,
     names: Option<Box<dyn FnMut(usize) -> String>>,
+    proactor_builder: ProactorBuilder,
 }
 
 impl DispatcherBuilder {
@@ -102,6 +154,7 @@ impl DispatcherBuilder {
             nthreads: available_parallelism().map(|n| n.get()).unwrap_or(1),
             stack_size: None,
             names: None,
+            proactor_builder: ProactorBuilder::new(),
         }
     }
 
@@ -125,6 +178,12 @@ impl DispatcherBuilder {
         self
     }
 
+    /// Set the proactor builder for the inner runtimes.
+    pub fn proactor_builder(mut self, builder: ProactorBuilder) -> Self {
+        self.proactor_builder = builder;
+        self
+    }
+
     /// Build the [`Dispatcher`].
     pub fn build(self) -> io::Result<Dispatcher> {
         Dispatcher::new_impl(self)
@@ -134,5 +193,39 @@ impl DispatcherBuilder {
 impl Default for DispatcherBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+type Closure<'a> = dyn (FnOnce() -> LocalBoxFuture<'a, ()>) + Send + UnwindSafe;
+
+struct DispatcherClosure {
+    handle: EventHandle,
+    result: Arc<Mutex<Option<std::thread::Result<()>>>>,
+    func: Box<Closure<'static>>,
+}
+
+/// The join handle for dispatched task.
+pub struct DispatcherJoinHandle {
+    event: Event,
+    result: Arc<Mutex<Option<std::thread::Result<()>>>>,
+}
+
+impl DispatcherJoinHandle {
+    pub(crate) fn new(event: Event) -> Self {
+        Self {
+            event,
+            result: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Wait for the task to complete.
+    pub async fn join(self) -> io::Result<std::thread::Result<()>> {
+        self.event.wait().await?;
+        Ok(self
+            .result
+            .lock()
+            .unwrap()
+            .take()
+            .expect("the result should be set"))
     }
 }

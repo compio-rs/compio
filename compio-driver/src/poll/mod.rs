@@ -7,21 +7,31 @@ use std::{
     num::NonZeroUsize,
     os::fd::BorrowedFd,
     pin::Pin,
+    ptr::NonNull,
+    sync::Arc,
     task::Poll,
     time::Duration,
 };
 
+use crossbeam_queue::SegQueue;
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use polling::{Event, Events, Poller};
 use slab::Slab;
 
-use crate::{syscall, Entry};
+use crate::{syscall, AsyncifyPool, Entry, ProactorBuilder};
 
 pub(crate) mod op;
+
 pub(crate) use crate::unix::RawOp;
 
 /// Abstraction of operations.
 pub trait OpCode {
+    /// Determines that the operation is really non-blocking defined by POSIX.
+    /// If not, the driver will try to operate it in another thread.
+    fn is_nonblocking(&self) -> bool {
+        true
+    }
+
     /// Perform the operation before submit, and return [`Decision`] to
     /// indicate whether submitting the operation to polling is required.
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision>;
@@ -125,14 +135,16 @@ impl FdQueue {
 /// Low-level driver of polling.
 pub(crate) struct Driver {
     events: Events,
-    poll: Poller,
+    poll: Arc<Poller>,
     registry: HashMap<RawFd, FdQueue>,
     cancelled: HashSet<usize>,
+    pool: AsyncifyPool,
+    pool_completed: Arc<SegQueue<Entry>>,
 }
 
 impl Driver {
-    pub fn new(entries: u32) -> io::Result<Self> {
-        let entries = entries as usize; // for the sake of consistency, use u32 like iour
+    pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
+        let entries = builder.capacity as usize; // for the sake of consistency, use u32 like iour
         let events = if entries == 0 {
             Events::new()
         } else {
@@ -141,9 +153,11 @@ impl Driver {
 
         Ok(Self {
             events,
-            poll: Poller::new()?,
+            poll: Arc::new(Poller::new()?),
             registry: HashMap::new(),
             cancelled: HashSet::new(),
+            pool: builder.create_or_get_thread_pool(),
+            pool_completed: Arc::new(SegQueue::new()),
         })
     }
 
@@ -193,16 +207,47 @@ impl Driver {
         if self.cancelled.remove(&user_data) {
             Poll::Ready(Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)))
         } else {
-            let op = op.as_pin();
-            match op.pre_submit() {
-                Ok(Decision::Wait(arg)) => {
-                    self.submit(user_data, arg)?;
-                    Poll::Pending
+            let op_pin = op.as_pin();
+            if op_pin.is_nonblocking() {
+                match op_pin.pre_submit() {
+                    Ok(Decision::Wait(arg)) => {
+                        self.submit(user_data, arg)?;
+                        Poll::Pending
+                    }
+                    Ok(Decision::Completed(res)) => Poll::Ready(Ok(res)),
+                    Err(err) => Poll::Ready(Err(err)),
                 }
-                Ok(Decision::Completed(res)) => Poll::Ready(Ok(res)),
-                Err(err) => Poll::Ready(Err(err)),
+            } else if self.push_blocking(user_data, op) {
+                Poll::Pending
+            } else {
+                Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
             }
         }
+    }
+
+    fn push_blocking(&mut self, user_data: usize, op: &mut RawOp) -> bool {
+        // Safety: the RawOp is not released before the operation returns.
+        struct SendWrapper<T>(T);
+        unsafe impl<T> Send for SendWrapper<T> {}
+
+        let op = SendWrapper(NonNull::from(op));
+        let poll = self.poll.clone();
+        let completed = self.pool_completed.clone();
+        self.pool
+            .dispatch(move || {
+                #[allow(clippy::redundant_locals)]
+                let mut op = op;
+                let op = unsafe { op.0.as_mut() };
+                let op_pin = op.as_pin();
+                let res = match op_pin.pre_submit() {
+                    Ok(Decision::Wait(_)) => unreachable!("this operation is not non-blocking"),
+                    Ok(Decision::Completed(res)) => Ok(res),
+                    Err(err) => Err(err),
+                };
+                completed.push(Entry::new(user_data, res));
+                poll.notify().ok();
+            })
+            .is_ok()
     }
 
     pub unsafe fn poll(
@@ -212,8 +257,11 @@ impl Driver {
         registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
         self.poll.wait(&mut self.events, timeout)?;
-        if self.events.is_empty() && timeout.is_some() {
+        if self.events.is_empty() && self.pool_completed.is_empty() && timeout.is_some() {
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
+        }
+        while let Some(entry) = self.pool_completed.pop() {
+            entries.extend(Some(entry));
         }
         for event in self.events.iter() {
             let fd = event.key as RawFd;

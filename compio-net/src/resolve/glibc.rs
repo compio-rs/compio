@@ -28,7 +28,7 @@ struct sigevent_thread {
 }
 
 #[link(name = "anl")]
-#[allow(unused)]
+#[allow(dead_code)]
 extern "C" {
     fn getaddrinfo_a(
         mode: libc::c_int,

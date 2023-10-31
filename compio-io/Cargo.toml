@@ -16,7 +16,7 @@ paste = "1.0.14"
 [dev-dependencies]
 compio-runtime = { workspace = true }
 compio-macros = { workspace = true }
-compio-driver = { workspace = true, features = ["io-uring"] }
+compio-driver = { workspace = true }
 
 [features]
 # Nightly features

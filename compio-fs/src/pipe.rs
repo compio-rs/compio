@@ -1,6 +1,6 @@
 //! Unix pipe types.
 
-use std::{io, os::unix::fs::FileTypeExt, path::Path};
+use std::io;
 
 use compio_driver::{impl_raw_fd, syscall, AsRawFd, FromRawFd, IntoRawFd};
 #[cfg(feature = "runtime")]
@@ -9,6 +9,7 @@ use {
     compio_driver::op::{BufResultExt, Recv, RecvVectored, Send, SendVectored},
     compio_io::{AsyncRead, AsyncWrite},
     compio_runtime::{impl_attachable, submit, Attachable},
+    std::{future::Future, path::Path},
 };
 
 use crate::File;
@@ -57,8 +58,8 @@ pub fn anonymous() -> io::Result<(Receiver, Sender)> {
 /// const FIFO_NAME: &str = "path/to/a/fifo";
 ///
 /// # async fn dox() -> std::io::Result<()> {
-/// let rx = pipe::OpenOptions::new().open_receiver(FIFO_NAME)?;
-/// let tx = pipe::OpenOptions::new().open_sender(FIFO_NAME)?;
+/// let rx = pipe::OpenOptions::new().open_receiver(FIFO_NAME).await?;
+/// let tx = pipe::OpenOptions::new().open_sender(FIFO_NAME).await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -113,9 +114,12 @@ impl OpenOptions {
     /// ```
     /// use compio_fs::pipe;
     ///
+    /// # compio_runtime::block_on(async {
     /// let tx = pipe::OpenOptions::new()
     ///     .read_write(true)
-    ///     .open_sender("path/to/a/fifo");
+    ///     .open_sender("path/to/a/fifo")
+    ///     .await;
+    /// # });
     /// ```
     ///
     /// Opening a resilient [`Receiver`] i.e. a reading pipe end which will not
@@ -127,9 +131,12 @@ impl OpenOptions {
     /// ```
     /// use compio_fs::pipe;
     ///
+    /// # compio_runtime::block_on(async {
     /// let tx = pipe::OpenOptions::new()
     ///     .read_write(true)
-    ///     .open_receiver("path/to/a/fifo");
+    ///     .open_receiver("path/to/a/fifo")
+    ///     .await;
+    /// # });
     /// ```
     #[cfg(target_os = "linux")]
     #[cfg_attr(docsrs, doc(cfg(target_os = "linux")))]
@@ -160,7 +167,8 @@ impl OpenOptions {
     /// mkfifo(FIFO_NAME, Mode::S_IRWXU)?;
     /// let rx = pipe::OpenOptions::new()
     ///     .unchecked(true)
-    ///     .open_receiver(FIFO_NAME)?;
+    ///     .open_receiver(FIFO_NAME)
+    ///     .await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -181,8 +189,9 @@ impl OpenOptions {
     /// If the file type check fails, this function will fail with
     /// `io::ErrorKind::InvalidInput`. This function may also fail with
     /// other standard OS errors.
-    pub fn open_receiver<P: AsRef<Path>>(&self, path: P) -> io::Result<Receiver> {
-        let file = self.open(path.as_ref(), PipeEnd::Receiver)?;
+    #[cfg(feature = "runtime")]
+    pub async fn open_receiver<P: AsRef<Path>>(&self, path: P) -> io::Result<Receiver> {
+        let file = self.open(path.as_ref(), PipeEnd::Receiver).await?;
         Receiver::from_file(file)
     }
 
@@ -200,24 +209,25 @@ impl OpenOptions {
     /// read-write access mode and the file is not currently open for
     /// reading, this function will fail with `ENXIO`. This function may
     /// also fail with other standard OS errors.
-    pub fn open_sender<P: AsRef<Path>>(&self, path: P) -> io::Result<Sender> {
-        let file = self.open(path.as_ref(), PipeEnd::Sender)?;
+    #[cfg(feature = "runtime")]
+    pub async fn open_sender<P: AsRef<Path>>(&self, path: P) -> io::Result<Sender> {
+        let file = self.open(path.as_ref(), PipeEnd::Sender).await?;
         Sender::from_file(file)
     }
 
-    fn open(&self, path: &Path, pipe_end: PipeEnd) -> io::Result<File> {
-        let options = crate::OpenOptions::new()
+    #[cfg(feature = "runtime")]
+    async fn open(&self, path: &Path, pipe_end: PipeEnd) -> io::Result<File> {
+        let mut options = crate::OpenOptions::new();
+        options
             .read(pipe_end == PipeEnd::Receiver)
             .write(pipe_end == PipeEnd::Sender);
 
         #[cfg(target_os = "linux")]
-        let options = if self.read_write {
-            options.read(true).write(true)
-        } else {
-            options
-        };
+        if self.read_write {
+            options.read(true).write(true);
+        }
 
-        let file = options.open(path)?;
+        let file = options.open(path).await?;
 
         if !self.unchecked && !is_fifo(&file)? {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a pipe"));
@@ -234,6 +244,7 @@ impl Default for OpenOptions {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg(feature = "runtime")]
 enum PipeEnd {
     Sender,
     Receiver,
@@ -266,7 +277,7 @@ enum PipeEnd {
 /// # async fn dox() -> std::io::Result<()> {
 /// // Wait for a reader to open the file.
 /// let tx = loop {
-///     match pipe::OpenOptions::new().open_sender(FIFO_NAME) {
+///     match pipe::OpenOptions::new().open_sender(FIFO_NAME).await {
 ///         Ok(tx) => break tx,
 ///         Err(e) if e.raw_os_error() == Some(libc::ENXIO) => {}
 ///         Err(e) => return Err(e.into()),
@@ -320,6 +331,13 @@ impl Sender {
     pub(crate) fn from_file(file: File) -> io::Result<Sender> {
         set_nonblocking(&file)?;
         Ok(Sender { file })
+    }
+
+    /// Close the pipe. If the returned future is dropped before polling, the
+    /// pipe won't be closed.
+    #[cfg(feature = "runtime")]
+    pub fn close(self) -> impl Future<Output = io::Result<()>> {
+        self.file.close()
     }
 }
 
@@ -394,7 +412,7 @@ impl_attachable!(Sender, file);
 /// const FIFO_NAME: &str = "path/to/a/fifo";
 ///
 /// # async fn dox() -> io::Result<()> {
-/// let mut rx = pipe::OpenOptions::new().open_receiver(FIFO_NAME)?;
+/// let mut rx = pipe::OpenOptions::new().open_receiver(FIFO_NAME).await?;
 /// loop {
 ///     let mut msg = Vec::with_capacity(256);
 ///     let BufResult(res, msg) = rx.read_exact(msg).await;
@@ -402,7 +420,7 @@ impl_attachable!(Sender, file);
 ///         Ok(_) => { /* handle the message */ }
 ///         Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
 ///             // Writing end has been closed, we should reopen the pipe.
-///             rx = pipe::OpenOptions::new().open_receiver(FIFO_NAME)?;
+///             rx = pipe::OpenOptions::new().open_receiver(FIFO_NAME).await?;
 ///         }
 ///         Err(e) => return Err(e.into()),
 ///     }
@@ -455,6 +473,13 @@ impl Receiver {
         set_nonblocking(&file)?;
         Ok(Receiver { file })
     }
+
+    /// Close the pipe. If the returned future is dropped before polling, the
+    /// pipe won't be closed.
+    #[cfg(feature = "runtime")]
+    pub fn close(self) -> impl Future<Output = io::Result<()>> {
+        self.file.close()
+    }
 }
 
 #[cfg(feature = "runtime")]
@@ -489,7 +514,10 @@ impl_raw_fd!(Receiver, file);
 impl_attachable!(Receiver, file);
 
 /// Checks if file is a FIFO
+#[cfg(feature = "runtime")]
 fn is_fifo(file: &File) -> io::Result<bool> {
+    use std::os::unix::prelude::FileTypeExt;
+
     Ok(file.metadata()?.file_type().is_fifo())
 }
 

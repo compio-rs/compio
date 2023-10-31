@@ -1,4 +1,4 @@
-use std::num::NonZeroUsize;
+use std::{num::NonZeroUsize, panic::resume_unwind};
 
 use compio::{
     buf::IntoInner,
@@ -21,7 +21,7 @@ async fn main() {
         .worker_threads(NonZeroUsize::new(THREAD_NUM).unwrap())
         .build()
         .unwrap();
-    let task = spawn(async move {
+    spawn(async move {
         let mut futures = FuturesUnordered::from_iter((0..CLIENT_NUM).map(|i| {
             let addr = &addr;
             async move {
@@ -30,26 +30,26 @@ async fn main() {
             }
         }));
         while let Some(()) = futures.next().await {}
-    });
+    })
+    .detach();
+    let mut handles = FuturesUnordered::new();
     for _i in 0..CLIENT_NUM {
         let (srv, _) = listener.accept().await.unwrap();
         let srv = Unattached::new(srv).unwrap();
-        dispatcher
+        let handle = dispatcher
             .dispatch(move || {
                 let mut srv = srv.into_inner();
                 async move {
                     let BufResult(res, buf) = srv.read(Vec::with_capacity(20)).await;
-                    res?;
+                    res.unwrap();
                     println!("{}", std::str::from_utf8(&buf).unwrap());
-                    Ok(())
                 }
             })
             .unwrap();
+        handles.push(handle.join());
     }
-    // Dispatcher::join is a blocking call, which may block the main thread. We need
-    // to wait for the client first.
-    task.await;
-    for res in dispatcher.join() {
-        res.unwrap();
+    while let Some(res) = handles.next().await {
+        res.unwrap().unwrap_or_else(|e| resume_unwind(e));
     }
+    dispatcher.join().await.unwrap();
 }

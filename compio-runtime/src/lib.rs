@@ -11,6 +11,7 @@
 //! ```
 
 #![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
+#![cfg_attr(feature = "lazy_cell", feature(lazy_cell))]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![warn(missing_docs)]
 
@@ -23,17 +24,31 @@ pub mod event;
 #[cfg(feature = "time")]
 pub mod time;
 
-use std::{future::Future, io};
+use std::{cell::RefCell, future::Future, io};
 
 use async_task::Task;
 pub use attacher::*;
 use compio_buf::BufResult;
-use compio_driver::{OpCode, RawFd};
+use compio_driver::{OpCode, ProactorBuilder, RawFd};
 pub(crate) use key::Key;
+// It cannot be replaced by std one because of lacking `get` method.
+use once_cell::unsync::Lazy as LazyCell;
 use runtime::Runtime;
 
 thread_local! {
-    pub(crate) static RUNTIME: Runtime = Runtime::new().expect("cannot create compio runtime");
+    pub(crate) static PROACTOR_BUILDER: RefCell<ProactorBuilder> = RefCell::new(ProactorBuilder::new());
+    pub(crate) static RUNTIME: LazyCell<Runtime> = LazyCell::new(|| {
+        PROACTOR_BUILDER.with(|builder| Runtime::new(&builder.borrow())).expect("cannot create compio runtime")
+    });
+}
+
+/// Config the inner proactor with a [`ProactorBuilder`]. Note that if any
+/// runtime related method is called before, there will be no influence.
+/// The return value indicates whether the builder will be used when
+/// initializing the runtime.
+pub fn config_proactor(new_builder: ProactorBuilder) -> bool {
+    PROACTOR_BUILDER.with(|builder| *builder.borrow_mut() = new_builder);
+    RUNTIME.with(|runtime| LazyCell::get(runtime).is_none())
 }
 
 /// Start a compio runtime and block on the future till it completes.

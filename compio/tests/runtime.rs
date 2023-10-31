@@ -113,7 +113,7 @@ async fn drop_on_complete() {
     std::io::Write::write_all(&mut file, &vec).unwrap();
 
     let file = {
-        let file = File::open(tempfile.path()).unwrap();
+        let file = File::open(tempfile.path()).await.unwrap();
         file.read_at(
             MyBuf {
                 data: Vec::with_capacity(64 * 1024),
@@ -136,7 +136,7 @@ async fn drop_on_complete() {
 async fn too_many_submissions() {
     let tempfile = tempfile();
 
-    let mut file = File::create(tempfile.path()).unwrap();
+    let mut file = File::create(tempfile.path()).await.unwrap();
     for _ in 0..600 {
         poll_once(async {
             file.write_at("hello world", 0).await.0.unwrap();
@@ -171,7 +171,7 @@ async fn arena() {
         }
     }
 
-    let file = File::open("Cargo.toml").unwrap();
+    let file = File::open("Cargo.toml").await.unwrap();
     let (read, buffer) = file
         .read_to_end_at(Vec::new_in(ArenaAllocator), 0)
         .await

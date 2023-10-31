@@ -6,7 +6,9 @@
 mod file;
 pub use file::*;
 
+#[cfg(feature = "runtime")]
 mod open_options;
+#[cfg(feature = "runtime")]
 pub use open_options::*;
 
 #[cfg(windows)]

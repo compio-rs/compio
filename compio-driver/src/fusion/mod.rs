@@ -16,7 +16,7 @@ pub use poll::Decision;
 use slab::Slab;
 
 pub(crate) use crate::unix::RawOp;
-use crate::Entry;
+use crate::{Entry, ProactorBuilder};
 
 mod driver_type {
     use std::sync::atomic::{AtomicU8, Ordering};
@@ -81,6 +81,9 @@ mod driver_type {
             RecvMsg::CODE,
             SendMsg::CODE,
             AsyncCancel::CODE,
+            OpenAt::CODE,
+            Close::CODE,
+            Shutdown::CODE,
         ];
 
         Ok(())
@@ -114,13 +117,13 @@ pub(crate) struct Driver {
 
 impl Driver {
     /// Create a new fusion driver with given number of entries
-    pub fn new(entries: u32) -> io::Result<Self> {
+    pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         match DriverType::current() {
             DriverType::Poll => Ok(Self {
-                fuse: FuseDriver::Poll(poll::Driver::new(entries)?),
+                fuse: FuseDriver::Poll(poll::Driver::new(builder)?),
             }),
             DriverType::IoUring => Ok(Self {
-                fuse: FuseDriver::IoUring(iour::Driver::new(entries)?),
+                fuse: FuseDriver::IoUring(iour::Driver::new(builder)?),
             }),
         }
     }
