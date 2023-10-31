@@ -62,19 +62,6 @@ impl Socket {
         Ok(Self::from_socket2(socket))
     }
 
-    #[cfg(feature = "runtime")]
-    pub fn close(self) -> impl Future<Output = io::Result<()>> {
-        // Make sure that self won't be dropped after `close` called.
-        // Users may call this method and drop the future immediately. In that way the
-        // `close` should be cancelled.
-        let this = ManuallyDrop::new(self);
-        async move {
-            let op = CloseSocket::new(this.as_raw_fd());
-            submit(op).await.0?;
-            Ok(())
-        }
-    }
-
     pub fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
         let socket = Self::new(addr.domain(), ty, protocol)?;
         socket.socket.bind(addr)?;
@@ -138,6 +125,19 @@ impl Socket {
         op.update_context()?;
         let addr = op.into_addr()?;
         Ok((accept_sock, addr))
+    }
+
+    #[cfg(feature = "runtime")]
+    pub fn close(self) -> impl Future<Output = io::Result<()>> {
+        // Make sure that self won't be dropped after `close` called.
+        // Users may call this method and drop the future immediately. In that way the
+        // `close` should be cancelled.
+        let this = ManuallyDrop::new(self);
+        async move {
+            let op = CloseSocket::new(this.as_raw_fd());
+            submit(op).await.0?;
+            Ok(())
+        }
     }
 
     #[cfg(feature = "runtime")]
