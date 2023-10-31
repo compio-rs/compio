@@ -305,13 +305,39 @@ impl Entry {
     }
 }
 
+#[derive(Debug, Clone)]
+enum ThreadPoolBuilder {
+    Create { limit: usize, recv_limit: Duration },
+    Reuse(AsyncifyPool),
+}
+
+impl Default for ThreadPoolBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ThreadPoolBuilder {
+    pub fn new() -> Self {
+        Self::Create {
+            limit: 256,
+            recv_limit: Duration::from_secs(60),
+        }
+    }
+
+    pub fn create_or_reuse(&self) -> AsyncifyPool {
+        match self {
+            Self::Create { limit, recv_limit } => AsyncifyPool::new(*limit, *recv_limit),
+            Self::Reuse(pool) => pool.clone(),
+        }
+    }
+}
+
 /// Builder for [`Proactor`].
 #[derive(Debug, Clone)]
 pub struct ProactorBuilder {
     capacity: u32,
-    thread_pool_limit: usize,
-    thread_pool_recv_timeout: Duration,
-    reuse_thread_pool: Option<AsyncifyPool>,
+    pool_builder: ThreadPoolBuilder,
 }
 
 impl Default for ProactorBuilder {
@@ -325,9 +351,7 @@ impl ProactorBuilder {
     pub fn new() -> Self {
         Self {
             capacity: 1024,
-            thread_pool_limit: 256,
-            thread_pool_recv_timeout: Duration::from_secs(60),
-            reuse_thread_pool: None,
+            pool_builder: ThreadPoolBuilder::new(),
         }
     }
 
@@ -342,8 +366,10 @@ impl ProactorBuilder {
     /// default value is 256.
     ///
     /// It will be ignored if `reuse_thread_pool` is set.
-    pub fn thread_pool_limit(&mut self, limit: usize) -> &mut Self {
-        self.thread_pool_limit = limit;
+    pub fn thread_pool_limit(&mut self, value: usize) -> &mut Self {
+        if let ThreadPoolBuilder::Create { limit, .. } = &mut self.pool_builder {
+            *limit = value;
+        }
         self
     }
 
@@ -352,22 +378,22 @@ impl ProactorBuilder {
     ///
     /// It will be ignored if `reuse_thread_pool` is set.
     pub fn thread_pool_recv_timeout(&mut self, timeout: Duration) -> &mut Self {
-        self.thread_pool_recv_timeout = timeout;
+        if let ThreadPoolBuilder::Create { recv_limit, .. } = &mut self.pool_builder {
+            *recv_limit = timeout;
+        }
         self
     }
 
     /// Set to reuse an existing [`AsyncifyPool`] in this proactor. It is in
     /// [`Arc`] to share across threads.
     pub fn reuse_thread_pool(&mut self, pool: AsyncifyPool) -> &mut Self {
-        self.reuse_thread_pool = Some(pool);
+        self.pool_builder = ThreadPoolBuilder::Reuse(pool);
         self
     }
 
     /// Create or reuse the thread pool from the config.
     pub fn create_or_get_thread_pool(&self) -> AsyncifyPool {
-        self.reuse_thread_pool.as_ref().cloned().unwrap_or_else(|| {
-            AsyncifyPool::new(self.thread_pool_limit, self.thread_pool_recv_timeout)
-        })
+        self.pool_builder.create_or_reuse()
     }
 
     /// Build the [`Proactor`].
