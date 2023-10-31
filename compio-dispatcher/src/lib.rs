@@ -113,7 +113,7 @@ impl Dispatcher {
         let results = Arc::new(Mutex::new(vec![]));
         let event = Event::new()?;
         let handle = event.handle()?;
-        self.pool.dispatch({
+        if let Err(f) = self.pool.dispatch({
             let results = results.clone();
             move || {
                 *results.lock().unwrap() = self
@@ -123,7 +123,9 @@ impl Dispatcher {
                     .collect();
                 handle.notify().ok();
             }
-        });
+        }) {
+            std::thread::spawn(f);
+        }
         event.wait().await?;
         let mut guard = results.lock().unwrap();
         for res in std::mem::take::<Vec<std::thread::Result<()>>>(guard.as_mut()) {
