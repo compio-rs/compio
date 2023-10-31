@@ -60,13 +60,14 @@ impl AsyncifyPool {
     }
 
     /// Send a closure to another thread. Usually the user should not use it.
-    pub fn dispatch(&self, f: impl FnOnce() + Send + 'static) -> bool {
+    pub fn dispatch<F: FnOnce() + Send + 'static>(&self, f: F) -> Result<(), F> {
         match self.sender.try_send(Box::new(f) as BoxClosure) {
-            Ok(_) => true,
+            Ok(_) => Ok(()),
             Err(e) => match e {
                 TrySendError::Full(f) => {
                     if self.counter.load(Ordering::Acquire) >= self.thread_limit {
-                        false
+                        // Safety: we can ensure the type
+                        Err(*unsafe { Box::from_raw(Box::into_raw(f).cast()) })
                     } else {
                         std::thread::spawn(worker(
                             self.receiver.clone(),
@@ -74,7 +75,7 @@ impl AsyncifyPool {
                             self.recv_timeout,
                         ));
                         self.sender.send(f).expect("the channel should not be full");
-                        true
+                        Ok(())
                     }
                 }
                 TrySendError::Disconnected(_) => {

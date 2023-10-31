@@ -233,19 +233,21 @@ impl Driver {
         let op = SendWrapper(NonNull::from(op));
         let poll = self.poll.clone();
         let completed = self.pool_completed.clone();
-        self.pool.dispatch(move || {
-            #[allow(clippy::redundant_locals)]
-            let mut op = op;
-            let op = unsafe { op.0.as_mut() };
-            let op_pin = op.as_pin();
-            let res = match op_pin.pre_submit() {
-                Ok(Decision::Wait(_)) => unreachable!("this operation is not non-blocking"),
-                Ok(Decision::Completed(res)) => Ok(res),
-                Err(err) => Err(err),
-            };
-            completed.push(Entry::new(user_data, res));
-            poll.notify().ok();
-        })
+        self.pool
+            .dispatch(move || {
+                #[allow(clippy::redundant_locals)]
+                let mut op = op;
+                let op = unsafe { op.0.as_mut() };
+                let op_pin = op.as_pin();
+                let res = match op_pin.pre_submit() {
+                    Ok(Decision::Wait(_)) => unreachable!("this operation is not non-blocking"),
+                    Ok(Decision::Completed(res)) => Ok(res),
+                    Err(err) => Err(err),
+                };
+                completed.push(Entry::new(user_data, res));
+                poll.notify().ok();
+            })
+            .is_ok()
     }
 
     pub unsafe fn poll(

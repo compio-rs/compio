@@ -276,28 +276,35 @@ impl Driver {
 
         let optr = SendWrapper(NonNull::from(op));
         let handle = self.as_raw_fd() as _;
-        self.pool.dispatch(move || {
-            #[allow(clippy::redundant_locals)]
-            let mut optr = optr;
-            // Safety: the pointer is created from a reference.
-            let op = unsafe { optr.0.as_mut() };
-            let optr = op.as_mut_ptr();
-            let op = op.as_op_pin();
-            let res = unsafe { op.operate(optr.cast()) };
-            let res = match res {
-                Poll::Pending => unreachable!("this operation is not overlapped"),
-                Poll::Ready(res) => res,
-            };
-            if let Err(e) = &res {
-                let code = e.raw_os_error().unwrap_or(ERROR_BAD_COMMAND as _);
-                unsafe { &mut *optr }.base.Internal = ntstatus_from_win32(code) as _;
-            }
-            syscall!(
-                BOOL,
-                PostQueuedCompletionStatus(handle, res.unwrap_or_default() as _, 0, optr.cast())
-            )
-            .ok();
-        })
+        self.pool
+            .dispatch(move || {
+                #[allow(clippy::redundant_locals)]
+                let mut optr = optr;
+                // Safety: the pointer is created from a reference.
+                let op = unsafe { optr.0.as_mut() };
+                let optr = op.as_mut_ptr();
+                let op = op.as_op_pin();
+                let res = unsafe { op.operate(optr.cast()) };
+                let res = match res {
+                    Poll::Pending => unreachable!("this operation is not overlapped"),
+                    Poll::Ready(res) => res,
+                };
+                if let Err(e) = &res {
+                    let code = e.raw_os_error().unwrap_or(ERROR_BAD_COMMAND as _);
+                    unsafe { &mut *optr }.base.Internal = ntstatus_from_win32(code) as _;
+                }
+                syscall!(
+                    BOOL,
+                    PostQueuedCompletionStatus(
+                        handle,
+                        res.unwrap_or_default() as _,
+                        0,
+                        optr.cast()
+                    )
+                )
+                .ok();
+            })
+            .is_ok()
     }
 
     pub unsafe fn poll(
