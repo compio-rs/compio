@@ -52,7 +52,11 @@ impl Dispatcher {
                     };
 
                     thread_builder.spawn(move || {
-                        compio_runtime::config_proactor(proactor_builder);
+                        let succeeded = compio_runtime::config_proactor(proactor_builder);
+                        debug_assert!(
+                            succeeded,
+                            "the runtime should not be created before proactor builder set"
+                        );
                         while let Ok(f) = receiver.recv() {
                             *f.result.lock().unwrap() = Some(std::panic::catch_unwind(move || {
                                 compio_runtime::block_on((f.func)());
