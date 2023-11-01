@@ -1,6 +1,6 @@
 use compio::{fs::OpenOptions, io::AsyncReadAtExt};
 
-#[compio::main(crate = "compio")]
+#[compio::main]
 async fn main() {
     let file = OpenOptions::new()
         .read(true)

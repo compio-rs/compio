@@ -27,17 +27,17 @@ pub fn test(args: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 fn retrieve_runtime_mod() -> proc_macro2::TokenStream {
-    match crate_name("compio") {
-        Ok(FoundCrate::Itself) => quote!(crate::runtime),
+    match crate_name("compio-runtime") {
+        Ok(FoundCrate::Itself) => quote!(crate),
         Ok(FoundCrate::Name(name)) => {
             let ident = Ident::new(&name, Span::call_site());
-            quote!(::#ident::runtime)
+            quote!(::#ident)
         }
-        Err(_) => match crate_name("compio-runtime") {
-            Ok(FoundCrate::Itself) => quote!(crate),
+        Err(_) => match crate_name("compio") {
+            Ok(FoundCrate::Itself) => quote!(crate::runtime),
             Ok(FoundCrate::Name(name)) => {
                 let ident = Ident::new(&name, Span::call_site());
-                quote!(::#ident)
+                quote!(::#ident::runtime)
             }
             Err(_) => panic!("Cannot find compio or compio_runtime."),
         },

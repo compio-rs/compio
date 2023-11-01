@@ -3,7 +3,7 @@ use compio::{
     BufResult,
 };
 
-#[compio::main(crate = "compio")]
+#[compio::main]
 async fn main() {
     #[cfg(windows)]
     {

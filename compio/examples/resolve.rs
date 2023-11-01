@@ -1,7 +1,7 @@
 use compio::net::ToSocketAddrsAsync;
 use futures_util::{stream::FuturesUnordered, StreamExt};
 
-#[compio::main(crate = "compio")]
+#[compio::main]
 async fn main() {
     let mut tasks = std::env::args()
         .skip(1)

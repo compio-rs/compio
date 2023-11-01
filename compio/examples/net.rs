@@ -5,7 +5,7 @@ use compio::{
     net::{TcpListener, TcpStream},
 };
 
-#[compio::main(crate = "compio")]
+#[compio::main]
 async fn main() {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
