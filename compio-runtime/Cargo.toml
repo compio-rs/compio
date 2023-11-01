@@ -55,3 +55,7 @@ time = ["dep:slab"]
 # Nightly features
 once_cell_try = []
 nightly = ["once_cell_try"]
+
+[[test]]
+name = "event"
+required-features = ["event"]

@@ -17,3 +17,9 @@ compio-runtime = { workspace = true }
 
 crossbeam-channel = "0.5"
 futures-util = "0.3"
+
+[dev-dependencies]
+compio-buf = { workspace = true }
+compio-io = { workspace = true }
+compio-net = { workspace = true }
+compio-macros = { workspace = true }

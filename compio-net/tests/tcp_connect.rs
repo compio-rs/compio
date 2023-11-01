@@ -1,6 +1,6 @@
 use std::net::{IpAddr, SocketAddr};
 
-use compio::net::{TcpListener, TcpStream, ToSocketAddrsAsync};
+use compio_net::{TcpListener, TcpStream, ToSocketAddrsAsync};
 
 async fn test_connect_ip_impl(
     target: impl ToSocketAddrsAsync,
@@ -12,7 +12,7 @@ async fn test_connect_ip_impl(
 
     let (tx, rx) = futures_channel::oneshot::channel();
 
-    compio::runtime::spawn(async move {
+    compio_runtime::spawn(async move {
         let (socket, addr) = listener.accept().await.unwrap();
         assert_eq!(addr, socket.peer_addr().unwrap());
         assert!(tx.send(socket).is_ok());

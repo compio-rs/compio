@@ -44,7 +44,9 @@ os_pipe = "1"
 # Shared dev dependencies for all platforms
 [dev-dependencies]
 compio-runtime = { workspace = true, features = ["time"] }
+compio-macros = { workspace = true }
 futures-util = "0.3"
+tempfile = "3"
 
 # Windows specific dev dependencies
 [target.'cfg(target_os = "windows")'.dev-dependencies]

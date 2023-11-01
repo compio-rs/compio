@@ -38,6 +38,8 @@ libc = "0.2"
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
+compio-macros = { workspace = true }
+futures-channel = "0.3"
 futures-util = "0.3"
 tempfile = "3"
 
