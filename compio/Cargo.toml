@@ -42,7 +42,7 @@ compio-dispatcher = { workspace = true, optional = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
-compio-buf = { workspace = true, features = ["arrayvec"] }
+compio-buf = { workspace = true, features = ["bumpalo"] }
 compio-macros = { workspace = true }
 
 criterion = { version = "0.5.1", features = ["async_tokio"] }
