@@ -89,3 +89,16 @@ jobs:
           rustup toolchain install nightly
           cargo +nightly doc --workspace --all-features --no-deps
         displayName: Build docs
+
+  - job: Clippy
+    pool:
+      vmImage: ubuntu-latest
+    
+    steps:
+      - script: |
+          rustup toolchain install nightly
+          rustup +nightly target install x86_64-pc-windows-msvc
+          rustup +nightly target install x86_64-unknown-linux-gnu
+          rustup +nightly target install x86_64-apple-darwin
+          cargo +nightly clippy --target x86_64-pc-windows-msvc --target x86_64-apple-darwin --target x86_64-unknown-linux-gnu -- -Dwarnings
+        displayName: Run clippy for targets
