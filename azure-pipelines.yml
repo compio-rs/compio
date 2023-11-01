@@ -100,5 +100,6 @@ jobs:
           rustup +nightly target install x86_64-pc-windows-msvc
           rustup +nightly target install x86_64-unknown-linux-gnu
           rustup +nightly target install x86_64-apple-darwin
-          cargo +nightly clippy --target x86_64-pc-windows-msvc --target x86_64-apple-darwin --target x86_64-unknown-linux-gnu -- -Dwarnings
+          rustup +nightly component add clippy
+          cargo +nightly clippy --target x86_64-pc-windows-msvc --target x86_64-apple-darwin --target x86_64-unknown-linux-gnu --all-features -- -Dwarnings
         displayName: Run clippy for targets
