@@ -30,7 +30,7 @@ pub trait AsyncWrite {
     /// an error, `Ok(0)`, or a length less than the length of the buf passed
     /// in, meaning it's possible that not all contents are written. If
     /// guaranteed full write is desired, it is recommended to use
-    /// [`AsyncWriteExt::write_all_vectored`] instead.
+    /// [`AsyncWriteExt::write_vectored_all`] instead.
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         loop_write_vectored!(buf, total: usize, n, iter, loop self.write(iter),
             break if n == 0 || n < iter.buf_len() {
