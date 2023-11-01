@@ -1,6 +1,6 @@
 [package]
 name = "compio-macros"
-version = "0.1.0"
+version = "0.1.1"
 description = "proc macro of compio"
 categories = ["asynchronous"]
 edition = { workspace = true }
