@@ -34,7 +34,7 @@
 //! ```
 //! use compio_buf::BufResult;
 //! use compio_io::AsyncRead;
-//! # #[tokio::main] async fn main() {
+//! # #[tokio::main(flavor = "current_thread")] async fn main() {
 //!
 //! let mut reader = "Hello, world!".as_bytes();
 //! let (res, buf) = reader.read(Vec::with_capacity(20)).await.unwrap();
@@ -55,7 +55,7 @@
 //!
 //! use compio_buf::BufResult;
 //! use compio_io::AsyncWrite;
-//! # #[tokio::main] async fn main() {
+//! # #[tokio::main(flavor = "current_thread")] async fn main() {
 //!
 //! let mut writer = Cursor::new([0; 6]);
 //! writer.set_position(2);
@@ -72,7 +72,7 @@
 //! ```
 //! use compio_buf::BufResult;
 //! use compio_io::AsyncWrite;
-//! # #[tokio::main] async fn main() {
+//! # #[tokio::main(flavor = "current_thread")] async fn main() {
 //!
 //! let mut writer = vec![1, 2, 3];
 //! let (_, buf) = writer.write(vec![3, 2, 1]).await.unwrap();

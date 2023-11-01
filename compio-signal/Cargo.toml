@@ -21,16 +21,16 @@ compio-runtime = { workspace = true, features = ["event"] }
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
 compio-driver = { workspace = true }
-once_cell = "1"
-slab = "0.4"
-windows-sys = { version = "0.48", features = [
+once_cell = { workspace = true }
+slab = { workspace = true }
+windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_System_Console",
 ] }
 
 # Unix specific dependencies
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true }
 
 [features]
 # Nightly features

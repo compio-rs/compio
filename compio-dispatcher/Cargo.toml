@@ -15,8 +15,8 @@ repository = { workspace = true }
 compio-driver = { workspace = true }
 compio-runtime = { workspace = true }
 
-crossbeam-channel = "0.5"
-futures-util = "0.3"
+crossbeam-channel = { workspace = true }
+futures-util = { workspace = true }
 
 [dev-dependencies]
 compio-buf = { workspace = true }

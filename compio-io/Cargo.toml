@@ -11,11 +11,11 @@ repository = { workspace = true }
 
 [dependencies]
 compio-buf = { workspace = true, features = ["arrayvec"] }
-paste = "1.0.14"
+paste = { workspace = true }
 
 [dev-dependencies]
 # use tokio to show this crate doesn't depend on the compio runtime
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt"] }
 
 [features]
 # Nightly features

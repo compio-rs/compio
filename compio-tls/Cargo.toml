@@ -13,7 +13,7 @@ repository = { workspace = true }
 compio-buf = { workspace = true }
 compio-io = { workspace = true }
 
-native-tls = { version = "0.2", optional = true }
+native-tls = { version = "0.2.11", optional = true }
 
 [dev-dependencies]
 compio-net = { workspace = true }

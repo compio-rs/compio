@@ -53,7 +53,7 @@ impl AsyncWrite for Null {
 /// ```
 /// use compio_io::{null, AsyncRead, AsyncWrite};
 ///
-/// # #[tokio::main] async fn main() {
+/// # #[tokio::main(flavor = "current_thread")] async fn main() {
 /// let mut buf = Vec::with_capacity(10);
 /// let mut null = null();
 ///

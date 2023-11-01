@@ -21,27 +21,27 @@ compio-driver = { workspace = true }
 compio-io = { workspace = true, optional = true }
 compio-runtime = { workspace = true, optional = true, features = ["event"] }
 
-cfg-if = "1"
-either = "1"
-socket2 = { version = "0.5", features = ["all"] }
+cfg-if = { workspace = true }
+either = "1.9.0"
+socket2 = { workspace = true, features = ["all"] }
 
 [target.'cfg(windows)'.dependencies]
-widestring = "1"
-windows-sys = { version = "0.48", features = [
+widestring = { workspace = true }
+windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Networking_WinSock",
     "Win32_System_IO",
 ] }
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
 compio-macros = { workspace = true }
-futures-channel = "0.3"
-futures-util = "0.3"
-tempfile = "3"
+futures-channel = "0.3.29"
+futures-util = { workspace = true }
+tempfile = { workspace = true }
 
 [features]
 runtime = ["dep:compio-io", "dep:compio-runtime"]

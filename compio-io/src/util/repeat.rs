@@ -12,7 +12,7 @@ use crate::{AsyncBufRead, AsyncRead, IoResult};
 /// # Examples
 ///
 /// ```rust
-/// # #[tokio::main] async fn main() {
+/// # #[tokio::main(flavor = "current_thread")] async fn main() {
 /// use compio_io::{self, AsyncRead, AsyncReadExt};
 ///
 /// let (len, buffer) = compio_io::repeat(42)
@@ -57,7 +57,7 @@ impl AsyncBufRead for Repeat {
 /// # Examples
 ///
 /// ```rust
-/// # #[tokio::main] async fn main() {
+/// # #[tokio::main(flavor = "current_thread")] async fn main() {
 /// use compio_io::{self, AsyncRead, AsyncReadExt};
 ///
 /// let (len, buffer) = compio_io::repeat(42)
