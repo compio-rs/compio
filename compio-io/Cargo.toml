@@ -14,6 +14,7 @@ compio-buf = { workspace = true, features = ["arrayvec"] }
 paste = { workspace = true }
 
 [dev-dependencies]
+compio-runtime = { workspace = true }
 # use tokio to show this crate doesn't depend on the compio runtime
 tokio = { workspace = true, features = ["macros", "rt"] }
 
