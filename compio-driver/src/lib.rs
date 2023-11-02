@@ -384,8 +384,7 @@ impl ProactorBuilder {
         self
     }
 
-    /// Set to reuse an existing [`AsyncifyPool`] in this proactor. It is in
-    /// [`Arc`] to share across threads.
+    /// Set to reuse an existing [`AsyncifyPool`] in this proactor.
     pub fn reuse_thread_pool(&mut self, pool: AsyncifyPool) -> &mut Self {
         self.pool_builder = ThreadPoolBuilder::Reuse(pool);
         self

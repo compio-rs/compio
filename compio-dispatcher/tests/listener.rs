@@ -1,12 +1,10 @@
 use std::{num::NonZeroUsize, panic::resume_unwind};
 
-use compio::{
-    buf::{arrayvec::ArrayVec, IntoInner},
-    dispatcher::Dispatcher,
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
-    runtime::{spawn, Unattached},
-};
+use compio_buf::{arrayvec::ArrayVec, IntoInner};
+use compio_dispatcher::Dispatcher;
+use compio_io::{AsyncReadExt, AsyncWriteExt};
+use compio_net::{TcpListener, TcpStream};
+use compio_runtime::{spawn, Unattached};
 use futures_util::{stream::FuturesUnordered, StreamExt};
 
 #[compio_macros::test]

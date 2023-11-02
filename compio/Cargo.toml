@@ -1,6 +1,6 @@
 [package]
 name = "compio"
-version = "0.8.0"
+version = "0.9.0"
 description = "completion based async runtime"
 categories = ["asynchronous", "filesystem", "network-programming"]
 keywords = ["async", "fs", "iocp", "io-uring", "net"]
@@ -42,24 +42,28 @@ compio-dispatcher = { workspace = true, optional = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
-compio-buf = { workspace = true, features = ["arrayvec"] }
+compio-buf = { workspace = true, features = ["bumpalo"] }
 compio-macros = { workspace = true }
 
-bumpalo = "3"
-criterion = { version = "0.5", features = ["async_tokio"] }
-futures-util = "0.3"
-futures-channel = "0.3"
-tempfile = "3"
-tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt"] }
+criterion = { version = "0.5.1", features = ["async_tokio"] }
+futures-util = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = [
+    "fs",
+    "io-util",
+    "macros",
+    "net",
+    "rt",
+] }
 
 [target.'cfg(windows)'.dev-dependencies]
-widestring = "1"
-windows-sys = { version = "0.48", features = ["Win32_Storage_FileSystem"] }
+widestring = { workspace = true }
+windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
 
 # Unix specific dev dependencies
 [target.'cfg(unix)'.dev-dependencies]
-nix = { version = "0.27", features = ["fs"] }
-libc = "0.2"
+nix = { workspace = true, features = ["fs"] }
+libc = { workspace = true }
 
 [features]
 default = ["runtime", "io-uring"]
@@ -80,11 +84,7 @@ dispatcher = ["dep:compio-dispatcher", "runtime"]
 all = ["time", "macros", "signal", "dispatcher"]
 
 # Nightly features
-allocator_api = [
-    "bumpalo/allocator_api",
-    "compio-buf/allocator_api",
-    "compio-io?/allocator_api",
-]
+allocator_api = ["compio-buf/allocator_api", "compio-io?/allocator_api"]
 lazy_cell = ["compio-signal?/lazy_cell"]
 once_cell_try = [
     "compio-driver/once_cell_try",
@@ -141,11 +141,3 @@ harness = false
 [[bench]]
 name = "named_pipe"
 harness = false
-
-[[test]]
-name = "event"
-required-features = ["event"]
-
-[[test]]
-name = "dispatcher"
-required-features = ["dispatcher"]

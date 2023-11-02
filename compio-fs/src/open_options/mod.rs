@@ -233,6 +233,7 @@ impl OpenOptions {
     /// For information about possible values, see [Impersonation Levels] on the
     /// Windows Dev Center site. The `SECURITY_SQOS_PRESENT` flag is set
     /// automatically when using this method.
+    ///
     /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
     /// [Impersonation Levels]:
     ///     https://docs.microsoft.com/en-us/windows/win32/api/winnt/ne-winnt-security_impersonation_level

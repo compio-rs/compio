@@ -1,6 +1,6 @@
 [package]
 name = "compio-fs"
-version = "0.1.0"
+version = "0.2.0"
 description = "Filesystem IO for compio"
 categories = ["asynchronous", "filesystem"]
 keywords = ["async", "fs"]
@@ -23,8 +23,8 @@ compio-runtime = { workspace = true, optional = true }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
-widestring = "1"
-windows-sys = { version = "0.48", features = [
+widestring = { workspace = true }
+windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Storage_FileSystem",
@@ -34,25 +34,27 @@ windows-sys = { version = "0.48", features = [
 
 # Windows specific dev dependencies
 [target.'cfg(windows)'.dev-dependencies]
-windows-sys = { version = "0.48", features = ["Win32_Security_Authorization"] }
+windows-sys = { workspace = true, features = ["Win32_Security_Authorization"] }
 
 # Unix specific dependencies
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
-os_pipe = "1"
+libc = { workspace = true }
+os_pipe = { workspace = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
 compio-runtime = { workspace = true, features = ["time"] }
-futures-util = "0.3"
+compio-macros = { workspace = true }
+futures-util = { workspace = true }
+tempfile = { workspace = true }
 
 # Windows specific dev dependencies
 [target.'cfg(target_os = "windows")'.dev-dependencies]
-windows-sys = { version = "0.48", features = ["Win32_Security_Authorization"] }
+windows-sys = { workspace = true, features = ["Win32_Security_Authorization"] }
 
 # Unix specific dev dependencies
 [target.'cfg(unix)'.dev-dependencies]
-nix = { version = "0.27", features = ["fs"] }
+nix = { workspace = true, features = ["fs"] }
 
 [features]
 runtime = ["dep:compio-buf", "dep:compio-io", "dep:compio-runtime"]

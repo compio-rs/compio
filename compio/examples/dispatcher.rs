@@ -10,7 +10,7 @@ use compio::{
 };
 use futures_util::{stream::FuturesUnordered, StreamExt};
 
-#[compio::main(crate = "compio")]
+#[compio::main]
 async fn main() {
     const THREAD_NUM: usize = 5;
     const CLIENT_NUM: usize = 10;

@@ -4,7 +4,7 @@ use compio::{
 };
 use tempfile::tempdir;
 
-#[compio::main(crate = "compio")]
+#[compio::main]
 async fn main() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("unix-example.sock");

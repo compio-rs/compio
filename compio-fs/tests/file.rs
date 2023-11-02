@@ -1,9 +1,7 @@
 use std::io::prelude::*;
 
-use compio::{
-    fs::File,
-    io::{AsyncReadAtExt, AsyncWriteAtExt},
-};
+use compio_fs::File;
+use compio_io::{AsyncReadAtExt, AsyncWriteAtExt};
 use tempfile::NamedTempFile;
 
 const HELLO: &[u8] = b"hello world...";

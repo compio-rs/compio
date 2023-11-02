@@ -7,8 +7,8 @@ use compio::{
     fs::File,
     io::{AsyncReadAt, AsyncReadExt, AsyncWriteAt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    runtime::Unattached,
 };
-use compio_runtime::Unattached;
 use tempfile::NamedTempFile;
 
 #[compio_macros::test]
