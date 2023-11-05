@@ -9,6 +9,7 @@ use std::{
 
 use async_task::{Runnable, Task};
 use compio_driver::{AsRawFd, Entry, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd};
+use compio_log::{self as tracing, instrument, trace};
 use futures_util::future::Either;
 use smallvec::SmallVec;
 
@@ -123,6 +124,7 @@ impl Runtime {
         self.timer_runtime.borrow_mut().cancel(key);
     }
 
+    #[instrument(level = "trace", skip(self))]
     pub fn poll_task<T: OpCode>(
         &self,
         cx: &mut Context,
@@ -130,6 +132,7 @@ impl Runtime {
     ) -> Poll<BufResult<usize, T>> {
         let mut op_runtime = self.op_runtime.borrow_mut();
         if op_runtime.has_result(*user_data) {
+            trace!("has result");
             let op = op_runtime.remove(*user_data);
             let res = self
                 .driver
@@ -139,6 +142,7 @@ impl Runtime {
                 .expect("the result should have come");
             Poll::Ready(res.map_buffer(|op| unsafe { op.into_op::<T>() }))
         } else {
+            trace!("update waker");
             op_runtime.update_waker(*user_data, cx.waker().clone());
             Poll::Pending
         }

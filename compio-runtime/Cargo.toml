@@ -31,6 +31,7 @@ targets = [
 # Workspace dependencies
 compio-driver = { workspace = true }
 compio-buf = { workspace = true }
+compio-log = { workspace = true }
 
 async-task = "4.5.0"
 cfg-if = { workspace = true, optional = true }

@@ -39,6 +39,7 @@ compio-io = { workspace = true, optional = true }
 compio-net = { workspace = true }
 compio-signal = { workspace = true, optional = true }
 compio-dispatcher = { workspace = true, optional = true }
+compio-log = { workspace = true, optional = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
@@ -93,6 +94,7 @@ once_cell_try = [
 ]
 read_buf = ["compio-buf/read_buf"]
 try_trait_v2 = ["compio-buf/try_trait_v2"]
+enable_log = ["compio-log/enable_log"]
 nightly = [
     "allocator_api",
     "lazy_cell",
@@ -100,7 +102,6 @@ nightly = [
     "read_buf",
     "try_trait_v2",
 ]
-
 
 [[example]]
 name = "basic"
