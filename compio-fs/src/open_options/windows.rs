@@ -1,10 +1,11 @@
-use std::{io, path::Path, ptr::null_mut};
+use std::{io, path::Path, ptr::null};
 
 use compio_driver::{op::OpenFile, FromRawFd, RawFd};
 use compio_runtime::submit;
 use widestring::U16CString;
 use windows_sys::Win32::{
     Foundation::{ERROR_INVALID_PARAMETER, GENERIC_READ, GENERIC_WRITE},
+    Security::SECURITY_ATTRIBUTES,
     Storage::FileSystem::{
         CREATE_ALWAYS, CREATE_NEW, FILE_FLAGS_AND_ATTRIBUTES, FILE_FLAG_OPEN_REPARSE_POINT,
         FILE_FLAG_OVERLAPPED, FILE_SHARE_DELETE, FILE_SHARE_MODE, FILE_SHARE_READ,
@@ -26,6 +27,7 @@ pub struct OpenOptions {
     attributes: FILE_FLAGS_AND_ATTRIBUTES,
     share_mode: FILE_SHARE_MODE,
     security_qos_flags: u32,
+    security_attributes: *const SECURITY_ATTRIBUTES,
 }
 
 impl OpenOptions {
@@ -41,6 +43,7 @@ impl OpenOptions {
             share_mode: FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             attributes: 0,
             security_qos_flags: 0,
+            security_attributes: null(),
         }
     }
 
@@ -78,6 +81,10 @@ impl OpenOptions {
 
     pub fn attributes(&mut self, attrs: u32) {
         self.attributes = attrs;
+    }
+
+    pub unsafe fn security_attributes(&mut self, attrs: *const SECURITY_ATTRIBUTES) {
+        self.security_attributes = attrs;
     }
 
     pub fn security_qos_flags(&mut self, flags: u32) {
@@ -134,7 +141,7 @@ impl OpenOptions {
             p,
             self.get_access_mode()?,
             self.share_mode,
-            null_mut(),
+            self.security_attributes,
             self.get_creation_mode()?,
             self.get_flags_and_attributes(),
         );
