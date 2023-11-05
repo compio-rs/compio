@@ -41,6 +41,6 @@ impl<T> std::ops::Deref for Key<T> {
 
 impl<T> std::fmt::Debug for Key<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.user_data)
+        write!(f, "Key({})", self.user_data)
     }
 }
