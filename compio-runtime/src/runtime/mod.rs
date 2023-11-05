@@ -143,26 +143,32 @@ impl Runtime {
     }
 
     #[cfg(feature = "time")]
+    #[instrument(level = "trace", skip(self))]
     pub fn poll_timer(&self, cx: &mut Context, key: usize) -> Poll<()> {
         let mut timer_runtime = self.timer_runtime.borrow_mut();
         if timer_runtime.contains(key) {
+            trace!("pending");
             timer_runtime.update_waker(key, cx.waker().clone());
             Poll::Pending
         } else {
+            trace!("ready");
             Poll::Ready(())
         }
     }
 
+    #[instrument(level = "trace", skip(self))]
     fn poll(&self) {
         #[cfg(not(feature = "time"))]
         let timeout = None;
         #[cfg(feature = "time")]
         let timeout = self.timer_runtime.borrow().min_timeout();
+        trace!("timeout: {:?}", timeout);
 
         let mut entries = SmallVec::<[Entry; 1024]>::new();
         let mut driver = self.driver.borrow_mut();
         match driver.poll(timeout, &mut entries) {
             Ok(_) => {
+                trace!("poll driver ok, entries: {}", entries.len());
                 for entry in entries {
                     self.op_runtime
                         .borrow_mut()
@@ -170,7 +176,9 @@ impl Runtime {
                 }
             }
             Err(e) => match e.kind() {
-                io::ErrorKind::TimedOut | io::ErrorKind::Interrupted => {}
+                io::ErrorKind::TimedOut | io::ErrorKind::Interrupted => {
+                    trace!("expected error: {e}");
+                }
                 _ => panic!("{:?}", e),
             },
         }
