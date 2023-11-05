@@ -17,27 +17,6 @@ enum TlsConnectorInner {
 
 /// A wrapper around a [`native_tls::TlsConnector`] or [`rustls::ClientConfig`],
 /// providing an async `connect` method.
-///
-/// ```rust
-/// use compio_io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
-/// use compio_net::TcpStream;
-/// use compio_tls::TlsConnector;
-///
-/// # compio_runtime::block_on(async {
-/// let connector = TlsConnector::from(native_tls::TlsConnector::new().unwrap());
-///
-/// let stream = TcpStream::connect("www.example.com:443").await.unwrap();
-/// let mut stream = connector.connect("www.example.com", stream).await.unwrap();
-///
-/// stream
-///     .write_all("GET / HTTP/1.1\r\nHost:www.example.com\r\nConnection: close\r\n\r\n")
-///     .await
-///     .unwrap();
-/// stream.flush().await.unwrap();
-/// let (_, res) = stream.read_to_end(vec![]).await.unwrap();
-/// println!("{}", String::from_utf8_lossy(&res));
-/// # })
-/// ```
 #[derive(Debug, Clone)]
 pub struct TlsConnector(TlsConnectorInner);
 
@@ -178,7 +157,7 @@ where
                 return Ok(s);
             }
             Err(e) => match e {
-                HandshakeError::Failure(e) => return Err(io::Error::new(io::ErrorKind::Other, e)),
+                HandshakeError::Rustls(e) => return Err(io::Error::new(io::ErrorKind::Other, e)),
                 HandshakeError::System(e) => return Err(e),
                 HandshakeError::WouldBlock(mut mid_stream) => {
                     if mid_stream.get_mut().flush_write_buf().await? == 0 {

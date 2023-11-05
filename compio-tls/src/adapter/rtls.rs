@@ -9,7 +9,7 @@ use rustls::{
 use crate::{wrapper::StreamWrapper, TlsStream};
 
 pub enum HandshakeError<S, C> {
-    Failure(Error),
+    Rustls(Error),
     System(io::Error),
     WouldBlock(MidStream<S, C>),
 }
@@ -64,7 +64,7 @@ impl<S, C> MidStream<S, C> {
                     Ok(_) => {
                         self.conn
                             .process_new_packets()
-                            .map_err(HandshakeError::Failure)?;
+                            .map_err(HandshakeError::Rustls)?;
                     }
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                         read_would_block = true;
@@ -103,7 +103,7 @@ impl TlsConnector {
             ServerName::try_from(domain)
                 .map_err(|e| HandshakeError::System(io::Error::new(io::ErrorKind::Other, e)))?,
         )
-        .map_err(HandshakeError::Failure)?;
+        .map_err(HandshakeError::Rustls)?;
 
         MidStream::new(
             StreamWrapper::new(stream),
@@ -122,7 +122,7 @@ impl TlsAcceptor {
         &self,
         stream: S,
     ) -> Result<TlsStream<S>, HandshakeError<S, ServerConnection>> {
-        let conn = ServerConnection::new(self.0.clone()).map_err(HandshakeError::Failure)?;
+        let conn = ServerConnection::new(self.0.clone()).map_err(HandshakeError::Rustls)?;
 
         MidStream::new(
             StreamWrapper::new(stream),
