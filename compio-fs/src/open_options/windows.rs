@@ -4,7 +4,7 @@ use compio_driver::{op::OpenFile, FromRawFd, RawFd};
 use compio_runtime::submit;
 use widestring::U16CString;
 use windows_sys::Win32::{
-    Foundation::{GENERIC_READ, GENERIC_WRITE},
+    Foundation::{ERROR_INVALID_PARAMETER, GENERIC_READ, GENERIC_WRITE},
     Storage::FileSystem::{
         CREATE_ALWAYS, CREATE_NEW, FILE_FLAGS_AND_ATTRIBUTES, FILE_FLAG_OPEN_REPARSE_POINT,
         FILE_FLAG_OVERLAPPED, FILE_SHARE_DELETE, FILE_SHARE_MODE, FILE_SHARE_READ,
@@ -88,22 +88,18 @@ impl OpenOptions {
     }
 
     fn get_access_mode(&self) -> io::Result<u32> {
-        const ERROR_INVALID_PARAMETER: i32 = 87;
-
         match (self.read, self.write, self.access_mode) {
             (.., Some(mode)) => Ok(mode),
             (true, false, None) => Ok(GENERIC_READ),
             (false, true, None) => Ok(GENERIC_WRITE),
             (true, true, None) => Ok(GENERIC_READ | GENERIC_WRITE),
-            (false, false, None) => Err(io::Error::from_raw_os_error(ERROR_INVALID_PARAMETER)),
+            (false, false, None) => Err(io::Error::from_raw_os_error(ERROR_INVALID_PARAMETER as _)),
         }
     }
 
     fn get_creation_mode(&self) -> io::Result<u32> {
-        const ERROR_INVALID_PARAMETER: i32 = 87;
-
         if !self.write && (self.truncate || self.create || self.create_new) {
-            return Err(io::Error::from_raw_os_error(ERROR_INVALID_PARAMETER));
+            return Err(io::Error::from_raw_os_error(ERROR_INVALID_PARAMETER as _));
         }
 
         Ok(match (self.create, self.truncate, self.create_new) {
