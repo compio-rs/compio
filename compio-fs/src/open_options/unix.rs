@@ -19,13 +19,11 @@ pub struct OpenOptions {
 impl OpenOptions {
     pub fn new() -> OpenOptions {
         OpenOptions {
-            // generic
             read: false,
             write: false,
             truncate: false,
             create: false,
             create_new: false,
-            // system-specific
             custom_flags: 0,
             mode: 0o666,
         }

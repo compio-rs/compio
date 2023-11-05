@@ -1,10 +1,11 @@
-use std::{io, path::Path, ptr::null_mut};
+use std::{io, path::Path, ptr::null};
 
 use compio_driver::{op::OpenFile, FromRawFd, RawFd};
 use compio_runtime::submit;
 use widestring::U16CString;
 use windows_sys::Win32::{
-    Foundation::{GENERIC_READ, GENERIC_WRITE},
+    Foundation::{ERROR_INVALID_PARAMETER, GENERIC_READ, GENERIC_WRITE},
+    Security::SECURITY_ATTRIBUTES,
     Storage::FileSystem::{
         CREATE_ALWAYS, CREATE_NEW, FILE_FLAGS_AND_ATTRIBUTES, FILE_FLAG_OPEN_REPARSE_POINT,
         FILE_FLAG_OVERLAPPED, FILE_SHARE_DELETE, FILE_SHARE_MODE, FILE_SHARE_READ,
@@ -26,6 +27,7 @@ pub struct OpenOptions {
     attributes: FILE_FLAGS_AND_ATTRIBUTES,
     share_mode: FILE_SHARE_MODE,
     security_qos_flags: u32,
+    security_attributes: *const SECURITY_ATTRIBUTES,
 }
 
 impl OpenOptions {
@@ -41,6 +43,7 @@ impl OpenOptions {
             share_mode: FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             attributes: 0,
             security_qos_flags: 0,
+            security_attributes: null(),
         }
     }
 
@@ -80,6 +83,10 @@ impl OpenOptions {
         self.attributes = attrs;
     }
 
+    pub unsafe fn security_attributes(&mut self, attrs: *const SECURITY_ATTRIBUTES) {
+        self.security_attributes = attrs;
+    }
+
     pub fn security_qos_flags(&mut self, flags: u32) {
         // We have to set `SECURITY_SQOS_PRESENT` here, because one of the valid flags
         // we can receive is `SECURITY_ANONYMOUS = 0x0`, which we can't check
@@ -88,22 +95,18 @@ impl OpenOptions {
     }
 
     fn get_access_mode(&self) -> io::Result<u32> {
-        const ERROR_INVALID_PARAMETER: i32 = 87;
-
         match (self.read, self.write, self.access_mode) {
             (.., Some(mode)) => Ok(mode),
             (true, false, None) => Ok(GENERIC_READ),
             (false, true, None) => Ok(GENERIC_WRITE),
             (true, true, None) => Ok(GENERIC_READ | GENERIC_WRITE),
-            (false, false, None) => Err(io::Error::from_raw_os_error(ERROR_INVALID_PARAMETER)),
+            (false, false, None) => Err(io::Error::from_raw_os_error(ERROR_INVALID_PARAMETER as _)),
         }
     }
 
     fn get_creation_mode(&self) -> io::Result<u32> {
-        const ERROR_INVALID_PARAMETER: i32 = 87;
-
         if !self.write && (self.truncate || self.create || self.create_new) {
-            return Err(io::Error::from_raw_os_error(ERROR_INVALID_PARAMETER));
+            return Err(io::Error::from_raw_os_error(ERROR_INVALID_PARAMETER as _));
         }
 
         Ok(match (self.create, self.truncate, self.create_new) {
@@ -138,7 +141,7 @@ impl OpenOptions {
             p,
             self.get_access_mode()?,
             self.share_mode,
-            null_mut(),
+            self.security_attributes,
             self.get_creation_mode()?,
             self.get_flags_and_attributes(),
         );

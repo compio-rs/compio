@@ -15,7 +15,11 @@ async fn main() {
             .access_inbound(false)
             .create(PIPE_NAME)
             .unwrap();
-        let mut client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
+        let mut client = ClientOptions::new()
+            .write(false)
+            .open(PIPE_NAME)
+            .await
+            .unwrap();
 
         server.connect().await.unwrap();
 

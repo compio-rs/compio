@@ -8,6 +8,9 @@ mod sys;
 
 use std::{io, path::Path};
 
+#[cfg(windows)]
+use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
+
 use crate::File;
 
 /// Options and flags which can be used to configure how a file is opened.
@@ -240,6 +243,18 @@ impl OpenOptions {
     #[cfg(windows)]
     pub fn security_qos_flags(&mut self, flags: u32) -> &mut Self {
         self.0.security_qos_flags(flags);
+        self
+    }
+
+    /// Set the security attributes for the file handle.
+    ///
+    /// # Safety
+    ///
+    /// The `attrs` argument must either be null or point at a valid instance of
+    /// the [`SECURITY_ATTRIBUTES`] structure.
+    #[cfg(windows)]
+    pub unsafe fn security_attributes(&mut self, attrs: *const SECURITY_ATTRIBUTES) -> &mut Self {
+        self.0.security_attributes(attrs);
         self
     }
 
