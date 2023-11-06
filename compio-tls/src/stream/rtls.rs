@@ -37,10 +37,24 @@ impl TlsConnection {
         }
     }
 
+    pub fn wants_read(&self) -> bool {
+        match self {
+            Self::Client(c) => c.wants_read(),
+            Self::Server(c) => c.wants_read(),
+        }
+    }
+
     pub fn write_tls(&mut self, wr: &mut dyn io::Write) -> io::Result<usize> {
         match self {
             Self::Client(c) => c.write_tls(wr),
             Self::Server(c) => c.write_tls(wr),
+        }
+    }
+
+    pub fn wants_write(&self) -> bool {
+        match self {
+            Self::Client(c) => c.wants_write(),
+            Self::Server(c) => c.wants_write(),
         }
     }
 }
@@ -74,20 +88,20 @@ impl<S> TlsStream<S> {
 impl<S: io::Read + io::Write> io::Read for TlsStream<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         loop {
+            io::Write::flush(self)?;
+
+            while self.conn.wants_read() {
+                self.conn.read_tls(&mut self.inner)?;
+                self.conn
+                    .process_new_packets()
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            }
+
             match self.conn.reader().read(buf) {
                 Ok(len) => {
                     return Ok(len);
                 }
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    self.conn.read_tls(&mut self.inner)?;
-                    let state = self
-                        .conn
-                        .process_new_packets()
-                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                    if state.tls_bytes_to_write() > 0 {
-                        io::Write::flush(self)?;
-                    }
-                }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
                 Err(e) => return Err(e),
             }
         }
@@ -101,7 +115,9 @@ impl<S: io::Write> io::Write for TlsStream<S> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.conn.write_tls(&mut self.inner)?;
+        while self.conn.wants_write() {
+            self.conn.write_tls(&mut self.inner)?;
+        }
         self.inner.flush()?;
         Ok(())
     }

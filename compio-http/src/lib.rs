@@ -20,6 +20,9 @@ pub(crate) use stream::*;
 mod service;
 pub(crate) use service::*;
 
+mod backend;
+pub(crate) use backend::*;
+
 mod util;
 
 use thiserror::Error;

@@ -50,3 +50,7 @@ tempfile = "3.8.1"
 tokio = "1.33.0"
 widestring = "1.0.2"
 windows-sys = "0.48.0"
+
+native-tls = "0.2.11"
+rustls = "0.21.8"
+rustls-native-certs = "0.6.3"

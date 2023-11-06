@@ -134,6 +134,15 @@ impl<S: AsyncWrite> AsyncWrite for TlsStream<S> {
     }
 
     async fn flush(&mut self) -> io::Result<()> {
+        loop {
+            match io::Write::flush(&mut self.0) {
+                Ok(()) => break,
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    self.0.get_mut().flush_write_buf().await?;
+                }
+                Err(e) => return Err(e),
+            }
+        }
         self.0.get_mut().flush_write_buf().await?;
         Ok(())
     }

@@ -11,12 +11,14 @@ use compio_buf::{
 };
 use compio_io::{AsyncRead, AsyncWrite, AsyncWriteExt, Buffer};
 use compio_net::TcpStream;
-use compio_tls::{TlsConnector, TlsStream};
+use compio_tls::TlsStream;
 use hyper::{
     client::connect::{Connected, Connection},
     Uri,
 };
 use send_wrapper::SendWrapper;
+
+use crate::TlsBackend;
 
 enum HttpStreamInner {
     Tcp(TcpStream),
@@ -24,7 +26,7 @@ enum HttpStreamInner {
 }
 
 impl HttpStreamInner {
-    pub async fn new(uri: Uri) -> io::Result<Self> {
+    pub async fn new(uri: Uri, tls: TlsBackend) -> io::Result<Self> {
         let scheme = uri.scheme_str().unwrap_or("http");
         let host = uri.host().expect("there should be host");
         let port = uri.port_u16();
@@ -35,10 +37,7 @@ impl HttpStreamInner {
             }
             "https" => {
                 let stream = TcpStream::connect((host, port.unwrap_or(443))).await?;
-                let connector = TlsConnector::from(
-                    native_tls::TlsConnector::new()
-                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
-                );
+                let connector = tls.create_connector()?;
                 Ok(Self::Tls(connector.connect(host, stream).await?))
             }
             _ => Err(io::Error::new(
@@ -104,9 +103,9 @@ struct HttpStreamBufInner {
 }
 
 impl HttpStreamBufInner {
-    pub async fn new(uri: Uri) -> io::Result<Self> {
+    pub async fn new(uri: Uri, tls: TlsBackend) -> io::Result<Self> {
         Ok(Self {
-            inner: HttpStreamInner::new(uri).await?,
+            inner: HttpStreamInner::new(uri, tls).await?,
             read_buffer: Buffer::with_capacity(DEFAULT_BUF_SIZE),
             write_buffer: Buffer::with_capacity(DEFAULT_BUF_SIZE),
         })
@@ -184,9 +183,9 @@ pub struct HttpStream {
 }
 
 impl HttpStream {
-    pub async fn new(uri: Uri) -> io::Result<Self> {
+    pub async fn new(uri: Uri, tls: TlsBackend) -> io::Result<Self> {
         Ok(Self {
-            inner: SendWrapper::new(HttpStreamBufInner::new(uri).await?),
+            inner: SendWrapper::new(HttpStreamBufInner::new(uri, tls).await?),
             read_future: None,
             write_future: None,
             flush_future: None,

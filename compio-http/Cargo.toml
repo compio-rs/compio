@@ -16,7 +16,9 @@ compio-runtime = { workspace = true, features = ["time"] }
 compio-net = { workspace = true, features = ["runtime"] }
 compio-tls = { workspace = true }
 
-native-tls = { version = "0.2", optional = true }
+native-tls = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+rustls-native-certs = { workspace = true, optional = true }
 
 http = "0.2"
 hyper = { version = "0.14", features = ["client", "http1"] }
@@ -24,6 +26,7 @@ send_wrapper = { workspace = true, features = ["futures"] }
 tokio = { workspace = true }
 
 base64 = "0.21"
+cfg-if = { workspace = true }
 encoding_rs = "0.8"
 mime = "0.3"
 serde = "1"
@@ -39,6 +42,7 @@ hyper = { version = "0.14", features = ["server", "tcp"] }
 [features]
 default = ["native-tls"]
 native-tls = ["compio-tls/native-tls", "dep:native-tls"]
+rustls = ["compio-tls/rustls", "dep:rustls", "dep:rustls-native-certs"]
 vendored = ["native-tls?/vendored"]
 json = ["dep:serde_json"]
 all = ["json"]

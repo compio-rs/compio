@@ -8,7 +8,7 @@ use std::{
 use hyper::{rt::Executor, service::Service, Uri};
 use send_wrapper::SendWrapper;
 
-use crate::HttpStream;
+use crate::{HttpStream, TlsBackend};
 
 #[derive(Debug, Clone)]
 pub struct CompioExecutor;
@@ -20,7 +20,15 @@ impl Executor<Pin<Box<dyn Future<Output = ()> + Send>>> for CompioExecutor {
 }
 
 #[derive(Debug, Clone)]
-pub struct Connector;
+pub struct Connector {
+    tls: TlsBackend,
+}
+
+impl Connector {
+    pub fn new(tls: TlsBackend) -> Self {
+        Self { tls }
+    }
+}
 
 impl Service<Uri> for Connector {
     type Error = io::Error;
@@ -32,6 +40,6 @@ impl Service<Uri> for Connector {
     }
 
     fn call(&mut self, req: Uri) -> Self::Future {
-        Box::pin(SendWrapper::new(HttpStream::new(req)))
+        Box::pin(SendWrapper::new(HttpStream::new(req, self.tls)))
     }
 }
