@@ -2,7 +2,7 @@ use compio_log::Level;
 
 #[test]
 fn test_log() {
-    compio_log::subscriber::fmt()
+    tracing_subscriber::fmt()
         .with_max_level(Level::TRACE)
         .init();
 
