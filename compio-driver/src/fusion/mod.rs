@@ -6,6 +6,8 @@ mod iour;
 
 pub(crate) mod op;
 
+pub use iour::OpCode as IourOpCode;
+pub use poll::OpCode as PollOpCode;
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{io, task::Poll, time::Duration};
@@ -32,7 +34,7 @@ mod driver_type {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum DriverType {
         /// Using `polling` driver
-        Poll    = POLLING,
+        Poll = POLLING,
 
         /// Using `io-uring` driver
         IoUring = IO_URING,
@@ -100,9 +102,9 @@ mod driver_type {
 /// Fused [`OpCode`]
 ///
 /// This trait encapsulates both operation for `io-uring` and `polling`
-pub trait OpCode: poll::OpCode + iour::OpCode {}
+pub trait OpCode: PollOpCode + IourOpCode {}
 
-impl<T: poll::OpCode + iour::OpCode + ?Sized> OpCode for T {}
+impl<T: PollOpCode + IourOpCode + ?Sized> OpCode for T {}
 
 #[allow(clippy::large_enum_variant)]
 enum FuseDriver {

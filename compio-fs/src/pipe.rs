@@ -462,7 +462,7 @@ impl_attachable!(Sender, file);
 /// # }
 /// ```
 ///
-/// [`read_to_end`]: crate::io::AsyncReadExt::read_to_end
+/// [`read_to_end`]: compio_io::AsyncReadExt::read_to_end
 #[derive(Debug)]
 pub struct Receiver {
     file: File,
