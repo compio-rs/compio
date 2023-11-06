@@ -1,4 +1,4 @@
-use std::{io, sync::Arc};
+use std::io;
 
 use compio_tls::TlsConnector;
 
@@ -39,7 +39,7 @@ impl TlsBackend {
                     store.add(&rustls::Certificate(cert.0)).unwrap();
                 }
 
-                Ok(TlsConnector::from(Arc::new(
+                Ok(TlsConnector::from(std::sync::Arc::new(
                     rustls::ClientConfig::builder()
                         .with_safe_defaults()
                         .with_root_certificates(store)

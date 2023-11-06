@@ -20,6 +20,7 @@ use send_wrapper::SendWrapper;
 
 use crate::TlsBackend;
 
+#[allow(clippy::large_enum_variant)]
 enum HttpStreamInner {
     Tcp(TcpStream),
     Tls(TlsStream<TcpStream>),
