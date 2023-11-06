@@ -12,5 +12,8 @@ repository = { workspace = true }
 [dependencies]
 tracing = { version = "0.1", default-features = false }
 
+[dev-dependencies]
+tracing-subscriber = "0.3"
+
 [features]
 enable_log = []
