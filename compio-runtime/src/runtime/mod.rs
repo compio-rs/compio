@@ -9,7 +9,7 @@ use std::{
 
 use async_task::{Runnable, Task};
 use compio_driver::{AsRawFd, Entry, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd};
-use compio_log::{self as tracing, instrument, trace};
+use compio_log::{instrument, trace};
 use futures_util::future::Either;
 use send_wrapper::SendWrapper;
 use smallvec::SmallVec;
@@ -118,12 +118,12 @@ impl Runtime {
         self.timer_runtime.borrow_mut().cancel(key);
     }
 
-    #[instrument(level = "trace", skip(self))]
     pub fn poll_task<T: OpCode>(
         &self,
         cx: &mut Context,
         user_data: Key<T>,
     ) -> Poll<BufResult<usize, T>> {
+        instrument!(compio_log::Level::TRACE, "poll_task", ?cx, ?user_data,);
         let mut op_runtime = self.op_runtime.borrow_mut();
         if op_runtime.has_result(*user_data) {
             trace!("has result");
@@ -143,8 +143,8 @@ impl Runtime {
     }
 
     #[cfg(feature = "time")]
-    #[instrument(level = "trace", skip(self))]
     pub fn poll_timer(&self, cx: &mut Context, key: usize) -> Poll<()> {
+        instrument!(compio_log::Level::TRACE, "poll_timer", ?cx, ?key);
         let mut timer_runtime = self.timer_runtime.borrow_mut();
         if timer_runtime.contains(key) {
             trace!("pending");
@@ -156,8 +156,8 @@ impl Runtime {
         }
     }
 
-    #[instrument(level = "trace", skip(self))]
     fn poll(&self) {
+        instrument!(compio_log::Level::TRACE, "poll");
         #[cfg(not(feature = "time"))]
         let timeout = None;
         #[cfg(feature = "time")]
