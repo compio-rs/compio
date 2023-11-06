@@ -1,4 +1,4 @@
-use compio::net::UdpSocket;
+use compio_net::UdpSocket;
 
 #[compio_macros::test]
 async fn connect() {

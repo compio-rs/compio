@@ -12,7 +12,7 @@ use crate::{AsyncBufRead, AsyncRead, IoResult};
 /// # Examples
 ///
 /// ```rust
-/// # #[compio_macros::main] async fn main() {
+/// # compio_runtime::block_on(async {
 /// use compio_io::{self, AsyncRead, AsyncReadExt};
 ///
 /// let (len, buffer) = compio_io::repeat(42)
@@ -22,7 +22,7 @@ use crate::{AsyncBufRead, AsyncRead, IoResult};
 ///
 /// assert_eq!(buffer.as_slice(), [42, 42, 42]);
 /// assert_eq!(len, 3);
-/// # }
+/// # })
 /// ```
 pub struct Repeat(u8);
 
@@ -57,7 +57,7 @@ impl AsyncBufRead for Repeat {
 /// # Examples
 ///
 /// ```rust
-/// # #[compio_macros::main] async fn main() {
+/// # compio_runtime::block_on(async {
 /// use compio_io::{self, AsyncRead, AsyncReadExt};
 ///
 /// let (len, buffer) = compio_io::repeat(42)
@@ -67,7 +67,7 @@ impl AsyncBufRead for Repeat {
 ///
 /// assert_eq!(buffer.as_slice(), [42, 42, 42]);
 /// assert_eq!(len, 3);
-/// # }
+/// # })
 /// ```
 pub fn repeat(byte: u8) -> Repeat {
     Repeat(byte)

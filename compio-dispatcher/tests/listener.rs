@@ -1,13 +1,10 @@
-use std::num::NonZeroUsize;
+use std::{num::NonZeroUsize, panic::resume_unwind};
 
-use compio::{
-    buf::{arrayvec::ArrayVec, IntoInner},
-    dispatcher::Dispatcher,
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
-    runtime::{spawn, Unattached},
-    BufResult,
-};
+use compio_buf::{arrayvec::ArrayVec, IntoInner};
+use compio_dispatcher::Dispatcher;
+use compio_io::{AsyncReadExt, AsyncWriteExt};
+use compio_net::{TcpListener, TcpStream};
+use compio_runtime::{spawn, Unattached};
 use futures_util::{stream::FuturesUnordered, StreamExt};
 
 #[compio_macros::test]
@@ -28,23 +25,24 @@ async fn listener_dispatch() {
         }));
         while let Some(()) = futures.next().await {}
     });
+    let mut handles = FuturesUnordered::new();
     for _i in 0..CLIENT_NUM {
         let (srv, _) = listener.accept().await.unwrap();
         let srv = Unattached::new(srv).unwrap();
-        dispatcher
+        let handle = dispatcher
             .dispatch(move || {
                 let mut srv = srv.into_inner();
                 async move {
-                    let BufResult(res, buf) = srv.read_exact(ArrayVec::<u8, 12>::new()).await;
-                    res?;
+                    let (_, buf) = srv.read_exact(ArrayVec::<u8, 12>::new()).await.unwrap();
                     assert_eq!(buf.as_slice(), b"Hello world!");
-                    Ok(())
                 }
             })
             .unwrap();
+        handles.push(handle.join());
     }
-    task.await;
-    for res in dispatcher.join() {
-        res.unwrap();
+    while let Some(res) = handles.next().await {
+        res.unwrap().unwrap_or_else(|e| resume_unwind(e));
     }
+    let (_, results) = futures_util::join!(task, dispatcher.join());
+    results.unwrap();
 }

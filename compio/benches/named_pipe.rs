@@ -63,7 +63,7 @@ fn basic(c: &mut Criterion) {
                 const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe";
 
                 let mut server = ServerOptions::new().create(PIPE_NAME).unwrap();
-                let mut client = ClientOptions::new().open(PIPE_NAME).unwrap();
+                let mut client = ClientOptions::new().open(PIPE_NAME).await.unwrap();
 
                 server.connect().await.unwrap();
 

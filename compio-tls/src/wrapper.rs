@@ -27,6 +27,10 @@ impl<S> StreamWrapper<S> {
         }
     }
 
+    pub fn is_eof(&self) -> bool {
+        self.eof
+    }
+
     pub fn get_ref(&self) -> &S {
         &self.stream
     }

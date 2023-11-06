@@ -1,20 +1,20 @@
-use std::{fs::Metadata, io, path::Path};
+use std::{fs::Metadata, io};
 
 use compio_driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 #[cfg(feature = "runtime")]
 use {
+    crate::OpenOptions,
     compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut},
-    compio_driver::op::{BufResultExt, ReadAt, Sync, WriteAt},
+    compio_driver::op::{BufResultExt, CloseFile, ReadAt, Sync, WriteAt},
     compio_io::{AsyncReadAt, AsyncWriteAt},
     compio_runtime::{submit, Attachable, Attacher},
+    std::{future::Future, mem::ManuallyDrop, path::Path},
 };
 #[cfg(all(feature = "runtime", unix))]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
     compio_driver::op::{ReadVectoredAt, WriteVectoredAt},
 };
-
-use crate::OpenOptions;
 
 /// A reference to an open file on the filesystem.
 ///
@@ -29,48 +29,13 @@ pub struct File {
     attacher: Attacher,
 }
 
-#[cfg(windows)]
-fn file_with_options(
-    path: impl AsRef<Path>,
-    mut options: std::fs::OpenOptions,
-) -> io::Result<std::fs::File> {
-    use std::os::windows::prelude::OpenOptionsExt;
-
-    use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
-
-    options.custom_flags(FILE_FLAG_OVERLAPPED);
-    options.open(path)
-}
-
-#[cfg(not(windows))]
-fn file_with_options(
-    path: impl AsRef<Path>,
-    mut options: std::fs::OpenOptions,
-) -> io::Result<std::fs::File> {
-    use std::os::unix::prelude::OpenOptionsExt;
-
-    // Don't set nonblocking with epoll.
-    if cfg!(not(any(target_os = "linux", target_os = "android"))) {
-        options.custom_flags(libc::O_NONBLOCK);
-    }
-    options.open(path)
-}
-
 impl File {
-    pub(crate) fn with_options(path: impl AsRef<Path>, options: OpenOptions) -> io::Result<Self> {
-        let this = Self {
-            inner: file_with_options(path, options.0)?,
-            #[cfg(feature = "runtime")]
-            attacher: Attacher::new(),
-        };
-        Ok(this)
-    }
-
     /// Attempts to open a file in read-only mode.
     ///
     /// See the [`OpenOptions::open`] method for more details.
-    pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
-        OpenOptions::new().read(true).open(path)
+    #[cfg(feature = "runtime")]
+    pub async fn open(path: impl AsRef<Path>) -> io::Result<Self> {
+        OpenOptions::new().read(true).open(path).await
     }
 
     /// Opens a file in write-only mode.
@@ -79,12 +44,29 @@ impl File {
     /// and will truncate it if it does.
     ///
     /// See the [`OpenOptions::open`] function for more details.
-    pub fn create(path: impl AsRef<Path>) -> io::Result<Self> {
+    #[cfg(feature = "runtime")]
+    pub async fn create(path: impl AsRef<Path>) -> io::Result<Self> {
         OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
             .open(path)
+            .await
+    }
+
+    /// Close the file. If the returned future is dropped before polling, the
+    /// file won't be closed.
+    #[cfg(feature = "runtime")]
+    pub fn close(self) -> impl Future<Output = io::Result<()>> {
+        // Make sure that self won't be dropped after `close` called.
+        // Users may call this method and drop the future immediately. In that way the
+        // `close` should be cancelled.
+        let this = ManuallyDrop::new(self);
+        async move {
+            let op = CloseFile::new(this.as_raw_fd());
+            submit(op).await.0?;
+            Ok(())
+        }
     }
 
     /// Creates a new `File` instance that shares the same underlying file

@@ -1,12 +1,26 @@
+use std::{ffi::CString, net::Shutdown};
+
 use compio_buf::{
     IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
 };
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
-#[cfg(doc)]
-use crate::op::*;
-use crate::sys::RawFd;
+use crate::{op::*, sys::RawFd};
+
+/// Open or create a file with flags and mode.
+pub struct OpenFile {
+    pub(crate) path: CString,
+    pub(crate) flags: i32,
+    pub(crate) mode: libc::mode_t,
+}
+
+impl OpenFile {
+    /// Create [`OpenFile`].
+    pub fn new(path: CString, flags: i32, mode: libc::mode_t) -> Self {
+        Self { path, flags, mode }
+    }
+}
 
 /// Read a file at specified position into vectored buffer.
 pub struct ReadVectoredAt<T: IoVectoredBufMut> {
@@ -61,6 +75,16 @@ impl<T: IoVectoredBuf> IntoInner for WriteVectoredAt<T> {
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
+    }
+}
+
+impl ShutdownSocket {
+    pub(crate) fn how(&self) -> i32 {
+        match self.how {
+            Shutdown::Write => libc::SHUT_WR,
+            Shutdown::Read => libc::SHUT_RD,
+            Shutdown::Both => libc::SHUT_RDWR,
+        }
     }
 }
 

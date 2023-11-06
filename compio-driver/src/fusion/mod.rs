@@ -6,6 +6,8 @@ mod iour;
 
 pub(crate) mod op;
 
+pub use iour::OpCode as IourOpCode;
+pub use poll::OpCode as PollOpCode;
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{io, task::Poll, time::Duration};
@@ -16,7 +18,7 @@ pub use poll::Decision;
 use slab::Slab;
 
 pub(crate) use crate::unix::RawOp;
-use crate::Entry;
+use crate::{Entry, ProactorBuilder};
 
 mod driver_type {
     use std::sync::atomic::{AtomicU8, Ordering};
@@ -32,7 +34,7 @@ mod driver_type {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum DriverType {
         /// Using `polling` driver
-        Poll    = POLLING,
+        Poll = POLLING,
 
         /// Using `io-uring` driver
         IoUring = IO_URING,
@@ -81,6 +83,9 @@ mod driver_type {
             RecvMsg::CODE,
             SendMsg::CODE,
             AsyncCancel::CODE,
+            OpenAt::CODE,
+            Close::CODE,
+            Shutdown::CODE,
         ];
 
         Ok(())
@@ -97,9 +102,9 @@ mod driver_type {
 /// Fused [`OpCode`]
 ///
 /// This trait encapsulates both operation for `io-uring` and `polling`
-pub trait OpCode: poll::OpCode + iour::OpCode {}
+pub trait OpCode: PollOpCode + IourOpCode {}
 
-impl<T: poll::OpCode + iour::OpCode + ?Sized> OpCode for T {}
+impl<T: PollOpCode + IourOpCode + ?Sized> OpCode for T {}
 
 #[allow(clippy::large_enum_variant)]
 enum FuseDriver {
@@ -114,13 +119,13 @@ pub(crate) struct Driver {
 
 impl Driver {
     /// Create a new fusion driver with given number of entries
-    pub fn new(entries: u32) -> io::Result<Self> {
+    pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         match DriverType::current() {
             DriverType::Poll => Ok(Self {
-                fuse: FuseDriver::Poll(poll::Driver::new(entries)?),
+                fuse: FuseDriver::Poll(poll::Driver::new(builder)?),
             }),
             DriverType::IoUring => Ok(Self {
-                fuse: FuseDriver::IoUring(iour::Driver::new(entries)?),
+                fuse: FuseDriver::IoUring(iour::Driver::new(builder)?),
             }),
         }
     }

@@ -3,6 +3,10 @@ use std::{io, pin::Pin, task::Poll};
 use compio_buf::{
     IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
 };
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+use libc::open;
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+use libc::open64 as open;
 #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "hurd")))]
 use libc::{pread, preadv, pwrite, pwritev};
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "hurd"))]
@@ -13,6 +17,38 @@ use socket2::SockAddr;
 use super::{sockaddr_storage, socklen_t, syscall, Decision, OpCode, RawFd};
 use crate::op::*;
 pub use crate::unix::op::*;
+
+impl OpCode for OpenFile {
+    fn is_nonblocking(&self) -> bool {
+        false
+    }
+
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::Completed(syscall!(open(
+            self.path.as_ptr(),
+            self.flags,
+            self.mode as libc::c_int
+        ))? as _))
+    }
+
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        unreachable!("OpenFile operation should not be submitted to polling")
+    }
+}
+
+impl OpCode for CloseFile {
+    fn is_nonblocking(&self) -> bool {
+        false
+    }
+
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::Completed(syscall!(libc::close(self.fd))? as _))
+    }
+
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        unreachable!("CloseFile operation should not be submitted to polling")
+    }
+}
 
 impl<T: IoBufMut> ReadAt<T> {
     unsafe fn call(&mut self) -> libc::ssize_t {
@@ -28,6 +64,10 @@ impl<T: IoBufMut> ReadAt<T> {
 }
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
+    fn is_nonblocking(&self) -> bool {
+        cfg!(not(any(target_os = "linux", target_os = "android")))
+    }
+
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         if cfg!(any(target_os = "linux", target_os = "android")) {
             Ok(Decision::Completed(syscall!(self.call())? as _))
@@ -56,6 +96,10 @@ impl<T: IoVectoredBufMut> ReadVectoredAt<T> {
 }
 
 impl<T: IoVectoredBufMut> OpCode for ReadVectoredAt<T> {
+    fn is_nonblocking(&self) -> bool {
+        cfg!(not(any(target_os = "linux", target_os = "android")))
+    }
+
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         if cfg!(any(target_os = "linux", target_os = "android")) {
             Ok(Decision::Completed(syscall!(self.call())? as _))
@@ -84,6 +128,10 @@ impl<T: IoBuf> WriteAt<T> {
 }
 
 impl<T: IoBuf> OpCode for WriteAt<T> {
+    fn is_nonblocking(&self) -> bool {
+        cfg!(not(any(target_os = "linux", target_os = "android")))
+    }
+
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         if cfg!(any(target_os = "linux", target_os = "android")) {
             Ok(Decision::Completed(syscall!(self.call())? as _))
@@ -112,6 +160,10 @@ impl<T: IoVectoredBuf> WriteVectoredAt<T> {
 }
 
 impl<T: IoVectoredBuf> OpCode for WriteVectoredAt<T> {
+    fn is_nonblocking(&self) -> bool {
+        cfg!(not(any(target_os = "linux", target_os = "android")))
+    }
+
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         if cfg!(any(target_os = "linux", target_os = "android")) {
             Ok(Decision::Completed(syscall!(self.call())? as _))
@@ -128,12 +180,71 @@ impl<T: IoVectoredBuf> OpCode for WriteVectoredAt<T> {
 }
 
 impl OpCode for Sync {
+    fn is_nonblocking(&self) -> bool {
+        false
+    }
+
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::Completed(syscall!(libc::fsync(self.fd))? as _))
+        #[cfg(any(
+            target_os = "android",
+            target_os = "freebsd",
+            target_os = "fuchsia",
+            target_os = "illumos",
+            target_os = "linux",
+            target_os = "netbsd"
+        ))]
+        {
+            Ok(Decision::Completed(syscall!(if self.datasync {
+                libc::fdatasync(self.fd)
+            } else {
+                libc::fsync(self.fd)
+            })? as _))
+        }
+        #[cfg(not(any(
+            target_os = "android",
+            target_os = "freebsd",
+            target_os = "fuchsia",
+            target_os = "illumos",
+            target_os = "linux",
+            target_os = "netbsd"
+        )))]
+        {
+            Ok(Decision::Completed(syscall!(libc::fsync(self.fd))? as _))
+        }
     }
 
     fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
         unreachable!("Sync operation should not be submitted to polling")
+    }
+}
+
+impl OpCode for ShutdownSocket {
+    fn is_nonblocking(&self) -> bool {
+        false
+    }
+
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::Completed(
+            syscall!(libc::shutdown(self.fd, self.how()))? as _,
+        ))
+    }
+
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        unreachable!("CreateSocket operation should not be submitted to polling")
+    }
+}
+
+impl OpCode for CloseSocket {
+    fn is_nonblocking(&self) -> bool {
+        false
+    }
+
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::Completed(syscall!(libc::close(self.fd))? as _))
+    }
+
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        unreachable!("CloseSocket operation should not be submitted to polling")
     }
 }
 

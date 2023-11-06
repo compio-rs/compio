@@ -8,7 +8,7 @@ use std::{
 };
 
 use async_task::{Runnable, Task};
-use compio_driver::{AsRawFd, Entry, OpCode, Proactor, PushEntry, RawFd};
+use compio_driver::{AsRawFd, Entry, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd};
 use futures_util::future::Either;
 use smallvec::SmallVec;
 
@@ -33,9 +33,9 @@ pub(crate) struct Runtime {
 }
 
 impl Runtime {
-    pub fn new() -> io::Result<Self> {
+    pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         Ok(Self {
-            driver: RefCell::new(Proactor::new()?),
+            driver: RefCell::new(builder.build()?),
             thread_id: std::thread::current().id(),
             runnables: RefCell::default(),
             op_runtime: RefCell::default(),

@@ -2,21 +2,17 @@
 //!
 //! The infrastructure of the code comes from tokio.
 
-use std::{
-    ffi::{c_void, OsStr},
-    io,
-    os::windows::prelude::{AsRawHandle, FromRawHandle, IntoRawHandle, OwnedHandle},
-    ptr::null_mut,
-};
+#[cfg(doc)]
+use std::ptr::null_mut;
+use std::{ffi::OsStr, io, ptr::null};
 
 use compio_driver::{impl_raw_fd, syscall, AsRawFd, FromRawFd, RawFd};
 use widestring::U16CString;
 use windows_sys::Win32::{
-    Foundation::{GENERIC_READ, GENERIC_WRITE},
+    Security::SECURITY_ATTRIBUTES,
     Storage::FileSystem::{
-        CreateFileW, FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_FLAG_OVERLAPPED, OPEN_EXISTING,
-        PIPE_ACCESS_INBOUND, PIPE_ACCESS_OUTBOUND, SECURITY_IDENTIFICATION, SECURITY_SQOS_PRESENT,
-        WRITE_DAC, WRITE_OWNER,
+        FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_FLAG_OVERLAPPED, PIPE_ACCESS_INBOUND,
+        PIPE_ACCESS_OUTBOUND, SECURITY_IDENTIFICATION, WRITE_DAC, WRITE_OWNER,
     },
     System::{
         Pipes::{
@@ -36,7 +32,7 @@ use {
     compio_runtime::{impl_attachable, submit, Attachable},
 };
 
-use crate::File;
+use crate::{File, OpenOptions};
 
 /// A [Windows named pipe] server.
 ///
@@ -105,10 +101,6 @@ pub struct NamedPipeServer {
 }
 
 impl NamedPipeServer {
-    pub(crate) fn from_handle(handle: OwnedHandle) -> io::Result<Self> {
-        Ok(unsafe { Self::from_raw_fd(handle.into_raw_handle()) })
-    }
-
     /// Creates a new independently owned handle to the underlying file handle.
     ///
     /// It does not clear the attach state.
@@ -187,7 +179,7 @@ impl NamedPipeServer {
     /// # compio_runtime::block_on(async move {
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
     ///
-    /// let mut client = ClientOptions::new().open(PIPE_NAME).unwrap();
+    /// let mut client = ClientOptions::new().open(PIPE_NAME).await.unwrap();
     ///
     /// // Wait for a client to become connected.
     /// server.connect().await.unwrap();
@@ -290,7 +282,7 @@ impl_attachable!(NamedPipeServer, handle);
 ///
 /// # compio_runtime::block_on(async move {
 /// let client = loop {
-///     match ClientOptions::new().open(PIPE_NAME) {
+///     match ClientOptions::new().open(PIPE_NAME).await {
 ///         Ok(client) => break client,
 ///         Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) => (),
 ///         Err(e) => return Err(e),
@@ -311,10 +303,6 @@ pub struct NamedPipeClient {
 }
 
 impl NamedPipeClient {
-    pub(crate) fn from_handle(handle: OwnedHandle) -> io::Result<Self> {
-        Ok(unsafe { Self::from_raw_fd(handle.into_raw_handle()) })
-    }
-
     /// Creates a new independently owned handle to the underlying file handle.
     ///
     /// It does not clear the attach state.
@@ -333,7 +321,7 @@ impl NamedPipeClient {
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-client-info";
     ///
     /// # compio_runtime::block_on(async move {
-    /// let client = ClientOptions::new().open(PIPE_NAME)?;
+    /// let client = ClientOptions::new().open(PIPE_NAME).await?;
     ///
     /// let client_info = client.info()?;
     ///
@@ -429,6 +417,7 @@ pub struct ServerOptions {
     out_buffer_size: u32,
     in_buffer_size: u32,
     default_timeout: u32,
+    security_attributes: *const SECURITY_ATTRIBUTES,
 }
 
 impl ServerOptions {
@@ -439,9 +428,7 @@ impl ServerOptions {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-new";
     ///
-    /// # compio_runtime::block_on(async move {
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
-    /// # })
     /// ```
     pub fn new() -> ServerOptions {
         ServerOptions {
@@ -457,6 +444,7 @@ impl ServerOptions {
             out_buffer_size: 65536,
             in_buffer_size: 65536,
             default_timeout: 0,
+            security_attributes: null(),
         }
     }
 
@@ -499,7 +487,7 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let e = ClientOptions::new().open(PIPE_NAME).unwrap_err();
+    /// let e = ClientOptions::new().open(PIPE_NAME).await.unwrap_err();
     ///
     /// assert_eq!(e.kind(), io::ErrorKind::PermissionDenied);
     /// # })
@@ -522,7 +510,11 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let mut client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
+    /// let mut client = ClientOptions::new()
+    ///     .write(false)
+    ///     .open(PIPE_NAME)
+    ///     .await
+    ///     .unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
@@ -551,7 +543,11 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let mut client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
+    /// let mut client = ClientOptions::new()
+    ///     .write(false)
+    ///     .open(PIPE_NAME)
+    ///     .await
+    ///     .unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
@@ -598,7 +594,7 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let e = ClientOptions::new().open(PIPE_NAME).unwrap_err();
+    /// let e = ClientOptions::new().open(PIPE_NAME).await.unwrap_err();
     ///
     /// assert_eq!(e.kind(), io::ErrorKind::PermissionDenied);
     /// # })
@@ -621,7 +617,11 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let mut client = ClientOptions::new().read(false).open(PIPE_NAME).unwrap();
+    /// let mut client = ClientOptions::new()
+    ///     .read(false)
+    ///     .open(PIPE_NAME)
+    ///     .await
+    ///     .unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
@@ -649,7 +649,11 @@ impl ServerOptions {
     ///     .create(PIPE_NAME)
     ///     .unwrap();
     ///
-    /// let mut client = ClientOptions::new().read(false).open(PIPE_NAME).unwrap();
+    /// let mut client = ClientOptions::new()
+    ///     .read(false)
+    ///     .open(PIPE_NAME)
+    ///     .await
+    ///     .unwrap();
     ///
     /// server.connect().await.unwrap();
     ///
@@ -891,10 +895,10 @@ impl ServerOptions {
     /// server.max_instances(2);
     ///
     /// let s1 = server.create(PIPE_NAME).unwrap();
-    /// let c1 = ClientOptions::new().open(PIPE_NAME);
+    /// let c1 = ClientOptions::new().open(PIPE_NAME).await.unwrap();
     ///
     /// let s2 = server.create(PIPE_NAME).unwrap();
-    /// let c2 = ClientOptions::new().open(PIPE_NAME);
+    /// let c2 = ClientOptions::new().open(PIPE_NAME).await.unwrap();
     ///
     /// // Too many servers!
     /// let e = server.create(PIPE_NAME).unwrap_err();
@@ -914,9 +918,7 @@ impl ServerOptions {
     /// ```should_panic
     /// use compio_fs::named_pipe::ServerOptions;
     ///
-    /// # compio_runtime::block_on(async move {
     /// let builder = ServerOptions::new().max_instances(255);
-    /// # })
     /// ```
     #[track_caller]
     pub fn max_instances(&mut self, instances: usize) -> &mut Self {
@@ -945,6 +947,17 @@ impl ServerOptions {
         self
     }
 
+    /// Set the security attributes for the server handle.
+    ///
+    /// # Safety
+    ///
+    /// The `attrs` argument must either be null or point at a valid instance of
+    /// the [`SECURITY_ATTRIBUTES`] structure.
+    pub unsafe fn security_attributes(&mut self, attrs: *mut SECURITY_ATTRIBUTES) -> &mut Self {
+        self.security_attributes = attrs;
+        self
+    }
+
     /// Creates the named pipe identified by `addr` for use as a server.
     ///
     /// This uses the [`CreateNamedPipe`] function.
@@ -963,31 +976,6 @@ impl ServerOptions {
     /// # })
     /// ```
     pub fn create(&self, addr: impl AsRef<OsStr>) -> io::Result<NamedPipeServer> {
-        // Safety: We're calling create_with_security_attributes_raw w/ a null
-        // pointer which disables it.
-        unsafe { self.create_with_security_attributes_raw(addr, null_mut()) }
-    }
-
-    /// Creates the named pipe identified by `addr` for use as a server.
-    ///
-    /// This is the same as [`create`] except that it supports providing the raw
-    /// pointer to a structure of [`SECURITY_ATTRIBUTES`] which will be passed
-    /// as the `lpSecurityAttributes` argument to [`CreateFile`].
-    ///
-    /// # Safety
-    ///
-    /// The `attrs` argument must either be null or point at a valid instance of
-    /// the [`SECURITY_ATTRIBUTES`] structure. If the argument is null, the
-    /// behavior is identical to calling the [`create`] method.
-    ///
-    /// [`create`]: ServerOptions::create
-    /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew
-    /// [`SECURITY_ATTRIBUTES`]: https://docs.rs/windows-sys/latest/windows_sys/Win32/Security/struct.SECURITY_ATTRIBUTES.html
-    pub unsafe fn create_with_security_attributes_raw(
-        &self,
-        addr: impl AsRef<OsStr>,
-        attrs: *mut c_void,
-    ) -> io::Result<NamedPipeServer> {
         let addr = U16CString::from_os_str(addr)
             .map_err(|e| io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
@@ -1037,13 +1025,11 @@ impl ServerOptions {
                 self.out_buffer_size,
                 self.in_buffer_size,
                 self.default_timeout,
-                attrs as *mut _,
+                self.security_attributes,
             )
         )?;
 
-        let h = OwnedHandle::from_raw_handle(h as _);
-
-        NamedPipeServer::from_handle(h)
+        Ok(unsafe { NamedPipeServer::from_raw_fd(h as _) })
     }
 }
 
@@ -1059,9 +1045,7 @@ impl Default for ServerOptions {
 /// See [`ClientOptions::open`].
 #[derive(Debug, Clone)]
 pub struct ClientOptions {
-    generic_read: bool,
-    generic_write: bool,
-    security_qos_flags: u32,
+    options: OpenOptions,
     pipe_mode: PipeMode,
 }
 
@@ -1076,48 +1060,35 @@ impl ClientOptions {
     /// # compio_runtime::block_on(async move {
     /// // Server must be created in order for the client creation to succeed.
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
-    /// let client = ClientOptions::new().open(PIPE_NAME).unwrap();
+    /// let client = ClientOptions::new().open(PIPE_NAME).await.unwrap();
     /// # })
     /// ```
     pub fn new() -> Self {
+        let mut options = OpenOptions::new();
+        options
+            .read(true)
+            .write(true)
+            .security_qos_flags(SECURITY_IDENTIFICATION);
         Self {
-            generic_read: true,
-            generic_write: true,
-            security_qos_flags: SECURITY_IDENTIFICATION | SECURITY_SQOS_PRESENT,
+            options,
             pipe_mode: PipeMode::Byte,
         }
     }
 
     /// If the client supports reading data. This is enabled by default.
-    ///
-    /// This corresponds to setting [`GENERIC_READ`] in the call to
-    /// [`CreateFile`].
-    ///
-    /// [`GENERIC_READ`]: https://docs.microsoft.com/en-us/windows/win32/secauthz/generic-access-rights
-    /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew
     pub fn read(&mut self, allowed: bool) -> &mut Self {
-        self.generic_read = allowed;
+        self.options.read(allowed);
         self
     }
 
     /// If the created pipe supports writing data. This is enabled by default.
-    ///
-    /// This corresponds to setting [`GENERIC_WRITE`] in the call to
-    /// [`CreateFile`].
-    ///
-    /// [`GENERIC_WRITE`]: https://docs.microsoft.com/en-us/windows/win32/secauthz/generic-access-rights
-    /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew
     pub fn write(&mut self, allowed: bool) -> &mut Self {
-        self.generic_write = allowed;
+        self.options.write(allowed);
         self
     }
 
     /// Sets qos flags which are combined with other flags and attributes in the
     /// call to [`CreateFile`].
-    ///
-    /// By default `security_qos_flags` is set to [`SECURITY_IDENTIFICATION`],
-    /// calling this function would override that value completely with the
-    /// argument specified.
     ///
     /// When `security_qos_flags` is not set, a malicious program can gain the
     /// elevated privileges of a privileged Rust process when it allows opening
@@ -1134,8 +1105,7 @@ impl ClientOptions {
     /// [`SECURITY_IDENTIFICATION`]: https://docs.rs/windows-sys/latest/windows_sys/Win32/Storage/FileSystem/constant.SECURITY_IDENTIFICATION.html
     /// [Impersonation Levels]: https://docs.microsoft.com/en-us/windows/win32/api/winnt/ne-winnt-security_impersonation_level
     pub fn security_qos_flags(&mut self, flags: u32) -> &mut Self {
-        // See: https://github.com/rust-lang/rust/pull/58216
-        self.security_qos_flags = flags | SECURITY_SQOS_PRESENT;
+        self.options.security_qos_flags(flags);
         self
     }
 
@@ -1145,6 +1115,16 @@ impl ClientOptions {
     /// documentation of what each mode means.
     pub fn pipe_mode(&mut self, pipe_mode: PipeMode) -> &mut Self {
         self.pipe_mode = pipe_mode;
+        self
+    }
+
+    /// Set the security attributes for the file handle.
+    ///
+    /// # Safety
+    ///
+    /// See [`OpenOptions::security_attributes`]
+    pub unsafe fn security_attributes(&mut self, attrs: *mut SECURITY_ATTRIBUTES) -> &mut Self {
+        self.options.security_attributes(attrs);
         self
     }
 
@@ -1182,7 +1162,7 @@ impl ClientOptions {
     ///
     /// # compio_runtime::block_on(async move {
     /// let client = loop {
-    ///     match ClientOptions::new().open(PIPE_NAME) {
+    ///     match ClientOptions::new().open(PIPE_NAME).await {
     ///         Ok(client) => break client,
     ///         Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) => (),
     ///         Err(e) => return Err(e),
@@ -1194,78 +1174,18 @@ impl ClientOptions {
     /// // use the connected client.
     /// # Ok(()) });
     /// ```
-    pub fn open(&self, addr: impl AsRef<OsStr>) -> io::Result<NamedPipeClient> {
-        // Safety: We're calling open_with_security_attributes_raw w/ a null
-        // pointer which disables it.
-        unsafe { self.open_with_security_attributes_raw(addr, null_mut()) }
-    }
-
-    /// Opens the named pipe identified by `addr`.
-    ///
-    /// This is the same as [`open`] except that it supports providing the raw
-    /// pointer to a structure of [`SECURITY_ATTRIBUTES`] which will be passed
-    /// as the `lpSecurityAttributes` argument to [`CreateFile`].
-    ///
-    /// # Safety
-    ///
-    /// The `attrs` argument must either be null or point at a valid instance of
-    /// the [`SECURITY_ATTRIBUTES`] structure. If the argument is null, the
-    /// behavior is identical to calling the [`open`] method.
-    ///
-    /// [`open`]: ClientOptions::open
-    /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew
-    /// [`SECURITY_ATTRIBUTES`]: https://docs.rs/windows-sys/latest/windows_sys/Win32/Security/struct.SECURITY_ATTRIBUTES.html
-    pub unsafe fn open_with_security_attributes_raw(
-        &self,
-        addr: impl AsRef<OsStr>,
-        attrs: *mut c_void,
-    ) -> io::Result<NamedPipeClient> {
-        let addr = U16CString::from_os_str(addr)
-            .map_err(|e| io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-
-        let desired_access = {
-            let mut access = 0;
-            if self.generic_read {
-                access |= GENERIC_READ;
-            }
-            if self.generic_write {
-                access |= GENERIC_WRITE;
-            }
-            access
-        };
-
-        // NB: We could use a platform specialized `OpenOptions` here, but since
-        // we have access to windows_sys it ultimately doesn't hurt to use
-        // `CreateFile` explicitly since it allows the use of our already
-        // well-structured wide `addr` to pass into CreateFileW.
-        let h = syscall!(
-            HANDLE,
-            CreateFileW(
-                addr.as_ptr(),
-                desired_access,
-                0,
-                attrs as *mut _,
-                OPEN_EXISTING,
-                self.get_flags(),
-                0,
-            )
-        )?;
-
-        let h = OwnedHandle::from_raw_handle(h as _);
+    pub async fn open(&self, addr: impl AsRef<OsStr>) -> io::Result<NamedPipeClient> {
+        let file = self.options.open(addr.as_ref()).await?;
 
         if matches!(self.pipe_mode, PipeMode::Message) {
             let mode = PIPE_READMODE_MESSAGE;
             syscall!(
                 BOOL,
-                SetNamedPipeHandleState(h.as_raw_handle() as _, &mode, null_mut(), null_mut())
+                SetNamedPipeHandleState(file.as_raw_fd() as _, &mode, null(), null())
             )?;
         }
 
-        NamedPipeClient::from_handle(h)
-    }
-
-    fn get_flags(&self) -> u32 {
-        self.security_qos_flags | FILE_FLAG_OVERLAPPED
+        Ok(NamedPipeClient { handle: file })
     }
 }
 

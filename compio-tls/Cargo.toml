@@ -13,11 +13,16 @@ repository = { workspace = true }
 compio-buf = { workspace = true }
 compio-io = { workspace = true }
 
-native-tls = { version = "0.2", optional = true }
+native-tls = { version = "0.2.11", optional = true }
+rustls = { version = "0.21.8", optional = true }
 
 [dev-dependencies]
-compio-net = { workspace = true, features = ["runtime"] }
+compio-net = { workspace = true }
 compio-runtime = { workspace = true }
+compio-macros = { workspace = true }
+
+rustls-native-certs = "0.6.3"
 
 [features]
 default = ["native-tls"]
+all = ["native-tls", "rustls"]

@@ -16,19 +16,24 @@ use compio_buf::arrayvec::ArrayVec;
 use slab::Slab;
 use windows_sys::Win32::{
     Foundation::{
-        RtlNtStatusToDosError, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_NO_DATA,
-        ERROR_OPERATION_ABORTED, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING, STATUS_SUCCESS,
+        RtlNtStatusToDosError, ERROR_BAD_COMMAND, ERROR_BUSY, ERROR_HANDLE_EOF,
+        ERROR_IO_INCOMPLETE, ERROR_NO_DATA, ERROR_OPERATION_ABORTED, FACILITY_NTWIN32,
+        INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING, STATUS_SUCCESS,
     },
     Networking::WinSock::{WSACleanup, WSAStartup, WSADATA},
     Storage::FileSystem::SetFileCompletionNotificationModes,
     System::{
+        SystemServices::ERROR_SEVERITY_ERROR,
         Threading::INFINITE,
         WindowsProgramming::{FILE_SKIP_COMPLETION_PORT_ON_SUCCESS, FILE_SKIP_SET_EVENT_ON_HANDLE},
-        IO::{CreateIoCompletionPort, GetQueuedCompletionStatusEx, OVERLAPPED, OVERLAPPED_ENTRY},
+        IO::{
+            CreateIoCompletionPort, GetQueuedCompletionStatusEx, PostQueuedCompletionStatus,
+            OVERLAPPED, OVERLAPPED_ENTRY,
+        },
     },
 };
 
-use crate::{syscall, Entry};
+use crate::{syscall, AsyncifyPool, Entry, ProactorBuilder};
 
 pub(crate) mod op;
 
@@ -104,6 +109,12 @@ impl IntoRawFd for socket2::Socket {
 
 /// Abstraction of IOCP operations.
 pub trait OpCode {
+    /// Determines that the operation is really overlapped defined by Windows
+    /// API. If not, the driver will try to operate it in another thread.
+    fn is_overlapped(&self) -> bool {
+        true
+    }
+
     /// Perform Windows API call with given pointer to overlapped struct.
     ///
     /// It is always safe to cast `optr` to a pointer to
@@ -125,16 +136,25 @@ pub trait OpCode {
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()>;
 }
 
+fn ntstatus_from_win32(x: i32) -> NTSTATUS {
+    if x <= 0 {
+        x
+    } else {
+        ((x) & 0x0000FFFF) | (FACILITY_NTWIN32 << 16) as NTSTATUS | ERROR_SEVERITY_ERROR as NTSTATUS
+    }
+}
+
 /// Low-level driver of IOCP.
 pub(crate) struct Driver {
     port: OwnedHandle,
     cancelled: HashSet<usize>,
+    pool: AsyncifyPool,
 }
 
 impl Driver {
     const DEFAULT_CAPACITY: usize = 1024;
 
-    pub fn new(_entries: u32) -> io::Result<Self> {
+    pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         let mut data: WSADATA = unsafe { std::mem::zeroed() };
         syscall!(SOCKET, WSAStartup(0x202, &mut data))?;
 
@@ -143,6 +163,7 @@ impl Driver {
         Ok(Self {
             port,
             cancelled: HashSet::default(),
+            pool: builder.create_or_get_thread_pool(),
         })
     }
 
@@ -237,8 +258,53 @@ impl Driver {
             )))
         } else {
             let optr = op.as_mut_ptr();
-            unsafe { op.as_op_pin().operate(optr.cast()) }
+            let op_pin = op.as_op_pin();
+            if op_pin.is_overlapped() {
+                unsafe { op_pin.operate(optr.cast()) }
+            } else if self.push_blocking(op) {
+                Poll::Pending
+            } else {
+                Poll::Ready(Err(io::Error::from_raw_os_error(ERROR_BUSY as _)))
+            }
         }
+    }
+
+    fn push_blocking(&mut self, op: &mut RawOp) -> bool {
+        // Safety: the RawOp is not released before the operation returns.
+        struct SendWrapper<T>(T);
+        unsafe impl<T> Send for SendWrapper<T> {}
+
+        let optr = SendWrapper(NonNull::from(op));
+        let handle = self.as_raw_fd() as _;
+        self.pool
+            .dispatch(move || {
+                #[allow(clippy::redundant_locals)]
+                let mut optr = optr;
+                // Safety: the pointer is created from a reference.
+                let op = unsafe { optr.0.as_mut() };
+                let optr = op.as_mut_ptr();
+                let op = op.as_op_pin();
+                let res = unsafe { op.operate(optr.cast()) };
+                let res = match res {
+                    Poll::Pending => unreachable!("this operation is not overlapped"),
+                    Poll::Ready(res) => res,
+                };
+                if let Err(e) = &res {
+                    let code = e.raw_os_error().unwrap_or(ERROR_BAD_COMMAND as _);
+                    unsafe { &mut *optr }.base.Internal = ntstatus_from_win32(code) as _;
+                }
+                syscall!(
+                    BOOL,
+                    PostQueuedCompletionStatus(
+                        handle,
+                        res.unwrap_or_default() as _,
+                        0,
+                        optr.cast()
+                    )
+                )
+                .ok();
+            })
+            .is_ok()
     }
 
     pub unsafe fn poll(

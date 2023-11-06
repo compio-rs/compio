@@ -22,6 +22,9 @@ pub mod op;
 #[cfg_attr(docsrs, doc(cfg(all())))]
 mod unix;
 
+mod asyncify;
+pub use asyncify::*;
+
 cfg_if::cfg_if! {
     if #[cfg(windows)] {
         #[path = "iocp/mod.rs"]
@@ -44,24 +47,24 @@ pub use sys::*;
 #[macro_export]
 #[doc(hidden)]
 macro_rules! syscall {
-    ($fn: ident ( $($arg: expr),* $(,)* ), $op: tt $rhs: expr) => {{
+    (BOOL, $e:expr) => {
+        $crate::syscall!($e, == 0)
+    };
+    (SOCKET, $e:expr) => {
+        $crate::syscall!($e, != 0)
+    };
+    (HANDLE, $e:expr) => {
+        $crate::syscall!($e, == ::windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE)
+    };
+    ($e:expr, $op: tt $rhs: expr) => {{
         #[allow(unused_unsafe)]
-        let res = unsafe { $fn($($arg, )*) };
+        let res = unsafe { $e };
         if res $op $rhs {
             Err(::std::io::Error::last_os_error())
         } else {
             Ok(res)
         }
     }};
-    (BOOL, $fn: ident ( $($arg: expr),* $(,)* )) => {
-        $crate::syscall!($fn($($arg, )*), == 0)
-    };
-    (SOCKET, $fn: ident ( $($arg: expr),* $(,)* )) => {
-        $crate::syscall!($fn($($arg, )*), != 0)
-    };
-    (HANDLE, $fn: ident ( $($arg: expr),* $(,)* )) => {
-        $crate::syscall!($fn($($arg, )*), == ::windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE)
-    };
 }
 
 /// Helper macro to execute a system call
@@ -155,14 +158,18 @@ pub struct Proactor {
 impl Proactor {
     /// Create [`Proactor`] with 1024 entries.
     pub fn new() -> io::Result<Self> {
-        Self::with_entries(1024)
+        Self::builder().build()
     }
 
-    /// Create [`Proactor`] with specified entries.
-    pub fn with_entries(entries: u32) -> io::Result<Self> {
+    /// Create [`ProactorBuilder`] to config the proactor.
+    pub fn builder() -> ProactorBuilder {
+        ProactorBuilder::new()
+    }
+
+    fn with_builder(builder: &ProactorBuilder) -> io::Result<Self> {
         Ok(Self {
-            driver: Driver::new(entries)?,
-            ops: Slab::with_capacity(entries as _),
+            driver: Driver::new(builder)?,
+            ops: Slab::with_capacity(builder.capacity as _),
         })
     }
 
@@ -295,5 +302,108 @@ impl Entry {
     /// The result of the operation.
     pub fn into_result(self) -> io::Result<usize> {
         self.result
+    }
+}
+
+#[derive(Debug, Clone)]
+enum ThreadPoolBuilder {
+    Create { limit: usize, recv_limit: Duration },
+    Reuse(AsyncifyPool),
+}
+
+impl Default for ThreadPoolBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ThreadPoolBuilder {
+    pub fn new() -> Self {
+        Self::Create {
+            limit: 256,
+            recv_limit: Duration::from_secs(60),
+        }
+    }
+
+    pub fn create_or_reuse(&self) -> AsyncifyPool {
+        match self {
+            Self::Create { limit, recv_limit } => AsyncifyPool::new(*limit, *recv_limit),
+            Self::Reuse(pool) => pool.clone(),
+        }
+    }
+}
+
+/// Builder for [`Proactor`].
+#[derive(Debug, Clone)]
+pub struct ProactorBuilder {
+    capacity: u32,
+    pool_builder: ThreadPoolBuilder,
+}
+
+impl Default for ProactorBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ProactorBuilder {
+    /// Create the builder with default config.
+    pub fn new() -> Self {
+        Self {
+            capacity: 1024,
+            pool_builder: ThreadPoolBuilder::new(),
+        }
+    }
+
+    /// Set the capacity of the inner event queue or submission queue, if
+    /// exists. The default value is 1024.
+    pub fn capacity(&mut self, capacity: u32) -> &mut Self {
+        self.capacity = capacity;
+        self
+    }
+
+    /// Set the thread number limit of the inner thread pool, if exists. The
+    /// default value is 256.
+    ///
+    /// It will be ignored if `reuse_thread_pool` is set.
+    pub fn thread_pool_limit(&mut self, value: usize) -> &mut Self {
+        if let ThreadPoolBuilder::Create { limit, .. } = &mut self.pool_builder {
+            *limit = value;
+        }
+        self
+    }
+
+    /// Set the waiting timeout of the inner thread, if exists. The default is
+    /// 60 seconds.
+    ///
+    /// It will be ignored if `reuse_thread_pool` is set.
+    pub fn thread_pool_recv_timeout(&mut self, timeout: Duration) -> &mut Self {
+        if let ThreadPoolBuilder::Create { recv_limit, .. } = &mut self.pool_builder {
+            *recv_limit = timeout;
+        }
+        self
+    }
+
+    /// Set to reuse an existing [`AsyncifyPool`] in this proactor.
+    pub fn reuse_thread_pool(&mut self, pool: AsyncifyPool) -> &mut Self {
+        self.pool_builder = ThreadPoolBuilder::Reuse(pool);
+        self
+    }
+
+    /// Force reuse the thread pool for each proactor created by this builder,
+    /// even `reuse_thread_pool` is not set.
+    pub fn force_reuse_thread_pool(&mut self) -> &mut Self {
+        self.reuse_thread_pool(self.create_or_get_thread_pool());
+        self
+    }
+
+    /// Create or reuse the thread pool from the config.
+    pub fn create_or_get_thread_pool(&self) -> AsyncifyPool {
+        self.pool_builder.create_or_reuse()
+    }
+
+    /// Build the [`Proactor`].
+    pub fn build(&self) -> io::Result<Proactor> {
+        Proactor::with_builder(self)
     }
 }

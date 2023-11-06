@@ -72,7 +72,7 @@ jobs:
       #     cargo test --workspace --features all
       #   displayName: TestStable
 
-  - job: Doc
+  - job: Clippy_Doc
     strategy:
       matrix:
         windows:
@@ -89,3 +89,8 @@ jobs:
           rustup toolchain install nightly
           cargo +nightly doc --workspace --all-features --no-deps
         displayName: Build docs
+
+      - script: |
+          rustup +nightly component add clippy
+          cargo +nightly clippy --all-features --all-targets -- -Dwarnings
+        displayName: Run clippy

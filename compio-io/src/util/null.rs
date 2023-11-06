@@ -53,7 +53,7 @@ impl AsyncWrite for Null {
 /// ```
 /// use compio_io::{null, AsyncRead, AsyncWrite};
 ///
-/// # #[compio_macros::main] async fn main() {
+/// # compio_runtime::block_on(async {
 /// let mut buf = Vec::with_capacity(10);
 /// let mut null = null();
 ///
@@ -64,7 +64,7 @@ impl AsyncWrite for Null {
 ///
 /// let (num_written, buf) = null.write(buf).await.unwrap();
 /// assert_eq!(num_written, 0);
-/// # }
+/// # })
 /// ```
 ///
 /// [`BufResult(Ok(0), buf)`]: compio_buf::BufResult

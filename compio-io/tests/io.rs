@@ -1,15 +1,12 @@
 use std::io::Cursor;
 
-use compio::{
-    buf::{arrayvec::ArrayVec, IoBuf, IoBufMut},
-    io::{
-        AsyncRead, AsyncReadAt, AsyncReadAtExt, AsyncReadExt, AsyncWrite, AsyncWriteAt,
-        AsyncWriteAtExt, AsyncWriteExt,
-    },
-    BufResult,
+use compio_buf::{arrayvec::ArrayVec, BufResult, IoBuf, IoBufMut};
+use compio_io::{
+    AsyncRead, AsyncReadAt, AsyncReadAtExt, AsyncReadExt, AsyncWrite, AsyncWriteAt,
+    AsyncWriteAtExt, AsyncWriteExt,
 };
 
-#[compio_macros::test]
+#[tokio::test]
 async fn io_read() {
     let mut src = "Hello, World";
     let (len, buf) = src.read(vec![1; 10]).await.unwrap();
@@ -23,7 +20,7 @@ async fn io_read() {
     assert_eq!(&buf[..12], b"Hello, World");
 }
 
-#[compio_macros::test]
+#[tokio::test]
 async fn io_write() {
     let mut dst = Cursor::new([0u8; 10]);
     let (len, _) = dst.write(vec![1, 1, 4, 5, 1, 4]).await.unwrap();
@@ -42,7 +39,7 @@ async fn io_write() {
     assert_eq!(dst.into_inner(), [1, 1, 4, 5, 1, 4, 1, 9, 1, 9]);
 }
 
-#[compio_macros::test]
+#[tokio::test]
 async fn io_write_at() {
     let mut dst = [0u8; 10];
     let (len, _) = dst.write_at(vec![1, 1, 4, 5, 1, 4], 2).await.unwrap();
@@ -69,7 +66,7 @@ async fn io_write_at() {
     assert_eq!(dst, [0, 0, 0, 0, 0, 1, 1, 4]);
 }
 
-#[compio_macros::test]
+#[tokio::test]
 async fn io_read_at() {
     const SRC: [u8; 6] = [1, 1, 4, 5, 1, 4];
 
@@ -89,7 +86,7 @@ async fn io_read_at() {
     assert_eq!(buf.as_slice(), []);
 }
 
-#[compio_macros::test]
+#[tokio::test]
 async fn readv() {
     let mut src = "Hello, world";
     let (len, buf) = src
@@ -117,7 +114,7 @@ async fn readv() {
     assert_eq!(buf[1], b"Hello, world");
 }
 
-#[compio_macros::test]
+#[tokio::test]
 async fn writev() {
     let mut dst = Cursor::new([0u8; 10]);
     let (len, _) = dst
@@ -139,7 +136,7 @@ async fn writev() {
     assert_eq!(dst.into_inner(), [1, 1, 4, 5, 1, 4, 1, 9, 1, 9]);
 }
 
-#[compio_macros::test]
+#[tokio::test]
 async fn readv_at() {
     const SRC: [u8; 6] = [1, 1, 4, 5, 1, 4];
 
@@ -162,7 +159,7 @@ async fn readv_at() {
     assert_eq!(buf[1].as_slice(), [4]);
 }
 
-#[compio_macros::test]
+#[tokio::test]
 async fn writev_at() {
     let mut dst = [0u8; 10];
     let (len, _) = dst
@@ -215,7 +212,7 @@ impl AsyncReadAt for RepeatOne {
     }
 }
 
-#[compio_macros::test]
+#[tokio::test]
 async fn read_exact() {
     let mut src = RepeatOne(114);
 
@@ -277,7 +274,7 @@ impl AsyncWriteAt for WriteOne {
     }
 }
 
-#[compio_macros::test]
+#[tokio::test]
 async fn write_all() {
     let mut dst = WriteOne(vec![]);
 
@@ -315,7 +312,7 @@ impl AsyncRead for ReadOne {
     }
 }
 
-#[compio_macros::test]
+#[tokio::test]
 async fn read_to_end() {
     let mut src = ReadOne(Cursor::new(vec![1, 1, 4, 5, 1, 4]));
 
@@ -350,7 +347,7 @@ impl AsyncReadAt for ReadOneAt {
     }
 }
 
-#[compio_macros::test]
+#[tokio::test]
 async fn read_to_end_at() {
     let src = ReadOneAt(vec![1, 1, 4, 5, 1, 4]);
 

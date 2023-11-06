@@ -3,7 +3,7 @@ use compio::{
     BufResult,
 };
 
-#[compio::main(crate = "compio")]
+#[compio::main]
 async fn main() {
     #[cfg(windows)]
     {
@@ -15,7 +15,11 @@ async fn main() {
             .access_inbound(false)
             .create(PIPE_NAME)
             .unwrap();
-        let mut client = ClientOptions::new().write(false).open(PIPE_NAME).unwrap();
+        let mut client = ClientOptions::new()
+            .write(false)
+            .open(PIPE_NAME)
+            .await
+            .unwrap();
 
         server.connect().await.unwrap();
 
@@ -30,7 +34,7 @@ async fn main() {
     }
     #[cfg(unix)]
     {
-        use compio::{buf::IntoInner, fs::pipe::OpenOptions, runtime::Unattached};
+        use compio::fs::pipe::OpenOptions;
         use nix::{sys::stat::Mode, unistd::mkfifo};
         use tempfile::tempdir;
 
@@ -38,18 +42,10 @@ async fn main() {
         let file = dir.path().join("compio-named-pipe");
 
         mkfifo(&file, Mode::S_IRWXU).unwrap();
-
-        let (mut rx, mut tx) = std::thread::scope(|s| {
-            let rx = s.spawn(|| {
-                Unattached::new(OpenOptions::new().open_receiver(&file).unwrap()).unwrap()
-            });
-            let tx = s
-                .spawn(|| Unattached::new(OpenOptions::new().open_sender(&file).unwrap()).unwrap());
-            (
-                rx.join().unwrap().into_inner(),
-                tx.join().unwrap().into_inner(),
-            )
-        });
+        let options = OpenOptions::new();
+        let (mut rx, mut tx) =
+            futures_util::try_join!(options.open_receiver(&file), options.open_sender(&file))
+                .unwrap();
 
         let write = tx.write_all("Hello world!");
         let buffer = Vec::with_capacity(12);

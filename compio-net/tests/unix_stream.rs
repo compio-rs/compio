@@ -1,7 +1,5 @@
-use compio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    net::{UnixListener, UnixStream},
-};
+use compio_io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use compio_net::{UnixListener, UnixStream};
 
 #[compio_macros::test]
 async fn accept_read_write() -> std::io::Result<()> {
