@@ -20,8 +20,8 @@ native-tls = { version = "0.2", optional = true }
 
 http = "0.2"
 hyper = { version = "0.14", features = ["client", "http1"] }
-send_wrapper = { version = "0.6", features = ["futures"] }
-tokio = { version = "1", default-features = false }
+send_wrapper = { workspace = true, features = ["futures"] }
+tokio = { workspace = true }
 
 base64 = "0.21"
 encoding_rs = "0.8"
