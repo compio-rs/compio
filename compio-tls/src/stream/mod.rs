@@ -82,6 +82,7 @@ impl<S> TlsStream<S> {
 }
 
 #[cfg(feature = "native-tls")]
+#[doc(hidden)]
 impl<S> From<native_tls::TlsStream<StreamWrapper<S>>> for TlsStream<S> {
     fn from(value: native_tls::TlsStream<StreamWrapper<S>>) -> Self {
         Self(TlsStreamInner::NativeTls(value))

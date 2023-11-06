@@ -93,6 +93,7 @@ impl<S, C> MidStream<S, C> {
 pub struct TlsConnector(pub Arc<ClientConfig>);
 
 impl TlsConnector {
+    #[allow(clippy::result_large_err)]
     pub fn connect<S: AsyncRead + AsyncWrite>(
         &self,
         domain: &str,
@@ -118,6 +119,7 @@ impl TlsConnector {
 pub struct TlsAcceptor(pub Arc<ServerConfig>);
 
 impl TlsAcceptor {
+    #[allow(clippy::result_large_err)]
     pub fn accept<S: AsyncRead + AsyncWrite>(
         &self,
         stream: S,
