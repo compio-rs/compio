@@ -9,5 +9,10 @@ pub use service::*;
 mod backend;
 pub use backend::*;
 
+#[cfg(feature = "server")]
+mod server;
+#[cfg(feature = "server")]
+pub use server::*;
+
 mod stream;
 pub use stream::*;

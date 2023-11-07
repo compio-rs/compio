@@ -47,6 +47,6 @@ impl Service<Uri> for Connector {
     }
 
     fn call(&mut self, req: Uri) -> Self::Future {
-        Box::pin(SendWrapper::new(HttpStream::new(req, self.tls)))
+        Box::pin(SendWrapper::new(HttpStream::connect(req, self.tls)))
     }
 }

@@ -27,7 +27,7 @@ enum HttpStreamInner {
 }
 
 impl HttpStreamInner {
-    pub async fn new(uri: Uri, tls: TlsBackend) -> io::Result<Self> {
+    pub async fn connect(uri: Uri, tls: TlsBackend) -> io::Result<Self> {
         let scheme = uri.scheme_str().unwrap_or("http");
         let host = uri.host().expect("there should be host");
         let port = uri.port_u16();
@@ -46,6 +46,14 @@ impl HttpStreamInner {
                 "unsupported scheme",
             )),
         }
+    }
+
+    pub fn from_tcp(s: TcpStream) -> Self {
+        Self::Tcp(s)
+    }
+
+    pub fn from_tls(s: TlsStream<TcpStream>) -> Self {
+        Self::Tls(s)
     }
 }
 
@@ -104,12 +112,24 @@ struct HttpStreamBufInner {
 }
 
 impl HttpStreamBufInner {
-    pub async fn new(uri: Uri, tls: TlsBackend) -> io::Result<Self> {
-        Ok(Self {
-            inner: HttpStreamInner::new(uri, tls).await?,
+    pub async fn connect(uri: Uri, tls: TlsBackend) -> io::Result<Self> {
+        Ok(Self::from_inner(HttpStreamInner::connect(uri, tls).await?))
+    }
+
+    pub fn from_tcp(s: TcpStream) -> Self {
+        Self::from_inner(HttpStreamInner::from_tcp(s))
+    }
+
+    pub fn from_tls(s: TlsStream<TcpStream>) -> Self {
+        Self::from_inner(HttpStreamInner::from_tls(s))
+    }
+
+    fn from_inner(s: HttpStreamInner) -> Self {
+        Self {
+            inner: s,
             read_buffer: Buffer::with_capacity(DEFAULT_BUF_SIZE),
             write_buffer: Buffer::with_capacity(DEFAULT_BUF_SIZE),
-        })
+        }
     }
 
     pub async fn fill_read_buf(&mut self) -> io::Result<()> {
@@ -187,14 +207,30 @@ pub struct HttpStream {
 
 impl HttpStream {
     /// Create [`HttpStream`] with target uri and TLS backend.
-    pub async fn new(uri: Uri, tls: TlsBackend) -> io::Result<Self> {
-        Ok(Self {
-            inner: SendWrapper::new(HttpStreamBufInner::new(uri, tls).await?),
+    pub async fn connect(uri: Uri, tls: TlsBackend) -> io::Result<Self> {
+        Ok(Self::from_inner(
+            HttpStreamBufInner::connect(uri, tls).await?,
+        ))
+    }
+
+    /// Create [`HttpStream`] with connected TCP stream.
+    pub fn from_tcp(s: TcpStream) -> Self {
+        Self::from_inner(HttpStreamBufInner::from_tcp(s))
+    }
+
+    /// Create [`HttpStream`] with connected TLS stream.
+    pub fn from_tls(s: TlsStream<TcpStream>) -> Self {
+        Self::from_inner(HttpStreamBufInner::from_tls(s))
+    }
+
+    fn from_inner(s: HttpStreamBufInner) -> Self {
+        Self {
+            inner: SendWrapper::new(s),
             read_future: None,
             write_future: None,
             flush_future: None,
             shutdown_future: None,
-        })
+        }
     }
 }
 
