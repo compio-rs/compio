@@ -87,7 +87,7 @@ impl Response {
     ///
     /// ```
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = compio_http::Client::new();
+    /// let client = compio_http_client::Client::new();
     /// let content = client
     ///     .get("http://httpbin.org/range/26")
     ///     .send()
@@ -120,7 +120,7 @@ impl Response {
     ///
     /// ```
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = compio_http::Client::new();
+    /// let client = compio_http_client::Client::new();
     /// let content = client
     ///     .get("http://httpbin.org/range/26")
     ///     .send()
@@ -162,7 +162,7 @@ impl Response {
     /// # extern crate compio_http;
     /// # extern crate serde;
     /// #
-    /// # use compio_http::Error;
+    /// # use compio_http_client::Error;
     /// # use serde::Deserialize;
     /// #
     /// // This `derive` requires the `serde` dependency.
@@ -172,7 +172,7 @@ impl Response {
     /// }
     ///
     /// # async fn run() -> Result<(), Error> {
-    /// let client = compio_http::Client::new();
+    /// let client = compio_http_client::Client::new();
     /// let ip = client
     ///     .get("http://httpbin.org/ip")
     ///     .send()
@@ -207,7 +207,7 @@ impl Response {
     ///
     /// ```
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = compio_http::Client::new();
+    /// let client = compio_http_client::Client::new();
     /// let bytes = client
     ///     .get("http://httpbin.org/ip")
     ///     .send()

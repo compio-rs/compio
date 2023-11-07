@@ -4,7 +4,7 @@ use std::{
     net::{Ipv4Addr, SocketAddr},
 };
 
-use compio_http::Acceptor;
+use compio_http::{Acceptor, CompioExecutor};
 use compio_net::TcpListener;
 use futures_channel::oneshot;
 
@@ -35,15 +35,17 @@ where
     let listener = TcpListener::bind(&(Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
     let acceptor = Acceptor::from_listener(listener);
-    let srv = hyper::Server::builder(acceptor).serve(hyper::service::make_service_fn(move |_| {
-        let func = func.clone();
-        async move {
-            Ok::<_, Infallible>(hyper::service::service_fn(move |req| {
-                let fut = func(req);
-                async move { Ok::<_, Infallible>(fut.await) }
-            }))
-        }
-    }));
+    let srv = hyper::Server::builder(acceptor)
+        .executor(CompioExecutor)
+        .serve(hyper::service::make_service_fn(move |_| {
+            let func = func.clone();
+            async move {
+                Ok::<_, Infallible>(hyper::service::service_fn(move |req| {
+                    let fut = func(req);
+                    async move { Ok::<_, Infallible>(fut.await) }
+                }))
+            }
+        }));
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let srv = srv.with_graceful_shutdown(async move {

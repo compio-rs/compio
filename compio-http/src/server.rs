@@ -50,6 +50,7 @@ impl Acceptor {
             }
         } else {
             self.fut = Some(Box::pin(listener.accept()));
+            cx.waker().wake_by_ref();
             Poll::Pending
         }
     }
@@ -95,26 +96,27 @@ impl Accept for TlsAcceptor {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
-        let tcp_acceptor = Pin::new(&mut self.tcp_acceptor);
-        let res = ready!(tcp_acceptor.poll_accept_impl(cx));
-        match res {
-            Ok(stream) => {
-                let acceptor: &'static compio_tls::TlsAcceptor =
-                    unsafe { &*(&self.tls_acceptor as *const _) };
-                if let Some(mut fut) = self.fut.take() {
-                    match fut.as_mut().poll(cx) {
-                        Poll::Pending => {
-                            self.fut = Some(fut);
-                            Poll::Pending
-                        }
-                        Poll::Ready(res) => Poll::Ready(Some(res.map(HttpStream::from_tls))),
-                    }
-                } else {
-                    self.fut = Some(Box::pin(acceptor.accept(stream)));
+        let acceptor: &'static compio_tls::TlsAcceptor =
+            unsafe { &*(&self.tls_acceptor as *const _) };
+        if let Some(mut fut) = self.fut.take() {
+            match fut.as_mut().poll(cx) {
+                Poll::Pending => {
+                    self.fut = Some(fut);
                     Poll::Pending
                 }
+                Poll::Ready(res) => Poll::Ready(Some(res.map(HttpStream::from_tls))),
             }
-            Err(e) => Poll::Ready(Some(Err(e))),
+        } else {
+            let tcp_acceptor = Pin::new(&mut self.tcp_acceptor);
+            let res = ready!(tcp_acceptor.poll_accept_impl(cx));
+            match res {
+                Ok(stream) => {
+                    self.fut = Some(Box::pin(acceptor.accept(stream)));
+                }
+                Err(e) => return Poll::Ready(Some(Err(e))),
+            }
+            cx.waker().wake_by_ref();
+            Poll::Pending
         }
     }
 }
