@@ -9,7 +9,7 @@ use std::{
 
 use async_task::{Runnable, Task};
 use compio_driver::{AsRawFd, Entry, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd};
-use compio_log::{instrument, trace};
+use compio_log::{debug, instrument};
 use futures_util::future::Either;
 use smallvec::SmallVec;
 
@@ -129,10 +129,10 @@ impl Runtime {
         cx: &mut Context,
         user_data: Key<T>,
     ) -> Poll<BufResult<usize, T>> {
-        instrument!(compio_log::Level::TRACE, "poll_task", ?cx, ?user_data,);
+        instrument!(compio_log::Level::DEBUG, "poll_task", ?user_data,);
         let mut op_runtime = self.op_runtime.borrow_mut();
         if op_runtime.has_result(*user_data) {
-            trace!("has result");
+            debug!("has result");
             let op = op_runtime.remove(*user_data);
             let res = self
                 .driver
@@ -142,7 +142,7 @@ impl Runtime {
                 .expect("the result should have come");
             Poll::Ready(res.map_buffer(|op| unsafe { op.into_op::<T>() }))
         } else {
-            trace!("update waker");
+            debug!("update waker");
             op_runtime.update_waker(*user_data, cx.waker().clone());
             Poll::Pending
         }
@@ -150,31 +150,31 @@ impl Runtime {
 
     #[cfg(feature = "time")]
     pub fn poll_timer(&self, cx: &mut Context, key: usize) -> Poll<()> {
-        instrument!(compio_log::Level::TRACE, "poll_timer", ?cx, ?key);
+        instrument!(compio_log::Level::DEBUG, "poll_timer", ?cx, ?key);
         let mut timer_runtime = self.timer_runtime.borrow_mut();
         if timer_runtime.contains(key) {
-            trace!("pending");
+            debug!("pending");
             timer_runtime.update_waker(key, cx.waker().clone());
             Poll::Pending
         } else {
-            trace!("ready");
+            debug!("ready");
             Poll::Ready(())
         }
     }
 
     fn poll(&self) {
-        instrument!(compio_log::Level::TRACE, "poll");
+        instrument!(compio_log::Level::DEBUG, "poll");
         #[cfg(not(feature = "time"))]
         let timeout = None;
         #[cfg(feature = "time")]
         let timeout = self.timer_runtime.borrow().min_timeout();
-        trace!("timeout: {:?}", timeout);
+        debug!("timeout: {:?}", timeout);
 
         let mut entries = SmallVec::<[Entry; 1024]>::new();
         let mut driver = self.driver.borrow_mut();
         match driver.poll(timeout, &mut entries) {
             Ok(_) => {
-                trace!("poll driver ok, entries: {}", entries.len());
+                debug!("poll driver ok, entries: {}", entries.len());
                 for entry in entries {
                     self.op_runtime
                         .borrow_mut()
@@ -183,7 +183,7 @@ impl Runtime {
             }
             Err(e) => match e.kind() {
                 io::ErrorKind::TimedOut | io::ErrorKind::Interrupted => {
-                    trace!("expected error: {e}");
+                    debug!("expected error: {e}");
                 }
                 _ => panic!("{:?}", e),
             },
