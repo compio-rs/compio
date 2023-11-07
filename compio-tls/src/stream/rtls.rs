@@ -85,11 +85,9 @@ impl<S> TlsStream<S> {
     }
 }
 
-impl<S: io::Read + io::Write> io::Read for TlsStream<S> {
+impl<S: io::Read> io::Read for TlsStream<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         loop {
-            io::Write::flush(self)?;
-
             while self.conn.wants_read() {
                 self.conn.read_tls(&mut self.inner)?;
                 self.conn

@@ -89,7 +89,7 @@ impl<S> From<native_tls::TlsStream<StreamWrapper<S>>> for TlsStream<S> {
     }
 }
 
-impl<S: AsyncRead + AsyncWrite> AsyncRead for TlsStream<S> {
+impl<S: AsyncRead> AsyncRead for TlsStream<S> {
     async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
         let slice: &mut [MaybeUninit<u8>] = buf.as_mut_slice();
         slice.fill(MaybeUninit::new(0));
@@ -103,10 +103,6 @@ impl<S: AsyncRead + AsyncWrite> AsyncRead for TlsStream<S> {
                     return BufResult(Ok(res), buf);
                 }
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    match self.flush().await {
-                        Ok(()) => {}
-                        Err(e) => return BufResult(Err(e), buf),
-                    }
                     match self.0.get_mut().fill_read_buf().await {
                         Ok(_) => continue,
                         Err(e) => return BufResult(Err(e), buf),
