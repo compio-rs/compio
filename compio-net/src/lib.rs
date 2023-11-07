@@ -5,6 +5,8 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![warn(missing_docs)]
 
+#[cfg(feature = "quic")]
+mod quic;
 #[cfg(feature = "runtime")]
 mod resolve;
 mod socket;
@@ -12,6 +14,8 @@ mod tcp;
 mod udp;
 mod unix;
 
+#[cfg(feature = "quic")]
+pub use quic::*;
 #[cfg(feature = "runtime")]
 pub use resolve::ToSocketAddrsAsync;
 #[cfg(feature = "runtime")]
