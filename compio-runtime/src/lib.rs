@@ -26,7 +26,7 @@ pub mod time;
 
 use std::{cell::RefCell, future::Future, io, mem::ManuallyDrop};
 
-use async_task::Task;
+pub use async_task::Task;
 pub use attacher::*;
 use compio_buf::BufResult;
 use compio_driver::{OpCode, ProactorBuilder, RawFd};
