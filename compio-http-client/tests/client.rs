@@ -3,7 +3,7 @@ mod server;
 #[cfg(feature = "json")]
 use std::collections::HashMap;
 
-use compio_http::Client;
+use compio_http_client::Client;
 #[cfg(feature = "json")]
 use http::header::CONTENT_TYPE;
 
@@ -57,10 +57,7 @@ async fn response_json() {
 
 #[compio_macros::test]
 async fn test_allowed_methods() {
-    let resp = compio_http::Client::new()
-        .get("https://www.example.com")
-        .send()
-        .await;
+    let resp = Client::new().get("https://www.example.com").send().await;
 
     assert!(resp.is_ok());
 }
@@ -68,7 +65,7 @@ async fn test_allowed_methods() {
 #[compio_macros::test]
 #[cfg(feature = "native-tls")]
 async fn test_native_tls() {
-    let resp = compio_http::ClientBuilder::new()
+    let resp = Client::builder()
         .use_native_tls()
         .build()
         .get("https://www.example.com")
@@ -81,7 +78,7 @@ async fn test_native_tls() {
 #[compio_macros::test]
 #[cfg(feature = "rustls")]
 async fn test_rustls() {
-    let resp = compio_http::ClientBuilder::new()
+    let resp = Client::builder()
         .use_rustls()
         .build()
         .get("https://www.example.com")

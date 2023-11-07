@@ -12,6 +12,7 @@ members = [
     "compio-io",
     "compio-tls",
     "compio-http",
+    "compio-http-client",
 ]
 resolver = "2"
 
@@ -33,6 +34,7 @@ compio-net = { path = "./compio-net", version = "0.2.0" }
 compio-signal = { path = "./compio-signal", version = "0.1.1" }
 compio-dispatcher = { path = "./compio-dispatcher", version = "0.1.0" }
 compio-tls = { path = "./compio-tls", version = "0.1.0" }
+compio-http = { path = "./compio-http", version = "0.1.0" }
 
 cfg-if = "1.0.0"
 crossbeam-channel = "0.5.8"
@@ -54,3 +56,5 @@ windows-sys = "0.48.0"
 native-tls = "0.2.11"
 rustls = "0.21.8"
 rustls-native-certs = "0.6.3"
+
+hyper = "0.14"

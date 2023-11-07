@@ -2,10 +2,13 @@ use std::io;
 
 use compio_tls::TlsConnector;
 
+/// Represents TLS backend options
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum TlsBackend {
+pub enum TlsBackend {
+    /// Use [`native_tls`] as TLS backend.
     #[cfg(feature = "native-tls")]
     NativeTls,
+    /// Use [`rustls`] as TLS backend.
     #[cfg(feature = "rustls")]
     Rustls,
 }
@@ -25,7 +28,7 @@ impl Default for TlsBackend {
 }
 
 impl TlsBackend {
-    pub fn create_connector(&self) -> io::Result<TlsConnector> {
+    pub(crate) fn create_connector(&self) -> io::Result<TlsConnector> {
         match self {
             #[cfg(feature = "native-tls")]
             Self::NativeTls => Ok(TlsConnector::from(

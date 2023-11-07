@@ -1,0 +1,42 @@
+[package]
+name = "compio-http-client"
+version = "0.1.0"
+categories = ["asynchronous", "network-programming"]
+keywords = ["async", "net"]
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+compio-buf = { workspace = true, features = ["bytes"] }
+compio-runtime = { workspace = true, features = ["time"] }
+compio-tls = { workspace = true }
+compio-http = { workspace = true }
+
+http = "0.2"
+hyper = { workspace = true, features = ["client", "http1"] }
+
+base64 = "0.21"
+encoding_rs = "0.8"
+mime = "0.3"
+serde = "1"
+serde_json = { version = "1", optional = true }
+serde_urlencoded = "0.7"
+thiserror = "1"
+url = "2"
+
+[dev-dependencies]
+compio-macros = { workspace = true }
+
+hyper = { version = "0.14", features = ["server", "tcp"] }
+tokio = { workspace = true, features = ["rt", "sync"] }
+
+[features]
+default = ["native-tls"]
+native-tls = ["compio-http/native-tls"]
+rustls = ["compio-http/rustls"]
+vendored = ["compio-http/vendored"]
+json = ["dep:serde_json"]
+all = ["json", "native-tls", "rustls", "compio-http/all"]

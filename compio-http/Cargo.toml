@@ -10,9 +10,9 @@ license = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-compio-buf = { workspace = true, features = ["bytes"] }
+compio-buf = { workspace = true }
 compio-io = { workspace = true }
-compio-runtime = { workspace = true, features = ["time"] }
+compio-runtime = { workspace = true }
 compio-net = { workspace = true, features = ["runtime"] }
 compio-tls = { workspace = true }
 
@@ -20,29 +20,14 @@ native-tls = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 rustls-native-certs = { workspace = true, optional = true }
 
-http = "0.2"
-hyper = { version = "0.14", features = ["client", "http1"] }
+cfg-if = { workspace = true }
+hyper = { workspace = true }
 send_wrapper = { workspace = true, features = ["futures"] }
 tokio = { workspace = true }
-
-base64 = "0.21"
-cfg-if = { workspace = true }
-encoding_rs = "0.8"
-mime = "0.3"
-serde = "1"
-serde_json = { version = "1", optional = true }
-serde_urlencoded = "0.7"
-thiserror = "1"
-url = "2"
-
-[dev-dependencies]
-compio-macros = { workspace = true }
-hyper = { version = "0.14", features = ["server", "tcp"] }
 
 [features]
 default = ["native-tls"]
 native-tls = ["compio-tls/native-tls", "dep:native-tls"]
 rustls = ["compio-tls/rustls", "dep:rustls", "dep:rustls-native-certs"]
 vendored = ["native-tls?/vendored"]
-json = ["dep:serde_json"]
-all = ["json", "native-tls", "rustls"]
+all = ["native-tls", "rustls"]

@@ -1,10 +1,9 @@
 use std::rc::Rc;
 
+use compio_http::{CompioExecutor, Connector, TlsBackend};
 use hyper::{Body, HeaderMap, Method, Uri};
 
-use crate::{
-    CompioExecutor, Connector, IntoUrl, Request, RequestBuilder, Response, Result, TlsBackend,
-};
+use crate::{IntoUrl, Request, RequestBuilder, Response, Result};
 
 /// An asynchronous `Client` to make Requests with.
 #[derive(Debug, Clone)]

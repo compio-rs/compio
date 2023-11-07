@@ -175,6 +175,8 @@ impl HttpStreamBufInner {
 
 type PinBoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
+/// A HTTP stream wrapper, based on compio, and exposes [`tokio::io`]
+/// interfaces.
 pub struct HttpStream {
     inner: SendWrapper<HttpStreamBufInner>,
     read_future: Option<PinBoxFuture<io::Result<()>>>,
@@ -184,6 +186,7 @@ pub struct HttpStream {
 }
 
 impl HttpStream {
+    /// Create [`HttpStream`] with target uri and TLS backend.
     pub async fn new(uri: Uri, tls: TlsBackend) -> io::Result<Self> {
         Ok(Self {
             inner: SendWrapper::new(HttpStreamBufInner::new(uri, tls).await?),
