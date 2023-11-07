@@ -39,6 +39,7 @@ compio-http = { path = "./compio-http", version = "0.1.0" }
 cfg-if = "1.0.0"
 crossbeam-channel = "0.5.8"
 crossbeam-queue = "0.3.8"
+futures-channel = "0.3.29"
 futures-util = "0.3.29"
 libc = "0.2.149"
 nix = "0.27.1"

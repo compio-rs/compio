@@ -28,10 +28,12 @@ thiserror = "1"
 url = "2"
 
 [dev-dependencies]
+compio-net = { workspace = true, features = ["runtime"] }
 compio-macros = { workspace = true }
+compio-http = { workspace = true, features = ["server"] }
 
-hyper = { version = "0.14", features = ["server", "tcp"] }
-tokio = { workspace = true, features = ["rt", "sync"] }
+futures-channel = { workspace = true }
+hyper = { workspace = true, features = ["server"] }
 
 [features]
 default = ["native-tls"]
