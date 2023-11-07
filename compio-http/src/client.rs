@@ -153,7 +153,7 @@ impl ClientBuilder {
 
     /// Force using the Rustls TLS backend.
     #[cfg(feature = "rustls")]
-    pub fn use_rustls_tls(mut self) -> Self {
+    pub fn use_rustls(mut self) -> Self {
         self.tls = TlsBackend::Rustls;
         self
     }

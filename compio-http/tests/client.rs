@@ -65,6 +65,32 @@ async fn test_allowed_methods() {
     assert!(resp.is_ok());
 }
 
+#[compio_macros::test]
+#[cfg(feature = "native-tls")]
+async fn test_native_tls() {
+    let resp = compio_http::ClientBuilder::new()
+        .use_native_tls()
+        .build()
+        .get("https://www.example.com")
+        .send()
+        .await
+        .unwrap();
+    resp.text().await.unwrap();
+}
+
+#[compio_macros::test]
+#[cfg(feature = "rustls")]
+async fn test_rustls() {
+    let resp = compio_http::ClientBuilder::new()
+        .use_rustls()
+        .build()
+        .get("https://www.example.com")
+        .send()
+        .await
+        .unwrap();
+    resp.text().await.unwrap();
+}
+
 #[test]
 #[cfg(feature = "json")]
 fn add_json_default_content_type_if_not_set_manually() {
