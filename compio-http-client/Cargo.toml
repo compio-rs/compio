@@ -13,7 +13,7 @@ repository = { workspace = true }
 compio-buf = { workspace = true, features = ["bytes"] }
 compio-runtime = { workspace = true, features = ["time"] }
 compio-tls = { workspace = true }
-compio-http = { workspace = true }
+compio-http = { workspace = true, features = ["client"] }
 
 http = "0.2"
 hyper = { workspace = true, features = ["client", "http1"] }

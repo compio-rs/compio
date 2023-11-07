@@ -31,6 +31,7 @@ native-tls = ["compio-tls/native-tls", "dep:native-tls"]
 rustls = ["compio-tls/rustls", "dep:rustls", "dep:rustls-native-certs"]
 vendored = ["native-tls?/vendored"]
 
+client = ["hyper/client"]
 server = ["hyper/server"]
 
-all = ["native-tls", "rustls", "server"]
+all = ["native-tls", "rustls", "client", "server"]

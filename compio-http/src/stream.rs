@@ -12,10 +12,9 @@ use compio_buf::{
 use compio_io::{AsyncRead, AsyncWrite, AsyncWriteExt, Buffer};
 use compio_net::TcpStream;
 use compio_tls::TlsStream;
-use hyper::{
-    client::connect::{Connected, Connection},
-    Uri,
-};
+#[cfg(feature = "client")]
+use hyper::client::connect::{Connected, Connection};
+use hyper::Uri;
 use send_wrapper::SendWrapper;
 
 use crate::TlsBackend;
@@ -296,6 +295,7 @@ impl tokio::io::AsyncWrite for HttpStream {
     }
 }
 
+#[cfg(feature = "client")]
 impl Connection for HttpStream {
     fn connected(&self) -> Connected {
         Connected::new()
