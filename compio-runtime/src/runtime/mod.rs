@@ -3,7 +3,7 @@ use std::{
     collections::VecDeque,
     future::{ready, Future},
     io,
-    sync::Arc,
+    rc::Rc,
     task::{Context, Poll},
 };
 
@@ -26,7 +26,7 @@ use crate::{
 
 pub(crate) struct Runtime {
     driver: RefCell<Proactor>,
-    runnables: Arc<SendWrapper<RefCell<VecDeque<Runnable>>>>,
+    runnables: Rc<RefCell<VecDeque<Runnable>>>,
     op_runtime: RefCell<OpRuntime>,
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
@@ -36,7 +36,7 @@ impl Runtime {
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         Ok(Self {
             driver: RefCell::new(builder.build()?),
-            runnables: Arc::new(SendWrapper::new(RefCell::default())),
+            runnables: Rc::new(RefCell::default()),
             op_runtime: RefCell::default(),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
@@ -45,7 +45,9 @@ impl Runtime {
 
     // Safety: the return runnable should be scheduled.
     unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
-        let runnables = self.runnables.clone();
+        // clone is cheap because it is Rc;
+        // SendWrapper is used to avoid cross-thread scheduling.
+        let runnables = SendWrapper::new(self.runnables.clone());
         let schedule = move |runnable| {
             runnables.borrow_mut().push_back(runnable);
         };

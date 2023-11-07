@@ -24,7 +24,7 @@ pub mod event;
 #[cfg(feature = "time")]
 pub mod time;
 
-use std::{cell::RefCell, future::Future, io};
+use std::{cell::RefCell, future::Future, io, mem::ManuallyDrop};
 
 use async_task::Task;
 pub use attacher::*;
@@ -37,8 +37,14 @@ use runtime::Runtime;
 
 thread_local! {
     pub(crate) static PROACTOR_BUILDER: RefCell<ProactorBuilder> = RefCell::new(ProactorBuilder::new());
-    pub(crate) static RUNTIME: LazyCell<Runtime> = LazyCell::new(|| {
-        PROACTOR_BUILDER.with(|builder| Runtime::new(&builder.borrow())).expect("cannot create compio runtime")
+    // Use ManuallyDrop here to avoid misc bugs on some platforms when
+    // trying to get current thread id after thread local resources dropped.
+    pub(crate) static RUNTIME: LazyCell<ManuallyDrop<Runtime>> = LazyCell::new(|| {
+        ManuallyDrop::new(
+            PROACTOR_BUILDER
+                .with(|builder| Runtime::new(&builder.borrow()))
+                .expect("cannot create compio runtime")
+        )
     });
 }
 
