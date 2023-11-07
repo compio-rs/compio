@@ -3,6 +3,7 @@
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{collections::VecDeque, io, pin::Pin, task::Poll, time::Duration};
 
+use compio_log::{instrument, trace};
 use io_uring::{
     cqueue,
     opcode::AsyncCancel,
@@ -34,6 +35,8 @@ impl Driver {
     const CANCEL: u64 = u64::MAX;
 
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
+        instrument!(compio_log::Level::TRACE, "new", ?builder);
+        trace!("new iour driver");
         Ok(Self {
             inner: IoUring::new(builder.capacity)?,
             squeue: VecDeque::with_capacity(builder.capacity as usize),
@@ -42,6 +45,7 @@ impl Driver {
 
     // Auto means that it choose to wait or not automatically.
     fn submit_auto(&mut self, timeout: Option<Duration>, wait: bool) -> io::Result<()> {
+        instrument!(compio_log::Level::TRACE, "submit_auto", ?timeout, wait);
         let res = if wait {
             // Last part of submission queue, wait till timeout.
             if let Some(duration) = timeout {
@@ -54,6 +58,7 @@ impl Driver {
         } else {
             self.inner.submit()
         };
+        trace!("submit result: {res:?}");
         match res {
             Ok(_) => Ok(()),
             Err(e) => match e.raw_os_error() {
@@ -65,12 +70,15 @@ impl Driver {
     }
 
     fn flush_submissions(&mut self) -> bool {
+        instrument!(compio_log::Level::TRACE, "flush_submissions");
+
         let mut ended_ops = false;
 
         let mut inner_squeue = self.inner.submission();
 
         while !inner_squeue.is_full() {
             if self.squeue.len() <= inner_squeue.capacity() - inner_squeue.len() {
+                trace!("inner_squeue have enough space, flush all entries");
                 let (s1, s2) = self.squeue.as_slices();
                 unsafe {
                     inner_squeue
@@ -84,8 +92,10 @@ impl Driver {
                 ended_ops = true;
                 break;
             } else if let Some(entry) = self.squeue.pop_front() {
+                trace!("inner_squeue have not enough space, flush an entry");
                 unsafe { inner_squeue.push(&entry) }.expect("queue has enough space");
             } else {
+                trace!("self.squeue is empty, skip");
                 ended_ops = true;
                 break;
             }
@@ -112,6 +122,8 @@ impl Driver {
     }
 
     pub fn cancel(&mut self, user_data: usize, _registry: &mut Slab<RawOp>) {
+        instrument!(compio_log::Level::TRACE, "cancel", user_data);
+        trace!("cancel RawOp");
         self.squeue.push_back(
             AsyncCancel::new(user_data as _)
                 .build()
@@ -120,7 +132,9 @@ impl Driver {
     }
 
     pub fn push(&mut self, user_data: usize, op: &mut RawOp) -> Poll<io::Result<usize>> {
+        instrument!(compio_log::Level::TRACE, "push", user_data);
         let op = op.as_pin();
+        trace!("push RawOp");
         self.squeue
             .push_back(op.create_entry().user_data(user_data as _));
         Poll::Pending
@@ -132,7 +146,9 @@ impl Driver {
         entries: &mut impl Extend<Entry>,
         _registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
+        instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         // Anyway we need to submit once, no matter there are entries in squeue.
+        trace!("start polling");
         loop {
             let ended = self.flush_submissions();
 
@@ -141,6 +157,7 @@ impl Driver {
             self.poll_entries(entries);
 
             if ended {
+                trace!("polling ended");
                 break;
             }
         }
