@@ -19,12 +19,16 @@ rustdoc-args = ["--cfg docsrs"]
 compio-buf = { workspace = true }
 compio-driver = { workspace = true }
 compio-io = { workspace = true, optional = true }
-compio-runtime = { workspace = true, optional = true, features = ["event"] }
+compio-runtime = { workspace = true, optional = true, features = [
+    "event",
+    "time",
+] }
 
 cfg-if = { workspace = true }
 either = "1.9.0"
 socket2 = { workspace = true, features = ["all"] }
 quiche = { version = "0.18.0", optional = true }
+thiserror = { version = "1.0.50", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 widestring = { workspace = true }
@@ -46,4 +50,4 @@ tempfile = { workspace = true }
 
 [features]
 runtime = ["dep:compio-io", "dep:compio-runtime"]
-quic = ["dep:quiche", "runtime"]
+quic = ["dep:quiche", "dep:thiserror", "runtime"]

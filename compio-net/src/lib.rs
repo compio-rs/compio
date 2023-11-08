@@ -6,7 +6,7 @@
 #![warn(missing_docs)]
 
 #[cfg(feature = "quic")]
-mod quic;
+pub mod quic;
 #[cfg(feature = "runtime")]
 mod resolve;
 mod socket;
@@ -15,7 +15,8 @@ mod udp;
 mod unix;
 
 #[cfg(feature = "quic")]
-pub use quic::*;
+#[doc(inline)]
+pub use quic::{QuicClient, QuicResult, QuicServer};
 #[cfg(feature = "runtime")]
 pub use resolve::ToSocketAddrsAsync;
 #[cfg(feature = "runtime")]
