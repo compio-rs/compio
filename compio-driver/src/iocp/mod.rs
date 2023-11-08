@@ -13,6 +13,7 @@ use std::{
 };
 
 use compio_buf::arrayvec::ArrayVec;
+use compio_log::{instrument, trace};
 use slab::Slab;
 use windows_sys::Win32::{
     Foundation::{
@@ -155,10 +156,12 @@ impl Driver {
     const DEFAULT_CAPACITY: usize = 1024;
 
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
+        instrument!(compio_log::Level::TRACE, "new", ?builder);
         let mut data: WSADATA = unsafe { std::mem::zeroed() };
         syscall!(SOCKET, WSAStartup(0x202, &mut data))?;
 
         let port = syscall!(BOOL, CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0))?;
+        trace!("new iocp driver at port: {port}");
         let port = unsafe { OwnedHandle::from_raw_handle(port as _) };
         Ok(Self {
             port,
@@ -173,6 +176,7 @@ impl Driver {
         timeout: Option<Duration>,
         iocp_entries: &mut ArrayVec<OVERLAPPED_ENTRY, N>,
     ) -> io::Result<()> {
+        instrument!(compio_log::Level::TRACE, "poll_impl", ?timeout);
         let mut recv_count = 0;
         let timeout = match timeout {
             Some(timeout) => timeout.as_millis() as u32,
@@ -189,6 +193,7 @@ impl Driver {
                 0,
             )
         )?;
+        trace!("recv_count: {recv_count}");
         unsafe {
             iocp_entries.set_len(recv_count as _);
         }
@@ -199,6 +204,7 @@ impl Driver {
         if iocp_entry.lpOverlapped.is_null() {
             // This entry is posted by `post_driver_nop`.
             let user_data = iocp_entry.lpCompletionKey;
+            trace!("entry {user_data} is posted by post_driver_nop");
             let result = if self.cancelled.remove(&user_data) {
                 Err(io::Error::from_raw_os_error(ERROR_OPERATION_ABORTED as _))
             } else {
@@ -208,6 +214,7 @@ impl Driver {
         } else {
             let transferred = iocp_entry.dwNumberOfBytesTransferred;
             // Any thin pointer is OK because we don't use the type of opcode.
+            trace!("entry transferred: {transferred}");
             let overlapped_ptr: *mut Overlapped<()> = iocp_entry.lpOverlapped.cast();
             let overlapped = unsafe { &*overlapped_ptr };
             let res = if matches!(
@@ -242,21 +249,27 @@ impl Driver {
     }
 
     pub fn cancel(&mut self, user_data: usize, registry: &mut Slab<RawOp>) {
+        instrument!(compio_log::Level::TRACE, "cancel", user_data);
+        trace!("cancel RawOp");
         self.cancelled.insert(user_data);
         if let Some(op) = registry.get_mut(user_data) {
             let overlapped_ptr = op.as_mut_ptr();
             let op = op.as_op_pin();
             // It's OK to fail to cancel.
+            trace!("call OpCode::cancel");
             unsafe { op.cancel(overlapped_ptr.cast()) }.ok();
         }
     }
 
     pub fn push(&mut self, user_data: usize, op: &mut RawOp) -> Poll<io::Result<usize>> {
+        instrument!(compio_log::Level::TRACE, "push", user_data);
         if self.cancelled.remove(&user_data) {
+            trace!("pushed RawOp already cancelled");
             Poll::Ready(Err(io::Error::from_raw_os_error(
                 ERROR_OPERATION_ABORTED as _,
             )))
         } else {
+            trace!("push RawOp");
             let optr = op.as_mut_ptr();
             let op_pin = op.as_op_pin();
             if op_pin.is_overlapped() {
@@ -313,6 +326,7 @@ impl Driver {
         entries: &mut impl Extend<Entry>,
         _registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
+        instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         // Prevent stack growth.
         let mut iocp_entries = ArrayVec::<OVERLAPPED_ENTRY, { Self::DEFAULT_CAPACITY }>::new();
         self.poll_impl(timeout, &mut iocp_entries)?;
@@ -325,7 +339,10 @@ impl Driver {
                     entries.extend(iocp_entries.drain(..).filter_map(|e| self.create_entry(e)));
                 }
                 Err(e) => match e.kind() {
-                    io::ErrorKind::TimedOut => break,
+                    io::ErrorKind::TimedOut => {
+                        trace!("poll timeout");
+                        break;
+                    }
                     _ => return Err(e),
                 },
             }
