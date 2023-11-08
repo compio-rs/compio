@@ -4,12 +4,7 @@ use std::{borrow::Cow, cell::RefCell, convert::Infallible, marker::PhantomData, 
 
 use quiche::Config;
 
-use super::{
-    error::QuicResult,
-    session::SessionStorage,
-    stream::{CLIENT_STREAM, SERVER_STREAM},
-    Inner, SharedInner,
-};
+use super::{error::QuicResult, session::SessionStorage, Inner, SharedInner};
 use crate::{QuicClient, QuicServer, ToSocketAddrsAsync};
 
 trait Build {
@@ -18,24 +13,26 @@ trait Build {
 
 impl Build for QuicServer {
     fn build(inner: SharedInner) -> Self {
-        inner.with(|s| s.stream_id = SERVER_STREAM);
         Self { inner }
     }
 }
 
 impl Build for QuicClient {
     fn build(inner: SharedInner) -> Self {
-        inner.with(|s| s.stream_id = CLIENT_STREAM);
         Self { inner }
     }
 }
 
-trait Sealed {}
-
-#[allow(private_bounds)]
-pub trait Roll: Sealed {
+/// Marker for building a [`QuicServer`] or [`QuicClient`].
+///
+/// This trait is sealed, and has only two implementors: [`Server`] and
+/// [`Client`].
+pub trait Roll {
+    /// The type of the quic socket
+    #[allow(private_bounds)]
     type Quic: Build;
 
+    /// Whether the socket is a server socket
     const IS_SERVER: bool;
 }
 
@@ -46,9 +43,6 @@ pub struct Server(Infallible);
 /// Marker for building a [`QuicClient`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Client(Infallible);
-
-impl Sealed for Server {}
-impl Sealed for Client {}
 
 impl Roll for Server {
     type Quic = QuicServer;

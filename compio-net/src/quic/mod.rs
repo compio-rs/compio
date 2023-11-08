@@ -1,15 +1,15 @@
 //! QUIC implementation based on [quiche].
 
 use std::{
-    cell::{Cell, RefCell},
+    cell::{Cell, RefCell, RefMut},
     collections::BTreeMap,
     net::SocketAddr,
     rc::Rc,
     time::Instant,
 };
 
-use compio_buf::{buf_try, IntoInner, IoBuf};
-use compio_runtime::Task;
+use compio_buf::{buf_try, BufResult, IntoInner, IoBuf};
+use compio_runtime::{event::EventHandle, Task};
 use quiche::{Config, Connection, ConnectionId, Error as QuicheError, RecvInfo, SendInfo};
 
 pub mod builder;
@@ -84,13 +84,15 @@ macro_rules! socket_fn {
         }
 
         #[doc = concat!("Create a new ", $name, "-initiated bidirectional stream")]
-        pub fn bi_stream(&self) -> BiStream {
-            BiStream::new(self.inner.clone(), self.inner.next_stream_id())
+        pub fn bi_stream(&self) -> QuicResult<BiStream> {
+            let id = self.inner.next_stream_id().to_bi();
+            BiStream::new(self.inner.clone(), id)
         }
 
         #[doc = concat!("Create a new ", $name, "-initiated unidirectional stream")]
-        pub fn uni_stream(&self) -> UniStream {
-            UniStream::new(self.inner.clone(), self.inner.next_stream_id())
+        pub fn uni_stream(&self) -> QuicResult<UniStream> {
+            let id = self.inner.next_stream_id().to_uni();
+            UniStream::new(self.inner.clone(), id)
         }
     };
 }
@@ -114,11 +116,13 @@ impl QuicClient {
 }
 
 struct Inner {
+    buf: Vec<u8>,
     quic: Connection,
     sockets: BTreeMap<FourTuple, UdpSocket>,
+    streams: BTreeMap<StreamId, EventHandle>,
+    is_server: bool,
+    next_stream_id: StreamId,
     config: Config,
-    buf: Vec<u8>,
-    stream_id: u64,
     session_storage: Option<Box<dyn DynSessionStorage>>,
     // TODO: add termination machenism
 }
@@ -168,12 +172,14 @@ impl Inner {
         };
 
         Ok(Self {
+            buf: vec![0; buf_size],
             quic,
             sockets: BTreeMap::from([(FourTuple { local, peer }, socket)]),
-            buf: vec![0; buf_size],
+            streams: BTreeMap::new(),
+            is_server: Ro::IS_SERVER,
+            next_stream_id: StreamId::new_bi(0, Ro::IS_SERVER),
             config,
             session_storage: None,
-            stream_id: 0,
         })
     }
 
@@ -199,6 +205,10 @@ impl Inner {
 struct SharedInner(Rc<RefCell<Inner>>);
 
 impl SharedInner {
+    fn get(&self) -> RefMut<'_, Inner> {
+        self.0.borrow_mut()
+    }
+
     fn with<R>(&self, f: impl FnOnce(&mut Inner) -> R) -> R {
         f(&mut self.0.borrow_mut())
     }
@@ -207,12 +217,8 @@ impl SharedInner {
         std::mem::take(f(&mut self.0.borrow_mut()))
     }
 
-    fn next_stream_id(&self) -> u64 {
-        self.with(|s| {
-            let curr = s.stream_id;
-            s.stream_id += 4;
-            curr
-        })
+    fn next_stream_id(&self) -> StreamId {
+        self.with(|s| s.next_stream_id.into_next())
     }
 
     fn spawn(self) -> Task<QuicResult<()>> {
@@ -315,11 +321,18 @@ impl SharedInner {
 
         for (tuple, socket) in sockets.iter() {
             buf.clear();
-            (len, buf) = buf_try!(@try socket.recv(buf).await);
-            let mut progress = 0;
-            while progress < len {
-                progress += self.with(|s| s.quic.recv(&mut buf[progress..len], tuple.into()))?;
-            }
+            (len, buf) = match socket.recv(buf).await {
+                BufResult(Err(_), b) => {
+                    buf = b;
+                    continue;
+                }
+                BufResult(Ok(0), b) => {
+                    buf = b;
+                    continue;
+                }
+                BufResult(Ok(len), buf) => (len, buf),
+            };
+            self.with(|s| s.quic.recv(&mut buf[..len], tuple.into()))?;
         }
 
         self.with(|s| {
@@ -328,5 +341,18 @@ impl SharedInner {
         });
 
         Ok(())
+    }
+
+    fn wake_stream(&self, id: StreamId) {
+        self.with(|s| {
+            let Some(handle) = s.streams.get(&id) else {
+                return;
+            };
+
+            // When the stream is closed, remove it from the map
+            if handle.notify().is_err() {
+                s.streams.remove(&id);
+            }
+        })
     }
 }
