@@ -29,7 +29,7 @@ impl Event {
     }
 
     /// Wait for [`EventHandle::notify`] called.
-    pub async fn wait(&self) -> io::Result<()> {
+    pub async fn wait(self) -> io::Result<()> {
         let future = OpFuture::new(self.user_data);
         future.await.0?;
         Ok(())
@@ -56,7 +56,7 @@ impl EventHandle {
     }
 
     /// Notify the event.
-    pub fn notify(&self) -> io::Result<()> {
+    pub fn notify(self) -> io::Result<()> {
         post_driver_nop(self.handle, self.user_data)
     }
 }

@@ -42,9 +42,10 @@ impl AsyncResolver {
         _dwbytes: u32,
         lpoverlapped: *const OVERLAPPED,
     ) {
-        let overlapped_ptr = lpoverlapped.cast::<GAIOverlapped>();
-        if let Some(overlapped) = overlapped_ptr.as_ref() {
-            if let Some(handle) = overlapped.handle.as_ref() {
+        // We won't access the overlapped struct outside callback.
+        let overlapped_ptr = lpoverlapped.cast::<GAIOverlapped>().cast_mut();
+        if let Some(overlapped) = overlapped_ptr.as_mut() {
+            if let Some(handle) = overlapped.handle.take() {
                 handle.notify().ok();
             }
         }

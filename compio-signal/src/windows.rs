@@ -64,7 +64,7 @@ fn unregister(ctrltype: u32, key: usize) {
 #[derive(Debug)]
 struct CtrlEvent {
     ctrltype: u32,
-    event: Event,
+    event: Option<Event>,
     handler_key: usize,
 }
 
@@ -76,13 +76,17 @@ impl CtrlEvent {
         let handler_key = register(ctrltype, &event)?;
         Ok(Self {
             ctrltype,
-            event,
+            event: Some(event),
             handler_key,
         })
     }
 
-    pub async fn wait(&self) -> io::Result<()> {
-        self.event.wait().await
+    pub async fn wait(mut self) -> io::Result<()> {
+        self.event
+            .take()
+            .expect("event could not be None")
+            .wait()
+            .await
     }
 }
 
