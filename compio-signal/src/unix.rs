@@ -70,24 +70,33 @@ fn unregister(sig: i32, fd: RawFd) {
 #[derive(Debug)]
 struct SignalFd {
     sig: i32,
-    fd: Event,
+    fd: RawFd,
+    event: Option<Event>,
 }
 
 impl SignalFd {
     fn new(sig: i32) -> io::Result<Self> {
-        let fd = Event::new()?;
-        register(sig, &fd)?;
-        Ok(Self { sig, fd })
+        let event = Event::new()?;
+        register(sig, &event)?;
+        Ok(Self {
+            sig,
+            fd: event.as_raw_fd(),
+            event: Some(event),
+        })
     }
 
-    async fn wait(&self) -> io::Result<()> {
-        self.fd.wait().await
+    async fn wait(mut self) -> io::Result<()> {
+        self.event
+            .take()
+            .expect("event could not be None")
+            .wait()
+            .await
     }
 }
 
 impl Drop for SignalFd {
     fn drop(&mut self) {
-        unregister(self.sig, self.fd.as_raw_fd());
+        unregister(self.sig, self.fd);
     }
 }
 

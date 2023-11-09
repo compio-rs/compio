@@ -33,7 +33,7 @@ impl Event {
     }
 
     /// Wait for [`EventHandle::notify`] called.
-    pub async fn wait(&self) -> io::Result<()> {
+    pub async fn wait(self) -> io::Result<()> {
         self.attacher.attach(&self.fd)?;
         let buffer = ArrayVec::<u8, 8>::new();
         // Trick: Recv uses readv which doesn't seek.
@@ -61,7 +61,7 @@ impl EventHandle {
     }
 
     /// Notify the event.
-    pub fn notify(&self) -> io::Result<()> {
+    pub fn notify(self) -> io::Result<()> {
         let data = 1u64;
         syscall!(libc::write(
             self.fd.as_raw_fd(),
