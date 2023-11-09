@@ -13,6 +13,7 @@ use std::{
     time::Duration,
 };
 
+use compio_log::{instrument, trace};
 use crossbeam_queue::SegQueue;
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use polling::{Event, Events, Poller};
@@ -144,6 +145,8 @@ pub(crate) struct Driver {
 
 impl Driver {
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
+        instrument!(compio_log::Level::TRACE, "new", ?builder);
+        trace!("new poll driver");
         let entries = builder.capacity as usize; // for the sake of consistency, use u32 like iour
         let events = if entries == 0 {
             Events::new()
