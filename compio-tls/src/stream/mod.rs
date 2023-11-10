@@ -1,9 +1,7 @@
 use std::{io, mem::MaybeUninit};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
-use compio_io::{AsyncRead, AsyncWrite};
-
-use crate::StreamWrapper;
+use compio_io::{compat::SyncStream, AsyncRead, AsyncWrite};
 
 #[cfg(feature = "rustls")]
 mod rtls;
@@ -12,13 +10,13 @@ mod rtls;
 #[allow(clippy::large_enum_variant)]
 enum TlsStreamInner<S> {
     #[cfg(feature = "native-tls")]
-    NativeTls(native_tls::TlsStream<StreamWrapper<S>>),
+    NativeTls(native_tls::TlsStream<SyncStream<S>>),
     #[cfg(feature = "rustls")]
-    Rustls(rtls::TlsStream<StreamWrapper<S>>),
+    Rustls(rtls::TlsStream<SyncStream<S>>),
 }
 
 impl<S> TlsStreamInner<S> {
-    fn get_mut(&mut self) -> &mut StreamWrapper<S> {
+    fn get_mut(&mut self) -> &mut SyncStream<S> {
         match self {
             #[cfg(feature = "native-tls")]
             Self::NativeTls(s) => s.get_mut(),
@@ -71,20 +69,20 @@ pub struct TlsStream<S>(TlsStreamInner<S>);
 
 impl<S> TlsStream<S> {
     #[cfg(feature = "rustls")]
-    pub(crate) fn new_rustls_client(s: StreamWrapper<S>, conn: rustls::ClientConnection) -> Self {
+    pub(crate) fn new_rustls_client(s: SyncStream<S>, conn: rustls::ClientConnection) -> Self {
         Self(TlsStreamInner::Rustls(rtls::TlsStream::new_client(s, conn)))
     }
 
     #[cfg(feature = "rustls")]
-    pub(crate) fn new_rustls_server(s: StreamWrapper<S>, conn: rustls::ServerConnection) -> Self {
+    pub(crate) fn new_rustls_server(s: SyncStream<S>, conn: rustls::ServerConnection) -> Self {
         Self(TlsStreamInner::Rustls(rtls::TlsStream::new_server(s, conn)))
     }
 }
 
 #[cfg(feature = "native-tls")]
 #[doc(hidden)]
-impl<S> From<native_tls::TlsStream<StreamWrapper<S>>> for TlsStream<S> {
-    fn from(value: native_tls::TlsStream<StreamWrapper<S>>) -> Self {
+impl<S> From<native_tls::TlsStream<SyncStream<S>>> for TlsStream<S> {
+    fn from(value: native_tls::TlsStream<SyncStream<S>>) -> Self {
         Self(TlsStreamInner::NativeTls(value))
     }
 }

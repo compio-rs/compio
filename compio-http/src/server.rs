@@ -112,11 +112,11 @@ impl Accept for TlsAcceptor {
             match res {
                 Ok(stream) => {
                     self.fut = Some(Box::pin(acceptor.accept(stream)));
+                    cx.waker().wake_by_ref();
+                    Poll::Pending
                 }
-                Err(e) => return Poll::Ready(Some(Err(e))),
+                Err(e) => Poll::Ready(Some(Err(e))),
             }
-            cx.waker().wake_by_ref();
-            Poll::Pending
         }
     }
 }

@@ -1,8 +1,8 @@
 use std::io;
 
-use compio_io::{AsyncRead, AsyncWrite};
+use compio_io::{compat::SyncStream, AsyncRead, AsyncWrite};
 
-use crate::{wrapper::StreamWrapper, TlsStream};
+use crate::TlsStream;
 
 #[cfg(feature = "rustls")]
 mod rtls;
@@ -55,7 +55,7 @@ impl TlsConnector {
         match &self.0 {
             #[cfg(feature = "native-tls")]
             TlsConnectorInner::NativeTls(c) => {
-                handshake_native_tls(c.connect(domain, StreamWrapper::new(stream))).await
+                handshake_native_tls(c.connect(domain, SyncStream::new(stream))).await
             }
             #[cfg(feature = "rustls")]
             TlsConnectorInner::Rustls(c) => handshake_rustls(c.connect(domain, stream)).await,
@@ -105,7 +105,7 @@ impl TlsAcceptor {
         match &self.0 {
             #[cfg(feature = "native-tls")]
             TlsAcceptorInner::NativeTls(c) => {
-                handshake_native_tls(c.accept(StreamWrapper::new(stream))).await
+                handshake_native_tls(c.accept(SyncStream::new(stream))).await
             }
             #[cfg(feature = "rustls")]
             TlsAcceptorInner::Rustls(c) => handshake_rustls(c.accept(stream)).await,
@@ -116,8 +116,8 @@ impl TlsAcceptor {
 #[cfg(feature = "native-tls")]
 async fn handshake_native_tls<S: AsyncRead + AsyncWrite>(
     mut res: Result<
-        native_tls::TlsStream<StreamWrapper<S>>,
-        native_tls::HandshakeError<StreamWrapper<S>>,
+        native_tls::TlsStream<SyncStream<S>>,
+        native_tls::HandshakeError<SyncStream<S>>,
     >,
 ) -> io::Result<TlsStream<S>> {
     use native_tls::HandshakeError;

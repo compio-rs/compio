@@ -19,6 +19,9 @@ compio-runtime = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [features]
+default = []
+compat = []
+
 # Nightly features
 allocator_api = []
 nightly = ["allocator_api", "compio-buf/allocator_api"]

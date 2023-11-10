@@ -11,7 +11,7 @@ repository = { workspace = true }
 
 [dependencies]
 compio-buf = { workspace = true }
-compio-io = { workspace = true }
+compio-io = { workspace = true, features = ["compat"] }
 
 native-tls = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
