@@ -6,7 +6,7 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
-#![cfg_attr(feature = "read_buf", feature(read_buf))]
+#![cfg_attr(feature = "read_buf", feature(read_buf, core_io_borrowed_buf))]
 #![cfg_attr(feature = "try_trait_v2", feature(try_trait_v2, try_trait_v2_residual))]
 #![warn(missing_docs)]
 
