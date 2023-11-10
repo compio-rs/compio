@@ -35,6 +35,16 @@ impl<S> io::Read for TlsStreamInner<S> {
             Self::Rustls(s) => io::Read::read(s, buf),
         }
     }
+
+    #[cfg(feature = "read_buf")]
+    fn read_buf(&mut self, buf: io::BorrowedCursor<'_>) -> io::Result<()> {
+        match self {
+            #[cfg(feature = "native-tls")]
+            Self::NativeTls(s) => io::Read::read_buf(s, buf),
+            #[cfg(feature = "rustls")]
+            Self::Rustls(s) => io::Read::read_buf(s, buf),
+        }
+    }
 }
 
 impl<S> io::Write for TlsStreamInner<S> {
@@ -87,14 +97,29 @@ impl<S> From<native_tls::TlsStream<SyncStream<S>>> for TlsStream<S> {
     }
 }
 
+#[cfg(not(feature = "read_buf"))]
+#[inline]
+fn read_buf<B: IoBufMut>(reader: &mut impl io::Read, buf: &mut B) -> io::Result<usize> {
+    let slice: &mut [MaybeUninit<u8>] = buf.as_mut_slice();
+    slice.fill(MaybeUninit::new(0));
+    let slice = unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), slice.len()) };
+    reader.read(slice)
+}
+
+#[cfg(feature = "read_buf")]
+#[inline]
+fn read_buf<B: IoBufMut>(reader: &mut impl io::Read, buf: &mut B) -> io::Result<usize> {
+    let slice: &mut [MaybeUninit<u8>] = buf.as_mut_slice();
+    let mut borrowed_buf = io::BorrowedBuf::from(slice);
+    let mut cursor = borrowed_buf.unfilled();
+    reader.read_buf(cursor.reborrow())?;
+    Ok(cursor.written())
+}
+
 impl<S: AsyncRead> AsyncRead for TlsStream<S> {
     async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
-        let slice: &mut [MaybeUninit<u8>] = buf.as_mut_slice();
-        slice.fill(MaybeUninit::new(0));
-        let slice =
-            unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), slice.len()) };
         loop {
-            let res = io::Read::read(&mut self.0, slice);
+            let res = read_buf(&mut self.0, &mut buf);
             match res {
                 Ok(res) => {
                     unsafe { buf.set_buf_init(res) };

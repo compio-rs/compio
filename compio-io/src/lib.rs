@@ -100,6 +100,8 @@
 // This is OK as we're thread-per-core and don't need `Send` or other auto trait on anonymous future
 #![allow(async_fn_in_trait)]
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
+#![cfg_attr(feature = "read_buf", feature(read_buf))]
+#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 mod buffer;
 #[cfg(feature = "compat")]

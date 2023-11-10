@@ -35,3 +35,6 @@ client = ["hyper/client"]
 server = ["hyper/server"]
 
 all = ["native-tls", "rustls", "client", "server"]
+
+read_buf = ["compio-tls/read_buf"]
+nightly = ["read_buf"]

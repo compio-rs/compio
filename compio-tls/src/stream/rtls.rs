@@ -85,8 +85,8 @@ impl<S> TlsStream<S> {
     }
 }
 
-impl<S: io::Read> io::Read for TlsStream<S> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+impl<S: io::Read> TlsStream<S> {
+    fn read_impl<T>(&mut self, mut f: impl FnMut(Reader) -> io::Result<T>) -> io::Result<T> {
         loop {
             while self.conn.wants_read() {
                 self.conn.read_tls(&mut self.inner)?;
@@ -95,7 +95,7 @@ impl<S: io::Read> io::Read for TlsStream<S> {
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             }
 
-            match self.conn.reader().read(buf) {
+            match f(self.conn.reader()) {
                 Ok(len) => {
                     return Ok(len);
                 }
@@ -103,6 +103,17 @@ impl<S: io::Read> io::Read for TlsStream<S> {
                 Err(e) => return Err(e),
             }
         }
+    }
+}
+
+impl<S: io::Read> io::Read for TlsStream<S> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.read_impl(|mut reader| reader.read(buf))
+    }
+
+    #[cfg(feature = "read_buf")]
+    fn read_buf(&mut self, mut buf: io::BorrowedCursor<'_>) -> io::Result<()> {
+        self.read_impl(|mut reader| reader.read_buf(buf.reborrow()))
     }
 }
 

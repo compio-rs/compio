@@ -265,6 +265,30 @@ macro_rules! poll_future_would_block {
     }};
 }
 
+#[cfg(not(feature = "read_buf"))]
+#[inline]
+fn read_buf(reader: &mut impl io::Read, buf: &mut tokio::io::ReadBuf<'_>) -> io::Result<()> {
+    let slice = buf.initialize_unfilled();
+    let len = reader.read(slice)?;
+    buf.advance(len);
+    Ok(())
+}
+
+#[cfg(feature = "read_buf")]
+#[inline]
+fn read_buf(reader: &mut impl io::Read, buf: &mut tokio::io::ReadBuf<'_>) -> io::Result<()> {
+    let slice = unsafe { buf.unfilled_mut() };
+    let len = {
+        let mut borrowed_buf = io::BorrowedBuf::from(slice);
+        let mut cursor = borrowed_buf.unfilled();
+        reader.read_buf(cursor.reborrow())?;
+        cursor.written()
+    };
+    unsafe { buf.assume_init(len) };
+    buf.advance(len);
+    Ok(())
+}
+
 impl tokio::io::AsyncRead for HttpStream {
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -274,18 +298,12 @@ impl tokio::io::AsyncRead for HttpStream {
         let inner: &'static mut SyncStream<HttpStreamInner> =
             unsafe { &mut *(self.inner.deref_mut() as *mut _) };
 
-        let res = poll_future_would_block!(self.read_future, cx, inner.fill_read_buf(), {
-            let slice = buf.initialize_unfilled();
-            io::Read::read(inner, slice)
-        });
-        match res {
-            Poll::Ready(Ok(len)) => {
-                buf.advance(len);
-                Poll::Ready(Ok(()))
-            }
-            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-            Poll::Pending => Poll::Pending,
-        }
+        poll_future_would_block!(
+            self.read_future,
+            cx,
+            inner.fill_read_buf(),
+            read_buf(inner, buf)
+        )
     }
 }
 

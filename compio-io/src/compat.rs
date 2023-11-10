@@ -66,6 +66,16 @@ impl<S> Read for SyncStream<S> {
             res
         })
     }
+
+    #[cfg(feature = "read_buf")]
+    fn read_buf(&mut self, mut buf: io::BorrowedCursor<'_>) -> io::Result<()> {
+        let mut slice = self.fill_buf()?;
+        let old_written = buf.written();
+        slice.read_buf(buf.reborrow())?;
+        let len = buf.written() - old_written;
+        self.consume(len);
+        Ok(())
+    }
 }
 
 impl<S> BufRead for SyncStream<S> {

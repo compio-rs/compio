@@ -42,3 +42,6 @@ rustls = ["compio-http/rustls"]
 vendored = ["compio-http/vendored"]
 json = ["dep:serde_json"]
 all = ["json", "native-tls", "rustls", "compio-http/all"]
+
+read_buf = ["compio-http/read_buf"]
+nightly = ["read_buf"]

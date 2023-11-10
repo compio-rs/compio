@@ -26,3 +26,6 @@ rustls-native-certs = { workspace = true }
 [features]
 default = ["native-tls"]
 all = ["native-tls", "rustls"]
+
+read_buf = ["compio-buf/read_buf", "compio-io/read_buf"]
+nightly = ["read_buf"]

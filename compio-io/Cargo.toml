@@ -23,5 +23,6 @@ default = []
 compat = []
 
 # Nightly features
-allocator_api = []
-nightly = ["allocator_api", "compio-buf/allocator_api"]
+allocator_api = ["compio-buf/allocator_api"]
+read_buf = ["compio-buf/read_buf"]
+nightly = ["allocator_api", "read_buf"]
