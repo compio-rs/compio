@@ -8,7 +8,7 @@ use crate::{IntoUrl, Request, RequestBuilder, Response, Result};
 /// An asynchronous `Client` to make Requests with.
 #[derive(Debug, Clone)]
 pub struct Client {
-    client: Rc<ClientRef>,
+    client: Rc<ClientInner>,
 }
 
 impl Client {
@@ -91,7 +91,7 @@ impl Client {
 }
 
 #[derive(Debug)]
-struct ClientRef {
+struct ClientInner {
     client: hyper::Client<Connector, Body>,
     headers: HeaderMap,
 }
@@ -126,7 +126,7 @@ impl ClientBuilder {
             .executor(CompioExecutor)
             .set_host(true)
             .build(Connector::new(self.tls));
-        let client_ref = ClientRef {
+        let client_ref = ClientInner {
             client,
             headers: self.headers,
         };
