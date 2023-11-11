@@ -1,24 +1,31 @@
+//! Compat wrappers for interop with other crates.
+
 use std::io::{self, BufRead, Read, Write};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
-use compio_io::{AsyncWriteExt, Buffer};
 
-const DEFAULT_BUF_SIZE: usize = 8 * 1024;
+use crate::{buffer::Buffer, util::DEFAULT_BUF_SIZE, AsyncWriteExt};
 
+/// A wrapper for [`AsyncRead`](crate::AsyncRead) +
+/// [`AsyncWrite`](crate::AsyncWrite), providing sync traits impl. The sync
+/// methods will return [`io::ErrorKind::WouldBlock`] error if the inner buffer
+/// needs more data.
 #[derive(Debug)]
-pub struct StreamWrapper<S> {
+pub struct SyncStream<S> {
     stream: S,
     eof: bool,
     read_buffer: Buffer,
     write_buffer: Buffer,
 }
 
-impl<S> StreamWrapper<S> {
+impl<S> SyncStream<S> {
+    /// Create [`SyncStream`] with the stream and default buffer size.
     pub fn new(stream: S) -> Self {
-        Self::with_capacity(stream, DEFAULT_BUF_SIZE)
+        Self::with_capacity(DEFAULT_BUF_SIZE, stream)
     }
 
-    pub fn with_capacity(stream: S, cap: usize) -> Self {
+    /// Create [`SyncStream`] with the stream and buffer size.
+    pub fn with_capacity(cap: usize, stream: S) -> Self {
         Self {
             stream,
             eof: false,
@@ -27,14 +34,17 @@ impl<S> StreamWrapper<S> {
         }
     }
 
+    /// Get if the stream is at EOF.
     pub fn is_eof(&self) -> bool {
         self.eof
     }
 
+    /// Get the reference of the inner stream.
     pub fn get_ref(&self) -> &S {
         &self.stream
     }
 
+    /// Get the mutable reference of the inner stream.
     pub fn get_mut(&mut self) -> &mut S {
         &mut self.stream
     }
@@ -48,7 +58,7 @@ impl<S> StreamWrapper<S> {
     }
 }
 
-impl<S> Read for StreamWrapper<S> {
+impl<S> Read for SyncStream<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let mut slice = self.fill_buf()?;
         slice.read(buf).map(|res| {
@@ -56,9 +66,19 @@ impl<S> Read for StreamWrapper<S> {
             res
         })
     }
+
+    #[cfg(feature = "read_buf")]
+    fn read_buf(&mut self, mut buf: io::BorrowedCursor<'_>) -> io::Result<()> {
+        let mut slice = self.fill_buf()?;
+        let old_written = buf.written();
+        slice.read_buf(buf.reborrow())?;
+        let len = buf.written() - old_written;
+        self.consume(len);
+        Ok(())
+    }
 }
 
-impl<S> BufRead for StreamWrapper<S> {
+impl<S> BufRead for SyncStream<S> {
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
         if self.read_buffer.all_done() {
             self.read_buffer.reset();
@@ -76,7 +96,7 @@ impl<S> BufRead for StreamWrapper<S> {
     }
 }
 
-impl<S> Write for StreamWrapper<S> {
+impl<S> Write for SyncStream<S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if self.write_buffer.need_flush() {
             self.flush_impl()?;
@@ -110,7 +130,8 @@ fn would_block(msg: &str) -> io::Error {
     io::Error::new(io::ErrorKind::WouldBlock, msg)
 }
 
-impl<S: compio_io::AsyncRead> StreamWrapper<S> {
+impl<S: crate::AsyncRead> SyncStream<S> {
+    /// Fill the read buffer.
     pub async fn fill_read_buf(&mut self) -> io::Result<usize> {
         let stream = &mut self.stream;
         let len = self
@@ -128,11 +149,13 @@ impl<S: compio_io::AsyncRead> StreamWrapper<S> {
     }
 }
 
-impl<S: compio_io::AsyncWrite> StreamWrapper<S> {
+impl<S: crate::AsyncWrite> SyncStream<S> {
+    /// Flush all data in the write buffer.
     pub async fn flush_write_buf(&mut self) -> io::Result<usize> {
         let stream = &mut self.stream;
         let len = self.write_buffer.with(|b| stream.write_all(b)).await?;
         self.write_buffer.reset();
+        stream.flush().await?;
         Ok(len)
     }
 }

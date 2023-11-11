@@ -1,12 +1,12 @@
 use std::{io, ops::DerefMut, sync::Arc};
 
-use compio_io::{AsyncRead, AsyncWrite};
+use compio_io::{compat::SyncStream, AsyncRead, AsyncWrite};
 use rustls::{
     ClientConfig, ClientConnection, ConnectionCommon, Error, ServerConfig, ServerConnection,
     ServerName,
 };
 
-use crate::{wrapper::StreamWrapper, TlsStream};
+use crate::TlsStream;
 
 pub enum HandshakeError<S, C> {
     Rustls(Error),
@@ -15,16 +15,16 @@ pub enum HandshakeError<S, C> {
 }
 
 pub struct MidStream<S, C> {
-    stream: StreamWrapper<S>,
+    stream: SyncStream<S>,
     conn: C,
-    result_fn: fn(StreamWrapper<S>, C) -> TlsStream<S>,
+    result_fn: fn(SyncStream<S>, C) -> TlsStream<S>,
 }
 
 impl<S, C> MidStream<S, C> {
     pub fn new(
-        stream: StreamWrapper<S>,
+        stream: SyncStream<S>,
         conn: C,
-        result_fn: fn(StreamWrapper<S>, C) -> TlsStream<S>,
+        result_fn: fn(SyncStream<S>, C) -> TlsStream<S>,
     ) -> Self {
         Self {
             stream,
@@ -33,7 +33,7 @@ impl<S, C> MidStream<S, C> {
         }
     }
 
-    pub fn get_mut(&mut self) -> &mut StreamWrapper<S> {
+    pub fn get_mut(&mut self) -> &mut SyncStream<S> {
         &mut self.stream
     }
 
@@ -107,7 +107,7 @@ impl TlsConnector {
         .map_err(HandshakeError::Rustls)?;
 
         MidStream::new(
-            StreamWrapper::new(stream),
+            SyncStream::new(stream),
             conn,
             TlsStream::<S>::new_rustls_client,
         )
@@ -127,7 +127,7 @@ impl TlsAcceptor {
         let conn = ServerConnection::new(self.0.clone()).map_err(HandshakeError::Rustls)?;
 
         MidStream::new(
-            StreamWrapper::new(stream),
+            SyncStream::new(stream),
             conn,
             TlsStream::<S>::new_rustls_server,
         )

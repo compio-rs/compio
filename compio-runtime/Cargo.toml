@@ -37,6 +37,7 @@ async-task = "4.5.0"
 cfg-if = { workspace = true, optional = true }
 futures-util = { workspace = true }
 once_cell = { workspace = true }
+send_wrapper = { workspace = true }
 slab = { workspace = true, optional = true }
 smallvec = "1.11.1"
 

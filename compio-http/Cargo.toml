@@ -1,0 +1,44 @@
+[package]
+name = "compio-http"
+version = "0.1.0"
+categories = ["asynchronous", "network-programming"]
+keywords = ["async", "net"]
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg docsrs"]
+
+[dependencies]
+compio-buf = { workspace = true }
+compio-io = { workspace = true, features = ["compat"] }
+compio-runtime = { workspace = true }
+compio-net = { workspace = true, features = ["runtime"] }
+compio-tls = { workspace = true }
+
+native-tls = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+rustls-native-certs = { workspace = true, optional = true }
+
+cfg-if = { workspace = true }
+hyper = { workspace = true }
+send_wrapper = { workspace = true, features = ["futures"] }
+tokio = { workspace = true }
+
+[features]
+default = ["native-tls"]
+native-tls = ["compio-tls/native-tls", "dep:native-tls"]
+rustls = ["compio-tls/rustls", "dep:rustls", "dep:rustls-native-certs"]
+vendored = ["native-tls?/vendored"]
+
+client = ["hyper/client"]
+server = ["hyper/server"]
+
+all = ["native-tls", "rustls", "client", "server"]
+
+read_buf = ["compio-tls/read_buf"]
+nightly = ["read_buf"]

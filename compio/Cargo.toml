@@ -92,7 +92,7 @@ once_cell_try = [
     "compio-runtime?/once_cell_try",
     "compio-signal?/once_cell_try",
 ]
-read_buf = ["compio-buf/read_buf"]
+read_buf = ["compio-buf/read_buf", "compio-io?/read_buf"]
 try_trait_v2 = ["compio-buf/try_trait_v2"]
 enable_log = ["compio-log/enable_log"]
 nightly = [
