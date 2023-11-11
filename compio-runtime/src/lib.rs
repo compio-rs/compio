@@ -1,6 +1,4 @@
 //! The runtime of compio.
-//! We don't expose the runtime struct because there could be only one runtime
-//! in each thread.
 //!
 //! ```
 //! let ans = compio_runtime::Runtime::new().unwrap().block_on(async {
