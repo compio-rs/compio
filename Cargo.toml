@@ -11,9 +11,9 @@ members = [
     "compio-dispatcher",
     "compio-io",
     "compio-tls",
+    "compio-log",
     "compio-http",
     "compio-http-client",
-    "compio-log",
 ]
 resolver = "2"
 
@@ -34,9 +34,10 @@ compio-io = { path = "./compio-io", version = "0.1.0" }
 compio-net = { path = "./compio-net", version = "0.2.0" }
 compio-signal = { path = "./compio-signal", version = "0.1.1" }
 compio-dispatcher = { path = "./compio-dispatcher", version = "0.1.0" }
-compio-tls = { path = "./compio-tls", version = "0.1.0" }
 compio-http = { path = "./compio-http", version = "0.1.0" }
 compio-log = { path = "./compio-log", version = "0.1.0" }
+compio-tls = { path = "./compio-tls", version = "0.1.0" }
+
 
 cfg-if = "1.0.0"
 crossbeam-channel = "0.5.8"
