@@ -30,6 +30,7 @@ targets = [
 [dependencies]
 # Workspace dependencies
 compio-buf = { workspace = true }
+compio-log = { workspace = true }
 
 # Utils
 cfg-if = { workspace = true }

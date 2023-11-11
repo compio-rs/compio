@@ -1,5 +1,5 @@
 /// A typed wrapper for key of Ops submitted into driver
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash)]
 pub struct Key<T> {
     user_data: usize,
     _p: std::marker::PhantomData<fn(T)>,
@@ -36,5 +36,11 @@ impl<T> std::ops::Deref for Key<T> {
 
     fn deref(&self) -> &Self::Target {
         &self.user_data
+    }
+}
+
+impl<T> std::fmt::Debug for Key<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Key({})", self.user_data)
     }
 }

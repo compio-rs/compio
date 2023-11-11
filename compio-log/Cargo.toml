@@ -1,0 +1,19 @@
+[package]
+name = "compio-log"
+version = "0.1.0"
+description = "log of compio"
+categories = ["asynchronous"]
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+tracing = { version = "0.1", default-features = false }
+
+[dev-dependencies]
+tracing-subscriber = "0.3"
+
+[features]
+enable_log = []
