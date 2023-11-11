@@ -68,32 +68,27 @@ use crate::{File, OpenOptions};
 ///     .create(PIPE_NAME)?;
 ///
 /// // Spawn the server loop.
-/// let server = compio_runtime::Runtime::new()
-///     .unwrap()
-///     .block_on(async move {
-///         loop {
-///             // Wait for a client to connect.
-///             let connected = server.connect().await?;
+/// # compio_runtime::Runtime::new().unwrap().block_on(async move {
+/// loop {
+///     // Wait for a client to connect.
+///     let connected = server.connect().await?;
 ///
-///             // Construct the next server to be connected before sending the one
-///             // we already have of onto a task. This ensures that the server
-///             // isn't closed (after it's done in the task) before a new one is
-///             // available. Otherwise the client might error with
-///             // `io::ErrorKind::NotFound`.
-///             server = ServerOptions::new().create(PIPE_NAME)?;
+///     // Construct the next server to be connected before sending the one
+///     // we already have of onto a task. This ensures that the server
+///     // isn't closed (after it's done in the task) before a new one is
+///     // available. Otherwise the client might error with
+///     // `io::ErrorKind::NotFound`.
+///     server = ServerOptions::new().create(PIPE_NAME)?;
 ///
-///             let client = compio_runtime::spawn(async move {
-///                 // use the connected client
-/// #           Ok::<_, std::io::Error>(())
-///             });
-/// #       if true { break } // needed for type inference to work
-///         }
-///
-///         Ok::<_, io::Error>(())
+///     let client = compio_runtime::spawn(async move {
+///         // use the connected client
+/// #       Ok::<_, std::io::Error>(())
 ///     });
-///
-/// // do something else not server related here
-/// # Ok(()) }
+/// # if true { break } // needed for type inference to work
+/// }
+/// # Ok::<_, io::Error>(())
+/// # })
+/// # }
 /// ```
 ///
 /// [Windows named pipe]: https://docs.microsoft.com/en-us/windows/win32/ipc/named-pipes

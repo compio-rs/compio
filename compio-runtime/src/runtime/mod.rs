@@ -422,14 +422,14 @@ impl Drop for EnterGuard<'_> {
 /// There is no guarantee that a spawned task will execute to completion.
 ///
 /// ```
-/// compio_runtime::Runtime::new().unwrap().block_on(async {
-///     let task = compio_runtime::spawn(async {
-///         println!("Hello from a spawned task!");
-///         42
-///     });
+/// # compio_runtime::Runtime::new().unwrap().block_on(async {
+/// let task = compio_runtime::spawn(async {
+///     println!("Hello from a spawned task!");
+///     42
+/// });
 ///
-///     assert_eq!(task.await, 42);
-/// })
+/// assert_eq!(task.await, 42);
+/// # })
 /// ```
 ///
 /// ## Panics
