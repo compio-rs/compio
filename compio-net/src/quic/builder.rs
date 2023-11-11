@@ -1,41 +1,40 @@
 //! Builder and other building utils
 
-use std::{borrow::Cow, cell::RefCell, convert::Infallible, marker::PhantomData, rc::Rc};
+use std::{borrow::Cow, convert::Infallible, marker::PhantomData};
 
 use quiche::Config;
 
 use super::{
-    error::QuicResult,
-    session::SessionStorage,
-    stream::{CLIENT_STREAM, SERVER_STREAM},
-    Inner, SharedInner,
+    error::QuicResult, session::SessionStorage, Endpoint, EndpointInner, QuicClient, QuicServer,
 };
-use crate::{QuicClient, QuicServer, ToSocketAddrsAsync};
+use crate::ToSocketAddrsAsync;
 
 trait Build {
-    fn build(inner: SharedInner) -> Self;
+    fn build(inner: Endpoint) -> Self;
 }
 
 impl Build for QuicServer {
-    fn build(inner: SharedInner) -> Self {
-        inner.with(|s| s.stream_id = SERVER_STREAM);
+    fn build(inner: Endpoint) -> Self {
         Self { inner }
     }
 }
 
 impl Build for QuicClient {
-    fn build(inner: SharedInner) -> Self {
-        inner.with(|s| s.stream_id = CLIENT_STREAM);
+    fn build(inner: Endpoint) -> Self {
         Self { inner }
     }
 }
 
-trait Sealed {}
-
-#[allow(private_bounds)]
-pub trait Roll: Sealed {
+/// Marker for building a [`QuicServer`] or [`QuicClient`].
+///
+/// This trait is sealed, and has only two implementors: [`Server`] and
+/// [`Client`].
+pub trait Roll {
+    /// The type of the quic socket
+    #[allow(private_bounds)]
     type Quic: Build;
 
+    /// Whether the socket is a server socket
     const IS_SERVER: bool;
 }
 
@@ -46,9 +45,6 @@ pub struct Server(Infallible);
 /// Marker for building a [`QuicClient`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Client(Infallible);
-
-impl Sealed for Server {}
-impl Sealed for Client {}
 
 impl Roll for Server {
     type Quic = QuicServer;
@@ -72,7 +68,7 @@ pub type ClientBuilder<'a, L = (), R = (), S = ()> = Builder<'a, Client, L, R, S
 pub struct Builder<'a, Ro, L = (), R = (), S = ()> {
     pub(super) config: Config,
     pub(super) server_name: Option<Cow<'a, str>>,
-    pub(super) buf_size: usize,
+    // pub(super) buf_size: usize,
     pub(super) tuple: (L, R),
     pub(super) session_storage: S,
     pub(super) _roll: std::marker::PhantomData<Ro>,
@@ -85,7 +81,7 @@ impl<'a, R> Builder<'a, R> {
             tuple: ((), ()),
             config: Config::new(quiche::PROTOCOL_VERSION)?,
             server_name: None,
-            buf_size: u16::MAX as usize,
+            // buf_size: u16::MAX as usize,
             session_storage: (),
             _roll: PhantomData,
         };
@@ -94,35 +90,15 @@ impl<'a, R> Builder<'a, R> {
     }
 }
 
-impl<'a, Ro, L, R, S> Builder<'a, Ro, L, R, S> {
-    /// Set the bind address.
-    pub fn bind<A: ToSocketAddrsAsync>(self, addr: A) -> Builder<'a, Ro, A, R, S> {
-        let Builder {
-            tuple,
-            config,
-            server_name,
-            buf_size,
-            session_storage,
-            _roll,
-        } = self;
-
-        Builder {
-            tuple: (addr, tuple.1),
-            config,
-            server_name,
-            buf_size,
-            session_storage,
-            _roll,
-        }
-    }
-
+/// Only client can set the remote address
+impl<'a, L, R, S> Builder<'a, Client, L, R, S> {
     /// Set the remote address.
-    pub fn remote<A: ToSocketAddrsAsync>(self, addr: A) -> Builder<'a, Ro, L, A, S> {
+    pub fn remote<A: ToSocketAddrsAsync>(self, addr: A) -> Builder<'a, Client, L, A, S> {
         let Builder {
             tuple,
             config,
             server_name,
-            buf_size,
+            // buf_size,
             session_storage,
             _roll,
         } = self;
@@ -131,7 +107,29 @@ impl<'a, Ro, L, R, S> Builder<'a, Ro, L, R, S> {
             tuple: (tuple.0, addr),
             config,
             server_name,
-            buf_size,
+            // buf_size,
+            session_storage,
+            _roll,
+        }
+    }
+}
+impl<'a, Ro, L, R, S> Builder<'a, Ro, L, R, S> {
+    /// Set the bind address.
+    pub fn bind<A: ToSocketAddrsAsync>(self, addr: A) -> Builder<'a, Ro, A, R, S> {
+        let Builder {
+            tuple,
+            config,
+            server_name,
+            // buf_size,
+            session_storage,
+            _roll,
+        } = self;
+
+        Builder {
+            tuple: (addr, tuple.1),
+            config,
+            server_name,
+            // buf_size,
             session_storage,
             _roll,
         }
@@ -144,7 +142,7 @@ impl<'a, Ro, L, R, S> Builder<'a, Ro, L, R, S> {
         let Builder {
             config,
             server_name,
-            buf_size,
+            // buf_size,
             tuple,
             _roll,
             ..
@@ -153,7 +151,7 @@ impl<'a, Ro, L, R, S> Builder<'a, Ro, L, R, S> {
         Builder {
             config,
             server_name,
-            buf_size,
+            // buf_size,
             tuple,
             session_storage: storage,
             _roll,
@@ -178,7 +176,7 @@ impl<'a, Ro, L, R, S> Builder<'a, Ro, L, R, S> {
         let new = Builder {
             config: self.config,
             server_name: self.server_name,
-            buf_size: self.buf_size,
+            // buf_size: self.buf_size,
             tuple: self.tuple,
             _roll: self._roll,
             session_storage: (),
@@ -188,35 +186,68 @@ impl<'a, Ro, L, R, S> Builder<'a, Ro, L, R, S> {
     }
 }
 
-impl<'a, Ro, L, R> Builder<'a, Ro, L, R>
+/// Client builder without session storage
+impl<'a, L, R> Builder<'a, Client, L, R>
 where
-    Ro: Roll,
     L: ToSocketAddrsAsync,
     R: ToSocketAddrsAsync,
 {
-    /// Finalize the builder and create a [`QuicServer`] or [`QuicClient`]
+    /// Finalize the builder and create a  [`QuicClient`]
     /// depends on the [`Roll`].
-    pub async fn build(self) -> QuicResult<Ro::Quic> {
-        let inner = Inner::new(self).await?;
-        let inner = SharedInner(Rc::new(RefCell::new(inner)));
-        inner.clone().spawn().detach();
-        Ok(Ro::Quic::build(inner))
+    pub async fn build(self) -> QuicResult<QuicClient> {
+        let inner = EndpointInner::new_client(self).await?;
+        let inner = Endpoint::new(inner);
+        inner.clone().spawn();
+        Ok(QuicClient::build(inner))
     }
 }
 
-impl<'a, Ro, L, R, S> Builder<'a, Ro, L, R, S>
+/// Client builder with session storage
+impl<'a, L, R, S> Builder<'a, Client, L, R, S>
 where
-    Ro: Roll,
     L: ToSocketAddrsAsync,
     R: ToSocketAddrsAsync,
     S: SessionStorage,
 {
-    /// Finalize the builder and create a [`QuicServer`] or [`QuicClient`] with
+    /// Finalize the builder and create a [`QuicClient`] with
     /// session storage depends on the [`Roll`].
-    pub async fn build(self) -> QuicResult<Ro::Quic> {
-        let inner = Inner::new_with_session(self).await?;
-        let inner = SharedInner(Rc::new(RefCell::new(inner)));
-        inner.clone().spawn().detach();
-        Ok(Ro::Quic::build(inner))
+    pub async fn build(self) -> QuicResult<QuicClient> {
+        let (s, b) = self.split_ss();
+        let inner = EndpointInner::new_client(b).await?.with_session(s).await?;
+        let inner = Endpoint::new(inner);
+        inner.clone().spawn();
+        Ok(QuicClient::build(inner))
+    }
+}
+
+/// Server builder without session storage
+impl<'a, L> Builder<'a, Server, L>
+where
+    L: ToSocketAddrsAsync,
+{
+    /// Finalize the builder and create a  [`QuicClient`]
+    /// depends on the [`Roll`].
+    pub async fn build(self) -> QuicResult<QuicClient> {
+        let inner = EndpointInner::new_server(self).await?;
+        let inner = Endpoint::new(inner);
+        inner.clone().spawn();
+        Ok(QuicClient::build(inner))
+    }
+}
+
+/// Server builder with session storage
+impl<'a, S, L> Builder<'a, Server, L, (), S>
+where
+    S: SessionStorage,
+    L: ToSocketAddrsAsync,
+{
+    /// Finalize the builder and create a [`QuicServer`] with
+    /// session storage depends on the [`Roll`].
+    pub async fn build(self) -> QuicResult<QuicServer> {
+        let (s, b) = self.split_ss();
+        let inner = EndpointInner::new_server(b).await?.with_session(s).await?;
+        let inner = Endpoint::new(inner);
+        inner.clone().spawn();
+        Ok(QuicServer::build(inner))
     }
 }

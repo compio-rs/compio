@@ -1,18 +1,22 @@
 //! QUIC implementation based on [quiche].
 
 use std::{
-    cell::{Cell, RefCell},
+    cell::{RefCell, RefMut},
     collections::BTreeMap,
+    future::Future,
+    io,
     net::SocketAddr,
+    ops::RangeBounds,
     rc::Rc,
-    time::Instant,
 };
 
-use compio_buf::{buf_try, IntoInner, IoBuf};
+use compio_buf::{BufResult, IntoInner, IoBuf};
 use compio_runtime::Task;
-use quiche::{Config, Connection, ConnectionId, Error as QuicheError, RecvInfo, SendInfo};
+use quiche::{Config, Header, RecvInfo, SendInfo, Type};
 
 pub mod builder;
+mod connection;
+mod endpoint;
 mod error;
 mod session;
 mod split;
@@ -21,21 +25,21 @@ pub mod stream;
 #[doc(inline)]
 pub use {
     builder::{ClientBuilder, ServerBuilder},
+    connection::{Connection, ConnectionId},
     error::QuicResult,
     session::SessionStorage,
-    stream::*,
+    stream::{BiStream, StreamId, UniStream},
 };
 
-use self::{
-    builder::{Builder, Roll},
-    session::DynSessionStorage,
+use self::{builder::Builder, session::DynSessionStorage};
+use crate::{
+    quic::{
+        builder::{Client, Server},
+        connection::ConnInner,
+        error::{IoResult, QuicError},
+    },
+    ToSocketAddrsAsync, UdpSocket,
 };
-use crate::{ToSocketAddrsAsync, UdpSocket};
-
-// TODO: Use random generated connection id
-thread_local! {
-    static CON_ID: Cell<u64> = Cell::new(0);
-}
 
 /// A 4-tuple of (source IP, source port, destination IP, destination port).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -62,37 +66,28 @@ impl From<&FourTuple> for RecvInfo {
     }
 }
 
+impl From<FourTuple> for RecvInfo {
+    fn from(tuple: FourTuple) -> RecvInfo {
+        RecvInfo {
+            from: tuple.local,
+            to: tuple.peer,
+        }
+    }
+}
+
 /// A QUIC server
 pub struct QuicServer {
-    inner: SharedInner,
+    inner: Endpoint,
 }
 
 /// A QUIC client
 pub struct QuicClient {
-    inner: SharedInner,
+    inner: Endpoint,
 }
 
 /// Shared methods for both client and server sockets
 macro_rules! socket_fn {
-    ($name:literal) => {
-        #[doc = concat!("Create a new QUIC ", $name, " socket.")]
-        pub async fn new(
-            bind: impl ToSocketAddrsAsync,
-            remote: impl ToSocketAddrsAsync,
-        ) -> QuicResult<Self> {
-            Self::builder()?.bind(bind).remote(remote).build().await
-        }
-
-        #[doc = concat!("Create a new ", $name, "-initiated bidirectional stream")]
-        pub fn bi_stream(&self) -> BiStream {
-            BiStream::new(self.inner.clone(), self.inner.next_stream_id())
-        }
-
-        #[doc = concat!("Create a new ", $name, "-initiated unidirectional stream")]
-        pub fn uni_stream(&self) -> UniStream {
-            UniStream::new(self.inner.clone(), self.inner.next_stream_id())
-        }
-    };
+    ($name:literal) => {};
 }
 
 impl QuicServer {
@@ -107,226 +102,288 @@ impl QuicServer {
 impl QuicClient {
     socket_fn!("client");
 
+    /// Create a new QUIC client socket with given local and remote address.
+    pub async fn new(
+        bind: impl ToSocketAddrsAsync,
+        remote: impl ToSocketAddrsAsync,
+    ) -> QuicResult<Self> {
+        Self::builder()?.bind(bind).remote(remote).build().await
+    }
+
     /// Create a new QUIC client socket builder.
     pub fn builder() -> QuicResult<ClientBuilder<'static>> {
         ClientBuilder::new()
     }
 }
 
-struct Inner {
-    quic: Connection,
-    sockets: BTreeMap<FourTuple, UdpSocket>,
-    config: Config,
+/// An internally-mutable shared pointer
+#[repr(transparent)]
+pub(crate) struct Shared<T>(Rc<RefCell<T>>);
+
+impl<T> Clone for Shared<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<T> Shared<T> {
+    pub(crate) fn new(inner: T) -> Self {
+        Self(Rc::new(RefCell::new(inner)))
+    }
+
+    pub(crate) fn get(&self) -> RefMut<'_, T> {
+        self.0.borrow_mut()
+    }
+
+    pub(crate) fn with<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
+        f(&mut self.get())
+    }
+
+    pub(crate) fn take<P>(&self, f: impl FnOnce(&mut T) -> &mut P) -> P
+    where
+        P: Default,
+    {
+        std::mem::take(f(&mut self.get()))
+    }
+}
+
+/// Buffer and socket for sending and receiving
+struct Io {
     buf: Vec<u8>,
-    stream_id: u64,
+    socket: Rc<UdpSocket>,
+}
+
+struct IoRef<'a> {
+    buf: Vec<u8>,
+    socket: &'a UdpSocket,
+}
+
+macro_rules! impl_io {
+    () => {
+        async fn recv(self) -> IoResult<(usize, SocketAddr), Self> {
+            let Self { buf, socket } = self;
+            let BufResult(res, buf) = socket.recv_from(buf).await;
+            (res.map_err(Into::into), Self { buf, socket })
+        }
+
+        async fn send(
+            self,
+            range: impl RangeBounds<usize>,
+            addr: SocketAddr,
+        ) -> IoResult<usize, Self> {
+            let Self { buf, socket } = self;
+            let BufResult(res, buf) = socket.send_to(buf.slice(range), addr).await.into_inner();
+            (res.map_err(Into::into), Self { buf, socket })
+        }
+
+        async fn send_all(mut self, len: usize, addr: SocketAddr) -> IoResult<(), Self> {
+            let mut progress = 0;
+            let mut res;
+
+            while progress < len {
+                (res, self) = self.send(progress..len, addr).await;
+                match res {
+                    Ok(sent) => progress += sent,
+                    Err(e) => return (Err(e), self),
+                }
+            }
+
+            self.buf.clear();
+
+            (Ok(()), self)
+        }
+
+        fn clear(&mut self) {
+            self.buf.clear();
+        }
+    };
+}
+
+impl Io {
+    impl_io!();
+}
+
+impl<'a> IoRef<'a> {
+    impl_io!();
+}
+
+struct EndpointInner {
+    local: SocketAddr,
+    socket: Rc<UdpSocket>,
+    config: Config,
+    recv_buf: Vec<u8>,
+    connections: BTreeMap<ConnectionId, Connection>,
+    next_stream_id: StreamId,
     session_storage: Option<Box<dyn DynSessionStorage>>,
     // TODO: add termination machenism
 }
 
-impl Inner {
-    async fn new<Ro, L, R>(builder: Builder<'_, Ro, L, R, ()>) -> QuicResult<Self>
+impl EndpointInner {
+    async fn new_client<L, R>(builder: Builder<'_, Client, L, R>) -> QuicResult<Self>
     where
-        Ro: Roll,
         L: ToSocketAddrsAsync,
         R: ToSocketAddrsAsync,
     {
         let Builder {
             tuple,
             mut config,
-            buf_size,
             server_name,
             ..
         } = builder;
 
-        let id = CON_ID.with(|x| {
-            let id = x.get();
-            x.set(id + 1);
-            id
-        });
-
-        let socket = UdpSocket::bind(tuple.0).await?;
-        socket.connect(tuple.1).await?;
-
-        let (local, peer) = (socket.local_addr()?, socket.peer_addr()?);
-
-        let quic = if Ro::IS_SERVER {
-            quiche::accept(
-                &ConnectionId::from_ref(&id.to_be_bytes()),
-                None,
-                local,
-                peer,
-                &mut config,
-            )?
-        } else {
-            quiche::connect(
-                server_name.as_deref(),
-                &ConnectionId::from_ref(&id.to_be_bytes()),
-                local,
-                peer,
-                &mut config,
-            )?
+        let socket = Rc::new(UdpSocket::bind(tuple.0).await?);
+        let local = socket.local_addr()?;
+        let Some(peer) = tuple.1.to_socket_addrs_async().await?.next() else {
+            return Err(QuicError::Io(io::Error::new(
+                io::ErrorKind::AddrNotAvailable,
+                "No peer address found",
+            )));
         };
 
+        let tuple = FourTuple { local, peer };
+        let (id, inner) = ConnInner::connect(server_name.as_deref(), tuple, &mut config)?;
+
         Ok(Self {
-            quic,
-            sockets: BTreeMap::from([(FourTuple { local, peer }, socket)]),
-            buf: vec![0; buf_size],
+            local,
             config,
+            socket,
+            recv_buf: vec![0; 1024],
+            connections: BTreeMap::from_iter([(id, Connection::new(inner))]),
+            next_stream_id: StreamId::new_bi(0, false),
             session_storage: None,
-            stream_id: 0,
         })
     }
 
-    async fn new_with_session<Ro, L, R, S>(builder: Builder<'_, Ro, L, R, S>) -> QuicResult<Self>
+    async fn new_server<L>(builder: Builder<'_, Server, L>) -> QuicResult<Self>
     where
-        Ro: Roll,
         L: ToSocketAddrsAsync,
-        R: ToSocketAddrsAsync,
-        S: SessionStorage,
     {
-        let (mut session_storage, builder) = builder.split_ss();
-        let session = session_storage.retrieve_session().await?;
-        let mut this = Self::new(builder).await?;
-        if let Some(session) = session {
-            this.quic.set_session(&session)?;
-        }
-        this.session_storage = Some(session_storage.into());
-        Ok(this)
+        let Builder { tuple, config, .. } = builder;
+
+        let socket = Rc::new(UdpSocket::bind(tuple.0).await?);
+        let local = socket.local_addr()?;
+
+        Ok(Self {
+            local,
+            socket,
+            config,
+            recv_buf: vec![0; 1024],
+            connections: Default::default(),
+            next_stream_id: StreamId::new_bi(0, false),
+            session_storage: None,
+        })
+    }
+
+    async fn with_session(mut self, s: impl SessionStorage) -> QuicResult<Self> {
+        // let session = s.retrieve_session().await?;
+        // if let Some(session) = session {
+        //     if let Some(quic) = self.quic.as_mut() {
+        //         quic.set_session(&session);
+        //     }
+        // }
+        self.session_storage = Some(s.into());
+        Ok(self)
     }
 }
 
-#[derive(Clone)]
-struct SharedInner(Rc<RefCell<Inner>>);
+type Endpoint = Shared<EndpointInner>;
 
-impl SharedInner {
-    fn with<R>(&self, f: impl FnOnce(&mut Inner) -> R) -> R {
-        f(&mut self.0.borrow_mut())
+impl Endpoint {
+    fn next_stream_id(&self) -> StreamId {
+        self.with(|s| s.next_stream_id.into_next())
     }
 
-    fn take<T: Default>(&self, f: impl FnOnce(&mut Inner) -> &mut T) -> T {
-        std::mem::take(f(&mut self.0.borrow_mut()))
+    async fn with_io<F, R>(&self, func: impl FnOnce(Io) -> F) -> QuicResult<R>
+    where
+        F: Future<Output = IoResult<R>>,
+    {
+        let io = Io {
+            buf: self.take(|s| &mut s.recv_buf),
+            socket: self.with(|s| s.socket.clone()),
+        };
+        let (res, mut io) = func(io).await;
+        io.clear();
+        self.with(|x| x.recv_buf = io.buf);
+        res
     }
 
-    fn next_stream_id(&self) -> u64 {
-        self.with(|s| {
-            let curr = s.stream_id;
-            s.stream_id += 4;
-            curr
-        })
-    }
-
-    fn spawn(self) -> Task<QuicResult<()>> {
-        compio_runtime::spawn(async move {
-            let err = loop {
-                if let Err(e) = self.tick().await {
-                    break e;
-                }
-            };
-
-            self.clean_up().await;
-
-            Err(err)
-        })
+    fn spawn(self) {
+        compio_runtime::spawn(self.recv_task()).detach();
     }
 
     async fn clean_up(&self) {
-        if let Err(QuicheError::Done) = self.with(|s| s.quic.close(false, 0x00, b"")) {
-            return;
-        }
+        // if let Err(QuicheError::Done) = self.with(|s|
+        // s.connections.close(false, 0x00, b"")) {     return;
+        // }
 
-        while self.with(|x| !x.quic.is_closed()) {
-            if self.tick().await.is_err() {
-                break;
-            }
-        }
+        // while self.with(|x| !x.connections.is_closed()) {
+        //     if self.tick().await.is_err() {
+        //         break;
+        //     }
+        // }
 
-        for socket in self.take(|s| &mut s.sockets).into_values() {
-            socket.close().await.ok();
-        }
+        // self.with(|x| x.socket.close()).await;
     }
 
     async fn tick(&self) -> QuicResult<()> {
-        self.recv().await?;
-        self.send().await?;
+        let socket = self.with(|s| s.socket.clone());
+        let con = self.take(|s| &mut s.connections);
 
-        let timeout = self.with(|s| s.quic.timeout());
+        self.with(|s| s.connections = con);
 
-        if let Some(timeout) = timeout {
-            compio_runtime::time::sleep(timeout).await;
-            self.with(|s| s.quic.on_timeout());
-            self.send().await?;
-        }
+        // let timeout = self.with(|s| s.connections.timeout());
+
+        // if let Some(timeout) = timeout {
+        //     compio_runtime::time::sleep(timeout).await;
+        //     self.with(|s| s.connections.on_timeout());
+        //     self.send().await?;
+        // }
 
         Ok(())
     }
 
-    async fn send(&self) -> QuicResult<()> {
-        if self.with(|s| s.quic.is_draining()) {
-            return Ok(());
-        }
-
+    async fn recv_task(self) -> QuicResult<()> {
         loop {
-            let res = self.with(|Inner { quic, buf, .. }| {
-                buf.clear();
-                quic.send(buf) // Read the packet to send
-            });
-            let (len, info) = match res {
-                Ok(res) => res,
-                Err(QuicheError::Done) => break,
-                Err(e) => {
-                    return Err(e.into());
+            let (len, peer) = self.with_io(Io::recv).await?;
+            let mut s = self.get();
+
+            let EndpointInner {
+                local,
+                socket,
+                config,
+                recv_buf,
+                connections,
+                ..
+            } = &mut *s;
+
+            let buf = &mut recv_buf[..len];
+            let tuple = FourTuple {
+                local: *local,
+                peer,
+            };
+            let hdr = Header::from_slice(buf, ConnectionId::LEN)?;
+            let found = (&hdr.dcid)
+                .try_into()
+                .ok()
+                .and_then(|c: ConnectionId| connections.get(&c));
+            let con = if let Some(found) = found {
+                found
+            } else {
+                if hdr.ty != Type::Initial {
+                    // Non-initial packets should only be sent to existing connections. Drop the
+                    // packet.
+                    return Ok(());
                 }
+
+                let (id, con) = ConnInner::accept(tuple, config)?;
+                let con = Connection::new(con);
+                con.spawn(socket.clone());
+
+                connections.insert(id, con);
+                connections.get(&id).unwrap()
             };
 
-            if info.at > Instant::now() {
-                compio_runtime::time::sleep_until(info.at).await;
-            }
-
-            let tuple = info.into();
-
-            let socket = self.with(|s| s.sockets.remove(&tuple).expect("socket not found"));
-            let mut buf = self.take(|s| &mut s.buf);
-            let mut progress = 0;
-
-            buf.clear();
-
-            while progress < len {
-                (progress, buf) = buf_try! {
-                    @try socket.send(buf.slice(progress..len))
-                        .await
-                        .into_inner()
-                        .map_res(|sent| sent + progress)
-                };
-            }
-
-            self.with(|s| {
-                s.buf = buf;
-                s.sockets.insert(tuple, socket);
-            })
+            con.get().quic.recv(buf, tuple.into())?;
         }
-
-        Ok(())
-    }
-
-    async fn recv(&self) -> QuicResult<()> {
-        let sockets = self.take(|s| &mut s.sockets);
-        let mut buf = self.take(|s| &mut s.buf);
-        let mut len;
-
-        for (tuple, socket) in sockets.iter() {
-            buf.clear();
-            (len, buf) = buf_try!(@try socket.recv(buf).await);
-            let mut progress = 0;
-            while progress < len {
-                progress += self.with(|s| s.quic.recv(&mut buf[progress..len], tuple.into()))?;
-            }
-        }
-
-        self.with(|s| {
-            s.buf = buf;
-            s.sockets = sockets;
-        });
-
-        Ok(())
     }
 }
