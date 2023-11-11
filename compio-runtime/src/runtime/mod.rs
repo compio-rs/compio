@@ -194,8 +194,41 @@ impl AsRawFd for RuntimeInner {
     }
 }
 
+struct RuntimeContext {
+    depth: usize,
+    ptr: Weak<RuntimeInner>,
+}
+
+impl RuntimeContext {
+    pub fn new() -> Self {
+        Self {
+            depth: 0,
+            ptr: Weak::new(),
+        }
+    }
+
+    pub fn inc_depth(&mut self) -> usize {
+        let depth = self.depth;
+        self.depth += 1;
+        depth
+    }
+
+    pub fn dec_depth(&mut self) -> usize {
+        self.depth -= 1;
+        self.depth
+    }
+
+    pub fn set_runtime(&mut self, ptr: Weak<RuntimeInner>) -> Weak<RuntimeInner> {
+        std::mem::replace(&mut self.ptr, ptr)
+    }
+
+    pub fn upgrade_runtime(&self) -> Option<Runtime> {
+        self.ptr.upgrade().map(|inner| Runtime { inner })
+    }
+}
+
 thread_local! {
-    static CURRENT_RUNTIME: RefCell<Weak<RuntimeInner>> = RefCell::new(Weak::new());
+    static CURRENT_RUNTIME: RefCell<RuntimeContext> = RefCell::new(RuntimeContext::new());
 }
 
 /// The async runtime of compio. It is a thread local runtime, and cannot be
@@ -219,11 +252,11 @@ impl Runtime {
     /// Get the current running [`Runtime`].
     ///
     /// ## Panics
+    ///
     /// This method will panic if there are no running [`Runtime`].
     pub fn current() -> Self {
         CURRENT_RUNTIME
-            .with(|r| r.borrow().upgrade())
-            .map(|inner| Self { inner })
+            .with(|r| r.borrow().upgrade_runtime())
             .expect("not in a compio runtime")
     }
 
@@ -233,6 +266,28 @@ impl Runtime {
 
     /// Enter the runtime context. This runtime will be set as the `current`
     /// one.
+    ///
+    /// ## Panics
+    ///
+    /// When calling `Runtime::enter` multiple times, the returned guards
+    /// **must** be dropped in the reverse order that they were acquired.
+    /// Failure to do so will result in a panic and possible memory leaks.
+    ///
+    /// Do **not** do the following, this shows a scenario that will result in a
+    /// panic and possible memory leak.
+    ///
+    /// ```should_panic
+    /// use compio_runtime::Runtime;
+    ///
+    /// let rt1 = Runtime::new().unwrap();
+    /// let rt2 = Runtime::new().unwrap();
+    ///
+    /// let enter1 = rt1.enter();
+    /// let enter2 = rt2.enter();
+    ///
+    /// drop(enter1);
+    /// drop(enter2);
+    /// ```
     pub fn enter(&self) -> EnterGuard {
         EnterGuard::new(self)
     }
@@ -307,28 +362,50 @@ impl RuntimeBuilder {
     }
 }
 
-/// Runtime context guard.
+/// Runtime context guard, exists the runtime context on drop.
 pub struct EnterGuard<'a> {
     old_ptr: Weak<RuntimeInner>,
+    depth: usize,
     _p: PhantomData<&'a Runtime>,
 }
 
 impl<'a> EnterGuard<'a> {
     fn new(runtime: &'a Runtime) -> Self {
-        let old_ptr = CURRENT_RUNTIME.with(|r| {
-            let mut ptr = r.borrow_mut();
-            std::mem::replace(&mut *ptr, Rc::downgrade(&runtime.inner))
+        let (old_ptr, depth) = CURRENT_RUNTIME.with(|r| {
+            let mut ctx = r.borrow_mut();
+            (
+                ctx.set_runtime(Rc::downgrade(&runtime.inner)),
+                ctx.inc_depth(),
+            )
         });
         Self {
             old_ptr,
+            depth,
             _p: PhantomData,
         }
     }
 }
 
+#[cold]
+fn panic_incorrent_drop_order() {
+    if !std::thread::panicking() {
+        panic!(
+            "`EnterGuard` values dropped out of order. Guards returned by `Runtime::enter()` must \
+             be dropped in the reverse order as they were acquired."
+        )
+    }
+}
+
 impl Drop for EnterGuard<'_> {
     fn drop(&mut self) {
-        CURRENT_RUNTIME.with(|r| *r.borrow_mut() = std::mem::take(&mut self.old_ptr));
+        let depth = CURRENT_RUNTIME.with(|r| {
+            let mut ctx = r.borrow_mut();
+            ctx.set_runtime(std::mem::take(&mut self.old_ptr));
+            ctx.dec_depth()
+        });
+        if depth != self.depth {
+            panic_incorrent_drop_order()
+        }
     }
 }
 
@@ -349,6 +426,7 @@ impl Drop for EnterGuard<'_> {
 /// ```
 ///
 /// ## Panics
+///
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::current`].
 pub fn spawn<F: Future + 'static>(future: F) -> Task<F::Output> {
