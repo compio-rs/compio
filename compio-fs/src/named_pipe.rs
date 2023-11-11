@@ -12,27 +12,27 @@ use windows_sys::Win32::{
     Security::SECURITY_ATTRIBUTES,
     Storage::FileSystem::{
         FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_FLAG_OVERLAPPED, PIPE_ACCESS_INBOUND,
-        PIPE_ACCESS_OUTBOUND, SECURITY_IDENTIFICATION, WRITE_DAC, WRITE_OWNER,
+        PIPE_ACCESS_OUTBOUND, WRITE_DAC, WRITE_OWNER,
     },
     System::{
         Pipes::{
-            CreateNamedPipeW, DisconnectNamedPipe, GetNamedPipeInfo, SetNamedPipeHandleState,
-            PIPE_ACCEPT_REMOTE_CLIENTS, PIPE_READMODE_BYTE, PIPE_READMODE_MESSAGE,
-            PIPE_REJECT_REMOTE_CLIENTS, PIPE_SERVER_END, PIPE_TYPE_BYTE, PIPE_TYPE_MESSAGE,
-            PIPE_UNLIMITED_INSTANCES,
+            CreateNamedPipeW, DisconnectNamedPipe, GetNamedPipeInfo, PIPE_ACCEPT_REMOTE_CLIENTS,
+            PIPE_READMODE_BYTE, PIPE_READMODE_MESSAGE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_SERVER_END,
+            PIPE_TYPE_BYTE, PIPE_TYPE_MESSAGE, PIPE_UNLIMITED_INSTANCES,
         },
         SystemServices::ACCESS_SYSTEM_SECURITY,
     },
 };
 #[cfg(feature = "runtime")]
 use {
+    crate::OpenOptions,
     compio_buf::{BufResult, IoBuf, IoBufMut},
     compio_driver::op::ConnectNamedPipe,
     compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt},
     compio_runtime::{impl_attachable, submit, Attachable},
 };
 
-use crate::{File, OpenOptions};
+use crate::File;
 
 /// A [Windows named pipe] server.
 ///
@@ -1043,12 +1043,14 @@ impl Default for ServerOptions {
 /// client side.
 ///
 /// See [`ClientOptions::open`].
+#[cfg(feature = "runtime")]
 #[derive(Debug, Clone)]
 pub struct ClientOptions {
     options: OpenOptions,
     pipe_mode: PipeMode,
 }
 
+#[cfg(feature = "runtime")]
 impl ClientOptions {
     /// Creates a new named pipe builder with the default settings.
     ///
@@ -1064,6 +1066,8 @@ impl ClientOptions {
     /// # })
     /// ```
     pub fn new() -> Self {
+        use windows_sys::Win32::Storage::FileSystem::SECURITY_IDENTIFICATION;
+
         let mut options = OpenOptions::new();
         options
             .read(true)
@@ -1175,6 +1179,8 @@ impl ClientOptions {
     /// # Ok(()) });
     /// ```
     pub async fn open(&self, addr: impl AsRef<OsStr>) -> io::Result<NamedPipeClient> {
+        use windows_sys::Win32::System::Pipes::SetNamedPipeHandleState;
+
         let file = self.options.open(addr.as_ref()).await?;
 
         if matches!(self.pipe_mode, PipeMode::Message) {
@@ -1189,6 +1195,7 @@ impl ClientOptions {
     }
 }
 
+#[cfg(feature = "runtime")]
 impl Default for ClientOptions {
     fn default() -> Self {
         Self::new()
