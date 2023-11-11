@@ -9,6 +9,10 @@ readme = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg docsrs"]
+
 [dependencies]
 compio-buf = { workspace = true, features = ["bytes"] }
 compio-runtime = { workspace = true, features = ["time"] }
