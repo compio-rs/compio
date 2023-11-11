@@ -40,6 +40,7 @@ once_cell = { workspace = true }
 send_wrapper = { workspace = true }
 slab = { workspace = true, optional = true }
 smallvec = "1.11.1"
+uuid = { version = "1.5.0", features = ["v4"] }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]

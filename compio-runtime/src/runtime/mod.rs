@@ -14,6 +14,7 @@ use compio_log::{debug, instrument};
 use futures_util::future::Either;
 use send_wrapper::SendWrapper;
 use smallvec::SmallVec;
+use uuid::Uuid;
 
 pub(crate) mod op;
 #[cfg(feature = "time")]
@@ -27,6 +28,7 @@ use crate::{
 };
 
 pub(crate) struct RuntimeInner {
+    id: Uuid,
     driver: RefCell<Proactor>,
     runnables: Rc<RefCell<VecDeque<Runnable>>>,
     op_runtime: RefCell<OpRuntime>,
@@ -37,12 +39,17 @@ pub(crate) struct RuntimeInner {
 impl RuntimeInner {
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         Ok(Self {
+            id: Uuid::new_v4(),
             driver: RefCell::new(builder.build()?),
             runnables: Rc::new(RefCell::default()),
             op_runtime: RefCell::default(),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
         })
+    }
+
+    pub fn id(&self) -> Uuid {
+        self.id
     }
 
     // Safety: the return runnable should be scheduled.
