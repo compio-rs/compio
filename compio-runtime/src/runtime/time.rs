@@ -8,6 +8,8 @@ use std::{
 
 use slab::Slab;
 
+use crate::Runtime;
+
 #[derive(Debug)]
 struct TimerEntry {
     key: usize,
@@ -121,7 +123,7 @@ impl Future for TimerFuture {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let res = crate::RUNTIME.with(|runtime| runtime.poll_timer(cx, self.key));
+        let res = Runtime::current().inner().poll_timer(cx, self.key);
         if res.is_ready() {
             self.get_mut().completed = true;
         }
@@ -132,7 +134,7 @@ impl Future for TimerFuture {
 impl Drop for TimerFuture {
     fn drop(&mut self) {
         if !self.completed {
-            crate::RUNTIME.with(|runtime| runtime.cancel_timer(self.key));
+            Runtime::current().inner().cancel_timer(self.key);
         }
     }
 }

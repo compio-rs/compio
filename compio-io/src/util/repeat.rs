@@ -12,7 +12,7 @@ use crate::{AsyncBufRead, AsyncRead, IoResult};
 /// # Examples
 ///
 /// ```rust
-/// # compio_runtime::block_on(async {
+/// # compio_runtime::Runtime::new().unwrap().block_on(async {
 /// use compio_io::{self, AsyncRead, AsyncReadExt};
 ///
 /// let (len, buffer) = compio_io::repeat(42)
@@ -57,7 +57,7 @@ impl AsyncBufRead for Repeat {
 /// # Examples
 ///
 /// ```rust
-/// # compio_runtime::block_on(async {
+/// # compio_runtime::Runtime::new().unwrap().block_on(async {
 /// use compio_io::{self, AsyncRead, AsyncReadExt};
 ///
 /// let (len, buffer) = compio_io::repeat(42)

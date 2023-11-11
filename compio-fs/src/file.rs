@@ -7,7 +7,7 @@ use {
     compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut},
     compio_driver::op::{BufResultExt, CloseFile, ReadAt, Sync, WriteAt},
     compio_io::{AsyncReadAt, AsyncWriteAt},
-    compio_runtime::{submit, Attachable, Attacher},
+    compio_runtime::{Attachable, Attacher, Runtime},
     std::{future::Future, mem::ManuallyDrop, path::Path},
 };
 #[cfg(all(feature = "runtime", unix))]
@@ -64,7 +64,7 @@ impl File {
         let this = ManuallyDrop::new(self);
         async move {
             let op = CloseFile::new(this.as_raw_fd());
-            submit(op).await.0?;
+            Runtime::current().submit(op).await.0?;
             Ok(())
         }
     }
@@ -91,7 +91,7 @@ impl File {
     async fn sync_impl(&self, datasync: bool) -> io::Result<()> {
         self.attach()?;
         let op = Sync::new(self.as_raw_fd(), datasync);
-        submit(op).await.0?;
+        Runtime::current().submit(op).await.0?;
         Ok(())
     }
 
@@ -126,7 +126,11 @@ impl AsyncReadAt for File {
     async fn read_at<T: IoBufMut>(&self, buffer: T, pos: u64) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = ReadAt::new(self.as_raw_fd(), pos, buffer);
-        submit(op).await.into_inner().map_advanced()
+        Runtime::current()
+            .submit(op)
+            .await
+            .into_inner()
+            .map_advanced()
     }
 
     #[cfg(unix)]
@@ -137,7 +141,11 @@ impl AsyncReadAt for File {
     ) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = ReadVectoredAt::new(self.as_raw_fd(), pos, buffer);
-        submit(op).await.into_inner().map_advanced()
+        Runtime::current()
+            .submit(op)
+            .await
+            .into_inner()
+            .map_advanced()
     }
 }
 
@@ -164,7 +172,7 @@ impl AsyncWriteAt for &File {
     async fn write_at<T: IoBuf>(&mut self, buffer: T, pos: u64) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = WriteAt::new(self.as_raw_fd(), pos, buffer);
-        submit(op).await.into_inner()
+        Runtime::current().submit(op).await.into_inner()
     }
 
     #[cfg(unix)]
@@ -175,7 +183,7 @@ impl AsyncWriteAt for &File {
     ) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = WriteVectoredAt::new(self.as_raw_fd(), pos, buffer);
-        submit(op).await.into_inner()
+        Runtime::current().submit(op).await.into_inner()
     }
 }
 

@@ -9,6 +9,8 @@ use std::{
 
 use futures_util::{select, FutureExt};
 
+use crate::Runtime;
+
 /// Waits until `duration` has elapsed.
 ///
 /// Equivalent to [`sleep_until(Instant::now() + duration)`](sleep_until). An
@@ -25,15 +27,13 @@ use futures_util::{select, FutureExt};
 ///
 /// use compio_runtime::time::sleep;
 ///
-/// compio_runtime::block_on(async {
-///     sleep(Duration::from_millis(100)).await;
-///     println!("100 ms have elapsed");
-/// })
+/// # compio_runtime::Runtime::new().unwrap().block_on(async {
+/// sleep(Duration::from_millis(100)).await;
+/// println!("100 ms have elapsed");
+/// # })
 /// ```
 pub async fn sleep(duration: Duration) {
-    crate::RUNTIME
-        .with(|runtime| runtime.create_timer(duration))
-        .await
+    Runtime::current().inner().create_timer(duration).await
 }
 
 /// Waits until `deadline` is reached.
@@ -49,10 +49,10 @@ pub async fn sleep(duration: Duration) {
 ///
 /// use compio_runtime::time::sleep_until;
 ///
-/// compio_runtime::block_on(async {
-///     sleep_until(Instant::now() + Duration::from_millis(100)).await;
-///     println!("100 ms have elapsed");
-/// })
+/// # compio_runtime::Runtime::new().unwrap().block_on(async {
+/// sleep_until(Instant::now() + Duration::from_millis(100)).await;
+/// println!("100 ms have elapsed");
+/// # })
 /// ```
 pub async fn sleep_until(deadline: Instant) {
     sleep(deadline - Instant::now()).await
@@ -151,15 +151,15 @@ impl Interval {
 ///
 /// use compio_runtime::time::interval;
 ///
-/// compio_runtime::block_on(async {
-///     let mut interval = interval(Duration::from_millis(10));
+/// # compio_runtime::Runtime::new().unwrap().block_on(async {
+/// let mut interval = interval(Duration::from_millis(10));
 ///
-///     interval.tick().await; // ticks immediately
-///     interval.tick().await; // ticks after 10ms
-///     interval.tick().await; // ticks after 10ms
+/// interval.tick().await; // ticks immediately
+/// interval.tick().await; // ticks after 10ms
+/// interval.tick().await; // ticks after 10ms
 ///
-///     // approximately 20ms have elapsed.
-/// })
+/// // approximately 20ms have elapsed.
+/// # })
 /// ```
 ///
 /// A simple example using [`interval`] to execute a task every two seconds.
@@ -183,13 +183,13 @@ impl Interval {
 ///     sleep(Duration::from_secs(1)).await
 /// }
 ///
-/// compio_runtime::block_on(async {
-///     let mut interval = interval(Duration::from_secs(2));
-///     for _i in 0..5 {
-///         interval.tick().await;
-///         task_that_takes_a_second().await;
-///     }
-/// })
+/// # compio_runtime::Runtime::new().unwrap().block_on(async {
+/// let mut interval = interval(Duration::from_secs(2));
+/// for _i in 0..5 {
+///     interval.tick().await;
+///     task_that_takes_a_second().await;
+/// }
+/// # })
 /// ```
 ///
 /// [`sleep`]: crate::time::sleep()
@@ -215,16 +215,16 @@ pub fn interval(period: Duration) -> Interval {
 ///
 /// use compio_runtime::time::interval_at;
 ///
-/// compio_runtime::block_on(async {
-///     let start = Instant::now() + Duration::from_millis(50);
-///     let mut interval = interval_at(start, Duration::from_millis(10));
+/// # compio_runtime::Runtime::new().unwrap().block_on(async {
+/// let start = Instant::now() + Duration::from_millis(50);
+/// let mut interval = interval_at(start, Duration::from_millis(10));
 ///
-///     interval.tick().await; // ticks after 50ms
-///     interval.tick().await; // ticks after 10ms
-///     interval.tick().await; // ticks after 10ms
+/// interval.tick().await; // ticks after 50ms
+/// interval.tick().await; // ticks after 10ms
+/// interval.tick().await; // ticks after 10ms
 ///
-///     // approximately 70ms have elapsed.
-/// });
+/// // approximately 70ms have elapsed.
+/// # });
 /// ```
 pub fn interval_at(start: Instant, period: Duration) -> Interval {
     assert!(period > Duration::ZERO, "`period` must be non-zero.");

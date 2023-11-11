@@ -7,7 +7,7 @@ use compio_driver::AsRawFd;
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 
-use crate::attach;
+use crate::Runtime;
 
 /// Attach a handle to the driver of current thread.
 ///
@@ -34,7 +34,8 @@ impl Attacher {
     /// Attach the source. This method could be called many times, but if the
     /// action fails, the error will only return once.
     pub fn attach(&self, source: &impl AsRawFd) -> io::Result<()> {
-        self.once.get_or_try_init(|| attach(source.as_raw_fd()))?;
+        self.once
+            .get_or_try_init(|| Runtime::current().inner().attach(source.as_raw_fd()))?;
         Ok(())
     }
 

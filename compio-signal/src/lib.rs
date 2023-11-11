@@ -7,10 +7,10 @@
 //! ```rust,no_run
 //! use compio_signal::ctrl_c;
 //!
-//! compio_runtime::block_on(async {
-//!     ctrl_c().await.unwrap();
-//!     println!("ctrl-c received!");
-//! })
+//! # compio_runtime::Runtime::new().unwrap().block_on(async {
+//! ctrl_c().await.unwrap();
+//! println!("ctrl-c received!");
+//! # })
 //! ```
 
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]

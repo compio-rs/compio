@@ -5,7 +5,7 @@
 //!
 //! ## Quick start
 //! ```rust
-//! # compio::runtime::block_on(async {
+//! # compio::runtime::Runtime::new().unwrap().block_on(async {
 //! use compio::{fs::File, io::AsyncReadAtExt};
 //!
 //! let file = File::open("Cargo.toml").await.unwrap();

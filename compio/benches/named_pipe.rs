@@ -7,7 +7,7 @@ struct CompioRuntime;
 
 impl AsyncExecutor for CompioRuntime {
     fn block_on<T>(&self, future: impl std::future::Future<Output = T>) -> T {
-        compio::runtime::block_on(future)
+        compio::runtime::Runtime::new().unwrap().block_on(future)
     }
 }
 

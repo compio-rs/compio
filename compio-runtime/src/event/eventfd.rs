@@ -6,7 +6,7 @@ use std::{
 use compio_buf::{arrayvec::ArrayVec, BufResult};
 use compio_driver::{impl_raw_fd, op::Recv, syscall};
 
-use crate::{attacher::Attacher, submit};
+use crate::{attacher::Attacher, Runtime};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
@@ -38,7 +38,7 @@ impl Event {
         let buffer = ArrayVec::<u8, 8>::new();
         // Trick: Recv uses readv which doesn't seek.
         let op = Recv::new(self.as_raw_fd(), buffer);
-        let BufResult(res, _) = submit(op).await;
+        let BufResult(res, _) = Runtime::current().submit(op).await;
         res?;
         Ok(())
     }

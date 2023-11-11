@@ -33,7 +33,7 @@ use crate::File;
 /// ```no_run
 /// use compio_fs::OpenOptions;
 ///
-/// # compio_runtime::block_on(async {
+/// # compio_runtime::Runtime::new().unwrap().block_on(async {
 /// let file = OpenOptions::new().read(true).open("foo.txt").await.unwrap();
 /// # });
 /// ```
@@ -44,7 +44,7 @@ use crate::File;
 /// ```no_run
 /// use compio_fs::OpenOptions;
 ///
-/// # compio_runtime::block_on(async {
+/// # compio_runtime::Runtime::new().unwrap().block_on(async {
 /// let file = OpenOptions::new()
 ///     .read(true)
 ///     .write(true)
