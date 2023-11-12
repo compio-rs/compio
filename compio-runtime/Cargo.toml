@@ -35,6 +35,7 @@ compio-log = { workspace = true }
 
 async-task = "4.5.0"
 cfg-if = { workspace = true, optional = true }
+criterion = { workspace = true, optional = true }
 futures-util = { workspace = true }
 once_cell = { workspace = true }
 send_wrapper = { workspace = true }

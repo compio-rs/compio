@@ -1,15 +1,7 @@
-use criterion::{async_executor::AsyncExecutor, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 criterion_group!(net, tcp, udp);
 criterion_main!(net);
-
-struct CompioRuntime;
-
-impl AsyncExecutor for CompioRuntime {
-    fn block_on<T>(&self, future: impl std::future::Future<Output = T>) -> T {
-        compio::runtime::Runtime::new().unwrap().block_on(future)
-    }
-}
 
 fn tcp(c: &mut Criterion) {
     const PACKET_LEN: usize = 1048576;
@@ -40,7 +32,8 @@ fn tcp(c: &mut Criterion) {
     });
 
     group.bench_function("compio", |b| {
-        b.to_async(CompioRuntime).iter(|| async {
+        let runtime = compio::runtime::Runtime::new().unwrap();
+        b.to_async(&runtime).iter(|| async {
             use compio::io::{AsyncReadExt, AsyncWriteExt};
 
             let listener = compio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -105,7 +98,8 @@ fn udp(c: &mut Criterion) {
     });
 
     group.bench_function("compio", |b| {
-        b.to_async(CompioRuntime).iter(|| async {
+        let runtime = compio::runtime::Runtime::new().unwrap();
+        b.to_async(&runtime).iter(|| async {
             let rx = compio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let addr_rx = rx.local_addr().unwrap();
             let tx = compio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();

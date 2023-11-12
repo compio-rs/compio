@@ -40,6 +40,7 @@ compio-tls = { path = "./compio-tls", version = "0.1.0" }
 
 
 cfg-if = "1.0.0"
+criterion = "0.5.1"
 crossbeam-channel = "0.5.8"
 crossbeam-queue = "0.3.8"
 futures-channel = "0.3.29"
