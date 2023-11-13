@@ -263,7 +263,7 @@ impl Runtime {
     /// This method will panic if there are no running [`Runtime`].
     pub fn current() -> Self {
         CURRENT_RUNTIME
-            .with(|r| r.borrow().upgrade_runtime())
+            .with_borrow(|r| r.upgrade_runtime())
             .expect("not in a compio runtime")
     }
 
@@ -392,8 +392,7 @@ pub struct EnterGuard<'a> {
 
 impl<'a> EnterGuard<'a> {
     fn new(runtime: &'a Runtime) -> Self {
-        let (old_ptr, depth) = CURRENT_RUNTIME.with(|r| {
-            let mut ctx = r.borrow_mut();
+        let (old_ptr, depth) = CURRENT_RUNTIME.with_borrow_mut(|ctx| {
             (
                 ctx.set_runtime(Rc::downgrade(&runtime.inner)),
                 ctx.inc_depth(),
@@ -419,8 +418,7 @@ fn panic_incorrent_drop_order() {
 
 impl Drop for EnterGuard<'_> {
     fn drop(&mut self) {
-        let depth = CURRENT_RUNTIME.with(|r| {
-            let mut ctx = r.borrow_mut();
+        let depth = CURRENT_RUNTIME.with_borrow_mut(|ctx| {
             ctx.set_runtime(std::mem::take(&mut self.old_ptr));
             ctx.dec_depth()
         });
