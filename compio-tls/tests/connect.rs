@@ -30,7 +30,7 @@ async fn native() {
 async fn rtls() {
     let mut store = rustls::RootCertStore::empty();
     for cert in rustls_native_certs::load_native_certs().unwrap() {
-        store.add(&rustls::Certificate(cert.0)).unwrap();
+        store.add(cert).unwrap();
     }
 
     let connector = TlsConnector::from(Arc::new(
