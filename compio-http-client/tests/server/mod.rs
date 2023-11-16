@@ -4,9 +4,10 @@ use std::{
     net::{Ipv4Addr, SocketAddr},
 };
 
-use compio_http::{Acceptor, CompioExecutor};
+use compio_http::HyperStream;
 use compio_net::TcpListener;
 use futures_channel::oneshot;
+use hyper::body::Incoming;
 
 pub struct Server {
     addr: SocketAddr,
@@ -29,28 +30,31 @@ impl Drop for Server {
 
 pub async fn http<F, Fut>(func: F) -> Server
 where
-    F: Fn(http::Request<hyper::Body>) -> Fut + Clone + Send + 'static,
-    Fut: Future<Output = http::Response<hyper::Body>> + Send + 'static,
+    F: Fn(http::Request<Incoming>) -> Fut + Clone + Send + 'static,
+    Fut: Future<Output = http::Response<String>> + Send + 'static,
 {
+    let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
+
     let listener = TcpListener::bind(&(Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let acceptor = Acceptor::from_listener(listener);
-    let srv = hyper::Server::builder(acceptor)
-        .executor(CompioExecutor)
-        .serve(hyper::service::make_service_fn(move |_| {
-            let func = func.clone();
-            async move {
-                Ok::<_, Infallible>(hyper::service::service_fn(move |req| {
-                    let fut = func(req);
-                    async move { Ok::<_, Infallible>(fut.await) }
-                }))
-            }
-        }));
-
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    let srv = srv.with_graceful_shutdown(async move {
-        let _ = shutdown_rx.await;
-    });
+    let srv = async move {
+        while let Ok(None) = shutdown_rx.try_recv() {
+            let (stream, _) = listener.accept().await.unwrap();
+            hyper::server::conn::http1::Builder::new()
+                .serve_connection(
+                    HyperStream::new(stream),
+                    hyper::service::service_fn({
+                        let func = func.clone();
+                        move |req| {
+                            let fut = func(req);
+                            async move { Ok::<_, Infallible>(fut.await) }
+                        }
+                    }),
+                )
+                .await
+                .unwrap();
+        }
+    };
 
     compio_runtime::spawn(srv).detach();
 

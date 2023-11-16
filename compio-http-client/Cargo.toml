@@ -17,13 +17,14 @@ rustdoc-args = ["--cfg docsrs"]
 compio-buf = { workspace = true, features = ["bytes"] }
 compio-runtime = { workspace = true, features = ["time"] }
 compio-tls = { workspace = true }
-compio-http = { workspace = true, features = ["client"] }
+compio-http = { workspace = true }
 
-http = "0.2"
+http = "1.0.0"
 hyper = { workspace = true, features = ["client", "http1"] }
 
 base64 = "0.21"
 encoding_rs = "0.8"
+http-body-util = "0.1.0"
 mime = "0.3"
 serde = "1"
 serde_json = { version = "1", optional = true }
@@ -34,7 +35,7 @@ url = "2"
 [dev-dependencies]
 compio-net = { workspace = true, features = ["runtime"] }
 compio-macros = { workspace = true }
-compio-http = { workspace = true, features = ["server"] }
+compio-http = { workspace = true }
 
 futures-channel = { workspace = true }
 hyper = { workspace = true, features = ["server"] }

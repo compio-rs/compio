@@ -1,9 +1,13 @@
-use std::rc::Rc;
+use std::{rc::Rc, time::Duration};
 
-use compio_http::{CompioExecutor, Connector, TlsBackend};
-use hyper::{Body, HeaderMap, Method, Uri};
+use compio_buf::bytes::Bytes;
+use compio_http::{HttpStream, TlsBackend};
+use http::{header::HOST, HeaderValue};
+use http_body_util::Empty;
+use hyper::{body::Body, client::conn::http1::handshake, HeaderMap, Method, Uri};
+use url::Url;
 
-use crate::{IntoUrl, Request, RequestBuilder, Response, Result};
+use crate::{Error, IntoUrl, Request, RequestBuilder, Response, Result};
 
 /// An asynchronous `Client` to make Requests with.
 #[derive(Debug, Clone)]
@@ -26,21 +30,53 @@ impl Client {
     }
 
     /// Send a request and wait for a response.
-    pub async fn execute(&self, request: Request) -> Result<Response> {
+    pub async fn execute<B: Body + 'static>(&self, request: Request<B>) -> Result<Response>
+    where
+        B::Data: Send,
+        B::Error: std::error::Error + Send + Sync,
+    {
         let (method, url, headers, body, timeout, version) = request.pieces();
-        let mut request = hyper::Request::builder()
+        let request = hyper::Request::builder()
             .method(method)
             .uri(
                 url.as_str()
                     .parse::<Uri>()
                     .expect("a parsed Url should always be a valid Uri"),
             )
-            .version(version)
-            .body(body.unwrap_or_else(Body::empty))?;
-        *request.headers_mut() = self.client.headers.clone();
-        crate::util::replace_headers(request.headers_mut(), headers);
+            .version(version);
+        if let Some(body) = body {
+            let request = request.body(body)?;
+            self.execute_impl(url, headers, timeout, request).await
+        } else {
+            let request = request.body(Empty::<Bytes>::new())?;
+            self.execute_impl(url, headers, timeout, request).await
+        }
+    }
 
-        let future = self.client.client.request(request);
+    async fn execute_impl<B: Body + 'static>(
+        &self,
+        url: Url,
+        headers: HeaderMap,
+        timeout: Option<Duration>,
+        mut request: hyper::Request<B>,
+    ) -> Result<Response>
+    where
+        B::Data: Send,
+        B::Error: std::error::Error + Send + Sync,
+    {
+        let headers_mut = request.headers_mut();
+        *headers_mut = self.client.headers.clone();
+        if let Some(host) = url.host_str() {
+            headers_mut.append(
+                HOST,
+                HeaderValue::from_str(host).map_err(|_| Error::BadScheme(url.clone()))?,
+            );
+        }
+        crate::util::replace_headers(headers_mut, headers);
+        let stream = HttpStream::connect(request.uri(), self.client.tls).await?;
+        let (mut send_request, conn) = handshake(stream).await?;
+        compio_runtime::spawn(conn).detach();
+        let future = send_request.send_request(request);
         let res = if let Some(timeout) = timeout {
             compio_runtime::time::timeout(timeout, future)
                 .await
@@ -52,7 +88,7 @@ impl Client {
     }
 
     /// Send a request with method and url.
-    pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder {
+    pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder<Empty<Bytes>> {
         RequestBuilder::new(
             self.clone(),
             url.into_url().map(|url| Request::new(method, url)),
@@ -60,40 +96,40 @@ impl Client {
     }
 
     /// Convenience method to make a `GET` request to a URL.
-    pub fn get<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn get<U: IntoUrl>(&self, url: U) -> RequestBuilder<Empty<Bytes>> {
         self.request(Method::GET, url)
     }
 
     /// Convenience method to make a `POST` request to a URL.
-    pub fn post<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn post<U: IntoUrl>(&self, url: U) -> RequestBuilder<Empty<Bytes>> {
         self.request(Method::POST, url)
     }
 
     /// Convenience method to make a `PUT` request to a URL.
-    pub fn put<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn put<U: IntoUrl>(&self, url: U) -> RequestBuilder<Empty<Bytes>> {
         self.request(Method::PUT, url)
     }
 
     /// Convenience method to make a `PATCH` request to a URL.
-    pub fn patch<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn patch<U: IntoUrl>(&self, url: U) -> RequestBuilder<Empty<Bytes>> {
         self.request(Method::PATCH, url)
     }
 
     /// Convenience method to make a `DELETE` request to a URL.
-    pub fn delete<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn delete<U: IntoUrl>(&self, url: U) -> RequestBuilder<Empty<Bytes>> {
         self.request(Method::DELETE, url)
     }
 
     /// Convenience method to make a `HEAD` request to a URL.
-    pub fn head<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn head<U: IntoUrl>(&self, url: U) -> RequestBuilder<Empty<Bytes>> {
         self.request(Method::HEAD, url)
     }
 }
 
 #[derive(Debug)]
 struct ClientInner {
-    client: hyper::Client<Connector, Body>,
     headers: HeaderMap,
+    tls: TlsBackend,
 }
 
 /// A `ClientBuilder` can be used to create a `Client` with custom
@@ -122,13 +158,9 @@ impl ClientBuilder {
 
     /// Returns a `Client` that uses this `ClientBuilder` configuration.
     pub fn build(self) -> Client {
-        let client = hyper::Client::builder()
-            .executor(CompioExecutor)
-            .set_host(true)
-            .build(Connector::new(self.tls));
         let client_ref = ClientInner {
-            client,
             headers: self.headers,
+            tls: self.tls,
         };
         Client {
             client: Rc::new(client_ref),

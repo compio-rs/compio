@@ -1,7 +1,8 @@
 use compio_buf::bytes::Bytes;
 use encoding_rs::{Encoding, UTF_8};
 use http::{header::CONTENT_TYPE, HeaderMap, StatusCode, Version};
-use hyper::Body;
+use http_body_util::BodyExt;
+use hyper::body::{Body, Incoming};
 use mime::Mime;
 use url::Url;
 
@@ -10,12 +11,12 @@ use crate::Result;
 /// A Response to a submitted `Request`.
 #[derive(Debug)]
 pub struct Response {
-    pub(super) res: hyper::Response<Body>,
+    pub(super) res: hyper::Response<Incoming>,
     url: Url,
 }
 
 impl Response {
-    pub(super) fn new(res: hyper::Response<hyper::Body>, url: Url) -> Response {
+    pub(super) fn new(res: hyper::Response<Incoming>, url: Url) -> Self {
         Response { res, url }
     }
 
@@ -51,9 +52,7 @@ impl Response {
     /// - The response is compressed and automatically decoded (thus changing
     ///   the actual decoded length).
     pub fn content_length(&self) -> Option<u64> {
-        use hyper::body::HttpBody;
-
-        HttpBody::size_hint(self.res.body()).exact()
+        self.res.body().size_hint().exact()
     }
 
     /// Get the final `Url` of this `Response`.
@@ -220,6 +219,6 @@ impl Response {
     /// # }
     /// ```
     pub async fn bytes(self) -> Result<Bytes> {
-        Ok(hyper::body::to_bytes(self.res.into_body()).await?)
+        Ok(self.res.into_body().collect().await?.to_bytes())
     }
 }

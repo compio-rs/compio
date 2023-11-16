@@ -10,8 +10,6 @@ use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_io::{compat::SyncStream, AsyncRead, AsyncWrite};
 use compio_net::TcpStream;
 use compio_tls::TlsStream;
-#[cfg(feature = "client")]
-use hyper::client::connect::{Connected, Connection};
 use hyper::Uri;
 use send_wrapper::SendWrapper;
 
@@ -24,7 +22,7 @@ enum HttpStreamInner {
 }
 
 impl HttpStreamInner {
-    pub async fn connect(uri: Uri, tls: TlsBackend) -> io::Result<Self> {
+    pub async fn connect(uri: &Uri, tls: TlsBackend) -> io::Result<Self> {
         let scheme = uri.scheme_str().unwrap_or("http");
         let host = uri.host().expect("there should be host");
         let port = uri.port_u16();
@@ -100,20 +98,13 @@ impl AsyncWrite for HttpStreamInner {
     }
 }
 
-type PinBoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
-
-/// A HTTP stream wrapper, based on compio, and exposes [`tokio::io`]
+/// A HTTP stream wrapper, based on compio, and exposes [`hyper::rt`]
 /// interfaces.
-pub struct HttpStream {
-    inner: SendWrapper<SyncStream<HttpStreamInner>>,
-    read_future: Option<PinBoxFuture<io::Result<usize>>>,
-    write_future: Option<PinBoxFuture<io::Result<usize>>>,
-    shutdown_future: Option<PinBoxFuture<io::Result<()>>>,
-}
+pub struct HttpStream(HyperStream<HttpStreamInner>);
 
 impl HttpStream {
     /// Create [`HttpStream`] with target uri and TLS backend.
-    pub async fn connect(uri: Uri, tls: TlsBackend) -> io::Result<Self> {
+    pub async fn connect(uri: &Uri, tls: TlsBackend) -> io::Result<Self> {
         Ok(Self::from_inner(HttpStreamInner::connect(uri, tls).await?))
     }
 
@@ -128,6 +119,55 @@ impl HttpStream {
     }
 
     fn from_inner(s: HttpStreamInner) -> Self {
+        Self(HyperStream::new(s))
+    }
+}
+
+impl hyper::rt::Read for HttpStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: hyper::rt::ReadBufCursor<'_>,
+    ) -> Poll<io::Result<()>> {
+        let inner = std::pin::pin!(&mut self.0);
+        inner.poll_read(cx, buf)
+    }
+}
+
+impl hyper::rt::Write for HttpStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let inner = std::pin::pin!(&mut self.0);
+        inner.poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let inner = std::pin::pin!(&mut self.0);
+        inner.poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let inner = std::pin::pin!(&mut self.0);
+        inner.poll_shutdown(cx)
+    }
+}
+
+type PinBoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
+
+/// A stream wrapper for hyper.
+pub struct HyperStream<S> {
+    inner: SendWrapper<SyncStream<S>>,
+    read_future: Option<PinBoxFuture<io::Result<usize>>>,
+    write_future: Option<PinBoxFuture<io::Result<usize>>>,
+    shutdown_future: Option<PinBoxFuture<io::Result<()>>>,
+}
+
+impl<S> HyperStream<S> {
+    /// Create a hyper stream wrapper.
+    pub fn new(s: S) -> Self {
         Self {
             inner: SendWrapper::new(SyncStream::new(s)),
             read_future: None,
@@ -177,36 +217,38 @@ macro_rules! poll_future_would_block {
 
 #[cfg(not(feature = "read_buf"))]
 #[inline]
-fn read_buf(reader: &mut impl io::Read, buf: &mut tokio::io::ReadBuf<'_>) -> io::Result<()> {
-    let slice = buf.initialize_unfilled();
+fn read_buf(reader: &mut impl io::Read, mut buf: hyper::rt::ReadBufCursor<'_>) -> io::Result<()> {
+    use std::mem::MaybeUninit;
+
+    let slice = unsafe { buf.as_mut() };
+    slice.fill(MaybeUninit::new(0));
+    let slice = unsafe { &mut *(slice as *mut _ as *mut [u8]) };
     let len = reader.read(slice)?;
-    buf.advance(len);
+    unsafe { buf.advance(len) };
     Ok(())
 }
 
 #[cfg(feature = "read_buf")]
 #[inline]
-fn read_buf(reader: &mut impl io::Read, buf: &mut tokio::io::ReadBuf<'_>) -> io::Result<()> {
-    let slice = unsafe { buf.unfilled_mut() };
+fn read_buf(reader: &mut impl io::Read, mut buf: hyper::rt::ReadBufCursor<'_>) -> io::Result<()> {
+    let slice = unsafe { buf.as_mut() };
     let len = {
         let mut borrowed_buf = io::BorrowedBuf::from(slice);
         let mut cursor = borrowed_buf.unfilled();
         reader.read_buf(cursor.reborrow())?;
         cursor.written()
     };
-    unsafe { buf.assume_init(len) };
-    buf.advance(len);
+    unsafe { buf.advance(len) };
     Ok(())
 }
 
-impl tokio::io::AsyncRead for HttpStream {
+impl<S: AsyncRead + Unpin + 'static> hyper::rt::Read for HyperStream<S> {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
+        buf: hyper::rt::ReadBufCursor<'_>,
     ) -> Poll<io::Result<()>> {
-        let inner: &'static mut SyncStream<HttpStreamInner> =
-            unsafe { &mut *(self.inner.deref_mut() as *mut _) };
+        let inner: &'static mut SyncStream<S> = unsafe { &mut *(self.inner.deref_mut() as *mut _) };
 
         poll_future_would_block!(
             self.read_future,
@@ -217,14 +259,13 @@ impl tokio::io::AsyncRead for HttpStream {
     }
 }
 
-impl tokio::io::AsyncWrite for HttpStream {
+impl<S: AsyncWrite + Unpin + 'static> hyper::rt::Write for HyperStream<S> {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        let inner: &'static mut SyncStream<HttpStreamInner> =
-            unsafe { &mut *(self.inner.deref_mut() as *mut _) };
+        let inner: &'static mut SyncStream<S> = unsafe { &mut *(self.inner.deref_mut() as *mut _) };
 
         poll_future_would_block!(
             self.write_future,
@@ -235,23 +276,14 @@ impl tokio::io::AsyncWrite for HttpStream {
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let inner: &'static mut SyncStream<HttpStreamInner> =
-            unsafe { &mut *(self.inner.deref_mut() as *mut _) };
+        let inner: &'static mut SyncStream<S> = unsafe { &mut *(self.inner.deref_mut() as *mut _) };
         let res = poll_future!(self.write_future, cx, inner.flush_write_buf());
         Poll::Ready(res.map(|_| ()))
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let inner: &'static mut SyncStream<HttpStreamInner> =
-            unsafe { &mut *(self.inner.deref_mut() as *mut _) };
+        let inner: &'static mut SyncStream<S> = unsafe { &mut *(self.inner.deref_mut() as *mut _) };
         let res = poll_future!(self.shutdown_future, cx, inner.get_mut().shutdown());
         Poll::Ready(res)
-    }
-}
-
-#[cfg(feature = "client")]
-impl Connection for HttpStream {
-    fn connected(&self) -> Connected {
-        Connected::new()
     }
 }

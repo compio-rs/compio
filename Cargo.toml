@@ -61,4 +61,4 @@ native-tls = "0.2.11"
 rustls = "0.22.0-alpha.4"
 rustls-native-certs = "0.7.0-alpha.1"
 
-hyper = "0.14"
+hyper = "1.0.0"
