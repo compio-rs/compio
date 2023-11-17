@@ -255,8 +255,12 @@ impl Proactor {
     }
 
     /// Create a notify handle for specified user_data.
+    ///
+    /// # Safety
+    ///
+    /// The caller should ensure `user_data` being valid.
     #[cfg(windows)]
-    pub fn handle_for(&self, user_data: usize) -> io::Result<NotifyHandle> {
+    pub unsafe fn handle_for(&self, user_data: usize) -> io::Result<NotifyHandle> {
         self.driver.handle_for(user_data)
     }
 }

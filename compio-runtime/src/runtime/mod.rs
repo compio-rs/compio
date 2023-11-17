@@ -56,7 +56,7 @@ impl RuntimeInner {
     }
 
     #[cfg(all(windows, feature = "event"))]
-    pub fn handle_for(&self, user_data: usize) -> io::Result<compio_driver::NotifyHandle> {
+    pub unsafe fn handle_for(&self, user_data: usize) -> io::Result<compio_driver::NotifyHandle> {
         self.driver.borrow().handle_for(user_data)
     }
 

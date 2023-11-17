@@ -45,7 +45,7 @@ impl EventHandle {
     fn new(user_data: &Key<NopPending>) -> io::Result<Self> {
         let runtime = Runtime::current();
         Ok(Self {
-            handle: runtime.inner().handle_for(**user_data)?,
+            handle: unsafe { runtime.inner().handle_for(**user_data)? },
         })
     }
 
