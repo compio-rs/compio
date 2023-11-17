@@ -8,7 +8,7 @@ use std::{
 use compio_buf::BufResult;
 use compio_driver::{Entry, OpCode};
 
-use crate::key::Key;
+use crate::{key::Key, Runtime};
 
 #[derive(Default)]
 pub(crate) struct RegisteredOp {
@@ -73,7 +73,7 @@ impl<T: OpCode> Future for OpFuture<T> {
     type Output = BufResult<usize, T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let res = crate::RUNTIME.with(|runtime| runtime.poll_task(cx, self.user_data));
+        let res = Runtime::current().inner().poll_task(cx, self.user_data);
         if res.is_ready() {
             self.get_mut().completed = true;
         }
@@ -84,7 +84,7 @@ impl<T: OpCode> Future for OpFuture<T> {
 impl<T> Drop for OpFuture<T> {
     fn drop(&mut self) {
         if !self.completed {
-            crate::RUNTIME.with(|runtime| runtime.cancel_op(self.user_data))
+            Runtime::current().inner().cancel_op(self.user_data)
         }
     }
 }

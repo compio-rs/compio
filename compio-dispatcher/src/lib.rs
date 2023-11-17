@@ -12,7 +12,10 @@ use std::{
 };
 
 use compio_driver::{AsyncifyPool, ProactorBuilder};
-use compio_runtime::event::{Event, EventHandle};
+use compio_runtime::{
+    event::{Event, EventHandle},
+    Runtime,
+};
 use crossbeam_channel::{unbounded, Sender};
 use futures_util::{future::LocalBoxFuture, FutureExt};
 
@@ -51,14 +54,14 @@ impl Dispatcher {
                     };
 
                     thread_builder.spawn(move || {
-                        let succeeded = compio_runtime::config_proactor(proactor_builder);
-                        debug_assert!(
-                            succeeded,
-                            "the runtime should not be created before proactor builder set"
-                        );
+                        let runtime = Runtime::builder()
+                            .with_proactor(proactor_builder)
+                            .build()
+                            .expect("cannot create compio runtime");
+                        let _guard = runtime.enter();
                         while let Ok(f) = receiver.recv() {
-                            *f.result.lock().unwrap() = Some(std::panic::catch_unwind(move || {
-                                compio_runtime::block_on((f.func)());
+                            *f.result.lock().unwrap() = Some(std::panic::catch_unwind(|| {
+                                Runtime::current().block_on((f.func)());
                             }));
                             f.handle.notify().ok();
                         }

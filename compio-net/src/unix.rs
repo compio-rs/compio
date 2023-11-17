@@ -27,18 +27,18 @@ use crate::Socket;
 /// let dir = tempdir().unwrap();
 /// let sock_file = dir.path().join("unix-server.sock");
 ///
-/// compio_runtime::block_on(async move {
-///     let listener = UnixListener::bind(&sock_file).unwrap();
+/// # compio_runtime::Runtime::new().unwrap().block_on(async move {
+/// let listener = UnixListener::bind(&sock_file).unwrap();
 ///
-///     let mut tx = UnixStream::connect(&sock_file).unwrap();
-///     let (mut rx, _) = listener.accept().await.unwrap();
+/// let mut tx = UnixStream::connect(&sock_file).unwrap();
+/// let (mut rx, _) = listener.accept().await.unwrap();
 ///
-///     tx.write_all("test").await.0.unwrap();
+/// tx.write_all("test").await.0.unwrap();
 ///
-///     let (_, buf) = rx.read_exact(Vec::with_capacity(4)).await.unwrap();
+/// let (_, buf) = rx.read_exact(Vec::with_capacity(4)).await.unwrap();
 ///
-///     assert_eq!(buf, b"test");
-/// });
+/// assert_eq!(buf, b"test");
+/// # });
 /// ```
 #[derive(Debug)]
 pub struct UnixListener {
@@ -112,13 +112,13 @@ impl_attachable!(UnixListener, inner);
 /// use compio_io::AsyncWrite;
 /// use compio_net::UnixStream;
 ///
-/// compio_runtime::block_on(async {
-///     // Connect to a peer
-///     let mut stream = UnixStream::connect("unix-server.sock").unwrap();
+/// # compio_runtime::Runtime::new().unwrap().block_on(async {
+/// // Connect to a peer
+/// let mut stream = UnixStream::connect("unix-server.sock").unwrap();
 ///
-///     // Write some data.
-///     stream.write("hello world!").await.unwrap();
-/// })
+/// // Write some data.
+/// stream.write("hello world!").await.unwrap();
+/// # })
 /// ```
 #[derive(Debug)]
 pub struct UnixStream {

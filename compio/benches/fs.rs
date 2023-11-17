@@ -1,16 +1,8 @@
-use criterion::{async_executor::AsyncExecutor, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use tempfile::NamedTempFile;
 
 criterion_group!(fs, read, write);
 criterion_main!(fs);
-
-struct CompioRuntime;
-
-impl AsyncExecutor for CompioRuntime {
-    fn block_on<T>(&self, future: impl std::future::Future<Output = T>) -> T {
-        compio::runtime::block_on(future)
-    }
-}
 
 fn read(c: &mut Criterion) {
     let mut group = c.benchmark_group("read");
@@ -42,7 +34,8 @@ fn read(c: &mut Criterion) {
     });
 
     group.bench_function("compio", |b| {
-        b.to_async(CompioRuntime).iter(|| async {
+        let runtime = compio::runtime::Runtime::new().unwrap();
+        b.to_async(&runtime).iter(|| async {
             use compio::io::AsyncReadAtExt;
 
             let file = compio::fs::File::open("Cargo.toml").await.unwrap();
@@ -85,8 +78,9 @@ fn write(c: &mut Criterion) {
     });
 
     group.bench_function("compio", |b| {
+        let runtime = compio::runtime::Runtime::new().unwrap();
         let temp_file = NamedTempFile::new().unwrap();
-        b.to_async(CompioRuntime).iter(|| async {
+        b.to_async(&runtime).iter(|| async {
             use compio::io::AsyncWriteAtExt;
 
             let mut file = compio::fs::File::create(temp_file.path()).await.unwrap();

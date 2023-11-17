@@ -1,7 +1,7 @@
 use std::{io, path::Path, ptr::null};
 
 use compio_driver::{op::OpenFile, FromRawFd, RawFd};
-use compio_runtime::submit;
+use compio_runtime::Runtime;
 use widestring::U16CString;
 use windows_sys::Win32::{
     Foundation::{ERROR_INVALID_PARAMETER, GENERIC_READ, GENERIC_WRITE},
@@ -145,7 +145,7 @@ impl OpenOptions {
             self.get_creation_mode()?,
             self.get_flags_and_attributes(),
         );
-        let fd = submit(op).await.0? as RawFd;
+        let fd = Runtime::current().submit(op).await.0? as RawFd;
         Ok(unsafe { File::from_raw_fd(fd) })
     }
 }

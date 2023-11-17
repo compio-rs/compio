@@ -1,15 +1,7 @@
-use criterion::{async_executor::AsyncExecutor, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 criterion_group!(named_pipe, basic);
 criterion_main!(named_pipe);
-
-struct CompioRuntime;
-
-impl AsyncExecutor for CompioRuntime {
-    fn block_on<T>(&self, future: impl std::future::Future<Output = T>) -> T {
-        compio::runtime::block_on(future)
-    }
-}
 
 fn basic(c: &mut Criterion) {
     #[allow(dead_code)]
@@ -51,7 +43,8 @@ fn basic(c: &mut Criterion) {
     });
 
     group.bench_function("compio", |b| {
-        b.to_async(CompioRuntime).iter(|| async {
+        let runtime = compio::runtime::Runtime::new().unwrap();
+        b.to_async(&runtime).iter(|| async {
             #[cfg(windows)]
             {
                 use compio::{

@@ -27,23 +27,23 @@ use crate::Socket;
 /// use compio_net::{TcpListener, TcpStream};
 /// use socket2::SockAddr;
 ///
+/// # compio_runtime::Runtime::new().unwrap().block_on(async move {
 /// let addr = "127.0.0.1:2345".parse::<SocketAddr>().unwrap();
 ///
-/// compio_runtime::block_on(async move {
-///     let listener = TcpListener::bind(&addr).await.unwrap();
+/// let listener = TcpListener::bind(&addr).await.unwrap();
 ///
-///     let tx_fut = TcpStream::connect(&addr);
+/// let tx_fut = TcpStream::connect(&addr);
 ///
-///     let rx_fut = listener.accept();
+/// let rx_fut = listener.accept();
 ///
-///     let (mut tx, (mut rx, _)) = futures_util::try_join!(tx_fut, rx_fut).unwrap();
+/// let (mut tx, (mut rx, _)) = futures_util::try_join!(tx_fut, rx_fut).unwrap();
 ///
-///     tx.write_all("test").await.0.unwrap();
+/// tx.write_all("test").await.0.unwrap();
 ///
-///     let (_, buf) = rx.read_exact(Vec::with_capacity(4)).await.unwrap();
+/// let (_, buf) = rx.read_exact(Vec::with_capacity(4)).await.unwrap();
 ///
-///     assert_eq!(buf, b"test");
-/// });
+/// assert_eq!(buf, b"test");
+/// # });
 /// ```
 #[derive(Debug)]
 pub struct TcpListener {
@@ -109,7 +109,7 @@ impl TcpListener {
     /// use compio_net::TcpListener;
     /// use socket2::SockAddr;
     ///
-    /// # compio_runtime::block_on(async {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async {
     /// let listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
     ///
     /// let addr = listener.local_addr().expect("Couldn't get local address");
@@ -144,13 +144,13 @@ impl_attachable!(TcpListener, inner);
 /// use compio_io::AsyncWrite;
 /// use compio_net::TcpStream;
 ///
-/// compio_runtime::block_on(async {
-///     // Connect to a peer
-///     let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
+/// # compio_runtime::Runtime::new().unwrap().block_on(async {
+/// // Connect to a peer
+/// let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
 ///
-///     // Write some data.
-///     stream.write("hello world!").await.unwrap();
-/// })
+/// // Write some data.
+/// stream.write("hello world!").await.unwrap();
+/// # })
 /// ```
 #[derive(Debug)]
 pub struct TcpStream {

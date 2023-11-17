@@ -1,6 +1,6 @@
 [package]
 name = "compio-runtime"
-version = "0.1.1"
+version = "0.2.0"
 description = "high-level runtime for compio"
 categories = ["asynchronous"]
 keywords = ["async", "runtime"]
@@ -35,6 +35,7 @@ compio-log = { workspace = true }
 
 async-task = "4.5.0"
 cfg-if = { workspace = true, optional = true }
+criterion = { workspace = true, optional = true }
 futures-util = { workspace = true }
 once_cell = { workspace = true }
 send_wrapper = { workspace = true }

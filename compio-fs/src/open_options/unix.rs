@@ -1,7 +1,7 @@
 use std::{ffi::CString, io, os::unix::prelude::OsStrExt, path::Path};
 
 use compio_driver::{op::OpenFile, FromRawFd, RawFd};
-use compio_runtime::submit;
+use compio_runtime::Runtime;
 
 use crate::File;
 
@@ -96,7 +96,7 @@ impl OpenOptions {
             )
         })?;
         let op = OpenFile::new(p, flags, self.mode);
-        let fd = submit(op).await.0? as RawFd;
+        let fd = Runtime::current().submit(op).await.0? as RawFd;
         Ok(unsafe { File::from_raw_fd(fd) })
     }
 }

@@ -3,7 +3,8 @@ use std::{
     collections::VecDeque,
     future::{ready, Future},
     io,
-    rc::Rc,
+    rc::{Rc, Weak},
+    sync::atomic::{AtomicUsize, Ordering},
     task::{Context, Poll},
 };
 
@@ -25,7 +26,10 @@ use crate::{
     BufResult, Key,
 };
 
-pub(crate) struct Runtime {
+static RUNTIME_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+pub(crate) struct RuntimeInner {
+    id: usize,
     driver: RefCell<Proactor>,
     runnables: Rc<RefCell<VecDeque<Runnable>>>,
     op_runtime: RefCell<OpRuntime>,
@@ -33,15 +37,20 @@ pub(crate) struct Runtime {
     timer_runtime: RefCell<TimerRuntime>,
 }
 
-impl Runtime {
+impl RuntimeInner {
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         Ok(Self {
+            id: RUNTIME_COUNTER.fetch_add(1, Ordering::AcqRel),
             driver: RefCell::new(builder.build()?),
             runnables: Rc::new(RefCell::default()),
             op_runtime: RefCell::default(),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
         })
+    }
+
+    pub fn id(&self) -> usize {
+        self.id
     }
 
     // Safety: the return runnable should be scheduled.
@@ -187,8 +196,270 @@ impl Runtime {
     }
 }
 
-impl AsRawFd for Runtime {
+impl AsRawFd for RuntimeInner {
     fn as_raw_fd(&self) -> RawFd {
         self.driver.borrow().as_raw_fd()
     }
+}
+
+struct RuntimeContext {
+    depth: usize,
+    ptr: Weak<RuntimeInner>,
+}
+
+impl RuntimeContext {
+    pub fn new() -> Self {
+        Self {
+            depth: 0,
+            ptr: Weak::new(),
+        }
+    }
+
+    pub fn inc_depth(&mut self) -> usize {
+        let depth = self.depth;
+        self.depth += 1;
+        depth
+    }
+
+    pub fn dec_depth(&mut self) -> usize {
+        self.depth -= 1;
+        self.depth
+    }
+
+    pub fn set_runtime(&mut self, ptr: Weak<RuntimeInner>) -> Weak<RuntimeInner> {
+        std::mem::replace(&mut self.ptr, ptr)
+    }
+
+    pub fn upgrade_runtime(&self) -> Option<Runtime> {
+        self.ptr.upgrade().map(|inner| Runtime { inner })
+    }
+}
+
+thread_local! {
+    static CURRENT_RUNTIME: RefCell<RuntimeContext> = RefCell::new(RuntimeContext::new());
+}
+
+/// The async runtime of compio. It is a thread local runtime, and cannot be
+/// sent to other threads.
+#[derive(Clone)]
+pub struct Runtime {
+    inner: Rc<RuntimeInner>,
+}
+
+impl Runtime {
+    /// Create [`Runtime`] with default config.
+    pub fn new() -> io::Result<Self> {
+        Self::builder().build()
+    }
+
+    /// Create a builder for [`Runtime`].
+    pub fn builder() -> RuntimeBuilder {
+        RuntimeBuilder::new()
+    }
+
+    /// Get the current running [`Runtime`].
+    pub fn try_current() -> Option<Self> {
+        CURRENT_RUNTIME.with_borrow(|r| r.upgrade_runtime())
+    }
+
+    /// Get the current running [`Runtime`].
+    ///
+    /// ## Panics
+    ///
+    /// This method will panic if there are no running [`Runtime`].
+    pub fn current() -> Self {
+        Self::try_current().expect("not in a compio runtime")
+    }
+
+    pub(crate) fn inner(&self) -> &RuntimeInner {
+        &self.inner
+    }
+
+    /// Enter the runtime context. This runtime will be set as the `current`
+    /// one.
+    ///
+    /// ## Panics
+    ///
+    /// When calling `Runtime::enter` multiple times, the returned guards
+    /// **must** be dropped in the reverse order that they were acquired.
+    /// Failure to do so will result in a panic and possible memory leaks.
+    ///
+    /// Do **not** do the following, this shows a scenario that will result in a
+    /// panic and possible memory leak.
+    ///
+    /// ```should_panic
+    /// use compio_runtime::Runtime;
+    ///
+    /// let rt1 = Runtime::new().unwrap();
+    /// let rt2 = Runtime::new().unwrap();
+    ///
+    /// let enter1 = rt1.enter();
+    /// let enter2 = rt2.enter();
+    ///
+    /// drop(enter1);
+    /// drop(enter2);
+    /// ```
+    pub fn enter(&self) -> EnterGuard {
+        EnterGuard::new(self)
+    }
+
+    /// Block on the future till it completes.
+    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        let guard = self.enter();
+        guard.block_on(future)
+    }
+
+    /// Spawns a new asynchronous task, returning a [`Task`] for it.
+    ///
+    /// Spawning a task enables the task to execute concurrently to other tasks.
+    /// There is no guarantee that a spawned task will execute to completion.
+    pub fn spawn<F: Future + 'static>(&self, future: F) -> Task<F::Output> {
+        self.inner.spawn(future)
+    }
+
+    /// Attach a raw file descriptor/handle/socket to the runtime.
+    ///
+    /// You only need this when authoring your own high-level APIs. High-level
+    /// resources in this crate are attached automatically.
+    pub fn attach(&self, fd: RawFd) -> io::Result<()> {
+        self.inner.attach(fd)
+    }
+
+    /// Submit an operation to the runtime.
+    ///
+    /// You only need this when authoring your own [`OpCode`].
+    pub fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
+        self.inner.submit(op)
+    }
+}
+
+impl AsRawFd for Runtime {
+    fn as_raw_fd(&self) -> RawFd {
+        self.inner.as_raw_fd()
+    }
+}
+
+#[cfg(feature = "criterion")]
+impl criterion::async_executor::AsyncExecutor for Runtime {
+    fn block_on<T>(&self, future: impl Future<Output = T>) -> T {
+        self.block_on(future)
+    }
+}
+
+#[cfg(feature = "criterion")]
+impl criterion::async_executor::AsyncExecutor for &Runtime {
+    fn block_on<T>(&self, future: impl Future<Output = T>) -> T {
+        (**self).block_on(future)
+    }
+}
+
+/// Builder for [`Runtime`].
+#[derive(Debug, Clone)]
+pub struct RuntimeBuilder {
+    proactor_builder: ProactorBuilder,
+}
+
+impl Default for RuntimeBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RuntimeBuilder {
+    /// Create the builder with default config.
+    pub fn new() -> Self {
+        Self {
+            proactor_builder: ProactorBuilder::new(),
+        }
+    }
+
+    /// Replace proactor builder.
+    pub fn with_proactor(&mut self, builder: ProactorBuilder) -> &mut Self {
+        self.proactor_builder = builder;
+        self
+    }
+
+    /// Build [`Runtime`].
+    pub fn build(&self) -> io::Result<Runtime> {
+        Ok(Runtime {
+            inner: Rc::new(RuntimeInner::new(&self.proactor_builder)?),
+        })
+    }
+}
+
+/// Runtime context guard.
+///
+/// When the guard is dropped, exit the corresponding runtime context.
+#[must_use]
+pub struct EnterGuard<'a> {
+    runtime: &'a Runtime,
+    old_ptr: Weak<RuntimeInner>,
+    depth: usize,
+}
+
+impl<'a> EnterGuard<'a> {
+    fn new(runtime: &'a Runtime) -> Self {
+        let (old_ptr, depth) = CURRENT_RUNTIME.with_borrow_mut(|ctx| {
+            (
+                ctx.set_runtime(Rc::downgrade(&runtime.inner)),
+                ctx.inc_depth(),
+            )
+        });
+        Self {
+            runtime,
+            old_ptr,
+            depth,
+        }
+    }
+
+    /// Block on the future in the runtime backed of this guard.
+    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        self.runtime.inner.block_on(future)
+    }
+}
+
+#[cold]
+fn panic_incorrent_drop_order() {
+    if !std::thread::panicking() {
+        panic!(
+            "`EnterGuard` values dropped out of order. Guards returned by `Runtime::enter()` must \
+             be dropped in the reverse order as they were acquired."
+        )
+    }
+}
+
+impl Drop for EnterGuard<'_> {
+    fn drop(&mut self) {
+        let depth = CURRENT_RUNTIME.with_borrow_mut(|ctx| {
+            ctx.set_runtime(std::mem::take(&mut self.old_ptr));
+            ctx.dec_depth()
+        });
+        if depth != self.depth {
+            panic_incorrent_drop_order()
+        }
+    }
+}
+
+/// Spawns a new asynchronous task, returning a [`Task`] for it.
+///
+/// Spawning a task enables the task to execute concurrently to other tasks.
+/// There is no guarantee that a spawned task will execute to completion.
+///
+/// ```
+/// # compio_runtime::Runtime::new().unwrap().block_on(async {
+/// let task = compio_runtime::spawn(async {
+///     println!("Hello from a spawned task!");
+///     42
+/// });
+///
+/// assert_eq!(task.await, 42);
+/// # })
+/// ```
+///
+/// ## Panics
+///
+/// This method doesn't create runtime. It tries to obtain the current runtime
+/// by [`Runtime::current`].
+pub fn spawn<F: Future + 'static>(future: F) -> Task<F::Output> {
+    Runtime::current().spawn(future)
 }

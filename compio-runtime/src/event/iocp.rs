@@ -3,7 +3,7 @@ use std::{io, pin::Pin, ptr::null_mut, task::Poll};
 use compio_driver::{syscall, AsRawFd, OpCode, PushEntry, RawFd};
 use windows_sys::Win32::System::IO::{PostQueuedCompletionStatus, OVERLAPPED};
 
-use crate::{key::Key, runtime::op::OpFuture, RUNTIME};
+use crate::{key::Key, runtime::op::OpFuture, Runtime};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
@@ -15,7 +15,7 @@ pub struct Event {
 impl Event {
     /// Create [`Event`].
     pub fn new() -> io::Result<Self> {
-        let user_data = RUNTIME.with(|runtime| runtime.submit_raw(NopPending::new()));
+        let user_data = Runtime::current().inner().submit_raw(NopPending::new());
         let user_data = match user_data {
             PushEntry::Pending(user_data) => user_data,
             PushEntry::Ready(_) => unreachable!("NopPending always returns Pending"),
@@ -48,7 +48,7 @@ unsafe impl Sync for EventHandle {}
 
 impl EventHandle {
     fn new(user_data: &Key<NopPending>) -> Self {
-        let handle = RUNTIME.with(|runtime| runtime.as_raw_fd());
+        let handle = Runtime::current().as_raw_fd();
         Self {
             user_data: **user_data,
             handle,

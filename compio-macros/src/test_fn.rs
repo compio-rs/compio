@@ -48,7 +48,7 @@ impl ToTokens for CompioTest {
         let block = &self.0.body;
         let runtime_mod = self.0.crate_name().unwrap_or_else(retrieve_runtime_mod);
         tokens.append_all(quote!({
-            #runtime_mod::block_on(async move #block)
+            #runtime_mod::Runtime::new().expect("cannot create runtime").block_on(async move #block)
         }));
     }
 }

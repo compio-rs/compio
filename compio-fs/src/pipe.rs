@@ -8,7 +8,7 @@ use {
     compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     compio_driver::op::{BufResultExt, Recv, RecvVectored, Send, SendVectored},
     compio_io::{AsyncRead, AsyncWrite},
-    compio_runtime::{impl_attachable, submit, Attachable},
+    compio_runtime::{impl_attachable, Attachable, Runtime},
     std::{future::Future, path::Path},
 };
 
@@ -20,7 +20,7 @@ use crate::File;
 /// use compio_fs::pipe::anonymous;
 /// use compio_io::{AsyncReadExt, AsyncWriteExt};
 ///
-/// # compio_runtime::block_on(async {
+/// # compio_runtime::Runtime::new().unwrap().block_on(async {
 /// let (mut rx, mut tx) = anonymous().unwrap();
 ///
 /// tx.write_all("Hello world!").await.unwrap();
@@ -114,7 +114,7 @@ impl OpenOptions {
     /// ```
     /// use compio_fs::pipe;
     ///
-    /// # compio_runtime::block_on(async {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async {
     /// let tx = pipe::OpenOptions::new()
     ///     .read_write(true)
     ///     .open_sender("path/to/a/fifo")
@@ -131,7 +131,7 @@ impl OpenOptions {
     /// ```
     /// use compio_fs::pipe;
     ///
-    /// # compio_runtime::block_on(async {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async {
     /// let tx = pipe::OpenOptions::new()
     ///     .read_write(true)
     ///     .open_receiver("path/to/a/fifo")
@@ -369,13 +369,13 @@ impl AsyncWrite for &Sender {
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = Send::new(self.as_raw_fd(), buffer);
-        submit(op).await.into_inner()
+        Runtime::current().submit(op).await.into_inner()
     }
 
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = SendVectored::new(self.as_raw_fd(), buffer);
-        submit(op).await.into_inner()
+        Runtime::current().submit(op).await.into_inner()
     }
 
     #[inline]
@@ -498,13 +498,21 @@ impl AsyncRead for &Receiver {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = Recv::new(self.as_raw_fd(), buffer);
-        submit(op).await.into_inner().map_advanced()
+        Runtime::current()
+            .submit(op)
+            .await
+            .into_inner()
+            .map_advanced()
     }
 
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buffer: V) -> BufResult<usize, V> {
         let ((), buffer) = buf_try!(self.attach(), buffer);
         let op = RecvVectored::new(self.as_raw_fd(), buffer);
-        submit(op).await.into_inner().map_advanced()
+        Runtime::current()
+            .submit(op)
+            .await
+            .into_inner()
+            .map_advanced()
     }
 }
 

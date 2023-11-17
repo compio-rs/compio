@@ -7,7 +7,7 @@ use compio_driver::AsRawFd;
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 
-use crate::attach;
+use crate::Runtime;
 
 /// Attach a handle to the driver of current thread.
 ///
@@ -17,7 +17,7 @@ use crate::attach;
 #[derive(Debug, Clone)]
 pub struct Attacher {
     // Make it thread safe.
-    once: OnceLock<()>,
+    once: OnceLock<usize>,
     // Make it !Send & !Sync.
     _p: PhantomData<*mut ()>,
 }
@@ -33,9 +33,24 @@ impl Attacher {
 
     /// Attach the source. This method could be called many times, but if the
     /// action fails, the error will only return once.
+    ///
+    /// You should always call this method before accessing the runtime. It
+    /// ensures that the current runtime is the exact runtime attached before.
     pub fn attach(&self, source: &impl AsRawFd) -> io::Result<()> {
-        self.once.get_or_try_init(|| attach(source.as_raw_fd()))?;
-        Ok(())
+        let r = Runtime::current();
+        let inner = r.inner();
+        let id = self.once.get_or_try_init(|| {
+            inner.attach(source.as_raw_fd())?;
+            io::Result::Ok(inner.id())
+        })?;
+        if id != &inner.id() {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "the current runtime is not the attached runtime",
+            ))
+        } else {
+            Ok(())
+        }
     }
 
     /// Check if [`attach`] has been called.

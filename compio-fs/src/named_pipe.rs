@@ -29,7 +29,7 @@ use {
     compio_buf::{BufResult, IoBuf, IoBufMut},
     compio_driver::op::ConnectNamedPipe,
     compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt},
-    compio_runtime::{impl_attachable, submit, Attachable},
+    compio_runtime::{impl_attachable, Attachable, Runtime},
 };
 
 use crate::File;
@@ -68,30 +68,27 @@ use crate::File;
 ///     .create(PIPE_NAME)?;
 ///
 /// // Spawn the server loop.
-/// let server = compio_runtime::block_on(async move {
-///     loop {
-///         // Wait for a client to connect.
-///         let connected = server.connect().await?;
+/// # compio_runtime::Runtime::new().unwrap().block_on(async move {
+/// loop {
+///     // Wait for a client to connect.
+///     let connected = server.connect().await?;
 ///
-///         // Construct the next server to be connected before sending the one
-///         // we already have of onto a task. This ensures that the server
-///         // isn't closed (after it's done in the task) before a new one is
-///         // available. Otherwise the client might error with
-///         // `io::ErrorKind::NotFound`.
-///         server = ServerOptions::new().create(PIPE_NAME)?;
+///     // Construct the next server to be connected before sending the one
+///     // we already have of onto a task. This ensures that the server
+///     // isn't closed (after it's done in the task) before a new one is
+///     // available. Otherwise the client might error with
+///     // `io::ErrorKind::NotFound`.
+///     server = ServerOptions::new().create(PIPE_NAME)?;
 ///
-///         let client = compio_runtime::spawn(async move {
-///             // use the connected client
-/// #           Ok::<_, std::io::Error>(())
-///         });
-/// #       if true { break } // needed for type inference to work
-///     }
-///
-///     Ok::<_, io::Error>(())
-/// });
-///
-/// // do something else not server related here
-/// # Ok(()) }
+///     let client = compio_runtime::spawn(async move {
+///         // use the connected client
+/// #       Ok::<_, std::io::Error>(())
+///     });
+/// # if true { break } // needed for type inference to work
+/// }
+/// # Ok::<_, io::Error>(())
+/// # })
+/// # }
 /// ```
 ///
 /// [Windows named pipe]: https://docs.microsoft.com/en-us/windows/win32/ipc/named-pipes
@@ -118,7 +115,7 @@ impl NamedPipeServer {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-server-info";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let server = ServerOptions::new()
     ///     .pipe_mode(PipeMode::Message)
     ///     .max_instances(5)
@@ -149,7 +146,7 @@ impl NamedPipeServer {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\mynamedpipe";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let pipe = ServerOptions::new().create(PIPE_NAME)?;
     ///
     /// // Wait for a client to connect.
@@ -162,7 +159,7 @@ impl NamedPipeServer {
     pub async fn connect(&self) -> io::Result<()> {
         self.attach()?;
         let op = ConnectNamedPipe::new(self.as_raw_fd());
-        submit(op).await.0?;
+        Runtime::current().submit(op).await.0?;
         Ok(())
     }
 
@@ -176,7 +173,7 @@ impl NamedPipeServer {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-disconnect";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
     ///
     /// let mut client = ClientOptions::new().open(PIPE_NAME).await.unwrap();
@@ -280,7 +277,7 @@ impl_attachable!(NamedPipeServer, handle);
 ///
 /// const PIPE_NAME: &str = r"\\.\pipe\named-pipe-idiomatic-client";
 ///
-/// # compio_runtime::block_on(async move {
+/// # compio_runtime::Runtime::new().unwrap().block_on(async move {
 /// let client = loop {
 ///     match ClientOptions::new().open(PIPE_NAME).await {
 ///         Ok(client) => break client,
@@ -320,7 +317,7 @@ impl NamedPipeClient {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-client-info";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let client = ClientOptions::new().open(PIPE_NAME).await?;
     ///
     /// let client_info = client.info()?;
@@ -481,7 +478,7 @@ impl ServerOptions {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-inbound-err1";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let _server = ServerOptions::new()
     ///     .access_inbound(false)
     ///     .create(PIPE_NAME)
@@ -504,7 +501,7 @@ impl ServerOptions {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-inbound-err2";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let server = ServerOptions::new()
     ///     .access_inbound(false)
     ///     .create(PIPE_NAME)
@@ -537,7 +534,7 @@ impl ServerOptions {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-inbound";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let mut server = ServerOptions::new()
     ///     .access_inbound(false)
     ///     .create(PIPE_NAME)
@@ -588,7 +585,7 @@ impl ServerOptions {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-outbound-err1";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let server = ServerOptions::new()
     ///     .access_outbound(false)
     ///     .create(PIPE_NAME)
@@ -611,7 +608,7 @@ impl ServerOptions {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-outbound-err2";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let server = ServerOptions::new()
     ///     .access_outbound(false)
     ///     .create(PIPE_NAME)
@@ -643,7 +640,7 @@ impl ServerOptions {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-access-outbound";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let mut server = ServerOptions::new()
     ///     .access_outbound(false)
     ///     .create(PIPE_NAME)
@@ -702,7 +699,7 @@ impl ServerOptions {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-first-instance-error";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let server1 = ServerOptions::new()
     ///     .first_pipe_instance(true)
     ///     .create(PIPE_NAME)
@@ -727,7 +724,7 @@ impl ServerOptions {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-first-instance";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let mut builder = ServerOptions::new();
     /// builder.first_pipe_instance(true);
     ///
@@ -770,7 +767,7 @@ impl ServerOptions {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\write_dac_pipe";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let mut pipe_template = ServerOptions::new();
     /// pipe_template.write_dac(true);
     /// let pipe = pipe_template.create(PIPE_NAME).unwrap();
@@ -807,7 +804,7 @@ impl ServerOptions {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\write_dac_pipe_fail";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let mut pipe_template = ServerOptions::new();
     /// pipe_template.write_dac(false);
     /// let pipe = pipe_template.create(PIPE_NAME).unwrap();
@@ -890,7 +887,7 @@ impl ServerOptions {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-max-instances";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let mut server = ServerOptions::new();
     /// server.max_instances(2);
     ///
@@ -971,7 +968,7 @@ impl ServerOptions {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-create";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
     /// # })
     /// ```
@@ -1059,7 +1056,7 @@ impl ClientOptions {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-client-new";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// // Server must be created in order for the client creation to succeed.
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
     /// let client = ClientOptions::new().open(PIPE_NAME).await.unwrap();
@@ -1164,7 +1161,7 @@ impl ClientOptions {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\mynamedpipe";
     ///
-    /// # compio_runtime::block_on(async move {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let client = loop {
     ///     match ClientOptions::new().open(PIPE_NAME).await {
     ///         Ok(client) => break client,

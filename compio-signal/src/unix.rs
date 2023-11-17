@@ -15,8 +15,7 @@ thread_local! {
 }
 
 unsafe extern "C" fn signal_handler(sig: i32) {
-    HANDLER.with(|handler| {
-        let mut handler = handler.borrow_mut();
+    HANDLER.with_borrow_mut(|handler| {
         if let Some(fds) = handler.get_mut(&sig) {
             if !fds.is_empty() {
                 let fds = std::mem::take(fds);
@@ -40,19 +39,12 @@ fn register(sig: i32, fd: &Event) -> io::Result<()> {
     unsafe { init(sig) };
     let raw_fd = fd.as_raw_fd();
     let handle = fd.handle()?;
-    HANDLER.with(|handler| {
-        handler
-            .borrow_mut()
-            .entry(sig)
-            .or_default()
-            .insert(raw_fd, handle)
-    });
+    HANDLER.with_borrow_mut(|handler| handler.entry(sig).or_default().insert(raw_fd, handle));
     Ok(())
 }
 
 fn unregister(sig: i32, fd: RawFd) {
-    let need_uninit = HANDLER.with(|handler| {
-        let mut handler = handler.borrow_mut();
+    let need_uninit = HANDLER.with_borrow_mut(|handler| {
         if let Some(fds) = handler.get_mut(&sig) {
             fds.remove(&fd);
             if !fds.is_empty() {

@@ -34,31 +34,31 @@ use crate::Socket;
 ///
 /// use compio_net::UdpSocket;
 ///
-/// compio_runtime::block_on(async {
-///     let first_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-///     let second_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+/// # compio_runtime::Runtime::new().unwrap().block_on(async {
+/// let first_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+/// let second_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
 ///
-///     // bind sockets
-///     let mut socket = UdpSocket::bind(first_addr).await.unwrap();
-///     let first_addr = socket.local_addr().unwrap();
-///     let mut other_socket = UdpSocket::bind(second_addr).await.unwrap();
-///     let second_addr = other_socket.local_addr().unwrap();
+/// // bind sockets
+/// let mut socket = UdpSocket::bind(first_addr).await.unwrap();
+/// let first_addr = socket.local_addr().unwrap();
+/// let mut other_socket = UdpSocket::bind(second_addr).await.unwrap();
+/// let second_addr = other_socket.local_addr().unwrap();
 ///
-///     // connect sockets
-///     socket.connect(second_addr).await.unwrap();
-///     other_socket.connect(first_addr).await.unwrap();
+/// // connect sockets
+/// socket.connect(second_addr).await.unwrap();
+/// other_socket.connect(first_addr).await.unwrap();
 ///
-///     let buf = Vec::with_capacity(12);
+/// let buf = Vec::with_capacity(12);
 ///
-///     // write data
-///     socket.send("Hello world!").await.unwrap();
+/// // write data
+/// socket.send("Hello world!").await.unwrap();
 ///
-///     // read data
-///     let (n_bytes, buf) = other_socket.recv(buf).await.unwrap();
+/// // read data
+/// let (n_bytes, buf) = other_socket.recv(buf).await.unwrap();
 ///
-///     assert_eq!(n_bytes, buf.len());
-///     assert_eq!(buf, b"Hello world!");
-/// });
+/// assert_eq!(n_bytes, buf.len());
+/// assert_eq!(buf, b"Hello world!");
+/// # });
 /// ```
 /// Send and receive packets without connecting:
 ///
@@ -68,28 +68,28 @@ use crate::Socket;
 /// use compio_net::UdpSocket;
 /// use socket2::SockAddr;
 ///
-/// compio_runtime::block_on(async {
-///     let first_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-///     let second_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+/// # compio_runtime::Runtime::new().unwrap().block_on(async {
+/// let first_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+/// let second_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
 ///
-///     // bind sockets
-///     let mut socket = UdpSocket::bind(first_addr).await.unwrap();
-///     let first_addr = socket.local_addr().unwrap();
-///     let mut other_socket = UdpSocket::bind(second_addr).await.unwrap();
-///     let second_addr = other_socket.local_addr().unwrap();
+/// // bind sockets
+/// let mut socket = UdpSocket::bind(first_addr).await.unwrap();
+/// let first_addr = socket.local_addr().unwrap();
+/// let mut other_socket = UdpSocket::bind(second_addr).await.unwrap();
+/// let second_addr = other_socket.local_addr().unwrap();
 ///
-///     let buf = Vec::with_capacity(32);
+/// let buf = Vec::with_capacity(32);
 ///
-///     // write data
-///     socket.send_to("hello world", second_addr).await.unwrap();
+/// // write data
+/// socket.send_to("hello world", second_addr).await.unwrap();
 ///
-///     // read data
-///     let ((n_bytes, addr), buf) = other_socket.recv_from(buf).await.unwrap();
+/// // read data
+/// let ((n_bytes, addr), buf) = other_socket.recv_from(buf).await.unwrap();
 ///
-///     assert_eq!(addr, first_addr);
-///     assert_eq!(n_bytes, buf.len());
-///     assert_eq!(buf, b"hello world");
-/// });
+/// assert_eq!(addr, first_addr);
+/// assert_eq!(n_bytes, buf.len());
+/// assert_eq!(buf, b"hello world");
+/// # });
 /// ```
 #[derive(Debug)]
 pub struct UdpSocket {
@@ -150,7 +150,7 @@ impl UdpSocket {
     /// use compio_net::UdpSocket;
     /// use socket2::SockAddr;
     ///
-    /// # compio_runtime::block_on(async {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async {
     /// let socket = UdpSocket::bind("127.0.0.1:34254")
     ///     .await
     ///     .expect("couldn't bind to address");
@@ -180,7 +180,7 @@ impl UdpSocket {
     /// use compio_net::UdpSocket;
     /// use socket2::SockAddr;
     ///
-    /// # compio_runtime::block_on(async {
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async {
     /// let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
     /// let sock = UdpSocket::bind(&addr).await.unwrap();
     /// // the address the socket is bound to
