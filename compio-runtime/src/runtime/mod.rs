@@ -257,14 +257,17 @@ impl Runtime {
     }
 
     /// Get the current running [`Runtime`].
+    pub fn try_current() -> Option<Self> {
+        CURRENT_RUNTIME.with_borrow(|r| r.upgrade_runtime())
+    }
+
+    /// Get the current running [`Runtime`].
     ///
     /// ## Panics
     ///
     /// This method will panic if there are no running [`Runtime`].
     pub fn current() -> Self {
-        CURRENT_RUNTIME
-            .with_borrow(|r| r.upgrade_runtime())
-            .expect("not in a compio runtime")
+        Self::try_current().expect("not in a compio runtime")
     }
 
     pub(crate) fn inner(&self) -> &RuntimeInner {
