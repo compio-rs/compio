@@ -248,6 +248,17 @@ impl Proactor {
             })
         })
     }
+
+    /// Create a notify handle to interrupt the inner driver.
+    pub fn handle(&self) -> io::Result<NotifyHandle> {
+        self.driver.handle()
+    }
+
+    /// Create a notify handle for specified user_data.
+    #[cfg(windows)]
+    pub fn handle_for(&self, user_data: usize) -> io::Result<NotifyHandle> {
+        self.driver.handle_for(user_data)
+    }
 }
 
 impl AsRawFd for Proactor {

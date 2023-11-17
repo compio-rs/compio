@@ -1,7 +1,7 @@
-use std::{io, pin::Pin, ptr::null_mut, task::Poll};
+use std::{io, pin::Pin, task::Poll};
 
-use compio_driver::{syscall, AsRawFd, OpCode, PushEntry, RawFd};
-use windows_sys::Win32::System::IO::{PostQueuedCompletionStatus, OVERLAPPED};
+use compio_driver::{NotifyHandle, OpCode, PushEntry};
+use windows_sys::Win32::System::IO::OVERLAPPED;
 
 use crate::{key::Key, runtime::op::OpFuture, Runtime};
 
@@ -25,7 +25,7 @@ impl Event {
 
     /// Get a notify handle.
     pub fn handle(&self) -> io::Result<EventHandle> {
-        Ok(EventHandle::new(&self.user_data))
+        EventHandle::new(&self.user_data)
     }
 
     /// Wait for [`EventHandle::notify`] called.
@@ -38,35 +38,21 @@ impl Event {
 
 /// A handle to [`Event`].
 pub struct EventHandle {
-    user_data: usize,
-    handle: RawFd,
+    handle: NotifyHandle,
 }
 
-// Safety: IOCP handle is thread safe.
-unsafe impl Send for EventHandle {}
-unsafe impl Sync for EventHandle {}
-
 impl EventHandle {
-    fn new(user_data: &Key<NopPending>) -> Self {
-        let handle = Runtime::current().as_raw_fd();
-        Self {
-            user_data: **user_data,
-            handle,
-        }
+    fn new(user_data: &Key<NopPending>) -> io::Result<Self> {
+        let runtime = Runtime::current();
+        Ok(Self {
+            handle: runtime.inner().handle_for(**user_data)?,
+        })
     }
 
     /// Notify the event.
     pub fn notify(self) -> io::Result<()> {
-        post_driver_nop(self.handle, self.user_data)
+        self.handle.notify()
     }
-}
-
-fn post_driver_nop(handle: RawFd, user_data: usize) -> io::Result<()> {
-    syscall!(
-        BOOL,
-        PostQueuedCompletionStatus(handle as _, 0, user_data, null_mut())
-    )?;
-    Ok(())
 }
 
 #[derive(Debug)]
