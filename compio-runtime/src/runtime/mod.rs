@@ -4,6 +4,7 @@ use std::{
     future::{ready, Future},
     io,
     rc::{Rc, Weak},
+    sync::atomic::{AtomicUsize, Ordering},
     task::{Context, Poll},
 };
 
@@ -13,7 +14,6 @@ use compio_log::{debug, instrument};
 use futures_util::future::Either;
 use send_wrapper::SendWrapper;
 use smallvec::SmallVec;
-use uuid::Uuid;
 
 pub(crate) mod op;
 #[cfg(feature = "time")]
@@ -26,8 +26,10 @@ use crate::{
     BufResult, Key,
 };
 
+static RUNTIME_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
 pub(crate) struct RuntimeInner {
-    id: Uuid,
+    id: usize,
     driver: RefCell<Proactor>,
     runnables: Rc<RefCell<VecDeque<Runnable>>>,
     op_runtime: RefCell<OpRuntime>,
@@ -38,7 +40,7 @@ pub(crate) struct RuntimeInner {
 impl RuntimeInner {
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         Ok(Self {
-            id: Uuid::new_v4(),
+            id: RUNTIME_COUNTER.fetch_add(1, Ordering::AcqRel),
             driver: RefCell::new(builder.build()?),
             runnables: Rc::new(RefCell::default()),
             op_runtime: RefCell::default(),
@@ -47,7 +49,7 @@ impl RuntimeInner {
         })
     }
 
-    pub fn id(&self) -> Uuid {
+    pub fn id(&self) -> usize {
         self.id
     }
 

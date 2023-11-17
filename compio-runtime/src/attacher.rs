@@ -6,7 +6,6 @@ use compio_buf::IntoInner;
 use compio_driver::AsRawFd;
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
-use uuid::Uuid;
 
 use crate::Runtime;
 
@@ -18,7 +17,7 @@ use crate::Runtime;
 #[derive(Debug, Clone)]
 pub struct Attacher {
     // Make it thread safe.
-    once: OnceLock<Uuid>,
+    once: OnceLock<usize>,
     // Make it !Send & !Sync.
     _p: PhantomData<*mut ()>,
 }
