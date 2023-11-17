@@ -133,3 +133,20 @@ fn register_multiple() {
     let op = CloseFile::new(fd);
     push_and_wait(&mut driver, op);
 }
+
+#[test]
+fn notify() {
+    let mut driver = Proactor::new().unwrap();
+
+    let handle = driver.handle().unwrap();
+
+    let thread = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(1));
+        handle.notify().unwrap()
+    });
+
+    let mut entries = ArrayVec::<Entry, 1>::new();
+    driver.poll(None, &mut entries).unwrap();
+
+    thread.join().unwrap();
+}

@@ -72,6 +72,9 @@ polling = "3.3.0"
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 
+[dev-dependencies]
+compio-buf = { workspace = true, features = ["arrayvec"] }
+
 [features]
 default = ["io-uring"]
 polling = ["dep:polling", "dep:crossbeam-queue"]
