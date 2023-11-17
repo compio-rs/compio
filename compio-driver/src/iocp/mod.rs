@@ -393,7 +393,7 @@ impl NotifyHandle {
         Self { user_data, handle }
     }
 
-    /// Notify the event.
+    /// Notify the inner driver.
     pub fn notify(&self) -> io::Result<()> {
         syscall!(
             BOOL,

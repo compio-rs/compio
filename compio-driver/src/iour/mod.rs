@@ -1,7 +1,7 @@
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 #[allow(unused_imports)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{collections::VecDeque, io, pin::Pin, task::Poll, time::Duration};
+use std::{collections::VecDeque, io, os::fd::OwnedFd, pin::Pin, task::Poll, time::Duration};
 
 use compio_log::{instrument, trace};
 use io_uring::{
@@ -14,7 +14,7 @@ use io_uring::{
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use slab::Slab;
 
-use crate::{Entry, ProactorBuilder};
+use crate::{syscall, Entry, ProactorBuilder};
 
 pub(crate) mod op;
 pub(crate) use crate::unix::RawOp;
@@ -29,6 +29,7 @@ pub trait OpCode {
 pub(crate) struct Driver {
     inner: IoUring,
     squeue: VecDeque<squeue::Entry>,
+    notifier: Notifier,
 }
 
 impl Driver {
@@ -40,6 +41,7 @@ impl Driver {
         Ok(Self {
             inner: IoUring::new(builder.capacity)?,
             squeue: VecDeque::with_capacity(builder.capacity as usize),
+            notifier: Notifier::new()?,
         })
     }
 
@@ -163,6 +165,10 @@ impl Driver {
         }
         Ok(())
     }
+
+    pub fn handle(&self) -> io::Result<NotifyHandle> {
+        self.notifier.handle()
+    }
 }
 
 impl AsRawFd for Driver {
@@ -190,4 +196,56 @@ fn timespec(duration: std::time::Duration) -> Timespec {
     Timespec::new()
         .sec(duration.as_secs())
         .nsec(duration.subsec_nanos())
+}
+
+#[derive(Debug)]
+struct Notifier {
+    fd: OwnedFd,
+}
+
+impl Notifier {
+    /// Create a new notifier.
+    fn new() -> io::Result<Self> {
+        let fd = syscall!(libc::eventfd(0, libc::EFD_CLOEXEC))?;
+        let fd = unsafe { OwnedFd::from_raw_fd(fd) };
+        Ok(Self { fd })
+    }
+
+    /// Clear the notification.
+    fn clear(&self) -> io::Result<()> {
+        let mut buf = [0u8; std::mem::size_of::<u64>()];
+        syscall!(libc::read(
+            self.fd.as_raw_fd(),
+            buf.as_mut_ptr().cast(),
+            buf.len()
+        ))?;
+        Ok(())
+    }
+
+    pub fn handle(&self) -> io::Result<NotifyHandle> {
+        let fd = self.fd.try_clone()?;
+        Ok(NotifyHandle::new(fd))
+    }
+}
+
+/// A notify handle to the inner driver.
+pub struct NotifyHandle {
+    fd: OwnedFd,
+}
+
+impl NotifyHandle {
+    pub(crate) fn new(fd: OwnedFd) -> Self {
+        Self { fd }
+    }
+
+    /// Notify the inner driver.
+    pub fn notify(&self) -> io::Result<()> {
+        let data = 1u64;
+        syscall!(libc::write(
+            self.fd.as_raw_fd(),
+            &data as *const _ as *const _,
+            std::mem::size_of::<u64>(),
+        ))?;
+        Ok(())
+    }
 }

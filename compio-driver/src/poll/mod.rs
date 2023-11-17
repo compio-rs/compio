@@ -296,6 +296,10 @@ impl Driver {
         }
         Ok(())
     }
+
+    pub fn handle(&self) -> io::Result<NotifyHandle> {
+        Ok(NotifyHandle::new(self.poll.clone()))
+    }
 }
 
 impl AsRawFd for Driver {
@@ -320,4 +324,20 @@ fn entry_cancelled(user_data: usize) -> Entry {
         user_data,
         Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)),
     )
+}
+
+/// A notify handle to the inner driver.
+pub struct NotifyHandle {
+    poll: Arc<Poller>,
+}
+
+impl NotifyHandle {
+    fn new(poll: Arc<Poller>) -> Self {
+        Self { poll }
+    }
+
+    /// Notify the inner driver.
+    pub fn notify(&self) -> io::Result<()> {
+        self.poll.notify()
+    }
 }
