@@ -3,7 +3,6 @@ use std::{
     collections::VecDeque,
     future::{ready, Future},
     io,
-    marker::PhantomData,
     rc::{Rc, Weak},
     task::{Context, Poll},
 };
@@ -302,10 +301,10 @@ impl Runtime {
         EnterGuard::new(self)
     }
 
-    /// Start a compio runtime and block on the future till it completes.
+    /// Block on the future till it completes.
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
-        let _guard = self.enter();
-        self.inner.block_on(future)
+        let guard = self.enter();
+        guard.block_on(future)
     }
 
     /// Spawns a new asynchronous task, returning a [`Task`] for it.
@@ -386,11 +385,14 @@ impl RuntimeBuilder {
     }
 }
 
-/// Runtime context guard, exists the runtime context on drop.
+/// Runtime context guard.
+///
+/// When the guard is dropped, exit the corresponding runtime context.
+#[must_use]
 pub struct EnterGuard<'a> {
+    runtime: &'a Runtime,
     old_ptr: Weak<RuntimeInner>,
     depth: usize,
-    _p: PhantomData<&'a Runtime>,
 }
 
 impl<'a> EnterGuard<'a> {
@@ -402,10 +404,15 @@ impl<'a> EnterGuard<'a> {
             )
         });
         Self {
+            runtime,
             old_ptr,
             depth,
-            _p: PhantomData,
         }
+    }
+
+    /// Block on the future in the runtime backed of this guard.
+    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        self.runtime.inner.block_on(future)
     }
 }
 
