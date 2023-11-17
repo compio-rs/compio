@@ -48,6 +48,7 @@ compio-runtime = { workspace = true, features = ["criterion"] }
 compio-macros = { workspace = true }
 
 criterion = { workspace = true, features = ["async_tokio"] }
+futures-channel = { workspace = true }
 futures-util = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = [

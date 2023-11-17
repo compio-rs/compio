@@ -1,6 +1,6 @@
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
 
-use std::net::Ipv4Addr;
+use std::{net::Ipv4Addr, time::Duration};
 
 use compio::{
     buf::*,
@@ -177,6 +177,16 @@ async fn arena() {
         .await
         .unwrap();
     assert_eq!(buffer.len(), read);
+}
+
+#[compio_macros::test]
+async fn wake_cross_thread() {
+    let (tx, rx) = futures_channel::oneshot::channel::<()>();
+    let thread = std::thread::spawn(move || compio::runtime::Runtime::new().unwrap().block_on(rx));
+    // Sleep and wait for the waker passed into the channel.
+    std::thread::sleep(Duration::from_secs(1));
+    tx.send(()).unwrap();
+    thread.join().unwrap().unwrap();
 }
 
 fn tempfile() -> NamedTempFile {
