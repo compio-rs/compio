@@ -54,7 +54,7 @@ pub trait AsRawFd {
     fn as_raw_fd(&self) -> RawFd;
 }
 
-/// Contruct IO objects from raw fds.
+/// Construct IO objects from raw fds.
 pub trait FromRawFd {
     /// Constructs a new IO object from the specified raw fd.
     ///

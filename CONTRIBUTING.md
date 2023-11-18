@@ -33,7 +33,7 @@ We adhere to [Rust Code of Conduct](https://www.rust-lang.org/policies/code-of-c
 
 ## Contribute with issue
 
-If you find a bug or have a feature request, please [open an issue](https://github.com/compio-rs/compio/issues/new/choose) with detailed description. Issues that are lack of informaton or destructive will be requested for more information or closed.
+If you find a bug or have a feature request, please [open an issue](https://github.com/compio-rs/compio/issues/new/choose) with detailed description. Issues that are lack of information or destructive will be requested for more information or closed.
 
 It's also helpful if you can provide the following information:
 
