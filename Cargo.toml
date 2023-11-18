@@ -12,8 +12,6 @@ members = [
     "compio-io",
     "compio-tls",
     "compio-log",
-    "compio-http",
-    "compio-http-client",
 ]
 resolver = "2"
 
@@ -34,10 +32,8 @@ compio-io = { path = "./compio-io", version = "0.1.0-beta.1" }
 compio-net = { path = "./compio-net", version = "0.2.0-beta.1" }
 compio-signal = { path = "./compio-signal", version = "0.1.1-beta.1" }
 compio-dispatcher = { path = "./compio-dispatcher", version = "0.1.0-beta.1" }
-compio-http = { path = "./compio-http", version = "0.1.0" }
 compio-log = { path = "./compio-log", version = "0.1.0-beta.1" }
-compio-tls = { path = "./compio-tls", version = "0.1.0" }
-
+compio-tls = { path = "./compio-tls", version = "0.1.0-beta.1" }
 
 cfg-if = "1.0.0"
 criterion = "0.5.1"

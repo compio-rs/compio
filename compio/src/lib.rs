@@ -28,6 +28,7 @@ pub use buf::BufResult;
 #[doc(inline)]
 pub use compio_dispatcher as dispatcher;
 #[cfg(feature = "io")]
+#[doc(inline)]
 pub use compio_io as io;
 #[cfg(feature = "macros")]
 pub use compio_macros::*;
@@ -37,6 +38,9 @@ pub use compio_runtime as runtime;
 #[cfg(feature = "signal")]
 #[doc(inline)]
 pub use compio_signal as signal;
+#[cfg(feature = "tls")]
+#[doc(inline)]
+pub use compio_tls as tls;
 #[cfg(feature = "event")]
 #[doc(no_inline)]
 pub use runtime::event;
