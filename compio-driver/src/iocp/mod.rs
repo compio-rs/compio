@@ -7,7 +7,8 @@ use std::{
         OwnedHandle, RawHandle,
     },
     pin::Pin,
-    ptr::NonNull,
+    ptr::{null_mut, NonNull},
+    sync::Arc,
     task::Poll,
     time::Duration,
 };
@@ -147,13 +148,15 @@ fn ntstatus_from_win32(x: i32) -> NTSTATUS {
 
 /// Low-level driver of IOCP.
 pub(crate) struct Driver {
-    port: OwnedHandle,
+    // IOCP handle could not be duplicated.
+    port: Arc<OwnedHandle>,
     cancelled: HashSet<usize>,
     pool: AsyncifyPool,
 }
 
 impl Driver {
     const DEFAULT_CAPACITY: usize = 1024;
+    const NOTIFY: usize = usize::MAX;
 
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         instrument!(compio_log::Level::TRACE, "new", ?builder);
@@ -164,7 +167,7 @@ impl Driver {
         trace!("new iocp driver at port: {port}");
         let port = unsafe { OwnedHandle::from_raw_handle(port as _) };
         Ok(Self {
-            port,
+            port: Arc::new(port),
             cancelled: HashSet::default(),
             pool: builder.create_or_get_thread_pool(),
         })
@@ -205,12 +208,16 @@ impl Driver {
             // This entry is posted by `post_driver_nop`.
             let user_data = iocp_entry.lpCompletionKey;
             trace!("entry {user_data} is posted by post_driver_nop");
-            let result = if self.cancelled.remove(&user_data) {
-                Err(io::Error::from_raw_os_error(ERROR_OPERATION_ABORTED as _))
+            if user_data != Self::NOTIFY {
+                let result = if self.cancelled.remove(&user_data) {
+                    Err(io::Error::from_raw_os_error(ERROR_OPERATION_ABORTED as _))
+                } else {
+                    Ok(0)
+                };
+                Some(Entry::new(user_data, result))
             } else {
-                Ok(0)
-            };
-            Some(Entry::new(user_data, result))
+                None
+            }
         } else {
             let transferred = iocp_entry.dwNumberOfBytesTransferred;
             // Any thin pointer is OK because we don't use the type of opcode.
@@ -350,6 +357,14 @@ impl Driver {
 
         Ok(())
     }
+
+    pub fn handle(&self) -> io::Result<NotifyHandle> {
+        self.handle_for(Self::NOTIFY)
+    }
+
+    pub fn handle_for(&self, user_data: usize) -> io::Result<NotifyHandle> {
+        Ok(NotifyHandle::new(user_data, self.port.clone()))
+    }
 }
 
 impl AsRawFd for Driver {
@@ -361,6 +376,35 @@ impl AsRawFd for Driver {
 impl Drop for Driver {
     fn drop(&mut self) {
         syscall!(SOCKET, WSACleanup()).ok();
+    }
+}
+
+/// A notify handle to the inner driver.
+pub struct NotifyHandle {
+    user_data: usize,
+    handle: Arc<OwnedHandle>,
+}
+
+unsafe impl Send for NotifyHandle {}
+unsafe impl Sync for NotifyHandle {}
+
+impl NotifyHandle {
+    fn new(user_data: usize, handle: Arc<OwnedHandle>) -> Self {
+        Self { user_data, handle }
+    }
+
+    /// Notify the inner driver.
+    pub fn notify(&self) -> io::Result<()> {
+        syscall!(
+            BOOL,
+            PostQueuedCompletionStatus(
+                self.handle.as_raw_handle() as _,
+                0,
+                self.user_data,
+                null_mut()
+            )
+        )?;
+        Ok(())
     }
 }
 

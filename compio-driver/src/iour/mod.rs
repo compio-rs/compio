@@ -1,20 +1,20 @@
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 #[allow(unused_imports)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{collections::VecDeque, io, pin::Pin, task::Poll, time::Duration};
+use std::{collections::VecDeque, io, os::fd::OwnedFd, pin::Pin, task::Poll, time::Duration};
 
 use compio_log::{instrument, trace};
 use io_uring::{
     cqueue,
-    opcode::AsyncCancel,
+    opcode::{AsyncCancel, Read},
     squeue,
-    types::{SubmitArgs, Timespec},
+    types::{Fd, SubmitArgs, Timespec},
     IoUring,
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use slab::Slab;
 
-use crate::{Entry, ProactorBuilder};
+use crate::{syscall, Entry, ProactorBuilder};
 
 pub(crate) mod op;
 pub(crate) use crate::unix::RawOp;
@@ -29,10 +29,13 @@ pub trait OpCode {
 pub(crate) struct Driver {
     inner: IoUring,
     squeue: VecDeque<squeue::Entry>,
+    notifier: Notifier,
+    notifier_registered: bool,
 }
 
 impl Driver {
     const CANCEL: u64 = u64::MAX;
+    const NOTIFY: u64 = u64::MAX - 1;
 
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         instrument!(compio_log::Level::TRACE, "new", ?builder);
@@ -40,6 +43,8 @@ impl Driver {
         Ok(Self {
             inner: IoUring::new(builder.capacity)?,
             squeue: VecDeque::with_capacity(builder.capacity as usize),
+            notifier: Notifier::new()?,
+            notifier_registered: false,
         })
     }
 
@@ -60,7 +65,13 @@ impl Driver {
         };
         trace!("submit result: {res:?}");
         match res {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                if self.inner.completion().is_empty() {
+                    Err(io::Error::from_raw_os_error(libc::ETIMEDOUT))
+                } else {
+                    Ok(())
+                }
+            }
             Err(e) => match e.raw_os_error() {
                 Some(libc::ETIME) => Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)),
                 Some(libc::EBUSY) | Some(libc::EAGAIN) => Ok(()),
@@ -107,13 +118,16 @@ impl Driver {
     }
 
     fn poll_entries(&mut self, entries: &mut impl Extend<Entry>) {
-        let completed_entries =
-            self.inner
-                .completion()
-                .filter_map(|entry| match entry.user_data() {
-                    Self::CANCEL => None,
-                    _ => Some(create_entry(entry)),
-                });
+        let mut cqueue = self.inner.completion();
+        cqueue.sync();
+        let completed_entries = cqueue.filter_map(|entry| match entry.user_data() {
+            Self::CANCEL => None,
+            Self::NOTIFY => {
+                self.notifier_registered = false;
+                None
+            }
+            _ => Some(create_entry(entry)),
+        });
         entries.extend(completed_entries);
     }
 
@@ -147,6 +161,17 @@ impl Driver {
         _registry: &mut Slab<RawOp>,
     ) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
+        if !self.notifier_registered {
+            let fd = self.notifier.as_raw_fd();
+            let dst = self.notifier.dst();
+            self.squeue.push_back(
+                Read::new(Fd(fd), dst.as_mut_ptr(), dst.len() as _)
+                    .build()
+                    .user_data(Self::NOTIFY),
+            );
+            trace!("registered notifier");
+            self.notifier_registered = true
+        }
         // Anyway we need to submit once, no matter there are entries in squeue.
         trace!("start polling");
         loop {
@@ -162,6 +187,10 @@ impl Driver {
             }
         }
         Ok(())
+    }
+
+    pub fn handle(&self) -> io::Result<NotifyHandle> {
+        self.notifier.handle()
     }
 }
 
@@ -190,4 +219,59 @@ fn timespec(duration: std::time::Duration) -> Timespec {
     Timespec::new()
         .sec(duration.as_secs())
         .nsec(duration.subsec_nanos())
+}
+
+#[derive(Debug)]
+struct Notifier {
+    fd: OwnedFd,
+    read_dst: Box<[u8; 8]>,
+}
+
+impl Notifier {
+    /// Create a new notifier.
+    fn new() -> io::Result<Self> {
+        let fd = syscall!(libc::eventfd(0, libc::EFD_CLOEXEC))?;
+        let fd = unsafe { OwnedFd::from_raw_fd(fd) };
+        Ok(Self {
+            fd,
+            read_dst: Box::new([0; 8]),
+        })
+    }
+
+    fn dst(&mut self) -> &mut [u8] {
+        self.read_dst.as_mut_slice()
+    }
+
+    pub fn handle(&self) -> io::Result<NotifyHandle> {
+        let fd = self.fd.try_clone()?;
+        Ok(NotifyHandle::new(fd))
+    }
+}
+
+impl AsRawFd for Notifier {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd.as_raw_fd()
+    }
+}
+
+/// A notify handle to the inner driver.
+pub struct NotifyHandle {
+    fd: OwnedFd,
+}
+
+impl NotifyHandle {
+    pub(crate) fn new(fd: OwnedFd) -> Self {
+        Self { fd }
+    }
+
+    /// Notify the inner driver.
+    pub fn notify(&self) -> io::Result<()> {
+        let data = 1u64;
+        syscall!(libc::write(
+            self.fd.as_raw_fd(),
+            &data as *const _ as *const _,
+            std::mem::size_of::<u64>(),
+        ))?;
+        Ok(())
+    }
 }

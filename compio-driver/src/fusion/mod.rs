@@ -162,6 +162,14 @@ impl Driver {
             FuseDriver::IoUring(driver) => driver.poll(timeout, entries, registry),
         }
     }
+
+    pub fn handle(&self) -> io::Result<NotifyHandle> {
+        let fuse = match &self.fuse {
+            FuseDriver::Poll(driver) => FuseNotifyHandle::Poll(driver.handle()?),
+            FuseDriver::IoUring(driver) => FuseNotifyHandle::IoUring(driver.handle()?),
+        };
+        Ok(NotifyHandle::from_fuse(fuse))
+    }
 }
 
 impl AsRawFd for Driver {
@@ -169,6 +177,30 @@ impl AsRawFd for Driver {
         match &self.fuse {
             FuseDriver::Poll(driver) => driver.as_raw_fd(),
             FuseDriver::IoUring(driver) => driver.as_raw_fd(),
+        }
+    }
+}
+
+enum FuseNotifyHandle {
+    Poll(poll::NotifyHandle),
+    IoUring(iour::NotifyHandle),
+}
+
+/// A notify handle to the inner driver.
+pub struct NotifyHandle {
+    fuse: FuseNotifyHandle,
+}
+
+impl NotifyHandle {
+    fn from_fuse(fuse: FuseNotifyHandle) -> Self {
+        Self { fuse }
+    }
+
+    /// Notify the inner driver.
+    pub fn notify(&self) -> io::Result<()> {
+        match &self.fuse {
+            FuseNotifyHandle::Poll(handle) => handle.notify(),
+            FuseNotifyHandle::IoUring(handle) => handle.notify(),
         }
     }
 }

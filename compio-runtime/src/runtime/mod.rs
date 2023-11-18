@@ -1,18 +1,20 @@
 use std::{
     cell::RefCell,
-    collections::VecDeque,
     future::{ready, Future},
     io,
     rc::{Rc, Weak},
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
     task::{Context, Poll},
 };
 
 use async_task::{Runnable, Task};
 use compio_driver::{AsRawFd, Entry, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd};
 use compio_log::{debug, instrument};
+use crossbeam_queue::SegQueue;
 use futures_util::future::Either;
-use send_wrapper::SendWrapper;
 use smallvec::SmallVec;
 
 pub(crate) mod op;
@@ -31,7 +33,7 @@ static RUNTIME_COUNTER: AtomicUsize = AtomicUsize::new(0);
 pub(crate) struct RuntimeInner {
     id: usize,
     driver: RefCell<Proactor>,
-    runnables: Rc<RefCell<VecDeque<Runnable>>>,
+    runnables: Arc<SegQueue<Runnable>>,
     op_runtime: RefCell<OpRuntime>,
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
@@ -42,7 +44,7 @@ impl RuntimeInner {
         Ok(Self {
             id: RUNTIME_COUNTER.fetch_add(1, Ordering::AcqRel),
             driver: RefCell::new(builder.build()?),
-            runnables: Rc::new(RefCell::default()),
+            runnables: Arc::new(SegQueue::new()),
             op_runtime: RefCell::default(),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
@@ -53,13 +55,22 @@ impl RuntimeInner {
         self.id
     }
 
+    #[cfg(all(windows, feature = "event"))]
+    pub unsafe fn handle_for(&self, user_data: usize) -> io::Result<compio_driver::NotifyHandle> {
+        self.driver.borrow().handle_for(user_data)
+    }
+
     // Safety: the return runnable should be scheduled.
     unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
-        // clone is cheap because it is Rc;
-        // SendWrapper is used to avoid cross-thread scheduling.
-        let runnables = SendWrapper::new(self.runnables.clone());
+        let runnables = self.runnables.clone();
+        let handle = self
+            .driver
+            .borrow()
+            .handle()
+            .expect("cannot create notify handle of the proactor");
         let schedule = move |runnable| {
-            runnables.borrow_mut().push_back(runnable);
+            runnables.push(runnable);
+            handle.notify().ok();
         };
         let (runnable, task) = async_task::spawn_unchecked(future, schedule);
         runnable.schedule();
@@ -71,7 +82,7 @@ impl RuntimeInner {
         unsafe { self.spawn_unchecked(async { result = Some(future.await) }) }.detach();
         loop {
             loop {
-                let next_task = self.runnables.borrow_mut().pop_front();
+                let next_task = self.runnables.pop();
                 if let Some(task) = next_task {
                     task.run();
                 } else {
