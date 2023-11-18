@@ -1,6 +1,6 @@
 [package]
 name = "compio"
-version = "0.9.0-beta.1"
+version = "0.9.0-beta.2"
 description = "completion based async runtime"
 categories = ["asynchronous", "filesystem", "network-programming"]
 keywords = ["async", "fs", "iocp", "io-uring", "net"]
@@ -40,6 +40,7 @@ compio-net = { workspace = true }
 compio-signal = { workspace = true, optional = true }
 compio-dispatcher = { workspace = true, optional = true }
 compio-log = { workspace = true, optional = true }
+compio-tls = { workspace = true, optional = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
@@ -84,7 +85,8 @@ event = ["compio-runtime/event", "runtime"]
 signal = ["dep:compio-signal", "event"]
 time = ["compio-runtime/time", "runtime"]
 dispatcher = ["dep:compio-dispatcher", "runtime"]
-all = ["time", "macros", "signal", "dispatcher"]
+tls = ["dep:compio-tls"]
+all = ["time", "macros", "signal", "dispatcher", "tls"]
 
 criterion = ["compio-runtime?/criterion"]
 
