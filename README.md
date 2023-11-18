@@ -1,9 +1,9 @@
 # Compio
 
-[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/Berrysoft/compio/blob/master/LICENSE)
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/compio-rs/compio/blob/master/LICENSE)
 [![crates.io](https://img.shields.io/crates/v/compio)](https://crates.io/crates/compio)
 [![docs.rs](https://img.shields.io/badge/docs.rs-compio-latest)](https://docs.rs/compio)
-[![Azure DevOps builds](https://strawberry-vs.visualstudio.com/compio/_apis/build/status/Berrysoft.compio?branch=master)](https://strawberry-vs.visualstudio.com/compio/_build)
+[![Azure DevOps builds](https://strawberry-vs.visualstudio.com/compio/_apis/build/status/compio-rs.compio?branch=master)](https://strawberry-vs.visualstudio.com/compio/_build?definitionId=22)
 
 A thread-per-core Rust runtime with IOCP/io_uring/polling.
 The name comes from "completion-based IO".
@@ -19,7 +19,7 @@ Unlike `tokio-uring`, this runtime isn't Tokio-based.
 This is mainly because that no public APIs to control IOCP in `mio`,
 and `tokio` won't public APIs to control `mio` before `mio` reaches 1.0.
 
-## Why not monoio/tokio-uring?
+## Why not monoio/tokio-uring/glommio?
 
 They don't support Windows.
 
@@ -28,7 +28,7 @@ They don't support Windows.
 Add `compio` as dependency:
 
 ```
-compio = { version = "0.8.0", features = ["macros"] }
+compio = { version = "0.9.0-beta.1", features = ["macros"] }
 ```
 
 Then we can use high level APIs to perform filesystem & net IO.
