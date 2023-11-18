@@ -430,7 +430,7 @@ impl<'a> EnterGuard<'a> {
 }
 
 #[cold]
-fn panic_incorrent_drop_order() {
+fn panic_incorrect_drop_order() {
     if !std::thread::panicking() {
         panic!(
             "`EnterGuard` values dropped out of order. Guards returned by `Runtime::enter()` must \
@@ -446,7 +446,7 @@ impl Drop for EnterGuard<'_> {
             ctx.dec_depth()
         });
         if depth != self.depth {
-            panic_incorrent_drop_order()
+            panic_incorrect_drop_order()
         }
     }
 }

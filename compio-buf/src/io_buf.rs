@@ -86,7 +86,7 @@ pub trait IoBuf: Unpin + 'static {
         Slice::new(self, begin, end)
     }
 
-    /// Indicate wether the buffer has been filled (uninit portion is empty)
+    /// Indicate whether the buffer has been filled (uninit portion is empty)
     fn filled(&self) -> bool {
         self.buf_len() == self.buf_capacity()
     }

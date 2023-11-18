@@ -24,7 +24,7 @@ pub trait AsyncRead {
     /// # Caution
     ///
     /// Implementor **MUST** update the buffer init via
-    /// [`SetBufInit::set_buf_init`] after reading, and no furthur update should
+    /// [`SetBufInit::set_buf_init`] after reading, and no further update should
     /// be made by caller.
     ///
     /// [`SetBufInit::set_buf_init`]: compio_buf::SetBufInit::set_buf_init

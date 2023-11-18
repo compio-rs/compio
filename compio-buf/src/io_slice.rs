@@ -64,7 +64,7 @@ compile_error!("`IoSlice` only available on unix and windows");
 /// An unsafe, `'static`, initialized, and immutable slice of bytes to interact
 /// with system API.
 ///
-/// Like [`IoSlice`] in `std`, `IoSlice` guarantees the ABI compatability
+/// Like [`IoSlice`] in `std`, `IoSlice` guarantees the ABI compatibility
 /// on unix and windows, but without the lifetime, makes it easier to use with
 /// compio driver at the cost of unsafe to construct. `IoSlice` should only be
 /// used with compio driver.
@@ -114,7 +114,7 @@ impl IoSlice {
 /// An unsafe, `'static`, maybe uninitialized, and mutable slice of bytes to
 /// interact with system API.
 ///
-/// Like [`IoSliceMut`] in `std`, `IoSliceMut` guarantees the ABI compatability
+/// Like [`IoSliceMut`] in `std`, `IoSliceMut` guarantees the ABI compatibility
 /// on unix and windows, but without the lifetime and accepts
 /// [`MaybeUninit<u8>`], makes it easier to use with compio driver at the cost
 /// of unsafe to construct. `IoSliceMut` should only be used with compio driver.

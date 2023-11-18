@@ -11,7 +11,7 @@ use send_wrapper::SendWrapper;
 use crate::{HttpStream, TlsBackend};
 
 /// An executor service based on [`compio_runtime`]. It uses
-/// [`compio_runtime::spawn`] interally.
+/// [`compio_runtime::spawn`] internally.
 #[derive(Debug, Default, Clone)]
 pub struct CompioExecutor;
 
