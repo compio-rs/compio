@@ -1,17 +1,12 @@
-use std::{io, net::SocketAddr};
+use std::{future::Future, io, net::SocketAddr};
 
+use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
-#[cfg(feature = "runtime")]
-use {
-    crate::ToSocketAddrsAsync,
-    compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
-    compio_io::{AsyncRead, AsyncWrite},
-    compio_runtime::impl_attachable,
-    socket2::{Protocol, SockAddr, Type},
-    std::future::Future,
-};
+use compio_io::{AsyncRead, AsyncWrite};
+use compio_runtime::impl_attachable;
+use socket2::{Protocol, SockAddr, Type};
 
-use crate::Socket;
+use crate::{Socket, ToSocketAddrsAsync};
 
 /// A TCP socket server, listening for connections.
 ///
@@ -58,7 +53,6 @@ impl TcpListener {
     ///
     /// Binding with a port number of 0 will request that the OS assigns a port
     /// to this listener.
-    #[cfg(feature = "runtime")]
     pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
         super::each_addr(addr, |addr| async move {
             let socket = Socket::bind(&SockAddr::from(addr), Type::STREAM, Some(Protocol::TCP))?;
@@ -70,7 +64,6 @@ impl TcpListener {
 
     /// Close the socket. If the returned future is dropped before polling, the
     /// socket won't be closed.
-    #[cfg(feature = "runtime")]
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.inner.close()
     }
@@ -89,7 +82,6 @@ impl TcpListener {
     /// This function will yield once a new TCP connection is established. When
     /// established, the corresponding [`TcpStream`] and the remote peer's
     /// address will be returned.
-    #[cfg(feature = "runtime")]
     pub async fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
         let (socket, addr) = self.inner.accept().await?;
         let stream = TcpStream { inner: socket };
@@ -128,7 +120,6 @@ impl TcpListener {
 
 impl_raw_fd!(TcpListener, inner);
 
-#[cfg(feature = "runtime")]
 impl_attachable!(TcpListener, inner);
 
 /// A TCP stream between a local and a remote socket.
@@ -159,7 +150,6 @@ pub struct TcpStream {
 
 impl TcpStream {
     /// Opens a TCP connection to a remote host.
-    #[cfg(feature = "runtime")]
     pub async fn connect(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
         use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6};
 
@@ -188,7 +178,6 @@ impl TcpStream {
 
     /// Close the socket. If the returned future is dropped before polling, the
     /// socket won't be closed.
-    #[cfg(feature = "runtime")]
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.inner.close()
     }
@@ -217,7 +206,6 @@ impl TcpStream {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncRead for TcpStream {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
@@ -230,7 +218,6 @@ impl AsyncRead for TcpStream {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncRead for &TcpStream {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
@@ -243,7 +230,6 @@ impl AsyncRead for &TcpStream {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncWrite for TcpStream {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
@@ -266,7 +252,6 @@ impl AsyncWrite for TcpStream {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncWrite for &TcpStream {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
@@ -291,5 +276,4 @@ impl AsyncWrite for &TcpStream {
 
 impl_raw_fd!(TcpStream, inner);
 
-#[cfg(feature = "runtime")]
 impl_attachable!(TcpStream, inner);

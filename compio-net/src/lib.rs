@@ -5,16 +5,13 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![warn(missing_docs)]
 
-#[cfg(feature = "runtime")]
 mod resolve;
 mod socket;
 mod tcp;
 mod udp;
 mod unix;
 
-#[cfg(feature = "runtime")]
 pub use resolve::ToSocketAddrsAsync;
-#[cfg(feature = "runtime")]
 pub(crate) use resolve::{each_addr, first_addr_buf};
 pub(crate) use socket::*;
 pub use tcp::*;

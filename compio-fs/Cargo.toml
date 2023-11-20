@@ -16,10 +16,10 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 # Workspace dependencies
-compio-buf = { workspace = true, optional = true }
+compio-buf = { workspace = true }
 compio-driver = { workspace = true }
-compio-io = { workspace = true, optional = true }
-compio-runtime = { workspace = true, optional = true }
+compio-io = { workspace = true }
+compio-runtime = { workspace = true }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
@@ -55,6 +55,3 @@ windows-sys = { workspace = true, features = ["Win32_Security_Authorization"] }
 # Unix specific dev dependencies
 [target.'cfg(unix)'.dev-dependencies]
 nix = { workspace = true, features = ["fs"] }
-
-[features]
-runtime = ["dep:compio-buf", "dep:compio-io", "dep:compio-runtime"]

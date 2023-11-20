@@ -6,7 +6,10 @@
 use std::ptr::null_mut;
 use std::{ffi::OsStr, io, ptr::null};
 
-use compio_driver::{impl_raw_fd, syscall, AsRawFd, FromRawFd, RawFd};
+use compio_buf::{BufResult, IoBuf, IoBufMut};
+use compio_driver::{impl_raw_fd, op::ConnectNamedPipe, syscall, AsRawFd, FromRawFd, RawFd};
+use compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt};
+use compio_runtime::{impl_attachable, Runtime};
 use widestring::U16CString;
 use windows_sys::Win32::{
     Security::SECURITY_ATTRIBUTES,
@@ -23,16 +26,8 @@ use windows_sys::Win32::{
         SystemServices::ACCESS_SYSTEM_SECURITY,
     },
 };
-#[cfg(feature = "runtime")]
-use {
-    crate::OpenOptions,
-    compio_buf::{BufResult, IoBuf, IoBufMut},
-    compio_driver::op::ConnectNamedPipe,
-    compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt},
-    compio_runtime::{impl_attachable, Attachable, Runtime},
-};
 
-use crate::File;
+use crate::{File, OpenOptions};
 
 /// A [Windows named pipe] server.
 ///
@@ -155,10 +150,8 @@ impl NamedPipeServer {
     /// // Use the connected client...
     /// # std::io::Result::Ok(()) });
     /// ```
-    #[cfg(feature = "runtime")]
     pub async fn connect(&self) -> io::Result<()> {
-        self.attach()?;
-        let op = ConnectNamedPipe::new(self.as_raw_fd());
+        let op = ConnectNamedPipe::new(self.handle.try_get()?.as_raw_fd());
         Runtime::current().submit(op).await.0?;
         Ok(())
     }
@@ -196,7 +189,6 @@ impl NamedPipeServer {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncRead for NamedPipeServer {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
@@ -204,7 +196,6 @@ impl AsyncRead for NamedPipeServer {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncRead for &NamedPipeServer {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
@@ -213,7 +204,6 @@ impl AsyncRead for &NamedPipeServer {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncWrite for NamedPipeServer {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
@@ -231,7 +221,6 @@ impl AsyncWrite for NamedPipeServer {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncWrite for &NamedPipeServer {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
@@ -252,7 +241,6 @@ impl AsyncWrite for &NamedPipeServer {
 
 impl_raw_fd!(NamedPipeServer, handle);
 
-#[cfg(feature = "runtime")]
 impl_attachable!(NamedPipeServer, handle);
 
 /// A [Windows named pipe] client.
@@ -333,7 +321,6 @@ impl NamedPipeClient {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncRead for NamedPipeClient {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
@@ -341,7 +328,6 @@ impl AsyncRead for NamedPipeClient {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncRead for &NamedPipeClient {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
@@ -350,7 +336,6 @@ impl AsyncRead for &NamedPipeClient {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncWrite for NamedPipeClient {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
@@ -368,7 +353,6 @@ impl AsyncWrite for NamedPipeClient {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncWrite for &NamedPipeClient {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
@@ -389,7 +373,6 @@ impl AsyncWrite for &NamedPipeClient {
 
 impl_raw_fd!(NamedPipeClient, handle);
 
-#[cfg(feature = "runtime")]
 impl_attachable!(NamedPipeClient, handle);
 
 /// A builder structure for construct a named pipe with named pipe-specific
@@ -1040,14 +1023,12 @@ impl Default for ServerOptions {
 /// client side.
 ///
 /// See [`ClientOptions::open`].
-#[cfg(feature = "runtime")]
 #[derive(Debug, Clone)]
 pub struct ClientOptions {
     options: OpenOptions,
     pipe_mode: PipeMode,
 }
 
-#[cfg(feature = "runtime")]
 impl ClientOptions {
     /// Creates a new named pipe builder with the default settings.
     ///
@@ -1192,7 +1173,6 @@ impl ClientOptions {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl Default for ClientOptions {
     fn default() -> Self {
         Self::new()

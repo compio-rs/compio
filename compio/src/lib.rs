@@ -38,9 +38,6 @@ pub use compio_dispatcher as dispatcher;
 pub use compio_io as io;
 #[cfg(feature = "macros")]
 pub use compio_macros::*;
-#[cfg(feature = "runtime")]
-#[doc(inline)]
-pub use compio_runtime as runtime;
 #[cfg(feature = "signal")]
 #[doc(inline)]
 pub use compio_signal as signal;
@@ -58,4 +55,7 @@ pub use tls::native_tls;
 #[cfg(feature = "rustls")]
 pub use tls::rustls;
 #[doc(inline)]
-pub use {compio_buf as buf, compio_driver as driver, compio_fs as fs, compio_net as net};
+pub use {compio_buf as buf, compio_driver as driver};
+#[cfg(feature = "runtime")]
+#[doc(inline)]
+pub use {compio_fs as fs, compio_net as net, compio_runtime as runtime};

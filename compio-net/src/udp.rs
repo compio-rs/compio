@@ -1,16 +1,11 @@
-use std::{io, net::SocketAddr};
+use std::{future::Future, io, net::SocketAddr};
 
+use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
-#[cfg(feature = "runtime")]
-use {
-    crate::ToSocketAddrsAsync,
-    compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
-    compio_runtime::impl_attachable,
-    socket2::{Protocol, SockAddr, Type},
-    std::future::Future,
-};
+use compio_runtime::impl_attachable;
+use socket2::{Protocol, SockAddr, Type};
 
-use crate::Socket;
+use crate::{Socket, ToSocketAddrsAsync};
 
 /// A UDP socket.
 ///
@@ -98,7 +93,6 @@ pub struct UdpSocket {
 
 impl UdpSocket {
     /// Creates a new UDP socket and attempt to bind it to the addr provided.
-    #[cfg(feature = "runtime")]
     pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
         super::each_addr(addr, |addr| async move {
             Ok(Self {
@@ -115,7 +109,6 @@ impl UdpSocket {
     /// Note that usually, a successful `connect` call does not specify
     /// that there is a remote server listening on the port, rather, such an
     /// error would only be detected after the first send.
-    #[cfg(feature = "runtime")]
     pub async fn connect(&self, addr: impl ToSocketAddrsAsync) -> io::Result<()> {
         super::each_addr(addr, |addr| async move {
             self.inner.connect(&SockAddr::from(addr))
@@ -125,7 +118,6 @@ impl UdpSocket {
 
     /// Close the socket. If the returned future is dropped before polling, the
     /// socket won't be closed.
-    #[cfg(feature = "runtime")]
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.inner.close()
     }
@@ -196,35 +188,30 @@ impl UdpSocket {
 
     /// Receives a packet of data from the socket into the buffer, returning the
     /// original buffer and quantity of data received.
-    #[cfg(feature = "runtime")]
     pub async fn recv<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.recv(buffer).await
     }
 
     /// Receives a packet of data from the socket into the buffer, returning the
     /// original buffer and quantity of data received.
-    #[cfg(feature = "runtime")]
     pub async fn recv_vectored<T: IoVectoredBufMut>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.recv_vectored(buffer).await
     }
 
     /// Sends some data to the socket from the buffer, returning the original
     /// buffer and quantity of data sent.
-    #[cfg(feature = "runtime")]
     pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.send(buffer).await
     }
 
     /// Sends some data to the socket from the buffer, returning the original
     /// buffer and quantity of data sent.
-    #[cfg(feature = "runtime")]
     pub async fn send_vectored<T: IoVectoredBuf>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.send_vectored(buffer).await
     }
 
     /// Receives a single datagram message on the socket. On success, returns
     /// the number of bytes received and the origin.
-    #[cfg(feature = "runtime")]
     pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SocketAddr), T> {
         self.inner
             .recv_from(buffer)
@@ -234,7 +221,6 @@ impl UdpSocket {
 
     /// Receives a single datagram message on the socket. On success, returns
     /// the number of bytes received and the origin.
-    #[cfg(feature = "runtime")]
     pub async fn recv_from_vectored<T: IoVectoredBufMut>(
         &self,
         buffer: T,
@@ -247,7 +233,6 @@ impl UdpSocket {
 
     /// Sends data on the socket to the given address. On success, returns the
     /// number of bytes sent.
-    #[cfg(feature = "runtime")]
     pub async fn send_to<T: IoBuf>(
         &self,
         buffer: T,
@@ -261,7 +246,6 @@ impl UdpSocket {
 
     /// Sends data on the socket to the given address. On success, returns the
     /// number of bytes sent.
-    #[cfg(feature = "runtime")]
     pub async fn send_to_vectored<T: IoVectoredBuf>(
         &self,
         buffer: T,
@@ -278,5 +262,4 @@ impl UdpSocket {
 
 impl_raw_fd!(UdpSocket, inner);
 
-#[cfg(feature = "runtime")]
 impl_attachable!(UdpSocket, inner);

@@ -1,9 +1,13 @@
+use std::io;
+#[cfg(unix)]
+use std::os::fd::OwnedFd;
+#[cfg(windows)]
+use std::os::windows::prelude::{OwnedHandle, OwnedSocket};
 #[cfg(feature = "once_cell_try")]
 use std::sync::OnceLock;
-use std::{io, marker::PhantomData};
 
 use compio_buf::IntoInner;
-use compio_driver::AsRawFd;
+use compio_driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 
@@ -15,32 +19,30 @@ use crate::Runtime;
 /// itself is Send & Sync. We mark it !Send & !Sync to warn users, making them
 /// ensure that they are using it in the correct thread.
 #[derive(Debug, Clone)]
-pub struct Attacher {
+pub struct Attacher<S> {
+    source: S,
     // Make it thread safe.
     once: OnceLock<usize>,
-    // Make it !Send & !Sync.
-    _p: PhantomData<*mut ()>,
 }
 
-impl Attacher {
+impl<S> Attacher<S> {
     /// Create [`Attacher`].
-    pub const fn new() -> Self {
+    pub fn new(source: S) -> Self {
         Self {
+            source,
             once: OnceLock::new(),
-            _p: PhantomData,
         }
     }
+}
 
+impl<S: AsRawFd> Attacher<S> {
     /// Attach the source. This method could be called many times, but if the
     /// action fails, the error will only return once.
-    ///
-    /// You should always call this method before accessing the runtime. It
-    /// ensures that the current runtime is the exact runtime attached before.
-    pub fn attach(&self, source: &impl AsRawFd) -> io::Result<()> {
+    fn attach(&self) -> io::Result<()> {
         let r = Runtime::current();
         let inner = r.inner();
         let id = self.once.get_or_try_init(|| {
-            inner.attach(source.as_raw_fd())?;
+            inner.attach(self.source.as_raw_fd())?;
             io::Result::Ok(inner.id())
         })?;
         if id != &inner.id() {
@@ -53,37 +55,111 @@ impl Attacher {
         }
     }
 
-    /// Check if [`attach`] has been called.
-    pub fn is_attached(&self) -> bool {
-        self.once.get().is_some()
+    /// Attach the inner source and get the reference.
+    pub fn try_get(&self) -> io::Result<&S> {
+        self.attach()?;
+        Ok(&self.source)
     }
 
+    /// Attach the inner source and get the mutable reference.
+    pub fn try_get_mut(&mut self) -> io::Result<&mut S> {
+        self.attach()?;
+        Ok(&mut self.source)
+    }
+}
+
+impl<S> Attachable for Attacher<S> {
+    fn is_attached(&self) -> bool {
+        self.once.get().is_some()
+    }
+}
+
+impl<S: AsRawFd> AsRawFd for Attacher<S> {
+    fn as_raw_fd(&self) -> RawFd {
+        self.source.as_raw_fd()
+    }
+}
+
+impl<S: IntoRawFd> IntoRawFd for Attacher<S> {
+    fn into_raw_fd(self) -> RawFd {
+        self.source.into_raw_fd()
+    }
+}
+
+impl<S: FromRawFd> FromRawFd for Attacher<S> {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
+        Self::new(S::from_raw_fd(fd))
+    }
+}
+
+impl<S: TryClone + AsRawFd> TryClone for Attacher<S> {
     /// Try clone self with the cloned source. The attach state will be
     /// reserved.
     ///
     /// ## Platform specific
     /// * io-uring/polling: it will try to attach in the current thread if
     ///   needed.
-    pub fn try_clone(&self, source: &impl AsRawFd) -> io::Result<Self> {
-        if cfg!(windows) {
-            Ok(self.clone())
-        } else {
-            let new_self = Self::new();
-            if self.is_attached() {
-                new_self.attach(source)?;
+    fn try_clone(&self) -> io::Result<Self> {
+        let source = self.source.try_clone()?;
+        let new_self = if cfg!(windows) {
+            Self {
+                source,
+                once: self.once.clone(),
             }
-            Ok(new_self)
-        }
+        } else {
+            let new_self = Self::new(source);
+            if self.is_attached() {
+                new_self.attach()?;
+            }
+            new_self
+        };
+        Ok(new_self)
     }
 }
 
 /// Represents an attachable resource to driver.
 pub trait Attachable {
-    /// Attach self to the global driver.
-    fn attach(&self) -> io::Result<()>;
-
     /// Check if [`Attachable::attach`] has been called.
     fn is_attached(&self) -> bool;
+}
+
+/// Duplicatable file or socket.
+pub trait TryClone: Sized {
+    /// Duplicate the source.
+    fn try_clone(&self) -> io::Result<Self>;
+}
+
+impl TryClone for std::fs::File {
+    fn try_clone(&self) -> io::Result<Self> {
+        std::fs::File::try_clone(self)
+    }
+}
+
+impl TryClone for socket2::Socket {
+    fn try_clone(&self) -> io::Result<Self> {
+        socket2::Socket::try_clone(self)
+    }
+}
+
+#[cfg(windows)]
+impl TryClone for OwnedHandle {
+    fn try_clone(&self) -> io::Result<Self> {
+        OwnedHandle::try_clone(self)
+    }
+}
+
+#[cfg(windows)]
+impl TryClone for OwnedSocket {
+    fn try_clone(&self) -> io::Result<Self> {
+        OwnedSocket::try_clone(self)
+    }
+}
+
+#[cfg(unix)]
+impl TryClone for OwnedFd {
+    fn try_clone(&self) -> io::Result<Self> {
+        OwnedFd::try_clone(self)
+    }
 }
 
 /// A [`Send`] wrapper for attachable resource that has not been attached. The
@@ -123,10 +199,6 @@ unsafe impl<T: Attachable> Sync for Unattached<T> {}
 macro_rules! impl_attachable {
     ($t:ty, $inner:ident) => {
         impl $crate::Attachable for $t {
-            fn attach(&self) -> ::std::io::Result<()> {
-                self.$inner.attach()
-            }
-
             fn is_attached(&self) -> bool {
                 self.$inner.is_attached()
             }
