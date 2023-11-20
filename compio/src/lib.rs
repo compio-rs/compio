@@ -22,6 +22,12 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![warn(missing_docs)]
 
+#[cfg(feature = "arrayvec")]
+pub use buf::arrayvec;
+#[cfg(feature = "bumpalo")]
+pub use buf::bumpalo;
+#[cfg(feature = "bytes")]
+pub use buf::bytes;
 #[doc(no_inline)]
 pub use buf::BufResult;
 #[cfg(feature = "dispatcher")]
