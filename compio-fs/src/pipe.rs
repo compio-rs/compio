@@ -4,12 +4,11 @@ use std::{future::Future, io, path::Path};
 
 use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{
-    impl_raw_fd,
     op::{BufResultExt, Recv, RecvVectored, Send, SendVectored},
     syscall, AsRawFd, FromRawFd, IntoRawFd,
 };
 use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::{impl_attachable, Runtime};
+use compio_runtime::{impl_attachable, impl_try_as_raw_fd, Runtime, TryAsRawFd};
 
 use crate::File;
 
@@ -385,7 +384,7 @@ impl AsyncWrite for &Sender {
     }
 }
 
-impl_raw_fd!(Sender, file);
+impl_try_as_raw_fd!(Sender, file);
 
 impl_attachable!(Sender, file);
 
@@ -512,7 +511,7 @@ impl AsyncRead for &Receiver {
     }
 }
 
-impl_raw_fd!(Receiver, file);
+impl_try_as_raw_fd!(Receiver, file);
 
 impl_attachable!(Receiver, file);
 
@@ -524,9 +523,9 @@ fn is_fifo(file: &File) -> io::Result<bool> {
 }
 
 /// Sets file's flags with O_NONBLOCK by fcntl.
-fn set_nonblocking(file: &impl AsRawFd) -> io::Result<()> {
+fn set_nonblocking(file: &impl TryAsRawFd) -> io::Result<()> {
     if cfg!(not(all(target_os = "linux", feature = "io-uring"))) {
-        let fd = file.as_raw_fd();
+        let fd = file.try_as_raw_fd()?;
         let current_flags = syscall!(libc::fcntl(fd, libc::F_GETFL))?;
         let flags = current_flags | libc::O_NONBLOCK;
         if flags != current_flags {

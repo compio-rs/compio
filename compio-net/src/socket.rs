@@ -2,14 +2,15 @@ use std::{future::Future, io, mem::ManuallyDrop};
 
 use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{
-    impl_raw_fd,
     op::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored,
         RecvResultExt, RecvVectored, Send, SendTo, SendToVectored, SendVectored, ShutdownSocket,
     },
     AsRawFd,
 };
-use compio_runtime::{impl_attachable, Attacher, Runtime, TryClone};
+use compio_runtime::{
+    impl_attachable, impl_try_as_raw_fd, Attacher, Runtime, TryAsRawFd, TryClone,
+};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
 #[derive(Debug)]
@@ -72,7 +73,7 @@ impl Socket {
     }
 
     pub async fn connect_async(&self, addr: &SockAddr) -> io::Result<()> {
-        let op = Connect::new(self.try_get()?.as_raw_fd(), addr.clone());
+        let op = Connect::new(self.try_as_raw_fd()?, addr.clone());
         let BufResult(res, _op) = Runtime::current().submit(op).await;
         #[cfg(windows)]
         {
@@ -90,7 +91,7 @@ impl Socket {
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         use compio_driver::FromRawFd;
 
-        let op = Accept::new(self.try_get()?.as_raw_fd());
+        let op = Accept::new(self.try_as_raw_fd()?);
         let BufResult(res, op) = Runtime::current().submit(op).await;
         let accept_sock = unsafe { Socket2::from_raw_fd(res? as _) };
         if cfg!(all(
@@ -126,14 +127,14 @@ impl Socket {
         // `close` should be cancelled.
         let this = ManuallyDrop::new(self);
         async move {
-            let op = CloseSocket::new(this.as_raw_fd());
+            let op = CloseSocket::new(this.try_as_raw_fd()?);
             Runtime::current().submit(op).await.0?;
             Ok(())
         }
     }
 
     pub async fn shutdown(&self) -> io::Result<()> {
-        let op = ShutdownSocket::new(self.try_get()?.as_raw_fd(), std::net::Shutdown::Write);
+        let op = ShutdownSocket::new(self.try_as_raw_fd()?, std::net::Shutdown::Write);
         Runtime::current().submit(op).await.0?;
         Ok(())
     }
@@ -212,6 +213,6 @@ impl Socket {
     }
 }
 
-impl_raw_fd!(Socket, socket);
+impl_try_as_raw_fd!(Socket, socket);
 
 impl_attachable!(Socket, socket);

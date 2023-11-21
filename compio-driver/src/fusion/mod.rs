@@ -6,15 +6,14 @@ mod iour;
 
 pub(crate) mod op;
 
-pub use iour::OpCode as IourOpCode;
-pub use poll::OpCode as PollOpCode;
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{io, task::Poll, time::Duration};
 
 pub use driver_type::DriverType;
+pub use iour::OpCode as IourOpCode;
 pub(crate) use iour::{sockaddr_storage, socklen_t};
-pub use poll::Decision;
+pub use poll::{Decision, OpCode as PollOpCode};
 use slab::Slab;
 
 pub(crate) use crate::unix::RawOp;
@@ -34,7 +33,7 @@ mod driver_type {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum DriverType {
         /// Using `polling` driver
-        Poll = POLLING,
+        Poll    = POLLING,
 
         /// Using `io-uring` driver
         IoUring = IO_URING,

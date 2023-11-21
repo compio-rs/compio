@@ -50,12 +50,6 @@ impl Event {
     }
 }
 
-impl AsRawFd for Event {
-    fn as_raw_fd(&self) -> RawFd {
-        self.receiver.as_raw_fd()
-    }
-}
-
 /// A handle to [`Event`].
 pub struct EventHandle {
     fd: OwnedFd,

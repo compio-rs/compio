@@ -2,12 +2,11 @@ use std::{fs::Metadata, future::Future, io, mem::ManuallyDrop, path::Path};
 
 use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
-    impl_raw_fd,
     op::{BufResultExt, CloseFile, ReadAt, Sync, WriteAt},
     AsRawFd,
 };
 use compio_io::{AsyncReadAt, AsyncWriteAt};
-use compio_runtime::{impl_attachable, Attacher, Runtime, TryClone};
+use compio_runtime::{impl_attachable, impl_try_as_raw_fd, Attacher, Runtime, TryClone};
 #[cfg(unix)]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
@@ -175,6 +174,6 @@ impl AsyncWriteAt for &File {
     }
 }
 
-impl_raw_fd!(File, inner);
+impl_try_as_raw_fd!(File, inner);
 
 impl_attachable!(File, inner);

@@ -1,12 +1,12 @@
 use std::{
     io,
-    os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd},
+    os::fd::{AsRawFd, FromRawFd, OwnedFd},
 };
 
-use compio_buf::{arrayvec::ArrayVec, BufResult};
+use compio_buf::{arrayvec::ArrayVec, BufResult, IntoInner};
 use compio_driver::{impl_raw_fd, op::Recv, syscall};
 
-use crate::{attacher::Attacher, Runtime, TryClone};
+use crate::{attacher::Attacher, impl_try_as_raw_fd, Runtime, TryClone};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
@@ -27,7 +27,7 @@ impl Event {
 
     /// Get a notify handle.
     pub fn handle(&self) -> io::Result<EventHandle> {
-        Ok(EventHandle::new(self.fd.try_clone()?))
+        Ok(EventHandle::new(self.fd.try_clone()?.into_inner()))
     }
 
     /// Wait for [`EventHandle::notify`] called.
@@ -41,19 +41,15 @@ impl Event {
     }
 }
 
-impl AsRawFd for Event {
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd.as_raw_fd()
-    }
-}
+impl_try_as_raw_fd!(Event, fd);
 
 /// A handle to [`Event`].
 pub struct EventHandle {
-    fd: Attacher<OwnedFd>,
+    fd: OwnedFd,
 }
 
 impl EventHandle {
-    pub(crate) fn new(fd: Attacher<OwnedFd>) -> Self {
+    pub(crate) fn new(fd: OwnedFd) -> Self {
         Self { fd }
     }
 
@@ -61,7 +57,7 @@ impl EventHandle {
     pub fn notify(self) -> io::Result<()> {
         let data = 1u64;
         syscall!(libc::write(
-            self.fd.try_get()?.as_raw_fd(),
+            self.fd.as_raw_fd(),
             &data as *const _ as *const _,
             std::mem::size_of::<u64>(),
         ))?;

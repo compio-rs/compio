@@ -1,8 +1,7 @@
 use std::{future::Future, io, net::SocketAddr};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_driver::impl_raw_fd;
-use compio_runtime::impl_attachable;
+use compio_runtime::{impl_attachable, impl_try_as_raw_fd};
 use socket2::{Protocol, SockAddr, Type};
 
 use crate::{Socket, ToSocketAddrsAsync};
@@ -260,6 +259,6 @@ impl UdpSocket {
     }
 }
 
-impl_raw_fd!(UdpSocket, inner);
+impl_try_as_raw_fd!(UdpSocket, inner);
 
 impl_attachable!(UdpSocket, inner);

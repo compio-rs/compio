@@ -7,7 +7,9 @@ use std::os::windows::prelude::{OwnedHandle, OwnedSocket};
 use std::sync::OnceLock;
 
 use compio_buf::IntoInner;
-use compio_driver::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
+use compio_driver::AsRawFd;
+#[doc(hidden)]
+pub use compio_driver::{FromRawFd, IntoRawFd, RawFd};
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 
@@ -74,12 +76,6 @@ impl<S> Attachable for Attacher<S> {
     }
 }
 
-impl<S: AsRawFd> AsRawFd for Attacher<S> {
-    fn as_raw_fd(&self) -> RawFd {
-        self.source.as_raw_fd()
-    }
-}
-
 impl<S: IntoRawFd> IntoRawFd for Attacher<S> {
     fn into_raw_fd(self) -> RawFd {
         self.source.into_raw_fd()
@@ -114,6 +110,14 @@ impl<S: TryClone + AsRawFd> TryClone for Attacher<S> {
             new_self
         };
         Ok(new_self)
+    }
+}
+
+impl<S> IntoInner for Attacher<S> {
+    type Inner = S;
+
+    fn into_inner(self) -> Self::Inner {
+        self.source
     }
 }
 
@@ -162,6 +166,24 @@ impl TryClone for OwnedFd {
     }
 }
 
+/// Extracts raw fds.
+pub trait TryAsRawFd {
+    /// Get the inner raw fd, while ensuring the source being attached.
+    fn try_as_raw_fd(&self) -> io::Result<RawFd>;
+}
+
+impl<T: AsRawFd> TryAsRawFd for T {
+    fn try_as_raw_fd(&self) -> io::Result<RawFd> {
+        Ok(self.as_raw_fd())
+    }
+}
+
+impl<S: AsRawFd> TryAsRawFd for Attacher<S> {
+    fn try_as_raw_fd(&self) -> io::Result<RawFd> {
+        Ok(self.try_get()?.as_raw_fd())
+    }
+}
+
 /// A [`Send`] wrapper for attachable resource that has not been attached. The
 /// resource should be able to send to another thread before attaching.
 pub struct Unattached<T: Attachable>(T);
@@ -170,7 +192,11 @@ impl<T: Attachable> Unattached<T> {
     /// Create the [`Unattached`] wrapper, or fail if the resource has already
     /// been attached.
     pub fn new(a: T) -> Result<Self, T> {
-        if a.is_attached() { Err(a) } else { Ok(Self(a)) }
+        if a.is_attached() {
+            Err(a)
+        } else {
+            Ok(Self(a))
+        }
     }
 
     /// Create [`Unattached`] without checking.
@@ -201,6 +227,30 @@ macro_rules! impl_attachable {
         impl $crate::Attachable for $t {
             fn is_attached(&self) -> bool {
                 self.$inner.is_attached()
+            }
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! impl_try_as_raw_fd {
+    ($t:ty, $inner:ident) => {
+        impl $crate::TryAsRawFd for $t {
+            fn try_as_raw_fd(&self) -> ::std::io::Result<$crate::RawFd> {
+                self.$inner.try_as_raw_fd()
+            }
+        }
+        impl $crate::FromRawFd for $t {
+            unsafe fn from_raw_fd(fd: $crate::RawFd) -> Self {
+                Self {
+                    $inner: $crate::FromRawFd::from_raw_fd(fd),
+                }
+            }
+        }
+        impl $crate::IntoRawFd for $t {
+            fn into_raw_fd(self) -> $crate::RawFd {
+                self.$inner.into_raw_fd()
             }
         }
     };
