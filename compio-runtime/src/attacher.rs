@@ -170,17 +170,33 @@ impl TryClone for OwnedFd {
 pub trait TryAsRawFd {
     /// Get the inner raw fd, while ensuring the source being attached.
     fn try_as_raw_fd(&self) -> io::Result<RawFd>;
+
+    /// Get the inner raw fd and don't check if it has been attached.
+    ///
+    /// # Safety
+    ///
+    /// The caller should ensure it is attached before submit an operation with
+    /// it.
+    unsafe fn as_raw_fd_unchecked(&self) -> RawFd;
 }
 
 impl<T: AsRawFd> TryAsRawFd for T {
     fn try_as_raw_fd(&self) -> io::Result<RawFd> {
         Ok(self.as_raw_fd())
     }
+
+    unsafe fn as_raw_fd_unchecked(&self) -> RawFd {
+        self.as_raw_fd()
+    }
 }
 
 impl<S: AsRawFd> TryAsRawFd for Attacher<S> {
     fn try_as_raw_fd(&self) -> io::Result<RawFd> {
         Ok(self.try_get()?.as_raw_fd())
+    }
+
+    unsafe fn as_raw_fd_unchecked(&self) -> RawFd {
+        self.source.as_raw_fd()
     }
 }
 
@@ -192,11 +208,7 @@ impl<T: Attachable> Unattached<T> {
     /// Create the [`Unattached`] wrapper, or fail if the resource has already
     /// been attached.
     pub fn new(a: T) -> Result<Self, T> {
-        if a.is_attached() {
-            Err(a)
-        } else {
-            Ok(Self(a))
-        }
+        if a.is_attached() { Err(a) } else { Ok(Self(a)) }
     }
 
     /// Create [`Unattached`] without checking.
@@ -239,6 +251,10 @@ macro_rules! impl_try_as_raw_fd {
         impl $crate::TryAsRawFd for $t {
             fn try_as_raw_fd(&self) -> ::std::io::Result<$crate::RawFd> {
                 self.$inner.try_as_raw_fd()
+            }
+
+            unsafe fn as_raw_fd_unchecked(&self) -> $crate::RawFd {
+                self.$inner.as_raw_fd_unchecked()
             }
         }
         impl $crate::FromRawFd for $t {

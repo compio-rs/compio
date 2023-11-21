@@ -7,9 +7,9 @@ use std::ptr::null_mut;
 use std::{ffi::OsStr, io, ptr::null};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
-use compio_driver::{impl_raw_fd, op::ConnectNamedPipe, syscall, AsRawFd, FromRawFd, RawFd};
+use compio_driver::{op::ConnectNamedPipe, syscall, FromRawFd, RawFd};
 use compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt};
-use compio_runtime::{impl_attachable, Runtime};
+use compio_runtime::{impl_attachable, impl_try_as_raw_fd, Runtime, TryAsRawFd};
 use widestring::U16CString;
 use windows_sys::Win32::{
     Security::SECURITY_ATTRIBUTES,
@@ -125,7 +125,8 @@ impl NamedPipeServer {
     /// ```
     pub fn info(&self) -> io::Result<PipeInfo> {
         // Safety: we're ensuring the lifetime of the named pipe.
-        unsafe { named_pipe_info(self.as_raw_fd()) }
+        // Safety: getting info doesn't need to be attached.
+        unsafe { named_pipe_info(self.as_raw_fd_unchecked()) }
     }
 
     /// Enables a named pipe server process to wait for a client process to
@@ -151,7 +152,7 @@ impl NamedPipeServer {
     /// # std::io::Result::Ok(()) });
     /// ```
     pub async fn connect(&self) -> io::Result<()> {
-        let op = ConnectNamedPipe::new(self.handle.try_get()?.as_raw_fd());
+        let op = ConnectNamedPipe::new(self.handle.try_as_raw_fd()?);
         Runtime::current().submit(op).await.0?;
         Ok(())
     }
@@ -184,7 +185,7 @@ impl NamedPipeServer {
     /// # })
     /// ```
     pub fn disconnect(&self) -> io::Result<()> {
-        syscall!(BOOL, DisconnectNamedPipe(self.as_raw_fd() as _))?;
+        syscall!(BOOL, DisconnectNamedPipe(self.try_as_raw_fd()? as _))?;
         Ok(())
     }
 }
@@ -239,7 +240,7 @@ impl AsyncWrite for &NamedPipeServer {
     }
 }
 
-impl_raw_fd!(NamedPipeServer, handle);
+impl_try_as_raw_fd!(NamedPipeServer, handle);
 
 impl_attachable!(NamedPipeServer, handle);
 
@@ -317,7 +318,8 @@ impl NamedPipeClient {
     /// ```
     pub fn info(&self) -> io::Result<PipeInfo> {
         // Safety: we're ensuring the lifetime of the named pipe.
-        unsafe { named_pipe_info(self.as_raw_fd()) }
+        // Safety: getting info doesn't need to be attached.
+        unsafe { named_pipe_info(self.as_raw_fd_unchecked()) }
     }
 }
 
@@ -371,7 +373,7 @@ impl AsyncWrite for &NamedPipeClient {
     }
 }
 
-impl_raw_fd!(NamedPipeClient, handle);
+impl_try_as_raw_fd!(NamedPipeClient, handle);
 
 impl_attachable!(NamedPipeClient, handle);
 
@@ -738,8 +740,8 @@ impl ServerOptions {
     /// ```
     /// use std::{io, ptr};
     ///
-    /// use compio_driver::AsRawFd;
     /// use compio_fs::named_pipe::ServerOptions;
+    /// use compio_runtime::TryAsRawFd;
     /// use windows_sys::Win32::{
     ///     Foundation::ERROR_SUCCESS,
     ///     Security::{
@@ -759,7 +761,7 @@ impl ServerOptions {
     ///     assert_eq!(
     ///         ERROR_SUCCESS,
     ///         SetSecurityInfo(
-    ///             pipe.as_raw_fd() as _,
+    ///             pipe.as_raw_fd_unchecked() as _,
     ///             SE_KERNEL_OBJECT,
     ///             DACL_SECURITY_INFORMATION,
     ///             ptr::null_mut(),
@@ -775,8 +777,8 @@ impl ServerOptions {
     /// ```
     /// use std::{io, ptr};
     ///
-    /// use compio_driver::AsRawFd;
     /// use compio_fs::named_pipe::ServerOptions;
+    /// use compio_runtime::TryAsRawFd;
     /// use windows_sys::Win32::{
     ///     Foundation::ERROR_ACCESS_DENIED,
     ///     Security::{
@@ -796,7 +798,7 @@ impl ServerOptions {
     ///     assert_eq!(
     ///         ERROR_ACCESS_DENIED,
     ///         SetSecurityInfo(
-    ///             pipe.as_raw_fd() as _,
+    ///             pipe.as_raw_fd_unchecked() as _,
     ///             SE_KERNEL_OBJECT,
     ///             DACL_SECURITY_INFORMATION,
     ///             ptr::null_mut(),
@@ -1165,7 +1167,7 @@ impl ClientOptions {
             let mode = PIPE_READMODE_MESSAGE;
             syscall!(
                 BOOL,
-                SetNamedPipeHandleState(file.as_raw_fd() as _, &mode, null(), null())
+                SetNamedPipeHandleState(file.as_raw_fd_unchecked() as _, &mode, null(), null())
             )?;
         }
 
