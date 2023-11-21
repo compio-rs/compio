@@ -6,7 +6,7 @@ use std::{
 use compio_buf::{arrayvec::ArrayVec, BufResult};
 use compio_driver::{impl_raw_fd, op::Recv, syscall};
 
-use crate::{attacher::Attacher, Runtime};
+use crate::{attacher::Attacher, Runtime, TryAsRawFd};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
@@ -47,6 +47,16 @@ impl Event {
         let BufResult(res, _) = Runtime::current().submit(op).await;
         res?;
         Ok(())
+    }
+}
+
+impl TryAsRawFd for Event {
+    fn try_as_raw_fd(&self) -> io::Result<RawFd> {
+        self.receiver.try_as_raw_fd()
+    }
+
+    unsafe fn as_raw_fd_unchecked(&self) -> RawFd {
+        self.receiver.as_raw_fd_unchecked()
     }
 }
 
