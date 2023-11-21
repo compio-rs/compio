@@ -1,12 +1,9 @@
 use std::{future::Future, io, mem::ManuallyDrop};
 
 use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_driver::{
-    op::{
-        Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored,
-        RecvResultExt, RecvVectored, Send, SendTo, SendToVectored, SendVectored, ShutdownSocket,
-    },
-    AsRawFd,
+use compio_driver::op::{
+    Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored, RecvResultExt,
+    RecvVectored, Send, SendTo, SendToVectored, SendVectored, ShutdownSocket,
 };
 use compio_runtime::{
     impl_attachable, impl_try_as_raw_fd, Attacher, Runtime, TryAsRawFd, TryClone,
@@ -103,6 +100,8 @@ impl Socket {
 
     #[cfg(windows)]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
+        use compio_driver::AsRawFd;
+
         let local_addr = self.local_addr()?;
         // We should allow users sending this accepted socket to a new thread.
         let accept_sock = Socket2::new(

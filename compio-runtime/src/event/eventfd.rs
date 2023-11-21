@@ -6,7 +6,7 @@ use std::{
 use compio_buf::{arrayvec::ArrayVec, BufResult, IntoInner};
 use compio_driver::{impl_raw_fd, op::Recv, syscall};
 
-use crate::{attacher::Attacher, impl_try_as_raw_fd, Runtime, TryClone};
+use crate::{attacher::Attacher, impl_try_as_raw_fd, Runtime, TryAsRawFd, TryClone};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.

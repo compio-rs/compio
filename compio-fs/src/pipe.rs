@@ -5,7 +5,7 @@ use std::{future::Future, io, path::Path};
 use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{
     op::{BufResultExt, Recv, RecvVectored, Send, SendVectored},
-    syscall, AsRawFd, FromRawFd, IntoRawFd,
+    syscall, FromRawFd, IntoRawFd,
 };
 use compio_io::{AsyncRead, AsyncWrite};
 use compio_runtime::{impl_attachable, impl_try_as_raw_fd, Runtime, TryAsRawFd};

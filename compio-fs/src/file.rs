@@ -1,10 +1,7 @@
 use std::{fs::Metadata, future::Future, io, mem::ManuallyDrop, path::Path};
 
 use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut};
-use compio_driver::{
-    op::{BufResultExt, CloseFile, ReadAt, Sync, WriteAt},
-    AsRawFd,
-};
+use compio_driver::op::{BufResultExt, CloseFile, ReadAt, Sync, WriteAt};
 use compio_io::{AsyncReadAt, AsyncWriteAt};
 use compio_runtime::{
     impl_attachable, impl_try_as_raw_fd, Attacher, Runtime, TryAsRawFd, TryClone,
