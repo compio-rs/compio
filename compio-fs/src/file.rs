@@ -6,7 +6,9 @@ use compio_driver::{
     AsRawFd,
 };
 use compio_io::{AsyncReadAt, AsyncWriteAt};
-use compio_runtime::{impl_attachable, impl_try_as_raw_fd, Attacher, Runtime, TryClone};
+use compio_runtime::{
+    impl_attachable, impl_try_as_raw_fd, Attacher, Runtime, TryAsRawFd, TryClone,
+};
 #[cfg(unix)]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
@@ -57,7 +59,7 @@ impl File {
         // `close` should be cancelled.
         let this = ManuallyDrop::new(self);
         async move {
-            let op = CloseFile::new(this.inner.try_get()?.as_raw_fd());
+            let op = CloseFile::new(this.inner.try_as_raw_fd()?);
             Runtime::current().submit(op).await.0?;
             Ok(())
         }
@@ -72,17 +74,13 @@ impl File {
         Ok(Self { inner })
     }
 
-    pub(crate) fn try_get(&self) -> io::Result<&std::fs::File> {
-        self.inner.try_get()
-    }
-
     /// Queries metadata about the underlying file.
     pub fn metadata(&self) -> io::Result<Metadata> {
-        self.try_get()?.metadata()
+        unsafe { self.inner.get_unchecked() }.metadata()
     }
 
     async fn sync_impl(&self, datasync: bool) -> io::Result<()> {
-        let op = Sync::new(self.try_get()?.as_raw_fd(), datasync);
+        let op = Sync::new(self.try_as_raw_fd()?, datasync);
         Runtime::current().submit(op).await.0?;
         Ok(())
     }
@@ -113,8 +111,8 @@ impl File {
 
 impl AsyncReadAt for File {
     async fn read_at<T: IoBufMut>(&self, buffer: T, pos: u64) -> BufResult<usize, T> {
-        let (inner, buffer) = buf_try!(self.try_get(), buffer);
-        let op = ReadAt::new(inner.as_raw_fd(), pos, buffer);
+        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let op = ReadAt::new(fd, pos, buffer);
         Runtime::current()
             .submit(op)
             .await
@@ -128,8 +126,8 @@ impl AsyncReadAt for File {
         buffer: T,
         pos: u64,
     ) -> BufResult<usize, T> {
-        let (inner, buffer) = buf_try!(self.try_get(), buffer);
-        let op = ReadVectoredAt::new(inner.as_raw_fd(), pos, buffer);
+        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let op = ReadVectoredAt::new(fd, pos, buffer);
         Runtime::current()
             .submit(op)
             .await
@@ -157,8 +155,8 @@ impl AsyncWriteAt for File {
 
 impl AsyncWriteAt for &File {
     async fn write_at<T: IoBuf>(&mut self, buffer: T, pos: u64) -> BufResult<usize, T> {
-        let (inner, buffer) = buf_try!(self.try_get(), buffer);
-        let op = WriteAt::new(inner.as_raw_fd(), pos, buffer);
+        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let op = WriteAt::new(fd, pos, buffer);
         Runtime::current().submit(op).await.into_inner()
     }
 
@@ -168,8 +166,8 @@ impl AsyncWriteAt for &File {
         buffer: T,
         pos: u64,
     ) -> BufResult<usize, T> {
-        let (inner, buffer) = buf_try!(self.try_get(), buffer);
-        let op = WriteVectoredAt::new(inner.as_raw_fd(), pos, buffer);
+        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let op = WriteVectoredAt::new(fd, pos, buffer);
         Runtime::current().submit(op).await.into_inner()
     }
 }

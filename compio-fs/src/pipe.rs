@@ -332,10 +332,6 @@ impl Sender {
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.file.close()
     }
-
-    pub(crate) fn try_get(&self) -> io::Result<&std::fs::File> {
-        self.file.try_get()
-    }
 }
 
 impl AsyncWrite for Sender {
@@ -362,14 +358,14 @@ impl AsyncWrite for Sender {
 
 impl AsyncWrite for &Sender {
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        let (inner, buffer) = buf_try!(self.try_get(), buffer);
-        let op = Send::new(inner.as_raw_fd(), buffer);
+        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let op = Send::new(fd, buffer);
         Runtime::current().submit(op).await.into_inner()
     }
 
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        let (inner, buffer) = buf_try!(self.try_get(), buffer);
-        let op = SendVectored::new(inner.as_raw_fd(), buffer);
+        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let op = SendVectored::new(fd, buffer);
         Runtime::current().submit(op).await.into_inner()
     }
 
@@ -473,10 +469,6 @@ impl Receiver {
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.file.close()
     }
-
-    pub(crate) fn try_get(&self) -> io::Result<&std::fs::File> {
-        self.file.try_get()
-    }
 }
 
 impl AsyncRead for Receiver {
@@ -491,8 +483,8 @@ impl AsyncRead for Receiver {
 
 impl AsyncRead for &Receiver {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
-        let (inner, buffer) = buf_try!(self.try_get(), buffer);
-        let op = Recv::new(inner.as_raw_fd(), buffer);
+        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let op = Recv::new(fd, buffer);
         Runtime::current()
             .submit(op)
             .await
@@ -501,8 +493,8 @@ impl AsyncRead for &Receiver {
     }
 
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buffer: V) -> BufResult<usize, V> {
-        let (inner, buffer) = buf_try!(self.try_get(), buffer);
-        let op = RecvVectored::new(inner.as_raw_fd(), buffer);
+        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let op = RecvVectored::new(fd, buffer);
         Runtime::current()
             .submit(op)
             .await

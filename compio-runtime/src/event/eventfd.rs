@@ -34,7 +34,7 @@ impl Event {
     pub async fn wait(self) -> io::Result<()> {
         let buffer = ArrayVec::<u8, 8>::new();
         // Trick: Recv uses readv which doesn't seek.
-        let op = Recv::new(self.fd.try_get()?.as_raw_fd(), buffer);
+        let op = Recv::new(self.fd.try_as_raw_fd()?, buffer);
         let BufResult(res, _) = Runtime::current().submit(op).await;
         res?;
         Ok(())

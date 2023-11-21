@@ -63,10 +63,30 @@ impl<S: AsRawFd> Attacher<S> {
         Ok(&self.source)
     }
 
+    /// Get the reference of the inner source without attaching it.
+    ///
+    /// # Safety
+    ///
+    /// The caller should ensure it is attached before submit an operation with
+    /// it.
+    pub unsafe fn get_unchecked(&self) -> &S {
+        &self.source
+    }
+
     /// Attach the inner source and get the mutable reference.
     pub fn try_get_mut(&mut self) -> io::Result<&mut S> {
         self.attach()?;
         Ok(&mut self.source)
+    }
+
+    /// Get the mutable reference of the inner source without attaching it.
+    ///
+    /// # Safety
+    ///
+    /// The caller should ensure it is attached before submit an operation with
+    /// it.
+    pub unsafe fn get_unchecked_mut(&mut self) -> &mut S {
+        &mut self.source
     }
 }
 
