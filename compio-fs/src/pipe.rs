@@ -9,7 +9,7 @@ use compio_driver::{
     syscall, AsRawFd, FromRawFd, IntoRawFd,
 };
 use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::{impl_attachable, Attachable, Runtime};
+use compio_runtime::{impl_attachable, Runtime};
 
 use crate::File;
 

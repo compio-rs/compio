@@ -88,6 +88,8 @@ impl Socket {
 
     #[cfg(unix)]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
+        use compio_driver::FromRawFd;
+
         let op = Accept::new(self.try_get()?.as_raw_fd());
         let BufResult(res, op) = Runtime::current().submit(op).await;
         let accept_sock = unsafe { Socket2::from_raw_fd(res? as _) };

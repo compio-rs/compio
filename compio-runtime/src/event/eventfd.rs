@@ -6,14 +6,13 @@ use std::{
 use compio_buf::{arrayvec::ArrayVec, BufResult};
 use compio_driver::{impl_raw_fd, op::Recv, syscall};
 
-use crate::{attacher::Attacher, Runtime};
+use crate::{attacher::Attacher, Runtime, TryClone};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
 #[derive(Debug)]
 pub struct Event {
-    fd: OwnedFd,
-    attacher: Attacher,
+    fd: Attacher<OwnedFd>,
 }
 
 impl Event {
@@ -22,8 +21,7 @@ impl Event {
         let fd = syscall!(libc::eventfd(0, libc::EFD_CLOEXEC))?;
         let fd = unsafe { OwnedFd::from_raw_fd(fd) };
         Ok(Self {
-            fd,
-            attacher: Attacher::new(),
+            fd: Attacher::new(fd),
         })
     }
 
@@ -34,10 +32,9 @@ impl Event {
 
     /// Wait for [`EventHandle::notify`] called.
     pub async fn wait(self) -> io::Result<()> {
-        self.attacher.attach(&self.fd)?;
         let buffer = ArrayVec::<u8, 8>::new();
         // Trick: Recv uses readv which doesn't seek.
-        let op = Recv::new(self.as_raw_fd(), buffer);
+        let op = Recv::new(self.fd.try_get()?.as_raw_fd(), buffer);
         let BufResult(res, _) = Runtime::current().submit(op).await;
         res?;
         Ok(())
@@ -52,11 +49,11 @@ impl AsRawFd for Event {
 
 /// A handle to [`Event`].
 pub struct EventHandle {
-    fd: OwnedFd,
+    fd: Attacher<OwnedFd>,
 }
 
 impl EventHandle {
-    pub(crate) fn new(fd: OwnedFd) -> Self {
+    pub(crate) fn new(fd: Attacher<OwnedFd>) -> Self {
         Self { fd }
     }
 
@@ -64,7 +61,7 @@ impl EventHandle {
     pub fn notify(self) -> io::Result<()> {
         let data = 1u64;
         syscall!(libc::write(
-            self.fd.as_raw_fd(),
+            self.fd.try_get()?.as_raw_fd(),
             &data as *const _ as *const _,
             std::mem::size_of::<u64>(),
         ))?;
