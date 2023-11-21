@@ -13,8 +13,7 @@ use crate::{attacher::Attacher, Runtime};
 #[derive(Debug)]
 pub struct Event {
     sender: OwnedFd,
-    receiver: OwnedFd,
-    attacher: Attacher,
+    receiver: Attacher<OwnedFd>,
 }
 
 impl Event {
@@ -31,8 +30,7 @@ impl Event {
         ))?;
         Ok(Self {
             sender,
-            receiver,
-            attacher: Attacher::new(),
+            receiver: Attacher::new(receiver),
         })
     }
 
@@ -43,10 +41,9 @@ impl Event {
 
     /// Wait for [`EventHandle::notify`] called.
     pub async fn wait(self) -> io::Result<()> {
-        self.attacher.attach(&self.receiver)?;
         let buffer = ArrayVec::<u8, 1>::new();
         // Trick: Recv uses readv which doesn't seek.
-        let op = Recv::new(self.receiver.as_raw_fd(), buffer);
+        let op = Recv::new(self.receiver.try_get()?.as_raw_fd(), buffer);
         let BufResult(res, _) = Runtime::current().submit(op).await;
         res?;
         Ok(())
