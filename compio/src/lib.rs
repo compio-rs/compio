@@ -53,5 +53,9 @@ pub use runtime::event;
 #[cfg(feature = "time")]
 #[doc(no_inline)]
 pub use runtime::time;
+#[cfg(feature = "native-tls")]
+pub use tls::native_tls;
+#[cfg(feature = "rustls")]
+pub use tls::rustls;
 #[doc(inline)]
 pub use {compio_buf as buf, compio_driver as driver, compio_fs as fs, compio_net as net};
