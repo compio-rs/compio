@@ -18,6 +18,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 compio-buf = { workspace = true }
 compio-io = { workspace = true, features = ["compat"] }
 
+boring = { version = "4.1.0", optional = true }
 native-tls = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 
@@ -30,7 +31,7 @@ rustls-native-certs = { workspace = true }
 
 [features]
 default = ["native-tls"]
-all = ["native-tls", "rustls"]
+all = ["native-tls", "rustls", "boring"]
 
 read_buf = ["compio-buf/read_buf", "compio-io/read_buf", "rustls?/read_buf"]
 nightly = ["read_buf"]

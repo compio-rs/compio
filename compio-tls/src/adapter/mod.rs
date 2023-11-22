@@ -13,6 +13,8 @@ enum TlsConnectorInner {
     NativeTls(native_tls::TlsConnector),
     #[cfg(feature = "rustls")]
     Rustls(rtls::TlsConnector),
+    #[cfg(feature = "boring")]
+    Boring(boring::ssl::SslConnector),
 }
 
 /// A wrapper around a [`native_tls::TlsConnector`] or [`rustls::ClientConfig`],
@@ -31,6 +33,13 @@ impl From<native_tls::TlsConnector> for TlsConnector {
 impl From<std::sync::Arc<rustls::ClientConfig>> for TlsConnector {
     fn from(value: std::sync::Arc<rustls::ClientConfig>) -> Self {
         Self(TlsConnectorInner::Rustls(rtls::TlsConnector(value)))
+    }
+}
+
+#[cfg(feature = "boring")]
+impl From<boring::ssl::SslConnector> for TlsConnector {
+    fn from(value: boring::ssl::SslConnector) -> Self {
+        Self(TlsConnectorInner::Boring(value))
     }
 }
 
@@ -59,6 +68,10 @@ impl TlsConnector {
             }
             #[cfg(feature = "rustls")]
             TlsConnectorInner::Rustls(c) => handshake_rustls(c.connect(domain, stream)).await,
+            #[cfg(feature = "boring")]
+            TlsConnectorInner::Boring(c) => {
+                handshake_boring(c.connect(domain, SyncStream::new(stream))).await
+            }
         }
     }
 }
@@ -69,6 +82,8 @@ enum TlsAcceptorInner {
     NativeTls(native_tls::TlsAcceptor),
     #[cfg(feature = "rustls")]
     Rustls(rtls::TlsAcceptor),
+    #[cfg(feature = "boring")]
+    Boring(boring::ssl::SslAcceptor),
 }
 
 /// A wrapper around a [`native_tls::TlsAcceptor`] or [`rustls::ServerConfig`],
@@ -87,6 +102,13 @@ impl From<native_tls::TlsAcceptor> for TlsAcceptor {
 impl From<std::sync::Arc<rustls::ServerConfig>> for TlsAcceptor {
     fn from(value: std::sync::Arc<rustls::ServerConfig>) -> Self {
         Self(TlsAcceptorInner::Rustls(rtls::TlsAcceptor(value)))
+    }
+}
+
+#[cfg(feature = "boring")]
+impl From<boring::ssl::SslAcceptor> for TlsAcceptor {
+    fn from(value: boring::ssl::SslAcceptor) -> Self {
+        Self(TlsAcceptorInner::Boring(value))
     }
 }
 
@@ -109,6 +131,10 @@ impl TlsAcceptor {
             }
             #[cfg(feature = "rustls")]
             TlsAcceptorInner::Rustls(c) => handshake_rustls(c.accept(stream)).await,
+            #[cfg(feature = "boring")]
+            TlsAcceptorInner::Boring(c) => {
+                handshake_boring(c.accept(SyncStream::new(stream))).await
+            }
         }
     }
 }
@@ -164,6 +190,39 @@ where
                         mid_stream.get_mut().fill_read_buf().await?;
                     }
                     res = mid_stream.handshake::<D>();
+                }
+            },
+        }
+    }
+}
+
+#[cfg(feature = "boring")]
+async fn handshake_boring<S: AsyncRead + AsyncWrite>(
+    mut res: Result<
+        boring::ssl::SslStream<SyncStream<S>>,
+        boring::ssl::HandshakeError<SyncStream<S>>,
+    >,
+) -> io::Result<TlsStream<S>> {
+    use boring::ssl::HandshakeError;
+
+    loop {
+        match res {
+            Ok(mut s) => {
+                s.get_mut().flush_write_buf().await?;
+                return Ok(TlsStream::from(s));
+            }
+            Err(e) => match e {
+                HandshakeError::SetupFailure(e) => {
+                    return Err(io::Error::new(io::ErrorKind::Other, e));
+                }
+                HandshakeError::Failure(e) => {
+                    return Err(io::Error::new(io::ErrorKind::Other, e.into_error()));
+                }
+                HandshakeError::WouldBlock(mut mid_stream) => {
+                    if mid_stream.get_mut().flush_write_buf().await? == 0 {
+                        mid_stream.get_mut().fill_read_buf().await?;
+                    }
+                    res = mid_stream.handshake();
                 }
             },
         }

@@ -13,6 +13,8 @@ enum TlsStreamInner<S> {
     NativeTls(native_tls::TlsStream<SyncStream<S>>),
     #[cfg(feature = "rustls")]
     Rustls(rtls::TlsStream<SyncStream<S>>),
+    #[cfg(feature = "boring")]
+    Boring(boring::ssl::SslStream<SyncStream<S>>),
 }
 
 impl<S> TlsStreamInner<S> {
@@ -22,6 +24,8 @@ impl<S> TlsStreamInner<S> {
             Self::NativeTls(s) => s.get_mut(),
             #[cfg(feature = "rustls")]
             Self::Rustls(s) => s.get_mut(),
+            #[cfg(feature = "boring")]
+            Self::Boring(s) => s.get_mut(),
         }
     }
 }
@@ -33,6 +37,8 @@ impl<S> io::Read for TlsStreamInner<S> {
             Self::NativeTls(s) => io::Read::read(s, buf),
             #[cfg(feature = "rustls")]
             Self::Rustls(s) => io::Read::read(s, buf),
+            #[cfg(feature = "boring")]
+            Self::Boring(s) => io::Read::read(s, buf),
         }
     }
 
@@ -43,6 +49,8 @@ impl<S> io::Read for TlsStreamInner<S> {
             Self::NativeTls(s) => io::Read::read_buf(s, buf),
             #[cfg(feature = "rustls")]
             Self::Rustls(s) => io::Read::read_buf(s, buf),
+            #[cfg(feature = "boring")]
+            Self::Boring(s) => io::Read::read_buf(s, buf),
         }
     }
 }
@@ -54,6 +62,8 @@ impl<S> io::Write for TlsStreamInner<S> {
             Self::NativeTls(s) => io::Write::write(s, buf),
             #[cfg(feature = "rustls")]
             Self::Rustls(s) => io::Write::write(s, buf),
+            #[cfg(feature = "boring")]
+            Self::Boring(s) => io::Write::write(s, buf),
         }
     }
 
@@ -63,6 +73,8 @@ impl<S> io::Write for TlsStreamInner<S> {
             Self::NativeTls(s) => io::Write::flush(s),
             #[cfg(feature = "rustls")]
             Self::Rustls(s) => io::Write::flush(s),
+            #[cfg(feature = "boring")]
+            Self::Boring(s) => io::Write::flush(s),
         }
     }
 }
@@ -94,6 +106,14 @@ impl<S> TlsStream<S> {
 impl<S> From<native_tls::TlsStream<SyncStream<S>>> for TlsStream<S> {
     fn from(value: native_tls::TlsStream<SyncStream<S>>) -> Self {
         Self(TlsStreamInner::NativeTls(value))
+    }
+}
+
+#[cfg(feature = "boring")]
+#[doc(hidden)]
+impl<S> From<boring::ssl::SslStream<SyncStream<S>>> for TlsStream<S> {
+    fn from(value: boring::ssl::SslStream<SyncStream<S>>) -> Self {
+        Self(TlsStreamInner::Boring(value))
     }
 }
 

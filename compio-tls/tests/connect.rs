@@ -42,3 +42,17 @@ async fn rtls() {
 
     connect(connector).await;
 }
+
+#[cfg(feature = "boring")]
+#[compio_macros::test]
+async fn boring() {
+    use boring::ssl::{SslConnector, SslMethod};
+
+    let connector = TlsConnector::from(
+        SslConnector::builder(SslMethod::tls_client())
+            .unwrap()
+            .build(),
+    );
+
+    connect(connector).await;
+}
