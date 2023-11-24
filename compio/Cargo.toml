@@ -1,6 +1,6 @@
 [package]
 name = "compio"
-version = "0.9.0-beta.2"
+version = "0.9.0-beta.3"
 description = "completion based async runtime"
 categories = ["asynchronous", "filesystem", "network-programming"]
 keywords = ["async", "fs", "iocp", "io-uring", "net"]
@@ -39,7 +39,7 @@ compio-io = { workspace = true, optional = true }
 compio-net = { workspace = true }
 compio-signal = { workspace = true, optional = true }
 compio-dispatcher = { workspace = true, optional = true }
-compio-log = { workspace = true, optional = true }
+compio-log = { workspace = true }
 compio-tls = { workspace = true, optional = true }
 
 # Shared dev dependencies for all platforms
@@ -74,6 +74,7 @@ default = ["runtime", "io-uring"]
 io-uring = ["compio-driver/io-uring"]
 polling = ["compio-driver/polling"]
 io = ["dep:compio-io"]
+io-compat = ["io", "compio-io/compat"]
 runtime = [
     "dep:compio-runtime",
     "compio-fs/runtime",
@@ -86,9 +87,16 @@ signal = ["dep:compio-signal", "event"]
 time = ["compio-runtime/time", "runtime"]
 dispatcher = ["dep:compio-dispatcher", "runtime"]
 tls = ["dep:compio-tls"]
-all = ["time", "macros", "signal", "dispatcher", "tls"]
+native-tls = ["tls", "compio-tls/native-tls"]
+rustls = ["tls", "compio-tls/rustls"]
+all = ["time", "macros", "signal", "dispatcher", "native-tls", "rustls"]
 
+arrayvec = ["compio-buf/arrayvec"]
+bumpalo = ["compio-buf/bumpalo"]
+bytes = ["compio-buf/bytes"]
 criterion = ["compio-runtime?/criterion"]
+
+enable_log = ["compio-log/enable_log"]
 
 # Nightly features
 allocator_api = ["compio-buf/allocator_api", "compio-io?/allocator_api"]
@@ -98,9 +106,12 @@ once_cell_try = [
     "compio-runtime?/once_cell_try",
     "compio-signal?/once_cell_try",
 ]
-read_buf = ["compio-buf/read_buf", "compio-io?/read_buf"]
+read_buf = [
+    "compio-buf/read_buf",
+    "compio-io?/read_buf",
+    "compio-tls?/read_buf",
+]
 try_trait_v2 = ["compio-buf/try_trait_v2"]
-enable_log = ["compio-log/enable_log"]
 nightly = [
     "allocator_api",
     "lazy_cell",
