@@ -19,7 +19,8 @@ compio-buf = { workspace = true }
 compio-io = { workspace = true, features = ["compat"] }
 
 native-tls = { version = "0.2.11", optional = true }
-rustls = { version = "=0.22.0-alpha.4", optional = true }
+rustls = { version = "=0.22.0-alpha.5", optional = true }
+rustls-pki-types = { version = "0.2.2", optional = true }
 
 [dev-dependencies]
 compio-net = { workspace = true }
@@ -31,6 +32,7 @@ rustls-native-certs = "=0.7.0-alpha.1"
 [features]
 default = ["native-tls"]
 all = ["native-tls", "rustls"]
+rustls = ["dep:rustls", "dep:rustls-pki-types"]
 
 read_buf = ["compio-buf/read_buf", "compio-io/read_buf", "rustls?/read_buf"]
 nightly = ["read_buf"]
