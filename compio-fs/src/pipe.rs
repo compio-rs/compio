@@ -1,16 +1,14 @@
 //! Unix pipe types.
 
-use std::io;
+use std::{future::Future, io, path::Path};
 
-use compio_driver::{impl_raw_fd, syscall, AsRawFd, FromRawFd, IntoRawFd};
-#[cfg(feature = "runtime")]
-use {
-    compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
-    compio_driver::op::{BufResultExt, Recv, RecvVectored, Send, SendVectored},
-    compio_io::{AsyncRead, AsyncWrite},
-    compio_runtime::{impl_attachable, Attachable, Runtime},
-    std::{future::Future, path::Path},
+use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_driver::{
+    op::{BufResultExt, Recv, RecvVectored, Send, SendVectored},
+    syscall, FromRawFd, IntoRawFd,
 };
+use compio_io::{AsyncRead, AsyncWrite};
+use compio_runtime::{impl_attachable, impl_try_as_raw_fd, Runtime, TryAsRawFd};
 
 use crate::File;
 
@@ -189,7 +187,6 @@ impl OpenOptions {
     /// If the file type check fails, this function will fail with
     /// `io::ErrorKind::InvalidInput`. This function may also fail with
     /// other standard OS errors.
-    #[cfg(feature = "runtime")]
     pub async fn open_receiver<P: AsRef<Path>>(&self, path: P) -> io::Result<Receiver> {
         let file = self.open(path.as_ref(), PipeEnd::Receiver).await?;
         Receiver::from_file(file)
@@ -209,13 +206,11 @@ impl OpenOptions {
     /// read-write access mode and the file is not currently open for
     /// reading, this function will fail with `ENXIO`. This function may
     /// also fail with other standard OS errors.
-    #[cfg(feature = "runtime")]
     pub async fn open_sender<P: AsRef<Path>>(&self, path: P) -> io::Result<Sender> {
         let file = self.open(path.as_ref(), PipeEnd::Sender).await?;
         Sender::from_file(file)
     }
 
-    #[cfg(feature = "runtime")]
     async fn open(&self, path: &Path, pipe_end: PipeEnd) -> io::Result<File> {
         let mut options = crate::OpenOptions::new();
         options
@@ -244,7 +239,6 @@ impl Default for OpenOptions {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[cfg(feature = "runtime")]
 enum PipeEnd {
     Sender,
     Receiver,
@@ -335,13 +329,11 @@ impl Sender {
 
     /// Close the pipe. If the returned future is dropped before polling, the
     /// pipe won't be closed.
-    #[cfg(feature = "runtime")]
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.file.close()
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncWrite for Sender {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
@@ -364,17 +356,16 @@ impl AsyncWrite for Sender {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncWrite for &Sender {
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
-        let op = Send::new(self.as_raw_fd(), buffer);
+        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let op = Send::new(fd, buffer);
         Runtime::current().submit(op).await.into_inner()
     }
 
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
-        let op = SendVectored::new(self.as_raw_fd(), buffer);
+        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let op = SendVectored::new(fd, buffer);
         Runtime::current().submit(op).await.into_inner()
     }
 
@@ -389,9 +380,8 @@ impl AsyncWrite for &Sender {
     }
 }
 
-impl_raw_fd!(Sender, file);
+impl_try_as_raw_fd!(Sender, file);
 
-#[cfg(feature = "runtime")]
 impl_attachable!(Sender, file);
 
 /// Reading end of a Unix pipe.
@@ -476,13 +466,11 @@ impl Receiver {
 
     /// Close the pipe. If the returned future is dropped before polling, the
     /// pipe won't be closed.
-    #[cfg(feature = "runtime")]
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.file.close()
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncRead for Receiver {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         (&*self).read(buf).await
@@ -493,11 +481,10 @@ impl AsyncRead for Receiver {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncRead for &Receiver {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
-        let op = Recv::new(self.as_raw_fd(), buffer);
+        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let op = Recv::new(fd, buffer);
         Runtime::current()
             .submit(op)
             .await
@@ -506,8 +493,8 @@ impl AsyncRead for &Receiver {
     }
 
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buffer: V) -> BufResult<usize, V> {
-        let ((), buffer) = buf_try!(self.attach(), buffer);
-        let op = RecvVectored::new(self.as_raw_fd(), buffer);
+        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let op = RecvVectored::new(fd, buffer);
         Runtime::current()
             .submit(op)
             .await
@@ -516,13 +503,11 @@ impl AsyncRead for &Receiver {
     }
 }
 
-impl_raw_fd!(Receiver, file);
+impl_try_as_raw_fd!(Receiver, file);
 
-#[cfg(feature = "runtime")]
 impl_attachable!(Receiver, file);
 
 /// Checks if file is a FIFO
-#[cfg(feature = "runtime")]
 fn is_fifo(file: &File) -> io::Result<bool> {
     use std::os::unix::prelude::FileTypeExt;
 
@@ -530,9 +515,9 @@ fn is_fifo(file: &File) -> io::Result<bool> {
 }
 
 /// Sets file's flags with O_NONBLOCK by fcntl.
-fn set_nonblocking(file: &impl AsRawFd) -> io::Result<()> {
+fn set_nonblocking(file: &impl TryAsRawFd) -> io::Result<()> {
     if cfg!(not(all(target_os = "linux", feature = "io-uring"))) {
-        let fd = file.as_raw_fd();
+        let fd = file.try_as_raw_fd()?;
         let current_flags = syscall!(libc::fcntl(fd, libc::F_GETFL))?;
         let flags = current_flags | libc::O_NONBLOCK;
         if flags != current_flags {

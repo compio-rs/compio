@@ -66,8 +66,8 @@
 //! # })
 //! ```
 //!
-//! Writing to `Vec<u8>`, which is extendable. Notice that the implementation will
-//! append the content to the end:
+//! Writing to `Vec<u8>`, which is extendable. Notice that the implementation
+//! will append the content to the end:
 //!
 //! ```
 //! use compio_buf::BufResult;

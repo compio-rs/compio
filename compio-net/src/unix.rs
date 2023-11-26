@@ -1,14 +1,9 @@
-use std::{io, path::Path};
+use std::{future::Future, io, path::Path};
 
-use compio_driver::impl_raw_fd;
+use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_io::{AsyncRead, AsyncWrite};
+use compio_runtime::{impl_attachable, impl_try_as_raw_fd};
 use socket2::{Domain, SockAddr, Type};
-#[cfg(feature = "runtime")]
-use {
-    compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
-    compio_io::{AsyncRead, AsyncWrite},
-    compio_runtime::impl_attachable,
-    std::future::Future,
-};
 
 use crate::Socket;
 
@@ -64,7 +59,6 @@ impl UnixListener {
 
     /// Close the socket. If the returned future is dropped before polling, the
     /// socket won't be closed.
-    #[cfg(feature = "runtime")]
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.inner.close()
     }
@@ -83,7 +77,6 @@ impl UnixListener {
     /// This function will yield once a new Unix domain socket connection
     /// is established. When established, the corresponding [`UnixStream`] and
     /// will be returned.
-    #[cfg(feature = "runtime")]
     pub async fn accept(&self) -> io::Result<(UnixStream, SockAddr)> {
         let (socket, addr) = self.inner.accept().await?;
         let stream = UnixStream { inner: socket };
@@ -96,9 +89,8 @@ impl UnixListener {
     }
 }
 
-impl_raw_fd!(UnixListener, inner);
+impl_try_as_raw_fd!(UnixListener, inner);
 
-#[cfg(feature = "runtime")]
 impl_attachable!(UnixListener, inner);
 
 /// A Unix stream between two local sockets on Windows & WSL.
@@ -145,7 +137,6 @@ impl UnixStream {
 
     /// Close the socket. If the returned future is dropped before polling, the
     /// socket won't be closed.
-    #[cfg(feature = "runtime")]
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.inner.close()
     }
@@ -170,7 +161,6 @@ impl UnixStream {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncRead for UnixStream {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
@@ -183,7 +173,6 @@ impl AsyncRead for UnixStream {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncRead for &UnixStream {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
@@ -196,7 +185,6 @@ impl AsyncRead for &UnixStream {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncWrite for UnixStream {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
@@ -219,7 +207,6 @@ impl AsyncWrite for UnixStream {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncWrite for &UnixStream {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
@@ -242,7 +229,6 @@ impl AsyncWrite for &UnixStream {
     }
 }
 
-impl_raw_fd!(UnixStream, inner);
+impl_try_as_raw_fd!(UnixStream, inner);
 
-#[cfg(feature = "runtime")]
 impl_attachable!(UnixStream, inner);

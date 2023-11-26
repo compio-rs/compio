@@ -6,15 +6,14 @@ use std::{
 use compio_buf::{arrayvec::ArrayVec, BufResult};
 use compio_driver::{impl_raw_fd, op::Recv, syscall};
 
-use crate::{attacher::Attacher, Runtime};
+use crate::{attacher::Attacher, Runtime, TryAsRawFd};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.
 #[derive(Debug)]
 pub struct Event {
     sender: OwnedFd,
-    receiver: OwnedFd,
-    attacher: Attacher,
+    receiver: Attacher<OwnedFd>,
 }
 
 impl Event {
@@ -31,8 +30,7 @@ impl Event {
         ))?;
         Ok(Self {
             sender,
-            receiver,
-            attacher: Attacher::new(),
+            receiver: Attacher::new(receiver),
         })
     }
 
@@ -43,19 +41,22 @@ impl Event {
 
     /// Wait for [`EventHandle::notify`] called.
     pub async fn wait(self) -> io::Result<()> {
-        self.attacher.attach(&self.receiver)?;
         let buffer = ArrayVec::<u8, 1>::new();
         // Trick: Recv uses readv which doesn't seek.
-        let op = Recv::new(self.receiver.as_raw_fd(), buffer);
+        let op = Recv::new(self.receiver.try_get()?.as_raw_fd(), buffer);
         let BufResult(res, _) = Runtime::current().submit(op).await;
         res?;
         Ok(())
     }
 }
 
-impl AsRawFd for Event {
-    fn as_raw_fd(&self) -> RawFd {
-        self.receiver.as_raw_fd()
+impl TryAsRawFd for Event {
+    fn try_as_raw_fd(&self) -> io::Result<RawFd> {
+        self.receiver.try_as_raw_fd()
+    }
+
+    unsafe fn as_raw_fd_unchecked(&self) -> RawFd {
+        self.receiver.as_raw_fd_unchecked()
     }
 }
 

@@ -2,10 +2,10 @@ use compio::{
     buf::{arrayvec::ArrayVec, IntoInner},
     driver::{
         op::{OpenFile, ReadAt},
-        AsRawFd, Entry, FromRawFd, OpCode, Proactor, PushEntry,
+        Entry, OpCode, Proactor, PushEntry,
     },
-    fs::File,
 };
+use compio_driver::{op::CloseFile, RawFd};
 
 #[cfg(windows)]
 fn open_file_op() -> OpenFile {
@@ -64,11 +64,11 @@ fn main() {
 
     let op = open_file_op();
     let (fd, _) = push_and_wait(&mut driver, op);
+    let fd = fd as RawFd;
 
-    let file = unsafe { File::from_raw_fd(fd as _) };
-    driver.attach(file.as_raw_fd()).unwrap();
+    driver.attach(fd).unwrap();
 
-    let op = ReadAt::new(file.as_raw_fd(), 0, Vec::with_capacity(4096));
+    let op = ReadAt::new(fd, 0, Vec::with_capacity(4096));
     let (n, op) = push_and_wait(&mut driver, op);
 
     let mut buffer = op.into_inner();
@@ -76,4 +76,7 @@ fn main() {
         buffer.set_len(n);
     }
     println!("{}", String::from_utf8(buffer).unwrap());
+
+    let op = CloseFile::new(fd);
+    push_and_wait(&mut driver, op);
 }

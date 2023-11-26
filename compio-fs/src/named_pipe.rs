@@ -6,7 +6,10 @@
 use std::ptr::null_mut;
 use std::{ffi::OsStr, io, ptr::null};
 
-use compio_driver::{impl_raw_fd, syscall, AsRawFd, FromRawFd, RawFd};
+use compio_buf::{BufResult, IoBuf, IoBufMut};
+use compio_driver::{op::ConnectNamedPipe, syscall, FromRawFd, RawFd};
+use compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt};
+use compio_runtime::{impl_attachable, impl_try_as_raw_fd, Runtime, TryAsRawFd};
 use widestring::U16CString;
 use windows_sys::Win32::{
     Security::SECURITY_ATTRIBUTES,
@@ -23,16 +26,8 @@ use windows_sys::Win32::{
         SystemServices::ACCESS_SYSTEM_SECURITY,
     },
 };
-#[cfg(feature = "runtime")]
-use {
-    crate::OpenOptions,
-    compio_buf::{BufResult, IoBuf, IoBufMut},
-    compio_driver::op::ConnectNamedPipe,
-    compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt},
-    compio_runtime::{impl_attachable, Attachable, Runtime},
-};
 
-use crate::File;
+use crate::{File, OpenOptions};
 
 /// A [Windows named pipe] server.
 ///
@@ -130,7 +125,8 @@ impl NamedPipeServer {
     /// ```
     pub fn info(&self) -> io::Result<PipeInfo> {
         // Safety: we're ensuring the lifetime of the named pipe.
-        unsafe { named_pipe_info(self.as_raw_fd()) }
+        // Safety: getting info doesn't need to be attached.
+        unsafe { named_pipe_info(self.as_raw_fd_unchecked()) }
     }
 
     /// Enables a named pipe server process to wait for a client process to
@@ -155,10 +151,8 @@ impl NamedPipeServer {
     /// // Use the connected client...
     /// # std::io::Result::Ok(()) });
     /// ```
-    #[cfg(feature = "runtime")]
     pub async fn connect(&self) -> io::Result<()> {
-        self.attach()?;
-        let op = ConnectNamedPipe::new(self.as_raw_fd());
+        let op = ConnectNamedPipe::new(self.handle.try_as_raw_fd()?);
         Runtime::current().submit(op).await.0?;
         Ok(())
     }
@@ -191,12 +185,11 @@ impl NamedPipeServer {
     /// # })
     /// ```
     pub fn disconnect(&self) -> io::Result<()> {
-        syscall!(BOOL, DisconnectNamedPipe(self.as_raw_fd() as _))?;
+        syscall!(BOOL, DisconnectNamedPipe(self.try_as_raw_fd()? as _))?;
         Ok(())
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncRead for NamedPipeServer {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
@@ -204,7 +197,6 @@ impl AsyncRead for NamedPipeServer {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncRead for &NamedPipeServer {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
@@ -213,7 +205,6 @@ impl AsyncRead for &NamedPipeServer {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncWrite for NamedPipeServer {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
@@ -231,7 +222,6 @@ impl AsyncWrite for NamedPipeServer {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncWrite for &NamedPipeServer {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
@@ -250,9 +240,8 @@ impl AsyncWrite for &NamedPipeServer {
     }
 }
 
-impl_raw_fd!(NamedPipeServer, handle);
+impl_try_as_raw_fd!(NamedPipeServer, handle);
 
-#[cfg(feature = "runtime")]
 impl_attachable!(NamedPipeServer, handle);
 
 /// A [Windows named pipe] client.
@@ -329,11 +318,11 @@ impl NamedPipeClient {
     /// ```
     pub fn info(&self) -> io::Result<PipeInfo> {
         // Safety: we're ensuring the lifetime of the named pipe.
-        unsafe { named_pipe_info(self.as_raw_fd()) }
+        // Safety: getting info doesn't need to be attached.
+        unsafe { named_pipe_info(self.as_raw_fd_unchecked()) }
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncRead for NamedPipeClient {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
@@ -341,7 +330,6 @@ impl AsyncRead for NamedPipeClient {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncRead for &NamedPipeClient {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
@@ -350,7 +338,6 @@ impl AsyncRead for &NamedPipeClient {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncWrite for NamedPipeClient {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
@@ -368,7 +355,6 @@ impl AsyncWrite for NamedPipeClient {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl AsyncWrite for &NamedPipeClient {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
@@ -387,9 +373,8 @@ impl AsyncWrite for &NamedPipeClient {
     }
 }
 
-impl_raw_fd!(NamedPipeClient, handle);
+impl_try_as_raw_fd!(NamedPipeClient, handle);
 
-#[cfg(feature = "runtime")]
 impl_attachable!(NamedPipeClient, handle);
 
 /// A builder structure for construct a named pipe with named pipe-specific
@@ -755,8 +740,8 @@ impl ServerOptions {
     /// ```
     /// use std::{io, ptr};
     ///
-    /// use compio_driver::AsRawFd;
     /// use compio_fs::named_pipe::ServerOptions;
+    /// use compio_runtime::TryAsRawFd;
     /// use windows_sys::Win32::{
     ///     Foundation::ERROR_SUCCESS,
     ///     Security::{
@@ -776,7 +761,7 @@ impl ServerOptions {
     ///     assert_eq!(
     ///         ERROR_SUCCESS,
     ///         SetSecurityInfo(
-    ///             pipe.as_raw_fd() as _,
+    ///             pipe.as_raw_fd_unchecked() as _,
     ///             SE_KERNEL_OBJECT,
     ///             DACL_SECURITY_INFORMATION,
     ///             ptr::null_mut(),
@@ -792,8 +777,8 @@ impl ServerOptions {
     /// ```
     /// use std::{io, ptr};
     ///
-    /// use compio_driver::AsRawFd;
     /// use compio_fs::named_pipe::ServerOptions;
+    /// use compio_runtime::TryAsRawFd;
     /// use windows_sys::Win32::{
     ///     Foundation::ERROR_ACCESS_DENIED,
     ///     Security::{
@@ -813,7 +798,7 @@ impl ServerOptions {
     ///     assert_eq!(
     ///         ERROR_ACCESS_DENIED,
     ///         SetSecurityInfo(
-    ///             pipe.as_raw_fd() as _,
+    ///             pipe.as_raw_fd_unchecked() as _,
     ///             SE_KERNEL_OBJECT,
     ///             DACL_SECURITY_INFORMATION,
     ///             ptr::null_mut(),
@@ -1040,14 +1025,12 @@ impl Default for ServerOptions {
 /// client side.
 ///
 /// See [`ClientOptions::open`].
-#[cfg(feature = "runtime")]
 #[derive(Debug, Clone)]
 pub struct ClientOptions {
     options: OpenOptions,
     pipe_mode: PipeMode,
 }
 
-#[cfg(feature = "runtime")]
 impl ClientOptions {
     /// Creates a new named pipe builder with the default settings.
     ///
@@ -1184,7 +1167,7 @@ impl ClientOptions {
             let mode = PIPE_READMODE_MESSAGE;
             syscall!(
                 BOOL,
-                SetNamedPipeHandleState(file.as_raw_fd() as _, &mode, null(), null())
+                SetNamedPipeHandleState(file.as_raw_fd_unchecked() as _, &mode, null(), null())
             )?;
         }
 
@@ -1192,7 +1175,6 @@ impl ClientOptions {
     }
 }
 
-#[cfg(feature = "runtime")]
 impl Default for ClientOptions {
     fn default() -> Self {
         Self::new()
