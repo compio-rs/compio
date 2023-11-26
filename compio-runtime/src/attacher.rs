@@ -17,9 +17,8 @@ use crate::Runtime;
 
 /// Attach a handle to the driver of current thread.
 ///
-/// A handle can and only can attach once to one driver. However, the handle
-/// itself is Send & Sync. We mark it !Send & !Sync to warn users, making them
-/// ensure that they are using it in the correct thread.
+/// A handle can and only can attach once to one driver. The attacher will check
+/// if it is attached to the current driver.
 #[derive(Debug, Clone)]
 pub struct Attacher<S> {
     source: S,
@@ -29,7 +28,7 @@ pub struct Attacher<S> {
 
 impl<S> Attacher<S> {
     /// Create [`Attacher`].
-    pub fn new(source: S) -> Self {
+    pub const fn new(source: S) -> Self {
         Self {
             source,
             once: OnceLock::new(),
@@ -222,7 +221,7 @@ impl<S: AsRawFd> TryAsRawFd for Attacher<S> {
 
 /// A [`Send`] wrapper for attachable resource that has not been attached. The
 /// resource should be able to send to another thread before attaching.
-pub struct Unattached<T: Attachable>(T);
+pub struct Unattached<T>(T);
 
 impl<T: Attachable> Unattached<T> {
     /// Create the [`Unattached`] wrapper, or fail if the resource has already
