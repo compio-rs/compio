@@ -3,8 +3,8 @@ use std::{io, ops::DerefMut, sync::Arc};
 use compio_io::{compat::SyncStream, AsyncRead, AsyncWrite};
 use rustls::{
     ClientConfig, ClientConnection, ConnectionCommon, Error, ServerConfig, ServerConnection,
-    ServerName,
 };
+use rustls_pki_types::ServerName;
 
 use crate::TlsStream;
 
@@ -102,7 +102,8 @@ impl TlsConnector {
         let conn = ClientConnection::new(
             self.0.clone(),
             ServerName::try_from(domain)
-                .map_err(|e| HandshakeError::System(io::Error::new(io::ErrorKind::Other, e)))?,
+                .map_err(|e| HandshakeError::System(io::Error::new(io::ErrorKind::Other, e)))?
+                .to_owned(),
         )
         .map_err(HandshakeError::Rustls)?;
 
