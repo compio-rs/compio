@@ -4,6 +4,7 @@
 [![crates.io](https://img.shields.io/crates/v/compio)](https://crates.io/crates/compio)
 [![docs.rs](https://img.shields.io/badge/docs.rs-compio-latest)](https://docs.rs/compio)
 [![Azure DevOps builds](https://strawberry-vs.visualstudio.com/compio/_apis/build/status/compio-rs.compio?branch=master)](https://strawberry-vs.visualstudio.com/compio/_build?definitionId=22)
+[![Telegram](https://img.shields.io/badge/Telegram-compio--rs-blue?logo=telegram)](https://t.me/compio_rs)
 
 A thread-per-core Rust runtime with IOCP/io_uring/polling.
 The name comes from "completion-based IO".
