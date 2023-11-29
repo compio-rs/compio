@@ -12,9 +12,10 @@ pub use windows_sys::Win32::Networking::WinSock::{
     ADDRINFOEXW as addrinfo, AF_UNSPEC, IPPROTO_TCP, SOCK_STREAM,
 };
 use windows_sys::Win32::{
-    Foundation::{GetLastError, ERROR_IO_PENDING},
+    Foundation::{GetLastError, ERROR_IO_PENDING, HANDLE},
     Networking::WinSock::{
-        FreeAddrInfoExW, GetAddrInfoExOverlappedResult, GetAddrInfoExW, ADDRINFOEXW, NS_ALL,
+        FreeAddrInfoExW, GetAddrInfoExCancel, GetAddrInfoExOverlappedResult, GetAddrInfoExW,
+        ADDRINFOEXW, NS_ALL,
     },
     System::IO::OVERLAPPED,
 };
@@ -23,6 +24,7 @@ pub struct AsyncResolver {
     name: U16CString,
     port: u16,
     result: *mut ADDRINFOEXW,
+    handle: HANDLE,
     overlapped: GAIOverlapped,
 }
 
@@ -33,6 +35,7 @@ impl AsyncResolver {
                 .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid host name"))?,
             port,
             result: null_mut(),
+            handle: 0,
             overlapped: GAIOverlapped::new(),
         })
     }
@@ -67,7 +70,7 @@ impl AsyncResolver {
             null(),
             &self.overlapped.base,
             Some(Self::callback),
-            null_mut(),
+            &mut self.handle,
         );
         match res {
             0 => Poll::Ready(Ok(())),
@@ -83,12 +86,16 @@ impl AsyncResolver {
 
     pub unsafe fn addrs(&mut self) -> io::Result<std::vec::IntoIter<SocketAddr>> {
         syscall!(SOCKET, GetAddrInfoExOverlappedResult(&self.overlapped.base))?;
+        self.handle = 0;
         Ok(super::to_addrs(self.result, self.port))
     }
 }
 
 impl Drop for AsyncResolver {
     fn drop(&mut self) {
+        if self.handle != 0 {
+            syscall!(SOCKET, GetAddrInfoExCancel(&self.handle)).ok();
+        }
         if !self.result.is_null() {
             unsafe { FreeAddrInfoExW(self.result) }
         }

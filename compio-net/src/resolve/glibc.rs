@@ -145,3 +145,9 @@ impl AsyncResolver {
         Ok(super::to_addrs(self.block.block.ar_result, self.port))
     }
 }
+
+impl Drop for AsyncResolver {
+    fn drop(&mut self) {
+        unsafe { gai_call(gai_cancel(self.block.deref_mut().as_mut_ptr())).ok() }
+    }
+}
