@@ -20,7 +20,7 @@ compio-io = { workspace = true, features = ["compat"] }
 
 native-tls = { version = "0.2.11", optional = true }
 rustls = { version = "=0.22.0-alpha.5", optional = true }
-rustls-pki-types = { version = "0.2.2", optional = true }
+rustls-pki-types = { version = "=0.2.2", optional = true }
 
 [dev-dependencies]
 compio-net = { workspace = true }
