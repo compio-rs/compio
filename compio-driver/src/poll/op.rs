@@ -19,7 +19,7 @@ use crate::op::*;
 pub use crate::unix::op::*;
 
 impl<
-    D: std::marker::Sync + Unpin + 'static,
+    D: std::marker::Send + Unpin + 'static,
     F: (FnOnce(D) -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + Unpin + 'static,
 > OpCode for Asyncify<F, D>
 {
