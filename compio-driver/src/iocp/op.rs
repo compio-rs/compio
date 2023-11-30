@@ -9,7 +9,7 @@ use std::{
 };
 
 use aligned_array::{Aligned, A8};
-use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 use socket2::SockAddr;
@@ -107,8 +107,10 @@ fn get_wsa_fn<F>(handle: RawFd, fguid: GUID) -> io::Result<Option<F>> {
     Ok(fptr)
 }
 
-impl<F: (FnOnce() -> io::Result<usize>) + std::marker::Send + std::marker::Sync + Unpin + 'static>
-    OpCode for Asyncify<F>
+impl<
+    D: std::marker::Send + Unpin + 'static,
+    F: (FnOnce(D) -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + Unpin + 'static,
+> OpCode for Asyncify<F, D>
 {
     fn is_overlapped(&self) -> bool {
         false
@@ -119,7 +121,9 @@ impl<F: (FnOnce() -> io::Result<usize>) + std::marker::Send + std::marker::Sync 
             .f
             .take()
             .expect("the operate method could only be called once");
-        Poll::Ready(f())
+        let BufResult(res, data) = f(self.data.take().expect("the data could not be None"));
+        self.data = Some(data);
+        Poll::Ready(res)
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
