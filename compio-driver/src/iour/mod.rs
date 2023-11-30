@@ -1,9 +1,13 @@
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 #[allow(unused_imports)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{collections::VecDeque, io, os::fd::OwnedFd, pin::Pin, task::Poll, time::Duration};
+use std::{
+    collections::VecDeque, io, os::fd::OwnedFd, pin::Pin, ptr::NonNull, sync::Arc, task::Poll,
+    time::Duration,
+};
 
 use compio_log::{instrument, trace};
+use crossbeam_queue::SegQueue;
 use io_uring::{
     cqueue,
     opcode::{AsyncCancel, Read},
@@ -14,15 +18,35 @@ use io_uring::{
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use slab::Slab;
 
-use crate::{syscall, Entry, ProactorBuilder};
+use crate::{syscall, AsyncifyPool, Entry, ProactorBuilder};
 
 pub(crate) mod op;
 pub(crate) use crate::unix::RawOp;
 
+/// The created entry of [`OpCode`].
+pub enum OpEntry {
+    /// This operation creates an io-uring submission entry.
+    Submission(squeue::Entry),
+    /// This operation is a blocking one.
+    Blocking,
+}
+
+impl From<squeue::Entry> for OpEntry {
+    fn from(value: squeue::Entry) -> Self {
+        Self::Submission(value)
+    }
+}
+
 /// Abstraction of io-uring operations.
 pub trait OpCode {
     /// Create submission entry.
-    fn create_entry(self: Pin<&mut Self>) -> squeue::Entry;
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry;
+
+    /// Call the operation in a blocking way. This method will only be called if
+    /// [`create_entry`] returns [`OpEntry::Blocking`].
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        unreachable!("this operation is asynchronous")
+    }
 }
 
 /// Low-level driver of io-uring.
@@ -31,6 +55,8 @@ pub(crate) struct Driver {
     squeue: VecDeque<squeue::Entry>,
     notifier: Notifier,
     notifier_registered: bool,
+    pool: AsyncifyPool,
+    pool_completed: Arc<SegQueue<Entry>>,
 }
 
 impl Driver {
@@ -45,6 +71,8 @@ impl Driver {
             squeue: VecDeque::with_capacity(builder.capacity as usize),
             notifier: Notifier::new()?,
             notifier_registered: false,
+            pool: builder.create_or_get_thread_pool(),
+            pool_completed: Arc::new(SegQueue::new()),
         })
     }
 
@@ -118,6 +146,10 @@ impl Driver {
     }
 
     fn poll_entries(&mut self, entries: &mut impl Extend<Entry>) {
+        while let Some(entry) = self.pool_completed.pop() {
+            entries.extend(Some(entry));
+        }
+
         let mut cqueue = self.inner.completion();
         cqueue.sync();
         let completed_entries = cqueue.filter_map(|entry| match entry.user_data() {
@@ -147,11 +179,39 @@ impl Driver {
 
     pub fn push(&mut self, user_data: usize, op: &mut RawOp) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", user_data);
-        let op = op.as_pin();
+        let op_pin = op.as_pin();
         trace!("push RawOp");
-        self.squeue
-            .push_back(op.create_entry().user_data(user_data as _));
-        Poll::Pending
+        if let OpEntry::Submission(entry) = op_pin.create_entry() {
+            self.squeue.push_back(entry.user_data(user_data as _));
+            Poll::Pending
+        } else if self.push_blocking(user_data, op)? {
+            Poll::Pending
+        } else {
+            Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
+        }
+    }
+
+    fn push_blocking(&mut self, user_data: usize, op: &mut RawOp) -> io::Result<bool> {
+        // Safety: the RawOp is not released before the operation returns.
+        struct SendWrapper<T>(T);
+        unsafe impl<T> Send for SendWrapper<T> {}
+
+        let op = SendWrapper(NonNull::from(op));
+        let handle = self.handle()?;
+        let completed = self.pool_completed.clone();
+        let is_ok = self
+            .pool
+            .dispatch(move || {
+                #[allow(clippy::redundant_locals)]
+                let mut op = op;
+                let op = unsafe { op.0.as_mut() };
+                let op_pin = op.as_pin();
+                let res = op_pin.call_blocking();
+                completed.push(Entry::new(user_data, res));
+                handle.notify().ok();
+            })
+            .is_ok();
+        Ok(is_ok)
     }
 
     pub unsafe fn poll(

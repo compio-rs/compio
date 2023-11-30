@@ -18,6 +18,26 @@ use super::{sockaddr_storage, socklen_t, syscall, Decision, OpCode, RawFd};
 use crate::op::*;
 pub use crate::unix::op::*;
 
+impl<F: (FnOnce() -> io::Result<usize>) + std::marker::Send + std::marker::Sync + Unpin + 'static>
+    OpCode for Asyncify<F>
+{
+    fn is_nonblocking(&self) -> bool {
+        false
+    }
+
+    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
+        let f = self
+            .f
+            .take()
+            .expect("the operate method could only be called once");
+        f().map(Decision::Completed)
+    }
+
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        unreachable!("Asyncify operation should not be submitted to polling")
+    }
+}
+
 impl OpCode for OpenFile {
     fn is_nonblocking(&self) -> bool {
         false

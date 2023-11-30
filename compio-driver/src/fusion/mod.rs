@@ -11,8 +11,8 @@ pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{io, task::Poll, time::Duration};
 
 pub use driver_type::DriverType;
-pub use iour::OpCode as IourOpCode;
 pub(crate) use iour::{sockaddr_storage, socklen_t};
+pub use iour::{OpCode as IourOpCode, OpEntry};
 pub use poll::{Decision, OpCode as PollOpCode};
 use slab::Slab;
 
