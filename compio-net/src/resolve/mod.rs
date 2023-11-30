@@ -81,6 +81,12 @@ fn to_addrs(mut result: *mut sys::addrinfo, port: u16) -> std::vec::IntoIter<Soc
 /// [`SocketAddr`] values.
 ///
 /// See [`std::net::ToSocketAddrs`].
+///
+/// # Cancel safety
+///
+/// All implementation of [`ToSocketAddrsAsync`] in this crate is safe to cancel
+/// by dropping the future. The Glibc impl may leak the control block if the
+/// task is not completed when dropping.
 #[allow(async_fn_in_trait)]
 pub trait ToSocketAddrsAsync {
     /// See [`std::net::ToSocketAddrs::Iter`].

@@ -1,4 +1,4 @@
-use std::{ffi::CString, io, net::SocketAddr, ops::DerefMut, pin::Pin, task::Poll};
+use std::{ffi::CString, io, mem::ManuallyDrop, net::SocketAddr, pin::Pin, task::Poll};
 
 use compio_driver::{FromRawFd, IntoRawFd, RawFd};
 use compio_runtime::event::EventHandle;
@@ -53,6 +53,9 @@ const GAI_NOWAIT: libc::c_int = 1;
 const EAI_INPROGRESS: libc::c_int = -100;
 const EAI_INTR: libc::c_int = -104;
 
+const EAI_CANCELED: libc::c_int = -101;
+const EAI_ALLDONE: libc::c_int = -103;
+
 fn gai_call(res: libc::c_int) -> io::Result<()> {
     let errno = match res {
         0 => return Ok(()),
@@ -102,7 +105,7 @@ impl Drop for GaiControlBlock {
 pub struct AsyncResolver {
     name: CString,
     port: u16,
-    block: Pin<Box<GaiControlBlock>>,
+    block: ManuallyDrop<Pin<Box<GaiControlBlock>>>,
 }
 
 impl AsyncResolver {
@@ -112,7 +115,7 @@ impl AsyncResolver {
         Ok(Self {
             name,
             port,
-            block: Box::pin(GaiControlBlock::new()),
+            block: ManuallyDrop::new(Box::pin(GaiControlBlock::new())),
         })
     }
 
@@ -129,7 +132,7 @@ impl AsyncResolver {
         self.block.block.ar_name = self.name.as_ptr();
         self.block.block.ar_request = hints;
 
-        let mut block_ptr = self.block.deref_mut().as_mut_ptr();
+        let mut block_ptr = self.block.as_mut_ptr();
         let mut sevp: sigevent_thread = std::mem::zeroed();
         sevp.sigev_value.sival_ptr = handle.into_raw_fd() as _;
         sevp.sigev_notify = libc::SIGEV_THREAD;
@@ -140,8 +143,19 @@ impl AsyncResolver {
     }
 
     pub unsafe fn addrs(&mut self) -> io::Result<std::vec::IntoIter<SocketAddr>> {
-        gai_call(gai_error(self.block.deref_mut().as_mut_ptr()))?;
+        gai_call(gai_error(self.block.as_mut_ptr()))?;
 
         Ok(super::to_addrs(self.block.block.ar_result, self.port))
+    }
+}
+
+impl Drop for AsyncResolver {
+    fn drop(&mut self) {
+        let ret = unsafe { gai_cancel(self.block.as_mut_ptr()) };
+        if ret == EAI_CANCELED || ret == EAI_ALLDONE {
+            unsafe {
+                ManuallyDrop::drop(&mut self.block);
+            }
+        }
     }
 }
