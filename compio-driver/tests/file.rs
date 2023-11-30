@@ -2,7 +2,7 @@ use std::{io, time::Duration};
 
 use compio_buf::{arrayvec::ArrayVec, BufResult};
 use compio_driver::{
-    op::{CloseFile, OpenFile, ReadAt},
+    op::{Asyncify, CloseFile, OpenFile, ReadAt},
     Entry, OpCode, Proactor, PushEntry, RawFd,
 };
 
@@ -149,4 +149,13 @@ fn notify() {
     driver.poll(None, &mut entries).unwrap();
 
     thread.join().unwrap();
+}
+
+#[test]
+fn asyncify() {
+    let mut driver = Proactor::new().unwrap();
+
+    let op = Asyncify::new(|| std::io::Result::Ok(114514));
+    let (res, _) = push_and_wait(&mut driver, op);
+    assert_eq!(res, 114514);
 }

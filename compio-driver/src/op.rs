@@ -66,6 +66,18 @@ impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t)> {
     }
 }
 
+/// Spawn a blocking function in the thread pool.
+pub struct Asyncify<F> {
+    pub(crate) f: Option<F>,
+}
+
+impl<F> Asyncify<F> {
+    /// Create [`Asyncify`].
+    pub fn new(f: F) -> Self {
+        Self { f: Some(f) }
+    }
+}
+
 /// Close the file fd.
 pub struct CloseFile {
     pub(crate) fd: RawFd,

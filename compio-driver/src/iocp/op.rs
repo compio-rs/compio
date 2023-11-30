@@ -107,6 +107,26 @@ fn get_wsa_fn<F>(handle: RawFd, fguid: GUID) -> io::Result<Option<F>> {
     Ok(fptr)
 }
 
+impl<F: (FnOnce() -> io::Result<usize>) + std::marker::Send + std::marker::Sync + Unpin + 'static>
+    OpCode for Asyncify<F>
+{
+    fn is_overlapped(&self) -> bool {
+        false
+    }
+
+    unsafe fn operate(mut self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let f = self
+            .f
+            .take()
+            .expect("the operate method could only be called once");
+        Poll::Ready(f())
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 /// Open or create a file with flags and mode.
 pub struct OpenFile {
     pub(crate) path: U16CString,
