@@ -1,7 +1,7 @@
-use std::{io, os::fd::RawFd, pin::Pin};
+use std::{os::fd::RawFd, pin::Pin};
 
 use compio_buf::{
-    IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
+    BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
 };
 use io_uring::{
     opcode,
@@ -14,8 +14,10 @@ use super::OpCode;
 pub use crate::unix::op::*;
 use crate::{op::*, OpEntry};
 
-impl<F: (FnOnce() -> io::Result<usize>) + std::marker::Send + std::marker::Sync + Unpin + 'static>
-    OpCode for Asyncify<F>
+impl<
+    D: std::marker::Send + Unpin + 'static,
+    F: (FnOnce(D) -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + Unpin + 'static,
+> OpCode for Asyncify<F, D>
 {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         OpEntry::Blocking
@@ -26,7 +28,9 @@ impl<F: (FnOnce() -> io::Result<usize>) + std::marker::Send + std::marker::Sync 
             .f
             .take()
             .expect("the operate method could only be called once");
-        f()
+        let BufResult(res, data) = f(self.data.take().expect("the data could not be None"));
+        self.data = Some(data);
+        res
     }
 }
 

@@ -1,7 +1,7 @@
 use std::{io, pin::Pin, task::Poll};
 
 use compio_buf::{
-    IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
+    BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
 };
 #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
 use libc::open;
@@ -18,8 +18,10 @@ use super::{sockaddr_storage, socklen_t, syscall, Decision, OpCode, RawFd};
 use crate::op::*;
 pub use crate::unix::op::*;
 
-impl<F: (FnOnce() -> io::Result<usize>) + std::marker::Send + std::marker::Sync + Unpin + 'static>
-    OpCode for Asyncify<F>
+impl<
+    D: std::marker::Sync + Unpin + 'static,
+    F: (FnOnce(D) -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + Unpin + 'static,
+> OpCode for Asyncify<F, D>
 {
     fn is_nonblocking(&self) -> bool {
         false
@@ -30,7 +32,9 @@ impl<F: (FnOnce() -> io::Result<usize>) + std::marker::Send + std::marker::Sync 
             .f
             .take()
             .expect("the operate method could only be called once");
-        f().map(Decision::Completed)
+        let BufResult(res, data) = f(self.data.take().expect("the data could not be None"));
+        self.data = Some(data);
+        res.map(Decision::Completed)
     }
 
     fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
