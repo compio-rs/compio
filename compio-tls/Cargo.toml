@@ -19,15 +19,15 @@ compio-buf = { workspace = true }
 compio-io = { workspace = true, features = ["compat"] }
 
 native-tls = { version = "0.2.11", optional = true }
-rustls = { version = "=0.22.0-alpha.5", optional = true }
-rustls-pki-types = { version = "=0.2.2", optional = true }
+rustls = { version = "=0.22.0-alpha.6", optional = true }
+rustls-pki-types = { version = "0.2.3", optional = true }
 
 [dev-dependencies]
 compio-net = { workspace = true }
 compio-runtime = { workspace = true }
 compio-macros = { workspace = true }
 
-rustls-native-certs = "=0.7.0-alpha.2"
+rustls-native-certs = "=0.7.0-alpha.3"
 
 [features]
 default = ["native-tls"]
