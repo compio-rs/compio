@@ -227,7 +227,8 @@ impl Proactor {
         entries: &mut impl Extend<Entry>,
     ) -> io::Result<()> {
         unsafe {
-            self.driver.poll(timeout, entries, &mut self.ops)?;
+            self.driver
+                .poll(timeout, OutEntries::new(entries, &mut self.ops))?;
         }
         Ok(())
     }
@@ -317,6 +318,32 @@ impl Entry {
     /// The result of the operation.
     pub fn into_result(self) -> io::Result<usize> {
         self.result
+    }
+}
+
+// The output entries need to be set `completed` to true.
+struct OutEntries<'a, 'b, E> {
+    entries: &'b mut E,
+    registry: &'a mut Slab<RawOp>,
+}
+
+impl<'a, 'b, E> OutEntries<'a, 'b, E> {
+    pub fn new(entries: &'b mut E, registry: &'a mut Slab<RawOp>) -> Self {
+        Self { entries, registry }
+    }
+
+    #[allow(dead_code)]
+    pub fn registry(&mut self) -> &mut Slab<RawOp> {
+        self.registry
+    }
+}
+
+impl<E: Extend<Entry>> Extend<Entry> for OutEntries<'_, '_, E> {
+    fn extend<T: IntoIterator<Item = Entry>>(&mut self, iter: T) {
+        self.entries.extend(iter.into_iter().map(|e| {
+            self.registry[e.user_data()].set_completed();
+            e
+        }))
     }
 }
 
