@@ -19,7 +19,7 @@ pub(crate) use libc::{sockaddr_storage, socklen_t};
 use polling::{Event, Events, Poller};
 use slab::Slab;
 
-use crate::{syscall, AsyncifyPool, Entry, ProactorBuilder};
+use crate::{syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder};
 
 pub(crate) mod op;
 
@@ -268,8 +268,7 @@ impl Driver {
     pub unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        entries: &mut impl Extend<Entry>,
-        registry: &mut Slab<RawOp>,
+        mut entries: OutEntries<impl Extend<Entry>>,
     ) -> io::Result<()> {
         self.poll.wait(&mut self.events, timeout)?;
         if self.events.is_empty() && self.pool_completed.is_empty() && timeout.is_some() {
@@ -288,7 +287,7 @@ impl Driver {
             if self.cancelled.remove(&user_data) {
                 entries.extend(Some(entry_cancelled(user_data)));
             } else {
-                let op = registry[user_data].as_pin();
+                let op = entries.registry()[user_data].as_pin();
                 let res = match op.on_event(&event) {
                     Poll::Pending => {
                         // The operation should go back to the front.
