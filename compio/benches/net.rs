@@ -50,7 +50,7 @@ fn tcp(c: &mut Criterion) {
 
     #[cfg(unix)]
     group.bench_function("monoio", |b| {
-        let mut runtime = monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
+        let mut runtime = monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
             .enable_all()
             .build()
             .unwrap();
@@ -150,7 +150,7 @@ fn udp(c: &mut Criterion) {
 
     #[cfg(unix)]
     group.bench_function("monoio", |b| {
-        let mut runtime = monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
+        let mut runtime = monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
             .enable_all()
             .build()
             .unwrap();
