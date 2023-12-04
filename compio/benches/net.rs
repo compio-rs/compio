@@ -48,6 +48,29 @@ fn tcp(c: &mut Criterion) {
         })
     });
 
+    #[cfg(unix)]
+    group.bench_function("monoio", |b| {
+        let mut runtime = monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
+            .enable_all()
+            .build()
+            .unwrap();
+        b.iter(|| {
+            runtime.block_on(async {
+                use monoio::io::{AsyncReadRentExt, AsyncWriteRentExt};
+
+                let listener = monoio::net::TcpListener::bind("127.0.0.1:0").unwrap();
+                let addr = listener.local_addr().unwrap();
+                let tx = monoio::net::TcpStream::connect(addr);
+                let rx = listener.accept();
+                let (mut tx, (mut rx, _)) = futures_util::try_join!(tx, rx).unwrap();
+                tx.write_all(PACKET).await.0.unwrap();
+                let buffer = Vec::with_capacity(PACKET_LEN);
+                let (_, buffer) = rx.read_exact(buffer).await;
+                buffer
+            })
+        })
+    });
+
     group.finish();
 }
 
@@ -122,6 +145,40 @@ fn udp(c: &mut Criterion) {
                 }
                 buffer
             }
+        })
+    });
+
+    #[cfg(unix)]
+    group.bench_function("monoio", |b| {
+        let mut runtime = monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
+            .enable_all()
+            .build()
+            .unwrap();
+        b.iter(|| {
+            runtime.block_on(async {
+                let rx = monoio::net::udp::UdpSocket::bind("127.0.0.1:0").unwrap();
+                let addr_rx = rx.local_addr().unwrap();
+                let tx = monoio::net::udp::UdpSocket::bind("127.0.0.1:0").unwrap();
+                let addr_tx = tx.local_addr().unwrap();
+
+                rx.connect(addr_tx).await.unwrap();
+                tx.connect(addr_rx).await.unwrap();
+
+                {
+                    let mut pos = 0;
+                    while pos < PACKET_LEN {
+                        let res = tx.send(&PACKET[pos..]).await.0.unwrap();
+                        pos += res;
+                    }
+                }
+                {
+                    let mut buffer = Vec::with_capacity(PACKET_LEN);
+                    while buffer.len() < PACKET_LEN {
+                        buffer = rx.recv(buffer).await.1;
+                    }
+                    buffer
+                }
+            })
         })
     });
 

@@ -45,6 +45,30 @@ fn read(c: &mut Criterion) {
         })
     });
 
+    #[cfg(unix)]
+    group.bench_function("monoio", |b| {
+        let mut runtime = monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
+            .enable_all()
+            .build()
+            .unwrap();
+        b.iter(|| {
+            runtime.block_on(async {
+                let file = monoio::fs::File::open("Cargo.toml").await.unwrap();
+                let mut data: Vec<u8> = Vec::with_capacity(1024);
+                let mut pos = 0;
+                loop {
+                    let (n, mut res) = file.read_at(Vec::<u8>::with_capacity(1024), pos).await;
+                    match n {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => pos += n as u64,
+                    }
+                    data.append(&mut res);
+                }
+                data
+            })
+        })
+    });
+
     group.finish();
 }
 
@@ -85,6 +109,22 @@ fn write(c: &mut Criterion) {
 
             let mut file = compio::fs::File::create(temp_file.path()).await.unwrap();
             file.write_all_at(CONTENT, 0).await.unwrap();
+        })
+    });
+
+    #[cfg(unix)]
+    group.bench_function("monoio", |b| {
+        let mut runtime = monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
+            .enable_all()
+            .build()
+            .unwrap();
+        let temp_file = NamedTempFile::new().unwrap();
+
+        b.iter(|| {
+            runtime.block_on(async {
+                let file = monoio::fs::File::create(temp_file.path()).await.unwrap();
+                file.write_all_at(CONTENT, 0).await.0.unwrap();
+            })
         })
     });
 
