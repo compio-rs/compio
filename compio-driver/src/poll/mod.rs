@@ -27,18 +27,13 @@ pub(crate) use crate::unix::RawOp;
 
 /// Abstraction of operations.
 pub trait OpCode {
-    /// Determines that the operation is really non-blocking defined by POSIX.
-    /// If not, the driver will try to operate it in another thread.
-    fn is_nonblocking(&self) -> bool {
-        true
-    }
-
     /// Perform the operation before submit, and return [`Decision`] to
     /// indicate whether submitting the operation to polling is required.
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision>;
 
     /// Perform the operation after received corresponding
-    /// event.
+    /// event. If this operation is blocking, the return value should be
+    /// [`Poll::Ready`].
     fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>>;
 }
 
@@ -48,6 +43,8 @@ pub enum Decision {
     Completed(usize),
     /// Async operation, needs to submit
     Wait(WaitArg),
+    /// Blocking operation, needs to be spawned in another thread
+    Blocking(Event),
 }
 
 impl Decision {
@@ -64,6 +61,21 @@ impl Decision {
     /// Decide to wait for the given fd to be writable.
     pub fn wait_writable(fd: RawFd) -> Self {
         Self::wait_for(fd, Interest::Writable)
+    }
+
+    /// Decide to spawn a blocking task with a dummy event.
+    pub fn blocking_dummy() -> Self {
+        Self::Blocking(Event::none(0))
+    }
+
+    /// Decide to spawn a blocking task with a readable event.
+    pub fn blocking_readable(fd: RawFd) -> Self {
+        Self::Blocking(Event::readable(fd as _))
+    }
+
+    /// Decide to spawn a blocking task with a writable event.
+    pub fn blocking_writable(fd: RawFd) -> Self {
+        Self::Blocking(Event::writable(fd as _))
     }
 }
 
@@ -211,24 +223,25 @@ impl Driver {
             Poll::Ready(Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)))
         } else {
             let op_pin = op.as_pin();
-            if op_pin.is_nonblocking() {
-                match op_pin.pre_submit() {
-                    Ok(Decision::Wait(arg)) => {
-                        self.submit(user_data, arg)?;
-                        Poll::Pending
-                    }
-                    Ok(Decision::Completed(res)) => Poll::Ready(Ok(res)),
-                    Err(err) => Poll::Ready(Err(err)),
+            match op_pin.pre_submit() {
+                Ok(Decision::Wait(arg)) => {
+                    self.submit(user_data, arg)?;
+                    Poll::Pending
                 }
-            } else if self.push_blocking(user_data, op) {
-                Poll::Pending
-            } else {
-                Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
+                Ok(Decision::Completed(res)) => Poll::Ready(Ok(res)),
+                Ok(Decision::Blocking(event)) => {
+                    if self.push_blocking(user_data, op, event) {
+                        Poll::Pending
+                    } else {
+                        Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
+                    }
+                }
+                Err(err) => Poll::Ready(Err(err)),
             }
         }
     }
 
-    fn push_blocking(&mut self, user_data: usize, op: &mut RawOp) -> bool {
+    fn push_blocking(&mut self, user_data: usize, op: &mut RawOp, event: Event) -> bool {
         // Safety: the RawOp is not released before the operation returns.
         struct SendWrapper<T>(T);
         unsafe impl<T> Send for SendWrapper<T> {}
@@ -242,10 +255,9 @@ impl Driver {
                 let mut op = op;
                 let op = unsafe { op.0.as_mut() };
                 let op_pin = op.as_pin();
-                let res = match op_pin.pre_submit() {
-                    Ok(Decision::Wait(_)) => unreachable!("this operation is not non-blocking"),
-                    Ok(Decision::Completed(res)) => Ok(res),
-                    Err(err) => Err(err),
+                let res = match op_pin.on_event(&event) {
+                    Poll::Pending => unreachable!("this operation is not non-blocking"),
+                    Poll::Ready(res) => res,
                 };
                 completed.push(Entry::new(user_data, res));
                 poll.notify().ok();

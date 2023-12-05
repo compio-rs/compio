@@ -43,58 +43,33 @@ impl<
 }
 
 impl OpCode for OpenFile {
-    fn is_nonblocking(&self) -> bool {
-        false
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::blocking_dummy())
     }
 
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::Completed(syscall!(open(
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        Poll::Ready(Ok(syscall!(open(
             self.path.as_ptr(),
             self.flags,
             self.mode as libc::c_int
         ))? as _))
     }
-
-    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
-        unreachable!("OpenFile operation should not be submitted to polling")
-    }
 }
 
 impl OpCode for CloseFile {
-    fn is_nonblocking(&self) -> bool {
-        false
-    }
-
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::Completed(syscall!(libc::close(self.fd))? as _))
+        Ok(Decision::blocking_dummy())
     }
 
     fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
-        unreachable!("CloseFile operation should not be submitted to polling")
-    }
-}
-
-impl<T: IoBufMut> ReadAt<T> {
-    unsafe fn call(&mut self) -> libc::ssize_t {
-        let fd = self.fd;
-        let slice = self.buffer.as_mut_slice();
-        pread(
-            fd,
-            slice.as_mut_ptr() as _,
-            slice.len() as _,
-            self.offset as _,
-        )
+        Poll::Ready(Ok(syscall!(libc::close(self.fd))? as _))
     }
 }
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
-    fn is_nonblocking(&self) -> bool {
-        cfg!(not(any(target_os = "linux", target_os = "android")))
-    }
-
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         if cfg!(any(target_os = "linux", target_os = "android")) {
-            Ok(Decision::Completed(syscall!(self.call())? as _))
+            Ok(Decision::blocking_readable(self.fd))
         } else {
             Ok(Decision::wait_readable(self.fd))
         }
@@ -103,30 +78,23 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
     fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
-        syscall!(break self.call())
-    }
-}
-
-impl<T: IoVectoredBufMut> ReadVectoredAt<T> {
-    unsafe fn call(&mut self) -> libc::ssize_t {
-        self.slices = unsafe { self.buffer.as_io_slices_mut() };
-        preadv(
-            self.fd,
-            self.slices.as_ptr() as _,
-            self.slices.len() as _,
-            self.offset as _,
+        let fd = self.fd;
+        let slice = self.buffer.as_mut_slice();
+        syscall!(
+            break pread(
+                fd,
+                slice.as_mut_ptr() as _,
+                slice.len() as _,
+                self.offset as _,
+            )
         )
     }
 }
 
 impl<T: IoVectoredBufMut> OpCode for ReadVectoredAt<T> {
-    fn is_nonblocking(&self) -> bool {
-        cfg!(not(any(target_os = "linux", target_os = "android")))
-    }
-
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         if cfg!(any(target_os = "linux", target_os = "android")) {
-            Ok(Decision::Completed(syscall!(self.call())? as _))
+            Ok(Decision::blocking_readable(self.fd))
         } else {
             Ok(Decision::wait_readable(self.fd))
         }
@@ -135,30 +103,22 @@ impl<T: IoVectoredBufMut> OpCode for ReadVectoredAt<T> {
     fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
-        syscall!(break self.call())
-    }
-}
-
-impl<T: IoBuf> WriteAt<T> {
-    unsafe fn call(&self) -> libc::ssize_t {
-        let slice = self.buffer.as_slice();
-        pwrite(
-            self.fd,
-            slice.as_ptr() as _,
-            slice.len() as _,
-            self.offset as _,
+        self.slices = unsafe { self.buffer.as_io_slices_mut() };
+        syscall!(
+            break preadv(
+                self.fd,
+                self.slices.as_ptr() as _,
+                self.slices.len() as _,
+                self.offset as _,
+            )
         )
     }
 }
 
 impl<T: IoBuf> OpCode for WriteAt<T> {
-    fn is_nonblocking(&self) -> bool {
-        cfg!(not(any(target_os = "linux", target_os = "android")))
-    }
-
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         if cfg!(any(target_os = "linux", target_os = "android")) {
-            Ok(Decision::Completed(syscall!(self.call())? as _))
+            Ok(Decision::blocking_writable(self.fd))
         } else {
             Ok(Decision::wait_writable(self.fd))
         }
@@ -167,30 +127,22 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
     fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.writable);
 
-        syscall!(break self.call())
-    }
-}
-
-impl<T: IoVectoredBuf> WriteVectoredAt<T> {
-    unsafe fn call(&mut self) -> libc::ssize_t {
-        self.slices = unsafe { self.buffer.as_io_slices() };
-        pwritev(
-            self.fd,
-            self.slices.as_ptr() as _,
-            self.slices.len() as _,
-            self.offset as _,
+        let slice = self.buffer.as_slice();
+        syscall!(
+            break pwrite(
+                self.fd,
+                slice.as_ptr() as _,
+                slice.len() as _,
+                self.offset as _,
+            )
         )
     }
 }
 
 impl<T: IoVectoredBuf> OpCode for WriteVectoredAt<T> {
-    fn is_nonblocking(&self) -> bool {
-        cfg!(not(any(target_os = "linux", target_os = "android")))
-    }
-
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         if cfg!(any(target_os = "linux", target_os = "android")) {
-            Ok(Decision::Completed(syscall!(self.call())? as _))
+            Ok(Decision::blocking_writable(self.fd))
         } else {
             Ok(Decision::wait_writable(self.fd))
         }
@@ -199,16 +151,24 @@ impl<T: IoVectoredBuf> OpCode for WriteVectoredAt<T> {
     fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.writable);
 
-        syscall!(break self.call())
+        self.slices = unsafe { self.buffer.as_io_slices() };
+        syscall!(
+            break pwritev(
+                self.fd,
+                self.slices.as_ptr() as _,
+                self.slices.len() as _,
+                self.offset as _,
+            )
+        )
     }
 }
 
 impl OpCode for Sync {
-    fn is_nonblocking(&self) -> bool {
-        false
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::blocking_dummy())
     }
 
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
         #[cfg(any(
             target_os = "android",
             target_os = "freebsd",
@@ -218,7 +178,7 @@ impl OpCode for Sync {
             target_os = "netbsd"
         ))]
         {
-            Ok(Decision::Completed(syscall!(if self.datasync {
+            Poll::Ready(Ok(syscall!(if self.datasync {
                 libc::fdatasync(self.fd)
             } else {
                 libc::fsync(self.fd)
@@ -233,42 +193,28 @@ impl OpCode for Sync {
             target_os = "netbsd"
         )))]
         {
-            Ok(Decision::Completed(syscall!(libc::fsync(self.fd))? as _))
+            Poll::Ready(Ok(syscall!(libc::fsync(self.fd))? as _))
         }
-    }
-
-    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
-        unreachable!("Sync operation should not be submitted to polling")
     }
 }
 
 impl OpCode for ShutdownSocket {
-    fn is_nonblocking(&self) -> bool {
-        false
-    }
-
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::Completed(
-            syscall!(libc::shutdown(self.fd, self.how()))? as _,
-        ))
+        Ok(Decision::blocking_dummy())
     }
 
     fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
-        unreachable!("CreateSocket operation should not be submitted to polling")
+        Poll::Ready(Ok(syscall!(libc::shutdown(self.fd, self.how()))? as _))
     }
 }
 
 impl OpCode for CloseSocket {
-    fn is_nonblocking(&self) -> bool {
-        false
-    }
-
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::Completed(syscall!(libc::close(self.fd))? as _))
+        Ok(Decision::blocking_dummy())
     }
 
     fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
-        unreachable!("CloseSocket operation should not be submitted to polling")
+        Poll::Ready(Ok(syscall!(libc::close(self.fd))? as _))
     }
 }
 
