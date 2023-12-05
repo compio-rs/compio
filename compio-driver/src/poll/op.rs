@@ -23,22 +23,18 @@ impl<
     F: (FnOnce(D) -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + Unpin + 'static,
 > OpCode for Asyncify<F, D>
 {
-    fn is_nonblocking(&self) -> bool {
-        false
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::blocking_dummy())
     }
 
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
+    fn on_event(mut self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
         let f = self
             .f
             .take()
             .expect("the operate method could only be called once");
         let BufResult(res, data) = f(self.data.take().expect("the data could not be None"));
         self.data = Some(data);
-        res.map(Decision::Completed)
-    }
-
-    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
-        unreachable!("Asyncify operation should not be submitted to polling")
+        Poll::Ready(res)
     }
 }
 
