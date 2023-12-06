@@ -109,7 +109,7 @@ fn get_wsa_fn<F>(handle: RawFd, fguid: GUID) -> io::Result<Option<F>> {
 
 impl<
     D: std::marker::Send + Unpin + 'static,
-    F: (FnOnce(D) -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + Unpin + 'static,
+    F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + Unpin + 'static,
 > OpCode for Asyncify<F, D>
 {
     fn is_overlapped(&self) -> bool {
@@ -121,7 +121,7 @@ impl<
             .f
             .take()
             .expect("the operate method could only be called once");
-        let BufResult(res, data) = f(self.data.take().expect("the data could not be None"));
+        let BufResult(res, data) = f();
         self.data = Some(data);
         Poll::Ready(res)
     }

@@ -107,15 +107,11 @@ impl RuntimeInner {
         &self,
         f: impl (FnOnce() -> T) + Send + Sync + Unpin + 'static,
     ) -> impl Future<Output = T> {
-        let op = Asyncify::new(
-            move |_| {
-                let res = f();
-                BufResult(Ok(0), Some(res))
-            },
-            None::<T>,
-        );
-        self.submit(op)
-            .map(|BufResult(_, op)| op.into_inner().expect("the inner data should not be None"))
+        let op = Asyncify::new(move || {
+            let res = f();
+            BufResult(Ok(0), res)
+        });
+        self.submit(op).map(|BufResult(_, op)| op.into_inner())
     }
 
     pub fn attach(&self, fd: RawFd) -> io::Result<()> {

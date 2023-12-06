@@ -16,7 +16,7 @@ use crate::{op::*, OpEntry};
 
 impl<
     D: std::marker::Send + Unpin + 'static,
-    F: (FnOnce(D) -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + Unpin + 'static,
+    F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + Unpin + 'static,
 > OpCode for Asyncify<F, D>
 {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
@@ -28,7 +28,7 @@ impl<
             .f
             .take()
             .expect("the operate method could only be called once");
-        let BufResult(res, data) = f(self.data.take().expect("the data could not be None"));
+        let BufResult(res, data) = f();
         self.data = Some(data);
         res
     }

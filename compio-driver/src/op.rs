@@ -74,10 +74,10 @@ pub struct Asyncify<F, D> {
 
 impl<F, D> Asyncify<F, D> {
     /// Create [`Asyncify`].
-    pub fn new(f: F, data: D) -> Self {
+    pub fn new(f: F) -> Self {
         Self {
             f: Some(f),
-            data: Some(data),
+            data: None,
         }
     }
 }

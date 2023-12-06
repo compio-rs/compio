@@ -155,7 +155,7 @@ fn notify() {
 fn asyncify() {
     let mut driver = Proactor::new().unwrap();
 
-    let op = Asyncify::new(|()| BufResult(Ok(114514), ()), ());
+    let op = Asyncify::new(|| BufResult(Ok(114514), ()));
     let (res, _) = push_and_wait(&mut driver, op);
     assert_eq!(res, 114514);
 }

@@ -20,7 +20,7 @@ pub use crate::unix::op::*;
 
 impl<
     D: std::marker::Send + Unpin + 'static,
-    F: (FnOnce(D) -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + Unpin + 'static,
+    F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + Unpin + 'static,
 > OpCode for Asyncify<F, D>
 {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
@@ -32,7 +32,7 @@ impl<
             .f
             .take()
             .expect("the operate method could only be called once");
-        let BufResult(res, data) = f(self.data.take().expect("the data could not be None"));
+        let BufResult(res, data) = f();
         self.data = Some(data);
         Poll::Ready(res)
     }
