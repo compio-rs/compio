@@ -204,6 +204,7 @@ impl Proactor {
     pub fn cancel(&mut self, user_data: usize) {
         if let Some(op) = self.ops.get_mut(user_data) {
             if op.set_cancelled() {
+                // The op is completed.
                 self.ops.remove(user_data);
                 return;
             }
@@ -329,7 +330,8 @@ impl Entry {
     }
 }
 
-// The output entries need to be set `completed` to true.
+// The output entries need to be marked as `completed`. If an entry has been
+// marked as `cancelled`, it will be removed from the registry.
 struct OutEntries<'a, 'b, E> {
     entries: &'b mut E,
     registry: &'a mut Slab<RawOp>,
