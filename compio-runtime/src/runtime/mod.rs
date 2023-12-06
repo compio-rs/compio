@@ -143,10 +143,8 @@ impl RuntimeInner {
     }
 
     pub fn cancel_op<T>(&self, user_data: Key<T>) {
-        let completed = self.op_runtime.borrow_mut().cancel(*user_data);
-        if !completed {
-            self.driver.borrow_mut().cancel(*user_data);
-        }
+        self.op_runtime.borrow_mut().remove(*user_data);
+        self.driver.borrow_mut().cancel(*user_data);
     }
 
     #[cfg(feature = "time")]

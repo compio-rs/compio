@@ -54,14 +54,6 @@ impl OpRuntime {
         matches!(self.ops.get_mut(&key), Some(RegisteredOp::Completed(_)))
     }
 
-    /// Returns whether the op is completed.
-    pub fn cancel(&mut self, key: usize) -> bool {
-        let op = self.ops.entry(key).or_default();
-        let has_result = matches!(op, RegisteredOp::Completed(_));
-        self.remove(key);
-        has_result
-    }
-
     pub fn remove(&mut self, key: usize) -> RegisteredOp {
         self.ops.remove(&key).unwrap()
     }

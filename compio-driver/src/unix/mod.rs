@@ -9,7 +9,10 @@ use crate::OpCode;
 
 pub(crate) struct RawOp {
     op: NonNull<dyn OpCode>,
+    // The two flags here are manual reference counting. The driver holds the strong ref until it
+    // completes; the runtime holds the strong ref until the future is dropped.
     completed: bool,
+    cancelled: bool,
 }
 
 impl RawOp {
@@ -18,6 +21,7 @@ impl RawOp {
         Self {
             op: unsafe { NonNull::new_unchecked(Box::into_raw(op as Box<dyn OpCode>)) },
             completed: false,
+            cancelled: false,
         }
     }
 
@@ -25,8 +29,14 @@ impl RawOp {
         unsafe { Pin::new_unchecked(self.op.as_mut()) }
     }
 
-    pub fn set_completed(&mut self) {
+    pub fn set_completed(&mut self) -> bool {
         self.completed = true;
+        self.cancelled
+    }
+
+    pub fn set_cancelled(&mut self) -> bool {
+        self.cancelled = true;
+        self.completed
     }
 
     /// # Safety

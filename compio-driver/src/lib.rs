@@ -197,9 +197,17 @@ impl Proactor {
     /// but just don't return from [`Proactor::poll`]. Therefore, although an
     /// operation is cancelled, you should not reuse its `user_data`.
     ///
-    /// It is well-defined to cancel before polling. If the submitted operation
+    /// It is *safe* to cancel before polling. If the submitted operation
     /// contains a cancelled user-defined data, the operation will be ignored.
+    /// However, to make the operation dropped correctly, you should cancel
+    /// after push.
     pub fn cancel(&mut self, user_data: usize) {
+        if let Some(op) = self.ops.get_mut(user_data) {
+            if op.set_cancelled() {
+                self.ops.remove(user_data);
+                return;
+            }
+        }
         self.driver.cancel(user_data, &mut self.ops);
     }
 
@@ -341,7 +349,9 @@ impl<'a, 'b, E> OutEntries<'a, 'b, E> {
 impl<E: Extend<Entry>> Extend<Entry> for OutEntries<'_, '_, E> {
     fn extend<T: IntoIterator<Item = Entry>>(&mut self, iter: T) {
         self.entries.extend(iter.into_iter().map(|e| {
-            self.registry[e.user_data()].set_completed();
+            if self.registry[e.user_data()].set_completed() {
+                self.registry.remove(e.user_data());
+            }
             e
         }))
     }
