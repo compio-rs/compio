@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{rc::Rc, sync::Arc};
 
 use criterion::{criterion_group, criterion_main, Criterion};
 
@@ -234,9 +234,9 @@ fn multi_tcp(c: &mut Criterion) {
         b.to_async(&runtime).iter(|| async {
             use compio::io::{AsyncReadExt, AsyncWriteExt};
 
-            let listener = Arc::new(compio::net::TcpListener::bind("127.0.0.1:0").await.unwrap());
+            let listener = Rc::new(compio::net::TcpListener::bind("127.0.0.1:0").await.unwrap());
 
-            let task = |listener: Arc<compio::net::TcpListener>| async move {
+            let task = |listener: Rc<compio::net::TcpListener>| async move {
                 let addr = listener.local_addr().unwrap();
                 let tx = compio::net::TcpStream::connect(addr);
                 let rx = listener.accept();
@@ -254,7 +254,7 @@ fn multi_tcp(c: &mut Criterion) {
                 handle.await;
             }
 
-            Arc::into_inner(listener).unwrap().close().await.unwrap();
+            Rc::into_inner(listener).unwrap().close().await.unwrap();
         })
     });
 
@@ -268,9 +268,9 @@ fn multi_tcp(c: &mut Criterion) {
             runtime.block_on(async {
                 use monoio::io::{AsyncReadRentExt, AsyncWriteRentExt};
 
-                let listener = Arc::new(monoio::net::TcpListener::bind("127.0.0.1:0").unwrap());
+                let listener = Rc::new(monoio::net::TcpListener::bind("127.0.0.1:0").unwrap());
 
-                let task = |listener: Arc<monoio::net::TcpListener>| async move {
+                let task = |listener: Rc<monoio::net::TcpListener>| async move {
                     let addr = listener.local_addr().unwrap();
                     let tx = monoio::net::TcpStream::connect(addr);
                     let rx = listener.accept();
@@ -288,7 +288,7 @@ fn multi_tcp(c: &mut Criterion) {
                     handle.await;
                 }
 
-                Arc::into_inner(listener).unwrap();
+                Rc::into_inner(listener).unwrap();
             })
         })
     });
