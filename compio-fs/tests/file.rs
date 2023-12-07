@@ -4,6 +4,18 @@ use compio_fs::File;
 use compio_io::{AsyncReadAtExt, AsyncWriteAtExt};
 use tempfile::NamedTempFile;
 
+#[compio_macros::test]
+async fn metadata() {
+    let meta = compio_fs::metadata("Cargo.toml").await.unwrap();
+    assert!(meta.is_file());
+    let size = meta.len();
+
+    let file = File::open("Cargo.toml").await.unwrap();
+    let meta = file.metadata().await.unwrap();
+    assert!(meta.is_file());
+    assert_eq!(size, meta.len());
+}
+
 const HELLO: &[u8] = b"hello world...";
 
 async fn read_hello(file: &File) {
