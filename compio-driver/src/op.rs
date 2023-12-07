@@ -11,8 +11,8 @@ use socket2::SockAddr;
 #[cfg(windows)]
 pub use crate::sys::op::ConnectNamedPipe;
 pub use crate::sys::op::{
-    Accept, OpenFile, Recv, RecvFrom, RecvFromVectored, RecvVectored, Send, SendTo, SendToVectored,
-    SendVectored,
+    Accept, FileStat, OpenFile, PathStat, Recv, RecvFrom, RecvFromVectored, RecvVectored, Send,
+    SendTo, SendToVectored, SendVectored,
 };
 #[cfg(unix)]
 pub use crate::sys::op::{ReadVectoredAt, WriteVectoredAt};

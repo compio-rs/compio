@@ -1,4 +1,4 @@
-use std::{io, pin::Pin, task::Poll};
+use std::{ffi::CString, io, pin::Pin, task::Poll};
 
 use compio_buf::{
     IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
@@ -39,6 +39,76 @@ impl OpCode for CloseFile {
 
     fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(syscall!(libc::close(self.fd))? as _))
+    }
+}
+
+/// Get metadata of an opened file.
+pub struct FileStat {
+    pub(crate) fd: RawFd,
+    pub(crate) stat: libc::stat,
+}
+
+impl FileStat {
+    /// Create [`FileStat`].
+    pub fn new(fd: RawFd) -> Self {
+        Self {
+            fd,
+            stat: unsafe { std::mem::zeroed() },
+        }
+    }
+}
+
+impl OpCode for FileStat {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::blocking_dummy())
+    }
+
+    fn on_event(mut self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        Poll::Ready(Ok(syscall!(libc::fstat(self.fd, &mut self.stat))? as _))
+    }
+}
+
+impl IntoInner for FileStat {
+    type Inner = libc::stat;
+
+    fn into_inner(self) -> Self::Inner {
+        self.stat
+    }
+}
+
+/// Get metadata from path.
+pub struct PathStat {
+    pub(crate) path: CString,
+    pub(crate) stat: libc::stat,
+}
+
+impl PathStat {
+    /// Create [`PathStat`].
+    pub fn new(path: CString) -> Self {
+        Self {
+            path,
+            stat: unsafe { std::mem::zeroed() },
+        }
+    }
+}
+
+impl OpCode for PathStat {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::blocking_dummy())
+    }
+
+    fn on_event(mut self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        Poll::Ready(Ok(
+            syscall!(libc::lstat(self.path.as_ptr(), &mut self.stat))? as _,
+        ))
+    }
+}
+
+impl IntoInner for PathStat {
+    type Inner = libc::stat;
+
+    fn into_inner(self) -> Self::Inner {
+        self.stat
     }
 }
 
