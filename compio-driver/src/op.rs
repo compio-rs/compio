@@ -66,6 +66,30 @@ impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t)> {
     }
 }
 
+/// Spawn a blocking function in the thread pool.
+pub struct Asyncify<F, D> {
+    pub(crate) f: Option<F>,
+    pub(crate) data: Option<D>,
+}
+
+impl<F, D> Asyncify<F, D> {
+    /// Create [`Asyncify`].
+    pub fn new(f: F) -> Self {
+        Self {
+            f: Some(f),
+            data: None,
+        }
+    }
+}
+
+impl<F, D> IntoInner for Asyncify<F, D> {
+    type Inner = D;
+
+    fn into_inner(mut self) -> Self::Inner {
+        self.data.take().expect("the data should not be None")
+    }
+}
+
 /// Close the file fd.
 pub struct CloseFile {
     pub(crate) fd: RawFd,

@@ -9,7 +9,7 @@ use std::{
 };
 
 use aligned_array::{Aligned, A8};
-use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 use socket2::SockAddr;
@@ -105,6 +105,30 @@ fn get_wsa_fn<F>(handle: RawFd, fguid: GUID) -> io::Result<Option<F>> {
         )
     )?;
     Ok(fptr)
+}
+
+impl<
+    D: std::marker::Send + Unpin + 'static,
+    F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + Unpin + 'static,
+> OpCode for Asyncify<F, D>
+{
+    fn is_overlapped(&self) -> bool {
+        false
+    }
+
+    unsafe fn operate(mut self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let f = self
+            .f
+            .take()
+            .expect("the operate method could only be called once");
+        let BufResult(res, data) = f();
+        self.data = Some(data);
+        Poll::Ready(res)
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 /// Open or create a file with flags and mode.

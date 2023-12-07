@@ -1,7 +1,7 @@
 use std::{io, pin::Pin, task::Poll};
 
 use compio_buf::{
-    IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
+    BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
 };
 #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
 use libc::open;
@@ -17,6 +17,26 @@ use socket2::SockAddr;
 use super::{sockaddr_storage, socklen_t, syscall, Decision, OpCode, RawFd};
 use crate::op::*;
 pub use crate::unix::op::*;
+
+impl<
+    D: std::marker::Send + Unpin + 'static,
+    F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + Unpin + 'static,
+> OpCode for Asyncify<F, D>
+{
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::blocking_dummy())
+    }
+
+    fn on_event(mut self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        let f = self
+            .f
+            .take()
+            .expect("the operate method could only be called once");
+        let BufResult(res, data) = f();
+        self.data = Some(data);
+        Poll::Ready(res)
+    }
+}
 
 impl OpCode for OpenFile {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
