@@ -1,7 +1,7 @@
-use std::{fs::Metadata, future::Future, io, mem::ManuallyDrop, path::Path};
+use std::{future::Future, io, mem::ManuallyDrop, path::Path};
 
 use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut};
-use compio_driver::op::{BufResultExt, CloseFile, ReadAt, Sync, WriteAt};
+use compio_driver::op::{BufResultExt, CloseFile, FileStat, ReadAt, Sync, WriteAt};
 use compio_io::{AsyncReadAt, AsyncWriteAt};
 use compio_runtime::{
     impl_attachable, impl_try_as_raw_fd, Attacher, Runtime, TryAsRawFd, TryClone,
@@ -12,7 +12,7 @@ use {
     compio_driver::op::{ReadVectoredAt, WriteVectoredAt},
 };
 
-use crate::OpenOptions;
+use crate::{Metadata, OpenOptions};
 
 /// A reference to an open file on the filesystem.
 ///
@@ -72,8 +72,10 @@ impl File {
     }
 
     /// Queries metadata about the underlying file.
-    pub fn metadata(&self) -> io::Result<Metadata> {
-        unsafe { self.inner.get_unchecked() }.metadata()
+    pub async fn metadata(&self) -> io::Result<Metadata> {
+        let op = FileStat::new(self.try_as_raw_fd()?);
+        let BufResult(res, op) = Runtime::current().submit(op).await;
+        res.map(|_| Metadata::from_stat(op.into_inner()))
     }
 
     async fn sync_impl(&self, datasync: bool) -> io::Result<()> {

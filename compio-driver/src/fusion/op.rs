@@ -96,4 +96,4 @@ op!(<T: IoBuf> SendTo(fd: RawFd, buffer: T, addr: SockAddr));
 op!(<T: IoVectoredBufMut> RecvFromVectored(fd: RawFd, buffer: T));
 op!(<T: IoVectoredBuf> SendToVectored(fd: RawFd, buffer: T, addr: SockAddr));
 op!(<> FileStat(fd: RawFd));
-op!(<> PathStat(path: CString));
+op!(<> PathStat(path: CString, follow_symlink: bool));

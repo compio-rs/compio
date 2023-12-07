@@ -80,14 +80,16 @@ impl IntoInner for FileStat {
 pub struct PathStat {
     pub(crate) path: CString,
     pub(crate) stat: libc::stat,
+    pub(crate) follow_symlink: bool,
 }
 
 impl PathStat {
     /// Create [`PathStat`].
-    pub fn new(path: CString) -> Self {
+    pub fn new(path: CString, follow_symlink: bool) -> Self {
         Self {
             path,
             stat: unsafe { std::mem::zeroed() },
+            follow_symlink,
         }
     }
 }
@@ -98,9 +100,12 @@ impl OpCode for PathStat {
     }
 
     fn on_event(mut self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
-        Poll::Ready(Ok(
-            syscall!(libc::lstat(self.path.as_ptr(), &mut self.stat))? as _,
-        ))
+        let f = if self.follow_symlink {
+            libc::stat
+        } else {
+            libc::lstat
+        };
+        Poll::Ready(Ok(syscall!(f(self.path.as_ptr(), &mut self.stat))? as _))
     }
 }
 

@@ -46,8 +46,8 @@ const fn statx_to_stat(statx: libc::statx) -> libc::stat {
     stat.st_atime_nsec = statx.stx_atime.tv_nsec as _;
     stat.st_mtime = statx.stx_mtime.tv_sec;
     stat.st_mtime_nsec = statx.stx_mtime.tv_nsec as _;
-    stat.st_ctime = statx.stx_ctime.tv_sec;
-    stat.st_ctime_nsec = statx.stx_ctime.tv_nsec as _;
+    stat.st_ctime = statx.stx_btime.tv_sec;
+    stat.st_ctime_nsec = statx.stx_btime.tv_nsec as _;
     stat
 }
 
@@ -74,7 +74,7 @@ impl OpCode for FileStat {
             null(),
             std::ptr::addr_of_mut!(self.stat).cast(),
         )
-        .flags(libc::AT_EMPTY_PATH | libc::AT_SYMLINK_NOFOLLOW)
+        .flags(libc::AT_EMPTY_PATH)
         .build()
     }
 }
@@ -91,26 +91,32 @@ impl IntoInner for FileStat {
 pub struct PathStat {
     pub(crate) path: CString,
     pub(crate) stat: libc::statx,
+    pub(crate) follow_symlink: bool,
 }
 
 impl PathStat {
     /// Create [`PathStat`].
-    pub fn new(path: CString) -> Self {
+    pub fn new(path: CString, follow_symlink: bool) -> Self {
         Self {
             path,
             stat: unsafe { std::mem::zeroed() },
+            follow_symlink,
         }
     }
 }
 
 impl OpCode for PathStat {
     fn create_entry(mut self: Pin<&mut Self>) -> io_uring::squeue::Entry {
+        let mut flags = libc::AT_EMPTY_PATH;
+        if !self.follow_symlink {
+            flags |= libc::AT_SYMLINK_NOFOLLOW;
+        }
         opcode::Statx::new(
             Fd(libc::AT_FDCWD),
             self.path.as_ptr(),
             std::ptr::addr_of_mut!(self.stat).cast(),
         )
-        .flags(libc::AT_EMPTY_PATH | libc::AT_SYMLINK_NOFOLLOW)
+        .flags(flags)
         .build()
     }
 }

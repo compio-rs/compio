@@ -224,7 +224,7 @@ impl OpenOptions {
 
         let file = options.open(path).await?;
 
-        if !self.unchecked && !is_fifo(&file)? {
+        if !self.unchecked && !is_fifo(&file).await? {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a pipe"));
         }
 
@@ -508,10 +508,10 @@ impl_try_as_raw_fd!(Receiver, file);
 impl_attachable!(Receiver, file);
 
 /// Checks if file is a FIFO
-fn is_fifo(file: &File) -> io::Result<bool> {
+async fn is_fifo(file: &File) -> io::Result<bool> {
     use std::os::unix::prelude::FileTypeExt;
 
-    Ok(file.metadata()?.file_type().is_fifo())
+    Ok(file.metadata().await?.file_type().is_fifo())
 }
 
 /// Sets file's flags with O_NONBLOCK by fcntl.

@@ -9,6 +9,9 @@ pub use file::*;
 mod open_options;
 pub use open_options::*;
 
+mod metadata;
+pub use metadata::*;
+
 #[cfg(windows)]
 pub mod named_pipe;
 
