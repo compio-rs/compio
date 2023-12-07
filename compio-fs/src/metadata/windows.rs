@@ -60,6 +60,7 @@ fn filetime_to_systemtime(t: FILETIME) -> SystemTime {
 }
 
 /// Metadata information about a file.
+#[derive(Clone)]
 pub struct Metadata {
     stat: BY_HANDLE_FILE_INFORMATION,
     reparse_tag: u32,
@@ -164,6 +165,7 @@ impl MetadataExt for Metadata {
 }
 
 /// A structure representing a type of file with accessors for each file type.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FileType {
     attributes: u32,
     reparse_tag: u32,
@@ -217,6 +219,7 @@ impl FileType {
 }
 
 /// Representation of the various permissions on a file.
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Permissions {
     attrs: u32,
 }

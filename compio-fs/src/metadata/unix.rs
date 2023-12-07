@@ -34,6 +34,7 @@ pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
 }
 
 /// Metadata information about a file.
+#[derive(Clone)]
 pub struct Metadata(pub(crate) libc::stat);
 
 impl Metadata {
@@ -194,6 +195,7 @@ impl MetadataExt for Metadata {
 }
 
 /// A structure representing a type of file with accessors for each file type.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FileType(pub(crate) libc::mode_t);
 
 impl FileType {
@@ -240,6 +242,7 @@ impl FileTypeExt for FileType {
 }
 
 /// Representation of the various permissions on a file.
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Permissions(pub(crate) libc::mode_t);
 
 impl Permissions {
