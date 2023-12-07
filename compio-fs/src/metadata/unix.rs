@@ -130,7 +130,7 @@ impl Metadata {
 
 impl MetadataExt for Metadata {
     fn dev(&self) -> u64 {
-        self.0.st_dev
+        self.0.st_dev as _
     }
 
     fn ino(&self) -> u64 {
@@ -142,7 +142,7 @@ impl MetadataExt for Metadata {
     }
 
     fn nlink(&self) -> u64 {
-        self.0.st_nlink
+        self.0.st_nlink as _
     }
 
     fn uid(&self) -> u32 {
@@ -154,7 +154,7 @@ impl MetadataExt for Metadata {
     }
 
     fn rdev(&self) -> u64 {
-        self.0.st_rdev
+        self.0.st_rdev as _
     }
 
     fn size(&self) -> u64 {
