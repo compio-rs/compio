@@ -14,6 +14,9 @@ async fn metadata() {
     let meta = file.metadata().await.unwrap();
     assert!(meta.is_file());
     assert_eq!(size, meta.len());
+
+    let std_meta = std::fs::metadata("Cargo.toml").unwrap();
+    assert_eq!(size, std_meta.len());
 }
 
 const HELLO: &[u8] = b"hello world...";
