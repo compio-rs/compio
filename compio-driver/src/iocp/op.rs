@@ -30,7 +30,9 @@ use windows_sys::{
         },
         Security::SECURITY_ATTRIBUTES,
         Storage::FileSystem::{
-            CreateFileW, FlushFileBuffers, ReadFile, WriteFile, FILE_CREATION_DISPOSITION,
+            CreateFileW, FileAttributeTagInfo, FlushFileBuffers, GetFileInformationByHandle,
+            GetFileInformationByHandleEx, ReadFile, WriteFile, BY_HANDLE_FILE_INFORMATION,
+            FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_CREATION_DISPOSITION,
             FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_MODE,
         },
         System::{
@@ -174,6 +176,105 @@ impl OpCode for CloseFile {
 
     unsafe fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
         Ok(())
+    }
+}
+
+/// Get metadata of an opened file.
+pub struct FileStat {
+    pub(crate) fd: RawFd,
+    pub(crate) stat: BY_HANDLE_FILE_INFORMATION,
+    pub(crate) reparse_tag: u32,
+}
+
+impl FileStat {
+    /// Create [`FileStat`].
+    pub fn new(fd: RawFd) -> Self {
+        Self {
+            fd,
+            stat: unsafe { std::mem::zeroed() },
+            reparse_tag: 0,
+        }
+    }
+}
+
+impl OpCode for FileStat {
+    fn is_overlapped(&self) -> bool {
+        false
+    }
+
+    unsafe fn operate(mut self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        syscall!(
+            BOOL,
+            GetFileInformationByHandle(self.fd as _, &mut self.stat)
+        )?;
+        if self.stat.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            let mut tag: FILE_ATTRIBUTE_TAG_INFO = std::mem::zeroed();
+            syscall!(
+                BOOL,
+                GetFileInformationByHandleEx(
+                    self.fd as _,
+                    FileAttributeTagInfo,
+                    &mut tag as *mut _ as _,
+                    std::mem::size_of::<FILE_ATTRIBUTE_TAG_INFO>() as _
+                )
+            )?;
+            if tag.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+                self.reparse_tag = tag.ReparseTag;
+            }
+        }
+        Poll::Ready(Ok(0))
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl IntoInner for FileStat {
+    type Inner = (BY_HANDLE_FILE_INFORMATION, u32);
+
+    fn into_inner(self) -> Self::Inner {
+        (self.stat, self.reparse_tag)
+    }
+}
+
+/// Get metadata from path.
+pub struct PathStat {
+    pub(crate) path: U16CString,
+    pub(crate) stat: BY_HANDLE_FILE_INFORMATION,
+    pub(crate) follow_symlink: bool,
+}
+
+impl PathStat {
+    /// Create [`PathStat`].
+    pub fn new(path: U16CString, follow_symlink: bool) -> Self {
+        Self {
+            path,
+            stat: unsafe { std::mem::zeroed() },
+            follow_symlink,
+        }
+    }
+}
+
+impl OpCode for PathStat {
+    fn is_overlapped(&self) -> bool {
+        false
+    }
+
+    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        todo!()
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl IntoInner for PathStat {
+    type Inner = BY_HANDLE_FILE_INFORMATION;
+
+    fn into_inner(self) -> Self::Inner {
+        self.stat
     }
 }
 

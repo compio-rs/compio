@@ -57,3 +57,7 @@ windows-sys = { workspace = true, features = ["Win32_Security_Authorization"] }
 # Unix specific dev dependencies
 [target.'cfg(unix)'.dev-dependencies]
 nix = { workspace = true, features = ["fs"] }
+
+[features]
+windows_by_handle = []
+nightly = ["windows_by_handle"]
