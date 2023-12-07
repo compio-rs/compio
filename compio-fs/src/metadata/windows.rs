@@ -1,9 +1,14 @@
 use std::{
     io,
     os::windows::fs::MetadataExt,
+    path::Path,
     time::{Duration, SystemTime},
 };
 
+use compio_buf::{BufResult, IntoInner};
+use compio_driver::op::PathStat;
+use compio_runtime::Runtime;
+use widestring::U16CString;
 use windows_sys::Win32::{
     Foundation::FILETIME,
     Storage::FileSystem::{
@@ -11,6 +16,29 @@ use windows_sys::Win32::{
         FILE_ATTRIBUTE_REPARSE_POINT,
     },
 };
+
+async fn metadata_impl(path: impl AsRef<Path>, follow_symlink: bool) -> io::Result<Metadata> {
+    let path = U16CString::from_os_str(path.as_ref().as_os_str()).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "file name contained an unexpected NUL byte",
+        )
+    })?;
+    let op = PathStat::new(path, follow_symlink);
+    let BufResult(res, op) = Runtime::current().submit(op).await;
+    res.map(|_| Metadata::from_stat(op.into_inner()))
+}
+
+/// Given a path, query the file system to get information about a file,
+/// directory, etc.
+pub async fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
+    metadata_impl(path, true).await
+}
+
+/// Query the metadata about a file without following symlinks.
+pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
+    metadata_impl(path, false).await
+}
 
 const fn create_u64(high: u32, low: u32) -> u64 {
     ((high as u64) << 32) | (low as u64)

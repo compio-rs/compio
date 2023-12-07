@@ -3,6 +3,7 @@ use std::sync::OnceLock;
 use std::{
     io,
     net::Shutdown,
+    os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
     pin::Pin,
     ptr::{null, null_mut},
     task::Poll,
@@ -18,8 +19,9 @@ use windows_sys::{
     core::GUID,
     Win32::{
         Foundation::{
-            CloseHandle, GetLastError, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_IO_PENDING,
-            ERROR_NOT_FOUND, ERROR_NO_DATA, ERROR_PIPE_CONNECTED,
+            CloseHandle, GetLastError, ERROR_ACCESS_DENIED, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE,
+            ERROR_IO_PENDING, ERROR_NOT_FOUND, ERROR_NO_DATA, ERROR_PIPE_CONNECTED,
+            ERROR_SHARING_VIOLATION,
         },
         Networking::WinSock::{
             closesocket, setsockopt, shutdown, socklen_t, WSAIoctl, WSARecv, WSARecvFrom, WSASend,
@@ -30,10 +32,12 @@ use windows_sys::{
         },
         Security::SECURITY_ATTRIBUTES,
         Storage::FileSystem::{
-            CreateFileW, FileAttributeTagInfo, FlushFileBuffers, GetFileInformationByHandle,
-            GetFileInformationByHandleEx, ReadFile, WriteFile, BY_HANDLE_FILE_INFORMATION,
-            FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_CREATION_DISPOSITION,
-            FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_MODE,
+            CreateFileW, FileAttributeTagInfo, FindClose, FindFirstFileW, FlushFileBuffers,
+            GetFileInformationByHandle, GetFileInformationByHandleEx, ReadFile, WriteFile,
+            BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO,
+            FILE_CREATION_DISPOSITION, FILE_FLAGS_AND_ATTRIBUTES, FILE_FLAG_BACKUP_SEMANTICS,
+            FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE, FILE_SHARE_MODE, FILE_SHARE_READ,
+            FILE_SHARE_WRITE, OPEN_EXISTING, WIN32_FIND_DATAW,
         },
         System::{
             Pipes::ConnectNamedPipe,
@@ -241,8 +245,9 @@ impl IntoInner for FileStat {
 /// Get metadata from path.
 pub struct PathStat {
     pub(crate) path: U16CString,
-    pub(crate) stat: BY_HANDLE_FILE_INFORMATION,
     pub(crate) follow_symlink: bool,
+    pub(crate) stat: BY_HANDLE_FILE_INFORMATION,
+    pub(crate) reparse_tag: u32,
 }
 
 impl PathStat {
@@ -250,8 +255,9 @@ impl PathStat {
     pub fn new(path: U16CString, follow_symlink: bool) -> Self {
         Self {
             path,
-            stat: unsafe { std::mem::zeroed() },
             follow_symlink,
+            stat: unsafe { std::mem::zeroed() },
+            reparse_tag: 0,
         }
     }
 }
@@ -261,8 +267,64 @@ impl OpCode for PathStat {
         false
     }
 
-    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        todo!()
+    unsafe fn operate(mut self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let mut flags = FILE_FLAG_BACKUP_SEMANTICS;
+        if !self.follow_symlink {
+            flags |= FILE_FLAG_OPEN_REPARSE_POINT;
+        }
+        let handle = syscall!(
+            HANDLE,
+            CreateFileW(
+                self.path.as_ptr(),
+                0,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                null(),
+                OPEN_EXISTING,
+                flags,
+                0
+            )
+        )?;
+        let handle = OwnedHandle::from_raw_handle(handle as _);
+        let mut op = FileStat::new(handle.as_raw_handle());
+        let op_pin = std::pin::Pin::new(&mut op);
+        let res = match std::task::ready!(op_pin.operate(optr)) {
+            Ok(_) => {
+                let (stat, reparse_tag) = op.into_inner();
+                self.stat = stat;
+                self.reparse_tag = reparse_tag;
+                Ok(0)
+            }
+            Err(e)
+                if [
+                    Some(ERROR_SHARING_VIOLATION as _),
+                    Some(ERROR_ACCESS_DENIED as _),
+                ]
+                .contains(&e.raw_os_error()) =>
+            {
+                let mut wfd: WIN32_FIND_DATAW = std::mem::zeroed();
+                let handle = syscall!(HANDLE, FindFirstFileW(self.path.as_ptr(), &mut wfd))?;
+                FindClose(handle);
+                self.stat = BY_HANDLE_FILE_INFORMATION {
+                    dwFileAttributes: wfd.dwFileAttributes,
+                    ftCreationTime: wfd.ftCreationTime,
+                    ftLastAccessTime: wfd.ftLastAccessTime,
+                    ftLastWriteTime: wfd.ftLastWriteTime,
+                    nFileSizeHigh: wfd.nFileSizeHigh,
+                    nFileSizeLow: wfd.nFileSizeLow,
+                    ..self.stat
+                };
+                let is_reparse = self.stat.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+                self.reparse_tag = if is_reparse { wfd.dwReserved0 } else { 0 };
+                let surrogate = self.reparse_tag & 0x20000000 != 0;
+                if self.follow_symlink && is_reparse && surrogate {
+                    Err(e)
+                } else {
+                    Ok(0)
+                }
+            }
+            Err(e) => Err(e),
+        };
+        Poll::Ready(res)
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
@@ -271,10 +333,10 @@ impl OpCode for PathStat {
 }
 
 impl IntoInner for PathStat {
-    type Inner = BY_HANDLE_FILE_INFORMATION;
+    type Inner = (BY_HANDLE_FILE_INFORMATION, u32);
 
     fn into_inner(self) -> Self::Inner {
-        self.stat
+        (self.stat, self.reparse_tag)
     }
 }
 
