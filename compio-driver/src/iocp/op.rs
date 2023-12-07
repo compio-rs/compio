@@ -248,6 +248,7 @@ pub struct PathStat {
     pub(crate) follow_symlink: bool,
     pub(crate) stat: BY_HANDLE_FILE_INFORMATION,
     pub(crate) reparse_tag: u32,
+    pub(crate) handle_info: bool,
 }
 
 impl PathStat {
@@ -258,6 +259,7 @@ impl PathStat {
             follow_symlink,
             stat: unsafe { std::mem::zeroed() },
             reparse_tag: 0,
+            handle_info: true,
         }
     }
 }
@@ -291,6 +293,7 @@ impl OpCode for PathStat {
             Ok(_) => {
                 let (stat, reparse_tag) = op.into_inner();
                 self.stat = stat;
+                self.handle_info = true;
                 self.reparse_tag = reparse_tag;
                 Ok(0)
             }
@@ -313,6 +316,7 @@ impl OpCode for PathStat {
                     nFileSizeLow: wfd.nFileSizeLow,
                     ..self.stat
                 };
+                self.handle_info = false;
                 let is_reparse = self.stat.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0;
                 self.reparse_tag = if is_reparse { wfd.dwReserved0 } else { 0 };
                 let surrogate = self.reparse_tag & 0x20000000 != 0;
@@ -332,11 +336,14 @@ impl OpCode for PathStat {
     }
 }
 
+/// Now all values of [`BY_HANDLE_FILE_INFORMATION`] is valid. If the last
+/// [`bool`] element is `false`, only the fields that are contained in
+/// [`WIN32_FIND_DATAW`] are valid.
 impl IntoInner for PathStat {
-    type Inner = (BY_HANDLE_FILE_INFORMATION, u32);
+    type Inner = (BY_HANDLE_FILE_INFORMATION, u32, bool);
 
     fn into_inner(self) -> Self::Inner {
-        (self.stat, self.reparse_tag)
+        (self.stat, self.reparse_tag, self.handle_info)
     }
 }
 

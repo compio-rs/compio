@@ -26,7 +26,7 @@ async fn metadata_impl(path: impl AsRef<Path>, follow_symlink: bool) -> io::Resu
     })?;
     let op = PathStat::new(path, follow_symlink);
     let BufResult(res, op) = Runtime::current().submit(op).await;
-    res.map(|_| Metadata::from_stat(op.into_inner()))
+    res.map(|_| Metadata::from_path_stat(op.into_inner()))
 }
 
 /// Given a path, query the file system to get information about a file,
@@ -64,11 +64,26 @@ fn filetime_to_systemtime(t: FILETIME) -> SystemTime {
 pub struct Metadata {
     stat: BY_HANDLE_FILE_INFORMATION,
     reparse_tag: u32,
+    handle_info: bool,
 }
 
 impl Metadata {
     pub(crate) fn from_stat((stat, reparse_tag): (BY_HANDLE_FILE_INFORMATION, u32)) -> Self {
-        Self { stat, reparse_tag }
+        Self {
+            stat,
+            reparse_tag,
+            handle_info: true,
+        }
+    }
+
+    pub(crate) fn from_path_stat(
+        (stat, reparse_tag, handle_info): (BY_HANDLE_FILE_INFORMATION, u32, bool),
+    ) -> Self {
+        Self {
+            stat,
+            reparse_tag,
+            handle_info,
+        }
     }
 
     /// Returns the file type for this metadata.
@@ -147,20 +162,32 @@ impl MetadataExt for Metadata {
 
     #[cfg(feature = "windows_by_handle")]
     fn volume_serial_number(&self) -> Option<u32> {
-        Some(self.stat.dwVolumeSerialNumber)
+        if self.handle_info {
+            Some(self.stat.dwVolumeSerialNumber)
+        } else {
+            None
+        }
     }
 
     #[cfg(feature = "windows_by_handle")]
     fn number_of_links(&self) -> Option<u32> {
-        Some(self.stat.nNumberOfLinks)
+        if self.handle_info {
+            Some(self.stat.nNumberOfLinks)
+        } else {
+            None
+        }
     }
 
     #[cfg(feature = "windows_by_handle")]
     fn file_index(&self) -> Option<u64> {
-        Some(create_u64(
-            self.stat.nFileIndexHigh,
-            self.stat.nFileIndexLow,
-        ))
+        if self.handle_info {
+            Some(create_u64(
+                self.stat.nFileIndexHigh,
+                self.stat.nFileIndexLow,
+            ))
+        } else {
+            None
+        }
     }
 }
 
