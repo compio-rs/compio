@@ -2,7 +2,10 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![warn(missing_docs)]
-#![cfg_attr(feature = "windows_by_handle", feature(windows_by_handle))]
+#![cfg_attr(
+    all(windows, feature = "windows_by_handle"),
+    feature(windows_by_handle)
+)]
 
 mod file;
 pub use file::*;
