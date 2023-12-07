@@ -64,7 +64,24 @@ impl OpCode for FileStat {
     }
 
     fn on_event(mut self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
-        Poll::Ready(Ok(syscall!(libc::fstat(self.fd, &mut self.stat))? as _))
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        {
+            let mut s: libc::statx = unsafe { std::mem::zeroed() };
+            static EMPTY_NAME: &[u8] = b"\0";
+            syscall!(libc::statx(
+                self.fd,
+                EMPTY_NAME.as_ptr().cast(),
+                libc::AT_EMPTY_PATH,
+                0,
+                &mut s
+            ))?;
+            self.stat = statx_to_stat(s);
+            Poll::Ready(Ok(0))
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        {
+            Poll::Ready(Ok(syscall!(libc::fstat(self.fd, &mut self.stat))? as _))
+        }
     }
 }
 
@@ -100,12 +117,32 @@ impl OpCode for PathStat {
     }
 
     fn on_event(mut self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
-        let f = if self.follow_symlink {
-            libc::stat
-        } else {
-            libc::lstat
-        };
-        Poll::Ready(Ok(syscall!(f(self.path.as_ptr(), &mut self.stat))? as _))
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        {
+            let mut flags = libc::AT_EMPTY_PATH;
+            if !self.follow_symlink {
+                flags |= libc::AT_SYMLINK_NOFOLLOW;
+            }
+            let mut s: libc::statx = unsafe { std::mem::zeroed() };
+            syscall!(libc::statx(
+                libc::AT_FDCWD,
+                self.path.as_ptr(),
+                flags,
+                0,
+                &mut s
+            ))?;
+            self.stat = statx_to_stat(s);
+            Poll::Ready(Ok(0))
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        {
+            let f = if self.follow_symlink {
+                libc::stat
+            } else {
+                libc::lstat
+            };
+            Poll::Ready(Ok(syscall!(f(self.path.as_ptr(), &mut self.stat))? as _))
+        }
     }
 }
 

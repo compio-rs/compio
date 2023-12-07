@@ -1,4 +1,4 @@
-use std::{ffi::CString, os::fd::RawFd, pin::Pin, ptr::null};
+use std::{ffi::CString, os::fd::RawFd, pin::Pin};
 
 use compio_buf::{
     IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
@@ -30,27 +30,6 @@ impl OpCode for CloseFile {
     }
 }
 
-const fn statx_to_stat(statx: libc::statx) -> libc::stat {
-    let mut stat: libc::stat = unsafe { std::mem::zeroed() };
-    stat.st_dev = libc::makedev(statx.stx_dev_major, statx.stx_dev_minor);
-    stat.st_ino = statx.stx_ino;
-    stat.st_nlink = statx.stx_nlink as _;
-    stat.st_mode = statx.stx_mode as _;
-    stat.st_uid = statx.stx_uid;
-    stat.st_gid = statx.stx_gid;
-    stat.st_rdev = libc::makedev(statx.stx_rdev_major, statx.stx_rdev_minor);
-    stat.st_size = statx.stx_size as _;
-    stat.st_blksize = statx.stx_blksize as _;
-    stat.st_blocks = statx.stx_blocks as _;
-    stat.st_atime = statx.stx_atime.tv_sec;
-    stat.st_atime_nsec = statx.stx_atime.tv_nsec as _;
-    stat.st_mtime = statx.stx_mtime.tv_sec;
-    stat.st_mtime_nsec = statx.stx_mtime.tv_nsec as _;
-    stat.st_ctime = statx.stx_btime.tv_sec;
-    stat.st_ctime_nsec = statx.stx_btime.tv_nsec as _;
-    stat
-}
-
 /// Get metadata of an opened file.
 pub struct FileStat {
     pub(crate) fd: RawFd,
@@ -69,9 +48,10 @@ impl FileStat {
 
 impl OpCode for FileStat {
     fn create_entry(mut self: Pin<&mut Self>) -> io_uring::squeue::Entry {
+        static EMPTY_NAME: &[u8] = b"\0";
         opcode::Statx::new(
             Fd(self.fd),
-            null(),
+            EMPTY_NAME.as_ptr().cast(),
             std::ptr::addr_of_mut!(self.stat).cast(),
         )
         .flags(libc::AT_EMPTY_PATH)
