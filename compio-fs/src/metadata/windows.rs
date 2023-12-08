@@ -8,7 +8,6 @@ use std::{
 use compio_buf::{BufResult, IntoInner};
 use compio_driver::{op::PathStat, syscall};
 use compio_runtime::Runtime;
-use widestring::U16CString;
 use windows_sys::Win32::{
     Foundation::FILETIME,
     Storage::FileSystem::{
@@ -256,7 +255,7 @@ impl FileType {
 /// Representation of the various permissions on a file.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Permissions {
-    attrs: u32,
+    pub(crate) attrs: u32,
 }
 
 impl Permissions {

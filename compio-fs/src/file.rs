@@ -1,7 +1,10 @@
 use std::{future::Future, io, mem::ManuallyDrop, path::Path};
 
 use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut};
-use compio_driver::op::{BufResultExt, CloseFile, FileStat, ReadAt, Sync, WriteAt};
+use compio_driver::{
+    op::{BufResultExt, CloseFile, FileStat, ReadAt, Sync, WriteAt},
+    syscall,
+};
 use compio_io::{AsyncReadAt, AsyncWriteAt};
 use compio_runtime::{
     impl_attachable, impl_try_as_raw_fd, Attacher, Runtime, TryAsRawFd, TryClone,
@@ -12,7 +15,7 @@ use {
     compio_driver::op::{ReadVectoredAt, WriteVectoredAt},
 };
 
-use crate::{Metadata, OpenOptions};
+use crate::{Metadata, OpenOptions, Permissions};
 
 /// A reference to an open file on the filesystem.
 ///
@@ -76,6 +79,37 @@ impl File {
         let op = FileStat::new(self.try_as_raw_fd()?);
         let BufResult(res, op) = Runtime::current().submit(op).await;
         res.map(|_| Metadata::from_stat(op.into_inner()))
+    }
+
+    /// Changes the permissions on the underlying file.
+    #[cfg(windows)]
+    pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
+        use windows_sys::Win32::Storage::FileSystem::{
+            FileBasicInfo, SetFileInformationByHandle, FILE_BASIC_INFO,
+        };
+
+        let fd = self.try_as_raw_fd()? as _;
+        Runtime::current()
+            .spawn_blocking(move || {
+                let info = FILE_BASIC_INFO {
+                    CreationTime: 0,
+                    LastAccessTime: 0,
+                    LastWriteTime: 0,
+                    ChangeTime: 0,
+                    FileAttributes: perm.attrs,
+                };
+                syscall!(
+                    BOOL,
+                    SetFileInformationByHandle(
+                        fd,
+                        FileBasicInfo,
+                        &info as *const _ as _,
+                        std::mem::size_of::<FILE_BASIC_INFO>() as _
+                    )
+                )?;
+                Ok(())
+            })
+            .await
     }
 
     async fn sync_impl(&self, datasync: bool) -> io::Result<()> {
