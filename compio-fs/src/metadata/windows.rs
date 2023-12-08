@@ -6,24 +6,21 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner};
-use compio_driver::op::PathStat;
+use compio_driver::{op::PathStat, syscall};
 use compio_runtime::Runtime;
 use widestring::U16CString;
 use windows_sys::Win32::{
     Foundation::FILETIME,
     Storage::FileSystem::{
-        BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_READONLY,
-        FILE_ATTRIBUTE_REPARSE_POINT,
+        SetFileAttributesW, BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY,
+        FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_REPARSE_POINT,
     },
 };
 
+use crate::path_string;
+
 async fn metadata_impl(path: impl AsRef<Path>, follow_symlink: bool) -> io::Result<Metadata> {
-    let path = U16CString::from_os_str(path.as_ref().as_os_str()).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "file name contained an unexpected NUL byte",
-        )
-    })?;
+    let path = path_string(path)?;
     let op = PathStat::new(path, follow_symlink);
     let BufResult(res, op) = Runtime::current().submit(op).await;
     res.map(|_| Metadata::from_path_stat(op.into_inner()))
@@ -38,6 +35,17 @@ pub async fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
 /// Query the metadata about a file without following symlinks.
 pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
     metadata_impl(path, false).await
+}
+
+/// Changes the permissions found on a file or a directory.
+pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::Result<()> {
+    let path = path_string(path)?;
+    Runtime::current()
+        .spawn_blocking(move || {
+            syscall!(BOOL, SetFileAttributesW(path.as_ptr(), perm.attrs))?;
+            Ok(())
+        })
+        .await
 }
 
 const fn create_u64(high: u32, low: u32) -> u64 {
