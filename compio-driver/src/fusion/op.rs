@@ -79,7 +79,7 @@ macro_rules! op {
         }
 
         impl<$($ty: $trait),*> iour::OpCode for $name<$($ty),*> {
-            fn create_entry(self: std::pin::Pin<&mut Self>) -> io_uring::squeue::Entry {
+            fn create_entry(self: std::pin::Pin<&mut Self>) -> OpEntry {
                 unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.create_entry()
             }
         }

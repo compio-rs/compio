@@ -11,10 +11,13 @@ use std::{
 };
 
 use async_task::{Runnable, Task};
-use compio_driver::{AsRawFd, Entry, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd};
+use compio_buf::IntoInner;
+use compio_driver::{
+    op::Asyncify, AsRawFd, Entry, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
+};
 use compio_log::{debug, instrument};
 use crossbeam_queue::SegQueue;
-use futures_util::future::Either;
+use futures_util::{future::Either, FutureExt};
 use smallvec::SmallVec;
 
 pub(crate) mod op;
@@ -98,6 +101,17 @@ impl RuntimeInner {
 
     pub fn spawn<F: Future + 'static>(&self, future: F) -> Task<F::Output> {
         unsafe { self.spawn_unchecked(future) }
+    }
+
+    pub fn spawn_blocking<T: Send + Unpin + 'static>(
+        &self,
+        f: impl (FnOnce() -> T) + Send + Sync + Unpin + 'static,
+    ) -> impl Future<Output = T> {
+        let op = Asyncify::new(move || {
+            let res = f();
+            BufResult(Ok(0), res)
+        });
+        self.submit(op).map(|BufResult(_, op)| op.into_inner())
     }
 
     pub fn attach(&self, fd: RawFd) -> io::Result<()> {
@@ -328,6 +342,16 @@ impl Runtime {
         self.inner.spawn(future)
     }
 
+    /// Spawns a blocking task in a new thread, and wait for it.
+    ///
+    /// The task will not be cancelled even if the future is dropped.
+    pub fn spawn_blocking<T: Send + Unpin + 'static>(
+        &self,
+        f: impl (FnOnce() -> T) + Send + Sync + Unpin + 'static,
+    ) -> impl Future<Output = T> {
+        self.inner.spawn_blocking(f)
+    }
+
     /// Attach a raw file descriptor/handle/socket to the runtime.
     ///
     /// You only need this when authoring your own high-level APIs. High-level
@@ -473,4 +497,18 @@ impl Drop for EnterGuard<'_> {
 /// by [`Runtime::current`].
 pub fn spawn<F: Future + 'static>(future: F) -> Task<F::Output> {
     Runtime::current().spawn(future)
+}
+
+/// Spawns a blocking task in a new thread, and wait for it.
+///
+/// The task will not be cancelled even if the future is dropped.
+///
+/// ## Panics
+///
+/// This method doesn't create runtime. It tries to obtain the current runtime
+/// by [`Runtime::current`].
+pub fn spawn_blocking<T: Send + Unpin + 'static>(
+    f: impl (FnOnce() -> T) + Send + Sync + Unpin + 'static,
+) -> impl Future<Output = T> {
+    Runtime::current().spawn_blocking(f)
 }

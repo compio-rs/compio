@@ -25,4 +25,4 @@ pub use async_task::Task;
 pub use attacher::*;
 use compio_buf::BufResult;
 pub(crate) use key::Key;
-pub use runtime::{spawn, EnterGuard, Runtime, RuntimeBuilder};
+pub use runtime::{spawn, spawn_blocking, EnterGuard, Runtime, RuntimeBuilder};
