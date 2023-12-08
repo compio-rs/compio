@@ -67,7 +67,7 @@ impl FileStat {
 }
 
 impl OpCode for FileStat {
-    fn create_entry(mut self: Pin<&mut Self>) -> io_uring::squeue::Entry {
+    fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
         static EMPTY_NAME: &[u8] = b"\0";
         opcode::Statx::new(
             Fd(self.fd),
@@ -76,6 +76,7 @@ impl OpCode for FileStat {
         )
         .flags(libc::AT_EMPTY_PATH)
         .build()
+        .into()
     }
 }
 
@@ -106,7 +107,7 @@ impl PathStat {
 }
 
 impl OpCode for PathStat {
-    fn create_entry(mut self: Pin<&mut Self>) -> io_uring::squeue::Entry {
+    fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
         let mut flags = libc::AT_EMPTY_PATH;
         if !self.follow_symlink {
             flags |= libc::AT_SYMLINK_NOFOLLOW;
@@ -118,6 +119,7 @@ impl OpCode for PathStat {
         )
         .flags(flags)
         .build()
+        .into()
     }
 }
 

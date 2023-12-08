@@ -112,6 +112,18 @@ impl File {
             .await
     }
 
+    /// Changes the permissions on the underlying file.
+    #[cfg(unix)]
+    pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
+        let fd = self.try_as_raw_fd()? as _;
+        Runtime::current()
+            .spawn_blocking(move || {
+                syscall!(libc::fchmod(fd, perm.0))?;
+                Ok(())
+            })
+            .await
+    }
+
     async fn sync_impl(&self, datasync: bool) -> io::Result<()> {
         let op = Sync::new(self.try_as_raw_fd()?, datasync);
         Runtime::current().submit(op).await.0?;
