@@ -22,6 +22,11 @@ jobs:
           rustup +nightly target install $(target)
           cargo +nightly test --workspace --features=all,nightly --target $(target) -Z doctest-xcompile
         displayName: TestNightly
+      - script: |
+          rustup toolchain install beta
+          rustup +beta target install $(target)
+          cargo +beta test --workspace --features all --target $(target)
+        displayName: TestBeta
       # - script: |
       #     cargo test --workspace --features all --target $(target)
       #   displayName: TestStable
@@ -41,6 +46,10 @@ jobs:
           rustup toolchain install nightly
           cargo +nightly test --workspace --features all,nightly
         displayName: TestNightly
+      - script: |
+          rustup toolchain install beta
+          cargo +beta test --workspace --features all
+        displayName: TestBeta
       # - script: |
       #     cargo test --workspace --features all
       #   displayName: TestStable
@@ -49,6 +58,10 @@ jobs:
           rustup toolchain install nightly
           cargo +nightly test --workspace --features all,polling,native-tls,nightly --no-default-features
         displayName: TestNightly-polling
+      - script: |
+          rustup toolchain install beta
+          cargo +beta test --workspace --features all,polling --no-default-features
+        displayName: TestBeta-polling
       # - script: |
       #     cargo test --workspace --features all,polling --no-default-features
       #   displayName: TestStable-polling
@@ -68,6 +81,10 @@ jobs:
           rustup toolchain install nightly
           cargo +nightly test --workspace --features all,nightly
         displayName: TestNightly
+      - script: |
+          rustup toolchain install beta
+          cargo +beta test --workspace --features all
+        displayName: TestBeta
       # - script: |
       #     cargo test --workspace --features all
       #   displayName: TestStable
