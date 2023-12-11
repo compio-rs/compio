@@ -35,7 +35,6 @@ async fn rtls() {
 
     let connector = TlsConnector::from(Arc::new(
         rustls::ClientConfig::builder()
-            .with_safe_defaults()
             .with_root_certificates(store)
             .with_no_client_auth(),
     ));
