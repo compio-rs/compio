@@ -5,9 +5,6 @@ cfg_if::cfg_if! {
     } else if #[cfg(all(target_os = "linux", target_env = "gnu"))] {
         #[path = "glibc.rs"]
         mod sys;
-    } else if #[cfg(unix)] {
-        #[path = "unix.rs"]
-        mod sys;
     }
 }
 
@@ -20,6 +17,7 @@ use std::{
 use compio_buf::{buf_try, BufResult};
 use either::Either;
 
+#[cfg(any(windows, all(target_os = "linux", target_env = "gnu")))]
 pub async fn resolve_sock_addrs(
     host: &str,
     port: u16,
@@ -48,7 +46,7 @@ pub async fn resolve_sock_addrs(
     unsafe { resolver.addrs() }
 }
 
-#[allow(dead_code)]
+#[cfg(any(windows, all(target_os = "linux", target_env = "gnu")))]
 fn to_addrs(mut result: *mut sys::addrinfo, port: u16) -> std::vec::IntoIter<SocketAddr> {
     use socket2::SockAddr;
 
@@ -75,6 +73,21 @@ fn to_addrs(mut result: *mut sys::addrinfo, port: u16) -> std::vec::IntoIter<Soc
         result = info.ai_next;
     }
     addrs.into_iter()
+}
+
+#[cfg(all(unix, not(all(target_os = "linux", target_env = "gnu"))))]
+pub async fn resolve_sock_addrs(
+    host: &str,
+    port: u16,
+) -> io::Result<std::vec::IntoIter<SocketAddr>> {
+    use std::net::ToSocketAddrs;
+
+    use compio_runtime::Runtime;
+
+    let host = host.to_string();
+    Runtime::current()
+        .spawn_blocking(move || (host, port).to_socket_addrs())
+        .await
 }
 
 /// A trait for objects which can be converted or resolved to one or more
