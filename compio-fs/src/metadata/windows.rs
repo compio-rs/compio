@@ -5,14 +5,14 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner};
-use compio_driver::{op::PathStat, syscall};
+use compio_driver::{
+    op::{FileMetadata, PathStat},
+    syscall,
+};
 use compio_runtime::Runtime;
-use windows_sys::Win32::{
-    Foundation::FILETIME,
-    Storage::FileSystem::{
-        SetFileAttributesW, BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY,
-        FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_REPARSE_POINT,
-    },
+use windows_sys::Win32::Storage::FileSystem::{
+    SetFileAttributesW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_READONLY,
+    FILE_ATTRIBUTE_REPARSE_POINT,
 };
 
 use crate::path_string;
@@ -21,7 +21,7 @@ async fn metadata_impl(path: impl AsRef<Path>, follow_symlink: bool) -> io::Resu
     let path = path_string(path)?;
     let op = PathStat::new(path, follow_symlink);
     let BufResult(res, op) = Runtime::current().submit(op).await;
-    res.map(|_| Metadata::from_path_stat(op.into_inner()))
+    res.map(|_| Metadata::from_stat(op.into_inner()))
 }
 
 /// Given a path, query the file system to get information about a file,
@@ -46,20 +46,11 @@ pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::R
         .await
 }
 
-const fn create_u64(high: u32, low: u32) -> u64 {
-    ((high as u64) << 32) | (low as u64)
-}
-
-const fn filetime_u64(t: FILETIME) -> u64 {
-    create_u64(t.dwHighDateTime, t.dwLowDateTime)
-}
-
 #[inline]
-fn filetime_to_systemtime(t: FILETIME) -> SystemTime {
+fn filetime_to_systemtime(tick: u64) -> SystemTime {
     const WINDOWS_TICK: u64 = 10000000;
     const SEC_TO_UNIX_EPOCH: u64 = 11644473600;
 
-    let tick = filetime_u64(t);
     let sec = tick / WINDOWS_TICK - SEC_TO_UNIX_EPOCH;
     let nsec = tick % WINDOWS_TICK * 100;
     SystemTime::UNIX_EPOCH + Duration::from_secs(sec) + Duration::from_nanos(nsec)
@@ -68,33 +59,18 @@ fn filetime_to_systemtime(t: FILETIME) -> SystemTime {
 /// Metadata information about a file.
 #[derive(Clone)]
 pub struct Metadata {
-    stat: BY_HANDLE_FILE_INFORMATION,
-    reparse_tag: u32,
-    handle_info: bool,
+    stat: FileMetadata,
 }
 
 impl Metadata {
-    pub(crate) fn from_stat((stat, reparse_tag): (BY_HANDLE_FILE_INFORMATION, u32)) -> Self {
-        Self {
-            stat,
-            reparse_tag,
-            handle_info: true,
-        }
-    }
-
-    pub(crate) fn from_path_stat(
-        (stat, reparse_tag, handle_info): (BY_HANDLE_FILE_INFORMATION, u32, bool),
-    ) -> Self {
-        Self {
-            stat,
-            reparse_tag,
-            handle_info,
-        }
+    /// Create from [`FileMetadata`].
+    pub fn from_stat(stat: FileMetadata) -> Self {
+        Self { stat }
     }
 
     /// Returns the file type for this metadata.
     pub fn file_type(&self) -> FileType {
-        FileType::new(self.stat.dwFileAttributes, self.reparse_tag)
+        FileType::new(self.stat.dwFileAttributes, self.stat.dwReparseTag)
     }
 
     /// Returns `true` if this metadata is for a directory.
@@ -115,7 +91,7 @@ impl Metadata {
     /// Returns the size of the file, in bytes, this metadata is for.
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u64 {
-        create_u64(self.stat.nFileSizeHigh, self.stat.nFileSizeLow)
+        self.stat.nFileSize
     }
 
     /// Returns the permissions of the file this metadata is for.
@@ -151,50 +127,35 @@ impl Metadata {
 
     /// Returns the value of the `ftCreationTime` field of this metadata.
     pub fn creation_time(&self) -> u64 {
-        filetime_u64(self.stat.ftCreationTime)
+        self.stat.ftCreationTime
     }
 
     /// Returns the value of the `ftLastAccessTime` field of this metadata.
     pub fn last_access_time(&self) -> u64 {
-        filetime_u64(self.stat.ftLastAccessTime)
+        self.stat.ftLastAccessTime
     }
 
     /// Returns the value of the `ftLastWriteTime` field of this metadata.
     pub fn last_write_time(&self) -> u64 {
-        filetime_u64(self.stat.ftLastWriteTime)
+        self.stat.ftLastWriteTime
     }
 
     /// Returns the value of the `dwVolumeSerialNumber` field of this
     /// metadata.
     pub fn volume_serial_number(&self) -> Option<u32> {
-        if self.handle_info {
-            Some(self.stat.dwVolumeSerialNumber)
-        } else {
-            None
-        }
+        self.stat.dwVolumeSerialNumber
     }
 
     /// Returns the value of the `nNumberOfLinks` field of this
     /// metadata.
     pub fn number_of_links(&self) -> Option<u32> {
-        if self.handle_info {
-            Some(self.stat.nNumberOfLinks)
-        } else {
-            None
-        }
+        self.stat.nNumberOfLinks
     }
 
     /// Returns the value of the `nFileIndex{Low,High}` fields of this
     /// metadata.
     pub fn file_index(&self) -> Option<u64> {
-        if self.handle_info {
-            Some(create_u64(
-                self.stat.nFileIndexHigh,
-                self.stat.nFileIndexLow,
-            ))
-        } else {
-            None
-        }
+        self.stat.nFileIndex
     }
 }
 
