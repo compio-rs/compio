@@ -1,6 +1,5 @@
 use std::{
     io,
-    os::windows::fs::MetadataExt,
     path::Path,
     time::{Duration, SystemTime},
 };
@@ -144,31 +143,30 @@ impl Metadata {
     pub fn created(&self) -> io::Result<SystemTime> {
         Ok(filetime_to_systemtime(self.stat.ftCreationTime))
     }
-}
 
-impl MetadataExt for Metadata {
-    fn file_attributes(&self) -> u32 {
+    /// Returns the value of the `dwFileAttributes` field of this metadata.
+    pub fn file_attributes(&self) -> u32 {
         self.stat.dwFileAttributes
     }
 
-    fn creation_time(&self) -> u64 {
+    /// Returns the value of the `ftCreationTime` field of this metadata.
+    pub fn creation_time(&self) -> u64 {
         filetime_u64(self.stat.ftCreationTime)
     }
 
-    fn last_access_time(&self) -> u64 {
+    /// Returns the value of the `ftLastAccessTime` field of this metadata.
+    pub fn last_access_time(&self) -> u64 {
         filetime_u64(self.stat.ftLastAccessTime)
     }
 
-    fn last_write_time(&self) -> u64 {
+    /// Returns the value of the `ftLastWriteTime` field of this metadata.
+    pub fn last_write_time(&self) -> u64 {
         filetime_u64(self.stat.ftLastWriteTime)
     }
 
-    fn file_size(&self) -> u64 {
-        self.len()
-    }
-
-    #[cfg(feature = "windows_by_handle")]
-    fn volume_serial_number(&self) -> Option<u32> {
+    /// Returns the value of the `dwVolumeSerialNumber` field of this
+    /// metadata.
+    pub fn volume_serial_number(&self) -> Option<u32> {
         if self.handle_info {
             Some(self.stat.dwVolumeSerialNumber)
         } else {
@@ -176,8 +174,9 @@ impl MetadataExt for Metadata {
         }
     }
 
-    #[cfg(feature = "windows_by_handle")]
-    fn number_of_links(&self) -> Option<u32> {
+    /// Returns the value of the `nNumberOfLinks` field of this
+    /// metadata.
+    pub fn number_of_links(&self) -> Option<u32> {
         if self.handle_info {
             Some(self.stat.nNumberOfLinks)
         } else {
@@ -185,8 +184,9 @@ impl MetadataExt for Metadata {
         }
     }
 
-    #[cfg(feature = "windows_by_handle")]
-    fn file_index(&self) -> Option<u64> {
+    /// Returns the value of the `nFileIndex{Low,High}` fields of this
+    /// metadata.
+    pub fn file_index(&self) -> Option<u64> {
         if self.handle_info {
             Some(create_u64(
                 self.stat.nFileIndexHigh,
