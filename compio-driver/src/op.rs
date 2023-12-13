@@ -3,7 +3,7 @@
 //! The operation itself doesn't perform anything.
 //! You need to pass them to [`crate::Proactor`], and poll the driver.
 
-use std::net::Shutdown;
+use std::{marker::PhantomPinned, net::Shutdown};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
 use socket2::SockAddr;
@@ -70,6 +70,7 @@ impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t)> {
 pub struct Asyncify<F, D> {
     pub(crate) f: Option<F>,
     pub(crate) data: Option<D>,
+    _p: PhantomPinned,
 }
 
 impl<F, D> Asyncify<F, D> {
@@ -78,6 +79,7 @@ impl<F, D> Asyncify<F, D> {
         Self {
             f: Some(f),
             data: None,
+            _p: PhantomPinned,
         }
     }
 }
@@ -108,12 +110,18 @@ pub struct ReadAt<T: IoBufMut> {
     pub(crate) fd: RawFd,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
+    _p: PhantomPinned,
 }
 
 impl<T: IoBufMut> ReadAt<T> {
     /// Create [`ReadAt`].
     pub fn new(fd: RawFd, offset: u64, buffer: T) -> Self {
-        Self { fd, offset, buffer }
+        Self {
+            fd,
+            offset,
+            buffer,
+            _p: PhantomPinned,
+        }
     }
 }
 
@@ -131,12 +139,18 @@ pub struct WriteAt<T: IoBuf> {
     pub(crate) fd: RawFd,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
+    _p: PhantomPinned,
 }
 
 impl<T: IoBuf> WriteAt<T> {
     /// Create [`WriteAt`].
     pub fn new(fd: RawFd, offset: u64, buffer: T) -> Self {
-        Self { fd, offset, buffer }
+        Self {
+            fd,
+            offset,
+            buffer,
+            _p: PhantomPinned,
+        }
     }
 }
 
