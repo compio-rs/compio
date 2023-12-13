@@ -151,7 +151,7 @@ pub trait AsyncReadExt: AsyncRead {
     }
 
     /// Read all bytes until underlying reader reaches `EOF`.
-    async fn read_to_end<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static>(
+    async fn read_to_end<#[cfg(feature = "allocator_api")] A: Allocator + 'static>(
         &mut self,
         mut buf: vec_alloc!(u8, A),
     ) -> BufResult<usize, vec_alloc!(u8, A)> {
@@ -236,7 +236,7 @@ pub trait AsyncReadAtExt: AsyncReadAt {
     /// If successful, this function will return the total number of bytes read.
     ///
     /// [`read_at()`]: AsyncReadAt::read_at
-    async fn read_to_end_at<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static>(
+    async fn read_to_end_at<#[cfg(feature = "allocator_api")] A: Allocator + 'static>(
         &self,
         mut buffer: vec_alloc!(u8, A),
         pos: u64,

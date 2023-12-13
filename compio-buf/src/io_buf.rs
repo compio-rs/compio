@@ -8,7 +8,7 @@ use crate::*;
 ///
 /// The `IoBuf` trait is implemented by buffer types that can be passed to
 /// compio operations. Users will not need to use this trait directly.
-pub trait IoBuf: Unpin + 'static {
+pub trait IoBuf: 'static {
     /// Returns a raw pointer to the vector’s buffer.
     ///
     /// This method is to be used by the `compio` runtime and it is not
@@ -92,7 +92,7 @@ pub trait IoBuf: Unpin + 'static {
     }
 }
 
-impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoBuf for vec_alloc!(u8, A) {
+impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf for vec_alloc!(u8, A) {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -106,9 +106,7 @@ impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoBuf for
     }
 }
 
-impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoBuf
-    for box_alloc!([u8], A)
-{
+impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf for box_alloc!([u8], A) {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -328,9 +326,7 @@ pub trait IoBufMut: IoBuf + SetBufInit {
     }
 }
 
-impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoBufMut
-    for vec_alloc!(u8, A)
-{
+impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut for vec_alloc!(u8, A) {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.as_mut_ptr()
     }
@@ -376,7 +372,7 @@ impl<const N: usize> IoBufMut for arrayvec::ArrayVec<u8, N> {
 }
 
 /// A trait for vectored buffers.
-pub trait IoVectoredBuf: Unpin + 'static {
+pub trait IoVectoredBuf: 'static {
     /// An iterator for the [`IoSlice`]s of the buffers.
     ///
     /// # Safety
@@ -408,7 +404,7 @@ pub trait IoVectoredBuf: Unpin + 'static {
     ///
     /// The time complexity of the returned iterator depends on the
     /// implementation of [`Iterator::nth`] of [`IoVectoredBuf::as_dyn_bufs`].
-    fn owned_iter(self) -> Result<OwnedIter<impl OwnedIterator<Inner = Self> + Unpin>, Self>
+    fn owned_iter(self) -> Result<OwnedIter<impl OwnedIterator<Inner = Self>>, Self>
     where
         Self: Sized;
 }
@@ -426,7 +422,7 @@ impl<T: IoBuf, const N: usize> IoVectoredBuf for [T; N] {
     }
 }
 
-impl<T: IoBuf, #[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoVectoredBuf
+impl<T: IoBuf, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoVectoredBuf
     for vec_alloc!(T, A)
 {
     fn as_dyn_bufs(&self) -> impl Iterator<Item = &dyn IoBuf> {
@@ -490,7 +486,7 @@ pub trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
     ///
     /// The time complexity of the returned iterator depends on the
     /// implementation of [`Iterator::nth`] of [`IoVectoredBuf::as_dyn_bufs`].
-    fn owned_iter_mut(self) -> Result<OwnedIter<impl OwnedIteratorMut<Inner = Self> + Unpin>, Self>
+    fn owned_iter_mut(self) -> Result<OwnedIter<impl OwnedIteratorMut<Inner = Self>>, Self>
     where
         Self: Sized;
 }
@@ -500,7 +496,7 @@ impl<T: IoBufMut, const N: usize> IoVectoredBufMut for [T; N] {
         self.iter_mut().map(|buf| buf as &mut dyn IoBufMut)
     }
 
-    fn owned_iter_mut(self) -> Result<OwnedIter<impl OwnedIteratorMut<Inner = Self> + Unpin>, Self>
+    fn owned_iter_mut(self) -> Result<OwnedIter<impl OwnedIteratorMut<Inner = Self>>, Self>
     where
         Self: Sized,
     {
@@ -508,7 +504,7 @@ impl<T: IoBufMut, const N: usize> IoVectoredBufMut for [T; N] {
     }
 }
 
-impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoVectoredBufMut
+impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoVectoredBufMut
     for vec_alloc!(T, A)
 {
     fn as_dyn_mut_bufs(&mut self) -> impl Iterator<Item = &mut dyn IoBufMut> {
@@ -549,7 +545,7 @@ impl<T: IoBuf, const N: usize> IoIndexedBuf for [T; N] {
     }
 }
 
-impl<T: IoBuf, #[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoIndexedBuf
+impl<T: IoBuf, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoIndexedBuf
     for vec_alloc!(T, A)
 {
     fn buf_nth(&self, n: usize) -> Option<&dyn IoBuf> {
@@ -576,7 +572,7 @@ impl<T: IoBufMut, const N: usize> IoIndexedBufMut for [T; N] {
     }
 }
 
-impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> IoIndexedBufMut
+impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoIndexedBufMut
     for vec_alloc!(T, A)
 {
     fn buf_nth_mut(&mut self, n: usize) -> Option<&mut dyn IoBufMut> {
@@ -602,9 +598,7 @@ pub trait SetBufInit {
     unsafe fn set_buf_init(&mut self, len: usize);
 }
 
-impl<#[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> SetBufInit
-    for vec_alloc!(u8, A)
-{
+impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> SetBufInit for vec_alloc!(u8, A) {
     unsafe fn set_buf_init(&mut self, len: usize) {
         if self.buf_len() < len {
             self.set_len(len);
@@ -664,7 +658,7 @@ impl<T: IoBufMut, const N: usize> SetBufInit for [T; N] {
     }
 }
 
-impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + Unpin + 'static> SetBufInit
+impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + 'static> SetBufInit
     for vec_alloc!(T, A)
 {
     unsafe fn set_buf_init(&mut self, len: usize) {

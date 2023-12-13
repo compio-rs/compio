@@ -1,4 +1,4 @@
-use std::{ffi::CString, io, pin::Pin, task::Poll};
+use std::{ffi::CString, io, marker::PhantomPinned, pin::Pin, task::Poll};
 
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
@@ -19,21 +19,22 @@ use crate::op::*;
 pub use crate::unix::op::*;
 
 impl<
-    D: std::marker::Send + Unpin + 'static,
-    F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + Unpin + 'static,
+    D: std::marker::Send + 'static,
+    F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + 'static,
 > OpCode for Asyncify<F, D>
 {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::blocking_dummy())
     }
 
-    fn on_event(mut self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
-        let f = self
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        let this = unsafe { self.get_unchecked_mut() };
+        let f = this
             .f
             .take()
             .expect("the operate method could only be called once");
         let BufResult(res, data) = f();
-        self.data = Some(data);
+        this.data = Some(data);
         Poll::Ready(res)
     }
 }
@@ -183,19 +184,13 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
         }
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
         let fd = self.fd;
-        let slice = self.buffer.as_mut_slice();
-        syscall!(
-            break pread(
-                fd,
-                slice.as_mut_ptr() as _,
-                slice.len() as _,
-                self.offset as _,
-            )
-        )
+        let offset = self.offset;
+        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
+        syscall!(break pread(fd, slice.as_mut_ptr() as _, slice.len() as _, offset as _,))
     }
 }
 
@@ -208,16 +203,17 @@ impl<T: IoVectoredBufMut> OpCode for ReadVectoredAt<T> {
         }
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
-        self.slices = unsafe { self.buffer.as_io_slices_mut() };
+        let this = unsafe { self.get_unchecked_mut() };
+        this.slices = unsafe { this.buffer.as_io_slices_mut() };
         syscall!(
             break preadv(
-                self.fd,
-                self.slices.as_ptr() as _,
-                self.slices.len() as _,
-                self.offset as _,
+                this.fd,
+                this.slices.as_ptr() as _,
+                this.slices.len() as _,
+                this.offset as _,
             )
         )
     }
@@ -256,16 +252,17 @@ impl<T: IoVectoredBuf> OpCode for WriteVectoredAt<T> {
         }
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.writable);
 
-        self.slices = unsafe { self.buffer.as_io_slices() };
+        let this = unsafe { self.get_unchecked_mut() };
+        this.slices = unsafe { this.buffer.as_io_slices() };
         syscall!(
             break pwritev(
-                self.fd,
-                self.slices.as_ptr() as _,
-                self.slices.len() as _,
-                self.offset as _,
+                this.fd,
+                this.slices.as_ptr() as _,
+                this.slices.len() as _,
+                this.offset as _,
             )
         )
     }
@@ -327,21 +324,23 @@ impl OpCode for CloseSocket {
 }
 
 impl Accept {
-    unsafe fn call(&mut self) -> libc::c_int {
+    unsafe fn call(self: Pin<&mut Self>) -> libc::c_int {
+        let this = self.get_unchecked_mut();
         libc::accept(
-            self.fd,
-            &mut self.buffer as *mut _ as *mut _,
-            &mut self.addr_len,
+            this.fd,
+            &mut this.buffer as *mut _ as *mut _,
+            &mut this.addr_len,
         )
     }
 }
 
 impl OpCode for Accept {
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
-        syscall!(self.call(), wait_readable(self.fd))
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        let fd = self.fd;
+        syscall!(self.call(), wait_readable(fd))
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
         syscall!(break self.call())
@@ -384,11 +383,11 @@ impl<T: IoBufMut> OpCode for Recv<T> {
         Ok(Decision::wait_readable(self.fd))
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
         let fd = self.fd;
-        let slice = self.buffer.as_mut_slice();
+        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
         syscall!(break libc::read(fd, slice.as_mut_ptr() as _, slice.len()))
     }
 }
@@ -398,11 +397,12 @@ impl<T: IoVectoredBufMut> OpCode for RecvVectored<T> {
         Ok(Decision::wait_readable(self.fd))
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
-        self.slices = unsafe { self.buffer.as_io_slices_mut() };
-        syscall!(break libc::readv(self.fd, self.slices.as_ptr() as _, self.slices.len() as _))
+        let this = unsafe { self.get_unchecked_mut() };
+        this.slices = unsafe { this.buffer.as_io_slices_mut() };
+        syscall!(break libc::readv(this.fd, this.slices.as_ptr() as _, this.slices.len() as _))
     }
 }
 
@@ -424,11 +424,12 @@ impl<T: IoVectoredBuf> OpCode for SendVectored<T> {
         Ok(Decision::wait_writable(self.fd))
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.writable);
 
-        self.slices = unsafe { self.buffer.as_io_slices() };
-        syscall!(break libc::writev(self.fd, self.slices.as_ptr() as _, self.slices.len() as _))
+        let this = unsafe { self.get_unchecked_mut() };
+        this.slices = unsafe { this.buffer.as_io_slices() };
+        syscall!(break libc::writev(this.fd, this.slices.as_ptr() as _, this.slices.len() as _))
     }
 }
 
@@ -438,6 +439,7 @@ pub struct RecvFrom<T: IoBufMut> {
     pub(crate) buffer: T,
     pub(crate) addr: sockaddr_storage,
     pub(crate) addr_len: socklen_t,
+    _p: PhantomPinned,
 }
 
 impl<T: IoBufMut> RecvFrom<T> {
@@ -448,29 +450,32 @@ impl<T: IoBufMut> RecvFrom<T> {
             buffer,
             addr: unsafe { std::mem::zeroed() },
             addr_len: std::mem::size_of::<sockaddr_storage>() as _,
+            _p: PhantomPinned,
         }
     }
 
-    unsafe fn call(&mut self) -> libc::ssize_t {
-        let fd = self.fd;
-        let slice = self.buffer.as_mut_slice();
+    unsafe fn call(self: Pin<&mut Self>) -> libc::ssize_t {
+        let this = self.get_unchecked_mut();
+        let fd = this.fd;
+        let slice = this.buffer.as_mut_slice();
         libc::recvfrom(
             fd,
             slice.as_mut_ptr() as _,
             slice.len(),
             0,
-            &mut self.addr as *mut _ as _,
-            &mut self.addr_len,
+            &mut this.addr as *mut _ as _,
+            &mut this.addr_len,
         )
     }
 }
 
 impl<T: IoBufMut> OpCode for RecvFrom<T> {
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
-        syscall!(self.call(), wait_readable(self.fd))
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        let fd = self.fd;
+        syscall!(self.call(), wait_readable(fd))
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
         syscall!(break self.call())
@@ -492,6 +497,7 @@ pub struct RecvFromVectored<T: IoVectoredBufMut> {
     pub(crate) slices: Vec<IoSliceMut>,
     pub(crate) addr: sockaddr_storage,
     pub(crate) msg: libc::msghdr,
+    _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBufMut> RecvFromVectored<T> {
@@ -503,6 +509,7 @@ impl<T: IoVectoredBufMut> RecvFromVectored<T> {
             slices: vec![],
             addr: unsafe { std::mem::zeroed() },
             msg: unsafe { std::mem::zeroed() },
+            _p: PhantomPinned,
         }
     }
 
@@ -525,15 +532,17 @@ impl<T: IoVectoredBufMut> RecvFromVectored<T> {
 }
 
 impl<T: IoVectoredBufMut> OpCode for RecvFromVectored<T> {
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
-        self.set_msg();
-        syscall!(self.call(), wait_readable(self.fd))
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        let this = unsafe { self.get_unchecked_mut() };
+        this.set_msg();
+        syscall!(this.call(), wait_readable(this.fd))
     }
 
-    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
-        syscall!(break self.call())
+        let this = unsafe { self.get_unchecked_mut() };
+        syscall!(break this.call())
     }
 }
 
@@ -550,12 +559,18 @@ pub struct SendTo<T: IoBuf> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
+    _p: PhantomPinned,
 }
 
 impl<T: IoBuf> SendTo<T> {
     /// Create [`SendTo`].
     pub fn new(fd: RawFd, buffer: T, addr: SockAddr) -> Self {
-        Self { fd, buffer, addr }
+        Self {
+            fd,
+            buffer,
+            addr,
+            _p: PhantomPinned,
+        }
     }
 
     unsafe fn call(&self) -> libc::ssize_t {
@@ -598,6 +613,7 @@ pub struct SendToVectored<T: IoVectoredBuf> {
     pub(crate) addr: SockAddr,
     pub(crate) slices: Vec<IoSlice>,
     pub(crate) msg: libc::msghdr,
+    _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBuf> SendToVectored<T> {
@@ -609,6 +625,7 @@ impl<T: IoVectoredBuf> SendToVectored<T> {
             addr,
             slices: vec![],
             msg: unsafe { std::mem::zeroed() },
+            _p: PhantomPinned,
         }
     }
 
@@ -631,9 +648,10 @@ impl<T: IoVectoredBuf> SendToVectored<T> {
 }
 
 impl<T: IoVectoredBuf> OpCode for SendToVectored<T> {
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
-        self.set_msg();
-        syscall!(self.call(), wait_writable(self.fd))
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        let this = unsafe { self.get_unchecked_mut() };
+        this.set_msg();
+        syscall!(this.call(), wait_writable(this.fd))
     }
 
     fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
