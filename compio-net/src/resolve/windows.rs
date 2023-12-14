@@ -7,20 +7,18 @@ use std::{
 
 use compio_driver::syscall;
 use compio_runtime::event::EventHandle;
+use socket2::SockAddr;
 use widestring::U16CString;
-pub use windows_sys::Win32::Networking::WinSock::{
-    ADDRINFOEXW as addrinfo, AF_UNSPEC, IPPROTO_TCP, SOCK_STREAM,
-};
 use windows_sys::Win32::{
     Foundation::{GetLastError, ERROR_IO_PENDING, HANDLE},
     Networking::WinSock::{
         FreeAddrInfoExW, GetAddrInfoExCancel, GetAddrInfoExOverlappedResult, GetAddrInfoExW,
-        ADDRINFOEXW, NS_ALL,
+        ADDRINFOEXW, AF_UNSPEC, IPPROTO_TCP, NS_ALL, SOCK_STREAM,
     },
     System::IO::OVERLAPPED,
 };
 
-pub struct AsyncResolver {
+struct AsyncResolver {
     name: U16CString,
     port: u16,
     result: *mut ADDRINFOEXW,
@@ -87,7 +85,31 @@ impl AsyncResolver {
     pub unsafe fn addrs(&mut self) -> io::Result<std::vec::IntoIter<SocketAddr>> {
         syscall!(SOCKET, GetAddrInfoExOverlappedResult(&self.overlapped.base))?;
         self.handle = 0;
-        Ok(super::to_addrs(self.result, self.port))
+
+        let mut addrs = vec![];
+        let mut result = self.result;
+        while let Some(info) = unsafe { result.as_ref() } {
+            let addr = unsafe {
+                SockAddr::try_init(|buffer, len| {
+                    std::slice::from_raw_parts_mut::<u8>(buffer.cast(), info.ai_addrlen as _)
+                        .copy_from_slice(std::slice::from_raw_parts::<u8>(
+                            info.ai_addr.cast(),
+                            info.ai_addrlen as _,
+                        ));
+                    *len = info.ai_addrlen as _;
+                    Ok(())
+                })
+            }
+            // it is always Ok
+            .unwrap()
+            .1;
+            if let Some(mut addr) = addr.as_socket() {
+                addr.set_port(self.port);
+                addrs.push(addr)
+            }
+            result = info.ai_next;
+        }
+        Ok(addrs.into_iter())
     }
 }
 
@@ -115,4 +137,30 @@ impl GAIOverlapped {
             handle: None,
         }
     }
+}
+
+pub async fn resolve_sock_addrs(
+    host: &str,
+    port: u16,
+) -> io::Result<std::vec::IntoIter<SocketAddr>> {
+    use compio_runtime::event::Event;
+
+    let mut resolver = AsyncResolver::new(host, port)?;
+    let mut hints: ADDRINFOEXW = unsafe { std::mem::zeroed() };
+    hints.ai_family = AF_UNSPEC as _;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    let event = Event::new()?;
+    let handle = event.handle()?;
+    match unsafe { resolver.call(&hints, handle) } {
+        Poll::Ready(res) => {
+            res?;
+        }
+        Poll::Pending => {
+            event.wait().await?;
+        }
+    }
+
+    unsafe { resolver.addrs() }
 }
