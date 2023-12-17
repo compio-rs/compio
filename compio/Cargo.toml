@@ -1,6 +1,6 @@
 [package]
 name = "compio"
-version = "0.9.0-beta.3"
+version = "0.9.0-beta.4"
 description = "completion based async runtime"
 categories = ["asynchronous", "filesystem", "network-programming"]
 keywords = ["async", "fs", "iocp", "io-uring", "net"]
@@ -12,10 +12,10 @@ repository = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true
-default-target = "x86_64-pc-windows-msvc"
+default-target = "x86_64-unknown-linux-gnu"
 rustdoc-args = ["--cfg", "docsrs"]
 targets = [
-    "x86_64-pc-windows-msvc",
+    "x86_64-pc-windows-gnu",
     "x86_64-unknown-linux-gnu",
     "x86_64-apple-darwin",
     "aarch64-apple-ios",

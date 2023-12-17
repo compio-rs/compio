@@ -1,6 +1,6 @@
 [package]
 name = "compio-runtime"
-version = "0.2.0-beta.2"
+version = "0.2.0-beta.3"
 description = "high-level runtime for compio"
 categories = ["asynchronous"]
 keywords = ["async", "runtime"]
@@ -12,10 +12,10 @@ repository = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true
-default-target = "x86_64-pc-windows-msvc"
+default-target = "x86_64-unknown-linux-gnu"
 rustdoc-args = ["--cfg", "docsrs"]
 targets = [
-    "x86_64-pc-windows-msvc",
+    "x86_64-pc-windows-gnu",
     "x86_64-unknown-linux-gnu",
     "x86_64-apple-darwin",
     "aarch64-apple-ios",

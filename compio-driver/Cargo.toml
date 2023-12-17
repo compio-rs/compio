@@ -1,6 +1,6 @@
 [package]
 name = "compio-driver"
-version = "0.2.0-beta.2"
+version = "0.2.0-beta.3"
 description = "low-level driver for compio"
 categories = ["asynchronous"]
 keywords = ["async", "iocp", "io-uring"]
@@ -13,9 +13,9 @@ repository = { workspace = true }
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
-default-target = "x86_64-pc-windows-msvc"
+default-target = "x86_64-unknown-linux-gnu"
 targets = [
-    "x86_64-pc-windows-msvc",
+    "x86_64-pc-windows-gnu",
     "x86_64-unknown-linux-gnu",
     "x86_64-apple-darwin",
     "aarch64-apple-ios",
