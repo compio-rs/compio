@@ -1,6 +1,6 @@
 [package]
 name = "compio-fs"
-version = "0.2.0-beta.1"
+version = "0.2.0-beta.2"
 description = "Filesystem IO for compio"
 categories = ["asynchronous", "filesystem"]
 keywords = ["async", "fs"]
