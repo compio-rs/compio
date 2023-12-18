@@ -47,7 +47,9 @@ fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> (usize, O
         PushEntry::Ready(res) => res.unwrap(),
         PushEntry::Pending(user_data) => {
             let mut entries = ArrayVec::<Entry, 1>::new();
-            driver.poll(None, &mut entries).unwrap();
+            while entries.is_empty() {
+                driver.poll(None, &mut entries).unwrap();
+            }
             let (n, op) = driver
                 .pop(&mut entries.into_iter())
                 .next()
