@@ -120,7 +120,7 @@ impl File {
         let fd = self.try_as_raw_fd()? as _;
         Runtime::current()
             .spawn_blocking(move || {
-                syscall!(libc::fchmod(fd, perm.mode()))?;
+                syscall!(libc::fchmod(fd, perm.mode() as libc::mode_t))?;
                 Ok(())
             })
             .await
