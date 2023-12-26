@@ -18,7 +18,7 @@ use io_uring::{
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use slab::Slab;
 
-use crate::{syscall, AsyncifyPool, Entry, ProactorBuilder};
+use crate::{syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder};
 
 pub(crate) mod op;
 pub(crate) use crate::unix::RawOp;
@@ -217,8 +217,7 @@ impl Driver {
     pub unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        entries: &mut impl Extend<Entry>,
-        _registry: &mut Slab<RawOp>,
+        mut entries: OutEntries<impl Extend<Entry>>,
     ) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         if !self.notifier_registered {
@@ -239,7 +238,7 @@ impl Driver {
 
             self.submit_auto(timeout, ended)?;
 
-            self.poll_entries(entries);
+            self.poll_entries(&mut entries);
 
             if ended {
                 trace!("polling ended");

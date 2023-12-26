@@ -35,7 +35,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{syscall, AsyncifyPool, Entry, ProactorBuilder};
+use crate::{syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder};
 
 pub(crate) mod op;
 
@@ -330,8 +330,7 @@ impl Driver {
     pub unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        entries: &mut impl Extend<Entry>,
-        _registry: &mut Slab<RawOp>,
+        mut entries: OutEntries<impl Extend<Entry>>,
     ) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         // Prevent stack growth.
@@ -430,28 +429,56 @@ impl<T> Overlapped<T> {
     }
 }
 
-pub(crate) struct RawOp(NonNull<Overlapped<dyn OpCode>>);
+pub(crate) struct RawOp {
+    op: NonNull<Overlapped<dyn OpCode>>,
+    // The two flags here are manual reference counting. The driver holds the strong ref until it
+    // completes; the runtime holds the strong ref until the future is dropped.
+    completed: bool,
+    cancelled: bool,
+}
 
 impl RawOp {
     pub(crate) fn new(user_data: usize, op: impl OpCode + 'static) -> Self {
         let op = Overlapped::new(user_data, op);
         let op = Box::new(op) as Box<Overlapped<dyn OpCode>>;
-        Self(unsafe { NonNull::new_unchecked(Box::into_raw(op)) })
+        Self {
+            op: unsafe { NonNull::new_unchecked(Box::into_raw(op)) },
+            completed: false,
+            cancelled: false,
+        }
     }
 
     pub fn as_op_pin(&mut self) -> Pin<&mut dyn OpCode> {
-        unsafe { Pin::new_unchecked(&mut self.0.as_mut().op) }
+        unsafe { Pin::new_unchecked(&mut self.op.as_mut().op) }
     }
 
     pub fn as_mut_ptr(&mut self) -> *mut Overlapped<dyn OpCode> {
-        self.0.as_ptr()
+        self.op.as_ptr()
+    }
+
+    pub fn set_completed(&mut self) -> bool {
+        self.completed = true;
+        self.cancelled
+    }
+
+    pub fn set_cancelled(&mut self) -> bool {
+        self.cancelled = true;
+        self.completed
     }
 
     /// # Safety
     /// The caller should ensure the correct type.
     pub unsafe fn into_inner<T: OpCode>(self) -> T {
         let this = ManuallyDrop::new(self);
-        let this: Box<Overlapped<T>> = Box::from_raw(this.0.cast().as_ptr());
+        let this: Box<Overlapped<T>> = Box::from_raw(this.op.cast().as_ptr());
         this.op
+    }
+}
+
+impl Drop for RawOp {
+    fn drop(&mut self) {
+        if self.completed {
+            let _ = unsafe { Box::from_raw(self.op.as_ptr()) };
+        }
     }
 }

@@ -197,9 +197,18 @@ impl Proactor {
     /// but just don't return from [`Proactor::poll`]. Therefore, although an
     /// operation is cancelled, you should not reuse its `user_data`.
     ///
-    /// It is well-defined to cancel before polling. If the submitted operation
+    /// It is *safe* to cancel before polling. If the submitted operation
     /// contains a cancelled user-defined data, the operation will be ignored.
+    /// However, to make the operation dropped correctly, you should cancel
+    /// after push.
     pub fn cancel(&mut self, user_data: usize) {
+        if let Some(op) = self.ops.get_mut(user_data) {
+            if op.set_cancelled() {
+                // The op is completed.
+                self.ops.remove(user_data);
+                return;
+            }
+        }
         self.driver.cancel(user_data, &mut self.ops);
     }
 
@@ -227,7 +236,8 @@ impl Proactor {
         entries: &mut impl Extend<Entry>,
     ) -> io::Result<()> {
         unsafe {
-            self.driver.poll(timeout, entries, &mut self.ops)?;
+            self.driver
+                .poll(timeout, OutEntries::new(entries, &mut self.ops))?;
         }
         Ok(())
     }
@@ -317,6 +327,35 @@ impl Entry {
     /// The result of the operation.
     pub fn into_result(self) -> io::Result<usize> {
         self.result
+    }
+}
+
+// The output entries need to be marked as `completed`. If an entry has been
+// marked as `cancelled`, it will be removed from the registry.
+struct OutEntries<'a, 'b, E> {
+    entries: &'b mut E,
+    registry: &'a mut Slab<RawOp>,
+}
+
+impl<'a, 'b, E> OutEntries<'a, 'b, E> {
+    pub fn new(entries: &'b mut E, registry: &'a mut Slab<RawOp>) -> Self {
+        Self { entries, registry }
+    }
+
+    #[allow(dead_code)]
+    pub fn registry(&mut self) -> &mut Slab<RawOp> {
+        self.registry
+    }
+}
+
+impl<E: Extend<Entry>> Extend<Entry> for OutEntries<'_, '_, E> {
+    fn extend<T: IntoIterator<Item = Entry>>(&mut self, iter: T) {
+        self.entries.extend(iter.into_iter().map(|e| {
+            if self.registry[e.user_data()].set_completed() {
+                self.registry.remove(e.user_data());
+            }
+            e
+        }))
     }
 }
 

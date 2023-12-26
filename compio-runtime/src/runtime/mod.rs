@@ -143,8 +143,8 @@ impl RuntimeInner {
     }
 
     pub fn cancel_op<T>(&self, user_data: Key<T>) {
+        self.op_runtime.borrow_mut().remove(*user_data);
         self.driver.borrow_mut().cancel(*user_data);
-        self.op_runtime.borrow_mut().cancel(*user_data);
     }
 
     #[cfg(feature = "time")]
@@ -165,7 +165,7 @@ impl RuntimeInner {
             let res = self
                 .driver
                 .borrow_mut()
-                .pop(&mut op.entry.into_iter())
+                .pop(&mut op.into_completed().into_iter())
                 .next()
                 .expect("the result should have come");
             Poll::Ready(res.map_buffer(|op| unsafe { op.into_op::<T>() }))
@@ -204,9 +204,7 @@ impl RuntimeInner {
             Ok(_) => {
                 debug!("poll driver ok, entries: {}", entries.len());
                 for entry in entries {
-                    self.op_runtime
-                        .borrow_mut()
-                        .update_result(entry.user_data(), entry);
+                    self.op_runtime.borrow_mut().update_result(entry);
                 }
             }
             Err(e) => match e.kind() {

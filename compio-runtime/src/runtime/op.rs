@@ -11,10 +11,20 @@ use compio_driver::{Entry, OpCode};
 use crate::{key::Key, Runtime};
 
 #[derive(Default)]
-pub(crate) struct RegisteredOp {
-    pub waker: Option<Waker>,
-    pub entry: Option<Entry>,
-    pub cancelled: bool,
+pub(crate) enum RegisteredOp {
+    #[default]
+    Default,
+    Submitted(Waker),
+    Completed(Entry),
+}
+
+impl RegisteredOp {
+    pub fn into_completed(self) -> Option<Entry> {
+        match self {
+            Self::Completed(op) => Some(op),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -24,29 +34,24 @@ pub(crate) struct OpRuntime {
 
 impl OpRuntime {
     pub fn update_waker(&mut self, key: usize, waker: Waker) {
-        self.ops.entry(key).or_default().waker = Some(waker);
+        *self.ops.entry(key).or_default() = RegisteredOp::Submitted(waker)
     }
 
-    pub fn update_result(&mut self, key: usize, entry: Entry) {
+    pub fn update_result(&mut self, entry: Entry) {
+        let key = entry.user_data();
         let op = self.ops.entry(key).or_default();
-        if let Some(waker) = op.waker.take() {
-            waker.wake();
-        }
-        op.entry = Some(entry);
-        if op.cancelled {
-            self.remove(key);
+        match op {
+            RegisteredOp::Default => *op = RegisteredOp::Completed(entry),
+            RegisteredOp::Submitted(waker) => {
+                waker.wake_by_ref();
+                *op = RegisteredOp::Completed(entry);
+            }
+            RegisteredOp::Completed(res) => *res = entry,
         }
     }
 
     pub fn has_result(&mut self, key: usize) -> bool {
-        self.ops
-            .get_mut(&key)
-            .map(|op| op.entry.is_some())
-            .unwrap_or_default()
-    }
-
-    pub fn cancel(&mut self, key: usize) {
-        self.ops.entry(key).or_default().cancelled = true;
+        matches!(self.ops.get_mut(&key), Some(RegisteredOp::Completed(_)))
     }
 
     pub fn remove(&mut self, key: usize) -> RegisteredOp {
