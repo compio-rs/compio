@@ -21,8 +21,6 @@ compio-driver = { workspace = true }
 compio-io = { workspace = true }
 compio-runtime = { workspace = true }
 
-cfg-if = { workspace = true }
-
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
 widestring = { workspace = true }

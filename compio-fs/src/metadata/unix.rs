@@ -18,18 +18,14 @@ async fn metadata_impl(path: impl AsRef<Path>, follow_symlink: bool) -> io::Resu
     res.map(|_| Metadata::from_stat(op.into_inner()))
 }
 
-/// Given a path, query the file system to get information about a file,
-/// directory, etc.
 pub async fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
     metadata_impl(path, true).await
 }
 
-/// Query the metadata about a file without following symlinks.
 pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
     metadata_impl(path, false).await
 }
 
-/// Changes the permissions found on a file or a directory.
 pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::Result<()> {
     let path = path_string(path)?;
     Runtime::current()
@@ -40,7 +36,6 @@ pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::R
         .await
 }
 
-/// Metadata information about a file.
 #[derive(Clone)]
 pub struct Metadata(pub(crate) libc::stat);
 
@@ -50,58 +45,43 @@ impl Metadata {
         Self(stat)
     }
 
-    /// Returns the file type for this metadata.
     pub fn file_type(&self) -> FileType {
         FileType(self.0.st_mode)
     }
 
-    /// Returns `true` if this metadata is for a directory.
     pub fn is_dir(&self) -> bool {
         self.file_type().is_dir()
     }
 
-    /// Returns `true` if this metadata is for a regular file.
     pub fn is_file(&self) -> bool {
         self.file_type().is_file()
     }
 
-    /// Returns `true` if this metadata is for a symbolic link.
     pub fn is_symlink(&self) -> bool {
         self.file_type().is_symlink()
     }
 
-    /// Returns the size of the file, in bytes, this metadata is for.
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u64 {
         self.0.st_size as _
     }
 
-    /// Returns the permissions of the file this metadata is for.
     pub fn permissions(&self) -> Permissions {
         Permissions(self.0.st_mode)
     }
 
-    /// Returns the last modification time listed in this metadata.
-    ///
-    /// The returned value corresponds to the `mtime` field.
     pub fn modified(&self) -> io::Result<SystemTime> {
         Ok(SystemTime::UNIX_EPOCH
             + Duration::from_secs(self.0.st_mtime as _)
             + Duration::from_nanos(self.0.st_mtime_nsec as _))
     }
 
-    /// Returns the last access time of this metadata.
-    ///
-    /// The returned value corresponds to the `atime` field.
     pub fn accessed(&self) -> io::Result<SystemTime> {
         Ok(SystemTime::UNIX_EPOCH
             + Duration::from_secs(self.0.st_atime as _)
             + Duration::from_nanos(self.0.st_atime_nsec as _))
     }
 
-    /// Returns the creation time listed in this metadata.
-    ///
-    /// The returned value corresponds to the `btime` field of [`libc::statx`].
     #[cfg(not(any(
         target_os = "freebsd",
         target_os = "openbsd",
@@ -117,9 +97,6 @@ impl Metadata {
             + Duration::from_nanos(self.0.st_ctime_nsec as _))
     }
 
-    /// Returns the creation time listed in this metadata.
-    ///
-    /// The returned value corresponds to the `birthtime` field.
     #[cfg(any(
         target_os = "freebsd",
         target_os = "openbsd",
@@ -201,22 +178,18 @@ impl MetadataExt for Metadata {
     }
 }
 
-/// A structure representing a type of file with accessors for each file type.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FileType(pub(crate) libc::mode_t);
 
 impl FileType {
-    /// Tests whether this file type represents a directory.
     pub fn is_dir(&self) -> bool {
         self.is(libc::S_IFDIR)
     }
 
-    /// Tests whether this file type represents a regular file.
     pub fn is_file(&self) -> bool {
         self.is(libc::S_IFREG)
     }
 
-    /// Tests whether this file type represents a symbolic link.
     pub fn is_symlink(&self) -> bool {
         self.is(libc::S_IFLNK)
     }
@@ -248,20 +221,14 @@ impl FileTypeExt for FileType {
     }
 }
 
-/// Representation of the various permissions on a file.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Permissions(pub(crate) libc::mode_t);
 
 impl Permissions {
-    /// Returns `true` if these permissions describe a readonly (unwritable)
-    /// file.
     pub fn readonly(&self) -> bool {
         self.0 & 0o222 == 0
     }
 
-    /// Modifies the readonly flag for this set of permissions.
-    ///
-    /// This operation does **not** modify the files attributes.
     pub fn set_readonly(&mut self, readonly: bool) {
         if readonly {
             // remove write permission for all classes; equivalent to `chmod a-w <file>`

@@ -96,7 +96,7 @@ impl File {
                     LastAccessTime: 0,
                     LastWriteTime: 0,
                     ChangeTime: 0,
-                    FileAttributes: perm.attrs,
+                    FileAttributes: perm.0.attrs,
                 };
                 syscall!(
                     BOOL,
@@ -115,10 +115,12 @@ impl File {
     /// Changes the permissions on the underlying file.
     #[cfg(unix)]
     pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
         let fd = self.try_as_raw_fd()? as _;
         Runtime::current()
             .spawn_blocking(move || {
-                syscall!(libc::fchmod(fd, perm.0))?;
+                syscall!(libc::fchmod(fd, perm.mode()))?;
                 Ok(())
             })
             .await
