@@ -24,6 +24,7 @@ impl<
     }
 
     fn call_blocking(self: Pin<&mut Self>) -> std::io::Result<usize> {
+        // Safety: this method is called only once.
         let this = unsafe { self.get_unchecked_mut() };
         let f = this
             .f
