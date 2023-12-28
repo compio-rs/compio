@@ -6,56 +6,28 @@ use std::{
 };
 
 use compio_buf::BufResult;
-use compio_driver::{Entry, OpCode};
+use compio_driver::{Key, OpCode};
 
-use crate::{key::Key, Runtime};
-
-#[derive(Default)]
-pub(crate) enum RegisteredOp {
-    #[default]
-    Default,
-    Submitted(Waker),
-    Completed(Entry),
-}
-
-impl RegisteredOp {
-    pub fn into_completed(self) -> Option<Entry> {
-        match self {
-            Self::Completed(op) => Some(op),
-            _ => None,
-        }
-    }
-}
+use crate::Runtime;
 
 #[derive(Default)]
 pub(crate) struct OpRuntime {
-    ops: HashMap<usize, RegisteredOp>,
+    ops: HashMap<usize, Option<Waker>>,
 }
 
 impl OpRuntime {
     pub fn update_waker(&mut self, key: usize, waker: Waker) {
-        *self.ops.entry(key).or_default() = RegisteredOp::Submitted(waker)
+        *self.ops.entry(key).or_default() = Some(waker)
     }
 
-    pub fn update_result(&mut self, entry: Entry) {
-        let key = entry.user_data();
-        let op = self.ops.entry(key).or_default();
-        match op {
-            RegisteredOp::Default => *op = RegisteredOp::Completed(entry),
-            RegisteredOp::Submitted(waker) => {
-                waker.wake_by_ref();
-                *op = RegisteredOp::Completed(entry);
-            }
-            RegisteredOp::Completed(res) => *res = entry,
+    pub fn wake(&mut self, key: usize) {
+        if let Some(waker) = self.ops.entry(key).or_default() {
+            waker.wake_by_ref();
         }
     }
 
-    pub fn has_result(&mut self, key: usize) -> bool {
-        matches!(self.ops.get_mut(&key), Some(RegisteredOp::Completed(_)))
-    }
-
-    pub fn remove(&mut self, key: usize) -> RegisteredOp {
-        self.ops.remove(&key).unwrap()
+    pub fn remove(&mut self, key: usize) {
+        self.ops.remove(&key).unwrap();
     }
 }
 

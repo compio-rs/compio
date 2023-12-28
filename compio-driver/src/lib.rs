@@ -15,7 +15,11 @@ compile_error!("You must choose at least one of these features: [\"io-uring\", \
 use std::{io, task::Poll, time::Duration};
 
 use compio_buf::BufResult;
+use compio_log::{instrument, trace};
 use slab::Slab;
+
+mod key;
+pub use key::Key;
 
 pub mod op;
 #[cfg(unix)]
@@ -202,9 +206,11 @@ impl Proactor {
     /// However, to make the operation dropped correctly, you should cancel
     /// after push.
     pub fn cancel(&mut self, user_data: usize) {
+        instrument!(compio_log::Level::DEBUG, "cancel", user_data);
         if let Some(op) = self.ops.get_mut(user_data) {
             if op.set_cancelled() {
                 // The op is completed.
+                trace!("cancel and remove {}", user_data);
                 self.ops.remove(user_data);
                 return;
             }
@@ -214,16 +220,17 @@ impl Proactor {
 
     /// Push an operation into the driver, and return the unique key, called
     /// user-defined data, associated with it.
-    pub fn push<T: OpCode + 'static>(&mut self, op: T) -> PushEntry<usize, BufResult<usize, T>> {
+    pub fn push<T: OpCode + 'static>(&mut self, op: T) -> PushEntry<Key<T>, BufResult<usize, T>> {
         let entry = self.ops.vacant_entry();
         let user_data = entry.key();
         let op = RawOp::new(user_data, op);
         let op = entry.insert(op);
         match self.driver.push(user_data, op) {
-            Poll::Pending => PushEntry::Pending(user_data),
+            Poll::Pending => PushEntry::Pending(unsafe { Key::new(user_data) }),
             Poll::Ready(res) => {
-                let op = self.ops.remove(user_data);
-                PushEntry::Ready(BufResult(res, unsafe { op.into_inner::<T>() }))
+                let mut op = self.ops.remove(user_data);
+                op.set_result(res);
+                PushEntry::Ready(unsafe { op.into_inner::<T>() })
             }
         }
     }
@@ -233,7 +240,7 @@ impl Proactor {
     pub fn poll(
         &mut self,
         timeout: Option<Duration>,
-        entries: &mut impl Extend<Entry>,
+        entries: &mut impl Extend<usize>,
     ) -> io::Result<()> {
         unsafe {
             self.driver
@@ -243,20 +250,23 @@ impl Proactor {
     }
 
     /// Get the pushed operations from the completion entries.
-    pub fn pop<'a>(
-        &'a mut self,
-        entries: &'a mut impl Iterator<Item = Entry>,
-    ) -> impl Iterator<Item = BufResult<usize, Operation>> + 'a {
-        std::iter::from_fn(|| {
-            entries.next().map(|entry| {
-                let op = self
-                    .ops
-                    .try_remove(entry.user_data())
-                    .expect("the entry should be valid");
-                let op = Operation::new(op, entry.user_data());
-                BufResult(entry.into_result(), op)
-            })
-        })
+    pub fn pop<T: OpCode>(&mut self, user_data: Key<T>) -> BufResult<usize, T> {
+        instrument!(compio_log::Level::DEBUG, "pop", ?user_data);
+        let op = self
+            .ops
+            .try_remove(*user_data)
+            .expect("the entry should be valid");
+        trace!("poped {}", *user_data);
+        // Safety: user cannot create key with safe code, so the type should be correct
+        unsafe { op.into_inner::<T>() }
+    }
+
+    /// Query if the operation has completed.
+    pub fn has_result(&self, user_data: usize) -> bool {
+        self.ops
+            .get(user_data)
+            .map(|op| op.has_result())
+            .unwrap_or_default()
     }
 
     /// Create a notify handle to interrupt the inner driver.
@@ -278,32 +288,6 @@ impl Proactor {
 impl AsRawFd for Proactor {
     fn as_raw_fd(&self) -> RawFd {
         self.driver.as_raw_fd()
-    }
-}
-
-/// Contains the operation and the user_data.
-pub struct Operation {
-    op: RawOp,
-    user_data: usize,
-}
-
-impl Operation {
-    pub(crate) fn new(op: RawOp, user_data: usize) -> Self {
-        Self { op, user_data }
-    }
-
-    /// Restore the original operation.
-    ///
-    /// # Safety
-    ///
-    /// The caller should guarantee that the type is right.
-    pub unsafe fn into_op<T: OpCode>(self) -> T {
-        self.op.into_inner()
-    }
-
-    /// The same user_data when the operation is pushed into the driver.
-    pub fn user_data(&self) -> usize {
-        self.user_data
     }
 }
 
@@ -348,13 +332,16 @@ impl<'a, 'b, E> OutEntries<'a, 'b, E> {
     }
 }
 
-impl<E: Extend<Entry>> Extend<Entry> for OutEntries<'_, '_, E> {
+impl<E: Extend<usize>> Extend<Entry> for OutEntries<'_, '_, E> {
     fn extend<T: IntoIterator<Item = Entry>>(&mut self, iter: T) {
-        self.entries.extend(iter.into_iter().map(|e| {
-            if self.registry[e.user_data()].set_completed() {
-                self.registry.remove(e.user_data());
+        self.entries.extend(iter.into_iter().filter_map(|e| {
+            let user_data = e.user_data();
+            if self.registry[user_data].set_result(e.into_result()) {
+                self.registry.remove(user_data);
+                None
+            } else {
+                Some(user_data)
             }
-            e
         }))
     }
 }

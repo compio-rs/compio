@@ -13,7 +13,7 @@ use std::{
 use async_task::{Runnable, Task};
 use compio_buf::IntoInner;
 use compio_driver::{
-    op::Asyncify, AsRawFd, Entry, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
+    op::Asyncify, AsRawFd, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
 };
 use compio_log::{debug, instrument};
 use crossbeam_queue::SegQueue;
@@ -28,7 +28,7 @@ pub(crate) mod time;
 use crate::runtime::time::{TimerFuture, TimerRuntime};
 use crate::{
     runtime::op::{OpFuture, OpRuntime},
-    BufResult, Key,
+    BufResult,
 };
 
 static RUNTIME_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -119,10 +119,7 @@ impl RuntimeInner {
     }
 
     pub fn submit_raw<T: OpCode + 'static>(&self, op: T) -> PushEntry<Key<T>, BufResult<usize, T>> {
-        self.driver
-            .borrow_mut()
-            .push(op)
-            .map_pending(|user_data| unsafe { Key::<T>::new(user_data) })
+        self.driver.borrow_mut().push(op)
     }
 
     pub fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
@@ -159,16 +156,11 @@ impl RuntimeInner {
     ) -> Poll<BufResult<usize, T>> {
         instrument!(compio_log::Level::DEBUG, "poll_task", ?user_data,);
         let mut op_runtime = self.op_runtime.borrow_mut();
-        if op_runtime.has_result(*user_data) {
+        let mut driver = self.driver.borrow_mut();
+        if driver.has_result(*user_data) {
             debug!("has result");
-            let op = op_runtime.remove(*user_data);
-            let res = self
-                .driver
-                .borrow_mut()
-                .pop(&mut op.into_completed().into_iter())
-                .next()
-                .expect("the result should have come");
-            Poll::Ready(res.map_buffer(|op| unsafe { op.into_op::<T>() }))
+            op_runtime.remove(*user_data);
+            Poll::Ready(driver.pop::<T>(user_data))
         } else {
             debug!("update waker");
             op_runtime.update_waker(*user_data, cx.waker().clone());
@@ -198,13 +190,13 @@ impl RuntimeInner {
         let timeout = self.timer_runtime.borrow().min_timeout();
         debug!("timeout: {:?}", timeout);
 
-        let mut entries = SmallVec::<[Entry; 1024]>::new();
+        let mut entries = SmallVec::<[usize; 1024]>::new();
         let mut driver = self.driver.borrow_mut();
         match driver.poll(timeout, &mut entries) {
             Ok(_) => {
                 debug!("poll driver ok, entries: {}", entries.len());
                 for entry in entries {
-                    self.op_runtime.borrow_mut().update_result(entry);
+                    self.op_runtime.borrow_mut().wake(entry);
                 }
             }
             Err(e) => match e.kind() {
