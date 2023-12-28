@@ -481,7 +481,7 @@ impl RawOp {
 
 impl Drop for RawOp {
     fn drop(&mut self) {
-        if self.has_result() && self.cancelled {
+        if self.has_result() {
             let _ = unsafe { Box::from_raw(self.op.as_ptr()) };
         }
     }
