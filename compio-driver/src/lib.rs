@@ -293,7 +293,7 @@ impl AsRawFd for Proactor {
 
 /// An completed entry returned from kernel.
 #[derive(Debug)]
-pub struct Entry {
+pub(crate) struct Entry {
     user_data: usize,
     result: io::Result<usize>,
 }
