@@ -124,7 +124,11 @@ impl RuntimeInner {
 
     pub fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
         match self.submit_raw(op) {
-            PushEntry::Pending(user_data) => Either::Left(OpFuture::new(user_data)),
+            PushEntry::Pending(user_data) => {
+                // Clear previous waker if exists.
+                self.op_runtime.borrow_mut().remove(*user_data);
+                Either::Left(OpFuture::new(user_data))
+            }
             PushEntry::Ready(res) => Either::Right(ready(res)),
         }
     }

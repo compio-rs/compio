@@ -27,7 +27,7 @@ impl OpRuntime {
     }
 
     pub fn remove(&mut self, key: usize) {
-        self.ops.remove(&key).unwrap();
+        self.ops.remove(&key);
     }
 }
 
