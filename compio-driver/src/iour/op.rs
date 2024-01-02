@@ -1,4 +1,4 @@
-use std::{os::fd::RawFd, pin::Pin};
+use std::{ffi::CString, os::fd::RawFd, pin::Pin};
 
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
@@ -47,6 +47,87 @@ impl OpCode for OpenFile {
 impl OpCode for CloseFile {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::Close::new(Fd(self.fd)).build().into()
+    }
+}
+
+/// Get metadata of an opened file.
+pub struct FileStat {
+    pub(crate) fd: RawFd,
+    pub(crate) stat: libc::statx,
+}
+
+impl FileStat {
+    /// Create [`FileStat`].
+    pub fn new(fd: RawFd) -> Self {
+        Self {
+            fd,
+            stat: unsafe { std::mem::zeroed() },
+        }
+    }
+}
+
+impl OpCode for FileStat {
+    fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
+        static EMPTY_NAME: &[u8] = b"\0";
+        opcode::Statx::new(
+            Fd(self.fd),
+            EMPTY_NAME.as_ptr().cast(),
+            std::ptr::addr_of_mut!(self.stat).cast(),
+        )
+        .flags(libc::AT_EMPTY_PATH)
+        .build()
+        .into()
+    }
+}
+
+impl IntoInner for FileStat {
+    type Inner = libc::stat;
+
+    fn into_inner(self) -> Self::Inner {
+        statx_to_stat(self.stat)
+    }
+}
+
+/// Get metadata from path.
+pub struct PathStat {
+    pub(crate) path: CString,
+    pub(crate) stat: libc::statx,
+    pub(crate) follow_symlink: bool,
+}
+
+impl PathStat {
+    /// Create [`PathStat`].
+    pub fn new(path: CString, follow_symlink: bool) -> Self {
+        Self {
+            path,
+            stat: unsafe { std::mem::zeroed() },
+            follow_symlink,
+        }
+    }
+}
+
+impl OpCode for PathStat {
+    fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
+        let mut flags = libc::AT_EMPTY_PATH;
+        if !self.follow_symlink {
+            flags |= libc::AT_SYMLINK_NOFOLLOW;
+        }
+        opcode::Statx::new(
+            Fd(libc::AT_FDCWD),
+            self.path.as_ptr(),
+            std::ptr::addr_of_mut!(self.stat).cast(),
+        )
+        .flags(flags)
+        .build()
+        .into()
+    }
+}
+
+impl IntoInner for PathStat {
+    type Inner = libc::stat;
+
+    fn into_inner(self) -> Self::Inner {
+        statx_to_stat(self.stat)
     }
 }
 

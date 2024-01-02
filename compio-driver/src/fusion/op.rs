@@ -1,3 +1,5 @@
+use std::ffi::CString;
+
 use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use socket2::SockAddr;
 
@@ -93,3 +95,5 @@ op!(<T: IoBufMut> RecvFrom(fd: RawFd, buffer: T));
 op!(<T: IoBuf> SendTo(fd: RawFd, buffer: T, addr: SockAddr));
 op!(<T: IoVectoredBufMut> RecvFromVectored(fd: RawFd, buffer: T));
 op!(<T: IoVectoredBuf> SendToVectored(fd: RawFd, buffer: T, addr: SockAddr));
+op!(<> FileStat(fd: RawFd));
+op!(<> PathStat(path: CString, follow_symlink: bool));

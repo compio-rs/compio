@@ -2,7 +2,6 @@ use std::{io, path::Path, ptr::null};
 
 use compio_driver::{op::OpenFile, FromRawFd, RawFd};
 use compio_runtime::Runtime;
-use widestring::U16CString;
 use windows_sys::Win32::{
     Foundation::{ERROR_INVALID_PARAMETER, GENERIC_READ, GENERIC_WRITE},
     Security::SECURITY_ATTRIBUTES,
@@ -13,7 +12,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::File;
+use crate::{path_string, File};
 
 #[derive(Clone, Debug)]
 pub struct OpenOptions {
@@ -131,12 +130,7 @@ impl OpenOptions {
     }
 
     pub async fn open(&self, p: impl AsRef<Path>) -> io::Result<File> {
-        let p = U16CString::from_os_str(p.as_ref().as_os_str()).map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "file name contained an unexpected NUL byte",
-            )
-        })?;
+        let p = path_string(p)?;
         let op = OpenFile::new(
             p,
             self.get_access_mode()?,

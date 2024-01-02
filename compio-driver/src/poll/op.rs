@@ -1,4 +1,4 @@
-use std::{io, pin::Pin, task::Poll};
+use std::{ffi::CString, io, pin::Pin, task::Poll};
 
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
@@ -59,6 +59,118 @@ impl OpCode for CloseFile {
 
     fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(syscall!(libc::close(self.fd))? as _))
+    }
+}
+
+/// Get metadata of an opened file.
+pub struct FileStat {
+    pub(crate) fd: RawFd,
+    pub(crate) stat: libc::stat,
+}
+
+impl FileStat {
+    /// Create [`FileStat`].
+    pub fn new(fd: RawFd) -> Self {
+        Self {
+            fd,
+            stat: unsafe { std::mem::zeroed() },
+        }
+    }
+}
+
+impl OpCode for FileStat {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::blocking_dummy())
+    }
+
+    fn on_event(mut self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        {
+            let mut s: libc::statx = unsafe { std::mem::zeroed() };
+            static EMPTY_NAME: &[u8] = b"\0";
+            syscall!(libc::statx(
+                self.fd,
+                EMPTY_NAME.as_ptr().cast(),
+                libc::AT_EMPTY_PATH,
+                0,
+                &mut s
+            ))?;
+            self.stat = statx_to_stat(s);
+            Poll::Ready(Ok(0))
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        {
+            Poll::Ready(Ok(syscall!(libc::fstat(self.fd, &mut self.stat))? as _))
+        }
+    }
+}
+
+impl IntoInner for FileStat {
+    type Inner = libc::stat;
+
+    fn into_inner(self) -> Self::Inner {
+        self.stat
+    }
+}
+
+/// Get metadata from path.
+pub struct PathStat {
+    pub(crate) path: CString,
+    pub(crate) stat: libc::stat,
+    pub(crate) follow_symlink: bool,
+}
+
+impl PathStat {
+    /// Create [`PathStat`].
+    pub fn new(path: CString, follow_symlink: bool) -> Self {
+        Self {
+            path,
+            stat: unsafe { std::mem::zeroed() },
+            follow_symlink,
+        }
+    }
+}
+
+impl OpCode for PathStat {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::blocking_dummy())
+    }
+
+    fn on_event(mut self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        {
+            let mut flags = libc::AT_EMPTY_PATH;
+            if !self.follow_symlink {
+                flags |= libc::AT_SYMLINK_NOFOLLOW;
+            }
+            let mut s: libc::statx = unsafe { std::mem::zeroed() };
+            syscall!(libc::statx(
+                libc::AT_FDCWD,
+                self.path.as_ptr(),
+                flags,
+                0,
+                &mut s
+            ))?;
+            self.stat = statx_to_stat(s);
+            Poll::Ready(Ok(0))
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        {
+            let f = if self.follow_symlink {
+                libc::stat
+            } else {
+                libc::lstat
+            };
+            Poll::Ready(Ok(syscall!(f(self.path.as_ptr(), &mut self.stat))? as _))
+        }
+    }
+}
+
+impl IntoInner for PathStat {
+    type Inner = libc::stat;
+
+    fn into_inner(self) -> Self::Inner {
+        self.stat
     }
 }
 
