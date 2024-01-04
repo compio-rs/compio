@@ -8,7 +8,7 @@ use std::{
 
 use slab::Slab;
 
-use crate::Runtime;
+use crate::runtime::{FutureState, Runtime};
 
 #[derive(Debug)]
 struct TimerEntry {
@@ -36,14 +36,9 @@ impl Ord for TimerEntry {
     }
 }
 
-enum TimerState {
-    Active(Option<Waker>),
-    Completed,
-}
-
 pub struct TimerRuntime {
     time: Instant,
-    tasks: Slab<TimerState>,
+    tasks: Slab<FutureState>,
     wheel: BinaryHeap<TimerEntry>,
 }
 
@@ -59,7 +54,7 @@ impl TimerRuntime {
     pub fn is_completed(&self, key: usize) -> bool {
         self.tasks
             .get(key)
-            .map(|state| matches!(state, TimerState::Completed))
+            .map(|state| matches!(state, FutureState::Completed))
             .unwrap_or_default()
     }
 
@@ -68,7 +63,7 @@ impl TimerRuntime {
             return None;
         }
         let elapsed = self.time.elapsed();
-        let key = self.tasks.insert(TimerState::Active(None));
+        let key = self.tasks.insert(FutureState::Active(None));
         delay += elapsed;
         let entry = TimerEntry { key, delay };
         self.wheel.push(entry);
@@ -77,7 +72,7 @@ impl TimerRuntime {
 
     pub fn update_waker(&mut self, key: usize, waker: Waker) {
         if let Some(w) = self.tasks.get_mut(key) {
-            *w = TimerState::Active(Some(waker));
+            *w = FutureState::Active(Some(waker));
         }
     }
 
@@ -101,8 +96,8 @@ impl TimerRuntime {
         while let Some(entry) = self.wheel.pop() {
             if entry.delay <= elapsed {
                 if let Some(state) = self.tasks.get_mut(entry.key) {
-                    let old_state = std::mem::replace(state, TimerState::Completed);
-                    if let TimerState::Active(Some(waker)) = old_state {
+                    let old_state = std::mem::replace(state, FutureState::Completed);
+                    if let FutureState::Active(Some(waker)) = old_state {
                         waker.wake();
                     }
                 }

@@ -7,7 +7,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
-    task::{Context, Poll},
+    task::{Context, Poll, Waker},
 };
 
 use async_task::{Runnable, Task};
@@ -30,6 +30,17 @@ use crate::{
     runtime::op::{OpFuture, OpRuntime},
     BufResult,
 };
+
+pub(crate) enum FutureState {
+    Active(Option<Waker>),
+    Completed,
+}
+
+impl Default for FutureState {
+    fn default() -> Self {
+        Self::Active(None)
+    }
+}
 
 static RUNTIME_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -126,7 +137,7 @@ impl RuntimeInner {
         match self.submit_raw(op) {
             PushEntry::Pending(user_data) => {
                 // Clear previous waker if exists.
-                self.op_runtime.borrow_mut().remove(*user_data);
+                self.op_runtime.borrow_mut().cancel(*user_data);
                 Either::Left(OpFuture::new(user_data))
             }
             PushEntry::Ready(res) => Either::Right(ready(res)),
@@ -144,8 +155,10 @@ impl RuntimeInner {
     }
 
     pub fn cancel_op<T>(&self, user_data: Key<T>) {
-        self.op_runtime.borrow_mut().remove(*user_data);
-        self.driver.borrow_mut().cancel(*user_data);
+        let completed = self.op_runtime.borrow_mut().cancel(*user_data);
+        if !completed {
+            self.driver.borrow_mut().cancel(*user_data);
+        }
     }
 
     #[cfg(feature = "time")]
@@ -163,7 +176,7 @@ impl RuntimeInner {
         let mut driver = self.driver.borrow_mut();
         if driver.has_result(*user_data) {
             debug!("has result");
-            op_runtime.remove(*user_data);
+            op_runtime.cancel(*user_data);
             Poll::Ready(driver.pop::<T>(user_data))
         } else {
             debug!("update waker");
