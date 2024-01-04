@@ -268,7 +268,7 @@ impl Driver {
     pub unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        mut entries: OutEntries<impl Extend<Entry>>,
+        mut entries: OutEntries<impl Extend<usize>>,
     ) -> io::Result<()> {
         self.poll.wait(&mut self.events, timeout)?;
         if self.events.is_empty() && self.pool_completed.is_empty() && timeout.is_some() {

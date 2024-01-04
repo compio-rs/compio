@@ -8,7 +8,7 @@ use std::{
 
 use slab::Slab;
 
-use crate::Runtime;
+use crate::runtime::{FutureState, Runtime};
 
 #[derive(Debug)]
 struct TimerEntry {
@@ -38,7 +38,7 @@ impl Ord for TimerEntry {
 
 pub struct TimerRuntime {
     time: Instant,
-    tasks: Slab<Option<Waker>>,
+    tasks: Slab<FutureState>,
     wheel: BinaryHeap<TimerEntry>,
 }
 
@@ -51,8 +51,11 @@ impl TimerRuntime {
         }
     }
 
-    pub fn contains(&self, key: usize) -> bool {
-        self.tasks.contains(key)
+    pub fn is_completed(&self, key: usize) -> bool {
+        self.tasks
+            .get(key)
+            .map(|state| matches!(state, FutureState::Completed))
+            .unwrap_or_default()
     }
 
     pub fn insert(&mut self, mut delay: Duration) -> Option<usize> {
@@ -60,7 +63,7 @@ impl TimerRuntime {
             return None;
         }
         let elapsed = self.time.elapsed();
-        let key = self.tasks.insert(None);
+        let key = self.tasks.insert(FutureState::Active(None));
         delay += elapsed;
         let entry = TimerEntry { key, delay };
         self.wheel.push(entry);
@@ -69,7 +72,7 @@ impl TimerRuntime {
 
     pub fn update_waker(&mut self, key: usize, waker: Waker) {
         if let Some(w) = self.tasks.get_mut(key) {
-            *w = Some(waker);
+            *w = FutureState::Active(Some(waker));
         }
     }
 
@@ -92,8 +95,9 @@ impl TimerRuntime {
         let elapsed = self.time.elapsed();
         while let Some(entry) = self.wheel.pop() {
             if entry.delay <= elapsed {
-                if self.tasks.contains(entry.key) {
-                    if let Some(waker) = self.tasks.remove(entry.key) {
+                if let Some(state) = self.tasks.get_mut(entry.key) {
+                    let old_state = std::mem::replace(state, FutureState::Completed);
+                    if let FutureState::Active(Some(waker)) = old_state {
                         waker.wake();
                     }
                 }
@@ -107,15 +111,11 @@ impl TimerRuntime {
 
 pub struct TimerFuture {
     key: usize,
-    completed: bool,
 }
 
 impl TimerFuture {
     pub fn new(key: usize) -> Self {
-        Self {
-            key,
-            completed: false,
-        }
+        Self { key }
     }
 }
 
@@ -123,18 +123,12 @@ impl Future for TimerFuture {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let res = Runtime::current().inner().poll_timer(cx, self.key);
-        if res.is_ready() {
-            self.get_mut().completed = true;
-        }
-        res
+        Runtime::current().inner().poll_timer(cx, self.key)
     }
 }
 
 impl Drop for TimerFuture {
     fn drop(&mut self) {
-        if !self.completed {
-            Runtime::current().inner().cancel_timer(self.key);
-        }
+        Runtime::current().inner().cancel_timer(self.key);
     }
 }
