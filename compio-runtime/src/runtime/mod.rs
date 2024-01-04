@@ -176,7 +176,7 @@ impl RuntimeInner {
     pub fn poll_timer(&self, cx: &mut Context, key: usize) -> Poll<()> {
         instrument!(compio_log::Level::DEBUG, "poll_timer", ?cx, ?key);
         let mut timer_runtime = self.timer_runtime.borrow_mut();
-        if timer_runtime.contains(key) {
+        if !timer_runtime.is_completed(key) {
             debug!("pending");
             timer_runtime.update_waker(key, cx.waker().clone());
             Poll::Pending
