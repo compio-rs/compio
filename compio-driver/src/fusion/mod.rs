@@ -17,7 +17,7 @@ pub use poll::{Decision, OpCode as PollOpCode};
 use slab::Slab;
 
 pub(crate) use crate::unix::RawOp;
-use crate::{Entry, OutEntries, ProactorBuilder};
+use crate::{OutEntries, ProactorBuilder};
 
 mod driver_type {
     use std::sync::atomic::{AtomicU8, Ordering};
@@ -153,7 +153,7 @@ impl Driver {
     pub unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        entries: OutEntries<impl Extend<Entry>>,
+        entries: OutEntries<impl Extend<usize>>,
     ) -> io::Result<()> {
         match &mut self.fuse {
             FuseDriver::Poll(driver) => driver.poll(timeout, entries),

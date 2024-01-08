@@ -16,8 +16,7 @@ impl<T> Clone for Key<T> {
 impl<T> Copy for Key<T> {}
 
 impl<T> Key<T> {
-    /// Create a new `Key` with the given user data. If this `Key` won't be used
-    /// to poll data from drivers, use [`Key::new_dummy`] instead.
+    /// Create a new `Key` with the given user data.
     ///
     /// # Safety
     ///

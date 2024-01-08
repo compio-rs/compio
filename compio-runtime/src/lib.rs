@@ -13,7 +13,6 @@
 #![warn(missing_docs)]
 
 mod attacher;
-mod key;
 mod runtime;
 
 #[cfg(feature = "event")]
@@ -24,5 +23,4 @@ pub mod time;
 pub use async_task::Task;
 pub use attacher::*;
 use compio_buf::BufResult;
-pub(crate) use key::Key;
 pub use runtime::{spawn, spawn_blocking, EnterGuard, Runtime, RuntimeBuilder};

@@ -217,7 +217,7 @@ impl Driver {
     pub unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        mut entries: OutEntries<impl Extend<Entry>>,
+        mut entries: OutEntries<impl Extend<usize>>,
     ) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         if !self.notifier_registered {

@@ -7,13 +7,13 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
-    task::{Context, Poll},
+    task::{Context, Poll, Waker},
 };
 
 use async_task::{Runnable, Task};
 use compio_buf::IntoInner;
 use compio_driver::{
-    op::Asyncify, AsRawFd, Entry, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
+    op::Asyncify, AsRawFd, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
 };
 use compio_log::{debug, instrument};
 use crossbeam_queue::SegQueue;
@@ -28,8 +28,19 @@ pub(crate) mod time;
 use crate::runtime::time::{TimerFuture, TimerRuntime};
 use crate::{
     runtime::op::{OpFuture, OpRuntime},
-    BufResult, Key,
+    BufResult,
 };
+
+pub(crate) enum FutureState {
+    Active(Option<Waker>),
+    Completed,
+}
+
+impl Default for FutureState {
+    fn default() -> Self {
+        Self::Active(None)
+    }
+}
 
 static RUNTIME_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -119,15 +130,16 @@ impl RuntimeInner {
     }
 
     pub fn submit_raw<T: OpCode + 'static>(&self, op: T) -> PushEntry<Key<T>, BufResult<usize, T>> {
-        self.driver
-            .borrow_mut()
-            .push(op)
-            .map_pending(|user_data| unsafe { Key::<T>::new(user_data) })
+        self.driver.borrow_mut().push(op)
     }
 
     pub fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
         match self.submit_raw(op) {
-            PushEntry::Pending(user_data) => Either::Left(OpFuture::new(user_data)),
+            PushEntry::Pending(user_data) => {
+                // Clear previous waker if exists.
+                self.op_runtime.borrow_mut().cancel(*user_data);
+                Either::Left(OpFuture::new(user_data))
+            }
             PushEntry::Ready(res) => Either::Right(ready(res)),
         }
     }
@@ -143,8 +155,10 @@ impl RuntimeInner {
     }
 
     pub fn cancel_op<T>(&self, user_data: Key<T>) {
-        self.op_runtime.borrow_mut().remove(*user_data);
-        self.driver.borrow_mut().cancel(*user_data);
+        let completed = self.op_runtime.borrow_mut().cancel(*user_data);
+        if !completed {
+            self.driver.borrow_mut().cancel(*user_data);
+        }
     }
 
     #[cfg(feature = "time")]
@@ -159,16 +173,11 @@ impl RuntimeInner {
     ) -> Poll<BufResult<usize, T>> {
         instrument!(compio_log::Level::DEBUG, "poll_task", ?user_data,);
         let mut op_runtime = self.op_runtime.borrow_mut();
-        if op_runtime.has_result(*user_data) {
+        let mut driver = self.driver.borrow_mut();
+        if driver.has_result(*user_data) {
             debug!("has result");
-            let op = op_runtime.remove(*user_data);
-            let res = self
-                .driver
-                .borrow_mut()
-                .pop(&mut op.into_completed().into_iter())
-                .next()
-                .expect("the result should have come");
-            Poll::Ready(res.map_buffer(|op| unsafe { op.into_op::<T>() }))
+            op_runtime.cancel(*user_data);
+            Poll::Ready(driver.pop::<T>(user_data))
         } else {
             debug!("update waker");
             op_runtime.update_waker(*user_data, cx.waker().clone());
@@ -180,7 +189,7 @@ impl RuntimeInner {
     pub fn poll_timer(&self, cx: &mut Context, key: usize) -> Poll<()> {
         instrument!(compio_log::Level::DEBUG, "poll_timer", ?cx, ?key);
         let mut timer_runtime = self.timer_runtime.borrow_mut();
-        if timer_runtime.contains(key) {
+        if !timer_runtime.is_completed(key) {
             debug!("pending");
             timer_runtime.update_waker(key, cx.waker().clone());
             Poll::Pending
@@ -198,13 +207,13 @@ impl RuntimeInner {
         let timeout = self.timer_runtime.borrow().min_timeout();
         debug!("timeout: {:?}", timeout);
 
-        let mut entries = SmallVec::<[Entry; 1024]>::new();
+        let mut entries = SmallVec::<[usize; 1024]>::new();
         let mut driver = self.driver.borrow_mut();
         match driver.poll(timeout, &mut entries) {
             Ok(_) => {
                 debug!("poll driver ok, entries: {}", entries.len());
                 for entry in entries {
-                    self.op_runtime.borrow_mut().update_result(entry);
+                    self.op_runtime.borrow_mut().wake(entry);
                 }
             }
             Err(e) => match e.kind() {
