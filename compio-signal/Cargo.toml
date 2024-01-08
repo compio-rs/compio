@@ -18,11 +18,12 @@ rustdoc-args = ["--cfg", "docsrs"]
 # Workspace dependencies
 compio-runtime = { workspace = true, features = ["event"] }
 
+once_cell = { workspace = true }
+slab = { workspace = true }
+
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
 compio-driver = { workspace = true }
-once_cell = { workspace = true }
-slab = { workspace = true }
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_System_Console",
@@ -30,6 +31,7 @@ windows-sys = { workspace = true, features = [
 
 # Unix specific dependencies
 [target.'cfg(unix)'.dependencies]
+os_pipe = { workspace = true }
 libc = { workspace = true }
 
 [features]
