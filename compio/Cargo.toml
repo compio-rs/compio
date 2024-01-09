@@ -66,6 +66,7 @@ windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
 
 # Unix specific dev dependencies
 [target.'cfg(unix)'.dev-dependencies]
+monoio = { workspace = true, features = ["legacy"] }
 nix = { workspace = true, features = ["fs"] }
 libc = { workspace = true }
 
