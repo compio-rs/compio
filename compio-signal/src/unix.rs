@@ -9,13 +9,13 @@ use std::{
     sync::Mutex,
 };
 
-use compio_runtime::event::{Event, EventHandle};
+use futures_channel::oneshot::{channel, Receiver, Sender};
 #[cfg(not(feature = "lazy_cell"))]
 use once_cell::sync::Lazy as LazyLock;
 use os_pipe::{PipeReader, PipeWriter};
 use slab::Slab;
 
-static HANDLER: LazyLock<Mutex<HashMap<i32, Slab<EventHandle>>>> =
+static HANDLER: LazyLock<Mutex<HashMap<i32, Slab<Sender<()>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static PIPE: LazyLock<Pipe> = LazyLock::new(|| Pipe::new().unwrap());
 
@@ -55,7 +55,7 @@ fn real_signal_handler(mut receiver: PipeReader) {
                 if !fds.is_empty() {
                     let fds = std::mem::take(fds);
                     for (_, fd) in fds {
-                        fd.notify().ok();
+                        fd.send(()).ok();
                     }
                 }
             }
@@ -74,15 +74,14 @@ unsafe fn uninit(sig: i32) {
     libc::signal(sig, libc::SIG_DFL);
 }
 
-fn register(sig: i32, fd: &Event) -> io::Result<usize> {
+fn register(sig: i32, sender: Sender<()>) -> io::Result<usize> {
     unsafe { init(sig) };
-    let handle = fd.handle()?;
     let key = HANDLER
         .lock()
         .unwrap()
         .entry(sig)
         .or_default()
-        .insert(handle);
+        .insert(sender);
     Ok(key)
 }
 
@@ -107,26 +106,26 @@ fn unregister(sig: i32, key: usize) {
 struct SignalFd {
     sig: i32,
     key: usize,
-    event: Option<Event>,
+    receiver: Option<Receiver<()>>,
 }
 
 impl SignalFd {
     fn new(sig: i32) -> io::Result<Self> {
-        let event = Event::new()?;
-        let key = register(sig, &event)?;
+        let (sender, receiver) = channel();
+        let key = register(sig, sender)?;
         Ok(Self {
             sig,
             key,
-            event: Some(event),
+            receiver: Some(receiver),
         })
     }
 
     async fn wait(mut self) -> io::Result<()> {
-        self.event
+        self.receiver
             .take()
             .expect("event could not be None")
-            .wait()
             .await
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 }
 

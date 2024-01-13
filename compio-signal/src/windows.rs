@@ -83,7 +83,7 @@ impl CtrlEvent {
     pub async fn wait(mut self) -> io::Result<()> {
         self.receiver
             .take()
-            .unwrap()
+            .expect("event could not be None")
             .await
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
