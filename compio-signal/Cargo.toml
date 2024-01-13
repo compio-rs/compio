@@ -16,7 +16,9 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 # Workspace dependencies
-compio-runtime = { workspace = true, features = ["event"] }
+compio-runtime = { workspace = true }
+
+futures-channel = { workspace = true }
 
 once_cell = { workspace = true }
 slab = { workspace = true }

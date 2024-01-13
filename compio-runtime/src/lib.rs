@@ -15,8 +15,6 @@
 mod attacher;
 mod runtime;
 
-#[cfg(feature = "event")]
-pub mod event;
 #[cfg(feature = "time")]
 pub mod time;
 

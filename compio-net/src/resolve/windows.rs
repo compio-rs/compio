@@ -6,7 +6,7 @@ use std::{
 };
 
 use compio_driver::syscall;
-use compio_runtime::event::EventHandle;
+use futures_channel::oneshot::{channel, Sender};
 use socket2::SockAddr;
 use widestring::U16CString;
 use windows_sys::Win32::{
@@ -47,16 +47,12 @@ impl AsyncResolver {
         let overlapped_ptr = lpoverlapped.cast::<GAIOverlapped>().cast_mut();
         if let Some(overlapped) = overlapped_ptr.as_mut() {
             if let Some(handle) = overlapped.handle.take() {
-                handle.notify().ok();
+                handle.send(()).ok();
             }
         }
     }
 
-    pub unsafe fn call(
-        &mut self,
-        hints: &ADDRINFOEXW,
-        handle: EventHandle,
-    ) -> Poll<io::Result<()>> {
+    pub unsafe fn call(&mut self, hints: &ADDRINFOEXW, handle: Sender<()>) -> Poll<io::Result<()>> {
         self.overlapped.handle = Some(handle);
         let res = GetAddrInfoExW(
             self.name.as_ptr(),
@@ -127,7 +123,7 @@ impl Drop for AsyncResolver {
 #[repr(C)]
 struct GAIOverlapped {
     base: OVERLAPPED,
-    handle: Option<EventHandle>,
+    handle: Option<Sender<()>>,
 }
 
 impl GAIOverlapped {
@@ -143,22 +139,21 @@ pub async fn resolve_sock_addrs(
     host: &str,
     port: u16,
 ) -> io::Result<std::vec::IntoIter<SocketAddr>> {
-    use compio_runtime::event::Event;
-
     let mut resolver = AsyncResolver::new(host, port)?;
     let mut hints: ADDRINFOEXW = unsafe { std::mem::zeroed() };
     hints.ai_family = AF_UNSPEC as _;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
 
-    let event = Event::new()?;
-    let handle = event.handle()?;
-    match unsafe { resolver.call(&hints, handle) } {
+    let (sender, receiver) = channel::<()>();
+    match unsafe { resolver.call(&hints, sender) } {
         Poll::Ready(res) => {
             res?;
         }
         Poll::Pending => {
-            event.wait().await?;
+            receiver
+                .await
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         }
     }
 

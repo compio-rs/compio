@@ -7,16 +7,13 @@ use std::{
     io,
     num::NonZeroUsize,
     panic::{resume_unwind, UnwindSafe},
-    sync::{Arc, Mutex},
     thread::{available_parallelism, JoinHandle},
 };
 
 use compio_driver::{AsyncifyPool, ProactorBuilder};
-use compio_runtime::{
-    event::{Event, EventHandle},
-    Runtime,
-};
+use compio_runtime::Runtime;
 use crossbeam_channel::{unbounded, Sender};
+use futures_channel::oneshot;
 use futures_util::{future::LocalBoxFuture, FutureExt};
 
 /// The dispatcher. It manages the threads and dispatches the tasks.
@@ -60,10 +57,11 @@ impl Dispatcher {
                             .expect("cannot create compio runtime");
                         let _guard = runtime.enter();
                         while let Ok(f) = receiver.recv() {
-                            *f.result.lock().unwrap() = Some(std::panic::catch_unwind(|| {
-                                Runtime::current().block_on((f.func)());
-                            }));
-                            f.handle.notify().ok();
+                            f.sender
+                                .send(std::panic::catch_unwind(|| {
+                                    Runtime::current().block_on((f.func)());
+                                }))
+                                .ok();
                         }
                     })
                 }
@@ -98,12 +96,10 @@ impl Dispatcher {
         &self,
         f: Fn,
     ) -> io::Result<DispatcherJoinHandle> {
-        let event = Event::new()?;
-        let handle = event.handle()?;
-        let join_handle = DispatcherJoinHandle::new(event);
+        let (sender, receiver) = oneshot::channel();
+        let join_handle = DispatcherJoinHandle::new(receiver);
         let closure = DispatcherClosure {
-            handle,
-            result: join_handle.result.clone(),
+            sender,
             func: Box::new(|| f().boxed_local()),
         };
         self.sender
@@ -116,25 +112,23 @@ impl Dispatcher {
     /// thread panicked, this method will resume the panic.
     pub async fn join(self) -> io::Result<()> {
         drop(self.sender);
-        let results = Arc::new(Mutex::new(vec![]));
-        let event = Event::new()?;
-        let handle = event.handle()?;
+        let (sender, receiver) = oneshot::channel::<Vec<_>>();
         if let Err(f) = self.pool.dispatch({
-            let results = results.clone();
             move || {
-                *results.lock().unwrap() = self
+                let results = self
                     .threads
                     .into_iter()
                     .map(|thread| thread.join())
                     .collect();
-                handle.notify().ok();
+                sender.send(results).ok();
             }
         }) {
             std::thread::spawn(f);
         }
-        event.wait().await?;
-        let mut guard = results.lock().unwrap();
-        for res in std::mem::take::<Vec<std::thread::Result<()>>>(guard.as_mut()) {
+        let results = receiver
+            .await
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        for res in results {
             // The thread should not panic.
             res.unwrap_or_else(|e| resume_unwind(e));
         }
@@ -202,33 +196,24 @@ impl Default for DispatcherBuilder {
 type Closure<'a> = dyn (FnOnce() -> LocalBoxFuture<'a, ()>) + Send + UnwindSafe;
 
 struct DispatcherClosure {
-    handle: EventHandle,
-    result: Arc<Mutex<Option<std::thread::Result<()>>>>,
+    sender: oneshot::Sender<std::thread::Result<()>>,
     func: Box<Closure<'static>>,
 }
 
 /// The join handle for dispatched task.
 pub struct DispatcherJoinHandle {
-    event: Event,
-    result: Arc<Mutex<Option<std::thread::Result<()>>>>,
+    receiver: oneshot::Receiver<std::thread::Result<()>>,
 }
 
 impl DispatcherJoinHandle {
-    pub(crate) fn new(event: Event) -> Self {
-        Self {
-            event,
-            result: Arc::new(Mutex::new(None)),
-        }
+    pub(crate) fn new(receiver: oneshot::Receiver<std::thread::Result<()>>) -> Self {
+        Self { receiver }
     }
 
     /// Wait for the task to complete.
     pub async fn join(self) -> io::Result<std::thread::Result<()>> {
-        self.event.wait().await?;
-        Ok(self
-            .result
-            .lock()
-            .unwrap()
-            .take()
-            .expect("the result should be set"))
+        self.receiver
+            .await
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 }

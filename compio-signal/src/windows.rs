@@ -9,7 +9,7 @@ use std::{
 };
 
 use compio_driver::syscall;
-use compio_runtime::event::{Event, EventHandle};
+use futures_channel::oneshot::{channel, Receiver, Sender};
 #[cfg(not(feature = "lazy_cell"))]
 use once_cell::sync::Lazy as LazyLock;
 use slab::Slab;
@@ -21,7 +21,7 @@ use windows_sys::Win32::{
     },
 };
 
-static HANDLER: LazyLock<Mutex<HashMap<u32, Slab<EventHandle>>>> =
+static HANDLER: LazyLock<Mutex<HashMap<u32, Slab<Sender<()>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 unsafe extern "system" fn ctrl_event_handler(ctrltype: u32) -> BOOL {
@@ -30,7 +30,7 @@ unsafe extern "system" fn ctrl_event_handler(ctrltype: u32) -> BOOL {
         if !handlers.is_empty() {
             let handlers = std::mem::replace(handlers, Slab::new());
             for (_, handler) in handlers {
-                handler.notify().ok();
+                handler.send(()).ok();
             }
             return 1;
         }
@@ -45,10 +45,9 @@ fn init() -> io::Result<()> {
     Ok(())
 }
 
-fn register(ctrltype: u32, e: &Event) -> io::Result<usize> {
+fn register(ctrltype: u32, sender: Sender<()>) -> io::Result<usize> {
     let mut handler = HANDLER.lock().unwrap();
-    let handle = e.handle()?;
-    Ok(handler.entry(ctrltype).or_default().insert(handle))
+    Ok(handler.entry(ctrltype).or_default().insert(sender))
 }
 
 fn unregister(ctrltype: u32, key: usize) {
@@ -64,7 +63,7 @@ fn unregister(ctrltype: u32, key: usize) {
 #[derive(Debug)]
 struct CtrlEvent {
     ctrltype: u32,
-    event: Option<Event>,
+    receiver: Option<Receiver<()>>,
     handler_key: usize,
 }
 
@@ -72,21 +71,21 @@ impl CtrlEvent {
     pub(crate) fn new(ctrltype: u32) -> io::Result<Self> {
         INIT.call_once(|| init().unwrap());
 
-        let event = Event::new()?;
-        let handler_key = register(ctrltype, &event)?;
+        let (sender, receiver) = channel();
+        let handler_key = register(ctrltype, sender)?;
         Ok(Self {
             ctrltype,
-            event: Some(event),
+            receiver: Some(receiver),
             handler_key,
         })
     }
 
     pub async fn wait(mut self) -> io::Result<()> {
-        self.event
+        self.receiver
             .take()
-            .expect("event could not be None")
-            .wait()
+            .unwrap()
             .await
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 }
 
