@@ -60,7 +60,7 @@ pub trait AsyncRead {
 }
 
 macro_rules! impl_read {
-    (@ptr $($ty:ty),*) => {
+    ($($ty:ty),*) => {
         $(
             impl<A: AsyncRead + ?Sized> AsyncRead for $ty {
                 #[inline(always)]
@@ -75,49 +75,15 @@ macro_rules! impl_read {
             }
         )*
     };
-
-    (@slice $ty:ty, for $($tt:tt)*) => {
-        impl<$($tt)*> AsyncRead for $ty {
-            #[inline(always)]
-            async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
-                (&self[..]).read(buf).await
-            }
-
-            #[inline(always)]
-            async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
-                (&self[..]).read_vectored(buf).await
-            }
-        }
-    };
-
-    (@string $($ty:ty),*) => {
-        $(
-            impl AsyncRead for $ty {
-                #[inline(always)]
-                async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
-                    self.as_bytes().read(buf).await
-                }
-
-                #[inline(always)]
-                async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
-                    self.as_bytes().read_vectored(buf).await
-                }
-            }
-        )*
-    };
 }
 
-impl_read!(@ptr &mut A, Box<A>);
-impl_read!(@slice [u8], for);
-impl_read!(@slice [u8; LEN], for const LEN: usize);
-impl_read!(@slice &[u8; LEN], for const LEN: usize);
-impl_read!(@string String, &'_ str, &String);
+impl_read!(&mut A, Box<A>);
 
 impl AsyncRead for &[u8] {
     #[inline]
     async fn read<T: IoBufMut>(&mut self, mut buf: T) -> BufResult<usize, T> {
         let len = slice_to_buf(self, &mut buf);
-
+        *self = &self[len..];
         BufResult(Ok(len), buf)
     }
 

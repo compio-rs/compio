@@ -8,16 +8,18 @@ use compio_io::{
 
 #[tokio::test]
 async fn io_read() {
-    let mut src = "Hello, World";
-    let (len, buf) = src.read(vec![1; 10]).await.unwrap();
+    let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
+    let (len, buf) = src.read(vec![1; 6]).await.unwrap();
 
-    assert_eq!(len, 10);
-    assert_eq!(buf, b"Hello, Wor");
+    assert_eq!(len, 6);
+    assert_eq!(buf, [1, 1, 4, 5, 1, 4]);
+    assert_eq!(src.len(), 7);
+    assert_eq!(src, [1, 9, 1, 9, 8, 1, 0]);
 
     let (len, buf) = src.read(vec![0; 20]).await.unwrap();
-    assert_eq!(len, 12);
+    assert_eq!(len, 7);
     assert_eq!(buf.len(), 20);
-    assert_eq!(&buf[..12], b"Hello, World");
+    assert_eq!(&buf[..7], [1, 9, 1, 9, 8, 1, 0]);
 }
 
 #[tokio::test]
@@ -88,30 +90,32 @@ async fn io_read_at() {
 
 #[tokio::test]
 async fn readv() {
-    let mut src = "Hello, world";
+    let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
     let (len, buf) = src
-        .read_vectored([Vec::with_capacity(5), Vec::with_capacity(5)])
+        .read_vectored([Vec::with_capacity(6), Vec::with_capacity(4)])
         .await
         .unwrap();
     assert_eq!(len, 10);
-    assert_eq!(buf[0], b"Hello");
-    assert_eq!(buf[1], b", wor");
+    assert_eq!(buf[0], [1, 1, 4, 5, 1, 4]);
+    assert_eq!(buf[1], [1, 9, 1, 9]);
 
+    let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
     let (len, buf) = src
-        .read_vectored([vec![0; 5], Vec::with_capacity(10)])
+        .read_vectored([vec![0; 6], Vec::with_capacity(10)])
         .await
         .unwrap();
-    assert_eq!(len, 12);
-    assert_eq!(buf[0], b"Hello");
-    assert_eq!(buf[1], b", world");
+    assert_eq!(len, 13);
+    assert_eq!(buf[0], [1, 1, 4, 5, 1, 4]);
+    assert_eq!(buf[1], [1, 9, 1, 9, 8, 1, 0]);
 
+    let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
     let (len, buf) = src
         .read_vectored([vec![], Vec::with_capacity(20)])
         .await
         .unwrap();
-    assert_eq!(len, 12);
+    assert_eq!(len, 13);
     assert!(buf[0].is_empty());
-    assert_eq!(buf[1], b"Hello, world");
+    assert_eq!(buf[1], [1, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0]);
 }
 
 #[tokio::test]
