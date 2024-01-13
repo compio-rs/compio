@@ -1,9 +1,9 @@
 use std::{io, pin::Pin, task::Poll};
 
-use compio_driver::{NotifyHandle, OpCode, PushEntry};
+use compio_driver::{Key, NotifyHandle, OpCode, PushEntry};
 use windows_sys::Win32::System::IO::OVERLAPPED;
 
-use crate::{key::Key, runtime::op::OpFuture, Runtime};
+use crate::{runtime::op::OpFuture, Runtime};
 
 /// An event that won't wake until [`EventHandle::notify`] is called
 /// successfully.

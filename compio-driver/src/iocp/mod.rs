@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-use compio_buf::arrayvec::ArrayVec;
+use compio_buf::{arrayvec::ArrayVec, BufResult};
 use compio_log::{instrument, trace};
 use slab::Slab;
 use windows_sys::Win32::{
@@ -330,7 +330,7 @@ impl Driver {
     pub unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        mut entries: OutEntries<impl Extend<Entry>>,
+        mut entries: OutEntries<impl Extend<usize>>,
     ) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         // Prevent stack growth.
@@ -433,8 +433,8 @@ pub(crate) struct RawOp {
     op: NonNull<Overlapped<dyn OpCode>>,
     // The two flags here are manual reference counting. The driver holds the strong ref until it
     // completes; the runtime holds the strong ref until the future is dropped.
-    completed: bool,
     cancelled: bool,
+    result: Option<io::Result<usize>>,
 }
 
 impl RawOp {
@@ -443,8 +443,8 @@ impl RawOp {
         let op = Box::new(op) as Box<Overlapped<dyn OpCode>>;
         Self {
             op: unsafe { NonNull::new_unchecked(Box::into_raw(op)) },
-            completed: false,
             cancelled: false,
+            result: None,
         }
     }
 
@@ -456,28 +456,35 @@ impl RawOp {
         self.op.as_ptr()
     }
 
-    pub fn set_completed(&mut self) -> bool {
-        self.completed = true;
+    pub fn set_cancelled(&mut self) -> bool {
+        self.cancelled = true;
+        self.has_result()
+    }
+
+    pub fn set_result(&mut self, res: io::Result<usize>) -> bool {
+        self.result = Some(res);
         self.cancelled
     }
 
-    pub fn set_cancelled(&mut self) -> bool {
-        self.cancelled = true;
-        self.completed
+    pub fn has_result(&self) -> bool {
+        self.result.is_some()
     }
 
     /// # Safety
     /// The caller should ensure the correct type.
-    pub unsafe fn into_inner<T: OpCode>(self) -> T {
-        let this = ManuallyDrop::new(self);
-        let this: Box<Overlapped<T>> = Box::from_raw(this.op.cast().as_ptr());
-        this.op
+    ///
+    /// # Panics
+    /// This function will panic if the result has not been set.
+    pub unsafe fn into_inner<T: OpCode>(self) -> BufResult<usize, T> {
+        let mut this = ManuallyDrop::new(self);
+        let overlapped: Box<Overlapped<T>> = Box::from_raw(this.op.cast().as_ptr());
+        BufResult(this.result.take().unwrap(), overlapped.op)
     }
 }
 
 impl Drop for RawOp {
     fn drop(&mut self) {
-        if self.completed {
+        if self.has_result() {
             let _ = unsafe { Box::from_raw(self.op.as_ptr()) };
         }
     }
