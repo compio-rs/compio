@@ -39,8 +39,8 @@
 //! let mut reader = "Hello, world!".as_bytes();
 //! let (res, buf) = reader.read(Vec::with_capacity(20)).await.unwrap();
 //!
-//! assert!(buf.as_slice() == reader);
-//! assert!(res == 13);
+//! assert_eq!(buf.as_slice(), b"Hello, world!");
+//! assert_eq!(res, 13);
 //! # })
 //! ```
 //!
