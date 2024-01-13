@@ -472,6 +472,9 @@ impl RawOp {
 
     /// # Safety
     /// The caller should ensure the correct type.
+    ///
+    /// # Panics
+    /// This function will panic if the result has not been set.
     pub unsafe fn into_inner<T: OpCode>(self) -> BufResult<usize, T> {
         let mut this = ManuallyDrop::new(self);
         let overlapped: Box<Overlapped<T>> = Box::from_raw(this.op.cast().as_ptr());

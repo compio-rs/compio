@@ -250,6 +250,10 @@ impl Proactor {
     }
 
     /// Get the pushed operations from the completion entries.
+    ///
+    /// # Panics
+    /// This function will panic if the requested operation has not been
+    /// completed.
     pub fn pop<T: OpCode>(&mut self, user_data: Key<T>) -> BufResult<usize, T> {
         instrument!(compio_log::Level::DEBUG, "pop", ?user_data);
         let op = self
