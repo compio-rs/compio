@@ -103,3 +103,32 @@ fn register_multiple() {
     let op = CloseFile::new(fd);
     push_and_wait(&mut driver, op);
 }
+
+#[test]
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+fn custom_op() {
+    use compio_driver::op::IoUringOp;
+
+    let mut driver = Proactor::new().unwrap();
+
+    let op = open_file_op();
+    let (fd, _) = push_and_wait(&mut driver, op);
+    let fd = fd as RawFd;
+    driver.attach(fd).unwrap();
+
+    let mut buffer = vec![0u8; 1024];
+
+    let op = IoUringOp::new(
+        io_uring::opcode::Read::new(
+            io_uring::types::Fd(fd),
+            buffer.as_mut_ptr(),
+            buffer.len() as _,
+        )
+        .build(),
+    );
+    let (len, _) = push_and_wait(&mut driver, op);
+    assert!(len > 0);
+
+    let op = CloseFile::new(fd);
+    push_and_wait(&mut driver, op);
+}
