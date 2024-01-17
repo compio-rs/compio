@@ -107,7 +107,7 @@ impl IoUringOp {
     /// Create [`IoUringOp`].
     ///
     /// # Panics
-    /// This method panics if the current driver is not io-uring one.
+    /// This method panics if the current driver is not io-uring.
     pub fn new(entry: io_uring::squeue::Entry) -> Self {
         assert_eq!(
             DriverType::current(),
