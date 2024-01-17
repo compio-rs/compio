@@ -1,4 +1,4 @@
-use std::ffi::CString;
+use std::{ffi::CString, pin::Pin};
 
 use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use socket2::SockAddr;
@@ -97,3 +97,49 @@ op!(<T: IoVectoredBufMut> RecvFromVectored(fd: RawFd, buffer: T));
 op!(<T: IoVectoredBuf> SendToVectored(fd: RawFd, buffer: T, addr: SockAddr));
 op!(<> FileStat(fd: RawFd));
 op!(<> PathStat(path: CString, follow_symlink: bool));
+
+/// A custom io-uring operation.
+pub struct IoUringOp {
+    inner: iour::IoUringOp,
+}
+
+impl IoUringOp {
+    /// Create [`IoUringOp`].
+    ///
+    /// # Panics
+    /// This method panics if the current driver is not io-uring one.
+    pub fn new(entry: io_uring::squeue::Entry) -> Self {
+        assert_eq!(
+            DriverType::current(),
+            DriverType::IoUring,
+            "`IoUringOp` is only supported on io-uring driver"
+        );
+        Self {
+            inner: iour::IoUringOp::new(entry),
+        }
+    }
+}
+
+impl IntoInner for IoUringOp {
+    type Inner = io_uring::squeue::Entry;
+
+    fn into_inner(self) -> Self::Inner {
+        self.inner.into_inner()
+    }
+}
+
+impl iour::OpCode for IoUringOp {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        unsafe { self.map_unchecked_mut(|x| &mut x.inner) }.create_entry()
+    }
+}
+
+impl poll::OpCode for IoUringOp {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        unreachable!("Current driver is not `polling`")
+    }
+
+    fn on_event(self: Pin<&mut Self>, _event: &polling::Event) -> Poll<io::Result<usize>> {
+        unreachable!("Current driver is not `polling`")
+    }
+}

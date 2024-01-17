@@ -8,6 +8,8 @@ use std::net::Shutdown;
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
 use socket2::SockAddr;
 
+#[cfg(target_os = "linux")]
+pub use crate::sys::op::IoUringOp;
 pub use crate::sys::op::{
     Accept, FileStat, OpenFile, PathStat, Recv, RecvFrom, RecvFromVectored, RecvVectored, Send,
     SendTo, SendToVectored, SendVectored,

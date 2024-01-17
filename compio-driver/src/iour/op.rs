@@ -4,7 +4,7 @@ use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
 };
 use io_uring::{
-    opcode,
+    opcode, squeue,
     types::{Fd, FsyncFlags},
 };
 use libc::{sockaddr_storage, socklen_t};
@@ -473,5 +473,31 @@ impl<T: IoVectoredBuf> IntoInner for SendToVectored<T> {
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
+    }
+}
+
+/// A custom io-uring operation.
+pub struct IoUringOp {
+    entry: squeue::Entry,
+}
+
+impl IoUringOp {
+    /// Create [`IoUringOp`].
+    pub fn new(entry: squeue::Entry) -> Self {
+        Self { entry }
+    }
+}
+
+impl OpCode for IoUringOp {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        OpEntry::Submission(self.entry.clone())
+    }
+}
+
+impl IntoInner for IoUringOp {
+    type Inner = squeue::Entry;
+
+    fn into_inner(self) -> Self::Inner {
+        self.entry
     }
 }
