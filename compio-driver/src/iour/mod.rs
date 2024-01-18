@@ -61,12 +61,12 @@ pub trait OpCode {
     }
 }
 
-struct UnlimitedUring<S: squeue::EntryMarker, C: cqueue::EntryMarker> {
+struct UnboundedUring<S: squeue::EntryMarker, C: cqueue::EntryMarker> {
     inner: IoUring<S, C>,
     squeue: VecDeque<S>,
 }
 
-impl<S: squeue::EntryMarker, C: cqueue::EntryMarker> UnlimitedUring<S, C> {
+impl<S: squeue::EntryMarker, C: cqueue::EntryMarker> UnboundedUring<S, C> {
     pub fn new(capacity: u32) -> io::Result<Self> {
         Ok(Self {
             inner: IoUring::builder().build(capacity)?,
@@ -151,7 +151,7 @@ impl<S: squeue::EntryMarker, C: cqueue::EntryMarker> UnlimitedUring<S, C> {
     }
 }
 
-impl<S: squeue::EntryMarker, C: cqueue::EntryMarker> AsRawFd for UnlimitedUring<S, C> {
+impl<S: squeue::EntryMarker, C: cqueue::EntryMarker> AsRawFd for UnboundedUring<S, C> {
     fn as_raw_fd(&self) -> RawFd {
         self.inner.as_raw_fd()
     }
@@ -159,8 +159,8 @@ impl<S: squeue::EntryMarker, C: cqueue::EntryMarker> AsRawFd for UnlimitedUring<
 
 /// Low-level driver of io-uring.
 pub(crate) struct Driver {
-    inner: UnlimitedUring<squeue::Entry, cqueue::Entry>,
-    inner_128: OnceCell<UnlimitedUring<squeue::Entry128, cqueue::Entry>>,
+    inner: UnboundedUring<squeue::Entry, cqueue::Entry>,
+    inner_128: OnceCell<UnboundedUring<squeue::Entry128, cqueue::Entry>>,
     capacity: u32,
     user_data_128: HashSet<usize>,
     notifier: Notifier,
@@ -178,7 +178,7 @@ impl Driver {
         instrument!(compio_log::Level::TRACE, "new", ?builder);
         trace!("new iour driver");
         Ok(Self {
-            inner: UnlimitedUring::new(builder.capacity)?,
+            inner: UnboundedUring::new(builder.capacity)?,
             inner_128: OnceCell::new(),
             capacity: builder.capacity,
             user_data_128: HashSet::new(),
@@ -189,9 +189,9 @@ impl Driver {
         })
     }
 
-    fn inner_128(&mut self) -> io::Result<&mut UnlimitedUring<squeue::Entry128, cqueue::Entry>> {
+    fn inner_128(&mut self) -> io::Result<&mut UnboundedUring<squeue::Entry128, cqueue::Entry>> {
         self.inner_128.get_or_try_init(|| {
-            let ring = UnlimitedUring::new(self.capacity)?;
+            let ring = UnboundedUring::new(self.capacity)?;
             self.inner.push_submission(
                 PollAdd::new(Fd(ring.as_raw_fd()), libc::POLLIN as _)
                     .multi(true)
