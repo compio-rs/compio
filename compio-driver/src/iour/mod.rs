@@ -1,8 +1,16 @@
+#[cfg(feature = "once_cell_try")]
+use std::cell::OnceCell;
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 #[allow(unused_imports)]
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{
-    collections::VecDeque, io, os::fd::OwnedFd, pin::Pin, ptr::NonNull, sync::Arc, task::Poll,
+    collections::{HashSet, VecDeque},
+    io,
+    os::fd::OwnedFd,
+    pin::Pin,
+    ptr::NonNull,
+    sync::Arc,
+    task::Poll,
     time::Duration,
 };
 
@@ -10,12 +18,14 @@ use compio_log::{instrument, trace};
 use crossbeam_queue::SegQueue;
 use io_uring::{
     cqueue,
-    opcode::{AsyncCancel, Read},
+    opcode::{AsyncCancel, PollAdd, Read},
     squeue,
     types::{Fd, SubmitArgs, Timespec},
-    IoUring,
+    CompletionQueue, IoUring,
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
+#[cfg(not(feature = "once_cell_try"))]
+use once_cell::unsync::OnceCell;
 use slab::Slab;
 
 use crate::{syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder};
@@ -27,6 +37,8 @@ pub(crate) use crate::unix::RawOp;
 pub enum OpEntry {
     /// This operation creates an io-uring submission entry.
     Submission(squeue::Entry),
+    /// This operation creates an 128-bit io-uring submission entry.
+    Submission128(squeue::Entry128),
     /// This operation is a blocking one.
     Blocking,
 }
@@ -49,36 +61,21 @@ pub trait OpCode {
     }
 }
 
-/// Low-level driver of io-uring.
-pub(crate) struct Driver {
-    inner: IoUring,
-    squeue: VecDeque<squeue::Entry>,
-    notifier: Notifier,
-    notifier_registered: bool,
-    pool: AsyncifyPool,
-    pool_completed: Arc<SegQueue<Entry>>,
+struct UnlimitedUring<S: squeue::EntryMarker, C: cqueue::EntryMarker> {
+    inner: IoUring<S, C>,
+    squeue: VecDeque<S>,
 }
 
-impl Driver {
-    const CANCEL: u64 = u64::MAX;
-    const NOTIFY: u64 = u64::MAX - 1;
-
-    pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
-        instrument!(compio_log::Level::TRACE, "new", ?builder);
-        trace!("new iour driver");
+impl<S: squeue::EntryMarker, C: cqueue::EntryMarker> UnlimitedUring<S, C> {
+    pub fn new(capacity: u32) -> io::Result<Self> {
         Ok(Self {
-            inner: IoUring::new(builder.capacity)?,
-            squeue: VecDeque::with_capacity(builder.capacity as usize),
-            notifier: Notifier::new()?,
-            notifier_registered: false,
-            pool: builder.create_or_get_thread_pool(),
-            pool_completed: Arc::new(SegQueue::new()),
+            inner: IoUring::builder().build(capacity)?,
+            squeue: VecDeque::with_capacity(capacity as _),
         })
     }
 
-    // Auto means that it choose to wait or not automatically.
-    fn submit_auto(&mut self, timeout: Option<Duration>, wait: bool) -> io::Result<()> {
-        instrument!(compio_log::Level::TRACE, "submit_auto", ?timeout, wait);
+    pub fn submit(&mut self, timeout: Option<Duration>, wait: bool) -> io::Result<()> {
+        instrument!(compio_log::Level::TRACE, "submit", ?timeout, wait);
         let res = if wait {
             // Last part of submission queue, wait till timeout.
             if let Some(duration) = timeout {
@@ -94,7 +91,7 @@ impl Driver {
         trace!("submit result: {res:?}");
         match res {
             Ok(_) => {
-                if self.inner.completion().is_empty() {
+                if wait && self.inner.completion().is_empty() {
                     Err(io::Error::from_raw_os_error(libc::ETIMEDOUT))
                 } else {
                     Ok(())
@@ -108,7 +105,7 @@ impl Driver {
         }
     }
 
-    fn flush_submissions(&mut self) -> bool {
+    pub fn flush_submissions(&mut self) -> bool {
         instrument!(compio_log::Level::TRACE, "flush_submissions");
 
         let mut ended_ops = false;
@@ -145,6 +142,67 @@ impl Driver {
         ended_ops
     }
 
+    pub fn completion(&mut self) -> CompletionQueue<C> {
+        self.inner.completion()
+    }
+
+    pub fn push_submission(&mut self, entry: S) {
+        self.squeue.push_back(entry)
+    }
+}
+
+impl<S: squeue::EntryMarker, C: cqueue::EntryMarker> AsRawFd for UnlimitedUring<S, C> {
+    fn as_raw_fd(&self) -> RawFd {
+        self.inner.as_raw_fd()
+    }
+}
+
+/// Low-level driver of io-uring.
+pub(crate) struct Driver {
+    inner: UnlimitedUring<squeue::Entry, cqueue::Entry>,
+    inner_128: OnceCell<UnlimitedUring<squeue::Entry128, cqueue::Entry>>,
+    capacity: u32,
+    user_data_128: HashSet<usize>,
+    notifier: Notifier,
+    notifier_registered: bool,
+    pool: AsyncifyPool,
+    pool_completed: Arc<SegQueue<Entry>>,
+}
+
+impl Driver {
+    const CANCEL: u64 = u64::MAX;
+    const NOTIFY: u64 = u64::MAX - 1;
+    const POLL128: u64 = u64::MAX - 2;
+
+    pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
+        instrument!(compio_log::Level::TRACE, "new", ?builder);
+        trace!("new iour driver");
+        Ok(Self {
+            inner: UnlimitedUring::new(builder.capacity)?,
+            inner_128: OnceCell::new(),
+            capacity: builder.capacity,
+            user_data_128: HashSet::new(),
+            notifier: Notifier::new()?,
+            notifier_registered: false,
+            pool: builder.create_or_get_thread_pool(),
+            pool_completed: Arc::new(SegQueue::new()),
+        })
+    }
+
+    fn inner_128(&mut self) -> io::Result<&mut UnlimitedUring<squeue::Entry128, cqueue::Entry>> {
+        self.inner_128.get_or_try_init(|| {
+            let ring = UnlimitedUring::new(self.capacity)?;
+            self.inner.push_submission(
+                PollAdd::new(Fd(ring.as_raw_fd()), libc::POLLIN as _)
+                    .multi(true)
+                    .build()
+                    .user_data(Self::POLL128),
+            );
+            io::Result::Ok(ring)
+        })?;
+        Ok(self.inner_128.get_mut().expect("inner_128 should be set"))
+    }
+
     fn poll_entries(&mut self, entries: &mut impl Extend<Entry>) {
         while let Some(entry) = self.pool_completed.pop() {
             entries.extend(Some(entry));
@@ -153,7 +211,7 @@ impl Driver {
         let mut cqueue = self.inner.completion();
         cqueue.sync();
         let completed_entries = cqueue.filter_map(|entry| match entry.user_data() {
-            Self::CANCEL => None,
+            Self::CANCEL | Self::POLL128 => None,
             Self::NOTIFY => {
                 self.notifier_registered = false;
                 None
@@ -161,6 +219,20 @@ impl Driver {
             _ => Some(create_entry(entry)),
         });
         entries.extend(completed_entries);
+
+        // TODO: only poll it when POLL128 is triggered?
+        if let Some(inner_128) = self.inner_128.get_mut() {
+            let mut cqueue = inner_128.completion();
+            cqueue.sync();
+            let completed_entries = cqueue.filter_map(|entry| match entry.user_data() {
+                Self::CANCEL => None,
+                _ => {
+                    self.user_data_128.remove(&(entry.user_data() as _));
+                    Some(create_entry(entry))
+                }
+            });
+            entries.extend(completed_entries);
+        }
     }
 
     pub fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
@@ -170,24 +242,48 @@ impl Driver {
     pub fn cancel(&mut self, user_data: usize, _registry: &mut Slab<RawOp>) {
         instrument!(compio_log::Level::TRACE, "cancel", user_data);
         trace!("cancel RawOp");
-        self.squeue.push_back(
-            AsyncCancel::new(user_data as _)
-                .build()
-                .user_data(Self::CANCEL),
-        );
+        let use_128 = self.inner_128.get().is_some() && self.user_data_128.contains(&user_data);
+        if use_128 {
+            self.inner_128
+                .get_mut()
+                .expect("inner_128 should be set")
+                .push_submission(
+                    AsyncCancel::new(user_data as _)
+                        .build()
+                        .user_data(Self::CANCEL)
+                        .into(),
+                );
+        } else {
+            self.inner.push_submission(
+                AsyncCancel::new(user_data as _)
+                    .build()
+                    .user_data(Self::CANCEL),
+            );
+        }
     }
 
     pub fn push(&mut self, user_data: usize, op: &mut RawOp) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", user_data);
         let op_pin = op.as_pin();
         trace!("push RawOp");
-        if let OpEntry::Submission(entry) = op_pin.create_entry() {
-            self.squeue.push_back(entry.user_data(user_data as _));
-            Poll::Pending
-        } else if self.push_blocking(user_data, op)? {
-            Poll::Pending
-        } else {
-            Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
+        match op_pin.create_entry() {
+            OpEntry::Submission(entry) => {
+                self.inner.push_submission(entry.user_data(user_data as _));
+                Poll::Pending
+            }
+            OpEntry::Submission128(entry) => {
+                self.user_data_128.insert(user_data);
+                self.inner_128()?
+                    .push_submission(entry.user_data(user_data as _));
+                Poll::Pending
+            }
+            OpEntry::Blocking => {
+                if self.push_blocking(user_data, op)? {
+                    Poll::Pending
+                } else {
+                    Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
+                }
+            }
         }
     }
 
@@ -223,7 +319,7 @@ impl Driver {
         if !self.notifier_registered {
             let fd = self.notifier.as_raw_fd();
             let dst = self.notifier.dst();
-            self.squeue.push_back(
+            self.inner.push_submission(
                 Read::new(Fd(fd), dst.as_mut_ptr(), dst.len() as _)
                     .build()
                     .user_data(Self::NOTIFY),
@@ -231,12 +327,24 @@ impl Driver {
             trace!("registered notifier");
             self.notifier_registered = true
         }
+        // If 128 uring is created, flush the submissions for it.
+        if let Some(inner_128) = self.inner_128.get_mut() {
+            trace!("push 128-bit entries");
+            loop {
+                let ended = inner_128.flush_submissions();
+                // Don't wait for it. Poll it in the main ring.
+                inner_128.submit(None, false)?;
+                if ended {
+                    break;
+                }
+            }
+        }
         // Anyway we need to submit once, no matter there are entries in squeue.
         trace!("start polling");
         loop {
-            let ended = self.flush_submissions();
+            let ended = self.inner.flush_submissions();
 
-            self.submit_auto(timeout, ended)?;
+            self.inner.submit(timeout, ended)?;
 
             self.poll_entries(&mut entries);
 

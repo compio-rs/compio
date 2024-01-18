@@ -150,3 +150,36 @@ fn asyncify() {
     let (res, _) = push_and_wait(&mut driver, op);
     assert_eq!(res, 114514);
 }
+
+#[test]
+#[cfg(all(target_os = "linux", not(feature = "polling")))]
+fn push_128() {
+    use compio_driver::OpEntry;
+
+    struct ReadAt128(ReadAt<Vec<u8>>);
+
+    impl OpCode for ReadAt128 {
+        fn create_entry(self: std::pin::Pin<&mut Self>) -> compio_driver::OpEntry {
+            if let OpEntry::Submission(entry) =
+                unsafe { self.map_unchecked_mut(|op| &mut op.0) }.create_entry()
+            {
+                OpEntry::Submission128(entry.into())
+            } else {
+                unreachable!()
+            }
+        }
+    }
+
+    let mut driver = Proactor::new().unwrap();
+
+    let op = open_file_op();
+    let (fd, _) = push_and_wait(&mut driver, op);
+    let fd = fd as RawFd;
+    driver.attach(fd).unwrap();
+
+    let op = ReadAt128(ReadAt::new(fd, 0, Vec::with_capacity(1024)));
+    push_and_wait(&mut driver, op);
+
+    let op = CloseFile::new(fd);
+    push_and_wait(&mut driver, op);
+}
