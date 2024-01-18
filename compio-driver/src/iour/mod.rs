@@ -160,7 +160,7 @@ impl<S: squeue::EntryMarker, C: cqueue::EntryMarker> AsRawFd for UnboundedUring<
 /// Low-level driver of io-uring.
 pub(crate) struct Driver {
     inner: UnboundedUring<squeue::Entry, cqueue::Entry>,
-    inner_128: OnceCell<UnboundedUring<squeue::Entry128, cqueue::Entry>>,
+    inner_128: OnceCell<UnboundedUring<squeue::Entry128, cqueue::Entry32>>,
     capacity: u32,
     user_data_128: HashSet<usize>,
     notifier: Notifier,
@@ -189,7 +189,7 @@ impl Driver {
         })
     }
 
-    fn inner_128(&mut self) -> io::Result<&mut UnboundedUring<squeue::Entry128, cqueue::Entry>> {
+    fn inner_128(&mut self) -> io::Result<&mut UnboundedUring<squeue::Entry128, cqueue::Entry32>> {
         self.inner_128.get_or_try_init(|| {
             let ring = UnboundedUring::new(self.capacity)?;
             self.inner.push_submission(
@@ -228,7 +228,7 @@ impl Driver {
                 Self::CANCEL => None,
                 _ => {
                     self.user_data_128.remove(&(entry.user_data() as _));
-                    Some(create_entry(entry))
+                    Some(create_entry(entry.into()))
                 }
             });
             entries.extend(completed_entries);
