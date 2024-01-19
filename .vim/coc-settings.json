@@ -1,0 +1,4 @@
+{
+    "rust-analyzer.updates.channel": "nightly",
+    "rust-analyzer.cargo.features": ["all", "nightly"]
+}
