@@ -8,6 +8,14 @@ use std::{
 
 use compio_log::{instrument, trace};
 use crossbeam_queue::SegQueue;
+#[cfg(not(feature = "io-uring-cqe32"))]
+use io_uring::cqueue::Entry as CEntry;
+#[cfg(feature = "io-uring-cqe32")]
+use io_uring::cqueue::Entry32 as CEntry;
+#[cfg(not(feature = "io-uring-sqe128"))]
+use io_uring::squeue::Entry as SEntry;
+#[cfg(feature = "io-uring-sqe128")]
+use io_uring::squeue::Entry128 as SEntry;
 use io_uring::{
     opcode::{AsyncCancel, Read},
     types::{Fd, SubmitArgs, Timespec},
@@ -15,12 +23,6 @@ use io_uring::{
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use slab::Slab;
-
-#[cfg(feature = "io-uring-large-qe")]
-use io_uring::{cqueue::Entry32 as CEntry, squeue::Entry128 as SEntry};
-
-#[cfg(not(feature = "io-uring-large-qe"))]
-use io_uring::{cqueue::Entry as CEntry, squeue::Entry as SEntry};
 
 use crate::{syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder};
 
@@ -195,15 +197,34 @@ impl Driver {
         instrument!(compio_log::Level::TRACE, "push", user_data);
         let op_pin = op.as_pin();
         trace!("push RawOp");
-        if let OpEntry::Submission(entry) = op_pin.create_entry() {
-            #[allow(clippy::useless_conversion)]
-            self.squeue
-                .push_back(entry.user_data(user_data as _).into());
-            Poll::Pending
-        } else if self.push_blocking(user_data, op)? {
-            Poll::Pending
-        } else {
-            Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
+        match op_pin.create_entry() {
+            OpEntry::Submission(entry) => {
+                #[allow(clippy::useless_conversion)]
+                self.squeue
+                    .push_back(entry.user_data(user_data as _).into());
+                Poll::Pending
+            }
+            OpEntry::Submission128(_entry) => {
+                #[cfg(feature = "io-uring-sqe128")]
+                {
+                    self.squeue.push_back(_entry.user_data(user_data as _));
+                    Poll::Pending
+                }
+                #[cfg(not(feature = "io-uring-sqe128"))]
+                {
+                    Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::Unsupported,
+                        "submission entry 128 is not enabled",
+                    )))
+                }
+            }
+            OpEntry::Blocking => {
+                if self.push_blocking(user_data, op)? {
+                    Poll::Pending
+                } else {
+                    Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
+                }
+            }
         }
     }
 

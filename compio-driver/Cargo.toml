@@ -78,7 +78,8 @@ compio-buf = { workspace = true, features = ["arrayvec"] }
 default = ["io-uring"]
 polling = ["dep:polling"]
 
-io-uring-large-qe = []
+io-uring-sqe128 = []
+io-uring-cqe32 = []
 
 # Nightly features
 once_cell_try = []
