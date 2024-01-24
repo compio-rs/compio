@@ -33,9 +33,6 @@ fn worker(
 }
 
 /// A thread pool to perform blocking operations in other threads.
-///
-/// ## Platform specific
-/// * io-uring: the driver doesn't user this thread pool.
 #[derive(Debug, Clone)]
 pub struct AsyncifyPool {
     sender: Sender<BoxClosure>,
