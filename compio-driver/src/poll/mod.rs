@@ -125,18 +125,18 @@ impl FdQueue {
         event
     }
 
-    pub fn pop_interest(&mut self, event: &Event) -> (usize, Interest) {
+    pub fn pop_interest(&mut self, event: &Event) -> Option<(usize, Interest)> {
         if event.readable {
             if let Some(user_data) = self.read_queue.pop_front() {
-                return (user_data, Interest::Readable);
+                return Some((user_data, Interest::Readable));
             }
         }
         if event.writable {
             if let Some(user_data) = self.write_queue.pop_front() {
-                return (user_data, Interest::Writable);
+                return Some((user_data, Interest::Writable));
             }
         }
-        unreachable!("should not receive event when no interest")
+        None
     }
 
     pub fn clear(&mut self) {
@@ -283,22 +283,23 @@ impl Driver {
                 .registry
                 .get_mut(&fd)
                 .expect("the fd should be attached");
-            let (user_data, interest) = queue.pop_interest(&event);
-            if self.cancelled.remove(&user_data) {
-                entries.extend(Some(entry_cancelled(user_data)));
-            } else {
-                let op = entries.registry()[user_data].as_pin();
-                let res = match op.on_event(&event) {
-                    Poll::Pending => {
-                        // The operation should go back to the front.
-                        queue.push_front_interest(user_data, interest);
-                        None
+            if let Some((user_data, interest)) = queue.pop_interest(&event) {
+                if self.cancelled.remove(&user_data) {
+                    entries.extend(Some(entry_cancelled(user_data)));
+                } else {
+                    let op = entries.registry()[user_data].as_pin();
+                    let res = match op.on_event(&event) {
+                        Poll::Pending => {
+                            // The operation should go back to the front.
+                            queue.push_front_interest(user_data, interest);
+                            None
+                        }
+                        Poll::Ready(res) => Some(res),
+                    };
+                    if let Some(res) = res {
+                        let entry = Entry::new(user_data, res);
+                        entries.extend(Some(entry));
                     }
-                    Poll::Ready(res) => Some(res),
-                };
-                if let Some(res) = res {
-                    let entry = Entry::new(user_data, res);
-                    entries.extend(Some(entry));
                 }
             }
             let renew_event = queue.event(fd as _);
