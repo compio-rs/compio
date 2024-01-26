@@ -8,14 +8,20 @@ use std::{
 
 use compio_log::{instrument, trace};
 use crossbeam_queue::SegQueue;
-#[cfg(not(feature = "io-uring-cqe32"))]
-use io_uring::cqueue::Entry as CEntry;
-#[cfg(feature = "io-uring-cqe32")]
-use io_uring::cqueue::Entry32 as CEntry;
-#[cfg(not(feature = "io-uring-sqe128"))]
-use io_uring::squeue::Entry as SEntry;
-#[cfg(feature = "io-uring-sqe128")]
-use io_uring::squeue::Entry128 as SEntry;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "io-uring-cqe32")] {
+        use io_uring::cqueue::Entry32 as CEntry;
+    } else {
+        use io_uring::cqueue::Entry as CEntry;
+    }
+}
+cfg_if::cfg_if! {
+    if #[cfg(feature = "io-uring-sqe128")] {
+        use io_uring::squeue::Entry128 as SEntry;
+    } else {
+        use io_uring::squeue::Entry as SEntry;
+    }
+}
 use io_uring::{
     opcode::{AsyncCancel, Read},
     types::{Fd, SubmitArgs, Timespec},
