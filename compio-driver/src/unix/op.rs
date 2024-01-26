@@ -1,4 +1,4 @@
-use std::{ffi::CString, net::Shutdown};
+use std::{ffi::CString, marker::PhantomPinned, net::Shutdown};
 
 use compio_buf::{
     IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
@@ -50,6 +50,7 @@ pub struct ReadVectoredAt<T: IoVectoredBufMut> {
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSliceMut>,
+    _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBufMut> ReadVectoredAt<T> {
@@ -60,6 +61,7 @@ impl<T: IoVectoredBufMut> ReadVectoredAt<T> {
             offset,
             buffer,
             slices: vec![],
+            _p: PhantomPinned,
         }
     }
 }
@@ -78,6 +80,7 @@ pub struct WriteVectoredAt<T: IoVectoredBuf> {
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSlice>,
+    _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBuf> WriteVectoredAt<T> {
@@ -88,6 +91,7 @@ impl<T: IoVectoredBuf> WriteVectoredAt<T> {
             offset,
             buffer,
             slices: vec![],
+            _p: PhantomPinned,
         }
     }
 }
@@ -115,6 +119,7 @@ pub struct Accept {
     pub(crate) fd: RawFd,
     pub(crate) buffer: sockaddr_storage,
     pub(crate) addr_len: socklen_t,
+    _p: PhantomPinned,
 }
 
 impl Accept {
@@ -124,6 +129,7 @@ impl Accept {
             fd,
             buffer: unsafe { std::mem::zeroed() },
             addr_len: std::mem::size_of::<sockaddr_storage>() as _,
+            _p: PhantomPinned,
         }
     }
 
@@ -137,12 +143,17 @@ impl Accept {
 pub struct Recv<T: IoBufMut> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
+    _p: PhantomPinned,
 }
 
 impl<T: IoBufMut> Recv<T> {
     /// Create [`Recv`].
     pub fn new(fd: RawFd, buffer: T) -> Self {
-        Self { fd, buffer }
+        Self {
+            fd,
+            buffer,
+            _p: PhantomPinned,
+        }
     }
 }
 
@@ -159,6 +170,7 @@ pub struct RecvVectored<T: IoVectoredBufMut> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSliceMut>,
+    _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBufMut> RecvVectored<T> {
@@ -168,6 +180,7 @@ impl<T: IoVectoredBufMut> RecvVectored<T> {
             fd,
             buffer,
             slices: vec![],
+            _p: PhantomPinned,
         }
     }
 }
@@ -184,12 +197,17 @@ impl<T: IoVectoredBufMut> IntoInner for RecvVectored<T> {
 pub struct Send<T: IoBuf> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
+    _p: PhantomPinned,
 }
 
 impl<T: IoBuf> Send<T> {
     /// Create [`Send`].
     pub fn new(fd: RawFd, buffer: T) -> Self {
-        Self { fd, buffer }
+        Self {
+            fd,
+            buffer,
+            _p: PhantomPinned,
+        }
     }
 }
 
@@ -206,6 +224,7 @@ pub struct SendVectored<T: IoVectoredBuf> {
     pub(crate) fd: RawFd,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSlice>,
+    _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBuf> SendVectored<T> {
@@ -215,6 +234,7 @@ impl<T: IoVectoredBuf> SendVectored<T> {
             fd,
             buffer,
             slices: vec![],
+            _p: PhantomPinned,
         }
     }
 }

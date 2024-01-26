@@ -114,9 +114,9 @@ impl RuntimeInner {
         unsafe { self.spawn_unchecked(future) }
     }
 
-    pub fn spawn_blocking<T: Send + Unpin + 'static>(
+    pub fn spawn_blocking<T: Send + 'static>(
         &self,
-        f: impl (FnOnce() -> T) + Send + Sync + Unpin + 'static,
+        f: impl (FnOnce() -> T) + Send + Sync + 'static,
     ) -> impl Future<Output = T> {
         let op = Asyncify::new(move || {
             let res = f();
@@ -352,9 +352,9 @@ impl Runtime {
     /// Spawns a blocking task in a new thread, and wait for it.
     ///
     /// The task will not be cancelled even if the future is dropped.
-    pub fn spawn_blocking<T: Send + Unpin + 'static>(
+    pub fn spawn_blocking<T: Send + 'static>(
         &self,
-        f: impl (FnOnce() -> T) + Send + Sync + Unpin + 'static,
+        f: impl (FnOnce() -> T) + Send + Sync + 'static,
     ) -> impl Future<Output = T> {
         self.inner.spawn_blocking(f)
     }
@@ -514,8 +514,8 @@ pub fn spawn<F: Future + 'static>(future: F) -> Task<F::Output> {
 ///
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::current`].
-pub fn spawn_blocking<T: Send + Unpin + 'static>(
-    f: impl (FnOnce() -> T) + Send + Sync + Unpin + 'static,
+pub fn spawn_blocking<T: Send + 'static>(
+    f: impl (FnOnce() -> T) + Send + Sync + 'static,
 ) -> impl Future<Output = T> {
     Runtime::current().spawn_blocking(f)
 }

@@ -135,7 +135,10 @@ pub trait OpCode {
     /// # Safety
     ///
     /// * Should not use [`Overlapped::op`].
-    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()>;
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        let _optr = optr; // ignore it
+        Ok(())
+    }
 }
 
 fn ntstatus_from_win32(x: i32) -> NTSTATUS {
