@@ -55,7 +55,7 @@ fn real_signal_handler(mut receiver: PipeReader) {
                 if !fds.is_empty() {
                     let fds = std::mem::take(fds);
                     for (_, fd) in fds {
-                        fd.notify().ok();
+                        fd.notify();
                     }
                 }
             }
@@ -65,18 +65,26 @@ fn real_signal_handler(mut receiver: PipeReader) {
     }
 }
 
-unsafe fn init(sig: i32) {
+unsafe fn init(sig: i32) -> io::Result<()> {
     let _ = PIPE.deref();
-    libc::signal(sig, signal_handler as *const () as usize);
+    if libc::signal(sig, signal_handler as *const () as usize) == libc::SIG_ERR {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
 }
 
-unsafe fn uninit(sig: i32) {
-    libc::signal(sig, libc::SIG_DFL);
+unsafe fn uninit(sig: i32) -> io::Result<()> {
+    if libc::signal(sig, libc::SIG_DFL) == libc::SIG_ERR {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
 }
 
 fn register(sig: i32, fd: &Event) -> io::Result<usize> {
-    unsafe { init(sig) };
-    let handle = fd.handle()?;
+    unsafe { init(sig)? };
+    let handle = fd.handle();
     let key = HANDLER
         .lock()
         .unwrap()
@@ -98,7 +106,7 @@ fn unregister(sig: i32, key: usize) {
         true
     })();
     if need_uninit {
-        unsafe { uninit(sig) };
+        unsafe { uninit(sig).ok() };
     }
 }
 
@@ -112,7 +120,7 @@ struct SignalFd {
 
 impl SignalFd {
     fn new(sig: i32) -> io::Result<Self> {
-        let event = Event::new()?;
+        let event = Event::new();
         let key = register(sig, &event)?;
         Ok(Self {
             sig,
@@ -121,7 +129,7 @@ impl SignalFd {
         })
     }
 
-    async fn wait(mut self) -> io::Result<()> {
+    async fn wait(mut self) {
         self.event
             .take()
             .expect("event could not be None")
@@ -140,5 +148,6 @@ impl Drop for SignalFd {
 /// process receives the specified signal.
 pub async fn signal(sig: i32) -> io::Result<()> {
     let fd = SignalFd::new(sig)?;
-    fd.wait().await
+    fd.wait().await;
+    Ok(())
 }
