@@ -39,6 +39,7 @@ pub(crate) use crate::unix::RawOp;
 pub enum OpEntry {
     /// This operation creates an io-uring submission entry.
     Submission(io_uring::squeue::Entry),
+    #[cfg(feature = "io-uring-sqe128")]
     /// This operation creates an 128-bit io-uring submission entry.
     Submission128(io_uring::squeue::Entry128),
     /// This operation is a blocking one.
@@ -51,6 +52,7 @@ impl From<io_uring::squeue::Entry> for OpEntry {
     }
 }
 
+#[cfg(feature = "io-uring-sqe128")]
 impl From<io_uring::squeue::Entry128> for OpEntry {
     fn from(value: io_uring::squeue::Entry128) -> Self {
         Self::Submission128(value)
@@ -210,19 +212,10 @@ impl Driver {
                     .push_back(entry.user_data(user_data as _).into());
                 Poll::Pending
             }
+            #[cfg(feature = "io-uring-sqe128")]
             OpEntry::Submission128(_entry) => {
-                #[cfg(feature = "io-uring-sqe128")]
-                {
-                    self.squeue.push_back(_entry.user_data(user_data as _));
-                    Poll::Pending
-                }
-                #[cfg(not(feature = "io-uring-sqe128"))]
-                {
-                    Poll::Ready(Err(io::Error::new(
-                        io::ErrorKind::Unsupported,
-                        "submission entry 128 is not enabled",
-                    )))
-                }
+                self.squeue.push_back(_entry.user_data(user_data as _));
+                Poll::Pending
             }
             OpEntry::Blocking => {
                 if self.push_blocking(user_data, op)? {
