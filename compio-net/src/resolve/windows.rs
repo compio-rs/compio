@@ -47,7 +47,7 @@ impl AsyncResolver {
         let overlapped_ptr = lpoverlapped.cast::<GAIOverlapped>().cast_mut();
         if let Some(overlapped) = overlapped_ptr.as_mut() {
             if let Some(handle) = overlapped.handle.take() {
-                handle.notify().ok();
+                handle.notify();
             }
         }
     }
@@ -151,14 +151,14 @@ pub async fn resolve_sock_addrs(
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
 
-    let event = Event::new()?;
-    let handle = event.handle()?;
+    let event = Event::new();
+    let handle = event.handle();
     match unsafe { resolver.call(&hints, handle) } {
         Poll::Ready(res) => {
             res?;
         }
         Poll::Pending => {
-            event.wait().await?;
+            event.wait().await;
         }
     }
 

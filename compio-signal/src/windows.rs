@@ -30,7 +30,7 @@ unsafe extern "system" fn ctrl_event_handler(ctrltype: u32) -> BOOL {
         if !handlers.is_empty() {
             let handlers = std::mem::replace(handlers, Slab::new());
             for (_, handler) in handlers {
-                handler.notify().ok();
+                handler.notify();
             }
             return 1;
         }
@@ -45,10 +45,10 @@ fn init() -> io::Result<()> {
     Ok(())
 }
 
-fn register(ctrltype: u32, e: &Event) -> io::Result<usize> {
+fn register(ctrltype: u32, e: &Event) -> usize {
     let mut handler = HANDLER.lock().unwrap();
-    let handle = e.handle()?;
-    Ok(handler.entry(ctrltype).or_default().insert(handle))
+    let handle = e.handle();
+    handler.entry(ctrltype).or_default().insert(handle)
 }
 
 fn unregister(ctrltype: u32, key: usize) {
@@ -72,8 +72,8 @@ impl CtrlEvent {
     pub(crate) fn new(ctrltype: u32) -> io::Result<Self> {
         INIT.call_once(|| init().unwrap());
 
-        let event = Event::new()?;
-        let handler_key = register(ctrltype, &event)?;
+        let event = Event::new();
+        let handler_key = register(ctrltype, &event);
         Ok(Self {
             ctrltype,
             event: Some(event),
@@ -81,7 +81,7 @@ impl CtrlEvent {
         })
     }
 
-    pub async fn wait(mut self) -> io::Result<()> {
+    pub async fn wait(mut self) {
         self.event
             .take()
             .expect("event could not be None")
@@ -98,7 +98,8 @@ impl Drop for CtrlEvent {
 
 async fn ctrl_event(ctrltype: u32) -> io::Result<()> {
     let event = CtrlEvent::new(ctrltype)?;
-    event.wait().await
+    event.wait().await;
+    Ok(())
 }
 
 /// Creates a new listener which receives "ctrl-break" notifications sent to the

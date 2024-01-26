@@ -69,11 +69,6 @@ impl RuntimeInner {
         self.id
     }
 
-    #[cfg(all(windows, feature = "event"))]
-    pub unsafe fn handle_for(&self, user_data: usize) -> io::Result<compio_driver::NotifyHandle> {
-        self.driver.borrow().handle_for(user_data)
-    }
-
     // Safety: the return runnable should be scheduled.
     unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
         let runnables = self.runnables.clone();

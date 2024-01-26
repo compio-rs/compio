@@ -63,7 +63,7 @@ impl Dispatcher {
                             *f.result.lock().unwrap() = Some(std::panic::catch_unwind(|| {
                                 Runtime::current().block_on((f.func)());
                             }));
-                            f.handle.notify().ok();
+                            f.handle.notify();
                         }
                     })
                 }
@@ -98,8 +98,8 @@ impl Dispatcher {
         &self,
         f: Fn,
     ) -> io::Result<DispatcherJoinHandle> {
-        let event = Event::new()?;
-        let handle = event.handle()?;
+        let event = Event::new();
+        let handle = event.handle();
         let join_handle = DispatcherJoinHandle::new(event);
         let closure = DispatcherClosure {
             handle,
@@ -117,8 +117,8 @@ impl Dispatcher {
     pub async fn join(self) -> io::Result<()> {
         drop(self.sender);
         let results = Arc::new(Mutex::new(vec![]));
-        let event = Event::new()?;
-        let handle = event.handle()?;
+        let event = Event::new();
+        let handle = event.handle();
         if let Err(f) = self.pool.dispatch({
             let results = results.clone();
             move || {
@@ -127,12 +127,12 @@ impl Dispatcher {
                     .into_iter()
                     .map(|thread| thread.join())
                     .collect();
-                handle.notify().ok();
+                handle.notify();
             }
         }) {
             std::thread::spawn(f);
         }
-        event.wait().await?;
+        event.wait().await;
         let mut guard = results.lock().unwrap();
         for res in std::mem::take::<Vec<std::thread::Result<()>>>(guard.as_mut()) {
             // The thread should not panic.
@@ -223,7 +223,7 @@ impl DispatcherJoinHandle {
 
     /// Wait for the task to complete.
     pub async fn join(self) -> io::Result<std::thread::Result<()>> {
-        self.event.wait().await?;
+        self.event.wait().await;
         Ok(self
             .result
             .lock()
