@@ -2,16 +2,16 @@
 
 #[cfg(feature = "lazy_cell")]
 use std::sync::LazyLock;
-use std::{
-    collections::HashMap,
-    io,
-    sync::{Mutex, Once},
-};
+#[cfg(feature = "once_cell_try")]
+use std::sync::OnceLock;
+use std::{collections::HashMap, io, sync::Mutex};
 
 use compio_driver::syscall;
 use compio_runtime::event::{Event, EventHandle};
 #[cfg(not(feature = "lazy_cell"))]
 use once_cell::sync::Lazy as LazyLock;
+#[cfg(not(feature = "once_cell_try"))]
+use once_cell::sync::OnceCell as OnceLock;
 use slab::Slab;
 use windows_sys::Win32::{
     Foundation::BOOL,
@@ -38,7 +38,7 @@ unsafe extern "system" fn ctrl_event_handler(ctrltype: u32) -> BOOL {
     0
 }
 
-static INIT: Once = Once::new();
+static INIT: OnceLock<()> = OnceLock::new();
 
 fn init() -> io::Result<()> {
     syscall!(BOOL, SetConsoleCtrlHandler(Some(ctrl_event_handler), 1))?;
@@ -70,7 +70,7 @@ struct CtrlEvent {
 
 impl CtrlEvent {
     pub(crate) fn new(ctrltype: u32) -> io::Result<Self> {
-        INIT.call_once(|| init().unwrap());
+        INIT.get_or_try_init(init)?;
 
         let event = Event::new();
         let handler_key = register(ctrltype, &event);
