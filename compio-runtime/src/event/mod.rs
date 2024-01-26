@@ -28,9 +28,13 @@ impl Flag {
         }))
     }
 
-    pub fn signal(&self) {
+    pub fn notify(&self) {
         self.0.set.store(true, Ordering::Relaxed);
         self.0.waker.wake();
+    }
+
+    pub fn notified(&self) -> bool {
+        self.0.set.load(Ordering::Relaxed)
     }
 }
 
@@ -79,6 +83,11 @@ impl Event {
         EventHandle::new(self.flag.clone())
     }
 
+    /// Get if the event has been notified.
+    pub fn notified(&self) -> bool {
+        self.flag.notified()
+    }
+
     /// Wait for [`EventHandle::notify`] called.
     pub async fn wait(self) {
         self.flag.await
@@ -97,6 +106,6 @@ impl EventHandle {
 
     /// Notify the event.
     pub fn notify(self) {
-        self.flag.signal()
+        self.flag.notify()
     }
 }
