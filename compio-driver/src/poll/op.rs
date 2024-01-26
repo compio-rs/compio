@@ -28,6 +28,7 @@ impl<
     }
 
     fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        // Safety: self won't be moved
         let this = unsafe { self.get_unchecked_mut() };
         let f = this
             .f

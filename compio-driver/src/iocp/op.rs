@@ -124,6 +124,7 @@ impl<
     }
 
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        // Safety: self won't be moved
         let this = self.get_unchecked_mut();
         let f = this
             .f
