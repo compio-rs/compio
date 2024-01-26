@@ -85,6 +85,9 @@ mod driver_type {
             OpenAt::CODE,
             Close::CODE,
             Shutdown::CODE,
+            // Linux kernel 5.19
+            #[cfg(any(feature = "io-uring-seq128", feature = "io-uring-cqe32"))]
+            Socket::CODE,
         ];
 
         Ok(())

@@ -8,10 +8,22 @@ use std::{
 
 use compio_log::{instrument, trace};
 use crossbeam_queue::SegQueue;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "io-uring-cqe32")] {
+        use io_uring::cqueue::Entry32 as CEntry;
+    } else {
+        use io_uring::cqueue::Entry as CEntry;
+    }
+}
+cfg_if::cfg_if! {
+    if #[cfg(feature = "io-uring-sqe128")] {
+        use io_uring::squeue::Entry128 as SEntry;
+    } else {
+        use io_uring::squeue::Entry as SEntry;
+    }
+}
 use io_uring::{
-    cqueue,
     opcode::{AsyncCancel, Read},
-    squeue,
     types::{Fd, SubmitArgs, Timespec},
     IoUring,
 };
@@ -26,14 +38,24 @@ pub(crate) use crate::unix::RawOp;
 /// The created entry of [`OpCode`].
 pub enum OpEntry {
     /// This operation creates an io-uring submission entry.
-    Submission(squeue::Entry),
+    Submission(io_uring::squeue::Entry),
+    #[cfg(feature = "io-uring-sqe128")]
+    /// This operation creates an 128-bit io-uring submission entry.
+    Submission128(io_uring::squeue::Entry128),
     /// This operation is a blocking one.
     Blocking,
 }
 
-impl From<squeue::Entry> for OpEntry {
-    fn from(value: squeue::Entry) -> Self {
+impl From<io_uring::squeue::Entry> for OpEntry {
+    fn from(value: io_uring::squeue::Entry) -> Self {
         Self::Submission(value)
+    }
+}
+
+#[cfg(feature = "io-uring-sqe128")]
+impl From<io_uring::squeue::Entry128> for OpEntry {
+    fn from(value: io_uring::squeue::Entry128) -> Self {
+        Self::Submission128(value)
     }
 }
 
@@ -51,8 +73,8 @@ pub trait OpCode {
 
 /// Low-level driver of io-uring.
 pub(crate) struct Driver {
-    inner: IoUring,
-    squeue: VecDeque<squeue::Entry>,
+    inner: IoUring<SEntry, CEntry>,
+    squeue: VecDeque<SEntry>,
     notifier: Notifier,
     notifier_registered: bool,
     pool: AsyncifyPool,
@@ -67,7 +89,7 @@ impl Driver {
         instrument!(compio_log::Level::TRACE, "new", ?builder);
         trace!("new iour driver");
         Ok(Self {
-            inner: IoUring::new(builder.capacity)?,
+            inner: IoUring::builder().build(builder.capacity)?,
             squeue: VecDeque::with_capacity(builder.capacity as usize),
             notifier: Notifier::new()?,
             notifier_registered: false,
@@ -170,10 +192,12 @@ impl Driver {
     pub fn cancel(&mut self, user_data: usize, _registry: &mut Slab<RawOp>) {
         instrument!(compio_log::Level::TRACE, "cancel", user_data);
         trace!("cancel RawOp");
+        #[allow(clippy::useless_conversion)]
         self.squeue.push_back(
             AsyncCancel::new(user_data as _)
                 .build()
-                .user_data(Self::CANCEL),
+                .user_data(Self::CANCEL)
+                .into(),
         );
     }
 
@@ -181,13 +205,25 @@ impl Driver {
         instrument!(compio_log::Level::TRACE, "push", user_data);
         let op_pin = op.as_pin();
         trace!("push RawOp");
-        if let OpEntry::Submission(entry) = op_pin.create_entry() {
-            self.squeue.push_back(entry.user_data(user_data as _));
-            Poll::Pending
-        } else if self.push_blocking(user_data, op)? {
-            Poll::Pending
-        } else {
-            Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
+        match op_pin.create_entry() {
+            OpEntry::Submission(entry) => {
+                #[allow(clippy::useless_conversion)]
+                self.squeue
+                    .push_back(entry.user_data(user_data as _).into());
+                Poll::Pending
+            }
+            #[cfg(feature = "io-uring-sqe128")]
+            OpEntry::Submission128(_entry) => {
+                self.squeue.push_back(_entry.user_data(user_data as _));
+                Poll::Pending
+            }
+            OpEntry::Blocking => {
+                if self.push_blocking(user_data, op)? {
+                    Poll::Pending
+                } else {
+                    Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
+                }
+            }
         }
     }
 
@@ -223,10 +259,12 @@ impl Driver {
         if !self.notifier_registered {
             let fd = self.notifier.as_raw_fd();
             let dst = self.notifier.dst();
+            #[allow(clippy::useless_conversion)]
             self.squeue.push_back(
                 Read::new(Fd(fd), dst.as_mut_ptr(), dst.len() as _)
                     .build()
-                    .user_data(Self::NOTIFY),
+                    .user_data(Self::NOTIFY)
+                    .into(),
             );
             trace!("registered notifier");
             self.notifier_registered = true
@@ -259,7 +297,7 @@ impl AsRawFd for Driver {
     }
 }
 
-fn create_entry(entry: cqueue::Entry) -> Entry {
+fn create_entry(entry: CEntry) -> Entry {
     let result = entry.result();
     let result = if result < 0 {
         let result = if result == -libc::ECANCELED {
