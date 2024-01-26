@@ -2,16 +2,16 @@
 
 #[cfg(feature = "lazy_cell")]
 use std::sync::LazyLock;
-use std::{
-    collections::HashMap,
-    io,
-    sync::{Mutex, Once},
-};
+#[cfg(feature = "once_cell_try")]
+use std::sync::OnceLock;
+use std::{collections::HashMap, io, sync::Mutex};
 
 use compio_driver::syscall;
 use compio_runtime::event::{Event, EventHandle};
 #[cfg(not(feature = "lazy_cell"))]
 use once_cell::sync::Lazy as LazyLock;
+#[cfg(not(feature = "once_cell_try"))]
+use once_cell::sync::OnceCell as OnceLock;
 use slab::Slab;
 use windows_sys::Win32::{
     Foundation::BOOL,
@@ -30,7 +30,7 @@ unsafe extern "system" fn ctrl_event_handler(ctrltype: u32) -> BOOL {
         if !handlers.is_empty() {
             let handlers = std::mem::replace(handlers, Slab::new());
             for (_, handler) in handlers {
-                handler.notify().ok();
+                handler.notify();
             }
             return 1;
         }
@@ -38,17 +38,17 @@ unsafe extern "system" fn ctrl_event_handler(ctrltype: u32) -> BOOL {
     0
 }
 
-static INIT: Once = Once::new();
+static INIT: OnceLock<()> = OnceLock::new();
 
 fn init() -> io::Result<()> {
     syscall!(BOOL, SetConsoleCtrlHandler(Some(ctrl_event_handler), 1))?;
     Ok(())
 }
 
-fn register(ctrltype: u32, e: &Event) -> io::Result<usize> {
+fn register(ctrltype: u32, e: &Event) -> usize {
     let mut handler = HANDLER.lock().unwrap();
-    let handle = e.handle()?;
-    Ok(handler.entry(ctrltype).or_default().insert(handle))
+    let handle = e.handle();
+    handler.entry(ctrltype).or_default().insert(handle)
 }
 
 fn unregister(ctrltype: u32, key: usize) {
@@ -70,10 +70,10 @@ struct CtrlEvent {
 
 impl CtrlEvent {
     pub(crate) fn new(ctrltype: u32) -> io::Result<Self> {
-        INIT.call_once(|| init().unwrap());
+        INIT.get_or_try_init(init)?;
 
-        let event = Event::new()?;
-        let handler_key = register(ctrltype, &event)?;
+        let event = Event::new();
+        let handler_key = register(ctrltype, &event);
         Ok(Self {
             ctrltype,
             event: Some(event),
@@ -81,7 +81,7 @@ impl CtrlEvent {
         })
     }
 
-    pub async fn wait(mut self) -> io::Result<()> {
+    pub async fn wait(mut self) {
         self.event
             .take()
             .expect("event could not be None")
@@ -98,7 +98,8 @@ impl Drop for CtrlEvent {
 
 async fn ctrl_event(ctrltype: u32) -> io::Result<()> {
     let event = CtrlEvent::new(ctrltype)?;
-    event.wait().await
+    event.wait().await;
+    Ok(())
 }
 
 /// Creates a new listener which receives "ctrl-break" notifications sent to the
