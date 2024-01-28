@@ -13,9 +13,7 @@ use std::{
 
 use async_task::{Runnable, Task};
 use compio_buf::IntoInner;
-use compio_driver::{
-    op::Asyncify, AsRawFd, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
-};
+use compio_driver::{op::Asyncify, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd};
 use compio_log::{debug, instrument};
 use crossbeam_queue::SegQueue;
 use futures_util::{future::Either, FutureExt};
@@ -238,12 +236,6 @@ impl RuntimeInner {
     }
 }
 
-impl AsRawFd for RuntimeInner {
-    fn as_raw_fd(&self) -> RawFd {
-        self.driver.borrow().as_raw_fd()
-    }
-}
-
 struct RuntimeContext {
     depth: usize,
     ptr: Weak<RuntimeInner>,
@@ -420,12 +412,6 @@ impl Runtime {
     /// You only need this when authoring your own [`OpCode`].
     pub fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
         self.inner.submit(op)
-    }
-}
-
-impl AsRawFd for Runtime {
-    fn as_raw_fd(&self) -> RawFd {
-        self.inner.as_raw_fd()
     }
 }
 

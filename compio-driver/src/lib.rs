@@ -223,7 +223,7 @@ impl Proactor {
     pub fn push<T: OpCode + 'static>(&mut self, op: T) -> PushEntry<Key<T>, BufResult<usize, T>> {
         let entry = self.ops.vacant_entry();
         let user_data = entry.key();
-        let op = RawOp::new(user_data, op);
+        let op = self.driver.create_op(user_data, op);
         let op = entry.insert(op);
         match self.driver.push(user_data, op) {
             Poll::Pending => PushEntry::Pending(unsafe { Key::new(user_data) }),
@@ -276,22 +276,6 @@ impl Proactor {
     /// Create a notify handle to interrupt the inner driver.
     pub fn handle(&self) -> io::Result<NotifyHandle> {
         self.driver.handle()
-    }
-
-    /// Create a notify handle for specified user_data.
-    ///
-    /// # Safety
-    ///
-    /// The caller should ensure `user_data` being valid.
-    #[cfg(windows)]
-    pub unsafe fn handle_for(&self, user_data: usize) -> io::Result<NotifyHandle> {
-        self.driver.handle_for(user_data)
-    }
-}
-
-impl AsRawFd for Proactor {
-    fn as_raw_fd(&self) -> RawFd {
-        self.driver.as_raw_fd()
     }
 }
 

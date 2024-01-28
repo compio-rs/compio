@@ -35,6 +35,7 @@ compio-log = { workspace = true }
 # Utils
 cfg-if = { workspace = true }
 crossbeam-channel = { workspace = true }
+crossbeam-queue = { workspace = true }
 slab = { workspace = true }
 socket2 = { workspace = true }
 
@@ -42,6 +43,7 @@ socket2 = { workspace = true }
 [target.'cfg(windows)'.dependencies]
 compio-buf = { workspace = true, features = ["arrayvec"] }
 aligned-array = "1.0.1"
+crossbeam-skiplist = { workspace = true }
 once_cell = { workspace = true }
 widestring = { workspace = true }
 windows-sys = { workspace = true, features = [
@@ -70,7 +72,6 @@ polling = "3.3.0"
 os_pipe = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
-crossbeam-queue = { workspace = true }
 libc = { workspace = true }
 
 [dev-dependencies]
