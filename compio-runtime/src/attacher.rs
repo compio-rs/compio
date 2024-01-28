@@ -1,10 +1,10 @@
-use std::io;
 #[cfg(unix)]
 use std::os::fd::OwnedFd;
 #[cfg(windows)]
 use std::os::windows::prelude::{OwnedHandle, OwnedSocket};
 #[cfg(feature = "once_cell_try")]
 use std::sync::OnceLock;
+use std::{io, marker::PhantomData};
 
 use compio_buf::IntoInner;
 use compio_driver::AsRawFd;
@@ -24,6 +24,7 @@ pub struct Attacher<S> {
     source: S,
     // Make it thread safe.
     once: OnceLock<usize>,
+    _p: PhantomData<*mut ()>,
 }
 
 impl<S> Attacher<S> {
@@ -32,6 +33,7 @@ impl<S> Attacher<S> {
         Self {
             source,
             once: OnceLock::new(),
+            _p: PhantomData,
         }
     }
 }
@@ -120,6 +122,7 @@ impl<S: TryClone + AsRawFd> TryClone for Attacher<S> {
             Self {
                 source,
                 once: self.once.clone(),
+                _p: PhantomData,
             }
         } else {
             let new_self = Self::new(source);
