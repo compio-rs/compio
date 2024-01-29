@@ -146,6 +146,9 @@ impl Drop for SignalFd {
 
 /// Creates a new listener which will receive notifications when the current
 /// process receives the specified signal.
+///
+/// The first call to this method spawns a thread to execute the signal
+/// handlers.
 pub async fn signal(sig: i32) -> io::Result<()> {
     let fd = SignalFd::new(sig)?;
     fd.wait().await;
