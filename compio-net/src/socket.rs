@@ -90,7 +90,7 @@ impl Socket {
         )) {
             accept_sock.set_nonblocking(true)?;
         }
-        let accept_sock = Self::from_socket2(accept_sock);
+        let accept_sock = Self::from_socket2(accept_sock)?;
         let addr = op.into_addr();
         Ok((accept_sock, addr))
     }

@@ -177,20 +177,13 @@ impl Proactor {
         })
     }
 
-    /// Attach an fd to the driver. It will cause unexpected result to attach
-    /// the handle with one driver and push an op to another driver.
+    /// Attach an fd to the driver.
     ///
     /// ## Platform specific
     /// * IOCP: it will be attached to the completion port. An fd could only be
     ///   attached to one driver, and could only be attached once, even if you
     ///   `try_clone` it.
-    /// * io-uring: it will do nothing and return `Ok(())`.
-    /// * polling: it will initialize inner queue and register to the driver. On
-    ///   Linux and Android, if the fd is a normal file or a directory, this
-    ///   method will do nothing. For other fd and systems, you should only call
-    ///   this method once for a specific resource. If this method is called
-    ///   twice with the same fd, we assume that the old fd has been closed, and
-    ///   it's a new fd.
+    /// * io-uring & polling: it will do nothing but return `Ok(())`.
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
         self.driver.attach(fd)
     }

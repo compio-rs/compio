@@ -2,13 +2,14 @@
 
 use std::{future::Future, io, path::Path};
 
-use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{
+    impl_raw_fd,
     op::{BufResultExt, Recv, RecvVectored, Send, SendVectored},
-    syscall, FromRawFd, IntoRawFd,
+    syscall, AsRawFd, FromRawFd, IntoRawFd,
 };
 use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::{impl_attachable, impl_try_as_raw_fd, Runtime, TryAsRawFd};
+use compio_runtime::{impl_attachable, impl_try_clone, Runtime};
 
 use crate::File;
 
@@ -358,13 +359,13 @@ impl AsyncWrite for Sender {
 
 impl AsyncWrite for &Sender {
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let fd = self.as_raw_fd();
         let op = Send::new(fd, buffer);
         Runtime::current().submit(op).await.into_inner()
     }
 
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let fd = self.as_raw_fd();
         let op = SendVectored::new(fd, buffer);
         Runtime::current().submit(op).await.into_inner()
     }
@@ -380,9 +381,11 @@ impl AsyncWrite for &Sender {
     }
 }
 
-impl_try_as_raw_fd!(Sender, file);
+impl_raw_fd!(Sender, file);
 
 impl_attachable!(Sender, file);
+
+impl_try_clone!(Sender, file);
 
 /// Reading end of a Unix pipe.
 ///
@@ -483,7 +486,7 @@ impl AsyncRead for Receiver {
 
 impl AsyncRead for &Receiver {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
-        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let fd = self.as_raw_fd();
         let op = Recv::new(fd, buffer);
         Runtime::current()
             .submit(op)
@@ -493,7 +496,7 @@ impl AsyncRead for &Receiver {
     }
 
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buffer: V) -> BufResult<usize, V> {
-        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let fd = self.as_raw_fd();
         let op = RecvVectored::new(fd, buffer);
         Runtime::current()
             .submit(op)
@@ -503,9 +506,11 @@ impl AsyncRead for &Receiver {
     }
 }
 
-impl_try_as_raw_fd!(Receiver, file);
+impl_raw_fd!(Receiver, file);
 
 impl_attachable!(Receiver, file);
+
+impl_try_clone!(Receiver, file);
 
 /// Checks if file is a FIFO
 async fn is_fifo(file: &File) -> io::Result<bool> {
@@ -515,9 +520,9 @@ async fn is_fifo(file: &File) -> io::Result<bool> {
 }
 
 /// Sets file's flags with O_NONBLOCK by fcntl.
-fn set_nonblocking(file: &impl TryAsRawFd) -> io::Result<()> {
+fn set_nonblocking(file: &impl AsRawFd) -> io::Result<()> {
     if cfg!(not(all(target_os = "linux", feature = "io-uring"))) {
-        let fd = file.try_as_raw_fd()?;
+        let fd = file.as_raw_fd();
         let current_flags = syscall!(libc::fcntl(fd, libc::F_GETFL))?;
         let flags = current_flags | libc::O_NONBLOCK;
         if flags != current_flags {

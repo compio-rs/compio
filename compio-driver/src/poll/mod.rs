@@ -138,11 +138,6 @@ impl FdQueue {
         }
         None
     }
-
-    pub fn clear(&mut self) {
-        self.read_queue.clear();
-        self.write_queue.clear();
-    }
 }
 
 /// Low-level driver of polling.
@@ -187,41 +182,28 @@ impl Driver {
         })
     }
 
+    pub fn create_op<T: crate::sys::OpCode + 'static>(&self, user_data: usize, op: T) -> RawOp {
+        RawOp::new(user_data, op)
+    }
+
     fn submit(&mut self, user_data: usize, arg: WaitArg) -> io::Result<()> {
-        let queue = self
-            .registry
-            .get_mut(&arg.fd)
-            .expect("the fd should be attached");
+        let need_add = !self.registry.contains_key(&arg.fd);
+        let queue = self.registry.entry(arg.fd).or_default();
         queue.push_back_interest(user_data, arg.interest);
         // We use fd as the key.
         let event = queue.event(arg.fd as usize);
         unsafe {
-            let fd = BorrowedFd::borrow_raw(arg.fd);
-            self.poll.modify(fd, event)?;
+            if need_add {
+                self.poll.add(arg.fd, event)?;
+            } else {
+                let fd = BorrowedFd::borrow_raw(arg.fd);
+                self.poll.modify(fd, event)?;
+            }
         }
         Ok(())
     }
 
-    pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
-        if cfg!(any(target_os = "linux", target_os = "android")) {
-            let mut stat = unsafe { std::mem::zeroed() };
-            syscall!(libc::fstat(fd, &mut stat))?;
-            if matches!(stat.st_mode & libc::S_IFMT, libc::S_IFREG | libc::S_IFDIR) {
-                return Ok(());
-            }
-        }
-        let queue = self.registry.entry(fd).or_default();
-        unsafe {
-            match self.poll.add(fd, Event::none(0)) {
-                Ok(()) => {}
-                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-                    queue.clear();
-                    let fd = BorrowedFd::borrow_raw(fd);
-                    self.poll.modify(fd, Event::none(0))?;
-                }
-                Err(e) => return Err(e),
-            }
-        }
+    pub fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
         Ok(())
     }
 

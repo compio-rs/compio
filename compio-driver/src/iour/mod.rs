@@ -196,6 +196,10 @@ impl Driver {
         entries.extend(completed_entries);
     }
 
+    pub fn create_op<T: crate::sys::OpCode + 'static>(&self, user_data: usize, op: T) -> RawOp {
+        RawOp::new(user_data, op)
+    }
+
     pub fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
         Ok(())
     }
