@@ -1,8 +1,9 @@
 use std::{future::Future, io, net::SocketAddr};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_driver::impl_raw_fd;
 use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::{impl_attachable, impl_try_as_raw_fd};
+use compio_runtime::impl_attachable;
 use socket2::{Protocol, SockAddr, Type};
 
 use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, ToSocketAddrsAsync, WriteHalf};
@@ -117,7 +118,7 @@ impl TcpListener {
     }
 }
 
-impl_try_as_raw_fd!(TcpListener, inner);
+impl_raw_fd!(TcpListener, inner);
 
 impl_attachable!(TcpListener, inner);
 
@@ -292,6 +293,6 @@ impl AsyncWrite for &TcpStream {
     }
 }
 
-impl_try_as_raw_fd!(TcpStream, inner);
+impl_raw_fd!(TcpStream, inner);
 
 impl_attachable!(TcpStream, inner);

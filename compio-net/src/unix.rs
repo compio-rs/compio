@@ -1,8 +1,9 @@
 use std::{future::Future, io, path::Path};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_driver::impl_raw_fd;
 use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::{impl_attachable, impl_try_as_raw_fd};
+use compio_runtime::impl_attachable;
 use socket2::{SockAddr, Type};
 
 use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, WriteHalf};
@@ -96,7 +97,7 @@ impl UnixListener {
     }
 }
 
-impl_try_as_raw_fd!(UnixListener, inner);
+impl_raw_fd!(UnixListener, inner);
 
 impl_attachable!(UnixListener, inner);
 
@@ -277,7 +278,7 @@ impl AsyncWrite for &UnixStream {
     }
 }
 
-impl_try_as_raw_fd!(UnixStream, inner);
+impl_raw_fd!(UnixStream, inner);
 
 impl_attachable!(UnixStream, inner);
 

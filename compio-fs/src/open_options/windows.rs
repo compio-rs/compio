@@ -160,6 +160,6 @@ impl OpenOptions {
                 )
             )?;
         }
-        Ok(unsafe { File::from_raw_fd(fd) })
+        File::new(unsafe { std::fs::File::from_raw_fd(fd) })
     }
 }

@@ -1,11 +1,10 @@
 use std::{num::NonZeroUsize, panic::resume_unwind};
 
 use compio::{
-    buf::IntoInner,
     dispatcher::Dispatcher,
     io::{AsyncRead, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    runtime::{spawn, Unattached},
+    runtime::spawn,
     BufResult,
 };
 use futures_util::{stream::FuturesUnordered, StreamExt};
@@ -34,16 +33,12 @@ async fn main() {
     .detach();
     let mut handles = FuturesUnordered::new();
     for _i in 0..CLIENT_NUM {
-        let (srv, _) = listener.accept().await.unwrap();
-        let srv = Unattached::new(srv).unwrap();
+        let (mut srv, _) = listener.accept().await.unwrap();
         let handle = dispatcher
-            .dispatch(move || {
-                let mut srv = srv.into_inner();
-                async move {
-                    let BufResult(res, buf) = srv.read(Vec::with_capacity(20)).await;
-                    res.unwrap();
-                    println!("{}", std::str::from_utf8(&buf).unwrap());
-                }
+            .dispatch(move || async move {
+                let BufResult(res, buf) = srv.read(Vec::with_capacity(20)).await;
+                res.unwrap();
+                println!("{}", std::str::from_utf8(&buf).unwrap());
             })
             .unwrap();
         handles.push(handle.join());

@@ -3,10 +3,7 @@ use std::{
     future::{ready, Future},
     io,
     rc::{Rc, Weak},
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::Arc,
     task::{Context, Poll, Waker},
     time::Duration,
 };
@@ -41,10 +38,7 @@ impl Default for FutureState {
     }
 }
 
-static RUNTIME_COUNTER: AtomicUsize = AtomicUsize::new(0);
-
 pub(crate) struct RuntimeInner {
-    id: usize,
     driver: RefCell<Proactor>,
     runnables: Arc<SegQueue<Runnable>>,
     op_runtime: RefCell<OpRuntime>,
@@ -55,7 +49,6 @@ pub(crate) struct RuntimeInner {
 impl RuntimeInner {
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         Ok(Self {
-            id: RUNTIME_COUNTER.fetch_add(1, Ordering::AcqRel),
             driver: RefCell::new(builder.build()?),
             runnables: Arc::new(SegQueue::new()),
             op_runtime: RefCell::default(),
