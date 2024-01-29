@@ -301,7 +301,6 @@ impl NamedPipeClient {
     /// ```
     pub fn info(&self) -> io::Result<PipeInfo> {
         // Safety: we're ensuring the lifetime of the named pipe.
-        // Safety: getting info doesn't need to be attached.
         unsafe { named_pipe_info(self.as_raw_fd()) }
     }
 }
@@ -994,7 +993,9 @@ impl ServerOptions {
             )
         )?;
 
-        Ok(unsafe { NamedPipeServer::from_raw_fd(h as _) })
+        Ok(NamedPipeServer {
+            handle: File::new(unsafe { std::fs::File::from_raw_fd(h as _) })?,
+        })
     }
 }
 
