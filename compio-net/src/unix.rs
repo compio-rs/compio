@@ -3,7 +3,7 @@ use std::{future::Future, io, path::Path};
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::impl_attachable;
+use compio_runtime::{impl_attachable, impl_try_clone};
 use socket2::{SockAddr, Type};
 
 use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, WriteHalf};
@@ -71,15 +71,6 @@ impl UnixListener {
         self.inner.close()
     }
 
-    /// Creates a new independently owned handle to the underlying socket.
-    ///
-    /// It does not clear the attach state.
-    pub fn try_clone(&self) -> io::Result<Self> {
-        Ok(Self {
-            inner: self.inner.try_clone()?,
-        })
-    }
-
     /// Accepts a new incoming connection from this listener.
     ///
     /// This function will yield once a new Unix domain socket connection
@@ -100,6 +91,8 @@ impl UnixListener {
 impl_raw_fd!(UnixListener, inner);
 
 impl_attachable!(UnixListener, inner);
+
+impl_try_clone!(UnixListener, inner);
 
 /// A Unix stream between two local sockets on Windows & WSL.
 ///
@@ -163,15 +156,6 @@ impl UnixStream {
     /// socket won't be closed.
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.inner.close()
-    }
-
-    /// Creates a new independently owned handle to the underlying socket.
-    ///
-    /// It does not clear the attach state.
-    pub fn try_clone(&self) -> io::Result<Self> {
-        Ok(Self {
-            inner: self.inner.try_clone()?,
-        })
     }
 
     /// Returns the socket path of the remote peer of this connection.
@@ -325,3 +309,5 @@ fn fix_unix_socket_length(addr: &mut SockAddr) {
         addr.set_length(addr_len as _);
     }
 }
+
+impl_try_clone!(UnixStream, inner);

@@ -162,3 +162,17 @@ macro_rules! impl_attachable {
         }
     };
 }
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! impl_try_clone {
+    ($t:ty, $inner:ident) => {
+        impl $crate::TryClone for $t {
+            fn try_clone(&self) -> ::std::io::Result<Self> {
+                Ok(Self {
+                    $inner: self.$inner.try_clone()?,
+                })
+            }
+        }
+    };
+}

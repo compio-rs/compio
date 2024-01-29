@@ -8,6 +8,7 @@ use compio::{
     io::{AsyncReadAt, AsyncReadExt, AsyncWriteAt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
+use compio_runtime::TryClone;
 use tempfile::NamedTempFile;
 
 #[compio_macros::test]

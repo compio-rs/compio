@@ -9,7 +9,7 @@ use compio_driver::{
     },
     AsRawFd,
 };
-use compio_runtime::{impl_attachable, Attacher, Runtime, TryClone};
+use compio_runtime::{impl_attachable, impl_try_clone, Attacher, Runtime};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
 #[derive(Debug)]
@@ -22,11 +22,6 @@ impl Socket {
         Ok(Self {
             socket: Attacher::new(socket)?,
         })
-    }
-
-    pub fn try_clone(&self) -> io::Result<Self> {
-        let socket = self.socket.try_clone()?;
-        Ok(Self { socket })
     }
 
     pub fn peer_addr(&self) -> io::Result<SockAddr> {
@@ -212,3 +207,5 @@ impl Socket {
 impl_raw_fd!(Socket, socket);
 
 impl_attachable!(Socket, socket);
+
+impl_try_clone!(Socket, socket);

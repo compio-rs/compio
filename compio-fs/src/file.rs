@@ -7,7 +7,7 @@ use compio_driver::{
     syscall, AsRawFd,
 };
 use compio_io::{AsyncReadAt, AsyncWriteAt};
-use compio_runtime::{impl_attachable, Attacher, Runtime, TryClone};
+use compio_runtime::{impl_attachable, impl_try_clone, Attacher, Runtime};
 #[cfg(unix)]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
@@ -68,15 +68,6 @@ impl File {
             Runtime::current().submit(op).await.0?;
             Ok(())
         }
-    }
-
-    /// Creates a new `File` instance that shares the same underlying file
-    /// handle as the existing `File` instance.
-    ///
-    /// It does not clear the attach state.
-    pub fn try_clone(&self) -> io::Result<Self> {
-        let inner = self.inner.try_clone()?;
-        Ok(Self { inner })
     }
 
     /// Queries metadata about the underlying file.
@@ -227,3 +218,5 @@ impl AsyncWriteAt for &File {
 impl_raw_fd!(File, inner);
 
 impl_attachable!(File, inner);
+
+impl_try_clone!(File, inner);
