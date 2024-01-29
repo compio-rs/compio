@@ -394,7 +394,9 @@ impl ServerOptions {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-new";
     ///
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
+    /// # })
     /// ```
     pub fn new() -> ServerOptions {
         ServerOptions {
