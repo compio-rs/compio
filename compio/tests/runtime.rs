@@ -22,11 +22,15 @@ async fn multi_threading() {
         futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
 
     tx.write_all(DATA).await.0.unwrap();
+    tx.write_all(DATA).await.0.unwrap();
+
+    let (n, buffer) = rx.read_exact(Vec::with_capacity(DATA.len())).await.unwrap();
+    assert_eq!(n, buffer.len());
+    assert_eq!(DATA, String::from_utf8(buffer).unwrap());
 
     if let Err(e) = std::thread::spawn(move || {
         compio::runtime::Runtime::new().unwrap().block_on(async {
-            let buffer = Vec::with_capacity(DATA.len());
-            let ((), buffer) = rx.read_exact(buffer).await.unwrap();
+            let ((), buffer) = rx.read_exact(Vec::with_capacity(DATA.len())).await.unwrap();
             assert_eq!(DATA, String::from_utf8(buffer).unwrap());
         });
     })
