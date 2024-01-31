@@ -1,7 +1,7 @@
 #[cfg(feature = "once_cell_try")]
 use std::sync::OnceLock;
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::HashSet,
     io,
     mem::ManuallyDrop,
     os::windows::prelude::{
@@ -12,7 +12,7 @@ use std::{
     ptr::NonNull,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Condvar, Mutex, MutexGuard,
+        Arc,
     },
     task::Poll,
     time::Duration,
@@ -20,6 +20,7 @@ use std::{
 
 use compio_buf::{arrayvec::ArrayVec, BufResult};
 use compio_log::{instrument, trace};
+use crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use crossbeam_skiplist::SkipMap;
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
@@ -117,46 +118,9 @@ impl IntoRawFd for socket2::Socket {
     }
 }
 
-struct DriverEntry {
-    queue: Mutex<VecDeque<Entry>>,
-    event: Condvar,
-}
-
-impl DriverEntry {
-    pub fn new(capacity: usize) -> Self {
-        Self {
-            queue: Mutex::new(VecDeque::with_capacity(capacity)),
-            event: Condvar::new(),
-        }
-    }
-
-    pub fn push(&self, entry: Entry) {
-        self.queue.lock().unwrap().push_back(entry);
-        self.event.notify_all();
-    }
-
-    pub fn wait(&self, timeout: Option<Duration>) -> io::Result<MutexGuard<VecDeque<Entry>>> {
-        let guard = self.queue.lock().unwrap();
-        if guard.is_empty() {
-            if let Some(timeout) = timeout {
-                let (guard, res) = self.event.wait_timeout(guard, timeout).unwrap();
-                if res.timed_out() {
-                    Err(io::Error::from_raw_os_error(ERROR_TIMEOUT as _))
-                } else {
-                    Ok(guard)
-                }
-            } else {
-                Ok(self.event.wait(guard).unwrap())
-            }
-        } else {
-            Ok(guard)
-        }
-    }
-}
-
 struct CompletionPort {
     port: OwnedHandle,
-    drivers: SkipMap<usize, Arc<DriverEntry>>,
+    drivers: SkipMap<usize, Sender<Entry>>,
 }
 
 impl CompletionPort {
@@ -170,10 +134,10 @@ impl CompletionPort {
         })
     }
 
-    pub fn register(&self, driver: usize, capacity: usize) -> Arc<DriverEntry> {
-        let driver_entry = Arc::new(DriverEntry::new(capacity));
-        self.drivers.insert(driver, driver_entry.clone());
-        driver_entry
+    pub fn register(&self, driver: usize) -> Receiver<Entry> {
+        let (sender, receiver) = unbounded();
+        self.drivers.insert(driver, sender);
+        receiver
     }
 
     pub fn attach(&self, fd: RawFd) -> io::Result<()> {
@@ -219,7 +183,8 @@ impl CompletionPort {
             .get(&driver)
             .expect("driver should register first")
             .value()
-            .push(entry)
+            .send(entry)
+            .ok(); // It's OK if the driver has been dropped.
     }
 }
 
@@ -336,7 +301,7 @@ static IOCP_INIT_ONCE: OnceLock<()> = OnceLock::new();
 /// Low-level driver of IOCP.
 pub(crate) struct Driver {
     id: usize,
-    driver_entry: Arc<DriverEntry>,
+    receiver: Receiver<Entry>,
     cancelled: HashSet<usize>,
     pool: AsyncifyPool,
     notify_overlapped: Arc<Overlapped<()>>,
@@ -353,10 +318,10 @@ impl Driver {
         IOCP_INIT_ONCE.get_or_try_init(iocp_start)?;
 
         let id = DRIVER_COUNTER.fetch_add(1, Ordering::AcqRel);
-        let driver_entry = iocp_port()?.register(id, builder.capacity as _);
+        let receiver = iocp_port()?.register(id);
         Ok(Self {
             id,
-            driver_entry,
+            receiver,
             cancelled: HashSet::default(),
             pool: builder.create_or_get_thread_pool(),
             notify_overlapped: Arc::new(Overlapped::new(id, Self::NOTIFY, ())),
@@ -431,10 +396,10 @@ impl Driver {
             .is_ok())
     }
 
-    fn create_entry(entry: Entry, cancelled: &mut HashSet<usize>) -> Option<Entry> {
+    fn create_entry(&mut self, entry: Entry) -> Option<Entry> {
         let user_data = entry.user_data();
         if user_data != Self::NOTIFY {
-            let result = if cancelled.remove(&user_data) {
+            let result = if self.cancelled.remove(&user_data) {
                 Err(io::Error::from_raw_os_error(ERROR_OPERATION_ABORTED as _))
             } else {
                 entry.into_result()
@@ -452,11 +417,33 @@ impl Driver {
     ) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
 
-        let mut completed_entries = self.driver_entry.wait(timeout)?;
-        entries.extend(
-            std::iter::from_fn(|| completed_entries.pop_front())
-                .filter_map(|e| Self::create_entry(e, &mut self.cancelled)),
-        );
+        let e = if let Some(timeout) = timeout {
+            match self.receiver.recv_timeout(timeout) {
+                Ok(e) => e,
+                Err(e) => match e {
+                    RecvTimeoutError::Timeout => {
+                        return Err(io::Error::from_raw_os_error(ERROR_TIMEOUT as _));
+                    }
+                    RecvTimeoutError::Disconnected => {
+                        unreachable!("IOCP thread should not exit")
+                    }
+                },
+            }
+        } else {
+            self.receiver.recv().expect("IOCP thread should not exit")
+        };
+        entries.extend(self.create_entry(e));
+
+        // Query if there are more entries.
+        loop {
+            match self.receiver.try_recv() {
+                Ok(e) => entries.extend(self.create_entry(e)),
+                Err(e) => match e {
+                    TryRecvError::Empty => break,
+                    TryRecvError::Disconnected => unreachable!("IOCP thread should not exit"),
+                },
+            }
+        }
 
         Ok(())
     }
