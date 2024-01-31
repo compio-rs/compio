@@ -1,7 +1,7 @@
 #[cfg(feature = "once_cell_try")]
 use std::sync::OnceLock;
 use std::{
-    collections::HashSet,
+    collections::{HashSet, VecDeque},
     io,
     mem::ManuallyDrop,
     os::windows::prelude::{
@@ -9,10 +9,10 @@ use std::{
         OwnedHandle, RawHandle,
     },
     pin::Pin,
-    ptr::{null, NonNull},
+    ptr::NonNull,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc,
+        Arc, Condvar, Mutex, MutexGuard,
     },
     task::Poll,
     time::Duration,
@@ -20,7 +20,6 @@ use std::{
 
 use compio_buf::{arrayvec::ArrayVec, BufResult};
 use compio_log::{instrument, trace};
-use crossbeam_queue::SegQueue;
 use crossbeam_skiplist::SkipMap;
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
@@ -30,13 +29,12 @@ use windows_sys::Win32::{
         RtlNtStatusToDosError, ERROR_BAD_COMMAND, ERROR_BUSY, ERROR_HANDLE_EOF,
         ERROR_IO_INCOMPLETE, ERROR_NO_DATA, ERROR_OPERATION_ABORTED, ERROR_TIMEOUT,
         FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING, STATUS_SUCCESS,
-        WAIT_OBJECT_0, WAIT_TIMEOUT,
     },
     Networking::WinSock::{WSACleanup, WSAStartup, WSADATA},
     Storage::FileSystem::SetFileCompletionNotificationModes,
     System::{
         SystemServices::ERROR_SEVERITY_ERROR,
-        Threading::{CreateEventW, SetEvent, WaitForSingleObject, INFINITE},
+        Threading::INFINITE,
         WindowsProgramming::{FILE_SKIP_COMPLETION_PORT_ON_SUCCESS, FILE_SKIP_SET_EVENT_ON_HANDLE},
         IO::{
             CreateIoCompletionPort, GetQueuedCompletionStatusEx, PostQueuedCompletionStatus,
@@ -120,46 +118,49 @@ impl IntoRawFd for socket2::Socket {
 }
 
 struct DriverEntry {
-    queue: SegQueue<Entry>,
-    event: OwnedHandle,
+    queue: Mutex<VecDeque<Entry>>,
+    event: Condvar,
 }
 
 impl DriverEntry {
-    pub fn new() -> io::Result<Self> {
-        let event = syscall!(BOOL, CreateEventW(null(), 0, 0, null()))?;
-        Ok(Self {
-            queue: SegQueue::new(),
-            event: unsafe { OwnedHandle::from_raw_handle(event as _) },
-        })
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            queue: Mutex::new(VecDeque::with_capacity(capacity)),
+            event: Condvar::new(),
+        }
     }
 
-    pub fn push(&self, entry: Entry) -> io::Result<()> {
-        self.queue.push(entry);
-        syscall!(BOOL, SetEvent(self.event.as_raw_handle() as _))?;
-        Ok(())
+    pub fn push(&self, entry: Entry) {
+        self.lock().push_back(entry);
+        self.event.notify_all();
     }
 
-    pub fn pop(&self) -> Option<Entry> {
-        self.queue.pop()
+    pub fn lock(&self) -> MutexGuard<VecDeque<Entry>> {
+        self.queue.lock().unwrap()
     }
 
-    pub fn wait(&self, timeout: Option<Duration>) -> io::Result<()> {
-        let timeout = match timeout {
-            Some(timeout) => timeout.as_millis() as u32,
-            None => INFINITE,
-        };
-        let res = unsafe { WaitForSingleObject(self.event.as_raw_handle() as _, timeout) };
-        match res {
-            WAIT_OBJECT_0 => Ok(()),
-            WAIT_TIMEOUT => Err(io::Error::from_raw_os_error(ERROR_TIMEOUT as _)),
-            _ => Err(io::Error::last_os_error()),
+    pub fn wait(&self, timeout: Option<Duration>) -> io::Result<MutexGuard<VecDeque<Entry>>> {
+        let guard = self.lock();
+        if guard.is_empty() {
+            if let Some(timeout) = timeout {
+                let (guard, res) = self.event.wait_timeout(guard, timeout).unwrap();
+                if res.timed_out() {
+                    Err(io::Error::from_raw_os_error(ERROR_TIMEOUT as _))
+                } else {
+                    Ok(guard)
+                }
+            } else {
+                Ok(self.event.wait(guard).unwrap())
+            }
+        } else {
+            Ok(guard)
         }
     }
 }
 
 struct CompletionPort {
     port: OwnedHandle,
-    drivers: SkipMap<usize, DriverEntry>,
+    drivers: SkipMap<usize, Arc<DriverEntry>>,
 }
 
 impl CompletionPort {
@@ -173,9 +174,9 @@ impl CompletionPort {
         })
     }
 
-    pub fn register(&self, driver: usize) -> io::Result<()> {
-        self.drivers.insert(driver, DriverEntry::new()?);
-        Ok(())
+    pub fn register(&self, driver: usize, capacity: usize) {
+        self.drivers
+            .insert(driver, Arc::new(DriverEntry::new(capacity)));
     }
 
     pub fn attach(&self, fd: RawFd) -> io::Result<()> {
@@ -216,18 +217,20 @@ impl CompletionPort {
         Ok(())
     }
 
-    pub fn entry(&self, driver: usize) -> crossbeam_skiplist::map::Entry<usize, DriverEntry> {
+    pub fn entry(&self, driver: usize) -> Arc<DriverEntry> {
         self.drivers
             .get(&driver)
             .expect("driver should register first")
+            .value()
+            .clone()
     }
 
-    pub fn push(&self, driver: usize, entry: Entry) -> io::Result<()> {
-        self.entry(driver).value().push(entry)
-    }
-
-    pub fn wait(&self, driver: usize, timeout: Option<Duration>) -> io::Result<()> {
-        self.entry(driver).value().wait(timeout)
+    pub fn push(&self, driver: usize, entry: Entry) {
+        self.drivers
+            .get(&driver)
+            .expect("driver should register first")
+            .value()
+            .push(entry)
     }
 }
 
@@ -289,7 +292,7 @@ fn iocp_start() -> io::Result<()> {
                     }
                 };
 
-                port.push(overlapped.driver, Entry::new(overlapped.user_data, res))?;
+                port.push(overlapped.driver, Entry::new(overlapped.user_data, res));
             }
         }
         #[allow(unreachable_code)]
@@ -360,7 +363,7 @@ impl Driver {
         IOCP_INIT_ONCE.get_or_try_init(iocp_start)?;
 
         let id = DRIVER_COUNTER.fetch_add(1, Ordering::AcqRel);
-        iocp_port()?.register(id)?;
+        iocp_port()?.register(id, builder.capacity as _);
         Ok(Self {
             id,
             cancelled: HashSet::default(),
@@ -460,15 +463,12 @@ impl Driver {
 
         let port = iocp_port()?;
 
-        port.wait(self.id, timeout)?;
-
-        {
-            let driver_entry = port.entry(self.id);
-            let completed_entries = driver_entry.value();
-            entries.extend(
-                std::iter::from_fn(|| completed_entries.pop()).filter_map(|e| self.create_entry(e)),
-            );
-        }
+        let driver_entry = port.entry(self.id);
+        let mut completed_entries = driver_entry.wait(timeout)?;
+        entries.extend(
+            std::iter::from_fn(|| completed_entries.pop_front())
+                .filter_map(|e| self.create_entry(e)),
+        );
 
         Ok(())
     }

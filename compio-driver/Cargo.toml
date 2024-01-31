@@ -35,7 +35,6 @@ compio-log = { workspace = true }
 # Utils
 cfg-if = { workspace = true }
 crossbeam-channel = { workspace = true }
-crossbeam-queue = { workspace = true }
 slab = { workspace = true }
 socket2 = { workspace = true }
 
@@ -72,6 +71,7 @@ polling = "3.3.0"
 os_pipe = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
+crossbeam-queue = { workspace = true }
 libc = { workspace = true }
 
 [dev-dependencies]
