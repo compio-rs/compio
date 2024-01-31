@@ -164,7 +164,7 @@ struct CompletionPort {
 
 impl CompletionPort {
     pub fn new() -> io::Result<Self> {
-        let port = syscall!(BOOL, CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0))?;
+        let port = syscall!(BOOL, CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 1))?;
         trace!("new iocp handle: {port}");
         let port = unsafe { OwnedHandle::from_raw_handle(port as _) };
         Ok(Self {
