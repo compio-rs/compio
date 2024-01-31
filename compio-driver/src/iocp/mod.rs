@@ -131,16 +131,12 @@ impl DriverEntry {
     }
 
     pub fn push(&self, entry: Entry) {
-        self.lock().push_back(entry);
+        self.queue.lock().unwrap().push_back(entry);
         self.event.notify_all();
     }
 
-    pub fn lock(&self) -> MutexGuard<VecDeque<Entry>> {
-        self.queue.lock().unwrap()
-    }
-
     pub fn wait(&self, timeout: Option<Duration>) -> io::Result<MutexGuard<VecDeque<Entry>>> {
-        let guard = self.lock();
+        let guard = self.queue.lock().unwrap();
         if guard.is_empty() {
             if let Some(timeout) = timeout {
                 let (guard, res) = self.event.wait_timeout(guard, timeout).unwrap();
@@ -174,9 +170,10 @@ impl CompletionPort {
         })
     }
 
-    pub fn register(&self, driver: usize, capacity: usize) {
-        self.drivers
-            .insert(driver, Arc::new(DriverEntry::new(capacity)));
+    pub fn register(&self, driver: usize, capacity: usize) -> Arc<DriverEntry> {
+        let driver_entry = Arc::new(DriverEntry::new(capacity));
+        self.drivers.insert(driver, driver_entry.clone());
+        driver_entry
     }
 
     pub fn attach(&self, fd: RawFd) -> io::Result<()> {
@@ -215,14 +212,6 @@ impl CompletionPort {
             )
         )?;
         Ok(())
-    }
-
-    pub fn entry(&self, driver: usize) -> Arc<DriverEntry> {
-        self.drivers
-            .get(&driver)
-            .expect("driver should register first")
-            .value()
-            .clone()
     }
 
     pub fn push(&self, driver: usize, entry: Entry) {
@@ -347,6 +336,7 @@ static IOCP_INIT_ONCE: OnceLock<()> = OnceLock::new();
 /// Low-level driver of IOCP.
 pub(crate) struct Driver {
     id: usize,
+    driver_entry: Arc<DriverEntry>,
     cancelled: HashSet<usize>,
     pool: AsyncifyPool,
     notify_overlapped: Arc<Overlapped<()>>,
@@ -363,9 +353,10 @@ impl Driver {
         IOCP_INIT_ONCE.get_or_try_init(iocp_start)?;
 
         let id = DRIVER_COUNTER.fetch_add(1, Ordering::AcqRel);
-        iocp_port()?.register(id, builder.capacity as _);
+        let driver_entry = iocp_port()?.register(id, builder.capacity as _);
         Ok(Self {
             id,
+            driver_entry,
             cancelled: HashSet::default(),
             pool: builder.create_or_get_thread_pool(),
             notify_overlapped: Arc::new(Overlapped::new(id, Self::NOTIFY, ())),
@@ -374,20 +365,6 @@ impl Driver {
 
     pub fn create_op<T: OpCode + 'static>(&self, user_data: usize, op: T) -> RawOp {
         RawOp::new(self.id, user_data, op)
-    }
-
-    fn create_entry(&mut self, entry: Entry) -> Option<Entry> {
-        let user_data = entry.user_data();
-        if user_data != Self::NOTIFY {
-            let result = if self.cancelled.remove(&user_data) {
-                Err(io::Error::from_raw_os_error(ERROR_OPERATION_ABORTED as _))
-            } else {
-                entry.into_result()
-            };
-            Some(Entry::new(user_data, result))
-        } else {
-            None
-        }
     }
 
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
@@ -454,6 +431,20 @@ impl Driver {
             .is_ok())
     }
 
+    fn create_entry(entry: Entry, cancelled: &mut HashSet<usize>) -> Option<Entry> {
+        let user_data = entry.user_data();
+        if user_data != Self::NOTIFY {
+            let result = if cancelled.remove(&user_data) {
+                Err(io::Error::from_raw_os_error(ERROR_OPERATION_ABORTED as _))
+            } else {
+                entry.into_result()
+            };
+            Some(Entry::new(user_data, result))
+        } else {
+            None
+        }
+    }
+
     pub unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
@@ -461,13 +452,10 @@ impl Driver {
     ) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
 
-        let port = iocp_port()?;
-
-        let driver_entry = port.entry(self.id);
-        let mut completed_entries = driver_entry.wait(timeout)?;
+        let mut completed_entries = self.driver_entry.wait(timeout)?;
         entries.extend(
             std::iter::from_fn(|| completed_entries.pop_front())
-                .filter_map(|e| self.create_entry(e)),
+                .filter_map(|e| Self::create_entry(e, &mut self.cancelled)),
         );
 
         Ok(())
