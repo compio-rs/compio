@@ -1,7 +1,7 @@
 #[cfg(feature = "allocator_api")]
 use std::alloc::Allocator;
 
-use compio_buf::{buf_try, vec_alloc, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut};
+use compio_buf::{vec_alloc, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut};
 
 use crate::{util::Take, AsyncRead, AsyncReadAt, IoResult};
 
@@ -41,20 +41,25 @@ macro_rules! loop_read_exact {
         let len = $len;
 
         while $tracker < len {
-            ($tracker, $buf) = buf_try!($read_expr.await.into_inner().and_then(|n, b| {
-                if n == 0 {
-                    use ::std::io::{Error, ErrorKind};
-                    (
-                        Err(Error::new(
-                            ErrorKind::UnexpectedEof,
+            match $read_expr.await.into_inner() {
+                BufResult(Ok(0), buf) => {
+                    return BufResult(
+                        Err(::std::io::Error::new(
+                            ::std::io::ErrorKind::UnexpectedEof,
                             "failed to fill whole buffer",
                         )),
-                        b,
-                    )
-                } else {
-                    (Ok($tracker + n), b)
+                        buf,
+                    );
                 }
-            }));
+                BufResult(Ok(n), buf) => {
+                    $tracker += n;
+                    $buf = buf;
+                }
+                BufResult(Err(ref e), buf) if e.kind() == ::std::io::ErrorKind::Interrupted => {
+                    $buf = buf;
+                }
+                res => return res,
+            }
         }
         return BufResult(Ok($tracker), $buf)
     };
@@ -114,16 +119,23 @@ macro_rules! loop_read_vectored {
 macro_rules! loop_read_to_end {
     ($buf:ident, $tracker:ident : $tracker_ty:ty,loop $read_expr:expr) => {{
         let mut $tracker: $tracker_ty = 0;
-        let mut read;
         loop {
             if $buf.len() == $buf.capacity() {
                 $buf.reserve(32);
             }
-            (read, $buf) = buf_try!($read_expr.await.into_inner());
-            if read == 0 {
-                break;
-            } else {
-                $tracker += read as $tracker_ty;
+            match $read_expr.await.into_inner() {
+                BufResult(Ok(0), buf) => {
+                    $buf = buf;
+                    break;
+                }
+                BufResult(Ok(read), buf) => {
+                    $tracker += read as $tracker_ty;
+                    $buf = buf;
+                }
+                BufResult(Err(ref e), buf) if e.kind() == ::std::io::ErrorKind::Interrupted => {
+                    $buf = buf
+                }
+                res => return res,
             }
         }
         BufResult(Ok($tracker as usize), $buf)
