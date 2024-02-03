@@ -7,12 +7,11 @@ use compio::{
     fs::File,
     io::{AsyncReadAt, AsyncReadExt, AsyncWriteAt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    runtime::TryClone,
 };
-use compio_runtime::TryClone;
 use tempfile::NamedTempFile;
 
 #[compio_macros::test]
-#[cfg(any(not(windows), feature = "iocp-global"))]
 async fn multi_threading() {
     const DATA: &str = "Hello world!";
 
@@ -29,16 +28,13 @@ async fn multi_threading() {
     assert_eq!(n, buffer.len());
     assert_eq!(DATA, String::from_utf8(buffer).unwrap());
 
-    if let Err(e) = std::thread::spawn(move || {
+    compio::runtime::spawn_blocking(move || {
         compio::runtime::Runtime::new().unwrap().block_on(async {
             let ((), buffer) = rx.read_exact(Vec::with_capacity(DATA.len())).await.unwrap();
             assert_eq!(DATA, String::from_utf8(buffer).unwrap());
         });
     })
-    .join()
-    {
-        std::panic::resume_unwind(e)
-    }
+    .await
 }
 
 #[compio_macros::test]

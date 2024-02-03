@@ -73,7 +73,6 @@ libc = { workspace = true }
 default = ["runtime", "io-uring"]
 io-uring = ["compio-driver/io-uring"]
 polling = ["compio-driver/polling"]
-iocp-global = ["compio-driver/iocp-global"]
 io = ["dep:compio-io"]
 io-compat = ["io", "compio-io/compat"]
 runtime = ["dep:compio-runtime", "dep:compio-fs", "dep:compio-net", "io"]

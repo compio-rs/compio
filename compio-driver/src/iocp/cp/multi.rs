@@ -28,7 +28,7 @@ impl Port {
 
     pub fn poll(&self, timeout: Option<Duration>) -> io::Result<impl Iterator<Item = Entry> + '_> {
         let current_id = self.id();
-        self.port.poll(timeout).map(move |it| {
+        self.port.poll(timeout, Some(current_id)).map(move |it| {
             it.filter_map(
                 move |(id, entry)| {
                     if id == current_id { Some(entry) } else { None }

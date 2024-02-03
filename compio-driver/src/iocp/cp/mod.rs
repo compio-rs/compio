@@ -86,9 +86,12 @@ impl CompletionPort {
         Ok(())
     }
 
+    // If current_driver is specified, any entry that doesn't belong the driver will
+    // be reposted. The driver id will be used as IOCP handle.
     pub fn poll(
         &self,
         timeout: Option<Duration>,
+        current_driver: Option<usize>,
     ) -> io::Result<impl Iterator<Item = (usize, Entry)>> {
         const DEFAULT_CAPACITY: usize = 1024;
 
@@ -112,12 +115,26 @@ impl CompletionPort {
         trace!("recv_count: {recv_count}");
         unsafe { entries.set_len(recv_count as _) };
 
-        Ok(entries.into_iter().map(|entry| {
+        Ok(entries.into_iter().map(move |entry| {
             let transferred = entry.dwNumberOfBytesTransferred;
             trace!("entry transferred: {transferred}");
             // Any thin pointer is OK because we don't use the type of opcode.
             let overlapped_ptr: *mut Overlapped<()> = entry.lpOverlapped.cast();
             let overlapped = unsafe { &*overlapped_ptr };
+            if let Some(current_driver) = current_driver {
+                if overlapped.driver != current_driver {
+                    syscall!(
+                        BOOL,
+                        PostQueuedCompletionStatus(
+                            overlapped.driver as _,
+                            entry.dwNumberOfBytesTransferred,
+                            entry.lpCompletionKey,
+                            entry.lpOverlapped
+                        )
+                    )
+                    .ok();
+                }
+            }
             let res = if matches!(
                 overlapped.base.Internal as NTSTATUS,
                 STATUS_SUCCESS | STATUS_PENDING
