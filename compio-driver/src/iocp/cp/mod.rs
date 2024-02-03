@@ -91,8 +91,8 @@ impl CompletionPort {
     pub fn poll(
         &self,
         timeout: Option<Duration>,
-        current_driver: Option<usize>,
-    ) -> io::Result<impl Iterator<Item = (usize, Entry)>> {
+        current_driver: Option<PortId>,
+    ) -> io::Result<impl Iterator<Item = (PortId, Entry)>> {
         const DEFAULT_CAPACITY: usize = 1024;
 
         let mut entries = ArrayVec::<OVERLAPPED_ENTRY, { DEFAULT_CAPACITY }>::new();
@@ -123,16 +123,14 @@ impl CompletionPort {
             let overlapped = unsafe { &*overlapped_ptr };
             if let Some(current_driver) = current_driver {
                 if overlapped.driver != current_driver {
-                    syscall!(
-                        BOOL,
-                        PostQueuedCompletionStatus(
-                            overlapped.driver as _,
+                    overlapped
+                        .driver
+                        .post_raw(
                             entry.dwNumberOfBytesTransferred,
                             entry.lpCompletionKey,
-                            entry.lpOverlapped
+                            entry.lpOverlapped,
                         )
-                    )
-                    .ok();
+                        .ok();
                 }
             }
             let res = if matches!(

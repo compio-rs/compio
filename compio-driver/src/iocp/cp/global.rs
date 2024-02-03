@@ -11,10 +11,13 @@ use crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Sender, TryRecvEr
 use crossbeam_skiplist::SkipMap;
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
-use windows_sys::Win32::Foundation::ERROR_TIMEOUT;
+use windows_sys::Win32::{
+    Foundation::ERROR_TIMEOUT,
+    System::IO::{PostQueuedCompletionStatus, OVERLAPPED},
+};
 
 use super::CompletionPort;
-use crate::{Entry, Overlapped, RawFd};
+use crate::{syscall, Entry, Overlapped, RawFd};
 
 struct GlobalPort {
     port: CompletionPort,
@@ -75,7 +78,7 @@ fn iocp_start() -> io::Result<()> {
     std::thread::spawn(move || {
         loop {
             for (driver, entry) in port.port.poll(None, None)? {
-                port.push(driver, entry);
+                port.push(driver.0, entry);
             }
         }
         #[allow(unreachable_code)]
@@ -103,8 +106,8 @@ impl Port {
         Ok(Self { id, port, receiver })
     }
 
-    pub fn id(&self) -> usize {
-        self.id
+    pub fn id(&self) -> PortId {
+        PortId(self.id)
     }
 
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
@@ -158,5 +161,20 @@ impl PortHandle {
         optr: *mut Overlapped<T>,
     ) -> io::Result<()> {
         self.port.post(res, optr)
+    }
+}
+
+/// The unique ID of IOCP driver.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PortId(usize);
+
+impl PortId {
+    /// Post raw entry to IOCP.
+    pub fn post_raw(&self, transferred: u32, key: usize, optr: *mut OVERLAPPED) -> io::Result<()> {
+        syscall!(
+            BOOL,
+            PostQueuedCompletionStatus(iocp_port()?.as_raw_handle() as _, transferred, key, optr)
+        )?;
+        Ok(())
     }
 }
