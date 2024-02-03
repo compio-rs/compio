@@ -10,17 +10,14 @@ async fn test_connect_ip_impl(
     let addr = listener.local_addr().unwrap();
     assert!(assert_fn(&addr));
 
-    let (tx, rx) = futures_channel::oneshot::channel();
-
-    compio_runtime::spawn(async move {
+    let task = compio_runtime::spawn(async move {
         let (socket, addr) = listener.accept().await.unwrap();
         assert_eq!(addr, socket.peer_addr().unwrap());
-        assert!(tx.send(socket).is_ok());
-    })
-    .detach();
+        socket
+    });
 
     let mine = TcpStream::connect(&addr).await.unwrap();
-    let theirs = rx.await.unwrap();
+    let theirs = task.await;
 
     assert_eq!(mine.local_addr().unwrap(), theirs.peer_addr().unwrap());
     assert_eq!(theirs.local_addr().unwrap(), mine.peer_addr().unwrap());
