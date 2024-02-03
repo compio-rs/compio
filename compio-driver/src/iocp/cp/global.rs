@@ -38,6 +38,10 @@ impl GlobalPort {
         receiver
     }
 
+    pub fn deregister(&self, driver: usize) {
+        self.drivers.remove(&driver);
+    }
+
     pub fn attach(&self, fd: RawFd) -> io::Result<()> {
         self.port.attach(fd)
     }
@@ -51,12 +55,9 @@ impl GlobalPort {
     }
 
     pub fn push(&self, driver: usize, entry: Entry) {
-        self.drivers
-            .get(&driver)
-            .expect("driver should register first")
-            .value()
-            .send(entry)
-            .ok(); // It's OK if the driver has been dropped.
+        if let Some(e) = self.drivers.get(&driver) {
+            e.value().send(entry).ok(); // It's OK if the driver has been dropped.
+        }
     }
 }
 
@@ -143,6 +144,12 @@ impl Port {
                     TryRecvError::Disconnected => unreachable!("IOCP thread should not exit"),
                 },
             })))
+    }
+}
+
+impl Drop for Port {
+    fn drop(&mut self) {
+        self.port.deregister(self.id);
     }
 }
 
