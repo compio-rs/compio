@@ -220,7 +220,7 @@ impl AsyncReadAt for RepeatOne {
 async fn read_exact() {
     let mut src = RepeatOne(114);
 
-    let (len, buf) = src.read_exact(Vec::with_capacity(5)).await.unwrap();
+    let (len, buf) = src.read_exact(vec![0; 5]).await.unwrap();
     assert_eq!(len, 5);
     assert_eq!(buf, [114; 5]);
 

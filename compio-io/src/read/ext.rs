@@ -147,7 +147,7 @@ pub trait AsyncReadExt: AsyncRead {
 
     /// Read the exact number of bytes required to fill the buf.
     async fn read_exact<T: IoBufMut>(&mut self, mut buf: T) -> BufResult<usize, T> {
-        loop_read_exact!(buf, buf.buf_capacity() - buf.buf_len(), read, loop self.read(buf.slice(read..)));
+        loop_read_exact!(buf, buf.buf_capacity(), read, loop self.read(buf.slice(read..)));
     }
 
     /// Read all bytes until underlying reader reaches `EOF`.
@@ -221,7 +221,7 @@ pub trait AsyncReadAtExt: AsyncReadAt {
     async fn read_exact_at<T: IoBufMut>(&self, mut buf: T, pos: u64) -> BufResult<usize, T> {
         loop_read_exact!(
             buf,
-            buf.buf_capacity() - buf.buf_len(),
+            buf.buf_capacity(),
             read,
             loop self.read_at(buf.slice(read..), pos + read as u64)
         );
