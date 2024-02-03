@@ -12,6 +12,7 @@ use compio_runtime::TryClone;
 use tempfile::NamedTempFile;
 
 #[compio_macros::test]
+#[cfg(any(not(windows), feature = "iocp-global"))]
 async fn multi_threading() {
     const DATA: &str = "Hello world!";
 
