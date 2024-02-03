@@ -42,7 +42,7 @@ socket2 = { workspace = true }
 [target.'cfg(windows)'.dependencies]
 compio-buf = { workspace = true, features = ["arrayvec"] }
 aligned-array = "1.0.1"
-crossbeam-skiplist = { workspace = true }
+crossbeam-skiplist = { workspace = true, optional = true }
 once_cell = { workspace = true }
 widestring = { workspace = true }
 windows-sys = { workspace = true, features = [
@@ -71,6 +71,7 @@ polling = "3.3.0"
 os_pipe = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
+crossbeam-channel = { workspace = true }
 crossbeam-queue = { workspace = true }
 libc = { workspace = true }
 
@@ -83,6 +84,8 @@ polling = ["dep:polling", "dep:os_pipe"]
 
 io-uring-sqe128 = []
 io-uring-cqe32 = []
+
+iocp-global = ["dep:crossbeam-skiplist"]
 
 # Nightly features
 once_cell_try = []

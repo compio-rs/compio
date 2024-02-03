@@ -1,52 +1,32 @@
-#[cfg(feature = "once_cell_try")]
-use std::sync::OnceLock;
 use std::{
     collections::HashSet,
     io,
     mem::ManuallyDrop,
     os::windows::prelude::{
         AsRawHandle, AsRawSocket, FromRawHandle, FromRawSocket, IntoRawHandle, IntoRawSocket,
-        OwnedHandle, RawHandle,
+        RawHandle,
     },
     pin::Pin,
     ptr::NonNull,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::Arc,
     task::Poll,
     time::Duration,
 };
 
-use compio_buf::{arrayvec::ArrayVec, BufResult};
+use compio_buf::BufResult;
 use compio_log::{instrument, trace};
-use crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Sender, TryRecvError};
-use crossbeam_skiplist::SkipMap;
-#[cfg(not(feature = "once_cell_try"))]
-use once_cell::sync::OnceCell as OnceLock;
 use slab::Slab;
 use windows_sys::Win32::{
-    Foundation::{
-        RtlNtStatusToDosError, ERROR_BAD_COMMAND, ERROR_BUSY, ERROR_HANDLE_EOF,
-        ERROR_IO_INCOMPLETE, ERROR_NO_DATA, ERROR_OPERATION_ABORTED, ERROR_TIMEOUT,
-        FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING, STATUS_SUCCESS,
-    },
+    Foundation::{ERROR_BUSY, ERROR_OPERATION_ABORTED},
     Networking::WinSock::{WSACleanup, WSAStartup, WSADATA},
-    Storage::FileSystem::SetFileCompletionNotificationModes,
-    System::{
-        SystemServices::ERROR_SEVERITY_ERROR,
-        Threading::INFINITE,
-        WindowsProgramming::{FILE_SKIP_COMPLETION_PORT_ON_SUCCESS, FILE_SKIP_SET_EVENT_ON_HANDLE},
-        IO::{
-            CreateIoCompletionPort, GetQueuedCompletionStatusEx, PostQueuedCompletionStatus,
-            OVERLAPPED, OVERLAPPED_ENTRY,
-        },
-    },
+    System::IO::OVERLAPPED,
 };
 
 use crate::{syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder};
 
 pub(crate) mod op;
+
+mod cp;
 
 pub(crate) use windows_sys::Win32::Networking::WinSock::{
     socklen_t, SOCKADDR_STORAGE as sockaddr_storage,
@@ -118,143 +98,6 @@ impl IntoRawFd for socket2::Socket {
     }
 }
 
-struct CompletionPort {
-    port: OwnedHandle,
-    drivers: SkipMap<usize, Sender<Entry>>,
-}
-
-impl CompletionPort {
-    pub fn new() -> io::Result<Self> {
-        let port = syscall!(BOOL, CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 1))?;
-        trace!("new iocp handle: {port}");
-        let port = unsafe { OwnedHandle::from_raw_handle(port as _) };
-        Ok(Self {
-            port,
-            drivers: SkipMap::new(),
-        })
-    }
-
-    pub fn register(&self, driver: usize) -> Receiver<Entry> {
-        let (sender, receiver) = unbounded();
-        self.drivers.insert(driver, sender);
-        receiver
-    }
-
-    pub fn attach(&self, fd: RawFd) -> io::Result<()> {
-        syscall!(
-            BOOL,
-            CreateIoCompletionPort(fd as _, self.port.as_raw_handle() as _, 0, 0)
-        )?;
-        syscall!(
-            BOOL,
-            SetFileCompletionNotificationModes(
-                fd as _,
-                (FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE) as _
-            )
-        )?;
-        Ok(())
-    }
-
-    pub fn post<T: ?Sized>(
-        &self,
-        res: io::Result<usize>,
-        optr: *mut Overlapped<T>,
-    ) -> io::Result<()> {
-        if let Err(e) = &res {
-            let code = e.raw_os_error().unwrap_or(ERROR_BAD_COMMAND as _);
-            unsafe { &mut *optr }.base.Internal = ntstatus_from_win32(code) as _;
-        }
-        // We have to use CompletionKey to transfer the result because it is large
-        // enough. It is OK because we set it to zero when attaching handles to IOCP.
-        syscall!(
-            BOOL,
-            PostQueuedCompletionStatus(
-                self.port.as_raw_handle() as _,
-                0,
-                res.unwrap_or_default(),
-                optr.cast()
-            )
-        )?;
-        Ok(())
-    }
-
-    pub fn push(&self, driver: usize, entry: Entry) {
-        self.drivers
-            .get(&driver)
-            .expect("driver should register first")
-            .value()
-            .send(entry)
-            .ok(); // It's OK if the driver has been dropped.
-    }
-}
-
-impl AsRawHandle for CompletionPort {
-    fn as_raw_handle(&self) -> RawHandle {
-        self.port.as_raw_handle()
-    }
-}
-
-static IOCP_PORT: OnceLock<CompletionPort> = OnceLock::new();
-
-#[inline]
-fn iocp_port() -> io::Result<&'static CompletionPort> {
-    IOCP_PORT.get_or_try_init(CompletionPort::new)
-}
-
-fn iocp_start() -> io::Result<()> {
-    const DEFAULT_CAPACITY: usize = 1024;
-
-    let port = iocp_port()?;
-    std::thread::spawn(move || {
-        let mut entries = ArrayVec::<OVERLAPPED_ENTRY, { DEFAULT_CAPACITY }>::new();
-        loop {
-            let mut recv_count = 0;
-            syscall!(
-                BOOL,
-                GetQueuedCompletionStatusEx(
-                    port.as_raw_handle() as _,
-                    entries.as_mut_ptr(),
-                    DEFAULT_CAPACITY as _,
-                    &mut recv_count,
-                    INFINITE,
-                    0
-                )
-            )?;
-            trace!("recv_count: {recv_count}");
-            unsafe { entries.set_len(recv_count as _) };
-
-            for entry in entries.drain(..) {
-                let transferred = entry.dwNumberOfBytesTransferred;
-                trace!("entry transferred: {transferred}");
-                // Any thin pointer is OK because we don't use the type of opcode.
-                let overlapped_ptr: *mut Overlapped<()> = entry.lpOverlapped.cast();
-                let overlapped = unsafe { &*overlapped_ptr };
-                let res = if matches!(
-                    overlapped.base.Internal as NTSTATUS,
-                    STATUS_SUCCESS | STATUS_PENDING
-                ) {
-                    if entry.lpCompletionKey != 0 {
-                        Ok(entry.lpCompletionKey)
-                    } else {
-                        Ok(transferred as _)
-                    }
-                } else {
-                    let error = unsafe { RtlNtStatusToDosError(overlapped.base.Internal as _) };
-                    match error {
-                        ERROR_IO_INCOMPLETE | ERROR_HANDLE_EOF | ERROR_NO_DATA => Ok(0),
-                        _ => Err(io::Error::from_raw_os_error(error as _)),
-                    }
-                };
-
-                port.push(overlapped.driver, Entry::new(overlapped.user_data, res));
-            }
-        }
-        #[allow(unreachable_code)]
-        io::Result::Ok(())
-    });
-    Ok(())
-}
-
 /// Abstraction of IOCP operations.
 pub trait OpCode {
     /// Determines that the operation is really overlapped defined by Windows
@@ -287,21 +130,9 @@ pub trait OpCode {
     }
 }
 
-fn ntstatus_from_win32(x: i32) -> NTSTATUS {
-    if x <= 0 {
-        x
-    } else {
-        ((x) & 0x0000FFFF) | (FACILITY_NTWIN32 << 16) as NTSTATUS | ERROR_SEVERITY_ERROR as NTSTATUS
-    }
-}
-
-static DRIVER_COUNTER: AtomicUsize = AtomicUsize::new(0);
-static IOCP_INIT_ONCE: OnceLock<()> = OnceLock::new();
-
 /// Low-level driver of IOCP.
 pub(crate) struct Driver {
-    id: usize,
-    receiver: Receiver<Entry>,
+    port: cp::Port,
     cancelled: HashSet<usize>,
     pool: AsyncifyPool,
     notify_overlapped: Arc<Overlapped<()>>,
@@ -315,13 +146,10 @@ impl Driver {
         let mut data: WSADATA = unsafe { std::mem::zeroed() };
         syscall!(SOCKET, WSAStartup(0x202, &mut data))?;
 
-        IOCP_INIT_ONCE.get_or_try_init(iocp_start)?;
-
-        let id = DRIVER_COUNTER.fetch_add(1, Ordering::AcqRel);
-        let receiver = iocp_port()?.register(id);
+        let port = cp::Port::new()?;
+        let id = port.id();
         Ok(Self {
-            id,
-            receiver,
+            port,
             cancelled: HashSet::default(),
             pool: builder.create_or_get_thread_pool(),
             notify_overlapped: Arc::new(Overlapped::new(id, Self::NOTIFY, ())),
@@ -329,11 +157,11 @@ impl Driver {
     }
 
     pub fn create_op<T: OpCode + 'static>(&self, user_data: usize, op: T) -> RawOp {
-        RawOp::new(self.id, user_data, op)
+        RawOp::new(self.port.id(), user_data, op)
     }
 
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
-        iocp_port()?.attach(fd)
+        self.port.attach(fd)
     }
 
     pub fn cancel(&mut self, user_data: usize, registry: &mut Slab<RawOp>) {
@@ -376,7 +204,7 @@ impl Driver {
         unsafe impl<T> Send for SendWrapper<T> {}
 
         let optr = SendWrapper(NonNull::from(op));
-        let port = iocp_port()?;
+        let port = self.port.handle();
         Ok(self
             .pool
             .dispatch(move || {
@@ -396,10 +224,10 @@ impl Driver {
             .is_ok())
     }
 
-    fn create_entry(&mut self, entry: Entry) -> Option<Entry> {
+    fn create_entry(cancelled: &mut HashSet<usize>, entry: Entry) -> Option<Entry> {
         let user_data = entry.user_data();
         if user_data != Self::NOTIFY {
-            let result = if self.cancelled.remove(&user_data) {
+            let result = if cancelled.remove(&user_data) {
                 Err(io::Error::from_raw_os_error(ERROR_OPERATION_ABORTED as _))
             } else {
                 entry.into_result()
@@ -417,39 +245,20 @@ impl Driver {
     ) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
 
-        let e = if let Some(timeout) = timeout {
-            match self.receiver.recv_timeout(timeout) {
-                Ok(e) => e,
-                Err(e) => match e {
-                    RecvTimeoutError::Timeout => {
-                        return Err(io::Error::from_raw_os_error(ERROR_TIMEOUT as _));
-                    }
-                    RecvTimeoutError::Disconnected => {
-                        unreachable!("IOCP thread should not exit")
-                    }
-                },
-            }
-        } else {
-            self.receiver.recv().expect("IOCP thread should not exit")
-        };
-        entries.extend(self.create_entry(e));
-
-        // Query if there are more entries.
-        loop {
-            match self.receiver.try_recv() {
-                Ok(e) => entries.extend(self.create_entry(e)),
-                Err(e) => match e {
-                    TryRecvError::Empty => break,
-                    TryRecvError::Disconnected => unreachable!("IOCP thread should not exit"),
-                },
-            }
-        }
+        entries.extend(
+            self.port
+                .poll(timeout)?
+                .filter_map(|e| Self::create_entry(&mut self.cancelled, e)),
+        );
 
         Ok(())
     }
 
     pub fn handle(&self) -> io::Result<NotifyHandle> {
-        Ok(NotifyHandle::new(self.notify_overlapped.clone()))
+        Ok(NotifyHandle::new(
+            self.port.handle(),
+            self.notify_overlapped.clone(),
+        ))
     }
 }
 
@@ -461,17 +270,18 @@ impl Drop for Driver {
 
 /// A notify handle to the inner driver.
 pub struct NotifyHandle {
+    port: cp::PortHandle,
     overlapped: Arc<Overlapped<()>>,
 }
 
 impl NotifyHandle {
-    fn new(overlapped: Arc<Overlapped<()>>) -> Self {
-        Self { overlapped }
+    fn new(port: cp::PortHandle, overlapped: Arc<Overlapped<()>>) -> Self {
+        Self { port, overlapped }
     }
 
     /// Notify the inner driver.
     pub fn notify(&self) -> io::Result<()> {
-        iocp_port()?.post(
+        self.port.post(
             Ok(0),
             self.overlapped.as_ref() as *const _ as *mut Overlapped<()> as _,
         )
