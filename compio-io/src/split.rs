@@ -13,6 +13,7 @@ pub fn split<T: AsyncRead + AsyncWrite>(stream: T) -> (ReadHalf<T>, WriteHalf<T>
 }
 
 /// The readable half of a value returned from [`split`].
+#[derive(Debug)]
 pub struct ReadHalf<T>(Arc<Mutex<T>>);
 
 impl<T: AsyncRead> AsyncRead for ReadHalf<T> {
@@ -26,6 +27,7 @@ impl<T: AsyncRead> AsyncRead for ReadHalf<T> {
 }
 
 /// The writable half of a value returned from [`split`].
+#[derive(Debug)]
 pub struct WriteHalf<T>(Arc<Mutex<T>>);
 
 impl<T: AsyncWrite> AsyncWrite for WriteHalf<T> {

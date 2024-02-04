@@ -5,7 +5,7 @@ use compio_io::{AsyncRead, AsyncWrite};
 use compio_runtime::{impl_attachable, impl_try_as_raw_fd};
 use socket2::{Domain, SockAddr, Type};
 
-use crate::Socket;
+use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, WriteHalf};
 
 /// A Unix socket server, listening for connections.
 ///
@@ -158,6 +158,25 @@ impl UnixStream {
     /// Returns the socket path of the local half of this connection.
     pub fn local_addr(&self) -> io::Result<SockAddr> {
         self.inner.local_addr()
+    }
+
+    /// Splits a [`UnixStream`] into a read half and a write half, which can be
+    /// used to read and write the stream concurrently.
+    ///
+    /// This method is more efficient than
+    /// [`into_split`](UnixStream::into_split), but the halves cannot
+    /// be moved into independently spawned tasks.
+    pub fn split(&self) -> (ReadHalf<Self>, WriteHalf<Self>) {
+        crate::split(self)
+    }
+
+    /// Splits a [`UnixStream`] into a read half and a write half, which can be
+    /// used to read and write the stream concurrently.
+    ///
+    /// Unlike [`split`](UnixStream::split), the owned halves can be moved to
+    /// separate tasks, however this comes at the cost of a heap allocation.
+    pub fn into_split(self) -> (OwnedReadHalf<Self>, OwnedWriteHalf<Self>) {
+        crate::into_split(self)
     }
 }
 
