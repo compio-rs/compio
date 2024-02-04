@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+use compio_log::*;
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 use windows_sys::Win32::System::IO::PostQueuedCompletionStatus;
@@ -53,12 +54,13 @@ fn iocp_port() -> io::Result<&'static GlobalPort> {
 fn iocp_start() -> io::Result<()> {
     let port = iocp_port()?;
     std::thread::spawn(move || {
+        instrument!(compio_log::Level::TRACE, "iocp_start");
         loop {
             for entry in port.port.poll_raw(None)? {
                 // Any thin pointer is OK because we don't use the type of opcode.
                 let overlapped_ptr: *mut Overlapped<()> = entry.lpOverlapped.cast();
                 let overlapped = unsafe { &*overlapped_ptr };
-                syscall!(
+                if let Err(e) = syscall!(
                     BOOL,
                     PostQueuedCompletionStatus(
                         overlapped.driver as _,
@@ -66,8 +68,16 @@ fn iocp_start() -> io::Result<()> {
                         entry.lpCompletionKey,
                         entry.lpOverlapped,
                     )
-                )
-                .ok();
+                ) {
+                    error!(
+                        "fail to dispatch entry ({}, {}, {:p}) to driver {:p}: {:?}",
+                        entry.dwNumberOfBytesTransferred,
+                        entry.lpCompletionKey,
+                        entry.lpOverlapped,
+                        overlapped.driver,
+                        e
+                    );
+                }
             }
         }
         #[allow(unreachable_code)]

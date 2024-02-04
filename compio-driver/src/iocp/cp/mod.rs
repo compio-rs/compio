@@ -143,7 +143,7 @@ impl CompletionPort {
             if let Some(current_driver) = current_driver {
                 if overlapped.driver != current_driver {
                     // Repose the entry to correct port.
-                    syscall!(
+                    if let Err(e) = syscall!(
                         BOOL,
                         PostQueuedCompletionStatus(
                             overlapped.driver as _,
@@ -151,8 +151,16 @@ impl CompletionPort {
                             entry.lpCompletionKey,
                             entry.lpOverlapped,
                         )
-                    )
-                    .ok();
+                    ) {
+                        error!(
+                            "fail to repost entry ({}, {}, {:p}) to driver {:p}: {:?}",
+                            entry.dwNumberOfBytesTransferred,
+                            entry.lpCompletionKey,
+                            entry.lpOverlapped,
+                            overlapped.driver,
+                            e
+                        );
+                    }
                 }
             }
             let res = if matches!(
