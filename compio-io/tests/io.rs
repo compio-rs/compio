@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use compio_buf::{arrayvec::ArrayVec, BufResult, IoBuf, IoBufMut};
 use compio_io::{
-    AsyncRead, AsyncReadAt, AsyncReadAtExt, AsyncReadExt, AsyncWrite, AsyncWriteAt,
+    split, AsyncRead, AsyncReadAt, AsyncReadAtExt, AsyncReadExt, AsyncWrite, AsyncWriteAt,
     AsyncWriteAtExt, AsyncWriteExt,
 };
 
@@ -354,4 +354,20 @@ async fn read_to_end_at() {
     let (len, buf) = src.read_to_end_at(vec![], 2).await.unwrap();
     assert_eq!(len, 4);
     assert_eq!(buf, [4, 5, 1, 4]);
+}
+
+#[tokio::test]
+async fn split_unsplit() {
+    let src = Cursor::new([1, 1, 4, 5, 1, 4]);
+    let (mut read, mut write) = split(src);
+
+    let (len, buf) = read.read([0, 0, 0]).await.unwrap();
+    assert_eq!(len, 3);
+    assert_eq!(buf, [1, 1, 4]);
+
+    let (len, _) = write.write([2, 2, 2]).await.unwrap();
+    assert_eq!(len, 3);
+
+    let src = read.unsplit(write);
+    assert_eq!(src.into_inner(), [1, 1, 4, 2, 2, 2]);
 }
