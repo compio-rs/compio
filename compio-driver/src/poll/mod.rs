@@ -186,19 +186,19 @@ impl Driver {
         RawOp::new(user_data, op)
     }
 
-    fn submit(&mut self, user_data: usize, arg: WaitArg) -> io::Result<()> {
+    /// # Safety
+    /// The input fd should be valid.
+    unsafe fn submit(&mut self, user_data: usize, arg: WaitArg) -> io::Result<()> {
         let need_add = !self.registry.contains_key(&arg.fd);
         let queue = self.registry.entry(arg.fd).or_default();
         queue.push_back_interest(user_data, arg.interest);
         // We use fd as the key.
         let event = queue.event(arg.fd as usize);
-        unsafe {
-            if need_add {
-                self.poll.add(arg.fd, event)?;
-            } else {
-                let fd = BorrowedFd::borrow_raw(arg.fd);
-                self.poll.modify(fd, event)?;
-            }
+        if need_add {
+            self.poll.add(arg.fd, event)?;
+        } else {
+            let fd = BorrowedFd::borrow_raw(arg.fd);
+            self.poll.modify(fd, event)?;
         }
         Ok(())
     }
@@ -218,7 +218,10 @@ impl Driver {
             let op_pin = op.as_pin();
             match op_pin.pre_submit() {
                 Ok(Decision::Wait(arg)) => {
-                    self.submit(user_data, arg)?;
+                    // SAFETY: fd is from the OpCode.
+                    unsafe {
+                        self.submit(user_data, arg)?;
+                    }
                     Poll::Pending
                 }
                 Ok(Decision::Completed(res)) => Poll::Ready(Ok(res)),
