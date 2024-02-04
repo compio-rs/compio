@@ -17,7 +17,7 @@ use compio_buf::BufResult;
 use compio_log::{instrument, trace};
 use slab::Slab;
 use windows_sys::Win32::{
-    Foundation::{ERROR_BUSY, ERROR_OPERATION_ABORTED, HANDLE},
+    Foundation::{ERROR_BUSY, ERROR_OPERATION_ABORTED},
     Networking::WinSock::{WSACleanup, WSAStartup, WSADATA},
     System::IO::OVERLAPPED,
 };
@@ -294,7 +294,7 @@ pub struct Overlapped<T: ?Sized> {
     /// The base [`OVERLAPPED`].
     pub base: OVERLAPPED,
     /// The unique ID of created driver.
-    pub driver: HANDLE,
+    pub driver: RawFd,
     /// The registered user defined data.
     pub user_data: usize,
     /// The opcode.
@@ -303,7 +303,7 @@ pub struct Overlapped<T: ?Sized> {
 }
 
 impl<T> Overlapped<T> {
-    pub(crate) fn new(driver: HANDLE, user_data: usize, op: T) -> Self {
+    pub(crate) fn new(driver: RawFd, user_data: usize, op: T) -> Self {
         Self {
             base: unsafe { std::mem::zeroed() },
             driver,
@@ -326,7 +326,7 @@ pub(crate) struct RawOp {
 }
 
 impl RawOp {
-    pub(crate) fn new(driver: HANDLE, user_data: usize, op: impl OpCode + 'static) -> Self {
+    pub(crate) fn new(driver: RawFd, user_data: usize, op: impl OpCode + 'static) -> Self {
         let op = Overlapped::new(driver, user_data, op);
         let op = Box::new(op) as Box<Overlapped<dyn OpCode>>;
         Self {

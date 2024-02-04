@@ -9,7 +9,7 @@ use compio_log::*;
 use windows_sys::Win32::{
     Foundation::{
         RtlNtStatusToDosError, ERROR_BAD_COMMAND, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE,
-        ERROR_NO_DATA, FACILITY_NTWIN32, HANDLE, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING,
+        ERROR_NO_DATA, FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING,
         STATUS_SUCCESS,
     },
     Storage::FileSystem::SetFileCompletionNotificationModes,
@@ -120,7 +120,7 @@ impl CompletionPort {
     pub fn poll(
         &self,
         timeout: Option<Duration>,
-        current_driver: Option<HANDLE>,
+        current_driver: Option<RawFd>,
     ) -> io::Result<impl Iterator<Item = Entry>> {
         Ok(self.poll_raw(timeout)?.map(move |entry| {
             // Any thin pointer is OK because we don't use the type of opcode.
@@ -132,7 +132,7 @@ impl CompletionPort {
                     syscall!(
                         BOOL,
                         PostQueuedCompletionStatus(
-                            overlapped.driver,
+                            overlapped.driver as _,
                             entry.dwNumberOfBytesTransferred,
                             entry.lpCompletionKey,
                             entry.lpOverlapped,

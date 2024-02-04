@@ -61,7 +61,7 @@ fn iocp_start() -> io::Result<()> {
                 syscall!(
                     BOOL,
                     PostQueuedCompletionStatus(
-                        overlapped.driver,
+                        overlapped.driver as _,
                         entry.dwNumberOfBytesTransferred,
                         entry.lpCompletionKey,
                         entry.lpOverlapped,
