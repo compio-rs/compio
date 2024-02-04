@@ -280,12 +280,10 @@ impl AsyncWriteAt for WriteOne {
 async fn write_all() {
     let mut dst = WriteOne(vec![]);
 
-    let (len, _) = dst.write_all([1, 1, 4, 5, 1, 4]).await.unwrap();
-    assert_eq!(len, 6);
+    let ((), _) = dst.write_all([1, 1, 4, 5, 1, 4]).await.unwrap();
     assert_eq!(dst.0, [1, 1, 4, 5, 1, 4]);
 
-    let (len, _) = dst.write_all_at([114, 114, 114], 2).await.unwrap();
-    assert_eq!(len, 3);
+    let ((), _) = dst.write_all_at([114, 114, 114], 2).await.unwrap();
     assert_eq!(dst.0, [1, 1, 114, 114, 114, 4]);
 }
 

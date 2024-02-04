@@ -11,11 +11,10 @@ macro_rules! write_scalar {
                 use ::compio_buf::{arrayvec::ArrayVec, BufResult};
 
                 const LEN: usize = ::std::mem::size_of::<$t>();
-                let BufResult(len, _) = self
+                let BufResult(res, _) = self
                     .write_all(ArrayVec::<u8, LEN>::from(num.$be()))
                     .await;
-                assert_eq!(len?, LEN, "`write_all` returned unexpected length");
-                Ok(())
+                res
             }
 
             #[doc = concat!("Write a little endian `", stringify!($t), "` into the underlying writer.")]
@@ -23,11 +22,10 @@ macro_rules! write_scalar {
                 use ::compio_buf::{arrayvec::ArrayVec, BufResult};
 
                 const LEN: usize = ::std::mem::size_of::<$t>();
-                let BufResult(len, _) = self
+                let BufResult(res, _) = self
                     .write_all(ArrayVec::<u8, LEN>::from(num.$le()))
                     .await;
-                assert_eq!(len?, LEN, "`write_all` returned unexpected length");
-                Ok(())
+                res
             }
         }
     };
@@ -57,24 +55,42 @@ macro_rules! loop_write_all {
                 BufResult(Err(ref e), buf) if e.kind() == ::std::io::ErrorKind::Interrupted => {
                     $buf = buf;
                 }
-                res => return res,
+                BufResult(Err(e), buf) => return BufResult(Err(e), buf),
             }
         }
 
-        return BufResult(Ok($needle), $buf);
+        return BufResult(Ok(()), $buf);
     };
 }
 
 macro_rules! loop_write_vectored {
-    (
-        $buf:ident,
-        $tracker:ident :
-        $tracker_ty:ty,
-        $iter:ident,loop
-        $read_expr:expr
-    ) => {
-        loop_write_vectored!($buf, $tracker: $tracker_ty, res, $iter, loop $read_expr, break None)
-    };
+    ($buf:ident, $tracker:ident : $tracker_ty:ty, $iter:ident,loop $read_expr:expr) => {{
+        let mut $iter = match $buf.owned_iter() {
+            Ok(buf) => buf,
+            Err(buf) => return BufResult(Ok(()), buf),
+        };
+        let mut $tracker: $tracker_ty = 0;
+
+        loop {
+            let len = $iter.buf_len();
+            if len == 0 {
+                continue;
+            }
+
+            match $read_expr.await {
+                BufResult(Ok(()), ret) => {
+                    $iter = ret;
+                    $tracker += len as $tracker_ty;
+                }
+                BufResult(Err(e), $iter) => return BufResult(Err(e), $iter.into_inner()),
+            };
+
+            match $iter.next() {
+                Ok(next) => $iter = next,
+                Err(buf) => return BufResult(Ok(()), buf),
+            }
+        }
+    }};
     (
         $buf:ident,
         $tracker:ident :
@@ -130,7 +146,7 @@ pub trait AsyncWriteExt: AsyncWrite {
     }
 
     /// Write the entire contents of a buffer into this writer.
-    async fn write_all<T: IoBuf>(&mut self, mut buf: T) -> BufResult<usize, T> {
+    async fn write_all<T: IoBuf>(&mut self, mut buf: T) -> BufResult<(), T> {
         loop_write_all!(
             buf,
             buf.buf_len(),
@@ -142,8 +158,8 @@ pub trait AsyncWriteExt: AsyncWrite {
     /// Write the entire contents of a buffer into this writer. Like
     /// [`AsyncWrite::write_vectored`], except that it tries to write the entire
     /// contents of the buffer into this writer.
-    async fn write_vectored_all<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        loop_write_vectored!(buf, total: usize, iter, loop self.write_all(iter))
+    async fn write_vectored_all<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<(), T> {
+        loop_write_vectored!(buf, _total: usize, iter, loop self.write_all(iter))
     }
 
     write_scalar!(u8, to_be_bytes, to_le_bytes);
@@ -168,7 +184,7 @@ impl<A: AsyncWrite + ?Sized> AsyncWriteExt for A {}
 pub trait AsyncWriteAtExt: AsyncWriteAt {
     /// Like [`AsyncWriteAt::write_at`], except that it tries to write the
     /// entire contents of the buffer into this writer.
-    async fn write_all_at<T: IoBuf>(&mut self, mut buf: T, pos: u64) -> BufResult<usize, T> {
+    async fn write_all_at<T: IoBuf>(&mut self, mut buf: T, pos: u64) -> BufResult<(), T> {
         loop_write_all!(
             buf,
             buf.buf_len(),
@@ -183,7 +199,7 @@ pub trait AsyncWriteAtExt: AsyncWriteAt {
         &mut self,
         buf: T,
         pos: u64,
-    ) -> BufResult<usize, T> {
+    ) -> BufResult<(), T> {
         loop_write_vectored!(buf, total: u64, iter, loop self.write_all_at(iter, pos + total))
     }
 }

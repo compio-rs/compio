@@ -153,7 +153,14 @@ impl<S: crate::AsyncWrite> SyncStream<S> {
     /// Flush all data in the write buffer.
     pub async fn flush_write_buf(&mut self) -> io::Result<usize> {
         let stream = &mut self.stream;
-        let len = self.write_buffer.with(|b| stream.write_all(b)).await?;
+        let len = self
+            .write_buffer
+            .with(|w| async {
+                let len = w.buf_len();
+                let BufResult(res, w) = stream.write_all(w).await;
+                BufResult(res.map(|()| len), w)
+            })
+            .await?;
         self.write_buffer.reset();
         stream.flush().await?;
         Ok(len)

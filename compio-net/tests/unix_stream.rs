@@ -14,8 +14,7 @@ async fn accept_read_write() -> std::io::Result<()> {
     let mut client = UnixStream::connect(&sock_path)?;
     let (mut server, _) = listener.accept().await?;
 
-    let write_len = client.write_all("hello").await.0?;
-    assert_eq!(write_len, 5);
+    client.write_all("hello").await.0?;
     drop(client);
 
     let buf = Vec::with_capacity(5);
