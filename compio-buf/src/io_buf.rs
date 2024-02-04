@@ -594,7 +594,7 @@ pub trait SetBufInit {
     ///
     /// # Safety
     ///
-    /// `len` should be less or equal than `buf_capacity() - buf_len()`.
+    /// `len` should be less or equal than `buf_capacity()`.
     unsafe fn set_buf_init(&mut self, len: usize);
 }
 

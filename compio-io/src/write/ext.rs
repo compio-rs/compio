@@ -1,4 +1,4 @@
-use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoVectoredBuf};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoVectoredBuf};
 
 use crate::{AsyncWrite, AsyncWriteAt, IoResult};
 
@@ -40,18 +40,25 @@ macro_rules! loop_write_all {
         let mut $needle = 0;
 
         while $needle < len {
-            let n;
-            (n, $buf) = buf_try!($expr_expr.await.into_inner());
-            if n == 0 {
-                return BufResult(
-                    Err(::std::io::Error::new(
-                        ::std::io::ErrorKind::WriteZero,
-                        "failed to write whole buffer",
-                    )),
-                    $buf,
-                );
+            match $expr_expr.await.into_inner() {
+                BufResult(Ok(0), buf) => {
+                    return BufResult(
+                        Err(::std::io::Error::new(
+                            ::std::io::ErrorKind::WriteZero,
+                            "failed to write whole buffer",
+                        )),
+                        buf,
+                    );
+                }
+                BufResult(Ok(n), buf) => {
+                    $needle += n;
+                    $buf = buf;
+                }
+                BufResult(Err(ref e), buf) if e.kind() == ::std::io::ErrorKind::Interrupted => {
+                    $buf = buf;
+                }
+                res => return res,
             }
-            $needle += n;
         }
 
         return BufResult(Ok($needle), $buf);
