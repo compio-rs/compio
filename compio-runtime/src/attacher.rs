@@ -30,7 +30,8 @@ pub struct Attacher<S> {
 }
 
 impl<S: AsRawFd> Attacher<S> {
-    /// Create [`Attacher`].
+    /// Create [`Attacher`]. It tries to attach the source, and will return
+    /// [`Err`] if it fails.
     pub fn new(source: S) -> io::Result<Self> {
         let this = Self {
             source,
@@ -41,19 +42,13 @@ impl<S: AsRawFd> Attacher<S> {
     }
 
     /// Attach the source. This method could be called many times, but if the
-    /// action fails, the error will only return once.
+    /// action fails, it will try to attach the source during each call.
     fn attach(&self) -> io::Result<()> {
         let r = Runtime::current();
         let inner = r.inner();
         self.once
             .get_or_try_init(|| inner.attach(self.source.as_raw_fd()))?;
         Ok(())
-    }
-}
-
-impl<S> Attachable for Attacher<S> {
-    fn is_attached(&self) -> bool {
-        self.once.get().is_some()
     }
 }
 
@@ -106,12 +101,6 @@ impl<S> DerefMut for Attacher<S> {
     }
 }
 
-/// Represents an attachable resource to driver.
-pub trait Attachable {
-    /// Check if [`Attachable::attach`] has been called.
-    fn is_attached(&self) -> bool;
-}
-
 /// Duplicatable file or socket.
 pub trait TryClone: Sized {
     /// Duplicate the source.
@@ -149,18 +138,6 @@ impl TryClone for OwnedFd {
     fn try_clone(&self) -> io::Result<Self> {
         OwnedFd::try_clone(self)
     }
-}
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! impl_attachable {
-    ($t:ty, $inner:ident) => {
-        impl $crate::Attachable for $t {
-            fn is_attached(&self) -> bool {
-                self.$inner.is_attached()
-            }
-        }
-    };
 }
 
 #[macro_export]

@@ -7,7 +7,7 @@ use compio_driver::{
     syscall, AsRawFd,
 };
 use compio_io::{AsyncReadAt, AsyncWriteAt};
-use compio_runtime::{impl_attachable, impl_try_clone, Attacher, Runtime};
+use compio_runtime::{impl_try_clone, Attacher, Runtime};
 #[cfg(unix)]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
@@ -216,7 +216,5 @@ impl AsyncWriteAt for &File {
 }
 
 impl_raw_fd!(File, inner);
-
-impl_attachable!(File, inner);
 
 impl_try_clone!(File, inner);

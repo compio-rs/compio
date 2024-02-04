@@ -3,7 +3,7 @@ use std::{future::Future, io, path::Path};
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::{impl_attachable, impl_try_clone};
+use compio_runtime::impl_try_clone;
 use socket2::{SockAddr, Type};
 
 use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, WriteHalf};
@@ -89,8 +89,6 @@ impl UnixListener {
 }
 
 impl_raw_fd!(UnixListener, inner);
-
-impl_attachable!(UnixListener, inner);
 
 impl_try_clone!(UnixListener, inner);
 
@@ -263,8 +261,6 @@ impl AsyncWrite for &UnixStream {
 }
 
 impl_raw_fd!(UnixStream, inner);
-
-impl_attachable!(UnixStream, inner);
 
 #[cfg(windows)]
 #[inline]

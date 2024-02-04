@@ -9,7 +9,7 @@ use compio_driver::{
     syscall, AsRawFd, FromRawFd, IntoRawFd,
 };
 use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::{impl_attachable, impl_try_clone, Runtime};
+use compio_runtime::{impl_try_clone, Runtime};
 
 use crate::File;
 
@@ -383,8 +383,6 @@ impl AsyncWrite for &Sender {
 
 impl_raw_fd!(Sender, file);
 
-impl_attachable!(Sender, file);
-
 impl_try_clone!(Sender, file);
 
 /// Reading end of a Unix pipe.
@@ -507,8 +505,6 @@ impl AsyncRead for &Receiver {
 }
 
 impl_raw_fd!(Receiver, file);
-
-impl_attachable!(Receiver, file);
 
 impl_try_clone!(Receiver, file);
 

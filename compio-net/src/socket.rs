@@ -9,7 +9,7 @@ use compio_driver::{
     },
     AsRawFd,
 };
-use compio_runtime::{impl_attachable, impl_try_clone, Attacher, Runtime};
+use compio_runtime::{impl_try_clone, Attacher, Runtime};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
 #[derive(Debug)]
@@ -205,7 +205,5 @@ impl Socket {
 }
 
 impl_raw_fd!(Socket, socket);
-
-impl_attachable!(Socket, socket);
 
 impl_try_clone!(Socket, socket);

@@ -9,7 +9,7 @@ use std::{ffi::OsStr, io, ptr::null};
 use compio_buf::{BufResult, IoBuf, IoBufMut};
 use compio_driver::{impl_raw_fd, op::ConnectNamedPipe, syscall, AsRawFd, FromRawFd, RawFd};
 use compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt};
-use compio_runtime::{impl_attachable, impl_try_clone, Runtime};
+use compio_runtime::{impl_try_clone, Runtime};
 use widestring::U16CString;
 use windows_sys::Win32::{
     Security::SECURITY_ATTRIBUTES,
@@ -232,8 +232,6 @@ impl AsyncWrite for &NamedPipeServer {
 
 impl_raw_fd!(NamedPipeServer, handle);
 
-impl_attachable!(NamedPipeServer, handle);
-
 impl_try_clone!(NamedPipeServer, handle);
 
 /// A [Windows named pipe] client.
@@ -356,8 +354,6 @@ impl AsyncWrite for &NamedPipeClient {
 }
 
 impl_raw_fd!(NamedPipeClient, handle);
-
-impl_attachable!(NamedPipeClient, handle);
 
 impl_try_clone!(NamedPipeClient, handle);
 
