@@ -107,11 +107,13 @@ mod buffer;
 #[cfg(feature = "compat")]
 pub mod compat;
 mod read;
+mod split;
 pub mod util;
 mod write;
 
 pub(crate) type IoResult<T> = std::io::Result<T>;
 
 pub use read::*;
+pub use split::*;
 pub use util::{copy, null, repeat};
 pub use write::*;

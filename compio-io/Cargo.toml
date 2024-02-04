@@ -12,6 +12,7 @@ repository = { workspace = true }
 
 [dependencies]
 compio-buf = { workspace = true, features = ["arrayvec"] }
+futures-util = { workspace = true }
 paste = { workspace = true }
 
 [dev-dependencies]
