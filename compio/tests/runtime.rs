@@ -24,8 +24,7 @@ async fn multi_threading() {
     tx.write_all(DATA).await.0.unwrap();
     tx.write_all(DATA).await.0.unwrap();
 
-    let (n, buffer) = rx.read_exact(Vec::with_capacity(DATA.len())).await.unwrap();
-    assert_eq!(n, buffer.len());
+    let ((), buffer) = rx.read_exact(Vec::with_capacity(DATA.len())).await.unwrap();
     assert_eq!(DATA, String::from_utf8(buffer).unwrap());
 
     compio::runtime::spawn_blocking(move || {
