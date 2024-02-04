@@ -16,6 +16,35 @@ pub fn split<T: AsyncRead + AsyncWrite>(stream: T) -> (ReadHalf<T>, WriteHalf<T>
 #[derive(Debug)]
 pub struct ReadHalf<T>(Arc<Mutex<T>>);
 
+impl<T> ReadHalf<T> {
+    /// Reunites with a previously split [`WriteHalf`].
+    ///
+    /// # Panics
+    ///
+    /// If this [`ReadHalf`] and the given [`WriteHalf`] do not originate from
+    /// the same [`split`] operation this method will panic.
+    /// This can be checked ahead of time by comparing the stored pointer
+    /// of the two halves.
+    #[track_caller]
+    pub fn unsplit(self, w: WriteHalf<T>) -> T
+    where
+        T: Unpin,
+    {
+        if Arc::ptr_eq(&self.0, &w.0) {
+            drop(w);
+            let inner = Arc::try_unwrap(self.0).expect("`Arc::try_unwrap` failed");
+            inner.into_inner()
+        } else {
+            #[cold]
+            fn panic_unrelated() -> ! {
+                panic!("Unrelated `WriteHalf` passed to `ReadHalf::unsplit`.")
+            }
+
+            panic_unrelated()
+        }
+    }
+}
+
 impl<T: AsyncRead> AsyncRead for ReadHalf<T> {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         self.0.lock().await.read(buf).await
