@@ -17,7 +17,7 @@ use compio_buf::BufResult;
 use compio_log::{instrument, trace};
 use slab::Slab;
 use windows_sys::Win32::{
-    Foundation::{ERROR_BUSY, ERROR_OPERATION_ABORTED},
+    Foundation::{ERROR_BUSY, ERROR_OPERATION_ABORTED, HANDLE},
     Networking::WinSock::{WSACleanup, WSAStartup, WSADATA},
     System::IO::OVERLAPPED,
 };
@@ -147,17 +147,17 @@ impl Driver {
         syscall!(SOCKET, WSAStartup(0x202, &mut data))?;
 
         let port = cp::Port::new()?;
-        let id = port.id();
+        let driver = port.as_raw_handle() as _;
         Ok(Self {
             port,
             cancelled: HashSet::default(),
             pool: builder.create_or_get_thread_pool(),
-            notify_overlapped: Arc::new(Overlapped::new(id, Self::NOTIFY, ())),
+            notify_overlapped: Arc::new(Overlapped::new(driver, Self::NOTIFY, ())),
         })
     }
 
     pub fn create_op<T: OpCode + 'static>(&self, user_data: usize, op: T) -> RawOp {
-        RawOp::new(self.port.id(), user_data, op)
+        RawOp::new(self.port.as_raw_handle() as _, user_data, op)
     }
 
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
@@ -294,7 +294,7 @@ pub struct Overlapped<T: ?Sized> {
     /// The base [`OVERLAPPED`].
     pub base: OVERLAPPED,
     /// The unique ID of created driver.
-    pub driver: cp::PortId,
+    pub driver: HANDLE,
     /// The registered user defined data.
     pub user_data: usize,
     /// The opcode.
@@ -303,7 +303,7 @@ pub struct Overlapped<T: ?Sized> {
 }
 
 impl<T> Overlapped<T> {
-    pub(crate) fn new(driver: cp::PortId, user_data: usize, op: T) -> Self {
+    pub(crate) fn new(driver: HANDLE, user_data: usize, op: T) -> Self {
         Self {
             base: unsafe { std::mem::zeroed() },
             driver,
@@ -326,7 +326,7 @@ pub(crate) struct RawOp {
 }
 
 impl RawOp {
-    pub(crate) fn new(driver: cp::PortId, user_data: usize, op: impl OpCode + 'static) -> Self {
+    pub(crate) fn new(driver: HANDLE, user_data: usize, op: impl OpCode + 'static) -> Self {
         let op = Overlapped::new(driver, user_data, op);
         let op = Box::new(op) as Box<Overlapped<dyn OpCode>>;
         Self {

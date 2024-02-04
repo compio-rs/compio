@@ -42,7 +42,6 @@ socket2 = { workspace = true }
 [target.'cfg(windows)'.dependencies]
 compio-buf = { workspace = true, features = ["arrayvec"] }
 aligned-array = "1.0.1"
-crossbeam-skiplist = { workspace = true, optional = true }
 once_cell = { workspace = true }
 widestring = { workspace = true }
 windows-sys = { workspace = true, features = [
@@ -85,7 +84,7 @@ polling = ["dep:polling", "dep:os_pipe"]
 io-uring-sqe128 = []
 io-uring-cqe32 = []
 
-iocp-global = ["dep:crossbeam-skiplist"]
+iocp-global = []
 
 # Nightly features
 once_cell_try = []

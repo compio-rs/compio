@@ -9,7 +9,7 @@ use compio_log::*;
 use windows_sys::Win32::{
     Foundation::{
         RtlNtStatusToDosError, ERROR_BAD_COMMAND, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE,
-        ERROR_NO_DATA, FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING,
+        ERROR_NO_DATA, FACILITY_NTWIN32, HANDLE, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING,
         STATUS_SUCCESS,
     },
     Storage::FileSystem::SetFileCompletionNotificationModes,
@@ -86,13 +86,10 @@ impl CompletionPort {
         Ok(())
     }
 
-    // If current_driver is specified, any entry that doesn't belong the driver will
-    // be reposted. The driver id will be used as IOCP handle.
-    pub fn poll(
+    pub fn poll_raw(
         &self,
         timeout: Option<Duration>,
-        current_driver: Option<PortId>,
-    ) -> io::Result<impl Iterator<Item = (PortId, Entry)>> {
+    ) -> io::Result<impl Iterator<Item = OVERLAPPED_ENTRY>> {
         const DEFAULT_CAPACITY: usize = 1024;
 
         let mut entries = ArrayVec::<OVERLAPPED_ENTRY, { DEFAULT_CAPACITY }>::new();
@@ -115,22 +112,33 @@ impl CompletionPort {
         trace!("recv_count: {recv_count}");
         unsafe { entries.set_len(recv_count as _) };
 
-        Ok(entries.into_iter().map(move |entry| {
-            let transferred = entry.dwNumberOfBytesTransferred;
-            trace!("entry transferred: {transferred}");
+        Ok(entries.into_iter())
+    }
+
+    // If current_driver is specified, any entry that doesn't belong the driver will
+    // be reposted. The driver id will be used as IOCP handle.
+    pub fn poll(
+        &self,
+        timeout: Option<Duration>,
+        current_driver: Option<HANDLE>,
+    ) -> io::Result<impl Iterator<Item = Entry>> {
+        Ok(self.poll_raw(timeout)?.map(move |entry| {
             // Any thin pointer is OK because we don't use the type of opcode.
             let overlapped_ptr: *mut Overlapped<()> = entry.lpOverlapped.cast();
             let overlapped = unsafe { &*overlapped_ptr };
             if let Some(current_driver) = current_driver {
                 if overlapped.driver != current_driver {
-                    overlapped
-                        .driver
-                        .post_raw(
+                    // Repose the entry to correct port.
+                    syscall!(
+                        BOOL,
+                        PostQueuedCompletionStatus(
+                            overlapped.driver,
                             entry.dwNumberOfBytesTransferred,
                             entry.lpCompletionKey,
                             entry.lpOverlapped,
                         )
-                        .ok();
+                    )
+                    .ok();
                 }
             }
             let res = if matches!(
@@ -140,7 +148,7 @@ impl CompletionPort {
                 if entry.lpCompletionKey != 0 {
                     Ok(entry.lpCompletionKey)
                 } else {
-                    Ok(transferred as _)
+                    Ok(entry.dwNumberOfBytesTransferred as _)
                 }
             } else {
                 let error = unsafe { RtlNtStatusToDosError(overlapped.base.Internal as _) };
@@ -149,7 +157,7 @@ impl CompletionPort {
                     _ => Err(io::Error::from_raw_os_error(error as _)),
                 }
             };
-            (overlapped.driver, Entry::new(overlapped.user_data, res))
+            Entry::new(overlapped.user_data, res)
         }))
     }
 }
