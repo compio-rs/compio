@@ -14,8 +14,8 @@ macro_rules! read_scalar {
                 use ::compio_buf::{arrayvec::ArrayVec, BufResult};
 
                 const LEN: usize = ::std::mem::size_of::<$t>();
-                let BufResult(len, buf) = self.read_exact(ArrayVec::<u8, LEN>::new()).await;
-                assert_eq!(len?, LEN, "read_exact returned unexpected length");
+                let BufResult(res, buf) = self.read_exact(ArrayVec::<u8, LEN>::new()).await;
+                res?;
                 // Safety: We just checked that the buffer is the correct size
                 Ok($t::$be(unsafe { buf.into_inner_unchecked() }))
             }
@@ -25,8 +25,8 @@ macro_rules! read_scalar {
                 use ::compio_buf::{arrayvec::ArrayVec, BufResult};
 
                 const LEN: usize = ::std::mem::size_of::<$t>();
-                let BufResult(len, buf) = self.read_exact(ArrayVec::<u8, LEN>::new()).await;
-                assert_eq!(len?, LEN, "read_exact returned unexpected length");
+                let BufResult(res, buf) = self.read_exact(ArrayVec::<u8, LEN>::new()).await;
+                res?;
                 // Safety: We just checked that the buffer is the correct size
                 Ok($t::$le(unsafe { buf.into_inner_unchecked() }))
             }
@@ -58,23 +58,41 @@ macro_rules! loop_read_exact {
                 BufResult(Err(ref e), buf) if e.kind() == ::std::io::ErrorKind::Interrupted => {
                     $buf = buf;
                 }
-                res => return res,
+                BufResult(Err(e), buf) => return BufResult(Err(e), buf),
             }
         }
-        return BufResult(Ok($tracker), $buf)
+        return BufResult(Ok(()), $buf)
     };
 }
 
 macro_rules! loop_read_vectored {
-    (
-        $buf:ident,
-        $tracker:ident :
-        $tracker_ty:ty,
-        $iter:ident,loop
-        $read_expr:expr
-    ) => {
-        loop_read_vectored!($buf, len, $tracker: $tracker_ty, res, $iter, loop $read_expr, break None)
-    };
+    ($buf:ident, $tracker:ident : $tracker_ty:ty, $iter:ident,loop $read_expr:expr) => {{
+        let mut $iter = match $buf.owned_iter_mut() {
+            Ok(buf) => buf,
+            Err(buf) => return BufResult(Ok(()), buf),
+        };
+        let mut $tracker: $tracker_ty = 0;
+
+        loop {
+            let len = $iter.buf_capacity();
+            if len == 0 {
+                continue;
+            }
+
+            match $read_expr.await {
+                BufResult(Ok(()), ret) => {
+                    $iter = ret;
+                    $tracker += len as $tracker_ty;
+                }
+                BufResult(Err(e), $iter) => return BufResult(Err(e), $iter.into_inner()),
+            };
+
+            match $iter.next() {
+                Ok(next) => $iter = next,
+                Err(buf) => return BufResult(Ok(()), buf),
+            }
+        }
+    }};
     (
         $buf:ident,
         $len:ident,
@@ -158,7 +176,7 @@ pub trait AsyncReadExt: AsyncRead {
     }
 
     /// Read the exact number of bytes required to fill the buf.
-    async fn read_exact<T: IoBufMut>(&mut self, mut buf: T) -> BufResult<usize, T> {
+    async fn read_exact<T: IoBufMut>(&mut self, mut buf: T) -> BufResult<(), T> {
         loop_read_exact!(buf, buf.buf_capacity(), read, loop self.read(buf.slice(read..)));
     }
 
@@ -171,8 +189,8 @@ pub trait AsyncReadExt: AsyncRead {
     }
 
     /// Read the exact number of bytes required to fill the vectored buf.
-    async fn read_vectored_exact<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
-        loop_read_vectored!(buf, total: usize, iter, loop self.read_exact(iter))
+    async fn read_vectored_exact<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<(), T> {
+        loop_read_vectored!(buf, _total: usize, iter, loop self.read_exact(iter))
     }
 
     /// Creates an adaptor which reads at most `limit` bytes from it.
@@ -230,7 +248,7 @@ pub trait AsyncReadAtExt: AsyncReadAt {
     /// completely fill the buffer.
     ///
     /// [`ErrorKind::UnexpectedEof`]: std::io::ErrorKind::UnexpectedEof
-    async fn read_exact_at<T: IoBufMut>(&self, mut buf: T, pos: u64) -> BufResult<usize, T> {
+    async fn read_exact_at<T: IoBufMut>(&self, mut buf: T, pos: u64) -> BufResult<(), T> {
         loop_read_exact!(
             buf,
             buf.buf_capacity(),
@@ -262,7 +280,7 @@ pub trait AsyncReadAtExt: AsyncReadAt {
         &self,
         buf: T,
         pos: u64,
-    ) -> BufResult<usize, T> {
+    ) -> BufResult<(), T> {
         loop_read_vectored!(buf, total: u64, iter, loop self.read_exact_at(iter, pos + total))
     }
 }
