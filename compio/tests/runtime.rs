@@ -28,8 +28,7 @@ async fn multi_threading() {
         let mut rx = rx.into_inner();
         compio::runtime::Runtime::new().unwrap().block_on(async {
             let buffer = Vec::with_capacity(DATA.len());
-            let (n, buffer) = rx.read_exact(buffer).await.unwrap();
-            assert_eq!(n, buffer.len());
+            let ((), buffer) = rx.read_exact(buffer).await.unwrap();
             assert_eq!(DATA, String::from_utf8(buffer).unwrap());
         });
     })
@@ -57,8 +56,7 @@ async fn try_clone() {
         let mut rx = rx.into_inner();
         compio::runtime::Runtime::new().unwrap().block_on(async {
             let buffer = Vec::with_capacity(DATA.len());
-            let (n, buffer) = rx.read_exact(buffer).await.unwrap();
-            assert_eq!(n, buffer.len());
+            let ((), buffer) = rx.read_exact(buffer).await.unwrap();
             assert_eq!(DATA, String::from_utf8(buffer).unwrap());
         });
     })

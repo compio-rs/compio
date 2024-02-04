@@ -540,9 +540,8 @@ impl ServerOptions {
     ///
     /// let (BufResult(write, _), BufResult(read, buf)) = futures_util::join!(write, read);
     /// write.unwrap();
-    /// let read = read.unwrap();
+    /// read.unwrap();
     ///
-    /// assert_eq!(read, 4);
     /// assert_eq!(&buf[..], b"ping");
     /// # })
     /// ```
@@ -646,11 +645,10 @@ impl ServerOptions {
     ///
     /// let (BufResult(write, _), BufResult(read, buf)) = futures_util::join!(write, read);
     /// write.unwrap();
-    /// let read = read.unwrap();
+    /// read.unwrap();
     ///
     /// println!("done reading and writing");
     ///
-    /// assert_eq!(read, 4);
     /// assert_eq!(&buf[..], b"ping");
     /// # })
     /// ```

@@ -16,7 +16,6 @@ async fn main() {
     tx.write_all("Hello world!").await.0.unwrap();
 
     let buffer = Vec::with_capacity(12);
-    let (n, buffer) = rx.read_exact(buffer).await.unwrap();
-    assert_eq!(n, buffer.len());
+    let ((), buffer) = rx.read_exact(buffer).await.unwrap();
     println!("{}", String::from_utf8(buffer).unwrap());
 }

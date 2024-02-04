@@ -1,6 +1,7 @@
 //! IO related utilities functions for ease of use.
 
 mod take;
+use compio_buf::{BufResult, IoBuf};
 pub use take::Take;
 
 mod null;
@@ -39,13 +40,13 @@ pub async fn copy<'a, R: AsyncRead, W: AsyncWrite>(
 
         // When EOF is reached, we are terminating, so flush before that
         if read == 0 || buf.need_flush() {
-            let written = buf.with(|w| writer.write_all(w)).await?;
-            if written == 0 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::WriteZero,
-                    "0 byte was written into the writer",
-                ));
-            }
+            let written = buf
+                .with(|w| async {
+                    let len = w.buf_len();
+                    let BufResult(res, w) = writer.write_all(w).await;
+                    BufResult(res.map(|()| len), w)
+                })
+                .await?;
             total += written;
 
             if buf.advance(written) {

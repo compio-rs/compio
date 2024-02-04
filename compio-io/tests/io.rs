@@ -220,12 +220,10 @@ impl AsyncReadAt for RepeatOne {
 async fn read_exact() {
     let mut src = RepeatOne(114);
 
-    let (len, buf) = src.read_exact(vec![0; 5]).await.unwrap();
-    assert_eq!(len, 5);
+    let ((), buf) = src.read_exact(vec![0; 5]).await.unwrap();
     assert_eq!(buf, [114; 5]);
 
-    let (len, buf) = src.read_exact_at(Vec::with_capacity(5), 0).await.unwrap();
-    assert_eq!(len, 5);
+    let ((), buf) = src.read_exact_at(Vec::with_capacity(5), 0).await.unwrap();
     assert_eq!(buf, [0, 114, 114, 114, 114]);
 }
 
@@ -282,12 +280,10 @@ impl AsyncWriteAt for WriteOne {
 async fn write_all() {
     let mut dst = WriteOne(vec![]);
 
-    let (len, _) = dst.write_all([1, 1, 4, 5, 1, 4]).await.unwrap();
-    assert_eq!(len, 6);
+    let ((), _) = dst.write_all([1, 1, 4, 5, 1, 4]).await.unwrap();
     assert_eq!(dst.0, [1, 1, 4, 5, 1, 4]);
 
-    let (len, _) = dst.write_all_at([114, 114, 114], 2).await.unwrap();
-    assert_eq!(len, 3);
+    let ((), _) = dst.write_all_at([114, 114, 114], 2).await.unwrap();
     assert_eq!(dst.0, [1, 1, 114, 114, 114, 4]);
 }
 

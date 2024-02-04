@@ -60,13 +60,12 @@ impl AsyncBufRead for Repeat {
 /// # compio_runtime::Runtime::new().unwrap().block_on(async {
 /// use compio_io::{self, AsyncRead, AsyncReadExt};
 ///
-/// let (len, buffer) = compio_io::repeat(42)
+/// let ((), buffer) = compio_io::repeat(42)
 ///     .read_exact(Vec::with_capacity(3))
 ///     .await
 ///     .unwrap();
 ///
 /// assert_eq!(buffer.as_slice(), [42, 42, 42]);
-/// assert_eq!(len, 3);
 /// # })
 /// ```
 pub fn repeat(byte: u8) -> Repeat {
