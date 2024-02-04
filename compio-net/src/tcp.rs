@@ -5,7 +5,7 @@ use compio_io::{AsyncRead, AsyncWrite};
 use compio_runtime::{impl_attachable, impl_try_as_raw_fd};
 use socket2::{Protocol, SockAddr, Type};
 
-use crate::{Socket, ToSocketAddrsAsync};
+use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, ToSocketAddrsAsync, WriteHalf};
 
 /// A TCP socket server, listening for connections.
 ///
@@ -202,6 +202,25 @@ impl TcpStream {
         self.inner
             .local_addr()
             .map(|addr| addr.as_socket().expect("should be SocketAddr"))
+    }
+
+    /// Splits a [`TcpStream`] into a read half and a write half, which can be
+    /// used to read and write the stream concurrently.
+    ///
+    /// This method is more efficient than
+    /// [`into_split`](TcpStream::into_split), but the halves cannot
+    /// be moved into independently spawned tasks.
+    pub fn split(&self) -> (ReadHalf<Self>, WriteHalf<Self>) {
+        crate::split(self)
+    }
+
+    /// Splits a [`TcpStream`] into a read half and a write half, which can be
+    /// used to read and write the stream concurrently.
+    ///
+    /// Unlike [`split`](TcpStream::split), the owned halves can be moved to
+    /// separate tasks, however this comes at the cost of a heap allocation.
+    pub fn into_split(self) -> (OwnedReadHalf<Self>, OwnedWriteHalf<Self>) {
+        crate::into_split(self)
     }
 }
 

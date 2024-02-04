@@ -7,6 +7,7 @@
 
 mod resolve;
 mod socket;
+pub(crate) mod split;
 mod tcp;
 mod udp;
 mod unix;
@@ -14,6 +15,7 @@ mod unix;
 pub use resolve::ToSocketAddrsAsync;
 pub(crate) use resolve::{each_addr, first_addr_buf};
 pub(crate) use socket::*;
+pub use split::*;
 pub use tcp::*;
 pub use udp::*;
 pub use unix::*;
