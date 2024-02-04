@@ -1,4 +1,4 @@
-use std::{io, ops::Deref, sync::Arc};
+use std::{error::Error, fmt, io, ops::Deref, sync::Arc};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_io::{AsyncRead, AsyncWrite};
@@ -64,6 +64,22 @@ where
 #[derive(Debug)]
 pub struct OwnedReadHalf<T>(Arc<T>);
 
+impl<T: Unpin> OwnedReadHalf<T> {
+    /// Attempts to put the two halves of a `TcpStream` back together and
+    /// recover the original socket. Succeeds only if the two halves
+    /// originated from the same call to `into_split`.
+    pub fn reunite(self, w: OwnedWriteHalf<T>) -> Result<T, ReuniteError<T>> {
+        if Arc::ptr_eq(&self.0, &w.0) {
+            drop(w);
+            Ok(Arc::try_unwrap(self.0)
+                .ok()
+                .expect("`Arc::try_unwrap` failed"))
+        } else {
+            Err(ReuniteError(self, w))
+        }
+    }
+}
+
 impl<T> AsyncRead for OwnedReadHalf<T>
 where
     for<'a> &'a T: AsyncRead,
@@ -101,3 +117,19 @@ where
         self.0.deref().shutdown().await
     }
 }
+
+/// Error indicating that two halves were not from the same socket, and thus
+/// could not be reunited.
+#[derive(Debug)]
+pub struct ReuniteError<T>(pub OwnedReadHalf<T>, pub OwnedWriteHalf<T>);
+
+impl<T> fmt::Display for ReuniteError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "tried to reunite halves that are not from the same socket"
+        )
+    }
+}
+
+impl<T: fmt::Debug> Error for ReuniteError<T> {}

@@ -16,7 +16,7 @@ pub fn split<T: AsyncRead + AsyncWrite>(stream: T) -> (ReadHalf<T>, WriteHalf<T>
 #[derive(Debug)]
 pub struct ReadHalf<T>(Arc<Mutex<T>>);
 
-impl<T> ReadHalf<T> {
+impl<T: Unpin> ReadHalf<T> {
     /// Reunites with a previously split [`WriteHalf`].
     ///
     /// # Panics
@@ -26,10 +26,7 @@ impl<T> ReadHalf<T> {
     /// This can be checked ahead of time by comparing the stored pointer
     /// of the two halves.
     #[track_caller]
-    pub fn unsplit(self, w: WriteHalf<T>) -> T
-    where
-        T: Unpin,
-    {
+    pub fn unsplit(self, w: WriteHalf<T>) -> T {
         if Arc::ptr_eq(&self.0, &w.0) {
             drop(w);
             let inner = Arc::try_unwrap(self.0).expect("`Arc::try_unwrap` failed");
