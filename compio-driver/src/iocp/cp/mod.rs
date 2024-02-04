@@ -1,3 +1,17 @@
+//! Completion Port
+//!
+//! This mod contains utilities of IOCP. It provides 2 working modes:
+//! IOCP-per-thread, and IOCP-global.
+//!
+//! ## IOCP-per-thread
+//! In `mod multi`. Each driver hosts a seperate port. If the port receives
+//! entry that doesn't belong to the current port, it will try to repost it to
+//! the correct port.
+//!
+//! ## IOCP-global
+//! In `mod global`. A main port runs in a separate thread, and dispatches all
+//! entries to the correct driver.
+
 use std::{
     io,
     os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle},
