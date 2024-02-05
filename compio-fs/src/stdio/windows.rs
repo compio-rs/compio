@@ -9,7 +9,7 @@ use std::{
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
     op::{BufResultExt, Recv, Send},
-    OpCode, RawFd,
+    AsRawFd, OpCode, RawFd,
 };
 use compio_io::{AsyncRead, AsyncWrite};
 use compio_runtime::Runtime;
@@ -137,6 +137,12 @@ impl AsyncRead for Stdin {
     }
 }
 
+impl AsRawFd for Stdin {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd
+    }
+}
+
 static STDOUT_ISATTY: OnceLock<bool> = OnceLock::new();
 
 /// A handle to the standard output stream of a process.
@@ -181,6 +187,12 @@ impl AsyncWrite for Stdout {
     }
 }
 
+impl AsRawFd for Stdout {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd
+    }
+}
+
 static STDERR_ISATTY: OnceLock<bool> = OnceLock::new();
 
 /// A handle to the standard output stream of a process.
@@ -222,5 +234,11 @@ impl AsyncWrite for Stderr {
 
     async fn shutdown(&mut self) -> std::io::Result<()> {
         self.flush().await
+    }
+}
+
+impl AsRawFd for Stderr {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd
     }
 }
