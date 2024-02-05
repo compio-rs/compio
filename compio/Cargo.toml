@@ -105,6 +105,7 @@ read_buf = [
     "compio-buf/read_buf",
     "compio-io?/read_buf",
     "compio-tls?/read_buf",
+    "compio-fs?/read_buf",
 ]
 try_trait_v2 = ["compio-buf/try_trait_v2"]
 nightly = [
