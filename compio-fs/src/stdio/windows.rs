@@ -110,14 +110,16 @@ pub struct Stdin {
     isatty: bool,
 }
 
-pub fn stdin() -> Stdin {
-    let stdin = std::io::stdin();
-    let isatty = *STDIN_ISATTY.get_or_init(|| {
-        stdin.is_terminal() || Runtime::current().attach(stdin.as_raw_handle()).is_err()
-    });
-    Stdin {
-        fd: stdin.as_raw_handle() as _,
-        isatty,
+impl Stdin {
+    pub(crate) fn new() -> Self {
+        let stdin = std::io::stdin();
+        let isatty = *STDIN_ISATTY.get_or_init(|| {
+            stdin.is_terminal() || Runtime::current().attach(stdin.as_raw_handle()).is_err()
+        });
+        Self {
+            fd: stdin.as_raw_handle() as _,
+            isatty,
+        }
     }
 }
 
@@ -145,14 +147,16 @@ pub struct Stdout {
     isatty: bool,
 }
 
-pub fn stdout() -> Stdout {
-    let stdout = std::io::stdout();
-    let isatty = *STDOUT_ISATTY.get_or_init(|| {
-        stdout.is_terminal() || Runtime::current().attach(stdout.as_raw_handle()).is_err()
-    });
-    Stdout {
-        fd: stdout.as_raw_handle() as _,
-        isatty,
+impl Stdout {
+    pub(crate) fn new() -> Self {
+        let stdout = std::io::stdout();
+        let isatty = *STDOUT_ISATTY.get_or_init(|| {
+            stdout.is_terminal() || Runtime::current().attach(stdout.as_raw_handle()).is_err()
+        });
+        Self {
+            fd: stdout.as_raw_handle() as _,
+            isatty,
+        }
     }
 }
 
@@ -187,14 +191,16 @@ pub struct Stderr {
     isatty: bool,
 }
 
-pub fn stderr() -> Stderr {
-    let stderr = std::io::stderr();
-    let isatty = *STDERR_ISATTY.get_or_init(|| {
-        stderr.is_terminal() || Runtime::current().attach(stderr.as_raw_handle()).is_err()
-    });
-    Stderr {
-        fd: stderr.as_raw_handle() as _,
-        isatty,
+impl Stderr {
+    pub(crate) fn new() -> Self {
+        let stderr = std::io::stderr();
+        let isatty = *STDERR_ISATTY.get_or_init(|| {
+            stderr.is_terminal() || Runtime::current().attach(stderr.as_raw_handle()).is_err()
+        });
+        Self {
+            fd: stderr.as_raw_handle() as _,
+            isatty,
+        }
     }
 }
 
