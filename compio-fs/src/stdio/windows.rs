@@ -36,9 +36,7 @@ impl<R: Read, B: IoBufMut> OpCode for StdRead<R, B> {
         let slice = this.buffer.as_mut_slice();
         #[cfg(feature = "read_buf")]
         {
-            use std::io::BorrowedBuf;
-
-            let mut buf = BorrowedBuf::from(slice);
+            let mut buf = io::BorrowedBuf::from(slice);
             let mut cursor = buf.unfilled();
             this.reader.read_buf(cursor.reborrow())?;
             Poll::Ready(Ok(cursor.written()))
@@ -82,10 +80,7 @@ impl<W: Write, B: IoBuf> OpCode for StdWrite<W, B> {
         false
     }
 
-    unsafe fn operate(
-        self: Pin<&mut Self>,
-        _optr: *mut OVERLAPPED,
-    ) -> Poll<std::io::Result<usize>> {
+    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = self.get_unchecked_mut();
         let slice = this.buffer.as_slice();
         this.writer.write(slice).into()
@@ -112,7 +107,7 @@ pub struct Stdin {
 
 impl Stdin {
     pub(crate) fn new() -> Self {
-        let stdin = std::io::stdin();
+        let stdin = io::stdin();
         let isatty = *STDIN_ISATTY.get_or_init(|| {
             stdin.is_terminal() || Runtime::current().attach(stdin.as_raw_handle()).is_err()
         });
@@ -127,7 +122,7 @@ impl AsyncRead for Stdin {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         let runtime = Runtime::current();
         if self.isatty {
-            let op = StdRead::new(std::io::stdin(), buf);
+            let op = StdRead::new(io::stdin(), buf);
             runtime.submit(op).await.into_inner()
         } else {
             let op = Recv::new(self.fd, buf);
@@ -155,7 +150,7 @@ pub struct Stdout {
 
 impl Stdout {
     pub(crate) fn new() -> Self {
-        let stdout = std::io::stdout();
+        let stdout = io::stdout();
         let isatty = *STDOUT_ISATTY.get_or_init(|| {
             stdout.is_terminal() || Runtime::current().attach(stdout.as_raw_handle()).is_err()
         });
@@ -170,7 +165,7 @@ impl AsyncWrite for Stdout {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         let runtime = Runtime::current();
         if self.isatty {
-            let op = StdWrite::new(std::io::stdout(), buf);
+            let op = StdWrite::new(io::stdout(), buf);
             runtime.submit(op).await.into_inner()
         } else {
             let op = Send::new(self.fd, buf);
@@ -178,11 +173,11 @@ impl AsyncWrite for Stdout {
         }
     }
 
-    async fn flush(&mut self) -> std::io::Result<()> {
+    async fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 
-    async fn shutdown(&mut self) -> std::io::Result<()> {
+    async fn shutdown(&mut self) -> io::Result<()> {
         self.flush().await
     }
 }
@@ -205,7 +200,7 @@ pub struct Stderr {
 
 impl Stderr {
     pub(crate) fn new() -> Self {
-        let stderr = std::io::stderr();
+        let stderr = io::stderr();
         let isatty = *STDERR_ISATTY.get_or_init(|| {
             stderr.is_terminal() || Runtime::current().attach(stderr.as_raw_handle()).is_err()
         });
@@ -220,7 +215,7 @@ impl AsyncWrite for Stderr {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         let runtime = Runtime::current();
         if self.isatty {
-            let op = StdWrite::new(std::io::stderr(), buf);
+            let op = StdWrite::new(io::stderr(), buf);
             runtime.submit(op).await.into_inner()
         } else {
             let op = Send::new(self.fd, buf);
@@ -228,11 +223,11 @@ impl AsyncWrite for Stderr {
         }
     }
 
-    async fn flush(&mut self) -> std::io::Result<()> {
+    async fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 
-    async fn shutdown(&mut self) -> std::io::Result<()> {
+    async fn shutdown(&mut self) -> io::Result<()> {
         self.flush().await
     }
 }
