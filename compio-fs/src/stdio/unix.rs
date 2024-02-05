@@ -1,10 +1,11 @@
-use std::mem::ManuallyDrop;
+use std::{io, mem::ManuallyDrop};
+
+use compio_buf::{BufResult, IoBuf, IoBufMut};
+use compio_driver::{AsRawFd, FromRawFd, RawFd};
+use compio_io::{AsyncRead, AsyncWrite};
+use compio_runtime::TryAsRawFd;
 
 use crate::pipe::{Receiver, Sender};
-use compio_buf::{BufResult, IoBuf, IoBufMut};
-use compio_driver::AsRawFd;
-use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::FromRawFd;
 
 /// A handle to the standard input stream of a process.
 ///
@@ -14,7 +15,7 @@ pub struct Stdin(ManuallyDrop<Receiver>);
 impl Stdin {
     pub(crate) fn new() -> Self {
         Self(ManuallyDrop::new(unsafe {
-            Receiver::from_raw_fd(std::io::stdin().as_raw_fd())
+            Receiver::from_raw_fd(io::stdin().as_raw_fd())
         }))
     }
 }
@@ -22,6 +23,16 @@ impl Stdin {
 impl AsyncRead for Stdin {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         self.0.read(buf).await
+    }
+}
+
+impl TryAsRawFd for Stdin {
+    fn try_as_raw_fd(&self) -> io::Result<RawFd> {
+        self.0.try_as_raw_fd()
+    }
+
+    unsafe fn as_raw_fd_unchecked(&self) -> RawFd {
+        self.0.as_raw_fd_unchecked()
     }
 }
 
@@ -33,7 +44,7 @@ pub struct Stdout(ManuallyDrop<Sender>);
 impl Stdout {
     pub(crate) fn new() -> Self {
         Self(ManuallyDrop::new(unsafe {
-            Sender::from_raw_fd(std::io::stdout().as_raw_fd())
+            Sender::from_raw_fd(io::stdout().as_raw_fd())
         }))
     }
 }
@@ -43,12 +54,22 @@ impl AsyncWrite for Stdout {
         self.0.write(buf).await
     }
 
-    async fn flush(&mut self) -> std::io::Result<()> {
+    async fn flush(&mut self) -> io::Result<()> {
         self.0.flush().await
     }
 
-    async fn shutdown(&mut self) -> std::io::Result<()> {
+    async fn shutdown(&mut self) -> io::Result<()> {
         self.0.shutdown().await
+    }
+}
+
+impl TryAsRawFd for Stdout {
+    fn try_as_raw_fd(&self) -> io::Result<RawFd> {
+        self.0.try_as_raw_fd()
+    }
+
+    unsafe fn as_raw_fd_unchecked(&self) -> RawFd {
+        self.0.as_raw_fd_unchecked()
     }
 }
 
@@ -60,7 +81,7 @@ pub struct Stderr(ManuallyDrop<Sender>);
 impl Stderr {
     pub(crate) fn new() -> Self {
         Self(ManuallyDrop::new(unsafe {
-            Sender::from_raw_fd(std::io::stderr().as_raw_fd())
+            Sender::from_raw_fd(io::stderr().as_raw_fd())
         }))
     }
 }
@@ -70,11 +91,21 @@ impl AsyncWrite for Stderr {
         self.0.write(buf).await
     }
 
-    async fn flush(&mut self) -> std::io::Result<()> {
+    async fn flush(&mut self) -> io::Result<()> {
         self.0.flush().await
     }
 
-    async fn shutdown(&mut self) -> std::io::Result<()> {
+    async fn shutdown(&mut self) -> io::Result<()> {
         self.0.shutdown().await
+    }
+}
+
+impl TryAsRawFd for Stderr {
+    fn try_as_raw_fd(&self) -> io::Result<RawFd> {
+        self.0.try_as_raw_fd()
+    }
+
+    unsafe fn as_raw_fd_unchecked(&self) -> RawFd {
+        self.0.as_raw_fd_unchecked()
     }
 }

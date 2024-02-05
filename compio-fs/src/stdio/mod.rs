@@ -11,11 +11,12 @@ cfg_if::cfg_if! {
 /// Constructs a new handle to the standard input of the current process.
 ///
 /// ## Platform specific
-/// * Windows: This handle is best used for non-interactive uses, such as when a file
-/// is piped into the application. For technical reasons, if `stdin` is a
-/// console handle, the read method is implemented by using an ordinary blocking
-/// read on a separate thread, and it is impossible to cancel that read. This
-/// can make shutdown of the runtime hang until the user presses enter.
+/// * Windows: This handle is best used for non-interactive uses, such as when a
+///   file is piped into the application. For technical reasons, if `stdin` is a
+///   console handle, the read method is implemented by using an ordinary
+///   blocking read on a separate thread, and it is impossible to cancel that
+///   read. This can make shutdown of the runtime hang until the user presses
+///   enter.
 ///
 /// [`AsyncRead`]: compio_io::AsyncRead
 pub fn stdin() -> Stdin {
