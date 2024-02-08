@@ -1,7 +1,6 @@
 //! IO related utilities functions for ease of use.
 
 mod take;
-use compio_buf::{BufResult, IoBuf};
 pub use take::Take;
 
 mod null;
@@ -13,7 +12,7 @@ pub use repeat::{repeat, Repeat};
 mod internal;
 pub(crate) use internal::*;
 
-use crate::{buffer::Buffer, AsyncRead, AsyncWrite, AsyncWriteExt, IoResult};
+use crate::{buffer::Buffer, AsyncRead, AsyncWrite, IoResult};
 
 /// Asynchronously copies the entire contents of a reader into a writer.
 ///
@@ -40,18 +39,8 @@ pub async fn copy<'a, R: AsyncRead, W: AsyncWrite>(
 
         // When EOF is reached, we are terminating, so flush before that
         if read == 0 || buf.need_flush() {
-            let written = buf
-                .with(|w| async {
-                    let len = w.buf_len();
-                    let BufResult(res, w) = writer.write_all(w).await;
-                    BufResult(res.map(|()| len), w)
-                })
-                .await?;
+            let written = buf.flush_to(writer).await?;
             total += written;
-
-            if buf.advance(written) {
-                buf.reset()
-            }
         }
 
         if read == 0 {

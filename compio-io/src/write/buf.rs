@@ -1,11 +1,11 @@
 use std::future::ready;
 
-use compio_buf::{buf_try, BufResult, IntoInner, IoBuf};
+use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoVectoredBuf};
 
 use crate::{
     buffer::Buffer,
     util::{slice_to_buf, DEFAULT_BUF_SIZE},
-    AsyncWrite, AsyncWriteExt, IoResult,
+    AsyncWrite, IoResult,
 };
 
 /// Wraps a writer and buffers its output.
@@ -48,8 +48,21 @@ impl<W> BufWriter<W> {
     }
 }
 
+impl<W: AsyncWrite> BufWriter<W> {
+    async fn flush_if_needed(&mut self) -> IoResult<()> {
+        if self.buf.need_flush() {
+            self.flush().await?;
+        }
+        Ok(())
+    }
+}
+
 impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
-    async fn write<T: IoBuf>(&mut self, mut buf: T) -> compio_buf::BufResult<usize, T> {
+    async fn write<T: IoBuf>(&mut self, mut buf: T) -> BufResult<usize, T> {
+        // The previous flush may error because disk full. We need to make the buffer
+        // all-done before writing new data to it.
+        (_, buf) = buf_try!(self.flush_if_needed().await, buf);
+
         let written = self
             .buf
             .with_sync(|w| {
@@ -60,17 +73,14 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
             })
             .expect("Closure always return Ok");
 
-        if self.buf.need_flush() {
-            (_, buf) = buf_try!(self.flush().await, buf);
-        }
+        (_, buf) = buf_try!(self.flush_if_needed().await, buf);
 
         BufResult(Ok(written), buf)
     }
 
-    async fn write_vectored<T: compio_buf::IoVectoredBuf>(
-        &mut self,
-        mut buf: T,
-    ) -> compio_buf::BufResult<usize, T> {
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, mut buf: T) -> BufResult<usize, T> {
+        (_, buf) = buf_try!(self.flush_if_needed().await, buf);
+
         let written = self
             .buf
             .with(|mut w| {
@@ -90,9 +100,7 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
             .await
             .expect("Closure always return Ok");
 
-        if self.buf.need_flush() {
-            (_, buf) = buf_try!(self.flush().await, buf);
-        }
+        (_, buf) = buf_try!(self.flush_if_needed().await, buf);
 
         BufResult(Ok(written), buf)
     }
@@ -100,8 +108,7 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
     async fn flush(&mut self) -> IoResult<()> {
         let Self { writer, buf } = self;
 
-        buf.with(|w| writer.write_all(w)).await?;
-        buf.reset();
+        buf.flush_to(writer).await?;
 
         Ok(())
     }
