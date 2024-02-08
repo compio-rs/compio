@@ -78,6 +78,30 @@ async fn drop_open() {
     assert_eq!(file, HELLO);
 }
 
+#[cfg(windows)]
+#[compio_macros::test]
+async fn hidden_file_truncation() {
+    let tmpdir = tempfile::tempdir().unwrap();
+    let path = tmpdir.path().join("hidden_file.txt");
+
+    // Create a hidden file.
+    const FILE_ATTRIBUTE_HIDDEN: u32 = 2;
+    let mut file = compio_fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .attributes(FILE_ATTRIBUTE_HIDDEN)
+        .open(&path)
+        .await
+        .unwrap();
+    file.write_all_at("hidden world!", 0).await.unwrap();
+    file.close().await.unwrap();
+
+    // Create a new file by truncating the existing one.
+    let file = File::create(&path).await.unwrap();
+    let metadata = file.metadata().await.unwrap();
+    assert_eq!(metadata.len(), 0);
+}
+
 fn tempfile() -> NamedTempFile {
     NamedTempFile::new().unwrap()
 }

@@ -1,14 +1,16 @@
 use std::{io, path::Path, ptr::null};
 
-use compio_driver::{op::OpenFile, FromRawFd, RawFd};
+use compio_buf::BufResult;
+use compio_driver::{op::OpenFile, syscall, FromRawFd, RawFd};
 use compio_runtime::Runtime;
 use windows_sys::Win32::{
-    Foundation::{ERROR_INVALID_PARAMETER, GENERIC_READ, GENERIC_WRITE},
+    Foundation::{ERROR_ALREADY_EXISTS, ERROR_INVALID_PARAMETER, GENERIC_READ, GENERIC_WRITE},
     Security::SECURITY_ATTRIBUTES,
     Storage::FileSystem::{
-        CREATE_ALWAYS, CREATE_NEW, FILE_FLAGS_AND_ATTRIBUTES, FILE_FLAG_OPEN_REPARSE_POINT,
-        FILE_FLAG_OVERLAPPED, FILE_SHARE_DELETE, FILE_SHARE_MODE, FILE_SHARE_READ,
-        FILE_SHARE_WRITE, OPEN_ALWAYS, OPEN_EXISTING, SECURITY_SQOS_PRESENT, TRUNCATE_EXISTING,
+        FileAllocationInfo, SetFileInformationByHandle, CREATE_NEW, FILE_ALLOCATION_INFO,
+        FILE_FLAGS_AND_ATTRIBUTES, FILE_FLAG_OPEN_REPARSE_POINT, FILE_FLAG_OVERLAPPED,
+        FILE_SHARE_DELETE, FILE_SHARE_MODE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_ALWAYS,
+        OPEN_EXISTING, SECURITY_SQOS_PRESENT, TRUNCATE_EXISTING,
     },
 };
 
@@ -112,7 +114,8 @@ impl OpenOptions {
             (false, false, false) => OPEN_EXISTING,
             (true, false, false) => OPEN_ALWAYS,
             (false, true, false) => TRUNCATE_EXISTING,
-            (true, true, false) => CREATE_ALWAYS,
+            // https://github.com/rust-lang/rust/issues/115745
+            (true, true, false) => OPEN_ALWAYS,
             (_, _, true) => CREATE_NEW,
         })
     }
@@ -131,15 +134,32 @@ impl OpenOptions {
 
     pub async fn open(&self, p: impl AsRef<Path>) -> io::Result<File> {
         let p = path_string(p)?;
+        let creation_mode = self.get_creation_mode()?;
         let op = OpenFile::new(
             p,
             self.get_access_mode()?,
             self.share_mode,
             self.security_attributes,
-            self.get_creation_mode()?,
+            creation_mode,
             self.get_flags_and_attributes(),
         );
-        let fd = Runtime::current().submit(op).await.0? as RawFd;
+        let BufResult(fd, op) = Runtime::current().submit(op).await;
+        let fd = fd? as RawFd;
+        if self.truncate
+            && creation_mode == OPEN_ALWAYS
+            && op.last_os_error() == ERROR_ALREADY_EXISTS
+        {
+            let alloc = FILE_ALLOCATION_INFO { AllocationSize: 0 };
+            syscall!(
+                BOOL,
+                SetFileInformationByHandle(
+                    fd as _,
+                    FileAllocationInfo,
+                    std::ptr::addr_of!(alloc).cast(),
+                    std::mem::size_of::<FILE_ALLOCATION_INFO>() as _,
+                )
+            )?;
+        }
         Ok(unsafe { File::from_raw_fd(fd) })
     }
 }
