@@ -4,7 +4,7 @@ use std::io::{self, BufRead, Read, Write};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
 
-use crate::{buffer::Buffer, util::DEFAULT_BUF_SIZE, AsyncWriteExt};
+use crate::{buffer::Buffer, util::DEFAULT_BUF_SIZE};
 
 /// A wrapper for [`AsyncRead`](crate::AsyncRead) +
 /// [`AsyncWrite`](crate::AsyncWrite), providing sync traits impl. The sync
@@ -153,15 +153,7 @@ impl<S: crate::AsyncWrite> SyncStream<S> {
     /// Flush all data in the write buffer.
     pub async fn flush_write_buf(&mut self) -> io::Result<usize> {
         let stream = &mut self.stream;
-        let len = self
-            .write_buffer
-            .with(|w| async {
-                let len = w.buf_len();
-                let BufResult(res, w) = stream.write_all(w).await;
-                BufResult(res.map(|()| len), w)
-            })
-            .await?;
-        self.write_buffer.reset();
+        let len = self.write_buffer.flush_to(stream).await?;
         stream.flush().await?;
         Ok(len)
     }

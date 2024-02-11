@@ -7,9 +7,9 @@ use std::{
     future::Future,
 };
 
-use compio_buf::{BufResult, IoBuf, IoBufMut, SetBufInit};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit, Slice};
 
-use crate::util::MISSING_BUF;
+use crate::{util::MISSING_BUF, AsyncWrite, IoResult};
 
 pub struct Inner {
     buf: Vec<u8>,
@@ -32,6 +32,12 @@ impl Inner {
     #[inline]
     fn slice(&self) -> &[u8] {
         &self.buf[self.pos..]
+    }
+
+    #[inline]
+    pub(crate) fn into_slice(self) -> Slice<Self> {
+        let pos = self.pos;
+        IoBuf::slice(self, pos..)
     }
 }
 
@@ -96,6 +102,7 @@ impl Buffer {
 
     /// If the inner buffer is empty.
     #[inline]
+    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.inner().as_slice().is_empty()
     }
@@ -115,6 +122,7 @@ impl Buffer {
     }
 
     /// The buffer needs to be flushed
+    #[inline]
     pub fn need_flush(&self) -> bool {
         // TODO: Better way to determine if we need to flush the buffer
         let buf = self.buf();
@@ -129,7 +137,7 @@ impl Buffer {
 
     /// Execute a funcition with ownership of the buffer, and restore the buffer
     /// afterwards
-    pub async fn with<R, Fut, F>(&mut self, func: F) -> std::io::Result<R>
+    pub async fn with<R, Fut, F>(&mut self, func: F) -> IoResult<R>
     where
         Fut: Future<Output = BufResult<R, Inner>>,
         F: FnOnce(Inner) -> Fut,
@@ -148,6 +156,24 @@ impl Buffer {
         let BufResult(res, buf) = func(self.take_inner());
         self.restore_inner(buf);
         res
+    }
+
+    /// Wrapper to flush the buffer to a writer with error safety.
+    ///
+    /// https://github.com/compio-rs/compio/issues/209
+    pub async fn flush_to(&mut self, writer: &mut impl AsyncWrite) -> IoResult<usize> {
+        let mut total = 0;
+        loop {
+            let written = self
+                .with(|inner| async { writer.write(inner.into_slice()).await.into_inner() })
+                .await?;
+            total += written;
+            if self.advance(written) {
+                break;
+            }
+        }
+        self.reset();
+        Ok(total)
     }
 
     /// Mark some bytes as read by advancing the progress tracker, return a
