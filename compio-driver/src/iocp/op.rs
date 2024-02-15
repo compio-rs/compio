@@ -22,7 +22,7 @@ use windows_sys::{
         Foundation::{
             CloseHandle, GetLastError, ERROR_ACCESS_DENIED, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE,
             ERROR_IO_PENDING, ERROR_NOT_FOUND, ERROR_NO_DATA, ERROR_PIPE_CONNECTED,
-            ERROR_SHARING_VIOLATION, FILETIME,
+            ERROR_SHARING_VIOLATION, FILETIME, INVALID_HANDLE_VALUE,
         },
         Networking::WinSock::{
             closesocket, setsockopt, shutdown, socklen_t, WSAIoctl, WSARecv, WSARecvFrom, WSASend,
@@ -144,6 +144,7 @@ pub struct OpenFile {
     pub(crate) security_attributes: *const SECURITY_ATTRIBUTES,
     pub(crate) creation_mode: FILE_CREATION_DISPOSITION,
     pub(crate) flags_and_attributes: FILE_FLAGS_AND_ATTRIBUTES,
+    pub(crate) error_code: u32,
 }
 
 impl OpenFile {
@@ -163,7 +164,14 @@ impl OpenFile {
             security_attributes,
             creation_mode,
             flags_and_attributes,
+            error_code: 0,
         }
+    }
+
+    /// The result of [`GetLastError`]. It may not be 0 even if the operation is
+    /// successful.
+    pub fn last_os_error(&self) -> u32 {
+        self.error_code
     }
 }
 
@@ -172,19 +180,22 @@ impl OpCode for OpenFile {
         false
     }
 
-    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        Poll::Ready(Ok(syscall!(
-            HANDLE,
-            CreateFileW(
-                self.path.as_ptr(),
-                self.access_mode,
-                self.share_mode,
-                self.security_attributes,
-                self.creation_mode,
-                self.flags_and_attributes,
-                0
-            )
-        )? as _))
+    unsafe fn operate(mut self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let handle = CreateFileW(
+            self.path.as_ptr(),
+            self.access_mode,
+            self.share_mode,
+            self.security_attributes,
+            self.creation_mode,
+            self.flags_and_attributes,
+            0,
+        );
+        self.error_code = GetLastError();
+        if handle == INVALID_HANDLE_VALUE {
+            Poll::Ready(Err(io::Error::from_raw_os_error(self.error_code as _)))
+        } else {
+            Poll::Ready(Ok(handle as _))
+        }
     }
 }
 
