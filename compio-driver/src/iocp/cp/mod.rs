@@ -82,20 +82,25 @@ impl CompletionPort {
         res: io::Result<usize>,
         optr: *mut Overlapped<T>,
     ) -> io::Result<()> {
-        if let Err(e) = &res {
-            let code = e.raw_os_error().unwrap_or(ERROR_BAD_COMMAND as _);
-            unsafe { &mut *optr }.base.Internal = ntstatus_from_win32(code) as _;
+        if let Some(overlapped) = unsafe { optr.as_mut() } {
+            match &res {
+                Ok(transferred) => {
+                    overlapped.base.Internal = STATUS_SUCCESS as _;
+                    overlapped.base.InternalHigh = *transferred;
+                }
+                Err(e) => {
+                    let code = e.raw_os_error().unwrap_or(ERROR_BAD_COMMAND as _);
+                    overlapped.base.Internal = ntstatus_from_win32(code) as _;
+                }
+            }
         }
-        // We have to use CompletionKey to transfer the result because it is large
-        // enough. It is OK because we set it to zero when attaching handles to IOCP.
+        self.post_raw(optr)
+    }
+
+    pub fn post_raw<T: ?Sized>(&self, optr: *const Overlapped<T>) -> io::Result<()> {
         syscall!(
             BOOL,
-            PostQueuedCompletionStatus(
-                self.port.as_raw_handle() as _,
-                0,
-                res.unwrap_or_default(),
-                optr.cast()
-            )
+            PostQueuedCompletionStatus(self.port.as_raw_handle() as _, 0, 0, optr.cast())
         )?;
         Ok(())
     }
@@ -143,7 +148,7 @@ impl CompletionPort {
             if let Some(current_driver) = current_driver {
                 if overlapped.driver != current_driver {
                     // Repose the entry to correct port.
-                    if let Err(e) = syscall!(
+                    if let Err(_e) = syscall!(
                         BOOL,
                         PostQueuedCompletionStatus(
                             overlapped.driver as _,
@@ -158,7 +163,7 @@ impl CompletionPort {
                             entry.lpCompletionKey,
                             entry.lpOverlapped,
                             overlapped.driver,
-                            e
+                            _e
                         );
                     }
                 }
@@ -167,11 +172,7 @@ impl CompletionPort {
                 overlapped.base.Internal as NTSTATUS,
                 STATUS_SUCCESS | STATUS_PENDING
             ) {
-                if entry.lpCompletionKey != 0 {
-                    Ok(entry.lpCompletionKey)
-                } else {
-                    Ok(entry.dwNumberOfBytesTransferred as _)
-                }
+                Ok(overlapped.base.InternalHigh)
             } else {
                 let error = unsafe { RtlNtStatusToDosError(overlapped.base.Internal as _) };
                 match error {

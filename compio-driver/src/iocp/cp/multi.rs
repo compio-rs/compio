@@ -55,4 +55,8 @@ impl PortHandle {
     ) -> io::Result<()> {
         self.port.post(res, optr)
     }
+
+    pub fn post_raw<T: ?Sized>(&self, optr: *const Overlapped<T>) -> io::Result<()> {
+        self.port.post_raw(optr)
+    }
 }

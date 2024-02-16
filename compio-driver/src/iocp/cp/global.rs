@@ -36,6 +36,10 @@ impl GlobalPort {
     ) -> io::Result<()> {
         self.port.post(res, optr)
     }
+
+    pub fn post_raw<T: ?Sized>(&self, optr: *const Overlapped<T>) -> io::Result<()> {
+        self.port.post_raw(optr)
+    }
 }
 
 impl AsRawHandle for GlobalPort {
@@ -60,7 +64,7 @@ fn iocp_start() -> io::Result<()> {
                 // Any thin pointer is OK because we don't use the type of opcode.
                 let overlapped_ptr: *mut Overlapped<()> = entry.lpOverlapped.cast();
                 let overlapped = unsafe { &*overlapped_ptr };
-                if let Err(e) = syscall!(
+                if let Err(_e) = syscall!(
                     BOOL,
                     PostQueuedCompletionStatus(
                         overlapped.driver as _,
@@ -75,7 +79,7 @@ fn iocp_start() -> io::Result<()> {
                         entry.lpCompletionKey,
                         entry.lpOverlapped,
                         overlapped.driver,
-                        e
+                        _e
                     );
                 }
             }
@@ -137,5 +141,9 @@ impl PortHandle {
         optr: *mut Overlapped<T>,
     ) -> io::Result<()> {
         self.port.post(res, optr)
+    }
+
+    pub fn post_raw<T: ?Sized>(&self, optr: *const Overlapped<T>) -> io::Result<()> {
+        self.port.post_raw(optr)
     }
 }

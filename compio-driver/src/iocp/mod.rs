@@ -281,10 +281,7 @@ impl NotifyHandle {
 
     /// Notify the inner driver.
     pub fn notify(&self) -> io::Result<()> {
-        self.port.post(
-            Ok(0),
-            self.overlapped.as_ref() as *const _ as *mut Overlapped<()> as _,
-        )
+        self.port.post_raw(self.overlapped.as_ref())
     }
 }
 
