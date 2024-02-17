@@ -1,7 +1,7 @@
 use std::{io, mem::ManuallyDrop};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
-use compio_driver::{AsRawFd, FromRawFd, RawFd};
+use compio_driver::{FromRawFd, RawFd};
 use compio_io::{AsyncRead, AsyncWrite};
 use compio_runtime::TryAsRawFd;
 
@@ -14,8 +14,9 @@ pub struct Stdin(ManuallyDrop<Receiver>);
 
 impl Stdin {
     pub(crate) fn new() -> Self {
+        // SAFETY: we don't drop it
         Self(ManuallyDrop::new(unsafe {
-            Receiver::from_raw_fd(io::stdin().as_raw_fd())
+            Receiver::from_raw_fd(libc::STDIN_FILENO)
         }))
     }
 }
@@ -43,8 +44,9 @@ pub struct Stdout(ManuallyDrop<Sender>);
 
 impl Stdout {
     pub(crate) fn new() -> Self {
+        // SAFETY: we don't drop it
         Self(ManuallyDrop::new(unsafe {
-            Sender::from_raw_fd(io::stdout().as_raw_fd())
+            Sender::from_raw_fd(libc::STDOUT_FILENO)
         }))
     }
 }
@@ -80,8 +82,9 @@ pub struct Stderr(ManuallyDrop<Sender>);
 
 impl Stderr {
     pub(crate) fn new() -> Self {
+        // SAFETY: we don't drop it
         Self(ManuallyDrop::new(unsafe {
-            Sender::from_raw_fd(io::stderr().as_raw_fd())
+            Sender::from_raw_fd(libc::STDERR_FILENO)
         }))
     }
 }

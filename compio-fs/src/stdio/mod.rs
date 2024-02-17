@@ -8,7 +8,7 @@ cfg_if::cfg_if! {
     }
 }
 
-/// Constructs a new handle to the standard input of the current process.
+/// Constructs a handle to the standard input of the current process.
 ///
 /// ## Platform specific
 /// * Windows: This handle is best used for non-interactive uses, such as when a
@@ -23,7 +23,7 @@ pub fn stdin() -> Stdin {
     Stdin::new()
 }
 
-/// Constructs a new handle to the standard output of the current process.
+/// Constructs a handle to the standard output of the current process.
 ///
 /// Concurrent writes to stdout must be executed with care: Only individual
 /// writes to this [`AsyncWrite`] are guaranteed to be intact. In particular
@@ -37,7 +37,7 @@ pub fn stdout() -> Stdout {
     Stdout::new()
 }
 
-/// Constructs a new handle to the standard output of the current process.
+/// Constructs a handle to the standard error of the current process.
 ///
 /// Concurrent writes to stderr must be executed with care: Only individual
 /// writes to this [`AsyncWrite`] are guaranteed to be intact. In particular

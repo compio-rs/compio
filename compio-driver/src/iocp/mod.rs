@@ -56,7 +56,7 @@ pub trait AsRawFd {
 
 /// Construct IO objects from raw fds.
 pub trait FromRawFd {
-    /// Constructs a new IO object from the specified raw fd.
+    /// Constructs an IO object from the specified raw fd.
     ///
     /// # Safety
     ///
