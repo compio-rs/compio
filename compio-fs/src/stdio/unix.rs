@@ -1,6 +1,6 @@
 use std::{io, mem::ManuallyDrop};
 
-use compio_buf::{BufResult, IoBuf, IoBufMut};
+use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{FromRawFd, RawFd};
 use compio_io::{AsyncRead, AsyncWrite};
 use compio_runtime::TryAsRawFd;
@@ -24,6 +24,10 @@ impl Stdin {
 impl AsyncRead for Stdin {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         self.0.read(buf).await
+    }
+
+    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
+        self.0.read_vectored(buf).await
     }
 }
 
@@ -54,6 +58,10 @@ impl Stdout {
 impl AsyncWrite for Stdout {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         self.0.write(buf).await
+    }
+
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        self.0.write_vectored(buf).await
     }
 
     async fn flush(&mut self) -> io::Result<()> {
@@ -92,6 +100,10 @@ impl Stderr {
 impl AsyncWrite for Stderr {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         self.0.write(buf).await
+    }
+
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        self.0.write_vectored(buf).await
     }
 
     async fn flush(&mut self) -> io::Result<()> {
