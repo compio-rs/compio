@@ -56,6 +56,8 @@ jobs:
       - name: Test on ${{ matrix.setup.os }} ${{ matrix.toolchain }} ${{ matrix.setup.target }}
         shell: bash
         run: |
+          set -ex
+
           ARGS=("--features" "all")
 
           # Add feature "nightly" if toolchain is nightly
