@@ -16,12 +16,12 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  check:
-    runs-on: ${{ matrix.os }}
+  test:
+    runs-on: ${{ matrix.setup.os }}
     strategy:
       matrix:
         toolchain: ["nightly", "beta"]
-        include:
+        setup:
           - os: "ubuntu-20.04"
           - os: "ubuntu-22.04"
             features: "io-uring-sqe128,io-uring-cqe32"
@@ -37,7 +37,6 @@ jobs:
           - os: "ubuntu-22.04"
             features: "polling,native-tls"
             no_default_features: true
-
           - os: "windows-latest"
             target: "x86_64-pc-windows-msvc"
           - os: "windows-latest"
@@ -52,9 +51,9 @@ jobs:
       - name: Setup Rust Toolchain
         run: rustup toolchain install ${{ matrix.toolchain }}
       - name: Setup target
-        if: ${{ matrix.target }}
-        run: rustup +${{ matrix.toolchain }} target install ${{ matrix.target }}
-      - name: Test on ${{ matrix.os }} ${{ matrix.toolchain }} ${{ matrix.target }}
+        if: ${{ matrix.setup.target }}
+        run: rustup +${{ matrix.toolchain }} target install ${{ matrix.setup.target }}
+      - name: Test on ${{ matrix.setup.os }} ${{ matrix.toolchain }} ${{ matrix.setup.target }}
         shell: bash
         run: |
           ARGS=("--features" "all")
@@ -64,15 +63,15 @@ jobs:
               ARGS+=("--features" "nightly")
           fi
           # Add features if features is not empty
-          if [[ ${{ matrix.features }} ]]; then
-              ARGS+=("--features" "${{ matrix.features }}")
+          if [[ ${{ matrix.setup.features }} ]]; then
+              ARGS+=("--features" "${{ matrix.setup.features }}")
           fi
           # Add no-default-features if no_default_features is true
-          if [[ ${{ matrix.no_default_features }} ]]; then
+          if [[ ${{ matrix.setup.no_default_features }} ]]; then
               ARGS+=("--no-default-features")
           fi
           # Add doctest-xcompile if on windows and nightly
-          if [[ ${{ matrix.os }} == "windows-latest" && ${{ matrix.toolchain }} == "nightly" ]]; then
+          if [[ ${{ matrix.setup.os }} == "windows-latest" && ${{ matrix.setup.toolchain }} == "nightly" ]]; then
               ARGS+=("-Z" "doctest-xcompile")
           fi
 
