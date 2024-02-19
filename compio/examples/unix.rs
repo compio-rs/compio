@@ -12,8 +12,8 @@ async fn main() {
 
     let addr = listener.local_addr().unwrap();
 
-    let mut tx = UnixStream::connect_addr(&addr).unwrap();
-    let (mut rx, _) = listener.accept().await.unwrap();
+    let (mut tx, (mut rx, _)) =
+        futures_util::try_join!(UnixStream::connect_addr(&addr), listener.accept()).unwrap();
 
     assert_eq!(addr, tx.peer_addr().unwrap());
 

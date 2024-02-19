@@ -11,8 +11,8 @@ async fn accept_read_write() -> std::io::Result<()> {
 
     let listener = UnixListener::bind(&sock_path)?;
 
-    let mut client = UnixStream::connect(&sock_path)?;
-    let (mut server, _) = listener.accept().await?;
+    let (mut client, (mut server, _)) =
+        futures_util::try_join!(UnixStream::connect(&sock_path), listener.accept()).unwrap();
 
     client.write_all("hello").await.0?;
     drop(client);
@@ -35,8 +35,8 @@ async fn shutdown() -> std::io::Result<()> {
 
     let listener = UnixListener::bind(&sock_path)?;
 
-    let mut client = UnixStream::connect(&sock_path)?;
-    let (mut server, _) = listener.accept().await?;
+    let (mut client, (mut server, _)) =
+        futures_util::try_join!(UnixStream::connect(&sock_path), listener.accept()).unwrap();
 
     // Shut down the client
     client.shutdown().await?;
