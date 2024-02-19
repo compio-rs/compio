@@ -1,0 +1,35 @@
+name: Check
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  RUST_BACKTRACE: 1
+
+jobs:
+  check:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust Toolchain
+        run: |
+          rustup toolchain install nightly
+          rustup +nightly component add clippy
+      - name: Check clippy
+        run: |
+          cargo +nightly clippy --all-features --all-targets -- -Dwarnings
+      - name: Check Docs
+        run: |
+          cargo +nightly doc --workspace --all-features --no-deps
