@@ -59,19 +59,19 @@ jobs:
           ARGS=("--features" "all")
 
           # Add feature "nightly" if toolchain is nightly
-          if [[ ${{ matrix.toolchain }} == "nightly" ]]; then
+          if [[ "${{ matrix.toolchain }}" == "nightly" ]]; then
               ARGS+=("--features" "nightly")
           fi
           # Add features if features is not empty
-          if [[ ${{ matrix.setup.features }} ]]; then
+          if [[ -n "${{ matrix.setup.features }}" ]]; then
               ARGS+=("--features" "${{ matrix.setup.features }}")
           fi
           # Add no-default-features if no_default_features is true
-          if [[ ${{ matrix.setup.no_default_features }} ]]; then
+          if [[ -n "${{ matrix.setup.no_default_features }}" ]]; then
               ARGS+=("--no-default-features")
           fi
           # Add doctest-xcompile if on windows and nightly
-          if [[ ${{ matrix.setup.os }} == "windows-latest" && ${{ matrix.setup.toolchain }} == "nightly" ]]; then
+          if [[ "${{ matrix.setup.os }}" == "windows-latest" && ${{ matrix.toolchain }} == "nightly" ]]; then
               ARGS+=("-Z" "doctest-xcompile")
           fi
 
