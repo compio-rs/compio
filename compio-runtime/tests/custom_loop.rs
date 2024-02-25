@@ -98,16 +98,19 @@ fn cf_run_loop() {
 #[cfg(windows)]
 #[test]
 fn message_queue() {
-    use std::{future::Future, mem::MaybeUninit, time::Duration};
+    use std::{future::Future, mem::MaybeUninit, sync::Mutex, time::Duration};
 
     use compio_driver::AsRawFd;
-    use compio_runtime::Runtime;
+    use compio_runtime::{
+        event::{Event, EventHandle},
+        Runtime,
+    };
     use windows_sys::Win32::{
-        Foundation::{HANDLE, WAIT_FAILED},
+        Foundation::{HANDLE, HWND, WAIT_FAILED},
         System::Threading::INFINITE,
         UI::WindowsAndMessaging::{
-            DispatchMessageW, MsgWaitForMultipleObjectsEx, PeekMessageW, TranslateMessage,
-            MWMO_ALERTABLE, MWMO_INPUTAVAILABLE, PM_REMOVE, QS_ALLINPUT,
+            DispatchMessageW, KillTimer, MsgWaitForMultipleObjectsEx, PeekMessageW, SetTimer,
+            TranslateMessage, MWMO_ALERTABLE, MWMO_INPUTAVAILABLE, PM_REMOVE, QS_ALLINPUT,
         },
     };
 
@@ -182,9 +185,22 @@ fn message_queue() {
 
     let runtime = MQRuntime::new();
 
-    let res = runtime.block_on(async {
-        compio_runtime::time::sleep(Duration::from_secs(1)).await;
-        1
+    runtime.block_on(async {
+        static GLOBAL_EVENT: Mutex<Option<EventHandle>> = Mutex::new(None);
+
+        let event = Event::new();
+        *GLOBAL_EVENT.lock().unwrap() = Some(event.handle());
+
+        unsafe extern "system" fn timer_callback(hwnd: HWND, _msg: u32, id: usize, _dwtime: u32) {
+            let handle = GLOBAL_EVENT.lock().unwrap().take().unwrap();
+            handle.notify();
+            KillTimer(hwnd, id);
+        }
+
+        unsafe {
+            SetTimer(0, 0, 1, Some(timer_callback));
+        }
+
+        event.wait().await;
     });
-    assert_eq!(res, 1);
 }
