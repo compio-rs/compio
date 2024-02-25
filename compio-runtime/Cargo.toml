@@ -52,6 +52,9 @@ windows-sys = { workspace = true, features = ["Win32_System_IO"] }
 os_pipe = { workspace = true }
 libc = { workspace = true }
 
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
+
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 core-foundation = "0.9"
 
