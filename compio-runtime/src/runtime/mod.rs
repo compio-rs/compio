@@ -8,6 +8,7 @@ use std::{
         Arc,
     },
     task::{Context, Poll, Waker},
+    time::Duration,
 };
 
 use async_task::{Runnable, Task};
@@ -69,8 +70,8 @@ impl RuntimeInner {
         self.id
     }
 
-    // Safety: the return runnable should be scheduled.
-    unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
+    // Safety: be careful about the captured lifetime.
+    pub unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
         let runnables = self.runnables.clone();
         let handle = self
             .driver
@@ -86,18 +87,22 @@ impl RuntimeInner {
         task
     }
 
+    pub fn run(&self) {
+        loop {
+            let next_task = self.runnables.pop();
+            if let Some(task) = next_task {
+                task.run();
+            } else {
+                break;
+            }
+        }
+    }
+
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
         let mut result = None;
         unsafe { self.spawn_unchecked(async { result = Some(future.await) }) }.detach();
         loop {
-            loop {
-                let next_task = self.runnables.pop();
-                if let Some(task) = next_task {
-                    task.run();
-                } else {
-                    break;
-                }
-            }
+            self.run();
             if let Some(result) = result.take() {
                 return result;
             }
@@ -194,8 +199,15 @@ impl RuntimeInner {
         }
     }
 
-    fn poll(&self) {
-        instrument!(compio_log::Level::DEBUG, "poll");
+    pub fn poll(&self) {
+        self.poll_with(Proactor::poll)
+    }
+
+    pub fn poll_with(
+        &self,
+        f: impl FnOnce(&mut Proactor, Option<Duration>, &mut SmallVec<[usize; 1024]>) -> io::Result<()>,
+    ) {
+        instrument!(compio_log::Level::DEBUG, "poll_with");
         #[cfg(not(feature = "time"))]
         let timeout = None;
         #[cfg(feature = "time")]
@@ -204,7 +216,7 @@ impl RuntimeInner {
 
         let mut entries = SmallVec::<[usize; 1024]>::new();
         let mut driver = self.driver.borrow_mut();
-        match driver.poll(timeout, &mut entries) {
+        match f(&mut driver, timeout, &mut entries) {
             Ok(_) => {
                 debug!("poll driver ok, entries: {}", entries.len());
                 for entry in entries {
@@ -352,6 +364,40 @@ impl Runtime {
         f: impl (FnOnce() -> T) + Send + Sync + 'static,
     ) -> impl Future<Output = T> {
         self.inner.spawn_blocking(f)
+    }
+
+    /// Spawns a new asynchronous task, returning a [`Task`] for it.
+    ///
+    /// # Safety
+    ///
+    /// The caller should ensure the captured lifetime long enough.
+    pub unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
+        self.inner.spawn_unchecked(future)
+    }
+
+    /// Low level API to control the runtime.
+    ///
+    /// Run the scheduled tasks.
+    pub fn run(&self) {
+        self.inner.run()
+    }
+
+    /// Low level API to control the runtime.
+    ///
+    /// Poll the inner proactor. It is equal to calling [`Runtime::poll_with`]
+    /// with [`Proactor::poll`].
+    pub fn poll(&self) {
+        self.inner.poll()
+    }
+
+    /// Low level API to control the runtime.
+    ///
+    /// Poll the inner proactor with a custom poll function.
+    pub fn poll_with(
+        &self,
+        f: impl FnOnce(&mut Proactor, Option<Duration>, &mut SmallVec<[usize; 1024]>) -> io::Result<()>,
+    ) {
+        self.inner.poll_with(f)
     }
 
     /// Attach a raw file descriptor/handle/socket to the runtime.
