@@ -56,7 +56,8 @@ libc = { workspace = true }
 windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
-core-foundation = "0.9"
+core-foundation = "0.9.4"
+block2 = "0.4.0"
 
 [features]
 event = ["dep:cfg-if", "compio-buf/arrayvec"]

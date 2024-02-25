@@ -3,12 +3,14 @@
 fn cf_run_loop() {
     use std::{future::Future, os::raw::c_void, time::Duration};
 
+    use block2::{Block, ConcreteBlock};
     use compio_driver::AsRawFd;
-    use compio_runtime::Runtime;
+    use compio_runtime::{event::Event, Runtime};
     use core_foundation::{
         base::TCFType,
         filedescriptor::{kCFFileDescriptorReadCallBack, CFFileDescriptor, CFFileDescriptorRef},
-        runloop::{kCFRunLoopDefaultMode, CFRunLoop},
+        runloop::{kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopRef},
+        string::CFStringRef,
     };
 
     struct CFRunLoopRuntime {
@@ -73,11 +75,24 @@ fn cf_run_loop() {
 
     let runtime = CFRunLoopRuntime::new();
 
-    let res = runtime.block_on(async {
-        compio_runtime::time::sleep(Duration::from_secs(1)).await;
-        1
+    runtime.block_on(async {
+        let event = Event::new();
+        let block = ConcreteBlock::new(|| {
+            event.handle().notify();
+        });
+        extern "C" {
+            fn CFRunLoopPerformBlock(rl: CFRunLoopRef, mode: CFStringRef, block: &Block<(), ()>);
+        }
+        let run_loop = CFRunLoop::get_current();
+        unsafe {
+            CFRunLoopPerformBlock(
+                run_loop.as_concrete_TypeRef(),
+                kCFRunLoopDefaultMode,
+                &block,
+            );
+        }
+        event.wait().await;
     });
-    assert_eq!(res, 1);
 }
 
 #[cfg(windows)]
