@@ -15,6 +15,7 @@ fn cf_run_loop() {
 
     struct CFRunLoopRuntime {
         runtime: Runtime,
+        fd_source: CFFileDescriptor,
     }
 
     impl CFRunLoopRuntime {
@@ -22,21 +23,19 @@ fn cf_run_loop() {
             let runtime = Runtime::new().unwrap();
 
             extern "C" fn callback(
-                fdref: CFFileDescriptorRef,
+                _fdref: CFFileDescriptorRef,
                 _callback_types: usize,
                 _info: *mut c_void,
             ) {
-                let fd = unsafe { CFFileDescriptor::wrap_under_get_rule(fdref) };
-                fd.enable_callbacks(kCFFileDescriptorReadCallBack);
             }
 
-            let source = CFFileDescriptor::new(runtime.as_raw_fd(), false, callback, None).unwrap();
-            source.enable_callbacks(kCFFileDescriptorReadCallBack);
-            let source = source.to_run_loop_source(0).unwrap();
+            let fd_source =
+                CFFileDescriptor::new(runtime.as_raw_fd(), false, callback, None).unwrap();
+            let source = fd_source.to_run_loop_source(0).unwrap();
 
             CFRunLoop::get_current().add_source(&source, unsafe { kCFRunLoopDefaultMode });
 
-            Self { runtime }
+            Self { runtime, fd_source }
         }
 
         pub fn block_on<F: Future>(&self, future: F) -> F::Output {
@@ -62,6 +61,8 @@ fn cf_run_loop() {
                         Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {}
                         Err(e) => return Err(e),
                     }
+                    self.fd_source
+                        .enable_callbacks(kCFFileDescriptorReadCallBack);
                     CFRunLoop::run_in_mode(
                         unsafe { kCFRunLoopDefaultMode },
                         timeout.unwrap_or(Duration::MAX),

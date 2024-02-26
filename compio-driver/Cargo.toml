@@ -66,6 +66,7 @@ paste = { workspace = true }
 # Other platform dependencies
 [target.'cfg(all(not(target_os = "linux"), unix))'.dependencies]
 polling = "3.3.0"
+os_pipe = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 crossbeam-queue = { workspace = true }

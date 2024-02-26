@@ -3,7 +3,7 @@
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    io,
+    io::{self, Read, Write},
     num::NonZeroUsize,
     os::fd::BorrowedFd,
     pin::Pin,
@@ -16,7 +16,7 @@ use std::{
 use compio_log::{instrument, trace};
 use crossbeam_queue::SegQueue;
 pub(crate) use libc::{sockaddr_storage, socklen_t};
-use polling::{Event, Events, Poller};
+use polling::{Event, Events, PollMode, Poller};
 use slab::Slab;
 
 use crate::{syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder};
@@ -151,6 +151,7 @@ pub(crate) struct Driver {
     poll: Arc<Poller>,
     registry: HashMap<RawFd, FdQueue>,
     cancelled: HashSet<usize>,
+    notifier: Notifier,
     pool: AsyncifyPool,
     pool_completed: Arc<SegQueue<Entry>>,
 }
@@ -166,11 +167,21 @@ impl Driver {
             Events::with_capacity(NonZeroUsize::new(entries).unwrap())
         };
 
+        let notifier = Notifier::new()?;
+        let fd = notifier.as_reader_fd();
+
+        let poll = Arc::new(Poller::new()?);
+        // Attach the reader to poll.
+        unsafe {
+            poll.add_with_mode(fd, Event::new(fd as _, true, false), PollMode::Level)?;
+        }
+
         Ok(Self {
             events,
-            poll: Arc::new(Poller::new()?),
+            poll,
             registry: HashMap::new(),
             cancelled: HashSet::new(),
+            notifier,
             pool: builder.create_or_get_thread_pool(),
             pool_completed: Arc::new(SegQueue::new()),
         })
@@ -279,6 +290,10 @@ impl Driver {
         }
         for event in self.events.iter() {
             let fd = event.key as RawFd;
+            if fd == self.notifier.as_reader_fd() {
+                self.notifier.clear()?;
+                continue;
+            }
             let queue = self
                 .registry
                 .get_mut(&fd)
@@ -310,7 +325,7 @@ impl Driver {
     }
 
     pub fn handle(&self) -> io::Result<NotifyHandle> {
-        Ok(NotifyHandle::new(self.poll.clone()))
+        self.notifier.handle()
     }
 }
 
@@ -338,18 +353,59 @@ fn entry_cancelled(user_data: usize) -> Entry {
     )
 }
 
+struct Notifier {
+    notify_reader: os_pipe::PipeReader,
+    notify_writer: os_pipe::PipeWriter,
+}
+
+impl Notifier {
+    pub fn new() -> io::Result<Self> {
+        let (notify_reader, notify_writer) = os_pipe::pipe()?;
+
+        // Set the reader as nonblocking.
+        let fd = notify_reader.as_raw_fd();
+        let current_flags = syscall!(libc::fcntl(fd, libc::F_GETFL))?;
+        let flags = current_flags | libc::O_NONBLOCK;
+        if flags != current_flags {
+            syscall!(libc::fcntl(fd, libc::F_SETFL, flags))?;
+        }
+
+        Ok(Self {
+            notify_reader,
+            notify_writer,
+        })
+    }
+
+    pub fn handle(&self) -> io::Result<NotifyHandle> {
+        Ok(NotifyHandle::new(self.notify_writer.try_clone()?))
+    }
+
+    pub fn clear(&self) -> io::Result<()> {
+        let mut buffer = [0u8];
+        match (&self.notify_reader).read_exact(&mut buffer) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn as_reader_fd(&self) -> RawFd {
+        self.notify_reader.as_raw_fd()
+    }
+}
+
 /// A notify handle to the inner driver.
 pub struct NotifyHandle {
-    poll: Arc<Poller>,
+    sender: os_pipe::PipeWriter,
 }
 
 impl NotifyHandle {
-    fn new(poll: Arc<Poller>) -> Self {
-        Self { poll }
+    fn new(sender: os_pipe::PipeWriter) -> Self {
+        Self { sender }
     }
 
     /// Notify the inner driver.
     pub fn notify(&self) -> io::Result<()> {
-        self.poll.notify()
+        (&self.sender).write_all(&[1u8])
     }
 }
