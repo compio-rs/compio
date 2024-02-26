@@ -139,7 +139,7 @@ fn message_queue() {
                     Some(timeout) => timeout.as_millis() as u32,
                     None => INFINITE,
                 };
-                let handle = driver.as_raw_fd() as HANDLE;
+                let handle = self.runtime.as_raw_fd() as HANDLE;
                 let res = unsafe {
                     MsgWaitForMultipleObjectsEx(
                         1,
@@ -150,7 +150,7 @@ fn message_queue() {
                     )
                 };
                 if res == WAIT_FAILED {
-                    return Err(std::io::Error::last_os_error());
+                    panic!("{:?}", std::io::Error::last_os_error());
                 }
 
                 let mut msg = MaybeUninit::uninit();
