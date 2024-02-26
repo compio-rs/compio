@@ -61,6 +61,7 @@ windows-sys = { workspace = true, features = [
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = { version = "0.6.2", optional = true }
 polling = { version = "3.3.0", optional = true }
+os_pipe = { workspace = true, optional = true }
 paste = { workspace = true }
 
 # Other platform dependencies
@@ -77,7 +78,7 @@ compio-buf = { workspace = true, features = ["arrayvec"] }
 
 [features]
 default = ["io-uring"]
-polling = ["dep:polling"]
+polling = ["dep:polling", "dep:os_pipe"]
 
 io-uring-sqe128 = []
 io-uring-cqe32 = []
