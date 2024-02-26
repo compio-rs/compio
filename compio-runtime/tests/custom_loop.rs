@@ -76,6 +76,8 @@ fn cf_run_loop() {
     let runtime = CFRunLoopRuntime::new();
 
     runtime.block_on(async {
+        compio_runtime::time::sleep(Duration::from_secs(1)).await;
+
         let event = Event::new();
         let block = ConcreteBlock::new(|| {
             event.handle().notify();
@@ -186,6 +188,8 @@ fn message_queue() {
     let runtime = MQRuntime::new();
 
     runtime.block_on(async {
+        compio_runtime::time::sleep(Duration::from_secs(1)).await;
+
         static GLOBAL_EVENT: Mutex<Option<EventHandle>> = Mutex::new(None);
 
         let event = Event::new();
@@ -202,5 +206,86 @@ fn message_queue() {
         }
 
         event.wait().await;
+    });
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+#[test]
+fn glib_context() {
+    use std::{future::Future, time::Duration};
+
+    use compio_driver::AsRawFd;
+    use compio_runtime::{event::Event, Runtime};
+    use glib::{timeout_add_local_once, unix_fd_add_local, ControlFlow, IOCondition, MainContext};
+
+    struct GLibRuntime {
+        runtime: Runtime,
+        ctx: MainContext,
+    }
+
+    impl GLibRuntime {
+        pub fn new() -> Self {
+            let runtime = Runtime::new().unwrap();
+            let ctx = MainContext::default();
+
+            unix_fd_add_local(runtime.as_raw_fd(), IOCondition::IN, |_fd, _cond| {
+                ControlFlow::Continue
+            });
+
+            Self { runtime, ctx }
+        }
+
+        pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+            let _guard = self.runtime.enter();
+            let mut result = None;
+            unsafe {
+                self.runtime
+                    .spawn_unchecked(async { result = Some(future.await) })
+            }
+            .detach();
+            loop {
+                self.runtime.run();
+                if let Some(result) = result.take() {
+                    break result;
+                }
+                self.runtime.poll_with(|driver, timeout, entries| {
+                    match driver.poll(Some(Duration::ZERO), entries) {
+                        Ok(()) => {
+                            if !entries.is_empty() {
+                                return Ok(());
+                            }
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {}
+                        Err(e) => return Err(e),
+                    }
+
+                    let source_id = timeout.map(|timeout| timeout_add_local_once(timeout, || {}));
+
+                    self.ctx.iteration(true);
+
+                    if let Some(source_id) = source_id {
+                        if self.ctx.find_source_by_id(&source_id).is_some() {
+                            source_id.remove();
+                        }
+                    }
+
+                    Ok(())
+                });
+            }
+        }
+    }
+
+    let runtime = GLibRuntime::new();
+
+    runtime.block_on(async {
+        compio_runtime::time::sleep(Duration::from_secs(1)).await;
+
+        let event = Event::new();
+        let handle = event.handle();
+        let task = glib::spawn_future_local(async move {
+            handle.notify();
+        });
+        event.wait().await;
+        task.await.unwrap();
     });
 }
