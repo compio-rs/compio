@@ -51,25 +51,15 @@ fn cf_run_loop() {
                 if let Some(result) = result.take() {
                     break result;
                 }
-                self.runtime.poll_with(|driver, timeout, entries| {
-                    match driver.poll(Some(Duration::ZERO), entries) {
-                        Ok(()) => {
-                            if !entries.is_empty() {
-                                return Ok(());
-                            }
-                        }
-                        Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {}
-                        Err(e) => return Err(e),
-                    }
-                    self.fd_source
-                        .enable_callbacks(kCFFileDescriptorReadCallBack);
-                    CFRunLoop::run_in_mode(
-                        unsafe { kCFRunLoopDefaultMode },
-                        timeout.unwrap_or(Duration::MAX),
-                        true,
-                    );
-                    Ok(())
-                });
+
+                self.runtime.poll_with(Some(Duration::ZERO));
+                self.fd_source
+                    .enable_callbacks(kCFFileDescriptorReadCallBack);
+                CFRunLoop::run_in_mode(
+                    unsafe { kCFRunLoopDefaultMode },
+                    self.runtime.current_timeout().unwrap_or(Duration::MAX),
+                    true,
+                );
             }
         }
     }
@@ -141,47 +131,37 @@ fn message_queue() {
                 if let Some(result) = result.take() {
                     break result;
                 }
-                self.runtime.poll_with(|driver, timeout, entries| {
-                    match driver.poll(Some(Duration::ZERO), entries) {
-                        Ok(()) => {
-                            if !entries.is_empty() {
-                                return Ok(());
-                            }
-                        }
-                        Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {}
-                        Err(e) => return Err(e),
-                    }
 
-                    let timeout = match timeout {
-                        Some(timeout) => timeout.as_millis() as u32,
-                        None => INFINITE,
-                    };
-                    let handle = driver.as_raw_fd() as HANDLE;
-                    let res = unsafe {
-                        MsgWaitForMultipleObjectsEx(
-                            1,
-                            &handle,
-                            timeout,
-                            QS_ALLINPUT,
-                            MWMO_ALERTABLE | MWMO_INPUTAVAILABLE,
-                        )
-                    };
-                    if res == WAIT_FAILED {
-                        return Err(std::io::Error::last_os_error());
-                    }
+                self.runtime.poll_with(Some(Duration::ZERO));
 
-                    let mut msg = MaybeUninit::uninit();
-                    let res = unsafe { PeekMessageW(msg.as_mut_ptr(), 0, 0, 0, PM_REMOVE) };
-                    if res != 0 {
-                        let msg = unsafe { msg.assume_init() };
-                        unsafe {
-                            TranslateMessage(&msg);
-                            DispatchMessageW(&msg);
-                        }
-                    }
+                let timeout = self.runtime.current_timeout();
+                let timeout = match timeout {
+                    Some(timeout) => timeout.as_millis() as u32,
+                    None => INFINITE,
+                };
+                let handle = driver.as_raw_fd() as HANDLE;
+                let res = unsafe {
+                    MsgWaitForMultipleObjectsEx(
+                        1,
+                        &handle,
+                        timeout,
+                        QS_ALLINPUT,
+                        MWMO_ALERTABLE | MWMO_INPUTAVAILABLE,
+                    )
+                };
+                if res == WAIT_FAILED {
+                    return Err(std::io::Error::last_os_error());
+                }
 
-                    Ok(())
-                });
+                let mut msg = MaybeUninit::uninit();
+                let res = unsafe { PeekMessageW(msg.as_mut_ptr(), 0, 0, 0, PM_REMOVE) };
+                if res != 0 {
+                    let msg = unsafe { msg.assume_init() };
+                    unsafe {
+                        TranslateMessage(&msg);
+                        DispatchMessageW(&msg);
+                    }
+                }
             }
         }
     }
@@ -249,29 +229,19 @@ fn glib_context() {
                 if let Some(result) = result.take() {
                     break result;
                 }
-                self.runtime.poll_with(|driver, timeout, entries| {
-                    match driver.poll(Some(Duration::ZERO), entries) {
-                        Ok(()) => {
-                            if !entries.is_empty() {
-                                return Ok(());
-                            }
-                        }
-                        Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {}
-                        Err(e) => return Err(e),
+
+                self.runtime.poll_with(Some(Duration::ZERO));
+
+                let timeout = self.runtime.current_timeout();
+                let source_id = timeout.map(|timeout| timeout_add_local_once(timeout, || {}));
+
+                self.ctx.iteration(true);
+
+                if let Some(source_id) = source_id {
+                    if self.ctx.find_source_by_id(&source_id).is_some() {
+                        source_id.remove();
                     }
-
-                    let source_id = timeout.map(|timeout| timeout_add_local_once(timeout, || {}));
-
-                    self.ctx.iteration(true);
-
-                    if let Some(source_id) = source_id {
-                        if self.ctx.find_source_by_id(&source_id).is_some() {
-                            source_id.remove();
-                        }
-                    }
-
-                    Ok(())
-                });
+                }
             }
         }
     }

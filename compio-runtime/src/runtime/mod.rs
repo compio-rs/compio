@@ -199,24 +199,27 @@ impl RuntimeInner {
         }
     }
 
-    pub fn poll(&self) {
-        self.poll_with(Proactor::poll)
-    }
-
-    pub fn poll_with(
-        &self,
-        f: impl FnOnce(&mut Proactor, Option<Duration>, &mut SmallVec<[usize; 1024]>) -> io::Result<()>,
-    ) {
-        instrument!(compio_log::Level::DEBUG, "poll_with");
+    pub fn current_timeout(&self) -> Option<Duration> {
         #[cfg(not(feature = "time"))]
         let timeout = None;
         #[cfg(feature = "time")]
         let timeout = self.timer_runtime.borrow().min_timeout();
+        timeout
+    }
+
+    pub fn poll(&self) {
+        instrument!(compio_log::Level::DEBUG, "poll");
+        let timeout = self.current_timeout();
         debug!("timeout: {:?}", timeout);
+        self.poll_with(timeout)
+    }
+
+    pub fn poll_with(&self, timeout: Option<Duration>) {
+        instrument!(compio_log::Level::DEBUG, "poll_with");
 
         let mut entries = SmallVec::<[usize; 1024]>::new();
         let mut driver = self.driver.borrow_mut();
-        match f(&mut driver, timeout, &mut entries) {
+        match driver.poll(timeout, &mut entries) {
             Ok(_) => {
                 debug!("poll driver ok, entries: {}", entries.len());
                 for entry in entries {
@@ -384,6 +387,13 @@ impl Runtime {
 
     /// Low level API to control the runtime.
     ///
+    /// Get the timeout value to be passed to [`Proactor::poll`].
+    pub fn current_timeout(&self) -> Option<Duration> {
+        self.inner.current_timeout()
+    }
+
+    /// Low level API to control the runtime.
+    ///
     /// Poll the inner proactor. It is equal to calling [`Runtime::poll_with`]
     /// with [`Proactor::poll`].
     pub fn poll(&self) {
@@ -392,12 +402,9 @@ impl Runtime {
 
     /// Low level API to control the runtime.
     ///
-    /// Poll the inner proactor with a custom poll function.
-    pub fn poll_with(
-        &self,
-        f: impl FnOnce(&mut Proactor, Option<Duration>, &mut SmallVec<[usize; 1024]>) -> io::Result<()>,
-    ) {
-        self.inner.poll_with(f)
+    /// Poll the inner proactor with a custom timeout.
+    pub fn poll_with(&self, timeout: Option<Duration>) {
+        self.inner.poll_with(timeout)
     }
 
     /// Attach a raw file descriptor/handle/socket to the runtime.
