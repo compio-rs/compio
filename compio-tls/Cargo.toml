@@ -19,13 +19,18 @@ compio-buf = { workspace = true }
 compio-io = { workspace = true, features = ["compat"] }
 
 native-tls = { version = "0.2.11", optional = true }
-rustls = { version = "0.22.1", optional = true }
+rustls = { version = "0.23.1", default-features = false, optional = true, features = [
+    "logging",
+    "std",
+    "tls12",
+] }
 
 [dev-dependencies]
 compio-net = { workspace = true }
 compio-runtime = { workspace = true }
 compio-macros = { workspace = true }
 
+rustls = { version = "0.23.1", default-features = false, features = ["ring"] }
 rustls-native-certs = "0.7.0"
 
 [features]
