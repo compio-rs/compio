@@ -59,7 +59,7 @@ impl<T> Slice<T> {
 }
 
 fn slice_mut<T: IoBufMut>(buffer: &mut T) -> &mut [u8] {
-    unsafe { std::slice::from_raw_parts_mut(buffer.as_buf_mut_ptr(), buffer.buf_len()) }
+    unsafe { std::slice::from_raw_parts_mut(buffer.as_buf_mut_ptr(), (*buffer).buf_len()) }
 }
 
 impl<T: IoBuf> Deref for Slice<T> {
