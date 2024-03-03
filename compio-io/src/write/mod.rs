@@ -2,7 +2,7 @@
 use std::alloc::Allocator;
 use std::io::Cursor;
 
-use compio_buf::{buf_try, vec_alloc, BufResult, IntoInner, IoBuf, IoVectoredBuf};
+use compio_buf::{box_alloc, buf_try, vec_alloc, BufResult, IntoInner, IoBuf, IoVectoredBuf};
 
 use crate::IoResult;
 
@@ -50,31 +50,43 @@ pub trait AsyncWrite {
     async fn shutdown(&mut self) -> IoResult<()>;
 }
 
-macro_rules! impl_write {
-    (@ptr $($ty:ty),*) => {
-        $(
-            impl<A: AsyncWrite + ?Sized> AsyncWrite for $ty {
-                async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-                    (**self).write(buf).await
-                }
+impl<A: AsyncWrite + ?Sized> AsyncWrite for &mut A {
+    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        (**self).write(buf).await
+    }
 
-                async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-                    (**self).write_vectored(buf).await
-                }
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        (**self).write_vectored(buf).await
+    }
 
-                async fn flush(&mut self) -> IoResult<()> {
-                    (**self).flush().await
-                }
+    async fn flush(&mut self) -> IoResult<()> {
+        (**self).flush().await
+    }
 
-                async fn shutdown(&mut self) -> IoResult<()> {
-                    (**self).shutdown().await
-                }
-            }
-        )*
-    };
+    async fn shutdown(&mut self) -> IoResult<()> {
+        (**self).shutdown().await
+    }
 }
 
-impl_write!(@ptr &mut A, Box<A>);
+impl<W: AsyncWrite + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator> AsyncWrite
+    for box_alloc!(W, A)
+{
+    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        (**self).write(buf).await
+    }
+
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        (**self).write_vectored(buf).await
+    }
+
+    async fn flush(&mut self) -> IoResult<()> {
+        (**self).flush().await
+    }
+
+    async fn shutdown(&mut self) -> IoResult<()> {
+        (**self).shutdown().await
+    }
+}
 
 /// Write is implemented for `Vec<u8>` by appending to the vector. The vector
 /// will grow as needed.
@@ -127,21 +139,38 @@ pub trait AsyncWriteAt {
     }
 }
 
-macro_rules! impl_write_at {
-    (@ptr $($ty:ty),*) => {
-        $(
-            impl<A: AsyncWriteAt + ?Sized> AsyncWriteAt for $ty {
-                async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
-                    (**self).write_at(buf, pos).await
-                }
+impl<A: AsyncWriteAt + ?Sized> AsyncWriteAt for &mut A {
+    async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
+        (**self).write_at(buf, pos).await
+    }
 
-                async fn write_vectored_at<T: IoVectoredBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
-                    (**self).write_vectored_at(buf, pos).await
-                }
-            }
-        )*
-    };
-    (@slice $($(const $len:ident =>)? $ty:ty),*) => {
+    async fn write_vectored_at<T: IoVectoredBuf>(
+        &mut self,
+        buf: T,
+        pos: u64,
+    ) -> BufResult<usize, T> {
+        (**self).write_vectored_at(buf, pos).await
+    }
+}
+
+impl<W: AsyncWriteAt + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator> AsyncWriteAt
+    for box_alloc!(W, A)
+{
+    async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
+        (**self).write_at(buf, pos).await
+    }
+
+    async fn write_vectored_at<T: IoVectoredBuf>(
+        &mut self,
+        buf: T,
+        pos: u64,
+    ) -> BufResult<usize, T> {
+        (**self).write_vectored_at(buf, pos).await
+    }
+}
+
+macro_rules! impl_write_at {
+    ($($(const $len:ident =>)? $ty:ty),*) => {
         $(
             impl<$(const $len: usize)?> AsyncWriteAt for $ty {
                 async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
@@ -156,8 +185,7 @@ macro_rules! impl_write_at {
     }
 }
 
-impl_write_at!(@ptr &mut A, Box<A>);
-impl_write_at!(@slice [u8], const LEN => [u8; LEN]);
+impl_write_at!([u8], const LEN => [u8; LEN]);
 
 /// This implementation aligns the behavior of files. If `pos` is larger than
 /// the vector length, the vectored will be extended, and the extended area will
