@@ -68,8 +68,8 @@ async fn unix_split() {
 
     let listener = UnixListener::bind(&sock_path).unwrap();
 
-    let client = UnixStream::connect(&sock_path).unwrap();
-    let (server, _) = listener.accept().await.unwrap();
+    let (client, (server, _)) =
+        futures_util::try_join!(UnixStream::connect(&sock_path), listener.accept()).unwrap();
 
     let (mut a_read, mut a_write) = server.into_split();
     let (mut b_read, mut b_write) = client.into_split();

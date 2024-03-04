@@ -3,7 +3,7 @@ use std::{future::Future, io, path::Path};
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_io::{AsyncRead, AsyncWrite};
 use compio_runtime::{impl_attachable, impl_try_as_raw_fd};
-use socket2::{Domain, SockAddr, Type};
+use socket2::{SockAddr, Type};
 
 use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, WriteHalf};
 
@@ -25,8 +25,8 @@ use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, WriteHalf};
 /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
 /// let listener = UnixListener::bind(&sock_file).unwrap();
 ///
-/// let mut tx = UnixStream::connect(&sock_file).unwrap();
-/// let (mut rx, _) = listener.accept().await.unwrap();
+/// let (mut tx, (mut rx, _)) =
+///     futures_util::try_join!(UnixStream::connect(&sock_file), listener.accept()).unwrap();
 ///
 /// tx.write_all("test").await.0.unwrap();
 ///
@@ -52,6 +52,13 @@ impl UnixListener {
     /// the specified file path. The file path cannot yet exist, and will be
     /// cleaned up upon dropping [`UnixListener`]
     pub fn bind_addr(addr: &SockAddr) -> io::Result<Self> {
+        if !addr.is_unix() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "addr is not unix socket address",
+            ));
+        }
+
         let socket = Socket::bind(addr, Type::STREAM, None)?;
         socket.listen(1024)?;
         Ok(UnixListener { inner: socket })
@@ -106,7 +113,7 @@ impl_attachable!(UnixListener, inner);
 ///
 /// # compio_runtime::Runtime::new().unwrap().block_on(async {
 /// // Connect to a peer
-/// let mut stream = UnixStream::connect("unix-server.sock").unwrap();
+/// let mut stream = UnixStream::connect("unix-server.sock").await.unwrap();
 ///
 /// // Write some data.
 /// stream.write("hello world!").await.unwrap();
@@ -121,16 +128,32 @@ impl UnixStream {
     /// Opens a Unix connection to the specified file path. There must be a
     /// [`UnixListener`] or equivalent listening on the corresponding Unix
     /// domain socket to successfully connect and return a `UnixStream`.
-    pub fn connect(path: impl AsRef<Path>) -> io::Result<Self> {
-        Self::connect_addr(&SockAddr::unix(path)?)
+    pub async fn connect(path: impl AsRef<Path>) -> io::Result<Self> {
+        Self::connect_addr(&SockAddr::unix(path)?).await
     }
 
     /// Opens a Unix connection to the specified address. There must be a
     /// [`UnixListener`] or equivalent listening on the corresponding Unix
     /// domain socket to successfully connect and return a `UnixStream`.
-    pub fn connect_addr(addr: &SockAddr) -> io::Result<Self> {
-        let socket = Socket::new(Domain::UNIX, Type::STREAM, None)?;
-        socket.connect(addr)?;
+    pub async fn connect_addr(addr: &SockAddr) -> io::Result<Self> {
+        if !addr.is_unix() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "addr is not unix socket address",
+            ));
+        }
+
+        #[cfg(windows)]
+        let socket = {
+            let new_addr = empty_unix_socket();
+            Socket::bind(&new_addr, Type::STREAM, None)?
+        };
+        #[cfg(unix)]
+        let socket = {
+            use socket2::Domain;
+            Socket::new(Domain::UNIX, Type::STREAM, None)?
+        };
+        socket.connect_async(addr).await?;
         let unix_stream = UnixStream { inner: socket };
         Ok(unix_stream)
     }
@@ -152,7 +175,13 @@ impl UnixStream {
 
     /// Returns the socket path of the remote peer of this connection.
     pub fn peer_addr(&self) -> io::Result<SockAddr> {
-        self.inner.peer_addr()
+        #[allow(unused_mut)]
+        let mut addr = self.inner.peer_addr()?;
+        #[cfg(windows)]
+        {
+            fix_unix_socket_length(&mut addr);
+        }
+        Ok(addr)
     }
 
     /// Returns the socket path of the local half of this connection.
@@ -251,3 +280,47 @@ impl AsyncWrite for &UnixStream {
 impl_try_as_raw_fd!(UnixStream, inner);
 
 impl_attachable!(UnixStream, inner);
+
+#[cfg(windows)]
+#[inline]
+fn empty_unix_socket() -> SockAddr {
+    use windows_sys::Win32::Networking::WinSock::{AF_UNIX, SOCKADDR_UN};
+
+    // SAFETY: the length is correct
+    unsafe {
+        SockAddr::try_init(|addr, len| {
+            let addr: *mut SOCKADDR_UN = addr.cast();
+            std::ptr::write(
+                addr,
+                SOCKADDR_UN {
+                    sun_family: AF_UNIX,
+                    sun_path: [0; 108],
+                },
+            );
+            std::ptr::write(len, 3);
+            Ok(())
+        })
+    }
+    // it is always Ok
+    .unwrap()
+    .1
+}
+
+// The peer addr returned after ConnectEx is buggy. It contains bytes that
+// should not belong to the address. Luckily a unix path should not contain `\0`
+// until the end. We can determine the path ending by that.
+#[cfg(windows)]
+#[inline]
+fn fix_unix_socket_length(addr: &mut SockAddr) {
+    use windows_sys::Win32::Networking::WinSock::SOCKADDR_UN;
+
+    // SAFETY: cannot construct non-unix socket address in safe way.
+    let unix_addr: &SOCKADDR_UN = unsafe { &*addr.as_ptr().cast() };
+    let addr_len = match std::ffi::CStr::from_bytes_until_nul(&unix_addr.sun_path) {
+        Ok(str) => str.to_bytes_with_nul().len() + 2,
+        Err(_) => std::mem::size_of::<SOCKADDR_UN>(),
+    };
+    unsafe {
+        addr.set_length(addr_len as _);
+    }
+}
