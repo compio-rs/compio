@@ -2,7 +2,9 @@
 use std::alloc::Allocator;
 use std::{io::Cursor, rc::Rc, sync::Arc};
 
-use compio_buf::{buf_try, vec_alloc, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut};
+use compio_buf::{
+    box_alloc, buf_try, vec_alloc, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut,
+};
 
 mod buf;
 #[macro_use]
@@ -59,25 +61,31 @@ pub trait AsyncRead {
     }
 }
 
-macro_rules! impl_read {
-    ($($ty:ty),*) => {
-        $(
-            impl<A: AsyncRead + ?Sized> AsyncRead for $ty {
-                #[inline(always)]
-                async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
-                    (**self).read(buf).await
-                }
+impl<A: AsyncRead + ?Sized> AsyncRead for &mut A {
+    #[inline(always)]
+    async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
+        (**self).read(buf).await
+    }
 
-                #[inline(always)]
-                async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
-                    (**self).read_vectored(buf).await
-                }
-            }
-        )*
-    };
+    #[inline(always)]
+    async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
+        (**self).read_vectored(buf).await
+    }
 }
 
-impl_read!(&mut A, Box<A>);
+impl<R: AsyncRead + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator> AsyncRead
+    for box_alloc!(R, A)
+{
+    #[inline(always)]
+    async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
+        (**self).read(buf).await
+    }
+
+    #[inline(always)]
+    async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
+        (**self).read_vectored(buf).await
+    }
+}
 
 impl AsyncRead for &[u8] {
     #[inline]
@@ -139,6 +147,23 @@ macro_rules! impl_read_at {
         )*
     };
 
+    (@ptra $($ty:ident),*) => {
+        $(
+            #[cfg(feature = "allocator_api")]
+            impl<R: AsyncReadAt + ?Sized, A: Allocator> AsyncReadAt for $ty<R, A> {
+                async fn read_at<T: IoBufMut>(&self, buf: T, pos: u64) -> BufResult<usize, T> {
+                    (**self).read_at(buf, pos).await
+                }
+
+                async fn read_vectored_at<T: IoVectoredBufMut>(&self, buf: T, pos: u64) -> BufResult<usize, T> {
+                    (**self).read_vectored_at(buf, pos).await
+                }
+            }
+            #[cfg(not(feature = "allocator_api"))]
+            impl_read_at!(@ptr $ty<A>);
+        )*
+    };
+
     (@slice $($(const $len:ident =>)? $ty:ty), *) => {
         $(
             impl<$(const $len: usize)?> AsyncReadAt for $ty {
@@ -152,7 +177,8 @@ macro_rules! impl_read_at {
     }
 }
 
-impl_read_at!(@ptr &A, &mut A, Box<A>, Rc<A>, Arc<A>);
+impl_read_at!(@ptr &A, &mut A);
+impl_read_at!(@ptra Box, Rc, Arc);
 impl_read_at!(@slice [u8], const LEN => [u8; LEN]);
 
 impl<#[cfg(feature = "allocator_api")] A: Allocator> AsyncReadAt for vec_alloc!(u8, A) {
