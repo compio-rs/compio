@@ -1,7 +1,7 @@
 [package]
 name = "compio-driver"
-version = "0.2.0-beta.3"
-description = "low-level driver for compio"
+version = "0.2.0"
+description = "Low-level driver for compio"
 categories = ["asynchronous"]
 keywords = ["async", "iocp", "io-uring"]
 edition = { workspace = true }

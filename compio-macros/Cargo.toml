@@ -1,7 +1,7 @@
 [package]
 name = "compio-macros"
-version = "0.1.1-beta.1"
-description = "proc macro of compio"
+version = "0.1.1"
+description = "Proc macro of compio"
 categories = ["asynchronous"]
 edition = { workspace = true }
 authors = { workspace = true }
