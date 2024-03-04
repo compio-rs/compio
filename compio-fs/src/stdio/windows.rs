@@ -15,6 +15,9 @@ use compio_io::{AsyncRead, AsyncWrite};
 use compio_runtime::Runtime;
 use windows_sys::Win32::System::IO::OVERLAPPED;
 
+#[cfg(doc)]
+use super::{stderr, stdin, stdout};
+
 struct StdRead<R: Read, B: IoBufMut> {
     reader: R,
     buffer: B,
