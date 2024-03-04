@@ -2,6 +2,7 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![warn(missing_docs)]
+#![cfg_attr(feature = "read_buf", feature(read_buf, core_io_borrowed_buf))]
 
 mod file;
 pub use file::*;
@@ -11,6 +12,9 @@ pub use open_options::*;
 
 mod metadata;
 pub use metadata::*;
+
+mod stdio;
+pub use stdio::*;
 
 #[cfg(windows)]
 pub mod named_pipe;

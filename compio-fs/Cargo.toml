@@ -21,6 +21,8 @@ compio-driver = { workspace = true }
 compio-io = { workspace = true }
 compio-runtime = { workspace = true }
 
+cfg-if = { workspace = true }
+
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
 widestring = { workspace = true }
@@ -55,3 +57,9 @@ windows-sys = { workspace = true, features = ["Win32_Security_Authorization"] }
 # Unix specific dev dependencies
 [target.'cfg(unix)'.dev-dependencies]
 nix = { workspace = true, features = ["fs"] }
+
+[features]
+default = []
+
+read_buf = ["compio-buf/read_buf", "compio-io/read_buf"]
+nightly = ["read_buf"]
