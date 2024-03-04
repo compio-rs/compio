@@ -168,7 +168,7 @@ impl Driver {
         };
 
         let notifier = Notifier::new()?;
-        let fd = notifier.as_reader_fd();
+        let fd = notifier.reader_fd();
 
         let poll = Arc::new(Poller::new()?);
         // Attach the reader to poll.
@@ -290,7 +290,7 @@ impl Driver {
         }
         for event in self.events.iter() {
             let fd = event.key as RawFd;
-            if fd == self.notifier.as_reader_fd() {
+            if fd == self.notifier.reader_fd() {
                 self.notifier.clear()?;
                 continue;
             }
@@ -389,7 +389,7 @@ impl Notifier {
         }
     }
 
-    pub fn as_reader_fd(&self) -> RawFd {
+    pub fn reader_fd(&self) -> RawFd {
         self.notify_reader.as_raw_fd()
     }
 }
