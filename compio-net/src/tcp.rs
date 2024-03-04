@@ -1,8 +1,9 @@
 use std::{future::Future, io, net::SocketAddr};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_driver::impl_raw_fd;
 use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::{impl_attachable, impl_try_as_raw_fd};
+use compio_runtime::impl_try_clone;
 use socket2::{Protocol, SockAddr, Type};
 
 use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, ToSocketAddrsAsync, WriteHalf};
@@ -67,15 +68,6 @@ impl TcpListener {
         self.inner.close()
     }
 
-    /// Creates a new independently owned handle to the underlying socket.
-    ///
-    /// It does not clear the attach state.
-    pub fn try_clone(&self) -> io::Result<Self> {
-        Ok(Self {
-            inner: self.inner.try_clone()?,
-        })
-    }
-
     /// Accepts a new incoming connection from this listener.
     ///
     /// This function will yield once a new TCP connection is established. When
@@ -117,9 +109,9 @@ impl TcpListener {
     }
 }
 
-impl_try_as_raw_fd!(TcpListener, inner);
+impl_raw_fd!(TcpListener, inner);
 
-impl_attachable!(TcpListener, inner);
+impl_try_clone!(TcpListener, inner);
 
 /// A TCP stream between a local and a remote socket.
 ///
@@ -179,15 +171,6 @@ impl TcpStream {
     /// socket won't be closed.
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.inner.close()
-    }
-
-    /// Creates a new independently owned handle to the underlying socket.
-    ///
-    /// It does not clear the attach state.
-    pub fn try_clone(&self) -> io::Result<Self> {
-        Ok(Self {
-            inner: self.inner.try_clone()?,
-        })
     }
 
     /// Returns the socket address of the remote peer of this TCP connection.
@@ -292,6 +275,6 @@ impl AsyncWrite for &TcpStream {
     }
 }
 
-impl_try_as_raw_fd!(TcpStream, inner);
+impl_raw_fd!(TcpStream, inner);
 
-impl_attachable!(TcpStream, inner);
+impl_try_clone!(TcpStream, inner);

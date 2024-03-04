@@ -1,7 +1,8 @@
 use std::{future::Future, io, net::SocketAddr};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_runtime::{impl_attachable, impl_try_as_raw_fd};
+use compio_driver::impl_raw_fd;
+use compio_runtime::impl_try_clone;
 use socket2::{Protocol, SockAddr, Type};
 
 use crate::{Socket, ToSocketAddrsAsync};
@@ -119,15 +120,6 @@ impl UdpSocket {
     /// socket won't be closed.
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.inner.close()
-    }
-
-    /// Creates a new independently owned handle to the underlying socket.
-    ///
-    /// It does not clear the attach state.
-    pub fn try_clone(&self) -> io::Result<Self> {
-        Ok(Self {
-            inner: self.inner.try_clone()?,
-        })
     }
 
     /// Returns the socket address of the remote peer this socket was connected
@@ -259,6 +251,6 @@ impl UdpSocket {
     }
 }
 
-impl_try_as_raw_fd!(UdpSocket, inner);
+impl_raw_fd!(UdpSocket, inner);
 
-impl_attachable!(UdpSocket, inner);
+impl_try_clone!(UdpSocket, inner);

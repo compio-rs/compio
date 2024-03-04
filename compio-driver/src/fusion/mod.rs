@@ -132,6 +132,13 @@ impl Driver {
         }
     }
 
+    pub fn create_op<T: OpCode + 'static>(&self, user_data: usize, op: T) -> RawOp {
+        match &self.fuse {
+            FuseDriver::Poll(driver) => driver.create_op(user_data, op),
+            FuseDriver::IoUring(driver) => driver.create_op(user_data, op),
+        }
+    }
+
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
         match &mut self.fuse {
             FuseDriver::Poll(driver) => driver.attach(fd),

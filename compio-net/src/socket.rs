@@ -1,13 +1,15 @@
 use std::{future::Future, io, mem::ManuallyDrop};
 
-use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_driver::op::{
-    Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored, RecvResultExt,
-    RecvVectored, Send, SendTo, SendToVectored, SendVectored, ShutdownSocket,
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_driver::{
+    impl_raw_fd,
+    op::{
+        Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored,
+        RecvResultExt, RecvVectored, Send, SendTo, SendToVectored, SendVectored, ShutdownSocket,
+    },
+    AsRawFd,
 };
-use compio_runtime::{
-    impl_attachable, impl_try_as_raw_fd, Attacher, Runtime, TryAsRawFd, TryClone,
-};
+use compio_runtime::{impl_try_clone, Attacher, Runtime};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
 #[derive(Debug)]
@@ -16,23 +18,18 @@ pub struct Socket {
 }
 
 impl Socket {
-    pub fn from_socket2(socket: Socket2) -> Self {
-        Self {
-            socket: Attacher::new(socket),
-        }
-    }
-
-    pub fn try_clone(&self) -> io::Result<Self> {
-        let socket = self.socket.try_clone()?;
-        Ok(Self { socket })
+    pub fn from_socket2(socket: Socket2) -> io::Result<Self> {
+        Ok(Self {
+            socket: Attacher::new(socket)?,
+        })
     }
 
     pub fn peer_addr(&self) -> io::Result<SockAddr> {
-        unsafe { self.socket.get_unchecked() }.peer_addr()
+        self.socket.peer_addr()
     }
 
     pub fn local_addr(&self) -> io::Result<SockAddr> {
-        unsafe { self.socket.get_unchecked() }.local_addr()
+        self.socket.local_addr()
     }
 
     pub fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
@@ -48,25 +45,25 @@ impl Socket {
         )) {
             socket.set_nonblocking(true)?;
         }
-        Ok(Self::from_socket2(socket))
+        Self::from_socket2(socket)
     }
 
     pub fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
         let socket = Self::new(addr.domain(), ty, protocol)?;
-        unsafe { socket.socket.get_unchecked() }.bind(addr)?;
+        socket.socket.bind(addr)?;
         Ok(socket)
     }
 
     pub fn listen(&self, backlog: i32) -> io::Result<()> {
-        unsafe { self.socket.get_unchecked() }.listen(backlog)
+        self.socket.listen(backlog)
     }
 
     pub fn connect(&self, addr: &SockAddr) -> io::Result<()> {
-        self.socket.try_get()?.connect(addr)
+        self.socket.connect(addr)
     }
 
     pub async fn connect_async(&self, addr: &SockAddr) -> io::Result<()> {
-        let op = Connect::new(self.try_as_raw_fd()?, addr.clone());
+        let op = Connect::new(self.as_raw_fd(), addr.clone());
         let BufResult(res, _op) = Runtime::current().submit(op).await;
         #[cfg(windows)]
         {
@@ -84,7 +81,7 @@ impl Socket {
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         use compio_driver::FromRawFd;
 
-        let op = Accept::new(self.try_as_raw_fd()?);
+        let op = Accept::new(self.as_raw_fd());
         let BufResult(res, op) = Runtime::current().submit(op).await;
         let accept_sock = unsafe { Socket2::from_raw_fd(res? as _) };
         if cfg!(all(
@@ -93,28 +90,26 @@ impl Socket {
         )) {
             accept_sock.set_nonblocking(true)?;
         }
-        let accept_sock = Self::from_socket2(accept_sock);
+        let accept_sock = Self::from_socket2(accept_sock)?;
         let addr = op.into_addr();
         Ok((accept_sock, addr))
     }
 
     #[cfg(windows)]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
-        use compio_driver::AsRawFd;
-
         let local_addr = self.local_addr()?;
         // We should allow users sending this accepted socket to a new thread.
         let accept_sock = Socket2::new(
             local_addr.domain(),
-            unsafe { self.socket.get_unchecked() }.r#type()?,
-            unsafe { self.socket.get_unchecked() }.protocol()?,
+            self.socket.r#type()?,
+            self.socket.protocol()?,
         )?;
-        let op = Accept::new(self.try_as_raw_fd()?, accept_sock.as_raw_fd() as _);
+        let op = Accept::new(self.as_raw_fd(), accept_sock.as_raw_fd() as _);
         let BufResult(res, op) = Runtime::current().submit(op).await;
         res?;
         op.update_context()?;
         let addr = op.into_addr()?;
-        Ok((Self::from_socket2(accept_sock), addr))
+        Ok((Self::from_socket2(accept_sock)?, addr))
     }
 
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
@@ -123,20 +118,20 @@ impl Socket {
         // `close` should be cancelled.
         let this = ManuallyDrop::new(self);
         async move {
-            let op = CloseSocket::new(this.try_as_raw_fd()?);
+            let op = CloseSocket::new(this.as_raw_fd());
             Runtime::current().submit(op).await.0?;
             Ok(())
         }
     }
 
     pub async fn shutdown(&self) -> io::Result<()> {
-        let op = ShutdownSocket::new(self.try_as_raw_fd()?, std::net::Shutdown::Write);
+        let op = ShutdownSocket::new(self.as_raw_fd(), std::net::Shutdown::Write);
         Runtime::current().submit(op).await.0?;
         Ok(())
     }
 
     pub async fn recv<B: IoBufMut>(&self, buffer: B) -> BufResult<usize, B> {
-        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let fd = self.as_raw_fd();
         let op = Recv::new(fd, buffer);
         Runtime::current()
             .submit(op)
@@ -146,7 +141,7 @@ impl Socket {
     }
 
     pub async fn recv_vectored<V: IoVectoredBufMut>(&self, buffer: V) -> BufResult<usize, V> {
-        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let fd = self.as_raw_fd();
         let op = RecvVectored::new(fd, buffer);
         Runtime::current()
             .submit(op)
@@ -156,19 +151,19 @@ impl Socket {
     }
 
     pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let fd = self.as_raw_fd();
         let op = Send::new(fd, buffer);
         Runtime::current().submit(op).await.into_inner()
     }
 
     pub async fn send_vectored<T: IoVectoredBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let fd = self.as_raw_fd();
         let op = SendVectored::new(fd, buffer);
         Runtime::current().submit(op).await.into_inner()
     }
 
     pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SockAddr), T> {
-        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let fd = self.as_raw_fd();
         let op = RecvFrom::new(fd, buffer);
         Runtime::current()
             .submit(op)
@@ -182,7 +177,7 @@ impl Socket {
         &self,
         buffer: T,
     ) -> BufResult<(usize, SockAddr), T> {
-        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let fd = self.as_raw_fd();
         let op = RecvFromVectored::new(fd, buffer);
         Runtime::current()
             .submit(op)
@@ -193,7 +188,7 @@ impl Socket {
     }
 
     pub async fn send_to<T: IoBuf>(&self, buffer: T, addr: &SockAddr) -> BufResult<usize, T> {
-        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let fd = self.as_raw_fd();
         let op = SendTo::new(fd, buffer, addr.clone());
         Runtime::current().submit(op).await.into_inner()
     }
@@ -203,12 +198,12 @@ impl Socket {
         buffer: T,
         addr: &SockAddr,
     ) -> BufResult<usize, T> {
-        let (fd, buffer) = buf_try!(self.try_as_raw_fd(), buffer);
+        let fd = self.as_raw_fd();
         let op = SendToVectored::new(fd, buffer, addr.clone());
         Runtime::current().submit(op).await.into_inner()
     }
 }
 
-impl_try_as_raw_fd!(Socket, socket);
+impl_raw_fd!(Socket, socket);
 
-impl_attachable!(Socket, socket);
+impl_try_clone!(Socket, socket);

@@ -177,20 +177,13 @@ impl Proactor {
         })
     }
 
-    /// Attach an fd to the driver. It will cause unexpected result to attach
-    /// the handle with one driver and push an op to another driver.
+    /// Attach an fd to the driver.
     ///
     /// ## Platform specific
     /// * IOCP: it will be attached to the completion port. An fd could only be
     ///   attached to one driver, and could only be attached once, even if you
     ///   `try_clone` it.
-    /// * io-uring: it will do nothing and return `Ok(())`.
-    /// * polling: it will initialize inner queue and register to the driver. On
-    ///   Linux and Android, if the fd is a normal file or a directory, this
-    ///   method will do nothing. For other fd and systems, you should only call
-    ///   this method once for a specific resource. If this method is called
-    ///   twice with the same fd, we assume that the old fd has been closed, and
-    ///   it's a new fd.
+    /// * io-uring & polling: it will do nothing but return `Ok(())`.
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
         self.driver.attach(fd)
     }
@@ -223,7 +216,7 @@ impl Proactor {
     pub fn push<T: OpCode + 'static>(&mut self, op: T) -> PushEntry<Key<T>, BufResult<usize, T>> {
         let entry = self.ops.vacant_entry();
         let user_data = entry.key();
-        let op = RawOp::new(user_data, op);
+        let op = self.driver.create_op(user_data, op);
         let op = entry.insert(op);
         match self.driver.push(user_data, op) {
             Poll::Pending => PushEntry::Pending(unsafe { Key::new(user_data) }),
@@ -276,16 +269,6 @@ impl Proactor {
     /// Create a notify handle to interrupt the inner driver.
     pub fn handle(&self) -> io::Result<NotifyHandle> {
         self.driver.handle()
-    }
-
-    /// Create a notify handle for specified user_data.
-    ///
-    /// # Safety
-    ///
-    /// The caller should ensure `user_data` being valid.
-    #[cfg(windows)]
-    pub unsafe fn handle_for(&self, user_data: usize) -> io::Result<NotifyHandle> {
-        self.driver.handle_for(user_data)
     }
 }
 

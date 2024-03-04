@@ -92,6 +92,6 @@ impl OpenOptions {
         let p = path_string(p)?;
         let op = OpenFile::new(p, flags, self.mode);
         let fd = Runtime::current().submit(op).await.0? as RawFd;
-        Ok(unsafe { File::from_raw_fd(fd) })
+        File::new(unsafe { std::fs::File::from_raw_fd(fd) })
     }
 }

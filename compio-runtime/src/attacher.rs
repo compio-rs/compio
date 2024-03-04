@@ -4,7 +4,10 @@ use std::os::fd::OwnedFd;
 use std::os::windows::prelude::{OwnedHandle, OwnedSocket};
 #[cfg(feature = "once_cell_try")]
 use std::sync::OnceLock;
-use std::{io, marker::PhantomData};
+use std::{
+    io,
+    ops::{Deref, DerefMut},
+};
 
 use compio_buf::IntoInner;
 use compio_driver::AsRawFd;
@@ -23,77 +26,29 @@ use crate::Runtime;
 pub struct Attacher<S> {
     source: S,
     // Make it thread safe.
-    once: OnceLock<usize>,
-    _p: PhantomData<*mut ()>,
-}
-
-impl<S> Attacher<S> {
-    /// Create [`Attacher`].
-    pub const fn new(source: S) -> Self {
-        Self {
-            source,
-            once: OnceLock::new(),
-            _p: PhantomData,
-        }
-    }
+    once: OnceLock<()>,
 }
 
 impl<S: AsRawFd> Attacher<S> {
+    /// Create [`Attacher`]. It tries to attach the source, and will return
+    /// [`Err`] if it fails.
+    pub fn new(source: S) -> io::Result<Self> {
+        let this = Self {
+            source,
+            once: OnceLock::new(),
+        };
+        this.attach()?;
+        Ok(this)
+    }
+
     /// Attach the source. This method could be called many times, but if the
-    /// action fails, the error will only return once.
+    /// action fails, it will try to attach the source during each call.
     fn attach(&self) -> io::Result<()> {
         let r = Runtime::current();
         let inner = r.inner();
-        let id = self.once.get_or_try_init(|| {
-            inner.attach(self.source.as_raw_fd())?;
-            io::Result::Ok(inner.id())
-        })?;
-        if id != &inner.id() {
-            Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "the current runtime is not the attached runtime",
-            ))
-        } else {
-            Ok(())
-        }
-    }
-
-    /// Attach the inner source and get the reference.
-    pub fn try_get(&self) -> io::Result<&S> {
-        self.attach()?;
-        Ok(&self.source)
-    }
-
-    /// Get the reference of the inner source without attaching it.
-    ///
-    /// # Safety
-    ///
-    /// The caller should ensure it is attached before submit an operation with
-    /// it.
-    pub unsafe fn get_unchecked(&self) -> &S {
-        &self.source
-    }
-
-    /// Attach the inner source and get the mutable reference.
-    pub fn try_get_mut(&mut self) -> io::Result<&mut S> {
-        self.attach()?;
-        Ok(&mut self.source)
-    }
-
-    /// Get the mutable reference of the inner source without attaching it.
-    ///
-    /// # Safety
-    ///
-    /// The caller should ensure it is attached before submit an operation with
-    /// it.
-    pub unsafe fn get_unchecked_mut(&mut self) -> &mut S {
-        &mut self.source
-    }
-}
-
-impl<S> Attachable for Attacher<S> {
-    fn is_attached(&self) -> bool {
-        self.once.get().is_some()
+        self.once
+            .get_or_try_init(|| inner.attach(self.source.as_raw_fd()))?;
+        Ok(())
     }
 }
 
@@ -105,33 +60,22 @@ impl<S: IntoRawFd> IntoRawFd for Attacher<S> {
 
 impl<S: FromRawFd> FromRawFd for Attacher<S> {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self::new(S::from_raw_fd(fd))
+        Self {
+            source: S::from_raw_fd(fd),
+            once: OnceLock::from(()),
+        }
     }
 }
 
-impl<S: TryClone + AsRawFd> TryClone for Attacher<S> {
+impl<S: TryClone> TryClone for Attacher<S> {
     /// Try clone self with the cloned source. The attach state will be
     /// reserved.
-    ///
-    /// ## Platform specific
-    /// * io-uring/polling: it will try to attach in the current thread if
-    ///   needed.
     fn try_clone(&self) -> io::Result<Self> {
         let source = self.source.try_clone()?;
-        let new_self = if cfg!(windows) {
-            Self {
-                source,
-                once: self.once.clone(),
-                _p: PhantomData,
-            }
-        } else {
-            let new_self = Self::new(source);
-            if self.is_attached() {
-                new_self.attach()?;
-            }
-            new_self
-        };
-        Ok(new_self)
+        Ok(Self {
+            source,
+            once: self.once.clone(),
+        })
     }
 }
 
@@ -143,10 +87,18 @@ impl<S> IntoInner for Attacher<S> {
     }
 }
 
-/// Represents an attachable resource to driver.
-pub trait Attachable {
-    /// Check if [`Attachable::attach`] has been called.
-    fn is_attached(&self) -> bool;
+impl<S> Deref for Attacher<S> {
+    type Target = S;
+
+    fn deref(&self) -> &Self::Target {
+        &self.source
+    }
+}
+
+impl<S> DerefMut for Attacher<S> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.source
+    }
 }
 
 /// Duplicatable file or socket.
@@ -188,107 +140,15 @@ impl TryClone for OwnedFd {
     }
 }
 
-/// Extracts raw fds.
-pub trait TryAsRawFd {
-    /// Get the inner raw fd, while ensuring the source being attached.
-    fn try_as_raw_fd(&self) -> io::Result<RawFd>;
-
-    /// Get the inner raw fd and don't check if it has been attached.
-    ///
-    /// # Safety
-    ///
-    /// The caller should ensure it is attached before submit an operation with
-    /// it.
-    unsafe fn as_raw_fd_unchecked(&self) -> RawFd;
-}
-
-impl<T: AsRawFd> TryAsRawFd for T {
-    fn try_as_raw_fd(&self) -> io::Result<RawFd> {
-        Ok(self.as_raw_fd())
-    }
-
-    unsafe fn as_raw_fd_unchecked(&self) -> RawFd {
-        self.as_raw_fd()
-    }
-}
-
-impl<S: AsRawFd> TryAsRawFd for Attacher<S> {
-    fn try_as_raw_fd(&self) -> io::Result<RawFd> {
-        Ok(self.try_get()?.as_raw_fd())
-    }
-
-    unsafe fn as_raw_fd_unchecked(&self) -> RawFd {
-        self.source.as_raw_fd()
-    }
-}
-
-/// A [`Send`] wrapper for attachable resource that has not been attached. The
-/// resource should be able to send to another thread before attaching.
-pub struct Unattached<T>(T);
-
-impl<T: Attachable> Unattached<T> {
-    /// Create the [`Unattached`] wrapper, or fail if the resource has already
-    /// been attached.
-    pub fn new(a: T) -> Result<Self, T> {
-        if a.is_attached() { Err(a) } else { Ok(Self(a)) }
-    }
-
-    /// Create [`Unattached`] without checking.
-    ///
-    /// # Safety
-    ///
-    /// The caller should ensure that the resource has not been attached.
-    pub unsafe fn new_unchecked(a: T) -> Self {
-        Self(a)
-    }
-}
-
-impl<T: Attachable> IntoInner for Unattached<T> {
-    type Inner = T;
-
-    fn into_inner(self) -> Self::Inner {
-        self.0
-    }
-}
-
-unsafe impl<T: Attachable> Send for Unattached<T> {}
-unsafe impl<T: Attachable> Sync for Unattached<T> {}
-
 #[macro_export]
 #[doc(hidden)]
-macro_rules! impl_attachable {
+macro_rules! impl_try_clone {
     ($t:ty, $inner:ident) => {
-        impl $crate::Attachable for $t {
-            fn is_attached(&self) -> bool {
-                self.$inner.is_attached()
-            }
-        }
-    };
-}
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! impl_try_as_raw_fd {
-    ($t:ty, $inner:ident) => {
-        impl $crate::TryAsRawFd for $t {
-            fn try_as_raw_fd(&self) -> ::std::io::Result<$crate::RawFd> {
-                self.$inner.try_as_raw_fd()
-            }
-
-            unsafe fn as_raw_fd_unchecked(&self) -> $crate::RawFd {
-                self.$inner.as_raw_fd_unchecked()
-            }
-        }
-        impl $crate::FromRawFd for $t {
-            unsafe fn from_raw_fd(fd: $crate::RawFd) -> Self {
-                Self {
-                    $inner: $crate::FromRawFd::from_raw_fd(fd),
-                }
-            }
-        }
-        impl $crate::IntoRawFd for $t {
-            fn into_raw_fd(self) -> $crate::RawFd {
-                self.$inner.into_raw_fd()
+        impl $crate::TryClone for $t {
+            fn try_clone(&self) -> ::std::io::Result<Self> {
+                Ok(Self {
+                    $inner: self.$inner.try_clone()?,
+                })
             }
         }
     };

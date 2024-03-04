@@ -70,6 +70,7 @@ polling = "3.3.0"
 os_pipe = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
+crossbeam-channel = { workspace = true }
 crossbeam-queue = { workspace = true }
 libc = { workspace = true }
 
@@ -82,6 +83,8 @@ polling = ["dep:polling", "dep:os_pipe"]
 
 io-uring-sqe128 = []
 io-uring-cqe32 = []
+
+iocp-global = []
 
 # Nightly features
 once_cell_try = []

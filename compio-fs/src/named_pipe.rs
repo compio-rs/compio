@@ -7,9 +7,9 @@ use std::ptr::null_mut;
 use std::{ffi::OsStr, io, ptr::null};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
-use compio_driver::{op::ConnectNamedPipe, syscall, FromRawFd, RawFd};
+use compio_driver::{impl_raw_fd, op::ConnectNamedPipe, syscall, AsRawFd, FromRawFd, RawFd};
 use compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt};
-use compio_runtime::{impl_attachable, impl_try_as_raw_fd, Runtime, TryAsRawFd};
+use compio_runtime::{impl_try_clone, Runtime};
 use widestring::U16CString;
 use windows_sys::Win32::{
     Security::SECURITY_ATTRIBUTES,
@@ -93,15 +93,6 @@ pub struct NamedPipeServer {
 }
 
 impl NamedPipeServer {
-    /// Creates a new independently owned handle to the underlying file handle.
-    ///
-    /// It does not clear the attach state.
-    pub fn try_clone(&self) -> io::Result<Self> {
-        Ok(Self {
-            handle: self.handle.try_clone()?,
-        })
-    }
-
     /// Retrieves information about the named pipe the server is associated
     /// with.
     ///
@@ -125,8 +116,7 @@ impl NamedPipeServer {
     /// ```
     pub fn info(&self) -> io::Result<PipeInfo> {
         // Safety: we're ensuring the lifetime of the named pipe.
-        // Safety: getting info doesn't need to be attached.
-        unsafe { named_pipe_info(self.as_raw_fd_unchecked()) }
+        unsafe { named_pipe_info(self.as_raw_fd()) }
     }
 
     /// Enables a named pipe server process to wait for a client process to
@@ -152,7 +142,7 @@ impl NamedPipeServer {
     /// # std::io::Result::Ok(()) });
     /// ```
     pub async fn connect(&self) -> io::Result<()> {
-        let op = ConnectNamedPipe::new(self.handle.try_as_raw_fd()?);
+        let op = ConnectNamedPipe::new(self.handle.as_raw_fd());
         Runtime::current().submit(op).await.0?;
         Ok(())
     }
@@ -185,7 +175,7 @@ impl NamedPipeServer {
     /// # })
     /// ```
     pub fn disconnect(&self) -> io::Result<()> {
-        syscall!(BOOL, DisconnectNamedPipe(self.try_as_raw_fd()? as _))?;
+        syscall!(BOOL, DisconnectNamedPipe(self.as_raw_fd() as _))?;
         Ok(())
     }
 }
@@ -240,9 +230,9 @@ impl AsyncWrite for &NamedPipeServer {
     }
 }
 
-impl_try_as_raw_fd!(NamedPipeServer, handle);
+impl_raw_fd!(NamedPipeServer, handle);
 
-impl_attachable!(NamedPipeServer, handle);
+impl_try_clone!(NamedPipeServer, handle);
 
 /// A [Windows named pipe] client.
 ///
@@ -289,15 +279,6 @@ pub struct NamedPipeClient {
 }
 
 impl NamedPipeClient {
-    /// Creates a new independently owned handle to the underlying file handle.
-    ///
-    /// It does not clear the attach state.
-    pub fn try_clone(&self) -> io::Result<Self> {
-        Ok(Self {
-            handle: self.handle.try_clone()?,
-        })
-    }
-
     /// Retrieves information about the named pipe the client is associated
     /// with.
     ///
@@ -318,8 +299,7 @@ impl NamedPipeClient {
     /// ```
     pub fn info(&self) -> io::Result<PipeInfo> {
         // Safety: we're ensuring the lifetime of the named pipe.
-        // Safety: getting info doesn't need to be attached.
-        unsafe { named_pipe_info(self.as_raw_fd_unchecked()) }
+        unsafe { named_pipe_info(self.as_raw_fd()) }
     }
 }
 
@@ -373,9 +353,9 @@ impl AsyncWrite for &NamedPipeClient {
     }
 }
 
-impl_try_as_raw_fd!(NamedPipeClient, handle);
+impl_raw_fd!(NamedPipeClient, handle);
 
-impl_attachable!(NamedPipeClient, handle);
+impl_try_clone!(NamedPipeClient, handle);
 
 /// A builder structure for construct a named pipe with named pipe-specific
 /// options. This is required to use for named pipe servers who wants to modify
@@ -410,7 +390,9 @@ impl ServerOptions {
     ///
     /// const PIPE_NAME: &str = r"\\.\pipe\compio-named-pipe-new";
     ///
+    /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
     /// let server = ServerOptions::new().create(PIPE_NAME).unwrap();
+    /// # })
     /// ```
     pub fn new() -> ServerOptions {
         ServerOptions {
@@ -738,8 +720,8 @@ impl ServerOptions {
     /// ```
     /// use std::{io, ptr};
     ///
+    /// use compio_driver::AsRawFd;
     /// use compio_fs::named_pipe::ServerOptions;
-    /// use compio_runtime::TryAsRawFd;
     /// use windows_sys::Win32::{
     ///     Foundation::ERROR_SUCCESS,
     ///     Security::{
@@ -759,7 +741,7 @@ impl ServerOptions {
     ///     assert_eq!(
     ///         ERROR_SUCCESS,
     ///         SetSecurityInfo(
-    ///             pipe.as_raw_fd_unchecked() as _,
+    ///             pipe.as_raw_fd() as _,
     ///             SE_KERNEL_OBJECT,
     ///             DACL_SECURITY_INFORMATION,
     ///             ptr::null_mut(),
@@ -775,8 +757,8 @@ impl ServerOptions {
     /// ```
     /// use std::{io, ptr};
     ///
+    /// use compio_driver::AsRawFd;
     /// use compio_fs::named_pipe::ServerOptions;
-    /// use compio_runtime::TryAsRawFd;
     /// use windows_sys::Win32::{
     ///     Foundation::ERROR_ACCESS_DENIED,
     ///     Security::{
@@ -796,7 +778,7 @@ impl ServerOptions {
     ///     assert_eq!(
     ///         ERROR_ACCESS_DENIED,
     ///         SetSecurityInfo(
-    ///             pipe.as_raw_fd_unchecked() as _,
+    ///             pipe.as_raw_fd() as _,
     ///             SE_KERNEL_OBJECT,
     ///             DACL_SECURITY_INFORMATION,
     ///             ptr::null_mut(),
@@ -1009,7 +991,9 @@ impl ServerOptions {
             )
         )?;
 
-        Ok(unsafe { NamedPipeServer::from_raw_fd(h as _) })
+        Ok(NamedPipeServer {
+            handle: File::new(unsafe { std::fs::File::from_raw_fd(h as _) })?,
+        })
     }
 }
 
@@ -1165,7 +1149,7 @@ impl ClientOptions {
             let mode = PIPE_READMODE_MESSAGE;
             syscall!(
                 BOOL,
-                SetNamedPipeHandleState(file.as_raw_fd_unchecked() as _, &mode, null(), null())
+                SetNamedPipeHandleState(file.as_raw_fd() as _, &mode, null(), null())
             )?;
         }
 

@@ -7,7 +7,7 @@ use compio::{
     fs::File,
     io::{AsyncReadAt, AsyncReadExt, AsyncWriteAt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    runtime::Unattached,
+    runtime::TryClone,
 };
 use tempfile::NamedTempFile;
 
@@ -18,24 +18,22 @@ async fn multi_threading() {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
 
-    let (mut tx, (rx, _)) =
+    let (mut tx, (mut rx, _)) =
         futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
 
     tx.write_all(DATA).await.0.unwrap();
+    tx.write_all(DATA).await.0.unwrap();
 
-    let rx = Unattached::new(rx).unwrap();
-    if let Err(e) = std::thread::spawn(move || {
-        let mut rx = rx.into_inner();
+    let ((), buffer) = rx.read_exact(Vec::with_capacity(DATA.len())).await.unwrap();
+    assert_eq!(DATA, String::from_utf8(buffer).unwrap());
+
+    compio::runtime::spawn_blocking(move || {
         compio::runtime::Runtime::new().unwrap().block_on(async {
-            let buffer = Vec::with_capacity(DATA.len());
-            let ((), buffer) = rx.read_exact(buffer).await.unwrap();
+            let ((), buffer) = rx.read_exact(Vec::with_capacity(DATA.len())).await.unwrap();
             assert_eq!(DATA, String::from_utf8(buffer).unwrap());
         });
     })
-    .join()
-    {
-        std::panic::resume_unwind(e)
-    }
+    .await
 }
 
 #[compio_macros::test]
@@ -45,15 +43,13 @@ async fn try_clone() {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
 
-    let (tx, (rx, _)) =
+    let (tx, (mut rx, _)) =
         futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
 
     let mut tx = tx.try_clone().unwrap();
     tx.write_all(DATA).await.0.unwrap();
 
-    let rx = Unattached::new(rx.try_clone().unwrap()).unwrap();
     if let Err(e) = std::thread::spawn(move || {
-        let mut rx = rx.into_inner();
         compio::runtime::Runtime::new().unwrap().block_on(async {
             let buffer = Vec::with_capacity(DATA.len());
             let ((), buffer) = rx.read_exact(buffer).await.unwrap();
