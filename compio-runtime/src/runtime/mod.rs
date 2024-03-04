@@ -395,7 +395,7 @@ impl Runtime {
     /// Low level API to control the runtime.
     ///
     /// Poll the inner proactor. It is equal to calling [`Runtime::poll_with`]
-    /// with [`Proactor::poll`].
+    /// with [`Runtime::current_timeout`].
     pub fn poll(&self) {
         self.inner.poll()
     }
