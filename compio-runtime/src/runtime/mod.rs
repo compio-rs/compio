@@ -10,7 +10,9 @@ use std::{
 
 use async_task::{Runnable, Task};
 use compio_buf::IntoInner;
-use compio_driver::{op::Asyncify, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd};
+use compio_driver::{
+    op::Asyncify, AsRawFd, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
+};
 use compio_log::{debug, instrument};
 use crossbeam_queue::SegQueue;
 use futures_util::{future::Either, FutureExt};
@@ -55,10 +57,6 @@ impl RuntimeInner {
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
         })
-    }
-
-    pub fn id(&self) -> usize {
-        self.id
     }
 
     // Safety: be careful about the captured lifetime.
@@ -226,6 +224,12 @@ impl RuntimeInner {
         }
         #[cfg(feature = "time")]
         self.timer_runtime.borrow_mut().wake();
+    }
+}
+
+impl AsRawFd for RuntimeInner {
+    fn as_raw_fd(&self) -> RawFd {
+        self.driver.borrow().as_raw_fd()
     }
 }
 
@@ -405,6 +409,12 @@ impl Runtime {
     /// You only need this when authoring your own [`OpCode`].
     pub fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
         self.inner.submit(op)
+    }
+}
+
+impl AsRawFd for Runtime {
+    fn as_raw_fd(&self) -> RawFd {
+        self.inner.as_raw_fd()
     }
 }
 

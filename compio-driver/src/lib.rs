@@ -272,6 +272,12 @@ impl Proactor {
     }
 }
 
+impl AsRawFd for Proactor {
+    fn as_raw_fd(&self) -> RawFd {
+        self.driver.as_raw_fd()
+    }
+}
+
 /// An completed entry returned from kernel.
 #[derive(Debug)]
 pub(crate) struct Entry {

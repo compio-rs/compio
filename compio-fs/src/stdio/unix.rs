@@ -1,9 +1,8 @@
 use std::{io, mem::ManuallyDrop};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_driver::{FromRawFd, RawFd};
+use compio_driver::{AsRawFd, FromRawFd, RawFd};
 use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::TryAsRawFd;
 
 use crate::pipe::{Receiver, Sender};
 
@@ -31,13 +30,9 @@ impl AsyncRead for Stdin {
     }
 }
 
-impl TryAsRawFd for Stdin {
-    fn try_as_raw_fd(&self) -> io::Result<RawFd> {
-        self.0.try_as_raw_fd()
-    }
-
-    unsafe fn as_raw_fd_unchecked(&self) -> RawFd {
-        self.0.as_raw_fd_unchecked()
+impl AsRawFd for Stdin {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0.as_raw_fd()
     }
 }
 
@@ -73,13 +68,9 @@ impl AsyncWrite for Stdout {
     }
 }
 
-impl TryAsRawFd for Stdout {
-    fn try_as_raw_fd(&self) -> io::Result<RawFd> {
-        self.0.try_as_raw_fd()
-    }
-
-    unsafe fn as_raw_fd_unchecked(&self) -> RawFd {
-        self.0.as_raw_fd_unchecked()
+impl AsRawFd for Stdout {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0.as_raw_fd()
     }
 }
 
@@ -115,12 +106,8 @@ impl AsyncWrite for Stderr {
     }
 }
 
-impl TryAsRawFd for Stderr {
-    fn try_as_raw_fd(&self) -> io::Result<RawFd> {
-        self.0.try_as_raw_fd()
-    }
-
-    unsafe fn as_raw_fd_unchecked(&self) -> RawFd {
-        self.0.as_raw_fd_unchecked()
+impl AsRawFd for Stderr {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0.as_raw_fd()
     }
 }
