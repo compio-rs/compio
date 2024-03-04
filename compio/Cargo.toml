@@ -1,7 +1,7 @@
 [package]
 name = "compio"
-version = "0.9.0-beta.4"
-description = "completion based async runtime"
+version = "0.9.0"
+description = "Completion based async runtime"
 categories = ["asynchronous", "filesystem", "network-programming"]
 keywords = ["async", "fs", "iocp", "io-uring", "net"]
 edition = { workspace = true }

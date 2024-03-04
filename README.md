@@ -29,7 +29,7 @@ They don't support Windows.
 Add `compio` as dependency:
 
 ```
-compio = { version = "0.9.0-beta.1", features = ["macros"] }
+compio = { version = "0.9.0", features = ["macros"] }
 ```
 
 Then we can use high level APIs to perform filesystem & net IO.

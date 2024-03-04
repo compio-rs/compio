@@ -4,6 +4,8 @@ use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{AsRawFd, FromRawFd, RawFd};
 use compio_io::{AsyncRead, AsyncWrite};
 
+#[cfg(doc)]
+use super::{stderr, stdin, stdout};
 use crate::pipe::{Receiver, Sender};
 
 /// A handle to the standard input stream of a process.

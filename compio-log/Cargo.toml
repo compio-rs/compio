@@ -1,7 +1,7 @@
 [package]
 name = "compio-log"
-version = "0.1.0-beta.1"
-description = "log of compio"
+version = "0.1.0"
+description = "Log of compio"
 categories = ["asynchronous"]
 edition = { workspace = true }
 authors = { workspace = true }
