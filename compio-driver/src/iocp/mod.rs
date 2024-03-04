@@ -262,6 +262,12 @@ impl Driver {
     }
 }
 
+impl AsRawFd for Driver {
+    fn as_raw_fd(&self) -> RawFd {
+        self.port.as_raw_handle()
+    }
+}
+
 impl Drop for Driver {
     fn drop(&mut self) {
         syscall!(SOCKET, WSACleanup()).ok();
