@@ -80,7 +80,7 @@ impl<T: IoBufMut> DerefMut for Slice<T> {
     }
 }
 
-impl<T: IoBuf> IoBuf for Slice<T> {
+unsafe impl<T: IoBuf> IoBuf for Slice<T> {
     fn as_buf_ptr(&self) -> *const u8 {
         self.buffer.as_slice()[self.begin..].as_ptr()
     }
@@ -94,7 +94,7 @@ impl<T: IoBuf> IoBuf for Slice<T> {
     }
 }
 
-impl<T: IoBufMut> IoBufMut for Slice<T> {
+unsafe impl<T: IoBufMut> IoBufMut for Slice<T> {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         slice_mut(&mut self.buffer)[self.begin..].as_mut_ptr()
     }
