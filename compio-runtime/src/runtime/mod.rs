@@ -106,12 +106,12 @@ impl RuntimeInner {
     pub fn spawn_blocking<T: Send + 'static>(
         &self,
         f: impl (FnOnce() -> T) + Send + Sync + 'static,
-    ) -> impl Future<Output = T> {
+    ) -> Task<T> {
         let op = Asyncify::new(move || {
             let res = f();
             BufResult(Ok(0), res)
         });
-        self.submit(op).map(|BufResult(_, op)| op.into_inner())
+        self.spawn(self.submit(op).map(|BufResult(_, op)| op.into_inner()))
     }
 
     pub fn attach(&self, fd: RawFd) -> io::Result<()> {
@@ -354,7 +354,7 @@ impl Runtime {
     pub fn spawn_blocking<T: Send + 'static>(
         &self,
         f: impl (FnOnce() -> T) + Send + Sync + 'static,
-    ) -> impl Future<Output = T> {
+    ) -> Task<T> {
         self.inner.spawn_blocking(f)
     }
 
@@ -553,6 +553,6 @@ pub fn spawn<F: Future + 'static>(future: F) -> Task<F::Output> {
 /// by [`Runtime::current`].
 pub fn spawn_blocking<T: Send + 'static>(
     f: impl (FnOnce() -> T) + Send + Sync + 'static,
-) -> impl Future<Output = T> {
+) -> Task<T> {
     Runtime::current().spawn_blocking(f)
 }
