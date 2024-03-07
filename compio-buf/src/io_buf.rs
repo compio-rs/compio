@@ -8,7 +8,12 @@ use crate::*;
 ///
 /// The `IoBuf` trait is implemented by buffer types that can be passed to
 /// compio operations. Users will not need to use this trait directly.
-pub trait IoBuf: 'static {
+///
+/// # Safety
+///
+/// The implementer should ensure the pointer, len and capacity are valid, so
+/// that the returned slice of [`IoBuf::as_slice`] is valid.
+pub unsafe trait IoBuf: 'static {
     /// Returns a raw pointer to the vector’s buffer.
     ///
     /// This method is to be used by the `compio` runtime and it is not
@@ -92,7 +97,7 @@ pub trait IoBuf: 'static {
     }
 }
 
-impl<B: IoBuf + ?Sized> IoBuf for &'static B {
+unsafe impl<B: IoBuf + ?Sized> IoBuf for &'static B {
     fn as_buf_ptr(&self) -> *const u8 {
         (**self).as_buf_ptr()
     }
@@ -106,7 +111,7 @@ impl<B: IoBuf + ?Sized> IoBuf for &'static B {
     }
 }
 
-impl<B: IoBuf + ?Sized> IoBuf for &'static mut B {
+unsafe impl<B: IoBuf + ?Sized> IoBuf for &'static mut B {
     fn as_buf_ptr(&self) -> *const u8 {
         (**self).as_buf_ptr()
     }
@@ -120,7 +125,7 @@ impl<B: IoBuf + ?Sized> IoBuf for &'static mut B {
     }
 }
 
-impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf
+unsafe impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf
     for box_alloc!(B, A)
 {
     fn as_buf_ptr(&self) -> *const u8 {
@@ -136,7 +141,7 @@ impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static
     }
 }
 
-impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf for vec_alloc!(u8, A) {
+unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf for vec_alloc!(u8, A) {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -150,7 +155,7 @@ impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf for vec_all
     }
 }
 
-impl IoBuf for String {
+unsafe impl IoBuf for String {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -164,7 +169,7 @@ impl IoBuf for String {
     }
 }
 
-impl IoBuf for str {
+unsafe impl IoBuf for str {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -178,7 +183,7 @@ impl IoBuf for str {
     }
 }
 
-impl IoBuf for [u8] {
+unsafe impl IoBuf for [u8] {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -192,7 +197,7 @@ impl IoBuf for [u8] {
     }
 }
 
-impl<const N: usize> IoBuf for [u8; N] {
+unsafe impl<const N: usize> IoBuf for [u8; N] {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -207,7 +212,7 @@ impl<const N: usize> IoBuf for [u8; N] {
 }
 
 #[cfg(feature = "bytes")]
-impl IoBuf for bytes::Bytes {
+unsafe impl IoBuf for bytes::Bytes {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -222,7 +227,7 @@ impl IoBuf for bytes::Bytes {
 }
 
 #[cfg(feature = "bytes")]
-impl IoBuf for bytes::BytesMut {
+unsafe impl IoBuf for bytes::BytesMut {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -237,7 +242,7 @@ impl IoBuf for bytes::BytesMut {
 }
 
 #[cfg(feature = "read_buf")]
-impl IoBuf for std::io::BorrowedBuf<'static> {
+unsafe impl IoBuf for std::io::BorrowedBuf<'static> {
     fn as_buf_ptr(&self) -> *const u8 {
         self.filled().as_ptr()
     }
@@ -252,7 +257,7 @@ impl IoBuf for std::io::BorrowedBuf<'static> {
 }
 
 #[cfg(feature = "arrayvec")]
-impl<const N: usize> IoBuf for arrayvec::ArrayVec<u8, N> {
+unsafe impl<const N: usize> IoBuf for arrayvec::ArrayVec<u8, N> {
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -276,7 +281,7 @@ impl<const N: usize> IoBuf for arrayvec::ArrayVec<u8, N> {
 /// Buffers passed to compio operations must reference a stable memory
 /// region. While the runtime holds ownership to a buffer, the pointer returned
 /// by `as_buf_mut_ptr` must remain valid even if the `IoBufMut` value is moved.
-pub trait IoBufMut: IoBuf + SetBufInit {
+pub unsafe trait IoBufMut: IoBuf + SetBufInit {
     /// Returns a raw mutable pointer to the vector’s buffer.
     ///
     /// This method is to be used by the `compio` runtime and it is not
@@ -302,13 +307,13 @@ pub trait IoBufMut: IoBuf + SetBufInit {
     }
 }
 
-impl<B: IoBufMut + ?Sized> IoBufMut for &'static mut B {
+unsafe impl<B: IoBufMut + ?Sized> IoBufMut for &'static mut B {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         (**self).as_buf_mut_ptr()
     }
 }
 
-impl<B: IoBufMut + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut
+unsafe impl<B: IoBufMut + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut
     for box_alloc!(B, A)
 {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
@@ -316,40 +321,42 @@ impl<B: IoBufMut + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'sta
     }
 }
 
-impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut for vec_alloc!(u8, A) {
+unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut
+    for vec_alloc!(u8, A)
+{
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.as_mut_ptr()
     }
 }
 
-impl IoBufMut for [u8] {
+unsafe impl IoBufMut for [u8] {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.as_mut_ptr()
     }
 }
 
-impl<const N: usize> IoBufMut for [u8; N] {
+unsafe impl<const N: usize> IoBufMut for [u8; N] {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.as_mut_ptr()
     }
 }
 
 #[cfg(feature = "bytes")]
-impl IoBufMut for bytes::BytesMut {
+unsafe impl IoBufMut for bytes::BytesMut {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.as_mut_ptr()
     }
 }
 
 #[cfg(feature = "read_buf")]
-impl IoBufMut for std::io::BorrowedBuf<'static> {
+unsafe impl IoBufMut for std::io::BorrowedBuf<'static> {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         (*self).filled().as_ptr() as _
     }
 }
 
 #[cfg(feature = "arrayvec")]
-impl<const N: usize> IoBufMut for arrayvec::ArrayVec<u8, N> {
+unsafe impl<const N: usize> IoBufMut for arrayvec::ArrayVec<u8, N> {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.as_mut_ptr()
     }
