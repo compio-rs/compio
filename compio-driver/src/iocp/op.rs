@@ -47,7 +47,7 @@ use windows_sys::{
     },
 };
 
-use crate::{op::*, syscall, OpCode, RawFd};
+use crate::{op::*, syscall, OpCode, OpType, RawFd};
 
 #[inline]
 fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
@@ -119,8 +119,8 @@ impl<
     F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + 'static,
 > OpCode for Asyncify<F, D>
 {
-    fn is_overlapped(&self) -> bool {
-        false
+    fn op_type(&self) -> OpType {
+        OpType::Blocking
     }
 
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
@@ -176,8 +176,8 @@ impl OpenFile {
 }
 
 impl OpCode for OpenFile {
-    fn is_overlapped(&self) -> bool {
-        false
+    fn op_type(&self) -> OpType {
+        OpType::Blocking
     }
 
     unsafe fn operate(mut self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
@@ -200,8 +200,8 @@ impl OpCode for OpenFile {
 }
 
 impl OpCode for CloseFile {
-    fn is_overlapped(&self) -> bool {
-        false
+    fn op_type(&self) -> OpType {
+        OpType::Blocking
     }
 
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
@@ -293,8 +293,8 @@ impl FileStat {
 }
 
 impl OpCode for FileStat {
-    fn is_overlapped(&self) -> bool {
-        false
+    fn op_type(&self) -> OpType {
+        OpType::Blocking
     }
 
     unsafe fn operate(mut self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
@@ -378,8 +378,8 @@ impl PathStat {
 }
 
 impl OpCode for PathStat {
-    fn is_overlapped(&self) -> bool {
-        false
+    fn op_type(&self) -> OpType {
+        OpType::Blocking
     }
 
     unsafe fn operate(mut self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
@@ -473,8 +473,8 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
 }
 
 impl OpCode for Sync {
-    fn is_overlapped(&self) -> bool {
-        false
+    fn op_type(&self) -> OpType {
+        OpType::Blocking
     }
 
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
@@ -483,8 +483,8 @@ impl OpCode for Sync {
 }
 
 impl OpCode for ShutdownSocket {
-    fn is_overlapped(&self) -> bool {
-        false
+    fn op_type(&self) -> OpType {
+        OpType::Blocking
     }
 
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
@@ -498,8 +498,8 @@ impl OpCode for ShutdownSocket {
 }
 
 impl OpCode for CloseSocket {
-    fn is_overlapped(&self) -> bool {
-        false
+    fn op_type(&self) -> OpType {
+        OpType::Blocking
     }
 
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
