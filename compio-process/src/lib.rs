@@ -15,6 +15,8 @@ cfg_if::cfg_if! {
     }
 }
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::{
     ffi::OsStr,
     io,
@@ -231,6 +233,25 @@ impl Command {
     pub async fn output(&mut self) -> io::Result<process::Output> {
         let child = self.spawn()?;
         child.wait_with_output().await
+    }
+}
+
+#[cfg(windows)]
+impl Command {
+    /// Sets the [process creation flags][1] to be passed to `CreateProcess`.
+    ///
+    /// These will always be ORed with `CREATE_UNICODE_ENVIRONMENT`.
+    ///
+    /// [1]: https://docs.microsoft.com/en-us/windows/win32/procthread/process-creation-flags
+    pub fn creation_flags(&mut self, flags: u32) -> &mut Self {
+        self.0.creation_flags(flags);
+        self
+    }
+
+    /// Append literal text to the command line without any quoting or escaping.
+    pub fn raw_arg(&mut self, text_to_append_as_is: impl AsRef<OsStr>) -> &mut Self {
+        self.0.raw_arg(text_to_append_as_is);
+        self
     }
 }
 
