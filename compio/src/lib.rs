@@ -38,6 +38,9 @@ pub use compio_dispatcher as dispatcher;
 pub use compio_io as io;
 #[cfg(feature = "macros")]
 pub use compio_macros::*;
+#[cfg(feature = "process")]
+#[doc(inline)]
+pub use compio_process as process;
 #[cfg(feature = "signal")]
 #[doc(inline)]
 pub use compio_signal as signal;

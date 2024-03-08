@@ -1,5 +1,6 @@
 //! Process library for compio. It is an extension to [`std::process`].
 
+#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![warn(missing_docs)]
 
 cfg_if::cfg_if! {

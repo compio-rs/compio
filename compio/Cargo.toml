@@ -41,6 +41,7 @@ compio-signal = { workspace = true, optional = true }
 compio-dispatcher = { workspace = true, optional = true }
 compio-log = { workspace = true }
 compio-tls = { workspace = true, optional = true }
+compio-process = { workspace = true, optional = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
@@ -88,7 +89,16 @@ dispatcher = ["dep:compio-dispatcher", "runtime"]
 tls = ["dep:compio-tls"]
 native-tls = ["tls", "compio-tls/native-tls"]
 rustls = ["tls", "compio-tls/rustls"]
-all = ["time", "macros", "signal", "dispatcher", "native-tls", "rustls"]
+process = ["dep:compio-process"]
+all = [
+    "time",
+    "macros",
+    "signal",
+    "dispatcher",
+    "native-tls",
+    "rustls",
+    "process",
+]
 
 arrayvec = ["compio-buf/arrayvec"]
 bumpalo = ["compio-buf/bumpalo"]
