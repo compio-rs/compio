@@ -21,6 +21,7 @@ compio-io = { workspace = true }
 compio-runtime = { workspace = true }
 
 cfg-if = { workspace = true }
+futures-util = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true }

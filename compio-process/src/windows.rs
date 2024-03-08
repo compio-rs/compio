@@ -48,11 +48,8 @@ impl OpCode for WaitProcess {
 
 pub async fn child_wait(child: process::Child) -> io::Result<process::ExitStatus> {
     let op = WaitProcess::new(child);
-    Runtime::current()
-        .submit(op)
-        .await
-        .0
-        .map(|code| process::ExitStatus::from_raw(code as _))
+    let code = Runtime::current().submit(op).await.0?;
+    Ok(process::ExitStatus::from_raw(code as _))
 }
 
 unsafe extern "system" fn apc_callback(
@@ -61,7 +58,7 @@ unsafe extern "system" fn apc_callback(
     lpoverlapped: *mut OVERLAPPED,
 ) {
     let optr: *mut Overlapped<()> = lpoverlapped.cast();
-    if let Some(overlapped) = optr.as_mut() {
+    if let Some(overlapped) = optr.as_ref() {
         syscall!(
             BOOL,
             PostQueuedCompletionStatus(
