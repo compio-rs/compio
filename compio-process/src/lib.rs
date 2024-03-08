@@ -15,14 +15,11 @@ cfg_if::cfg_if! {
     }
 }
 
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
-use std::{
-    ffi::OsStr,
-    io,
-    path::Path,
-    process::{self},
-};
+use std::{ffi::OsStr, io, path::Path, process};
 
 use compio_buf::BufResult;
 use compio_io::AsyncReadExt;
@@ -251,6 +248,56 @@ impl Command {
     /// Append literal text to the command line without any quoting or escaping.
     pub fn raw_arg(&mut self, text_to_append_as_is: impl AsRef<OsStr>) -> &mut Self {
         self.0.raw_arg(text_to_append_as_is);
+        self
+    }
+}
+
+#[cfg(unix)]
+impl Command {
+    /// Sets the child process’s user ID. This translates to a `setuid`` call in
+    /// the child process. Failure in the `setuid` call will cause the spawn to
+    /// fail.
+    pub fn uid(&mut self, id: u32) -> &mut Self {
+        self.0.uid(id);
+        self
+    }
+
+    /// Similar to `uid`, but sets the group ID of the child process. This has
+    /// the same semantics as the `uid` field.
+    pub fn gid(&mut self, id: u32) -> &mut Self {
+        self.0.gid(id);
+        self
+    }
+
+    /// Schedules a closure to be run just before the `exec` function is
+    /// invoked.
+    ///
+    /// # Safety
+    ///
+    /// See [`CommandExt::pre_exec`].
+    pub unsafe fn pre_exec(
+        &mut self,
+        f: impl FnMut() -> io::Result<()> + Send + Sync + 'static,
+    ) -> &mut Self {
+        self.0.pre_exec(f);
+        self
+    }
+
+    /// `exec` the command without `fork`.
+    pub fn exec(&mut self) -> io::Error {
+        self.0.exec()
+    }
+
+    /// Set the first process argument, `argv[0]`, to something other than the
+    /// default executable path.
+    pub fn arg0(&mut self, arg: impl AsRef<OsStr>) -> &mut Self {
+        self.0.arg0(arg);
+        self
+    }
+
+    /// Sets the process group ID (PGID) of the child process.
+    pub fn process_group(&mut self, pgroup: i32) -> &mut Self {
+        self.0.process_group(pgroup);
         self
     }
 }

@@ -44,9 +44,22 @@ async fn echo() {
     let id = child.id();
     assert!(id > 0);
 
-    let status = child.wait_with_output().await.unwrap();
-    assert!(status.status.success());
+    let output = child.wait_with_output().await.unwrap();
+    assert!(output.status.success());
 
-    let out = String::from_utf8(status.stdout).unwrap();
+    let out = String::from_utf8(output.stdout).unwrap();
     assert_eq!(out.trim(), "hello world");
+}
+
+#[cfg(unix)]
+#[compio_macros::test]
+async fn arg0() {
+    let mut cmd = Command::new("sh");
+    cmd.arg0("test_string")
+        .arg("-c")
+        .arg("echo $0")
+        .stdout(Stdio::piped());
+
+    let output = cmd.output().await.unwrap();
+    assert_eq!(output.stdout, b"test_string\n");
 }
