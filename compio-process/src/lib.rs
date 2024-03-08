@@ -1,13 +1,14 @@
 //! Process library for compio. It is an extension to [`std::process`].
 
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(feature = "linux_pidfd", feature(linux_pidfd))]
 #![warn(missing_docs)]
 
 cfg_if::cfg_if! {
     if #[cfg(windows)] {
         #[path = "windows.rs"]
         mod sys;
-    } else if #[cfg(any(target_os="linux",target_os="android"))] {
+    } else if #[cfg(target_os = "linux")] {
         #[path = "linux.rs"]
         mod sys;
     } else {
@@ -206,6 +207,11 @@ impl Command {
 
     /// Executes the command as a child process, returning a handle to it.
     pub fn spawn(&mut self) -> io::Result<Child> {
+        #[cfg(all(target_os = "linux", feature = "linux_pidfd"))]
+        {
+            use std::os::linux::process::CommandExt;
+            self.0.create_pidfd(true);
+        }
         let mut child = self.0.spawn()?;
         let stdin = child.stdin.take().map(ChildStdin);
         let stdout = child.stdout.take().map(ChildStdout);
