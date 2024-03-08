@@ -125,7 +125,7 @@ impl CompletionPort {
                 DEFAULT_CAPACITY as _,
                 &mut recv_count,
                 timeout,
-                0
+                1
             )
         )?;
         trace!("recv_count: {recv_count}");

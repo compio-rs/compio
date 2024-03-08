@@ -12,6 +12,7 @@ members = [
     "compio-io",
     "compio-tls",
     "compio-log",
+    "compio-process",
 ]
 resolver = "2"
 
