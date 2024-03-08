@@ -14,7 +14,7 @@ use libc::{pread64 as pread, preadv64 as preadv, pwrite64 as pwrite, pwritev64 a
 use polling::Event;
 use socket2::SockAddr;
 
-use super::{sockaddr_storage, socklen_t, syscall, Decision, OpCode, RawFd};
+use super::{sockaddr_storage, socklen_t, syscall, Decision, Interest, OpCode, RawFd};
 use crate::op::*;
 pub use crate::unix::op::*;
 
@@ -667,5 +667,25 @@ impl<T: IoVectoredBuf> IntoInner for SendToVectored<T> {
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
+    }
+}
+
+impl OpCode for PollRead {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::wait_for(self.fd, Interest::Readable))
+    }
+
+    fn on_event(self: Pin<&mut Self>, _event: &Event) -> Poll<io::Result<usize>> {
+        Poll::Ready(Ok(0))
+    }
+}
+
+impl OpCode for PollWrite {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::wait_for(self.fd, Interest::Writable))
+    }
+
+    fn on_event(self: Pin<&mut Self>, _event: &Event) -> Poll<io::Result<usize>> {
+        Poll::Ready(Ok(0))
     }
 }

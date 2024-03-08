@@ -4,7 +4,7 @@ use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
 };
 use io_uring::{
-    opcode,
+    opcode::{self},
     types::{Fd, FsyncFlags},
 };
 use libc::{sockaddr_storage, socklen_t};
@@ -485,5 +485,21 @@ impl<T: IoVectoredBuf> IntoInner for SendToVectored<T> {
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
+    }
+}
+
+impl OpCode for PollRead {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        opcode::PollAdd::new(Fd(self.fd), libc::POLLIN as _)
+            .build()
+            .into()
+    }
+}
+
+impl OpCode for PollWrite {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        opcode::PollAdd::new(Fd(self.fd), libc::POLLOUT as _)
+            .build()
+            .into()
     }
 }

@@ -246,3 +246,27 @@ impl<T: IoVectoredBuf> IntoInner for SendVectored<T> {
         self.buffer
     }
 }
+
+/// Poll a file descriptor for read.
+pub struct PollRead {
+    pub(crate) fd: RawFd,
+}
+
+impl PollRead {
+    /// Create [`PollRead`].
+    pub fn new(fd: RawFd) -> Self {
+        Self { fd }
+    }
+}
+
+/// Poll a file descriptor for write.
+pub struct PollWrite {
+    pub(crate) fd: RawFd,
+}
+
+impl PollWrite {
+    /// Create [`PollWrite`].
+    pub fn new(fd: RawFd) -> Self {
+        Self { fd }
+    }
+}
