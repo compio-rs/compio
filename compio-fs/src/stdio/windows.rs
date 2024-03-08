@@ -9,7 +9,7 @@ use std::{
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
     op::{BufResultExt, Recv, Send},
-    AsRawFd, OpCode, RawFd,
+    AsRawFd, OpCode, OpType, RawFd,
 };
 use compio_io::{AsyncRead, AsyncWrite};
 use compio_runtime::Runtime;
@@ -30,8 +30,8 @@ impl<R: Read, B: IoBufMut> StdRead<R, B> {
 }
 
 impl<R: Read, B: IoBufMut> OpCode for StdRead<R, B> {
-    fn is_overlapped(&self) -> bool {
-        false
+    fn op_type(&self) -> OpType {
+        OpType::Blocking
     }
 
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
@@ -79,8 +79,8 @@ impl<W: Write, B: IoBuf> StdWrite<W, B> {
 }
 
 impl<W: Write, B: IoBuf> OpCode for StdWrite<W, B> {
-    fn is_overlapped(&self) -> bool {
-        false
+    fn op_type(&self) -> OpType {
+        OpType::Blocking
     }
 
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
