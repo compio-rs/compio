@@ -41,6 +41,7 @@ compio-signal = { workspace = true, optional = true }
 compio-dispatcher = { workspace = true, optional = true }
 compio-log = { workspace = true }
 compio-tls = { workspace = true, optional = true }
+compio-process = { workspace = true, optional = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
@@ -92,7 +93,16 @@ dispatcher = ["dep:compio-dispatcher", "runtime"]
 tls = ["dep:compio-tls"]
 native-tls = ["tls", "compio-tls/native-tls"]
 rustls = ["tls", "compio-tls/rustls"]
-all = ["time", "macros", "signal", "dispatcher", "native-tls", "rustls"]
+process = ["dep:compio-process"]
+all = [
+    "time",
+    "macros",
+    "signal",
+    "dispatcher",
+    "native-tls",
+    "rustls",
+    "process",
+]
 
 arrayvec = ["compio-buf/arrayvec"]
 bumpalo = ["compio-buf/bumpalo"]
@@ -104,6 +114,7 @@ enable_log = ["compio-log/enable_log"]
 # Nightly features
 allocator_api = ["compio-buf/allocator_api", "compio-io?/allocator_api"]
 lazy_cell = ["compio-signal?/lazy_cell"]
+linux_pidfd = ["compio-process?/linux_pidfd"]
 once_cell_try = ["compio-driver/once_cell_try", "compio-signal?/once_cell_try"]
 read_buf = [
     "compio-buf/read_buf",
@@ -116,6 +127,7 @@ windows_by_handle = ["compio-fs?/windows_by_handle"]
 nightly = [
     "allocator_api",
     "lazy_cell",
+    "linux_pidfd",
     "once_cell_try",
     "read_buf",
     "try_trait_v2",
