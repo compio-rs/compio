@@ -447,9 +447,10 @@ fn write_all_std(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
     b.iter(|| {
         file.seek(SeekFrom::Start(0)).unwrap();
         let mut write_len = 0;
-        while write_len < content.len() {
+        let total_len = content.len();
+        while write_len < total_len {
             let write = file
-                .write(&content[write_len..write_len + BUFFER_SIZE])
+                .write(&content[write_len..(write_len + BUFFER_SIZE).min(total_len)])
                 .unwrap();
             write_len += write;
         }
@@ -467,10 +468,14 @@ fn write_all_compio(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
             let start = Instant::now();
             for _i in 0..iter {
                 let mut write_len = 0;
-                while write_len < content.len() as u64 {
+                let total_len = content.len();
+                while write_len < total_len as u64 {
                     let (write, slice) = file
                         .write_at(
-                            content.slice(write_len as usize..write_len as usize + BUFFER_SIZE),
+                            content.slice(
+                                write_len as usize
+                                    ..(write_len as usize + BUFFER_SIZE).min(total_len),
+                            ),
                             write_len,
                         )
                         .await
@@ -500,12 +505,14 @@ fn write_all_monoio(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
             let start = Instant::now();
             for _i in 0..iter {
                 let mut write_len = 0;
-                while write_len < content.len() as u64 {
+                let total_len = content.len();
+                while write_len < total_len as u64 {
                     let (write, slice) = file
                         .write_at(
                             monoio::buf::IoBuf::slice(
                                 content,
-                                write_len as usize..write_len as usize + BUFFER_SIZE,
+                                write_len as usize
+                                    ..(write_len as usize + BUFFER_SIZE).min(total_len),
                             ),
                             write_len,
                         )
