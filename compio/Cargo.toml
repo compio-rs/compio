@@ -51,6 +51,7 @@ compio-macros = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 futures-channel = { workspace = true }
 futures-util = { workspace = true }
+rand = "0.8.5"
 tempfile = { workspace = true }
 tokio = { workspace = true, features = [
     "fs",
