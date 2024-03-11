@@ -70,6 +70,9 @@ windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
 nix = { workspace = true, features = ["fs"] }
 libc = { workspace = true }
 
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+monoio = { version = "0.2.2", default-features = false, features = ["iouring"] }
+
 [features]
 default = ["runtime", "io-uring"]
 io-uring = ["compio-driver/io-uring"]

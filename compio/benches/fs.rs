@@ -13,6 +13,23 @@ use rand::{thread_rng, Rng, RngCore};
 use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
+#[cfg(target_os = "linux")]
+struct MonoioRuntime(std::cell::RefCell<monoio::Runtime<monoio::IoUringDriver>>);
+
+#[cfg(target_os = "linux")]
+impl criterion::async_executor::AsyncExecutor for MonoioRuntime {
+    fn block_on<T>(&self, future: impl futures_util::Future<Output = T>) -> T {
+        self.0.borrow_mut().block_on(future)
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl criterion::async_executor::AsyncExecutor for &MonoioRuntime {
+    fn block_on<T>(&self, future: impl futures_util::Future<Output = T>) -> T {
+        self.0.borrow_mut().block_on(future)
+    }
+}
+
 criterion_group!(fs, read, write);
 criterion_main!(fs);
 
@@ -84,6 +101,25 @@ fn read_compio_join(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
     })
 }
 
+#[cfg(target_os = "linux")]
+fn read_monoio(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
+    let runtime = MonoioRuntime(std::cell::RefCell::new(
+        monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
+            .build()
+            .unwrap(),
+    ));
+    b.to_async(&runtime).iter(|| async {
+        let file = monoio::fs::File::open(path).await.unwrap();
+        let mut buffer = Box::new([0u8; BUFFER_SIZE]);
+        for &offset in *offsets {
+            let res;
+            (res, buffer) = file.read_exact_at(buffer, offset).await;
+            res.unwrap();
+        }
+        buffer
+    })
+}
+
 fn read_all_std(b: &mut Bencher, (path, len): &(&Path, u64)) {
     b.iter(|| {
         let mut file = std::fs::File::open(path).unwrap();
@@ -148,6 +184,27 @@ fn read_all_compio_join(b: &mut Bencher, (path, len): &(&Path, u64)) {
     })
 }
 
+#[cfg(target_os = "linux")]
+fn read_all_monoio(b: &mut Bencher, (path, len): &(&Path, u64)) {
+    let runtime = MonoioRuntime(std::cell::RefCell::new(
+        monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
+            .build()
+            .unwrap(),
+    ));
+    b.to_async(&runtime).iter(|| async {
+        let file = monoio::fs::File::open(path).await.unwrap();
+        let mut buffer = Box::new([0u8; BUFFER_SIZE]);
+        let mut read_len = 0;
+        while read_len < *len {
+            let res;
+            (res, buffer) = file.read_exact_at(buffer, read_len).await;
+            res.unwrap();
+            read_len += BUFFER_SIZE as u64;
+        }
+        buffer
+    })
+}
+
 fn read(c: &mut Criterion) {
     const FILE_SIZE: u64 = 1024;
 
@@ -182,6 +239,12 @@ fn read(c: &mut Criterion) {
         &(&path, &offsets),
         read_compio_join,
     );
+    #[cfg(target_os = "linux")]
+    group.bench_with_input::<_, _, (&Path, &[u64])>(
+        "monoio-random",
+        &(&path, &offsets),
+        read_monoio,
+    );
 
     group.bench_with_input::<_, _, (&Path, u64)>("std-all", &(&path, FILE_SIZE), read_all_std);
     group.bench_with_input::<_, _, (&Path, u64)>("tokio-all", &(&path, FILE_SIZE), read_all_tokio);
@@ -194,6 +257,12 @@ fn read(c: &mut Criterion) {
         "compio-all-join",
         &(&path, FILE_SIZE),
         read_all_compio_join,
+    );
+    #[cfg(target_os = "linux")]
+    group.bench_with_input::<_, _, (&Path, u64)>(
+        "monoio-all",
+        &(&path, FILE_SIZE),
+        read_all_monoio,
     );
 
     group.finish();
@@ -276,6 +345,65 @@ fn write_compio_join(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64],
     })
 }
 
+#[cfg(target_os = "linux")]
+fn write_monoio(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64], &[u8])) {
+    let runtime = MonoioRuntime(std::cell::RefCell::new(
+        monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
+            .build()
+            .unwrap(),
+    ));
+    let content = content.to_vec();
+    b.to_async(&runtime).iter(|| {
+        let mut content = content.clone();
+        async {
+            let file = monoio::fs::OpenOptions::new()
+                .write(true)
+                .open(path)
+                .await
+                .unwrap();
+            for &offset in *offsets {
+                let res;
+                (res, content) = file.write_all_at(content, offset).await;
+                res.unwrap();
+            }
+        }
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn write_monoio_join(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64], &[u8])) {
+    let runtime = MonoioRuntime(std::cell::RefCell::new(
+        monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
+            .build()
+            .unwrap(),
+    ));
+    let content = content.to_vec();
+    b.to_async(&runtime).iter(|| {
+        let content = content.clone();
+        async move {
+            let file = monoio::fs::OpenOptions::new()
+                .write(true)
+                .open(path)
+                .await
+                .unwrap();
+            offsets
+                .iter()
+                .map(|offset| {
+                    let file = &file;
+                    let content = content.clone();
+                    async move {
+                        let (res, content) = file.write_all_at(content, *offset).await;
+                        res.unwrap();
+                        content
+                    }
+                })
+                .collect::<FuturesUnordered<_>>()
+                .collect::<Vec<_>>()
+                .await
+        }
+    })
+}
+
 fn write_all_std(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
     b.iter(|| {
         let mut file = std::fs::File::create(path).unwrap();
@@ -301,6 +429,37 @@ fn write_all_compio(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
                     )
                     .await
                     .unwrap();
+                write_len += BUFFER_SIZE as u64;
+                content = slice.into_inner();
+            }
+        }
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn write_all_monoio(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
+    let runtime = MonoioRuntime(std::cell::RefCell::new(
+        monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
+            .build()
+            .unwrap(),
+    ));
+    let content = content.to_vec();
+    b.to_async(&runtime).iter(|| {
+        let mut content = content.clone();
+        async {
+            let file = monoio::fs::File::create(path).await.unwrap();
+            let mut write_len = 0;
+            while write_len < content.len() as u64 {
+                let (res, slice) = file
+                    .write_all_at(
+                        monoio::buf::IoBuf::slice(
+                            content,
+                            write_len as usize..write_len as usize + BUFFER_SIZE,
+                        ),
+                        write_len,
+                    )
+                    .await;
+                res.unwrap();
                 write_len += BUFFER_SIZE as u64;
                 content = slice.into_inner();
             }
@@ -361,12 +520,30 @@ fn write(c: &mut Criterion) {
         &(&path, &offsets, &single_content),
         write_compio_join,
     );
+    #[cfg(target_os = "linux")]
+    group.bench_with_input::<_, _, (&Path, &[u64], &[u8])>(
+        "monoio-random",
+        &(&path, &offsets, &single_content),
+        write_monoio,
+    );
+    #[cfg(target_os = "linux")]
+    group.bench_with_input::<_, _, (&Path, &[u64], &[u8])>(
+        "monoio-random-join",
+        &(&path, &offsets, &single_content),
+        write_monoio_join,
+    );
 
     group.bench_with_input::<_, _, (&Path, &[u8])>("std-all", &(&path, &content), write_all_std);
     group.bench_with_input::<_, _, (&Path, &[u8])>(
         "compio-all",
         &(&path, &content),
         write_all_compio,
+    );
+    #[cfg(target_os = "linux")]
+    group.bench_with_input::<_, _, (&Path, &[u8])>(
+        "monoio-all",
+        &(&path, &content),
+        write_all_monoio,
     );
 
     group.finish()
