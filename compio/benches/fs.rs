@@ -1,5 +1,7 @@
+#[cfg(windows)]
+use std::io::Seek;
 use std::{
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Read, SeekFrom, Write},
     path::Path,
 };
 
@@ -199,6 +201,7 @@ fn read(c: &mut Criterion) {
 
 fn write_std(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64], &[u8])) {
     b.iter(|| {
+        #[allow(unused_mut)]
         let mut file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
         for &offset in *offsets {
             #[cfg(windows)]
