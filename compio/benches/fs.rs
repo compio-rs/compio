@@ -7,7 +7,7 @@ use std::{
 
 use compio_buf::{IntoInner, IoBuf};
 use compio_io::{AsyncReadAt, AsyncWriteAt};
-use criterion::{criterion_group, criterion_main, Bencher, Criterion};
+use criterion::{criterion_group, criterion_main, Bencher, Criterion, Throughput};
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use rand::{thread_rng, Rng, RngCore};
 use tempfile::NamedTempFile;
@@ -239,40 +239,29 @@ fn read(c: &mut Criterion) {
         offsets.push(offset);
     }
 
-    let mut group = c.benchmark_group("read");
+    let mut group = c.benchmark_group("read-random");
 
-    group.bench_with_input::<_, _, (&Path, &[u64])>("std-random", &(&path, &offsets), read_std);
-    group.bench_with_input::<_, _, (&Path, &[u64])>("tokio-random", &(&path, &offsets), read_tokio);
+    group.bench_with_input::<_, _, (&Path, &[u64])>("std", &(&path, &offsets), read_std);
+    group.bench_with_input::<_, _, (&Path, &[u64])>("tokio", &(&path, &offsets), read_tokio);
+    group.bench_with_input::<_, _, (&Path, &[u64])>("compio", &(&path, &offsets), read_compio);
     group.bench_with_input::<_, _, (&Path, &[u64])>(
-        "compio-random",
-        &(&path, &offsets),
-        read_compio,
-    );
-    group.bench_with_input::<_, _, (&Path, &[u64])>(
-        "compio-random-join",
+        "compio-join",
         &(&path, &offsets),
         read_compio_join,
     );
     #[cfg(target_os = "linux")]
-    group.bench_with_input::<_, _, (&Path, &[u64])>(
-        "monoio-random",
-        &(&path, &offsets),
-        read_monoio,
-    );
+    group.bench_with_input::<_, _, (&Path, &[u64])>("monoio", &(&path, &offsets), read_monoio);
 
-    group.bench_with_input::<_, _, (&Path, u64)>("std-all", &(&path, FILE_SIZE), read_all_std);
-    group.bench_with_input::<_, _, (&Path, u64)>("tokio-all", &(&path, FILE_SIZE), read_all_tokio);
-    group.bench_with_input::<_, _, (&Path, u64)>(
-        "compio-all",
-        &(&path, FILE_SIZE),
-        read_all_compio,
-    );
+    group.finish();
+
+    let mut group = c.benchmark_group("read-all");
+    group.throughput(Throughput::Bytes(FILE_SIZE * BUFFER_SIZE as u64));
+
+    group.bench_with_input::<_, _, (&Path, u64)>("std", &(&path, FILE_SIZE), read_all_std);
+    group.bench_with_input::<_, _, (&Path, u64)>("tokio", &(&path, FILE_SIZE), read_all_tokio);
+    group.bench_with_input::<_, _, (&Path, u64)>("compio", &(&path, FILE_SIZE), read_all_compio);
     #[cfg(target_os = "linux")]
-    group.bench_with_input::<_, _, (&Path, u64)>(
-        "monoio-all",
-        &(&path, FILE_SIZE),
-        read_all_monoio,
-    );
+    group.bench_with_input::<_, _, (&Path, u64)>("monoio", &(&path, FILE_SIZE), read_all_monoio);
 
     group.finish();
 }
@@ -557,53 +546,50 @@ fn write(c: &mut Criterion) {
         content.extend_from_slice(&buffer);
     }
 
-    let mut group = c.benchmark_group("write");
+    let mut group = c.benchmark_group("write-random");
 
     group.bench_with_input::<_, _, (&Path, &[u64], &[u8])>(
-        "std-random",
+        "std",
         &(&path, &offsets, &single_content),
         write_std,
     );
     group.bench_with_input::<_, _, (&Path, &[u64], &[u8])>(
-        "tokio-random",
+        "tokio",
         &(&path, &offsets, &single_content),
         write_tokio,
     );
     group.bench_with_input::<_, _, (&Path, &[u64], &[u8])>(
-        "compio-random",
+        "compio",
         &(&path, &offsets, &single_content),
         write_compio,
     );
     group.bench_with_input::<_, _, (&Path, &[u64], &[u8])>(
-        "compio-random-join",
+        "compio-join",
         &(&path, &offsets, &single_content),
         write_compio_join,
     );
     #[cfg(target_os = "linux")]
     group.bench_with_input::<_, _, (&Path, &[u64], &[u8])>(
-        "monoio-random",
+        "monoio",
         &(&path, &offsets, &single_content),
         write_monoio,
     );
     #[cfg(target_os = "linux")]
     group.bench_with_input::<_, _, (&Path, &[u64], &[u8])>(
-        "monoio-random-join",
+        "monoio-join",
         &(&path, &offsets, &single_content),
         write_monoio_join,
     );
 
-    group.bench_with_input::<_, _, (&Path, &[u8])>("std-all", &(&path, &content), write_all_std);
-    group.bench_with_input::<_, _, (&Path, &[u8])>(
-        "compio-all",
-        &(&path, &content),
-        write_all_compio,
-    );
+    group.finish();
+
+    let mut group = c.benchmark_group("write-all");
+    group.throughput(Throughput::Bytes(content.len() as _));
+
+    group.bench_with_input::<_, _, (&Path, &[u8])>("std", &(&path, &content), write_all_std);
+    group.bench_with_input::<_, _, (&Path, &[u8])>("compio", &(&path, &content), write_all_compio);
     #[cfg(target_os = "linux")]
-    group.bench_with_input::<_, _, (&Path, &[u8])>(
-        "monoio-all",
-        &(&path, &content),
-        write_all_monoio,
-    );
+    group.bench_with_input::<_, _, (&Path, &[u8])>("monoio", &(&path, &content), write_all_monoio);
 
     group.finish()
 }
