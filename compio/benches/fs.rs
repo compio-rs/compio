@@ -446,6 +446,31 @@ fn write_all_std(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
     })
 }
 
+fn write_all_tokio(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    b.to_async(&runtime).iter_custom(|iter| async move {
+        let mut file = tokio::fs::File::create(path).await.unwrap();
+
+        let start = Instant::now();
+        for _i in 0..iter {
+            file.seek(SeekFrom::Start(0)).await.unwrap();
+            let mut write_len = 0;
+            let total_len = content.len();
+            while write_len < total_len {
+                let write = file
+                    .write(&content[write_len..(write_len + BUFFER_SIZE).min(total_len)])
+                    .await
+                    .unwrap();
+                write_len += write;
+            }
+        }
+        start.elapsed()
+    })
+}
+
 fn write_all_compio(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
     let runtime = compio::runtime::Runtime::new().unwrap();
     let content = content.to_vec();
@@ -587,6 +612,7 @@ fn write(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(content.len() as _));
 
     group.bench_with_input::<_, _, (&Path, &[u8])>("std", &(&path, &content), write_all_std);
+    group.bench_with_input::<_, _, (&Path, &[u8])>("tokio", &(&path, &content), write_all_tokio);
     group.bench_with_input::<_, _, (&Path, &[u8])>("compio", &(&path, &content), write_all_compio);
     #[cfg(target_os = "linux")]
     group.bench_with_input::<_, _, (&Path, &[u8])>("monoio", &(&path, &content), write_all_monoio);
