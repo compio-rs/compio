@@ -24,6 +24,7 @@
         with pkgs; {
           devShells.default = mkShell {
             buildInputs = [
+              glib
               openssl
               pkg-config
               (rust-bin.selectLatestNightlyWith (toolchain:
