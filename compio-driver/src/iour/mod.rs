@@ -3,7 +3,7 @@
 pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{io, os::fd::OwnedFd, pin::Pin, ptr::NonNull, sync::Arc, task::Poll, time::Duration};
 
-use compio_log::{instrument, trace};
+use compio_log::{instrument, trace, warn};
 use crossbeam_queue::SegQueue;
 cfg_if::cfg_if! {
     if #[cfg(feature = "io-uring-cqe32")] {
@@ -96,7 +96,7 @@ impl Driver {
                         .user_data(Self::NOTIFY)
                         .into(),
                 )
-                .expect("the squeue sould not be empty");
+                .expect("the squeue sould not be full");
         }
         Ok(Self {
             inner,
@@ -108,7 +108,7 @@ impl Driver {
 
     // Auto means that it choose to wait or not automatically.
     fn submit_auto(&mut self, timeout: Option<Duration>) -> io::Result<()> {
-        instrument!(compio_log::Level::TRACE, "submit_auto", ?timeout, wait);
+        instrument!(compio_log::Level::TRACE, "submit_auto", ?timeout);
         let res = {
             // Last part of submission queue, wait till timeout.
             if let Some(duration) = timeout {
@@ -172,7 +172,8 @@ impl Driver {
         trace!("cancel RawOp");
         unsafe {
             #[allow(clippy::useless_conversion)]
-            self.inner
+            if self
+                .inner
                 .submission()
                 .push(
                     &AsyncCancel::new(user_data as _)
@@ -180,7 +181,10 @@ impl Driver {
                         .user_data(Self::CANCEL)
                         .into(),
                 )
-                .ok();
+                .is_err()
+            {
+                warn!("could not push AsyncCancel entry");
+            }
         }
     }
 
