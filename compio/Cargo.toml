@@ -48,7 +48,7 @@ compio-buf = { workspace = true, features = ["bumpalo"] }
 compio-runtime = { workspace = true, features = ["criterion"] }
 compio-macros = { workspace = true }
 
-criterion = { workspace = true, features = ["async_tokio", "real_blackbox"] }
+criterion = { workspace = true, features = ["async_tokio"] }
 futures-channel = { workspace = true }
 futures-util = { workspace = true }
 rand = "0.8.5"
@@ -119,6 +119,8 @@ nightly = [
     "read_buf",
     "try_trait_v2",
 ]
+
+real_blackbox = ["criterion/real_blackbox"]
 
 [[example]]
 name = "basic"
