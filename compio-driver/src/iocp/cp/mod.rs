@@ -24,8 +24,8 @@ use windows_sys::Win32::{
     Foundation::{
         GetLastError, RtlNtStatusToDosError, ERROR_BAD_COMMAND, ERROR_BROKEN_PIPE,
         ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_NO_DATA, ERROR_PIPE_CONNECTED,
-        FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING, STATUS_SUCCESS,
-        WAIT_IO_COMPLETION,
+        ERROR_PIPE_NOT_CONNECTED, FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING,
+        STATUS_SUCCESS, WAIT_IO_COMPLETION,
     },
     Storage::FileSystem::SetFileCompletionNotificationModes,
     System::{
@@ -184,8 +184,12 @@ impl CompletionPort {
             } else {
                 let error = unsafe { RtlNtStatusToDosError(overlapped.base.Internal as _) };
                 match error {
-                    ERROR_IO_INCOMPLETE | ERROR_HANDLE_EOF | ERROR_BROKEN_PIPE
-                    | ERROR_PIPE_CONNECTED | ERROR_NO_DATA => Ok(0),
+                    ERROR_IO_INCOMPLETE
+                    | ERROR_HANDLE_EOF
+                    | ERROR_BROKEN_PIPE
+                    | ERROR_PIPE_CONNECTED
+                    | ERROR_PIPE_NOT_CONNECTED
+                    | ERROR_NO_DATA => Ok(0),
                     _ => Err(io::Error::from_raw_os_error(error as _)),
                 }
             };

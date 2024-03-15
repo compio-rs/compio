@@ -20,6 +20,7 @@ use windows_sys::{
         Foundation::{
             CloseHandle, GetLastError, ERROR_BROKEN_PIPE, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE,
             ERROR_IO_PENDING, ERROR_NOT_FOUND, ERROR_NO_DATA, ERROR_PIPE_CONNECTED,
+            ERROR_PIPE_NOT_CONNECTED,
         },
         Networking::WinSock::{
             closesocket, setsockopt, shutdown, socklen_t, WSAIoctl, WSARecv, WSARecvFrom, WSASend,
@@ -44,7 +45,11 @@ fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
     assert_ne!(error, 0);
     match error {
         ERROR_IO_PENDING => Poll::Pending,
-        ERROR_IO_INCOMPLETE | ERROR_HANDLE_EOF | ERROR_BROKEN_PIPE | ERROR_PIPE_CONNECTED
+        ERROR_IO_INCOMPLETE
+        | ERROR_HANDLE_EOF
+        | ERROR_BROKEN_PIPE
+        | ERROR_PIPE_CONNECTED
+        | ERROR_PIPE_NOT_CONNECTED
         | ERROR_NO_DATA => Poll::Ready(Ok(transferred as _)),
         _ => Poll::Ready(Err(io::Error::from_raw_os_error(error as _))),
     }
