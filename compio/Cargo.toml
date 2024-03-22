@@ -51,6 +51,7 @@ compio-macros = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 futures-channel = { workspace = true }
 futures-util = { workspace = true }
+rand = "0.8.5"
 tempfile = { workspace = true }
 tokio = { workspace = true, features = [
     "fs",
@@ -68,6 +69,9 @@ windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
 [target.'cfg(unix)'.dev-dependencies]
 nix = { workspace = true, features = ["fs"] }
 libc = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+monoio = { version = "0.2.2", default-features = false, features = ["iouring"] }
 
 [features]
 default = ["runtime", "io-uring"]
@@ -115,6 +119,8 @@ nightly = [
     "read_buf",
     "try_trait_v2",
 ]
+
+real_blackbox = ["criterion/real_blackbox"]
 
 [[example]]
 name = "basic"
