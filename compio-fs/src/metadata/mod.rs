@@ -147,7 +147,7 @@ impl Metadata {
 #[cfg(unix)]
 impl Metadata {
     /// Create from [`libc::statx`]
-    pub fn from_stat(stat: libc::statx) -> Self {
+    pub fn from_stat(stat: libc::stat) -> Self {
         Self(sys::Metadata::from_stat(stat))
     }
 }
