@@ -3,15 +3,15 @@ use std::{future::Future, io, mem::ManuallyDrop, path::Path};
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
     impl_raw_fd,
-    op::{BufResultExt, CloseFile, FileStat, ReadAt, Sync, WriteAt},
-    syscall, AsRawFd,
+    op::{BufResultExt, CloseFile, ReadAt, Sync, WriteAt},
+    AsRawFd,
 };
 use compio_io::{AsyncReadAt, AsyncWriteAt};
 use compio_runtime::{impl_try_clone, Attacher, Runtime};
 #[cfg(unix)]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
-    compio_driver::op::{ReadVectoredAt, WriteVectoredAt},
+    compio_driver::op::{FileStat, ReadVectoredAt, WriteVectoredAt},
 };
 
 use crate::{Metadata, OpenOptions, Permissions};
@@ -71,6 +71,14 @@ impl File {
     }
 
     /// Queries metadata about the underlying file.
+    #[cfg(windows)]
+    pub async fn metadata(&self) -> io::Result<Metadata> {
+        let file = self.inner.try_clone()?;
+        compio_runtime::spawn_blocking(move || file.metadata().map(Metadata::from_std)).await
+    }
+
+    /// Queries metadata about the underlying file.
+    #[cfg(unix)]
     pub async fn metadata(&self) -> io::Result<Metadata> {
         let op = FileStat::new(self.as_raw_fd());
         let BufResult(res, op) = Runtime::current().submit(op).await;
@@ -80,32 +88,8 @@ impl File {
     /// Changes the permissions on the underlying file.
     #[cfg(windows)]
     pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
-        use windows_sys::Win32::Storage::FileSystem::{
-            FileBasicInfo, SetFileInformationByHandle, FILE_BASIC_INFO,
-        };
-
-        let fd = self.as_raw_fd() as _;
-        Runtime::current()
-            .spawn_blocking(move || {
-                let info = FILE_BASIC_INFO {
-                    CreationTime: 0,
-                    LastAccessTime: 0,
-                    LastWriteTime: 0,
-                    ChangeTime: 0,
-                    FileAttributes: perm.0.attrs,
-                };
-                syscall!(
-                    BOOL,
-                    SetFileInformationByHandle(
-                        fd,
-                        FileBasicInfo,
-                        &info as *const _ as _,
-                        std::mem::size_of::<FILE_BASIC_INFO>() as _
-                    )
-                )?;
-                Ok(())
-            })
-            .await
+        let file = self.inner.try_clone()?;
+        compio_runtime::spawn_blocking(move || file.set_permissions(perm.0)).await
     }
 
     /// Changes the permissions on the underlying file.
@@ -114,12 +98,11 @@ impl File {
         use std::os::unix::fs::PermissionsExt;
 
         let fd = self.as_raw_fd() as _;
-        Runtime::current()
-            .spawn_blocking(move || {
-                syscall!(libc::fchmod(fd, perm.mode() as libc::mode_t))?;
-                Ok(())
-            })
-            .await
+        compio_runtime::spawn_blocking(move || {
+            syscall!(libc::fchmod(fd, perm.mode() as libc::mode_t))?;
+            Ok(())
+        })
+        .await
     }
 
     async fn sync_impl(&self, datasync: bool) -> io::Result<()> {

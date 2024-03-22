@@ -8,9 +8,6 @@ mod sys;
 
 use std::{io, path::Path};
 
-#[cfg(windows)]
-use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
-
 use crate::File;
 
 /// Options and flags which can be used to configure how a file is opened.
@@ -126,6 +123,14 @@ impl OpenOptions {
         self
     }
 
+    /// Opens a file at `path` with the options specified by `self`.
+    pub async fn open(&self, path: impl AsRef<Path>) -> io::Result<File> {
+        self.0.open(path).await
+    }
+}
+
+#[cfg(unix)]
+impl OpenOptions {
     /// Pass custom flags to the `flags` argument of `open`.
     ///
     /// The bits that define the access mode are masked out with `O_ACCMODE`, to
@@ -133,7 +138,6 @@ impl OpenOptions {
     ///
     /// Custom flags can only set flags, not remove flags set by Rusts options.
     /// This options overwrites any previously set custom flags.
-    #[cfg(unix)]
     pub fn custom_flags(&mut self, flags: i32) -> &mut Self {
         self.0.custom_flags(flags);
         self
@@ -146,12 +150,14 @@ impl OpenOptions {
     /// new file. If no `mode` is set, the default of `0o666` will be used.
     /// The operating system masks out bits with the system's `umask`, to
     /// produce the final permissions.
-    #[cfg(unix)]
     pub fn mode(&mut self, mode: u32) -> &mut Self {
         self.0.mode(mode);
         self
     }
+}
 
+#[cfg(windows)]
+impl OpenOptions {
     /// Combines it with
     /// `attributes` and `security_qos_flags` to set the `dwFlagsAndAttributes`
     /// for [`CreateFile`].
@@ -160,7 +166,6 @@ impl OpenOptions {
     /// This option overwrites any previously set custom flags.
     ///
     /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
-    #[cfg(windows)]
     pub fn custom_flags(&mut self, flags: u32) -> &mut Self {
         self.0.custom_flags(flags);
         self
@@ -175,7 +180,6 @@ impl OpenOptions {
     /// and system), and extended attributes.
     ///
     /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
-    #[cfg(windows)]
     pub fn access_mode(&mut self, access_mode: u32) -> &mut Self {
         self.0.access_mode(access_mode);
         self
@@ -192,7 +196,6 @@ impl OpenOptions {
     /// handle is closed.
     ///
     /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
-    #[cfg(windows)]
     pub fn share_mode(&mut self, share_mode: u32) -> &mut Self {
         self.0.share_mode(share_mode);
         self
@@ -213,7 +216,6 @@ impl OpenOptions {
     /// In all other cases the attributes get ignored.
     ///
     /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
-    #[cfg(windows)]
     pub fn attributes(&mut self, attrs: u32) -> &mut Self {
         self.0.attributes(attrs);
         self
@@ -240,26 +242,8 @@ impl OpenOptions {
     /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
     /// [Impersonation Levels]:
     ///     https://docs.microsoft.com/en-us/windows/win32/api/winnt/ne-winnt-security_impersonation_level
-    #[cfg(windows)]
     pub fn security_qos_flags(&mut self, flags: u32) -> &mut Self {
         self.0.security_qos_flags(flags);
         self
-    }
-
-    /// Set the security attributes for the file handle.
-    ///
-    /// # Safety
-    ///
-    /// The `attrs` argument must either be null or point at a valid instance of
-    /// the [`SECURITY_ATTRIBUTES`] structure.
-    #[cfg(windows)]
-    pub unsafe fn security_attributes(&mut self, attrs: *const SECURITY_ATTRIBUTES) -> &mut Self {
-        self.0.security_attributes(attrs);
-        self
-    }
-
-    /// Opens a file at `path` with the options specified by `self`.
-    pub async fn open(&self, path: impl AsRef<Path>) -> io::Result<File> {
-        self.0.open(path).await
     }
 }

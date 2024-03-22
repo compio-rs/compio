@@ -2,36 +2,34 @@ use std::{io, time::Duration};
 
 use compio_buf::{arrayvec::ArrayVec, BufResult};
 use compio_driver::{
-    op::{Asyncify, CloseFile, OpenFile, ReadAt},
+    op::{Asyncify, CloseFile, ReadAt},
     OpCode, Proactor, PushEntry, RawFd,
 };
 
 #[cfg(windows)]
-fn open_file_op() -> OpenFile {
-    use std::ptr::null_mut;
+fn open_file_op() -> impl OpCode {
+    use std::os::windows::fs::OpenOptionsExt;
 
-    use widestring::U16CString;
-    use windows_sys::Win32::{
-        Foundation::GENERIC_READ,
-        Storage::FileSystem::{
-            FILE_FLAG_OVERLAPPED, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-            OPEN_EXISTING,
-        },
-    };
+    use compio_driver::IntoRawFd;
+    use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
 
-    OpenFile::new(
-        U16CString::from_str("Cargo.toml").unwrap(),
-        GENERIC_READ,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        null_mut(),
-        OPEN_EXISTING,
-        FILE_FLAG_OVERLAPPED,
-    )
+    Asyncify::new(|| {
+        BufResult(
+            std::fs::OpenOptions::new()
+                .read(true)
+                .attributes(FILE_FLAG_OVERLAPPED)
+                .open("Cargo.toml")
+                .map(|f| f.into_raw_fd() as usize),
+            (),
+        )
+    })
 }
 
 #[cfg(unix)]
-fn open_file_op() -> OpenFile {
+fn open_file_op() -> impl OpCode {
     use std::ffi::CString;
+
+    use compio_driver::op::OpenFile;
 
     let mut flags = libc::O_CLOEXEC | libc::O_RDONLY;
     if cfg!(not(any(target_os = "linux", target_os = "android"))) {

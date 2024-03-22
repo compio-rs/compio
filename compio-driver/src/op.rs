@@ -8,14 +8,14 @@ use std::{marker::PhantomPinned, net::Shutdown};
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
 use socket2::SockAddr;
 
-pub use crate::sys::op::{
-    Accept, FileStat, OpenFile, PathStat, Recv, RecvFrom, RecvFromVectored, RecvVectored, Send,
-    SendTo, SendToVectored, SendVectored,
-};
 #[cfg(windows)]
-pub use crate::sys::op::{ConnectNamedPipe, FileMetadata};
+pub use crate::sys::op::ConnectNamedPipe;
+pub use crate::sys::op::{
+    Accept, Recv, RecvFrom, RecvFromVectored, RecvVectored, Send, SendTo, SendToVectored,
+    SendVectored,
+};
 #[cfg(unix)]
-pub use crate::sys::op::{ReadVectoredAt, WriteVectoredAt};
+pub use crate::sys::op::{FileStat, OpenFile, PathStat, ReadVectoredAt, WriteVectoredAt};
 use crate::sys::{sockaddr_storage, socklen_t, RawFd};
 
 /// Trait to update the buffer length inside the [`BufResult`].

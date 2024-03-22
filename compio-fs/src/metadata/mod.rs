@@ -6,6 +6,8 @@ mod sys;
 #[path = "windows.rs"]
 mod sys;
 
+#[cfg(windows)]
+use std::os::windows::fs::{FileTypeExt, MetadataExt};
 use std::{io, path::Path, time::SystemTime};
 
 /// Given a path, query the file system to get information about a file,
@@ -29,14 +31,6 @@ pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::R
 pub struct Metadata(sys::Metadata);
 
 impl Metadata {
-    /// Create from inner type of [`FileStat`] or [`PathStat`].
-    ///
-    /// [`FileStat`]: compio_driver::op::FileStat
-    /// [`PathStat`]: compio_driver::op::PathStat
-    pub fn from_stat(stat: <compio_driver::op::FileStat as compio_buf::IntoInner>::Inner) -> Self {
-        Self(sys::Metadata::from_stat(stat))
-    }
-
     /// Returns the file type for this metadata.
     pub fn file_type(&self) -> FileType {
         FileType(self.0.file_type())
@@ -97,53 +91,64 @@ impl Metadata {
     pub fn created(&self) -> io::Result<SystemTime> {
         self.0.created()
     }
+}
 
-    // The below methods are Windows specific. We cannot impl `MetadataExt` because
-    // it is going to be sealed.
+// The below methods are Windows specific. We cannot impl `MetadataExt` because
+// it is going to be sealed.
+#[cfg(windows)]
+impl Metadata {
+    /// Create [`Metadata`] from [`std::fs::Metadata`].
+    pub fn from_std(m: std::fs::Metadata) -> Self {
+        Self(m)
+    }
 
     /// Returns the value of the `dwFileAttributes` field of this metadata.
-    #[cfg(windows)]
     pub fn file_attributes(&self) -> u32 {
         self.0.file_attributes()
     }
 
     /// Returns the value of the `ftCreationTime` field of this metadata.
-    #[cfg(windows)]
     pub fn creation_time(&self) -> u64 {
         self.0.creation_time()
     }
 
     /// Returns the value of the `ftLastAccessTime` field of this metadata.
-    #[cfg(windows)]
     pub fn last_access_time(&self) -> u64 {
         self.0.last_access_time()
     }
 
     /// Returns the value of the `ftLastWriteTime` field of this metadata.
-    #[cfg(windows)]
     pub fn last_write_time(&self) -> u64 {
         self.0.last_write_time()
     }
+}
 
+#[cfg(all(windows, feature = "windows_by_handle"))]
+impl Metadata {
     /// Returns the value of the `dwVolumeSerialNumber` field of this
     /// metadata.
-    #[cfg(windows)]
     pub fn volume_serial_number(&self) -> Option<u32> {
         self.0.volume_serial_number()
     }
 
     /// Returns the value of the `nNumberOfLinks` field of this
     /// metadata.
-    #[cfg(windows)]
     pub fn number_of_links(&self) -> Option<u32> {
         self.0.number_of_links()
     }
 
     /// Returns the value of the `nFileIndex{Low,High}` fields of this
     /// metadata.
-    #[cfg(windows)]
     pub fn file_index(&self) -> Option<u64> {
         self.0.file_index()
+    }
+}
+
+#[cfg(unix)]
+impl Metadata {
+    /// Create from [`libc::statx`]
+    pub fn from_stat(stat: libc::statx) -> Self {
+        Self(sys::Metadata::from_stat(stat))
     }
 }
 
@@ -233,19 +238,20 @@ impl FileType {
     pub fn is_symlink(&self) -> bool {
         self.0.is_symlink()
     }
+}
 
-    // The below methods are Windows specific. We cannot impl `FileTypeExt` because
-    // it is sealed.
+// The below methods are Windows specific. We cannot impl `FileTypeExt` because
+// it is sealed.
 
+#[cfg(windows)]
+impl FileType {
     /// Returns `true` if this file type is a symbolic link that is also a
     /// directory.
-    #[cfg(windows)]
     pub fn is_symlink_dir(&self) -> bool {
         self.0.is_symlink_dir()
     }
 
     /// Returns `true` if this file type is a symbolic link that is also a file.
-    #[cfg(windows)]
     pub fn is_symlink_file(&self) -> bool {
         self.0.is_symlink_file()
     }

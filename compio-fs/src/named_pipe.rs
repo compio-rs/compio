@@ -12,7 +12,6 @@ use compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt};
 use compio_runtime::{impl_try_clone, Runtime};
 use widestring::U16CString;
 use windows_sys::Win32::{
-    Security::SECURITY_ATTRIBUTES,
     Storage::FileSystem::{
         FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_FLAG_OVERLAPPED, PIPE_ACCESS_INBOUND,
         PIPE_ACCESS_OUTBOUND, WRITE_DAC, WRITE_OWNER,
@@ -379,7 +378,6 @@ pub struct ServerOptions {
     out_buffer_size: u32,
     in_buffer_size: u32,
     default_timeout: u32,
-    security_attributes: *const SECURITY_ATTRIBUTES,
 }
 
 impl ServerOptions {
@@ -408,7 +406,6 @@ impl ServerOptions {
             out_buffer_size: 65536,
             in_buffer_size: 65536,
             default_timeout: 0,
-            security_attributes: null(),
         }
     }
 
@@ -909,17 +906,6 @@ impl ServerOptions {
         self
     }
 
-    /// Set the security attributes for the server handle.
-    ///
-    /// # Safety
-    ///
-    /// The `attrs` argument must either be null or point at a valid instance of
-    /// the [`SECURITY_ATTRIBUTES`] structure.
-    pub unsafe fn security_attributes(&mut self, attrs: *mut SECURITY_ATTRIBUTES) -> &mut Self {
-        self.security_attributes = attrs;
-        self
-    }
-
     /// Creates the named pipe identified by `addr` for use as a server.
     ///
     /// This uses the [`CreateNamedPipe`] function.
@@ -987,7 +973,7 @@ impl ServerOptions {
                 self.out_buffer_size,
                 self.in_buffer_size,
                 self.default_timeout,
-                self.security_attributes,
+                null(),
             )
         )?;
 
@@ -1081,16 +1067,6 @@ impl ClientOptions {
     /// documentation of what each mode means.
     pub fn pipe_mode(&mut self, pipe_mode: PipeMode) -> &mut Self {
         self.pipe_mode = pipe_mode;
-        self
-    }
-
-    /// Set the security attributes for the file handle.
-    ///
-    /// # Safety
-    ///
-    /// See [`OpenOptions::security_attributes`]
-    pub unsafe fn security_attributes(&mut self, attrs: *mut SECURITY_ATTRIBUTES) -> &mut Self {
-        self.options.security_attributes(attrs);
         self
     }
 
