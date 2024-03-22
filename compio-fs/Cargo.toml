@@ -62,4 +62,5 @@ nix = { workspace = true, features = ["fs"] }
 default = []
 
 read_buf = ["compio-buf/read_buf", "compio-io/read_buf"]
-nightly = ["read_buf"]
+windows_by_handle = []
+nightly = ["read_buf", "windows_by_handle"]

@@ -28,12 +28,11 @@ pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
 
 pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::Result<()> {
     let path = path_string(path)?;
-    Runtime::current()
-        .spawn_blocking(move || {
-            syscall!(libc::chmod(path.as_ptr(), perm.0))?;
-            Ok(())
-        })
-        .await
+    compio_runtime::spawn_blocking(move || {
+        syscall!(libc::chmod(path.as_ptr(), perm.0))?;
+        Ok(())
+    })
+    .await
 }
 
 #[derive(Clone)]

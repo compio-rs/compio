@@ -4,7 +4,6 @@ use std::{
     io,
     marker::PhantomPinned,
     net::Shutdown,
-    os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
     pin::Pin,
     ptr::{null, null_mut},
     task::Poll,
@@ -15,14 +14,12 @@ use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectore
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 use socket2::SockAddr;
-use widestring::U16CString;
 use windows_sys::{
     core::GUID,
     Win32::{
         Foundation::{
-            CloseHandle, GetLastError, ERROR_ACCESS_DENIED, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE,
-            ERROR_IO_PENDING, ERROR_NOT_FOUND, ERROR_NO_DATA, ERROR_PIPE_CONNECTED,
-            ERROR_SHARING_VIOLATION, FILETIME, INVALID_HANDLE_VALUE,
+            CloseHandle, GetLastError, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_IO_PENDING,
+            ERROR_NOT_FOUND, ERROR_NO_DATA, ERROR_PIPE_CONNECTED,
         },
         Networking::WinSock::{
             closesocket, setsockopt, shutdown, socklen_t, WSAIoctl, WSARecv, WSARecvFrom, WSASend,
@@ -31,15 +28,7 @@ use windows_sys::{
             SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, WSAID_ACCEPTEX,
             WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS,
         },
-        Security::SECURITY_ATTRIBUTES,
-        Storage::FileSystem::{
-            CreateFileW, FileAttributeTagInfo, FindClose, FindFirstFileW, FlushFileBuffers,
-            GetFileInformationByHandle, GetFileInformationByHandleEx, ReadFile, WriteFile,
-            BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO,
-            FILE_CREATION_DISPOSITION, FILE_FLAGS_AND_ATTRIBUTES, FILE_FLAG_BACKUP_SEMANTICS,
-            FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE, FILE_SHARE_MODE, FILE_SHARE_READ,
-            FILE_SHARE_WRITE, OPEN_EXISTING, WIN32_FIND_DATAW,
-        },
+        Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile},
         System::{
             Pipes::ConnectNamedPipe,
             IO::{CancelIoEx, OVERLAPPED},
@@ -136,69 +125,6 @@ impl<
     }
 }
 
-/// Open or create a file with flags and mode.
-pub struct OpenFile {
-    pub(crate) path: U16CString,
-    pub(crate) access_mode: u32,
-    pub(crate) share_mode: FILE_SHARE_MODE,
-    pub(crate) security_attributes: *const SECURITY_ATTRIBUTES,
-    pub(crate) creation_mode: FILE_CREATION_DISPOSITION,
-    pub(crate) flags_and_attributes: FILE_FLAGS_AND_ATTRIBUTES,
-    pub(crate) error_code: u32,
-}
-
-impl OpenFile {
-    /// Create [`OpenFile`].
-    pub fn new(
-        path: U16CString,
-        access_mode: u32,
-        share_mode: FILE_SHARE_MODE,
-        security_attributes: *const SECURITY_ATTRIBUTES,
-        creation_mode: FILE_CREATION_DISPOSITION,
-        flags_and_attributes: FILE_FLAGS_AND_ATTRIBUTES,
-    ) -> Self {
-        Self {
-            path,
-            access_mode,
-            share_mode,
-            security_attributes,
-            creation_mode,
-            flags_and_attributes,
-            error_code: 0,
-        }
-    }
-
-    /// The result of [`GetLastError`]. It may not be 0 even if the operation is
-    /// successful.
-    pub fn last_os_error(&self) -> u32 {
-        self.error_code
-    }
-}
-
-impl OpCode for OpenFile {
-    fn op_type(&self) -> OpType {
-        OpType::Blocking
-    }
-
-    unsafe fn operate(mut self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let handle = CreateFileW(
-            self.path.as_ptr(),
-            self.access_mode,
-            self.share_mode,
-            self.security_attributes,
-            self.creation_mode,
-            self.flags_and_attributes,
-            0,
-        );
-        self.error_code = GetLastError();
-        if handle == INVALID_HANDLE_VALUE {
-            Poll::Ready(Err(io::Error::from_raw_os_error(self.error_code as _)))
-        } else {
-            Poll::Ready(Ok(handle as _))
-        }
-    }
-}
-
 impl OpCode for CloseFile {
     fn op_type(&self) -> OpType {
         OpType::Blocking
@@ -206,222 +132,6 @@ impl OpCode for CloseFile {
 
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(syscall!(BOOL, CloseHandle(self.fd as _))? as _))
-    }
-}
-
-/// A mixture of [`BY_HANDLE_FILE_INFORMATION`], [`FILE_ATTRIBUTE_TAG_INFO`] and
-/// [`WIN32_FIND_DATAW`]. The field names follows Hungarian case, to make it
-/// look like Windows API.
-#[derive(Default, Clone)]
-#[allow(non_snake_case, missing_docs)]
-pub struct FileMetadata {
-    pub dwFileAttributes: u32,
-    pub ftCreationTime: u64,
-    pub ftLastAccessTime: u64,
-    pub ftLastWriteTime: u64,
-    pub nFileSize: u64,
-    pub dwReparseTag: u32,
-    pub dwVolumeSerialNumber: Option<u32>,
-    pub nNumberOfLinks: Option<u32>,
-    pub nFileIndex: Option<u64>,
-}
-
-impl FileMetadata {
-    fn is_reparse_point(&self) -> bool {
-        self.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
-    }
-}
-
-const fn create_u64(high: u32, low: u32) -> u64 {
-    ((high as u64) << 32) | (low as u64)
-}
-
-const fn filetime_u64(t: FILETIME) -> u64 {
-    create_u64(t.dwHighDateTime, t.dwLowDateTime)
-}
-
-impl From<BY_HANDLE_FILE_INFORMATION> for FileMetadata {
-    fn from(value: BY_HANDLE_FILE_INFORMATION) -> Self {
-        Self {
-            dwFileAttributes: value.dwFileAttributes,
-            ftCreationTime: filetime_u64(value.ftCreationTime),
-            ftLastAccessTime: filetime_u64(value.ftLastAccessTime),
-            ftLastWriteTime: filetime_u64(value.ftLastWriteTime),
-            nFileSize: create_u64(value.nFileSizeHigh, value.nFileSizeLow),
-            dwReparseTag: 0,
-            dwVolumeSerialNumber: Some(value.dwVolumeSerialNumber),
-            nNumberOfLinks: Some(value.nNumberOfLinks),
-            nFileIndex: Some(create_u64(value.nFileIndexHigh, value.nFileIndexLow)),
-        }
-    }
-}
-
-impl From<WIN32_FIND_DATAW> for FileMetadata {
-    fn from(value: WIN32_FIND_DATAW) -> Self {
-        let mut this = Self {
-            dwFileAttributes: value.dwFileAttributes,
-            ftCreationTime: filetime_u64(value.ftCreationTime),
-            ftLastAccessTime: filetime_u64(value.ftLastAccessTime),
-            ftLastWriteTime: filetime_u64(value.ftLastWriteTime),
-            nFileSize: create_u64(value.nFileSizeHigh, value.nFileSizeLow),
-            dwReparseTag: 0,
-            dwVolumeSerialNumber: None,
-            nNumberOfLinks: None,
-            nFileIndex: None,
-        };
-        if this.is_reparse_point() {
-            this.dwReparseTag = value.dwReserved0;
-        }
-        this
-    }
-}
-
-/// Get metadata of an opened file.
-pub struct FileStat {
-    pub(crate) fd: RawFd,
-    pub(crate) stat: FileMetadata,
-}
-
-impl FileStat {
-    /// Create [`FileStat`].
-    pub fn new(fd: RawFd) -> Self {
-        Self {
-            fd,
-            stat: Default::default(),
-        }
-    }
-}
-
-impl OpCode for FileStat {
-    fn op_type(&self) -> OpType {
-        OpType::Blocking
-    }
-
-    unsafe fn operate(mut self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let mut stat = unsafe { std::mem::zeroed() };
-        syscall!(BOOL, GetFileInformationByHandle(self.fd as _, &mut stat))?;
-        self.stat = stat.into();
-        if self.stat.is_reparse_point() {
-            let mut tag: FILE_ATTRIBUTE_TAG_INFO = std::mem::zeroed();
-            syscall!(
-                BOOL,
-                GetFileInformationByHandleEx(
-                    self.fd as _,
-                    FileAttributeTagInfo,
-                    &mut tag as *mut _ as _,
-                    std::mem::size_of::<FILE_ATTRIBUTE_TAG_INFO>() as _
-                )
-            )?;
-            debug_assert_eq!(self.stat.dwFileAttributes, tag.FileAttributes);
-            self.stat.dwReparseTag = tag.ReparseTag;
-        }
-        Poll::Ready(Ok(0))
-    }
-
-    unsafe fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-impl IntoInner for FileStat {
-    type Inner = FileMetadata;
-
-    fn into_inner(self) -> Self::Inner {
-        self.stat
-    }
-}
-
-/// Get metadata from path.
-pub struct PathStat {
-    pub(crate) path: U16CString,
-    pub(crate) follow_symlink: bool,
-    pub(crate) stat: FileMetadata,
-}
-
-impl PathStat {
-    /// Create [`PathStat`].
-    pub fn new(path: U16CString, follow_symlink: bool) -> Self {
-        Self {
-            path,
-            follow_symlink,
-            stat: Default::default(),
-        }
-    }
-
-    unsafe fn open_and_stat(&self, optr: *mut OVERLAPPED) -> io::Result<FileMetadata> {
-        let mut flags = FILE_FLAG_BACKUP_SEMANTICS;
-        if !self.follow_symlink {
-            flags |= FILE_FLAG_OPEN_REPARSE_POINT;
-        }
-        let handle = syscall!(
-            HANDLE,
-            CreateFileW(
-                self.path.as_ptr(),
-                0,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                null(),
-                OPEN_EXISTING,
-                flags,
-                0
-            )
-        )?;
-        let handle = OwnedHandle::from_raw_handle(handle as _);
-        let mut op = FileStat::new(handle.as_raw_handle());
-        let op_pin = std::pin::Pin::new(&mut op);
-        let res = op_pin.operate(optr);
-        if let Poll::Ready(res) = res {
-            res.map(|_| op.into_inner())
-        } else {
-            unreachable!("FileStat could not return Poll::Pending")
-        }
-    }
-}
-
-impl OpCode for PathStat {
-    fn op_type(&self) -> OpType {
-        OpType::Blocking
-    }
-
-    unsafe fn operate(mut self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let res = match self.open_and_stat(optr) {
-            Ok(stat) => {
-                self.stat = stat;
-                Ok(0)
-            }
-            Err(e)
-                if [
-                    Some(ERROR_SHARING_VIOLATION as _),
-                    Some(ERROR_ACCESS_DENIED as _),
-                ]
-                .contains(&e.raw_os_error()) =>
-            {
-                let mut wfd: WIN32_FIND_DATAW = std::mem::zeroed();
-                let handle = syscall!(HANDLE, FindFirstFileW(self.path.as_ptr(), &mut wfd))?;
-                FindClose(handle);
-                self.stat = wfd.into();
-                let is_reparse = self.stat.is_reparse_point();
-                let surrogate = self.stat.dwReparseTag & 0x20000000 != 0;
-                if self.follow_symlink && is_reparse && surrogate {
-                    Err(e)
-                } else {
-                    Ok(0)
-                }
-            }
-            Err(e) => Err(e),
-        };
-        Poll::Ready(res)
-    }
-
-    unsafe fn cancel(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-impl IntoInner for PathStat {
-    type Inner = FileMetadata;
-
-    fn into_inner(self) -> Self::Inner {
-        self.stat
     }
 }
 

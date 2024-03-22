@@ -43,7 +43,6 @@ socket2 = { workspace = true }
 compio-buf = { workspace = true, features = ["arrayvec"] }
 aligned-array = "1.0.1"
 once_cell = { workspace = true }
-widestring = { workspace = true }
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Networking_WinSock",
