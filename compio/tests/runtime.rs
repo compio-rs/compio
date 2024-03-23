@@ -7,7 +7,6 @@ use compio::{
     fs::File,
     io::{AsyncReadAt, AsyncReadExt, AsyncWriteAt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    runtime::TryClone,
 };
 use tempfile::NamedTempFile;
 
@@ -47,7 +46,7 @@ async fn try_clone() {
     let (tx, (mut rx, _)) =
         futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
 
-    let mut tx = tx.try_clone().unwrap();
+    let mut tx = tx.clone();
     tx.write_all(DATA).await.0.unwrap();
 
     if let Err(e) = std::thread::spawn(move || {

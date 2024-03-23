@@ -4,10 +4,10 @@ use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
     impl_raw_fd,
     op::{BufResultExt, CloseFile, ReadAt, Sync, WriteAt},
-    AsRawFd,
+    SharedFd, ToSharedFd,
 };
 use compio_io::{AsyncReadAt, AsyncWriteAt};
-use compio_runtime::{impl_try_clone, Attacher, Runtime};
+use compio_runtime::{Attacher, Runtime};
 #[cfg(unix)]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
@@ -22,15 +22,15 @@ use crate::{Metadata, OpenOptions, Permissions};
 /// it was opened with. The `File` type provides **positional** read and write
 /// operations. The file does not maintain an internal cursor. The caller is
 /// required to specify an offset when issuing an operation.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct File {
-    inner: Attacher<std::fs::File>,
+    inner: Attacher<SharedFd>,
 }
 
 impl File {
     pub(crate) fn new(file: std::fs::File) -> io::Result<Self> {
         Ok(Self {
-            inner: Attacher::new(file)?,
+            inner: Attacher::new(SharedFd::new(file))?,
         })
     }
 
@@ -59,13 +59,20 @@ impl File {
     /// Close the file. If the returned future is dropped before polling, the
     /// file won't be closed.
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
-        // Make sure that self won't be dropped after `close` called.
-        // Users may call this method and drop the future immediately. In that way the
+        // Make sure that fd won't be dropped after `close` called.
+        // Users may call this method and drop the future immediately. In that way
         // `close` should be cancelled.
         let this = ManuallyDrop::new(self);
         async move {
-            let op = CloseFile::new(this.inner.as_raw_fd());
-            Runtime::current().submit(op).await.0?;
+            let fd = ManuallyDrop::into_inner(this)
+                .inner
+                .into_inner()
+                .take()
+                .await;
+            if let Some(fd) = fd {
+                let op = CloseFile::new(fd);
+                Runtime::current().submit(op).await.0?;
+            }
             Ok(())
         }
     }
@@ -73,10 +80,12 @@ impl File {
     /// Queries metadata about the underlying file.
     #[cfg(windows)]
     pub async fn metadata(&self) -> io::Result<Metadata> {
-        let file = self.inner.try_clone()?;
-        compio_runtime::spawn_blocking(move || file.metadata().map(Metadata::from_std))
-            .await
-            .unwrap_or_else(|e| resume_unwind(e))
+        let file = self.inner.clone();
+        compio_runtime::spawn_blocking(move || {
+            unsafe { file.to_file() }.metadata().map(Metadata::from_std)
+        })
+        .await
+        .unwrap_or_else(|e| resume_unwind(e))
     }
 
     /// Queries metadata about the underlying file.
@@ -90,8 +99,8 @@ impl File {
     /// Changes the permissions on the underlying file.
     #[cfg(windows)]
     pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
-        let file = self.inner.try_clone()?;
-        compio_runtime::spawn_blocking(move || file.set_permissions(perm.0))
+        let file = self.inner.clone();
+        compio_runtime::spawn_blocking(move || unsafe { file.to_file() }.set_permissions(perm.0))
             .await
             .unwrap_or_else(|e| resume_unwind(e))
     }
@@ -103,7 +112,7 @@ impl File {
 
         use compio_driver::syscall;
 
-        let file = self.inner.try_clone()?;
+        let file = self.inner.clone();
         compio_runtime::spawn_blocking(move || {
             syscall!(libc::fchmod(file.as_raw_fd(), perm.mode() as libc::mode_t))?;
             Ok(())
@@ -113,7 +122,7 @@ impl File {
     }
 
     async fn sync_impl(&self, datasync: bool) -> io::Result<()> {
-        let op = Sync::new(self.as_raw_fd(), datasync);
+        let op = Sync::new(self.to_shared_fd(), datasync);
         Runtime::current().submit(op).await.0?;
         Ok(())
     }
@@ -144,7 +153,7 @@ impl File {
 
 impl AsyncReadAt for File {
     async fn read_at<T: IoBufMut>(&self, buffer: T, pos: u64) -> BufResult<usize, T> {
-        let fd = self.as_raw_fd();
+        let fd = self.inner.to_shared_fd();
         let op = ReadAt::new(fd, pos, buffer);
         Runtime::current()
             .submit(op)
@@ -159,7 +168,7 @@ impl AsyncReadAt for File {
         buffer: T,
         pos: u64,
     ) -> BufResult<usize, T> {
-        let fd = self.as_raw_fd();
+        let fd = self.inner.to_shared_fd();
         let op = ReadVectoredAt::new(fd, pos, buffer);
         Runtime::current()
             .submit(op)
@@ -188,7 +197,7 @@ impl AsyncWriteAt for File {
 
 impl AsyncWriteAt for &File {
     async fn write_at<T: IoBuf>(&mut self, buffer: T, pos: u64) -> BufResult<usize, T> {
-        let fd = self.as_raw_fd();
+        let fd = self.inner.to_shared_fd();
         let op = WriteAt::new(fd, pos, buffer);
         Runtime::current().submit(op).await.into_inner()
     }
@@ -199,12 +208,10 @@ impl AsyncWriteAt for &File {
         buffer: T,
         pos: u64,
     ) -> BufResult<usize, T> {
-        let fd = self.as_raw_fd();
+        let fd = self.inner.to_shared_fd();
         let op = WriteVectoredAt::new(fd, pos, buffer);
         Runtime::current().submit(op).await.into_inner()
     }
 }
 
 impl_raw_fd!(File, inner);
-
-impl_try_clone!(File, inner);

@@ -3,7 +3,6 @@ use std::{future::Future, io, path::Path};
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::impl_try_clone;
 use socket2::{SockAddr, Type};
 
 use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, WriteHalf};
@@ -36,7 +35,7 @@ use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, WriteHalf};
 /// assert_eq!(buf, b"test");
 /// # });
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UnixListener {
     inner: Socket,
 }
@@ -90,8 +89,6 @@ impl UnixListener {
 
 impl_raw_fd!(UnixListener, inner);
 
-impl_try_clone!(UnixListener, inner);
-
 /// A Unix stream between two local sockets on Windows & WSL.
 ///
 /// A Unix stream can either be created by connecting to an endpoint, via the
@@ -111,7 +108,7 @@ impl_try_clone!(UnixListener, inner);
 /// stream.write("hello world!").await.unwrap();
 /// # })
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UnixStream {
     inner: Socket,
 }
@@ -305,5 +302,3 @@ fn fix_unix_socket_length(addr: &mut SockAddr) {
         addr.set_length(addr_len as _);
     }
 }
-
-impl_try_clone!(UnixStream, inner);
