@@ -11,6 +11,7 @@ use crate::pipe::{Receiver, Sender};
 /// A handle to the standard input stream of a process.
 ///
 /// See [`stdin`].
+#[derive(Debug, Clone)]
 pub struct Stdin(ManuallyDrop<Receiver>);
 
 impl Stdin {
@@ -41,6 +42,7 @@ impl AsRawFd for Stdin {
 /// A handle to the standard output stream of a process.
 ///
 /// See [`stdout`].
+#[derive(Debug, Clone)]
 pub struct Stdout(ManuallyDrop<Sender>);
 
 impl Stdout {
@@ -79,6 +81,7 @@ impl AsRawFd for Stdout {
 /// A handle to the standard output stream of a process.
 ///
 /// See [`stderr`].
+#[derive(Debug, Clone)]
 pub struct Stderr(ManuallyDrop<Sender>);
 
 impl Stderr {

@@ -326,7 +326,7 @@ enum PipeEnd {
 /// ```
 ///
 /// [`ENXIO`]: https://docs.rs/libc/latest/libc/constant.ENXIO.html
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Sender {
     file: File,
 }
@@ -469,7 +469,7 @@ impl FromRawFd for Sender {
 /// ```
 ///
 /// [`read_to_end`]: compio_io::AsyncReadExt::read_to_end
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Receiver {
     file: File,
 }
