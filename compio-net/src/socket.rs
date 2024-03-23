@@ -18,12 +18,6 @@ pub struct Socket {
 }
 
 impl Socket {
-    pub(crate) fn from_shared_fd(fd: SharedFd) -> io::Result<Self> {
-        Ok(Self {
-            socket: Attacher::new(fd)?,
-        })
-    }
-
     pub fn from_socket2(socket: Socket2) -> io::Result<Self> {
         Ok(Self {
             socket: Attacher::new(SharedFd::new(socket))?,
@@ -111,13 +105,12 @@ impl Socket {
             this_socket.r#type()?,
             this_socket.protocol()?,
         )?;
-        let accept_sock = SharedFd::new(accept_sock);
-        let op = Accept::new(self.to_shared_fd(), accept_sock.clone());
+        let op = Accept::new(self.to_shared_fd(), accept_sock);
         let BufResult(res, op) = Runtime::current().submit(op).await;
         res?;
         op.update_context()?;
-        let addr = op.into_addr()?;
-        Ok((Self::from_shared_fd(accept_sock)?, addr))
+        let (accept_sock, addr) = op.into_addr()?;
+        Ok((Self::from_socket2(accept_sock)?, addr))
     }
 
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
