@@ -4,6 +4,7 @@ use std::{
     io,
     marker::PhantomPinned,
     net::Shutdown,
+    os::windows::io::AsRawSocket,
     pin::Pin,
     ptr::{null, null_mut},
     task::Poll,
@@ -232,14 +233,14 @@ const ACCEPT_BUFFER_SIZE: usize = ACCEPT_ADDR_BUFFER_SIZE * 2;
 /// Accept a connection.
 pub struct Accept {
     pub(crate) fd: SharedFd,
-    pub(crate) accept_fd: SharedFd,
+    pub(crate) accept_fd: socket2::Socket,
     pub(crate) buffer: Aligned<A8, [u8; ACCEPT_BUFFER_SIZE]>,
     _p: PhantomPinned,
 }
 
 impl Accept {
     /// Create [`Accept`]. `accept_fd` should not be bound.
-    pub fn new(fd: SharedFd, accept_fd: SharedFd) -> Self {
+    pub fn new(fd: SharedFd, accept_fd: socket2::Socket) -> Self {
         Self {
             fd,
             accept_fd,
@@ -254,7 +255,7 @@ impl Accept {
         syscall!(
             SOCKET,
             setsockopt(
-                self.accept_fd.as_raw_fd() as _,
+                self.accept_fd.as_raw_socket() as _,
                 SOL_SOCKET,
                 SO_UPDATE_ACCEPT_CONTEXT,
                 &fd as *const _ as _,
@@ -265,7 +266,7 @@ impl Accept {
     }
 
     /// Get the remote address from the inner buffer.
-    pub fn into_addr(self) -> io::Result<SockAddr> {
+    pub fn into_addr(self) -> io::Result<(socket2::Socket, SockAddr)> {
         let get_addrs_fn = GET_ADDRS
             .get_or_try_init(|| get_wsa_fn(self.fd.as_raw_fd(), WSAID_GETACCEPTEXSOCKADDRS))?
             .ok_or_else(|| {
@@ -290,7 +291,9 @@ impl Accept {
                 &mut remote_addr_len,
             );
         }
-        Ok(unsafe { SockAddr::new(*remote_addr.cast::<SOCKADDR_STORAGE>(), remote_addr_len) })
+        Ok((self.accept_fd, unsafe {
+            SockAddr::new(*remote_addr.cast::<SOCKADDR_STORAGE>(), remote_addr_len)
+        }))
     }
 }
 
@@ -304,7 +307,7 @@ impl OpCode for Accept {
         let mut received = 0;
         let res = accept_fn(
             self.fd.as_raw_fd() as _,
-            self.accept_fd.as_raw_fd() as _,
+            self.accept_fd.as_raw_socket() as _,
             self.get_unchecked_mut().buffer.as_mut_ptr() as _,
             0,
             ACCEPT_ADDR_BUFFER_SIZE as _,

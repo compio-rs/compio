@@ -161,13 +161,14 @@ impl Socket {
         let this_socket = unsafe { self.socket.to_socket() };
         let ty = this_socket.r#type()?;
         let protocol = this_socket.protocol()?;
-        let accept_sock = Self::new(domain, ty, protocol).await?;
-        let op = Accept::new(self.to_shared_fd(), accept_sock.to_shared_fd());
+        let accept_sock =
+            compio_runtime::spawn_blocking(move || Socket2::new(domain, ty, protocol)).await?;
+        let op = Accept::new(self.to_shared_fd(), accept_sock);
         let BufResult(res, op) = Runtime::current().submit(op).await;
         res?;
         op.update_context()?;
-        let addr = op.into_addr()?;
-        Ok((accept_sock, addr))
+        let (accept_sock, addr) = op.into_addr()?;
+        Ok((Self::from_socket2(accept_sock)?, addr))
     }
 
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
