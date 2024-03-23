@@ -4,9 +4,9 @@ use std::{
     mem::ManuallyDrop,
     os::{
         raw::c_void,
-        windows::prelude::{
-            AsRawHandle, AsRawSocket, FromRawHandle, FromRawSocket, IntoRawHandle, IntoRawSocket,
-            RawHandle,
+        windows::{
+            io::{OwnedHandle, OwnedSocket},
+            prelude::{AsRawHandle, AsRawSocket},
         },
     },
     pin::Pin,
@@ -44,7 +44,7 @@ pub(crate) use windows_sys::Win32::Networking::WinSock::{
 /// On windows, handle and socket are in the same size.
 /// Both of them could be attached to an IOCP.
 /// Therefore, both could be seen as fd.
-pub type RawFd = RawHandle;
+pub type RawFd = isize;
 
 /// Extracts raw fds.
 pub trait AsRawFd {
@@ -52,58 +52,45 @@ pub trait AsRawFd {
     fn as_raw_fd(&self) -> RawFd;
 }
 
-/// Construct IO objects from raw fds.
-pub trait FromRawFd {
-    /// Constructs an IO object from the specified raw fd.
-    ///
-    /// # Safety
-    ///
-    /// The `fd` passed in must:
-    ///   - be a valid open handle or socket,
-    ///   - be opened with `FILE_FLAG_OVERLAPPED` if it's a file handle,
-    ///   - have not been attached to a driver.
-    unsafe fn from_raw_fd(fd: RawFd) -> Self;
+/// Owned handle or socket on Windows.
+#[derive(Debug)]
+pub enum OwnedFd {
+    /// Win32 handle.
+    File(OwnedHandle),
+    /// Windows socket handle.
+    Socket(OwnedSocket),
 }
 
-/// Consumes an object and acquire ownership of its raw fd.
-pub trait IntoRawFd {
-    /// Consumes this object, returning the raw underlying fd.
-    fn into_raw_fd(self) -> RawFd;
-}
-
-impl AsRawFd for std::fs::File {
+impl AsRawFd for OwnedFd {
     fn as_raw_fd(&self) -> RawFd {
-        self.as_raw_handle()
+        match self {
+            Self::File(fd) => fd.as_raw_handle() as _,
+            Self::Socket(s) => s.as_raw_socket() as _,
+        }
     }
 }
 
-impl AsRawFd for socket2::Socket {
-    fn as_raw_fd(&self) -> RawFd {
-        self.as_raw_socket() as _
+impl From<OwnedHandle> for OwnedFd {
+    fn from(value: OwnedHandle) -> Self {
+        Self::File(value)
     }
 }
 
-impl FromRawFd for std::fs::File {
-    unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self::from_raw_handle(fd)
+impl From<std::fs::File> for OwnedFd {
+    fn from(value: std::fs::File) -> Self {
+        Self::File(OwnedHandle::from(value))
     }
 }
 
-impl FromRawFd for socket2::Socket {
-    unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self::from_raw_socket(fd as _)
+impl From<OwnedSocket> for OwnedFd {
+    fn from(value: OwnedSocket) -> Self {
+        Self::Socket(value)
     }
 }
 
-impl IntoRawFd for std::fs::File {
-    fn into_raw_fd(self) -> RawFd {
-        self.into_raw_handle()
-    }
-}
-
-impl IntoRawFd for socket2::Socket {
-    fn into_raw_fd(self) -> RawFd {
-        self.into_raw_socket() as _
+impl From<socket2::Socket> for OwnedFd {
+    fn from(value: socket2::Socket) -> Self {
+        Self::Socket(OwnedSocket::from(value))
     }
 }
 
@@ -298,7 +285,7 @@ impl Driver {
 
 impl AsRawFd for Driver {
     fn as_raw_fd(&self) -> RawFd {
-        self.port.as_raw_handle()
+        self.port.as_raw_handle() as _
     }
 }
 
