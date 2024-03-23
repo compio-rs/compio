@@ -20,12 +20,6 @@ pub struct Socket {
 }
 
 impl Socket {
-    pub(crate) fn from_shared_fd(fd: SharedFd) -> io::Result<Self> {
-        Ok(Self {
-            socket: Attacher::new(fd)?,
-        })
-    }
-
     pub fn from_socket2(socket: Socket2) -> io::Result<Self> {
         Ok(Self {
             socket: Attacher::new(SharedFd::new(socket))?,
@@ -52,7 +46,7 @@ impl Socket {
 
     #[cfg(unix)]
     pub async fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
-        use compio_driver::FromRawFd;
+        use std::os::fd::FromRawFd;
 
         #[allow(unused_mut)]
         let mut ty: i32 = ty.into();
@@ -144,9 +138,9 @@ impl Socket {
 
     #[cfg(unix)]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
-        use compio_driver::FromRawFd;
+        use std::os::fd::FromRawFd;
 
-        let op = Accept::new(self.as_raw_fd());
+        let op = Accept::new(self.to_shared_fd());
         let BufResult(res, op) = Runtime::current().submit(op).await;
         let accept_sock = unsafe { Socket2::from_raw_fd(res? as _) };
         if cfg!(all(

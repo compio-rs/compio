@@ -28,7 +28,7 @@ pub struct File {
 }
 
 impl File {
-    pub(crate) fn new(file: std::fs::File) -> io::Result<Self> {
+    pub(crate) fn from_std(file: std::fs::File) -> io::Result<Self> {
         Ok(Self {
             inner: Attacher::new(SharedFd::new(file))?,
         })
@@ -91,7 +91,7 @@ impl File {
     /// Queries metadata about the underlying file.
     #[cfg(unix)]
     pub async fn metadata(&self) -> io::Result<Metadata> {
-        let op = FileStat::new(self.as_raw_fd());
+        let op = FileStat::new(self.to_shared_fd());
         let BufResult(res, op) = Runtime::current().submit(op).await;
         res.map(|_| Metadata::from_stat(op.into_inner()))
     }
@@ -110,7 +110,7 @@ impl File {
     pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
         use std::os::unix::fs::PermissionsExt;
 
-        use compio_driver::syscall;
+        use compio_driver::{syscall, AsRawFd};
 
         let file = self.inner.clone();
         compio_runtime::spawn_blocking(move || {

@@ -1,6 +1,6 @@
-use std::{io, path::Path};
+use std::{io, os::fd::FromRawFd, path::Path};
 
-use compio_driver::{op::OpenFile, FromRawFd, RawFd};
+use compio_driver::{op::OpenFile, RawFd};
 use compio_runtime::Runtime;
 
 use crate::{path_string, File};
@@ -88,6 +88,6 @@ impl OpenOptions {
         let p = path_string(p)?;
         let op = OpenFile::new(p, flags, self.mode);
         let fd = Runtime::current().submit(op).await.0? as RawFd;
-        File::new(unsafe { std::fs::File::from_raw_fd(fd) })
+        File::from_std(unsafe { std::fs::File::from_raw_fd(fd) })
     }
 }

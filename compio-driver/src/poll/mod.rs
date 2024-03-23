@@ -1,6 +1,6 @@
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 #[allow(unused_imports)]
-pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
+pub use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     io::{self, Read, Write},

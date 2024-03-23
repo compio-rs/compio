@@ -111,6 +111,22 @@ impl SharedFd {
     }
 }
 
+#[cfg(unix)]
+#[doc(hidden)]
+impl SharedFd {
+    pub unsafe fn to_file(&self) -> ManuallyDrop<std::fs::File> {
+        use std::os::fd::FromRawFd;
+
+        ManuallyDrop::new(std::fs::File::from_raw_fd(self.as_raw_fd() as _))
+    }
+
+    pub unsafe fn to_socket(&self) -> ManuallyDrop<socket2::Socket> {
+        use std::os::fd::FromRawFd;
+
+        ManuallyDrop::new(socket2::Socket::from_raw_fd(self.as_raw_fd() as _))
+    }
+}
+
 impl AsRawFd for SharedFd {
     fn as_raw_fd(&self) -> RawFd {
         self.0.fd.as_raw_fd()

@@ -1,7 +1,7 @@
-use std::{io, mem::ManuallyDrop};
+use std::{io, mem::ManuallyDrop, os::fd::FromRawFd};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_driver::{AsRawFd, FromRawFd, RawFd};
+use compio_driver::{AsRawFd, RawFd};
 use compio_io::{AsyncRead, AsyncWrite};
 
 #[cfg(doc)]
