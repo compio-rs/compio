@@ -102,7 +102,9 @@ impl OpCode for FileStat {
         }
         #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
         {
-            Poll::Ready(Ok(syscall!(libc::fstat(self.fd, &mut self.stat))? as _))
+            Poll::Ready(Ok(
+                syscall!(libc::fstat(self.fd.as_raw_fd(), &mut self.stat))? as _,
+            ))
         }
     }
 }
@@ -283,7 +285,7 @@ impl OpCode for Sync {
             target_os = "netbsd"
         )))]
         {
-            Poll::Ready(Ok(syscall!(libc::fsync(self.fd))? as _))
+            Poll::Ready(Ok(syscall!(libc::fsync(self.fd.as_raw_fd()))? as _))
         }
     }
 }
