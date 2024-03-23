@@ -102,7 +102,9 @@ impl OpCode for FileStat {
         }
         #[cfg(not(any(target_os = "linux", target_os = "android")))]
         {
-            Poll::Ready(Ok(syscall!(libc::fstat(self.fd, &mut self.stat))? as _))
+            Poll::Ready(Ok(
+                syscall!(libc::fstat(self.fd.as_raw_fd(), &mut self.stat))? as _,
+            ))
         }
     }
 }
@@ -299,7 +301,7 @@ impl OpCode for Sync {
             target_os = "netbsd"
         )))]
         {
-            Poll::Ready(Ok(syscall!(libc::fsync(self.fd))? as _))
+            Poll::Ready(Ok(syscall!(libc::fsync(self.fd.as_raw_fd()))? as _))
         }
     }
 }
