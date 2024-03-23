@@ -7,7 +7,7 @@ mod iour;
 pub(crate) mod op;
 
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
-pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
+pub use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::{io, task::Poll, time::Duration};
 
 pub use driver_type::DriverType;

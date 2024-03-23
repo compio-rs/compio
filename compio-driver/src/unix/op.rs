@@ -6,7 +6,7 @@ use compio_buf::{
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
-use crate::{op::*, sys::RawFd};
+use crate::{op::*, SharedFd};
 
 /// Open or create a file with flags and mode.
 pub struct OpenFile {
@@ -46,7 +46,7 @@ pub(crate) const fn statx_to_stat(statx: libc::statx) -> libc::stat {
 
 /// Read a file at specified position into vectored buffer.
 pub struct ReadVectoredAt<T: IoVectoredBufMut> {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: SharedFd,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSliceMut>,
@@ -55,7 +55,7 @@ pub struct ReadVectoredAt<T: IoVectoredBufMut> {
 
 impl<T: IoVectoredBufMut> ReadVectoredAt<T> {
     /// Create [`ReadVectoredAt`].
-    pub fn new(fd: RawFd, offset: u64, buffer: T) -> Self {
+    pub fn new(fd: SharedFd, offset: u64, buffer: T) -> Self {
         Self {
             fd,
             offset,
@@ -76,7 +76,7 @@ impl<T: IoVectoredBufMut> IntoInner for ReadVectoredAt<T> {
 
 /// Write a file at specified position from vectored buffer.
 pub struct WriteVectoredAt<T: IoVectoredBuf> {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: SharedFd,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSlice>,
@@ -85,7 +85,7 @@ pub struct WriteVectoredAt<T: IoVectoredBuf> {
 
 impl<T: IoVectoredBuf> WriteVectoredAt<T> {
     /// Create [`WriteVectoredAt`]
-    pub fn new(fd: RawFd, offset: u64, buffer: T) -> Self {
+    pub fn new(fd: SharedFd, offset: u64, buffer: T) -> Self {
         Self {
             fd,
             offset,
@@ -116,7 +116,7 @@ impl ShutdownSocket {
 
 /// Accept a connection.
 pub struct Accept {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: SharedFd,
     pub(crate) buffer: sockaddr_storage,
     pub(crate) addr_len: socklen_t,
     _p: PhantomPinned,
@@ -124,7 +124,7 @@ pub struct Accept {
 
 impl Accept {
     /// Create [`Accept`].
-    pub fn new(fd: RawFd) -> Self {
+    pub fn new(fd: SharedFd) -> Self {
         Self {
             fd,
             buffer: unsafe { std::mem::zeroed() },
@@ -141,14 +141,14 @@ impl Accept {
 
 /// Receive data from remote.
 pub struct Recv<T: IoBufMut> {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: SharedFd,
     pub(crate) buffer: T,
     _p: PhantomPinned,
 }
 
 impl<T: IoBufMut> Recv<T> {
     /// Create [`Recv`].
-    pub fn new(fd: RawFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -167,7 +167,7 @@ impl<T: IoBufMut> IntoInner for Recv<T> {
 
 /// Receive data from remote into vectored buffer.
 pub struct RecvVectored<T: IoVectoredBufMut> {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: SharedFd,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSliceMut>,
     _p: PhantomPinned,
@@ -175,7 +175,7 @@ pub struct RecvVectored<T: IoVectoredBufMut> {
 
 impl<T: IoVectoredBufMut> RecvVectored<T> {
     /// Create [`RecvVectored`].
-    pub fn new(fd: RawFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -195,14 +195,14 @@ impl<T: IoVectoredBufMut> IntoInner for RecvVectored<T> {
 
 /// Send data to remote.
 pub struct Send<T: IoBuf> {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: SharedFd,
     pub(crate) buffer: T,
     _p: PhantomPinned,
 }
 
 impl<T: IoBuf> Send<T> {
     /// Create [`Send`].
-    pub fn new(fd: RawFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -221,7 +221,7 @@ impl<T: IoBuf> IntoInner for Send<T> {
 
 /// Send data to remote from vectored buffer.
 pub struct SendVectored<T: IoVectoredBuf> {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: SharedFd,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSlice>,
     _p: PhantomPinned,
@@ -229,7 +229,7 @@ pub struct SendVectored<T: IoVectoredBuf> {
 
 impl<T: IoVectoredBuf> SendVectored<T> {
     /// Create [`SendVectored`].
-    pub fn new(fd: RawFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd, buffer: T) -> Self {
         Self {
             fd,
             buffer,

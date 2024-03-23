@@ -974,7 +974,7 @@ impl ServerOptions {
         )?;
 
         Ok(NamedPipeServer {
-            handle: File::new(unsafe { std::fs::File::from_raw_handle(h as _) })?,
+            handle: File::from_std(unsafe { std::fs::File::from_raw_handle(h as _) })?,
         })
     }
 }

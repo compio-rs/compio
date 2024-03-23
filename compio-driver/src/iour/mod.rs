@@ -1,7 +1,7 @@
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 #[allow(unused_imports)]
-pub use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::{io, os::fd::OwnedFd, pin::Pin, ptr::NonNull, sync::Arc, task::Poll, time::Duration};
+pub use std::os::fd::{AsRawFd, OwnedFd, RawFd};
+use std::{io, os::fd::FromRawFd, pin::Pin, ptr::NonNull, sync::Arc, task::Poll, time::Duration};
 
 use compio_log::{instrument, trace, warn};
 use crossbeam_queue::SegQueue;

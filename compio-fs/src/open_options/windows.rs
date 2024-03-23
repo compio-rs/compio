@@ -61,6 +61,6 @@ impl OpenOptions {
         opt.attributes(FILE_FLAG_OVERLAPPED);
         let p = p.as_ref().to_path_buf();
         let file = compio_runtime::spawn_blocking(move || opt.open(p)).await?;
-        File::new(file)
+        File::from_std(file)
     }
 }

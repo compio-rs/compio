@@ -1,15 +1,20 @@
 //! Unix pipe types.
 
-use std::{future::Future, io, path::Path};
+use std::{
+    future::Future,
+    io,
+    os::fd::{FromRawFd, IntoRawFd},
+    path::Path,
+};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{
     impl_raw_fd,
     op::{BufResultExt, Recv, RecvVectored, Send, SendVectored},
-    syscall, AsRawFd, FromRawFd, IntoRawFd,
+    syscall, AsRawFd, RawFd, ToSharedFd,
 };
 use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::{impl_try_clone, Runtime};
+use compio_runtime::Runtime;
 
 use crate::File;
 
@@ -29,8 +34,12 @@ use crate::File;
 /// ```
 pub fn anonymous() -> io::Result<(Receiver, Sender)> {
     let (receiver, sender) = os_pipe::pipe()?;
-    let receiver = Receiver::from_file(unsafe { File::from_raw_fd(receiver.into_raw_fd()) })?;
-    let sender = Sender::from_file(unsafe { File::from_raw_fd(sender.into_raw_fd()) })?;
+    let receiver = Receiver::from_file(File::from_std(unsafe {
+        std::fs::File::from_raw_fd(receiver.into_raw_fd())
+    })?)?;
+    let sender = Sender::from_file(File::from_std(unsafe {
+        std::fs::File::from_raw_fd(sender.into_raw_fd())
+    })?)?;
     Ok((receiver, sender))
 }
 
@@ -359,13 +368,13 @@ impl AsyncWrite for Sender {
 
 impl AsyncWrite for &Sender {
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        let fd = self.as_raw_fd();
+        let fd = self.to_shared_fd();
         let op = Send::new(fd, buffer);
         Runtime::current().submit(op).await.into_inner()
     }
 
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        let fd = self.as_raw_fd();
+        let fd = self.to_shared_fd();
         let op = SendVectored::new(fd, buffer);
         Runtime::current().submit(op).await.into_inner()
     }
@@ -383,7 +392,13 @@ impl AsyncWrite for &Sender {
 
 impl_raw_fd!(Sender, file);
 
-impl_try_clone!(Sender, file);
+impl FromRawFd for Sender {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
+        Self {
+            file: File::from_std(std::fs::File::from_raw_fd(fd)).expect("attach should be Ok"),
+        }
+    }
+}
 
 /// Reading end of a Unix pipe.
 ///
@@ -484,7 +499,7 @@ impl AsyncRead for Receiver {
 
 impl AsyncRead for &Receiver {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
-        let fd = self.as_raw_fd();
+        let fd = self.to_shared_fd();
         let op = Recv::new(fd, buffer);
         Runtime::current()
             .submit(op)
@@ -494,7 +509,7 @@ impl AsyncRead for &Receiver {
     }
 
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buffer: V) -> BufResult<usize, V> {
-        let fd = self.as_raw_fd();
+        let fd = self.to_shared_fd();
         let op = RecvVectored::new(fd, buffer);
         Runtime::current()
             .submit(op)
@@ -506,7 +521,13 @@ impl AsyncRead for &Receiver {
 
 impl_raw_fd!(Receiver, file);
 
-impl_try_clone!(Receiver, file);
+impl FromRawFd for Receiver {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
+        Self {
+            file: File::from_std(std::fs::File::from_raw_fd(fd)).expect("attach should be Ok"),
+        }
+    }
+}
 
 /// Checks if file is a FIFO
 async fn is_fifo(file: &File) -> io::Result<bool> {
