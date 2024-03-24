@@ -23,7 +23,7 @@ use crate::{syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder};
 
 pub(crate) mod op;
 
-pub(crate) use crate::unix::RawOp;
+pub(crate) use crate::{op::Interest, unix::RawOp};
 
 /// Abstraction of operations.
 pub trait OpCode {
@@ -86,15 +86,6 @@ pub struct WaitArg {
     pub fd: RawFd,
     /// The interest to be registered.
     pub interest: Interest,
-}
-
-/// The interest of the operation
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Interest {
-    /// Represents a read operation.
-    Readable,
-    /// Represents a write operation.
-    Writable,
 }
 
 #[derive(Debug, Default)]

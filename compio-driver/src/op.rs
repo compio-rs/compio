@@ -16,7 +16,7 @@ pub use crate::sys::op::{
 };
 #[cfg(unix)]
 pub use crate::sys::op::{
-    FileStat, OpenFile, PathStat, PollRead, PollWrite, ReadVectoredAt, WriteVectoredAt,
+    FileStat, Interest, OpenFile, PathStat, PollOnce, ReadVectoredAt, WriteVectoredAt,
 };
 use crate::sys::{sockaddr_storage, socklen_t, RawFd};
 

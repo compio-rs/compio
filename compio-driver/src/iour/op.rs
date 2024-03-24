@@ -488,18 +488,12 @@ impl<T: IoVectoredBuf> IntoInner for SendToVectored<T> {
     }
 }
 
-impl OpCode for PollRead {
+impl OpCode for PollOnce {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        opcode::PollAdd::new(Fd(self.fd), libc::POLLIN as _)
-            .build()
-            .into()
-    }
-}
-
-impl OpCode for PollWrite {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        opcode::PollAdd::new(Fd(self.fd), libc::POLLOUT as _)
-            .build()
-            .into()
+        let flags = match self.interest {
+            Interest::Readable => libc::POLLIN,
+            Interest::Writable => libc::POLLOUT,
+        };
+        opcode::PollAdd::new(Fd(self.fd), flags as _).build().into()
     }
 }

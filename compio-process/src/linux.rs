@@ -1,6 +1,6 @@
 use std::{io, process};
 
-use compio_driver::op::PollRead;
+use compio_driver::op::{Interest, PollOnce};
 use compio_runtime::Runtime;
 
 pub async fn child_wait(mut child: process::Child) -> io::Result<process::ExitStatus> {
@@ -15,7 +15,7 @@ pub async fn child_wait(mut child: process::Child) -> io::Result<process::ExitSt
     #[cfg(not(feature = "linux_pidfd"))]
     let fd = None;
     if let Some(fd) = fd {
-        let op = PollRead::new(fd);
+        let op = PollOnce::new(fd, Interest::Readable);
         Runtime::current().submit(op).await.0?;
         child.wait()
     } else {
