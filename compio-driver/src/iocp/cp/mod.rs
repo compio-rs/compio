@@ -158,7 +158,7 @@ impl CompletionPort {
                         )
                     ) {
                         error!(
-                            "fail to repost entry ({}, {}, {:p}) to driver {:p}: {:?}",
+                            "fail to repost entry ({}, {}, {:p}) to driver {:x}: {:?}",
                             entry.dwNumberOfBytesTransferred,
                             entry.lpCompletionKey,
                             entry.lpOverlapped,

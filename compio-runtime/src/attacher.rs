@@ -1,7 +1,3 @@
-#[cfg(unix)]
-use std::os::fd::OwnedFd;
-#[cfg(windows)]
-use std::os::windows::prelude::{OwnedHandle, OwnedSocket};
 #[cfg(feature = "once_cell_try")]
 use std::sync::OnceLock;
 use std::{
@@ -11,8 +7,6 @@ use std::{
 
 use compio_buf::IntoInner;
 use compio_driver::AsRawFd;
-#[doc(hidden)]
-pub use compio_driver::{FromRawFd, IntoRawFd, RawFd};
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 
@@ -52,33 +46,6 @@ impl<S: AsRawFd> Attacher<S> {
     }
 }
 
-impl<S: IntoRawFd> IntoRawFd for Attacher<S> {
-    fn into_raw_fd(self) -> RawFd {
-        self.source.into_raw_fd()
-    }
-}
-
-impl<S: FromRawFd> FromRawFd for Attacher<S> {
-    unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self {
-            source: S::from_raw_fd(fd),
-            once: OnceLock::from(()),
-        }
-    }
-}
-
-impl<S: TryClone> TryClone for Attacher<S> {
-    /// Try clone self with the cloned source. The attach state will be
-    /// reserved.
-    fn try_clone(&self) -> io::Result<Self> {
-        let source = self.source.try_clone()?;
-        Ok(Self {
-            source,
-            once: self.once.clone(),
-        })
-    }
-}
-
 impl<S> IntoInner for Attacher<S> {
     type Inner = S;
 
@@ -99,57 +66,4 @@ impl<S> DerefMut for Attacher<S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.source
     }
-}
-
-/// Duplicatable file or socket.
-pub trait TryClone: Sized {
-    /// Duplicate the source.
-    fn try_clone(&self) -> io::Result<Self>;
-}
-
-impl TryClone for std::fs::File {
-    fn try_clone(&self) -> io::Result<Self> {
-        std::fs::File::try_clone(self)
-    }
-}
-
-impl TryClone for socket2::Socket {
-    fn try_clone(&self) -> io::Result<Self> {
-        socket2::Socket::try_clone(self)
-    }
-}
-
-#[cfg(windows)]
-impl TryClone for OwnedHandle {
-    fn try_clone(&self) -> io::Result<Self> {
-        OwnedHandle::try_clone(self)
-    }
-}
-
-#[cfg(windows)]
-impl TryClone for OwnedSocket {
-    fn try_clone(&self) -> io::Result<Self> {
-        OwnedSocket::try_clone(self)
-    }
-}
-
-#[cfg(unix)]
-impl TryClone for OwnedFd {
-    fn try_clone(&self) -> io::Result<Self> {
-        OwnedFd::try_clone(self)
-    }
-}
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! impl_try_clone {
-    ($t:ty, $inner:ident) => {
-        impl $crate::TryClone for $t {
-            fn try_clone(&self) -> ::std::io::Result<Self> {
-                Ok(Self {
-                    $inner: self.$inner.try_clone()?,
-                })
-            }
-        }
-    };
 }

@@ -29,6 +29,9 @@ mod unix;
 mod asyncify;
 pub use asyncify::*;
 
+mod fd;
+pub use fd::*;
+
 cfg_if::cfg_if! {
     if #[cfg(windows)] {
         #[path = "iocp/mod.rs"]
@@ -111,16 +114,9 @@ macro_rules! impl_raw_fd {
                 self.$inner.as_raw_fd()
             }
         }
-        impl $crate::FromRawFd for $t {
-            unsafe fn from_raw_fd(fd: $crate::RawFd) -> Self {
-                Self {
-                    $inner: $crate::FromRawFd::from_raw_fd(fd),
-                }
-            }
-        }
-        impl $crate::IntoRawFd for $t {
-            fn into_raw_fd(self) -> $crate::RawFd {
-                self.$inner.into_raw_fd()
+        impl $crate::ToSharedFd for $t {
+            fn to_shared_fd(&self) -> $crate::SharedFd {
+                self.$inner.to_shared_fd()
             }
         }
     };
