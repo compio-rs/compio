@@ -14,7 +14,7 @@ use libc::{pread64 as pread, preadv64 as preadv, pwrite64 as pwrite, pwritev64 a
 use polling::Event;
 use socket2::SockAddr;
 
-use super::{sockaddr_storage, socklen_t, syscall, Decision, Interest, OpCode, RawFd};
+use super::{sockaddr_storage, socklen_t, syscall, Decision, OpCode, RawFd};
 use crate::op::*;
 pub use crate::unix::op::*;
 

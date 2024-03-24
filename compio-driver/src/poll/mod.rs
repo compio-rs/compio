@@ -19,11 +19,11 @@ pub(crate) use libc::{sockaddr_storage, socklen_t};
 use polling::{Event, Events, PollMode, Poller};
 use slab::Slab;
 
-use crate::{syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder};
+use crate::{op::Interest, syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder};
 
 pub(crate) mod op;
 
-pub(crate) use crate::{op::Interest, unix::RawOp};
+pub(crate) use crate::unix::RawOp;
 
 /// Abstraction of operations.
 pub trait OpCode {
