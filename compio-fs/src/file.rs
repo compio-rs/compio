@@ -95,8 +95,9 @@ impl File {
     /// Changes the permissions on the underlying file.
     #[cfg(unix)]
     pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
-        use compio_driver::syscall;
         use std::os::unix::fs::PermissionsExt;
+
+        use compio_driver::syscall;
 
         let file = self.inner.try_clone()?;
         compio_runtime::spawn_blocking(move || {
