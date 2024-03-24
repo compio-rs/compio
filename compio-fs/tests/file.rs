@@ -1,7 +1,7 @@
 use std::io::prelude::*;
 
 use compio_fs::File;
-use compio_io::{AsyncReadAtExt, AsyncWriteAtExt};
+use compio_io::{AsyncReadAtExt, AsyncWriteAt, AsyncWriteAtExt};
 use tempfile::NamedTempFile;
 
 #[compio_macros::test]
@@ -49,6 +49,21 @@ async fn basic_write() {
 
     let file = std::fs::read(tempfile.path()).unwrap();
     assert_eq!(file, HELLO);
+}
+
+#[compio_macros::test]
+async fn writev() {
+    let tempfile = tempfile();
+
+    let mut file = File::create(tempfile.path()).await.unwrap();
+
+    let (write, _) = file.write_vectored_at([HELLO, HELLO], 0).await.unwrap();
+    assert_eq!(write, HELLO.len() * 2);
+    file.sync_all().await.unwrap();
+
+    let file = std::fs::read(tempfile.path()).unwrap();
+    assert_eq!(&file[..HELLO.len()], HELLO);
+    assert_eq!(&file[HELLO.len()..], HELLO);
 }
 
 #[compio_macros::test]
