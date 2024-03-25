@@ -174,7 +174,7 @@ impl<T: IoVectoredBuf> OpCode for WriteVectoredAt<T> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
         this.slices = unsafe { this.buffer.as_io_slices() };
-        opcode::Write::new(
+        opcode::Writev::new(
             Fd(this.fd),
             this.slices.as_ptr() as _,
             this.slices.len() as _,
