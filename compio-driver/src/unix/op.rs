@@ -246,3 +246,25 @@ impl<T: IoVectoredBuf> IntoInner for SendVectored<T> {
         self.buffer
     }
 }
+
+/// The interest to poll a file descriptor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Interest {
+    /// Represents a read operation.
+    Readable,
+    /// Represents a write operation.
+    Writable,
+}
+
+/// Poll a file descriptor for specified [`Interest`].
+pub struct PollOnce {
+    pub(crate) fd: RawFd,
+    pub(crate) interest: Interest,
+}
+
+impl PollOnce {
+    /// Create [`PollOnce`].
+    pub fn new(fd: RawFd, interest: Interest) -> Self {
+        Self { fd, interest }
+    }
+}

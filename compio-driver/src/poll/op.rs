@@ -669,3 +669,18 @@ impl<T: IoVectoredBuf> IntoInner for SendToVectored<T> {
         self.buffer
     }
 }
+
+impl OpCode for PollOnce {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::wait_for(self.fd, self.interest))
+    }
+
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+        match self.interest {
+            Interest::Readable => debug_assert!(event.readable),
+            Interest::Writable => debug_assert!(event.writable),
+        }
+
+        Poll::Ready(Ok(0))
+    }
+}

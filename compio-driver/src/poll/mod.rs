@@ -19,7 +19,7 @@ pub(crate) use libc::{sockaddr_storage, socklen_t};
 use polling::{Event, Events, PollMode, Poller};
 use slab::Slab;
 
-use crate::{syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder};
+use crate::{op::Interest, syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder};
 
 pub(crate) mod op;
 
@@ -86,15 +86,6 @@ pub struct WaitArg {
     pub fd: RawFd,
     /// The interest to be registered.
     pub interest: Interest,
-}
-
-/// The interest of the operation
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Interest {
-    /// Represents a read operation.
-    Readable,
-    /// Represents a write operation.
-    Writable,
 }
 
 #[derive(Debug, Default)]

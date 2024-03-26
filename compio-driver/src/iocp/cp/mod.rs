@@ -22,9 +22,10 @@ use compio_buf::arrayvec::ArrayVec;
 use compio_log::*;
 use windows_sys::Win32::{
     Foundation::{
-        RtlNtStatusToDosError, ERROR_BAD_COMMAND, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE,
-        ERROR_NO_DATA, FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING,
-        STATUS_SUCCESS,
+        GetLastError, RtlNtStatusToDosError, ERROR_BAD_COMMAND, ERROR_BROKEN_PIPE,
+        ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_NO_DATA, ERROR_PIPE_CONNECTED,
+        ERROR_PIPE_NOT_CONNECTED, FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING,
+        STATUS_SUCCESS, WAIT_IO_COMPLETION,
     },
     Storage::FileSystem::SetFileCompletionNotificationModes,
     System::{
@@ -117,17 +118,24 @@ impl CompletionPort {
             Some(timeout) => timeout.as_millis() as u32,
             None => INFINITE,
         };
-        syscall!(
-            BOOL,
+        let res = unsafe {
             GetQueuedCompletionStatusEx(
                 self.port.as_raw_handle() as _,
                 entries.as_mut_ptr(),
                 DEFAULT_CAPACITY as _,
                 &mut recv_count,
                 timeout,
-                0
+                1,
             )
-        )?;
+        };
+        if res == 0 {
+            let err = unsafe { GetLastError() };
+            if err == WAIT_IO_COMPLETION {
+                return Err(io::ErrorKind::Interrupted.into());
+            } else {
+                return Err(io::Error::from_raw_os_error(err as _));
+            }
+        }
         trace!("recv_count: {recv_count}");
         unsafe { entries.set_len(recv_count as _) };
 
@@ -176,7 +184,12 @@ impl CompletionPort {
             } else {
                 let error = unsafe { RtlNtStatusToDosError(overlapped.base.Internal as _) };
                 match error {
-                    ERROR_IO_INCOMPLETE | ERROR_HANDLE_EOF | ERROR_NO_DATA => Ok(0),
+                    ERROR_IO_INCOMPLETE
+                    | ERROR_HANDLE_EOF
+                    | ERROR_BROKEN_PIPE
+                    | ERROR_PIPE_CONNECTED
+                    | ERROR_PIPE_NOT_CONNECTED
+                    | ERROR_NO_DATA => Ok(0),
                     _ => Err(io::Error::from_raw_os_error(error as _)),
                 }
             };
