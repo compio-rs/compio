@@ -178,11 +178,7 @@ impl IntoInner for PathStat {
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        if cfg!(any(target_os = "linux", target_os = "android")) {
-            Ok(Decision::blocking_readable(self.fd))
-        } else {
-            Ok(Decision::wait_readable(self.fd))
-        }
+        Ok(Decision::blocking_readable(self.fd))
     }
 
     fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
@@ -197,11 +193,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
 
 impl<T: IoVectoredBufMut> OpCode for ReadVectoredAt<T> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        if cfg!(any(target_os = "linux", target_os = "android")) {
-            Ok(Decision::blocking_readable(self.fd))
-        } else {
-            Ok(Decision::wait_readable(self.fd))
-        }
+        Ok(Decision::blocking_readable(self.fd))
     }
 
     fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
@@ -222,11 +214,7 @@ impl<T: IoVectoredBufMut> OpCode for ReadVectoredAt<T> {
 
 impl<T: IoBuf> OpCode for WriteAt<T> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        if cfg!(any(target_os = "linux", target_os = "android")) {
-            Ok(Decision::blocking_writable(self.fd))
-        } else {
-            Ok(Decision::wait_writable(self.fd))
-        }
+        Ok(Decision::blocking_writable(self.fd))
     }
 
     fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
@@ -246,11 +234,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
 
 impl<T: IoVectoredBuf> OpCode for WriteVectoredAt<T> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        if cfg!(any(target_os = "linux", target_os = "android")) {
-            Ok(Decision::blocking_writable(self.fd))
-        } else {
-            Ok(Decision::wait_writable(self.fd))
-        }
+        Ok(Decision::blocking_writable(self.fd))
     }
 
     fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {

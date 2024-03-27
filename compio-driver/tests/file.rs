@@ -31,12 +31,11 @@ fn open_file_op() -> impl OpCode {
 
     use compio_driver::op::OpenFile;
 
-    let mut flags = libc::O_CLOEXEC | libc::O_RDONLY;
-    if cfg!(not(any(target_os = "linux", target_os = "android"))) {
-        flags |= libc::O_NONBLOCK;
-    }
-
-    OpenFile::new(CString::new("Cargo.toml").unwrap(), flags, 0o666)
+    OpenFile::new(
+        CString::new("Cargo.toml").unwrap(),
+        libc::O_CLOEXEC | libc::O_RDONLY,
+        0o666,
+    )
 }
 
 fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> (usize, O) {

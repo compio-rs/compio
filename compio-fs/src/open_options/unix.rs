@@ -81,14 +81,10 @@ impl OpenOptions {
     }
 
     pub async fn open(&self, p: impl AsRef<Path>) -> io::Result<File> {
-        let mut flags = libc::O_CLOEXEC
+        let flags = libc::O_CLOEXEC
             | self.get_access_mode()?
             | self.get_creation_mode()?
             | (self.custom_flags as libc::c_int & !libc::O_ACCMODE);
-        // Don't set nonblocking with epoll.
-        if cfg!(not(any(target_os = "linux", target_os = "android"))) {
-            flags |= libc::O_NONBLOCK;
-        }
         let p = path_string(p)?;
         let op = OpenFile::new(p, flags, self.mode);
         let fd = Runtime::current().submit(op).await.0? as RawFd;
