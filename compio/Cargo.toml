@@ -100,11 +100,7 @@ enable_log = ["compio-log/enable_log"]
 # Nightly features
 allocator_api = ["compio-buf/allocator_api", "compio-io?/allocator_api"]
 lazy_cell = ["compio-signal?/lazy_cell"]
-once_cell_try = [
-    "compio-driver/once_cell_try",
-    "compio-runtime?/once_cell_try",
-    "compio-signal?/once_cell_try",
-]
+once_cell_try = ["compio-driver/once_cell_try", "compio-signal?/once_cell_try"]
 read_buf = [
     "compio-buf/read_buf",
     "compio-io?/read_buf",

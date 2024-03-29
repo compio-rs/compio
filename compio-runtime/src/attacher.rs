@@ -1,5 +1,3 @@
-#[cfg(feature = "once_cell_try")]
-use std::sync::OnceLock;
 use std::{
     io,
     ops::{Deref, DerefMut},
@@ -7,42 +5,42 @@ use std::{
 
 use compio_buf::IntoInner;
 use compio_driver::AsRawFd;
-#[cfg(not(feature = "once_cell_try"))]
-use once_cell::sync::OnceCell as OnceLock;
 
 use crate::Runtime;
 
 /// Attach a handle to the driver of current thread.
 ///
-/// A handle can and only can attach once to one driver. The attacher will check
-/// if it is attached to the current driver.
+/// A handle can and only can attach once to one driver. The attacher will try
+/// to attach the handle.
 #[derive(Debug, Clone)]
 pub struct Attacher<S> {
     source: S,
-    // Make it thread safe.
-    once: OnceLock<()>,
+}
+
+impl<S> Attacher<S> {
+    /// Create [`Attacher`] without trying to attach the source.
+    ///
+    /// # Safety
+    ///
+    /// The user should ensure that the source is attached to the current
+    /// driver.
+    pub unsafe fn new_unchecked(source: S) -> Self {
+        Self { source }
+    }
 }
 
 impl<S: AsRawFd> Attacher<S> {
     /// Create [`Attacher`]. It tries to attach the source, and will return
     /// [`Err`] if it fails.
+    ///
+    /// ## Platform specific
+    /// * IOCP: a handle could not be attached more than once. If you want to
+    ///   clone the handle, create the [`Attacher`] before cloning.
     pub fn new(source: S) -> io::Result<Self> {
-        let this = Self {
-            source,
-            once: OnceLock::new(),
-        };
-        this.attach()?;
-        Ok(this)
-    }
-
-    /// Attach the source. This method could be called many times, but if the
-    /// action fails, it will try to attach the source during each call.
-    fn attach(&self) -> io::Result<()> {
         let r = Runtime::current();
         let inner = r.inner();
-        self.once
-            .get_or_try_init(|| inner.attach(self.source.as_raw_fd()))?;
-        Ok(())
+        inner.attach(source.as_raw_fd())?;
+        Ok(Self { source })
     }
 }
 
