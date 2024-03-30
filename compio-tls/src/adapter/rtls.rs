@@ -37,6 +37,7 @@ impl<S, C> MidStream<S, C> {
         &mut self.stream
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn handshake<D>(mut self) -> Result<TlsStream<S>, HandshakeError<S, C>>
     where
         C: DerefMut<Target = ConnectionCommon<D>>,
