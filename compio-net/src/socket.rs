@@ -45,8 +45,9 @@ impl Socket {
     pub async fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
         use compio_driver::FromRawFd;
 
+        #[allow(unused_mut)]
         let mut ty: i32 = ty.into();
-        if cfg!(any(
+        #[cfg(any(
             target_os = "android",
             target_os = "dragonfly",
             target_os = "freebsd",
@@ -56,7 +57,8 @@ impl Socket {
             target_os = "linux",
             target_os = "netbsd",
             target_os = "openbsd",
-        )) {
+        ))]
+        {
             ty |= libc::SOCK_CLOEXEC;
         }
 
