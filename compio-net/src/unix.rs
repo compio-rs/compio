@@ -45,14 +45,14 @@ impl UnixListener {
     /// Creates a new [`UnixListener`], which will be bound to the specified
     /// file path. The file path cannot yet exist, and will be cleaned up
     /// upon dropping [`UnixListener`]
-    pub fn bind(path: impl AsRef<Path>) -> io::Result<Self> {
-        Self::bind_addr(&SockAddr::unix(path)?)
+    pub async fn bind(path: impl AsRef<Path>) -> io::Result<Self> {
+        Self::bind_addr(&SockAddr::unix(path)?).await
     }
 
     /// Creates a new [`UnixListener`] with [`SockAddr`], which will be bound to
     /// the specified file path. The file path cannot yet exist, and will be
     /// cleaned up upon dropping [`UnixListener`]
-    pub fn bind_addr(addr: &SockAddr) -> io::Result<Self> {
+    pub async fn bind_addr(addr: &SockAddr) -> io::Result<Self> {
         if !addr.is_unix() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -60,7 +60,7 @@ impl UnixListener {
             ));
         }
 
-        let socket = Socket::bind(addr, Type::STREAM, None)?;
+        let socket = Socket::bind(addr, Type::STREAM, None).await?;
         socket.listen(1024)?;
         Ok(UnixListener { inner: socket })
     }
@@ -138,12 +138,12 @@ impl UnixStream {
         #[cfg(windows)]
         let socket = {
             let new_addr = empty_unix_socket();
-            Socket::bind(&new_addr, Type::STREAM, None)?
+            Socket::bind(&new_addr, Type::STREAM, None).await?
         };
         #[cfg(unix)]
         let socket = {
             use socket2::Domain;
-            Socket::new(Domain::UNIX, Type::STREAM, None)?
+            Socket::new(Domain::UNIX, Type::STREAM, None).await?
         };
         socket.connect_async(addr).await?;
         let unix_stream = UnixStream { inner: socket };

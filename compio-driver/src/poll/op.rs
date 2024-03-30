@@ -347,6 +347,18 @@ impl OpCode for HardLink {
     }
 }
 
+impl OpCode for CreateSocket {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::blocking_dummy())
+    }
+
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        Poll::Ready(Ok(
+            syscall!(libc::socket(self.domain, self.socket_type, self.protocol))? as _,
+        ))
+    }
+}
+
 impl OpCode for ShutdownSocket {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::blocking_dummy())

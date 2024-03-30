@@ -1,6 +1,8 @@
 use std::{future::Future, io, mem::ManuallyDrop};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+#[cfg(unix)]
+use compio_driver::op::CreateSocket;
 use compio_driver::{
     impl_raw_fd,
     op::{
@@ -32,8 +34,59 @@ impl Socket {
         self.socket.local_addr()
     }
 
-    pub fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
-        let socket = Socket2::new(domain, ty, protocol)?;
+    #[cfg(windows)]
+    pub async fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
+        let socket = compio_runtime::spawn_blocking(|| Socket2::new(domain, ty, protocol))?;
+        Self::from_socket2(socket)
+    }
+
+    #[cfg(unix)]
+    pub async fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
+        use compio_driver::FromRawFd;
+
+        let mut ty: i32 = ty.into();
+        if cfg!(any(
+            target_os = "android",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "fuchsia",
+            target_os = "hurd",
+            target_os = "illumos",
+            target_os = "linux",
+            target_os = "netbsd",
+            target_os = "openbsd",
+        )) {
+            ty |= libc::SOCK_CLOEXEC;
+        }
+
+        let op = CreateSocket::new(
+            domain.into(),
+            ty,
+            protocol.map(|p| p.into()).unwrap_or_default(),
+        );
+        let BufResult(res, _) = Runtime::current().submit(op).await;
+        let socket = unsafe { Socket2::from_raw_fd(res? as _) };
+        #[cfg(not(any(
+            target_os = "android",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "fuchsia",
+            target_os = "hurd",
+            target_os = "illumos",
+            target_os = "linux",
+            target_os = "netbsd",
+            target_os = "openbsd",
+            target_os = "espidf",
+            target_os = "vita",
+        )))]
+        socket.set_cloexec(true)?;
+        #[cfg(any(
+            target_os = "ios",
+            target_os = "macos",
+            target_os = "tvos",
+            target_os = "watchos",
+        ))]
+        socket.set_nosigpipe(true)?;
         // On Linux we use blocking socket
         // Newer kernels have the patch that allows to arm io_uring poll mechanism for
         // non blocking socket when there is no connections in listen queue
@@ -48,8 +101,8 @@ impl Socket {
         Self::from_socket2(socket)
     }
 
-    pub fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
-        let socket = Self::new(addr.domain(), ty, protocol)?;
+    pub async fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
+        let socket = Self::new(addr.domain(), ty, protocol).await?;
         socket.socket.bind(addr)?;
         Ok(socket)
     }
@@ -103,7 +156,8 @@ impl Socket {
             local_addr.domain(),
             self.socket.r#type()?,
             self.socket.protocol()?,
-        )?;
+        )
+        .await?;
         let op = Accept::new(self.as_raw_fd(), accept_sock.as_raw_fd() as _);
         let BufResult(res, op) = Runtime::current().submit(op).await;
         res?;

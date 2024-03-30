@@ -82,6 +82,7 @@ polling = ["dep:polling", "dep:os_pipe"]
 
 io-uring-sqe128 = []
 io-uring-cqe32 = []
+io-uring-socket = []
 
 iocp-global = []
 

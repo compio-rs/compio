@@ -8,7 +8,7 @@ use tempfile::tempdir;
 async fn main() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("unix-example.sock");
-    let listener = UnixListener::bind(&path).unwrap();
+    let listener = UnixListener::bind(&path).await.unwrap();
 
     let addr = listener.local_addr().unwrap();
 

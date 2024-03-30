@@ -1,4 +1,4 @@
-use std::{ffi::CString, marker::PhantomPinned, os::fd::RawFd, pin::Pin};
+use std::{ffi::CString, io, marker::PhantomPinned, os::fd::RawFd, pin::Pin};
 
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
@@ -12,7 +12,7 @@ use socket2::SockAddr;
 
 use super::OpCode;
 pub use crate::unix::op::*;
-use crate::{op::*, OpEntry};
+use crate::{op::*, syscall, OpEntry};
 
 impl<
     D: std::marker::Send + 'static,
@@ -251,6 +251,22 @@ impl OpCode for HardLink {
         )
         .build()
         .into()
+    }
+}
+
+impl OpCode for CreateSocket {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        if cfg!(feature = "io-uring-socket") {
+            opcode::Socket::new(self.domain, self.socket_type, self.protocol)
+                .build()
+                .into()
+        } else {
+            OpEntry::Blocking
+        }
+    }
+
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        Ok(syscall!(libc::socket(self.domain, self.socket_type, self.protocol))? as _)
     }
 }
 

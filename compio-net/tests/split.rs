@@ -66,7 +66,7 @@ async fn unix_split() {
         .unwrap();
     let sock_path = dir.path().join("connect.sock");
 
-    let listener = UnixListener::bind(&sock_path).unwrap();
+    let listener = UnixListener::bind(&sock_path).await.unwrap();
 
     let (client, (server, _)) =
         futures_util::try_join!(UnixStream::connect(&sock_path), listener.accept()).unwrap();
