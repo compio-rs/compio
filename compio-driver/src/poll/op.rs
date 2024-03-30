@@ -86,7 +86,7 @@ impl OpCode for FileStat {
     }
 
     fn on_event(mut self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
-        #[cfg(any(target_os = "linux", target_os = "android"))]
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
         {
             let mut s: libc::statx = unsafe { std::mem::zeroed() };
             static EMPTY_NAME: &[u8] = b"\0";
@@ -100,7 +100,7 @@ impl OpCode for FileStat {
             self.stat = statx_to_stat(s);
             Poll::Ready(Ok(0))
         }
-        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
         {
             Poll::Ready(Ok(syscall!(libc::fstat(self.fd, &mut self.stat))? as _))
         }
@@ -139,7 +139,7 @@ impl OpCode for PathStat {
     }
 
     fn on_event(mut self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
-        #[cfg(any(target_os = "linux", target_os = "android"))]
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
         {
             let mut flags = libc::AT_EMPTY_PATH;
             if !self.follow_symlink {
@@ -156,7 +156,7 @@ impl OpCode for PathStat {
             self.stat = statx_to_stat(s);
             Poll::Ready(Ok(0))
         }
-        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
         {
             let f = if self.follow_symlink {
                 libc::stat

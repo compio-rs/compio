@@ -22,23 +22,20 @@ impl OpenFile {
     }
 }
 
-#[cfg(all(
-    any(target_os = "linux", target_os = "android"),
-    not(target_env = "musl")
-))]
-pub type Statx = libc::statx;
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+pub(crate) type Statx = libc::statx;
 
-#[cfg(all(any(target_os = "linux", target_os = "android"), target_env = "musl"))]
+#[cfg(all(target_os = "linux", not(target_env = "gnu")))]
 #[repr(C)]
-pub struct StatxTimestamp {
+pub(crate) struct StatxTimestamp {
     pub tv_sec: i64,
     pub tv_nsec: u32,
     pub __statx_timestamp_pad1: [i32; 1],
 }
 
-#[cfg(all(any(target_os = "linux", target_os = "android"), target_env = "musl"))]
+#[cfg(all(target_os = "linux", not(target_env = "gnu")))]
 #[repr(C)]
-pub struct Statx {
+pub(crate) struct Statx {
     pub stx_mask: u32,
     pub stx_blksize: u32,
     pub stx_attributes: u64,
@@ -65,7 +62,7 @@ pub struct Statx {
     __statx_pad3: [u64; 12],
 }
 
-#[cfg(any(target_os = "linux", target_os = "android"))]
+#[cfg(target_os = "linux")]
 pub(crate) const fn statx_to_stat(statx: Statx) -> libc::stat {
     let mut stat: libc::stat = unsafe { std::mem::zeroed() };
     stat.st_dev = libc::makedev(statx.stx_dev_major, statx.stx_dev_minor);
