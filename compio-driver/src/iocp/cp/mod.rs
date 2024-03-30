@@ -141,13 +141,13 @@ impl CompletionPort {
         timeout: Option<Duration>,
         current_driver: Option<RawFd>,
     ) -> io::Result<impl Iterator<Item = Entry>> {
-        Ok(self.poll_raw(timeout)?.map(move |entry| {
+        Ok(self.poll_raw(timeout)?.filter_map(move |entry| {
             // Any thin pointer is OK because we don't use the type of opcode.
             let overlapped_ptr: *mut Overlapped<()> = entry.lpOverlapped.cast();
             let overlapped = unsafe { &*overlapped_ptr };
             if let Some(current_driver) = current_driver {
                 if overlapped.driver != current_driver {
-                    // Repose the entry to correct port.
+                    // Repost the entry to correct port.
                     if let Err(_e) = syscall!(
                         BOOL,
                         PostQueuedCompletionStatus(
@@ -166,6 +166,7 @@ impl CompletionPort {
                             _e
                         );
                     }
+                    return None;
                 }
             }
             let res = if matches!(
@@ -180,7 +181,7 @@ impl CompletionPort {
                     _ => Err(io::Error::from_raw_os_error(error as _)),
                 }
             };
-            Entry::new(overlapped.user_data, res)
+            Some(Entry::new(overlapped.user_data, res))
         }))
     }
 }
