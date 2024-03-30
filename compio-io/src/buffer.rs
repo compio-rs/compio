@@ -6,6 +6,8 @@ use std::{
     fmt::{self, Debug},
     future::Future,
 };
+#[cfg(debug_assertions)]
+use std::backtrace::Backtrace;
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit, Slice};
 
@@ -82,16 +84,24 @@ unsafe impl IoBufMut for Inner {
 /// +-------- Initialized (vec len) ---------^
 ///                      +------ slice ------^
 /// ```
-pub struct Buffer(Option<Inner>);
+pub struct Buffer {
+    inner: Option<Inner>,
+    #[cfg(debug_assertions)]
+    take_trace: Option<Backtrace>,
+}
 
 impl Buffer {
     /// Create a buffer with capacity.
     #[inline]
     pub fn with_capacity(cap: usize) -> Self {
-        Self(Some(Inner {
-            buf: Vec::with_capacity(cap),
-            pos: 0,
-        }))
+        Self {
+            inner: Some(Inner {
+                buf: Vec::with_capacity(cap),
+                pos: 0,
+            }),
+            #[cfg(debug_assertions)]
+            take_trace: None,
+        }
     }
 
     /// Get the initialized but not consumed part of the buffer.
@@ -189,24 +199,35 @@ impl Buffer {
 
     #[inline]
     fn take_inner(&mut self) -> Inner {
-        self.0.take().expect(MISSING_BUF)
+        #[cfg(debug_assertions)]
+        {
+            if let Some(ref trace) = self.take_trace {
+                panic!("{}\n\nFirst taken at:\n{}", MISSING_BUF, trace)
+            }
+            self.take_trace = Some(Backtrace::capture());
+        }
+        self.inner.take().expect(MISSING_BUF)
     }
 
     #[inline]
     fn restore_inner(&mut self, buf: Inner) {
-        debug_assert!(self.0.is_none());
+        debug_assert!(self.inner.is_none());
+        #[cfg(debug_assertions)]
+        {
+            self.take_trace = None;
+        }
 
-        self.0 = Some(buf);
+        self.inner = Some(buf);
     }
 
     #[inline]
     fn inner(&self) -> &Inner {
-        self.0.as_ref().expect(MISSING_BUF)
+        self.inner.as_ref().expect(MISSING_BUF)
     }
 
     #[inline]
     fn inner_mut(&mut self) -> &mut Inner {
-        self.0.as_mut().expect(MISSING_BUF)
+        self.inner.as_mut().expect(MISSING_BUF)
     }
 
     #[inline]
