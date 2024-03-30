@@ -153,18 +153,16 @@ impl Socket {
 
     #[cfg(windows)]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
-        let local_addr = self.local_addr()?;
+        let domain = self.local_addr()?.domain();
         let ty = self.socket.r#type()?;
         let protocol = self.socket.protocol()?;
-        let accept_sock =
-            compio_runtime::spawn_blocking(move || Socket2::new(local_addr.domain(), ty, protocol))
-                .await?;
+        let accept_sock = Self::new(domain, ty, protocol).await?;
         let op = Accept::new(self.as_raw_fd(), accept_sock.as_raw_fd() as _);
         let BufResult(res, op) = Runtime::current().submit(op).await;
         res?;
         op.update_context()?;
         let addr = op.into_addr()?;
-        Ok((Self::from_socket2(accept_sock)?, addr))
+        Ok((accept_sock, addr))
     }
 
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
