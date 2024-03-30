@@ -167,7 +167,6 @@ impl<S: AsyncWrite> AsyncWrite for TlsStream<S> {
     }
 
     async fn shutdown(&mut self) -> io::Result<()> {
-        self.flush().await?;
         self.0.get_mut().get_mut().shutdown().await
     }
 }
