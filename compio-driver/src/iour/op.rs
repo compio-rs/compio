@@ -55,7 +55,7 @@ impl OpCode for CloseFile {
 /// Get metadata of an opened file.
 pub struct FileStat {
     pub(crate) fd: RawFd,
-    pub(crate) stat: libc::statx,
+    pub(crate) stat: Statx,
 }
 
 impl FileStat {
@@ -93,7 +93,7 @@ impl IntoInner for FileStat {
 /// Get metadata from path.
 pub struct PathStat {
     pub(crate) path: CString,
-    pub(crate) stat: libc::statx,
+    pub(crate) stat: Statx,
     pub(crate) follow_symlink: bool,
 }
 
@@ -298,15 +298,10 @@ impl RecvFromHeader {
     }
 
     pub fn create_entry(&mut self, slices: &mut [IoSliceMut]) -> OpEntry {
-        self.msg = libc::msghdr {
-            msg_name: &mut self.addr as *mut _ as _,
-            msg_namelen: std::mem::size_of_val(&self.addr) as _,
-            msg_iov: slices.as_mut_ptr() as _,
-            msg_iovlen: slices.len() as _,
-            msg_control: std::ptr::null_mut(),
-            msg_controllen: 0,
-            msg_flags: 0,
-        };
+        self.msg.msg_name = &mut self.addr as *mut _ as _;
+        self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
+        self.msg.msg_iov = slices.as_mut_ptr() as _;
+        self.msg.msg_iovlen = slices.len() as _;
         opcode::RecvMsg::new(Fd(self.fd), &mut self.msg)
             .build()
             .into()
@@ -406,15 +401,10 @@ impl SendToHeader {
     }
 
     pub fn create_entry(&mut self, slices: &mut [IoSlice]) -> OpEntry {
-        self.msg = libc::msghdr {
-            msg_name: self.addr.as_ptr() as _,
-            msg_namelen: self.addr.len(),
-            msg_iov: slices.as_mut_ptr() as _,
-            msg_iovlen: slices.len() as _,
-            msg_control: std::ptr::null_mut(),
-            msg_controllen: 0,
-            msg_flags: 0,
-        };
+        self.msg.msg_name = self.addr.as_ptr() as _;
+        self.msg.msg_namelen = self.addr.len();
+        self.msg.msg_iov = slices.as_mut_ptr() as _;
+        self.msg.msg_iovlen = slices.len() as _;
         opcode::SendMsg::new(Fd(self.fd), &self.msg).build().into()
     }
 }

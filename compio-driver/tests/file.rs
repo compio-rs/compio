@@ -38,16 +38,16 @@ fn open_file_op() -> impl OpCode {
     )
 }
 
-fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> (usize, O) {
+fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult<usize, O> {
     match driver.push(op) {
-        PushEntry::Ready(res) => res.unwrap(),
+        PushEntry::Ready(res) => res,
         PushEntry::Pending(user_data) => {
             let mut entries = ArrayVec::<usize, 1>::new();
             while entries.is_empty() {
                 driver.poll(None, &mut entries).unwrap();
             }
             assert_eq!(entries[0], *user_data);
-            driver.pop(user_data).unwrap()
+            driver.pop(user_data)
         }
     }
 }
@@ -57,27 +57,19 @@ fn cancel_before_poll() {
     let mut driver = Proactor::new().unwrap();
 
     let op = open_file_op();
-    let (fd, _) = push_and_wait(&mut driver, op);
+    let (fd, _) = push_and_wait(&mut driver, op).unwrap();
     let fd = fd as RawFd;
     driver.attach(fd).unwrap();
 
     driver.cancel(0);
 
     let op = ReadAt::new(fd, 0, Vec::with_capacity(8));
-    let BufResult(res, _) = match driver.push(op) {
-        PushEntry::Ready(res) => res,
-        PushEntry::Pending(key) => {
-            let mut entries = ArrayVec::<usize, 1>::new();
-            driver.poll(None, &mut entries).unwrap();
-            assert_eq!(entries[0], *key);
-            driver.pop(key)
-        }
-    };
+    let BufResult(res, _) = push_and_wait(&mut driver, op);
 
     assert!(res.is_ok() || res.unwrap_err().kind() == io::ErrorKind::TimedOut);
 
     let op = CloseFile::new(fd);
-    push_and_wait(&mut driver, op);
+    push_and_wait(&mut driver, op).unwrap();
 }
 
 #[test]
@@ -98,7 +90,7 @@ fn register_multiple() {
     let mut driver = Proactor::new().unwrap();
 
     let op = open_file_op();
-    let (fd, _) = push_and_wait(&mut driver, op);
+    let (fd, _) = push_and_wait(&mut driver, op).unwrap();
     let fd = fd as RawFd;
     driver.attach(fd).unwrap();
 
@@ -119,7 +111,7 @@ fn register_multiple() {
     }
 
     let op = CloseFile::new(fd);
-    push_and_wait(&mut driver, op);
+    push_and_wait(&mut driver, op).unwrap();
 }
 
 #[test]
@@ -144,6 +136,6 @@ fn asyncify() {
     let mut driver = Proactor::new().unwrap();
 
     let op = Asyncify::new(|| BufResult(Ok(114514), ()));
-    let (res, _) = push_and_wait(&mut driver, op);
+    let (res, _) = push_and_wait(&mut driver, op).unwrap();
     assert_eq!(res, 114514);
 }
