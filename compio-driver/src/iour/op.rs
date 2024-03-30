@@ -298,7 +298,6 @@ impl RecvFromHeader {
     }
 
     pub fn create_entry(&mut self, slices: &mut [IoSliceMut]) -> OpEntry {
-        self.msg = unsafe { std::mem::zeroed::<libc::msghdr>() };
         self.msg.msg_name = &mut self.addr as *mut _ as _;
         self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
         self.msg.msg_iov = slices.as_mut_ptr() as _;
@@ -402,7 +401,6 @@ impl SendToHeader {
     }
 
     pub fn create_entry(&mut self, slices: &mut [IoSlice]) -> OpEntry {
-        self.msg = unsafe { std::mem::zeroed::<libc::msghdr>() };
         self.msg.msg_name = self.addr.as_ptr() as _;
         self.msg.msg_namelen = self.addr.len();
         self.msg.msg_iov = slices.as_mut_ptr() as _;
