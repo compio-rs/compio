@@ -36,7 +36,8 @@ impl Socket {
 
     #[cfg(windows)]
     pub async fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
-        let socket = compio_runtime::spawn_blocking(|| Socket2::new(domain, ty, protocol))?;
+        let socket =
+            compio_runtime::spawn_blocking(move || Socket2::new(domain, ty, protocol)).await?;
         Self::from_socket2(socket)
     }
 
@@ -151,13 +152,11 @@ impl Socket {
     #[cfg(windows)]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         let local_addr = self.local_addr()?;
-        // We should allow users sending this accepted socket to a new thread.
-        let accept_sock = Socket2::new(
-            local_addr.domain(),
-            self.socket.r#type()?,
-            self.socket.protocol()?,
-        )
-        .await?;
+        let ty = self.socket.r#type()?;
+        let protocol = self.socket.protocol()?;
+        let accept_sock =
+            compio_runtime::spawn_blocking(move || Socket2::new(local_addr.domain(), ty, protocol))
+                .await?;
         let op = Accept::new(self.as_raw_fd(), accept_sock.as_raw_fd() as _);
         let BufResult(res, op) = Runtime::current().submit(op).await;
         res?;

@@ -24,7 +24,7 @@ use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, WriteHalf};
 /// let sock_file = dir.path().join("unix-server.sock");
 ///
 /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
-/// let listener = UnixListener::bind(&sock_file).unwrap();
+/// let listener = UnixListener::bind(&sock_file).await.unwrap();
 ///
 /// let (mut tx, (mut rx, _)) =
 ///     futures_util::try_join!(UnixStream::connect(&sock_file), listener.accept()).unwrap();
