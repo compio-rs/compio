@@ -144,6 +144,71 @@ impl<T: IoVectoredBuf> IntoInner for WriteVectoredAt<T> {
     }
 }
 
+/// Remove file or directory.
+pub struct Unlink {
+    pub(crate) path: CString,
+    pub(crate) dir: bool,
+}
+
+impl Unlink {
+    /// Create [`Unlink`].
+    pub fn new(path: CString, dir: bool) -> Self {
+        Self { path, dir }
+    }
+}
+
+/// Create a directory.
+pub struct CreateDir {
+    pub(crate) path: CString,
+    pub(crate) mode: libc::mode_t,
+}
+
+impl CreateDir {
+    /// Create [`CreateDir`].
+    pub fn new(path: CString, mode: libc::mode_t) -> Self {
+        Self { path, mode }
+    }
+}
+
+/// Rename a file or directory.
+pub struct Rename {
+    pub(crate) old_path: CString,
+    pub(crate) new_path: CString,
+}
+
+impl Rename {
+    /// Create [`Rename`].
+    pub fn new(old_path: CString, new_path: CString) -> Self {
+        Self { old_path, new_path }
+    }
+}
+
+/// Create a symlink.
+pub struct Symlink {
+    pub(crate) source: CString,
+    pub(crate) target: CString,
+}
+
+impl Symlink {
+    /// Create [`Symlink`]. `target` is a symlink to `source`.
+    pub fn new(source: CString, target: CString) -> Self {
+        Self { source, target }
+    }
+}
+
+/// Create a hard link.
+pub struct HardLink {
+    pub(crate) source: CString,
+    pub(crate) target: CString,
+}
+
+impl HardLink {
+    /// Create [`HardLink`]. `target` is a hard link to `source`.
+    pub fn new(source: CString, target: CString) -> Self {
+        Self { source, target }
+    }
+}
+
 impl ShutdownSocket {
     pub(crate) fn how(&self) -> i32 {
         match self.how {
