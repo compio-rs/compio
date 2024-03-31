@@ -35,6 +35,18 @@ pub async fn symlink(original: impl AsRef<Path>, link: impl AsRef<Path>) -> io::
     sys::symlink(original, link).await
 }
 
+/// Creates a new symlink to a non-directory file on the filesystem.
+#[cfg(windows)]
+pub async fn symlink_file(original: impl AsRef<Path>, link: impl AsRef<Path>) -> io::Result<()> {
+    sys::symlink_file(original, link).await
+}
+
+/// Creates a new symlink to a directory on the filesystem.
+#[cfg(windows)]
+pub async fn symlink_dir(original: impl AsRef<Path>, link: impl AsRef<Path>) -> io::Result<()> {
+    sys::symlink_dir(original, link).await
+}
+
 /// Creates a new hard link on the filesystem.
 pub async fn hard_link(original: impl AsRef<Path>, link: impl AsRef<Path>) -> io::Result<()> {
     sys::hard_link(original, link).await
