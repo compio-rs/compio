@@ -137,3 +137,52 @@ async fn test_symlink() {
     let symlink_meta = compio_fs::symlink_metadata(dst.clone()).await.unwrap();
     assert!(symlink_meta.file_type().is_symlink());
 }
+
+#[compio_macros::test]
+#[cfg(windows)]
+async fn symlink_file_windows() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let source_path = dir.path().join("foo.txt");
+    let dest_path = dir.path().join("bar.txt");
+
+    compio_fs::write(&source_path, b"Hello File!")
+        .await
+        .unwrap();
+    compio_fs::symlink_file(&source_path, &dest_path)
+        .await
+        .unwrap();
+
+    compio_fs::write(&source_path, b"new data!").await.unwrap();
+
+    let from = compio_fs::read(&source_path).await.unwrap();
+    let to = compio_fs::read(&dest_path).await.unwrap();
+
+    assert_eq!(from, to);
+}
+
+#[compio_macros::test]
+#[cfg(windows)]
+async fn symlink_dir_windows() {
+    const FILE_NAME: &str = "abc.txt";
+
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    let dir1 = temp_dir.path().join("a");
+    compio_fs::create_dir(&dir1).await.unwrap();
+
+    let file1 = dir1.as_path().join(FILE_NAME);
+    compio_fs::write(&file1, b"Hello File!").await.unwrap();
+
+    let dir2 = temp_dir.path().join("b");
+    compio_fs::symlink_dir(&dir1, &dir2).await.unwrap();
+
+    compio_fs::write(&file1, b"new data!").await.unwrap();
+
+    let file2 = dir2.as_path().join(FILE_NAME);
+
+    let from = compio_fs::read(&file1).await.unwrap();
+    let to = compio_fs::read(&file2).await.unwrap();
+
+    assert_eq!(from, to);
+}
