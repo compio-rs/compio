@@ -20,13 +20,6 @@ pub async fn remove_dir(path: impl AsRef<Path>) -> io::Result<()> {
     unlink(path, true).await
 }
 
-pub async fn create_dir(path: impl AsRef<Path>) -> io::Result<()> {
-    let path = path_string(path)?;
-    let op = CreateDir::new(path, 0o777);
-    Runtime::current().submit(op).await.0?;
-    Ok(())
-}
-
 pub async fn rename(from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<()> {
     let from = path_string(from)?;
     let to = path_string(to)?;
@@ -49,4 +42,25 @@ pub async fn hard_link(original: impl AsRef<Path>, link: impl AsRef<Path>) -> io
     let op = HardLink::new(original, link);
     Runtime::current().submit(op).await.0?;
     Ok(())
+}
+
+pub struct DirBuilder {
+    mode: u32,
+}
+
+impl DirBuilder {
+    pub fn new() -> Self {
+        Self { mode: 0o777 }
+    }
+
+    pub fn mode(&mut self, mode: u32) {
+        self.mode = mode;
+    }
+
+    pub async fn create(&self, path: &Path) -> io::Result<()> {
+        let path = path_string(path)?;
+        let op = CreateDir::new(path, self.mode as _);
+        Runtime::current().submit(op).await.0?;
+        Ok(())
+    }
 }
