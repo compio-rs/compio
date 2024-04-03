@@ -1,3 +1,5 @@
+use std::io::Write;
+
 #[compio_macros::test]
 async fn path_read_write() {
     let temp = tempfile::tempdir().unwrap();
@@ -80,4 +82,58 @@ async fn remove() {
 
     compio_fs::remove_dir(&new_dir).await.unwrap();
     assert!(compio_fs::metadata(&new_dir).await.is_err());
+}
+
+#[compio_macros::test]
+async fn test_hard_link() {
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("src.txt");
+    let dst = dir.path().join("dst.txt");
+
+    std::fs::File::create(&src)
+        .unwrap()
+        .write_all(b"hello")
+        .unwrap();
+
+    compio_fs::hard_link(&src, &dst).await.unwrap();
+
+    std::fs::File::create(&src)
+        .unwrap()
+        .write_all(b"new-data")
+        .unwrap();
+
+    let content = compio_fs::read(&dst).await.unwrap();
+    assert_eq!(content, b"new-data");
+
+    // test that this is not a symlink:
+    assert!(std::fs::read_link(&dst).is_err());
+}
+
+#[compio_macros::test]
+#[cfg(unix)]
+async fn test_symlink() {
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("src.txt");
+    let dst = dir.path().join("dst.txt");
+
+    std::fs::File::create(&src)
+        .unwrap()
+        .write_all(b"hello")
+        .unwrap();
+
+    compio_fs::symlink(&src, &dst).await.unwrap();
+
+    std::fs::File::create(&src)
+        .unwrap()
+        .write_all(b"new-data")
+        .unwrap();
+
+    let content = compio_fs::read(&dst).await.unwrap();
+    assert_eq!(content, b"new-data");
+
+    let read = std::fs::read_link(dst.clone()).unwrap();
+    assert!(read == src);
+
+    let symlink_meta = compio_fs::symlink_metadata(dst.clone()).await.unwrap();
+    assert!(symlink_meta.file_type().is_symlink());
 }

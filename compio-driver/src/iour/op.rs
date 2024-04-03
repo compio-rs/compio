@@ -233,8 +233,8 @@ impl OpCode for Symlink {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::SymlinkAt::new(
             Fd(libc::AT_FDCWD),
-            self.target.as_ptr(),
             self.source.as_ptr(),
+            self.target.as_ptr(),
         )
         .build()
         .into()

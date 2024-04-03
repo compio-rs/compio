@@ -331,7 +331,7 @@ impl OpCode for Symlink {
     }
 
     fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
-        syscall!(libc::symlink(self.target.as_ptr(), self.source.as_ptr()))?;
+        syscall!(libc::symlink(self.source.as_ptr(), self.target.as_ptr()))?;
         Poll::Ready(Ok(0))
     }
 }
