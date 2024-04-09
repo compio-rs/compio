@@ -162,11 +162,20 @@ impl Buffer {
     ///
     /// https://github.com/compio-rs/compio/issues/209
     pub async fn flush_to(&mut self, writer: &mut impl AsyncWrite) -> IoResult<usize> {
+        if self.slice().is_empty() {
+            return Ok(0);
+        }
         let mut total = 0;
         loop {
             let written = self
                 .with(|inner| async { writer.write(inner.into_slice()).await.into_inner() })
                 .await?;
+            if written == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "cannot flush all buffer data",
+                ));
+            }
             total += written;
             if self.advance(written) {
                 break;
