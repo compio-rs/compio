@@ -288,6 +288,65 @@ impl OpCode for Sync {
     }
 }
 
+impl OpCode for Unlink {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::blocking_dummy())
+    }
+
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        if self.dir {
+            syscall!(libc::rmdir(self.path.as_ptr()))?;
+        } else {
+            syscall!(libc::unlink(self.path.as_ptr()))?;
+        }
+        Poll::Ready(Ok(0))
+    }
+}
+
+impl OpCode for CreateDir {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::blocking_dummy())
+    }
+
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        syscall!(libc::mkdir(self.path.as_ptr(), self.mode))?;
+        Poll::Ready(Ok(0))
+    }
+}
+
+impl OpCode for Rename {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::blocking_dummy())
+    }
+
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        syscall!(libc::rename(self.old_path.as_ptr(), self.new_path.as_ptr()))?;
+        Poll::Ready(Ok(0))
+    }
+}
+
+impl OpCode for Symlink {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::blocking_dummy())
+    }
+
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        syscall!(libc::symlink(self.source.as_ptr(), self.target.as_ptr()))?;
+        Poll::Ready(Ok(0))
+    }
+}
+
+impl OpCode for HardLink {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::blocking_dummy())
+    }
+
+    fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {
+        syscall!(libc::link(self.source.as_ptr(), self.target.as_ptr()))?;
+        Poll::Ready(Ok(0))
+    }
+}
+
 impl OpCode for ShutdownSocket {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::blocking_dummy())

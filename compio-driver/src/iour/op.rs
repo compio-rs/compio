@@ -198,6 +198,62 @@ impl OpCode for Sync {
     }
 }
 
+impl OpCode for Unlink {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        opcode::UnlinkAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())
+            .flags(if self.dir { libc::AT_REMOVEDIR } else { 0 })
+            .build()
+            .into()
+    }
+}
+
+impl OpCode for CreateDir {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        opcode::MkDirAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())
+            .mode(self.mode)
+            .build()
+            .into()
+    }
+}
+
+impl OpCode for Rename {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        opcode::RenameAt::new(
+            Fd(libc::AT_FDCWD),
+            self.old_path.as_ptr(),
+            Fd(libc::AT_FDCWD),
+            self.new_path.as_ptr(),
+        )
+        .build()
+        .into()
+    }
+}
+
+impl OpCode for Symlink {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        opcode::SymlinkAt::new(
+            Fd(libc::AT_FDCWD),
+            self.source.as_ptr(),
+            self.target.as_ptr(),
+        )
+        .build()
+        .into()
+    }
+}
+
+impl OpCode for HardLink {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        opcode::LinkAt::new(
+            Fd(libc::AT_FDCWD),
+            self.source.as_ptr(),
+            Fd(libc::AT_FDCWD),
+            self.target.as_ptr(),
+        )
+        .build()
+        .into()
+    }
+}
+
 impl OpCode for ShutdownSocket {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::Shutdown::new(Fd(self.fd), self.how())

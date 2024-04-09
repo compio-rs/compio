@@ -15,7 +15,10 @@ pub use crate::sys::op::{
     SendVectored,
 };
 #[cfg(unix)]
-pub use crate::sys::op::{FileStat, OpenFile, PathStat, ReadVectoredAt, WriteVectoredAt};
+pub use crate::sys::op::{
+    CreateDir, FileStat, HardLink, OpenFile, PathStat, ReadVectoredAt, Rename, Symlink, Unlink,
+    WriteVectoredAt,
+};
 use crate::sys::{sockaddr_storage, socklen_t, RawFd};
 
 /// Trait to update the buffer length inside the [`BufResult`].

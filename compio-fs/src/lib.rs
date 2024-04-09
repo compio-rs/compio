@@ -20,6 +20,9 @@ pub use metadata::*;
 mod stdio;
 pub use stdio::*;
 
+mod utils;
+pub use utils::*;
+
 #[cfg(windows)]
 pub mod named_pipe;
 
