@@ -1,6 +1,7 @@
-use std::{error::Error, fmt, io, ops::Deref, sync::Arc};
+use std::{error::Error, fmt, io};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_driver::AsRawFd;
 use compio_io::{AsyncRead, AsyncWrite};
 
 pub(crate) fn split<T>(stream: &T) -> (ReadHalf<T>, WriteHalf<T>)
@@ -55,25 +56,23 @@ where
 pub(crate) fn into_split<T>(stream: T) -> (OwnedReadHalf<T>, OwnedWriteHalf<T>)
 where
     for<'a> &'a T: AsyncRead + AsyncWrite,
+    T: Clone,
 {
-    let stream = Arc::new(stream);
     (OwnedReadHalf(stream.clone()), OwnedWriteHalf(stream))
 }
 
 /// Owned read half.
 #[derive(Debug)]
-pub struct OwnedReadHalf<T>(Arc<T>);
+pub struct OwnedReadHalf<T>(T);
 
-impl<T: Unpin> OwnedReadHalf<T> {
+impl<T: AsRawFd> OwnedReadHalf<T> {
     /// Attempts to put the two halves of a `TcpStream` back together and
     /// recover the original socket. Succeeds only if the two halves
     /// originated from the same call to `into_split`.
     pub fn reunite(self, w: OwnedWriteHalf<T>) -> Result<T, ReuniteError<T>> {
-        if Arc::ptr_eq(&self.0, &w.0) {
+        if self.0.as_raw_fd() == w.0.as_raw_fd() {
             drop(w);
-            Ok(Arc::try_unwrap(self.0)
-                .ok()
-                .expect("`Arc::try_unwrap` failed"))
+            Ok(self.0)
         } else {
             Err(ReuniteError(self, w))
         }
@@ -85,36 +84,36 @@ where
     for<'a> &'a T: AsyncRead,
 {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        self.0.deref().read(buf).await
+        (&self.0).read(buf).await
     }
 
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
-        self.0.deref().read_vectored(buf).await
+        (&self.0).read_vectored(buf).await
     }
 }
 
 /// Owned write half.
 #[derive(Debug)]
-pub struct OwnedWriteHalf<T>(Arc<T>);
+pub struct OwnedWriteHalf<T>(T);
 
 impl<T> AsyncWrite for OwnedWriteHalf<T>
 where
     for<'a> &'a T: AsyncWrite,
 {
     async fn write<B: IoBuf>(&mut self, buf: B) -> BufResult<usize, B> {
-        self.0.deref().write(buf).await
+        (&self.0).write(buf).await
     }
 
     async fn write_vectored<B: IoVectoredBuf>(&mut self, buf: B) -> BufResult<usize, B> {
-        self.0.deref().write_vectored(buf).await
+        (&self.0).write_vectored(buf).await
     }
 
     async fn flush(&mut self) -> io::Result<()> {
-        self.0.deref().flush().await
+        (&self.0).flush().await
     }
 
     async fn shutdown(&mut self) -> io::Result<()> {
-        self.0.deref().shutdown().await
+        (&self.0).shutdown().await
     }
 }
 
