@@ -209,6 +209,24 @@ impl HardLink {
     }
 }
 
+/// Create a socket.
+pub struct CreateSocket {
+    pub(crate) domain: i32,
+    pub(crate) socket_type: i32,
+    pub(crate) protocol: i32,
+}
+
+impl CreateSocket {
+    /// Create [`CreateSocket`].
+    pub fn new(domain: i32, socket_type: i32, protocol: i32) -> Self {
+        Self {
+            domain,
+            socket_type,
+            protocol,
+        }
+    }
+}
+
 impl ShutdownSocket {
     pub(crate) fn how(&self) -> i32 {
         match self.how {

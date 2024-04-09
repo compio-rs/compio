@@ -24,7 +24,7 @@ jobs:
         setup:
           - os: "ubuntu-20.04"
           - os: "ubuntu-22.04"
-            features: "io-uring-sqe128,io-uring-cqe32"
+            features: "io-uring-sqe128,io-uring-cqe32,io-uring-socket"
           - os: "ubuntu-20.04"
             features: "polling"
             no_default_features: true
