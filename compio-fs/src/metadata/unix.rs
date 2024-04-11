@@ -117,7 +117,7 @@ impl MetadataExt for Metadata {
     }
 
     fn ino(&self) -> u64 {
-        self.0.st_ino
+        self.0.st_ino as _
     }
 
     fn mode(&self) -> u32 {
