@@ -178,7 +178,24 @@ impl IntoInner for PathStat {
 
 impl<T: IoBufMut> OpCode for ReadAt<T> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::blocking_readable(self.fd))
+        #[cfg(target_os = "freebsd")]
+        {
+            let fd = self.fd;
+            let offset = self.offset;
+            let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
+
+            let mut cb: libc::aiocb = unsafe { std::mem::zeroed() };
+            cb.aio_fildes = fd;
+            cb.aio_offset = offset as _;
+            cb.aio_buf = slice.as_mut_ptr().cast();
+            cb.aio_nbytes = slice.len();
+
+            Ok(Decision::Aio(cb, libc::aio_read))
+        }
+        #[cfg(not(target_os = "freebsd"))]
+        {
+            Ok(Decision::blocking_readable(self.fd))
+        }
     }
 
     fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
@@ -193,7 +210,23 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
 
 impl<T: IoVectoredBufMut> OpCode for ReadVectoredAt<T> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::blocking_readable(self.fd))
+        #[cfg(target_os = "freebsd")]
+        {
+            let this = unsafe { self.get_unchecked_mut() };
+            this.slices = unsafe { this.buffer.as_io_slices_mut() };
+
+            let mut cb: libc::aiocb = unsafe { std::mem::zeroed() };
+            cb.aio_fildes = this.fd;
+            cb.aio_offset = this.offset as _;
+            cb.aio_buf = this.slices.as_mut_ptr().cast();
+            cb.aio_nbytes = this.slices.len();
+
+            Ok(Decision::Aio(cb, libc::aio_readv))
+        }
+        #[cfg(not(target_os = "freebsd"))]
+        {
+            Ok(Decision::blocking_readable(self.fd))
+        }
     }
 
     fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
@@ -214,7 +247,24 @@ impl<T: IoVectoredBufMut> OpCode for ReadVectoredAt<T> {
 
 impl<T: IoBuf> OpCode for WriteAt<T> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::blocking_writable(self.fd))
+        #[cfg(target_os = "freebsd")]
+        {
+            let fd = self.fd;
+            let offset = self.offset;
+            let slice = unsafe { self.get_unchecked_mut() }.buffer.as_slice();
+
+            let mut cb: libc::aiocb = unsafe { std::mem::zeroed() };
+            cb.aio_fildes = fd;
+            cb.aio_offset = offset as _;
+            cb.aio_buf = slice.as_ptr().cast_mut().cast();
+            cb.aio_nbytes = slice.len();
+
+            Ok(Decision::Aio(cb, libc::aio_write))
+        }
+        #[cfg(not(target_os = "freebsd"))]
+        {
+            Ok(Decision::blocking_writable(self.fd))
+        }
     }
 
     fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
@@ -234,7 +284,23 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
 
 impl<T: IoVectoredBuf> OpCode for WriteVectoredAt<T> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::blocking_writable(self.fd))
+        #[cfg(target_os = "freebsd")]
+        {
+            let this = unsafe { self.get_unchecked_mut() };
+            this.slices = unsafe { this.buffer.as_io_slices() };
+
+            let mut cb: libc::aiocb = unsafe { std::mem::zeroed() };
+            cb.aio_fildes = this.fd;
+            cb.aio_offset = this.offset as _;
+            cb.aio_buf = this.slices.as_ptr().cast_mut().cast();
+            cb.aio_nbytes = this.slices.len();
+
+            Ok(Decision::Aio(cb, libc::aio_writev))
+        }
+        #[cfg(not(target_os = "freebsd"))]
+        {
+            Ok(Decision::blocking_writable(self.fd))
+        }
     }
 
     fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
@@ -255,7 +321,29 @@ impl<T: IoVectoredBuf> OpCode for WriteVectoredAt<T> {
 
 impl OpCode for Sync {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::blocking_dummy())
+        #[cfg(target_os = "freebsd")]
+        {
+            unsafe extern "C" fn aio_fsync(aiocbp: *mut libc::aiocb) -> i32 {
+                libc::aio_fsync(libc::O_SYNC, aiocbp)
+            }
+            unsafe extern "C" fn aio_fdatasync(aiocbp: *mut libc::aiocb) -> i32 {
+                libc::aio_fsync(libc::O_DSYNC, aiocbp)
+            }
+            let mut cb: libc::aiocb = unsafe { std::mem::zeroed() };
+            cb.aio_fildes = self.fd;
+
+            let f = if self.datasync {
+                aio_fdatasync
+            } else {
+                aio_fsync
+            };
+
+            Ok(Decision::Aio(cb, f))
+        }
+        #[cfg(not(target_os = "freebsd"))]
+        {
+            Ok(Decision::blocking_dummy())
+        }
     }
 
     fn on_event(self: Pin<&mut Self>, _: &Event) -> Poll<io::Result<usize>> {

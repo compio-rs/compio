@@ -45,6 +45,9 @@ pub enum Decision {
     Wait(WaitArg),
     /// Blocking operation, needs to be spawned in another thread
     Blocking(Event),
+    /// AIO operation, needs to wait
+    #[cfg(target_os = "freebsd")]
+    Aio(libc::aiocb, unsafe extern "C" fn(*mut libc::aiocb) -> i32),
 }
 
 impl Decision {
@@ -216,23 +219,29 @@ impl Driver {
             Poll::Ready(Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)))
         } else {
             let op_pin = op.as_pin();
-            match op_pin.pre_submit() {
-                Ok(Decision::Wait(arg)) => {
+            match op_pin.pre_submit()? {
+                Decision::Wait(arg) => {
                     // SAFETY: fd is from the OpCode.
                     unsafe {
                         self.submit(user_data, arg)?;
                     }
                     Poll::Pending
                 }
-                Ok(Decision::Completed(res)) => Poll::Ready(Ok(res)),
-                Ok(Decision::Blocking(event)) => {
+                Decision::Completed(res) => Poll::Ready(Ok(res)),
+                Decision::Blocking(event) => {
                     if self.push_blocking(user_data, op, event) {
                         Poll::Pending
                     } else {
                         Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
                     }
                 }
-                Err(err) => Poll::Ready(Err(err)),
+                Decision::Aio(mut aiocb, f) => {
+                    // sigev_notify_kqueue
+                    aiocb.aio_sigevent.sigev_signo = self.poll.as_raw_fd();
+                    aiocb.aio_sigevent.sigev_notify = libc::SIGEV_KEVENT;
+                    syscall!(f(&mut aiocb))?;
+                    Poll::Pending
+                }
             }
         }
     }
