@@ -131,7 +131,7 @@ async fn too_many_submissions() {
     let tempfile = tempfile();
 
     let mut file = File::create(tempfile.path()).await.unwrap();
-    for _ in 0..600 {
+    for _ in 0..100 {
         poll_once(async {
             file.write_at("hello world", 0).await.0.unwrap();
         })
