@@ -113,6 +113,8 @@ pub struct ReadAt<T: IoBufMut> {
     pub(crate) fd: RawFd,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
+    #[cfg(target_os = "freebsd")]
+    pub(crate) aiocb: libc::aiocb,
     _p: PhantomPinned,
 }
 
@@ -123,6 +125,8 @@ impl<T: IoBufMut> ReadAt<T> {
             fd,
             offset,
             buffer,
+            #[cfg(target_os = "freebsd")]
+            aiocb: unsafe { std::mem::zeroed() },
             _p: PhantomPinned,
         }
     }
@@ -142,6 +146,8 @@ pub struct WriteAt<T: IoBuf> {
     pub(crate) fd: RawFd,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
+    #[cfg(target_os = "freebsd")]
+    pub(crate) aiocb: libc::aiocb,
     _p: PhantomPinned,
 }
 
@@ -152,6 +158,8 @@ impl<T: IoBuf> WriteAt<T> {
             fd,
             offset,
             buffer,
+            #[cfg(target_os = "freebsd")]
+            aiocb: unsafe { std::mem::zeroed() },
             _p: PhantomPinned,
         }
     }
@@ -170,6 +178,8 @@ pub struct Sync {
     pub(crate) fd: RawFd,
     #[allow(dead_code)]
     pub(crate) datasync: bool,
+    #[cfg(target_os = "freebsd")]
+    pub(crate) aiocb: libc::aiocb,
 }
 
 impl Sync {
@@ -177,7 +187,12 @@ impl Sync {
     ///
     /// If `datasync` is `true`, the file metadata may not be synchronized.
     pub fn new(fd: RawFd, datasync: bool) -> Self {
-        Self { fd, datasync }
+        Self {
+            fd,
+            datasync,
+            #[cfg(target_os = "freebsd")]
+            aiocb: unsafe { std::mem::zeroed() },
+        }
     }
 }
 

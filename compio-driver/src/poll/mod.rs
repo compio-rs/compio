@@ -34,7 +34,7 @@ pub trait OpCode {
     /// Perform the operation after received corresponding
     /// event. If this operation is blocking, the return value should be
     /// [`Poll::Ready`].
-    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>>;
+    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>>;
 }
 
 /// Result of [`OpCode::pre_submit`].
@@ -44,10 +44,9 @@ pub enum Decision {
     /// Async operation, needs to submit
     Wait(WaitArg),
     /// Blocking operation, needs to be spawned in another thread
-    Blocking(Event),
+    Blocking,
     /// AIO operation, needs to wait
-    #[cfg(target_os = "freebsd")]
-    Aio(libc::aiocb, unsafe extern "C" fn(*mut libc::aiocb) -> i32),
+    Aio(AioArg),
 }
 
 impl Decision {
@@ -66,19 +65,15 @@ impl Decision {
         Self::wait_for(fd, Interest::Writable)
     }
 
-    /// Decide to spawn a blocking task with a dummy event.
-    pub fn blocking_dummy() -> Self {
-        Self::Blocking(Event::none(0))
-    }
-
-    /// Decide to spawn a blocking task with a readable event.
-    pub fn blocking_readable(fd: RawFd) -> Self {
-        Self::Blocking(Event::readable(fd as _))
-    }
-
-    /// Decide to spawn a blocking task with a writable event.
-    pub fn blocking_writable(fd: RawFd) -> Self {
-        Self::Blocking(Event::writable(fd as _))
+    /// Decide to spawn an AIO operation.
+    pub fn aio(
+        cb: &mut libc::aiocb,
+        submit: unsafe extern "C" fn(*mut libc::aiocb) -> i32,
+    ) -> Self {
+        Self::Aio(AioArg {
+            aiocbp: NonNull::from(cb),
+            submit,
+        })
     }
 }
 
@@ -89,6 +84,15 @@ pub struct WaitArg {
     pub fd: RawFd,
     /// The interest to be registered.
     pub interest: Interest,
+}
+
+/// Meta of AIO operations.
+#[derive(Debug, Clone, Copy)]
+pub struct AioArg {
+    /// Pointer of the control block.
+    pub aiocbp: NonNull<libc::aiocb>,
+    /// The aio_* submit function.
+    pub submit: unsafe extern "C" fn(*mut libc::aiocb) -> i32,
 }
 
 /// The interest of the operation
@@ -143,18 +147,26 @@ impl FdQueue {
     }
 }
 
+enum OpType {
+    Fd(RawFd),
+    Aio(NonNull<libc::aiocb>),
+}
+
 /// Low-level driver of polling.
 pub(crate) struct Driver {
     events: Events,
     poll: Arc<Poller>,
     registry: HashMap<RawFd, FdQueue>,
     cancelled: HashSet<usize>,
+    keymap: HashMap<usize, OpType>,
     notifier: Notifier,
     pool: AsyncifyPool,
     pool_completed: Arc<SegQueue<Entry>>,
 }
 
 impl Driver {
+    const NOTIFY: usize = usize::MAX - 1;
+
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         instrument!(compio_log::Level::TRACE, "new", ?builder);
         trace!("new poll driver");
@@ -171,7 +183,7 @@ impl Driver {
         let poll = Arc::new(Poller::new()?);
         // Attach the reader to poll.
         unsafe {
-            poll.add_with_mode(fd, Event::new(fd as _, true, false), PollMode::Level)?;
+            poll.add_with_mode(fd, Event::new(Self::NOTIFY, true, false), PollMode::Level)?;
         }
 
         Ok(Self {
@@ -179,6 +191,7 @@ impl Driver {
             poll,
             registry: HashMap::new(),
             cancelled: HashSet::new(),
+            keymap: HashMap::new(),
             notifier,
             pool: builder.create_or_get_thread_pool(),
             pool_completed: Arc::new(SegQueue::new()),
@@ -195,8 +208,7 @@ impl Driver {
         let need_add = !self.registry.contains_key(&arg.fd);
         let queue = self.registry.entry(arg.fd).or_default();
         queue.push_back_interest(user_data, arg.interest);
-        // We use fd as the key.
-        let event = queue.event(arg.fd as usize);
+        let event = queue.event(user_data);
         if need_add {
             self.poll.add(arg.fd, event)?;
         } else {
@@ -212,6 +224,12 @@ impl Driver {
 
     pub fn cancel(&mut self, user_data: usize, _registry: &mut Slab<RawOp>) {
         self.cancelled.insert(user_data);
+        if let Some(OpType::Aio(aiocbp)) = self.keymap.get(&user_data) {
+            if let Some(aiocb) = unsafe { aiocbp.as_ptr().as_ref() } {
+                let fd = aiocb.aio_fildes;
+                syscall!(libc::aio_cancel(fd, aiocbp.as_ptr())).ok();
+            }
+        }
     }
 
     pub fn push(&mut self, user_data: usize, op: &mut RawOp) -> Poll<io::Result<usize>> {
@@ -221,6 +239,7 @@ impl Driver {
             let op_pin = op.as_pin();
             match op_pin.pre_submit()? {
                 Decision::Wait(arg) => {
+                    self.keymap.insert(user_data, OpType::Fd(arg.fd));
                     // SAFETY: fd is from the OpCode.
                     unsafe {
                         self.submit(user_data, arg)?;
@@ -228,25 +247,30 @@ impl Driver {
                     Poll::Pending
                 }
                 Decision::Completed(res) => Poll::Ready(Ok(res)),
-                Decision::Blocking(event) => {
-                    if self.push_blocking(user_data, op, event) {
+                Decision::Blocking => {
+                    if self.push_blocking(user_data, op) {
                         Poll::Pending
                     } else {
                         Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
                     }
                 }
-                Decision::Aio(mut aiocb, f) => {
-                    // sigev_notify_kqueue
-                    aiocb.aio_sigevent.sigev_signo = self.poll.as_raw_fd();
-                    aiocb.aio_sigevent.sigev_notify = libc::SIGEV_KEVENT;
-                    syscall!(f(&mut aiocb))?;
+                Decision::Aio(AioArg { aiocbp, submit }) => {
+                    #[cfg(target_os = "freebsd")]
+                    if let Some(aiocb) = unsafe { aiocbp.as_ptr().as_mut() } {
+                        // sigev_notify_kqueue
+                        aiocb.aio_sigevent.sigev_signo = self.poll.as_raw_fd();
+                        aiocb.aio_sigevent.sigev_notify = libc::SIGEV_KEVENT;
+                        aiocb.aio_sigevent.sigev_value.sival_ptr = user_data as _;
+                    }
+                    self.keymap.insert(user_data, OpType::Aio(aiocbp));
+                    syscall!(submit(aiocbp.as_ptr()))?;
                     Poll::Pending
                 }
             }
         }
     }
 
-    fn push_blocking(&mut self, user_data: usize, op: &mut RawOp, event: Event) -> bool {
+    fn push_blocking(&mut self, user_data: usize, op: &mut RawOp) -> bool {
         // Safety: the RawOp is not released before the operation returns.
         struct SendWrapper<T>(T);
         unsafe impl<T> Send for SendWrapper<T> {}
@@ -260,7 +284,7 @@ impl Driver {
                 let mut op = op;
                 let op = unsafe { op.0.as_mut() };
                 let op_pin = op.as_pin();
-                let res = match op_pin.on_event(&event) {
+                let res = match op_pin.on_event() {
                     Poll::Pending => unreachable!("this operation is not non-blocking"),
                     Poll::Ready(res) => res,
                 };
@@ -283,37 +307,58 @@ impl Driver {
             entries.extend(Some(entry));
         }
         for event in self.events.iter() {
-            let fd = event.key as RawFd;
-            if fd == self.notifier.reader_fd() {
+            let user_data = event.key;
+            if user_data == Self::NOTIFY {
                 self.notifier.clear()?;
                 continue;
             }
-            let queue = self
-                .registry
-                .get_mut(&fd)
-                .expect("the fd should be attached");
-            if let Some((user_data, interest)) = queue.pop_interest(&event) {
-                if self.cancelled.remove(&user_data) {
-                    entries.extend(Some(entry_cancelled(user_data)));
-                } else {
-                    let op = entries.registry()[user_data].as_pin();
-                    let res = match op.on_event(&event) {
-                        Poll::Pending => {
-                            // The operation should go back to the front.
-                            queue.push_front_interest(user_data, interest);
-                            None
+            match self
+                .keymap
+                .remove(&user_data)
+                .expect("unexpected user data")
+            {
+                OpType::Fd(fd) => {
+                    let queue = self
+                        .registry
+                        .get_mut(&fd)
+                        .expect("the fd should be attached");
+                    if let Some((user_data, interest)) = queue.pop_interest(&event) {
+                        if self.cancelled.remove(&user_data) {
+                            entries.extend(Some(entry_cancelled(user_data)));
+                        } else {
+                            let op = entries.registry()[user_data].as_pin();
+                            let res = match op.on_event() {
+                                Poll::Pending => {
+                                    // The operation should go back to the front.
+                                    queue.push_front_interest(user_data, interest);
+                                    None
+                                }
+                                Poll::Ready(res) => Some(res),
+                            };
+                            if let Some(res) = res {
+                                let entry = Entry::new(user_data, res);
+                                entries.extend(Some(entry));
+                            }
                         }
-                        Poll::Ready(res) => Some(res),
-                    };
-                    if let Some(res) = res {
-                        let entry = Entry::new(user_data, res);
-                        entries.extend(Some(entry));
                     }
+                    let renew_event = queue.event(user_data);
+                    let fd = BorrowedFd::borrow_raw(fd);
+                    self.poll.modify(fd, renew_event)?;
+                }
+                OpType::Aio(aiocbp) => {
+                    let err = unsafe { libc::aio_error(aiocbp.as_ptr()) };
+                    debug_assert_ne!(err, libc::EINPROGRESS);
+                    let res = match err {
+                        0 => {
+                            let res = syscall!(libc::aio_return(aiocbp.as_ptr()))?;
+                            Ok(res as usize)
+                        }
+                        libc::ECANCELED => Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)),
+                        _ => Err(io::Error::from_raw_os_error(err)),
+                    };
+                    entries.extend(Some(Entry::new(user_data, res)));
                 }
             }
-            let renew_event = queue.event(fd as _);
-            let fd = BorrowedFd::borrow_raw(fd);
-            self.poll.modify(fd, renew_event)?;
         }
         Ok(())
     }

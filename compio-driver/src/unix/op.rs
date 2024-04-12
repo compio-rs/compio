@@ -90,6 +90,8 @@ pub struct ReadVectoredAt<T: IoVectoredBufMut> {
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSliceMut>,
+    #[cfg(target_os = "freebsd")]
+    pub(crate) aiocb: libc::aiocb,
     _p: PhantomPinned,
 }
 
@@ -101,6 +103,8 @@ impl<T: IoVectoredBufMut> ReadVectoredAt<T> {
             offset,
             buffer,
             slices: vec![],
+            #[cfg(target_os = "freebsd")]
+            aiocb: unsafe { std::mem::zeroed() },
             _p: PhantomPinned,
         }
     }
@@ -120,6 +124,8 @@ pub struct WriteVectoredAt<T: IoVectoredBuf> {
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSlice>,
+    #[cfg(target_os = "freebsd")]
+    pub(crate) aiocb: libc::aiocb,
     _p: PhantomPinned,
 }
 
@@ -131,6 +137,8 @@ impl<T: IoVectoredBuf> WriteVectoredAt<T> {
             offset,
             buffer,
             slices: vec![],
+            #[cfg(target_os = "freebsd")]
+            aiocb: unsafe { std::mem::zeroed() },
             _p: PhantomPinned,
         }
     }
