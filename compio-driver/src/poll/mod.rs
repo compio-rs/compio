@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-use compio_log::{instrument, trace};
+use compio_log::{info, instrument, trace};
 use crossbeam_queue::SegQueue;
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use polling::{Event, Events, PollMode, Poller};
@@ -233,17 +233,19 @@ impl Driver {
     }
 
     pub fn push(&mut self, user_data: usize, op: &mut RawOp) -> Poll<io::Result<usize>> {
+        instrument!(compio_log::Level::TRACE, "push", user_data);
         if self.cancelled.remove(&user_data) {
             Poll::Ready(Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)))
         } else {
             let op_pin = op.as_pin();
             match op_pin.pre_submit()? {
                 Decision::Wait(arg) => {
-                    self.keymap.insert(user_data, OpType::Fd(arg.fd));
                     // SAFETY: fd is from the OpCode.
                     unsafe {
                         self.submit(user_data, arg)?;
                     }
+                    trace!("register {:?}", arg);
+                    self.keymap.insert(user_data, OpType::Fd(arg.fd));
                     Poll::Pending
                 }
                 Decision::Completed(res) => Poll::Ready(Ok(res)),
@@ -262,8 +264,8 @@ impl Driver {
                         aiocb.aio_sigevent.sigev_notify = libc::SIGEV_KEVENT;
                         aiocb.aio_sigevent.sigev_value.sival_ptr = user_data as _;
                     }
-                    self.keymap.insert(user_data, OpType::Aio(aiocbp));
                     syscall!(submit(aiocbp.as_ptr()))?;
+                    self.keymap.insert(user_data, OpType::Aio(aiocbp));
                     Poll::Pending
                 }
             }
@@ -299,6 +301,7 @@ impl Driver {
         timeout: Option<Duration>,
         mut entries: OutEntries<impl Extend<usize>>,
     ) -> io::Result<()> {
+        instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         self.poll.wait(&mut self.events, timeout)?;
         if self.events.is_empty() && self.pool_completed.is_empty() && timeout.is_some() {
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
@@ -312,6 +315,11 @@ impl Driver {
                 self.notifier.clear()?;
                 continue;
             }
+            if !self.keymap.contains_key(&user_data) && event.is_interrupt() {
+                info!("receive completed {} for {:?}", user_data, event);
+                continue;
+            }
+            trace!("receive {} for {:?}", user_data, event);
             match self
                 .keymap
                 .remove(&user_data)
