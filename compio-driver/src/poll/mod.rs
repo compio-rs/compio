@@ -45,7 +45,8 @@ pub enum Decision {
     Wait(WaitArg),
     /// Blocking operation, needs to be spawned in another thread
     Blocking,
-    /// AIO operation, needs to wait
+    /// AIO operation, needs to be spawned to the kernel. It is only supported
+    /// on FreeBSD.
     Aio(AioArg),
 }
 
@@ -65,7 +66,8 @@ impl Decision {
         Self::wait_for(fd, Interest::Writable)
     }
 
-    /// Decide to spawn an AIO operation.
+    /// Decide to spawn an AIO operation. `submit` is a method like `aio_read`.
+    /// AIO is only supported on FreeBSD.
     pub fn aio(
         cb: &mut libc::aiocb,
         submit: unsafe extern "C" fn(*mut libc::aiocb) -> i32,
@@ -147,6 +149,8 @@ impl FdQueue {
     }
 }
 
+// Represents the filter type of kqueue. `polling` crate doesn't expose such
+// API, and we need to know about it when `cancel` is called.
 enum OpType {
     Fd(RawFd),
     Aio(NonNull<libc::aiocb>),
@@ -315,17 +319,14 @@ impl Driver {
                 self.notifier.clear()?;
                 continue;
             }
-            if !self.keymap.contains_key(&user_data) && event.is_interrupt() {
-                info!("receive completed {} for {:?}", user_data, event);
-                continue;
-            }
             trace!("receive {} for {:?}", user_data, event);
-            match self
-                .keymap
-                .remove(&user_data)
-                .expect("unexpected user data")
-            {
-                OpType::Fd(fd) => {
+            match self.keymap.remove(&user_data) {
+                None => {
+                    // On epoll, multiple event may be received even if it is registered as
+                    // one-shot. It is safe to ignore it.
+                    info!("op {} is completed", user_data);
+                }
+                Some(OpType::Fd(fd)) => {
                     let queue = self
                         .registry
                         .get_mut(&fd)
@@ -353,13 +354,20 @@ impl Driver {
                     let fd = BorrowedFd::borrow_raw(fd);
                     self.poll.modify(fd, renew_event)?;
                 }
-                OpType::Aio(aiocbp) => {
+                Some(OpType::Aio(aiocbp)) => {
                     let err = unsafe { libc::aio_error(aiocbp.as_ptr()) };
-                    debug_assert_ne!(err, libc::EINPROGRESS);
                     let res = match err {
                         0 => {
                             let res = syscall!(libc::aio_return(aiocbp.as_ptr()))?;
                             Ok(res as usize)
+                        }
+                        // If the user_data is reused but the former registered event still
+                        // emits (for example, HUP in epoll; however it is impossible now
+                        // because we only use AIO on FreeBSD), we'd better ignore the current
+                        // one and wait for the real event.
+                        libc::EINPROGRESS => {
+                            info!("op {} is not completed", user_data);
+                            continue;
                         }
                         libc::ECANCELED => Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)),
                         _ => Err(io::Error::from_raw_os_error(err)),
