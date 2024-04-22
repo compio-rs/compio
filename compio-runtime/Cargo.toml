@@ -57,7 +57,7 @@ windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 core-foundation = "0.9.4"
-block2 = "0.4.0"
+block2 = "0.5.0"
 
 [target.'cfg(not(any(windows, target_os = "macos")))'.dev-dependencies]
 glib = "0.19"
