@@ -8,7 +8,7 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
-use pin_project::pin_project;
+use pin_project_lite::pin_project;
 
 use crate::{buffer::Buffer, util::DEFAULT_BUF_SIZE};
 
@@ -167,14 +167,15 @@ impl<S: crate::AsyncWrite> SyncStream<S> {
 
 type PinBoxFuture<T> = Pin<Box<dyn Future<Output = T>>>;
 
-/// A stream wrapper for [`futures_util::io`] traits.
-#[pin_project]
-pub struct AsyncStream<S> {
-    #[pin]
-    inner: SyncStream<S>,
-    read_future: Option<PinBoxFuture<io::Result<usize>>>,
-    write_future: Option<PinBoxFuture<io::Result<usize>>>,
-    shutdown_future: Option<PinBoxFuture<io::Result<()>>>,
+pin_project! {
+    /// A stream wrapper for [`futures_util::io`] traits.
+    pub struct AsyncStream<S> {
+        #[pin]
+        inner: SyncStream<S>,
+        read_future: Option<PinBoxFuture<io::Result<usize>>>,
+        write_future: Option<PinBoxFuture<io::Result<usize>>>,
+        shutdown_future: Option<PinBoxFuture<io::Result<()>>>,
+    }
 }
 
 impl<S> AsyncStream<S> {
