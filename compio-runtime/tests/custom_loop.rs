@@ -1,9 +1,14 @@
 #[cfg(target_os = "macos")]
 #[test]
 fn cf_run_loop() {
-    use std::{future::Future, os::raw::c_void, time::Duration};
+    use std::{
+        future::Future,
+        os::raw::c_void,
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
 
-    use block2::{Block, ConcreteBlock};
+    use block2::{Block, StackBlock};
     use compio_driver::AsRawFd;
     use compio_runtime::{event::Event, Runtime};
     use core_foundation::{
@@ -70,11 +75,12 @@ fn cf_run_loop() {
         compio_runtime::time::sleep(Duration::from_secs(1)).await;
 
         let event = Event::new();
-        let block = ConcreteBlock::new(|| {
-            event.handle().notify();
+        let handle = Arc::new(Mutex::new(Some(event.handle())));
+        let block = StackBlock::new(move || {
+            handle.lock().unwrap().take().unwrap().notify();
         });
         extern "C" {
-            fn CFRunLoopPerformBlock(rl: CFRunLoopRef, mode: CFStringRef, block: &Block<(), ()>);
+            fn CFRunLoopPerformBlock(rl: CFRunLoopRef, mode: CFStringRef, block: &Block<dyn Fn()>);
         }
         let run_loop = CFRunLoop::get_current();
         unsafe {
