@@ -13,9 +13,9 @@ repository = { workspace = true }
 [dependencies]
 # Workspace dependencies
 compio-driver = { workspace = true }
-compio-runtime = { workspace = true, features = ["event"] }
+compio-runtime = { workspace = true, features = ["event", "time"] }
 
-crossbeam-channel = { workspace = true }
+flume = { workspace = true }
 futures-util = { workspace = true }
 
 [dev-dependencies]

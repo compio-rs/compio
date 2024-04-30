@@ -1,4 +1,4 @@
-use std::{num::NonZeroUsize, panic::resume_unwind};
+use std::num::NonZeroUsize;
 
 use compio::{
     dispatcher::Dispatcher,
@@ -35,7 +35,7 @@ async fn main() {
     for _i in 0..CLIENT_NUM {
         let (mut srv, _) = listener.accept().await.unwrap();
         let handle = dispatcher
-            .dispatch(move || async move {
+            .execute(move || async move {
                 let BufResult(res, buf) = srv.read(Vec::with_capacity(20)).await;
                 res.unwrap();
                 println!("{}", std::str::from_utf8(&buf).unwrap());
@@ -43,8 +43,6 @@ async fn main() {
             .unwrap();
         handles.push(handle.join());
     }
-    while let Some(res) = handles.next().await {
-        res.unwrap().unwrap_or_else(|e| resume_unwind(e));
-    }
+    while handles.next().await.is_some() {}
     dispatcher.join().await.unwrap();
 }
