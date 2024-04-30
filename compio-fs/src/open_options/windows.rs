@@ -1,4 +1,4 @@
-use std::{io, os::windows::fs::OpenOptionsExt, path::Path};
+use std::{io, os::windows::fs::OpenOptionsExt, panic::resume_unwind, path::Path};
 
 use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
 
@@ -60,7 +60,9 @@ impl OpenOptions {
         let mut opt = self.opt.clone();
         opt.attributes(FILE_FLAG_OVERLAPPED);
         let p = p.as_ref().to_path_buf();
-        let file = compio_runtime::spawn_blocking(move || opt.open(p)).await?;
+        let file = compio_runtime::spawn_blocking(move || opt.open(p))
+            .await
+            .unwrap_or_else(|e| resume_unwind(e))?;
         File::new(file)
     }
 }

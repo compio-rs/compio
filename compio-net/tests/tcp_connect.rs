@@ -1,4 +1,7 @@
-use std::net::{IpAddr, SocketAddr};
+use std::{
+    net::{IpAddr, SocketAddr},
+    panic::resume_unwind,
+};
 
 use compio_net::{TcpListener, TcpStream, ToSocketAddrsAsync};
 
@@ -17,7 +20,7 @@ async fn test_connect_ip_impl(
     });
 
     let mine = TcpStream::connect(&addr).await.unwrap();
-    let theirs = task.await;
+    let theirs = task.await.unwrap_or_else(|e| resume_unwind(e));
 
     assert_eq!(mine.local_addr().unwrap(), theirs.peer_addr().unwrap());
     assert_eq!(theirs.local_addr().unwrap(), mine.peer_addr().unwrap());

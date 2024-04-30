@@ -1,4 +1,4 @@
-use std::{future::Future, io, mem::ManuallyDrop, path::Path};
+use std::{future::Future, io, mem::ManuallyDrop, panic::resume_unwind, path::Path};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
@@ -74,7 +74,9 @@ impl File {
     #[cfg(windows)]
     pub async fn metadata(&self) -> io::Result<Metadata> {
         let file = self.inner.try_clone()?;
-        compio_runtime::spawn_blocking(move || file.metadata().map(Metadata::from_std)).await
+        compio_runtime::spawn_blocking(move || file.metadata().map(Metadata::from_std))
+            .await
+            .unwrap_or_else(|e| resume_unwind(e))
     }
 
     /// Queries metadata about the underlying file.
@@ -89,7 +91,9 @@ impl File {
     #[cfg(windows)]
     pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
         let file = self.inner.try_clone()?;
-        compio_runtime::spawn_blocking(move || file.set_permissions(perm.0)).await
+        compio_runtime::spawn_blocking(move || file.set_permissions(perm.0))
+            .await
+            .unwrap_or_else(|e| resume_unwind(e))
     }
 
     /// Changes the permissions on the underlying file.
@@ -105,6 +109,7 @@ impl File {
             Ok(())
         })
         .await
+        .unwrap_or_else(|e| resume_unwind(e))
     }
 
     async fn sync_impl(&self, datasync: bool) -> io::Result<()> {

@@ -1,6 +1,7 @@
 use std::{
     io,
     os::unix::prelude::{FileTypeExt, MetadataExt, PermissionsExt},
+    panic::resume_unwind,
     path::Path,
     time::{Duration, SystemTime},
 };
@@ -33,6 +34,7 @@ pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::R
         Ok(())
     })
     .await
+    .unwrap_or_else(|e| resume_unwind(e))
 }
 
 #[derive(Clone)]

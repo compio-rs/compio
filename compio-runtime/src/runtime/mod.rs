@@ -1,7 +1,9 @@
 use std::{
+    any::Any,
     cell::RefCell,
     future::{ready, Future},
     io,
+    panic::AssertUnwindSafe,
     rc::{Rc, Weak},
     sync::Arc,
     task::{Context, Poll, Waker},
@@ -28,6 +30,8 @@ use crate::{
     runtime::op::{OpFuture, OpRuntime},
     BufResult,
 };
+
+pub type JoinHandle<T> = Task<Result<T, Box<dyn Any + Send>>>;
 
 pub(crate) enum FutureState {
     Active(Option<Waker>),
@@ -99,19 +103,20 @@ impl RuntimeInner {
         }
     }
 
-    pub fn spawn<F: Future + 'static>(&self, future: F) -> Task<F::Output> {
-        unsafe { self.spawn_unchecked(future) }
+    pub fn spawn<F: Future + 'static>(&self, future: F) -> JoinHandle<F::Output> {
+        unsafe { self.spawn_unchecked(AssertUnwindSafe(future).catch_unwind()) }
     }
 
     pub fn spawn_blocking<T: Send + 'static>(
         &self,
         f: impl (FnOnce() -> T) + Send + Sync + 'static,
-    ) -> Task<T> {
+    ) -> JoinHandle<T> {
         let op = Asyncify::new(move || {
-            let res = f();
+            let res = std::panic::catch_unwind(AssertUnwindSafe(f));
             BufResult(Ok(0), res)
         });
-        self.spawn(self.submit(op).map(|BufResult(_, op)| op.into_inner()))
+        // SAFETY: Just like spawn.
+        unsafe { self.spawn_unchecked(self.submit(op).map(|BufResult(_, op)| op.into_inner())) }
     }
 
     pub fn attach(&self, fd: RawFd) -> io::Result<()> {
@@ -344,7 +349,7 @@ impl Runtime {
     ///
     /// Spawning a task enables the task to execute concurrently to other tasks.
     /// There is no guarantee that a spawned task will execute to completion.
-    pub fn spawn<F: Future + 'static>(&self, future: F) -> Task<F::Output> {
+    pub fn spawn<F: Future + 'static>(&self, future: F) -> JoinHandle<F::Output> {
         self.inner.spawn(future)
     }
 
@@ -354,7 +359,7 @@ impl Runtime {
     pub fn spawn_blocking<T: Send + 'static>(
         &self,
         f: impl (FnOnce() -> T) + Send + Sync + 'static,
-    ) -> Task<T> {
+    ) -> JoinHandle<T> {
         self.inner.spawn_blocking(f)
     }
 
@@ -531,7 +536,10 @@ impl Drop for EnterGuard<'_> {
 ///     42
 /// });
 ///
-/// assert_eq!(task.await, 42);
+/// assert_eq!(
+///     task.await.unwrap_or_else(|e| std::panic::resume_unwind(e)),
+///     42
+/// );
 /// # })
 /// ```
 ///
@@ -539,7 +547,7 @@ impl Drop for EnterGuard<'_> {
 ///
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::current`].
-pub fn spawn<F: Future + 'static>(future: F) -> Task<F::Output> {
+pub fn spawn<F: Future + 'static>(future: F) -> JoinHandle<F::Output> {
     Runtime::current().spawn(future)
 }
 
@@ -553,6 +561,6 @@ pub fn spawn<F: Future + 'static>(future: F) -> Task<F::Output> {
 /// by [`Runtime::current`].
 pub fn spawn_blocking<T: Send + 'static>(
     f: impl (FnOnce() -> T) + Send + Sync + 'static,
-) -> Task<T> {
+) -> JoinHandle<T> {
     Runtime::current().spawn_blocking(f)
 }
