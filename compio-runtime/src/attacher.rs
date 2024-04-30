@@ -1,9 +1,7 @@
 #[cfg(unix)]
-use std::os::fd::OwnedFd;
+use std::os::fd::{FromRawFd, RawFd};
 #[cfg(windows)]
-use std::os::windows::prelude::{OwnedHandle, OwnedSocket};
-#[cfg(feature = "once_cell_try")]
-use std::sync::OnceLock;
+use std::os::windows::io::{FromRawHandle, FromRawSocket, RawHandle, RawSocket};
 use std::{
     io,
     ops::{Deref, DerefMut},
@@ -11,71 +9,42 @@ use std::{
 
 use compio_buf::IntoInner;
 use compio_driver::AsRawFd;
-#[doc(hidden)]
-pub use compio_driver::{FromRawFd, IntoRawFd, RawFd};
-#[cfg(not(feature = "once_cell_try"))]
-use once_cell::sync::OnceCell as OnceLock;
 
 use crate::Runtime;
 
 /// Attach a handle to the driver of current thread.
 ///
-/// A handle can and only can attach once to one driver. The attacher will check
-/// if it is attached to the current driver.
+/// A handle can and only can attach once to one driver. The attacher will try
+/// to attach the handle.
 #[derive(Debug, Clone)]
 pub struct Attacher<S> {
     source: S,
-    // Make it thread safe.
-    once: OnceLock<()>,
+}
+
+impl<S> Attacher<S> {
+    /// Create [`Attacher`] without trying to attach the source.
+    ///
+    /// # Safety
+    ///
+    /// The user should ensure that the source is attached to the current
+    /// driver.
+    pub unsafe fn new_unchecked(source: S) -> Self {
+        Self { source }
+    }
 }
 
 impl<S: AsRawFd> Attacher<S> {
     /// Create [`Attacher`]. It tries to attach the source, and will return
     /// [`Err`] if it fails.
+    ///
+    /// ## Platform specific
+    /// * IOCP: a handle could not be attached more than once. If you want to
+    ///   clone the handle, create the [`Attacher`] before cloning.
     pub fn new(source: S) -> io::Result<Self> {
-        let this = Self {
-            source,
-            once: OnceLock::new(),
-        };
-        this.attach()?;
-        Ok(this)
-    }
-
-    /// Attach the source. This method could be called many times, but if the
-    /// action fails, it will try to attach the source during each call.
-    fn attach(&self) -> io::Result<()> {
         let r = Runtime::current();
         let inner = r.inner();
-        self.once
-            .get_or_try_init(|| inner.attach(self.source.as_raw_fd()))?;
-        Ok(())
-    }
-}
-
-impl<S: IntoRawFd> IntoRawFd for Attacher<S> {
-    fn into_raw_fd(self) -> RawFd {
-        self.source.into_raw_fd()
-    }
-}
-
-impl<S: FromRawFd> FromRawFd for Attacher<S> {
-    unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self {
-            source: S::from_raw_fd(fd),
-            once: OnceLock::from(()),
-        }
-    }
-}
-
-impl<S: TryClone> TryClone for Attacher<S> {
-    /// Try clone self with the cloned source. The attach state will be
-    /// reserved.
-    fn try_clone(&self) -> io::Result<Self> {
-        let source = self.source.try_clone()?;
-        Ok(Self {
-            source,
-            once: self.once.clone(),
-        })
+        inner.attach(source.as_raw_fd())?;
+        Ok(Self { source })
     }
 }
 
@@ -84,6 +53,27 @@ impl<S> IntoInner for Attacher<S> {
 
     fn into_inner(self) -> Self::Inner {
         self.source
+    }
+}
+
+#[cfg(windows)]
+impl<S: FromRawHandle> FromRawHandle for Attacher<S> {
+    unsafe fn from_raw_handle(handle: RawHandle) -> Self {
+        Self::new_unchecked(S::from_raw_handle(handle))
+    }
+}
+
+#[cfg(windows)]
+impl<S: FromRawSocket> FromRawSocket for Attacher<S> {
+    unsafe fn from_raw_socket(sock: RawSocket) -> Self {
+        Self::new_unchecked(S::from_raw_socket(sock))
+    }
+}
+
+#[cfg(unix)]
+impl<S: FromRawFd> FromRawFd for Attacher<S> {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
+        Self::new_unchecked(S::from_raw_fd(fd))
     }
 }
 
@@ -99,57 +89,4 @@ impl<S> DerefMut for Attacher<S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.source
     }
-}
-
-/// Duplicatable file or socket.
-pub trait TryClone: Sized {
-    /// Duplicate the source.
-    fn try_clone(&self) -> io::Result<Self>;
-}
-
-impl TryClone for std::fs::File {
-    fn try_clone(&self) -> io::Result<Self> {
-        std::fs::File::try_clone(self)
-    }
-}
-
-impl TryClone for socket2::Socket {
-    fn try_clone(&self) -> io::Result<Self> {
-        socket2::Socket::try_clone(self)
-    }
-}
-
-#[cfg(windows)]
-impl TryClone for OwnedHandle {
-    fn try_clone(&self) -> io::Result<Self> {
-        OwnedHandle::try_clone(self)
-    }
-}
-
-#[cfg(windows)]
-impl TryClone for OwnedSocket {
-    fn try_clone(&self) -> io::Result<Self> {
-        OwnedSocket::try_clone(self)
-    }
-}
-
-#[cfg(unix)]
-impl TryClone for OwnedFd {
-    fn try_clone(&self) -> io::Result<Self> {
-        OwnedFd::try_clone(self)
-    }
-}
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! impl_try_clone {
-    ($t:ty, $inner:ident) => {
-        impl $crate::TryClone for $t {
-            fn try_clone(&self) -> ::std::io::Result<Self> {
-                Ok(Self {
-                    $inner: self.$inner.try_clone()?,
-                })
-            }
-        }
-    };
 }

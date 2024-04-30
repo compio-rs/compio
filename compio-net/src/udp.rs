@@ -2,7 +2,6 @@ use std::{future::Future, io, net::SocketAddr};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
-use compio_runtime::impl_try_clone;
 use socket2::{Protocol, SockAddr, Type};
 
 use crate::{Socket, ToSocketAddrsAsync};
@@ -86,7 +85,7 @@ use crate::{Socket, ToSocketAddrsAsync};
 /// assert_eq!(buf, b"hello world");
 /// # });
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UdpSocket {
     inner: Socket,
 }
@@ -252,6 +251,4 @@ impl UdpSocket {
     }
 }
 
-impl_raw_fd!(UdpSocket, inner);
-
-impl_try_clone!(UdpSocket, inner);
+impl_raw_fd!(UdpSocket, inner, socket);

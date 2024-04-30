@@ -2,43 +2,47 @@ use compio::{
     buf::{arrayvec::ArrayVec, IntoInner},
     driver::{
         op::{CloseFile, ReadAt},
-        OpCode, Proactor, PushEntry, RawFd,
+        AsRawFd, OpCode, OwnedFd, Proactor, PushEntry, SharedFd,
     },
 };
 
 #[cfg(windows)]
-fn open_file_op() -> impl OpCode {
-    use std::os::windows::fs::OpenOptionsExt;
-
-    use compio::{
-        driver::{op::Asyncify, IntoRawFd},
-        BufResult,
+fn open_file(driver: &mut Proactor) -> OwnedFd {
+    use std::os::windows::{
+        fs::OpenOptionsExt,
+        io::{FromRawHandle, IntoRawHandle, OwnedHandle},
     };
+
+    use compio::{driver::op::Asyncify, BufResult};
     use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
 
-    Asyncify::new(|| {
+    let op = Asyncify::new(|| {
         BufResult(
             std::fs::OpenOptions::new()
                 .read(true)
                 .attributes(FILE_FLAG_OVERLAPPED)
                 .open("Cargo.toml")
-                .map(|f| f.into_raw_fd() as usize),
+                .map(|f| f.into_raw_handle() as usize),
             (),
         )
-    })
+    });
+    let (fd, _) = push_and_wait(driver, op);
+    OwnedFd::File(unsafe { OwnedHandle::from_raw_handle(fd as _) })
 }
 
 #[cfg(unix)]
-fn open_file_op() -> impl OpCode {
-    use std::ffi::CString;
+fn open_file(driver: &mut Proactor) -> OwnedFd {
+    use std::{ffi::CString, os::fd::FromRawFd};
 
-    use compio::driver::op::OpenFile;
+    use compio_driver::op::OpenFile;
 
-    OpenFile::new(
+    let op = OpenFile::new(
         CString::new("Cargo.toml").unwrap(),
         libc::O_CLOEXEC | libc::O_RDONLY,
         0o666,
-    )
+    );
+    let (fd, _) = push_and_wait(driver, op);
+    unsafe { OwnedFd::from_raw_fd(fd as _) }
 }
 
 fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> (usize, O) {
@@ -58,13 +62,11 @@ fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> (usize, O
 fn main() {
     let mut driver = Proactor::new().unwrap();
 
-    let op = open_file_op();
-    let (fd, _) = push_and_wait(&mut driver, op);
-    let fd = fd as RawFd;
+    let fd = open_file(&mut driver);
+    let fd = SharedFd::new(fd);
+    driver.attach(fd.as_raw_fd()).unwrap();
 
-    driver.attach(fd).unwrap();
-
-    let op = ReadAt::new(fd, 0, Vec::with_capacity(4096));
+    let op = ReadAt::new(fd.clone(), 0, Vec::with_capacity(4096));
     let (n, op) = push_and_wait(&mut driver, op);
 
     let mut buffer = op.into_inner();
@@ -73,6 +75,6 @@ fn main() {
     }
     println!("{}", String::from_utf8(buffer).unwrap());
 
-    let op = CloseFile::new(fd);
+    let op = CloseFile::new(fd.try_unwrap().unwrap());
     push_and_wait(&mut driver, op);
 }

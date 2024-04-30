@@ -1,7 +1,7 @@
-use std::{io, mem::ManuallyDrop};
+use std::{io, mem::ManuallyDrop, os::fd::FromRawFd};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_driver::{AsRawFd, FromRawFd, RawFd};
+use compio_driver::{AsRawFd, RawFd};
 use compio_io::{AsyncRead, AsyncWrite};
 
 #[cfg(doc)]
@@ -11,6 +11,7 @@ use crate::pipe::{Receiver, Sender};
 /// A handle to the standard input stream of a process.
 ///
 /// See [`stdin`].
+#[derive(Debug, Clone)]
 pub struct Stdin(ManuallyDrop<Receiver>);
 
 impl Stdin {
@@ -41,6 +42,7 @@ impl AsRawFd for Stdin {
 /// A handle to the standard output stream of a process.
 ///
 /// See [`stdout`].
+#[derive(Debug, Clone)]
 pub struct Stdout(ManuallyDrop<Sender>);
 
 impl Stdout {
@@ -79,6 +81,7 @@ impl AsRawFd for Stdout {
 /// A handle to the standard output stream of a process.
 ///
 /// See [`stderr`].
+#[derive(Debug, Clone)]
 pub struct Stderr(ManuallyDrop<Sender>);
 
 impl Stderr {

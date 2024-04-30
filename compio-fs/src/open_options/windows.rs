@@ -63,6 +63,6 @@ impl OpenOptions {
         let file = compio_runtime::spawn_blocking(move || opt.open(p))
             .await
             .unwrap_or_else(|e| resume_unwind(e))?;
-        File::new(file)
+        File::from_std(file)
     }
 }

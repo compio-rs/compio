@@ -3,7 +3,7 @@
 //! The operation itself doesn't perform anything.
 //! You need to pass them to [`crate::Proactor`], and poll the driver.
 
-use std::{marker::PhantomPinned, net::Shutdown};
+use std::{marker::PhantomPinned, mem::ManuallyDrop, net::Shutdown};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
 use socket2::SockAddr;
@@ -19,7 +19,10 @@ pub use crate::sys::op::{
     CreateDir, CreateSocket, FileStat, HardLink, OpenFile, PathStat, ReadVectoredAt, Rename,
     Symlink, Unlink, WriteVectoredAt,
 };
-use crate::sys::{sockaddr_storage, socklen_t, RawFd};
+use crate::{
+    sys::{sockaddr_storage, socklen_t},
+    OwnedFd, SharedFd,
+};
 
 /// Trait to update the buffer length inside the [`BufResult`].
 pub trait BufResultExt {
@@ -97,20 +100,22 @@ impl<F, D> IntoInner for Asyncify<F, D> {
 
 /// Close the file fd.
 pub struct CloseFile {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: ManuallyDrop<OwnedFd>,
 }
 
 impl CloseFile {
     /// Create [`CloseFile`].
-    pub fn new(fd: RawFd) -> Self {
-        Self { fd }
+    pub fn new(fd: OwnedFd) -> Self {
+        Self {
+            fd: ManuallyDrop::new(fd),
+        }
     }
 }
 
 /// Read a file at specified position into specified buffer.
 #[derive(Debug)]
 pub struct ReadAt<T: IoBufMut> {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: SharedFd,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     _p: PhantomPinned,
@@ -118,7 +123,7 @@ pub struct ReadAt<T: IoBufMut> {
 
 impl<T: IoBufMut> ReadAt<T> {
     /// Create [`ReadAt`].
-    pub fn new(fd: RawFd, offset: u64, buffer: T) -> Self {
+    pub fn new(fd: SharedFd, offset: u64, buffer: T) -> Self {
         Self {
             fd,
             offset,
@@ -139,7 +144,7 @@ impl<T: IoBufMut> IntoInner for ReadAt<T> {
 /// Write a file at specified position from specified buffer.
 #[derive(Debug)]
 pub struct WriteAt<T: IoBuf> {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: SharedFd,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     _p: PhantomPinned,
@@ -147,7 +152,7 @@ pub struct WriteAt<T: IoBuf> {
 
 impl<T: IoBuf> WriteAt<T> {
     /// Create [`WriteAt`].
-    pub fn new(fd: RawFd, offset: u64, buffer: T) -> Self {
+    pub fn new(fd: SharedFd, offset: u64, buffer: T) -> Self {
         Self {
             fd,
             offset,
@@ -167,7 +172,7 @@ impl<T: IoBuf> IntoInner for WriteAt<T> {
 
 /// Sync data to the disk.
 pub struct Sync {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: SharedFd,
     #[allow(dead_code)]
     pub(crate) datasync: bool,
 }
@@ -176,45 +181,47 @@ impl Sync {
     /// Create [`Sync`].
     ///
     /// If `datasync` is `true`, the file metadata may not be synchronized.
-    pub fn new(fd: RawFd, datasync: bool) -> Self {
+    pub fn new(fd: SharedFd, datasync: bool) -> Self {
         Self { fd, datasync }
     }
 }
 
 /// Shutdown a socket.
 pub struct ShutdownSocket {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: SharedFd,
     pub(crate) how: Shutdown,
 }
 
 impl ShutdownSocket {
     /// Create [`ShutdownSocket`].
-    pub fn new(fd: RawFd, how: Shutdown) -> Self {
+    pub fn new(fd: SharedFd, how: Shutdown) -> Self {
         Self { fd, how }
     }
 }
 
 /// Close socket fd.
 pub struct CloseSocket {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: ManuallyDrop<OwnedFd>,
 }
 
 impl CloseSocket {
     /// Create [`CloseSocket`].
-    pub fn new(fd: RawFd) -> Self {
-        Self { fd }
+    pub fn new(fd: OwnedFd) -> Self {
+        Self {
+            fd: ManuallyDrop::new(fd),
+        }
     }
 }
 
 /// Connect to a remote address.
 pub struct Connect {
-    pub(crate) fd: RawFd,
+    pub(crate) fd: SharedFd,
     pub(crate) addr: SockAddr,
 }
 
 impl Connect {
     /// Create [`Connect`]. `fd` should be bound.
-    pub fn new(fd: RawFd, addr: SockAddr) -> Self {
+    pub fn new(fd: SharedFd, addr: SockAddr) -> Self {
         Self { fd, addr }
     }
 }

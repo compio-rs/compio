@@ -74,7 +74,7 @@ fn iocp_start() -> io::Result<()> {
                     )
                 ) {
                     error!(
-                        "fail to dispatch entry ({}, {}, {:p}) to driver {:p}: {:?}",
+                        "fail to dispatch entry ({}, {}, {:p}) to driver {:x}: {:?}",
                         entry.dwNumberOfBytesTransferred,
                         entry.lpCompletionKey,
                         entry.lpOverlapped,
