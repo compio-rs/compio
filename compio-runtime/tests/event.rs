@@ -1,3 +1,5 @@
+use std::panic::resume_unwind;
+
 use compio_runtime::event::Event;
 
 #[test]
@@ -9,7 +11,7 @@ fn event_handle() {
             handle.notify();
         });
         event.wait().await;
-        task.await;
+        task.await.unwrap_or_else(|e| resume_unwind(e));
     })
 }
 
@@ -59,6 +61,6 @@ fn win32_event() {
         });
 
         wait.await.0.unwrap();
-        task.await;
+        task.await.unwrap_or_else(|e| resume_unwind(e));
     })
 }

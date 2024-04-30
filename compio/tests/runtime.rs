@@ -1,6 +1,6 @@
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
 
-use std::{net::Ipv4Addr, time::Duration};
+use std::{net::Ipv4Addr, panic::resume_unwind, time::Duration};
 
 use compio::{
     buf::*,
@@ -34,6 +34,7 @@ async fn multi_threading() {
         });
     })
     .await
+    .unwrap_or_else(|e| resume_unwind(e))
 }
 
 #[compio_macros::test]

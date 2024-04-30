@@ -1,4 +1,7 @@
-use std::io::{Read, Write};
+use std::{
+    io::{Read, Write},
+    panic::resume_unwind,
+};
 
 use compio_buf::BufResult;
 use compio_io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -29,7 +32,7 @@ async fn tcp_split() {
     assert_eq!(&buf[..MSG.len()], MSG);
 
     write_half.write_all(MSG).await.unwrap();
-    handle.await;
+    handle.await.unwrap_or_else(|e| resume_unwind(e));
 }
 
 #[compio_macros::test]
@@ -55,7 +58,7 @@ async fn tcp_unsplit() {
 
     read1.reunite(write1).expect("Reunite should succeed");
 
-    handle.await;
+    handle.await.unwrap_or_else(|e| resume_unwind(e));
 }
 
 #[compio_macros::test]

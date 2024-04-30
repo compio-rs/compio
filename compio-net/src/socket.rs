@@ -36,8 +36,11 @@ impl Socket {
 
     #[cfg(windows)]
     pub async fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
-        let socket =
-            compio_runtime::spawn_blocking(move || Socket2::new(domain, ty, protocol)).await?;
+        use std::panic::resume_unwind;
+
+        let socket = compio_runtime::spawn_blocking(move || Socket2::new(domain, ty, protocol))
+            .await
+            .unwrap_or_else(|e| resume_unwind(e))?;
         Self::from_socket2(socket)
     }
 
