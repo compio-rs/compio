@@ -9,7 +9,7 @@ use std::{
     mem::ManuallyDrop,
     panic::RefUnwindSafe,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, Ordering},
         Arc,
     },
     task::Poll,
@@ -22,7 +22,8 @@ use crate::{AsRawFd, OwnedFd, RawFd};
 #[derive(Debug)]
 struct Inner {
     fd: OwnedFd,
-    waits: AtomicUsize,
+    // whether there is a future waiting
+    waits: AtomicBool,
     waker: AtomicWaker,
 }
 
@@ -38,7 +39,7 @@ impl SharedFd {
     pub fn new(fd: impl Into<OwnedFd>) -> Self {
         Self(Arc::new(Inner {
             fd: fd.into(),
-            waits: AtomicUsize::new(0),
+            waits: AtomicBool::new(false),
             waker: AtomicWaker::new(),
         }))
     }
@@ -70,7 +71,7 @@ impl SharedFd {
     pub fn take(self) -> impl Future<Output = Option<OwnedFd>> {
         let this = ManuallyDrop::new(self);
         async move {
-            if this.0.waits.fetch_add(1, Ordering::AcqRel) == 0 {
+            if !this.0.waits.swap(true, Ordering::AcqRel) {
                 poll_fn(move |cx| {
                     if let Some(fd) = unsafe { Self::try_unwrap_inner(&this) } {
                         return Poll::Ready(Some(fd));
