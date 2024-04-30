@@ -3,3 +3,5 @@
 /.vscode
 /.cargo
 /.idea
+/.direnv
+.envrc

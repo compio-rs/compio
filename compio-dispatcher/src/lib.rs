@@ -3,25 +3,23 @@
 #![warn(missing_docs)]
 
 use std::{
+    any::Any,
     future::Future,
     io,
     num::NonZeroUsize,
-    panic::{resume_unwind, UnwindSafe},
+    panic::resume_unwind,
+    pin::Pin,
     sync::{Arc, Mutex},
     thread::{available_parallelism, JoinHandle},
 };
 
 use compio_driver::{AsyncifyPool, ProactorBuilder};
-use compio_runtime::{
-    event::{Event, EventHandle},
-    Runtime,
-};
-use crossbeam_channel::{unbounded, Sender};
-use futures_util::{future::LocalBoxFuture, FutureExt};
+use compio_runtime::{event::Event, Runtime};
+use flume::{unbounded, SendError, Sender};
 
 /// The dispatcher. It manages the threads and dispatches the tasks.
 pub struct Dispatcher {
-    sender: Sender<DispatcherClosure>,
+    sender: Sender<Box<Closure>>,
     threads: Vec<JoinHandle<()>>,
     pool: AsyncifyPool,
 }
@@ -32,13 +30,12 @@ impl Dispatcher {
         let mut proactor_builder = builder.proactor_builder;
         proactor_builder.force_reuse_thread_pool();
         let pool = proactor_builder.create_or_get_thread_pool();
+        let (sender, receiver) = unbounded::<Box<Closure>>();
 
-        let (sender, receiver) = unbounded::<DispatcherClosure>();
         let threads = (0..builder.nthreads)
             .map({
                 |index| {
                     let proactor_builder = proactor_builder.clone();
-
                     let receiver = receiver.clone();
 
                     let thread_builder = std::thread::Builder::new();
@@ -54,17 +51,21 @@ impl Dispatcher {
                     };
 
                     thread_builder.spawn(move || {
-                        let runtime = Runtime::builder()
+                        Runtime::builder()
                             .with_proactor(proactor_builder)
                             .build()
-                            .expect("cannot create compio runtime");
-                        let _guard = runtime.enter();
-                        while let Ok(f) = receiver.recv() {
-                            *f.result.lock().unwrap() = Some(std::panic::catch_unwind(|| {
-                                Runtime::current().block_on((f.func)());
-                            }));
-                            f.handle.notify();
-                        }
+                            .expect("cannot create compio runtime")
+                            .block_on(async move {
+                                let rt = Runtime::current();
+                                while let Ok(f) = receiver.recv_async().await {
+                                    let fut = (f)();
+                                    if builder.concurrent {
+                                        rt.spawn(fut).detach()
+                                    } else {
+                                        fut.await
+                                    }
+                                }
+                            })
                     })
                 }
             })
@@ -86,30 +87,75 @@ impl Dispatcher {
         DispatcherBuilder::default()
     }
 
-    /// Dispatch a task to the threads.
+    fn prepare<Fut, Fn, R>(&self, f: Fn) -> (Executing<R>, Box<Closure>)
+    where
+        Fn: (FnOnce() -> Fut) + Send + 'static,
+        Fut: Future<Output = R> + 'static,
+        R: Any + Send + 'static,
+    {
+        let event = Event::new();
+        let handle = event.handle();
+        let res = Arc::new(Mutex::new(None));
+        let dispatched = Executing {
+            event,
+            result: res.clone(),
+        };
+        let closure = Box::new(|| {
+            Box::pin(async move {
+                *res.lock().unwrap() = Some(f().await);
+                handle.notify();
+            }) as BoxFuture<()>
+        });
+        (dispatched, closure)
+    }
+
+    /// Spawn a boxed closure to the threads.
+    ///
+    /// If all threads have panicked, this method will return an error with the
+    /// sent closure.
+    pub fn spawn(&self, closure: Box<Closure>) -> Result<(), SendError<Box<Closure>>> {
+        self.sender.send(closure)
+    }
+
+    /// Dispatch a task to the threads
     ///
     /// The provided `f` should be [`Send`] because it will be send to another
     /// thread before calling. The return [`Future`] need not to be [`Send`]
     /// because it will be executed on only one thread.
-    pub fn dispatch<
-        F: Future<Output = ()> + 'static,
-        Fn: (FnOnce() -> F) + Send + UnwindSafe + 'static,
-    >(
-        &self,
-        f: Fn,
-    ) -> io::Result<DispatcherJoinHandle> {
-        let event = Event::new();
-        let handle = event.handle();
-        let join_handle = DispatcherJoinHandle::new(event);
-        let closure = DispatcherClosure {
-            handle,
-            result: join_handle.result.clone(),
-            func: Box::new(|| f().boxed_local()),
-        };
-        self.sender
-            .send(closure)
-            .expect("the channel should not be disconnected");
-        Ok(join_handle)
+    ///
+    /// # Error
+    ///
+    /// If all threads have panicked, this method will return an error with the
+    /// sent closure. Notice that the returned closure is not the same as the
+    /// argument and cannot be simply transmuted back to `Fn`.
+    pub fn dispatch<Fut, Fn>(&self, f: Fn) -> Result<(), SendError<Box<Closure>>>
+    where
+        Fn: (FnOnce() -> Fut) + Send + 'static,
+        Fut: Future<Output = ()> + 'static,
+    {
+        self.spawn(Box::new(|| Box::pin(f()) as BoxFuture<()>))
+    }
+
+    /// Execute a task on the threads and retrieve its returned value.
+    ///
+    /// The provided `f` should be [`Send`] because it will be send to another
+    /// thread before calling. The return [`Future`] need not to be [`Send`]
+    /// because it will be executed on only one thread.
+    ///
+    /// # Error
+    ///
+    /// If all threads have panicked, this method will return an error with the
+    /// sent closure. Notice that the returned closure is not the same as the
+    /// argument and cannot be simply transmuted back to `Fn`.
+    pub fn execute<Fut, Fn, R>(&self, f: Fn) -> Result<Executing<R>, SendError<Box<Closure>>>
+    where
+        Fn: (FnOnce() -> Fut) + Send + 'static,
+        Fut: Future<Output = R> + 'static,
+        R: Any + Send + 'static,
+    {
+        let (dispatched, closure) = self.prepare(f);
+        self.spawn(closure)?;
+        Ok(dispatched)
     }
 
     /// Stop the dispatcher and wait for the threads to complete. If there is a
@@ -135,7 +181,6 @@ impl Dispatcher {
         event.wait().await;
         let mut guard = results.lock().unwrap();
         for res in std::mem::take::<Vec<std::thread::Result<()>>>(guard.as_mut()) {
-            // The thread should not panic.
             res.unwrap_or_else(|e| resume_unwind(e));
         }
         Ok(())
@@ -145,6 +190,7 @@ impl Dispatcher {
 /// A builder for [`Dispatcher`].
 pub struct DispatcherBuilder {
     nthreads: usize,
+    concurrent: bool,
     stack_size: Option<usize>,
     names: Option<Box<dyn FnMut(usize) -> String>>,
     proactor_builder: ProactorBuilder,
@@ -155,10 +201,20 @@ impl DispatcherBuilder {
     pub fn new() -> Self {
         Self {
             nthreads: available_parallelism().map(|n| n.get()).unwrap_or(1),
+            concurrent: true,
             stack_size: None,
             names: None,
             proactor_builder: ProactorBuilder::new(),
         }
+    }
+
+    /// If execute tasks concurrently. Default to be `true`.
+    ///
+    /// When set to `false`, tasks are executed sequentially without any
+    /// concurrency within the thread.
+    pub fn concurrent(mut self, concurrent: bool) -> Self {
+        self.concurrent = concurrent;
+        self
     }
 
     /// Set the number of worker threads of the dispatcher. The default value is
@@ -199,36 +255,36 @@ impl Default for DispatcherBuilder {
     }
 }
 
-type Closure<'a> = dyn (FnOnce() -> LocalBoxFuture<'a, ()>) + Send + UnwindSafe;
+type BoxFuture<T> = Pin<Box<dyn Future<Output = T>>>;
+type Closure = dyn (FnOnce() -> BoxFuture<()>) + Send;
 
-struct DispatcherClosure {
-    handle: EventHandle,
-    result: Arc<Mutex<Option<std::thread::Result<()>>>>,
-    func: Box<Closure<'static>>,
-}
-
-/// The join handle for dispatched task.
-pub struct DispatcherJoinHandle {
+/// The join handle for an executing task. It can be used to wait for the
+/// task's returned value.
+pub struct Executing<R> {
     event: Event,
-    result: Arc<Mutex<Option<std::thread::Result<()>>>>,
+    result: Arc<Mutex<Option<R>>>,
 }
 
-impl DispatcherJoinHandle {
-    pub(crate) fn new(event: Event) -> Self {
-        Self {
-            event,
-            result: Arc::new(Mutex::new(None)),
+impl<R: 'static> Executing<R> {
+    fn take(val: &Mutex<Option<R>>) -> R {
+        val.lock()
+            .unwrap()
+            .take()
+            .expect("the result should be set")
+    }
+
+    /// Try to wait for the task to complete without blocking.
+    pub fn try_join(self) -> Result<R, Self> {
+        if self.event.notified() {
+            Ok(Self::take(&self.result))
+        } else {
+            Err(self)
         }
     }
 
     /// Wait for the task to complete.
-    pub async fn join(self) -> io::Result<std::thread::Result<()>> {
+    pub async fn join(self) -> R {
         self.event.wait().await;
-        Ok(self
-            .result
-            .lock()
-            .unwrap()
-            .take()
-            .expect("the result should be set"))
+        Self::take(&self.result)
     }
 }
