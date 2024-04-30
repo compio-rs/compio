@@ -1,3 +1,7 @@
+#[cfg(unix)]
+use std::os::fd::{FromRawFd, RawFd};
+#[cfg(windows)]
+use std::os::windows::io::{FromRawHandle, FromRawSocket, RawHandle, RawSocket};
 use std::{
     io,
     ops::{Deref, DerefMut},
@@ -49,6 +53,27 @@ impl<S> IntoInner for Attacher<S> {
 
     fn into_inner(self) -> Self::Inner {
         self.source
+    }
+}
+
+#[cfg(windows)]
+impl<S: FromRawHandle> FromRawHandle for Attacher<S> {
+    unsafe fn from_raw_handle(handle: RawHandle) -> Self {
+        Self::new_unchecked(S::from_raw_handle(handle))
+    }
+}
+
+#[cfg(windows)]
+impl<S: FromRawSocket> FromRawSocket for Attacher<S> {
+    unsafe fn from_raw_socket(sock: RawSocket) -> Self {
+        Self::new_unchecked(S::from_raw_socket(sock))
+    }
+}
+
+#[cfg(unix)]
+impl<S: FromRawFd> FromRawFd for Attacher<S> {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
+        Self::new_unchecked(S::from_raw_fd(fd))
     }
 }
 

@@ -11,7 +11,7 @@ use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectore
 use compio_driver::{
     impl_raw_fd,
     op::{BufResultExt, Recv, RecvVectored, Send, SendVectored},
-    syscall, AsRawFd, RawFd, ToSharedFd,
+    syscall, AsRawFd, ToSharedFd,
 };
 use compio_io::{AsyncRead, AsyncWrite};
 use compio_runtime::Runtime;
@@ -390,15 +390,7 @@ impl AsyncWrite for &Sender {
     }
 }
 
-impl_raw_fd!(Sender, file);
-
-impl FromRawFd for Sender {
-    unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self {
-            file: File::from_std(std::fs::File::from_raw_fd(fd)).expect("attach should be Ok"),
-        }
-    }
-}
+impl_raw_fd!(Sender, file, file);
 
 /// Reading end of a Unix pipe.
 ///
@@ -519,15 +511,7 @@ impl AsyncRead for &Receiver {
     }
 }
 
-impl_raw_fd!(Receiver, file);
-
-impl FromRawFd for Receiver {
-    unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self {
-            file: File::from_std(std::fs::File::from_raw_fd(fd)).expect("attach should be Ok"),
-        }
-    }
-}
+impl_raw_fd!(Receiver, file, file);
 
 /// Checks if file is a FIFO
 async fn is_fifo(file: &File) -> io::Result<bool> {

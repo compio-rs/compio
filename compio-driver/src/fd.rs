@@ -1,3 +1,9 @@
+#[cfg(unix)]
+use std::os::fd::FromRawFd;
+#[cfg(windows)]
+use std::os::windows::io::{
+    FromRawHandle, FromRawSocket, OwnedHandle, OwnedSocket, RawHandle, RawSocket,
+};
 use std::{
     future::{poll_fn, Future},
     mem::ManuallyDrop,
@@ -99,14 +105,10 @@ impl Drop for SharedFd {
 #[doc(hidden)]
 impl SharedFd {
     pub unsafe fn to_file(&self) -> ManuallyDrop<std::fs::File> {
-        use std::os::windows::io::FromRawHandle;
-
         ManuallyDrop::new(std::fs::File::from_raw_handle(self.as_raw_fd() as _))
     }
 
     pub unsafe fn to_socket(&self) -> ManuallyDrop<socket2::Socket> {
-        use std::os::windows::io::FromRawSocket;
-
         ManuallyDrop::new(socket2::Socket::from_raw_socket(self.as_raw_fd() as _))
     }
 }
@@ -115,14 +117,10 @@ impl SharedFd {
 #[doc(hidden)]
 impl SharedFd {
     pub unsafe fn to_file(&self) -> ManuallyDrop<std::fs::File> {
-        use std::os::fd::FromRawFd;
-
         ManuallyDrop::new(std::fs::File::from_raw_fd(self.as_raw_fd() as _))
     }
 
     pub unsafe fn to_socket(&self) -> ManuallyDrop<socket2::Socket> {
-        use std::os::fd::FromRawFd;
-
         ManuallyDrop::new(socket2::Socket::from_raw_fd(self.as_raw_fd() as _))
     }
 }
@@ -130,6 +128,27 @@ impl SharedFd {
 impl AsRawFd for SharedFd {
     fn as_raw_fd(&self) -> RawFd {
         self.0.fd.as_raw_fd()
+    }
+}
+
+#[cfg(windows)]
+impl FromRawHandle for SharedFd {
+    unsafe fn from_raw_handle(handle: RawHandle) -> Self {
+        Self::new(OwnedFd::File(OwnedHandle::from_raw_handle(handle)))
+    }
+}
+
+#[cfg(windows)]
+impl FromRawSocket for SharedFd {
+    unsafe fn from_raw_socket(sock: RawSocket) -> Self {
+        Self::new(OwnedFd::Socket(OwnedSocket::from_raw_socket(sock)))
+    }
+}
+
+#[cfg(unix)]
+impl FromRawFd for SharedFd {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
+        Self::new(OwnedFd::from_raw_fd(fd))
     }
 }
 

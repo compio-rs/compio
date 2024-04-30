@@ -114,9 +114,39 @@ macro_rules! impl_raw_fd {
                 self.$inner.as_raw_fd()
             }
         }
+        #[cfg(unix)]
+        impl std::os::fd::FromRawFd for $t {
+            unsafe fn from_raw_fd(fd: $crate::RawFd) -> Self {
+                Self {
+                    $inner: std::os::fd::FromRawFd::from_raw_fd(fd),
+                }
+            }
+        }
         impl $crate::ToSharedFd for $t {
             fn to_shared_fd(&self) -> $crate::SharedFd {
                 self.$inner.to_shared_fd()
+            }
+        }
+    };
+    ($t:ty, $inner:ident,file) => {
+        $crate::impl_raw_fd!($t, $inner);
+        #[cfg(windows)]
+        impl std::os::windows::io::FromRawHandle for $t {
+            unsafe fn from_raw_handle(handle: std::os::windows::io::RawHandle) -> Self {
+                Self {
+                    $inner: std::os::windows::io::FromRawHandle::from_raw_handle(handle),
+                }
+            }
+        }
+    };
+    ($t:ty, $inner:ident,socket) => {
+        $crate::impl_raw_fd!($t, $inner);
+        #[cfg(windows)]
+        impl std::os::windows::io::FromRawSocket for $t {
+            unsafe fn from_raw_socket(sock: std::os::windows::io::RawSocket) -> Self {
+                Self {
+                    $inner: std::os::windows::io::FromRawSocket::from_raw_socket(sock),
+                }
             }
         }
     };

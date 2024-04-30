@@ -274,4 +274,4 @@ impl Socket {
     }
 }
 
-impl_raw_fd!(Socket, socket);
+impl_raw_fd!(Socket, socket, socket);

@@ -87,7 +87,7 @@ impl UnixListener {
     }
 }
 
-impl_raw_fd!(UnixListener, inner);
+impl_raw_fd!(UnixListener, inner, socket);
 
 /// A Unix stream between two local sockets on Windows & WSL.
 ///
@@ -257,7 +257,7 @@ impl AsyncWrite for &UnixStream {
     }
 }
 
-impl_raw_fd!(UnixStream, inner);
+impl_raw_fd!(UnixStream, inner, socket);
 
 #[cfg(windows)]
 #[inline]

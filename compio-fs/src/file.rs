@@ -214,4 +214,4 @@ impl AsyncWriteAt for &File {
     }
 }
 
-impl_raw_fd!(File, inner);
+impl_raw_fd!(File, inner, file);

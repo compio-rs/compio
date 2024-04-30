@@ -251,4 +251,4 @@ impl UdpSocket {
     }
 }
 
-impl_raw_fd!(UdpSocket, inner);
+impl_raw_fd!(UdpSocket, inner, socket);

@@ -229,7 +229,7 @@ impl AsyncWrite for &NamedPipeServer {
     }
 }
 
-impl_raw_fd!(NamedPipeServer, handle);
+impl_raw_fd!(NamedPipeServer, handle, file);
 
 /// A [Windows named pipe] client.
 ///
@@ -350,7 +350,7 @@ impl AsyncWrite for &NamedPipeClient {
     }
 }
 
-impl_raw_fd!(NamedPipeClient, handle);
+impl_raw_fd!(NamedPipeClient, handle, file);
 
 /// A builder structure for construct a named pipe with named pipe-specific
 /// options. This is required to use for named pipe servers who wants to modify
