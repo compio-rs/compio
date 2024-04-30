@@ -75,6 +75,6 @@ fn main() {
     }
     println!("{}", String::from_utf8(buffer).unwrap());
 
-    let op = CloseFile::new(fd.try_owned().unwrap());
+    let op = CloseFile::new(fd.try_unwrap().unwrap());
     push_and_wait(&mut driver, op);
 }

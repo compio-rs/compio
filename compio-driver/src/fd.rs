@@ -1,5 +1,5 @@
 use std::{
-    future::{poll_fn, ready, Future},
+    future::{poll_fn, Future},
     mem::ManuallyDrop,
     panic::RefUnwindSafe,
     sync::{
@@ -9,7 +9,7 @@ use std::{
     task::Poll,
 };
 
-use futures_util::{future::Either, task::AtomicWaker};
+use futures_util::task::AtomicWaker;
 
 use crate::{AsRawFd, OwnedFd, RawFd};
 
@@ -38,18 +38,18 @@ impl SharedFd {
     }
 
     /// Try to take the inner owned fd.
-    pub fn try_owned(self) -> Result<OwnedFd, Self> {
+    pub fn try_unwrap(self) -> Result<OwnedFd, Self> {
         let this = ManuallyDrop::new(self);
-        if let Some(fd) = Self::try_owned_inner(&this) {
+        if let Some(fd) = unsafe { Self::try_unwrap_inner(&this) } {
             Ok(fd)
         } else {
             Err(ManuallyDrop::into_inner(this))
         }
     }
 
-    fn try_owned_inner(this: &ManuallyDrop<Self>) -> Option<OwnedFd> {
-        // SAFETY: see ManuallyDrop::take
-        let ptr = ManuallyDrop::new(unsafe { std::ptr::read(&this.0) });
+    // SAFETY: if `Some` is returned, the method should not be called again.
+    unsafe fn try_unwrap_inner(this: &ManuallyDrop<Self>) -> Option<OwnedFd> {
+        let ptr = ManuallyDrop::new(std::ptr::read(&this.0));
         // The ptr is duplicated without increasing the strong count, should forget.
         match Arc::try_unwrap(ManuallyDrop::into_inner(ptr)) {
             Ok(inner) => Some(inner.fd),
@@ -62,26 +62,26 @@ impl SharedFd {
 
     /// Wait and take the inner owned fd.
     pub fn take(self) -> impl Future<Output = Option<OwnedFd>> {
-        if self.0.waits.fetch_add(1, Ordering::AcqRel) == 0 {
-            let this = ManuallyDrop::new(self);
-            Either::Left(async move {
-                poll_fn(|cx| {
-                    if let Some(fd) = Self::try_owned_inner(&this) {
+        let this = ManuallyDrop::new(self);
+        async move {
+            if this.0.waits.fetch_add(1, Ordering::AcqRel) == 0 {
+                poll_fn(move |cx| {
+                    if let Some(fd) = unsafe { Self::try_unwrap_inner(&this) } {
                         return Poll::Ready(Some(fd));
                     }
 
                     this.0.waker.register(cx.waker());
 
-                    if let Some(fd) = Self::try_owned_inner(&this) {
+                    if let Some(fd) = unsafe { Self::try_unwrap_inner(&this) } {
                         Poll::Ready(Some(fd))
                     } else {
                         Poll::Pending
                     }
                 })
                 .await
-            })
-        } else {
-            Either::Right(ready(None))
+            } else {
+                None
+            }
         }
     }
 }

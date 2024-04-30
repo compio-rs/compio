@@ -156,13 +156,17 @@ impl Socket {
 
     #[cfg(windows)]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
+        use std::panic::resume_unwind;
+
         let domain = self.local_addr()?.domain();
         // We should allow users sending this accepted socket to a new thread.
         let this_socket = unsafe { self.socket.to_socket() };
         let ty = this_socket.r#type()?;
         let protocol = this_socket.protocol()?;
         let accept_sock =
-            compio_runtime::spawn_blocking(move || Socket2::new(domain, ty, protocol)).await?;
+            compio_runtime::spawn_blocking(move || Socket2::new(domain, ty, protocol))
+                .await
+                .unwrap_or_else(|e| resume_unwind(e))?;
         let op = Accept::new(self.to_shared_fd(), accept_sock);
         let BufResult(res, op) = Runtime::current().submit(op).await;
         res?;

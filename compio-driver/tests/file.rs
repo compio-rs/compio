@@ -73,7 +73,7 @@ fn cancel_before_poll() {
 
     assert!(res.is_ok() || res.unwrap_err().kind() == io::ErrorKind::TimedOut);
 
-    let op = CloseFile::new(fd.try_owned().unwrap());
+    let op = CloseFile::new(fd.try_unwrap().unwrap());
     push_and_wait(&mut driver, op).unwrap();
 }
 
@@ -119,7 +119,7 @@ fn register_multiple() {
         driver.cancel(entry);
     }
 
-    let op = CloseFile::new(fd.try_owned().unwrap());
+    let op = CloseFile::new(fd.try_unwrap().unwrap());
     push_and_wait(&mut driver, op).unwrap();
 }
 
