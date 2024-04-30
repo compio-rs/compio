@@ -126,7 +126,8 @@ impl Dispatcher {
     /// # Error
     ///
     /// If all threads have panicked, this method will return an error with the
-    /// sent closure.
+    /// sent closure. Notice that the returned closure is not the same as the
+    /// argument and cannot be simply transmuted back to `Fn`.
     pub fn dispatch<Fut, Fn>(&self, f: Fn) -> Result<(), SendError<Box<Closure>>>
     where
         Fn: (FnOnce() -> Fut) + Send + 'static,
@@ -144,7 +145,8 @@ impl Dispatcher {
     /// # Error
     ///
     /// If all threads have panicked, this method will return an error with the
-    /// sent closure.
+    /// sent closure. Notice that the returned closure is not the same as the
+    /// argument and cannot be simply transmuted back to `Fn`.
     pub fn execute<Fut, Fn, R>(&self, f: Fn) -> Result<Executing<R>, SendError<Box<Closure>>>
     where
         Fn: (FnOnce() -> Fut) + Send + 'static,
