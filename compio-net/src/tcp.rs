@@ -3,7 +3,6 @@ use std::{future::Future, io, net::SocketAddr};
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::impl_try_clone;
 use socket2::{Protocol, SockAddr, Type};
 
 use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, ToSocketAddrsAsync, WriteHalf};
@@ -40,7 +39,7 @@ use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, ToSocketAddrsAsync,
 /// assert_eq!(buf, b"test");
 /// # });
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TcpListener {
     inner: Socket,
 }
@@ -110,9 +109,7 @@ impl TcpListener {
     }
 }
 
-impl_raw_fd!(TcpListener, inner);
-
-impl_try_clone!(TcpListener, inner);
+impl_raw_fd!(TcpListener, inner, socket);
 
 /// A TCP stream between a local and a remote socket.
 ///
@@ -135,7 +132,7 @@ impl_try_clone!(TcpListener, inner);
 /// stream.write("hello world!").await.unwrap();
 /// # })
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TcpStream {
     inner: Socket,
 }
@@ -276,6 +273,4 @@ impl AsyncWrite for &TcpStream {
     }
 }
 
-impl_raw_fd!(TcpStream, inner);
-
-impl_try_clone!(TcpStream, inner);
+impl_raw_fd!(TcpStream, inner, socket);

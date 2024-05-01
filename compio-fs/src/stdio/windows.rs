@@ -1,6 +1,7 @@
 use std::{
     io::{self, IsTerminal, Read, Write},
-    os::windows::io::AsRawHandle,
+    mem::ManuallyDrop,
+    os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
     pin::Pin,
     sync::OnceLock,
     task::Poll,
@@ -9,7 +10,7 @@ use std::{
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
     op::{BufResultExt, Recv, Send},
-    AsRawFd, OpCode, OpType, RawFd,
+    AsRawFd, OpCode, OpType, RawFd, SharedFd,
 };
 use compio_io::{AsyncRead, AsyncWrite};
 use compio_runtime::Runtime;
@@ -103,8 +104,9 @@ static STDIN_ISATTY: OnceLock<bool> = OnceLock::new();
 /// A handle to the standard input stream of a process.
 ///
 /// See [`stdin`].
+#[derive(Debug, Clone)]
 pub struct Stdin {
-    fd: RawFd,
+    fd: ManuallyDrop<SharedFd>,
     isatty: bool,
 }
 
@@ -112,10 +114,15 @@ impl Stdin {
     pub(crate) fn new() -> Self {
         let stdin = io::stdin();
         let isatty = *STDIN_ISATTY.get_or_init(|| {
-            stdin.is_terminal() || Runtime::current().attach(stdin.as_raw_handle()).is_err()
+            stdin.is_terminal()
+                || Runtime::current()
+                    .attach(stdin.as_raw_handle() as _)
+                    .is_err()
         });
         Self {
-            fd: stdin.as_raw_handle() as _,
+            fd: ManuallyDrop::new(SharedFd::new(unsafe {
+                OwnedHandle::from_raw_handle(stdin.as_raw_handle())
+            })),
             isatty,
         }
     }
@@ -128,7 +135,7 @@ impl AsyncRead for Stdin {
             let op = StdRead::new(io::stdin(), buf);
             runtime.submit(op).await.into_inner()
         } else {
-            let op = Recv::new(self.fd, buf);
+            let op = Recv::new(ManuallyDrop::into_inner(self.fd.clone()), buf);
             runtime.submit(op).await.into_inner()
         }
         .map_advanced()
@@ -137,7 +144,7 @@ impl AsyncRead for Stdin {
 
 impl AsRawFd for Stdin {
     fn as_raw_fd(&self) -> RawFd {
-        self.fd
+        self.fd.as_raw_fd()
     }
 }
 
@@ -146,8 +153,9 @@ static STDOUT_ISATTY: OnceLock<bool> = OnceLock::new();
 /// A handle to the standard output stream of a process.
 ///
 /// See [`stdout`].
+#[derive(Debug, Clone)]
 pub struct Stdout {
-    fd: RawFd,
+    fd: ManuallyDrop<SharedFd>,
     isatty: bool,
 }
 
@@ -155,10 +163,15 @@ impl Stdout {
     pub(crate) fn new() -> Self {
         let stdout = io::stdout();
         let isatty = *STDOUT_ISATTY.get_or_init(|| {
-            stdout.is_terminal() || Runtime::current().attach(stdout.as_raw_handle()).is_err()
+            stdout.is_terminal()
+                || Runtime::current()
+                    .attach(stdout.as_raw_handle() as _)
+                    .is_err()
         });
         Self {
-            fd: stdout.as_raw_handle() as _,
+            fd: ManuallyDrop::new(SharedFd::new(unsafe {
+                OwnedHandle::from_raw_handle(stdout.as_raw_handle())
+            })),
             isatty,
         }
     }
@@ -171,7 +184,7 @@ impl AsyncWrite for Stdout {
             let op = StdWrite::new(io::stdout(), buf);
             runtime.submit(op).await.into_inner()
         } else {
-            let op = Send::new(self.fd, buf);
+            let op = Send::new(ManuallyDrop::into_inner(self.fd.clone()), buf);
             runtime.submit(op).await.into_inner()
         }
     }
@@ -187,7 +200,7 @@ impl AsyncWrite for Stdout {
 
 impl AsRawFd for Stdout {
     fn as_raw_fd(&self) -> RawFd {
-        self.fd
+        self.fd.as_raw_fd()
     }
 }
 
@@ -196,8 +209,9 @@ static STDERR_ISATTY: OnceLock<bool> = OnceLock::new();
 /// A handle to the standard output stream of a process.
 ///
 /// See [`stderr`].
+#[derive(Debug, Clone)]
 pub struct Stderr {
-    fd: RawFd,
+    fd: ManuallyDrop<SharedFd>,
     isatty: bool,
 }
 
@@ -205,10 +219,15 @@ impl Stderr {
     pub(crate) fn new() -> Self {
         let stderr = io::stderr();
         let isatty = *STDERR_ISATTY.get_or_init(|| {
-            stderr.is_terminal() || Runtime::current().attach(stderr.as_raw_handle()).is_err()
+            stderr.is_terminal()
+                || Runtime::current()
+                    .attach(stderr.as_raw_handle() as _)
+                    .is_err()
         });
         Self {
-            fd: stderr.as_raw_handle() as _,
+            fd: ManuallyDrop::new(SharedFd::new(unsafe {
+                OwnedHandle::from_raw_handle(stderr.as_raw_handle())
+            })),
             isatty,
         }
     }
@@ -221,7 +240,7 @@ impl AsyncWrite for Stderr {
             let op = StdWrite::new(io::stderr(), buf);
             runtime.submit(op).await.into_inner()
         } else {
-            let op = Send::new(self.fd, buf);
+            let op = Send::new(ManuallyDrop::into_inner(self.fd.clone()), buf);
             runtime.submit(op).await.into_inner()
         }
     }
@@ -237,6 +256,6 @@ impl AsyncWrite for Stderr {
 
 impl AsRawFd for Stderr {
     fn as_raw_fd(&self) -> RawFd {
-        self.fd
+        self.fd.as_raw_fd()
     }
 }

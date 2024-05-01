@@ -28,7 +28,7 @@ impl Port {
     }
 
     pub fn poll(&self, timeout: Option<Duration>) -> io::Result<impl Iterator<Item = Entry> + '_> {
-        let current_id = self.as_raw_handle();
+        let current_id = self.as_raw_handle() as _;
         self.port.poll(timeout, Some(current_id))
     }
 }

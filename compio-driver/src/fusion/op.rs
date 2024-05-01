@@ -5,6 +5,7 @@ use socket2::SockAddr;
 
 use super::*;
 pub use crate::unix::op::*;
+use crate::SharedFd;
 
 macro_rules! op {
     (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ident),* $(,)? )) => {
@@ -91,9 +92,9 @@ mod iour { pub use crate::sys::iour::{op::*, OpCode}; }
 #[rustfmt::skip]
 mod poll { pub use crate::sys::poll::{op::*, OpCode}; }
 
-op!(<T: IoBufMut> RecvFrom(fd: RawFd, buffer: T));
-op!(<T: IoBuf> SendTo(fd: RawFd, buffer: T, addr: SockAddr));
-op!(<T: IoVectoredBufMut> RecvFromVectored(fd: RawFd, buffer: T));
-op!(<T: IoVectoredBuf> SendToVectored(fd: RawFd, buffer: T, addr: SockAddr));
-op!(<> FileStat(fd: RawFd));
+op!(<T: IoBufMut> RecvFrom(fd: SharedFd, buffer: T));
+op!(<T: IoBuf> SendTo(fd: SharedFd, buffer: T, addr: SockAddr));
+op!(<T: IoVectoredBufMut> RecvFromVectored(fd: SharedFd, buffer: T));
+op!(<T: IoVectoredBuf> SendToVectored(fd: SharedFd, buffer: T, addr: SockAddr));
+op!(<> FileStat(fd: SharedFd));
 op!(<> PathStat(path: CString, follow_symlink: bool));

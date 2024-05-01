@@ -4,12 +4,12 @@
 
 #[cfg(doc)]
 use std::ptr::null_mut;
-use std::{ffi::OsStr, io, ptr::null};
+use std::{ffi::OsStr, io, os::windows::io::FromRawHandle, ptr::null};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
-use compio_driver::{impl_raw_fd, op::ConnectNamedPipe, syscall, AsRawFd, FromRawFd, RawFd};
+use compio_driver::{impl_raw_fd, op::ConnectNamedPipe, syscall, AsRawFd, RawFd, ToSharedFd};
 use compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt};
-use compio_runtime::{impl_try_clone, Runtime};
+use compio_runtime::Runtime;
 use widestring::U16CString;
 use windows_sys::Win32::{
     Storage::FileSystem::{
@@ -86,7 +86,7 @@ use crate::{File, OpenOptions};
 /// ```
 ///
 /// [Windows named pipe]: https://docs.microsoft.com/en-us/windows/win32/ipc/named-pipes
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NamedPipeServer {
     handle: File,
 }
@@ -141,7 +141,7 @@ impl NamedPipeServer {
     /// # std::io::Result::Ok(()) });
     /// ```
     pub async fn connect(&self) -> io::Result<()> {
-        let op = ConnectNamedPipe::new(self.handle.as_raw_fd());
+        let op = ConnectNamedPipe::new(self.handle.to_shared_fd());
         Runtime::current().submit(op).await.0?;
         Ok(())
     }
@@ -229,9 +229,7 @@ impl AsyncWrite for &NamedPipeServer {
     }
 }
 
-impl_raw_fd!(NamedPipeServer, handle);
-
-impl_try_clone!(NamedPipeServer, handle);
+impl_raw_fd!(NamedPipeServer, handle, file);
 
 /// A [Windows named pipe] client.
 ///
@@ -272,7 +270,7 @@ impl_try_clone!(NamedPipeServer, handle);
 ///
 /// [`ERROR_PIPE_BUSY`]: https://docs.rs/windows-sys/latest/windows_sys/Win32/Foundation/constant.ERROR_PIPE_BUSY.html
 /// [Windows named pipe]: https://docs.microsoft.com/en-us/windows/win32/ipc/named-pipes
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NamedPipeClient {
     handle: File,
 }
@@ -352,9 +350,7 @@ impl AsyncWrite for &NamedPipeClient {
     }
 }
 
-impl_raw_fd!(NamedPipeClient, handle);
-
-impl_try_clone!(NamedPipeClient, handle);
+impl_raw_fd!(NamedPipeClient, handle, file);
 
 /// A builder structure for construct a named pipe with named pipe-specific
 /// options. This is required to use for named pipe servers who wants to modify
@@ -978,7 +974,7 @@ impl ServerOptions {
         )?;
 
         Ok(NamedPipeServer {
-            handle: File::new(unsafe { std::fs::File::from_raw_fd(h as _) })?,
+            handle: File::from_std(unsafe { std::fs::File::from_raw_handle(h as _) })?,
         })
     }
 }

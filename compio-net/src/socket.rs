@@ -9,29 +9,29 @@ use compio_driver::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored,
         RecvResultExt, RecvVectored, Send, SendTo, SendToVectored, SendVectored, ShutdownSocket,
     },
-    AsRawFd,
+    SharedFd, ToSharedFd,
 };
-use compio_runtime::{impl_try_clone, Attacher, Runtime};
+use compio_runtime::{Attacher, Runtime};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Socket {
-    socket: Attacher<Socket2>,
+    socket: Attacher<SharedFd>,
 }
 
 impl Socket {
     pub fn from_socket2(socket: Socket2) -> io::Result<Self> {
         Ok(Self {
-            socket: Attacher::new(socket)?,
+            socket: Attacher::new(SharedFd::new(socket))?,
         })
     }
 
     pub fn peer_addr(&self) -> io::Result<SockAddr> {
-        self.socket.peer_addr()
+        unsafe { self.socket.to_socket() }.peer_addr()
     }
 
     pub fn local_addr(&self) -> io::Result<SockAddr> {
-        self.socket.local_addr()
+        unsafe { self.socket.to_socket() }.local_addr()
     }
 
     #[cfg(windows)]
@@ -46,7 +46,7 @@ impl Socket {
 
     #[cfg(unix)]
     pub async fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
-        use compio_driver::FromRawFd;
+        use std::os::fd::FromRawFd;
 
         #[allow(unused_mut)]
         let mut ty: i32 = ty.into();
@@ -109,20 +109,20 @@ impl Socket {
 
     pub async fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
         let socket = Self::new(addr.domain(), ty, protocol).await?;
-        socket.socket.bind(addr)?;
+        unsafe { socket.socket.to_socket() }.bind(addr)?;
         Ok(socket)
     }
 
     pub fn listen(&self, backlog: i32) -> io::Result<()> {
-        self.socket.listen(backlog)
+        unsafe { self.socket.to_socket() }.listen(backlog)
     }
 
     pub fn connect(&self, addr: &SockAddr) -> io::Result<()> {
-        self.socket.connect(addr)
+        unsafe { self.socket.to_socket() }.connect(addr)
     }
 
     pub async fn connect_async(&self, addr: &SockAddr) -> io::Result<()> {
-        let op = Connect::new(self.as_raw_fd(), addr.clone());
+        let op = Connect::new(self.to_shared_fd(), addr.clone());
         let BufResult(res, _op) = Runtime::current().submit(op).await;
         #[cfg(windows)]
         {
@@ -138,9 +138,9 @@ impl Socket {
 
     #[cfg(unix)]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
-        use compio_driver::FromRawFd;
+        use std::os::fd::FromRawFd;
 
-        let op = Accept::new(self.as_raw_fd());
+        let op = Accept::new(self.to_shared_fd());
         let BufResult(res, op) = Runtime::current().submit(op).await;
         let accept_sock = unsafe { Socket2::from_raw_fd(res? as _) };
         if cfg!(all(
@@ -156,16 +156,23 @@ impl Socket {
 
     #[cfg(windows)]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
+        use std::panic::resume_unwind;
+
         let domain = self.local_addr()?.domain();
-        let ty = self.socket.r#type()?;
-        let protocol = self.socket.protocol()?;
-        let accept_sock = Self::new(domain, ty, protocol).await?;
-        let op = Accept::new(self.as_raw_fd(), accept_sock.as_raw_fd() as _);
+        // We should allow users sending this accepted socket to a new thread.
+        let this_socket = unsafe { self.socket.to_socket() };
+        let ty = this_socket.r#type()?;
+        let protocol = this_socket.protocol()?;
+        let accept_sock =
+            compio_runtime::spawn_blocking(move || Socket2::new(domain, ty, protocol))
+                .await
+                .unwrap_or_else(|e| resume_unwind(e))?;
+        let op = Accept::new(self.to_shared_fd(), accept_sock);
         let BufResult(res, op) = Runtime::current().submit(op).await;
         res?;
         op.update_context()?;
-        let addr = op.into_addr()?;
-        Ok((accept_sock, addr))
+        let (accept_sock, addr) = op.into_addr()?;
+        Ok((Self::from_socket2(accept_sock)?, addr))
     }
 
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
@@ -174,20 +181,27 @@ impl Socket {
         // `close` should be cancelled.
         let this = ManuallyDrop::new(self);
         async move {
-            let op = CloseSocket::new(this.as_raw_fd());
-            Runtime::current().submit(op).await.0?;
+            let fd = ManuallyDrop::into_inner(this)
+                .socket
+                .into_inner()
+                .take()
+                .await;
+            if let Some(fd) = fd {
+                let op = CloseSocket::new(fd);
+                Runtime::current().submit(op).await.0?;
+            }
             Ok(())
         }
     }
 
     pub async fn shutdown(&self) -> io::Result<()> {
-        let op = ShutdownSocket::new(self.as_raw_fd(), std::net::Shutdown::Write);
+        let op = ShutdownSocket::new(self.to_shared_fd(), std::net::Shutdown::Write);
         Runtime::current().submit(op).await.0?;
         Ok(())
     }
 
     pub async fn recv<B: IoBufMut>(&self, buffer: B) -> BufResult<usize, B> {
-        let fd = self.as_raw_fd();
+        let fd = self.to_shared_fd();
         let op = Recv::new(fd, buffer);
         Runtime::current()
             .submit(op)
@@ -197,7 +211,7 @@ impl Socket {
     }
 
     pub async fn recv_vectored<V: IoVectoredBufMut>(&self, buffer: V) -> BufResult<usize, V> {
-        let fd = self.as_raw_fd();
+        let fd = self.to_shared_fd();
         let op = RecvVectored::new(fd, buffer);
         Runtime::current()
             .submit(op)
@@ -207,19 +221,19 @@ impl Socket {
     }
 
     pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        let fd = self.as_raw_fd();
+        let fd = self.to_shared_fd();
         let op = Send::new(fd, buffer);
         Runtime::current().submit(op).await.into_inner()
     }
 
     pub async fn send_vectored<T: IoVectoredBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        let fd = self.as_raw_fd();
+        let fd = self.to_shared_fd();
         let op = SendVectored::new(fd, buffer);
         Runtime::current().submit(op).await.into_inner()
     }
 
     pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SockAddr), T> {
-        let fd = self.as_raw_fd();
+        let fd = self.to_shared_fd();
         let op = RecvFrom::new(fd, buffer);
         Runtime::current()
             .submit(op)
@@ -233,7 +247,7 @@ impl Socket {
         &self,
         buffer: T,
     ) -> BufResult<(usize, SockAddr), T> {
-        let fd = self.as_raw_fd();
+        let fd = self.to_shared_fd();
         let op = RecvFromVectored::new(fd, buffer);
         Runtime::current()
             .submit(op)
@@ -244,7 +258,7 @@ impl Socket {
     }
 
     pub async fn send_to<T: IoBuf>(&self, buffer: T, addr: &SockAddr) -> BufResult<usize, T> {
-        let fd = self.as_raw_fd();
+        let fd = self.to_shared_fd();
         let op = SendTo::new(fd, buffer, addr.clone());
         Runtime::current().submit(op).await.into_inner()
     }
@@ -254,12 +268,10 @@ impl Socket {
         buffer: T,
         addr: &SockAddr,
     ) -> BufResult<usize, T> {
-        let fd = self.as_raw_fd();
+        let fd = self.to_shared_fd();
         let op = SendToVectored::new(fd, buffer, addr.clone());
         Runtime::current().submit(op).await.into_inner()
     }
 }
 
-impl_raw_fd!(Socket, socket);
-
-impl_try_clone!(Socket, socket);
+impl_raw_fd!(Socket, socket, socket);
