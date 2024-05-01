@@ -1,4 +1,5 @@
 use std::{
+    cmp::Reverse,
     collections::BinaryHeap,
     future::Future,
     pin::Pin,
@@ -39,7 +40,7 @@ impl Ord for TimerEntry {
 pub struct TimerRuntime {
     time: Instant,
     tasks: Slab<FutureState>,
-    wheel: BinaryHeap<TimerEntry>,
+    wheel: BinaryHeap<Reverse<TimerEntry>>,
 }
 
 impl TimerRuntime {
@@ -66,7 +67,7 @@ impl TimerRuntime {
         let key = self.tasks.insert(FutureState::Active(None));
         delay += elapsed;
         let entry = TimerEntry { key, delay };
-        self.wheel.push(entry);
+        self.wheel.push(Reverse(entry));
         Some(key)
     }
 
@@ -83,8 +84,8 @@ impl TimerRuntime {
     pub fn min_timeout(&self) -> Option<Duration> {
         let elapsed = self.time.elapsed();
         self.wheel.peek().map(|entry| {
-            if entry.delay > elapsed {
-                entry.delay - elapsed
+            if entry.0.delay > elapsed {
+                entry.0.delay - elapsed
             } else {
                 Duration::ZERO
             }
@@ -94,8 +95,8 @@ impl TimerRuntime {
     pub fn wake(&mut self) {
         let elapsed = self.time.elapsed();
         while let Some(entry) = self.wheel.pop() {
-            if entry.delay <= elapsed {
-                if let Some(state) = self.tasks.get_mut(entry.key) {
+            if entry.0.delay <= elapsed {
+                if let Some(state) = self.tasks.get_mut(entry.0.key) {
                     let old_state = std::mem::replace(state, FutureState::Completed);
                     if let FutureState::Active(Some(waker)) = old_state {
                         waker.wake();
@@ -131,4 +132,16 @@ impl Drop for TimerFuture {
     fn drop(&mut self) {
         Runtime::current().inner().cancel_timer(self.key);
     }
+}
+
+#[test]
+fn timer_min_timeout() {
+    let mut runtime = TimerRuntime::new();
+    assert_eq!(runtime.min_timeout(), None);
+
+    runtime.insert(Duration::from_secs(1));
+    runtime.insert(Duration::from_secs(10));
+    let min_timeout = runtime.min_timeout().unwrap().as_secs_f32();
+
+    assert!(min_timeout < 1.);
 }
