@@ -32,7 +32,7 @@ impl PartialOrd for TimerEntry {
 
 impl Ord for TimerEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.delay.cmp(&other.delay)
+        other.delay.cmp(&self.delay)
     }
 }
 
@@ -131,4 +131,16 @@ impl Drop for TimerFuture {
     fn drop(&mut self) {
         Runtime::current().inner().cancel_timer(self.key);
     }
+}
+
+#[test]
+fn timer_min_timeout() {
+    let mut runtime = TimerRuntime::new();
+    assert_eq!(runtime.min_timeout(), None);
+
+    runtime.insert(Duration::from_secs(1));
+    runtime.insert(Duration::from_secs(10));
+    let min_timeout = runtime.min_timeout().unwrap().as_secs_f32();
+
+    assert!(min_timeout < 1.);
 }
