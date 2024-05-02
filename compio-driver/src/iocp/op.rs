@@ -136,7 +136,7 @@ impl OpCode for CloseFile {
     }
 }
 
-impl<T: IoBufMut> OpCode for ReadAt<T> {
+impl<T: IoBufMut, S: AsRawFd> OpCode for ReadAt<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         if let Some(overlapped) = optr.as_mut() {
             overlapped.Anonymous.Anonymous.Offset = (self.offset & 0xFFFFFFFF) as _;
@@ -160,7 +160,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
     }
 }
 
-impl<T: IoBuf> OpCode for WriteAt<T> {
+impl<T: IoBuf, S: AsRawFd> OpCode for WriteAt<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         if let Some(overlapped) = optr.as_mut() {
             overlapped.Anonymous.Anonymous.Offset = (self.offset & 0xFFFFFFFF) as _;
@@ -183,7 +183,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
     }
 }
 
-impl OpCode for Sync {
+impl<S: AsRawFd> OpCode for Sync<S> {
     fn op_type(&self) -> OpType {
         OpType::Blocking
     }
@@ -195,7 +195,7 @@ impl OpCode for Sync {
     }
 }
 
-impl OpCode for ShutdownSocket {
+impl<S: AsRawFd> OpCode for ShutdownSocket<S> {
     fn op_type(&self) -> OpType {
         OpType::Blocking
     }
@@ -231,16 +231,16 @@ const ACCEPT_ADDR_BUFFER_SIZE: usize = std::mem::size_of::<SOCKADDR_STORAGE>() +
 const ACCEPT_BUFFER_SIZE: usize = ACCEPT_ADDR_BUFFER_SIZE * 2;
 
 /// Accept a connection.
-pub struct Accept {
-    pub(crate) fd: SharedFd,
+pub struct Accept<S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) accept_fd: socket2::Socket,
     pub(crate) buffer: Aligned<A8, [u8; ACCEPT_BUFFER_SIZE]>,
     _p: PhantomPinned,
 }
 
-impl Accept {
+impl<S> Accept<S> {
     /// Create [`Accept`]. `accept_fd` should not be bound.
-    pub fn new(fd: SharedFd, accept_fd: socket2::Socket) -> Self {
+    pub fn new(fd: SharedFd<S>, accept_fd: socket2::Socket) -> Self {
         Self {
             fd,
             accept_fd,
@@ -248,7 +248,9 @@ impl Accept {
             _p: PhantomPinned,
         }
     }
+}
 
+impl<S: AsRawFd> Accept<S> {
     /// Update accept context.
     pub fn update_context(&self) -> io::Result<()> {
         let fd = self.fd.as_raw_fd();
@@ -297,7 +299,7 @@ impl Accept {
     }
 }
 
-impl OpCode for Accept {
+impl<S: AsRawFd> OpCode for Accept<S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let accept_fn = ACCEPT_EX
             .get_or_try_init(|| get_wsa_fn(self.fd.as_raw_fd(), WSAID_ACCEPTEX))?
@@ -325,7 +327,7 @@ impl OpCode for Accept {
 
 static CONNECT_EX: OnceLock<LPFN_CONNECTEX> = OnceLock::new();
 
-impl Connect {
+impl<S: AsRawFd> Connect<S> {
     /// Update connect context.
     pub fn update_context(&self) -> io::Result<()> {
         syscall!(
@@ -342,7 +344,7 @@ impl Connect {
     }
 }
 
-impl OpCode for Connect {
+impl<S: AsRawFd> OpCode for Connect<S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let connect_fn = CONNECT_EX
             .get_or_try_init(|| get_wsa_fn(self.fd.as_raw_fd(), WSAID_CONNECTEX))?
@@ -368,15 +370,15 @@ impl OpCode for Connect {
 }
 
 /// Receive data from remote.
-pub struct Recv<T: IoBufMut> {
-    pub(crate) fd: SharedFd,
+pub struct Recv<T: IoBufMut, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: T,
     _p: PhantomPinned,
 }
 
-impl<T: IoBufMut> Recv<T> {
+impl<T: IoBufMut, S> Recv<T, S> {
     /// Create [`Recv`].
-    pub fn new(fd: SharedFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -385,7 +387,7 @@ impl<T: IoBufMut> Recv<T> {
     }
 }
 
-impl<T: IoBufMut> IntoInner for Recv<T> {
+impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -393,7 +395,7 @@ impl<T: IoBufMut> IntoInner for Recv<T> {
     }
 }
 
-impl<T: IoBufMut> OpCode for Recv<T> {
+impl<T: IoBufMut, S: AsRawFd> OpCode for Recv<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_raw_fd();
         let slice = self.get_unchecked_mut().buffer.as_mut_slice();
@@ -414,15 +416,15 @@ impl<T: IoBufMut> OpCode for Recv<T> {
 }
 
 /// Receive data from remote into vectored buffer.
-pub struct RecvVectored<T: IoVectoredBufMut> {
-    pub(crate) fd: SharedFd,
+pub struct RecvVectored<T: IoVectoredBufMut, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: T,
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBufMut> RecvVectored<T> {
+impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
     /// Create [`RecvVectored`].
-    pub fn new(fd: SharedFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -431,7 +433,7 @@ impl<T: IoVectoredBufMut> RecvVectored<T> {
     }
 }
 
-impl<T: IoVectoredBufMut> IntoInner for RecvVectored<T> {
+impl<T: IoVectoredBufMut, S> IntoInner for RecvVectored<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -439,7 +441,7 @@ impl<T: IoVectoredBufMut> IntoInner for RecvVectored<T> {
     }
 }
 
-impl<T: IoVectoredBufMut> OpCode for RecvVectored<T> {
+impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_raw_fd();
         let slices = self.get_unchecked_mut().buffer.as_io_slices_mut();
@@ -463,15 +465,15 @@ impl<T: IoVectoredBufMut> OpCode for RecvVectored<T> {
 }
 
 /// Send data to remote.
-pub struct Send<T: IoBuf> {
-    pub(crate) fd: SharedFd,
+pub struct Send<T: IoBuf, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: T,
     _p: PhantomPinned,
 }
 
-impl<T: IoBuf> Send<T> {
+impl<T: IoBuf, S> Send<T, S> {
     /// Create [`Send`].
-    pub fn new(fd: SharedFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -480,7 +482,7 @@ impl<T: IoBuf> Send<T> {
     }
 }
 
-impl<T: IoBuf> IntoInner for Send<T> {
+impl<T: IoBuf, S> IntoInner for Send<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -488,7 +490,7 @@ impl<T: IoBuf> IntoInner for Send<T> {
     }
 }
 
-impl<T: IoBuf> OpCode for Send<T> {
+impl<T: IoBuf, S: AsRawFd> OpCode for Send<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let slice = self.buffer.as_slice();
         let mut transferred = 0;
@@ -508,15 +510,15 @@ impl<T: IoBuf> OpCode for Send<T> {
 }
 
 /// Send data to remote from vectored buffer.
-pub struct SendVectored<T: IoVectoredBuf> {
-    pub(crate) fd: SharedFd,
+pub struct SendVectored<T: IoVectoredBuf, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: T,
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBuf> SendVectored<T> {
+impl<T: IoVectoredBuf, S> SendVectored<T, S> {
     /// Create [`SendVectored`].
-    pub fn new(fd: SharedFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -525,7 +527,7 @@ impl<T: IoVectoredBuf> SendVectored<T> {
     }
 }
 
-impl<T: IoVectoredBuf> IntoInner for SendVectored<T> {
+impl<T: IoVectoredBuf, S> IntoInner for SendVectored<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -533,7 +535,7 @@ impl<T: IoVectoredBuf> IntoInner for SendVectored<T> {
     }
 }
 
-impl<T: IoVectoredBuf> OpCode for SendVectored<T> {
+impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let slices = self.buffer.as_io_slices();
         let mut sent = 0;
@@ -555,17 +557,17 @@ impl<T: IoVectoredBuf> OpCode for SendVectored<T> {
 }
 
 /// Receive data and source address.
-pub struct RecvFrom<T: IoBufMut> {
-    pub(crate) fd: SharedFd,
+pub struct RecvFrom<T: IoBufMut, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: T,
     pub(crate) addr: SOCKADDR_STORAGE,
     pub(crate) addr_len: socklen_t,
     _p: PhantomPinned,
 }
 
-impl<T: IoBufMut> RecvFrom<T> {
+impl<T: IoBufMut, S> RecvFrom<T, S> {
     /// Create [`RecvFrom`].
-    pub fn new(fd: SharedFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -576,7 +578,7 @@ impl<T: IoBufMut> RecvFrom<T> {
     }
 }
 
-impl<T: IoBufMut> IntoInner for RecvFrom<T> {
+impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
     type Inner = (T, SOCKADDR_STORAGE, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
@@ -584,7 +586,7 @@ impl<T: IoBufMut> IntoInner for RecvFrom<T> {
     }
 }
 
-impl<T: IoBufMut> OpCode for RecvFrom<T> {
+impl<T: IoBufMut, S: AsRawFd> OpCode for RecvFrom<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = self.get_unchecked_mut();
         let fd = this.fd.as_raw_fd();
@@ -611,17 +613,17 @@ impl<T: IoBufMut> OpCode for RecvFrom<T> {
 }
 
 /// Receive data and source address into vectored buffer.
-pub struct RecvFromVectored<T: IoVectoredBufMut> {
-    pub(crate) fd: SharedFd,
+pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: T,
     pub(crate) addr: SOCKADDR_STORAGE,
     pub(crate) addr_len: socklen_t,
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBufMut> RecvFromVectored<T> {
+impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
     /// Create [`RecvFromVectored`].
-    pub fn new(fd: SharedFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -632,7 +634,7 @@ impl<T: IoVectoredBufMut> RecvFromVectored<T> {
     }
 }
 
-impl<T: IoVectoredBufMut> IntoInner for RecvFromVectored<T> {
+impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
     type Inner = (T, SOCKADDR_STORAGE, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
@@ -640,7 +642,7 @@ impl<T: IoVectoredBufMut> IntoInner for RecvFromVectored<T> {
     }
 }
 
-impl<T: IoVectoredBufMut> OpCode for RecvFromVectored<T> {
+impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvFromVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = self.get_unchecked_mut();
         let fd = this.fd.as_raw_fd();
@@ -667,16 +669,16 @@ impl<T: IoVectoredBufMut> OpCode for RecvFromVectored<T> {
 }
 
 /// Send data to specified address.
-pub struct SendTo<T: IoBuf> {
-    pub(crate) fd: SharedFd,
+pub struct SendTo<T: IoBuf, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
     _p: PhantomPinned,
 }
 
-impl<T: IoBuf> SendTo<T> {
+impl<T: IoBuf, S> SendTo<T, S> {
     /// Create [`SendTo`].
-    pub fn new(fd: SharedFd, buffer: T, addr: SockAddr) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T, addr: SockAddr) -> Self {
         Self {
             fd,
             buffer,
@@ -686,7 +688,7 @@ impl<T: IoBuf> SendTo<T> {
     }
 }
 
-impl<T: IoBuf> IntoInner for SendTo<T> {
+impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -694,7 +696,7 @@ impl<T: IoBuf> IntoInner for SendTo<T> {
     }
 }
 
-impl<T: IoBuf> OpCode for SendTo<T> {
+impl<T: IoBuf, S: AsRawFd> OpCode for SendTo<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let buffer = self.buffer.as_io_slice();
         let mut sent = 0;
@@ -718,16 +720,16 @@ impl<T: IoBuf> OpCode for SendTo<T> {
 }
 
 /// Send data to specified address from vectored buffer.
-pub struct SendToVectored<T: IoVectoredBuf> {
-    pub(crate) fd: SharedFd,
+pub struct SendToVectored<T: IoVectoredBuf, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBuf> SendToVectored<T> {
+impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
     /// Create [`SendToVectored`].
-    pub fn new(fd: SharedFd, buffer: T, addr: SockAddr) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T, addr: SockAddr) -> Self {
         Self {
             fd,
             buffer,
@@ -737,7 +739,7 @@ impl<T: IoVectoredBuf> SendToVectored<T> {
     }
 }
 
-impl<T: IoVectoredBuf> IntoInner for SendToVectored<T> {
+impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -745,7 +747,7 @@ impl<T: IoVectoredBuf> IntoInner for SendToVectored<T> {
     }
 }
 
-impl<T: IoVectoredBuf> OpCode for SendToVectored<T> {
+impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendToVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let buffer = self.buffer.as_io_slices();
         let mut sent = 0;
@@ -769,18 +771,18 @@ impl<T: IoVectoredBuf> OpCode for SendToVectored<T> {
 }
 
 /// Connect a named pipe server.
-pub struct ConnectNamedPipe {
-    pub(crate) fd: SharedFd,
+pub struct ConnectNamedPipe<S> {
+    pub(crate) fd: SharedFd<S>,
 }
 
-impl ConnectNamedPipe {
+impl<S> ConnectNamedPipe<S> {
     /// Create [`ConnectNamedPipe`](struct@ConnectNamedPipe).
-    pub fn new(fd: SharedFd) -> Self {
+    pub fn new(fd: SharedFd<S>) -> Self {
         Self { fd }
     }
 }
 
-impl OpCode for ConnectNamedPipe {
+impl<S: AsRawFd> OpCode for ConnectNamedPipe<S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let res = ConnectNamedPipe(self.fd.as_raw_fd() as _, optr);
         win32_result(res, 0)

@@ -8,7 +8,7 @@ pub use crate::unix::op::*;
 use crate::SharedFd;
 
 macro_rules! op {
-    (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ident),* $(,)? )) => {
+    (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? )) => {
         ::paste::paste!{
             enum [< $name Inner >] <$($ty: $trait),*> {
                 Poll(poll::$name<$($ty),*>),
@@ -92,9 +92,9 @@ mod iour { pub use crate::sys::iour::{op::*, OpCode}; }
 #[rustfmt::skip]
 mod poll { pub use crate::sys::poll::{op::*, OpCode}; }
 
-op!(<T: IoBufMut> RecvFrom(fd: SharedFd, buffer: T));
-op!(<T: IoBuf> SendTo(fd: SharedFd, buffer: T, addr: SockAddr));
-op!(<T: IoVectoredBufMut> RecvFromVectored(fd: SharedFd, buffer: T));
-op!(<T: IoVectoredBuf> SendToVectored(fd: SharedFd, buffer: T, addr: SockAddr));
-op!(<> FileStat(fd: SharedFd));
+op!(<T: IoBufMut, S: AsRawFd> RecvFrom(fd: SharedFd<S>, buffer: T));
+op!(<T: IoBuf, S: AsRawFd> SendTo(fd: SharedFd<S>, buffer: T, addr: SockAddr));
+op!(<T: IoVectoredBufMut, S: AsRawFd> RecvFromVectored(fd: SharedFd<S>, buffer: T));
+op!(<T: IoVectoredBuf, S: AsRawFd> SendToVectored(fd: SharedFd<S>, buffer: T, addr: SockAddr));
+op!(<S: AsRawFd> FileStat(fd: SharedFd<S>));
 op!(<> PathStat(path: CString, follow_symlink: bool));

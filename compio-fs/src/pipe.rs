@@ -390,7 +390,7 @@ impl AsyncWrite for &Sender {
     }
 }
 
-impl_raw_fd!(Sender, file, file);
+impl_raw_fd!(Sender, std::fs::File, file, file);
 
 /// Reading end of a Unix pipe.
 ///
@@ -511,7 +511,7 @@ impl AsyncRead for &Receiver {
     }
 }
 
-impl_raw_fd!(Receiver, file, file);
+impl_raw_fd!(Receiver, std::fs::File, file, file);
 
 /// Checks if file is a FIFO
 async fn is_fifo(file: &File) -> io::Result<bool> {

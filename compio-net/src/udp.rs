@@ -251,4 +251,4 @@ impl UdpSocket {
     }
 }
 
-impl_raw_fd!(UdpSocket, inner, socket);
+impl_raw_fd!(UdpSocket, socket2::Socket, inner, socket);

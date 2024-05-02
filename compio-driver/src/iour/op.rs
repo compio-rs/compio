@@ -53,14 +53,14 @@ impl OpCode for CloseFile {
 }
 
 /// Get metadata of an opened file.
-pub struct FileStat {
-    pub(crate) fd: SharedFd,
+pub struct FileStat<S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) stat: Statx,
 }
 
-impl FileStat {
+impl<S> FileStat<S> {
     /// Create [`FileStat`].
-    pub fn new(fd: SharedFd) -> Self {
+    pub fn new(fd: SharedFd<S>) -> Self {
         Self {
             fd,
             stat: unsafe { std::mem::zeroed() },
@@ -68,7 +68,7 @@ impl FileStat {
     }
 }
 
-impl OpCode for FileStat {
+impl<S: AsRawFd> OpCode for FileStat<S> {
     fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
         static EMPTY_NAME: &[u8] = b"\0";
         opcode::Statx::new(
@@ -82,7 +82,7 @@ impl OpCode for FileStat {
     }
 }
 
-impl IntoInner for FileStat {
+impl<S> IntoInner for FileStat<S> {
     type Inner = libc::stat;
 
     fn into_inner(self) -> Self::Inner {
@@ -133,7 +133,7 @@ impl IntoInner for PathStat {
     }
 }
 
-impl<T: IoBufMut> OpCode for ReadAt<T> {
+impl<T: IoBufMut, S: AsRawFd> OpCode for ReadAt<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let fd = Fd(self.fd.as_raw_fd());
         let offset = self.offset;
@@ -145,7 +145,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
     }
 }
 
-impl<T: IoVectoredBufMut> OpCode for ReadVectoredAt<T> {
+impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for ReadVectoredAt<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
         this.slices = unsafe { this.buffer.as_io_slices_mut() };
@@ -160,7 +160,7 @@ impl<T: IoVectoredBufMut> OpCode for ReadVectoredAt<T> {
     }
 }
 
-impl<T: IoBuf> OpCode for WriteAt<T> {
+impl<T: IoBuf, S: AsRawFd> OpCode for WriteAt<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let slice = self.buffer.as_slice();
         opcode::Write::new(Fd(self.fd.as_raw_fd()), slice.as_ptr(), slice.len() as _)
@@ -170,7 +170,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
     }
 }
 
-impl<T: IoVectoredBuf> OpCode for WriteVectoredAt<T> {
+impl<T: IoVectoredBuf, S: AsRawFd> OpCode for WriteVectoredAt<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
         this.slices = unsafe { this.buffer.as_io_slices() };
@@ -185,7 +185,7 @@ impl<T: IoVectoredBuf> OpCode for WriteVectoredAt<T> {
     }
 }
 
-impl OpCode for Sync {
+impl<S: AsRawFd> OpCode for Sync<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::Fsync::new(Fd(self.fd.as_raw_fd()))
             .flags(if self.datasync {
@@ -270,7 +270,7 @@ impl OpCode for CreateSocket {
     }
 }
 
-impl OpCode for ShutdownSocket {
+impl<S: AsRawFd> OpCode for ShutdownSocket<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::Shutdown::new(Fd(self.fd.as_raw_fd()), self.how())
             .build()
@@ -284,7 +284,7 @@ impl OpCode for CloseSocket {
     }
 }
 
-impl OpCode for Accept {
+impl<S: AsRawFd> OpCode for Accept<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
         opcode::Accept::new(
@@ -297,7 +297,7 @@ impl OpCode for Accept {
     }
 }
 
-impl OpCode for Connect {
+impl<S: AsRawFd> OpCode for Connect<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::Connect::new(Fd(self.fd.as_raw_fd()), self.addr.as_ptr(), self.addr.len())
             .build()
@@ -305,7 +305,7 @@ impl OpCode for Connect {
     }
 }
 
-impl<T: IoBufMut> OpCode for Recv<T> {
+impl<T: IoBufMut, S: AsRawFd> OpCode for Recv<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let fd = self.fd.as_raw_fd();
         let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
@@ -315,7 +315,7 @@ impl<T: IoBufMut> OpCode for Recv<T> {
     }
 }
 
-impl<T: IoVectoredBufMut> OpCode for RecvVectored<T> {
+impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
         this.slices = unsafe { this.buffer.as_io_slices_mut() };
@@ -329,7 +329,7 @@ impl<T: IoVectoredBufMut> OpCode for RecvVectored<T> {
     }
 }
 
-impl<T: IoBuf> OpCode for Send<T> {
+impl<T: IoBuf, S: AsRawFd> OpCode for Send<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let slice = self.buffer.as_slice();
         opcode::Write::new(Fd(self.fd.as_raw_fd()), slice.as_ptr(), slice.len() as _)
@@ -338,7 +338,7 @@ impl<T: IoBuf> OpCode for Send<T> {
     }
 }
 
-impl<T: IoVectoredBuf> OpCode for SendVectored<T> {
+impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
         this.slices = unsafe { this.buffer.as_io_slices() };
@@ -352,15 +352,15 @@ impl<T: IoVectoredBuf> OpCode for SendVectored<T> {
     }
 }
 
-struct RecvFromHeader {
-    pub(crate) fd: SharedFd,
+struct RecvFromHeader<S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) addr: sockaddr_storage,
     pub(crate) msg: libc::msghdr,
     _p: PhantomPinned,
 }
 
-impl RecvFromHeader {
-    pub fn new(fd: SharedFd) -> Self {
+impl<S> RecvFromHeader<S> {
+    pub fn new(fd: SharedFd<S>) -> Self {
         Self {
             fd,
             addr: unsafe { std::mem::zeroed() },
@@ -368,7 +368,9 @@ impl RecvFromHeader {
             _p: PhantomPinned,
         }
     }
+}
 
+impl<S: AsRawFd> RecvFromHeader<S> {
     pub fn create_entry(&mut self, slices: &mut [IoSliceMut]) -> OpEntry {
         self.msg.msg_name = &mut self.addr as *mut _ as _;
         self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
@@ -385,15 +387,15 @@ impl RecvFromHeader {
 }
 
 /// Receive data and source address.
-pub struct RecvFrom<T: IoBufMut> {
-    header: RecvFromHeader,
+pub struct RecvFrom<T: IoBufMut, S> {
+    header: RecvFromHeader<S>,
     buffer: T,
     slice: [IoSliceMut; 1],
 }
 
-impl<T: IoBufMut> RecvFrom<T> {
+impl<T: IoBufMut, S> RecvFrom<T, S> {
     /// Create [`RecvFrom`].
-    pub fn new(fd: SharedFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
         Self {
             header: RecvFromHeader::new(fd),
             buffer,
@@ -403,7 +405,7 @@ impl<T: IoBufMut> RecvFrom<T> {
     }
 }
 
-impl<T: IoBufMut> OpCode for RecvFrom<T> {
+impl<T: IoBufMut, S: AsRawFd> OpCode for RecvFrom<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
         this.slice[0] = unsafe { this.buffer.as_io_slice_mut() };
@@ -411,7 +413,7 @@ impl<T: IoBufMut> OpCode for RecvFrom<T> {
     }
 }
 
-impl<T: IoBufMut> IntoInner for RecvFrom<T> {
+impl<T: IoBufMut, S: AsRawFd> IntoInner for RecvFrom<T, S> {
     type Inner = (T, sockaddr_storage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
@@ -421,15 +423,15 @@ impl<T: IoBufMut> IntoInner for RecvFrom<T> {
 }
 
 /// Receive data and source address into vectored buffer.
-pub struct RecvFromVectored<T: IoVectoredBufMut> {
-    header: RecvFromHeader,
+pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
+    header: RecvFromHeader<S>,
     buffer: T,
     slice: Vec<IoSliceMut>,
 }
 
-impl<T: IoVectoredBufMut> RecvFromVectored<T> {
+impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
     /// Create [`RecvFromVectored`].
-    pub fn new(fd: SharedFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
         Self {
             header: RecvFromHeader::new(fd),
             buffer,
@@ -438,7 +440,7 @@ impl<T: IoVectoredBufMut> RecvFromVectored<T> {
     }
 }
 
-impl<T: IoVectoredBufMut> OpCode for RecvFromVectored<T> {
+impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvFromVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
         this.slice = unsafe { this.buffer.as_io_slices_mut() };
@@ -446,7 +448,7 @@ impl<T: IoVectoredBufMut> OpCode for RecvFromVectored<T> {
     }
 }
 
-impl<T: IoVectoredBufMut> IntoInner for RecvFromVectored<T> {
+impl<T: IoVectoredBufMut, S: AsRawFd> IntoInner for RecvFromVectored<T, S> {
     type Inner = (T, sockaddr_storage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
@@ -455,15 +457,15 @@ impl<T: IoVectoredBufMut> IntoInner for RecvFromVectored<T> {
     }
 }
 
-struct SendToHeader {
-    pub(crate) fd: SharedFd,
+struct SendToHeader<S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) addr: SockAddr,
     pub(crate) msg: libc::msghdr,
     _p: PhantomPinned,
 }
 
-impl SendToHeader {
-    pub fn new(fd: SharedFd, addr: SockAddr) -> Self {
+impl<S> SendToHeader<S> {
+    pub fn new(fd: SharedFd<S>, addr: SockAddr) -> Self {
         Self {
             fd,
             addr,
@@ -471,7 +473,9 @@ impl SendToHeader {
             _p: PhantomPinned,
         }
     }
+}
 
+impl<S: AsRawFd> SendToHeader<S> {
     pub fn create_entry(&mut self, slices: &mut [IoSlice]) -> OpEntry {
         self.msg.msg_name = self.addr.as_ptr() as _;
         self.msg.msg_namelen = self.addr.len();
@@ -484,15 +488,15 @@ impl SendToHeader {
 }
 
 /// Send data to specified address.
-pub struct SendTo<T: IoBuf> {
-    header: SendToHeader,
+pub struct SendTo<T: IoBuf, S> {
+    header: SendToHeader<S>,
     buffer: T,
     slice: [IoSlice; 1],
 }
 
-impl<T: IoBuf> SendTo<T> {
+impl<T: IoBuf, S> SendTo<T, S> {
     /// Create [`SendTo`].
-    pub fn new(fd: SharedFd, buffer: T, addr: SockAddr) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T, addr: SockAddr) -> Self {
         Self {
             header: SendToHeader::new(fd, addr),
             buffer,
@@ -502,7 +506,7 @@ impl<T: IoBuf> SendTo<T> {
     }
 }
 
-impl<T: IoBuf> OpCode for SendTo<T> {
+impl<T: IoBuf, S: AsRawFd> OpCode for SendTo<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
         this.slice[0] = unsafe { this.buffer.as_io_slice() };
@@ -510,7 +514,7 @@ impl<T: IoBuf> OpCode for SendTo<T> {
     }
 }
 
-impl<T: IoBuf> IntoInner for SendTo<T> {
+impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -519,15 +523,15 @@ impl<T: IoBuf> IntoInner for SendTo<T> {
 }
 
 /// Send data to specified address from vectored buffer.
-pub struct SendToVectored<T: IoVectoredBuf> {
-    header: SendToHeader,
+pub struct SendToVectored<T: IoVectoredBuf, S> {
+    header: SendToHeader<S>,
     buffer: T,
     slice: Vec<IoSlice>,
 }
 
-impl<T: IoVectoredBuf> SendToVectored<T> {
+impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
     /// Create [`SendToVectored`].
-    pub fn new(fd: SharedFd, buffer: T, addr: SockAddr) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T, addr: SockAddr) -> Self {
         Self {
             header: SendToHeader::new(fd, addr),
             buffer,
@@ -536,7 +540,7 @@ impl<T: IoVectoredBuf> SendToVectored<T> {
     }
 }
 
-impl<T: IoVectoredBuf> OpCode for SendToVectored<T> {
+impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendToVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
         this.slice = unsafe { this.buffer.as_io_slices() };
@@ -544,7 +548,7 @@ impl<T: IoVectoredBuf> OpCode for SendToVectored<T> {
     }
 }
 
-impl<T: IoVectoredBuf> IntoInner for SendToVectored<T> {
+impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
