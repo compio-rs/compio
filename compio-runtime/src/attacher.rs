@@ -2,13 +2,10 @@
 use std::os::fd::{FromRawFd, RawFd};
 #[cfg(windows)]
 use std::os::windows::io::{FromRawHandle, FromRawSocket, RawHandle, RawSocket};
-use std::{
-    io,
-    ops::{Deref, DerefMut},
-};
+use std::{io, ops::Deref};
 
 use compio_buf::IntoInner;
-use compio_driver::AsRawFd;
+use compio_driver::{AsRawFd, SharedFd, ToSharedFd};
 
 use crate::Runtime;
 
@@ -16,9 +13,9 @@ use crate::Runtime;
 ///
 /// A handle can and only can attach once to one driver. The attacher will try
 /// to attach the handle.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Attacher<S> {
-    source: S,
+    source: SharedFd<S>,
 }
 
 impl<S> Attacher<S> {
@@ -29,7 +26,9 @@ impl<S> Attacher<S> {
     /// The user should ensure that the source is attached to the current
     /// driver.
     pub unsafe fn new_unchecked(source: S) -> Self {
-        Self { source }
+        Self {
+            source: SharedFd::new(source),
+        }
     }
 }
 
@@ -44,15 +43,23 @@ impl<S: AsRawFd> Attacher<S> {
         let r = Runtime::current();
         let inner = r.inner();
         inner.attach(source.as_raw_fd())?;
-        Ok(Self { source })
+        Ok(unsafe { Self::new_unchecked(source) })
     }
 }
 
 impl<S> IntoInner for Attacher<S> {
-    type Inner = S;
+    type Inner = SharedFd<S>;
 
     fn into_inner(self) -> Self::Inner {
         self.source
+    }
+}
+
+impl<S> Clone for Attacher<S> {
+    fn clone(&self) -> Self {
+        Self {
+            source: self.source.clone(),
+        }
     }
 }
 
@@ -81,12 +88,12 @@ impl<S> Deref for Attacher<S> {
     type Target = S;
 
     fn deref(&self) -> &Self::Target {
-        &self.source
+        self.source.deref()
     }
 }
 
-impl<S> DerefMut for Attacher<S> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.source
+impl<S> ToSharedFd<S> for Attacher<S> {
+    fn to_shared_fd(&self) -> SharedFd<S> {
+        self.source.to_shared_fd()
     }
 }

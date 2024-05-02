@@ -9,29 +9,29 @@ use compio_driver::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored,
         RecvResultExt, RecvVectored, Send, SendTo, SendToVectored, SendVectored, ShutdownSocket,
     },
-    SharedFd, ToSharedFd,
+    ToSharedFd,
 };
 use compio_runtime::{Attacher, Runtime};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
 #[derive(Debug, Clone)]
 pub struct Socket {
-    socket: Attacher<SharedFd>,
+    socket: Attacher<Socket2>,
 }
 
 impl Socket {
     pub fn from_socket2(socket: Socket2) -> io::Result<Self> {
         Ok(Self {
-            socket: Attacher::new(SharedFd::new(socket))?,
+            socket: Attacher::new(socket)?,
         })
     }
 
     pub fn peer_addr(&self) -> io::Result<SockAddr> {
-        unsafe { self.socket.to_socket() }.peer_addr()
+        self.socket.peer_addr()
     }
 
     pub fn local_addr(&self) -> io::Result<SockAddr> {
-        unsafe { self.socket.to_socket() }.local_addr()
+        self.socket.local_addr()
     }
 
     #[cfg(windows)]
@@ -109,16 +109,16 @@ impl Socket {
 
     pub async fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
         let socket = Self::new(addr.domain(), ty, protocol).await?;
-        unsafe { socket.socket.to_socket() }.bind(addr)?;
+        socket.socket.bind(addr)?;
         Ok(socket)
     }
 
     pub fn listen(&self, backlog: i32) -> io::Result<()> {
-        unsafe { self.socket.to_socket() }.listen(backlog)
+        self.socket.listen(backlog)
     }
 
     pub fn connect(&self, addr: &SockAddr) -> io::Result<()> {
-        unsafe { self.socket.to_socket() }.connect(addr)
+        self.socket.connect(addr)
     }
 
     pub async fn connect_async(&self, addr: &SockAddr) -> io::Result<()> {
@@ -160,9 +160,8 @@ impl Socket {
 
         let domain = self.local_addr()?.domain();
         // We should allow users sending this accepted socket to a new thread.
-        let this_socket = unsafe { self.socket.to_socket() };
-        let ty = this_socket.r#type()?;
-        let protocol = this_socket.protocol()?;
+        let ty = self.socket.r#type()?;
+        let protocol = self.socket.protocol()?;
         let accept_sock =
             compio_runtime::spawn_blocking(move || Socket2::new(domain, ty, protocol))
                 .await
@@ -187,7 +186,7 @@ impl Socket {
                 .take()
                 .await;
             if let Some(fd) = fd {
-                let op = CloseSocket::new(fd);
+                let op = CloseSocket::new(fd.into());
                 Runtime::current().submit(op).await.0?;
             }
             Ok(())
@@ -274,4 +273,4 @@ impl Socket {
     }
 }
 
-impl_raw_fd!(Socket, socket, socket);
+impl_raw_fd!(Socket, Socket2, socket, socket);

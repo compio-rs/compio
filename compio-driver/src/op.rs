@@ -114,16 +114,16 @@ impl CloseFile {
 
 /// Read a file at specified position into specified buffer.
 #[derive(Debug)]
-pub struct ReadAt<T: IoBufMut> {
-    pub(crate) fd: SharedFd,
+pub struct ReadAt<T: IoBufMut, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     _p: PhantomPinned,
 }
 
-impl<T: IoBufMut> ReadAt<T> {
+impl<T: IoBufMut, S> ReadAt<T, S> {
     /// Create [`ReadAt`].
-    pub fn new(fd: SharedFd, offset: u64, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, offset: u64, buffer: T) -> Self {
         Self {
             fd,
             offset,
@@ -133,7 +133,7 @@ impl<T: IoBufMut> ReadAt<T> {
     }
 }
 
-impl<T: IoBufMut> IntoInner for ReadAt<T> {
+impl<T: IoBufMut, S> IntoInner for ReadAt<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -143,16 +143,16 @@ impl<T: IoBufMut> IntoInner for ReadAt<T> {
 
 /// Write a file at specified position from specified buffer.
 #[derive(Debug)]
-pub struct WriteAt<T: IoBuf> {
-    pub(crate) fd: SharedFd,
+pub struct WriteAt<T: IoBuf, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     _p: PhantomPinned,
 }
 
-impl<T: IoBuf> WriteAt<T> {
+impl<T: IoBuf, S> WriteAt<T, S> {
     /// Create [`WriteAt`].
-    pub fn new(fd: SharedFd, offset: u64, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, offset: u64, buffer: T) -> Self {
         Self {
             fd,
             offset,
@@ -162,7 +162,7 @@ impl<T: IoBuf> WriteAt<T> {
     }
 }
 
-impl<T: IoBuf> IntoInner for WriteAt<T> {
+impl<T: IoBuf, S> IntoInner for WriteAt<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -171,30 +171,30 @@ impl<T: IoBuf> IntoInner for WriteAt<T> {
 }
 
 /// Sync data to the disk.
-pub struct Sync {
-    pub(crate) fd: SharedFd,
+pub struct Sync<S> {
+    pub(crate) fd: SharedFd<S>,
     #[allow(dead_code)]
     pub(crate) datasync: bool,
 }
 
-impl Sync {
+impl<S> Sync<S> {
     /// Create [`Sync`].
     ///
     /// If `datasync` is `true`, the file metadata may not be synchronized.
-    pub fn new(fd: SharedFd, datasync: bool) -> Self {
+    pub fn new(fd: SharedFd<S>, datasync: bool) -> Self {
         Self { fd, datasync }
     }
 }
 
 /// Shutdown a socket.
-pub struct ShutdownSocket {
-    pub(crate) fd: SharedFd,
+pub struct ShutdownSocket<S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) how: Shutdown,
 }
 
-impl ShutdownSocket {
+impl<S> ShutdownSocket<S> {
     /// Create [`ShutdownSocket`].
-    pub fn new(fd: SharedFd, how: Shutdown) -> Self {
+    pub fn new(fd: SharedFd<S>, how: Shutdown) -> Self {
         Self { fd, how }
     }
 }
@@ -214,14 +214,14 @@ impl CloseSocket {
 }
 
 /// Connect to a remote address.
-pub struct Connect {
-    pub(crate) fd: SharedFd,
+pub struct Connect<S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) addr: SockAddr,
 }
 
-impl Connect {
+impl<S> Connect<S> {
     /// Create [`Connect`]. `fd` should be bound.
-    pub fn new(fd: SharedFd, addr: SockAddr) -> Self {
+    pub fn new(fd: SharedFd<S>, addr: SockAddr) -> Self {
         Self { fd, addr }
     }
 }

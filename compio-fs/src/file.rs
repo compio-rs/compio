@@ -4,7 +4,7 @@ use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
     impl_raw_fd,
     op::{BufResultExt, CloseFile, ReadAt, Sync, WriteAt},
-    SharedFd, ToSharedFd,
+    ToSharedFd,
 };
 use compio_io::{AsyncReadAt, AsyncWriteAt};
 use compio_runtime::{Attacher, Runtime};
@@ -24,13 +24,13 @@ use crate::{Metadata, OpenOptions, Permissions};
 /// required to specify an offset when issuing an operation.
 #[derive(Debug, Clone)]
 pub struct File {
-    inner: Attacher<SharedFd>,
+    inner: Attacher<std::fs::File>,
 }
 
 impl File {
     pub(crate) fn from_std(file: std::fs::File) -> io::Result<Self> {
         Ok(Self {
-            inner: Attacher::new(SharedFd::new(file))?,
+            inner: Attacher::new(file)?,
         })
     }
 
@@ -70,7 +70,7 @@ impl File {
                 .take()
                 .await;
             if let Some(fd) = fd {
-                let op = CloseFile::new(fd);
+                let op = CloseFile::new(fd.into());
                 Runtime::current().submit(op).await.0?;
             }
             Ok(())
@@ -81,11 +81,9 @@ impl File {
     #[cfg(windows)]
     pub async fn metadata(&self) -> io::Result<Metadata> {
         let file = self.inner.clone();
-        compio_runtime::spawn_blocking(move || {
-            unsafe { file.to_file() }.metadata().map(Metadata::from_std)
-        })
-        .await
-        .unwrap_or_else(|e| resume_unwind(e))
+        compio_runtime::spawn_blocking(move || file.metadata().map(Metadata::from_std))
+            .await
+            .unwrap_or_else(|e| resume_unwind(e))
     }
 
     /// Queries metadata about the underlying file.
@@ -100,7 +98,7 @@ impl File {
     #[cfg(windows)]
     pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
         let file = self.inner.clone();
-        compio_runtime::spawn_blocking(move || unsafe { file.to_file() }.set_permissions(perm.0))
+        compio_runtime::spawn_blocking(move || file.set_permissions(perm.0))
             .await
             .unwrap_or_else(|e| resume_unwind(e))
     }
@@ -214,4 +212,4 @@ impl AsyncWriteAt for &File {
     }
 }
 
-impl_raw_fd!(File, inner, file);
+impl_raw_fd!(File, std::fs::File, inner, file);

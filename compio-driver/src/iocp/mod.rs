@@ -70,6 +70,36 @@ impl AsRawFd for OwnedFd {
     }
 }
 
+impl AsRawFd for RawFd {
+    fn as_raw_fd(&self) -> RawFd {
+        *self
+    }
+}
+
+impl AsRawFd for std::fs::File {
+    fn as_raw_fd(&self) -> RawFd {
+        self.as_raw_handle() as _
+    }
+}
+
+impl AsRawFd for OwnedHandle {
+    fn as_raw_fd(&self) -> RawFd {
+        self.as_raw_handle() as _
+    }
+}
+
+impl AsRawFd for socket2::Socket {
+    fn as_raw_fd(&self) -> RawFd {
+        self.as_raw_socket() as _
+    }
+}
+
+impl AsRawFd for OwnedSocket {
+    fn as_raw_fd(&self) -> RawFd {
+        self.as_raw_socket() as _
+    }
+}
+
 impl From<OwnedHandle> for OwnedFd {
     fn from(value: OwnedHandle) -> Self {
         Self::File(value)

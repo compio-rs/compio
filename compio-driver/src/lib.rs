@@ -108,7 +108,7 @@ macro_rules! syscall {
 #[macro_export]
 #[doc(hidden)]
 macro_rules! impl_raw_fd {
-    ($t:ty, $inner:ident) => {
+    ($t:ty, $it:ty, $inner:ident) => {
         impl $crate::AsRawFd for $t {
             fn as_raw_fd(&self) -> $crate::RawFd {
                 self.$inner.as_raw_fd()
@@ -122,14 +122,14 @@ macro_rules! impl_raw_fd {
                 }
             }
         }
-        impl $crate::ToSharedFd for $t {
-            fn to_shared_fd(&self) -> $crate::SharedFd {
+        impl $crate::ToSharedFd<$it> for $t {
+            fn to_shared_fd(&self) -> $crate::SharedFd<$it> {
                 self.$inner.to_shared_fd()
             }
         }
     };
-    ($t:ty, $inner:ident,file) => {
-        $crate::impl_raw_fd!($t, $inner);
+    ($t:ty, $it:ty, $inner:ident,file) => {
+        $crate::impl_raw_fd!($t, $it, $inner);
         #[cfg(windows)]
         impl std::os::windows::io::FromRawHandle for $t {
             unsafe fn from_raw_handle(handle: std::os::windows::io::RawHandle) -> Self {
@@ -139,8 +139,8 @@ macro_rules! impl_raw_fd {
             }
         }
     };
-    ($t:ty, $inner:ident,socket) => {
-        $crate::impl_raw_fd!($t, $inner);
+    ($t:ty, $it:ty, $inner:ident,socket) => {
+        $crate::impl_raw_fd!($t, $it, $inner);
         #[cfg(windows)]
         impl std::os::windows::io::FromRawSocket for $t {
             unsafe fn from_raw_socket(sock: std::os::windows::io::RawSocket) -> Self {

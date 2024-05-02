@@ -85,17 +85,17 @@ pub(crate) const fn statx_to_stat(statx: Statx) -> libc::stat {
 }
 
 /// Read a file at specified position into vectored buffer.
-pub struct ReadVectoredAt<T: IoVectoredBufMut> {
-    pub(crate) fd: SharedFd,
+pub struct ReadVectoredAt<T: IoVectoredBufMut, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSliceMut>,
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBufMut> ReadVectoredAt<T> {
+impl<T: IoVectoredBufMut, S> ReadVectoredAt<T, S> {
     /// Create [`ReadVectoredAt`].
-    pub fn new(fd: SharedFd, offset: u64, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, offset: u64, buffer: T) -> Self {
         Self {
             fd,
             offset,
@@ -106,7 +106,7 @@ impl<T: IoVectoredBufMut> ReadVectoredAt<T> {
     }
 }
 
-impl<T: IoVectoredBufMut> IntoInner for ReadVectoredAt<T> {
+impl<T: IoVectoredBufMut, S> IntoInner for ReadVectoredAt<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -115,17 +115,17 @@ impl<T: IoVectoredBufMut> IntoInner for ReadVectoredAt<T> {
 }
 
 /// Write a file at specified position from vectored buffer.
-pub struct WriteVectoredAt<T: IoVectoredBuf> {
-    pub(crate) fd: SharedFd,
+pub struct WriteVectoredAt<T: IoVectoredBuf, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSlice>,
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBuf> WriteVectoredAt<T> {
+impl<T: IoVectoredBuf, S> WriteVectoredAt<T, S> {
     /// Create [`WriteVectoredAt`]
-    pub fn new(fd: SharedFd, offset: u64, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, offset: u64, buffer: T) -> Self {
         Self {
             fd,
             offset,
@@ -136,7 +136,7 @@ impl<T: IoVectoredBuf> WriteVectoredAt<T> {
     }
 }
 
-impl<T: IoVectoredBuf> IntoInner for WriteVectoredAt<T> {
+impl<T: IoVectoredBuf, S> IntoInner for WriteVectoredAt<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -227,7 +227,7 @@ impl CreateSocket {
     }
 }
 
-impl ShutdownSocket {
+impl<S> ShutdownSocket<S> {
     pub(crate) fn how(&self) -> i32 {
         match self.how {
             Shutdown::Write => libc::SHUT_WR,
@@ -238,16 +238,16 @@ impl ShutdownSocket {
 }
 
 /// Accept a connection.
-pub struct Accept {
-    pub(crate) fd: SharedFd,
+pub struct Accept<S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: sockaddr_storage,
     pub(crate) addr_len: socklen_t,
     _p: PhantomPinned,
 }
 
-impl Accept {
+impl<S> Accept<S> {
     /// Create [`Accept`].
-    pub fn new(fd: SharedFd) -> Self {
+    pub fn new(fd: SharedFd<S>) -> Self {
         Self {
             fd,
             buffer: unsafe { std::mem::zeroed() },
@@ -263,15 +263,15 @@ impl Accept {
 }
 
 /// Receive data from remote.
-pub struct Recv<T: IoBufMut> {
-    pub(crate) fd: SharedFd,
+pub struct Recv<T: IoBufMut, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: T,
     _p: PhantomPinned,
 }
 
-impl<T: IoBufMut> Recv<T> {
+impl<T: IoBufMut, S> Recv<T, S> {
     /// Create [`Recv`].
-    pub fn new(fd: SharedFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -280,7 +280,7 @@ impl<T: IoBufMut> Recv<T> {
     }
 }
 
-impl<T: IoBufMut> IntoInner for Recv<T> {
+impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -289,16 +289,16 @@ impl<T: IoBufMut> IntoInner for Recv<T> {
 }
 
 /// Receive data from remote into vectored buffer.
-pub struct RecvVectored<T: IoVectoredBufMut> {
-    pub(crate) fd: SharedFd,
+pub struct RecvVectored<T: IoVectoredBufMut, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSliceMut>,
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBufMut> RecvVectored<T> {
+impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
     /// Create [`RecvVectored`].
-    pub fn new(fd: SharedFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -308,7 +308,7 @@ impl<T: IoVectoredBufMut> RecvVectored<T> {
     }
 }
 
-impl<T: IoVectoredBufMut> IntoInner for RecvVectored<T> {
+impl<T: IoVectoredBufMut, S> IntoInner for RecvVectored<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -317,15 +317,15 @@ impl<T: IoVectoredBufMut> IntoInner for RecvVectored<T> {
 }
 
 /// Send data to remote.
-pub struct Send<T: IoBuf> {
-    pub(crate) fd: SharedFd,
+pub struct Send<T: IoBuf, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: T,
     _p: PhantomPinned,
 }
 
-impl<T: IoBuf> Send<T> {
+impl<T: IoBuf, S> Send<T, S> {
     /// Create [`Send`].
-    pub fn new(fd: SharedFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -334,7 +334,7 @@ impl<T: IoBuf> Send<T> {
     }
 }
 
-impl<T: IoBuf> IntoInner for Send<T> {
+impl<T: IoBuf, S> IntoInner for Send<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -343,16 +343,16 @@ impl<T: IoBuf> IntoInner for Send<T> {
 }
 
 /// Send data to remote from vectored buffer.
-pub struct SendVectored<T: IoVectoredBuf> {
-    pub(crate) fd: SharedFd,
+pub struct SendVectored<T: IoVectoredBuf, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSlice>,
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBuf> SendVectored<T> {
+impl<T: IoVectoredBuf, S> SendVectored<T, S> {
     /// Create [`SendVectored`].
-    pub fn new(fd: SharedFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -362,7 +362,7 @@ impl<T: IoVectoredBuf> SendVectored<T> {
     }
 }
 
-impl<T: IoVectoredBuf> IntoInner for SendVectored<T> {
+impl<T: IoVectoredBuf, S> IntoInner for SendVectored<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {

@@ -1,7 +1,6 @@
 use std::{
     io::{self, IsTerminal, Read, Write},
-    mem::ManuallyDrop,
-    os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
+    os::windows::io::AsRawHandle,
     pin::Pin,
     sync::OnceLock,
     task::Poll,
@@ -106,7 +105,7 @@ static STDIN_ISATTY: OnceLock<bool> = OnceLock::new();
 /// See [`stdin`].
 #[derive(Debug, Clone)]
 pub struct Stdin {
-    fd: ManuallyDrop<SharedFd>,
+    fd: SharedFd<RawFd>,
     isatty: bool,
 }
 
@@ -120,9 +119,7 @@ impl Stdin {
                     .is_err()
         });
         Self {
-            fd: ManuallyDrop::new(SharedFd::new(unsafe {
-                OwnedHandle::from_raw_handle(stdin.as_raw_handle())
-            })),
+            fd: SharedFd::new(stdin.as_raw_handle() as _),
             isatty,
         }
     }
@@ -135,7 +132,7 @@ impl AsyncRead for Stdin {
             let op = StdRead::new(io::stdin(), buf);
             runtime.submit(op).await.into_inner()
         } else {
-            let op = Recv::new(ManuallyDrop::into_inner(self.fd.clone()), buf);
+            let op = Recv::new(self.fd.clone(), buf);
             runtime.submit(op).await.into_inner()
         }
         .map_advanced()
@@ -155,7 +152,7 @@ static STDOUT_ISATTY: OnceLock<bool> = OnceLock::new();
 /// See [`stdout`].
 #[derive(Debug, Clone)]
 pub struct Stdout {
-    fd: ManuallyDrop<SharedFd>,
+    fd: SharedFd<RawFd>,
     isatty: bool,
 }
 
@@ -169,9 +166,7 @@ impl Stdout {
                     .is_err()
         });
         Self {
-            fd: ManuallyDrop::new(SharedFd::new(unsafe {
-                OwnedHandle::from_raw_handle(stdout.as_raw_handle())
-            })),
+            fd: SharedFd::new(stdout.as_raw_handle() as _),
             isatty,
         }
     }
@@ -184,7 +179,7 @@ impl AsyncWrite for Stdout {
             let op = StdWrite::new(io::stdout(), buf);
             runtime.submit(op).await.into_inner()
         } else {
-            let op = Send::new(ManuallyDrop::into_inner(self.fd.clone()), buf);
+            let op = Send::new(self.fd.clone(), buf);
             runtime.submit(op).await.into_inner()
         }
     }
@@ -211,7 +206,7 @@ static STDERR_ISATTY: OnceLock<bool> = OnceLock::new();
 /// See [`stderr`].
 #[derive(Debug, Clone)]
 pub struct Stderr {
-    fd: ManuallyDrop<SharedFd>,
+    fd: SharedFd<RawFd>,
     isatty: bool,
 }
 
@@ -225,9 +220,7 @@ impl Stderr {
                     .is_err()
         });
         Self {
-            fd: ManuallyDrop::new(SharedFd::new(unsafe {
-                OwnedHandle::from_raw_handle(stderr.as_raw_handle())
-            })),
+            fd: SharedFd::new(stderr.as_raw_handle() as _),
             isatty,
         }
     }
@@ -240,7 +233,7 @@ impl AsyncWrite for Stderr {
             let op = StdWrite::new(io::stderr(), buf);
             runtime.submit(op).await.into_inner()
         } else {
-            let op = Send::new(ManuallyDrop::into_inner(self.fd.clone()), buf);
+            let op = Send::new(self.fd.clone(), buf);
             runtime.submit(op).await.into_inner()
         }
     }

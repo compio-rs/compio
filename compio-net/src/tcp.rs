@@ -109,7 +109,7 @@ impl TcpListener {
     }
 }
 
-impl_raw_fd!(TcpListener, inner, socket);
+impl_raw_fd!(TcpListener, socket2::Socket, inner, socket);
 
 /// A TCP stream between a local and a remote socket.
 ///
@@ -273,4 +273,4 @@ impl AsyncWrite for &TcpStream {
     }
 }
 
-impl_raw_fd!(TcpStream, inner, socket);
+impl_raw_fd!(TcpStream, socket2::Socket, inner, socket);

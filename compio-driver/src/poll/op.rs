@@ -65,14 +65,14 @@ impl OpCode for CloseFile {
 }
 
 /// Get metadata of an opened file.
-pub struct FileStat {
-    pub(crate) fd: SharedFd,
+pub struct FileStat<S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) stat: libc::stat,
 }
 
-impl FileStat {
+impl<S> FileStat<S> {
     /// Create [`FileStat`].
-    pub fn new(fd: SharedFd) -> Self {
+    pub fn new(fd: SharedFd<S>) -> Self {
         Self {
             fd,
             stat: unsafe { std::mem::zeroed() },
@@ -80,7 +80,7 @@ impl FileStat {
     }
 }
 
-impl OpCode for FileStat {
+impl<S: AsRawFd> OpCode for FileStat<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::blocking_dummy())
     }
@@ -109,7 +109,7 @@ impl OpCode for FileStat {
     }
 }
 
-impl IntoInner for FileStat {
+impl<S> IntoInner for FileStat<S> {
     type Inner = libc::stat;
 
     fn into_inner(self) -> Self::Inner {
@@ -178,7 +178,7 @@ impl IntoInner for PathStat {
     }
 }
 
-impl<T: IoBufMut> OpCode for ReadAt<T> {
+impl<T: IoBufMut, S: AsRawFd> OpCode for ReadAt<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::blocking_readable(self.fd.as_raw_fd()))
     }
@@ -193,7 +193,7 @@ impl<T: IoBufMut> OpCode for ReadAt<T> {
     }
 }
 
-impl<T: IoVectoredBufMut> OpCode for ReadVectoredAt<T> {
+impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for ReadVectoredAt<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::blocking_readable(self.fd.as_raw_fd()))
     }
@@ -214,7 +214,7 @@ impl<T: IoVectoredBufMut> OpCode for ReadVectoredAt<T> {
     }
 }
 
-impl<T: IoBuf> OpCode for WriteAt<T> {
+impl<T: IoBuf, S: AsRawFd> OpCode for WriteAt<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::blocking_writable(self.fd.as_raw_fd()))
     }
@@ -234,7 +234,7 @@ impl<T: IoBuf> OpCode for WriteAt<T> {
     }
 }
 
-impl<T: IoVectoredBuf> OpCode for WriteVectoredAt<T> {
+impl<T: IoVectoredBuf, S: AsRawFd> OpCode for WriteVectoredAt<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::blocking_writable(self.fd.as_raw_fd()))
     }
@@ -255,7 +255,7 @@ impl<T: IoVectoredBuf> OpCode for WriteVectoredAt<T> {
     }
 }
 
-impl OpCode for Sync {
+impl<S: AsRawFd> OpCode for Sync<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::blocking_dummy())
     }
@@ -361,7 +361,7 @@ impl OpCode for CreateSocket {
     }
 }
 
-impl OpCode for ShutdownSocket {
+impl<S: AsRawFd> OpCode for ShutdownSocket<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::blocking_dummy())
     }
@@ -383,7 +383,7 @@ impl OpCode for CloseSocket {
     }
 }
 
-impl Accept {
+impl<S: AsRawFd> Accept<S> {
     unsafe fn call(self: Pin<&mut Self>) -> libc::c_int {
         let this = self.get_unchecked_mut();
         libc::accept(
@@ -394,7 +394,7 @@ impl Accept {
     }
 }
 
-impl OpCode for Accept {
+impl<S: AsRawFd> OpCode for Accept<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let fd = self.fd.as_raw_fd();
         syscall!(self.call(), wait_readable(fd))
@@ -407,7 +407,7 @@ impl OpCode for Accept {
     }
 }
 
-impl OpCode for Connect {
+impl<S: AsRawFd> OpCode for Connect<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         syscall!(
             libc::connect(self.fd.as_raw_fd(), self.addr.as_ptr(), self.addr.len()),
@@ -438,7 +438,7 @@ impl OpCode for Connect {
     }
 }
 
-impl<T: IoBufMut> OpCode for Recv<T> {
+impl<T: IoBufMut, S: AsRawFd> OpCode for Recv<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_readable(self.fd.as_raw_fd()))
     }
@@ -452,7 +452,7 @@ impl<T: IoBufMut> OpCode for Recv<T> {
     }
 }
 
-impl<T: IoVectoredBufMut> OpCode for RecvVectored<T> {
+impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_readable(self.fd.as_raw_fd()))
     }
@@ -472,7 +472,7 @@ impl<T: IoVectoredBufMut> OpCode for RecvVectored<T> {
     }
 }
 
-impl<T: IoBuf> OpCode for Send<T> {
+impl<T: IoBuf, S: AsRawFd> OpCode for Send<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_writable(self.fd.as_raw_fd()))
     }
@@ -485,7 +485,7 @@ impl<T: IoBuf> OpCode for Send<T> {
     }
 }
 
-impl<T: IoVectoredBuf> OpCode for SendVectored<T> {
+impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_writable(self.fd.as_raw_fd()))
     }
@@ -506,17 +506,17 @@ impl<T: IoVectoredBuf> OpCode for SendVectored<T> {
 }
 
 /// Receive data and source address.
-pub struct RecvFrom<T: IoBufMut> {
-    pub(crate) fd: SharedFd,
+pub struct RecvFrom<T: IoBufMut, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: T,
     pub(crate) addr: sockaddr_storage,
     pub(crate) addr_len: socklen_t,
     _p: PhantomPinned,
 }
 
-impl<T: IoBufMut> RecvFrom<T> {
+impl<T: IoBufMut, S> RecvFrom<T, S> {
     /// Create [`RecvFrom`].
-    pub fn new(fd: SharedFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -525,7 +525,9 @@ impl<T: IoBufMut> RecvFrom<T> {
             _p: PhantomPinned,
         }
     }
+}
 
+impl<T: IoBufMut, S: AsRawFd> RecvFrom<T, S> {
     unsafe fn call(self: Pin<&mut Self>) -> libc::ssize_t {
         let this = self.get_unchecked_mut();
         let fd = this.fd.as_raw_fd();
@@ -541,7 +543,7 @@ impl<T: IoBufMut> RecvFrom<T> {
     }
 }
 
-impl<T: IoBufMut> OpCode for RecvFrom<T> {
+impl<T: IoBufMut, S: AsRawFd> OpCode for RecvFrom<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let fd = self.fd.as_raw_fd();
         syscall!(self.call(), wait_readable(fd))
@@ -554,7 +556,7 @@ impl<T: IoBufMut> OpCode for RecvFrom<T> {
     }
 }
 
-impl<T: IoBufMut> IntoInner for RecvFrom<T> {
+impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
     type Inner = (T, sockaddr_storage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
@@ -563,8 +565,8 @@ impl<T: IoBufMut> IntoInner for RecvFrom<T> {
 }
 
 /// Receive data and source address into vectored buffer.
-pub struct RecvFromVectored<T: IoVectoredBufMut> {
-    pub(crate) fd: SharedFd,
+pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSliceMut>,
     pub(crate) addr: sockaddr_storage,
@@ -572,9 +574,9 @@ pub struct RecvFromVectored<T: IoVectoredBufMut> {
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBufMut> RecvFromVectored<T> {
+impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
     /// Create [`RecvFromVectored`].
-    pub fn new(fd: SharedFd, buffer: T) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -584,7 +586,9 @@ impl<T: IoVectoredBufMut> RecvFromVectored<T> {
             _p: PhantomPinned,
         }
     }
+}
 
+impl<T: IoVectoredBufMut, S: AsRawFd> RecvFromVectored<T, S> {
     fn set_msg(&mut self) {
         self.slices = unsafe { self.buffer.as_io_slices_mut() };
         self.msg = libc::msghdr {
@@ -603,7 +607,7 @@ impl<T: IoVectoredBufMut> RecvFromVectored<T> {
     }
 }
 
-impl<T: IoVectoredBufMut> OpCode for RecvFromVectored<T> {
+impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvFromVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let this = unsafe { self.get_unchecked_mut() };
         this.set_msg();
@@ -618,7 +622,7 @@ impl<T: IoVectoredBufMut> OpCode for RecvFromVectored<T> {
     }
 }
 
-impl<T: IoVectoredBufMut> IntoInner for RecvFromVectored<T> {
+impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
     type Inner = (T, sockaddr_storage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
@@ -627,16 +631,16 @@ impl<T: IoVectoredBufMut> IntoInner for RecvFromVectored<T> {
 }
 
 /// Send data to specified address.
-pub struct SendTo<T: IoBuf> {
-    pub(crate) fd: SharedFd,
+pub struct SendTo<T: IoBuf, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
     _p: PhantomPinned,
 }
 
-impl<T: IoBuf> SendTo<T> {
+impl<T: IoBuf, S> SendTo<T, S> {
     /// Create [`SendTo`].
-    pub fn new(fd: SharedFd, buffer: T, addr: SockAddr) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T, addr: SockAddr) -> Self {
         Self {
             fd,
             buffer,
@@ -644,7 +648,9 @@ impl<T: IoBuf> SendTo<T> {
             _p: PhantomPinned,
         }
     }
+}
 
+impl<T: IoBuf, S: AsRawFd> SendTo<T, S> {
     unsafe fn call(&self) -> libc::ssize_t {
         let slice = self.buffer.as_slice();
         libc::sendto(
@@ -658,7 +664,7 @@ impl<T: IoBuf> SendTo<T> {
     }
 }
 
-impl<T: IoBuf> OpCode for SendTo<T> {
+impl<T: IoBuf, S: AsRawFd> OpCode for SendTo<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         syscall!(self.call(), wait_writable(self.fd.as_raw_fd()))
     }
@@ -670,7 +676,7 @@ impl<T: IoBuf> OpCode for SendTo<T> {
     }
 }
 
-impl<T: IoBuf> IntoInner for SendTo<T> {
+impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -679,8 +685,8 @@ impl<T: IoBuf> IntoInner for SendTo<T> {
 }
 
 /// Send data to specified address from vectored buffer.
-pub struct SendToVectored<T: IoVectoredBuf> {
-    pub(crate) fd: SharedFd,
+pub struct SendToVectored<T: IoVectoredBuf, S> {
+    pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
     pub(crate) slices: Vec<IoSlice>,
@@ -688,9 +694,9 @@ pub struct SendToVectored<T: IoVectoredBuf> {
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBuf> SendToVectored<T> {
+impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
     /// Create [`SendToVectored`].
-    pub fn new(fd: SharedFd, buffer: T, addr: SockAddr) -> Self {
+    pub fn new(fd: SharedFd<S>, buffer: T, addr: SockAddr) -> Self {
         Self {
             fd,
             buffer,
@@ -700,7 +706,9 @@ impl<T: IoVectoredBuf> SendToVectored<T> {
             _p: PhantomPinned,
         }
     }
+}
 
+impl<T: IoVectoredBuf, S: AsRawFd> SendToVectored<T, S> {
     fn set_msg(&mut self) {
         self.slices = unsafe { self.buffer.as_io_slices() };
         self.msg = libc::msghdr {
@@ -719,7 +727,7 @@ impl<T: IoVectoredBuf> SendToVectored<T> {
     }
 }
 
-impl<T: IoVectoredBuf> OpCode for SendToVectored<T> {
+impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendToVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let this = unsafe { self.get_unchecked_mut() };
         this.set_msg();
@@ -733,7 +741,7 @@ impl<T: IoVectoredBuf> OpCode for SendToVectored<T> {
     }
 }
 
-impl<T: IoVectoredBuf> IntoInner for SendToVectored<T> {
+impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
