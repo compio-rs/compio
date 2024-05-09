@@ -87,7 +87,7 @@ mod driver_type {
             Shutdown::CODE,
             // Linux kernel 5.19
             #[cfg(any(
-                feature = "io-uring-seq128",
+                feature = "io-uring-sqe128",
                 feature = "io-uring-cqe32",
                 feature = "io-uring-socket"
             ))]
