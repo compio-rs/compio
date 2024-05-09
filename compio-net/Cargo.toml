@@ -41,3 +41,7 @@ libc = { workspace = true }
 compio-macros = { workspace = true }
 futures-util = { workspace = true }
 tempfile = { workspace = true }
+
+[features]
+default = []
+io-uring = ["compio-driver/io-uring"]
