@@ -13,6 +13,11 @@ use compio_driver::{
 };
 use compio_io::{AsyncRead, AsyncWrite};
 use compio_runtime::{Attacher, Runtime};
+#[cfg(unix)]
+use {
+    compio_buf::{IoVectoredBuf, IoVectoredBufMut},
+    compio_driver::op::{RecvVectored, SendVectored},
+};
 
 /// A wrapper for IO source, providing implementations for [`AsyncRead`] and
 /// [`AsyncWrite`].
@@ -46,6 +51,12 @@ impl<T: AsRawFd + 'static> AsyncRead for AsyncFd<T> {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         (&*self).read(buf).await
     }
+
+    #[cfg(unix)]
+    #[inline]
+    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
+        (&*self).read_vectored(buf).await
+    }
 }
 
 impl<T: AsRawFd + 'static> AsyncRead for &AsyncFd<T> {
@@ -58,12 +69,29 @@ impl<T: AsRawFd + 'static> AsyncRead for &AsyncFd<T> {
             .into_inner()
             .map_advanced()
     }
+
+    #[cfg(unix)]
+    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
+        let fd = self.inner.to_shared_fd();
+        let op = RecvVectored::new(fd, buf);
+        Runtime::current()
+            .submit(op)
+            .await
+            .into_inner()
+            .map_advanced()
+    }
 }
 
 impl<T: AsRawFd + 'static> AsyncWrite for AsyncFd<T> {
     #[inline]
     async fn write<B: IoBuf>(&mut self, buf: B) -> BufResult<usize, B> {
         (&*self).write(buf).await
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    async fn write_vectored<V: IoVectoredBuf>(&mut self, buf: V) -> BufResult<usize, V> {
+        (&*self).write_vectored(buf).await
     }
 
     #[inline]
@@ -81,6 +109,13 @@ impl<T: AsRawFd + 'static> AsyncWrite for &AsyncFd<T> {
     async fn write<B: IoBuf>(&mut self, buf: B) -> BufResult<usize, B> {
         let fd = self.inner.to_shared_fd();
         let op = Send::new(fd, buf);
+        Runtime::current().submit(op).await.into_inner()
+    }
+
+    #[cfg(unix)]
+    async fn write_vectored<V: IoVectoredBuf>(&mut self, buf: V) -> BufResult<usize, V> {
+        let fd = self.inner.to_shared_fd();
+        let op = SendVectored::new(fd, buf);
         Runtime::current().submit(op).await.into_inner()
     }
 

@@ -1,4 +1,4 @@
-use std::{io, mem::ManuallyDrop, os::fd::FromRawFd};
+use std::io;
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{AsRawFd, RawFd};
@@ -6,30 +6,38 @@ use compio_io::{AsyncRead, AsyncWrite};
 
 #[cfg(doc)]
 use super::{stderr, stdin, stdout};
-use crate::pipe::{Receiver, Sender};
+use crate::AsyncFd;
 
 /// A handle to the standard input stream of a process.
 ///
 /// See [`stdin`].
 #[derive(Debug, Clone)]
-pub struct Stdin(ManuallyDrop<Receiver>);
+pub struct Stdin(AsyncFd<RawFd>);
 
 impl Stdin {
     pub(crate) fn new() -> Self {
-        // SAFETY: we don't drop it
-        Self(ManuallyDrop::new(unsafe {
-            Receiver::from_raw_fd(libc::STDIN_FILENO)
-        }))
+        // SAFETY: no need to attach on unix
+        Self(unsafe { AsyncFd::new_unchecked(libc::STDIN_FILENO) })
     }
 }
 
 impl AsyncRead for Stdin {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        self.0.read(buf).await
+        (&*self).read(buf).await
     }
 
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
-        self.0.read_vectored(buf).await
+        (&*self).read_vectored(buf).await
+    }
+}
+
+impl AsyncRead for &Stdin {
+    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
+        (&self.0).read(buf).await
+    }
+
+    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
+        (&self.0).read_vectored(buf).await
     }
 }
 
@@ -43,14 +51,12 @@ impl AsRawFd for Stdin {
 ///
 /// See [`stdout`].
 #[derive(Debug, Clone)]
-pub struct Stdout(ManuallyDrop<Sender>);
+pub struct Stdout(AsyncFd<RawFd>);
 
 impl Stdout {
     pub(crate) fn new() -> Self {
-        // SAFETY: we don't drop it
-        Self(ManuallyDrop::new(unsafe {
-            Sender::from_raw_fd(libc::STDOUT_FILENO)
-        }))
+        // SAFETY: no need to attach on unix
+        Self(unsafe { AsyncFd::new_unchecked(libc::STDOUT_FILENO) })
     }
 }
 
@@ -82,14 +88,12 @@ impl AsRawFd for Stdout {
 ///
 /// See [`stderr`].
 #[derive(Debug, Clone)]
-pub struct Stderr(ManuallyDrop<Sender>);
+pub struct Stderr(AsyncFd<RawFd>);
 
 impl Stderr {
     pub(crate) fn new() -> Self {
-        // SAFETY: we don't drop it
-        Self(ManuallyDrop::new(unsafe {
-            Sender::from_raw_fd(libc::STDERR_FILENO)
-        }))
+        // SAFETY: no need to attach on unix
+        Self(unsafe { AsyncFd::new_unchecked(libc::STDERR_FILENO) })
     }
 }
 
