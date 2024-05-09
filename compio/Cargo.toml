@@ -75,7 +75,11 @@ monoio = { version = "0.2.2", default-features = false, features = ["iouring"] }
 
 [features]
 default = ["runtime", "io-uring"]
-io-uring = ["compio-driver/io-uring", "compio-net?/io-uring"]
+io-uring = [
+    "compio-driver/io-uring",
+    "compio-fs?/io-uring",
+    "compio-net?/io-uring",
+]
 polling = ["compio-driver/polling"]
 io = ["dep:compio-io"]
 io-compat = ["io", "compio-io/compat"]
