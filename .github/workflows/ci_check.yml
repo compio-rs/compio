@@ -25,11 +25,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Setup Rust Toolchain
         run: |
-          rustup toolchain install nightly
-          rustup +nightly component add clippy
+          rustup default nightly
+          rustup component add clippy
       - name: Check clippy
         run: |
-          cargo +nightly clippy --all-features --all-targets -- -Dwarnings
+          cargo clippy --all-features --all-targets -- -Dwarnings
       - name: Check Docs
         run: |
-          cargo +nightly doc --workspace --all-features --no-deps
+          cargo doc --workspace --all-features --no-deps
