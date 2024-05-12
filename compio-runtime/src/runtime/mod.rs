@@ -46,6 +46,7 @@ impl Default for FutureState {
 
 pub(crate) struct RuntimeInner {
     driver: RefCell<Proactor>,
+    poll: bool,
     runnables: Arc<SegQueue<Runnable>>,
     op_runtime: RefCell<OpRuntime>,
     #[cfg(feature = "time")]
@@ -53,9 +54,10 @@ pub(crate) struct RuntimeInner {
 }
 
 impl RuntimeInner {
-    pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
+    pub fn new(builder: &RuntimeBuilder) -> io::Result<Self> {
         Ok(Self {
-            driver: RefCell::new(builder.build()?),
+            driver: RefCell::new(builder.proactor_builder.build()?),
+            poll: builder.poll,
             runnables: Arc::new(SegQueue::new()),
             op_runtime: RefCell::default(),
             #[cfg(feature = "time")]
@@ -71,9 +73,13 @@ impl RuntimeInner {
             .borrow()
             .handle()
             .expect("cannot create notify handle of the proactor");
+        let main_id = std::thread::current().id();
+        let poll = self.poll;
         let schedule = move |runnable| {
             runnables.push(runnable);
-            handle.notify().ok();
+            if poll || main_id != std::thread::current().id() {
+                handle.notify().ok();
+            }
         };
         let (runnable, task) = async_task::spawn_unchecked(future, schedule);
         runnable.schedule();
@@ -441,6 +447,7 @@ impl criterion::async_executor::AsyncExecutor for &Runtime {
 #[derive(Debug, Clone)]
 pub struct RuntimeBuilder {
     proactor_builder: ProactorBuilder,
+    poll: bool,
 }
 
 impl Default for RuntimeBuilder {
@@ -454,6 +461,7 @@ impl RuntimeBuilder {
     pub fn new() -> Self {
         Self {
             proactor_builder: ProactorBuilder::new(),
+            poll: false,
         }
     }
 
@@ -463,10 +471,16 @@ impl RuntimeBuilder {
         self
     }
 
+    /// Ensure the fd of proactor is pollable.
+    pub fn enable_poll(&mut self, poll: bool) -> &mut Self {
+        self.poll = poll;
+        self
+    }
+
     /// Build [`Runtime`].
     pub fn build(&self) -> io::Result<Runtime> {
         Ok(Runtime {
-            inner: Rc::new(RuntimeInner::new(&self.proactor_builder)?),
+            inner: Rc::new(RuntimeInner::new(self)?),
         })
     }
 }

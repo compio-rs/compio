@@ -212,7 +212,7 @@ fn glib_context() {
 
     impl GLibRuntime {
         pub fn new() -> Self {
-            let runtime = Runtime::new().unwrap();
+            let runtime = Runtime::builder().enable_poll(true).build().unwrap();
             let ctx = MainContext::default();
 
             unix_fd_add_local(runtime.as_raw_fd(), IOCondition::IN, |_fd, _cond| {
