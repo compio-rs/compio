@@ -25,7 +25,7 @@ fn cf_run_loop() {
 
     impl CFRunLoopRuntime {
         pub fn new() -> Self {
-            let runtime = Runtime::new().unwrap();
+            let runtime = Runtime::builder().enable_poll(true).build().unwrap();
 
             extern "C" fn callback(
                 _fdref: CFFileDescriptorRef,
@@ -120,7 +120,7 @@ fn message_queue() {
     impl MQRuntime {
         pub fn new() -> Self {
             Self {
-                runtime: Runtime::new().unwrap(),
+                runtime: Runtime::builder().enable_poll(true).build().unwrap(),
             }
         }
 
