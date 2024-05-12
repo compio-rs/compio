@@ -83,7 +83,7 @@ fn read_compio(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
 
         let start = Instant::now();
         for _i in 0..iter {
-            let mut buffer = [0u8; BUFFER_SIZE];
+            let mut buffer = Box::new([0u8; BUFFER_SIZE]);
             for &offset in *offsets {
                 (_, buffer) = file.read_at(buffer, offset).await.unwrap();
             }
@@ -103,7 +103,7 @@ fn read_compio_join(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
             let res = offsets
                 .iter()
                 .map(|offset| async {
-                    let buffer = [0u8; BUFFER_SIZE];
+                    let buffer = Box::new([0u8; BUFFER_SIZE]);
                     let (_, buffer) = file.read_at(buffer, *offset).await.unwrap();
                     buffer
                 })
@@ -180,7 +180,7 @@ fn read_all_compio(b: &mut Bencher, (path, len): &(&Path, u64)) {
     let runtime = compio::runtime::Runtime::new().unwrap();
     b.to_async(&runtime).iter_custom(|iter| async move {
         let file = compio::fs::File::open(path).await.unwrap();
-        let mut buffer = [0u8; BUFFER_SIZE];
+        let mut buffer = Box::new([0u8; BUFFER_SIZE]);
 
         let start = Instant::now();
         for _i in 0..iter {
