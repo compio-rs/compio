@@ -171,21 +171,21 @@ impl Command {
     }
 
     /// Configuration for the child process’s standard input (stdin) handle.
-    pub fn stdin(&mut self, cfg: impl Into<process::Stdio>) -> &mut Self {
-        self.0.stdin(cfg);
-        self
+    pub fn stdin<S: TryInto<process::Stdio>>(&mut self, cfg: S) -> Result<&mut Self, S::Error> {
+        self.0.stdin(cfg.try_into()?);
+        Ok(self)
     }
 
     /// Configuration for the child process’s standard output (stdout) handle.
-    pub fn stdout(&mut self, cfg: impl Into<process::Stdio>) -> &mut Self {
-        self.0.stdout(cfg);
-        self
+    pub fn stdout<S: TryInto<process::Stdio>>(&mut self, cfg: S) -> Result<&mut Self, S::Error> {
+        self.0.stdout(cfg.try_into()?);
+        Ok(self)
     }
 
     /// Configuration for the child process’s standard error (stderr) handle.
-    pub fn stderr(&mut self, cfg: impl Into<process::Stdio>) -> &mut Self {
-        self.0.stderr(cfg);
-        self
+    pub fn stderr<S: TryInto<process::Stdio>>(&mut self, cfg: S) -> Result<&mut Self, S::Error> {
+        self.0.stderr(cfg.try_into()?);
+        Ok(self)
     }
 
     /// Returns the path to the program.
@@ -409,15 +409,16 @@ impl ChildStdout {
     }
 }
 
-impl From<ChildStdout> for process::Stdio {
-    fn from(value: ChildStdout) -> Self {
-        Self::from(
-            value
-                .0
-                .into_inner()
-                .try_unwrap()
-                .expect("the handle is being used"),
-        )
+impl TryFrom<ChildStdout> for process::Stdio {
+    type Error = ChildStdout;
+
+    fn try_from(value: ChildStdout) -> Result<Self, ChildStdout> {
+        value
+            .0
+            .into_inner()
+            .try_unwrap()
+            .map(Self::from)
+            .map_err(|fd| ChildStdout(unsafe { Attacher::from_shared_fd_unchecked(fd) }))
     }
 }
 
@@ -430,15 +431,16 @@ impl ChildStderr {
     }
 }
 
-impl From<ChildStderr> for process::Stdio {
-    fn from(value: ChildStderr) -> Self {
-        Self::from(
-            value
-                .0
-                .into_inner()
-                .try_unwrap()
-                .expect("the handle is being used"),
-        )
+impl TryFrom<ChildStderr> for process::Stdio {
+    type Error = ChildStderr;
+
+    fn try_from(value: ChildStderr) -> Result<Self, ChildStderr> {
+        value
+            .0
+            .into_inner()
+            .try_unwrap()
+            .map(Self::from)
+            .map_err(|fd| ChildStderr(unsafe { Attacher::from_shared_fd_unchecked(fd) }))
     }
 }
 
@@ -452,14 +454,15 @@ impl ChildStdin {
     }
 }
 
-impl From<ChildStdin> for process::Stdio {
-    fn from(value: ChildStdin) -> Self {
-        Self::from(
-            value
-                .0
-                .into_inner()
-                .try_unwrap()
-                .expect("the handle is being used"),
-        )
+impl TryFrom<ChildStdin> for process::Stdio {
+    type Error = ChildStdin;
+
+    fn try_from(value: ChildStdin) -> Result<Self, ChildStdin> {
+        value
+            .0
+            .into_inner()
+            .try_unwrap()
+            .map(Self::from)
+            .map_err(|fd| ChildStdin(unsafe { Attacher::from_shared_fd_unchecked(fd) }))
     }
 }

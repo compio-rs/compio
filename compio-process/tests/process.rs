@@ -38,6 +38,7 @@ async fn echo() {
     let child = cmd
         .arg("echo hello world")
         .stdout(Stdio::piped())
+        .unwrap()
         .spawn()
         .unwrap();
 
@@ -58,7 +59,8 @@ async fn arg0() {
     cmd.arg0("test_string")
         .arg("-c")
         .arg("echo $0")
-        .stdout(Stdio::piped());
+        .stdout(Stdio::piped())
+        .unwrap();
 
     let output = cmd.output().await.unwrap();
     assert_eq!(output.stdout, b"test_string\n");

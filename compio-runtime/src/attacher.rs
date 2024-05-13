@@ -30,6 +30,15 @@ impl<S> Attacher<S> {
             source: SharedFd::new(source),
         }
     }
+
+    /// Create [`Attacher`] without trying to attach the source.
+    ///
+    /// # Safety
+    ///
+    /// See [`Attacher::new_unchecked`].
+    pub unsafe fn from_shared_fd_unchecked(source: SharedFd<S>) -> Self {
+        Self { source }
+    }
 }
 
 impl<S: AsRawFd> Attacher<S> {
