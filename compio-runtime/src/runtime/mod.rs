@@ -28,10 +28,7 @@ pub(crate) mod time;
 
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerRuntime};
-use crate::{
-    runtime::op::{OpFuture, OpRuntime},
-    BufResult,
-};
+use crate::{runtime::op::OpFuture, BufResult};
 
 pub type JoinHandle<T> = Task<Result<T, Box<dyn Any + Send>>>;
 
@@ -50,7 +47,6 @@ pub(crate) struct RuntimeInner {
     driver: RefCell<Proactor>,
     local_runnables: Arc<SendWrapper<RefCell<VecDeque<Runnable>>>>,
     sync_runnables: Arc<SegQueue<Runnable>>,
-    op_runtime: RefCell<OpRuntime>,
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
 }
@@ -61,7 +57,6 @@ impl RuntimeInner {
             driver: RefCell::new(builder.build()?),
             local_runnables: Arc::new(SendWrapper::new(RefCell::new(VecDeque::new()))),
             sync_runnables: Arc::new(SegQueue::new()),
-            op_runtime: RefCell::default(),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
         })
@@ -148,11 +143,7 @@ impl RuntimeInner {
 
     pub fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
         match self.submit_raw(op) {
-            PushEntry::Pending(user_data) => {
-                // Clear previous waker if exists.
-                self.op_runtime.borrow_mut().cancel(*user_data);
-                Either::Left(OpFuture::new(user_data))
-            }
+            PushEntry::Pending(user_data) => Either::Left(OpFuture::new(user_data)),
             PushEntry::Ready(res) => Either::Right(ready(res)),
         }
     }
@@ -168,10 +159,7 @@ impl RuntimeInner {
     }
 
     pub fn cancel_op<T>(&self, user_data: Key<T>) {
-        let completed = self.op_runtime.borrow_mut().cancel(*user_data);
-        if !completed {
-            self.driver.borrow_mut().cancel(*user_data);
-        }
+        self.driver.borrow_mut().cancel(*user_data);
     }
 
     #[cfg(feature = "time")]
@@ -185,15 +173,11 @@ impl RuntimeInner {
         user_data: Key<T>,
     ) -> Poll<BufResult<usize, T>> {
         instrument!(compio_log::Level::DEBUG, "poll_task", ?user_data,);
-        let mut op_runtime = self.op_runtime.borrow_mut();
         let mut driver = self.driver.borrow_mut();
-        if driver.has_result(*user_data) {
-            debug!("has result");
-            op_runtime.cancel(*user_data);
-            Poll::Ready(driver.pop::<T>(user_data))
+        if let Some(res) = driver.pop(user_data) {
+            Poll::Ready(res)
         } else {
-            debug!("update waker");
-            op_runtime.update_waker(*user_data, cx.waker().clone());
+            driver.update_waker(*user_data, cx.waker().clone());
             Poll::Pending
         }
     }
@@ -235,9 +219,6 @@ impl RuntimeInner {
         match driver.poll(timeout, &mut entries) {
             Ok(_) => {
                 debug!("poll driver ok, entries: {}", entries.len());
-                for entry in entries {
-                    self.op_runtime.borrow_mut().wake(entry);
-                }
             }
             Err(e) => match e.kind() {
                 io::ErrorKind::TimedOut | io::ErrorKind::Interrupted => {

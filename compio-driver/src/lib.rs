@@ -12,7 +12,11 @@
 ))]
 compile_error!("You must choose at least one of these features: [\"io-uring\", \"polling\"]");
 
-use std::{io, task::Poll, time::Duration};
+use std::{
+    io,
+    task::{Poll, Waker},
+    time::Duration,
+};
 
 use compio_buf::BufResult;
 use compio_log::{instrument, trace};
@@ -173,6 +177,19 @@ pub enum PushEntry<K, R> {
 }
 
 impl<K, R> PushEntry<K, R> {
+    /// Get if the current variant is [`PushEntry::Ready`].
+    pub const fn is_ready(&self) -> bool {
+        matches!(self, Self::Ready(_))
+    }
+
+    /// Take the ready variant if exists.
+    pub fn take_ready(self) -> Option<R> {
+        match self {
+            Self::Pending(_) => None,
+            Self::Ready(res) => Some(res),
+        }
+    }
+
     /// Map the [`PushEntry::Pending`] branch.
     pub fn map_pending<L>(self, f: impl FnOnce(K) -> L) -> PushEntry<L, R> {
         match self {
@@ -285,23 +302,24 @@ impl Proactor {
     /// # Panics
     /// This function will panic if the requested operation has not been
     /// completed.
-    pub fn pop<T: OpCode>(&mut self, user_data: Key<T>) -> BufResult<usize, T> {
+    pub fn pop<T: OpCode>(&mut self, user_data: Key<T>) -> Option<BufResult<usize, T>> {
         instrument!(compio_log::Level::DEBUG, "pop", ?user_data);
-        let op = self
-            .ops
-            .try_remove(*user_data)
-            .expect("the entry should be valid");
-        trace!("poped {}", *user_data);
-        // Safety: user cannot create key with safe code, so the type should be correct
-        unsafe { op.into_inner::<T>() }
+        if self.ops[*user_data].has_result() {
+            let op = self
+                .ops
+                .try_remove(*user_data)
+                .expect("the entry should be valid");
+            trace!("poped {}", *user_data);
+            // Safety: user cannot create key with safe code, so the type should be correct
+            Some(unsafe { op.into_inner::<T>() })
+        } else {
+            None
+        }
     }
 
-    /// Query if the operation has completed.
-    pub fn has_result(&self, user_data: usize) -> bool {
-        self.ops
-            .get(user_data)
-            .map(|op| op.has_result())
-            .unwrap_or_default()
+    /// Update the waker of the specified op.
+    pub fn update_waker(&mut self, user_data: usize, waker: Waker) {
+        self.ops[user_data].set_waker(waker);
     }
 
     /// Create a notify handle to interrupt the inner driver.
