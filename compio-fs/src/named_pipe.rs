@@ -26,7 +26,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{File, OpenOptions};
+use crate::{AsyncFd, File, OpenOptions};
 
 /// A [Windows named pipe] server.
 ///
@@ -88,7 +88,7 @@ use crate::{File, OpenOptions};
 /// [Windows named pipe]: https://docs.microsoft.com/en-us/windows/win32/ipc/named-pipes
 #[derive(Debug, Clone)]
 pub struct NamedPipeServer {
-    handle: File,
+    handle: AsyncFd<std::fs::File>,
 }
 
 impl NamedPipeServer {
@@ -189,8 +189,7 @@ impl AsyncRead for NamedPipeServer {
 impl AsyncRead for &NamedPipeServer {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
-        // The position is ignored.
-        self.handle.read_at(buffer, 0).await
+        (&self.handle).read(buffer).await
     }
 }
 
@@ -214,8 +213,7 @@ impl AsyncWrite for NamedPipeServer {
 impl AsyncWrite for &NamedPipeServer {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        // The position is ignored.
-        (&self.handle).write_at(buffer, 0).await
+        (&self.handle).write(buffer).await
     }
 
     #[inline]
@@ -974,7 +972,7 @@ impl ServerOptions {
         )?;
 
         Ok(NamedPipeServer {
-            handle: File::from_std(unsafe { std::fs::File::from_raw_handle(h as _) })?,
+            handle: AsyncFd::new(unsafe { std::fs::File::from_raw_handle(h as _) })?,
         })
     }
 }

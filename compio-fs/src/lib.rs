@@ -23,6 +23,9 @@ pub use stdio::*;
 mod utils;
 pub use utils::*;
 
+mod async_fd;
+pub use async_fd::*;
+
 #[cfg(windows)]
 pub mod named_pipe;
 
