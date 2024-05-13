@@ -9,7 +9,18 @@ use std::{
 
 use slab::Slab;
 
-use crate::runtime::{FutureState, Runtime};
+use crate::runtime::Runtime;
+
+pub(crate) enum FutureState {
+    Active(Option<Waker>),
+    Completed,
+}
+
+impl Default for FutureState {
+    fn default() -> Self {
+        Self::Active(None)
+    }
+}
 
 #[derive(Debug)]
 struct TimerEntry {

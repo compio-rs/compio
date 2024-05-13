@@ -7,7 +7,7 @@ use std::{
     panic::AssertUnwindSafe,
     rc::{Rc, Weak},
     sync::Arc,
-    task::{Context, Poll, Waker},
+    task::{Context, Poll},
     time::Duration,
 };
 
@@ -31,17 +31,6 @@ use crate::runtime::time::{TimerFuture, TimerRuntime};
 use crate::{runtime::op::OpFuture, BufResult};
 
 pub type JoinHandle<T> = Task<Result<T, Box<dyn Any + Send>>>;
-
-pub(crate) enum FutureState {
-    Active(Option<Waker>),
-    Completed,
-}
-
-impl Default for FutureState {
-    fn default() -> Self {
-        Self::Active(None)
-    }
-}
 
 pub(crate) struct RuntimeInner {
     driver: RefCell<Proactor>,
