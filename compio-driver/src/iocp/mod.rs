@@ -12,7 +12,7 @@ use std::{
     pin::Pin,
     ptr::{null, NonNull},
     sync::Arc,
-    task::Poll,
+    task::{Poll, Waker},
     time::Duration,
 };
 
@@ -31,7 +31,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder};
+use crate::{syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder, PushEntry};
 
 pub(crate) mod op;
 
@@ -437,7 +437,7 @@ pub(crate) struct RawOp {
     // The two flags here are manual reference counting. The driver holds the strong ref until it
     // completes; the runtime holds the strong ref until the future is dropped.
     cancelled: bool,
-    result: Option<io::Result<usize>>,
+    result: PushEntry<Option<Waker>, io::Result<usize>>,
 }
 
 impl RawOp {
@@ -447,7 +447,7 @@ impl RawOp {
         Self {
             op: unsafe { NonNull::new_unchecked(Box::into_raw(op)) },
             cancelled: false,
-            result: None,
+            result: PushEntry::Pending(None),
         }
     }
 
@@ -465,12 +465,22 @@ impl RawOp {
     }
 
     pub fn set_result(&mut self, res: io::Result<usize>) -> bool {
-        self.result = Some(res);
+        if let PushEntry::Pending(Some(w)) =
+            std::mem::replace(&mut self.result, PushEntry::Ready(res))
+        {
+            w.wake();
+        }
         self.cancelled
     }
 
     pub fn has_result(&self) -> bool {
-        self.result.is_some()
+        self.result.is_ready()
+    }
+
+    pub fn set_waker(&mut self, waker: Waker) {
+        if let PushEntry::Pending(w) = &mut self.result {
+            *w = Some(waker)
+        }
     }
 
     /// # Safety
@@ -481,7 +491,12 @@ impl RawOp {
     pub unsafe fn into_inner<T: OpCode>(self) -> BufResult<usize, T> {
         let mut this = ManuallyDrop::new(self);
         let overlapped: Box<Overlapped<T>> = Box::from_raw(this.op.cast().as_ptr());
-        BufResult(this.result.take().unwrap(), overlapped.op)
+        BufResult(
+            std::mem::replace(&mut this.result, PushEntry::Pending(None))
+                .take_ready()
+                .unwrap(),
+            overlapped.op,
+        )
     }
 
     fn operate_blocking(&mut self) -> io::Result<usize> {
