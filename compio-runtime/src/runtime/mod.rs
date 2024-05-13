@@ -100,17 +100,16 @@ impl RuntimeInner {
     pub fn run(&self) {
         loop {
             let next_task = self.local_runnables.borrow_mut().pop_front();
+            let has_local_task = next_task.is_some();
             if let Some(task) = next_task {
                 task.run();
-            } else {
-                break;
             }
-        }
-        loop {
             let next_task = self.sync_runnables.pop();
+            let has_sync_task = next_task.is_some();
             if let Some(task) = next_task {
                 task.run();
-            } else {
+            }
+            if !has_local_task && !has_sync_task {
                 break;
             }
         }
