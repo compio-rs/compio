@@ -387,7 +387,7 @@ impl Child {
             Either::Right(std::future::ready(BufResult(Ok(0), vec![])))
         };
         let (status, BufResult(out_res, stdout), BufResult(err_res, stderr)) =
-            futures_util::join!(status, stdout, stderr);
+            futures_util::future::join3(status, stdout, stderr).await;
         let status = status?;
         out_res?;
         err_res?;
