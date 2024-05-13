@@ -14,6 +14,9 @@ compile_error!("You must choose at least one of these features: [\"io-uring\", \
 
 use std::{
     io,
+    mem::ManuallyDrop,
+    pin::Pin,
+    ptr::NonNull,
     task::{Poll, Waker},
     time::Duration,
 };
@@ -354,6 +357,92 @@ impl Entry {
     /// The result of the operation.
     pub fn into_result(self) -> io::Result<usize> {
         self.result
+    }
+}
+
+pub(crate) struct RawOp {
+    op: NonNull<Overlapped<dyn OpCode>>,
+    // The two flags here are manual reference counting. The driver holds the strong ref until it
+    // completes; the runtime holds the strong ref until the future is dropped.
+    cancelled: bool,
+    result: PushEntry<Option<Waker>, io::Result<usize>>,
+}
+
+impl RawOp {
+    pub(crate) fn new(driver: RawFd, user_data: usize, op: impl OpCode + 'static) -> Self {
+        let op = Overlapped::new(driver, user_data, op);
+        let op = Box::new(op) as Box<Overlapped<dyn OpCode>>;
+        Self {
+            op: unsafe { NonNull::new_unchecked(Box::into_raw(op)) },
+            cancelled: false,
+            result: PushEntry::Pending(None),
+        }
+    }
+
+    pub fn as_op_pin(&mut self) -> Pin<&mut dyn OpCode> {
+        unsafe { Pin::new_unchecked(&mut self.op.as_mut().op) }
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut Overlapped<dyn OpCode> {
+        self.op.as_ptr()
+    }
+
+    pub fn set_cancelled(&mut self) -> bool {
+        self.cancelled = true;
+        self.has_result()
+    }
+
+    pub fn set_result(&mut self, res: io::Result<usize>) -> bool {
+        if let PushEntry::Pending(Some(w)) =
+            std::mem::replace(&mut self.result, PushEntry::Ready(res))
+        {
+            w.wake();
+        }
+        self.cancelled
+    }
+
+    pub fn has_result(&self) -> bool {
+        self.result.is_ready()
+    }
+
+    pub fn set_waker(&mut self, waker: Waker) {
+        if let PushEntry::Pending(w) = &mut self.result {
+            *w = Some(waker)
+        }
+    }
+
+    /// # Safety
+    /// The caller should ensure the correct type.
+    ///
+    /// # Panics
+    /// This function will panic if the result has not been set.
+    pub unsafe fn into_inner<T: OpCode>(self) -> BufResult<usize, T> {
+        let mut this = ManuallyDrop::new(self);
+        let overlapped: Box<Overlapped<T>> = Box::from_raw(this.op.cast().as_ptr());
+        BufResult(
+            std::mem::replace(&mut this.result, PushEntry::Pending(None))
+                .take_ready()
+                .unwrap(),
+            overlapped.op,
+        )
+    }
+
+    fn operate_blocking(&mut self) -> io::Result<usize> {
+        let optr = self.as_mut_ptr();
+        let op = self.as_op_pin();
+        let res = unsafe { op.operate(optr.cast()) };
+        match res {
+            Poll::Pending => unreachable!("this operation is not overlapped"),
+            Poll::Ready(res) => res,
+        }
+    }
+}
+
+impl Drop for RawOp {
+    fn drop(&mut self) {
+        if self.has_result() {
+            let _ = unsafe { Box::from_raw(self.op.as_ptr()) };
+        }
     }
 }
 
