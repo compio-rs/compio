@@ -23,7 +23,7 @@ use crate::{syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder};
 
 pub(crate) mod op;
 
-pub(crate) use crate::unix::RawOp;
+pub(crate) use crate::RawOp;
 
 /// Abstraction of operations.
 pub trait OpCode {
@@ -183,7 +183,7 @@ impl Driver {
     }
 
     pub fn create_op<T: crate::sys::OpCode + 'static>(&self, user_data: usize, op: T) -> RawOp {
-        RawOp::new(user_data, op)
+        RawOp::new(self.as_raw_fd(), user_data, op)
     }
 
     /// # Safety
@@ -215,7 +215,7 @@ impl Driver {
         if self.cancelled.remove(&user_data) {
             Poll::Ready(Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)))
         } else {
-            let op_pin = op.as_pin();
+            let op_pin = op.as_op_pin();
             match op_pin.pre_submit() {
                 Ok(Decision::Wait(arg)) => {
                     // SAFETY: fd is from the OpCode.
@@ -250,7 +250,7 @@ impl Driver {
                 #[allow(clippy::redundant_locals)]
                 let mut op = op;
                 let op = unsafe { op.0.as_mut() };
-                let op_pin = op.as_pin();
+                let op_pin = op.as_op_pin();
                 let res = match op_pin.on_event(&event) {
                     Poll::Pending => unreachable!("this operation is not non-blocking"),
                     Poll::Ready(res) => res,
@@ -287,7 +287,7 @@ impl Driver {
                 if self.cancelled.remove(&user_data) {
                     entries.extend(Some(entry_cancelled(user_data)));
                 } else {
-                    let op = entries.registry()[user_data].as_pin();
+                    let op = entries.registry()[user_data].as_op_pin();
                     let res = match op.on_event(&event) {
                         Poll::Pending => {
                             // The operation should go back to the front.

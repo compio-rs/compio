@@ -3,12 +3,9 @@
 
 pub(crate) mod op;
 
-use std::{io, mem::ManuallyDrop, pin::Pin, ptr::NonNull, task::Waker};
+use crate::RawFd;
 
-use compio_buf::BufResult;
-
-use crate::{OpCode, PushEntry};
-
+/// The overlapped struct for unix needn't contain extra fields.
 #[repr(transparent)]
 pub(crate) struct Overlapped<T: ?Sized> {
     pub op: T,

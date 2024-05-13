@@ -30,7 +30,7 @@ use slab::Slab;
 use crate::{syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder};
 
 pub(crate) mod op;
-pub(crate) use crate::unix::RawOp;
+pub(crate) use crate::RawOp;
 
 /// The created entry of [`OpCode`].
 pub enum OpEntry {
@@ -160,7 +160,7 @@ impl Driver {
     }
 
     pub fn create_op<T: crate::sys::OpCode + 'static>(&self, user_data: usize, op: T) -> RawOp {
-        RawOp::new(user_data, op)
+        RawOp::new(self.as_raw_fd(), user_data, op)
     }
 
     pub fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
@@ -206,7 +206,7 @@ impl Driver {
 
     pub fn push(&mut self, user_data: usize, op: &mut RawOp) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", user_data);
-        let op_pin = op.as_pin();
+        let op_pin = op.as_op_pin();
         trace!("push RawOp");
         match op_pin.create_entry() {
             OpEntry::Submission(entry) => {
@@ -243,7 +243,7 @@ impl Driver {
                 #[allow(clippy::redundant_locals)]
                 let mut op = op;
                 let op = unsafe { op.0.as_mut() };
-                let op_pin = op.as_pin();
+                let op_pin = op.as_op_pin();
                 let res = op_pin.call_blocking();
                 completed.push(Entry::new(user_data, res));
                 handle.notify().ok();

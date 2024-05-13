@@ -16,7 +16,7 @@ pub use iour::{OpCode as IourOpCode, OpEntry};
 pub use poll::{Decision, OpCode as PollOpCode};
 use slab::Slab;
 
-pub(crate) use crate::unix::RawOp;
+pub(crate) use crate::RawOp;
 use crate::{OutEntries, ProactorBuilder};
 
 mod driver_type {

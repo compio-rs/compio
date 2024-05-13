@@ -32,6 +32,8 @@ pub mod op;
 #[cfg(unix)]
 #[cfg_attr(docsrs, doc(cfg(all())))]
 mod unix;
+#[cfg(unix)]
+use unix::Overlapped;
 
 mod asyncify;
 pub use asyncify::*;
@@ -383,6 +385,7 @@ impl RawOp {
         unsafe { Pin::new_unchecked(&mut self.op.as_mut().op) }
     }
 
+    #[cfg(windows)]
     pub fn as_mut_ptr(&mut self) -> *mut Overlapped<dyn OpCode> {
         self.op.as_ptr()
     }
@@ -427,6 +430,7 @@ impl RawOp {
         )
     }
 
+    #[cfg(windows)]
     fn operate_blocking(&mut self) -> io::Result<usize> {
         let optr = self.as_mut_ptr();
         let op = self.as_op_pin();
