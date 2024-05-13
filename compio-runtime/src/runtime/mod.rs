@@ -1,6 +1,7 @@
 use std::{
     any::Any,
     cell::RefCell,
+    collections::VecDeque,
     future::{ready, Future},
     io,
     panic::AssertUnwindSafe,
@@ -47,7 +48,8 @@ impl Default for FutureState {
 pub(crate) struct RuntimeInner {
     driver: RefCell<Proactor>,
     poll: bool,
-    runnables: Arc<SegQueue<Runnable>>,
+    local_runnables: Arc<RefCell<VecDeque<Runnable>>>,
+    sync_runnables: Arc<SegQueue<Runnable>>,
     op_runtime: RefCell<OpRuntime>,
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
@@ -58,7 +60,8 @@ impl RuntimeInner {
         Ok(Self {
             driver: RefCell::new(builder.proactor_builder.build()?),
             poll: builder.poll,
-            runnables: Arc::new(SegQueue::new()),
+            local_runnables: Arc::new(RefCell::new(VecDeque::new())),
+            sync_runnables: Arc::new(SegQueue::new()),
             op_runtime: RefCell::default(),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
@@ -67,7 +70,8 @@ impl RuntimeInner {
 
     // Safety: be careful about the captured lifetime.
     pub unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
-        let runnables = self.runnables.clone();
+        let local_runnables = self.local_runnables.clone();
+        let sync_runnables = self.sync_runnables.clone();
         let handle = self
             .driver
             .borrow()
@@ -76,8 +80,13 @@ impl RuntimeInner {
         let main_id = std::thread::current().id();
         let poll = self.poll;
         let schedule = move |runnable| {
-            runnables.push(runnable);
-            if poll || main_id != std::thread::current().id() {
+            let in_current_thread = main_id == std::thread::current().id();
+            if in_current_thread {
+                local_runnables.borrow_mut().push_back(runnable);
+            } else {
+                sync_runnables.push(runnable);
+            }
+            if poll || !in_current_thread {
                 handle.notify().ok();
             }
         };
@@ -88,7 +97,15 @@ impl RuntimeInner {
 
     pub fn run(&self) {
         loop {
-            let next_task = self.runnables.pop();
+            let next_task = self.local_runnables.borrow_mut().pop_front();
+            if let Some(task) = next_task {
+                task.run();
+            } else {
+                break;
+            }
+        }
+        loop {
+            let next_task = self.sync_runnables.pop();
             if let Some(task) = next_task {
                 task.run();
             } else {
