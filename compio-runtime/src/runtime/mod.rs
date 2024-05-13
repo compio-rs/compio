@@ -60,6 +60,8 @@ impl RuntimeInner {
         Ok(Self {
             driver: RefCell::new(builder.proactor_builder.build()?),
             poll: builder.poll,
+            // Arc to send to another thread, but only in current thread will the inner be accessed.
+            #[allow(clippy::arc_with_non_send_sync)]
             local_runnables: Arc::new(RefCell::new(VecDeque::new())),
             sync_runnables: Arc::new(SegQueue::new()),
             op_runtime: RefCell::default(),
