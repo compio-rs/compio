@@ -52,11 +52,6 @@ fn cf_run_loop() {
             }
             .detach();
             loop {
-                self.runtime.run();
-                if let Some(result) = result.take() {
-                    break result;
-                }
-
                 self.runtime.poll_with(Some(Duration::ZERO));
 
                 self.runtime.run();
@@ -139,11 +134,6 @@ fn message_queue() {
             }
             .detach();
             loop {
-                self.runtime.run();
-                if let Some(result) = result.take() {
-                    break result;
-                }
-
                 self.runtime.poll_with(Some(Duration::ZERO));
 
                 self.runtime.run();
@@ -242,11 +232,6 @@ fn glib_context() {
             }
             .detach();
             loop {
-                self.runtime.run();
-                if let Some(result) = result.take() {
-                    break result;
-                }
-
                 self.runtime.poll_with(Some(Duration::ZERO));
 
                 self.runtime.run();
