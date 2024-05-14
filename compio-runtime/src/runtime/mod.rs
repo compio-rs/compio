@@ -90,8 +90,11 @@ impl RuntimeInner {
     }
 
     pub fn run(&self) {
+        use std::ops::Deref;
+
+        let local_runnables = self.local_runnables.deref().deref();
         loop {
-            let next_task = self.local_runnables.borrow_mut().pop_front();
+            let next_task = local_runnables.borrow_mut().pop_front();
             let has_local_task = next_task.is_some();
             if let Some(task) = next_task {
                 task.run();
