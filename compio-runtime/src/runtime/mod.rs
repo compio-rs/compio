@@ -48,7 +48,7 @@ impl Default for FutureState {
 
 pub(crate) struct RuntimeInner {
     driver: RefCell<Proactor>,
-    local_runnables: SendWrapper<Arc<RefCell<VecDeque<Runnable>>>>,
+    local_runnables: Arc<SendWrapper<RefCell<VecDeque<Runnable>>>>,
     sync_runnables: Arc<SegQueue<Runnable>>,
     op_runtime: RefCell<OpRuntime>,
     #[cfg(feature = "time")]
@@ -59,9 +59,7 @@ impl RuntimeInner {
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         Ok(Self {
             driver: RefCell::new(builder.build()?),
-            // Arc to send to another thread, but only in current thread will the inner be accessed.
-            #[allow(clippy::arc_with_non_send_sync)]
-            local_runnables: SendWrapper::new(Arc::new(RefCell::new(VecDeque::new()))),
+            local_runnables: Arc::new(SendWrapper::new(RefCell::new(VecDeque::new()))),
             sync_runnables: Arc::new(SegQueue::new()),
             op_runtime: RefCell::default(),
             #[cfg(feature = "time")]
