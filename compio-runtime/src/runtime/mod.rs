@@ -19,6 +19,7 @@ use compio_driver::{
 use compio_log::{debug, instrument};
 use crossbeam_queue::SegQueue;
 use futures_util::{future::Either, FutureExt};
+use send_wrapper::SendWrapper;
 use smallvec::SmallVec;
 
 pub(crate) mod op;
@@ -47,7 +48,7 @@ impl Default for FutureState {
 
 pub(crate) struct RuntimeInner {
     driver: RefCell<Proactor>,
-    local_runnables: Arc<RefCell<VecDeque<Runnable>>>,
+    local_runnables: SendWrapper<Arc<RefCell<VecDeque<Runnable>>>>,
     sync_runnables: Arc<SegQueue<Runnable>>,
     op_runtime: RefCell<OpRuntime>,
     #[cfg(feature = "time")]
@@ -60,7 +61,7 @@ impl RuntimeInner {
             driver: RefCell::new(builder.build()?),
             // Arc to send to another thread, but only in current thread will the inner be accessed.
             #[allow(clippy::arc_with_non_send_sync)]
-            local_runnables: Arc::new(RefCell::new(VecDeque::new())),
+            local_runnables: SendWrapper::new(Arc::new(RefCell::new(VecDeque::new()))),
             sync_runnables: Arc::new(SegQueue::new()),
             op_runtime: RefCell::default(),
             #[cfg(feature = "time")]
@@ -77,10 +78,8 @@ impl RuntimeInner {
             .borrow()
             .handle()
             .expect("cannot create notify handle of the proactor");
-        let main_id = std::thread::current().id();
         let schedule = move |runnable| {
-            let in_current_thread = main_id == std::thread::current().id();
-            if in_current_thread {
+            if local_runnables.valid() {
                 local_runnables.borrow_mut().push_back(runnable);
             } else {
                 sync_runnables.push(runnable);
