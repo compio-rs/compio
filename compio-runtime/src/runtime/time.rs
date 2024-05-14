@@ -82,8 +82,8 @@ impl TimerRuntime {
     }
 
     pub fn min_timeout(&self) -> Option<Duration> {
-        let elapsed = self.time.elapsed();
         self.wheel.peek().map(|entry| {
+            let elapsed = self.time.elapsed();
             if entry.0.delay > elapsed {
                 entry.0.delay - elapsed
             } else {

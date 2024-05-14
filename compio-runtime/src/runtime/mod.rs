@@ -1,6 +1,7 @@
 use std::{
     any::Any,
     cell::RefCell,
+    collections::VecDeque,
     future::{ready, Future},
     io,
     panic::AssertUnwindSafe,
@@ -18,6 +19,7 @@ use compio_driver::{
 use compio_log::{debug, instrument};
 use crossbeam_queue::SegQueue;
 use futures_util::{future::Either, FutureExt};
+use send_wrapper::SendWrapper;
 use smallvec::SmallVec;
 
 pub(crate) mod op;
@@ -46,7 +48,8 @@ impl Default for FutureState {
 
 pub(crate) struct RuntimeInner {
     driver: RefCell<Proactor>,
-    runnables: Arc<SegQueue<Runnable>>,
+    local_runnables: Arc<SendWrapper<RefCell<VecDeque<Runnable>>>>,
+    sync_runnables: Arc<SegQueue<Runnable>>,
     op_runtime: RefCell<OpRuntime>,
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
@@ -56,7 +59,8 @@ impl RuntimeInner {
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         Ok(Self {
             driver: RefCell::new(builder.build()?),
-            runnables: Arc::new(SegQueue::new()),
+            local_runnables: Arc::new(SendWrapper::new(RefCell::new(VecDeque::new()))),
+            sync_runnables: Arc::new(SegQueue::new()),
             op_runtime: RefCell::default(),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
@@ -65,15 +69,20 @@ impl RuntimeInner {
 
     // Safety: be careful about the captured lifetime.
     pub unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
-        let runnables = self.runnables.clone();
+        let local_runnables = self.local_runnables.clone();
+        let sync_runnables = self.sync_runnables.clone();
         let handle = self
             .driver
             .borrow()
             .handle()
             .expect("cannot create notify handle of the proactor");
         let schedule = move |runnable| {
-            runnables.push(runnable);
-            handle.notify().ok();
+            if local_runnables.valid() {
+                local_runnables.borrow_mut().push_back(runnable);
+            } else {
+                sync_runnables.push(runnable);
+                handle.notify().ok();
+            }
         };
         let (runnable, task) = async_task::spawn_unchecked(future, schedule);
         runnable.schedule();
@@ -81,11 +90,21 @@ impl RuntimeInner {
     }
 
     pub fn run(&self) {
+        use std::ops::Deref;
+
+        let local_runnables = self.local_runnables.deref().deref();
         loop {
-            let next_task = self.runnables.pop();
+            let next_task = local_runnables.borrow_mut().pop_front();
+            let has_local_task = next_task.is_some();
             if let Some(task) = next_task {
                 task.run();
-            } else {
+            }
+            let next_task = self.sync_runnables.pop();
+            let has_sync_task = next_task.is_some();
+            if let Some(task) = next_task {
+                task.run();
+            }
+            if !has_local_task && !has_sync_task {
                 break;
             }
         }
