@@ -25,7 +25,7 @@ fn cf_run_loop() {
 
     impl CFRunLoopRuntime {
         pub fn new() -> Self {
-            let runtime = Runtime::builder().enable_poll(true).build().unwrap();
+            let runtime = Runtime::new().unwrap();
 
             extern "C" fn callback(
                 _fdref: CFFileDescriptorRef,
@@ -58,6 +58,12 @@ fn cf_run_loop() {
                 }
 
                 self.runtime.poll_with(Some(Duration::ZERO));
+
+                self.runtime.run();
+                if let Some(result) = result.take() {
+                    break result;
+                }
+
                 self.fd_source
                     .enable_callbacks(kCFFileDescriptorReadCallBack);
                 CFRunLoop::run_in_mode(
@@ -120,7 +126,7 @@ fn message_queue() {
     impl MQRuntime {
         pub fn new() -> Self {
             Self {
-                runtime: Runtime::builder().enable_poll(true).build().unwrap(),
+                runtime: Runtime::new().unwrap(),
             }
         }
 
@@ -139,6 +145,11 @@ fn message_queue() {
                 }
 
                 self.runtime.poll_with(Some(Duration::ZERO));
+
+                self.runtime.run();
+                if let Some(result) = result.take() {
+                    break result;
+                }
 
                 let timeout = self.runtime.current_timeout();
                 let timeout = match timeout {
@@ -212,7 +223,7 @@ fn glib_context() {
 
     impl GLibRuntime {
         pub fn new() -> Self {
-            let runtime = Runtime::builder().enable_poll(true).build().unwrap();
+            let runtime = Runtime::new().unwrap();
             let ctx = MainContext::default();
 
             unix_fd_add_local(runtime.as_raw_fd(), IOCondition::IN, |_fd, _cond| {
@@ -237,6 +248,11 @@ fn glib_context() {
                 }
 
                 self.runtime.poll_with(Some(Duration::ZERO));
+
+                self.runtime.run();
+                if let Some(result) = result.take() {
+                    break result;
+                }
 
                 let timeout = self.runtime.current_timeout();
                 let source_id = timeout.map(|timeout| timeout_add_local_once(timeout, || {}));

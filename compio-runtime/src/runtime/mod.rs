@@ -47,7 +47,6 @@ impl Default for FutureState {
 
 pub(crate) struct RuntimeInner {
     driver: RefCell<Proactor>,
-    poll: bool,
     local_runnables: Arc<RefCell<VecDeque<Runnable>>>,
     sync_runnables: Arc<SegQueue<Runnable>>,
     op_runtime: RefCell<OpRuntime>,
@@ -56,10 +55,9 @@ pub(crate) struct RuntimeInner {
 }
 
 impl RuntimeInner {
-    pub fn new(builder: &RuntimeBuilder) -> io::Result<Self> {
+    pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         Ok(Self {
-            driver: RefCell::new(builder.proactor_builder.build()?),
-            poll: builder.poll,
+            driver: RefCell::new(builder.build()?),
             // Arc to send to another thread, but only in current thread will the inner be accessed.
             #[allow(clippy::arc_with_non_send_sync)]
             local_runnables: Arc::new(RefCell::new(VecDeque::new())),
@@ -80,15 +78,12 @@ impl RuntimeInner {
             .handle()
             .expect("cannot create notify handle of the proactor");
         let main_id = std::thread::current().id();
-        let poll = self.poll;
         let schedule = move |runnable| {
             let in_current_thread = main_id == std::thread::current().id();
             if in_current_thread {
                 local_runnables.borrow_mut().push_back(runnable);
             } else {
                 sync_runnables.push(runnable);
-            }
-            if poll || !in_current_thread {
                 handle.notify().ok();
             }
         };
@@ -465,7 +460,6 @@ impl criterion::async_executor::AsyncExecutor for &Runtime {
 #[derive(Debug, Clone)]
 pub struct RuntimeBuilder {
     proactor_builder: ProactorBuilder,
-    poll: bool,
 }
 
 impl Default for RuntimeBuilder {
@@ -479,7 +473,6 @@ impl RuntimeBuilder {
     pub fn new() -> Self {
         Self {
             proactor_builder: ProactorBuilder::new(),
-            poll: false,
         }
     }
 
@@ -489,16 +482,10 @@ impl RuntimeBuilder {
         self
     }
 
-    /// Ensure the fd of proactor is pollable.
-    pub fn enable_poll(&mut self, poll: bool) -> &mut Self {
-        self.poll = poll;
-        self
-    }
-
     /// Build [`Runtime`].
     pub fn build(&self) -> io::Result<Runtime> {
         Ok(Runtime {
-            inner: Rc::new(RuntimeInner::new(self)?),
+            inner: Rc::new(RuntimeInner::new(&self.proactor_builder)?),
         })
     }
 }
