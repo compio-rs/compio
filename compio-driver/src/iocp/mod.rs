@@ -9,14 +9,13 @@ use std::{
         },
     },
     pin::Pin,
-    ptr::{null, NonNull},
+    ptr::null,
     sync::Arc,
     task::Poll,
     time::Duration,
 };
 
 use compio_log::{instrument, trace};
-use slab::Slab;
 use windows_sys::Win32::{
     Foundation::{ERROR_BUSY, ERROR_OPERATION_ABORTED, ERROR_TIMEOUT, WAIT_OBJECT_0, WAIT_TIMEOUT},
     Networking::WinSock::{WSACleanup, WSAStartup, WSADATA},
@@ -29,7 +28,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder, RawOp};
+use crate::{syscall, AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder};
 
 pub(crate) mod op;
 
@@ -173,12 +172,10 @@ pub(crate) struct Driver {
     waits: HashMap<usize, WinThreadpollWait>,
     cancelled: HashSet<usize>,
     pool: AsyncifyPool,
-    notify_overlapped: Arc<Overlapped<()>>,
+    notify_overlapped: Arc<Overlapped>,
 }
 
 impl Driver {
-    const NOTIFY: usize = usize::MAX;
-
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         instrument!(compio_log::Level::TRACE, "new", ?builder);
         let mut data: WSADATA = unsafe { std::mem::zeroed() };
@@ -191,33 +188,33 @@ impl Driver {
             waits: HashMap::default(),
             cancelled: HashSet::default(),
             pool: builder.create_or_get_thread_pool(),
-            notify_overlapped: Arc::new(Overlapped::new(driver, Self::NOTIFY, ())),
+            notify_overlapped: Arc::new(Overlapped::new(driver)),
         })
     }
 
-    pub fn create_op<T: OpCode + 'static>(&self, user_data: usize, op: T) -> RawOp {
-        RawOp::new(self.port.as_raw_handle() as _, user_data, op)
+    pub fn create_op<T: OpCode + 'static>(&self, op: T) -> Key<T> {
+        Key::new(self.port.as_raw_handle() as _, op)
     }
 
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
         self.port.attach(fd)
     }
 
-    pub fn cancel(&mut self, user_data: usize, registry: &mut Slab<RawOp>) {
-        instrument!(compio_log::Level::TRACE, "cancel", user_data);
+    pub fn cancel<T: OpCode>(&mut self, mut op: Key<T>) {
+        instrument!(compio_log::Level::TRACE, "cancel", ?op);
         trace!("cancel RawOp");
+        let user_data = op.user_data();
         self.cancelled.insert(user_data);
-        if let Some(op) = registry.get_mut(user_data) {
-            let overlapped_ptr = op.as_mut_ptr();
-            let op = op.as_op_pin();
-            // It's OK to fail to cancel.
-            trace!("call OpCode::cancel");
-            unsafe { op.cancel(overlapped_ptr.cast()) }.ok();
-        }
+        let overlapped_ptr = op.as_mut_ptr();
+        let op = op.as_op_pin();
+        // It's OK to fail to cancel.
+        trace!("call OpCode::cancel");
+        unsafe { op.cancel(overlapped_ptr.cast()) }.ok();
     }
 
-    pub fn push(&mut self, user_data: usize, op: &mut RawOp) -> Poll<io::Result<usize>> {
-        instrument!(compio_log::Level::TRACE, "push", user_data);
+    pub fn push<T: OpCode + 'static>(&mut self, op: &mut Key<T>) -> Poll<io::Result<usize>> {
+        instrument!(compio_log::Level::TRACE, "push", ?op);
+        let user_data = op.user_data();
         if self.cancelled.remove(&user_data) {
             trace!("pushed RawOp already cancelled");
             Poll::Ready(Err(io::Error::from_raw_os_error(
@@ -230,7 +227,7 @@ impl Driver {
             match op_pin.op_type() {
                 OpType::Overlapped => unsafe { op_pin.operate(optr.cast()) },
                 OpType::Blocking => {
-                    if self.push_blocking(op)? {
+                    if self.push_blocking(user_data)? {
                         Poll::Pending
                     } else {
                         Poll::Ready(Err(io::Error::from_raw_os_error(ERROR_BUSY as _)))
@@ -247,20 +244,12 @@ impl Driver {
         }
     }
 
-    fn push_blocking(&mut self, op: &mut RawOp) -> io::Result<bool> {
-        // Safety: the RawOp is not released before the operation returns.
-        struct SendWrapper<T>(T);
-        unsafe impl<T> Send for SendWrapper<T> {}
-
-        let optr = SendWrapper(NonNull::from(op));
+    fn push_blocking(&mut self, user_data: usize) -> io::Result<bool> {
         let port = self.port.handle();
         Ok(self
             .pool
             .dispatch(move || {
-                #[allow(clippy::redundant_locals)]
-                let mut optr = optr;
-                // Safety: the pointer is created from a reference.
-                let op = unsafe { optr.0.as_mut() };
+                let op = unsafe { Key::upcast(user_data) };
                 let optr = op.as_mut_ptr();
                 let res = op.operate_blocking();
                 port.post(res, optr).ok();
@@ -269,12 +258,13 @@ impl Driver {
     }
 
     fn create_entry(
+        notify_user_data: usize,
         cancelled: &mut HashSet<usize>,
         waits: &mut HashMap<usize, WinThreadpollWait>,
         entry: Entry,
     ) -> Option<Entry> {
         let user_data = entry.user_data();
-        if user_data != Self::NOTIFY {
+        if user_data != notify_user_data {
             waits.remove(&user_data);
             let result = if cancelled.remove(&user_data) {
                 Err(io::Error::from_raw_os_error(ERROR_OPERATION_ABORTED as _))
@@ -294,11 +284,11 @@ impl Driver {
     ) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
 
-        entries.extend(
-            self.port
-                .poll(timeout)?
-                .filter_map(|e| Self::create_entry(&mut self.cancelled, &mut self.waits, e)),
-        );
+        let notify_user_data = self.notify_overlapped.as_ref() as *const Overlapped as usize;
+
+        entries.extend(self.port.poll(timeout)?.filter_map(|e| {
+            Self::create_entry(notify_user_data, &mut self.cancelled, &mut self.waits, e)
+        }));
 
         Ok(())
     }
@@ -326,11 +316,11 @@ impl Drop for Driver {
 /// A notify handle to the inner driver.
 pub struct NotifyHandle {
     port: cp::PortHandle,
-    overlapped: Arc<Overlapped<()>>,
+    overlapped: Arc<Overlapped>,
 }
 
 impl NotifyHandle {
-    fn new(port: cp::PortHandle, overlapped: Arc<Overlapped<()>>) -> Self {
+    fn new(port: cp::PortHandle, overlapped: Arc<Overlapped>) -> Self {
         Self { port, overlapped }
     }
 
@@ -348,8 +338,11 @@ struct WinThreadpollWait {
 }
 
 impl WinThreadpollWait {
-    pub fn new(port: cp::PortHandle, event: RawFd, op: &mut RawOp) -> io::Result<Self> {
-        let mut context = Box::new(WinThreadpollWaitContext { port, op });
+    pub fn new<T>(port: cp::PortHandle, event: RawFd, op: &mut Key<T>) -> io::Result<Self> {
+        let mut context = Box::new(WinThreadpollWaitContext {
+            port,
+            user_data: op.user_data(),
+        });
         let wait = syscall!(
             BOOL,
             CreateThreadpoolWait(
@@ -376,13 +369,13 @@ impl WinThreadpollWait {
             WAIT_TIMEOUT => Err(io::Error::from_raw_os_error(ERROR_TIMEOUT as _)),
             _ => Err(io::Error::from_raw_os_error(result as _)),
         };
+        let op = unsafe { Key::upcast(context.user_data) };
         let res = if res.is_err() {
             res
         } else {
-            let op = unsafe { &mut *context.op };
             op.operate_blocking()
         };
-        context.port.post(res, (*context.op).as_mut_ptr()).ok();
+        context.port.post(res, op.as_mut_ptr()).ok();
     }
 }
 
@@ -398,34 +391,27 @@ impl Drop for WinThreadpollWait {
 
 struct WinThreadpollWaitContext {
     port: cp::PortHandle,
-    op: *mut RawOp,
+    user_data: usize,
 }
 
 /// The overlapped struct we actually used for IOCP.
 #[repr(C)]
-pub struct Overlapped<T: ?Sized> {
+pub struct Overlapped {
     /// The base [`OVERLAPPED`].
     pub base: OVERLAPPED,
     /// The unique ID of created driver.
     pub driver: RawFd,
-    /// The registered user defined data.
-    pub user_data: usize,
-    /// The opcode.
-    /// The user should guarantee the type is correct.
-    pub op: T,
 }
 
-impl<T> Overlapped<T> {
-    pub(crate) fn new(driver: RawFd, user_data: usize, op: T) -> Self {
+impl Overlapped {
+    pub(crate) fn new(driver: RawFd) -> Self {
         Self {
             base: unsafe { std::mem::zeroed() },
             driver,
-            user_data,
-            op,
         }
     }
 }
 
 // SAFETY: neither field of `OVERLAPPED` is used
-unsafe impl Send for Overlapped<()> {}
-unsafe impl Sync for Overlapped<()> {}
+unsafe impl Send for Overlapped {}
+unsafe impl Sync for Overlapped {}

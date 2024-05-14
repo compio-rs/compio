@@ -77,11 +77,7 @@ impl CompletionPort {
         Ok(())
     }
 
-    pub fn post<T: ?Sized>(
-        &self,
-        res: io::Result<usize>,
-        optr: *mut Overlapped<T>,
-    ) -> io::Result<()> {
+    pub fn post(&self, res: io::Result<usize>, optr: *mut Overlapped) -> io::Result<()> {
         if let Some(overlapped) = unsafe { optr.as_mut() } {
             match &res {
                 Ok(transferred) => {
@@ -97,7 +93,7 @@ impl CompletionPort {
         self.post_raw(optr)
     }
 
-    pub fn post_raw<T: ?Sized>(&self, optr: *const Overlapped<T>) -> io::Result<()> {
+    pub fn post_raw(&self, optr: *const Overlapped) -> io::Result<()> {
         syscall!(
             BOOL,
             PostQueuedCompletionStatus(self.port.as_raw_handle() as _, 0, 0, optr.cast())
@@ -143,7 +139,7 @@ impl CompletionPort {
     ) -> io::Result<impl Iterator<Item = Entry>> {
         Ok(self.poll_raw(timeout)?.filter_map(move |entry| {
             // Any thin pointer is OK because we don't use the type of opcode.
-            let overlapped_ptr: *mut Overlapped<()> = entry.lpOverlapped.cast();
+            let overlapped_ptr: *mut Overlapped = entry.lpOverlapped.cast();
             let overlapped = unsafe { &*overlapped_ptr };
             if let Some(current_driver) = current_driver {
                 if overlapped.driver != current_driver {
@@ -181,7 +177,7 @@ impl CompletionPort {
                     _ => Err(io::Error::from_raw_os_error(error as _)),
                 }
             };
-            Some(Entry::new(overlapped.user_data, res))
+            Some(Entry::new(overlapped_ptr as usize, res))
         }))
     }
 }

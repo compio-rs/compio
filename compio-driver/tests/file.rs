@@ -52,29 +52,10 @@ fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult
             while entries.is_empty() {
                 driver.poll(None, &mut entries).unwrap();
             }
-            assert_eq!(entries[0], *user_data);
-            driver.pop(user_data).unwrap()
+            assert_eq!(entries[0], user_data.user_data());
+            driver.pop(user_data).take_ready().unwrap()
         }
     }
-}
-
-#[test]
-fn cancel_before_poll() {
-    let mut driver = Proactor::new().unwrap();
-
-    let fd = open_file(&mut driver);
-    let fd = SharedFd::new(fd);
-    driver.attach(fd.as_raw_fd()).unwrap();
-
-    driver.cancel(0);
-
-    let op = ReadAt::new(fd.clone(), 0, Vec::with_capacity(8));
-    let BufResult(res, _) = push_and_wait(&mut driver, op);
-
-    assert!(res.is_ok() || res.unwrap_err().kind() == io::ErrorKind::TimedOut);
-
-    let op = CloseFile::new(fd.try_unwrap().unwrap());
-    push_and_wait(&mut driver, op).unwrap();
 }
 
 #[test]
@@ -98,11 +79,11 @@ fn register_multiple() {
     let fd = SharedFd::new(fd);
     driver.attach(fd.as_raw_fd()).unwrap();
 
-    let mut need_wait = 0;
+    let mut keys = vec![];
 
     for _i in 0..TASK_LEN {
         match driver.push(ReadAt::new(fd.clone(), 0, Vec::with_capacity(1024))) {
-            PushEntry::Pending(_) => need_wait += 1,
+            PushEntry::Pending(key) => keys.push(key),
             PushEntry::Ready(res) => {
                 res.unwrap();
             }
@@ -110,13 +91,13 @@ fn register_multiple() {
     }
 
     let mut entries = ArrayVec::<usize, TASK_LEN>::new();
-    while entries.len() < need_wait {
+    while entries.len() < keys.len() {
         driver.poll(None, &mut entries).unwrap();
     }
 
     // Cancel the entries to drop the ops, and decrease the ref count of fd.
-    for entry in entries {
-        driver.cancel(entry);
+    for key in keys {
+        driver.cancel(key);
     }
 
     let op = CloseFile::new(fd.try_unwrap().unwrap());

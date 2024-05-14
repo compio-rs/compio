@@ -7,7 +7,6 @@ use std::{
     num::NonZeroUsize,
     os::fd::BorrowedFd,
     pin::Pin,
-    ptr::NonNull,
     sync::Arc,
     task::Poll,
     time::Duration,
@@ -17,13 +16,10 @@ use compio_log::{instrument, trace};
 use crossbeam_queue::SegQueue;
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use polling::{Event, Events, PollMode, Poller};
-use slab::Slab;
 
-use crate::{syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder};
+use crate::{syscall, AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder};
 
 pub(crate) mod op;
-
-pub(crate) use crate::RawOp;
 
 /// Abstraction of operations.
 pub trait OpCode {
@@ -182,8 +178,8 @@ impl Driver {
         })
     }
 
-    pub fn create_op<T: crate::sys::OpCode + 'static>(&self, user_data: usize, op: T) -> RawOp {
-        RawOp::new(self.as_raw_fd(), user_data, op)
+    pub fn create_op<T: crate::sys::OpCode + 'static>(&self, op: T) -> Key<T> {
+        Key::new(self.as_raw_fd(), op)
     }
 
     /// # Safety
@@ -207,11 +203,12 @@ impl Driver {
         Ok(())
     }
 
-    pub fn cancel(&mut self, user_data: usize, _registry: &mut Slab<RawOp>) {
-        self.cancelled.insert(user_data);
+    pub fn cancel<T>(&mut self, op: Key<T>) {
+        self.cancelled.insert(op.user_data());
     }
 
-    pub fn push(&mut self, user_data: usize, op: &mut RawOp) -> Poll<io::Result<usize>> {
+    pub fn push<T: OpCode + 'static>(&mut self, op: &mut Key<T>) -> Poll<io::Result<usize>> {
+        let user_data = op.user_data();
         if self.cancelled.remove(&user_data) {
             Poll::Ready(Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)))
         } else {
@@ -226,7 +223,7 @@ impl Driver {
                 }
                 Ok(Decision::Completed(res)) => Poll::Ready(Ok(res)),
                 Ok(Decision::Blocking(event)) => {
-                    if self.push_blocking(user_data, op, event) {
+                    if self.push_blocking(user_data, event) {
                         Poll::Pending
                     } else {
                         Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
@@ -237,19 +234,12 @@ impl Driver {
         }
     }
 
-    fn push_blocking(&mut self, user_data: usize, op: &mut RawOp, event: Event) -> bool {
-        // Safety: the RawOp is not released before the operation returns.
-        struct SendWrapper<T>(T);
-        unsafe impl<T> Send for SendWrapper<T> {}
-
-        let op = SendWrapper(NonNull::from(op));
+    fn push_blocking(&mut self, user_data: usize, event: Event) -> bool {
         let poll = self.poll.clone();
         let completed = self.pool_completed.clone();
         self.pool
             .dispatch(move || {
-                #[allow(clippy::redundant_locals)]
-                let mut op = op;
-                let op = unsafe { op.0.as_mut() };
+                let op = unsafe { Key::upcast(user_data) };
                 let op_pin = op.as_op_pin();
                 let res = match op_pin.on_event(&event) {
                     Poll::Pending => unreachable!("this operation is not non-blocking"),
@@ -287,7 +277,8 @@ impl Driver {
                 if self.cancelled.remove(&user_data) {
                     entries.extend(Some(entry_cancelled(user_data)));
                 } else {
-                    let op = entries.registry()[user_data].as_op_pin();
+                    let op = Key::upcast(user_data);
+                    let op = op.as_op_pin();
                     let res = match op.on_event(&event) {
                         Poll::Pending => {
                             // The operation should go back to the front.

@@ -14,16 +14,12 @@ compile_error!("You must choose at least one of these features: [\"io-uring\", \
 
 use std::{
     io,
-    mem::ManuallyDrop,
-    pin::Pin,
-    ptr::NonNull,
     task::{Poll, Waker},
     time::Duration,
 };
 
 use compio_buf::BufResult;
-use compio_log::{instrument, trace};
-use slab::Slab;
+use compio_log::instrument;
 
 mod key;
 pub use key::Key;
@@ -216,7 +212,6 @@ impl<K, R> PushEntry<K, R> {
 /// It owns the operations to keep the driver safe.
 pub struct Proactor {
     driver: Driver,
-    ops: Slab<RawOp>,
 }
 
 impl Proactor {
@@ -233,7 +228,6 @@ impl Proactor {
     fn with_builder(builder: &ProactorBuilder) -> io::Result<Self> {
         Ok(Self {
             driver: Driver::new(builder)?,
-            ops: Slab::with_capacity(builder.capacity as _),
         })
     }
 
@@ -258,32 +252,25 @@ impl Proactor {
     /// contains a cancelled user-defined data, the operation will be ignored.
     /// However, to make the operation dropped correctly, you should cancel
     /// after push.
-    pub fn cancel(&mut self, user_data: usize) {
-        instrument!(compio_log::Level::DEBUG, "cancel", user_data);
-        if let Some(op) = self.ops.get_mut(user_data) {
-            if op.set_cancelled() {
-                // The op is completed.
-                trace!("cancel and remove {}", user_data);
-                self.ops.remove(user_data);
-                return;
-            }
+    pub fn cancel<T: OpCode>(&mut self, mut op: Key<T>) -> Option<BufResult<usize, T>> {
+        instrument!(compio_log::Level::DEBUG, "cancel", ?op);
+        if op.set_cancelled() {
+            Some(op.into_inner())
+        } else {
+            self.driver.cancel(op);
+            None
         }
-        self.driver.cancel(user_data, &mut self.ops);
     }
 
     /// Push an operation into the driver, and return the unique key, called
     /// user-defined data, associated with it.
     pub fn push<T: OpCode + 'static>(&mut self, op: T) -> PushEntry<Key<T>, BufResult<usize, T>> {
-        let entry = self.ops.vacant_entry();
-        let user_data = entry.key();
-        let op = self.driver.create_op(user_data, op);
-        let op = entry.insert(op);
-        match self.driver.push(user_data, op) {
-            Poll::Pending => PushEntry::Pending(unsafe { Key::new(user_data) }),
+        let mut op = self.driver.create_op(op);
+        match self.driver.push(&mut op) {
+            Poll::Pending => PushEntry::Pending(op),
             Poll::Ready(res) => {
-                let mut op = self.ops.remove(user_data);
                 op.set_result(res);
-                PushEntry::Ready(unsafe { op.into_inner::<T>() })
+                PushEntry::Ready(op.into_inner())
             }
         }
     }
@@ -296,8 +283,7 @@ impl Proactor {
         entries: &mut impl Extend<usize>,
     ) -> io::Result<()> {
         unsafe {
-            self.driver
-                .poll(timeout, OutEntries::new(entries, &mut self.ops))?;
+            self.driver.poll(timeout, OutEntries::new(entries))?;
         }
         Ok(())
     }
@@ -307,24 +293,18 @@ impl Proactor {
     /// # Panics
     /// This function will panic if the requested operation has not been
     /// completed.
-    pub fn pop<T: OpCode>(&mut self, user_data: Key<T>) -> Option<BufResult<usize, T>> {
-        instrument!(compio_log::Level::DEBUG, "pop", ?user_data);
-        if self.ops[*user_data].has_result() {
-            let op = self
-                .ops
-                .try_remove(*user_data)
-                .expect("the entry should be valid");
-            trace!("poped {}", *user_data);
-            // Safety: user cannot create key with safe code, so the type should be correct
-            Some(unsafe { op.into_inner::<T>() })
+    pub fn pop<T>(&mut self, op: Key<T>) -> PushEntry<Key<T>, BufResult<usize, T>> {
+        instrument!(compio_log::Level::DEBUG, "pop", ?op);
+        if op.has_result() {
+            PushEntry::Ready(op.into_inner())
         } else {
-            None
+            PushEntry::Pending(op)
         }
     }
 
     /// Update the waker of the specified op.
-    pub fn update_waker(&mut self, user_data: usize, waker: Waker) {
-        self.ops[user_data].set_waker(waker);
+    pub fn update_waker<T>(&mut self, op: &mut Key<T>, waker: Waker) {
+        op.set_waker(waker);
     }
 
     /// Create a notify handle to interrupt the inner driver.
@@ -362,118 +342,25 @@ impl Entry {
     }
 }
 
-pub(crate) struct RawOp {
-    op: NonNull<Overlapped<dyn OpCode>>,
-    // The two flags here are manual reference counting. The driver holds the strong ref until it
-    // completes; the runtime holds the strong ref until the future is dropped.
-    cancelled: bool,
-    result: PushEntry<Option<Waker>, io::Result<usize>>,
-}
-
-impl RawOp {
-    pub(crate) fn new(driver: RawFd, user_data: usize, op: impl OpCode + 'static) -> Self {
-        let op = Overlapped::new(driver, user_data, op);
-        let op = Box::new(op) as Box<Overlapped<dyn OpCode>>;
-        Self {
-            op: unsafe { NonNull::new_unchecked(Box::into_raw(op)) },
-            cancelled: false,
-            result: PushEntry::Pending(None),
-        }
-    }
-
-    pub fn as_op_pin(&mut self) -> Pin<&mut dyn OpCode> {
-        unsafe { Pin::new_unchecked(&mut self.op.as_mut().op) }
-    }
-
-    #[cfg(windows)]
-    pub fn as_mut_ptr(&mut self) -> *mut Overlapped<dyn OpCode> {
-        self.op.as_ptr()
-    }
-
-    pub fn set_cancelled(&mut self) -> bool {
-        self.cancelled = true;
-        self.has_result()
-    }
-
-    pub fn set_result(&mut self, res: io::Result<usize>) -> bool {
-        if let PushEntry::Pending(Some(w)) =
-            std::mem::replace(&mut self.result, PushEntry::Ready(res))
-        {
-            w.wake();
-        }
-        self.cancelled
-    }
-
-    pub fn has_result(&self) -> bool {
-        self.result.is_ready()
-    }
-
-    pub fn set_waker(&mut self, waker: Waker) {
-        if let PushEntry::Pending(w) = &mut self.result {
-            *w = Some(waker)
-        }
-    }
-
-    /// # Safety
-    /// The caller should ensure the correct type.
-    ///
-    /// # Panics
-    /// This function will panic if the result has not been set.
-    pub unsafe fn into_inner<T: OpCode>(self) -> BufResult<usize, T> {
-        let mut this = ManuallyDrop::new(self);
-        let overlapped: Box<Overlapped<T>> = Box::from_raw(this.op.cast().as_ptr());
-        BufResult(
-            std::mem::replace(&mut this.result, PushEntry::Pending(None))
-                .take_ready()
-                .unwrap(),
-            overlapped.op,
-        )
-    }
-
-    #[cfg(windows)]
-    fn operate_blocking(&mut self) -> io::Result<usize> {
-        let optr = self.as_mut_ptr();
-        let op = self.as_op_pin();
-        let res = unsafe { op.operate(optr.cast()) };
-        match res {
-            Poll::Pending => unreachable!("this operation is not overlapped"),
-            Poll::Ready(res) => res,
-        }
-    }
-}
-
-impl Drop for RawOp {
-    fn drop(&mut self) {
-        if self.has_result() {
-            let _ = unsafe { Box::from_raw(self.op.as_ptr()) };
-        }
-    }
-}
-
 // The output entries need to be marked as `completed`. If an entry has been
 // marked as `cancelled`, it will be removed from the registry.
-struct OutEntries<'a, 'b, E> {
+struct OutEntries<'b, E> {
     entries: &'b mut E,
-    registry: &'a mut Slab<RawOp>,
 }
 
-impl<'a, 'b, E> OutEntries<'a, 'b, E> {
-    pub fn new(entries: &'b mut E, registry: &'a mut Slab<RawOp>) -> Self {
-        Self { entries, registry }
-    }
-
-    #[allow(dead_code)]
-    pub fn registry(&mut self) -> &mut Slab<RawOp> {
-        self.registry
+impl<'b, E> OutEntries<'b, E> {
+    pub fn new(entries: &'b mut E) -> Self {
+        Self { entries }
     }
 }
 
-impl<E: Extend<usize>> Extend<Entry> for OutEntries<'_, '_, E> {
+impl<E: Extend<usize>> Extend<Entry> for OutEntries<'_, E> {
     fn extend<T: IntoIterator<Item = Entry>>(&mut self, iter: T) {
         self.entries.extend(iter.into_iter().filter_map(|e| {
             let user_data = e.user_data();
-            if self.registry[user_data].set_result(e.into_result()) {
-                self.registry.remove(user_data);
+            let op = unsafe { Key::upcast(user_data) };
+            if op.set_result(e.into_result()) {
+                unsafe { Key::drop_in_place(user_data) };
                 None
             } else {
                 Some(user_data)

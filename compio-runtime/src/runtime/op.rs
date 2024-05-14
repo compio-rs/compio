@@ -5,22 +5,18 @@ use std::{
 };
 
 use compio_buf::BufResult;
-use compio_driver::{Key, OpCode};
+use compio_driver::{Key, OpCode, PushEntry};
 
 use crate::runtime::Runtime;
 
 #[derive(Debug)]
-pub struct OpFuture<T> {
-    user_data: Key<T>,
-    completed: bool,
+pub struct OpFuture<T: OpCode> {
+    key: Option<Key<T>>,
 }
 
-impl<T> OpFuture<T> {
-    pub fn new(user_data: Key<T>) -> Self {
-        Self {
-            user_data,
-            completed: false,
-        }
+impl<T: OpCode> OpFuture<T> {
+    pub fn new(key: Key<T>) -> Self {
+        Self { key: Some(key) }
     }
 }
 
@@ -28,18 +24,23 @@ impl<T: OpCode> Future for OpFuture<T> {
     type Output = BufResult<usize, T>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let res = Runtime::current().inner().poll_task(cx, self.user_data);
-        if res.is_ready() {
-            self.completed = true;
+        let res = Runtime::current()
+            .inner()
+            .poll_task(cx, self.key.take().unwrap());
+        match res {
+            PushEntry::Pending(key) => {
+                self.key = Some(key);
+                Poll::Pending
+            }
+            PushEntry::Ready(res) => Poll::Ready(res),
         }
-        res
     }
 }
 
-impl<T> Drop for OpFuture<T> {
+impl<T: OpCode> Drop for OpFuture<T> {
     fn drop(&mut self) {
-        if !self.completed {
-            Runtime::current().inner().cancel_op(self.user_data)
+        if let Some(key) = self.key.take() {
+            Runtime::current().inner().cancel_op(key)
         }
     }
 }

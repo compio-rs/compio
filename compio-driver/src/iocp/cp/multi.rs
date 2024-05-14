@@ -48,15 +48,11 @@ impl PortHandle {
         Self { port }
     }
 
-    pub fn post<T: ?Sized>(
-        &self,
-        res: io::Result<usize>,
-        optr: *mut Overlapped<T>,
-    ) -> io::Result<()> {
+    pub fn post(&self, res: io::Result<usize>, optr: *mut Overlapped) -> io::Result<()> {
         self.port.post(res, optr)
     }
 
-    pub fn post_raw<T: ?Sized>(&self, optr: *const Overlapped<T>) -> io::Result<()> {
+    pub fn post_raw(&self, optr: *const Overlapped) -> io::Result<()> {
         self.port.post_raw(optr)
     }
 }

@@ -6,13 +6,10 @@ pub(crate) mod op;
 use crate::RawFd;
 
 /// The overlapped struct for unix needn't contain extra fields.
-#[repr(transparent)]
-pub(crate) struct Overlapped<T: ?Sized> {
-    pub op: T,
-}
+pub(crate) struct Overlapped;
 
-impl<T> Overlapped<T> {
-    pub(crate) fn new(_driver: RawFd, _user_data: usize, op: T) -> Self {
-        Self { op }
+impl Overlapped {
+    pub fn new(_driver: RawFd) -> Self {
+        Self
     }
 }

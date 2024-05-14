@@ -147,8 +147,8 @@ impl RuntimeInner {
         }
     }
 
-    pub fn cancel_op<T>(&self, user_data: Key<T>) {
-        self.driver.borrow_mut().cancel(*user_data);
+    pub fn cancel_op<T: OpCode>(&self, op: Key<T>) {
+        self.driver.borrow_mut().cancel(op);
     }
 
     #[cfg(feature = "time")]
@@ -159,16 +159,14 @@ impl RuntimeInner {
     pub fn poll_task<T: OpCode>(
         &self,
         cx: &mut Context,
-        user_data: Key<T>,
-    ) -> Poll<BufResult<usize, T>> {
-        instrument!(compio_log::Level::DEBUG, "poll_task", ?user_data,);
+        op: Key<T>,
+    ) -> PushEntry<Key<T>, BufResult<usize, T>> {
+        instrument!(compio_log::Level::DEBUG, "poll_task", ?op);
         let mut driver = self.driver.borrow_mut();
-        if let Some(res) = driver.pop(user_data) {
-            Poll::Ready(res)
-        } else {
-            driver.update_waker(*user_data, cx.waker().clone());
-            Poll::Pending
-        }
+        driver.pop(op).map_pending(|mut k| {
+            driver.update_waker(&mut k, cx.waker().clone());
+            k
+        })
     }
 
     #[cfg(feature = "time")]
