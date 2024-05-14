@@ -14,7 +14,7 @@ fn cf_run_loop() {
     use core_foundation::{
         base::TCFType,
         filedescriptor::{kCFFileDescriptorReadCallBack, CFFileDescriptor, CFFileDescriptorRef},
-        runloop::{kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopRef},
+        runloop::{kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopRef, CFRunLoopStop},
         string::CFStringRef,
     };
 
@@ -77,8 +77,12 @@ fn cf_run_loop() {
 
         let event = Event::new();
         let handle = Arc::new(Mutex::new(Some(event.handle())));
+        let run_loop = CFRunLoop::get_current();
         let block = StackBlock::new(move || {
             handle.lock().unwrap().take().unwrap().notify();
+            unsafe {
+                CFRunLoopStop(run_loop.as_concrete_TypeRef());
+            }
         });
         extern "C" {
             fn CFRunLoopPerformBlock(rl: CFRunLoopRef, mode: CFStringRef, block: &Block<dyn Fn()>);
