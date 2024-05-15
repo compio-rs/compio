@@ -141,7 +141,7 @@ impl RuntimeInner {
                     BufResult(Ok(_), rop) => break rop.into_inner(),
                     BufResult(Err(_), rop) => op = rop,
                 }
-                // Possible error: thread poll is full, or failed to create notify handle.
+                // Possible error: thread pool is full, or failed to create notify handle.
                 // Push the future to the back of the queue.
                 let mut yielded = false;
                 poll_fn(|cx| {
