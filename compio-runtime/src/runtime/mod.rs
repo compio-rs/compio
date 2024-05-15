@@ -2,7 +2,7 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::VecDeque,
-    future::{ready, Future},
+    future::{poll_fn, ready, Future},
     io,
     panic::AssertUnwindSafe,
     rc::{Rc, Weak},
@@ -134,8 +134,31 @@ impl RuntimeInner {
             let res = std::panic::catch_unwind(AssertUnwindSafe(f));
             BufResult(Ok(0), res)
         });
-        // SAFETY: Just like spawn.
-        unsafe { self.spawn_unchecked(self.submit(op).map(|BufResult(_, op)| op.into_inner())) }
+        let closure = async move {
+            let mut op = op;
+            loop {
+                match self.submit(op).await {
+                    BufResult(Ok(_), rop) => break rop.into_inner(),
+                    BufResult(Err(_), rop) => op = rop,
+                }
+                // Possible error: thread pool is full, or failed to create notify handle.
+                // Push the future to the back of the queue.
+                let mut yielded = false;
+                poll_fn(|cx| {
+                    if yielded {
+                        Poll::Ready(())
+                    } else {
+                        yielded = true;
+                        cx.waker().wake_by_ref();
+                        Poll::Pending
+                    }
+                })
+                .await;
+            }
+        };
+        // SAFETY: the closure catches the shared reference of self, which is in an Rc
+        // so it won't be moved.
+        unsafe { self.spawn_unchecked(closure) }
     }
 
     pub fn attach(&self, fd: RawFd) -> io::Result<()> {
