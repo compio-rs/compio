@@ -5,11 +5,11 @@ use compio_buf::BufResult;
 use crate::{OpCode, Overlapped, PushEntry, RawFd};
 
 /// An operation with other needed information. It should be allocated on the
-/// stack. The pointer to this struct is used as user_data, and on Windows, it
-/// is used as the pointer to OVERLAPPED.
+/// heap. The pointer to this struct is used as `user_data`, and on Windows, it
+/// is used as the pointer to `OVERLAPPED`.
 ///
-/// Convert any user_data to *const RawOp<()> is valid. Then it could be
-/// converted to *mut RawOp<dyn OpCode> with upcast_fn.
+/// Convert any `user_data` to `*const RawOp<()>` is valid. Then it could be
+/// converted to `*mut RawOp<dyn OpCode>` with `upcast_fn`.
 #[repr(C)]
 pub(crate) struct RawOp<T: ?Sized> {
     header: Overlapped,
