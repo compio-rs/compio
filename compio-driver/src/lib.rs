@@ -247,15 +247,11 @@ impl Proactor {
     /// The cancellation is not reliable. The underlying operation may continue,
     /// but just don't return from [`Proactor::poll`]. Therefore, although an
     /// operation is cancelled, you should not reuse its `user_data`.
-    ///
-    /// It is *safe* to cancel before polling. If the submitted operation
-    /// contains a cancelled user-defined data, the operation will be ignored.
-    /// However, to make the operation dropped correctly, you should cancel
-    /// after push.
     pub fn cancel<T: OpCode>(&mut self, mut op: Key<T>) -> Option<BufResult<usize, T>> {
         instrument!(compio_log::Level::DEBUG, "cancel", ?op);
         if op.set_cancelled() {
-            Some(op.into_inner())
+            // SAFETY: completed.
+            Some(unsafe { op.into_inner() })
         } else {
             self.driver.cancel(op);
             None
@@ -270,7 +266,8 @@ impl Proactor {
             Poll::Pending => PushEntry::Pending(op),
             Poll::Ready(res) => {
                 op.set_result(res);
-                PushEntry::Ready(op.into_inner())
+                // SAFETY: just completed.
+                PushEntry::Ready(unsafe { op.into_inner() })
             }
         }
     }
@@ -296,7 +293,8 @@ impl Proactor {
     pub fn pop<T>(&mut self, op: Key<T>) -> PushEntry<Key<T>, BufResult<usize, T>> {
         instrument!(compio_log::Level::DEBUG, "pop", ?op);
         if op.has_result() {
-            PushEntry::Ready(op.into_inner())
+            // SAFETY: completed.
+            PushEntry::Ready(unsafe { op.into_inner() })
         } else {
             PushEntry::Pending(op)
         }

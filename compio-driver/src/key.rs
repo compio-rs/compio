@@ -8,8 +8,9 @@ use crate::{OpCode, Overlapped, PushEntry, RawFd};
 /// heap. The pointer to this struct is used as `user_data`, and on Windows, it
 /// is used as the pointer to `OVERLAPPED`.
 ///
-/// Convert any `user_data` to `*const RawOp<()>` is valid. Then it could be
-/// converted to `*mut RawOp<dyn OpCode>` with `upcast_fn`.
+/// `*const RawOp<dyn OpCode>` can be obtained from any `Key<T: OpCode>` by
+/// first casting `Key::user_data` to `*const RawOp<()>`, then upcasted with
+/// `upcast_fn`. It is done in [`Key::as_op_pin`].
 #[repr(C)]
 pub(crate) struct RawOp<T: ?Sized> {
     header: Overlapped,
@@ -132,7 +133,9 @@ impl<T: ?Sized> Key<T> {
     ///
     /// # Safety
     ///
-    /// Call it when the op is cancelled and completed.
+    /// Call it only when the op is cancelled and completed, which is the case
+    /// when the ref count becomes zero. See doc of [`Key::set_cancelled`]
+    /// and [`Key::set_result`].
     pub(crate) unsafe fn into_box(mut self) -> Box<RawOp<dyn OpCode>> {
         let this = self.as_opaque_mut();
         let ptr = (this.upcast_fn)(self.user_data);
@@ -143,12 +146,12 @@ impl<T: ?Sized> Key<T> {
 impl<T> Key<T> {
     /// Get the inner result if it is completed.
     ///
-    /// # Panics
+    /// # Safety
     ///
-    /// Panics if the op is not completed.
-    pub(crate) fn into_inner(self) -> BufResult<usize, T> {
+    /// Call it only when the op is completed, otherwise it is UB.
+    pub(crate) unsafe fn into_inner(self) -> BufResult<usize, T> {
         let op = unsafe { Box::from_raw(self.user_data as *mut RawOp<T>) };
-        BufResult(op.result.take_ready().unwrap(), op.op)
+        BufResult(op.result.take_ready().unwrap_unchecked(), op.op)
     }
 }
 
