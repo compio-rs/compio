@@ -239,7 +239,7 @@ impl Driver {
         let completed = self.pool_completed.clone();
         self.pool
             .dispatch(move || {
-                let op = unsafe { Key::upcast(user_data) };
+                let mut op = unsafe { Key::<dyn OpCode>::new_unchecked(user_data) };
                 let op_pin = op.as_op_pin();
                 let res = match op_pin.on_event(&event) {
                     Poll::Pending => unreachable!("this operation is not non-blocking"),
@@ -277,7 +277,7 @@ impl Driver {
                 if self.cancelled.remove(&user_data) {
                     entries.extend(Some(entry_cancelled(user_data)));
                 } else {
-                    let op = Key::upcast(user_data);
+                    let mut op = Key::<dyn OpCode>::new_unchecked(user_data);
                     let op = op.as_op_pin();
                     let res = match op.on_event(&event) {
                         Poll::Pending => {

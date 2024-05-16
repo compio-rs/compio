@@ -234,7 +234,7 @@ impl Driver {
         let is_ok = self
             .pool
             .dispatch(move || {
-                let op = unsafe { Key::upcast(user_data) };
+                let mut op = unsafe { Key::<dyn OpCode>::new_unchecked(user_data) };
                 let op_pin = op.as_op_pin();
                 let res = op_pin.call_blocking();
                 completed.push(Entry::new(user_data, res));

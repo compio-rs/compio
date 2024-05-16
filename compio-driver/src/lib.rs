@@ -358,9 +358,10 @@ impl<E: Extend<usize>> Extend<Entry> for OutEntries<'_, E> {
     fn extend<T: IntoIterator<Item = Entry>>(&mut self, iter: T) {
         self.entries.extend(iter.into_iter().filter_map(|e| {
             let user_data = e.user_data();
-            let op = unsafe { Key::upcast(user_data) };
+            let mut op = unsafe { Key::<()>::new_unchecked(user_data) };
             if op.set_result(e.into_result()) {
-                unsafe { Key::drop_in_place(user_data) };
+                // SAFETY: completed and cancelled.
+                let _ = unsafe { op.into_box() };
                 None
             } else {
                 Some(user_data)

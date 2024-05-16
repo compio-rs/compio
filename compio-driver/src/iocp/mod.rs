@@ -249,7 +249,7 @@ impl Driver {
         Ok(self
             .pool
             .dispatch(move || {
-                let op = unsafe { Key::upcast(user_data) };
+                let mut op = unsafe { Key::<dyn OpCode>::new_unchecked(user_data) };
                 let optr = op.as_mut_ptr();
                 let res = op.operate_blocking();
                 port.post(res, optr).ok();
@@ -369,7 +369,7 @@ impl WinThreadpollWait {
             WAIT_TIMEOUT => Err(io::Error::from_raw_os_error(ERROR_TIMEOUT as _)),
             _ => Err(io::Error::from_raw_os_error(result as _)),
         };
-        let op = unsafe { Key::upcast(context.user_data) };
+        let mut op = unsafe { Key::<dyn OpCode>::new_unchecked(context.user_data) };
         let res = if res.is_err() {
             res
         } else {
