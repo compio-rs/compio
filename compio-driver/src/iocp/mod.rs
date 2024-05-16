@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     io,
     os::{
         raw::c_void,
@@ -17,7 +17,7 @@ use std::{
 
 use compio_log::{instrument, trace};
 use windows_sys::Win32::{
-    Foundation::{ERROR_BUSY, ERROR_OPERATION_ABORTED, ERROR_TIMEOUT, WAIT_OBJECT_0, WAIT_TIMEOUT},
+    Foundation::{ERROR_BUSY, ERROR_TIMEOUT, WAIT_OBJECT_0, WAIT_TIMEOUT},
     Networking::WinSock::{WSACleanup, WSAStartup, WSADATA},
     System::{
         Threading::{
@@ -170,7 +170,6 @@ pub trait OpCode {
 pub(crate) struct Driver {
     port: cp::Port,
     waits: HashMap<usize, WinThreadpollWait>,
-    cancelled: HashSet<usize>,
     pool: AsyncifyPool,
     notify_overlapped: Arc<Overlapped>,
 }
@@ -186,7 +185,6 @@ impl Driver {
         Ok(Self {
             port,
             waits: HashMap::default(),
-            cancelled: HashSet::default(),
             pool: builder.create_or_get_thread_pool(),
             notify_overlapped: Arc::new(Overlapped::new(driver)),
         })
@@ -203,8 +201,6 @@ impl Driver {
     pub fn cancel<T: OpCode>(&mut self, mut op: Key<T>) {
         instrument!(compio_log::Level::TRACE, "cancel", ?op);
         trace!("cancel RawOp");
-        let user_data = op.user_data();
-        self.cancelled.insert(user_data);
         let overlapped_ptr = op.as_mut_ptr();
         let op = op.as_op_pin();
         // It's OK to fail to cancel.
@@ -215,31 +211,24 @@ impl Driver {
     pub fn push<T: OpCode + 'static>(&mut self, op: &mut Key<T>) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?op);
         let user_data = op.user_data();
-        if self.cancelled.remove(&user_data) {
-            trace!("pushed RawOp already cancelled");
-            Poll::Ready(Err(io::Error::from_raw_os_error(
-                ERROR_OPERATION_ABORTED as _,
-            )))
-        } else {
-            trace!("push RawOp");
-            let optr = op.as_mut_ptr();
-            let op_pin = op.as_op_pin();
-            match op_pin.op_type() {
-                OpType::Overlapped => unsafe { op_pin.operate(optr.cast()) },
-                OpType::Blocking => {
-                    if self.push_blocking(user_data)? {
-                        Poll::Pending
-                    } else {
-                        Poll::Ready(Err(io::Error::from_raw_os_error(ERROR_BUSY as _)))
-                    }
-                }
-                OpType::Event(e) => {
-                    self.waits.insert(
-                        user_data,
-                        WinThreadpollWait::new(self.port.handle(), e, op)?,
-                    );
+        trace!("push RawOp");
+        let optr = op.as_mut_ptr();
+        let op_pin = op.as_op_pin();
+        match op_pin.op_type() {
+            OpType::Overlapped => unsafe { op_pin.operate(optr.cast()) },
+            OpType::Blocking => {
+                if self.push_blocking(user_data)? {
                     Poll::Pending
+                } else {
+                    Poll::Ready(Err(io::Error::from_raw_os_error(ERROR_BUSY as _)))
                 }
+            }
+            OpType::Event(e) => {
+                self.waits.insert(
+                    user_data,
+                    WinThreadpollWait::new(self.port.handle(), e, op)?,
+                );
+                Poll::Pending
             }
         }
     }
@@ -259,19 +248,13 @@ impl Driver {
 
     fn create_entry(
         notify_user_data: usize,
-        cancelled: &mut HashSet<usize>,
         waits: &mut HashMap<usize, WinThreadpollWait>,
         entry: Entry,
     ) -> Option<Entry> {
         let user_data = entry.user_data();
         if user_data != notify_user_data {
             waits.remove(&user_data);
-            let result = if cancelled.remove(&user_data) {
-                Err(io::Error::from_raw_os_error(ERROR_OPERATION_ABORTED as _))
-            } else {
-                entry.into_result()
-            };
-            Some(Entry::new(user_data, result))
+            Some(Entry::new(user_data, entry.into_result()))
         } else {
             None
         }
@@ -286,9 +269,11 @@ impl Driver {
 
         let notify_user_data = self.notify_overlapped.as_ref() as *const Overlapped as usize;
 
-        entries.extend(self.port.poll(timeout)?.filter_map(|e| {
-            Self::create_entry(notify_user_data, &mut self.cancelled, &mut self.waits, e)
-        }));
+        entries.extend(
+            self.port
+                .poll(timeout)?
+                .filter_map(|e| Self::create_entry(notify_user_data, &mut self.waits, e)),
+        );
 
         Ok(())
     }
