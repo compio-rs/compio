@@ -212,28 +212,24 @@ impl Driver {
         op: &mut Key<T>,
     ) -> Poll<io::Result<usize>> {
         let user_data = op.user_data();
-        if self.cancelled.remove(&user_data) {
-            Poll::Ready(Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)))
-        } else {
-            let op_pin = op.as_op_pin();
-            match op_pin.pre_submit() {
-                Ok(Decision::Wait(arg)) => {
-                    // SAFETY: fd is from the OpCode.
-                    unsafe {
-                        self.submit(user_data, arg)?;
-                    }
-                    Poll::Pending
+        let op_pin = op.as_op_pin();
+        match op_pin.pre_submit() {
+            Ok(Decision::Wait(arg)) => {
+                // SAFETY: fd is from the OpCode.
+                unsafe {
+                    self.submit(user_data, arg)?;
                 }
-                Ok(Decision::Completed(res)) => Poll::Ready(Ok(res)),
-                Ok(Decision::Blocking(event)) => {
-                    if self.push_blocking(user_data, event) {
-                        Poll::Pending
-                    } else {
-                        Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
-                    }
-                }
-                Err(err) => Poll::Ready(Err(err)),
+                Poll::Pending
             }
+            Ok(Decision::Completed(res)) => Poll::Ready(Ok(res)),
+            Ok(Decision::Blocking(event)) => {
+                if self.push_blocking(user_data, event) {
+                    Poll::Pending
+                } else {
+                    Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
+                }
+            }
+            Err(err) => Poll::Ready(Err(err)),
         }
     }
 
