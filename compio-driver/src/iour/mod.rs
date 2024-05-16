@@ -202,7 +202,10 @@ impl Driver {
         }
     }
 
-    pub fn push<T: OpCode + 'static>(&mut self, op: &mut Key<T>) -> Poll<io::Result<usize>> {
+    pub fn push<T: crate::sys::OpCode + 'static>(
+        &mut self,
+        op: &mut Key<T>,
+    ) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?op);
         let user_data = op.user_data();
         let op_pin = op.as_op_pin();
@@ -234,7 +237,7 @@ impl Driver {
         let is_ok = self
             .pool
             .dispatch(move || {
-                let mut op = unsafe { Key::<dyn OpCode>::new_unchecked(user_data) };
+                let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
                 let op_pin = op.as_op_pin();
                 let res = op_pin.call_blocking();
                 completed.push(Entry::new(user_data, res));

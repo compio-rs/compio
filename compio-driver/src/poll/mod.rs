@@ -207,7 +207,10 @@ impl Driver {
         self.cancelled.insert(op.user_data());
     }
 
-    pub fn push<T: OpCode + 'static>(&mut self, op: &mut Key<T>) -> Poll<io::Result<usize>> {
+    pub fn push<T: crate::sys::OpCode + 'static>(
+        &mut self,
+        op: &mut Key<T>,
+    ) -> Poll<io::Result<usize>> {
         let user_data = op.user_data();
         if self.cancelled.remove(&user_data) {
             Poll::Ready(Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)))
@@ -239,7 +242,7 @@ impl Driver {
         let completed = self.pool_completed.clone();
         self.pool
             .dispatch(move || {
-                let mut op = unsafe { Key::<dyn OpCode>::new_unchecked(user_data) };
+                let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
                 let op_pin = op.as_op_pin();
                 let res = match op_pin.on_event(&event) {
                     Poll::Pending => unreachable!("this operation is not non-blocking"),
@@ -277,7 +280,7 @@ impl Driver {
                 if self.cancelled.remove(&user_data) {
                     entries.extend(Some(entry_cancelled(user_data)));
                 } else {
-                    let mut op = Key::<dyn OpCode>::new_unchecked(user_data);
+                    let mut op = Key::<dyn crate::sys::OpCode>::new_unchecked(user_data);
                     let op = op.as_op_pin();
                     let res = match op.on_event(&event) {
                         Poll::Pending => {
