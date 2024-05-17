@@ -1,4 +1,4 @@
-use std::{io, marker::PhantomData, pin::Pin, task::Waker};
+use std::{io, marker::PhantomData, mem::MaybeUninit, pin::Pin, task::Waker};
 
 use compio_buf::BufResult;
 
@@ -18,14 +18,45 @@ pub(crate) struct RawOp<T: ?Sized> {
     // strong ref until it completes; the runtime holds the strong ref until the future is
     // dropped.
     cancelled: bool,
-    // Imitate vtable. It contains enough information to get the correct vtable of T.
-    upcast_fn: unsafe fn(usize) -> *mut RawOp<dyn OpCode>,
+    // The metadata in `*mut RawOp<dyn OpCode>`
+    metadata: usize,
     result: PushEntry<Option<Waker>, io::Result<usize>>,
     op: T,
 }
 
-unsafe fn upcast<T: OpCode>(user_data: usize) -> *mut RawOp<dyn OpCode> {
-    user_data as *mut RawOp<T> as *mut RawOp<dyn OpCode>
+#[repr(C)]
+union OpCodePtrRepr {
+    ptr: *mut RawOp<dyn OpCode>,
+    components: OpCodePtrComponents,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct OpCodePtrComponents {
+    data_pointer: *const (),
+    metadata: usize,
+}
+
+fn opcode_metadata<T: OpCode + 'static>() -> usize {
+    let mut op = MaybeUninit::<RawOp<T>>::uninit();
+    // SAFETY: same as `core::ptr::metadata`.
+    unsafe {
+        OpCodePtrRepr {
+            ptr: op.as_mut_ptr(),
+        }
+        .components
+        .metadata
+    }
+}
+
+const unsafe fn opcode_dyn_mut(ptr: *const (), metadata: usize) -> *mut RawOp<dyn OpCode> {
+    OpCodePtrRepr {
+        components: OpCodePtrComponents {
+            data_pointer: ptr,
+            metadata,
+        },
+    }
+    .ptr
 }
 
 /// A typed wrapper for key of Ops submitted into driver. It doesn't free the
@@ -38,7 +69,7 @@ unsafe fn upcast<T: OpCode>(user_data: usize) -> *mut RawOp<dyn OpCode> {
 ///    by the proactor.
 #[derive(PartialEq, Eq, Hash)]
 pub struct Key<T: ?Sized> {
-    user_data: usize,
+    user_data: *mut (),
     _p: PhantomData<Box<T>>,
 }
 
@@ -51,7 +82,7 @@ impl<T: OpCode + 'static> Key<T> {
         let raw_op = Box::new(RawOp {
             header,
             cancelled: false,
-            upcast_fn: upcast::<T>,
+            metadata: opcode_metadata::<T>(),
             result: PushEntry::Pending(None),
             op,
         });
@@ -69,14 +100,14 @@ impl<T: ?Sized> Key<T> {
     /// `dyn OpCode`.
     pub unsafe fn new_unchecked(user_data: usize) -> Self {
         Self {
-            user_data,
+            user_data: user_data as _,
             _p: PhantomData,
         }
     }
 
     /// Get the unique user-defined data.
-    pub const fn user_data(&self) -> usize {
-        self.user_data
+    pub fn user_data(&self) -> usize {
+        self.user_data as _
     }
 
     fn as_opaque(&self) -> &RawOp<()> {
@@ -87,6 +118,13 @@ impl<T: ?Sized> Key<T> {
     fn as_opaque_mut(&mut self) -> &mut RawOp<()> {
         // SAFETY: see `as_opaque`.
         unsafe { &mut *(self.user_data as *mut RawOp<()>) }
+    }
+
+    fn as_dyn_mut_ptr(&mut self) -> *mut RawOp<dyn OpCode> {
+        let user_data = self.user_data;
+        let this = self.as_opaque_mut();
+        // SAFETY: metadata from `Key::new`.
+        unsafe { opcode_dyn_mut(user_data, this.metadata) }
     }
 
     /// A pointer to OVERLAPPED.
@@ -137,9 +175,7 @@ impl<T: ?Sized> Key<T> {
     /// when the ref count becomes zero. See doc of [`Key::set_cancelled`]
     /// and [`Key::set_result`].
     pub(crate) unsafe fn into_box(mut self) -> Box<RawOp<dyn OpCode>> {
-        let this = self.as_opaque_mut();
-        let ptr = (this.upcast_fn)(self.user_data);
-        Box::from_raw(ptr)
+        Box::from_raw(self.as_dyn_mut_ptr())
     }
 }
 
@@ -160,8 +196,7 @@ impl<T: OpCode + ?Sized> Key<T> {
     pub(crate) fn as_op_pin(&mut self) -> Pin<&mut dyn OpCode> {
         // SAFETY: the inner won't be moved.
         unsafe {
-            let this = self.as_opaque_mut();
-            let this = &mut *((this.upcast_fn)(self.user_data));
+            let this = &mut *self.as_dyn_mut_ptr();
             Pin::new_unchecked(&mut this.op)
         }
     }
@@ -186,6 +221,6 @@ impl<T: OpCode + ?Sized> Key<T> {
 
 impl<T: ?Sized> std::fmt::Debug for Key<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Key({})", self.user_data)
+        write!(f, "Key({})", self.user_data())
     }
 }
