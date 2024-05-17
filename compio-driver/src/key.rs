@@ -33,7 +33,7 @@ union OpCodePtrRepr {
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct OpCodePtrComponents {
-    data_pointer: *const (),
+    data_pointer: *mut (),
     metadata: usize,
 }
 
@@ -49,7 +49,7 @@ fn opcode_metadata<T: OpCode + 'static>() -> usize {
     }
 }
 
-const unsafe fn opcode_dyn_mut(ptr: *const (), metadata: usize) -> *mut RawOp<dyn OpCode> {
+const unsafe fn opcode_dyn_mut(ptr: *mut (), metadata: usize) -> *mut RawOp<dyn OpCode> {
     OpCodePtrRepr {
         components: OpCodePtrComponents {
             data_pointer: ptr,
