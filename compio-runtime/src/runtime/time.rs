@@ -104,6 +104,9 @@ impl TimerRuntime {
     }
 
     pub fn wake(&mut self) {
+        if self.wheel.is_empty() {
+            return;
+        }
         let elapsed = self.time.elapsed();
         while let Some(entry) = self.wheel.pop() {
             if entry.0.delay <= elapsed {
