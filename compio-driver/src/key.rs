@@ -70,7 +70,7 @@ const unsafe fn opcode_dyn_mut(ptr: *mut (), metadata: usize) -> *mut RawOp<dyn 
 #[derive(PartialEq, Eq, Hash)]
 pub struct Key<T: ?Sized> {
     user_data: *mut (),
-    _p: PhantomData<Box<T>>,
+    _p: PhantomData<Box<RawOp<T>>>,
 }
 
 impl<T: ?Sized> Unpin for Key<T> {}
