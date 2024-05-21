@@ -14,21 +14,9 @@ use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 #[cfg(target_os = "linux")]
-struct MonoioRuntime(std::cell::RefCell<monoio::Runtime<monoio::IoUringDriver>>);
-
+mod monoio_wrap;
 #[cfg(target_os = "linux")]
-impl criterion::async_executor::AsyncExecutor for MonoioRuntime {
-    fn block_on<T>(&self, future: impl futures_util::Future<Output = T>) -> T {
-        self.0.borrow_mut().block_on(future)
-    }
-}
-
-#[cfg(target_os = "linux")]
-impl criterion::async_executor::AsyncExecutor for &MonoioRuntime {
-    fn block_on<T>(&self, future: impl futures_util::Future<Output = T>) -> T {
-        self.0.borrow_mut().block_on(future)
-    }
-}
+use monoio_wrap::MonoioRuntime;
 
 criterion_group!(fs, read, write);
 criterion_main!(fs);
@@ -118,11 +106,7 @@ fn read_compio_join(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
 
 #[cfg(target_os = "linux")]
 fn read_monoio(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
-    let runtime = MonoioRuntime(std::cell::RefCell::new(
-        monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
-            .build()
-            .unwrap(),
-    ));
+    let runtime = MonoioRuntime::new();
     b.to_async(&runtime).iter_custom(|iter| async move {
         let file = monoio::fs::File::open(path).await.unwrap();
 
@@ -197,11 +181,7 @@ fn read_all_compio(b: &mut Bencher, (path, len): &(&Path, u64)) {
 
 #[cfg(target_os = "linux")]
 fn read_all_monoio(b: &mut Bencher, (path, len): &(&Path, u64)) {
-    let runtime = MonoioRuntime(std::cell::RefCell::new(
-        monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
-            .build()
-            .unwrap(),
-    ));
+    let runtime = MonoioRuntime::new();
     b.to_async(&runtime).iter_custom(|iter| async move {
         let file = monoio::fs::File::open(path).await.unwrap();
         let mut buffer = Box::new([0u8; BUFFER_SIZE]);
@@ -363,11 +343,7 @@ fn write_compio_join(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64],
 
 #[cfg(target_os = "linux")]
 fn write_monoio(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64], &[u8])) {
-    let runtime = MonoioRuntime(std::cell::RefCell::new(
-        monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
-            .build()
-            .unwrap(),
-    ));
+    let runtime = MonoioRuntime::new();
     let content = content.to_vec();
     b.to_async(&runtime).iter_custom(|iter| {
         let mut content = content.clone();
@@ -393,11 +369,7 @@ fn write_monoio(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64], &[u8
 
 #[cfg(target_os = "linux")]
 fn write_monoio_join(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64], &[u8])) {
-    let runtime = MonoioRuntime(std::cell::RefCell::new(
-        monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
-            .build()
-            .unwrap(),
-    ));
+    let runtime = MonoioRuntime::new();
     let content = content.to_vec();
     b.to_async(&runtime).iter_custom(|iter| {
         let content = content.clone();
@@ -505,11 +477,7 @@ fn write_all_compio(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
 
 #[cfg(target_os = "linux")]
 fn write_all_monoio(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
-    let runtime = MonoioRuntime(std::cell::RefCell::new(
-        monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
-            .build()
-            .unwrap(),
-    ));
+    let runtime = MonoioRuntime::new();
     let content = content.to_vec();
     b.to_async(&runtime).iter_custom(|iter| {
         let mut content = content.clone();
