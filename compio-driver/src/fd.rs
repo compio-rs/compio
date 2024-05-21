@@ -95,7 +95,7 @@ impl<T> SharedFd<T> {
 impl<T> Drop for SharedFd<T> {
     fn drop(&mut self) {
         // It's OK to wake multiple times.
-        if Arc::strong_count(&self.0) == 2 {
+        if Arc::strong_count(&self.0) == 2 && self.0.waits.load(Ordering::Acquire) {
             self.0.waker.wake()
         }
     }

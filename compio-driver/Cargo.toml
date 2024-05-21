@@ -36,7 +36,6 @@ compio-log = { workspace = true }
 cfg-if = { workspace = true }
 crossbeam-channel = { workspace = true }
 futures-util = { workspace = true }
-slab = { workspace = true }
 socket2 = { workspace = true }
 
 # Windows specific dependencies

@@ -53,8 +53,8 @@ fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> (usize, O
             while entries.is_empty() {
                 driver.poll(None, &mut entries).unwrap();
             }
-            assert_eq!(entries[0], *user_data);
-            driver.pop(user_data).unwrap()
+            assert_eq!(entries[0], user_data.user_data());
+            driver.pop(user_data).take_ready().unwrap().unwrap()
         }
     }
 }

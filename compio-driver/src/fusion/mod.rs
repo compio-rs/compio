@@ -14,10 +14,8 @@ pub use driver_type::DriverType;
 pub(crate) use iour::{sockaddr_storage, socklen_t};
 pub use iour::{OpCode as IourOpCode, OpEntry};
 pub use poll::{Decision, OpCode as PollOpCode};
-use slab::Slab;
 
-pub(crate) use crate::unix::RawOp;
-use crate::{OutEntries, ProactorBuilder};
+use crate::{Key, OutEntries, ProactorBuilder};
 
 mod driver_type {
     use std::sync::atomic::{AtomicU8, Ordering};
@@ -136,10 +134,10 @@ impl Driver {
         }
     }
 
-    pub fn create_op<T: OpCode + 'static>(&self, user_data: usize, op: T) -> RawOp {
+    pub fn create_op<T: OpCode + 'static>(&self, op: T) -> Key<T> {
         match &self.fuse {
-            FuseDriver::Poll(driver) => driver.create_op(user_data, op),
-            FuseDriver::IoUring(driver) => driver.create_op(user_data, op),
+            FuseDriver::Poll(driver) => driver.create_op(op),
+            FuseDriver::IoUring(driver) => driver.create_op(op),
         }
     }
 
@@ -150,17 +148,17 @@ impl Driver {
         }
     }
 
-    pub fn cancel(&mut self, user_data: usize, registry: &mut Slab<RawOp>) {
+    pub fn cancel<T>(&mut self, op: Key<T>) {
         match &mut self.fuse {
-            FuseDriver::Poll(driver) => driver.cancel(user_data, registry),
-            FuseDriver::IoUring(driver) => driver.cancel(user_data, registry),
+            FuseDriver::Poll(driver) => driver.cancel(op),
+            FuseDriver::IoUring(driver) => driver.cancel(op),
         }
     }
 
-    pub fn push(&mut self, user_data: usize, op: &mut RawOp) -> Poll<io::Result<usize>> {
+    pub fn push<T: OpCode + 'static>(&mut self, op: &mut Key<T>) -> Poll<io::Result<usize>> {
         match &mut self.fuse {
-            FuseDriver::Poll(driver) => driver.push(user_data, op),
-            FuseDriver::IoUring(driver) => driver.push(user_data, op),
+            FuseDriver::Poll(driver) => driver.push(op),
+            FuseDriver::IoUring(driver) => driver.push(op),
         }
     }
 

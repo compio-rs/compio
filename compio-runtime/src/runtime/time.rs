@@ -9,7 +9,18 @@ use std::{
 
 use slab::Slab;
 
-use crate::runtime::{FutureState, Runtime};
+use crate::runtime::Runtime;
+
+pub(crate) enum FutureState {
+    Active(Option<Waker>),
+    Completed,
+}
+
+impl Default for FutureState {
+    fn default() -> Self {
+        Self::Active(None)
+    }
+}
 
 #[derive(Debug)]
 struct TimerEntry {
@@ -93,6 +104,9 @@ impl TimerRuntime {
     }
 
     pub fn wake(&mut self) {
+        if self.wheel.is_empty() {
+            return;
+        }
         let elapsed = self.time.elapsed();
         while let Some(entry) = self.wheel.pop() {
             if entry.0.delay <= elapsed {

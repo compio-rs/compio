@@ -12,11 +12,14 @@
 ))]
 compile_error!("You must choose at least one of these features: [\"io-uring\", \"polling\"]");
 
-use std::{io, task::Poll, time::Duration};
+use std::{
+    io,
+    task::{Poll, Waker},
+    time::Duration,
+};
 
 use compio_buf::BufResult;
-use compio_log::{instrument, trace};
-use slab::Slab;
+use compio_log::instrument;
 
 mod key;
 pub use key::Key;
@@ -25,6 +28,8 @@ pub mod op;
 #[cfg(unix)]
 #[cfg_attr(docsrs, doc(cfg(all())))]
 mod unix;
+#[cfg(unix)]
+use unix::Overlapped;
 
 mod asyncify;
 pub use asyncify::*;
@@ -173,6 +178,19 @@ pub enum PushEntry<K, R> {
 }
 
 impl<K, R> PushEntry<K, R> {
+    /// Get if the current variant is [`PushEntry::Ready`].
+    pub const fn is_ready(&self) -> bool {
+        matches!(self, Self::Ready(_))
+    }
+
+    /// Take the ready variant if exists.
+    pub fn take_ready(self) -> Option<R> {
+        match self {
+            Self::Pending(_) => None,
+            Self::Ready(res) => Some(res),
+        }
+    }
+
     /// Map the [`PushEntry::Pending`] branch.
     pub fn map_pending<L>(self, f: impl FnOnce(K) -> L) -> PushEntry<L, R> {
         match self {
@@ -194,7 +212,6 @@ impl<K, R> PushEntry<K, R> {
 /// It owns the operations to keep the driver safe.
 pub struct Proactor {
     driver: Driver,
-    ops: Slab<RawOp>,
 }
 
 impl Proactor {
@@ -211,7 +228,6 @@ impl Proactor {
     fn with_builder(builder: &ProactorBuilder) -> io::Result<Self> {
         Ok(Self {
             driver: Driver::new(builder)?,
-            ops: Slab::with_capacity(builder.capacity as _),
         })
     }
 
@@ -231,37 +247,27 @@ impl Proactor {
     /// The cancellation is not reliable. The underlying operation may continue,
     /// but just don't return from [`Proactor::poll`]. Therefore, although an
     /// operation is cancelled, you should not reuse its `user_data`.
-    ///
-    /// It is *safe* to cancel before polling. If the submitted operation
-    /// contains a cancelled user-defined data, the operation will be ignored.
-    /// However, to make the operation dropped correctly, you should cancel
-    /// after push.
-    pub fn cancel(&mut self, user_data: usize) {
-        instrument!(compio_log::Level::DEBUG, "cancel", user_data);
-        if let Some(op) = self.ops.get_mut(user_data) {
-            if op.set_cancelled() {
-                // The op is completed.
-                trace!("cancel and remove {}", user_data);
-                self.ops.remove(user_data);
-                return;
-            }
+    pub fn cancel<T: OpCode>(&mut self, mut op: Key<T>) -> Option<BufResult<usize, T>> {
+        instrument!(compio_log::Level::DEBUG, "cancel", ?op);
+        if op.set_cancelled() {
+            // SAFETY: completed.
+            Some(unsafe { op.into_inner() })
+        } else {
+            self.driver.cancel(op);
+            None
         }
-        self.driver.cancel(user_data, &mut self.ops);
     }
 
     /// Push an operation into the driver, and return the unique key, called
     /// user-defined data, associated with it.
     pub fn push<T: OpCode + 'static>(&mut self, op: T) -> PushEntry<Key<T>, BufResult<usize, T>> {
-        let entry = self.ops.vacant_entry();
-        let user_data = entry.key();
-        let op = self.driver.create_op(user_data, op);
-        let op = entry.insert(op);
-        match self.driver.push(user_data, op) {
-            Poll::Pending => PushEntry::Pending(unsafe { Key::new(user_data) }),
+        let mut op = self.driver.create_op(op);
+        match self.driver.push(&mut op) {
+            Poll::Pending => PushEntry::Pending(op),
             Poll::Ready(res) => {
-                let mut op = self.ops.remove(user_data);
                 op.set_result(res);
-                PushEntry::Ready(unsafe { op.into_inner::<T>() })
+                // SAFETY: just completed.
+                PushEntry::Ready(unsafe { op.into_inner() })
             }
         }
     }
@@ -274,8 +280,7 @@ impl Proactor {
         entries: &mut impl Extend<usize>,
     ) -> io::Result<()> {
         unsafe {
-            self.driver
-                .poll(timeout, OutEntries::new(entries, &mut self.ops))?;
+            self.driver.poll(timeout, OutEntries::new(entries))?;
         }
         Ok(())
     }
@@ -285,23 +290,19 @@ impl Proactor {
     /// # Panics
     /// This function will panic if the requested operation has not been
     /// completed.
-    pub fn pop<T: OpCode>(&mut self, user_data: Key<T>) -> BufResult<usize, T> {
-        instrument!(compio_log::Level::DEBUG, "pop", ?user_data);
-        let op = self
-            .ops
-            .try_remove(*user_data)
-            .expect("the entry should be valid");
-        trace!("poped {}", *user_data);
-        // Safety: user cannot create key with safe code, so the type should be correct
-        unsafe { op.into_inner::<T>() }
+    pub fn pop<T>(&mut self, op: Key<T>) -> PushEntry<Key<T>, BufResult<usize, T>> {
+        instrument!(compio_log::Level::DEBUG, "pop", ?op);
+        if op.has_result() {
+            // SAFETY: completed.
+            PushEntry::Ready(unsafe { op.into_inner() })
+        } else {
+            PushEntry::Pending(op)
+        }
     }
 
-    /// Query if the operation has completed.
-    pub fn has_result(&self, user_data: usize) -> bool {
-        self.ops
-            .get(user_data)
-            .map(|op| op.has_result())
-            .unwrap_or_default()
+    /// Update the waker of the specified op.
+    pub fn update_waker<T>(&mut self, op: &mut Key<T>, waker: Waker) {
+        op.set_waker(waker);
     }
 
     /// Create a notify handle to interrupt the inner driver.
@@ -341,28 +342,24 @@ impl Entry {
 
 // The output entries need to be marked as `completed`. If an entry has been
 // marked as `cancelled`, it will be removed from the registry.
-struct OutEntries<'a, 'b, E> {
+struct OutEntries<'b, E> {
     entries: &'b mut E,
-    registry: &'a mut Slab<RawOp>,
 }
 
-impl<'a, 'b, E> OutEntries<'a, 'b, E> {
-    pub fn new(entries: &'b mut E, registry: &'a mut Slab<RawOp>) -> Self {
-        Self { entries, registry }
-    }
-
-    #[allow(dead_code)]
-    pub fn registry(&mut self) -> &mut Slab<RawOp> {
-        self.registry
+impl<'b, E> OutEntries<'b, E> {
+    pub fn new(entries: &'b mut E) -> Self {
+        Self { entries }
     }
 }
 
-impl<E: Extend<usize>> Extend<Entry> for OutEntries<'_, '_, E> {
+impl<E: Extend<usize>> Extend<Entry> for OutEntries<'_, E> {
     fn extend<T: IntoIterator<Item = Entry>>(&mut self, iter: T) {
         self.entries.extend(iter.into_iter().filter_map(|e| {
             let user_data = e.user_data();
-            if self.registry[user_data].set_result(e.into_result()) {
-                self.registry.remove(user_data);
+            let mut op = unsafe { Key::<()>::new_unchecked(user_data) };
+            if op.set_result(e.into_result()) {
+                // SAFETY: completed and cancelled.
+                let _ = unsafe { op.into_box() };
                 None
             } else {
                 Some(user_data)

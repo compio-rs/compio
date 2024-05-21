@@ -1,7 +1,7 @@
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 #[allow(unused_imports)]
 pub use std::os::fd::{AsRawFd, OwnedFd, RawFd};
-use std::{io, os::fd::FromRawFd, pin::Pin, ptr::NonNull, sync::Arc, task::Poll, time::Duration};
+use std::{io, os::fd::FromRawFd, pin::Pin, sync::Arc, task::Poll, time::Duration};
 
 use compio_log::{instrument, trace, warn};
 use crossbeam_queue::SegQueue;
@@ -25,12 +25,10 @@ use io_uring::{
     IoUring,
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
-use slab::Slab;
 
-use crate::{syscall, AsyncifyPool, Entry, OutEntries, ProactorBuilder};
+use crate::{syscall, AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder};
 
 pub(crate) mod op;
-pub(crate) use crate::unix::RawOp;
 
 /// The created entry of [`OpCode`].
 pub enum OpEntry {
@@ -159,16 +157,16 @@ impl Driver {
         has_entry
     }
 
-    pub fn create_op<T: crate::sys::OpCode + 'static>(&self, user_data: usize, op: T) -> RawOp {
-        RawOp::new(user_data, op)
+    pub fn create_op<T: crate::sys::OpCode + 'static>(&self, op: T) -> Key<T> {
+        Key::new(self.as_raw_fd(), op)
     }
 
     pub fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
         Ok(())
     }
 
-    pub fn cancel(&mut self, user_data: usize, _registry: &mut Slab<RawOp>) {
-        instrument!(compio_log::Level::TRACE, "cancel", user_data);
+    pub fn cancel<T>(&mut self, op: Key<T>) {
+        instrument!(compio_log::Level::TRACE, "cancel", ?op);
         trace!("cancel RawOp");
         unsafe {
             #[allow(clippy::useless_conversion)]
@@ -176,7 +174,7 @@ impl Driver {
                 .inner
                 .submission()
                 .push(
-                    &AsyncCancel::new(user_data as _)
+                    &AsyncCancel::new(op.user_data() as _)
                         .build()
                         .user_data(Self::CANCEL)
                         .into(),
@@ -204,9 +202,13 @@ impl Driver {
         }
     }
 
-    pub fn push(&mut self, user_data: usize, op: &mut RawOp) -> Poll<io::Result<usize>> {
-        instrument!(compio_log::Level::TRACE, "push", user_data);
-        let op_pin = op.as_pin();
+    pub fn push<T: crate::sys::OpCode + 'static>(
+        &mut self,
+        op: &mut Key<T>,
+    ) -> Poll<io::Result<usize>> {
+        instrument!(compio_log::Level::TRACE, "push", ?op);
+        let user_data = op.user_data();
+        let op_pin = op.as_op_pin();
         trace!("push RawOp");
         match op_pin.create_entry() {
             OpEntry::Submission(entry) => {
@@ -220,7 +222,7 @@ impl Driver {
                 Poll::Pending
             }
             OpEntry::Blocking => {
-                if self.push_blocking(user_data, op)? {
+                if self.push_blocking(user_data)? {
                     Poll::Pending
                 } else {
                     Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
@@ -229,21 +231,14 @@ impl Driver {
         }
     }
 
-    fn push_blocking(&mut self, user_data: usize, op: &mut RawOp) -> io::Result<bool> {
-        // Safety: the RawOp is not released before the operation returns.
-        struct SendWrapper<T>(T);
-        unsafe impl<T> Send for SendWrapper<T> {}
-
-        let op = SendWrapper(NonNull::from(op));
+    fn push_blocking(&mut self, user_data: usize) -> io::Result<bool> {
         let handle = self.handle()?;
         let completed = self.pool_completed.clone();
         let is_ok = self
             .pool
             .dispatch(move || {
-                #[allow(clippy::redundant_locals)]
-                let mut op = op;
-                let op = unsafe { op.0.as_mut() };
-                let op_pin = op.as_pin();
+                let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
+                let op_pin = op.as_op_pin();
                 let res = op_pin.call_blocking();
                 completed.push(Entry::new(user_data, res));
                 handle.notify().ok();
