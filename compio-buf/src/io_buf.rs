@@ -1,6 +1,6 @@
 #[cfg(feature = "allocator_api")]
 use std::alloc::Allocator;
-use std::mem::MaybeUninit;
+use std::{mem::MaybeUninit, rc::Rc, sync::Arc};
 
 use crate::*;
 
@@ -126,7 +126,7 @@ unsafe impl<B: IoBuf + ?Sized> IoBuf for &'static mut B {
 }
 
 unsafe impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf
-    for box_alloc!(B, A)
+    for t_alloc!(Box, B, A)
 {
     fn as_buf_ptr(&self) -> *const u8 {
         (**self).as_buf_ptr()
@@ -141,7 +141,41 @@ unsafe impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 
     }
 }
 
-unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf for vec_alloc!(u8, A) {
+unsafe impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf
+    for t_alloc!(Rc, B, A)
+{
+    fn as_buf_ptr(&self) -> *const u8 {
+        (**self).as_buf_ptr()
+    }
+
+    fn buf_len(&self) -> usize {
+        (**self).buf_len()
+    }
+
+    fn buf_capacity(&self) -> usize {
+        (**self).buf_capacity()
+    }
+}
+
+unsafe impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf
+    for t_alloc!(Arc, B, A)
+{
+    fn as_buf_ptr(&self) -> *const u8 {
+        (**self).as_buf_ptr()
+    }
+
+    fn buf_len(&self) -> usize {
+        (**self).buf_len()
+    }
+
+    fn buf_capacity(&self) -> usize {
+        (**self).buf_capacity()
+    }
+}
+
+unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf
+    for t_alloc!(Vec, u8, A)
+{
     fn as_buf_ptr(&self) -> *const u8 {
         self.as_ptr()
     }
@@ -314,7 +348,7 @@ unsafe impl<B: IoBufMut + ?Sized> IoBufMut for &'static mut B {
 }
 
 unsafe impl<B: IoBufMut + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut
-    for box_alloc!(B, A)
+    for t_alloc!(Box, B, A)
 {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         (**self).as_buf_mut_ptr()
@@ -322,7 +356,7 @@ unsafe impl<B: IoBufMut + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator
 }
 
 unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut
-    for vec_alloc!(u8, A)
+    for t_alloc!(Vec, u8, A)
 {
     fn as_buf_mut_ptr(&mut self) -> *mut u8 {
         self.as_mut_ptr()
@@ -449,7 +483,7 @@ impl<T: IoBuf, const N: usize> IoVectoredBuf for [T; N] {
 }
 
 impl<T: IoBuf, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoVectoredBuf
-    for vec_alloc!(T, A)
+    for t_alloc!(Vec, T, A)
 {
     fn as_dyn_bufs(&self) -> impl Iterator<Item = &dyn IoBuf> {
         self.iter().map(|buf| buf as &dyn IoBuf)
@@ -540,7 +574,7 @@ impl<T: IoBufMut, const N: usize> IoVectoredBufMut for [T; N] {
 }
 
 impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoVectoredBufMut
-    for vec_alloc!(T, A)
+    for t_alloc!(Vec, T, A)
 {
     fn as_dyn_mut_bufs(&mut self) -> impl Iterator<Item = &mut dyn IoBufMut> {
         self.iter_mut().map(|buf| buf as &mut dyn IoBufMut)
@@ -599,7 +633,7 @@ impl<T: IoBuf, const N: usize> IoIndexedBuf for [T; N] {
 }
 
 impl<T: IoBuf, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoIndexedBuf
-    for vec_alloc!(T, A)
+    for t_alloc!(Vec, T, A)
 {
     fn buf_nth(&self, n: usize) -> Option<&dyn IoBuf> {
         self.get(n).map(|b| b as _)
@@ -638,7 +672,7 @@ impl<T: IoBufMut, const N: usize> IoIndexedBufMut for [T; N] {
 }
 
 impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoIndexedBufMut
-    for vec_alloc!(T, A)
+    for t_alloc!(Vec, T, A)
 {
     fn buf_nth_mut(&mut self, n: usize) -> Option<&mut dyn IoBufMut> {
         self.get_mut(n).map(|b| b as _)
@@ -670,14 +704,14 @@ impl<B: SetBufInit + ?Sized> SetBufInit for &'static mut B {
 }
 
 impl<B: SetBufInit + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> SetBufInit
-    for box_alloc!(B, A)
+    for t_alloc!(Box, B, A)
 {
     unsafe fn set_buf_init(&mut self, len: usize) {
         (**self).set_buf_init(len)
     }
 }
 
-impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> SetBufInit for vec_alloc!(u8, A) {
+impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> SetBufInit for t_alloc!(Vec, u8, A) {
     unsafe fn set_buf_init(&mut self, len: usize) {
         if (**self).buf_len() < len {
             self.set_len(len);
@@ -738,7 +772,7 @@ impl<T: IoBufMut, const N: usize> SetBufInit for [T; N] {
 }
 
 impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + 'static> SetBufInit
-    for vec_alloc!(T, A)
+    for t_alloc!(Vec, T, A)
 {
     unsafe fn set_buf_init(&mut self, len: usize) {
         default_set_buf_init(self.iter_mut(), len)
