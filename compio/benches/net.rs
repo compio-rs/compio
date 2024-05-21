@@ -30,8 +30,7 @@ fn echo_tokio(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
         let start = Instant::now();
         for _i in 0..iter {
             let (mut tx, (mut rx, _)) =
-                futures_util::try_join!(tokio::net::TcpStream::connect(addr), listener.accept())
-                    .unwrap();
+                tokio::try_join!(tokio::net::TcpStream::connect(addr), listener.accept()).unwrap();
 
             let client = async move {
                 let mut buffer = [0u8; BUFFER_SIZE];
@@ -47,7 +46,7 @@ fn echo_tokio(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
                     rx.write_all(&buffer).await.unwrap();
                 }
             };
-            futures_util::join!(client, server);
+            tokio::join!(client, server);
         }
         start.elapsed()
     })
