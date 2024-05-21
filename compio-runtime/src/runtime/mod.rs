@@ -80,9 +80,16 @@ impl Runtime {
     ///
     /// This method will panic if there are no running [`Runtime`].
     pub fn with_current<T, F: FnOnce(&Self) -> T>(f: F) -> T {
-        Self::try_with_current(f)
-            .ok()
-            .expect("not in a compio runtime")
+        #[cold]
+        fn not_in_compio_runtime() -> ! {
+            panic!("not in a compio runtime")
+        }
+
+        if CURRENT_RUNTIME.is_set() {
+            CURRENT_RUNTIME.with(f)
+        } else {
+            not_in_compio_runtime()
+        }
     }
 
     /// Set this runtime as current runtime, and perform a function in the
