@@ -83,12 +83,13 @@ impl RuntimeInner {
             if let Some(task) = next_task {
                 task.run();
             }
-            let next_task = self.sync_runnables.pop();
-            let has_sync_task = next_task.is_some();
-            if let Some(task) = next_task {
-                task.run();
-            }
-            if !has_local_task && !has_sync_task {
+            // Cheaper than pop.
+            let has_sync_task = !self.sync_runnables.is_empty();
+            if has_sync_task {
+                if let Some(task) = self.sync_runnables.pop() {
+                    task.run();
+                }
+            } else if !has_local_task {
                 break;
             }
         }
