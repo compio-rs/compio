@@ -40,9 +40,7 @@ impl<S: AsRawFd> Attacher<S> {
     /// * IOCP: a handle could not be attached more than once. If you want to
     ///   clone the handle, create the [`Attacher`] before cloning.
     pub fn new(source: S) -> io::Result<Self> {
-        let r = Runtime::current();
-        let inner = r.inner();
-        inner.attach(source.as_raw_fd())?;
+        Runtime::with_current(|r| r.attach(source.as_raw_fd()))?;
         Ok(unsafe { Self::new_unchecked(source) })
     }
 }

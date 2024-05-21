@@ -54,7 +54,7 @@ fn win32_event() {
 
         let event_raw = event.as_raw_handle() as _;
 
-        let wait = compio_runtime::Runtime::current().submit(WaitEvent { event });
+        let wait = compio_runtime::submit(WaitEvent { event });
 
         let task = compio_runtime::spawn_blocking(move || {
             unsafe { SetEvent(event_raw) };

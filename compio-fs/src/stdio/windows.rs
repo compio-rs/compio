@@ -114,9 +114,7 @@ impl Stdin {
         let stdin = io::stdin();
         let isatty = *STDIN_ISATTY.get_or_init(|| {
             stdin.is_terminal()
-                || Runtime::current()
-                    .attach(stdin.as_raw_handle() as _)
-                    .is_err()
+                || Runtime::with_current(|r| r.attach(stdin.as_raw_handle() as _)).is_err()
         });
         Self {
             fd: SharedFd::new(stdin.as_raw_handle() as _),
@@ -127,13 +125,12 @@ impl Stdin {
 
 impl AsyncRead for Stdin {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        let runtime = Runtime::current();
         if self.isatty {
             let op = StdRead::new(io::stdin(), buf);
-            runtime.submit(op).await.into_inner()
+            compio_runtime::submit(op).await.into_inner()
         } else {
             let op = Recv::new(self.fd.clone(), buf);
-            runtime.submit(op).await.into_inner()
+            compio_runtime::submit(op).await.into_inner()
         }
         .map_advanced()
     }
@@ -161,9 +158,7 @@ impl Stdout {
         let stdout = io::stdout();
         let isatty = *STDOUT_ISATTY.get_or_init(|| {
             stdout.is_terminal()
-                || Runtime::current()
-                    .attach(stdout.as_raw_handle() as _)
-                    .is_err()
+                || Runtime::with_current(|r| r.attach(stdout.as_raw_handle() as _)).is_err()
         });
         Self {
             fd: SharedFd::new(stdout.as_raw_handle() as _),
@@ -174,13 +169,12 @@ impl Stdout {
 
 impl AsyncWrite for Stdout {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let runtime = Runtime::current();
         if self.isatty {
             let op = StdWrite::new(io::stdout(), buf);
-            runtime.submit(op).await.into_inner()
+            compio_runtime::submit(op).await.into_inner()
         } else {
             let op = Send::new(self.fd.clone(), buf);
-            runtime.submit(op).await.into_inner()
+            compio_runtime::submit(op).await.into_inner()
         }
     }
 
@@ -215,9 +209,7 @@ impl Stderr {
         let stderr = io::stderr();
         let isatty = *STDERR_ISATTY.get_or_init(|| {
             stderr.is_terminal()
-                || Runtime::current()
-                    .attach(stderr.as_raw_handle() as _)
-                    .is_err()
+                || Runtime::with_current(|r| r.attach(stderr.as_raw_handle() as _)).is_err()
         });
         Self {
             fd: SharedFd::new(stderr.as_raw_handle() as _),
@@ -228,13 +220,12 @@ impl Stderr {
 
 impl AsyncWrite for Stderr {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let runtime = Runtime::current();
         if self.isatty {
             let op = StdWrite::new(io::stderr(), buf);
-            runtime.submit(op).await.into_inner()
+            compio_runtime::submit(op).await.into_inner()
         } else {
             let op = Send::new(self.fd.clone(), buf);
-            runtime.submit(op).await.into_inner()
+            compio_runtime::submit(op).await.into_inner()
         }
     }
 
