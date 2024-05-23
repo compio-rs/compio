@@ -4,7 +4,9 @@ use std::{
     collections::VecDeque,
     future::{poll_fn, ready, Future},
     io,
+    marker::PhantomData,
     panic::AssertUnwindSafe,
+    rc::Rc,
     sync::Arc,
     task::{Context, Poll},
     time::Duration,
@@ -41,6 +43,9 @@ pub struct Runtime {
     sync_runnables: Arc<SegQueue<Runnable>>,
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
+    // Other fields don't make it !Send, but actually `local_runnables` implies it should be !Send,
+    // otherwise it won't be valid if the runtime is sent to other threads.
+    _p: PhantomData<Rc<VecDeque<Runnable>>>,
 }
 
 impl Runtime {
@@ -61,6 +66,7 @@ impl Runtime {
             sync_runnables: Arc::new(SegQueue::new()),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
+            _p: PhantomData,
         })
     }
 
