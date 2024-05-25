@@ -1,129 +1,160 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use std::{net::Ipv4Addr, rc::Rc, time::Instant};
 
-criterion_group!(net, tcp, udp);
+use criterion::{criterion_group, criterion_main, Bencher, Criterion, Throughput};
+use rand::{thread_rng, RngCore};
+
+#[cfg(target_os = "linux")]
+mod monoio_wrap;
+#[cfg(target_os = "linux")]
+use monoio_wrap::MonoioRuntime;
+
+criterion_group!(net, echo);
 criterion_main!(net);
 
-fn tcp(c: &mut Criterion) {
-    const PACKET_LEN: usize = 1048576;
-    static PACKET: &[u8] = &[1u8; PACKET_LEN];
+const BUFFER_SIZE: usize = 4096;
+const BUFFER_COUNT: usize = 1024;
 
-    let mut group = c.benchmark_group("tcp");
+fn echo_tokio(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    group.bench_function("tokio", |b| {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    b.to_async(&runtime).iter_custom(|iter| async move {
+        let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
             .unwrap();
-        b.to_async(&runtime).iter(|| async {
-            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let addr = listener.local_addr().unwrap();
 
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let addr = listener.local_addr().unwrap();
-            let tx = tokio::net::TcpStream::connect(addr);
-            let rx = listener.accept();
-            let (mut tx, (mut rx, _)) = tokio::try_join!(tx, rx).unwrap();
-            tx.write_all(PACKET).await.unwrap();
-            let mut buffer = Vec::with_capacity(PACKET_LEN);
-            while buffer.len() < PACKET_LEN {
-                rx.read_buf(&mut buffer).await.unwrap();
-            }
-            buffer
-        })
-    });
+        let start = Instant::now();
+        for _i in 0..iter {
+            let (mut tx, (mut rx, _)) =
+                tokio::try_join!(tokio::net::TcpStream::connect(addr), listener.accept()).unwrap();
 
-    group.bench_function("compio", |b| {
-        let runtime = compio::runtime::Runtime::new().unwrap();
-        b.to_async(&runtime).iter(|| async {
-            use compio::io::{AsyncReadExt, AsyncWriteExt};
-
-            let listener = compio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let addr = listener.local_addr().unwrap();
-            let tx = compio::net::TcpStream::connect(addr);
-            let rx = listener.accept();
-            let (mut tx, (mut rx, _)) = futures_util::try_join!(tx, rx).unwrap();
-            tx.write_all(PACKET).await.0.unwrap();
-            let buffer = Vec::with_capacity(PACKET_LEN);
-            let (_, buffer) = rx.read_exact(buffer).await.unwrap();
-            buffer
-        })
-    });
-
-    group.finish();
+            let client = async move {
+                let mut buffer = [0u8; BUFFER_SIZE];
+                for _i in 0..BUFFER_COUNT {
+                    tx.write_all(content).await.unwrap();
+                    tx.read_exact(&mut buffer).await.unwrap();
+                }
+            };
+            let server = async move {
+                let mut buffer = [0u8; BUFFER_SIZE];
+                for _i in 0..BUFFER_COUNT {
+                    rx.read_exact(&mut buffer).await.unwrap();
+                    rx.write_all(&buffer).await.unwrap();
+                }
+            };
+            tokio::join!(client, server);
+        }
+        start.elapsed()
+    })
 }
 
-fn udp(c: &mut Criterion) {
-    const PACKET_LEN: usize = 1024;
-    static PACKET: &[u8] = &[1u8; PACKET_LEN];
+fn echo_compio(b: &mut Bencher, content: Rc<[u8; BUFFER_SIZE]>) {
+    use compio_io::{AsyncReadExt, AsyncWriteExt};
 
-    let mut group = c.benchmark_group("udp");
+    let runtime = compio::runtime::Runtime::new().unwrap();
+    b.to_async(&runtime).iter_custom(|iter| {
+        let content = content.clone();
+        async move {
+            let listener = compio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+                .await
+                .unwrap();
+            let addr = listener.local_addr().unwrap();
 
-    // The socket may be dropped by firewall when the number is too large.
+            let start = Instant::now();
+            for _i in 0..iter {
+                let (mut tx, (mut rx, _)) = futures_util::try_join!(
+                    compio::net::TcpStream::connect(addr),
+                    listener.accept()
+                )
+                .unwrap();
+
+                let client = async {
+                    let mut content = content.clone();
+                    let mut buffer = Box::new([0u8; BUFFER_SIZE]);
+                    for _i in 0..BUFFER_COUNT {
+                        (_, content) = tx.write_all(content).await.unwrap();
+                        (_, buffer) = tx.read_exact(buffer).await.unwrap();
+                    }
+                };
+                let server = async move {
+                    let mut buffer = Box::new([0u8; BUFFER_SIZE]);
+                    for _i in 0..BUFFER_COUNT {
+                        (_, buffer) = rx.read_exact(buffer).await.unwrap();
+                        (_, buffer) = rx.write_all(buffer).await.unwrap();
+                    }
+                };
+                futures_util::join!(client, server);
+            }
+            start.elapsed()
+        }
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn echo_monoio(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
+    use monoio::io::{AsyncReadRentExt, AsyncWriteRentExt};
+
+    let runtime = MonoioRuntime::new();
+    b.to_async(&runtime).iter_custom(|iter| {
+        let content = Box::new(*content);
+        async move {
+            let listener = monoio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+            let addr = listener.local_addr().unwrap();
+
+            let start = Instant::now();
+            for _i in 0..iter {
+                let (mut tx, (mut rx, _)) = futures_util::try_join!(
+                    monoio::net::TcpStream::connect(addr),
+                    listener.accept()
+                )
+                .unwrap();
+
+                let client = async {
+                    let mut content = content.clone();
+                    let mut buffer = Box::new([0u8; BUFFER_SIZE]);
+                    let mut res;
+                    for _i in 0..BUFFER_COUNT {
+                        (res, content) = tx.write_all(content).await;
+                        res.unwrap();
+                        (res, buffer) = tx.read_exact(buffer).await;
+                        res.unwrap();
+                    }
+                };
+                let server = async move {
+                    let mut buffer = Box::new([0u8; BUFFER_SIZE]);
+                    let mut res;
+                    for _i in 0..BUFFER_COUNT {
+                        (res, buffer) = rx.read_exact(buffer).await;
+                        res.unwrap();
+                        (res, buffer) = rx.write_all(buffer).await;
+                        res.unwrap();
+                    }
+                };
+                futures_util::join!(client, server);
+            }
+            start.elapsed()
+        }
+    })
+}
+
+fn echo(c: &mut Criterion) {
+    let mut rng = thread_rng();
+
+    let mut content = [0u8; BUFFER_SIZE];
+    rng.fill_bytes(&mut content);
+    let content = Rc::new(content);
+
+    let mut group = c.benchmark_group("echo");
+    group.throughput(Throughput::Bytes((BUFFER_SIZE * BUFFER_COUNT * 2) as u64));
+
+    group.bench_function("tokio", |b| echo_tokio(b, &content));
+    group.bench_function("compio", |b| echo_compio(b, content.clone()));
     #[cfg(target_os = "linux")]
-    group
-        .sample_size(16)
-        .measurement_time(std::time::Duration::from_millis(2))
-        .warm_up_time(std::time::Duration::from_millis(2));
-
-    group.bench_function("tokio", |b| {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        b.to_async(&runtime).iter(|| async {
-            let rx = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-            let addr_rx = rx.local_addr().unwrap();
-            let tx = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-            let addr_tx = tx.local_addr().unwrap();
-
-            rx.connect(addr_tx).await.unwrap();
-            tx.connect(addr_rx).await.unwrap();
-
-            {
-                let mut pos = 0;
-                while pos < PACKET_LEN {
-                    let res = tx.send(&PACKET[pos..]).await;
-                    pos += res.unwrap();
-                }
-            }
-            {
-                let mut buffer = vec![0; PACKET_LEN];
-                let mut pos = 0;
-                while pos < PACKET_LEN {
-                    let res = rx.recv(&mut buffer[pos..]).await;
-                    pos += res.unwrap();
-                }
-                buffer
-            }
-        })
-    });
-
-    group.bench_function("compio", |b| {
-        let runtime = compio::runtime::Runtime::new().unwrap();
-        b.to_async(&runtime).iter(|| async {
-            let rx = compio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-            let addr_rx = rx.local_addr().unwrap();
-            let tx = compio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-            let addr_tx = tx.local_addr().unwrap();
-
-            rx.connect(addr_tx).await.unwrap();
-            tx.connect(addr_rx).await.unwrap();
-
-            {
-                let mut pos = 0;
-                while pos < PACKET_LEN {
-                    let (res, _) = tx.send(&PACKET[pos..]).await.unwrap();
-                    pos += res;
-                }
-            }
-            {
-                let mut buffer = Vec::with_capacity(PACKET_LEN);
-                while buffer.len() < PACKET_LEN {
-                    (_, buffer) = rx.recv(buffer).await.unwrap();
-                }
-                buffer
-            }
-        })
-    });
+    group.bench_function("monoio", |b| echo_monoio(b, &content));
 
     group.finish();
 }

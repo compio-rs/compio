@@ -24,9 +24,7 @@ impl<T: OpCode> Future for OpFuture<T> {
     type Output = BufResult<usize, T>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let res = Runtime::current()
-            .inner()
-            .poll_task(cx, self.key.take().unwrap());
+        let res = Runtime::with_current(|r| r.poll_task(cx, self.key.take().unwrap()));
         match res {
             PushEntry::Pending(key) => {
                 self.key = Some(key);
@@ -40,7 +38,7 @@ impl<T: OpCode> Future for OpFuture<T> {
 impl<T: OpCode> Drop for OpFuture<T> {
     fn drop(&mut self) {
         if let Some(key) = self.key.take() {
-            Runtime::current().inner().cancel_op(key)
+            Runtime::with_current(|r| r.cancel_op(key))
         }
     }
 }

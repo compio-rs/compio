@@ -135,8 +135,11 @@ impl Driver {
     }
 
     fn poll_entries(&mut self, entries: &mut impl Extend<Entry>) -> bool {
-        while let Some(entry) = self.pool_completed.pop() {
-            entries.extend(Some(entry));
+        // Cheaper than pop.
+        if !self.pool_completed.is_empty() {
+            while let Some(entry) = self.pool_completed.pop() {
+                entries.extend(Some(entry));
+            }
         }
 
         let mut cqueue = self.inner.completion();

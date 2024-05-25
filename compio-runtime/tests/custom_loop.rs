@@ -44,29 +44,30 @@ fn cf_run_loop() {
         }
 
         pub fn block_on<F: Future>(&self, future: F) -> F::Output {
-            let _guard = self.runtime.enter();
-            let mut result = None;
-            unsafe {
-                self.runtime
-                    .spawn_unchecked(async { result = Some(future.await) })
-            }
-            .detach();
-            loop {
-                self.runtime.poll_with(Some(Duration::ZERO));
-
-                self.runtime.run();
-                if let Some(result) = result.take() {
-                    break result;
+            self.runtime.enter(|| {
+                let mut result = None;
+                unsafe {
+                    self.runtime
+                        .spawn_unchecked(async { result = Some(future.await) })
                 }
+                .detach();
+                loop {
+                    self.runtime.poll_with(Some(Duration::ZERO));
 
-                self.fd_source
-                    .enable_callbacks(kCFFileDescriptorReadCallBack);
-                CFRunLoop::run_in_mode(
-                    unsafe { kCFRunLoopDefaultMode },
-                    self.runtime.current_timeout().unwrap_or(Duration::MAX),
-                    true,
-                );
-            }
+                    self.runtime.run();
+                    if let Some(result) = result.take() {
+                        break result;
+                    }
+
+                    self.fd_source
+                        .enable_callbacks(kCFFileDescriptorReadCallBack);
+                    CFRunLoop::run_in_mode(
+                        unsafe { kCFRunLoopDefaultMode },
+                        self.runtime.current_timeout().unwrap_or(Duration::MAX),
+                        true,
+                    );
+                }
+            })
         }
     }
 
@@ -130,50 +131,51 @@ fn message_queue() {
         }
 
         pub fn block_on<F: Future>(&self, future: F) -> F::Output {
-            let _guard = self.runtime.enter();
-            let mut result = None;
-            unsafe {
-                self.runtime
-                    .spawn_unchecked(async { result = Some(future.await) })
-            }
-            .detach();
-            loop {
-                self.runtime.poll_with(Some(Duration::ZERO));
-
-                self.runtime.run();
-                if let Some(result) = result.take() {
-                    break result;
+            self.runtime.enter(|| {
+                let mut result = None;
+                unsafe {
+                    self.runtime
+                        .spawn_unchecked(async { result = Some(future.await) })
                 }
+                .detach();
+                loop {
+                    self.runtime.poll_with(Some(Duration::ZERO));
 
-                let timeout = self.runtime.current_timeout();
-                let timeout = match timeout {
-                    Some(timeout) => timeout.as_millis() as u32,
-                    None => INFINITE,
-                };
-                let handle = self.runtime.as_raw_fd() as HANDLE;
-                let res = unsafe {
-                    MsgWaitForMultipleObjectsEx(
-                        1,
-                        &handle,
-                        timeout,
-                        QS_ALLINPUT,
-                        MWMO_ALERTABLE | MWMO_INPUTAVAILABLE,
-                    )
-                };
-                if res == WAIT_FAILED {
-                    panic!("{:?}", std::io::Error::last_os_error());
-                }
+                    self.runtime.run();
+                    if let Some(result) = result.take() {
+                        break result;
+                    }
 
-                let mut msg = MaybeUninit::uninit();
-                let res = unsafe { PeekMessageW(msg.as_mut_ptr(), 0, 0, 0, PM_REMOVE) };
-                if res != 0 {
-                    let msg = unsafe { msg.assume_init() };
-                    unsafe {
-                        TranslateMessage(&msg);
-                        DispatchMessageW(&msg);
+                    let timeout = self.runtime.current_timeout();
+                    let timeout = match timeout {
+                        Some(timeout) => timeout.as_millis() as u32,
+                        None => INFINITE,
+                    };
+                    let handle = self.runtime.as_raw_fd() as HANDLE;
+                    let res = unsafe {
+                        MsgWaitForMultipleObjectsEx(
+                            1,
+                            &handle,
+                            timeout,
+                            QS_ALLINPUT,
+                            MWMO_ALERTABLE | MWMO_INPUTAVAILABLE,
+                        )
+                    };
+                    if res == WAIT_FAILED {
+                        panic!("{:?}", std::io::Error::last_os_error());
+                    }
+
+                    let mut msg = MaybeUninit::uninit();
+                    let res = unsafe { PeekMessageW(msg.as_mut_ptr(), 0, 0, 0, PM_REMOVE) };
+                    if res != 0 {
+                        let msg = unsafe { msg.assume_init() };
+                        unsafe {
+                            TranslateMessage(&msg);
+                            DispatchMessageW(&msg);
+                        }
                     }
                 }
-            }
+            })
         }
     }
 
@@ -228,32 +230,33 @@ fn glib_context() {
         }
 
         pub fn block_on<F: Future>(&self, future: F) -> F::Output {
-            let _guard = self.runtime.enter();
-            let mut result = None;
-            unsafe {
-                self.runtime
-                    .spawn_unchecked(async { result = Some(future.await) })
-            }
-            .detach();
-            loop {
-                self.runtime.poll_with(Some(Duration::ZERO));
-
-                self.runtime.run();
-                if let Some(result) = result.take() {
-                    break result;
+            self.runtime.enter(|| {
+                let mut result = None;
+                unsafe {
+                    self.runtime
+                        .spawn_unchecked(async { result = Some(future.await) })
                 }
+                .detach();
+                loop {
+                    self.runtime.poll_with(Some(Duration::ZERO));
 
-                let timeout = self.runtime.current_timeout();
-                let source_id = timeout.map(|timeout| timeout_add_local_once(timeout, || {}));
+                    self.runtime.run();
+                    if let Some(result) = result.take() {
+                        break result;
+                    }
 
-                self.ctx.iteration(true);
+                    let timeout = self.runtime.current_timeout();
+                    let source_id = timeout.map(|timeout| timeout_add_local_once(timeout, || {}));
 
-                if let Some(source_id) = source_id {
-                    if self.ctx.find_source_by_id(&source_id).is_some() {
-                        source_id.remove();
+                    self.ctx.iteration(true);
+
+                    if let Some(source_id) = source_id {
+                        if self.ctx.find_source_by_id(&source_id).is_some() {
+                            source_id.remove();
+                        }
                     }
                 }
-            }
+            })
         }
     }
 

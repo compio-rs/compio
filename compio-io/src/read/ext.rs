@@ -1,7 +1,7 @@
 #[cfg(feature = "allocator_api")]
 use std::alloc::Allocator;
 
-use compio_buf::{vec_alloc, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut};
+use compio_buf::{t_alloc, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut};
 
 use crate::{util::Take, AsyncRead, AsyncReadAt, IoResult};
 
@@ -183,8 +183,8 @@ pub trait AsyncReadExt: AsyncRead {
     /// Read all bytes until underlying reader reaches `EOF`.
     async fn read_to_end<#[cfg(feature = "allocator_api")] A: Allocator + 'static>(
         &mut self,
-        mut buf: vec_alloc!(u8, A),
-    ) -> BufResult<usize, vec_alloc!(u8, A)> {
+        mut buf: t_alloc!(Vec, u8, A),
+    ) -> BufResult<usize, t_alloc!(Vec, u8, A)> {
         loop_read_to_end!(buf, total: usize, loop self.read(buf.slice(total..)))
     }
 
@@ -268,9 +268,9 @@ pub trait AsyncReadAtExt: AsyncReadAt {
     /// [`read_at()`]: AsyncReadAt::read_at
     async fn read_to_end_at<#[cfg(feature = "allocator_api")] A: Allocator + 'static>(
         &self,
-        mut buffer: vec_alloc!(u8, A),
+        mut buffer: t_alloc!(Vec, u8, A),
         pos: u64,
-    ) -> BufResult<usize, vec_alloc!(u8, A)> {
+    ) -> BufResult<usize, t_alloc!(Vec, u8, A)> {
         loop_read_to_end!(buffer, total: u64, loop self.read_at(buffer.slice(total as usize..), pos + total))
     }
 

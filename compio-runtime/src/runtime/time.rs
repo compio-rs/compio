@@ -138,13 +138,13 @@ impl Future for TimerFuture {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Runtime::current().inner().poll_timer(cx, self.key)
+        Runtime::with_current(|r| r.poll_timer(cx, self.key))
     }
 }
 
 impl Drop for TimerFuture {
     fn drop(&mut self) {
-        Runtime::current().inner().cancel_timer(self.key);
+        Runtime::with_current(|r| r.cancel_timer(self.key));
     }
 }
 

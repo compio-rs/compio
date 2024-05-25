@@ -56,11 +56,10 @@ impl Dispatcher {
                             .build()
                             .expect("cannot create compio runtime")
                             .block_on(async move {
-                                let rt = Runtime::current();
                                 while let Ok(f) = receiver.recv_async().await {
                                     let fut = (f)();
                                     if builder.concurrent {
-                                        rt.spawn(fut).detach()
+                                        compio_runtime::spawn(fut).detach()
                                     } else {
                                         fut.await
                                     }

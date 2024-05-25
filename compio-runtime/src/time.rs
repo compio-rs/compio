@@ -33,7 +33,7 @@ use crate::Runtime;
 /// # })
 /// ```
 pub async fn sleep(duration: Duration) {
-    Runtime::current().inner().create_timer(duration).await
+    Runtime::with_current(|r| r.create_timer(duration)).await
 }
 
 /// Waits until `deadline` is reached.

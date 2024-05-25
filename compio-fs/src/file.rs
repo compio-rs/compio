@@ -7,7 +7,7 @@ use compio_driver::{
     ToSharedFd,
 };
 use compio_io::{AsyncReadAt, AsyncWriteAt};
-use compio_runtime::{Attacher, Runtime};
+use compio_runtime::Attacher;
 #[cfg(unix)]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
@@ -71,7 +71,7 @@ impl File {
                 .await;
             if let Some(fd) = fd {
                 let op = CloseFile::new(fd.into());
-                Runtime::current().submit(op).await.0?;
+                compio_runtime::submit(op).await.0?;
             }
             Ok(())
         }
@@ -90,7 +90,7 @@ impl File {
     #[cfg(unix)]
     pub async fn metadata(&self) -> io::Result<Metadata> {
         let op = FileStat::new(self.to_shared_fd());
-        let BufResult(res, op) = Runtime::current().submit(op).await;
+        let BufResult(res, op) = compio_runtime::submit(op).await;
         res.map(|_| Metadata::from_stat(op.into_inner()))
     }
 
@@ -121,7 +121,7 @@ impl File {
 
     async fn sync_impl(&self, datasync: bool) -> io::Result<()> {
         let op = Sync::new(self.to_shared_fd(), datasync);
-        Runtime::current().submit(op).await.0?;
+        compio_runtime::submit(op).await.0?;
         Ok(())
     }
 
@@ -153,11 +153,7 @@ impl AsyncReadAt for File {
     async fn read_at<T: IoBufMut>(&self, buffer: T, pos: u64) -> BufResult<usize, T> {
         let fd = self.inner.to_shared_fd();
         let op = ReadAt::new(fd, pos, buffer);
-        Runtime::current()
-            .submit(op)
-            .await
-            .into_inner()
-            .map_advanced()
+        compio_runtime::submit(op).await.into_inner().map_advanced()
     }
 
     #[cfg(unix)]
@@ -168,11 +164,7 @@ impl AsyncReadAt for File {
     ) -> BufResult<usize, T> {
         let fd = self.inner.to_shared_fd();
         let op = ReadVectoredAt::new(fd, pos, buffer);
-        Runtime::current()
-            .submit(op)
-            .await
-            .into_inner()
-            .map_advanced()
+        compio_runtime::submit(op).await.into_inner().map_advanced()
     }
 }
 
@@ -197,7 +189,7 @@ impl AsyncWriteAt for &File {
     async fn write_at<T: IoBuf>(&mut self, buffer: T, pos: u64) -> BufResult<usize, T> {
         let fd = self.inner.to_shared_fd();
         let op = WriteAt::new(fd, pos, buffer);
-        Runtime::current().submit(op).await.into_inner()
+        compio_runtime::submit(op).await.into_inner()
     }
 
     #[cfg(unix)]
@@ -208,7 +200,7 @@ impl AsyncWriteAt for &File {
     ) -> BufResult<usize, T> {
         let fd = self.inner.to_shared_fd();
         let op = WriteVectoredAt::new(fd, pos, buffer);
-        Runtime::current().submit(op).await.into_inner()
+        compio_runtime::submit(op).await.into_inner()
     }
 }
 

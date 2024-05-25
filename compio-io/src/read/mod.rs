@@ -2,9 +2,7 @@
 use std::alloc::Allocator;
 use std::{io::Cursor, rc::Rc, sync::Arc};
 
-use compio_buf::{
-    box_alloc, buf_try, vec_alloc, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut,
-};
+use compio_buf::{buf_try, t_alloc, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut};
 
 mod buf;
 #[macro_use]
@@ -74,7 +72,7 @@ impl<A: AsyncRead + ?Sized> AsyncRead for &mut A {
 }
 
 impl<R: AsyncRead + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator> AsyncRead
-    for box_alloc!(R, A)
+    for t_alloc!(Box, R, A)
 {
     #[inline(always)]
     async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
@@ -181,7 +179,7 @@ impl_read_at!(@ptr &A, &mut A);
 impl_read_at!(@ptra Box, Rc, Arc);
 impl_read_at!(@slice [u8], const LEN => [u8; LEN]);
 
-impl<#[cfg(feature = "allocator_api")] A: Allocator> AsyncReadAt for vec_alloc!(u8, A) {
+impl<#[cfg(feature = "allocator_api")] A: Allocator> AsyncReadAt for t_alloc!(Vec, u8, A) {
     async fn read_at<T: IoBufMut>(&self, buf: T, pos: u64) -> BufResult<usize, T> {
         self.as_slice().read_at(buf, pos).await
     }

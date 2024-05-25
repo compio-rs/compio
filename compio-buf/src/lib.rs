@@ -44,35 +44,17 @@ pub trait IntoInner {
 #[cfg(not(feature = "allocator_api"))]
 #[macro_export]
 #[doc(hidden)]
-macro_rules! vec_alloc {
-    ($t:ty, $a:ident) => {
-        Vec<$t>
+macro_rules! t_alloc {
+    ($b:tt, $t:ty, $a:ident) => {
+        $b<$t>
     };
 }
 
 #[cfg(feature = "allocator_api")]
 #[macro_export]
 #[doc(hidden)]
-macro_rules! vec_alloc {
-    ($t:ty, $a:ident) => {
-        Vec<$t, $a>
-    };
-}
-
-#[cfg(feature = "allocator_api")]
-#[macro_export]
-#[doc(hidden)]
-macro_rules! box_alloc {
-    ($t:ty, $a:ident) => {
-        Box<$t, $a>
-    };
-}
-
-#[cfg(not(feature = "allocator_api"))]
-#[macro_export]
-#[doc(hidden)]
-macro_rules! box_alloc {
-    ($t:ty, $a:ident) => {
-        Box<$t>
+macro_rules! t_alloc {
+    ($b:tt, $t:ty, $a:ident) => {
+        $b<$t, $a>
     };
 }

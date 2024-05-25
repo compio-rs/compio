@@ -9,7 +9,6 @@ use std::{ffi::OsStr, io, os::windows::io::FromRawHandle, ptr::null};
 use compio_buf::{BufResult, IoBuf, IoBufMut};
 use compio_driver::{impl_raw_fd, op::ConnectNamedPipe, syscall, AsRawFd, RawFd, ToSharedFd};
 use compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt};
-use compio_runtime::Runtime;
 use widestring::U16CString;
 use windows_sys::Win32::{
     Storage::FileSystem::{
@@ -142,7 +141,7 @@ impl NamedPipeServer {
     /// ```
     pub async fn connect(&self) -> io::Result<()> {
         let op = ConnectNamedPipe::new(self.handle.to_shared_fd());
-        Runtime::current().submit(op).await.0?;
+        compio_runtime::submit(op).await.0?;
         Ok(())
     }
 

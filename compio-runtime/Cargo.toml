@@ -39,6 +39,7 @@ criterion = { workspace = true, optional = true }
 crossbeam-queue = { workspace = true }
 futures-util = { workspace = true }
 once_cell = { workspace = true }
+scoped-tls = "1.0.1"
 send_wrapper = "0.6.0"
 slab = { workspace = true, optional = true }
 smallvec = "1.11.1"

@@ -22,4 +22,4 @@ pub mod time;
 pub use async_task::Task;
 pub use attacher::*;
 use compio_buf::BufResult;
-pub use runtime::{spawn, spawn_blocking, EnterGuard, Runtime, RuntimeBuilder};
+pub use runtime::{spawn, spawn_blocking, submit, Runtime, RuntimeBuilder};
