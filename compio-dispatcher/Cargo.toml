@@ -23,3 +23,5 @@ compio-buf = { workspace = true }
 compio-io = { workspace = true }
 compio-net = { workspace = true }
 compio-macros = { workspace = true }
+
+futures-util = { workspace = true }

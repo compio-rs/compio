@@ -29,12 +29,12 @@ async fn listener_dispatch() {
     for _i in 0..CLIENT_NUM {
         let (mut srv, _) = listener.accept().await.unwrap();
         let handle = dispatcher
-            .execute(move || async move {
+            .dispatch(move || async move {
                 let (_, buf) = srv.read_exact(ArrayVec::<u8, 12>::new()).await.unwrap();
                 assert_eq!(buf.as_slice(), b"Hello world!");
             })
             .unwrap();
-        handles.push(handle.join());
+        handles.push(handle);
     }
     while handles.next().await.is_some() {}
     let (_, results) = futures_util::join!(task, dispatcher.join());
