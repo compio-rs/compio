@@ -43,6 +43,7 @@ where
     }
 }
 
+#[derive(Debug)]
 /// The dispatcher. It manages the threads and dispatches the tasks.
 pub struct Dispatcher {
     sender: Sender<Dispatching>,
