@@ -16,7 +16,7 @@ compio-driver = { workspace = true }
 compio-runtime = { workspace = true, features = ["event", "time"] }
 
 flume = { workspace = true }
-futures-util = { workspace = true }
+futures-channel = { workspace = true }
 
 [dev-dependencies]
 compio-buf = { workspace = true }
