@@ -35,13 +35,13 @@ async fn main() {
     for _i in 0..CLIENT_NUM {
         let (mut srv, _) = listener.accept().await.unwrap();
         let handle = dispatcher
-            .execute(move || async move {
+            .dispatch(move || async move {
                 let BufResult(res, buf) = srv.read(Vec::with_capacity(20)).await;
                 res.unwrap();
                 println!("{}", std::str::from_utf8(&buf).unwrap());
             })
             .unwrap();
-        handles.push(handle.join());
+        handles.push(handle);
     }
     while handles.next().await.is_some() {}
     dispatcher.join().await.unwrap();

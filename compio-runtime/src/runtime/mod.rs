@@ -33,6 +33,8 @@ use crate::{runtime::op::OpFuture, BufResult};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 
+/// Type alias for `Task<Result<T, Box<dyn Any + Send>>>`, which resolves to an
+/// `Err` when the spawned future panicked.
 pub type JoinHandle<T> = Task<Result<T, Box<dyn Any + Send>>>;
 
 /// The async runtime of compio. It is a thread local runtime, and cannot be
