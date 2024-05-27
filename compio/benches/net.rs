@@ -14,11 +14,87 @@ criterion_main!(net);
 const BUFFER_SIZE: usize = 4096;
 const BUFFER_COUNT: usize = 1024;
 
-fn echo_tokio_tcp(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
-    use tokio::{
-        io::{AsyncReadExt, AsyncWriteExt},
-        net::{TcpListener, TcpStream},
+async fn echo_tokio_impl<T, R>(mut tx: T, mut rx: R, content: &[u8; BUFFER_SIZE])
+where
+    T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    R: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let client = async move {
+        let mut buffer = [0u8; BUFFER_SIZE];
+        for _i in 0..BUFFER_COUNT {
+            tx.write_all(content).await.unwrap();
+            tx.read_exact(&mut buffer).await.unwrap();
+        }
     };
+    let server = async move {
+        let mut buffer = [0u8; BUFFER_SIZE];
+        for _i in 0..BUFFER_COUNT {
+            rx.read_exact(&mut buffer).await.unwrap();
+            rx.write_all(&buffer).await.unwrap();
+        }
+    };
+    tokio::join!(client, server);
+}
+
+async fn echo_compio_impl<T, R>(mut tx: T, mut rx: R, mut content: Rc<[u8; BUFFER_SIZE]>)
+where
+    T: compio::io::AsyncRead + compio::io::AsyncWrite,
+    R: compio::io::AsyncRead + compio::io::AsyncWrite,
+{
+    use compio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let client = async move {
+        let mut buffer = Box::new([0u8; BUFFER_SIZE]);
+        for _i in 0..BUFFER_COUNT {
+            (_, content) = tx.write_all(content).await.unwrap();
+            (_, buffer) = tx.read_exact(buffer).await.unwrap();
+        }
+    };
+    let server = async move {
+        let mut buffer = Box::new([0u8; BUFFER_SIZE]);
+        for _i in 0..BUFFER_COUNT {
+            (_, buffer) = rx.read_exact(buffer).await.unwrap();
+            (_, buffer) = rx.write_all(buffer).await.unwrap();
+        }
+    };
+    futures_util::join!(client, server);
+}
+
+#[cfg(target_os = "linux")]
+async fn echo_monoio_impl<T, R>(mut tx: T, mut rx: R, mut content: Box<[u8; BUFFER_SIZE]>)
+where
+    T: monoio::io::AsyncReadRent + monoio::io::AsyncWriteRent,
+    R: monoio::io::AsyncReadRent + monoio::io::AsyncWriteRent,
+{
+    use monoio::io::{AsyncReadRentExt, AsyncWriteRentExt};
+
+    let client = async {
+        let mut buffer = Box::new([0u8; BUFFER_SIZE]);
+        let mut res;
+        for _i in 0..BUFFER_COUNT {
+            (res, content) = tx.write_all(content).await;
+            res.unwrap();
+            (res, buffer) = tx.read_exact(buffer).await;
+            res.unwrap();
+        }
+    };
+    let server = async move {
+        let mut buffer = Box::new([0u8; BUFFER_SIZE]);
+        let mut res;
+        for _i in 0..BUFFER_COUNT {
+            (res, buffer) = rx.read_exact(buffer).await;
+            res.unwrap();
+            (res, buffer) = rx.write_all(buffer).await;
+            res.unwrap();
+        }
+    };
+    futures_util::join!(client, server);
+}
+
+fn echo_tokio_tcp(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
+    use tokio::net::{TcpListener, TcpStream};
 
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -30,34 +106,16 @@ fn echo_tokio_tcp(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
 
         let start = Instant::now();
         for _i in 0..iter {
-            let (mut tx, (mut rx, _)) =
+            let (tx, (rx, _)) =
                 tokio::try_join!(TcpStream::connect(addr), listener.accept()).unwrap();
-
-            let client = async move {
-                let mut buffer = [0u8; BUFFER_SIZE];
-                for _i in 0..BUFFER_COUNT {
-                    tx.write_all(content).await.unwrap();
-                    tx.read_exact(&mut buffer).await.unwrap();
-                }
-            };
-            let server = async move {
-                let mut buffer = [0u8; BUFFER_SIZE];
-                for _i in 0..BUFFER_COUNT {
-                    rx.read_exact(&mut buffer).await.unwrap();
-                    rx.write_all(&buffer).await.unwrap();
-                }
-            };
-            tokio::join!(client, server);
+            echo_tokio_impl(tx, rx, content).await;
         }
         start.elapsed()
     })
 }
 
 fn echo_compio_tcp(b: &mut Bencher, content: Rc<[u8; BUFFER_SIZE]>) {
-    use compio::{
-        io::{AsyncReadExt, AsyncWriteExt},
-        net::{TcpListener, TcpStream},
-    };
+    use compio::net::{TcpListener, TcpStream};
 
     let runtime = compio::runtime::Runtime::new().unwrap();
     b.to_async(&runtime).iter_custom(|iter| {
@@ -68,25 +126,9 @@ fn echo_compio_tcp(b: &mut Bencher, content: Rc<[u8; BUFFER_SIZE]>) {
 
             let start = Instant::now();
             for _i in 0..iter {
-                let (mut tx, (mut rx, _)) =
+                let (tx, (rx, _)) =
                     futures_util::try_join!(TcpStream::connect(addr), listener.accept()).unwrap();
-
-                let client = async {
-                    let mut content = content.clone();
-                    let mut buffer = Box::new([0u8; BUFFER_SIZE]);
-                    for _i in 0..BUFFER_COUNT {
-                        (_, content) = tx.write_all(content).await.unwrap();
-                        (_, buffer) = tx.read_exact(buffer).await.unwrap();
-                    }
-                };
-                let server = async move {
-                    let mut buffer = Box::new([0u8; BUFFER_SIZE]);
-                    for _i in 0..BUFFER_COUNT {
-                        (_, buffer) = rx.read_exact(buffer).await.unwrap();
-                        (_, buffer) = rx.write_all(buffer).await.unwrap();
-                    }
-                };
-                futures_util::join!(client, server);
+                echo_compio_impl(tx, rx, content.clone()).await;
             }
             start.elapsed()
         }
@@ -95,10 +137,7 @@ fn echo_compio_tcp(b: &mut Bencher, content: Rc<[u8; BUFFER_SIZE]>) {
 
 #[cfg(target_os = "linux")]
 fn echo_monoio_tcp(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
-    use monoio::{
-        io::{AsyncReadRentExt, AsyncWriteRentExt},
-        net::{TcpListener, TcpStream},
-    };
+    use monoio::net::{TcpListener, TcpStream};
 
     let runtime = MonoioRuntime::new();
     b.to_async(&runtime).iter_custom(|iter| {
@@ -109,31 +148,9 @@ fn echo_monoio_tcp(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
 
             let start = Instant::now();
             for _i in 0..iter {
-                let (mut tx, (mut rx, _)) =
+                let (tx, (rx, _)) =
                     futures_util::try_join!(TcpStream::connect(addr), listener.accept()).unwrap();
-
-                let client = async {
-                    let mut content = content.clone();
-                    let mut buffer = Box::new([0u8; BUFFER_SIZE]);
-                    let mut res;
-                    for _i in 0..BUFFER_COUNT {
-                        (res, content) = tx.write_all(content).await;
-                        res.unwrap();
-                        (res, buffer) = tx.read_exact(buffer).await;
-                        res.unwrap();
-                    }
-                };
-                let server = async move {
-                    let mut buffer = Box::new([0u8; BUFFER_SIZE]);
-                    let mut res;
-                    for _i in 0..BUFFER_COUNT {
-                        (res, buffer) = rx.read_exact(buffer).await;
-                        res.unwrap();
-                        (res, buffer) = rx.write_all(buffer).await;
-                        res.unwrap();
-                    }
-                };
-                futures_util::join!(client, server);
+                echo_monoio_impl(tx, rx, content.clone()).await;
             }
             start.elapsed()
         }
@@ -142,10 +159,7 @@ fn echo_monoio_tcp(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
 
 #[cfg(windows)]
 fn echo_tokio_win_named_pipe(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
-    use tokio::{
-        io::{AsyncReadExt, AsyncWriteExt},
-        net::windows::named_pipe::{ClientOptions, ServerOptions},
-    };
+    use tokio::net::windows::named_pipe::{ClientOptions, ServerOptions};
 
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -156,26 +170,12 @@ fn echo_tokio_win_named_pipe(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
 
         let start = Instant::now();
         for _i in 0..iter {
-            let mut rx = ServerOptions::new().create(PIPE_NAME).unwrap();
-            let mut tx = ClientOptions::new().open(PIPE_NAME).unwrap();
+            let rx = ServerOptions::new().create(PIPE_NAME).unwrap();
+            let tx = ClientOptions::new().open(PIPE_NAME).unwrap();
 
             rx.connect().await.unwrap();
 
-            let client = async {
-                let mut buffer = [0u8; BUFFER_SIZE];
-                for _i in 0..BUFFER_COUNT {
-                    tx.write_all(content).await.unwrap();
-                    tx.read_exact(&mut buffer).await.unwrap();
-                }
-            };
-            let server = async {
-                let mut buffer = [0u8; BUFFER_SIZE];
-                for _i in 0..BUFFER_COUNT {
-                    rx.read_exact(&mut buffer).await.unwrap();
-                    rx.write_all(&buffer).await.unwrap();
-                }
-            };
-            tokio::join!(client, server);
+            echo_tokio_impl(tx, rx, content).await;
         }
         start.elapsed()
     })
@@ -183,10 +183,7 @@ fn echo_tokio_win_named_pipe(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
 
 #[cfg(windows)]
 fn echo_compio_win_named_pipe(b: &mut Bencher, content: Rc<[u8; BUFFER_SIZE]>) {
-    use compio::{
-        fs::named_pipe::{ClientOptions, ServerOptions},
-        io::{AsyncReadExt, AsyncWriteExt},
-    };
+    use compio::fs::named_pipe::{ClientOptions, ServerOptions};
 
     let runtime = compio::runtime::Runtime::new().unwrap();
     b.to_async(&runtime).iter_custom(|iter| {
@@ -197,26 +194,10 @@ fn echo_compio_win_named_pipe(b: &mut Bencher, content: Rc<[u8; BUFFER_SIZE]>) {
             let start = Instant::now();
             let options = ClientOptions::new();
             for _i in 0..iter {
-                let mut rx = ServerOptions::new().create(PIPE_NAME).unwrap();
-                let (mut tx, ()) =
+                let rx = ServerOptions::new().create(PIPE_NAME).unwrap();
+                let (tx, ()) =
                     futures_util::try_join!(options.open(PIPE_NAME), rx.connect()).unwrap();
-
-                let client = async {
-                    let mut content = content.clone();
-                    let mut buffer = Box::new([0u8; BUFFER_SIZE]);
-                    for _i in 0..BUFFER_COUNT {
-                        (_, content) = tx.write_all(content).await.unwrap();
-                        (_, buffer) = tx.read_exact(buffer).await.unwrap();
-                    }
-                };
-                let server = async {
-                    let mut buffer = Box::new([0u8; BUFFER_SIZE]);
-                    for _i in 0..BUFFER_COUNT {
-                        (_, buffer) = rx.read_exact(buffer).await.unwrap();
-                        (_, buffer) = rx.write_all(buffer).await.unwrap();
-                    }
-                };
-                tokio::join!(client, server);
+                echo_compio_impl(tx, rx, content.clone()).await;
             }
             start.elapsed()
         }
@@ -225,10 +206,7 @@ fn echo_compio_win_named_pipe(b: &mut Bencher, content: Rc<[u8; BUFFER_SIZE]>) {
 
 #[cfg(unix)]
 fn echo_tokio_unix(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
-    use tokio::{
-        io::{AsyncReadExt, AsyncWriteExt},
-        net::{UnixListener, UnixStream},
-    };
+    use tokio::net::{UnixListener, UnixStream};
 
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -244,34 +222,16 @@ fn echo_tokio_unix(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
 
         let start = Instant::now();
         for _i in 0..iter {
-            let (mut tx, (mut rx, _)) =
+            let (tx, (rx, _)) =
                 tokio::try_join!(UnixStream::connect(&sock_path), listener.accept()).unwrap();
-
-            let client = async move {
-                let mut buffer = [0u8; BUFFER_SIZE];
-                for _i in 0..BUFFER_COUNT {
-                    tx.write_all(content).await.unwrap();
-                    tx.read_exact(&mut buffer).await.unwrap();
-                }
-            };
-            let server = async move {
-                let mut buffer = [0u8; BUFFER_SIZE];
-                for _i in 0..BUFFER_COUNT {
-                    rx.read_exact(&mut buffer).await.unwrap();
-                    rx.write_all(&buffer).await.unwrap();
-                }
-            };
-            tokio::join!(client, server);
+            echo_tokio_impl(tx, rx, content).await;
         }
         start.elapsed()
     })
 }
 
 fn echo_compio_unix(b: &mut Bencher, content: Rc<[u8; BUFFER_SIZE]>) {
-    use compio::{
-        io::{AsyncReadExt, AsyncWriteExt},
-        net::{UnixListener, UnixStream},
-    };
+    use compio::net::{UnixListener, UnixStream};
 
     let runtime = compio::runtime::Runtime::new().unwrap();
     b.to_async(&runtime).iter_custom(|iter| {
@@ -286,26 +246,10 @@ fn echo_compio_unix(b: &mut Bencher, content: Rc<[u8; BUFFER_SIZE]>) {
 
             let start = Instant::now();
             for _i in 0..iter {
-                let (mut tx, (mut rx, _)) =
+                let (tx, (rx, _)) =
                     futures_util::try_join!(UnixStream::connect(&sock_path), listener.accept())
                         .unwrap();
-
-                let client = async {
-                    let mut content = content.clone();
-                    let mut buffer = Box::new([0u8; BUFFER_SIZE]);
-                    for _i in 0..BUFFER_COUNT {
-                        (_, content) = tx.write_all(content).await.unwrap();
-                        (_, buffer) = tx.read_exact(buffer).await.unwrap();
-                    }
-                };
-                let server = async move {
-                    let mut buffer = Box::new([0u8; BUFFER_SIZE]);
-                    for _i in 0..BUFFER_COUNT {
-                        (_, buffer) = rx.read_exact(buffer).await.unwrap();
-                        (_, buffer) = rx.write_all(buffer).await.unwrap();
-                    }
-                };
-                futures_util::join!(client, server);
+                echo_compio_impl(tx, rx, content.clone()).await;
             }
             start.elapsed()
         }
@@ -314,10 +258,7 @@ fn echo_compio_unix(b: &mut Bencher, content: Rc<[u8; BUFFER_SIZE]>) {
 
 #[cfg(target_os = "linux")]
 fn echo_monoio_unix(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
-    use monoio::{
-        io::{AsyncReadRentExt, AsyncWriteRentExt},
-        net::{UnixListener, UnixStream},
-    };
+    use monoio::net::{UnixListener, UnixStream};
 
     let runtime = MonoioRuntime::new();
     b.to_async(&runtime).iter_custom(|iter| {
@@ -332,32 +273,10 @@ fn echo_monoio_unix(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
 
             let start = Instant::now();
             for _i in 0..iter {
-                let (mut tx, (mut rx, _)) =
+                let (tx, (rx, _)) =
                     futures_util::try_join!(UnixStream::connect(&sock_path), listener.accept())
                         .unwrap();
-
-                let client = async {
-                    let mut content = content.clone();
-                    let mut buffer = Box::new([0u8; BUFFER_SIZE]);
-                    let mut res;
-                    for _i in 0..BUFFER_COUNT {
-                        (res, content) = tx.write_all(content).await;
-                        res.unwrap();
-                        (res, buffer) = tx.read_exact(buffer).await;
-                        res.unwrap();
-                    }
-                };
-                let server = async move {
-                    let mut buffer = Box::new([0u8; BUFFER_SIZE]);
-                    let mut res;
-                    for _i in 0..BUFFER_COUNT {
-                        (res, buffer) = rx.read_exact(buffer).await;
-                        res.unwrap();
-                        (res, buffer) = rx.write_all(buffer).await;
-                        res.unwrap();
-                    }
-                };
-                futures_util::join!(client, server);
+                echo_monoio_impl(tx, rx, content.clone()).await;
             }
             start.elapsed()
         }
