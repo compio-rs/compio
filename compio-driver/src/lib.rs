@@ -401,6 +401,7 @@ impl ThreadPoolBuilder {
 pub struct ProactorBuilder {
     capacity: u32,
     pool_builder: ThreadPoolBuilder,
+    sqpoll_idle: Option<Duration>,
 }
 
 impl Default for ProactorBuilder {
@@ -415,6 +416,7 @@ impl ProactorBuilder {
         Self {
             capacity: 1024,
             pool_builder: ThreadPoolBuilder::new(),
+            sqpoll_idle: None,
         }
     }
 
@@ -463,6 +465,19 @@ impl ProactorBuilder {
     /// Create or reuse the thread pool from the config.
     pub fn create_or_get_thread_pool(&self) -> AsyncifyPool {
         self.pool_builder.create_or_reuse()
+    }
+
+    /// Set `io-uring` sqpoll idle milliseconds, when `sqpoll_idle` is set,
+    /// io-uring sqpoll feature will be enabled
+    ///
+    /// # Notes
+    ///
+    /// - Only effective when the `io-uring` feature is enabled
+    /// - `idle` must >= 1ms, otherwise will set sqpoll idle 0ms
+    /// - `idle` will be rounded down
+    pub fn sqpoll_idle(&mut self, idle: Duration) -> &mut Self {
+        self.sqpoll_idle = Some(idle);
+        self
     }
 
     /// Build the [`Proactor`].

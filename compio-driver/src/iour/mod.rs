@@ -82,7 +82,11 @@ impl Driver {
         instrument!(compio_log::Level::TRACE, "new", ?builder);
         trace!("new iour driver");
         let notifier = Notifier::new()?;
-        let mut inner = IoUring::builder().build(builder.capacity)?;
+        let mut io_uring_builder = IoUring::builder();
+        if let Some(sqpoll_idle) = builder.sqpoll_idle {
+            io_uring_builder.setup_sqpoll(sqpoll_idle.as_millis() as _);
+        }
+        let mut inner = io_uring_builder.build(builder.capacity)?;
         #[allow(clippy::useless_conversion)]
         unsafe {
             inner
