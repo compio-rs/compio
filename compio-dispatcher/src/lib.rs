@@ -13,7 +13,7 @@ use std::{
 
 use compio_driver::{AsyncifyPool, DispatchError, Dispatchable, ProactorBuilder};
 use compio_runtime::{event::Event, JoinHandle as CompioJoinHandle, Runtime};
-use flume::{unbounded, SendError, Sender};
+use flume::{unbounded, Sender};
 use futures_channel::oneshot;
 
 type Spawning = Box<dyn Spawnable + Send>;
@@ -142,7 +142,7 @@ impl Dispatcher {
     ///
     /// If all threads have panicked, this method will return an error with the
     /// sent closure.
-    pub fn dispatch<Fn, Fut, R>(&self, f: Fn) -> Result<oneshot::Receiver<R>, SendError<Fn>>
+    pub fn dispatch<Fn, Fut, R>(&self, f: Fn) -> Result<oneshot::Receiver<R>, DispatchError<Fn>>
     where
         Fn: (FnOnce() -> Fut) + Send + 'static,
         Fut: Future<Output = R> + 'static,
@@ -156,7 +156,7 @@ impl Dispatcher {
                 // SAFETY: We know the dispatchable we sent has type `Concrete<Fn, R>`
                 let recovered =
                     unsafe { Box::from_raw(Box::into_raw(err.0) as *mut Concrete<Fn, R>) };
-                Err(SendError(recovered.func))
+                Err(DispatchError(recovered.func))
             }
         }
     }
