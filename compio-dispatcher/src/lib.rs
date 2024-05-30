@@ -11,14 +11,14 @@ use std::{
     thread::{available_parallelism, JoinHandle},
 };
 
-use compio_driver::{AsyncifyPool, ProactorBuilder};
+use compio_driver::{AsyncifyPool, DispatchError, Dispatchable, ProactorBuilder};
 use compio_runtime::{event::Event, JoinHandle as CompioJoinHandle, Runtime};
 use flume::{unbounded, SendError, Sender};
 use futures_channel::oneshot;
 
-type Dispatching = Box<dyn Dispatchable + Send>;
+type Spawning = Box<dyn Spawnable + Send>;
 
-trait Dispatchable {
+trait Spawnable {
     fn spawn(self: Box<Self>, handle: &Runtime) -> CompioJoinHandle<()>;
 }
 
@@ -28,7 +28,14 @@ struct Concrete<F, R> {
     func: F,
 }
 
-impl<F, Fut, R> Dispatchable for Concrete<F, R>
+impl<F, R> Concrete<F, R> {
+    pub fn new(func: F) -> (Self, oneshot::Receiver<R>) {
+        let (tx, rx) = oneshot::channel();
+        (Self { callback: tx, func }, rx)
+    }
+}
+
+impl<F, Fut, R> Spawnable for Concrete<F, R>
 where
     F: FnOnce() -> Fut + Send + 'static,
     Fut: Future<Output = R>,
@@ -43,10 +50,22 @@ where
     }
 }
 
-#[derive(Debug)]
+impl<F, R> Dispatchable for Concrete<F, R>
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    fn run(self: Box<Self>) {
+        let Concrete { callback, func } = *self;
+        let res = func();
+        callback.send(res).ok();
+    }
+}
+
 /// The dispatcher. It manages the threads and dispatches the tasks.
+#[derive(Debug)]
 pub struct Dispatcher {
-    sender: Sender<Dispatching>,
+    sender: Sender<Spawning>,
     threads: Vec<JoinHandle<()>>,
     pool: AsyncifyPool,
 }
@@ -57,7 +76,7 @@ impl Dispatcher {
         let mut proactor_builder = builder.proactor_builder;
         proactor_builder.force_reuse_thread_pool();
         let pool = proactor_builder.create_or_get_thread_pool();
-        let (sender, receiver) = unbounded::<Dispatching>();
+        let (sender, receiver) = unbounded::<Spawning>();
 
         let threads = (0..builder.nthreads)
             .map({
@@ -129,11 +148,8 @@ impl Dispatcher {
         Fut: Future<Output = R> + 'static,
         R: Send + 'static,
     {
-        let (tx, rx) = oneshot::channel();
-        let concrete: Concrete<Fn, R> = Concrete {
-            callback: tx,
-            func: f,
-        };
+        let (concrete, rx) = Concrete::new(f);
+
         match self.sender.send(Box::new(concrete)) {
             Ok(_) => Ok(rx),
             Err(err) => {
@@ -157,11 +173,18 @@ impl Dispatcher {
     /// return an error with the original closure. The limit can be configured
     /// with [`DispatcherBuilder::proactor_builder`] and
     /// [`ProactorBuilder::thread_pool_limit`].
-    pub fn dispatch_blocking<Fn>(&self, f: Fn) -> Result<(), SendError<Fn>>
+    pub fn dispatch_blocking<Fn, R>(&self, f: Fn) -> Result<oneshot::Receiver<R>, DispatchError<Fn>>
     where
-        Fn: FnOnce() + Send + 'static,
+        Fn: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
     {
-        self.pool.dispatch(f).map_err(|f| SendError(f))
+        let (concrete, rx) = Concrete::new(f);
+
+        self.pool
+            .dispatch(concrete)
+            .map_err(|e| DispatchError(e.0.func))?;
+
+        Ok(rx)
     }
 
     /// Stop the dispatcher and wait for the threads to complete. If there is a
@@ -182,7 +205,7 @@ impl Dispatcher {
                 handle.notify();
             }
         }) {
-            std::thread::spawn(f);
+            std::thread::spawn(f.0);
         }
         event.wait().await;
         let mut guard = results.lock().unwrap();
