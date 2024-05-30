@@ -123,7 +123,7 @@ impl Dispatcher {
     ///
     /// If all threads have panicked, this method will return an error with the
     /// sent closure.
-    pub fn dispatch<Fut, Fn, R>(&self, f: Fn) -> Result<oneshot::Receiver<R>, SendError<Fn>>
+    pub fn dispatch<Fn, Fut, R>(&self, f: Fn) -> Result<oneshot::Receiver<R>, SendError<Fn>>
     where
         Fn: (FnOnce() -> Fut) + Send + 'static,
         Fut: Future<Output = R> + 'static,
@@ -143,6 +143,25 @@ impl Dispatcher {
                 Err(SendError(recovered.func))
             }
         }
+    }
+
+    /// Dispatch a blocking task to the threads.
+    ///
+    /// Blocking pool of the dispatcher will be obtained from the proactor
+    /// builder. So any configuration of the proactor's blocking pool will be
+    /// applied to the dispatcher.
+    ///
+    /// # Error
+    ///
+    /// If all threads are busy and the thread pool is full, this method will
+    /// return an error with the original closure. The limit can be configured
+    /// with [`DispatcherBuilder::proactor_builder`] and
+    /// [`ProactorBuilder::thread_pool_limit`].
+    pub fn dispatch_blocking<Fn>(&self, f: Fn) -> Result<(), SendError<Fn>>
+    where
+        Fn: FnOnce() + Send + 'static,
+    {
+        self.pool.dispatch(f).map_err(|f| SendError(f))
     }
 
     /// Stop the dispatcher and wait for the threads to complete. If there is a
