@@ -1,3 +1,12 @@
+// Copyright 2017 Thomas Keh.
+// Copyright 2024 compio-rs
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use std::{
     cell::Cell,
     mem::{self, ManuallyDrop},
@@ -17,6 +26,7 @@ pub struct SendWrapper<T> {
 impl<T> SendWrapper<T> {
     /// Create a `SendWrapper<T>` wrapper around a value of type `T`.
     /// The wrapper takes ownership of the value.
+    #[inline]
     pub fn new(data: T) -> SendWrapper<T> {
         SendWrapper {
             data: ManuallyDrop::new(data),
@@ -26,6 +36,7 @@ impl<T> SendWrapper<T> {
 
     /// Returns `true` if the value can be safely accessed from within the
     /// current thread.
+    #[inline]
     pub fn valid(&self) -> bool {
         self.thread_id == THREAD_ID.get()
     }
@@ -35,11 +46,13 @@ impl<T> SendWrapper<T> {
     /// # Safety
     ///
     /// The caller should be in the same thread as the creator.
+    #[inline]
     pub unsafe fn get_unchecked(&self) -> &T {
         &self.data
     }
 
     /// Returns a reference to the contained value, if valid.
+    #[inline]
     pub fn get(&self) -> Option<&T> {
         if self.valid() { Some(&self.data) } else { None }
     }
