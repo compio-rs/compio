@@ -16,8 +16,8 @@ pub use crate::sys::op::{
 };
 #[cfg(unix)]
 pub use crate::sys::op::{
-    CreateDir, CreateSocket, FileStat, HardLink, OpenFile, PathStat, ReadVectoredAt, Rename,
-    Symlink, Unlink, WriteVectoredAt,
+    CreateDir, CreateSocket, FileStat, HardLink, Interest, OpenFile, PathStat, PollOnce,
+    ReadVectoredAt, Rename, Symlink, Unlink, WriteVectoredAt,
 };
 use crate::{
     sys::{sockaddr_storage, socklen_t},

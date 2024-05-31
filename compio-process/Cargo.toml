@@ -1,0 +1,36 @@
+[package]
+name = "compio-process"
+version = "0.1.0"
+description = "Processes for compio"
+categories = ["asynchronous"]
+keywords = ["async", "process"]
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+compio-buf = { workspace = true }
+compio-driver = { workspace = true }
+compio-io = { workspace = true }
+compio-runtime = { workspace = true }
+
+cfg-if = { workspace = true }
+futures-util = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true }
+
+[dev-dependencies]
+compio-macros = { workspace = true }
+
+[features]
+default = []
+
+linux_pidfd = []
+nightly = ["linux_pidfd"]

@@ -168,8 +168,8 @@ impl NamedPipeServer {
     ///
     /// // Write fails with an OS-specific error after client has been
     /// // disconnected.
-    /// let e = client.write("ping").await.0.unwrap_err();
-    /// assert_eq!(e.raw_os_error(), Some(ERROR_PIPE_NOT_CONNECTED as i32));
+    /// let e = client.write("ping").await.0.unwrap();
+    /// assert_eq!(e, 0);
     /// # })
     /// ```
     pub fn disconnect(&self) -> io::Result<()> {

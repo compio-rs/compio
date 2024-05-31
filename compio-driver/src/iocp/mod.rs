@@ -97,6 +97,24 @@ impl AsRawFd for OwnedSocket {
     }
 }
 
+impl AsRawFd for std::process::ChildStdin {
+    fn as_raw_fd(&self) -> RawFd {
+        self.as_raw_handle() as _
+    }
+}
+
+impl AsRawFd for std::process::ChildStdout {
+    fn as_raw_fd(&self) -> RawFd {
+        self.as_raw_handle() as _
+    }
+}
+
+impl AsRawFd for std::process::ChildStderr {
+    fn as_raw_fd(&self) -> RawFd {
+        self.as_raw_handle() as _
+    }
+}
+
 impl From<OwnedHandle> for OwnedFd {
     fn from(value: OwnedHandle) -> Self {
         Self::File(value)
@@ -105,6 +123,24 @@ impl From<OwnedHandle> for OwnedFd {
 
 impl From<std::fs::File> for OwnedFd {
     fn from(value: std::fs::File) -> Self {
+        Self::File(OwnedHandle::from(value))
+    }
+}
+
+impl From<std::process::ChildStdin> for OwnedFd {
+    fn from(value: std::process::ChildStdin) -> Self {
+        Self::File(OwnedHandle::from(value))
+    }
+}
+
+impl From<std::process::ChildStdout> for OwnedFd {
+    fn from(value: std::process::ChildStdout) -> Self {
+        Self::File(OwnedHandle::from(value))
+    }
+}
+
+impl From<std::process::ChildStderr> for OwnedFd {
+    fn from(value: std::process::ChildStderr) -> Self {
         Self::File(OwnedHandle::from(value))
     }
 }
