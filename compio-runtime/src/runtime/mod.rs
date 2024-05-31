@@ -20,12 +20,14 @@ use compio_driver::{
 use compio_log::{debug, instrument};
 use crossbeam_queue::SegQueue;
 use futures_util::{future::Either, FutureExt};
-use send_wrapper::SendWrapper;
 use smallvec::SmallVec;
 
 pub(crate) mod op;
 #[cfg(feature = "time")]
 pub(crate) mod time;
+
+mod send_wrapper;
+use send_wrapper::SendWrapper;
 
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerRuntime};
@@ -120,8 +122,8 @@ impl Runtime {
             .handle()
             .expect("cannot create notify handle of the proactor");
         let schedule = move |runnable| {
-            if local_runnables.valid() {
-                local_runnables.borrow_mut().push_back(runnable);
+            if let Some(runnables) = local_runnables.get() {
+                runnables.borrow_mut().push_back(runnable);
             } else {
                 sync_runnables.push(runnable);
                 handle.notify().ok();
@@ -136,9 +138,8 @@ impl Runtime {
     ///
     /// Run the scheduled tasks.
     pub fn run(&self) {
-        use std::ops::Deref;
-
-        let local_runnables = self.local_runnables.deref().deref();
+        // SAFETY: self is !Send + !Sync.
+        let local_runnables = unsafe { self.local_runnables.get_unchecked() };
         loop {
             let next_task = local_runnables.borrow_mut().pop_front();
             let has_local_task = next_task.is_some();
