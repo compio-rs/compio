@@ -14,11 +14,11 @@
 
 use std::{
     io,
+    mem::MaybeUninit,
     os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle},
     time::Duration,
 };
 
-use compio_buf::arrayvec::ArrayVec;
 use compio_log::*;
 use windows_sys::Win32::{
     Foundation::{
@@ -55,6 +55,8 @@ struct CompletionPort {
 }
 
 impl CompletionPort {
+    pub const DEFAULT_CAPACITY: usize = 1024;
+
     pub fn new() -> io::Result<Self> {
         let port = syscall!(BOOL, CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 1))?;
         trace!("new iocp handle: {port}");
@@ -104,10 +106,8 @@ impl CompletionPort {
     pub fn poll_raw(
         &self,
         timeout: Option<Duration>,
-    ) -> io::Result<impl Iterator<Item = OVERLAPPED_ENTRY>> {
-        const DEFAULT_CAPACITY: usize = 1024;
-
-        let mut entries = ArrayVec::<OVERLAPPED_ENTRY, { DEFAULT_CAPACITY }>::new();
+        entries: &mut [MaybeUninit<OVERLAPPED_ENTRY>],
+    ) -> io::Result<usize> {
         let mut recv_count = 0;
         let timeout = match timeout {
             Some(timeout) => timeout.as_millis() as u32,
@@ -117,17 +117,16 @@ impl CompletionPort {
             BOOL,
             GetQueuedCompletionStatusEx(
                 self.port.as_raw_handle() as _,
-                entries.as_mut_ptr(),
-                DEFAULT_CAPACITY as _,
+                entries.as_mut_ptr().cast(),
+                entries.len() as _,
                 &mut recv_count,
                 timeout,
                 0
             )
         )?;
         trace!("recv_count: {recv_count}");
-        unsafe { entries.set_len(recv_count as _) };
 
-        Ok(entries.into_iter())
+        Ok(recv_count as _)
     }
 
     // If current_driver is specified, any entry that doesn't belong the driver will
@@ -137,7 +136,10 @@ impl CompletionPort {
         timeout: Option<Duration>,
         current_driver: Option<RawFd>,
     ) -> io::Result<impl Iterator<Item = Entry>> {
-        Ok(self.poll_raw(timeout)?.filter_map(move |entry| {
+        let mut entries = Vec::with_capacity(Self::DEFAULT_CAPACITY);
+        let len = self.poll_raw(timeout, entries.spare_capacity_mut())?;
+        unsafe { entries.set_len(len) };
+        Ok(entries.into_iter().filter_map(move |entry| {
             // Any thin pointer is OK because we don't use the type of opcode.
             let overlapped_ptr: *mut Overlapped = entry.lpOverlapped.cast();
             let overlapped = unsafe { &*overlapped_ptr };

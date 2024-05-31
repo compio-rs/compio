@@ -40,7 +40,6 @@ socket2 = { workspace = true }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
-compio-buf = { workspace = true, features = ["arrayvec"] }
 aligned-array = "1.0.1"
 once_cell = { workspace = true }
 windows-sys = { workspace = true, features = [
