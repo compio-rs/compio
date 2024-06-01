@@ -27,6 +27,10 @@ impl Port {
         PortHandle::new(self.port.clone())
     }
 
+    pub fn post_raw(&self, optr: *const Overlapped) -> io::Result<()> {
+        self.port.post_raw(optr)
+    }
+
     pub fn poll(&self, timeout: Option<Duration>) -> io::Result<impl Iterator<Item = Entry> + '_> {
         let current_id = self.as_raw_handle() as _;
         self.port.poll(timeout, Some(current_id))

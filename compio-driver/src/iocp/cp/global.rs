@@ -111,6 +111,10 @@ impl Port {
         PortHandle::new(self.global_port)
     }
 
+    pub fn post_raw(&self, optr: *const Overlapped) -> io::Result<()> {
+        self.port.post_raw(optr)
+    }
+
     pub fn poll(&self, timeout: Option<Duration>) -> io::Result<impl Iterator<Item = Entry> + '_> {
         self.port.poll(timeout, None)
     }

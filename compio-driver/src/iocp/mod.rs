@@ -1,15 +1,11 @@
 use std::{
     collections::HashMap,
     io,
-    os::{
-        raw::c_void,
-        windows::{
-            io::{OwnedHandle, OwnedSocket},
-            prelude::{AsRawHandle, AsRawSocket},
-        },
+    os::windows::{
+        io::{OwnedHandle, OwnedSocket},
+        prelude::{AsRawHandle, AsRawSocket},
     },
     pin::Pin,
-    ptr::null,
     sync::Arc,
     task::Poll,
     time::Duration,
@@ -17,15 +13,9 @@ use std::{
 
 use compio_log::{instrument, trace};
 use windows_sys::Win32::{
-    Foundation::{ERROR_BUSY, ERROR_TIMEOUT, WAIT_OBJECT_0, WAIT_TIMEOUT},
+    Foundation::{ERROR_BUSY, ERROR_CANCELLED},
     Networking::WinSock::{WSACleanup, WSAStartup, WSADATA},
-    System::{
-        Threading::{
-            CloseThreadpoolWait, CreateThreadpoolWait, SetThreadpoolWait,
-            WaitForThreadpoolWaitCallbacks, PTP_CALLBACK_INSTANCE, PTP_WAIT,
-        },
-        IO::OVERLAPPED,
-    },
+    System::IO::OVERLAPPED,
 };
 
 use crate::{syscall, AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder};
@@ -37,6 +27,9 @@ mod cp;
 pub(crate) use windows_sys::Win32::Networking::WinSock::{
     socklen_t, SOCKADDR_STORAGE as sockaddr_storage,
 };
+
+mod wait;
+use wait::WaitCompletionPacket;
 
 /// On windows, handle and socket are in the same size.
 /// Both of them could be attached to an IOCP.
@@ -205,7 +198,7 @@ pub trait OpCode {
 /// Low-level driver of IOCP.
 pub(crate) struct Driver {
     port: cp::Port,
-    waits: HashMap<usize, WinThreadpollWait>,
+    waits: HashMap<usize, WaitCompletionPacket>,
     pool: AsyncifyPool,
     notify_overlapped: Arc<Overlapped>,
 }
@@ -238,6 +231,13 @@ impl Driver {
         instrument!(compio_log::Level::TRACE, "cancel", ?op);
         trace!("cancel RawOp");
         let overlapped_ptr = op.as_mut_ptr();
+        if let Some(w) = self.waits.get_mut(&op.user_data()) {
+            if w.cancel().is_ok() {
+                // The pack has been cancelled successfully, which means no packet will be post
+                // to IOCP. Need not set the result because `create_entry` handles it.
+                self.port.post_raw(overlapped_ptr).ok();
+            }
+        }
         let op = op.as_op_pin();
         // It's OK to fail to cancel.
         trace!("call OpCode::cancel");
@@ -262,7 +262,7 @@ impl Driver {
             OpType::Event(e) => {
                 self.waits.insert(
                     user_data,
-                    WinThreadpollWait::new(self.port.handle(), e, op)?,
+                    WaitCompletionPacket::new(self.as_raw_fd(), e, op)?,
                 );
                 Poll::Pending
             }
@@ -284,13 +284,25 @@ impl Driver {
 
     fn create_entry(
         notify_user_data: usize,
-        waits: &mut HashMap<usize, WinThreadpollWait>,
+        waits: &mut HashMap<usize, WaitCompletionPacket>,
         entry: Entry,
     ) -> Option<Entry> {
         let user_data = entry.user_data();
         if user_data != notify_user_data {
-            waits.remove(&user_data);
-            Some(Entry::new(user_data, entry.into_result()))
+            if let Some(w) = waits.remove(&user_data) {
+                if w.is_cancelled() {
+                    Some(Entry::new(
+                        user_data,
+                        Err(io::Error::from_raw_os_error(ERROR_CANCELLED as _)),
+                    ))
+                } else {
+                    let mut op = unsafe { Key::<dyn OpCode>::new_unchecked(user_data) };
+                    let result = op.operate_blocking();
+                    Some(Entry::new(user_data, result))
+                }
+            } else {
+                Some(entry)
+            }
         } else {
             None
         }
@@ -349,70 +361,6 @@ impl NotifyHandle {
     pub fn notify(&self) -> io::Result<()> {
         self.port.post_raw(self.overlapped.as_ref())
     }
-}
-
-struct WinThreadpollWait {
-    wait: PTP_WAIT,
-    // For memory safety.
-    #[allow(dead_code)]
-    context: Box<WinThreadpollWaitContext>,
-}
-
-impl WinThreadpollWait {
-    pub fn new<T>(port: cp::PortHandle, event: RawFd, op: &mut Key<T>) -> io::Result<Self> {
-        let mut context = Box::new(WinThreadpollWaitContext {
-            port,
-            user_data: op.user_data(),
-        });
-        let wait = syscall!(
-            BOOL,
-            CreateThreadpoolWait(
-                Some(Self::wait_callback),
-                (&mut *context) as *mut WinThreadpollWaitContext as _,
-                null()
-            )
-        )?;
-        unsafe {
-            SetThreadpoolWait(wait, event as _, null());
-        }
-        Ok(Self { wait, context })
-    }
-
-    unsafe extern "system" fn wait_callback(
-        _instance: PTP_CALLBACK_INSTANCE,
-        context: *mut c_void,
-        _wait: PTP_WAIT,
-        result: u32,
-    ) {
-        let context = &*(context as *mut WinThreadpollWaitContext);
-        let res = match result {
-            WAIT_OBJECT_0 => Ok(0),
-            WAIT_TIMEOUT => Err(io::Error::from_raw_os_error(ERROR_TIMEOUT as _)),
-            _ => Err(io::Error::from_raw_os_error(result as _)),
-        };
-        let mut op = unsafe { Key::<dyn OpCode>::new_unchecked(context.user_data) };
-        let res = if res.is_err() {
-            res
-        } else {
-            op.operate_blocking()
-        };
-        context.port.post(res, op.as_mut_ptr()).ok();
-    }
-}
-
-impl Drop for WinThreadpollWait {
-    fn drop(&mut self) {
-        unsafe {
-            SetThreadpoolWait(self.wait, 0, null());
-            WaitForThreadpoolWaitCallbacks(self.wait, 1);
-            CloseThreadpoolWait(self.wait);
-        }
-    }
-}
-
-struct WinThreadpollWaitContext {
-    port: cp::PortHandle,
-    user_data: usize,
 }
 
 /// The overlapped struct we actually used for IOCP.
