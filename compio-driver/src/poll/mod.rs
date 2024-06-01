@@ -284,8 +284,13 @@ impl Driver {
                 }
             }
             let renew_event = queue.event(fd as _);
-            let fd = BorrowedFd::borrow_raw(fd);
-            self.poll.modify(fd, renew_event)?;
+            let borrowed_fd = BorrowedFd::borrow_raw(fd);
+            if !renew_event.readable && !renew_event.writable {
+                self.poll.delete(borrowed_fd)?;
+                self.registry.remove(&fd);
+            } else {
+                self.poll.modify(borrowed_fd, renew_event)?;
+            }
         }
         Ok(())
     }
