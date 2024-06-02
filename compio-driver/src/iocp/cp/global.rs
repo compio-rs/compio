@@ -55,8 +55,12 @@ fn iocp_start() -> io::Result<()> {
     let port = iocp_port()?;
     std::thread::spawn(move || {
         instrument!(compio_log::Level::TRACE, "iocp_start");
+        let mut entries = Vec::with_capacity(CompletionPort::DEFAULT_CAPACITY);
         loop {
-            for entry in port.port.poll_raw(None)? {
+            let len = port.port.poll_raw(None, entries.spare_capacity_mut())?;
+            unsafe { entries.set_len(len) };
+
+            for entry in entries.drain(..) {
                 // Any thin pointer is OK because we don't use the type of opcode.
                 let overlapped_ptr: *mut Overlapped = entry.lpOverlapped.cast();
                 let overlapped = unsafe { &*overlapped_ptr };

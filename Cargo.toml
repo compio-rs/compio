@@ -55,3 +55,8 @@ tempfile = "3.8.1"
 tokio = "1.33.0"
 widestring = "1.0.2"
 windows-sys = "0.52.0"
+
+[profile.bench]
+debug = true
+lto = true
+codegen-units = 1
