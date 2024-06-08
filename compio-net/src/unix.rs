@@ -3,9 +3,9 @@ use std::{future::Future, io, path::Path};
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use compio_io::{AsyncRead, AsyncWrite};
-use socket2::{SockAddr, Type};
+use socket2::{SockAddr, Socket as Socket2, Type};
 
-use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, WriteHalf};
+use crate::{OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, WriteHalf};
 
 /// A Unix socket server, listening for connections.
 ///
@@ -186,6 +186,16 @@ impl UnixStream {
     /// separate tasks, however this comes at the cost of a heap allocation.
     pub fn into_split(self) -> (OwnedReadHalf<Self>, OwnedWriteHalf<Self>) {
         crate::into_split(self)
+    }
+
+    /// Create [`PollFd`] from inner socket.
+    pub fn to_poll_fd(&self) -> PollFd<Socket2> {
+        self.inner.to_poll_fd()
+    }
+
+    /// Create [`PollFd`] from inner socket.
+    pub fn into_poll_fd(self) -> PollFd<Socket2> {
+        self.inner.into_poll_fd()
     }
 }
 

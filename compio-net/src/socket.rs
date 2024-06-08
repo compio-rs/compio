@@ -14,6 +14,8 @@ use compio_driver::{
 use compio_runtime::Attacher;
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
+use crate::PollFd;
+
 #[derive(Debug, Clone)]
 pub struct Socket {
     socket: Attacher<Socket2>,
@@ -32,6 +34,14 @@ impl Socket {
 
     pub fn local_addr(&self) -> io::Result<SockAddr> {
         self.socket.local_addr()
+    }
+
+    pub fn to_poll_fd(&self) -> PollFd<Socket2> {
+        PollFd::from_shared_fd(self.to_shared_fd())
+    }
+
+    pub fn into_poll_fd(self) -> PollFd<Socket2> {
+        PollFd::from_shared_fd(self.socket.into_inner())
     }
 
     #[cfg(windows)]
