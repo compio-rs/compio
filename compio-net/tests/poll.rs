@@ -26,21 +26,21 @@ async fn poll_connect() {
         .unwrap();
     listener.listen(4).unwrap();
     let addr = listener.local_addr().unwrap();
-    let listener = PollFd::new(listener);
+    let listener = PollFd::new(listener).unwrap();
     let accept_task = async {
         loop {
             listener.accept_ready().await.unwrap();
             match listener.accept() {
                 Ok(res) => break res,
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
-                Err(e) => Err(e).unwrap(),
+                Err(e) => panic!("{:?}", e),
             }
         }
     };
 
     let client = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
     client.set_nonblocking(true).unwrap();
-    let client = PollFd::new(client);
+    let client = PollFd::new(client).unwrap();
     let res = client.connect(&addr);
     let tx = if let Err(e) = res {
         assert!(is_would_block(&e));
@@ -53,14 +53,14 @@ async fn poll_connect() {
     };
 
     tx.set_nonblocking(true).unwrap();
-    let tx = PollFd::new(tx);
+    let tx = PollFd::new(tx).unwrap();
 
     let send_task = async {
         loop {
             match tx.send(b"Hello world!") {
                 Ok(res) => break res,
                 Err(e) if is_would_block(&e) => {}
-                Err(e) => Err(e).unwrap(),
+                Err(e) => panic!("{:?}", e),
             }
             tx.write_ready().await.unwrap();
         }
@@ -75,7 +75,7 @@ async fn poll_connect() {
                     break res;
                 }
                 Err(e) if is_would_block(&e) => {}
-                Err(e) => Err(e).unwrap(),
+                Err(e) => panic!("{:?}", e),
             }
             client.read_ready().await.unwrap();
         }

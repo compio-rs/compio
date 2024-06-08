@@ -207,12 +207,12 @@ impl TcpStream {
     }
 
     /// Create [`PollFd`] from inner socket.
-    pub fn to_poll_fd(&self) -> PollFd<Socket2> {
+    pub fn to_poll_fd(&self) -> io::Result<PollFd<Socket2>> {
         self.inner.to_poll_fd()
     }
 
     /// Create [`PollFd`] from inner socket.
-    pub fn into_poll_fd(self) -> PollFd<Socket2> {
+    pub fn into_poll_fd(self) -> io::Result<PollFd<Socket2>> {
         self.inner.into_poll_fd()
     }
 }

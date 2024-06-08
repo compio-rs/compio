@@ -36,11 +36,11 @@ impl Socket {
         self.socket.local_addr()
     }
 
-    pub fn to_poll_fd(&self) -> PollFd<Socket2> {
+    pub fn to_poll_fd(&self) -> io::Result<PollFd<Socket2>> {
         PollFd::from_shared_fd(self.to_shared_fd())
     }
 
-    pub fn into_poll_fd(self) -> PollFd<Socket2> {
+    pub fn into_poll_fd(self) -> io::Result<PollFd<Socket2>> {
         PollFd::from_shared_fd(self.socket.into_inner())
     }
 
