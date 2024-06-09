@@ -11,9 +11,10 @@ use std::{
 use compio_buf::{BufResult, IntoInner};
 use compio_driver::{syscall, AsRawFd, OpCode, OpType, RawFd, SharedFd, ToSharedFd};
 use windows_sys::Win32::{
+    Foundation::ERROR_IO_PENDING,
     Networking::WinSock::{
-        WSAEnumNetworkEvents, WSAEventSelect, FD_ACCEPT, FD_CONNECT, FD_READ, FD_WRITE,
-        WSANETWORKEVENTS,
+        WSAEnumNetworkEvents, WSAEventSelect, FD_ACCEPT, FD_CONNECT, FD_MAX_EVENTS, FD_READ,
+        FD_WRITE, WSANETWORKEVENTS,
     },
     System::{Threading::CreateEventW, IO::OVERLAPPED},
 };
@@ -85,12 +86,10 @@ impl<T: AsRawFd> Deref for PollFd<T> {
     }
 }
 
-const EVENT_COUNT: usize = 5;
-
 #[derive(Debug)]
 pub struct WSAEvent {
     ev_object: SharedFd<OwnedHandle>,
-    ev_record: [AtomicUsize; EVENT_COUNT],
+    ev_record: [AtomicUsize; FD_MAX_EVENTS as usize],
     events: AtomicI32,
 }
 
@@ -109,7 +108,7 @@ impl WSAEvent {
 
     pub async fn wait<T: AsRawFd + 'static>(
         &self,
-        socket: SharedFd<T>,
+        mut socket: SharedFd<T>,
         event: u32,
     ) -> io::Result<()> {
         struct EventGuard<'a> {
@@ -119,7 +118,7 @@ impl WSAEvent {
 
         impl Drop for EventGuard<'_> {
             fn drop(&mut self) {
-                let index = (self.event.ilog2() - 1) as usize;
+                let index = self.event.ilog2() as usize;
                 if self.wsa_event.ev_record[index].fetch_sub(1, Ordering::Relaxed) == 1 {
                     self.wsa_event
                         .events
@@ -129,9 +128,9 @@ impl WSAEvent {
         }
 
         let event = event as i32;
-        let ev_object = self.ev_object.clone();
+        let mut ev_object = self.ev_object.clone();
 
-        let index = (event.ilog2() - 1) as usize;
+        let index = event.ilog2() as usize;
         let events = if self.ev_record[index].fetch_add(1, Ordering::Relaxed) == 0 {
             self.events.fetch_or(event, Ordering::Relaxed) | event
         } else {
@@ -149,25 +148,35 @@ impl WSAEvent {
             wsa_event: self,
             event,
         };
-        let op = WaitWSAEvent::new(socket, ev_object, index + 1);
-        let BufResult(res, _) = compio_runtime::submit(op).await;
-        res?;
-        Ok(())
+        loop {
+            let op = WaitWSAEvent::new(socket, ev_object, event);
+            let BufResult(res, op) = compio_runtime::submit(op).await;
+            WaitWSAEvent {
+                socket,
+                ev_object,
+                ..
+            } = op;
+            match res {
+                Ok(_) => break Ok(()),
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
+                Err(e) => break Err(e),
+            }
+        }
     }
 }
 
 struct WaitWSAEvent<T> {
     socket: SharedFd<T>,
     ev_object: SharedFd<OwnedHandle>,
-    index: usize,
+    event: i32,
 }
 
 impl<T> WaitWSAEvent<T> {
-    pub fn new(socket: SharedFd<T>, ev_object: SharedFd<OwnedHandle>, index: usize) -> Self {
+    pub fn new(socket: SharedFd<T>, ev_object: SharedFd<OwnedHandle>, event: i32) -> Self {
         Self {
             socket,
             ev_object,
-            index,
+            event,
         }
     }
 }
@@ -187,7 +196,6 @@ impl<T: AsRawFd> OpCode for WaitWSAEvent<T> {
 
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let mut events: WSANETWORKEVENTS = unsafe { std::mem::zeroed() };
-        events.lNetworkEvents = 10;
         syscall!(
             SOCKET,
             WSAEnumNetworkEvents(
@@ -196,7 +204,11 @@ impl<T: AsRawFd> OpCode for WaitWSAEvent<T> {
                 &mut events
             )
         )?;
-        let res = events.iErrorCode[self.index + 1];
+        let res = if (events.lNetworkEvents & self.event) != 0 {
+            events.iErrorCode[self.event.ilog2() as usize]
+        } else {
+            ERROR_IO_PENDING as _
+        };
         if res == 0 {
             Poll::Ready(Ok(0))
         } else {
