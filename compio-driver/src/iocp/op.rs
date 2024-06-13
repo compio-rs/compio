@@ -605,7 +605,7 @@ impl<S: AsRawFd> RecvFromHeader<S> {
         let mut received = 0;
         let res = recvmsg_fn(
             self.fd.as_raw_fd() as _,
-            &mut self.msg as *mut _ as _,
+            &mut self.msg,
             &mut received,
             optr,
             None,
@@ -642,8 +642,8 @@ impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
 impl<T: IoBufMut, S: AsRawFd> OpCode for RecvFrom<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = self.get_unchecked_mut();
-        let mut buffer = [this.buffer.as_io_slice_mut()];
-        this.header.operate(&mut buffer, optr)
+        let mut slices = [this.buffer.as_io_slice_mut()];
+        this.header.operate(&mut slices, optr)
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
@@ -679,8 +679,8 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
 impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvFromVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = self.get_unchecked_mut();
-        let mut buffer = this.buffer.as_io_slices_mut();
-        this.header.operate(&mut buffer, optr)
+        let mut slices = this.buffer.as_io_slices_mut();
+        this.header.operate(&mut slices, optr)
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
@@ -713,13 +713,13 @@ impl<S: AsRawFd> SendToHeader<S> {
         optr: *mut OVERLAPPED,
     ) -> Poll<io::Result<usize>> {
         self.msg.name = self.addr.as_ptr() as _;
-        self.msg.namelen = std::mem::size_of_val(&self.addr) as _;
+        self.msg.namelen = self.addr.len();
         self.msg.lpBuffers = slices.as_mut_ptr() as _;
         self.msg.dwBufferCount = slices.len() as _;
         let mut sent = 0;
         let res = WSASendMsg(
             self.fd.as_raw_fd() as _,
-            &mut self.msg as *mut _ as _,
+            &self.msg,
             0,
             &mut sent,
             optr,
@@ -756,8 +756,8 @@ impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
 impl<T: IoBuf, S: AsRawFd> OpCode for SendTo<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = self.get_unchecked_mut();
-        let mut buffer = [this.buffer.as_io_slice()];
-        this.header.operate(&mut buffer, optr)
+        let mut slices = [this.buffer.as_io_slice()];
+        this.header.operate(&mut slices, optr)
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
@@ -792,8 +792,8 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
 impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendToVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = self.get_unchecked_mut();
-        let mut buffer = this.buffer.as_io_slices();
-        this.header.operate(&mut buffer, optr)
+        let mut slices = this.buffer.as_io_slices();
+        this.header.operate(&mut slices, optr)
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
