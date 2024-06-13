@@ -22,9 +22,9 @@ use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, ToSocketAddrsAsync,
 /// use socket2::SockAddr;
 ///
 /// # compio_runtime::Runtime::new().unwrap().block_on(async move {
-/// let addr = "127.0.0.1:2345".parse::<SocketAddr>().unwrap();
+/// let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 ///
-/// let listener = TcpListener::bind(&addr).await.unwrap();
+/// let addr = listener.local_addr().unwrap();
 ///
 /// let tx_fut = TcpStream::connect(&addr);
 ///
