@@ -505,54 +505,76 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendVectored<T, S> {
     }
 }
 
+struct RecvFromHeader<S> {
+    pub(crate) fd: SharedFd<S>,
+    addr: sockaddr_storage,
+    msg: libc::msghdr,
+    _p: PhantomPinned,
+}
+
+impl<S> RecvFromHeader<S> {
+    fn new(fd: SharedFd<S>) -> Self {
+        Self {
+            fd,
+            addr: unsafe { std::mem::zeroed() },
+            msg: unsafe { std::mem::zeroed() },
+            _p: PhantomPinned,
+        }
+    }
+
+    fn set_msg(&mut self, slices: &mut [IoSliceMut]) {
+        self.msg.msg_name = &mut self.addr as *mut _ as _;
+        self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
+        self.msg.msg_iov = slices.as_mut_ptr() as _;
+        self.msg.msg_iovlen = slices.len() as _;
+    }
+
+    fn into_addr(self) -> (sockaddr_storage, socklen_t) {
+        (self.addr, self.msg.msg_namelen)
+    }
+}
+
+impl<S: AsRawFd> RecvFromHeader<S> {
+    unsafe fn call(&mut self) -> libc::ssize_t {
+        libc::recvmsg(self.fd.as_raw_fd(), &mut self.msg, 0)
+    }
+}
+
 /// Receive data and source address.
 pub struct RecvFrom<T: IoBufMut, S> {
-    pub(crate) fd: SharedFd<S>,
-    pub(crate) buffer: T,
-    pub(crate) addr: sockaddr_storage,
-    pub(crate) addr_len: socklen_t,
-    _p: PhantomPinned,
+    header: RecvFromHeader<S>,
+    buffer: T,
+    slices: [IoSliceMut; 1],
 }
 
 impl<T: IoBufMut, S> RecvFrom<T, S> {
     /// Create [`RecvFrom`].
     pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
         Self {
-            fd,
+            header: RecvFromHeader::new(fd),
             buffer,
-            addr: unsafe { std::mem::zeroed() },
-            addr_len: std::mem::size_of::<sockaddr_storage>() as _,
-            _p: PhantomPinned,
+            // SAFETY: We never use this slice.
+            slices: [unsafe { IoSliceMut::from_slice(&mut []) }],
         }
-    }
-}
-
-impl<T: IoBufMut, S: AsRawFd> RecvFrom<T, S> {
-    unsafe fn call(self: Pin<&mut Self>) -> libc::ssize_t {
-        let this = self.get_unchecked_mut();
-        let fd = this.fd.as_raw_fd();
-        let slice = this.buffer.as_mut_slice();
-        libc::recvfrom(
-            fd,
-            slice.as_mut_ptr() as _,
-            slice.len(),
-            0,
-            &mut this.addr as *mut _ as _,
-            &mut this.addr_len,
-        )
     }
 }
 
 impl<T: IoBufMut, S: AsRawFd> OpCode for RecvFrom<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        let fd = self.fd.as_raw_fd();
-        syscall!(self.call(), wait_readable(fd))
+        let this = unsafe { self.get_unchecked_mut() };
+        this.slices[0] = unsafe { this.buffer.as_io_slice_mut() };
+        this.header.set_msg(&mut this.slices);
+        syscall!(
+            this.header.call(),
+            wait_readable(this.header.fd.as_raw_fd())
+        )
     }
 
     fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
-        syscall!(break self.call())
+        let this = unsafe { self.get_unchecked_mut() };
+        syscall!(break this.header.call())
     }
 }
 
@@ -560,65 +582,45 @@ impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
     type Inner = (T, sockaddr_storage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
-        (self.buffer, self.addr, self.addr_len)
+        let (addr, addr_len) = self.header.into_addr();
+        (self.buffer, addr, addr_len)
     }
 }
 
 /// Receive data and source address into vectored buffer.
 pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
-    pub(crate) fd: SharedFd<S>,
-    pub(crate) buffer: T,
-    pub(crate) slices: Vec<IoSliceMut>,
-    pub(crate) addr: sockaddr_storage,
-    pub(crate) msg: libc::msghdr,
-    _p: PhantomPinned,
+    header: RecvFromHeader<S>,
+    buffer: T,
+    slices: Vec<IoSliceMut>,
 }
 
 impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
     /// Create [`RecvFromVectored`].
     pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
         Self {
-            fd,
+            header: RecvFromHeader::new(fd),
             buffer,
             slices: vec![],
-            addr: unsafe { std::mem::zeroed() },
-            msg: unsafe { std::mem::zeroed() },
-            _p: PhantomPinned,
         }
-    }
-}
-
-impl<T: IoVectoredBufMut, S: AsRawFd> RecvFromVectored<T, S> {
-    fn set_msg(&mut self) {
-        self.slices = unsafe { self.buffer.as_io_slices_mut() };
-        self.msg = libc::msghdr {
-            msg_name: &mut self.addr as *mut _ as _,
-            msg_namelen: std::mem::size_of_val(&self.addr) as _,
-            msg_iov: self.slices.as_mut_ptr() as _,
-            msg_iovlen: self.slices.len() as _,
-            msg_control: std::ptr::null_mut(),
-            msg_controllen: 0,
-            msg_flags: 0,
-        };
-    }
-
-    unsafe fn call(&mut self) -> libc::ssize_t {
-        libc::recvmsg(self.fd.as_raw_fd(), &mut self.msg, 0)
     }
 }
 
 impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvFromVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let this = unsafe { self.get_unchecked_mut() };
-        this.set_msg();
-        syscall!(this.call(), wait_readable(this.fd.as_raw_fd()))
+        this.slices = unsafe { this.buffer.as_io_slices_mut() };
+        this.header.set_msg(&mut this.slices);
+        syscall!(
+            this.header.call(),
+            wait_readable(this.header.fd.as_raw_fd())
+        )
     }
 
     fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
         let this = unsafe { self.get_unchecked_mut() };
-        syscall!(break this.call())
+        syscall!(break this.header.call())
     }
 }
 
@@ -626,53 +628,76 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
     type Inner = (T, sockaddr_storage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
-        (self.buffer, self.addr, self.msg.msg_namelen)
+        let (addr, addr_len) = self.header.into_addr();
+        (self.buffer, addr, addr_len)
+    }
+}
+
+struct SendToHeader<S> {
+    pub(crate) fd: SharedFd<S>,
+    pub(crate) addr: SockAddr,
+    pub(crate) msg: libc::msghdr,
+    _p: PhantomPinned,
+}
+
+impl<S> SendToHeader<S> {
+    fn new(fd: SharedFd<S>, addr: SockAddr) -> Self {
+        Self {
+            fd,
+            addr,
+            msg: unsafe { std::mem::zeroed() },
+            _p: PhantomPinned,
+        }
+    }
+
+    fn set_msg(&mut self, slices: &mut [IoSlice]) {
+        self.msg.msg_name = self.addr.as_ptr() as _;
+        self.msg.msg_namelen = self.addr.len();
+        self.msg.msg_iov = slices.as_mut_ptr() as _;
+        self.msg.msg_iovlen = slices.len() as _;
+    }
+}
+
+impl<S: AsRawFd> SendToHeader<S> {
+    unsafe fn call(&self) -> libc::ssize_t {
+        libc::sendmsg(self.fd.as_raw_fd(), &self.msg, 0)
     }
 }
 
 /// Send data to specified address.
 pub struct SendTo<T: IoBuf, S> {
-    pub(crate) fd: SharedFd<S>,
-    pub(crate) buffer: T,
-    pub(crate) addr: SockAddr,
-    _p: PhantomPinned,
+    header: SendToHeader<S>,
+    buffer: T,
+    slices: [IoSlice; 1],
 }
 
 impl<T: IoBuf, S> SendTo<T, S> {
     /// Create [`SendTo`].
     pub fn new(fd: SharedFd<S>, buffer: T, addr: SockAddr) -> Self {
         Self {
-            fd,
+            header: SendToHeader::new(fd, addr),
             buffer,
-            addr,
-            _p: PhantomPinned,
+            // SAFETY: We never use this slice.
+            slices: [unsafe { IoSlice::from_slice(&[]) }],
         }
-    }
-}
-
-impl<T: IoBuf, S: AsRawFd> SendTo<T, S> {
-    unsafe fn call(&self) -> libc::ssize_t {
-        let slice = self.buffer.as_slice();
-        libc::sendto(
-            self.fd.as_raw_fd(),
-            slice.as_ptr() as _,
-            slice.len(),
-            0,
-            self.addr.as_ptr(),
-            self.addr.len(),
-        )
     }
 }
 
 impl<T: IoBuf, S: AsRawFd> OpCode for SendTo<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        syscall!(self.call(), wait_writable(self.fd.as_raw_fd()))
+        let this = unsafe { self.get_unchecked_mut() };
+        this.slices[0] = unsafe { this.buffer.as_io_slice() };
+        this.header.set_msg(&mut this.slices);
+        syscall!(
+            this.header.call(),
+            wait_writable(this.header.fd.as_raw_fd())
+        )
     }
 
     fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.writable);
 
-        syscall!(break self.call())
+        syscall!(break self.header.call())
     }
 }
 
@@ -686,58 +711,37 @@ impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
 
 /// Send data to specified address from vectored buffer.
 pub struct SendToVectored<T: IoVectoredBuf, S> {
-    pub(crate) fd: SharedFd<S>,
-    pub(crate) buffer: T,
-    pub(crate) addr: SockAddr,
-    pub(crate) slices: Vec<IoSlice>,
-    pub(crate) msg: libc::msghdr,
-    _p: PhantomPinned,
+    header: SendToHeader<S>,
+    buffer: T,
+    slices: Vec<IoSlice>,
 }
 
 impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
     /// Create [`SendToVectored`].
     pub fn new(fd: SharedFd<S>, buffer: T, addr: SockAddr) -> Self {
         Self {
-            fd,
+            header: SendToHeader::new(fd, addr),
             buffer,
-            addr,
             slices: vec![],
-            msg: unsafe { std::mem::zeroed() },
-            _p: PhantomPinned,
         }
-    }
-}
-
-impl<T: IoVectoredBuf, S: AsRawFd> SendToVectored<T, S> {
-    fn set_msg(&mut self) {
-        self.slices = unsafe { self.buffer.as_io_slices() };
-        self.msg = libc::msghdr {
-            msg_name: &mut self.addr as *mut _ as _,
-            msg_namelen: std::mem::size_of_val(&self.addr) as _,
-            msg_iov: self.slices.as_mut_ptr() as _,
-            msg_iovlen: self.slices.len() as _,
-            msg_control: std::ptr::null_mut(),
-            msg_controllen: 0,
-            msg_flags: 0,
-        };
-    }
-
-    unsafe fn call(&self) -> libc::ssize_t {
-        libc::sendmsg(self.fd.as_raw_fd(), &self.msg, 0)
     }
 }
 
 impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendToVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let this = unsafe { self.get_unchecked_mut() };
-        this.set_msg();
-        syscall!(this.call(), wait_writable(this.fd.as_raw_fd()))
+        this.slices = unsafe { this.buffer.as_io_slices() };
+        this.header.set_msg(&mut this.slices);
+        syscall!(
+            this.header.call(),
+            wait_writable(this.header.fd.as_raw_fd())
+        )
     }
 
     fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.writable);
 
-        syscall!(break self.call())
+        syscall!(break self.header.call())
     }
 }
 
