@@ -1,4 +1,4 @@
-use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::{quote, ToTokens, TokenStreamExt};
 use syn::{parse::Parse, AttrStyle, Attribute, Signature, Visibility};
 
@@ -29,12 +29,6 @@ impl Parse for CompioMain {
                 "the `async` keyword is missing from the function declaration",
             ));
         };
-        if sig.ident != Ident::new("main", Span::call_site()) {
-            return Err(syn::Error::new_spanned(
-                sig.ident,
-                "`compio::main` can only be used for main function.",
-            ));
-        }
 
         sig.asyncness.take();
         Ok(Self(RawBodyItemFn::new(attrs, vis, sig, body)))
