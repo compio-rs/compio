@@ -1,6 +1,6 @@
 [package]
 name = "compio-driver"
-version = "0.3.0"
+version = "0.4.0"
 description = "Low-level driver for compio"
 categories = ["asynchronous"]
 keywords = ["async", "iocp", "io-uring"]

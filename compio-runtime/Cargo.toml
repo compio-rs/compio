@@ -1,6 +1,6 @@
 [package]
 name = "compio-runtime"
-version = "0.3.0"
+version = "0.4.0"
 description = "High-level runtime for compio"
 categories = ["asynchronous"]
 keywords = ["async", "runtime"]
