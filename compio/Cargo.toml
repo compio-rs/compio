@@ -80,6 +80,7 @@ io-uring = [
     "compio-driver/io-uring",
     "compio-fs?/io-uring",
     "compio-net?/io-uring",
+    "compio-signal?/io-uring",
 ]
 polling = ["compio-driver/polling"]
 io = ["dep:compio-io"]

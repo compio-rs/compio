@@ -18,23 +18,33 @@ rustdoc-args = ["--cfg", "docsrs"]
 # Workspace dependencies
 compio-runtime = { workspace = true, features = ["event"] }
 
-once_cell = { workspace = true }
-slab = { workspace = true }
-
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
 compio-driver = { workspace = true }
+once_cell = { workspace = true }
+slab = { workspace = true }
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_System_Console",
 ] }
 
+# Linux specific dependencies
+[target.'cfg(target_os = "linux")'.dependencies]
+compio-buf = { workspace = true }
+compio-driver = { workspace = true }
+
 # Unix specific dependencies
 [target.'cfg(unix)'.dependencies]
-os_pipe = { workspace = true }
 libc = { workspace = true }
 
+[target.'cfg(all(unix, not(target_os = "linux")))'.dependencies]
+once_cell = { workspace = true }
+os_pipe = { workspace = true }
+slab = { workspace = true }
+
 [features]
+default = []
+io-uring = ["compio-driver/io-uring"]
 # Nightly features
 lazy_cell = []
 once_cell_try = []
