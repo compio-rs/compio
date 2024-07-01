@@ -67,9 +67,8 @@ impl<S> SyncStream<S> {
 impl<S> Read for SyncStream<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let mut slice = self.fill_buf()?;
-        slice.read(buf).map(|res| {
-            self.consume(res);
-            res
+        slice.read(buf).inspect(|res| {
+            self.consume(*res);
         })
     }
 
