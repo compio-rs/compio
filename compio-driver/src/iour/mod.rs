@@ -20,6 +20,7 @@ cfg_if::cfg_if! {
     }
 }
 use io_uring::{
+    cqueue::more,
     opcode::{AsyncCancel, PollAdd},
     types::{Fd, SubmitArgs, Timespec},
     IoUring,
@@ -152,9 +153,8 @@ impl Driver {
         let completed_entries = cqueue.filter_map(|entry| match entry.user_data() {
             Self::CANCEL => None,
             Self::NOTIFY => {
-                const IORING_CQE_F_MORE: u32 = 1 << 1;
                 let flags = entry.flags();
-                debug_assert!(flags & IORING_CQE_F_MORE == IORING_CQE_F_MORE);
+                debug_assert!(more(flags));
                 self.notifier.clear().expect("cannot clear notifier");
                 None
             }
