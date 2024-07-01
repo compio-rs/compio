@@ -234,13 +234,6 @@ impl Runtime {
         self.driver.borrow_mut().push(op)
     }
 
-    fn submit_flags_raw<T: OpCode + 'static>(
-        &self,
-        op: T,
-    ) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
-        self.driver.borrow_mut().push_flags(op)
-    }
-
     /// Submit an operation to the runtime.
     ///
     /// You only need this when authoring your own [`OpCode`].
@@ -261,9 +254,13 @@ impl Runtime {
         &self,
         op: T,
     ) -> impl Future<Output = (BufResult<usize, T>, u32)> {
-        match self.submit_flags_raw(op) {
+        match self.submit_raw(op) {
             PushEntry::Pending(user_data) => Either::Left(OpFlagsFuture::new(user_data)),
-            PushEntry::Ready(res) => Either::Right(ready(res)),
+            PushEntry::Ready(res) => {
+                // submit_flags won't be ready immediately, if ready, it must be error without
+                // flags
+                Either::Right(ready((res, 0)))
+            }
         }
     }
 

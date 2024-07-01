@@ -238,37 +238,6 @@ impl Driver {
         }
     }
 
-    pub fn push_flags<T: crate::sys::OpCode + 'static>(
-        &mut self,
-        op: &mut Key<T>,
-    ) -> Poll<(io::Result<usize>, u32)> {
-        instrument!(compio_log::Level::TRACE, "push_flags", ?op);
-        let user_data = op.user_data();
-        let op_pin = op.as_op_pin();
-        trace!("push RawOp");
-        match op_pin.create_entry() {
-            OpEntry::Submission(entry) => {
-                #[allow(clippy::useless_conversion)]
-                if let Err(err) = self.push_raw(entry.user_data(user_data as _).into()) {
-                    return Poll::Ready((Err(err), 0));
-                }
-                Poll::Pending
-            }
-            #[cfg(feature = "io-uring-sqe128")]
-            OpEntry::Submission128(entry) => {
-                if let Err(err) = self.push_raw(entry.user_data(user_data as _)) {
-                    return Poll::Ready((Err(err), 0));
-                }
-                Poll::Pending
-            }
-            OpEntry::Blocking => match self.push_blocking(user_data) {
-                Err(err) => Poll::Ready((Err(err), 0)),
-                Ok(true) => Poll::Pending,
-                Ok(false) => Poll::Ready((Err(io::Error::from_raw_os_error(libc::EBUSY)), 0)),
-            },
-        }
-    }
-
     fn push_blocking(&mut self, user_data: usize) -> io::Result<bool> {
         let handle = self.handle()?;
         let completed = self.pool_completed.clone();

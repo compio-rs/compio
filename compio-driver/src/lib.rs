@@ -272,24 +272,6 @@ impl Proactor {
         }
     }
 
-    /// Push an operation into the driver, and return the unique key, called
-    /// user-defined data, associated with it.
-    pub fn push_flags<T: OpCode + 'static>(
-        &mut self,
-        op: T,
-    ) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
-        let mut op = self.driver.create_op(op);
-        match self.driver.push_flags(&mut op) {
-            Poll::Pending => PushEntry::Pending(op),
-            Poll::Ready((res, flags)) => {
-                op.set_result(res);
-                op.set_flags(flags);
-                // SAFETY: just completed.
-                PushEntry::Ready(unsafe { op.into_inner_flags() })
-            }
-        }
-    }
-
     /// Poll the driver and get completed entries.
     /// You need to call [`Proactor::pop`] to get the pushed operations.
     pub fn poll(
