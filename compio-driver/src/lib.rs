@@ -272,6 +272,24 @@ impl Proactor {
         }
     }
 
+    /// Push an operation into the driver, and return the unique key, called
+    /// user-defined data, associated with it.
+    pub fn push_flags<T: OpCode + 'static>(
+        &mut self,
+        op: T,
+    ) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
+        let mut op = self.driver.create_op(op);
+        match self.driver.push_flags(&mut op) {
+            Poll::Pending => PushEntry::Pending(op),
+            Poll::Ready((res, flags)) => {
+                op.set_result(res);
+                op.set_flags(flags);
+                // SAFETY: just completed.
+                PushEntry::Ready(unsafe { op.into_inner_flags() })
+            }
+        }
+    }
+
     /// Poll the driver and get completed entries.
     /// You need to call [`Proactor::pop`] to get the pushed operations.
     pub fn poll(
@@ -300,6 +318,21 @@ impl Proactor {
         }
     }
 
+    /// Get the pushed operations from the completion entries.
+    ///
+    /// # Panics
+    /// This function will panic if the requested operation has not been
+    /// completed.
+    pub fn pop_flags<T>(&mut self, op: Key<T>) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
+        instrument!(compio_log::Level::DEBUG, "pop_flags", ?op);
+        if op.has_result() {
+            // SAFETY: completed.
+            PushEntry::Ready(unsafe { op.into_inner_flags() })
+        } else {
+            PushEntry::Pending(op)
+        }
+    }
+
     /// Update the waker of the specified op.
     pub fn update_waker<T>(&mut self, op: &mut Key<T>, waker: Waker) {
         op.set_waker(waker);
@@ -322,16 +355,25 @@ impl AsRawFd for Proactor {
 pub(crate) struct Entry {
     user_data: usize,
     result: io::Result<usize>,
+    flags: u32,
 }
 
 impl Entry {
-    pub(crate) fn new(user_data: usize, result: io::Result<usize>) -> Self {
-        Self { user_data, result }
+    pub(crate) fn new(user_data: usize, result: io::Result<usize>, flags: u32) -> Self {
+        Self {
+            user_data,
+            result,
+            flags,
+        }
     }
 
     /// The user-defined data returned by [`Proactor::push`].
     pub fn user_data(&self) -> usize {
         self.user_data
+    }
+
+    pub fn flags(&self) -> u32 {
+        self.flags
     }
 
     /// The result of the operation.
@@ -357,6 +399,7 @@ impl<E: Extend<usize>> Extend<Entry> for OutEntries<'_, E> {
         self.entries.extend(iter.into_iter().filter_map(|e| {
             let user_data = e.user_data();
             let mut op = unsafe { Key::<()>::new_unchecked(user_data) };
+            op.set_flags(e.flags());
             if op.set_result(e.into_result()) {
                 // SAFETY: completed and cancelled.
                 let _ = unsafe { op.into_box() };

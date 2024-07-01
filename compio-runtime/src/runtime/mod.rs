@@ -31,7 +31,10 @@ use send_wrapper::SendWrapper;
 
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerRuntime};
-use crate::{runtime::op::OpFuture, BufResult};
+use crate::{
+    runtime::op::{OpFlagsFuture, OpFuture},
+    BufResult,
+};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 
@@ -231,12 +234,35 @@ impl Runtime {
         self.driver.borrow_mut().push(op)
     }
 
+    fn submit_flags_raw<T: OpCode + 'static>(
+        &self,
+        op: T,
+    ) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
+        self.driver.borrow_mut().push_flags(op)
+    }
+
     /// Submit an operation to the runtime.
     ///
     /// You only need this when authoring your own [`OpCode`].
     pub fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
         match self.submit_raw(op) {
             PushEntry::Pending(user_data) => Either::Left(OpFuture::new(user_data)),
+            PushEntry::Ready(res) => Either::Right(ready(res)),
+        }
+    }
+
+    /// Submit an operation to the runtime.
+    ///
+    /// The difference between [`Runtime::submit`] is this method will return
+    /// the flags
+    ///
+    /// You only need this when authoring your own [`OpCode`].
+    pub fn submit_flags<T: OpCode + 'static>(
+        &self,
+        op: T,
+    ) -> impl Future<Output = (BufResult<usize, T>, u32)> {
+        match self.submit_flags_raw(op) {
+            PushEntry::Pending(user_data) => Either::Left(OpFlagsFuture::new(user_data)),
             PushEntry::Ready(res) => Either::Right(ready(res)),
         }
     }
@@ -268,6 +294,19 @@ impl Runtime {
         instrument!(compio_log::Level::DEBUG, "poll_task", ?op);
         let mut driver = self.driver.borrow_mut();
         driver.pop(op).map_pending(|mut k| {
+            driver.update_waker(&mut k, cx.waker().clone());
+            k
+        })
+    }
+
+    pub(crate) fn poll_task_flags<T: OpCode>(
+        &self,
+        cx: &mut Context,
+        op: Key<T>,
+    ) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
+        instrument!(compio_log::Level::DEBUG, "poll_task_flags", ?op);
+        let mut driver = self.driver.borrow_mut();
+        driver.pop_flags(op).map_pending(|mut k| {
             driver.update_waker(&mut k, cx.waker().clone());
             k
         })

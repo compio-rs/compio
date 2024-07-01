@@ -21,6 +21,7 @@ pub(crate) struct RawOp<T: ?Sized> {
     // The metadata in `*mut RawOp<dyn OpCode>`
     metadata: usize,
     result: PushEntry<Option<Waker>, io::Result<usize>>,
+    flags: u32,
     op: T,
 }
 
@@ -84,6 +85,7 @@ impl<T: OpCode + 'static> Key<T> {
             cancelled: false,
             metadata: opcode_metadata::<T>(),
             result: PushEntry::Pending(None),
+            flags: 0,
             op,
         });
         unsafe { Self::new_unchecked(Box::into_raw(raw_op) as _) }
@@ -154,6 +156,10 @@ impl<T: ?Sized> Key<T> {
         this.cancelled
     }
 
+    pub(crate) fn set_flags(&mut self, flags: u32) {
+        self.as_opaque_mut().flags = flags;
+    }
+
     /// Whether the op is completed.
     pub(crate) fn has_result(&self) -> bool {
         self.as_opaque().result.is_ready()
@@ -188,6 +194,19 @@ impl<T> Key<T> {
     pub(crate) unsafe fn into_inner(self) -> BufResult<usize, T> {
         let op = unsafe { Box::from_raw(self.user_data as *mut RawOp<T>) };
         BufResult(op.result.take_ready().unwrap_unchecked(), op.op)
+    }
+
+    /// Get the inner result and flags if it is completed.
+    ///
+    /// # Safety
+    ///
+    /// Call it only when the op is completed, otherwise it is UB.
+    pub(crate) unsafe fn into_inner_flags(self) -> (BufResult<usize, T>, u32) {
+        let op = unsafe { Box::from_raw(self.user_data as *mut RawOp<T>) };
+        (
+            BufResult(op.result.take_ready().unwrap_unchecked(), op.op),
+            op.flags,
+        )
     }
 }
 
