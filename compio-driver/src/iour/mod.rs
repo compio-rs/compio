@@ -24,7 +24,6 @@ use io_uring::{
     types::{Fd, SubmitArgs, Timespec},
     IoUring,
 };
-pub(crate) use libc::{sockaddr_storage, socklen_t};
 
 use crate::{syscall, AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder};
 
