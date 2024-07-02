@@ -247,7 +247,7 @@ impl Driver {
                 let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
                 let op_pin = op.as_op_pin();
                 let res = op_pin.call_blocking();
-                completed.push(Entry::new(user_data, res, todo!("how to get flags?")));
+                completed.push(Entry::new(user_data, res));
                 handle.notify().ok();
             })
             .is_ok();
@@ -282,8 +282,8 @@ impl AsRawFd for Driver {
     }
 }
 
-fn create_entry(entry: CEntry) -> Entry {
-    let result = entry.result();
+fn create_entry(cq_entry: CEntry) -> Entry {
+    let result = cq_entry.result();
     let result = if result < 0 {
         let result = if result == -libc::ECANCELED {
             libc::ETIMEDOUT
@@ -294,7 +294,10 @@ fn create_entry(entry: CEntry) -> Entry {
     } else {
         Ok(result as _)
     };
-    Entry::new(entry.user_data() as _, result, entry.flags())
+    let mut entry = Entry::new(cq_entry.user_data() as _, result);
+    entry.set_flags(entry.flags());
+
+    entry
 }
 
 fn timespec(duration: std::time::Duration) -> Timespec {

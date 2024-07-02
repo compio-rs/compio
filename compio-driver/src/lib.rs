@@ -308,8 +308,9 @@ impl Proactor {
     pub fn pop_flags<T>(&mut self, op: Key<T>) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
         instrument!(compio_log::Level::DEBUG, "pop_flags", ?op);
         if op.has_result() {
+            let flags = op.flags();
             // SAFETY: completed.
-            PushEntry::Ready(unsafe { op.into_inner_flags() })
+            PushEntry::Ready((unsafe { op.into_inner() }, flags))
         } else {
             PushEntry::Pending(op)
         }
@@ -341,12 +342,16 @@ pub(crate) struct Entry {
 }
 
 impl Entry {
-    pub(crate) fn new(user_data: usize, result: io::Result<usize>, flags: u32) -> Self {
+    pub(crate) fn new(user_data: usize, result: io::Result<usize>) -> Self {
         Self {
             user_data,
             result,
-            flags,
+            flags: 0,
         }
+    }
+
+    pub(crate) fn set_flags(&mut self, flags: u32) {
+        self.flags = flags;
     }
 
     /// The user-defined data returned by [`Proactor::push`].

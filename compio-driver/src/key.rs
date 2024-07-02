@@ -160,6 +160,10 @@ impl<T: ?Sized> Key<T> {
         self.as_opaque_mut().flags = flags;
     }
 
+    pub(crate) fn flags(&self) -> u32 {
+        self.as_opaque().flags
+    }
+
     /// Whether the op is completed.
     pub(crate) fn has_result(&self) -> bool {
         self.as_opaque().result.is_ready()
@@ -194,19 +198,6 @@ impl<T> Key<T> {
     pub(crate) unsafe fn into_inner(self) -> BufResult<usize, T> {
         let op = unsafe { Box::from_raw(self.user_data as *mut RawOp<T>) };
         BufResult(op.result.take_ready().unwrap_unchecked(), op.op)
-    }
-
-    /// Get the inner result and flags if it is completed.
-    ///
-    /// # Safety
-    ///
-    /// Call it only when the op is completed, otherwise it is UB.
-    pub(crate) unsafe fn into_inner_flags(self) -> (BufResult<usize, T>, u32) {
-        let op = unsafe { Box::from_raw(self.user_data as *mut RawOp<T>) };
-        (
-            BufResult(op.result.take_ready().unwrap_unchecked(), op.op),
-            op.flags,
-        )
     }
 }
 
