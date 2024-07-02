@@ -300,6 +300,25 @@ impl Proactor {
         }
     }
 
+    /// Get the pushed operations from the completion entries.
+    ///
+    /// # Panics
+    /// This function will panic if the requested operation has not been
+    /// completed.
+    pub fn pop_with_flags<T>(
+        &mut self,
+        op: Key<T>,
+    ) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
+        instrument!(compio_log::Level::DEBUG, "pop_flags", ?op);
+        if op.has_result() {
+            let flags = op.flags();
+            // SAFETY: completed.
+            PushEntry::Ready((unsafe { op.into_inner() }, flags))
+        } else {
+            PushEntry::Pending(op)
+        }
+    }
+
     /// Update the waker of the specified op.
     pub fn update_waker<T>(&mut self, op: &mut Key<T>, waker: Waker) {
         op.set_waker(waker);
@@ -322,16 +341,29 @@ impl AsRawFd for Proactor {
 pub(crate) struct Entry {
     user_data: usize,
     result: io::Result<usize>,
+    flags: u32,
 }
 
 impl Entry {
     pub(crate) fn new(user_data: usize, result: io::Result<usize>) -> Self {
-        Self { user_data, result }
+        Self {
+            user_data,
+            result,
+            flags: 0,
+        }
+    }
+
+    pub(crate) fn set_flags(&mut self, flags: u32) {
+        self.flags = flags;
     }
 
     /// The user-defined data returned by [`Proactor::push`].
     pub fn user_data(&self) -> usize {
         self.user_data
+    }
+
+    pub fn flags(&self) -> u32 {
+        self.flags
     }
 
     /// The result of the operation.
@@ -357,6 +389,7 @@ impl<E: Extend<usize>> Extend<Entry> for OutEntries<'_, E> {
         self.entries.extend(iter.into_iter().filter_map(|e| {
             let user_data = e.user_data();
             let mut op = unsafe { Key::<()>::new_unchecked(user_data) };
+            op.set_flags(e.flags());
             if op.set_result(e.into_result()) {
                 // SAFETY: completed and cancelled.
                 let _ = unsafe { op.into_box() };

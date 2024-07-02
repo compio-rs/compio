@@ -21,6 +21,7 @@ pub(crate) struct RawOp<T: ?Sized> {
     // The metadata in `*mut RawOp<dyn OpCode>`
     metadata: usize,
     result: PushEntry<Option<Waker>, io::Result<usize>>,
+    flags: u32,
     op: T,
 }
 
@@ -84,6 +85,7 @@ impl<T: OpCode + 'static> Key<T> {
             cancelled: false,
             metadata: opcode_metadata::<T>(),
             result: PushEntry::Pending(None),
+            flags: 0,
             op,
         });
         unsafe { Self::new_unchecked(Box::into_raw(raw_op) as _) }
@@ -152,6 +154,14 @@ impl<T: ?Sized> Key<T> {
             w.wake();
         }
         this.cancelled
+    }
+
+    pub(crate) fn set_flags(&mut self, flags: u32) {
+        self.as_opaque_mut().flags = flags;
+    }
+
+    pub(crate) fn flags(&self) -> u32 {
+        self.as_opaque().flags
     }
 
     /// Whether the op is completed.
