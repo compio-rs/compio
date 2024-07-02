@@ -370,6 +370,154 @@ impl<T: IoVectoredBuf, S> IntoInner for SendVectored<T, S> {
     }
 }
 
+pub(crate) struct RecvFromHeader<S> {
+    pub(crate) fd: SharedFd<S>,
+    pub(crate) addr: sockaddr_storage,
+    pub(crate) msg: libc::msghdr,
+    _p: PhantomPinned,
+}
+
+impl<S> RecvFromHeader<S> {
+    pub fn new(fd: SharedFd<S>) -> Self {
+        Self {
+            fd,
+            addr: unsafe { std::mem::zeroed() },
+            msg: unsafe { std::mem::zeroed() },
+            _p: PhantomPinned,
+        }
+    }
+
+    pub fn into_addr(self) -> (sockaddr_storage, socklen_t) {
+        (self.addr, self.msg.msg_namelen)
+    }
+}
+
+/// Receive data and source address.
+pub struct RecvFrom<T: IoBufMut, S> {
+    pub(crate) header: RecvFromHeader<S>,
+    pub(crate) buffer: T,
+    pub(crate) slices: [IoSliceMut; 1],
+}
+
+impl<T: IoBufMut, S> RecvFrom<T, S> {
+    /// Create [`RecvFrom`].
+    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
+        Self {
+            header: RecvFromHeader::new(fd),
+            buffer,
+            // SAFETY: We never use this slice.
+            slices: [unsafe { IoSliceMut::from_slice(&mut []) }],
+        }
+    }
+}
+
+impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
+    type Inner = (T, sockaddr_storage, socklen_t);
+
+    fn into_inner(self) -> Self::Inner {
+        let (addr, addr_len) = self.header.into_addr();
+        (self.buffer, addr, addr_len)
+    }
+}
+
+/// Receive data and source address into vectored buffer.
+pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
+    pub(crate) header: RecvFromHeader<S>,
+    pub(crate) buffer: T,
+    pub(crate) slices: Vec<IoSliceMut>,
+}
+
+impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
+    /// Create [`RecvFromVectored`].
+    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
+        Self {
+            header: RecvFromHeader::new(fd),
+            buffer,
+            slices: vec![],
+        }
+    }
+}
+
+impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
+    type Inner = (T, sockaddr_storage, socklen_t);
+
+    fn into_inner(self) -> Self::Inner {
+        let (addr, addr_len) = self.header.into_addr();
+        (self.buffer, addr, addr_len)
+    }
+}
+
+pub(crate) struct SendToHeader<S> {
+    pub(crate) fd: SharedFd<S>,
+    pub(crate) addr: SockAddr,
+    pub(crate) msg: libc::msghdr,
+    _p: PhantomPinned,
+}
+
+impl<S> SendToHeader<S> {
+    pub fn new(fd: SharedFd<S>, addr: SockAddr) -> Self {
+        Self {
+            fd,
+            addr,
+            msg: unsafe { std::mem::zeroed() },
+            _p: PhantomPinned,
+        }
+    }
+}
+
+/// Send data to specified address.
+pub struct SendTo<T: IoBuf, S> {
+    pub(crate) header: SendToHeader<S>,
+    pub(crate) buffer: T,
+    pub(crate) slices: [IoSlice; 1],
+}
+
+impl<T: IoBuf, S> SendTo<T, S> {
+    /// Create [`SendTo`].
+    pub fn new(fd: SharedFd<S>, buffer: T, addr: SockAddr) -> Self {
+        Self {
+            header: SendToHeader::new(fd, addr),
+            buffer,
+            // SAFETY: We never use this slice.
+            slices: [unsafe { IoSlice::from_slice(&[]) }],
+        }
+    }
+}
+
+impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+/// Send data to specified address from vectored buffer.
+pub struct SendToVectored<T: IoVectoredBuf, S> {
+    pub(crate) header: SendToHeader<S>,
+    pub(crate) buffer: T,
+    pub(crate) slices: Vec<IoSlice>,
+}
+
+impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
+    /// Create [`SendToVectored`].
+    pub fn new(fd: SharedFd<S>, buffer: T, addr: SockAddr) -> Self {
+        Self {
+            header: SendToHeader::new(fd, addr),
+            buffer,
+            slices: vec![],
+        }
+    }
+}
+
+impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
 /// The interest to poll a file descriptor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Interest {

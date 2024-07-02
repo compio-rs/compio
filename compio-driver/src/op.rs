@@ -6,7 +6,11 @@
 use std::{marker::PhantomPinned, mem::ManuallyDrop, net::Shutdown};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
+#[cfg(unix)]
+use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
+#[cfg(windows)]
+use windows_sys::Win32::Networking::WinSock::{socklen_t, SOCKADDR_STORAGE as sockaddr_storage};
 
 #[cfg(windows)]
 pub use crate::sys::op::ConnectNamedPipe;
@@ -19,10 +23,7 @@ pub use crate::sys::op::{
     CreateDir, CreateSocket, FileStat, HardLink, Interest, OpenFile, PathStat, PollOnce,
     ReadVectoredAt, Rename, Symlink, Unlink, WriteVectoredAt,
 };
-use crate::{
-    sys::{sockaddr_storage, socklen_t},
-    OwnedFd, SharedFd,
-};
+use crate::{OwnedFd, SharedFd};
 
 /// Trait to update the buffer length inside the [`BufResult`].
 pub trait BufResultExt {
