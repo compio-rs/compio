@@ -127,6 +127,10 @@ async fn drop_on_complete() {
 }
 
 #[compio_macros::test]
+#[cfg_attr(
+    not(any(windows, all(target_os = "linux", feature = "io-uring"))),
+    ignore
+)]
 async fn too_many_submissions() {
     let tempfile = tempfile();
 
