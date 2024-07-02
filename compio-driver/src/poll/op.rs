@@ -1,4 +1,4 @@
-use std::{ffi::CString, io, marker::PhantomPinned, pin::Pin, task::Poll};
+use std::{ffi::CString, io, pin::Pin, task::Poll};
 
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
@@ -12,9 +12,8 @@ use libc::{pread, preadv, pwrite, pwritev};
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "hurd"))]
 use libc::{pread64 as pread, preadv64 as preadv, pwrite64 as pwrite, pwritev64 as pwritev};
 use polling::Event;
-use socket2::SockAddr;
 
-use super::{sockaddr_storage, socklen_t, syscall, AsRawFd, Decision, OpCode};
+use super::{syscall, AsRawFd, Decision, OpCode};
 pub use crate::unix::op::*;
 use crate::{op::*, SharedFd};
 
@@ -505,57 +504,18 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendVectored<T, S> {
     }
 }
 
-struct RecvFromHeader<S> {
-    pub(crate) fd: SharedFd<S>,
-    addr: sockaddr_storage,
-    msg: libc::msghdr,
-    _p: PhantomPinned,
-}
-
 impl<S> RecvFromHeader<S> {
-    fn new(fd: SharedFd<S>) -> Self {
-        Self {
-            fd,
-            addr: unsafe { std::mem::zeroed() },
-            msg: unsafe { std::mem::zeroed() },
-            _p: PhantomPinned,
-        }
-    }
-
     fn set_msg(&mut self, slices: &mut [IoSliceMut]) {
         self.msg.msg_name = &mut self.addr as *mut _ as _;
         self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
         self.msg.msg_iov = slices.as_mut_ptr() as _;
         self.msg.msg_iovlen = slices.len() as _;
     }
-
-    fn into_addr(self) -> (sockaddr_storage, socklen_t) {
-        (self.addr, self.msg.msg_namelen)
-    }
 }
 
 impl<S: AsRawFd> RecvFromHeader<S> {
     unsafe fn call(&mut self) -> libc::ssize_t {
         libc::recvmsg(self.fd.as_raw_fd(), &mut self.msg, 0)
-    }
-}
-
-/// Receive data and source address.
-pub struct RecvFrom<T: IoBufMut, S> {
-    header: RecvFromHeader<S>,
-    buffer: T,
-    slices: [IoSliceMut; 1],
-}
-
-impl<T: IoBufMut, S> RecvFrom<T, S> {
-    /// Create [`RecvFrom`].
-    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
-        Self {
-            header: RecvFromHeader::new(fd),
-            buffer,
-            // SAFETY: We never use this slice.
-            slices: [unsafe { IoSliceMut::from_slice(&mut []) }],
-        }
     }
 }
 
@@ -578,33 +538,6 @@ impl<T: IoBufMut, S: AsRawFd> OpCode for RecvFrom<T, S> {
     }
 }
 
-impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
-    type Inner = (T, sockaddr_storage, socklen_t);
-
-    fn into_inner(self) -> Self::Inner {
-        let (addr, addr_len) = self.header.into_addr();
-        (self.buffer, addr, addr_len)
-    }
-}
-
-/// Receive data and source address into vectored buffer.
-pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
-    header: RecvFromHeader<S>,
-    buffer: T,
-    slices: Vec<IoSliceMut>,
-}
-
-impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
-    /// Create [`RecvFromVectored`].
-    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
-        Self {
-            header: RecvFromHeader::new(fd),
-            buffer,
-            slices: vec![],
-        }
-    }
-}
-
 impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvFromVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -624,32 +557,7 @@ impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvFromVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
-    type Inner = (T, sockaddr_storage, socklen_t);
-
-    fn into_inner(self) -> Self::Inner {
-        let (addr, addr_len) = self.header.into_addr();
-        (self.buffer, addr, addr_len)
-    }
-}
-
-struct SendToHeader<S> {
-    pub(crate) fd: SharedFd<S>,
-    pub(crate) addr: SockAddr,
-    pub(crate) msg: libc::msghdr,
-    _p: PhantomPinned,
-}
-
 impl<S> SendToHeader<S> {
-    fn new(fd: SharedFd<S>, addr: SockAddr) -> Self {
-        Self {
-            fd,
-            addr,
-            msg: unsafe { std::mem::zeroed() },
-            _p: PhantomPinned,
-        }
-    }
-
     fn set_msg(&mut self, slices: &mut [IoSlice]) {
         self.msg.msg_name = self.addr.as_ptr() as _;
         self.msg.msg_namelen = self.addr.len();
@@ -661,25 +569,6 @@ impl<S> SendToHeader<S> {
 impl<S: AsRawFd> SendToHeader<S> {
     unsafe fn call(&self) -> libc::ssize_t {
         libc::sendmsg(self.fd.as_raw_fd(), &self.msg, 0)
-    }
-}
-
-/// Send data to specified address.
-pub struct SendTo<T: IoBuf, S> {
-    header: SendToHeader<S>,
-    buffer: T,
-    slices: [IoSlice; 1],
-}
-
-impl<T: IoBuf, S> SendTo<T, S> {
-    /// Create [`SendTo`].
-    pub fn new(fd: SharedFd<S>, buffer: T, addr: SockAddr) -> Self {
-        Self {
-            header: SendToHeader::new(fd, addr),
-            buffer,
-            // SAFETY: We never use this slice.
-            slices: [unsafe { IoSlice::from_slice(&[]) }],
-        }
     }
 }
 
@@ -701,32 +590,6 @@ impl<T: IoBuf, S: AsRawFd> OpCode for SendTo<T, S> {
     }
 }
 
-impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
-    type Inner = T;
-
-    fn into_inner(self) -> Self::Inner {
-        self.buffer
-    }
-}
-
-/// Send data to specified address from vectored buffer.
-pub struct SendToVectored<T: IoVectoredBuf, S> {
-    header: SendToHeader<S>,
-    buffer: T,
-    slices: Vec<IoSlice>,
-}
-
-impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
-    /// Create [`SendToVectored`].
-    pub fn new(fd: SharedFd<S>, buffer: T, addr: SockAddr) -> Self {
-        Self {
-            header: SendToHeader::new(fd, addr),
-            buffer,
-            slices: vec![],
-        }
-    }
-}
-
 impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendToVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -742,14 +605,6 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendToVectored<T, S> {
         debug_assert!(event.writable);
 
         syscall!(break self.header.call())
-    }
-}
-
-impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
-    type Inner = T;
-
-    fn into_inner(self) -> Self::Inner {
-        self.buffer
     }
 }
 

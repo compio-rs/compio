@@ -1,7 +1,6 @@
 use std::ffi::CString;
 
-use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use socket2::SockAddr;
+use compio_buf::IntoInner;
 
 use super::*;
 pub use crate::unix::op::*;
@@ -92,9 +91,5 @@ mod iour { pub use crate::sys::iour::{op::*, OpCode}; }
 #[rustfmt::skip]
 mod poll { pub use crate::sys::poll::{op::*, OpCode}; }
 
-op!(<T: IoBufMut, S: AsRawFd> RecvFrom(fd: SharedFd<S>, buffer: T));
-op!(<T: IoBuf, S: AsRawFd> SendTo(fd: SharedFd<S>, buffer: T, addr: SockAddr));
-op!(<T: IoVectoredBufMut, S: AsRawFd> RecvFromVectored(fd: SharedFd<S>, buffer: T));
-op!(<T: IoVectoredBuf, S: AsRawFd> SendToVectored(fd: SharedFd<S>, buffer: T, addr: SockAddr));
 op!(<S: AsRawFd> FileStat(fd: SharedFd<S>));
 op!(<> PathStat(path: CString, follow_symlink: bool));
