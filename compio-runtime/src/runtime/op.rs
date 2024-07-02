@@ -58,7 +58,7 @@ impl<T: OpCode> Future for OpFlagsFuture<T> {
     type Output = (BufResult<usize, T>, u32);
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let res = Runtime::with_current(|r| r.poll_task_flags(cx, self.key.take().unwrap()));
+        let res = Runtime::with_current(|r| r.poll_task_with_flags(cx, self.key.take().unwrap()));
         match res {
             PushEntry::Pending(key) => {
                 self.key = Some(key);

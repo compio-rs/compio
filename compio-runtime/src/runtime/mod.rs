@@ -250,7 +250,7 @@ impl Runtime {
     /// the flags
     ///
     /// You only need this when authoring your own [`OpCode`].
-    pub fn submit_flags<T: OpCode + 'static>(
+    pub fn submit_with_flags<T: OpCode + 'static>(
         &self,
         op: T,
     ) -> impl Future<Output = (BufResult<usize, T>, u32)> {
@@ -296,14 +296,14 @@ impl Runtime {
         })
     }
 
-    pub(crate) fn poll_task_flags<T: OpCode>(
+    pub(crate) fn poll_task_with_flags<T: OpCode>(
         &self,
         cx: &mut Context,
         op: Key<T>,
     ) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
         instrument!(compio_log::Level::DEBUG, "poll_task_flags", ?op);
         let mut driver = self.driver.borrow_mut();
-        driver.pop_flags(op).map_pending(|mut k| {
+        driver.pop_with_flags(op).map_pending(|mut k| {
             driver.update_waker(&mut k, cx.waker().clone());
             k
         })

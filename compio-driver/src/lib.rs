@@ -305,7 +305,10 @@ impl Proactor {
     /// # Panics
     /// This function will panic if the requested operation has not been
     /// completed.
-    pub fn pop_flags<T>(&mut self, op: Key<T>) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
+    pub fn pop_with_flags<T>(
+        &mut self,
+        op: Key<T>,
+    ) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
         instrument!(compio_log::Level::DEBUG, "pop_flags", ?op);
         if op.has_result() {
             let flags = op.flags();
