@@ -471,3 +471,16 @@ pub fn spawn_blocking<T: Send + 'static>(
 pub fn submit<T: OpCode + 'static>(op: T) -> impl Future<Output = BufResult<usize, T>> {
     Runtime::with_current(|r| r.submit(op))
 }
+
+/// Submit an operation to the current runtime, and return a future for it with
+/// flags.
+///
+/// ## Panics
+///
+/// This method doesn't create runtime. It tries to obtain the current runtime
+/// by [`Runtime::with_current`].
+pub fn submit_with_flags<T: OpCode + 'static>(
+    op: T,
+) -> impl Future<Output = (BufResult<usize, T>, u32)> {
+    Runtime::with_current(|r| r.submit_with_flags(op))
+}
