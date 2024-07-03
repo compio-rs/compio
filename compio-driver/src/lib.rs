@@ -353,6 +353,8 @@ impl Entry {
         }
     }
 
+    #[cfg(all(target_os = "linux", feature = "io-uring"))]
+    // this method only used by in io-uring driver
     pub(crate) fn set_flags(&mut self, flags: u32) {
         self.flags = flags;
     }
