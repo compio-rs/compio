@@ -295,7 +295,7 @@ fn create_entry(cq_entry: CEntry) -> Entry {
         Ok(result as _)
     };
     let mut entry = Entry::new(cq_entry.user_data() as _, result);
-    entry.set_flags(entry.flags());
+    entry.set_flags(cq_entry.flags());
 
     entry
 }
