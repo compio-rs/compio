@@ -1,7 +1,7 @@
 use std::{future::Future, io, net::SocketAddr};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_driver::impl_raw_fd;
+use compio_driver::{impl_raw_fd, BorrowedBuffer, BufferPool};
 use compio_io::{AsyncRead, AsyncWrite};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
@@ -214,6 +214,15 @@ impl TcpStream {
     /// Create [`PollFd`] from inner socket.
     pub fn into_poll_fd(self) -> io::Result<PollFd<Socket2>> {
         self.inner.into_poll_fd()
+    }
+
+    /// Read some bytes from this source with buffer pool, if
+    pub async fn recv_buffer_pool<'a>(
+        &self,
+        buffer_pool: &'a BufferPool,
+        len: u32,
+    ) -> io::Result<BorrowedBuffer<'a>> {
+        self.inner.recv_buffer_pool(buffer_pool, len).await
     }
 }
 

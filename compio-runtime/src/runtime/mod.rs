@@ -15,7 +15,7 @@ use std::{
 use async_task::{Runnable, Task};
 use compio_buf::IntoInner;
 use compio_driver::{
-    op::Asyncify, AsRawFd, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
+    op::Asyncify, AsRawFd, BufferPool, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
 };
 use compio_log::{debug, instrument};
 use crossbeam_queue::SegQueue;
@@ -348,6 +348,22 @@ impl Runtime {
         #[cfg(feature = "time")]
         self.timer_runtime.borrow_mut().wake();
     }
+
+    /// Create buffer pool with given `buffer_size` and `buffer_len`
+    ///
+    /// # Notes
+    ///
+    /// If `buffer_len` is not power of 2, it will be upward with
+    /// [`u16::next_power_of_two`]
+    pub fn create_buffer_pool(
+        &self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<BufferPool> {
+        self.driver
+            .borrow_mut()
+            .create_buffer_pool(buffer_len, buffer_size)
+    }
 }
 
 impl AsRawFd for Runtime {
@@ -464,4 +480,14 @@ pub fn submit_with_flags<T: OpCode + 'static>(
     op: T,
 ) -> impl Future<Output = (BufResult<usize, T>, u32)> {
     Runtime::with_current(|r| r.submit_with_flags(op))
+}
+
+/// Create buffer pool with given `buffer_size` and `buffer_len`
+///
+/// # Notes
+///
+/// If `buffer_len` is not power of 2, it will be upward with
+/// [`u16::next_power_of_two`]
+pub async fn create_buffer_pool(buffer_len: u16, buffer_size: usize) -> io::Result<BufferPool> {
+    Runtime::with_current(|r| r.create_buffer_pool(buffer_len, buffer_size))
 }

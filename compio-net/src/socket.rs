@@ -1,4 +1,4 @@
-use std::{future::Future, io, mem::ManuallyDrop};
+use std::{future::Future, io, io::ErrorKind, mem::ManuallyDrop};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 #[cfg(unix)]
@@ -6,10 +6,11 @@ use compio_driver::op::CreateSocket;
 use compio_driver::{
     impl_raw_fd,
     op::{
-        Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored,
-        RecvResultExt, RecvVectored, Send, SendTo, SendToVectored, SendVectored, ShutdownSocket,
+        Accept, BufResultExt, CloseSocket, Connect, Recv, RecvBufferPool, RecvFrom,
+        RecvFromVectored, RecvResultExt, RecvVectored, Send, SendTo, SendToVectored, SendVectored,
+        ShutdownSocket,
     },
-    ToSharedFd,
+    BorrowedBuffer, BufferPool, ToSharedFd,
 };
 use compio_runtime::Attacher;
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
@@ -213,6 +214,36 @@ impl Socket {
         let fd = self.to_shared_fd();
         let op = Recv::new(fd, buffer);
         compio_runtime::submit(op).await.into_inner().map_advanced()
+    }
+
+    pub async fn recv_buffer_pool<'a>(
+        &self,
+        buffer_pool: &'a BufferPool,
+        len: u32,
+    ) -> io::Result<BorrowedBuffer<'a>> {
+        let fd = self.to_shared_fd();
+        let op = RecvBufferPool::new(fd, buffer_pool, len);
+        let (BufResult(res, _), flags) = compio_runtime::submit_with_flags(op).await;
+        match res {
+            Ok(n) => {
+                unsafe {
+                    // Safety: n is valid
+                    buffer_pool.get_buffer(flags, n).ok_or_else(|| {
+                        io::Error::new(ErrorKind::InvalidData, format!("flags {flags} is invalid"))
+                    })
+                }
+            }
+            Err(err) => {
+                unsafe {
+                    // Safety: drop it if it is used to release the buffer
+                    if let Some(buffer) = buffer_pool.get_buffer(flags, 0) {
+                        drop(buffer);
+                    }
+                }
+
+                Err(err)
+            }
+        }
     }
 
     pub async fn recv_vectored<V: IoVectoredBufMut>(&self, buffer: V) -> BufResult<usize, V> {

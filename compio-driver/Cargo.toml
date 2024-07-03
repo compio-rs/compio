@@ -58,9 +58,11 @@ windows-sys = { workspace = true, features = [
 # Linux specific dependencies
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = { version = "0.6.2", optional = true }
+io_uring_buf_ring = { version = "0.1.0-dev.2", optional = true }
 polling = { version = "3.3.0", optional = true }
 os_pipe = { workspace = true, optional = true }
 paste = { workspace = true }
+slab = { version = "0.4.9", optional = true }
 
 # Other platform dependencies
 [target.'cfg(all(not(target_os = "linux"), unix))'.dependencies]
@@ -77,6 +79,7 @@ compio-buf = { workspace = true, features = ["arrayvec"] }
 
 [features]
 default = ["io-uring"]
+io-uring = ["dep:io-uring", "dep:io_uring_buf_ring", "dep:slab"]
 polling = ["dep:polling", "dep:os_pipe"]
 
 io-uring-sqe128 = []

@@ -1,10 +1,11 @@
-use std::{ffi::CString, io, marker::PhantomPinned, os::fd::AsRawFd, pin::Pin};
+use std::{ffi::CString, io, marker::PhantomPinned, os::fd::AsRawFd, pin::Pin, ptr};
 
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
 };
 use io_uring::{
     opcode,
+    squeue::Flags,
     types::{Fd, FsyncFlags},
 };
 use libc::{sockaddr_storage, socklen_t};
@@ -12,7 +13,7 @@ use socket2::SockAddr;
 
 use super::OpCode;
 pub use crate::unix::op::*;
-use crate::{op::*, syscall, OpEntry, SharedFd};
+use crate::{op::*, syscall, BufferPool, OpEntry, SharedFd};
 
 impl<
     D: std::marker::Send + 'static,
@@ -454,6 +455,37 @@ impl<T: IoVectoredBufMut, S: AsRawFd> IntoInner for RecvFromVectored<T, S> {
     fn into_inner(self) -> Self::Inner {
         let (addr, addr_len) = self.header.into_addr();
         (self.buffer, addr, addr_len)
+    }
+}
+
+/// Receive data from remote.
+pub struct RecvBufferPool<S> {
+    fd: SharedFd<S>,
+    buffer_group: u16,
+    len: u32,
+    _p: PhantomPinned,
+}
+
+impl<S> RecvBufferPool<S> {
+    /// Create [`RecvBufferPool`].
+    pub fn new(fd: SharedFd<S>, buffer_pool: &BufferPool, len: u32) -> Self {
+        Self {
+            fd,
+            buffer_group: buffer_pool.buffer_group(),
+            len,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<S: AsRawFd> OpCode for RecvBufferPool<S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let fd = self.fd.as_raw_fd();
+        opcode::Read::new(Fd(fd), ptr::null_mut(), self.len)
+            .buf_group(self.buffer_group)
+            .build()
+            .flags(Flags::BUFFER_SELECT)
+            .into()
     }
 }
 

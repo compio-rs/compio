@@ -1,7 +1,7 @@
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 #[allow(unused_imports)]
 pub use std::os::fd::{AsRawFd, OwnedFd, RawFd};
-use std::{io, os::fd::FromRawFd, pin::Pin, sync::Arc, task::Poll, time::Duration};
+use std::{io, io::ErrorKind, os::fd::FromRawFd, pin::Pin, sync::Arc, task::Poll, time::Duration};
 
 use compio_log::{instrument, trace, warn};
 use crossbeam_queue::SegQueue;
@@ -25,11 +25,16 @@ use io_uring::{
     types::{Fd, SubmitArgs, Timespec},
     IoUring,
 };
+use io_uring_buf_ring::IoUringBufRing;
 pub(crate) use libc::{sockaddr_storage, socklen_t};
+use slab::Slab;
 
 use crate::{syscall, AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder};
 
+mod buffer_pool;
 pub(crate) mod op;
+
+pub use buffer_pool::{BorrowedBuffer, BufferPool};
 
 /// The created entry of [`OpCode`].
 pub enum OpEntry {
@@ -73,6 +78,8 @@ pub(crate) struct Driver {
     notifier: Notifier,
     pool: AsyncifyPool,
     pool_completed: Arc<SegQueue<Entry>>,
+    // buffer group id type is u16, we should reuse the buffer group id when BufferPool is drop
+    buffer_group_ids: Slab<()>,
 }
 
 impl Driver {
@@ -106,6 +113,7 @@ impl Driver {
             notifier,
             pool: builder.create_or_get_thread_pool(),
             pool_completed: Arc::new(SegQueue::new()),
+            buffer_group_ids: Default::default(),
         })
     }
 
@@ -273,6 +281,38 @@ impl Driver {
 
     pub fn handle(&self) -> io::Result<NotifyHandle> {
         self.notifier.handle()
+    }
+
+    pub fn create_buffer_pool(
+        &mut self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<BufferPool> {
+        let buffer_group = self.buffer_group_ids.insert(());
+        if buffer_group > u16::MAX as usize {
+            self.buffer_group_ids.remove(buffer_group);
+
+            return Err(io::Error::new(
+                ErrorKind::OutOfMemory,
+                "too many buffer pool allocated",
+            ));
+        }
+
+        let buf_ring =
+            IoUringBufRing::new(&self.inner, buffer_len, buffer_group as _, buffer_size)?;
+
+        Ok(BufferPool::new(buf_ring))
+    }
+
+    /// # Safety
+    ///
+    /// caller must make sure release the buffer pool with correct driver
+    pub unsafe fn release_buffer_pool(&mut self, buffer_pool: BufferPool) -> io::Result<()> {
+        let buffer_group = buffer_pool.buffer_group();
+        buffer_pool.into_inner().release(&self.inner)?;
+        self.buffer_group_ids.remove(buffer_group as _);
+
+        Ok(())
     }
 }
 
