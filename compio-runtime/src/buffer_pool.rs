@@ -30,10 +30,16 @@ impl BufferPool {
         }
     }
 
+    // user should not use this method, but compio_net and compio_fs need it to
+    // access the driver buffer pool, so make it public and hide it from doc
+    #[doc(hidden)]
     pub fn as_driver_buffer_pool(&self) -> &compio_driver::BufferPool {
         &self.inner
     }
 
+    // user should not use this method, but compio_net and compio_fs need it to
+    // access the driver buffer pool, so make it public and hide it from doc
+    #[doc(hidden)]
     pub unsafe fn get_buffer(&self, flags: u32, available_len: usize) -> Option<BorrowedBuffer> {
         self.inner.get_buffer(flags, available_len)
     }
