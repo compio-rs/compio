@@ -15,7 +15,7 @@ use std::{
 use async_task::{Runnable, Task};
 use compio_buf::IntoInner;
 use compio_driver::{
-    op::Asyncify, AsRawFd, BufferPool, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
+    op::Asyncify, AsRawFd, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
 };
 use compio_log::{debug, instrument};
 use crossbeam_queue::SegQueue;
@@ -31,7 +31,7 @@ use send_wrapper::SendWrapper;
 
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerRuntime};
-use crate::{runtime::op::OpFlagsFuture, BufResult};
+use crate::{buffer_pool::BufferPool, runtime::op::OpFlagsFuture, BufResult};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 
@@ -363,6 +363,14 @@ impl Runtime {
         self.driver
             .borrow_mut()
             .create_buffer_pool(buffer_len, buffer_size)
+            .map(|buffer_pool| BufferPool::inner_new(buffer_pool))
+    }
+
+    pub(crate) unsafe fn release_buffer_pool(
+        &self,
+        buffer_pool: compio_driver::BufferPool,
+    ) -> io::Result<()> {
+        self.driver.borrow_mut().release_buffer_pool(buffer_pool)
     }
 }
 
@@ -480,14 +488,4 @@ pub fn submit_with_flags<T: OpCode + 'static>(
     op: T,
 ) -> impl Future<Output = (BufResult<usize, T>, u32)> {
     Runtime::with_current(|r| r.submit_with_flags(op))
-}
-
-/// Create buffer pool with given `buffer_size` and `buffer_len`
-///
-/// # Notes
-///
-/// If `buffer_len` is not power of 2, it will be upward with
-/// [`u16::next_power_of_two`]
-pub async fn create_buffer_pool(buffer_len: u16, buffer_size: usize) -> io::Result<BufferPool> {
-    Runtime::with_current(|r| r.create_buffer_pool(buffer_len, buffer_size))
 }

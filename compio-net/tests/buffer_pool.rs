@@ -2,6 +2,7 @@ use std::net::Ipv6Addr;
 
 use compio_io::AsyncWriteExt;
 use compio_net::{TcpListener, TcpStream};
+use compio_runtime::buffer_pool::BufferPool;
 
 #[compio_macros::test]
 async fn test_tcp_read_buffer_pool() {
@@ -15,7 +16,7 @@ async fn test_tcp_read_buffer_pool() {
     })
     .detach();
 
-    let buffer_pool = compio_runtime::create_buffer_pool(2, 4).await.unwrap();
+    let buffer_pool = BufferPool::new(2, 4).unwrap();
     let stream = TcpStream::connect(addr).await.unwrap();
 
     assert_eq!(

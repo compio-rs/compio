@@ -14,6 +14,7 @@
 mod attacher;
 mod runtime;
 
+pub mod buffer_pool;
 #[cfg(feature = "event")]
 pub mod event;
 #[cfg(feature = "time")]
@@ -23,6 +24,5 @@ pub use async_task::Task;
 pub use attacher::*;
 use compio_buf::BufResult;
 pub use runtime::{
-    create_buffer_pool, spawn, spawn_blocking, submit, submit_with_flags, JoinHandle, Runtime,
-    RuntimeBuilder,
+    spawn, spawn_blocking, submit, submit_with_flags, JoinHandle, Runtime, RuntimeBuilder,
 };

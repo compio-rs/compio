@@ -10,9 +10,12 @@ use compio_driver::{
         RecvFromVectored, RecvResultExt, RecvVectored, Send, SendTo, SendToVectored, SendVectored,
         ShutdownSocket,
     },
-    BorrowedBuffer, BufferPool, ToSharedFd,
+    ToSharedFd,
 };
-use compio_runtime::Attacher;
+use compio_runtime::{
+    buffer_pool::{BorrowedBuffer, BufferPool},
+    Attacher,
+};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::PollFd;
@@ -222,7 +225,7 @@ impl Socket {
         len: u32,
     ) -> io::Result<BorrowedBuffer<'a>> {
         let fd = self.to_shared_fd();
-        let op = RecvBufferPool::new(fd, buffer_pool, len);
+        let op = RecvBufferPool::new(fd, buffer_pool.as_driver_buffer_pool(), len);
         let (BufResult(res, _), flags) = compio_runtime::submit_with_flags(op).await;
         match res {
             Ok(n) => {
