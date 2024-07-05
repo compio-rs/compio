@@ -31,7 +31,7 @@ use send_wrapper::SendWrapper;
 
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerRuntime};
-use crate::{buffer_pool::BufferPool, runtime::op::OpFlagsFuture, BufResult};
+use crate::{runtime::op::OpFlagsFuture, BufResult};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 
@@ -355,15 +355,14 @@ impl Runtime {
     ///
     /// If `buffer_len` is not power of 2, it will be upward with
     /// [`u16::next_power_of_two`]
-    pub fn create_buffer_pool(
+    pub(crate) fn create_buffer_pool(
         &self,
         buffer_len: u16,
         buffer_size: usize,
-    ) -> io::Result<BufferPool> {
+    ) -> io::Result<compio_driver::BufferPool> {
         self.driver
             .borrow_mut()
             .create_buffer_pool(buffer_len, buffer_size)
-            .map(BufferPool::inner_new)
     }
 
     pub(crate) unsafe fn release_buffer_pool(
