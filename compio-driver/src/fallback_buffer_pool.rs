@@ -30,11 +30,11 @@ impl BufferPool {
         }
     }
 
-    pub fn get_buffer(&self) -> Option<Vec<u8>> {
+    pub(crate) fn get_buffer(&self) -> Option<Vec<u8>> {
         self.buffers.borrow_mut().pop_front()
     }
 
-    pub fn add_buffer(&self, buffer: Vec<u8>) {
+    pub(crate) fn add_buffer(&self, buffer: Vec<u8>) {
         self.buffers.borrow_mut().push_back(buffer)
     }
 }
@@ -45,7 +45,7 @@ pub struct BorrowedBuffer<'a> {
 }
 
 impl<'a> BorrowedBuffer<'a> {
-    pub fn new(buffer: Slice<Vec<u8>>, pool: &'a BufferPool) -> Self {
+    pub(crate) fn new(buffer: Slice<Vec<u8>>, pool: &'a BufferPool) -> Self {
         Self {
             buffer: ManuallyDrop::new(buffer),
             pool,

@@ -1,4 +1,4 @@
-use std::{ffi::CString, io, marker::PhantomPinned, os::fd::AsRawFd, pin::Pin, ptr};
+use std::{ffi::CString, io, io::ErrorKind, marker::PhantomPinned, os::fd::AsRawFd, pin::Pin, ptr};
 
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
@@ -11,9 +11,12 @@ use io_uring::{
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
-use super::OpCode;
+use super::{
+    buffer_pool::{BorrowedBuffer, BufferPool},
+    OpCode,
+};
 pub use crate::unix::op::*;
-use crate::{op::*, syscall, BufferPool, OpEntry, SharedFd};
+use crate::{op::*, syscall, OpEntry, SharedFd, TakeBuffer};
 
 impl<
     D: std::marker::Send + 'static,
@@ -146,14 +149,19 @@ pub struct ReadAtBufferPool<S> {
 
 impl<S> ReadAtBufferPool<S> {
     /// Create [`ReadAtBufferPool`].
-    pub fn new(fd: SharedFd<S>, offset: u64, buffer_pool: &BufferPool, len: u32) -> Self {
-        Self {
+    pub fn new(
+        buffer_pool: &BufferPool,
+        fd: SharedFd<S>,
+        offset: u64,
+        len: u32,
+    ) -> io::Result<Self> {
+        Ok(Self {
             fd,
             offset,
             buffer_group: buffer_pool.buffer_group(),
             len,
             _p: PhantomPinned,
-        }
+        })
     }
 }
 
@@ -167,6 +175,30 @@ impl<S: AsRawFd> OpCode for ReadAtBufferPool<S> {
             .build()
             .flags(Flags::BUFFER_SELECT)
             .into()
+    }
+}
+
+impl<S> TakeBuffer<usize> for ReadAtBufferPool<S> {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    fn take_buffer(
+        self,
+        buffer_pool: &Self::BufferPool,
+        result: io::Result<usize>,
+        flags: u32,
+    ) -> io::Result<Self::Buffer<'_>> {
+        let n = result.inspect_err(|_| unsafe {
+            // Safety: flags is valid
+            buffer_pool.reuse_buffer(flags)
+        })?;
+
+        unsafe {
+            // Safety: flags is valid
+            buffer_pool.get_buffer(flags, n).ok_or_else(|| {
+                io::Error::new(ErrorKind::InvalidInput, format!("flags {flags} is invalid"))
+            })
+        }
     }
 }
 
@@ -504,13 +536,13 @@ pub struct RecvBufferPool<S> {
 
 impl<S> RecvBufferPool<S> {
     /// Create [`RecvBufferPool`].
-    pub fn new(fd: SharedFd<S>, buffer_pool: &BufferPool, len: u32) -> Self {
-        Self {
+    pub fn new(buffer_pool: &BufferPool, fd: SharedFd<S>, len: u32) -> io::Result<Self> {
+        Ok(Self {
             fd,
             buffer_group: buffer_pool.buffer_group(),
             len,
             _p: PhantomPinned,
-        }
+        })
     }
 }
 
@@ -522,6 +554,30 @@ impl<S: AsRawFd> OpCode for RecvBufferPool<S> {
             .build()
             .flags(Flags::BUFFER_SELECT)
             .into()
+    }
+}
+
+impl<S> TakeBuffer<usize> for RecvBufferPool<S> {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    fn take_buffer(
+        self,
+        buffer_pool: &Self::BufferPool,
+        result: io::Result<usize>,
+        flags: u32,
+    ) -> io::Result<Self::Buffer<'_>> {
+        let n = result.inspect_err(|_| unsafe {
+            // Safety: flags is valid
+            buffer_pool.reuse_buffer(flags)
+        })?;
+
+        unsafe {
+            // Safety: flags is valid
+            buffer_pool.get_buffer(flags, n).ok_or_else(|| {
+                io::Error::new(ErrorKind::InvalidInput, format!("flags {flags} is invalid"))
+            })
+        }
     }
 }
 

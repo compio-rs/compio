@@ -1,7 +1,8 @@
-use std::{ffi::CString, io, marker::PhantomPinned, pin::Pin, task::Poll};
+use std::{ffi::CString, io, io::ErrorKind, marker::PhantomPinned, pin::Pin, task::Poll};
 
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
+    SetBufInit, Slice,
 };
 #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
 use libc::open;
@@ -11,12 +12,17 @@ use libc::open64 as open;
 use libc::{pread, preadv, pwrite, pwritev};
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "hurd"))]
 use libc::{pread64 as pread, preadv64 as preadv, pwrite64 as pwrite, pwritev64 as pwritev};
+use pin_project_lite::pin_project;
 use polling::Event;
 use socket2::SockAddr;
 
 use super::{sockaddr_storage, socklen_t, syscall, AsRawFd, Decision, OpCode};
 pub use crate::unix::op::*;
-use crate::{op::*, SharedFd};
+use crate::{
+    fallback_buffer_pool::{BorrowedBuffer, BufferPool},
+    op::*,
+    SharedFd, TakeBuffer,
+};
 
 impl<
     D: std::marker::Send + 'static,
@@ -190,6 +196,64 @@ impl<T: IoBufMut, S: AsRawFd> OpCode for ReadAt<T, S> {
         let offset = self.offset;
         let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
         syscall!(break pread(fd, slice.as_mut_ptr() as _, slice.len() as _, offset as _,))
+    }
+}
+
+pin_project! {
+    /// Read a file at specified position into specified buffer.
+    pub struct ReadAtBufferPool<S> {
+        #[pin]
+        read_at: ReadAt<Slice<Vec<u8>>, S>,
+    }
+}
+
+impl<S> ReadAtBufferPool<S> {
+    /// Create [`ReadAtBufferPool`].
+    pub fn new(
+        buffer_pool: &BufferPool,
+        fd: SharedFd<S>,
+        offset: u64,
+        len: u32,
+    ) -> io::Result<Self> {
+        let buffer = buffer_pool.get_buffer().ok_or_else(|| {
+            io::Error::new(ErrorKind::Other, "buffer ring has no available buffer")
+        })?;
+
+        Ok(Self {
+            read_at: ReadAt::new(fd, offset, buffer.slice(..len as usize)),
+        })
+    }
+}
+
+impl<S: AsRawFd> OpCode for ReadAtBufferPool<S> {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        self.project().read_at.pre_submit()
+    }
+
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+        self.project().read_at.on_event(event)
+    }
+}
+
+impl<S> TakeBuffer<usize> for ReadAtBufferPool<S> {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    fn take_buffer(
+        self,
+        buffer_pool: &Self::BufferPool,
+        result: io::Result<usize>,
+        _: u32,
+    ) -> io::Result<Self::Buffer<'_>> {
+        let n = result?;
+        let mut slice = self.read_at.into_inner();
+
+        // Safety: n is valid
+        unsafe {
+            slice.set_buf_init(n);
+        }
+
+        Ok(BorrowedBuffer::new(slice, buffer_pool))
     }
 }
 
@@ -449,6 +513,59 @@ impl<T: IoBufMut, S: AsRawFd> OpCode for Recv<T, S> {
         let fd = self.fd.as_raw_fd();
         let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
         syscall!(break libc::read(fd, slice.as_mut_ptr() as _, slice.len()))
+    }
+}
+
+pin_project! {
+    /// Receive data from remote.
+    pub struct RecvBufferPool<S> {
+        #[pin]
+        recv: Recv<Slice<Vec<u8>>, S>,
+    }
+}
+
+impl<S> RecvBufferPool<S> {
+    /// Create [`RecvBufferPool`].
+    pub fn new(buffer_pool: &BufferPool, fd: SharedFd<S>, len: u32) -> io::Result<Self> {
+        let buffer = buffer_pool.get_buffer().ok_or_else(|| {
+            io::Error::new(ErrorKind::Other, "buffer ring has no available buffer")
+        })?;
+
+        Ok(Self {
+            recv: Recv::new(fd, buffer.slice(..len as usize)),
+        })
+    }
+}
+
+impl<S: AsRawFd> OpCode for RecvBufferPool<S> {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        self.project().recv.pre_submit()
+    }
+
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+        self.project().recv.on_event(event)
+    }
+}
+
+impl<S> TakeBuffer<usize> for RecvBufferPool<S> {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    fn take_buffer(
+        self,
+        buffer_pool: &Self::BufferPool,
+        result: io::Result<usize>,
+        _: u32,
+    ) -> io::Result<Self::Buffer<'_>> {
+        let n = result?;
+        let mut slice = self.recv.into_inner();
+
+        // Safety: n is valid
+        unsafe {
+            slice.set_buf_init(n);
+        }
+
+        Ok(BorrowedBuffer::new(slice, buffer_pool))
     }
 }
 

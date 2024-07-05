@@ -55,6 +55,7 @@ tempfile = "3.8.1"
 tokio = "1.33.0"
 widestring = "1.0.2"
 windows-sys = "0.52.0"
+pin-project-lite = "0.2.14"
 
 [profile.bench]
 debug = true

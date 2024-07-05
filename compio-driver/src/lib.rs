@@ -48,7 +48,7 @@ cfg_if::cfg_if! {
         #[path = "fusion/mod.rs"]
         mod sys;
         mod fallback_buffer_pool;
-        pub use fallback_buffer_pool::{BufferPool, BorrowedBuffer};
+        pub use sys::buffer_pool::{BufferPool, BorrowedBuffer};
     } else if #[cfg(all(target_os = "linux", feature = "io-uring"))] {
         #[path = "iour/mod.rs"]
         mod sys;
@@ -320,7 +320,6 @@ impl Proactor {
         self.driver.handle()
     }
 
-    #[cfg(all(target_os = "linux", feature = "io-uring"))]
     /// Create buffer pool with given `buffer_size` and `buffer_len`
     ///
     /// # Notes
@@ -335,32 +334,6 @@ impl Proactor {
         self.driver.create_buffer_pool(buffer_len, buffer_size)
     }
 
-    #[cfg(not(feature = "io-uring"))]
-    /// Create buffer pool with given `buffer_size` and `buffer_len`
-    ///
-    /// # Notes
-    ///
-    /// If `buffer_len` is not power of 2, it will be upward with
-    /// [`u16::next_power_of_two`]
-    pub fn create_buffer_pool(
-        &mut self,
-        buffer_len: u16,
-        buffer_size: usize,
-    ) -> io::Result<BufferPool> {
-        Ok(BufferPool::new(buffer_len, buffer_size))
-    }
-
-    #[cfg(not(feature = "io-uring"))]
-    /// Release the buffer pool
-    ///
-    /// # Safety
-    ///
-    /// caller must make sure release the buffer pool with correct driver
-    pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
-        Ok(())
-    }
-
-    #[cfg(all(target_os = "linux", feature = "io-uring"))]
     /// Release the buffer pool
     ///
     /// # Safety
@@ -560,4 +533,16 @@ impl ProactorBuilder {
     pub fn build(&self) -> io::Result<Proactor> {
         Proactor::with_builder(self)
     }
+}
+
+pub trait TakeBuffer<T> {
+    type BufferPool;
+    type Buffer<'a>;
+
+    fn take_buffer(
+        self,
+        buffer_pool: &Self::BufferPool,
+        result: io::Result<T>,
+        flag: u32,
+    ) -> io::Result<Self::Buffer<'_>>;
 }

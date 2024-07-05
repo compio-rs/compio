@@ -4,6 +4,7 @@ mod poll;
 #[path = "../iour/mod.rs"]
 mod iour;
 
+pub(crate) mod buffer_pool;
 pub(crate) mod op;
 
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
@@ -15,7 +16,7 @@ pub(crate) use iour::{sockaddr_storage, socklen_t};
 pub use iour::{OpCode as IourOpCode, OpEntry};
 pub use poll::{Decision, OpCode as PollOpCode};
 
-use crate::{Key, OutEntries, ProactorBuilder};
+use crate::{BufferPool, Key, OutEntries, ProactorBuilder};
 
 mod driver_type {
     use std::sync::atomic::{AtomicU8, Ordering};
@@ -179,6 +180,28 @@ impl Driver {
             FuseDriver::IoUring(driver) => FuseNotifyHandle::IoUring(driver.handle()?),
         };
         Ok(NotifyHandle::from_fuse(fuse))
+    }
+
+    pub fn create_buffer_pool(
+        &mut self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<BufferPool> {
+        match &mut self.fuse {
+            FuseDriver::IoUring(driver) => Ok(BufferPool::new_io_uring(
+                driver.create_buffer_pool(buffer_len, buffer_size)?,
+            )),
+            FuseDriver::Poll(driver) => Ok(BufferPool::new_poll(
+                driver.create_buffer_pool(buffer_len, buffer_size)?,
+            )),
+        }
+    }
+
+    /// # Safety
+    ///
+    /// caller must make sure release the buffer pool with correct driver
+    pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
+        todo!()
     }
 }
 

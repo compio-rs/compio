@@ -30,12 +30,22 @@ impl BufferPool {
         self.buf_ring
     }
 
-    pub unsafe fn get_buffer(&self, flags: u32, available_len: usize) -> Option<BorrowedBuffer> {
+    pub(crate) unsafe fn get_buffer(
+        &self,
+        flags: u32,
+        available_len: usize,
+    ) -> Option<BorrowedBuffer> {
         let buffer_id = buffer_select(flags)?;
 
         self.buf_ring
             .get_buf(buffer_id, available_len)
             .map(BorrowedBuffer)
+    }
+
+    pub(crate) unsafe fn reuse_buffer(&self, flags: u32) {
+        if let Some(buffer_id) = buffer_select(flags) {
+            self.buf_ring.get_buf(buffer_id, 0).map(BorrowedBuffer);
+        }
     }
 }
 

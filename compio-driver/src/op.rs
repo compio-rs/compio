@@ -11,16 +11,14 @@ use socket2::SockAddr;
 #[cfg(windows)]
 pub use crate::sys::op::ConnectNamedPipe;
 pub use crate::sys::op::{
-    Accept, Recv, RecvFrom, RecvFromVectored, RecvVectored, Send, SendTo, SendToVectored,
-    SendVectored,
+    Accept, ReadAtBufferPool, Recv, RecvBufferPool, RecvFrom, RecvFromVectored, RecvVectored, Send,
+    SendTo, SendToVectored, SendVectored,
 };
 #[cfg(unix)]
 pub use crate::sys::op::{
     CreateDir, CreateSocket, FileStat, HardLink, Interest, OpenFile, PathStat, PollOnce,
     ReadVectoredAt, Rename, Symlink, Unlink, WriteVectoredAt,
 };
-#[cfg(all(target_os = "linux", feature = "io-uring"))]
-pub use crate::sys::op::{ReadAtBufferPool, RecvBufferPool};
 use crate::{
     sys::{sockaddr_storage, socklen_t},
     OwnedFd, SharedFd,
