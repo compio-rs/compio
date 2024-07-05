@@ -60,7 +60,7 @@ nix = { workspace = true, features = ["fs"] }
 
 [features]
 default = []
-io-uring = ["compio-driver/io-uring"]
+io-uring = ["compio-runtime/io-uring"]
 
 read_buf = ["compio-buf/read_buf", "compio-io/read_buf"]
 windows_by_handle = []

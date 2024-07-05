@@ -65,6 +65,7 @@ glib = "0.19"
 
 [features]
 event = ["dep:cfg-if", "compio-buf/arrayvec"]
+io-uring = ["compio-driver/io-uring"]
 time = ["dep:slab"]
 
 [[test]]

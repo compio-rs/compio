@@ -3,12 +3,13 @@ use std::{future::Future, io, io::ErrorKind, mem::ManuallyDrop};
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 #[cfg(unix)]
 use compio_driver::op::CreateSocket;
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+use compio_driver::op::RecvBufferPool;
 use compio_driver::{
     impl_raw_fd,
     op::{
-        Accept, BufResultExt, CloseSocket, Connect, Recv, RecvBufferPool, RecvFrom,
-        RecvFromVectored, RecvResultExt, RecvVectored, Send, SendTo, SendToVectored, SendVectored,
-        ShutdownSocket,
+        Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored,
+        RecvResultExt, RecvVectored, Send, SendTo, SendToVectored, SendVectored, ShutdownSocket,
     },
     ToSharedFd,
 };
@@ -219,6 +220,7 @@ impl Socket {
         compio_runtime::submit(op).await.into_inner().map_advanced()
     }
 
+    #[cfg(all(target_os = "linux", feature = "io-uring"))]
     pub async fn recv_buffer_pool<'a>(
         &self,
         buffer_pool: &'a BufferPool,
@@ -246,6 +248,30 @@ impl Socket {
 
                 Err(err)
             }
+        }
+    }
+
+    #[cfg(not(feature = "io-uring"))]
+    pub async fn recv_buffer_pool<'a>(
+        &self,
+        buffer_pool: &'a BufferPool,
+        len: u32,
+    ) -> io::Result<BorrowedBuffer<'a>> {
+        let buffer = buffer_pool.get_buffer().ok_or_else(|| {
+            io::Error::new(ErrorKind::Other, "buffer pool has no available buffer")
+        })?;
+        let BufResult(res, buffer) = self.recv(buffer.slice(..len as usize)).await;
+        match res {
+            Err(err) => {
+                buffer_pool.add_buffer(buffer.into_inner());
+
+                Err(err)
+            }
+
+            Ok(_) => Ok(BorrowedBuffer::new(
+                buffer,
+                buffer_pool.as_driver_buffer_pool(),
+            )),
         }
     }
 

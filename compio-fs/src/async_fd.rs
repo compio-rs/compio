@@ -7,8 +7,10 @@ use std::os::windows::io::{
 use std::{io, io::ErrorKind};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+use compio_driver::op::RecvBufferPool;
 use compio_driver::{
-    op::{BufResultExt, Recv, RecvBufferPool, Send},
+    op::{BufResultExt, Recv, Send},
     AsRawFd, SharedFd, ToSharedFd,
 };
 use compio_io::{AsyncRead, AsyncWrite};
@@ -50,6 +52,7 @@ impl<T: AsRawFd> AsyncFd<T> {
 }
 
 impl<T: AsRawFd + 'static> AsyncFd<T> {
+    #[cfg(all(target_os = "linux", feature = "io-uring"))]
     pub async fn read_buffer_pool<'a>(
         &self,
         buffer_pool: &'a BufferPool,
@@ -77,6 +80,32 @@ impl<T: AsRawFd + 'static> AsyncFd<T> {
 
                 Err(err)
             }
+        }
+    }
+
+    #[cfg(not(feature = "io-uring"))]
+    pub async fn read_buffer_pool<'a>(
+        &self,
+        buffer_pool: &'a BufferPool,
+        len: u32,
+    ) -> io::Result<BorrowedBuffer<'a>> {
+        let buffer = buffer_pool.get_buffer().ok_or_else(|| {
+            io::Error::new(ErrorKind::Other, "buffer pool has no available buffer")
+        })?;
+        let mut this = self;
+        let this = &mut this;
+        let BufResult(res, buffer) = this.read(buffer.slice(..len as usize)).await;
+        match res {
+            Err(err) => {
+                buffer_pool.add_buffer(buffer.into_inner());
+
+                Err(err)
+            }
+
+            Ok(_) => Ok(BorrowedBuffer::new(
+                buffer,
+                buffer_pool.as_driver_buffer_pool(),
+            )),
         }
     }
 }

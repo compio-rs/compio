@@ -363,7 +363,7 @@ impl Runtime {
         self.driver
             .borrow_mut()
             .create_buffer_pool(buffer_len, buffer_size)
-            .map(|buffer_pool| BufferPool::inner_new(buffer_pool))
+            .map(BufferPool::inner_new)
     }
 
     pub(crate) unsafe fn release_buffer_pool(

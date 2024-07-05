@@ -31,10 +31,10 @@ use slab::Slab;
 
 use crate::{syscall, AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder};
 
-mod buffer_pool;
+pub(crate) mod buffer_pool;
 pub(crate) mod op;
 
-pub use buffer_pool::{BorrowedBuffer, BufferPool};
+use buffer_pool::BufferPool;
 
 /// The created entry of [`OpCode`].
 pub enum OpEntry {
