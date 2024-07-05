@@ -217,7 +217,13 @@ impl TcpStream {
         self.inner.into_poll_fd()
     }
 
-    /// Read some bytes from this source with buffer pool, if
+    /// Read some bytes from this source with buffer pool
+    ///
+    /// # Note
+    ///
+    /// - If len > 0, will read `len` data at most
+    /// - If len == 0, will let kernel and `buffer_pool` decide how much data to
+    ///   read
     pub async fn recv_buffer_pool<'a>(
         &self,
         buffer_pool: &'a BufferPool,
