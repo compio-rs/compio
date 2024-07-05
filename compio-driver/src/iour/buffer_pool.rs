@@ -1,4 +1,5 @@
 use std::{
+    borrow::{Borrow, BorrowMut},
     fmt::{Debug, Formatter},
     ops::{Deref, DerefMut},
 };
@@ -57,5 +58,29 @@ impl Deref for BorrowedBuffer<'_> {
 impl DerefMut for BorrowedBuffer<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0.deref_mut()
+    }
+}
+
+impl AsRef<[u8]> for BorrowedBuffer<'_> {
+    fn as_ref(&self) -> &[u8] {
+        self.deref()
+    }
+}
+
+impl AsMut<[u8]> for BorrowedBuffer<'_> {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.deref_mut()
+    }
+}
+
+impl Borrow<[u8]> for BorrowedBuffer<'_> {
+    fn borrow(&self) -> &[u8] {
+        self.deref()
+    }
+}
+
+impl BorrowMut<[u8]> for BorrowedBuffer<'_> {
+    fn borrow_mut(&mut self) -> &mut [u8] {
+        self.deref_mut()
     }
 }
