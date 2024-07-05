@@ -9,6 +9,7 @@ use std::{ffi::OsStr, io, os::windows::io::FromRawHandle, ptr::null};
 use compio_buf::{BufResult, IoBuf, IoBufMut};
 use compio_driver::{impl_raw_fd, op::ConnectNamedPipe, syscall, AsRawFd, RawFd, ToSharedFd};
 use compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt};
+use compio_runtime::buffer_pool::{BorrowedBuffer, BufferPool};
 use widestring::U16CString;
 use windows_sys::Win32::{
     Storage::FileSystem::{
@@ -176,6 +177,15 @@ impl NamedPipeServer {
         syscall!(BOOL, DisconnectNamedPipe(self.as_raw_fd() as _))?;
         Ok(())
     }
+
+    #[inline]
+    pub async fn read_buffer_pool<'a>(
+        &self,
+        buffer_pool: &'a BufferPool,
+        len: u32,
+    ) -> io::Result<BorrowedBuffer<'a>> {
+        self.handle.read_buffer_pool(buffer_pool, len).await
+    }
 }
 
 impl AsyncRead for NamedPipeServer {
@@ -294,6 +304,15 @@ impl NamedPipeClient {
     pub fn info(&self) -> io::Result<PipeInfo> {
         // Safety: we're ensuring the lifetime of the named pipe.
         unsafe { named_pipe_info(self.as_raw_fd()) }
+    }
+
+    #[inline]
+    pub async fn read_buffer_pool<'a>(
+        &self,
+        buffer_pool: &'a BufferPool,
+        len: u32,
+    ) -> io::Result<BorrowedBuffer<'a>> {
+        self.handle.read_buffer_pool(buffer_pool, len).await
     }
 }
 

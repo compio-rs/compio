@@ -1,18 +1,21 @@
-use std::io;
 #[cfg(unix)]
 use std::os::fd::{FromRawFd, RawFd};
 #[cfg(windows)]
 use std::os::windows::io::{
     AsRawHandle, AsRawSocket, FromRawHandle, FromRawSocket, RawHandle, RawSocket,
 };
+use std::{io, io::ErrorKind};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
-    op::{BufResultExt, Recv, Send},
+    op::{BufResultExt, Recv, RecvBufferPool, Send},
     AsRawFd, SharedFd, ToSharedFd,
 };
 use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::Attacher;
+use compio_runtime::{
+    buffer_pool::{BorrowedBuffer, BufferPool},
+    Attacher,
+};
 #[cfg(unix)]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
@@ -42,6 +45,38 @@ impl<T: AsRawFd> AsyncFd<T> {
     pub unsafe fn new_unchecked(source: T) -> Self {
         Self {
             inner: Attacher::new_unchecked(source),
+        }
+    }
+}
+
+impl<T: AsRawFd + 'static> AsyncFd<T> {
+    pub async fn read_buffer_pool<'a>(
+        &self,
+        buffer_pool: &'a BufferPool,
+        len: u32,
+    ) -> io::Result<BorrowedBuffer<'a>> {
+        let fd = self.inner.to_shared_fd();
+        let op = RecvBufferPool::new(fd, buffer_pool.as_driver_buffer_pool(), len);
+        let (BufResult(res, _), flags) = compio_runtime::submit_with_flags(op).await;
+        match res {
+            Ok(n) => {
+                unsafe {
+                    // Safety: n is valid
+                    buffer_pool.get_buffer(flags, n).ok_or_else(|| {
+                        io::Error::new(ErrorKind::InvalidData, format!("flags {flags} is invalid"))
+                    })
+                }
+            }
+            Err(err) => {
+                unsafe {
+                    // Safety: drop it if it is used to release the buffer
+                    if let Some(buffer) = buffer_pool.get_buffer(flags, 0) {
+                        drop(buffer);
+                    }
+                }
+
+                Err(err)
+            }
         }
     }
 }

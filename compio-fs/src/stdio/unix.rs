@@ -3,6 +3,7 @@ use std::io;
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{AsRawFd, RawFd};
 use compio_io::{AsyncRead, AsyncWrite};
+use compio_runtime::buffer_pool::{BorrowedBuffer, BufferPool};
 
 #[cfg(doc)]
 use super::{stderr, stdin, stdout};
@@ -18,6 +19,15 @@ impl Stdin {
     pub(crate) fn new() -> Self {
         // SAFETY: no need to attach on unix
         Self(unsafe { AsyncFd::new_unchecked(libc::STDIN_FILENO) })
+    }
+
+    #[inline]
+    pub async fn read_buffer_pool<'a>(
+        &self,
+        buffer_pool: &'a BufferPool,
+        len: u32,
+    ) -> io::Result<BorrowedBuffer<'a>> {
+        self.0.read_buffer_pool(buffer_pool, len).await
     }
 }
 

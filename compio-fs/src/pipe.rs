@@ -3,6 +3,7 @@
 use std::{
     future::Future,
     io,
+    io::ErrorKind,
     os::fd::{FromRawFd, IntoRawFd},
     path::Path,
 };
@@ -10,10 +11,11 @@ use std::{
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{
     impl_raw_fd,
-    op::{BufResultExt, Recv, RecvVectored, Send, SendVectored},
+    op::{BufResultExt, Recv, RecvBufferPool, RecvVectored, Send, SendVectored},
     syscall, AsRawFd, ToSharedFd,
 };
 use compio_io::{AsyncRead, AsyncWrite};
+use compio_runtime::buffer_pool::{BorrowedBuffer, BufferPool};
 
 use crate::File;
 
@@ -475,6 +477,37 @@ impl Receiver {
     /// pipe won't be closed.
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.file.close()
+    }
+
+    #[inline]
+    pub async fn read_buffer_pool<'a>(
+        &self,
+        buffer_pool: &'a BufferPool,
+        len: u32,
+    ) -> io::Result<BorrowedBuffer<'a>> {
+        let fd = self.file.to_shared_fd();
+        let op = RecvBufferPool::new(fd, buffer_pool.as_driver_buffer_pool(), len);
+        let (BufResult(res, _), flags) = compio_runtime::submit_with_flags(op).await;
+        match res {
+            Ok(n) => {
+                unsafe {
+                    // Safety: n is valid
+                    buffer_pool.get_buffer(flags, n).ok_or_else(|| {
+                        io::Error::new(ErrorKind::InvalidData, format!("flags {flags} is invalid"))
+                    })
+                }
+            }
+            Err(err) => {
+                unsafe {
+                    // Safety: drop it if it is used to release the buffer
+                    if let Some(buffer) = buffer_pool.get_buffer(flags, 0) {
+                        drop(buffer);
+                    }
+                }
+
+                Err(err)
+            }
+        }
     }
 }
 

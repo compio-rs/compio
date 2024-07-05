@@ -1,13 +1,16 @@
-use std::{future::Future, io, mem::ManuallyDrop, panic::resume_unwind, path::Path};
+use std::{future::Future, io, io::ErrorKind, mem::ManuallyDrop, panic::resume_unwind, path::Path};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
     impl_raw_fd,
-    op::{BufResultExt, CloseFile, ReadAt, Sync, WriteAt},
+    op::{BufResultExt, CloseFile, ReadAt, ReadAtBufferPool, Sync, WriteAt},
     ToSharedFd,
 };
 use compio_io::{AsyncReadAt, AsyncWriteAt};
-use compio_runtime::Attacher;
+use compio_runtime::{
+    buffer_pool::{BorrowedBuffer, BufferPool},
+    Attacher,
+};
 #[cfg(unix)]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
@@ -146,6 +149,37 @@ impl File {
     /// [`sync_all`]: File::sync_all
     pub async fn sync_data(&self) -> io::Result<()> {
         self.sync_impl(true).await
+    }
+
+    pub async fn read_at_buffer_pool<'a>(
+        &self,
+        buffer_pool: &'a BufferPool,
+        pos: u64,
+        len: u32,
+    ) -> io::Result<BorrowedBuffer<'a>> {
+        let fd = self.inner.to_shared_fd();
+        let op = ReadAtBufferPool::new(fd, pos, buffer_pool.as_driver_buffer_pool(), len);
+        let (BufResult(res, _), flags) = compio_runtime::submit_with_flags(op).await;
+        match res {
+            Ok(n) => {
+                unsafe {
+                    // Safety: n is valid
+                    buffer_pool.get_buffer(flags, n).ok_or_else(|| {
+                        io::Error::new(ErrorKind::InvalidData, format!("flags {flags} is invalid"))
+                    })
+                }
+            }
+            Err(err) => {
+                unsafe {
+                    // Safety: drop it if it is used to release the buffer
+                    if let Some(buffer) = buffer_pool.get_buffer(flags, 0) {
+                        drop(buffer);
+                    }
+                }
+
+                Err(err)
+            }
+        }
     }
 }
 
