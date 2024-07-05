@@ -134,6 +134,42 @@ impl IntoInner for PathStat {
     }
 }
 
+/// Read a file at specified position into specified buffer.
+#[derive(Debug)]
+pub struct ReadAtBufferPool<S> {
+    pub(crate) fd: SharedFd<S>,
+    pub(crate) offset: u64,
+    buffer_group: u16,
+    len: u32,
+    _p: PhantomPinned,
+}
+
+impl<S> ReadAtBufferPool<S> {
+    /// Create [`ReadAtBufferPool`].
+    pub fn new(fd: SharedFd<S>, offset: u64, buffer_pool: &BufferPool, len: u32) -> Self {
+        Self {
+            fd,
+            offset,
+            buffer_group: buffer_pool.buffer_group(),
+            len,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<S: AsRawFd> OpCode for ReadAtBufferPool<S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let fd = Fd(self.fd.as_raw_fd());
+        let offset = self.offset;
+        opcode::Read::new(fd, ptr::null_mut(), self.len)
+            .offset(offset)
+            .buf_group(self.buffer_group)
+            .build()
+            .flags(Flags::BUFFER_SELECT)
+            .into()
+    }
+}
+
 impl<T: IoBufMut, S: AsRawFd> OpCode for ReadAt<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let fd = Fd(self.fd.as_raw_fd());
