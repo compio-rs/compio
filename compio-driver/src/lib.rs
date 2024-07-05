@@ -273,7 +273,8 @@ impl Proactor {
     }
 
     /// Poll the driver and get completed entries.
-    /// You need to call [`Proactor::pop`] to get the pushed operations.
+    /// You need to call [`Proactor::pop`] to get the pushed
+    /// operations.
     pub fn poll(
         &mut self,
         timeout: Option<Duration>,
@@ -290,25 +291,7 @@ impl Proactor {
     /// # Panics
     /// This function will panic if the requested operation has not been
     /// completed.
-    pub fn pop<T>(&mut self, op: Key<T>) -> PushEntry<Key<T>, BufResult<usize, T>> {
-        instrument!(compio_log::Level::DEBUG, "pop", ?op);
-        if op.has_result() {
-            // SAFETY: completed.
-            PushEntry::Ready(unsafe { op.into_inner() })
-        } else {
-            PushEntry::Pending(op)
-        }
-    }
-
-    /// Get the pushed operations from the completion entries.
-    ///
-    /// # Panics
-    /// This function will panic if the requested operation has not been
-    /// completed.
-    pub fn pop_with_flags<T>(
-        &mut self,
-        op: Key<T>,
-    ) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
+    pub fn pop<T>(&mut self, op: Key<T>) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
         instrument!(compio_log::Level::DEBUG, "pop_flags", ?op);
         if op.has_result() {
             let flags = op.flags();

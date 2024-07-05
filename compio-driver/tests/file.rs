@@ -53,7 +53,11 @@ fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult
                 driver.poll(None, &mut entries).unwrap();
             }
             assert_eq!(entries[0], user_data.user_data());
-            driver.pop(user_data).take_ready().unwrap()
+            driver
+                .pop(user_data)
+                .map_ready(|(res, _)| res)
+                .take_ready()
+                .unwrap()
         }
     }
 }

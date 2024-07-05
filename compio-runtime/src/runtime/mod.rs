@@ -31,10 +31,7 @@ use send_wrapper::SendWrapper;
 
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerRuntime};
-use crate::{
-    runtime::op::{OpFlagsFuture, OpFuture},
-    BufResult,
-};
+use crate::{runtime::op::OpFlagsFuture, BufResult};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 
@@ -238,10 +235,7 @@ impl Runtime {
     ///
     /// You only need this when authoring your own [`OpCode`].
     pub fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
-        match self.submit_raw(op) {
-            PushEntry::Pending(user_data) => Either::Left(OpFuture::new(user_data)),
-            PushEntry::Ready(res) => Either::Right(ready(res)),
-        }
+        self.submit_with_flags(op).map(|(res, _)| res)
     }
 
     /// Submit an operation to the runtime.
@@ -287,23 +281,10 @@ impl Runtime {
         &self,
         cx: &mut Context,
         op: Key<T>,
-    ) -> PushEntry<Key<T>, BufResult<usize, T>> {
+    ) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
         instrument!(compio_log::Level::DEBUG, "poll_task", ?op);
         let mut driver = self.driver.borrow_mut();
         driver.pop(op).map_pending(|mut k| {
-            driver.update_waker(&mut k, cx.waker().clone());
-            k
-        })
-    }
-
-    pub(crate) fn poll_task_with_flags<T: OpCode>(
-        &self,
-        cx: &mut Context,
-        op: Key<T>,
-    ) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
-        instrument!(compio_log::Level::DEBUG, "poll_task_flags", ?op);
-        let mut driver = self.driver.borrow_mut();
-        driver.pop_with_flags(op).map_pending(|mut k| {
             driver.update_waker(&mut k, cx.waker().clone());
             k
         })
