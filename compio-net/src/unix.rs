@@ -3,6 +3,7 @@ use std::{future::Future, io, path::Path};
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use compio_io::{AsyncRead, AsyncWrite};
+use compio_runtime::buffer_pool::{BorrowedBuffer, BufferPool};
 use socket2::{SockAddr, Socket as Socket2, Type};
 
 use crate::{OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, WriteHalf};
@@ -196,6 +197,21 @@ impl UnixStream {
     /// Create [`PollFd`] from inner socket.
     pub fn into_poll_fd(self) -> io::Result<PollFd<Socket2>> {
         self.inner.into_poll_fd()
+    }
+
+    /// Read some bytes from this source with buffer pool
+    ///
+    /// # Note
+    ///
+    /// - If len > 0, will read `len` data at most
+    /// - If len == 0, will let kernel and `buffer_pool` decide how much data to
+    ///   read
+    pub async fn recv_buffer_pool<'a>(
+        &self,
+        buffer_pool: &'a BufferPool,
+        len: u32,
+    ) -> io::Result<BorrowedBuffer<'a>> {
+        self.inner.recv_buffer_pool(buffer_pool, len).await
     }
 }
 

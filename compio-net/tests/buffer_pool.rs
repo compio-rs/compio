@@ -1,7 +1,7 @@
 use std::net::Ipv6Addr;
 
 use compio_io::AsyncWriteExt;
-use compio_net::{TcpListener, TcpStream, UdpSocket};
+use compio_net::{TcpListener, TcpStream, UdpSocket, UnixListener, UnixStream};
 use compio_runtime::buffer_pool::BufferPool;
 
 #[compio_macros::test]
@@ -15,7 +15,7 @@ async fn test_tcp_read_buffer_pool() {
     })
     .detach();
 
-    let buffer_pool = BufferPool::new(2, 4).unwrap();
+    let buffer_pool = BufferPool::new(1, 4).unwrap();
     let stream = TcpStream::connect(addr).await.unwrap();
 
     assert_eq!(
@@ -49,7 +49,7 @@ async fn test_udp_read_buffer_pool() {
     })
     .detach();
 
-    let buffer_pool = BufferPool::new(2, 4).unwrap();
+    let buffer_pool = BufferPool::new(1, 4).unwrap();
 
     assert_eq!(
         connected
@@ -58,5 +58,41 @@ async fn test_udp_read_buffer_pool() {
             .unwrap()
             .as_ref(),
         b"test"
+    );
+}
+
+#[compio_macros::test]
+async fn test_uds_recv_buffer_pool() {
+    let dir = tempfile::Builder::new()
+        .prefix("compio-uds-buffer-pool-tests")
+        .tempdir()
+        .unwrap();
+    let sock_path = dir.path().join("connect.sock");
+
+    let listener = UnixListener::bind(&sock_path).await.unwrap();
+
+    let (mut client, (server, _)) =
+        futures_util::try_join!(UnixStream::connect(&sock_path), listener.accept()).unwrap();
+
+    client.write_all("test").await.unwrap();
+    drop(client);
+
+    let buffer_pool = BufferPool::new(1, 4).unwrap();
+
+    assert_eq!(
+        server
+            .recv_buffer_pool(&buffer_pool, 0)
+            .await
+            .unwrap()
+            .as_ref(),
+        b"test"
+    );
+
+    assert!(
+        server
+            .recv_buffer_pool(&buffer_pool, 0)
+            .await
+            .unwrap()
+            .is_empty()
     );
 }
