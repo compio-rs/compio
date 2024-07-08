@@ -11,7 +11,9 @@ use std::{
 };
 
 use aligned_array::{Aligned, A8};
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{
+    BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
+};
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 use socket2::SockAddr;
@@ -25,10 +27,11 @@ use windows_sys::{
         },
         Networking::WinSock::{
             closesocket, setsockopt, shutdown, socklen_t, WSAIoctl, WSARecv, WSARecvFrom, WSASend,
-            WSASendTo, LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS, SD_BOTH,
-            SD_RECEIVE, SD_SEND, SIO_GET_EXTENSION_FUNCTION_POINTER, SOCKADDR, SOCKADDR_STORAGE,
-            SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, WSAID_ACCEPTEX,
-            WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS,
+            WSASendMsg, WSASendTo, LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS,
+            LPFN_WSARECVMSG, SD_BOTH, SD_RECEIVE, SD_SEND, SIO_GET_EXTENSION_FUNCTION_POINTER,
+            SOCKADDR, SOCKADDR_STORAGE, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT,
+            SO_UPDATE_CONNECT_CONTEXT, WSABUF, WSAID_ACCEPTEX, WSAID_CONNECTEX,
+            WSAID_GETACCEPTEXSOCKADDRS, WSAID_WSARECVMSG, WSAMSG,
         },
         Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile},
         System::{
@@ -771,6 +774,261 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendToVectored<T, S> {
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_raw_fd(), optr)
+    }
+}
+
+static WSA_RECVMSG: OnceLock<LPFN_WSARECVMSG> = OnceLock::new();
+
+struct RecvMsgHeader<S> {
+    fd: SharedFd<S>,
+    addr: SOCKADDR_STORAGE,
+    addr_len: socklen_t,
+    _p: PhantomPinned,
+}
+
+impl<S> RecvMsgHeader<S> {
+    fn new(fd: SharedFd<S>) -> Self {
+        Self {
+            fd,
+            addr: unsafe { std::mem::zeroed() },
+            addr_len: std::mem::size_of::<SOCKADDR_STORAGE>() as _,
+            _p: PhantomPinned,
+        }
+    }
+
+    fn into_addr(self) -> (SOCKADDR_STORAGE, socklen_t) {
+        (self.addr, self.addr_len)
+    }
+}
+
+impl<S: AsRawFd> RecvMsgHeader<S> {
+    unsafe fn operate(
+        &mut self,
+        slices: &mut [IoSliceMut],
+        control: IoSliceMut,
+        optr: *mut OVERLAPPED,
+    ) -> Poll<io::Result<usize>> {
+        let recvmsg_fn = WSA_RECVMSG
+            .get_or_try_init(|| get_wsa_fn(self.fd.as_raw_fd(), WSAID_WSARECVMSG))?
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::Unsupported, "cannot retrieve WSARecvMsg")
+            })?;
+
+        let mut msg = WSAMSG {
+            name: &mut self.addr as *mut _ as _,
+            namelen: self.addr_len,
+            lpBuffers: slices.as_mut_ptr() as _,
+            dwBufferCount: slices.len() as _,
+            Control: std::mem::transmute::<IoSliceMut, WSABUF>(control),
+            dwFlags: 0,
+        };
+
+        let mut received = 0;
+        let res = recvmsg_fn(
+            self.fd.as_raw_fd() as _,
+            &mut msg,
+            &mut received,
+            optr,
+            None,
+        );
+        winsock_result(res, received)
+    }
+}
+
+/// Receive data and source address with ancillary data.
+pub struct RecvMsg<T: IoBufMut, C: IoBufMut, S> {
+    header: RecvMsgHeader<S>,
+    buffer: MsgBuf<T, C>,
+}
+
+impl<T: IoBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
+    /// Create [`RecvMsg`].
+    pub fn new(fd: SharedFd<S>, buffer: MsgBuf<T, C>) -> Self {
+        Self {
+            header: RecvMsgHeader::new(fd),
+            buffer,
+        }
+    }
+}
+
+impl<T: IoBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
+    type Inner = (MsgBuf<T, C>, SOCKADDR_STORAGE, socklen_t);
+
+    fn into_inner(self) -> Self::Inner {
+        let (addr, addr_len) = self.header.into_addr();
+        (self.buffer, addr, addr_len)
+    }
+}
+
+impl<T: IoBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let this = self.get_unchecked_mut();
+        this.header.operate(
+            &mut [this.buffer.inner.as_io_slice_mut()],
+            this.buffer.control.as_io_slice_mut(),
+            optr,
+        )
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.header.fd.as_raw_fd(), optr)
+    }
+}
+
+/// Receive data and source address with ancillary data into vectored buffer.
+pub struct RecvMsgVectored<T: IoVectoredBufMut, C: IoBufMut, S> {
+    header: RecvMsgHeader<S>,
+    buffer: MsgBuf<T, C>,
+}
+
+impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsgVectored<T, C, S> {
+    /// Create [`RecvMsgVectored`].
+    pub fn new(fd: SharedFd<S>, buffer: MsgBuf<T, C>) -> Self {
+        Self {
+            header: RecvMsgHeader::new(fd),
+            buffer,
+        }
+    }
+}
+
+impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsgVectored<T, C, S> {
+    type Inner = (MsgBuf<T, C>, SOCKADDR_STORAGE, socklen_t);
+
+    fn into_inner(self) -> Self::Inner {
+        let (addr, addr_len) = self.header.into_addr();
+        (self.buffer, addr, addr_len)
+    }
+}
+
+impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsgVectored<T, C, S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let this = self.get_unchecked_mut();
+        this.header.operate(
+            &mut this.buffer.inner.as_io_slices_mut(),
+            this.buffer.control.as_io_slice_mut(),
+            optr,
+        )
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.header.fd.as_raw_fd(), optr)
+    }
+}
+
+struct SendMsgHeader<S> {
+    fd: SharedFd<S>,
+    addr: SockAddr,
+    _p: PhantomPinned,
+}
+
+impl<S> SendMsgHeader<S> {
+    pub fn new(fd: SharedFd<S>, addr: SockAddr) -> Self {
+        Self {
+            fd,
+            addr,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<S: AsRawFd> SendMsgHeader<S> {
+    unsafe fn operate(
+        &mut self,
+        slices: &mut [IoSlice],
+        control: IoSlice,
+        optr: *mut OVERLAPPED,
+    ) -> Poll<io::Result<usize>> {
+        let msg = WSAMSG {
+            name: self.addr.as_ptr() as _,
+            namelen: self.addr.len(),
+            lpBuffers: slices.as_ptr() as _,
+            dwBufferCount: slices.len() as _,
+            Control: std::mem::transmute::<IoSlice, WSABUF>(control),
+            dwFlags: 0,
+        };
+
+        let mut sent = 0;
+        let res = WSASendMsg(self.fd.as_raw_fd() as _, &msg, 0, &mut sent, optr, None);
+        winsock_result(res, sent)
+    }
+}
+
+/// Send data to specified address accompanied by ancillary data.
+pub struct SendMsg<T: IoBuf, C: IoBuf, S> {
+    header: SendMsgHeader<S>,
+    buffer: MsgBuf<T, C>,
+}
+
+impl<T: IoBuf, C: IoBuf, S> SendMsg<T, C, S> {
+    /// Create [`SendMsg`].
+    pub fn new(fd: SharedFd<S>, buffer: MsgBuf<T, C>, addr: SockAddr) -> Self {
+        Self {
+            header: SendMsgHeader::new(fd, addr),
+            buffer,
+        }
+    }
+}
+
+impl<T: IoBuf, C: IoBuf, S> IntoInner for SendMsg<T, C, S> {
+    type Inner = MsgBuf<T, C>;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+impl<T: IoBuf, C: IoBuf, S: AsRawFd> OpCode for SendMsg<T, C, S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let this = self.get_unchecked_mut();
+        this.header.operate(
+            &mut [this.buffer.inner.as_io_slice()],
+            this.buffer.control.as_io_slice(),
+            optr,
+        )
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.header.fd.as_raw_fd(), optr)
+    }
+}
+
+/// Send data to specified address accompanied by ancillary data from vectored
+/// buffer.
+pub struct SendMsgVectored<T: IoVectoredBuf, C: IoBuf, S> {
+    header: SendMsgHeader<S>,
+    buffer: MsgBuf<T, C>,
+}
+
+impl<T: IoVectoredBuf, C: IoBuf, S> SendMsgVectored<T, C, S> {
+    /// Create [`SendMsgVectored`].
+    pub fn new(fd: SharedFd<S>, buffer: MsgBuf<T, C>, addr: SockAddr) -> Self {
+        Self {
+            header: SendMsgHeader::new(fd, addr),
+            buffer,
+        }
+    }
+}
+
+impl<T: IoVectoredBuf, C: IoBuf, S> IntoInner for SendMsgVectored<T, C, S> {
+    type Inner = MsgBuf<T, C>;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+impl<T: IoVectoredBuf, C: IoBuf, S: AsRawFd> OpCode for SendMsgVectored<T, C, S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let this = self.get_unchecked_mut();
+        this.header.operate(
+            &mut this.buffer.inner.as_io_slices(),
+            this.buffer.control.as_io_slice(),
+            optr,
+        )
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.header.fd.as_raw_fd(), optr)
     }
 }
 

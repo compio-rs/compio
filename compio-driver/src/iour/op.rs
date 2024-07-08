@@ -556,6 +556,54 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
     }
 }
 
+impl<S: AsRawFd> RecvMsgHeader<S> {
+    pub fn create_entry(&mut self) -> OpEntry {
+        opcode::RecvMsg::new(Fd(self.fd.as_raw_fd()), &mut self.msg)
+            .build()
+            .into()
+    }
+}
+
+impl<T: IoBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let this = unsafe { self.get_unchecked_mut() };
+        this.set_msg();
+        this.header.create_entry()
+    }
+}
+
+impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsgVectored<T, C, S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let this = unsafe { self.get_unchecked_mut() };
+        this.set_msg();
+        this.header.create_entry()
+    }
+}
+
+impl<S: AsRawFd> SendMsgHeader<S> {
+    pub fn create_entry(&mut self) -> OpEntry {
+        opcode::SendMsg::new(Fd(self.fd.as_raw_fd()), &self.msg)
+            .build()
+            .into()
+    }
+}
+
+impl<T: IoBuf, C: IoBuf, S: AsRawFd> OpCode for SendMsg<T, C, S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let this = unsafe { self.get_unchecked_mut() };
+        this.set_msg();
+        this.header.create_entry()
+    }
+}
+
+impl<T: IoVectoredBuf, C: IoBuf, S: AsRawFd> OpCode for SendMsgVectored<T, C, S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let this = unsafe { self.get_unchecked_mut() };
+        this.set_msg();
+        this.header.create_entry()
+    }
+}
+
 impl<S: AsRawFd> OpCode for PollOnce<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let flags = match self.interest {

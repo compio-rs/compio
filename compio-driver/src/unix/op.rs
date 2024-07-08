@@ -1,4 +1,4 @@
-use std::{ffi::CString, marker::PhantomPinned, net::Shutdown};
+use std::{ffi::CString, marker::PhantomPinned, mem::MaybeUninit, net::Shutdown};
 
 use compio_buf::{
     IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
@@ -364,6 +364,201 @@ impl<T: IoVectoredBuf, S> SendVectored<T, S> {
 
 impl<T: IoVectoredBuf, S> IntoInner for SendVectored<T, S> {
     type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+pub(crate) struct RecvMsgHeader<S> {
+    pub(crate) fd: SharedFd<S>,
+    pub(crate) addr: sockaddr_storage,
+    pub(crate) msg: libc::msghdr,
+    _p: PhantomPinned,
+}
+
+impl<S> RecvMsgHeader<S> {
+    pub fn new(fd: SharedFd<S>) -> Self {
+        Self {
+            fd,
+            addr: unsafe { std::mem::zeroed() },
+            msg: unsafe { std::mem::zeroed() },
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<S> RecvMsgHeader<S> {
+    pub fn set_msg(&mut self, slices: &mut [IoSliceMut], control: &mut [MaybeUninit<u8>]) {
+        self.msg.msg_name = std::ptr::addr_of_mut!(self.addr) as _;
+        self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
+        self.msg.msg_iov = slices.as_mut_ptr() as _;
+        self.msg.msg_iovlen = slices.len() as _;
+        self.msg.msg_control = control.as_mut_ptr() as _;
+        self.msg.msg_controllen = control.len() as _;
+    }
+
+    pub fn into_addr(self) -> (sockaddr_storage, socklen_t) {
+        (self.addr, self.msg.msg_namelen)
+    }
+}
+
+/// Receive data and source address with ancillary data.
+pub struct RecvMsg<T: IoBufMut, C: IoBufMut, S> {
+    pub(crate) header: RecvMsgHeader<S>,
+    pub(crate) buffer: MsgBuf<T, C>,
+    pub(crate) slices: [IoSliceMut; 1],
+}
+
+impl<T: IoBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
+    /// Create [`RecvMsg`].
+    pub fn new(fd: SharedFd<S>, buffer: MsgBuf<T, C>) -> Self {
+        Self {
+            header: RecvMsgHeader::new(fd),
+            buffer,
+            // SAFETY: We never use this slice.
+            slices: [unsafe { IoSliceMut::from_slice(&mut []) }],
+        }
+    }
+
+    pub(crate) fn set_msg(&mut self) {
+        self.slices[0] = unsafe { self.buffer.inner.as_io_slice_mut() };
+        self.header
+            .set_msg(&mut self.slices, self.buffer.control.as_mut_slice());
+    }
+}
+
+impl<T: IoBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
+    type Inner = (MsgBuf<T, C>, sockaddr_storage, socklen_t);
+
+    fn into_inner(self) -> Self::Inner {
+        let (addr, addr_len) = self.header.into_addr();
+        (self.buffer, addr, addr_len)
+    }
+}
+
+/// Receive data and source address with ancillary data into vectored buffer.
+pub struct RecvMsgVectored<T: IoVectoredBufMut, C: IoBufMut, S> {
+    pub(crate) header: RecvMsgHeader<S>,
+    pub(crate) buffer: MsgBuf<T, C>,
+    pub(crate) slices: Vec<IoSliceMut>,
+}
+
+impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsgVectored<T, C, S> {
+    /// Create [`RecvMsgVectored`].
+    pub fn new(fd: SharedFd<S>, buffer: MsgBuf<T, C>) -> Self {
+        Self {
+            header: RecvMsgHeader::new(fd),
+            buffer,
+            slices: vec![],
+        }
+    }
+
+    pub(crate) fn set_msg(&mut self) {
+        self.slices = unsafe { self.buffer.inner.as_io_slices_mut() };
+        self.header
+            .set_msg(&mut self.slices, self.buffer.control.as_mut_slice());
+    }
+}
+
+impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsgVectored<T, C, S> {
+    type Inner = (MsgBuf<T, C>, sockaddr_storage, socklen_t);
+
+    fn into_inner(self) -> Self::Inner {
+        let (addr, addr_len) = self.header.into_addr();
+        (self.buffer, addr, addr_len)
+    }
+}
+
+pub(crate) struct SendMsgHeader<S> {
+    pub(crate) fd: SharedFd<S>,
+    pub(crate) addr: SockAddr,
+    pub(crate) msg: libc::msghdr,
+    _p: PhantomPinned,
+}
+
+impl<S> SendMsgHeader<S> {
+    pub fn new(fd: SharedFd<S>, addr: SockAddr) -> Self {
+        Self {
+            fd,
+            addr,
+            msg: unsafe { std::mem::zeroed() },
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<S> SendMsgHeader<S> {
+    pub fn set_msg(&mut self, slices: &[IoSlice], control: &[u8]) {
+        self.msg.msg_name = std::ptr::addr_of_mut!(self.addr) as _;
+        self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
+        self.msg.msg_iov = slices.as_ptr() as _;
+        self.msg.msg_iovlen = slices.len() as _;
+        self.msg.msg_control = control.as_ptr() as _;
+        self.msg.msg_controllen = control.len() as _;
+    }
+}
+
+/// Send data to specified address accompanied by ancillary data.
+pub struct SendMsg<T: IoBuf, C: IoBuf, S> {
+    pub(crate) header: SendMsgHeader<S>,
+    pub(crate) buffer: MsgBuf<T, C>,
+    pub(crate) slices: [IoSlice; 1],
+}
+
+impl<T: IoBuf, C: IoBuf, S> SendMsg<T, C, S> {
+    /// Create [`SendMsg`].
+    pub fn new(fd: SharedFd<S>, buffer: MsgBuf<T, C>, addr: SockAddr) -> Self {
+        Self {
+            header: SendMsgHeader::new(fd, addr),
+            buffer,
+            // SAFETY: We never use this slice.
+            slices: [unsafe { IoSlice::from_slice(&[]) }],
+        }
+    }
+
+    pub(crate) fn set_msg(&mut self) {
+        self.slices[0] = unsafe { self.buffer.inner.as_io_slice() };
+        self.header
+            .set_msg(&self.slices, self.buffer.control.as_slice());
+    }
+}
+
+impl<T: IoBuf, C: IoBuf, S> IntoInner for SendMsg<T, C, S> {
+    type Inner = MsgBuf<T, C>;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+/// Send data to specified address accompanied by ancillary data from vectored
+/// buffer.
+pub struct SendMsgVectored<T: IoVectoredBuf, C: IoBuf, S> {
+    pub(crate) header: SendMsgHeader<S>,
+    pub(crate) buffer: MsgBuf<T, C>,
+    pub(crate) slices: Vec<IoSlice>,
+}
+
+impl<T: IoVectoredBuf, C: IoBuf, S> SendMsgVectored<T, C, S> {
+    /// Create [`SendMsgVectored`].
+    pub fn new(fd: SharedFd<S>, buffer: MsgBuf<T, C>, addr: SockAddr) -> Self {
+        Self {
+            header: SendMsgHeader::new(fd, addr),
+            buffer,
+            slices: vec![],
+        }
+    }
+
+    pub(crate) fn set_msg(&mut self) {
+        self.slices = unsafe { self.buffer.inner.as_io_slices() };
+        self.header
+            .set_msg(&self.slices, self.buffer.control.as_slice());
+    }
+}
+
+impl<T: IoVectoredBuf, C: IoBuf, S> IntoInner for SendMsgVectored<T, C, S> {
+    type Inner = MsgBuf<T, C>;
 
     fn into_inner(self) -> Self::Inner {
         self.buffer

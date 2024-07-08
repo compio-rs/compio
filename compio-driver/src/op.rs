@@ -11,8 +11,8 @@ use socket2::SockAddr;
 #[cfg(windows)]
 pub use crate::sys::op::ConnectNamedPipe;
 pub use crate::sys::op::{
-    Accept, Recv, RecvFrom, RecvFromVectored, RecvVectored, Send, SendTo, SendToVectored,
-    SendVectored,
+    Accept, Recv, RecvFrom, RecvFromVectored, RecvMsg, RecvMsgVectored, RecvVectored, Send,
+    SendMsg, SendMsgVectored, SendTo, SendToVectored, SendVectored,
 };
 #[cfg(unix)]
 pub use crate::sys::op::{
@@ -69,6 +69,36 @@ impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t)> {
             },
             |(buffer, ..)| buffer,
         )
+    }
+}
+
+// FIXME: Using this struct instead of a simple tuple because we can implement
+// neither `BufResultExt` on `BufResult<(usize, O), (T, C)>` nor `SetBufInit` on
+// `(T, C)`. But it's not elegant. `.map_advanced` call happens in `compio-net`
+// so we must expose this struct. There should be better ways to do this.
+/// Helper struct for [`RecvMsg`], [`SendMsg`], and vectored variants.
+pub struct MsgBuf<T, C> {
+    /// The buffer for message
+    pub inner: T,
+    /// The buffer for ancillary data
+    pub control: C,
+}
+
+impl<T, C> MsgBuf<T, C> {
+    /// Create [`MsgBuf`].
+    pub fn new(inner: T, control: C) -> Self {
+        Self { inner, control }
+    }
+
+    /// Unpack to tuple.
+    pub fn into_tuple(self) -> (T, C) {
+        (self.inner, self.control)
+    }
+}
+
+impl<T: SetBufInit, C> SetBufInit for MsgBuf<T, C> {
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        self.inner.set_buf_init(len);
     }
 }
 
