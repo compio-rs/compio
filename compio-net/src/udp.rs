@@ -222,6 +222,32 @@ impl UdpSocket {
             .map_res(|(n, addr)| (n, addr.as_socket().expect("should be SocketAddr")))
     }
 
+    /// Receives a single datagram message and ancillary data on the socket. On
+    /// success, returns the number of bytes received and the origin.
+    pub async fn recv_msg<T: IoBufMut, C: IoBufMut>(
+        &self,
+        buffer: T,
+        control: C,
+    ) -> BufResult<(usize, SocketAddr), (T, C)> {
+        self.inner
+            .recv_msg(buffer, control)
+            .await
+            .map_res(|(n, addr)| (n, addr.as_socket().expect("should be SocketAddr")))
+    }
+
+    /// Receives a single datagram message and ancillary data on the socket. On
+    /// success, returns the number of bytes received and the origin.
+    pub async fn recv_msg_vectored<T: IoVectoredBufMut, C: IoBufMut>(
+        &self,
+        buffer: T,
+        control: C,
+    ) -> BufResult<(usize, SocketAddr), (T, C)> {
+        self.inner
+            .recv_msg_vectored(buffer, control)
+            .await
+            .map_res(|(n, addr)| (n, addr.as_socket().expect("should be SocketAddr")))
+    }
+
     /// Sends data on the socket to the given address. On success, returns the
     /// number of bytes sent.
     pub async fn send_to<T: IoBuf>(
@@ -247,6 +273,46 @@ impl UdpSocket {
                 .send_to_vectored(buffer, &SockAddr::from(addr))
                 .await
         })
+        .await
+    }
+
+    /// Sends data on the socket to the given address accompanied by ancillary
+    /// data. On success, returns the number of bytes sent.
+    pub async fn send_msg<T: IoBuf, C: IoBuf>(
+        &self,
+        buffer: T,
+        control: C,
+        addr: impl ToSocketAddrsAsync,
+    ) -> BufResult<usize, (T, C)> {
+        super::first_addr_buf(
+            addr,
+            (buffer, control),
+            |addr, (buffer, control)| async move {
+                self.inner
+                    .send_msg(buffer, control, &SockAddr::from(addr))
+                    .await
+            },
+        )
+        .await
+    }
+
+    /// Sends data on the socket to the given address accompanied by ancillary
+    /// data. On success, returns the number of bytes sent.
+    pub async fn send_msg_vectored<T: IoVectoredBuf, C: IoBuf>(
+        &self,
+        buffer: T,
+        control: C,
+        addr: impl ToSocketAddrsAsync,
+    ) -> BufResult<usize, (T, C)> {
+        super::first_addr_buf(
+            addr,
+            (buffer, control),
+            |addr, (buffer, control)| async move {
+                self.inner
+                    .send_msg_vectored(buffer, control, &SockAddr::from(addr))
+                    .await
+            },
+        )
         .await
     }
 }
