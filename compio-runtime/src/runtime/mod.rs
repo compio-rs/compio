@@ -31,7 +31,7 @@ use send_wrapper::SendWrapper;
 
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerRuntime};
-use crate::{runtime::op::OpFuture, BufResult};
+use crate::{runtime::op::OpFlagsFuture, BufResult};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 
@@ -235,9 +235,26 @@ impl Runtime {
     ///
     /// You only need this when authoring your own [`OpCode`].
     pub fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
+        self.submit_with_flags(op).map(|(res, _)| res)
+    }
+
+    /// Submit an operation to the runtime.
+    ///
+    /// The difference between [`Runtime::submit`] is this method will return
+    /// the flags
+    ///
+    /// You only need this when authoring your own [`OpCode`].
+    pub fn submit_with_flags<T: OpCode + 'static>(
+        &self,
+        op: T,
+    ) -> impl Future<Output = (BufResult<usize, T>, u32)> {
         match self.submit_raw(op) {
-            PushEntry::Pending(user_data) => Either::Left(OpFuture::new(user_data)),
-            PushEntry::Ready(res) => Either::Right(ready(res)),
+            PushEntry::Pending(user_data) => Either::Left(OpFlagsFuture::new(user_data)),
+            PushEntry::Ready(res) => {
+                // submit_flags won't be ready immediately, if ready, it must be error without
+                // flags
+                Either::Right(ready((res, 0)))
+            }
         }
     }
 
@@ -264,7 +281,7 @@ impl Runtime {
         &self,
         cx: &mut Context,
         op: Key<T>,
-    ) -> PushEntry<Key<T>, BufResult<usize, T>> {
+    ) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
         instrument!(compio_log::Level::DEBUG, "poll_task", ?op);
         let mut driver = self.driver.borrow_mut();
         driver.pop(op).map_pending(|mut k| {
@@ -434,4 +451,17 @@ pub fn spawn_blocking<T: Send + 'static>(
 /// by [`Runtime::with_current`].
 pub fn submit<T: OpCode + 'static>(op: T) -> impl Future<Output = BufResult<usize, T>> {
     Runtime::with_current(|r| r.submit(op))
+}
+
+/// Submit an operation to the current runtime, and return a future for it with
+/// flags.
+///
+/// ## Panics
+///
+/// This method doesn't create runtime. It tries to obtain the current runtime
+/// by [`Runtime::with_current`].
+pub fn submit_with_flags<T: OpCode + 'static>(
+    op: T,
+) -> impl Future<Output = (BufResult<usize, T>, u32)> {
+    Runtime::with_current(|r| r.submit_with_flags(op))
 }
