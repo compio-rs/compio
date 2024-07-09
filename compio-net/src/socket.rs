@@ -6,9 +6,9 @@ use compio_driver::op::CreateSocket;
 use compio_driver::{
     impl_raw_fd,
     op::{
-        Accept, BufResultExt, CloseSocket, Connect, MsgBuf, Recv, RecvFrom, RecvFromVectored,
-        RecvMsg, RecvMsgVectored, RecvResultExt, RecvVectored, Send, SendMsg, SendMsgVectored,
-        SendTo, SendToVectored, SendVectored, ShutdownSocket,
+        Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored, RecvMsg,
+        RecvResultExt, RecvVectored, Send, SendMsg, SendTo, SendToVectored, SendVectored,
+        ShutdownSocket,
     },
     ToSharedFd,
 };
@@ -262,14 +262,9 @@ impl Socket {
         buffer: T,
         control: C,
     ) -> BufResult<(usize, SockAddr), (T, C)> {
-        let fd = self.to_shared_fd();
-        let op = RecvMsg::new(fd, MsgBuf::new(buffer, control));
-        compio_runtime::submit(op)
+        self.recv_msg_vectored([buffer], control)
             .await
-            .into_inner()
-            .map_addr()
-            .map_advanced()
-            .map_buffer(MsgBuf::into_tuple)
+            .map_buffer(|([buffer], control)| (buffer, control))
     }
 
     pub async fn recv_msg_vectored<T: IoVectoredBufMut, C: IoBufMut>(
@@ -278,13 +273,18 @@ impl Socket {
         control: C,
     ) -> BufResult<(usize, SockAddr), (T, C)> {
         let fd = self.to_shared_fd();
-        let op = RecvMsgVectored::new(fd, MsgBuf::new(buffer, control));
+        let op = RecvMsg::new(fd, buffer, control);
         compio_runtime::submit(op)
             .await
             .into_inner()
             .map_addr()
-            .map_advanced()
-            .map_buffer(MsgBuf::into_tuple)
+            .map(|(init, obj), (mut buffer, control)| {
+                // SAFETY: The number of bytes received would not bypass the buffer capacity.
+                unsafe {
+                    buffer.set_buf_init(init);
+                }
+                ((init, obj), (buffer, control))
+            })
     }
 
     pub async fn send_to<T: IoBuf>(&self, buffer: T, addr: &SockAddr) -> BufResult<usize, T> {
@@ -309,12 +309,9 @@ impl Socket {
         control: C,
         addr: &SockAddr,
     ) -> BufResult<usize, (T, C)> {
-        let fd = self.to_shared_fd();
-        let op = SendMsg::new(fd, MsgBuf::new(buffer, control), addr.clone());
-        compio_runtime::submit(op)
+        self.send_msg_vectored([buffer], control, addr)
             .await
-            .into_inner()
-            .map_buffer(MsgBuf::into_tuple)
+            .map_buffer(|([buffer], control)| (buffer, control))
     }
 
     pub async fn send_msg_vectored<T: IoVectoredBuf, C: IoBuf>(
@@ -324,11 +321,8 @@ impl Socket {
         addr: &SockAddr,
     ) -> BufResult<usize, (T, C)> {
         let fd = self.to_shared_fd();
-        let op = SendMsgVectored::new(fd, MsgBuf::new(buffer, control), addr.clone());
-        compio_runtime::submit(op)
-            .await
-            .into_inner()
-            .map_buffer(MsgBuf::into_tuple)
+        let op = SendMsg::new(fd, buffer, control, addr.clone());
+        compio_runtime::submit(op).await.into_inner()
     }
 }
 
