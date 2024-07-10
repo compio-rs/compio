@@ -13,7 +13,7 @@ thread_local! {
 }
 
 fn sigset(sig: i32) -> io::Result<libc::sigset_t> {
-    let mut set = MaybeUninit::uninit();
+    let mut set: MaybeUninit<libc::sigset_t> = MaybeUninit::uninit();
     syscall!(libc::sigemptyset(set.as_mut_ptr()))?;
     syscall!(libc::sigaddset(set.as_mut_ptr(), sig))?;
     // SAFETY: sigemptyset initializes the set.
@@ -79,7 +79,7 @@ impl SignalFd {
             }
 
             fn buf_len(&self) -> usize {
-                INFO_SIZE
+                0
             }
 
             fn buf_capacity(&self) -> usize {
