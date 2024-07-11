@@ -251,13 +251,11 @@ impl UdpSocket {
         .await
     }
 
-    /// Read some bytes from this source with buffer pool
+    /// Read some bytes from this source with [`BufferPool`] and return
+    /// a [`BorrowedBuffer`].
     ///
-    /// # Note
-    ///
-    /// - If len > 0, will read `len` data at most
-    /// - If len == 0, will let kernel and `buffer_pool` decide how much data to
-    ///   read
+    /// If `len` == 0, will use [`BufferPool`] inner buffer size as the max len,
+    /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
     pub async fn recv_buffer_pool<'a>(
         &self,
         buffer_pool: &'a BufferPool,

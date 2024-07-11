@@ -1,6 +1,6 @@
 #[cfg(feature = "allocator_api")]
 use std::alloc::Allocator;
-use std::{io::Cursor, rc::Rc, sync::Arc};
+use std::{io, io::Cursor, ops::DerefMut, rc::Rc, sync::Arc};
 
 use compio_buf::{buf_try, t_alloc, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut};
 
@@ -128,6 +128,51 @@ pub trait AsyncReadAt {
             }
         )
     }
+}
+
+/// # AsyncReadBufferPool
+///
+/// Async read with buffer pool
+pub trait AsyncReadBufferPool {
+    /// Filled buffer type
+    type Buffer<'a>: DerefMut<Target = [u8]>;
+
+    /// Buffer pool type
+    type BufferPool;
+
+    /// Read some bytes from this source with [`BufferPool`] and return
+    /// a [`BorrowedBuffer`].
+    ///
+    /// If `len` == 0, will use [`BufferPool`] inner buffer size as the max len,
+    /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
+    async fn read_buffer_pool<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>>;
+}
+
+/// # AsyncReadAtBufferPool
+///
+/// Async read with buffer pool and position
+pub trait AsyncReadAtBufferPool {
+    /// Buffer pool type
+    type BufferPool;
+
+    /// Filled buffer type
+    type Buffer<'a>: DerefMut<Target = [u8]>;
+
+    /// Read some bytes from this source at position with [`BufferPool`] and
+    /// return a [`BorrowedBuffer`].
+    ///
+    /// If `len` == 0, will use [`BufferPool`] inner buffer size as the max len,
+    /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
+    async fn read_at_buffer_pool<'a>(
+        &self,
+        buffer_pool: &'a Self::BufferPool,
+        pos: u64,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>>;
 }
 
 macro_rules! impl_read_at {

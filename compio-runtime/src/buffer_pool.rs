@@ -1,9 +1,21 @@
-pub type BorrowedBuffer<'a> = compio_driver::BorrowedBuffer<'a>;
+//! Buffer pool
 
 use std::{io, marker::PhantomData, mem::ManuallyDrop};
 
 use crate::Runtime;
 
+/// Buffer borrowed from buffer pool
+///
+/// When IO operation finish, user will obtain a `BorrowedBuffer` to access the
+/// filled data
+pub type BorrowedBuffer<'a> = compio_driver::BorrowedBuffer<'a>;
+
+/// Buffer pool
+///
+/// A buffer pool to allow user no need to specify a specific buffer to do the
+/// IO operation
+///
+/// Drop the `BufferPool` will release the buffer pool automatically
 #[derive(Debug)]
 pub struct BufferPool {
     inner: ManuallyDrop<compio_driver::BufferPool>,
@@ -33,6 +45,11 @@ impl BufferPool {
         }
     }
 
+    /// Get the inner driver buffer pool reference
+    ///
+    /// # Notes
+    ///
+    /// You should not use this method unless you are writing your own IO opcode
     pub fn as_driver_buffer_pool(&self) -> &compio_driver::BufferPool {
         &self.inner
     }

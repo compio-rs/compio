@@ -349,12 +349,6 @@ impl Runtime {
         self.timer_runtime.borrow_mut().wake();
     }
 
-    /// Create buffer pool with given `buffer_size` and `buffer_len`
-    ///
-    /// # Notes
-    ///
-    /// If `buffer_len` is not power of 2, it will be upward with
-    /// [`u16::next_power_of_two`]
     pub(crate) fn create_buffer_pool(
         &self,
         buffer_len: u16,

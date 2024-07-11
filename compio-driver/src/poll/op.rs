@@ -218,9 +218,14 @@ impl<S> ReadAtBufferPool<S> {
         let buffer = buffer_pool.get_buffer().ok_or_else(|| {
             io::Error::new(ErrorKind::Other, "buffer ring has no available buffer")
         })?;
+        let len = if len == 0 {
+            buffer.capacity()
+        } else {
+            buffer.capacity().min(len as _)
+        };
 
         Ok(Self {
-            read_at: ReadAt::new(fd, offset, buffer.slice(..len as usize)),
+            read_at: ReadAt::new(fd, offset, buffer.slice(..len)),
         })
     }
 }
@@ -530,9 +535,14 @@ impl<S> RecvBufferPool<S> {
         let buffer = buffer_pool.get_buffer().ok_or_else(|| {
             io::Error::new(ErrorKind::Other, "buffer ring has no available buffer")
         })?;
+        let len = if len == 0 {
+            buffer.capacity()
+        } else {
+            buffer.capacity().min(len as _)
+        };
 
         Ok(Self {
-            recv: Recv::new(fd, buffer.slice(..len as usize)),
+            recv: Recv::new(fd, buffer.slice(..len)),
         })
     }
 }

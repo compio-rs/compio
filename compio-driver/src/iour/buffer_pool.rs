@@ -7,6 +7,10 @@ use std::{
 use io_uring::cqueue::buffer_select;
 use io_uring_buf_ring::IoUringBufRing;
 
+/// Buffer pool
+///
+/// A buffer pool to allow user no need to specify a specific buffer to do the
+/// IO operation
 pub struct BufferPool {
     buf_ring: IoUringBufRing<Vec<u8>>,
 }
@@ -49,6 +53,10 @@ impl BufferPool {
     }
 }
 
+/// Buffer borrowed from buffer pool
+///
+/// When IO operation finish, user will obtain a `BorrowedBuffer` to access the
+/// filled data
 pub struct BorrowedBuffer<'a>(io_uring_buf_ring::BorrowedBuffer<'a, Vec<u8>>);
 
 impl Debug for BorrowedBuffer<'_> {

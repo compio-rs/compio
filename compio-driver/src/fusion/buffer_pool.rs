@@ -4,6 +4,10 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+/// Buffer pool
+///
+/// A buffer pool to allow user no need to specify a specific buffer to do the
+/// IO operation
 pub struct BufferPool {
     inner: BufferPollInner,
 }
@@ -40,6 +44,22 @@ impl BufferPool {
             inner: BufferPollInner::Poll(buffer_pool),
         }
     }
+
+    pub(crate) fn into_poll(self) -> crate::fallback_buffer_pool::BufferPool {
+        match self.inner {
+            BufferPollInner::IoUring(_) => {
+                panic!("BufferPool type is not io-uring type")
+            }
+            BufferPollInner::Poll(inner) => inner,
+        }
+    }
+
+    pub(crate) fn into_io_uring(self) -> super::iour::buffer_pool::BufferPool {
+        match self.inner {
+            BufferPollInner::IoUring(inner) => inner,
+            BufferPollInner::Poll(_) => panic!("BufferPool type is not poll type"),
+        }
+    }
 }
 
 enum BufferPollInner {
@@ -47,6 +67,10 @@ enum BufferPollInner {
     Poll(crate::fallback_buffer_pool::BufferPool),
 }
 
+/// Buffer borrowed from buffer pool
+///
+/// When IO operation finish, user will obtain a `BorrowedBuffer` to access the
+/// filled data
 pub struct BorrowedBuffer<'a> {
     inner: BorrowedBufferInner<'a>,
 }

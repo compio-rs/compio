@@ -13,7 +13,7 @@ use compio_driver::{
     op::{BufResultExt, Recv, RecvBufferPool, RecvVectored, Send, SendVectored},
     syscall, AsRawFd, TakeBuffer, ToSharedFd,
 };
-use compio_io::{AsyncRead, AsyncWrite};
+use compio_io::{AsyncRead, AsyncReadBufferPool, AsyncWrite};
 use compio_runtime::buffer_pool::{BorrowedBuffer, BufferPool};
 
 use crate::File;
@@ -477,18 +477,6 @@ impl Receiver {
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.file.close()
     }
-
-    pub async fn read_buffer_pool<'a>(
-        &self,
-        buffer_pool: &'a BufferPool,
-        len: u32,
-    ) -> io::Result<BorrowedBuffer<'a>> {
-        let fd = self.to_shared_fd();
-        let op = RecvBufferPool::new(buffer_pool.as_driver_buffer_pool(), fd, len)?;
-        let (BufResult(res, op), flags) = compio_runtime::submit_with_flags(op).await;
-
-        op.take_buffer(buffer_pool.as_driver_buffer_pool(), res, flags)
-    }
 }
 
 impl AsyncRead for Receiver {
@@ -512,6 +500,36 @@ impl AsyncRead for &Receiver {
         let fd = self.to_shared_fd();
         let op = RecvVectored::new(fd, buffer);
         compio_runtime::submit(op).await.into_inner().map_advanced()
+    }
+}
+
+impl AsyncReadBufferPool for Receiver {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_buffer_pool<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        (&*self).read_buffer_pool(buffer_pool, len).await
+    }
+}
+
+impl AsyncReadBufferPool for &Receiver {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_buffer_pool<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        let fd = self.to_shared_fd();
+        let op = RecvBufferPool::new(buffer_pool.as_driver_buffer_pool(), fd, len as _)?;
+        let (BufResult(res, op), flags) = compio_runtime::submit_with_flags(op).await;
+
+        op.take_buffer(buffer_pool.as_driver_buffer_pool(), res, flags)
     }
 }
 

@@ -9,6 +9,10 @@ use std::{
 
 use compio_buf::{IntoInner, Slice};
 
+/// Buffer pool
+///
+/// A buffer pool to allow user no need to specify a specific buffer to do the
+/// IO operation
 pub struct BufferPool {
     buffers: RefCell<VecDeque<Vec<u8>>>,
 }
@@ -21,7 +25,7 @@ impl Debug for BufferPool {
 
 impl BufferPool {
     pub(crate) fn new(buffer_len: u16, buffer_size: usize) -> Self {
-        let buffers = (0..buffer_len)
+        let buffers = (0..buffer_len.next_power_of_two())
             .map(|_| Vec::with_capacity(buffer_size))
             .collect();
 
@@ -34,11 +38,16 @@ impl BufferPool {
         self.buffers.borrow_mut().pop_front()
     }
 
-    pub(crate) fn add_buffer(&self, buffer: Vec<u8>) {
+    pub(crate) fn add_buffer(&self, mut buffer: Vec<u8>) {
+        buffer.clear();
         self.buffers.borrow_mut().push_back(buffer)
     }
 }
 
+/// Buffer borrowed from buffer pool
+///
+/// When IO operation finish, user will obtain a `BorrowedBuffer` to access the
+/// filled data
 pub struct BorrowedBuffer<'a> {
     buffer: ManuallyDrop<Slice<Vec<u8>>>,
     pool: &'a BufferPool,

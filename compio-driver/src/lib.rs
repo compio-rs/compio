@@ -535,14 +535,20 @@ impl ProactorBuilder {
     }
 }
 
+/// Trait to get the selected buffer of an io operation.
 pub trait TakeBuffer<T> {
+    /// Buffer pool type
     type BufferPool;
+
+    /// Selected buffer type
     type Buffer<'a>;
 
+    /// Take the selected buffer with `buffer_pool`, io `result` and `flags`, if
+    /// io operation is success
     fn take_buffer(
         self,
         buffer_pool: &Self::BufferPool,
         result: io::Result<T>,
-        flag: u32,
+        flags: u32,
     ) -> io::Result<Self::Buffer<'_>>;
 }

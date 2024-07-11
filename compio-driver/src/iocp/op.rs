@@ -5,14 +5,16 @@ use std::{
     io::ErrorKind,
     marker::PhantomPinned,
     net::Shutdown,
-    os::{fd::AsRawFd, windows::io::AsRawSocket},
+    os::windows::io::AsRawSocket,
     pin::Pin,
     ptr::{null, null_mut},
     task::Poll,
 };
 
 use aligned_array::{Aligned, A8};
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{
+    BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, SetBufInit, Slice,
+};
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 use pin_project_lite::pin_project;
@@ -40,7 +42,10 @@ use windows_sys::{
     },
 };
 
-use crate::{op::*, syscall, AsRawFd, OpCode, OpType, RawFd, SharedFd};
+use crate::{
+    op::*, syscall, AsRawFd, BorrowedBuffer, BufferPool, OpCode, OpType, RawFd, SharedFd,
+    TakeBuffer,
+};
 
 #[inline]
 fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
@@ -185,24 +190,32 @@ impl<S> ReadAtBufferPool<S> {
         let buffer = buffer_pool.get_buffer().ok_or_else(|| {
             io::Error::new(ErrorKind::Other, "buffer ring has no available buffer")
         })?;
+        let len = if len == 0 {
+            buffer.capacity()
+        } else {
+            buffer.capacity().min(len as _)
+        };
 
         Ok(Self {
-            read_at: ReadAt::new(fd, offset, buffer.slice(..len as usize)),
+            read_at: ReadAt::new(fd, offset, buffer.slice(..len)),
         })
     }
 }
 
 impl<S: AsRawFd> OpCode for ReadAtBufferPool<S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        self.project().recv.operate(self, optr)
+        self.project().read_at.operate(optr)
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
-        self.project().recv.cancel(self, optr)
+        self.project().read_at.cancel(optr)
     }
 }
 
 impl<S> TakeBuffer<usize> for ReadAtBufferPool<S> {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
     fn take_buffer(
         self,
         buffer_pool: &BufferPool,
@@ -490,24 +503,32 @@ impl<S> RecvBufferPool<S> {
         let buffer = buffer_pool.get_buffer().ok_or_else(|| {
             io::Error::new(ErrorKind::Other, "buffer ring has no available buffer")
         })?;
+        let len = if len == 0 {
+            buffer.capacity()
+        } else {
+            buffer.capacity().min(len as _)
+        };
 
         Ok(Self {
-            recv: Recv::new(fd, buffer.slice(..len as usize)),
+            recv: Recv::new(fd, buffer.slice(..len)),
         })
     }
 }
 
 impl<S: AsRawFd> OpCode for RecvBufferPool<S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        self.project().recv.operate(self, optr)
+        self.project().recv.operate(optr)
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
-        self.project().recv.cancel(self, optr)
+        self.project().recv.cancel(optr)
     }
 }
 
 impl<S> TakeBuffer<usize> for RecvBufferPool<S> {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
     fn take_buffer(
         self,
         buffer_pool: &BufferPool,

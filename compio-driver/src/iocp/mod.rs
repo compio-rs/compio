@@ -28,7 +28,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{syscall, AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder};
+use crate::{syscall, AsyncifyPool, BufferPool, Entry, Key, OutEntries, ProactorBuilder};
 
 pub(crate) mod op;
 
@@ -319,6 +319,21 @@ impl Driver {
             self.port.handle(),
             self.notify_overlapped.clone(),
         ))
+    }
+
+    pub fn create_buffer_pool(
+        &mut self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<BufferPool> {
+        Ok(BufferPool::new(buffer_len, buffer_size))
+    }
+
+    /// # Safety
+    ///
+    /// caller must make sure release the buffer pool with correct driver
+    pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
+        Ok(())
     }
 }
 

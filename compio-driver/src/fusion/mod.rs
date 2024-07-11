@@ -200,8 +200,11 @@ impl Driver {
     /// # Safety
     ///
     /// caller must make sure release the buffer pool with correct driver
-    pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
-        todo!()
+    pub unsafe fn release_buffer_pool(&mut self, buffer_pool: BufferPool) -> io::Result<()> {
+        match &mut self.fuse {
+            FuseDriver::Poll(driver) => driver.release_buffer_pool(buffer_pool.into_poll()),
+            FuseDriver::IoUring(driver) => driver.release_buffer_pool(buffer_pool.into_io_uring()),
+        }
     }
 }
 
