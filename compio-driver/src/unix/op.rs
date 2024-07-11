@@ -384,6 +384,10 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
 impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
     /// Create [`RecvMsgVectored`].
     pub fn new(fd: SharedFd<S>, buffer: T, control: C) -> Self {
+        assert!(
+            control.as_buf_ptr().cast::<libc::cmsghdr>().is_aligned(),
+            "misaligned control message buffer"
+        );
         Self {
             addr: unsafe { std::mem::zeroed() },
             msg: unsafe { std::mem::zeroed() },
@@ -430,6 +434,10 @@ pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
 impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     /// Create [`SendMsgVectored`].
     pub fn new(fd: SharedFd<S>, buffer: T, control: C, addr: SockAddr) -> Self {
+        assert!(
+            control.as_buf_ptr().cast::<libc::cmsghdr>().is_aligned(),
+            "misaligned control message buffer"
+        );
         Self {
             msg: unsafe { std::mem::zeroed() },
             fd,

@@ -27,11 +27,11 @@ use windows_sys::{
         },
         Networking::WinSock::{
             closesocket, setsockopt, shutdown, socklen_t, WSAIoctl, WSARecv, WSARecvFrom, WSASend,
-            WSASendMsg, WSASendTo, LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS,
-            LPFN_WSARECVMSG, SD_BOTH, SD_RECEIVE, SD_SEND, SIO_GET_EXTENSION_FUNCTION_POINTER,
-            SOCKADDR, SOCKADDR_STORAGE, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT,
-            SO_UPDATE_CONNECT_CONTEXT, WSABUF, WSAID_ACCEPTEX, WSAID_CONNECTEX,
-            WSAID_GETACCEPTEXSOCKADDRS, WSAID_WSARECVMSG, WSAMSG,
+            WSASendMsg, WSASendTo, CMSGHDR, LPFN_ACCEPTEX, LPFN_CONNECTEX,
+            LPFN_GETACCEPTEXSOCKADDRS, LPFN_WSARECVMSG, SD_BOTH, SD_RECEIVE, SD_SEND,
+            SIO_GET_EXTENSION_FUNCTION_POINTER, SOCKADDR, SOCKADDR_STORAGE, SOL_SOCKET,
+            SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, WSABUF, WSAID_ACCEPTEX,
+            WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS, WSAID_WSARECVMSG, WSAMSG,
         },
         Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile},
         System::{
@@ -792,6 +792,10 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
 impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
     /// Create [`RecvMsgVectored`].
     pub fn new(fd: SharedFd<S>, buffer: T, control: C) -> Self {
+        assert!(
+            control.as_buf_ptr().cast::<CMSGHDR>().is_aligned(),
+            "misaligned control message buffer"
+        );
         Self {
             addr: unsafe { std::mem::zeroed() },
             addr_len: std::mem::size_of::<SOCKADDR_STORAGE>() as _,
@@ -859,6 +863,10 @@ pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
 impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     /// Create [`SendMsgVectored`].
     pub fn new(fd: SharedFd<S>, buffer: T, control: C, addr: SockAddr) -> Self {
+        assert!(
+            control.as_buf_ptr().cast::<CMSGHDR>().is_aligned(),
+            "misaligned control message buffer"
+        );
         Self {
             fd,
             buffer,
