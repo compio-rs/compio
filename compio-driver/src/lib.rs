@@ -52,6 +52,8 @@ cfg_if::cfg_if! {
     } else if #[cfg(all(target_os = "linux", feature = "io-uring"))] {
         #[path = "iour/mod.rs"]
         mod sys;
+        #[cfg(not(feature = "io-uring-buf-ring"))]
+        mod fallback_buffer_pool;
         pub use sys::buffer_pool::{BufferPool, BorrowedBuffer};
     } else if #[cfg(unix)] {
         #[path = "poll/mod.rs"]

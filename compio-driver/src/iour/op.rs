@@ -1,22 +1,22 @@
-use std::{ffi::CString, io, io::ErrorKind, marker::PhantomPinned, os::fd::AsRawFd, pin::Pin, ptr};
+use std::{ffi::CString, io, marker::PhantomPinned, os::fd::AsRawFd, pin::Pin};
 
+#[cfg(feature = "io-uring-buf-ring")]
+pub use buf_ring_op::{ReadAtBufferPool, RecvBufferPool};
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
 };
+#[cfg(not(feature = "io-uring-buf-ring"))]
+pub use fallback_op::{ReadAtBufferPool, RecvBufferPool};
 use io_uring::{
     opcode,
-    squeue::Flags,
     types::{Fd, FsyncFlags},
 };
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
-use super::{
-    buffer_pool::{BorrowedBuffer, BufferPool},
-    OpCode,
-};
+use super::OpCode;
 pub use crate::unix::op::*;
-use crate::{op::*, syscall, OpEntry, SharedFd, TakeBuffer};
+use crate::{op::*, syscall, OpEntry, SharedFd};
 
 impl<
     D: std::marker::Send + 'static,
@@ -27,7 +27,7 @@ impl<
         OpEntry::Blocking
     }
 
-    fn call_blocking(self: Pin<&mut Self>) -> std::io::Result<usize> {
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
         // Safety: self won't be moved
         let this = unsafe { self.get_unchecked_mut() };
         let f = this
@@ -134,71 +134,6 @@ impl IntoInner for PathStat {
 
     fn into_inner(self) -> Self::Inner {
         statx_to_stat(self.stat)
-    }
-}
-
-/// Read a file at specified position into specified buffer.
-#[derive(Debug)]
-pub struct ReadAtBufferPool<S> {
-    pub(crate) fd: SharedFd<S>,
-    pub(crate) offset: u64,
-    buffer_group: u16,
-    len: u32,
-    _p: PhantomPinned,
-}
-
-impl<S> ReadAtBufferPool<S> {
-    /// Create [`ReadAtBufferPool`].
-    pub fn new(
-        buffer_pool: &BufferPool,
-        fd: SharedFd<S>,
-        offset: u64,
-        len: u32,
-    ) -> io::Result<Self> {
-        Ok(Self {
-            fd,
-            offset,
-            buffer_group: buffer_pool.buffer_group(),
-            len,
-            _p: PhantomPinned,
-        })
-    }
-}
-
-impl<S: AsRawFd> OpCode for ReadAtBufferPool<S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let fd = Fd(self.fd.as_raw_fd());
-        let offset = self.offset;
-        opcode::Read::new(fd, ptr::null_mut(), self.len)
-            .offset(offset)
-            .buf_group(self.buffer_group)
-            .build()
-            .flags(Flags::BUFFER_SELECT)
-            .into()
-    }
-}
-
-impl<S> TakeBuffer<usize> for ReadAtBufferPool<S> {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
-
-    fn take_buffer(
-        self,
-        buffer_pool: &Self::BufferPool,
-        result: io::Result<usize>,
-        flags: u32,
-    ) -> io::Result<Self::Buffer<'_>> {
-        let n = result.inspect_err(|_| unsafe {
-            // Safety: flags is valid
-            buffer_pool.reuse_buffer(flags)
-        })?;
-
-        unsafe {
-            // Safety: flags is valid
-            buffer_pool.get_buffer(flags, n).ok_or_else(|| {
-                io::Error::new(ErrorKind::InvalidInput, format!("flags {flags} is invalid"))
-            })
-        }
     }
 }
 
@@ -526,61 +461,6 @@ impl<T: IoVectoredBufMut, S: AsRawFd> IntoInner for RecvFromVectored<T, S> {
     }
 }
 
-/// Receive data from remote.
-pub struct RecvBufferPool<S> {
-    fd: SharedFd<S>,
-    buffer_group: u16,
-    len: u32,
-    _p: PhantomPinned,
-}
-
-impl<S> RecvBufferPool<S> {
-    /// Create [`RecvBufferPool`].
-    pub fn new(buffer_pool: &BufferPool, fd: SharedFd<S>, len: u32) -> io::Result<Self> {
-        Ok(Self {
-            fd,
-            buffer_group: buffer_pool.buffer_group(),
-            len,
-            _p: PhantomPinned,
-        })
-    }
-}
-
-impl<S: AsRawFd> OpCode for RecvBufferPool<S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let fd = self.fd.as_raw_fd();
-        opcode::Read::new(Fd(fd), ptr::null_mut(), self.len)
-            .buf_group(self.buffer_group)
-            .build()
-            .flags(Flags::BUFFER_SELECT)
-            .into()
-    }
-}
-
-impl<S> TakeBuffer<usize> for RecvBufferPool<S> {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
-
-    fn take_buffer(
-        self,
-        buffer_pool: &Self::BufferPool,
-        result: io::Result<usize>,
-        flags: u32,
-    ) -> io::Result<Self::Buffer<'_>> {
-        let n = result.inspect_err(|_| unsafe {
-            // Safety: flags is valid
-            buffer_pool.reuse_buffer(flags)
-        })?;
-
-        unsafe {
-            // Safety: flags is valid
-            buffer_pool.get_buffer(flags, n).ok_or_else(|| {
-                io::Error::new(ErrorKind::InvalidInput, format!("flags {flags} is invalid"))
-            })
-        }
-    }
-}
-
 struct SendToHeader<S> {
     pub(crate) fd: SharedFd<S>,
     pub(crate) addr: SockAddr,
@@ -689,5 +569,265 @@ impl<S: AsRawFd> OpCode for PollOnce<S> {
         opcode::PollAdd::new(Fd(self.fd.as_raw_fd()), flags as _)
             .build()
             .into()
+    }
+}
+
+#[cfg(feature = "io-uring-buf-ring")]
+mod buf_ring_op {
+    use std::{io, io::ErrorKind, marker::PhantomPinned, os::fd::AsRawFd, pin::Pin, ptr};
+
+    use io_uring::{opcode, squeue::Flags, types::Fd};
+
+    use super::{
+        super::buffer_pool::{BorrowedBuffer, BufferPool},
+        OpCode, OpEntry,
+    };
+    use crate::{SharedFd, TakeBuffer};
+
+    /// Receive data from remote.
+    pub struct RecvBufferPool<S> {
+        fd: SharedFd<S>,
+        buffer_group: u16,
+        len: u32,
+        _p: PhantomPinned,
+    }
+
+    impl<S> RecvBufferPool<S> {
+        /// Create [`RecvBufferPool`].
+        pub fn new(buffer_pool: &BufferPool, fd: SharedFd<S>, len: u32) -> io::Result<Self> {
+            Ok(Self {
+                fd,
+                buffer_group: buffer_pool.buffer_group(),
+                len,
+                _p: PhantomPinned,
+            })
+        }
+    }
+
+    impl<S: AsRawFd> OpCode for RecvBufferPool<S> {
+        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+            let fd = self.fd.as_raw_fd();
+            opcode::Read::new(Fd(fd), ptr::null_mut(), self.len)
+                .buf_group(self.buffer_group)
+                .build()
+                .flags(Flags::BUFFER_SELECT)
+                .into()
+        }
+    }
+
+    impl<S> TakeBuffer<usize> for RecvBufferPool<S> {
+        type Buffer<'a> = BorrowedBuffer<'a>;
+        type BufferPool = BufferPool;
+
+        fn take_buffer(
+            self,
+            buffer_pool: &Self::BufferPool,
+            result: io::Result<usize>,
+            flags: u32,
+        ) -> io::Result<Self::Buffer<'_>> {
+            let n = result.inspect_err(|_| unsafe {
+                // Safety: flags is valid
+                buffer_pool.reuse_buffer(flags)
+            })?;
+
+            unsafe {
+                // Safety: flags is valid
+                buffer_pool.get_buffer(flags, n).ok_or_else(|| {
+                    io::Error::new(ErrorKind::InvalidInput, format!("flags {flags} is invalid"))
+                })
+            }
+        }
+    }
+
+    /// Read a file at specified position into specified buffer.
+    #[derive(Debug)]
+    pub struct ReadAtBufferPool<S> {
+        pub(crate) fd: SharedFd<S>,
+        pub(crate) offset: u64,
+        buffer_group: u16,
+        len: u32,
+        _p: PhantomPinned,
+    }
+
+    impl<S> ReadAtBufferPool<S> {
+        /// Create [`ReadAtBufferPool`].
+        pub fn new(
+            buffer_pool: &BufferPool,
+            fd: SharedFd<S>,
+            offset: u64,
+            len: u32,
+        ) -> io::Result<Self> {
+            Ok(Self {
+                fd,
+                offset,
+                buffer_group: buffer_pool.buffer_group(),
+                len,
+                _p: PhantomPinned,
+            })
+        }
+    }
+
+    impl<S: AsRawFd> OpCode for ReadAtBufferPool<S> {
+        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+            let fd = Fd(self.fd.as_raw_fd());
+            let offset = self.offset;
+            opcode::Read::new(fd, ptr::null_mut(), self.len)
+                .offset(offset)
+                .buf_group(self.buffer_group)
+                .build()
+                .flags(Flags::BUFFER_SELECT)
+                .into()
+        }
+    }
+
+    impl<S> TakeBuffer<usize> for ReadAtBufferPool<S> {
+        type Buffer<'a> = BorrowedBuffer<'a>;
+        type BufferPool = BufferPool;
+
+        fn take_buffer(
+            self,
+            buffer_pool: &Self::BufferPool,
+            result: io::Result<usize>,
+            flags: u32,
+        ) -> io::Result<Self::Buffer<'_>> {
+            let n = result.inspect_err(|_| unsafe {
+                // Safety: flags is valid
+                buffer_pool.reuse_buffer(flags)
+            })?;
+
+            unsafe {
+                // Safety: flags is valid
+                buffer_pool.get_buffer(flags, n).ok_or_else(|| {
+                    io::Error::new(ErrorKind::InvalidInput, format!("flags {flags} is invalid"))
+                })
+            }
+        }
+    }
+}
+
+#[cfg(not(feature = "io-uring-buf-ring"))]
+mod fallback_op {
+    use std::{io, io::ErrorKind, os::fd::AsRawFd, pin::Pin};
+
+    use compio_buf::{IntoInner, IoBuf, SetBufInit, Slice};
+    use pin_project_lite::pin_project;
+
+    use super::{OpCode, ReadAt, Recv};
+    use crate::{
+        fallback_buffer_pool::{BorrowedBuffer, BufferPool},
+        OpEntry, SharedFd, TakeBuffer,
+    };
+
+    pin_project! {
+        /// Receive data from remote.
+        pub struct RecvBufferPool<S> {
+            #[pin]
+            recv: Recv<Slice<Vec<u8>>, S>,
+        }
+    }
+
+    impl<S> RecvBufferPool<S> {
+        /// Create [`RecvBufferPool`].
+        pub fn new(buffer_pool: &BufferPool, fd: SharedFd<S>, len: u32) -> io::Result<Self> {
+            let buffer = buffer_pool.get_buffer().ok_or_else(|| {
+                io::Error::new(ErrorKind::Other, "buffer ring has no available buffer")
+            })?;
+            let len = if len == 0 {
+                buffer.capacity()
+            } else {
+                buffer.capacity().min(len as _)
+            };
+
+            Ok(Self {
+                recv: Recv::new(fd, buffer.slice(..len)),
+            })
+        }
+    }
+
+    impl<S: AsRawFd> OpCode for RecvBufferPool<S> {
+        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+            self.project().recv.create_entry()
+        }
+    }
+
+    impl<S> TakeBuffer<usize> for RecvBufferPool<S> {
+        type Buffer<'a> = BorrowedBuffer<'a>;
+        type BufferPool = BufferPool;
+
+        fn take_buffer(
+            self,
+            buffer_pool: &Self::BufferPool,
+            result: io::Result<usize>,
+            _: u32,
+        ) -> io::Result<Self::Buffer<'_>> {
+            let n = result?;
+            let mut slice = self.recv.into_inner();
+
+            // Safety: n is valid
+            unsafe {
+                slice.set_buf_init(n);
+            }
+
+            Ok(BorrowedBuffer::new(slice, buffer_pool))
+        }
+    }
+
+    pin_project! {
+        /// Read a file at specified position into specified buffer.
+        pub struct ReadAtBufferPool<S> {
+            #[pin]
+            read_at: ReadAt<Slice<Vec<u8>>, S>,
+        }
+    }
+
+    impl<S> ReadAtBufferPool<S> {
+        /// Create [`ReadAtBufferPool`].
+        pub fn new(
+            buffer_pool: &BufferPool,
+            fd: SharedFd<S>,
+            offset: u64,
+            len: u32,
+        ) -> io::Result<Self> {
+            let buffer = buffer_pool.get_buffer().ok_or_else(|| {
+                io::Error::new(ErrorKind::Other, "buffer ring has no available buffer")
+            })?;
+            let len = if len == 0 {
+                buffer.capacity()
+            } else {
+                buffer.capacity().min(len as _)
+            };
+
+            Ok(Self {
+                read_at: ReadAt::new(fd, offset, buffer.slice(..len)),
+            })
+        }
+    }
+
+    impl<S: AsRawFd> OpCode for ReadAtBufferPool<S> {
+        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+            self.project().read_at.create_entry()
+        }
+    }
+
+    impl<S> TakeBuffer<usize> for ReadAtBufferPool<S> {
+        type Buffer<'a> = BorrowedBuffer<'a>;
+        type BufferPool = BufferPool;
+
+        fn take_buffer(
+            self,
+            buffer_pool: &Self::BufferPool,
+            result: io::Result<usize>,
+            _: u32,
+        ) -> io::Result<Self::Buffer<'_>> {
+            let n = result?;
+            let mut slice = self.read_at.into_inner();
+
+            // Safety: n is valid
+            unsafe {
+                slice.set_buf_init(n);
+            }
+
+            Ok(BorrowedBuffer::new(slice, buffer_pool))
+        }
     }
 }

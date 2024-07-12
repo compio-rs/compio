@@ -25,16 +25,25 @@ use io_uring::{
     types::{Fd, SubmitArgs, Timespec},
     IoUring,
 };
+#[cfg(feature = "io-uring-buf-ring")]
 use io_uring_buf_ring::IoUringBufRing;
 pub(crate) use libc::{sockaddr_storage, socklen_t};
+#[cfg(feature = "io-uring-buf-ring")]
 use slab::Slab;
 
 use crate::{syscall, AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder};
 
+#[cfg(feature = "io-uring-buf-ring")]
 pub(crate) mod buffer_pool;
 pub(crate) mod op;
 
+#[cfg(feature = "io-uring-buf-ring")]
 use buffer_pool::BufferPool;
+
+#[cfg(not(feature = "io-uring-buf-ring"))]
+pub(crate) use crate::fallback_buffer_pool as buffer_pool;
+#[cfg(not(feature = "io-uring-buf-ring"))]
+use crate::fallback_buffer_pool::BufferPool;
 
 /// The created entry of [`OpCode`].
 pub enum OpEntry {
@@ -78,6 +87,7 @@ pub(crate) struct Driver {
     notifier: Notifier,
     pool: AsyncifyPool,
     pool_completed: Arc<SegQueue<Entry>>,
+    #[cfg(feature = "io-uring-buf-ring")]
     // buffer group id type is u16, we should reuse the buffer group id when BufferPool is drop
     buffer_group_ids: Slab<()>,
 }
@@ -113,6 +123,7 @@ impl Driver {
             notifier,
             pool: builder.create_or_get_thread_pool(),
             pool_completed: Arc::new(SegQueue::new()),
+            #[cfg(feature = "io-uring-buf-ring")]
             buffer_group_ids: Default::default(),
         })
     }
@@ -134,14 +145,14 @@ impl Driver {
         match res {
             Ok(_) => {
                 if self.inner.completion().is_empty() {
-                    Err(io::ErrorKind::TimedOut.into())
+                    Err(ErrorKind::TimedOut.into())
                 } else {
                     Ok(())
                 }
             }
             Err(e) => match e.raw_os_error() {
-                Some(libc::ETIME) => Err(io::ErrorKind::TimedOut.into()),
-                Some(libc::EBUSY) | Some(libc::EAGAIN) => Err(io::ErrorKind::Interrupted.into()),
+                Some(libc::ETIME) => Err(ErrorKind::TimedOut.into()),
+                Some(libc::EBUSY) | Some(libc::EAGAIN) => Err(ErrorKind::Interrupted.into()),
                 _ => Err(e),
             },
         }
@@ -283,6 +294,7 @@ impl Driver {
         self.notifier.handle()
     }
 
+    #[cfg(feature = "io-uring-buf-ring")]
     pub fn create_buffer_pool(
         &mut self,
         buffer_len: u16,
@@ -304,6 +316,16 @@ impl Driver {
         Ok(BufferPool::new(buf_ring))
     }
 
+    #[cfg(not(feature = "io-uring-buf-ring"))]
+    pub fn create_buffer_pool(
+        &mut self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<BufferPool> {
+        Ok(BufferPool::new(buffer_len, buffer_size))
+    }
+
+    #[cfg(feature = "io-uring-buf-ring")]
     /// # Safety
     ///
     /// caller must make sure release the buffer pool with correct driver
@@ -312,6 +334,14 @@ impl Driver {
         buffer_pool.into_inner().release(&self.inner)?;
         self.buffer_group_ids.remove(buffer_group as _);
 
+        Ok(())
+    }
+
+    #[cfg(not(feature = "io-uring-buf-ring"))]
+    /// # Safety
+    ///
+    /// caller must make sure release the buffer pool with correct driver
+    pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
         Ok(())
     }
 }
@@ -373,9 +403,9 @@ impl Notifier {
                     break Ok(());
                 }
                 // Clear the next time:)
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => break Ok(()),
+                Err(e) if e.kind() == ErrorKind::WouldBlock => break Ok(()),
                 // Just like read_exact
-                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) if e.kind() == ErrorKind::Interrupted => continue,
                 Err(e) => break Err(e),
             }
         }
