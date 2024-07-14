@@ -75,12 +75,7 @@ impl<B> CMsgBuilder<B> {
     /// properly aligned and has enough space, safety conditions of all unsafe
     /// functions involved are satisfied, except for `CMSG_*`/`wsa_cmsg_*`, as
     /// their safety are not documented.
-    pub unsafe fn try_push<T>(
-        &mut self,
-        level: sys::c_int,
-        ty: sys::c_int,
-        value: T,
-    ) -> Option<()> {
+    pub unsafe fn try_push<T>(&mut self, level: i32, ty: i32, value: T) -> Option<()> {
         if !self.inner.is_aligned::<T>() || !self.inner.is_space_enough::<T>() {
             return None;
         }

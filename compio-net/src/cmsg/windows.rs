@@ -1,21 +1,20 @@
-use std::{mem, ptr::null_mut};
+use std::ptr::null_mut;
 
-pub use i32 as c_int;
 use windows_sys::Win32::Networking::WinSock::{CMSGHDR, WSABUF, WSAMSG};
 
 // Macros from https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/shared/ws2def.h
 #[inline]
 const fn wsa_cmsghdr_align(length: usize) -> usize {
-    (length + mem::align_of::<CMSGHDR>() - 1) & !(mem::align_of::<CMSGHDR>() - 1)
+    (length + std::mem::align_of::<CMSGHDR>() - 1) & !(std::mem::align_of::<CMSGHDR>() - 1)
 }
 
 // WSA_CMSGDATA_ALIGN(sizeof(CMSGHDR))
 const WSA_CMSGDATA_OFFSET: usize =
-    (mem::size_of::<CMSGHDR>() + mem::align_of::<usize>() - 1) & !(mem::align_of::<usize>() - 1);
+    (std::mem::size_of::<CMSGHDR>() + std::mem::align_of::<usize>() - 1) & !(std::mem::align_of::<usize>() - 1);
 
 #[inline]
 unsafe fn wsa_cmsg_firsthdr(msg: *const WSAMSG) -> *mut CMSGHDR {
-    if (*msg).Control.len as usize >= mem::size_of::<CMSGHDR>() {
+    if (*msg).Control.len as usize >= std::mem::size_of::<CMSGHDR>() {
         (*msg).Control.buf as _
     } else {
         null_mut()
@@ -28,7 +27,7 @@ unsafe fn wsa_cmsg_nxthdr(msg: *const WSAMSG, cmsg: *const CMSGHDR) -> *mut CMSG
         wsa_cmsg_firsthdr(msg)
     } else {
         let next = cmsg as usize + wsa_cmsghdr_align((*cmsg).cmsg_len);
-        if next + mem::size_of::<CMSGHDR>()
+        if next + std::mem::size_of::<CMSGHDR>()
             > (*msg).Control.buf as usize + (*msg).Control.len as usize
         {
             null_mut()
@@ -97,7 +96,7 @@ impl<'a> CMsgMut<'a> {
     }
 
     pub(crate) unsafe fn set_data<T>(&mut self, data: T) {
-        self.0.cmsg_len = wsa_cmsg_len(mem::size_of::<T>() as _) as _;
+        self.0.cmsg_len = wsa_cmsg_len(std::mem::size_of::<T>() as _) as _;
         let data_ptr = wsa_cmsg_data(self.0);
         std::ptr::write(data_ptr.cast::<T>(), data);
     }
@@ -113,7 +112,7 @@ impl CMsgIter {
         assert!(len >= wsa_cmsg_space(0) as _, "buffer too short");
         assert!(ptr.cast::<CMSGHDR>().is_aligned(), "misaligned buffer");
 
-        let mut msg: WSAMSG = unsafe { mem::zeroed() };
+        let mut msg: WSAMSG = unsafe { std::mem::zeroed() };
         msg.Control = WSABUF {
             len: len as _,
             buf: ptr as _,
@@ -143,7 +142,7 @@ impl CMsgIter {
 
     pub(crate) fn is_space_enough<T>(&self) -> bool {
         if !self.cmsg.is_null() {
-            let space = wsa_cmsg_space(mem::size_of::<T>() as _);
+            let space = wsa_cmsg_space(std::mem::size_of::<T>() as _);
             let max = self.msg.Control.buf as usize + self.msg.Control.len as usize;
             self.cmsg as usize + space <= max
         } else {
@@ -153,5 +152,5 @@ impl CMsgIter {
 }
 
 pub(crate) fn space_of<T>() -> usize {
-    wsa_cmsg_space(mem::size_of::<T>() as _)
+    wsa_cmsg_space(std::mem::size_of::<T>() as _)
 }

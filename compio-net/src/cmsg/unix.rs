@@ -1,7 +1,4 @@
-use std::mem;
-
-pub use libc::c_int;
-use libc::{cmsghdr, msghdr, CMSG_DATA, CMSG_FIRSTHDR, CMSG_LEN, CMSG_NXTHDR, CMSG_SPACE};
+use libc::{c_int, cmsghdr, msghdr, CMSG_DATA, CMSG_FIRSTHDR, CMSG_LEN, CMSG_NXTHDR, CMSG_SPACE};
 
 /// Reference to a control message.
 pub struct CMsgRef<'a>(&'a cmsghdr);
@@ -47,7 +44,7 @@ impl<'a> CMsgMut<'a> {
     }
 
     pub(crate) unsafe fn set_data<T>(&mut self, data: T) {
-        self.0.cmsg_len = CMSG_LEN(mem::size_of::<T>() as _) as _;
+        self.0.cmsg_len = CMSG_LEN(std::mem::size_of::<T>() as _) as _;
         let data_ptr = CMSG_DATA(self.0);
         std::ptr::write(data_ptr.cast::<T>(), data);
     }
@@ -63,7 +60,7 @@ impl CMsgIter {
         assert!(len >= unsafe { CMSG_SPACE(0) as _ }, "buffer too short");
         assert!(ptr.cast::<cmsghdr>().is_aligned(), "misaligned buffer");
 
-        let mut msg: msghdr = unsafe { mem::zeroed() };
+        let mut msg: msghdr = unsafe { std::mem::zeroed() };
         msg.msg_control = ptr as _;
         msg.msg_controllen = len as _;
         // SAFETY: msg is initialized and valid
@@ -91,7 +88,7 @@ impl CMsgIter {
 
     pub(crate) fn is_space_enough<T>(&self) -> bool {
         if !self.cmsg.is_null() {
-            let space = unsafe { CMSG_SPACE(mem::size_of::<T>() as _) as usize };
+            let space = unsafe { CMSG_SPACE(std::mem::size_of::<T>() as _) as usize };
             #[allow(clippy::unnecessary_cast)]
             let max = self.msg.msg_control as usize + self.msg.msg_controllen as usize;
             self.cmsg as usize + space <= max
@@ -102,5 +99,5 @@ impl CMsgIter {
 }
 
 pub(crate) fn space_of<T>() -> usize {
-    unsafe { CMSG_SPACE(mem::size_of::<T>() as _) as _ }
+    unsafe { CMSG_SPACE(std::mem::size_of::<T>() as _) as _ }
 }
