@@ -10,7 +10,7 @@ use compio_driver::{
         RecvResultExt, RecvVectored, Send, SendMsg, SendTo, SendToVectored, SendVectored,
         ShutdownSocket,
     },
-    ToSharedFd,
+    syscall, AsRawFd, ToSharedFd,
 };
 use compio_runtime::Attacher;
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
@@ -323,6 +323,33 @@ impl Socket {
         let fd = self.to_shared_fd();
         let op = SendMsg::new(fd, buffer, control, addr.clone());
         compio_runtime::submit(op).await.into_inner()
+    }
+
+    #[cfg(unix)]
+    pub fn set_socket_option<T>(&self, level: i32, name: i32, value: &T) -> io::Result<()> {
+        syscall!(libc::setsockopt(
+            self.socket.as_raw_fd(),
+            level,
+            name,
+            value as *const _ as _,
+            std::mem::size_of::<T>() as _
+        ))
+        .map(|_| ())
+    }
+
+    #[cfg(windows)]
+    pub fn set_socket_option<T>(&self, level: i32, name: i32, value: &T) -> io::Result<()> {
+        syscall!(
+            SOCKET,
+            windows_sys::Win32::Networking::WinSock::setsockopt(
+                self.socket.as_raw_fd() as _,
+                level,
+                name,
+                value as *const _ as _,
+                std::mem::size_of::<T>() as _
+            )
+        )
+        .map(|_| ())
     }
 }
 

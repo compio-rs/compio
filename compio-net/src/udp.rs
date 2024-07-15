@@ -315,6 +315,11 @@ impl UdpSocket {
         )
         .await
     }
+
+    /// Sets a socket option.
+    pub fn set_socket_option<T>(&self, level: i32, name: i32, value: &T) -> io::Result<()> {
+        self.inner.set_socket_option(level, name, value)
+    }
 }
 
 impl_raw_fd!(UdpSocket, socket2::Socket, inner, socket);
