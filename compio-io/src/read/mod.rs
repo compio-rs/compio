@@ -1,6 +1,6 @@
 #[cfg(feature = "allocator_api")]
 use std::alloc::Allocator;
-use std::{io::Cursor, rc::Rc, sync::Arc};
+use std::{io::Cursor, ops::DerefMut, rc::Rc, sync::Arc};
 
 use compio_buf::{buf_try, t_alloc, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut};
 
@@ -96,8 +96,8 @@ impl AsyncRead for &[u8] {
     async fn read_vectored<T: IoVectoredBufMut>(&mut self, mut buf: T) -> BufResult<usize, T> {
         let mut this = *self; // An immutable slice to track the read position
 
-        for buf in buf.as_dyn_mut_bufs() {
-            let n = slice_to_buf(this, buf);
+        for mut buf in buf.iter_buf_mut() {
+            let n = slice_to_buf(this, buf.deref_mut());
             this = &this[n..];
             if this.is_empty() {
                 break;

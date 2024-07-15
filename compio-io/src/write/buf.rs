@@ -85,7 +85,7 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
             .buf
             .with(|mut w| {
                 let mut written = 0;
-                for buf in buf.as_dyn_bufs() {
+                for buf in buf.iter_buf() {
                     let len = w.buf_len();
                     let mut slice = w.slice(len..);
                     written += slice_to_buf(buf.as_slice(), &mut slice);

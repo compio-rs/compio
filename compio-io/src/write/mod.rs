@@ -97,9 +97,9 @@ impl AsyncWrite for Vec<u8> {
     }
 
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let len = buf.as_dyn_bufs().map(|b| b.buf_len()).sum();
+        let len = buf.iter_buf().map(|b| b.buf_len()).sum();
         self.reserve(len - self.len());
-        for buf in buf.as_dyn_bufs() {
+        for buf in buf.iter_buf() {
             self.extend_from_slice(buf.as_slice());
         }
         BufResult(Ok(len), buf)
