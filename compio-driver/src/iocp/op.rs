@@ -448,7 +448,7 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvVectored<T, S> {
 impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_raw_fd();
-        let slices = self.get_unchecked_mut().buffer.as_io_slices_mut();
+        let slices = self.get_unchecked_mut().buffer.io_slices_mut();
         let mut flags = 0;
         let mut received = 0;
         let res = WSARecv(
@@ -541,7 +541,7 @@ impl<T: IoVectoredBuf, S> IntoInner for SendVectored<T, S> {
 
 impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let slices = self.buffer.as_io_slices();
+        let slices = self.buffer.io_slices();
         let mut sent = 0;
         let res = WSASend(
             self.fd.as_raw_fd() as _,
@@ -650,7 +650,7 @@ impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvFromVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = self.get_unchecked_mut();
         let fd = this.fd.as_raw_fd();
-        let buffer = this.buffer.as_io_slices_mut();
+        let buffer = this.buffer.io_slices_mut();
         let mut flags = 0;
         let mut received = 0;
         let res = WSARecvFrom(
@@ -753,7 +753,7 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
 
 impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendToVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let buffer = self.buffer.as_io_slices();
+        let buffer = self.buffer.io_slices();
         let mut sent = 0;
         let res = WSASendTo(
             self.fd.as_raw_fd() as _,

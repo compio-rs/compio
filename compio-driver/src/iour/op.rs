@@ -148,7 +148,7 @@ impl<T: IoBufMut, S: AsRawFd> OpCode for ReadAt<T, S> {
 impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for ReadVectoredAt<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slices = unsafe { this.buffer.as_io_slices_mut() };
+        this.slices = unsafe { this.buffer.io_slices_mut() };
         opcode::Readv::new(
             Fd(this.fd.as_raw_fd()),
             this.slices.as_ptr() as _,
@@ -173,7 +173,7 @@ impl<T: IoBuf, S: AsRawFd> OpCode for WriteAt<T, S> {
 impl<T: IoVectoredBuf, S: AsRawFd> OpCode for WriteVectoredAt<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slices = unsafe { this.buffer.as_io_slices() };
+        this.slices = unsafe { this.buffer.io_slices() };
         opcode::Writev::new(
             Fd(this.fd.as_raw_fd()),
             this.slices.as_ptr() as _,
@@ -318,7 +318,7 @@ impl<T: IoBufMut, S: AsRawFd> OpCode for Recv<T, S> {
 impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slices = unsafe { this.buffer.as_io_slices_mut() };
+        this.slices = unsafe { this.buffer.io_slices_mut() };
         opcode::Readv::new(
             Fd(this.fd.as_raw_fd()),
             this.slices.as_ptr() as _,
@@ -341,7 +341,7 @@ impl<T: IoBuf, S: AsRawFd> OpCode for Send<T, S> {
 impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slices = unsafe { this.buffer.as_io_slices() };
+        this.slices = unsafe { this.buffer.io_slices() };
         opcode::Writev::new(
             Fd(this.fd.as_raw_fd()),
             this.slices.as_ptr() as _,
@@ -443,7 +443,7 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
 impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvFromVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slice = unsafe { this.buffer.as_io_slices_mut() };
+        this.slice = unsafe { this.buffer.io_slices_mut() };
         this.header.create_entry(&mut this.slice)
     }
 }
@@ -543,7 +543,7 @@ impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
 impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendToVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slice = unsafe { this.buffer.as_io_slices() };
+        this.slice = unsafe { this.buffer.io_slices() };
         this.header.create_entry(&mut this.slice)
     }
 }
