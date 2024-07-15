@@ -452,8 +452,8 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     pub(crate) fn set_msg(&mut self) {
         self.slices = unsafe { self.buffer.as_io_slices() };
 
-        self.msg.msg_name = std::ptr::addr_of_mut!(self.addr) as _;
-        self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
+        self.msg.msg_name = self.addr.as_ptr() as _;
+        self.msg.msg_namelen = self.addr.len();
         self.msg.msg_iov = self.slices.as_ptr() as _;
         self.msg.msg_iovlen = self.slices.len() as _;
         self.msg.msg_control = self.control.as_buf_ptr() as _;
