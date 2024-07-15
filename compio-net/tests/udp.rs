@@ -89,7 +89,7 @@ async fn send_msg_with_ipv6_ecn() {
     let mut control = vec![0u8; 32];
     let mut builder = CMsgBuilder::new(&mut control);
 
-    const ECN_BITS: i32 = 0b11;
+    const ECN_BITS: i32 = 0b10;
 
     #[cfg(unix)]
     builder
