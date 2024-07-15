@@ -1,20 +1,23 @@
-use std::ptr::null_mut;
+use std::{
+    mem::{align_of, size_of},
+    ptr::null_mut,
+};
 
 use windows_sys::Win32::Networking::WinSock::{CMSGHDR, WSABUF, WSAMSG};
 
 // Macros from https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/shared/ws2def.h
 #[inline]
 const fn wsa_cmsghdr_align(length: usize) -> usize {
-    (length + std::mem::align_of::<CMSGHDR>() - 1) & !(std::mem::align_of::<CMSGHDR>() - 1)
+    (length + align_of::<CMSGHDR>() - 1) & !(align_of::<CMSGHDR>() - 1)
 }
 
 // WSA_CMSGDATA_ALIGN(sizeof(CMSGHDR))
 const WSA_CMSGDATA_OFFSET: usize =
-    (std::mem::size_of::<CMSGHDR>() + std::mem::align_of::<usize>() - 1) & !(std::mem::align_of::<usize>() - 1);
+    (size_of::<CMSGHDR>() + align_of::<usize>() - 1) & !(align_of::<usize>() - 1);
 
 #[inline]
 unsafe fn wsa_cmsg_firsthdr(msg: *const WSAMSG) -> *mut CMSGHDR {
-    if (*msg).Control.len as usize >= std::mem::size_of::<CMSGHDR>() {
+    if (*msg).Control.len as usize >= size_of::<CMSGHDR>() {
         (*msg).Control.buf as _
     } else {
         null_mut()
@@ -27,9 +30,7 @@ unsafe fn wsa_cmsg_nxthdr(msg: *const WSAMSG, cmsg: *const CMSGHDR) -> *mut CMSG
         wsa_cmsg_firsthdr(msg)
     } else {
         let next = cmsg as usize + wsa_cmsghdr_align((*cmsg).cmsg_len);
-        if next + std::mem::size_of::<CMSGHDR>()
-            > (*msg).Control.buf as usize + (*msg).Control.len as usize
-        {
+        if next + size_of::<CMSGHDR>() > (*msg).Control.buf as usize + (*msg).Control.len as usize {
             null_mut()
         } else {
             next as _
@@ -52,32 +53,21 @@ const fn wsa_cmsg_len(length: usize) -> usize {
     WSA_CMSGDATA_OFFSET + length
 }
 
-/// Reference to a control message.
 pub struct CMsgRef<'a>(&'a CMSGHDR);
 
 impl<'a> CMsgRef<'a> {
-    /// Returns the level of the control message.
     pub fn level(&self) -> i32 {
         self.0.cmsg_level
     }
 
-    /// Returns the type of the control message.
     pub fn ty(&self) -> i32 {
         self.0.cmsg_type
     }
 
-    /// Returns the length of the control message.
-    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.0.cmsg_len
     }
 
-    /// Returns a reference to the data of the control message.
-    ///
-    /// # Safety
-    ///
-    /// The data part must be properly aligned and contains an initialized
-    /// instance of `T`.
     pub unsafe fn data<T>(&self) -> &T {
         let data_ptr = wsa_cmsg_data(self.0);
         data_ptr.cast::<T>().as_ref().unwrap()
@@ -95,10 +85,11 @@ impl<'a> CMsgMut<'a> {
         self.0.cmsg_type = ty;
     }
 
-    pub(crate) unsafe fn set_data<T>(&mut self, data: T) {
-        self.0.cmsg_len = wsa_cmsg_len(std::mem::size_of::<T>() as _) as _;
+    pub(crate) unsafe fn set_data<T>(&mut self, data: T) -> usize {
+        self.0.cmsg_len = wsa_cmsg_len(size_of::<T>() as _) as _;
         let data_ptr = wsa_cmsg_data(self.0);
         std::ptr::write(data_ptr.cast::<T>(), data);
+        wsa_cmsg_space(size_of::<T>() as _)
     }
 }
 
@@ -142,15 +133,11 @@ impl CMsgIter {
 
     pub(crate) fn is_space_enough<T>(&self) -> bool {
         if !self.cmsg.is_null() {
-            let space = wsa_cmsg_space(std::mem::size_of::<T>() as _);
+            let space = wsa_cmsg_space(size_of::<T>() as _);
             let max = self.msg.Control.buf as usize + self.msg.Control.len as usize;
             self.cmsg as usize + space <= max
         } else {
             false
         }
     }
-}
-
-pub(crate) fn space_of<T>() -> usize {
-    wsa_cmsg_space(std::mem::size_of::<T>() as _)
 }

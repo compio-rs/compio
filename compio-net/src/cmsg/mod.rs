@@ -10,7 +10,36 @@ cfg_if::cfg_if! {
     }
 }
 
-pub use sys::CMsgRef;
+/// Reference to a control message.
+pub struct CMsgRef<'a>(sys::CMsgRef<'a>);
+
+impl<'a> CMsgRef<'a> {
+    /// Returns the level of the control message.
+    pub fn level(&self) -> i32 {
+        self.0.level()
+    }
+
+    /// Returns the type of the control message.
+    pub fn ty(&self) -> i32 {
+        self.0.ty()
+    }
+
+    /// Returns the length of the control message.
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        self.0.len() as _
+    }
+
+    /// Returns a reference to the data of the control message.
+    ///
+    /// # Safety
+    ///
+    /// The data part must be properly aligned and contains an initialized
+    /// instance of `T`.
+    pub unsafe fn data<T>(&self) -> &T {
+        self.0.data()
+    }
+}
 
 /// An iterator for control messages.
 pub struct CMsgIter<'a> {
@@ -44,7 +73,7 @@ impl<'a> Iterator for CMsgIter<'a> {
         unsafe {
             let cmsg = self.inner.current();
             self.inner.next();
-            cmsg
+            cmsg.map(CMsgRef)
         }
     }
 }
@@ -91,10 +120,9 @@ impl<'a> CMsgBuilder<'a> {
             let mut cmsg = self.inner.current_mut()?;
             cmsg.set_level(level);
             cmsg.set_ty(ty);
-            cmsg.set_data(value);
+            self.len += cmsg.set_data(value);
 
             self.inner.next();
-            self.len += sys::space_of::<T>();
         }
 
         Some(())

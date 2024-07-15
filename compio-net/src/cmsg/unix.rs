@@ -1,32 +1,21 @@
 use libc::{c_int, cmsghdr, msghdr, CMSG_DATA, CMSG_FIRSTHDR, CMSG_LEN, CMSG_NXTHDR, CMSG_SPACE};
 
-/// Reference to a control message.
-pub struct CMsgRef<'a>(&'a cmsghdr);
+pub(crate) struct CMsgRef<'a>(&'a cmsghdr);
 
 impl<'a> CMsgRef<'a> {
-    /// Returns the level of the control message.
-    pub fn level(&self) -> c_int {
+    pub(crate) fn level(&self) -> c_int {
         self.0.cmsg_level
     }
 
-    /// Returns the type of the control message.
-    pub fn ty(&self) -> c_int {
+    pub(crate) fn ty(&self) -> c_int {
         self.0.cmsg_type
     }
 
-    /// Returns the length of the control message.
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.0.cmsg_len as _
     }
 
-    /// Returns a reference to the data of the control message.
-    ///
-    /// # Safety
-    ///
-    /// The data part must be properly aligned and contains an initialized
-    /// instance of `T`.
-    pub unsafe fn data<T>(&self) -> &T {
+    pub(crate) unsafe fn data<T>(&self) -> &T {
         let data_ptr = CMSG_DATA(self.0);
         data_ptr.cast::<T>().as_ref().unwrap()
     }
@@ -43,10 +32,11 @@ impl<'a> CMsgMut<'a> {
         self.0.cmsg_type = ty;
     }
 
-    pub(crate) unsafe fn set_data<T>(&mut self, data: T) {
+    pub(crate) unsafe fn set_data<T>(&mut self, data: T) -> usize {
         self.0.cmsg_len = CMSG_LEN(std::mem::size_of::<T>() as _) as _;
         let data_ptr = CMSG_DATA(self.0);
         std::ptr::write(data_ptr.cast::<T>(), data);
+        CMSG_SPACE(std::mem::size_of::<T>() as _) as _
     }
 }
 
@@ -96,8 +86,4 @@ impl CMsgIter {
             false
         }
     }
-}
-
-pub(crate) fn space_of<T>() -> usize {
-    unsafe { CMSG_SPACE(std::mem::size_of::<T>() as _) as _ }
 }
