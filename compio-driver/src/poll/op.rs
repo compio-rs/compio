@@ -758,7 +758,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> RecvMsg<T, C, S> {
 impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let this = unsafe { self.get_unchecked_mut() };
-        this.set_msg();
+        unsafe { this.set_msg() };
         syscall!(this.call(), wait_readable(this.fd.as_raw_fd()))
     }
 
@@ -779,7 +779,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsRawFd> SendMsg<T, C, S> {
 impl<T: IoVectoredBuf, C: IoBuf, S: AsRawFd> OpCode for SendMsg<T, C, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let this = unsafe { self.get_unchecked_mut() };
-        this.set_msg();
+        unsafe { this.set_msg() };
         syscall!(this.call(), wait_writable(this.fd.as_raw_fd()))
     }
 

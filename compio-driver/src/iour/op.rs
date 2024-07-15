@@ -559,7 +559,7 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
 impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.set_msg();
+        unsafe { this.set_msg() };
         opcode::RecvMsg::new(Fd(this.fd.as_raw_fd()), &mut this.msg)
             .build()
             .into()
@@ -569,7 +569,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
 impl<T: IoVectoredBuf, C: IoBuf, S: AsRawFd> OpCode for SendMsg<T, C, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.set_msg();
+        unsafe { this.set_msg() };
         opcode::SendMsg::new(Fd(this.fd.as_raw_fd()), &this.msg)
             .build()
             .into()
