@@ -382,7 +382,7 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
-    /// Create [`RecvMsgVectored`].
+    /// Create [`RecvMsg`].
     ///
     /// # Panics
     ///
@@ -436,7 +436,7 @@ pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
 }
 
 impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
-    /// Create [`SendMsgVectored`].
+    /// Create [`SendMsg`].
     ///
     /// # Panics
     ///
