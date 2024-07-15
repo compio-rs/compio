@@ -791,6 +791,10 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
     /// Create [`RecvMsgVectored`].
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the control message buffer is misaligned.
     pub fn new(fd: SharedFd<S>, buffer: T, control: C) -> Self {
         assert!(
             control.as_buf_ptr().cast::<CMSGHDR>().is_aligned(),
@@ -862,6 +866,10 @@ pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
 
 impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     /// Create [`SendMsgVectored`].
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the control message buffer is misaligned.
     pub fn new(fd: SharedFd<S>, buffer: T, control: C, addr: SockAddr) -> Self {
         assert!(
             control.as_buf_ptr().cast::<CMSGHDR>().is_aligned(),
