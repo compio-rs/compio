@@ -4,8 +4,8 @@ use crate::*;
 pub trait OwnedIterator: IntoInner + Sized {
     /// Get the next iterator.
     ///
-    /// If current `Self` is the last one, return `Err(Self)` with `Self` being
-    /// untouched.
+    /// If current `Self` is the last one, return `Err(Self::Inner)` to give the
+    /// inner back.
     fn next(self) -> Result<Self, Self::Inner>;
 }
 
