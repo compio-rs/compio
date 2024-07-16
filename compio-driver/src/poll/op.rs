@@ -749,6 +749,47 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
     }
 }
 
+impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> RecvMsg<T, C, S> {
+    unsafe fn call(&mut self) -> libc::ssize_t {
+        libc::recvmsg(self.fd.as_raw_fd(), &mut self.msg, 0)
+    }
+}
+
+impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        let this = unsafe { self.get_unchecked_mut() };
+        unsafe { this.set_msg() };
+        syscall!(this.call(), wait_readable(this.fd.as_raw_fd()))
+    }
+
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+        debug_assert!(event.readable);
+
+        let this = unsafe { self.get_unchecked_mut() };
+        syscall!(break this.call())
+    }
+}
+
+impl<T: IoVectoredBuf, C: IoBuf, S: AsRawFd> SendMsg<T, C, S> {
+    unsafe fn call(&self) -> libc::ssize_t {
+        libc::sendmsg(self.fd.as_raw_fd(), &self.msg, 0)
+    }
+}
+
+impl<T: IoVectoredBuf, C: IoBuf, S: AsRawFd> OpCode for SendMsg<T, C, S> {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        let this = unsafe { self.get_unchecked_mut() };
+        unsafe { this.set_msg() };
+        syscall!(this.call(), wait_writable(this.fd.as_raw_fd()))
+    }
+
+    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+        debug_assert!(event.writable);
+
+        syscall!(break self.call())
+    }
+}
+
 impl<S: AsRawFd> OpCode for PollOnce<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_for(self.fd.as_raw_fd(), self.interest))

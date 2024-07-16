@@ -11,7 +11,9 @@ use std::{
 };
 
 use aligned_array::{Aligned, A8};
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{
+    BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
+};
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 use socket2::SockAddr;
@@ -25,10 +27,11 @@ use windows_sys::{
         },
         Networking::WinSock::{
             closesocket, setsockopt, shutdown, socklen_t, WSAIoctl, WSARecv, WSARecvFrom, WSASend,
-            WSASendTo, LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS, SD_BOTH,
-            SD_RECEIVE, SD_SEND, SIO_GET_EXTENSION_FUNCTION_POINTER, SOCKADDR, SOCKADDR_STORAGE,
-            SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, WSAID_ACCEPTEX,
-            WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS,
+            WSASendMsg, WSASendTo, CMSGHDR, LPFN_ACCEPTEX, LPFN_CONNECTEX,
+            LPFN_GETACCEPTEXSOCKADDRS, LPFN_WSARECVMSG, SD_BOTH, SD_RECEIVE, SD_SEND,
+            SIO_GET_EXTENSION_FUNCTION_POINTER, SOCKADDR, SOCKADDR_STORAGE, SOL_SOCKET,
+            SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, WSABUF, WSAID_ACCEPTEX,
+            WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS, WSAID_WSARECVMSG, WSAMSG,
         },
         Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile},
         System::{
@@ -766,6 +769,146 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendToVectored<T, S> {
             optr,
             None,
         );
+        winsock_result(res, sent)
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd.as_raw_fd(), optr)
+    }
+}
+
+static WSA_RECVMSG: OnceLock<LPFN_WSARECVMSG> = OnceLock::new();
+
+/// Receive data and source address with ancillary data into vectored buffer.
+pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
+    addr: SOCKADDR_STORAGE,
+    addr_len: socklen_t,
+    fd: SharedFd<S>,
+    buffer: T,
+    control: C,
+    _p: PhantomPinned,
+}
+
+impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
+    /// Create [`RecvMsg`].
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the control message buffer is misaligned.
+    pub fn new(fd: SharedFd<S>, buffer: T, control: C) -> Self {
+        assert!(
+            control.as_buf_ptr().cast::<CMSGHDR>().is_aligned(),
+            "misaligned control message buffer"
+        );
+        Self {
+            addr: unsafe { std::mem::zeroed() },
+            addr_len: std::mem::size_of::<SOCKADDR_STORAGE>() as _,
+            fd,
+            buffer,
+            control,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
+    type Inner = ((T, C), SOCKADDR_STORAGE, socklen_t);
+
+    fn into_inner(self) -> Self::Inner {
+        ((self.buffer, self.control), self.addr, self.addr_len)
+    }
+}
+
+impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let recvmsg_fn = WSA_RECVMSG
+            .get_or_try_init(|| get_wsa_fn(self.fd.as_raw_fd(), WSAID_WSARECVMSG))?
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::Unsupported, "cannot retrieve WSARecvMsg")
+            })?;
+
+        let this = self.get_unchecked_mut();
+        let mut slices = this.buffer.as_io_slices_mut();
+        let mut msg = WSAMSG {
+            name: &mut this.addr as *mut _ as _,
+            namelen: this.addr_len,
+            lpBuffers: slices.as_mut_ptr() as _,
+            dwBufferCount: slices.len() as _,
+            Control: std::mem::transmute::<IoSliceMut, WSABUF>(this.control.as_io_slice_mut()),
+            dwFlags: 0,
+        };
+
+        let mut received = 0;
+        let res = recvmsg_fn(
+            this.fd.as_raw_fd() as _,
+            &mut msg,
+            &mut received,
+            optr,
+            None,
+        );
+        winsock_result(res, received)
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd.as_raw_fd(), optr)
+    }
+}
+
+/// Send data to specified address accompanied by ancillary data from vectored
+/// buffer.
+pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
+    fd: SharedFd<S>,
+    buffer: T,
+    control: C,
+    addr: SockAddr,
+    _p: PhantomPinned,
+}
+
+impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
+    /// Create [`SendMsg`].
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the control message buffer is misaligned.
+    pub fn new(fd: SharedFd<S>, buffer: T, control: C, addr: SockAddr) -> Self {
+        assert!(
+            control.as_buf_ptr().cast::<CMSGHDR>().is_aligned(),
+            "misaligned control message buffer"
+        );
+        Self {
+            fd,
+            buffer,
+            control,
+            addr,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<T: IoVectoredBuf, C: IoBuf, S> IntoInner for SendMsg<T, C, S> {
+    type Inner = (T, C);
+
+    fn into_inner(self) -> Self::Inner {
+        (self.buffer, self.control)
+    }
+}
+
+impl<T: IoVectoredBuf, C: IoBuf, S: AsRawFd> OpCode for SendMsg<T, C, S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let this = self.get_unchecked_mut();
+
+        let slices = this.buffer.as_io_slices();
+        let msg = WSAMSG {
+            name: this.addr.as_ptr() as _,
+            namelen: this.addr.len(),
+            lpBuffers: slices.as_ptr() as _,
+            dwBufferCount: slices.len() as _,
+            Control: std::mem::transmute::<IoSlice, WSABUF>(this.control.as_io_slice()),
+            dwFlags: 0,
+        };
+
+        let mut sent = 0;
+        let res = WSASendMsg(this.fd.as_raw_fd() as _, &msg, 0, &mut sent, optr, None);
         winsock_result(res, sent)
     }
 

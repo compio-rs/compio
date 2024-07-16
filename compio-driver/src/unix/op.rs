@@ -370,6 +370,113 @@ impl<T: IoVectoredBuf, S> IntoInner for SendVectored<T, S> {
     }
 }
 
+/// Receive data and source address with ancillary data into vectored buffer.
+pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
+    pub(crate) msg: libc::msghdr,
+    pub(crate) addr: sockaddr_storage,
+    pub(crate) fd: SharedFd<S>,
+    pub(crate) buffer: T,
+    pub(crate) control: C,
+    pub(crate) slices: Vec<IoSliceMut>,
+    _p: PhantomPinned,
+}
+
+impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
+    /// Create [`RecvMsg`].
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the control message buffer is misaligned.
+    pub fn new(fd: SharedFd<S>, buffer: T, control: C) -> Self {
+        assert!(
+            control.as_buf_ptr().cast::<libc::cmsghdr>().is_aligned(),
+            "misaligned control message buffer"
+        );
+        Self {
+            addr: unsafe { std::mem::zeroed() },
+            msg: unsafe { std::mem::zeroed() },
+            fd,
+            buffer,
+            control,
+            slices: vec![],
+            _p: PhantomPinned,
+        }
+    }
+
+    pub(crate) unsafe fn set_msg(&mut self) {
+        self.slices = self.buffer.as_io_slices_mut();
+
+        self.msg.msg_name = std::ptr::addr_of_mut!(self.addr) as _;
+        self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
+        self.msg.msg_iov = self.slices.as_mut_ptr() as _;
+        self.msg.msg_iovlen = self.slices.len() as _;
+        self.msg.msg_control = self.control.as_buf_mut_ptr() as _;
+        self.msg.msg_controllen = self.control.buf_len() as _;
+    }
+}
+
+impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
+    type Inner = ((T, C), sockaddr_storage, socklen_t);
+
+    fn into_inner(self) -> Self::Inner {
+        ((self.buffer, self.control), self.addr, self.msg.msg_namelen)
+    }
+}
+
+/// Send data to specified address accompanied by ancillary data from vectored
+/// buffer.
+pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
+    pub(crate) msg: libc::msghdr,
+    pub(crate) fd: SharedFd<S>,
+    pub(crate) buffer: T,
+    pub(crate) control: C,
+    pub(crate) addr: SockAddr,
+    pub(crate) slices: Vec<IoSlice>,
+    _p: PhantomPinned,
+}
+
+impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
+    /// Create [`SendMsg`].
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the control message buffer is misaligned.
+    pub fn new(fd: SharedFd<S>, buffer: T, control: C, addr: SockAddr) -> Self {
+        assert!(
+            control.as_buf_ptr().cast::<libc::cmsghdr>().is_aligned(),
+            "misaligned control message buffer"
+        );
+        Self {
+            msg: unsafe { std::mem::zeroed() },
+            fd,
+            buffer,
+            control,
+            addr,
+            slices: vec![],
+            _p: PhantomPinned,
+        }
+    }
+
+    pub(crate) unsafe fn set_msg(&mut self) {
+        self.slices = self.buffer.as_io_slices();
+
+        self.msg.msg_name = self.addr.as_ptr() as _;
+        self.msg.msg_namelen = self.addr.len();
+        self.msg.msg_iov = self.slices.as_ptr() as _;
+        self.msg.msg_iovlen = self.slices.len() as _;
+        self.msg.msg_control = self.control.as_buf_ptr() as _;
+        self.msg.msg_controllen = self.control.buf_len() as _;
+    }
+}
+
+impl<T: IoVectoredBuf, C: IoBuf, S> IntoInner for SendMsg<T, C, S> {
+    type Inner = (T, C);
+
+    fn into_inner(self) -> Self::Inner {
+        (self.buffer, self.control)
+    }
+}
+
 /// The interest to poll a file descriptor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Interest {

@@ -6,10 +6,11 @@ use compio_driver::op::CreateSocket;
 use compio_driver::{
     impl_raw_fd,
     op::{
-        Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored,
-        RecvResultExt, RecvVectored, Send, SendTo, SendToVectored, SendVectored, ShutdownSocket,
+        Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored, RecvMsg,
+        RecvResultExt, RecvVectored, Send, SendMsg, SendTo, SendToVectored, SendVectored,
+        ShutdownSocket,
     },
-    ToSharedFd,
+    syscall, AsRawFd, ToSharedFd,
 };
 use compio_runtime::Attacher;
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
@@ -256,6 +257,36 @@ impl Socket {
             .map_advanced()
     }
 
+    pub async fn recv_msg<T: IoBufMut, C: IoBufMut>(
+        &self,
+        buffer: T,
+        control: C,
+    ) -> BufResult<(usize, SockAddr), (T, C)> {
+        self.recv_msg_vectored([buffer], control)
+            .await
+            .map_buffer(|([buffer], control)| (buffer, control))
+    }
+
+    pub async fn recv_msg_vectored<T: IoVectoredBufMut, C: IoBufMut>(
+        &self,
+        buffer: T,
+        control: C,
+    ) -> BufResult<(usize, SockAddr), (T, C)> {
+        let fd = self.to_shared_fd();
+        let op = RecvMsg::new(fd, buffer, control);
+        compio_runtime::submit(op)
+            .await
+            .into_inner()
+            .map_addr()
+            .map(|(init, obj), (mut buffer, control)| {
+                // SAFETY: The number of bytes received would not bypass the buffer capacity.
+                unsafe {
+                    buffer.set_buf_init(init);
+                }
+                ((init, obj), (buffer, control))
+            })
+    }
+
     pub async fn send_to<T: IoBuf>(&self, buffer: T, addr: &SockAddr) -> BufResult<usize, T> {
         let fd = self.to_shared_fd();
         let op = SendTo::new(fd, buffer, addr.clone());
@@ -270,6 +301,55 @@ impl Socket {
         let fd = self.to_shared_fd();
         let op = SendToVectored::new(fd, buffer, addr.clone());
         compio_runtime::submit(op).await.into_inner()
+    }
+
+    pub async fn send_msg<T: IoBuf, C: IoBuf>(
+        &self,
+        buffer: T,
+        control: C,
+        addr: &SockAddr,
+    ) -> BufResult<usize, (T, C)> {
+        self.send_msg_vectored([buffer], control, addr)
+            .await
+            .map_buffer(|([buffer], control)| (buffer, control))
+    }
+
+    pub async fn send_msg_vectored<T: IoVectoredBuf, C: IoBuf>(
+        &self,
+        buffer: T,
+        control: C,
+        addr: &SockAddr,
+    ) -> BufResult<usize, (T, C)> {
+        let fd = self.to_shared_fd();
+        let op = SendMsg::new(fd, buffer, control, addr.clone());
+        compio_runtime::submit(op).await.into_inner()
+    }
+
+    #[cfg(unix)]
+    pub fn set_socket_option<T>(&self, level: i32, name: i32, value: &T) -> io::Result<()> {
+        syscall!(libc::setsockopt(
+            self.socket.as_raw_fd(),
+            level,
+            name,
+            value as *const _ as _,
+            std::mem::size_of::<T>() as _
+        ))
+        .map(|_| ())
+    }
+
+    #[cfg(windows)]
+    pub fn set_socket_option<T>(&self, level: i32, name: i32, value: &T) -> io::Result<()> {
+        syscall!(
+            SOCKET,
+            windows_sys::Win32::Networking::WinSock::setsockopt(
+                self.socket.as_raw_fd() as _,
+                level,
+                name,
+                value as *const _ as _,
+                std::mem::size_of::<T>() as _
+            )
+        )
+        .map(|_| ())
     }
 }
 

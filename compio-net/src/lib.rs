@@ -5,6 +5,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![warn(missing_docs)]
 
+mod cmsg;
 mod poll_fd;
 mod resolve;
 mod socket;
@@ -13,6 +14,7 @@ mod tcp;
 mod udp;
 mod unix;
 
+pub use cmsg::*;
 pub use poll_fd::*;
 pub use resolve::ToSocketAddrsAsync;
 pub(crate) use resolve::{each_addr, first_addr_buf};
