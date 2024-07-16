@@ -8,11 +8,14 @@ use std::os::windows::io::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
-    op::{BufResultExt, Recv, Send},
-    AsRawFd, SharedFd, ToSharedFd,
+    op::{BufResultExt, Recv, RecvBufferPool, Send},
+    AsRawFd, SharedFd, TakeBuffer, ToSharedFd,
 };
-use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::Attacher;
+use compio_io::{AsyncRead, AsyncReadBufferPool, AsyncWrite};
+use compio_runtime::{
+    buffer_pool::{BorrowedBuffer, BufferPool},
+    Attacher,
+};
 #[cfg(unix)]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
@@ -71,6 +74,36 @@ impl<T: AsRawFd + 'static> AsyncRead for &AsyncFd<T> {
         let fd = self.inner.to_shared_fd();
         let op = RecvVectored::new(fd, buf);
         compio_runtime::submit(op).await.into_inner().map_advanced()
+    }
+}
+
+impl<T: AsRawFd + 'static> AsyncReadBufferPool for AsyncFd<T> {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_buffer_pool<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        (&*self).read_buffer_pool(buffer_pool, len).await
+    }
+}
+
+impl<T: AsRawFd + 'static> AsyncReadBufferPool for &AsyncFd<T> {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_buffer_pool<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        let fd = self.to_shared_fd();
+        let op = RecvBufferPool::new(buffer_pool.as_driver_buffer_pool(), fd, len as _)?;
+        let (BufResult(res, op), flags) = compio_runtime::submit_with_flags(op).await;
+
+        op.take_buffer(buffer_pool.as_driver_buffer_pool(), res, flags)
     }
 }
 

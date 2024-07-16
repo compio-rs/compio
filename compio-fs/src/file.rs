@@ -3,11 +3,14 @@ use std::{future::Future, io, mem::ManuallyDrop, panic::resume_unwind, path::Pat
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
     impl_raw_fd,
-    op::{BufResultExt, CloseFile, ReadAt, Sync, WriteAt},
-    ToSharedFd,
+    op::{BufResultExt, CloseFile, ReadAt, ReadAtBufferPool, Sync, WriteAt},
+    TakeBuffer, ToSharedFd,
 };
-use compio_io::{AsyncReadAt, AsyncWriteAt};
-use compio_runtime::Attacher;
+use compio_io::{AsyncReadAt, AsyncReadAtBufferPool, AsyncWriteAt};
+use compio_runtime::{
+    buffer_pool::{BorrowedBuffer, BufferPool},
+    Attacher,
+};
 #[cfg(unix)]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
@@ -165,6 +168,24 @@ impl AsyncReadAt for File {
         let fd = self.inner.to_shared_fd();
         let op = ReadVectoredAt::new(fd, pos, buffer);
         compio_runtime::submit(op).await.into_inner().map_advanced()
+    }
+}
+
+impl AsyncReadAtBufferPool for File {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_at_buffer_pool<'a>(
+        &self,
+        buffer_pool: &'a Self::BufferPool,
+        pos: u64,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        let fd = self.to_shared_fd();
+        let op = ReadAtBufferPool::new(buffer_pool.as_driver_buffer_pool(), fd, pos, len as _)?;
+        let (BufResult(res, op), flags) = compio_runtime::submit_with_flags(op).await;
+
+        op.take_buffer(buffer_pool.as_driver_buffer_pool(), res, flags)
     }
 }
 

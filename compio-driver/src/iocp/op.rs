@@ -2,6 +2,7 @@
 use std::sync::OnceLock;
 use std::{
     io,
+    io::ErrorKind,
     marker::PhantomPinned,
     net::Shutdown,
     os::windows::io::AsRawSocket,
@@ -11,9 +12,12 @@ use std::{
 };
 
 use aligned_array::{Aligned, A8};
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{
+    BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, SetBufInit, Slice,
+};
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
+use pin_project_lite::pin_project;
 use socket2::SockAddr;
 use windows_sys::{
     core::GUID,
@@ -38,7 +42,10 @@ use windows_sys::{
     },
 };
 
-use crate::{op::*, syscall, AsRawFd, OpCode, OpType, RawFd, SharedFd};
+use crate::{
+    op::*, syscall, AsRawFd, BorrowedBuffer, BufferPool, OpCode, OpType, RawFd, SharedFd,
+    TakeBuffer,
+};
 
 #[inline]
 fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
@@ -161,6 +168,69 @@ impl<T: IoBufMut, S: AsRawFd> OpCode for ReadAt<T, S> {
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_raw_fd(), optr)
+    }
+}
+
+pin_project! {
+    /// Read a file at specified position into specified buffer.
+    pub struct ReadAtBufferPool<S> {
+        #[pin]
+        read_at: ReadAt<Slice<Vec<u8>>, S>,
+    }
+}
+
+impl<S> ReadAtBufferPool<S> {
+    /// Create [`ReadAtBufferPool`].
+    pub fn new(
+        buffer_pool: &BufferPool,
+        fd: SharedFd<S>,
+        offset: u64,
+        len: u32,
+    ) -> io::Result<Self> {
+        let buffer = buffer_pool.get_buffer().ok_or_else(|| {
+            io::Error::new(ErrorKind::Other, "buffer ring has no available buffer")
+        })?;
+        let len = if len == 0 {
+            buffer.capacity()
+        } else {
+            buffer.capacity().min(len as _)
+        };
+
+        Ok(Self {
+            read_at: ReadAt::new(fd, offset, buffer.slice(..len)),
+        })
+    }
+}
+
+impl<S: AsRawFd> OpCode for ReadAtBufferPool<S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        self.project().read_at.operate(optr)
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        self.project().read_at.cancel(optr)
+    }
+}
+
+impl<S> TakeBuffer<usize> for ReadAtBufferPool<S> {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    fn take_buffer(
+        self,
+        buffer_pool: &BufferPool,
+        result: io::Result<usize>,
+        _: u32,
+    ) -> io::Result<BorrowedBuffer> {
+        let n = result?;
+        let mut slice = self.read_at.into_inner();
+
+        // Safety: n is valid
+        unsafe {
+            slice.set_buf_init(n);
+        }
+
+        Ok(BorrowedBuffer::new(slice, buffer_pool))
     }
 }
 
@@ -416,6 +486,64 @@ impl<T: IoBufMut, S: AsRawFd> OpCode for Recv<T, S> {
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_raw_fd(), optr)
+    }
+}
+
+pin_project! {
+    /// Receive data from remote.
+    pub struct RecvBufferPool<S> {
+        #[pin]
+        recv: Recv<Slice<Vec<u8>>, S>,
+    }
+}
+
+impl<S> RecvBufferPool<S> {
+    /// Create [`RecvBufferPool`].
+    pub fn new(buffer_pool: &BufferPool, fd: SharedFd<S>, len: u32) -> io::Result<Self> {
+        let buffer = buffer_pool.get_buffer().ok_or_else(|| {
+            io::Error::new(ErrorKind::Other, "buffer ring has no available buffer")
+        })?;
+        let len = if len == 0 {
+            buffer.capacity()
+        } else {
+            buffer.capacity().min(len as _)
+        };
+
+        Ok(Self {
+            recv: Recv::new(fd, buffer.slice(..len)),
+        })
+    }
+}
+
+impl<S: AsRawFd> OpCode for RecvBufferPool<S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        self.project().recv.operate(optr)
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        self.project().recv.cancel(optr)
+    }
+}
+
+impl<S> TakeBuffer<usize> for RecvBufferPool<S> {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    fn take_buffer(
+        self,
+        buffer_pool: &BufferPool,
+        result: io::Result<usize>,
+        _: u32,
+    ) -> io::Result<BorrowedBuffer> {
+        let n = result?;
+        let mut slice = self.recv.into_inner();
+
+        // Safety: n is valid
+        unsafe {
+            slice.set_buf_init(n);
+        }
+
+        Ok(BorrowedBuffer::new(slice, buffer_pool))
     }
 }
 

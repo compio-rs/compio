@@ -2,7 +2,8 @@ use std::{future::Future, io, net::SocketAddr};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
-use compio_io::{AsyncRead, AsyncWrite};
+use compio_io::{AsyncRead, AsyncReadBufferPool, AsyncWrite};
+use compio_runtime::buffer_pool::{BorrowedBuffer, BufferPool};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::{
@@ -226,6 +227,32 @@ impl AsyncRead for TcpStream {
     #[inline]
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
         (&*self).read_vectored(buf).await
+    }
+}
+
+impl AsyncReadBufferPool for TcpStream {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_buffer_pool<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        (&*self).read_buffer_pool(buffer_pool, len).await
+    }
+}
+
+impl AsyncReadBufferPool for &TcpStream {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_buffer_pool<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        self.inner.recv_buffer_pool(buffer_pool, len as _).await
     }
 }
 

@@ -8,10 +8,11 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
-    op::{BufResultExt, Recv, Send},
-    syscall, AsRawFd, OpCode, OpType, RawFd, SharedFd, ToSharedFd,
+    op::{BufResultExt, Recv, RecvBufferPool, Send},
+    syscall, AsRawFd, OpCode, OpType, RawFd, SharedFd, TakeBuffer, ToSharedFd,
 };
-use compio_io::{AsyncRead, AsyncWrite};
+use compio_io::{AsyncRead, AsyncReadBufferPool, AsyncWrite};
+use compio_runtime::buffer_pool::{BorrowedBuffer, BufferPool};
 use windows_sys::Win32::System::{Threading::GetExitCodeProcess, IO::OVERLAPPED};
 
 use crate::{ChildStderr, ChildStdin, ChildStdout};
@@ -67,6 +68,23 @@ impl AsyncRead for ChildStdout {
     }
 }
 
+impl AsyncReadBufferPool for ChildStdout {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_buffer_pool<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        let fd = self.to_shared_fd();
+        let op = RecvBufferPool::new(buffer_pool.as_driver_buffer_pool(), fd, len as _)?;
+        let (BufResult(res, op), flags) = compio_runtime::submit_with_flags(op).await;
+
+        op.take_buffer(buffer_pool.as_driver_buffer_pool(), res, flags)
+    }
+}
+
 impl AsRawFd for ChildStderr {
     fn as_raw_fd(&self) -> RawFd {
         self.0.as_raw_fd()
@@ -84,6 +102,23 @@ impl AsyncRead for ChildStderr {
         let fd = self.to_shared_fd();
         let op = Recv::new(fd, buffer);
         compio_runtime::submit(op).await.into_inner().map_advanced()
+    }
+}
+
+impl AsyncReadBufferPool for ChildStderr {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_buffer_pool<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        let fd = self.to_shared_fd();
+        let op = RecvBufferPool::new(buffer_pool.as_driver_buffer_pool(), fd, len as _)?;
+        let (BufResult(res, op), flags) = compio_runtime::submit_with_flags(op).await;
+
+        op.take_buffer(buffer_pool.as_driver_buffer_pool(), res, flags)
     }
 }
 

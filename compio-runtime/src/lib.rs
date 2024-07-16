@@ -14,6 +14,7 @@
 mod attacher;
 mod runtime;
 
+pub mod buffer_pool;
 #[cfg(feature = "event")]
 pub mod event;
 #[cfg(feature = "time")]

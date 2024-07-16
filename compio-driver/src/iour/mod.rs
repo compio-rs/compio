@@ -1,7 +1,7 @@
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 #[allow(unused_imports)]
 pub use std::os::fd::{AsRawFd, OwnedFd, RawFd};
-use std::{io, os::fd::FromRawFd, pin::Pin, sync::Arc, task::Poll, time::Duration};
+use std::{io, io::ErrorKind, os::fd::FromRawFd, pin::Pin, sync::Arc, task::Poll, time::Duration};
 
 use compio_log::{instrument, trace, warn};
 use crossbeam_queue::SegQueue;
@@ -25,11 +25,25 @@ use io_uring::{
     types::{Fd, SubmitArgs, Timespec},
     IoUring,
 };
+#[cfg(feature = "io-uring-buf-ring")]
+use io_uring_buf_ring::IoUringBufRing;
 pub(crate) use libc::{sockaddr_storage, socklen_t};
+#[cfg(feature = "io-uring-buf-ring")]
+use slab::Slab;
 
 use crate::{syscall, AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder};
 
+#[cfg(feature = "io-uring-buf-ring")]
+pub(crate) mod buffer_pool;
 pub(crate) mod op;
+
+#[cfg(feature = "io-uring-buf-ring")]
+use buffer_pool::BufferPool;
+
+#[cfg(not(feature = "io-uring-buf-ring"))]
+pub(crate) use crate::fallback_buffer_pool as buffer_pool;
+#[cfg(not(feature = "io-uring-buf-ring"))]
+use crate::fallback_buffer_pool::BufferPool;
 
 /// The created entry of [`OpCode`].
 pub enum OpEntry {
@@ -73,6 +87,9 @@ pub(crate) struct Driver {
     notifier: Notifier,
     pool: AsyncifyPool,
     pool_completed: Arc<SegQueue<Entry>>,
+    #[cfg(feature = "io-uring-buf-ring")]
+    // buffer group id type is u16, we should reuse the buffer group id when BufferPool is drop
+    buffer_group_ids: Slab<()>,
 }
 
 impl Driver {
@@ -106,6 +123,8 @@ impl Driver {
             notifier,
             pool: builder.create_or_get_thread_pool(),
             pool_completed: Arc::new(SegQueue::new()),
+            #[cfg(feature = "io-uring-buf-ring")]
+            buffer_group_ids: Default::default(),
         })
     }
 
@@ -126,14 +145,14 @@ impl Driver {
         match res {
             Ok(_) => {
                 if self.inner.completion().is_empty() {
-                    Err(io::ErrorKind::TimedOut.into())
+                    Err(ErrorKind::TimedOut.into())
                 } else {
                     Ok(())
                 }
             }
             Err(e) => match e.raw_os_error() {
-                Some(libc::ETIME) => Err(io::ErrorKind::TimedOut.into()),
-                Some(libc::EBUSY) | Some(libc::EAGAIN) => Err(io::ErrorKind::Interrupted.into()),
+                Some(libc::ETIME) => Err(ErrorKind::TimedOut.into()),
+                Some(libc::EBUSY) | Some(libc::EAGAIN) => Err(ErrorKind::Interrupted.into()),
                 _ => Err(e),
             },
         }
@@ -274,6 +293,57 @@ impl Driver {
     pub fn handle(&self) -> io::Result<NotifyHandle> {
         self.notifier.handle()
     }
+
+    #[cfg(feature = "io-uring-buf-ring")]
+    pub fn create_buffer_pool(
+        &mut self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<BufferPool> {
+        let buffer_group = self.buffer_group_ids.insert(());
+        if buffer_group > u16::MAX as usize {
+            self.buffer_group_ids.remove(buffer_group);
+
+            return Err(io::Error::new(
+                ErrorKind::OutOfMemory,
+                "too many buffer pool allocated",
+            ));
+        }
+
+        let buf_ring =
+            IoUringBufRing::new(&self.inner, buffer_len, buffer_group as _, buffer_size)?;
+
+        Ok(BufferPool::new(buf_ring))
+    }
+
+    #[cfg(not(feature = "io-uring-buf-ring"))]
+    pub fn create_buffer_pool(
+        &mut self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<BufferPool> {
+        Ok(BufferPool::new(buffer_len, buffer_size))
+    }
+
+    #[cfg(feature = "io-uring-buf-ring")]
+    /// # Safety
+    ///
+    /// caller must make sure release the buffer pool with correct driver
+    pub unsafe fn release_buffer_pool(&mut self, buffer_pool: BufferPool) -> io::Result<()> {
+        let buffer_group = buffer_pool.buffer_group();
+        buffer_pool.into_inner().release(&self.inner)?;
+        self.buffer_group_ids.remove(buffer_group as _);
+
+        Ok(())
+    }
+
+    #[cfg(not(feature = "io-uring-buf-ring"))]
+    /// # Safety
+    ///
+    /// caller must make sure release the buffer pool with correct driver
+    pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 impl AsRawFd for Driver {
@@ -333,9 +403,9 @@ impl Notifier {
                     break Ok(());
                 }
                 // Clear the next time:)
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => break Ok(()),
+                Err(e) if e.kind() == ErrorKind::WouldBlock => break Ok(()),
                 // Just like read_exact
-                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) if e.kind() == ErrorKind::Interrupted => continue,
                 Err(e) => break Err(e),
             }
         }

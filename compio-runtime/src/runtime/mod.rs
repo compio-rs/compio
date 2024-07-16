@@ -348,6 +348,23 @@ impl Runtime {
         #[cfg(feature = "time")]
         self.timer_runtime.borrow_mut().wake();
     }
+
+    pub(crate) fn create_buffer_pool(
+        &self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<compio_driver::BufferPool> {
+        self.driver
+            .borrow_mut()
+            .create_buffer_pool(buffer_len, buffer_size)
+    }
+
+    pub(crate) unsafe fn release_buffer_pool(
+        &self,
+        buffer_pool: compio_driver::BufferPool,
+    ) -> io::Result<()> {
+        self.driver.borrow_mut().release_buffer_pool(buffer_pool)
+    }
 }
 
 impl AsRawFd for Runtime {

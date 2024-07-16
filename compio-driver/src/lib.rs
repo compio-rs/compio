@@ -35,21 +35,31 @@ mod asyncify;
 pub use asyncify::*;
 
 mod fd;
+
 pub use fd::*;
 
 cfg_if::cfg_if! {
     if #[cfg(windows)] {
         #[path = "iocp/mod.rs"]
         mod sys;
+        mod fallback_buffer_pool;
+        pub use fallback_buffer_pool::{BufferPool, BorrowedBuffer};
     } else if #[cfg(all(target_os = "linux", feature = "polling", feature = "io-uring"))] {
         #[path = "fusion/mod.rs"]
         mod sys;
+        mod fallback_buffer_pool;
+        pub use sys::buffer_pool::{BufferPool, BorrowedBuffer};
     } else if #[cfg(all(target_os = "linux", feature = "io-uring"))] {
         #[path = "iour/mod.rs"]
         mod sys;
+        #[cfg(not(feature = "io-uring-buf-ring"))]
+        mod fallback_buffer_pool;
+        pub use sys::buffer_pool::{BufferPool, BorrowedBuffer};
     } else if #[cfg(unix)] {
         #[path = "poll/mod.rs"]
         mod sys;
+        mod fallback_buffer_pool;
+        pub use fallback_buffer_pool::{BufferPool, BorrowedBuffer};
     }
 }
 
@@ -311,6 +321,29 @@ impl Proactor {
     pub fn handle(&self) -> io::Result<NotifyHandle> {
         self.driver.handle()
     }
+
+    /// Create buffer pool with given `buffer_size` and `buffer_len`
+    ///
+    /// # Notes
+    ///
+    /// If `buffer_len` is not power of 2, it will be upward with
+    /// [`u16::next_power_of_two`]
+    pub fn create_buffer_pool(
+        &mut self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<BufferPool> {
+        self.driver.create_buffer_pool(buffer_len, buffer_size)
+    }
+
+    /// Release the buffer pool
+    ///
+    /// # Safety
+    ///
+    /// caller must make sure release the buffer pool with correct driver
+    pub unsafe fn release_buffer_pool(&mut self, buffer_pool: BufferPool) -> io::Result<()> {
+        self.driver.release_buffer_pool(buffer_pool)
+    }
 }
 
 impl AsRawFd for Proactor {
@@ -502,4 +535,22 @@ impl ProactorBuilder {
     pub fn build(&self) -> io::Result<Proactor> {
         Proactor::with_builder(self)
     }
+}
+
+/// Trait to get the selected buffer of an io operation.
+pub trait TakeBuffer<T> {
+    /// Buffer pool type
+    type BufferPool;
+
+    /// Selected buffer type
+    type Buffer<'a>;
+
+    /// Take the selected buffer with `buffer_pool`, io `result` and `flags`, if
+    /// io operation is success
+    fn take_buffer(
+        self,
+        buffer_pool: &Self::BufferPool,
+        result: io::Result<T>,
+        flags: u32,
+    ) -> io::Result<Self::Buffer<'_>>;
 }

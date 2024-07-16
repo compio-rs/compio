@@ -8,7 +8,10 @@ use std::{ffi::OsStr, io, os::windows::io::FromRawHandle, ptr::null};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
 use compio_driver::{impl_raw_fd, op::ConnectNamedPipe, syscall, AsRawFd, RawFd, ToSharedFd};
-use compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt};
+use compio_io::{
+    AsyncRead, AsyncReadAt, AsyncReadAtBufferPool, AsyncReadBufferPool, AsyncWrite, AsyncWriteAt,
+};
+use compio_runtime::buffer_pool::{BorrowedBuffer, BufferPool};
 use widestring::U16CString;
 use windows_sys::Win32::{
     Storage::FileSystem::{
@@ -192,6 +195,32 @@ impl AsyncRead for &NamedPipeServer {
     }
 }
 
+impl AsyncReadBufferPool for NamedPipeServer {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_buffer_pool<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        (&*self).read_buffer_pool(buffer_pool, len).await
+    }
+}
+
+impl AsyncReadBufferPool for &NamedPipeServer {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_buffer_pool<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        (&self.handle).read_buffer_pool(buffer_pool, len).await
+    }
+}
+
 impl AsyncWrite for NamedPipeServer {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
@@ -309,6 +338,32 @@ impl AsyncRead for &NamedPipeClient {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
         // The position is ignored.
         self.handle.read_at(buffer, 0).await
+    }
+}
+
+impl AsyncReadBufferPool for NamedPipeClient {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_buffer_pool<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        (&*self).read_buffer_pool(buffer_pool, len).await
+    }
+}
+
+impl AsyncReadBufferPool for &NamedPipeClient {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_buffer_pool<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        self.handle.read_at_buffer_pool(buffer_pool, 0, len).await
     }
 }
 
