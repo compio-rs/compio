@@ -47,6 +47,14 @@ pub struct Runtime {
     sync_runnables: Arc<SegQueue<Runnable>>,
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
+    // Runtime id is used to check if the buffer pool is belonged to this runtime or not.
+    // Without this, if user enable `io-uring-buf-ring` feature then:
+    // 1. Create a buffer pool at runtime1
+    // 3. Create another runtime2, then use the exists buffer pool in runtime2, it may cause
+    // - io-uring report error if the buffer group id is not registered
+    // - buffer pool will return a wrong buffer which the buffer's data is uninit, that will cause
+    //   UB
+    id: i64,
     // Other fields don't make it !Send, but actually `local_runnables` implies it should be !Send,
     // otherwise it won't be valid if the runtime is sent to other threads.
     _p: PhantomData<Rc<VecDeque<Runnable>>>,
@@ -70,6 +78,7 @@ impl Runtime {
             sync_runnables: Arc::new(SegQueue::new()),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
+            id: rand::random(),
             _p: PhantomData,
         })
     }
@@ -364,6 +373,10 @@ impl Runtime {
         buffer_pool: compio_driver::BufferPool,
     ) -> io::Result<()> {
         self.driver.borrow_mut().release_buffer_pool(buffer_pool)
+    }
+
+    pub(crate) fn id(&self) -> i64 {
+        self.id
     }
 }
 

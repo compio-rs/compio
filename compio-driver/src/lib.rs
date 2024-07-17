@@ -539,11 +539,11 @@ impl ProactorBuilder {
 
 /// Trait to get the selected buffer of an io operation.
 pub trait TakeBuffer<T> {
-    /// Buffer pool type
-    type BufferPool;
-
     /// Selected buffer type
     type Buffer<'a>;
+
+    /// Buffer pool type
+    type BufferPool;
 
     /// Take the selected buffer with `buffer_pool`, io `result` and `flags`, if
     /// io operation is success
