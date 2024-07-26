@@ -13,7 +13,7 @@ use std::{
 
 use compio_driver::{AsyncifyPool, DispatchError, Dispatchable, ProactorBuilder};
 use compio_runtime::{event::Event, JoinHandle as CompioJoinHandle, Runtime};
-use flume::{unbounded, Sender};
+use crossbeam_channel::{unbounded, Sender};
 use futures_channel::oneshot;
 
 type Spawning = Box<dyn Spawnable + Send>;
