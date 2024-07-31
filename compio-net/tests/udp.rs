@@ -103,14 +103,18 @@ async fn send_msg_with_ipv6_ecn() {
 
     active.send_msg(MSG, control, passive_addr).await.unwrap();
 
-    let res = passive.recv_msg(Vec::with_capacity(20), [0u8; 32]).await;
-    assert_eq!(res.0.unwrap().1, active_addr);
-    assert_eq!(res.1.0, MSG.as_bytes());
+    let ((_, _, addr), (buffer, control)) = passive
+        .recv_msg(Vec::with_capacity(20), Vec::with_capacity(32))
+        .await
+        .unwrap();
+    assert_eq!(addr, active_addr);
+    assert_eq!(buffer, MSG.as_bytes());
     unsafe {
-        let mut iter = CMsgIter::new(&res.1.1);
+        let mut iter = CMsgIter::new(&control);
         let cmsg = iter.next().unwrap();
         assert_eq!(cmsg.level(), IPPROTO_IPV6);
         assert_eq!(cmsg.ty(), IPV6_TCLASS);
         assert_eq!(cmsg.data::<i32>(), &ECN_BITS);
+        assert!(iter.next().is_none());
     }
 }

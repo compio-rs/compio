@@ -411,15 +411,20 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
         self.msg.msg_iov = self.slices.as_mut_ptr() as _;
         self.msg.msg_iovlen = self.slices.len() as _;
         self.msg.msg_control = self.control.as_buf_mut_ptr() as _;
-        self.msg.msg_controllen = self.control.buf_len() as _;
+        self.msg.msg_controllen = self.control.buf_capacity() as _;
     }
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
-    type Inner = ((T, C), sockaddr_storage, socklen_t);
+    type Inner = ((T, C), sockaddr_storage, socklen_t, usize);
 
     fn into_inner(self) -> Self::Inner {
-        ((self.buffer, self.control), self.addr, self.msg.msg_namelen)
+        (
+            (self.buffer, self.control),
+            self.addr,
+            self.msg.msg_namelen,
+            self.msg.msg_controllen as _,
+        )
     }
 }
 

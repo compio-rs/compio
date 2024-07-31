@@ -261,7 +261,7 @@ impl Socket {
         &self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, SockAddr), (T, C)> {
+    ) -> BufResult<(usize, usize, SockAddr), (T, C)> {
         self.recv_msg_vectored([buffer], control)
             .await
             .map_buffer(|([buffer], control)| (buffer, control))
@@ -271,20 +271,14 @@ impl Socket {
         &self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, SockAddr), (T, C)> {
+    ) -> BufResult<(usize, usize, SockAddr), (T, C)> {
         let fd = self.to_shared_fd();
         let op = RecvMsg::new(fd, buffer, control);
         compio_runtime::submit(op)
             .await
             .into_inner()
             .map_addr()
-            .map(|(init, obj), (mut buffer, control)| {
-                // SAFETY: The number of bytes received would not bypass the buffer capacity.
-                unsafe {
-                    buffer.set_buf_init(init);
-                }
-                ((init, obj), (buffer, control))
-            })
+            .map_advanced()
     }
 
     pub async fn send_to<T: IoBuf>(&self, buffer: T, addr: &SockAddr) -> BufResult<usize, T> {

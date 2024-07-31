@@ -786,6 +786,7 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
     fd: SharedFd<S>,
     buffer: T,
     control: C,
+    control_len: u32,
     _p: PhantomPinned,
 }
 
@@ -806,16 +807,22 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
             fd,
             buffer,
             control,
+            control_len: 0,
             _p: PhantomPinned,
         }
     }
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
-    type Inner = ((T, C), SOCKADDR_STORAGE, socklen_t);
+    type Inner = ((T, C), SOCKADDR_STORAGE, socklen_t, usize);
 
     fn into_inner(self) -> Self::Inner {
-        ((self.buffer, self.control), self.addr, self.addr_len)
+        (
+            (self.buffer, self.control),
+            self.addr,
+            self.addr_len,
+            self.control_len as _,
+        )
     }
 }
 
@@ -837,6 +844,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
             Control: std::mem::transmute::<IoSliceMut, WSABUF>(this.control.as_io_slice_mut()),
             dwFlags: 0,
         };
+        this.control_len = 0;
 
         let mut received = 0;
         let res = recvmsg_fn(
@@ -846,6 +854,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
             optr,
             None,
         );
+        this.control_len = msg.Control.len;
         winsock_result(res, received)
     }
 

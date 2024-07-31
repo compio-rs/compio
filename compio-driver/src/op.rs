@@ -49,23 +49,47 @@ impl<T: SetBufInit, O> BufResultExt for BufResult<(usize, O), T> {
     }
 }
 
-/// Helper trait for [`RecvFrom`] and [`RecvFromVectored`].
+impl<T: SetBufInit, C: SetBufInit, O> BufResultExt for BufResult<(usize, usize, O), (T, C)> {
+    fn map_advanced(self) -> Self {
+        self.map(
+            |(init_buffer, init_control, obj), (mut buffer, mut control)| {
+                unsafe {
+                    buffer.set_buf_init(init_buffer);
+                    control.set_buf_init(init_control);
+                }
+                ((init_buffer, init_control, obj), (buffer, control))
+            },
+        )
+    }
+}
+
+/// Helper trait for [`RecvFrom`], [`RecvFromVectored`] and [`RecvMsg`].
 pub trait RecvResultExt {
     /// The mapped result.
-    type RecvFromResult;
+    type RecvResult;
 
     /// Create [`SockAddr`] if the result is [`Ok`].
-    fn map_addr(self) -> Self::RecvFromResult;
+    fn map_addr(self) -> Self::RecvResult;
 }
 
 impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t)> {
-    type RecvFromResult = BufResult<(usize, SockAddr), T>;
+    type RecvResult = BufResult<(usize, SockAddr), T>;
 
-    fn map_addr(self) -> Self::RecvFromResult {
+    fn map_addr(self) -> Self::RecvResult {
+        self.map_buffer(|(buffer, addr_buffer, addr_size)| (buffer, addr_buffer, addr_size, 0))
+            .map_addr()
+            .map_res(|(res, _, addr)| (res, addr))
+    }
+}
+
+impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t, usize)> {
+    type RecvResult = BufResult<(usize, usize, SockAddr), T>;
+
+    fn map_addr(self) -> Self::RecvResult {
         self.map2(
-            |res, (buffer, addr_buffer, addr_size)| {
+            |res, (buffer, addr_buffer, addr_size, len)| {
                 let addr = unsafe { SockAddr::new(addr_buffer, addr_size) };
-                ((res, addr), buffer)
+                ((res, len, addr), buffer)
             },
             |(buffer, ..)| buffer,
         )
