@@ -202,7 +202,7 @@ impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for ReadVectoredAt<T, S> {
         debug_assert!(event.readable);
 
         let this = unsafe { self.get_unchecked_mut() };
-        this.slices = unsafe { this.buffer.as_io_slices_mut() };
+        this.slices = unsafe { this.buffer.io_slices_mut() };
         syscall!(
             break preadv(
                 this.fd.as_raw_fd(),
@@ -243,7 +243,7 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for WriteVectoredAt<T, S> {
         debug_assert!(event.writable);
 
         let this = unsafe { self.get_unchecked_mut() };
-        this.slices = unsafe { this.buffer.as_io_slices() };
+        this.slices = unsafe { this.buffer.io_slices() };
         syscall!(
             break pwritev(
                 this.fd.as_raw_fd(),
@@ -461,7 +461,7 @@ impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvVectored<T, S> {
         debug_assert!(event.readable);
 
         let this = unsafe { self.get_unchecked_mut() };
-        this.slices = unsafe { this.buffer.as_io_slices_mut() };
+        this.slices = unsafe { this.buffer.io_slices_mut() };
         syscall!(
             break libc::readv(
                 this.fd.as_raw_fd(),
@@ -494,7 +494,7 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendVectored<T, S> {
         debug_assert!(event.writable);
 
         let this = unsafe { self.get_unchecked_mut() };
-        this.slices = unsafe { this.buffer.as_io_slices() };
+        this.slices = unsafe { this.buffer.io_slices() };
         syscall!(
             break libc::writev(
                 this.fd.as_raw_fd(),
@@ -590,7 +590,7 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
 
 impl<T: IoVectoredBufMut, S: AsRawFd> RecvFromVectored<T, S> {
     fn set_msg(&mut self) {
-        self.slices = unsafe { self.buffer.as_io_slices_mut() };
+        self.slices = unsafe { self.buffer.io_slices_mut() };
         self.msg = libc::msghdr {
             msg_name: &mut self.addr as *mut _ as _,
             msg_namelen: std::mem::size_of_val(&self.addr) as _,
@@ -710,7 +710,7 @@ impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
 
 impl<T: IoVectoredBuf, S: AsRawFd> SendToVectored<T, S> {
     fn set_msg(&mut self) {
-        self.slices = unsafe { self.buffer.as_io_slices() };
+        self.slices = unsafe { self.buffer.io_slices() };
         self.msg = libc::msghdr {
             msg_name: &mut self.addr as *mut _ as _,
             msg_namelen: std::mem::size_of_val(&self.addr) as _,

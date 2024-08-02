@@ -65,6 +65,8 @@ macro_rules! loop_write_all {
 
 macro_rules! loop_write_vectored {
     ($buf:ident, $tracker:ident : $tracker_ty:ty, $iter:ident,loop $read_expr:expr) => {{
+        use ::compio_buf::OwnedIterator;
+
         let mut $iter = match $buf.owned_iter() {
             Ok(buf) => buf,
             Err(buf) => return BufResult(Ok(()), buf),
@@ -100,6 +102,8 @@ macro_rules! loop_write_vectored {
         $read_expr:expr,break
         $judge_expr:expr
     ) => {{
+        use ::compio_buf::OwnedIterator;
+
         let mut $iter = match $buf.owned_iter() {
             Ok(buf) => buf,
             Err(buf) => return BufResult(Ok(0), buf),

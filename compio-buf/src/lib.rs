@@ -26,6 +26,9 @@ pub use buf_result::*;
 mod io_buf;
 pub use io_buf::*;
 
+mod io_vec_buf;
+pub use io_vec_buf::*;
+
 mod slice;
 pub use slice::*;
 
