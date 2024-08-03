@@ -404,22 +404,27 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
     }
 
     pub(crate) unsafe fn set_msg(&mut self) {
-        self.slices = self.buffer.as_io_slices_mut();
+        self.slices = self.buffer.io_slices_mut();
 
         self.msg.msg_name = std::ptr::addr_of_mut!(self.addr) as _;
         self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
         self.msg.msg_iov = self.slices.as_mut_ptr() as _;
         self.msg.msg_iovlen = self.slices.len() as _;
         self.msg.msg_control = self.control.as_buf_mut_ptr() as _;
-        self.msg.msg_controllen = self.control.buf_len() as _;
+        self.msg.msg_controllen = self.control.buf_capacity() as _;
     }
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
-    type Inner = ((T, C), sockaddr_storage, socklen_t);
+    type Inner = ((T, C), sockaddr_storage, socklen_t, usize);
 
     fn into_inner(self) -> Self::Inner {
-        ((self.buffer, self.control), self.addr, self.msg.msg_namelen)
+        (
+            (self.buffer, self.control),
+            self.addr,
+            self.msg.msg_namelen,
+            self.msg.msg_controllen as _,
+        )
     }
 }
 
@@ -458,7 +463,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     }
 
     pub(crate) unsafe fn set_msg(&mut self) {
-        self.slices = self.buffer.as_io_slices();
+        self.slices = self.buffer.io_slices();
 
         self.msg.msg_name = self.addr.as_ptr() as _;
         self.msg.msg_namelen = self.addr.len();

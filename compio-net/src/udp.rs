@@ -228,11 +228,11 @@ impl UdpSocket {
         &self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, SocketAddr), (T, C)> {
+    ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
         self.inner
             .recv_msg(buffer, control)
             .await
-            .map_res(|(n, addr)| (n, addr.as_socket().expect("should be SocketAddr")))
+            .map_res(|(n, m, addr)| (n, m, addr.as_socket().expect("should be SocketAddr")))
     }
 
     /// Receives a single datagram message and ancillary data on the socket. On
@@ -241,11 +241,11 @@ impl UdpSocket {
         &self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, SocketAddr), (T, C)> {
+    ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
         self.inner
             .recv_msg_vectored(buffer, control)
             .await
-            .map_res(|(n, addr)| (n, addr.as_socket().expect("should be SocketAddr")))
+            .map_res(|(n, m, addr)| (n, m, addr.as_socket().expect("should be SocketAddr")))
     }
 
     /// Sends data on the socket to the given address. On success, returns the

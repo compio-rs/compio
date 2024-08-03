@@ -786,6 +786,7 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
     fd: SharedFd<S>,
     buffer: T,
     control: C,
+    control_len: u32,
     _p: PhantomPinned,
 }
 
@@ -806,16 +807,22 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
             fd,
             buffer,
             control,
+            control_len: 0,
             _p: PhantomPinned,
         }
     }
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
-    type Inner = ((T, C), SOCKADDR_STORAGE, socklen_t);
+    type Inner = ((T, C), SOCKADDR_STORAGE, socklen_t, usize);
 
     fn into_inner(self) -> Self::Inner {
-        ((self.buffer, self.control), self.addr, self.addr_len)
+        (
+            (self.buffer, self.control),
+            self.addr,
+            self.addr_len,
+            self.control_len as _,
+        )
     }
 }
 
@@ -828,7 +835,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
             })?;
 
         let this = self.get_unchecked_mut();
-        let mut slices = this.buffer.as_io_slices_mut();
+        let mut slices = this.buffer.io_slices_mut();
         let mut msg = WSAMSG {
             name: &mut this.addr as *mut _ as _,
             namelen: this.addr_len,
@@ -837,6 +844,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
             Control: std::mem::transmute::<IoSliceMut, WSABUF>(this.control.as_io_slice_mut()),
             dwFlags: 0,
         };
+        this.control_len = 0;
 
         let mut received = 0;
         let res = recvmsg_fn(
@@ -846,6 +854,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
             optr,
             None,
         );
+        this.control_len = msg.Control.len;
         winsock_result(res, received)
     }
 
@@ -897,7 +906,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsRawFd> OpCode for SendMsg<T, C, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = self.get_unchecked_mut();
 
-        let slices = this.buffer.as_io_slices();
+        let slices = this.buffer.io_slices();
         let msg = WSAMSG {
             name: this.addr.as_ptr() as _,
             namelen: this.addr.len(),
