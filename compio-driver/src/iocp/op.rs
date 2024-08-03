@@ -835,7 +835,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
             })?;
 
         let this = self.get_unchecked_mut();
-        let mut slices = this.buffer.as_io_slices_mut();
+        let mut slices = this.buffer.io_slices_mut();
         let mut msg = WSAMSG {
             name: &mut this.addr as *mut _ as _,
             namelen: this.addr_len,
@@ -906,7 +906,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsRawFd> OpCode for SendMsg<T, C, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = self.get_unchecked_mut();
 
-        let slices = this.buffer.as_io_slices();
+        let slices = this.buffer.io_slices();
         let msg = WSAMSG {
             name: this.addr.as_ptr() as _,
             namelen: this.addr.len(),
