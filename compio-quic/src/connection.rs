@@ -11,12 +11,12 @@ use compio_buf::BufResult;
 use compio_runtime::JoinHandle;
 use flume::{Receiver, Sender};
 use futures_util::{
-    future::{poll_fn, Fuse, FusedFuture, Future, LocalBoxFuture},
-    select, FutureExt,
+    future::{self, Fuse, FusedFuture, LocalBoxFuture},
+    select, stream, Future, FutureExt, StreamExt,
 };
 use quinn_proto::{
     congestion::Controller, crypto::rustls::HandshakeData, ConnectionError, ConnectionHandle,
-    ConnectionStats, EndpointEvent, VarInt,
+    ConnectionStats, Dir, EndpointEvent, VarInt,
 };
 
 use crate::Socket;
@@ -33,6 +33,7 @@ struct ConnectionState {
     connected: bool,
     error: Option<ConnectionError>,
     worker: Option<JoinHandle<()>>,
+    poll_waker: Option<Waker>,
     on_connected: Option<Waker>,
     on_handshake_data: Option<Waker>,
 }
@@ -46,6 +47,12 @@ impl ConnectionState {
             waker.wake()
         }
         if let Some(waker) = self.on_handshake_data.take() {
+            waker.wake()
+        }
+    }
+
+    fn wake(&mut self) {
+        if let Some(waker) = self.poll_waker.take() {
             waker.wake()
         }
     }
@@ -94,6 +101,7 @@ impl ConnectionInner {
                 connected: false,
                 error: None,
                 worker: None,
+                poll_waker: None,
                 on_connected: None,
                 on_handshake_data: None,
             }),
@@ -108,6 +116,7 @@ impl ConnectionInner {
         let mut state = self.state.lock().unwrap();
         state.conn.close(Instant::now(), error_code, reason.into());
         state.terminate(ConnectionError::LocallyClosed);
+        state.wake();
     }
 
     async fn run(&self) -> io::Result<()> {
@@ -118,71 +127,84 @@ impl ConnectionInner {
 
         let mut timer = Timer::new();
 
-        loop {
-            {
-                let now = Instant::now();
-                let mut state = self.state.lock().unwrap();
-
-                if let Some(mut buf) = send_buf.take() {
-                    if let Some(transmit) =
-                        state
-                            .conn
-                            .poll_transmit(now, self.socket.max_gso_segments(), &mut buf)
-                    {
-                        transmit_fut
-                            .set(async move { self.socket.send(buf, &transmit).await }.fuse())
-                    } else {
-                        send_buf = Some(buf);
-                    }
-                }
-
-                timer.reset(state.conn.poll_timeout());
-
-                while let Some(event) = state.conn.poll_endpoint_events() {
-                    let _ = self.events_tx.send((self.handle, event));
-                }
-
-                while let Some(event) = state.conn.poll() {
-                    use quinn_proto::Event::*;
-                    match event {
-                        HandshakeDataReady => {
-                            if let Some(waker) = state.on_handshake_data.take() {
-                                waker.wake()
-                            }
-                        }
-                        Connected => {
-                            state.connected = true;
-                            if let Some(waker) = state.on_connected.take() {
-                                waker.wake()
-                            }
-                        }
-                        ConnectionLost { reason } => state.terminate(reason),
-                        _ => {}
-                    }
-                }
-
-                if state.conn.is_drained() {
-                    break Ok(());
-                }
+        let mut poller = stream::poll_fn(|cx| {
+            let mut state = self.state.lock().unwrap();
+            let ready = state.poll_waker.is_none();
+            match &state.poll_waker {
+                Some(waker) if waker.will_wake(cx.waker()) => {}
+                _ => state.poll_waker = Some(cx.waker().clone()),
+            };
+            if ready {
+                Poll::Ready(Some(()))
+            } else {
+                Poll::Pending
             }
+        })
+        .fuse();
 
+        loop {
             select! {
+                _ = poller.next() => {}
                 _ = timer => {
                     self.state.lock().unwrap().conn.handle_timeout(Instant::now());
                     timer.reset(None);
-                },
+                }
                 ev = self.events_rx.recv_async() => match ev {
                     Ok(ConnectionEvent::Close(error_code, reason)) => self.close(error_code, reason),
                     Ok(ConnectionEvent::Proto(ev)) => self.state.lock().unwrap().conn.handle_event(ev),
                     Err(_) => unreachable!("endpoint dropped connection"),
                 },
-                BufResult(res, mut buf) = transmit_fut => match res {
+                BufResult::<(), Vec<u8>>(res, mut buf) = transmit_fut => match res {
                     Ok(()) => {
                         buf.clear();
                         send_buf = Some(buf);
                     },
                     Err(e) => break Err(e),
                 },
+            }
+
+            let now = Instant::now();
+            let mut state = self.state.lock().unwrap();
+
+            if let Some(mut buf) = send_buf.take() {
+                if let Some(transmit) =
+                    state
+                        .conn
+                        .poll_transmit(now, self.socket.max_gso_segments(), &mut buf)
+                {
+                    transmit_fut.set(async move { self.socket.send(buf, &transmit).await }.fuse())
+                } else {
+                    send_buf = Some(buf);
+                }
+            }
+
+            timer.reset(state.conn.poll_timeout());
+
+            while let Some(event) = state.conn.poll_endpoint_events() {
+                let _ = self.events_tx.send((self.handle, event));
+            }
+
+            while let Some(event) = state.conn.poll() {
+                use quinn_proto::Event::*;
+                match event {
+                    HandshakeDataReady => {
+                        if let Some(waker) = state.on_handshake_data.take() {
+                            waker.wake()
+                        }
+                    }
+                    Connected => {
+                        state.connected = true;
+                        if let Some(waker) = state.on_connected.take() {
+                            waker.wake()
+                        }
+                    }
+                    ConnectionLost { reason } => state.terminate(reason),
+                    _ => {}
+                }
+            }
+
+            if state.conn.is_drained() {
+                break Ok(());
             }
         }
     }
@@ -244,6 +266,32 @@ macro_rules! conn_fn {
                 .peer_identity()
                 .map(|v| v.downcast().unwrap())
         }
+
+        /// Derive keying material from this connection's TLS session secrets.
+        ///
+        /// When both peers call this method with the same `label` and `context`
+        /// arguments and `output` buffers of equal length, they will get the
+        /// same sequence of bytes in `output`. These bytes are cryptographically
+        /// strong and pseudorandom, and are suitable for use as keying material.
+        ///
+        /// This function fails if called with an empty `output` or called prior to
+        /// the handshake completing.
+        ///
+        /// See [RFC5705](https://tools.ietf.org/html/rfc5705) for more information.
+        pub fn export_keying_material(
+            &self,
+            output: &mut [u8],
+            label: &[u8],
+            context: &[u8],
+        ) -> Result<(), quinn_proto::crypto::ExportKeyingMaterialError> {
+            self.0
+                .state
+                .lock()
+                .unwrap()
+                .conn
+                .crypto_session()
+                .export_keying_material(output, label, context)
+        }
     };
 }
 
@@ -275,7 +323,7 @@ impl Connecting {
 
     /// Parameters negotiated during the handshake.
     pub async fn handshake_data(&mut self) -> Result<Box<HandshakeData>, ConnectionError> {
-        poll_fn(|cx| {
+        future::poll_fn(|cx| {
             let mut state = self.0.state.lock().unwrap();
             if let Some(res) = state.try_handshake_data() {
                 return Poll::Ready(res);
@@ -372,6 +420,39 @@ impl Connection {
             .conn
             .datagrams()
             .send_buffer_space()
+    }
+
+    /// Modify the number of remotely initiated unidirectional streams that may
+    /// be concurrently open
+    ///
+    /// No streams may be opened by the peer unless fewer than `count` are
+    /// already open. Large `count`s increase both minimum and worst-case
+    /// memory consumption.
+    pub fn set_max_concurrent_uni_streams(&self, count: VarInt) {
+        let mut state = self.0.state.lock().unwrap();
+        state.conn.set_max_concurrent_streams(Dir::Uni, count);
+        // May need to send MAX_STREAMS to make progress
+        state.wake();
+    }
+
+    /// See [`quinn_proto::TransportConfig::receive_window()`]
+    pub fn set_receive_window(&self, receive_window: VarInt) {
+        let mut state = self.0.state.lock().unwrap();
+        state.conn.set_receive_window(receive_window);
+        state.wake();
+    }
+
+    /// Modify the number of remotely initiated bidirectional streams that may
+    /// be concurrently open
+    ///
+    /// No streams may be opened by the peer unless fewer than `count` are
+    /// already open. Large `count`s increase both minimum and worst-case
+    /// memory consumption.
+    pub fn set_max_concurrent_bi_streams(&self, count: VarInt) {
+        let mut state = self.0.state.lock().unwrap();
+        state.conn.set_max_concurrent_streams(Dir::Bi, count);
+        // May need to send MAX_STREAMS to make progress
+        state.wake();
     }
 
     /// Close the connection immediately.

@@ -469,8 +469,10 @@ mod verifier {
         pub fn new() -> Self {
             Self(
                 rustls::crypto::CryptoProvider::get_default()
-                    .unwrap()
-                    .signature_verification_algorithms,
+                    .map(|provider| provider.signature_verification_algorithms)
+                    .unwrap_or_else(|| {
+                        rustls::crypto::ring::default_provider().signature_verification_algorithms
+                    }),
             )
         }
     }

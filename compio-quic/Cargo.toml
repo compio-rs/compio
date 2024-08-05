@@ -16,13 +16,13 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 # Workspace dependencies
-compio-buf = { workspace = true, features = ["bytes"] }
+compio-buf = { workspace = true }
 compio-log = { workspace = true }
 compio-net = { workspace = true }
 compio-runtime = { workspace = true, features = ["time"] }
 
 quinn-proto = "0.11.3"
-rustls = { workspace = true }
+rustls = { workspace = true, features = ["ring"] }
 rustls-platform-verifier = { version = "0.3.3", optional = true }
 rustls-native-certs = { version = "0.7.1", optional = true }
 webpki-roots = { version = "0.26.3", optional = true }

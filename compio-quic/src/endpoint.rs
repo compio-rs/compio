@@ -12,10 +12,10 @@ use std::{
 use compio_buf::BufResult;
 use compio_net::UdpSocket;
 use compio_runtime::JoinHandle;
-use event_listener::{Event, IntoNotification};
+use event_listener::{listener, Event, IntoNotification};
 use flume::{unbounded, Receiver, Sender};
 use futures_util::{
-    future::{poll_fn, Fuse, FusedFuture},
+    future::{self},
     select,
     task::AtomicWaker,
     FutureExt,
@@ -35,12 +35,11 @@ struct EndpointState {
     worker: Option<JoinHandle<()>>,
     connections: HashMap<ConnectionHandle, Sender<ConnectionEvent>>,
     close: Option<(VarInt, String)>,
-    resp: VecDeque<(Vec<u8>, Transmit)>,
     incoming: VecDeque<quinn_proto::Incoming>,
 }
 
 impl EndpointState {
-    fn handle_data(&mut self, meta: RecvMeta, buf: &[u8]) {
+    fn handle_data(&mut self, meta: RecvMeta, buf: &[u8], respond_fn: impl Fn(Vec<u8>, Transmit)) {
         let now = Instant::now();
         for data in buf[..meta.len]
             .chunks(meta.stride.min(meta.len))
@@ -60,7 +59,7 @@ impl EndpointState {
                         self.incoming.push_back(incoming);
                     } else {
                         let transmit = self.endpoint.refuse(incoming, &mut resp_buf);
-                        self.resp.push_back((resp_buf, transmit));
+                        respond_fn(resp_buf, transmit);
                     }
                 }
                 Some(DatagramEvent::ConnectionEvent(ch, event)) => {
@@ -70,9 +69,7 @@ impl EndpointState {
                         .unwrap()
                         .send(ConnectionEvent::Proto(event));
                 }
-                Some(DatagramEvent::Response(transmit)) => {
-                    self.resp.push_back((resp_buf, transmit))
-                }
+                Some(DatagramEvent::Response(transmit)) => respond_fn(resp_buf, transmit),
                 None => {}
             }
         }
@@ -92,7 +89,7 @@ impl EndpointState {
     }
 
     fn is_idle(&self) -> bool {
-        self.connections.is_empty() && self.resp.is_empty()
+        self.connections.is_empty()
     }
 
     fn try_get_incoming(&mut self) -> Option<Option<quinn_proto::Incoming>> {
@@ -153,7 +150,6 @@ impl EndpointInner {
                 worker: None,
                 connections: HashMap::new(),
                 close: None,
-                resp: VecDeque::new(),
                 incoming: VecDeque::new(),
             }),
             socket,
@@ -196,6 +192,14 @@ impl EndpointInner {
         Ok(state.new_connection(handle, conn, self.socket.clone(), self.events.0.clone()))
     }
 
+    fn respond(&self, buf: Vec<u8>, transmit: Transmit) {
+        let socket = self.socket.clone();
+        compio_runtime::spawn(async move {
+            let _ = socket.send(buf, &transmit).await;
+        })
+        .detach();
+    }
+
     pub(crate) fn accept(
         &self,
         incoming: quinn_proto::Incoming,
@@ -213,7 +217,7 @@ impl EndpointInner {
             }
             Err(err) => {
                 if let Some(transmit) = err.response {
-                    state.resp.push_back((resp_buf, transmit));
+                    self.respond(resp_buf, transmit);
                 }
                 Err(err.cause)
             }
@@ -224,7 +228,7 @@ impl EndpointInner {
         let mut state = self.state.lock().unwrap();
         let mut resp_buf = Vec::new();
         let transmit = state.endpoint.refuse(incoming, &mut resp_buf);
-        state.resp.push_back((resp_buf, transmit));
+        self.respond(resp_buf, transmit);
     }
 
     pub(crate) fn retry(
@@ -234,7 +238,7 @@ impl EndpointInner {
         let mut state = self.state.lock().unwrap();
         let mut resp_buf = Vec::new();
         let transmit = state.endpoint.retry(incoming, &mut resp_buf)?;
-        state.resp.push_back((resp_buf, transmit));
+        self.respond(resp_buf, transmit);
         Ok(())
     }
 
@@ -259,13 +263,13 @@ impl EndpointInner {
                 .fuse()
         );
 
-        let mut resp_fut = pin!(Fuse::terminated());
+        let respond_fn = |buf: Vec<u8>, transmit: Transmit| self.respond(buf, transmit);
 
         loop {
             select! {
                 BufResult(res, recv_buf) = recv_fut => {
                     match res {
-                        Ok(meta) => self.state.lock().unwrap().handle_data(meta, &recv_buf),
+                        Ok(meta) => self.state.lock().unwrap().handle_data(meta, &recv_buf, respond_fn),
                         Err(e) if e.kind() == io::ErrorKind::ConnectionReset => {}
                         Err(e) => break Err(e),
                     }
@@ -274,19 +278,12 @@ impl EndpointInner {
                 (ch, event) = self.events.1.recv_async().map(Result::unwrap) => {
                     self.state.lock().unwrap().handle_event(ch, event);
                 },
-                _ = resp_fut => {},
             }
 
-            let mut state = self.state.lock().unwrap();
-            if resp_fut.is_terminated() && !state.resp.is_empty() {
-                let (data, transmit) = state.resp.pop_front().unwrap();
-                resp_fut.set(async move { self.socket.send(data, &transmit).await }.fuse());
-            }
-
+            let state = self.state.lock().unwrap();
             if state.close.is_some() && state.is_idle() {
                 break Ok(());
             }
-
             if !state.incoming.is_empty() {
                 self.incoming.notify(state.incoming.len().additional());
             }
@@ -364,7 +361,7 @@ impl Endpoint {
                 return incoming.map(|incoming| Incoming::new(incoming, self.inner.clone()));
             }
 
-            let listener = self.inner.incoming.listen();
+            listener!(self.inner.incoming => listener);
 
             if let Some(incoming) = self.inner.state.lock().unwrap().try_get_incoming() {
                 return incoming.map(|incoming| Incoming::new(incoming, self.inner.clone()));
@@ -421,7 +418,7 @@ impl Endpoint {
         }
 
         let this = ManuallyDrop::new(self);
-        let inner = poll_fn(move |cx| {
+        let inner = future::poll_fn(move |cx| {
             if let Some(inner) = unsafe { Self::try_unwrap_inner(&this) } {
                 return Poll::Ready(inner);
             }
