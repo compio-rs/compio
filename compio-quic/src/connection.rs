@@ -7,8 +7,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+use bytes::Bytes;
 use compio_buf::BufResult;
 use compio_runtime::JoinHandle;
+use event_listener::{listener, Event, IntoNotification};
 use flume::{Receiver, Sender};
 use futures_util::{
     future::{self, Fuse, FusedFuture, LocalBoxFuture},
@@ -18,6 +20,7 @@ use quinn_proto::{
     congestion::Controller, crypto::rustls::HandshakeData, ConnectionError, ConnectionHandle,
     ConnectionStats, Dir, EndpointEvent, VarInt,
 };
+use thiserror::Error;
 
 use crate::Socket;
 
@@ -67,6 +70,18 @@ impl ConnectionState {
     }
 
     #[inline]
+    fn try_map_mut<T>(
+        &mut self,
+        f: impl Fn(&mut Self) -> Option<T>,
+    ) -> Option<Result<T, ConnectionError>> {
+        if let Some(error) = &self.error {
+            Some(Err(error.clone()))
+        } else {
+            f(self).map(Ok)
+        }
+    }
+
+    #[inline]
     fn try_handshake_data(&self) -> Option<Result<Box<HandshakeData>, ConnectionError>> {
         self.try_map(|state| {
             state
@@ -85,6 +100,8 @@ struct ConnectionInner {
     socket: Socket,
     events_tx: Sender<(ConnectionHandle, EndpointEvent)>,
     events_rx: Receiver<ConnectionEvent>,
+    datagram_received: Event,
+    datagrams_unblocked: Event,
 }
 
 impl ConnectionInner {
@@ -109,7 +126,14 @@ impl ConnectionInner {
             socket,
             events_tx,
             events_rx,
+            datagram_received: Event::new(),
+            datagrams_unblocked: Event::new(),
         }
+    }
+
+    fn notify_events(&self) {
+        self.datagram_received.notify(usize::MAX.additional());
+        self.datagrams_unblocked.notify(usize::MAX.additional());
     }
 
     fn close(&self, error_code: VarInt, reason: String) {
@@ -117,6 +141,7 @@ impl ConnectionInner {
         state.conn.close(Instant::now(), error_code, reason.into());
         state.terminate(ConnectionError::LocallyClosed);
         state.wake();
+        self.notify_events();
     }
 
     async fn run(&self) -> io::Result<()> {
@@ -198,7 +223,16 @@ impl ConnectionInner {
                             waker.wake()
                         }
                     }
-                    ConnectionLost { reason } => state.terminate(reason),
+                    ConnectionLost { reason } => {
+                        state.terminate(reason);
+                        self.notify_events();
+                    }
+                    DatagramReceived => {
+                        self.datagram_received.notify(usize::MAX.additional());
+                    }
+                    DatagramsUnblocked => {
+                        self.datagrams_unblocked.notify(usize::MAX.additional());
+                    }
                     _ => {}
                 }
             }
@@ -486,6 +520,93 @@ impl Connection {
 
         self.0.state.lock().unwrap().error.clone().unwrap()
     }
+
+    /// Receive an application datagram
+    pub async fn read_datagram(&self) -> Result<Vec<u8>, ConnectionError> {
+        loop {
+            if let Some(res) = self
+                .0
+                .state
+                .lock()
+                .unwrap()
+                .try_map_mut(|state| state.conn.datagrams().recv().map(Into::into))
+            {
+                return res;
+            }
+
+            listener!(self.0.datagram_received => listener);
+
+            if let Some(res) = self
+                .0
+                .state
+                .lock()
+                .unwrap()
+                .try_map_mut(|state| state.conn.datagrams().recv().map(Into::into))
+            {
+                return res;
+            }
+
+            listener.await;
+        }
+    }
+
+    fn try_send_datagram(
+        &self,
+        data: Bytes,
+        drop: bool,
+    ) -> Result<Result<(), SendDatagramError>, Bytes> {
+        let mut state = self.0.state.lock().unwrap();
+        if let Some(err) = &state.error {
+            return Ok(Err(err.clone().into()));
+        }
+        match state.conn.datagrams().send(data, drop) {
+            Ok(()) => {
+                state.wake();
+                Ok(Ok(()))
+            }
+            Err(e) => e.try_into().map(Err),
+        }
+    }
+
+    /// Transmit `data` as an unreliable, unordered application datagram
+    ///
+    /// Application datagrams are a low-level primitive. They may be lost or
+    /// delivered out of order, and `data` must both fit inside a single
+    /// QUIC packet and be smaller than the maximum dictated by the peer.
+    pub fn send_datagram(&self, data: impl Into<Bytes>) -> Result<(), SendDatagramError> {
+        self.try_send_datagram(data.into(), true).unwrap()
+    }
+
+    /// Transmit `data` as an unreliable, unordered application datagram
+    ///
+    /// Unlike [`send_datagram()`], this method will wait for buffer space
+    /// during congestion conditions, which effectively prioritizes old
+    /// datagrams over new datagrams.
+    ///
+    /// See [`send_datagram()`] for details.
+    ///
+    /// [`send_datagram()`]: Connection::send_datagram
+    pub async fn send_datagram_wait(
+        &self,
+        data: impl Into<Bytes>,
+    ) -> Result<(), SendDatagramError> {
+        let mut data = Some(data.into());
+        loop {
+            match self.try_send_datagram(data.take().unwrap(), false) {
+                Ok(res) => return res,
+                Err(b) => data.replace(b),
+            };
+
+            listener!(self.0.datagrams_unblocked => listener);
+
+            match self.try_send_datagram(data.take().unwrap(), false) {
+                Ok(res) => return res,
+                Err(b) => data.replace(b),
+            };
+
+            listener.await;
+        }
+    }
 }
 
 impl PartialEq for Connection {
@@ -542,5 +663,39 @@ impl Future for Timer {
 impl FusedFuture for Timer {
     fn is_terminated(&self) -> bool {
         self.fut.is_terminated()
+    }
+}
+
+/// Errors that can arise when sending a datagram
+#[derive(Debug, Error, Clone, Eq, PartialEq)]
+pub enum SendDatagramError {
+    /// The peer does not support receiving datagram frames
+    #[error("datagrams not supported by peer")]
+    UnsupportedByPeer,
+    /// Datagram support is disabled locally
+    #[error("datagram support disabled")]
+    Disabled,
+    /// The datagram is larger than the connection can currently accommodate
+    ///
+    /// Indicates that the path MTU minus overhead or the limit advertised by
+    /// the peer has been exceeded.
+    #[error("datagram too large")]
+    TooLarge,
+    /// The connection was lost
+    #[error("connection lost")]
+    ConnectionLost(#[from] ConnectionError),
+}
+
+impl TryFrom<quinn_proto::SendDatagramError> for SendDatagramError {
+    type Error = Bytes;
+
+    fn try_from(value: quinn_proto::SendDatagramError) -> Result<Self, Self::Error> {
+        use quinn_proto::SendDatagramError::*;
+        match value {
+            UnsupportedByPeer => Ok(SendDatagramError::UnsupportedByPeer),
+            Disabled => Ok(SendDatagramError::Disabled),
+            TooLarge => Ok(SendDatagramError::TooLarge),
+            Blocked(data) => Err(data),
+        }
     }
 }
