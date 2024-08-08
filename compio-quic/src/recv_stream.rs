@@ -54,15 +54,17 @@ use crate::{ConnectionInner, StoppedError};
 pub struct RecvStream {
     conn: Arc<ConnectionInner>,
     stream: StreamId,
+    is_0rtt: bool,
     all_data_read: bool,
     reset: Option<VarInt>,
 }
 
 impl RecvStream {
-    pub(crate) fn new(conn: Arc<ConnectionInner>, stream: StreamId) -> Self {
+    pub(crate) fn new(conn: Arc<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
         Self {
             conn,
             stream,
+            is_0rtt,
             all_data_read: false,
             reset: None,
         }
@@ -73,6 +75,15 @@ impl RecvStream {
         self.stream
     }
 
+    /// Check if this stream has been opened during 0-RTT.
+    ///
+    /// In which case any non-idempotent request should be considered dangerous
+    /// at the application level. Because read data is subject to replay
+    /// attacks.
+    pub fn is_0rtt(&self) -> bool {
+        self.is_0rtt
+    }
+
     /// Stop accepting data
     ///
     /// Discards unread data and notifies the peer to stop transmitting. Once
@@ -80,6 +91,9 @@ impl RecvStream {
     /// `ClosedStream` errors.
     pub fn stop(&mut self, error_code: VarInt) -> Result<(), ClosedStream> {
         let mut state = self.conn.state();
+        if self.is_0rtt && state.check_0rtt().is_err() {
+            return Ok(());
+        }
         state.conn.recv_stream(self.stream).stop(error_code)?;
         state.wake();
         self.all_data_read = true;
@@ -101,6 +115,9 @@ impl RecvStream {
         poll_fn(|cx| {
             let mut state = self.conn.state();
 
+            if self.is_0rtt && state.check_0rtt().is_err() {
+                return Poll::Ready(Err(StoppedError::ZeroRttRejected));
+            }
             if let Some(code) = self.reset {
                 return Poll::Ready(Ok(Some(code)));
             }
@@ -152,6 +169,11 @@ impl RecvStream {
         }
 
         let mut state = self.conn.state();
+        if self.is_0rtt {
+            state
+                .check_0rtt()
+                .map_err(|()| ReadError::ZeroRttRejected)?;
+        }
 
         // If we stored an error during a previous call, return it now. This can happen
         // if a `read_fn` both wants to return data and also returns an error in
@@ -356,7 +378,7 @@ impl Drop for RecvStream {
         // clean up any previously registered wakers
         state.readable.remove(&self.stream);
 
-        if state.error.is_some() {
+        if state.error.is_some() || (self.is_0rtt && state.check_0rtt().is_err()) {
             return;
         }
         if !self.all_data_read {

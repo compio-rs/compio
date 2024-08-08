@@ -73,6 +73,14 @@ impl ConnectionState {
             .handshake_data()
             .map(|data| data.downcast::<HandshakeData>().unwrap())
     }
+
+    pub(crate) fn check_0rtt(&self) -> Result<(), ()> {
+        if self.conn.side().is_server() || self.conn.is_handshaking() || self.conn.accepted_0rtt() {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
 }
 
 fn wake_stream(stream: StreamId, wakers: &mut HashMap<StreamId, Waker>) {
@@ -240,6 +248,13 @@ impl ConnectionInner {
                         if let Some(waker) = state.on_connected.take() {
                             waker.wake()
                         }
+                        if state.conn.side().is_client() && !state.conn.accepted_0rtt() {
+                            // Wake up rejected 0-RTT streams so they can fail immediately with
+                            // `ZeroRttRejected` errors.
+                            wake_all_streams(&mut state.writable);
+                            wake_all_streams(&mut state.readable);
+                            wake_all_streams(&mut state.stopped);
+                        }
                     }
                     ConnectionLost { reason } => {
                         state.terminate(reason);
@@ -391,6 +406,65 @@ impl Connecting {
             Poll::Pending
         })
         .await
+    }
+
+    /// Convert into a 0-RTT or 0.5-RTT connection at the cost of weakened
+    /// security.
+    ///
+    /// Returns `Ok` immediately if the local endpoint is able to attempt
+    /// sending 0/0.5-RTT data. If so, the returned [`Connection`] can be used
+    /// to send application data without waiting for the rest of the handshake
+    /// to complete, at the cost of weakened cryptographic security guarantees.
+    /// The [`Connection::accepted_0rtt`] method resolves when the handshake
+    /// does complete, at which point subsequently opened streams and written
+    /// data will have full cryptographic protection.
+    ///
+    /// ## Outgoing
+    ///
+    /// For outgoing connections, the initial attempt to convert to a
+    /// [`Connection`] which sends 0-RTT data will proceed if the
+    /// [`crypto::ClientConfig`][crate::crypto::ClientConfig] attempts to resume
+    /// a previous TLS session. However, **the remote endpoint may not actually
+    /// _accept_ the 0-RTT data**--yet still accept the connection attempt in
+    /// general. This possibility is conveyed through the
+    /// [`Connection::accepted_0rtt`] method--when the handshake completes, it
+    /// resolves to true if the 0-RTT data was accepted and false if it was
+    /// rejected. If it was rejected, the existence of streams opened and other
+    /// application data sent prior to the handshake completing will not be
+    /// conveyed to the remote application, and local operations on them will
+    /// return `ZeroRttRejected` errors.
+    ///
+    /// A server may reject 0-RTT data at its discretion, but accepting 0-RTT
+    /// data requires the relevant resumption state to be stored in the server,
+    /// which servers may limit or lose for various reasons including not
+    /// persisting resumption state across server restarts.
+    ///
+    /// ## Incoming
+    ///
+    /// For incoming connections, conversion to 0.5-RTT will always fully
+    /// succeed. `into_0rtt` will always return `Ok` and
+    /// [`Connection::accepted_0rtt`] will always resolve to true.
+    ///
+    /// ## Security
+    ///
+    /// On outgoing connections, this enables transmission of 0-RTT data, which
+    /// is vulnerable to replay attacks, and should therefore never invoke
+    /// non-idempotent operations.
+    ///
+    /// On incoming connections, this enables transmission of 0.5-RTT data,
+    /// which may be sent before TLS client authentication has occurred, and
+    /// should therefore not be used to send data for which client
+    /// authentication is being used.
+    pub fn into_0rtt(self) -> Result<Connection, Self> {
+        let is_ok = {
+            let state = self.0.state();
+            state.conn.has_0rtt() || state.conn.side().is_server()
+        };
+        if is_ok {
+            Ok(Connection(self.0.clone()))
+        } else {
+            Err(self)
+        }
     }
 }
 
@@ -579,20 +653,24 @@ impl Connection {
         )
     }
 
-    fn try_open_stream(&self, dir: Dir) -> Result<StreamId, OpenStreamError> {
-        self.0
-            .try_state()?
+    fn try_open_stream(&self, dir: Dir) -> Result<(StreamId, bool), OpenStreamError> {
+        let mut state = self.0.try_state()?;
+        let stream = state
             .conn
             .streams()
             .open(dir)
-            .ok_or(OpenStreamError::StreamsExhausted)
+            .ok_or(OpenStreamError::StreamsExhausted)?;
+        Ok((
+            stream,
+            state.conn.side().is_client() && state.conn.is_handshaking(),
+        ))
     }
 
-    async fn open_stream(&self, dir: Dir) -> Result<StreamId, ConnectionError> {
+    async fn open_stream(&self, dir: Dir) -> Result<(StreamId, bool), ConnectionError> {
         wait_event!(
             self.0.stream_available[dir as usize],
             match self.try_open_stream(dir) {
-                Ok(stream) => break Ok(stream),
+                Ok(res) => break Ok(res),
                 Err(OpenStreamError::StreamsExhausted) => {}
                 Err(OpenStreamError::ConnectionLost(e)) => break Err(e),
             }
@@ -605,8 +683,8 @@ impl Connection {
     /// won't be notified that a stream has been opened until the stream is
     /// actually used.
     pub fn open_uni(&self) -> Result<SendStream, OpenStreamError> {
-        let stream = self.try_open_stream(Dir::Uni)?;
-        Ok(SendStream::new(self.0.clone(), stream))
+        let (stream, is_0rtt) = self.try_open_stream(Dir::Uni)?;
+        Ok(SendStream::new(self.0.clone(), stream, is_0rtt))
     }
 
     /// Initiate a new outgoing unidirectional stream.
@@ -618,8 +696,8 @@ impl Connection {
     ///
     /// [`open_uni()`]: crate::Connection::open_uni
     pub async fn open_uni_wait(&self) -> Result<SendStream, ConnectionError> {
-        let stream = self.open_stream(Dir::Uni).await?;
-        Ok(SendStream::new(self.0.clone(), stream))
+        let (stream, is_0rtt) = self.open_stream(Dir::Uni).await?;
+        Ok(SendStream::new(self.0.clone(), stream, is_0rtt))
     }
 
     /// Initiate a new outgoing bidirectional stream.
@@ -628,10 +706,10 @@ impl Connection {
     /// won't be notified that a stream has been opened until the stream is
     /// actually used.
     pub fn open_bi(&self) -> Result<(SendStream, RecvStream), OpenStreamError> {
-        let stream = self.try_open_stream(Dir::Bi)?;
+        let (stream, is_0rtt) = self.try_open_stream(Dir::Bi)?;
         Ok((
-            SendStream::new(self.0.clone(), stream),
-            RecvStream::new(self.0.clone(), stream),
+            SendStream::new(self.0.clone(), stream, is_0rtt),
+            RecvStream::new(self.0.clone(), stream, is_0rtt),
         ))
     }
 
@@ -644,19 +722,19 @@ impl Connection {
     ///
     /// [`open_bi()`]: crate::Connection::open_bi
     pub async fn open_bi_wait(&self) -> Result<(SendStream, RecvStream), ConnectionError> {
-        let stream = self.open_stream(Dir::Bi).await?;
+        let (stream, is_0rtt) = self.open_stream(Dir::Bi).await?;
         Ok((
-            SendStream::new(self.0.clone(), stream),
-            RecvStream::new(self.0.clone(), stream),
+            SendStream::new(self.0.clone(), stream, is_0rtt),
+            RecvStream::new(self.0.clone(), stream, is_0rtt),
         ))
     }
 
-    async fn accept_stream(&self, dir: Dir) -> Result<StreamId, ConnectionError> {
+    async fn accept_stream(&self, dir: Dir) -> Result<(StreamId, bool), ConnectionError> {
         wait_event!(self.0.stream_opened[dir as usize], {
             let mut state = self.0.state();
             if let Some(stream) = state.conn.streams().accept(dir) {
                 state.wake();
-                break Ok(stream);
+                break Ok((stream, state.conn.is_handshaking()));
             } else if let Some(error) = &state.error {
                 break Err(error.clone());
             }
@@ -665,8 +743,8 @@ impl Connection {
 
     /// Accept the next incoming uni-directional stream
     pub async fn accept_uni(&self) -> Result<RecvStream, ConnectionError> {
-        let stream = self.accept_stream(Dir::Uni).await?;
-        Ok(RecvStream::new(self.0.clone(), stream))
+        let (stream, is_0rtt) = self.accept_stream(Dir::Uni).await?;
+        Ok(RecvStream::new(self.0.clone(), stream, is_0rtt))
     }
 
     /// Accept the next incoming bidirectional stream
@@ -681,11 +759,33 @@ impl Connection {
     /// [`SendStream`]: crate::SendStream
     /// [`RecvStream`]: crate::RecvStream
     pub async fn accept_bi(&self) -> Result<(SendStream, RecvStream), ConnectionError> {
-        let stream = self.accept_stream(Dir::Bi).await?;
+        let (stream, is_0rtt) = self.accept_stream(Dir::Bi).await?;
         Ok((
-            SendStream::new(self.0.clone(), stream),
-            RecvStream::new(self.0.clone(), stream),
+            SendStream::new(self.0.clone(), stream, is_0rtt),
+            RecvStream::new(self.0.clone(), stream, is_0rtt),
         ))
+    }
+
+    /// Wait for the connection to be fully established.
+    ///
+    /// For clients, the resulting value indicates if 0-RTT was accepted. For
+    /// servers, the resulting value is meaningless.
+    pub async fn accepted_0rtt(&self) -> Result<bool, ConnectionError> {
+        future::poll_fn(|cx| {
+            let mut state = self.0.try_state()?;
+
+            if state.connected {
+                return Poll::Ready(Ok(state.conn.accepted_0rtt()));
+            }
+
+            match &state.on_connected {
+                Some(waker) if waker.will_wake(cx.waker()) => {}
+                _ => state.on_connected = Some(cx.waker().clone()),
+            }
+
+            Poll::Pending
+        })
+        .await
     }
 }
 
