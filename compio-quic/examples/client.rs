@@ -27,7 +27,20 @@ async fn main() {
             .unwrap()
             .await
             .unwrap();
-        conn.close(1u32.into(), "bye");
+
+        println!("Connected to {:?}", conn.remote_address());
+
+        let (mut send, mut recv) = conn.open_bi().unwrap();
+        send.write(&[1, 2, 3]).await.unwrap();
+        send.finish().unwrap();
+
+        let mut buf = vec![];
+        recv.read_to_end(&mut buf).await.unwrap();
+        println!("{:?}", buf);
+
+        let _ = dbg!(send.write(&[1, 2, 3]).await);
+
+        conn.close(1u32.into(), "qaq");
         conn.closed().await;
     }
     endpoint.close(0u32.into(), "").await.unwrap();

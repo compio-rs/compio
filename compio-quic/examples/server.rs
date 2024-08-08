@@ -22,6 +22,16 @@ async fn main() {
 
     if let Some(incoming) = endpoint.wait_incoming().await {
         let conn = incoming.await.unwrap();
+
+        let (mut send, mut recv) = conn.accept_bi().await.unwrap();
+
+        let mut buf = vec![];
+        recv.read_to_end(&mut buf).await.unwrap();
+        println!("{:?}", buf);
+
+        send.write(&[4, 5, 6]).await.unwrap();
+        send.finish().unwrap();
+
         conn.closed().await;
     }
 

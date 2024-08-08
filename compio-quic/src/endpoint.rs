@@ -12,7 +12,7 @@ use std::{
 use compio_buf::BufResult;
 use compio_net::UdpSocket;
 use compio_runtime::JoinHandle;
-use event_listener::{listener, Event, IntoNotification};
+use event_listener::{Event, IntoNotification};
 use flume::{unbounded, Receiver, Sender};
 use futures_util::{
     future::{self},
@@ -26,7 +26,8 @@ use quinn_proto::{
 };
 
 use crate::{
-    ClientBuilder, Connecting, ConnectionEvent, Incoming, RecvMeta, ServerBuilder, Socket,
+    wait_event, ClientBuilder, Connecting, ConnectionEvent, Incoming, RecvMeta, ServerBuilder,
+    Socket,
 };
 
 #[derive(Debug)]
@@ -94,9 +95,9 @@ impl EndpointState {
 
     fn try_get_incoming(&mut self) -> Option<Option<quinn_proto::Incoming>> {
         if self.close.is_none() {
-            self.incoming.pop_front().map(Some)
+            Some(self.incoming.pop_front())
         } else {
-            Some(None)
+            None
         }
     }
 
@@ -356,19 +357,13 @@ impl Endpoint {
     /// intermediate `Connecting` future which can be used to e.g. send 0.5-RTT
     /// data.
     pub async fn wait_incoming(&self) -> Option<Incoming> {
-        loop {
-            if let Some(incoming) = self.inner.state.lock().unwrap().try_get_incoming() {
-                return incoming.map(|incoming| Incoming::new(incoming, self.inner.clone()));
+        let incoming = wait_event!(
+            self.inner.incoming,
+            if let Some(res) = self.inner.state.lock().unwrap().try_get_incoming()? {
+                break res;
             }
-
-            listener!(self.inner.incoming => listener);
-
-            if let Some(incoming) = self.inner.state.lock().unwrap().try_get_incoming() {
-                return incoming.map(|incoming| Incoming::new(incoming, self.inner.clone()));
-            }
-
-            listener.await;
-        }
+        );
+        Some(Incoming::new(incoming, self.inner.clone()))
     }
 
     // Modified from [`SharedFd::try_unwrap_inner`], see notes there.

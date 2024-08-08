@@ -16,6 +16,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 # Workspace dependencies
+compio-io = { workspace = true }
 compio-buf = { workspace = true }
 compio-log = { workspace = true }
 compio-net = { workspace = true }
@@ -53,6 +54,7 @@ tracing-subscriber = "0.3.18"
 
 [features]
 default = ["webpki-roots"]
+futures-io = ["futures-util/io"]
 platform-verifier = ["dep:rustls-platform-verifier"]
 native-certs = ["dep:rustls-native-certs"]
 webpki-roots = ["dep:webpki-roots"]
