@@ -1,4 +1,4 @@
-use compio_quic::Endpoint;
+use compio_quic::ServerBuilder;
 use tracing_subscriber::filter::LevelFilter;
 
 #[compio_macros::main]
@@ -11,10 +11,8 @@ async fn main() {
     let cert_chain = vec![cert.cert.into()];
     let key_der = cert.key_pair.serialize_der().try_into().unwrap();
 
-    let endpoint = Endpoint::server()
-        .with_single_cert(cert_chain, key_der)
+    let endpoint = ServerBuilder::new_with_single_cert(cert_chain, key_der)
         .unwrap()
-        .with_alpn_protocols(&["hq-29"])
         .with_key_log()
         .bind("[::1]:4433")
         .await

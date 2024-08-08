@@ -1,6 +1,6 @@
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 
-use compio_quic::Endpoint;
+use compio_quic::ClientBuilder;
 use tracing_subscriber::filter::LevelFilter;
 
 #[compio_macros::main]
@@ -9,9 +9,7 @@ async fn main() {
         .with_max_level(LevelFilter::TRACE)
         .init();
 
-    let endpoint = Endpoint::client()
-        .with_no_server_verification()
-        .with_alpn_protocols(&["hq-29"])
+    let endpoint = ClientBuilder::new_with_no_server_verification()
         .with_key_log()
         .bind("[::1]:0")
         .await
@@ -25,10 +23,10 @@ async fn main() {
                 None,
             )
             .unwrap()
+            .into_0rtt()
+            .unwrap_err()
             .await
             .unwrap();
-
-        println!("Connected to {:?}", conn.remote_address());
 
         let (mut send, mut recv) = conn.open_bi().unwrap();
         send.write(&[1, 2, 3]).await.unwrap();
@@ -38,10 +36,8 @@ async fn main() {
         recv.read_to_end(&mut buf).await.unwrap();
         println!("{:?}", buf);
 
-        let _ = dbg!(send.write(&[1, 2, 3]).await);
-
-        conn.close(1u32.into(), "qaq");
-        conn.closed().await;
+        conn.close(1u32.into(), "bye");
     }
+
     endpoint.close(0u32.into(), "").await.unwrap();
 }

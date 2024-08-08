@@ -39,9 +39,6 @@ thiserror = "1.0.63"
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_Networking_WinSock"] }
 
-# Linux specific dependencies
-[target.'cfg(target_os = "linux")'.dependencies]
-
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 

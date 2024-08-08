@@ -10,7 +10,7 @@ use std::{
 };
 
 use compio_buf::BufResult;
-use compio_net::UdpSocket;
+use compio_net::{ToSocketAddrsAsync, UdpSocket};
 use compio_runtime::JoinHandle;
 use event_listener::{Event, IntoNotification};
 use flume::{unbounded, Receiver, Sender};
@@ -25,10 +25,7 @@ use quinn_proto::{
     EndpointEvent, ServerConfig, Transmit, VarInt,
 };
 
-use crate::{
-    wait_event, ClientBuilder, Connecting, ConnectionEvent, Incoming, RecvMeta, ServerBuilder,
-    Socket,
-};
+use crate::{wait_event, Connecting, ConnectionEvent, Incoming, RecvMeta, Socket};
 
 #[derive(Debug)]
 struct EndpointState {
@@ -320,14 +317,37 @@ impl Endpoint {
         })
     }
 
-    /// Create a builder for a QUIC client.
-    pub fn client() -> ClientBuilder<()> {
-        ClientBuilder::default()
+    /// Helper to construct an endpoint for use with outgoing connections only.
+    ///
+    /// Note that `addr` is the *local* address to bind to, which should usually
+    /// be a wildcard address like `0.0.0.0:0` or `[::]:0`, which allow
+    /// communication with any reachable IPv4 or IPv6 address respectively
+    /// from an OS-assigned port.
+    ///
+    /// If an IPv6 address is provided, the socket may dual-stack depending on
+    /// the platform, so as to allow communication with both IPv4 and IPv6
+    /// addresses. As such, calling this method with the address `[::]:0` is a
+    /// reasonable default to maximize the ability to connect to other
+    /// address.
+    ///
+    /// IPv4 client is never dual-stack.
+    pub async fn client(addr: impl ToSocketAddrsAsync) -> io::Result<Endpoint> {
+        // TODO: try to enable dual-stack on all platforms, notably Windows
+        let socket = UdpSocket::bind(addr).await?;
+        Self::new(socket, EndpointConfig::default(), None, None)
     }
 
-    /// Create a builder for a QUIC server.
-    pub fn server() -> ServerBuilder<()> {
-        ServerBuilder::default()
+    /// Helper to construct an endpoint for use with both incoming and outgoing
+    /// connections
+    ///
+    /// Platform defaults for dual-stack sockets vary. For example, any socket
+    /// bound to a wildcard IPv6 address on Windows will not by default be
+    /// able to communicate with IPv4 addresses. Portable applications
+    /// should bind an address that matches the family they wish to
+    /// communicate within.
+    pub async fn server(addr: impl ToSocketAddrsAsync, config: ServerConfig) -> io::Result<Self> {
+        let socket = UdpSocket::bind(addr).await?;
+        Self::new(socket, EndpointConfig::default(), Some(config), None)
     }
 
     /// Connect to a remote endpoint.
@@ -337,13 +357,9 @@ impl Endpoint {
         server_name: &str,
         config: Option<ClientConfig>,
     ) -> Result<Connecting, ConnectError> {
-        let config = if let Some(config) = config {
-            config
-        } else if let Some(config) = &self.default_client_config {
-            config.clone()
-        } else {
-            return Err(ConnectError::NoDefaultClientConfig);
-        };
+        let config = config
+            .or_else(|| self.default_client_config.clone())
+            .ok_or(ConnectError::NoDefaultClientConfig)?;
 
         self.inner.connect(remote, server_name, config)
     }
@@ -392,11 +408,11 @@ impl Endpoint {
         let reason = reason.to_string();
 
         {
-            let close = &mut self.inner.state.lock().unwrap().close;
-            if close.is_some() {
+            let mut state = self.inner.state.lock().unwrap();
+            if state.close.is_some() {
                 return Ok(());
             }
-            close.replace((error_code, reason.clone()));
+            state.close = Some((error_code, reason.clone()));
         }
 
         for conn in self.inner.state.lock().unwrap().connections.values() {
