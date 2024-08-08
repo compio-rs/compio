@@ -382,6 +382,30 @@ impl Endpoint {
         Some(Incoming::new(incoming, self.inner.clone()))
     }
 
+    /// Replace the server configuration, affecting new incoming connections
+    /// only.
+    ///
+    /// Useful for e.g. refreshing TLS certificates without disrupting existing
+    /// connections.
+    pub fn set_server_config(&self, server_config: Option<ServerConfig>) {
+        self.inner
+            .state
+            .lock()
+            .unwrap()
+            .endpoint
+            .set_server_config(server_config.map(Arc::new))
+    }
+
+    /// Get the local `SocketAddr` the underlying socket is bound to.
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.inner.socket.local_addr()
+    }
+
+    /// Get the number of connections that are currently open.
+    pub fn open_connections(&self) -> usize {
+        self.inner.state.lock().unwrap().endpoint.open_connections()
+    }
+
     // Modified from [`SharedFd::try_unwrap_inner`], see notes there.
     unsafe fn try_unwrap_inner(this: &ManuallyDrop<Self>) -> Option<EndpointInner> {
         let ptr = ManuallyDrop::new(std::ptr::read(&this.inner));

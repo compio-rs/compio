@@ -45,9 +45,10 @@ libc = { workspace = true }
 [dev-dependencies]
 compio-driver = { workspace = true }
 compio-macros = { workspace = true }
+rand = "0.8.5"
 rcgen = "0.13.1"
 socket2 = { workspace = true, features = ["all"] }
-tracing-subscriber = "0.3.18"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [features]
 default = ["webpki-roots"]

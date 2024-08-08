@@ -1,10 +1,10 @@
 use compio_quic::ServerBuilder;
-use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::EnvFilter;
 
 #[compio_macros::main]
 async fn main() {
     tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::TRACE)
+        .with_env_filter(EnvFilter::from_default_env())
         .init();
 
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();

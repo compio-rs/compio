@@ -1,12 +1,12 @@
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 
 use compio_quic::ClientBuilder;
-use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::EnvFilter;
 
 #[compio_macros::main]
 async fn main() {
     tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::TRACE)
+        .with_env_filter(EnvFilter::from_default_env())
         .init();
 
     let endpoint = ClientBuilder::new_with_no_server_verification()

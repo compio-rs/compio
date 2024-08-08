@@ -496,7 +496,7 @@ impl Drop for Connecting {
 }
 
 /// A QUIC connection.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Connection(Arc<ConnectionInner>);
 
 impl Connection {
