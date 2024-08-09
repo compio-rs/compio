@@ -142,7 +142,7 @@ async fn echo_v4() {
 }
 
 #[compio_macros::test]
-#[cfg_attr(target_os = "windows", ignore)]
+#[cfg_attr(windows, ignore)] // FIXME: dual-stack socket on Windows
 async fn echo_dualstack() {
     let _guard = subscribe();
     run_echo(EchoArgs {

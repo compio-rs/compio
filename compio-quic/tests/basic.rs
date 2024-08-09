@@ -11,7 +11,6 @@ mod common;
 use common::{config_pair, subscribe};
 
 #[compio_macros::test]
-#[cfg_attr(target_os = "windows", ignore)] // FIXME: ERROR_PORT_UNREACHABLE
 async fn handshake_timeout() {
     let _guard = subscribe();
 
