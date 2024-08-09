@@ -10,6 +10,7 @@ use std::{
 };
 
 use compio_buf::BufResult;
+use compio_log::{error, Instrument};
 use compio_net::{ToSocketAddrsAsync, UdpSocket};
 use compio_runtime::JoinHandle;
 use event_listener::{Event, IntoNotification};
@@ -269,8 +270,8 @@ impl EndpointInner {
                     match res {
                         Ok(meta) => self.state.lock().unwrap().handle_data(meta, &recv_buf, respond_fn),
                         Err(e) if e.kind() == io::ErrorKind::ConnectionReset => {}
-                        #[cfg(windows)]
-                        Err(e) if e.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_PORT_UNREACHABLE as _) => {}
+                        // #[cfg(windows)]
+                        // Err(e) if e.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_PORT_UNREACHABLE as _) => {}
                         Err(e) => break Err(e),
                     }
                     recv_fut.set(self.socket.recv(recv_buf).fuse());
@@ -310,7 +311,13 @@ impl Endpoint {
         let inner = Arc::new(EndpointInner::new(socket, config, server_config)?);
         let worker = compio_runtime::spawn({
             let inner = inner.clone();
-            async move { inner.run().await.unwrap() }
+            async move {
+                #[allow(unused)]
+                if let Err(e) = inner.run().await {
+                    error!("I/O error: {}", e);
+                }
+            }
+            .in_current_span()
         });
         inner.state.lock().unwrap().worker = Some(worker);
         Ok(Self {

@@ -10,6 +10,7 @@ use std::{
 
 use bytes::Bytes;
 use compio_buf::BufResult;
+use compio_log::{error, Instrument};
 use compio_runtime::JoinHandle;
 use event_listener::{Event, IntoNotification};
 use flume::{Receiver, Sender};
@@ -384,7 +385,13 @@ impl Connecting {
         ));
         let worker = compio_runtime::spawn({
             let inner = inner.clone();
-            async move { inner.run().await.unwrap() }
+            async move {
+                #[allow(unused)]
+                if let Err(e) = inner.run().await {
+                    error!("I/O error: {}", e);
+                }
+            }
+            .in_current_span()
         });
         inner.state().worker = Some(worker);
         Self(inner)
