@@ -1,4 +1,8 @@
-use std::{future::Future, io, mem::ManuallyDrop};
+use std::{
+    future::Future,
+    io,
+    mem::{ManuallyDrop, MaybeUninit},
+};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 #[cfg(unix)]
@@ -317,6 +321,45 @@ impl Socket {
         let fd = self.to_shared_fd();
         let op = SendMsg::new(fd, buffer, control, addr.clone());
         compio_runtime::submit(op).await.into_inner()
+    }
+
+    #[cfg(unix)]
+    pub fn get_socket_option<T>(&self, level: i32, name: i32) -> io::Result<T> {
+        let mut value: MaybeUninit<T> = MaybeUninit::uninit();
+        let mut len = size_of::<T>() as libc::socklen_t;
+        syscall!(libc::getsockopt(
+            self.socket.as_raw_fd(),
+            level,
+            name,
+            value.as_mut_ptr() as _,
+            &mut len
+        ))
+        .map(|_| {
+            debug_assert_eq!(len as usize, size_of::<T>());
+            // SAFETY: The value is initialized by `getsockopt`.
+            unsafe { value.assume_init() }
+        })
+    }
+
+    #[cfg(windows)]
+    pub fn get_socket_option<T>(&self, level: i32, name: i32) -> io::Result<T> {
+        let mut value: MaybeUninit<T> = MaybeUninit::uninit();
+        let mut len = size_of::<T>() as i32;
+        syscall!(
+            SOCKET,
+            windows_sys::Win32::Networking::WinSock::getsockopt(
+                self.socket.as_raw_fd() as _,
+                level,
+                name,
+                value.as_mut_ptr() as _,
+                &mut len
+            )
+        )
+        .map(|_| {
+            debug_assert_eq!(len as usize, size_of::<T>());
+            // SAFETY: The value is initialized by `getsockopt`.
+            unsafe { value.assume_init() }
+        })
     }
 
     #[cfg(unix)]
