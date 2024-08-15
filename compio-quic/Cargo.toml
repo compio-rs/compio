@@ -43,16 +43,27 @@ windows-sys = { workspace = true, features = ["Win32_Networking_WinSock"] }
 libc = { workspace = true }
 
 [dev-dependencies]
+compio-dispatcher = { workspace = true }
 compio-driver = { workspace = true }
 compio-macros = { workspace = true }
+compio-runtime = { workspace = true, features = ["criterion"] }
+
 rand = "0.8.5"
 rcgen = "0.13.1"
 socket2 = { workspace = true, features = ["all"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
+criterion = { workspace = true, features = ["async_tokio"] }
+quinn = "0.11.3"
+tokio = { workspace = true, features = ["rt", "macros"] }
+
 [features]
-default = ["webpki-roots"]
-futures-io = ["futures-util/io"]
+default = []
+io-compat = ["futures-util/io"]
 platform-verifier = ["dep:rustls-platform-verifier"]
 native-certs = ["dep:rustls-native-certs"]
 webpki-roots = ["dep:webpki-roots"]
+
+[[bench]]
+name = "quic"
+harness = false

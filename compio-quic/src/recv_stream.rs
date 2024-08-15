@@ -8,7 +8,7 @@ use std::{
 use bytes::{BufMut, Bytes};
 use compio_buf::{BufResult, IoBufMut};
 use compio_io::AsyncRead;
-use futures_util::future::poll_fn;
+use futures_util::{future::poll_fn, ready};
 use quinn_proto::{Chunk, Chunks, ClosedStream, ConnectionError, ReadableError, StreamId, VarInt};
 use thiserror::Error;
 
@@ -261,6 +261,23 @@ impl RecvStream {
         poll_fn(|cx| self.poll_read(cx, &mut buf)).await
     }
 
+    /// Read an exact number of bytes contiguously from the stream.
+    ///
+    /// See [`read()`] for details. This operation is *not* cancel-safe.
+    ///
+    /// [`read()`]: RecvStream::read
+    pub async fn read_exact(&mut self, mut buf: impl BufMut) -> Result<(), ReadExactError> {
+        poll_fn(|cx| {
+            while buf.has_remaining_mut() {
+                if ready!(self.poll_read(cx, &mut buf))?.is_none() {
+                    return Poll::Ready(Err(ReadExactError::FinishedEarly(buf.remaining_mut())));
+                }
+            }
+            Poll::Ready(Ok(()))
+        })
+        .await
+    }
+
     /// Read the next segment of data.
     ///
     /// Yields `None` if the stream was finished. Otherwise, yields a segment of
@@ -470,6 +487,17 @@ impl From<ReadError> for io::Error {
     }
 }
 
+/// Errors that arise from reading from a stream.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum ReadExactError {
+    /// The stream finished before all bytes were read
+    #[error("stream finished early (expected {0} bytes more)")]
+    FinishedEarly(usize),
+    /// A read error occurred
+    #[error(transparent)]
+    ReadError(#[from] ReadError),
+}
+
 impl AsyncRead for RecvStream {
     async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
         let res = self
@@ -485,7 +513,7 @@ impl AsyncRead for RecvStream {
     }
 }
 
-#[cfg(feature = "futures-io")]
+#[cfg(feature = "io-compat")]
 impl futures_util::AsyncRead for RecvStream {
     fn poll_read(
         self: std::pin::Pin<&mut Self>,

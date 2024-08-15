@@ -341,7 +341,7 @@ impl AsyncWrite for SendStream {
     }
 }
 
-#[cfg(feature = "futures-io")]
+#[cfg(feature = "io-compat")]
 impl futures_util::AsyncWrite for SendStream {
     fn poll_write(
         self: std::pin::Pin<&mut Self>,

@@ -25,7 +25,7 @@ pub use builder::{ClientBuilder, ServerBuilder};
 pub use connection::{Connecting, Connection};
 pub use endpoint::Endpoint;
 pub use incoming::{Incoming, IncomingFuture};
-pub use recv_stream::{ReadError, RecvStream};
+pub use recv_stream::{ReadError, ReadExactError, RecvStream};
 pub use send_stream::{SendStream, WriteError};
 
 pub(crate) use crate::{

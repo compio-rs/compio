@@ -7,11 +7,12 @@ async fn main() {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
-    let cert_chain = vec![cert.cert.into()];
-    let key_der = cert.key_pair.serialize_der().try_into().unwrap();
+    let rcgen::CertifiedKey { cert, key_pair } =
+        rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+    let cert = cert.der().clone();
+    let key_der = key_pair.serialize_der().try_into().unwrap();
 
-    let endpoint = ServerBuilder::new_with_single_cert(cert_chain, key_der)
+    let endpoint = ServerBuilder::new_with_single_cert(vec![cert], key_der)
         .unwrap()
         .with_key_log()
         .bind("[::1]:4433")

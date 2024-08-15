@@ -41,6 +41,9 @@ pub use compio_macros::*;
 #[cfg(feature = "process")]
 #[doc(inline)]
 pub use compio_process as process;
+#[cfg(feature = "quic")]
+#[doc(inline)]
+pub use compio_quic as quic;
 #[cfg(feature = "signal")]
 #[doc(inline)]
 pub use compio_signal as signal;

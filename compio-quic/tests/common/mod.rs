@@ -12,15 +12,16 @@ pub fn subscribe() -> DefaultGuard {
 }
 
 pub fn config_pair(transport: Option<TransportConfig>) -> (ServerConfig, ClientConfig) {
-    let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
-    let cert_chain = vec![cert.cert.der().clone()];
-    let key_der = cert.key_pair.serialize_der().try_into().unwrap();
+    let rcgen::CertifiedKey { cert, key_pair } =
+        rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+    let cert = cert.der().clone();
+    let key_der = key_pair.serialize_der().try_into().unwrap();
 
-    let mut server_config = ServerBuilder::new_with_single_cert(cert_chain, key_der)
+    let mut server_config = ServerBuilder::new_with_single_cert(vec![cert.clone()], key_der)
         .unwrap()
         .build();
     let mut client_config = ClientBuilder::new_with_empty_roots()
-        .with_custom_certificate(cert.cert.into())
+        .with_custom_certificate(cert)
         .unwrap()
         .with_no_crls()
         .build();

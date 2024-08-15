@@ -37,6 +37,7 @@ compio-dispatcher = { path = "./compio-dispatcher", version = "0.3.0" }
 compio-log = { path = "./compio-log", version = "0.1.0" }
 compio-tls = { path = "./compio-tls", version = "0.2.0", default-features = false }
 compio-process = { path = "./compio-process", version = "0.1.0" }
+compio-quic = { path = "./compio-quic", version = "0.1.0" }
 
 flume = "0.11.0"
 cfg-if = "1.0.0"

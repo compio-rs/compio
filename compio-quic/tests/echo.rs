@@ -1,4 +1,7 @@
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::{
+    array,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+};
 
 use bytes::Bytes;
 use compio_quic::{Endpoint, RecvStream, SendStream, TransportConfig};
@@ -20,17 +23,7 @@ struct EchoArgs {
 async fn echo((mut send, mut recv): (SendStream, RecvStream)) {
     loop {
         // These are 32 buffers, for reading approximately 32kB at once
-        #[rustfmt::skip]
-        let mut bufs = [
-            Bytes::new(), Bytes::new(), Bytes::new(), Bytes::new(),
-            Bytes::new(), Bytes::new(), Bytes::new(), Bytes::new(),
-            Bytes::new(), Bytes::new(), Bytes::new(), Bytes::new(),
-            Bytes::new(), Bytes::new(), Bytes::new(), Bytes::new(),
-            Bytes::new(), Bytes::new(), Bytes::new(), Bytes::new(),
-            Bytes::new(), Bytes::new(), Bytes::new(), Bytes::new(),
-            Bytes::new(), Bytes::new(), Bytes::new(), Bytes::new(),
-            Bytes::new(), Bytes::new(), Bytes::new(), Bytes::new(),
-        ];
+        let mut bufs: [Bytes; 32] = array::from_fn(|_| Bytes::new());
 
         match recv.read_chunks(&mut bufs).await.unwrap() {
             Some(n) => {
