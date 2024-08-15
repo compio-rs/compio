@@ -59,9 +59,7 @@ async fn close_endpoint() {
             None,
         )
         .unwrap();
-
-    compio_runtime::spawn(endpoint.close(0u32.into(), "")).detach();
-
+    endpoint.close(0u32.into(), b"");
     match conn.await {
         Err(ConnectionError::LocallyClosed) => (),
         Err(e) => panic!("unexpected error: {e}"),

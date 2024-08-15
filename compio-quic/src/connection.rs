@@ -28,7 +28,7 @@ use crate::{wait_event, RecvStream, SendStream, Socket};
 
 #[derive(Debug)]
 pub(crate) enum ConnectionEvent {
-    Close(VarInt, String),
+    Close(VarInt, Bytes),
     Proto(quinn_proto::ConnectionEvent),
 }
 
@@ -165,9 +165,9 @@ impl ConnectionInner {
         }
     }
 
-    fn close(&self, error_code: VarInt, reason: String) {
+    fn close(&self, error_code: VarInt, reason: Bytes) {
         let mut state = self.state();
-        state.conn.close(Instant::now(), error_code, reason.into());
+        state.conn.close(Instant::now(), error_code, reason);
         state.terminate(ConnectionError::LocallyClosed);
         state.wake();
         self.notify_events();
@@ -497,7 +497,7 @@ impl Future for Connecting {
 impl Drop for Connecting {
     fn drop(&mut self) {
         if Arc::strong_count(&self.0) == 2 {
-            self.0.close(0u32.into(), String::new())
+            self.0.close(0u32.into(), Bytes::new())
         }
     }
 }
@@ -575,23 +575,41 @@ impl Connection {
     /// Close the connection immediately.
     ///
     /// Pending operations will fail immediately with
-    /// [`ConnectionError::LocallyClosed`]. Delivery of data on unfinished
-    /// streams is not guaranteed, so the application must call this only when
-    /// all important communications have been completed, e.g. by calling
-    /// [`finish`] on outstanding [`SendStream`]s and waiting for the resulting
-    /// futures to complete.
+    /// [`ConnectionError::LocallyClosed`]. No more data is sent to the peer
+    /// and the peer may drop buffered data upon receiving
+    /// the CONNECTION_CLOSE frame.
     ///
     /// `error_code` and `reason` are not interpreted, and are provided directly
     /// to the peer.
     ///
     /// `reason` will be truncated to fit in a single packet with overhead; to
-    /// improve odds that it is preserved in full, it should be kept under 1KiB.
+    /// improve odds that it is preserved in full, it should be kept under
+    /// 1KiB.
     ///
-    /// [`ConnectionError::LocallyClosed`]: quinn_proto::ConnectionError::LocallyClosed
-    /// [`finish`]: crate::SendStream::finish
-    /// [`SendStream`]: crate::SendStream
-    pub fn close(&self, error_code: VarInt, reason: &str) {
-        self.0.close(error_code, reason.to_string());
+    /// # Gracefully closing a connection
+    ///
+    /// Only the peer last receiving application data can be certain that all
+    /// data is delivered. The only reliable action it can then take is to
+    /// close the connection, potentially with a custom error code. The
+    /// delivery of the final CONNECTION_CLOSE frame is very likely if both
+    /// endpoints stay online long enough, and [`Endpoint::shutdown()`] can
+    /// be used to provide sufficient time. Otherwise, the remote peer will
+    /// time out the connection, provided that the idle timeout is not
+    /// disabled.
+    ///
+    /// The sending side can not guarantee all stream data is delivered to the
+    /// remote application. It only knows the data is delivered to the QUIC
+    /// stack of the remote endpoint. Once the local side sends a
+    /// CONNECTION_CLOSE frame in response to calling [`close()`] the remote
+    /// endpoint may drop any data it received but is as yet undelivered to
+    /// the application, including data that was acknowledged as received to
+    /// the local endpoint.
+    ///
+    /// [`ConnectionError::LocallyClosed`]: ConnectionError::LocallyClosed
+    /// [`Endpoint::shutdown()`]: crate::Endpoint::shutdown
+    /// [`close()`]: Connection::close
+    pub fn close(&self, error_code: VarInt, reason: &[u8]) {
+        self.0.close(error_code, Bytes::copy_from_slice(reason));
     }
 
     /// Wait for the connection to be closed for any reason.
@@ -601,7 +619,14 @@ impl Connection {
             let _ = worker.await;
         }
 
-        self.0.state().error.clone().unwrap()
+        self.0.try_state().unwrap_err()
+    }
+
+    /// If the connection is closed, the reason why.
+    ///
+    /// Returns `None` if the connection is still open.
+    pub fn close_reason(&self) -> Option<ConnectionError> {
+        self.0.try_state().err()
     }
 
     /// Receive an application datagram.
@@ -807,7 +832,7 @@ impl Eq for Connection {}
 impl Drop for Connection {
     fn drop(&mut self) {
         if Arc::strong_count(&self.0) == 2 {
-            self.close(0u32.into(), "")
+            self.close(0u32.into(), b"")
         }
     }
 }

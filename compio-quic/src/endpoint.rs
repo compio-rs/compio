@@ -9,6 +9,7 @@ use std::{
     time::Instant,
 };
 
+use bytes::Bytes;
 use compio_buf::BufResult;
 use compio_log::{error, Instrument};
 use compio_net::{ToSocketAddrsAsync, UdpSocket};
@@ -33,7 +34,8 @@ struct EndpointState {
     endpoint: quinn_proto::Endpoint,
     worker: Option<JoinHandle<()>>,
     connections: HashMap<ConnectionHandle, Sender<ConnectionEvent>>,
-    close: Option<(VarInt, String)>,
+    close: Option<(VarInt, Bytes)>,
+    exit_on_idle: bool,
     incoming: VecDeque<quinn_proto::Incoming>,
 }
 
@@ -149,6 +151,7 @@ impl EndpointInner {
                 worker: None,
                 connections: HashMap::new(),
                 close: None,
+                exit_on_idle: false,
                 incoming: VecDeque::new(),
             }),
             socket,
@@ -270,8 +273,8 @@ impl EndpointInner {
                     match res {
                         Ok(meta) => self.state.lock().unwrap().handle_data(meta, &recv_buf, respond_fn),
                         Err(e) if e.kind() == io::ErrorKind::ConnectionReset => {}
-                        // #[cfg(windows)]
-                        // Err(e) if e.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_PORT_UNREACHABLE as _) => {}
+                        #[cfg(windows)]
+                        Err(e) if e.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_PORT_UNREACHABLE as _) => {}
                         Err(e) => break Err(e),
                     }
                     recv_fut.set(self.socket.recv(recv_buf).fuse());
@@ -282,7 +285,7 @@ impl EndpointInner {
             }
 
             let state = self.state.lock().unwrap();
-            if state.close.is_some() && state.is_idle() {
+            if state.exit_on_idle && state.is_idle() {
                 break Ok(());
             }
             if !state.incoming.is_empty() {
@@ -415,6 +418,25 @@ impl Endpoint {
         self.inner.state.lock().unwrap().endpoint.open_connections()
     }
 
+    /// Close all of this endpoint's connections immediately and cease accepting
+    /// new connections.
+    ///
+    /// See [`Connection::close()`] for details.
+    ///
+    /// [`Connection::close()`]: crate::Connection::close
+    pub fn close(&self, error_code: VarInt, reason: &[u8]) {
+        let reason = Bytes::copy_from_slice(reason);
+        let mut state = self.inner.state.lock().unwrap();
+        if state.close.is_some() {
+            return;
+        }
+        state.close = Some((error_code, reason.clone()));
+        for conn in state.connections.values() {
+            let _ = conn.send(ConnectionEvent::Close(error_code, reason.clone()));
+        }
+        self.inner.incoming.notify(usize::MAX.additional());
+    }
+
     // Modified from [`SharedFd::try_unwrap_inner`], see notes there.
     unsafe fn try_unwrap_inner(this: &ManuallyDrop<Self>) -> Option<EndpointInner> {
         let ptr = ManuallyDrop::new(std::ptr::read(&this.inner));
@@ -427,36 +449,29 @@ impl Endpoint {
         }
     }
 
-    /// Shutdown the endpoint and close the underlying socket.
+    /// Gracefully shutdown the endpoint.
     ///
-    /// This will close all connections and the underlying socket. Note that it
-    /// will wait for all connections and all clones of the endpoint (and any
-    /// clone of the underlying socket) to be dropped before closing the socket.
+    /// Wait for all connections on the endpoint to be cleanly shut down and
+    /// close the underlying socket. This will wait for all clones of the
+    /// endpoint, all connections and all streams to be dropped before
+    /// closing the socket.
     ///
-    /// If the endpoint has already been closed or is closing, this will return
-    /// immediately with `Ok(())`.
+    /// Waiting for this condition before exiting ensures that a good-faith
+    /// effort is made to notify peers of recent connection closes, whereas
+    /// exiting immediately could force them to wait out the idle timeout
+    /// period.
     ///
-    /// See [`Connection::close()`](crate::Connection::close) for details.
-    pub async fn close(self, error_code: VarInt, reason: &str) -> io::Result<()> {
-        let reason = reason.to_string();
-
-        {
-            let mut state = self.inner.state.lock().unwrap();
-            if state.close.is_some() {
-                return Ok(());
-            }
-            state.close = Some((error_code, reason.clone()));
-        }
-
-        for conn in self.inner.state.lock().unwrap().connections.values() {
-            let _ = conn.send(ConnectionEvent::Close(error_code, reason.clone()));
-        }
-
+    /// Does not proactively close existing connections. Consider calling
+    /// [`close()`] if that is desired.
+    ///
+    /// [`close()`]: Endpoint::close
+    pub async fn shutdown(self) -> io::Result<()> {
         let worker = self.inner.state.lock().unwrap().worker.take();
         if let Some(worker) = worker {
             if self.inner.state.lock().unwrap().is_idle() {
                 worker.cancel().await;
             } else {
+                self.inner.state.lock().unwrap().exit_on_idle = true;
                 let _ = worker.await;
             }
         }
@@ -484,7 +499,11 @@ impl Endpoint {
 impl Drop for Endpoint {
     fn drop(&mut self) {
         if Arc::strong_count(&self.inner) == 2 {
+            // There are actually two cases:
+            // 1. User is trying to shutdown the socket.
             self.inner.done.wake();
+            // 2. User dropped the endpoint but the worker is still running.
+            self.inner.state.lock().unwrap().exit_on_idle = true;
         }
     }
 }

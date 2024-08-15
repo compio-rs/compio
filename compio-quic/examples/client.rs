@@ -36,8 +36,8 @@ async fn main() {
         recv.read_to_end(&mut buf).await.unwrap();
         println!("{:?}", buf);
 
-        conn.close(1u32.into(), "bye");
+        conn.close(1u32.into(), b"bye");
     }
 
-    endpoint.close(0u32.into(), "").await.unwrap();
+    endpoint.shutdown().await.unwrap();
 }

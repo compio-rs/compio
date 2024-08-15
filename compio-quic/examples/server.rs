@@ -34,5 +34,6 @@ async fn main() {
         conn.closed().await;
     }
 
-    endpoint.close(0u32.into(), "").await.unwrap();
+    endpoint.close(0u32.into(), b"");
+    endpoint.shutdown().await.unwrap();
 }
