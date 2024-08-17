@@ -124,7 +124,6 @@ impl<T, B> FromResidual<BufResult<Infallible, B>> for BufResult<T, B> {
     fn from_residual(residual: BufResult<Infallible, B>) -> Self {
         match residual {
             BufResult(Err(e), b) => BufResult(Err(e), b),
-            _ => unreachable!(),
         }
     }
 }
@@ -144,7 +143,6 @@ impl<T, B> FromResidual<BufResult<Infallible, B>> for io::Result<T> {
     fn from_residual(residual: BufResult<Infallible, B>) -> Self {
         match residual {
             BufResult(Err(e), _) => Err(e),
-            _ => unreachable!(),
         }
     }
 }
