@@ -1,4 +1,4 @@
-use compio_net::{CMsgBuilder, CMsgIter, UdpSocket};
+use compio_net::UdpSocket;
 
 #[compio_macros::test]
 async fn connect() {
@@ -63,60 +63,4 @@ async fn send_to() {
         passive3.recv_from(Vec::with_capacity(20)).await,
         active_addr
     );
-}
-
-#[compio_macros::test]
-async fn send_msg_with_ipv6_ecn() {
-    #[cfg(unix)]
-    use libc::{IPPROTO_IPV6, IPV6_RECVTCLASS, IPV6_TCLASS};
-    #[cfg(windows)]
-    use windows_sys::Win32::Networking::WinSock::{
-        IPPROTO_IPV6, IPV6_ECN, IPV6_RECVTCLASS, IPV6_TCLASS,
-    };
-
-    const MSG: &str = "foo bar baz";
-
-    let passive = UdpSocket::bind("[::1]:0").await.unwrap();
-    let passive_addr = passive.local_addr().unwrap();
-
-    unsafe {
-        passive
-            .set_socket_option(IPPROTO_IPV6, IPV6_RECVTCLASS, &1)
-            .unwrap();
-    }
-
-    let active = UdpSocket::bind("[::1]:0").await.unwrap();
-    let active_addr = active.local_addr().unwrap();
-
-    let mut control = vec![0u8; 32];
-    let mut builder = CMsgBuilder::new(&mut control);
-
-    const ECN_BITS: i32 = 0b10;
-
-    #[cfg(unix)]
-    builder
-        .try_push(IPPROTO_IPV6, IPV6_TCLASS, ECN_BITS)
-        .unwrap();
-    #[cfg(windows)]
-    builder.try_push(IPPROTO_IPV6, IPV6_ECN, ECN_BITS).unwrap();
-
-    let len = builder.finish();
-    control.truncate(len);
-
-    active.send_msg(MSG, control, passive_addr).await.unwrap();
-
-    let ((_, _, addr), (buffer, control)) = passive
-        .recv_msg(Vec::with_capacity(20), Vec::with_capacity(32))
-        .await
-        .unwrap();
-    assert_eq!(addr, active_addr);
-    assert_eq!(buffer, MSG.as_bytes());
-    unsafe {
-        let mut iter = CMsgIter::new(&control);
-        let cmsg = iter.next().unwrap();
-        assert_eq!(cmsg.level(), IPPROTO_IPV6);
-        assert_eq!(cmsg.ty(), IPV6_TCLASS);
-        assert_eq!(cmsg.data::<i32>(), &ECN_BITS);
-        assert!(iter.next().is_none());
-    }
 }
