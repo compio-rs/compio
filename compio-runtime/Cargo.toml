@@ -57,7 +57,7 @@ libc = { workspace = true }
 windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
-core-foundation = "0.9.4"
+core-foundation = "0.10.0"
 block2 = "0.5.0"
 
 [target.'cfg(not(any(windows, target_os = "macos")))'.dev-dependencies]
