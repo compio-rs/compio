@@ -79,9 +79,11 @@ async fn send_msg_with_ipv6_ecn() {
     let passive = UdpSocket::bind("[::1]:0").await.unwrap();
     let passive_addr = passive.local_addr().unwrap();
 
-    passive
-        .set_socket_option(IPPROTO_IPV6, IPV6_RECVTCLASS, &1)
-        .unwrap();
+    unsafe {
+        passive
+            .set_socket_option(IPPROTO_IPV6, IPV6_RECVTCLASS, &1)
+            .unwrap();
+    }
 
     let active = UdpSocket::bind("[::1]:0").await.unwrap();
     let active_addr = active.local_addr().unwrap();

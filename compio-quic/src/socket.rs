@@ -118,13 +118,17 @@ impl<const N: usize> DerefMut for Ancillary<N> {
 #[cfg(target_os = "linux")]
 #[inline]
 fn max_gso_segments(socket: &UdpSocket) -> io::Result<usize> {
-    socket.get_socket_option::<libc::c_int>(libc::SOL_UDP, libc::UDP_SEGMENT)?;
+    unsafe {
+        socket.get_socket_option::<libc::c_int>(libc::SOL_UDP, libc::UDP_SEGMENT)?;
+    }
     Ok(64)
 }
 #[cfg(windows)]
 #[inline]
 fn max_gso_segments(socket: &UdpSocket) -> io::Result<usize> {
-    socket.get_socket_option::<i32>(WinSock::IPPROTO_UDP, WinSock::UDP_SEND_MSG_SIZE)?;
+    unsafe {
+        socket.get_socket_option::<i32>(WinSock::IPPROTO_UDP, WinSock::UDP_SEND_MSG_SIZE)?;
+    }
     Ok(512)
 }
 #[cfg(not(any(target_os = "linux", windows)))]
@@ -135,7 +139,7 @@ fn max_gso_segments(_socket: &UdpSocket) -> io::Result<usize> {
 
 macro_rules! set_socket_option {
     ($socket:expr, $level:expr, $name:expr, $value:expr $(,)?) => {
-        match $socket.set_socket_option($level, $name, $value) {
+        match unsafe { $socket.set_socket_option($level, $name, $value) } {
             Ok(()) => true,
             Err(e) => {
                 compio_log::warn!(
@@ -178,11 +182,16 @@ impl Socket {
     pub fn new(socket: UdpSocket) -> io::Result<Self> {
         let is_ipv6 = socket.local_addr()?.is_ipv6();
         #[cfg(unix)]
-        let only_v6 = is_ipv6
-            && socket.get_socket_option::<libc::c_int>(libc::IPPROTO_IPV6, libc::IPV6_V6ONLY)? != 0;
+        let only_v6 = unsafe {
+            is_ipv6
+                && socket.get_socket_option::<libc::c_int>(libc::IPPROTO_IPV6, libc::IPV6_V6ONLY)?
+                    != 0
+        };
         #[cfg(windows)]
-        let only_v6 = is_ipv6
-            && socket.get_socket_option::<u8>(WinSock::IPPROTO_IPV6, WinSock::IPV6_V6ONLY)? != 0;
+        let only_v6 = unsafe {
+            is_ipv6
+                && socket.get_socket_option::<u8>(WinSock::IPPROTO_IPV6, WinSock::IPV6_V6ONLY)? != 0
+        };
         let is_ipv4 = socket.local_addr()?.is_ipv4() || !only_v6;
 
         // ECN
