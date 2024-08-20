@@ -244,22 +244,22 @@ async fn two_datagram_readers() {
         async { endpoint.wait_incoming().await.unwrap().await.unwrap() },
     );
 
-    let ev = event_listener::Event::new();
+    let (tx, rx) = flume::bounded::<()>(1);
 
     let (a, b, _) = join!(
         async {
             let x = conn1.recv_datagram().await.unwrap();
-            ev.notify(1);
+            let _ = tx.try_send(());
             x
         },
         async {
             let x = conn1.recv_datagram().await.unwrap();
-            ev.notify(1);
+            let _ = tx.try_send(());
             x
         },
         async {
             conn2.send_datagram(MSG1.into()).unwrap();
-            ev.listen().await;
+            rx.recv_async().await.unwrap();
             conn2.send_datagram_wait(MSG2.into()).await.unwrap();
         }
     );

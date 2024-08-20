@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     io,
     net::{IpAddr, SocketAddr},
     pin::{pin, Pin},
@@ -12,7 +12,6 @@ use bytes::Bytes;
 use compio_buf::BufResult;
 use compio_log::{error, Instrument};
 use compio_runtime::JoinHandle;
-use event_listener::{Event, IntoNotification};
 use flume::{Receiver, Sender};
 use futures_util::{
     future::{self, Fuse, FusedFuture, LocalBoxFuture},
@@ -24,7 +23,7 @@ use quinn_proto::{
 };
 use thiserror::Error;
 
-use crate::{wait_event, RecvStream, SendStream, Socket};
+use crate::{RecvStream, SendStream, Socket};
 
 #[derive(Debug)]
 pub(crate) enum ConnectionEvent {
@@ -41,6 +40,10 @@ pub(crate) struct ConnectionState {
     poll_waker: Option<Waker>,
     on_connected: Option<Waker>,
     on_handshake_data: Option<Waker>,
+    datagram_received: VecDeque<Waker>,
+    datagrams_unblocked: VecDeque<Waker>,
+    stream_opened: [VecDeque<Waker>; 2],
+    stream_available: [VecDeque<Waker>; 2],
     pub(crate) writable: HashMap<StreamId, Waker>,
     pub(crate) readable: HashMap<StreamId, Waker>,
     pub(crate) stopped: HashMap<StreamId, Waker>,
@@ -56,6 +59,14 @@ impl ConnectionState {
         }
         if let Some(waker) = self.on_connected.take() {
             waker.wake()
+        }
+        self.datagram_received.drain(..).for_each(Waker::wake);
+        self.datagrams_unblocked.drain(..).for_each(Waker::wake);
+        for e in &mut self.stream_opened {
+            e.drain(..).for_each(Waker::wake);
+        }
+        for e in &mut self.stream_available {
+            e.drain(..).for_each(Waker::wake);
         }
         wake_all_streams(&mut self.writable);
         wake_all_streams(&mut self.readable);
@@ -101,10 +112,6 @@ pub(crate) struct ConnectionInner {
     socket: Socket,
     events_tx: Sender<(ConnectionHandle, EndpointEvent)>,
     events_rx: Receiver<ConnectionEvent>,
-    datagram_received: Event,
-    datagrams_unblocked: Event,
-    stream_opened: [Event; 2],
-    stream_available: [Event; 2],
 }
 
 impl ConnectionInner {
@@ -124,6 +131,10 @@ impl ConnectionInner {
                 poll_waker: None,
                 on_connected: None,
                 on_handshake_data: None,
+                datagram_received: VecDeque::new(),
+                datagrams_unblocked: VecDeque::new(),
+                stream_opened: [VecDeque::new(), VecDeque::new()],
+                stream_available: [VecDeque::new(), VecDeque::new()],
                 writable: HashMap::new(),
                 readable: HashMap::new(),
                 stopped: HashMap::new(),
@@ -132,10 +143,6 @@ impl ConnectionInner {
             socket,
             events_tx,
             events_rx,
-            datagram_received: Event::new(),
-            datagrams_unblocked: Event::new(),
-            stream_opened: [Event::new(), Event::new()],
-            stream_available: [Event::new(), Event::new()],
         }
     }
 
@@ -154,23 +161,11 @@ impl ConnectionInner {
         }
     }
 
-    fn notify_events(&self) {
-        self.datagram_received.notify(usize::MAX.additional());
-        self.datagrams_unblocked.notify(usize::MAX.additional());
-        for e in &self.stream_opened {
-            e.notify(usize::MAX.additional());
-        }
-        for e in &self.stream_available {
-            e.notify(usize::MAX.additional());
-        }
-    }
-
     fn close(&self, error_code: VarInt, reason: Bytes) {
         let mut state = self.state();
         state.conn.close(Instant::now(), error_code, reason);
         state.terminate(ConnectionError::LocallyClosed);
         state.wake();
-        self.notify_events();
     }
 
     async fn run(&self) -> io::Result<()> {
@@ -257,10 +252,7 @@ impl ConnectionInner {
                             wake_all_streams(&mut state.stopped);
                         }
                     }
-                    ConnectionLost { reason } => {
-                        state.terminate(reason);
-                        self.notify_events();
-                    }
+                    ConnectionLost { reason } => state.terminate(reason),
                     Stream(StreamEvent::Readable { id }) => wake_stream(id, &mut state.readable),
                     Stream(StreamEvent::Writable { id }) => wake_stream(id, &mut state.writable),
                     Stream(StreamEvent::Finished { id }) => wake_stream(id, &mut state.stopped),
@@ -268,18 +260,14 @@ impl ConnectionInner {
                         wake_stream(id, &mut state.stopped);
                         wake_stream(id, &mut state.writable);
                     }
-                    Stream(StreamEvent::Available { dir }) => {
-                        self.stream_available[dir as usize].notify(usize::MAX.additional());
-                    }
-                    Stream(StreamEvent::Opened { dir }) => {
-                        self.stream_opened[dir as usize].notify(usize::MAX.additional());
-                    }
-                    DatagramReceived => {
-                        self.datagram_received.notify(usize::MAX.additional());
-                    }
-                    DatagramsUnblocked => {
-                        self.datagrams_unblocked.notify(usize::MAX.additional());
-                    }
+                    Stream(StreamEvent::Available { dir }) => state.stream_available[dir as usize]
+                        .drain(..)
+                        .for_each(Waker::wake),
+                    Stream(StreamEvent::Opened { dir }) => state.stream_opened[dir as usize]
+                        .drain(..)
+                        .for_each(Waker::wake),
+                    DatagramReceived => state.datagram_received.drain(..).for_each(Waker::wake),
+                    DatagramsUnblocked => state.datagrams_unblocked.drain(..).for_each(Waker::wake),
                 }
             }
 
@@ -629,28 +617,42 @@ impl Connection {
         self.0.try_state().err()
     }
 
+    fn poll_recv_datagram(&self, cx: &mut Context) -> Poll<Result<Bytes, ConnectionError>> {
+        let mut state = self.0.try_state()?;
+        if let Some(bytes) = state.conn.datagrams().recv() {
+            return Poll::Ready(Ok(bytes));
+        }
+        state.datagram_received.push_back(cx.waker().clone());
+        Poll::Pending
+    }
+
     /// Receive an application datagram.
     pub async fn recv_datagram(&self) -> Result<Bytes, ConnectionError> {
-        let bytes = wait_event!(
-            self.0.datagram_received,
-            if let Some(bytes) = self.0.try_state()?.conn.datagrams().recv() {
-                break bytes;
-            }
-        );
-        Ok(bytes)
+        future::poll_fn(|cx| self.poll_recv_datagram(cx)).await
     }
 
     fn try_send_datagram(
         &self,
+        cx: Option<&mut Context>,
         data: Bytes,
-        drop: bool,
     ) -> Result<(), Result<SendDatagramError, Bytes>> {
+        use quinn_proto::SendDatagramError::*;
         let mut state = self.0.try_state().map_err(|e| Ok(e.into()))?;
         state
             .conn
             .datagrams()
-            .send(data, drop)
-            .map_err(TryInto::try_into)?;
+            .send(data, cx.is_none())
+            .map_err(|err| match err {
+                UnsupportedByPeer => Ok(SendDatagramError::UnsupportedByPeer),
+                Disabled => Ok(SendDatagramError::Disabled),
+                TooLarge => Ok(SendDatagramError::TooLarge),
+                Blocked(data) => {
+                    state
+                        .datagrams_unblocked
+                        .push_back(cx.unwrap().waker().clone());
+                    Err(data)
+                }
+            })?;
         state.wake();
         Ok(())
     }
@@ -661,7 +663,7 @@ impl Connection {
     /// delivered out of order, and `data` must both fit inside a single
     /// QUIC packet and be smaller than the maximum dictated by the peer.
     pub fn send_datagram(&self, data: Bytes) -> Result<(), SendDatagramError> {
-        self.try_send_datagram(data, true).map_err(Result::unwrap)
+        self.try_send_datagram(None, data).map_err(Result::unwrap)
     }
 
     /// Transmit `data` as an unreliable, unordered application datagram.
@@ -675,38 +677,36 @@ impl Connection {
     /// [`send_datagram()`]: Connection::send_datagram
     pub async fn send_datagram_wait(&self, data: Bytes) -> Result<(), SendDatagramError> {
         let mut data = Some(data);
-        wait_event!(
-            self.0.datagrams_unblocked,
-            match self.try_send_datagram(data.take().unwrap(), false) {
-                Ok(res) => break Ok(res),
-                Err(Ok(e)) => break Err(e),
-                Err(Err(b)) => data.replace(b),
-            }
+        future::poll_fn(
+            |cx| match self.try_send_datagram(Some(cx), data.take().unwrap()) {
+                Ok(()) => Poll::Ready(Ok(())),
+                Err(Ok(e)) => Poll::Ready(Err(e)),
+                Err(Err(b)) => {
+                    data.replace(b);
+                    Poll::Pending
+                }
+            },
         )
+        .await
     }
 
-    fn try_open_stream(&self, dir: Dir) -> Result<(StreamId, bool), OpenStreamError> {
+    fn poll_open_stream(
+        &self,
+        cx: Option<&mut Context>,
+        dir: Dir,
+    ) -> Poll<Result<(StreamId, bool), ConnectionError>> {
         let mut state = self.0.try_state()?;
-        let stream = state
-            .conn
-            .streams()
-            .open(dir)
-            .ok_or(OpenStreamError::StreamsExhausted)?;
-        Ok((
-            stream,
-            state.conn.side().is_client() && state.conn.is_handshaking(),
-        ))
-    }
-
-    async fn open_stream(&self, dir: Dir) -> Result<(StreamId, bool), ConnectionError> {
-        wait_event!(
-            self.0.stream_available[dir as usize],
-            match self.try_open_stream(dir) {
-                Ok(res) => break Ok(res),
-                Err(OpenStreamError::StreamsExhausted) => {}
-                Err(OpenStreamError::ConnectionLost(e)) => break Err(e),
+        if let Some(stream) = state.conn.streams().open(dir) {
+            Poll::Ready(Ok((
+                stream,
+                state.conn.side().is_client() && state.conn.is_handshaking(),
+            )))
+        } else {
+            if let Some(cx) = cx {
+                state.stream_available[dir as usize].push_back(cx.waker().clone());
             }
-        )
+            Poll::Pending
+        }
     }
 
     /// Initiate a new outgoing unidirectional stream.
@@ -715,8 +715,11 @@ impl Connection {
     /// won't be notified that a stream has been opened until the stream is
     /// actually used.
     pub fn open_uni(&self) -> Result<SendStream, OpenStreamError> {
-        let (stream, is_0rtt) = self.try_open_stream(Dir::Uni)?;
-        Ok(SendStream::new(self.0.clone(), stream, is_0rtt))
+        if let Poll::Ready((stream, is_0rtt)) = self.poll_open_stream(None, Dir::Uni)? {
+            Ok(SendStream::new(self.0.clone(), stream, is_0rtt))
+        } else {
+            Err(OpenStreamError::StreamsExhausted)
+        }
     }
 
     /// Initiate a new outgoing unidirectional stream.
@@ -728,7 +731,8 @@ impl Connection {
     ///
     /// [`open_uni()`]: crate::Connection::open_uni
     pub async fn open_uni_wait(&self) -> Result<SendStream, ConnectionError> {
-        let (stream, is_0rtt) = self.open_stream(Dir::Uni).await?;
+        let (stream, is_0rtt) =
+            future::poll_fn(|cx| self.poll_open_stream(Some(cx), Dir::Uni)).await?;
         Ok(SendStream::new(self.0.clone(), stream, is_0rtt))
     }
 
@@ -738,11 +742,14 @@ impl Connection {
     /// won't be notified that a stream has been opened until the stream is
     /// actually used.
     pub fn open_bi(&self) -> Result<(SendStream, RecvStream), OpenStreamError> {
-        let (stream, is_0rtt) = self.try_open_stream(Dir::Bi)?;
-        Ok((
-            SendStream::new(self.0.clone(), stream, is_0rtt),
-            RecvStream::new(self.0.clone(), stream, is_0rtt),
-        ))
+        if let Poll::Ready((stream, is_0rtt)) = self.poll_open_stream(None, Dir::Bi)? {
+            Ok((
+                SendStream::new(self.0.clone(), stream, is_0rtt),
+                RecvStream::new(self.0.clone(), stream, is_0rtt),
+            ))
+        } else {
+            Err(OpenStreamError::StreamsExhausted)
+        }
     }
 
     /// Initiate a new outgoing bidirectional stream.
@@ -754,28 +761,32 @@ impl Connection {
     ///
     /// [`open_bi()`]: crate::Connection::open_bi
     pub async fn open_bi_wait(&self) -> Result<(SendStream, RecvStream), ConnectionError> {
-        let (stream, is_0rtt) = self.open_stream(Dir::Bi).await?;
+        let (stream, is_0rtt) =
+            future::poll_fn(|cx| self.poll_open_stream(Some(cx), Dir::Bi)).await?;
         Ok((
             SendStream::new(self.0.clone(), stream, is_0rtt),
             RecvStream::new(self.0.clone(), stream, is_0rtt),
         ))
     }
 
-    async fn accept_stream(&self, dir: Dir) -> Result<(StreamId, bool), ConnectionError> {
-        wait_event!(self.0.stream_opened[dir as usize], {
-            let mut state = self.0.state();
-            if let Some(stream) = state.conn.streams().accept(dir) {
-                state.wake();
-                break Ok((stream, state.conn.is_handshaking()));
-            } else if let Some(error) = &state.error {
-                break Err(error.clone());
-            }
-        })
+    fn poll_accept_stream(
+        &self,
+        cx: &mut Context,
+        dir: Dir,
+    ) -> Poll<Result<(StreamId, bool), ConnectionError>> {
+        let mut state = self.0.try_state()?;
+        if let Some(stream) = state.conn.streams().accept(dir) {
+            state.wake();
+            Poll::Ready(Ok((stream, state.conn.is_handshaking())))
+        } else {
+            state.stream_opened[dir as usize].push_back(cx.waker().clone());
+            Poll::Pending
+        }
     }
 
     /// Accept the next incoming uni-directional stream
     pub async fn accept_uni(&self) -> Result<RecvStream, ConnectionError> {
-        let (stream, is_0rtt) = self.accept_stream(Dir::Uni).await?;
+        let (stream, is_0rtt) = future::poll_fn(|cx| self.poll_accept_stream(cx, Dir::Uni)).await?;
         Ok(RecvStream::new(self.0.clone(), stream, is_0rtt))
     }
 
@@ -791,7 +802,7 @@ impl Connection {
     /// [`SendStream`]: crate::SendStream
     /// [`RecvStream`]: crate::RecvStream
     pub async fn accept_bi(&self) -> Result<(SendStream, RecvStream), ConnectionError> {
-        let (stream, is_0rtt) = self.accept_stream(Dir::Bi).await?;
+        let (stream, is_0rtt) = future::poll_fn(|cx| self.poll_accept_stream(cx, Dir::Bi)).await?;
         Ok((
             SendStream::new(self.0.clone(), stream, is_0rtt),
             RecvStream::new(self.0.clone(), stream, is_0rtt),
@@ -896,20 +907,6 @@ pub enum SendDatagramError {
     /// The connection was lost
     #[error("connection lost")]
     ConnectionLost(#[from] ConnectionError),
-}
-
-impl TryFrom<quinn_proto::SendDatagramError> for SendDatagramError {
-    type Error = Bytes;
-
-    fn try_from(value: quinn_proto::SendDatagramError) -> Result<Self, Self::Error> {
-        use quinn_proto::SendDatagramError::*;
-        match value {
-            UnsupportedByPeer => Ok(SendDatagramError::UnsupportedByPeer),
-            Disabled => Ok(SendDatagramError::Disabled),
-            TooLarge => Ok(SendDatagramError::TooLarge),
-            Blocked(data) => Err(data),
-        }
-    }
 }
 
 /// Errors that can arise when trying to open a stream

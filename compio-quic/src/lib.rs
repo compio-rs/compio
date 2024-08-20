@@ -60,15 +60,3 @@ impl From<StoppedError> for std::io::Error {
         Self::new(kind, x)
     }
 }
-
-macro_rules! wait_event {
-    ($event:expr, $break:expr) => {
-        loop {
-            $break;
-            event_listener::listener!($event => listener);
-            $break;
-            listener.await;
-        }
-    };
-}
-pub(crate) use wait_event;

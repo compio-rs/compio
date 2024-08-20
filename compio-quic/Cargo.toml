@@ -30,7 +30,6 @@ webpki-roots = { version = "0.26.3", optional = true }
 
 # Utils
 bytes = "1.7.1"
-event-listener = "5.3.1"
 flume = { workspace = true }
 futures-util = { workspace = true }
 thiserror = "1.0.63"

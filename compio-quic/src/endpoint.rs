@@ -5,7 +5,7 @@ use std::{
     net::{SocketAddr, SocketAddrV6},
     pin::pin,
     sync::{Arc, Mutex},
-    task::Poll,
+    task::{Context, Poll, Waker},
     time::Instant,
 };
 
@@ -14,7 +14,6 @@ use compio_buf::BufResult;
 use compio_log::{error, Instrument};
 use compio_net::{ToSocketAddrsAsync, UdpSocket};
 use compio_runtime::JoinHandle;
-use event_listener::{Event, IntoNotification};
 use flume::{unbounded, Receiver, Sender};
 use futures_util::{
     future::{self},
@@ -27,7 +26,7 @@ use quinn_proto::{
     EndpointEvent, ServerConfig, Transmit, VarInt,
 };
 
-use crate::{wait_event, Connecting, ConnectionEvent, Incoming, RecvMeta, Socket};
+use crate::{Connecting, ConnectionEvent, Incoming, RecvMeta, Socket};
 
 #[derive(Debug)]
 struct EndpointState {
@@ -37,6 +36,7 @@ struct EndpointState {
     close: Option<(VarInt, Bytes)>,
     exit_on_idle: bool,
     incoming: VecDeque<quinn_proto::Incoming>,
+    incoming_wakers: VecDeque<Waker>,
 }
 
 impl EndpointState {
@@ -93,11 +93,16 @@ impl EndpointState {
         self.connections.is_empty()
     }
 
-    fn try_get_incoming(&mut self) -> Option<Option<quinn_proto::Incoming>> {
+    fn poll_incoming(&mut self, cx: &mut Context) -> Poll<Option<quinn_proto::Incoming>> {
         if self.close.is_none() {
-            Some(self.incoming.pop_front())
+            if let Some(incoming) = self.incoming.pop_front() {
+                Poll::Ready(Some(incoming))
+            } else {
+                self.incoming_wakers.push_back(cx.waker().clone());
+                Poll::Pending
+            }
         } else {
-            None
+            Poll::Ready(None)
         }
     }
 
@@ -127,7 +132,6 @@ pub(crate) struct EndpointInner {
     ipv6: bool,
     events: ChannelPair<(ConnectionHandle, EndpointEvent)>,
     done: AtomicWaker,
-    incoming: Event,
 }
 
 impl EndpointInner {
@@ -153,12 +157,12 @@ impl EndpointInner {
                 close: None,
                 exit_on_idle: false,
                 incoming: VecDeque::new(),
+                incoming_wakers: VecDeque::new(),
             }),
             socket,
             ipv6,
             events: unbounded(),
             done: AtomicWaker::new(),
-            incoming: Event::new(),
         })
     }
 
@@ -284,12 +288,13 @@ impl EndpointInner {
                 },
             }
 
-            let state = self.state.lock().unwrap();
+            let mut state = self.state.lock().unwrap();
             if state.exit_on_idle && state.is_idle() {
                 break Ok(());
             }
             if !state.incoming.is_empty() {
-                self.incoming.notify(state.incoming.len().additional());
+                let n = state.incoming.len().min(state.incoming_wakers.len());
+                state.incoming_wakers.drain(..n).for_each(Waker::wake);
             }
         }
     }
@@ -385,13 +390,9 @@ impl Endpoint {
     /// intermediate `Connecting` future which can be used to e.g. send 0.5-RTT
     /// data.
     pub async fn wait_incoming(&self) -> Option<Incoming> {
-        let incoming = wait_event!(
-            self.inner.incoming,
-            if let Some(res) = self.inner.state.lock().unwrap().try_get_incoming()? {
-                break res;
-            }
-        );
-        Some(Incoming::new(incoming, self.inner.clone()))
+        future::poll_fn(|cx| self.inner.state.lock().unwrap().poll_incoming(cx))
+            .await
+            .map(|incoming| Incoming::new(incoming, self.inner.clone()))
     }
 
     /// Replace the server configuration, affecting new incoming connections
@@ -434,7 +435,7 @@ impl Endpoint {
         for conn in state.connections.values() {
             let _ = conn.send(ConnectionEvent::Close(error_code, reason.clone()));
         }
-        self.inner.incoming.notify(usize::MAX.additional());
+        state.incoming_wakers.drain(..).for_each(Waker::wake);
     }
 
     // Modified from [`SharedFd::try_unwrap_inner`], see notes there.
