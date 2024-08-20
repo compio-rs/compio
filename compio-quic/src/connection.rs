@@ -18,8 +18,8 @@ use futures_util::{
     select, stream, Future, FutureExt, StreamExt,
 };
 use quinn_proto::{
-    congestion::Controller, crypto::rustls::HandshakeData, ConnectionError, ConnectionHandle,
-    ConnectionStats, Dir, EndpointEvent, StreamEvent, StreamId, VarInt,
+    congestion::Controller, crypto::rustls::HandshakeData, ConnectionHandle, ConnectionStats, Dir,
+    EndpointEvent, StreamEvent, StreamId, VarInt,
 };
 use thiserror::Error;
 
@@ -252,7 +252,7 @@ impl ConnectionInner {
                             wake_all_streams(&mut state.stopped);
                         }
                     }
-                    ConnectionLost { reason } => state.terminate(reason),
+                    ConnectionLost { reason } => state.terminate(reason.into()),
                     Stream(StreamEvent::Readable { id }) => wake_stream(id, &mut state.readable),
                     Stream(StreamEvent::Writable { id }) => wake_stream(id, &mut state.writable),
                     Stream(StreamEvent::Finished { id }) => wake_stream(id, &mut state.stopped),
@@ -889,6 +889,63 @@ impl FusedFuture for Timer {
     }
 }
 
+/// Reasons why a connection might be lost
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum ConnectionError {
+    /// The peer doesn't implement any supported version
+    #[error("peer doesn't implement any supported version")]
+    VersionMismatch,
+    /// The peer violated the QUIC specification as understood by this
+    /// implementation
+    #[error(transparent)]
+    TransportError(#[from] quinn_proto::TransportError),
+    /// The peer's QUIC stack aborted the connection automatically
+    #[error("aborted by peer: {0}")]
+    ConnectionClosed(quinn_proto::ConnectionClose),
+    /// The peer closed the connection
+    #[error("closed by peer: {0}")]
+    ApplicationClosed(quinn_proto::ApplicationClose),
+    /// The peer is unable to continue processing this connection, usually due
+    /// to having restarted
+    #[error("reset by peer")]
+    Reset,
+    /// Communication with the peer has lapsed for longer than the negotiated
+    /// idle timeout
+    ///
+    /// If neither side is sending keep-alives, a connection will time out after
+    /// a long enough idle period even if the peer is still reachable. See
+    /// also [`TransportConfig::max_idle_timeout()`]
+    /// and [`TransportConfig::keep_alive_interval()`].
+    #[error("timed out")]
+    TimedOut,
+    /// The local application closed the connection
+    #[error("closed")]
+    LocallyClosed,
+    /// The connection could not be created because not enough of the CID space
+    /// is available
+    ///
+    /// Try using longer connection IDs.
+    #[error("CIDs exhausted")]
+    CidsExhausted,
+}
+
+impl From<quinn_proto::ConnectionError> for ConnectionError {
+    fn from(value: quinn_proto::ConnectionError) -> Self {
+        use quinn_proto::ConnectionError::*;
+
+        match value {
+            VersionMismatch => ConnectionError::VersionMismatch,
+            TransportError(e) => ConnectionError::TransportError(e),
+            ConnectionClosed(e) => ConnectionError::ConnectionClosed(e),
+            ApplicationClosed(e) => ConnectionError::ApplicationClosed(e),
+            Reset => ConnectionError::Reset,
+            TimedOut => ConnectionError::TimedOut,
+            LocallyClosed => ConnectionError::LocallyClosed,
+            CidsExhausted => ConnectionError::CidsExhausted,
+        }
+    }
+}
+
 /// Errors that can arise when sending a datagram
 #[derive(Debug, Error, Clone, Eq, PartialEq)]
 pub enum SendDatagramError {
@@ -918,4 +975,256 @@ pub enum OpenStreamError {
     // The streams in the given direction are currently exhausted
     #[error("streams exhausted")]
     StreamsExhausted,
+}
+
+#[cfg(feature = "h3")]
+pub(crate) mod h3_impl {
+    use bytes::{Buf, BytesMut};
+    use futures_util::ready;
+    use h3::{
+        error::Code,
+        ext::Datagram,
+        quic::{self, Error, RecvDatagramExt, SendDatagramExt, WriteBuf},
+    };
+
+    use super::*;
+    use crate::{send_stream::h3_impl::SendStream, ReadError, WriteError};
+
+    impl Error for ConnectionError {
+        fn is_timeout(&self) -> bool {
+            matches!(self, ConnectionError::TimedOut)
+        }
+
+        fn err_code(&self) -> Option<u64> {
+            match &self {
+                ConnectionError::ApplicationClosed(quinn_proto::ApplicationClose {
+                    error_code,
+                    ..
+                }) => Some(error_code.into_inner()),
+                _ => None,
+            }
+        }
+    }
+
+    impl Error for SendDatagramError {
+        fn is_timeout(&self) -> bool {
+            false
+        }
+
+        fn err_code(&self) -> Option<u64> {
+            match self {
+                SendDatagramError::ConnectionLost(ConnectionError::ApplicationClosed(
+                    quinn_proto::ApplicationClose { error_code, .. },
+                )) => Some(error_code.into_inner()),
+                _ => None,
+            }
+        }
+    }
+
+    impl<B> SendDatagramExt<B> for Connection
+    where
+        B: Buf,
+    {
+        type Error = SendDatagramError;
+
+        fn send_datagram(&mut self, data: Datagram<B>) -> Result<(), Self::Error> {
+            let mut buf = BytesMut::new();
+            data.encode(&mut buf);
+            Connection::send_datagram(self, buf.freeze())
+        }
+    }
+
+    impl RecvDatagramExt for Connection {
+        type Buf = Bytes;
+        type Error = ConnectionError;
+
+        fn poll_accept_datagram(
+            &mut self,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<Option<Self::Buf>, Self::Error>> {
+            Poll::Ready(Ok(Some(ready!(self.poll_recv_datagram(cx))?)))
+        }
+    }
+
+    /// Bidirectional stream.
+    pub struct BidiStream<B> {
+        send: SendStream<B>,
+        recv: RecvStream,
+    }
+
+    impl<B> BidiStream<B> {
+        pub(crate) fn new(conn: Arc<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
+            Self {
+                send: SendStream::new(conn.clone(), stream, is_0rtt),
+                recv: RecvStream::new(conn, stream, is_0rtt),
+            }
+        }
+    }
+
+    impl<B> quic::BidiStream<B> for BidiStream<B>
+    where
+        B: Buf,
+    {
+        type RecvStream = RecvStream;
+        type SendStream = SendStream<B>;
+
+        fn split(self) -> (Self::SendStream, Self::RecvStream) {
+            (self.send, self.recv)
+        }
+    }
+
+    impl<B> quic::RecvStream for BidiStream<B>
+    where
+        B: Buf,
+    {
+        type Buf = Bytes;
+        type Error = ReadError;
+
+        fn poll_data(
+            &mut self,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<Option<Self::Buf>, Self::Error>> {
+            self.recv.poll_data(cx)
+        }
+
+        fn stop_sending(&mut self, error_code: u64) {
+            self.recv.stop_sending(error_code)
+        }
+
+        fn recv_id(&self) -> quic::StreamId {
+            self.recv.recv_id()
+        }
+    }
+
+    impl<B> quic::SendStream<B> for BidiStream<B>
+    where
+        B: Buf,
+    {
+        type Error = WriteError;
+
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.send.poll_ready(cx)
+        }
+
+        fn send_data<T: Into<WriteBuf<B>>>(&mut self, data: T) -> Result<(), Self::Error> {
+            self.send.send_data(data)
+        }
+
+        fn poll_finish(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.send.poll_finish(cx)
+        }
+
+        fn reset(&mut self, reset_code: u64) {
+            self.send.reset(reset_code)
+        }
+
+        fn send_id(&self) -> quic::StreamId {
+            self.send.send_id()
+        }
+    }
+
+    impl<B> quic::SendStreamUnframed<B> for BidiStream<B>
+    where
+        B: Buf,
+    {
+        fn poll_send<D: Buf>(
+            &mut self,
+            cx: &mut Context<'_>,
+            buf: &mut D,
+        ) -> Poll<Result<usize, Self::Error>> {
+            self.send.poll_send(cx, buf)
+        }
+    }
+
+    /// Stream opener.
+    #[derive(Clone)]
+    pub struct OpenStreams(Connection);
+
+    impl<B> quic::OpenStreams<B> for OpenStreams
+    where
+        B: Buf,
+    {
+        type BidiStream = BidiStream<B>;
+        type OpenError = ConnectionError;
+        type SendStream = SendStream<B>;
+
+        fn poll_open_bidi(
+            &mut self,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<Self::BidiStream, Self::OpenError>> {
+            let (stream, is_0rtt) = ready!(self.0.poll_open_stream(Some(cx), Dir::Bi))?;
+            Poll::Ready(Ok(BidiStream::new(self.0.0.clone(), stream, is_0rtt)))
+        }
+
+        fn poll_open_send(
+            &mut self,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<Self::SendStream, Self::OpenError>> {
+            let (stream, is_0rtt) = ready!(self.0.poll_open_stream(Some(cx), Dir::Uni))?;
+            Poll::Ready(Ok(SendStream::new(self.0.0.clone(), stream, is_0rtt)))
+        }
+
+        fn close(&mut self, code: Code, reason: &[u8]) {
+            self.0
+                .close(code.value().try_into().expect("invalid code"), reason)
+        }
+    }
+
+    impl<B> quic::OpenStreams<B> for Connection
+    where
+        B: Buf,
+    {
+        type BidiStream = BidiStream<B>;
+        type OpenError = ConnectionError;
+        type SendStream = SendStream<B>;
+
+        fn poll_open_bidi(
+            &mut self,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<Self::BidiStream, Self::OpenError>> {
+            let (stream, is_0rtt) = ready!(self.poll_open_stream(Some(cx), Dir::Bi))?;
+            Poll::Ready(Ok(BidiStream::new(self.0.clone(), stream, is_0rtt)))
+        }
+
+        fn poll_open_send(
+            &mut self,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<Self::SendStream, Self::OpenError>> {
+            let (stream, is_0rtt) = ready!(self.poll_open_stream(Some(cx), Dir::Uni))?;
+            Poll::Ready(Ok(SendStream::new(self.0.clone(), stream, is_0rtt)))
+        }
+
+        fn close(&mut self, code: Code, reason: &[u8]) {
+            Connection::close(self, code.value().try_into().expect("invalid code"), reason)
+        }
+    }
+
+    impl<B> quic::Connection<B> for Connection
+    where
+        B: Buf,
+    {
+        type AcceptError = ConnectionError;
+        type OpenStreams = OpenStreams;
+        type RecvStream = RecvStream;
+
+        fn poll_accept_recv(
+            &mut self,
+            cx: &mut std::task::Context<'_>,
+        ) -> Poll<Result<Option<Self::RecvStream>, Self::AcceptError>> {
+            let (stream, is_0rtt) = ready!(self.poll_accept_stream(cx, Dir::Uni))?;
+            Poll::Ready(Ok(Some(RecvStream::new(self.0.clone(), stream, is_0rtt))))
+        }
+
+        fn poll_accept_bidi(
+            &mut self,
+            cx: &mut std::task::Context<'_>,
+        ) -> Poll<Result<Option<Self::BidiStream>, Self::AcceptError>> {
+            let (stream, is_0rtt) = ready!(self.poll_accept_stream(cx, Dir::Bi))?;
+            Poll::Ready(Ok(Some(BidiStream::new(self.0.clone(), stream, is_0rtt))))
+        }
+
+        fn opener(&self) -> Self::OpenStreams {
+            OpenStreams(self.clone())
+        }
+    }
 }

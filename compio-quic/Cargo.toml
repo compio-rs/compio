@@ -27,6 +27,7 @@ rustls = { workspace = true, features = ["ring"] }
 rustls-platform-verifier = { version = "0.3.3", optional = true }
 rustls-native-certs = { version = "0.7.1", optional = true }
 webpki-roots = { version = "0.26.3", optional = true }
+h3 = { version = "0.0.6", optional = true }
 
 # Utils
 bytes = "1.7.1"
@@ -42,8 +43,10 @@ windows-sys = { workspace = true, features = ["Win32_Networking_WinSock"] }
 libc = { workspace = true }
 
 [dev-dependencies]
+compio-buf = { workspace = true, features = ["bytes"] }
 compio-dispatcher = { workspace = true }
 compio-driver = { workspace = true }
+compio-fs = { workspace = true }
 compio-macros = { workspace = true }
 compio-runtime = { workspace = true, features = ["criterion"] }
 
@@ -55,13 +58,23 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 criterion = { workspace = true, features = ["async_tokio"] }
 quinn = "0.11.3"
 tokio = { workspace = true, features = ["rt", "macros"] }
+http = "1.1.0"
 
 [features]
-default = []
+default = ["h3"]
 io-compat = ["futures-util/io"]
 platform-verifier = ["dep:rustls-platform-verifier"]
 native-certs = ["dep:rustls-native-certs"]
 webpki-roots = ["dep:webpki-roots"]
+h3 = ["dep:h3"]
+
+[[example]]
+name = "http3-client"
+required-features = ["h3"]
+
+[[example]]
+name = "http3-server"
+required-features = ["h3"]
 
 [[bench]]
 name = "quic"

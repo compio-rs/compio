@@ -9,10 +9,10 @@ use bytes::{BufMut, Bytes};
 use compio_buf::{BufResult, IoBufMut};
 use compio_io::AsyncRead;
 use futures_util::{future::poll_fn, ready};
-use quinn_proto::{Chunk, Chunks, ClosedStream, ConnectionError, ReadableError, StreamId, VarInt};
+use quinn_proto::{Chunk, Chunks, ClosedStream, ReadableError, StreamId, VarInt};
 use thiserror::Error;
 
-use crate::{ConnectionInner, StoppedError};
+use crate::{ConnectionError, ConnectionInner, StoppedError};
 
 /// A stream that can only be used to receive data
 ///
@@ -524,5 +524,52 @@ impl futures_util::AsyncRead for RecvStream {
             .poll_read(cx, buf)
             .map_ok(Option::unwrap_or_default)
             .map_err(Into::into)
+    }
+}
+
+#[cfg(feature = "h3")]
+pub(crate) mod h3_impl {
+    use h3::quic::{self, Error};
+
+    use super::*;
+
+    impl Error for ReadError {
+        fn is_timeout(&self) -> bool {
+            matches!(self, Self::ConnectionLost(ConnectionError::TimedOut))
+        }
+
+        fn err_code(&self) -> Option<u64> {
+            match self {
+                Self::ConnectionLost(ConnectionError::ApplicationClosed(
+                    quinn_proto::ApplicationClose { error_code, .. },
+                ))
+                | Self::Reset(error_code) => Some(error_code.into_inner()),
+                _ => None,
+            }
+        }
+    }
+
+    impl quic::RecvStream for RecvStream {
+        type Buf = Bytes;
+        type Error = ReadError;
+
+        fn poll_data(
+            &mut self,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<Option<Self::Buf>, Self::Error>> {
+            self.execute_poll_read(cx, true, |chunks| match chunks.next(usize::MAX) {
+                Ok(Some(chunk)) => ReadStatus::Readable(chunk.bytes),
+                res => (None, res.err()).into(),
+            })
+        }
+
+        fn stop_sending(&mut self, error_code: u64) {
+            self.stop(error_code.try_into().expect("invalid error_code"))
+                .ok();
+        }
+
+        fn recv_id(&self) -> quic::StreamId {
+            self.stream.0.try_into().unwrap()
+        }
     }
 }

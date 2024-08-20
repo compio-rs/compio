@@ -9,8 +9,8 @@
 
 pub use quinn_proto::{
     congestion, crypto, AckFrequencyConfig, ApplicationClose, Chunk, ClientConfig, ClosedStream,
-    ConfigError, ConnectError, ConnectionClose, ConnectionError, ConnectionStats, EndpointConfig,
-    IdleTimeout, MtuDiscoveryConfig, ServerConfig, StreamId, Transmit, TransportConfig, VarInt,
+    ConfigError, ConnectError, ConnectionClose, ConnectionStats, EndpointConfig, IdleTimeout,
+    MtuDiscoveryConfig, ServerConfig, StreamId, Transmit, TransportConfig, VarInt,
 };
 
 mod builder;
@@ -22,7 +22,7 @@ mod send_stream;
 mod socket;
 
 pub use builder::{ClientBuilder, ServerBuilder};
-pub use connection::{Connecting, Connection};
+pub use connection::{Connecting, Connection, ConnectionError};
 pub use endpoint::Endpoint;
 pub use incoming::{Incoming, IncomingFuture};
 pub use recv_stream::{ReadError, ReadExactError, RecvStream};
@@ -59,4 +59,15 @@ impl From<StoppedError> for std::io::Error {
         };
         Self::new(kind, x)
     }
+}
+
+/// HTTP/3 support via [`h3`].
+#[cfg(feature = "h3")]
+pub mod h3 {
+    pub use h3::*;
+
+    pub use crate::{
+        connection::h3_impl::{BidiStream, OpenStreams},
+        send_stream::h3_impl::SendStream,
+    };
 }

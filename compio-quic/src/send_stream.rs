@@ -8,10 +8,10 @@ use bytes::Bytes;
 use compio_buf::{BufResult, IoBuf};
 use compio_io::AsyncWrite;
 use futures_util::{future::poll_fn, ready};
-use quinn_proto::{ClosedStream, ConnectionError, FinishError, StreamId, VarInt, Written};
+use quinn_proto::{ClosedStream, FinishError, StreamId, VarInt, Written};
 use thiserror::Error;
 
-use crate::{ConnectionInner, StoppedError};
+use crate::{ConnectionError, ConnectionInner, StoppedError};
 
 /// A stream that can only be used to send data.
 ///
@@ -290,6 +290,11 @@ pub enum WriteError {
     /// [`Connecting::into_0rtt()`]: crate::Connecting::into_0rtt()
     #[error("0-RTT rejected")]
     ZeroRttRejected,
+    /// Error when the stream is not ready, because it is still sending
+    /// data from a previous call
+    #[cfg(feature = "h3")]
+    #[error("stream not ready")]
+    NotReady,
 }
 
 impl TryFrom<quinn_proto::WriteError> for WriteError {
@@ -320,6 +325,8 @@ impl From<WriteError> for io::Error {
         let kind = match x {
             Stopped(_) | ZeroRttRejected => io::ErrorKind::ConnectionReset,
             ConnectionLost(_) | ClosedStream => io::ErrorKind::NotConnected,
+            #[cfg(feature = "h3")]
+            NotReady => io::ErrorKind::Other,
         };
         Self::new(kind, x)
     }
@@ -360,5 +367,112 @@ impl futures_util::AsyncWrite for SendStream {
     fn poll_close(self: std::pin::Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         self.get_mut().finish()?;
         Poll::Ready(Ok(()))
+    }
+}
+
+#[cfg(feature = "h3")]
+pub(crate) mod h3_impl {
+    use bytes::Buf;
+    use h3::quic::{self, Error, WriteBuf};
+
+    use super::*;
+
+    impl Error for WriteError {
+        fn is_timeout(&self) -> bool {
+            matches!(self, Self::ConnectionLost(ConnectionError::TimedOut))
+        }
+
+        fn err_code(&self) -> Option<u64> {
+            match self {
+                Self::ConnectionLost(ConnectionError::ApplicationClosed(
+                    quinn_proto::ApplicationClose { error_code, .. },
+                ))
+                | Self::Stopped(error_code) => Some(error_code.into_inner()),
+                _ => None,
+            }
+        }
+    }
+
+    /// A wrapper around `SendStream` that implements `quic::SendStream` and
+    /// `quic::SendStreamUnframed`.
+    pub struct SendStream<B> {
+        inner: super::SendStream,
+        buf: Option<WriteBuf<B>>,
+    }
+
+    impl<B> SendStream<B> {
+        pub(crate) fn new(conn: Arc<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
+            Self {
+                inner: super::SendStream::new(conn, stream, is_0rtt),
+                buf: None,
+            }
+        }
+    }
+
+    impl<B> quic::SendStream<B> for SendStream<B>
+    where
+        B: Buf,
+    {
+        type Error = WriteError;
+
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            if let Some(data) = &mut self.buf {
+                while data.has_remaining() {
+                    let n = ready!(
+                        self.inner
+                            .execute_poll_write(cx, |mut stream| stream.write(data.chunk()))
+                    )?;
+                    data.advance(n);
+                }
+            }
+            self.buf = None;
+            Poll::Ready(Ok(()))
+        }
+
+        fn send_data<T: Into<WriteBuf<B>>>(&mut self, data: T) -> Result<(), Self::Error> {
+            if self.buf.is_some() {
+                return Err(WriteError::NotReady);
+            }
+            self.buf = Some(data.into());
+            Ok(())
+        }
+
+        fn poll_finish(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(self.inner.finish().map_err(|_| WriteError::ClosedStream))
+        }
+
+        fn reset(&mut self, reset_code: u64) {
+            self.inner
+                .reset(reset_code.try_into().unwrap_or(VarInt::MAX))
+                .ok();
+        }
+
+        fn send_id(&self) -> quic::StreamId {
+            self.inner.stream.0.try_into().unwrap()
+        }
+    }
+
+    impl<B> quic::SendStreamUnframed<B> for SendStream<B>
+    where
+        B: Buf,
+    {
+        fn poll_send<D: Buf>(
+            &mut self,
+            cx: &mut Context<'_>,
+            buf: &mut D,
+        ) -> Poll<Result<usize, Self::Error>> {
+            // This signifies a bug in implementation
+            debug_assert!(
+                self.buf.is_some(),
+                "poll_send called while send stream is not ready"
+            );
+
+            let n = ready!(
+                self.inner
+                    .execute_poll_write(cx, |mut stream| stream.write(buf.chunk()))
+            )?;
+            buf.advance(n);
+            Poll::Ready(Ok(n))
+        }
     }
 }

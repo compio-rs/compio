@@ -23,8 +23,6 @@ async fn main() {
                 None,
             )
             .unwrap()
-            .into_0rtt()
-            .unwrap_err()
             .await
             .unwrap();
 

@@ -7,10 +7,10 @@ use std::{
 };
 
 use futures_util::FutureExt;
-use quinn_proto::{ConnectionError, ServerConfig};
+use quinn_proto::ServerConfig;
 use thiserror::Error;
 
-use crate::{Connecting, Connection, EndpointInner};
+use crate::{Connecting, Connection, ConnectionError, EndpointInner};
 
 #[derive(Debug)]
 pub(crate) struct IncomingInner {
@@ -32,7 +32,7 @@ impl Incoming {
     /// occur).
     pub fn accept(mut self) -> Result<Connecting, ConnectionError> {
         let inner = self.0.take().unwrap();
-        inner.endpoint.accept(inner.incoming, None)
+        Ok(inner.endpoint.accept(inner.incoming, None)?)
     }
 
     /// Accept this incoming connection using a custom configuration.
@@ -45,7 +45,7 @@ impl Incoming {
         server_config: ServerConfig,
     ) -> Result<Connecting, ConnectionError> {
         let inner = self.0.take().unwrap();
-        inner.endpoint.accept(inner.incoming, Some(server_config))
+        Ok(inner.endpoint.accept(inner.incoming, Some(server_config))?)
     }
 
     /// Reject this incoming connection attempt.
