@@ -167,6 +167,11 @@ impl TcpStream {
         .await
     }
 
+    /// Creates new TcpStream from a std::net::TcpStream.
+    pub fn from_std(stream: std::net::TcpStream) -> io::Result<Self> {
+        Ok(Self { inner: Socket::from_socket2(Socket2::from(stream))? })
+    }
+
     /// Close the socket. If the returned future is dropped before polling, the
     /// socket won't be closed.
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
