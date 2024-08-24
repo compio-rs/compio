@@ -1,7 +1,13 @@
 #[cfg(feature = "once_cell_try")]
 use std::sync::OnceLock;
 use std::{
-    io, marker::PhantomPinned, net::Shutdown, os::windows::io::AsRawSocket, pin::Pin, ptr::{null, null_mut}, task::Poll
+    io,
+    marker::PhantomPinned,
+    net::Shutdown,
+    os::windows::io::AsRawSocket,
+    pin::Pin,
+    ptr::{null, null_mut},
+    task::Poll,
 };
 
 use aligned_array::{Aligned, A8};
@@ -829,13 +835,14 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
             })?;
 
         let this = self.get_unchecked_mut();
-        
+
         this.slices = this.buffer.io_slices_mut();
         this.msg.name = &mut this.addr as *mut _ as _;
         this.msg.namelen = std::mem::size_of::<SOCKADDR_STORAGE>() as _;
         this.msg.lpBuffers = this.slices.as_mut_ptr() as _;
         this.msg.dwBufferCount = this.slices.len() as _;
-        this.msg.Control = std::mem::transmute::<IoSliceMut, WSABUF>(this.control.as_io_slice_mut());
+        this.msg.Control =
+            std::mem::transmute::<IoSliceMut, WSABUF>(this.control.as_io_slice_mut());
 
         let mut received = 0;
         let res = recvmsg_fn(
@@ -908,7 +915,14 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsRawFd> OpCode for SendMsg<T, C, S> {
         this.msg.Control = std::mem::transmute::<IoSlice, WSABUF>(this.control.as_io_slice());
 
         let mut sent = 0;
-        let res = WSASendMsg(this.fd.as_raw_fd() as _, &this.msg, 0, &mut sent, optr, None);
+        let res = WSASendMsg(
+            this.fd.as_raw_fd() as _,
+            &this.msg,
+            0,
+            &mut sent,
+            optr,
+            None,
+        );
         winsock_result(res, sent)
     }
 

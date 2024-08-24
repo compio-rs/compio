@@ -61,7 +61,7 @@ tokio = { workspace = true, features = ["rt", "macros"] }
 http = "1.1.0"
 
 [features]
-default = ["h3"]
+default = []
 io-compat = ["futures-util/io"]
 platform-verifier = ["dep:rustls-platform-verifier"]
 native-certs = ["dep:rustls-native-certs"]
