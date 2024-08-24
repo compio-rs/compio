@@ -5,7 +5,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use criterion::{criterion_group, criterion_main, Bencher, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Bencher, BenchmarkId, Criterion, Throughput};
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use rand::{thread_rng, RngCore};
 
@@ -161,36 +161,32 @@ fn echo_quinn(b: &mut Bencher, content: &[u8], streams: usize) {
     });
 }
 
+const DATA_SIZES: &[usize] = &[1, 10, 1024, 1200, 1024 * 16, 1024 * 128];
+const STREAMS: &[usize] = &[1, 10, 100];
+
 fn echo(c: &mut Criterion) {
     let mut rng = thread_rng();
 
-    let mut large_data = [0u8; 1024 * 1024];
-    rng.fill_bytes(&mut large_data);
+    let mut data = vec![0u8; *DATA_SIZES.last().unwrap()];
+    rng.fill_bytes(&mut data);
 
-    let mut small_data = [0u8; 10];
-    rng.fill_bytes(&mut small_data);
+    let mut group = c.benchmark_group("echo");
+    for &size in DATA_SIZES {
+        let data = &data[..size];
+        for &streams in STREAMS {
+            group.throughput(Throughput::Bytes((data.len() * streams * 2) as u64));
 
-    let mut group = c.benchmark_group("echo-large-data-1-stream");
-    group.throughput(Throughput::Bytes((large_data.len() * 2) as u64));
-
-    group.bench_function("compio-quic", |b| echo_compio_quic(b, &large_data, 1));
-    group.bench_function("quinn", |b| echo_quinn(b, &large_data, 1));
-
-    group.finish();
-
-    let mut group = c.benchmark_group("echo-large-data-10-streams");
-    group.throughput(Throughput::Bytes((large_data.len() * 10 * 2) as u64));
-
-    group.bench_function("compio-quic", |b| echo_compio_quic(b, &large_data, 10));
-    group.bench_function("quinn", |b| echo_quinn(b, &large_data, 10));
-
-    group.finish();
-
-    let mut group = c.benchmark_group("echo-small-data-100-streams");
-    group.throughput(Throughput::Bytes((small_data.len() * 10 * 2) as u64));
-
-    group.bench_function("compio-quic", |b| echo_compio_quic(b, &small_data, 100));
-    group.bench_function("quinn", |b| echo_quinn(b, &small_data, 100));
-
+            group.bench_with_input(
+                BenchmarkId::new("compio-quic", format!("{}-streams-{}-bytes", streams, size)),
+                &(),
+                |b, _| echo_compio_quic(b, data, streams),
+            );
+            group.bench_with_input(
+                BenchmarkId::new("quinn", format!("{}-streams-{}-bytes", streams, size)),
+                &(),
+                |b, _| echo_quinn(b, data, streams),
+            );
+        }
+    }
     group.finish();
 }
