@@ -13,9 +13,10 @@ use pin_project_lite::pin_project;
 use crate::{buffer::Buffer, util::DEFAULT_BUF_SIZE};
 
 /// A wrapper for [`AsyncRead`](crate::AsyncRead) +
-/// [`AsyncWrite`](crate::AsyncWrite), providing sync traits impl. The sync
-/// methods will return [`io::ErrorKind::WouldBlock`] error if the inner buffer
-/// needs more data.
+/// [`AsyncWrite`](crate::AsyncWrite), providing sync traits impl.
+///
+/// The sync methods will return [`io::ErrorKind::WouldBlock`] error if the
+/// inner buffer needs more data.
 #[derive(Debug)]
 pub struct SyncStream<S> {
     stream: S,
