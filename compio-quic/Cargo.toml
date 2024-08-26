@@ -30,7 +30,7 @@ webpki-roots = { version = "0.26.3", optional = true }
 h3 = { version = "0.0.6", optional = true }
 
 # Utils
-bytes = "1.7.1"
+bytes = { workspace = true }
 flume = { workspace = true }
 futures-util = { workspace = true }
 thiserror = "1.0.63"
@@ -50,15 +50,14 @@ compio-fs = { workspace = true }
 compio-macros = { workspace = true }
 compio-runtime = { workspace = true, features = ["criterion"] }
 
-rand = "0.8.5"
+criterion = { workspace = true, features = ["async_tokio"] }
+http = "1.1.0"
+quinn = "0.11.3"
+rand = { workspace = true }
 rcgen = "0.13.1"
 socket2 = { workspace = true, features = ["all"] }
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-
-criterion = { workspace = true, features = ["async_tokio"] }
-quinn = "0.11.3"
 tokio = { workspace = true, features = ["rt", "macros"] }
-http = "1.1.0"
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [features]
 default = []
