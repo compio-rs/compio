@@ -321,7 +321,7 @@ impl UdpSocket {
     /// # Safety
     ///
     /// The caller must ensure `T` is the correct type for `level` and `name`.
-    pub unsafe fn get_socket_option<T>(&self, level: i32, name: i32) -> io::Result<T> {
+    pub unsafe fn get_socket_option<T: Copy>(&self, level: i32, name: i32) -> io::Result<T> {
         self.inner.get_socket_option(level, name)
     }
 
@@ -330,7 +330,12 @@ impl UdpSocket {
     /// # Safety
     ///
     /// The caller must ensure `T` is the correct type for `level` and `name`.
-    pub unsafe fn set_socket_option<T>(&self, level: i32, name: i32, value: &T) -> io::Result<()> {
+    pub unsafe fn set_socket_option<T: Copy>(
+        &self,
+        level: i32,
+        name: i32,
+        value: &T,
+    ) -> io::Result<()> {
         self.inner.set_socket_option(level, name, value)
     }
 }

@@ -324,7 +324,7 @@ impl Socket {
     }
 
     #[cfg(unix)]
-    pub unsafe fn get_socket_option<T>(&self, level: i32, name: i32) -> io::Result<T> {
+    pub unsafe fn get_socket_option<T: Copy>(&self, level: i32, name: i32) -> io::Result<T> {
         let mut value: MaybeUninit<T> = MaybeUninit::uninit();
         let mut len = size_of::<T>() as libc::socklen_t;
         syscall!(libc::getsockopt(
@@ -342,7 +342,7 @@ impl Socket {
     }
 
     #[cfg(windows)]
-    pub unsafe fn get_socket_option<T>(&self, level: i32, name: i32) -> io::Result<T> {
+    pub unsafe fn get_socket_option<T: Copy>(&self, level: i32, name: i32) -> io::Result<T> {
         let mut value: MaybeUninit<T> = MaybeUninit::uninit();
         let mut len = size_of::<T>() as i32;
         syscall!(
@@ -363,7 +363,12 @@ impl Socket {
     }
 
     #[cfg(unix)]
-    pub unsafe fn set_socket_option<T>(&self, level: i32, name: i32, value: &T) -> io::Result<()> {
+    pub unsafe fn set_socket_option<T: Copy>(
+        &self,
+        level: i32,
+        name: i32,
+        value: &T,
+    ) -> io::Result<()> {
         syscall!(libc::setsockopt(
             self.socket.as_raw_fd(),
             level,
@@ -375,7 +380,12 @@ impl Socket {
     }
 
     #[cfg(windows)]
-    pub unsafe fn set_socket_option<T>(&self, level: i32, name: i32, value: &T) -> io::Result<()> {
+    pub unsafe fn set_socket_option<T: Copy>(
+        &self,
+        level: i32,
+        name: i32,
+        value: &T,
+    ) -> io::Result<()> {
         syscall!(
             SOCKET,
             windows_sys::Win32::Networking::WinSock::setsockopt(
