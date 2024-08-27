@@ -94,7 +94,7 @@ impl SendStream {
     /// stream's state.
     pub fn reset(&mut self, error_code: VarInt) -> Result<(), ClosedStream> {
         let mut state = self.conn.state();
-        if self.is_0rtt && state.check_0rtt().is_err() {
+        if self.is_0rtt && !state.check_0rtt() {
             return Ok(());
         }
         state.conn.send_stream(self.stream).reset(error_code)?;
@@ -139,10 +139,8 @@ impl SendStream {
     pub async fn stopped(&mut self) -> Result<Option<VarInt>, StoppedError> {
         poll_fn(|cx| {
             let mut state = self.conn.state();
-            if self.is_0rtt {
-                state
-                    .check_0rtt()
-                    .map_err(|()| StoppedError::ZeroRttRejected)?;
+            if self.is_0rtt && !state.check_0rtt() {
+                return Poll::Ready(Err(StoppedError::ZeroRttRejected));
             }
             match state.conn.send_stream(self.stream).stopped() {
                 Err(_) => Poll::Ready(Ok(None)),
@@ -164,10 +162,8 @@ impl SendStream {
         F: FnOnce(quinn_proto::SendStream) -> Result<R, quinn_proto::WriteError>,
     {
         let mut state = self.conn.try_state()?;
-        if self.is_0rtt {
-            state
-                .check_0rtt()
-                .map_err(|()| WriteError::ZeroRttRejected)?;
+        if self.is_0rtt && !state.check_0rtt() {
+            return Poll::Ready(Err(WriteError::ZeroRttRejected));
         }
         match f(state.conn.send_stream(self.stream)) {
             Ok(r) => {
@@ -252,7 +248,7 @@ impl Drop for SendStream {
         state.stopped.remove(&self.stream);
         state.writable.remove(&self.stream);
 
-        if state.error.is_some() || (self.is_0rtt && state.check_0rtt().is_err()) {
+        if state.error.is_some() || (self.is_0rtt && !state.check_0rtt()) {
             return;
         }
         match state.conn.send_stream(self.stream).finish() {

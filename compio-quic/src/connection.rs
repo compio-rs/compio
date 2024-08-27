@@ -86,12 +86,8 @@ impl ConnectionState {
             .map(|data| data.downcast::<HandshakeData>().unwrap())
     }
 
-    pub(crate) fn check_0rtt(&self) -> Result<(), ()> {
-        if self.conn.side().is_server() || self.conn.is_handshaking() || self.conn.accepted_0rtt() {
-            Ok(())
-        } else {
-            Err(())
-        }
+    pub(crate) fn check_0rtt(&self) -> bool {
+        self.conn.side().is_server() || self.conn.is_handshaking() || self.conn.accepted_0rtt()
     }
 }
 

@@ -91,7 +91,7 @@ impl RecvStream {
     /// `ClosedStream` errors.
     pub fn stop(&mut self, error_code: VarInt) -> Result<(), ClosedStream> {
         let mut state = self.conn.state();
-        if self.is_0rtt && state.check_0rtt().is_err() {
+        if self.is_0rtt && !state.check_0rtt() {
             return Ok(());
         }
         state.conn.recv_stream(self.stream).stop(error_code)?;
@@ -115,7 +115,7 @@ impl RecvStream {
         poll_fn(|cx| {
             let mut state = self.conn.state();
 
-            if self.is_0rtt && state.check_0rtt().is_err() {
+            if self.is_0rtt && !state.check_0rtt() {
                 return Poll::Ready(Err(StoppedError::ZeroRttRejected));
             }
             if let Some(code) = self.reset {
@@ -169,10 +169,8 @@ impl RecvStream {
         }
 
         let mut state = self.conn.state();
-        if self.is_0rtt {
-            state
-                .check_0rtt()
-                .map_err(|()| ReadError::ZeroRttRejected)?;
+        if self.is_0rtt && !state.check_0rtt() {
+            return Poll::Ready(Err(ReadError::ZeroRttRejected));
         }
 
         // If we stored an error during a previous call, return it now. This can happen
@@ -395,7 +393,7 @@ impl Drop for RecvStream {
         // clean up any previously registered wakers
         state.readable.remove(&self.stream);
 
-        if state.error.is_some() || (self.is_0rtt && state.check_0rtt().is_err()) {
+        if state.error.is_some() || (self.is_0rtt && !state.check_0rtt()) {
             return;
         }
         if !self.all_data_read {
