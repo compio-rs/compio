@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
     io,
     net::{IpAddr, SocketAddr},
     pin::{pin, Pin},
@@ -21,6 +21,7 @@ use quinn_proto::{
     congestion::Controller, crypto::rustls::HandshakeData, ConnectionHandle, ConnectionStats, Dir,
     EndpointEvent, StreamEvent, StreamId, VarInt,
 };
+use rustc_hash::FxHashMap as HashMap;
 use thiserror::Error;
 
 use crate::{RecvStream, SendStream, Socket};
@@ -37,7 +38,7 @@ pub(crate) struct ConnectionState {
     pub(crate) error: Option<ConnectionError>,
     connected: bool,
     worker: Option<JoinHandle<()>>,
-    poll_waker: Option<Waker>,
+    poller: Option<Waker>,
     on_connected: Option<Waker>,
     on_handshake_data: Option<Waker>,
     datagram_received: VecDeque<Waker>,
@@ -73,8 +74,14 @@ impl ConnectionState {
         wake_all_streams(&mut self.stopped);
     }
 
+    fn close(&mut self, error_code: VarInt, reason: Bytes) {
+        self.conn.close(Instant::now(), error_code, reason);
+        self.terminate(ConnectionError::LocallyClosed);
+        self.wake();
+    }
+
     pub(crate) fn wake(&mut self) {
-        if let Some(waker) = self.poll_waker.take() {
+        if let Some(waker) = self.poller.take() {
             waker.wake()
         }
     }
@@ -110,6 +117,12 @@ pub(crate) struct ConnectionInner {
     events_rx: Receiver<ConnectionEvent>,
 }
 
+fn implicit_close(this: &Arc<ConnectionInner>) {
+    if Arc::strong_count(this) == 2 {
+        this.state().close(0u32.into(), Bytes::new())
+    }
+}
+
 impl ConnectionInner {
     fn new(
         handle: ConnectionHandle,
@@ -124,16 +137,16 @@ impl ConnectionInner {
                 connected: false,
                 error: None,
                 worker: None,
-                poll_waker: None,
+                poller: None,
                 on_connected: None,
                 on_handshake_data: None,
                 datagram_received: VecDeque::new(),
                 datagrams_unblocked: VecDeque::new(),
                 stream_opened: [VecDeque::new(), VecDeque::new()],
                 stream_available: [VecDeque::new(), VecDeque::new()],
-                writable: HashMap::new(),
-                readable: HashMap::new(),
-                stopped: HashMap::new(),
+                writable: HashMap::default(),
+                readable: HashMap::default(),
+                stopped: HashMap::default(),
             }),
             handle,
             socket,
@@ -157,25 +170,13 @@ impl ConnectionInner {
         }
     }
 
-    fn close(&self, error_code: VarInt, reason: Bytes) {
-        let mut state = self.state();
-        state.conn.close(Instant::now(), error_code, reason);
-        state.terminate(ConnectionError::LocallyClosed);
-        state.wake();
-    }
-
-    async fn run(&self) -> io::Result<()> {
-        let mut send_buf = Some(Vec::with_capacity(self.state().conn.current_mtu() as usize));
-        let mut transmit_fut = pin!(Fuse::terminated());
-
-        let mut timer = Timer::new();
-
+    async fn run(self: &Arc<Self>) -> io::Result<()> {
         let mut poller = stream::poll_fn(|cx| {
             let mut state = self.state();
-            let ready = state.poll_waker.is_none();
-            match &state.poll_waker {
+            let ready = state.poller.is_none();
+            match &state.poller {
                 Some(waker) if waker.will_wake(cx.waker()) => {}
-                _ => state.poll_waker = Some(cx.waker().clone()),
+                _ => state.poller = Some(cx.waker().clone()),
             };
             if ready {
                 Poll::Ready(Some(()))
@@ -185,36 +186,46 @@ impl ConnectionInner {
         })
         .fuse();
 
+        let mut timer = Timer::new();
+        let mut event_stream = self.events_rx.stream().ready_chunks(100);
+        let mut send_buf = Some(Vec::with_capacity(self.state().conn.current_mtu() as usize));
+        let mut transmit_fut = pin!(Fuse::terminated());
+
         loop {
-            select! {
-                _ = poller.next() => {}
+            let mut state = select! {
+                _ = poller.select_next_some() => self.state(),
                 _ = timer => {
-                    self.state().conn.handle_timeout(Instant::now());
                     timer.reset(None);
+                    let mut state = self.state();
+                    state.conn.handle_timeout(Instant::now());
+                    state
                 }
-                ev = self.events_rx.recv_async() => match ev {
-                    Ok(ConnectionEvent::Close(error_code, reason)) => self.close(error_code, reason),
-                    Ok(ConnectionEvent::Proto(ev)) => self.state().conn.handle_event(ev),
-                    Err(_) => unreachable!("endpoint dropped connection"),
+                events = event_stream.select_next_some() => {
+                    let mut state = self.state();
+                    for event in events {
+                        match event {
+                            ConnectionEvent::Close(error_code, reason) => state.close(error_code, reason),
+                            ConnectionEvent::Proto(event) => state.conn.handle_event(event),
+                        }
+                    }
+                    state
                 },
                 BufResult::<(), Vec<u8>>(res, mut buf) = transmit_fut => match res {
                     Ok(()) => {
                         buf.clear();
                         send_buf = Some(buf);
+                        self.state()
                     },
                     Err(e) => break Err(e),
                 },
-            }
-
-            let now = Instant::now();
-            let mut state = self.state();
+            };
 
             if let Some(mut buf) = send_buf.take() {
-                if let Some(transmit) =
-                    state
-                        .conn
-                        .poll_transmit(now, self.socket.max_gso_segments(), &mut buf)
-                {
+                if let Some(transmit) = state.conn.poll_transmit(
+                    Instant::now(),
+                    self.socket.max_gso_segments(),
+                    &mut buf,
+                ) {
                     transmit_fut.set(async move { self.socket.send(buf, &transmit).await }.fuse())
                 } else {
                     send_buf = Some(buf);
@@ -480,9 +491,7 @@ impl Future for Connecting {
 
 impl Drop for Connecting {
     fn drop(&mut self) {
-        if Arc::strong_count(&self.0) == 2 {
-            self.0.close(0u32.into(), Bytes::new())
-        }
+        implicit_close(&self.0)
     }
 }
 
@@ -593,7 +602,9 @@ impl Connection {
     /// [`Endpoint::shutdown()`]: crate::Endpoint::shutdown
     /// [`close()`]: Connection::close
     pub fn close(&self, error_code: VarInt, reason: &[u8]) {
-        self.0.close(error_code, Bytes::copy_from_slice(reason));
+        self.0
+            .state()
+            .close(error_code, Bytes::copy_from_slice(reason));
     }
 
     /// Wait for the connection to be closed for any reason.
@@ -838,9 +849,7 @@ impl Eq for Connection {}
 
 impl Drop for Connection {
     fn drop(&mut self) {
-        if Arc::strong_count(&self.0) == 2 {
-            self.close(0u32.into(), b"")
-        }
+        implicit_close(&self.0)
     }
 }
 

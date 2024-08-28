@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
     io,
     mem::ManuallyDrop,
     net::{SocketAddr, SocketAddrV6},
@@ -19,12 +19,13 @@ use futures_util::{
     future::{self},
     select,
     task::AtomicWaker,
-    FutureExt,
+    FutureExt, StreamExt,
 };
 use quinn_proto::{
     ClientConfig, ConnectError, ConnectionError, ConnectionHandle, DatagramEvent, EndpointConfig,
     EndpointEvent, ServerConfig, Transmit, VarInt,
 };
+use rustc_hash::FxHashMap as HashMap;
 
 use crate::{Connecting, ConnectionEvent, Incoming, RecvMeta, Socket};
 
@@ -153,7 +154,7 @@ impl EndpointInner {
                     None,
                 ),
                 worker: None,
-                connections: HashMap::new(),
+                connections: HashMap::default(),
                 close: None,
                 exit_on_idle: false,
                 incoming: VecDeque::new(),
@@ -254,6 +255,8 @@ impl EndpointInner {
     }
 
     async fn run(&self) -> io::Result<()> {
+        let respond_fn = |buf: Vec<u8>, transmit: Transmit| self.respond(buf, transmit);
+
         let mut recv_fut = pin!(
             self.socket
                 .recv(Vec::with_capacity(
@@ -269,26 +272,31 @@ impl EndpointInner {
                 .fuse()
         );
 
-        let respond_fn = |buf: Vec<u8>, transmit: Transmit| self.respond(buf, transmit);
+        let mut event_stream = self.events.1.stream().ready_chunks(100);
 
         loop {
-            select! {
+            let mut state = select! {
                 BufResult(res, recv_buf) = recv_fut => {
+                    let mut state = self.state.lock().unwrap();
                     match res {
-                        Ok(meta) => self.state.lock().unwrap().handle_data(meta, &recv_buf, respond_fn),
+                        Ok(meta) => state.handle_data(meta, &recv_buf, respond_fn),
                         Err(e) if e.kind() == io::ErrorKind::ConnectionReset => {}
                         #[cfg(windows)]
                         Err(e) if e.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_PORT_UNREACHABLE as _) => {}
                         Err(e) => break Err(e),
                     }
                     recv_fut.set(self.socket.recv(recv_buf).fuse());
+                    state
                 },
-                (ch, event) = self.events.1.recv_async().map(Result::unwrap) => {
-                    self.state.lock().unwrap().handle_event(ch, event);
+                events = event_stream.select_next_some() => {
+                    let mut state = self.state.lock().unwrap();
+                    for (ch, event) in events {
+                        state.handle_event(ch, event);
+                    }
+                    state
                 },
-            }
+            };
 
-            let mut state = self.state.lock().unwrap();
             if state.exit_on_idle && state.is_idle() {
                 break Ok(());
             }

@@ -127,13 +127,13 @@ fn echo_quinn(b: &mut Bencher, content: &[u8], streams: usize) {
         client.set_default_client_config(client_config);
         let addr = server.local_addr().unwrap();
 
-        let (client_conn, server_conn) = futures_util::join!(
+        let (client_conn, server_conn) = tokio::join!(
             async move { client.connect(addr, "localhost").unwrap().await.unwrap() },
             async move { server.accept().await.unwrap().await.unwrap() }
         );
 
         let start = Instant::now();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             while let Ok((mut send, mut recv)) = server_conn.accept_bi().await {
                 tokio::spawn(async move {
                     echo_impl!(send, recv);
@@ -157,6 +157,7 @@ fn echo_quinn(b: &mut Bencher, content: &[u8], streams: usize) {
                 .collect::<FuturesUnordered<_>>();
             while futures.next().await.is_some() {}
         }
+        handle.abort();
         start.elapsed()
     });
 }
