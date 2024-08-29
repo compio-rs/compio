@@ -37,6 +37,9 @@ pub use asyncify::*;
 mod fd;
 pub use fd::*;
 
+mod driver_type;
+pub use driver_type::*;
+
 cfg_if::cfg_if! {
     if #[cfg(windows)] {
         #[path = "iocp/mod.rs"]

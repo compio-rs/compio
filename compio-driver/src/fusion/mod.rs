@@ -10,98 +10,12 @@ pub(crate) mod op;
 pub use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::{io, task::Poll, time::Duration};
 
-pub use driver_type::DriverType;
 pub(crate) use iour::{sockaddr_storage, socklen_t};
 pub use iour::{OpCode as IourOpCode, OpEntry};
 pub use poll::{Decision, OpCode as PollOpCode};
 
+pub use crate::driver_type::DriverType; // Re-export so current user won't be broken
 use crate::{Key, OutEntries, ProactorBuilder};
-
-mod driver_type {
-    use std::sync::atomic::{AtomicU8, Ordering};
-
-    const UNINIT: u8 = u8::MAX;
-    const IO_URING: u8 = 0;
-    const POLLING: u8 = 1;
-
-    static DRIVER_TYPE: AtomicU8 = AtomicU8::new(UNINIT);
-
-    /// Representing underlying driver type the fusion driver is using
-    #[repr(u8)]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum DriverType {
-        /// Using `polling` driver
-        Poll    = POLLING,
-
-        /// Using `io-uring` driver
-        IoUring = IO_URING,
-    }
-
-    impl DriverType {
-        fn from_num(n: u8) -> Self {
-            match n {
-                IO_URING => Self::IoUring,
-                POLLING => Self::Poll,
-                _ => unreachable!("invalid driver type"),
-            }
-        }
-
-        /// Get the underlying driver type
-        pub fn current() -> DriverType {
-            match DRIVER_TYPE.load(Ordering::Acquire) {
-                UNINIT => {}
-                x => return DriverType::from_num(x),
-            }
-
-            let dev_ty = if uring_available() {
-                DriverType::IoUring
-            } else {
-                DriverType::Poll
-            };
-
-            DRIVER_TYPE.store(dev_ty as u8, Ordering::Release);
-
-            dev_ty
-        }
-    }
-
-    fn uring_available() -> bool {
-        use io_uring::opcode::*;
-
-        // Add more opcodes here if used
-        const USED_OP: &[u8] = &[
-            Read::CODE,
-            Readv::CODE,
-            Write::CODE,
-            Writev::CODE,
-            Fsync::CODE,
-            Accept::CODE,
-            Connect::CODE,
-            RecvMsg::CODE,
-            SendMsg::CODE,
-            AsyncCancel::CODE,
-            OpenAt::CODE,
-            Close::CODE,
-            Shutdown::CODE,
-            // Linux kernel 5.19
-            #[cfg(any(
-                feature = "io-uring-sqe128",
-                feature = "io-uring-cqe32",
-                feature = "io-uring-socket"
-            ))]
-            Socket::CODE,
-        ];
-
-        Ok(())
-            .and_then(|_| {
-                let uring = io_uring::IoUring::new(2)?;
-                let mut probe = io_uring::Probe::new();
-                uring.submitter().register_probe(&mut probe)?;
-                std::io::Result::Ok(USED_OP.iter().all(|op| probe.is_supported(*op)))
-            })
-            .unwrap_or(false)
-    }
-}
 
 /// Fused [`OpCode`]
 ///
@@ -131,6 +45,7 @@ impl Driver {
             DriverType::IoUring => Ok(Self {
                 fuse: FuseDriver::IoUring(iour::Driver::new(builder)?),
             }),
+            _ => unreachable!("Fuse driver will only be enabled on linux"),
         }
     }
 

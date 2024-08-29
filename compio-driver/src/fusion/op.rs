@@ -61,6 +61,7 @@ macro_rules! op {
                         DriverType::IoUring => Self {
                             inner: [< $name Inner >]::IoUring(iour::$name::new($($arg),*)),
                         },
+                        _ => unreachable!("Fuse driver will only be enabled on linux"),
                     }
                 }
             }
