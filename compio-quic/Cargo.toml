@@ -1,0 +1,82 @@
+[package]
+name = "compio-quic"
+version = "0.1.0"
+description = "QUIC for compio"
+categories = ["asynchronous", "network-programming"]
+keywords = ["async", "net", "quic"]
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+# Workspace dependencies
+compio-io = { workspace = true }
+compio-buf = { workspace = true }
+compio-log = { workspace = true }
+compio-net = { workspace = true }
+compio-runtime = { workspace = true, features = ["time"] }
+
+quinn-proto = "0.11.3"
+rustls = { workspace = true }
+rustls-platform-verifier = { version = "0.3.3", optional = true }
+rustls-native-certs = { version = "0.7.1", optional = true }
+webpki-roots = { version = "0.26.3", optional = true }
+h3 = { version = "0.0.6", optional = true }
+
+# Utils
+bytes = { workspace = true }
+flume = { workspace = true }
+futures-util = { workspace = true }
+rustc-hash = "2.0.0"
+thiserror = "1.0.63"
+
+# Windows specific dependencies
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Networking_WinSock"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
+[dev-dependencies]
+compio-buf = { workspace = true, features = ["bytes"] }
+compio-dispatcher = { workspace = true }
+compio-driver = { workspace = true }
+compio-fs = { workspace = true }
+compio-macros = { workspace = true }
+compio-runtime = { workspace = true, features = ["criterion"] }
+
+criterion = { workspace = true, features = ["async_tokio"] }
+http = "1.1.0"
+quinn = "0.11.3"
+rand = { workspace = true }
+rcgen = "0.13.1"
+socket2 = { workspace = true, features = ["all"] }
+tokio = { workspace = true, features = ["rt", "macros"] }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+[features]
+default = []
+io-compat = ["futures-util/io"]
+platform-verifier = ["dep:rustls-platform-verifier"]
+native-certs = ["dep:rustls-native-certs"]
+webpki-roots = ["dep:webpki-roots"]
+h3 = ["dep:h3"]
+# FIXME: see https://github.com/quinn-rs/quinn/pull/1962
+
+[[example]]
+name = "http3-client"
+required-features = ["h3"]
+
+[[example]]
+name = "http3-server"
+required-features = ["h3"]
+
+[[bench]]
+name = "quic"
+harness = false

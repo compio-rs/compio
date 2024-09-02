@@ -781,12 +781,11 @@ static WSA_RECVMSG: OnceLock<LPFN_WSARECVMSG> = OnceLock::new();
 
 /// Receive data and source address with ancillary data into vectored buffer.
 pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
+    msg: WSAMSG,
     addr: SOCKADDR_STORAGE,
-    addr_len: socklen_t,
     fd: SharedFd<S>,
     buffer: T,
     control: C,
-    control_len: u32,
     _p: PhantomPinned,
 }
 
@@ -802,12 +801,11 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
             "misaligned control message buffer"
         );
         Self {
+            msg: unsafe { std::mem::zeroed() },
             addr: unsafe { std::mem::zeroed() },
-            addr_len: std::mem::size_of::<SOCKADDR_STORAGE>() as _,
             fd,
             buffer,
             control,
-            control_len: 0,
             _p: PhantomPinned,
         }
     }
@@ -820,8 +818,8 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
         (
             (self.buffer, self.control),
             self.addr,
-            self.addr_len,
-            self.control_len as _,
+            self.msg.namelen,
+            self.msg.Control.len as _,
         )
     }
 }
@@ -835,26 +833,23 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
             })?;
 
         let this = self.get_unchecked_mut();
+
         let mut slices = this.buffer.io_slices_mut();
-        let mut msg = WSAMSG {
-            name: &mut this.addr as *mut _ as _,
-            namelen: this.addr_len,
-            lpBuffers: slices.as_mut_ptr() as _,
-            dwBufferCount: slices.len() as _,
-            Control: std::mem::transmute::<IoSliceMut, WSABUF>(this.control.as_io_slice_mut()),
-            dwFlags: 0,
-        };
-        this.control_len = 0;
+        this.msg.name = &mut this.addr as *mut _ as _;
+        this.msg.namelen = std::mem::size_of::<SOCKADDR_STORAGE>() as _;
+        this.msg.lpBuffers = slices.as_mut_ptr() as _;
+        this.msg.dwBufferCount = slices.len() as _;
+        this.msg.Control =
+            std::mem::transmute::<IoSliceMut, WSABUF>(this.control.as_io_slice_mut());
 
         let mut received = 0;
         let res = recvmsg_fn(
             this.fd.as_raw_fd() as _,
-            &mut msg,
+            &mut this.msg,
             &mut received,
             optr,
             None,
         );
-        this.control_len = msg.Control.len;
         winsock_result(res, received)
     }
 

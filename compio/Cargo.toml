@@ -42,6 +42,7 @@ compio-dispatcher = { workspace = true, optional = true }
 compio-log = { workspace = true }
 compio-tls = { workspace = true, optional = true }
 compio-process = { workspace = true, optional = true }
+compio-quic = { workspace = true, optional = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
@@ -52,7 +53,7 @@ compio-macros = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 futures-channel = { workspace = true }
 futures-util = { workspace = true }
-rand = "0.8.5"
+rand = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = [
     "fs",
@@ -83,7 +84,7 @@ io-uring = [
 ]
 polling = ["compio-driver/polling"]
 io = ["dep:compio-io"]
-io-compat = ["io", "compio-io/compat"]
+io-compat = ["io", "compio-io/compat", "compio-quic?/io-compat"]
 runtime = ["dep:compio-runtime", "dep:compio-fs", "dep:compio-net", "io"]
 macros = ["dep:compio-macros", "runtime"]
 event = ["compio-runtime/event", "runtime"]
@@ -94,6 +95,8 @@ tls = ["dep:compio-tls"]
 native-tls = ["tls", "compio-tls/native-tls"]
 rustls = ["tls", "compio-tls/rustls"]
 process = ["dep:compio-process"]
+quic = ["dep:compio-quic"]
+h3 = ["quic", "compio-quic/h3"]
 all = [
     "time",
     "macros",
@@ -102,6 +105,7 @@ all = [
     "native-tls",
     "rustls",
     "process",
+    "quic",
 ]
 
 arrayvec = ["compio-buf/arrayvec"]
