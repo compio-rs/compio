@@ -54,6 +54,7 @@ os_pipe = "1.1.4"
 paste = "1.0.14"
 rand = "0.8.5"
 rustls = { version = "0.23.1", default-features = false }
+rustls-native-certs = "0.8.0"
 slab = "0.4.9"
 socket2 = "0.5.6"
 tempfile = "3.8.1"

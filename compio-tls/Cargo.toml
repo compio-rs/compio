@@ -31,7 +31,7 @@ compio-runtime = { workspace = true }
 compio-macros = { workspace = true }
 
 rustls = { workspace = true, default-features = false, features = ["ring"] }
-rustls-native-certs = "0.8.0"
+rustls-native-certs = { workspace = true }
 
 [features]
 default = ["native-tls"]
