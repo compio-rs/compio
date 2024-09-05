@@ -26,7 +26,16 @@ impl ClientBuilder<rustls::RootCertStore> {
     #[cfg(feature = "native-certs")]
     pub fn new_with_native_certs() -> io::Result<Self> {
         let mut roots = rustls::RootCertStore::empty();
-        roots.add_parsable_certificates(rustls_native_certs::load_native_certs()?);
+        let mut certs = rustls_native_certs::load_native_certs();
+        if certs.certs.is_empty() {
+            return Err(io::Error::other(
+                certs
+                    .errors
+                    .pop()
+                    .expect("certs and errors should not be both empty"),
+            ));
+        }
+        roots.add_parsable_certificates(certs.certs);
         Ok(ClientBuilder(roots))
     }
 
