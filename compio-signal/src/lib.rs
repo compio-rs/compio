@@ -23,6 +23,7 @@
 pub mod windows;
 
 #[cfg(unix)]
+#[cfg_attr(target_os = "linux", path = "linux.rs")]
 pub mod unix;
 
 /// Completes when a "ctrl-c" notification is sent to the process.
