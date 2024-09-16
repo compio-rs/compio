@@ -107,6 +107,7 @@ all = [
     "rustls",
     "process",
     "quic",
+    "h3",
 ]
 
 arrayvec = ["compio-buf/arrayvec"]
