@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use compio_buf::bytes::Bytes;
 use compio_quic::ServerBuilder;
 use http::{HeaderMap, Response};
 use tracing_subscriber::EnvFilter;

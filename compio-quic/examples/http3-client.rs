@@ -4,7 +4,7 @@ use std::{
     str::FromStr,
 };
 
-use bytes::Buf;
+use compio_buf::bytes::Buf;
 use compio_io::AsyncWriteAtExt;
 use compio_net::ToSocketAddrsAsync;
 use compio_quic::ClientBuilder;

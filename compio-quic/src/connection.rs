@@ -8,8 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bytes::Bytes;
-use compio_buf::BufResult;
+use compio_buf::{bytes::Bytes, BufResult};
 use compio_log::{error, Instrument};
 use compio_runtime::JoinHandle;
 use flume::{Receiver, Sender};
@@ -984,7 +983,7 @@ pub enum OpenStreamError {
 
 #[cfg(feature = "h3")]
 pub(crate) mod h3_impl {
-    use bytes::{Buf, BytesMut};
+    use compio_buf::bytes::{Buf, BytesMut};
     use futures_util::ready;
     use h3::{
         error::Code,

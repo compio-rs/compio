@@ -4,7 +4,7 @@ use std::{
     time::Instant,
 };
 
-use bytes::Bytes;
+use compio_buf::bytes::Bytes;
 use criterion::{criterion_group, criterion_main, Bencher, BenchmarkId, Criterion, Throughput};
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use rand::{thread_rng, RngCore};

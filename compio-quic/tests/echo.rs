@@ -3,7 +3,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 
-use bytes::Bytes;
+use compio_buf::bytes::Bytes;
 use compio_quic::{Endpoint, RecvStream, SendStream, TransportConfig};
 
 mod common;

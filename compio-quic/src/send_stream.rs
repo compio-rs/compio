@@ -4,8 +4,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use bytes::Bytes;
-use compio_buf::{BufResult, IoBuf};
+use compio_buf::{bytes::Bytes, BufResult, IoBuf};
 use compio_io::AsyncWrite;
 use futures_util::{future::poll_fn, ready};
 use quinn_proto::{ClosedStream, FinishError, StreamId, VarInt, Written};
@@ -368,7 +367,7 @@ impl futures_util::AsyncWrite for SendStream {
 
 #[cfg(feature = "h3")]
 pub(crate) mod h3_impl {
-    use bytes::Buf;
+    use compio_buf::bytes::Buf;
     use h3::quic::{self, Error, WriteBuf};
 
     use super::*;

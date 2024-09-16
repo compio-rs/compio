@@ -9,8 +9,7 @@ use std::{
     time::Instant,
 };
 
-use bytes::Bytes;
-use compio_buf::BufResult;
+use compio_buf::{bytes::Bytes, BufResult};
 use compio_log::{error, Instrument};
 use compio_net::{ToSocketAddrsAsync, UdpSocket};
 use compio_runtime::JoinHandle;

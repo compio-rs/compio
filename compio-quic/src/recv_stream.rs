@@ -5,8 +5,10 @@ use std::{
     task::{Context, Poll},
 };
 
-use bytes::{BufMut, Bytes};
-use compio_buf::{BufResult, IoBufMut};
+use compio_buf::{
+    bytes::{BufMut, Bytes},
+    BufResult, IoBufMut,
+};
 use compio_io::AsyncRead;
 use futures_util::{future::poll_fn, ready};
 use quinn_proto::{Chunk, Chunks, ClosedStream, ReadableError, StreamId, VarInt};
