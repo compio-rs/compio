@@ -17,12 +17,12 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 # Workspace dependencies
 compio-io = { workspace = true }
-compio-buf = { workspace = true }
+compio-buf = { workspace = true, features = ["bytes"] }
 compio-log = { workspace = true }
 compio-net = { workspace = true }
 compio-runtime = { workspace = true, features = ["time"] }
 
-quinn-proto = "0.11.3"
+quinn-proto = "0.11.8"
 rustls = { workspace = true }
 rustls-platform-verifier = { version = "0.3.3", optional = true }
 rustls-native-certs = { workspace = true, optional = true }
@@ -30,7 +30,6 @@ webpki-roots = { version = "0.26.3", optional = true }
 h3 = { version = "0.0.6", optional = true }
 
 # Utils
-bytes = { workspace = true }
 flume = { workspace = true }
 futures-util = { workspace = true }
 rustc-hash = "2.0.0"
@@ -44,7 +43,6 @@ windows-sys = { workspace = true, features = ["Win32_Networking_WinSock"] }
 libc = { workspace = true }
 
 [dev-dependencies]
-compio-buf = { workspace = true, features = ["bytes"] }
 compio-dispatcher = { workspace = true }
 compio-driver = { workspace = true }
 compio-fs = { workspace = true }
@@ -53,7 +51,7 @@ compio-runtime = { workspace = true, features = ["criterion"] }
 
 criterion = { workspace = true, features = ["async_tokio"] }
 http = "1.1.0"
-quinn = "0.11.3"
+quinn = "0.11.5"
 rand = { workspace = true }
 rcgen = "0.13.1"
 socket2 = { workspace = true, features = ["all"] }
