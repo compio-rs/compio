@@ -20,7 +20,7 @@ jobs:
     runs-on: ${{ matrix.setup.os }}
     strategy:
       matrix:
-        toolchain: ["nightly", "stable"]
+        toolchain: ["nightly", "beta", "stable"]
         setup:
           - os: "ubuntu-20.04"
           - os: "ubuntu-22.04"
