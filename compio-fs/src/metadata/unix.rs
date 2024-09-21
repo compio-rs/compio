@@ -46,7 +46,7 @@ impl Metadata {
     }
 
     pub fn file_type(&self) -> FileType {
-        FileType(self.0.st_mode)
+        FileType(self.0.st_mode as _)
     }
 
     pub fn is_dir(&self) -> bool {
@@ -67,7 +67,7 @@ impl Metadata {
     }
 
     pub fn permissions(&self) -> Permissions {
-        Permissions(self.0.st_mode)
+        Permissions(self.0.st_mode as _)
     }
 
     pub fn modified(&self) -> io::Result<SystemTime> {
@@ -146,27 +146,27 @@ impl MetadataExt for Metadata {
     }
 
     fn atime(&self) -> i64 {
-        self.0.st_atime
+        self.0.st_atime as _
     }
 
     fn atime_nsec(&self) -> i64 {
-        self.0.st_atime_nsec
+        self.0.st_atime_nsec as _
     }
 
     fn mtime(&self) -> i64 {
-        self.0.st_mtime
+        self.0.st_mtime as _
     }
 
     fn mtime_nsec(&self) -> i64 {
-        self.0.st_mtime_nsec
+        self.0.st_mtime_nsec as _
     }
 
     fn ctime(&self) -> i64 {
-        self.0.st_ctime
+        self.0.st_ctime as _
     }
 
     fn ctime_nsec(&self) -> i64 {
-        self.0.st_ctime_nsec
+        self.0.st_ctime_nsec as _
     }
 
     fn blksize(&self) -> u64 {
