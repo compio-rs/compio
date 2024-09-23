@@ -1,4 +1,4 @@
-use std::{io, mem::MaybeUninit};
+use std::{borrow::Cow, io, mem::MaybeUninit};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
 use compio_io::{compat::SyncStream, AsyncRead, AsyncWrite};
@@ -22,6 +22,15 @@ impl<S> TlsStreamInner<S> {
             Self::NativeTls(s) => s.get_mut(),
             #[cfg(feature = "rustls")]
             Self::Rustls(s) => s.get_mut(),
+        }
+    }
+
+    pub fn negotiated_alpn(&self) -> Option<Cow<[u8]>> {
+        match self {
+            #[cfg(feature = "native-tls")]
+            Self::NativeTls(s) => s.negotiated_alpn().ok().flatten().map(Cow::from),
+            #[cfg(feature = "rustls")]
+            Self::Rustls(s) => s.negotiated_alpn().map(Cow::from),
         }
     }
 }
@@ -86,6 +95,11 @@ impl<S> TlsStream<S> {
     #[cfg(feature = "rustls")]
     pub(crate) fn new_rustls_server(s: SyncStream<S>, conn: rustls::ServerConnection) -> Self {
         Self(TlsStreamInner::Rustls(rtls::TlsStream::new_server(s, conn)))
+    }
+
+    /// Returns the negotiated ALPN protocol.
+    pub fn negotiated_alpn(&self) -> Option<Cow<[u8]>> {
+        self.0.negotiated_alpn()
     }
 }
 

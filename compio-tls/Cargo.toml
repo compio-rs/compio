@@ -18,7 +18,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 compio-buf = { workspace = true }
 compio-io = { workspace = true, features = ["compat"] }
 
-native-tls = { version = "0.2.11", optional = true }
+native-tls = { version = "0.2.11", optional = true, features = ["alpn"] }
 rustls = { workspace = true, default-features = false, optional = true, features = [
     "logging",
     "std",
