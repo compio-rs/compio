@@ -83,6 +83,13 @@ impl<S> TlsStream<S> {
     pub fn get_mut(&mut self) -> &mut S {
         &mut self.inner
     }
+
+    pub fn negotiated_alpn(&self) -> Option<&[u8]> {
+        match &self.conn {
+            TlsConnection::Client(client) => client.alpn_protocol(),
+            TlsConnection::Server(server) => server.alpn_protocol(),
+        }
+    }
 }
 
 impl<S: io::Read> TlsStream<S> {
