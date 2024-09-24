@@ -54,16 +54,21 @@ fn cf_run_loop() {
                 loop {
                     self.runtime.poll_with(Some(Duration::ZERO));
 
-                    self.runtime.run();
+                    let remaining_tasks = self.runtime.run();
                     if let Some(result) = result.take() {
                         break result;
                     }
 
+                    let timeout = if remaining_tasks {
+                        Some(Duration::ZERO)
+                    } else {
+                        self.runtime.current_timeout()
+                    };
                     self.fd_source
                         .enable_callbacks(kCFFileDescriptorReadCallBack);
                     CFRunLoop::run_in_mode(
                         unsafe { kCFRunLoopDefaultMode },
-                        self.runtime.current_timeout().unwrap_or(Duration::MAX),
+                        timeout.unwrap_or(Duration::MAX),
                         true,
                     );
                 }
@@ -141,12 +146,16 @@ fn message_queue() {
                 loop {
                     self.runtime.poll_with(Some(Duration::ZERO));
 
-                    self.runtime.run();
+                    let remaining_tasks = self.runtime.run();
                     if let Some(result) = result.take() {
                         break result;
                     }
 
-                    let timeout = self.runtime.current_timeout();
+                    let timeout = if remaining_tasks {
+                        Some(Duration::ZERO)
+                    } else {
+                        self.runtime.current_timeout()
+                    };
                     let timeout = match timeout {
                         Some(timeout) => timeout.as_millis() as u32,
                         None => INFINITE,
@@ -240,12 +249,16 @@ fn glib_context() {
                 loop {
                     self.runtime.poll_with(Some(Duration::ZERO));
 
-                    self.runtime.run();
+                    let remaining_tasks = self.runtime.run();
                     if let Some(result) = result.take() {
                         break result;
                     }
 
-                    let timeout = self.runtime.current_timeout();
+                    let timeout = if remaining_tasks {
+                        Some(Duration::ZERO)
+                    } else {
+                        self.runtime.current_timeout()
+                    };
                     let source_id = timeout.map(|timeout| timeout_add_local_once(timeout, || {}));
 
                     self.ctx.iteration(true);

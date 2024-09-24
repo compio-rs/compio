@@ -47,6 +47,7 @@ pub struct Runtime {
     sync_runnables: Arc<SegQueue<Runnable>>,
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
+    event_interval: usize,
     // Other fields don't make it !Send, but actually `local_runnables` implies it should be !Send,
     // otherwise it won't be valid if the runtime is sent to other threads.
     _p: PhantomData<Rc<VecDeque<Runnable>>>,
@@ -63,13 +64,14 @@ impl Runtime {
         RuntimeBuilder::new()
     }
 
-    fn with_builder(builder: &ProactorBuilder) -> io::Result<Self> {
+    fn with_builder(builder: &RuntimeBuilder) -> io::Result<Self> {
         Ok(Self {
-            driver: RefCell::new(builder.build()?),
+            driver: RefCell::new(builder.proactor_builder.build()?),
             local_runnables: Arc::new(SendWrapper::new(RefCell::new(VecDeque::new()))),
             sync_runnables: Arc::new(SegQueue::new()),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
+            event_interval: builder.event_interval,
             _p: PhantomData,
         })
     }
@@ -137,10 +139,12 @@ impl Runtime {
     /// Low level API to control the runtime.
     ///
     /// Run the scheduled tasks.
-    pub fn run(&self) {
+    ///
+    /// The return value indicates whether there are still tasks in the queue.
+    pub fn run(&self) -> bool {
         // SAFETY: self is !Send + !Sync.
         let local_runnables = unsafe { self.local_runnables.get_unchecked() };
-        loop {
+        for _i in 0..self.event_interval {
             let next_task = local_runnables.borrow_mut().pop_front();
             let has_local_task = next_task.is_some();
             if let Some(task) = next_task {
@@ -156,6 +160,7 @@ impl Runtime {
                 break;
             }
         }
+        !(local_runnables.borrow_mut().is_empty() && self.sync_runnables.is_empty())
     }
 
     /// Block on the future till it completes.
@@ -164,11 +169,15 @@ impl Runtime {
             let mut result = None;
             unsafe { self.spawn_unchecked(async { result = Some(future.await) }) }.detach();
             loop {
-                self.run();
+                let remaining_tasks = self.run();
                 if let Some(result) = result.take() {
                     return result;
                 }
-                self.poll();
+                if remaining_tasks {
+                    self.poll_with(Some(Duration::ZERO));
+                } else {
+                    self.poll();
+                }
             }
         })
     }
@@ -374,6 +383,7 @@ impl criterion::async_executor::AsyncExecutor for &Runtime {
 #[derive(Debug, Clone)]
 pub struct RuntimeBuilder {
     proactor_builder: ProactorBuilder,
+    event_interval: usize,
 }
 
 impl Default for RuntimeBuilder {
@@ -387,6 +397,7 @@ impl RuntimeBuilder {
     pub fn new() -> Self {
         Self {
             proactor_builder: ProactorBuilder::new(),
+            event_interval: 61,
         }
     }
 
@@ -396,9 +407,18 @@ impl RuntimeBuilder {
         self
     }
 
+    /// Sets the number of scheduler ticks after which the scheduler will poll
+    /// for external events (timers, I/O, and so on).
+    ///
+    /// A scheduler “tick” roughly corresponds to one poll invocation on a task.
+    pub fn event_interval(&mut self, val: usize) -> &mut Self {
+        self.event_interval = val;
+        self
+    }
+
     /// Build [`Runtime`].
     pub fn build(&self) -> io::Result<Runtime> {
-        Runtime::with_builder(&self.proactor_builder)
+        Runtime::with_builder(self)
     }
 }
 
