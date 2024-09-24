@@ -3,6 +3,7 @@
 use std::{
     future::Future,
     io::{self, BufRead, Read, Write},
+    mem::MaybeUninit,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -62,6 +63,17 @@ impl<S> SyncStream<S> {
         } else {
             Ok(())
         }
+    }
+
+    /// Pull some bytes from this source into the specified buffer.
+    pub fn read_buf_uninit(&mut self, buf: &mut [MaybeUninit<u8>]) -> io::Result<usize> {
+        let slice = self.fill_buf()?;
+        let amt = buf.len().min(slice.len());
+        // SAFETY: the length is valid
+        buf[..amt]
+            .copy_from_slice(unsafe { std::slice::from_raw_parts(slice.as_ptr().cast(), amt) });
+        self.consume(amt);
+        Ok(amt)
     }
 }
 
@@ -261,6 +273,28 @@ impl<S: crate::AsyncRead + 'static> futures_util::AsyncRead for AsyncStream<S> {
             cx,
             inner.fill_read_buf(),
             io::Read::read(inner, buf)
+        )
+    }
+}
+
+impl<S: crate::AsyncRead + 'static> AsyncStream<S> {
+    /// Attempt to read from the `AsyncRead` into `buf`.
+    ///
+    /// On success, returns `Poll::Ready(Ok(num_bytes_read))`.
+    pub fn poll_read_uninit(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [MaybeUninit<u8>],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.project();
+
+        let inner: &'static mut SyncStream<S> =
+            unsafe { &mut *(this.inner.get_unchecked_mut() as *mut _) };
+        poll_future_would_block!(
+            this.read_future,
+            cx,
+            inner.fill_read_buf(),
+            inner.read_buf_uninit(buf)
         )
     }
 }
