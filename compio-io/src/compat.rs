@@ -3,6 +3,7 @@
 use std::{
     future::Future,
     io::{self, BufRead, Read, Write},
+    mem::MaybeUninit,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -62,6 +63,14 @@ impl<S> SyncStream<S> {
         } else {
             Ok(())
         }
+    }
+
+    #[cfg(feature = "read_buf")]
+    fn read_buf_uninit(&mut self, buf: &mut [MaybeUninit<u8>]) -> io::Result<usize> {
+        let mut buf = io::BorrowedBuf::from(buf);
+        let mut cursor = buf.unfilled();
+        self.read_buf(cursor.reborrow())?;
+        Ok(cursor.written())
     }
 }
 
@@ -262,6 +271,38 @@ impl<S: crate::AsyncRead + 'static> futures_util::AsyncRead for AsyncStream<S> {
             inner.fill_read_buf(),
             io::Read::read(inner, buf)
         )
+    }
+}
+
+impl<S: crate::AsyncRead + 'static> AsyncStream<S> {
+    /// Attempt to read from the `AsyncRead` into `buf`.
+    ///
+    /// On success, returns `Poll::Ready(Ok(num_bytes_read))`.
+    pub fn poll_read_uninit(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [MaybeUninit<u8>],
+    ) -> Poll<io::Result<usize>> {
+        #[cfg(feature = "read_buf")]
+        {
+            let this = self.project();
+
+            let inner: &'static mut SyncStream<S> =
+                unsafe { &mut *(this.inner.get_unchecked_mut() as *mut _) };
+            poll_future_would_block!(
+                this.read_future,
+                cx,
+                inner.fill_read_buf(),
+                inner.read_buf_uninit(buf)
+            )
+        }
+        #[cfg(not(feature = "read_buf"))]
+        {
+            buf.fill(MaybeUninit::new(0));
+            self.poll_read(cx, unsafe {
+                std::slice::from_raw_parts_mut(buf.as_mut_ptr().cast(), buf.len())
+            })
+        }
     }
 }
 
