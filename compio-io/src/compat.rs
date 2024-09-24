@@ -65,12 +65,15 @@ impl<S> SyncStream<S> {
         }
     }
 
-    #[cfg(feature = "read_buf")]
-    fn read_buf_uninit(&mut self, buf: &mut [MaybeUninit<u8>]) -> io::Result<usize> {
-        let mut buf = io::BorrowedBuf::from(buf);
-        let mut cursor = buf.unfilled();
-        self.read_buf(cursor.reborrow())?;
-        Ok(cursor.written())
+    /// Pull some bytes from this source into the specified buffer.
+    pub fn read_buf_uninit(&mut self, buf: &mut [MaybeUninit<u8>]) -> io::Result<usize> {
+        let slice = self.fill_buf()?;
+        let amt = buf.len().min(slice.len());
+        // SAFETY: the length is valid
+        buf[..amt]
+            .copy_from_slice(unsafe { std::slice::from_raw_parts(slice.as_ptr().cast(), amt) });
+        self.consume(amt);
+        Ok(amt)
     }
 }
 
