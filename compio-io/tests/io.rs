@@ -1,187 +1,204 @@
 use std::io::Cursor;
 
-use compio_buf::{arrayvec::ArrayVec, BufResult, IoBuf, IoBufMut};
+use compio_buf::{BufResult, IoBuf, IoBufMut, arrayvec::ArrayVec};
 use compio_io::{
-    split, AsyncRead, AsyncReadAt, AsyncReadAtExt, AsyncReadExt, AsyncWrite, AsyncWriteAt,
-    AsyncWriteAtExt, AsyncWriteExt,
+    AsyncRead, AsyncReadAt, AsyncReadAtExt, AsyncReadExt, AsyncWrite, AsyncWriteAt,
+    AsyncWriteAtExt, AsyncWriteExt, split,
 };
+use futures_executor::block_on;
 
-#[tokio::test]
-async fn io_read() {
-    let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
-    let (len, buf) = src.read(vec![1; 6]).await.unwrap();
+#[test]
+fn io_read() {
+    block_on(async {
+        let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
+        let (len, buf) = src.read(vec![1; 6]).await.unwrap();
 
-    assert_eq!(len, 6);
-    assert_eq!(buf, [1, 1, 4, 5, 1, 4]);
-    assert_eq!(src.len(), 7);
-    assert_eq!(src, [1, 9, 1, 9, 8, 1, 0]);
+        assert_eq!(len, 6);
+        assert_eq!(buf, [1, 1, 4, 5, 1, 4]);
+        assert_eq!(src.len(), 7);
+        assert_eq!(src, [1, 9, 1, 9, 8, 1, 0]);
 
-    let (len, buf) = src.read(vec![0; 20]).await.unwrap();
-    assert_eq!(len, 7);
-    assert_eq!(buf.len(), 20);
-    assert_eq!(&buf[..7], [1, 9, 1, 9, 8, 1, 0]);
+        let (len, buf) = src.read(vec![0; 20]).await.unwrap();
+        assert_eq!(len, 7);
+        assert_eq!(buf.len(), 20);
+        assert_eq!(&buf[..7], [1, 9, 1, 9, 8, 1, 0]);
+    })
 }
 
-#[tokio::test]
-async fn io_write() {
-    let mut dst = Cursor::new([0u8; 10]);
-    let (len, _) = dst.write(vec![1, 1, 4, 5, 1, 4]).await.unwrap();
+#[test]
+fn io_write() {
+    block_on(async {
+        let mut dst = Cursor::new([0u8; 10]);
+        let (len, _) = dst.write(vec![1, 1, 4, 5, 1, 4]).await.unwrap();
 
-    assert_eq!(len, 6);
-    assert_eq!(dst.position(), 6);
-    assert_eq!(dst.into_inner(), [1, 1, 4, 5, 1, 4, 0, 0, 0, 0]);
+        assert_eq!(len, 6);
+        assert_eq!(dst.position(), 6);
+        assert_eq!(dst.into_inner(), [1, 1, 4, 5, 1, 4, 0, 0, 0, 0]);
 
-    let mut dst = Cursor::new([0u8; 10]);
-    let (len, _) = dst
-        .write(vec![1, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0])
-        .await
-        .unwrap();
+        let mut dst = Cursor::new([0u8; 10]);
+        let (len, _) = dst
+            .write(vec![1, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0])
+            .await
+            .unwrap();
 
-    assert_eq!(len, 10);
-    assert_eq!(dst.into_inner(), [1, 1, 4, 5, 1, 4, 1, 9, 1, 9]);
+        assert_eq!(len, 10);
+        assert_eq!(dst.into_inner(), [1, 1, 4, 5, 1, 4, 1, 9, 1, 9]);
+    })
 }
 
-#[tokio::test]
-async fn io_write_at() {
-    let mut dst = [0u8; 10];
-    let (len, _) = dst.write_at(vec![1, 1, 4, 5, 1, 4], 2).await.unwrap();
+#[test]
+fn io_write_at() {
+    block_on(async {
+        let mut dst = [0u8; 10];
+        let (len, _) = dst.write_at(vec![1, 1, 4, 5, 1, 4], 2).await.unwrap();
 
-    assert_eq!(len, 6);
-    assert_eq!(dst, [0, 0, 1, 1, 4, 5, 1, 4, 0, 0]);
+        assert_eq!(len, 6);
+        assert_eq!(dst, [0, 0, 1, 1, 4, 5, 1, 4, 0, 0]);
 
-    let mut dst = [0u8; 5];
-    let (len, _) = dst.write_at(vec![1, 1, 4, 5, 1, 4], 2).await.unwrap();
+        let mut dst = [0u8; 5];
+        let (len, _) = dst.write_at(vec![1, 1, 4, 5, 1, 4], 2).await.unwrap();
 
-    assert_eq!(len, 3);
-    assert_eq!(dst, [0, 0, 1, 1, 4]);
+        assert_eq!(len, 3);
+        assert_eq!(dst, [0, 0, 1, 1, 4]);
 
-    let mut dst = [0u8; 5];
-    let (len, _) = dst.write_at(vec![1, 1, 4], 6).await.unwrap();
+        let mut dst = [0u8; 5];
+        let (len, _) = dst.write_at(vec![1, 1, 4], 6).await.unwrap();
 
-    assert_eq!(len, 0);
-    assert_eq!(dst, [0, 0, 0, 0, 0]);
+        assert_eq!(len, 0);
+        assert_eq!(dst, [0, 0, 0, 0, 0]);
 
-    let mut dst = vec![];
-    let (len, _) = dst.write_at(vec![1, 1, 4], 5).await.unwrap();
+        let mut dst = vec![];
+        let (len, _) = dst.write_at(vec![1, 1, 4], 5).await.unwrap();
 
-    assert_eq!(len, 3);
-    assert_eq!(dst, [0, 0, 0, 0, 0, 1, 1, 4]);
+        assert_eq!(len, 3);
+        assert_eq!(dst, [0, 0, 0, 0, 0, 1, 1, 4]);
+    })
 }
 
-#[tokio::test]
-async fn io_read_at() {
-    const SRC: [u8; 6] = [1, 1, 4, 5, 1, 4];
+#[test]
+fn io_read_at() {
+    block_on(async {
+        const SRC: [u8; 6] = [1, 1, 4, 5, 1, 4];
 
-    let (len, buf) = SRC.read_at(ArrayVec::<u8, 10>::new(), 2).await.unwrap();
+        let (len, buf) = SRC.read_at(ArrayVec::<u8, 10>::new(), 2).await.unwrap();
 
-    assert_eq!(len, 4);
-    assert_eq!(buf.as_slice(), [4, 5, 1, 4]);
+        assert_eq!(len, 4);
+        assert_eq!(buf.as_slice(), [4, 5, 1, 4]);
 
-    let (len, buf) = SRC.read_at(ArrayVec::<u8, 3>::new(), 2).await.unwrap();
+        let (len, buf) = SRC.read_at(ArrayVec::<u8, 3>::new(), 2).await.unwrap();
 
-    assert_eq!(len, 3);
-    assert_eq!(buf.as_slice(), [4, 5, 1]);
+        assert_eq!(len, 3);
+        assert_eq!(buf.as_slice(), [4, 5, 1]);
 
-    let (len, buf) = SRC.read_at(ArrayVec::<u8, 1>::new(), 7).await.unwrap();
+        let (len, buf) = SRC.read_at(ArrayVec::<u8, 1>::new(), 7).await.unwrap();
 
-    assert_eq!(len, 0);
-    assert_eq!(buf.as_slice(), []);
+        assert_eq!(len, 0);
+        assert_eq!(buf.as_slice(), []);
+    })
 }
 
-#[tokio::test]
-async fn readv() {
-    let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
-    let (len, buf) = src
-        .read_vectored([Vec::with_capacity(6), Vec::with_capacity(4)])
-        .await
-        .unwrap();
-    assert_eq!(len, 10);
-    assert_eq!(buf[0], [1, 1, 4, 5, 1, 4]);
-    assert_eq!(buf[1], [1, 9, 1, 9]);
+#[test]
+fn readv() {
+    block_on(async {
+        let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
+        let (len, buf) = src
+            .read_vectored([Vec::with_capacity(6), Vec::with_capacity(4)])
+            .await
+            .unwrap();
+        assert_eq!(len, 10);
+        assert_eq!(buf[0], [1, 1, 4, 5, 1, 4]);
+        assert_eq!(buf[1], [1, 9, 1, 9]);
 
-    let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
-    let (len, buf) = src
-        .read_vectored([vec![0; 6], Vec::with_capacity(10)])
-        .await
-        .unwrap();
-    assert_eq!(len, 13);
-    assert_eq!(buf[0], [1, 1, 4, 5, 1, 4]);
-    assert_eq!(buf[1], [1, 9, 1, 9, 8, 1, 0]);
+        let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
+        let (len, buf) = src
+            .read_vectored([vec![0; 6], Vec::with_capacity(10)])
+            .await
+            .unwrap();
+        assert_eq!(len, 13);
+        assert_eq!(buf[0], [1, 1, 4, 5, 1, 4]);
+        assert_eq!(buf[1], [1, 9, 1, 9, 8, 1, 0]);
 
-    let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
-    let (len, buf) = src
-        .read_vectored([vec![], Vec::with_capacity(20)])
-        .await
-        .unwrap();
-    assert_eq!(len, 13);
-    assert!(buf[0].is_empty());
-    assert_eq!(buf[1], [1, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0]);
+        let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
+        let (len, buf) = src
+            .read_vectored([vec![], Vec::with_capacity(20)])
+            .await
+            .unwrap();
+        assert_eq!(len, 13);
+        assert!(buf[0].is_empty());
+        assert_eq!(buf[1], [1, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0]);
+    })
 }
 
-#[tokio::test]
-async fn writev() {
-    let mut dst = Cursor::new([0u8; 10]);
-    let (len, _) = dst
-        .write_vectored([vec![1, 1, 4], vec![5, 1, 4]])
-        .await
-        .unwrap();
+#[test]
+fn writev() {
+    block_on(async {
+        let mut dst = Cursor::new([0u8; 10]);
+        let (len, _) = dst
+            .write_vectored([vec![1, 1, 4], vec![5, 1, 4]])
+            .await
+            .unwrap();
 
-    assert_eq!(len, 6);
-    assert_eq!(dst.position(), 6);
-    assert_eq!(dst.into_inner(), [1, 1, 4, 5, 1, 4, 0, 0, 0, 0]);
+        assert_eq!(len, 6);
+        assert_eq!(dst.position(), 6);
+        assert_eq!(dst.into_inner(), [1, 1, 4, 5, 1, 4, 0, 0, 0, 0]);
 
-    let mut dst = Cursor::new([0u8; 10]);
-    let (len, _) = dst
-        .write_vectored([vec![1, 1, 4, 5, 1, 4], vec![1, 9, 1, 9, 8, 1, 0]])
-        .await
-        .unwrap();
+        let mut dst = Cursor::new([0u8; 10]);
+        let (len, _) = dst
+            .write_vectored([vec![1, 1, 4, 5, 1, 4], vec![1, 9, 1, 9, 8, 1, 0]])
+            .await
+            .unwrap();
 
-    assert_eq!(len, 10);
-    assert_eq!(dst.into_inner(), [1, 1, 4, 5, 1, 4, 1, 9, 1, 9]);
+        assert_eq!(len, 10);
+        assert_eq!(dst.into_inner(), [1, 1, 4, 5, 1, 4, 1, 9, 1, 9]);
+    })
 }
 
-#[tokio::test]
-async fn readv_at() {
-    const SRC: [u8; 6] = [1, 1, 4, 5, 1, 4];
+#[test]
+fn readv_at() {
+    block_on(async {
+        const SRC: [u8; 6] = [1, 1, 4, 5, 1, 4];
 
-    let (len, buf) = SRC
-        .read_vectored_at([ArrayVec::<u8, 5>::new(), ArrayVec::<u8, 5>::new()], 2)
-        .await
-        .unwrap();
+        let (len, buf) = SRC
+            .read_vectored_at([ArrayVec::<u8, 5>::new(), ArrayVec::<u8, 5>::new()], 2)
+            .await
+            .unwrap();
 
-    assert_eq!(len, 4);
-    assert_eq!(buf[0].as_slice(), [4, 5, 1, 4]);
-    assert!(buf[1].is_empty());
+        assert_eq!(len, 4);
+        assert_eq!(buf[0].as_slice(), [4, 5, 1, 4]);
+        assert!(buf[1].is_empty());
 
-    let (len, buf) = SRC
-        .read_vectored_at([vec![0; 3], Vec::with_capacity(1)], 2)
-        .await
-        .unwrap();
+        let (len, buf) = SRC
+            .read_vectored_at([vec![0; 3], Vec::with_capacity(1)], 2)
+            .await
+            .unwrap();
 
-    assert_eq!(len, 4);
-    assert_eq!(buf[0].as_slice(), [4, 5, 1]);
-    assert_eq!(buf[1].as_slice(), [4]);
+        assert_eq!(len, 4);
+        assert_eq!(buf[0].as_slice(), [4, 5, 1]);
+        assert_eq!(buf[1].as_slice(), [4]);
+    })
 }
 
-#[tokio::test]
-async fn writev_at() {
-    let mut dst = [0u8; 10];
-    let (len, _) = dst
-        .write_vectored_at([vec![1, 1, 4], vec![5, 1, 4]], 2)
-        .await
-        .unwrap();
+#[test]
+fn writev_at() {
+    block_on(async {
+        let mut dst = [0u8; 10];
+        let (len, _) = dst
+            .write_vectored_at([vec![1, 1, 4], vec![5, 1, 4]], 2)
+            .await
+            .unwrap();
 
-    assert_eq!(len, 6);
-    assert_eq!(dst, [0, 0, 1, 1, 4, 5, 1, 4, 0, 0]);
+        assert_eq!(len, 6);
+        assert_eq!(dst, [0, 0, 1, 1, 4, 5, 1, 4, 0, 0]);
 
-    let mut dst = [0u8; 5];
-    let (len, _) = dst
-        .write_vectored_at([vec![1, 1, 4], vec![5, 1, 4]], 2)
-        .await
-        .unwrap();
+        let mut dst = [0u8; 5];
+        let (len, _) = dst
+            .write_vectored_at([vec![1, 1, 4], vec![5, 1, 4]], 2)
+            .await
+            .unwrap();
 
-    assert_eq!(len, 3);
-    assert_eq!(dst, [0, 0, 1, 1, 4]);
+        assert_eq!(len, 3);
+        assert_eq!(dst, [0, 0, 1, 1, 4]);
+    })
 }
 
 struct RepeatOne(u8);
@@ -216,15 +233,17 @@ impl AsyncReadAt for RepeatOne {
     }
 }
 
-#[tokio::test]
-async fn read_exact() {
-    let mut src = RepeatOne(114);
+#[test]
+fn read_exact() {
+    block_on(async {
+        let mut src = RepeatOne(114);
 
-    let ((), buf) = src.read_exact(vec![0; 5]).await.unwrap();
-    assert_eq!(buf, [114; 5]);
+        let ((), buf) = src.read_exact(vec![0; 5]).await.unwrap();
+        assert_eq!(buf, [114; 5]);
 
-    let ((), buf) = src.read_exact_at(Vec::with_capacity(5), 0).await.unwrap();
-    assert_eq!(buf, [0, 114, 114, 114, 114]);
+        let ((), buf) = src.read_exact_at(Vec::with_capacity(5), 0).await.unwrap();
+        assert_eq!(buf, [0, 114, 114, 114, 114]);
+    })
 }
 
 struct WriteOne(Vec<u8>);
@@ -276,15 +295,17 @@ impl AsyncWriteAt for WriteOne {
     }
 }
 
-#[tokio::test]
-async fn write_all() {
-    let mut dst = WriteOne(vec![]);
+#[test]
+fn write_all() {
+    block_on(async {
+        let mut dst = WriteOne(vec![]);
 
-    let ((), _) = dst.write_all([1, 1, 4, 5, 1, 4]).await.unwrap();
-    assert_eq!(dst.0, [1, 1, 4, 5, 1, 4]);
+        let ((), _) = dst.write_all([1, 1, 4, 5, 1, 4]).await.unwrap();
+        assert_eq!(dst.0, [1, 1, 4, 5, 1, 4]);
 
-    let ((), _) = dst.write_all_at([114, 114, 114], 2).await.unwrap();
-    assert_eq!(dst.0, [1, 1, 114, 114, 114, 4]);
+        let ((), _) = dst.write_all_at([114, 114, 114], 2).await.unwrap();
+        assert_eq!(dst.0, [1, 1, 114, 114, 114, 4]);
+    })
 }
 
 struct ReadOne(Cursor<Vec<u8>>);
@@ -312,13 +333,15 @@ impl AsyncRead for ReadOne {
     }
 }
 
-#[tokio::test]
-async fn read_to_end() {
-    let mut src = ReadOne(Cursor::new(vec![1, 1, 4, 5, 1, 4]));
+#[test]
+fn read_to_end() {
+    block_on(async {
+        let mut src = ReadOne(Cursor::new(vec![1, 1, 4, 5, 1, 4]));
 
-    let (len, buf) = src.read_to_end(vec![]).await.unwrap();
-    assert_eq!(len, 6);
-    assert_eq!(buf, [1, 1, 4, 5, 1, 4]);
+        let (len, buf) = src.read_to_end(vec![]).await.unwrap();
+        assert_eq!(len, 6);
+        assert_eq!(buf, [1, 1, 4, 5, 1, 4]);
+    })
 }
 
 struct ReadOneAt(Vec<u8>);
@@ -347,27 +370,31 @@ impl AsyncReadAt for ReadOneAt {
     }
 }
 
-#[tokio::test]
-async fn read_to_end_at() {
-    let src = ReadOneAt(vec![1, 1, 4, 5, 1, 4]);
+#[test]
+fn read_to_end_at() {
+    block_on(async {
+        let src = ReadOneAt(vec![1, 1, 4, 5, 1, 4]);
 
-    let (len, buf) = src.read_to_end_at(vec![], 2).await.unwrap();
-    assert_eq!(len, 4);
-    assert_eq!(buf, [4, 5, 1, 4]);
+        let (len, buf) = src.read_to_end_at(vec![], 2).await.unwrap();
+        assert_eq!(len, 4);
+        assert_eq!(buf, [4, 5, 1, 4]);
+    })
 }
 
-#[tokio::test]
-async fn split_unsplit() {
-    let src = Cursor::new([1, 1, 4, 5, 1, 4]);
-    let (mut read, mut write) = split(src);
+#[test]
+fn split_unsplit() {
+    block_on(async {
+        let src = Cursor::new([1, 1, 4, 5, 1, 4]);
+        let (mut read, mut write) = split(src);
 
-    let (len, buf) = read.read([0, 0, 0]).await.unwrap();
-    assert_eq!(len, 3);
-    assert_eq!(buf, [1, 1, 4]);
+        let (len, buf) = read.read([0, 0, 0]).await.unwrap();
+        assert_eq!(len, 3);
+        assert_eq!(buf, [1, 1, 4]);
 
-    let (len, _) = write.write([2, 2, 2]).await.unwrap();
-    assert_eq!(len, 3);
+        let (len, _) = write.write([2, 2, 2]).await.unwrap();
+        assert_eq!(len, 3);
 
-    let src = read.unsplit(write);
-    assert_eq!(src.into_inner(), [1, 1, 4, 2, 2, 2]);
+        let src = read.unsplit(write);
+        assert_eq!(src.into_inner(), [1, 1, 4, 2, 2, 2]);
+    })
 }
