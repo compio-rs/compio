@@ -2,7 +2,7 @@ use std::{future::Future, io, net::SocketAddr};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
-use socket2::{Protocol, SockAddr, Type};
+use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::{Socket, ToSocketAddrsAsync};
 
@@ -114,6 +114,13 @@ impl UdpSocket {
             self.inner.connect(&SockAddr::from(addr))
         })
         .await
+    }
+
+    /// Creates new UdpSocket from a std::net::UdpSocket.
+    pub fn from_std(socket: std::net::UdpSocket) -> io::Result<Self> {
+        Ok(Self {
+            inner: Socket::from_socket2(Socket2::from(socket))?,
+        })
     }
 
     /// Close the socket. If the returned future is dropped before polling, the
