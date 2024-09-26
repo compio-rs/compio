@@ -18,8 +18,9 @@ pin-project-lite = { version = "0.2.14", optional = true }
 
 [dev-dependencies]
 compio-runtime = { workspace = true }
-# use tokio to show this crate doesn't depend on the compio runtime
+# use tokio & futures to show this crate doesn't depend on the compio runtime
 tokio = { workspace = true, features = ["macros", "rt"] }
+futures-executor = "0.3.30"
 
 [features]
 default = []
