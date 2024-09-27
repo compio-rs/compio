@@ -15,9 +15,9 @@ pub use crate::unix::op::*;
 use crate::{op::*, syscall, OpEntry, SharedFd};
 
 impl<
-    D: std::marker::Send + 'static,
-    F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + 'static,
-> OpCode for Asyncify<F, D>
+        D: std::marker::Send + 'static,
+        F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + 'static,
+    > OpCode for Asyncify<F, D>
 {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         OpEntry::Blocking

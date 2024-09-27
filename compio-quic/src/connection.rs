@@ -1157,7 +1157,7 @@ pub(crate) mod h3_impl {
             cx: &mut Context<'_>,
         ) -> Poll<Result<Self::BidiStream, Self::OpenError>> {
             let (stream, is_0rtt) = ready!(self.0.poll_open_stream(Some(cx), Dir::Bi))?;
-            Poll::Ready(Ok(BidiStream::new(self.0.0.clone(), stream, is_0rtt)))
+            Poll::Ready(Ok(BidiStream::new(self.0 .0.clone(), stream, is_0rtt)))
         }
 
         fn poll_open_send(
@@ -1165,7 +1165,7 @@ pub(crate) mod h3_impl {
             cx: &mut Context<'_>,
         ) -> Poll<Result<Self::SendStream, Self::OpenError>> {
             let (stream, is_0rtt) = ready!(self.0.poll_open_stream(Some(cx), Dir::Uni))?;
-            Poll::Ready(Ok(SendStream::new(self.0.0.clone(), stream, is_0rtt)))
+            Poll::Ready(Ok(SendStream::new(self.0 .0.clone(), stream, is_0rtt)))
         }
 
         fn close(&mut self, code: Code, reason: &[u8]) {

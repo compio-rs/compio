@@ -112,9 +112,9 @@ fn get_wsa_fn<F>(handle: RawFd, fguid: GUID) -> io::Result<Option<F>> {
 }
 
 impl<
-    D: std::marker::Send + 'static,
-    F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + 'static,
-> OpCode for Asyncify<F, D>
+        D: std::marker::Send + 'static,
+        F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + 'static,
+    > OpCode for Asyncify<F, D>
 {
     fn op_type(&self) -> OpType {
         OpType::Blocking

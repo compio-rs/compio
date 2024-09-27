@@ -19,9 +19,9 @@ pub use crate::unix::op::*;
 use crate::{op::*, SharedFd};
 
 impl<
-    D: std::marker::Send + 'static,
-    F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + 'static,
-> OpCode for Asyncify<F, D>
+        D: std::marker::Send + 'static,
+        F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + 'static,
+    > OpCode for Asyncify<F, D>
 {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::blocking_dummy())

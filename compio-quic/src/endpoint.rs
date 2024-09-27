@@ -256,20 +256,19 @@ impl EndpointInner {
     async fn run(&self) -> io::Result<()> {
         let respond_fn = |buf: Vec<u8>, transmit: Transmit| self.respond(buf, transmit);
 
-        let mut recv_fut = pin!(
-            self.socket
-                .recv(Vec::with_capacity(
-                    self.state
-                        .lock()
-                        .unwrap()
-                        .endpoint
-                        .config()
-                        .get_max_udp_payload_size()
-                        .min(64 * 1024) as usize
-                        * self.socket.max_gro_segments(),
-                ))
-                .fuse()
-        );
+        let mut recv_fut = pin!(self
+            .socket
+            .recv(Vec::with_capacity(
+                self.state
+                    .lock()
+                    .unwrap()
+                    .endpoint
+                    .config()
+                    .get_max_udp_payload_size()
+                    .min(64 * 1024) as usize
+                    * self.socket.max_gro_segments(),
+            ))
+            .fuse());
 
         let mut event_stream = self.events.1.stream().ready_chunks(100);
 

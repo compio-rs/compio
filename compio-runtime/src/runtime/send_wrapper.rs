@@ -54,7 +54,11 @@ impl<T> SendWrapper<T> {
     /// Returns a reference to the contained value, if valid.
     #[inline]
     pub fn get(&self) -> Option<&T> {
-        if self.valid() { Some(&self.data) } else { None }
+        if self.valid() {
+            Some(&self.data)
+        } else {
+            None
+        }
     }
 }
 
