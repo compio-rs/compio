@@ -1,5 +1,5 @@
 use compio::net::ToSocketAddrsAsync;
-use futures_util::{stream::FuturesUnordered, StreamExt};
+use futures_util::{StreamExt, stream::FuturesUnordered};
 
 #[compio::main]
 async fn main() {

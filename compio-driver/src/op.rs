@@ -21,8 +21,8 @@ pub use crate::sys::op::{
     ReadVectoredAt, Rename, Symlink, Unlink, WriteVectoredAt,
 };
 use crate::{
-    sys::{sockaddr_storage, socklen_t},
     OwnedFd, SharedFd,
+    sys::{sockaddr_storage, socklen_t},
 };
 
 /// Trait to update the buffer length inside the [`BufResult`].

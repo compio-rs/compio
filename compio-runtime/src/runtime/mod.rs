@@ -2,7 +2,7 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::VecDeque,
-    future::{poll_fn, ready, Future},
+    future::{Future, poll_fn, ready},
     io,
     marker::PhantomData,
     panic::AssertUnwindSafe,
@@ -15,11 +15,11 @@ use std::{
 use async_task::{Runnable, Task};
 use compio_buf::IntoInner;
 use compio_driver::{
-    op::Asyncify, AsRawFd, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
+    AsRawFd, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd, op::Asyncify,
 };
 use compio_log::{debug, instrument};
 use crossbeam_queue::SegQueue;
-use futures_util::{future::Either, FutureExt};
+use futures_util::{FutureExt, future::Either};
 use smallvec::SmallVec;
 
 pub(crate) mod op;
@@ -31,7 +31,7 @@ use send_wrapper::SendWrapper;
 
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerRuntime};
-use crate::{runtime::op::OpFlagsFuture, BufResult};
+use crate::{BufResult, runtime::op::OpFlagsFuture};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 

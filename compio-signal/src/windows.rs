@@ -16,8 +16,8 @@ use slab::Slab;
 use windows_sys::Win32::{
     Foundation::BOOL,
     System::Console::{
-        SetConsoleCtrlHandler, CTRL_BREAK_EVENT, CTRL_CLOSE_EVENT, CTRL_C_EVENT, CTRL_LOGOFF_EVENT,
-        CTRL_SHUTDOWN_EVENT,
+        CTRL_BREAK_EVENT, CTRL_C_EVENT, CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT,
+        SetConsoleCtrlHandler,
     },
 };
 

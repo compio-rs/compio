@@ -6,8 +6,8 @@ use std::{
 };
 
 use compio_buf::{
-    bytes::{BufMut, Bytes},
     BufResult, IoBufMut,
+    bytes::{BufMut, Bytes},
 };
 use compio_io::AsyncRead;
 use futures_util::{future::poll_fn, ready};

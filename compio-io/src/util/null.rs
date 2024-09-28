@@ -51,7 +51,7 @@ impl AsyncWrite for Null {
 /// # Examples
 ///
 /// ```
-/// use compio_io::{null, AsyncRead, AsyncWrite};
+/// use compio_io::{AsyncRead, AsyncWrite, null};
 ///
 /// # compio_runtime::Runtime::new().unwrap().block_on(async {
 /// let mut buf = Vec::with_capacity(10);

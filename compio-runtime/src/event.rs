@@ -3,13 +3,13 @@
 use std::{
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     task::{Context, Poll},
 };
 
-use futures_util::{task::AtomicWaker, Future};
+use futures_util::{Future, task::AtomicWaker};
 
 #[derive(Debug)]
 struct Inner {

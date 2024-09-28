@@ -2,8 +2,8 @@ use std::{io, panic::resume_unwind, process};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
-    op::{BufResultExt, Recv, Send},
     AsRawFd, RawFd, SharedFd, ToSharedFd,
+    op::{BufResultExt, Recv, Send},
 };
 use compio_io::{AsyncRead, AsyncWrite};
 

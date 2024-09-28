@@ -5,7 +5,7 @@ use compio_dispatcher::Dispatcher;
 use compio_io::{AsyncReadExt, AsyncWriteExt};
 use compio_net::{TcpListener, TcpStream};
 use compio_runtime::spawn;
-use futures_util::{stream::FuturesUnordered, StreamExt};
+use futures_util::{StreamExt, stream::FuturesUnordered};
 
 #[compio_macros::test]
 async fn listener_dispatch() {

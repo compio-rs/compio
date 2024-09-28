@@ -2,8 +2,8 @@ use std::{io, sync::Arc};
 
 use compio_net::ToSocketAddrsAsync;
 use quinn_proto::{
-    crypto::rustls::{QuicClientConfig, QuicServerConfig},
     ClientConfig, ServerConfig,
+    crypto::rustls::{QuicClientConfig, QuicServerConfig},
 };
 
 use crate::Endpoint;
@@ -224,10 +224,10 @@ impl ServerBuilder<rustls::ServerConfig> {
 
 mod verifier {
     use rustls::{
+        DigitallySignedStruct, Error, SignatureScheme,
         client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
         crypto::WebPkiSupportedAlgorithms,
         pki_types::{CertificateDer, ServerName, UnixTime},
-        DigitallySignedStruct, Error, SignatureScheme,
     };
 
     #[derive(Debug)]

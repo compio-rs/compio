@@ -9,7 +9,7 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit, Slice};
 
-use crate::{util::MISSING_BUF, AsyncWrite, IoResult};
+use crate::{AsyncWrite, IoResult, util::MISSING_BUF};
 
 pub struct Inner {
     buf: Vec<u8>,

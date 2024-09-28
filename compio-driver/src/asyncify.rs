@@ -1,13 +1,13 @@
 use std::{
     fmt,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
 };
 
-use crossbeam_channel::{bounded, Receiver, Sender, TrySendError};
+use crossbeam_channel::{Receiver, Sender, TrySendError, bounded};
 
 /// An error that may be emitted when all worker threads are busy. It simply
 /// returns the dispatchable value with a convenient [`fmt::Debug`] and

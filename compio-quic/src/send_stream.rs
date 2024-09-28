@@ -4,7 +4,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use compio_buf::{bytes::Bytes, BufResult, IoBuf};
+use compio_buf::{BufResult, IoBuf, bytes::Bytes};
 use compio_io::AsyncWrite;
 use futures_util::{future::poll_fn, ready};
 use quinn_proto::{ClosedStream, FinishError, StreamId, VarInt, Written};
@@ -195,12 +195,15 @@ impl SendStream {
     /// This operation is *not* cancel-safe.
     pub async fn write_all(&mut self, buf: &[u8]) -> Result<(), WriteError> {
         let mut count = 0;
-        poll_fn(|cx| loop {
-            if count == buf.len() {
-                return Poll::Ready(Ok(()));
+        poll_fn(|cx| {
+            loop {
+                if count == buf.len() {
+                    return Poll::Ready(Ok(()));
+                }
+                let n =
+                    ready!(self.execute_poll_write(cx, |mut stream| stream.write(&buf[count..])))?;
+                count += n;
             }
-            let n = ready!(self.execute_poll_write(cx, |mut stream| stream.write(&buf[count..])))?;
-            count += n;
         })
         .await
     }
@@ -221,14 +224,16 @@ impl SendStream {
     /// This operation is *not* cancel-safe.
     pub async fn write_all_chunks(&mut self, bufs: &mut [Bytes]) -> Result<(), WriteError> {
         let mut chunks = 0;
-        poll_fn(|cx| loop {
-            if chunks == bufs.len() {
-                return Poll::Ready(Ok(()));
+        poll_fn(|cx| {
+            loop {
+                if chunks == bufs.len() {
+                    return Poll::Ready(Ok(()));
+                }
+                let written = ready!(self.execute_poll_write(cx, |mut stream| {
+                    stream.write_chunks(&mut bufs[chunks..])
+                }))?;
+                chunks += written.chunks;
             }
-            let written = ready!(self.execute_poll_write(cx, |mut stream| {
-                stream.write_chunks(&mut bufs[chunks..])
-            }))?;
-            chunks += written.chunks;
         })
         .await
     }
@@ -408,9 +413,10 @@ pub(crate) mod h3_impl {
         fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             if let Some(data) = &mut self.buf {
                 while data.has_remaining() {
-                    let n = ready!(self
-                        .inner
-                        .execute_poll_write(cx, |mut stream| stream.write(data.chunk())))?;
+                    let n = ready!(
+                        self.inner
+                            .execute_poll_write(cx, |mut stream| stream.write(data.chunk()))
+                    )?;
                     data.advance(n);
                 }
             }
@@ -456,9 +462,10 @@ pub(crate) mod h3_impl {
                 "poll_send called while send stream is not ready"
             );
 
-            let n = ready!(self
-                .inner
-                .execute_poll_write(cx, |mut stream| stream.write(buf.chunk())))?;
+            let n = ready!(
+                self.inner
+                    .execute_poll_write(cx, |mut stream| stream.write(buf.chunk()))
+            )?;
             buf.advance(n);
             Poll::Ready(Ok(n))
         }

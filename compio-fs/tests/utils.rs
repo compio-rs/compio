@@ -64,11 +64,13 @@ async fn build_dir_mode_read_only() {
         .await
         .unwrap();
 
-    assert!(compio_fs::metadata(new_dir)
-        .await
-        .expect("metadata result")
-        .permissions()
-        .readonly());
+    assert!(
+        compio_fs::metadata(new_dir)
+            .await
+            .expect("metadata result")
+            .permissions()
+            .readonly()
+    );
 }
 
 #[compio_macros::test]

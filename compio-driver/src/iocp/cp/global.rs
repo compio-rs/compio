@@ -12,7 +12,7 @@ use once_cell::sync::OnceCell as OnceLock;
 use windows_sys::Win32::System::IO::PostQueuedCompletionStatus;
 
 use super::CompletionPort;
-use crate::{syscall, Entry, Overlapped, RawFd};
+use crate::{Entry, Overlapped, RawFd, syscall};
 
 struct GlobalPort {
     port: CompletionPort,

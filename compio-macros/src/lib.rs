@@ -5,9 +5,9 @@ mod main_fn;
 mod test_fn;
 
 use proc_macro::TokenStream;
+use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Ident, Span};
-use proc_macro_crate::{crate_name, FoundCrate};
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use syn::parse_macro_input;
 
 #[proc_macro_attribute]

@@ -5,9 +5,9 @@ use std::{
 };
 
 use compio_buf::bytes::Bytes;
-use criterion::{criterion_group, criterion_main, Bencher, BenchmarkId, Criterion, Throughput};
-use futures_util::{stream::FuturesUnordered, StreamExt};
-use rand::{thread_rng, RngCore};
+use criterion::{Bencher, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use futures_util::{StreamExt, stream::FuturesUnordered};
+use rand::{RngCore, thread_rng};
 
 criterion_group!(quic, echo);
 criterion_main!(quic);

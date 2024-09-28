@@ -1,6 +1,6 @@
 use compio::{
-    io::{AsyncReadExt, AsyncWriteExt},
     BufResult,
+    io::{AsyncReadExt, AsyncWriteExt},
 };
 
 #[compio::main]

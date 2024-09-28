@@ -1,13 +1,13 @@
 use std::num::NonZeroUsize;
 
 use compio::{
+    BufResult,
     dispatcher::Dispatcher,
     io::{AsyncRead, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     runtime::spawn,
-    BufResult,
 };
-use futures_util::{stream::FuturesUnordered, StreamExt};
+use futures_util::{StreamExt, stream::FuturesUnordered};
 
 #[compio::main]
 async fn main() {

@@ -1,9 +1,9 @@
 use std::io::Cursor;
 
-use compio_buf::{arrayvec::ArrayVec, BufResult, IoBuf, IoBufMut};
+use compio_buf::{BufResult, IoBuf, IoBufMut, arrayvec::ArrayVec};
 use compio_io::{
-    split, AsyncRead, AsyncReadAt, AsyncReadAtExt, AsyncReadExt, AsyncWrite, AsyncWriteAt,
-    AsyncWriteAtExt, AsyncWriteExt,
+    AsyncRead, AsyncReadAt, AsyncReadAtExt, AsyncReadExt, AsyncWrite, AsyncWriteAt,
+    AsyncWriteAtExt, AsyncWriteExt, split,
 };
 use futures_executor::block_on;
 

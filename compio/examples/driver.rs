@@ -1,8 +1,8 @@
 use compio::{
-    buf::{arrayvec::ArrayVec, IntoInner},
+    buf::{IntoInner, arrayvec::ArrayVec},
     driver::{
-        op::{CloseFile, ReadAt},
         AsRawFd, OpCode, OwnedFd, Proactor, PushEntry, SharedFd,
+        op::{CloseFile, ReadAt},
     },
 };
 
@@ -13,7 +13,7 @@ fn open_file(driver: &mut Proactor) -> OwnedFd {
         io::{FromRawHandle, IntoRawHandle, OwnedHandle},
     };
 
-    use compio::{driver::op::Asyncify, BufResult};
+    use compio::{BufResult, driver::op::Asyncify};
     use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
 
     let op = Asyncify::new(|| {

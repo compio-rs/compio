@@ -10,7 +10,7 @@ use std::{
     task::Poll,
 };
 
-use aligned_array::{Aligned, A8};
+use aligned_array::{A8, Aligned};
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
 };
@@ -18,30 +18,30 @@ use compio_buf::{
 use once_cell::sync::OnceCell as OnceLock;
 use socket2::SockAddr;
 use windows_sys::{
-    core::GUID,
     Win32::{
         Foundation::{
-            CloseHandle, GetLastError, ERROR_BROKEN_PIPE, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE,
-            ERROR_IO_PENDING, ERROR_NOT_FOUND, ERROR_NO_DATA, ERROR_PIPE_CONNECTED,
-            ERROR_PIPE_NOT_CONNECTED,
+            CloseHandle, ERROR_BROKEN_PIPE, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE,
+            ERROR_IO_PENDING, ERROR_NO_DATA, ERROR_NOT_FOUND, ERROR_PIPE_CONNECTED,
+            ERROR_PIPE_NOT_CONNECTED, GetLastError,
         },
         Networking::WinSock::{
-            closesocket, setsockopt, shutdown, socklen_t, WSAIoctl, WSARecv, WSARecvFrom, WSASend,
-            WSASendMsg, WSASendTo, CMSGHDR, LPFN_ACCEPTEX, LPFN_CONNECTEX,
-            LPFN_GETACCEPTEXSOCKADDRS, LPFN_WSARECVMSG, SD_BOTH, SD_RECEIVE, SD_SEND,
-            SIO_GET_EXTENSION_FUNCTION_POINTER, SOCKADDR, SOCKADDR_STORAGE, SOL_SOCKET,
-            SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, WSABUF, WSAID_ACCEPTEX,
-            WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS, WSAID_WSARECVMSG, WSAMSG,
+            CMSGHDR, LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS, LPFN_WSARECVMSG,
+            SD_BOTH, SD_RECEIVE, SD_SEND, SIO_GET_EXTENSION_FUNCTION_POINTER,
+            SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, SOCKADDR, SOCKADDR_STORAGE,
+            SOL_SOCKET, WSABUF, WSAID_ACCEPTEX, WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS,
+            WSAID_WSARECVMSG, WSAIoctl, WSAMSG, WSARecv, WSARecvFrom, WSASend, WSASendMsg,
+            WSASendTo, closesocket, setsockopt, shutdown, socklen_t,
         },
         Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile},
         System::{
-            Pipes::ConnectNamedPipe,
             IO::{CancelIoEx, OVERLAPPED},
+            Pipes::ConnectNamedPipe,
         },
     },
+    core::GUID,
 };
 
-use crate::{op::*, syscall, AsRawFd, OpCode, OpType, RawFd, SharedFd};
+use crate::{AsRawFd, OpCode, OpType, RawFd, SharedFd, op::*, syscall};
 
 #[inline]
 fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
@@ -112,9 +112,9 @@ fn get_wsa_fn<F>(handle: RawFd, fguid: GUID) -> io::Result<Option<F>> {
 }
 
 impl<
-        D: std::marker::Send + 'static,
-        F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + 'static,
-    > OpCode for Asyncify<F, D>
+    D: std::marker::Send + 'static,
+    F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + 'static,
+> OpCode for Asyncify<F, D>
 {
     fn op_type(&self) -> OpType {
         OpType::Blocking

@@ -10,11 +10,11 @@ fn cf_run_loop() {
 
     use block2::{Block, StackBlock};
     use compio_driver::AsRawFd;
-    use compio_runtime::{event::Event, Runtime};
+    use compio_runtime::{Runtime, event::Event};
     use core_foundation::{
         base::TCFType,
-        filedescriptor::{kCFFileDescriptorReadCallBack, CFFileDescriptor, CFFileDescriptorRef},
-        runloop::{kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopRef, CFRunLoopStop},
+        filedescriptor::{CFFileDescriptor, CFFileDescriptorRef, kCFFileDescriptorReadCallBack},
+        runloop::{CFRunLoop, CFRunLoopRef, CFRunLoopStop, kCFRunLoopDefaultMode},
         string::CFStringRef,
     };
 
@@ -112,15 +112,16 @@ fn message_queue() {
 
     use compio_driver::AsRawFd;
     use compio_runtime::{
-        event::{Event, EventHandle},
         Runtime,
+        event::{Event, EventHandle},
     };
     use windows_sys::Win32::{
         Foundation::{HANDLE, HWND, WAIT_FAILED},
         System::Threading::INFINITE,
         UI::WindowsAndMessaging::{
-            DispatchMessageW, KillTimer, MsgWaitForMultipleObjectsEx, PeekMessageW, SetTimer,
-            TranslateMessage, MWMO_ALERTABLE, MWMO_INPUTAVAILABLE, PM_REMOVE, QS_ALLINPUT,
+            DispatchMessageW, KillTimer, MWMO_ALERTABLE, MWMO_INPUTAVAILABLE,
+            MsgWaitForMultipleObjectsEx, PM_REMOVE, PeekMessageW, QS_ALLINPUT, SetTimer,
+            TranslateMessage,
         },
     };
 
@@ -218,8 +219,8 @@ fn glib_context() {
     use std::{future::Future, time::Duration};
 
     use compio_driver::AsRawFd;
-    use compio_runtime::{event::Event, Runtime};
-    use glib::{timeout_add_local_once, unix_fd_add_local, ControlFlow, IOCondition, MainContext};
+    use compio_runtime::{Runtime, event::Event};
+    use glib::{ControlFlow, IOCondition, MainContext, timeout_add_local_once, unix_fd_add_local};
 
     struct GLibRuntime {
         runtime: Runtime,

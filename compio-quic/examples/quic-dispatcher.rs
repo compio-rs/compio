@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 use compio_dispatcher::Dispatcher;
 use compio_quic::{ClientBuilder, Endpoint, ServerBuilder};
 use compio_runtime::spawn;
-use futures_util::{stream::FuturesUnordered, StreamExt};
+use futures_util::{StreamExt, stream::FuturesUnordered};
 
 #[compio_macros::main]
 async fn main() {

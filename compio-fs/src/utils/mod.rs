@@ -8,10 +8,10 @@ mod sys;
 
 use std::{io, path::Path};
 
-use compio_buf::{buf_try, BufResult, IoBuf};
+use compio_buf::{BufResult, IoBuf, buf_try};
 use compio_io::{AsyncReadAtExt, AsyncWriteAtExt};
 
-use crate::{metadata, File};
+use crate::{File, metadata};
 
 /// Removes a file from the filesystem.
 pub async fn remove_file(path: impl AsRef<Path>) -> io::Result<()> {

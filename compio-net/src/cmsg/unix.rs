@@ -1,4 +1,4 @@
-use libc::{c_int, cmsghdr, msghdr, CMSG_DATA, CMSG_FIRSTHDR, CMSG_LEN, CMSG_NXTHDR, CMSG_SPACE};
+use libc::{CMSG_DATA, CMSG_FIRSTHDR, CMSG_LEN, CMSG_NXTHDR, CMSG_SPACE, c_int, cmsghdr, msghdr};
 
 pub(crate) struct CMsgRef<'a>(&'a cmsghdr);
 

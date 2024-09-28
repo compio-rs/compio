@@ -14,7 +14,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
 };
 
-use compio_buf::{buf_try, BufResult};
+use compio_buf::{BufResult, buf_try};
 use either::Either;
 pub use sys::resolve_sock_addrs;
 

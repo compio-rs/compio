@@ -10,8 +10,8 @@ pub(crate) mod op;
 pub use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::{io, task::Poll, time::Duration};
 
-pub(crate) use iour::{sockaddr_storage, socklen_t};
 pub use iour::{OpCode as IourOpCode, OpEntry};
+pub(crate) use iour::{sockaddr_storage, socklen_t};
 pub use poll::{Decision, OpCode as PollOpCode};
 
 pub use crate::driver_type::DriverType; // Re-export so current user won't be broken

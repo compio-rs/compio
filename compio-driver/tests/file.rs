@@ -1,9 +1,9 @@
 use std::{io, time::Duration};
 
-use compio_buf::{arrayvec::ArrayVec, BufResult};
+use compio_buf::{BufResult, arrayvec::ArrayVec};
 use compio_driver::{
-    op::{Asyncify, CloseFile, ReadAt},
     AsRawFd, OpCode, OwnedFd, Proactor, PushEntry, SharedFd,
+    op::{Asyncify, CloseFile, ReadAt},
 };
 
 #[cfg(windows)]

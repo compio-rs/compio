@@ -1,8 +1,8 @@
 use std::{io, os::fd::FromRawFd, path::Path};
 
-use compio_driver::{op::OpenFile, RawFd};
+use compio_driver::{RawFd, op::OpenFile};
 
-use crate::{path_string, File};
+use crate::{File, path_string};
 
 #[derive(Clone, Debug)]
 pub struct OpenOptions {

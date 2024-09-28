@@ -9,16 +9,16 @@ use std::{
     time::Instant,
 };
 
-use compio_buf::{bytes::Bytes, BufResult};
-use compio_log::{error, Instrument};
+use compio_buf::{BufResult, bytes::Bytes};
+use compio_log::{Instrument, error};
 use compio_net::{ToSocketAddrsAsync, UdpSocket};
 use compio_runtime::JoinHandle;
-use flume::{unbounded, Receiver, Sender};
+use flume::{Receiver, Sender, unbounded};
 use futures_util::{
+    FutureExt, StreamExt,
     future::{self},
     select,
     task::AtomicWaker,
-    FutureExt, StreamExt,
 };
 use quinn_proto::{
     ClientConfig, ConnectError, ConnectionError, ConnectionHandle, DatagramEvent, EndpointConfig,
@@ -256,19 +256,20 @@ impl EndpointInner {
     async fn run(&self) -> io::Result<()> {
         let respond_fn = |buf: Vec<u8>, transmit: Transmit| self.respond(buf, transmit);
 
-        let mut recv_fut = pin!(self
-            .socket
-            .recv(Vec::with_capacity(
-                self.state
-                    .lock()
-                    .unwrap()
-                    .endpoint
-                    .config()
-                    .get_max_udp_payload_size()
-                    .min(64 * 1024) as usize
-                    * self.socket.max_gro_segments(),
-            ))
-            .fuse());
+        let mut recv_fut = pin!(
+            self.socket
+                .recv(Vec::with_capacity(
+                    self.state
+                        .lock()
+                        .unwrap()
+                        .endpoint
+                        .config()
+                        .get_max_udp_payload_size()
+                        .min(64 * 1024) as usize
+                        * self.socket.max_gro_segments(),
+                ))
+                .fuse()
+        );
 
         let mut event_stream = self.events.1.stream().ready_chunks(100);
 

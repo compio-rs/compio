@@ -8,13 +8,13 @@ use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectore
 #[cfg(unix)]
 use compio_driver::op::CreateSocket;
 use compio_driver::{
-    impl_raw_fd,
+    AsRawFd, ToSharedFd, impl_raw_fd,
     op::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored, RecvMsg,
         RecvResultExt, RecvVectored, Send, SendMsg, SendTo, SendToVectored, SendVectored,
         ShutdownSocket,
     },
-    syscall, AsRawFd, ToSharedFd,
+    syscall,
 };
 use compio_runtime::Attacher;
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};

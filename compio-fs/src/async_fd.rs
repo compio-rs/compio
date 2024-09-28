@@ -8,8 +8,8 @@ use std::os::windows::io::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
-    op::{BufResultExt, Recv, Send},
     AsRawFd, SharedFd, ToSharedFd,
+    op::{BufResultExt, Recv, Send},
 };
 use compio_io::{AsyncRead, AsyncWrite};
 use compio_runtime::Attacher;

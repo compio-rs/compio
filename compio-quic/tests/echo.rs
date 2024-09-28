@@ -9,7 +9,7 @@ use compio_quic::{Endpoint, RecvStream, SendStream, TransportConfig};
 mod common;
 use common::{config_pair, subscribe};
 use futures_util::join;
-use rand::{rngs::StdRng, RngCore, SeedableRng};
+use rand::{RngCore, SeedableRng, rngs::StdRng};
 
 struct EchoArgs {
     client_addr: SocketAddr,

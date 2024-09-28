@@ -1,6 +1,6 @@
-use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut, buf_try};
 
-use crate::{buffer::Buffer, util::DEFAULT_BUF_SIZE, AsyncRead, IoResult};
+use crate::{AsyncRead, IoResult, buffer::Buffer, util::DEFAULT_BUF_SIZE};
 /// # AsyncBufRead
 ///
 /// Async read with buffered content.

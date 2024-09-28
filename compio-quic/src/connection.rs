@@ -2,23 +2,24 @@ use std::{
     collections::VecDeque,
     io,
     net::{IpAddr, SocketAddr},
-    pin::{pin, Pin},
+    pin::{Pin, pin},
     sync::{Arc, Mutex, MutexGuard},
     task::{Context, Poll, Waker},
     time::{Duration, Instant},
 };
 
-use compio_buf::{bytes::Bytes, BufResult};
-use compio_log::{error, Instrument};
+use compio_buf::{BufResult, bytes::Bytes};
+use compio_log::{Instrument, error};
 use compio_runtime::JoinHandle;
 use flume::{Receiver, Sender};
 use futures_util::{
+    Future, FutureExt, StreamExt,
     future::{self, Fuse, FusedFuture, LocalBoxFuture},
-    select, stream, Future, FutureExt, StreamExt,
+    select, stream,
 };
 use quinn_proto::{
-    congestion::Controller, crypto::rustls::HandshakeData, ConnectionHandle, ConnectionStats, Dir,
-    EndpointEvent, StreamEvent, StreamId, VarInt,
+    ConnectionHandle, ConnectionStats, Dir, EndpointEvent, StreamEvent, StreamId, VarInt,
+    congestion::Controller, crypto::rustls::HandshakeData,
 };
 use rustc_hash::FxHashMap as HashMap;
 use thiserror::Error;
@@ -992,7 +993,7 @@ pub(crate) mod h3_impl {
     };
 
     use super::*;
-    use crate::{send_stream::h3_impl::SendStream, ReadError, WriteError};
+    use crate::{ReadError, WriteError, send_stream::h3_impl::SendStream};
 
     impl Error for ConnectionError {
         fn is_timeout(&self) -> bool {
@@ -1157,7 +1158,7 @@ pub(crate) mod h3_impl {
             cx: &mut Context<'_>,
         ) -> Poll<Result<Self::BidiStream, Self::OpenError>> {
             let (stream, is_0rtt) = ready!(self.0.poll_open_stream(Some(cx), Dir::Bi))?;
-            Poll::Ready(Ok(BidiStream::new(self.0 .0.clone(), stream, is_0rtt)))
+            Poll::Ready(Ok(BidiStream::new(self.0.0.clone(), stream, is_0rtt)))
         }
 
         fn poll_open_send(
@@ -1165,7 +1166,7 @@ pub(crate) mod h3_impl {
             cx: &mut Context<'_>,
         ) -> Poll<Result<Self::SendStream, Self::OpenError>> {
             let (stream, is_0rtt) = ready!(self.0.poll_open_stream(Some(cx), Dir::Uni))?;
-            Poll::Ready(Ok(SendStream::new(self.0 .0.clone(), stream, is_0rtt)))
+            Poll::Ready(Ok(SendStream::new(self.0.0.clone(), stream, is_0rtt)))
         }
 
         fn close(&mut self, code: Code, reason: &[u8]) {

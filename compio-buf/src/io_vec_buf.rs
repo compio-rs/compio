@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::{
-    t_alloc, IndexedIter, IoBuf, IoBufMut, IoSlice, IoSliceMut, OwnedIterator, SetBufInit,
+    IndexedIter, IoBuf, IoBufMut, IoSlice, IoSliceMut, OwnedIterator, SetBufInit, t_alloc,
 };
 
 /// A type that's either owned or borrowed. Like [`Cow`](std::rc::Cow) but

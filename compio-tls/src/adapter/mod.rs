@@ -1,6 +1,6 @@
 use std::io;
 
-use compio_io::{compat::SyncStream, AsyncRead, AsyncWrite};
+use compio_io::{AsyncRead, AsyncWrite, compat::SyncStream};
 
 use crate::TlsStream;
 
