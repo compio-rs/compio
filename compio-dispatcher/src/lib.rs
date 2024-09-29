@@ -8,12 +8,12 @@ use std::{
     num::NonZeroUsize,
     panic::resume_unwind,
     sync::{Arc, Mutex},
-    thread::{available_parallelism, JoinHandle},
+    thread::{JoinHandle, available_parallelism},
 };
 
 use compio_driver::{AsyncifyPool, DispatchError, Dispatchable, ProactorBuilder};
-use compio_runtime::{event::Event, JoinHandle as CompioJoinHandle, Runtime};
-use flume::{unbounded, Sender};
+use compio_runtime::{JoinHandle as CompioJoinHandle, Runtime, event::Event};
+use flume::{Sender, unbounded};
 use futures_channel::oneshot;
 
 type Spawning = Box<dyn Spawnable + Send>;

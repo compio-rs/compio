@@ -1,8 +1,8 @@
 use std::{io, process};
 
 use compio_driver::{
-    op::{Interest, PollOnce},
     SharedFd,
+    op::{Interest, PollOnce},
 };
 
 pub async fn child_wait(mut child: process::Child) -> io::Result<process::ExitStatus> {

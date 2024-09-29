@@ -10,10 +10,10 @@ use compio_runtime::event::EventHandle;
 use socket2::SockAddr;
 use widestring::U16CString;
 use windows_sys::Win32::{
-    Foundation::{GetLastError, ERROR_IO_PENDING, HANDLE},
+    Foundation::{ERROR_IO_PENDING, GetLastError, HANDLE},
     Networking::WinSock::{
-        FreeAddrInfoExW, GetAddrInfoExCancel, GetAddrInfoExOverlappedResult, GetAddrInfoExW,
-        ADDRINFOEXW, AF_UNSPEC, IPPROTO_TCP, NS_ALL, SOCK_STREAM,
+        ADDRINFOEXW, AF_UNSPEC, FreeAddrInfoExW, GetAddrInfoExCancel,
+        GetAddrInfoExOverlappedResult, GetAddrInfoExW, IPPROTO_TCP, NS_ALL, SOCK_STREAM,
     },
     System::IO::OVERLAPPED,
 };

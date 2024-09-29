@@ -25,10 +25,10 @@ fn win32_event() {
         task::Poll,
     };
 
-    use compio_driver::{syscall, OpCode, OpType};
+    use compio_driver::{OpCode, OpType, syscall};
     use windows_sys::Win32::System::{
-        Threading::{CreateEventW, SetEvent},
         IO::OVERLAPPED,
+        Threading::{CreateEventW, SetEvent},
     };
 
     struct WaitEvent {

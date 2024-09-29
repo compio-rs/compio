@@ -1,11 +1,11 @@
 use std::future::ready;
 
-use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoVectoredBuf};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoVectoredBuf, buf_try};
 
 use crate::{
-    buffer::Buffer,
-    util::{slice_to_buf, DEFAULT_BUF_SIZE},
     AsyncWrite, IoResult,
+    buffer::Buffer,
+    util::{DEFAULT_BUF_SIZE, slice_to_buf},
 };
 
 /// Wraps a writer and buffers its output.

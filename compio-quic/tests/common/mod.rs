@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use compio_log::subscriber::DefaultGuard;
 use compio_quic::{ClientBuilder, ClientConfig, ServerBuilder, ServerConfig, TransportConfig};
-use tracing_subscriber::{util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, util::SubscriberInitExt};
 
 pub fn subscribe() -> DefaultGuard {
     tracing_subscriber::fmt()

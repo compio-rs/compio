@@ -2,8 +2,8 @@ use std::{io, ops::Deref};
 
 use compio_buf::{BufResult, IntoInner};
 use compio_driver::{
-    op::{Interest, PollOnce},
     AsRawFd, RawFd, SharedFd, ToSharedFd,
+    op::{Interest, PollOnce},
 };
 
 #[derive(Debug)]

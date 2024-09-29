@@ -12,7 +12,7 @@ use socket2::SockAddr;
 
 use super::OpCode;
 pub use crate::unix::op::*;
-use crate::{op::*, syscall, OpEntry, SharedFd};
+use crate::{OpEntry, SharedFd, op::*, syscall};
 
 impl<
     D: std::marker::Send + 'static,

@@ -1,7 +1,7 @@
 use std::{net::Ipv4Addr, rc::Rc, time::Instant};
 
-use criterion::{criterion_group, criterion_main, Bencher, Criterion, Throughput};
-use rand::{thread_rng, RngCore};
+use criterion::{Bencher, Criterion, Throughput, criterion_group, criterion_main};
+use rand::{RngCore, thread_rng};
 
 #[cfg(target_os = "linux")]
 mod monoio_wrap;

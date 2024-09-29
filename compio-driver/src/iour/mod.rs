@@ -20,14 +20,14 @@ cfg_if::cfg_if! {
     }
 }
 use io_uring::{
+    IoUring,
     cqueue::more,
     opcode::{AsyncCancel, PollAdd},
     types::{Fd, SubmitArgs, Timespec},
-    IoUring,
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 
-use crate::{syscall, AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder};
+use crate::{AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder, syscall};
 
 pub(crate) mod op;
 

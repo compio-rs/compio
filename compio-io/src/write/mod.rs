@@ -2,7 +2,7 @@
 use std::alloc::Allocator;
 use std::io::Cursor;
 
-use compio_buf::{buf_try, t_alloc, BufResult, IntoInner, IoBuf, IoVectoredBuf};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoVectoredBuf, buf_try, t_alloc};
 
 use crate::IoResult;
 

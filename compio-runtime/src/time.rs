@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures_util::{select, FutureExt};
+use futures_util::{FutureExt, select};
 
 use crate::Runtime;
 

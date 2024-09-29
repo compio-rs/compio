@@ -4,15 +4,15 @@ mod take;
 pub use take::Take;
 
 mod null;
-pub use null::{null, Null};
+pub use null::{Null, null};
 
 mod repeat;
-pub use repeat::{repeat, Repeat};
+pub use repeat::{Repeat, repeat};
 
 mod internal;
 pub(crate) use internal::*;
 
-use crate::{buffer::Buffer, AsyncRead, AsyncWrite, IoResult};
+use crate::{AsyncRead, AsyncWrite, IoResult, buffer::Buffer};
 
 /// Asynchronously copies the entire contents of a reader into a writer.
 ///

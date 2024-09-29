@@ -1,6 +1,6 @@
 unstable_features = true
 
-version = "Two"
+style_edition = "2024"
 
 group_imports = "StdExternalCrate"
 imports_granularity = "Crate"

@@ -22,23 +22,23 @@ use std::{
 use compio_log::*;
 use windows_sys::Win32::{
     Foundation::{
-        RtlNtStatusToDosError, ERROR_BAD_COMMAND, ERROR_BROKEN_PIPE, ERROR_HANDLE_EOF,
-        ERROR_IO_INCOMPLETE, ERROR_NO_DATA, ERROR_PIPE_CONNECTED, ERROR_PIPE_NOT_CONNECTED,
-        FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, STATUS_PENDING, STATUS_SUCCESS,
+        ERROR_BAD_COMMAND, ERROR_BROKEN_PIPE, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_NO_DATA,
+        ERROR_PIPE_CONNECTED, ERROR_PIPE_NOT_CONNECTED, FACILITY_NTWIN32, INVALID_HANDLE_VALUE,
+        NTSTATUS, RtlNtStatusToDosError, STATUS_PENDING, STATUS_SUCCESS,
     },
     Storage::FileSystem::SetFileCompletionNotificationModes,
     System::{
+        IO::{
+            CreateIoCompletionPort, GetQueuedCompletionStatusEx, OVERLAPPED_ENTRY,
+            PostQueuedCompletionStatus,
+        },
         SystemServices::ERROR_SEVERITY_ERROR,
         Threading::INFINITE,
         WindowsProgramming::{FILE_SKIP_COMPLETION_PORT_ON_SUCCESS, FILE_SKIP_SET_EVENT_ON_HANDLE},
-        IO::{
-            CreateIoCompletionPort, GetQueuedCompletionStatusEx, PostQueuedCompletionStatus,
-            OVERLAPPED_ENTRY,
-        },
     },
 };
 
-use crate::{syscall, Entry, Overlapped, RawFd};
+use crate::{Entry, Overlapped, RawFd, syscall};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "iocp-global")] {

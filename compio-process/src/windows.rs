@@ -8,11 +8,12 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
+    AsRawFd, OpCode, OpType, RawFd, SharedFd, ToSharedFd,
     op::{BufResultExt, Recv, Send},
-    syscall, AsRawFd, OpCode, OpType, RawFd, SharedFd, ToSharedFd,
+    syscall,
 };
 use compio_io::{AsyncRead, AsyncWrite};
-use windows_sys::Win32::System::{Threading::GetExitCodeProcess, IO::OVERLAPPED};
+use windows_sys::Win32::System::{IO::OVERLAPPED, Threading::GetExitCodeProcess};
 
 use crate::{ChildStderr, ChildStdin, ChildStdout};
 

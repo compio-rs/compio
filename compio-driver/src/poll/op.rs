@@ -14,9 +14,9 @@ use libc::{pread64 as pread, preadv64 as preadv, pwrite64 as pwrite, pwritev64 a
 use polling::Event;
 use socket2::SockAddr;
 
-use super::{sockaddr_storage, socklen_t, syscall, AsRawFd, Decision, OpCode};
+use super::{AsRawFd, Decision, OpCode, sockaddr_storage, socklen_t, syscall};
 pub use crate::unix::op::*;
-use crate::{op::*, SharedFd};
+use crate::{SharedFd, op::*};
 
 impl<
     D: std::marker::Send + 'static,

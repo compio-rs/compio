@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens, TokenStreamExt};
-use syn::{parse::Parse, AttrStyle, Attribute, Signature, Visibility};
+use quote::{ToTokens, TokenStreamExt, quote};
+use syn::{AttrStyle, Attribute, Signature, Visibility, parse::Parse};
 
 use crate::{
     item_fn::{RawAttr, RawBodyItemFn},

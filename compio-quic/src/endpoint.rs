@@ -9,16 +9,16 @@ use std::{
     time::Instant,
 };
 
-use compio_buf::{bytes::Bytes, BufResult};
-use compio_log::{error, Instrument};
+use compio_buf::{BufResult, bytes::Bytes};
+use compio_log::{Instrument, error};
 use compio_net::{ToSocketAddrsAsync, UdpSocket};
 use compio_runtime::JoinHandle;
-use flume::{unbounded, Receiver, Sender};
+use flume::{Receiver, Sender, unbounded};
 use futures_util::{
+    FutureExt, StreamExt,
     future::{self},
     select,
     task::AtomicWaker,
-    FutureExt, StreamExt,
 };
 use quinn_proto::{
     ClientConfig, ConnectError, ConnectionError, ConnectionHandle, DatagramEvent, EndpointConfig,

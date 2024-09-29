@@ -6,7 +6,7 @@ use compio_buf::{
 use libc::{sockaddr_storage, socklen_t};
 use socket2::SockAddr;
 
-use crate::{op::*, SharedFd};
+use crate::{SharedFd, op::*};
 
 /// Open or create a file with flags and mode.
 pub struct OpenFile {

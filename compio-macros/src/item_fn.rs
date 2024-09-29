@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
-    parse::Parse, punctuated::Punctuated, Attribute, Expr, Lit, Meta, Signature, Visibility,
+    Attribute, Expr, Lit, Meta, Signature, Visibility, parse::Parse, punctuated::Punctuated,
 };
 
 type AttributeArgs = Punctuated<syn::Meta, syn::Token![,]>;

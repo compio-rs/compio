@@ -17,7 +17,7 @@ use crossbeam_queue::SegQueue;
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use polling::{Event, Events, PollMode, Poller};
 
-use crate::{op::Interest, syscall, AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder};
+use crate::{AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder, op::Interest, syscall};
 
 pub(crate) mod op;
 

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use compio::{signal::ctrl_c, time::interval};
-use futures_util::{select, FutureExt};
+use futures_util::{FutureExt, select};
 
 #[compio::main]
 async fn main() {

@@ -18,24 +18,24 @@ use std::{
 use compio_log::{instrument, trace};
 use windows_sys::Win32::{
     Foundation::{ERROR_BUSY, ERROR_TIMEOUT, WAIT_OBJECT_0, WAIT_TIMEOUT},
-    Networking::WinSock::{WSACleanup, WSAStartup, WSADATA},
+    Networking::WinSock::{WSACleanup, WSADATA, WSAStartup},
     System::{
-        Threading::{
-            CloseThreadpoolWait, CreateThreadpoolWait, SetThreadpoolWait,
-            WaitForThreadpoolWaitCallbacks, PTP_CALLBACK_INSTANCE, PTP_WAIT,
-        },
         IO::OVERLAPPED,
+        Threading::{
+            CloseThreadpoolWait, CreateThreadpoolWait, PTP_CALLBACK_INSTANCE, PTP_WAIT,
+            SetThreadpoolWait, WaitForThreadpoolWaitCallbacks,
+        },
     },
 };
 
-use crate::{syscall, AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder};
+use crate::{AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder, syscall};
 
 pub(crate) mod op;
 
 mod cp;
 
 pub(crate) use windows_sys::Win32::Networking::WinSock::{
-    socklen_t, SOCKADDR_STORAGE as sockaddr_storage,
+    SOCKADDR_STORAGE as sockaddr_storage, socklen_t,
 };
 
 /// On windows, handle and socket are in the same size.

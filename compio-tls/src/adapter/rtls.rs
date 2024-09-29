@@ -1,9 +1,9 @@
 use std::{io, ops::DerefMut, sync::Arc};
 
-use compio_io::{compat::SyncStream, AsyncRead, AsyncWrite};
+use compio_io::{AsyncRead, AsyncWrite, compat::SyncStream};
 use rustls::{
-    pki_types::ServerName, ClientConfig, ClientConnection, ConnectionCommon, Error, ServerConfig,
-    ServerConnection,
+    ClientConfig, ClientConnection, ConnectionCommon, Error, ServerConfig, ServerConnection,
+    pki_types::ServerName,
 };
 
 use crate::TlsStream;

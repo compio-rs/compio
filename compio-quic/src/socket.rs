@@ -16,7 +16,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use compio_buf::{buf_try, BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit, buf_try};
 use compio_net::{CMsgBuilder, CMsgIter, UdpSocket};
 use quinn_proto::{EcnCodepoint, Transmit};
 #[cfg(windows)]

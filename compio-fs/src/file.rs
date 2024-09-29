@@ -2,9 +2,8 @@ use std::{future::Future, io, mem::ManuallyDrop, panic::resume_unwind, path::Pat
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
-    impl_raw_fd,
+    ToSharedFd, impl_raw_fd,
     op::{BufResultExt, CloseFile, ReadAt, Sync, WriteAt},
-    ToSharedFd,
 };
 use compio_io::{AsyncReadAt, AsyncWriteAt};
 use compio_runtime::Attacher;
@@ -108,7 +107,7 @@ impl File {
     pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
         use std::os::unix::fs::PermissionsExt;
 
-        use compio_driver::{syscall, AsRawFd};
+        use compio_driver::{AsRawFd, syscall};
 
         let file = self.inner.clone();
         compio_runtime::spawn_blocking(move || {

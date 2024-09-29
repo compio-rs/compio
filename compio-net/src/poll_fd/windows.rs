@@ -9,14 +9,14 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner};
-use compio_driver::{syscall, AsRawFd, OpCode, OpType, RawFd, SharedFd, ToSharedFd};
+use compio_driver::{AsRawFd, OpCode, OpType, RawFd, SharedFd, ToSharedFd, syscall};
 use windows_sys::Win32::{
     Foundation::ERROR_IO_PENDING,
     Networking::WinSock::{
-        WSAEnumNetworkEvents, WSAEventSelect, FD_ACCEPT, FD_CONNECT, FD_MAX_EVENTS, FD_READ,
-        FD_WRITE, WSANETWORKEVENTS,
+        FD_ACCEPT, FD_CONNECT, FD_MAX_EVENTS, FD_READ, FD_WRITE, WSAEnumNetworkEvents,
+        WSAEventSelect, WSANETWORKEVENTS,
     },
-    System::{Threading::CreateEventW, IO::OVERLAPPED},
+    System::{IO::OVERLAPPED, Threading::CreateEventW},
 };
 
 #[derive(Debug)]

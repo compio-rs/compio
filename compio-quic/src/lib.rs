@@ -8,9 +8,10 @@
 #![warn(missing_docs)]
 
 pub use quinn_proto::{
-    congestion, crypto, AckFrequencyConfig, ApplicationClose, Chunk, ClientConfig, ClosedStream,
-    ConfigError, ConnectError, ConnectionClose, ConnectionStats, EndpointConfig, IdleTimeout,
-    MtuDiscoveryConfig, ServerConfig, StreamId, Transmit, TransportConfig, VarInt,
+    AckFrequencyConfig, ApplicationClose, Chunk, ClientConfig, ClosedStream, ConfigError,
+    ConnectError, ConnectionClose, ConnectionStats, EndpointConfig, IdleTimeout,
+    MtuDiscoveryConfig, ServerConfig, StreamId, Transmit, TransportConfig, VarInt, congestion,
+    crypto,
 };
 
 mod builder;

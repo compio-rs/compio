@@ -1,9 +1,9 @@
 #[cfg(feature = "allocator_api")]
 use std::alloc::Allocator;
 
-use compio_buf::{t_alloc, BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut, t_alloc};
 
-use crate::{util::Take, AsyncRead, AsyncReadAt, IoResult};
+use crate::{AsyncRead, AsyncReadAt, IoResult, util::Take};
 
 /// Shared code for read a scalar value from the underlying reader.
 macro_rules! read_scalar {

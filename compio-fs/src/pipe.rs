@@ -9,9 +9,9 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{
-    impl_raw_fd,
+    AsRawFd, ToSharedFd, impl_raw_fd,
     op::{BufResultExt, Recv, RecvVectored, Send, SendVectored},
-    syscall, AsRawFd, ToSharedFd,
+    syscall,
 };
 use compio_io::{AsyncRead, AsyncWrite};
 

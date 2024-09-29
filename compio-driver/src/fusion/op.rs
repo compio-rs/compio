@@ -4,8 +4,8 @@ use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use socket2::SockAddr;
 
 use super::*;
-pub use crate::unix::op::*;
 use crate::SharedFd;
+pub use crate::unix::op::*;
 
 macro_rules! op {
     (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? )) => {

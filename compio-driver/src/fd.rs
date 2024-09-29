@@ -3,13 +3,13 @@ use std::os::fd::FromRawFd;
 #[cfg(windows)]
 use std::os::windows::io::{FromRawHandle, FromRawSocket, RawHandle, RawSocket};
 use std::{
-    future::{poll_fn, Future},
+    future::{Future, poll_fn},
     mem::ManuallyDrop,
     ops::Deref,
     panic::RefUnwindSafe,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     task::Poll,
 };

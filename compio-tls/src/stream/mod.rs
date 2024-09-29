@@ -1,7 +1,7 @@
 use std::{borrow::Cow, io, mem::MaybeUninit};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
-use compio_io::{compat::SyncStream, AsyncRead, AsyncWrite};
+use compio_io::{AsyncRead, AsyncWrite, compat::SyncStream};
 
 #[cfg(feature = "rustls")]
 mod rtls;
