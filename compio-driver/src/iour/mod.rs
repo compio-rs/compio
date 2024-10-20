@@ -308,7 +308,7 @@ fn timespec(duration: std::time::Duration) -> Timespec {
 
 #[derive(Debug)]
 struct Notifier {
-    fd: OwnedFd,
+    fd: Arc<OwnedFd>,
 }
 
 impl Notifier {
@@ -316,7 +316,7 @@ impl Notifier {
     fn new() -> io::Result<Self> {
         let fd = syscall!(libc::eventfd(0, libc::EFD_CLOEXEC | libc::EFD_NONBLOCK))?;
         let fd = unsafe { OwnedFd::from_raw_fd(fd) };
-        Ok(Self { fd })
+        Ok(Self { fd: Arc::new(fd) })
     }
 
     pub fn clear(&self) -> io::Result<()> {
@@ -342,7 +342,7 @@ impl Notifier {
     }
 
     pub fn handle(&self) -> io::Result<NotifyHandle> {
-        Ok(NotifyHandle::new(self.fd.try_clone()?))
+        Ok(NotifyHandle::new(self.fd.clone()))
     }
 }
 
@@ -354,11 +354,11 @@ impl AsRawFd for Notifier {
 
 /// A notify handle to the inner driver.
 pub struct NotifyHandle {
-    fd: OwnedFd,
+    fd: Arc<OwnedFd>,
 }
 
 impl NotifyHandle {
-    pub(crate) fn new(fd: OwnedFd) -> Self {
+    pub(crate) fn new(fd: Arc<OwnedFd>) -> Self {
         Self { fd }
     }
 
