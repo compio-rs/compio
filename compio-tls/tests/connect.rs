@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use compio_io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use compio_net::TcpStream;
 use compio_tls::TlsConnector;
@@ -33,7 +31,7 @@ async fn rtls() {
         store.add(cert).unwrap();
     }
 
-    let connector = TlsConnector::from(Arc::new(
+    let connector = TlsConnector::from(std::sync::Arc::new(
         rustls::ClientConfig::builder()
             .with_root_certificates(store)
             .with_no_client_auth(),
