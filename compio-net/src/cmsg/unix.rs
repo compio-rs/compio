@@ -2,7 +2,7 @@ use libc::{CMSG_DATA, CMSG_FIRSTHDR, CMSG_LEN, CMSG_NXTHDR, CMSG_SPACE, c_int, c
 
 pub(crate) struct CMsgRef<'a>(&'a cmsghdr);
 
-impl<'a> CMsgRef<'a> {
+impl CMsgRef<'_> {
     pub(crate) fn level(&self) -> c_int {
         self.0.cmsg_level
     }
@@ -23,7 +23,7 @@ impl<'a> CMsgRef<'a> {
 
 pub(crate) struct CMsgMut<'a>(&'a mut cmsghdr);
 
-impl<'a> CMsgMut<'a> {
+impl CMsgMut<'_> {
     pub(crate) fn set_level(&mut self, level: c_int) {
         self.0.cmsg_level = level;
     }

@@ -326,7 +326,7 @@ fn entry_cancelled(user_data: usize) -> Entry {
 
 struct Notifier {
     notify_reader: os_pipe::PipeReader,
-    notify_writer: os_pipe::PipeWriter,
+    notify_writer: Arc<os_pipe::PipeWriter>,
 }
 
 impl Notifier {
@@ -343,12 +343,12 @@ impl Notifier {
 
         Ok(Self {
             notify_reader,
-            notify_writer,
+            notify_writer: Arc::new(notify_writer),
         })
     }
 
     pub fn handle(&self) -> io::Result<NotifyHandle> {
-        Ok(NotifyHandle::new(self.notify_writer.try_clone()?))
+        Ok(NotifyHandle::new(self.notify_writer.clone()))
     }
 
     pub fn clear(&self) -> io::Result<()> {
@@ -367,16 +367,16 @@ impl Notifier {
 
 /// A notify handle to the inner driver.
 pub struct NotifyHandle {
-    sender: os_pipe::PipeWriter,
+    sender: Arc<os_pipe::PipeWriter>,
 }
 
 impl NotifyHandle {
-    fn new(sender: os_pipe::PipeWriter) -> Self {
+    fn new(sender: Arc<os_pipe::PipeWriter>) -> Self {
         Self { sender }
     }
 
     /// Notify the inner driver.
     pub fn notify(&self) -> io::Result<()> {
-        (&self.sender).write_all(&[1u8])
+        (&*self.sender).write_all(&[1u8])
     }
 }
