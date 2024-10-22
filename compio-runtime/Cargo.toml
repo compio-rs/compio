@@ -50,7 +50,6 @@ windows-sys = { workspace = true, features = ["Win32_System_IO"] }
 
 # Unix specific dependencies
 [target.'cfg(unix)'.dependencies]
-os_pipe = { workspace = true }
 libc = { workspace = true }
 
 [target.'cfg(windows)'.dev-dependencies]
