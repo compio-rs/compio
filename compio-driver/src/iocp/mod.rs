@@ -244,7 +244,11 @@ impl Driver {
         unsafe { op.cancel(overlapped_ptr.cast()) }.ok();
     }
 
-    pub fn push<T: OpCode + 'static>(&mut self, op: &mut Key<T>) -> Poll<io::Result<usize>> {
+    pub fn push<T: OpCode + 'static>(
+        &mut self,
+        op: &mut Key<T>,
+        _entries: &mut OutEntries,
+    ) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?op);
         let user_data = op.user_data();
         trace!("push RawOp");
@@ -299,17 +303,17 @@ impl Driver {
     pub unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        mut entries: OutEntries<impl Extend<usize>>,
+        entries: &mut OutEntries,
     ) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
 
         let notify_user_data = self.notify_overlapped.as_ref() as *const Overlapped as usize;
 
-        entries.extend(
-            self.port
-                .poll(timeout)?
-                .filter_map(|e| Self::create_entry(notify_user_data, &mut self.waits, e)),
-        );
+        for e in self.port.poll(timeout)? {
+            if let Some(e) = Self::create_entry(notify_user_data, &mut self.waits, e) {
+                entries.notify(e);
+            }
+        }
 
         Ok(())
     }

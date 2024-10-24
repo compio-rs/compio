@@ -265,7 +265,8 @@ impl Proactor {
     /// user-defined data, associated with it.
     pub fn push<T: OpCode + 'static>(&mut self, op: T) -> PushEntry<Key<T>, BufResult<usize, T>> {
         let mut op = self.driver.create_op(op);
-        match self.driver.push(&mut op) {
+        let mut entries = OutEntries::new();
+        match self.driver.push(&mut op, &mut entries) {
             Poll::Pending => PushEntry::Pending(op),
             Poll::Ready(res) => {
                 op.set_result(res);
@@ -278,15 +279,12 @@ impl Proactor {
     /// Poll the driver and get completed entries.
     /// You need to call [`Proactor::pop`] to get the pushed
     /// operations.
-    pub fn poll(
-        &mut self,
-        timeout: Option<Duration>,
-        entries: &mut impl Extend<usize>,
-    ) -> io::Result<()> {
+    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<usize> {
+        let mut entries = OutEntries::new();
         unsafe {
-            self.driver.poll(timeout, OutEntries::new(entries))?;
+            self.driver.poll(timeout, &mut entries)?;
         }
-        Ok(())
+        Ok(entries.len)
     }
 
     /// Get the pushed operations from the completion entries.
@@ -362,30 +360,25 @@ impl Entry {
 
 // The output entries need to be marked as `completed`. If an entry has been
 // marked as `cancelled`, it will be removed from the registry.
-struct OutEntries<'b, E> {
-    entries: &'b mut E,
+struct OutEntries {
+    len: usize,
 }
 
-impl<'b, E> OutEntries<'b, E> {
-    pub fn new(entries: &'b mut E) -> Self {
-        Self { entries }
+impl OutEntries {
+    pub fn new() -> Self {
+        Self { len: 0 }
     }
-}
 
-impl<E: Extend<usize>> Extend<Entry> for OutEntries<'_, E> {
-    fn extend<T: IntoIterator<Item = Entry>>(&mut self, iter: T) {
-        self.entries.extend(iter.into_iter().filter_map(|e| {
-            let user_data = e.user_data();
-            let mut op = unsafe { Key::<()>::new_unchecked(user_data) };
-            op.set_flags(e.flags());
-            if op.set_result(e.into_result()) {
-                // SAFETY: completed and cancelled.
-                let _ = unsafe { op.into_box() };
-                None
-            } else {
-                Some(user_data)
-            }
-        }))
+    pub fn notify(&mut self, e: Entry) {
+        let user_data = e.user_data();
+        let mut op = unsafe { Key::<()>::new_unchecked(user_data) };
+        op.set_flags(e.flags());
+        if op.set_result(e.into_result()) {
+            // SAFETY: completed and cancelled.
+            let _ = unsafe { op.into_box() };
+        } else {
+            self.len += 1;
+        }
     }
 }
 

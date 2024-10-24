@@ -139,28 +139,30 @@ impl Driver {
         }
     }
 
-    fn poll_entries(&mut self, entries: &mut impl Extend<Entry>) -> bool {
+    fn poll_entries(&mut self, entries: &mut OutEntries) -> bool {
         // Cheaper than pop.
         if !self.pool_completed.is_empty() {
             while let Some(entry) = self.pool_completed.pop() {
-                entries.extend(Some(entry));
+                entries.notify(entry);
             }
         }
 
         let mut cqueue = self.inner.completion();
         cqueue.sync();
         let has_entry = !cqueue.is_empty();
-        let completed_entries = cqueue.filter_map(|entry| match entry.user_data() {
-            Self::CANCEL => None,
-            Self::NOTIFY => {
-                let flags = entry.flags();
-                debug_assert!(more(flags));
-                self.notifier.clear().expect("cannot clear notifier");
-                None
+        for entry in cqueue {
+            match entry.user_data() {
+                Self::CANCEL => {}
+                Self::NOTIFY => {
+                    let flags = entry.flags();
+                    debug_assert!(more(flags));
+                    self.notifier.clear().expect("cannot clear notifier");
+                }
+                _ => {
+                    entries.notify(create_entry(entry));
+                }
             }
-            _ => Some(create_entry(entry)),
-        });
-        entries.extend(completed_entries);
+        }
         has_entry
     }
 
@@ -193,7 +195,7 @@ impl Driver {
         }
     }
 
-    fn push_raw(&mut self, entry: SEntry) -> io::Result<()> {
+    fn push_raw(&mut self, entry: SEntry, entries: &mut OutEntries) -> io::Result<()> {
         loop {
             let mut squeue = self.inner.submission();
             match unsafe { squeue.push(&entry) } {
@@ -203,7 +205,8 @@ impl Driver {
                 }
                 Err(_) => {
                     drop(squeue);
-                    self.inner.submit()?;
+                    self.poll_entries(entries);
+                    self.submit_auto(Some(Duration::ZERO))?;
                 }
             }
         }
@@ -212,6 +215,7 @@ impl Driver {
     pub fn push<T: crate::sys::OpCode + 'static>(
         &mut self,
         op: &mut Key<T>,
+        entries: &mut OutEntries,
     ) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?op);
         let user_data = op.user_data();
@@ -220,12 +224,12 @@ impl Driver {
         match op_pin.create_entry() {
             OpEntry::Submission(entry) => {
                 #[allow(clippy::useless_conversion)]
-                self.push_raw(entry.user_data(user_data as _).into())?;
+                self.push_raw(entry.user_data(user_data as _).into(), entries)?;
                 Poll::Pending
             }
             #[cfg(feature = "io-uring-sqe128")]
             OpEntry::Submission128(entry) => {
-                self.push_raw(entry.user_data(user_data as _))?;
+                self.push_raw(entry.user_data(user_data as _), entries)?;
                 Poll::Pending
             }
             OpEntry::Blocking => {
@@ -257,15 +261,15 @@ impl Driver {
     pub unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        mut entries: OutEntries<impl Extend<usize>>,
+        entries: &mut OutEntries,
     ) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         // Anyway we need to submit once, no matter there are entries in squeue.
         trace!("start polling");
 
-        if !self.poll_entries(&mut entries) {
+        if !self.poll_entries(entries) {
             self.submit_auto(timeout)?;
-            self.poll_entries(&mut entries);
+            self.poll_entries(entries);
         }
 
         Ok(())

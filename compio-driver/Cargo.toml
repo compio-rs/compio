@@ -70,9 +70,6 @@ crossbeam-channel = { workspace = true }
 crossbeam-queue = { workspace = true }
 libc = { workspace = true }
 
-[dev-dependencies]
-compio-buf = { workspace = true, features = ["arrayvec"] }
-
 [features]
 default = ["io-uring"]
 polling = ["dep:polling"]

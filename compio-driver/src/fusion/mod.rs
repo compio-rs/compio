@@ -70,17 +70,21 @@ impl Driver {
         }
     }
 
-    pub fn push<T: OpCode + 'static>(&mut self, op: &mut Key<T>) -> Poll<io::Result<usize>> {
+    pub fn push<T: OpCode + 'static>(
+        &mut self,
+        op: &mut Key<T>,
+        entries: &mut OutEntries,
+    ) -> Poll<io::Result<usize>> {
         match &mut self.fuse {
-            FuseDriver::Poll(driver) => driver.push(op),
-            FuseDriver::IoUring(driver) => driver.push(op),
+            FuseDriver::Poll(driver) => driver.push(op, entries),
+            FuseDriver::IoUring(driver) => driver.push(op, entries),
         }
     }
 
     pub unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        entries: OutEntries<impl Extend<usize>>,
+        entries: &mut OutEntries,
     ) -> io::Result<()> {
         match &mut self.fuse {
             FuseDriver::Poll(driver) => driver.poll(timeout, entries),

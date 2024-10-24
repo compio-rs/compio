@@ -192,6 +192,7 @@ impl Driver {
     pub fn push<T: crate::sys::OpCode + 'static>(
         &mut self,
         op: &mut Key<T>,
+        _entries: &mut OutEntries,
     ) -> Poll<io::Result<usize>> {
         let user_data = op.user_data();
         let op_pin = op.as_op_pin();
@@ -235,14 +236,14 @@ impl Driver {
     pub unsafe fn poll(
         &mut self,
         timeout: Option<Duration>,
-        mut entries: OutEntries<impl Extend<usize>>,
+        entries: &mut OutEntries,
     ) -> io::Result<()> {
         self.poll.wait(&mut self.events, timeout)?;
         if self.events.is_empty() && self.pool_completed.is_empty() && timeout.is_some() {
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
         }
         while let Some(entry) = self.pool_completed.pop() {
-            entries.extend(Some(entry));
+            entries.notify(entry);
         }
         for event in self.events.iter() {
             let fd = event.key as RawFd;
@@ -252,7 +253,7 @@ impl Driver {
                 .expect("the fd should be attached");
             if let Some((user_data, interest)) = queue.pop_interest(&event) {
                 if self.cancelled.remove(&user_data) {
-                    entries.extend(Some(entry_cancelled(user_data)));
+                    entries.notify(entry_cancelled(user_data));
                 } else {
                     let mut op = Key::<dyn crate::sys::OpCode>::new_unchecked(user_data);
                     let op = op.as_op_pin();
@@ -266,7 +267,7 @@ impl Driver {
                     };
                     if let Some(res) = res {
                         let entry = Entry::new(user_data, res);
-                        entries.extend(Some(entry));
+                        entries.notify(entry);
                     }
                 }
             }

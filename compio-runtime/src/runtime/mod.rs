@@ -20,7 +20,6 @@ use compio_driver::{
 use compio_log::{debug, instrument};
 use crossbeam_queue::SegQueue;
 use futures_util::{FutureExt, future::Either};
-use smallvec::SmallVec;
 
 pub(crate) mod op;
 #[cfg(feature = "time")]
@@ -341,11 +340,10 @@ impl Runtime {
     pub fn poll_with(&self, timeout: Option<Duration>) {
         instrument!(compio_log::Level::DEBUG, "poll_with");
 
-        let mut entries = SmallVec::<[usize; 1024]>::new();
         let mut driver = self.driver.borrow_mut();
-        match driver.poll(timeout, &mut entries) {
-            Ok(_) => {
-                debug!("poll driver ok, entries: {}", entries.len());
+        match driver.poll(timeout) {
+            Ok(_len) => {
+                debug!("poll driver ok, entries: {}", _len);
             }
             Err(e) => match e.kind() {
                 io::ErrorKind::TimedOut | io::ErrorKind::Interrupted => {
