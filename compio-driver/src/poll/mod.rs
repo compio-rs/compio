@@ -19,7 +19,7 @@ use crossbeam_queue::SegQueue;
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use polling::{Event, Events, Poller};
 
-use crate::{AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder, op::Interest, syscall};
+use crate::{AsyncifyPool, Entry, Key, ProactorBuilder, op::Interest, syscall};
 
 pub(crate) mod op;
 
@@ -244,13 +244,13 @@ impl Driver {
                 Poll::Pending
             }
             Decision::Completed(res) => Poll::Ready(Ok(res)),
-            Decision::Blocking => {
+            Decision::Blocking => loop {
                 if self.push_blocking(user_data) {
-                    Poll::Pending
+                    break Poll::Pending;
                 } else {
-                    Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
+                    self.poll_blocking();
                 }
-            }
+            },
             #[cfg(aio)]
             Decision::Aio(AioControl { mut aiocbp, submit }) => {
                 let aiocb = unsafe { aiocbp.as_mut() };
@@ -281,19 +281,21 @@ impl Driver {
             .is_ok()
     }
 
-    pub unsafe fn poll(
-        &mut self,
-        timeout: Option<Duration>,
-        mut entries: OutEntries<impl Extend<usize>>,
-    ) -> io::Result<()> {
+    fn poll_blocking(&mut self) {
+        while let Some(entry) = self.pool_completed.pop() {
+            unsafe {
+                entry.notify();
+            }
+        }
+    }
+
+    pub unsafe fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         self.poll.wait(&mut self.events, timeout)?;
         if self.events.is_empty() && self.pool_completed.is_empty() && timeout.is_some() {
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
         }
-        while let Some(entry) = self.pool_completed.pop() {
-            entries.extend(Some(entry));
-        }
+        self.poll_blocking();
         for event in self.events.iter() {
             let user_data = event.key;
             trace!("receive {} for {:?}", user_data, event);
@@ -312,7 +314,7 @@ impl Driver {
                         .expect("the fd should be attached");
                     if let Some((user_data, interest)) = queue.pop_interest(&event) {
                         if self.cancelled.remove(&user_data) {
-                            entries.extend(Some(entry_cancelled(user_data)));
+                            entry_cancelled(user_data).notify();
                         } else {
                             let res = match op.operate() {
                                 Poll::Pending => {
@@ -323,8 +325,7 @@ impl Driver {
                                 Poll::Ready(res) => Some(res),
                             };
                             if let Some(res) = res {
-                                let entry = Entry::new(user_data, res);
-                                entries.extend(Some(entry));
+                                Entry::new(user_data, res).notify();
                             }
                         }
                     }
@@ -357,7 +358,7 @@ impl Driver {
                         }
                         _ => syscall!(libc::aio_return(aiocbp.as_ptr())).map(|res| res as usize),
                     };
-                    entries.extend(Some(Entry::new(user_data, res)));
+                    Entry::new(user_data, res).notify();
                 }
             }
         }

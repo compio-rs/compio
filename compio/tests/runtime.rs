@@ -8,6 +8,7 @@ use compio::{
     io::{AsyncReadAt, AsyncReadExt, AsyncWriteAt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
+use compio_driver::ProactorBuilder;
 use tempfile::NamedTempFile;
 
 #[compio_macros::test]
@@ -126,21 +127,24 @@ async fn drop_on_complete() {
     drop(file);
 }
 
-#[compio_macros::test]
-#[cfg_attr(
-    not(any(windows, all(target_os = "linux", feature = "io-uring"))),
-    ignore
-)]
-async fn too_many_submissions() {
-    let tempfile = tempfile();
-
-    let mut file = File::create(tempfile.path()).await.unwrap();
-    for _ in 0..600 {
-        poll_once(async {
-            file.write_at("hello world", 0).await.0.unwrap();
+#[test]
+fn too_many_submissions() {
+    let mut proactor_builder = ProactorBuilder::new();
+    proactor_builder.capacity(1).thread_pool_limit(1);
+    compio_runtime::Runtime::builder()
+        .with_proactor(proactor_builder)
+        .build()
+        .unwrap()
+        .block_on(async move {
+            let tempfile = tempfile();
+            let mut file = File::create(tempfile.path()).await.unwrap();
+            for _ in 0..600 {
+                poll_once(async {
+                    file.write_at("hello world", 0).await.0.unwrap();
+                })
+                .await;
+            }
         })
-        .await;
-    }
 }
 
 #[cfg(feature = "allocator_api")]

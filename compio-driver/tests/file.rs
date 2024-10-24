@@ -1,9 +1,9 @@
 use std::{io, time::Duration};
 
-use compio_buf::{BufResult, arrayvec::ArrayVec};
+use compio_buf::BufResult;
 use compio_driver::{
     AsRawFd, OpCode, OwnedFd, Proactor, PushEntry, SharedFd,
-    op::{Asyncify, CloseFile, ReadAt},
+    op::{Asyncify, ReadAt},
 };
 
 #[cfg(windows)]
@@ -47,14 +47,13 @@ fn open_file(driver: &mut Proactor) -> OwnedFd {
 fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult<usize, O> {
     match driver.push(op) {
         PushEntry::Ready(res) => res,
-        PushEntry::Pending(user_data) => {
-            let mut entries = ArrayVec::<usize, 1>::new();
-            while entries.is_empty() {
-                driver.poll(None, &mut entries).unwrap();
+        PushEntry::Pending(mut user_data) => loop {
+            driver.poll(None).unwrap();
+            match driver.pop(user_data) {
+                PushEntry::Pending(k) => user_data = k,
+                PushEntry::Ready((res, _)) => break res,
             }
-            assert_eq!(entries[0], user_data.user_data());
-            driver.pop(user_data).take_ready().unwrap().0
-        }
+        },
     }
 }
 
@@ -62,10 +61,7 @@ fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult
 fn timeout() {
     let mut driver = Proactor::new().unwrap();
 
-    let mut entries = ArrayVec::<usize, 1>::new();
-    let err = driver
-        .poll(Some(Duration::from_secs(1)), &mut entries)
-        .unwrap_err();
+    let err = driver.poll(Some(Duration::from_secs(1))).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::TimedOut);
 }
 
@@ -90,18 +86,14 @@ fn register_multiple() {
         }
     }
 
-    let mut entries = ArrayVec::<usize, TASK_LEN>::new();
-    while entries.len() < keys.len() {
-        driver.poll(None, &mut entries).unwrap();
-    }
+    driver.poll(None).unwrap();
 
     // Cancel the entries to drop the ops, and decrease the ref count of fd.
     for key in keys {
         driver.cancel(key);
     }
 
-    let op = CloseFile::new(fd.try_unwrap().unwrap());
-    push_and_wait(&mut driver, op).unwrap();
+    // Don't async close because the reading operations may have not completed.
 }
 
 #[test]
@@ -115,8 +107,7 @@ fn notify() {
         handle.notify().unwrap()
     });
 
-    let mut entries = ArrayVec::<usize, 1>::new();
-    driver.poll(None, &mut entries).unwrap();
+    driver.poll(None).unwrap();
 
     thread.join().unwrap();
 }

@@ -27,7 +27,7 @@ use io_uring::{
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 
-use crate::{AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder, syscall};
+use crate::{AsyncifyPool, Entry, Key, ProactorBuilder, syscall};
 
 pub(crate) mod op;
 
@@ -148,28 +148,36 @@ impl Driver {
         }
     }
 
-    fn poll_entries(&mut self, entries: &mut impl Extend<Entry>) -> bool {
+    fn poll_blocking(&mut self) {
         // Cheaper than pop.
         if !self.pool_completed.is_empty() {
             while let Some(entry) = self.pool_completed.pop() {
-                entries.extend(Some(entry));
+                unsafe {
+                    entry.notify();
+                }
             }
         }
+    }
+
+    fn poll_entries(&mut self) -> bool {
+        self.poll_blocking();
 
         let mut cqueue = self.inner.completion();
         cqueue.sync();
         let has_entry = !cqueue.is_empty();
-        let completed_entries = cqueue.filter_map(|entry| match entry.user_data() {
-            Self::CANCEL => None,
-            Self::NOTIFY => {
-                let flags = entry.flags();
-                debug_assert!(more(flags));
-                self.notifier.clear().expect("cannot clear notifier");
-                None
+        for entry in cqueue {
+            match entry.user_data() {
+                Self::CANCEL => {}
+                Self::NOTIFY => {
+                    let flags = entry.flags();
+                    debug_assert!(more(flags));
+                    self.notifier.clear().expect("cannot clear notifier");
+                }
+                _ => unsafe {
+                    create_entry(entry).notify();
+                },
             }
-            _ => Some(create_entry(entry)),
-        });
-        entries.extend(completed_entries);
+        }
         has_entry
     }
 
@@ -212,7 +220,16 @@ impl Driver {
                 }
                 Err(_) => {
                     drop(squeue);
-                    self.inner.submit()?;
+                    self.poll_entries();
+                    match self.submit_auto(Some(Duration::ZERO)) {
+                        Ok(()) => {}
+                        Err(e)
+                            if matches!(
+                                e.kind(),
+                                io::ErrorKind::TimedOut | io::ErrorKind::Interrupted
+                            ) => {}
+                        Err(e) => return Err(e),
+                    }
                 }
             }
         }
@@ -237,13 +254,13 @@ impl Driver {
                 self.push_raw(entry.user_data(user_data as _))?;
                 Poll::Pending
             }
-            OpEntry::Blocking => {
+            OpEntry::Blocking => loop {
                 if self.push_blocking(user_data)? {
-                    Poll::Pending
+                    break Poll::Pending;
                 } else {
-                    Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
+                    self.poll_blocking();
                 }
-            }
+            },
         }
     }
 
@@ -263,18 +280,14 @@ impl Driver {
         Ok(is_ok)
     }
 
-    pub unsafe fn poll(
-        &mut self,
-        timeout: Option<Duration>,
-        mut entries: OutEntries<impl Extend<usize>>,
-    ) -> io::Result<()> {
+    pub unsafe fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         // Anyway we need to submit once, no matter there are entries in squeue.
         trace!("start polling");
 
-        if !self.poll_entries(&mut entries) {
+        if !self.poll_entries() {
             self.submit_auto(timeout)?;
-            self.poll_entries(&mut entries);
+            self.poll_entries();
         }
 
         Ok(())
