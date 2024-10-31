@@ -1,6 +1,5 @@
 use std::{
     collections::VecDeque,
-    io,
     net::{IpAddr, SocketAddr},
     pin::{Pin, pin},
     sync::{Arc, Mutex, MutexGuard},
@@ -170,7 +169,7 @@ impl ConnectionInner {
         }
     }
 
-    async fn run(self: &Arc<Self>) -> io::Result<()> {
+    async fn run(&self) {
         let mut poller = stream::poll_fn(|cx| {
             let mut state = self.state();
             let ready = state.poller.is_none();
@@ -210,13 +209,14 @@ impl ConnectionInner {
                     }
                     state
                 },
-                BufResult::<(), Vec<u8>>(res, mut buf) = transmit_fut => match res {
-                    Ok(()) => {
-                        buf.clear();
-                        send_buf = Some(buf);
-                        self.state()
-                    },
-                    Err(e) => break Err(e),
+                BufResult::<(), Vec<u8>>(res, mut buf) = transmit_fut => {
+                    #[allow(unused)]
+                    if let Err(e) = res {
+                        error!("I/O error: {}", e);
+                    }
+                    buf.clear();
+                    send_buf = Some(buf);
+                    self.state()
                 },
             };
 
@@ -279,7 +279,7 @@ impl ConnectionInner {
             }
 
             if state.conn.is_drained() {
-                break Ok(());
+                break;
             }
         }
     }
@@ -380,13 +380,7 @@ impl Connecting {
         ));
         let worker = compio_runtime::spawn({
             let inner = inner.clone();
-            async move {
-                #[allow(unused)]
-                if let Err(e) = inner.run().await {
-                    error!("I/O error: {}", e);
-                }
-            }
-            .in_current_span()
+            async move { inner.run().await }.in_current_span()
         });
         inner.state().worker = Some(worker);
         Self(inner)
