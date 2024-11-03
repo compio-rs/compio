@@ -1,4 +1,10 @@
-use std::{ffi::CString, io, marker::PhantomPinned, os::fd::AsRawFd, pin::Pin};
+use std::{
+    ffi::CString,
+    io,
+    marker::PhantomPinned,
+    os::fd::{AsRawFd, FromRawFd, OwnedFd},
+    pin::Pin,
+};
 
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
@@ -294,6 +300,10 @@ impl<S: AsRawFd> OpCode for Accept<S> {
         )
         .build()
         .into()
+    }
+
+    unsafe fn set_result(self: Pin<&mut Self>, fd: usize) {
+        self.get_unchecked_mut().accepted_fd = Some(OwnedFd::from_raw_fd(fd as _));
     }
 }
 

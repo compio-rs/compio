@@ -1,4 +1,11 @@
-use std::{ffi::CString, io, marker::PhantomPinned, pin::Pin, task::Poll};
+use std::{
+    ffi::CString,
+    io,
+    marker::PhantomPinned,
+    os::fd::{FromRawFd, OwnedFd},
+    pin::Pin,
+    task::Poll,
+};
 
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
@@ -400,10 +407,16 @@ impl<S: AsRawFd> OpCode for Accept<S> {
         syscall!(self.call(), wait_readable(fd))
     }
 
-    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
-        syscall!(break self.call())
+        let res = syscall!(break self.as_mut().call());
+        if let Poll::Ready(Ok(fd)) = res {
+            unsafe {
+                self.get_unchecked_mut().accepted_fd = Some(OwnedFd::from_raw_fd(fd as _));
+            }
+        }
+        res
     }
 }
 

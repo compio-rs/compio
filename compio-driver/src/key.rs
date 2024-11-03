@@ -147,7 +147,13 @@ impl<T: ?Sized> Key<T> {
     /// set. The return value indicates if the op is cancelled. If so, the
     /// op should be dropped because it is useless.
     pub(crate) fn set_result(&mut self, res: io::Result<usize>) -> bool {
-        let this = self.as_opaque_mut();
+        let this = unsafe { &mut *self.as_dyn_mut_ptr() };
+        #[cfg(all(target_os = "linux", feature = "io-uring"))]
+        if let Ok(res) = res {
+            unsafe {
+                Pin::new_unchecked(&mut this.op).set_result(res);
+            }
+        }
         if let PushEntry::Pending(Some(w)) =
             std::mem::replace(&mut this.result, PushEntry::Ready(res))
         {
