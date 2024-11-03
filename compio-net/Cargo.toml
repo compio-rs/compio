@@ -23,6 +23,7 @@ compio-runtime = { workspace = true, features = ["event"] }
 
 cfg-if = { workspace = true }
 either = "1.9.0"
+once_cell = { workspace = true }
 socket2 = { workspace = true, features = ["all"] }
 
 [target.'cfg(windows)'.dependencies]
@@ -45,3 +46,7 @@ tempfile = { workspace = true }
 [features]
 default = []
 io-uring = ["compio-driver/io-uring"]
+
+# Nightly features
+once_cell_try = []
+nightly = ["once_cell_try"]

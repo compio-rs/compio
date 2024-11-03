@@ -1,5 +1,8 @@
+#[cfg(feature = "once_cell_try")]
+use std::sync::OnceLock;
 use std::{
     io,
+    mem::MaybeUninit,
     net::SocketAddr,
     ptr::{null, null_mut},
     task::Poll,
@@ -7,6 +10,8 @@ use std::{
 
 use compio_driver::syscall;
 use compio_runtime::event::EventHandle;
+#[cfg(not(feature = "once_cell_try"))]
+use once_cell::sync::OnceCell as OnceLock;
 use socket2::SockAddr;
 use widestring::U16CString;
 use windows_sys::Win32::{
@@ -14,9 +19,28 @@ use windows_sys::Win32::{
     Networking::WinSock::{
         ADDRINFOEXW, AF_UNSPEC, FreeAddrInfoExW, GetAddrInfoExCancel,
         GetAddrInfoExOverlappedResult, GetAddrInfoExW, IPPROTO_TCP, NS_ALL, SOCK_STREAM,
+        WSACleanup, WSADATA, WSAStartup,
     },
     System::IO::OVERLAPPED,
 };
+
+struct WsaInit;
+
+impl WsaInit {
+    fn new() -> io::Result<Self> {
+        let mut data = MaybeUninit::<WSADATA>::uninit();
+        syscall!(SOCKET, WSAStartup(0x202, data.as_mut_ptr()))?;
+        Ok(Self)
+    }
+}
+
+impl Drop for WsaInit {
+    fn drop(&mut self) {
+        syscall!(SOCKET, WSACleanup()).ok();
+    }
+}
+
+static WSA_INIT: OnceLock<WsaInit> = OnceLock::new();
 
 struct AsyncResolver {
     name: U16CString,
@@ -28,6 +52,7 @@ struct AsyncResolver {
 
 impl AsyncResolver {
     pub fn new(name: &str, port: u16) -> io::Result<Self> {
+        WSA_INIT.get_or_try_init(WsaInit::new)?;
         Ok(Self {
             name: U16CString::from_str(name)
                 .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid host name"))?,

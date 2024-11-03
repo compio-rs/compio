@@ -14,11 +14,10 @@ use std::{
 use compio_log::{instrument, trace};
 use windows_sys::Win32::{
     Foundation::{ERROR_BUSY, ERROR_CANCELLED},
-    Networking::WinSock::{WSACleanup, WSADATA, WSAStartup},
     System::IO::OVERLAPPED,
 };
 
-use crate::{AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder, syscall};
+use crate::{AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder};
 
 pub(crate) mod op;
 
@@ -208,8 +207,6 @@ pub(crate) struct Driver {
 impl Driver {
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         instrument!(compio_log::Level::TRACE, "new", ?builder);
-        let mut data: WSADATA = unsafe { std::mem::zeroed() };
-        syscall!(SOCKET, WSAStartup(0x202, &mut data))?;
 
         let port = cp::Port::new()?;
         let driver = port.as_raw_handle() as _;
@@ -339,12 +336,6 @@ impl Driver {
 impl AsRawFd for Driver {
     fn as_raw_fd(&self) -> RawFd {
         self.port.as_raw_handle() as _
-    }
-}
-
-impl Drop for Driver {
-    fn drop(&mut self) {
-        syscall!(SOCKET, WSACleanup()).ok();
     }
 }
 
