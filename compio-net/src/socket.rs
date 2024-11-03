@@ -162,6 +162,7 @@ impl Socket {
 
         let op = Accept::new(self.to_shared_fd());
         let BufResult(res, op) = compio_runtime::submit(op).await;
+        let addr = op.into_addr();
         let accept_sock = unsafe { Socket2::from_raw_fd(res? as _) };
         if cfg!(all(
             unix,
@@ -170,7 +171,6 @@ impl Socket {
             accept_sock.set_nonblocking(true)?;
         }
         let accept_sock = Self::from_socket2(accept_sock)?;
-        let addr = op.into_addr();
         Ok((accept_sock, addr))
     }
 

@@ -65,6 +65,15 @@ pub trait OpCode {
     fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
         unreachable!("this operation is asynchronous")
     }
+
+    /// Set the result when it successfully completes.
+    /// The operation stores the result and is responsible to release it if the
+    /// operation is cancelled.
+    ///
+    /// # Safety
+    ///
+    /// Users should not call it.
+    unsafe fn set_result(self: Pin<&mut Self>, _: usize) {}
 }
 
 /// Low-level driver of io-uring.
