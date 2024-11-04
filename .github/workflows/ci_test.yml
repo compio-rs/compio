@@ -46,9 +46,9 @@ jobs:
           - os: "windows-latest"
             target: "x86_64-pc-windows-msvc"
             features: "iocp-global"
-          - os: "macos-12"
           - os: "macos-13"
           - os: "macos-14"
+          - os: "macos-15"
     steps:
       - uses: actions/checkout@v4
       - name: Setup Rust Toolchain
