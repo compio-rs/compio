@@ -27,10 +27,7 @@ use crate::{AsyncRead, AsyncWrite, IoResult, buffer::Buffer};
 ///
 /// A heap-allocated copy buffer with 8 KB is created to take data from the
 /// reader to the writer.
-pub async fn copy<'a, R: AsyncRead, W: AsyncWrite>(
-    reader: &'a mut R,
-    writer: &'a mut W,
-) -> IoResult<usize> {
+pub async fn copy<R: AsyncRead, W: AsyncWrite>(reader: &mut R, writer: &mut W) -> IoResult<usize> {
     let mut buf = Buffer::with_capacity(DEFAULT_BUF_SIZE);
     let mut total = 0;
 
