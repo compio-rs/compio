@@ -31,6 +31,28 @@ pub async fn copy<'a, R: AsyncRead, W: AsyncWrite>(
     reader: &'a mut R,
     writer: &'a mut W,
 ) -> IoResult<usize> {
+    copy_impl(reader, writer, false).await
+}
+
+/// Similar to `copy`, but the buffer is always flush to writer after each read,
+/// even when the buf is not full yet,
+/// which is more consistent to `tokio::io::copy`.
+/// 
+/// This function will consume more resources compared to the original `copy`.
+/// 
+/// Use it if you find small data not transferred.
+pub async fn copy_eager<'a, R: AsyncRead, W: AsyncWrite>(
+    reader: &'a mut R,
+    writer: &'a mut W,
+) -> IoResult<usize> {
+    copy_impl(reader, writer, true).await
+}
+
+async fn copy_impl<'a, R: AsyncRead, W: AsyncWrite>(
+    reader: &'a mut R,
+    writer: &'a mut W,
+    eager_flush: bool,
+) -> IoResult<usize> {
     let mut buf = Buffer::with_capacity(DEFAULT_BUF_SIZE);
     let mut total = 0;
 
@@ -38,7 +60,7 @@ pub async fn copy<'a, R: AsyncRead, W: AsyncWrite>(
         let read = buf.with(|w| reader.read(w)).await?;
 
         // When EOF is reached, we are terminating, so flush before that
-        if read == 0 || buf.need_flush() {
+        if eager_flush || read == 0 || buf.need_flush() {
             let written = buf.flush_to(writer).await?;
             total += written;
         }
