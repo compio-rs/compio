@@ -82,6 +82,7 @@ io-uring-cqe32 = []
 io-uring-socket = []
 
 iocp-global = []
+iocp-wait-packet = []
 
 # Nightly features
 once_cell_try = []
