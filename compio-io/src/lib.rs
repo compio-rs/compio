@@ -115,5 +115,5 @@ pub(crate) type IoResult<T> = std::io::Result<T>;
 
 pub use read::*;
 pub use split::*;
-pub use util::{copy, null, repeat};
+pub use util::{copy, copy_eager, null, repeat};
 pub use write::*;
