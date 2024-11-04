@@ -96,12 +96,11 @@ impl ClientBuilder<rustls::ClientConfig> {
     /// Create a builder with [`rustls_platform_verifier`].
     #[cfg(feature = "platform-verifier")]
     pub fn new_with_platform_verifier() -> ClientBuilder<rustls::ClientConfig> {
+        use rustls_platform_verifier::BuilderVerifierExt;
+
         ClientBuilder(
             rustls::ClientConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
-                .dangerous()
-                .with_custom_certificate_verifier(Arc::new(
-                    rustls_platform_verifier::Verifier::new(),
-                ))
+                .with_platform_verifier()
                 .with_no_client_auth(),
         )
     }
