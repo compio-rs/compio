@@ -48,7 +48,6 @@ pub async fn copy<R: AsyncRead, W: AsyncWrite>(reader: &mut R, writer: &mut W) -
         (res, buf) = writer.write_all(buf).await.into();
         res?;
     }
-    writer.flush().await?;
 
     Ok(total)
 }
