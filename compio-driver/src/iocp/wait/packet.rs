@@ -6,7 +6,8 @@ use std::{
 };
 
 use windows_sys::Win32::Foundation::{
-    BOOLEAN, GENERIC_READ, GENERIC_WRITE, HANDLE, NTSTATUS, RtlNtStatusToDosError, STATUS_SUCCESS,
+    BOOLEAN, GENERIC_READ, GENERIC_WRITE, HANDLE, NTSTATUS, RtlNtStatusToDosError, STATUS_PENDING,
+    STATUS_SUCCESS,
 };
 
 use crate::{Key, RawFd, sys::cp};
@@ -76,8 +77,9 @@ impl Wait {
     }
 
     pub fn cancel(&mut self) -> io::Result<()> {
-        self.cancelled = true;
-        check_status(unsafe { NtCancelWaitCompletionPacket(self.handle.as_raw_handle() as _, 0) })
+        let res = unsafe { NtCancelWaitCompletionPacket(self.handle.as_raw_handle() as _, 0) };
+        self.cancelled = res != STATUS_PENDING;
+        check_status(res)
     }
 
     pub fn is_cancelled(&self) -> bool {
