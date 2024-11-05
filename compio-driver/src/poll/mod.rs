@@ -30,7 +30,7 @@ pub trait OpCode {
     /// Perform the operation after received corresponding
     /// event. If this operation is blocking, the return value should be
     /// [`Poll::Ready`].
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>>;
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>>;
 }
 
 /// Result of [`OpCode::pre_submit`].
@@ -206,7 +206,7 @@ impl Driver {
             .dispatch(move || {
                 let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
                 let op_pin = op.as_op_pin();
-                let res = match op_pin.on_event() {
+                let res = match op_pin.operate() {
                     Poll::Pending => unreachable!("this operation is not non-blocking"),
                     Poll::Ready(res) => res,
                 };
@@ -240,7 +240,7 @@ impl Driver {
                 } else {
                     let mut op = Key::<dyn crate::sys::OpCode>::new_unchecked(user_data);
                     let op = op.as_op_pin();
-                    let res = match op.on_event() {
+                    let res = match op.operate() {
                         Poll::Pending => {
                             // The operation should go back to the front.
                             queue.push_front_interest(user_data, interest);

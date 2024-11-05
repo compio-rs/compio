@@ -33,7 +33,7 @@ impl<
         Ok(Decision::Blocking)
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         // Safety: self won't be moved
         let this = unsafe { self.get_unchecked_mut() };
         let f = this
@@ -51,7 +51,7 @@ impl OpCode for OpenFile {
         Ok(Decision::Blocking)
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(syscall!(open(
             self.path.as_ptr(),
             self.flags,
@@ -65,7 +65,7 @@ impl OpCode for CloseFile {
         Ok(Decision::Blocking)
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(syscall!(libc::close(self.fd.as_raw_fd()))? as _))
     }
 }
@@ -91,7 +91,7 @@ impl<S: AsRawFd> OpCode for FileStat<S> {
         Ok(Decision::Blocking)
     }
 
-    fn on_event(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         #[cfg(all(target_os = "linux", target_env = "gnu"))]
         {
             let mut s: libc::statx = unsafe { std::mem::zeroed() };
@@ -146,7 +146,7 @@ impl OpCode for PathStat {
         Ok(Decision::Blocking)
     }
 
-    fn on_event(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         #[cfg(all(target_os = "linux", target_env = "gnu"))]
         {
             let mut flags = libc::AT_EMPTY_PATH;
@@ -189,7 +189,7 @@ impl<T: IoBufMut, S: AsRawFd> OpCode for ReadAt<T, S> {
         Ok(Decision::Blocking)
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_raw_fd();
         let offset = self.offset;
         let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
@@ -202,7 +202,7 @@ impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for ReadVectoredAt<T, S> {
         Ok(Decision::Blocking)
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
         this.slices = unsafe { this.buffer.io_slices_mut() };
         syscall!(
@@ -221,7 +221,7 @@ impl<T: IoBuf, S: AsRawFd> OpCode for WriteAt<T, S> {
         Ok(Decision::Blocking)
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let slice = self.buffer.as_slice();
         syscall!(
             break pwrite(
@@ -239,7 +239,7 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for WriteVectoredAt<T, S> {
         Ok(Decision::Blocking)
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
         this.slices = unsafe { this.buffer.io_slices() };
         syscall!(
@@ -258,7 +258,7 @@ impl<S: AsRawFd> OpCode for Sync<S> {
         Ok(Decision::Blocking)
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         #[cfg(any(
             target_os = "android",
             target_os = "freebsd",
@@ -293,7 +293,7 @@ impl OpCode for Unlink {
         Ok(Decision::Blocking)
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         if self.dir {
             syscall!(libc::rmdir(self.path.as_ptr()))?;
         } else {
@@ -308,7 +308,7 @@ impl OpCode for CreateDir {
         Ok(Decision::Blocking)
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         syscall!(libc::mkdir(self.path.as_ptr(), self.mode))?;
         Poll::Ready(Ok(0))
     }
@@ -319,7 +319,7 @@ impl OpCode for Rename {
         Ok(Decision::Blocking)
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         syscall!(libc::rename(self.old_path.as_ptr(), self.new_path.as_ptr()))?;
         Poll::Ready(Ok(0))
     }
@@ -330,7 +330,7 @@ impl OpCode for Symlink {
         Ok(Decision::Blocking)
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         syscall!(libc::symlink(self.source.as_ptr(), self.target.as_ptr()))?;
         Poll::Ready(Ok(0))
     }
@@ -341,7 +341,7 @@ impl OpCode for HardLink {
         Ok(Decision::Blocking)
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         syscall!(libc::link(self.source.as_ptr(), self.target.as_ptr()))?;
         Poll::Ready(Ok(0))
     }
@@ -352,7 +352,7 @@ impl OpCode for CreateSocket {
         Ok(Decision::Blocking)
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(
             syscall!(libc::socket(self.domain, self.socket_type, self.protocol))? as _,
         ))
@@ -364,7 +364,7 @@ impl<S: AsRawFd> OpCode for ShutdownSocket<S> {
         Ok(Decision::Blocking)
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(
             syscall!(libc::shutdown(self.fd.as_raw_fd(), self.how()))? as _,
         ))
@@ -376,7 +376,7 @@ impl OpCode for CloseSocket {
         Ok(Decision::Blocking)
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(syscall!(libc::close(self.fd.as_raw_fd()))? as _))
     }
 }
@@ -398,7 +398,7 @@ impl<S: AsRawFd> OpCode for Accept<S> {
         syscall!(self.as_mut().call(), wait_readable(fd))
     }
 
-    fn on_event(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let res = syscall!(break self.as_mut().call());
         if let Poll::Ready(Ok(fd)) = res {
             unsafe {
@@ -417,7 +417,7 @@ impl<S: AsRawFd> OpCode for Connect<S> {
         )
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let mut err: libc::c_int = 0;
         let mut err_len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
 
@@ -443,7 +443,7 @@ impl<T: IoBufMut, S: AsRawFd> OpCode for Recv<T, S> {
         Ok(Decision::wait_readable(self.fd.as_raw_fd()))
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_raw_fd();
         let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
         syscall!(break libc::read(fd, slice.as_mut_ptr() as _, slice.len()))
@@ -455,7 +455,7 @@ impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvVectored<T, S> {
         Ok(Decision::wait_readable(self.fd.as_raw_fd()))
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
         this.slices = unsafe { this.buffer.io_slices_mut() };
         syscall!(
@@ -473,7 +473,7 @@ impl<T: IoBuf, S: AsRawFd> OpCode for Send<T, S> {
         Ok(Decision::wait_writable(self.fd.as_raw_fd()))
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let slice = self.buffer.as_slice();
         syscall!(break libc::write(self.fd.as_raw_fd(), slice.as_ptr() as _, slice.len()))
     }
@@ -484,7 +484,7 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendVectored<T, S> {
         Ok(Decision::wait_writable(self.fd.as_raw_fd()))
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
         this.slices = unsafe { this.buffer.io_slices() };
         syscall!(
@@ -541,7 +541,7 @@ impl<T: IoBufMut, S: AsRawFd> OpCode for RecvFrom<T, S> {
         syscall!(self.as_mut().call(), wait_readable(fd))
     }
 
-    fn on_event(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         syscall!(break self.as_mut().call())
     }
 }
@@ -604,7 +604,7 @@ impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvFromVectored<T, S> {
         syscall!(this.call(), wait_readable(this.fd.as_raw_fd()))
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
         syscall!(break this.call())
     }
@@ -657,7 +657,7 @@ impl<T: IoBuf, S: AsRawFd> OpCode for SendTo<T, S> {
         syscall!(self.call(), wait_writable(self.fd.as_raw_fd()))
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         syscall!(break self.call())
     }
 }
@@ -720,7 +720,7 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendToVectored<T, S> {
         syscall!(this.call(), wait_writable(this.fd.as_raw_fd()))
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         syscall!(break self.call())
     }
 }
@@ -746,7 +746,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
         syscall!(this.call(), wait_readable(this.fd.as_raw_fd()))
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
         syscall!(break this.call())
     }
@@ -765,7 +765,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsRawFd> OpCode for SendMsg<T, C, S> {
         syscall!(this.call(), wait_writable(this.fd.as_raw_fd()))
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         syscall!(break self.call())
     }
 }
@@ -775,7 +775,7 @@ impl<S: AsRawFd> OpCode for PollOnce<S> {
         Ok(Decision::wait_for(self.fd.as_raw_fd(), self.interest))
     }
 
-    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(0))
     }
 }
