@@ -27,9 +27,9 @@ use crate::{AsyncRead, AsyncWrite, AsyncWriteExt, IoResult};
 ///
 /// A heap-allocated copy buffer with 8 KB is created to take data from the
 /// reader to the writer.
-pub async fn copy<R: AsyncRead, W: AsyncWrite>(reader: &mut R, writer: &mut W) -> IoResult<usize> {
+pub async fn copy<R: AsyncRead, W: AsyncWrite>(reader: &mut R, writer: &mut W) -> IoResult<u64> {
     let mut buf = Vec::with_capacity(DEFAULT_BUF_SIZE);
-    let mut total = 0;
+    let mut total = 0u64;
 
     loop {
         let res;
@@ -37,7 +37,7 @@ pub async fn copy<R: AsyncRead, W: AsyncWrite>(reader: &mut R, writer: &mut W) -
         match res {
             Ok(0) => break,
             Ok(read) => {
-                total += read;
+                total += read as u64;
             }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
                 continue;
