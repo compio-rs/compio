@@ -402,9 +402,9 @@ impl<S: AsRawFd> Accept<S> {
 }
 
 impl<S: AsRawFd> OpCode for Accept<S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         let fd = self.fd.as_raw_fd();
-        syscall!(self.call(), wait_readable(fd))
+        syscall!(self.as_mut().call(), wait_readable(fd))
     }
 
     fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
@@ -557,15 +557,15 @@ impl<T: IoBufMut, S: AsRawFd> RecvFrom<T, S> {
 }
 
 impl<T: IoBufMut, S: AsRawFd> OpCode for RecvFrom<T, S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         let fd = self.fd.as_raw_fd();
-        syscall!(self.call(), wait_readable(fd))
+        syscall!(self.as_mut().call(), wait_readable(fd))
     }
 
-    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
+    fn on_event(mut self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>> {
         debug_assert!(event.readable);
 
-        syscall!(break self.call())
+        syscall!(break self.as_mut().call())
     }
 }
 

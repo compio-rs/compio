@@ -88,11 +88,14 @@ macro_rules! syscall {
 #[doc(hidden)]
 macro_rules! syscall {
     (break $e:expr) => {
-        match $crate::syscall!($e) {
-            Ok(fd) => ::std::task::Poll::Ready(Ok(fd as usize)),
-            Err(e) if e.kind() == ::std::io::ErrorKind::WouldBlock || e.raw_os_error() == Some(::libc::EINPROGRESS)
-                   => ::std::task::Poll::Pending,
-            Err(e) => ::std::task::Poll::Ready(Err(e)),
+        loop {
+            match $crate::syscall!($e) {
+                Ok(fd) => break ::std::task::Poll::Ready(Ok(fd as usize)),
+                Err(e) if e.kind() == ::std::io::ErrorKind::WouldBlock || e.raw_os_error() == Some(::libc::EINPROGRESS)
+                    => break ::std::task::Poll::Pending,
+                Err(e) if e.kind() == ::std::io::ErrorKind::Interrupted => {},
+                Err(e) => break ::std::task::Poll::Ready(Err(e)),
+            }
         }
     };
     ($e:expr, $f:ident($fd:expr)) => {
