@@ -180,23 +180,22 @@ impl Driver {
     ) -> Poll<io::Result<usize>> {
         let user_data = op.user_data();
         let op_pin = op.as_op_pin();
-        match op_pin.pre_submit() {
-            Ok(Decision::Wait(arg)) => {
+        match op_pin.pre_submit()? {
+            Decision::Wait(arg) => {
                 // SAFETY: fd is from the OpCode.
                 unsafe {
                     self.submit(user_data, arg)?;
                 }
                 Poll::Pending
             }
-            Ok(Decision::Completed(res)) => Poll::Ready(Ok(res)),
-            Ok(Decision::Blocking) => {
+            Decision::Completed(res) => Poll::Ready(Ok(res)),
+            Decision::Blocking => {
                 if self.push_blocking(user_data) {
                     Poll::Pending
                 } else {
                     Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
                 }
             }
-            Err(err) => Poll::Ready(Err(err)),
         }
     }
 
