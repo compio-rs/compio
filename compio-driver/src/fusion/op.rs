@@ -72,6 +72,10 @@ macro_rules! op {
                 unsafe { self.map_unchecked_mut(|x| x.inner.poll() ) }.pre_submit()
             }
 
+            fn op_type(self: std::pin::Pin<&mut Self>) -> Option<OpType> {
+                unsafe { self.map_unchecked_mut(|x| x.inner.poll() ) }.op_type()
+            }
+
             fn operate(
                 self: std::pin::Pin<&mut Self>,
             ) -> std::task::Poll<std::io::Result<usize>> {
