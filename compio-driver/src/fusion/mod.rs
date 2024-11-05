@@ -63,7 +63,7 @@ impl Driver {
         }
     }
 
-    pub fn cancel<T>(&mut self, op: Key<T>) {
+    pub fn cancel<T: OpCode>(&mut self, op: Key<T>) {
         match &mut self.fuse {
             FuseDriver::Poll(driver) => driver.cancel(op),
             FuseDriver::IoUring(driver) => driver.cancel(op),

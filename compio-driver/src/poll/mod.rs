@@ -1,6 +1,8 @@
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 #[allow(unused_imports)]
 pub use std::os::fd::{AsRawFd, OwnedFd, RawFd};
+#[cfg(target_os = "freebsd")]
+use std::ptr::NonNull;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     io,
@@ -39,6 +41,7 @@ pub trait OpCode {
 }
 
 /// Result of [`OpCode::pre_submit`].
+#[non_exhaustive]
 pub enum Decision {
     /// Instant operation, no need to submit
     Completed(usize),
@@ -46,6 +49,9 @@ pub enum Decision {
     Wait(WaitArg),
     /// Blocking operation, needs to be spawned in another thread
     Blocking,
+    /// AIO operation, needs to be spawned to the kernel.
+    #[cfg(target_os = "freebsd")]
+    Aio(AioControl),
 }
 
 impl Decision {
@@ -63,6 +69,18 @@ impl Decision {
     pub fn wait_writable(fd: RawFd) -> Self {
         Self::wait_for(fd, Interest::Writable)
     }
+
+    /// Decide to spawn an AIO operation. `submit` is a method like `aio_read`.
+    #[cfg(target_os = "freebsd")]
+    pub fn aio(
+        cb: &mut libc::aiocb,
+        submit: unsafe extern "C" fn(*mut libc::aiocb) -> i32,
+    ) -> Self {
+        Self::Aio(AioControl {
+            aiocbp: NonNull::from(cb),
+            submit,
+        })
+    }
 }
 
 /// Meta of polling operations.
@@ -72,6 +90,16 @@ pub struct WaitArg {
     pub fd: RawFd,
     /// The interest to be registered.
     pub interest: Interest,
+}
+
+/// Meta of AIO operations.
+#[cfg(target_os = "freebsd")]
+#[derive(Debug, Clone, Copy)]
+pub struct AioControl {
+    /// Pointer of the control block.
+    pub aiocbp: NonNull<libc::aiocb>,
+    /// The aio_* submit function.
+    pub submit: unsafe extern "C" fn(*mut libc::aiocb) -> i32,
 }
 
 #[derive(Debug, Default)]
@@ -123,6 +151,9 @@ impl FdQueue {
 pub enum OpType {
     /// The operation polls an fd.
     Fd(RawFd),
+    /// The operation submits an AIO.
+    #[cfg(target_os = "freebsd")]
+    Aio(NonNull<libc::aiocb>),
 }
 
 /// Low-level driver of polling.
@@ -182,14 +213,26 @@ impl Driver {
         Ok(())
     }
 
-    pub fn cancel<T>(&mut self, op: Key<T>) {
+    pub fn cancel<T: crate::sys::OpCode>(&mut self, op: Key<T>) {
         self.cancelled.insert(op.user_data());
+        #[cfg(target_os = "freebsd")]
+        {
+            let mut op = op;
+            let op = op.as_op_pin();
+            if let Some(OpType::Aio(aiocbp)) = op.op_type() {
+                if let Some(aiocb) = unsafe { aiocbp.as_ptr().as_ref() } {
+                    let fd = aiocb.aio_fildes;
+                    syscall!(libc::aio_cancel(fd, aiocbp.as_ptr())).ok();
+                }
+            }
+        }
     }
 
     pub fn push<T: crate::sys::OpCode + 'static>(
         &mut self,
         op: &mut Key<T>,
     ) -> Poll<io::Result<usize>> {
+        instrument!(compio_log::Level::TRACE, "push", ?op);
         let user_data = op.user_data();
         let op_pin = op.as_op_pin();
         match op_pin.pre_submit()? {
@@ -198,6 +241,7 @@ impl Driver {
                 unsafe {
                     self.submit(user_data, arg)?;
                 }
+                trace!("register {:?}", arg);
                 Poll::Pending
             }
             Decision::Completed(res) => Poll::Ready(Ok(res)),
@@ -207,6 +251,17 @@ impl Driver {
                 } else {
                     Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
                 }
+            }
+            #[cfg(target_os = "freebsd")]
+            Decision::Aio(AioControl { aiocbp, submit }) => {
+                if let Some(aiocb) = unsafe { aiocbp.as_ptr().as_mut() } {
+                    // sigev_notify_kqueue
+                    aiocb.aio_sigevent.sigev_signo = self.poll.as_raw_fd();
+                    aiocb.aio_sigevent.sigev_notify = libc::SIGEV_KEVENT;
+                    aiocb.aio_sigevent.sigev_value.sival_ptr = user_data as _;
+                }
+                syscall!(submit(aiocbp.as_ptr()))?;
+                Poll::Pending
             }
         }
     }
@@ -233,6 +288,7 @@ impl Driver {
         timeout: Option<Duration>,
         mut entries: OutEntries<impl Extend<usize>>,
     ) -> io::Result<()> {
+        instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         self.poll.wait(&mut self.events, timeout)?;
         if self.events.is_empty() && self.pool_completed.is_empty() && timeout.is_some() {
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
@@ -282,6 +338,28 @@ impl Driver {
                     } else {
                         self.poll.modify(borrowed_fd, renew_event)?;
                     }
+                }
+                #[cfg(target_os = "freebsd")]
+                Some(OpType::Aio(aiocbp)) => {
+                    let err = unsafe { libc::aio_error(aiocbp.as_ptr()) };
+                    let res = match err {
+                        // If the user_data is reused but the former registered event still
+                        // emits (for example, HUP in epoll; however it is impossible now
+                        // because we only use AIO on FreeBSD), we'd better ignore the current
+                        // one and wait for the real event.
+                        libc::EINPROGRESS => {
+                            trace!("op {} is not completed", user_data);
+                            continue;
+                        }
+                        libc::ECANCELED => {
+                            self.cancelled.remove(&user_data);
+                            // Remove the aiocb from kqueue.
+                            libc::aio_return(aiocbp.as_ptr());
+                            Err(io::Error::from_raw_os_error(libc::ETIMEDOUT))
+                        }
+                        _ => syscall!(libc::aio_return(aiocbp.as_ptr())).map(|res| res as usize),
+                    };
+                    entries.extend(Some(Entry::new(user_data, res)));
                 }
             }
         }
