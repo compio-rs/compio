@@ -30,7 +30,7 @@ pub trait OpCode {
     /// Perform the operation after received corresponding
     /// event. If this operation is blocking, the return value should be
     /// [`Poll::Ready`].
-    fn on_event(self: Pin<&mut Self>, event: &Event) -> Poll<io::Result<usize>>;
+    fn on_event(self: Pin<&mut Self>) -> Poll<io::Result<usize>>;
 }
 
 /// Result of [`OpCode::pre_submit`].
@@ -40,7 +40,7 @@ pub enum Decision {
     /// Async operation, needs to submit
     Wait(WaitArg),
     /// Blocking operation, needs to be spawned in another thread
-    Blocking(Event),
+    Blocking,
 }
 
 impl Decision {
@@ -57,21 +57,6 @@ impl Decision {
     /// Decide to wait for the given fd to be writable.
     pub fn wait_writable(fd: RawFd) -> Self {
         Self::wait_for(fd, Interest::Writable)
-    }
-
-    /// Decide to spawn a blocking task with a dummy event.
-    pub fn blocking_dummy() -> Self {
-        Self::Blocking(Event::none(0))
-    }
-
-    /// Decide to spawn a blocking task with a readable event.
-    pub fn blocking_readable(fd: RawFd) -> Self {
-        Self::Blocking(Event::readable(fd as _))
-    }
-
-    /// Decide to spawn a blocking task with a writable event.
-    pub fn blocking_writable(fd: RawFd) -> Self {
-        Self::Blocking(Event::writable(fd as _))
     }
 }
 
@@ -204,8 +189,8 @@ impl Driver {
                 Poll::Pending
             }
             Ok(Decision::Completed(res)) => Poll::Ready(Ok(res)),
-            Ok(Decision::Blocking(event)) => {
-                if self.push_blocking(user_data, event) {
+            Ok(Decision::Blocking) => {
+                if self.push_blocking(user_data) {
                     Poll::Pending
                 } else {
                     Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
@@ -215,14 +200,14 @@ impl Driver {
         }
     }
 
-    fn push_blocking(&mut self, user_data: usize, event: Event) -> bool {
+    fn push_blocking(&mut self, user_data: usize) -> bool {
         let poll = self.poll.clone();
         let completed = self.pool_completed.clone();
         self.pool
             .dispatch(move || {
                 let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
                 let op_pin = op.as_op_pin();
-                let res = match op_pin.on_event(&event) {
+                let res = match op_pin.on_event() {
                     Poll::Pending => unreachable!("this operation is not non-blocking"),
                     Poll::Ready(res) => res,
                 };
@@ -256,7 +241,7 @@ impl Driver {
                 } else {
                     let mut op = Key::<dyn crate::sys::OpCode>::new_unchecked(user_data);
                     let op = op.as_op_pin();
-                    let res = match op.on_event(&event) {
+                    let res = match op.on_event() {
                         Poll::Pending => {
                             // The operation should go back to the front.
                             queue.push_front_interest(user_data, interest);

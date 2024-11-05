@@ -74,9 +74,8 @@ macro_rules! op {
 
             fn on_event(
                 self: std::pin::Pin<&mut Self>,
-                event: &polling::Event,
             ) -> std::task::Poll<std::io::Result<usize>> {
-                unsafe { self.map_unchecked_mut(|x| x.inner.poll() ) }.on_event(event)
+                unsafe { self.map_unchecked_mut(|x| x.inner.poll() ) }.on_event()
             }
         }
 
