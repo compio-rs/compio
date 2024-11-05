@@ -135,7 +135,15 @@ async fn echo_v4() {
 }
 
 #[compio_macros::test]
-#[cfg_attr(any(target_os = "openbsd", target_os = "netbsd", windows), ignore)]
+#[cfg_attr(
+    any(
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "freebsd",
+        windows
+    ),
+    ignore
+)]
 async fn echo_dualstack() {
     let _guard = subscribe();
     run_echo(EchoArgs {
