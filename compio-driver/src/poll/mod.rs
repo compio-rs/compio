@@ -168,7 +168,6 @@ impl Driver {
         let need_add = !self.registry.contains_key(&arg.fd);
         let queue = self.registry.entry(arg.fd).or_default();
         queue.push_back_interest(user_data, arg.interest);
-        // We use fd as the key.
         let event = queue.event(user_data);
         if need_add {
             self.poll.add(arg.fd, event)?;
