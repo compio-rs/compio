@@ -143,6 +143,8 @@ pub struct ReadAt<T: IoBufMut, S> {
     pub(crate) fd: SharedFd<S>,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
+    #[cfg(target_os = "freebsd")]
+    pub(crate) aiocb: libc::aiocb,
     _p: PhantomPinned,
 }
 
@@ -153,6 +155,8 @@ impl<T: IoBufMut, S> ReadAt<T, S> {
             fd,
             offset,
             buffer,
+            #[cfg(target_os = "freebsd")]
+            aiocb: unsafe { std::mem::zeroed() },
             _p: PhantomPinned,
         }
     }
@@ -172,6 +176,8 @@ pub struct WriteAt<T: IoBuf, S> {
     pub(crate) fd: SharedFd<S>,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
+    #[cfg(target_os = "freebsd")]
+    pub(crate) aiocb: libc::aiocb,
     _p: PhantomPinned,
 }
 
@@ -182,6 +188,8 @@ impl<T: IoBuf, S> WriteAt<T, S> {
             fd,
             offset,
             buffer,
+            #[cfg(target_os = "freebsd")]
+            aiocb: unsafe { std::mem::zeroed() },
             _p: PhantomPinned,
         }
     }
@@ -200,6 +208,8 @@ pub struct Sync<S> {
     pub(crate) fd: SharedFd<S>,
     #[allow(dead_code)]
     pub(crate) datasync: bool,
+    #[cfg(target_os = "freebsd")]
+    pub(crate) aiocb: libc::aiocb,
 }
 
 impl<S> Sync<S> {
@@ -207,7 +217,12 @@ impl<S> Sync<S> {
     ///
     /// If `datasync` is `true`, the file metadata may not be synchronized.
     pub fn new(fd: SharedFd<S>, datasync: bool) -> Self {
-        Self { fd, datasync }
+        Self {
+            fd,
+            datasync,
+            #[cfg(target_os = "freebsd")]
+            aiocb: unsafe { std::mem::zeroed() },
+        }
     }
 }
 
