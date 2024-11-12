@@ -220,10 +220,9 @@ impl Driver {
             let mut op = op;
             let op = op.as_op_pin();
             if let Some(OpType::Aio(aiocbp)) = op.op_type() {
-                if let Some(aiocb) = unsafe { aiocbp.as_ptr().as_ref() } {
-                    let fd = aiocb.aio_fildes;
-                    syscall!(libc::aio_cancel(fd, aiocbp.as_ptr())).ok();
-                }
+                let aiocb = unsafe { aiocbp.as_ref() };
+                let fd = aiocb.aio_fildes;
+                syscall!(libc::aio_cancel(fd, aiocbp.as_ptr())).ok();
             }
         }
     }
@@ -253,13 +252,12 @@ impl Driver {
                 }
             }
             #[cfg(target_os = "freebsd")]
-            Decision::Aio(AioControl { aiocbp, submit }) => {
-                if let Some(aiocb) = unsafe { aiocbp.as_ptr().as_mut() } {
-                    // sigev_notify_kqueue
-                    aiocb.aio_sigevent.sigev_signo = self.poll.as_raw_fd();
-                    aiocb.aio_sigevent.sigev_notify = libc::SIGEV_KEVENT;
-                    aiocb.aio_sigevent.sigev_value.sival_ptr = user_data as _;
-                }
+            Decision::Aio(AioControl { mut aiocbp, submit }) => {
+                let aiocb = unsafe { aiocbp.as_mut() };
+                // sigev_notify_kqueue
+                aiocb.aio_sigevent.sigev_signo = self.poll.as_raw_fd();
+                aiocb.aio_sigevent.sigev_notify = libc::SIGEV_KEVENT;
+                aiocb.aio_sigevent.sigev_value.sival_ptr = user_data as _;
                 syscall!(submit(aiocbp.as_ptr()))?;
                 Poll::Pending
             }
@@ -343,7 +341,7 @@ impl Driver {
                 Some(OpType::Aio(aiocbp)) => {
                     let err = unsafe { libc::aio_error(aiocbp.as_ptr()) };
                     let res = match err {
-                        // If the user_data is reused but the former registered event still
+                        // If the user_data is reused but the previously registered event still
                         // emits (for example, HUP in epoll; however it is impossible now
                         // because we only use AIO on FreeBSD), we'd better ignore the current
                         // one and wait for the real event.
