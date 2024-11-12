@@ -27,6 +27,11 @@ pub trait OpCode {
     /// indicate whether submitting the operation to polling is required.
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision>;
 
+    /// Get the operation type when an event is occurred.
+    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+        None
+    }
+
     /// Perform the operation after received corresponding
     /// event. If this operation is blocking, the return value should be
     /// [`Poll::Ready`].
@@ -112,6 +117,14 @@ impl FdQueue {
     }
 }
 
+/// Represents the filter type of kqueue. `polling` crate doesn't expose such
+/// API, and we need to know about it when `cancel` is called.
+#[non_exhaustive]
+pub enum OpType {
+    /// The operation polls an fd.
+    Fd(RawFd),
+}
+
 /// Low-level driver of polling.
 pub(crate) struct Driver {
     events: Events,
@@ -155,8 +168,7 @@ impl Driver {
         let need_add = !self.registry.contains_key(&arg.fd);
         let queue = self.registry.entry(arg.fd).or_default();
         queue.push_back_interest(user_data, arg.interest);
-        // We use fd as the key.
-        let event = queue.event(arg.fd as usize);
+        let event = queue.event(user_data);
         if need_add {
             self.poll.add(arg.fd, event)?;
         } else {
@@ -229,38 +241,48 @@ impl Driver {
             entries.extend(Some(entry));
         }
         for event in self.events.iter() {
-            let fd = event.key as RawFd;
-            let queue = self
-                .registry
-                .get_mut(&fd)
-                .expect("the fd should be attached");
-            if let Some((user_data, interest)) = queue.pop_interest(&event) {
-                if self.cancelled.remove(&user_data) {
-                    entries.extend(Some(entry_cancelled(user_data)));
-                } else {
-                    let mut op = Key::<dyn crate::sys::OpCode>::new_unchecked(user_data);
-                    let op = op.as_op_pin();
-                    let res = match op.operate() {
-                        Poll::Pending => {
-                            // The operation should go back to the front.
-                            queue.push_front_interest(user_data, interest);
-                            None
+            let user_data = event.key;
+            trace!("receive {} for {:?}", user_data, event);
+            let mut op = Key::<dyn crate::sys::OpCode>::new_unchecked(user_data);
+            let mut op = op.as_op_pin();
+            match op.as_mut().op_type() {
+                None => {
+                    // On epoll, multiple event may be received even if it is registered as
+                    // one-shot. It is safe to ignore it.
+                    trace!("op {} is completed", user_data);
+                }
+                Some(OpType::Fd(fd)) => {
+                    let queue = self
+                        .registry
+                        .get_mut(&fd)
+                        .expect("the fd should be attached");
+                    if let Some((user_data, interest)) = queue.pop_interest(&event) {
+                        if self.cancelled.remove(&user_data) {
+                            entries.extend(Some(entry_cancelled(user_data)));
+                        } else {
+                            let res = match op.operate() {
+                                Poll::Pending => {
+                                    // The operation should go back to the front.
+                                    queue.push_front_interest(user_data, interest);
+                                    None
+                                }
+                                Poll::Ready(res) => Some(res),
+                            };
+                            if let Some(res) = res {
+                                let entry = Entry::new(user_data, res);
+                                entries.extend(Some(entry));
+                            }
                         }
-                        Poll::Ready(res) => Some(res),
-                    };
-                    if let Some(res) = res {
-                        let entry = Entry::new(user_data, res);
-                        entries.extend(Some(entry));
+                    }
+                    let renew_event = queue.event(user_data);
+                    let borrowed_fd = BorrowedFd::borrow_raw(fd);
+                    if !renew_event.readable && !renew_event.writable {
+                        self.poll.delete(borrowed_fd)?;
+                        self.registry.remove(&fd);
+                    } else {
+                        self.poll.modify(borrowed_fd, renew_event)?;
                     }
                 }
-            }
-            let renew_event = queue.event(fd as _);
-            let borrowed_fd = BorrowedFd::borrow_raw(fd);
-            if !renew_event.readable && !renew_event.writable {
-                self.poll.delete(borrowed_fd)?;
-                self.registry.remove(&fd);
-            } else {
-                self.poll.modify(borrowed_fd, renew_event)?;
             }
         }
         Ok(())
