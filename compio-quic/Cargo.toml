@@ -33,7 +33,7 @@ h3 = { version = "0.0.6", optional = true }
 flume = { workspace = true }
 futures-util = { workspace = true }
 rustc-hash = "2.0.0"
-thiserror = "1.0.63"
+thiserror = "2.0.3"
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
