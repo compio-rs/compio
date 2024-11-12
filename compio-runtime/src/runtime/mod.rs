@@ -15,7 +15,7 @@ use std::{
 use async_task::{Runnable, Task};
 use compio_buf::IntoInner;
 use compio_driver::{
-    AsRawFd, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd, op::Asyncify,
+    AsRawFd, Key, NotifyHandle, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd, op::Asyncify,
 };
 use compio_log::{debug, instrument};
 use crossbeam_queue::SegQueue;
@@ -39,12 +39,56 @@ scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 /// `Err` when the spawned future panicked.
 pub type JoinHandle<T> = Task<Result<T, Box<dyn Any + Send>>>;
 
+struct RunnableQueue {
+    local_runnables: SendWrapper<RefCell<VecDeque<Runnable>>>,
+    sync_runnables: SegQueue<Runnable>,
+}
+
+impl RunnableQueue {
+    pub fn new() -> Self {
+        Self {
+            local_runnables: SendWrapper::new(RefCell::new(VecDeque::new())),
+            sync_runnables: SegQueue::new(),
+        }
+    }
+
+    pub fn schedule(&self, runnable: Runnable, handle: &NotifyHandle) {
+        if let Some(runnables) = self.local_runnables.get() {
+            runnables.borrow_mut().push_back(runnable);
+        } else {
+            self.sync_runnables.push(runnable);
+            handle.notify().ok();
+        }
+    }
+
+    /// SAFETY: call in the main thread
+    pub unsafe fn run(&self, event_interval: usize) -> bool {
+        let local_runnables = self.local_runnables.get_unchecked();
+        for _i in 0..event_interval {
+            let next_task = local_runnables.borrow_mut().pop_front();
+            let has_local_task = next_task.is_some();
+            if let Some(task) = next_task {
+                task.run();
+            }
+            // Cheaper than pop.
+            let has_sync_task = !self.sync_runnables.is_empty();
+            if has_sync_task {
+                if let Some(task) = self.sync_runnables.pop() {
+                    task.run();
+                }
+            } else if !has_local_task {
+                break;
+            }
+        }
+        !(local_runnables.borrow_mut().is_empty() && self.sync_runnables.is_empty())
+    }
+}
+
 /// The async runtime of compio. It is a thread local runtime, and cannot be
 /// sent to other threads.
 pub struct Runtime {
     driver: RefCell<Proactor>,
-    local_runnables: Arc<SendWrapper<RefCell<VecDeque<Runnable>>>>,
-    sync_runnables: Arc<SegQueue<Runnable>>,
+    runnables: Arc<RunnableQueue>,
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
     event_interval: usize,
@@ -67,8 +111,7 @@ impl Runtime {
     fn with_builder(builder: &RuntimeBuilder) -> io::Result<Self> {
         Ok(Self {
             driver: RefCell::new(builder.proactor_builder.build()?),
-            local_runnables: Arc::new(SendWrapper::new(RefCell::new(VecDeque::new()))),
-            sync_runnables: Arc::new(SegQueue::new()),
+            runnables: Arc::new(RunnableQueue::new()),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
             event_interval: builder.event_interval,
@@ -116,19 +159,15 @@ impl Runtime {
     ///
     /// The caller should ensure the captured lifetime long enough.
     pub unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
-        let local_runnables = self.local_runnables.clone();
-        let sync_runnables = self.sync_runnables.clone();
+        let runnables = Arc::downgrade(&self.runnables);
         let handle = self
             .driver
             .borrow()
             .handle()
             .expect("cannot create notify handle of the proactor");
         let schedule = move |runnable| {
-            if let Some(runnables) = local_runnables.get() {
-                runnables.borrow_mut().push_back(runnable);
-            } else {
-                sync_runnables.push(runnable);
-                handle.notify().ok();
+            if let Some(runnables) = runnables.upgrade() {
+                runnables.schedule(runnable, &handle);
             }
         };
         let (runnable, task) = async_task::spawn_unchecked(future, schedule);
@@ -143,24 +182,7 @@ impl Runtime {
     /// The return value indicates whether there are still tasks in the queue.
     pub fn run(&self) -> bool {
         // SAFETY: self is !Send + !Sync.
-        let local_runnables = unsafe { self.local_runnables.get_unchecked() };
-        for _i in 0..self.event_interval {
-            let next_task = local_runnables.borrow_mut().pop_front();
-            let has_local_task = next_task.is_some();
-            if let Some(task) = next_task {
-                task.run();
-            }
-            // Cheaper than pop.
-            let has_sync_task = !self.sync_runnables.is_empty();
-            if has_sync_task {
-                if let Some(task) = self.sync_runnables.pop() {
-                    task.run();
-                }
-            } else if !has_local_task {
-                break;
-            }
-        }
-        !(local_runnables.borrow_mut().is_empty() && self.sync_runnables.is_empty())
+        unsafe { self.runnables.run(self.event_interval) }
     }
 
     /// Block on the future till it completes.
