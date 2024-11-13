@@ -12,9 +12,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
-env:
-  RUST_BACKTRACE: 1
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -27,7 +24,6 @@ jobs:
         id: test
         uses: vmactions/freebsd-vm@v1
         with:
-          envs: 'RUST_BACKTRACE'
           usesh: true
           sync: rsync
           copyback: false
@@ -47,4 +43,4 @@ jobs:
                 ARGS="$ARGS --features nightly"
             fi
 
-            cargo +${{ matrix.toolchain }} test --workspace $ARGS
+            RUST_BACKTRACE=1 cargo +${{ matrix.toolchain }} test --workspace $ARGS
