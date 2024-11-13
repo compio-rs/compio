@@ -254,10 +254,23 @@ impl Driver {
             #[cfg(aio)]
             Decision::Aio(AioControl { mut aiocbp, submit }) => {
                 let aiocb = unsafe { aiocbp.as_mut() };
-                // sigev_notify_kqueue
-                aiocb.aio_sigevent.sigev_signo = self.poll.as_raw_fd();
-                aiocb.aio_sigevent.sigev_notify = libc::SIGEV_KEVENT;
-                aiocb.aio_sigevent.sigev_value.sival_ptr = user_data as _;
+                #[cfg(freebsd)]
+                {
+                    // sigev_notify_kqueue
+                    aiocb.aio_sigevent.sigev_signo = self.poll.as_raw_fd();
+                    aiocb.aio_sigevent.sigev_notify = libc::SIGEV_KEVENT;
+                    aiocb.aio_sigevent.sigev_value.sival_ptr = user_data as _;
+                }
+                #[cfg(solarish)]
+                let mut notify = libc::port_notify {
+                    portnfy_port: self.poll.as_raw_fd(),
+                    portnfy_user: user_data as _,
+                };
+                #[cfg(solarish)]
+                {
+                    aiocb.aio_sigevent.sigev_notify = libc::SIGEV_PORT;
+                    aiocb.aio_sigevent.sigev_value.sival_ptr = &mut notify as *mut _ as _;
+                }
                 match syscall!(submit(aiocbp.as_ptr())) {
                     Ok(_) => Poll::Pending,
                     Err(e)
