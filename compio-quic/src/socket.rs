@@ -22,11 +22,6 @@ use quinn_proto::{EcnCodepoint, Transmit};
 #[cfg(windows)]
 use windows_sys::Win32::Networking::WinSock;
 
-#[cfg(any(target_os = "illumos", target_os = "solaris"))]
-const IP_RECVTOS: i32 = 0xc;
-#[cfg(not(any(target_os = "illumos", target_os = "solaris", windows)))]
-const IP_RECVTOS: i32 = libc::IP_RECVTOS;
-
 /// Metadata for a single buffer filled with bytes received from the network
 ///
 /// This associated buffer can contain one or more datagrams, see [`stride`].
@@ -201,8 +196,16 @@ impl Socket {
 
         // ECN
         if is_ipv4 {
-            #[cfg(all(unix, not(any(target_os = "openbsd", target_os = "netbsd"))))]
-            set_socket_option!(socket, libc::IPPROTO_IP, IP_RECVTOS, &1);
+            #[cfg(all(
+                unix,
+                not(any(
+                    target_os = "openbsd",
+                    target_os = "netbsd",
+                    target_os = "illumos",
+                    target_os = "solaris"
+                ))
+            ))]
+            set_socket_option!(socket, libc::IPPROTO_IP, libc::IP_RECVTOS, &1);
             #[cfg(windows)]
             set_socket_option!(socket, WinSock::IPPROTO_IP, WinSock::IP_ECN, &1);
         }
@@ -221,6 +224,8 @@ impl Socket {
                 target_os = "freebsd",
                 target_os = "openbsd",
                 target_os = "netbsd",
+                target_os = "illumos",
+                target_os = "solaris",
                 target_os = "macos",
                 target_os = "ios"
             ))]
@@ -369,8 +374,16 @@ impl Socket {
                     // ECN
                     #[cfg(unix)]
                     (libc::IPPROTO_IP, libc::IP_TOS) => ecn_bits = *cmsg.data::<u8>(),
-                    #[cfg(all(unix, not(any(target_os = "openbsd", target_os = "netbsd"))))]
-                    (libc::IPPROTO_IP, IP_RECVTOS) => ecn_bits = *cmsg.data::<u8>(),
+                    #[cfg(all(
+                        unix,
+                        not(any(
+                            target_os = "openbsd",
+                            target_os = "netbsd",
+                            target_os = "illumos",
+                            target_os = "solaris"
+                        ))
+                    ))]
+                    (libc::IPPROTO_IP, libc::IP_RECVTOS) => ecn_bits = *cmsg.data::<u8>(),
                     #[cfg(unix)]
                     (libc::IPPROTO_IPV6, libc::IPV6_TCLASS) => {
                         // NOTE: It's OK to use `c_int` instead of `u8` on Apple systems
@@ -392,6 +405,8 @@ impl Socket {
                         target_os = "freebsd",
                         target_os = "openbsd",
                         target_os = "netbsd",
+                        target_os = "illumos",
+                        target_os = "solaris",
                         target_os = "macos",
                         target_os = "ios",
                     ))]
@@ -687,7 +702,15 @@ mod tests {
     }
 
     #[compio_macros::test]
-    #[cfg_attr(any(target_os = "openbsd", target_os = "netbsd"), ignore)]
+    #[cfg_attr(
+        any(
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "illumos",
+            target_os = "solaris"
+        ),
+        ignore
+    )]
     async fn ecn_v4() {
         let passive = Socket::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()).unwrap();
         let active = Socket::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()).unwrap();
@@ -749,7 +772,15 @@ mod tests {
     }
 
     #[compio_macros::test]
-    #[cfg_attr(any(target_os = "openbsd", target_os = "netbsd"), ignore)]
+    #[cfg_attr(
+        any(
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "illumos",
+            target_os = "solaris"
+        ),
+        ignore
+    )]
     async fn ecn_v4_mapped_v6() {
         let passive = Socket::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()).unwrap();
         let active = Socket::new(bind_udp_dualstack().unwrap()).unwrap();
