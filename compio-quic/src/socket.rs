@@ -196,7 +196,7 @@ impl Socket {
 
         // ECN
         if is_ipv4 {
-            #[cfg(all(unix, not(any(nonfreebsd, solarish))))]
+            #[cfg(all(unix, not(any(non_freebsd, solarish))))]
             set_socket_option!(socket, libc::IPPROTO_IP, libc::IP_RECVTOS, &1);
             #[cfg(windows)]
             set_socket_option!(socket, WinSock::IPPROTO_IP, WinSock::IP_ECN, &1);
@@ -210,7 +210,7 @@ impl Socket {
 
         // pktinfo / destination address
         if is_ipv4 {
-            #[cfg(linuxall)]
+            #[cfg(linux_all)]
             set_socket_option!(socket, libc::IPPROTO_IP, libc::IP_PKTINFO, &1);
             #[cfg(any(bsd, solarish, apple))]
             set_socket_option!(socket, libc::IPPROTO_IP, libc::IP_RECVDSTADDR, &1);
@@ -227,7 +227,7 @@ impl Socket {
         // disable fragmentation
         let mut may_fragment = false;
         if is_ipv4 {
-            #[cfg(linuxall)]
+            #[cfg(linux_all)]
             {
                 may_fragment |= set_socket_option!(
                     socket,
@@ -247,7 +247,7 @@ impl Socket {
             }
         }
         if is_ipv6 {
-            #[cfg(linuxall)]
+            #[cfg(linux_all)]
             {
                 may_fragment |= set_socket_option!(
                     socket,
@@ -256,12 +256,12 @@ impl Socket {
                     &libc::IPV6_PMTUDISC_PROBE,
                 );
             }
-            #[cfg(all(unix, not(nonfreebsd)))]
+            #[cfg(all(unix, not(non_freebsd)))]
             {
                 may_fragment |=
                     set_socket_option!(socket, libc::IPPROTO_IPV6, libc::IPV6_DONTFRAG, &1);
             }
-            #[cfg(nonfreebsd)]
+            #[cfg(non_freebsd)]
             {
                 // FIXME: workaround until https://github.com/rust-lang/libc/pull/3716 is released (at least in 0.2.155)
                 may_fragment |= set_socket_option!(socket, libc::IPPROTO_IPV6, 62, &1);
@@ -353,7 +353,7 @@ impl Socket {
                     // ECN
                     #[cfg(unix)]
                     (libc::IPPROTO_IP, libc::IP_TOS) => ecn_bits = *cmsg.data::<u8>(),
-                    #[cfg(all(unix, not(any(nonfreebsd, solarish))))]
+                    #[cfg(all(unix, not(any(non_freebsd, solarish))))]
                     (libc::IPPROTO_IP, libc::IP_RECVTOS) => ecn_bits = *cmsg.data::<u8>(),
                     #[cfg(unix)]
                     (libc::IPPROTO_IPV6, libc::IPV6_TCLASS) => {
@@ -367,7 +367,7 @@ impl Socket {
                     }
 
                     // pktinfo / destination address
-                    #[cfg(linuxall)]
+                    #[cfg(linux_all)]
                     (libc::IPPROTO_IP, libc::IP_PKTINFO) => {
                         let pktinfo = cmsg.data::<libc::in_pktinfo>();
                         local_ip = Some(IpAddr::from(pktinfo.ipi_addr.s_addr.to_ne_bytes()));
@@ -442,7 +442,7 @@ impl Socket {
         match transmit.src_ip {
             Some(IpAddr::V4(ip)) => {
                 let addr = u32::from_ne_bytes(ip.octets());
-                #[cfg(linuxall)]
+                #[cfg(linux_all)]
                 {
                     let pktinfo = libc::in_pktinfo {
                         ipi_ifindex: 0,
@@ -455,7 +455,7 @@ impl Socket {
                 {
                     #[cfg(freebsd)]
                     let encode_src_ip_v4 = self.encode_src_ip_v4;
-                    #[cfg(any(nonfreebsd, solarish, apple))]
+                    #[cfg(any(non_freebsd, solarish, apple))]
                     let encode_src_ip_v4 = true;
 
                     if encode_src_ip_v4 {
@@ -650,7 +650,7 @@ mod tests {
     }
 
     #[compio_macros::test]
-    #[cfg_attr(any(nonfreebsd, solarish), ignore)]
+    #[cfg_attr(any(non_freebsd, solarish), ignore)]
     async fn ecn_v4() {
         let passive = Socket::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()).unwrap();
         let active = Socket::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()).unwrap();
@@ -685,7 +685,7 @@ mod tests {
     }
 
     #[compio_macros::test]
-    #[cfg_attr(nonfreebsd, ignore)]
+    #[cfg_attr(non_freebsd, ignore)]
     async fn ecn_dualstack() {
         let passive = Socket::new(bind_udp_dualstack().unwrap()).unwrap();
 
@@ -712,7 +712,7 @@ mod tests {
     }
 
     #[compio_macros::test]
-    #[cfg_attr(any(nonfreebsd, solarish), ignore)]
+    #[cfg_attr(any(non_freebsd, solarish), ignore)]
     async fn ecn_v4_mapped_v6() {
         let passive = Socket::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()).unwrap();
         let active = Socket::new(bind_udp_dualstack().unwrap()).unwrap();
