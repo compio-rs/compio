@@ -1,7 +1,7 @@
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 #[allow(unused_imports)]
 pub use std::os::fd::{AsRawFd, OwnedFd, RawFd};
-#[cfg(target_os = "freebsd")]
+#[cfg(aio)]
 use std::ptr::NonNull;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -50,7 +50,7 @@ pub enum Decision {
     /// Blocking operation, needs to be spawned in another thread
     Blocking,
     /// AIO operation, needs to be spawned to the kernel.
-    #[cfg(target_os = "freebsd")]
+    #[cfg(aio)]
     Aio(AioControl),
 }
 
@@ -71,7 +71,7 @@ impl Decision {
     }
 
     /// Decide to spawn an AIO operation. `submit` is a method like `aio_read`.
-    #[cfg(target_os = "freebsd")]
+    #[cfg(aio)]
     pub fn aio(
         cb: &mut libc::aiocb,
         submit: unsafe extern "C" fn(*mut libc::aiocb) -> i32,
@@ -93,7 +93,7 @@ pub struct WaitArg {
 }
 
 /// Meta of AIO operations.
-#[cfg(target_os = "freebsd")]
+#[cfg(aio)]
 #[derive(Debug, Clone, Copy)]
 pub struct AioControl {
     /// Pointer of the control block.
@@ -152,7 +152,7 @@ pub enum OpType {
     /// The operation polls an fd.
     Fd(RawFd),
     /// The operation submits an AIO.
-    #[cfg(target_os = "freebsd")]
+    #[cfg(aio)]
     Aio(NonNull<libc::aiocb>),
 }
 
@@ -215,7 +215,7 @@ impl Driver {
 
     pub fn cancel<T: crate::sys::OpCode>(&mut self, op: Key<T>) {
         self.cancelled.insert(op.user_data());
-        #[cfg(target_os = "freebsd")]
+        #[cfg(aio)]
         {
             let mut op = op;
             let op = op.as_op_pin();
@@ -251,7 +251,7 @@ impl Driver {
                     Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
                 }
             }
-            #[cfg(target_os = "freebsd")]
+            #[cfg(aio)]
             Decision::Aio(AioControl { mut aiocbp, submit }) => {
                 let aiocb = unsafe { aiocbp.as_mut() };
                 // sigev_notify_kqueue
@@ -337,7 +337,7 @@ impl Driver {
                         self.poll.modify(borrowed_fd, renew_event)?;
                     }
                 }
-                #[cfg(target_os = "freebsd")]
+                #[cfg(aio)]
                 Some(OpType::Aio(aiocbp)) => {
                     let err = unsafe { libc::aio_error(aiocbp.as_ptr()) };
                     let res = match err {

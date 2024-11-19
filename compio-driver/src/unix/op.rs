@@ -22,7 +22,7 @@ impl OpenFile {
     }
 }
 
-#[cfg(all(target_os = "linux", target_env = "gnu"))]
+#[cfg(gnulinux)]
 pub(crate) type Statx = libc::statx;
 
 #[cfg(all(target_os = "linux", not(target_env = "gnu")))]
@@ -90,7 +90,7 @@ pub struct ReadVectoredAt<T: IoVectoredBufMut, S> {
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSliceMut>,
-    #[cfg(target_os = "freebsd")]
+    #[cfg(freebsd)]
     pub(crate) aiocb: libc::aiocb,
     _p: PhantomPinned,
 }
@@ -103,7 +103,7 @@ impl<T: IoVectoredBufMut, S> ReadVectoredAt<T, S> {
             offset,
             buffer,
             slices: vec![],
-            #[cfg(target_os = "freebsd")]
+            #[cfg(freebsd)]
             aiocb: unsafe { std::mem::zeroed() },
             _p: PhantomPinned,
         }
@@ -124,7 +124,7 @@ pub struct WriteVectoredAt<T: IoVectoredBuf, S> {
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSlice>,
-    #[cfg(target_os = "freebsd")]
+    #[cfg(freebsd)]
     pub(crate) aiocb: libc::aiocb,
     _p: PhantomPinned,
 }
@@ -137,7 +137,7 @@ impl<T: IoVectoredBuf, S> WriteVectoredAt<T, S> {
             offset,
             buffer,
             slices: vec![],
-            #[cfg(target_os = "freebsd")]
+            #[cfg(freebsd)]
             aiocb: unsafe { std::mem::zeroed() },
             _p: PhantomPinned,
         }

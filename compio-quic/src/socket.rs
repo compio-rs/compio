@@ -115,7 +115,7 @@ impl<const N: usize> DerefMut for Ancillary<N> {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(linux)]
 #[inline]
 fn max_gso_segments(socket: &UdpSocket) -> io::Result<usize> {
     unsafe {
@@ -131,7 +131,7 @@ fn max_gso_segments(socket: &UdpSocket) -> io::Result<usize> {
     }
     Ok(512)
 }
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(not(any(linux, windows)))]
 #[inline]
 fn max_gso_segments(_socket: &UdpSocket) -> io::Result<usize> {
     Err(io::Error::from(io::ErrorKind::Unsupported))
@@ -174,7 +174,7 @@ pub(crate) struct Socket {
     max_gso_segments: usize,
     may_fragment: bool,
     has_gso_error: AtomicBool,
-    #[cfg(target_os = "freebsd")]
+    #[cfg(freebsd)]
     encode_src_ip_v4: bool,
 }
 
@@ -196,15 +196,7 @@ impl Socket {
 
         // ECN
         if is_ipv4 {
-            #[cfg(all(
-                unix,
-                not(any(
-                    target_os = "openbsd",
-                    target_os = "netbsd",
-                    target_os = "illumos",
-                    target_os = "solaris"
-                ))
-            ))]
+            #[cfg(all(unix, not(any(non_freebsd, solarish))))]
             set_socket_option!(socket, libc::IPPROTO_IP, libc::IP_RECVTOS, &1);
             #[cfg(windows)]
             set_socket_option!(socket, WinSock::IPPROTO_IP, WinSock::IP_ECN, &1);
@@ -218,17 +210,9 @@ impl Socket {
 
         // pktinfo / destination address
         if is_ipv4 {
-            #[cfg(any(target_os = "linux", target_os = "android"))]
+            #[cfg(linux_all)]
             set_socket_option!(socket, libc::IPPROTO_IP, libc::IP_PKTINFO, &1);
-            #[cfg(any(
-                target_os = "freebsd",
-                target_os = "openbsd",
-                target_os = "netbsd",
-                target_os = "illumos",
-                target_os = "solaris",
-                target_os = "macos",
-                target_os = "ios"
-            ))]
+            #[cfg(any(bsd, solarish, apple))]
             set_socket_option!(socket, libc::IPPROTO_IP, libc::IP_RECVDSTADDR, &1);
             #[cfg(windows)]
             set_socket_option!(socket, WinSock::IPPROTO_IP, WinSock::IP_PKTINFO, &1);
@@ -243,7 +227,7 @@ impl Socket {
         // disable fragmentation
         let mut may_fragment = false;
         if is_ipv4 {
-            #[cfg(any(target_os = "linux", target_os = "android"))]
+            #[cfg(linux_all)]
             {
                 may_fragment |= set_socket_option!(
                     socket,
@@ -252,12 +236,7 @@ impl Socket {
                     &libc::IP_PMTUDISC_PROBE,
                 );
             }
-            #[cfg(any(
-                target_os = "aix",
-                target_os = "freebsd",
-                target_os = "macos",
-                target_os = "ios"
-            ))]
+            #[cfg(any(aix, freebsd, apple))]
             {
                 may_fragment |= set_socket_option!(socket, libc::IPPROTO_IP, libc::IP_DONTFRAG, &1);
             }
@@ -268,7 +247,7 @@ impl Socket {
             }
         }
         if is_ipv6 {
-            #[cfg(any(target_os = "linux", target_os = "android"))]
+            #[cfg(linux_all)]
             {
                 may_fragment |= set_socket_option!(
                     socket,
@@ -277,12 +256,12 @@ impl Socket {
                     &libc::IPV6_PMTUDISC_PROBE,
                 );
             }
-            #[cfg(all(unix, not(any(target_os = "openbsd", target_os = "netbsd"))))]
+            #[cfg(all(unix, not(non_freebsd)))]
             {
                 may_fragment |=
                     set_socket_option!(socket, libc::IPPROTO_IPV6, libc::IPV6_DONTFRAG, &1);
             }
-            #[cfg(any(target_os = "openbsd", target_os = "netbsd"))]
+            #[cfg(non_freebsd)]
             {
                 // FIXME: workaround until https://github.com/rust-lang/libc/pull/3716 is released (at least in 0.2.155)
                 may_fragment |= set_socket_option!(socket, libc::IPPROTO_IPV6, 62, &1);
@@ -297,7 +276,7 @@ impl Socket {
         // GRO
         #[allow(unused_mut)] // only mutable on Linux and Windows
         let mut max_gro_segments = 1;
-        #[cfg(target_os = "linux")]
+        #[cfg(linux)]
         if set_socket_option!(socket, libc::SOL_UDP, libc::UDP_GRO, &1) {
             max_gro_segments = 64;
         }
@@ -314,7 +293,7 @@ impl Socket {
         // GSO
         let max_gso_segments = max_gso_segments(&socket).unwrap_or(1);
 
-        #[cfg(target_os = "freebsd")]
+        #[cfg(freebsd)]
         let encode_src_ip_v4 =
             socket.local_addr().unwrap().ip() == IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED);
 
@@ -324,7 +303,7 @@ impl Socket {
             max_gso_segments,
             may_fragment,
             has_gso_error: AtomicBool::new(false),
-            #[cfg(target_os = "freebsd")]
+            #[cfg(freebsd)]
             encode_src_ip_v4,
         })
     }
@@ -374,15 +353,7 @@ impl Socket {
                     // ECN
                     #[cfg(unix)]
                     (libc::IPPROTO_IP, libc::IP_TOS) => ecn_bits = *cmsg.data::<u8>(),
-                    #[cfg(all(
-                        unix,
-                        not(any(
-                            target_os = "openbsd",
-                            target_os = "netbsd",
-                            target_os = "illumos",
-                            target_os = "solaris"
-                        ))
-                    ))]
+                    #[cfg(all(unix, not(any(non_freebsd, solarish))))]
                     (libc::IPPROTO_IP, libc::IP_RECVTOS) => ecn_bits = *cmsg.data::<u8>(),
                     #[cfg(unix)]
                     (libc::IPPROTO_IPV6, libc::IPV6_TCLASS) => {
@@ -396,20 +367,12 @@ impl Socket {
                     }
 
                     // pktinfo / destination address
-                    #[cfg(any(target_os = "linux", target_os = "android"))]
+                    #[cfg(linux_all)]
                     (libc::IPPROTO_IP, libc::IP_PKTINFO) => {
                         let pktinfo = cmsg.data::<libc::in_pktinfo>();
                         local_ip = Some(IpAddr::from(pktinfo.ipi_addr.s_addr.to_ne_bytes()));
                     }
-                    #[cfg(any(
-                        target_os = "freebsd",
-                        target_os = "openbsd",
-                        target_os = "netbsd",
-                        target_os = "illumos",
-                        target_os = "solaris",
-                        target_os = "macos",
-                        target_os = "ios",
-                    ))]
+                    #[cfg(any(bsd, solarish, apple))]
                     (libc::IPPROTO_IP, libc::IP_RECVDSTADDR) => {
                         let in_addr = cmsg.data::<libc::in_addr>();
                         local_ip = Some(IpAddr::from(in_addr.s_addr.to_ne_bytes()));
@@ -431,7 +394,7 @@ impl Socket {
                     }
 
                     // GRO
-                    #[cfg(target_os = "linux")]
+                    #[cfg(linux)]
                     (libc::SOL_UDP, libc::UDP_GRO) => stride = *cmsg.data::<libc::c_int>() as usize,
                     #[cfg(windows)]
                     (WinSock::IPPROTO_UDP, UDP_COALESCED_INFO) => {
@@ -462,9 +425,9 @@ impl Socket {
 
         // ECN
         if is_ipv4 {
-            #[cfg(all(unix, not(any(target_os = "freebsd", target_os = "netbsd"))))]
+            #[cfg(all(unix, not(any(freebsd, netbsd))))]
             builder.try_push(libc::IPPROTO_IP, libc::IP_TOS, ecn as libc::c_int);
-            #[cfg(target_os = "freebsd")]
+            #[cfg(freebsd)]
             builder.try_push(libc::IPPROTO_IP, libc::IP_TOS, ecn as libc::c_uchar);
             #[cfg(windows)]
             builder.try_push(WinSock::IPPROTO_IP, WinSock::IP_ECN, ecn as i32);
@@ -479,7 +442,7 @@ impl Socket {
         match transmit.src_ip {
             Some(IpAddr::V4(ip)) => {
                 let addr = u32::from_ne_bytes(ip.octets());
-                #[cfg(any(target_os = "linux", target_os = "android"))]
+                #[cfg(linux_all)]
                 {
                     let pktinfo = libc::in_pktinfo {
                         ipi_ifindex: 0,
@@ -488,26 +451,11 @@ impl Socket {
                     };
                     builder.try_push(libc::IPPROTO_IP, libc::IP_PKTINFO, pktinfo);
                 }
-                #[cfg(any(
-                    target_os = "freebsd",
-                    target_os = "openbsd",
-                    target_os = "netbsd",
-                    target_os = "macos",
-                    target_os = "ios",
-                    target_os = "illumos",
-                    target_os = "solaris",
-                ))]
+                #[cfg(any(bsd, solarish, apple))]
                 {
-                    #[cfg(target_os = "freebsd")]
+                    #[cfg(freebsd)]
                     let encode_src_ip_v4 = self.encode_src_ip_v4;
-                    #[cfg(any(
-                        target_os = "openbsd",
-                        target_os = "netbsd",
-                        target_os = "macos",
-                        target_os = "ios",
-                        target_os = "illumos",
-                        target_os = "solaris",
-                    ))]
+                    #[cfg(any(non_freebsd, solarish, apple))]
                     let encode_src_ip_v4 = true;
 
                     if encode_src_ip_v4 {
@@ -553,7 +501,7 @@ impl Socket {
 
         // GSO
         if let Some(segment_size) = transmit.segment_size {
-            #[cfg(target_os = "linux")]
+            #[cfg(linux)]
             builder.try_push(libc::SOL_UDP, libc::UDP_SEGMENT, segment_size as u16);
             #[cfg(windows)]
             builder.try_push(
@@ -561,7 +509,7 @@ impl Socket {
                 WinSock::UDP_SEND_MSG_SIZE,
                 segment_size as u32,
             );
-            #[cfg(not(any(target_os = "linux", windows)))]
+            #[cfg(not(any(linux, windows)))]
             let _ = segment_size;
         }
 
@@ -577,7 +525,7 @@ impl Socket {
         match res {
             Ok(_) => BufResult(Ok(()), buffer),
             Err(e) => {
-                #[cfg(target_os = "linux")]
+                #[cfg(linux)]
                 if let Some(libc::EIO) | Some(libc::EINVAL) = e.raw_os_error() {
                     if self.max_gso_segments() > 1 {
                         self.has_gso_error.store(true, Ordering::Relaxed);
@@ -601,7 +549,7 @@ impl Clone for Socket {
             max_gro_segments: self.max_gro_segments,
             max_gso_segments: self.max_gso_segments,
             has_gso_error: AtomicBool::new(self.has_gso_error.load(Ordering::Relaxed)),
-            #[cfg(target_os = "freebsd")]
+            #[cfg(freebsd)]
             encode_src_ip_v4: self.encode_src_ip_v4.clone(),
         }
     }
@@ -702,15 +650,7 @@ mod tests {
     }
 
     #[compio_macros::test]
-    #[cfg_attr(
-        any(
-            target_os = "openbsd",
-            target_os = "netbsd",
-            target_os = "illumos",
-            target_os = "solaris"
-        ),
-        ignore
-    )]
+    #[cfg_attr(any(non_freebsd, solarish), ignore)]
     async fn ecn_v4() {
         let passive = Socket::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()).unwrap();
         let active = Socket::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()).unwrap();
@@ -745,7 +685,7 @@ mod tests {
     }
 
     #[compio_macros::test]
-    #[cfg_attr(any(target_os = "openbsd", target_os = "netbsd"), ignore)]
+    #[cfg_attr(non_freebsd, ignore)]
     async fn ecn_dualstack() {
         let passive = Socket::new(bind_udp_dualstack().unwrap()).unwrap();
 
@@ -772,15 +712,7 @@ mod tests {
     }
 
     #[compio_macros::test]
-    #[cfg_attr(
-        any(
-            target_os = "openbsd",
-            target_os = "netbsd",
-            target_os = "illumos",
-            target_os = "solaris"
-        ),
-        ignore
-    )]
+    #[cfg_attr(any(non_freebsd, solarish), ignore)]
     async fn ecn_v4_mapped_v6() {
         let passive = Socket::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()).unwrap();
         let active = Socket::new(bind_udp_dualstack().unwrap()).unwrap();
@@ -802,7 +734,7 @@ mod tests {
     }
 
     #[compio_macros::test]
-    #[cfg_attr(not(any(target_os = "linux", target_os = "windows")), ignore)]
+    #[cfg_attr(not(any(linux, windows)), ignore)]
     async fn gso() {
         let passive = Socket::new(UdpSocket::bind("[::1]:0").await.unwrap()).unwrap();
         let active = Socket::new(UdpSocket::bind("[::1]:0").await.unwrap()).unwrap();
