@@ -73,9 +73,6 @@ libc = { workspace = true }
 [build-dependencies]
 cfg_aliases = { workspace = true }
 
-[dev-dependencies]
-compio-buf = { workspace = true, features = ["arrayvec"] }
-
 [features]
 default = ["io-uring"]
 polling = ["dep:polling"]

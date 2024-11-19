@@ -41,7 +41,6 @@ futures-util = { workspace = true }
 once_cell = { workspace = true }
 scoped-tls = "1.0.1"
 slab = { workspace = true, optional = true }
-smallvec = "1.11.1"
 socket2 = { workspace = true }
 
 # Windows specific dependencies

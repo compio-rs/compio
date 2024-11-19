@@ -12,12 +12,9 @@ use std::{
 };
 
 use compio_log::{instrument, trace};
-use windows_sys::Win32::{
-    Foundation::{ERROR_BUSY, ERROR_CANCELLED},
-    System::IO::OVERLAPPED,
-};
+use windows_sys::Win32::{Foundation::ERROR_CANCELLED, System::IO::OVERLAPPED};
 
-use crate::{AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder};
+use crate::{AsyncifyPool, Entry, Key, ProactorBuilder};
 
 pub(crate) mod op;
 
@@ -251,13 +248,17 @@ impl Driver {
         let op_pin = op.as_op_pin();
         match op_pin.op_type() {
             OpType::Overlapped => unsafe { op_pin.operate(optr.cast()) },
-            OpType::Blocking => {
+            OpType::Blocking => loop {
                 if self.push_blocking(user_data)? {
-                    Poll::Pending
+                    break Poll::Pending;
                 } else {
-                    Poll::Ready(Err(io::Error::from_raw_os_error(ERROR_BUSY as _)))
+                    // It's OK to wait forever, because any blocking task will notify the IOCP after
+                    // it completes.
+                    unsafe {
+                        self.poll(None)?;
+                    }
                 }
-            }
+            },
             OpType::Event(e) => {
                 self.waits
                     .insert(user_data, wait::Wait::new(&self.port, e, op)?);
@@ -307,20 +308,16 @@ impl Driver {
         }
     }
 
-    pub unsafe fn poll(
-        &mut self,
-        timeout: Option<Duration>,
-        mut entries: OutEntries<impl Extend<usize>>,
-    ) -> io::Result<()> {
+    pub unsafe fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
 
         let notify_user_data = self.notify_overlapped.as_ref() as *const Overlapped as usize;
 
-        entries.extend(
-            self.port
-                .poll(timeout)?
-                .filter_map(|e| Self::create_entry(notify_user_data, &mut self.waits, e)),
-        );
+        for e in self.port.poll(timeout)? {
+            if let Some(e) = Self::create_entry(notify_user_data, &mut self.waits, e) {
+                e.notify();
+            }
+        }
 
         Ok(())
     }

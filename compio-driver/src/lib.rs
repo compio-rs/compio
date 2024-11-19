@@ -281,15 +281,8 @@ impl Proactor {
     /// Poll the driver and get completed entries.
     /// You need to call [`Proactor::pop`] to get the pushed
     /// operations.
-    pub fn poll(
-        &mut self,
-        timeout: Option<Duration>,
-        entries: &mut impl Extend<usize>,
-    ) -> io::Result<()> {
-        unsafe {
-            self.driver.poll(timeout, OutEntries::new(entries))?;
-        }
-        Ok(())
+    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+        unsafe { self.driver.poll(timeout) }
     }
 
     /// Get the pushed operations from the completion entries.
@@ -361,34 +354,16 @@ impl Entry {
     pub fn into_result(self) -> io::Result<usize> {
         self.result
     }
-}
 
-// The output entries need to be marked as `completed`. If an entry has been
-// marked as `cancelled`, it will be removed from the registry.
-struct OutEntries<'b, E> {
-    entries: &'b mut E,
-}
-
-impl<'b, E> OutEntries<'b, E> {
-    pub fn new(entries: &'b mut E) -> Self {
-        Self { entries }
-    }
-}
-
-impl<E: Extend<usize>> Extend<Entry> for OutEntries<'_, E> {
-    fn extend<T: IntoIterator<Item = Entry>>(&mut self, iter: T) {
-        self.entries.extend(iter.into_iter().filter_map(|e| {
-            let user_data = e.user_data();
-            let mut op = unsafe { Key::<()>::new_unchecked(user_data) };
-            op.set_flags(e.flags());
-            if op.set_result(e.into_result()) {
-                // SAFETY: completed and cancelled.
-                let _ = unsafe { op.into_box() };
-                None
-            } else {
-                Some(user_data)
-            }
-        }))
+    /// SAFETY: `user_data` should be a valid pointer.
+    pub unsafe fn notify(self) {
+        let user_data = self.user_data();
+        let mut op = Key::<()>::new_unchecked(user_data);
+        op.set_flags(self.flags());
+        if op.set_result(self.into_result()) {
+            // SAFETY: completed and cancelled.
+            let _ = op.into_box();
+        }
     }
 }
 
