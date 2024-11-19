@@ -258,8 +258,24 @@ impl Driver {
                 aiocb.aio_sigevent.sigev_signo = self.poll.as_raw_fd();
                 aiocb.aio_sigevent.sigev_notify = libc::SIGEV_KEVENT;
                 aiocb.aio_sigevent.sigev_value.sival_ptr = user_data as _;
-                syscall!(submit(aiocbp.as_ptr()))?;
-                Poll::Pending
+                match syscall!(submit(aiocbp.as_ptr())) {
+                    Ok(_) => Poll::Pending,
+                    Err(e)
+                        if matches!(
+                            e.raw_os_error(),
+                            Some(libc::EOPNOTSUPP) | Some(libc::EAGAIN)
+                        ) =>
+                    {
+                        loop {
+                            if self.push_blocking(user_data) {
+                                return Poll::Pending;
+                            } else {
+                                self.poll_blocking();
+                            }
+                        }
+                    }
+                    Err(e) => Poll::Ready(Err(e)),
+                }
             }
         }
     }
