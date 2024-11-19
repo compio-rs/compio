@@ -1,4 +1,4 @@
-#[cfg(target_os = "freebsd")]
+#[cfg(aio)]
 use std::ptr::NonNull;
 use std::{
     ffi::CString,
@@ -12,9 +12,9 @@ use std::{
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
 };
-#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+#[cfg(not(gnulinux))]
 use libc::open;
-#[cfg(all(target_os = "linux", target_env = "gnu"))]
+#[cfg(gnulinux)]
 use libc::open64 as open;
 #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "hurd")))]
 use libc::{pread, preadv, pwrite, pwritev};
@@ -94,7 +94,7 @@ impl<S: AsRawFd> OpCode for FileStat<S> {
     }
 
     fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        #[cfg(gnulinux)]
         {
             let mut s: libc::statx = unsafe { std::mem::zeroed() };
             static EMPTY_NAME: &[u8] = b"\0";
@@ -108,7 +108,7 @@ impl<S: AsRawFd> OpCode for FileStat<S> {
             self.stat = statx_to_stat(s);
             Poll::Ready(Ok(0))
         }
-        #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+        #[cfg(not(gnulinux))]
         {
             Poll::Ready(Ok(
                 syscall!(libc::fstat(self.fd.as_raw_fd(), &mut self.stat))? as _,
@@ -149,7 +149,7 @@ impl OpCode for PathStat {
     }
 
     fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        #[cfg(gnulinux)]
         {
             let mut flags = libc::AT_EMPTY_PATH;
             if !self.follow_symlink {
@@ -166,7 +166,7 @@ impl OpCode for PathStat {
             self.stat = statx_to_stat(s);
             Poll::Ready(Ok(0))
         }
-        #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+        #[cfg(not(gnulinux))]
         {
             let f = if self.follow_symlink {
                 libc::stat
@@ -188,7 +188,7 @@ impl IntoInner for PathStat {
 
 impl<T: IoBufMut, S: AsRawFd> OpCode for ReadAt<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        #[cfg(target_os = "freebsd")]
+        #[cfg(aio)]
         {
             let this = unsafe { self.get_unchecked_mut() };
             let slice = this.buffer.as_mut_slice();
@@ -200,13 +200,13 @@ impl<T: IoBufMut, S: AsRawFd> OpCode for ReadAt<T, S> {
 
             Ok(Decision::aio(&mut this.aiocb, libc::aio_read))
         }
-        #[cfg(not(target_os = "freebsd"))]
+        #[cfg(not(aio))]
         {
             Ok(Decision::Blocking)
         }
     }
 
-    #[cfg(target_os = "freebsd")]
+    #[cfg(aio)]
     fn op_type(self: Pin<&mut Self>) -> Option<crate::OpType> {
         Some(OpType::Aio(NonNull::from(
             &mut unsafe { self.get_unchecked_mut() }.aiocb,
@@ -223,7 +223,7 @@ impl<T: IoBufMut, S: AsRawFd> OpCode for ReadAt<T, S> {
 
 impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for ReadVectoredAt<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        #[cfg(target_os = "freebsd")]
+        #[cfg(freebsd)]
         {
             let this = unsafe { self.get_unchecked_mut() };
             this.slices = unsafe { this.buffer.io_slices_mut() };
@@ -235,13 +235,13 @@ impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for ReadVectoredAt<T, S> {
 
             Ok(Decision::aio(&mut this.aiocb, libc::aio_readv))
         }
-        #[cfg(not(target_os = "freebsd"))]
+        #[cfg(not(freebsd))]
         {
             Ok(Decision::Blocking)
         }
     }
 
-    #[cfg(target_os = "freebsd")]
+    #[cfg(freebsd)]
     fn op_type(self: Pin<&mut Self>) -> Option<crate::OpType> {
         Some(OpType::Aio(NonNull::from(
             &mut unsafe { self.get_unchecked_mut() }.aiocb,
@@ -264,7 +264,7 @@ impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for ReadVectoredAt<T, S> {
 
 impl<T: IoBuf, S: AsRawFd> OpCode for WriteAt<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        #[cfg(target_os = "freebsd")]
+        #[cfg(aio)]
         {
             let this = unsafe { self.get_unchecked_mut() };
             let slice = this.buffer.as_slice();
@@ -276,13 +276,13 @@ impl<T: IoBuf, S: AsRawFd> OpCode for WriteAt<T, S> {
 
             Ok(Decision::aio(&mut this.aiocb, libc::aio_write))
         }
-        #[cfg(not(target_os = "freebsd"))]
+        #[cfg(not(aio))]
         {
             Ok(Decision::Blocking)
         }
     }
 
-    #[cfg(target_os = "freebsd")]
+    #[cfg(aio)]
     fn op_type(self: Pin<&mut Self>) -> Option<crate::OpType> {
         Some(OpType::Aio(NonNull::from(
             &mut unsafe { self.get_unchecked_mut() }.aiocb,
@@ -304,7 +304,7 @@ impl<T: IoBuf, S: AsRawFd> OpCode for WriteAt<T, S> {
 
 impl<T: IoVectoredBuf, S: AsRawFd> OpCode for WriteVectoredAt<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        #[cfg(target_os = "freebsd")]
+        #[cfg(freebsd)]
         {
             let this = unsafe { self.get_unchecked_mut() };
             this.slices = unsafe { this.buffer.io_slices() };
@@ -316,13 +316,13 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for WriteVectoredAt<T, S> {
 
             Ok(Decision::aio(&mut this.aiocb, libc::aio_writev))
         }
-        #[cfg(not(target_os = "freebsd"))]
+        #[cfg(not(freebsd))]
         {
             Ok(Decision::Blocking)
         }
     }
 
-    #[cfg(target_os = "freebsd")]
+    #[cfg(freebsd)]
     fn op_type(self: Pin<&mut Self>) -> Option<crate::OpType> {
         Some(OpType::Aio(NonNull::from(
             &mut unsafe { self.get_unchecked_mut() }.aiocb,
@@ -345,7 +345,7 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for WriteVectoredAt<T, S> {
 
 impl<S: AsRawFd> OpCode for Sync<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        #[cfg(target_os = "freebsd")]
+        #[cfg(aio)]
         {
             unsafe extern "C" fn aio_fsync(aiocbp: *mut libc::aiocb) -> i32 {
                 libc::aio_fsync(libc::O_SYNC, aiocbp)
@@ -365,13 +365,13 @@ impl<S: AsRawFd> OpCode for Sync<S> {
 
             Ok(Decision::aio(&mut this.aiocb, f))
         }
-        #[cfg(not(target_os = "freebsd"))]
+        #[cfg(not(aio))]
         {
             Ok(Decision::Blocking)
         }
     }
 
-    #[cfg(target_os = "freebsd")]
+    #[cfg(aio)]
     fn op_type(self: Pin<&mut Self>) -> Option<crate::OpType> {
         Some(OpType::Aio(NonNull::from(
             &mut unsafe { self.get_unchecked_mut() }.aiocb,
@@ -379,14 +379,7 @@ impl<S: AsRawFd> OpCode for Sync<S> {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        #[cfg(any(
-            target_os = "android",
-            target_os = "freebsd",
-            target_os = "fuchsia",
-            target_os = "illumos",
-            target_os = "linux",
-            target_os = "netbsd"
-        ))]
+        #[cfg(datasync)]
         {
             Poll::Ready(Ok(syscall!(if self.datasync {
                 libc::fdatasync(self.fd.as_raw_fd())
@@ -394,14 +387,7 @@ impl<S: AsRawFd> OpCode for Sync<S> {
                 libc::fsync(self.fd.as_raw_fd())
             })? as _))
         }
-        #[cfg(not(any(
-            target_os = "android",
-            target_os = "freebsd",
-            target_os = "fuchsia",
-            target_os = "illumos",
-            target_os = "linux",
-            target_os = "netbsd"
-        )))]
+        #[cfg(not(datasync))]
         {
             Poll::Ready(Ok(syscall!(libc::fsync(self.fd.as_raw_fd()))? as _))
         }

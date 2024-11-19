@@ -82,14 +82,7 @@ impl Metadata {
             + Duration::from_nanos(self.0.st_atime_nsec as _))
     }
 
-    #[cfg(not(any(
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "macos",
-        target_os = "ios",
-        target_os = "tvos",
-        target_os = "watchos",
-    )))]
+    #[cfg(not(noctime))]
     pub fn created(&self) -> io::Result<SystemTime> {
         // We've assigned btime field to ctime.
         Ok(SystemTime::UNIX_EPOCH
@@ -97,14 +90,7 @@ impl Metadata {
             + Duration::from_nanos(self.0.st_ctime_nsec as _))
     }
 
-    #[cfg(any(
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "macos",
-        target_os = "ios",
-        target_os = "tvos",
-        target_os = "watchos",
-    ))]
+    #[cfg(noctime)]
     pub fn created(&self) -> io::Result<SystemTime> {
         Ok(SystemTime::UNIX_EPOCH
             + Duration::from_secs(self.0.st_birthtime as _)

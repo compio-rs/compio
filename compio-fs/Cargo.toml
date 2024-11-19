@@ -43,6 +43,9 @@ windows-sys = { workspace = true, features = ["Win32_Security_Authorization"] }
 libc = { workspace = true }
 os_pipe = { workspace = true }
 
+[build-dependencies]
+cfg_aliases = { workspace = true }
+
 # Shared dev dependencies for all platforms
 [dev-dependencies]
 compio-runtime = { workspace = true, features = ["time"] }

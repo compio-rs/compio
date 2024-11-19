@@ -1,5 +1,5 @@
 use std::time::Instant;
-#[cfg(not(any(target_os = "illumos", target_os = "solaris")))]
+#[cfg(not(solarish))]
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
@@ -105,7 +105,7 @@ fn echo_compio_quic(b: &mut Bencher, content: &[u8], streams: usize) {
     })
 }
 
-#[cfg(not(any(target_os = "illumos", target_os = "solaris")))]
+#[cfg(not(solarish))]
 fn echo_quinn(b: &mut Bencher, content: &[u8], streams: usize) {
     use quinn::{ClientConfig, Endpoint, ServerConfig};
 
@@ -184,7 +184,7 @@ fn echo(c: &mut Criterion) {
                 &(),
                 |b, _| echo_compio_quic(b, data, streams),
             );
-            #[cfg(not(any(target_os = "illumos", target_os = "solaris")))]
+            #[cfg(not(solarish))]
             group.bench_with_input(
                 BenchmarkId::new("quinn", format!("{}-streams-{}-bytes", streams, size)),
                 &(),
