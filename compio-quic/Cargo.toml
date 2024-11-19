@@ -51,12 +51,14 @@ compio-runtime = { workspace = true, features = ["criterion"] }
 
 criterion = { workspace = true, features = ["async_tokio"] }
 http = "1.1.0"
-quinn = "0.11.5"
 rand = { workspace = true }
 rcgen = "0.13.1"
 socket2 = { workspace = true, features = ["all"] }
 tokio = { workspace = true, features = ["rt", "macros"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+[target.'cfg(not(any(target_os = "illumos", target_os = "solaris")))'.dev-dependencies]
+quinn = "0.11.5"
 
 [features]
 default = []

@@ -196,7 +196,15 @@ impl Socket {
 
         // ECN
         if is_ipv4 {
-            #[cfg(all(unix, not(any(target_os = "openbsd", target_os = "netbsd"))))]
+            #[cfg(all(
+                unix,
+                not(any(
+                    target_os = "openbsd",
+                    target_os = "netbsd",
+                    target_os = "illumos",
+                    target_os = "solaris"
+                ))
+            ))]
             set_socket_option!(socket, libc::IPPROTO_IP, libc::IP_RECVTOS, &1);
             #[cfg(windows)]
             set_socket_option!(socket, WinSock::IPPROTO_IP, WinSock::IP_ECN, &1);
@@ -216,6 +224,8 @@ impl Socket {
                 target_os = "freebsd",
                 target_os = "openbsd",
                 target_os = "netbsd",
+                target_os = "illumos",
+                target_os = "solaris",
                 target_os = "macos",
                 target_os = "ios"
             ))]
@@ -364,7 +374,15 @@ impl Socket {
                     // ECN
                     #[cfg(unix)]
                     (libc::IPPROTO_IP, libc::IP_TOS) => ecn_bits = *cmsg.data::<u8>(),
-                    #[cfg(all(unix, not(any(target_os = "openbsd", target_os = "netbsd"))))]
+                    #[cfg(all(
+                        unix,
+                        not(any(
+                            target_os = "openbsd",
+                            target_os = "netbsd",
+                            target_os = "illumos",
+                            target_os = "solaris"
+                        ))
+                    ))]
                     (libc::IPPROTO_IP, libc::IP_RECVTOS) => ecn_bits = *cmsg.data::<u8>(),
                     #[cfg(unix)]
                     (libc::IPPROTO_IPV6, libc::IPV6_TCLASS) => {
@@ -387,6 +405,8 @@ impl Socket {
                         target_os = "freebsd",
                         target_os = "openbsd",
                         target_os = "netbsd",
+                        target_os = "illumos",
+                        target_os = "solaris",
                         target_os = "macos",
                         target_os = "ios",
                     ))]
@@ -474,6 +494,8 @@ impl Socket {
                     target_os = "netbsd",
                     target_os = "macos",
                     target_os = "ios",
+                    target_os = "illumos",
+                    target_os = "solaris",
                 ))]
                 {
                     #[cfg(target_os = "freebsd")]
@@ -483,6 +505,8 @@ impl Socket {
                         target_os = "netbsd",
                         target_os = "macos",
                         target_os = "ios",
+                        target_os = "illumos",
+                        target_os = "solaris",
                     ))]
                     let encode_src_ip_v4 = true;
 
@@ -678,7 +702,15 @@ mod tests {
     }
 
     #[compio_macros::test]
-    #[cfg_attr(any(target_os = "openbsd", target_os = "netbsd"), ignore)]
+    #[cfg_attr(
+        any(
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "illumos",
+            target_os = "solaris"
+        ),
+        ignore
+    )]
     async fn ecn_v4() {
         let passive = Socket::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()).unwrap();
         let active = Socket::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()).unwrap();
@@ -740,7 +772,15 @@ mod tests {
     }
 
     #[compio_macros::test]
-    #[cfg_attr(any(target_os = "openbsd", target_os = "netbsd"), ignore)]
+    #[cfg_attr(
+        any(
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "illumos",
+            target_os = "solaris"
+        ),
+        ignore
+    )]
     async fn ecn_v4_mapped_v6() {
         let passive = Socket::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()).unwrap();
         let active = Socket::new(bind_udp_dualstack().unwrap()).unwrap();

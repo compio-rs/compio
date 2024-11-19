@@ -140,6 +140,8 @@ async fn echo_v4() {
         target_os = "openbsd",
         target_os = "netbsd",
         target_os = "freebsd",
+        target_os = "illumos",
+        target_os = "solaris",
         windows
     ),
     ignore

@@ -1,4 +1,4 @@
-name: TestFreeBSD
+name: TestIllumos
 
 on:
   push:
@@ -20,15 +20,15 @@ jobs:
         toolchain: ["nightly", "beta", "stable"]
     steps:
       - uses: actions/checkout@v4
-      - name: Test in FreeBSD
+      - name: Test in Illumos
         id: test
-        uses: vmactions/freebsd-vm@v1
+        uses: vmactions/omnios-vm@v1
         with:
           usesh: true
           sync: rsync
           copyback: false
           prepare: |
-            pkg install -y curl pkgconf glib
+            pkg install gcc14 curl pkg-config glib2
             curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf > install.sh
             chmod +x install.sh
             ./install.sh -y --default-toolchain ${{ matrix.toolchain }} --profile minimal
