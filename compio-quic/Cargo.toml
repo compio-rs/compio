@@ -22,7 +22,7 @@ compio-log = { workspace = true }
 compio-net = { workspace = true }
 compio-runtime = { workspace = true, features = ["time"] }
 
-quinn-proto = "0.11.8"
+quinn-proto = { version = "0.11.9", default-features = false }
 rustls = { workspace = true }
 rustls-platform-verifier = { version = "0.4.0", optional = true }
 rustls-native-certs = { workspace = true, optional = true }
@@ -61,16 +61,20 @@ tokio = { workspace = true, features = ["rt", "macros"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [target.'cfg(not(any(target_os = "illumos", target_os = "solaris")))'.dev-dependencies]
-quinn = "0.11.5"
+quinn = { version = "0.11.6", default-features = false, features = [
+    "rustls-ring",
+] }
 
 [features]
-default = []
+default = ["ring"]
 io-compat = ["futures-util/io"]
 platform-verifier = ["dep:rustls-platform-verifier"]
 native-certs = ["dep:rustls-native-certs"]
 webpki-roots = ["dep:webpki-roots"]
 h3 = ["dep:h3"]
-# FIXME: see https://github.com/quinn-rs/quinn/pull/1962
+ring = ["quinn-proto/rustls-ring"]
+aws-lc-rs = ["quinn-proto/rustls-aws-lc-rs"]
+aws-lc-rs-fips = ["aws-lc-rs", "quinn-proto/rustls-aws-lc-rs-fips"]
 
 [[example]]
 name = "http3-client"
