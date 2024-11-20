@@ -1,3 +1,11 @@
+<div  align="center">
+    <a href='https://compio.rs'>
+        <img height="150" src="https://github.com/compio-rs/compio-logo/raw/refs/heads/master/generated/colored-with-text.svg">
+    </a>
+</div>
+
+---
+
 # Compio
 
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/compio-rs/compio/blob/master/LICENSE)
