@@ -26,18 +26,18 @@ repository = "https://github.com/compio-rs/compio"
 
 [workspace.dependencies]
 compio-buf = { path = "./compio-buf", version = "0.5.0" }
-compio-driver = { path = "./compio-driver", version = "0.5.0", default-features = false }
-compio-runtime = { path = "./compio-runtime", version = "0.5.0" }
+compio-driver = { path = "./compio-driver", version = "0.6.0", default-features = false }
+compio-runtime = { path = "./compio-runtime", version = "0.6.0" }
 compio-macros = { path = "./compio-macros", version = "0.1.2" }
-compio-fs = { path = "./compio-fs", version = "0.5.0" }
-compio-io = { path = "./compio-io", version = "0.4.0" }
-compio-net = { path = "./compio-net", version = "0.5.0" }
-compio-signal = { path = "./compio-signal", version = "0.3.0" }
-compio-dispatcher = { path = "./compio-dispatcher", version = "0.4.0" }
+compio-fs = { path = "./compio-fs", version = "0.6.0" }
+compio-io = { path = "./compio-io", version = "0.5.0" }
+compio-net = { path = "./compio-net", version = "0.6.0" }
+compio-signal = { path = "./compio-signal", version = "0.4.0" }
+compio-dispatcher = { path = "./compio-dispatcher", version = "0.5.0" }
 compio-log = { path = "./compio-log", version = "0.1.0" }
-compio-tls = { path = "./compio-tls", version = "0.3.0", default-features = false }
-compio-process = { path = "./compio-process", version = "0.2.0" }
-compio-quic = { path = "./compio-quic", version = "0.1.0", default-features = false }
+compio-tls = { path = "./compio-tls", version = "0.4.0", default-features = false }
+compio-process = { path = "./compio-process", version = "0.3.0" }
+compio-quic = { path = "./compio-quic", version = "0.2.0", default-features = false }
 
 bytes = "1.7.1"
 flume = "0.11.0"
