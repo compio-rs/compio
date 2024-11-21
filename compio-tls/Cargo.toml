@@ -38,8 +38,8 @@ default = ["native-tls"]
 all = ["native-tls", "rustls"]
 rustls = ["dep:rustls"]
 
-ring = ["rustls/ring"]
-aws-lc-rs = ["rustls/aws-lc-rs"]
+ring = ["rustls", "rustls/ring"]
+aws-lc-rs = ["rustls", "rustls/aws-lc-rs"]
 aws-lc-rs-fips = ["aws-lc-rs", "rustls/fips"]
 
 read_buf = ["compio-buf/read_buf", "compio-io/read_buf", "rustls?/read_buf"]
