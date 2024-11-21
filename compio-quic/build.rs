@@ -10,6 +10,7 @@ fn main() {
         non_freebsd: { any(target_os = "openbsd", target_os = "netbsd") },
         bsd: { any(freebsd, non_freebsd) },
         solarish: { any(target_os = "illumos", target_os = "solaris") },
-        apple: { target_vendor = "apple" }
+        apple: { target_vendor = "apple" },
+        rustls: { any(feature = "aws-lc-rs", feature = "ring") }
     }
 }

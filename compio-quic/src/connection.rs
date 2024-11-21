@@ -16,9 +16,11 @@ use futures_util::{
     future::{self, Fuse, FusedFuture, LocalBoxFuture},
     select, stream,
 };
+#[cfg(rustls)]
+use quinn_proto::crypto::rustls::HandshakeData;
 use quinn_proto::{
     ConnectionHandle, ConnectionStats, Dir, EndpointEvent, StreamEvent, StreamId, VarInt,
-    congestion::Controller, crypto::rustls::HandshakeData,
+    congestion::Controller,
 };
 use rustc_hash::FxHashMap as HashMap;
 use thiserror::Error;
@@ -85,6 +87,7 @@ impl ConnectionState {
         }
     }
 
+    #[cfg(rustls)]
     fn handshake_data(&self) -> Option<Box<HandshakeData>> {
         self.conn
             .crypto_session()
@@ -387,6 +390,7 @@ impl Connecting {
     }
 
     /// Parameters negotiated during the handshake.
+    #[cfg(rustls)]
     pub async fn handshake_data(&mut self) -> Result<Box<HandshakeData>, ConnectionError> {
         future::poll_fn(|cx| {
             let mut state = self.0.try_state()?;
@@ -497,6 +501,7 @@ impl Connection {
     conn_fn!();
 
     /// Parameters negotiated during the handshake.
+    #[cfg(rustls)]
     pub fn handshake_data(&mut self) -> Result<Box<HandshakeData>, ConnectionError> {
         Ok(self.0.try_state()?.handshake_data().unwrap())
     }
