@@ -76,7 +76,7 @@ libc = { workspace = true }
 monoio = { version = "0.2.2", default-features = false, features = ["iouring"] }
 
 [features]
-default = ["runtime", "io-uring"]
+default = ["runtime", "io-uring", "ring"]
 io-uring = [
     "compio-driver/io-uring",
     "compio-fs?/io-uring",
@@ -116,6 +116,10 @@ bytes = ["compio-buf/bytes"]
 criterion = ["compio-runtime?/criterion"]
 
 enable_log = ["compio-log/enable_log"]
+
+ring = ["compio-tls?/ring", "compio-quic?/ring"]
+aws-lc-rs = ["compio-tls?/aws-lc-rs", "compio-quic?/aws-lc-rs"]
+aws-lc-rs-fips = ["compio-tls?/aws-lc-rs-fips", "compio-quic?/aws-lc-rs-fips"]
 
 # Nightly features
 allocator_api = ["compio-buf/allocator_api", "compio-io?/allocator_api"]
