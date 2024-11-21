@@ -144,7 +144,8 @@ impl Future for TimerFuture {
 
 impl Drop for TimerFuture {
     fn drop(&mut self) {
-        Runtime::with_current(|r| r.cancel_timer(self.key));
+        // If there's no runtime, it's OK to forget it.
+        Runtime::try_with_current(|r| r.cancel_timer(self.key)).ok();
     }
 }
 

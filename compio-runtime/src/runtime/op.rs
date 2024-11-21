@@ -38,7 +38,8 @@ impl<T: OpCode> Future for OpFlagsFuture<T> {
 impl<T: OpCode> Drop for OpFlagsFuture<T> {
     fn drop(&mut self) {
         if let Some(key) = self.key.take() {
-            Runtime::with_current(|r| r.cancel_op(key))
+            // If there's no runtime, it's OK to forget it.
+            Runtime::try_with_current(|r| r.cancel_op(key)).ok();
         }
     }
 }
