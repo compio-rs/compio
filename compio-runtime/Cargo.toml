@@ -65,6 +65,9 @@ glib = "0.20"
 event = ["dep:cfg-if", "compio-buf/arrayvec"]
 time = ["dep:slab"]
 
+io-uring = ["compio-driver/io-uring"]
+polling = ["compio-driver/polling"]
+
 [[test]]
 name = "event"
 required-features = ["event"]

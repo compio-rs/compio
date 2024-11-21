@@ -10,6 +10,10 @@ readme = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
 # Workspace dependencies
 compio-driver = { workspace = true }
@@ -25,3 +29,7 @@ compio-net = { workspace = true }
 compio-macros = { workspace = true }
 
 futures-util = { workspace = true }
+
+[features]
+io-uring = ["compio-runtime/io-uring"]
+polling = ["compio-runtime/polling"]

@@ -30,7 +30,8 @@ windows-sys = { workspace = true }
 compio-macros = { workspace = true }
 
 [features]
-default = []
+io-uring = ["compio-runtime/io-uring"]
+polling = ["compio-runtime/polling"]
 
 linux_pidfd = []
 nightly = ["linux_pidfd"]

@@ -62,8 +62,8 @@ windows-sys = { workspace = true, features = ["Win32_Security_Authorization"] }
 nix = { workspace = true, features = ["fs"] }
 
 [features]
-default = []
-io-uring = ["compio-driver/io-uring"]
+io-uring = ["compio-runtime/io-uring"]
+polling = ["compio-runtime/polling"]
 
 read_buf = ["compio-buf/read_buf", "compio-io/read_buf"]
 windows_by_handle = []
