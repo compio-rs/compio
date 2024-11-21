@@ -43,8 +43,8 @@ os_pipe = { workspace = true }
 slab = { workspace = true }
 
 [features]
-default = []
-io-uring = ["compio-driver/io-uring"]
+io-uring = ["compio-runtime/io-uring"]
+polling = ["compio-runtime/polling"]
 # Nightly features
 lazy_cell = []
 once_cell_try = []
