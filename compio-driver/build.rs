@@ -12,6 +12,7 @@ fn main() {
         ) },
         gnulinux: { all(target_os = "linux", target_env = "gnu") },
         freebsd: { target_os = "freebsd" },
-        aio: { freebsd },
+        solarish: { any(target_os = "illumos", target_os = "solaris") },
+        aio: { any(freebsd, solarish) },
     }
 }

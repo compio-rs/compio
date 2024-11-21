@@ -1,16 +1,18 @@
 use std::{future::Future, io, mem::ManuallyDrop, panic::resume_unwind, path::Path};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
+#[cfg(unix)]
+use compio_driver::op::FileStat;
 use compio_driver::{
     ToSharedFd, impl_raw_fd,
     op::{BufResultExt, CloseFile, ReadAt, Sync, WriteAt},
 };
 use compio_io::{AsyncReadAt, AsyncWriteAt};
 use compio_runtime::Attacher;
-#[cfg(unix)]
+#[cfg(all(unix, not(solarish)))]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
-    compio_driver::op::{FileStat, ReadVectoredAt, WriteVectoredAt},
+    compio_driver::op::{ReadVectoredAt, WriteVectoredAt},
 };
 
 use crate::{Metadata, OpenOptions, Permissions};
@@ -155,7 +157,7 @@ impl AsyncReadAt for File {
         compio_runtime::submit(op).await.into_inner().map_advanced()
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, not(solarish)))]
     async fn read_vectored_at<T: IoVectoredBufMut>(
         &self,
         buffer: T,
@@ -173,7 +175,7 @@ impl AsyncWriteAt for File {
         (&*self).write_at(buf, pos).await
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, not(solarish)))]
     #[inline]
     async fn write_vectored_at<T: IoVectoredBuf>(
         &mut self,
@@ -191,7 +193,7 @@ impl AsyncWriteAt for &File {
         compio_runtime::submit(op).await.into_inner()
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, not(solarish)))]
     async fn write_vectored_at<T: IoVectoredBuf>(
         &mut self,
         buffer: T,

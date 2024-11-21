@@ -244,35 +244,43 @@ impl Driver {
                 Poll::Pending
             }
             Decision::Completed(res) => Poll::Ready(Ok(res)),
-            Decision::Blocking => loop {
-                if self.push_blocking(user_data) {
-                    break Poll::Pending;
-                } else {
-                    self.poll_blocking();
-                }
-            },
+            Decision::Blocking => self.push_blocking(user_data),
             #[cfg(aio)]
             Decision::Aio(AioControl { mut aiocbp, submit }) => {
                 let aiocb = unsafe { aiocbp.as_mut() };
-                // sigev_notify_kqueue
-                aiocb.aio_sigevent.sigev_signo = self.poll.as_raw_fd();
-                aiocb.aio_sigevent.sigev_notify = libc::SIGEV_KEVENT;
-                aiocb.aio_sigevent.sigev_value.sival_ptr = user_data as _;
+                #[cfg(freebsd)]
+                {
+                    // sigev_notify_kqueue
+                    aiocb.aio_sigevent.sigev_signo = self.poll.as_raw_fd();
+                    aiocb.aio_sigevent.sigev_notify = libc::SIGEV_KEVENT;
+                    aiocb.aio_sigevent.sigev_value.sival_ptr = user_data as _;
+                }
+                #[cfg(solarish)]
+                let mut notify = libc::port_notify {
+                    portnfy_port: self.poll.as_raw_fd(),
+                    portnfy_user: user_data as _,
+                };
+                #[cfg(solarish)]
+                {
+                    aiocb.aio_sigevent.sigev_notify = libc::SIGEV_PORT;
+                    aiocb.aio_sigevent.sigev_value.sival_ptr = &mut notify as *mut _ as _;
+                }
                 match syscall!(submit(aiocbp.as_ptr())) {
                     Ok(_) => Poll::Pending,
+                    // FreeBSD:
+                    //   * EOPNOTSUPP: It's on a filesystem without AIO support. Just fallback to
+                    //     blocking IO.
+                    //   * EAGAIN: The process-wide queue is full. No safe way to remove the (maybe)
+                    //     dead entries.
+                    // Solarish:
+                    //   * EAGAIN: Allocation failed.
                     Err(e)
                         if matches!(
                             e.raw_os_error(),
                             Some(libc::EOPNOTSUPP) | Some(libc::EAGAIN)
                         ) =>
                     {
-                        loop {
-                            if self.push_blocking(user_data) {
-                                return Poll::Pending;
-                            } else {
-                                self.poll_blocking();
-                            }
-                        }
+                        self.push_blocking(user_data)
                     }
                     Err(e) => Poll::Ready(Err(e)),
                 }
@@ -280,21 +288,28 @@ impl Driver {
         }
     }
 
-    fn push_blocking(&mut self, user_data: usize) -> bool {
+    fn push_blocking(&mut self, user_data: usize) -> Poll<io::Result<usize>> {
         let poll = self.poll.clone();
         let completed = self.pool_completed.clone();
-        self.pool
-            .dispatch(move || {
-                let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
-                let op_pin = op.as_op_pin();
-                let res = match op_pin.operate() {
-                    Poll::Pending => unreachable!("this operation is not non-blocking"),
-                    Poll::Ready(res) => res,
-                };
-                completed.push(Entry::new(user_data, res));
-                poll.notify().ok();
-            })
-            .is_ok()
+        let mut closure = move || {
+            let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
+            let op_pin = op.as_op_pin();
+            let res = match op_pin.operate() {
+                Poll::Pending => unreachable!("this operation is not non-blocking"),
+                Poll::Ready(res) => res,
+            };
+            completed.push(Entry::new(user_data, res));
+            poll.notify().ok();
+        };
+        loop {
+            match self.pool.dispatch(closure) {
+                Ok(()) => return Poll::Pending,
+                Err(e) => {
+                    closure = e.0;
+                    self.poll_blocking();
+                }
+            }
+        }
     }
 
     fn poll_blocking(&mut self) {
