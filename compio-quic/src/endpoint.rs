@@ -11,7 +11,7 @@ use std::{
 
 use compio_buf::{BufResult, bytes::Bytes};
 use compio_log::{Instrument, error};
-#[cfg(any(feature = "aws-lc-rs", feature = "ring"))]
+#[cfg(rustls)]
 use compio_net::ToSocketAddrsAsync;
 use compio_net::UdpSocket;
 use compio_runtime::JoinHandle;
@@ -357,7 +357,7 @@ impl Endpoint {
     /// address.
     ///
     /// IPv4 client is never dual-stack.
-    #[cfg(any(feature = "aws-lc-rs", feature = "ring"))]
+    #[cfg(rustls)]
     pub async fn client(addr: impl ToSocketAddrsAsync) -> io::Result<Endpoint> {
         // TODO: try to enable dual-stack on all platforms, notably Windows
         let socket = UdpSocket::bind(addr).await?;
@@ -372,7 +372,7 @@ impl Endpoint {
     /// able to communicate with IPv4 addresses. Portable applications
     /// should bind an address that matches the family they wish to
     /// communicate within.
-    #[cfg(any(feature = "aws-lc-rs", feature = "ring"))]
+    #[cfg(rustls)]
     pub async fn server(addr: impl ToSocketAddrsAsync, config: ServerConfig) -> io::Result<Self> {
         let socket = UdpSocket::bind(addr).await?;
         Self::new(socket, EndpointConfig::default(), Some(config), None)

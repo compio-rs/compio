@@ -16,7 +16,7 @@ use futures_util::{
     future::{self, Fuse, FusedFuture, LocalBoxFuture},
     select, stream,
 };
-#[cfg(any(feature = "aws-lc-rs", feature = "ring"))]
+#[cfg(rustls)]
 use quinn_proto::crypto::rustls::HandshakeData;
 use quinn_proto::{
     ConnectionHandle, ConnectionStats, Dir, EndpointEvent, StreamEvent, StreamId, VarInt,
@@ -87,7 +87,7 @@ impl ConnectionState {
         }
     }
 
-    #[cfg(any(feature = "aws-lc-rs", feature = "ring"))]
+    #[cfg(rustls)]
     fn handshake_data(&self) -> Option<Box<HandshakeData>> {
         self.conn
             .crypto_session()
@@ -390,7 +390,7 @@ impl Connecting {
     }
 
     /// Parameters negotiated during the handshake.
-    #[cfg(any(feature = "aws-lc-rs", feature = "ring"))]
+    #[cfg(rustls)]
     pub async fn handshake_data(&mut self) -> Result<Box<HandshakeData>, ConnectionError> {
         future::poll_fn(|cx| {
             let mut state = self.0.try_state()?;
@@ -501,7 +501,7 @@ impl Connection {
     conn_fn!();
 
     /// Parameters negotiated during the handshake.
-    #[cfg(any(feature = "aws-lc-rs", feature = "ring"))]
+    #[cfg(rustls)]
     pub fn handshake_data(&mut self) -> Result<Box<HandshakeData>, ConnectionError> {
         Ok(self.0.try_state()?.handshake_data().unwrap())
     }
