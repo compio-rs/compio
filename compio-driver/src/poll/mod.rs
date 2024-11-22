@@ -124,7 +124,7 @@ impl FdQueue {
     }
 
     pub fn event(&self) -> Event {
-        let mut event = Event::all(0);
+        let mut event = Event::none(0);
         if let Some(&key) = self.read_queue.front() {
             event.readable = true;
             event.key = key;
@@ -337,14 +337,16 @@ impl Driver {
             let user_data = event.key;
             trace!("receive {} for {:?}", user_data, event);
             let mut op = Key::<dyn crate::sys::OpCode>::new_unchecked(user_data);
-            let mut op = op.as_op_pin();
-            match op.as_mut().op_type() {
+            let op = op.as_op_pin();
+            match op.op_type() {
                 None => {
                     // On epoll, multiple event may be received even if it is registered as
                     // one-shot. It is safe to ignore it.
                     trace!("op {} is completed", user_data);
                 }
                 Some(OpType::Fd(fd)) => {
+                    // If it's an FD op, the returned user_data is only for calling `op_type`. We
+                    // need to pop the real user_data from the queue.
                     let queue = self
                         .registry
                         .get_mut(&fd)
@@ -353,6 +355,8 @@ impl Driver {
                         if self.cancelled.remove(&user_data) {
                             entry_cancelled(user_data).notify();
                         } else {
+                            let mut op = Key::<dyn crate::sys::OpCode>::new_unchecked(user_data);
+                            let op = op.as_op_pin();
                             let res = match op.operate() {
                                 Poll::Pending => {
                                     // The operation should go back to the front.
