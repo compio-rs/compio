@@ -123,10 +123,16 @@ impl FdQueue {
         }
     }
 
-    pub fn event(&self, key: usize) -> Event {
-        let mut event = Event::all(key);
-        event.readable = !self.read_queue.is_empty();
-        event.writable = !self.write_queue.is_empty();
+    pub fn event(&self) -> Event {
+        let mut event = Event::none(0);
+        if let Some(&key) = self.read_queue.front() {
+            event.readable = true;
+            event.key = key;
+        }
+        if let Some(&key) = self.write_queue.front() {
+            event.writable = true;
+            event.key = key;
+        }
         event
     }
 
@@ -199,7 +205,7 @@ impl Driver {
         let need_add = !self.registry.contains_key(&arg.fd);
         let queue = self.registry.entry(arg.fd).or_default();
         queue.push_back_interest(user_data, arg.interest);
-        let event = queue.event(user_data);
+        let event = queue.event();
         if need_add {
             self.poll.add(arg.fd, event)?;
         } else {
@@ -331,14 +337,16 @@ impl Driver {
             let user_data = event.key;
             trace!("receive {} for {:?}", user_data, event);
             let mut op = Key::<dyn crate::sys::OpCode>::new_unchecked(user_data);
-            let mut op = op.as_op_pin();
-            match op.as_mut().op_type() {
+            let op = op.as_op_pin();
+            match op.op_type() {
                 None => {
                     // On epoll, multiple event may be received even if it is registered as
                     // one-shot. It is safe to ignore it.
                     trace!("op {} is completed", user_data);
                 }
                 Some(OpType::Fd(fd)) => {
+                    // If it's an FD op, the returned user_data is only for calling `op_type`. We
+                    // need to pop the real user_data from the queue.
                     let queue = self
                         .registry
                         .get_mut(&fd)
@@ -347,6 +355,8 @@ impl Driver {
                         if self.cancelled.remove(&user_data) {
                             entry_cancelled(user_data).notify();
                         } else {
+                            let mut op = Key::<dyn crate::sys::OpCode>::new_unchecked(user_data);
+                            let op = op.as_op_pin();
                             let res = match op.operate() {
                                 Poll::Pending => {
                                     // The operation should go back to the front.
@@ -360,7 +370,7 @@ impl Driver {
                             }
                         }
                     }
-                    let renew_event = queue.event(user_data);
+                    let renew_event = queue.event();
                     let borrowed_fd = BorrowedFd::borrow_raw(fd);
                     if !renew_event.readable && !renew_event.writable {
                         self.poll.delete(borrowed_fd)?;
