@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::{
-    IndexedIter, IoBuf, IoBufMut, IoSlice, IoSliceMut, OwnedIterator, SetBufInit, t_alloc,
+    t_alloc, IndexedIter, IoBuf, IoBufMut, IoSlice, IoSliceMut, OwnedIterator, SetBufInit,
 };
 
 /// A type that's either owned or borrowed. Like [`Cow`](std::rc::Cow) but
@@ -149,6 +149,23 @@ impl<T: IoBuf, const N: usize> IoVectoredBuf for arrayvec::ArrayVec<T, N> {
     }
 }
 
+#[cfg(feature = "smallvec")]
+impl<T: IoBuf, const N: usize> IoVectoredBuf for smallvec::SmallVec<[T; N]>
+where
+    [T; N]: smallvec::Array<Item = T>,
+{
+    type Buf = T;
+    type OwnedIter = IndexedIter<Self>;
+
+    fn iter_buf(&self) -> impl Iterator<Item = MaybeOwned<'_, T>> {
+        self.iter().map(MaybeOwned::Borrowed)
+    }
+
+    fn owned_iter(self) -> Result<Self::OwnedIter, Self> {
+        IndexedIter::new(self)
+    }
+}
+
 /// A trait for mutable vectored buffers.
 pub trait IoVectoredBufMut: IoVectoredBuf<Buf: IoBufMut, OwnedIter: IoBufMut> + SetBufInit {
     /// An iterator for the [`IoSliceMut`]s of the buffers.
@@ -191,6 +208,16 @@ impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: std::alloc::Allocator + '
 
 #[cfg(feature = "arrayvec")]
 impl<T: IoBufMut, const N: usize> IoVectoredBufMut for arrayvec::ArrayVec<T, N> {
+    fn iter_buf_mut(&mut self) -> impl Iterator<Item = MaybeOwnedMut<'_, Self::Buf>> {
+        self.iter_mut().map(MaybeOwnedMut::Borrowed)
+    }
+}
+
+#[cfg(feature = "smallvec")]
+impl<T: IoBufMut, const N: usize> IoVectoredBufMut for smallvec::SmallVec<[T; N]>
+where
+    [T; N]: smallvec::Array<Item = T>,
+{
     fn iter_buf_mut(&mut self) -> impl Iterator<Item = MaybeOwnedMut<'_, Self::Buf>> {
         self.iter_mut().map(MaybeOwnedMut::Borrowed)
     }

@@ -305,6 +305,24 @@ unsafe impl<const N: usize> IoBuf for arrayvec::ArrayVec<u8, N> {
     }
 }
 
+#[cfg(feature = "smallvec")]
+unsafe impl<const N: usize> IoBuf for smallvec::SmallVec<[u8; N]>
+where
+    [u8; N]: smallvec::Array<Item = u8>,
+{
+    fn as_buf_ptr(&self) -> *const u8 {
+        self.as_ptr()
+    }
+
+    fn buf_len(&self) -> usize {
+        self.len()
+    }
+
+    fn buf_capacity(&self) -> usize {
+        self.capacity()
+    }
+}
+
 /// A mutable compio compatible buffer.
 ///
 /// The `IoBufMut` trait is implemented by buffer types that can be passed to
@@ -396,6 +414,16 @@ unsafe impl<const N: usize> IoBufMut for arrayvec::ArrayVec<u8, N> {
     }
 }
 
+#[cfg(feature = "smallvec")]
+unsafe impl<const N: usize> IoBufMut for smallvec::SmallVec<[u8; N]>
+where
+    [u8; N]: smallvec::Array<Item = u8>,
+{
+    fn as_buf_mut_ptr(&mut self) -> *mut u8 {
+        self.as_mut_ptr()
+    }
+}
+
 /// A helper trait for `set_len` like methods.
 pub trait SetBufInit {
     /// Set the buffer length. If `len` is less than the current length, nothing
@@ -469,6 +497,18 @@ impl<const N: usize> SetBufInit for arrayvec::ArrayVec<u8, N> {
     }
 }
 
+#[cfg(feature = "smallvec")]
+impl<const N: usize> SetBufInit for smallvec::SmallVec<[u8; N]>
+where
+    [u8; N]: smallvec::Array<Item = u8>,
+{
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        if (**self).buf_len() < len {
+            self.set_len(len);
+        }
+    }
+}
+
 impl<T: IoBufMut> SetBufInit for [T] {
     unsafe fn set_buf_init(&mut self, len: usize) {
         default_set_buf_init(self.iter_mut(), len)
@@ -491,6 +531,16 @@ impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + 'static> SetB
 
 #[cfg(feature = "arrayvec")]
 impl<T: IoBufMut, const N: usize> SetBufInit for arrayvec::ArrayVec<T, N> {
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        default_set_buf_init(self.iter_mut(), len)
+    }
+}
+
+#[cfg(feature = "smallvec")]
+impl<T: IoBufMut, const N: usize> SetBufInit for smallvec::SmallVec<[T; N]>
+where
+    [T; N]: smallvec::Array<Item = T>,
+{
     unsafe fn set_buf_init(&mut self, len: usize) {
         default_set_buf_init(self.iter_mut(), len)
     }
