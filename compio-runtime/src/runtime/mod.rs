@@ -6,6 +6,7 @@ use std::{
     io,
     panic::AssertUnwindSafe,
     rc::Rc,
+    sync::Arc,
     task::Poll,
     time::Duration,
 };
@@ -85,7 +86,7 @@ impl RunnableQueue {
 /// sent to other threads.
 pub struct Runtime {
     driver: Rc<RefCell<Proactor>>,
-    runnables: Rc<RunnableQueue>,
+    runnables: Arc<RunnableQueue>,
     #[cfg(feature = "time")]
     timer_runtime: Rc<RefCell<TimerRuntime>>,
     event_interval: usize,
@@ -105,7 +106,7 @@ impl Runtime {
     fn with_builder(builder: &RuntimeBuilder) -> io::Result<Self> {
         Ok(Self {
             driver: Rc::new(RefCell::new(builder.proactor_builder.build()?)),
-            runnables: Rc::new(RunnableQueue::new()),
+            runnables: Arc::new(RunnableQueue::new()),
             #[cfg(feature = "time")]
             timer_runtime: Rc::new(RefCell::new(TimerRuntime::new())),
             event_interval: builder.event_interval,
@@ -152,7 +153,7 @@ impl Runtime {
     ///
     /// The caller should ensure the captured lifetime long enough.
     pub unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
-        let runnables = Rc::downgrade(&self.runnables);
+        let runnables = Arc::downgrade(&self.runnables);
         let handle = self
             .driver
             .borrow()
