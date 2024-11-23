@@ -29,7 +29,7 @@ use send_wrapper::SendWrapper;
 
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerRuntime};
-use crate::{BufResult, runtime::op::OpFlagsFuture};
+use crate::{BufResult, runtime::op::OpFuture};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 
@@ -280,7 +280,7 @@ impl Runtime {
         op: T,
     ) -> impl Future<Output = (BufResult<usize, T>, u32)> {
         match self.submit_raw(op) {
-            PushEntry::Pending(user_data) => Either::Left(OpFlagsFuture::new(user_data)),
+            PushEntry::Pending(user_data) => Either::Left(OpFuture::new(user_data)),
             PushEntry::Ready(res) => {
                 // submit_flags won't be ready immediately, if ready, it must be error without
                 // flags
