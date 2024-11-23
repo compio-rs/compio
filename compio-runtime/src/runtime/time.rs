@@ -1,15 +1,16 @@
 use std::{
+    cell::RefCell,
     cmp::Reverse,
     collections::BinaryHeap,
     future::Future,
     pin::Pin,
+    rc::Rc,
     task::{Context, Poll, Waker},
     time::{Duration, Instant},
 };
 
+use compio_log::{debug, instrument};
 use slab::Slab;
-
-use crate::runtime::Runtime;
 
 pub(crate) enum FutureState {
     Active(Option<Waker>),
@@ -126,11 +127,12 @@ impl TimerRuntime {
 
 pub struct TimerFuture {
     key: usize,
+    runtime: Rc<RefCell<TimerRuntime>>,
 }
 
 impl TimerFuture {
-    pub fn new(key: usize) -> Self {
-        Self { key }
+    pub fn new(key: usize, runtime: Rc<RefCell<TimerRuntime>>) -> Self {
+        Self { key, runtime }
     }
 }
 
@@ -138,14 +140,22 @@ impl Future for TimerFuture {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Runtime::with_current(|r| r.poll_timer(cx, self.key))
+        instrument!(compio_log::Level::DEBUG, "poll_timer", ?cx, ?self.key);
+        let mut timer_runtime = self.runtime.borrow_mut();
+        if !timer_runtime.is_completed(self.key) {
+            debug!("pending");
+            timer_runtime.update_waker(self.key, cx.waker().clone());
+            Poll::Pending
+        } else {
+            debug!("ready");
+            Poll::Ready(())
+        }
     }
 }
 
 impl Drop for TimerFuture {
     fn drop(&mut self) {
-        // If there's no runtime, it's OK to forget it.
-        Runtime::try_with_current(|r| r.cancel_timer(self.key)).ok();
+        self.runtime.borrow_mut().cancel(self.key);
     }
 }
 

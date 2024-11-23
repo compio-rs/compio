@@ -4,10 +4,9 @@ use std::{
     collections::VecDeque,
     future::{Future, poll_fn, ready},
     io,
-    marker::PhantomData,
     panic::AssertUnwindSafe,
     rc::Rc,
-    task::{Context, Poll},
+    task::Poll,
     time::Duration,
 };
 
@@ -85,15 +84,11 @@ impl RunnableQueue {
 /// The async runtime of compio. It is a thread local runtime, and cannot be
 /// sent to other threads.
 pub struct Runtime {
-    // The runnable queue should live longer than the proactor.
-    runnables: Box<RunnableQueue>,
-    driver: RefCell<Proactor>,
+    driver: Rc<RefCell<Proactor>>,
+    runnables: Rc<RunnableQueue>,
     #[cfg(feature = "time")]
-    timer_runtime: RefCell<TimerRuntime>,
+    timer_runtime: Rc<RefCell<TimerRuntime>>,
     event_interval: usize,
-    // Other fields don't make it !Send, but actually `local_runnables` implies it should be !Send,
-    // otherwise it won't be valid if the runtime is sent to other threads.
-    _p: PhantomData<Rc<VecDeque<Runnable>>>,
 }
 
 impl Runtime {
@@ -109,12 +104,11 @@ impl Runtime {
 
     fn with_builder(builder: &RuntimeBuilder) -> io::Result<Self> {
         Ok(Self {
-            driver: RefCell::new(builder.proactor_builder.build()?),
-            runnables: Box::new(RunnableQueue::new()),
+            driver: Rc::new(RefCell::new(builder.proactor_builder.build()?)),
+            runnables: Rc::new(RunnableQueue::new()),
             #[cfg(feature = "time")]
-            timer_runtime: RefCell::new(TimerRuntime::new()),
+            timer_runtime: Rc::new(RefCell::new(TimerRuntime::new())),
             event_interval: builder.event_interval,
-            _p: PhantomData,
         })
     }
 
@@ -158,17 +152,16 @@ impl Runtime {
     ///
     /// The caller should ensure the captured lifetime long enough.
     pub unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
-        let runnables = self.runnables.as_ref() as *const RunnableQueue;
+        let runnables = Rc::downgrade(&self.runnables);
         let handle = self
             .driver
             .borrow()
             .handle()
             .expect("cannot create notify handle of the proactor");
         let schedule = move |runnable| {
-            // The schedule closure are owned by runnables, and the runnables are owned by
-            // the queue. This is a self-reference.
-            let runnables = &*runnables;
-            runnables.schedule(runnable, &handle);
+            if let Some(runnables) = runnables.upgrade() {
+                runnables.schedule(runnable, &handle);
+            }
         };
         let (runnable, task) = async_task::spawn_unchecked(future, schedule);
         runnable.schedule();
@@ -280,7 +273,9 @@ impl Runtime {
         op: T,
     ) -> impl Future<Output = (BufResult<usize, T>, u32)> {
         match self.submit_raw(op) {
-            PushEntry::Pending(user_data) => Either::Left(OpFuture::new(user_data)),
+            PushEntry::Pending(user_data) => {
+                Either::Left(OpFuture::new(user_data, self.driver.clone()))
+            }
             PushEntry::Ready(res) => {
                 // submit_flags won't be ready immediately, if ready, it must be error without
                 // flags
@@ -293,45 +288,9 @@ impl Runtime {
     pub(crate) fn create_timer(&self, delay: std::time::Duration) -> impl Future<Output = ()> {
         let mut timer_runtime = self.timer_runtime.borrow_mut();
         if let Some(key) = timer_runtime.insert(delay) {
-            Either::Left(TimerFuture::new(key))
+            Either::Left(TimerFuture::new(key, self.timer_runtime.clone()))
         } else {
             Either::Right(std::future::ready(()))
-        }
-    }
-
-    pub(crate) fn cancel_op<T: OpCode>(&self, op: Key<T>) {
-        self.driver.borrow_mut().cancel(op);
-    }
-
-    #[cfg(feature = "time")]
-    pub(crate) fn cancel_timer(&self, key: usize) {
-        self.timer_runtime.borrow_mut().cancel(key);
-    }
-
-    pub(crate) fn poll_task<T: OpCode>(
-        &self,
-        cx: &mut Context,
-        op: Key<T>,
-    ) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
-        instrument!(compio_log::Level::DEBUG, "poll_task", ?op);
-        let mut driver = self.driver.borrow_mut();
-        driver.pop(op).map_pending(|mut k| {
-            driver.update_waker(&mut k, cx.waker().clone());
-            k
-        })
-    }
-
-    #[cfg(feature = "time")]
-    pub(crate) fn poll_timer(&self, cx: &mut Context, key: usize) -> Poll<()> {
-        instrument!(compio_log::Level::DEBUG, "poll_timer", ?cx, ?key);
-        let mut timer_runtime = self.timer_runtime.borrow_mut();
-        if !timer_runtime.is_completed(key) {
-            debug!("pending");
-            timer_runtime.update_waker(key, cx.waker().clone());
-            Poll::Pending
-        } else {
-            debug!("ready");
-            Poll::Ready(())
         }
     }
 
