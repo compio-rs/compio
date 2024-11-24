@@ -10,7 +10,7 @@ use windows_sys::Win32::Foundation::{
     STATUS_SUCCESS,
 };
 
-use crate::{Key, RawFd, sys::cp};
+use crate::{Key, OpCode, RawFd, sys::cp};
 
 extern "system" {
     fn NtCreateWaitCompletionPacket(
@@ -52,7 +52,7 @@ fn check_status(status: NTSTATUS) -> io::Result<()> {
 }
 
 impl Wait {
-    pub fn new<T>(port: &cp::Port, event: RawFd, op: &mut Key<T>) -> io::Result<Self> {
+    pub fn new(port: &cp::Port, event: RawFd, op: &mut Key<dyn OpCode>) -> io::Result<Self> {
         let mut handle = 0;
         check_status(unsafe {
             NtCreateWaitCompletionPacket(&mut handle, GENERIC_READ | GENERIC_WRITE, null_mut())

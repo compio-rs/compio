@@ -189,7 +189,7 @@ impl Driver {
         Ok(())
     }
 
-    pub fn cancel<T>(&mut self, op: Key<T>) {
+    pub fn cancel(&mut self, op: &mut Key<dyn crate::sys::OpCode>) {
         instrument!(compio_log::Level::TRACE, "cancel", ?op);
         trace!("cancel RawOp");
         unsafe {
@@ -235,10 +235,7 @@ impl Driver {
         }
     }
 
-    pub fn push<T: crate::sys::OpCode + 'static>(
-        &mut self,
-        op: &mut Key<T>,
-    ) -> Poll<io::Result<usize>> {
+    pub fn push(&mut self, op: &mut Key<dyn crate::sys::OpCode>) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?op);
         let user_data = op.user_data();
         let op_pin = op.as_op_pin();

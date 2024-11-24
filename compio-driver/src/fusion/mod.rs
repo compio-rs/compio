@@ -63,14 +63,14 @@ impl Driver {
         }
     }
 
-    pub fn cancel<T: OpCode>(&mut self, op: Key<T>) {
+    pub fn cancel(&mut self, op: &mut Key<dyn OpCode>) {
         match &mut self.fuse {
             FuseDriver::Poll(driver) => driver.cancel(op),
             FuseDriver::IoUring(driver) => driver.cancel(op),
         }
     }
 
-    pub fn push<T: OpCode + 'static>(&mut self, op: &mut Key<T>) -> Poll<io::Result<usize>> {
+    pub fn push(&mut self, op: &mut Key<dyn OpCode>) -> Poll<io::Result<usize>> {
         match &mut self.fuse {
             FuseDriver::Poll(driver) => driver.push(op),
             FuseDriver::IoUring(driver) => driver.push(op),
