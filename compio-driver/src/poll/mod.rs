@@ -124,12 +124,8 @@ impl FdQueue {
     }
 
     pub fn remove(&mut self, user_data: usize) {
-        if let Some(index) = self.read_queue.iter().position(|k| *k == user_data) {
-            self.read_queue.remove(index);
-        }
-        if let Some(index) = self.write_queue.iter().position(|k| *k == user_data) {
-            self.write_queue.remove(index);
-        }
+        self.read_queue.retain(|&k| k != user_data);
+        self.write_queue.retain(|&k| k != user_data);
     }
 
     pub fn event(&self) -> Event {
