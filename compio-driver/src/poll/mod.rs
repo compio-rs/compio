@@ -218,18 +218,17 @@ impl Driver {
         Ok(())
     }
 
-    unsafe fn renew(
+    fn renew(
         poll: &Poller,
         registry: &mut HashMap<RawFd, FdQueue>,
-        fd: RawFd,
+        fd: BorrowedFd,
         renew_event: Event,
     ) -> io::Result<()> {
-        let borrowed_fd = BorrowedFd::borrow_raw(fd);
         if !renew_event.readable && !renew_event.writable {
-            poll.delete(borrowed_fd)?;
-            registry.remove(&fd);
+            poll.delete(fd)?;
+            registry.remove(&fd.as_raw_fd());
         } else {
-            poll.modify(borrowed_fd, renew_event)?;
+            poll.modify(fd, renew_event)?;
         }
         Ok(())
     }
@@ -249,7 +248,14 @@ impl Driver {
                     .expect("the fd should be attached");
                 queue.remove(op.user_data());
                 let renew_event = queue.event();
-                if unsafe { Self::renew(&self.poll, &mut self.registry, fd, renew_event) }.is_ok() {
+                if Self::renew(
+                    &self.poll,
+                    &mut self.registry,
+                    unsafe { BorrowedFd::borrow_raw(fd) },
+                    renew_event,
+                )
+                .is_ok()
+                {
                     self.pool_completed.push(entry_cancelled(op.user_data()));
                 }
             }
@@ -399,7 +405,12 @@ impl Driver {
                         }
                     }
                     let renew_event = queue.event();
-                    Self::renew(&self.poll, &mut self.registry, fd, renew_event)?;
+                    Self::renew(
+                        &self.poll,
+                        &mut self.registry,
+                        BorrowedFd::borrow_raw(fd),
+                        renew_event,
+                    )?;
                 }
                 #[cfg(aio)]
                 Some(OpType::Aio(aiocbp)) => {
