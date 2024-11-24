@@ -259,7 +259,8 @@ impl Proactor {
             // SAFETY: completed.
             Some(unsafe { op.into_inner() })
         } else {
-            self.driver.cancel(op);
+            self.driver
+                .cancel(&mut unsafe { Key::<dyn OpCode>::new_unchecked(op.user_data()) });
             None
         }
     }
@@ -268,7 +269,10 @@ impl Proactor {
     /// user-defined data, associated with it.
     pub fn push<T: OpCode + 'static>(&mut self, op: T) -> PushEntry<Key<T>, BufResult<usize, T>> {
         let mut op = self.driver.create_op(op);
-        match self.driver.push(&mut op) {
+        match self
+            .driver
+            .push(&mut unsafe { Key::<dyn OpCode>::new_unchecked(op.user_data()) })
+        {
             Poll::Pending => PushEntry::Pending(op),
             Poll::Ready(res) => {
                 op.set_result(res);

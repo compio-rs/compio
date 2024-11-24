@@ -223,7 +223,7 @@ impl Driver {
         self.port.attach(fd)
     }
 
-    pub fn cancel<T: OpCode>(&mut self, mut op: Key<T>) {
+    pub fn cancel(&mut self, op: &mut Key<dyn OpCode>) {
         instrument!(compio_log::Level::TRACE, "cancel", ?op);
         trace!("cancel RawOp");
         let overlapped_ptr = op.as_mut_ptr();
@@ -240,7 +240,7 @@ impl Driver {
         unsafe { op.cancel(overlapped_ptr.cast()) }.ok();
     }
 
-    pub fn push<T: OpCode + 'static>(&mut self, op: &mut Key<T>) -> Poll<io::Result<usize>> {
+    pub fn push(&mut self, op: &mut Key<dyn OpCode>) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?op);
         let user_data = op.user_data();
         trace!("push RawOp");

@@ -219,11 +219,10 @@ impl Driver {
         Ok(())
     }
 
-    pub fn cancel<T: crate::sys::OpCode>(&mut self, op: Key<T>) {
+    pub fn cancel(&mut self, op: &mut Key<dyn crate::sys::OpCode>) {
         self.cancelled.insert(op.user_data());
         #[cfg(aio)]
         {
-            let mut op = op;
             let op = op.as_op_pin();
             if let Some(OpType::Aio(aiocbp)) = op.op_type() {
                 let aiocb = unsafe { aiocbp.as_ref() };
@@ -233,10 +232,7 @@ impl Driver {
         }
     }
 
-    pub fn push<T: crate::sys::OpCode + 'static>(
-        &mut self,
-        op: &mut Key<T>,
-    ) -> Poll<io::Result<usize>> {
+    pub fn push(&mut self, op: &mut Key<dyn crate::sys::OpCode>) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?op);
         let user_data = op.user_data();
         let op_pin = op.as_op_pin();

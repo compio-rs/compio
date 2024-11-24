@@ -18,7 +18,7 @@ pub struct Wait {
 }
 
 impl Wait {
-    pub fn new<T>(port: &cp::Port, event: RawFd, op: &mut Key<T>) -> io::Result<Self> {
+    pub fn new(port: &cp::Port, event: RawFd, op: &mut Key<dyn OpCode>) -> io::Result<Self> {
         let port = port.handle();
         let mut context = Box::new(WinThreadpoolWaitContext {
             port,
