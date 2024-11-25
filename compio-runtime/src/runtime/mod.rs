@@ -7,6 +7,7 @@ use std::{
     marker::PhantomData,
     panic::AssertUnwindSafe,
     rc::Rc,
+    sync::Arc,
     task::{Context, Poll},
     time::Duration,
 };
@@ -85,9 +86,8 @@ impl RunnableQueue {
 /// The async runtime of compio. It is a thread local runtime, and cannot be
 /// sent to other threads.
 pub struct Runtime {
-    // The runnable queue should live longer than the proactor.
-    runnables: Box<RunnableQueue>,
     driver: RefCell<Proactor>,
+    runnables: Arc<RunnableQueue>,
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
     event_interval: usize,
@@ -110,7 +110,7 @@ impl Runtime {
     fn with_builder(builder: &RuntimeBuilder) -> io::Result<Self> {
         Ok(Self {
             driver: RefCell::new(builder.proactor_builder.build()?),
-            runnables: Box::new(RunnableQueue::new()),
+            runnables: Arc::new(RunnableQueue::new()),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
             event_interval: builder.event_interval,
@@ -158,16 +158,13 @@ impl Runtime {
     ///
     /// The caller should ensure the captured lifetime long enough.
     pub unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
-        let runnables = self.runnables.as_ref() as *const RunnableQueue;
+        let runnables = self.runnables.clone();
         let handle = self
             .driver
             .borrow()
             .handle()
             .expect("cannot create notify handle of the proactor");
         let schedule = move |runnable| {
-            // The schedule closure are owned by runnables, and the runnables are owned by
-            // the queue. This is a self-reference.
-            let runnables = &*runnables;
             runnables.schedule(runnable, &handle);
         };
         let (runnable, task) = async_task::spawn_unchecked(future, schedule);
@@ -375,6 +372,17 @@ impl Runtime {
         }
         #[cfg(feature = "time")]
         self.timer_runtime.borrow_mut().wake();
+    }
+}
+
+impl Drop for Runtime {
+    fn drop(&mut self) {
+        self.enter(|| {
+            while self.runnables.sync_runnables.pop().is_some() {}
+            let local_runnables = unsafe { self.runnables.local_runnables.get_unchecked() };
+            let mut local_runnables = local_runnables.borrow_mut();
+            while local_runnables.pop_front().is_some() {}
+        })
     }
 }
 
