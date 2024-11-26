@@ -1,6 +1,6 @@
 [package]
 name = "compio"
-version = "0.13.1"
+version = "0.13.2"
 description = "Completion based async runtime"
 categories = ["asynchronous", "filesystem", "network-programming"]
 keywords = ["async", "fs", "iocp", "io-uring", "net"]
@@ -76,7 +76,7 @@ libc = { workspace = true }
 monoio = { version = "0.2.2", default-features = false, features = ["iouring"] }
 
 [features]
-default = ["runtime", "io-uring", "ring"]
+default = ["runtime", "io-uring"]
 io-uring = [
     "compio-driver/io-uring",
     "compio-runtime?/io-uring",
