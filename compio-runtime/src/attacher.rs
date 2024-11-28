@@ -73,14 +73,14 @@ impl<S> Clone for Attacher<S> {
 #[cfg(windows)]
 impl<S: FromRawHandle> FromRawHandle for Attacher<S> {
     unsafe fn from_raw_handle(handle: RawHandle) -> Self {
-        Self::new_unchecked(S::from_raw_handle(handle))
+        unsafe { Self::new_unchecked(S::from_raw_handle(handle)) }
     }
 }
 
 #[cfg(windows)]
 impl<S: FromRawSocket> FromRawSocket for Attacher<S> {
     unsafe fn from_raw_socket(sock: RawSocket) -> Self {
-        Self::new_unchecked(S::from_raw_socket(sock))
+        unsafe { Self::new_unchecked(S::from_raw_socket(sock)) }
     }
 }
 

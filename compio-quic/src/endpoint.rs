@@ -451,7 +451,7 @@ impl Endpoint {
 
     // Modified from [`SharedFd::try_unwrap_inner`], see notes there.
     unsafe fn try_unwrap_inner(this: &ManuallyDrop<Self>) -> Option<EndpointInner> {
-        let ptr = ManuallyDrop::new(std::ptr::read(&this.inner));
+        let ptr = ManuallyDrop::new(unsafe { std::ptr::read(&this.inner) });
         match Arc::try_unwrap(ManuallyDrop::into_inner(ptr)) {
             Ok(inner) => Some(inner),
             Err(ptr) => {

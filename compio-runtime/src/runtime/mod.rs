@@ -62,7 +62,8 @@ impl RunnableQueue {
 
     /// SAFETY: call in the main thread
     pub unsafe fn run(&self, event_interval: usize) -> bool {
-        let local_runnables = self.local_runnables.get_unchecked();
+        // SAFETY: already in the main thread
+        let local_runnables = unsafe { self.local_runnables.get_unchecked() };
         for _i in 0..event_interval {
             let next_task = local_runnables.borrow_mut().pop_front();
             let has_local_task = next_task.is_some();
@@ -167,7 +168,8 @@ impl Runtime {
         let schedule = move |runnable| {
             runnables.schedule(runnable, &handle);
         };
-        let (runnable, task) = async_task::spawn_unchecked(future, schedule);
+        // SAFETY: Schedule closure is thread safe and static
+        let (runnable, task) = unsafe { async_task::spawn_unchecked(future, schedule) };
         runnable.schedule();
         task
     }
@@ -262,7 +264,10 @@ impl Runtime {
     /// Submit an operation to the runtime.
     ///
     /// You only need this when authoring your own [`OpCode`].
-    pub fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
+    pub fn submit<T: OpCode + 'static>(
+        &self,
+        op: T,
+    ) -> impl Future<Output = BufResult<usize, T>> + use<T> {
         self.submit_with_flags(op).map(|(res, _)| res)
     }
 
@@ -275,7 +280,7 @@ impl Runtime {
     pub fn submit_with_flags<T: OpCode + 'static>(
         &self,
         op: T,
-    ) -> impl Future<Output = (BufResult<usize, T>, u32)> {
+    ) -> impl Future<Output = (BufResult<usize, T>, u32)> + use<T> {
         match self.submit_raw(op) {
             PushEntry::Pending(user_data) => Either::Left(OpFuture::new(user_data)),
             PushEntry::Ready(res) => {
@@ -287,7 +292,10 @@ impl Runtime {
     }
 
     #[cfg(feature = "time")]
-    pub(crate) fn create_timer(&self, delay: std::time::Duration) -> impl Future<Output = ()> {
+    pub(crate) fn create_timer(
+        &self,
+        delay: std::time::Duration,
+    ) -> impl Future<Output = ()> + use<> {
         let mut timer_runtime = self.timer_runtime.borrow_mut();
         if let Some(key) = timer_runtime.insert(delay) {
             Either::Left(TimerFuture::new(key))

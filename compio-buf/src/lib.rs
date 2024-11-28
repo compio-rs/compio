@@ -9,6 +9,7 @@
 #![cfg_attr(feature = "read_buf", feature(read_buf, core_io_borrowed_buf))]
 #![cfg_attr(feature = "try_trait_v2", feature(try_trait_v2, try_trait_v2_residual))]
 #![warn(missing_docs)]
+#![allow(unsafe_op_in_unsafe_fn)]
 
 #[cfg(feature = "arrayvec")]
 pub use arrayvec;

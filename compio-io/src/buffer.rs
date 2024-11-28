@@ -61,7 +61,7 @@ unsafe impl IoBuf for Inner {
 impl SetBufInit for Inner {
     #[inline]
     unsafe fn set_buf_init(&mut self, len: usize) {
-        self.buf.set_buf_init(len);
+        unsafe { self.buf.set_buf_init(len) };
     }
 }
 

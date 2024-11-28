@@ -94,7 +94,9 @@ async fn drop_on_complete() {
 
     impl SetBufInit for MyBuf {
         unsafe fn set_buf_init(&mut self, pos: usize) {
-            self.data.set_buf_init(pos);
+            unsafe {
+                self.data.set_buf_init(pos);
+            }
         }
     }
 
@@ -169,7 +171,7 @@ async fn arena() {
         }
 
         unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-            ALLOCATOR.with(|alloc| alloc.deallocate(ptr, layout))
+            ALLOCATOR.with(|alloc| unsafe { alloc.deallocate(ptr, layout) })
         }
     }
 
