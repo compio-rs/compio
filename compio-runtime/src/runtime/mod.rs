@@ -510,6 +510,9 @@ pub fn spawn_blocking<T: Send + 'static>(
 
 /// Submit an operation to the current runtime, and return a future for it.
 ///
+/// It is safe but unspecified behavior to send the returned future to another
+/// runtime and poll it.
+///
 /// ## Panics
 ///
 /// This method doesn't create runtime. It tries to obtain the current runtime
@@ -520,6 +523,9 @@ pub fn submit<T: OpCode + 'static>(op: T) -> impl Future<Output = BufResult<usiz
 
 /// Submit an operation to the current runtime, and return a future for it with
 /// flags.
+///
+/// It is safe but unspecified behavior to send the returned future to another
+/// runtime and poll it.
 ///
 /// ## Panics
 ///
