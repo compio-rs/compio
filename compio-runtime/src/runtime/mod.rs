@@ -288,11 +288,10 @@ impl Runtime {
 
     #[cfg(feature = "time")]
     pub(crate) fn create_timer(&self, delay: std::time::Duration) -> impl Future<Output = ()> {
-        let mut timer_runtime = self.timer_runtime.borrow_mut();
-        if let Some(key) = timer_runtime.insert(delay) {
-            Either::Left(TimerFuture::new(key))
-        } else {
+        if delay.is_zero() {
             Either::Right(std::future::ready(()))
+        } else {
+            Either::Left(TimerFuture::new(std::time::Instant::now() + delay))
         }
     }
 
@@ -316,6 +315,21 @@ impl Runtime {
             driver.update_waker(&mut k, cx.waker().clone());
             k
         })
+    }
+
+    #[cfg(feature = "time")]
+    pub(crate) fn register_timer(
+        &self,
+        cx: &mut Context,
+        instant: std::time::Instant,
+    ) -> Option<usize> {
+        let mut timer_runtime = self.timer_runtime.borrow_mut();
+        if let Some(key) = timer_runtime.insert(instant) {
+            timer_runtime.update_waker(key, cx.waker().clone());
+            Some(key)
+        } else {
+            None
+        }
     }
 
     #[cfg(feature = "time")]
