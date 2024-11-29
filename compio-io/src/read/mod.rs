@@ -7,9 +7,11 @@ use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut, buf_tr
 mod buf;
 #[macro_use]
 mod ext;
+mod managed;
 
 pub use buf::*;
 pub use ext::*;
+pub use managed::*;
 
 use crate::util::slice_to_buf;
 
