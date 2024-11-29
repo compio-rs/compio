@@ -2,7 +2,7 @@
 use std::alloc::Allocator;
 use std::io::Cursor;
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoVectoredBuf, buf_try, t_alloc};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoVectoredBuf, OwnedIterator, buf_try, t_alloc};
 
 use crate::IoResult;
 
@@ -32,13 +32,7 @@ pub trait AsyncWrite {
     /// guaranteed full write is desired, it is recommended to use
     /// [`AsyncWriteExt::write_vectored_all`] instead.
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        loop_write_vectored!(buf, total: usize, n, iter, loop self.write(iter),
-            break if n == 0 || n < iter.buf_len() {
-                Some(Ok(total))
-            } else {
-                None
-            }
-        )
+        loop_write_vectored!(buf, iter, self.write(iter))
     }
 
     /// Attempts to flush the object, ensuring that any buffered data reach
@@ -90,7 +84,7 @@ impl<W: AsyncWrite + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator> Asy
 
 /// Write is implemented for `Vec<u8>` by appending to the vector. The vector
 /// will grow as needed.
-impl AsyncWrite for Vec<u8> {
+impl<#[cfg(feature = "allocator_api")] A: Allocator> AsyncWrite for t_alloc!(Vec, u8, A) {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         self.extend_from_slice(buf.as_slice());
         BufResult(Ok(buf.buf_len()), buf)
@@ -129,13 +123,7 @@ pub trait AsyncWriteAt {
         buf: T,
         pos: u64,
     ) -> BufResult<usize, T> {
-        loop_write_vectored!(buf, total: u64, n, iter, loop self.write_at(iter, pos + total),
-            break if n == 0 || n < iter.buf_len() {
-                Some(Ok(total as usize))
-            } else {
-                None
-            }
-        )
+        loop_write_vectored!(buf, iter, self.write_at(iter, pos))
     }
 }
 
@@ -169,6 +157,44 @@ impl<W: AsyncWriteAt + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator> A
     }
 }
 
+impl AsyncWrite for &mut [u8] {
+    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        let slice = buf.as_slice();
+        BufResult(std::io::Write::write(self, slice), buf)
+    }
+
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        let mut iter = match buf.owned_iter() {
+            Ok(buf) => buf,
+            Err(buf) => return BufResult(Ok(0), buf),
+        };
+        let mut total = 0;
+        loop {
+            let n = match std::io::Write::write(self, iter.as_slice()) {
+                Ok(n) => n,
+                // TODO: unlikely
+                Err(e) => return BufResult(Err(e), iter.into_inner()),
+            };
+            total += n;
+            if self.is_empty() {
+                return BufResult(Ok(total), iter.into_inner());
+            }
+            match iter.next() {
+                Ok(next) => iter = next,
+                Err(buf) => return BufResult(Ok(total), buf),
+            }
+        }
+    }
+
+    async fn flush(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+
+    async fn shutdown(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+}
+
 macro_rules! impl_write_at {
     ($($(const $len:ident =>)? $ty:ty),*) => {
         $(
@@ -179,6 +205,30 @@ macro_rules! impl_write_at {
                     let n = slice.len().min(self.len() - pos);
                     self[pos..pos + n].copy_from_slice(&slice[..n]);
                     BufResult(Ok(n), buf)
+                }
+
+                async fn write_vectored_at<T: IoVectoredBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
+                    let mut iter = match buf.owned_iter() {
+                        Ok(buf) => buf,
+                        Err(buf) => return BufResult(Ok(0), buf),
+                    };
+                    let mut total = 0;
+                    loop {
+                        let n;
+                        (n, iter) = match self.write_at(iter, pos + total as u64).await {
+                            BufResult(Ok(n), iter) => (n, iter),
+                            // TODO: unlikely
+                            BufResult(Err(e), iter) => return BufResult(Err(e), iter.into_inner()),
+                        };
+                        total += n;
+                        if self.is_empty() {
+                            return BufResult(Ok(total), iter.into_inner());
+                        }
+                        match iter.next() {
+                            Ok(next) => iter = next,
+                            Err(buf) => return BufResult(Ok(total), buf),
+                        }
+                    }
                 }
             }
         )*
@@ -203,13 +253,43 @@ impl<#[cfg(feature = "allocator_api")] A: Allocator> AsyncWriteAt for t_alloc!(V
             } else {
                 self[pos..pos + n].copy_from_slice(slice);
             }
-            BufResult(Ok(n), buf)
         } else {
             self.reserve(pos - self.len() + slice.len());
             self.resize(pos, 0);
             self.extend_from_slice(slice);
-            BufResult(Ok(slice.len()), buf)
         }
+        BufResult(Ok(slice.len()), buf)
+    }
+
+    async fn write_vectored_at<T: IoVectoredBuf>(
+        &mut self,
+        buf: T,
+        pos: u64,
+    ) -> BufResult<usize, T> {
+        let mut pos = pos as usize;
+        let len = buf.iter_buf().map(|b| b.buf_len()).sum();
+        if pos <= self.len() {
+            self.reserve(len - (self.len() - pos));
+        } else {
+            self.reserve(pos - self.len() + len);
+            self.resize(pos, 0);
+        }
+        for buf in buf.iter_buf() {
+            let slice = buf.as_slice();
+            if pos <= self.len() {
+                let n = slice.len().min(self.len() - pos);
+                if n < slice.len() {
+                    self[pos..pos + n].copy_from_slice(&slice[..n]);
+                    self.extend_from_slice(&slice[n..]);
+                } else {
+                    self[pos..pos + n].copy_from_slice(slice);
+                }
+            } else {
+                self.extend_from_slice(slice);
+            }
+            pos += slice.len();
+        }
+        BufResult(Ok(len), buf)
     }
 }
 

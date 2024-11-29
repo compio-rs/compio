@@ -47,15 +47,7 @@ pub trait AsyncRead {
     ///
     /// [`SetBufInit::set_buf_init`]: compio_buf::SetBufInit::set_buf_init
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
-        loop_read_vectored!(
-            buf, len, total: usize, n, iter,
-            loop self.read(iter),
-            break if n == 0 || n < len {
-                Some(Ok(total))
-            } else {
-                None
-            }
-        )
+        loop_read_vectored!(buf, iter, self.read(iter))
     }
 }
 
@@ -118,15 +110,7 @@ pub trait AsyncReadAt {
     /// Like [`AsyncRead::read_vectored`], except that it reads at a specified
     /// position.
     async fn read_vectored_at<T: IoVectoredBufMut>(&self, buf: T, pos: u64) -> BufResult<usize, T> {
-        loop_read_vectored!(
-            buf, len, total: u64, n, iter,
-            loop self.read_at(iter, pos + total),
-            break if n == 0 || n < len {
-                Some(Ok(total as usize))
-            } else {
-                None
-            }
-        )
+        loop_read_vectored!(buf, iter, self.read_at(iter, pos))
     }
 }
 
@@ -169,6 +153,21 @@ macro_rules! impl_read_at {
                     let pos = pos.min(self.len() as u64);
                     let len = slice_to_buf(&self[pos as usize..], &mut buf);
                     BufResult(Ok(len), buf)
+                }
+
+                async fn read_vectored_at<T:IoVectoredBufMut>(&self, mut buf: T, pos: u64) -> BufResult<usize, T> {
+                    let slice = &self[pos as usize..];
+                    let mut this = slice;
+
+                    for mut buf in buf.iter_buf_mut() {
+                        let n = slice_to_buf(this, buf.deref_mut());
+                        this = &this[n..];
+                        if this.is_empty() {
+                            break;
+                        }
+                    }
+
+                    BufResult(Ok(slice.len() - this.len()), buf)
                 }
             }
         )*
