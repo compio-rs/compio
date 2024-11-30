@@ -13,6 +13,7 @@ use std::{
 use aligned_array::{A8, Aligned};
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
+    SetBufInit, Slice,
 };
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
@@ -41,7 +42,10 @@ use windows_sys::{
     core::GUID,
 };
 
-use crate::{AsRawFd, OpCode, OpType, RawFd, SharedFd, op::*, syscall};
+use crate::{
+    AsRawFd, BorrowedBuffer, BufferPool, OpCode, OpType, RawFd, SharedFd, TakeBuffer, op::*,
+    syscall,
+};
 
 #[inline]
 fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
@@ -187,6 +191,44 @@ impl<T: IoBuf, S: AsRawFd> OpCode for WriteAt<T, S> {
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_raw_fd(), optr)
+    }
+}
+
+/// Read a file at specified position into managed buffer.
+pub struct ReadManagedAt<S> {
+    op: ReadAt<Slice<Vec<u8>>, S>,
+}
+
+impl<S> ReadManagedAt<S> {
+    /// Create [`ReadManagedAt`].
+    pub fn new(fd: SharedFd<S>, offset: u64, pool: &BufferPool, len: usize) -> io::Result<Self> {
+        Ok(Self {
+            op: ReadAt::new(fd, offset, pool.get_buffer(len)?),
+        })
+    }
+}
+
+impl<S: AsRawFd> OpCode for ReadManagedAt<S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        self.map_unchecked_mut(|this| &mut this.op).operate(optr)
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        self.map_unchecked_mut(|this| &mut this.op).cancel(optr)
+    }
+}
+
+impl<S> TakeBuffer for ReadManagedAt<S> {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    fn take_buffer(self, buffer_pool: &BufferPool, result: usize, _: u32) -> BorrowedBuffer {
+        let mut slice = self.op.into_inner();
+        // Safety: result is valid
+        unsafe {
+            slice.set_buf_init(result);
+        }
+        BorrowedBuffer::new(slice, buffer_pool)
     }
 }
 
@@ -399,6 +441,49 @@ impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
+    }
+}
+
+/// Receive data from remote into managed buffer.
+pub struct RecvManaged<S> {
+    op: Recv<Slice<Vec<u8>>, S>,
+}
+
+impl<S> RecvManaged<S> {
+    /// Create [`RecvManaged`].
+    pub fn new(fd: SharedFd<S>, pool: &BufferPool, len: usize) -> io::Result<Self> {
+        Ok(Self {
+            op: Recv::new(fd, pool.get_buffer(len)?),
+        })
+    }
+}
+
+impl<S: AsRawFd> OpCode for RecvManaged<S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        self.map_unchecked_mut(|this| &mut this.op).operate(optr)
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        self.map_unchecked_mut(|this| &mut this.op).cancel(optr)
+    }
+}
+
+impl<S> TakeBuffer for RecvManaged<S> {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    fn take_buffer(
+        self,
+        buffer_pool: &Self::BufferPool,
+        result: usize,
+        _: u32,
+    ) -> Self::Buffer<'_> {
+        let mut slice = self.op.into_inner();
+        // Safety: result is valid
+        unsafe {
+            slice.set_buf_init(result);
+        }
+        BorrowedBuffer::new(slice, buffer_pool)
     }
 }
 
