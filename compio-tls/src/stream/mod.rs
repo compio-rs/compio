@@ -6,6 +6,12 @@ use compio_io::{AsyncRead, AsyncWrite, compat::SyncStream};
 #[cfg(feature = "rustls")]
 mod rtls;
 
+#[cfg(feature = "io-compat")]
+mod compat;
+
+#[cfg(feature = "io-compat")]
+pub use compat::*;
+
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 enum TlsStreamInner<S> {
@@ -113,8 +119,7 @@ impl<S> From<native_tls::TlsStream<SyncStream<S>>> for TlsStream<S> {
 
 #[cfg(not(feature = "read_buf"))]
 #[inline]
-fn read_buf<B: IoBufMut>(reader: &mut impl io::Read, buf: &mut B) -> io::Result<usize> {
-    let slice: &mut [MaybeUninit<u8>] = buf.as_mut_slice();
+fn read_buf(reader: &mut impl io::Read, slice: &mut [MaybeUninit<u8>]) -> io::Result<usize> {
     slice.fill(MaybeUninit::new(0));
     let slice = unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), slice.len()) };
     reader.read(slice)
@@ -122,8 +127,7 @@ fn read_buf<B: IoBufMut>(reader: &mut impl io::Read, buf: &mut B) -> io::Result<
 
 #[cfg(feature = "read_buf")]
 #[inline]
-fn read_buf<B: IoBufMut>(reader: &mut impl io::Read, buf: &mut B) -> io::Result<usize> {
-    let slice: &mut [MaybeUninit<u8>] = buf.as_mut_slice();
+fn read_buf(reader: &mut impl io::Read, slice: &mut [MaybeUninit<u8>]) -> io::Result<usize> {
     let mut borrowed_buf = io::BorrowedBuf::from(slice);
     let mut cursor = borrowed_buf.unfilled();
     reader.read_buf(cursor.reborrow())?;
@@ -133,7 +137,7 @@ fn read_buf<B: IoBufMut>(reader: &mut impl io::Read, buf: &mut B) -> io::Result<
 impl<S: AsyncRead> AsyncRead for TlsStream<S> {
     async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
         loop {
-            let res = read_buf(&mut self.0, &mut buf);
+            let res = read_buf(&mut self.0, buf.as_mut_slice());
             match res {
                 Ok(res) => {
                     unsafe { buf.set_buf_init(res) };
