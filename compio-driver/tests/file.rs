@@ -140,9 +140,8 @@ fn managed() {
 
     let op = ReadManagedAt::new(fd.clone(), 0, &pool, 1024).unwrap();
     let (BufResult(res, op), flags) = push_and_wait_flags(&mut driver, op);
-    let n = res.unwrap();
 
-    let buffer = op.take_buffer(&pool, n, flags);
+    let buffer = op.take_buffer(&pool, res, flags).unwrap();
     println!("{}", std::str::from_utf8(&buffer).unwrap());
 
     let op = CloseFile::new(fd.try_unwrap().unwrap());

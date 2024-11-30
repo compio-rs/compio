@@ -19,7 +19,7 @@ use crossbeam_queue::SegQueue;
 pub(crate) use libc::{sockaddr_storage, socklen_t};
 use polling::{Event, Events, Poller};
 
-use crate::{AsyncifyPool, Entry, Key, ProactorBuilder, op::Interest, syscall};
+use crate::{AsyncifyPool, BufferPool, Entry, Key, ProactorBuilder, op::Interest, syscall};
 
 pub(crate) mod op;
 
@@ -440,6 +440,31 @@ impl Driver {
 
     pub fn handle(&self) -> NotifyHandle {
         NotifyHandle::new(self.poll.clone())
+    }
+
+    pub fn create_buffer_pool(
+        &mut self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<BufferPool> {
+        #[cfg(all(buf_ring, fusion))]
+        {
+            Ok(BufferPool::new_poll(crate::FallbackBufferPool::new(
+                buffer_len,
+                buffer_size,
+            )))
+        }
+        #[cfg(not(all(buf_ring, fusion)))]
+        {
+            Ok(BufferPool::new(buffer_len, buffer_size))
+        }
+    }
+
+    /// # Safety
+    ///
+    /// caller must make sure release the buffer pool with correct driver
+    pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
+        Ok(())
     }
 }
 

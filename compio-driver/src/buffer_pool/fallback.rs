@@ -8,7 +8,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use compio_buf::{IntoInner, IoBuf, Slice};
+use compio_buf::{IntoInner, IoBuf, SetBufInit, Slice};
 
 /// Buffer pool
 ///
@@ -50,6 +50,18 @@ impl BufferPool {
     pub(crate) fn add_buffer(&self, mut buffer: Vec<u8>) {
         buffer.clear();
         self.buffers.borrow_mut().push_back(buffer)
+    }
+
+    /// Safety: `len` should be valid
+    pub(crate) unsafe fn create_proxy(
+        &self,
+        mut slice: Slice<Vec<u8>>,
+        len: usize,
+    ) -> BorrowedBuffer {
+        unsafe {
+            slice.set_buf_init(len);
+        }
+        BorrowedBuffer::new(slice, self)
     }
 }
 

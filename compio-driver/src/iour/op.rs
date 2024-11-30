@@ -597,3 +597,178 @@ impl<S: AsRawFd> OpCode for PollOnce<S> {
             .into()
     }
 }
+
+#[cfg(buf_ring)]
+mod buf_ring {
+    use std::{io, marker::PhantomPinned, os::fd::AsRawFd, pin::Pin, ptr};
+
+    use io_uring::{opcode, squeue::Flags, types::Fd};
+
+    use super::OpCode;
+    use crate::{BorrowedBuffer, BufferPool, OpEntry, SharedFd, TakeBuffer};
+
+    /// Read a file at specified position into specified buffer.
+    #[derive(Debug)]
+    pub struct ReadManagedAt<S> {
+        pub(crate) fd: SharedFd<S>,
+        pub(crate) offset: u64,
+        buffer_group: u16,
+        len: u32,
+        _p: PhantomPinned,
+    }
+
+    impl<S> ReadManagedAt<S> {
+        /// Create [`ReadAtBufferPool`].
+        pub fn new(
+            fd: SharedFd<S>,
+            offset: u64,
+            buffer_pool: &BufferPool,
+            len: usize,
+        ) -> io::Result<Self> {
+            #[cfg(fusion)]
+            let buffer_pool = buffer_pool.as_io_uring();
+            Ok(Self {
+                fd,
+                offset,
+                buffer_group: buffer_pool.buffer_group(),
+                len: len.try_into().map_err(|_| {
+                    io::Error::new(io::ErrorKind::InvalidInput, "required length too long")
+                })?,
+                _p: PhantomPinned,
+            })
+        }
+    }
+
+    impl<S: AsRawFd> OpCode for ReadManagedAt<S> {
+        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+            let fd = Fd(self.fd.as_raw_fd());
+            let offset = self.offset;
+            opcode::Read::new(fd, ptr::null_mut(), self.len)
+                .offset(offset)
+                .buf_group(self.buffer_group)
+                .build()
+                .flags(Flags::BUFFER_SELECT)
+                .into()
+        }
+    }
+
+    impl<S> TakeBuffer for ReadManagedAt<S> {
+        type Buffer<'a> = BorrowedBuffer<'a>;
+        type BufferPool = BufferPool;
+
+        fn take_buffer(
+            self,
+            buffer_pool: &Self::BufferPool,
+            result: io::Result<usize>,
+            flags: u32,
+        ) -> io::Result<Self::Buffer<'_>> {
+            #[cfg(fusion)]
+            let buffer_pool = buffer_pool.as_io_uring();
+            let result = result.inspect_err(|_| unsafe {
+                // Safety: flags is valid
+                buffer_pool.reuse_buffer(flags)
+            })?;
+            let res = unsafe {
+                // Safety: flags is valid
+                buffer_pool.get_buffer(flags, result).ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!("flags {flags} is invalid"),
+                    )
+                })
+            };
+            #[cfg(fusion)]
+            let res = res.map(BorrowedBuffer::new_io_uring);
+            res
+        }
+    }
+
+    /// Receive data from remote.
+    pub struct RecvManaged<S> {
+        fd: SharedFd<S>,
+        buffer_group: u16,
+        len: u32,
+        _p: PhantomPinned,
+    }
+
+    impl<S> RecvManaged<S> {
+        /// Create [`RecvBufferPool`].
+        pub fn new(fd: SharedFd<S>, buffer_pool: &BufferPool, len: usize) -> io::Result<Self> {
+            #[cfg(fusion)]
+            let buffer_pool = buffer_pool.as_io_uring();
+            Ok(Self {
+                fd,
+                buffer_group: buffer_pool.buffer_group(),
+                len: len.try_into().map_err(|_| {
+                    io::Error::new(io::ErrorKind::InvalidInput, "required length too long")
+                })?,
+                _p: PhantomPinned,
+            })
+        }
+    }
+
+    impl<S: AsRawFd> OpCode for RecvManaged<S> {
+        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+            let fd = self.fd.as_raw_fd();
+            opcode::Read::new(Fd(fd), ptr::null_mut(), self.len)
+                .buf_group(self.buffer_group)
+                .build()
+                .flags(Flags::BUFFER_SELECT)
+                .into()
+        }
+    }
+
+    impl<S> TakeBuffer for RecvManaged<S> {
+        type Buffer<'a> = BorrowedBuffer<'a>;
+        type BufferPool = BufferPool;
+
+        fn take_buffer(
+            self,
+            buffer_pool: &Self::BufferPool,
+            result: io::Result<usize>,
+            flags: u32,
+        ) -> io::Result<Self::Buffer<'_>> {
+            #[cfg(fusion)]
+            let buffer_pool = buffer_pool.as_io_uring();
+            let result = result.inspect_err(|_| unsafe {
+                // Safety: flags is valid
+                buffer_pool.reuse_buffer(flags)
+            })?;
+            let res = unsafe {
+                // Safety: flags is valid
+                buffer_pool.get_buffer(flags, result).ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!("flags {flags} is invalid"),
+                    )
+                })
+            };
+            #[cfg(fusion)]
+            let res = res.map(BorrowedBuffer::new_io_uring);
+            res
+        }
+    }
+}
+
+#[cfg(buf_ring)]
+pub use buf_ring::{ReadManagedAt, RecvManaged};
+
+#[cfg(not(buf_ring))]
+mod fallback {
+    use std::pin::Pin;
+
+    use super::OpCode;
+    use crate::{AsRawFd, OpEntry, op::managed::*};
+
+    impl<S: AsRawFd> OpCode for ReadManagedAt<S> {
+        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+            unsafe { self.map_unchecked_mut(|this| &mut this.op) }.create_entry()
+        }
+    }
+
+    impl<S: AsRawFd> OpCode for RecvManaged<S> {
+        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+            unsafe { self.map_unchecked_mut(|this| &mut this.op) }.create_entry()
+        }
+    }
+}
