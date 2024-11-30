@@ -272,14 +272,14 @@ impl<S> Connect<S> {
 pub(crate) mod managed {
     use std::io;
 
-    use compio_buf::{IntoInner, Slice};
+    use compio_buf::IntoInner;
 
     use super::{ReadAt, Recv};
-    use crate::{BorrowedBuffer, BufferPool, SharedFd, TakeBuffer};
+    use crate::{BorrowedBuffer, BufferPool, OwnedBuffer, SharedFd, TakeBuffer};
 
     /// Read a file at specified position into managed buffer.
     pub struct ReadManagedAt<S> {
-        pub(crate) op: ReadAt<Slice<Vec<u8>>, S>,
+        pub(crate) op: ReadAt<OwnedBuffer, S>,
     }
 
     impl<S> ReadManagedAt<S> {
@@ -322,7 +322,7 @@ pub(crate) mod managed {
 
     /// Receive data from remote into managed buffer.
     pub struct RecvManaged<S> {
-        pub(crate) op: Recv<Slice<Vec<u8>>, S>,
+        pub(crate) op: Recv<OwnedBuffer, S>,
     }
 
     impl<S> RecvManaged<S> {
