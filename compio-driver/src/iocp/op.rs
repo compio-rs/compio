@@ -194,20 +194,6 @@ impl<T: IoBuf, S: AsRawFd> OpCode for WriteAt<T, S> {
     }
 }
 
-/// Read a file at specified position into managed buffer.
-pub struct ReadManagedAt<S> {
-    op: ReadAt<Slice<Vec<u8>>, S>,
-}
-
-impl<S> ReadManagedAt<S> {
-    /// Create [`ReadManagedAt`].
-    pub fn new(fd: SharedFd<S>, offset: u64, pool: &BufferPool, len: usize) -> io::Result<Self> {
-        Ok(Self {
-            op: ReadAt::new(fd, offset, pool.get_buffer(len)?),
-        })
-    }
-}
-
 impl<S: AsRawFd> OpCode for ReadManagedAt<S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         self.map_unchecked_mut(|this| &mut this.op).operate(optr)
@@ -215,20 +201,6 @@ impl<S: AsRawFd> OpCode for ReadManagedAt<S> {
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         self.map_unchecked_mut(|this| &mut this.op).cancel(optr)
-    }
-}
-
-impl<S> TakeBuffer for ReadManagedAt<S> {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
-
-    fn take_buffer(self, buffer_pool: &BufferPool, result: usize, _: u32) -> BorrowedBuffer {
-        let mut slice = self.op.into_inner();
-        // Safety: result is valid
-        unsafe {
-            slice.set_buf_init(result);
-        }
-        BorrowedBuffer::new(slice, buffer_pool)
     }
 }
 
@@ -444,20 +416,6 @@ impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
     }
 }
 
-/// Receive data from remote into managed buffer.
-pub struct RecvManaged<S> {
-    op: Recv<Slice<Vec<u8>>, S>,
-}
-
-impl<S> RecvManaged<S> {
-    /// Create [`RecvManaged`].
-    pub fn new(fd: SharedFd<S>, pool: &BufferPool, len: usize) -> io::Result<Self> {
-        Ok(Self {
-            op: Recv::new(fd, pool.get_buffer(len)?),
-        })
-    }
-}
-
 impl<S: AsRawFd> OpCode for RecvManaged<S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         self.map_unchecked_mut(|this| &mut this.op).operate(optr)
@@ -465,25 +423,6 @@ impl<S: AsRawFd> OpCode for RecvManaged<S> {
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         self.map_unchecked_mut(|this| &mut this.op).cancel(optr)
-    }
-}
-
-impl<S> TakeBuffer for RecvManaged<S> {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
-
-    fn take_buffer(
-        self,
-        buffer_pool: &Self::BufferPool,
-        result: usize,
-        _: u32,
-    ) -> Self::Buffer<'_> {
-        let mut slice = self.op.into_inner();
-        // Safety: result is valid
-        unsafe {
-            slice.set_buf_init(result);
-        }
-        BorrowedBuffer::new(slice, buffer_pool)
     }
 }
 

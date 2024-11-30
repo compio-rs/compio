@@ -1,7 +1,14 @@
 cfg_if::cfg_if! {
-    if #[cfg(all(target_os = "linux", feature = "io-uring", feature = "io-uring-buf-ring"))] {
-        mod iour;
-        pub use iour::*;
+    if #[cfg(buf_ring)] {
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "polling")] {
+                mod fusion;
+                pub use fusion::*;
+            } else {
+                mod iour;
+                pub use iour::*;
+            }
+        }
     } else {
         mod fallback;
         pub use fallback::*;
@@ -21,7 +28,7 @@ pub trait TakeBuffer {
     fn take_buffer(
         self,
         buffer_pool: &Self::BufferPool,
-        result: usize,
+        result: std::io::Result<usize>,
         flags: u32,
-    ) -> Self::Buffer<'_>;
+    ) -> std::io::Result<Self::Buffer<'_>>;
 }
