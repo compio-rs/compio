@@ -14,7 +14,7 @@ repository = { workspace = true }
 compio-buf = { workspace = true, features = ["arrayvec"] }
 futures-util = { workspace = true }
 paste = { workspace = true }
-pin-project-lite = { version = "0.2.14", optional = true }
+pin-project-lite = { workspace = true, optional = true }
 
 [dev-dependencies]
 compio-runtime = { workspace = true }

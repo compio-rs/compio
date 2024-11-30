@@ -6,6 +6,12 @@ use compio_io::{AsyncRead, AsyncWrite, compat::SyncStream};
 #[cfg(feature = "rustls")]
 mod rtls;
 
+#[cfg(feature = "io-compat")]
+mod compat;
+
+#[cfg(feature = "io-compat")]
+pub use compat::*;
+
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 enum TlsStreamInner<S> {
