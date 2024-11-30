@@ -11,6 +11,7 @@ mod fallback;
 mod iour;
 
 pub use fallback::BufferPool as FallbackBufferPool;
+pub(crate) use fallback::OwnedBuffer;
 pub use iour::BufferPool as IoUringBufferPool;
 
 /// Buffer pool
