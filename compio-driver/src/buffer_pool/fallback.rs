@@ -125,7 +125,12 @@ impl IntoInner for OwnedBuffer {
     type Inner = Slice<Vec<u8>>;
 
     fn into_inner(mut self) -> Self::Inner {
-        unsafe { ManuallyDrop::take(&mut self.buffer) }
+        let buffer = unsafe { ManuallyDrop::take(&mut self.buffer) };
+        unsafe {
+            std::ptr::drop_in_place(&mut self.pool);
+        }
+        std::mem::forget(self);
+        buffer
     }
 }
 
