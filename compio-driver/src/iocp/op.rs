@@ -13,7 +13,6 @@ use std::{
 use aligned_array::{A8, Aligned};
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
-    SetBufInit, Slice,
 };
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
@@ -42,10 +41,7 @@ use windows_sys::{
     core::GUID,
 };
 
-use crate::{
-    AsRawFd, BorrowedBuffer, BufferPool, OpCode, OpType, RawFd, SharedFd, TakeBuffer, op::*,
-    syscall,
-};
+use crate::{AsRawFd, OpCode, OpType, RawFd, SharedFd, op::*, syscall};
 
 #[inline]
 fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
