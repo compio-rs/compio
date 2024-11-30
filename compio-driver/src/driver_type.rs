@@ -58,7 +58,8 @@ impl DriverType {
                     #[cfg(any(
                         feature = "io-uring-sqe128",
                         feature = "io-uring-cqe32",
-                        feature = "io-uring-socket"
+                        feature = "io-uring-socket",
+                        feature = "io-uring-buf-ring"
                     ))]
                     Socket::CODE,
                 ];
