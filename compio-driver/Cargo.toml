@@ -80,6 +80,7 @@ polling = ["dep:polling"]
 io-uring-sqe128 = []
 io-uring-cqe32 = []
 io-uring-socket = []
+io-uring-buf-ring = []
 
 iocp-global = []
 iocp-wait-packet = []
