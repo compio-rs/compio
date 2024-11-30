@@ -6,16 +6,28 @@ use std::{
     io,
     mem::ManuallyDrop,
     ops::{Deref, DerefMut},
+    rc::Rc,
 };
 
-use compio_buf::{IntoInner, IoBuf, SetBufInit, Slice};
+use compio_buf::{IntoInner, IoBuf, IoBufMut, SetBufInit, Slice};
+
+struct BufferPoolInner {
+    buffers: RefCell<VecDeque<Vec<u8>>>,
+}
+
+impl BufferPoolInner {
+    pub(crate) fn add_buffer(&self, mut buffer: Vec<u8>) {
+        buffer.clear();
+        self.buffers.borrow_mut().push_back(buffer)
+    }
+}
 
 /// Buffer pool
 ///
 /// A buffer pool to allow user no need to specify a specific buffer to do the
 /// IO operation
 pub struct BufferPool {
-    buffers: RefCell<VecDeque<Vec<u8>>>,
+    inner: Rc<BufferPoolInner>,
 }
 
 impl Debug for BufferPool {
@@ -31,12 +43,14 @@ impl BufferPool {
             .collect();
 
         Self {
-            buffers: RefCell::new(buffers),
+            inner: Rc::new(BufferPoolInner {
+                buffers: RefCell::new(buffers),
+            }),
         }
     }
 
-    pub(crate) fn get_buffer(&self, len: usize) -> io::Result<Slice<Vec<u8>>> {
-        let buffer = self.buffers.borrow_mut().pop_front().ok_or_else(|| {
+    pub(crate) fn get_buffer(&self, len: usize) -> io::Result<OwnedBuffer> {
+        let buffer = self.inner.buffers.borrow_mut().pop_front().ok_or_else(|| {
             io::Error::new(io::ErrorKind::Other, "buffer ring has no available buffer")
         })?;
         let len = if len == 0 {
@@ -44,24 +58,74 @@ impl BufferPool {
         } else {
             buffer.capacity().min(len)
         };
-        Ok(buffer.slice(..len))
+        Ok(OwnedBuffer::new(buffer.slice(..len), self.inner.clone()))
     }
 
-    pub(crate) fn add_buffer(&self, mut buffer: Vec<u8>) {
-        buffer.clear();
-        self.buffers.borrow_mut().push_back(buffer)
+    pub(crate) fn add_buffer(&self, buffer: Vec<u8>) {
+        self.inner.add_buffer(buffer);
     }
 
     /// Safety: `len` should be valid
-    pub(crate) unsafe fn create_proxy(
-        &self,
-        mut slice: Slice<Vec<u8>>,
-        len: usize,
-    ) -> BorrowedBuffer {
+    pub(crate) unsafe fn create_proxy(&self, mut slice: OwnedBuffer, len: usize) -> BorrowedBuffer {
         unsafe {
             slice.set_buf_init(len);
         }
-        BorrowedBuffer::new(slice, self)
+        BorrowedBuffer::new(slice.into_inner(), self)
+    }
+}
+
+pub(crate) struct OwnedBuffer {
+    buffer: ManuallyDrop<Slice<Vec<u8>>>,
+    pool: Rc<BufferPoolInner>,
+}
+
+impl OwnedBuffer {
+    fn new(buffer: Slice<Vec<u8>>, pool: Rc<BufferPoolInner>) -> Self {
+        Self {
+            buffer: ManuallyDrop::new(buffer),
+            pool,
+        }
+    }
+}
+
+unsafe impl IoBuf for OwnedBuffer {
+    fn as_buf_ptr(&self) -> *const u8 {
+        self.buffer.as_buf_ptr()
+    }
+
+    fn buf_len(&self) -> usize {
+        self.buffer.buf_len()
+    }
+
+    fn buf_capacity(&self) -> usize {
+        self.buffer.buf_capacity()
+    }
+}
+
+unsafe impl IoBufMut for OwnedBuffer {
+    fn as_buf_mut_ptr(&mut self) -> *mut u8 {
+        self.buffer.as_buf_mut_ptr()
+    }
+}
+
+impl SetBufInit for OwnedBuffer {
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        self.buffer.set_buf_init(len);
+    }
+}
+
+impl Drop for OwnedBuffer {
+    fn drop(&mut self) {
+        self.pool
+            .add_buffer(unsafe { ManuallyDrop::take(&mut self.buffer) }.into_inner());
+    }
+}
+
+impl IntoInner for OwnedBuffer {
+    type Inner = Slice<Vec<u8>>;
+
+    fn into_inner(mut self) -> Self::Inner {
+        unsafe { ManuallyDrop::take(&mut self.buffer) }
     }
 }
 
