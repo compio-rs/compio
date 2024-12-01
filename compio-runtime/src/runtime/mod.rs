@@ -380,8 +380,12 @@ impl Drop for Runtime {
         self.enter(|| {
             while self.runnables.sync_runnables.pop().is_some() {}
             let local_runnables = unsafe { self.runnables.local_runnables.get_unchecked() };
-            let mut local_runnables = local_runnables.borrow_mut();
-            while local_runnables.pop_front().is_some() {}
+            loop {
+                let runnable = local_runnables.borrow_mut().pop_front();
+                if runnable.is_none() {
+                    break;
+                }
+            }
         })
     }
 }
