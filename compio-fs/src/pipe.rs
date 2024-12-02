@@ -513,7 +513,7 @@ async fn is_fifo(file: &File) -> io::Result<bool> {
 
 /// Sets file's flags with O_NONBLOCK by fcntl.
 fn set_nonblocking(file: &impl AsRawFd) -> io::Result<()> {
-    if cfg!(not(all(target_os = "linux", feature = "io-uring"))) {
+    if compio_driver::DriverType::is_polling() {
         let fd = file.as_raw_fd();
         let current_flags = syscall!(libc::fcntl(fd, libc::F_GETFL))?;
         let flags = current_flags | libc::O_NONBLOCK;

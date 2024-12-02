@@ -56,10 +56,7 @@ impl Socket {
             // non blocking socket when there is no connections in listen queue
             //
             // https://patchwork.kernel.org/project/linux-block/patch/f999615b-205c-49b7-b272-c4e42e45e09d@kernel.dk/#22949861
-            if cfg!(all(
-                unix,
-                not(all(target_os = "linux", feature = "io-uring"))
-            )) {
+            if compio_driver::DriverType::is_polling() {
                 socket.set_nonblocking(true)?;
             }
         }
@@ -164,10 +161,7 @@ impl Socket {
         let BufResult(res, op) = compio_runtime::submit(op).await;
         let addr = op.into_addr();
         let accept_sock = unsafe { Socket2::from_raw_fd(res? as _) };
-        if cfg!(all(
-            unix,
-            not(all(target_os = "linux", feature = "io-uring"))
-        )) {
+        if compio_driver::DriverType::is_polling() {
             accept_sock.set_nonblocking(true)?;
         }
         let accept_sock = Self::from_socket2(accept_sock)?;
