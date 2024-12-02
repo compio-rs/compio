@@ -73,7 +73,7 @@ impl TimerRuntime {
 
     pub fn insert(&mut self, instant: Instant) -> Option<usize> {
         let delay = instant - self.time;
-        if delay.is_zero() {
+        if delay <= self.time.elapsed() {
             return None;
         }
         let key = self.tasks.insert(FutureState::Active(None));

@@ -287,12 +287,8 @@ impl Runtime {
     }
 
     #[cfg(feature = "time")]
-    pub(crate) fn create_timer(&self, delay: std::time::Duration) -> impl Future<Output = ()> {
-        if delay.is_zero() {
-            Either::Right(std::future::ready(()))
-        } else {
-            Either::Left(TimerFuture::new(std::time::Instant::now() + delay))
-        }
+    pub(crate) fn create_timer(&self, instant: std::time::Instant) -> impl Future<Output = ()> {
+        TimerFuture::new(instant)
     }
 
     pub(crate) fn cancel_op<T: OpCode>(&self, op: Key<T>) {
