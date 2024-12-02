@@ -7,6 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use futures_util::future::Either;
 use slab::Slab;
 
 use crate::runtime::Runtime;
@@ -70,13 +71,12 @@ impl TimerRuntime {
             .unwrap_or_default()
     }
 
-    pub fn insert(&mut self, mut delay: Duration) -> Option<usize> {
-        if delay.is_zero() {
+    pub fn insert(&mut self, instant: Instant) -> Option<usize> {
+        let delay = instant - self.time;
+        if delay <= self.time.elapsed() {
             return None;
         }
-        let elapsed = self.time.elapsed();
         let key = self.tasks.insert(FutureState::Active(None));
-        delay += elapsed;
         let entry = TimerEntry { key, delay };
         self.wheel.push(Reverse(entry));
         Some(key)
@@ -125,26 +125,39 @@ impl TimerRuntime {
 }
 
 pub struct TimerFuture {
-    key: usize,
+    key: Either<Instant, usize>,
 }
 
 impl TimerFuture {
-    pub fn new(key: usize) -> Self {
-        Self { key }
+    pub fn new(instant: Instant) -> Self {
+        Self {
+            key: Either::Left(instant),
+        }
     }
 }
 
 impl Future for TimerFuture {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Runtime::with_current(|r| r.poll_timer(cx, self.key))
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Runtime::with_current(|r| match self.key {
+            Either::Left(instant) => match r.register_timer(cx, instant) {
+                Some(key) => {
+                    self.key = Either::Right(key);
+                    Poll::Pending
+                }
+                None => Poll::Ready(()),
+            },
+            Either::Right(key) => r.poll_timer(cx, key),
+        })
     }
 }
 
 impl Drop for TimerFuture {
     fn drop(&mut self) {
-        Runtime::with_current(|r| r.cancel_timer(self.key));
+        if let Either::Right(key) = self.key {
+            Runtime::with_current(|r| r.cancel_timer(key));
+        }
     }
 }
 
@@ -153,8 +166,9 @@ fn timer_min_timeout() {
     let mut runtime = TimerRuntime::new();
     assert_eq!(runtime.min_timeout(), None);
 
-    runtime.insert(Duration::from_secs(1));
-    runtime.insert(Duration::from_secs(10));
+    let now = Instant::now();
+    runtime.insert(now + Duration::from_secs(1));
+    runtime.insert(now + Duration::from_secs(10));
     let min_timeout = runtime.min_timeout().unwrap().as_secs_f32();
 
     assert!(min_timeout < 1.);
