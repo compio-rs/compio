@@ -7,7 +7,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures_util::future::Either;
 use slab::Slab;
 
 use crate::runtime::Runtime;
@@ -125,39 +124,26 @@ impl TimerRuntime {
 }
 
 pub struct TimerFuture {
-    key: Either<Instant, usize>,
+    key: usize,
 }
 
 impl TimerFuture {
-    pub fn new(instant: Instant) -> Self {
-        Self {
-            key: Either::Left(instant),
-        }
+    pub fn new(key: usize) -> Self {
+        Self { key }
     }
 }
 
 impl Future for TimerFuture {
     type Output = ();
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Runtime::with_current(|r| match self.key {
-            Either::Left(instant) => match r.register_timer(cx, instant) {
-                Some(key) => {
-                    self.key = Either::Right(key);
-                    Poll::Pending
-                }
-                None => Poll::Ready(()),
-            },
-            Either::Right(key) => r.poll_timer(cx, key),
-        })
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Runtime::with_current(|r| r.poll_timer(cx, self.key))
     }
 }
 
 impl Drop for TimerFuture {
     fn drop(&mut self) {
-        if let Either::Right(key) = self.key {
-            Runtime::with_current(|r| r.cancel_timer(key));
-        }
+        Runtime::with_current(|r| r.cancel_timer(self.key));
     }
 }
 

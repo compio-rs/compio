@@ -216,7 +216,12 @@ impl Runtime {
             let res = std::panic::catch_unwind(AssertUnwindSafe(f));
             BufResult(Ok(0), res)
         });
-        unsafe { self.spawn_unchecked(self.submit(op).map(|res| res.1.into_inner())) }
+        // It is safe and sound to use `submit` here because the task is spawned
+        // immediately.
+        #[allow(deprecated)]
+        unsafe {
+            self.spawn_unchecked(self.submit(op).map(|res| res.1.into_inner()))
+        }
     }
 
     /// Attach a raw file descriptor/handle/socket to the runtime.
@@ -234,7 +239,13 @@ impl Runtime {
     /// Submit an operation to the runtime.
     ///
     /// You only need this when authoring your own [`OpCode`].
+    ///
+    /// It is safe to send the returned future to another runtime and poll it,
+    /// but the exact behavior is not guaranteed, e.g. it may return pending
+    /// forever or else.
+    #[deprecated = "use compio::runtime::submit instead"]
     pub fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
+        #[allow(deprecated)]
         self.submit_with_flags(op).map(|(res, _)| res)
     }
 
@@ -244,6 +255,11 @@ impl Runtime {
     /// the flags
     ///
     /// You only need this when authoring your own [`OpCode`].
+    ///
+    /// It is safe to send the returned future to another runtime and poll it,
+    /// but the exact behavior is not guaranteed, e.g. it may return pending
+    /// forever or else.
+    #[deprecated = "use compio::runtime::submit_with_flags instead"]
     pub fn submit_with_flags<T: OpCode + 'static>(
         &self,
         op: T,
@@ -256,11 +272,6 @@ impl Runtime {
                 Either::Right(ready((res, 0)))
             }
         }
-    }
-
-    #[cfg(feature = "time")]
-    pub(crate) fn create_timer(&self, instant: std::time::Instant) -> impl Future<Output = ()> {
-        TimerFuture::new(instant)
     }
 
     pub(crate) fn cancel_op<T: OpCode>(&self, op: Key<T>) {
@@ -283,21 +294,6 @@ impl Runtime {
             driver.update_waker(&mut k, cx.waker().clone());
             k
         })
-    }
-
-    #[cfg(feature = "time")]
-    pub(crate) fn register_timer(
-        &self,
-        cx: &mut Context,
-        instant: std::time::Instant,
-    ) -> Option<usize> {
-        let mut timer_runtime = self.timer_runtime.borrow_mut();
-        if let Some(key) = timer_runtime.insert(instant) {
-            timer_runtime.update_waker(key, cx.waker().clone());
-            Some(key)
-        } else {
-            None
-        }
     }
 
     #[cfg(feature = "time")]
@@ -478,29 +474,37 @@ pub fn spawn_blocking<T: Send + 'static>(
 
 /// Submit an operation to the current runtime, and return a future for it.
 ///
-/// It is safe but unspecified behavior to send the returned future to another
-/// runtime and poll it.
-///
 /// ## Panics
 ///
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::with_current`].
-pub fn submit<T: OpCode + 'static>(op: T) -> impl Future<Output = BufResult<usize, T>> {
-    Runtime::with_current(|r| r.submit(op))
+pub async fn submit<T: OpCode + 'static>(op: T) -> BufResult<usize, T> {
+    submit_with_flags(op).await.0
 }
 
 /// Submit an operation to the current runtime, and return a future for it with
 /// flags.
 ///
-/// It is safe but unspecified behavior to send the returned future to another
-/// runtime and poll it.
-///
 /// ## Panics
 ///
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::with_current`].
-pub fn submit_with_flags<T: OpCode + 'static>(
-    op: T,
-) -> impl Future<Output = (BufResult<usize, T>, u32)> {
-    Runtime::with_current(|r| r.submit_with_flags(op))
+pub async fn submit_with_flags<T: OpCode + 'static>(op: T) -> (BufResult<usize, T>, u32) {
+    let state = Runtime::with_current(|r| r.submit_raw(op));
+    match state {
+        PushEntry::Pending(user_data) => OpFuture::new(user_data).await,
+        PushEntry::Ready(res) => {
+            // submit_flags won't be ready immediately, if ready, it must be error without
+            // flags, or the flags are not necessary
+            (res, 0)
+        }
+    }
+}
+
+#[cfg(feature = "time")]
+pub(crate) async fn create_timer(instant: std::time::Instant) {
+    let key = Runtime::with_current(|r| r.timer_runtime.borrow_mut().insert(instant));
+    if let Some(key) = key {
+        TimerFuture::new(key).await
+    }
 }
