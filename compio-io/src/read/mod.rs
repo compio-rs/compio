@@ -96,7 +96,10 @@ impl AsyncRead for &[u8] {
             }
         }
 
-        BufResult(Ok(self.len() - this.len()), buf)
+        let len = self.len() - this.len();
+        *self = this;
+
+        BufResult(Ok(len), buf)
     }
 }
 
