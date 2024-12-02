@@ -126,6 +126,30 @@ fn readv() {
         assert_eq!(len, 13);
         assert!(buf[0].is_empty());
         assert_eq!(buf[1], [1, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0]);
+
+        let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
+        let ((), buf) = src
+            .read_vectored_exact([Vec::with_capacity(3), Vec::with_capacity(3)])
+            .await
+            .unwrap();
+        assert_eq!(buf[0], [1, 1, 4]);
+        assert_eq!(buf[1], [5, 1, 4]);
+
+        let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
+        let ((), buf) = src
+            .read_vectored_exact([vec![], Vec::with_capacity(3)])
+            .await
+            .unwrap();
+        assert!(buf[0].is_empty());
+        assert_eq!(buf[1], [1, 1, 4]);
+
+        let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
+        let BufResult(res, buf) = src
+            .read_vectored_exact([Vec::with_capacity(10), Vec::with_capacity(10)])
+            .await;
+        assert!(res.is_err());
+        assert_eq!(buf[0], [1, 1, 4, 5, 1, 4, 1, 9, 1, 9]);
+        assert_eq!(buf[1], [8, 1, 0]);
     })
 }
 
@@ -160,6 +184,23 @@ fn writev() {
         assert_eq!(len, 6);
         assert_eq!(dst.len(), 6);
         assert_eq!(dst, [1, 1, 4, 5, 1, 4]);
+
+        let mut dst = Cursor::new([0u8; 10]);
+        let ((), _) = dst
+            .write_vectored_all([vec![1, 1, 4], vec![5, 1, 4]])
+            .await
+            .unwrap();
+
+        assert_eq!(dst.position(), 6);
+        assert_eq!(dst.into_inner(), [1, 1, 4, 5, 1, 4, 0, 0, 0, 0]);
+
+        let mut dst = Cursor::new([0u8; 10]);
+        let BufResult(res, _) = dst
+            .write_vectored_all([vec![1, 1, 4, 5, 1, 4], vec![1, 9, 1, 9, 8, 1, 0]])
+            .await;
+
+        assert!(res.is_err());
+        assert_eq!(dst.into_inner(), [1, 1, 4, 5, 1, 4, 1, 9, 1, 9]);
     })
 }
 
@@ -185,6 +226,22 @@ fn readv_at() {
         assert_eq!(len, 4);
         assert_eq!(buf[0].as_slice(), [4, 5, 1]);
         assert_eq!(buf[1].as_slice(), [4]);
+
+        let ((), buf) = SRC
+            .read_vectored_exact_at([vec![0; 3], Vec::with_capacity(1)], 2)
+            .await
+            .unwrap();
+
+        assert_eq!(buf[0].as_slice(), [4, 5, 1]);
+        assert_eq!(buf[1].as_slice(), [4]);
+
+        let BufResult(res, buf) = SRC
+            .read_vectored_exact_at([Vec::with_capacity(6), Vec::with_capacity(6)], 2)
+            .await;
+
+        assert!(res.is_err());
+        assert_eq!(buf[0].as_slice(), &SRC[2..]);
+        assert!(buf[1].is_empty());
     })
 }
 
@@ -218,6 +275,22 @@ fn writev_at() {
         assert_eq!(len, 6);
         assert_eq!(dst.len(), 8);
         assert_eq!(dst, [0, 0, 1, 1, 4, 5, 1, 4]);
+
+        let mut dst = [0u8; 10];
+        let ((), _) = dst
+            .write_vectored_all_at([vec![1, 1, 4], vec![5, 1, 4]], 2)
+            .await
+            .unwrap();
+
+        assert_eq!(dst, [0, 0, 1, 1, 4, 5, 1, 4, 0, 0]);
+
+        let mut dst = [0u8; 5];
+        let BufResult(res, _) = dst
+            .write_vectored_all_at([vec![1, 1, 4], vec![5, 1, 4]], 2)
+            .await;
+
+        assert!(res.is_err());
+        assert_eq!(dst, [0, 0, 1, 1, 4]);
     })
 }
 
