@@ -12,7 +12,7 @@ pub trait AsyncReadManaged {
     type Buffer<'a>: DerefMut<Target = [u8]>;
 
     /// Read some bytes from this source with [`BufferPool`] and return
-    /// a [`BorrowedBuffer`].
+    /// a [`Buffer`].
     ///
     /// If `len` == 0, will use [`BufferPool`] inner buffer size as the max len,
     /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
@@ -33,7 +33,7 @@ pub trait AsyncReadAtManaged {
     type Buffer<'a>: DerefMut<Target = [u8]>;
 
     /// Read some bytes from this source at position with [`BufferPool`] and
-    /// return a [`BorrowedBuffer`].
+    /// return a [`Buffer`].
     ///
     /// If `len` == 0, will use [`BufferPool`] inner buffer size as the max len,
     /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
