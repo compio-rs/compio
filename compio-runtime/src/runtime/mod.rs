@@ -2,7 +2,7 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::VecDeque,
-    future::{Future, poll_fn, ready},
+    future::{Future, ready},
     io,
     marker::PhantomData,
     panic::AssertUnwindSafe,
@@ -220,31 +220,7 @@ impl Runtime {
             let res = std::panic::catch_unwind(AssertUnwindSafe(f));
             BufResult(Ok(0), res)
         });
-        let closure = async move {
-            let mut op = op;
-            loop {
-                match self.submit(op).await {
-                    BufResult(Ok(_), rop) => break rop.into_inner(),
-                    BufResult(Err(_), rop) => op = rop,
-                }
-                // Possible error: thread pool is full, or failed to create notify handle.
-                // Push the future to the back of the queue.
-                let mut yielded = false;
-                poll_fn(|cx| {
-                    if yielded {
-                        Poll::Ready(())
-                    } else {
-                        yielded = true;
-                        cx.waker().wake_by_ref();
-                        Poll::Pending
-                    }
-                })
-                .await;
-            }
-        };
-        // SAFETY: the closure catches the shared reference of self, which is in an Rc
-        // so it won't be moved.
-        unsafe { self.spawn_unchecked(closure) }
+        unsafe { self.spawn_unchecked(self.submit(op).map(|res| res.1.into_inner())) }
     }
 
     /// Attach a raw file descriptor/handle/socket to the runtime.
