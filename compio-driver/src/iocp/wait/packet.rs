@@ -42,7 +42,7 @@ pub struct Wait {
 }
 
 fn check_status(status: NTSTATUS) -> io::Result<()> {
-    if status == STATUS_SUCCESS {
+    if status >= 0 {
         Ok(())
     } else {
         Err(io::Error::from_raw_os_error(unsafe {
