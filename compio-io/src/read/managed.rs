@@ -1,4 +1,4 @@
-use std::{io::Cursor, ops::DerefMut};
+use std::{io::Cursor, ops::Deref};
 
 use crate::IoResult;
 
@@ -9,18 +9,18 @@ pub trait AsyncReadManaged {
     /// Buffer pool type
     type BufferPool;
     /// Filled buffer type
-    type Buffer<'a>: DerefMut<Target = [u8]>;
+    type Buffer: Deref<Target = [u8]>;
 
     /// Read some bytes from this source with [`BufferPool`] and return
     /// a [`Buffer`].
     ///
     /// If `len` == 0, will use [`BufferPool`] inner buffer size as the max len,
     /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
-    async fn read_managed<'a>(
+    async fn read_managed(
         &mut self,
-        buffer_pool: &'a Self::BufferPool,
+        buffer_pool: &Self::BufferPool,
         len: usize,
-    ) -> IoResult<Self::Buffer<'a>>;
+    ) -> IoResult<Self::Buffer>;
 }
 
 /// # AsyncReadAtManaged
@@ -30,30 +30,30 @@ pub trait AsyncReadManagedAt {
     /// Buffer pool type
     type BufferPool;
     /// Filled buffer type
-    type Buffer<'a>: DerefMut<Target = [u8]>;
+    type Buffer: Deref<Target = [u8]>;
 
     /// Read some bytes from this source at position with [`BufferPool`] and
     /// return a [`Buffer`].
     ///
     /// If `len` == 0, will use [`BufferPool`] inner buffer size as the max len,
     /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
-    async fn read_managed_at<'a>(
+    async fn read_managed_at(
         &self,
         pos: u64,
-        buffer_pool: &'a Self::BufferPool,
+        buffer_pool: &Self::BufferPool,
         len: usize,
-    ) -> IoResult<Self::Buffer<'a>>;
+    ) -> IoResult<Self::Buffer>;
 }
 
 impl<A: AsyncReadManagedAt> AsyncReadManaged for Cursor<A> {
-    type Buffer<'a> = A::Buffer<'a>;
+    type Buffer = A::Buffer;
     type BufferPool = A::BufferPool;
 
-    async fn read_managed<'a>(
+    async fn read_managed(
         &mut self,
-        buffer_pool: &'a Self::BufferPool,
+        buffer_pool: &Self::BufferPool,
         len: usize,
-    ) -> IoResult<Self::Buffer<'a>> {
+    ) -> IoResult<Self::Buffer> {
         let pos = self.position();
         let buf = self
             .get_ref()
