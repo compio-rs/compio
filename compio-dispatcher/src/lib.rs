@@ -7,12 +7,11 @@ use std::{
     io,
     num::NonZeroUsize,
     panic::resume_unwind,
-    sync::{Arc, Mutex},
     thread::{JoinHandle, available_parallelism},
 };
 
 use compio_driver::{AsyncifyPool, DispatchError, Dispatchable, ProactorBuilder};
-use compio_runtime::{JoinHandle as CompioJoinHandle, Runtime, event::Event};
+use compio_runtime::{JoinHandle as CompioJoinHandle, Runtime};
 use flume::{Sender, unbounded};
 use futures_channel::oneshot;
 
@@ -191,25 +190,23 @@ impl Dispatcher {
     /// thread panicked, this method will resume the panic.
     pub async fn join(self) -> io::Result<()> {
         drop(self.sender);
-        let results = Arc::new(Mutex::new(vec![]));
-        let event = Event::new();
-        let handle = event.handle();
+        let (tx, rx) = oneshot::channel::<Vec<_>>();
         if let Err(f) = self.pool.dispatch({
-            let results = results.clone();
             move || {
-                *results.lock().unwrap() = self
+                let results = self
                     .threads
                     .into_iter()
                     .map(|thread| thread.join())
                     .collect();
-                handle.notify();
+                tx.send(results).unwrap();
             }
         }) {
             std::thread::spawn(f.0);
         }
-        event.wait().await;
-        let mut guard = results.lock().unwrap();
-        for res in std::mem::take::<Vec<std::thread::Result<()>>>(guard.as_mut()) {
+        let results = rx.await.map_err(|_| {
+            io::Error::new(io::ErrorKind::Other, "the join task cancelled unexpectedly")
+        })?;
+        for res in results {
             res.unwrap_or_else(|e| resume_unwind(e));
         }
         Ok(())

@@ -17,7 +17,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 # Workspace dependencies
 compio-driver = { workspace = true }
-compio-runtime = { workspace = true, features = ["event", "time"] }
+compio-runtime = { workspace = true }
 
 flume = { workspace = true }
 futures-channel = { workspace = true }
