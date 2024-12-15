@@ -311,7 +311,7 @@ impl Proactor {
     }
 
     /// Create a notify handle to interrupt the inner driver.
-    pub fn handle(&self) -> io::Result<NotifyHandle> {
+    pub fn handle(&self) -> NotifyHandle {
         self.driver.handle()
     }
 }

@@ -84,12 +84,12 @@ impl Driver {
         }
     }
 
-    pub fn handle(&self) -> io::Result<NotifyHandle> {
+    pub fn handle(&self) -> NotifyHandle {
         let fuse = match &self.fuse {
-            FuseDriver::Poll(driver) => FuseNotifyHandle::Poll(driver.handle()?),
-            FuseDriver::IoUring(driver) => FuseNotifyHandle::IoUring(driver.handle()?),
+            FuseDriver::Poll(driver) => FuseNotifyHandle::Poll(driver.handle()),
+            FuseDriver::IoUring(driver) => FuseNotifyHandle::IoUring(driver.handle()),
         };
-        Ok(NotifyHandle::from_fuse(fuse))
+        NotifyHandle::from_fuse(fuse)
     }
 }
 

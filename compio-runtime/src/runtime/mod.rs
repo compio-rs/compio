@@ -159,11 +159,7 @@ impl Runtime {
     /// The caller should ensure the captured lifetime long enough.
     pub unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
         let runnables = self.runnables.clone();
-        let handle = self
-            .driver
-            .borrow()
-            .handle()
-            .expect("cannot create notify handle of the proactor");
+        let handle = self.driver.borrow().handle();
         let schedule = move |runnable| {
             runnables.schedule(runnable, &handle);
         };
