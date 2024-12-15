@@ -322,11 +322,8 @@ impl Driver {
         Ok(())
     }
 
-    pub fn handle(&self) -> io::Result<NotifyHandle> {
-        Ok(NotifyHandle::new(
-            self.port.handle(),
-            self.notify_overlapped.clone(),
-        ))
+    pub fn handle(&self) -> NotifyHandle {
+        NotifyHandle::new(self.port.handle(), self.notify_overlapped.clone())
     }
 }
 

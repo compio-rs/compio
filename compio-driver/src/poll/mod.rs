@@ -438,8 +438,8 @@ impl Driver {
         Ok(())
     }
 
-    pub fn handle(&self) -> io::Result<NotifyHandle> {
-        Ok(NotifyHandle::new(self.poll.clone()))
+    pub fn handle(&self) -> NotifyHandle {
+        NotifyHandle::new(self.poll.clone())
     }
 }
 

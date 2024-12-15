@@ -290,7 +290,7 @@ impl Driver {
         Ok(())
     }
 
-    pub fn handle(&self) -> io::Result<NotifyHandle> {
+    pub fn handle(&self) -> NotifyHandle {
         self.notifier.handle()
     }
 }
@@ -360,8 +360,8 @@ impl Notifier {
         }
     }
 
-    pub fn handle(&self) -> io::Result<NotifyHandle> {
-        Ok(NotifyHandle::new(self.fd.clone()))
+    pub fn handle(&self) -> NotifyHandle {
+        NotifyHandle::new(self.fd.clone())
     }
 }
 
