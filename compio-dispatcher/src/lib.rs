@@ -198,7 +198,7 @@ impl Dispatcher {
                     .into_iter()
                     .map(|thread| thread.join())
                     .collect();
-                tx.send(results).unwrap();
+                tx.send(results).ok();
             }
         }) {
             std::thread::spawn(f.0);
