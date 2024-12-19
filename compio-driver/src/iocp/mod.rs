@@ -249,7 +249,7 @@ impl Driver {
         match op_pin.op_type() {
             OpType::Overlapped => unsafe { op_pin.operate(optr.cast()) },
             OpType::Blocking => loop {
-                if self.push_blocking(user_data)? {
+                if self.push_blocking(user_data) {
                     break Poll::Pending;
                 } else {
                     // It's OK to wait forever, because any blocking task will notify the IOCP after
@@ -267,17 +267,16 @@ impl Driver {
         }
     }
 
-    fn push_blocking(&mut self, user_data: usize) -> io::Result<bool> {
+    fn push_blocking(&mut self, user_data: usize) -> bool {
         let port = self.port.handle();
-        Ok(self
-            .pool
+        self.pool
             .dispatch(move || {
                 let mut op = unsafe { Key::<dyn OpCode>::new_unchecked(user_data) };
                 let optr = op.as_mut_ptr();
                 let res = op.operate_blocking();
                 port.post(res, optr).ok();
             })
-            .is_ok())
+            .is_ok()
     }
 
     fn create_entry(
@@ -322,11 +321,8 @@ impl Driver {
         Ok(())
     }
 
-    pub fn handle(&self) -> io::Result<NotifyHandle> {
-        Ok(NotifyHandle::new(
-            self.port.handle(),
-            self.notify_overlapped.clone(),
-        ))
+    pub fn handle(&self) -> NotifyHandle {
+        NotifyHandle::new(self.port.handle(), self.notify_overlapped.clone())
     }
 }
 
