@@ -9,8 +9,6 @@ use std::{
 
 use futures_util::{FutureExt, select};
 
-use crate::Runtime;
-
 /// Waits until `duration` has elapsed.
 ///
 /// Equivalent to [`sleep_until(Instant::now() + duration)`](sleep_until). An
@@ -55,7 +53,7 @@ pub async fn sleep(duration: Duration) {
 /// # })
 /// ```
 pub async fn sleep_until(deadline: Instant) {
-    Runtime::with_current(|r| r.create_timer(deadline)).await
+    crate::runtime::create_timer(deadline).await
 }
 
 /// Error returned by [`timeout`] or [`timeout_at`].
