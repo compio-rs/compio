@@ -58,8 +58,10 @@ windows-sys = { workspace = true, features = [
 # Linux specific dependencies
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = { version = "0.7.0", optional = true }
+io_uring_buf_ring = { version = "0.2.0", optional = true }
 polling = { version = "3.3.0", optional = true }
 paste = { workspace = true }
+slab = { workspace = true, optional = true }
 
 # Other platform dependencies
 [target.'cfg(all(not(target_os = "linux"), unix))'.dependencies]
@@ -75,11 +77,13 @@ cfg_aliases = { workspace = true }
 
 [features]
 default = ["io-uring"]
+io-uring = ["dep:io-uring", "dep:io_uring_buf_ring", "dep:slab"]
 polling = ["dep:polling"]
 
 io-uring-sqe128 = []
 io-uring-cqe32 = []
 io-uring-socket = []
+io-uring-buf-ring = []
 
 iocp-global = []
 iocp-wait-packet = []

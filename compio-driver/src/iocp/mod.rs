@@ -14,7 +14,7 @@ use std::{
 use compio_log::{instrument, trace};
 use windows_sys::Win32::{Foundation::ERROR_CANCELLED, System::IO::OVERLAPPED};
 
-use crate::{AsyncifyPool, Entry, Key, ProactorBuilder};
+use crate::{AsyncifyPool, BufferPool, Entry, Key, ProactorBuilder};
 
 pub(crate) mod op;
 
@@ -323,6 +323,21 @@ impl Driver {
 
     pub fn handle(&self) -> NotifyHandle {
         NotifyHandle::new(self.port.handle(), self.notify_overlapped.clone())
+    }
+
+    pub fn create_buffer_pool(
+        &mut self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<BufferPool> {
+        Ok(BufferPool::new(buffer_len, buffer_size))
+    }
+
+    /// # Safety
+    ///
+    /// caller must make sure release the buffer pool with correct driver
+    pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
+        Ok(())
     }
 }
 
