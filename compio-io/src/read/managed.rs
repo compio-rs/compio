@@ -1,4 +1,6 @@
-use std::{io::Cursor, ops::Deref};
+use std::io::Cursor;
+
+use compio_buf::IoBuf;
 
 use crate::IoResult;
 
@@ -9,7 +11,7 @@ pub trait AsyncReadManaged {
     /// Buffer pool type
     type BufferPool;
     /// Filled buffer type
-    type Buffer: Deref<Target = [u8]>;
+    type Buffer: IoBuf;
 
     /// Read some bytes from this source with [`BufferPool`] and return
     /// a [`Buffer`].
@@ -30,7 +32,7 @@ pub trait AsyncReadManagedAt {
     /// Buffer pool type
     type BufferPool;
     /// Filled buffer type
-    type Buffer: Deref<Target = [u8]>;
+    type Buffer: IoBuf;
 
     /// Read some bytes from this source at position with [`BufferPool`] and
     /// return a [`Buffer`].
@@ -59,7 +61,7 @@ impl<A: AsyncReadManagedAt> AsyncReadManaged for Cursor<A> {
             .get_ref()
             .read_managed_at(pos, buffer_pool, len)
             .await?;
-        self.set_position(pos + buf.len() as u64);
+        self.set_position(pos + buf.buf_len() as u64);
         Ok(buf)
     }
 }
