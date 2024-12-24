@@ -57,7 +57,7 @@ impl SignalFd {
     fn new(sig: i32) -> io::Result<Self> {
         let set = register_signal(sig)?;
         let mut flag = libc::SFD_CLOEXEC;
-        if cfg!(not(feature = "io-uring")) {
+        if cfg!(not(feature = "io-uring")) || compio_driver::DriverType::is_polling() {
             flag |= libc::SFD_NONBLOCK;
         }
         let fd = syscall!(libc::signalfd(-1, &set, flag))?;

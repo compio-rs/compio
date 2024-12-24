@@ -77,17 +77,15 @@ macro_rules! loop_read_vectored {
 
         loop {
             let len = $iter.buf_capacity();
-            if len == 0 {
-                continue;
+            if len > 0 {
+                match $read_expr.await {
+                    BufResult(Ok(()), ret) => {
+                        $iter = ret;
+                        $tracker += len as $tracker_ty;
+                    }
+                    BufResult(Err(e), $iter) => return BufResult(Err(e), $iter.into_inner()),
+                };
             }
-
-            match $read_expr.await {
-                BufResult(Ok(()), ret) => {
-                    $iter = ret;
-                    $tracker += len as $tracker_ty;
-                }
-                BufResult(Err(e), $iter) => return BufResult(Err(e), $iter.into_inner()),
-            };
 
             match $iter.next() {
                 Ok(next) => $iter = next,
@@ -95,44 +93,23 @@ macro_rules! loop_read_vectored {
             }
         }
     }};
-    (
-        $buf:ident,
-        $len:ident,
-        $tracker:ident :
-        $tracker_ty:ty,
-        $res:ident,
-        $iter:ident,loop
-        $read_expr:expr,break
-        $judge_expr:expr
-    ) => {{
+    ($buf:ident, $iter:ident, $read_expr:expr) => {{
         use ::compio_buf::OwnedIterator;
 
         let mut $iter = match $buf.owned_iter() {
             Ok(buf) => buf,
             Err(buf) => return BufResult(Ok(0), buf),
         };
-        let mut $tracker: $tracker_ty = 0;
 
         loop {
-            let $len = $iter.buf_capacity();
-            if $len == 0 {
-                continue;
+            let len = $iter.buf_capacity();
+            if len > 0 {
+                return $read_expr.await.into_inner();
             }
-
-            match $read_expr.await {
-                BufResult(Ok($res), ret) => {
-                    $iter = ret;
-                    $tracker += $res as $tracker_ty;
-                    if let Some(res) = $judge_expr {
-                        return BufResult(res, $iter.into_inner());
-                    }
-                }
-                BufResult(Err(e), $iter) => return BufResult(Err(e), $iter.into_inner()),
-            };
 
             match $iter.next() {
                 Ok(next) => $iter = next,
-                Err(buf) => return BufResult(Ok($tracker as usize), buf),
+                Err(buf) => return BufResult(Ok(0), buf),
             }
         }
     }};

@@ -24,7 +24,7 @@ use windows_sys::Win32::{
     Foundation::{
         ERROR_BAD_COMMAND, ERROR_BROKEN_PIPE, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_NO_DATA,
         ERROR_PIPE_CONNECTED, ERROR_PIPE_NOT_CONNECTED, FACILITY_NTWIN32, INVALID_HANDLE_VALUE,
-        NTSTATUS, RtlNtStatusToDosError, STATUS_PENDING, STATUS_SUCCESS,
+        NTSTATUS, RtlNtStatusToDosError, STATUS_SUCCESS,
     },
     Storage::FileSystem::SetFileCompletionNotificationModes,
     System::{
@@ -167,13 +167,14 @@ impl CompletionPort {
                     return None;
                 }
             }
-            let res = if matches!(
-                overlapped.base.Internal as NTSTATUS,
-                STATUS_SUCCESS | STATUS_PENDING
-            ) {
+            // TODO: *mut OVERLAPPED is *mut IO_STATUS_BLOCK internally, but
+            // OVERLAPPED::Internal is not the same size as
+            // IO_STATUS_BLOCK::Status.
+            let status = overlapped.base.Internal as NTSTATUS;
+            let res = if status >= 0 {
                 Ok(overlapped.base.InternalHigh)
             } else {
-                let error = unsafe { RtlNtStatusToDosError(overlapped.base.Internal as _) };
+                let error = unsafe { RtlNtStatusToDosError(status) };
                 match error {
                     ERROR_IO_INCOMPLETE
                     | ERROR_HANDLE_EOF

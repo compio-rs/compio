@@ -70,13 +70,12 @@ impl TimerRuntime {
             .unwrap_or_default()
     }
 
-    pub fn insert(&mut self, mut delay: Duration) -> Option<usize> {
-        if delay.is_zero() {
+    pub fn insert(&mut self, instant: Instant) -> Option<usize> {
+        let delay = instant - self.time;
+        if delay <= self.time.elapsed() {
             return None;
         }
-        let elapsed = self.time.elapsed();
         let key = self.tasks.insert(FutureState::Active(None));
-        delay += elapsed;
         let entry = TimerEntry { key, delay };
         self.wheel.push(Reverse(entry));
         Some(key)
@@ -153,8 +152,9 @@ fn timer_min_timeout() {
     let mut runtime = TimerRuntime::new();
     assert_eq!(runtime.min_timeout(), None);
 
-    runtime.insert(Duration::from_secs(1));
-    runtime.insert(Duration::from_secs(10));
+    let now = Instant::now();
+    runtime.insert(now + Duration::from_secs(1));
+    runtime.insert(now + Duration::from_secs(10));
     let min_timeout = runtime.min_timeout().unwrap().as_secs_f32();
 
     assert!(min_timeout < 1.);

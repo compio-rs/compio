@@ -150,6 +150,16 @@ fn writev() {
 
         assert_eq!(len, 10);
         assert_eq!(dst.into_inner(), [1, 1, 4, 5, 1, 4, 1, 9, 1, 9]);
+
+        let mut dst = vec![];
+        let (len, _) = dst
+            .write_vectored([vec![1, 1, 4], vec![5, 1, 4]])
+            .await
+            .unwrap();
+
+        assert_eq!(len, 6);
+        assert_eq!(dst.len(), 6);
+        assert_eq!(dst, [1, 1, 4, 5, 1, 4]);
     })
 }
 
@@ -198,6 +208,16 @@ fn writev_at() {
 
         assert_eq!(len, 3);
         assert_eq!(dst, [0, 0, 1, 1, 4]);
+
+        let mut dst = vec![0u8; 5];
+        let (len, _) = dst
+            .write_vectored_at([vec![1, 1, 4], vec![5, 1, 4]], 2)
+            .await
+            .unwrap();
+
+        assert_eq!(len, 6);
+        assert_eq!(dst.len(), 8);
+        assert_eq!(dst, [0, 0, 1, 1, 4, 5, 1, 4]);
     })
 }
 

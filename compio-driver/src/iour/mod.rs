@@ -258,7 +258,7 @@ impl Driver {
                 Poll::Pending
             }
             OpEntry::Blocking => loop {
-                if self.push_blocking(user_data)? {
+                if self.push_blocking(user_data) {
                     break Poll::Pending;
                 } else {
                     self.poll_blocking();
@@ -267,11 +267,10 @@ impl Driver {
         }
     }
 
-    fn push_blocking(&mut self, user_data: usize) -> io::Result<bool> {
-        let handle = self.handle()?;
+    fn push_blocking(&mut self, user_data: usize) -> bool {
+        let handle = self.handle();
         let completed = self.pool_completed.clone();
-        let is_ok = self
-            .pool
+        self.pool
             .dispatch(move || {
                 let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
                 let op_pin = op.as_op_pin();
@@ -279,8 +278,7 @@ impl Driver {
                 completed.push(Entry::new(user_data, res));
                 handle.notify().ok();
             })
-            .is_ok();
-        Ok(is_ok)
+            .is_ok()
     }
 
     pub unsafe fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
@@ -296,7 +294,7 @@ impl Driver {
         Ok(())
     }
 
-    pub fn handle(&self) -> io::Result<NotifyHandle> {
+    pub fn handle(&self) -> NotifyHandle {
         self.notifier.handle()
     }
 
@@ -433,8 +431,8 @@ impl Notifier {
         }
     }
 
-    pub fn handle(&self) -> io::Result<NotifyHandle> {
-        Ok(NotifyHandle::new(self.fd.clone()))
+    pub fn handle(&self) -> NotifyHandle {
+        NotifyHandle::new(self.fd.clone())
     }
 }
 
