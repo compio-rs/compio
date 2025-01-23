@@ -210,7 +210,7 @@ impl Runtime {
     /// The task will not be cancelled even if the future is dropped.
     pub fn spawn_blocking<T: Send + 'static>(
         &self,
-        f: impl (FnOnce() -> T) + Send + Sync + 'static,
+        f: impl (FnOnce() -> T) + Send + 'static,
     ) -> JoinHandle<T> {
         let op = Asyncify::new(move || {
             let res = std::panic::catch_unwind(AssertUnwindSafe(f));
@@ -467,7 +467,7 @@ pub fn spawn<F: Future + 'static>(future: F) -> JoinHandle<F::Output> {
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::with_current`].
 pub fn spawn_blocking<T: Send + 'static>(
-    f: impl (FnOnce() -> T) + Send + Sync + 'static,
+    f: impl (FnOnce() -> T) + Send + 'static,
 ) -> JoinHandle<T> {
     Runtime::with_current(|r| r.spawn_blocking(f))
 }

@@ -22,7 +22,7 @@ use crate::{OpEntry, SharedFd, op::*, syscall};
 
 impl<
     D: std::marker::Send + 'static,
-    F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + 'static,
+    F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + 'static,
 > OpCode for Asyncify<F, D>
 {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
