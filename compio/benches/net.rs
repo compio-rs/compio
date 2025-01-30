@@ -1,7 +1,7 @@
 use std::{net::Ipv4Addr, rc::Rc, time::Instant};
 
 use criterion::{Bencher, Criterion, Throughput, criterion_group, criterion_main};
-use rand::{RngCore, thread_rng};
+use rand::{RngCore, rng};
 
 #[cfg(target_os = "linux")]
 mod monoio_wrap;
@@ -284,7 +284,7 @@ fn echo_monoio_unix(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
 }
 
 fn echo(c: &mut Criterion) {
-    let mut rng = thread_rng();
+    let mut rng = rng();
 
     let mut content = [0u8; BUFFER_SIZE];
     rng.fill_bytes(&mut content);
