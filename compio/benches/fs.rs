@@ -9,7 +9,7 @@ use compio_buf::{IntoInner, IoBuf};
 use compio_io::{AsyncReadAt, AsyncWriteAt};
 use criterion::{Bencher, Criterion, Throughput, criterion_group, criterion_main};
 use futures_util::{StreamExt, stream::FuturesUnordered};
-use rand::{Rng, RngCore, thread_rng};
+use rand::{Rng, RngCore, rng};
 use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
@@ -202,7 +202,7 @@ fn read_all_monoio(b: &mut Bencher, (path, len): &(&Path, u64)) {
 fn read(c: &mut Criterion) {
     const FILE_SIZE: u64 = 1024;
 
-    let mut rng = thread_rng();
+    let mut rng = rng();
 
     let mut file = NamedTempFile::new().unwrap();
     for _i in 0..FILE_SIZE {
@@ -215,7 +215,7 @@ fn read(c: &mut Criterion) {
 
     let mut offsets = vec![];
     for _i in 0..64 {
-        let offset = rng.gen_range(0u64..FILE_SIZE) * BUFFER_SIZE as u64;
+        let offset = rng.random_range(0u64..FILE_SIZE) * BUFFER_SIZE as u64;
         offsets.push(offset);
     }
 
@@ -512,7 +512,7 @@ fn write(c: &mut Criterion) {
     const FILE_SIZE: u64 = 1024;
     const WRITE_FILE_SIZE: u64 = 16;
 
-    let mut rng = thread_rng();
+    let mut rng = rng();
 
     let mut file = NamedTempFile::new().unwrap();
     for _i in 0..FILE_SIZE {
@@ -528,7 +528,7 @@ fn write(c: &mut Criterion) {
 
     let mut offsets = vec![];
     for _i in 0..64 {
-        let offset = rng.gen_range(0u64..FILE_SIZE) * BUFFER_SIZE as u64;
+        let offset = rng.random_range(0u64..FILE_SIZE) * BUFFER_SIZE as u64;
         offsets.push(offset);
     }
 

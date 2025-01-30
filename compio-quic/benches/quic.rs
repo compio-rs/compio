@@ -8,7 +8,7 @@ use std::{
 use compio_buf::bytes::Bytes;
 use criterion::{Bencher, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use futures_util::{StreamExt, stream::FuturesUnordered};
-use rand::{RngCore, thread_rng};
+use rand::{RngCore, rng};
 
 criterion_group!(quic, echo);
 criterion_main!(quic);
@@ -168,7 +168,7 @@ const DATA_SIZES: &[usize] = &[1, 10, 1024, 1200, 1024 * 16, 1024 * 128];
 const STREAMS: &[usize] = &[1, 10, 100];
 
 fn echo(c: &mut Criterion) {
-    let mut rng = thread_rng();
+    let mut rng = rng();
 
     let mut data = vec![0u8; *DATA_SIZES.last().unwrap()];
     rng.fill_bytes(&mut data);
