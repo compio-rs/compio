@@ -2,6 +2,7 @@ use std::{
     hint::black_box,
     io::{Read, Seek, SeekFrom, Write},
     path::Path,
+    sync::Arc,
     time::Instant,
 };
 
@@ -57,6 +58,41 @@ fn read_tokio(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
             for &offset in *offsets {
                 file.seek(SeekFrom::Start(offset)).await.unwrap();
                 _ = file.read(&mut buffer).await.unwrap();
+            }
+            black_box(buffer);
+        }
+        start.elapsed()
+    })
+}
+
+fn read_tokio_std(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    b.to_async(&runtime).iter_custom(|iter| async move {
+        let file = Arc::new(std::fs::File::open(path).unwrap());
+
+        let start = Instant::now();
+        for _i in 0..iter {
+            let mut buffer = [0u8; BUFFER_SIZE];
+            for &offset in *offsets {
+                let file = file.clone();
+                buffer = tokio::task::spawn_blocking(move || {
+                    #[cfg(windows)]
+                    {
+                        use std::os::windows::fs::FileExt;
+                        file.seek_read(&mut buffer, offset).unwrap();
+                    }
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::FileExt;
+                        file.read_at(&mut buffer, offset).unwrap();
+                    }
+                    buffer
+                })
+                .await
+                .unwrap();
             }
             black_box(buffer);
         }
@@ -160,6 +196,34 @@ fn read_all_tokio(b: &mut Bencher, (path, len): &(&Path, u64)) {
     })
 }
 
+fn read_all_tokio_std(b: &mut Bencher, (path, len): &(&Path, u64)) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    b.to_async(&runtime).iter_custom(|iter| async move {
+        let mut buffer = [0u8; BUFFER_SIZE];
+
+        let start = Instant::now();
+        for _i in 0..iter {
+            let mut file = std::fs::File::open(path).unwrap();
+            let len = *len;
+            buffer = tokio::task::spawn_blocking(move || {
+                let mut read_len = 0;
+                file.seek(SeekFrom::Start(0)).unwrap();
+                while read_len < len {
+                    let read = file.read(&mut buffer).unwrap();
+                    read_len += read as u64;
+                }
+                buffer
+            })
+            .await
+            .unwrap();
+        }
+        start.elapsed()
+    })
+}
+
 fn read_all_compio(b: &mut Bencher, (path, len): &(&Path, u64)) {
     let runtime = compio::runtime::Runtime::new().unwrap();
     b.to_async(&runtime).iter_custom(|iter| async move {
@@ -223,6 +287,11 @@ fn read(c: &mut Criterion) {
 
     group.bench_with_input::<_, _, (&Path, &[u64])>("std", &(&path, &offsets), read_std);
     group.bench_with_input::<_, _, (&Path, &[u64])>("tokio", &(&path, &offsets), read_tokio);
+    group.bench_with_input::<_, _, (&Path, &[u64])>(
+        "tokio_std",
+        &(&path, &offsets),
+        read_tokio_std,
+    );
     group.bench_with_input::<_, _, (&Path, &[u64])>("compio", &(&path, &offsets), read_compio);
     group.bench_with_input::<_, _, (&Path, &[u64])>(
         "compio-join",
@@ -239,6 +308,11 @@ fn read(c: &mut Criterion) {
 
     group.bench_with_input::<_, _, (&Path, u64)>("std", &(&path, FILE_SIZE), read_all_std);
     group.bench_with_input::<_, _, (&Path, u64)>("tokio", &(&path, FILE_SIZE), read_all_tokio);
+    group.bench_with_input::<_, _, (&Path, u64)>(
+        "tokio_std",
+        &(&path, FILE_SIZE),
+        read_all_tokio_std,
+    );
     group.bench_with_input::<_, _, (&Path, u64)>("compio", &(&path, FILE_SIZE), read_all_compio);
     #[cfg(target_os = "linux")]
     group.bench_with_input::<_, _, (&Path, u64)>("monoio", &(&path, FILE_SIZE), read_all_monoio);
@@ -282,6 +356,43 @@ fn write_tokio(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64], &[u8]
                 file.seek(SeekFrom::Start(offset)).await.unwrap();
                 _ = file.write(content).await.unwrap();
             }
+        }
+        start.elapsed()
+    })
+}
+
+fn write_tokio_std(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64], &[u8])) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    b.to_async(&runtime).iter_custom(|iter| async move {
+        let file = Arc::new(std::fs::OpenOptions::new().write(true).open(path).unwrap());
+        let offsets = Arc::new(offsets.to_vec());
+        let content = Arc::new(content.to_vec());
+
+        let start = Instant::now();
+        for _i in 0..iter {
+            let file = file.clone();
+            let offsets = offsets.clone();
+            let content = content.clone();
+
+            tokio::task::spawn_blocking(move || {
+                for offset in offsets.iter() {
+                    #[cfg(windows)]
+                    {
+                        use std::os::windows::fs::FileExt;
+                        file.seek_write(content, offset).unwrap();
+                    }
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::FileExt;
+                        file.write_at(&content, *offset).unwrap();
+                    }
+                }
+            })
+            .await
+            .unwrap();
         }
         start.elapsed()
     })
@@ -443,6 +554,37 @@ fn write_all_tokio(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
     })
 }
 
+fn write_all_tokio_std(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    b.to_async(&runtime).iter_custom(|iter| async move {
+        let content = Arc::new(content.to_vec());
+        let mut file = std::fs::File::create(path).unwrap();
+
+        let start = Instant::now();
+        for _i in 0..iter {
+            let content = content.clone();
+            file = tokio::task::spawn_blocking(move || {
+                file.seek(SeekFrom::Start(0)).unwrap();
+                let mut write_len = 0;
+                let total_len = content.len();
+                while write_len < total_len {
+                    let write = file
+                        .write(&content[write_len..(write_len + BUFFER_SIZE).min(total_len)])
+                        .unwrap();
+                    write_len += write;
+                }
+                file
+            })
+            .await
+            .unwrap();
+        }
+        start.elapsed()
+    })
+}
+
 fn write_all_compio(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
     let runtime = compio::runtime::Runtime::new().unwrap();
     let content = content.to_vec();
@@ -552,6 +694,11 @@ fn write(c: &mut Criterion) {
         write_tokio,
     );
     group.bench_with_input::<_, _, (&Path, &[u64], &[u8])>(
+        "tokio_std",
+        &(&path, &offsets, &single_content),
+        write_tokio_std,
+    );
+    group.bench_with_input::<_, _, (&Path, &[u64], &[u8])>(
         "compio",
         &(&path, &offsets, &single_content),
         write_compio,
@@ -581,6 +728,11 @@ fn write(c: &mut Criterion) {
 
     group.bench_with_input::<_, _, (&Path, &[u8])>("std", &(&path, &content), write_all_std);
     group.bench_with_input::<_, _, (&Path, &[u8])>("tokio", &(&path, &content), write_all_tokio);
+    group.bench_with_input::<_, _, (&Path, &[u8])>(
+        "tokio_std",
+        &(&path, &content),
+        write_all_tokio_std,
+    );
     group.bench_with_input::<_, _, (&Path, &[u8])>("compio", &(&path, &content), write_all_compio);
     #[cfg(target_os = "linux")]
     group.bench_with_input::<_, _, (&Path, &[u8])>("monoio", &(&path, &content), write_all_monoio);
