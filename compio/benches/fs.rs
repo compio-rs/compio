@@ -382,7 +382,7 @@ fn write_tokio_std(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64], &
                     #[cfg(windows)]
                     {
                         use std::os::windows::fs::FileExt;
-                        file.seek_write(content, offset).unwrap();
+                        file.seek_write(&content, *offset).unwrap();
                     }
                     #[cfg(unix)]
                     {
