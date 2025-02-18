@@ -14,5 +14,7 @@ fn main() {
         freebsd: { target_os = "freebsd" },
         solarish: { any(target_os = "illumos", target_os = "solaris") },
         aio: { any(freebsd, solarish) },
+        buf_ring: { all(target_os = "linux", feature = "io-uring", feature = "io-uring-buf-ring") },
+        fusion: { all(target_os = "linux", feature = "io-uring", feature = "polling") }
     }
 }
