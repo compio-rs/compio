@@ -23,7 +23,7 @@ use crate::PollFd;
 
 #[derive(Debug, Clone)]
 pub struct Socket {
-    socket: Attacher<Socket2>,
+    pub(crate) socket: Attacher<Socket2>,
 }
 
 impl Socket {
