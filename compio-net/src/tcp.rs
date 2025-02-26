@@ -231,6 +231,25 @@ impl TcpStream {
     pub fn into_poll_fd(self) -> io::Result<PollFd<Socket2>> {
         self.inner.into_poll_fd()
     }
+
+    /// Gets the value of the `TCP_NODELAY` option on this socket.
+    ///
+    /// For more information about this option, see
+    /// [`TcpStream::set_nodelay`].
+    pub fn nodelay(&self) -> io::Result<bool> {
+        self.inner.socket.nodelay()
+    }
+
+    /// Sets the value of the TCP_NODELAY option on this socket.
+    ///
+    /// If set, this option disables the Nagle algorithm. This means
+    /// that segments are always sent as soon as possible, even if
+    /// there is only a small amount of data. When not set, data is
+    /// buffered until there is a sufficient amount to send out,
+    /// thereby avoiding the frequent sending of small packets.
+    pub fn set_nodelay(&self, nodelay: bool) -> io::Result<()> {
+        self.inner.socket.set_nodelay(nodelay)
+    }
 }
 
 impl AsyncRead for TcpStream {
