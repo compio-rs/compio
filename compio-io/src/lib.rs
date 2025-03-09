@@ -109,6 +109,7 @@ pub mod compat;
 mod read;
 mod split;
 pub mod util;
+mod vectored;
 mod write;
 
 pub(crate) type IoResult<T> = std::io::Result<T>;
