@@ -239,6 +239,7 @@ impl EndpointInner {
         self.respond(resp_buf, transmit);
     }
 
+    #[allow(clippy::result_large_err)]
     pub(crate) fn retry(
         &self,
         incoming: quinn_proto::Incoming,

@@ -58,6 +58,7 @@ impl Incoming {
     /// address validation.
     ///
     /// Errors if `remote_address_validated()` is true.
+    #[allow(clippy::result_large_err)]
     pub fn retry(mut self) -> Result<(), RetryError> {
         let inner = self.0.take().unwrap();
         inner

@@ -129,7 +129,7 @@ async fn handshake_native_tls<S: AsyncRead + AsyncWrite>(
                 return Ok(TlsStream::from(s));
             }
             Err(e) => match e {
-                HandshakeError::Failure(e) => return Err(io::Error::new(io::ErrorKind::Other, e)),
+                HandshakeError::Failure(e) => return Err(io::Error::other(e)),
                 HandshakeError::WouldBlock(mut mid_stream) => {
                     if mid_stream.get_mut().flush_write_buf().await? == 0 {
                         mid_stream.get_mut().fill_read_buf().await?;
@@ -157,7 +157,7 @@ where
                 return Ok(s);
             }
             Err(e) => match e {
-                HandshakeError::Rustls(e) => return Err(io::Error::new(io::ErrorKind::Other, e)),
+                HandshakeError::Rustls(e) => return Err(io::Error::other(e)),
                 HandshakeError::System(e) => return Err(e),
                 HandshakeError::WouldBlock(mut mid_stream) => {
                     if mid_stream.get_mut().flush_write_buf().await? == 0 {

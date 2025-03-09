@@ -97,9 +97,7 @@ impl<S: io::Read> TlsStream<S> {
         loop {
             while self.conn.wants_read() {
                 self.conn.read_tls(&mut self.inner)?;
-                self.conn
-                    .process_new_packets()
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                self.conn.process_new_packets().map_err(io::Error::other)?;
             }
 
             match f(self.conn.reader()) {
