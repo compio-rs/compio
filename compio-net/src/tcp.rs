@@ -56,8 +56,10 @@ impl TcpListener {
     /// to this listener.
     pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
         super::each_addr(addr, |addr| async move {
-            let socket =
-                Socket::bind(&SockAddr::from(addr), Type::STREAM, Some(Protocol::TCP)).await?;
+            let sa = SockAddr::from(addr);
+            let socket = Socket::new(sa.domain(), Type::STREAM, Some(Protocol::TCP)).await?;
+            socket.socket.set_reuse_address(true)?;
+            socket.socket.bind(&sa)?;
             socket.listen(128)?;
             Ok(Self { inner: socket })
         })
