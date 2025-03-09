@@ -203,9 +203,9 @@ impl Dispatcher {
         }) {
             std::thread::spawn(f.0);
         }
-        let results = rx.await.map_err(|_| {
-            io::Error::new(io::ErrorKind::Other, "the join task cancelled unexpectedly")
-        })?;
+        let results = rx
+            .await
+            .map_err(|_| io::Error::other("the join task cancelled unexpectedly"))?;
         for res in results {
             res.unwrap_or_else(|e| resume_unwind(e));
         }
