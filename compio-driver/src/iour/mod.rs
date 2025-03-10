@@ -26,8 +26,10 @@ use io_uring::{
     types::{Fd, SubmitArgs, Timespec},
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
+#[cfg(buf_ring)]
+use slab::Slab;
 
-use crate::{AsyncifyPool, Entry, Key, ProactorBuilder, syscall};
+use crate::{AsyncifyPool, BufferPool, Entry, Key, ProactorBuilder, syscall};
 
 pub(crate) mod op;
 
@@ -82,6 +84,8 @@ pub(crate) struct Driver {
     notifier: Notifier,
     pool: AsyncifyPool,
     pool_completed: Arc<SegQueue<Entry>>,
+    #[cfg(buf_ring)]
+    buffer_group_ids: Slab<()>,
 }
 
 impl Driver {
@@ -115,6 +119,8 @@ impl Driver {
             notifier,
             pool: builder.create_or_get_thread_pool(),
             pool_completed: Arc::new(SegQueue::new()),
+            #[cfg(buf_ring)]
+            buffer_group_ids: Slab::new(),
         })
     }
 
@@ -290,6 +296,73 @@ impl Driver {
 
     pub fn handle(&self) -> NotifyHandle {
         self.notifier.handle()
+    }
+
+    #[cfg(buf_ring)]
+    pub fn create_buffer_pool(
+        &mut self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<BufferPool> {
+        let buffer_group = self.buffer_group_ids.insert(());
+        if buffer_group > u16::MAX as usize {
+            self.buffer_group_ids.remove(buffer_group);
+
+            return Err(io::Error::new(
+                io::ErrorKind::OutOfMemory,
+                "too many buffer pool allocated",
+            ));
+        }
+
+        let buf_ring = io_uring_buf_ring::IoUringBufRing::new(
+            &self.inner,
+            buffer_len,
+            buffer_group as _,
+            buffer_size,
+        )?;
+
+        #[cfg(fusion)]
+        {
+            Ok(BufferPool::new_io_uring(crate::IoUringBufferPool::new(
+                buf_ring,
+            )))
+        }
+        #[cfg(not(fusion))]
+        {
+            Ok(BufferPool::new(buf_ring))
+        }
+    }
+
+    #[cfg(not(buf_ring))]
+    pub fn create_buffer_pool(
+        &mut self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<BufferPool> {
+        Ok(BufferPool::new(buffer_len, buffer_size))
+    }
+
+    /// # Safety
+    ///
+    /// caller must make sure release the buffer pool with correct driver
+    #[cfg(buf_ring)]
+    pub unsafe fn release_buffer_pool(&mut self, buffer_pool: BufferPool) -> io::Result<()> {
+        #[cfg(fusion)]
+        let buffer_pool = buffer_pool.into_io_uring();
+
+        let buffer_group = buffer_pool.buffer_group();
+        buffer_pool.into_inner().release(&self.inner)?;
+        self.buffer_group_ids.remove(buffer_group as _);
+
+        Ok(())
+    }
+
+    /// # Safety
+    ///
+    /// caller must make sure release the buffer pool with correct driver
+    #[cfg(not(buf_ring))]
+    pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
+        Ok(())
     }
 }
 
