@@ -51,7 +51,7 @@ impl BufferPool {
 
     pub(crate) fn get_buffer(&self, len: usize) -> io::Result<OwnedBuffer> {
         let buffer = self.inner.buffers.borrow_mut().pop_front().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::Other, "buffer ring has no available buffer")
+            io::Error::other("buffer ring has no available buffer")
         })?;
         let len = if len == 0 {
             buffer.capacity()
