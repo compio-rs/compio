@@ -55,7 +55,9 @@ impl BufferPool {
     pub(crate) fn reuse_buffer(&self, flags: u32) {
         // It ignores invalid flags.
         if let Some(buffer_id) = buffer_select(flags) {
-            self.buf_ring.get_buf(buffer_id, 0).map(BorrowedBuffer);
+            // Safety: 0 is always valid length. We just want to get the buffer once and
+            // return it immediately.
+            unsafe { self.buf_ring.get_buf(buffer_id, 0) };
         }
     }
 }
