@@ -103,6 +103,7 @@ op!(<T: IoVectoredBuf, S: AsRawFd> SendToVectored(fd: SharedFd<S>, buffer: T, ad
 op!(<S: AsRawFd> FileStat(fd: SharedFd<S>));
 op!(<> PathStat(path: CString, follow_symlink: bool));
 
+#[cfg(buf_ring)]
 macro_rules! mop {
     (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? )) => {
         ::paste::paste!{

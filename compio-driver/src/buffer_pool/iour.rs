@@ -5,6 +5,7 @@
 use std::{
     borrow::{Borrow, BorrowMut},
     fmt::{Debug, Formatter},
+    io,
     ops::{Deref, DerefMut},
 };
 
@@ -44,12 +45,18 @@ impl BufferPool {
         &self,
         flags: u32,
         available_len: usize,
-    ) -> Option<BorrowedBuffer> {
-        let buffer_id = buffer_select(flags)?;
+    ) -> io::Result<BorrowedBuffer> {
+        let buffer_id = buffer_select(flags).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("flags {flags} is invalid"),
+            )
+        })?;
 
         self.buf_ring
             .get_buf(buffer_id, available_len)
             .map(BorrowedBuffer)
+            .ok_or_else(|| io::Error::other(format!("cannot find buffer {buffer_id}")))
     }
 
     pub(crate) fn reuse_buffer(&self, flags: u32) {

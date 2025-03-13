@@ -618,7 +618,7 @@ mod buf_ring {
     }
 
     impl<S> ReadManagedAt<S> {
-        /// Create [`ReadAtBufferPool`].
+        /// Create [`ReadManagedAt`].
         pub fn new(
             fd: SharedFd<S>,
             offset: u64,
@@ -665,15 +665,8 @@ mod buf_ring {
             #[cfg(fusion)]
             let buffer_pool = buffer_pool.as_io_uring();
             let result = result.inspect_err(|_| buffer_pool.reuse_buffer(flags))?;
-            let res = unsafe {
-                // Safety: result is valid
-                buffer_pool.get_buffer(flags, result).ok_or_else(|| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        format!("flags {flags} is invalid"),
-                    )
-                })
-            };
+            // Safety: result is valid
+            let res = unsafe { buffer_pool.get_buffer(flags, result) };
             #[cfg(fusion)]
             let res = res.map(BorrowedBuffer::new_io_uring);
             res
@@ -728,15 +721,8 @@ mod buf_ring {
             #[cfg(fusion)]
             let buffer_pool = buffer_pool.as_io_uring();
             let result = result.inspect_err(|_| buffer_pool.reuse_buffer(flags))?;
-            let res = unsafe {
-                // Safety: result is valid
-                buffer_pool.get_buffer(flags, result).ok_or_else(|| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        format!("flags {flags} is invalid"),
-                    )
-                })
-            };
+            // Safety: result is valid
+            let res = unsafe { buffer_pool.get_buffer(flags, result) };
             #[cfg(fusion)]
             let res = res.map(BorrowedBuffer::new_io_uring);
             res
