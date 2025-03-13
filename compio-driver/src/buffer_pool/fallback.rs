@@ -1,3 +1,8 @@
+//! The fallback buffer pool. It is backed by a [`VecDeque`] of [`Vec<u8>`].
+//! An [`OwnedBuffer`] is selected when the op is created. It keeps a strong
+//! reference to the buffer pool. The [`BorrowedBuffer`] is created after the op
+//! returns successfully.
+
 use std::{
     borrow::{Borrow, BorrowMut},
     cell::RefCell,
@@ -38,6 +43,7 @@ impl Debug for BufferPool {
 
 impl BufferPool {
     pub(crate) fn new(buffer_len: u16, buffer_size: usize) -> Self {
+        // To match the behavior of io-uring, extend the number of buffers.
         let buffers = (0..buffer_len.next_power_of_two())
             .map(|_| Vec::with_capacity(buffer_size))
             .collect();
@@ -49,10 +55,14 @@ impl BufferPool {
         }
     }
 
+    /// Select an [`OwnedBuffer`] when the op creates.
     pub(crate) fn get_buffer(&self, len: usize) -> io::Result<OwnedBuffer> {
-        let buffer = self.inner.buffers.borrow_mut().pop_front().ok_or_else(|| {
-            io::Error::other("buffer ring has no available buffer")
-        })?;
+        let buffer = self
+            .inner
+            .buffers
+            .borrow_mut()
+            .pop_front()
+            .ok_or_else(|| io::Error::other("buffer ring has no available buffer"))?;
         let len = if len == 0 {
             buffer.capacity()
         } else {
@@ -61,11 +71,13 @@ impl BufferPool {
         Ok(OwnedBuffer::new(buffer.slice(..len), self.inner.clone()))
     }
 
+    /// Return the buffer to the pool.
     pub(crate) fn add_buffer(&self, buffer: Vec<u8>) {
         self.inner.add_buffer(buffer);
     }
 
-    /// Safety: `len` should be valid
+    /// ## Safety
+    /// * `len` should be valid.
     pub(crate) unsafe fn create_proxy(&self, mut slice: OwnedBuffer, len: usize) -> BorrowedBuffer {
         unsafe {
             slice.set_buf_init(len);
@@ -76,14 +88,14 @@ impl BufferPool {
 
 pub(crate) struct OwnedBuffer {
     buffer: ManuallyDrop<Slice<Vec<u8>>>,
-    pool: Rc<BufferPoolInner>,
+    pool: ManuallyDrop<Rc<BufferPoolInner>>,
 }
 
 impl OwnedBuffer {
     fn new(buffer: Slice<Vec<u8>>, pool: Rc<BufferPoolInner>) -> Self {
         Self {
             buffer: ManuallyDrop::new(buffer),
-            pool,
+            pool: ManuallyDrop::new(pool),
         }
     }
 }
@@ -116,8 +128,11 @@ impl SetBufInit for OwnedBuffer {
 
 impl Drop for OwnedBuffer {
     fn drop(&mut self) {
+        // Safety: `take` is called only once here.
         self.pool
             .add_buffer(unsafe { ManuallyDrop::take(&mut self.buffer) }.into_inner());
+        // Safety: `drop` is called only once here.
+        unsafe { ManuallyDrop::drop(&mut self.pool) };
     }
 }
 
@@ -125,10 +140,11 @@ impl IntoInner for OwnedBuffer {
     type Inner = Slice<Vec<u8>>;
 
     fn into_inner(mut self) -> Self::Inner {
+        // Safety: `self` is forgotten in this method.
         let buffer = unsafe { ManuallyDrop::take(&mut self.buffer) };
-        unsafe {
-            std::ptr::drop_in_place(&mut self.pool);
-        }
+        // The buffer is taken, we only need to drop the Rc.
+        // Safety: `self` is forgotten in this method.
+        unsafe { ManuallyDrop::drop(&mut self.pool) };
         std::mem::forget(self);
         buffer
     }
@@ -160,10 +176,8 @@ impl Debug for BorrowedBuffer<'_> {
 
 impl Drop for BorrowedBuffer<'_> {
     fn drop(&mut self) {
-        let buffer = unsafe {
-            // Safety: we won't take self.buffer again
-            ManuallyDrop::take(&mut self.buffer)
-        };
+        // Safety: `take` is called only once here.
+        let buffer = unsafe { ManuallyDrop::take(&mut self.buffer) };
         self.pool.add_buffer(buffer.into_inner());
     }
 }

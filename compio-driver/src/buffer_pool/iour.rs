@@ -1,3 +1,7 @@
+//! The io-uring buffer pool. It is backed by a [`Vec`] of [`Vec<u8>`].
+//! The kernel selects the buffer and returns `flags`. The crate
+//! [`io_uring_buf_ring`] handles the returning of buffer on drop.
+
 use std::{
     borrow::{Borrow, BorrowMut},
     fmt::{Debug, Formatter},
@@ -34,6 +38,8 @@ impl BufferPool {
         self.buf_ring
     }
 
+    /// ## Safety
+    /// * `available_len` should be the returned value from the op.
     pub(crate) unsafe fn get_buffer(
         &self,
         flags: u32,
@@ -46,7 +52,8 @@ impl BufferPool {
             .map(BorrowedBuffer)
     }
 
-    pub(crate) unsafe fn reuse_buffer(&self, flags: u32) {
+    pub(crate) fn reuse_buffer(&self, flags: u32) {
+        // It ignores invalid flags.
         if let Some(buffer_id) = buffer_select(flags) {
             self.buf_ring.get_buf(buffer_id, 0).map(BorrowedBuffer);
         }

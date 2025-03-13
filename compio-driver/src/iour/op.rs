@@ -664,12 +664,9 @@ mod buf_ring {
         ) -> io::Result<Self::Buffer<'_>> {
             #[cfg(fusion)]
             let buffer_pool = buffer_pool.as_io_uring();
-            let result = result.inspect_err(|_| unsafe {
-                // Safety: flags is valid
-                buffer_pool.reuse_buffer(flags)
-            })?;
+            let result = result.inspect_err(|_| buffer_pool.reuse_buffer(flags))?;
             let res = unsafe {
-                // Safety: flags is valid
+                // Safety: result is valid
                 buffer_pool.get_buffer(flags, result).ok_or_else(|| {
                     io::Error::new(
                         io::ErrorKind::InvalidInput,
@@ -730,12 +727,9 @@ mod buf_ring {
         ) -> io::Result<Self::Buffer<'_>> {
             #[cfg(fusion)]
             let buffer_pool = buffer_pool.as_io_uring();
-            let result = result.inspect_err(|_| unsafe {
-                // Safety: flags is valid
-                buffer_pool.reuse_buffer(flags)
-            })?;
+            let result = result.inspect_err(|_| buffer_pool.reuse_buffer(flags))?;
             let res = unsafe {
-                // Safety: flags is valid
+                // Safety: result is valid
                 buffer_pool.get_buffer(flags, result).ok_or_else(|| {
                     io::Error::new(
                         io::ErrorKind::InvalidInput,
