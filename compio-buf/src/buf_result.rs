@@ -78,12 +78,14 @@ impl<T, B> BufResult<T, B> {
 
     /// Returns the contained [`Ok`] value, consuming the `self` value.
     #[inline]
+    #[track_caller]
     pub fn expect(self, msg: &str) -> (T, B) {
         (self.0.expect(msg), self.1)
     }
 
     /// Returns the contained [`Ok`] value, consuming the `self` value.
     #[inline]
+    #[track_caller]
     pub fn unwrap(self) -> (T, B) {
         (self.0.unwrap(), self.1)
     }
