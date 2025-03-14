@@ -84,7 +84,7 @@ impl<T, B> BufResult<T, B> {
     }
 
     /// Returns the contained [`Ok`] value, consuming the `self` value.
-    #[inline]
+    #[inline(always)]
     #[track_caller]
     pub fn unwrap(self) -> (T, B) {
         (self.0.unwrap(), self.1)
