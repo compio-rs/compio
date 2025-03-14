@@ -129,7 +129,8 @@ impl<S: AsyncRead> AsyncRead for TlsStream<S> {
         let mut f = {
             slice.fill(MaybeUninit::new(0));
             // SAFETY: The memory has been initialized
-            let slice = unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), slice.len()) };
+            let slice =
+                unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), slice.len()) };
             |s: &mut _| std::io::Read::read(s, slice)
         };
 
