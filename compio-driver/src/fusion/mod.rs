@@ -15,7 +15,7 @@ pub(crate) use iour::{sockaddr_storage, socklen_t};
 pub use poll::{Decision, OpCode as PollOpCode, OpType};
 
 pub use crate::driver_type::DriverType; // Re-export so current user won't be broken
-use crate::{Key, ProactorBuilder};
+use crate::{BufferPool, Key, ProactorBuilder};
 
 /// Fused [`OpCode`]
 ///
@@ -90,6 +90,27 @@ impl Driver {
             FuseDriver::IoUring(driver) => FuseNotifyHandle::IoUring(driver.handle()),
         };
         NotifyHandle::from_fuse(fuse)
+    }
+
+    pub fn create_buffer_pool(
+        &mut self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<BufferPool> {
+        match &mut self.fuse {
+            FuseDriver::IoUring(driver) => Ok(driver.create_buffer_pool(buffer_len, buffer_size)?),
+            FuseDriver::Poll(driver) => Ok(driver.create_buffer_pool(buffer_len, buffer_size)?),
+        }
+    }
+
+    /// # Safety
+    ///
+    /// caller must make sure release the buffer pool with correct driver
+    pub unsafe fn release_buffer_pool(&mut self, buffer_pool: BufferPool) -> io::Result<()> {
+        match &mut self.fuse {
+            FuseDriver::Poll(driver) => driver.release_buffer_pool(buffer_pool),
+            FuseDriver::IoUring(driver) => driver.release_buffer_pool(buffer_pool),
+        }
     }
 }
 

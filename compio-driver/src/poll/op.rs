@@ -343,6 +343,20 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for WriteVectoredAt<T, S> {
     }
 }
 
+impl<S: AsRawFd> OpCode for crate::op::managed::ReadManagedAt<S> {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        unsafe { self.map_unchecked_mut(|this| &mut this.op) }.pre_submit()
+    }
+
+    fn op_type(self: Pin<&mut Self>) -> Option<crate::OpType> {
+        unsafe { self.map_unchecked_mut(|this| &mut this.op) }.op_type()
+    }
+
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        unsafe { self.map_unchecked_mut(|this| &mut this.op) }.operate()
+    }
+}
+
 impl<S: AsRawFd> OpCode for Sync<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         #[cfg(aio)]
@@ -624,6 +638,20 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendVectored<T, S> {
                 this.slices.len() as _
             )
         )
+    }
+}
+
+impl<S: AsRawFd> OpCode for crate::op::managed::RecvManaged<S> {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        unsafe { self.map_unchecked_mut(|this| &mut this.op) }.pre_submit()
+    }
+
+    fn op_type(self: Pin<&mut Self>) -> Option<crate::OpType> {
+        unsafe { self.map_unchecked_mut(|this| &mut this.op) }.op_type()
+    }
+
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        unsafe { self.map_unchecked_mut(|this| &mut this.op) }.operate()
     }
 }
 

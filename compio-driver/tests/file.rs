@@ -2,8 +2,8 @@ use std::{io, time::Duration};
 
 use compio_buf::BufResult;
 use compio_driver::{
-    AsRawFd, OpCode, OwnedFd, Proactor, PushEntry, SharedFd,
-    op::{Asyncify, ReadAt},
+    AsRawFd, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
+    op::{Asyncify, CloseFile, ReadAt, ReadManagedAt},
 };
 
 #[cfg(windows)]
@@ -44,17 +44,24 @@ fn open_file(driver: &mut Proactor) -> OwnedFd {
     unsafe { OwnedFd::from_raw_fd(fd as _) }
 }
 
-fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult<usize, O> {
+fn push_and_wait_flags<O: OpCode + 'static>(
+    driver: &mut Proactor,
+    op: O,
+) -> (BufResult<usize, O>, u32) {
     match driver.push(op) {
-        PushEntry::Ready(res) => res,
+        PushEntry::Ready(res) => (res, 0),
         PushEntry::Pending(mut user_data) => loop {
             driver.poll(None).unwrap();
             match driver.pop(user_data) {
                 PushEntry::Pending(k) => user_data = k,
-                PushEntry::Ready((res, _)) => break res,
+                PushEntry::Ready((res, flags)) => break (res, flags),
             }
         },
     }
+}
+
+fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult<usize, O> {
+    push_and_wait_flags(driver, op).0
 }
 
 #[test]
@@ -119,4 +126,24 @@ fn asyncify() {
     let op = Asyncify::new(|| BufResult(Ok(114514), ()));
     let (res, _) = push_and_wait(&mut driver, op).unwrap();
     assert_eq!(res, 114514);
+}
+
+#[test]
+fn managed() {
+    let mut driver = Proactor::new().unwrap();
+
+    let fd = open_file(&mut driver);
+    let fd = SharedFd::new(fd);
+    driver.attach(fd.as_raw_fd()).unwrap();
+
+    let pool = driver.create_buffer_pool(4, 1024).unwrap();
+
+    let op = ReadManagedAt::new(fd.clone(), 0, &pool, 1024).unwrap();
+    let (BufResult(res, op), flags) = push_and_wait_flags(&mut driver, op);
+
+    let buffer = op.take_buffer(&pool, res, flags).unwrap();
+    println!("{}", std::str::from_utf8(&buffer).unwrap());
+
+    let op = CloseFile::new(fd.try_unwrap().unwrap());
+    push_and_wait(&mut driver, op).unwrap();
 }

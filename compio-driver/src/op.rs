@@ -20,6 +20,8 @@ pub use crate::sys::op::{
     CreateDir, CreateSocket, FileStat, HardLink, Interest, OpenFile, PathStat, PollOnce,
     ReadVectoredAt, Rename, Symlink, Unlink, WriteVectoredAt,
 };
+#[cfg(buf_ring)]
+pub use crate::sys::op::{ReadManagedAt, RecvManaged};
 use crate::{
     OwnedFd, SharedFd,
     sys::{sockaddr_storage, socklen_t},
@@ -265,3 +267,97 @@ impl<S> Connect<S> {
         Self { fd, addr }
     }
 }
+
+#[cfg(any(not(buf_ring), fusion))]
+pub(crate) mod managed {
+    use std::io;
+
+    use compio_buf::IntoInner;
+
+    use super::{ReadAt, Recv};
+    use crate::{BorrowedBuffer, BufferPool, OwnedBuffer, SharedFd, TakeBuffer};
+
+    /// Read a file at specified position into managed buffer.
+    pub struct ReadManagedAt<S> {
+        pub(crate) op: ReadAt<OwnedBuffer, S>,
+    }
+
+    impl<S> ReadManagedAt<S> {
+        /// Create [`ReadManagedAt`].
+        pub fn new(
+            fd: SharedFd<S>,
+            offset: u64,
+            pool: &BufferPool,
+            len: usize,
+        ) -> io::Result<Self> {
+            #[cfg(all(buf_ring, fusion))]
+            let pool = pool.as_poll();
+            Ok(Self {
+                op: ReadAt::new(fd, offset, pool.get_buffer(len)?),
+            })
+        }
+    }
+
+    impl<S> TakeBuffer for ReadManagedAt<S> {
+        type Buffer<'a> = BorrowedBuffer<'a>;
+        type BufferPool = BufferPool;
+
+        fn take_buffer(
+            self,
+            buffer_pool: &BufferPool,
+            result: io::Result<usize>,
+            _: u32,
+        ) -> io::Result<BorrowedBuffer> {
+            let result = result?;
+            #[cfg(all(buf_ring, fusion))]
+            let buffer_pool = buffer_pool.as_poll();
+            let slice = self.op.into_inner();
+            // Safety: result is valid
+            let res = unsafe { buffer_pool.create_proxy(slice, result) };
+            #[cfg(all(buf_ring, fusion))]
+            let res = BorrowedBuffer::new_poll(res);
+            Ok(res)
+        }
+    }
+
+    /// Receive data from remote into managed buffer.
+    pub struct RecvManaged<S> {
+        pub(crate) op: Recv<OwnedBuffer, S>,
+    }
+
+    impl<S> RecvManaged<S> {
+        /// Create [`RecvManaged`].
+        pub fn new(fd: SharedFd<S>, pool: &BufferPool, len: usize) -> io::Result<Self> {
+            #[cfg(all(buf_ring, fusion))]
+            let pool = pool.as_poll();
+            Ok(Self {
+                op: Recv::new(fd, pool.get_buffer(len)?),
+            })
+        }
+    }
+
+    impl<S> TakeBuffer for RecvManaged<S> {
+        type Buffer<'a> = BorrowedBuffer<'a>;
+        type BufferPool = BufferPool;
+
+        fn take_buffer(
+            self,
+            buffer_pool: &Self::BufferPool,
+            result: io::Result<usize>,
+            _: u32,
+        ) -> io::Result<Self::Buffer<'_>> {
+            let result = result?;
+            #[cfg(all(buf_ring, fusion))]
+            let buffer_pool = buffer_pool.as_poll();
+            let slice = self.op.into_inner();
+            // Safety: result is valid
+            let res = unsafe { buffer_pool.create_proxy(slice, result) };
+            #[cfg(all(buf_ring, fusion))]
+            let res = BorrowedBuffer::new_poll(res);
+            Ok(res)
+        }
+    }
+}
+
+#[cfg(not(buf_ring))]
+pub use managed::*;

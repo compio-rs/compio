@@ -190,6 +190,16 @@ impl<T: IoBuf, S: AsRawFd> OpCode for WriteAt<T, S> {
     }
 }
 
+impl<S: AsRawFd> OpCode for ReadManagedAt<S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        self.map_unchecked_mut(|this| &mut this.op).operate(optr)
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        self.map_unchecked_mut(|this| &mut this.op).cancel(optr)
+    }
+}
+
 impl<S: AsRawFd> OpCode for Sync<S> {
     fn op_type(&self) -> OpType {
         OpType::Blocking
@@ -399,6 +409,16 @@ impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
+    }
+}
+
+impl<S: AsRawFd> OpCode for RecvManaged<S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        self.map_unchecked_mut(|this| &mut this.op).operate(optr)
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        self.map_unchecked_mut(|this| &mut this.op).cancel(optr)
     }
 }
 
