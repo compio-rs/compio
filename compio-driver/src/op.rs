@@ -107,14 +107,14 @@ pub trait ResultTakeBuffer {
     type Buffer<'a>;
 
     /// Take the buffer from result.
-    fn take_buffer<'a>(self, pool: &'a Self::BufferPool) -> io::Result<Self::Buffer<'a>>;
+    fn take_buffer(self, pool: &Self::BufferPool) -> io::Result<Self::Buffer<'_>>;
 }
 
 impl<T: TakeBuffer> ResultTakeBuffer for (BufResult<usize, T>, u32) {
     type Buffer<'a> = T::Buffer<'a>;
     type BufferPool = T::BufferPool;
 
-    fn take_buffer<'a>(self, pool: &'a Self::BufferPool) -> io::Result<Self::Buffer<'a>> {
+    fn take_buffer(self, pool: &Self::BufferPool) -> io::Result<Self::Buffer<'_>> {
         let (BufResult(result, op), flags) = self;
         op.take_buffer(pool, result, flags)
     }

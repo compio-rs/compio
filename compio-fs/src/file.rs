@@ -4,11 +4,11 @@ use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 #[cfg(unix)]
 use compio_driver::op::FileStat;
 use compio_driver::{
-    BorrowedBuffer, BufferPool, ToSharedFd, impl_raw_fd,
+    ToSharedFd, impl_raw_fd,
     op::{BufResultExt, CloseFile, ReadAt, ReadManagedAt, ResultTakeBuffer, Sync, WriteAt},
 };
 use compio_io::{AsyncReadAt, AsyncReadManagedAt, AsyncWriteAt, util::Splittable};
-use compio_runtime::Attacher;
+use compio_runtime::{Attacher, BorrowedBuffer, BufferPool};
 #[cfg(all(unix, not(solarish)))]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
@@ -180,6 +180,7 @@ impl AsyncReadManagedAt for File {
         len: usize,
     ) -> io::Result<Self::Buffer<'a>> {
         let fd = self.inner.to_shared_fd();
+        let buffer_pool = buffer_pool.as_inner();
         let op = ReadManagedAt::new(fd, pos, buffer_pool, len)?;
         compio_runtime::submit_with_flags(op)
             .await
