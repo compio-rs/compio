@@ -9,11 +9,12 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{
-    AsRawFd, BorrowedBuffer, BufferPool, ToSharedFd, impl_raw_fd,
+    AsRawFd, ToSharedFd, impl_raw_fd,
     op::{BufResultExt, Recv, RecvManaged, RecvVectored, ResultTakeBuffer, Send, SendVectored},
     syscall,
 };
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
+use compio_runtime::{BorrowedBuffer, BufferPool};
 
 use crate::File;
 
@@ -525,6 +526,7 @@ impl AsyncReadManaged for &Receiver {
         len: usize,
     ) -> io::Result<Self::Buffer<'a>> {
         let fd = self.to_shared_fd();
+        let buffer_pool = buffer_pool.try_inner()?;
         let op = RecvManaged::new(fd, buffer_pool, len)?;
         compio_runtime::submit_with_flags(op)
             .await

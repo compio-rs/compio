@@ -36,15 +36,11 @@ impl BufferPool {
             io::Result::Ok((buffer_pool, runtime_id))
         })?;
 
-        Ok(Self::inner_new(inner, runtime_id))
-    }
-
-    fn inner_new(inner: compio_driver::BufferPool, runtime_id: u64) -> Self {
-        Self {
+        Ok(Self {
             inner: ManuallyDrop::new(inner),
             runtime_id,
             _marker: Default::default(),
-        }
+        })
     }
 
     /// Get the inner driver buffer pool reference
@@ -52,15 +48,13 @@ impl BufferPool {
     /// # Notes
     ///
     /// You should not use this method unless you are writing your own IO opcode
-    ///
-    /// # Panic
-    ///
-    /// If call this method in incorrect runtime, will panic
-    pub fn as_inner(&self) -> &compio_driver::BufferPool {
+    pub fn try_inner(&self) -> io::Result<&compio_driver::BufferPool> {
         let current_runtime_id = Runtime::with_current(|runtime| runtime.id());
-        assert_eq!(current_runtime_id, self.runtime_id);
-
-        &self.inner
+        if current_runtime_id == self.runtime_id {
+            Ok(&self.inner)
+        } else {
+            Err(io::Error::other("runtime and buffer pool mismatch"))
+        }
     }
 }
 
