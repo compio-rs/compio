@@ -8,11 +8,11 @@ use std::os::windows::io::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
-    AsRawFd, BorrowedBuffer, BufferPool, SharedFd, ToSharedFd,
+    AsRawFd, SharedFd, ToSharedFd,
     op::{BufResultExt, Recv, RecvManaged, ResultTakeBuffer, Send},
 };
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
-use compio_runtime::Attacher;
+use compio_runtime::{Attacher, BorrowedBuffer, BufferPool};
 #[cfg(unix)]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
@@ -82,6 +82,7 @@ impl<T: AsRawFd + 'static> AsyncReadManaged for &AsyncFd<T> {
         len: usize,
     ) -> io::Result<Self::Buffer<'a>> {
         let fd = self.to_shared_fd();
+        let buffer_pool = buffer_pool.as_inner();
         let op = RecvManaged::new(fd, buffer_pool, len)?;
         compio_runtime::submit_with_flags(op)
             .await
