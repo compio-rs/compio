@@ -339,10 +339,13 @@ fn empty_unix_socket() -> SockAddr {
     unsafe {
         SockAddr::try_init(|addr, len| {
             let addr: *mut SOCKADDR_UN = addr.cast();
-            std::ptr::write(addr, SOCKADDR_UN {
-                sun_family: AF_UNIX,
-                sun_path: [0; 108],
-            });
+            std::ptr::write(
+                addr,
+                SOCKADDR_UN {
+                    sun_family: AF_UNIX,
+                    sun_path: [0; 108],
+                },
+            );
             std::ptr::write(len, 3);
             Ok(())
         })
