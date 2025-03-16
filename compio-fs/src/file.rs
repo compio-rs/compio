@@ -180,7 +180,7 @@ impl AsyncReadManagedAt for File {
         len: usize,
     ) -> io::Result<Self::Buffer<'a>> {
         let fd = self.inner.to_shared_fd();
-        let buffer_pool = buffer_pool.as_inner();
+        let buffer_pool = buffer_pool.try_inner()?;
         let op = ReadManagedAt::new(fd, pos, buffer_pool, len)?;
         compio_runtime::submit_with_flags(op)
             .await
