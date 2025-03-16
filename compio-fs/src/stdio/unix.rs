@@ -1,8 +1,9 @@
 use std::io;
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_driver::{AsFd, AsRawFd, BorrowedBuffer, BorrowedFd, BufferPool, RawFd};
+use compio_driver::{AsFd, AsRawFd, BorrowedFd, RawFd};
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
+use compio_runtime::{BorrowedBuffer, BufferPool};
 
 #[cfg(doc)]
 use super::{stderr, stdin, stdout};
