@@ -2,6 +2,7 @@ use std::{future::Future, io, net::SocketAddr};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
+use compio_runtime::{BorrowedBuffer, BufferPool};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::{Socket, ToSocketAddrsAsync};
@@ -194,6 +195,19 @@ impl UdpSocket {
     /// original buffer and quantity of data received.
     pub async fn recv_vectored<T: IoVectoredBufMut>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.recv_vectored(buffer).await
+    }
+
+    /// Read some bytes from this source with [`BufferPool`] and return
+    /// a [`BorrowedBuffer`].
+    ///
+    /// If `len` == 0, will use [`BufferPool`] inner buffer size as the max len,
+    /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
+    pub async fn recv_managed<'a>(
+        &self,
+        buffer_pool: &'a BufferPool,
+        len: usize,
+    ) -> io::Result<BorrowedBuffer<'a>> {
+        self.inner.recv_managed(buffer_pool, len).await
     }
 
     /// Sends some data to the socket from the buffer, returning the original
