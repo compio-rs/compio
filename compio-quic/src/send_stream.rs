@@ -73,7 +73,7 @@ impl SendStream {
                 state.wake();
                 Ok(())
             }
-            Err(FinishError::ClosedStream) => Err(ClosedStream::new()),
+            Err(FinishError::ClosedStream) => Err(ClosedStream::default()),
             // Harmless. If the application needs to know about stopped streams at this point,
             // it should call `stopped`.
             Err(FinishError::Stopped(_)) => Ok(()),
@@ -443,7 +443,7 @@ pub(crate) mod h3_impl {
         }
 
         fn send_id(&self) -> quic::StreamId {
-            self.inner.stream.0.try_into().unwrap()
+            u64::from(self.inner.stream).try_into().unwrap()
         }
     }
 

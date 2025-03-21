@@ -569,7 +569,7 @@ pub(crate) mod h3_impl {
         }
 
         fn recv_id(&self) -> quic::StreamId {
-            self.stream.0.try_into().unwrap()
+            u64::from(self.stream).try_into().unwrap()
         }
     }
 }
