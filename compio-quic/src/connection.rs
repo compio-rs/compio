@@ -987,8 +987,11 @@ pub(crate) mod h3_impl {
     use futures_util::ready;
     use h3::{
         error::Code,
-        ext::Datagram,
-        quic::{self, Error, RecvDatagramExt, SendDatagramExt, WriteBuf},
+        quic::{self, Error, WriteBuf},
+    };
+    use h3_datagram::{
+        datagram::Datagram,
+        quic_traits::{RecvDatagramExt, SendDatagramExt},
     };
 
     use super::*;
