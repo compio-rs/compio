@@ -57,7 +57,7 @@ windows-sys = { workspace = true, features = [
 
 # Linux specific dependencies
 [target.'cfg(target_os = "linux")'.dependencies]
-io-uring = { version = "0.7.0", optional = true }
+io-uring = { version = "0.7.6", optional = true }
 io_uring_buf_ring = { version = "0.2.0", optional = true }
 polling = { version = "3.3.0", optional = true }
 paste = { workspace = true }
