@@ -40,7 +40,7 @@ async fn main() {
                         .await
                         .unwrap();
                     let mut send = conn.open_uni().unwrap();
-                    send.write_all(format!("Hello world {}!", i).as_bytes())
+                    send.write_all(format!("Hello world {i}!").as_bytes())
                         .await
                         .unwrap();
                     send.finish().unwrap();

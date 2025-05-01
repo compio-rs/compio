@@ -52,7 +52,7 @@ async fn test_connect_impl<A: ToSocketAddrsAsync>(mapping: impl FnOnce(&TcpListe
     let client = async {
         match TcpStream::connect(addr).await {
             Ok(_) => (),
-            Err(e) => panic!("Failed to connect: {}", e),
+            Err(e) => panic!("Failed to connect: {e}"),
         }
     };
 

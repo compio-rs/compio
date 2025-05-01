@@ -336,7 +336,8 @@ impl Proactor {
     ///
     /// # Safety
     ///
-    /// Caller must make sure to release the buffer pool with the correct driver, i.e., the one they created the buffer pool with.
+    /// Caller must make sure to release the buffer pool with the correct
+    /// driver, i.e., the one they created the buffer pool with.
     pub unsafe fn release_buffer_pool(&mut self, buffer_pool: BufferPool) -> io::Result<()> {
         self.driver.release_buffer_pool(buffer_pool)
     }

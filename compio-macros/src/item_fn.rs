@@ -56,7 +56,7 @@ impl RawBodyItemFn {
                         }
                     }
                 } else {
-                    panic!("Unsupported property {}", ident);
+                    panic!("Unsupported property {ident}");
                 }
             }
         }
