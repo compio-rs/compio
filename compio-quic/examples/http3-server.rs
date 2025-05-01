@@ -33,7 +33,7 @@ async fn main() {
                 .unwrap();
 
             while let Ok(Some((req, mut stream))) = conn.accept().await {
-                println!("Received request: {:?}", req);
+                println!("Received request: {req:?}");
                 stream
                     .send_response(
                         Response::builder()
