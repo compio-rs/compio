@@ -129,6 +129,12 @@ macro_rules! impl_raw_fd {
             }
         }
         #[cfg(unix)]
+        impl std::os::fd::AsFd for $t {
+            fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
+                self.$inner.as_fd()
+            }
+        }
+        #[cfg(unix)]
         impl std::os::fd::FromRawFd for $t {
             unsafe fn from_raw_fd(fd: $crate::RawFd) -> Self {
                 Self {
