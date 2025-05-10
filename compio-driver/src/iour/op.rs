@@ -45,7 +45,7 @@ impl<
 impl OpCode for OpenFile {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::OpenAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())
-            .flags(self.flags)
+            .flags(self.flags | libc::O_CLOEXEC)
             .mode(self.mode)
             .build()
             .into()

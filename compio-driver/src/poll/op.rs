@@ -56,7 +56,7 @@ impl OpCode for OpenFile {
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(syscall!(open(
             self.path.as_ptr(),
-            self.flags,
+            self.flags | libc::O_CLOEXEC,
             self.mode as libc::c_int
         ))? as _))
     }
