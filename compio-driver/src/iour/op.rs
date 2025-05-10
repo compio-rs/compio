@@ -262,9 +262,13 @@ impl OpCode for HardLink {
 
 impl OpCode for CreateSocket {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        opcode::Socket::new(self.domain, self.socket_type, self.protocol)
-            .build()
-            .into()
+        opcode::Socket::new(
+            self.domain,
+            self.socket_type | libc::SOCK_CLOEXEC,
+            self.protocol,
+        )
+        .build()
+        .into()
     }
 
     fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
@@ -294,6 +298,7 @@ impl<S: AsRawFd> OpCode for Accept<S> {
             &mut this.buffer as *mut sockaddr_storage as *mut libc::sockaddr,
             &mut this.addr_len,
         )
+        .flags(libc::SOCK_CLOEXEC)
         .build()
         .into()
     }
