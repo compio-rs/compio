@@ -100,6 +100,13 @@ impl Driver {
         if let Some(sqpoll_idle) = builder.sqpoll_idle {
             io_uring_builder.setup_sqpoll(sqpoll_idle.as_millis() as _);
         }
+        if builder.coop_taskrun {
+            io_uring_builder.setup_coop_taskrun();
+        }
+        if builder.taskrun_flag {
+            io_uring_builder.setup_taskrun_flag();
+        }
+
         let mut inner = io_uring_builder.build(builder.capacity)?;
         #[allow(clippy::useless_conversion)]
         unsafe {
@@ -127,14 +134,23 @@ impl Driver {
     // Auto means that it choose to wait or not automatically.
     fn submit_auto(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "submit_auto", ?timeout);
+
+        // when taskrun is true, there are completed cqes wait to handle, no need to
+        // block the submit
+        let want_sqe = if self.inner.submission().taskrun() {
+            0
+        } else {
+            1
+        };
+
         let res = {
             // Last part of submission queue, wait till timeout.
             if let Some(duration) = timeout {
                 let timespec = timespec(duration);
                 let args = SubmitArgs::new().timespec(&timespec);
-                self.inner.submitter().submit_with_args(1, &args)
+                self.inner.submitter().submit_with_args(want_sqe, &args)
             } else {
-                self.inner.submit_and_wait(1)
+                self.inner.submit_and_wait(want_sqe)
             }
         };
         trace!("submit result: {res:?}");
