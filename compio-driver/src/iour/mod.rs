@@ -26,7 +26,7 @@ use io_uring::{
     types::{Fd, SubmitArgs, Timespec},
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
-#[cfg(buf_ring)]
+#[cfg(io_uring)]
 use slab::Slab;
 
 use crate::{AsyncifyPool, BufferPool, Entry, Key, ProactorBuilder, syscall};
@@ -84,7 +84,7 @@ pub(crate) struct Driver {
     notifier: Notifier,
     pool: AsyncifyPool,
     pool_completed: Arc<SegQueue<Entry>>,
-    #[cfg(buf_ring)]
+    #[cfg(io_uring)]
     buffer_group_ids: Slab<()>,
 }
 
@@ -119,7 +119,7 @@ impl Driver {
             notifier,
             pool: builder.create_or_get_thread_pool(),
             pool_completed: Arc::new(SegQueue::new()),
-            #[cfg(buf_ring)]
+            #[cfg(io_uring)]
             buffer_group_ids: Slab::new(),
         })
     }
@@ -298,7 +298,7 @@ impl Driver {
         self.notifier.handle()
     }
 
-    #[cfg(buf_ring)]
+    #[cfg(io_uring)]
     pub fn create_buffer_pool(
         &mut self,
         buffer_len: u16,
@@ -333,7 +333,7 @@ impl Driver {
         }
     }
 
-    #[cfg(not(buf_ring))]
+    #[cfg(not(io_uring))]
     pub fn create_buffer_pool(
         &mut self,
         buffer_len: u16,
@@ -345,7 +345,7 @@ impl Driver {
     /// # Safety
     ///
     /// caller must make sure release the buffer pool with correct driver
-    #[cfg(buf_ring)]
+    #[cfg(io_uring)]
     pub unsafe fn release_buffer_pool(&mut self, buffer_pool: BufferPool) -> io::Result<()> {
         #[cfg(fusion)]
         let buffer_pool = buffer_pool.into_io_uring();
@@ -360,7 +360,7 @@ impl Driver {
     /// # Safety
     ///
     /// caller must make sure release the buffer pool with correct driver
-    #[cfg(not(buf_ring))]
+    #[cfg(not(io_uring))]
     pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
         Ok(())
     }

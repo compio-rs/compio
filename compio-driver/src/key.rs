@@ -148,7 +148,7 @@ impl<T: ?Sized> Key<T> {
     /// op should be dropped because it is useless.
     pub(crate) fn set_result(&mut self, res: io::Result<usize>) -> bool {
         let this = unsafe { &mut *self.as_dyn_mut_ptr() };
-        #[cfg(all(target_os = "linux", feature = "io-uring"))]
+        #[cfg(io_uring)]
         if let Ok(res) = res {
             unsafe {
                 Pin::new_unchecked(&mut this.op).set_result(res);

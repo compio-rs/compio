@@ -20,7 +20,7 @@ pub use crate::sys::op::{
     CreateDir, CreateSocket, FileStat, HardLink, Interest, OpenFile, PathStat, PollOnce,
     ReadVectoredAt, Rename, Symlink, Unlink, WriteVectoredAt,
 };
-#[cfg(buf_ring)]
+#[cfg(io_uring)]
 pub use crate::sys::op::{ReadManagedAt, RecvManaged};
 use crate::{
     OwnedFd, SharedFd,
@@ -268,7 +268,7 @@ impl<S> Connect<S> {
     }
 }
 
-#[cfg(any(not(buf_ring), fusion))]
+#[cfg(any(not(io_uring), fusion))]
 pub(crate) mod managed {
     use std::io;
 
@@ -290,7 +290,7 @@ pub(crate) mod managed {
             pool: &BufferPool,
             len: usize,
         ) -> io::Result<Self> {
-            #[cfg(all(buf_ring, fusion))]
+            #[cfg(fusion)]
             let pool = pool.as_poll();
             Ok(Self {
                 op: ReadAt::new(fd, offset, pool.get_buffer(len)?),
@@ -309,12 +309,12 @@ pub(crate) mod managed {
             _: u32,
         ) -> io::Result<BorrowedBuffer> {
             let result = result?;
-            #[cfg(all(buf_ring, fusion))]
+            #[cfg(fusion)]
             let buffer_pool = buffer_pool.as_poll();
             let slice = self.op.into_inner();
             // Safety: result is valid
             let res = unsafe { buffer_pool.create_proxy(slice, result) };
-            #[cfg(all(buf_ring, fusion))]
+            #[cfg(fusion)]
             let res = BorrowedBuffer::new_poll(res);
             Ok(res)
         }
@@ -328,7 +328,7 @@ pub(crate) mod managed {
     impl<S> RecvManaged<S> {
         /// Create [`RecvManaged`].
         pub fn new(fd: SharedFd<S>, pool: &BufferPool, len: usize) -> io::Result<Self> {
-            #[cfg(all(buf_ring, fusion))]
+            #[cfg(fusion)]
             let pool = pool.as_poll();
             Ok(Self {
                 op: Recv::new(fd, pool.get_buffer(len)?),
@@ -347,17 +347,17 @@ pub(crate) mod managed {
             _: u32,
         ) -> io::Result<Self::Buffer<'_>> {
             let result = result?;
-            #[cfg(all(buf_ring, fusion))]
+            #[cfg(fusion)]
             let buffer_pool = buffer_pool.as_poll();
             let slice = self.op.into_inner();
             // Safety: result is valid
             let res = unsafe { buffer_pool.create_proxy(slice, result) };
-            #[cfg(all(buf_ring, fusion))]
+            #[cfg(fusion)]
             let res = BorrowedBuffer::new_poll(res);
             Ok(res)
         }
     }
 }
 
-#[cfg(not(buf_ring))]
+#[cfg(not(io_uring))]
 pub use managed::*;

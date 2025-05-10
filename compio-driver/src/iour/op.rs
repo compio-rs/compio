@@ -262,13 +262,9 @@ impl OpCode for HardLink {
 
 impl OpCode for CreateSocket {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        if cfg!(feature = "io-uring-socket") {
-            opcode::Socket::new(self.domain, self.socket_type, self.protocol)
-                .build()
-                .into()
-        } else {
-            OpEntry::Blocking
-        }
+        opcode::Socket::new(self.domain, self.socket_type, self.protocol)
+            .build()
+            .into()
     }
 
     fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
@@ -598,7 +594,7 @@ impl<S: AsRawFd> OpCode for PollOnce<S> {
     }
 }
 
-#[cfg(buf_ring)]
+#[cfg(io_uring)]
 mod buf_ring {
     use std::{io, marker::PhantomPinned, os::fd::AsRawFd, pin::Pin, ptr};
 
@@ -730,10 +726,10 @@ mod buf_ring {
     }
 }
 
-#[cfg(buf_ring)]
+#[cfg(io_uring)]
 pub use buf_ring::{ReadManagedAt, RecvManaged};
 
-#[cfg(not(buf_ring))]
+#[cfg(not(io_uring))]
 mod fallback {
     use std::pin::Pin;
 
