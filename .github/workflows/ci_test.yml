@@ -26,11 +26,7 @@ jobs:
           - os: "ubuntu-22.04"
             features: "polling" # fusion
           - os: "ubuntu-22.04"
-            features: "io-uring-sqe128,io-uring-cqe32,io-uring-socket"
-          - os: "ubuntu-22.04"
-            features: "io-uring-buf-ring"
-          - os: "ubuntu-22.04"
-            features: "polling,io-uring-buf-ring" # fusion & buf-ring
+            features: "io-uring-sqe128,io-uring-cqe32"
           - os: "ubuntu-22.04"
             features: "polling,ring"
             no_default_features: true

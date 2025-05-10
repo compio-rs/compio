@@ -47,10 +47,10 @@ cfg_if::cfg_if! {
     if #[cfg(windows)] {
         #[path = "iocp/mod.rs"]
         mod sys;
-    } else if #[cfg(all(target_os = "linux", feature = "polling", feature = "io-uring"))] {
+    } else if #[cfg(fusion)] {
         #[path = "fusion/mod.rs"]
         mod sys;
-    } else if #[cfg(all(target_os = "linux", feature = "io-uring"))] {
+    } else if #[cfg(io_uring)] {
         #[path = "iour/mod.rs"]
         mod sys;
     } else if #[cfg(unix)] {
@@ -372,7 +372,7 @@ impl Entry {
         }
     }
 
-    #[cfg(all(target_os = "linux", feature = "io-uring"))]
+    #[cfg(io_uring)]
     // this method only used by in io-uring driver
     pub(crate) fn set_flags(&mut self, flags: u32) {
         self.flags = flags;

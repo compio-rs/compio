@@ -1,5 +1,5 @@
 cfg_if::cfg_if! {
-    if #[cfg(buf_ring)] {
+    if #[cfg(io_uring)] {
         cfg_if::cfg_if! {
             if #[cfg(fusion)] {
                 mod fusion;

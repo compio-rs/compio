@@ -447,14 +447,14 @@ impl Driver {
         buffer_len: u16,
         buffer_size: usize,
     ) -> io::Result<BufferPool> {
-        #[cfg(all(buf_ring, fusion))]
+        #[cfg(fusion)]
         {
             Ok(BufferPool::new_poll(crate::FallbackBufferPool::new(
                 buffer_len,
                 buffer_size,
             )))
         }
-        #[cfg(not(all(buf_ring, fusion)))]
+        #[cfg(not(fusion))]
         {
             Ok(BufferPool::new(buffer_len, buffer_size))
         }
