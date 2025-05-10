@@ -97,9 +97,21 @@ impl Driver {
         trace!("new iour driver");
         let notifier = Notifier::new()?;
         let mut io_uring_builder = IoUring::builder();
-        if let Some(sqpoll_idle) = builder.sqpoll_idle {
-            io_uring_builder.setup_sqpoll(sqpoll_idle.as_millis() as _);
+
+        match builder.sqpoll_idle {
+            Some(sqpoll_idle) => {
+                io_uring_builder.setup_sqpoll(sqpoll_idle.as_millis() as _);
+            }
+
+            None => {
+                // Available since Linux Kernel 5.19. This will optimize performance for most
+                // cases, especially compio is a single thread runtime
+                // However, it can't run with sqpoll feature
+                io_uring_builder.setup_coop_taskrun();
+                io_uring_builder.setup_taskrun_flag();
+            }
         }
+
         let mut inner = io_uring_builder.build(builder.capacity)?;
         #[allow(clippy::useless_conversion)]
         unsafe {
