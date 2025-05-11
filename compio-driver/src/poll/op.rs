@@ -4,7 +4,7 @@ use std::{
     ffi::CString,
     io,
     marker::PhantomPinned,
-    os::fd::{FromRawFd, OwnedFd},
+    os::fd::{FromRawFd, IntoRawFd, OwnedFd},
     pin::Pin,
     task::Poll,
 };
@@ -20,7 +20,7 @@ use libc::open64 as open;
 use libc::{pread, preadv, pwrite, pwritev};
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "hurd"))]
 use libc::{pread64 as pread, preadv64 as preadv, pwrite64 as pwrite, pwritev64 as pwritev};
-use socket2::SockAddr;
+use socket2::{SockAddr, Socket as Socket2};
 
 use super::{AsRawFd, Decision, OpCode, OpType, sockaddr_storage, socklen_t, syscall};
 pub use crate::unix::op::*;
@@ -56,7 +56,7 @@ impl OpCode for OpenFile {
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(syscall!(open(
             self.path.as_ptr(),
-            self.flags,
+            self.flags | libc::O_CLOEXEC,
             self.mode as libc::c_int
         ))? as _))
     }
@@ -467,15 +467,73 @@ impl OpCode for HardLink {
     }
 }
 
+impl CreateSocket {
+    unsafe fn call(self: Pin<&mut Self>) -> io::Result<libc::c_int> {
+        #[allow(unused_mut)]
+        let mut ty: i32 = self.socket_type;
+        #[cfg(any(
+            target_os = "android",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "fuchsia",
+            target_os = "hurd",
+            target_os = "illumos",
+            target_os = "linux",
+            target_os = "netbsd",
+            target_os = "openbsd",
+            target_os = "cygwin",
+        ))]
+        {
+            ty |= libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK;
+        }
+        let fd = syscall!(libc::socket(self.domain, ty, self.protocol))?;
+        let socket = Socket2::from_raw_fd(fd);
+        #[cfg(not(any(
+            target_os = "android",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "fuchsia",
+            target_os = "hurd",
+            target_os = "illumos",
+            target_os = "linux",
+            target_os = "netbsd",
+            target_os = "openbsd",
+            target_os = "espidf",
+            target_os = "vita",
+            target_os = "cygwin",
+        )))]
+        socket.set_cloexec(true)?;
+        #[cfg(any(
+            target_os = "ios",
+            target_os = "macos",
+            target_os = "tvos",
+            target_os = "watchos",
+        ))]
+        socket.set_nosigpipe(true)?;
+        #[cfg(not(any(
+            target_os = "android",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "fuchsia",
+            target_os = "hurd",
+            target_os = "illumos",
+            target_os = "linux",
+            target_os = "netbsd",
+            target_os = "openbsd",
+            target_os = "cygwin",
+        )))]
+        socket.set_nonblocking(true)?;
+        Ok(socket.into_raw_fd())
+    }
+}
+
 impl OpCode for CreateSocket {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(Ok(
-            syscall!(libc::socket(self.domain, self.socket_type, self.protocol))? as _,
-        ))
+        Poll::Ready(Ok(unsafe { self.call()? } as _))
     }
 }
 
@@ -504,11 +562,50 @@ impl OpCode for CloseSocket {
 impl<S: AsRawFd> Accept<S> {
     unsafe fn call(self: Pin<&mut Self>) -> libc::c_int {
         let this = self.get_unchecked_mut();
-        libc::accept(
-            this.fd.as_raw_fd(),
-            &mut this.buffer as *mut _ as *mut _,
-            &mut this.addr_len,
-        )
+        #[cfg(any(
+            target_os = "android",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "fuchsia",
+            target_os = "illumos",
+            target_os = "linux",
+            target_os = "netbsd",
+            target_os = "openbsd",
+            target_os = "cygwin",
+        ))]
+        {
+            libc::accept4(
+                this.fd.as_raw_fd(),
+                &mut this.buffer as *mut _ as *mut _,
+                &mut this.addr_len,
+                libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC,
+            )
+        }
+        #[cfg(not(any(
+            target_os = "android",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "fuchsia",
+            target_os = "illumos",
+            target_os = "linux",
+            target_os = "netbsd",
+            target_os = "openbsd",
+            target_os = "cygwin",
+        )))]
+        {
+            || -> io::Result<libc::c_int> {
+                let fd = syscall!(libc::accept(
+                    this.fd.as_raw_fd(),
+                    &mut this.buffer as *mut _ as *mut _,
+                    &mut this.addr_len,
+                ))?;
+                let socket = Socket2::from_raw_fd(fd);
+                socket.set_cloexec(true)?;
+                socket.set_nonblocking(true)?;
+                Ok(socket.into_raw_fd())
+            }()
+            .unwrap_or(-1)
+        }
     }
 }
 
