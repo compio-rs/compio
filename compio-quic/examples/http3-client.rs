@@ -77,7 +77,7 @@ async fn main() {
 
         drop(send_req);
 
-        handle.await.unwrap().unwrap();
+        handle.await.unwrap();
     }
 
     endpoint.shutdown().await.unwrap();
