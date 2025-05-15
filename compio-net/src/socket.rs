@@ -10,13 +10,13 @@ use compio_driver::op::CreateSocket;
 use compio_driver::{
     AsRawFd, ToSharedFd, impl_raw_fd,
     op::{
-        Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored, RecvMsg,
-        RecvResultExt, RecvVectored, Send, SendMsg, SendTo, SendToVectored, SendVectored,
-        ShutdownSocket,
+        Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored, RecvManaged,
+        RecvMsg, RecvResultExt, RecvVectored, ResultTakeBuffer, Send, SendMsg, SendTo,
+        SendToVectored, SendVectored, ShutdownSocket,
     },
     syscall,
 };
-use compio_runtime::Attacher;
+use compio_runtime::{Attacher, BorrowedBuffer, BufferPool};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::PollFd;
@@ -170,6 +170,19 @@ impl Socket {
         let fd = self.to_shared_fd();
         let op = RecvVectored::new(fd, buffer);
         compio_runtime::submit(op).await.into_inner().map_advanced()
+    }
+
+    pub async fn recv_managed<'a>(
+        &self,
+        buffer_pool: &'a BufferPool,
+        len: usize,
+    ) -> io::Result<BorrowedBuffer<'a>> {
+        let fd = self.to_shared_fd();
+        let buffer_pool = buffer_pool.try_inner()?;
+        let op = RecvManaged::new(fd, buffer_pool, len)?;
+        compio_runtime::submit_with_flags(op)
+            .await
+            .take_buffer(buffer_pool)
     }
 
     pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
