@@ -32,7 +32,8 @@ async fn main() {
                 .await
                 .unwrap();
 
-            while let Ok(Some((req, mut stream))) = conn.accept().await {
+            while let Ok(Some(resolver)) = conn.accept().await {
+                let (req, mut stream) = resolver.resolve_request().await.unwrap();
                 println!("Received request: {req:?}");
                 stream
                     .send_response(

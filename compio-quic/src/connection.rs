@@ -983,73 +983,90 @@ pub enum OpenStreamError {
 
 #[cfg(feature = "h3")]
 pub(crate) mod h3_impl {
-    use compio_buf::bytes::{Buf, BytesMut};
+    use compio_buf::bytes::Buf;
     use futures_util::ready;
     use h3::{
         error::Code,
-        quic::{self, Error, WriteBuf},
+        quic::{self, ConnectionErrorIncoming, StreamErrorIncoming, WriteBuf},
     };
     use h3_datagram::{
-        datagram::Datagram,
-        quic_traits::{RecvDatagramExt, SendDatagramExt},
+        datagram::EncodedDatagram,
+        quic_traits::{
+            DatagramConnectionExt, RecvDatagram, SendDatagram, SendDatagramErrorIncoming,
+        },
     };
 
     use super::*;
-    use crate::{ReadError, WriteError, send_stream::h3_impl::SendStream};
+    use crate::send_stream::h3_impl::SendStream;
 
-    impl Error for ConnectionError {
-        fn is_timeout(&self) -> bool {
-            matches!(self, ConnectionError::TimedOut)
-        }
+    impl From<ConnectionError> for ConnectionErrorIncoming {
+        fn from(e: ConnectionError) -> Self {
+            use ConnectionError::*;
+            match e {
+                ApplicationClosed(e) => Self::ApplicationClose {
+                    error_code: e.error_code.into_inner(),
+                },
+                TimedOut => Self::Timeout,
 
-        fn err_code(&self) -> Option<u64> {
-            match &self {
-                ConnectionError::ApplicationClosed(quinn_proto::ApplicationClose {
-                    error_code,
-                    ..
-                }) => Some(error_code.into_inner()),
-                _ => None,
+                e => Self::Undefined(Arc::new(e)),
             }
         }
     }
 
-    impl Error for SendDatagramError {
-        fn is_timeout(&self) -> bool {
-            false
-        }
-
-        fn err_code(&self) -> Option<u64> {
-            match self {
-                SendDatagramError::ConnectionLost(ConnectionError::ApplicationClosed(
-                    quinn_proto::ApplicationClose { error_code, .. },
-                )) => Some(error_code.into_inner()),
-                _ => None,
+    impl From<ConnectionError> for StreamErrorIncoming {
+        fn from(e: ConnectionError) -> Self {
+            Self::ConnectionErrorIncoming {
+                connection_error: e.into(),
             }
         }
     }
 
-    impl<B> SendDatagramExt<B> for Connection
+    impl From<SendDatagramError> for SendDatagramErrorIncoming {
+        fn from(e: SendDatagramError) -> Self {
+            use SendDatagramError::*;
+            match e {
+                UnsupportedByPeer | Disabled => Self::NotAvailable,
+                TooLarge => Self::TooLarge,
+                ConnectionLost(e) => Self::ConnectionError(e.into()),
+            }
+        }
+    }
+
+    impl<B> SendDatagram<B> for Connection
     where
         B: Buf,
     {
-        type Error = SendDatagramError;
-
-        fn send_datagram(&mut self, data: Datagram<B>) -> Result<(), Self::Error> {
-            let mut buf = BytesMut::new();
-            data.encode(&mut buf);
-            Connection::send_datagram(self, buf.freeze())
+        fn send_datagram<T: Into<EncodedDatagram<B>>>(
+            &mut self,
+            data: T,
+        ) -> Result<(), SendDatagramErrorIncoming> {
+            let mut buf: EncodedDatagram<B> = data.into();
+            let buf = buf.copy_to_bytes(buf.remaining());
+            Ok(Connection::send_datagram(self, buf)?)
         }
     }
 
-    impl RecvDatagramExt for Connection {
-        type Buf = Bytes;
-        type Error = ConnectionError;
+    impl RecvDatagram for Connection {
+        type Buffer = Bytes;
 
-        fn poll_accept_datagram(
+        fn poll_incoming_datagram(
             &mut self,
-            cx: &mut Context<'_>,
-        ) -> Poll<Result<Option<Self::Buf>, Self::Error>> {
-            Poll::Ready(Ok(Some(ready!(self.poll_recv_datagram(cx))?)))
+            cx: &mut core::task::Context<'_>,
+        ) -> Poll<Result<Self::Buffer, ConnectionErrorIncoming>> {
+            Poll::Ready(Ok(ready!(self.poll_recv_datagram(cx))?))
+        }
+    }
+
+    impl<B: Buf> DatagramConnectionExt<B> for Connection {
+        type RecvDatagramHandler = Self;
+        type SendDatagramHandler = Self;
+
+        fn send_datagram_handler(&self) -> Self::SendDatagramHandler {
+            self.clone()
+        }
+
+        fn recv_datagram_handler(&self) -> Self::RecvDatagramHandler {
+            self.clone()
         }
     }
 
@@ -1085,12 +1102,11 @@ pub(crate) mod h3_impl {
         B: Buf,
     {
         type Buf = Bytes;
-        type Error = ReadError;
 
         fn poll_data(
             &mut self,
             cx: &mut Context<'_>,
-        ) -> Poll<Result<Option<Self::Buf>, Self::Error>> {
+        ) -> Poll<Result<Option<Self::Buf>, StreamErrorIncoming>> {
             self.recv.poll_data(cx)
         }
 
@@ -1107,17 +1123,15 @@ pub(crate) mod h3_impl {
     where
         B: Buf,
     {
-        type Error = WriteError;
-
-        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), StreamErrorIncoming>> {
             self.send.poll_ready(cx)
         }
 
-        fn send_data<T: Into<WriteBuf<B>>>(&mut self, data: T) -> Result<(), Self::Error> {
+        fn send_data<T: Into<WriteBuf<B>>>(&mut self, data: T) -> Result<(), StreamErrorIncoming> {
             self.send.send_data(data)
         }
 
-        fn poll_finish(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        fn poll_finish(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), StreamErrorIncoming>> {
             self.send.poll_finish(cx)
         }
 
@@ -1138,7 +1152,7 @@ pub(crate) mod h3_impl {
             &mut self,
             cx: &mut Context<'_>,
             buf: &mut D,
-        ) -> Poll<Result<usize, Self::Error>> {
+        ) -> Poll<Result<usize, StreamErrorIncoming>> {
             self.send.poll_send(cx, buf)
         }
     }
@@ -1152,13 +1166,12 @@ pub(crate) mod h3_impl {
         B: Buf,
     {
         type BidiStream = BidiStream<B>;
-        type OpenError = ConnectionError;
         type SendStream = SendStream<B>;
 
         fn poll_open_bidi(
             &mut self,
             cx: &mut Context<'_>,
-        ) -> Poll<Result<Self::BidiStream, Self::OpenError>> {
+        ) -> Poll<Result<Self::BidiStream, StreamErrorIncoming>> {
             let (stream, is_0rtt) = ready!(self.0.poll_open_stream(Some(cx), Dir::Bi))?;
             Poll::Ready(Ok(BidiStream::new(self.0.0.clone(), stream, is_0rtt)))
         }
@@ -1166,7 +1179,7 @@ pub(crate) mod h3_impl {
         fn poll_open_send(
             &mut self,
             cx: &mut Context<'_>,
-        ) -> Poll<Result<Self::SendStream, Self::OpenError>> {
+        ) -> Poll<Result<Self::SendStream, StreamErrorIncoming>> {
             let (stream, is_0rtt) = ready!(self.0.poll_open_stream(Some(cx), Dir::Uni))?;
             Poll::Ready(Ok(SendStream::new(self.0.0.clone(), stream, is_0rtt)))
         }
@@ -1182,13 +1195,12 @@ pub(crate) mod h3_impl {
         B: Buf,
     {
         type BidiStream = BidiStream<B>;
-        type OpenError = ConnectionError;
         type SendStream = SendStream<B>;
 
         fn poll_open_bidi(
             &mut self,
             cx: &mut Context<'_>,
-        ) -> Poll<Result<Self::BidiStream, Self::OpenError>> {
+        ) -> Poll<Result<Self::BidiStream, StreamErrorIncoming>> {
             let (stream, is_0rtt) = ready!(self.poll_open_stream(Some(cx), Dir::Bi))?;
             Poll::Ready(Ok(BidiStream::new(self.0.clone(), stream, is_0rtt)))
         }
@@ -1196,7 +1208,7 @@ pub(crate) mod h3_impl {
         fn poll_open_send(
             &mut self,
             cx: &mut Context<'_>,
-        ) -> Poll<Result<Self::SendStream, Self::OpenError>> {
+        ) -> Poll<Result<Self::SendStream, StreamErrorIncoming>> {
             let (stream, is_0rtt) = ready!(self.poll_open_stream(Some(cx), Dir::Uni))?;
             Poll::Ready(Ok(SendStream::new(self.0.clone(), stream, is_0rtt)))
         }
@@ -1210,24 +1222,23 @@ pub(crate) mod h3_impl {
     where
         B: Buf,
     {
-        type AcceptError = ConnectionError;
         type OpenStreams = OpenStreams;
         type RecvStream = RecvStream;
 
         fn poll_accept_recv(
             &mut self,
             cx: &mut std::task::Context<'_>,
-        ) -> Poll<Result<Option<Self::RecvStream>, Self::AcceptError>> {
+        ) -> Poll<Result<Self::RecvStream, ConnectionErrorIncoming>> {
             let (stream, is_0rtt) = ready!(self.poll_accept_stream(cx, Dir::Uni))?;
-            Poll::Ready(Ok(Some(RecvStream::new(self.0.clone(), stream, is_0rtt))))
+            Poll::Ready(Ok(RecvStream::new(self.0.clone(), stream, is_0rtt)))
         }
 
         fn poll_accept_bidi(
             &mut self,
             cx: &mut std::task::Context<'_>,
-        ) -> Poll<Result<Option<Self::BidiStream>, Self::AcceptError>> {
+        ) -> Poll<Result<Self::BidiStream, ConnectionErrorIncoming>> {
             let (stream, is_0rtt) = ready!(self.poll_accept_stream(cx, Dir::Bi))?;
-            Poll::Ready(Ok(Some(BidiStream::new(self.0.clone(), stream, is_0rtt))))
+            Poll::Ready(Ok(BidiStream::new(self.0.clone(), stream, is_0rtt)))
         }
 
         fn opener(&self) -> Self::OpenStreams {

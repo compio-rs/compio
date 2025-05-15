@@ -529,38 +529,38 @@ impl futures_util::AsyncRead for RecvStream {
 
 #[cfg(feature = "h3")]
 pub(crate) mod h3_impl {
-    use h3::quic::{self, Error};
+    use h3::quic::{self, StreamErrorIncoming};
 
     use super::*;
 
-    impl Error for ReadError {
-        fn is_timeout(&self) -> bool {
-            matches!(self, Self::ConnectionLost(ConnectionError::TimedOut))
-        }
-
-        fn err_code(&self) -> Option<u64> {
-            match self {
-                Self::ConnectionLost(ConnectionError::ApplicationClosed(
-                    quinn_proto::ApplicationClose { error_code, .. },
-                ))
-                | Self::Reset(error_code) => Some(error_code.into_inner()),
-                _ => None,
+    impl From<ReadError> for StreamErrorIncoming {
+        fn from(e: ReadError) -> Self {
+            use ReadError::*;
+            match e {
+                Reset(code) => Self::StreamTerminated {
+                    error_code: code.into_inner(),
+                },
+                ConnectionLost(e) => Self::ConnectionErrorIncoming {
+                    connection_error: e.into(),
+                },
+                IllegalOrderedRead => unreachable!("illegal ordered read"),
+                e => Self::Unknown(Box::new(e)),
             }
         }
     }
 
     impl quic::RecvStream for RecvStream {
         type Buf = Bytes;
-        type Error = ReadError;
 
         fn poll_data(
             &mut self,
             cx: &mut Context<'_>,
-        ) -> Poll<Result<Option<Self::Buf>, Self::Error>> {
+        ) -> Poll<Result<Option<Self::Buf>, StreamErrorIncoming>> {
             self.execute_poll_read(cx, true, |chunks| match chunks.next(usize::MAX) {
                 Ok(Some(chunk)) => ReadStatus::Readable(chunk.bytes),
                 res => (None, res.err()).into(),
             })
+            .map_err(Into::into)
         }
 
         fn stop_sending(&mut self, error_code: u64) {
