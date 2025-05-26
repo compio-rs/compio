@@ -176,6 +176,22 @@ impl TcpStream {
         .await
     }
 
+    /// Bind to `bind_addr` then opens a TCP connection to a remote host.
+    pub async fn bind_and_connect(
+        bind_addr: SocketAddr,
+        addr: impl ToSocketAddrsAsync,
+    ) -> io::Result<Self> {
+        super::each_addr(addr, |addr| async move {
+            let addr = SockAddr::from(addr);
+            let bind_addr = SockAddr::from(bind_addr);
+
+            let socket = Socket::bind(&bind_addr, Type::STREAM, Some(Protocol::TCP)).await?;
+            socket.connect_async(&addr).await?;
+            Ok(Self { inner: socket })
+        })
+        .await
+    }
+
     /// Creates new TcpStream from a [`std::net::TcpStream`].
     pub fn from_std(stream: std::net::TcpStream) -> io::Result<Self> {
         Ok(Self {
