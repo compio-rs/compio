@@ -24,6 +24,8 @@
         with pkgs; {
           devShells.default = mkShell {
             buildInputs = [
+              go
+              cmake
               glib
               openssl
               pkg-config
