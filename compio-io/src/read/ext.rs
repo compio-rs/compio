@@ -1,5 +1,6 @@
 #[cfg(feature = "allocator_api")]
 use std::alloc::Allocator;
+use std::io::ErrorKind;
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut, t_alloc};
 
@@ -159,6 +160,21 @@ pub trait AsyncReadExt: AsyncRead {
     /// Read the exact number of bytes required to fill the buf.
     async fn read_exact<T: IoBufMut>(&mut self, mut buf: T) -> BufResult<(), T> {
         loop_read_exact!(buf, buf.buf_capacity(), read, loop self.read(buf.slice(read..)));
+    }
+
+    /// Read all bytes as [`String`] until underlying reader reaches `EOF`.
+    async fn read_to_string(&mut self, buf: String) -> BufResult<usize, String> {
+        let BufResult(res, buf) = self.read_to_end(buf.into_bytes()).await;
+        match res {
+            Err(err) => BufResult(Err(err), String::new()),
+            Ok(n) => match String::from_utf8(buf) {
+                Err(err) => BufResult(
+                    Err(std::io::Error::new(ErrorKind::InvalidData, err)),
+                    String::new(),
+                ),
+                Ok(data) => BufResult(Ok(n), data),
+            },
+        }
     }
 
     /// Read all bytes until underlying reader reaches `EOF`.
