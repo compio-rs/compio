@@ -364,6 +364,17 @@ fn read_to_end() {
     })
 }
 
+#[test]
+fn read_to_string() {
+    block_on(async {
+        let mut src = ReadOne(Cursor::new("test".to_string().into_bytes()));
+
+        let (len, buf) = src.read_to_string(String::new()).await.unwrap();
+        assert_eq!(len, 4);
+        assert_eq!(buf, "test");
+    })
+}
+
 struct ReadOneAt(Vec<u8>);
 
 impl AsyncReadAt for ReadOneAt {
@@ -398,6 +409,19 @@ fn read_to_end_at() {
         let (len, buf) = src.read_to_end_at(vec![], 2).await.unwrap();
         assert_eq!(len, 4);
         assert_eq!(buf, [4, 5, 1, 4]);
+    })
+}
+
+#[test]
+fn read_to_string_at() {
+    block_on(async {
+        let mut src = vec![1, 1];
+        src.extend_from_slice("test".as_bytes());
+        let mut src = ReadOneAt(src);
+
+        let (len, buf) = src.read_to_string_at(String::new(), 2).await.unwrap();
+        assert_eq!(len, 4);
+        assert_eq!(buf, "test");
     })
 }
 
