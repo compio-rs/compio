@@ -182,3 +182,9 @@ impl<T: AsRawFd + FromRawSocket> FromRawSocket for AsyncFd<T> {
         Self::new_unchecked(FromRawSocket::from_raw_socket(sock))
     }
 }
+
+impl<T: AsRawFd> AsRef<T> for AsyncFd<T> {
+    fn as_ref(&self) -> &T {
+        &self.inner
+    }
+}
