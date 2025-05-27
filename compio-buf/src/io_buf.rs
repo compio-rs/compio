@@ -91,6 +91,31 @@ pub unsafe trait IoBuf: 'static {
         Slice::new(self, begin, end)
     }
 
+    /// Returns an [`Uninit`], which is a [`Slice`] that only exposes
+    /// uninitialized bytes.
+    ///
+    /// This is useful for writing data into buffer without overwriting any
+    /// existing bytes.
+    ///
+    /// # Examples
+    ///
+    /// Creating an uninit slice
+    ///
+    /// ```
+    /// use compio_buf::IoBuf;
+    ///
+    /// let buf = b"hello world";
+    /// let slice = buf.uninit();
+    ///
+    /// assert_eq!(&slice[..], b"");
+    /// ```
+    fn uninit(self) -> Uninit<Self>
+    where
+        Self: Sized,
+    {
+        Uninit::new(self)
+    }
+
     /// Indicate whether the buffer has been filled (uninit portion is empty)
     fn filled(&self) -> bool {
         self.buf_len() == self.buf_capacity()

@@ -22,6 +22,7 @@ use crate::*;
 ///
 /// assert_eq!(&slice[..], b"hello");
 /// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Slice<T> {
     buffer: T,
     begin: usize,
