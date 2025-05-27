@@ -254,6 +254,22 @@ pub trait AsyncReadAtExt: AsyncReadAt {
         );
     }
 
+    /// Read all bytes as [`String`] until EOF in this source, placing them into
+    /// `buffer`.
+    async fn read_to_string_at(&mut self, buf: String, pos: u64) -> BufResult<usize, String> {
+        let BufResult(res, buf) = self.read_to_end_at(buf.into_bytes(), pos).await;
+        match res {
+            Err(err) => BufResult(Err(err), String::new()),
+            Ok(n) => match String::from_utf8(buf) {
+                Err(err) => BufResult(
+                    Err(std::io::Error::new(ErrorKind::InvalidData, err)),
+                    String::new(),
+                ),
+                Ok(data) => BufResult(Ok(n), data),
+            },
+        }
+    }
+
     /// Read all bytes until EOF in this source, placing them into `buffer`.
     ///
     /// All bytes read from this source will be appended to the specified buffer
