@@ -36,7 +36,7 @@ compio-log = { workspace = true }
 cfg-if = { workspace = true }
 crossbeam-channel = { workspace = true }
 futures-util = { workspace = true }
-socket2 = { workspace = true }
+socket2 = { workspace = true, features = ["all"] }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
