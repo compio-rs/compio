@@ -151,7 +151,8 @@ fn after_read_to_string(res: io::Result<usize>, buf: Vec<u8>) -> BufResult<usize
                 let mut buf = err.into_bytes();
                 buf.clear();
 
-                String::from_utf8(buf).unwrap()
+                // Safety: the buffer is empty
+                unsafe { String::from_utf8_unchecked(buf) }
             });
 
             BufResult(Err(err), buf)
