@@ -47,7 +47,7 @@ impl Frame {
     }
 }
 
-/// Embedding and extracting bytes into buf in a framed fashion.
+/// Enclosing and extracting frames in a buffer.
 pub trait Framer {
     /// Enclose a frame in the given buffer.
     ///
@@ -107,6 +107,7 @@ impl Framer for LengthDelimited {
 }
 
 /// A generic delimiter that uses a single character.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CharDelimited<const C: char> {}
 
 impl<const C: char> CharDelimited<C> {
@@ -132,13 +133,8 @@ impl<const C: char> Framer for CharDelimited<C> {
     }
 }
 
-impl<const C: char> Default for CharDelimited<C> {
-    fn default() -> Self {
-        Self {}
-    }
-}
-
 /// A generic delimiter that uses any sequence of bytes as a delimiter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AnyDelimited<'a> {
     bytes: &'a [u8],
 }

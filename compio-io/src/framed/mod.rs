@@ -107,8 +107,8 @@ impl<Io> State<Io> {
 /// A framed encoder/decoder that handles both [`Sink`] for writing frames and
 /// [`Stream`] for reading frames.
 ///
-/// It uses a [`codec`] to encode/decode messages and a [`Framer`] to
-/// define how frames are laid out in buffer.
+/// It uses a [`codec`] to encode/decode messages into frames and a [`Framer`]
+/// to define how frames are laid out in buffer.
 pub struct Framed<Io, C, F, In, Out> {
     state: State<Io>,
     codec: C,
@@ -116,19 +116,20 @@ pub struct Framed<Io, C, F, In, Out> {
     types: PhantomData<(In, Out)>,
 }
 
-impl<Io, C, F, In, Out> Framed<Io, C, F, In, Out> {
+/// [`Framed`] with same In ([`Sink`]) and Out ([`Stream::Item`]) type
+pub type SymmetricFramed<Io, C, F, Item> = Framed<Io, C, F, Item, Item>;
+
+impl<Io, C, F> Framed<Io, C, F, (), ()> {
     /// Creates a new `Framed` with the given I/O object, codec, and framer.
-    pub fn new(io: Io, codec: C, framer: F) -> Self {
-        Self {
+    pub fn new<In, Out>(io: Io, codec: C, framer: F) -> Framed<Io, C, F, In, Out> {
+        Framed {
             state: State::Idle(Some((io, Vec::new()))),
             codec,
             framer,
             types: PhantomData,
         }
     }
-}
 
-impl<Io, C, F> Framed<Io, C, F, (), ()> {
     /// Creates a new `Framed` with the given I/O object, codec, and framer with
     /// symmetric In/Out type.
     pub fn symmetric<T>(io: Io, codec: C, framer: F) -> Framed<Io, C, F, T, T> {

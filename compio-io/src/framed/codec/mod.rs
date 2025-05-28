@@ -1,4 +1,4 @@
-//! This module defines traits for encoding/decoding structured types to/from
+//! Traits and implementations for encoding/decoding structured types to/from
 //! bytes.
 
 use std::io;
