@@ -2,18 +2,18 @@
 members = [
     "compio",
     "compio-buf",
-    "compio-driver",
-    "compio-runtime",
-    "compio-macros",
-    "compio-fs",
-    "compio-net",
-    "compio-signal",
     "compio-dispatcher",
+    "compio-driver",
+    "compio-fs",
     "compio-io",
-    "compio-tls",
     "compio-log",
+    "compio-macros",
+    "compio-net",
     "compio-process",
     "compio-quic",
+    "compio-runtime",
+    "compio-signal",
+    "compio-tls",
 ]
 resolver = "2"
 
@@ -63,6 +63,7 @@ tokio = "1.33.0"
 tracing-subscriber = "0.3.18"
 widestring = "1.0.2"
 windows-sys = "0.52.0"
+thiserror = "2.0.3"
 
 [profile.bench]
 debug = true

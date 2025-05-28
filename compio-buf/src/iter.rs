@@ -1,6 +1,8 @@
 use crate::*;
 
 /// The inner implementation of a [`OwnedIter`].
+///
+/// [`OwnedIter`]: IoVectoredBuf::OwnedIter
 pub trait OwnedIterator: IntoInner + Sized {
     /// Get the next iterator.
     ///

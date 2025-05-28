@@ -1,5 +1,7 @@
 //! Traits and implementations for frame extraction and enclosing
 
+use compio_buf::IoBufMut;
+
 /// An extracted frame
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Frame {
@@ -72,12 +74,20 @@ pub trait Framer {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LengthDelimited {}
 
+impl LengthDelimited {
+    /// Creates a new `LengthDelimited` framer.
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
 impl Framer for LengthDelimited {
     fn enclose(&mut self, buf: &mut Vec<u8>) {
         let len = buf.len();
 
         buf.reserve(8);
-        buf.copy_within(0..len, 8); // Shift existing data
+        IoBufMut::as_mut_slice(buf).copy_within(0..len, 8); // Shift existing data
+        unsafe { buf.set_len(len + 8) };
         buf[0..8].copy_from_slice(&(len as u64).to_be_bytes()); // Write the length at the beginning
     }
 

@@ -37,6 +37,14 @@ impl<Io> State<Io> {
         }
     }
 
+    #[cfg(test)]
+    fn io(&mut self) -> Option<&mut Io> {
+        match self {
+            State::Idle(Some((io, _))) => Some(io),
+            _ => None,
+        }
+    }
+
     fn buf(&mut self) -> Option<&mut Vec<u8>> {
         match self {
             State::Idle(Some((_, buf))) => Some(buf),
@@ -108,7 +116,30 @@ pub struct Framed<Io, C, F, In, Out> {
     types: PhantomData<(In, Out)>,
 }
 
-impl<Io, C, F, In, Out> Framed<Io, C, F, In, Out> {}
+impl<Io, C, F, In, Out> Framed<Io, C, F, In, Out> {
+    /// Creates a new `Framed` with the given I/O object, codec, and framer.
+    pub fn new(io: Io, codec: C, framer: F) -> Self {
+        Self {
+            state: State::Idle(Some((io, Vec::new()))),
+            codec,
+            framer,
+            types: PhantomData,
+        }
+    }
+}
+
+impl<Io, C, F> Framed<Io, C, F, (), ()> {
+    /// Creates a new `Framed` with the given I/O object, codec, and framer with
+    /// symmetric In/Out type.
+    pub fn symmetric<T>(io: Io, codec: C, framer: F) -> Framed<Io, C, F, T, T> {
+        Framed {
+            state: State::Idle(Some((io, Vec::new()))),
+            codec,
+            framer,
+            types: PhantomData,
+        }
+    }
+}
 
 impl<Io, C, F, In, Out> Sink<In> for Framed<Io, C, F, In, Out>
 where
@@ -141,6 +172,7 @@ where
 
         let buf = this.state.buf().expect("`Framed` not in idle state");
         buf.clear();
+        buf.reserve(64);
         this.codec.encode(item, buf)?;
         this.framer.enclose(buf);
         this.state.start_write();
@@ -154,11 +186,13 @@ where
     ) -> std::task::Poll<Result<(), Self::Error>> {
         let this = self.get_mut();
         match &mut this.state {
-            state @ State::Idle(_) => {
-                state.start_flush();
-                state.poll_sink(cx).map_err(C::Error::from)
+            State::Idle(_) => {
+                this.state.start_flush();
+                this.state.poll_sink(cx).map_err(C::Error::from)
             }
-            state @ State::Flushing(_) => state.poll_sink(cx).map_err(C::Error::from),
+            State::Writing(_) | State::Flushing(_) => {
+                this.state.poll_sink(cx).map_err(C::Error::from)
+            }
             _ => unreachable!("`Framed` not able to flush"),
         }
     }
@@ -182,7 +216,7 @@ where
 impl<Io, C, F, In, Out> Stream for Framed<Io, C, F, In, Out>
 where
     Io: AsyncRead + 'static,
-    C: Decoder<Item = Out>,
+    C: Decoder<Out>,
     F: frame::Framer,
     Self: Unpin,
 {
@@ -222,5 +256,45 @@ where
                 _ => unreachable!("`Framed` not in reading state"),
             };
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::io::Cursor;
+
+    use futures_util::{SinkExt, StreamExt};
+    use serde::{Deserialize, Serialize};
+
+    use crate::framed::{Framed, codec::serde_json::SerdeJsonCodec, frame::LengthDelimited};
+
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    struct Test {
+        foo: String,
+        bar: usize,
+    }
+
+    #[compio_macros::test]
+    async fn test_framed() {
+        let codec = SerdeJsonCodec::new();
+        let framer = LengthDelimited::new();
+        let mut framed = Framed::symmetric::<Test>(Cursor::new(Vec::new()), codec, framer);
+
+        let origin = Test {
+            foo: "hello, world!".to_owned(),
+            bar: 114514,
+        };
+        framed.send(origin.clone()).await.unwrap();
+
+        let io = framed.state.io().expect("Invalid state");
+        println!(
+            "{:?}",
+            std::str::from_utf8(io.get_ref().as_slice()).unwrap()
+        );
+
+        let des = framed.next().await.unwrap().unwrap();
+        println!("{des:?}");
+
+        assert_eq!(origin, des);
     }
 }

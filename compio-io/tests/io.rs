@@ -93,7 +93,7 @@ fn io_read_at() {
         let (len, buf) = SRC.read_at(ArrayVec::<u8, 1>::new(), 7).await.unwrap();
 
         assert_eq!(len, 0);
-        assert_eq!(buf.as_slice(), []);
+        assert!(buf.as_slice().is_empty());
     })
 }
 
