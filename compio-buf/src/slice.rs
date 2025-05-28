@@ -22,6 +22,7 @@ use crate::*;
 ///
 /// assert_eq!(&slice[..], b"hello");
 /// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Slice<T> {
     buffer: T,
     begin: usize,
@@ -41,6 +42,11 @@ impl<T> Slice<T> {
     /// Offset in the underlying buffer at which this slice ends.
     pub fn end(&self) -> usize {
         self.end
+    }
+
+    pub(crate) fn set_range(&mut self, begin: usize, end: usize) {
+        self.begin = begin;
+        self.end = end;
     }
 
     /// Gets a reference to the underlying buffer.

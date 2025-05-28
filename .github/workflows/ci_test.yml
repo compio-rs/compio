@@ -20,34 +20,36 @@ jobs:
     runs-on: ${{ matrix.setup.os }}
     strategy:
       matrix:
-        toolchain: ["nightly", "beta", "stable"]
+        toolchain: ['nightly', 'beta', 'stable']
         setup:
-          - os: "ubuntu-22.04"
-          - os: "ubuntu-22.04"
-            features: "polling" # fusion
-          - os: "ubuntu-22.04"
-            features: "io-uring-sqe128,io-uring-cqe32"
-          - os: "ubuntu-22.04"
-            features: "polling,ring"
+          - os: 'ubuntu-22.04'
+          - os: 'ubuntu-22.04'
+            features: 'polling' # fusion
+          - os: 'ubuntu-22.04'
+            features: 'io-uring-sqe128,io-uring-cqe32'
+          - os: 'ubuntu-22.04'
+            features: 'polling,ring'
             no_default_features: true
-          - os: "ubuntu-22.04"
-            features: "polling,native-tls,ring"
+          - os: 'ubuntu-22.04'
+            features: 'polling,native-tls,ring'
             no_default_features: true
-          - os: "windows-latest"
-            target: "x86_64-pc-windows-msvc"
-          - os: "windows-latest"
-            target: "x86_64-pc-windows-gnu"
-          - os: "windows-latest"
-            target: "i686-pc-windows-msvc"
-          - os: "windows-latest"
-            target: "x86_64-pc-windows-msvc"
-            features: "iocp-global"
-          - os: "windows-latest"
-            target: "x86_64-pc-windows-msvc"
-            features: "iocp-wait-packet"
-          - os: "macos-13"
-          - os: "macos-14"
-          - os: "macos-15"
+          - os: 'ubuntu-22.04'
+            features: 'codec-serde-json'
+          - os: 'windows-latest'
+            target: 'x86_64-pc-windows-msvc'
+          - os: 'windows-latest'
+            target: 'x86_64-pc-windows-gnu'
+          - os: 'windows-latest'
+            target: 'i686-pc-windows-msvc'
+          - os: 'windows-latest'
+            target: 'x86_64-pc-windows-msvc'
+            features: 'iocp-global'
+          - os: 'windows-latest'
+            target: 'x86_64-pc-windows-msvc'
+            features: 'iocp-wait-packet'
+          - os: 'macos-13'
+          - os: 'macos-14'
+          - os: 'macos-15'
     steps:
       - uses: actions/checkout@v4
       - name: Setup Rust Toolchain

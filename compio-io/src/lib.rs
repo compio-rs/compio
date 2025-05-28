@@ -23,9 +23,18 @@
 //! - [`AsyncWriteExt`]: Extension trait for [`AsyncWrite`]
 //! - [`AsyncWriteAtExt`]: Extension trait for [`AsyncWriteAt`]
 //!
+//! ### Adapters
+//! - [`framed::Framed`]: Adapts [`AsyncRead`] to [`Stream`] and [`AsyncWrite`]
+//!   to [`Sink`], with framed de/encoding.
+//! - [`compat::SyncStream`]: Adapts async IO to std blocking io (requires
+//!   `compat` feature)
+//! - [`compat::AsyncStream`]: Adapts async IO to [`futures_util::io`] traits
+//!   (requires `compat` feature)
 //!
 //! [`IoBufMut`]: compio_buf::IoBufMut
 //! [`IoBuf`]: compio_buf::IoBuf
+//! [`Sink`]: futures_util::Sink
+//! [`Stream`]: futures_util::Stream
 //!
 //! # Examples
 //!
@@ -103,17 +112,21 @@
 #![cfg_attr(feature = "read_buf", feature(read_buf, core_io_borrowed_buf))]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
+use std::{future::Future, pin::Pin};
+type PinBoxFuture<T> = Pin<Box<dyn Future<Output = T>>>;
+
 mod buffer;
+pub mod framed;
+
 #[cfg(feature = "compat")]
 pub mod compat;
 mod read;
-mod split;
 pub mod util;
 mod write;
 
 pub(crate) type IoResult<T> = std::io::Result<T>;
 
 pub use read::*;
-pub use split::*;
-pub use util::{copy, null, repeat};
+#[doc(inline)]
+pub use util::{copy, null, repeat, split};
 pub use write::*;

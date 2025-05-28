@@ -4,7 +4,7 @@ use crate::{
     IndexedIter, IoBuf, IoBufMut, IoSlice, IoSliceMut, OwnedIterator, SetBufInit, t_alloc,
 };
 
-/// A type that's either owned or borrowed. Like [`Cow`](std::rc::Cow) but
+/// A type that's either owned or borrowed. Like [`Cow`](std::borrow::Cow) but
 /// without the requirement of [`ToOwned`].
 pub enum MaybeOwned<'a, T> {
     /// Owned.
