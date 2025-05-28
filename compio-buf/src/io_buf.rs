@@ -94,7 +94,7 @@ pub unsafe trait IoBuf: 'static {
     /// Returns an [`Uninit`], which is a [`Slice`] that only exposes
     /// uninitialized bytes.
     ///
-    /// It will always pointing to uninitialized area of a [`IoBuf`] even after
+    /// It will always point to uninitialized area of a [`IoBuf`] even after
     /// reading in some bytes, which is done by [`SetBufInit`]. This is useful
     /// for writing data into buffer without overwriting any existing bytes.
     ///
