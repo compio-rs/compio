@@ -12,7 +12,7 @@ repository = { workspace = true }
 
 [dependencies]
 compio-buf = { workspace = true, features = ["arrayvec"] }
-futures-util = { workspace = true }
+futures-util = { workspace = true, features = ["sink"] }
 paste = { workspace = true }
 pin-project-lite = { version = "0.2.14", optional = true }
 
@@ -24,7 +24,7 @@ futures-executor = "0.3.30"
 
 [features]
 default = []
-compat = ["futures-util/io", "dep:pin-project-lite"]
+compat = ["dep:pin-project-lite", "futures-util/io"]
 
 # Nightly features
 allocator_api = ["compio-buf/allocator_api"]

@@ -94,8 +94,9 @@ pub unsafe trait IoBuf: 'static {
     /// Returns an [`Uninit`], which is a [`Slice`] that only exposes
     /// uninitialized bytes.
     ///
-    /// This is useful for writing data into buffer without overwriting any
-    /// existing bytes.
+    /// It will always pointing to uninitialized area of a [`IoBuf`] even after
+    /// reading in some bytes, which is done by [`SetBufInit`]. This is useful
+    /// for writing data into buffer without overwriting any existing bytes.
     ///
     /// # Examples
     ///
@@ -104,10 +105,12 @@ pub unsafe trait IoBuf: 'static {
     /// ```
     /// use compio_buf::IoBuf;
     ///
-    /// let buf = b"hello world";
+    /// let mut buf = Vec::from(b"hello world");
+    /// buf.reserve_exact(10);
     /// let slice = buf.uninit();
     ///
-    /// assert_eq!(&slice[..], b"");
+    /// assert_eq!(slice.as_slice(), b"");
+    /// assert_eq!(slice.buf_capacity(), 10);
     /// ```
     fn uninit(self) -> Uninit<Self>
     where

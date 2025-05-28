@@ -44,6 +44,11 @@ impl<T> Slice<T> {
         self.end
     }
 
+    pub(crate) fn set_range(&mut self, begin: usize, end: usize) {
+        self.begin = begin;
+        self.end = end;
+    }
+
     /// Gets a reference to the underlying buffer.
     ///
     /// This method escapes the slice's view.

@@ -1,8 +1,6 @@
-use std::ops::{Deref, DerefMut};
-
 use crate::*;
 
-/// An [`Slice`] that only exposes uninitialized bytes.
+/// A [`Slice`] that only exposes uninitialized bytes.
 ///
 /// [`Uninit`] can be created with [`IoBuf::uninit`].
 ///
@@ -13,10 +11,12 @@ use crate::*;
 /// ```
 /// use compio_buf::IoBuf;
 ///
-/// let buf = b"hello world";
+/// let mut buf = Vec::from(b"hello world");
+/// buf.reserve_exact(10);
 /// let slice = buf.uninit();
 ///
-/// assert_eq!(&slice[..], b"");
+/// assert_eq!(slice.as_slice(), b"");
+/// assert_eq!(slice.buf_capacity(), 10);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Uninit<T>(Slice<T>);
@@ -49,27 +49,13 @@ impl<T> Uninit<T> {
     }
 }
 
-impl<T: IoBuf> Deref for Uninit<T> {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        self.0.deref()
-    }
-}
-
-impl<T: IoBufMut> DerefMut for Uninit<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.0.deref_mut()
-    }
-}
-
 unsafe impl<T: IoBuf> IoBuf for Uninit<T> {
     fn as_buf_ptr(&self) -> *const u8 {
         self.0.as_buf_ptr()
     }
 
     fn buf_len(&self) -> usize {
-        self.0.buf_len()
+        0
     }
 
     fn buf_capacity(&self) -> usize {
@@ -83,9 +69,11 @@ unsafe impl<T: IoBufMut> IoBufMut for Uninit<T> {
     }
 }
 
-impl<T: SetBufInit> SetBufInit for Uninit<T> {
+impl<T: SetBufInit + IoBuf> SetBufInit for Uninit<T> {
     unsafe fn set_buf_init(&mut self, len: usize) {
         self.0.set_buf_init(len);
+        let inner = self.0.as_inner();
+        self.0.set_range(inner.buf_len(), inner.buf_capacity());
     }
 }
 
