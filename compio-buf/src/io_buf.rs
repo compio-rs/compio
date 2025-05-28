@@ -91,6 +91,34 @@ pub unsafe trait IoBuf: 'static {
         Slice::new(self, begin, end)
     }
 
+    /// Returns an [`Uninit`], which is a [`Slice`] that only exposes
+    /// uninitialized bytes.
+    ///
+    /// It will always point to uninitialized area of a [`IoBuf`] even after
+    /// reading in some bytes, which is done by [`SetBufInit`]. This is useful
+    /// for writing data into buffer without overwriting any existing bytes.
+    ///
+    /// # Examples
+    ///
+    /// Creating an uninit slice
+    ///
+    /// ```
+    /// use compio_buf::IoBuf;
+    ///
+    /// let mut buf = Vec::from(b"hello world");
+    /// buf.reserve_exact(10);
+    /// let slice = buf.uninit();
+    ///
+    /// assert_eq!(slice.as_slice(), b"");
+    /// assert_eq!(slice.buf_capacity(), 10);
+    /// ```
+    fn uninit(self) -> Uninit<Self>
+    where
+        Self: Sized,
+    {
+        Uninit::new(self)
+    }
+
     /// Indicate whether the buffer has been filled (uninit portion is empty)
     fn filled(&self) -> bool {
         self.buf_len() == self.buf_capacity()

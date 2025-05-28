@@ -24,7 +24,7 @@ compio-runtime = { workspace = true, features = ["event"] }
 cfg-if = { workspace = true }
 either = "1.9.0"
 once_cell = { workspace = true }
-socket2 = { workspace = true, features = ["all"] }
+socket2 = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 widestring = { workspace = true }

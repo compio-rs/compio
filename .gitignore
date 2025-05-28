@@ -2,6 +2,6 @@
 /Cargo.lock
 /.vscode
 /.cargo
-/.idea
+.idea
 /.direnv
 .envrc

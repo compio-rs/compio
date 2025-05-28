@@ -32,7 +32,7 @@ async fn main() {
 
         let mut buf = vec![];
         recv.read_to_end(&mut buf).await.unwrap();
-        println!("{:?}", buf);
+        println!("{buf:?}");
 
         conn.close(1u32.into(), b"bye");
     }

@@ -367,6 +367,7 @@ impl Driver {
         if self.poll_blocking() {
             return Ok(());
         }
+        self.events.clear();
         self.poll.wait(&mut self.events, timeout)?;
         if self.events.is_empty() && timeout.is_some() {
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
@@ -447,14 +448,14 @@ impl Driver {
         buffer_len: u16,
         buffer_size: usize,
     ) -> io::Result<BufferPool> {
-        #[cfg(all(buf_ring, fusion))]
+        #[cfg(fusion)]
         {
             Ok(BufferPool::new_poll(crate::FallbackBufferPool::new(
                 buffer_len,
                 buffer_size,
             )))
         }
-        #[cfg(not(all(buf_ring, fusion)))]
+        #[cfg(not(fusion))]
         {
             Ok(BufferPool::new(buffer_len, buffer_size))
         }

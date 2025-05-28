@@ -178,12 +178,12 @@ fn echo(c: &mut Criterion) {
             group.throughput(Throughput::Bytes((data.len() * streams * 2) as u64));
 
             group.bench_with_input(
-                BenchmarkId::new("compio-quic", format!("{}-streams-{}-bytes", streams, size)),
+                BenchmarkId::new("compio-quic", format!("{streams}-streams-{size}-bytes")),
                 &(),
                 |b, _| echo_compio_quic(b, data, streams),
             );
             group.bench_with_input(
-                BenchmarkId::new("quinn", format!("{}-streams-{}-bytes", streams, size)),
+                BenchmarkId::new("quinn", format!("{streams}-streams-{size}-bytes")),
                 &(),
                 |b, _| echo_quinn(b, data, streams),
             );

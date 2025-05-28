@@ -1,5 +1,6 @@
 #[cfg(feature = "allocator_api")]
 use std::alloc::Allocator;
+use std::{io, io::ErrorKind};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut, t_alloc};
 
@@ -141,6 +142,31 @@ macro_rules! loop_read_to_end {
     }};
 }
 
+#[inline]
+fn after_read_to_string(res: io::Result<usize>, buf: Vec<u8>) -> BufResult<usize, String> {
+    match res {
+        Err(err) => {
+            // we have to clear the read bytes if it is not valid utf8 bytes
+            let buf = String::from_utf8(buf).unwrap_or_else(|err| {
+                let mut buf = err.into_bytes();
+                buf.clear();
+
+                // Safety: the buffer is empty
+                unsafe { String::from_utf8_unchecked(buf) }
+            });
+
+            BufResult(Err(err), buf)
+        }
+        Ok(n) => match String::from_utf8(buf) {
+            Err(err) => BufResult(
+                Err(std::io::Error::new(ErrorKind::InvalidData, err)),
+                String::new(),
+            ),
+            Ok(data) => BufResult(Ok(n), data),
+        },
+    }
+}
+
 /// Implemented as an extension trait, adding utility methods to all
 /// [`AsyncRead`] types. Callers will tend to import this trait instead of
 /// [`AsyncRead`].
@@ -159,6 +185,12 @@ pub trait AsyncReadExt: AsyncRead {
     /// Read the exact number of bytes required to fill the buf.
     async fn read_exact<T: IoBufMut>(&mut self, mut buf: T) -> BufResult<(), T> {
         loop_read_exact!(buf, buf.buf_capacity(), read, loop self.read(buf.slice(read..)));
+    }
+
+    /// Read all bytes as [`String`] until underlying reader reaches `EOF`.
+    async fn read_to_string(&mut self, buf: String) -> BufResult<usize, String> {
+        let BufResult(res, buf) = self.read_to_end(buf.into_bytes()).await;
+        after_read_to_string(res, buf)
     }
 
     /// Read all bytes until underlying reader reaches `EOF`.
@@ -236,6 +268,13 @@ pub trait AsyncReadAtExt: AsyncReadAt {
             read,
             loop self.read_at(buf.slice(read..), pos + read as u64)
         );
+    }
+
+    /// Read all bytes as [`String`] until EOF in this source, placing them into
+    /// `buffer`.
+    async fn read_to_string_at(&mut self, buf: String, pos: u64) -> BufResult<usize, String> {
+        let BufResult(res, buf) = self.read_to_end_at(buf.into_bytes(), pos).await;
+        after_read_to_string(res, buf)
     }
 
     /// Read all bytes until EOF in this source, placing them into `buffer`.

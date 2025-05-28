@@ -12,6 +12,9 @@ pub use repeat::{Repeat, repeat};
 mod internal;
 pub(crate) use internal::*;
 
+mod split;
+pub use split::{ReadHalf, WriteHalf, split};
+
 use crate::{AsyncRead, AsyncWrite, AsyncWriteExt, IoResult};
 
 /// Asynchronously copies the entire contents of a reader into a writer.

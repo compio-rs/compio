@@ -36,7 +36,7 @@ impl DriverType {
         cfg_if::cfg_if! {
             if #[cfg(windows)] {
                 DriverType::IOCP
-            } else if #[cfg(all(target_os = "linux", feature = "polling", feature = "io-uring"))] {
+            } else if #[cfg(fusion)] {
                 use io_uring::opcode::*;
 
                 // Add more opcodes here if used
@@ -54,13 +54,6 @@ impl DriverType {
                     OpenAt::CODE,
                     Close::CODE,
                     Shutdown::CODE,
-                    // Linux kernel 5.19
-                    #[cfg(any(
-                        feature = "io-uring-sqe128",
-                        feature = "io-uring-cqe32",
-                        feature = "io-uring-socket",
-                        feature = "io-uring-buf-ring"
-                    ))]
                     Socket::CODE,
                 ];
 
@@ -75,7 +68,7 @@ impl DriverType {
                     }
                 })()
                 .unwrap_or(DriverType::Poll) // Should we fail here?
-            } else if #[cfg(all(target_os = "linux", feature = "io-uring"))] {
+            } else if #[cfg(io_uring)] {
                 DriverType::IoUring
             } else if #[cfg(unix)] {
                 DriverType::Poll

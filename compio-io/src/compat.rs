@@ -1,7 +1,6 @@
 //! Compat wrappers for interop with other crates.
 
 use std::{
-    future::Future,
     io::{self, BufRead, Read, Write},
     mem::MaybeUninit,
     pin::Pin,
@@ -11,7 +10,7 @@ use std::{
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
 use pin_project_lite::pin_project;
 
-use crate::{buffer::Buffer, util::DEFAULT_BUF_SIZE};
+use crate::{PinBoxFuture, buffer::Buffer, util::DEFAULT_BUF_SIZE};
 
 /// A wrapper for [`AsyncRead`](crate::AsyncRead) +
 /// [`AsyncWrite`](crate::AsyncWrite), providing sync traits impl.
@@ -176,8 +175,6 @@ impl<S: crate::AsyncWrite> SyncStream<S> {
         Ok(len)
     }
 }
-
-type PinBoxFuture<T> = Pin<Box<dyn Future<Output = T>>>;
 
 pin_project! {
     /// A stream wrapper for [`futures_util::io`] traits.

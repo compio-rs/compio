@@ -26,7 +26,7 @@ async fn main() {
 
         let mut buf = vec![];
         recv.read_to_end(&mut buf).await.unwrap();
-        println!("{:?}", buf);
+        println!("{buf:?}");
 
         send.write(&[4, 5, 6]).await.unwrap();
         send.finish().unwrap();

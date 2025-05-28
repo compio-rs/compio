@@ -103,7 +103,7 @@ op!(<T: IoVectoredBuf, S: AsRawFd> SendToVectored(fd: SharedFd<S>, buffer: T, ad
 op!(<S: AsRawFd> FileStat(fd: SharedFd<S>));
 op!(<> PathStat(path: CString, follow_symlink: bool));
 
-#[cfg(buf_ring)]
+#[cfg(io_uring)]
 macro_rules! mop {
     (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? )) => {
         ::paste::paste!{
@@ -198,7 +198,7 @@ macro_rules! mop {
     };
 }
 
-#[cfg(buf_ring)]
+#[cfg(io_uring)]
 mop!(<S: AsRawFd> ReadManagedAt(fd: SharedFd<S>, offset: u64, pool: &BufferPool, len: usize));
-#[cfg(buf_ring)]
+#[cfg(io_uring)]
 mop!(<S: AsRawFd> RecvManaged(fd: SharedFd<S>, pool: &BufferPool, len: usize));

@@ -47,10 +47,10 @@ cfg_if::cfg_if! {
     if #[cfg(windows)] {
         #[path = "iocp/mod.rs"]
         mod sys;
-    } else if #[cfg(all(target_os = "linux", feature = "polling", feature = "io-uring"))] {
+    } else if #[cfg(fusion)] {
         #[path = "fusion/mod.rs"]
         mod sys;
-    } else if #[cfg(all(target_os = "linux", feature = "io-uring"))] {
+    } else if #[cfg(io_uring)] {
         #[path = "iour/mod.rs"]
         mod sys;
     } else if #[cfg(unix)] {
@@ -126,6 +126,12 @@ macro_rules! impl_raw_fd {
         impl $crate::AsRawFd for $t {
             fn as_raw_fd(&self) -> $crate::RawFd {
                 self.$inner.as_raw_fd()
+            }
+        }
+        #[cfg(unix)]
+        impl std::os::fd::AsFd for $t {
+            fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
+                self.$inner.as_fd()
             }
         }
         #[cfg(unix)]
@@ -366,7 +372,7 @@ impl Entry {
         }
     }
 
-    #[cfg(all(target_os = "linux", feature = "io-uring"))]
+    #[cfg(io_uring)]
     // this method only used by in io-uring driver
     pub(crate) fn set_flags(&mut self, flags: u32) {
         self.flags = flags;
@@ -432,6 +438,8 @@ pub struct ProactorBuilder {
     capacity: u32,
     pool_builder: ThreadPoolBuilder,
     sqpoll_idle: Option<Duration>,
+    coop_taskrun: bool,
+    taskrun_flag: bool,
 }
 
 impl Default for ProactorBuilder {
@@ -447,6 +455,8 @@ impl ProactorBuilder {
             capacity: 1024,
             pool_builder: ThreadPoolBuilder::new(),
             sqpoll_idle: None,
+            coop_taskrun: false,
+            taskrun_flag: false,
         }
     }
 
@@ -507,6 +517,33 @@ impl ProactorBuilder {
     /// - `idle` will be rounded down
     pub fn sqpoll_idle(&mut self, idle: Duration) -> &mut Self {
         self.sqpoll_idle = Some(idle);
+        self
+    }
+
+    /// `coop_taskrun` feature has been available since Linux Kernel 5.19. This
+    /// will optimize performance for most cases, especially compio is a single
+    /// thread runtime.
+    ///
+    /// However, it can't run with sqpoll feature.
+    ///
+    /// # Notes
+    ///
+    /// - Only effective when the `io-uring` feature is enabled
+    pub fn coop_taskrun(&mut self, enable: bool) -> &mut Self {
+        self.coop_taskrun = enable;
+        self
+    }
+
+    /// `taskrun_flag` feature has been available since Linux Kernel 5.19. This
+    /// allows io-uring driver can know if any cqes are available when try to
+    /// push sqe to sq. This should be enabled with
+    /// [`coop_taskrun`](Self::coop_taskrun)
+    ///
+    /// # Notes
+    ///
+    /// - Only effective when the `io-uring` feature is enabled
+    pub fn taskrun_flag(&mut self, enable: bool) -> &mut Self {
+        self.taskrun_flag = enable;
         self
     }
 

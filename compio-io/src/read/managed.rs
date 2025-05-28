@@ -11,11 +11,12 @@ pub trait AsyncReadManaged {
     /// Filled buffer type
     type Buffer<'a>;
 
-    /// Read some bytes from this source with [`BufferPool`] and return
-    /// a [`Buffer`].
+    /// Read some bytes from this source with [`Self::BufferPool`] and return
+    /// a [`Self::Buffer`].
     ///
-    /// If `len` == 0, will use [`BufferPool`] inner buffer size as the max len,
-    /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
+    /// If `len` == 0, will use [`Self::BufferPool`] inner buffer size as the
+    /// max len, if `len` > 0, `min(len, inner buffer size)` will be the
+    /// read max len
     async fn read_managed<'a>(
         &mut self,
         buffer_pool: &'a Self::BufferPool,
@@ -32,11 +33,12 @@ pub trait AsyncReadManagedAt {
     /// Filled buffer type
     type Buffer<'a>;
 
-    /// Read some bytes from this source at position with [`BufferPool`] and
-    /// return a [`Buffer`].
+    /// Read some bytes from this source at position with [`Self::BufferPool`]
+    /// and return a [`Self::Buffer`].
     ///
-    /// If `len` == 0, will use [`BufferPool`] inner buffer size as the max len,
-    /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
+    /// If `len` == 0, will use [`Self::BufferPool`] inner buffer size as the
+    /// max len, if `len` > 0, `min(len, inner buffer size)` will be the
+    /// read max len
     async fn read_managed_at<'a>(
         &self,
         pos: u64,

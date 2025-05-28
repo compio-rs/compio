@@ -33,7 +33,7 @@ async fn poll_connect() {
             match listener.accept() {
                 Ok(res) => break res,
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
-                Err(e) => panic!("{:?}", e),
+                Err(e) => panic!("{e:?}"),
             }
         }
     };
@@ -60,7 +60,7 @@ async fn poll_connect() {
             match tx.send(b"Hello world!") {
                 Ok(res) => break res,
                 Err(e) if is_would_block(&e) => {}
-                Err(e) => panic!("{:?}", e),
+                Err(e) => panic!("{e:?}"),
             }
             tx.write_ready().await.unwrap();
         }
@@ -75,7 +75,7 @@ async fn poll_connect() {
                     break res;
                 }
                 Err(e) if is_would_block(&e) => {}
-                Err(e) => panic!("{:?}", e),
+                Err(e) => panic!("{e:?}"),
             }
             client.read_ready().await.unwrap();
         }

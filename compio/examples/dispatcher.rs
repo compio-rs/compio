@@ -25,7 +25,7 @@ async fn main() {
             let addr = &addr;
             async move {
                 let mut cli = TcpStream::connect(addr).await.unwrap();
-                cli.write_all(format!("Hello world {}!", i)).await.unwrap();
+                cli.write_all(format!("Hello world {i}!")).await.unwrap();
             }
         }));
         while let Some(()) = futures.next().await {}
