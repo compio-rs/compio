@@ -1,6 +1,9 @@
 //! Traits and implementations for frame extraction and enclosing
 
-use compio_buf::IoBufMut;
+use compio_buf::{
+    IoBufMut,
+    bytes::{Buf, BufMut},
+};
 
 /// An extracted frame
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,13 +74,47 @@ pub trait Framer {
 /// A simple extractor that frames data by its length.
 ///
 /// It uses 8 bytes to represent the length of the data at the beginning.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LengthDelimited {}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LengthDelimited {
+    length_field_len: usize,
+    length_field_is_big_endian: bool,
+}
+
+impl Default for LengthDelimited {
+    fn default() -> Self {
+        Self {
+            length_field_len: 4,
+            length_field_is_big_endian: true,
+        }
+    }
+}
 
 impl LengthDelimited {
     /// Creates a new `LengthDelimited` framer.
     pub fn new() -> Self {
-        Self {}
+        Self::default()
+    }
+
+    /// Returns the length of the length field in bytes.
+    pub fn length_field_len(&self) -> usize {
+        self.length_field_len
+    }
+
+    /// Sets the length of the length field in bytes.
+    pub fn set_length_field_len(mut self, len_field_len: usize) -> Self {
+        self.length_field_len = len_field_len;
+        self
+    }
+
+    /// Returns whether the length field is big-endian.
+    pub fn length_field_is_big_endian(&self) -> bool {
+        self.length_field_is_big_endian
+    }
+
+    /// Sets whether the length field is big-endian.
+    pub fn set_length_field_is_big_endian(mut self, big_endian: bool) -> Self {
+        self.length_field_is_big_endian = big_endian;
+        self
     }
 }
 
@@ -85,24 +122,34 @@ impl Framer for LengthDelimited {
     fn enclose(&mut self, buf: &mut Vec<u8>) {
         let len = buf.len();
 
-        buf.reserve(8);
-        IoBufMut::as_mut_slice(buf).copy_within(0..len, 8); // Shift existing data
-        unsafe { buf.set_len(len + 8) };
-        buf[0..8].copy_from_slice(&(len as u64).to_be_bytes()); // Write the length at the beginning
+        buf.reserve(self.length_field_len);
+        IoBufMut::as_mut_slice(buf).copy_within(0..len, self.length_field_len); // Shift existing data
+        unsafe { buf.set_len(len + self.length_field_len) };
+
+        // Write the length at the beginning
+        if self.length_field_is_big_endian {
+            (&mut buf[0..self.length_field_len]).put_uint(len as _, self.length_field_len);
+        } else {
+            (&mut buf[0..self.length_field_len]).put_uint_le(len as _, self.length_field_len);
+        }
     }
 
-    fn extract(&mut self, buf: &[u8]) -> Option<Frame> {
-        if buf.len() < 8 {
+    fn extract(&mut self, mut buf: &[u8]) -> Option<Frame> {
+        if buf.len() < self.length_field_len {
             return None;
         }
 
-        let len = u64::from_be_bytes(buf[0..8].try_into().unwrap()) as usize;
+        let len = if self.length_field_is_big_endian {
+            buf.get_uint(self.length_field_len)
+        } else {
+            buf.get_uint_le(self.length_field_len)
+        } as usize;
 
-        if buf.len() < len + 8 {
+        if buf.len() < len {
             return None;
         }
 
-        Some(Frame::new(8, len, 0))
+        Some(Frame::new(self.length_field_len, len, 0))
     }
 }
 
