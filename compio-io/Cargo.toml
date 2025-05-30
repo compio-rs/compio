@@ -11,7 +11,7 @@ license = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-compio-buf = { workspace = true, features = ["arrayvec"] }
+compio-buf = { workspace = true, features = ["arrayvec", "bytes"] }
 futures-util = { workspace = true, features = ["sink"] }
 paste = { workspace = true }
 thiserror = { workspace = true, optional = true }
