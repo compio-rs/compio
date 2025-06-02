@@ -1,6 +1,6 @@
 use compio_buf::{BufResult, IoBufMut};
 
-use crate::{AsyncBufRead, AsyncRead, AsyncWrite, IoResult};
+use crate::{AsyncBufRead, AsyncRead, AsyncWrite, IoResult, util::Splittable};
 
 /// An empty reader and writer constructed via [`null`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -40,6 +40,15 @@ impl AsyncWrite for Null {
 
     async fn shutdown(&mut self) -> IoResult<()> {
         Ok(())
+    }
+}
+
+impl Splittable for Null {
+    type ReadHalf = Null;
+    type WriteHalf = Null;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        (Null { _p: () }, Null { _p: () })
     }
 }
 

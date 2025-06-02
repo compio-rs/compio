@@ -120,7 +120,10 @@ mod test {
     use futures_util::{SinkExt, StreamExt};
     use serde::{Deserialize, Serialize};
 
-    use crate::framed::{Framed, codec::serde_json::SerdeJsonCodec, frame::LengthDelimited};
+    use crate::{
+        framed::{Framed, codec::serde_json::SerdeJsonCodec, frame::LengthDelimited},
+        split,
+    };
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
     struct Test {
@@ -132,19 +135,16 @@ mod test {
     async fn test_framed() {
         let codec = SerdeJsonCodec::new();
         let framer = LengthDelimited::new();
-        let mut framed = Framed::symmetric::<Test>(Cursor::new(Vec::new()), codec, framer);
+        let (r, w) = split(Cursor::new(Vec::new()));
+        let mut framed = Framed::symmetric::<Test>(codec, framer)
+            .with_reader(r)
+            .with_writer(w);
 
         let origin = Test {
             foo: "hello, world!".to_owned(),
             bar: 114514,
         };
         framed.send(origin.clone()).await.unwrap();
-
-        let io = framed.state.io().expect("Invalid state");
-        println!(
-            "{:?}",
-            std::str::from_utf8(io.get_ref().as_slice()).unwrap()
-        );
 
         let des = framed.next().await.unwrap().unwrap();
         println!("{des:?}");
