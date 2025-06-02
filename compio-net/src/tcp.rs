@@ -2,7 +2,7 @@ use std::{future::Future, io, net::SocketAddr};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
-use compio_io::{AsyncRead, AsyncWrite};
+use compio_io::{AsyncRead, AsyncWrite, util::Splittable};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::{
@@ -333,6 +333,24 @@ impl AsyncWrite for &TcpStream {
     #[inline]
     async fn shutdown(&mut self) -> io::Result<()> {
         self.inner.shutdown().await
+    }
+}
+
+impl Splittable for TcpStream {
+    type ReadHalf = OwnedReadHalf<Self>;
+    type WriteHalf = OwnedWriteHalf<Self>;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        crate::into_split(self)
+    }
+}
+
+impl<'a> Splittable for &'a TcpStream {
+    type ReadHalf = ReadHalf<'a, TcpStream>;
+    type WriteHalf = WriteHalf<'a, TcpStream>;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        crate::split(self)
     }
 }
 

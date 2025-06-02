@@ -226,6 +226,24 @@ impl AsyncWrite for &NamedPipeServer {
     }
 }
 
+impl Splittable for NamedPipeServer {
+    type ReadHalf = NamedPipeServer;
+    type WriteHalf = NamedPipeServer;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        (self.clone(), self)
+    }
+}
+
+impl Splittable for &NamedPipeServer {
+    type ReadHalf = NamedPipeServer;
+    type WriteHalf = NamedPipeServer;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        (self.clone(), self.clone())
+    }
+}
+
 impl_raw_fd!(NamedPipeServer, std::fs::File, handle, file);
 
 /// A [Windows named pipe] client.
@@ -344,6 +362,24 @@ impl AsyncWrite for &NamedPipeClient {
     #[inline]
     async fn shutdown(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+impl Splittable for NamedPipeClient {
+    type ReadHalf = NamedPipeClient;
+    type WriteHalf = NamedPipeClient;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        (self.clone(), self)
+    }
+}
+
+impl Splittable for &NamedPipeClient {
+    type ReadHalf = NamedPipeClient;
+    type WriteHalf = NamedPipeClient;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        (self.clone(), self.clone())
     }
 }
 

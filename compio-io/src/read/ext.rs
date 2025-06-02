@@ -2,7 +2,7 @@
 use std::alloc::Allocator;
 use std::{io, io::ErrorKind};
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut, t_alloc};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut, Uninit, t_alloc};
 
 use crate::{AsyncRead, AsyncReadAt, IoResult, util::Take};
 
@@ -180,6 +180,13 @@ pub trait AsyncReadExt: AsyncRead {
         Self: Sized,
     {
         self
+    }
+
+    /// Same as [`AsyncRead::read`], but it appends data to the end of the
+    /// buffer; in other words, it read to the beginning of the uninitialized
+    /// area.
+    async fn append<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
+        self.read(buf.uninit()).await.map_buffer(Uninit::into_inner)
     }
 
     /// Read the exact number of bytes required to fill the buf.

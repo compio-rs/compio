@@ -55,11 +55,16 @@ unsafe impl<T: IoBuf> IoBuf for Uninit<T> {
     }
 
     fn buf_len(&self) -> usize {
+        debug_assert!(self.0.buf_len() == 0, "Uninit buffer should have length 0");
         0
     }
 
     fn buf_capacity(&self) -> usize {
         self.0.buf_capacity()
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        &[]
     }
 }
 

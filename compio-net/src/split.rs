@@ -2,7 +2,7 @@ use std::{error::Error, fmt, io};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::AsRawFd;
-use compio_io::{AsyncRead, AsyncWrite};
+use compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt};
 
 pub(crate) fn split<T>(stream: &T) -> (ReadHalf<'_, T>, WriteHalf<'_, T>)
 where
@@ -92,6 +92,19 @@ where
     }
 }
 
+impl<R> AsyncReadAt for OwnedReadHalf<R>
+where
+    for<'a> &'a R: AsyncReadAt,
+{
+    async fn read_at<T: IoBufMut>(&self, buf: T, pos: u64) -> BufResult<usize, T> {
+        (&self.0).read_at(buf, pos).await
+    }
+
+    async fn read_vectored_at<T: IoVectoredBufMut>(&self, buf: T, pos: u64) -> BufResult<usize, T> {
+        (&self.0).read_vectored_at(buf, pos).await
+    }
+}
+
 /// Owned write half.
 #[derive(Debug)]
 pub struct OwnedWriteHalf<T>(T);
@@ -114,6 +127,23 @@ where
 
     async fn shutdown(&mut self) -> io::Result<()> {
         (&self.0).shutdown().await
+    }
+}
+
+impl<R> AsyncWriteAt for OwnedWriteHalf<R>
+where
+    for<'a> &'a R: AsyncWriteAt,
+{
+    async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
+        (&self.0).write_at(buf, pos).await
+    }
+
+    async fn write_vectored_at<T: IoVectoredBuf>(
+        &mut self,
+        buf: T,
+        pos: u64,
+    ) -> BufResult<usize, T> {
+        (&self.0).write_vectored_at(buf, pos).await
     }
 }
 
