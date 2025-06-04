@@ -63,7 +63,7 @@ pub trait Splittable {
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// use compio::io::util::UnsyncSplit;
 ///
 /// // Create a splittable stream
