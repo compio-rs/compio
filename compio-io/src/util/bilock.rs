@@ -49,6 +49,7 @@ impl<T> BiLock<T> {
         }
     }
 
+    #[allow(unused)]
     pub fn join(self, other: Self) -> T {
         if let Some(value) = self.try_join(other) {
             value
