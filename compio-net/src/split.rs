@@ -92,19 +92,6 @@ where
     }
 }
 
-impl<R> AsyncReadAt for OwnedReadHalf<R>
-where
-    for<'a> &'a R: AsyncReadAt,
-{
-    async fn read_at<T: IoBufMut>(&self, buf: T, pos: u64) -> BufResult<usize, T> {
-        (&self.0).read_at(buf, pos).await
-    }
-
-    async fn read_vectored_at<T: IoVectoredBufMut>(&self, buf: T, pos: u64) -> BufResult<usize, T> {
-        (&self.0).read_vectored_at(buf, pos).await
-    }
-}
-
 /// Owned write half.
 #[derive(Debug)]
 pub struct OwnedWriteHalf<T>(T);
