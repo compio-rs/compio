@@ -8,7 +8,7 @@ use std::{ffi::OsStr, io, os::windows::io::FromRawHandle, ptr::null};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
 use compio_driver::{AsRawFd, RawFd, ToSharedFd, impl_raw_fd, op::ConnectNamedPipe, syscall};
-use compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt};
+use compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt, util::Splittable};
 use widestring::U16CString;
 use windows_sys::Win32::{
     Storage::FileSystem::{
