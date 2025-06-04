@@ -56,7 +56,8 @@ impl BufferPool {
     }
 
     /// Select an [`OwnedBuffer`] when the op creates.
-    pub(crate) fn get_buffer(&self, len: usize) -> io::Result<OwnedBuffer> {
+    #[doc(hidden)]
+    pub fn get_buffer(&self, len: usize) -> io::Result<OwnedBuffer> {
         let buffer = self
             .inner
             .buffers
@@ -78,7 +79,8 @@ impl BufferPool {
 
     /// ## Safety
     /// * `len` should be valid.
-    pub(crate) unsafe fn create_proxy(&self, mut slice: OwnedBuffer, len: usize) -> BorrowedBuffer {
+    #[doc(hidden)]
+    pub unsafe fn create_proxy(&self, mut slice: OwnedBuffer, len: usize) -> BorrowedBuffer {
         unsafe {
             slice.set_buf_init(len);
         }
@@ -86,7 +88,8 @@ impl BufferPool {
     }
 }
 
-pub(crate) struct OwnedBuffer {
+#[doc(hidden)]
+pub struct OwnedBuffer {
     buffer: ManuallyDrop<Slice<Vec<u8>>>,
     pool: ManuallyDrop<Rc<BufferPoolInner>>,
 }
