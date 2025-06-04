@@ -369,7 +369,7 @@ impl Splittable for NamedPipeClient {
     type ReadHalf = NamedPipeClient;
     type WriteHalf = NamedPipeClient;
 
-    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+    fn split(self) -> (NamedPipeClient, NamedPipeClient) {
         (self.clone(), self)
     }
 }
@@ -378,7 +378,7 @@ impl Splittable for &NamedPipeClient {
     type ReadHalf = NamedPipeClient;
     type WriteHalf = NamedPipeClient;
 
-    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+    fn split(self) -> (NamedPipeClient, NamedPipeClient) {
         (self.clone(), self.clone())
     }
 }
