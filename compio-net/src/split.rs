@@ -117,23 +117,6 @@ where
     }
 }
 
-impl<R> AsyncWriteAt for OwnedWriteHalf<R>
-where
-    for<'a> &'a R: AsyncWriteAt,
-{
-    async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
-        (&self.0).write_at(buf, pos).await
-    }
-
-    async fn write_vectored_at<T: IoVectoredBuf>(
-        &mut self,
-        buf: T,
-        pos: u64,
-    ) -> BufResult<usize, T> {
-        (&self.0).write_vectored_at(buf, pos).await
-    }
-}
-
 /// Error indicating that two halves were not from the same socket, and thus
 /// could not be reunited.
 #[derive(Debug)]
