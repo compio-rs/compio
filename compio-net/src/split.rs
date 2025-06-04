@@ -2,7 +2,7 @@ use std::{error::Error, fmt, io};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::AsRawFd;
-use compio_io::{AsyncRead, AsyncWrite, AsyncWriteAt};
+use compio_io::{AsyncRead, AsyncWrite};
 
 pub(crate) fn split<T>(stream: &T) -> (ReadHalf<'_, T>, WriteHalf<'_, T>)
 where
