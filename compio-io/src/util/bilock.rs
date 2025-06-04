@@ -114,53 +114,6 @@ impl<T: ?Sized> Drop for BiLockGuard<'_, T> {
     }
 }
 
-// pub struct WaitingOwned<T> {
-//     inner: Rc<Inner<T>>,
-// }
-
-// impl<T> Future for WaitingOwned<T> {
-//     type Output = BiLockOwnedGuard<T>;
-
-//     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output>
-// {         let this = self.get_mut();
-//         if this.inner.locked.replace(true) {
-//             this.inner.waiter.replace(Some(cx.waker().clone()));
-//             Poll::Pending
-//         } else {
-//             Poll::Ready(BiLockOwnedGuard {
-//                 inner: this.inner.clone(),
-//             })
-//         }
-//     }
-// }
-
-// pub struct BiLockOwnedGuard<T> {
-//     inner: Rc<Inner<T>>,
-// }
-
-// impl<T> Deref for BiLockOwnedGuard<T> {
-//     type Target = T;
-
-//     fn deref(&self) -> &Self::Target {
-//         unsafe { &*self.inner.data.get() }
-//     }
-// }
-
-// impl<T> DerefMut for BiLockOwnedGuard<T> {
-//     fn deref_mut(&mut self) -> &mut Self::Target {
-//         unsafe { &mut *self.inner.data.get() }
-//     }
-// }
-
-// impl<T> Drop for BiLockOwnedGuard<T> {
-//     fn drop(&mut self) {
-//         self.inner.locked.set(false);
-//         if let Some(waker) = self.inner.waiter.borrow_mut().take() {
-//             waker.wake();
-//         }
-//     }
-// }
-
 #[cfg(test)]
 mod tests {
     use futures_util::{FutureExt, task::noop_waker_ref};
