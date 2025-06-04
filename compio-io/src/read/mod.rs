@@ -24,10 +24,12 @@ pub trait AsyncRead {
     /// how many bytes were read.
     ///
     /// # Caution
-    ///
-    /// Implementor **MUST** update the buffer init via
-    /// [`SetBufInit::set_buf_init`] after reading, and no further update should
-    /// be made by caller.
+    /// - This function read data to the **beginning** of the buffer; that is,
+    ///   all existing data in the buffer will be overwritten. To read data to
+    ///   the end of the buffer, use [`AsyncReadExt::append`].
+    /// - Implementor **MUST** update the buffer init via
+    ///   [`SetBufInit::set_buf_init`] after reading, and no further update
+    ///   should be made by caller.
     ///
     /// [`SetBufInit::set_buf_init`]: compio_buf::SetBufInit::set_buf_init
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B>;

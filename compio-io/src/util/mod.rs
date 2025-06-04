@@ -1,4 +1,7 @@
 //! IO related utilities functions for ease of use.
+use crate::{AsyncRead, AsyncWrite, AsyncWriteExt, IoResult};
+
+mod bilock;
 
 mod take;
 pub use take::Take;
@@ -12,10 +15,8 @@ pub use repeat::{Repeat, repeat};
 mod internal;
 pub(crate) use internal::*;
 
-mod split;
-pub use split::{ReadHalf, WriteHalf, split};
-
-use crate::{AsyncRead, AsyncWrite, AsyncWriteExt, IoResult};
+pub mod split;
+pub use split::Splittable;
 
 /// Asynchronously copies the entire contents of a reader into a writer.
 ///

@@ -43,11 +43,6 @@ impl Frame {
     pub fn payload<'a>(&self, buf: &'a [u8]) -> &'a [u8] {
         &buf[self.prefix..self.prefix + self.payload]
     }
-
-    /// Shifts bytes after the frame to the beginning of `buf`
-    pub fn consume(&self, buf: &mut [u8]) {
-        buf.copy_within(self.len().., 0);
-    }
 }
 
 /// Enclosing and extracting frames in a buffer.

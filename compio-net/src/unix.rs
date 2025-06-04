@@ -2,7 +2,7 @@ use std::{future::Future, io, path::Path};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
-use compio_io::{AsyncRead, AsyncWrite};
+use compio_io::{AsyncRead, AsyncWrite, util::Splittable};
 use socket2::{SockAddr, Socket as Socket2, Type};
 
 use crate::{OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, WriteHalf};
@@ -280,6 +280,24 @@ impl AsyncWrite for &UnixStream {
     #[inline]
     async fn shutdown(&mut self) -> io::Result<()> {
         self.inner.shutdown().await
+    }
+}
+
+impl Splittable for UnixStream {
+    type ReadHalf = OwnedReadHalf<Self>;
+    type WriteHalf = OwnedWriteHalf<Self>;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        crate::into_split(self)
+    }
+}
+
+impl<'a> Splittable for &'a UnixStream {
+    type ReadHalf = ReadHalf<'a, UnixStream>;
+    type WriteHalf = WriteHalf<'a, UnixStream>;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        crate::split(self)
     }
 }
 

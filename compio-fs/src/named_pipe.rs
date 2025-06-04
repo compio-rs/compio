@@ -8,7 +8,7 @@ use std::{ffi::OsStr, io, os::windows::io::FromRawHandle, ptr::null};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
 use compio_driver::{AsRawFd, RawFd, ToSharedFd, impl_raw_fd, op::ConnectNamedPipe, syscall};
-use compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt};
+use compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt, util::Splittable};
 use widestring::U16CString;
 use windows_sys::Win32::{
     Storage::FileSystem::{
@@ -226,6 +226,24 @@ impl AsyncWrite for &NamedPipeServer {
     }
 }
 
+impl Splittable for NamedPipeServer {
+    type ReadHalf = NamedPipeServer;
+    type WriteHalf = NamedPipeServer;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        (self.clone(), self)
+    }
+}
+
+impl Splittable for &NamedPipeServer {
+    type ReadHalf = NamedPipeServer;
+    type WriteHalf = NamedPipeServer;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        (self.clone(), self.clone())
+    }
+}
+
 impl_raw_fd!(NamedPipeServer, std::fs::File, handle, file);
 
 /// A [Windows named pipe] client.
@@ -344,6 +362,24 @@ impl AsyncWrite for &NamedPipeClient {
     #[inline]
     async fn shutdown(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+impl Splittable for NamedPipeClient {
+    type ReadHalf = NamedPipeClient;
+    type WriteHalf = NamedPipeClient;
+
+    fn split(self) -> (NamedPipeClient, NamedPipeClient) {
+        (self.clone(), self)
+    }
+}
+
+impl Splittable for &NamedPipeClient {
+    type ReadHalf = NamedPipeClient;
+    type WriteHalf = NamedPipeClient;
+
+    fn split(self) -> (NamedPipeClient, NamedPipeClient) {
+        (self.clone(), self.clone())
     }
 }
 

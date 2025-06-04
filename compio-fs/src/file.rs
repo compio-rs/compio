@@ -7,7 +7,7 @@ use compio_driver::{
     ToSharedFd, impl_raw_fd,
     op::{BufResultExt, CloseFile, ReadAt, Sync, WriteAt},
 };
-use compio_io::{AsyncReadAt, AsyncWriteAt};
+use compio_io::{AsyncReadAt, AsyncWriteAt, util::Splittable};
 use compio_runtime::Attacher;
 #[cfg(all(unix, not(solarish)))]
 use {
@@ -202,6 +202,24 @@ impl AsyncWriteAt for &File {
         let fd = self.inner.to_shared_fd();
         let op = WriteVectoredAt::new(fd, pos, buffer);
         compio_runtime::submit(op).await.into_inner()
+    }
+}
+
+impl Splittable for File {
+    type ReadHalf = File;
+    type WriteHalf = File;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        (self.clone(), self)
+    }
+}
+
+impl Splittable for &File {
+    type ReadHalf = File;
+    type WriteHalf = File;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        (self.clone(), self.clone())
     }
 }
 
