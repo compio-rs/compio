@@ -7,7 +7,6 @@ use std::{
     collections::{HashMap, VecDeque},
     io,
     num::NonZeroUsize,
-    os::fd::BorrowedFd,
     pin::Pin,
     sync::Arc,
     task::Poll,
