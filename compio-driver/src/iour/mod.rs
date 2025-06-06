@@ -1,6 +1,6 @@
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 #[allow(unused_imports)]
-pub use std::os::fd::{AsRawFd, OwnedFd, RawFd};
+pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::{io, os::fd::FromRawFd, pin::Pin, sync::Arc, task::Poll, time::Duration};
 
 use compio_log::{instrument, trace, warn};

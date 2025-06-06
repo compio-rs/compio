@@ -9,7 +9,9 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner};
-use compio_driver::{AsRawFd, OpCode, OpType, RawFd, SharedFd, ToSharedFd, syscall};
+use compio_driver::{
+    AsFd, AsRawFd, BorrowedFd, OpCode, OpType, RawFd, SharedFd, ToSharedFd, syscall,
+};
 use windows_sys::Win32::{
     Foundation::ERROR_IO_PENDING,
     Networking::WinSock::{
@@ -20,12 +22,12 @@ use windows_sys::Win32::{
 };
 
 #[derive(Debug)]
-pub struct PollFd<T: AsRawFd> {
+pub struct PollFd<T: AsFd> {
     inner: SharedFd<T>,
     event: WSAEvent,
 }
 
-impl<T: AsRawFd> PollFd<T> {
+impl<T: AsFd> PollFd<T> {
     pub fn new(inner: SharedFd<T>) -> io::Result<Self> {
         Ok(Self {
             inner,
@@ -34,7 +36,7 @@ impl<T: AsRawFd> PollFd<T> {
     }
 }
 
-impl<T: AsRawFd + 'static> PollFd<T> {
+impl<T: AsFd + 'static> PollFd<T> {
     pub async fn accept_ready(&self) -> io::Result<()> {
         self.event.wait(self.to_shared_fd(), FD_ACCEPT).await
     }
@@ -52,7 +54,7 @@ impl<T: AsRawFd + 'static> PollFd<T> {
     }
 }
 
-impl<T: AsRawFd> IntoInner for PollFd<T> {
+impl<T: AsFd> IntoInner for PollFd<T> {
     type Inner = SharedFd<T>;
 
     fn into_inner(self) -> Self::Inner {
@@ -60,25 +62,31 @@ impl<T: AsRawFd> IntoInner for PollFd<T> {
     }
 }
 
-impl<T: AsRawFd> ToSharedFd<T> for PollFd<T> {
+impl<T: AsFd> ToSharedFd<T> for PollFd<T> {
     fn to_shared_fd(&self) -> SharedFd<T> {
         self.inner.clone()
     }
 }
 
-impl<T: AsRawFd> AsRawFd for PollFd<T> {
-    fn as_raw_fd(&self) -> RawFd {
-        self.inner.as_raw_fd()
+impl<T: AsFd> AsFd for PollFd<T> {
+    fn as_fd(&self) -> BorrowedFd {
+        self.inner.as_fd()
     }
 }
 
-impl<T: AsRawFd + AsRawSocket> AsRawSocket for PollFd<T> {
+impl<T: AsFd> AsRawFd for PollFd<T> {
+    fn as_raw_fd(&self) -> RawFd {
+        self.inner.as_fd().as_raw_fd()
+    }
+}
+
+impl<T: AsFd + AsRawSocket> AsRawSocket for PollFd<T> {
     fn as_raw_socket(&self) -> RawSocket {
         self.inner.as_raw_socket()
     }
 }
 
-impl<T: AsRawFd> Deref for PollFd<T> {
+impl<T: AsFd> Deref for PollFd<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -106,7 +114,7 @@ impl WSAEvent {
         })
     }
 
-    pub async fn wait<T: AsRawFd + 'static>(
+    pub async fn wait<T: AsFd + 'static>(
         &self,
         mut socket: SharedFd<T>,
         event: u32,
@@ -139,7 +147,7 @@ impl WSAEvent {
         syscall!(
             SOCKET,
             WSAEventSelect(
-                socket.as_raw_fd() as _,
+                socket.as_fd().as_raw_fd() as _,
                 ev_object.as_raw_handle() as _,
                 events
             )
@@ -189,7 +197,7 @@ impl<T> IntoInner for WaitWSAEvent<T> {
     }
 }
 
-impl<T: AsRawFd> OpCode for WaitWSAEvent<T> {
+impl<T: AsFd> OpCode for WaitWSAEvent<T> {
     fn op_type(&self) -> OpType {
         OpType::Event(self.ev_object.as_raw_fd())
     }
@@ -199,7 +207,7 @@ impl<T: AsRawFd> OpCode for WaitWSAEvent<T> {
         syscall!(
             SOCKET,
             WSAEnumNetworkEvents(
-                self.socket.as_raw_fd() as _,
+                self.socket.as_fd().as_raw_fd() as _,
                 self.ev_object.as_raw_handle() as _,
                 &mut events
             )

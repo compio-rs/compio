@@ -1,6 +1,6 @@
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 #[allow(unused_imports)]
-pub use std::os::fd::{AsRawFd, OwnedFd, RawFd};
+pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 #[cfg(aio)]
 use std::ptr::NonNull;
 use std::{
