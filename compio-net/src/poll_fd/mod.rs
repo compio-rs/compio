@@ -31,7 +31,7 @@ impl<T: AsFd> PollFd<T> {
     }
 }
 
-impl<T: AsFd + 'static> PollFd<T> {
+impl<T: AsFd + AsRawFd + 'static> PollFd<T> {
     /// Wait for accept readiness, before calling `accept`, or after `accept`
     /// returns `WouldBlock`.
     pub async fn accept_ready(&self) -> io::Result<()> {
