@@ -27,7 +27,7 @@ impl<S> Attacher<S> {
     /// driver.
     pub unsafe fn new_unchecked(source: S) -> Self {
         Self {
-            source: SharedFd::new(source),
+            source: SharedFd::new_unchecked(source),
         }
     }
 

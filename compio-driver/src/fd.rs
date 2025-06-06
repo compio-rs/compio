@@ -16,7 +16,7 @@ use std::{
 
 use futures_util::task::AtomicWaker;
 
-use crate::{AsRawFd, RawFd};
+use crate::{AsFd, AsRawFd, RawFd};
 
 #[derive(Debug)]
 struct Inner<T> {
@@ -33,9 +33,19 @@ impl<T> RefUnwindSafe for Inner<T> {}
 #[derive(Debug)]
 pub struct SharedFd<T>(Arc<Inner<T>>);
 
-impl<T> SharedFd<T> {
+impl<T: AsFd> SharedFd<T> {
     /// Create the shared fd from an owned fd.
     pub fn new(fd: T) -> Self {
+        unsafe { Self::new_unchecked(fd) }
+    }
+}
+
+impl<T> SharedFd<T> {
+    /// Create the shared fd.
+    ///
+    /// # Safety
+    /// * T should own the fd.
+    pub unsafe fn new_unchecked(fd: T) -> Self {
         Self(Arc::new(Inner {
             fd,
             waits: AtomicBool::new(false),
@@ -110,27 +120,21 @@ impl<T: AsRawFd> AsRawFd for SharedFd<T> {
 #[cfg(windows)]
 impl<T: FromRawHandle> FromRawHandle for SharedFd<T> {
     unsafe fn from_raw_handle(handle: RawHandle) -> Self {
-        Self::new(T::from_raw_handle(handle))
+        Self::new_unchecked(T::from_raw_handle(handle))
     }
 }
 
 #[cfg(windows)]
 impl<T: FromRawSocket> FromRawSocket for SharedFd<T> {
     unsafe fn from_raw_socket(sock: RawSocket) -> Self {
-        Self::new(T::from_raw_socket(sock))
+        Self::new_unchecked(T::from_raw_socket(sock))
     }
 }
 
 #[cfg(unix)]
 impl<T: FromRawFd> FromRawFd for SharedFd<T> {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self::new(T::from_raw_fd(fd))
-    }
-}
-
-impl<T> From<T> for SharedFd<T> {
-    fn from(value: T) -> Self {
-        Self::new(value)
+        Self::new_unchecked(T::from_raw_fd(fd))
     }
 }
 

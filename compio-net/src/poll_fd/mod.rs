@@ -13,13 +13,13 @@ use std::os::windows::io::{AsRawSocket, RawSocket};
 use std::{io, ops::Deref};
 
 use compio_buf::IntoInner;
-use compio_driver::{AsRawFd, RawFd, SharedFd, ToSharedFd};
+use compio_driver::{AsFd, AsRawFd, BorrowedFd, RawFd, SharedFd, ToSharedFd};
 
 /// A wrapper for socket, providing functionalities to wait for readiness.
 #[derive(Debug)]
-pub struct PollFd<T: AsRawFd>(sys::PollFd<T>);
+pub struct PollFd<T: AsFd>(sys::PollFd<T>);
 
-impl<T: AsRawFd> PollFd<T> {
+impl<T: AsFd> PollFd<T> {
     /// Create [`PollFd`] without attaching the source. Ready-based sources need
     /// not to be attached.
     pub fn new(source: T) -> io::Result<Self> {
@@ -31,7 +31,7 @@ impl<T: AsRawFd> PollFd<T> {
     }
 }
 
-impl<T: AsRawFd + 'static> PollFd<T> {
+impl<T: AsFd + 'static> PollFd<T> {
     /// Wait for accept readiness, before calling `accept`, or after `accept`
     /// returns `WouldBlock`.
     pub async fn accept_ready(&self) -> io::Result<()> {
@@ -54,7 +54,7 @@ impl<T: AsRawFd + 'static> PollFd<T> {
     }
 }
 
-impl<T: AsRawFd> IntoInner for PollFd<T> {
+impl<T: AsFd> IntoInner for PollFd<T> {
     type Inner = SharedFd<T>;
 
     fn into_inner(self) -> Self::Inner {
@@ -62,26 +62,32 @@ impl<T: AsRawFd> IntoInner for PollFd<T> {
     }
 }
 
-impl<T: AsRawFd> ToSharedFd<T> for PollFd<T> {
+impl<T: AsFd> ToSharedFd<T> for PollFd<T> {
     fn to_shared_fd(&self) -> SharedFd<T> {
         self.0.to_shared_fd()
     }
 }
 
-impl<T: AsRawFd> AsRawFd for PollFd<T> {
+impl<T: AsFd> AsFd for PollFd<T> {
+    fn as_fd(&self) -> BorrowedFd {
+        self.0.as_fd()
+    }
+}
+
+impl<T: AsFd> AsRawFd for PollFd<T> {
     fn as_raw_fd(&self) -> RawFd {
         self.0.as_raw_fd()
     }
 }
 
 #[cfg(windows)]
-impl<T: AsRawFd + AsRawSocket> AsRawSocket for PollFd<T> {
+impl<T: AsFd + AsRawSocket> AsRawSocket for PollFd<T> {
     fn as_raw_socket(&self) -> RawSocket {
         self.0.as_raw_socket()
     }
 }
 
-impl<T: AsRawFd> Deref for PollFd<T> {
+impl<T: AsFd> Deref for PollFd<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
