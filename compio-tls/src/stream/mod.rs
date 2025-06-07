@@ -25,7 +25,7 @@ impl<S> TlsStreamInner<S> {
         }
     }
 
-    pub fn negotiated_alpn(&self) -> Option<Cow<[u8]>> {
+    pub fn negotiated_alpn(&self) -> Option<Cow<'_, [u8]>> {
         match self {
             #[cfg(feature = "native-tls")]
             Self::NativeTls(s) => s.negotiated_alpn().ok().flatten().map(Cow::from),
@@ -98,7 +98,7 @@ impl<S> TlsStream<S> {
     }
 
     /// Returns the negotiated ALPN protocol.
-    pub fn negotiated_alpn(&self) -> Option<Cow<[u8]>> {
+    pub fn negotiated_alpn(&self) -> Option<Cow<'_, [u8]>> {
         self.0.negotiated_alpn()
     }
 }
