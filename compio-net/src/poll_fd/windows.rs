@@ -69,7 +69,7 @@ impl<T: AsFd> ToSharedFd<T> for PollFd<T> {
 }
 
 impl<T: AsFd> AsFd for PollFd<T> {
-    fn as_fd(&self) -> BorrowedFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         self.inner.as_fd()
     }
 }

@@ -41,7 +41,7 @@ use windows_sys::{
     core::GUID,
 };
 
-use crate::{AsRawFd, OpCode, OpType, RawFd, SharedFd, op::*, syscall};
+use crate::{AsRawFd, OpCode, OpType, RawFd, op::*, syscall};
 
 #[inline]
 fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
@@ -250,7 +250,7 @@ const ACCEPT_BUFFER_SIZE: usize = ACCEPT_ADDR_BUFFER_SIZE * 2;
 
 /// Accept a connection.
 pub struct Accept<S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) accept_fd: socket2::Socket,
     pub(crate) buffer: Aligned<A8, [u8; ACCEPT_BUFFER_SIZE]>,
     _p: PhantomPinned,
@@ -258,7 +258,7 @@ pub struct Accept<S> {
 
 impl<S> Accept<S> {
     /// Create [`Accept`]. `accept_fd` should not be bound.
-    pub fn new(fd: SharedFd<S>, accept_fd: socket2::Socket) -> Self {
+    pub fn new(fd: S, accept_fd: socket2::Socket) -> Self {
         Self {
             fd,
             accept_fd,
@@ -392,14 +392,14 @@ impl<S: AsRawFd> OpCode for Connect<S> {
 
 /// Receive data from remote.
 pub struct Recv<T: IoBufMut, S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) buffer: T,
     _p: PhantomPinned,
 }
 
 impl<T: IoBufMut, S> Recv<T, S> {
     /// Create [`Recv`].
-    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
+    pub fn new(fd: S, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -448,14 +448,14 @@ impl<T: IoBufMut, S: AsRawFd> OpCode for Recv<T, S> {
 
 /// Receive data from remote into vectored buffer.
 pub struct RecvVectored<T: IoVectoredBufMut, S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) buffer: T,
     _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
     /// Create [`RecvVectored`].
-    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
+    pub fn new(fd: S, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -497,14 +497,14 @@ impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvVectored<T, S> {
 
 /// Send data to remote.
 pub struct Send<T: IoBuf, S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) buffer: T,
     _p: PhantomPinned,
 }
 
 impl<T: IoBuf, S> Send<T, S> {
     /// Create [`Send`].
-    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
+    pub fn new(fd: S, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -542,14 +542,14 @@ impl<T: IoBuf, S: AsRawFd> OpCode for Send<T, S> {
 
 /// Send data to remote from vectored buffer.
 pub struct SendVectored<T: IoVectoredBuf, S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) buffer: T,
     _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBuf, S> SendVectored<T, S> {
     /// Create [`SendVectored`].
-    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
+    pub fn new(fd: S, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -589,7 +589,7 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendVectored<T, S> {
 
 /// Receive data and source address.
 pub struct RecvFrom<T: IoBufMut, S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) addr: SOCKADDR_STORAGE,
     pub(crate) addr_len: socklen_t,
@@ -598,7 +598,7 @@ pub struct RecvFrom<T: IoBufMut, S> {
 
 impl<T: IoBufMut, S> RecvFrom<T, S> {
     /// Create [`RecvFrom`].
-    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
+    pub fn new(fd: S, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -645,7 +645,7 @@ impl<T: IoBufMut, S: AsRawFd> OpCode for RecvFrom<T, S> {
 
 /// Receive data and source address into vectored buffer.
 pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) addr: SOCKADDR_STORAGE,
     pub(crate) addr_len: socklen_t,
@@ -654,7 +654,7 @@ pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
 
 impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
     /// Create [`RecvFromVectored`].
-    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
+    pub fn new(fd: S, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -701,7 +701,7 @@ impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvFromVectored<T, S> {
 
 /// Send data to specified address.
 pub struct SendTo<T: IoBuf, S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
     _p: PhantomPinned,
@@ -709,7 +709,7 @@ pub struct SendTo<T: IoBuf, S> {
 
 impl<T: IoBuf, S> SendTo<T, S> {
     /// Create [`SendTo`].
-    pub fn new(fd: SharedFd<S>, buffer: T, addr: SockAddr) -> Self {
+    pub fn new(fd: S, buffer: T, addr: SockAddr) -> Self {
         Self {
             fd,
             buffer,
@@ -752,7 +752,7 @@ impl<T: IoBuf, S: AsRawFd> OpCode for SendTo<T, S> {
 
 /// Send data to specified address from vectored buffer.
 pub struct SendToVectored<T: IoVectoredBuf, S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
     _p: PhantomPinned,
@@ -760,7 +760,7 @@ pub struct SendToVectored<T: IoVectoredBuf, S> {
 
 impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
     /// Create [`SendToVectored`].
-    pub fn new(fd: SharedFd<S>, buffer: T, addr: SockAddr) -> Self {
+    pub fn new(fd: S, buffer: T, addr: SockAddr) -> Self {
         Self {
             fd,
             buffer,
@@ -807,7 +807,7 @@ static WSA_RECVMSG: OnceLock<LPFN_WSARECVMSG> = OnceLock::new();
 pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
     msg: WSAMSG,
     addr: SOCKADDR_STORAGE,
-    fd: SharedFd<S>,
+    fd: S,
     buffer: T,
     control: C,
     _p: PhantomPinned,
@@ -819,7 +819,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
     /// # Panics
     ///
     /// This function will panic if the control message buffer is misaligned.
-    pub fn new(fd: SharedFd<S>, buffer: T, control: C) -> Self {
+    pub fn new(fd: S, buffer: T, control: C) -> Self {
         assert!(
             control.as_buf_ptr().cast::<CMSGHDR>().is_aligned(),
             "misaligned control message buffer"
@@ -885,7 +885,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
 /// Send data to specified address accompanied by ancillary data from vectored
 /// buffer.
 pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
-    fd: SharedFd<S>,
+    fd: S,
     buffer: T,
     control: C,
     addr: SockAddr,
@@ -898,7 +898,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     /// # Panics
     ///
     /// This function will panic if the control message buffer is misaligned.
-    pub fn new(fd: SharedFd<S>, buffer: T, control: C, addr: SockAddr) -> Self {
+    pub fn new(fd: S, buffer: T, control: C, addr: SockAddr) -> Self {
         assert!(
             control.as_buf_ptr().cast::<CMSGHDR>().is_aligned(),
             "misaligned control message buffer"
@@ -947,12 +947,12 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsRawFd> OpCode for SendMsg<T, C, S> {
 
 /// Connect a named pipe server.
 pub struct ConnectNamedPipe<S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
 }
 
 impl<S> ConnectNamedPipe<S> {
     /// Create [`ConnectNamedPipe`](struct@ConnectNamedPipe).
-    pub fn new(fd: SharedFd<S>) -> Self {
+    pub fn new(fd: S) -> Self {
         Self { fd }
     }
 }

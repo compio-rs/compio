@@ -16,7 +16,7 @@ use std::{
 
 use futures_util::task::AtomicWaker;
 
-use crate::{AsFd, AsRawFd, RawFd};
+use crate::{AsFd, AsRawFd, BorrowedFd, RawFd};
 
 #[derive(Debug)]
 struct Inner<T> {
@@ -111,9 +111,15 @@ impl<T> Drop for SharedFd<T> {
     }
 }
 
-impl<T: AsRawFd> AsRawFd for SharedFd<T> {
+impl<T: AsFd> AsFd for SharedFd<T> {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.0.fd.as_fd()
+    }
+}
+
+impl<T: AsFd> AsRawFd for SharedFd<T> {
     fn as_raw_fd(&self) -> RawFd {
-        self.0.fd.as_raw_fd()
+        self.as_fd().as_raw_fd()
     }
 }
 
