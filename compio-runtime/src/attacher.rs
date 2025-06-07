@@ -5,7 +5,7 @@ use std::os::windows::io::{FromRawHandle, FromRawSocket, RawHandle, RawSocket};
 use std::{io, ops::Deref};
 
 use compio_buf::IntoInner;
-use compio_driver::{AsRawFd, SharedFd, ToSharedFd};
+use compio_driver::{AsFd, AsRawFd, SharedFd, ToSharedFd};
 
 use crate::Runtime;
 
@@ -27,7 +27,7 @@ impl<S> Attacher<S> {
     /// driver.
     pub unsafe fn new_unchecked(source: S) -> Self {
         Self {
-            source: SharedFd::new(source),
+            source: SharedFd::new_unchecked(source),
         }
     }
 
@@ -41,7 +41,7 @@ impl<S> Attacher<S> {
     }
 }
 
-impl<S: AsRawFd> Attacher<S> {
+impl<S: AsFd> Attacher<S> {
     /// Create [`Attacher`]. It tries to attach the source, and will return
     /// [`Err`] if it fails.
     ///
@@ -49,7 +49,7 @@ impl<S: AsRawFd> Attacher<S> {
     /// * IOCP: a handle could not be attached more than once. If you want to
     ///   clone the handle, create the [`Attacher`] before cloning.
     pub fn new(source: S) -> io::Result<Self> {
-        Runtime::with_current(|r| r.attach(source.as_raw_fd()))?;
+        Runtime::with_current(|r| r.attach(source.as_fd().as_raw_fd()))?;
         Ok(unsafe { Self::new_unchecked(source) })
     }
 }

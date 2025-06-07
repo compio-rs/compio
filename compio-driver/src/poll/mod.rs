@@ -1,13 +1,12 @@
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 #[allow(unused_imports)]
-pub use std::os::fd::{AsRawFd, OwnedFd, RawFd};
+pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 #[cfg(aio)]
 use std::ptr::NonNull;
 use std::{
     collections::{HashMap, VecDeque},
     io,
     num::NonZeroUsize,
-    os::fd::BorrowedFd,
     pin::Pin,
     sync::Arc,
     task::Poll,

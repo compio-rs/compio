@@ -7,7 +7,7 @@ mod iour;
 pub(crate) mod op;
 
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
-pub use std::os::fd::{AsRawFd, OwnedFd, RawFd};
+pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::{io, task::Poll, time::Duration};
 
 pub use iour::{OpCode as IourOpCode, OpEntry};
