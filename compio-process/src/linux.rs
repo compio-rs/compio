@@ -27,7 +27,7 @@ pub async fn child_wait(child: process::Child) -> io::Result<process::ExitStatus
         }
 
         impl AsFd for PidFdWrap {
-            fn as_fd(&self) -> BorrowedFd {
+            fn as_fd(&self) -> BorrowedFd<'_> {
                 unsafe { BorrowedFd::borrow_raw(self.fd) }
             }
         }
