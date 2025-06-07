@@ -307,7 +307,7 @@ pub(crate) mod managed {
             buffer_pool: &BufferPool,
             result: io::Result<usize>,
             _: u32,
-        ) -> io::Result<BorrowedBuffer> {
+        ) -> io::Result<BorrowedBuffer<'_>> {
             let result = result?;
             #[cfg(fusion)]
             let buffer_pool = buffer_pool.as_poll();

@@ -78,7 +78,11 @@ impl BufferPool {
 
     /// ## Safety
     /// * `len` should be valid.
-    pub(crate) unsafe fn create_proxy(&self, mut slice: OwnedBuffer, len: usize) -> BorrowedBuffer {
+    pub(crate) unsafe fn create_proxy(
+        &self,
+        mut slice: OwnedBuffer,
+        len: usize,
+    ) -> BorrowedBuffer<'_> {
         unsafe {
             slice.set_buf_init(len);
         }

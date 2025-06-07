@@ -45,7 +45,7 @@ impl BufferPool {
         &self,
         flags: u32,
         available_len: usize,
-    ) -> io::Result<BorrowedBuffer> {
+    ) -> io::Result<BorrowedBuffer<'_>> {
         let buffer_id = buffer_select(flags).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
