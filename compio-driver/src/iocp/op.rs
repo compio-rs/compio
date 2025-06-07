@@ -6,7 +6,7 @@ use std::{
     net::Shutdown,
     os::windows::io::AsRawSocket,
     pin::Pin,
-    ptr::{null, null_mut},
+    ptr::{null, null_mut, read_unaligned},
     task::Poll,
 };
 
@@ -311,7 +311,10 @@ impl<S: AsRawFd> Accept<S> {
             );
         }
         Ok((self.accept_fd, unsafe {
-            SockAddr::new(*remote_addr.cast::<SOCKADDR_STORAGE>(), remote_addr_len)
+            SockAddr::new(
+                read_unaligned(remote_addr.cast::<SOCKADDR_STORAGE>()),
+                remote_addr_len,
+            )
         }))
     }
 }
