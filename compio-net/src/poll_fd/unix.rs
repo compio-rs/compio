@@ -17,7 +17,7 @@ impl<T: AsFd> PollFd<T> {
     }
 }
 
-impl<T: AsFd + AsRawFd + 'static> PollFd<T> {
+impl<T: AsFd + 'static> PollFd<T> {
     pub async fn accept_ready(&self) -> io::Result<()> {
         self.read_ready().await
     }
@@ -56,7 +56,7 @@ impl<T: AsFd> ToSharedFd<T> for PollFd<T> {
 }
 
 impl<T: AsFd> AsFd for PollFd<T> {
-    fn as_fd(&self) -> BorrowedFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         self.inner.as_fd()
     }
 }

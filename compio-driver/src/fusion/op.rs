@@ -4,7 +4,6 @@ use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use socket2::SockAddr;
 
 use super::*;
-use crate::SharedFd;
 pub use crate::unix::op::*;
 
 macro_rules! op {
@@ -96,11 +95,11 @@ mod iour { pub use crate::sys::iour::{op::*, OpCode}; }
 #[rustfmt::skip]
 mod poll { pub use crate::sys::poll::{op::*, OpCode}; }
 
-op!(<T: IoBufMut, S: AsRawFd> RecvFrom(fd: SharedFd<S>, buffer: T));
-op!(<T: IoBuf, S: AsRawFd> SendTo(fd: SharedFd<S>, buffer: T, addr: SockAddr));
-op!(<T: IoVectoredBufMut, S: AsRawFd> RecvFromVectored(fd: SharedFd<S>, buffer: T));
-op!(<T: IoVectoredBuf, S: AsRawFd> SendToVectored(fd: SharedFd<S>, buffer: T, addr: SockAddr));
-op!(<S: AsRawFd> FileStat(fd: SharedFd<S>));
+op!(<T: IoBufMut, S: AsFd> RecvFrom(fd: S, buffer: T));
+op!(<T: IoBuf, S: AsFd> SendTo(fd: S, buffer: T, addr: SockAddr));
+op!(<T: IoVectoredBufMut, S: AsFd> RecvFromVectored(fd: S, buffer: T));
+op!(<T: IoVectoredBuf, S: AsFd> SendToVectored(fd: S, buffer: T, addr: SockAddr));
+op!(<S: AsFd> FileStat(fd: S));
 op!(<> PathStat(path: CString, follow_symlink: bool));
 
 #[cfg(io_uring)]
@@ -199,6 +198,6 @@ macro_rules! mop {
 }
 
 #[cfg(io_uring)]
-mop!(<S: AsRawFd> ReadManagedAt(fd: SharedFd<S>, offset: u64, pool: &BufferPool, len: usize));
+mop!(<S: AsFd> ReadManagedAt(fd: S, offset: u64, pool: &BufferPool, len: usize));
 #[cfg(io_uring)]
-mop!(<S: AsRawFd> RecvManaged(fd: SharedFd<S>, pool: &BufferPool, len: usize));
+mop!(<S: AsFd> RecvManaged(fd: S, pool: &BufferPool, len: usize));
