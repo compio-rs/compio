@@ -38,6 +38,7 @@ impl<Io> State<Io> {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     fn io(&mut self) -> Option<&mut Io> {
         match self {
             State::Idle(Some((io, _))) => Some(io),
