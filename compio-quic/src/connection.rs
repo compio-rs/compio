@@ -158,12 +158,12 @@ impl ConnectionInner {
     }
 
     #[inline]
-    pub(crate) fn state(&self) -> MutexGuard<ConnectionState> {
+    pub(crate) fn state(&self) -> MutexGuard<'_, ConnectionState> {
         self.state.lock().unwrap()
     }
 
     #[inline]
-    pub(crate) fn try_state(&self) -> Result<MutexGuard<ConnectionState>, ConnectionError> {
+    pub(crate) fn try_state(&self) -> Result<MutexGuard<'_, ConnectionState>, ConnectionError> {
         let state = self.state();
         if let Some(error) = &state.error {
             Err(error.clone())

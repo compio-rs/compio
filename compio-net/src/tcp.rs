@@ -225,7 +225,7 @@ impl TcpStream {
     /// This method is more efficient than
     /// [`into_split`](TcpStream::into_split), but the halves cannot
     /// be moved into independently spawned tasks.
-    pub fn split(&self) -> (ReadHalf<Self>, WriteHalf<Self>) {
+    pub fn split(&self) -> (ReadHalf<'_, Self>, WriteHalf<'_, Self>) {
         crate::split(self)
     }
 

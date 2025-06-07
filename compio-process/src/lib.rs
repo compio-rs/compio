@@ -194,13 +194,13 @@ impl Command {
     }
 
     /// Returns an iterator of the arguments that will be passed to the program.
-    pub fn get_args(&self) -> process::CommandArgs {
+    pub fn get_args(&self) -> process::CommandArgs<'_> {
         self.0.get_args()
     }
 
     /// Returns an iterator of the environment variables explicitly set for the
     /// child process.
-    pub fn get_envs(&self) -> process::CommandEnvs {
+    pub fn get_envs(&self) -> process::CommandEnvs<'_> {
         self.0.get_envs()
     }
 
