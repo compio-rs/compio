@@ -181,7 +181,7 @@ pub trait AsFd {
 }
 
 impl AsFd for OwnedFd {
-    fn as_fd(&self) -> BorrowedFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         match self {
             Self::File(fd) => fd.as_fd(),
             Self::Socket(s) => s.as_fd(),
@@ -190,43 +190,43 @@ impl AsFd for OwnedFd {
 }
 
 impl AsFd for std::fs::File {
-    fn as_fd(&self) -> BorrowedFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         self.as_handle().into()
     }
 }
 
 impl AsFd for OwnedHandle {
-    fn as_fd(&self) -> BorrowedFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         self.as_handle().into()
     }
 }
 
 impl AsFd for socket2::Socket {
-    fn as_fd(&self) -> BorrowedFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         self.as_socket().into()
     }
 }
 
 impl AsFd for OwnedSocket {
-    fn as_fd(&self) -> BorrowedFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         self.as_socket().into()
     }
 }
 
 impl AsFd for std::process::ChildStdin {
-    fn as_fd(&self) -> BorrowedFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         self.as_handle().into()
     }
 }
 
 impl AsFd for std::process::ChildStdout {
-    fn as_fd(&self) -> BorrowedFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         self.as_handle().into()
     }
 }
 
 impl AsFd for std::process::ChildStderr {
-    fn as_fd(&self) -> BorrowedFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         self.as_handle().into()
     }
 }

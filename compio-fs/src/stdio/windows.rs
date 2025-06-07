@@ -102,7 +102,7 @@ impl<W: Write, B: IoBuf> IntoInner for StdWrite<W, B> {
 struct StaticFd(RawHandle);
 
 impl AsFd for StaticFd {
-    fn as_fd(&self) -> BorrowedFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         // Safety: we only use it for console handles.
         BorrowedFd::File(unsafe { BorrowedHandle::borrow_raw(self.0) })
     }

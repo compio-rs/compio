@@ -31,7 +31,7 @@ impl<T: AsFd> PollFd<T> {
     }
 }
 
-impl<T: AsFd + AsRawFd + 'static> PollFd<T> {
+impl<T: AsFd + 'static> PollFd<T> {
     /// Wait for accept readiness, before calling `accept`, or after `accept`
     /// returns `WouldBlock`.
     pub async fn accept_ready(&self) -> io::Result<()> {
@@ -69,7 +69,7 @@ impl<T: AsFd> ToSharedFd<T> for PollFd<T> {
 }
 
 impl<T: AsFd> AsFd for PollFd<T> {
-    fn as_fd(&self) -> BorrowedFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         self.0.as_fd()
     }
 }
