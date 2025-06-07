@@ -77,7 +77,7 @@ jobs:
               ARGS+=("--no-default-features")
           fi
           # Specify target if target is not empty
-          if [[ -n "${{ matrix.setup.target }}"]]; then
+          if [[ -n "${{ matrix.setup.target }}" ]]; then
               ARGS+=("--target" "${{ matrix.setup.target }}")
           fi
           # Add doctest-xcompile if on windows and nightly
