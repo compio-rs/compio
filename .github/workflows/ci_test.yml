@@ -76,6 +76,10 @@ jobs:
           if [[ -n "${{ matrix.setup.no_default_features }}" ]]; then
               ARGS+=("--no-default-features")
           fi
+          # Specify target if target is not empty
+          if [[ -n "${{ matrix.setup.target }}" ]]; then
+              ARGS+=("--target" "${{ matrix.setup.target }}")
+          fi
           # Add doctest-xcompile if on windows and nightly
           if [[ "${{ matrix.setup.os }}" == "windows-latest" && ${{ matrix.toolchain }} == "nightly" ]]; then
               ARGS+=("-Z" "doctest-xcompile")
