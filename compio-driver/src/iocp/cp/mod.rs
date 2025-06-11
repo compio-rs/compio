@@ -140,7 +140,7 @@ impl CompletionPort {
         let mut entries = Vec::with_capacity(Self::DEFAULT_CAPACITY);
         let len = match self.poll_raw(timeout, entries.spare_capacity_mut()) {
             Ok(len) => len,
-            Err(e) if e.code() == Some(ERROR_NETNAME_DELETED) => 0,
+            Err(_e) if unsafe { GetLastError() } == ERROR_NETNAME_DELETED => 0,
             Err(e) => return Err(e),
         };
 
