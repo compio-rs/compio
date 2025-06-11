@@ -22,9 +22,10 @@ use std::{
 use compio_log::*;
 use windows_sys::Win32::{
     Foundation::{
-        ERROR_BAD_COMMAND, ERROR_BROKEN_PIPE, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_NO_DATA,
-        ERROR_PIPE_CONNECTED, ERROR_PIPE_NOT_CONNECTED, FACILITY_NTWIN32, INVALID_HANDLE_VALUE,
-        NTSTATUS, RtlNtStatusToDosError, STATUS_PENDING, STATUS_SUCCESS,
+        ERROR_BAD_COMMAND, ERROR_BROKEN_PIPE, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE,
+        ERROR_NETNAME_DELETED, ERROR_NO_DATA, ERROR_PIPE_CONNECTED, ERROR_PIPE_NOT_CONNECTED,
+        FACILITY_NTWIN32, GetLastError, INVALID_HANDLE_VALUE, NTSTATUS, RtlNtStatusToDosError,
+        STATUS_PENDING, STATUS_SUCCESS,
     },
     Storage::FileSystem::SetFileCompletionNotificationModes,
     System::{
@@ -137,7 +138,12 @@ impl CompletionPort {
         current_driver: Option<RawFd>,
     ) -> io::Result<impl Iterator<Item = Entry>> {
         let mut entries = Vec::with_capacity(Self::DEFAULT_CAPACITY);
-        let len = self.poll_raw(timeout, entries.spare_capacity_mut())?;
+        let len = match self.poll_raw(timeout, entries.spare_capacity_mut()) {
+            Ok(len) => len,
+            Err(e) if unsafe { GetLastError() } == ERROR_NETNAME_DELETED => 0,
+            Err(e) => return Err(e),
+        };
+
         unsafe { entries.set_len(len) };
         Ok(entries.into_iter().filter_map(move |entry| {
             // Any thin pointer is OK because we don't use the type of opcode.
@@ -176,6 +182,7 @@ impl CompletionPort {
                 let error = unsafe { RtlNtStatusToDosError(overlapped.base.Internal as _) };
                 match error {
                     ERROR_IO_INCOMPLETE
+                    | ERROR_NETNAME_DELETED
                     | ERROR_HANDLE_EOF
                     | ERROR_BROKEN_PIPE
                     | ERROR_PIPE_CONNECTED
