@@ -21,8 +21,8 @@ use windows_sys::{
     Win32::{
         Foundation::{
             CloseHandle, ERROR_BROKEN_PIPE, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE,
-            ERROR_IO_PENDING, ERROR_NO_DATA, ERROR_NOT_FOUND, ERROR_PIPE_CONNECTED,
-            ERROR_PIPE_NOT_CONNECTED, GetLastError,
+            ERROR_IO_PENDING, ERROR_NETNAME_DELETED, ERROR_NO_DATA, ERROR_NOT_FOUND,
+            ERROR_PIPE_CONNECTED, ERROR_PIPE_NOT_CONNECTED, GetLastError,
         },
         Networking::WinSock::{
             CMSGHDR, LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS, LPFN_WSARECVMSG,
@@ -50,6 +50,7 @@ fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
     match error {
         ERROR_IO_PENDING => Poll::Pending,
         ERROR_IO_INCOMPLETE
+        | ERROR_NETNAME_DELETED
         | ERROR_HANDLE_EOF
         | ERROR_BROKEN_PIPE
         | ERROR_PIPE_CONNECTED

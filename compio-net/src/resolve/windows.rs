@@ -97,6 +97,7 @@ impl AsyncResolver {
         );
         match res {
             0 => Poll::Ready(Ok(())),
+            x if x == ERROR_IO_PENDING as i32 => Poll::Pending,
             _ => {
                 let code = GetLastError();
                 match code {
