@@ -24,8 +24,7 @@ use windows_sys::Win32::{
     Foundation::{
         ERROR_BAD_COMMAND, ERROR_BROKEN_PIPE, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE,
         ERROR_NETNAME_DELETED, ERROR_NO_DATA, ERROR_PIPE_CONNECTED, ERROR_PIPE_NOT_CONNECTED,
-        FACILITY_NTWIN32, GetLastError, INVALID_HANDLE_VALUE, NTSTATUS, RtlNtStatusToDosError,
-        STATUS_SUCCESS,
+        FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, RtlNtStatusToDosError, STATUS_SUCCESS,
     },
     Storage::FileSystem::SetFileCompletionNotificationModes,
     System::{
@@ -140,7 +139,7 @@ impl CompletionPort {
         let mut entries = Vec::with_capacity(Self::DEFAULT_CAPACITY);
         let len = match self.poll_raw(timeout, entries.spare_capacity_mut()) {
             Ok(len) => len,
-            Err(_e) if unsafe { GetLastError() } == ERROR_NETNAME_DELETED => 0,
+            Err(e) if e.raw_os_error() == Some(ERROR_NETNAME_DELETED as _) => 0,
             Err(e) => return Err(e),
         };
 
