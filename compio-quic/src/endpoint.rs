@@ -11,7 +11,9 @@ use std::{
 
 use compio_buf::{BufResult, bytes::Bytes};
 use compio_log::{Instrument, error};
-use compio_net::{ToSocketAddrsAsync, UdpSocket};
+#[cfg(rustls)]
+use compio_net::ToSocketAddrsAsync;
+use compio_net::UdpSocket;
 use compio_runtime::JoinHandle;
 use flume::{Receiver, Sender, unbounded};
 use futures_util::{
@@ -237,6 +239,7 @@ impl EndpointInner {
         self.respond(resp_buf, transmit);
     }
 
+    #[allow(clippy::result_large_err)]
     pub(crate) fn retry(
         &self,
         incoming: quinn_proto::Incoming,
@@ -355,6 +358,7 @@ impl Endpoint {
     /// address.
     ///
     /// IPv4 client is never dual-stack.
+    #[cfg(rustls)]
     pub async fn client(addr: impl ToSocketAddrsAsync) -> io::Result<Endpoint> {
         // TODO: try to enable dual-stack on all platforms, notably Windows
         let socket = UdpSocket::bind(addr).await?;
@@ -369,6 +373,7 @@ impl Endpoint {
     /// able to communicate with IPv4 addresses. Portable applications
     /// should bind an address that matches the family they wish to
     /// communicate within.
+    #[cfg(rustls)]
     pub async fn server(addr: impl ToSocketAddrsAsync, config: ServerConfig) -> io::Result<Self> {
         let socket = UdpSocket::bind(addr).await?;
         Self::new(socket, EndpointConfig::default(), Some(config), None)

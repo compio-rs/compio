@@ -1,6 +1,6 @@
 [package]
 name = "compio"
-version = "0.12.0"
+version = "0.14.0"
 description = "Completion based async runtime"
 categories = ["asynchronous", "filesystem", "network-programming"]
 keywords = ["async", "fs", "iocp", "io-uring", "net"]
@@ -79,11 +79,24 @@ monoio = { version = "0.2.2", default-features = false, features = ["iouring"] }
 default = ["runtime", "io-uring"]
 io-uring = [
     "compio-driver/io-uring",
+    "compio-runtime?/io-uring",
     "compio-fs?/io-uring",
     "compio-net?/io-uring",
     "compio-signal?/io-uring",
+    "compio-quic?/io-uring",
+    "compio-process?/io-uring",
+    "compio-dispatcher?/io-uring",
 ]
-polling = ["compio-driver/polling"]
+polling = [
+    "compio-driver/polling",
+    "compio-runtime?/polling",
+    "compio-fs?/polling",
+    "compio-net?/polling",
+    "compio-signal?/polling",
+    "compio-quic?/polling",
+    "compio-process?/polling",
+    "compio-dispatcher?/polling",
+]
 io = ["dep:compio-io"]
 io-compat = ["io", "compio-io/compat", "compio-quic?/io-compat"]
 runtime = ["dep:compio-runtime", "dep:compio-fs", "dep:compio-net", "io"]
@@ -117,11 +130,19 @@ criterion = ["compio-runtime?/criterion"]
 
 enable_log = ["compio-log/enable_log"]
 
+ring = ["compio-tls?/ring", "compio-quic?/ring"]
+aws-lc-rs = ["compio-tls?/aws-lc-rs", "compio-quic?/aws-lc-rs"]
+aws-lc-rs-fips = ["compio-tls?/aws-lc-rs-fips", "compio-quic?/aws-lc-rs-fips"]
+
 # Nightly features
 allocator_api = ["compio-buf/allocator_api", "compio-io?/allocator_api"]
 lazy_cell = ["compio-signal?/lazy_cell"]
 linux_pidfd = ["compio-process?/linux_pidfd"]
-once_cell_try = ["compio-driver/once_cell_try", "compio-signal?/once_cell_try"]
+once_cell_try = [
+    "compio-driver/once_cell_try",
+    "compio-net?/once_cell_try",
+    "compio-signal?/once_cell_try",
+]
 read_buf = [
     "compio-buf/read_buf",
     "compio-io?/read_buf",

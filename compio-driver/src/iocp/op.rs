@@ -6,7 +6,7 @@ use std::{
     net::Shutdown,
     os::windows::io::AsRawSocket,
     pin::Pin,
-    ptr::{null, null_mut},
+    ptr::{null, null_mut, read_unaligned},
     task::Poll,
 };
 
@@ -113,7 +113,7 @@ fn get_wsa_fn<F>(handle: RawFd, fguid: GUID) -> io::Result<Option<F>> {
 
 impl<
     D: std::marker::Send + 'static,
-    F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + std::marker::Sync + 'static,
+    F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + 'static,
 > OpCode for Asyncify<F, D>
 {
     fn op_type(&self) -> OpType {
@@ -187,6 +187,16 @@ impl<T: IoBuf, S: AsRawFd> OpCode for WriteAt<T, S> {
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_raw_fd(), optr)
+    }
+}
+
+impl<S: AsRawFd> OpCode for ReadManagedAt<S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        self.map_unchecked_mut(|this| &mut this.op).operate(optr)
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        self.map_unchecked_mut(|this| &mut this.op).cancel(optr)
     }
 }
 
@@ -301,7 +311,10 @@ impl<S: AsRawFd> Accept<S> {
             );
         }
         Ok((self.accept_fd, unsafe {
-            SockAddr::new(*remote_addr.cast::<SOCKADDR_STORAGE>(), remote_addr_len)
+            SockAddr::new(
+                read_unaligned(remote_addr.cast::<SOCKADDR_STORAGE>()),
+                remote_addr_len,
+            )
         }))
     }
 }
@@ -399,6 +412,16 @@ impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
+    }
+}
+
+impl<S: AsRawFd> OpCode for RecvManaged<S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        self.map_unchecked_mut(|this| &mut this.op).operate(optr)
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        self.map_unchecked_mut(|this| &mut this.op).cancel(optr)
     }
 }
 

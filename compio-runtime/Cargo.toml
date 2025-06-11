@@ -1,6 +1,6 @@
 [package]
 name = "compio-runtime"
-version = "0.5.1"
+version = "0.7.0"
 description = "High-level runtime for compio"
 categories = ["asynchronous"]
 keywords = ["async", "runtime"]
@@ -41,7 +41,6 @@ futures-util = { workspace = true }
 once_cell = { workspace = true }
 scoped-tls = "1.0.1"
 slab = { workspace = true, optional = true }
-smallvec = "1.11.1"
 socket2 = { workspace = true }
 
 # Windows specific dependencies
@@ -50,7 +49,6 @@ windows-sys = { workspace = true, features = ["Win32_System_IO"] }
 
 # Unix specific dependencies
 [target.'cfg(unix)'.dependencies]
-os_pipe = { workspace = true }
 libc = { workspace = true }
 
 [target.'cfg(windows)'.dev-dependencies]
@@ -58,7 +56,7 @@ windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 core-foundation = "0.10.0"
-block2 = "0.5.0"
+block2 = "0.6.0"
 
 [target.'cfg(not(any(windows, target_os = "macos")))'.dev-dependencies]
 glib = "0.20"
@@ -66,6 +64,9 @@ glib = "0.20"
 [features]
 event = ["dep:cfg-if", "compio-buf/arrayvec"]
 time = ["dep:slab"]
+
+io-uring = ["compio-driver/io-uring"]
+polling = ["compio-driver/polling"]
 
 [[test]]
 name = "event"

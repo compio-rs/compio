@@ -32,6 +32,9 @@ pub use io_vec_buf::*;
 mod slice;
 pub use slice::*;
 
+mod uninit;
+pub use uninit::*;
+
 mod iter;
 pub use iter::*;
 

@@ -7,7 +7,7 @@ use futures_util::{FutureExt, select};
 async fn main() {
     let mut interval = interval(Duration::from_secs(2));
     loop {
-        let mut ctrlc = ctrl_c();
+        let ctrlc = ctrl_c();
         let ctrlc = std::pin::pin!(ctrlc);
         select! {
             res = ctrlc.fuse() => {

@@ -1,6 +1,6 @@
 [package]
 name = "compio-tls"
-version = "0.3.1"
+version = "0.5.0"
 description = "TLS adaptor with compio"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net", "tls"]
@@ -37,6 +37,10 @@ rustls-native-certs = { workspace = true }
 default = ["native-tls"]
 all = ["native-tls", "rustls"]
 rustls = ["dep:rustls"]
+
+ring = ["rustls", "rustls/ring"]
+aws-lc-rs = ["rustls", "rustls/aws-lc-rs"]
+aws-lc-rs-fips = ["aws-lc-rs", "rustls/fips"]
 
 read_buf = ["compio-buf/read_buf", "compio-io/read_buf", "rustls?/read_buf"]
 nightly = ["read_buf"]

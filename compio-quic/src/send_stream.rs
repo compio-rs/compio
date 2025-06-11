@@ -73,7 +73,7 @@ impl SendStream {
                 state.wake();
                 Ok(())
             }
-            Err(FinishError::ClosedStream) => Err(ClosedStream::new()),
+            Err(FinishError::ClosedStream) => Err(ClosedStream::default()),
             // Harmless. If the application needs to know about stopped streams at this point,
             // it should call `stopped`.
             Err(FinishError::Stopped(_)) => Ok(()),
@@ -368,22 +368,22 @@ impl futures_util::AsyncWrite for SendStream {
 #[cfg(feature = "h3")]
 pub(crate) mod h3_impl {
     use compio_buf::bytes::Buf;
-    use h3::quic::{self, Error, WriteBuf};
+    use h3::quic::{self, StreamErrorIncoming, WriteBuf};
 
     use super::*;
 
-    impl Error for WriteError {
-        fn is_timeout(&self) -> bool {
-            matches!(self, Self::ConnectionLost(ConnectionError::TimedOut))
-        }
+    impl From<WriteError> for StreamErrorIncoming {
+        fn from(e: WriteError) -> Self {
+            use WriteError::*;
+            match e {
+                Stopped(code) => Self::StreamTerminated {
+                    error_code: code.into_inner(),
+                },
+                ConnectionLost(e) => Self::ConnectionErrorIncoming {
+                    connection_error: e.into(),
+                },
 
-        fn err_code(&self) -> Option<u64> {
-            match self {
-                Self::ConnectionLost(ConnectionError::ApplicationClosed(
-                    quinn_proto::ApplicationClose { error_code, .. },
-                ))
-                | Self::Stopped(error_code) => Some(error_code.into_inner()),
-                _ => None,
+                e => Self::Unknown(Box::new(e)),
             }
         }
     }
@@ -408,9 +408,7 @@ pub(crate) mod h3_impl {
     where
         B: Buf,
     {
-        type Error = WriteError;
-
-        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), StreamErrorIncoming>> {
             if let Some(data) = &mut self.buf {
                 while data.has_remaining() {
                     let n = ready!(
@@ -424,16 +422,20 @@ pub(crate) mod h3_impl {
             Poll::Ready(Ok(()))
         }
 
-        fn send_data<T: Into<WriteBuf<B>>>(&mut self, data: T) -> Result<(), Self::Error> {
+        fn send_data<T: Into<WriteBuf<B>>>(&mut self, data: T) -> Result<(), StreamErrorIncoming> {
             if self.buf.is_some() {
-                return Err(WriteError::NotReady);
+                return Err(WriteError::NotReady.into());
             }
             self.buf = Some(data.into());
             Ok(())
         }
 
-        fn poll_finish(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(self.inner.finish().map_err(|_| WriteError::ClosedStream))
+        fn poll_finish(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), StreamErrorIncoming>> {
+            Poll::Ready(
+                self.inner
+                    .finish()
+                    .map_err(|_| WriteError::ClosedStream.into()),
+            )
         }
 
         fn reset(&mut self, reset_code: u64) {
@@ -443,7 +445,7 @@ pub(crate) mod h3_impl {
         }
 
         fn send_id(&self) -> quic::StreamId {
-            self.inner.stream.0.try_into().unwrap()
+            u64::from(self.inner.stream).try_into().unwrap()
         }
     }
 
@@ -455,7 +457,7 @@ pub(crate) mod h3_impl {
             &mut self,
             cx: &mut Context<'_>,
             buf: &mut D,
-        ) -> Poll<Result<usize, Self::Error>> {
+        ) -> Poll<Result<usize, StreamErrorIncoming>> {
             // This signifies a bug in implementation
             debug_assert!(
                 self.buf.is_some(),

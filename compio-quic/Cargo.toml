@@ -1,6 +1,6 @@
 [package]
 name = "compio-quic"
-version = "0.1.0"
+version = "0.3.1"
 description = "QUIC for compio"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net", "quic"]
@@ -22,18 +22,19 @@ compio-log = { workspace = true }
 compio-net = { workspace = true }
 compio-runtime = { workspace = true, features = ["time"] }
 
-quinn-proto = "0.11.8"
+quinn-proto = { version = "0.11.10", default-features = false }
 rustls = { workspace = true }
-rustls-platform-verifier = { version = "0.3.3", optional = true }
+rustls-platform-verifier = { version = "0.6.0", optional = true }
 rustls-native-certs = { workspace = true, optional = true }
-webpki-roots = { version = "0.26.3", optional = true }
-h3 = { version = "0.0.6", optional = true }
+webpki-roots = { version = "1.0.0", optional = true }
+h3 = { version = "0.0.8", optional = true }
+h3-datagram = { version = "0.0.2", optional = true }
 
 # Utils
 flume = { workspace = true }
 futures-util = { workspace = true }
+thiserror = { workspace = true }
 rustc-hash = "2.0.0"
-thiserror = "1.0.63"
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
@@ -41,6 +42,9 @@ windows-sys = { workspace = true, features = ["Win32_Networking_WinSock"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
+
+[build-dependencies]
+cfg_aliases = { workspace = true }
 
 [dev-dependencies]
 compio-dispatcher = { workspace = true }
@@ -51,21 +55,25 @@ compio-runtime = { workspace = true, features = ["criterion"] }
 
 criterion = { workspace = true, features = ["async_tokio"] }
 http = "1.1.0"
-quinn = "0.11.5"
+quinn = "0.11.6"
 rand = { workspace = true }
 rcgen = "0.13.1"
 socket2 = { workspace = true, features = ["all"] }
-tokio = { workspace = true, features = ["rt", "macros"] }
+tokio = { workspace = true, features = ["macros", "rt"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [features]
-default = []
+default = ["ring"]
+io-uring = ["compio-runtime/io-uring"]
+polling = ["compio-runtime/polling"]
 io-compat = ["futures-util/io"]
 platform-verifier = ["dep:rustls-platform-verifier"]
 native-certs = ["dep:rustls-native-certs"]
 webpki-roots = ["dep:webpki-roots"]
-h3 = ["dep:h3"]
-# FIXME: see https://github.com/quinn-rs/quinn/pull/1962
+h3 = ["dep:h3", "dep:h3-datagram"]
+ring = ["quinn-proto/rustls-ring"]
+aws-lc-rs = ["quinn-proto/rustls-aws-lc-rs"]
+aws-lc-rs-fips = ["aws-lc-rs", "quinn-proto/rustls-aws-lc-rs-fips"]
 
 [[example]]
 name = "http3-client"

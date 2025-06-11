@@ -1,6 +1,6 @@
 [package]
 name = "compio-driver"
-version = "0.5.0"
+version = "0.7.0"
 description = "Low-level driver for compio"
 categories = ["asynchronous"]
 keywords = ["async", "iocp", "io-uring"]
@@ -36,7 +36,7 @@ compio-log = { workspace = true }
 cfg-if = { workspace = true }
 crossbeam-channel = { workspace = true }
 futures-util = { workspace = true }
-socket2 = { workspace = true }
+socket2 = { workspace = true, features = ["all"] }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
@@ -58,32 +58,33 @@ windows-sys = { workspace = true, features = [
 # Linux specific dependencies
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = { version = "0.7.0", optional = true }
+io_uring_buf_ring = { version = "0.2.0", optional = true }
 polling = { version = "3.3.0", optional = true }
-os_pipe = { workspace = true, optional = true }
 paste = { workspace = true }
+slab = { workspace = true, optional = true }
 
 # Other platform dependencies
 [target.'cfg(all(not(target_os = "linux"), unix))'.dependencies]
 polling = "3.3.0"
-os_pipe = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 crossbeam-channel = { workspace = true }
 crossbeam-queue = { workspace = true }
 libc = { workspace = true }
 
-[dev-dependencies]
-compio-buf = { workspace = true, features = ["arrayvec"] }
+[build-dependencies]
+cfg_aliases = { workspace = true }
 
 [features]
 default = ["io-uring"]
-polling = ["dep:polling", "dep:os_pipe"]
+io-uring = ["dep:io-uring", "dep:io_uring_buf_ring", "dep:slab"]
+polling = ["dep:polling"]
 
 io-uring-sqe128 = []
 io-uring-cqe32 = []
-io-uring-socket = []
 
 iocp-global = []
+iocp-wait-packet = []
 
 # Nightly features
 once_cell_try = []

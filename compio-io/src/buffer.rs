@@ -102,7 +102,6 @@ impl Buffer {
 
     /// If the inner buffer is empty.
     #[inline]
-    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.inner().as_slice().is_empty()
     }
@@ -116,9 +115,7 @@ impl Buffer {
     /// The buffer needs to be filled
     #[inline]
     pub fn need_fill(&self) -> bool {
-        // TODO: Better way to determine if we need to fill the buffer
-        let buf = self.buf();
-        buf.len() < buf.capacity() / 3
+        self.is_empty()
     }
 
     /// The buffer needs to be flushed

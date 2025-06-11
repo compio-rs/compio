@@ -40,14 +40,17 @@ pub use fd::*;
 mod driver_type;
 pub use driver_type::*;
 
+mod buffer_pool;
+pub use buffer_pool::*;
+
 cfg_if::cfg_if! {
     if #[cfg(windows)] {
         #[path = "iocp/mod.rs"]
         mod sys;
-    } else if #[cfg(all(target_os = "linux", feature = "polling", feature = "io-uring"))] {
+    } else if #[cfg(fusion)] {
         #[path = "fusion/mod.rs"]
         mod sys;
-    } else if #[cfg(all(target_os = "linux", feature = "io-uring"))] {
+    } else if #[cfg(io_uring)] {
         #[path = "iour/mod.rs"]
         mod sys;
     } else if #[cfg(unix)] {
@@ -88,11 +91,14 @@ macro_rules! syscall {
 #[doc(hidden)]
 macro_rules! syscall {
     (break $e:expr) => {
-        match $crate::syscall!($e) {
-            Ok(fd) => ::std::task::Poll::Ready(Ok(fd as usize)),
-            Err(e) if e.kind() == ::std::io::ErrorKind::WouldBlock || e.raw_os_error() == Some(::libc::EINPROGRESS)
-                   => ::std::task::Poll::Pending,
-            Err(e) => ::std::task::Poll::Ready(Err(e)),
+        loop {
+            match $crate::syscall!($e) {
+                Ok(fd) => break ::std::task::Poll::Ready(Ok(fd as usize)),
+                Err(e) if e.kind() == ::std::io::ErrorKind::WouldBlock || e.raw_os_error() == Some(::libc::EINPROGRESS)
+                    => break ::std::task::Poll::Pending,
+                Err(e) if e.kind() == ::std::io::ErrorKind::Interrupted => {},
+                Err(e) => break ::std::task::Poll::Ready(Err(e)),
+            }
         }
     };
     ($e:expr, $f:ident($fd:expr)) => {
@@ -120,6 +126,12 @@ macro_rules! impl_raw_fd {
         impl $crate::AsRawFd for $t {
             fn as_raw_fd(&self) -> $crate::RawFd {
                 self.$inner.as_raw_fd()
+            }
+        }
+        #[cfg(unix)]
+        impl std::os::fd::AsFd for $t {
+            fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
+                self.$inner.as_fd()
             }
         }
         #[cfg(unix)]
@@ -256,7 +268,8 @@ impl Proactor {
             // SAFETY: completed.
             Some(unsafe { op.into_inner() })
         } else {
-            self.driver.cancel(op);
+            self.driver
+                .cancel(&mut unsafe { Key::<dyn OpCode>::new_unchecked(op.user_data()) });
             None
         }
     }
@@ -265,7 +278,10 @@ impl Proactor {
     /// user-defined data, associated with it.
     pub fn push<T: OpCode + 'static>(&mut self, op: T) -> PushEntry<Key<T>, BufResult<usize, T>> {
         let mut op = self.driver.create_op(op);
-        match self.driver.push(&mut op) {
+        match self
+            .driver
+            .push(&mut unsafe { Key::<dyn OpCode>::new_unchecked(op.user_data()) })
+        {
             Poll::Pending => PushEntry::Pending(op),
             Poll::Ready(res) => {
                 op.set_result(res);
@@ -278,15 +294,8 @@ impl Proactor {
     /// Poll the driver and get completed entries.
     /// You need to call [`Proactor::pop`] to get the pushed
     /// operations.
-    pub fn poll(
-        &mut self,
-        timeout: Option<Duration>,
-        entries: &mut impl Extend<usize>,
-    ) -> io::Result<()> {
-        unsafe {
-            self.driver.poll(timeout, OutEntries::new(entries))?;
-        }
-        Ok(())
+    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+        unsafe { self.driver.poll(timeout) }
     }
 
     /// Get the pushed operations from the completion entries.
@@ -311,8 +320,32 @@ impl Proactor {
     }
 
     /// Create a notify handle to interrupt the inner driver.
-    pub fn handle(&self) -> io::Result<NotifyHandle> {
+    pub fn handle(&self) -> NotifyHandle {
         self.driver.handle()
+    }
+
+    /// Create buffer pool with given `buffer_size` and `buffer_len`
+    ///
+    /// # Notes
+    ///
+    /// If `buffer_len` is not a power of 2, it will be rounded up with
+    /// [`u16::next_power_of_two`].
+    pub fn create_buffer_pool(
+        &mut self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<BufferPool> {
+        self.driver.create_buffer_pool(buffer_len, buffer_size)
+    }
+
+    /// Release the buffer pool
+    ///
+    /// # Safety
+    ///
+    /// Caller must make sure to release the buffer pool with the correct
+    /// driver, i.e., the one they created the buffer pool with.
+    pub unsafe fn release_buffer_pool(&mut self, buffer_pool: BufferPool) -> io::Result<()> {
+        self.driver.release_buffer_pool(buffer_pool)
     }
 }
 
@@ -339,7 +372,7 @@ impl Entry {
         }
     }
 
-    #[cfg(all(target_os = "linux", feature = "io-uring"))]
+    #[cfg(io_uring)]
     // this method only used by in io-uring driver
     pub(crate) fn set_flags(&mut self, flags: u32) {
         self.flags = flags;
@@ -358,34 +391,16 @@ impl Entry {
     pub fn into_result(self) -> io::Result<usize> {
         self.result
     }
-}
 
-// The output entries need to be marked as `completed`. If an entry has been
-// marked as `cancelled`, it will be removed from the registry.
-struct OutEntries<'b, E> {
-    entries: &'b mut E,
-}
-
-impl<'b, E> OutEntries<'b, E> {
-    pub fn new(entries: &'b mut E) -> Self {
-        Self { entries }
-    }
-}
-
-impl<E: Extend<usize>> Extend<Entry> for OutEntries<'_, E> {
-    fn extend<T: IntoIterator<Item = Entry>>(&mut self, iter: T) {
-        self.entries.extend(iter.into_iter().filter_map(|e| {
-            let user_data = e.user_data();
-            let mut op = unsafe { Key::<()>::new_unchecked(user_data) };
-            op.set_flags(e.flags());
-            if op.set_result(e.into_result()) {
-                // SAFETY: completed and cancelled.
-                let _ = unsafe { op.into_box() };
-                None
-            } else {
-                Some(user_data)
-            }
-        }))
+    /// SAFETY: `user_data` should be a valid pointer.
+    pub unsafe fn notify(self) {
+        let user_data = self.user_data();
+        let mut op = Key::<()>::new_unchecked(user_data);
+        op.set_flags(self.flags());
+        if op.set_result(self.into_result()) {
+            // SAFETY: completed and cancelled.
+            let _ = op.into_box();
+        }
     }
 }
 
@@ -423,6 +438,8 @@ pub struct ProactorBuilder {
     capacity: u32,
     pool_builder: ThreadPoolBuilder,
     sqpoll_idle: Option<Duration>,
+    coop_taskrun: bool,
+    taskrun_flag: bool,
 }
 
 impl Default for ProactorBuilder {
@@ -438,6 +455,8 @@ impl ProactorBuilder {
             capacity: 1024,
             pool_builder: ThreadPoolBuilder::new(),
             sqpoll_idle: None,
+            coop_taskrun: false,
+            taskrun_flag: false,
         }
     }
 
@@ -498,6 +517,33 @@ impl ProactorBuilder {
     /// - `idle` will be rounded down
     pub fn sqpoll_idle(&mut self, idle: Duration) -> &mut Self {
         self.sqpoll_idle = Some(idle);
+        self
+    }
+
+    /// `coop_taskrun` feature has been available since Linux Kernel 5.19. This
+    /// will optimize performance for most cases, especially compio is a single
+    /// thread runtime.
+    ///
+    /// However, it can't run with sqpoll feature.
+    ///
+    /// # Notes
+    ///
+    /// - Only effective when the `io-uring` feature is enabled
+    pub fn coop_taskrun(&mut self, enable: bool) -> &mut Self {
+        self.coop_taskrun = enable;
+        self
+    }
+
+    /// `taskrun_flag` feature has been available since Linux Kernel 5.19. This
+    /// allows io-uring driver can know if any cqes are available when try to
+    /// push sqe to sq. This should be enabled with
+    /// [`coop_taskrun`](Self::coop_taskrun)
+    ///
+    /// # Notes
+    ///
+    /// - Only effective when the `io-uring` feature is enabled
+    pub fn taskrun_flag(&mut self, enable: bool) -> &mut Self {
+        self.taskrun_flag = enable;
         self
     }
 

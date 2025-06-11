@@ -13,7 +13,7 @@ cfg_if::cfg_if! {
 /// Reference to a control message.
 pub struct CMsgRef<'a>(sys::CMsgRef<'a>);
 
-impl<'a> CMsgRef<'a> {
+impl CMsgRef<'_> {
     /// Returns the level of the control message.
     pub fn level(&self) -> i32 {
         self.0.level()

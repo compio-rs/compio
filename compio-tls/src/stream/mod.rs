@@ -25,7 +25,7 @@ impl<S> TlsStreamInner<S> {
         }
     }
 
-    pub fn negotiated_alpn(&self) -> Option<Cow<[u8]>> {
+    pub fn negotiated_alpn(&self) -> Option<Cow<'_, [u8]>> {
         match self {
             #[cfg(feature = "native-tls")]
             Self::NativeTls(s) => s.negotiated_alpn().ok().flatten().map(Cow::from),
@@ -98,7 +98,7 @@ impl<S> TlsStream<S> {
     }
 
     /// Returns the negotiated ALPN protocol.
-    pub fn negotiated_alpn(&self) -> Option<Cow<[u8]>> {
+    pub fn negotiated_alpn(&self) -> Option<Cow<'_, [u8]>> {
         self.0.negotiated_alpn()
     }
 }
@@ -111,30 +111,31 @@ impl<S> From<native_tls::TlsStream<SyncStream<S>>> for TlsStream<S> {
     }
 }
 
-#[cfg(not(feature = "read_buf"))]
-#[inline]
-fn read_buf<B: IoBufMut>(reader: &mut impl io::Read, buf: &mut B) -> io::Result<usize> {
-    let slice: &mut [MaybeUninit<u8>] = buf.as_mut_slice();
-    slice.fill(MaybeUninit::new(0));
-    let slice = unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), slice.len()) };
-    reader.read(slice)
-}
-
-#[cfg(feature = "read_buf")]
-#[inline]
-fn read_buf<B: IoBufMut>(reader: &mut impl io::Read, buf: &mut B) -> io::Result<usize> {
-    let slice: &mut [MaybeUninit<u8>] = buf.as_mut_slice();
-    let mut borrowed_buf = io::BorrowedBuf::from(slice);
-    let mut cursor = borrowed_buf.unfilled();
-    reader.read_buf(cursor.reborrow())?;
-    Ok(cursor.written())
-}
-
 impl<S: AsyncRead> AsyncRead for TlsStream<S> {
     async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
+        let slice: &mut [MaybeUninit<u8>] = buf.as_mut_slice();
+
+        #[cfg(feature = "read_buf")]
+        let mut f = {
+            let mut borrowed_buf = io::BorrowedBuf::from(slice);
+            move |s: &mut _| {
+                let mut cursor = borrowed_buf.unfilled();
+                std::io::Read::read_buf(s, cursor.reborrow())?;
+                Ok::<usize, io::Error>(cursor.written())
+            }
+        };
+
+        #[cfg(not(feature = "read_buf"))]
+        let mut f = {
+            slice.fill(MaybeUninit::new(0));
+            // SAFETY: The memory has been initialized
+            let slice =
+                unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), slice.len()) };
+            |s: &mut _| std::io::Read::read(s, slice)
+        };
+
         loop {
-            let res = read_buf(&mut self.0, &mut buf);
-            match res {
+            match f(&mut self.0) {
                 Ok(res) => {
                     unsafe { buf.set_buf_init(res) };
                     return BufResult(Ok(res), buf);
@@ -145,7 +146,7 @@ impl<S: AsyncRead> AsyncRead for TlsStream<S> {
                         Err(e) => return BufResult(Err(e), buf),
                     }
                 }
-                _ => return BufResult(res, buf),
+                res => return BufResult(res, buf),
             }
         }
     }

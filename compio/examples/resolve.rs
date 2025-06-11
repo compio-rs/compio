@@ -13,7 +13,7 @@ async fn main() {
         })
         .collect::<FuturesUnordered<_>>();
     while let Some((addrs, name)) = tasks.next().await {
-        println!("Address of {}", name);
+        println!("Address of {name}");
         for addr in addrs {
             println!("    {}", addr.ip());
         }

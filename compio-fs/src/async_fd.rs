@@ -1,10 +1,10 @@
-use std::io;
 #[cfg(unix)]
 use std::os::fd::{FromRawFd, RawFd};
 #[cfg(windows)]
 use std::os::windows::io::{
     AsRawHandle, AsRawSocket, FromRawHandle, FromRawSocket, RawHandle, RawSocket,
 };
+use std::{io, ops::Deref};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
@@ -180,5 +180,13 @@ impl<T: AsRawFd + FromRawHandle> FromRawHandle for AsyncFd<T> {
 impl<T: AsRawFd + FromRawSocket> FromRawSocket for AsyncFd<T> {
     unsafe fn from_raw_socket(sock: RawSocket) -> Self {
         Self::new_unchecked(FromRawSocket::from_raw_socket(sock))
+    }
+}
+
+impl<T: AsRawFd> Deref for AsyncFd<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }

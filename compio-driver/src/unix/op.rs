@@ -1,4 +1,4 @@
-use std::{ffi::CString, marker::PhantomPinned, net::Shutdown};
+use std::{ffi::CString, marker::PhantomPinned, net::Shutdown, os::fd::OwnedFd};
 
 use compio_buf::{
     IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
@@ -22,7 +22,7 @@ impl OpenFile {
     }
 }
 
-#[cfg(all(target_os = "linux", target_env = "gnu"))]
+#[cfg(gnulinux)]
 pub(crate) type Statx = libc::statx;
 
 #[cfg(all(target_os = "linux", not(target_env = "gnu")))]
@@ -90,6 +90,8 @@ pub struct ReadVectoredAt<T: IoVectoredBufMut, S> {
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSliceMut>,
+    #[cfg(freebsd)]
+    pub(crate) aiocb: libc::aiocb,
     _p: PhantomPinned,
 }
 
@@ -101,6 +103,8 @@ impl<T: IoVectoredBufMut, S> ReadVectoredAt<T, S> {
             offset,
             buffer,
             slices: vec![],
+            #[cfg(freebsd)]
+            aiocb: unsafe { std::mem::zeroed() },
             _p: PhantomPinned,
         }
     }
@@ -120,6 +124,8 @@ pub struct WriteVectoredAt<T: IoVectoredBuf, S> {
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSlice>,
+    #[cfg(freebsd)]
+    pub(crate) aiocb: libc::aiocb,
     _p: PhantomPinned,
 }
 
@@ -131,6 +137,8 @@ impl<T: IoVectoredBuf, S> WriteVectoredAt<T, S> {
             offset,
             buffer,
             slices: vec![],
+            #[cfg(freebsd)]
+            aiocb: unsafe { std::mem::zeroed() },
             _p: PhantomPinned,
         }
     }
@@ -242,6 +250,7 @@ pub struct Accept<S> {
     pub(crate) fd: SharedFd<S>,
     pub(crate) buffer: sockaddr_storage,
     pub(crate) addr_len: socklen_t,
+    pub(crate) accepted_fd: Option<OwnedFd>,
     _p: PhantomPinned,
 }
 
@@ -252,12 +261,14 @@ impl<S> Accept<S> {
             fd,
             buffer: unsafe { std::mem::zeroed() },
             addr_len: std::mem::size_of::<sockaddr_storage>() as _,
+            accepted_fd: None,
             _p: PhantomPinned,
         }
     }
 
     /// Get the remote address from the inner buffer.
-    pub fn into_addr(self) -> SockAddr {
+    pub fn into_addr(mut self) -> SockAddr {
+        std::mem::forget(self.accepted_fd.take());
         unsafe { SockAddr::new(self.buffer, self.addr_len) }
     }
 }

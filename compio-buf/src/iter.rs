@@ -1,6 +1,8 @@
 use crate::*;
 
 /// The inner implementation of a [`OwnedIter`].
+///
+/// [`OwnedIter`]: IoVectoredBuf::OwnedIter
 pub trait OwnedIterator: IntoInner + Sized {
     /// Get the next iterator.
     ///
@@ -163,6 +165,18 @@ impl<T, const N: usize> Indexable for arrayvec::ArrayVec<T, N> {
     }
 }
 
+#[cfg(feature = "smallvec")]
+impl<T, const N: usize> Indexable for smallvec::SmallVec<[T; N]>
+where
+    [T; N]: smallvec::Array<Item = T>,
+{
+    type Output = T;
+
+    fn index(&self, n: usize) -> Option<&T> {
+        self.get(n)
+    }
+}
+
 impl<T> IndexableMut for &mut [T] {
     fn index_mut(&mut self, n: usize) -> Option<&mut T> {
         self.get_mut(n)
@@ -191,6 +205,16 @@ impl<T, #[cfg(feature = "allocator_api")] A: std::alloc::Allocator + 'static> In
 
 #[cfg(feature = "arrayvec")]
 impl<T, const N: usize> IndexableMut for arrayvec::ArrayVec<T, N> {
+    fn index_mut(&mut self, n: usize) -> Option<&mut T> {
+        self.get_mut(n)
+    }
+}
+
+#[cfg(feature = "smallvec")]
+impl<T, const N: usize> IndexableMut for smallvec::SmallVec<[T; N]>
+where
+    [T; N]: smallvec::Array<Item = T>,
+{
     fn index_mut(&mut self, n: usize) -> Option<&mut T> {
         self.get_mut(n)
     }

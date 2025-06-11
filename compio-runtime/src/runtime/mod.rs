@@ -2,7 +2,7 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::VecDeque,
-    future::{Future, poll_fn, ready},
+    future::{Future, ready},
     io,
     marker::PhantomData,
     panic::AssertUnwindSafe,
@@ -15,12 +15,11 @@ use std::{
 use async_task::{Runnable, Task};
 use compio_buf::IntoInner;
 use compio_driver::{
-    AsRawFd, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd, op::Asyncify,
+    AsRawFd, Key, NotifyHandle, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd, op::Asyncify,
 };
 use compio_log::{debug, instrument};
 use crossbeam_queue::SegQueue;
 use futures_util::{FutureExt, future::Either};
-use smallvec::SmallVec;
 
 pub(crate) mod op;
 #[cfg(feature = "time")]
@@ -31,7 +30,7 @@ use send_wrapper::SendWrapper;
 
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerRuntime};
-use crate::{BufResult, runtime::op::OpFlagsFuture};
+use crate::{BufResult, runtime::op::OpFuture};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 
@@ -39,12 +38,56 @@ scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 /// `Err` when the spawned future panicked.
 pub type JoinHandle<T> = Task<Result<T, Box<dyn Any + Send>>>;
 
+struct RunnableQueue {
+    local_runnables: SendWrapper<RefCell<VecDeque<Runnable>>>,
+    sync_runnables: SegQueue<Runnable>,
+}
+
+impl RunnableQueue {
+    pub fn new() -> Self {
+        Self {
+            local_runnables: SendWrapper::new(RefCell::new(VecDeque::new())),
+            sync_runnables: SegQueue::new(),
+        }
+    }
+
+    pub fn schedule(&self, runnable: Runnable, handle: &NotifyHandle) {
+        if let Some(runnables) = self.local_runnables.get() {
+            runnables.borrow_mut().push_back(runnable);
+        } else {
+            self.sync_runnables.push(runnable);
+            handle.notify().ok();
+        }
+    }
+
+    /// SAFETY: call in the main thread
+    pub unsafe fn run(&self, event_interval: usize) -> bool {
+        let local_runnables = self.local_runnables.get_unchecked();
+        for _i in 0..event_interval {
+            let next_task = local_runnables.borrow_mut().pop_front();
+            let has_local_task = next_task.is_some();
+            if let Some(task) = next_task {
+                task.run();
+            }
+            // Cheaper than pop.
+            let has_sync_task = !self.sync_runnables.is_empty();
+            if has_sync_task {
+                if let Some(task) = self.sync_runnables.pop() {
+                    task.run();
+                }
+            } else if !has_local_task {
+                break;
+            }
+        }
+        !(local_runnables.borrow_mut().is_empty() && self.sync_runnables.is_empty())
+    }
+}
+
 /// The async runtime of compio. It is a thread local runtime, and cannot be
 /// sent to other threads.
 pub struct Runtime {
     driver: RefCell<Proactor>,
-    local_runnables: Arc<SendWrapper<RefCell<VecDeque<Runnable>>>>,
-    sync_runnables: Arc<SegQueue<Runnable>>,
+    runnables: Arc<RunnableQueue>,
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
     event_interval: usize,
@@ -67,8 +110,7 @@ impl Runtime {
     fn with_builder(builder: &RuntimeBuilder) -> io::Result<Self> {
         Ok(Self {
             driver: RefCell::new(builder.proactor_builder.build()?),
-            local_runnables: Arc::new(SendWrapper::new(RefCell::new(VecDeque::new()))),
-            sync_runnables: Arc::new(SegQueue::new()),
+            runnables: Arc::new(RunnableQueue::new()),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
             event_interval: builder.event_interval,
@@ -116,20 +158,10 @@ impl Runtime {
     ///
     /// The caller should ensure the captured lifetime long enough.
     pub unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
-        let local_runnables = self.local_runnables.clone();
-        let sync_runnables = self.sync_runnables.clone();
-        let handle = self
-            .driver
-            .borrow()
-            .handle()
-            .expect("cannot create notify handle of the proactor");
+        let runnables = self.runnables.clone();
+        let handle = self.driver.borrow().handle();
         let schedule = move |runnable| {
-            if let Some(runnables) = local_runnables.get() {
-                runnables.borrow_mut().push_back(runnable);
-            } else {
-                sync_runnables.push(runnable);
-                handle.notify().ok();
-            }
+            runnables.schedule(runnable, &handle);
         };
         let (runnable, task) = async_task::spawn_unchecked(future, schedule);
         runnable.schedule();
@@ -143,24 +175,7 @@ impl Runtime {
     /// The return value indicates whether there are still tasks in the queue.
     pub fn run(&self) -> bool {
         // SAFETY: self is !Send + !Sync.
-        let local_runnables = unsafe { self.local_runnables.get_unchecked() };
-        for _i in 0..self.event_interval {
-            let next_task = local_runnables.borrow_mut().pop_front();
-            let has_local_task = next_task.is_some();
-            if let Some(task) = next_task {
-                task.run();
-            }
-            // Cheaper than pop.
-            let has_sync_task = !self.sync_runnables.is_empty();
-            if has_sync_task {
-                if let Some(task) = self.sync_runnables.pop() {
-                    task.run();
-                }
-            } else if !has_local_task {
-                break;
-            }
-        }
-        !(local_runnables.borrow_mut().is_empty() && self.sync_runnables.is_empty())
+        unsafe { self.runnables.run(self.event_interval) }
     }
 
     /// Block on the future till it completes.
@@ -195,37 +210,18 @@ impl Runtime {
     /// The task will not be cancelled even if the future is dropped.
     pub fn spawn_blocking<T: Send + 'static>(
         &self,
-        f: impl (FnOnce() -> T) + Send + Sync + 'static,
+        f: impl (FnOnce() -> T) + Send + 'static,
     ) -> JoinHandle<T> {
         let op = Asyncify::new(move || {
             let res = std::panic::catch_unwind(AssertUnwindSafe(f));
             BufResult(Ok(0), res)
         });
-        let closure = async move {
-            let mut op = op;
-            loop {
-                match self.submit(op).await {
-                    BufResult(Ok(_), rop) => break rop.into_inner(),
-                    BufResult(Err(_), rop) => op = rop,
-                }
-                // Possible error: thread pool is full, or failed to create notify handle.
-                // Push the future to the back of the queue.
-                let mut yielded = false;
-                poll_fn(|cx| {
-                    if yielded {
-                        Poll::Ready(())
-                    } else {
-                        yielded = true;
-                        cx.waker().wake_by_ref();
-                        Poll::Pending
-                    }
-                })
-                .await;
-            }
-        };
-        // SAFETY: the closure catches the shared reference of self, which is in an Rc
-        // so it won't be moved.
-        unsafe { self.spawn_unchecked(closure) }
+        // It is safe and sound to use `submit` here because the task is spawned
+        // immediately.
+        #[allow(deprecated)]
+        unsafe {
+            self.spawn_unchecked(self.submit(op).map(|res| res.1.into_inner()))
+        }
     }
 
     /// Attach a raw file descriptor/handle/socket to the runtime.
@@ -243,7 +239,13 @@ impl Runtime {
     /// Submit an operation to the runtime.
     ///
     /// You only need this when authoring your own [`OpCode`].
+    ///
+    /// It is safe to send the returned future to another runtime and poll it,
+    /// but the exact behavior is not guaranteed, e.g. it may return pending
+    /// forever or else.
+    #[deprecated = "use compio::runtime::submit instead"]
     pub fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
+        #[allow(deprecated)]
         self.submit_with_flags(op).map(|(res, _)| res)
     }
 
@@ -253,27 +255,22 @@ impl Runtime {
     /// the flags
     ///
     /// You only need this when authoring your own [`OpCode`].
+    ///
+    /// It is safe to send the returned future to another runtime and poll it,
+    /// but the exact behavior is not guaranteed, e.g. it may return pending
+    /// forever or else.
+    #[deprecated = "use compio::runtime::submit_with_flags instead"]
     pub fn submit_with_flags<T: OpCode + 'static>(
         &self,
         op: T,
     ) -> impl Future<Output = (BufResult<usize, T>, u32)> {
         match self.submit_raw(op) {
-            PushEntry::Pending(user_data) => Either::Left(OpFlagsFuture::new(user_data)),
+            PushEntry::Pending(user_data) => Either::Left(OpFuture::new(user_data)),
             PushEntry::Ready(res) => {
                 // submit_flags won't be ready immediately, if ready, it must be error without
                 // flags
                 Either::Right(ready((res, 0)))
             }
-        }
-    }
-
-    #[cfg(feature = "time")]
-    pub(crate) fn create_timer(&self, delay: std::time::Duration) -> impl Future<Output = ()> {
-        let mut timer_runtime = self.timer_runtime.borrow_mut();
-        if let Some(key) = timer_runtime.insert(delay) {
-            Either::Left(TimerFuture::new(key))
-        } else {
-            Either::Right(std::future::ready(()))
         }
     }
 
@@ -341,21 +338,33 @@ impl Runtime {
     pub fn poll_with(&self, timeout: Option<Duration>) {
         instrument!(compio_log::Level::DEBUG, "poll_with");
 
-        let mut entries = SmallVec::<[usize; 1024]>::new();
         let mut driver = self.driver.borrow_mut();
-        match driver.poll(timeout, &mut entries) {
-            Ok(_) => {
-                debug!("poll driver ok, entries: {}", entries.len());
-            }
+        match driver.poll(timeout) {
+            Ok(()) => {}
             Err(e) => match e.kind() {
                 io::ErrorKind::TimedOut | io::ErrorKind::Interrupted => {
                     debug!("expected error: {e}");
                 }
-                _ => panic!("{:?}", e),
+                _ => panic!("{e:?}"),
             },
         }
         #[cfg(feature = "time")]
         self.timer_runtime.borrow_mut().wake();
+    }
+}
+
+impl Drop for Runtime {
+    fn drop(&mut self) {
+        self.enter(|| {
+            while self.runnables.sync_runnables.pop().is_some() {}
+            let local_runnables = unsafe { self.runnables.local_runnables.get_unchecked() };
+            loop {
+                let runnable = local_runnables.borrow_mut().pop_front();
+                if runnable.is_none() {
+                    break;
+                }
+            }
+        })
     }
 }
 
@@ -458,7 +467,7 @@ pub fn spawn<F: Future + 'static>(future: F) -> JoinHandle<F::Output> {
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::with_current`].
 pub fn spawn_blocking<T: Send + 'static>(
-    f: impl (FnOnce() -> T) + Send + Sync + 'static,
+    f: impl (FnOnce() -> T) + Send + 'static,
 ) -> JoinHandle<T> {
     Runtime::with_current(|r| r.spawn_blocking(f))
 }
@@ -469,8 +478,8 @@ pub fn spawn_blocking<T: Send + 'static>(
 ///
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::with_current`].
-pub fn submit<T: OpCode + 'static>(op: T) -> impl Future<Output = BufResult<usize, T>> {
-    Runtime::with_current(|r| r.submit(op))
+pub async fn submit<T: OpCode + 'static>(op: T) -> BufResult<usize, T> {
+    submit_with_flags(op).await.0
 }
 
 /// Submit an operation to the current runtime, and return a future for it with
@@ -480,8 +489,22 @@ pub fn submit<T: OpCode + 'static>(op: T) -> impl Future<Output = BufResult<usiz
 ///
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::with_current`].
-pub fn submit_with_flags<T: OpCode + 'static>(
-    op: T,
-) -> impl Future<Output = (BufResult<usize, T>, u32)> {
-    Runtime::with_current(|r| r.submit_with_flags(op))
+pub async fn submit_with_flags<T: OpCode + 'static>(op: T) -> (BufResult<usize, T>, u32) {
+    let state = Runtime::with_current(|r| r.submit_raw(op));
+    match state {
+        PushEntry::Pending(user_data) => OpFuture::new(user_data).await,
+        PushEntry::Ready(res) => {
+            // submit_flags won't be ready immediately, if ready, it must be error without
+            // flags, or the flags are not necessary
+            (res, 0)
+        }
+    }
+}
+
+#[cfg(feature = "time")]
+pub(crate) async fn create_timer(instant: std::time::Instant) {
+    let key = Runtime::with_current(|r| r.timer_runtime.borrow_mut().insert(instant));
+    if let Some(key) = key {
+        TimerFuture::new(key).await
+    }
 }

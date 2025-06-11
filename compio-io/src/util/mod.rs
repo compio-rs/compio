@@ -12,7 +12,10 @@ pub use repeat::{Repeat, repeat};
 mod internal;
 pub(crate) use internal::*;
 
-use crate::{AsyncRead, AsyncWrite, IoResult, buffer::Buffer};
+mod split;
+pub use split::{ReadHalf, WriteHalf, split};
+
+use crate::{AsyncRead, AsyncWrite, AsyncWriteExt, IoResult};
 
 /// Asynchronously copies the entire contents of a reader into a writer.
 ///
@@ -27,26 +30,27 @@ use crate::{AsyncRead, AsyncWrite, IoResult, buffer::Buffer};
 ///
 /// A heap-allocated copy buffer with 8 KB is created to take data from the
 /// reader to the writer.
-pub async fn copy<'a, R: AsyncRead, W: AsyncWrite>(
-    reader: &'a mut R,
-    writer: &'a mut W,
-) -> IoResult<usize> {
-    let mut buf = Buffer::with_capacity(DEFAULT_BUF_SIZE);
-    let mut total = 0;
+pub async fn copy<R: AsyncRead, W: AsyncWrite>(reader: &mut R, writer: &mut W) -> IoResult<u64> {
+    let mut buf = Vec::with_capacity(DEFAULT_BUF_SIZE);
+    let mut total = 0u64;
 
     loop {
-        let read = buf.with(|w| reader.read(w)).await?;
-
-        // When EOF is reached, we are terminating, so flush before that
-        if read == 0 || buf.need_flush() {
-            let written = buf.flush_to(writer).await?;
-            total += written;
+        let res;
+        (res, buf) = reader.read(buf).await.into();
+        match res {
+            Ok(0) => break,
+            Ok(read) => {
+                total += read as u64;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
+                continue;
+            }
+            Err(e) => return Err(e),
         }
-
-        if read == 0 {
-            writer.flush().await?;
-            break;
-        }
+        let res;
+        (res, buf) = writer.write_all(buf).await.into();
+        res?;
+        buf.clear();
     }
 
     Ok(total)

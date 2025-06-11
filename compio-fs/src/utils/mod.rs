@@ -135,10 +135,7 @@ impl DirBuilder {
         match path.parent() {
             Some(p) => Box::pin(self.create_dir_all(p)).await?,
             None => {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "failed to create whole tree",
-                ));
+                return Err(io::Error::other("failed to create whole tree"));
             }
         }
         match self.inner.create(path).await {

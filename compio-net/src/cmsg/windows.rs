@@ -55,7 +55,7 @@ const fn wsa_cmsg_len(length: usize) -> usize {
 
 pub struct CMsgRef<'a>(&'a CMSGHDR);
 
-impl<'a> CMsgRef<'a> {
+impl CMsgRef<'_> {
     pub fn level(&self) -> i32 {
         self.0.cmsg_level
     }
@@ -76,7 +76,7 @@ impl<'a> CMsgRef<'a> {
 
 pub(crate) struct CMsgMut<'a>(&'a mut CMSGHDR);
 
-impl<'a> CMsgMut<'a> {
+impl CMsgMut<'_> {
     pub(crate) fn set_level(&mut self, level: i32) {
         self.0.cmsg_level = level;
     }

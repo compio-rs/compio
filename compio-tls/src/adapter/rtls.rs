@@ -102,7 +102,7 @@ impl TlsConnector {
         let conn = ClientConnection::new(
             self.0.clone(),
             ServerName::try_from(domain)
-                .map_err(|e| HandshakeError::System(io::Error::new(io::ErrorKind::Other, e)))?
+                .map_err(|e| HandshakeError::System(io::Error::other(e)))?
                 .to_owned(),
         )
         .map_err(HandshakeError::Rustls)?;

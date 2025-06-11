@@ -64,6 +64,14 @@ impl UnixListener {
         Ok(UnixListener { inner: socket })
     }
 
+    #[cfg(unix)]
+    /// Creates new UnixListener from a [`std::os::unix::net::UnixListener`].
+    pub fn from_std(stream: std::os::unix::net::UnixListener) -> io::Result<Self> {
+        Ok(Self {
+            inner: Socket::from_socket2(Socket2::from(stream))?,
+        })
+    }
+
     /// Close the socket. If the returned future is dropped before polling, the
     /// socket won't be closed.
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
@@ -148,7 +156,7 @@ impl UnixStream {
     }
 
     #[cfg(unix)]
-    /// Creates new UnixStream from a std::os::unix::net::UnixStream.
+    /// Creates new UnixStream from a [`std::os::unix::net::UnixStream`].
     pub fn from_std(stream: std::os::unix::net::UnixStream) -> io::Result<Self> {
         Ok(Self {
             inner: Socket::from_socket2(Socket2::from(stream))?,
@@ -183,7 +191,7 @@ impl UnixStream {
     /// This method is more efficient than
     /// [`into_split`](UnixStream::into_split), but the halves cannot
     /// be moved into independently spawned tasks.
-    pub fn split(&self) -> (ReadHalf<Self>, WriteHalf<Self>) {
+    pub fn split(&self) -> (ReadHalf<'_, Self>, WriteHalf<'_, Self>) {
         crate::split(self)
     }
 
@@ -286,10 +294,13 @@ fn empty_unix_socket() -> SockAddr {
     unsafe {
         SockAddr::try_init(|addr, len| {
             let addr: *mut SOCKADDR_UN = addr.cast();
-            std::ptr::write(addr, SOCKADDR_UN {
-                sun_family: AF_UNIX,
-                sun_path: [0; 108],
-            });
+            std::ptr::write(
+                addr,
+                SOCKADDR_UN {
+                    sun_family: AF_UNIX,
+                    sun_path: [0; 108],
+                },
+            );
             std::ptr::write(len, 3);
             Ok(())
         })

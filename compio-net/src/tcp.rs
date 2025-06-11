@@ -56,12 +56,21 @@ impl TcpListener {
     /// to this listener.
     pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
         super::each_addr(addr, |addr| async move {
-            let socket =
-                Socket::bind(&SockAddr::from(addr), Type::STREAM, Some(Protocol::TCP)).await?;
+            let sa = SockAddr::from(addr);
+            let socket = Socket::new(sa.domain(), Type::STREAM, Some(Protocol::TCP)).await?;
+            socket.socket.set_reuse_address(true)?;
+            socket.socket.bind(&sa)?;
             socket.listen(128)?;
             Ok(Self { inner: socket })
         })
         .await
+    }
+
+    /// Creates new TcpListener from a [`std::net::TcpListener`].
+    pub fn from_std(stream: std::net::TcpListener) -> io::Result<Self> {
+        Ok(Self {
+            inner: Socket::from_socket2(Socket2::from(stream))?,
+        })
     }
 
     /// Close the socket. If the returned future is dropped before polling, the
@@ -167,7 +176,23 @@ impl TcpStream {
         .await
     }
 
-    /// Creates new TcpStream from a std::net::TcpStream.
+    /// Bind to `bind_addr` then opens a TCP connection to a remote host.
+    pub async fn bind_and_connect(
+        bind_addr: SocketAddr,
+        addr: impl ToSocketAddrsAsync,
+    ) -> io::Result<Self> {
+        super::each_addr(addr, |addr| async move {
+            let addr = SockAddr::from(addr);
+            let bind_addr = SockAddr::from(bind_addr);
+
+            let socket = Socket::bind(&bind_addr, Type::STREAM, Some(Protocol::TCP)).await?;
+            socket.connect_async(&addr).await?;
+            Ok(Self { inner: socket })
+        })
+        .await
+    }
+
+    /// Creates new TcpStream from a [`std::net::TcpStream`].
     pub fn from_std(stream: std::net::TcpStream) -> io::Result<Self> {
         Ok(Self {
             inner: Socket::from_socket2(Socket2::from(stream))?,
@@ -200,7 +225,7 @@ impl TcpStream {
     /// This method is more efficient than
     /// [`into_split`](TcpStream::into_split), but the halves cannot
     /// be moved into independently spawned tasks.
-    pub fn split(&self) -> (ReadHalf<Self>, WriteHalf<Self>) {
+    pub fn split(&self) -> (ReadHalf<'_, Self>, WriteHalf<'_, Self>) {
         crate::split(self)
     }
 
@@ -221,6 +246,25 @@ impl TcpStream {
     /// Create [`PollFd`] from inner socket.
     pub fn into_poll_fd(self) -> io::Result<PollFd<Socket2>> {
         self.inner.into_poll_fd()
+    }
+
+    /// Gets the value of the `TCP_NODELAY` option on this socket.
+    ///
+    /// For more information about this option, see
+    /// [`TcpStream::set_nodelay`].
+    pub fn nodelay(&self) -> io::Result<bool> {
+        self.inner.socket.nodelay()
+    }
+
+    /// Sets the value of the TCP_NODELAY option on this socket.
+    ///
+    /// If set, this option disables the Nagle algorithm. This means
+    /// that segments are always sent as soon as possible, even if
+    /// there is only a small amount of data. When not set, data is
+    /// buffered until there is a sufficient amount to send out,
+    /// thereby avoiding the frequent sending of small packets.
+    pub fn set_nodelay(&self, nodelay: bool) -> io::Result<()> {
+        self.inner.socket.set_nodelay(nodelay)
     }
 }
 

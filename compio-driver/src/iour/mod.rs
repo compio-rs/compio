@@ -26,8 +26,10 @@ use io_uring::{
     types::{Fd, SubmitArgs, Timespec},
 };
 pub(crate) use libc::{sockaddr_storage, socklen_t};
+#[cfg(io_uring)]
+use slab::Slab;
 
-use crate::{AsyncifyPool, Entry, Key, OutEntries, ProactorBuilder, syscall};
+use crate::{AsyncifyPool, BufferPool, Entry, Key, ProactorBuilder, syscall};
 
 pub(crate) mod op;
 
@@ -65,6 +67,15 @@ pub trait OpCode {
     fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
         unreachable!("this operation is asynchronous")
     }
+
+    /// Set the result when it successfully completes.
+    /// The operation stores the result and is responsible to release it if the
+    /// operation is cancelled.
+    ///
+    /// # Safety
+    ///
+    /// Users should not call it.
+    unsafe fn set_result(self: Pin<&mut Self>, _: usize) {}
 }
 
 /// Low-level driver of io-uring.
@@ -73,6 +84,8 @@ pub(crate) struct Driver {
     notifier: Notifier,
     pool: AsyncifyPool,
     pool_completed: Arc<SegQueue<Entry>>,
+    #[cfg(io_uring)]
+    buffer_group_ids: Slab<()>,
 }
 
 impl Driver {
@@ -87,6 +100,13 @@ impl Driver {
         if let Some(sqpoll_idle) = builder.sqpoll_idle {
             io_uring_builder.setup_sqpoll(sqpoll_idle.as_millis() as _);
         }
+        if builder.coop_taskrun {
+            io_uring_builder.setup_coop_taskrun();
+        }
+        if builder.taskrun_flag {
+            io_uring_builder.setup_taskrun_flag();
+        }
+
         let mut inner = io_uring_builder.build(builder.capacity)?;
         #[allow(clippy::useless_conversion)]
         unsafe {
@@ -106,20 +126,31 @@ impl Driver {
             notifier,
             pool: builder.create_or_get_thread_pool(),
             pool_completed: Arc::new(SegQueue::new()),
+            #[cfg(io_uring)]
+            buffer_group_ids: Slab::new(),
         })
     }
 
     // Auto means that it choose to wait or not automatically.
     fn submit_auto(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "submit_auto", ?timeout);
+
+        // when taskrun is true, there are completed cqes wait to handle, no need to
+        // block the submit
+        let want_sqe = if self.inner.submission().taskrun() {
+            0
+        } else {
+            1
+        };
+
         let res = {
             // Last part of submission queue, wait till timeout.
             if let Some(duration) = timeout {
                 let timespec = timespec(duration);
                 let args = SubmitArgs::new().timespec(&timespec);
-                self.inner.submitter().submit_with_args(1, &args)
+                self.inner.submitter().submit_with_args(want_sqe, &args)
             } else {
-                self.inner.submit_and_wait(1)
+                self.inner.submit_and_wait(want_sqe)
             }
         };
         trace!("submit result: {res:?}");
@@ -139,28 +170,36 @@ impl Driver {
         }
     }
 
-    fn poll_entries(&mut self, entries: &mut impl Extend<Entry>) -> bool {
+    fn poll_blocking(&mut self) {
         // Cheaper than pop.
         if !self.pool_completed.is_empty() {
             while let Some(entry) = self.pool_completed.pop() {
-                entries.extend(Some(entry));
+                unsafe {
+                    entry.notify();
+                }
             }
         }
+    }
+
+    fn poll_entries(&mut self) -> bool {
+        self.poll_blocking();
 
         let mut cqueue = self.inner.completion();
         cqueue.sync();
         let has_entry = !cqueue.is_empty();
-        let completed_entries = cqueue.filter_map(|entry| match entry.user_data() {
-            Self::CANCEL => None,
-            Self::NOTIFY => {
-                let flags = entry.flags();
-                debug_assert!(more(flags));
-                self.notifier.clear().expect("cannot clear notifier");
-                None
+        for entry in cqueue {
+            match entry.user_data() {
+                Self::CANCEL => {}
+                Self::NOTIFY => {
+                    let flags = entry.flags();
+                    debug_assert!(more(flags));
+                    self.notifier.clear().expect("cannot clear notifier");
+                }
+                _ => unsafe {
+                    create_entry(entry).notify();
+                },
             }
-            _ => Some(create_entry(entry)),
-        });
-        entries.extend(completed_entries);
+        }
         has_entry
     }
 
@@ -172,7 +211,7 @@ impl Driver {
         Ok(())
     }
 
-    pub fn cancel<T>(&mut self, op: Key<T>) {
+    pub fn cancel(&mut self, op: &mut Key<dyn crate::sys::OpCode>) {
         instrument!(compio_log::Level::TRACE, "cancel", ?op);
         trace!("cancel RawOp");
         unsafe {
@@ -203,16 +242,22 @@ impl Driver {
                 }
                 Err(_) => {
                     drop(squeue);
-                    self.inner.submit()?;
+                    self.poll_entries();
+                    match self.submit_auto(Some(Duration::ZERO)) {
+                        Ok(()) => {}
+                        Err(e)
+                            if matches!(
+                                e.kind(),
+                                io::ErrorKind::TimedOut | io::ErrorKind::Interrupted
+                            ) => {}
+                        Err(e) => return Err(e),
+                    }
                 }
             }
         }
     }
 
-    pub fn push<T: crate::sys::OpCode + 'static>(
-        &mut self,
-        op: &mut Key<T>,
-    ) -> Poll<io::Result<usize>> {
+    pub fn push(&mut self, op: &mut Key<dyn crate::sys::OpCode>) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?op);
         let user_data = op.user_data();
         let op_pin = op.as_op_pin();
@@ -228,21 +273,20 @@ impl Driver {
                 self.push_raw(entry.user_data(user_data as _))?;
                 Poll::Pending
             }
-            OpEntry::Blocking => {
-                if self.push_blocking(user_data)? {
-                    Poll::Pending
+            OpEntry::Blocking => loop {
+                if self.push_blocking(user_data) {
+                    break Poll::Pending;
                 } else {
-                    Poll::Ready(Err(io::Error::from_raw_os_error(libc::EBUSY)))
+                    self.poll_blocking();
                 }
-            }
+            },
         }
     }
 
-    fn push_blocking(&mut self, user_data: usize) -> io::Result<bool> {
-        let handle = self.handle()?;
+    fn push_blocking(&mut self, user_data: usize) -> bool {
+        let handle = self.handle();
         let completed = self.pool_completed.clone();
-        let is_ok = self
-            .pool
+        self.pool
             .dispatch(move || {
                 let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
                 let op_pin = op.as_op_pin();
@@ -250,29 +294,91 @@ impl Driver {
                 completed.push(Entry::new(user_data, res));
                 handle.notify().ok();
             })
-            .is_ok();
-        Ok(is_ok)
+            .is_ok()
     }
 
-    pub unsafe fn poll(
-        &mut self,
-        timeout: Option<Duration>,
-        mut entries: OutEntries<impl Extend<usize>>,
-    ) -> io::Result<()> {
+    pub unsafe fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         // Anyway we need to submit once, no matter there are entries in squeue.
         trace!("start polling");
 
-        if !self.poll_entries(&mut entries) {
+        if !self.poll_entries() {
             self.submit_auto(timeout)?;
-            self.poll_entries(&mut entries);
+            self.poll_entries();
         }
 
         Ok(())
     }
 
-    pub fn handle(&self) -> io::Result<NotifyHandle> {
+    pub fn handle(&self) -> NotifyHandle {
         self.notifier.handle()
+    }
+
+    #[cfg(io_uring)]
+    pub fn create_buffer_pool(
+        &mut self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<BufferPool> {
+        let buffer_group = self.buffer_group_ids.insert(());
+        if buffer_group > u16::MAX as usize {
+            self.buffer_group_ids.remove(buffer_group);
+
+            return Err(io::Error::new(
+                io::ErrorKind::OutOfMemory,
+                "too many buffer pool allocated",
+            ));
+        }
+
+        let buf_ring = io_uring_buf_ring::IoUringBufRing::new(
+            &self.inner,
+            buffer_len,
+            buffer_group as _,
+            buffer_size,
+        )?;
+
+        #[cfg(fusion)]
+        {
+            Ok(BufferPool::new_io_uring(crate::IoUringBufferPool::new(
+                buf_ring,
+            )))
+        }
+        #[cfg(not(fusion))]
+        {
+            Ok(BufferPool::new(buf_ring))
+        }
+    }
+
+    #[cfg(not(io_uring))]
+    pub fn create_buffer_pool(
+        &mut self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<BufferPool> {
+        Ok(BufferPool::new(buffer_len, buffer_size))
+    }
+
+    /// # Safety
+    ///
+    /// caller must make sure release the buffer pool with correct driver
+    #[cfg(io_uring)]
+    pub unsafe fn release_buffer_pool(&mut self, buffer_pool: BufferPool) -> io::Result<()> {
+        #[cfg(fusion)]
+        let buffer_pool = buffer_pool.into_io_uring();
+
+        let buffer_group = buffer_pool.buffer_group();
+        buffer_pool.into_inner().release(&self.inner)?;
+        self.buffer_group_ids.remove(buffer_group as _);
+
+        Ok(())
+    }
+
+    /// # Safety
+    ///
+    /// caller must make sure release the buffer pool with correct driver
+    #[cfg(not(io_uring))]
+    pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
+        Ok(())
     }
 }
 
@@ -308,7 +414,7 @@ fn timespec(duration: std::time::Duration) -> Timespec {
 
 #[derive(Debug)]
 struct Notifier {
-    fd: OwnedFd,
+    fd: Arc<OwnedFd>,
 }
 
 impl Notifier {
@@ -316,7 +422,7 @@ impl Notifier {
     fn new() -> io::Result<Self> {
         let fd = syscall!(libc::eventfd(0, libc::EFD_CLOEXEC | libc::EFD_NONBLOCK))?;
         let fd = unsafe { OwnedFd::from_raw_fd(fd) };
-        Ok(Self { fd })
+        Ok(Self { fd: Arc::new(fd) })
     }
 
     pub fn clear(&self) -> io::Result<()> {
@@ -341,8 +447,8 @@ impl Notifier {
         }
     }
 
-    pub fn handle(&self) -> io::Result<NotifyHandle> {
-        Ok(NotifyHandle::new(self.fd.try_clone()?))
+    pub fn handle(&self) -> NotifyHandle {
+        NotifyHandle::new(self.fd.clone())
     }
 }
 
@@ -354,11 +460,11 @@ impl AsRawFd for Notifier {
 
 /// A notify handle to the inner driver.
 pub struct NotifyHandle {
-    fd: OwnedFd,
+    fd: Arc<OwnedFd>,
 }
 
 impl NotifyHandle {
-    pub(crate) fn new(fd: OwnedFd) -> Self {
+    pub(crate) fn new(fd: Arc<OwnedFd>) -> Self {
         Self { fd }
     }
 

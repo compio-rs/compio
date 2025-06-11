@@ -23,47 +23,11 @@ use crate::PollFd;
 
 #[derive(Debug, Clone)]
 pub struct Socket {
-    socket: Attacher<Socket2>,
+    pub(crate) socket: Attacher<Socket2>,
 }
 
 impl Socket {
     pub fn from_socket2(socket: Socket2) -> io::Result<Self> {
-        #[cfg(unix)]
-        {
-            #[cfg(not(any(
-                target_os = "android",
-                target_os = "dragonfly",
-                target_os = "freebsd",
-                target_os = "fuchsia",
-                target_os = "hurd",
-                target_os = "illumos",
-                target_os = "linux",
-                target_os = "netbsd",
-                target_os = "openbsd",
-                target_os = "espidf",
-                target_os = "vita",
-            )))]
-            socket.set_cloexec(true)?;
-            #[cfg(any(
-                target_os = "ios",
-                target_os = "macos",
-                target_os = "tvos",
-                target_os = "watchos",
-            ))]
-            socket.set_nosigpipe(true)?;
-            // On Linux we use blocking socket
-            // Newer kernels have the patch that allows to arm io_uring poll mechanism for
-            // non blocking socket when there is no connections in listen queue
-            //
-            // https://patchwork.kernel.org/project/linux-block/patch/f999615b-205c-49b7-b272-c4e42e45e09d@kernel.dk/#22949861
-            if cfg!(all(
-                unix,
-                not(all(target_os = "linux", feature = "io-uring"))
-            )) {
-                socket.set_nonblocking(true)?;
-            }
-        }
-
         Ok(Self {
             socket: Attacher::new(socket)?,
         })
@@ -99,26 +63,9 @@ impl Socket {
     pub async fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
         use std::os::fd::FromRawFd;
 
-        #[allow(unused_mut)]
-        let mut ty: i32 = ty.into();
-        #[cfg(any(
-            target_os = "android",
-            target_os = "dragonfly",
-            target_os = "freebsd",
-            target_os = "fuchsia",
-            target_os = "hurd",
-            target_os = "illumos",
-            target_os = "linux",
-            target_os = "netbsd",
-            target_os = "openbsd",
-        ))]
-        {
-            ty |= libc::SOCK_CLOEXEC;
-        }
-
         let op = CreateSocket::new(
             domain.into(),
-            ty,
+            ty.into(),
             protocol.map(|p| p.into()).unwrap_or_default(),
         );
         let BufResult(res, _) = compio_runtime::submit(op).await;
@@ -162,15 +109,9 @@ impl Socket {
 
         let op = Accept::new(self.to_shared_fd());
         let BufResult(res, op) = compio_runtime::submit(op).await;
-        let accept_sock = unsafe { Socket2::from_raw_fd(res? as _) };
-        if cfg!(all(
-            unix,
-            not(all(target_os = "linux", feature = "io-uring"))
-        )) {
-            accept_sock.set_nonblocking(true)?;
-        }
-        let accept_sock = Self::from_socket2(accept_sock)?;
         let addr = op.into_addr();
+        let accept_sock = unsafe { Socket2::from_raw_fd(res? as _) };
+        let accept_sock = Self::from_socket2(accept_sock)?;
         Ok((accept_sock, addr))
     }
 

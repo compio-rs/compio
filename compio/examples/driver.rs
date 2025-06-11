@@ -1,5 +1,5 @@
 use compio::{
-    buf::{IntoInner, arrayvec::ArrayVec},
+    buf::IntoInner,
     driver::{
         AsRawFd, OpCode, OwnedFd, Proactor, PushEntry, SharedFd,
         op::{CloseFile, ReadAt},
@@ -48,19 +48,13 @@ fn open_file(driver: &mut Proactor) -> OwnedFd {
 fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> (usize, O) {
     match driver.push(op) {
         PushEntry::Ready(res) => res.unwrap(),
-        PushEntry::Pending(user_data) => {
-            let mut entries = ArrayVec::<usize, 1>::new();
-            while entries.is_empty() {
-                driver.poll(None, &mut entries).unwrap();
+        PushEntry::Pending(mut user_data) => loop {
+            driver.poll(None).unwrap();
+            match driver.pop(user_data) {
+                PushEntry::Pending(k) => user_data = k,
+                PushEntry::Ready((res, _)) => break res.unwrap(),
             }
-            assert_eq!(entries[0], user_data.user_data());
-            driver
-                .pop(user_data)
-                .map_ready(|(res, _)| res)
-                .take_ready()
-                .unwrap()
-                .unwrap()
-        }
+        },
     }
 }
 

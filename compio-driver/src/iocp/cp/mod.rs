@@ -173,13 +173,14 @@ impl CompletionPort {
                     return None;
                 }
             }
-            let res = if matches!(
-                overlapped.base.Internal as NTSTATUS,
-                STATUS_SUCCESS | STATUS_PENDING
-            ) {
+            // TODO: *mut OVERLAPPED is *mut IO_STATUS_BLOCK internally, but
+            // OVERLAPPED::Internal is not the same size as
+            // IO_STATUS_BLOCK::Status.
+            let status = overlapped.base.Internal as NTSTATUS;
+            let res = if status >= 0 {
                 Ok(overlapped.base.InternalHigh)
             } else {
-                let error = unsafe { RtlNtStatusToDosError(overlapped.base.Internal as _) };
+                let error = unsafe { RtlNtStatusToDosError(status) };
                 match error {
                     ERROR_IO_INCOMPLETE
                     | ERROR_NETNAME_DELETED

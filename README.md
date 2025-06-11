@@ -1,3 +1,11 @@
+<div  align="center">
+    <a href='https://compio.rs'>
+        <img height="150" src="https://github.com/compio-rs/compio-logo/raw/refs/heads/master/generated/colored-with-text.svg">
+    </a>
+</div>
+
+---
+
 # Compio
 
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/compio-rs/compio/blob/master/LICENSE)
@@ -30,7 +38,7 @@ They don't support Windows.
 Add `compio` as dependency:
 
 ```
-compio = { version = "0.12.0", features = ["macros"] }
+compio = { version = "0.13.1", features = ["macros"] }
 ```
 
 Then we can use high level APIs to perform filesystem & net IO.

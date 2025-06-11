@@ -14,6 +14,7 @@ pub use quinn_proto::{
     crypto,
 };
 
+#[cfg(rustls)]
 mod builder;
 mod connection;
 mod endpoint;
@@ -22,6 +23,7 @@ mod recv_stream;
 mod send_stream;
 mod socket;
 
+#[cfg(rustls)]
 pub use builder::{ClientBuilder, ServerBuilder};
 pub use connection::{Connecting, Connection, ConnectionError};
 pub use endpoint::Endpoint;

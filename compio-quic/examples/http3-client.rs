@@ -49,7 +49,7 @@ async fn main() {
         .unwrap();
 
     {
-        println!("Connecting to {} at {}", host, remote);
+        println!("Connecting to {host} at {remote}");
         let conn = endpoint.connect(remote, host, None).unwrap().await.unwrap();
 
         let (mut conn, mut send_req) = compio_quic::h3::client::new(conn).await.unwrap();
@@ -60,7 +60,7 @@ async fn main() {
         stream.finish().await.unwrap();
 
         let resp = stream.recv_response().await.unwrap();
-        println!("{:?}", resp);
+        println!("{resp:?}");
 
         let mut out = compio_fs::File::create(outpath).await.unwrap();
         let mut pos = 0;
@@ -72,12 +72,12 @@ async fn main() {
             pos += len as u64;
         }
         if let Some(headers) = stream.recv_trailers().await.unwrap() {
-            println!("{:?}", headers);
+            println!("{headers:?}");
         }
 
         drop(send_req);
 
-        handle.await.unwrap().unwrap();
+        handle.await.unwrap();
     }
 
     endpoint.shutdown().await.unwrap();
