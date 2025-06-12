@@ -23,7 +23,7 @@ pub use crate::sys::op::{
 #[cfg(io_uring)]
 pub use crate::sys::op::{ReadManagedAt, RecvManaged};
 use crate::{
-    OwnedFd, SharedFd,
+    OwnedFd,
     sys::{sockaddr_storage, socklen_t},
 };
 
@@ -142,7 +142,7 @@ impl CloseFile {
 /// Read a file at specified position into specified buffer.
 #[derive(Debug)]
 pub struct ReadAt<T: IoBufMut, S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     #[cfg(aio)]
@@ -152,7 +152,7 @@ pub struct ReadAt<T: IoBufMut, S> {
 
 impl<T: IoBufMut, S> ReadAt<T, S> {
     /// Create [`ReadAt`].
-    pub fn new(fd: SharedFd<S>, offset: u64, buffer: T) -> Self {
+    pub fn new(fd: S, offset: u64, buffer: T) -> Self {
         Self {
             fd,
             offset,
@@ -175,7 +175,7 @@ impl<T: IoBufMut, S> IntoInner for ReadAt<T, S> {
 /// Write a file at specified position from specified buffer.
 #[derive(Debug)]
 pub struct WriteAt<T: IoBuf, S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
     #[cfg(aio)]
@@ -185,7 +185,7 @@ pub struct WriteAt<T: IoBuf, S> {
 
 impl<T: IoBuf, S> WriteAt<T, S> {
     /// Create [`WriteAt`].
-    pub fn new(fd: SharedFd<S>, offset: u64, buffer: T) -> Self {
+    pub fn new(fd: S, offset: u64, buffer: T) -> Self {
         Self {
             fd,
             offset,
@@ -207,7 +207,7 @@ impl<T: IoBuf, S> IntoInner for WriteAt<T, S> {
 
 /// Sync data to the disk.
 pub struct Sync<S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     #[allow(dead_code)]
     pub(crate) datasync: bool,
     #[cfg(aio)]
@@ -218,7 +218,7 @@ impl<S> Sync<S> {
     /// Create [`Sync`].
     ///
     /// If `datasync` is `true`, the file metadata may not be synchronized.
-    pub fn new(fd: SharedFd<S>, datasync: bool) -> Self {
+    pub fn new(fd: S, datasync: bool) -> Self {
         Self {
             fd,
             datasync,
@@ -230,13 +230,13 @@ impl<S> Sync<S> {
 
 /// Shutdown a socket.
 pub struct ShutdownSocket<S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) how: Shutdown,
 }
 
 impl<S> ShutdownSocket<S> {
     /// Create [`ShutdownSocket`].
-    pub fn new(fd: SharedFd<S>, how: Shutdown) -> Self {
+    pub fn new(fd: S, how: Shutdown) -> Self {
         Self { fd, how }
     }
 }
@@ -257,13 +257,13 @@ impl CloseSocket {
 
 /// Connect to a remote address.
 pub struct Connect<S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) addr: SockAddr,
 }
 
 impl<S> Connect<S> {
     /// Create [`Connect`]. `fd` should be bound.
-    pub fn new(fd: SharedFd<S>, addr: SockAddr) -> Self {
+    pub fn new(fd: S, addr: SockAddr) -> Self {
         Self { fd, addr }
     }
 }
@@ -275,7 +275,7 @@ pub(crate) mod managed {
     use compio_buf::IntoInner;
 
     use super::{ReadAt, Recv};
-    use crate::{BorrowedBuffer, BufferPool, OwnedBuffer, SharedFd, TakeBuffer};
+    use crate::{BorrowedBuffer, BufferPool, OwnedBuffer, TakeBuffer};
 
     /// Read a file at specified position into managed buffer.
     pub struct ReadManagedAt<S> {
@@ -284,12 +284,7 @@ pub(crate) mod managed {
 
     impl<S> ReadManagedAt<S> {
         /// Create [`ReadManagedAt`].
-        pub fn new(
-            fd: SharedFd<S>,
-            offset: u64,
-            pool: &BufferPool,
-            len: usize,
-        ) -> io::Result<Self> {
+        pub fn new(fd: S, offset: u64, pool: &BufferPool, len: usize) -> io::Result<Self> {
             #[cfg(fusion)]
             let pool = pool.as_poll();
             Ok(Self {
@@ -327,7 +322,7 @@ pub(crate) mod managed {
 
     impl<S> RecvManaged<S> {
         /// Create [`RecvManaged`].
-        pub fn new(fd: SharedFd<S>, pool: &BufferPool, len: usize) -> io::Result<Self> {
+        pub fn new(fd: S, pool: &BufferPool, len: usize) -> io::Result<Self> {
             #[cfg(fusion)]
             let pool = pool.as_poll();
             Ok(Self {

@@ -4,7 +4,7 @@ use std::{
     ffi::CString,
     io,
     marker::PhantomPinned,
-    os::fd::{FromRawFd, IntoRawFd, OwnedFd},
+    os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd},
     pin::Pin,
     task::Poll,
 };
@@ -22,9 +22,9 @@ use libc::{pread, preadv, pwrite, pwritev};
 use libc::{pread64 as pread, preadv64 as preadv, pwrite64 as pwrite, pwritev64 as pwritev};
 use socket2::{SockAddr, Socket as Socket2};
 
-use super::{AsRawFd, Decision, OpCode, OpType, sockaddr_storage, socklen_t, syscall};
+use super::{AsFd, Decision, OpCode, OpType, sockaddr_storage, socklen_t, syscall};
+use crate::op::*;
 pub use crate::unix::op::*;
-use crate::{SharedFd, op::*};
 
 impl<
     D: std::marker::Send + 'static,
@@ -68,19 +68,19 @@ impl OpCode for CloseFile {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(Ok(syscall!(libc::close(self.fd.as_raw_fd()))? as _))
+        Poll::Ready(Ok(syscall!(libc::close(self.fd.as_fd().as_raw_fd()))? as _))
     }
 }
 
 /// Get metadata of an opened file.
 pub struct FileStat<S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) stat: libc::stat,
 }
 
 impl<S> FileStat<S> {
     /// Create [`FileStat`].
-    pub fn new(fd: SharedFd<S>) -> Self {
+    pub fn new(fd: S) -> Self {
         Self {
             fd,
             stat: unsafe { std::mem::zeroed() },
@@ -88,30 +88,31 @@ impl<S> FileStat<S> {
     }
 }
 
-impl<S: AsRawFd> OpCode for FileStat<S> {
+impl<S: AsFd> OpCode for FileStat<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        let this = unsafe { self.get_unchecked_mut() };
         #[cfg(gnulinux)]
         {
             let mut s: libc::statx = unsafe { std::mem::zeroed() };
             static EMPTY_NAME: &[u8] = b"\0";
             syscall!(libc::statx(
-                self.fd.as_raw_fd(),
+                this.fd.as_fd().as_raw_fd(),
                 EMPTY_NAME.as_ptr().cast(),
                 libc::AT_EMPTY_PATH,
                 0,
                 &mut s
             ))?;
-            self.stat = statx_to_stat(s);
+            this.stat = statx_to_stat(s);
             Poll::Ready(Ok(0))
         }
         #[cfg(not(gnulinux))]
         {
             Poll::Ready(Ok(
-                syscall!(libc::fstat(self.fd.as_raw_fd(), &mut self.stat))? as _,
+                syscall!(libc::fstat(this.fd.as_fd().as_raw_fd(), &mut this.stat))? as _,
             ))
         }
     }
@@ -186,14 +187,14 @@ impl IntoInner for PathStat {
     }
 }
 
-impl<T: IoBufMut, S: AsRawFd> OpCode for ReadAt<T, S> {
+impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         #[cfg(aio)]
         {
             let this = unsafe { self.get_unchecked_mut() };
             let slice = this.buffer.as_mut_slice();
 
-            this.aiocb.aio_fildes = this.fd.as_raw_fd();
+            this.aiocb.aio_fildes = this.fd.as_fd().as_raw_fd();
             this.aiocb.aio_offset = this.offset as _;
             this.aiocb.aio_buf = slice.as_mut_ptr().cast();
             this.aiocb.aio_nbytes = slice.len();
@@ -214,21 +215,21 @@ impl<T: IoBufMut, S: AsRawFd> OpCode for ReadAt<T, S> {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        let fd = self.fd.as_raw_fd();
+        let fd = self.fd.as_fd().as_raw_fd();
         let offset = self.offset;
         let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
         syscall!(break pread(fd, slice.as_mut_ptr() as _, slice.len() as _, offset as _,))
     }
 }
 
-impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for ReadVectoredAt<T, S> {
+impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         #[cfg(freebsd)]
         {
             let this = unsafe { self.get_unchecked_mut() };
             this.slices = unsafe { this.buffer.io_slices_mut() };
 
-            this.aiocb.aio_fildes = this.fd.as_raw_fd();
+            this.aiocb.aio_fildes = this.fd.as_fd().as_raw_fd();
             this.aiocb.aio_offset = this.offset as _;
             this.aiocb.aio_buf = this.slices.as_mut_ptr().cast();
             this.aiocb.aio_nbytes = this.slices.len();
@@ -253,7 +254,7 @@ impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for ReadVectoredAt<T, S> {
         this.slices = unsafe { this.buffer.io_slices_mut() };
         syscall!(
             break preadv(
-                this.fd.as_raw_fd(),
+                this.fd.as_fd().as_raw_fd(),
                 this.slices.as_ptr() as _,
                 this.slices.len() as _,
                 this.offset as _,
@@ -262,14 +263,14 @@ impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for ReadVectoredAt<T, S> {
     }
 }
 
-impl<T: IoBuf, S: AsRawFd> OpCode for WriteAt<T, S> {
+impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         #[cfg(aio)]
         {
             let this = unsafe { self.get_unchecked_mut() };
             let slice = this.buffer.as_slice();
 
-            this.aiocb.aio_fildes = this.fd.as_raw_fd();
+            this.aiocb.aio_fildes = this.fd.as_fd().as_raw_fd();
             this.aiocb.aio_offset = this.offset as _;
             this.aiocb.aio_buf = slice.as_ptr().cast_mut().cast();
             this.aiocb.aio_nbytes = slice.len();
@@ -293,7 +294,7 @@ impl<T: IoBuf, S: AsRawFd> OpCode for WriteAt<T, S> {
         let slice = self.buffer.as_slice();
         syscall!(
             break pwrite(
-                self.fd.as_raw_fd(),
+                self.fd.as_fd().as_raw_fd(),
                 slice.as_ptr() as _,
                 slice.len() as _,
                 self.offset as _,
@@ -302,14 +303,14 @@ impl<T: IoBuf, S: AsRawFd> OpCode for WriteAt<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S: AsRawFd> OpCode for WriteVectoredAt<T, S> {
+impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         #[cfg(freebsd)]
         {
             let this = unsafe { self.get_unchecked_mut() };
             this.slices = unsafe { this.buffer.io_slices() };
 
-            this.aiocb.aio_fildes = this.fd.as_raw_fd();
+            this.aiocb.aio_fildes = this.fd.as_fd().as_raw_fd();
             this.aiocb.aio_offset = this.offset as _;
             this.aiocb.aio_buf = this.slices.as_ptr().cast_mut().cast();
             this.aiocb.aio_nbytes = this.slices.len();
@@ -334,7 +335,7 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for WriteVectoredAt<T, S> {
         this.slices = unsafe { this.buffer.io_slices() };
         syscall!(
             break pwritev(
-                this.fd.as_raw_fd(),
+                this.fd.as_fd().as_raw_fd(),
                 this.slices.as_ptr() as _,
                 this.slices.len() as _,
                 this.offset as _,
@@ -343,7 +344,7 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for WriteVectoredAt<T, S> {
     }
 }
 
-impl<S: AsRawFd> OpCode for crate::op::managed::ReadManagedAt<S> {
+impl<S: AsFd> OpCode for crate::op::managed::ReadManagedAt<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         unsafe { self.map_unchecked_mut(|this| &mut this.op) }.pre_submit()
     }
@@ -357,7 +358,7 @@ impl<S: AsRawFd> OpCode for crate::op::managed::ReadManagedAt<S> {
     }
 }
 
-impl<S: AsRawFd> OpCode for Sync<S> {
+impl<S: AsFd> OpCode for Sync<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         #[cfg(aio)]
         {
@@ -369,7 +370,7 @@ impl<S: AsRawFd> OpCode for Sync<S> {
             }
 
             let this = unsafe { self.get_unchecked_mut() };
-            this.aiocb.aio_fildes = this.fd.as_raw_fd();
+            this.aiocb.aio_fildes = this.fd.as_fd().as_raw_fd();
 
             let f = if this.datasync {
                 aio_fdatasync
@@ -396,14 +397,14 @@ impl<S: AsRawFd> OpCode for Sync<S> {
         #[cfg(datasync)]
         {
             Poll::Ready(Ok(syscall!(if self.datasync {
-                libc::fdatasync(self.fd.as_raw_fd())
+                libc::fdatasync(self.fd.as_fd().as_raw_fd())
             } else {
-                libc::fsync(self.fd.as_raw_fd())
+                libc::fsync(self.fd.as_fd().as_raw_fd())
             })? as _))
         }
         #[cfg(not(datasync))]
         {
-            Poll::Ready(Ok(syscall!(libc::fsync(self.fd.as_raw_fd()))? as _))
+            Poll::Ready(Ok(syscall!(libc::fsync(self.fd.as_fd().as_raw_fd()))? as _))
         }
     }
 }
@@ -537,14 +538,14 @@ impl OpCode for CreateSocket {
     }
 }
 
-impl<S: AsRawFd> OpCode for ShutdownSocket<S> {
+impl<S: AsFd> OpCode for ShutdownSocket<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(
-            syscall!(libc::shutdown(self.fd.as_raw_fd(), self.how()))? as _,
+            syscall!(libc::shutdown(self.fd.as_fd().as_raw_fd(), self.how()))? as _,
         ))
     }
 }
@@ -555,11 +556,11 @@ impl OpCode for CloseSocket {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(Ok(syscall!(libc::close(self.fd.as_raw_fd()))? as _))
+        Poll::Ready(Ok(syscall!(libc::close(self.fd.as_fd().as_raw_fd()))? as _))
     }
 }
 
-impl<S: AsRawFd> Accept<S> {
+impl<S: AsFd> Accept<S> {
     unsafe fn call(self: Pin<&mut Self>) -> libc::c_int {
         let this = self.get_unchecked_mut();
         #[cfg(any(
@@ -575,7 +576,7 @@ impl<S: AsRawFd> Accept<S> {
         ))]
         {
             libc::accept4(
-                this.fd.as_raw_fd(),
+                this.fd.as_fd().as_raw_fd(),
                 &mut this.buffer as *mut _ as *mut _,
                 &mut this.addr_len,
                 libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC,
@@ -595,7 +596,7 @@ impl<S: AsRawFd> Accept<S> {
         {
             || -> io::Result<libc::c_int> {
                 let fd = syscall!(libc::accept(
-                    this.fd.as_raw_fd(),
+                    this.fd.as_fd().as_raw_fd(),
                     &mut this.buffer as *mut _ as *mut _,
                     &mut this.addr_len,
                 ))?;
@@ -609,14 +610,14 @@ impl<S: AsRawFd> Accept<S> {
     }
 }
 
-impl<S: AsRawFd> OpCode for Accept<S> {
+impl<S: AsFd> OpCode for Accept<S> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
-        let fd = self.fd.as_raw_fd();
+        let fd = self.fd.as_fd().as_raw_fd();
         syscall!(self.as_mut().call(), wait_readable(fd))
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_raw_fd()))
+        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
     }
 
     fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -630,16 +631,20 @@ impl<S: AsRawFd> OpCode for Accept<S> {
     }
 }
 
-impl<S: AsRawFd> OpCode for Connect<S> {
+impl<S: AsFd> OpCode for Connect<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         syscall!(
-            libc::connect(self.fd.as_raw_fd(), self.addr.as_ptr(), self.addr.len()),
-            wait_writable(self.fd.as_raw_fd())
+            libc::connect(
+                self.fd.as_fd().as_raw_fd(),
+                self.addr.as_ptr(),
+                self.addr.len()
+            ),
+            wait_writable(self.fd.as_fd().as_raw_fd())
         )
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_raw_fd()))
+        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -647,7 +652,7 @@ impl<S: AsRawFd> OpCode for Connect<S> {
         let mut err_len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
 
         syscall!(libc::getsockopt(
-            self.fd.as_raw_fd(),
+            self.fd.as_fd().as_raw_fd(),
             libc::SOL_SOCKET,
             libc::SO_ERROR,
             &mut err as *mut _ as *mut _,
@@ -663,29 +668,29 @@ impl<S: AsRawFd> OpCode for Connect<S> {
     }
 }
 
-impl<T: IoBufMut, S: AsRawFd> OpCode for Recv<T, S> {
+impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::wait_readable(self.fd.as_raw_fd()))
+        Ok(Decision::wait_readable(self.fd.as_fd().as_raw_fd()))
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_raw_fd()))
+        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        let fd = self.fd.as_raw_fd();
+        let fd = self.fd.as_fd().as_raw_fd();
         let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
         syscall!(break libc::read(fd, slice.as_mut_ptr() as _, slice.len()))
     }
 }
 
-impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvVectored<T, S> {
+impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::wait_readable(self.fd.as_raw_fd()))
+        Ok(Decision::wait_readable(self.fd.as_fd().as_raw_fd()))
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_raw_fd()))
+        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -693,7 +698,7 @@ impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvVectored<T, S> {
         this.slices = unsafe { this.buffer.io_slices_mut() };
         syscall!(
             break libc::readv(
-                this.fd.as_raw_fd(),
+                this.fd.as_fd().as_raw_fd(),
                 this.slices.as_ptr() as _,
                 this.slices.len() as _
             )
@@ -701,28 +706,34 @@ impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvVectored<T, S> {
     }
 }
 
-impl<T: IoBuf, S: AsRawFd> OpCode for Send<T, S> {
+impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::wait_writable(self.fd.as_raw_fd()))
+        Ok(Decision::wait_writable(self.fd.as_fd().as_raw_fd()))
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_raw_fd()))
+        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let slice = self.buffer.as_slice();
-        syscall!(break libc::write(self.fd.as_raw_fd(), slice.as_ptr() as _, slice.len()))
+        syscall!(
+            break libc::write(
+                self.fd.as_fd().as_raw_fd(),
+                slice.as_ptr() as _,
+                slice.len()
+            )
+        )
     }
 }
 
-impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendVectored<T, S> {
+impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::wait_writable(self.fd.as_raw_fd()))
+        Ok(Decision::wait_writable(self.fd.as_fd().as_raw_fd()))
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_raw_fd()))
+        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -730,7 +741,7 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendVectored<T, S> {
         this.slices = unsafe { this.buffer.io_slices() };
         syscall!(
             break libc::writev(
-                this.fd.as_raw_fd(),
+                this.fd.as_fd().as_raw_fd(),
                 this.slices.as_ptr() as _,
                 this.slices.len() as _
             )
@@ -738,7 +749,7 @@ impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendVectored<T, S> {
     }
 }
 
-impl<S: AsRawFd> OpCode for crate::op::managed::RecvManaged<S> {
+impl<S: AsFd> OpCode for crate::op::managed::RecvManaged<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         unsafe { self.map_unchecked_mut(|this| &mut this.op) }.pre_submit()
     }
@@ -754,7 +765,7 @@ impl<S: AsRawFd> OpCode for crate::op::managed::RecvManaged<S> {
 
 /// Receive data and source address.
 pub struct RecvFrom<T: IoBufMut, S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) addr: sockaddr_storage,
     pub(crate) addr_len: socklen_t,
@@ -763,7 +774,7 @@ pub struct RecvFrom<T: IoBufMut, S> {
 
 impl<T: IoBufMut, S> RecvFrom<T, S> {
     /// Create [`RecvFrom`].
-    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
+    pub fn new(fd: S, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -774,10 +785,10 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
     }
 }
 
-impl<T: IoBufMut, S: AsRawFd> RecvFrom<T, S> {
+impl<T: IoBufMut, S: AsFd> RecvFrom<T, S> {
     unsafe fn call(self: Pin<&mut Self>) -> libc::ssize_t {
         let this = self.get_unchecked_mut();
-        let fd = this.fd.as_raw_fd();
+        let fd = this.fd.as_fd().as_raw_fd();
         let slice = this.buffer.as_mut_slice();
         libc::recvfrom(
             fd,
@@ -790,14 +801,14 @@ impl<T: IoBufMut, S: AsRawFd> RecvFrom<T, S> {
     }
 }
 
-impl<T: IoBufMut, S: AsRawFd> OpCode for RecvFrom<T, S> {
+impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
-        let fd = self.fd.as_raw_fd();
+        let fd = self.fd.as_fd().as_raw_fd();
         syscall!(self.as_mut().call(), wait_readable(fd))
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_raw_fd()))
+        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
     }
 
     fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -815,7 +826,7 @@ impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
 
 /// Receive data and source address into vectored buffer.
 pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSliceMut>,
     pub(crate) addr: sockaddr_storage,
@@ -825,7 +836,7 @@ pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
 
 impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
     /// Create [`RecvFromVectored`].
-    pub fn new(fd: SharedFd<S>, buffer: T) -> Self {
+    pub fn new(fd: S, buffer: T) -> Self {
         Self {
             fd,
             buffer,
@@ -837,7 +848,7 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S: AsRawFd> RecvFromVectored<T, S> {
+impl<T: IoVectoredBufMut, S: AsFd> RecvFromVectored<T, S> {
     fn set_msg(&mut self) {
         self.slices = unsafe { self.buffer.io_slices_mut() };
         self.msg = libc::msghdr {
@@ -852,19 +863,19 @@ impl<T: IoVectoredBufMut, S: AsRawFd> RecvFromVectored<T, S> {
     }
 
     unsafe fn call(&mut self) -> libc::ssize_t {
-        libc::recvmsg(self.fd.as_raw_fd(), &mut self.msg, 0)
+        libc::recvmsg(self.fd.as_fd().as_raw_fd(), &mut self.msg, 0)
     }
 }
 
-impl<T: IoVectoredBufMut, S: AsRawFd> OpCode for RecvFromVectored<T, S> {
+impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let this = unsafe { self.get_unchecked_mut() };
         this.set_msg();
-        syscall!(this.call(), wait_readable(this.fd.as_raw_fd()))
+        syscall!(this.call(), wait_readable(this.fd.as_fd().as_raw_fd()))
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_raw_fd()))
+        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -883,7 +894,7 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
 
 /// Send data to specified address.
 pub struct SendTo<T: IoBuf, S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
     _p: PhantomPinned,
@@ -891,7 +902,7 @@ pub struct SendTo<T: IoBuf, S> {
 
 impl<T: IoBuf, S> SendTo<T, S> {
     /// Create [`SendTo`].
-    pub fn new(fd: SharedFd<S>, buffer: T, addr: SockAddr) -> Self {
+    pub fn new(fd: S, buffer: T, addr: SockAddr) -> Self {
         Self {
             fd,
             buffer,
@@ -901,11 +912,11 @@ impl<T: IoBuf, S> SendTo<T, S> {
     }
 }
 
-impl<T: IoBuf, S: AsRawFd> SendTo<T, S> {
+impl<T: IoBuf, S: AsFd> SendTo<T, S> {
     unsafe fn call(&self) -> libc::ssize_t {
         let slice = self.buffer.as_slice();
         libc::sendto(
-            self.fd.as_raw_fd(),
+            self.fd.as_fd().as_raw_fd(),
             slice.as_ptr() as _,
             slice.len(),
             0,
@@ -915,13 +926,13 @@ impl<T: IoBuf, S: AsRawFd> SendTo<T, S> {
     }
 }
 
-impl<T: IoBuf, S: AsRawFd> OpCode for SendTo<T, S> {
+impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        syscall!(self.call(), wait_writable(self.fd.as_raw_fd()))
+        syscall!(self.call(), wait_writable(self.fd.as_fd().as_raw_fd()))
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_raw_fd()))
+        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -939,7 +950,7 @@ impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
 
 /// Send data to specified address from vectored buffer.
 pub struct SendToVectored<T: IoVectoredBuf, S> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
     pub(crate) slices: Vec<IoSlice>,
@@ -949,7 +960,7 @@ pub struct SendToVectored<T: IoVectoredBuf, S> {
 
 impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
     /// Create [`SendToVectored`].
-    pub fn new(fd: SharedFd<S>, buffer: T, addr: SockAddr) -> Self {
+    pub fn new(fd: S, buffer: T, addr: SockAddr) -> Self {
         Self {
             fd,
             buffer,
@@ -961,7 +972,7 @@ impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S: AsRawFd> SendToVectored<T, S> {
+impl<T: IoVectoredBuf, S: AsFd> SendToVectored<T, S> {
     fn set_msg(&mut self) {
         self.slices = unsafe { self.buffer.io_slices() };
         self.msg = libc::msghdr {
@@ -976,19 +987,19 @@ impl<T: IoVectoredBuf, S: AsRawFd> SendToVectored<T, S> {
     }
 
     unsafe fn call(&self) -> libc::ssize_t {
-        libc::sendmsg(self.fd.as_raw_fd(), &self.msg, 0)
+        libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, 0)
     }
 }
 
-impl<T: IoVectoredBuf, S: AsRawFd> OpCode for SendToVectored<T, S> {
+impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let this = unsafe { self.get_unchecked_mut() };
         this.set_msg();
-        syscall!(this.call(), wait_writable(this.fd.as_raw_fd()))
+        syscall!(this.call(), wait_writable(this.fd.as_fd().as_raw_fd()))
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_raw_fd()))
+        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -1004,21 +1015,21 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> RecvMsg<T, C, S> {
+impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> RecvMsg<T, C, S> {
     unsafe fn call(&mut self) -> libc::ssize_t {
-        libc::recvmsg(self.fd.as_raw_fd(), &mut self.msg, 0)
+        libc::recvmsg(self.fd.as_fd().as_raw_fd(), &mut self.msg, 0)
     }
 }
 
-impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
+impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let this = unsafe { self.get_unchecked_mut() };
         unsafe { this.set_msg() };
-        syscall!(this.call(), wait_readable(this.fd.as_raw_fd()))
+        syscall!(this.call(), wait_readable(this.fd.as_fd().as_raw_fd()))
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_raw_fd()))
+        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -1027,21 +1038,21 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsRawFd> OpCode for RecvMsg<T, C, S> {
     }
 }
 
-impl<T: IoVectoredBuf, C: IoBuf, S: AsRawFd> SendMsg<T, C, S> {
+impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> SendMsg<T, C, S> {
     unsafe fn call(&self) -> libc::ssize_t {
-        libc::sendmsg(self.fd.as_raw_fd(), &self.msg, 0)
+        libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, 0)
     }
 }
 
-impl<T: IoVectoredBuf, C: IoBuf, S: AsRawFd> OpCode for SendMsg<T, C, S> {
+impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let this = unsafe { self.get_unchecked_mut() };
         unsafe { this.set_msg() };
-        syscall!(this.call(), wait_writable(this.fd.as_raw_fd()))
+        syscall!(this.call(), wait_writable(this.fd.as_fd().as_raw_fd()))
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_raw_fd()))
+        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -1049,13 +1060,16 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsRawFd> OpCode for SendMsg<T, C, S> {
     }
 }
 
-impl<S: AsRawFd> OpCode for PollOnce<S> {
+impl<S: AsFd> OpCode for PollOnce<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::wait_for(self.fd.as_raw_fd(), self.interest))
+        Ok(Decision::wait_for(
+            self.fd.as_fd().as_raw_fd(),
+            self.interest,
+        ))
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_raw_fd()))
+        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
