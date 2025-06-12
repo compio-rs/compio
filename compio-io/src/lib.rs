@@ -122,6 +122,7 @@ pub mod framed;
 pub mod compat;
 mod read;
 pub mod util;
+mod vectored;
 mod write;
 
 pub(crate) type IoResult<T> = std::io::Result<T>;
