@@ -981,7 +981,7 @@ impl<S: AsFd> OpCode for ConnectNamedPipe<S> {
 
 /// Send a control code to a device.
 pub struct DeviceIoControl<S, I: IoBuf, O: IoBufMut> {
-    pub(crate) fd: SharedFd<S>,
+    pub(crate) fd: S,
     pub(crate) ioctl_code: u32,
     pub(crate) input_buffer: Option<I>,
     pub(crate) output_buffer: Option<O>,
@@ -990,7 +990,7 @@ pub struct DeviceIoControl<S, I: IoBuf, O: IoBufMut> {
 
 impl<S, I: IoBuf, O: IoBufMut> DeviceIoControl<S, I, O> {
     /// Create [`DeviceIoControl`].
-    pub fn new(fd: SharedFd<S>, ioctl_code: u32, input_buffer: Option<I>, output_buffer: Option<O>) -> Self {
+    pub fn new(fd: S, ioctl_code: u32, input_buffer: Option<I>, output_buffer: Option<O>) -> Self {
         Self {
             fd,
             ioctl_code,
@@ -1009,15 +1009,21 @@ impl<S, I: IoBuf, O: IoBufMut> IntoInner for DeviceIoControl<S, I, O> {
     }
 }
 
-impl<S: AsRawFd, I: IoBuf, O: IoBufMut> OpCode for DeviceIoControl<S, I, O> {
+impl<S: AsFd, I: IoBuf, O: IoBufMut> OpCode for DeviceIoControl<S, I, O> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = self.get_unchecked_mut();
-        let fd = this.fd.as_raw_fd();
+        let fd = this.fd.as_fd().as_raw_fd();
         let input_len = this.input_buffer.as_ref().map_or(0, |x| x.buf_len());
-        let input_ptr = this.input_buffer.as_ref().map_or(std::ptr::null(), |x| x.as_buf_ptr());
+        let input_ptr = this
+            .input_buffer
+            .as_ref()
+            .map_or(std::ptr::null(), |x| x.as_buf_ptr());
         let output_len = this.output_buffer.as_ref().map_or(0, |x| x.buf_len());
-        let output_ptr = this.output_buffer.as_mut().map_or(std::ptr::null_mut(), |x| x.as_buf_mut_ptr());
-        let mut transferred = 0; 
+        let output_ptr = this
+            .output_buffer
+            .as_mut()
+            .map_or(std::ptr::null_mut(), |x| x.as_buf_mut_ptr());
+        let mut transferred = 0;
         let res = DeviceIoControl(
             fd,
             this.ioctl_code,
@@ -1032,6 +1038,6 @@ impl<S: AsRawFd, I: IoBuf, O: IoBufMut> OpCode for DeviceIoControl<S, I, O> {
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
-        cancel(self.fd.as_raw_fd(), optr)
+        cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
