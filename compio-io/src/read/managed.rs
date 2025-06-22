@@ -41,9 +41,9 @@ pub trait AsyncReadManagedAt {
     /// read max len
     async fn read_managed_at<'a>(
         &self,
-        pos: u64,
         buffer_pool: &'a Self::BufferPool,
         len: usize,
+        pos: u64,
     ) -> IoResult<Self::Buffer<'a>>;
 }
 
@@ -62,7 +62,7 @@ where
         let pos = self.position();
         let buf = self
             .get_ref()
-            .read_managed_at(pos, buffer_pool, len)
+            .read_managed_at(buffer_pool, len, pos)
             .await?;
         self.set_position(pos + buf.len() as u64);
         Ok(buf)
