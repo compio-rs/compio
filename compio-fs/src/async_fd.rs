@@ -1,5 +1,5 @@
 #[cfg(unix)]
-use std::os::fd::{FromRawFd, RawFd};
+use std::os::fd::FromRawFd;
 #[cfg(windows)]
 use std::os::windows::io::{
     AsRawHandle, AsRawSocket, FromRawHandle, FromRawSocket, RawHandle, RawSocket,
@@ -8,7 +8,7 @@ use std::{io, ops::Deref};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
-    AsRawFd, SharedFd, ToSharedFd,
+    AsFd, AsRawFd, BorrowedFd, RawFd, SharedFd, ToSharedFd,
     op::{BufResultExt, Recv, Send},
 };
 use compio_io::{AsyncRead, AsyncWrite};
@@ -22,11 +22,11 @@ use {
 /// A wrapper for IO source, providing implementations for [`AsyncRead`] and
 /// [`AsyncWrite`].
 #[derive(Debug)]
-pub struct AsyncFd<T: AsRawFd> {
+pub struct AsyncFd<T: AsFd> {
     inner: Attacher<T>,
 }
 
-impl<T: AsRawFd> AsyncFd<T> {
+impl<T: AsFd> AsyncFd<T> {
     /// Create [`AsyncFd`] and attach the source to the current runtime.
     pub fn new(source: T) -> io::Result<Self> {
         Ok(Self {
@@ -46,7 +46,7 @@ impl<T: AsRawFd> AsyncFd<T> {
     }
 }
 
-impl<T: AsRawFd + 'static> AsyncRead for AsyncFd<T> {
+impl<T: AsFd + 'static> AsyncRead for AsyncFd<T> {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         (&*self).read(buf).await
@@ -59,7 +59,7 @@ impl<T: AsRawFd + 'static> AsyncRead for AsyncFd<T> {
     }
 }
 
-impl<T: AsRawFd + 'static> AsyncRead for &AsyncFd<T> {
+impl<T: AsFd + 'static> AsyncRead for &AsyncFd<T> {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         let fd = self.inner.to_shared_fd();
         let op = Recv::new(fd, buf);
@@ -74,7 +74,7 @@ impl<T: AsRawFd + 'static> AsyncRead for &AsyncFd<T> {
     }
 }
 
-impl<T: AsRawFd + 'static> AsyncWrite for AsyncFd<T> {
+impl<T: AsFd + 'static> AsyncWrite for AsyncFd<T> {
     #[inline]
     async fn write<B: IoBuf>(&mut self, buf: B) -> BufResult<usize, B> {
         (&*self).write(buf).await
@@ -97,7 +97,7 @@ impl<T: AsRawFd + 'static> AsyncWrite for AsyncFd<T> {
     }
 }
 
-impl<T: AsRawFd + 'static> AsyncWrite for &AsyncFd<T> {
+impl<T: AsFd + 'static> AsyncWrite for &AsyncFd<T> {
     async fn write<B: IoBuf>(&mut self, buf: B) -> BufResult<usize, B> {
         let fd = self.inner.to_shared_fd();
         let op = Send::new(fd, buf);
@@ -120,7 +120,7 @@ impl<T: AsRawFd + 'static> AsyncWrite for &AsyncFd<T> {
     }
 }
 
-impl<T: AsRawFd> IntoInner for AsyncFd<T> {
+impl<T: AsFd> IntoInner for AsyncFd<T> {
     type Inner = SharedFd<T>;
 
     fn into_inner(self) -> Self::Inner {
@@ -128,33 +128,39 @@ impl<T: AsRawFd> IntoInner for AsyncFd<T> {
     }
 }
 
-impl<T: AsRawFd> AsRawFd for AsyncFd<T> {
-    fn as_raw_fd(&self) -> compio_driver::RawFd {
-        self.inner.as_raw_fd()
+impl<T: AsFd> AsFd for AsyncFd<T> {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.inner.as_fd()
+    }
+}
+
+impl<T: AsFd> AsRawFd for AsyncFd<T> {
+    fn as_raw_fd(&self) -> RawFd {
+        self.inner.as_fd().as_raw_fd()
     }
 }
 
 #[cfg(windows)]
-impl<T: AsRawFd + AsRawHandle> AsRawHandle for AsyncFd<T> {
+impl<T: AsFd + AsRawHandle> AsRawHandle for AsyncFd<T> {
     fn as_raw_handle(&self) -> RawHandle {
         self.inner.as_raw_handle()
     }
 }
 
 #[cfg(windows)]
-impl<T: AsRawFd + AsRawSocket> AsRawSocket for AsyncFd<T> {
+impl<T: AsFd + AsRawSocket> AsRawSocket for AsyncFd<T> {
     fn as_raw_socket(&self) -> RawSocket {
         self.inner.as_raw_socket()
     }
 }
 
-impl<T: AsRawFd> ToSharedFd<T> for AsyncFd<T> {
+impl<T: AsFd> ToSharedFd<T> for AsyncFd<T> {
     fn to_shared_fd(&self) -> SharedFd<T> {
         self.inner.to_shared_fd()
     }
 }
 
-impl<T: AsRawFd> Clone for AsyncFd<T> {
+impl<T: AsFd> Clone for AsyncFd<T> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -163,27 +169,27 @@ impl<T: AsRawFd> Clone for AsyncFd<T> {
 }
 
 #[cfg(unix)]
-impl<T: AsRawFd + FromRawFd> FromRawFd for AsyncFd<T> {
+impl<T: AsFd + FromRawFd> FromRawFd for AsyncFd<T> {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
         Self::new_unchecked(FromRawFd::from_raw_fd(fd))
     }
 }
 
 #[cfg(windows)]
-impl<T: AsRawFd + FromRawHandle> FromRawHandle for AsyncFd<T> {
+impl<T: AsFd + FromRawHandle> FromRawHandle for AsyncFd<T> {
     unsafe fn from_raw_handle(handle: RawHandle) -> Self {
         Self::new_unchecked(FromRawHandle::from_raw_handle(handle))
     }
 }
 
 #[cfg(windows)]
-impl<T: AsRawFd + FromRawSocket> FromRawSocket for AsyncFd<T> {
+impl<T: AsFd + FromRawSocket> FromRawSocket for AsyncFd<T> {
     unsafe fn from_raw_socket(sock: RawSocket) -> Self {
         Self::new_unchecked(FromRawSocket::from_raw_socket(sock))
     }
 }
 
-impl<T: AsRawFd> Deref for AsyncFd<T> {
+impl<T: AsFd> Deref for AsyncFd<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {

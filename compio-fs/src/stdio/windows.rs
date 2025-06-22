@@ -1,6 +1,6 @@
 use std::{
     io::{self, IsTerminal, Read, Write},
-    os::windows::io::AsRawHandle,
+    os::windows::io::{AsRawHandle, BorrowedHandle, RawHandle},
     pin::Pin,
     sync::OnceLock,
     task::Poll,
@@ -8,7 +8,7 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
-    AsRawFd, OpCode, OpType, RawFd, SharedFd,
+    AsFd, AsRawFd, BorrowedFd, OpCode, OpType, RawFd, SharedFd,
     op::{BufResultExt, Recv, Send},
 };
 use compio_io::{AsyncRead, AsyncWrite};
@@ -98,6 +98,22 @@ impl<W: Write, B: IoBuf> IntoInner for StdWrite<W, B> {
     }
 }
 
+#[derive(Debug)]
+struct StaticFd(RawHandle);
+
+impl AsFd for StaticFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        // Safety: we only use it for console handles.
+        BorrowedFd::File(unsafe { BorrowedHandle::borrow_raw(self.0) })
+    }
+}
+
+impl AsRawFd for StaticFd {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0 as _
+    }
+}
+
 static STDIN_ISATTY: OnceLock<bool> = OnceLock::new();
 
 /// A handle to the standard input stream of a process.
@@ -105,7 +121,7 @@ static STDIN_ISATTY: OnceLock<bool> = OnceLock::new();
 /// See [`stdin`].
 #[derive(Debug, Clone)]
 pub struct Stdin {
-    fd: SharedFd<RawFd>,
+    fd: SharedFd<StaticFd>,
     isatty: bool,
 }
 
@@ -117,7 +133,7 @@ impl Stdin {
                 || Runtime::with_current(|r| r.attach(stdin.as_raw_handle() as _)).is_err()
         });
         Self {
-            fd: SharedFd::new(stdin.as_raw_handle() as _),
+            fd: SharedFd::new(StaticFd(stdin.as_raw_handle())),
             isatty,
         }
     }
@@ -149,7 +165,7 @@ static STDOUT_ISATTY: OnceLock<bool> = OnceLock::new();
 /// See [`stdout`].
 #[derive(Debug, Clone)]
 pub struct Stdout {
-    fd: SharedFd<RawFd>,
+    fd: SharedFd<StaticFd>,
     isatty: bool,
 }
 
@@ -161,7 +177,7 @@ impl Stdout {
                 || Runtime::with_current(|r| r.attach(stdout.as_raw_handle() as _)).is_err()
         });
         Self {
-            fd: SharedFd::new(stdout.as_raw_handle() as _),
+            fd: SharedFd::new(StaticFd(stdout.as_raw_handle())),
             isatty,
         }
     }
@@ -200,7 +216,7 @@ static STDERR_ISATTY: OnceLock<bool> = OnceLock::new();
 /// See [`stderr`].
 #[derive(Debug, Clone)]
 pub struct Stderr {
-    fd: SharedFd<RawFd>,
+    fd: SharedFd<StaticFd>,
     isatty: bool,
 }
 
@@ -212,7 +228,7 @@ impl Stderr {
                 || Runtime::with_current(|r| r.attach(stderr.as_raw_handle() as _)).is_err()
         });
         Self {
-            fd: SharedFd::new(stderr.as_raw_handle() as _),
+            fd: SharedFd::new(StaticFd(stderr.as_raw_handle())),
             isatty,
         }
     }

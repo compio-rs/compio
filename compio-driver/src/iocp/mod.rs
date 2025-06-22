@@ -1,9 +1,9 @@
 use std::{
     collections::HashMap,
     io,
-    os::windows::{
-        io::{OwnedHandle, OwnedSocket},
-        prelude::{AsRawHandle, AsRawSocket},
+    os::windows::io::{
+        AsHandle, AsRawHandle, AsRawSocket, AsSocket, BorrowedHandle, BorrowedSocket, OwnedHandle,
+        OwnedSocket,
     },
     pin::Pin,
     sync::Arc,
@@ -141,6 +141,93 @@ impl From<OwnedSocket> for OwnedFd {
 impl From<socket2::Socket> for OwnedFd {
     fn from(value: socket2::Socket) -> Self {
         Self::Socket(OwnedSocket::from(value))
+    }
+}
+
+/// Borrowed handle or socket on Windows.
+#[derive(Debug)]
+pub enum BorrowedFd<'a> {
+    /// Win32 handle.
+    File(BorrowedHandle<'a>),
+    /// Windows socket handle.
+    Socket(BorrowedSocket<'a>),
+}
+
+impl AsRawFd for BorrowedFd<'_> {
+    fn as_raw_fd(&self) -> RawFd {
+        match self {
+            Self::File(fd) => fd.as_raw_handle() as RawFd,
+            Self::Socket(s) => s.as_raw_socket() as RawFd,
+        }
+    }
+}
+
+impl<'a> From<BorrowedHandle<'a>> for BorrowedFd<'a> {
+    fn from(value: BorrowedHandle<'a>) -> Self {
+        Self::File(value)
+    }
+}
+
+impl<'a> From<BorrowedSocket<'a>> for BorrowedFd<'a> {
+    fn from(value: BorrowedSocket<'a>) -> Self {
+        Self::Socket(value)
+    }
+}
+
+/// Extracts fds.
+pub trait AsFd {
+    /// Extracts the borrowed fd.
+    fn as_fd(&self) -> BorrowedFd<'_>;
+}
+
+impl AsFd for OwnedFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        match self {
+            Self::File(fd) => fd.as_fd(),
+            Self::Socket(s) => s.as_fd(),
+        }
+    }
+}
+
+impl AsFd for std::fs::File {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.as_handle().into()
+    }
+}
+
+impl AsFd for OwnedHandle {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.as_handle().into()
+    }
+}
+
+impl AsFd for socket2::Socket {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.as_socket().into()
+    }
+}
+
+impl AsFd for OwnedSocket {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.as_socket().into()
+    }
+}
+
+impl AsFd for std::process::ChildStdin {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.as_handle().into()
+    }
+}
+
+impl AsFd for std::process::ChildStdout {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.as_handle().into()
+    }
+}
+
+impl AsFd for std::process::ChildStderr {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.as_handle().into()
     }
 }
 
