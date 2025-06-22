@@ -58,9 +58,6 @@ windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
 core-foundation = "0.10.0"
 block2 = "0.6.0"
 
-[target.'cfg(not(any(windows, target_os = "macos")))'.dev-dependencies]
-glib = "0.20"
-
 [features]
 event = ["dep:cfg-if", "compio-buf/arrayvec"]
 time = ["dep:slab"]
