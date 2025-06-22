@@ -175,9 +175,9 @@ impl AsyncReadManagedAt for File {
 
     async fn read_managed_at<'a>(
         &self,
-        pos: u64,
         buffer_pool: &'a Self::BufferPool,
         len: usize,
+        pos: u64,
     ) -> io::Result<Self::Buffer<'a>> {
         let fd = self.inner.to_shared_fd();
         let buffer_pool = buffer_pool.try_inner()?;

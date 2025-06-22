@@ -384,7 +384,7 @@ impl AsyncReadManaged for &NamedPipeClient {
         len: usize,
     ) -> io::Result<Self::Buffer<'a>> {
         // The position is ignored.
-        self.handle.read_managed_at(0, buffer_pool, len).await
+        self.handle.read_managed_at(buffer_pool, len, 0).await
     }
 }
 

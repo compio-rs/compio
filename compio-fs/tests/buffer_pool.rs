@@ -22,7 +22,7 @@ async fn test_read_file() {
 
     let file = File::open(tempfile.path()).await.unwrap();
     let buffer_pool = BufferPool::new(1, 15).unwrap();
-    let buf = file.read_managed_at(0, &buffer_pool, 0).await.unwrap();
+    let buf = file.read_managed_at(&buffer_pool, 0, 0).await.unwrap();
 
     assert_eq!(buf.len(), HELLO.len());
     assert_eq!(buf.as_ref(), HELLO);
