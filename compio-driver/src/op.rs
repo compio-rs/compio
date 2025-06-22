@@ -10,7 +10,7 @@ use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
 use socket2::SockAddr;
 
 #[cfg(windows)]
-pub use crate::sys::op::ConnectNamedPipe;
+pub use crate::sys::op::{ConnectNamedPipe, DeviceIoControl};
 pub use crate::sys::op::{
     Accept, Recv, RecvFrom, RecvFromVectored, RecvMsg, RecvVectored, Send, SendMsg, SendTo,
     SendToVectored, SendVectored,

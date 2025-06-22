@@ -34,7 +34,7 @@ use windows_sys::{
         },
         Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile},
         System::{
-            IO::{CancelIoEx, OVERLAPPED},
+            IO::{CancelIoEx, DeviceIoControl, OVERLAPPED},
             Pipes::ConnectNamedPipe,
         },
     },
@@ -972,6 +972,69 @@ impl<S: AsFd> OpCode for ConnectNamedPipe<S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let res = ConnectNamedPipe(self.fd.as_fd().as_raw_fd() as _, optr);
         win32_result(res, 0)
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd.as_fd().as_raw_fd(), optr)
+    }
+}
+
+/// Send a control code to a device.
+pub struct DeviceIoControl<S, I: IoBuf, O: IoBufMut> {
+    pub(crate) fd: S,
+    pub(crate) ioctl_code: u32,
+    pub(crate) input_buffer: Option<I>,
+    pub(crate) output_buffer: Option<O>,
+    _p: PhantomPinned,
+}
+
+impl<S, I: IoBuf, O: IoBufMut> DeviceIoControl<S, I, O> {
+    /// Create [`DeviceIoControl`].
+    pub fn new(fd: S, ioctl_code: u32, input_buffer: Option<I>, output_buffer: Option<O>) -> Self {
+        Self {
+            fd,
+            ioctl_code,
+            input_buffer,
+            output_buffer,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<S, I: IoBuf, O: IoBufMut> IntoInner for DeviceIoControl<S, I, O> {
+    type Inner = (Option<I>, Option<O>);
+
+    fn into_inner(self) -> Self::Inner {
+        (self.input_buffer, self.output_buffer)
+    }
+}
+
+impl<S: AsFd, I: IoBuf, O: IoBufMut> OpCode for DeviceIoControl<S, I, O> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let this = self.get_unchecked_mut();
+        let fd = this.fd.as_fd().as_raw_fd();
+        let input_len = this.input_buffer.as_ref().map_or(0, |x| x.buf_len());
+        let input_ptr = this
+            .input_buffer
+            .as_ref()
+            .map_or(std::ptr::null(), |x| x.as_buf_ptr());
+        let output_len = this.output_buffer.as_ref().map_or(0, |x| x.buf_len());
+        let output_ptr = this
+            .output_buffer
+            .as_mut()
+            .map_or(std::ptr::null_mut(), |x| x.as_buf_mut_ptr());
+        let mut transferred = 0;
+        let res = DeviceIoControl(
+            fd,
+            this.ioctl_code,
+            input_ptr as _,
+            input_len as _,
+            output_ptr as _,
+            output_len as _,
+            &mut transferred,
+            optr,
+        );
+        win32_result(res, transferred)
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
