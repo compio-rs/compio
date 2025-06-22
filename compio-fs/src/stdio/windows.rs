@@ -9,10 +9,10 @@ use std::{
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
     AsFd, AsRawFd, BorrowedFd, OpCode, OpType, RawFd, SharedFd,
-    op::{BufResultExt, Recv, Send},
+    op::{BufResultExt, Recv, RecvManaged, ResultTakeBuffer, Send},
 };
-use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::Runtime;
+use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
+use compio_runtime::{BorrowedBuffer, BufferPool, Runtime};
 use windows_sys::Win32::System::IO::OVERLAPPED;
 
 #[cfg(doc)]
@@ -149,6 +149,44 @@ impl AsyncRead for Stdin {
             compio_runtime::submit(op).await.into_inner()
         }
         .map_advanced()
+    }
+}
+
+impl AsyncReadManaged for Stdin {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        (&*self).read_managed(buffer_pool, len).await
+    }
+}
+
+impl AsyncReadManaged for &Stdin {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        let buffer_pool = buffer_pool.try_inner()?;
+        if self.isatty {
+            let buf = buffer_pool.get_buffer(len)?;
+            let op = StdRead::new(io::stdin(), buf);
+            let BufResult(res, buf) = compio_runtime::submit(op).await.into_inner();
+            let res = unsafe { buffer_pool.create_proxy(buf, res?) };
+            Ok(res)
+        } else {
+            let op = RecvManaged::new(self.fd.clone(), buffer_pool, len)?;
+            compio_runtime::submit_with_flags(op)
+                .await
+                .take_buffer(buffer_pool)
+        }
     }
 }
 

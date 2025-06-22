@@ -9,10 +9,10 @@ use std::{io, ops::Deref};
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
     AsFd, AsRawFd, BorrowedFd, RawFd, SharedFd, ToSharedFd,
-    op::{BufResultExt, Recv, Send},
+    op::{BufResultExt, Recv, RecvManaged, ResultTakeBuffer, Send},
 };
-use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::Attacher;
+use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
+use compio_runtime::{Attacher, BorrowedBuffer, BufferPool};
 #[cfg(unix)]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
@@ -56,6 +56,37 @@ impl<T: AsFd + 'static> AsyncRead for AsyncFd<T> {
     #[inline]
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
         (&*self).read_vectored(buf).await
+    }
+}
+
+impl<T: AsFd + 'static> AsyncReadManaged for AsyncFd<T> {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        (&*self).read_managed(buffer_pool, len).await
+    }
+}
+
+impl<T: AsFd + 'static> AsyncReadManaged for &AsyncFd<T> {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        let fd = self.to_shared_fd();
+        let buffer_pool = buffer_pool.try_inner()?;
+        let op = RecvManaged::new(fd, buffer_pool, len)?;
+        compio_runtime::submit_with_flags(op)
+            .await
+            .take_buffer(buffer_pool)
     }
 }
 

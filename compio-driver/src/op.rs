@@ -4,7 +4,7 @@
 //! The operation itself doesn't perform anything.
 //! You need to pass them to [`crate::Proactor`], and poll the driver.
 
-use std::{marker::PhantomPinned, mem::ManuallyDrop, net::Shutdown};
+use std::{io, marker::PhantomPinned, mem::ManuallyDrop, net::Shutdown};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
 use socket2::SockAddr;
@@ -23,7 +23,7 @@ pub use crate::sys::op::{
 #[cfg(io_uring)]
 pub use crate::sys::op::{ReadManagedAt, RecvManaged};
 use crate::{
-    OwnedFd,
+    OwnedFd, TakeBuffer,
     sys::{sockaddr_storage, socklen_t},
 };
 
@@ -96,6 +96,27 @@ impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t, usiz
             },
             |(buffer, ..)| buffer,
         )
+    }
+}
+
+/// Helper trait for [`ReadManagedAt`] and [`RecvManaged`].
+pub trait ResultTakeBuffer {
+    /// The buffer pool of the op.
+    type BufferPool;
+    /// The buffer type of the op.
+    type Buffer<'a>;
+
+    /// Take the buffer from result.
+    fn take_buffer(self, pool: &Self::BufferPool) -> io::Result<Self::Buffer<'_>>;
+}
+
+impl<T: TakeBuffer> ResultTakeBuffer for (BufResult<usize, T>, u32) {
+    type Buffer<'a> = T::Buffer<'a>;
+    type BufferPool = T::BufferPool;
+
+    fn take_buffer(self, pool: &Self::BufferPool) -> io::Result<Self::Buffer<'_>> {
+        let (BufResult(result, op), flags) = self;
+        op.take_buffer(pool, result, flags)
     }
 }
 

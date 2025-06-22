@@ -2,7 +2,8 @@ use std::{future::Future, io, path::Path};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
-use compio_io::{AsyncRead, AsyncWrite, util::Splittable};
+use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite, util::Splittable};
+use compio_runtime::{BorrowedBuffer, BufferPool};
 use socket2::{SockAddr, Socket as Socket2, Type};
 
 use crate::{OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, WriteHalf};
@@ -236,6 +237,32 @@ impl AsyncRead for &UnixStream {
     #[inline]
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
         self.inner.recv_vectored(buf).await
+    }
+}
+
+impl AsyncReadManaged for UnixStream {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        (&*self).read_managed(buffer_pool, len).await
+    }
+}
+
+impl AsyncReadManaged for &UnixStream {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        self.inner.recv_managed(buffer_pool, len as _).await
     }
 }
 

@@ -10,10 +10,11 @@ use std::{
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{
     AsRawFd, ToSharedFd, impl_raw_fd,
-    op::{BufResultExt, Recv, RecvVectored, Send, SendVectored},
+    op::{BufResultExt, Recv, RecvManaged, RecvVectored, ResultTakeBuffer, Send, SendVectored},
     syscall,
 };
-use compio_io::{AsyncRead, AsyncWrite};
+use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
+use compio_runtime::{BorrowedBuffer, BufferPool};
 
 use crate::File;
 
@@ -499,6 +500,37 @@ impl AsyncRead for &Receiver {
         let fd = self.to_shared_fd();
         let op = RecvVectored::new(fd, buffer);
         compio_runtime::submit(op).await.into_inner().map_advanced()
+    }
+}
+
+impl AsyncReadManaged for Receiver {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        (&*self).read_managed(buffer_pool, len).await
+    }
+}
+
+impl AsyncReadManaged for &Receiver {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        let fd = self.to_shared_fd();
+        let buffer_pool = buffer_pool.try_inner()?;
+        let op = RecvManaged::new(fd, buffer_pool, len)?;
+        compio_runtime::submit_with_flags(op)
+            .await
+            .take_buffer(buffer_pool)
     }
 }
 
