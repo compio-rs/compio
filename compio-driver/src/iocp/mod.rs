@@ -177,7 +177,7 @@ impl<'a> From<BorrowedSocket<'a>> for BorrowedFd<'a> {
 /// Extracts fds.
 pub trait AsFd {
     /// Extracts the borrowed fd.
-    fn as_fd(&self) -> BorrowedFd;
+    fn as_fd(&self) -> BorrowedFd<'_>;
 }
 
 impl AsFd for OwnedFd {
