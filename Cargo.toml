@@ -62,7 +62,7 @@ tempfile = "3.8.1"
 tokio = "1.33.0"
 tracing-subscriber = "0.3.18"
 widestring = "1.0.2"
-windows-sys = "0.52.0"
+windows-sys = "0.60.2"
 thiserror = "2.0.3"
 
 [profile.bench]
