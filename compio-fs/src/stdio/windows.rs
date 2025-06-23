@@ -1,6 +1,6 @@
 use std::{
     io::{self, IsTerminal, Read, Write},
-    os::windows::io::AsRawHandle,
+    os::windows::io::{AsRawHandle, BorrowedHandle, RawHandle},
     pin::Pin,
     sync::OnceLock,
     task::Poll,
@@ -8,11 +8,11 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
-    AsRawFd, OpCode, OpType, RawFd, SharedFd,
-    op::{BufResultExt, Recv, Send},
+    AsFd, AsRawFd, BorrowedFd, OpCode, OpType, RawFd, SharedFd,
+    op::{BufResultExt, Recv, RecvManaged, ResultTakeBuffer, Send},
 };
-use compio_io::{AsyncRead, AsyncWrite};
-use compio_runtime::Runtime;
+use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
+use compio_runtime::{BorrowedBuffer, BufferPool, Runtime};
 use windows_sys::Win32::System::IO::OVERLAPPED;
 
 #[cfg(doc)]
@@ -98,6 +98,22 @@ impl<W: Write, B: IoBuf> IntoInner for StdWrite<W, B> {
     }
 }
 
+#[derive(Debug)]
+struct StaticFd(RawHandle);
+
+impl AsFd for StaticFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        // Safety: we only use it for console handles.
+        BorrowedFd::File(unsafe { BorrowedHandle::borrow_raw(self.0) })
+    }
+}
+
+impl AsRawFd for StaticFd {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0 as _
+    }
+}
+
 static STDIN_ISATTY: OnceLock<bool> = OnceLock::new();
 
 /// A handle to the standard input stream of a process.
@@ -105,7 +121,7 @@ static STDIN_ISATTY: OnceLock<bool> = OnceLock::new();
 /// See [`stdin`].
 #[derive(Debug, Clone)]
 pub struct Stdin {
-    fd: SharedFd<RawFd>,
+    fd: SharedFd<StaticFd>,
     isatty: bool,
 }
 
@@ -117,7 +133,7 @@ impl Stdin {
                 || Runtime::with_current(|r| r.attach(stdin.as_raw_handle() as _)).is_err()
         });
         Self {
-            fd: SharedFd::new(stdin.as_raw_handle() as _),
+            fd: SharedFd::new(StaticFd(stdin.as_raw_handle())),
             isatty,
         }
     }
@@ -136,6 +152,44 @@ impl AsyncRead for Stdin {
     }
 }
 
+impl AsyncReadManaged for Stdin {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        (&*self).read_managed(buffer_pool, len).await
+    }
+}
+
+impl AsyncReadManaged for &Stdin {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        let buffer_pool = buffer_pool.try_inner()?;
+        if self.isatty {
+            let buf = buffer_pool.get_buffer(len)?;
+            let op = StdRead::new(io::stdin(), buf);
+            let BufResult(res, buf) = compio_runtime::submit(op).await.into_inner();
+            let res = unsafe { buffer_pool.create_proxy(buf, res?) };
+            Ok(res)
+        } else {
+            let op = RecvManaged::new(self.fd.clone(), buffer_pool, len)?;
+            compio_runtime::submit_with_flags(op)
+                .await
+                .take_buffer(buffer_pool)
+        }
+    }
+}
+
 impl AsRawFd for Stdin {
     fn as_raw_fd(&self) -> RawFd {
         self.fd.as_raw_fd()
@@ -149,7 +203,7 @@ static STDOUT_ISATTY: OnceLock<bool> = OnceLock::new();
 /// See [`stdout`].
 #[derive(Debug, Clone)]
 pub struct Stdout {
-    fd: SharedFd<RawFd>,
+    fd: SharedFd<StaticFd>,
     isatty: bool,
 }
 
@@ -161,7 +215,7 @@ impl Stdout {
                 || Runtime::with_current(|r| r.attach(stdout.as_raw_handle() as _)).is_err()
         });
         Self {
-            fd: SharedFd::new(stdout.as_raw_handle() as _),
+            fd: SharedFd::new(StaticFd(stdout.as_raw_handle())),
             isatty,
         }
     }
@@ -200,7 +254,7 @@ static STDERR_ISATTY: OnceLock<bool> = OnceLock::new();
 /// See [`stderr`].
 #[derive(Debug, Clone)]
 pub struct Stderr {
-    fd: SharedFd<RawFd>,
+    fd: SharedFd<StaticFd>,
     isatty: bool,
 }
 
@@ -212,7 +266,7 @@ impl Stderr {
                 || Runtime::with_current(|r| r.attach(stderr.as_raw_handle() as _)).is_err()
         });
         Self {
-            fd: SharedFd::new(stderr.as_raw_handle() as _),
+            fd: SharedFd::new(StaticFd(stderr.as_raw_handle())),
             isatty,
         }
     }

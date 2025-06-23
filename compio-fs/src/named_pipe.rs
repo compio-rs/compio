@@ -8,7 +8,11 @@ use std::{ffi::OsStr, io, os::windows::io::FromRawHandle, ptr::null};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
 use compio_driver::{AsRawFd, RawFd, ToSharedFd, impl_raw_fd, op::ConnectNamedPipe, syscall};
-use compio_io::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt};
+use compio_io::{
+    AsyncRead, AsyncReadAt, AsyncReadManaged, AsyncReadManagedAt, AsyncWrite, AsyncWriteAt,
+    util::Splittable,
+};
+use compio_runtime::{BorrowedBuffer, BufferPool};
 use widestring::U16CString;
 use windows_sys::Win32::{
     Storage::FileSystem::{
@@ -192,6 +196,33 @@ impl AsyncRead for &NamedPipeServer {
     }
 }
 
+impl AsyncReadManaged for NamedPipeServer {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        (&*self).read_managed(buffer_pool, len).await
+    }
+}
+
+impl AsyncReadManaged for &NamedPipeServer {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        // The position is ignored.
+        (&self.handle).read_managed(buffer_pool, len).await
+    }
+}
+
 impl AsyncWrite for NamedPipeServer {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
@@ -223,6 +254,24 @@ impl AsyncWrite for &NamedPipeServer {
     #[inline]
     async fn shutdown(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+impl Splittable for NamedPipeServer {
+    type ReadHalf = NamedPipeServer;
+    type WriteHalf = NamedPipeServer;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        (self.clone(), self)
+    }
+}
+
+impl Splittable for &NamedPipeServer {
+    type ReadHalf = NamedPipeServer;
+    type WriteHalf = NamedPipeServer;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        (self.clone(), self.clone())
     }
 }
 
@@ -312,6 +361,33 @@ impl AsyncRead for &NamedPipeClient {
     }
 }
 
+impl AsyncReadManaged for NamedPipeClient {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        (&*self).read_managed(buffer_pool, len).await
+    }
+}
+
+impl AsyncReadManaged for &NamedPipeClient {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        // The position is ignored.
+        self.handle.read_managed_at(buffer_pool, len, 0).await
+    }
+}
+
 impl AsyncWrite for NamedPipeClient {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
@@ -344,6 +420,24 @@ impl AsyncWrite for &NamedPipeClient {
     #[inline]
     async fn shutdown(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+impl Splittable for NamedPipeClient {
+    type ReadHalf = NamedPipeClient;
+    type WriteHalf = NamedPipeClient;
+
+    fn split(self) -> (NamedPipeClient, NamedPipeClient) {
+        (self.clone(), self)
+    }
+}
+
+impl Splittable for &NamedPipeClient {
+    type ReadHalf = NamedPipeClient;
+    type WriteHalf = NamedPipeClient;
+
+    fn split(self) -> (NamedPipeClient, NamedPipeClient) {
+        (self.clone(), self.clone())
     }
 }
 

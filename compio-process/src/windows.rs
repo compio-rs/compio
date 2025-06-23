@@ -8,11 +8,12 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
-    AsRawFd, OpCode, OpType, RawFd, SharedFd, ToSharedFd,
-    op::{BufResultExt, Recv, Send},
+    OpCode, OpType, ToSharedFd,
+    op::{BufResultExt, Recv, RecvManaged, ResultTakeBuffer, Send},
     syscall,
 };
-use compio_io::{AsyncRead, AsyncWrite};
+use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
+use compio_runtime::{BorrowedBuffer, BufferPool};
 use windows_sys::Win32::System::{IO::OVERLAPPED, Threading::GetExitCodeProcess};
 
 use crate::{ChildStderr, ChildStdin, ChildStdout};
@@ -48,18 +49,6 @@ pub async fn child_wait(child: process::Child) -> io::Result<process::ExitStatus
     Ok(process::ExitStatus::from_raw(code as _))
 }
 
-impl AsRawFd for ChildStdout {
-    fn as_raw_fd(&self) -> RawFd {
-        self.0.as_raw_fd()
-    }
-}
-
-impl ToSharedFd<process::ChildStdout> for ChildStdout {
-    fn to_shared_fd(&self) -> SharedFd<process::ChildStdout> {
-        self.0.to_shared_fd()
-    }
-}
-
 impl AsyncRead for ChildStdout {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
         let fd = self.to_shared_fd();
@@ -68,15 +57,21 @@ impl AsyncRead for ChildStdout {
     }
 }
 
-impl AsRawFd for ChildStderr {
-    fn as_raw_fd(&self) -> RawFd {
-        self.0.as_raw_fd()
-    }
-}
+impl AsyncReadManaged for ChildStdout {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
 
-impl ToSharedFd<process::ChildStderr> for ChildStderr {
-    fn to_shared_fd(&self) -> SharedFd<process::ChildStderr> {
-        self.0.to_shared_fd()
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        let fd = self.to_shared_fd();
+        let buffer_pool = buffer_pool.try_inner()?;
+        let op = RecvManaged::new(fd, buffer_pool, len)?;
+        compio_runtime::submit_with_flags(op)
+            .await
+            .take_buffer(buffer_pool)
     }
 }
 
@@ -88,15 +83,21 @@ impl AsyncRead for ChildStderr {
     }
 }
 
-impl AsRawFd for ChildStdin {
-    fn as_raw_fd(&self) -> RawFd {
-        self.0.as_raw_fd()
-    }
-}
+impl AsyncReadManaged for ChildStderr {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
 
-impl ToSharedFd<process::ChildStdin> for ChildStdin {
-    fn to_shared_fd(&self) -> SharedFd<process::ChildStdin> {
-        self.0.to_shared_fd()
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        let fd = self.to_shared_fd();
+        let buffer_pool = buffer_pool.try_inner()?;
+        let op = RecvManaged::new(fd, buffer_pool, len)?;
+        compio_runtime::submit_with_flags(op)
+            .await
+            .take_buffer(buffer_pool)
     }
 }
 

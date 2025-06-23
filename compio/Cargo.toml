@@ -1,6 +1,6 @@
 [package]
 name = "compio"
-version = "0.14.0"
+version = "0.15.0"
 description = "Completion based async runtime"
 categories = ["asynchronous", "filesystem", "network-programming"]
 keywords = ["async", "fs", "iocp", "io-uring", "net"]

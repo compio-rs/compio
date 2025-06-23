@@ -132,12 +132,18 @@ impl Buffer {
         self.inner_mut().reset();
     }
 
+    /// Reserve additional capacity in the buffer. See detail at
+    /// [`Vec::reserve`].
+    pub fn reserve(&mut self, additional: usize) {
+        self.inner_mut().buf.reserve(additional);
+    }
+
     /// Execute a funcition with ownership of the buffer, and restore the buffer
     /// afterwards
     pub async fn with<R, Fut, F>(&mut self, func: F) -> IoResult<R>
     where
-        Fut: Future<Output = BufResult<R, Inner>>,
         F: FnOnce(Inner) -> Fut,
+        Fut: Future<Output = BufResult<R, Inner>>,
     {
         let BufResult(res, buf) = func(self.take_inner()).await;
         self.restore_inner(buf);

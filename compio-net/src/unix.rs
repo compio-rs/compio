@@ -2,7 +2,8 @@ use std::{future::Future, io, path::Path};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
-use compio_io::{AsyncRead, AsyncWrite};
+use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite, util::Splittable};
+use compio_runtime::{BorrowedBuffer, BufferPool};
 use socket2::{SockAddr, Socket as Socket2, Type};
 
 use crate::{OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, WriteHalf};
@@ -239,6 +240,32 @@ impl AsyncRead for &UnixStream {
     }
 }
 
+impl AsyncReadManaged for UnixStream {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        (&*self).read_managed(buffer_pool, len).await
+    }
+}
+
+impl AsyncReadManaged for &UnixStream {
+    type Buffer<'a> = BorrowedBuffer<'a>;
+    type BufferPool = BufferPool;
+
+    async fn read_managed<'a>(
+        &mut self,
+        buffer_pool: &'a Self::BufferPool,
+        len: usize,
+    ) -> io::Result<Self::Buffer<'a>> {
+        self.inner.recv_managed(buffer_pool, len as _).await
+    }
+}
+
 impl AsyncWrite for UnixStream {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
@@ -280,6 +307,24 @@ impl AsyncWrite for &UnixStream {
     #[inline]
     async fn shutdown(&mut self) -> io::Result<()> {
         self.inner.shutdown().await
+    }
+}
+
+impl Splittable for UnixStream {
+    type ReadHalf = OwnedReadHalf<Self>;
+    type WriteHalf = OwnedWriteHalf<Self>;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        crate::into_split(self)
+    }
+}
+
+impl<'a> Splittable for &'a UnixStream {
+    type ReadHalf = ReadHalf<'a, UnixStream>;
+    type WriteHalf = WriteHalf<'a, UnixStream>;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        crate::split(self)
     }
 }
 

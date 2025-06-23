@@ -128,5 +128,8 @@ pub(crate) type IoResult<T> = std::io::Result<T>;
 
 pub use read::*;
 #[doc(inline)]
-pub use util::{copy, null, repeat, split};
+pub use util::{
+    copy, null, repeat,
+    split::{split, split_unsync},
+};
 pub use write::*;

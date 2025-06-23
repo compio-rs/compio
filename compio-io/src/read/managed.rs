@@ -1,6 +1,4 @@
-use std::io::Cursor;
-
-use compio_buf::IoBuf;
+use std::{io::Cursor, ops::Deref};
 
 use crate::IoResult;
 
@@ -11,7 +9,7 @@ pub trait AsyncReadManaged {
     /// Buffer pool type
     type BufferPool;
     /// Filled buffer type
-    type Buffer: IoBuf;
+    type Buffer<'a>;
 
     /// Read some bytes from this source with [`Self::BufferPool`] and return
     /// a [`Self::Buffer`].
@@ -19,11 +17,11 @@ pub trait AsyncReadManaged {
     /// If `len` == 0, will use [`Self::BufferPool`] inner buffer size as the
     /// max len, if `len` > 0, `min(len, inner buffer size)` will be the
     /// read max len
-    async fn read_managed(
+    async fn read_managed<'a>(
         &mut self,
-        buffer_pool: &Self::BufferPool,
+        buffer_pool: &'a Self::BufferPool,
         len: usize,
-    ) -> IoResult<Self::Buffer>;
+    ) -> IoResult<Self::Buffer<'a>>;
 }
 
 /// # AsyncReadAtManaged
@@ -33,7 +31,7 @@ pub trait AsyncReadManagedAt {
     /// Buffer pool type
     type BufferPool;
     /// Filled buffer type
-    type Buffer: IoBuf;
+    type Buffer<'a>;
 
     /// Read some bytes from this source at position with [`Self::BufferPool`]
     /// and return a [`Self::Buffer`].
@@ -41,29 +39,32 @@ pub trait AsyncReadManagedAt {
     /// If `len` == 0, will use [`Self::BufferPool`] inner buffer size as the
     /// max len, if `len` > 0, `min(len, inner buffer size)` will be the
     /// read max len
-    async fn read_managed_at(
+    async fn read_managed_at<'a>(
         &self,
-        pos: u64,
-        buffer_pool: &Self::BufferPool,
+        buffer_pool: &'a Self::BufferPool,
         len: usize,
-    ) -> IoResult<Self::Buffer>;
+        pos: u64,
+    ) -> IoResult<Self::Buffer<'a>>;
 }
 
-impl<A: AsyncReadManagedAt> AsyncReadManaged for Cursor<A> {
-    type Buffer = A::Buffer;
+impl<A: AsyncReadManagedAt> AsyncReadManaged for Cursor<A>
+where
+    for<'a> A::Buffer<'a>: Deref<Target = [u8]>,
+{
+    type Buffer<'a> = A::Buffer<'a>;
     type BufferPool = A::BufferPool;
 
-    async fn read_managed(
+    async fn read_managed<'a>(
         &mut self,
-        buffer_pool: &Self::BufferPool,
+        buffer_pool: &'a Self::BufferPool,
         len: usize,
-    ) -> IoResult<Self::Buffer> {
+    ) -> IoResult<Self::Buffer<'a>> {
         let pos = self.position();
         let buf = self
             .get_ref()
-            .read_managed_at(pos, buffer_pool, len)
+            .read_managed_at(buffer_pool, len, pos)
             .await?;
-        self.set_position(pos + buf.buf_len() as u64);
+        self.set_position(pos + buf.len() as u64);
         Ok(buf)
     }
 }

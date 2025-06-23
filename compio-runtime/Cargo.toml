@@ -1,6 +1,6 @@
 [package]
 name = "compio-runtime"
-version = "0.7.0"
+version = "0.8.0"
 description = "High-level runtime for compio"
 categories = ["asynchronous"]
 keywords = ["async", "runtime"]
@@ -57,9 +57,6 @@ windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 core-foundation = "0.10.0"
 block2 = "0.6.0"
-
-[target.'cfg(not(any(windows, target_os = "macos")))'.dev-dependencies]
-glib = "0.20"
 
 [features]
 event = ["dep:cfg-if", "compio-buf/arrayvec"]

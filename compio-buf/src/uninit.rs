@@ -55,11 +55,16 @@ unsafe impl<T: IoBuf> IoBuf for Uninit<T> {
     }
 
     fn buf_len(&self) -> usize {
+        debug_assert!(self.0.buf_len() == 0, "Uninit buffer should have length 0");
         0
     }
 
     fn buf_capacity(&self) -> usize {
         self.0.buf_capacity()
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        &[]
     }
 }
 
@@ -71,7 +76,7 @@ unsafe impl<T: IoBufMut> IoBufMut for Uninit<T> {
 
 impl<T: SetBufInit + IoBuf> SetBufInit for Uninit<T> {
     unsafe fn set_buf_init(&mut self, len: usize) {
-        self.0.set_buf_init(len);
+        self.0.set_buf_init(self.0.buf_len() + len);
         let inner = self.0.as_inner();
         self.0.set_range(inner.buf_len(), inner.buf_capacity());
     }

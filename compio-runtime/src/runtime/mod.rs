@@ -1,6 +1,6 @@
 use std::{
     any::Any,
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::VecDeque,
     future::{Future, ready},
     io,
@@ -24,6 +24,9 @@ use futures_util::{FutureExt, future::Either};
 pub(crate) mod op;
 #[cfg(feature = "time")]
 pub(crate) mod time;
+
+mod buffer_pool;
+pub use buffer_pool::*;
 
 mod send_wrapper;
 use send_wrapper::SendWrapper;
@@ -83,6 +86,10 @@ impl RunnableQueue {
     }
 }
 
+thread_local! {
+    static RUNTIME_ID: Cell<u64> = const { Cell::new(0) };
+}
+
 /// The async runtime of compio. It is a thread local runtime, and cannot be
 /// sent to other threads.
 pub struct Runtime {
@@ -91,6 +98,14 @@ pub struct Runtime {
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
     event_interval: usize,
+    // Runtime id is used to check if the buffer pool is belonged to this runtime or not.
+    // Without this, if user enable `io-uring-buf-ring` feature then:
+    // 1. Create a buffer pool at runtime1
+    // 3. Create another runtime2, then use the exists buffer pool in runtime2, it may cause
+    // - io-uring report error if the buffer group id is not registered
+    // - buffer pool will return a wrong buffer which the buffer's data is uninit, that will cause
+    //   UB
+    id: u64,
     // Other fields don't make it !Send, but actually `local_runnables` implies it should be !Send,
     // otherwise it won't be valid if the runtime is sent to other threads.
     _p: PhantomData<Rc<VecDeque<Runnable>>>,
@@ -108,12 +123,15 @@ impl Runtime {
     }
 
     fn with_builder(builder: &RuntimeBuilder) -> io::Result<Self> {
+        let id = RUNTIME_ID.get();
+        RUNTIME_ID.set(id + 1);
         Ok(Self {
             driver: RefCell::new(builder.proactor_builder.build()?),
             runnables: Arc::new(RunnableQueue::new()),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
             event_interval: builder.event_interval,
+            id,
             _p: PhantomData,
         })
     }
@@ -350,6 +368,27 @@ impl Runtime {
         }
         #[cfg(feature = "time")]
         self.timer_runtime.borrow_mut().wake();
+    }
+
+    pub(crate) fn create_buffer_pool(
+        &self,
+        buffer_len: u16,
+        buffer_size: usize,
+    ) -> io::Result<compio_driver::BufferPool> {
+        self.driver
+            .borrow_mut()
+            .create_buffer_pool(buffer_len, buffer_size)
+    }
+
+    pub(crate) unsafe fn release_buffer_pool(
+        &self,
+        buffer_pool: compio_driver::BufferPool,
+    ) -> io::Result<()> {
+        self.driver.borrow_mut().release_buffer_pool(buffer_pool)
+    }
+
+    pub(crate) fn id(&self) -> u64 {
+        self.id
     }
 }
 

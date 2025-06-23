@@ -28,7 +28,7 @@ jobs:
           sync: rsync
           copyback: false
           prepare: |
-            pkg install gcc14 curl pkg-config glib2
+            pkg install gcc14 curl pkg-config
             curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf > install.sh
             chmod +x install.sh
             ./install.sh -y --default-toolchain ${{ matrix.toolchain }} --profile minimal
