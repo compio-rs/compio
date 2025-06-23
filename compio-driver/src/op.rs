@@ -4,7 +4,7 @@
 //! The operation itself doesn't perform anything.
 //! You need to pass them to [`crate::Proactor`], and poll the driver.
 
-use std::{marker::PhantomPinned, mem::ManuallyDrop, net::Shutdown};
+use std::{io, fmt, marker::PhantomPinned, mem::ManuallyDrop, net::Shutdown};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
 use socket2::SockAddr;
@@ -140,7 +140,7 @@ impl CloseFile {
 }
 
 /// Read a file at specified position into specified buffer.
-#[derive(Debug)]
+#[derive(Clone)]
 pub struct ReadAt<T: IoBufMut, S> {
     pub(crate) fd: SharedFd<S>,
     pub(crate) offset: u64,
@@ -172,8 +172,28 @@ impl<T: IoBufMut, S> IntoInner for ReadAt<T, S> {
     }
 }
 
+#[cfg(aio)]
+impl<T: fmt::Debug + compio_buf::IoBufMut, S: fmt::Debug> fmt::Debug for ReadAt<T, S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let aiocb_debug = format!(
+            "aiocb {{ aio_fildes: {:?}, aio_buf: {:?}, aio_bytes: {:?}, aio_offset: {:?} }}",
+            self.aiocb.aio_fildes,
+            self.aiocb.aio_buf as usize, // Casting to usize for safer display
+            self.aiocb.aio_nbytes,
+            self.aiocb.aio_offset,
+        );
+
+        f.debug_struct("ReadAt")
+            .field("fd", &self.fd)
+            .field("offset", &self.offset)
+            .field("buffer", &self.buffer)
+            .field("aiocb", &aiocb_debug)
+            .finish()
+    }
+}
+
 /// Write a file at specified position from specified buffer.
-#[derive(Debug)]
+#[derive(Clone)]
 pub struct WriteAt<T: IoBuf, S> {
     pub(crate) fd: SharedFd<S>,
     pub(crate) offset: u64,
@@ -194,6 +214,26 @@ impl<T: IoBuf, S> WriteAt<T, S> {
             aiocb: unsafe { std::mem::zeroed() },
             _p: PhantomPinned,
         }
+    }
+}
+
+#[cfg(aio)]
+impl<T: fmt::Debug + compio_buf::IoBuf, S: fmt::Debug> fmt::Debug for WriteAt<T, S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let aiocb_debug = format!(
+            "aiocb {{ aio_fildes: {:?}, aio_buf: {:?}, aio_bytes: {:?}, aio_offset: {:?} }}",
+            self.aiocb.aio_fildes,
+            self.aiocb.aio_buf as usize, // Casting to usize for safer display
+            self.aiocb.aio_nbytes,
+            self.aiocb.aio_offset,
+        );
+
+        f.debug_struct("WriteAt")
+            .field("fd", &self.fd)
+            .field("offset", &self.offset)
+            .field("buffer", &self.buffer)
+            .field("aiocb", &aiocb_debug)
+            .finish()
     }
 }
 
