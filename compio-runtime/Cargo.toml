@@ -65,6 +65,9 @@ time = ["dep:slab"]
 io-uring = ["compio-driver/io-uring"]
 polling = ["compio-driver/polling"]
 
+# Enable it to always notify the driver when a task schedules.
+notify-always = []
+
 [[test]]
 name = "event"
 required-features = ["event"]
