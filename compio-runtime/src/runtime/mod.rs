@@ -57,6 +57,8 @@ impl RunnableQueue {
     pub fn schedule(&self, runnable: Runnable, handle: &NotifyHandle) {
         if let Some(runnables) = self.local_runnables.get() {
             runnables.borrow_mut().push_back(runnable);
+            #[cfg(feature = "notify-always")]
+            handle.notify().ok();
         } else {
             self.sync_runnables.push(runnable);
             handle.notify().ok();
