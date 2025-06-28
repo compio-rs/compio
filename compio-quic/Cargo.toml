@@ -64,8 +64,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [features]
 default = ["ring"]
-io-uring = ["compio-runtime/io-uring"]
-polling = ["compio-runtime/polling"]
 io-compat = ["futures-util/io"]
 platform-verifier = ["dep:rustls-platform-verifier"]
 native-certs = ["dep:rustls-native-certs"]
