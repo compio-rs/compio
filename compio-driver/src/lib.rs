@@ -452,6 +452,7 @@ pub struct ProactorBuilder {
     sqpoll_idle: Option<Duration>,
     coop_taskrun: bool,
     taskrun_flag: bool,
+    eventfd: Option<RawFd>,
 }
 
 impl Default for ProactorBuilder {
@@ -469,6 +470,7 @@ impl ProactorBuilder {
             sqpoll_idle: None,
             coop_taskrun: false,
             taskrun_flag: false,
+            eventfd: None,
         }
     }
 
@@ -556,6 +558,16 @@ impl ProactorBuilder {
     /// - Only effective when the `io-uring` feature is enabled
     pub fn taskrun_flag(&mut self, enable: bool) -> &mut Self {
         self.taskrun_flag = enable;
+        self
+    }
+
+    /// Register an eventfd to io-uring.
+    ///
+    /// # Notes
+    ///
+    /// - Only effective when the `io-uring` feature is enabled
+    pub fn register_eventfd(&mut self, fd: RawFd) -> &mut Self {
+        self.eventfd = Some(fd);
         self
     }
 

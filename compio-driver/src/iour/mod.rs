@@ -108,6 +108,11 @@ impl Driver {
         }
 
         let mut inner = io_uring_builder.build(builder.capacity)?;
+
+        if let Some(fd) = builder.eventfd {
+            inner.submitter().register_eventfd(fd)?;
+        }
+
         #[allow(clippy::useless_conversion)]
         unsafe {
             inner
