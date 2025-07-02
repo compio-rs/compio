@@ -56,7 +56,7 @@ impl TcpListener {
     /// Binding with a port number of 0 will request that the OS assigns a port
     /// to this listener.
     pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
-        Self::bind_base(addr, None).await
+        Self::bind_with_options(addr, TcpOpts::default().set_reuse_address(true)).await
     }
 
     /// Creates a new `TcpListener`, which will be bound to the specified
@@ -70,14 +70,6 @@ impl TcpListener {
         addr: impl ToSocketAddrsAsync,
         options: TcpOpts,
     ) -> io::Result<Self> {
-        Self::bind_base(addr, Some(options)).await
-    }
-
-    async fn bind_base(
-        addr: impl ToSocketAddrsAsync,
-        options: Option<TcpOpts>,
-    ) -> io::Result<Self> {
-        let options = options.unwrap_or_default();
         super::each_addr(addr, |addr| async move {
             let sa = SockAddr::from(addr);
             let socket = Socket::new(sa.domain(), Type::STREAM, Some(Protocol::TCP)).await?;
@@ -191,7 +183,6 @@ impl TcpStream {
     ) -> io::Result<Self> {
         use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6};
 
-        let options = options.unwrap_or_default();
         super::each_addr(addr, |addr| async move {
             let addr2 = SockAddr::from(addr);
             let socket = if cfg!(windows) {
@@ -209,7 +200,9 @@ impl TcpStream {
             } else {
                 Socket::new(addr2.domain(), Type::STREAM, Some(Protocol::TCP)).await?
             };
-            options.setup_socket(&socket)?;
+            if let Some(options) = &options {
+                options.setup_socket(&socket)?;
+            }
             socket.connect_async(&addr2).await?;
             Ok(Self { inner: socket })
         })

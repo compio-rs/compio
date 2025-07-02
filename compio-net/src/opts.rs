@@ -2,7 +2,7 @@ use crate::Socket;
 
 /// Options for configuring TCP sockets.
 /// By default, SO_REUSEADDR is enabled.
-#[derive(Copy, Clone)]
+#[derive(Default, Debug, Copy, Clone)]
 pub struct TcpOpts {
     recv_buffer_size: Option<usize>,
     send_buffer_size: Option<usize>,
@@ -13,22 +13,6 @@ pub struct TcpOpts {
     reuse_address: bool,
     reuse_port: bool,
     no_delay: bool,
-}
-
-impl Default for TcpOpts {
-    fn default() -> Self {
-        Self {
-            recv_buffer_size: None,
-            send_buffer_size: None,
-            keepalive: false,
-            linger: None,
-            read_timeout: None,
-            write_timeout: None,
-            reuse_address: true,
-            reuse_port: false,
-            no_delay: false,
-        }
-    }
 }
 
 impl TcpOpts {
