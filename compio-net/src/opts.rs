@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::Socket;
 
 /// Options for configuring TCP sockets.
@@ -7,9 +9,9 @@ pub struct TcpOpts {
     recv_buffer_size: Option<usize>,
     send_buffer_size: Option<usize>,
     keepalive: bool,
-    linger: Option<std::time::Duration>,
-    read_timeout: Option<std::time::Duration>,
-    write_timeout: Option<std::time::Duration>,
+    linger: Option<Duration>,
+    read_timeout: Option<Duration>,
+    write_timeout: Option<Duration>,
     reuse_address: bool,
     reuse_port: bool,
     no_delay: bool,
@@ -22,55 +24,55 @@ impl TcpOpts {
     }
 
     /// Sets the receive buffer size for the TCP socket.
-    pub fn set_recv_buffer_size(mut self, size: usize) -> Self {
+    pub fn recv_buffer_size(mut self, size: usize) -> Self {
         self.recv_buffer_size = Some(size);
         self
     }
 
     /// Sets the send buffer size for the TCP socket.
-    pub fn set_send_buffer_size(mut self, size: usize) -> Self {
+    pub fn send_buffer_size(mut self, size: usize) -> Self {
         self.send_buffer_size = Some(size);
         self
     }
 
     /// Enables or disables the TCP keepalive option.
-    pub fn set_keepalive(mut self, keepalive: bool) -> Self {
+    pub fn keepalive(mut self, keepalive: bool) -> Self {
         self.keepalive = keepalive;
         self
     }
 
     /// Sets the linger duration for the TCP socket.
-    pub fn set_linger(mut self, duration: std::time::Duration) -> Self {
+    pub fn linger(mut self, duration: Duration) -> Self {
         self.linger = Some(duration);
         self
     }
 
     /// Sets the read timeout for the TCP socket.
-    pub fn set_read_timeout(mut self, duration: std::time::Duration) -> Self {
+    pub fn read_timeout(mut self, duration: Duration) -> Self {
         self.read_timeout = Some(duration);
         self
     }
 
     /// Sets the write timeout for the TCP socket.
-    pub fn set_write_timeout(mut self, duration: std::time::Duration) -> Self {
+    pub fn write_timeout(mut self, duration: Duration) -> Self {
         self.write_timeout = Some(duration);
         self
     }
 
     /// Sets whether the TCP socket should reuse the address.
-    pub fn set_reuse_address(mut self, reuse: bool) -> Self {
+    pub fn reuse_address(mut self, reuse: bool) -> Self {
         self.reuse_address = reuse;
         self
     }
 
     /// Sets whether the TCP socket should reuse the port.
-    pub fn set_reuse_port(mut self, reuse: bool) -> Self {
+    pub fn reuse_port(mut self, reuse: bool) -> Self {
         self.reuse_port = reuse;
         self
     }
 
     /// Sets whether the TCP socket should disable Nagle's algorithm (no delay).
-    pub fn set_no_delay(mut self, no_delay: bool) -> Self {
+    pub fn no_delay(mut self, no_delay: bool) -> Self {
         self.no_delay = no_delay;
         self
     }

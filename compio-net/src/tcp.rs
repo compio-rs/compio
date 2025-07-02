@@ -56,7 +56,7 @@ impl TcpListener {
     /// Binding with a port number of 0 will request that the OS assigns a port
     /// to this listener.
     pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
-        Self::bind_with_options(addr, TcpOpts::default().set_reuse_address(true)).await
+        Self::bind_with_options(addr, TcpOpts::default().reuse_address(true)).await
     }
 
     /// Creates a new `TcpListener`, which will be bound to the specified
