@@ -8,13 +8,12 @@ pub struct TcpOpts {
     send_buffer_size: Option<usize>,
     keepalive: bool,
     linger: Option<std::time::Duration>,
-    connect_timeout: Option<std::time::Duration>,     
-    read_timeout: Option<std::time::Duration>,        
-    write_timeout: Option<std::time::Duration>,       
+    read_timeout: Option<std::time::Duration>,
+    write_timeout: Option<std::time::Duration>,
     reuse_address: bool,
     reuse_port: bool,
     no_delay: bool,
-} 
+}
 
 impl Default for TcpOpts {
     fn default() -> Self {
@@ -23,12 +22,11 @@ impl Default for TcpOpts {
             send_buffer_size: None,
             keepalive: false,
             linger: None,
-            connect_timeout: None,
             read_timeout: None,
             write_timeout: None,
             reuse_address: true,
             reuse_port: false,
-            no_delay: false, 
+            no_delay: false,
         }
     }
 }
@@ -63,16 +61,10 @@ impl TcpOpts {
         self
     }
 
-    /// Sets the connect timeout for the TCP socket.
-    pub fn set_connect_timeout(mut self, duration: std::time::Duration) -> Self {
-        self.connect_timeout = Some(duration);
-        self
-    }
-
     /// Sets the read timeout for the TCP socket.
     pub fn set_read_timeout(mut self, duration: std::time::Duration) -> Self {
         self.read_timeout = Some(duration);
-        self    
+        self
     }
 
     /// Sets the write timeout for the TCP socket.
@@ -117,6 +109,4 @@ impl TcpOpts {
         socket.socket.set_nodelay(self.no_delay)?;
         Ok(())
     }
-
-
 }
