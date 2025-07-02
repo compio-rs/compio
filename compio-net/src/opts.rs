@@ -104,7 +104,10 @@ impl TcpOpts {
         socket.socket.set_read_timeout(self.read_timeout)?;
         socket.socket.set_write_timeout(self.write_timeout)?;
         socket.socket.set_reuse_address(self.reuse_address)?;
-        #[cfg(unix)]
+        #[cfg(all(
+            unix,
+            not(any(target_os = "illumos", target_os = "solaris", target_os = "cygwin"))
+        ))]
         socket.socket.set_reuse_port(self.reuse_port)?;
         socket.socket.set_nodelay(self.no_delay)?;
         Ok(())
