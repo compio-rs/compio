@@ -14,6 +14,7 @@ pub(crate) mod split;
 mod tcp;
 mod udp;
 mod unix;
+mod opts;
 
 pub use cmsg::*;
 pub use poll_fd::*;
@@ -24,3 +25,4 @@ pub use split::*;
 pub use tcp::*;
 pub use udp::*;
 pub use unix::*;
+pub use opts::TcpOpts;

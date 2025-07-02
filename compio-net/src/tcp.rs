@@ -7,7 +7,7 @@ use compio_runtime::{BorrowedBuffer, BufferPool};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::{
-    OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, ToSocketAddrsAsync, WriteHalf,
+    OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, TcpOpts, ToSocketAddrsAsync, WriteHalf
 };
 
 /// A TCP socket server, listening for connections.
@@ -56,10 +56,26 @@ impl TcpListener {
     /// Binding with a port number of 0 will request that the OS assigns a port
     /// to this listener.
     pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
+        Self::bind_base(addr, None).await
+    }
+
+    /// Creates a new `TcpListener`, which will be bound to the specified
+    /// address using `TcpOpts`.
+    ///
+    /// The returned listener is ready for accepting connections.
+    ///
+    /// Binding with a port number of 0 will request that the OS assigns a port
+    /// to this listener.
+    pub async fn bind_with_options(addr: impl ToSocketAddrsAsync, options: TcpOpts) -> io::Result<Self> {
+        Self::bind_base(addr, Some(options)).await
+    }
+
+    async fn bind_base(addr: impl ToSocketAddrsAsync, options: Option<TcpOpts>) -> io::Result<Self> {
+        let options = options.unwrap_or_default();
         super::each_addr(addr, |addr| async move {
             let sa = SockAddr::from(addr);
             let socket = Socket::new(sa.domain(), Type::STREAM, Some(Protocol::TCP)).await?;
-            socket.socket.set_reuse_address(true)?;
+            options.setup_socket(&socket)?;
             socket.socket.bind(&sa)?;
             socket.listen(128)?;
             Ok(Self { inner: socket })
@@ -152,8 +168,18 @@ pub struct TcpStream {
 impl TcpStream {
     /// Opens a TCP connection to a remote host.
     pub async fn connect(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
+        Self::connect_base(addr, None).await
+    }
+
+    /// Opens a TCP connection to a remote host using `TcpOpts`.
+    pub async fn connect_with_options(addr: impl ToSocketAddrsAsync, options: TcpOpts) -> io::Result<Self> {
+        Self::connect_base(addr, Some(options)).await
+    }
+
+    async fn connect_base(addr: impl ToSocketAddrsAsync, options: Option<TcpOpts>) -> io::Result<Self> {
         use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6};
 
+        let options = options.unwrap_or_default();
         super::each_addr(addr, |addr| async move {
             let addr2 = SockAddr::from(addr);
             let socket = if cfg!(windows) {
@@ -171,6 +197,7 @@ impl TcpStream {
             } else {
                 Socket::new(addr2.domain(), Type::STREAM, Some(Protocol::TCP)).await?
             };
+            options.setup_socket(&socket)?;
             socket.connect_async(&addr2).await?;
             Ok(Self { inner: socket })
         })
@@ -178,15 +205,27 @@ impl TcpStream {
     }
 
     /// Bind to `bind_addr` then opens a TCP connection to a remote host.
-    pub async fn bind_and_connect(
+    pub async fn bind_and_connect(bind_addr: SocketAddr, addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
+        Self::bind_and_connect_base(bind_addr, addr, None).await
+    }
+
+    /// Bind to `bind_addr` then opens a TCP connection to a remote host using `TcpOpts`.
+    pub async fn bind_and_connect_with_options(bind_addr: SocketAddr, addr: impl ToSocketAddrsAsync, options: TcpOpts) -> io::Result<Self> {
+        Self::bind_and_connect_base(bind_addr, addr, Some(options)).await
+    }
+
+    async fn bind_and_connect_base(
         bind_addr: SocketAddr,
         addr: impl ToSocketAddrsAsync,
+        options: Option<TcpOpts>,
     ) -> io::Result<Self> {
+        let options = options.unwrap_or_default();
         super::each_addr(addr, |addr| async move {
             let addr = SockAddr::from(addr);
             let bind_addr = SockAddr::from(bind_addr);
 
             let socket = Socket::bind(&bind_addr, Type::STREAM, Some(Protocol::TCP)).await?;
+            options.setup_socket(&socket)?;
             socket.connect_async(&addr).await?;
             Ok(Self { inner: socket })
         })
