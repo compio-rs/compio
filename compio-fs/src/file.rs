@@ -23,6 +23,27 @@ use crate::{Metadata, OpenOptions, Permissions};
 /// it was opened with. The `File` type provides **positional** read and write
 /// operations. The file does not maintain an internal cursor. The caller is
 /// required to specify an offset when issuing an operation.
+/// 
+/// 
+/// If you'd like to use methods from [`AsyncRead`](`compio_io::AsyncRead`) or [`AsyncWrite`](`compio_io::AsyncWrite`) traits,
+/// you can wrap `File` with [`std::io::Cursor`].
+/// # Examples
+/// ```
+/// use compio::fs::File;
+/// use std::io::Cursor;
+///
+/// let file = File::open("foo.txt").await?;
+/// let cursor = Cursor::new(file);
+/// 
+/// let int = cursor.read_u32().await?;
+/// let float = cursor.read_f32().await?;
+/// 
+/// let mut string = String::new();
+/// let BufResult(result, string) = cursor.read_to_string(string).await;
+/// 
+/// let mut buf = vec![0; 1024];
+/// let BufResult(result, buf) = cursor.read_exact(buf).await;
+/// ```
 #[derive(Debug, Clone)]
 pub struct File {
     inner: Attacher<std::fs::File>,
