@@ -32,7 +32,7 @@ pub fn bind_to_cpu_set(_: impl IntoIterator<Item = usize>) -> BindError<()> {
     Ok(())
 }
 
-#[cfg(all(test))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
