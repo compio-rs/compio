@@ -7,6 +7,7 @@
 #![warn(missing_docs)]
 
 mod cmsg;
+mod opts;
 mod poll_fd;
 mod resolve;
 mod socket;
@@ -16,6 +17,7 @@ mod udp;
 mod unix;
 
 pub use cmsg::*;
+pub use opts::TcpOpts;
 pub use poll_fd::*;
 pub use resolve::ToSocketAddrsAsync;
 pub(crate) use resolve::{each_addr, first_addr_buf};
