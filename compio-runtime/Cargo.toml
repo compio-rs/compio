@@ -38,6 +38,7 @@ cfg-if = { workspace = true, optional = true }
 criterion = { workspace = true, optional = true }
 crossbeam-queue = { workspace = true }
 futures-util = { workspace = true }
+nix = {workspace = true , features = ["sched"] }
 once_cell = { workspace = true }
 scoped-tls = "1.0.1"
 slab = { workspace = true, optional = true }
