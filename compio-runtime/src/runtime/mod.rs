@@ -133,7 +133,7 @@ impl Runtime {
         } = builder;
         RUNTIME_ID.set(id + 1);
         if let Some(cpus) = thread_affinity {
-            bind_to_cpu_set(cpus)?;
+            bind_to_cpu_set(cpus);
         }
         Ok(Self {
             driver: RefCell::new(proactor_builder.build()?),
