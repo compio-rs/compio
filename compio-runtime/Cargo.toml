@@ -36,9 +36,9 @@ compio-log = { workspace = true }
 async-task = "4.5.0"
 cfg-if = { workspace = true, optional = true }
 criterion = { workspace = true, optional = true }
+core_affinity = "0.8.3"
 crossbeam-queue = { workspace = true }
 futures-util = { workspace = true }
-nix = {workspace = true , features = ["sched"] }
 once_cell = { workspace = true }
 scoped-tls = "1.0.1"
 slab = { workspace = true, optional = true }
