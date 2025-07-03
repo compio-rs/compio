@@ -43,6 +43,7 @@ compio-log = { workspace = true }
 compio-tls = { workspace = true, optional = true }
 compio-process = { workspace = true, optional = true }
 compio-quic = { workspace = true, optional = true }
+compio-utils = { workspace = true, optional = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
@@ -109,6 +110,7 @@ tls = ["dep:compio-tls"]
 native-tls = ["tls", "compio-tls/native-tls"]
 rustls = ["tls", "compio-tls/rustls"]
 process = ["dep:compio-process"]
+utils = ["dep:compio-utils"]
 quic = ["dep:compio-quic"]
 h3 = ["quic", "compio-quic/h3"]
 all = [
@@ -121,6 +123,7 @@ all = [
     "process",
     "quic",
     "h3",
+    "utils",
 ]
 
 arrayvec = ["compio-buf/arrayvec"]

@@ -50,6 +50,9 @@ pub use compio_signal as signal;
 #[cfg(feature = "tls")]
 #[doc(inline)]
 pub use compio_tls as tls;
+#[cfg(feature = "utils")]
+#[doc(inline)]
+pub use compio_utils as utils;
 #[cfg(feature = "event")]
 #[doc(no_inline)]
 pub use runtime::event;

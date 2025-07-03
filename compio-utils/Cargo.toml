@@ -1,0 +1,19 @@
+
+[package]
+name = "compio-utils"
+version = "0.1.0"
+description = "Utilities for compio runtime"
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nix = { workspace = true, features = ["sched"] }
+
+

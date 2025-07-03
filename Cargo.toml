@@ -13,7 +13,8 @@ members = [
     "compio-quic",
     "compio-runtime",
     "compio-signal",
-    "compio-tls",
+    "compio-tls", 
+    "compio-utils",
 ]
 resolver = "2"
 
@@ -38,6 +39,7 @@ compio-log = { path = "./compio-log", version = "0.1.0" }
 compio-tls = { path = "./compio-tls", version = "0.6.0", default-features = false }
 compio-process = { path = "./compio-process", version = "0.5.0" }
 compio-quic = { path = "./compio-quic", version = "0.4.0", default-features = false }
+compio-utils = { path = "./compio-utils", version = "0.1.0" }
 
 bytes = "1.7.1"
 flume = "0.11.0"
