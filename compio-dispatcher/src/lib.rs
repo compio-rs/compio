@@ -71,39 +71,48 @@ pub struct Dispatcher {
 
 impl Dispatcher {
     /// Create the dispatcher with specified number of threads.
-    pub(crate) fn new_impl(mut builder: DispatcherBuilder) -> io::Result<Self> {
-        let mut proactor_builder = builder.proactor_builder;
+    pub(crate) fn new_impl(builder: DispatcherBuilder) -> io::Result<Self> {
+        let DispatcherBuilder {
+            nthreads,
+            concurrent,
+            stack_size,
+            thread_affinity,
+            mut names,
+            mut proactor_builder,
+        } = builder;
         proactor_builder.force_reuse_thread_pool();
         let pool = proactor_builder.create_or_get_thread_pool();
         let (sender, receiver) = unbounded::<Spawning>();
 
-        let threads = (0..builder.nthreads)
+        let threads = (0..nthreads)
             .map({
                 |index| {
                     let proactor_builder = proactor_builder.clone();
                     let receiver = receiver.clone();
 
                     let thread_builder = std::thread::Builder::new();
-                    let thread_builder = if let Some(s) = builder.stack_size {
+                    let thread_builder = if let Some(s) = stack_size {
                         thread_builder.stack_size(s)
                     } else {
                         thread_builder
                     };
-                    let thread_builder = if let Some(f) = &mut builder.names {
+                    let thread_builder = if let Some(f) = &mut names {
                         thread_builder.name(f(index))
                     } else {
                         thread_builder
                     };
+                    let cpus = thread_affinity.clone().unwrap_or_default();
 
                     thread_builder.spawn(move || {
                         Runtime::builder()
                             .with_proactor(proactor_builder)
+                            .thread_affinity(cpus)
                             .build()
                             .expect("cannot create compio runtime")
                             .block_on(async move {
                                 while let Ok(f) = receiver.recv_async().await {
                                     let task = Runtime::with_current(|rt| f.spawn(rt));
-                                    if builder.concurrent {
+                                    if concurrent {
                                         task.detach()
                                     } else {
                                         task.await.ok();
@@ -218,6 +227,7 @@ pub struct DispatcherBuilder {
     nthreads: usize,
     concurrent: bool,
     stack_size: Option<usize>,
+    thread_affinity: Option<Vec<usize>>,
     names: Option<Box<dyn FnMut(usize) -> String>>,
     proactor_builder: ProactorBuilder,
 }
@@ -229,6 +239,7 @@ impl DispatcherBuilder {
             nthreads: available_parallelism().map(|n| n.get()).unwrap_or(1),
             concurrent: true,
             stack_size: None,
+            thread_affinity: None,
             names: None,
             proactor_builder: ProactorBuilder::new(),
         }
@@ -254,6 +265,12 @@ impl DispatcherBuilder {
     /// Set the size of stack of the worker threads.
     pub fn stack_size(mut self, s: usize) -> Self {
         self.stack_size = Some(s);
+        self
+    }
+
+    /// Set the thread affinity for the dispatcher.
+    pub fn thread_affinity(mut self, cpus: Vec<usize>) -> Self {
+        self.thread_affinity = Some(cpus);
         self
     }
 
