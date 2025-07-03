@@ -33,7 +33,7 @@ use send_wrapper::SendWrapper;
 
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerRuntime};
-use crate::{affinity::bind_to_cpu_set, runtime::op::OpFuture, BufResult};
+use crate::{BufResult, affinity::bind_to_cpu_set, runtime::op::OpFuture};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 
