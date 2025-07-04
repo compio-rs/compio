@@ -76,7 +76,7 @@ impl Dispatcher {
             nthreads,
             concurrent,
             stack_size,
-            thread_affinity,
+            mut thread_affinity,
             mut names,
             mut proactor_builder,
         } = builder;
@@ -101,8 +101,12 @@ impl Dispatcher {
                     } else {
                         thread_builder
                     };
-                    let cpus = thread_affinity.clone().unwrap_or_default();
 
+                    let cpus = if let Some(f) = &mut thread_affinity {
+                        f(index)
+                    } else {
+                        vec![]
+                    };
                     thread_builder.spawn(move || {
                         Runtime::builder()
                             .with_proactor(proactor_builder)
@@ -227,7 +231,7 @@ pub struct DispatcherBuilder {
     nthreads: usize,
     concurrent: bool,
     stack_size: Option<usize>,
-    thread_affinity: Option<Vec<usize>>,
+    thread_affinity: Option<Box<dyn FnMut(usize) -> Vec<usize>>>,
     names: Option<Box<dyn FnMut(usize) -> String>>,
     proactor_builder: ProactorBuilder,
 }
@@ -269,8 +273,8 @@ impl DispatcherBuilder {
     }
 
     /// Set the thread affinity for the dispatcher.
-    pub fn thread_affinity(mut self, cpus: Vec<usize>) -> Self {
-        self.thread_affinity = Some(cpus);
+    pub fn thread_affinity(mut self, f: impl FnMut(usize) -> Vec<usize> + 'static) -> Self {
+        self.thread_affinity = Some(Box::new(f));
         self
     }
 
