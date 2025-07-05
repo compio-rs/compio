@@ -44,9 +44,6 @@ futures-util = { workspace = true }
 tempfile = { workspace = true }
 
 [features]
-io-uring = ["compio-runtime/io-uring"]
-polling = ["compio-runtime/polling"]
-
 # Nightly features
 once_cell_try = []
 nightly = ["once_cell_try"]

@@ -29,7 +29,3 @@ compio-net = { workspace = true }
 compio-macros = { workspace = true }
 
 futures-util = { workspace = true }
-
-[features]
-io-uring = ["compio-runtime/io-uring"]
-polling = ["compio-runtime/polling"]
