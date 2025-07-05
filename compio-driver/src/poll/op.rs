@@ -20,9 +20,9 @@ use libc::open64 as open;
 use libc::{pread, preadv, pwrite, pwritev};
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "hurd"))]
 use libc::{pread64 as pread, preadv64 as preadv, pwrite64 as pwrite, pwritev64 as pwritev};
-use socket2::{SockAddr, Socket as Socket2};
+use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
-use super::{AsFd, Decision, OpCode, OpType, sockaddr_storage, socklen_t, syscall};
+use super::{AsFd, Decision, OpCode, OpType, syscall};
 use crate::op::*;
 pub use crate::unix::op::*;
 
@@ -636,7 +636,7 @@ impl<S: AsFd> OpCode for Connect<S> {
         syscall!(
             libc::connect(
                 self.fd.as_fd().as_raw_fd(),
-                self.addr.as_ptr(),
+                self.addr.as_ptr().cast(),
                 self.addr.len()
             ),
             wait_writable(self.fd.as_fd().as_raw_fd())
@@ -767,7 +767,7 @@ impl<S: AsFd> OpCode for crate::op::managed::RecvManaged<S> {
 pub struct RecvFrom<T: IoBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
-    pub(crate) addr: sockaddr_storage,
+    pub(crate) addr: SockAddrStorage,
     pub(crate) addr_len: socklen_t,
     _p: PhantomPinned,
 }
@@ -775,11 +775,13 @@ pub struct RecvFrom<T: IoBufMut, S> {
 impl<T: IoBufMut, S> RecvFrom<T, S> {
     /// Create [`RecvFrom`].
     pub fn new(fd: S, buffer: T) -> Self {
+        let addr = SockAddrStorage::zeroed();
+        let addr_len = addr.size_of();
         Self {
             fd,
             buffer,
-            addr: unsafe { std::mem::zeroed() },
-            addr_len: std::mem::size_of::<sockaddr_storage>() as _,
+            addr,
+            addr_len,
             _p: PhantomPinned,
         }
     }
@@ -817,7 +819,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
 }
 
 impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
-    type Inner = (T, sockaddr_storage, socklen_t);
+    type Inner = (T, SockAddrStorage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
         (self.buffer, self.addr, self.addr_len)
@@ -829,7 +831,7 @@ pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSliceMut>,
-    pub(crate) addr: sockaddr_storage,
+    pub(crate) addr: SockAddrStorage,
     pub(crate) msg: libc::msghdr,
     _p: PhantomPinned,
 }
@@ -841,7 +843,7 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
             fd,
             buffer,
             slices: vec![],
-            addr: unsafe { std::mem::zeroed() },
+            addr: SockAddrStorage::zeroed(),
             msg: unsafe { std::mem::zeroed() },
             _p: PhantomPinned,
         }
@@ -885,7 +887,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
 }
 
 impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
-    type Inner = (T, sockaddr_storage, socklen_t);
+    type Inner = (T, SockAddrStorage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
         (self.buffer, self.addr, self.msg.msg_namelen)
@@ -920,7 +922,7 @@ impl<T: IoBuf, S: AsFd> SendTo<T, S> {
             slice.as_ptr() as _,
             slice.len(),
             0,
-            self.addr.as_ptr(),
+            self.addr.as_ptr().cast(),
             self.addr.len(),
         )
     }

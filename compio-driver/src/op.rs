@@ -7,14 +7,14 @@
 use std::{io, marker::PhantomPinned, mem::ManuallyDrop, net::Shutdown};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
-use socket2::SockAddr;
+use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
-#[cfg(windows)]
-pub use crate::sys::op::{ConnectNamedPipe, DeviceIoControl};
 pub use crate::sys::op::{
     Accept, Recv, RecvFrom, RecvFromVectored, RecvMsg, RecvVectored, Send, SendMsg, SendTo,
     SendToVectored, SendVectored,
 };
+#[cfg(windows)]
+pub use crate::sys::op::{ConnectNamedPipe, DeviceIoControl};
 #[cfg(unix)]
 pub use crate::sys::op::{
     CreateDir, CreateSocket, FileStat, HardLink, Interest, OpenFile, PathStat, PollOnce,
@@ -22,10 +22,7 @@ pub use crate::sys::op::{
 };
 #[cfg(io_uring)]
 pub use crate::sys::op::{ReadManagedAt, RecvManaged};
-use crate::{
-    OwnedFd, TakeBuffer,
-    sys::{sockaddr_storage, socklen_t},
-};
+use crate::{OwnedFd, TakeBuffer};
 
 /// Trait to update the buffer length inside the [`BufResult`].
 pub trait BufResultExt {
@@ -75,7 +72,7 @@ pub trait RecvResultExt {
     fn map_addr(self) -> Self::RecvResult;
 }
 
-impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t)> {
+impl<T> RecvResultExt for BufResult<usize, (T, SockAddrStorage, socklen_t)> {
     type RecvResult = BufResult<(usize, SockAddr), T>;
 
     fn map_addr(self) -> Self::RecvResult {
@@ -85,7 +82,7 @@ impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t)> {
     }
 }
 
-impl<T> RecvResultExt for BufResult<usize, (T, sockaddr_storage, socklen_t, usize)> {
+impl<T> RecvResultExt for BufResult<usize, (T, SockAddrStorage, socklen_t, usize)> {
     type RecvResult = BufResult<(usize, usize, SockAddr), T>;
 
     fn map_addr(self) -> Self::RecvResult {

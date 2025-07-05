@@ -175,10 +175,10 @@ async fn quinn_echo_client(
 fn main() {
     let mut c = Criterion::default().configure_from_args();
 
-    let rcgen::CertifiedKey { cert, key_pair } =
+    let rcgen::CertifiedKey { cert, signing_key } =
         rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
     let cert = cert.der().clone();
-    let key_der: rustls::pki_types::PrivateKeyDer = key_pair.serialize_der().try_into().unwrap();
+    let key_der: rustls::pki_types::PrivateKeyDer = signing_key.serialize_der().try_into().unwrap();
 
     let compio_quic_server = start_compio_quic_server(cert.clone(), key_der.clone_key());
     let quinn_server = start_quinn_server(cert.clone(), key_der);

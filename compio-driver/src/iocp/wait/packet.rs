@@ -6,7 +6,7 @@ use std::{
 };
 
 use windows_sys::Win32::Foundation::{
-    BOOLEAN, GENERIC_READ, GENERIC_WRITE, HANDLE, NTSTATUS, RtlNtStatusToDosError, STATUS_PENDING,
+    GENERIC_READ, GENERIC_WRITE, HANDLE, NTSTATUS, RtlNtStatusToDosError, STATUS_PENDING,
     STATUS_SUCCESS,
 };
 
@@ -27,12 +27,12 @@ extern "system" {
         ApcContext: *mut c_void,
         IoStatus: NTSTATUS,
         IoStatusInformation: usize,
-        AlreadySignaled: *mut BOOLEAN,
+        AlreadySignaled: *mut bool,
     ) -> NTSTATUS;
 
     fn NtCancelWaitCompletionPacket(
         WaitCompletionPacketHandle: HANDLE,
-        RemoveSignaledPacket: BOOLEAN,
+        RemoveSignaledPacket: bool,
     ) -> NTSTATUS;
 }
 
@@ -53,7 +53,7 @@ fn check_status(status: NTSTATUS) -> io::Result<()> {
 
 impl Wait {
     pub fn new(port: &cp::Port, event: RawFd, op: &mut Key<dyn OpCode>) -> io::Result<Self> {
-        let mut handle = 0;
+        let mut handle = null_mut();
         check_status(unsafe {
             NtCreateWaitCompletionPacket(&mut handle, GENERIC_READ | GENERIC_WRITE, null_mut())
         })?;
@@ -77,7 +77,7 @@ impl Wait {
     }
 
     pub fn cancel(&mut self) -> io::Result<()> {
-        let res = unsafe { NtCancelWaitCompletionPacket(self.handle.as_raw_handle() as _, 0) };
+        let res = unsafe { NtCancelWaitCompletionPacket(self.handle.as_raw_handle() as _, false) };
         self.cancelled = res != STATUS_PENDING;
         check_status(res)
     }

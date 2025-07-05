@@ -25,7 +25,7 @@ fn win32_event() {
         task::Poll,
     };
 
-    use compio_driver::{OpCode, OpType, syscall};
+    use compio_driver::{OpCode, OpType};
     use windows_sys::Win32::System::{
         IO::OVERLAPPED,
         Threading::{CreateEventW, SetEvent},
@@ -49,15 +49,18 @@ fn win32_event() {
     }
 
     compio_runtime::Runtime::new().unwrap().block_on(async {
-        let event = syscall!(BOOL, CreateEventW(null(), 0, 0, null())).unwrap();
+        let event = unsafe { CreateEventW(null(), 0, 0, null()) };
+        if event.is_null() {
+            panic!("{:?}", std::io::Error::last_os_error());
+        }
         let event = unsafe { OwnedHandle::from_raw_handle(event as _) };
 
-        let event_raw = event.as_raw_handle() as _;
+        let event_raw = event.as_raw_handle() as isize;
 
         let wait = compio_runtime::submit(WaitEvent { event });
 
         let task = compio_runtime::spawn_blocking(move || {
-            unsafe { SetEvent(event_raw) };
+            unsafe { SetEvent(event_raw as _) };
         });
 
         wait.await.0.unwrap();

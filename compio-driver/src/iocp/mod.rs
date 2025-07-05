@@ -12,7 +12,10 @@ use std::{
 };
 
 use compio_log::{instrument, trace};
-use windows_sys::Win32::{Foundation::ERROR_CANCELLED, System::IO::OVERLAPPED};
+use windows_sys::Win32::{
+    Foundation::{ERROR_CANCELLED, HANDLE},
+    System::IO::OVERLAPPED,
+};
 
 use crate::{AsyncifyPool, BufferPool, Entry, Key, ProactorBuilder};
 
@@ -21,14 +24,10 @@ pub(crate) mod op;
 mod cp;
 mod wait;
 
-pub(crate) use windows_sys::Win32::Networking::WinSock::{
-    SOCKADDR_STORAGE as sockaddr_storage, socklen_t,
-};
-
 /// On windows, handle and socket are in the same size.
 /// Both of them could be attached to an IOCP.
 /// Therefore, both could be seen as fd.
-pub type RawFd = isize;
+pub type RawFd = HANDLE;
 
 /// Extracts raw fds.
 pub trait AsRawFd {

@@ -16,6 +16,7 @@ use std::{
     io,
     mem::MaybeUninit,
     os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle},
+    ptr::null_mut,
     time::Duration,
 };
 
@@ -58,21 +59,24 @@ impl CompletionPort {
     pub const DEFAULT_CAPACITY: usize = 1024;
 
     pub fn new() -> io::Result<Self> {
-        let port = syscall!(BOOL, CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 1))?;
-        trace!("new iocp handle: {port}");
-        let port = unsafe { OwnedHandle::from_raw_handle(port as _) };
+        let port = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, null_mut(), 0, 1) };
+        if port.is_null() {
+            return Err(::std::io::Error::last_os_error());
+        }
+        trace!("new iocp handle: {port:p}");
+        let port = unsafe { OwnedHandle::from_raw_handle(port) };
         Ok(Self { port })
     }
 
     pub fn attach(&self, fd: RawFd) -> io::Result<()> {
         syscall!(
             BOOL,
-            CreateIoCompletionPort(fd as _, self.port.as_raw_handle() as _, 0, 0)
+            CreateIoCompletionPort(fd, self.port.as_raw_handle(), 0, 0) as isize
         )?;
         syscall!(
             BOOL,
             SetFileCompletionNotificationModes(
-                fd as _,
+                fd,
                 (FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE) as _
             )
         )?;
@@ -161,7 +165,7 @@ impl CompletionPort {
                         )
                     ) {
                         error!(
-                            "fail to repost entry ({}, {}, {:p}) to driver {:x}: {:?}",
+                            "fail to repost entry ({}, {}, {:p}) to driver {:p}: {:?}",
                             entry.dwNumberOfBytesTransferred,
                             entry.lpCompletionKey,
                             entry.lpOverlapped,

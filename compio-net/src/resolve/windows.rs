@@ -58,7 +58,7 @@ impl AsyncResolver {
                 .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid host name"))?,
             port,
             result: null_mut(),
-            handle: 0,
+            handle: null_mut(),
             overlapped: GAIOverlapped::new(),
         })
     }
@@ -110,7 +110,7 @@ impl AsyncResolver {
 
     pub unsafe fn addrs(&mut self) -> io::Result<std::vec::IntoIter<SocketAddr>> {
         syscall!(SOCKET, GetAddrInfoExOverlappedResult(&self.overlapped.base))?;
-        self.handle = 0;
+        self.handle = null_mut();
 
         let mut addrs = vec![];
         let mut result = self.result;
@@ -141,7 +141,7 @@ impl AsyncResolver {
 
 impl Drop for AsyncResolver {
     fn drop(&mut self) {
-        if self.handle != 0 {
+        if !self.handle.is_null() {
             syscall!(SOCKET, GetAddrInfoExCancel(&self.handle)).ok();
         }
         if !self.result.is_null() {

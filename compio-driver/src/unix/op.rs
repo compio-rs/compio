@@ -3,8 +3,7 @@ use std::{ffi::CString, marker::PhantomPinned, net::Shutdown, os::fd::OwnedFd};
 use compio_buf::{
     IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
 };
-use libc::{sockaddr_storage, socklen_t};
-use socket2::SockAddr;
+use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
 use crate::op::*;
 
@@ -248,7 +247,7 @@ impl<S> ShutdownSocket<S> {
 /// Accept a connection.
 pub struct Accept<S> {
     pub(crate) fd: S,
-    pub(crate) buffer: sockaddr_storage,
+    pub(crate) buffer: SockAddrStorage,
     pub(crate) addr_len: socklen_t,
     pub(crate) accepted_fd: Option<OwnedFd>,
     _p: PhantomPinned,
@@ -257,10 +256,12 @@ pub struct Accept<S> {
 impl<S> Accept<S> {
     /// Create [`Accept`].
     pub fn new(fd: S) -> Self {
+        let buffer = SockAddrStorage::zeroed();
+        let addr_len = buffer.size_of();
         Self {
             fd,
-            buffer: unsafe { std::mem::zeroed() },
-            addr_len: std::mem::size_of::<sockaddr_storage>() as _,
+            buffer,
+            addr_len,
             accepted_fd: None,
             _p: PhantomPinned,
         }
@@ -384,7 +385,7 @@ impl<T: IoVectoredBuf, S> IntoInner for SendVectored<T, S> {
 /// Receive data and source address with ancillary data into vectored buffer.
 pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
     pub(crate) msg: libc::msghdr,
-    pub(crate) addr: sockaddr_storage,
+    pub(crate) addr: SockAddrStorage,
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) control: C,
@@ -427,7 +428,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
-    type Inner = ((T, C), sockaddr_storage, socklen_t, usize);
+    type Inner = ((T, C), SockAddrStorage, socklen_t, usize);
 
     fn into_inner(self) -> Self::Inner {
         (

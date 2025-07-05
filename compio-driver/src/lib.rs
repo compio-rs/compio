@@ -455,6 +455,10 @@ pub struct ProactorBuilder {
     eventfd: Option<RawFd>,
 }
 
+// Safety: `RawFd` is thread safe.
+unsafe impl Send for ProactorBuilder {}
+unsafe impl Sync for ProactorBuilder {}
+
 impl Default for ProactorBuilder {
     fn default() -> Self {
         Self::new()

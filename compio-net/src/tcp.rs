@@ -306,7 +306,7 @@ impl TcpStream {
     /// For more information about this option, see
     /// [`TcpStream::set_nodelay`].
     pub fn nodelay(&self) -> io::Result<bool> {
-        self.inner.socket.nodelay()
+        self.inner.socket.tcp_nodelay()
     }
 
     /// Sets the value of the TCP_NODELAY option on this socket.
@@ -317,7 +317,7 @@ impl TcpStream {
     /// buffered until there is a sufficient amount to send out,
     /// thereby avoiding the frequent sending of small packets.
     pub fn set_nodelay(&self, nodelay: bool) -> io::Result<()> {
-        self.inner.socket.set_nodelay(nodelay)
+        self.inner.socket.set_tcp_nodelay(nodelay)
     }
 }
 

@@ -15,7 +15,6 @@ use std::{
 
 use compio_log::{instrument, trace};
 use crossbeam_queue::SegQueue;
-pub(crate) use libc::{sockaddr_storage, socklen_t};
 use polling::{Event, Events, Poller};
 
 use crate::{AsyncifyPool, BufferPool, Entry, Key, ProactorBuilder, op::Interest, syscall};

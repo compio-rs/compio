@@ -13,12 +13,12 @@ use once_cell::sync::Lazy as LazyLock;
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 use slab::Slab;
-use windows_sys::Win32::{
-    Foundation::BOOL,
-    System::Console::{
+use windows_sys::{
+    Win32::System::Console::{
         CTRL_BREAK_EVENT, CTRL_C_EVENT, CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT,
         SetConsoleCtrlHandler,
     },
+    core::BOOL,
 };
 
 static HANDLER: LazyLock<Mutex<HashMap<u32, Slab<EventHandle>>>> =

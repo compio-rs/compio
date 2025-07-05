@@ -11,7 +11,6 @@ pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::{io, task::Poll, time::Duration};
 
 pub use iour::{OpCode as IourOpCode, OpEntry};
-pub(crate) use iour::{sockaddr_storage, socklen_t};
 pub use poll::{Decision, OpCode as PollOpCode, OpType};
 
 pub use crate::driver_type::DriverType; // Re-export so current user won't be broken
