@@ -1,7 +1,7 @@
 use std::{
     any::Any,
     cell::{Cell, RefCell},
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
     future::{Future, ready},
     io,
     marker::PhantomData,
@@ -132,8 +132,8 @@ impl Runtime {
         } = builder;
         let id = RUNTIME_ID.get();
         RUNTIME_ID.set(id + 1);
-        if let Some(cpus) = thread_affinity {
-            bind_to_cpu_set(cpus)?;
+        if !thread_affinity.is_empty() {
+            bind_to_cpu_set(thread_affinity)?;
         }
         Ok(Self {
             driver: RefCell::new(proactor_builder.build()?),
@@ -441,7 +441,7 @@ impl criterion::async_executor::AsyncExecutor for &Runtime {
 #[derive(Debug, Clone)]
 pub struct RuntimeBuilder {
     proactor_builder: ProactorBuilder,
-    thread_affinity: Option<Vec<usize>>,
+    thread_affinity: HashSet<usize>,
     event_interval: usize,
 }
 
@@ -457,7 +457,7 @@ impl RuntimeBuilder {
         Self {
             proactor_builder: ProactorBuilder::new(),
             event_interval: 61,
-            thread_affinity: None,
+            thread_affinity: HashSet::new(),
         }
     }
 
@@ -468,8 +468,8 @@ impl RuntimeBuilder {
     }
 
     /// Sets the thread affinity for the runtime.
-    pub fn thread_affinity(mut self, cpus: Vec<usize>) -> Self {
-        self.thread_affinity = Some(cpus);
+    pub fn thread_affinity(mut self, cpus: HashSet<usize>) -> Self {
+        self.thread_affinity = cpus;
         self
     }
 

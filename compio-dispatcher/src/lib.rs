@@ -3,6 +3,7 @@
 #![warn(missing_docs)]
 
 use std::{
+    collections::HashSet,
     future::Future,
     io,
     num::NonZeroUsize,
@@ -105,7 +106,7 @@ impl Dispatcher {
                     let cpus = if let Some(f) = &mut thread_affinity {
                         f(index)
                     } else {
-                        vec![]
+                        HashSet::new()
                     };
                     thread_builder.spawn(move || {
                         Runtime::builder()
@@ -231,7 +232,7 @@ pub struct DispatcherBuilder {
     nthreads: usize,
     concurrent: bool,
     stack_size: Option<usize>,
-    thread_affinity: Option<Box<dyn FnMut(usize) -> Vec<usize>>>,
+    thread_affinity: Option<Box<dyn FnMut(usize) -> HashSet<usize>>>,
     names: Option<Box<dyn FnMut(usize) -> String>>,
     proactor_builder: ProactorBuilder,
 }
@@ -273,7 +274,7 @@ impl DispatcherBuilder {
     }
 
     /// Set the thread affinity for the dispatcher.
-    pub fn thread_affinity(mut self, f: impl FnMut(usize) -> Vec<usize> + 'static) -> Self {
+    pub fn thread_affinity(mut self, f: impl FnMut(usize) -> HashSet<usize> + 'static) -> Self {
         self.thread_affinity = Some(Box::new(f));
         self
     }
