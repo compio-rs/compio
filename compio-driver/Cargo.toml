@@ -40,7 +40,6 @@ socket2 = { workspace = true, features = ["all"] }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
-aligned-array = "1.0.1"
 once_cell = { workspace = true }
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",

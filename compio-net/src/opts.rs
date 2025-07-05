@@ -109,7 +109,7 @@ impl TcpOpts {
             not(any(target_os = "illumos", target_os = "solaris", target_os = "cygwin"))
         ))]
         socket.socket.set_reuse_port(self.reuse_port)?;
-        socket.socket.set_nodelay(self.no_delay)?;
+        socket.socket.set_tcp_nodelay(self.no_delay)?;
         Ok(())
     }
 }

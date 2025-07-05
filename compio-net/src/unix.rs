@@ -365,7 +365,13 @@ fn fix_unix_socket_length(addr: &mut SockAddr) {
 
     // SAFETY: cannot construct non-unix socket address in safe way.
     let unix_addr: &SOCKADDR_UN = unsafe { &*addr.as_ptr().cast() };
-    let addr_len = match std::ffi::CStr::from_bytes_until_nul(&unix_addr.sun_path) {
+    let sun_path = unsafe {
+        std::slice::from_raw_parts(
+            unix_addr.sun_path.as_ptr() as *const u8,
+            unix_addr.sun_path.len(),
+        )
+    };
+    let addr_len = match std::ffi::CStr::from_bytes_until_nul(sun_path) {
         Ok(str) => str.to_bytes_with_nul().len() + 2,
         Err(_) => std::mem::size_of::<SOCKADDR_UN>(),
     };

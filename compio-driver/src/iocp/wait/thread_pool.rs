@@ -1,4 +1,8 @@
-use std::{ffi::c_void, io, ptr::null};
+use std::{
+    ffi::c_void,
+    io,
+    ptr::{null, null_mut},
+};
 
 use windows_sys::Win32::{
     Foundation::{ERROR_IO_PENDING, ERROR_TIMEOUT, WAIT_OBJECT_0, WAIT_TIMEOUT},
@@ -57,7 +61,7 @@ impl Wait {
     pub fn cancel(&mut self) -> io::Result<()> {
         // Try to cancel it, but don't know whether it is successfully cancelled.
         unsafe {
-            SetThreadpoolWait(self.wait, 0, null());
+            SetThreadpoolWait(self.wait, null_mut(), null());
         }
         Err(io::Error::from_raw_os_error(ERROR_IO_PENDING as _))
     }
@@ -70,7 +74,7 @@ impl Wait {
 impl Drop for Wait {
     fn drop(&mut self) {
         unsafe {
-            SetThreadpoolWait(self.wait, 0, null());
+            SetThreadpoolWait(self.wait, null_mut(), null());
             WaitForThreadpoolWaitCallbacks(self.wait, 1);
             CloseThreadpoolWait(self.wait);
         }

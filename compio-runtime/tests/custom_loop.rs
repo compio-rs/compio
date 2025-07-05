@@ -108,7 +108,7 @@ fn cf_run_loop() {
 #[cfg(windows)]
 #[test]
 fn message_queue() {
-    use std::{future::Future, mem::MaybeUninit, sync::Mutex, time::Duration};
+    use std::{future::Future, mem::MaybeUninit, ptr::null_mut, sync::Mutex, time::Duration};
 
     use compio_driver::AsRawFd;
     use compio_runtime::{
@@ -176,7 +176,10 @@ fn message_queue() {
                     }
 
                     let mut msg = MaybeUninit::uninit();
-                    let res = unsafe { PeekMessageW(msg.as_mut_ptr(), 0, 0, 0, PM_REMOVE) };
+                    let res = unsafe {
+                        use std::ptr::null_mut;
+                        PeekMessageW(msg.as_mut_ptr(), null_mut(), 0, 0, PM_REMOVE)
+                    };
                     if res != 0 {
                         let msg = unsafe { msg.assume_init() };
                         unsafe {
@@ -206,7 +209,7 @@ fn message_queue() {
         }
 
         unsafe {
-            SetTimer(0, 0, 1, Some(timer_callback));
+            SetTimer(null_mut(), 0, 1, Some(timer_callback));
         }
 
         event.wait().await;

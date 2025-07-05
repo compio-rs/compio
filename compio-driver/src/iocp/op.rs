@@ -10,13 +10,12 @@ use std::{
     task::Poll,
 };
 
-use aligned_array::{A8, Aligned};
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
 };
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
-use socket2::SockAddr;
+use socket2::{SockAddr, SockAddrStorage};
 use windows_sys::{
     Win32::{
         Foundation::{
@@ -254,7 +253,7 @@ const ACCEPT_BUFFER_SIZE: usize = ACCEPT_ADDR_BUFFER_SIZE * 2;
 pub struct Accept<S> {
     pub(crate) fd: S,
     pub(crate) accept_fd: socket2::Socket,
-    pub(crate) buffer: Aligned<A8, [u8; ACCEPT_BUFFER_SIZE]>,
+    pub(crate) buffer: [u8; ACCEPT_BUFFER_SIZE],
     _p: PhantomPinned,
 }
 
@@ -264,7 +263,7 @@ impl<S> Accept<S> {
         Self {
             fd,
             accept_fd,
-            buffer: unsafe { std::mem::zeroed() },
+            buffer: [0u8; ACCEPT_BUFFER_SIZE],
             _p: PhantomPinned,
         }
     }
@@ -317,7 +316,10 @@ impl<S: AsFd> Accept<S> {
         }
         Ok((self.accept_fd, unsafe {
             SockAddr::new(
-                read_unaligned(remote_addr.cast::<SOCKADDR_STORAGE>()),
+                // Safety: the buffer is large enough to hold the address
+                std::mem::transmute::<SOCKADDR_STORAGE, SockAddrStorage>(read_unaligned(
+                    remote_addr.cast::<SOCKADDR_STORAGE>(),
+                )),
                 remote_addr_len,
             )
         }))
@@ -379,7 +381,7 @@ impl<S: AsFd> OpCode for Connect<S> {
         let mut sent = 0;
         let res = connect_fn(
             self.fd.as_fd().as_raw_fd() as _,
-            self.addr.as_ptr(),
+            self.addr.as_ptr().cast(),
             self.addr.len(),
             null(),
             0,
@@ -595,7 +597,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
 pub struct RecvFrom<T: IoBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
-    pub(crate) addr: SOCKADDR_STORAGE,
+    pub(crate) addr: SockAddrStorage,
     pub(crate) addr_len: socklen_t,
     _p: PhantomPinned,
 }
@@ -603,18 +605,20 @@ pub struct RecvFrom<T: IoBufMut, S> {
 impl<T: IoBufMut, S> RecvFrom<T, S> {
     /// Create [`RecvFrom`].
     pub fn new(fd: S, buffer: T) -> Self {
+        let addr = SockAddrStorage::zeroed();
+        let addr_len = addr.size_of();
         Self {
             fd,
             buffer,
-            addr: unsafe { std::mem::zeroed() },
-            addr_len: std::mem::size_of::<SOCKADDR_STORAGE>() as _,
+            addr,
+            addr_len,
             _p: PhantomPinned,
         }
     }
 }
 
 impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
-    type Inner = (T, SOCKADDR_STORAGE, socklen_t);
+    type Inner = (T, SockAddrStorage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
         (self.buffer, self.addr, self.addr_len)
@@ -651,7 +655,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
 pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
-    pub(crate) addr: SOCKADDR_STORAGE,
+    pub(crate) addr: SockAddrStorage,
     pub(crate) addr_len: socklen_t,
     _p: PhantomPinned,
 }
@@ -659,18 +663,20 @@ pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
 impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
     /// Create [`RecvFromVectored`].
     pub fn new(fd: S, buffer: T) -> Self {
+        let addr = SockAddrStorage::zeroed();
+        let addr_len = addr.size_of();
         Self {
             fd,
             buffer,
-            addr: unsafe { std::mem::zeroed() },
-            addr_len: std::mem::size_of::<SOCKADDR_STORAGE>() as _,
+            addr,
+            addr_len,
             _p: PhantomPinned,
         }
     }
 }
 
 impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
-    type Inner = (T, SOCKADDR_STORAGE, socklen_t);
+    type Inner = (T, SockAddrStorage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
         (self.buffer, self.addr, self.addr_len)
@@ -741,7 +747,7 @@ impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
             1,
             &mut sent,
             0,
-            self.addr.as_ptr(),
+            self.addr.as_ptr().cast(),
             self.addr.len(),
             optr,
             None,
@@ -792,7 +798,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
             buffer.len() as _,
             &mut sent,
             0,
-            self.addr.as_ptr(),
+            self.addr.as_ptr().cast(),
             self.addr.len(),
             optr,
             None,
@@ -810,7 +816,7 @@ static WSA_RECVMSG: OnceLock<LPFN_WSARECVMSG> = OnceLock::new();
 /// Receive data and source address with ancillary data into vectored buffer.
 pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
     msg: WSAMSG,
-    addr: SOCKADDR_STORAGE,
+    addr: SockAddrStorage,
     fd: S,
     buffer: T,
     control: C,
@@ -828,9 +834,10 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
             control.as_buf_ptr().cast::<CMSGHDR>().is_aligned(),
             "misaligned control message buffer"
         );
+        let addr = SockAddrStorage::zeroed();
         Self {
             msg: unsafe { std::mem::zeroed() },
-            addr: unsafe { std::mem::zeroed() },
+            addr,
             fd,
             buffer,
             control,
@@ -840,7 +847,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
-    type Inner = ((T, C), SOCKADDR_STORAGE, socklen_t, usize);
+    type Inner = ((T, C), SockAddrStorage, socklen_t, usize);
 
     fn into_inner(self) -> Self::Inner {
         (

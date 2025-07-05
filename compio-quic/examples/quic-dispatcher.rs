@@ -10,10 +10,10 @@ async fn main() {
     const THREAD_NUM: usize = 5;
     const CLIENT_NUM: usize = 10;
 
-    let rcgen::CertifiedKey { cert, key_pair } =
+    let rcgen::CertifiedKey { cert, signing_key } =
         rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
     let cert = cert.der().clone();
-    let key_der = key_pair.serialize_der().try_into().unwrap();
+    let key_der = signing_key.serialize_der().try_into().unwrap();
 
     let server_config = ServerBuilder::new_with_single_cert(vec![cert.clone()], key_der)
         .unwrap()
