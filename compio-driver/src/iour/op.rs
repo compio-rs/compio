@@ -13,8 +13,7 @@ use io_uring::{
     opcode,
     types::{Fd, FsyncFlags},
 };
-use libc::{sockaddr_storage, socklen_t};
-use socket2::SockAddr;
+use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
 use super::OpCode;
 pub use crate::unix::op::*;
@@ -304,7 +303,7 @@ impl<S: AsFd> OpCode for Accept<S> {
         let this = unsafe { self.get_unchecked_mut() };
         opcode::Accept::new(
             Fd(this.fd.as_fd().as_raw_fd()),
-            &mut this.buffer as *mut sockaddr_storage as *mut libc::sockaddr,
+            unsafe { this.buffer.view_as::<libc::sockaddr>() },
             &mut this.addr_len,
         )
         .flags(libc::SOCK_CLOEXEC)
@@ -321,7 +320,7 @@ impl<S: AsFd> OpCode for Connect<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::Connect::new(
             Fd(self.fd.as_fd().as_raw_fd()),
-            self.addr.as_ptr(),
+            self.addr.as_ptr().cast(),
             self.addr.len(),
         )
         .build()
@@ -382,7 +381,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
 
 struct RecvFromHeader<S> {
     pub(crate) fd: S,
-    pub(crate) addr: sockaddr_storage,
+    pub(crate) addr: SockAddrStorage,
     pub(crate) msg: libc::msghdr,
     _p: PhantomPinned,
 }
@@ -391,7 +390,7 @@ impl<S> RecvFromHeader<S> {
     pub fn new(fd: S) -> Self {
         Self {
             fd,
-            addr: unsafe { std::mem::zeroed() },
+            addr: SockAddrStorage::zeroed(),
             msg: unsafe { std::mem::zeroed() },
             _p: PhantomPinned,
         }
@@ -409,7 +408,7 @@ impl<S: AsFd> RecvFromHeader<S> {
             .into()
     }
 
-    pub fn into_addr(self) -> (sockaddr_storage, socklen_t) {
+    pub fn into_addr(self) -> (SockAddrStorage, socklen_t) {
         (self.addr, self.msg.msg_namelen)
     }
 }
@@ -442,7 +441,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
 }
 
 impl<T: IoBufMut, S: AsFd> IntoInner for RecvFrom<T, S> {
-    type Inner = (T, sockaddr_storage, socklen_t);
+    type Inner = (T, SockAddrStorage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
         let (addr, addr_len) = self.header.into_addr();
@@ -477,7 +476,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
 }
 
 impl<T: IoVectoredBufMut, S: AsFd> IntoInner for RecvFromVectored<T, S> {
-    type Inner = (T, sockaddr_storage, socklen_t);
+    type Inner = (T, SockAddrStorage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
         let (addr, addr_len) = self.header.into_addr();

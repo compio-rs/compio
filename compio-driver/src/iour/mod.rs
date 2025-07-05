@@ -25,7 +25,6 @@ use io_uring::{
     opcode::{AsyncCancel, PollAdd},
     types::{Fd, SubmitArgs, Timespec},
 };
-pub(crate) use libc::{sockaddr_storage, socklen_t};
 #[cfg(io_uring)]
 use slab::Slab;
 
