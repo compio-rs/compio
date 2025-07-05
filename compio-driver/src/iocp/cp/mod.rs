@@ -63,7 +63,7 @@ impl CompletionPort {
         if port.is_null() {
             return Err(::std::io::Error::last_os_error());
         }
-        trace!("new iocp handle: {port}");
+        trace!("new iocp handle: {port:p}");
         let port = unsafe { OwnedHandle::from_raw_handle(port) };
         Ok(Self { port })
     }
@@ -165,7 +165,7 @@ impl CompletionPort {
                         )
                     ) {
                         error!(
-                            "fail to repost entry ({}, {}, {:p}) to driver {:x}: {:?}",
+                            "fail to repost entry ({}, {}, {:p}) to driver {:p}: {:?}",
                             entry.dwNumberOfBytesTransferred,
                             entry.lpCompletionKey,
                             entry.lpOverlapped,
