@@ -125,15 +125,15 @@ impl Runtime {
     }
 
     fn with_builder(builder: RuntimeBuilder) -> io::Result<Self> {
-        let id = RUNTIME_ID.get();
         let RuntimeBuilder {
             proactor_builder,
             thread_affinity,
             event_interval,
         } = builder;
+        let id = RUNTIME_ID.get();
         RUNTIME_ID.set(id + 1);
         if let Some(cpus) = thread_affinity {
-            bind_to_cpu_set(cpus);
+            bind_to_cpu_set(cpus)?;
         }
         Ok(Self {
             driver: RefCell::new(proactor_builder.build()?),
