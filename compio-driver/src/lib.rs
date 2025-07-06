@@ -495,9 +495,6 @@ impl ProactorBuilder {
     /// * Operations except `Recv*`, `Send*`, `Connect`, `Accept` may need
     ///   thread pool.
     pub fn thread_pool_limit(&mut self, value: usize) -> &mut Self {
-        if value == 0 {
-            compio_log::warn!("Some operations don't work if the limit is set to zero.");
-        }
         if let ThreadPoolBuilder::Create { limit, .. } = &mut self.pool_builder {
             *limit = value;
         }
