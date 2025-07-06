@@ -1,7 +1,7 @@
 use std::{
     any::Any,
     cell::{Cell, RefCell},
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
     future::{Future, ready},
     io,
     marker::PhantomData,
@@ -33,7 +33,7 @@ use send_wrapper::SendWrapper;
 
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerRuntime};
-use crate::{BufResult, runtime::op::OpFuture};
+use crate::{BufResult, affinity::bind_to_cpu_set, runtime::op::OpFuture};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 
@@ -125,14 +125,22 @@ impl Runtime {
     }
 
     fn with_builder(builder: &RuntimeBuilder) -> io::Result<Self> {
+        let RuntimeBuilder {
+            proactor_builder,
+            thread_affinity,
+            event_interval,
+        } = builder;
         let id = RUNTIME_ID.get();
         RUNTIME_ID.set(id + 1);
+        if !thread_affinity.is_empty() {
+            bind_to_cpu_set(thread_affinity);
+        }
         Ok(Self {
-            driver: RefCell::new(builder.proactor_builder.build()?),
+            driver: RefCell::new(proactor_builder.build()?),
             runnables: Arc::new(RunnableQueue::new()),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
-            event_interval: builder.event_interval,
+            event_interval: *event_interval,
             id,
             _p: PhantomData,
         })
@@ -433,6 +441,7 @@ impl criterion::async_executor::AsyncExecutor for &Runtime {
 #[derive(Debug, Clone)]
 pub struct RuntimeBuilder {
     proactor_builder: ProactorBuilder,
+    thread_affinity: HashSet<usize>,
     event_interval: usize,
 }
 
@@ -448,12 +457,19 @@ impl RuntimeBuilder {
         Self {
             proactor_builder: ProactorBuilder::new(),
             event_interval: 61,
+            thread_affinity: HashSet::new(),
         }
     }
 
     /// Replace proactor builder.
     pub fn with_proactor(&mut self, builder: ProactorBuilder) -> &mut Self {
         self.proactor_builder = builder;
+        self
+    }
+
+    /// Sets the thread affinity for the runtime.
+    pub fn thread_affinity(&mut self, cpus: HashSet<usize>) -> &mut Self {
+        self.thread_affinity = cpus;
         self
     }
 
