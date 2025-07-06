@@ -14,7 +14,7 @@ pub struct TcpOpts {
     write_timeout: Option<Duration>,
     reuse_address: bool,
     reuse_port: bool,
-    no_delay: bool,
+    nodelay: bool,
 }
 
 impl TcpOpts {
@@ -72,8 +72,8 @@ impl TcpOpts {
     }
 
     /// Sets whether the TCP socket should disable Nagle's algorithm (no delay).
-    pub fn no_delay(mut self, no_delay: bool) -> Self {
-        self.no_delay = no_delay;
+    pub fn nodelay(mut self, nodelay: bool) -> Self {
+        self.nodelay = nodelay;
         self
     }
 
@@ -95,7 +95,7 @@ impl TcpOpts {
             not(any(target_os = "illumos", target_os = "solaris", target_os = "cygwin"))
         ))]
         socket.socket.set_reuse_port(self.reuse_port)?;
-        socket.socket.set_tcp_nodelay(self.no_delay)?;
+        socket.socket.set_tcp_nodelay(self.nodelay)?;
         Ok(())
     }
 }
