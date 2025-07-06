@@ -44,9 +44,6 @@ scoped-tls = "1.0.1"
 slab = { workspace = true, optional = true }
 socket2 = { workspace = true }
 
-[build-dependencies]
-cfg_aliases = { workspace = true }
-
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_IO"] }
