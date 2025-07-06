@@ -124,7 +124,7 @@ impl Runtime {
         RuntimeBuilder::new()
     }
 
-    fn with_builder(builder: RuntimeBuilder) -> io::Result<Self> {
+    fn with_builder(builder: &RuntimeBuilder) -> io::Result<Self> {
         let RuntimeBuilder {
             proactor_builder,
             thread_affinity,
@@ -133,14 +133,14 @@ impl Runtime {
         let id = RUNTIME_ID.get();
         RUNTIME_ID.set(id + 1);
         if !thread_affinity.is_empty() {
-            bind_to_cpu_set(thread_affinity)?;
+            bind_to_cpu_set(thread_affinity);
         }
         Ok(Self {
             driver: RefCell::new(proactor_builder.build()?),
             runnables: Arc::new(RunnableQueue::new()),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
-            event_interval,
+            event_interval: *event_interval,
             id,
             _p: PhantomData,
         })
@@ -462,13 +462,13 @@ impl RuntimeBuilder {
     }
 
     /// Replace proactor builder.
-    pub fn with_proactor(mut self, builder: ProactorBuilder) -> Self {
+    pub fn with_proactor(&mut self, builder: ProactorBuilder) -> &mut Self {
         self.proactor_builder = builder;
         self
     }
 
     /// Sets the thread affinity for the runtime.
-    pub fn thread_affinity(mut self, cpus: HashSet<usize>) -> Self {
+    pub fn thread_affinity(&mut self, cpus: HashSet<usize>) -> &mut Self {
         self.thread_affinity = cpus;
         self
     }
@@ -477,13 +477,13 @@ impl RuntimeBuilder {
     /// for external events (timers, I/O, and so on).
     ///
     /// A scheduler “tick” roughly corresponds to one poll invocation on a task.
-    pub fn event_interval(mut self, val: usize) -> Self {
+    pub fn event_interval(&mut self, val: usize) -> &mut Self {
         self.event_interval = val;
         self
     }
 
     /// Build [`Runtime`].
-    pub fn build(self) -> io::Result<Runtime> {
+    pub fn build(&self) -> io::Result<Runtime> {
         Runtime::with_builder(self)
     }
 }
