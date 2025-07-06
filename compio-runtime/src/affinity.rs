@@ -23,7 +23,7 @@ pub fn bind_to_cpu_set(cpus: &HashSet<usize>) {
         }
         _ => {}
     }
-    let cpu_set = ids.intersection(&cpus);
+    let cpu_set = ids.intersection(cpus);
     for cpu in cpu_set {
         let result = core_affinity::set_for_current(CoreId { id: *cpu });
         if !result {
