@@ -489,6 +489,11 @@ impl ProactorBuilder {
     /// default value is 256.
     ///
     /// It will be ignored if `reuse_thread_pool` is set.
+    ///
+    /// Warning: some operations don't work if the limit is set to zero:
+    /// * `Asyncify` needs thread pool.
+    /// * Operations except `Recv*`, `Send*`, `Connect`, `Accept` may need
+    ///   thread pool.
     pub fn thread_pool_limit(&mut self, value: usize) -> &mut Self {
         if let ThreadPoolBuilder::Create { limit, .. } = &mut self.pool_builder {
             *limit = value;
