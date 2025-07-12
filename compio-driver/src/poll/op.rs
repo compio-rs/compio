@@ -853,15 +853,10 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
 impl<T: IoVectoredBufMut, S: AsFd> RecvFromVectored<T, S> {
     fn set_msg(&mut self) {
         self.slices = unsafe { self.buffer.io_slices_mut() };
-        self.msg = libc::msghdr {
-            msg_name: &mut self.addr as *mut _ as _,
-            msg_namelen: std::mem::size_of_val(&self.addr) as _,
-            msg_iov: self.slices.as_mut_ptr() as _,
-            msg_iovlen: self.slices.len() as _,
-            msg_control: std::ptr::null_mut(),
-            msg_controllen: 0,
-            msg_flags: 0,
-        };
+        self.msg.msg_name = &mut self.addr as *mut _ as _;
+        self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
+        self.msg.msg_iov = self.slices.as_mut_ptr() as _;
+        self.msg.msg_iovlen = self.slices.len() as _;
     }
 
     unsafe fn call(&mut self) -> libc::ssize_t {
@@ -977,15 +972,10 @@ impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
 impl<T: IoVectoredBuf, S: AsFd> SendToVectored<T, S> {
     fn set_msg(&mut self) {
         self.slices = unsafe { self.buffer.io_slices() };
-        self.msg = libc::msghdr {
-            msg_name: &mut self.addr as *mut _ as _,
-            msg_namelen: std::mem::size_of_val(&self.addr) as _,
-            msg_iov: self.slices.as_mut_ptr() as _,
-            msg_iovlen: self.slices.len() as _,
-            msg_control: std::ptr::null_mut(),
-            msg_controllen: 0,
-            msg_flags: 0,
-        };
+        self.msg.msg_name = &mut self.addr as *mut _ as _;
+        self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
+        self.msg.msg_iov = self.slices.as_mut_ptr() as _;
+        self.msg.msg_iovlen = self.slices.len() as _;
     }
 
     unsafe fn call(&self) -> libc::ssize_t {
