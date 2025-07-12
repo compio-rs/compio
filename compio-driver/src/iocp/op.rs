@@ -11,7 +11,7 @@ use std::{
 };
 
 use compio_buf::{
-    BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
+    BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf2, IoVectoredBufMut2,
 };
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
@@ -453,13 +453,13 @@ impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
 }
 
 /// Receive data from remote into vectored buffer.
-pub struct RecvVectored<T: IoVectoredBufMut, S> {
+pub struct RecvVectored<T: IoVectoredBufMut2, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
+impl<T: IoVectoredBufMut2, S> RecvVectored<T, S> {
     /// Create [`RecvVectored`].
     pub fn new(fd: S, buffer: T) -> Self {
         Self {
@@ -470,7 +470,7 @@ impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S> IntoInner for RecvVectored<T, S> {
+impl<T: IoVectoredBufMut2, S> IntoInner for RecvVectored<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -478,7 +478,7 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
+impl<T: IoVectoredBufMut2, S: AsFd> OpCode for RecvVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();
         let slices = self.get_unchecked_mut().buffer.io_slices_mut();
@@ -547,13 +547,13 @@ impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
 }
 
 /// Send data to remote from vectored buffer.
-pub struct SendVectored<T: IoVectoredBuf, S> {
+pub struct SendVectored<T: IoVectoredBuf2, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBuf, S> SendVectored<T, S> {
+impl<T: IoVectoredBuf2, S> SendVectored<T, S> {
     /// Create [`SendVectored`].
     pub fn new(fd: S, buffer: T) -> Self {
         Self {
@@ -564,7 +564,7 @@ impl<T: IoVectoredBuf, S> SendVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S> IntoInner for SendVectored<T, S> {
+impl<T: IoVectoredBuf2, S> IntoInner for SendVectored<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -572,7 +572,7 @@ impl<T: IoVectoredBuf, S> IntoInner for SendVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
+impl<T: IoVectoredBuf2, S: AsFd> OpCode for SendVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let slices = self.buffer.io_slices();
         let mut sent = 0;
@@ -652,7 +652,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
 }
 
 /// Receive data and source address into vectored buffer.
-pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
+pub struct RecvFromVectored<T: IoVectoredBufMut2, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddrStorage,
@@ -660,7 +660,7 @@ pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
+impl<T: IoVectoredBufMut2, S> RecvFromVectored<T, S> {
     /// Create [`RecvFromVectored`].
     pub fn new(fd: S, buffer: T) -> Self {
         let addr = SockAddrStorage::zeroed();
@@ -675,7 +675,7 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
+impl<T: IoVectoredBufMut2, S> IntoInner for RecvFromVectored<T, S> {
     type Inner = (T, SockAddrStorage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
@@ -683,7 +683,7 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
+impl<T: IoVectoredBufMut2, S: AsFd> OpCode for RecvFromVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = self.get_unchecked_mut();
         let fd = this.fd.as_fd().as_raw_fd();
@@ -761,14 +761,14 @@ impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
 }
 
 /// Send data to specified address from vectored buffer.
-pub struct SendToVectored<T: IoVectoredBuf, S> {
+pub struct SendToVectored<T: IoVectoredBuf2, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
+impl<T: IoVectoredBuf2, S> SendToVectored<T, S> {
     /// Create [`SendToVectored`].
     pub fn new(fd: S, buffer: T, addr: SockAddr) -> Self {
         Self {
@@ -780,7 +780,7 @@ impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
+impl<T: IoVectoredBuf2, S> IntoInner for SendToVectored<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -788,7 +788,7 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
+impl<T: IoVectoredBuf2, S: AsFd> OpCode for SendToVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let buffer = self.buffer.io_slices();
         let mut sent = 0;
@@ -814,7 +814,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
 static WSA_RECVMSG: OnceLock<LPFN_WSARECVMSG> = OnceLock::new();
 
 /// Receive data and source address with ancillary data into vectored buffer.
-pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
+pub struct RecvMsg<T: IoVectoredBufMut2, C: IoBufMut, S> {
     msg: WSAMSG,
     addr: SockAddrStorage,
     fd: S,
@@ -823,7 +823,7 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
+impl<T: IoVectoredBufMut2, C: IoBufMut, S> RecvMsg<T, C, S> {
     /// Create [`RecvMsg`].
     ///
     /// # Panics
@@ -846,7 +846,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
+impl<T: IoVectoredBufMut2, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
     type Inner = ((T, C), SockAddrStorage, socklen_t, usize);
 
     fn into_inner(self) -> Self::Inner {
@@ -859,7 +859,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
+impl<T: IoVectoredBufMut2, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let recvmsg_fn = WSA_RECVMSG
             .get_or_try_init(|| get_wsa_fn(self.fd.as_fd().as_raw_fd(), WSAID_WSARECVMSG))?
@@ -895,7 +895,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
 
 /// Send data to specified address accompanied by ancillary data from vectored
 /// buffer.
-pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
+pub struct SendMsg<T: IoVectoredBuf2, C: IoBuf, S> {
     fd: S,
     buffer: T,
     control: C,
@@ -903,7 +903,7 @@ pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
+impl<T: IoVectoredBuf2, C: IoBuf, S> SendMsg<T, C, S> {
     /// Create [`SendMsg`].
     ///
     /// # Panics
@@ -924,7 +924,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     }
 }
 
-impl<T: IoVectoredBuf, C: IoBuf, S> IntoInner for SendMsg<T, C, S> {
+impl<T: IoVectoredBuf2, C: IoBuf, S> IntoInner for SendMsg<T, C, S> {
     type Inner = (T, C);
 
     fn into_inner(self) -> Self::Inner {
@@ -932,7 +932,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> IntoInner for SendMsg<T, C, S> {
     }
 }
 
-impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
+impl<T: IoVectoredBuf2, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = self.get_unchecked_mut();
 

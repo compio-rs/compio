@@ -4,7 +4,7 @@ use std::{
     mem::{ManuallyDrop, MaybeUninit},
 };
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf2, IoVectoredBufMut2};
 #[cfg(unix)]
 use compio_driver::op::CreateSocket;
 use compio_driver::{
@@ -166,7 +166,7 @@ impl Socket {
         compio_runtime::submit(op).await.into_inner().map_advanced()
     }
 
-    pub async fn recv_vectored<V: IoVectoredBufMut>(&self, buffer: V) -> BufResult<usize, V> {
+    pub async fn recv_vectored<V: IoVectoredBufMut2>(&self, buffer: V) -> BufResult<usize, V> {
         let fd = self.to_shared_fd();
         let op = RecvVectored::new(fd, buffer);
         compio_runtime::submit(op).await.into_inner().map_advanced()
@@ -191,7 +191,7 @@ impl Socket {
         compio_runtime::submit(op).await.into_inner()
     }
 
-    pub async fn send_vectored<T: IoVectoredBuf>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn send_vectored<T: IoVectoredBuf2>(&self, buffer: T) -> BufResult<usize, T> {
         let fd = self.to_shared_fd();
         let op = SendVectored::new(fd, buffer);
         compio_runtime::submit(op).await.into_inner()
@@ -207,7 +207,7 @@ impl Socket {
             .map_advanced()
     }
 
-    pub async fn recv_from_vectored<T: IoVectoredBufMut>(
+    pub async fn recv_from_vectored<T: IoVectoredBufMut2>(
         &self,
         buffer: T,
     ) -> BufResult<(usize, SockAddr), T> {
@@ -230,7 +230,7 @@ impl Socket {
             .map_buffer(|([buffer], control)| (buffer, control))
     }
 
-    pub async fn recv_msg_vectored<T: IoVectoredBufMut, C: IoBufMut>(
+    pub async fn recv_msg_vectored<T: IoVectoredBufMut2, C: IoBufMut>(
         &self,
         buffer: T,
         control: C,
@@ -250,7 +250,7 @@ impl Socket {
         compio_runtime::submit(op).await.into_inner()
     }
 
-    pub async fn send_to_vectored<T: IoVectoredBuf>(
+    pub async fn send_to_vectored<T: IoVectoredBuf2>(
         &self,
         buffer: T,
         addr: &SockAddr,
@@ -271,7 +271,7 @@ impl Socket {
             .map_buffer(|([buffer], control)| (buffer, control))
     }
 
-    pub async fn send_msg_vectored<T: IoVectoredBuf, C: IoBuf>(
+    pub async fn send_msg_vectored<T: IoVectoredBuf2, C: IoBuf>(
         &self,
         buffer: T,
         control: C,

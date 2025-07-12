@@ -10,7 +10,7 @@ use std::{
 };
 
 use compio_buf::{
-    BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
+    BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut, IoVectoredBuf2, IoVectoredBufMut2,
 };
 #[cfg(not(gnulinux))]
 use libc::open;
@@ -684,7 +684,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
+impl<T: IoVectoredBufMut2, S: AsFd> OpCode for RecvVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_readable(self.fd.as_fd().as_raw_fd()))
     }
@@ -727,7 +727,7 @@ impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
+impl<T: IoVectoredBuf2, S: AsFd> OpCode for SendVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_writable(self.fd.as_fd().as_raw_fd()))
     }
@@ -827,7 +827,7 @@ impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
 }
 
 /// Receive data and source address into vectored buffer.
-pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
+pub struct RecvFromVectored<T: IoVectoredBufMut2, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSliceMut>,
@@ -836,7 +836,7 @@ pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
+impl<T: IoVectoredBufMut2, S> RecvFromVectored<T, S> {
     /// Create [`RecvFromVectored`].
     pub fn new(fd: S, buffer: T) -> Self {
         Self {
@@ -850,7 +850,7 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S: AsFd> RecvFromVectored<T, S> {
+impl<T: IoVectoredBufMut2, S: AsFd> RecvFromVectored<T, S> {
     fn set_msg(&mut self) {
         self.slices = unsafe { self.buffer.io_slices_mut() };
         self.msg = libc::msghdr {
@@ -869,7 +869,7 @@ impl<T: IoVectoredBufMut, S: AsFd> RecvFromVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
+impl<T: IoVectoredBufMut2, S: AsFd> OpCode for RecvFromVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let this = unsafe { self.get_unchecked_mut() };
         this.set_msg();
@@ -886,7 +886,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
+impl<T: IoVectoredBufMut2, S> IntoInner for RecvFromVectored<T, S> {
     type Inner = (T, SockAddrStorage, socklen_t);
 
     fn into_inner(self) -> Self::Inner {
@@ -951,7 +951,7 @@ impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
 }
 
 /// Send data to specified address from vectored buffer.
-pub struct SendToVectored<T: IoVectoredBuf, S> {
+pub struct SendToVectored<T: IoVectoredBuf2, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
@@ -960,7 +960,7 @@ pub struct SendToVectored<T: IoVectoredBuf, S> {
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
+impl<T: IoVectoredBuf2, S> SendToVectored<T, S> {
     /// Create [`SendToVectored`].
     pub fn new(fd: S, buffer: T, addr: SockAddr) -> Self {
         Self {
@@ -974,7 +974,7 @@ impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S: AsFd> SendToVectored<T, S> {
+impl<T: IoVectoredBuf2, S: AsFd> SendToVectored<T, S> {
     fn set_msg(&mut self) {
         self.slices = unsafe { self.buffer.io_slices() };
         self.msg = libc::msghdr {
@@ -993,7 +993,7 @@ impl<T: IoVectoredBuf, S: AsFd> SendToVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
+impl<T: IoVectoredBuf2, S: AsFd> OpCode for SendToVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let this = unsafe { self.get_unchecked_mut() };
         this.set_msg();
@@ -1009,7 +1009,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
+impl<T: IoVectoredBuf2, S> IntoInner for SendToVectored<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -1017,13 +1017,13 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> RecvMsg<T, C, S> {
+impl<T: IoVectoredBufMut2, C: IoBufMut, S: AsFd> RecvMsg<T, C, S> {
     unsafe fn call(&mut self) -> libc::ssize_t {
         libc::recvmsg(self.fd.as_fd().as_raw_fd(), &mut self.msg, 0)
     }
 }
 
-impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
+impl<T: IoVectoredBufMut2, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let this = unsafe { self.get_unchecked_mut() };
         unsafe { this.set_msg() };
@@ -1040,13 +1040,13 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
     }
 }
 
-impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> SendMsg<T, C, S> {
+impl<T: IoVectoredBuf2, C: IoBuf, S: AsFd> SendMsg<T, C, S> {
     unsafe fn call(&self) -> libc::ssize_t {
         libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, 0)
     }
 }
 
-impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
+impl<T: IoVectoredBuf2, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         let this = unsafe { self.get_unchecked_mut() };
         unsafe { this.set_msg() };

@@ -1,7 +1,7 @@
 use std::{ffi::CString, marker::PhantomPinned, net::Shutdown, os::fd::OwnedFd};
 
 use compio_buf::{
-    IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
+    IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut, IoVectoredBuf2, IoVectoredBufMut2,
 };
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
@@ -301,14 +301,14 @@ impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
 }
 
 /// Receive data from remote into vectored buffer.
-pub struct RecvVectored<T: IoVectoredBufMut, S> {
+pub struct RecvVectored<T: IoVectoredBufMut2, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSliceMut>,
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
+impl<T: IoVectoredBufMut2, S> RecvVectored<T, S> {
     /// Create [`RecvVectored`].
     pub fn new(fd: S, buffer: T) -> Self {
         Self {
@@ -320,7 +320,7 @@ impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S> IntoInner for RecvVectored<T, S> {
+impl<T: IoVectoredBufMut2, S> IntoInner for RecvVectored<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -355,14 +355,14 @@ impl<T: IoBuf, S> IntoInner for Send<T, S> {
 }
 
 /// Send data to remote from vectored buffer.
-pub struct SendVectored<T: IoVectoredBuf, S> {
+pub struct SendVectored<T: IoVectoredBuf2, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<IoSlice>,
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBuf, S> SendVectored<T, S> {
+impl<T: IoVectoredBuf2, S> SendVectored<T, S> {
     /// Create [`SendVectored`].
     pub fn new(fd: S, buffer: T) -> Self {
         Self {
@@ -374,7 +374,7 @@ impl<T: IoVectoredBuf, S> SendVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S> IntoInner for SendVectored<T, S> {
+impl<T: IoVectoredBuf2, S> IntoInner for SendVectored<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
@@ -383,7 +383,7 @@ impl<T: IoVectoredBuf, S> IntoInner for SendVectored<T, S> {
 }
 
 /// Receive data and source address with ancillary data into vectored buffer.
-pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
+pub struct RecvMsg<T: IoVectoredBufMut2, C: IoBufMut, S> {
     pub(crate) msg: libc::msghdr,
     pub(crate) addr: SockAddrStorage,
     pub(crate) fd: S,
@@ -393,7 +393,7 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
+impl<T: IoVectoredBufMut2, C: IoBufMut, S> RecvMsg<T, C, S> {
     /// Create [`RecvMsg`].
     ///
     /// # Panics
@@ -427,7 +427,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
+impl<T: IoVectoredBufMut2, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
     type Inner = ((T, C), SockAddrStorage, socklen_t, usize);
 
     fn into_inner(self) -> Self::Inner {
@@ -442,7 +442,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
 
 /// Send data to specified address accompanied by ancillary data from vectored
 /// buffer.
-pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
+pub struct SendMsg<T: IoVectoredBuf2, C: IoBuf, S> {
     pub(crate) msg: libc::msghdr,
     pub(crate) fd: S,
     pub(crate) buffer: T,
@@ -452,7 +452,7 @@ pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
     _p: PhantomPinned,
 }
 
-impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
+impl<T: IoVectoredBuf2, C: IoBuf, S> SendMsg<T, C, S> {
     /// Create [`SendMsg`].
     ///
     /// # Panics
@@ -486,7 +486,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     }
 }
 
-impl<T: IoVectoredBuf, C: IoBuf, S> IntoInner for SendMsg<T, C, S> {
+impl<T: IoVectoredBuf2, C: IoBuf, S> IntoInner for SendMsg<T, C, S> {
     type Inner = (T, C);
 
     fn into_inner(self) -> Self::Inner {

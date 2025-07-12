@@ -1,6 +1,6 @@
 use std::{future::Future, io, net::SocketAddr};
 
-use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf2, IoVectoredBufMut2};
 use compio_driver::impl_raw_fd;
 use compio_runtime::{BorrowedBuffer, BufferPool};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
@@ -193,7 +193,7 @@ impl UdpSocket {
 
     /// Receives a packet of data from the socket into the buffer, returning the
     /// original buffer and quantity of data received.
-    pub async fn recv_vectored<T: IoVectoredBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn recv_vectored<T: IoVectoredBufMut2>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.recv_vectored(buffer).await
     }
 
@@ -218,7 +218,7 @@ impl UdpSocket {
 
     /// Sends some data to the socket from the buffer, returning the original
     /// buffer and quantity of data sent.
-    pub async fn send_vectored<T: IoVectoredBuf>(&self, buffer: T) -> BufResult<usize, T> {
+    pub async fn send_vectored<T: IoVectoredBuf2>(&self, buffer: T) -> BufResult<usize, T> {
         self.inner.send_vectored(buffer).await
     }
 
@@ -233,7 +233,7 @@ impl UdpSocket {
 
     /// Receives a single datagram message on the socket. On success, returns
     /// the number of bytes received and the origin.
-    pub async fn recv_from_vectored<T: IoVectoredBufMut>(
+    pub async fn recv_from_vectored<T: IoVectoredBufMut2>(
         &self,
         buffer: T,
     ) -> BufResult<(usize, SocketAddr), T> {
@@ -258,7 +258,7 @@ impl UdpSocket {
 
     /// Receives a single datagram message and ancillary data on the socket. On
     /// success, returns the number of bytes received and the origin.
-    pub async fn recv_msg_vectored<T: IoVectoredBufMut, C: IoBufMut>(
+    pub async fn recv_msg_vectored<T: IoVectoredBufMut2, C: IoBufMut>(
         &self,
         buffer: T,
         control: C,
@@ -284,7 +284,7 @@ impl UdpSocket {
 
     /// Sends data on the socket to the given address. On success, returns the
     /// number of bytes sent.
-    pub async fn send_to_vectored<T: IoVectoredBuf>(
+    pub async fn send_to_vectored<T: IoVectoredBuf2>(
         &self,
         buffer: T,
         addr: impl ToSocketAddrsAsync,
@@ -319,7 +319,7 @@ impl UdpSocket {
 
     /// Sends data on the socket to the given address accompanied by ancillary
     /// data. On success, returns the number of bytes sent.
-    pub async fn send_msg_vectored<T: IoVectoredBuf, C: IoBuf>(
+    pub async fn send_msg_vectored<T: IoVectoredBuf2, C: IoBuf>(
         &self,
         buffer: T,
         control: C,
