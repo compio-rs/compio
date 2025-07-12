@@ -53,6 +53,33 @@ impl<T> DerefMut for MaybeOwnedMut<'_, T> {
 }
 
 /// A trait for vectored buffers.
+pub trait IoVectoredBuf2: 'static {
+
+    /// Collected [`IoSlice`]s of the buffers.
+    ///
+    /// # Safety
+    ///
+    /// The return slice will not live longer than self.
+    /// It is static to provide convenience from writing self-referenced
+    /// structure.
+    unsafe fn io_slices(&self) -> Vec<IoSlice>;
+}
+
+impl<T: IoBuf, Rest: IoVectoredBuf2> IoVectoredBuf2 for (T, Rest) {
+    unsafe fn io_slices(&self) -> Vec<IoSlice> {
+        let mut slices = self.1.io_slices();
+        slices.insert(0, self.0.as_io_slice());
+        slices
+    }
+}
+
+impl IoVectoredBuf2 for () {
+    unsafe fn io_slices(&self) -> Vec<IoSlice> {
+        Vec::new()
+    }
+}
+
+/// A trait for vectored buffers.
 pub trait IoVectoredBuf: 'static {
     /// The buffer.
     type Buf: IoBuf;
@@ -94,6 +121,15 @@ impl<T: IoBuf> IoVectoredBuf for &'static [T] {
     }
 }
 
+impl<T: IoBuf> IoVectoredBuf2 for &'static [T] {
+    unsafe fn io_slices(&self) -> Vec<IoSlice> {
+        self.iter()
+            .map(MaybeOwned::Borrowed)
+            .map(|buf| buf.as_io_slice())
+            .collect()
+    }
+}
+
 impl<T: IoBuf> IoVectoredBuf for &'static mut [T] {
     type Buf = T;
     type OwnedIter = IndexedIter<Self>;
@@ -104,6 +140,15 @@ impl<T: IoBuf> IoVectoredBuf for &'static mut [T] {
 
     fn owned_iter(self) -> Result<Self::OwnedIter, Self> {
         IndexedIter::new(self)
+    }
+}
+
+impl<T: IoBuf> IoVectoredBuf2 for &'static mut [T] {
+    unsafe fn io_slices(&self) -> Vec<IoSlice> {
+        self.iter()
+            .map(MaybeOwned::Borrowed)
+            .map(|buf| buf.as_io_slice())
+            .collect()
     }
 }
 
@@ -119,6 +164,16 @@ impl<T: IoBuf, const N: usize> IoVectoredBuf for [T; N] {
         IndexedIter::new(self)
     }
 }
+
+impl<T: IoBuf, const N: usize> IoVectoredBuf2 for [T; N] {
+    unsafe fn io_slices(&self) -> Vec<IoSlice> {
+        self.iter()
+            .map(MaybeOwned::Borrowed)
+            .map(|buf| buf.as_io_slice())
+            .collect()
+    }
+}
+
 
 impl<T: IoBuf, #[cfg(feature = "allocator_api")] A: std::alloc::Allocator + 'static> IoVectoredBuf
     for t_alloc!(Vec, T, A)
