@@ -1,4 +1,4 @@
-use std::ops::{Deref, DerefMut};
+use std::{cmp::min, ops::{Deref, DerefMut}};
 
 use crate::{
     IndexedIter, IoBuf, IoBufMut, IoSlice, IoSliceMut, OwnedIterator, SetBufInit, t_alloc,
@@ -52,7 +52,7 @@ impl<T> DerefMut for MaybeOwnedMut<'_, T> {
     }
 }
 
-/// A trait for vectored buffers.
+/// A trait for homogeneous vectored buffers.
 pub trait IoVectoredBuf: 'static {
     /// The buffer.
     type Buf: IoBuf;
@@ -166,7 +166,49 @@ where
     }
 }
 
-/// A trait for mutable vectored buffers.
+/// A trait for heterogeneous vectored buffers.
+pub trait IoVectoredBuf2: 'static {
+
+    /// Collected [`IoSlice`]s of the buffers.
+    ///
+    /// # Safety
+    ///
+    /// The return slice will not live longer than self.
+    /// It is static to provide convenience from writing self-referenced
+    /// structure.
+    unsafe fn io_slices(&self) -> Vec<IoSlice> {
+        self.iter_ioslice().collect()
+    }
+
+    /// An iterator over the [`IoSlice`]s.
+    ///
+    /// # Safety
+    ///
+    /// The return slice will not live longer than self.
+    /// It is static to provide convenience from writing self-referenced
+    /// structure.
+    unsafe fn iter_ioslice(&self) -> impl Iterator<Item = IoSlice>;
+}
+
+impl<T: IoBuf, Rest: IoVectoredBuf2> IoVectoredBuf2 for (T, Rest) {
+    unsafe fn iter_ioslice(&self) -> impl Iterator<Item = IoSlice> {
+        std::iter::once(self.0.as_io_slice()).chain(self.1.iter_ioslice())
+    }
+}
+
+impl IoVectoredBuf2 for () {
+    unsafe fn iter_ioslice(&self) -> impl Iterator<Item = IoSlice> {
+        std::iter::empty()
+    }
+}
+
+impl<T: IoVectoredBuf> IoVectoredBuf2 for T {
+    unsafe fn iter_ioslice(&self) -> impl Iterator<Item = IoSlice> {
+        self.iter_buf().map(|buf| buf.as_io_slice())
+    }
+}
+
+/// A trait for mutable homogeneous vectored buffers.
 pub trait IoVectoredBufMut: IoVectoredBuf<Buf: IoBufMut, OwnedIter: IoBufMut> + SetBufInit {
     /// An iterator for the [`IoSliceMut`]s of the buffers.
     ///
@@ -220,5 +262,61 @@ where
 {
     fn iter_buf_mut(&mut self) -> impl Iterator<Item = MaybeOwnedMut<'_, Self::Buf>> {
         self.iter_mut().map(MaybeOwnedMut::Borrowed)
+    }
+}
+
+/// A trait for mutable heterogeneous vectored buffers.
+pub trait IoVectoredBufMut2: IoVectoredBuf2 + SetBufInit {
+    /// Collected [`IoSliceMut`]s of the buffers.
+    ///
+    /// # Safety
+    ///
+    /// The return slice will not live longer than self.
+    /// It is static to provide convenience from writing self-referenced
+    /// structure.
+    unsafe fn io_slices_mut(&mut self) -> Vec<IoSliceMut> {
+        self.iter_ioslice_mut().collect()
+    }
+
+    /// An iterator over the [`IoSliceMut`]s of the buffers.
+    ///
+    /// # Safety
+    ///
+    /// The return slice will not live longer than self.
+    /// It is static to provide convenience from writing self-referenced
+    /// structure.
+    unsafe fn iter_ioslice_mut(&mut self) -> impl Iterator<Item = IoSliceMut>;
+}
+
+impl<T: IoBufMut, Rest: IoVectoredBufMut2> IoVectoredBufMut2 for (T, Rest) {
+    unsafe fn iter_ioslice_mut(&mut self) -> impl Iterator<Item = IoSliceMut> {
+        std::iter::once(self.0.as_io_slice_mut()).chain(self.1.iter_ioslice_mut())
+    }
+}
+
+impl IoVectoredBufMut2 for () {
+    unsafe fn iter_ioslice_mut(&mut self) -> impl Iterator<Item = IoSliceMut> {
+        std::iter::empty()
+    }
+}
+
+impl<T: IoBufMut, Rest: IoVectoredBufMut2> SetBufInit for (T, Rest) {
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        let buf0_len = min(len, self.0.buf_capacity());
+
+        self.0.set_buf_init(buf0_len);
+        self.1.set_buf_init(len - buf0_len);
+    }
+}
+
+impl SetBufInit for () {
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        assert_eq!(len, 0, "set_buf_init called with non-zero len on empty buffer");
+    }
+}
+
+impl<T: IoVectoredBufMut> IoVectoredBufMut2 for T {
+    unsafe fn iter_ioslice_mut(&mut self) -> impl Iterator<Item = IoSliceMut> {
+        self.iter_buf_mut().map(|mut buf| buf.as_io_slice_mut())
     }
 }
