@@ -11,7 +11,7 @@ use std::{
 };
 
 use compio_buf::{
-    BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
+    BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBuf2, IoVectoredBufMut,
 };
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
@@ -768,8 +768,28 @@ pub struct SendToVectored<T: IoVectoredBuf, S> {
     _p: PhantomPinned,
 }
 
+/// Send data to specified address from vectored buffer.
+pub struct SendToVectored2<T: IoVectoredBuf2, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) addr: SockAddr,
+    _p: PhantomPinned,
+}
+
 impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
     /// Create [`SendToVectored`].
+    pub fn new(fd: S, buffer: T, addr: SockAddr) -> Self {
+        Self {
+            fd,
+            buffer,
+            addr,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<T: IoVectoredBuf2, S> SendToVectored2<T, S> {
+    /// Create [`SendToVectored2`].
     pub fn new(fd: S, buffer: T, addr: SockAddr) -> Self {
         Self {
             fd,
@@ -788,7 +808,38 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
     }
 }
 
+impl<T: IoVectoredBuf2, S> IntoInner for SendToVectored2<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
 impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let buffer = self.buffer.io_slices();
+        let mut sent = 0;
+        let res = WSASendTo(
+            self.fd.as_fd().as_raw_fd() as _,
+            buffer.as_ptr() as _,
+            buffer.len() as _,
+            &mut sent,
+            0,
+            self.addr.as_ptr().cast(),
+            self.addr.len(),
+            optr,
+            None,
+        );
+        winsock_result(res, sent)
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd.as_fd().as_raw_fd(), optr)
+    }
+}
+
+impl<T: IoVectoredBuf2, S: AsFd> OpCode for SendToVectored2<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let buffer = self.buffer.io_slices();
         let mut sent = 0;

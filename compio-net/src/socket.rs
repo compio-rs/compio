@@ -4,7 +4,7 @@ use std::{
     mem::{ManuallyDrop, MaybeUninit},
 };
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBuf2, IoVectoredBufMut};
 #[cfg(unix)]
 use compio_driver::op::CreateSocket;
 use compio_driver::{
@@ -12,7 +12,7 @@ use compio_driver::{
     op::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored, RecvManaged,
         RecvMsg, RecvResultExt, RecvVectored, ResultTakeBuffer, Send, SendMsg, SendTo,
-        SendToVectored, SendVectored, ShutdownSocket,
+        SendToVectored, SendToVectored2, SendVectored, ShutdownSocket,
     },
     syscall,
 };
@@ -257,6 +257,16 @@ impl Socket {
     ) -> BufResult<usize, T> {
         let fd = self.to_shared_fd();
         let op = SendToVectored::new(fd, buffer, addr.clone());
+        compio_runtime::submit(op).await.into_inner()
+    }
+
+    pub async fn send_to_vectored2<T: IoVectoredBuf2>(
+        &self,
+        buffer: T,
+        addr: &SockAddr,
+    ) -> BufResult<usize, T> {
+        let fd = self.to_shared_fd();
+        let op = SendToVectored2::new(fd, buffer, addr.clone());
         compio_runtime::submit(op).await.into_inner()
     }
 

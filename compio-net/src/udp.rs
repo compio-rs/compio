@@ -1,6 +1,6 @@
 use std::{future::Future, io, net::SocketAddr};
 
-use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBuf2, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use compio_runtime::{BorrowedBuffer, BufferPool};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
@@ -292,6 +292,21 @@ impl UdpSocket {
         super::first_addr_buf(addr, buffer, |addr, buffer| async move {
             self.inner
                 .send_to_vectored(buffer, &SockAddr::from(addr))
+                .await
+        })
+        .await
+    }
+
+    /// Sends data on the socket to the given address. On success, returns the
+    /// number of bytes sent.
+    pub async fn send_to_vectored2<T: IoVectoredBuf2>(
+        &self,
+        buffer: T,
+        addr: impl ToSocketAddrsAsync,
+    ) -> BufResult<usize, T> {
+        super::first_addr_buf(addr, buffer, |addr, buffer| async move {
+            self.inner
+                .send_to_vectored2(buffer, &SockAddr::from(addr))
                 .await
         })
         .await

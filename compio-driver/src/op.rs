@@ -11,7 +11,7 @@ use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
 pub use crate::sys::op::{
     Accept, Recv, RecvFrom, RecvFromVectored, RecvMsg, RecvVectored, Send, SendMsg, SendTo,
-    SendToVectored, SendVectored,
+    SendToVectored, SendToVectored2, SendVectored,
 };
 #[cfg(windows)]
 pub use crate::sys::op::{ConnectNamedPipe, DeviceIoControl};
