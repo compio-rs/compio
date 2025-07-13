@@ -64,3 +64,27 @@ async fn send_to() {
         active_addr
     );
 }
+
+#[compio_macros::test]
+async fn send_recv_vectored() {
+    const MSG1: &str = "foobar";
+    const MSG2: [u8; 5] = [1, 2, 3, 4, 5];
+    let msg2: Vec<u8> = Vec::from(MSG2);
+
+    let passive = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let passive_addr = passive.local_addr().unwrap();
+
+    let active = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let active_addr = active.local_addr().unwrap();
+
+    active.connect(passive_addr).await.unwrap();
+    active.send_vectored((MSG1, (msg2, ()))).await.0.unwrap();
+
+    let recv_buf: [u8; 6] = [0; 6];
+    let (_, buffer) = passive.recv_vectored((recv_buf, (Vec::with_capacity(20), ()))).await.unwrap();
+
+    assert_eq!(MSG1.as_bytes(), &buffer.0);
+    assert_eq!(MSG2, buffer.1.0.as_slice());
+    assert_eq!(active.local_addr().unwrap(), active_addr);
+    assert_eq!(active.peer_addr().unwrap(), passive_addr);
+}
