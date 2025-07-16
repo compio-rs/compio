@@ -52,6 +52,13 @@ pub unsafe trait IoBuf: 'static {
         IoSlice::from_slice(self.as_slice())
     }
 
+    /// Create an [`IoBuffer`] of this buffer.
+    ///
+    /// # Safety
+    ///
+    /// The returned [`IoBuffer`] will not live longer than `Self`.
+    /// It is static to provide convenience from writing self-referenced
+    /// structure.
     unsafe fn as_io_buffer(&self) -> IoBuffer {
         IoBuffer::new(
             self.as_buf_ptr().cast_mut().cast(),

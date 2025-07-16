@@ -29,6 +29,13 @@ pub trait IoVectoredBuf: 'static {
         self.iter_io_buffer().map(IoSlice::from)
     }
 
+    /// An iterator over the [`IoBuffer`]s.
+    ///
+    /// # Safety
+    ///
+    /// The return slice will not live longer than self.
+    /// It is static to provide convenience from writing self-referenced
+    /// structure.
     unsafe fn iter_io_buffer(&self) -> impl Iterator<Item = IoBuffer>;
 
     /// An iterator over slices.
@@ -160,7 +167,7 @@ pub trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
         }
     }
 
-    /// Get an owned view with a specific offset.
+    /// Get an owned mutable view with a specific offset.
     fn slice_mut(self, begin: usize) -> VectoredSliceMut<Self>
     where
         Self: Sized,

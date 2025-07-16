@@ -171,6 +171,9 @@ impl IoSliceMut {
     }
 }
 
+/// An unsafe, `'static`, partially initialized, and mutable buffer.
+///
+/// It contains full information to describe the buffer.
 pub struct IoBuffer {
     len: usize,
     capacity: usize,
@@ -178,14 +181,26 @@ pub struct IoBuffer {
 }
 
 impl IoBuffer {
+    /// Create a new [`IoBuffer`] from a raw pointer, a length, and a capacity.
+    ///
+    /// # Safety
+    /// The caller must ensure that:
+    /// - the pointer is valid for the lifetime of the `IoBuffer`
+    /// - the length is correct (the content can be uninitialized, but must be
+    ///   accessible)
+    /// - The capacity should not be smaller than the length.
+    /// - the pointer is not used for anything else while the `IoBuffer` is in
+    ///   use
     pub unsafe fn new(ptr: *mut MaybeUninit<u8>, len: usize, capacity: usize) -> Self {
         Self { len, capacity, ptr }
     }
 
+    /// Get the pointer to the buffer.
     pub fn as_ptr(&self) -> *mut MaybeUninit<u8> {
         self.ptr
     }
 
+    /// Get the initialized length of the buffer.
     pub fn len(&self) -> usize {
         self.len
     }
@@ -195,6 +210,7 @@ impl IoBuffer {
         self.len() == 0
     }
 
+    /// Get the full capacity of the buffer.
     pub fn capacity(&self) -> usize {
         self.capacity
     }
