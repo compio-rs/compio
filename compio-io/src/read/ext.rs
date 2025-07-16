@@ -67,31 +67,6 @@ macro_rules! loop_read_exact {
 }
 
 macro_rules! loop_read_vectored {
-    ($buf:ident, $tracker:ident : $tracker_ty:ty, $iter:ident,loop $read_expr:expr) => {{
-        let mut $iter = match $buf.owned_iter() {
-            Ok(buf) => buf,
-            Err(buf) => return BufResult(Ok(()), buf),
-        };
-        let mut $tracker: $tracker_ty = 0;
-
-        loop {
-            let len = $iter.buf_capacity();
-            if len > 0 {
-                match $read_expr.await {
-                    BufResult(Ok(()), ret) => {
-                        $iter = ret;
-                        $tracker += len as $tracker_ty;
-                    }
-                    BufResult(Err(e), $iter) => return BufResult(Err(e), $iter.into_inner()),
-                };
-            }
-
-            match $iter.next() {
-                Ok(next) => $iter = next,
-                Err(buf) => return BufResult(Ok(()), buf),
-            }
-        }
-    }};
     ($buf:ident, $iter:ident, $read_expr:expr) => {{
         let mut $iter = match $buf.owned_iter() {
             Ok(buf) => buf,
@@ -205,8 +180,9 @@ pub trait AsyncReadExt: AsyncRead {
     }
 
     /// Read the exact number of bytes required to fill the vectored buf.
-    async fn read_vectored_exact<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<(), T> {
-        loop_read_vectored!(buf, _total: usize, iter, loop self.read_exact(iter))
+    async fn read_vectored_exact<T: IoVectoredBufMut>(&mut self, mut buf: T) -> BufResult<(), T> {
+        let len = buf.iter_slice_mut().map(|slice| slice.len()).sum();
+        loop_read_exact!(buf, len, read, loop self.read_vectored(buf.slice_mut(read)));
     }
 
     /// Creates an adaptor which reads at most `limit` bytes from it.
@@ -301,10 +277,11 @@ pub trait AsyncReadAtExt: AsyncReadAt {
     /// specified position.
     async fn read_vectored_exact_at<T: IoVectoredBufMut>(
         &self,
-        buf: T,
+        mut buf: T,
         pos: u64,
     ) -> BufResult<(), T> {
-        loop_read_vectored!(buf, total: u64, iter, loop self.read_exact_at(iter, pos + total))
+        let len = buf.iter_slice_mut().map(|slice| slice.len()).sum();
+        loop_read_exact!(buf, len, read, loop self.read_vectored_at(buf.slice_mut(read), pos + read as u64));
     }
 }
 

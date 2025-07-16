@@ -170,3 +170,44 @@ impl IoSliceMut {
         self.len() == 0
     }
 }
+
+pub struct IoBuffer {
+    len: usize,
+    capacity: usize,
+    ptr: *mut MaybeUninit<u8>,
+}
+
+impl IoBuffer {
+    pub unsafe fn new(ptr: *mut MaybeUninit<u8>, len: usize, capacity: usize) -> Self {
+        Self { len, capacity, ptr }
+    }
+
+    pub fn as_ptr(&self) -> *mut MaybeUninit<u8> {
+        self.ptr
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Check if the buffer is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+}
+
+impl From<IoBuffer> for IoSlice {
+    fn from(value: IoBuffer) -> Self {
+        unsafe { Self::new(value.ptr.cast(), value.len) }
+    }
+}
+
+impl From<IoBuffer> for IoSliceMut {
+    fn from(value: IoBuffer) -> Self {
+        unsafe { Self::new(value.ptr.cast(), value.capacity) }
+    }
+}

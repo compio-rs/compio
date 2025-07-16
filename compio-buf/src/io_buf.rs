@@ -52,6 +52,14 @@ pub unsafe trait IoBuf: 'static {
         IoSlice::from_slice(self.as_slice())
     }
 
+    unsafe fn as_io_buffer(&self) -> IoBuffer {
+        IoBuffer::new(
+            self.as_buf_ptr().cast_mut().cast(),
+            self.buf_len(),
+            self.buf_capacity(),
+        )
+    }
+
     /// Returns a view of the buffer with the specified range.
     ///
     /// This method is similar to Rust's slicing (`&buf[..]`), but takes

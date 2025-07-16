@@ -263,6 +263,20 @@ fn read_exact() {
 
         let ((), buf) = src.read_exact_at(Vec::with_capacity(5), 0).await.unwrap();
         assert_eq!(buf, [0, 114, 114, 114, 114]);
+
+        let ((), bufs) = src
+            .read_vectored_exact([vec![0; 2], vec![0; 3]])
+            .await
+            .unwrap();
+        assert_eq!(bufs[0], [114; 2]);
+        assert_eq!(bufs[1], [114; 3]);
+
+        let ((), bufs) = src
+            .read_vectored_exact_at([vec![0; 1], Vec::with_capacity(4)], 0)
+            .await
+            .unwrap();
+        assert_eq!(bufs[0], [0]);
+        assert_eq!(bufs[1], [114; 4]);
     })
 }
 
