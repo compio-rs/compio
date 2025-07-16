@@ -78,10 +78,13 @@ async fn send_recv_vectored() {
     let active_addr = active.local_addr().unwrap();
 
     active.connect(passive_addr).await.unwrap();
-    active.send_vectored((MSG1, (msg2, ()))).await.0.unwrap();
+    active.send_vectored((MSG1, (msg2,))).await.0.unwrap();
 
     let recv_buf: [u8; 6] = [0; 6];
-    let (_, buffer) = passive.recv_vectored((recv_buf, (Vec::with_capacity(20), ()))).await.unwrap();
+    let (_, buffer) = passive
+        .recv_vectored((recv_buf, (Vec::with_capacity(20),)))
+        .await
+        .unwrap();
 
     assert_eq!(MSG1.as_bytes(), &buffer.0);
     assert_eq!(MSG2, buffer.1.0.as_slice());
