@@ -116,6 +116,12 @@ impl<T: IoBuf, Rest: IoVectoredBuf> IoVectoredBuf for (T, Rest) {
     }
 }
 
+impl<T: IoBuf> IoVectoredBuf for (T,) {
+    unsafe fn iter_io_buffer(&self) -> impl Iterator<Item = IoBuffer> {
+        std::iter::once(self.0.as_io_buffer())
+    }
+}
+
 impl IoVectoredBuf for () {
     unsafe fn iter_io_buffer(&self) -> impl Iterator<Item = IoBuffer> {
         std::iter::empty()
@@ -183,6 +189,8 @@ impl<T: IoBufMut, const N: usize> IoVectoredBufMut for smallvec::SmallVec<[T; N]
 
 impl<T: IoBufMut, Rest: IoVectoredBufMut> IoVectoredBufMut for (T, Rest) {}
 
+impl<T: IoBufMut> IoVectoredBufMut for (T,) {}
+
 impl IoVectoredBufMut for () {}
 
 impl<T: IoBufMut, Rest: IoVectoredBufMut> SetBufInit for (T, Rest) {
@@ -191,6 +199,12 @@ impl<T: IoBufMut, Rest: IoVectoredBufMut> SetBufInit for (T, Rest) {
 
         self.0.set_buf_init(buf0_len);
         self.1.set_buf_init(len - buf0_len);
+    }
+}
+
+impl<T: IoBufMut> SetBufInit for (T,) {
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        self.0.set_buf_init(len);
     }
 }
 

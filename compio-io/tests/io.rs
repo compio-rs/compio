@@ -339,6 +339,18 @@ fn write_all() {
 
         let ((), _) = dst.write_all_at([114, 114, 114], 2).await.unwrap();
         assert_eq!(dst.0, [1, 1, 114, 114, 114, 4]);
+
+        let ((), _) = dst
+            .write_vectored_all(([1u8, 9], ([8u8, 1, 0],)))
+            .await
+            .unwrap();
+        assert_eq!(dst.0, [1, 1, 114, 114, 114, 4, 1, 9, 8, 1, 0]);
+
+        let ((), _) = dst
+            .write_vectored_all_at([[19, 19], [8, 10]], 5)
+            .await
+            .unwrap();
+        assert_eq!(dst.0, [1, 1, 114, 114, 114, 19, 19, 8, 10, 1, 0]);
     })
 }
 
