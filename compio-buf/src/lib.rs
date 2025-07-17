@@ -35,9 +35,6 @@ pub use slice::*;
 mod uninit;
 pub use uninit::*;
 
-mod iter;
-pub use iter::*;
-
 /// Trait to get the inner buffer of an operation or a result.
 pub trait IntoInner {
     /// The inner type.

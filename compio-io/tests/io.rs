@@ -263,6 +263,20 @@ fn read_exact() {
 
         let ((), buf) = src.read_exact_at(Vec::with_capacity(5), 0).await.unwrap();
         assert_eq!(buf, [0, 114, 114, 114, 114]);
+
+        let ((), bufs) = src
+            .read_vectored_exact([vec![0; 2], vec![0; 3]])
+            .await
+            .unwrap();
+        assert_eq!(bufs[0], [114; 2]);
+        assert_eq!(bufs[1], [114; 3]);
+
+        let ((), bufs) = src
+            .read_vectored_exact_at([vec![0; 1], Vec::with_capacity(4)], 0)
+            .await
+            .unwrap();
+        assert_eq!(bufs[0], [0]);
+        assert_eq!(bufs[1], [114; 4]);
     })
 }
 
@@ -325,6 +339,18 @@ fn write_all() {
 
         let ((), _) = dst.write_all_at([114, 114, 114], 2).await.unwrap();
         assert_eq!(dst.0, [1, 1, 114, 114, 114, 4]);
+
+        let ((), _) = dst
+            .write_vectored_all(([1u8, 9], ([8u8, 1, 0],)))
+            .await
+            .unwrap();
+        assert_eq!(dst.0, [1, 1, 114, 114, 114, 4, 1, 9, 8, 1, 0]);
+
+        let ((), _) = dst
+            .write_vectored_all_at([[19, 19], [8, 10]], 5)
+            .await
+            .unwrap();
+        assert_eq!(dst.0, [1, 1, 114, 114, 114, 19, 19, 8, 10, 1, 0]);
     })
 }
 

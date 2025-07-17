@@ -119,3 +119,126 @@ impl<T> IntoInner for Slice<T> {
         self.buffer
     }
 }
+
+/// An owned view of a vectored buffer.
+pub struct VectoredSlice<T> {
+    buf: T,
+    begin: usize,
+}
+
+impl<T> VectoredSlice<T> {
+    pub(crate) fn new(buf: T, begin: usize) -> Self {
+        Self { buf, begin }
+    }
+
+    /// Offset in the underlying buffer at which this slice starts.
+    pub fn begin(&self) -> usize {
+        self.begin
+    }
+
+    /// Gets a reference to the underlying buffer.
+    ///
+    /// This method escapes the slice's view.
+    pub fn as_inner(&self) -> &T {
+        &self.buf
+    }
+
+    /// Gets a mutable reference to the underlying buffer.
+    ///
+    /// This method escapes the slice's view.
+    pub fn as_inner_mut(&mut self) -> &mut T {
+        &mut self.buf
+    }
+}
+
+impl<T: IoVectoredBuf> IoVectoredBuf for VectoredSlice<T> {
+    unsafe fn iter_io_buffer(&self) -> impl Iterator<Item = IoBuffer> {
+        let mut offset = self.begin;
+        self.buf.iter_io_buffer().filter_map(move |buf| {
+            let len = buf.len();
+            let sub = len.min(offset);
+            offset -= sub;
+            if len - sub > 0 {
+                Some(IoBuffer::new(
+                    buf.as_ptr().add(sub),
+                    len - sub,
+                    buf.capacity() - sub,
+                ))
+            } else {
+                None
+            }
+        })
+    }
+}
+
+impl<T> IntoInner for VectoredSlice<T> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buf
+    }
+}
+
+/// An owned view of a vectored buffer.
+pub struct VectoredSliceMut<T> {
+    buf: T,
+    begin: usize,
+}
+
+impl<T> VectoredSliceMut<T> {
+    pub(crate) fn new(buf: T, begin: usize) -> Self {
+        Self { buf, begin }
+    }
+
+    /// Offset in the underlying buffer at which this slice starts.
+    pub fn begin(&self) -> usize {
+        self.begin
+    }
+
+    /// Gets a reference to the underlying buffer.
+    ///
+    /// This method escapes the slice's view.
+    pub fn as_inner(&self) -> &T {
+        &self.buf
+    }
+
+    /// Gets a mutable reference to the underlying buffer.
+    ///
+    /// This method escapes the slice's view.
+    pub fn as_inner_mut(&mut self) -> &mut T {
+        &mut self.buf
+    }
+}
+
+impl<T: IoVectoredBuf> IoVectoredBuf for VectoredSliceMut<T> {
+    unsafe fn iter_io_buffer(&self) -> impl Iterator<Item = IoBuffer> {
+        let mut offset = self.begin;
+        self.buf.iter_io_buffer().filter_map(move |buf| {
+            let capacity = buf.capacity();
+            let sub = capacity.min(offset);
+            offset -= sub;
+            if capacity - sub > 0 {
+                let len = buf.len().saturating_sub(sub);
+                Some(IoBuffer::new(buf.as_ptr().add(sub), len, capacity - sub))
+            } else {
+                None
+            }
+        })
+    }
+}
+
+impl<T> IntoInner for VectoredSliceMut<T> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buf
+    }
+}
+
+impl<T: SetBufInit> SetBufInit for VectoredSliceMut<T> {
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        self.buf.set_buf_init(self.begin + len);
+    }
+}
+
+impl<T: IoVectoredBufMut> IoVectoredBufMut for VectoredSliceMut<T> {}

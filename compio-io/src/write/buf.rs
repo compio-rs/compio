@@ -85,10 +85,10 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
             .buf
             .with(|mut w| {
                 let mut written = 0;
-                for buf in buf.iter_buf() {
+                for buf in buf.iter_slice() {
                     let len = w.buf_len();
                     let mut slice = w.slice(len..);
-                    written += slice_to_buf(buf.as_slice(), &mut slice);
+                    written += slice_to_buf(buf, &mut slice);
                     w = slice.into_inner();
 
                     if w.buf_len() == w.buf_capacity() {

@@ -2,7 +2,7 @@
 use std::alloc::Allocator;
 use std::io::Cursor;
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoVectoredBuf, OwnedIterator, buf_try, t_alloc};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoVectoredBuf, buf_try, t_alloc};
 
 use crate::IoResult;
 
@@ -91,10 +91,10 @@ impl<#[cfg(feature = "allocator_api")] A: Allocator> AsyncWrite for t_alloc!(Vec
     }
 
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let len = buf.iter_buf().map(|b| b.buf_len()).sum();
+        let len = buf.iter_slice().map(|b| b.buf_len()).sum();
         self.reserve(len - self.len());
-        for buf in buf.iter_buf() {
-            self.extend_from_slice(buf.as_slice());
+        for buf in buf.iter_slice() {
+            self.extend_from_slice(buf);
         }
         BufResult(Ok(len), buf)
     }
@@ -267,15 +267,14 @@ impl<#[cfg(feature = "allocator_api")] A: Allocator> AsyncWriteAt for t_alloc!(V
         pos: u64,
     ) -> BufResult<usize, T> {
         let mut pos = pos as usize;
-        let len = buf.iter_buf().map(|b| b.buf_len()).sum();
+        let len = buf.iter_slice().map(|b| b.buf_len()).sum();
         if pos <= self.len() {
             self.reserve(len - (self.len() - pos));
         } else {
             self.reserve(pos - self.len() + len);
             self.resize(pos, 0);
         }
-        for buf in buf.iter_buf() {
-            let slice = buf.as_slice();
+        for slice in buf.iter_slice() {
             if pos <= self.len() {
                 let n = slice.len().min(self.len() - pos);
                 if n < slice.len() {

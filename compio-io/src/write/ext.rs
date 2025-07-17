@@ -64,36 +64,7 @@ macro_rules! loop_write_all {
 }
 
 macro_rules! loop_write_vectored {
-    ($buf:ident, $tracker:ident : $tracker_ty:ty, $iter:ident,loop $read_expr:expr) => {{
-        use ::compio_buf::OwnedIterator;
-
-        let mut $iter = match $buf.owned_iter() {
-            Ok(buf) => buf,
-            Err(buf) => return BufResult(Ok(()), buf),
-        };
-        let mut $tracker: $tracker_ty = 0;
-
-        loop {
-            let len = $iter.buf_len();
-            if len > 0 {
-                match $read_expr.await {
-                    BufResult(Ok(()), ret) => {
-                        $iter = ret;
-                        $tracker += len as $tracker_ty;
-                    }
-                    BufResult(Err(e), $iter) => return BufResult(Err(e), $iter.into_inner()),
-                };
-            }
-
-            match $iter.next() {
-                Ok(next) => $iter = next,
-                Err(buf) => return BufResult(Ok(()), buf),
-            }
-        }
-    }};
     ($buf:ident, $iter:ident, $read_expr:expr) => {{
-        use ::compio_buf::OwnedIterator;
-
         let mut $iter = match $buf.owned_iter() {
             Ok(buf) => buf,
             Err(buf) => return BufResult(Ok(0), buf),
@@ -140,8 +111,9 @@ pub trait AsyncWriteExt: AsyncWrite {
     /// Write the entire contents of a buffer into this writer. Like
     /// [`AsyncWrite::write_vectored`], except that it tries to write the entire
     /// contents of the buffer into this writer.
-    async fn write_vectored_all<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<(), T> {
-        loop_write_vectored!(buf, _total: usize, iter, loop self.write_all(iter))
+    async fn write_vectored_all<T: IoVectoredBuf>(&mut self, mut buf: T) -> BufResult<(), T> {
+        let len = buf.total_len();
+        loop_write_all!(buf, len, needle, loop self.write_vectored(buf.slice(needle)));
     }
 
     write_scalar!(u8, to_be_bytes, to_le_bytes);
@@ -179,10 +151,11 @@ pub trait AsyncWriteAtExt: AsyncWriteAt {
     /// the entire contents of the buffer into this writer.
     async fn write_vectored_all_at<T: IoVectoredBuf>(
         &mut self,
-        buf: T,
+        mut buf: T,
         pos: u64,
     ) -> BufResult<(), T> {
-        loop_write_vectored!(buf, total: u64, iter, loop self.write_all_at(iter, pos + total))
+        let len = buf.total_len();
+        loop_write_all!(buf, len, needle, loop self.write_vectored_at(buf.slice(needle), pos + needle as u64));
     }
 }
 

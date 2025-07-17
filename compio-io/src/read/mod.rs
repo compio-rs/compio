@@ -1,6 +1,6 @@
 #[cfg(feature = "allocator_api")]
 use std::alloc::Allocator;
-use std::{io::Cursor, ops::DerefMut, rc::Rc, sync::Arc};
+use std::{io::Cursor, rc::Rc, sync::Arc};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut, buf_try, t_alloc};
 
@@ -13,7 +13,7 @@ pub use buf::*;
 pub use ext::*;
 pub use managed::*;
 
-use crate::util::slice_to_buf;
+use crate::util::{slice_to_buf, slice_to_uninit};
 
 /// AsyncRead
 ///
@@ -92,8 +92,8 @@ impl AsyncRead for &[u8] {
     async fn read_vectored<T: IoVectoredBufMut>(&mut self, mut buf: T) -> BufResult<usize, T> {
         let mut this = *self; // An immutable slice to track the read position
 
-        for mut buf in buf.iter_buf_mut() {
-            let n = slice_to_buf(this, buf.deref_mut());
+        for buf in buf.iter_slice_mut() {
+            let n = slice_to_uninit(this, buf);
             this = &this[n..];
             if this.is_empty() {
                 break;
@@ -102,6 +102,10 @@ impl AsyncRead for &[u8] {
 
         let len = self.len() - this.len();
         *self = this;
+
+        unsafe {
+            buf.set_buf_init(len);
+        }
 
         BufResult(Ok(len), buf)
     }
@@ -166,15 +170,20 @@ macro_rules! impl_read_at {
                     let slice = &self[pos as usize..];
                     let mut this = slice;
 
-                    for mut buf in buf.iter_buf_mut() {
-                        let n = slice_to_buf(this, buf.deref_mut());
+                    for buf in buf.iter_slice_mut() {
+                        let n = slice_to_uninit(this, buf);
                         this = &this[n..];
                         if this.is_empty() {
                             break;
                         }
                     }
 
-                    BufResult(Ok(slice.len() - this.len()), buf)
+                    let len = slice.len() - this.len();
+                    unsafe {
+                        buf.set_buf_init(len);
+                    }
+
+                    BufResult(Ok(len), buf)
                 }
             }
         )*
