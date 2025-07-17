@@ -7,11 +7,20 @@ use crate::{
 
 /// A trait for vectored buffers.
 pub trait IoVectoredBuf: 'static {
+    /// An iterator over the [`IoBuffer`]s.
+    ///
+    /// # Safety
+    ///
+    /// The returned slice must not live longer than `self`.
+    /// It is static to provide convenience from writing self-referenced
+    /// structure.
+    unsafe fn iter_io_buffer(&self) -> impl Iterator<Item = IoBuffer>;
+
     /// Collected [`IoSlice`]s of the buffers.
     ///
     /// # Safety
     ///
-    /// The return slice will not live longer than self.
+    /// The returned slice must not live longer than `self`.
     /// It is static to provide convenience from writing self-referenced
     /// structure.
     unsafe fn io_slices(&self) -> Vec<IoSlice> {
@@ -22,21 +31,12 @@ pub trait IoVectoredBuf: 'static {
     ///
     /// # Safety
     ///
-    /// The return slice will not live longer than self.
+    /// The returned slice must not live longer than `self`.
     /// It is static to provide convenience from writing self-referenced
     /// structure.
     unsafe fn iter_io_slice(&self) -> impl Iterator<Item = IoSlice> {
         self.iter_io_buffer().map(IoSlice::from)
     }
-
-    /// An iterator over the [`IoBuffer`]s.
-    ///
-    /// # Safety
-    ///
-    /// The return slice will not live longer than self.
-    /// It is static to provide convenience from writing self-referenced
-    /// structure.
-    unsafe fn iter_io_buffer(&self) -> impl Iterator<Item = IoBuffer>;
 
     /// An iterator over slices.
     fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
@@ -44,6 +44,16 @@ pub trait IoVectoredBuf: 'static {
             self.iter_io_slice()
                 .map(|slice| std::slice::from_raw_parts(slice.as_ptr(), slice.len()))
         }
+    }
+
+    /// The total length of all buffers.
+    fn total_len(&self) -> usize {
+        unsafe { self.iter_io_buffer().map(|buf| buf.len()).sum() }
+    }
+
+    /// The total capacity of all buffers.
+    fn total_capacity(&self) -> usize {
+        unsafe { self.iter_io_buffer().map(|buf| buf.capacity()).sum() }
     }
 
     /// Wrap self into an owned iterator.
@@ -141,7 +151,7 @@ pub trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
     ///
     /// # Safety
     ///
-    /// The return slice will not live longer than self.
+    /// The returned slice must not live longer than `self`.
     /// It is static to provide convenience from writing self-referenced
     /// structure.
     unsafe fn io_slices_mut(&mut self) -> Vec<IoSliceMut> {
@@ -152,7 +162,7 @@ pub trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
     ///
     /// # Safety
     ///
-    /// The return slice will not live longer than self.
+    /// The returned slice must not live longer than `self`.
     /// It is static to provide convenience from writing self-referenced
     /// structure.
     unsafe fn iter_io_slice_mut(&mut self) -> impl Iterator<Item = IoSliceMut> {

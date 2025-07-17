@@ -112,7 +112,7 @@ pub trait AsyncWriteExt: AsyncWrite {
     /// [`AsyncWrite::write_vectored`], except that it tries to write the entire
     /// contents of the buffer into this writer.
     async fn write_vectored_all<T: IoVectoredBuf>(&mut self, mut buf: T) -> BufResult<(), T> {
-        let len = buf.iter_slice().map(|slice| slice.len()).sum();
+        let len = buf.total_len();
         loop_write_all!(buf, len, needle, loop self.write_vectored(buf.slice(needle)));
     }
 
@@ -154,7 +154,7 @@ pub trait AsyncWriteAtExt: AsyncWriteAt {
         mut buf: T,
         pos: u64,
     ) -> BufResult<(), T> {
-        let len = buf.iter_slice().map(|slice| slice.len()).sum();
+        let len = buf.total_len();
         loop_write_all!(buf, len, needle, loop self.write_vectored_at(buf.slice(needle), pos + needle as u64));
     }
 }

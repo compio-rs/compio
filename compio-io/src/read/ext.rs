@@ -181,7 +181,7 @@ pub trait AsyncReadExt: AsyncRead {
 
     /// Read the exact number of bytes required to fill the vectored buf.
     async fn read_vectored_exact<T: IoVectoredBufMut>(&mut self, mut buf: T) -> BufResult<(), T> {
-        let len = buf.iter_slice_mut().map(|slice| slice.len()).sum();
+        let len = buf.total_capacity();
         loop_read_exact!(buf, len, read, loop self.read_vectored(buf.slice_mut(read)));
     }
 
@@ -280,7 +280,7 @@ pub trait AsyncReadAtExt: AsyncReadAt {
         mut buf: T,
         pos: u64,
     ) -> BufResult<(), T> {
-        let len = buf.iter_slice_mut().map(|slice| slice.len()).sum();
+        let len = buf.total_capacity();
         loop_read_exact!(buf, len, read, loop self.read_vectored_at(buf.slice_mut(read), pos + read as u64));
     }
 }
