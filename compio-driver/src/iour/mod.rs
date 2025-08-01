@@ -85,6 +85,7 @@ pub(crate) struct Driver {
     pool_completed: Arc<SegQueue<Entry>>,
     #[cfg(io_uring)]
     buffer_group_ids: Slab<()>,
+    need_push_notifier: bool,
 }
 
 impl Driver {
@@ -106,25 +107,12 @@ impl Driver {
             io_uring_builder.setup_taskrun_flag();
         }
 
-        let mut inner = io_uring_builder.build(builder.capacity)?;
+        let inner = io_uring_builder.build(builder.capacity)?;
 
         if let Some(fd) = builder.eventfd {
             inner.submitter().register_eventfd(fd)?;
         }
 
-        #[allow(clippy::useless_conversion)]
-        unsafe {
-            inner
-                .submission()
-                .push(
-                    &PollAdd::new(Fd(notifier.as_raw_fd()), libc::POLLIN as _)
-                        .multi(true)
-                        .build()
-                        .user_data(Self::NOTIFY)
-                        .into(),
-                )
-                .expect("the squeue sould not be full");
-        }
         Ok(Self {
             inner,
             notifier,
@@ -132,6 +120,7 @@ impl Driver {
             pool_completed: Arc::new(SegQueue::new()),
             #[cfg(io_uring)]
             buffer_group_ids: Slab::new(),
+            need_push_notifier: true,
         })
     }
 
@@ -196,7 +185,9 @@ impl Driver {
                 Self::CANCEL => {}
                 Self::NOTIFY => {
                     let flags = entry.flags();
-                    debug_assert!(more(flags));
+                    if !more(flags) {
+                        self.need_push_notifier = true;
+                    }
                     self.notifier.clear().expect("cannot clear notifier");
                 }
                 _ => unsafe {
@@ -305,6 +296,18 @@ impl Driver {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         // Anyway we need to submit once, no matter there are entries in squeue.
         trace!("start polling");
+
+        if self.need_push_notifier {
+            #[allow(clippy::useless_conversion)]
+            self.push_raw(
+                PollAdd::new(Fd(self.notifier.as_raw_fd()), libc::POLLIN as _)
+                    .multi(true)
+                    .build()
+                    .user_data(Self::NOTIFY)
+                    .into(),
+            )?;
+            self.need_push_notifier = false;
+        }
 
         if !self.poll_entries() {
             self.submit_auto(timeout)?;
