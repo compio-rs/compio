@@ -102,7 +102,6 @@ op!(<T: IoVectoredBuf, S: AsFd> SendToVectored(fd: S, buffer: T, addr: SockAddr)
 op!(<S: AsFd> FileStat(fd: S));
 op!(<> PathStat(path: CString, follow_symlink: bool));
 
-#[cfg(io_uring)]
 macro_rules! mop {
     (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? )) => {
         ::paste::paste!{
@@ -197,7 +196,5 @@ macro_rules! mop {
     };
 }
 
-#[cfg(io_uring)]
 mop!(<S: AsFd> ReadManagedAt(fd: S, offset: u64, pool: &BufferPool, len: usize));
-#[cfg(io_uring)]
 mop!(<S: AsFd> RecvManaged(fd: S, pool: &BufferPool, len: usize));
