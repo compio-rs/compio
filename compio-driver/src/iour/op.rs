@@ -615,7 +615,6 @@ impl<S: AsFd> OpCode for PollOnce<S> {
     }
 }
 
-#[cfg(io_uring)]
 mod buf_ring {
     use std::{
         io,
@@ -748,25 +747,4 @@ mod buf_ring {
     }
 }
 
-#[cfg(io_uring)]
 pub use buf_ring::{ReadManagedAt, RecvManaged};
-
-#[cfg(not(io_uring))]
-mod fallback {
-    use std::pin::Pin;
-
-    use super::OpCode;
-    use crate::{AsFd, OpEntry, op::managed::*};
-
-    impl<S: AsFd> OpCode for ReadManagedAt<S> {
-        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-            unsafe { self.map_unchecked_mut(|this| &mut this.op) }.create_entry()
-        }
-    }
-
-    impl<S: AsFd> OpCode for RecvManaged<S> {
-        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-            unsafe { self.map_unchecked_mut(|this| &mut this.op) }.create_entry()
-        }
-    }
-}

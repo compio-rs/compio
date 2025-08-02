@@ -25,7 +25,6 @@ use io_uring::{
     opcode::{AsyncCancel, PollAdd},
     types::{Fd, SubmitArgs, Timespec},
 };
-#[cfg(io_uring)]
 use slab::Slab;
 
 use crate::{AsyncifyPool, BufferPool, Entry, Key, ProactorBuilder, syscall};
@@ -83,7 +82,6 @@ pub(crate) struct Driver {
     notifier: Notifier,
     pool: AsyncifyPool,
     pool_completed: Arc<SegQueue<Entry>>,
-    #[cfg(io_uring)]
     buffer_group_ids: Slab<()>,
     need_push_notifier: bool,
 }
@@ -118,7 +116,6 @@ impl Driver {
             notifier,
             pool: builder.create_or_get_thread_pool(),
             pool_completed: Arc::new(SegQueue::new()),
-            #[cfg(io_uring)]
             buffer_group_ids: Slab::new(),
             need_push_notifier: true,
         })
@@ -321,7 +318,6 @@ impl Driver {
         self.notifier.handle()
     }
 
-    #[cfg(io_uring)]
     pub fn create_buffer_pool(
         &mut self,
         buffer_len: u16,
@@ -356,19 +352,9 @@ impl Driver {
         }
     }
 
-    #[cfg(not(io_uring))]
-    pub fn create_buffer_pool(
-        &mut self,
-        buffer_len: u16,
-        buffer_size: usize,
-    ) -> io::Result<BufferPool> {
-        Ok(BufferPool::new(buffer_len, buffer_size))
-    }
-
     /// # Safety
     ///
     /// caller must make sure release the buffer pool with correct driver
-    #[cfg(io_uring)]
     pub unsafe fn release_buffer_pool(&mut self, buffer_pool: BufferPool) -> io::Result<()> {
         #[cfg(fusion)]
         let buffer_pool = buffer_pool.into_io_uring();
@@ -377,14 +363,6 @@ impl Driver {
         buffer_pool.into_inner().release(&self.inner)?;
         self.buffer_group_ids.remove(buffer_group as _);
 
-        Ok(())
-    }
-
-    /// # Safety
-    ///
-    /// caller must make sure release the buffer pool with correct driver
-    #[cfg(not(io_uring))]
-    pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
         Ok(())
     }
 }
