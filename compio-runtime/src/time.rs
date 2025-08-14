@@ -58,7 +58,7 @@ pub async fn sleep_until(deadline: Instant) {
 
 /// Error returned by [`timeout`] or [`timeout_at`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Elapsed;
+pub struct Elapsed(());
 
 impl Display for Elapsed {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -76,7 +76,7 @@ impl Error for Elapsed {}
 pub async fn timeout<F: Future>(duration: Duration, future: F) -> Result<F::Output, Elapsed> {
     select! {
         res = future.fuse() => Ok(res),
-        _ = sleep(duration).fuse() => Err(Elapsed),
+        _ = sleep(duration).fuse() => Err(Elapsed(())),
     }
 }
 
