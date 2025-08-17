@@ -42,6 +42,8 @@ where
                             buf.reset();
                         }
 
+                        this.read_state = State::Idle(Some((io, buf)));
+
                         return Poll::Ready(Some(Ok(decoded)));
                     }
 
