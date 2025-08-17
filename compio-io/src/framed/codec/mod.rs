@@ -13,7 +13,9 @@ pub trait Encoder<Item> {
 
     /// Encodes an item into bytes.
     ///
-    /// Returns the number of bytes written to the buffer.
+    /// The `buf` is *guaranteed* to have 0 initialized bytes (`len` == 0). At
+    /// the end, all initialized bytes will be treated as valid content to
+    /// be transimitted.
     fn encode(&mut self, item: Item, buf: &mut Vec<u8>) -> Result<(), Self::Error>;
 }
 
