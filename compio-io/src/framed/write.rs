@@ -76,7 +76,6 @@ impl<Io> State<Io> {
                 let (io, BufResult(res, buf)) = ready!(fut.poll_unpin(cx));
                 (io, res, buf)
             }
-
             State::Closing(fut) | State::Flushing(fut) => ready!(fut.poll_unpin(cx)),
             State::Idle(_) => {
                 return Poll::Ready(Ok(()));

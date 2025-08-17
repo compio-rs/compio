@@ -199,7 +199,12 @@ mod test {
             bar: 114514,
         };
         framed.send(origin.clone()).await.unwrap();
+        framed.send(origin.clone()).await.unwrap();
 
+        let des = framed.next().await.unwrap().unwrap();
+        println!("{des:?}");
+
+        assert_eq!(origin, des);
         let des = framed.next().await.unwrap().unwrap();
         println!("{des:?}");
 
