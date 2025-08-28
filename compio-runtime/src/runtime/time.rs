@@ -2,6 +2,7 @@ use std::{
     cmp::Reverse,
     collections::BinaryHeap,
     future::Future,
+    marker::PhantomData,
     pin::Pin,
     task::{Context, Poll, Waker},
     time::{Duration, Instant},
@@ -125,11 +126,15 @@ impl TimerRuntime {
 
 pub struct TimerFuture {
     key: usize,
+    _local_marker: PhantomData<*const ()>,
 }
 
 impl TimerFuture {
     pub fn new(key: usize) -> Self {
-        Self { key }
+        Self {
+            key,
+            _local_marker: PhantomData,
+        }
     }
 }
 
@@ -146,6 +151,8 @@ impl Drop for TimerFuture {
         Runtime::with_current(|r| r.cancel_timer(self.key));
     }
 }
+
+crate::assert_not_impl!(TimerFuture, Send, Sync);
 
 #[test]
 fn timer_min_timeout() {
