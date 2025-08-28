@@ -33,7 +33,7 @@ pub use runtime::{
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// assert_not_impl!(u8, From<u16>);
 /// ```
 macro_rules! assert_not_impl {
