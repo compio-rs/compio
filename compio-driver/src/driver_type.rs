@@ -1,38 +1,18 @@
-use std::sync::atomic::{AtomicU8, Ordering};
-
-const UNINIT: u8 = u8::MAX;
-const IO_URING: u8 = 0;
-const POLLING: u8 = 1;
-const IOCP: u8 = 2;
-
-static DRIVER_TYPE: AtomicU8 = AtomicU8::new(UNINIT);
-
 /// Representing underlying driver type the fusion driver is using
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DriverType {
     /// Using `polling` driver
-    Poll    = POLLING,
-
+    Poll,
     /// Using `io-uring` driver
-    IoUring = IO_URING,
-
+    IoUring,
     /// Using `iocp` driver
-    IOCP    = IOCP,
+    IOCP,
 }
 
 impl DriverType {
-    fn from_num(n: u8) -> Self {
-        match n {
-            IO_URING => Self::IoUring,
-            POLLING => Self::Poll,
-            IOCP => Self::IOCP,
-            _ => unreachable!("invalid driver type"),
-        }
-    }
-
     /// Get the underlying driver type
-    fn get() -> DriverType {
+    pub(crate) fn suggest() -> DriverType {
         cfg_if::cfg_if! {
             if #[cfg(windows)] {
                 DriverType::IOCP
@@ -78,32 +58,18 @@ impl DriverType {
         }
     }
 
-    /// Get the underlying driver type and cache it. Following calls will return
-    /// the cached value.
-    pub fn current() -> DriverType {
-        match DRIVER_TYPE.load(Ordering::Acquire) {
-            UNINIT => {}
-            x => return DriverType::from_num(x),
-        }
-        let dev_ty = Self::get();
-
-        DRIVER_TYPE.store(dev_ty as u8, Ordering::Release);
-
-        dev_ty
-    }
-
     /// Check if the current driver is `polling`
-    pub fn is_polling() -> bool {
-        Self::current() == DriverType::Poll
+    pub fn is_polling(&self) -> bool {
+        *self == DriverType::Poll
     }
 
     /// Check if the current driver is `io-uring`
-    pub fn is_iouring() -> bool {
-        Self::current() == DriverType::IoUring
+    pub fn is_iouring(&self) -> bool {
+        *self == DriverType::IoUring
     }
 
     /// Check if the current driver is `iocp`
-    pub fn is_iocp() -> bool {
-        Self::current() == DriverType::IOCP
+    pub fn is_iocp(&self) -> bool {
+        *self == DriverType::IOCP
     }
 }

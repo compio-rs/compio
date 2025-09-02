@@ -10,6 +10,7 @@ pub(crate) mod op;
 pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::{io, task::Poll, time::Duration};
 
+use compio_log::error;
 pub use iour::{OpCode as IourOpCode, OpEntry};
 pub use poll::{Decision, OpCode as PollOpCode, OpType};
 
@@ -37,13 +38,21 @@ pub(crate) struct Driver {
 impl Driver {
     /// Create a new fusion driver with given number of entries
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
-        match DriverType::current() {
+        match DriverType::suggest() {
             DriverType::Poll => Ok(Self {
                 fuse: FuseDriver::Poll(poll::Driver::new(builder)?),
             }),
-            DriverType::IoUring => Ok(Self {
-                fuse: FuseDriver::IoUring(iour::Driver::new(builder)?),
-            }),
+            DriverType::IoUring => match iour::Driver::new(builder) {
+                Ok(driver) => Ok(Self {
+                    fuse: FuseDriver::IoUring(driver),
+                }),
+                Err(_e) => {
+                    error!("Fail to create io-uring driver: {_e:?}");
+                    Ok(Self {
+                        fuse: FuseDriver::Poll(poll::Driver::new(builder)?),
+                    })
+                }
+            },
             _ => unreachable!("Fuse driver will only be enabled on linux"),
         }
     }
