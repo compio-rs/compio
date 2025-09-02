@@ -17,7 +17,7 @@ use windows_sys::Win32::{
     System::IO::OVERLAPPED,
 };
 
-use crate::{AsyncifyPool, BufferPool, Entry, Key, ProactorBuilder};
+use crate::{AsyncifyPool, BufferPool, DriverType, Entry, Key, ProactorBuilder};
 
 pub(crate) mod op;
 
@@ -299,6 +299,10 @@ impl Driver {
             pool: builder.create_or_get_thread_pool(),
             notify_overlapped: Arc::new(Overlapped::new(driver)),
         })
+    }
+
+    pub fn driver_type(&self) -> DriverType {
+        DriverType::IOCP
     }
 
     pub fn create_op<T: OpCode + 'static>(&self, op: T) -> Key<T> {

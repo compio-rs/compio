@@ -17,7 +17,9 @@ use compio_log::{instrument, trace};
 use crossbeam_queue::SegQueue;
 use polling::{Event, Events, Poller};
 
-use crate::{AsyncifyPool, BufferPool, Entry, Key, ProactorBuilder, op::Interest, syscall};
+use crate::{
+    AsyncifyPool, BufferPool, DriverType, Entry, Key, ProactorBuilder, op::Interest, syscall,
+};
 
 pub(crate) mod op;
 
@@ -194,6 +196,10 @@ impl Driver {
             pool: builder.create_or_get_thread_pool(),
             pool_completed: Arc::new(SegQueue::new()),
         })
+    }
+
+    pub fn driver_type(&self) -> DriverType {
+        DriverType::Poll
     }
 
     pub fn create_op<T: crate::sys::OpCode + 'static>(&self, op: T) -> Key<T> {

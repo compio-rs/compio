@@ -57,6 +57,13 @@ impl Driver {
         }
     }
 
+    pub fn driver_type(&self) -> DriverType {
+        match &self.fuse {
+            FuseDriver::Poll(driver) => driver.driver_type(),
+            FuseDriver::IoUring(driver) => driver.driver_type(),
+        }
+    }
+
     pub fn create_op<T: OpCode + 'static>(&self, op: T) -> Key<T> {
         match &self.fuse {
             FuseDriver::Poll(driver) => driver.create_op(op),

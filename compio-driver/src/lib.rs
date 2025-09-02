@@ -258,6 +258,11 @@ impl Proactor {
         })
     }
 
+    /// The current driver type.
+    pub fn driver_type(&self) -> DriverType {
+        self.driver.driver_type()
+    }
+
     /// Attach an fd to the driver.
     ///
     /// ## Platform specific
