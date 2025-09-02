@@ -12,50 +12,39 @@ pub enum DriverType {
 
 impl DriverType {
     /// Get the underlying driver type
+    #[cfg(fusion)]
     pub(crate) fn suggest() -> DriverType {
-        cfg_if::cfg_if! {
-            if #[cfg(windows)] {
-                DriverType::IOCP
-            } else if #[cfg(fusion)] {
-                use io_uring::opcode::*;
+        use io_uring::opcode::*;
 
-                // Add more opcodes here if used
-                const USED_OP: &[u8] = &[
-                    Read::CODE,
-                    Readv::CODE,
-                    Write::CODE,
-                    Writev::CODE,
-                    Fsync::CODE,
-                    Accept::CODE,
-                    Connect::CODE,
-                    RecvMsg::CODE,
-                    SendMsg::CODE,
-                    AsyncCancel::CODE,
-                    OpenAt::CODE,
-                    Close::CODE,
-                    Shutdown::CODE,
-                    Socket::CODE,
-                ];
+        // Add more opcodes here if used
+        const USED_OP: &[u8] = &[
+            Read::CODE,
+            Readv::CODE,
+            Write::CODE,
+            Writev::CODE,
+            Fsync::CODE,
+            Accept::CODE,
+            Connect::CODE,
+            RecvMsg::CODE,
+            SendMsg::CODE,
+            AsyncCancel::CODE,
+            OpenAt::CODE,
+            Close::CODE,
+            Shutdown::CODE,
+            Socket::CODE,
+        ];
 
-                (|| {
-                    let uring = io_uring::IoUring::new(2)?;
-                    let mut probe = io_uring::Probe::new();
-                    uring.submitter().register_probe(&mut probe)?;
-                    if USED_OP.iter().all(|op| probe.is_supported(*op)) {
-                        std::io::Result::Ok(DriverType::IoUring)
-                    } else {
-                        Ok(DriverType::Poll)
-                    }
-                })()
-                .unwrap_or(DriverType::Poll) // Should we fail here?
-            } else if #[cfg(io_uring)] {
-                DriverType::IoUring
-            } else if #[cfg(unix)] {
-                DriverType::Poll
+        (|| {
+            let uring = io_uring::IoUring::new(2)?;
+            let mut probe = io_uring::Probe::new();
+            uring.submitter().register_probe(&mut probe)?;
+            if USED_OP.iter().all(|op| probe.is_supported(*op)) {
+                std::io::Result::Ok(DriverType::IoUring)
             } else {
-                compile_error!("unsupported platform");
+                Ok(DriverType::Poll)
             }
-        }
+        })()
+        .unwrap_or(DriverType::Poll) // Should we fail here?
     }
 
     /// Check if the current driver is `polling`

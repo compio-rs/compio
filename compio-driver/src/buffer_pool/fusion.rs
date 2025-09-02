@@ -30,7 +30,7 @@ impl Debug for BufferPool {
 
 impl BufferPool {
     pub(crate) fn is_io_uring(&self) -> bool {
-        matches!(&self.inner, BufferPollInner::Poll(_))
+        matches!(&self.inner, BufferPollInner::IoUring(_))
     }
 
     pub(crate) fn new_io_uring(buffer_pool: iour::BufferPool) -> Self {
