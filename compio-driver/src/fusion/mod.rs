@@ -10,7 +10,7 @@ pub(crate) mod op;
 pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::{io, task::Poll, time::Duration};
 
-use compio_log::error;
+use compio_log::warn;
 pub use iour::{OpCode as IourOpCode, OpEntry};
 pub use poll::{Decision, OpCode as PollOpCode, OpType};
 
@@ -47,7 +47,7 @@ impl Driver {
                     fuse: FuseDriver::IoUring(driver),
                 }),
                 Err(_e) => {
-                    error!("Fail to create io-uring driver: {_e:?}");
+                    warn!("Fail to create io-uring driver: {_e:?}, fallback to polling driver.");
                     Ok(Self {
                         fuse: FuseDriver::Poll(poll::Driver::new(builder)?),
                     })
