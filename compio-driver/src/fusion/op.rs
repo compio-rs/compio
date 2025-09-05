@@ -1,4 +1,4 @@
-use std::ffi::CString;
+use std::{ffi::CString, hint::unreachable_unchecked};
 
 use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use socket2::SockAddr;
@@ -10,24 +10,39 @@ macro_rules! op {
     (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? )) => {
         ::paste::paste!{
             enum [< $name Inner >] <$($ty: $trait),*> {
+                Uninit($($arg_t),*),
                 Poll(poll::$name<$($ty),*>),
                 IoUring(iour::$name<$($ty),*>),
             }
 
             impl<$($ty: $trait),*> [< $name Inner >]<$($ty),*> {
                 fn poll(&mut self) -> &mut poll::$name<$($ty),*> {
-                    debug_assert!(DriverType::current() == DriverType::Poll);
-
                     match self {
+                        Self::Uninit(..) => {
+                            unsafe {
+                                let Self::Uninit($($arg),*) = std::ptr::read(self) else {
+                                    unreachable_unchecked()
+                                };
+                                std::ptr::write(self, Self::Poll(poll::$name::new($($arg),*)));
+                            }
+                            self.poll()
+                        },
                         Self::Poll(ref mut op) => op,
                         Self::IoUring(_) => unreachable!("Current driver is not `io-uring`"),
                     }
                 }
 
                 fn iour(&mut self) -> &mut iour::$name<$($ty),*> {
-                    debug_assert!(DriverType::current() == DriverType::IoUring);
-
                     match self {
+                        Self::Uninit(..) => {
+                            unsafe {
+                                let Self::Uninit($($arg),*) = std::ptr::read(self) else {
+                                    unreachable_unchecked()
+                                };
+                                std::ptr::write(self, Self::IoUring(iour::$name::new($($arg),*)));
+                            }
+                            self.iour()
+                        },
                         Self::IoUring(ref mut op) => op,
                         Self::Poll(_) => unreachable!("Current driver is not `polling`"),
                     }
@@ -42,8 +57,12 @@ macro_rules! op {
             impl<$($ty: $trait),*> IntoInner for $name <$($ty),*> {
                 type Inner = <poll::$name<$($ty),*> as IntoInner>::Inner;
 
-                fn into_inner(self) -> Self::Inner {
+                fn into_inner(mut self) -> Self::Inner {
                     match self.inner {
+                        [< $name Inner >]::Uninit(..) => {
+                            self.inner.poll();
+                            self.into_inner()
+                        },
                         [< $name Inner >]::Poll(op) => op.into_inner(),
                         [< $name Inner >]::IoUring(op) => op.into_inner(),
                     }
@@ -53,15 +72,7 @@ macro_rules! op {
             impl<$($ty: $trait),*> $name <$($ty),*> {
                 #[doc = concat!("Create a new `", stringify!($name), "`.")]
                 pub fn new($($arg: $arg_t),*) -> Self {
-                    match DriverType::current() {
-                        DriverType::Poll => Self {
-                            inner: [< $name Inner >]::Poll(poll::$name::new($($arg),*)),
-                        },
-                        DriverType::IoUring => Self {
-                            inner: [< $name Inner >]::IoUring(iour::$name::new($($arg),*)),
-                        },
-                        _ => unreachable!("Fuse driver will only be enabled on linux"),
-                    }
+                    Self { inner: [< $name Inner >]::Uninit($($arg),*) }
                 }
             }
         }
@@ -103,7 +114,7 @@ op!(<S: AsFd> FileStat(fd: S));
 op!(<> PathStat(path: CString, follow_symlink: bool));
 
 macro_rules! mop {
-    (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? )) => {
+    (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? ) with $pool:ident) => {
         ::paste::paste!{
             enum [< $name Inner >] <$($ty: $trait),*> {
                 Poll(crate::op::managed::$name<$($ty),*>),
@@ -112,8 +123,6 @@ macro_rules! mop {
 
             impl<$($ty: $trait),*> [< $name Inner >]<$($ty),*> {
                 fn poll(&mut self) -> &mut crate::op::managed::$name<$($ty),*> {
-                    debug_assert!(DriverType::current() == DriverType::Poll);
-
                     match self {
                         Self::Poll(ref mut op) => op,
                         Self::IoUring(_) => unreachable!("Current driver is not `io-uring`"),
@@ -121,8 +130,6 @@ macro_rules! mop {
                 }
 
                 fn iour(&mut self) -> &mut iour::$name<$($ty),*> {
-                    debug_assert!(DriverType::current() == DriverType::IoUring);
-
                     match self {
                         Self::IoUring(ref mut op) => op,
                         Self::Poll(_) => unreachable!("Current driver is not `polling`"),
@@ -138,14 +145,14 @@ macro_rules! mop {
             impl<$($ty: $trait),*> $name <$($ty),*> {
                 #[doc = concat!("Create a new `", stringify!($name), "`.")]
                 pub fn new($($arg: $arg_t),*) -> std::io::Result<Self> {
-                    Ok(match DriverType::current() {
-                        DriverType::Poll => Self {
-                            inner: [< $name Inner >]::Poll(crate::op::managed::$name::new($($arg),*)?),
-                        },
-                        DriverType::IoUring => Self {
+                    Ok(if $pool.is_io_uring() {
+                        Self {
                             inner: [< $name Inner >]::IoUring(iour::$name::new($($arg),*)?),
-                        },
-                        _ => unreachable!("Fuse driver will only be enabled on linux"),
+                        }
+                    } else {
+                        Self {
+                            inner: [< $name Inner >]::Poll(crate::op::managed::$name::new($($arg),*)?),
+                        }
                     })
                 }
             }
@@ -196,5 +203,5 @@ macro_rules! mop {
     };
 }
 
-mop!(<S: AsFd> ReadManagedAt(fd: S, offset: u64, pool: &BufferPool, len: usize));
-mop!(<S: AsFd> RecvManaged(fd: S, pool: &BufferPool, len: usize));
+mop!(<S: AsFd> ReadManagedAt(fd: S, offset: u64, pool: &BufferPool, len: usize) with pool);
+mop!(<S: AsFd> RecvManaged(fd: S, pool: &BufferPool, len: usize) with pool);

@@ -10,6 +10,7 @@ pub(crate) mod op;
 pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::{io, task::Poll, time::Duration};
 
+use compio_log::warn;
 pub use iour::{OpCode as IourOpCode, OpEntry};
 pub use poll::{Decision, OpCode as PollOpCode, OpType};
 
@@ -37,14 +38,34 @@ pub(crate) struct Driver {
 impl Driver {
     /// Create a new fusion driver with given number of entries
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
-        match DriverType::current() {
+        let (ty, fallback) = match &builder.driver_type {
+            Some(t) => (*t, false),
+            None => (DriverType::suggest(), true),
+        };
+        match ty {
             DriverType::Poll => Ok(Self {
                 fuse: FuseDriver::Poll(poll::Driver::new(builder)?),
             }),
-            DriverType::IoUring => Ok(Self {
-                fuse: FuseDriver::IoUring(iour::Driver::new(builder)?),
-            }),
+            DriverType::IoUring => match iour::Driver::new(builder) {
+                Ok(driver) => Ok(Self {
+                    fuse: FuseDriver::IoUring(driver),
+                }),
+                Err(_e) if fallback => {
+                    warn!("Fail to create io-uring driver: {_e:?}, fallback to polling driver.");
+                    Ok(Self {
+                        fuse: FuseDriver::Poll(poll::Driver::new(builder)?),
+                    })
+                }
+                Err(e) => Err(e),
+            },
             _ => unreachable!("Fuse driver will only be enabled on linux"),
+        }
+    }
+
+    pub fn driver_type(&self) -> DriverType {
+        match &self.fuse {
+            FuseDriver::Poll(driver) => driver.driver_type(),
+            FuseDriver::IoUring(driver) => driver.driver_type(),
         }
     }
 

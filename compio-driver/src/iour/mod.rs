@@ -27,7 +27,7 @@ use io_uring::{
 };
 use slab::Slab;
 
-use crate::{AsyncifyPool, BufferPool, Entry, Key, ProactorBuilder, syscall};
+use crate::{AsyncifyPool, BufferPool, DriverType, Entry, Key, ProactorBuilder, syscall};
 
 pub(crate) mod op;
 
@@ -119,6 +119,10 @@ impl Driver {
             buffer_group_ids: Slab::new(),
             need_push_notifier: true,
         })
+    }
+
+    pub fn driver_type(&self) -> DriverType {
+        DriverType::IoUring
     }
 
     // Auto means that it choose to wait or not automatically.

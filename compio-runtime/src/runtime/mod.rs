@@ -15,7 +15,8 @@ use std::{
 use async_task::{Runnable, Task};
 use compio_buf::IntoInner;
 use compio_driver::{
-    AsRawFd, Key, NotifyHandle, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd, op::Asyncify,
+    AsRawFd, DriverType, Key, NotifyHandle, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
+    op::Asyncify,
 };
 use compio_log::{debug, instrument};
 use crossbeam_queue::SegQueue;
@@ -144,6 +145,11 @@ impl Runtime {
             id,
             _p: PhantomData,
         })
+    }
+
+    /// The current driver type.
+    pub fn driver_type(&self) -> DriverType {
+        self.driver.borrow().driver_type()
     }
 
     /// Try to perform a function on the current runtime, and if no runtime is
