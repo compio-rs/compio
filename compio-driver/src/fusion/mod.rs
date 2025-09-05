@@ -38,7 +38,11 @@ pub(crate) struct Driver {
 impl Driver {
     /// Create a new fusion driver with given number of entries
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
-        match DriverType::suggest() {
+        let (ty, fallback) = match &builder.driver_type {
+            Some(t) => (*t, false),
+            None => (DriverType::suggest(), true),
+        };
+        match ty {
             DriverType::Poll => Ok(Self {
                 fuse: FuseDriver::Poll(poll::Driver::new(builder)?),
             }),
@@ -46,12 +50,13 @@ impl Driver {
                 Ok(driver) => Ok(Self {
                     fuse: FuseDriver::IoUring(driver),
                 }),
-                Err(_e) => {
+                Err(_e) if fallback => {
                     warn!("Fail to create io-uring driver: {_e:?}, fallback to polling driver.");
                     Ok(Self {
                         fuse: FuseDriver::Poll(poll::Driver::new(builder)?),
                     })
                 }
+                Err(e) => Err(e),
             },
             _ => unreachable!("Fuse driver will only be enabled on linux"),
         }

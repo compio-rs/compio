@@ -458,6 +458,7 @@ pub struct ProactorBuilder {
     coop_taskrun: bool,
     taskrun_flag: bool,
     eventfd: Option<RawFd>,
+    driver_type: Option<DriverType>,
 }
 
 // Safety: `RawFd` is thread safe.
@@ -480,6 +481,7 @@ impl ProactorBuilder {
             coop_taskrun: false,
             taskrun_flag: false,
             eventfd: None,
+            driver_type: None,
         }
     }
 
@@ -582,6 +584,13 @@ impl ProactorBuilder {
     /// - Only effective when the `io-uring` feature is enabled
     pub fn register_eventfd(&mut self, fd: RawFd) -> &mut Self {
         self.eventfd = Some(fd);
+        self
+    }
+
+    /// Force a driver type to use. It is ignored if the fusion driver is
+    /// disabled.
+    pub fn driver_type(&mut self, t: DriverType) -> &mut Self {
+        self.driver_type = Some(t);
         self
     }
 
