@@ -25,19 +25,19 @@ license = "MIT"
 repository = "https://github.com/compio-rs/compio"
 
 [workspace.dependencies]
-compio-buf = { path = "./compio-buf", version = "0.6.0" }
-compio-driver = { path = "./compio-driver", version = "0.8.0", default-features = false }
-compio-runtime = { path = "./compio-runtime", version = "0.8.0" }
+compio-buf = { path = "./compio-buf", version = "0.7.0" }
+compio-driver = { path = "./compio-driver", version = "0.9.0", default-features = false }
+compio-runtime = { path = "./compio-runtime", version = "0.9.0" }
 compio-macros = { path = "./compio-macros", version = "0.1.2" }
-compio-fs = { path = "./compio-fs", version = "0.8.0" }
-compio-io = { path = "./compio-io", version = "0.7.0" }
-compio-net = { path = "./compio-net", version = "0.8.0" }
-compio-signal = { path = "./compio-signal", version = "0.6.0" }
-compio-dispatcher = { path = "./compio-dispatcher", version = "0.7.0" }
+compio-fs = { path = "./compio-fs", version = "0.9.0" }
+compio-io = { path = "./compio-io", version = "0.8.0" }
+compio-net = { path = "./compio-net", version = "0.9.0" }
+compio-signal = { path = "./compio-signal", version = "0.7.0" }
+compio-dispatcher = { path = "./compio-dispatcher", version = "0.8.0" }
 compio-log = { path = "./compio-log", version = "0.1.0" }
-compio-tls = { path = "./compio-tls", version = "0.6.0", default-features = false }
-compio-process = { path = "./compio-process", version = "0.5.0" }
-compio-quic = { path = "./compio-quic", version = "0.4.0", default-features = false }
+compio-tls = { path = "./compio-tls", version = "0.7.0", default-features = false }
+compio-process = { path = "./compio-process", version = "0.6.0" }
+compio-quic = { path = "./compio-quic", version = "0.5.0", default-features = false }
 
 bytes = "1.7.1"
 flume = "0.11.0"
@@ -62,7 +62,7 @@ tempfile = "3.8.1"
 tokio = "1.33.0"
 tracing-subscriber = "0.3.18"
 widestring = "1.0.2"
-windows-sys = "0.60.2"
+windows-sys = "0.61.0"
 thiserror = "2.0.3"
 
 [profile.bench]
