@@ -33,7 +33,7 @@ mod send_wrapper;
 use send_wrapper::SendWrapper;
 
 #[cfg(feature = "time")]
-use crate::runtime::time::{TimerFuture, TimerRuntime};
+use crate::runtime::time::{TimerFuture, TimerKey, TimerRuntime};
 use crate::{BufResult, affinity::bind_to_cpu_set, runtime::op::OpFuture};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
@@ -313,7 +313,7 @@ impl Runtime {
     }
 
     #[cfg(feature = "time")]
-    pub(crate) fn cancel_timer(&self, key: usize) {
+    pub(crate) fn cancel_timer(&self, key: &TimerKey) {
         self.timer_runtime.borrow_mut().cancel(key);
     }
 
@@ -331,16 +331,16 @@ impl Runtime {
     }
 
     #[cfg(feature = "time")]
-    pub(crate) fn poll_timer(&self, cx: &mut Context, key: usize) -> Poll<()> {
+    pub(crate) fn poll_timer(&self, cx: &mut Context, key: &TimerKey) -> Poll<()> {
         instrument!(compio_log::Level::DEBUG, "poll_timer", ?cx, ?key);
         let mut timer_runtime = self.timer_runtime.borrow_mut();
-        if !timer_runtime.is_completed(key) {
+        if timer_runtime.remove_completed(key) {
+            debug!("ready");
+            Poll::Ready(())
+        } else {
             debug!("pending");
             timer_runtime.update_waker(key, cx.waker().clone());
             Poll::Pending
-        } else {
-            debug!("ready");
-            Poll::Ready(())
         }
     }
 
