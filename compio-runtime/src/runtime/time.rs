@@ -90,6 +90,7 @@ impl TimerRuntime {
 
     pub fn cancel(&mut self, key: usize) {
         self.tasks.remove(key);
+        self.wheel.retain(|entry| entry.0.key != key);
     }
 
     pub fn min_timeout(&self) -> Option<Duration> {
