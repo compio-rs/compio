@@ -1,4 +1,4 @@
-<div  align="center">
+<div align="center">
     <a href='https://compio.rs'>
         <img height="150" src="https://github.com/compio-rs/compio-logo/raw/refs/heads/master/generated/colored-with-text.svg">
     </a>
@@ -25,13 +25,17 @@ Tokio is a great generic-purpose async runtime.
 However, it is poll-based, and even uses [undocumented APIs](https://notgull.net/device-afd/) on Windows.
 We would like some new high-level APIs to perform IOCP/io_uring.
 
-Unlike `tokio-uring`, this runtime isn't Tokio-based.
+`compio` isn't Tokio-based.
 This is mainly because that no public APIs to control IOCP in `mio`,
 and `tokio` won't expose APIs to control `mio` before `mio` reaches 1.0.
 
-## Why not monoio/tokio-uring/glommio?
+## Why not monoio?
 
-They don't support Windows.
+Monoio focuses on Linux and io-uring, and fallbacks to `mio` on other platforms.
+
+## Why not glommio?
+
+It doesn't support Windows.
 
 ## Quick start
 
@@ -62,4 +66,5 @@ You can also control the low-level driver manually. See `driver` example of the 
 
 There are opportunities to contribute to Compio at any level. It doesn't matter if
 you are just getting started with Rust or are the most weathered expert, we can
-use your help. If you have any question about Compio, feel free to join our [telegram group](https://t.me/compio_rs). Before contributing, please checkout our [contributing guide](https://github.com/compio-rs/compio/blob/master/CONTRIBUTING.md).
+use your help. If you have any question about Compio, feel free to join our [telegram group](https://t.me/compio_rs).
+Before contributing, please checkout our [contributing guide](https://github.com/compio-rs/compio/blob/master/CONTRIBUTING.md).
