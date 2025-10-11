@@ -441,10 +441,10 @@ impl ThreadPoolBuilder {
         }
     }
 
-    pub fn create_or_reuse(&self) -> AsyncifyPool {
+    pub fn create_or_reuse(&self) -> io::Result<AsyncifyPool> {
         match self {
             Self::Create { limit, recv_limit } => AsyncifyPool::new(*limit, *recv_limit),
-            Self::Reuse(pool) => pool.clone(),
+            Self::Reuse(pool) => Ok(pool.clone()),
         }
     }
 }
@@ -527,13 +527,13 @@ impl ProactorBuilder {
 
     /// Force reuse the thread pool for each proactor created by this builder,
     /// even `reuse_thread_pool` is not set.
-    pub fn force_reuse_thread_pool(&mut self) -> &mut Self {
-        self.reuse_thread_pool(self.create_or_get_thread_pool());
-        self
+    pub fn force_reuse_thread_pool(&mut self) -> io::Result<&mut Self> {
+        self.reuse_thread_pool(self.create_or_get_thread_pool()?);
+        Ok(self)
     }
 
     /// Create or reuse the thread pool from the config.
-    pub fn create_or_get_thread_pool(&self) -> AsyncifyPool {
+    pub fn create_or_get_thread_pool(&self) -> io::Result<AsyncifyPool> {
         self.pool_builder.create_or_reuse()
     }
 

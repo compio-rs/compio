@@ -296,7 +296,7 @@ impl Driver {
         Ok(Self {
             port,
             waits: HashMap::default(),
-            pool: builder.create_or_get_thread_pool(),
+            pool: builder.create_or_get_thread_pool()?,
             notify_overlapped: Arc::new(Overlapped::new(driver)),
         })
     }

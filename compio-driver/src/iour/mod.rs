@@ -114,7 +114,7 @@ impl Driver {
         Ok(Self {
             inner,
             notifier,
-            pool: builder.create_or_get_thread_pool(),
+            pool: builder.create_or_get_thread_pool()?,
             pool_completed: Arc::new(SegQueue::new()),
             buffer_group_ids: Slab::new(),
             need_push_notifier: true,
