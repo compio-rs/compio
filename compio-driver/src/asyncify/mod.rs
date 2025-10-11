@@ -72,4 +72,11 @@ impl AsyncifyPool {
     pub fn dispatch<D: Dispatchable>(&self, f: D) -> Result<(), DispatchError<D>> {
         self.0.dispatch(f)
     }
+
+    #[cfg(windows)]
+    pub(crate) fn as_ptr(
+        &self,
+    ) -> *const windows_sys::Win32::System::Threading::TP_CALLBACK_ENVIRON_V3 {
+        self.0.as_ptr()
+    }
 }

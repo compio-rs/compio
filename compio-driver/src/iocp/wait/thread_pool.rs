@@ -8,7 +8,7 @@ use windows_sys::Win32::{
     Foundation::{ERROR_IO_PENDING, ERROR_TIMEOUT, WAIT_OBJECT_0, WAIT_TIMEOUT},
     System::Threading::{
         CloseThreadpoolWait, CreateThreadpoolWait, PTP_CALLBACK_INSTANCE, PTP_WAIT,
-        SetThreadpoolWait, WaitForThreadpoolWaitCallbacks,
+        SetThreadpoolWait, TP_CALLBACK_ENVIRON_V3, WaitForThreadpoolWaitCallbacks,
     },
 };
 
@@ -22,7 +22,12 @@ pub struct Wait {
 }
 
 impl Wait {
-    pub fn new(port: &cp::Port, event: RawFd, op: &mut Key<dyn OpCode>) -> io::Result<Self> {
+    pub fn new(
+        port: &cp::Port,
+        event: RawFd,
+        op: &mut Key<dyn OpCode>,
+        env: *const TP_CALLBACK_ENVIRON_V3,
+    ) -> io::Result<Self> {
         let port = port.handle();
         let mut context = Box::new(WinThreadpoolWaitContext {
             port,
@@ -33,7 +38,7 @@ impl Wait {
             CreateThreadpoolWait(
                 Some(Self::wait_callback),
                 (&mut *context) as *mut WinThreadpoolWaitContext as _,
-                null()
+                env
             )
         )?;
         unsafe {

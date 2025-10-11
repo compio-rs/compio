@@ -5,9 +5,12 @@ use std::{
     ptr::null_mut,
 };
 
-use windows_sys::Win32::Foundation::{
-    GENERIC_READ, GENERIC_WRITE, HANDLE, NTSTATUS, RtlNtStatusToDosError, STATUS_PENDING,
-    STATUS_SUCCESS,
+use windows_sys::Win32::{
+    Foundation::{
+        GENERIC_READ, GENERIC_WRITE, HANDLE, NTSTATUS, RtlNtStatusToDosError, STATUS_PENDING,
+        STATUS_SUCCESS,
+    },
+    System::Threading::TP_CALLBACK_ENVIRON_V3,
 };
 
 use crate::{Key, OpCode, RawFd, sys::cp};
@@ -52,7 +55,12 @@ fn check_status(status: NTSTATUS) -> io::Result<()> {
 }
 
 impl Wait {
-    pub fn new(port: &cp::Port, event: RawFd, op: &mut Key<dyn OpCode>) -> io::Result<Self> {
+    pub fn new(
+        port: &cp::Port,
+        event: RawFd,
+        op: &mut Key<dyn OpCode>,
+        _env: *const TP_CALLBACK_ENVIRON_V3,
+    ) -> io::Result<Self> {
         let mut handle = null_mut();
         check_status(unsafe {
             NtCreateWaitCompletionPacket(&mut handle, GENERIC_READ | GENERIC_WRITE, null_mut())

@@ -103,4 +103,11 @@ impl AsyncifyPool {
             panic!("the thread pool is needed but no worker thread is running");
         }
     }
+
+    pub fn as_ptr(&self) -> *const TP_CALLBACK_ENVIRON_V3 {
+        self.inner
+            .as_deref()
+            .map(|e| e.as_ref() as *const _)
+            .unwrap_or(null())
+    }
 }

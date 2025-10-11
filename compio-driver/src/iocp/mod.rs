@@ -350,8 +350,10 @@ impl Driver {
                 }
             },
             OpType::Event(e) => {
-                self.waits
-                    .insert(user_data, wait::Wait::new(&self.port, e, op)?);
+                self.waits.insert(
+                    user_data,
+                    wait::Wait::new(&self.port, e, op, self.pool.as_ptr())?,
+                );
                 Poll::Pending
             }
         }
