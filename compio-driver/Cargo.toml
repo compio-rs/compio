@@ -34,7 +34,7 @@ compio-log = { workspace = true }
 
 # Utils
 cfg-if = { workspace = true }
-crossbeam-channel = { workspace = true }
+flume = { workspace = true, default-features = false }
 futures-util = { workspace = true }
 socket2 = { workspace = true, features = ["all"] }
 
@@ -67,7 +67,6 @@ slab = { workspace = true, optional = true }
 polling = "3.3.0"
 
 [target.'cfg(unix)'.dependencies]
-crossbeam-channel = { workspace = true }
 crossbeam-queue = { workspace = true }
 libc = { workspace = true }
 

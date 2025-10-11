@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use crossbeam_channel::{Receiver, Sender, TrySendError, bounded};
+use flume::{Receiver, Sender, TrySendError, bounded};
 
 /// An error that may be emitted when all worker threads are busy. It simply
 /// returns the dispatchable value with a convenient [`fmt::Debug`] and
