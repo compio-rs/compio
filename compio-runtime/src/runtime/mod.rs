@@ -69,23 +69,33 @@ impl RunnableQueue {
     /// SAFETY: call in the main thread
     pub unsafe fn run(&self, event_interval: usize) -> bool {
         let local_runnables = self.local_runnables.get_unchecked();
-        for _i in 0..event_interval {
-            let next_task = local_runnables.borrow_mut().pop_front();
-            let has_local_task = next_task.is_some();
-            if let Some(task) = next_task {
-                task.run();
-            }
-            // Cheaper than pop.
-            let has_sync_task = !self.sync_runnables.is_empty();
-            if has_sync_task {
-                if let Some(task) = self.sync_runnables.pop() {
-                    task.run();
+
+        for _ in 0..event_interval {
+            let local_task = local_runnables.borrow_mut().pop_front();
+
+            // Perform an empty check as a fast path, since `pop()` is more expensive.
+            let sync_task = if self.sync_runnables.is_empty() {
+                None
+            } else {
+                self.sync_runnables.pop()
+            };
+
+            match (local_task, sync_task) {
+                (Some(local), Some(sync)) => {
+                    local.run();
+                    sync.run();
                 }
-            } else if !has_local_task {
-                break;
+                (Some(local), None) => {
+                    local.run();
+                }
+                (None, Some(sync)) => {
+                    sync.run();
+                }
+                (None, None) => break,
             }
         }
-        !(local_runnables.borrow_mut().is_empty() && self.sync_runnables.is_empty())
+
+        !(local_runnables.borrow().is_empty() && self.sync_runnables.is_empty())
     }
 }
 
