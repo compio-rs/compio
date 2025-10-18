@@ -31,7 +31,7 @@ h3 = { version = "0.0.8", optional = true }
 h3-datagram = { version = "0.0.2", optional = true }
 
 # Utils
-flume = { workspace = true }
+flume = { workspace = true, default-features = false, features = ["async"] }
 futures-util = { workspace = true }
 thiserror = { workspace = true }
 rustc-hash = "2.0.0"
