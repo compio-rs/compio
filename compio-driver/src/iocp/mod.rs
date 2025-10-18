@@ -296,7 +296,7 @@ impl Driver {
         Ok(Self {
             port,
             waits: HashMap::default(),
-            pool: builder.create_or_get_thread_pool(),
+            pool: builder.create_or_get_thread_pool()?,
             notify_overlapped: Arc::new(Overlapped::new(driver)),
         })
     }
@@ -350,8 +350,10 @@ impl Driver {
                 }
             },
             OpType::Event(e) => {
-                self.waits
-                    .insert(user_data, wait::Wait::new(&self.port, e, op)?);
+                self.waits.insert(
+                    user_data,
+                    wait::Wait::new(&self.port, e, op, self.pool.as_ptr())?,
+                );
                 Poll::Pending
             }
         }

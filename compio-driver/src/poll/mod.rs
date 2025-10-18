@@ -193,7 +193,7 @@ impl Driver {
             events,
             poll,
             registry: HashMap::new(),
-            pool: builder.create_or_get_thread_pool(),
+            pool: builder.create_or_get_thread_pool()?,
             pool_completed: Arc::new(SegQueue::new()),
         })
     }

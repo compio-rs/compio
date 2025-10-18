@@ -81,8 +81,8 @@ impl Dispatcher {
             mut names,
             mut proactor_builder,
         } = builder;
-        proactor_builder.force_reuse_thread_pool();
-        let pool = proactor_builder.create_or_get_thread_pool();
+        proactor_builder.force_reuse_thread_pool()?;
+        let pool = proactor_builder.create_or_get_thread_pool()?;
         let (sender, receiver) = unbounded::<Spawning>();
 
         let threads = (0..nthreads)
