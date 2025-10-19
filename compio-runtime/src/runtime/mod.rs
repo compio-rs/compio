@@ -202,11 +202,19 @@ impl Runtime {
     ///
     /// The caller should ensure the captured lifetime long enough.
     pub unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
-        let runnables = self.runnables.clone();
-        let handle = self.driver.borrow().handle();
-        let schedule = move |runnable| {
-            runnables.schedule(runnable, &handle);
+        let schedule = {
+            // Use `Weak` to break reference cycle.
+            // `RunnableQueue` -> `Runnable` -> `RunnableQueue`
+            let runnables = Arc::downgrade(&self.runnables);
+            let handle = self.driver.borrow().handle();
+
+            move |runnable| {
+                if let Some(runnables) = runnables.upgrade() {
+                    runnables.schedule(runnable, &handle);
+                }
+            }
         };
+
         let (runnable, task) = async_task::spawn_unchecked(future, schedule);
         runnable.schedule();
         task
@@ -415,21 +423,6 @@ impl Runtime {
 
     pub(crate) fn id(&self) -> u64 {
         self.id
-    }
-}
-
-impl Drop for Runtime {
-    fn drop(&mut self) {
-        self.enter(|| {
-            while self.runnables.sync_runnables.pop().is_some() {}
-            let local_runnables = unsafe { self.runnables.local_runnables.get_unchecked() };
-            loop {
-                let runnable = local_runnables.borrow_mut().pop_front();
-                if runnable.is_none() {
-                    break;
-                }
-            }
-        })
     }
 }
 
