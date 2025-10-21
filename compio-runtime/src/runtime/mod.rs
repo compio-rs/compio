@@ -1,25 +1,20 @@
 use std::{
     any::Any,
     cell::{Cell, RefCell},
-    collections::{HashSet, VecDeque},
+    collections::HashSet,
     future::{Future, ready},
     io,
-    marker::PhantomData,
     panic::AssertUnwindSafe,
-    rc::Rc,
-    sync::Arc,
     task::{Context, Poll},
     time::Duration,
 };
 
-use async_task::{Runnable, Task};
+use async_task::Task;
 use compio_buf::IntoInner;
 use compio_driver::{
-    AsRawFd, DriverType, Key, NotifyHandle, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
-    op::Asyncify,
+    AsRawFd, DriverType, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd, op::Asyncify,
 };
 use compio_log::{debug, instrument};
-use crossbeam_queue::SegQueue;
 use futures_util::{FutureExt, future::Either};
 
 pub(crate) mod op;
@@ -29,75 +24,21 @@ pub(crate) mod time;
 mod buffer_pool;
 pub use buffer_pool::*;
 
-mod send_wrapper;
-use send_wrapper::SendWrapper;
+mod scheduler;
 
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerKey, TimerRuntime};
-use crate::{BufResult, affinity::bind_to_cpu_set, runtime::op::OpFuture};
+use crate::{
+    BufResult,
+    affinity::bind_to_cpu_set,
+    runtime::{op::OpFuture, scheduler::Scheduler},
+};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 
 /// Type alias for `Task<Result<T, Box<dyn Any + Send>>>`, which resolves to an
 /// `Err` when the spawned future panicked.
 pub type JoinHandle<T> = Task<Result<T, Box<dyn Any + Send>>>;
-
-struct RunnableQueue {
-    local_runnables: SendWrapper<RefCell<VecDeque<Runnable>>>,
-    sync_runnables: SegQueue<Runnable>,
-}
-
-impl RunnableQueue {
-    pub fn new() -> Self {
-        Self {
-            local_runnables: SendWrapper::new(RefCell::new(VecDeque::new())),
-            sync_runnables: SegQueue::new(),
-        }
-    }
-
-    pub fn schedule(&self, runnable: Runnable, handle: &NotifyHandle) {
-        if let Some(runnables) = self.local_runnables.get() {
-            runnables.borrow_mut().push_back(runnable);
-            #[cfg(feature = "notify-always")]
-            handle.notify().ok();
-        } else {
-            self.sync_runnables.push(runnable);
-            handle.notify().ok();
-        }
-    }
-
-    /// SAFETY: call in the main thread
-    pub unsafe fn run(&self, event_interval: usize) -> bool {
-        let local_runnables = self.local_runnables.get_unchecked();
-
-        for _ in 0..event_interval {
-            let local_task = local_runnables.borrow_mut().pop_front();
-
-            // Perform an empty check as a fast path, since `pop()` is more expensive.
-            let sync_task = if self.sync_runnables.is_empty() {
-                None
-            } else {
-                self.sync_runnables.pop()
-            };
-
-            match (local_task, sync_task) {
-                (Some(local), Some(sync)) => {
-                    local.run();
-                    sync.run();
-                }
-                (Some(local), None) => {
-                    local.run();
-                }
-                (None, Some(sync)) => {
-                    sync.run();
-                }
-                (None, None) => break,
-            }
-        }
-
-        !(local_runnables.borrow().is_empty() && self.sync_runnables.is_empty())
-    }
-}
 
 thread_local! {
     static RUNTIME_ID: Cell<u64> = const { Cell::new(0) };
@@ -107,10 +48,9 @@ thread_local! {
 /// sent to other threads.
 pub struct Runtime {
     driver: RefCell<Proactor>,
-    runnables: Arc<RunnableQueue>,
+    scheduler: Scheduler,
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
-    event_interval: usize,
     // Runtime id is used to check if the buffer pool is belonged to this runtime or not.
     // Without this, if user enable `io-uring-buf-ring` feature then:
     // 1. Create a buffer pool at runtime1
@@ -119,9 +59,6 @@ pub struct Runtime {
     // - buffer pool will return a wrong buffer which the buffer's data is uninit, that will cause
     //   UB
     id: u64,
-    // Other fields don't make it !Send, but actually `local_runnables` implies it should be !Send,
-    // otherwise it won't be valid if the runtime is sent to other threads.
-    _p: PhantomData<Rc<VecDeque<Runnable>>>,
 }
 
 impl Runtime {
@@ -148,12 +85,10 @@ impl Runtime {
         }
         Ok(Self {
             driver: RefCell::new(proactor_builder.build()?),
-            runnables: Arc::new(RunnableQueue::new()),
+            scheduler: Scheduler::new(*event_interval),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
-            event_interval: *event_interval,
             id,
-            _p: PhantomData,
         })
     }
 
@@ -202,22 +137,10 @@ impl Runtime {
     ///
     /// The caller should ensure the captured lifetime long enough.
     pub unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
-        let schedule = {
-            // Use `Weak` to break reference cycle.
-            // `RunnableQueue` -> `Runnable` -> `RunnableQueue`
-            let runnables = Arc::downgrade(&self.runnables);
-            let handle = self.driver.borrow().handle();
+        let notify = self.driver.borrow().handle();
 
-            move |runnable| {
-                if let Some(runnables) = runnables.upgrade() {
-                    runnables.schedule(runnable, &handle);
-                }
-            }
-        };
-
-        let (runnable, task) = async_task::spawn_unchecked(future, schedule);
-        runnable.schedule();
-        task
+        // SAFETY: See the safety comment of this method.
+        unsafe { self.scheduler.spawn_unchecked(future, notify) }
     }
 
     /// Low level API to control the runtime.
@@ -226,8 +149,7 @@ impl Runtime {
     ///
     /// The return value indicates whether there are still tasks in the queue.
     pub fn run(&self) -> bool {
-        // SAFETY: self is !Send + !Sync.
-        unsafe { self.runnables.run(self.event_interval) }
+        self.scheduler.run()
     }
 
     /// Block on the future till it completes.
