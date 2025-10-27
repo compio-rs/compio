@@ -154,7 +154,7 @@ impl Runtime {
 
     /// Block on the future till it completes.
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
-        CURRENT_RUNTIME.set(self, || {
+        self.enter(|| {
             let mut result = None;
             unsafe { self.spawn_unchecked(async { result = Some(future.await) }) }.detach();
             loop {
@@ -345,6 +345,14 @@ impl Runtime {
 
     pub(crate) fn id(&self) -> u64 {
         self.id
+    }
+}
+
+impl Drop for Runtime {
+    fn drop(&mut self) {
+        self.enter(|| {
+            self.scheduler.clear();
+        })
     }
 }
 
