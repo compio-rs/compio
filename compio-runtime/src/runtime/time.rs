@@ -109,6 +109,10 @@ impl TimerRuntime {
                 }
             });
     }
+
+    pub fn clear(&mut self) {
+        self.wheel.clear();
+    }
 }
 
 pub struct TimerFuture(TimerKey);

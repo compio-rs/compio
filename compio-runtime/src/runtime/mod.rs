@@ -348,6 +348,15 @@ impl Runtime {
     }
 }
 
+impl Drop for Runtime {
+    fn drop(&mut self) {
+        self.enter(|| {
+            self.timer_runtime.borrow_mut().clear();
+            self.scheduler.clear();
+        })
+    }
+}
+
 impl AsRawFd for Runtime {
     fn as_raw_fd(&self) -> RawFd {
         self.driver.borrow().as_raw_fd()
