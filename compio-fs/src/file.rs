@@ -27,7 +27,9 @@ use crate::{Metadata, OpenOptions, Permissions};
 ///
 /// If you'd like to use methods from [`AsyncRead`](`compio_io::AsyncRead`) or
 /// [`AsyncWrite`](`compio_io::AsyncWrite`) traits, you can wrap `File` with
-/// [`std::io::Cursor`]. # Examples
+/// [`std::io::Cursor`].
+///
+/// # Examples
 /// ```ignore
 /// use compio::fs::File;
 /// use compio::buf::BufResult;
