@@ -41,8 +41,9 @@ crossbeam-queue = { workspace = true }
 futures-util = { workspace = true }
 once_cell = { workspace = true }
 scoped-tls = "1.0.1"
-slab = { workspace = true, optional = true }
+slab = { workspace = true }
 socket2 = { workspace = true }
+pin-project-lite = { workspace = true }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
@@ -61,11 +62,19 @@ block2 = "0.6.0"
 
 [features]
 event = ["dep:cfg-if", "compio-buf/arrayvec"]
-time = ["dep:slab"]
+time = []
 
 # Enable it to always notify the driver when a task schedules.
 notify-always = []
 
 [[test]]
+name = "custom_loop"
+required-features = ["event", "time"]
+
+[[test]]
 name = "event"
 required-features = ["event"]
+
+[[test]]
+name = "drop"
+required-features = ["time"]

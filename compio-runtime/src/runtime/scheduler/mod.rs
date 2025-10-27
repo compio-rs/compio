@@ -1,9 +1,13 @@
-use crate::runtime::scheduler::{local_queue::LocalQueue, send_wrapper::SendWrapper};
+use crate::runtime::scheduler::{
+    drop_hook::DropHook, local_queue::LocalQueue, send_wrapper::SendWrapper,
+};
 use async_task::{Runnable, Task};
 use compio_driver::NotifyHandle;
 use crossbeam_queue::SegQueue;
-use std::{future::Future, marker::PhantomData, sync::Arc};
+use slab::Slab;
+use std::{cell::RefCell, future::Future, marker::PhantomData, rc::Rc, sync::Arc, task::Waker};
 
+mod drop_hook;
 mod local_queue;
 mod send_wrapper;
 
@@ -68,13 +72,38 @@ impl TaskQueue {
         let local_queue = unsafe { self.local_queue.get_unchecked() };
         local_queue.is_empty() && self.sync_queue.is_empty()
     }
+
+    /// Clears both queues.
+    ///
+    /// # Safety
+    ///
+    /// Call this method in the same thread as the creator.
+    unsafe fn clear(&self) {
+        // SAFETY: See the safety comment of this method.
+        let local_queue = unsafe { self.local_queue.get_unchecked() };
+
+        while let Some(item) = local_queue.pop() {
+            drop(item);
+        }
+
+        while let Some(item) = self.sync_queue.pop() {
+            drop(item);
+        }
+    }
 }
 
 /// A scheduler for managing and executing tasks.
 pub(crate) struct Scheduler {
+    /// Queue for scheduled tasks.
     task_queue: Arc<TaskQueue>,
+
+    /// `Waker` of active tasks.
+    active_tasks: Rc<RefCell<Slab<Waker>>>,
+
+    /// Number of scheduler ticks for each `run` invocation.
     event_interval: usize,
-    // `Scheduler` is `!Send` and `!Sync`.
+
+    /// Makes this type `!Send` and `!Sync`.
     _local_marker: PhantomData<*const ()>,
 }
 
@@ -83,6 +112,7 @@ impl Scheduler {
     pub(crate) fn new(event_interval: usize) -> Self {
         Self {
             task_queue: Arc::new(TaskQueue::new()),
+            active_tasks: Rc::new(RefCell::new(Slab::new())),
             event_interval,
             _local_marker: PhantomData,
         }
@@ -101,20 +131,39 @@ impl Scheduler {
     where
         F: Future,
     {
+        let mut active_tasks = self.active_tasks.borrow_mut();
+        let task_entry = active_tasks.vacant_entry();
+
+        let future = {
+            let active_tasks = self.active_tasks.clone();
+            let index = task_entry.key();
+
+            // Wrap the future with a drop hook to remove the waker upon completion.
+            DropHook::new(future, move || {
+                active_tasks.borrow_mut().try_remove(index);
+            })
+        };
+
         let schedule = {
-            // Use `Weak` to break reference cycle.
-            // `TaskQueue` -> `Runnable` -> `TaskQueue`
+            // The schedule closure is managed by the `Waker` and may be dropped on another thread,
+            // so use `Weak` to ensure the `TaskQueue` is always dropped on the creator thread.
             let task_queue = Arc::downgrade(&self.task_queue);
 
             move |runnable| {
-                if let Some(task_queue) = task_queue.upgrade() {
-                    task_queue.push(runnable, &notify);
-                }
+                // The `upgrade()` never fails because all tasks are dropped when the `Scheduler` is dropped,
+                // if a `Waker` is used after that, the schedule closure will never be called.
+                task_queue.upgrade().unwrap().push(runnable, &notify);
             }
         };
 
         let (runnable, task) = async_task::spawn_unchecked(future, schedule);
+
+        // Store the waker.
+        task_entry.insert(runnable.waker());
+
+        // Schedule the task for execution.
         runnable.schedule();
+
         task
     }
 
@@ -124,11 +173,13 @@ impl Scheduler {
     pub(crate) fn run(&self) -> bool {
         for _ in 0..self.event_interval {
             // SAFETY:
-            // `Scheduler` is `!Send` and `!Sync`, so this method is only called
-            // on `TaskQueue`'s creator thread.
+            // This method is only called on `TaskQueue`'s creator thread
+            // because `Scheduler` is `!Send` and `!Sync`.
             let tasks = unsafe { self.task_queue.pop() };
 
             // Run the tasks, which will poll the futures.
+            //
+            // SAFETY:
             // Since spawned tasks are not required to be `Send`, they must always be polled
             // on the same thread. Because `Scheduler` is `!Send` and `!Sync`, this is safe.
             match tasks {
@@ -147,8 +198,29 @@ impl Scheduler {
         }
 
         // SAFETY:
-        // `Scheduler` is `!Send` and `!Sync`, so this method is only called
-        // on `TaskQueue`'s creator thread.
+        // This method is only called on `TaskQueue`'s creator thread
+        // because `Scheduler` is `!Send` and `!Sync`.
         !unsafe { self.task_queue.is_empty() }
+    }
+
+    /// Clears all active tasks.
+    ///
+    /// This method **must** be called before the scheduler is dropped.
+    pub(crate) fn clear(&self) {
+        // Drain and wake all wakers, which will schedule all active tasks.
+        self.active_tasks
+            .borrow_mut()
+            .drain()
+            .for_each(|waker| waker.wake());
+
+        // Then drop all scheduled tasks, which will drop all futures.
+        //
+        // SAFETY:
+        // Since spawned tasks are not required to be `Send`, they must always be dropped
+        // on the same thread. Because `Scheduler` is `!Send` and `!Sync`, this is safe.
+        //
+        // This method is only called on `TaskQueue`'s creator thread
+        // because `Scheduler` is `!Send` and `!Sync`.
+        unsafe { self.task_queue.clear() };
     }
 }

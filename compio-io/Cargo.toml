@@ -15,7 +15,7 @@ compio-buf = { workspace = true, features = ["arrayvec", "bytes"] }
 futures-util = { workspace = true, features = ["sink"] }
 paste = { workspace = true }
 thiserror = { workspace = true, optional = true }
-pin-project-lite = { version = "0.2.14", optional = true }
+pin-project-lite = { workspace = true, optional = true }
 serde = { version = "1.0.219", optional = true }
 serde_json = { version = "1.0.140", optional = true }
 
