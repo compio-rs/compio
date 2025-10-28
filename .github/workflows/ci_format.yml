@@ -1,0 +1,24 @@
+name: Check Code Format
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+env:
+  RUST_BACKTRACE: 1
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust Toolchain
+        run: |
+          rustup default nightly
+          rustup component add rustfmt
+      - name: Check Format
+        run: cargo fmt --all -- --check
