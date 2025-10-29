@@ -22,6 +22,7 @@ serde_json = { version = "1.0.140", optional = true }
 [dev-dependencies]
 compio-runtime = { workspace = true }
 compio-macros = { workspace = true }
+compio-driver = { workspace = true, features = ["polling"] }
 tokio = { workspace = true, features = ["macros", "rt"] }
 serde = { version = "1.0.219", features = ["derive"] }
 futures-executor = "0.3.30"
@@ -38,3 +39,11 @@ codec-serde-json = ["dep:serde", "dep:serde_json", "dep:thiserror"]
 allocator_api = ["compio-buf/allocator_api"]
 read_buf = ["compio-buf/read_buf"]
 nightly = ["allocator_api", "read_buf"]
+
+[[test]]
+name = "compat"
+required-features = ["compat"]
+
+[[test]]
+name = "framed"
+required-features = ["codec-serde-json"]

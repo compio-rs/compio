@@ -19,6 +19,14 @@ pub enum State<Io> {
 }
 
 impl<Io> State<Io> {
+    pub fn new(io: Io, buf: Vec<u8>) -> Self {
+        State::Idle(Some((io, buf)))
+    }
+
+    pub fn empty() -> Self {
+        State::Idle(None)
+    }
+
     fn take_idle(&mut self) -> (Io, Vec<u8>) {
         match self {
             State::Idle(idle) => idle.take().expect("Inconsistent state"),
@@ -26,51 +34,14 @@ impl<Io> State<Io> {
         }
     }
 
-    pub fn buf(&mut self) -> Option<&mut Vec<u8>> {
+    fn buf(&mut self) -> Option<&mut Vec<u8>> {
         match self {
             State::Idle(Some((_, buf))) => Some(buf),
             _ => None,
         }
     }
 
-    pub fn start_flush(&mut self)
-    where
-        Io: AsyncWrite + 'static,
-    {
-        let (mut io, buf) = self.take_idle();
-        let fut = Box::pin(async move {
-            let res = io.flush().await;
-            (io, res, buf)
-        });
-        *self = State::Flushing(fut);
-    }
-
-    pub fn start_close(&mut self)
-    where
-        Io: AsyncWrite + 'static,
-    {
-        let (mut io, buf) = self.take_idle();
-        let fut = Box::pin(async move {
-            let res = io.shutdown().await;
-            (io, res, buf)
-        });
-        *self = State::Closing(fut);
-    }
-
-    pub fn start_write(&mut self)
-    where
-        Io: AsyncWrite + 'static,
-    {
-        let (mut io, buf) = self.take_idle();
-        let fut = Box::pin(async move {
-            let res = io.write_all(buf).await;
-            (io, res)
-        });
-        *self = State::Writing(fut);
-    }
-
-    /// State that may occur when `Framed` is acting as a [`Sink`].
-    pub fn poll_sink(&mut self, cx: &mut std::task::Context<'_>) -> Poll<io::Result<()>> {
+    fn poll_sink(&mut self, cx: &mut std::task::Context<'_>) -> Poll<io::Result<()>> {
         let (io, res, buf) = match self {
             State::Writing(fut) => {
                 let (io, BufResult(res, buf)) = ready!(fut.poll_unpin(cx));
@@ -83,6 +54,35 @@ impl<Io> State<Io> {
         };
         *self = State::Idle(Some((io, buf)));
         Poll::Ready(res)
+    }
+}
+
+impl<Io: AsyncWrite + 'static> State<Io> {
+    fn start_flush(&mut self) {
+        let (mut io, buf) = self.take_idle();
+        let fut = Box::pin(async move {
+            let res = io.flush().await;
+            (io, res, buf)
+        });
+        *self = State::Flushing(fut);
+    }
+
+    fn start_close(&mut self) {
+        let (mut io, buf) = self.take_idle();
+        let fut = Box::pin(async move {
+            let res = io.shutdown().await;
+            (io, res, buf)
+        });
+        *self = State::Closing(fut);
+    }
+
+    fn start_write(&mut self) {
+        let (mut io, buf) = self.take_idle();
+        let fut = Box::pin(async move {
+            let res = io.write_all(buf).await;
+            (io, res)
+        });
+        *self = State::Writing(fut);
     }
 }
 

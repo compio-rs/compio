@@ -36,7 +36,7 @@ impl<R, W, C, F, In, Out> Framed<R, W, C, F, In, Out> {
     /// Change the reader of the `Framed` object.
     pub fn with_reader<Io>(self, reader: Io) -> Framed<Io, W, C, F, In, Out> {
         Framed {
-            read_state: read::State::Idle(Some((reader, Buffer::with_capacity(64)))),
+            read_state: read::State::new(reader, Buffer::with_capacity(64)),
             write_state: self.write_state,
             codec: self.codec,
             framer: self.framer,
@@ -48,7 +48,7 @@ impl<R, W, C, F, In, Out> Framed<R, W, C, F, In, Out> {
     pub fn with_writer<Io>(self, writer: Io) -> Framed<R, Io, C, F, In, Out> {
         Framed {
             read_state: self.read_state,
-            write_state: write::State::Idle(Some((writer, Vec::new()))),
+            write_state: write::State::new(writer, Vec::new()),
             codec: self.codec,
             framer: self.framer,
             types: PhantomData,
@@ -57,9 +57,18 @@ impl<R, W, C, F, In, Out> Framed<R, W, C, F, In, Out> {
 
     /// Change the codec of the `Framed` object.
     ///
-    /// This is useful when you have a duplex I/O type, e.g., a `TcpStream` or
-    /// `File`, and you want [`Framed`] to implement both
-    /// [`Sink`](futures_util::Sink) and [`Stream`](futures_util::Stream).
+    /// This is useful when you have a duplex I/O type, e.g., a
+    /// `compio::net::TcpStream` or `compio::fs::File`, and you want
+    /// [`Framed`] to implement both [`Sink`](futures_util::Sink) and
+    /// [`Stream`](futures_util::Stream).
+    ///
+    /// Some types like the ones mentioned above are multiplexed by nature, so
+    /// they implement the [`Splittable`] trait by themselves. For other types,
+    /// you may want to wrap them in [`Split`] or [`UnsyncSplit`] first, which
+    /// uses lock or `RefCell` under the hood.
+    ///
+    /// [`Split`]: crate::util::split::Split
+    /// [`UnsyncSplit`]: crate::util::split::UnsyncSplit
     pub fn with_duplex<Io: Splittable>(
         self,
         io: Io,
@@ -67,8 +76,8 @@ impl<R, W, C, F, In, Out> Framed<R, W, C, F, In, Out> {
         let (read_half, write_half) = io.split();
 
         Framed {
-            read_state: read::State::Idle(Some((read_half, Buffer::with_capacity(64)))),
-            write_state: write::State::Idle(Some((write_half, Vec::new()))),
+            read_state: read::State::new(read_half, Buffer::with_capacity(64)),
+            write_state: write::State::new(write_half, Vec::new()),
             codec: self.codec,
             framer: self.framer,
             types: PhantomData,
@@ -81,8 +90,8 @@ impl<C, F> Framed<(), (), C, F, (), ()> {
     /// different input and output type.
     pub fn new<In, Out>(codec: C, framer: F) -> Framed<(), (), C, F, In, Out> {
         Framed {
-            read_state: read::State::Idle(None),
-            write_state: write::State::Idle(None),
+            read_state: read::State::empty(),
+            write_state: write::State::empty(),
             codec,
             framer,
             types: PhantomData,
@@ -93,8 +102,8 @@ impl<C, F> Framed<(), (), C, F, (), ()> {
     /// the same input and output type.
     pub fn symmetric<T>(codec: C, framer: F) -> Framed<(), (), C, F, T, T> {
         Framed {
-            read_state: read::State::Idle(None),
-            write_state: write::State::Idle(None),
+            read_state: read::State::empty(),
+            write_state: write::State::empty(),
             codec,
             framer,
             types: PhantomData,

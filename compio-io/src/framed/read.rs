@@ -7,11 +7,32 @@ use compio_buf::BufResult;
 use futures_util::Stream;
 
 use super::*;
-use crate::{AsyncReadExt, PinBoxFuture, buffer::Buffer};
+use crate::{AsyncReadExt, PinBoxFuture, buffer::Buffer, framed::frame::Framer};
 
 type ReadResult = BufResult<usize, Buffer>;
 
-pub enum State<Io> {
+pub struct State<Io> {
+    inner: StateInner<Io>,
+    eof: bool,
+}
+
+impl<Io> State<Io> {
+    pub fn new(io: Io, buf: Buffer) -> Self {
+        State {
+            inner: StateInner::Idle(Some((io, buf))),
+            eof: false,
+        }
+    }
+
+    pub fn empty() -> Self {
+        State {
+            inner: StateInner::Idle(None),
+            eof: false,
+        }
+    }
+}
+
+enum StateInner<Io> {
     Idle(Option<(Io, Buffer)>),
     Reading(PinBoxFuture<(Io, ReadResult)>),
 }
@@ -20,7 +41,7 @@ impl<R, W, C, F, In, Out> Stream for Framed<R, W, C, F, In, Out>
 where
     R: AsyncRead + 'static,
     C: Decoder<Out>,
-    F: frame::Framer,
+    F: Framer,
     Self: Unpin,
 {
     type Item = Result<Out, C::Error>;
@@ -29,20 +50,21 @@ where
         let this = self.get_mut();
 
         loop {
-            match &mut this.read_state {
-                State::Idle(idle) => {
+            match &mut this.read_state.inner {
+                StateInner::Idle(idle) => {
                     let (mut io, mut buf) = idle.take().expect("Inconsistent state");
+                    let slice = buf.slice();
 
                     // First try decode from the buffer
-                    if let Some(frame) = this.framer.extract(buf.slice()) {
-                        let decoded = this.codec.decode(frame.payload(buf.slice()))?;
+                    if let Some(frame) = this.framer.extract(slice) {
+                        let decoded = this.codec.decode(frame.payload(slice))?;
                         buf.advance(frame.len());
 
                         if buf.all_done() {
                             buf.reset();
                         }
 
-                        this.read_state = State::Idle(Some((io, buf)));
+                        this.read_state.inner = StateInner::Idle(Some((io, buf)));
 
                         return Poll::Ready(Some(Ok(decoded)));
                     }
@@ -54,12 +76,19 @@ where
                         (io, BufResult(res, buf))
                     });
 
-                    this.read_state = State::Reading(fut)
+                    this.read_state.inner = StateInner::Reading(fut)
                 }
-                State::Reading(fut) => {
+                StateInner::Reading(fut) => {
                     let (io, BufResult(res, buf)) = ready!(fut.poll_unpin(cx));
-                    this.read_state = State::Idle(Some((io, buf)));
-                    res?;
+                    this.read_state.inner = StateInner::Idle(Some((io, buf)));
+                    if res? == 0 {
+                        // It's the second time EOF is reached, return None
+                        if this.read_state.eof {
+                            return Poll::Ready(None);
+                        }
+
+                        this.read_state.eof = true;
+                    }
                 }
             };
         }
