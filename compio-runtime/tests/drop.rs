@@ -1,4 +1,3 @@
-use futures_util::task::AtomicWaker;
 use std::{
     future::Future,
     pin::Pin,
@@ -6,6 +5,8 @@ use std::{
     task::{Context, Poll},
     thread::{self, ThreadId},
 };
+
+use futures_util::task::AtomicWaker;
 
 struct DropWatcher {
     waker: Arc<AtomicWaker>,
