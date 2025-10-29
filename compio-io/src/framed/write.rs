@@ -58,10 +58,7 @@ impl<Io> State<Io> {
 }
 
 impl<Io: AsyncWrite + 'static> State<Io> {
-    fn start_flush(&mut self)
-    where
-        Io: AsyncWrite + 'static,
-    {
+    fn start_flush(&mut self) {
         let (mut io, buf) = self.take_idle();
         let fut = Box::pin(async move {
             let res = io.flush().await;
@@ -70,10 +67,7 @@ impl<Io: AsyncWrite + 'static> State<Io> {
         *self = State::Flushing(fut);
     }
 
-    fn start_close(&mut self)
-    where
-        Io: AsyncWrite + 'static,
-    {
+    fn start_close(&mut self) {
         let (mut io, buf) = self.take_idle();
         let fut = Box::pin(async move {
             let res = io.shutdown().await;
@@ -82,10 +76,7 @@ impl<Io: AsyncWrite + 'static> State<Io> {
         *self = State::Closing(fut);
     }
 
-    fn start_write(&mut self)
-    where
-        Io: AsyncWrite + 'static,
-    {
+    fn start_write(&mut self) {
         let (mut io, buf) = self.take_idle();
         let fut = Box::pin(async move {
             let res = io.write_all(buf).await;
