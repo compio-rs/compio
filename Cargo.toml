@@ -46,6 +46,7 @@ criterion = "0.7.0"
 crossbeam-queue = "0.3.8"
 flume = { version = "0.11.0", default-features = false }
 futures-channel = "0.3.29"
+futures-rustls = { version = "0.26.0", default-features = false }
 futures-util = "0.3.29"
 libc = "0.2.164"
 nix = "0.30.1"

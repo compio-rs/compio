@@ -1,6 +1,6 @@
 [package]
 name = "compio-io"
-version = "0.8.1"
+version = "0.8.2"
 description = "IO traits for completion based async IO"
 categories = ["asynchronous"]
 keywords = ["async", "io"]
@@ -15,7 +15,6 @@ compio-buf = { workspace = true, features = ["arrayvec", "bytes"] }
 futures-util = { workspace = true, features = ["sink"] }
 paste = { workspace = true }
 thiserror = { workspace = true, optional = true }
-pin-project-lite = { workspace = true, optional = true }
 serde = { version = "1.0.219", optional = true }
 serde_json = { version = "1.0.140", optional = true }
 
@@ -29,7 +28,7 @@ futures-executor = "0.3.30"
 
 [features]
 default = []
-compat = ["dep:pin-project-lite", "futures-util/io"]
+compat = ["futures-util/io"]
 
 # Codecs
 # Serde json codec

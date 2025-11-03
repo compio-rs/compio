@@ -1,18 +1,29 @@
-use std::io;
+use std::{fmt::Debug, io};
 
-use compio_io::{AsyncRead, AsyncWrite, compat::SyncStream};
+use compio_io::{
+    AsyncRead, AsyncWrite,
+    compat::{AsyncStream, SyncStream},
+};
 
 use crate::TlsStream;
 
-#[cfg(feature = "rustls")]
-mod rtls;
-
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 enum TlsConnectorInner {
     #[cfg(feature = "native-tls")]
     NativeTls(native_tls::TlsConnector),
     #[cfg(feature = "rustls")]
-    Rustls(rtls::TlsConnector),
+    Rustls(futures_rustls::TlsConnector),
+}
+
+impl Debug for TlsConnectorInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            #[cfg(feature = "native-tls")]
+            Self::NativeTls(_) => f.debug_tuple("NativeTls").finish(),
+            #[cfg(feature = "rustls")]
+            Self::Rustls(_) => f.debug_tuple("Rustls").finish(),
+        }
+    }
 }
 
 /// A wrapper around a [`native_tls::TlsConnector`] or [`rustls::ClientConfig`],
@@ -30,7 +41,7 @@ impl From<native_tls::TlsConnector> for TlsConnector {
 #[cfg(feature = "rustls")]
 impl From<std::sync::Arc<rustls::ClientConfig>> for TlsConnector {
     fn from(value: std::sync::Arc<rustls::ClientConfig>) -> Self {
-        Self(TlsConnectorInner::Rustls(rtls::TlsConnector(value)))
+        Self(TlsConnectorInner::Rustls(value.into()))
     }
 }
 
@@ -47,7 +58,7 @@ impl TlsConnector {
     /// example, a TCP connection to a remote server. That stream is then
     /// provided here to perform the client half of a connection to a
     /// TLS-powered server.
-    pub async fn connect<S: AsyncRead + AsyncWrite>(
+    pub async fn connect<S: AsyncRead + AsyncWrite + Unpin + 'static>(
         &self,
         domain: &str,
         stream: S,
@@ -58,7 +69,15 @@ impl TlsConnector {
                 handshake_native_tls(c.connect(domain, SyncStream::new(stream))).await
             }
             #[cfg(feature = "rustls")]
-            TlsConnectorInner::Rustls(c) => handshake_rustls(c.connect(domain, stream)).await,
+            TlsConnectorInner::Rustls(c) => {
+                let client = c
+                    .connect(
+                        domain.to_string().try_into().map_err(io::Error::other)?,
+                        AsyncStream::new(stream),
+                    )
+                    .await?;
+                Ok(TlsStream::from(client))
+            }
         }
     }
 }
@@ -68,7 +87,7 @@ enum TlsAcceptorInner {
     #[cfg(feature = "native-tls")]
     NativeTls(native_tls::TlsAcceptor),
     #[cfg(feature = "rustls")]
-    Rustls(rtls::TlsAcceptor),
+    Rustls(futures_rustls::TlsAcceptor),
 }
 
 /// A wrapper around a [`native_tls::TlsAcceptor`] or [`rustls::ServerConfig`],
@@ -86,7 +105,7 @@ impl From<native_tls::TlsAcceptor> for TlsAcceptor {
 #[cfg(feature = "rustls")]
 impl From<std::sync::Arc<rustls::ServerConfig>> for TlsAcceptor {
     fn from(value: std::sync::Arc<rustls::ServerConfig>) -> Self {
-        Self(TlsAcceptorInner::Rustls(rtls::TlsAcceptor(value)))
+        Self(TlsAcceptorInner::Rustls(value.into()))
     }
 }
 
@@ -101,14 +120,20 @@ impl TlsAcceptor {
     /// This is typically used after a new socket has been accepted from a
     /// `TcpListener`. That socket is then passed to this function to perform
     /// the server half of accepting a client connection.
-    pub async fn accept<S: AsyncRead + AsyncWrite>(&self, stream: S) -> io::Result<TlsStream<S>> {
+    pub async fn accept<S: AsyncRead + AsyncWrite + Unpin + 'static>(
+        &self,
+        stream: S,
+    ) -> io::Result<TlsStream<S>> {
         match &self.0 {
             #[cfg(feature = "native-tls")]
             TlsAcceptorInner::NativeTls(c) => {
                 handshake_native_tls(c.accept(SyncStream::new(stream))).await
             }
             #[cfg(feature = "rustls")]
-            TlsAcceptorInner::Rustls(c) => handshake_rustls(c.accept(stream)).await,
+            TlsAcceptorInner::Rustls(c) => {
+                let server = c.accept(AsyncStream::new(stream)).await?;
+                Ok(TlsStream::from(server))
+            }
         }
     }
 }
@@ -135,35 +160,6 @@ async fn handshake_native_tls<S: AsyncRead + AsyncWrite>(
                         mid_stream.get_mut().fill_read_buf().await?;
                     }
                     res = mid_stream.handshake();
-                }
-            },
-        }
-    }
-}
-
-#[cfg(feature = "rustls")]
-async fn handshake_rustls<S: AsyncRead + AsyncWrite, C, D>(
-    mut res: Result<TlsStream<S>, rtls::HandshakeError<S, C>>,
-) -> io::Result<TlsStream<S>>
-where
-    C: std::ops::DerefMut<Target = rustls::ConnectionCommon<D>>,
-{
-    use rtls::HandshakeError;
-
-    loop {
-        match res {
-            Ok(mut s) => {
-                s.flush().await?;
-                return Ok(s);
-            }
-            Err(e) => match e {
-                HandshakeError::Rustls(e) => return Err(io::Error::other(e)),
-                HandshakeError::System(e) => return Err(e),
-                HandshakeError::WouldBlock(mut mid_stream) => {
-                    if mid_stream.get_mut().flush_write_buf().await? == 0 {
-                        mid_stream.get_mut().fill_read_buf().await?;
-                    }
-                    res = mid_stream.handshake::<D>();
                 }
             },
         }
