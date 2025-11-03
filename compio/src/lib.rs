@@ -19,7 +19,7 @@
 //! # })
 //! ```
 
-#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 
 #[doc(no_inline)]

@@ -1,6 +1,6 @@
 //! Process library for compio. It is an extension to [`std::process`].
 
-#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(
     all(feature = "linux_pidfd", target_os = "linux"),
     feature(linux_pidfd)
