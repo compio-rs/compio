@@ -90,26 +90,35 @@ impl<S> TlsStream<S> {
             TlsConnection::Server(server) => server.alpn_protocol(),
         }
     }
+
+    pub fn is_handshaking(&self) -> bool {
+        match &self.conn {
+            TlsConnection::Client(client) => client.is_handshaking(),
+            TlsConnection::Server(server) => server.is_handshaking(),
+        }
+    }
 }
 
 impl<S: io::Read> TlsStream<S> {
     fn read_impl<T>(&mut self, mut f: impl FnMut(Reader) -> io::Result<T>) -> io::Result<T> {
-        loop {
-            while self.conn.wants_read() {
-                if self.conn.read_tls(&mut self.inner)? == 0 {
-                    break;
-                }
-                self.conn.process_new_packets().map_err(io::Error::other)?;
-            }
-
-            match f(self.conn.reader()) {
-                Ok(len) => {
-                    return Ok(len);
-                }
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
-                Err(e) => return Err(e),
+        let mut eof = false;
+        while self.conn.wants_read() {
+            let res = self.conn.read_tls(&mut self.inner)?;
+            self.conn.process_new_packets().map_err(io::Error::other)?;
+            if res == 0 {
+                eof = true;
+                break;
             }
         }
+
+        if eof && self.is_handshaking() {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "TLS handshake interrupted by EOF",
+            ));
+        }
+
+        f(self.conn.reader())
     }
 }
 
