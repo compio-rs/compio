@@ -98,9 +98,16 @@ impl<S: AsyncRead + AsyncWrite + Unpin + 'static> AsyncRead for TlsStream<S> {
             #[cfg(feature = "rustls")]
             TlsStreamInner::Rustls(s) => {
                 let res = futures_util::AsyncReadExt::read(s, slice).await;
-                if let Ok(len) = &res {
-                    unsafe { buf.set_buf_init(*len) };
-                }
+                let res = match res {
+                    Ok(len) => {
+                        unsafe { buf.set_buf_init(len) };
+                        Ok(len)
+                    }
+                    // TLS streams may return UnexpectedEof when the connection is closed.
+                    // https://docs.rs/rustls/latest/rustls/manual/_03_howto/index.html#unexpected-eof
+                    Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => Ok(0),
+                    _ => res,
+                };
                 BufResult(res, buf)
             }
         }
