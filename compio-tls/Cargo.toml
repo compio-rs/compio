@@ -1,6 +1,6 @@
 [package]
 name = "compio-tls"
-version = "0.7.0"
+version = "0.7.1"
 description = "TLS adaptor with compio"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net", "tls"]
@@ -25,6 +25,12 @@ rustls = { workspace = true, default-features = false, optional = true, features
     "tls12",
 ] }
 
+futures-rustls = { workspace = true, default-features = false, optional = true, features = [
+    "logging",
+    "tls12",
+] }
+futures-util = { workspace = true, optional = true }
+
 [dev-dependencies]
 compio-net = { workspace = true }
 compio-runtime = { workspace = true }
@@ -33,14 +39,18 @@ compio-macros = { workspace = true }
 rustls = { workspace = true, default-features = false, features = ["ring"] }
 rustls-native-certs = { workspace = true }
 
+futures-rustls = { workspace = true, default-features = false, features = [
+    "ring",
+] }
+
 [features]
 default = ["native-tls"]
 all = ["native-tls", "rustls"]
-rustls = ["dep:rustls"]
+rustls = ["dep:rustls", "dep:futures-rustls", "dep:futures-util"]
 
-ring = ["rustls", "rustls/ring"]
-aws-lc-rs = ["rustls", "rustls/aws-lc-rs"]
-aws-lc-rs-fips = ["aws-lc-rs", "rustls/fips"]
+ring = ["rustls", "rustls/ring", "futures-rustls/ring"]
+aws-lc-rs = ["rustls", "rustls/aws-lc-rs", "futures-rustls/aws-lc-rs"]
+aws-lc-rs-fips = ["aws-lc-rs", "rustls/fips", "futures-rustls/fips"]
 
 read_buf = ["compio-buf/read_buf", "compio-io/read_buf", "rustls?/read_buf"]
 nightly = ["read_buf"]

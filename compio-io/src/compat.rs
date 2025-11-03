@@ -1,6 +1,7 @@
 //! Compat wrappers for interop with other crates.
 
 use std::{
+    fmt::Debug,
     io::{self, BufRead, Read, Write},
     mem::MaybeUninit,
     pin::Pin,
@@ -8,7 +9,6 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
-use pin_project_lite::pin_project;
 
 use crate::{PinBoxFuture, buffer::Buffer, util::DEFAULT_BUF_SIZE};
 
@@ -176,15 +176,14 @@ impl<S: crate::AsyncWrite> SyncStream<S> {
     }
 }
 
-pin_project! {
-    /// A stream wrapper for [`futures_util::io`] traits.
-    pub struct AsyncStream<S> {
-        #[pin]
-        inner: SyncStream<S>,
-        read_future: Option<PinBoxFuture<io::Result<usize>>>,
-        write_future: Option<PinBoxFuture<io::Result<usize>>>,
-        shutdown_future: Option<PinBoxFuture<io::Result<()>>>,
-    }
+/// A stream wrapper for [`futures_util::io`] traits.
+pub struct AsyncStream<S> {
+    // The futures keep the reference to the inner stream, so we need to pin
+    // the inner stream to make sure the reference is valid.
+    inner: Pin<Box<SyncStream<S>>>,
+    read_future: Option<PinBoxFuture<io::Result<usize>>>,
+    write_future: Option<PinBoxFuture<io::Result<usize>>>,
+    shutdown_future: Option<PinBoxFuture<io::Result<()>>>,
 }
 
 impl<S> AsyncStream<S> {
@@ -200,7 +199,7 @@ impl<S> AsyncStream<S> {
 
     fn new_impl(inner: SyncStream<S>) -> Self {
         Self {
-            inner,
+            inner: Box::pin(inner),
             read_future: None,
             write_future: None,
             shutdown_future: None,
@@ -253,20 +252,18 @@ macro_rules! poll_future_would_block {
 
 impl<S: crate::AsyncRead + 'static> futures_util::AsyncRead for AsyncStream<S> {
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        let this = self.project();
         // Safety:
         // - The futures won't live longer than the stream.
-        // - `self` is pinned.
-        // - The inner stream won't be moved.
+        // - The inner stream is pinned.
         let inner: &'static mut SyncStream<S> =
-            unsafe { &mut *(this.inner.get_unchecked_mut() as *mut _) };
+            unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
 
         poll_future_would_block!(
-            this.read_future,
+            self.read_future,
             cx,
             inner.fill_read_buf(),
             io::Read::read(inner, buf)
@@ -279,16 +276,14 @@ impl<S: crate::AsyncRead + 'static> AsyncStream<S> {
     ///
     /// On success, returns `Poll::Ready(Ok(num_bytes_read))`.
     pub fn poll_read_uninit(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut [MaybeUninit<u8>],
     ) -> Poll<io::Result<usize>> {
-        let this = self.project();
-
         let inner: &'static mut SyncStream<S> =
-            unsafe { &mut *(this.inner.get_unchecked_mut() as *mut _) };
+            unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
         poll_future_would_block!(
-            this.read_future,
+            self.read_future,
             cx,
             inner.fill_read_buf(),
             inner.read_buf_uninit(buf)
@@ -297,13 +292,11 @@ impl<S: crate::AsyncRead + 'static> AsyncStream<S> {
 }
 
 impl<S: crate::AsyncRead + 'static> futures_util::AsyncBufRead for AsyncStream<S> {
-    fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
-        let this = self.project();
-
+    fn poll_fill_buf(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
         let inner: &'static mut SyncStream<S> =
-            unsafe { &mut *(this.inner.get_unchecked_mut() as *mut _) };
+            unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
         poll_future_would_block!(
-            this.read_future,
+            self.read_future,
             cx,
             inner.fill_read_buf(),
             // Safety: anyway the slice won't be used after free.
@@ -311,65 +304,63 @@ impl<S: crate::AsyncRead + 'static> futures_util::AsyncBufRead for AsyncStream<S
         )
     }
 
-    fn consume(self: Pin<&mut Self>, amt: usize) {
-        let this = self.project();
-
-        let inner: &'static mut SyncStream<S> =
-            unsafe { &mut *(this.inner.get_unchecked_mut() as *mut _) };
-        inner.consume(amt)
+    fn consume(mut self: Pin<&mut Self>, amt: usize) {
+        unsafe { self.inner.as_mut().get_unchecked_mut().consume(amt) }
     }
 }
 
 impl<S: crate::AsyncWrite + 'static> futures_util::AsyncWrite for AsyncStream<S> {
     fn poll_write(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        let this = self.project();
-
-        if this.shutdown_future.is_some() {
-            debug_assert!(this.write_future.is_none());
+        if self.shutdown_future.is_some() {
+            debug_assert!(self.write_future.is_none());
             return Poll::Pending;
         }
 
         let inner: &'static mut SyncStream<S> =
-            unsafe { &mut *(this.inner.get_unchecked_mut() as *mut _) };
+            unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
         poll_future_would_block!(
-            this.write_future,
+            self.write_future,
             cx,
             inner.flush_write_buf(),
             io::Write::write(inner, buf)
         )
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let this = self.project();
-
-        if this.shutdown_future.is_some() {
-            debug_assert!(this.write_future.is_none());
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        if self.shutdown_future.is_some() {
+            debug_assert!(self.write_future.is_none());
             return Poll::Pending;
         }
 
         let inner: &'static mut SyncStream<S> =
-            unsafe { &mut *(this.inner.get_unchecked_mut() as *mut _) };
-        let res = poll_future!(this.write_future, cx, inner.flush_write_buf());
+            unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
+        let res = poll_future!(self.write_future, cx, inner.flush_write_buf());
         Poll::Ready(res.map(|_| ()))
     }
 
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let this = self.project();
-
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         // Avoid shutdown on flush because the inner buffer might be passed to the
         // driver.
-        if this.write_future.is_some() {
-            debug_assert!(this.shutdown_future.is_none());
+        if self.write_future.is_some() {
+            debug_assert!(self.shutdown_future.is_none());
             return Poll::Pending;
         }
 
         let inner: &'static mut SyncStream<S> =
-            unsafe { &mut *(this.inner.get_unchecked_mut() as *mut _) };
-        let res = poll_future!(this.shutdown_future, cx, inner.get_mut().shutdown());
+            unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
+        let res = poll_future!(self.shutdown_future, cx, inner.get_mut().shutdown());
         Poll::Ready(res)
+    }
+}
+
+impl<S: Debug> Debug for AsyncStream<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AsyncStream")
+            .field("inner", &self.inner)
+            .finish_non_exhaustive()
     }
 }
