@@ -1,6 +1,6 @@
 [package]
 name = "compio-tls"
-version = "0.7.0"
+version = "0.7.1"
 description = "TLS adaptor with compio"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net", "tls"]
