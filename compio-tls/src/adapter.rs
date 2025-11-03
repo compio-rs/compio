@@ -58,7 +58,7 @@ impl TlsConnector {
     /// example, a TCP connection to a remote server. That stream is then
     /// provided here to perform the client half of a connection to a
     /// TLS-powered server.
-    pub async fn connect<S: AsyncRead + AsyncWrite + Unpin + 'static>(
+    pub async fn connect<S: AsyncRead + AsyncWrite + 'static>(
         &self,
         domain: &str,
         stream: S,
@@ -120,7 +120,7 @@ impl TlsAcceptor {
     /// This is typically used after a new socket has been accepted from a
     /// `TcpListener`. That socket is then passed to this function to perform
     /// the server half of accepting a client connection.
-    pub async fn accept<S: AsyncRead + AsyncWrite + Unpin + 'static>(
+    pub async fn accept<S: AsyncRead + AsyncWrite + 'static>(
         &self,
         stream: S,
     ) -> io::Result<TlsStream<S>> {
