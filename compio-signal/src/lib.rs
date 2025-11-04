@@ -13,7 +13,7 @@
 //! # })
 //! ```
 
-#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
 #![cfg_attr(feature = "lazy_cell", feature(lazy_cell))]
 #![warn(missing_docs)]

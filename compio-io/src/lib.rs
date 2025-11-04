@@ -110,7 +110,7 @@
 #![allow(async_fn_in_trait)]
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
 #![cfg_attr(feature = "read_buf", feature(read_buf, core_io_borrowed_buf))]
-#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 use std::{future::Future, pin::Pin};
 type PinBoxFuture<T> = Pin<Box<dyn Future<Output = T>>>;
