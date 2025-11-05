@@ -1,8 +1,9 @@
 //! Async WebSocket support for compio.
 //!
-//! This library is an implementation of WebSocket handshakes and streams for compio.
-//! It is based on the tungstenite crate which implements all required WebSocket protocol
-//! logic. This crate brings compio support / compio integration to it.
+//! This library is an implementation of WebSocket handshakes and streams for
+//! compio. It is based on the tungstenite crate which implements all required
+//! WebSocket protocol logic. This crate brings compio support / compio
+//! integration to it.
 //!
 //! Each WebSocket stream implements message reading and writing.
 
@@ -16,21 +17,16 @@ use std::io::ErrorKind;
 
 use compio_io::{AsyncRead, AsyncWrite};
 use growable_sync_stream::GrowableSyncStream;
-
 use tungstenite::{
     Error as WsError, HandshakeError, Message, WebSocket,
     client::IntoClientRequest,
     handshake::server::{Callback, NoCallback},
     protocol::CloseFrame,
 };
-
-pub use crate::stream::MaybeTlsStream;
-
-pub use tungstenite::{Message as WebSocketMessage, handshake::client::Response};
-
-pub use tungstenite::protocol::WebSocketConfig;
-
-pub use tungstenite::error::Error as TungsteniteError;
+pub use tungstenite::{
+    Message as WebSocketMessage, error::Error as TungsteniteError, handshake::client::Response,
+    protocol::WebSocketConfig,
+};
 
 #[cfg(feature = "rustls")]
 pub use crate::rustls::{
@@ -39,6 +35,7 @@ pub use crate::rustls::{
     connect_async_with_config, connect_async_with_tls_connector,
     connect_async_with_tls_connector_and_config,
 };
+pub use crate::stream::MaybeTlsStream;
 
 pub struct WebSocketStream<S> {
     inner: WebSocket<GrowableSyncStream<S>>,
@@ -140,8 +137,8 @@ where
     accept_hdr_async(stream, NoCallback).await
 }
 
-/// The same as `accept_async()` but the one can specify a websocket configuration.
-/// Please refer to `accept_async()` for more details.
+/// The same as `accept_async()` but the one can specify a websocket
+/// configuration. Please refer to `accept_async()` for more details.
 pub async fn accept_async_with_config<S>(
     stream: S,
     config: Option<WebSocketConfig>,
@@ -153,9 +150,9 @@ where
 }
 /// Accepts a new WebSocket connection with the provided stream.
 ///
-/// This function does the same as `accept_async()` but accepts an extra callback
-/// for header processing. The callback receives headers of the incoming
-/// requests and is able to add extra headers to the reply.
+/// This function does the same as `accept_async()` but accepts an extra
+/// callback for header processing. The callback receives headers of the
+/// incoming requests and is able to add extra headers to the reply.
 pub async fn accept_hdr_async<S, C>(stream: S, callback: C) -> Result<WebSocketStream<S>, WsError>
 where
     S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
@@ -164,8 +161,8 @@ where
     accept_hdr_with_config_async(stream, callback, None).await
 }
 
-/// The same as `accept_hdr_async()` but the one can specify a websocket configuration.
-/// Please refer to `accept_hdr_async()` for more details.
+/// The same as `accept_hdr_async()` but the one can specify a websocket
+/// configuration. Please refer to `accept_hdr_async()` for more details.
 pub async fn accept_hdr_with_config_async<S, C>(
     stream: S,
     callback: C,
@@ -228,8 +225,8 @@ where
     client_async_with_config(request, stream, None).await
 }
 
-/// The same as `client_async()` but the one can specify a websocket configuration.
-/// Please refer to `client_async()` for more details.
+/// The same as `client_async()` but the one can specify a websocket
+/// configuration. Please refer to `client_async()` for more details.
 pub async fn client_async_with_config<R, S>(
     request: R,
     stream: S,
@@ -281,11 +278,12 @@ pub(crate) fn domain(
         .uri()
         .host()
         .map(|host| {
-            // If host is an IPv6 address, it might be surrounded by brackets. These brackets are
-            // *not* part of a valid IP, so they must be stripped out.
+            // If host is an IPv6 address, it might be surrounded by brackets. These
+            // brackets are *not* part of a valid IP, so they must be stripped
+            // out.
             //
-            // The URI from the request is guaranteed to be valid, so we don't need a separate
-            // check for the closing bracket.
+            // The URI from the request is guaranteed to be valid, so we don't need a
+            // separate check for the closing bracket.
             let host = if host.starts_with('[') {
                 &host[1..host.len() - 1]
             } else {

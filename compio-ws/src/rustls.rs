@@ -1,17 +1,19 @@
+use std::sync::Arc;
+
 use compio_io::{AsyncRead, AsyncWrite};
 use compio_net::TcpStream;
 use compio_tls::TlsConnector;
 use rustls::{ClientConfig, RootCertStore};
+use tungstenite::{
+    Error,
+    client::{IntoClientRequest, uri_mode},
+    handshake::client::{Request, Response},
+    stream::Mode,
+};
 
-use tungstenite::Error;
-use tungstenite::client::{IntoClientRequest, uri_mode};
-use tungstenite::handshake::client::{Request, Response};
-use tungstenite::stream::Mode;
-
-use std::sync::Arc;
-
-use crate::stream::MaybeTlsStream;
-use crate::{WebSocketConfig, WebSocketStream, client_async_with_config, domain};
+use crate::{
+    WebSocketConfig, WebSocketStream, client_async_with_config, domain, stream::MaybeTlsStream,
+};
 
 pub type AutoStream<S> = MaybeTlsStream<S>;
 
@@ -35,7 +37,7 @@ where
                 } else {
                     // Only create root_store when we actually have certificate features enabled
                     #[cfg(any(feature = "rustls-native-certs", feature = "webpki-roots"))]
-                    let mut root_store = {
+                    let root_store = {
                         let mut store = RootCertStore::empty();
 
                         #[cfg(feature = "rustls-native-certs")]
@@ -80,8 +82,7 @@ where
                         {
                             use log::debug;
 
-                            let webpki_certs: Vec<_> =
-                                webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect();
+                            let webpki_certs = webpki_roots::TLS_SERVER_ROOTS.to_vec();
                             store.extend(webpki_certs);
                             debug!(
                                 "Added {} webpki root certificates",
@@ -97,7 +98,8 @@ where
                     {
                         return Err(Error::Io(std::io::Error::new(
                             std::io::ErrorKind::NotFound,
-                            "No root certificate features enabled. Enable either 'rustls-native-certs' or 'webpki-roots'",
+                            "No root certificate features enabled. Enable either \
+                             'rustls-native-certs' or 'webpki-roots'",
                         )));
                     }
 
@@ -145,7 +147,8 @@ where
     client_async_tls_with_connector_and_config(request, stream, None, None).await
 }
 
-/// The same as `client_async_tls()` but the one can specify a websocket configuration.
+/// The same as `client_async_tls()` but the one can specify a websocket
+/// configuration.
 pub async fn client_async_tls_with_config<R, S>(
     request: R,
     stream: S,
@@ -173,8 +176,8 @@ where
     client_async_tls_with_connector_and_config(request, stream, connector, None).await
 }
 
-/// The same as `client_async_tls()` but the one can specify a websocket configuration,
-/// and an optional connector.
+/// The same as `client_async_tls()` but the one can specify a websocket
+/// configuration, and an optional connector.
 pub async fn client_async_tls_with_connector_and_config<R, S>(
     request: R,
     stream: S,
@@ -208,9 +211,10 @@ where
     connect_async_with_config(request, None, false).await
 }
 
-/// The same as `connect_async()` but the one can specify a websocket configuration.
-/// `disable_nagle` specifies if the Nagle's algorithm must be disabled, i.e. `set_nodelay(true)`.
-/// If you don't know what the Nagle's algorithm is, better leave it to `false`.
+/// The same as `connect_async()` but the one can specify a websocket
+/// configuration. `disable_nagle` specifies if the Nagle's algorithm must be
+/// disabled, i.e. `set_nodelay(true)`. If you don't know what the Nagle's
+/// algorithm is, better leave it to `false`.
 pub async fn connect_async_with_config<R>(
     request: R,
     config: Option<WebSocketConfig>,
@@ -246,8 +250,8 @@ where
     connect_async_with_tls_connector_and_config(request, connector, None).await
 }
 
-/// The same as `connect_async()` but the one can specify a websocket configuration,
-/// a TLS connector, and whether to disable Nagle's algorithm.
+/// The same as `connect_async()` but the one can specify a websocket
+/// configuration, a TLS connector, and whether to disable Nagle's algorithm.
 pub async fn connect_async_with_tls_connector_and_config<R>(
     request: R,
     connector: Option<Connector>,

@@ -5,28 +5,33 @@ use compio_io::{AsyncRead, AsyncWrite};
 
 /// A growable buffered stream adapter that bridges async I/O with sync traits.
 ///
-/// This is similar to `compio_io::compat::SyncStream` but with dynamically growing
-/// buffers that can expand beyond the initial capacity up to a configurable maximum.
+/// This is similar to `compio_io::compat::SyncStream` but with dynamically
+/// growing buffers that can expand beyond the initial capacity up to a
+/// configurable maximum.
 ///
 /// # Buffer Growth Strategy
 ///
-/// - **Read buffer**: Grows as needed to accommodate incoming data, up to `max_buffer_size`
-/// - **Write buffer**: Grows as needed for outgoing data, up to `max_buffer_size`
-/// - Both buffers shrink back to `base_capacity` when fully consumed and capacity exceeds 4x base
+/// - **Read buffer**: Grows as needed to accommodate incoming data, up to
+///   `max_buffer_size`
+/// - **Write buffer**: Grows as needed for outgoing data, up to
+///   `max_buffer_size`
+/// - Both buffers shrink back to `base_capacity` when fully consumed and
+///   capacity exceeds 4x base
 ///
 /// # Usage Pattern
 ///
-/// The sync `Read` and `Write` implementations will return `WouldBlock` errors when
-/// buffers need servicing via the async methods:
+/// The sync `Read` and `Write` implementations will return `WouldBlock` errors
+/// when buffers need servicing via the async methods:
 ///
 /// - Call `fill_read_buf()` when `Read::read()` returns `WouldBlock`
 /// - Call `flush_write_buf()` when `Write::write()` returns `WouldBlock`
 ///
 /// # Note on flush()
 ///
-/// The `Write::flush()` method intentionally returns `Ok(())` without checking if there's
-/// buffered data. This is for compatibility with libraries like tungstenite that call
-/// `flush()` after every write. Actual flushing happens via the async `flush_write_buf()` method.
+/// The `Write::flush()` method intentionally returns `Ok(())` without checking
+/// if there's buffered data. This is for compatibility with libraries like
+/// tungstenite that call `flush()` after every write. Actual flushing happens
+/// via the async `flush_write_buf()` method.
 #[derive(Debug)]
 pub struct GrowableSyncStream<S> {
     inner: S,
@@ -39,8 +44,11 @@ pub struct GrowableSyncStream<S> {
 }
 
 impl<S> GrowableSyncStream<S> {
-    const DEFAULT_BASE_CAPACITY: usize = 8 * 1024; // 8KB base
-    const DEFAULT_MAX_BUFFER: usize = 64 * 1024 * 1024; // 64MB max
+    const DEFAULT_BASE_CAPACITY: usize = 8 * 1024;
+    // 8KB base
+    const DEFAULT_MAX_BUFFER: usize = 64 * 1024 * 1024;
+
+    // 64MB max
 
     /// Creates a new `GrowableSyncStream` with default buffer sizes.
     ///
@@ -65,7 +73,8 @@ impl<S> GrowableSyncStream<S> {
         }
     }
 
-    /// Creates a new `GrowableSyncStream` with custom base capacity and maximum buffer size.
+    /// Creates a new `GrowableSyncStream` with custom base capacity and maximum
+    /// buffer size.
     pub fn with_limits(base_capacity: usize, max_buffer_size: usize, stream: S) -> Self {
         Self {
             inner: stream,
@@ -149,8 +158,9 @@ impl<S> Read for GrowableSyncStream<S> {
 impl<S> Write for GrowableSyncStream<S> {
     /// Writes data to the internal buffer.
     ///
-    /// Returns `WouldBlock` if the buffer needs flushing or has reached max capacity.
-    /// In the latter case, it may write partial data before returning `WouldBlock`.
+    /// Returns `WouldBlock` if the buffer needs flushing or has reached max
+    /// capacity. In the latter case, it may write partial data before
+    /// returning `WouldBlock`.
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         // Check if we should flush first
         if self.write_buf.len() > self.base_capacity * 2 / 3 && !self.write_buf.is_empty() {
@@ -179,13 +189,14 @@ impl<S> Write for GrowableSyncStream<S> {
 
     /// Returns `Ok(())` without checking for buffered data.
     ///
-    /// **Important**: This does NOT actually flush data to the underlying stream.
-    /// This behavior is intentional for compatibility with libraries like tungstenite
-    /// that call `flush()` after every write operation. The actual async flush
-    /// happens when `flush_write_buf()` is called.
+    /// **Important**: This does NOT actually flush data to the underlying
+    /// stream. This behavior is intentional for compatibility with
+    /// libraries like tungstenite that call `flush()` after every write
+    /// operation. The actual async flush happens when `flush_write_buf()`
+    /// is called.
     ///
-    /// This prevents spurious errors in sync code that expects `flush()` to succeed
-    /// after successfully buffering data.
+    /// This prevents spurious errors in sync code that expects `flush()` to
+    /// succeed after successfully buffering data.
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
@@ -307,7 +318,8 @@ impl<S: AsyncWrite> GrowableSyncStream<S> {
     /// # Errors
     ///
     /// Returns an error if the underlying stream returns an error.
-    /// In this case, the buffer retains any data that wasn't successfully written.
+    /// In this case, the buffer retains any data that wasn't successfully
+    /// written.
     pub async fn flush_write_buf(&mut self) -> io::Result<usize> {
         if self.write_buf.is_empty() {
             return Ok(0);

@@ -1,15 +1,16 @@
+use std::{fs, sync::Arc};
+
 use compio_net::{TcpListener, TcpStream};
 use compio_tls::TlsAcceptor;
 use compio_ws::accept_async;
 use rustls::ServerConfig;
-use std::fs;
-use std::sync::Arc;
 use tungstenite::Message;
 
 async fn create_tls_acceptor() -> Result<TlsAcceptor, Box<dyn std::error::Error>> {
     // Load certificate and key from files
     // Generate these files with:
-    // openssl req -x509 -newkey rsa:2048 -keyout localhost.key -out localhost.crt -days 365 -nodes -subj "/CN=localhost"
+    // openssl req -x509 -newkey rsa:2048 -keyout localhost.key -out localhost.crt
+    // -days 365 -nodes -subj "/CN=localhost"
 
     let cert_file = fs::read_to_string("localhost.crt")?;
     let key_file = fs::read_to_string("localhost.key")?;
@@ -42,7 +43,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         eprintln!("Error: Certificate files not found!");
         eprintln!("Please generate them with:");
-        eprintln!("openssl req -x509 -newkey rsa:2048 -keyout localhost.key -out localhost.crt -days 365 -nodes -subj \"/CN=localhost\"");
+        eprintln!(
+            "openssl req -x509 -newkey rsa:2048 -keyout localhost.key -out localhost.crt -days \
+             365 -nodes -subj \"/CN=localhost\""
+        );
         return Err("Missing certificate files".into());
     }
 

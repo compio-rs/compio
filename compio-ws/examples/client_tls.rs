@@ -1,6 +1,7 @@
-use compio_ws::{connect_async_with_tls_connector, Connector};
-use rustls::ClientConfig;
 use std::sync::Arc;
+
+use compio_ws::{Connector, connect_async_with_tls_connector};
+use rustls::ClientConfig;
 use tungstenite::Message;
 
 async fn create_insecure_tls_connector() -> Result<Connector, Box<dyn std::error::Error>> {
