@@ -142,9 +142,9 @@ impl Scheduler {
             let active_tasks = self.active_tasks.clone();
             let index = task_entry.key();
 
-            // Wrap the future with a drop hook to remove the waker upon completion.
+            // Wrap the future with a drop hook to remove the waker on drop.
             DropHook::new(future, move || {
-                active_tasks.borrow_mut().try_remove(index);
+                active_tasks.borrow_mut().remove(index);
             })
         };
 
@@ -173,9 +173,9 @@ impl Scheduler {
         task
     }
 
-    /// Run the scheduled tasks.
+    /// Runs the scheduled tasks.
     ///
-    /// The return value indicates whether there are still tasks in the queue.
+    /// Returns `true` if there are still tasks in the queue.
     pub(crate) fn run(&self) -> bool {
         for _ in 0..self.event_interval {
             // SAFETY:
@@ -213,13 +213,14 @@ impl Scheduler {
     ///
     /// This method **must** be called before the scheduler is dropped.
     pub(crate) fn clear(&self) {
-        // Drain and wake all wakers, which will schedule all active tasks.
+        // Wake up all active tasks, which schedules them again.
         self.active_tasks
-            .borrow_mut()
-            .drain()
-            .for_each(|waker| waker.wake());
+            .borrow()
+            .iter()
+            .for_each(|(_, waker)| waker.wake_by_ref());
 
-        // Then drop all scheduled tasks, which will drop all futures.
+        // Then drop all scheduled tasks, which drops all futures and removes
+        // `Waker`s from `active_tasks` by drop hooks.
         //
         // SAFETY:
         // Since spawned tasks are not required to be `Send`, they must always be
