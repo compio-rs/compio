@@ -27,10 +27,8 @@ async fn handle_client(stream: TcpStream) -> Result<(), Box<dyn std::error::Erro
     loop {
         match websocket.read().await? {
             Message::Text(text) => {
-                println!("Received text: {}", text.len());
-                let echo_msg = format!("Echo: {text}");
-                println!("Sending echo: {echo_msg}");
-
+                let text_str = text.to_string();
+                println!("Received text: {}", text_str);
                 websocket.send(Message::Text(text)).await?;
                 println!("Echo sent successfully");
             }
