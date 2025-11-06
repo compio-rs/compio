@@ -10,36 +10,37 @@ repository = { workspace = true }
 
 
 [dependencies]
-rustls = { workspace = true, optional = true, features = [
-    "logging",
-    "std",
-    "tls12",
-    "ring",
-] }
+rustls = { workspace = true, optional = true, default-features = false }
 rustls-native-certs = { version = "0.8", optional = true }
 tungstenite = "0.27.0"
-compio = { workspace = true, features = ["io", "io-compat", "macros"] }
 compio-io = { workspace = true }
 compio-net = { workspace = true, optional = true }
 compio-tls = { workspace = true, optional = true, default-features = false, features = [
     "rustls",
 ] }
 compio-runtime = { workspace = true }
+compio-driver = { workspace = true }
 compio-buf = { workspace = true }
 webpki-roots = { version = "1.0.4", optional = true }
 rustls-pemfile = "2.0"
 log = "0.4"
 
 [features]
-default = []
+default = ["io-uring"]
+io-uring = ["compio-driver/io-uring"]
+polling = ["compio-driver/polling"]
 connect = ["dep:compio-net"]
 rustls = ["connect", "dep:compio-tls", "dep:rustls", "compio-tls/rustls"]
 rustls-native-certs = ["rustls", "dep:rustls-native-certs"]
 webpki-roots = ["rustls", "dep:webpki-roots"]
+ring = ["rustls?/ring", "compio-tls?/ring"]
+
 
 [dev-dependencies]
 log = "0.4"
 env_logger = "0.11"
+compio-net = { workspace = true }
+compio-macros = { workspace = true }
 
 
 [[example]]
@@ -60,8 +61,7 @@ required-features = ["connect"]
 
 [[example]]
 name = "echo_server_tls"
-required-features = ["connect", "rustls"]
-
+required-features = ["connect", "rustls", "ring"]
 [[example]]
 name = "client_tls"
-required-features = ["connect", "rustls"]
+required-features = ["connect", "rustls", "ring"]

@@ -2,7 +2,7 @@ use compio_net::{TcpListener, TcpStream};
 use compio_ws::accept_async;
 use tungstenite::Message;
 
-#[compio::main]
+#[compio_macros::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind("127.0.0.1:9002").await?;
     println!("WebSocket echo server listening on ws://127.0.0.1:9002");

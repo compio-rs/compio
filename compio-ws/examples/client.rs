@@ -2,7 +2,7 @@ use compio_net::TcpStream;
 use compio_ws::client_async;
 use tungstenite::Message;
 
-#[compio::main]
+#[compio_macros::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Connecting to WebSocket server");
 

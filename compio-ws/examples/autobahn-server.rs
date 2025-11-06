@@ -48,7 +48,7 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
     Ok(())
 }
 
-#[compio::main]
+#[compio_macros::main]
 async fn main() {
     env_logger::init();
 

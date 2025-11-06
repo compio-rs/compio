@@ -52,7 +52,7 @@ async fn run_test(case: u32) -> Result<()> {
     Ok(())
 }
 
-#[compio::main]
+#[compio_macros::main]
 async fn main() {
     env_logger::init();
 

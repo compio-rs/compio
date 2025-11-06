@@ -35,7 +35,7 @@ async fn create_tls_acceptor() -> Result<TlsAcceptor, Box<dyn std::error::Error>
     Ok(TlsAcceptor::from(Arc::new(config)))
 }
 
-#[compio::main]
+#[compio_macros::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Check if certificate files exist
     if !std::path::Path::new("localhost.crt").exists()

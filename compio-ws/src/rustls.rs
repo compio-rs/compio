@@ -1,8 +1,10 @@
+#[cfg(any(feature = "rustls-native-certs", feature = "webpki-roots"))]
 use std::sync::Arc;
 
 use compio_io::{AsyncRead, AsyncWrite};
 use compio_net::TcpStream;
 use compio_tls::TlsConnector;
+#[cfg(any(feature = "rustls-native-certs", feature = "webpki-roots"))]
 use rustls::{ClientConfig, RootCertStore};
 use tungstenite::{
     Error,
