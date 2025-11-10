@@ -1,11 +1,15 @@
+#[cfg(feature = "rustls")]
 use std::io::Result as IoResult;
 
+#[cfg(feature = "rustls")]
 use compio_buf::{BufResult, IoBuf, IoBufMut};
+#[cfg(feature = "rustls")]
 use compio_io::{AsyncRead, AsyncWrite};
 #[cfg(feature = "rustls")]
 use compio_tls::TlsStream;
 
 /// Stream that can be either plain TCP or TLS-encrypted
+#[cfg(feature = "rustls")]
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum MaybeTlsStream<S> {
@@ -16,6 +20,7 @@ pub enum MaybeTlsStream<S> {
     Tls(TlsStream<S>),
 }
 
+#[cfg(feature = "rustls")]
 impl<S> MaybeTlsStream<S> {
     pub fn plain(stream: S) -> Self {
         MaybeTlsStream::Plain(stream)
@@ -38,6 +43,7 @@ impl<S> MaybeTlsStream<S> {
     }
 }
 
+#[cfg(feature = "rustls")]
 impl<S> AsyncRead for MaybeTlsStream<S>
 where
     S: AsyncRead + AsyncWrite + Unpin + 'static,
@@ -51,6 +57,7 @@ where
     }
 }
 
+#[cfg(feature = "rustls")]
 impl<S> AsyncWrite for MaybeTlsStream<S>
 where
     S: AsyncRead + AsyncWrite + Unpin + 'static,
@@ -79,5 +86,3 @@ where
         }
     }
 }
-
-impl<S> Unpin for MaybeTlsStream<S> where S: Unpin {}

@@ -1,10 +1,10 @@
-#[cfg(any(feature = "rustls-native-certs", feature = "webpki-roots"))]
+#[cfg(any(feature = "rustls-platform-verifier", feature = "webpki-roots"))]
 use std::sync::Arc;
 
 use compio_io::{AsyncRead, AsyncWrite};
 use compio_net::TcpStream;
 use compio_tls::TlsConnector;
-#[cfg(any(feature = "rustls-native-certs", feature = "webpki-roots"))]
+#[cfg(any(feature = "rustls-platform-verifier", feature = "webpki-roots"))]
 use rustls::{ClientConfig, RootCertStore};
 use tungstenite::{
     Error,
@@ -37,91 +37,92 @@ where
                 let connector = if let Some(connector) = connector {
                     connector
                 } else {
-                    // Only create root_store when we actually have certificate features enabled
-                    #[cfg(any(feature = "rustls-native-certs", feature = "webpki-roots"))]
-                    let root_store = {
-                        let mut store = RootCertStore::empty();
+                    // Create TLS connector with platform verifier when feature is enabled
+                    #[cfg(feature = "rustls-platform-verifier")]
+                    {
+                        use rustls_platform_verifier::BuilderVerifierExt;
 
-                        #[cfg(feature = "rustls-native-certs")]
-                        {
-                            let cert_result = rustls_native_certs::load_native_certs();
+                        // Use platform's native certificate verification
+                        // This provides better security and enterprise integration
+                        let config_result = ClientConfig::builder().with_platform_verifier();
 
-                            // Log any errors that occurred
-                            for err in &cert_result.errors {
-                                log::warn!("Error loading native certificate: {err}");
-                            }
-
-                            if !cert_result.certs.is_empty() {
-                                let (added, ignored) =
-                                    store.add_parsable_certificates(cert_result.certs);
+                        match config_result {
+                            Ok(config_builder) => {
                                 log::debug!(
-                                    "Added {added} native root certificates (ignored {ignored})"
+                                    "Using rustls-platform-verifier for certificate validation"
                                 );
+                                TlsConnector::from(Arc::new(config_builder.with_no_client_auth()))
+                            }
+                            Err(e) => {
+                                log::warn!("Error creating platform verifier: {e}");
 
                                 // Only fail if webpki-roots is NOT enabled as fallback
                                 #[cfg(not(feature = "webpki-roots"))]
-                                if added == 0 {
+                                {
                                     return Err(Error::Io(std::io::Error::new(
-                                        std::io::ErrorKind::NotFound,
-                                        "No valid native root certificates found",
+                                        std::io::ErrorKind::Other,
+                                        format!("Failed to create platform verifier: {}", e),
                                     )));
                                 }
-                            } else {
-                                log::warn!("No native root certificates found");
 
-                                // Only fail if webpki-roots is NOT enabled as fallback
-                                #[cfg(not(feature = "webpki-roots"))]
-                                return Err(Error::Io(std::io::Error::new(
-                                    std::io::ErrorKind::NotFound,
-                                    "No native root certificates found",
-                                )));
+                                // Fall through to webpki-roots if available
+                                #[cfg(feature = "webpki-roots")]
+                                {
+                                    use log::debug;
+
+                                    let mut root_store = RootCertStore::empty();
+                                    let webpki_certs = webpki_roots::TLS_SERVER_ROOTS.to_vec();
+                                    root_store.extend(webpki_certs);
+                                    debug!(
+                                        "Falling back to {} webpki root certificates",
+                                        webpki_roots::TLS_SERVER_ROOTS.len()
+                                    );
+
+                                    TlsConnector::from(Arc::new(
+                                        ClientConfig::builder()
+                                            .with_root_certificates(root_store)
+                                            .with_no_client_auth(),
+                                    ))
+                                }
                             }
                         }
-
-                        // Load webpki-roots whenever the feature is enabled
-                        // This serves as a fallback when native-certs is also enabled
-                        #[cfg(feature = "webpki-roots")]
-                        {
-                            use log::debug;
-
-                            let webpki_certs = webpki_roots::TLS_SERVER_ROOTS.to_vec();
-                            store.extend(webpki_certs);
-                            debug!(
-                                "Added {} webpki root certificates",
-                                webpki_roots::TLS_SERVER_ROOTS.len()
-                            );
-                        }
-
-                        store
-                    };
-
-                    // Check if we have neither feature enabled
-                    #[cfg(not(any(feature = "rustls-native-certs", feature = "webpki-roots")))]
-                    {
-                        return Err(Error::Io(std::io::Error::new(
-                            std::io::ErrorKind::NotFound,
-                            "No root certificate features enabled. Enable either \
-                             'rustls-native-certs' or 'webpki-roots'",
-                        )));
                     }
 
-                    // Check if root_store is empty (only when features are enabled)
-                    #[cfg(any(feature = "rustls-native-certs", feature = "webpki-roots"))]
-                    if root_store.is_empty() {
-                        return Err(Error::Io(std::io::Error::new(
-                            std::io::ErrorKind::NotFound,
-                            "No root certificates available",
-                        )));
-                    }
-
-                    // Create the TLS connector (only when features are enabled)
-                    #[cfg(any(feature = "rustls-native-certs", feature = "webpki-roots"))]
+                    // Use webpki-roots when platform-verifier is not available
+                    // This serves as a fallback or standalone certificate source
+                    #[cfg(all(
+                        feature = "webpki-roots",
+                        not(feature = "rustls-platform-verifier")
+                    ))]
                     {
+                        use log::debug;
+
+                        let mut root_store = RootCertStore::empty();
+                        let webpki_certs = webpki_roots::TLS_SERVER_ROOTS.to_vec();
+                        root_store.extend(webpki_certs);
+                        debug!(
+                            "Using {} webpki root certificates",
+                            webpki_roots::TLS_SERVER_ROOTS.len()
+                        );
+
                         TlsConnector::from(Arc::new(
                             ClientConfig::builder()
                                 .with_root_certificates(root_store)
                                 .with_no_client_auth(),
                         ))
+                    }
+
+                    // Check if we have neither feature enabled
+                    #[cfg(not(any(
+                        feature = "rustls-platform-verifier",
+                        feature = "webpki-roots"
+                    )))]
+                    {
+                        return Err(Error::Io(std::io::Error::new(
+                            std::io::ErrorKind::NotFound,
+                            "No root certificate features enabled. Enable either \
+                             'rustls-platform-verifier' or 'webpki-roots'",
+                        )));
                     }
                 };
 

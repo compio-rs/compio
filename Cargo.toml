@@ -26,7 +26,6 @@ license = "MIT"
 repository = "https://github.com/compio-rs/compio"
 
 [workspace.dependencies]
-compio = { path = "./compio", version = "0.16.0" }
 compio-buf = { path = "./compio-buf", version = "0.7.0" }
 compio-driver = { path = "./compio-driver", version = "0.9.0", default-features = false }
 compio-runtime = { path = "./compio-runtime", version = "0.9.0" }

@@ -35,7 +35,6 @@ pub use crate::rustls::{
     connect_async_with_config, connect_async_with_tls_connector,
     connect_async_with_tls_connector_and_config,
 };
-pub use crate::stream::MaybeTlsStream;
 
 pub struct WebSocketStream<S> {
     inner: WebSocket<GrowableSyncStream<S>>,
