@@ -97,7 +97,6 @@ h3 = ["quic", "compio-quic/h3"]
 ws = ["dep:compio-ws"]
 ws-connect = ["compio-ws/connect"]
 all = [
-    "io-uring",
     "time",
     "macros",
     "signal",
