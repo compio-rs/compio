@@ -337,11 +337,12 @@ impl Driver {
             ));
         }
 
-        let buf_ring = io_uring_buf_ring::IoUringBufRing::new(
+        let buf_ring = io_uring_buf_ring::IoUringBufRing::new_with_flags(
             &self.inner,
             buffer_len,
             buffer_group as _,
             buffer_size,
+            0,
         )?;
 
         #[cfg(fusion)]
