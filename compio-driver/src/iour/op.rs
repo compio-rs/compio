@@ -268,7 +268,7 @@ impl OpCode for HardLink {
 
 impl OpCode for CreateSocket {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        if crate::is_op_supported(opcode::Socket::CODE) {
+        if super::is_op_supported(opcode::Socket::CODE) {
             opcode::Socket::new(
                 self.domain,
                 self.socket_type | libc::SOCK_CLOEXEC,
