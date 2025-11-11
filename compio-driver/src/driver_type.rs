@@ -33,17 +33,11 @@ impl DriverType {
             Shutdown::CODE,
         ];
 
-        (|| {
-            let uring = io_uring::IoUring::new(2)?;
-            let mut probe = io_uring::Probe::new();
-            uring.submitter().register_probe(&mut probe)?;
-            if USED_OP.iter().all(|op| probe.is_supported(*op)) {
-                std::io::Result::Ok(DriverType::IoUring)
-            } else {
-                Ok(DriverType::Poll)
-            }
-        })()
-        .unwrap_or(DriverType::Poll) // Should we fail here?
+        if USED_OP.iter().all(|op| is_op_supported(*op)) {
+            DriverType::IoUring
+        } else {
+            DriverType::Poll
+        }
     }
 
     /// Check if the current driver is `polling`
@@ -60,4 +54,29 @@ impl DriverType {
     pub fn is_iocp(&self) -> bool {
         *self == DriverType::IOCP
     }
+}
+
+#[cfg(io_uring)]
+pub(crate) fn is_op_supported(code: u8) -> bool {
+    #[cfg(feature = "once_cell_try")]
+    use std::sync::OnceLock;
+
+    use io_uring::Probe;
+    #[cfg(not(feature = "once_cell_try"))]
+    use once_cell::sync::OnceCell as OnceLock;
+
+    static PROBE: OnceLock<Probe> = OnceLock::new();
+
+    PROBE
+        .get_or_try_init(|| {
+            use io_uring::IoUring;
+
+            let mut probe = Probe::new();
+
+            IoUring::new(2)?.submitter().register_probe(&mut probe)?;
+
+            std::io::Result::Ok(probe)
+        })
+        .map(|probe| probe.is_supported(code))
+        .unwrap_or_default()
 }

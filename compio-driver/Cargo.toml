@@ -64,6 +64,7 @@ slab = { workspace = true, optional = true }
 
 # Other platform dependencies
 [target.'cfg(all(not(target_os = "linux"), unix))'.dependencies]
+once_cell = { workspace = true, optional = true }
 polling = "3.3.0"
 
 [target.'cfg(unix)'.dependencies]
@@ -75,7 +76,12 @@ cfg_aliases = { workspace = true }
 
 [features]
 default = ["io-uring"]
-io-uring = ["dep:io-uring", "dep:io_uring_buf_ring", "dep:slab"]
+io-uring = [
+    "dep:io-uring",
+    "dep:io_uring_buf_ring",
+    "dep:slab",
+    "dep:once_cell",
+]
 polling = ["dep:polling"]
 
 io-uring-sqe128 = []

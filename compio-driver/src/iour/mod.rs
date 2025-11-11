@@ -1,17 +1,7 @@
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 #[allow(unused_imports)]
 pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
-use std::{
-    io,
-    os::fd::FromRawFd,
-    pin::Pin,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    task::Poll,
-    time::Duration,
-};
+use std::{io, os::fd::FromRawFd, pin::Pin, sync::Arc, task::Poll, time::Duration};
 
 use compio_log::{instrument, trace, warn};
 use crossbeam_queue::SegQueue;
@@ -86,8 +76,6 @@ pub trait OpCode {
     unsafe fn set_result(self: Pin<&mut Self>, _: usize) {}
 }
 
-static SOCKET_SUPPORTED: AtomicBool = AtomicBool::new(false);
-
 /// Low-level driver of io-uring.
 pub(crate) struct Driver {
     inner: IoUring<SEntry, CEntry>,
@@ -123,15 +111,6 @@ impl Driver {
 
         if let Some(fd) = builder.eventfd {
             submitter.register_eventfd(fd)?;
-        }
-
-        // It's OK to check it multiple times.
-        if !SOCKET_SUPPORTED.load(Ordering::Relaxed) {
-            let mut probe = io_uring::Probe::new();
-            submitter.register_probe(&mut probe)?;
-            if probe.is_supported(io_uring::opcode::Socket::CODE) {
-                SOCKET_SUPPORTED.store(true, Ordering::Relaxed);
-            }
         }
 
         Ok(Self {
