@@ -58,13 +58,13 @@ windows-sys = { workspace = true, features = [
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = { version = "0.7.0", optional = true }
 io_uring_buf_ring = { version = "0.2.0", optional = true }
+once_cell = { workspace = true, optional = true }
 polling = { version = "3.3.0", optional = true }
 paste = { workspace = true }
 slab = { workspace = true, optional = true }
 
 # Other platform dependencies
 [target.'cfg(all(not(target_os = "linux"), unix))'.dependencies]
-once_cell = { workspace = true, optional = true }
 polling = "3.3.0"
 
 [target.'cfg(unix)'.dependencies]
