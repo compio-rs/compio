@@ -44,10 +44,8 @@ pub struct SyncStream<S> {
 }
 
 impl<S> SyncStream<S> {
-    // 8KB base
-    const DEFAULT_MAX_BUFFER: usize = 64 * 1024 * 1024;
-
     // 64MB max
+    const DEFAULT_MAX_BUFFER: usize = 64 * 1024 * 1024;
 
     /// Creates a new `SyncStream` with default buffer sizes.
     ///
