@@ -4,6 +4,7 @@ use std::{
     marker::PhantomPinned,
     os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd},
     pin::Pin,
+    sync::atomic::Ordering,
 };
 
 use compio_buf::{
@@ -268,17 +269,25 @@ impl OpCode for HardLink {
 
 impl OpCode for CreateSocket {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        opcode::Socket::new(
-            self.domain,
-            self.socket_type | libc::SOCK_CLOEXEC,
-            self.protocol,
-        )
-        .build()
-        .into()
+        if super::SOCKET_SUPPORTED.load(Ordering::Relaxed) {
+            opcode::Socket::new(
+                self.domain,
+                self.socket_type | libc::SOCK_CLOEXEC,
+                self.protocol,
+            )
+            .build()
+            .into()
+        } else {
+            OpEntry::Blocking
+        }
     }
 
     fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
-        Ok(syscall!(libc::socket(self.domain, self.socket_type, self.protocol))? as _)
+        Ok(syscall!(libc::socket(
+            self.domain,
+            self.socket_type | libc::SOCK_CLOEXEC,
+            self.protocol
+        ))? as _)
     }
 }
 
