@@ -31,7 +31,6 @@ impl DriverType {
             OpenAt::CODE,
             Close::CODE,
             Shutdown::CODE,
-            Socket::CODE,
         ];
 
         (|| {
