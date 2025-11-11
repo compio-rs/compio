@@ -43,6 +43,7 @@ compio-log = { workspace = true }
 compio-tls = { workspace = true, optional = true }
 compio-process = { workspace = true, optional = true }
 compio-quic = { workspace = true, optional = true }
+compio-ws = { workspace = true, optional = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
@@ -93,7 +94,10 @@ rustls = ["tls", "compio-tls/rustls"]
 process = ["dep:compio-process"]
 quic = ["dep:compio-quic"]
 h3 = ["quic", "compio-quic/h3"]
+ws = ["dep:compio-ws", "compio-ws/connect"]
+ws-rustls = ["ws", "compio-ws/rustls"]
 all = [
+    "io-uring",
     "time",
     "macros",
     "signal",
@@ -103,6 +107,8 @@ all = [
     "process",
     "quic",
     "h3",
+    "ws",
+    "ws-rustls",
 ]
 
 arrayvec = ["compio-buf/arrayvec"]
@@ -112,7 +118,7 @@ criterion = ["compio-runtime?/criterion"]
 
 enable_log = ["compio-log/enable_log"]
 
-ring = ["compio-tls?/ring", "compio-quic?/ring"]
+ring = ["compio-tls?/ring", "compio-quic?/ring", "compio-ws?/ring"]
 aws-lc-rs = ["compio-tls?/aws-lc-rs", "compio-quic?/aws-lc-rs"]
 aws-lc-rs-fips = ["compio-tls?/aws-lc-rs-fips", "compio-quic?/aws-lc-rs-fips"]
 

@@ -1,0 +1,69 @@
+[package]
+name = "compio-ws"
+version = "0.1.0"
+description = "WebSocket library for the compio runtime"
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+
+[dependencies]
+rustls = { workspace = true, optional = true, default-features = false }
+rustls-platform-verifier = { version = "0.6.0", optional = true }
+tungstenite = "0.28.0"
+compio-io = { workspace = true }
+compio-net = { workspace = true, optional = true }
+compio-tls = { workspace = true, optional = true, default-features = false, features = [
+    "rustls",
+] }
+compio-buf = { workspace = true }
+webpki-roots = { version = "1.0.4", optional = true }
+rustls-pemfile = "2.0"
+log = "0.4"
+
+[features]
+default = []
+connect = ["dep:compio-net"]
+rustls = ["connect", "dep:compio-tls", "dep:rustls", "compio-tls/rustls"]
+rustls-platform-verifier = ["rustls", "dep:rustls-platform-verifier"]
+webpki-roots = ["rustls", "dep:webpki-roots"]
+ring = ["rustls?/ring", "compio-tls?/ring"]
+
+
+[dev-dependencies]
+log = "0.4"
+env_logger = "0.11"
+compio-net = { workspace = true }
+compio-macros = { workspace = true }
+futures-channel = { workspace = true }
+compio-runtime = { workspace = true }
+compio-driver = { workspace = true }
+
+[[example]]
+name = "echo_server"
+required-features = ["connect"]
+
+[[example]]
+name = "client"
+required-features = ["connect"]
+
+[[example]]
+name = "autobahn-client"
+required-features = ["connect"]
+
+[[example]]
+name = "autobahn-server"
+required-features = ["connect"]
+
+[[example]]
+name = "echo_server_tls"
+required-features = ["connect", "rustls", "ring"]
+[[example]]
+name = "client_tls"
+required-features = ["connect", "rustls", "ring"]
+
+[[test]]
+name = "websocket"
+required-features = ["connect", "compio-driver/io-uring"]
