@@ -60,10 +60,10 @@ fn async_compat_write() {
             .write(&[1, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0])
             .await
             .unwrap();
-        assert_eq!(len, 10);
+        assert_eq!(len, 13);
 
-        stream.flush().await.unwrap();
-        assert_eq!(stream.get_ref().get_ref(), &[1, 1, 4, 5, 1, 4, 1, 9, 1, 9]);
+        let err = stream.flush().await.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::WriteZero);
     })
 }
 
@@ -78,6 +78,6 @@ fn async_compat_flush_fail() {
             .unwrap();
         assert_eq!(len, 13);
         let err = stream.flush().await.unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+        assert_eq!(err.kind(), std::io::ErrorKind::WriteZero);
     })
 }

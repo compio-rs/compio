@@ -1,13 +1,13 @@
-use std::io::{self, Read, Write};
+use std::{
+    io::{self, BufRead, Read, Write},
+    mem::MaybeUninit,
+};
 
 use compio_buf::{BufResult, IntoInner, IoBuf};
-use compio_io::{AsyncRead, AsyncWrite};
+
+use crate::util::DEFAULT_BUF_SIZE;
 
 /// A growable buffered stream adapter that bridges async I/O with sync traits.
-///
-/// This is similar to `compio_io::compat::SyncStream` but with dynamically
-/// growing buffers that can expand beyond the initial capacity up to a
-/// configurable maximum.
 ///
 /// # Buffer Growth Strategy
 ///
@@ -33,7 +33,7 @@ use compio_io::{AsyncRead, AsyncWrite};
 /// tungstenite that call `flush()` after every write. Actual flushing happens
 /// via the async `flush_write_buf()` method.
 #[derive(Debug)]
-pub struct GrowableSyncStream<S> {
+pub struct SyncStream<S> {
     inner: S,
     read_buf: Vec<u8>,
     read_pos: usize,
@@ -43,22 +43,21 @@ pub struct GrowableSyncStream<S> {
     max_buffer_size: usize,
 }
 
-impl<S> GrowableSyncStream<S> {
-    const DEFAULT_BASE_CAPACITY: usize = 8 * 1024;
+impl<S> SyncStream<S> {
     // 8KB base
     const DEFAULT_MAX_BUFFER: usize = 64 * 1024 * 1024;
 
     // 64MB max
 
-    /// Creates a new `GrowableSyncStream` with default buffer sizes.
+    /// Creates a new `SyncStream` with default buffer sizes.
     ///
     /// - Base capacity: 8KB
     /// - Max buffer size: 64MB
     pub fn new(stream: S) -> Self {
-        Self::with_capacity(Self::DEFAULT_BASE_CAPACITY, stream)
+        Self::with_capacity(DEFAULT_BUF_SIZE, stream)
     }
 
-    /// Creates a new `GrowableSyncStream` with a custom base capacity.
+    /// Creates a new `SyncStream` with a custom base capacity.
     ///
     /// The maximum buffer size defaults to 64MB.
     pub fn with_capacity(base_capacity: usize, stream: S) -> Self {
@@ -73,7 +72,7 @@ impl<S> GrowableSyncStream<S> {
         }
     }
 
-    /// Creates a new `GrowableSyncStream` with custom base capacity and maximum
+    /// Creates a new `SyncStream` with custom base capacity and maximum
     /// buffer size.
     pub fn with_limits(base_capacity: usize, max_buffer_size: usize, stream: S) -> Self {
         Self {
@@ -97,7 +96,7 @@ impl<S> GrowableSyncStream<S> {
         &mut self.inner
     }
 
-    /// Consumes the `GrowableSyncStream`, returning the underlying stream.
+    /// Consumes the `SyncStream`, returning the underlying stream.
     pub fn into_inner(self) -> S {
         self.inner
     }
@@ -130,32 +129,61 @@ impl<S> GrowableSyncStream<S> {
             }
         }
     }
-}
 
-impl<S> Read for GrowableSyncStream<S> {
-    /// Reads data from the internal buffer.
-    ///
-    /// Returns `WouldBlock` if the buffer is empty and not at EOF,
-    /// indicating that `fill_read_buf()` should be called.
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let available = self.available_read();
-
-        if available.is_empty() && !self.eof {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "need to fill read buffer",
-            ));
-        }
+    /// Pull some bytes from this source into the specified buffer.
+    pub fn read_buf_uninit(&mut self, buf: &mut [MaybeUninit<u8>]) -> io::Result<usize> {
+        let available = self.fill_buf()?;
 
         let to_read = available.len().min(buf.len());
-        buf[..to_read].copy_from_slice(&available[..to_read]);
-        self.consume_read(to_read);
+        buf[..to_read].copy_from_slice(unsafe {
+            std::slice::from_raw_parts(available.as_ptr().cast(), to_read)
+        });
+        self.consume(to_read);
 
         Ok(to_read)
     }
 }
 
-impl<S> Write for GrowableSyncStream<S> {
+impl<S> Read for SyncStream<S> {
+    /// Reads data from the internal buffer.
+    ///
+    /// Returns `WouldBlock` if the buffer is empty and not at EOF,
+    /// indicating that `fill_read_buf()` should be called.
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut slice = self.fill_buf()?;
+        slice.read(buf).inspect(|res| {
+            self.consume(*res);
+        })
+    }
+
+    #[cfg(feature = "read_buf")]
+    fn read_buf(&mut self, mut buf: io::BorrowedCursor<'_>) -> io::Result<()> {
+        let mut slice = self.fill_buf()?;
+        let old_written = buf.written();
+        slice.read_buf(buf.reborrow())?;
+        let len = buf.written() - old_written;
+        self.consume(len);
+        Ok(())
+    }
+}
+
+impl<S> BufRead for SyncStream<S> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        let available = self.available_read();
+
+        if available.is_empty() && !self.eof {
+            return Err(would_block("need to fill read buffer"));
+        }
+
+        Ok(available)
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.consume_read(amt);
+    }
+}
+
+impl<S> Write for SyncStream<S> {
     /// Writes data to the internal buffer.
     ///
     /// Returns `WouldBlock` if the buffer needs flushing or has reached max
@@ -164,20 +192,14 @@ impl<S> Write for GrowableSyncStream<S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         // Check if we should flush first
         if self.write_buf.len() > self.base_capacity * 2 / 3 && !self.write_buf.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "need to flush write buffer",
-            ));
+            return Err(would_block("need to flush write buffer"));
         }
 
         // Check if write would exceed max buffer size
         if self.write_buf.len() + buf.len() > self.max_buffer_size {
             let space = self.max_buffer_size - self.write_buf.len();
             if space == 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::WouldBlock,
-                    "write buffer full, need to flush",
-                ));
+                return Err(would_block("write buffer full, need to flush"));
             }
             self.write_buf.extend_from_slice(&buf[..space]);
             return Ok(space);
@@ -202,7 +224,11 @@ impl<S> Write for GrowableSyncStream<S> {
     }
 }
 
-impl<S: AsyncRead> GrowableSyncStream<S> {
+fn would_block(msg: &str) -> io::Error {
+    io::Error::new(io::ErrorKind::WouldBlock, msg)
+}
+
+impl<S: crate::AsyncRead> SyncStream<S> {
     /// Fills the read buffer by reading from the underlying async stream.
     ///
     /// This method:
@@ -305,7 +331,7 @@ impl<S: AsyncRead> GrowableSyncStream<S> {
     }
 }
 
-impl<S: AsyncWrite> GrowableSyncStream<S> {
+impl<S: crate::AsyncWrite> SyncStream<S> {
     /// Flushes the write buffer to the underlying async stream.
     ///
     /// This method:
