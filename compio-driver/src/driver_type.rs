@@ -31,20 +31,13 @@ impl DriverType {
             OpenAt::CODE,
             Close::CODE,
             Shutdown::CODE,
-            Socket::CODE,
         ];
 
-        (|| {
-            let uring = io_uring::IoUring::new(2)?;
-            let mut probe = io_uring::Probe::new();
-            uring.submitter().register_probe(&mut probe)?;
-            if USED_OP.iter().all(|op| probe.is_supported(*op)) {
-                std::io::Result::Ok(DriverType::IoUring)
-            } else {
-                Ok(DriverType::Poll)
-            }
-        })()
-        .unwrap_or(DriverType::Poll) // Should we fail here?
+        if USED_OP.iter().all(|op| crate::sys::is_op_supported(*op)) {
+            DriverType::IoUring
+        } else {
+            DriverType::Poll
+        }
     }
 
     /// Check if the current driver is `polling`

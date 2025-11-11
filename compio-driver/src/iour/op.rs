@@ -268,17 +268,25 @@ impl OpCode for HardLink {
 
 impl OpCode for CreateSocket {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        opcode::Socket::new(
-            self.domain,
-            self.socket_type | libc::SOCK_CLOEXEC,
-            self.protocol,
-        )
-        .build()
-        .into()
+        if super::is_op_supported(opcode::Socket::CODE) {
+            opcode::Socket::new(
+                self.domain,
+                self.socket_type | libc::SOCK_CLOEXEC,
+                self.protocol,
+            )
+            .build()
+            .into()
+        } else {
+            OpEntry::Blocking
+        }
     }
 
     fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
-        Ok(syscall!(libc::socket(self.domain, self.socket_type, self.protocol))? as _)
+        Ok(syscall!(libc::socket(
+            self.domain,
+            self.socket_type | libc::SOCK_CLOEXEC,
+            self.protocol
+        ))? as _)
     }
 }
 
