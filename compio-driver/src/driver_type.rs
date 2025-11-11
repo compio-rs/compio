@@ -61,19 +61,18 @@ pub(crate) fn is_op_supported(code: u8) -> bool {
     #[cfg(feature = "once_cell_try")]
     use std::sync::OnceLock;
 
-    use io_uring::Probe;
     #[cfg(not(feature = "once_cell_try"))]
     use once_cell::sync::OnceCell as OnceLock;
 
-    static PROBE: OnceLock<Probe> = OnceLock::new();
+    static PROBE: OnceLock<io_uring::Probe> = OnceLock::new();
 
     PROBE
         .get_or_try_init(|| {
-            use io_uring::IoUring;
+            let mut probe = io_uring::Probe::new();
 
-            let mut probe = Probe::new();
-
-            IoUring::new(2)?.submitter().register_probe(&mut probe)?;
+            io_uring::IoUring::new(2)?
+                .submitter()
+                .register_probe(&mut probe)?;
 
             std::io::Result::Ok(probe)
         })
