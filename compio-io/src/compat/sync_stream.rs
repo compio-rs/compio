@@ -5,7 +5,7 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf};
 
-use crate::util::DEFAULT_BUF_SIZE;
+use crate::{buffer::Buffer, util::DEFAULT_BUF_SIZE};
 
 /// A growable buffered stream adapter that bridges async I/O with sync traits.
 ///
@@ -35,9 +35,8 @@ use crate::util::DEFAULT_BUF_SIZE;
 #[derive(Debug)]
 pub struct SyncStream<S> {
     inner: S,
-    read_buf: Vec<u8>,
-    read_pos: usize,
-    write_buf: Vec<u8>,
+    read_buf: Buffer,
+    write_buf: Buffer,
     eof: bool,
     base_capacity: usize,
     max_buffer_size: usize,
@@ -59,15 +58,7 @@ impl<S> SyncStream<S> {
     ///
     /// The maximum buffer size defaults to 64MB.
     pub fn with_capacity(base_capacity: usize, stream: S) -> Self {
-        Self {
-            inner: stream,
-            read_buf: Vec::with_capacity(base_capacity),
-            read_pos: 0,
-            write_buf: Vec::with_capacity(base_capacity),
-            eof: false,
-            base_capacity,
-            max_buffer_size: Self::DEFAULT_MAX_BUFFER,
-        }
+        Self::with_limits(base_capacity, Self::DEFAULT_MAX_BUFFER, stream)
     }
 
     /// Creates a new `SyncStream` with custom base capacity and maximum
@@ -75,9 +66,8 @@ impl<S> SyncStream<S> {
     pub fn with_limits(base_capacity: usize, max_buffer_size: usize, stream: S) -> Self {
         Self {
             inner: stream,
-            read_buf: Vec::with_capacity(base_capacity),
-            read_pos: 0,
-            write_buf: Vec::with_capacity(base_capacity),
+            read_buf: Buffer::with_capacity(base_capacity),
+            write_buf: Buffer::with_capacity(base_capacity),
             eof: false,
             base_capacity,
             max_buffer_size,
@@ -106,7 +96,7 @@ impl<S> SyncStream<S> {
 
     /// Returns the available bytes in the read buffer.
     fn available_read(&self) -> &[u8] {
-        &self.read_buf[self.read_pos..]
+        self.read_buf.slice()
     }
 
     /// Marks `amt` bytes as consumed from the read buffer.
@@ -114,17 +104,12 @@ impl<S> SyncStream<S> {
     /// Resets the buffer when all data is consumed and shrinks capacity
     /// if it has grown significantly beyond the base capacity.
     fn consume_read(&mut self, amt: usize) {
-        self.read_pos += amt;
+        let all_done = self.read_buf.advance(amt);
 
         // Shrink oversized buffers back to base capacity
-        if self.read_pos >= self.read_buf.len() {
-            self.read_pos = 0;
-
-            if self.read_buf.capacity() > self.base_capacity * 4 {
-                self.read_buf = Vec::with_capacity(self.base_capacity);
-            } else {
-                self.read_buf.clear();
-            }
+        if all_done {
+            self.read_buf
+                .compact_to(self.base_capacity, self.max_buffer_size);
         }
     }
 
@@ -189,22 +174,27 @@ impl<S> Write for SyncStream<S> {
     /// returning `WouldBlock`.
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         // Check if we should flush first
-        if self.write_buf.len() > self.base_capacity * 2 / 3 && !self.write_buf.is_empty() {
+        if self.write_buf.need_flush() && !self.write_buf.is_empty() {
             return Err(would_block("need to flush write buffer"));
         }
 
-        // Check if write would exceed max buffer size
-        if self.write_buf.len() + buf.len() > self.max_buffer_size {
-            let space = self.max_buffer_size - self.write_buf.len();
-            if space == 0 {
-                return Err(would_block("write buffer full, need to flush"));
-            }
-            self.write_buf.extend_from_slice(&buf[..space]);
-            return Ok(space);
-        }
+        let written = self.write_buf.with_sync(|mut inner| {
+            let res = if inner.buf_len() + buf.len() > self.max_buffer_size {
+                let space = self.max_buffer_size - inner.buf_len();
+                if space == 0 {
+                    Err(would_block("write buffer full, need to flush"))
+                } else {
+                    inner.extend_from_slice(&buf[..space]);
+                    Ok(space)
+                }
+            } else {
+                inner.extend_from_slice(buf);
+                Ok(buf.len())
+            };
+            BufResult(res, inner)
+        })?;
 
-        self.write_buf.extend_from_slice(buf);
-        Ok(buf.len())
+        Ok(written)
     }
 
     /// Returns `Ok(())` without checking for buffered data.
@@ -246,86 +236,43 @@ impl<S: crate::AsyncRead> SyncStream<S> {
         }
 
         // Compact buffer, move unconsumed data to the front
-        if self.read_pos > 0 && self.read_pos < self.read_buf.len() {
-            let buf_len = self.read_buf.len();
-            let remaining = buf_len - self.read_pos;
-            self.read_buf.copy_within(self.read_pos..buf_len, 0);
+        self.read_buf
+            .compact_to(self.base_capacity, self.max_buffer_size);
 
-            // SAFETY: We're setting the length to the amount of data we just moved.
-            // The data from 0..remaining is initialized (just moved from read_pos..buf_len)
-            unsafe {
-                self.read_buf.set_len(remaining);
-            }
-            self.read_pos = 0;
-        } else if self.read_pos >= self.read_buf.len() {
-            // All data consumed, reset buffer
-            self.read_pos = 0;
-            if self.read_buf.capacity() > self.base_capacity * 4 {
-                self.read_buf = Vec::with_capacity(self.base_capacity);
-            } else {
-                self.read_buf.clear();
-            }
-        }
+        let read = self
+            .read_buf
+            .with(|mut inner| async {
+                let current_len = inner.buf_len();
 
-        let current_len = self.read_buf.len();
-
-        if current_len >= self.max_buffer_size {
-            return Err(io::Error::new(
-                io::ErrorKind::OutOfMemory,
-                format!("read buffer size limit ({}) exceeded", self.max_buffer_size),
-            ));
-        }
-
-        let capacity = self.read_buf.capacity();
-        let available_space = capacity - current_len;
-
-        let target_space = self.base_capacity;
-        if available_space < target_space {
-            let new_capacity = current_len + target_space;
-            self.read_buf.reserve_exact(new_capacity - capacity);
-        }
-
-        let capacity = self.read_buf.capacity();
-        let len = self.read_buf.len();
-
-        // SAFETY: We're extending the buffer to its capacity to allow reading into
-        // uninitialized memory. This is safe because:
-        // 1. We save the original length and restore it on error
-        // 2. The async read operation initializes the bytes it writes to
-        // 3. We update the length based on how many bytes were actually read
-        unsafe {
-            self.read_buf.set_len(capacity);
-        }
-
-        let buf = std::mem::take(&mut self.read_buf);
-
-        let read_slice = IoBuf::slice(buf, len..);
-
-        let BufResult(result, mut buf) = self.inner.read(read_slice).await.into_inner();
-
-        match result {
-            Ok(n) => {
-                if n == 0 {
-                    self.eof = true;
-                    unsafe {
-                        buf.set_len(len);
-                    }
-                } else {
-                    unsafe {
-                        buf.set_len(len + n);
-                    }
+                if current_len >= self.max_buffer_size {
+                    return BufResult(
+                        Err(io::Error::new(
+                            io::ErrorKind::OutOfMemory,
+                            format!("read buffer size limit ({}) exceeded", self.max_buffer_size),
+                        )),
+                        inner,
+                    );
                 }
-                self.read_buf = buf;
-                Ok(n)
-            }
-            Err(e) => {
-                unsafe {
-                    buf.set_len(len);
+
+                let capacity = inner.buf_capacity();
+                let available_space = capacity - current_len;
+
+                // If target space is less than base capacity, grow the buffer.
+                let target_space = self.base_capacity;
+                if available_space < target_space {
+                    let new_capacity = current_len + target_space;
+                    inner.reserve_exact(new_capacity - capacity);
                 }
-                self.read_buf = buf;
-                Err(e)
-            }
+
+                let len = inner.buf_len();
+                let read_slice = inner.slice(len..);
+                self.inner.read(read_slice).await.into_inner()
+            })
+            .await?;
+        if read == 0 {
+            self.eof = true;
         }
+        Ok(read)
     }
 }
 
@@ -345,39 +292,10 @@ impl<S: crate::AsyncWrite> SyncStream<S> {
     /// In this case, the buffer retains any data that wasn't successfully
     /// written.
     pub async fn flush_write_buf(&mut self) -> io::Result<usize> {
-        if self.write_buf.is_empty() {
-            return Ok(0);
-        }
-
-        let total = self.write_buf.len();
-        let mut buf = std::mem::take(&mut self.write_buf);
-        let mut flushed = 0;
-
-        while flushed < total {
-            let write_slice = IoBuf::slice(buf, flushed..);
-
-            let BufResult(result, returned_buf) = self.inner.write(write_slice).await.into_inner();
-            buf = returned_buf;
-
-            match result {
-                Ok(0) => {
-                    self.write_buf = buf[flushed..].to_vec();
-                    return Err(io::Error::new(io::ErrorKind::WriteZero, "write returned 0"));
-                }
-                Ok(n) => {
-                    flushed += n;
-                }
-                Err(e) => {
-                    self.write_buf = buf[flushed..].to_vec();
-                    return Err(e);
-                }
-            }
-        }
-
-        self.write_buf = Vec::with_capacity(self.base_capacity);
-
+        let flushed = self.write_buf.flush_to(&mut self.inner).await?;
+        self.write_buf
+            .compact_to(self.base_capacity, self.max_buffer_size);
         self.inner.flush().await?;
-
         Ok(flushed)
     }
 }
