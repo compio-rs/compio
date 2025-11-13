@@ -167,8 +167,8 @@ impl Buffer {
         self.inner_mut().buf.reserve(additional);
     }
 
-    /// Compact the buffer to the given capacity, if the current capacity is 4
-    /// times larger than the given capacity.
+    /// Compact the buffer to the given capacity, if the current capacity is
+    /// larger than the given maximum capacity.
     pub fn compact_to(&mut self, capacity: usize, max_capacity: usize) {
         self.inner_mut().compact_to(capacity, max_capacity);
     }
