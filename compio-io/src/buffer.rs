@@ -26,12 +26,41 @@ impl Inner {
     #[inline]
     fn reset(&mut self) {
         self.pos = 0;
-        unsafe { self.buf.set_len(0) };
+        self.buf.clear();
     }
 
     #[inline]
     fn slice(&self) -> &[u8] {
         &self.buf[self.pos..]
+    }
+
+    pub fn reserve_exact(&mut self, additional: usize) {
+        self.buf.reserve_exact(additional);
+    }
+
+    pub fn extend_from_slice(&mut self, data: &[u8]) {
+        self.buf.extend_from_slice(data);
+    }
+
+    fn compact_to(&mut self, capacity: usize, max_capacity: usize) {
+        if self.pos > 0 && self.pos < self.buf.len() {
+            let buf_len = self.buf.len();
+            let remaining = buf_len - self.pos;
+            self.buf.copy_within(self.pos..buf_len, 0);
+
+            // SAFETY: We're setting the length to the amount of data we just moved.
+            // The data from 0..remaining is initialized (just moved from read_pos..buf_len)
+            unsafe {
+                self.buf.set_len(remaining);
+            }
+            self.pos = 0;
+        } else if self.pos >= self.buf.len() {
+            // All data consumed, reset buffer
+            self.reset();
+            if self.buf.capacity() > max_capacity {
+                self.buf.shrink_to(capacity);
+            }
+        }
     }
 
     #[inline]
@@ -138,6 +167,12 @@ impl Buffer {
         self.inner_mut().buf.reserve(additional);
     }
 
+    /// Compact the buffer to the given capacity, if the current capacity is
+    /// larger than the given maximum capacity.
+    pub fn compact_to(&mut self, capacity: usize, max_capacity: usize) {
+        self.inner_mut().compact_to(capacity, max_capacity);
+    }
+
     /// Execute a funcition with ownership of the buffer, and restore the buffer
     /// afterwards
     pub async fn with<R, Fut, F>(&mut self, func: F) -> IoResult<R>
@@ -175,7 +210,7 @@ impl Buffer {
                 .await?;
             if written == 0 {
                 return Err(std::io::Error::new(
-                    std::io::ErrorKind::UnexpectedEof,
+                    std::io::ErrorKind::WriteZero,
                     "cannot flush all buffer data",
                 ));
             }

@@ -7,7 +7,6 @@
 //!
 //! Each WebSocket stream implements message reading and writing.
 
-pub mod growable_sync_stream;
 pub mod stream;
 
 #[cfg(feature = "rustls")]
@@ -15,8 +14,7 @@ pub mod rustls;
 
 use std::io::ErrorKind;
 
-use compio_io::{AsyncRead, AsyncWrite};
-use growable_sync_stream::GrowableSyncStream;
+use compio_io::{AsyncRead, AsyncWrite, compat::SyncStream};
 use tungstenite::{
     Error as WsError, HandshakeError, Message, WebSocket,
     client::IntoClientRequest,
@@ -37,7 +35,7 @@ pub use crate::rustls::{
 };
 
 pub struct WebSocketStream<S> {
-    inner: WebSocket<GrowableSyncStream<S>>,
+    inner: WebSocket<SyncStream<S>>,
 }
 
 impl<S> WebSocketStream<S>
@@ -113,7 +111,7 @@ where
         self.inner.get_mut().get_mut()
     }
 
-    pub fn get_inner(self) -> WebSocket<GrowableSyncStream<S>> {
+    pub fn get_inner(self) -> WebSocket<SyncStream<S>> {
         self.inner
     }
 }
@@ -171,7 +169,7 @@ where
     S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
     C: Callback,
 {
-    let sync_stream = GrowableSyncStream::new(stream);
+    let sync_stream = SyncStream::new(stream);
     let mut handshake_result = tungstenite::accept_hdr_with_config(sync_stream, callback, config);
 
     loop {
@@ -235,7 +233,7 @@ where
     R: IntoClientRequest,
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let sync_stream = GrowableSyncStream::new(stream);
+    let sync_stream = SyncStream::new(stream);
     let mut handshake_result =
         tungstenite::client::client_with_config(request, sync_stream, config);
 
