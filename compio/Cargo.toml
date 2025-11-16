@@ -90,14 +90,12 @@ time = ["compio-runtime/time", "runtime"]
 dispatcher = ["dep:compio-dispatcher", "runtime"]
 tls = ["dep:compio-tls"]
 native-tls = ["tls", "compio-tls/native-tls"]
-rustls = ["tls", "compio-tls/rustls"]
+rustls = ["tls", "compio-tls/rustls", "compio-ws?/rustls"]
 process = ["dep:compio-process"]
 quic = ["dep:compio-quic"]
 h3 = ["quic", "compio-quic/h3"]
 ws = ["dep:compio-ws", "compio-ws/connect"]
-ws-rustls = ["ws", "compio-ws/rustls"]
 all = [
-    "io-uring",
     "time",
     "macros",
     "signal",
@@ -108,7 +106,6 @@ all = [
     "quic",
     "h3",
     "ws",
-    "ws-rustls",
 ]
 
 arrayvec = ["compio-buf/arrayvec"]
