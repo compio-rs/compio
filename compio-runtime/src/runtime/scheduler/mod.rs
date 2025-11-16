@@ -87,15 +87,17 @@ impl TaskQueue {
         }
     }
 
+    /// Downgrades the `TaskQueue` into a `WeakTaskQueue`.
     fn downgrade(&self) -> WeakTaskQueue {
         WeakTaskQueue {
             local_queue: Arc::downgrade(&self.local_queue),
             sync_queue: Arc::downgrade(&self.sync_queue),
-            local_thread: SendWrapper::new(()),
+            local_thread: self.local_queue.tracker(),
         }
     }
 }
 
+/// A weak reference to a `TaskQueue`.
 struct WeakTaskQueue {
     local_queue: Weak<SendWrapper<LocalQueue<Runnable>>>,
     sync_queue: Weak<SegQueue<Runnable>>,
@@ -104,6 +106,8 @@ struct WeakTaskQueue {
 }
 
 impl WeakTaskQueue {
+    /// Upgrades the `WeakTaskQueue` and pushes the `runnable` into the
+    /// appropriate queue.
     fn upgrade_and_push(&self, runnable: Runnable, notify: &NotifyHandle) {
         if self.local_thread.valid() {
             // It's ok to drop the runnable on the same thread.
