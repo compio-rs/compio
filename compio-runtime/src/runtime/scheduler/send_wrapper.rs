@@ -53,8 +53,19 @@ impl<T> SendWrapper<T> {
 
     /// Returns a reference to the contained value, if valid.
     #[inline]
+    #[allow(dead_code)]
     pub fn get(&self) -> Option<&T> {
         if self.valid() { Some(&self.data) } else { None }
+    }
+
+    /// Returns a tracker that can be used to check if the current thread is
+    /// the same as the creator thread.
+    #[inline]
+    pub fn tracker(&self) -> SendWrapper<()> {
+        SendWrapper {
+            data: ManuallyDrop::new(()),
+            thread_id: self.thread_id,
+        }
     }
 }
 
