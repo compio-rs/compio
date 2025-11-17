@@ -20,7 +20,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-22.04, windows-latest, macos-latest ]
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+        lock: [minimal, auto]
     steps:
       - uses: actions/checkout@v4
       - name: Setup Rust Toolchain
@@ -37,8 +38,13 @@ jobs:
         if: runner.os == 'Windows'
         uses: seanmiddleditch/gha-setup-ninja@v4
       - name: Check clippy
+        shell: bash
         run: |
-          cargo clippy --all-features --all-targets -- -Dwarnings
+          ARGS=()
+          if [[ "${{ matrix.lock }}" == "minimal" ]]; then
+              ARGS+=("-Z" "minimal-versions")
+          fi
+          cargo clippy "${ARGS[@]}" --all-features --all-targets -- -Dwarnings
       - name: Check Docs
         run: |
           cargo doc --workspace --all-features --no-deps
