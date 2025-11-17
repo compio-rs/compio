@@ -18,17 +18,14 @@ use tungstenite::{
     Error as WsError, HandshakeError, Message, WebSocket,
     client::IntoClientRequest,
     handshake::server::{Callback, NoCallback},
-    protocol::CloseFrame,
-};
-pub use tungstenite::{
-    Message as WebSocketMessage, error::Error as TungsteniteError, handshake::client::Response,
-    protocol::WebSocketConfig,
+    protocol::{CloseFrame, WebSocketConfig},
 };
 
 #[cfg(any(feature = "native-tls", feature = "rustls"))]
 mod tls;
 #[cfg(any(feature = "native-tls", feature = "rustls"))]
 pub use tls::*;
+pub use tungstenite;
 
 /// A WebSocket stream that works with compio.
 #[derive(Debug)]

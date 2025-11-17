@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 
 use compio_log::*;
 use compio_net::{TcpListener, TcpStream};
-use compio_ws::{WebSocketConfig, accept_async_with_config};
+use compio_ws::{accept_async_with_config, tungstenite::protocol::WebSocketConfig};
 use tungstenite::{Error, Result};
 
 async fn accept_connection(peer: SocketAddr, stream: TcpStream) {
