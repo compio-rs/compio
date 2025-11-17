@@ -117,12 +117,13 @@ impl WeakTaskQueue {
                 #[cfg(feature = "notify-always")]
                 notify.notify().ok();
             }
-        } else {
-            // We have to panic if the queue has been dropped, because we cannot drop the
-            // runnable safely on another thread.
-            let sync_queue = self.sync_queue.upgrade().unwrap();
+        } else if let Some(sync_queue) = self.sync_queue.upgrade() {
             sync_queue.push(runnable);
             notify.notify().ok();
+        } else {
+            // We have to leak the runnable since it's not safe to drop it on another
+            // thread.
+            std::mem::forget(runnable);
         }
     }
 }
