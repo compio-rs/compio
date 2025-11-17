@@ -58,7 +58,7 @@ mod encryption {
 
                 let total_number = certs.len();
                 let (number_added, number_ignored) = root_store.add_parsable_certificates(certs);
-                log::debug!(
+                compio_log::debug!(
                     "Added {number_added}/{total_number} native root certificates (ignored \
                      {number_ignored})"
                 );
@@ -81,7 +81,9 @@ mod encryption {
 
             // Use platform's native certificate verification
             // This provides better security and enterprise integration
-            let config_result = ClientConfig::builder().with_platform_verifier()?;
+            let config_result = ClientConfig::builder()
+                .with_platform_verifier()
+                .map_err(tungstenite::error::TlsError::from)?;
             Ok(Arc::new(config_result.with_no_client_auth()))
         }
 
@@ -90,14 +92,9 @@ mod encryption {
             #[cfg(feature = "rustls-platform-verifier")]
             {
                 let config = match config_with_platform_verifier() {
-                    Ok(config_builder) => {
-                        compio_log::debug!(
-                            "Using rustls-platform-verifier for certificate validation"
-                        );
-                        Arc::new(config_builder.with_no_client_auth())
-                    }
-                    Err(e) => {
-                        compio_log::warn!("Error creating platform verifier: {e}");
+                    Ok(config_builder) => config_builder,
+                    Err(_e) => {
+                        compio_log::warn!("Error creating platform verifier: {_e}");
                         config_with_certs()?
                     }
                 };
