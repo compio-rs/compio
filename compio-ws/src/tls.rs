@@ -1,4 +1,4 @@
-//! Rustls support.
+//! TLS support for WebSocket connections (native-tls and rustls).
 
 use compio_io::{AsyncRead, AsyncWrite};
 use compio_net::{TcpOpts, TcpStream};
