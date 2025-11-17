@@ -1,3 +1,5 @@
+//! Provides [`MaybeTlsStream`].
+
 #[cfg(feature = "rustls")]
 use std::io::Result as IoResult;
 
@@ -22,15 +24,18 @@ pub enum MaybeTlsStream<S> {
 
 #[cfg(feature = "rustls")]
 impl<S> MaybeTlsStream<S> {
+    /// Create an unencrypted stream.
     pub fn plain(stream: S) -> Self {
         MaybeTlsStream::Plain(stream)
     }
 
+    /// Create a TLS-encrypted stream.
     #[cfg(feature = "rustls")]
     pub fn tls(stream: TlsStream<S>) -> Self {
         MaybeTlsStream::Tls(stream)
     }
 
+    /// Whether the stream is TLS-encrypted.
     pub fn is_tls(&self) -> bool {
         #[cfg(feature = "rustls")]
         {
