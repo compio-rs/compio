@@ -206,7 +206,7 @@ where
     client_async_with_config(request, stream, config).await
 }
 
-/// Type alias for a connect stream.
+/// Type alias for a connected stream.
 pub type ConnectStream = AutoStream<TcpStream>;
 
 /// Connect to a given URL.
