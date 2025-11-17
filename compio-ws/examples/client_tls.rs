@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
-use compio_ws::{Connector, connect_async_with_tls_connector};
+use compio_tls::TlsConnector;
+use compio_ws::connect_async_tls_with_config;
 use rustls::ClientConfig;
 use tungstenite::Message;
 
-async fn create_insecure_tls_connector() -> Result<Connector, Box<dyn std::error::Error>> {
+async fn create_insecure_tls_connector() -> Result<TlsConnector, Box<dyn std::error::Error>> {
     // Create a TLS connector that accepts self-signed certificates
     // This is needed for testing with localhost self-signed certificates
     // WARNING: This is insecure and should only be used for testing!
@@ -66,7 +67,7 @@ async fn create_insecure_tls_connector() -> Result<Connector, Box<dyn std::error
         .with_custom_certificate_verifier(Arc::new(AcceptAllVerifier))
         .with_no_client_auth();
 
-    Ok(Connector::from(Arc::new(config)))
+    Ok(TlsConnector::from(Arc::new(config)))
 }
 
 #[compio_macros::main]
@@ -76,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let connector = create_insecure_tls_connector().await?;
 
     let (mut websocket, _response) =
-        connect_async_with_tls_connector("wss://127.0.0.1:9002", Some(connector)).await?;
+        connect_async_tls_with_config("wss://127.0.0.1:9002", None, false, Some(connector)).await?;
 
     println!("Successfully connected to WebSocket TLS server!");
     println!();

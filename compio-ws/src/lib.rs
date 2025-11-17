@@ -10,12 +10,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 
-#[deprecated = "Use `compio-tls` crate instead."]
-pub mod stream;
-
-#[cfg(feature = "rustls")]
-pub mod rustls;
-
 use std::io::ErrorKind;
 
 use compio_buf::IntoInner;
@@ -31,13 +25,10 @@ pub use tungstenite::{
     protocol::WebSocketConfig,
 };
 
-#[cfg(feature = "rustls")]
-pub use crate::rustls::{
-    AutoStream, ConnectStream, Connector, client_async_tls, client_async_tls_with_config,
-    client_async_tls_with_connector, client_async_tls_with_connector_and_config, connect_async,
-    connect_async_with_config, connect_async_with_tls_connector,
-    connect_async_with_tls_connector_and_config,
-};
+#[cfg(any(feature = "native-tls", feature = "rustls"))]
+mod tls;
+#[cfg(any(feature = "native-tls", feature = "rustls"))]
+pub use tls::*;
 
 /// A WebSocket stream that works with compio.
 pub struct WebSocketStream<S> {
@@ -120,12 +111,6 @@ where
     /// Get a mutable reference to the underlying stream.
     pub fn get_mut(&mut self) -> &mut S {
         self.inner.get_mut().get_mut()
-    }
-
-    /// Get the inner WebSocket.
-    #[deprecated = "Use IntoInner trait instead. This method will be removed in a future release."]
-    pub fn get_inner(self) -> WebSocket<SyncStream<S>> {
-        self.inner
     }
 }
 
@@ -284,33 +269,4 @@ where
             }
         }
     }
-}
-
-#[inline]
-#[allow(clippy::result_large_err)]
-#[cfg(feature = "rustls")]
-pub(crate) fn domain(
-    request: &tungstenite::handshake::client::Request,
-) -> Result<String, tungstenite::Error> {
-    request
-        .uri()
-        .host()
-        .map(|host| {
-            // If host is an IPv6 address, it might be surrounded by brackets. These
-            // brackets are *not* part of a valid IP, so they must be stripped
-            // out.
-            //
-            // The URI from the request is guaranteed to be valid, so we don't need a
-            // separate check for the closing bracket.
-            let host = if host.starts_with('[') {
-                &host[1..host.len() - 1]
-            } else {
-                host
-            };
-
-            host.to_owned()
-        })
-        .ok_or(tungstenite::Error::Url(
-            tungstenite::error::UrlError::NoHostName,
-        ))
 }

@@ -13,27 +13,46 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-rustls = { workspace = true, optional = true, default-features = false }
-rustls-platform-verifier = { version = "0.6.0", optional = true }
-tungstenite = "0.28.0"
+compio-buf = { workspace = true }
 compio-io = { workspace = true, features = ["compat"] }
 compio-net = { workspace = true, optional = true }
 compio-tls = { workspace = true, optional = true, default-features = false, features = [
     "rustls",
 ] }
-compio-buf = { workspace = true }
-webpki-roots = { version = "1.0.4", optional = true }
+compio-log = { workspace = true }
+
+tungstenite = "0.28.0"
+
+native-tls = { workspace = true, optional = true }
+
+rustls = { workspace = true, optional = true, default-features = false }
+rustls-platform-verifier = { workspace = true, optional = true }
+rustls-native-certs = { workspace = true, optional = true }
+webpki-roots = { workspace = true, optional = true }
 rustls-pemfile = "2.0"
-log = "0.4"
 
 [features]
 default = []
 connect = ["dep:compio-net"]
-rustls = ["connect", "dep:compio-tls", "dep:rustls", "compio-tls/rustls"]
+native-tls = [
+    "connect",
+    "dep:native-tls",
+    "compio-tls/native-tls",
+    "tungstenite/native-tls",
+]
+rustls = [
+    "connect",
+    "dep:compio-tls",
+    "dep:rustls",
+    "compio-tls/rustls",
+    "tungstenite/__rustls-tls",
+]
 rustls-platform-verifier = ["rustls", "dep:rustls-platform-verifier"]
+rustls-native-certs = ["rustls", "dep:rustls-native-certs"]
 webpki-roots = ["rustls", "dep:webpki-roots"]
-ring = ["rustls?/ring", "compio-tls?/ring"]
-
+ring = ["compio-tls?/ring"]
+aws-lc-rs = ["compio-tls?/aws-lc-rs"]
+aws-lc-rs-fips = ["compio-tls?/aws-lc-rs-fips"]
 
 [dev-dependencies]
 log = "0.4"
@@ -62,10 +81,10 @@ required-features = ["connect"]
 
 [[example]]
 name = "echo_server_tls"
-required-features = ["connect", "rustls", "ring"]
+required-features = ["connect"]
 [[example]]
 name = "client_tls"
-required-features = ["connect", "rustls", "ring"]
+required-features = ["connect"]
 
 [[test]]
 name = "websocket"
