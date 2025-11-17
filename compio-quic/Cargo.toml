@@ -70,8 +70,10 @@ native-certs = ["dep:rustls-native-certs"]
 webpki-roots = ["dep:webpki-roots"]
 h3 = ["dep:h3", "dep:h3-datagram"]
 ring = ["quinn-proto/rustls-ring"]
-aws-lc-rs = ["quinn-proto/rustls-aws-lc-rs"]
-aws-lc-rs-fips = ["aws-lc-rs", "quinn-proto/rustls-aws-lc-rs-fips"]
+
+# Deprecated Features
+aws-lc-rs = []
+aws-lc-rs-fips = []
 
 [[example]]
 name = "http3-client"

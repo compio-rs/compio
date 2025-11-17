@@ -49,8 +49,10 @@ all = ["native-tls", "rustls"]
 rustls = ["dep:rustls", "dep:futures-rustls", "dep:futures-util"]
 
 ring = ["rustls", "rustls/ring", "futures-rustls/ring"]
-aws-lc-rs = ["rustls", "rustls/aws-lc-rs", "futures-rustls/aws-lc-rs"]
-aws-lc-rs-fips = ["aws-lc-rs", "rustls/fips", "futures-rustls/fips"]
 
 read_buf = ["compio-buf/read_buf", "compio-io/read_buf", "rustls?/read_buf"]
 nightly = ["read_buf"]
+
+# Deprecated Features
+aws-lc-rs = []
+aws-lc-rs-fips = []
