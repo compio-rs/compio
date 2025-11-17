@@ -13,7 +13,9 @@ pub use native_tls;
 pub use rustls;
 
 mod adapter;
+mod maybe;
 mod stream;
 
 pub use adapter::*;
+pub use maybe::*;
 pub use stream::*;
