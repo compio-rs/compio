@@ -1,3 +1,5 @@
+//! Rustls support.
+
 #[cfg(any(feature = "rustls-platform-verifier", feature = "webpki-roots"))]
 use std::sync::Arc;
 
@@ -17,8 +19,10 @@ use crate::{
     WebSocketConfig, WebSocketStream, client_async_with_config, domain, stream::MaybeTlsStream,
 };
 
+/// Type alias for a stream that can be either plain TCP or TLS-encrypted.
 pub type AutoStream<S> = MaybeTlsStream<S>;
 
+/// Type alias for a TLS connector.
 pub type Connector = TlsConnector;
 
 async fn wrap_stream<S>(
@@ -202,6 +206,7 @@ where
     client_async_with_config(request, stream, config).await
 }
 
+/// Type alias for a connect stream.
 pub type ConnectStream = AutoStream<TcpStream>;
 
 /// Connect to a given URL.

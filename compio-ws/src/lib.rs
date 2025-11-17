@@ -7,6 +7,9 @@
 //!
 //! Each WebSocket stream implements message reading and writing.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![warn(missing_docs)]
+
 pub mod stream;
 
 #[cfg(feature = "rustls")]
@@ -14,6 +17,7 @@ pub mod rustls;
 
 use std::io::ErrorKind;
 
+use compio_buf::IntoInner;
 use compio_io::{AsyncRead, AsyncWrite, compat::SyncStream};
 use tungstenite::{
     Error as WsError, HandshakeError, Message, WebSocket,
@@ -34,6 +38,7 @@ pub use crate::rustls::{
     connect_async_with_tls_connector_and_config,
 };
 
+/// A WebSocket stream that works with compio.
 pub struct WebSocketStream<S> {
     inner: WebSocket<SyncStream<S>>,
 }
@@ -42,6 +47,7 @@ impl<S> WebSocketStream<S>
 where
     S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
 {
+    /// Send a message on the WebSocket stream.
     pub async fn send(&mut self, message: Message) -> Result<(), WsError> {
         // Send the message - this buffers it
         // Since CompioStream::flush() now returns Ok, this should succeed on first try
@@ -57,6 +63,7 @@ where
         Ok(())
     }
 
+    /// Read a message from the WebSocket stream.
     pub async fn read(&mut self) -> Result<Message, WsError> {
         loop {
             match self.inner.read() {
@@ -84,6 +91,7 @@ where
         }
     }
 
+    /// Close the WebSocket connection.
     pub async fn close(&mut self, close_frame: Option<CloseFrame>) -> Result<(), WsError> {
         loop {
             match self.inner.close(close_frame.clone()) {
@@ -103,15 +111,27 @@ where
         }
     }
 
+    /// Get a reference to the underlying stream.
     pub fn get_ref(&self) -> &S {
         self.inner.get_ref().get_ref()
     }
 
+    /// Get a mutable reference to the underlying stream.
     pub fn get_mut(&mut self) -> &mut S {
         self.inner.get_mut().get_mut()
     }
 
+    /// Get the inner WebSocket.
+    #[deprecated = "Use IntoInner trait instead. This method will be removed in a future release."]
     pub fn get_inner(self) -> WebSocket<SyncStream<S>> {
+        self.inner
+    }
+}
+
+impl<S> IntoInner for WebSocketStream<S> {
+    type Inner = WebSocket<SyncStream<S>>;
+
+    fn into_inner(self) -> Self::Inner {
         self.inner
     }
 }

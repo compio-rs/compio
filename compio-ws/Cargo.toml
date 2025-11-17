@@ -8,6 +8,9 @@ readme = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 rustls = { workspace = true, optional = true, default-features = false }
