@@ -21,9 +21,6 @@ compio-log = { workspace = true }
 
 tungstenite = "0.28.0"
 
-native-tls = { workspace = true, optional = true }
-
-rustls = { workspace = true, optional = true, default-features = false }
 rustls-platform-verifier = { workspace = true, optional = true }
 rustls-native-certs = { workspace = true, optional = true }
 webpki-roots = { workspace = true, optional = true }
@@ -41,12 +38,8 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 default = []
 # Deprecated
 connect = []
-native-tls = [
-    "dep:native-tls",
-    "compio-tls/native-tls",
-    "tungstenite/native-tls",
-]
-rustls = ["dep:rustls", "compio-tls/rustls", "tungstenite/__rustls-tls"]
+native-tls = ["compio-tls/native-tls", "tungstenite/native-tls"]
+rustls = ["compio-tls/rustls", "tungstenite/__rustls-tls"]
 rustls-platform-verifier = ["rustls", "dep:rustls-platform-verifier"]
 rustls-native-certs = ["rustls", "dep:rustls-native-certs"]
 webpki-roots = ["rustls", "dep:webpki-roots"]

@@ -11,6 +11,8 @@ use tungstenite::Message;
 // -days 365 -nodes -subj "/CN=localhost"
 #[cfg(feature = "native-tls")]
 async fn create_tls_acceptor() -> Result<TlsAcceptor, Box<dyn std::error::Error>> {
+    use compio_tls::native_tls;
+
     let cert_file = fs::read_to_string("localhost.crt")?;
     let key_file = fs::read_to_string("localhost.key")?;
 
@@ -22,6 +24,7 @@ async fn create_tls_acceptor() -> Result<TlsAcceptor, Box<dyn std::error::Error>
 async fn create_tls_acceptor() -> Result<TlsAcceptor, Box<dyn std::error::Error>> {
     use std::sync::Arc;
 
+    use compio_tls::rustls;
     use rustls::ServerConfig;
 
     let cert_file = fs::read_to_string("localhost.crt")?;

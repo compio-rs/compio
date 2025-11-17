@@ -15,7 +15,7 @@ use crate::{WebSocketConfig, WebSocketStream, client_async_with_config};
 mod encryption {
     #[cfg(feature = "native-tls")]
     pub mod native_tls {
-        use compio_tls::TlsConnector;
+        use compio_tls::{TlsConnector, native_tls};
         use tungstenite::{Error, error::TlsError};
 
         pub fn new_connector() -> Result<TlsConnector, Error> {
@@ -28,9 +28,10 @@ mod encryption {
     pub mod rustls {
         use std::sync::Arc;
 
-        use compio_tls::TlsConnector;
-        pub use rustls::ClientConfig;
-        use rustls::RootCertStore;
+        use compio_tls::{
+            TlsConnector,
+            rustls::{ClientConfig, RootCertStore},
+        };
         use tungstenite::Error;
 
         fn config_with_certs() -> Result<Arc<ClientConfig>, Error> {

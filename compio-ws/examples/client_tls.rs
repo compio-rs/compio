@@ -7,7 +7,7 @@ use tungstenite::Message;
 // WARNING: This is insecure and should only be used for testing!
 #[cfg(feature = "native-tls")]
 async fn create_insecure_tls_connector() -> Result<TlsConnector, Box<dyn std::error::Error>> {
-    let mut builder = native_tls::TlsConnector::builder();
+    let mut builder = compio_tls::native_tls::TlsConnector::builder();
     builder
         .danger_accept_invalid_certs(true)
         .danger_accept_invalid_hostnames(true);
@@ -19,6 +19,7 @@ async fn create_insecure_tls_connector() -> Result<TlsConnector, Box<dyn std::er
 async fn create_insecure_tls_connector() -> Result<TlsConnector, Box<dyn std::error::Error>> {
     use std::sync::Arc;
 
+    use compio_tls::rustls;
     use rustls::ClientConfig;
 
     #[derive(Debug)]
