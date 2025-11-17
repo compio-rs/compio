@@ -31,13 +31,14 @@ mod tls;
 pub use tls::*;
 
 /// A WebSocket stream that works with compio.
+#[derive(Debug)]
 pub struct WebSocketStream<S> {
     inner: WebSocket<SyncStream<S>>,
 }
 
 impl<S> WebSocketStream<S>
 where
-    S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
+    S: AsyncRead + AsyncWrite,
 {
     /// Send a message on the WebSocket stream.
     pub async fn send(&mut self, message: Message) -> Result<(), WsError> {
@@ -145,7 +146,7 @@ impl<S> IntoInner for WebSocketStream<S> {
 /// the server half of accepting a client's websocket connection.
 pub async fn accept_async<S>(stream: S) -> Result<WebSocketStream<S>, WsError>
 where
-    S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
+    S: AsyncRead + AsyncWrite,
 {
     accept_hdr_async(stream, NoCallback).await
 }
@@ -157,7 +158,7 @@ pub async fn accept_async_with_config<S>(
     config: Option<WebSocketConfig>,
 ) -> Result<WebSocketStream<S>, WsError>
 where
-    S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
+    S: AsyncRead + AsyncWrite,
 {
     accept_hdr_with_config_async(stream, NoCallback, config).await
 }
@@ -168,7 +169,7 @@ where
 /// incoming requests and is able to add extra headers to the reply.
 pub async fn accept_hdr_async<S, C>(stream: S, callback: C) -> Result<WebSocketStream<S>, WsError>
 where
-    S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
+    S: AsyncRead + AsyncWrite,
     C: Callback,
 {
     accept_hdr_with_config_async(stream, callback, None).await
@@ -182,7 +183,7 @@ pub async fn accept_hdr_with_config_async<S, C>(
     config: Option<WebSocketConfig>,
 ) -> Result<WebSocketStream<S>, WsError>
 where
-    S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
+    S: AsyncRead + AsyncWrite,
     C: Callback,
 {
     let sync_stream = SyncStream::new(stream);
@@ -233,7 +234,7 @@ pub async fn client_async<R, S>(
 ) -> Result<(WebSocketStream<S>, tungstenite::handshake::client::Response), WsError>
 where
     R: IntoClientRequest,
-    S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
+    S: AsyncRead + AsyncWrite,
 {
     client_async_with_config(request, stream, None).await
 }
@@ -247,7 +248,7 @@ pub async fn client_async_with_config<R, S>(
 ) -> Result<(WebSocketStream<S>, tungstenite::handshake::client::Response), WsError>
 where
     R: IntoClientRequest,
-    S: AsyncRead + AsyncWrite + Unpin,
+    S: AsyncRead + AsyncWrite,
 {
     let sync_stream = SyncStream::new(stream);
     let mut handshake_result =

@@ -120,7 +120,7 @@ async fn wrap_stream<S>(
     mode: Mode,
 ) -> Result<MaybeTlsStream<S>, Error>
 where
-    S: AsyncRead + AsyncWrite + Unpin + 'static,
+    S: AsyncRead + AsyncWrite + 'static,
 {
     match mode {
         Mode::Plain => Ok(MaybeTlsStream::new_plain(socket)),
@@ -176,9 +176,8 @@ pub async fn client_async_tls<R, S>(
     stream: S,
 ) -> Result<(WebSocketStream<MaybeTlsStream<S>>, Response), Error>
 where
-    R: IntoClientRequest + Unpin,
+    R: IntoClientRequest,
     S: AsyncRead + AsyncWrite + Unpin + 'static,
-    MaybeTlsStream<S>: Unpin,
 {
     client_async_tls_with_config(request, stream, None, None).await
 }
@@ -192,9 +191,8 @@ pub async fn client_async_tls_with_config<R, S>(
     config: Option<WebSocketConfig>,
 ) -> Result<(WebSocketStream<MaybeTlsStream<S>>, Response), Error>
 where
-    R: IntoClientRequest + Unpin,
+    R: IntoClientRequest,
     S: AsyncRead + AsyncWrite + Unpin + 'static,
-    MaybeTlsStream<S>: Unpin,
 {
     let request: Request = request.into_client_request()?;
 
@@ -214,7 +212,7 @@ pub async fn connect_async<R>(
     request: R,
 ) -> Result<(WebSocketStream<ConnectStream>, Response), Error>
 where
-    R: IntoClientRequest + Unpin,
+    R: IntoClientRequest,
 {
     connect_async_with_config(request, None, false).await
 }
@@ -229,7 +227,7 @@ pub async fn connect_async_with_config<R>(
     disable_nagle: bool,
 ) -> Result<(WebSocketStream<ConnectStream>, Response), Error>
 where
-    R: IntoClientRequest + Unpin,
+    R: IntoClientRequest,
 {
     connect_async_tls_with_config(request, config, disable_nagle, None).await
 }
@@ -246,7 +244,7 @@ pub async fn connect_async_tls_with_config<R>(
     connector: Option<TlsConnector>,
 ) -> Result<(WebSocketStream<ConnectStream>, Response), Error>
 where
-    R: IntoClientRequest + Unpin,
+    R: IntoClientRequest,
 {
     let request: Request = request.into_client_request()?;
 
