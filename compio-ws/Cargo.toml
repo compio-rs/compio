@@ -15,10 +15,8 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 compio-buf = { workspace = true }
 compio-io = { workspace = true, features = ["compat"] }
-compio-net = { workspace = true, optional = true }
-compio-tls = { workspace = true, optional = true, default-features = false, features = [
-    "rustls",
-] }
+compio-net = { workspace = true }
+compio-tls = { workspace = true, default-features = false }
 compio-log = { workspace = true }
 
 tungstenite = "0.28.0"
@@ -31,7 +29,6 @@ rustls-native-certs = { workspace = true, optional = true }
 webpki-roots = { workspace = true, optional = true }
 
 [dev-dependencies]
-compio-net = { workspace = true }
 compio-macros = { workspace = true }
 compio-runtime = { workspace = true }
 compio-driver = { workspace = true }
@@ -45,29 +42,14 @@ default = []
 # Deprecated
 connect = []
 native-tls = [
-    "dep:compio-net",
     "dep:native-tls",
     "compio-tls/native-tls",
     "tungstenite/native-tls",
 ]
-rustls = [
-    "dep:compio-net",
-    "dep:compio-tls",
-    "dep:rustls",
-    "compio-tls/rustls",
-    "tungstenite/__rustls-tls",
-]
+rustls = ["dep:rustls", "compio-tls/rustls", "tungstenite/__rustls-tls"]
 rustls-platform-verifier = ["rustls", "dep:rustls-platform-verifier"]
 rustls-native-certs = ["rustls", "dep:rustls-native-certs"]
 webpki-roots = ["rustls", "dep:webpki-roots"]
-ring = ["compio-tls?/ring"]
-aws-lc-rs = ["compio-tls?/aws-lc-rs"]
-aws-lc-rs-fips = ["compio-tls?/aws-lc-rs-fips"]
-
-[[example]]
-name = "echo_server_tls"
-required-features = ["rustls"]
-
-[[example]]
-name = "client_tls"
-required-features = ["rustls"]
+ring = ["compio-tls/ring"]
+aws-lc-rs = ["compio-tls/aws-lc-rs"]
+aws-lc-rs-fips = ["compio-tls/aws-lc-rs-fips"]

@@ -154,7 +154,7 @@ where
                     #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
                     {
                         return Err(Error::Url(
-                            tunstenite::error::UrlError::TlsFeatureNotEnabled,
+                            tungstenite::error::UrlError::TlsFeatureNotEnabled,
                         ));
                     }
                 };

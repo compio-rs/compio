@@ -21,9 +21,7 @@ use tungstenite::{
     protocol::{CloseFrame, WebSocketConfig},
 };
 
-#[cfg(any(feature = "native-tls", feature = "rustls"))]
 mod tls;
-#[cfg(any(feature = "native-tls", feature = "rustls"))]
 pub use tls::*;
 pub use tungstenite;
 

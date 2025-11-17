@@ -1,16 +1,28 @@
-use std::{fs, sync::Arc};
+use std::fs;
 
 use compio_net::{TcpListener, TcpStream};
 use compio_tls::TlsAcceptor;
 use compio_ws::accept_async;
-use rustls::ServerConfig;
 use tungstenite::Message;
 
+// Load certificate and key from files
+// Generate these files with:
+// openssl req -x509 -newkey rsa:2048 -keyout localhost.key -out localhost.crt
+// -days 365 -nodes -subj "/CN=localhost"
+#[cfg(feature = "native-tls")]
 async fn create_tls_acceptor() -> Result<TlsAcceptor, Box<dyn std::error::Error>> {
-    // Load certificate and key from files
-    // Generate these files with:
-    // openssl req -x509 -newkey rsa:2048 -keyout localhost.key -out localhost.crt
-    // -days 365 -nodes -subj "/CN=localhost"
+    let cert_file = fs::read_to_string("localhost.crt")?;
+    let key_file = fs::read_to_string("localhost.key")?;
+
+    let identity = native_tls::Identity::from_pkcs8(cert_file.as_bytes(), key_file.as_bytes())?;
+    Ok(TlsAcceptor::from(native_tls::TlsAcceptor::new(identity)?))
+}
+
+#[cfg(all(feature = "rustls", not(feature = "native-tls")))]
+async fn create_tls_acceptor() -> Result<TlsAcceptor, Box<dyn std::error::Error>> {
+    use std::sync::Arc;
+
+    use rustls::ServerConfig;
 
     let cert_file = fs::read_to_string("localhost.crt")?;
     let key_file = fs::read_to_string("localhost.key")?;
@@ -33,6 +45,11 @@ async fn create_tls_acceptor() -> Result<TlsAcceptor, Box<dyn std::error::Error>
         .with_single_cert(cert_chain, key_der)?;
 
     Ok(TlsAcceptor::from(Arc::new(config)))
+}
+
+#[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+async fn create_tls_acceptor() -> Result<TlsAcceptor, Box<dyn std::error::Error>> {
+    Err("No TLS implementation enabled".into())
 }
 
 #[compio_macros::main]
