@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use compio_io::{AsyncRead, AsyncWrite};
 use compio_net::TcpStream;
-use compio_tls::TlsConnector;
+use compio_tls::{MaybeTlsStream, TlsConnector};
 #[cfg(any(feature = "rustls-platform-verifier", feature = "webpki-roots"))]
 use rustls::{ClientConfig, RootCertStore};
 use tungstenite::{
@@ -15,9 +15,7 @@ use tungstenite::{
     stream::Mode,
 };
 
-use crate::{
-    WebSocketConfig, WebSocketStream, client_async_with_config, domain, stream::MaybeTlsStream,
-};
+use crate::{WebSocketConfig, WebSocketStream, client_async_with_config, domain};
 
 /// Type alias for a stream that can be either plain TCP or TLS-encrypted.
 pub type AutoStream<S> = MaybeTlsStream<S>;
