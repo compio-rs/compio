@@ -10,6 +10,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 
+#[deprecated = "Use `compio-tls` crate instead."]
 pub mod stream;
 
 #[cfg(feature = "rustls")]
