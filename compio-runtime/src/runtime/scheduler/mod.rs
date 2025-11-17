@@ -1,4 +1,4 @@
-use std::{cell::RefCell, future::Future, marker::PhantomData, rc::Rc, sync::Arc, task::Waker};
+use std::{cell::RefCell, future::Future, marker::PhantomData, rc::Rc, task::Waker};
 
 use async_task::{Runnable, Task};
 use compio_driver::NotifyHandle;
@@ -6,11 +6,12 @@ use crossbeam_queue::SegQueue;
 use slab::Slab;
 
 use crate::runtime::scheduler::{
-    drop_hook::DropHook, local_queue::LocalQueue, send_wrapper::SendWrapper,
+    drop_hook::DropHook, local_queue::LocalQueue, raw_ref::Own, send_wrapper::SendWrapper,
 };
 
 mod drop_hook;
 mod local_queue;
+mod raw_ref;
 mod send_wrapper;
 
 /// A task queue consisting of a local queue and a synchronized queue.
@@ -99,7 +100,7 @@ impl TaskQueue {
 /// A scheduler for managing and executing tasks.
 pub(crate) struct Scheduler {
     /// Queue for scheduled tasks.
-    task_queue: Arc<TaskQueue>,
+    task_queue: Own<TaskQueue>,
 
     /// `Waker` of active tasks.
     active_tasks: Rc<RefCell<Slab<Waker>>>,
@@ -115,7 +116,7 @@ impl Scheduler {
     /// Creates a new `Scheduler`.
     pub(crate) fn new(event_interval: usize) -> Self {
         Self {
-            task_queue: Arc::new(TaskQueue::new()),
+            task_queue: Own::new(TaskQueue::new()),
             active_tasks: Rc::new(RefCell::new(Slab::new())),
             event_interval,
             _local_marker: PhantomData,
@@ -149,16 +150,15 @@ impl Scheduler {
         };
 
         let schedule = {
-            // The schedule closure is managed by the `Waker` and may be dropped on another
-            // thread, so use `Weak` to ensure the `TaskQueue` is always dropped
-            // on the creator thread.
-            let task_queue = Arc::downgrade(&self.task_queue);
+            let task_queue = self.task_queue.raw_ref();
 
             move |runnable| {
-                // The `upgrade()` never fails because all tasks are dropped when the
-                // `Scheduler` is dropped, if a `Waker` is used after that, the
-                // schedule closure will never be called.
-                task_queue.upgrade().unwrap().push(runnable, &notify);
+                // SAFETY:
+                // `Scheduler` drains and drops all `Runnable`s before it is dropped.
+                // If this closure is still invoked and can push a `Runnable`, the
+                // `Scheduler` is necessarily still alive, so the `task_queue` reference
+                // obtained from `raw_ref()` is valid.
+                unsafe { task_queue.as_ref() }.push(runnable, &notify);
             }
         };
 
