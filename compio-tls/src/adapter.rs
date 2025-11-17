@@ -13,6 +13,8 @@ enum TlsConnectorInner {
     NativeTls(native_tls::TlsConnector),
     #[cfg(feature = "rustls")]
     Rustls(futures_rustls::TlsConnector),
+    #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+    None(std::convert::Infallible),
 }
 
 impl Debug for TlsConnectorInner {
@@ -23,7 +25,7 @@ impl Debug for TlsConnectorInner {
             #[cfg(feature = "rustls")]
             Self::Rustls(_) => f.debug_tuple("Rustls").finish(),
             #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
-            _ => Ok(()),
+            Self::None(f) => match *f {},
         }
     }
 }
@@ -81,7 +83,7 @@ impl TlsConnector {
                 Ok(TlsStream::from(client))
             }
             #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
-            _ => Err(io::Error::other("no TLS implementation enabled")),
+            TlsConnectorInner::None(f) => match *f {},
         }
     }
 }
@@ -92,6 +94,8 @@ enum TlsAcceptorInner {
     NativeTls(native_tls::TlsAcceptor),
     #[cfg(feature = "rustls")]
     Rustls(futures_rustls::TlsAcceptor),
+    #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+    None(std::convert::Infallible),
 }
 
 /// A wrapper around a [`native_tls::TlsAcceptor`] or [`rustls::ServerConfig`],
@@ -139,7 +143,7 @@ impl TlsAcceptor {
                 Ok(TlsStream::from(server))
             }
             #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
-            _ => Err(io::Error::other("no TLS implementation enabled")),
+            TlsAcceptorInner::None(f) => match *f {},
         }
     }
 }

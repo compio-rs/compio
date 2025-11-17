@@ -25,7 +25,7 @@ impl<S> TlsStreamInner<S> {
             #[cfg(feature = "rustls")]
             Self::Rustls(s) => s.get_ref().1.alpn_protocol().map(Cow::from),
             #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
-            Self::None(..) => None,
+            Self::None(f, ..) => match *f {},
         }
     }
 }
@@ -115,9 +115,9 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncRead for TlsStream<S> {
                 BufResult(res, buf)
             }
             #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
-            TlsStreamInner::None(..) => {
+            TlsStreamInner::None(f, ..) => {
                 let _slice: &mut [u8] = slice;
-                BufResult(Err(io::Error::other("no TLS implementation enabled")), buf)
+                match *f {}
             }
         }
     }
@@ -159,9 +159,9 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncWrite for TlsStream<S> {
                 BufResult(res, buf)
             }
             #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
-            TlsStreamInner::None(..) => {
+            TlsStreamInner::None(f, ..) => {
                 let _slice: &[u8] = slice;
-                BufResult(Err(io::Error::other("no TLS implementation enabled")), buf)
+                match *f {}
             }
         }
     }
@@ -173,7 +173,7 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncWrite for TlsStream<S> {
             #[cfg(feature = "rustls")]
             TlsStreamInner::Rustls(s) => futures_util::AsyncWriteExt::flush(s).await,
             #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
-            TlsStreamInner::None(..) => Err(io::Error::other("no TLS implementation enabled")),
+            TlsStreamInner::None(f, ..) => match *f {},
         }
     }
 
@@ -185,7 +185,7 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncWrite for TlsStream<S> {
             #[cfg(feature = "rustls")]
             TlsStreamInner::Rustls(s) => futures_util::AsyncWriteExt::close(s).await,
             #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
-            TlsStreamInner::None(..) => Err(io::Error::other("no TLS implementation enabled")),
+            TlsStreamInner::None(f, ..) => match *f {},
         }
     }
 }
