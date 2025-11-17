@@ -29,19 +29,29 @@ rustls = { workspace = true, optional = true, default-features = false }
 rustls-platform-verifier = { workspace = true, optional = true }
 rustls-native-certs = { workspace = true, optional = true }
 webpki-roots = { workspace = true, optional = true }
+
+[dev-dependencies]
+compio-net = { workspace = true }
+compio-macros = { workspace = true }
+compio-runtime = { workspace = true }
+compio-driver = { workspace = true }
+
+futures-channel = { workspace = true }
 rustls-pemfile = "2.0"
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [features]
 default = []
-connect = ["dep:compio-net"]
+# Deprecated
+connect = []
 native-tls = [
-    "connect",
+    "dep:compio-net",
     "dep:native-tls",
     "compio-tls/native-tls",
     "tungstenite/native-tls",
 ]
 rustls = [
-    "connect",
+    "dep:compio-net",
     "dep:compio-tls",
     "dep:rustls",
     "compio-tls/rustls",
@@ -54,38 +64,10 @@ ring = ["compio-tls?/ring"]
 aws-lc-rs = ["compio-tls?/aws-lc-rs"]
 aws-lc-rs-fips = ["compio-tls?/aws-lc-rs-fips"]
 
-[dev-dependencies]
-log = "0.4"
-env_logger = "0.11"
-compio-net = { workspace = true }
-compio-macros = { workspace = true }
-futures-channel = { workspace = true }
-compio-runtime = { workspace = true }
-compio-driver = { workspace = true }
-
-[[example]]
-name = "echo_server"
-required-features = ["connect"]
-
-[[example]]
-name = "client"
-required-features = ["connect"]
-
-[[example]]
-name = "autobahn-client"
-required-features = ["connect"]
-
-[[example]]
-name = "autobahn-server"
-required-features = ["connect"]
-
 [[example]]
 name = "echo_server_tls"
-required-features = ["connect"]
+required-features = ["rustls"]
+
 [[example]]
 name = "client_tls"
-required-features = ["connect"]
-
-[[test]]
-name = "websocket"
-required-features = ["connect", "compio-driver/io-uring"]
+required-features = ["rustls"]
