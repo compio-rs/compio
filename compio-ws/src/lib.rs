@@ -46,24 +46,14 @@ where
         self.inner.send(message)?;
 
         // flush the buffer to the network
-        self.inner
-            .get_mut()
-            .flush_write_buf()
-            .await
-            .map_err(WsError::Io)?;
-
-        Ok(())
+        self.flush().await
     }
 
     /// Read a message from the WebSocket stream.
     pub async fn read(&mut self) -> Result<Message, WsError> {
-        loop {
+        let res = loop {
             match self.inner.read() {
-                Ok(msg) => {
-                    // Always try to flush after read (close frames need this)
-                    let _ = self.inner.get_mut().flush_write_buf().await;
-                    return Ok(msg);
-                }
+                Ok(msg) => break Ok(msg),
                 Err(WsError::Io(ref e)) if e.kind() == ErrorKind::WouldBlock => {
                     // Need more data - fill the read buffer
                     self.inner
@@ -71,23 +61,43 @@ where
                         .fill_read_buf()
                         .await
                         .map_err(WsError::Io)?;
-                    // Retry the read
-                    continue;
                 }
-                Err(e) => {
-                    // Always try to flush on error (close frames)
-                    let _ = self.inner.get_mut().flush_write_buf().await;
-                    return Err(e);
+                Err(e) => break Err(e),
+            }
+        };
+        // Always try to flush after read, but return the original result.
+        let _ = self.flush().await;
+        res
+    }
+
+    /// Flush the WebSocket stream.
+    pub async fn flush(&mut self) -> Result<(), WsError> {
+        loop {
+            match self.inner.flush() {
+                Ok(()) => break,
+                Err(WsError::Io(ref e)) if e.kind() == ErrorKind::WouldBlock => {
+                    self.inner
+                        .get_mut()
+                        .flush_write_buf()
+                        .await
+                        .map_err(WsError::Io)?;
                 }
+                Err(e) => return Err(e),
             }
         }
+        self.inner
+            .get_mut()
+            .flush_write_buf()
+            .await
+            .map_err(WsError::Io)?;
+        Ok(())
     }
 
     /// Close the WebSocket connection.
     pub async fn close(&mut self, close_frame: Option<CloseFrame>) -> Result<(), WsError> {
         loop {
             match self.inner.close(close_frame.clone()) {
-                Ok(()) => return Ok(()),
+                Ok(()) => break,
                 Err(WsError::Io(ref e)) if e.kind() == ErrorKind::WouldBlock => {
                     let sync_stream = self.inner.get_mut();
 
@@ -96,11 +106,11 @@ where
                     if flushed == 0 {
                         sync_stream.fill_read_buf().await.map_err(WsError::Io)?;
                     }
-                    continue;
                 }
                 Err(e) => return Err(e),
             }
         }
+        self.flush().await
     }
 
     /// Get a reference to the underlying stream.
