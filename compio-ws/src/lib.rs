@@ -47,9 +47,12 @@ where
 
     /// Read a message from the WebSocket stream.
     pub async fn read(&mut self) -> Result<Message, WsError> {
-        let res = loop {
+        loop {
             match self.inner.read() {
-                Ok(msg) => break Ok(msg),
+                Ok(msg) => {
+                    self.flush().await?;
+                    return Ok(msg);
+                }
                 Err(WsError::Io(ref e)) if e.kind() == ErrorKind::WouldBlock => {
                     // Need more data - fill the read buffer
                     self.inner
@@ -58,12 +61,12 @@ where
                         .await
                         .map_err(WsError::Io)?;
                 }
-                Err(e) => break Err(e),
+                Err(e) => {
+                    let _ = self.flush().await;
+                    return Err(e);
+                }
             }
-        };
-        // Always try to flush after read, but return the original result.
-        let _ = self.flush().await;
-        res
+        }
     }
 
     /// Flush the WebSocket stream.
@@ -78,6 +81,7 @@ where
                         .await
                         .map_err(WsError::Io)?;
                 }
+                Err(WsError::ConnectionClosed) => break,
                 Err(e) => return Err(e),
             }
         }
@@ -103,6 +107,7 @@ where
                         sync_stream.fill_read_buf().await.map_err(WsError::Io)?;
                     }
                 }
+                Err(WsError::ConnectionClosed) => break,
                 Err(e) => return Err(e),
             }
         }
