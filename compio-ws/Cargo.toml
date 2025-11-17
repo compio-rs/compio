@@ -1,6 +1,6 @@
 [package]
 name = "compio-ws"
-version = "0.1.1"
+version = "0.2.0"
 description = "WebSocket library for the compio runtime"
 edition = { workspace = true }
 authors = { workspace = true }
@@ -13,60 +13,36 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-rustls = { workspace = true, optional = true, default-features = false }
-rustls-platform-verifier = { version = "0.6.0", optional = true }
-tungstenite = "0.28.0"
-compio-io = { workspace = true, features = ["compat"] }
-compio-net = { workspace = true, optional = true }
-compio-tls = { workspace = true, optional = true, default-features = false, features = [
-    "rustls",
-] }
 compio-buf = { workspace = true }
-webpki-roots = { version = "1.0.4", optional = true }
-rustls-pemfile = "2.0"
-log = "0.4"
+compio-io = { workspace = true, features = ["compat"] }
+compio-net = { workspace = true }
+compio-tls = { workspace = true, default-features = false }
+compio-log = { workspace = true }
 
-[features]
-default = []
-connect = ["dep:compio-net"]
-rustls = ["connect", "dep:compio-tls", "dep:rustls", "compio-tls/rustls"]
-rustls-platform-verifier = ["rustls", "dep:rustls-platform-verifier"]
-webpki-roots = ["rustls", "dep:webpki-roots"]
-ring = ["rustls?/ring", "compio-tls?/ring"]
+tungstenite = "0.28.0"
 
+rustls-platform-verifier = { workspace = true, optional = true }
+rustls-native-certs = { workspace = true, optional = true }
+webpki-roots = { workspace = true, optional = true }
 
 [dev-dependencies]
-log = "0.4"
-env_logger = "0.11"
-compio-net = { workspace = true }
 compio-macros = { workspace = true }
-futures-channel = { workspace = true }
 compio-runtime = { workspace = true }
 compio-driver = { workspace = true }
 
-[[example]]
-name = "echo_server"
-required-features = ["connect"]
+futures-channel = { workspace = true }
+rustls-pemfile = "2.0"
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
-[[example]]
-name = "client"
-required-features = ["connect"]
-
-[[example]]
-name = "autobahn-client"
-required-features = ["connect"]
-
-[[example]]
-name = "autobahn-server"
-required-features = ["connect"]
-
-[[example]]
-name = "echo_server_tls"
-required-features = ["connect", "rustls", "ring"]
-[[example]]
-name = "client_tls"
-required-features = ["connect", "rustls", "ring"]
-
-[[test]]
-name = "websocket"
-required-features = ["connect", "compio-driver/io-uring"]
+[features]
+default = []
+# Deprecated
+connect = []
+native-tls = ["compio-tls/native-tls", "tungstenite/native-tls"]
+rustls = ["compio-tls/rustls", "tungstenite/__rustls-tls"]
+rustls-platform-verifier = ["rustls", "dep:rustls-platform-verifier"]
+rustls-native-certs = ["rustls", "dep:rustls-native-certs"]
+webpki-roots = ["rustls", "dep:webpki-roots"]
+ring = ["compio-tls/ring"]
+aws-lc-rs = ["compio-tls/aws-lc-rs"]
+aws-lc-rs-fips = ["compio-tls/aws-lc-rs-fips"]

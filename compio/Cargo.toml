@@ -1,6 +1,6 @@
 [package]
 name = "compio"
-version = "0.16.1"
+version = "0.16.2"
 description = "Completion based async runtime"
 categories = ["asynchronous", "filesystem", "network-programming"]
 keywords = ["async", "fs", "iocp", "io-uring", "net"]
@@ -89,7 +89,7 @@ signal = ["dep:compio-signal", "event"]
 time = ["compio-runtime/time", "runtime"]
 dispatcher = ["dep:compio-dispatcher", "runtime"]
 tls = ["dep:compio-tls"]
-native-tls = ["tls", "compio-tls/native-tls"]
+native-tls = ["tls", "compio-tls/native-tls", "compio-ws?/native-tls"]
 rustls = ["tls", "compio-tls/rustls", "compio-ws?/rustls"]
 process = ["dep:compio-process"]
 quic = ["dep:compio-quic"]
@@ -118,8 +118,16 @@ criterion = ["compio-runtime?/criterion"]
 enable_log = ["compio-log/enable_log"]
 
 ring = ["compio-tls?/ring", "compio-quic?/ring", "compio-ws?/ring"]
-aws-lc-rs = ["compio-tls?/aws-lc-rs", "compio-quic?/aws-lc-rs"]
-aws-lc-rs-fips = ["compio-tls?/aws-lc-rs-fips", "compio-quic?/aws-lc-rs-fips"]
+aws-lc-rs = [
+    "compio-tls?/aws-lc-rs",
+    "compio-quic?/aws-lc-rs",
+    "compio-ws?/aws-lc-rs",
+]
+aws-lc-rs-fips = [
+    "compio-tls?/aws-lc-rs-fips",
+    "compio-quic?/aws-lc-rs-fips",
+    "compio-ws?/aws-lc-rs-fips",
+]
 
 # Nightly features
 allocator_api = ["compio-buf/allocator_api", "compio-io?/allocator_api"]

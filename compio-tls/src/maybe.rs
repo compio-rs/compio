@@ -5,30 +5,33 @@ use compio_io::{AsyncRead, AsyncWrite};
 
 use crate::TlsStream;
 
-/// Stream that can be either plain TCP or TLS-encrypted
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum MaybeTlsStream<S> {
+enum MaybeTlsStreamInner<S> {
     /// Plain, unencrypted stream
     Plain(S),
     /// TLS-encrypted stream
     Tls(TlsStream<S>),
 }
 
+/// Stream that can be either plain TCP or TLS-encrypted
+#[derive(Debug)]
+pub struct MaybeTlsStream<S>(MaybeTlsStreamInner<S>);
+
 impl<S> MaybeTlsStream<S> {
     /// Create an unencrypted stream.
-    pub fn plain(stream: S) -> Self {
-        MaybeTlsStream::Plain(stream)
+    pub fn new_plain(stream: S) -> Self {
+        Self(MaybeTlsStreamInner::Plain(stream))
     }
 
     /// Create a TLS-encrypted stream.
-    pub fn tls(stream: TlsStream<S>) -> Self {
-        MaybeTlsStream::Tls(stream)
+    pub fn new_tls(stream: TlsStream<S>) -> Self {
+        Self(MaybeTlsStreamInner::Tls(stream))
     }
 
     /// Whether the stream is TLS-encrypted.
     pub fn is_tls(&self) -> bool {
-        matches!(self, MaybeTlsStream::Tls(_))
+        matches!(self.0, MaybeTlsStreamInner::Tls(_))
     }
 }
 
@@ -37,9 +40,9 @@ where
     S: AsyncRead + AsyncWrite + Unpin + 'static,
 {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        match self {
-            MaybeTlsStream::Plain(stream) => stream.read(buf).await,
-            MaybeTlsStream::Tls(stream) => stream.read(buf).await,
+        match &mut self.0 {
+            MaybeTlsStreamInner::Plain(stream) => stream.read(buf).await,
+            MaybeTlsStreamInner::Tls(stream) => stream.read(buf).await,
         }
     }
 }
@@ -49,23 +52,23 @@ where
     S: AsyncRead + AsyncWrite + Unpin + 'static,
 {
     async fn write<B: IoBuf>(&mut self, buf: B) -> BufResult<usize, B> {
-        match self {
-            MaybeTlsStream::Plain(stream) => stream.write(buf).await,
-            MaybeTlsStream::Tls(stream) => stream.write(buf).await,
+        match &mut self.0 {
+            MaybeTlsStreamInner::Plain(stream) => stream.write(buf).await,
+            MaybeTlsStreamInner::Tls(stream) => stream.write(buf).await,
         }
     }
 
     async fn flush(&mut self) -> io::Result<()> {
-        match self {
-            MaybeTlsStream::Plain(stream) => stream.flush().await,
-            MaybeTlsStream::Tls(stream) => stream.flush().await,
+        match &mut self.0 {
+            MaybeTlsStreamInner::Plain(stream) => stream.flush().await,
+            MaybeTlsStreamInner::Tls(stream) => stream.flush().await,
         }
     }
 
     async fn shutdown(&mut self) -> io::Result<()> {
-        match self {
-            MaybeTlsStream::Plain(stream) => stream.shutdown().await,
-            MaybeTlsStream::Tls(stream) => stream.shutdown().await,
+        match &mut self.0 {
+            MaybeTlsStreamInner::Plain(stream) => stream.shutdown().await,
+            MaybeTlsStreamInner::Tls(stream) => stream.shutdown().await,
         }
     }
 }

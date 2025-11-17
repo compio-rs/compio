@@ -10,12 +10,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 
-#[deprecated = "Use `compio-tls` crate instead."]
-pub mod stream;
-
-#[cfg(feature = "rustls")]
-pub mod rustls;
-
 use std::io::ErrorKind;
 
 use compio_buf::IntoInner;
@@ -24,29 +18,22 @@ use tungstenite::{
     Error as WsError, HandshakeError, Message, WebSocket,
     client::IntoClientRequest,
     handshake::server::{Callback, NoCallback},
-    protocol::CloseFrame,
-};
-pub use tungstenite::{
-    Message as WebSocketMessage, error::Error as TungsteniteError, handshake::client::Response,
-    protocol::WebSocketConfig,
+    protocol::{CloseFrame, WebSocketConfig},
 };
 
-#[cfg(feature = "rustls")]
-pub use crate::rustls::{
-    AutoStream, ConnectStream, Connector, client_async_tls, client_async_tls_with_config,
-    client_async_tls_with_connector, client_async_tls_with_connector_and_config, connect_async,
-    connect_async_with_config, connect_async_with_tls_connector,
-    connect_async_with_tls_connector_and_config,
-};
+mod tls;
+pub use tls::*;
+pub use tungstenite;
 
 /// A WebSocket stream that works with compio.
+#[derive(Debug)]
 pub struct WebSocketStream<S> {
     inner: WebSocket<SyncStream<S>>,
 }
 
 impl<S> WebSocketStream<S>
 where
-    S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
+    S: AsyncRead + AsyncWrite,
 {
     /// Send a message on the WebSocket stream.
     pub async fn send(&mut self, message: Message) -> Result<(), WsError> {
@@ -55,13 +42,7 @@ where
         self.inner.send(message)?;
 
         // flush the buffer to the network
-        self.inner
-            .get_mut()
-            .flush_write_buf()
-            .await
-            .map_err(WsError::Io)?;
-
-        Ok(())
+        self.flush().await
     }
 
     /// Read a message from the WebSocket stream.
@@ -69,8 +50,7 @@ where
         loop {
             match self.inner.read() {
                 Ok(msg) => {
-                    // Always try to flush after read (close frames need this)
-                    let _ = self.inner.get_mut().flush_write_buf().await;
+                    self.flush().await?;
                     return Ok(msg);
                 }
                 Err(WsError::Io(ref e)) if e.kind() == ErrorKind::WouldBlock => {
@@ -80,23 +60,44 @@ where
                         .fill_read_buf()
                         .await
                         .map_err(WsError::Io)?;
-                    // Retry the read
-                    continue;
                 }
                 Err(e) => {
-                    // Always try to flush on error (close frames)
-                    let _ = self.inner.get_mut().flush_write_buf().await;
+                    let _ = self.flush().await;
                     return Err(e);
                 }
             }
         }
     }
 
+    /// Flush the WebSocket stream.
+    pub async fn flush(&mut self) -> Result<(), WsError> {
+        loop {
+            match self.inner.flush() {
+                Ok(()) => break,
+                Err(WsError::Io(ref e)) if e.kind() == ErrorKind::WouldBlock => {
+                    self.inner
+                        .get_mut()
+                        .flush_write_buf()
+                        .await
+                        .map_err(WsError::Io)?;
+                }
+                Err(WsError::ConnectionClosed) => break,
+                Err(e) => return Err(e),
+            }
+        }
+        self.inner
+            .get_mut()
+            .flush_write_buf()
+            .await
+            .map_err(WsError::Io)?;
+        Ok(())
+    }
+
     /// Close the WebSocket connection.
     pub async fn close(&mut self, close_frame: Option<CloseFrame>) -> Result<(), WsError> {
         loop {
             match self.inner.close(close_frame.clone()) {
-                Ok(()) => return Ok(()),
+                Ok(()) => break,
                 Err(WsError::Io(ref e)) if e.kind() == ErrorKind::WouldBlock => {
                     let sync_stream = self.inner.get_mut();
 
@@ -105,11 +106,12 @@ where
                     if flushed == 0 {
                         sync_stream.fill_read_buf().await.map_err(WsError::Io)?;
                     }
-                    continue;
                 }
+                Err(WsError::ConnectionClosed) => break,
                 Err(e) => return Err(e),
             }
         }
+        self.flush().await
     }
 
     /// Get a reference to the underlying stream.
@@ -120,12 +122,6 @@ where
     /// Get a mutable reference to the underlying stream.
     pub fn get_mut(&mut self) -> &mut S {
         self.inner.get_mut().get_mut()
-    }
-
-    /// Get the inner WebSocket.
-    #[deprecated = "Use IntoInner trait instead. This method will be removed in a future release."]
-    pub fn get_inner(self) -> WebSocket<SyncStream<S>> {
-        self.inner
     }
 }
 
@@ -150,7 +146,7 @@ impl<S> IntoInner for WebSocketStream<S> {
 /// the server half of accepting a client's websocket connection.
 pub async fn accept_async<S>(stream: S) -> Result<WebSocketStream<S>, WsError>
 where
-    S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
+    S: AsyncRead + AsyncWrite,
 {
     accept_hdr_async(stream, NoCallback).await
 }
@@ -162,7 +158,7 @@ pub async fn accept_async_with_config<S>(
     config: Option<WebSocketConfig>,
 ) -> Result<WebSocketStream<S>, WsError>
 where
-    S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
+    S: AsyncRead + AsyncWrite,
 {
     accept_hdr_with_config_async(stream, NoCallback, config).await
 }
@@ -173,7 +169,7 @@ where
 /// incoming requests and is able to add extra headers to the reply.
 pub async fn accept_hdr_async<S, C>(stream: S, callback: C) -> Result<WebSocketStream<S>, WsError>
 where
-    S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
+    S: AsyncRead + AsyncWrite,
     C: Callback,
 {
     accept_hdr_with_config_async(stream, callback, None).await
@@ -187,7 +183,7 @@ pub async fn accept_hdr_with_config_async<S, C>(
     config: Option<WebSocketConfig>,
 ) -> Result<WebSocketStream<S>, WsError>
 where
-    S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
+    S: AsyncRead + AsyncWrite,
     C: Callback,
 {
     let sync_stream = SyncStream::new(stream);
@@ -238,7 +234,7 @@ pub async fn client_async<R, S>(
 ) -> Result<(WebSocketStream<S>, tungstenite::handshake::client::Response), WsError>
 where
     R: IntoClientRequest,
-    S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
+    S: AsyncRead + AsyncWrite,
 {
     client_async_with_config(request, stream, None).await
 }
@@ -252,7 +248,7 @@ pub async fn client_async_with_config<R, S>(
 ) -> Result<(WebSocketStream<S>, tungstenite::handshake::client::Response), WsError>
 where
     R: IntoClientRequest,
-    S: AsyncRead + AsyncWrite + Unpin,
+    S: AsyncRead + AsyncWrite,
 {
     let sync_stream = SyncStream::new(stream);
     let mut handshake_result =
@@ -284,33 +280,4 @@ where
             }
         }
     }
-}
-
-#[inline]
-#[allow(clippy::result_large_err)]
-#[cfg(feature = "rustls")]
-pub(crate) fn domain(
-    request: &tungstenite::handshake::client::Request,
-) -> Result<String, tungstenite::Error> {
-    request
-        .uri()
-        .host()
-        .map(|host| {
-            // If host is an IPv6 address, it might be surrounded by brackets. These
-            // brackets are *not* part of a valid IP, so they must be stripped
-            // out.
-            //
-            // The URI from the request is guaranteed to be valid, so we don't need a
-            // separate check for the closing bracket.
-            let host = if host.starts_with('[') {
-                &host[1..host.len() - 1]
-            } else {
-                host
-            };
-
-            host.to_owned()
-        })
-        .ok_or(tungstenite::Error::Url(
-            tungstenite::error::UrlError::NoHostName,
-        ))
 }

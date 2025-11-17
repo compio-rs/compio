@@ -13,6 +13,8 @@ enum TlsStreamInner<S> {
     NativeTls(native_tls::TlsStream<SyncStream<S>>),
     #[cfg(feature = "rustls")]
     Rustls(futures_rustls::TlsStream<AsyncStream<S>>),
+    #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+    None(std::convert::Infallible, std::marker::PhantomData<S>),
 }
 
 impl<S> TlsStreamInner<S> {
@@ -22,6 +24,8 @@ impl<S> TlsStreamInner<S> {
             Self::NativeTls(s) => s.negotiated_alpn().ok().flatten().map(Cow::from),
             #[cfg(feature = "rustls")]
             Self::Rustls(s) => s.get_ref().1.alpn_protocol().map(Cow::from),
+            #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+            Self::None(f, ..) => match *f {},
         }
     }
 }
@@ -110,6 +114,11 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncRead for TlsStream<S> {
                 };
                 BufResult(res, buf)
             }
+            #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+            TlsStreamInner::None(f, ..) => {
+                let _slice: &mut [u8] = slice;
+                match *f {}
+            }
         }
     }
 }
@@ -149,6 +158,11 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncWrite for TlsStream<S> {
                 let res = futures_util::AsyncWriteExt::write(s, slice).await;
                 BufResult(res, buf)
             }
+            #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+            TlsStreamInner::None(f, ..) => {
+                let _slice: &[u8] = slice;
+                match *f {}
+            }
         }
     }
 
@@ -158,6 +172,8 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncWrite for TlsStream<S> {
             TlsStreamInner::NativeTls(s) => flush_impl(s).await,
             #[cfg(feature = "rustls")]
             TlsStreamInner::Rustls(s) => futures_util::AsyncWriteExt::flush(s).await,
+            #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+            TlsStreamInner::None(f, ..) => match *f {},
         }
     }
 
@@ -168,6 +184,8 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncWrite for TlsStream<S> {
             TlsStreamInner::NativeTls(s) => s.get_mut().get_mut().shutdown().await,
             #[cfg(feature = "rustls")]
             TlsStreamInner::Rustls(s) => futures_util::AsyncWriteExt::close(s).await,
+            #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+            TlsStreamInner::None(f, ..) => match *f {},
         }
     }
 }

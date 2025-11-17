@@ -1,6 +1,8 @@
+#![allow(clippy::collapsible_match)]
+
+use compio_log::*;
 use compio_net::TcpStream;
 use compio_ws::client_async;
-use log::*;
 use tungstenite::{Error, Result};
 
 const AGENT: &str = "Tungstenite";
@@ -54,7 +56,9 @@ async fn run_test(case: u32) -> Result<()> {
 
 #[compio_macros::main]
 async fn main() {
-    env_logger::init();
+    tracing_subscriber::fmt()
+        .with_max_level(Level::TRACE)
+        .init();
 
     let total = get_case_count().await.expect("Error getting case count");
 
@@ -62,7 +66,9 @@ async fn main() {
         if let Err(e) = run_test(case).await {
             match e {
                 Error::ConnectionClosed | Error::Protocol(_) | Error::Utf8(_) => (),
-                err => error!("Testcase failed: {err}"),
+                _err => {
+                    error!("Testcase failed: {_err}");
+                }
             }
         }
     }
