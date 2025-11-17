@@ -37,6 +37,7 @@
             ];
 
             AWS_LC_FIPS_SYS_CC = "${llvmPackages.clangUseLLVM}/bin/cc";
+            OPENSSL_DIR = "${openssl.dev}/include/openssl";
           };
         }
     );
