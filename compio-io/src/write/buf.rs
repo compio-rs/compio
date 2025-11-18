@@ -1,5 +1,3 @@
-use std::future::ready;
-
 use compio_buf::{BufResult, IntoInner, IoBuf, IoVectoredBuf, buf_try};
 
 use crate::{
@@ -83,7 +81,7 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
 
         let written = self
             .buf
-            .with(|mut w| {
+            .with_sync(|mut w| {
                 let mut written = 0;
                 for buf in buf.iter_slice() {
                     let len = w.buf_len();
@@ -95,9 +93,8 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
                         break;
                     }
                 }
-                ready(BufResult(Ok(written), w))
+                BufResult(Ok(written), w)
             })
-            .await
             .expect("Closure always return Ok");
 
         (_, buf) = buf_try!(self.flush_if_needed().await, buf);
