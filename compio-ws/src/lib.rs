@@ -189,7 +189,7 @@ where
     S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
     C: Callback,
 {
-    let sync_stream = SyncStream::new(stream);
+    let sync_stream = SyncStream::with_capacity(128 * 1024, stream);
     let mut handshake_result = tungstenite::accept_hdr_with_config(sync_stream, callback, config);
 
     loop {
@@ -253,7 +253,7 @@ where
     R: IntoClientRequest,
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let sync_stream = SyncStream::new(stream);
+    let sync_stream = SyncStream::with_capacity(128 * 1024, stream);
     let mut handshake_result =
         tungstenite::client::client_with_config(request, sync_stream, config);
 
