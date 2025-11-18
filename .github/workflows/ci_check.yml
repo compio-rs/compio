@@ -27,15 +27,6 @@ jobs:
         run: |
           rustup default nightly
           rustup component add clippy
-      - uses: actions/setup-go@v4
-        with:
-          go-version: '>=1.18'
-      - name: Install NASM on Windows
-        if: runner.os == 'Windows'
-        uses: ilammy/setup-nasm@v1
-      - name: Install ninja-build tool on Windows
-        if: runner.os == 'Windows'
-        uses: seanmiddleditch/gha-setup-ninja@v4
       - name: Check clippy
         shell: bash
         run: |
