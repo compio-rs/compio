@@ -5,13 +5,6 @@
 #![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
 #![warn(missing_docs)]
 
-#[cfg(all(
-    target_os = "linux",
-    not(feature = "io-uring"),
-    not(feature = "polling")
-))]
-compile_error!("You must choose at least one of these features: [\"io-uring\", \"polling\"]");
-
 use std::{
     io,
     task::{Poll, Waker},
@@ -53,8 +46,11 @@ cfg_if::cfg_if! {
     } else if #[cfg(io_uring)] {
         #[path = "iour/mod.rs"]
         mod sys;
-    } else if #[cfg(unix)] {
+    } else if #[cfg(all(unix, not(target_os = "linux")))] {
         #[path = "poll/mod.rs"]
+        mod sys;
+    } else {
+        #[path = "stub/mod.rs"]
         mod sys;
     }
 }

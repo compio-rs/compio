@@ -28,7 +28,6 @@ webpki-roots = { workspace = true, optional = true }
 [dev-dependencies]
 compio-macros = { workspace = true }
 compio-runtime = { workspace = true }
-compio-driver = { workspace = true }
 
 futures-channel = { workspace = true }
 rustls-pemfile = "2.0"
