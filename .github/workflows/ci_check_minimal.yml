@@ -1,4 +1,4 @@
-name: Check
+name: Check (Minimal Versions)
 
 on:
   push:
