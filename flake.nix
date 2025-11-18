@@ -29,14 +29,11 @@
               glib
               openssl
               pkg-config
-              llvmPackages.clangUseLLVM
               (rust-bin.selectLatestNightlyWith (toolchain:
                 toolchain.default.override {
                   extensions = ["rust-src"];
                 }))
             ];
-
-            AWS_LC_FIPS_SYS_CC = "${llvmPackages.clangUseLLVM}/bin/cc";
           };
         }
     );
