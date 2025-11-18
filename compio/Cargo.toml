@@ -118,16 +118,10 @@ criterion = ["compio-runtime?/criterion"]
 enable_log = ["compio-log/enable_log"]
 
 ring = ["compio-tls?/ring", "compio-quic?/ring", "compio-ws?/ring"]
-aws-lc-rs = [
-    "compio-tls?/aws-lc-rs",
-    "compio-quic?/aws-lc-rs",
-    "compio-ws?/aws-lc-rs",
-]
-aws-lc-rs-fips = [
-    "compio-tls?/aws-lc-rs-fips",
-    "compio-quic?/aws-lc-rs-fips",
-    "compio-ws?/aws-lc-rs-fips",
-]
+
+# Deprecated Features
+aws-lc-rs = []
+aws-lc-rs-fips = []
 
 # Nightly features
 allocator_api = ["compio-buf/allocator_api", "compio-io?/allocator_api"]

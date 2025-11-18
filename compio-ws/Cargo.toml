@@ -36,13 +36,14 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [features]
 default = []
-# Deprecated
-connect = []
 native-tls = ["compio-tls/native-tls", "tungstenite/native-tls"]
 rustls = ["compio-tls/rustls", "tungstenite/__rustls-tls"]
 rustls-platform-verifier = ["rustls", "dep:rustls-platform-verifier"]
 rustls-native-certs = ["rustls", "dep:rustls-native-certs"]
 webpki-roots = ["rustls", "dep:webpki-roots"]
 ring = ["compio-tls/ring"]
-aws-lc-rs = ["compio-tls/aws-lc-rs"]
-aws-lc-rs-fips = ["compio-tls/aws-lc-rs-fips"]
+
+# Deprecated Features
+connect = []
+aws-lc-rs = []
+aws-lc-rs-fips = []
