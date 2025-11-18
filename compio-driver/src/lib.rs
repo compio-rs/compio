@@ -46,11 +46,11 @@ cfg_if::cfg_if! {
     } else if #[cfg(io_uring)] {
         #[path = "iour/mod.rs"]
         mod sys;
-    } else if #[cfg(all(unix, not(target_os = "linux")))] {
-        #[path = "poll/mod.rs"]
-        mod sys;
-    } else {
+    } else if #[cfg(all(target_os = "linux", not(feature = "polling")))] {
         #[path = "stub/mod.rs"]
+        mod sys;
+    } else if #[cfg(unix)] {
+        #[path = "poll/mod.rs"]
         mod sys;
     }
 }
