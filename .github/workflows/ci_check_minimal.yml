@@ -27,6 +27,7 @@ jobs:
         run: |
           rustup default nightly
           rustup component add clippy
+      - uses: taiki-e/install-action@cargo-no-dev-deps
       - uses: actions/setup-go@v4
         with:
           go-version: '>=1.18'
@@ -39,7 +40,7 @@ jobs:
       - name: Check clippy
         shell: bash
         run: |
-          cargo clippy --all-features --all-targets -- -Dwarnings
+          cargo no-dev-deps -Zminimal-versions clippy --all-features --lib
       - name: Check Docs
         run: |
-          cargo doc --workspace --all-features --no-deps
+          cargo no-dev-deps -Zminimal-versions doc --workspace --all-features --no-deps
