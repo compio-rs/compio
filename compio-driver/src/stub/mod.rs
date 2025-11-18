@@ -1,9 +1,12 @@
+#[cfg(not(feature = "proc_macro_diagnostic"))]
 macro_rules! compile_warning {
     ($expr:expr) => {
         #[warn(dead_code)]
         const WARNING: &str = $expr;
     };
 }
+#[cfg(feature = "proc_macro_diagnostic")]
+use compile_warning::compile_warning;
 
 compile_warning!("You have to choose at least one of these features: [\"io-uring\", \"polling\"]");
 
