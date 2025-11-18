@@ -132,6 +132,7 @@ once_cell_try = [
     "compio-net?/once_cell_try",
     "compio-signal?/once_cell_try",
 ]
+proc_macro_diagnostic = ["compio-driver/proc_macro_diagnostic"]
 read_buf = [
     "compio-buf/read_buf",
     "compio-io?/read_buf",
@@ -145,6 +146,7 @@ nightly = [
     "lazy_cell",
     "linux_pidfd",
     "once_cell_try",
+    "proc_macro_diagnostic",
     "read_buf",
     "try_trait_v2",
     "windows_by_handle",
