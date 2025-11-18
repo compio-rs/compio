@@ -1,4 +1,4 @@
-use std::io;
+use std::{borrow::Cow, io};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
 use compio_io::{AsyncRead, AsyncWrite};
@@ -32,6 +32,14 @@ impl<S> MaybeTlsStream<S> {
     /// Whether the stream is TLS-encrypted.
     pub fn is_tls(&self) -> bool {
         matches!(self.0, MaybeTlsStreamInner::Tls(_))
+    }
+
+    /// Returns the negotiated ALPN protocol.
+    pub fn negotiated_alpn(&self) -> Option<Cow<'_, [u8]>> {
+        match &self.0 {
+            MaybeTlsStreamInner::Plain(_) => None,
+            MaybeTlsStreamInner::Tls(s) => s.negotiated_alpn(),
+        }
     }
 }
 
