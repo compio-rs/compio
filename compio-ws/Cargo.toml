@@ -41,8 +41,3 @@ rustls-platform-verifier = ["rustls", "dep:rustls-platform-verifier"]
 rustls-native-certs = ["rustls", "dep:rustls-native-certs"]
 webpki-roots = ["rustls", "dep:webpki-roots"]
 ring = ["compio-tls/ring"]
-
-# Deprecated Features
-connect = []
-aws-lc-rs = []
-aws-lc-rs-fips = []

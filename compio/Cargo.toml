@@ -1,6 +1,6 @@
 [package]
 name = "compio"
-version = "0.16.2"
+version = "0.17.0"
 description = "Completion based async runtime"
 categories = ["asynchronous", "filesystem", "network-programming"]
 keywords = ["async", "fs", "iocp", "io-uring", "net"]
@@ -95,7 +95,6 @@ process = ["dep:compio-process"]
 quic = ["dep:compio-quic"]
 h3 = ["quic", "compio-quic/h3"]
 ws = ["dep:compio-ws"]
-ws-connect = ["ws", "compio-ws/connect"]
 all = [
     "time",
     "macros",
@@ -107,7 +106,6 @@ all = [
     "quic",
     "h3",
     "ws",
-    "ws-connect",
 ]
 
 arrayvec = ["compio-buf/arrayvec"]
@@ -118,10 +116,6 @@ criterion = ["compio-runtime?/criterion"]
 enable_log = ["compio-log/enable_log"]
 
 ring = ["compio-tls?/ring", "compio-quic?/ring", "compio-ws?/ring"]
-
-# Deprecated Features
-aws-lc-rs = []
-aws-lc-rs-fips = []
 
 # Nightly features
 allocator_api = ["compio-buf/allocator_api", "compio-io?/allocator_api"]

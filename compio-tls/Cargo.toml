@@ -1,6 +1,6 @@
 [package]
 name = "compio-tls"
-version = "0.7.2"
+version = "0.8.0"
 description = "TLS adaptor with compio"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net", "tls"]
@@ -52,7 +52,3 @@ ring = ["rustls", "rustls/ring", "futures-rustls/ring"]
 
 read_buf = ["compio-buf/read_buf", "compio-io/read_buf", "rustls?/read_buf"]
 nightly = ["read_buf"]
-
-# Deprecated Features
-aws-lc-rs = []
-aws-lc-rs-fips = []

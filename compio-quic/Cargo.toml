@@ -1,6 +1,6 @@
 [package]
 name = "compio-quic"
-version = "0.5.1"
+version = "0.6.0"
 description = "QUIC for compio"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net", "quic"]
@@ -70,10 +70,6 @@ native-certs = ["dep:rustls-native-certs"]
 webpki-roots = ["dep:webpki-roots"]
 h3 = ["dep:h3", "dep:h3-datagram"]
 ring = ["quinn-proto/rustls-ring"]
-
-# Deprecated Features
-aws-lc-rs = []
-aws-lc-rs-fips = []
 
 [[example]]
 name = "http3-client"
