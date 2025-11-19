@@ -497,15 +497,7 @@ pub async fn submit<T: OpCode + 'static>(op: T) -> BufResult<usize, T> {
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::with_current`].
 pub async fn submit_with_flags<T: OpCode + 'static>(op: T) -> (BufResult<usize, T>, u32) {
-    let state = Runtime::with_current(|r| r.submit_raw(op));
-    match state {
-        PushEntry::Pending(user_data) => OpFuture::new(user_data).await,
-        PushEntry::Ready(res) => {
-            // submit_flags won't be ready immediately, if ready, it must be error without
-            // flags, or the flags are not necessary
-            (res, 0)
-        }
-    }
+    Runtime::with_current(|r| r.submit_with_flags(op)).await
 }
 
 #[cfg(feature = "time")]
