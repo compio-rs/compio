@@ -180,7 +180,7 @@ where
     client_async_tls_with_config(request, stream, None, None).await
 }
 
-/// Similar to `client_async_tls()` but the one can specify a websocket
+/// Similar to [`client_async_tls()`] but the one can specify a websocket
 /// configuration, and an optional connector.
 pub async fn client_async_tls_with_config<R, S>(
     request: R,
