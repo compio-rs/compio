@@ -1,7 +1,11 @@
 /target
 /Cargo.lock
-/.vscode
 /.cargo
-.idea
+
 /.direnv
-.envrc
+/.envrc
+
+# Editor directories
+/.vscode
+/.zed
+/.idea

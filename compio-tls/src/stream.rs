@@ -81,7 +81,7 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncRead for TlsStream<S> {
         slice.fill(MaybeUninit::new(0));
         // SAFETY: The memory has been initialized
         let slice =
-            unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), slice.len()) };
+            unsafe { std::slice::from_raw_parts_mut::<u8>(slice.as_mut_ptr().cast(), slice.len()) };
         match &mut self.0 {
             #[cfg(feature = "native-tls")]
             TlsStreamInner::NativeTls(s) => loop {
@@ -115,10 +115,7 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncRead for TlsStream<S> {
                 BufResult(res, buf)
             }
             #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
-            TlsStreamInner::None(f, ..) => {
-                let _slice: &mut [u8] = slice;
-                match *f {}
-            }
+            TlsStreamInner::None(f, ..) => match *f {},
         }
     }
 }
@@ -159,10 +156,7 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncWrite for TlsStream<S> {
                 BufResult(res, buf)
             }
             #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
-            TlsStreamInner::None(f, ..) => {
-                let _slice: &[u8] = slice;
-                match *f {}
-            }
+            TlsStreamInner::None(f, ..) => match *f {},
         }
     }
 
