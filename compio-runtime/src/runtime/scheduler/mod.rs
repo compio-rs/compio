@@ -8,7 +8,6 @@ use std::{
 };
 
 use async_task::{Runnable, Task};
-use compio_driver::NotifyHandle;
 use crossbeam_queue::SegQueue;
 use slab::Slab;
 
@@ -108,18 +107,18 @@ struct WeakTaskQueue {
 impl WeakTaskQueue {
     /// Upgrades the `WeakTaskQueue` and pushes the `runnable` into the
     /// appropriate queue.
-    fn upgrade_and_push(&self, runnable: Runnable, notify: &NotifyHandle) {
+    fn upgrade_and_push(&self, runnable: Runnable, waker: &Waker) {
         if self.local_thread.valid() {
             // It's ok to drop the runnable on the same thread.
             if let Some(local_queue) = self.local_queue.upgrade() {
                 // SAFETY: already checked
                 unsafe { local_queue.get_unchecked() }.push(runnable);
                 #[cfg(feature = "notify-always")]
-                notify.notify().ok();
+                waker.wake_by_ref();
             }
         } else if let Some(sync_queue) = self.sync_queue.upgrade() {
             sync_queue.push(runnable);
-            notify.notify().ok();
+            waker.wake_by_ref();
         } else {
             // We have to leak the runnable since it's not safe to drop it on another
             // thread.
@@ -155,7 +154,7 @@ impl Scheduler {
     }
 
     /// Spawns a new asynchronous task, returning a [`Task`] for it.
-    pub(crate) fn spawn<F>(&self, future: F, notify: NotifyHandle) -> Task<F::Output>
+    pub(crate) fn spawn<F>(&self, future: F, waker: Waker) -> Task<F::Output>
     where
         F: Future + 'static,
     {
@@ -178,7 +177,7 @@ impl Scheduler {
             // on the creator thread.
             let task_queue = self.task_queue.downgrade();
 
-            move |runnable| task_queue.upgrade_and_push(runnable, &notify)
+            move |runnable| task_queue.upgrade_and_push(runnable, &waker)
         };
 
         let (runnable, task) = async_task::spawn_local(future, schedule);

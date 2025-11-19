@@ -107,11 +107,11 @@ fn register_multiple() {
 fn notify() {
     let mut driver = Proactor::new().unwrap();
 
-    let handle = driver.handle();
+    let waker = driver.waker();
 
     let thread = std::thread::spawn(move || {
         std::thread::sleep(Duration::from_secs(1));
-        handle.notify().unwrap()
+        waker.wake();
     });
 
     driver.poll(None).unwrap();

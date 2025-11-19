@@ -3,6 +3,7 @@ use std::{
     io,
     os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
     ptr::null_mut,
+    sync::Arc,
 };
 
 use windows_sys::Win32::Foundation::{
@@ -10,7 +11,7 @@ use windows_sys::Win32::Foundation::{
     STATUS_SUCCESS,
 };
 
-use crate::{Key, OpCode, RawFd, sys::cp};
+use crate::{Key, OpCode, RawFd, sys::Notify};
 
 extern "system" {
     fn NtCreateWaitCompletionPacket(
@@ -52,7 +53,7 @@ fn check_status(status: NTSTATUS) -> io::Result<()> {
 }
 
 impl Wait {
-    pub fn new(port: &cp::Port, event: RawFd, op: &mut Key<dyn OpCode>) -> io::Result<Self> {
+    pub fn new(notify: Arc<Notify>, event: RawFd, op: &mut Key<dyn OpCode>) -> io::Result<Self> {
         let mut handle = null_mut();
         check_status(unsafe {
             NtCreateWaitCompletionPacket(&mut handle, GENERIC_READ | GENERIC_WRITE, null_mut())
@@ -61,7 +62,7 @@ impl Wait {
         check_status(unsafe {
             NtAssociateWaitCompletionPacket(
                 handle.as_raw_handle() as _,
-                port.as_raw_handle() as _,
+                notify.port.as_raw_handle() as _,
                 event,
                 null_mut(),
                 op.as_mut_ptr().cast(),

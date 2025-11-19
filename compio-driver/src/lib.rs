@@ -332,9 +332,9 @@ impl Proactor {
         op.set_waker(waker);
     }
 
-    /// Create a notify handle to interrupt the inner driver.
-    pub fn handle(&self) -> NotifyHandle {
-        self.driver.handle()
+    /// Create a waker to interrupt the inner driver.
+    pub fn waker(&self) -> Waker {
+        self.driver.waker()
     }
 
     /// Create buffer pool with given `buffer_size` and `buffer_len`
