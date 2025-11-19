@@ -209,7 +209,6 @@ impl Runtime {
         });
         // It is safe and sound to use `submit` here because the task is spawned
         // immediately.
-        #[allow(deprecated)]
         self.spawn_impl(self.submit(op).map(|res| res.1.into_inner()))
     }
 
@@ -232,9 +231,7 @@ impl Runtime {
     /// It is safe to send the returned future to another runtime and poll it,
     /// but the exact behavior is not guaranteed, e.g. it may return pending
     /// forever or else.
-    #[deprecated = "use compio::runtime::submit instead"]
-    pub fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
-        #[allow(deprecated)]
+    fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
         self.submit_with_flags(op).map(|(res, _)| res)
     }
 
@@ -248,8 +245,7 @@ impl Runtime {
     /// It is safe to send the returned future to another runtime and poll it,
     /// but the exact behavior is not guaranteed, e.g. it may return pending
     /// forever or else.
-    #[deprecated = "use compio::runtime::submit_with_flags instead"]
-    pub fn submit_with_flags<T: OpCode + 'static>(
+    fn submit_with_flags<T: OpCode + 'static>(
         &self,
         op: T,
     ) -> impl Future<Output = (BufResult<usize, T>, u32)> {
