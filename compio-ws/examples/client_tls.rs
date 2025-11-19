@@ -92,7 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let connector = None;
 
     let (mut websocket, _response) =
-        connect_async_tls_with_config("wss://127.0.0.1:9002", None, false, connector).await?;
+        connect_async_tls_with_config("wss://127.0.0.1:9002", None, connector).await?;
 
     println!("Successfully connected to WebSocket TLS server!");
     println!();

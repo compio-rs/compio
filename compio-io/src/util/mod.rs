@@ -29,7 +29,7 @@ pub use split::Splittable;
 ///
 /// This is an asynchronous version of [`std::io::copy`][std].
 ///
-/// A heap-allocated copy buffer with 8 KB is created to take data from the
+/// A heap-allocated copy buffer with 8 KiB is created to take data from the
 /// reader to the writer.
 pub async fn copy<R: AsyncRead, W: AsyncWrite>(reader: &mut R, writer: &mut W) -> IoResult<u64> {
     let mut buf = Vec::with_capacity(DEFAULT_BUF_SIZE);

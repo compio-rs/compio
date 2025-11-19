@@ -55,7 +55,7 @@ pub struct BufReader<R> {
 
 impl<R> BufReader<R> {
     /// Creates a new `BufReader` with a default buffer capacity. The default is
-    /// currently 8 KB, but may change in the future.
+    /// currently 8 KiB, but may change in the future.
     pub fn new(reader: R) -> Self {
         Self::with_capacity(DEFAULT_BUF_SIZE, reader)
     }
