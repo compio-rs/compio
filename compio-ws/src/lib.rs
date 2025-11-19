@@ -355,7 +355,7 @@ where
 }
 
 /// Similar to [`client_async()`] but user can specify a [`Config`].
-async fn client_async_with_config<R, S>(
+pub async fn client_async_with_config<R, S>(
     request: R,
     stream: S,
     config: impl Into<Config>,
