@@ -1,5 +1,3 @@
-use std::task::{Context, Poll};
-
 #[cfg(target_os = "macos")]
 #[test]
 fn cf_run_loop() {
@@ -7,6 +5,7 @@ fn cf_run_loop() {
         future::Future,
         os::raw::c_void,
         sync::{Arc, Mutex},
+        task::{Context, Poll},
         time::Duration,
     };
 
@@ -108,7 +107,14 @@ fn cf_run_loop() {
 #[cfg(windows)]
 #[test]
 fn message_queue() {
-    use std::{future::Future, mem::MaybeUninit, ptr::null_mut, sync::Mutex, time::Duration};
+    use std::{
+        future::Future,
+        mem::MaybeUninit,
+        ptr::null_mut,
+        sync::Mutex,
+        task::{Context, Poll},
+        time::Duration,
+    };
 
     use compio_driver::AsRawFd;
     use compio_runtime::{
