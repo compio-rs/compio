@@ -32,7 +32,7 @@ pub struct BufWriter<W> {
 
 impl<W> BufWriter<W> {
     /// Creates a new `BufWriter` with a default buffer capacity. The default is
-    /// currently 8 KB, but may change in the future.
+    /// currently 8 KiB, but may change in the future.
     pub fn new(writer: W) -> Self {
         Self::with_capacity(DEFAULT_BUF_SIZE, writer)
     }

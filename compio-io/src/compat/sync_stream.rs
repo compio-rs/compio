@@ -43,20 +43,20 @@ pub struct SyncStream<S> {
 }
 
 impl<S> SyncStream<S> {
-    // 64MB max
+    // 64MiB max
     const DEFAULT_MAX_BUFFER: usize = 64 * 1024 * 1024;
 
     /// Creates a new `SyncStream` with default buffer sizes.
     ///
-    /// - Base capacity: 8KB
-    /// - Max buffer size: 64MB
+    /// - Base capacity: 8KiB
+    /// - Max buffer size: 64MiB
     pub fn new(stream: S) -> Self {
         Self::with_capacity(DEFAULT_BUF_SIZE, stream)
     }
 
     /// Creates a new `SyncStream` with a custom base capacity.
     ///
-    /// The maximum buffer size defaults to 64MB.
+    /// The maximum buffer size defaults to 64MiB.
     pub fn with_capacity(base_capacity: usize, stream: S) -> Self {
         Self::with_limits(base_capacity, Self::DEFAULT_MAX_BUFFER, stream)
     }

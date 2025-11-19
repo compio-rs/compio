@@ -25,6 +25,121 @@ mod tls;
 pub use tls::*;
 pub use tungstenite;
 
+/// Configuration for compio-ws.
+///
+/// ## API Interface
+///
+/// `_with_config` functions in this crate accept `impl Into<Config>`, so
+/// following are all valid:
+/// - [`Config`]
+/// - [`WebSocketConfig`] (use custom WebSocket config with default remaining
+///   settings)
+/// - [`None`] (use default value)
+pub struct Config {
+    /// WebSocket configuration from tungstenite.
+    websocket: Option<WebSocketConfig>,
+
+    /// Base buffer size
+    buffer_size_base: usize,
+
+    /// Maximum buffer size
+    buffer_size_limit: usize,
+
+    /// Disable Nagle's algorithm. This only affects
+    /// [`connect_async_with_config()`] and [`connect_async_tls_with_config()`].
+    disable_nagle: bool,
+}
+
+impl Config {
+    // 128 KiB, see <https://github.com/compio-rs/compio/pull/532>.
+    const DEFAULT_BUF_SIZE: usize = 128 * 1024;
+    // 64 MiB, the same as [`SyncStream`].
+    const DEFAULT_MAX_BUFFER: usize = 64 * 1024 * 1024;
+
+    /// Creates a new `Config` with default settings.
+    pub fn new() -> Self {
+        Self {
+            websocket: None,
+            buffer_size_base: Self::DEFAULT_BUF_SIZE,
+            buffer_size_limit: Self::DEFAULT_MAX_BUFFER,
+            disable_nagle: false,
+        }
+    }
+
+    /// Get the WebSocket configuration.
+    pub fn websocket_config(&self) -> Option<&WebSocketConfig> {
+        self.websocket.as_ref()
+    }
+
+    /// Get the base buffer size.
+    pub fn buffer_size_base(&self) -> usize {
+        self.buffer_size_base
+    }
+
+    /// Get the maximum buffer size.
+    pub fn buffer_size_limit(&self) -> usize {
+        self.buffer_size_limit
+    }
+
+    /// Set custom base buffer size.
+    ///
+    /// Default to 128 KiB.
+    pub fn with_buffer_size_base(mut self, size: usize) -> Self {
+        self.buffer_size_base = size;
+        self
+    }
+
+    /// Set custom maximum buffer size.
+    ///
+    /// Default to 64 MiB.
+    pub fn with_buffer_size_limit(mut self, size: usize) -> Self {
+        self.buffer_size_limit = size;
+        self
+    }
+
+    /// Set custom buffer sizes.
+    ///
+    /// Default to 128 KiB for base and 64 MiB for limit.
+    pub fn with_buffer_sizes(mut self, base: usize, limit: usize) -> Self {
+        self.buffer_size_base = base;
+        self.buffer_size_limit = limit;
+        self
+    }
+
+    /// Disable Nagle's algorithm, i.e. `set_nodelay(true)`.
+    ///
+    /// Default to `false`. If you don't know what the Nagle's algorithm is,
+    /// better leave it to `false`.
+    pub fn disable_nagle(mut self, disable: bool) -> Self {
+        self.disable_nagle = disable;
+        self
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl From<WebSocketConfig> for Config {
+    fn from(config: WebSocketConfig) -> Self {
+        Self {
+            websocket: Some(config),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<Option<WebSocketConfig>> for Config {
+    fn from(config: Option<WebSocketConfig>) -> Self {
+        Self {
+            websocket: config,
+            ..Default::default()
+        }
+    }
+}
+
 /// A WebSocket stream that works with compio.
 #[derive(Debug)]
 pub struct WebSocketStream<S> {
@@ -135,11 +250,10 @@ impl<S> IntoInner for WebSocketStream<S> {
 
 /// Accepts a new WebSocket connection with the provided stream.
 ///
-/// This function will internally call `server::accept` to create a
-/// handshake representation and returns a future representing the
-/// resolution of the WebSocket handshake. The returned future will resolve
-/// to either `WebSocketStream<S>` or `Error` depending if it's successful
-/// or not.
+/// This function will internally create a handshake representation and returns
+/// a future representing the resolution of the WebSocket handshake. The
+/// returned future will resolve to either [`WebSocketStream<S>`] or [`WsError`]
+/// depending on if it's successful or not.
 ///
 /// This is typically used after a socket has been accepted from a
 /// `TcpListener`. That socket is then passed to this function to perform
@@ -151,11 +265,10 @@ where
     accept_hdr_async(stream, NoCallback).await
 }
 
-/// The same as `accept_async()` but the one can specify a websocket
-/// configuration. Please refer to `accept_async()` for more details.
+/// Similar to [`accept_async()`] but user can specify a [`Config`].
 pub async fn accept_async_with_config<S>(
     stream: S,
-    config: Option<WebSocketConfig>,
+    config: impl Into<Config>,
 ) -> Result<WebSocketStream<S>, WsError>
 where
     S: AsyncRead + AsyncWrite,
@@ -164,7 +277,7 @@ where
 }
 /// Accepts a new WebSocket connection with the provided stream.
 ///
-/// This function does the same as `accept_async()` but accepts an extra
+/// This function does the same as [`accept_async()`] but accepts an extra
 /// callback for header processing. The callback receives headers of the
 /// incoming requests and is able to add extra headers to the reply.
 pub async fn accept_hdr_async<S, C>(stream: S, callback: C) -> Result<WebSocketStream<S>, WsError>
@@ -175,19 +288,21 @@ where
     accept_hdr_with_config_async(stream, callback, None).await
 }
 
-/// The same as `accept_hdr_async()` but the one can specify a websocket
-/// configuration. Please refer to `accept_hdr_async()` for more details.
+/// Similar to [`accept_hdr_async()`] but user can specify a [`Config`].
 pub async fn accept_hdr_with_config_async<S, C>(
     stream: S,
     callback: C,
-    config: Option<WebSocketConfig>,
+    config: impl Into<Config>,
 ) -> Result<WebSocketStream<S>, WsError>
 where
     S: AsyncRead + AsyncWrite,
     C: Callback,
 {
-    let sync_stream = SyncStream::with_capacity(128 * 1024, stream);
-    let mut handshake_result = tungstenite::accept_hdr_with_config(sync_stream, callback, config);
+    let config = config.into();
+    let sync_stream =
+        SyncStream::with_limits(config.buffer_size_base, config.buffer_size_limit, stream);
+    let mut handshake_result =
+        tungstenite::accept_hdr_with_config(sync_stream, callback, config.websocket);
 
     loop {
         match handshake_result {
@@ -223,7 +338,7 @@ where
 ///
 /// Internally, this creates a handshake representation and returns
 /// a future representing the resolution of the WebSocket handshake. The
-/// returned future will resolve to either `WebSocketStream<S>` or `Error`
+/// returned future will resolve to either [`WebSocketStream<S>`] or [`WsError`]
 /// depending on whether the handshake is successful.
 ///
 /// This is typically used for clients who have already established, for
@@ -239,20 +354,21 @@ where
     client_async_with_config(request, stream, None).await
 }
 
-/// The same as `client_async()` but the one can specify a websocket
-/// configuration. Please refer to `client_async()` for more details.
-pub async fn client_async_with_config<R, S>(
+/// Similar to [`client_async()`] but user can specify a [`Config`].
+async fn client_async_with_config<R, S>(
     request: R,
     stream: S,
-    config: Option<WebSocketConfig>,
+    config: impl Into<Config>,
 ) -> Result<(WebSocketStream<S>, tungstenite::handshake::client::Response), WsError>
 where
     R: IntoClientRequest,
     S: AsyncRead + AsyncWrite,
 {
-    let sync_stream = SyncStream::with_capacity(128 * 1024, stream);
+    let config = config.into();
+    let sync_stream =
+        SyncStream::with_limits(config.buffer_size_base, config.buffer_size_limit, stream);
     let mut handshake_result =
-        tungstenite::client::client_with_config(request, sync_stream, config);
+        tungstenite::client::client_with_config(request, sync_stream, config.websocket);
 
     loop {
         match handshake_result {

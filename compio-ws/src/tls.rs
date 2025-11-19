@@ -10,7 +10,7 @@ use tungstenite::{
     stream::Mode,
 };
 
-use crate::{WebSocketConfig, WebSocketStream, client_async_with_config};
+use crate::{Config, WebSocketStream, client_async_with_config};
 
 mod encryption {
     #[cfg(feature = "native-tls")]
@@ -180,13 +180,13 @@ where
     client_async_tls_with_config(request, stream, None, None).await
 }
 
-/// The same as `client_async_tls()` but the one can specify a websocket
+/// Similar to `client_async_tls()` but the one can specify a websocket
 /// configuration, and an optional connector.
 pub async fn client_async_tls_with_config<R, S>(
     request: R,
     stream: S,
     connector: Option<TlsConnector>,
-    config: Option<WebSocketConfig>,
+    config: impl Into<Config>,
 ) -> Result<(WebSocketStream<MaybeTlsStream<S>>, Response), Error>
 where
     R: IntoClientRequest,
@@ -212,38 +212,31 @@ pub async fn connect_async<R>(
 where
     R: IntoClientRequest,
 {
-    connect_async_with_config(request, None, false).await
+    connect_async_with_config(request, None).await
 }
 
-/// The same as `connect_async()` but the one can specify a websocket
-/// configuration. `disable_nagle` specifies if the Nagle's algorithm must be
-/// disabled, i.e. `set_nodelay(true)`. If you don't know what the Nagle's
-/// algorithm is, better leave it to `false`.
+/// Similar to [`connect_async()`], but user can specify a [`Config`].
 pub async fn connect_async_with_config<R>(
     request: R,
-    config: Option<WebSocketConfig>,
-    disable_nagle: bool,
+    config: impl Into<Config>,
 ) -> Result<(WebSocketStream<ConnectStream>, Response), Error>
 where
     R: IntoClientRequest,
 {
-    connect_async_tls_with_config(request, config, disable_nagle, None).await
+    connect_async_tls_with_config(request, config, None).await
 }
 
-/// The same as `connect_async()` but the one can specify a websocket
-/// configuration, a TLS connector, and whether to disable Nagle's algorithm.
-/// `disable_nagle` specifies if the Nagle's algorithm must be disabled, i.e.
-/// `set_nodelay(true)`. If you don't know what the Nagle's algorithm is, better
-/// leave it to `false`.
+/// Similar to [`connect_async()`], but user can specify a [`Config`] and an
+/// optional [`TlsConnector`].
 pub async fn connect_async_tls_with_config<R>(
     request: R,
-    config: Option<WebSocketConfig>,
-    disable_nagle: bool,
+    config: impl Into<Config>,
     connector: Option<TlsConnector>,
 ) -> Result<(WebSocketStream<ConnectStream>, Response), Error>
 where
     R: IntoClientRequest,
 {
+    let config = config.into();
     let request: Request = request.into_client_request()?;
 
     // We don't check if it's an IPv6 address because `std` handles it internally.
@@ -253,10 +246,10 @@ where
         .ok_or(Error::Url(tungstenite::error::UrlError::NoHostName))?;
     let port = port(&request)?;
 
-    let socket =
-        TcpStream::connect_with_options((domain, port), TcpOpts::new().nodelay(disable_nagle))
-            .await
-            .map_err(Error::Io)?;
+    let opts = TcpOpts::new().nodelay(config.disable_nagle);
+    let socket = TcpStream::connect_with_options((domain, port), opts)
+        .await
+        .map_err(Error::Io)?;
     client_async_tls_with_config(request, socket, connector, config).await
 }
 
