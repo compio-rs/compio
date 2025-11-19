@@ -1,3 +1,5 @@
+use std::task::{Context, Poll};
+
 #[cfg(target_os = "macos")]
 #[test]
 fn cf_run_loop() {
@@ -45,19 +47,17 @@ fn cf_run_loop() {
 
         pub fn block_on<F: Future>(&self, future: F) -> F::Output {
             self.runtime.enter(|| {
-                let mut result = None;
-                unsafe {
-                    self.runtime
-                        .spawn_unchecked(async { result = Some(future.await) })
-                }
-                .detach();
+                let waker = self.runtime.waker();
+                let mut context = Context::from_waker(&waker);
+                let mut future = std::pin::pin!(future);
                 loop {
                     self.runtime.poll_with(Some(Duration::ZERO));
 
-                    let remaining_tasks = self.runtime.run();
-                    if let Some(result) = result.take() {
+                    if let Poll::Ready(result) = future.as_mut().poll(&mut context) {
+                        self.runtime.run();
                         break result;
                     }
+                    let remaining_tasks = self.runtime.run();
 
                     let timeout = if remaining_tasks {
                         Some(Duration::ZERO)
@@ -138,19 +138,17 @@ fn message_queue() {
 
         pub fn block_on<F: Future>(&self, future: F) -> F::Output {
             self.runtime.enter(|| {
-                let mut result = None;
-                unsafe {
-                    self.runtime
-                        .spawn_unchecked(async { result = Some(future.await) })
-                }
-                .detach();
+                let waker = self.runtime.waker();
+                let mut context = Context::from_waker(&waker);
+                let mut future = std::pin::pin!(future);
                 loop {
                     self.runtime.poll_with(Some(Duration::ZERO));
 
-                    let remaining_tasks = self.runtime.run();
-                    if let Some(result) = result.take() {
+                    if let Poll::Ready(result) = future.as_mut().poll(&mut context) {
+                        self.runtime.run();
                         break result;
                     }
+                    let remaining_tasks = self.runtime.run();
 
                     let timeout = if remaining_tasks {
                         Some(Duration::ZERO)
