@@ -9,7 +9,7 @@ use std::{
     num::NonZeroUsize,
     pin::Pin,
     sync::Arc,
-    task::Poll,
+    task::{Poll, Wake, Waker},
     time::Duration,
 };
 
@@ -170,7 +170,7 @@ pub enum OpType {
 /// Low-level driver of polling.
 pub(crate) struct Driver {
     events: Events,
-    poll: Arc<Poller>,
+    notify: Arc<Notify>,
     registry: HashMap<RawFd, FdQueue>,
     pool: AsyncifyPool,
     pool_completed: Arc<SegQueue<Entry>>,
@@ -187,11 +187,12 @@ impl Driver {
             Events::with_capacity(NonZeroUsize::new(entries).unwrap())
         };
 
-        let poll = Arc::new(Poller::new()?);
+        let poll = Poller::new()?;
+        let notify = Arc::new(Notify::new(poll));
 
         Ok(Self {
             events,
-            poll,
+            notify,
             registry: HashMap::new(),
             pool: builder.create_or_get_thread_pool(),
             pool_completed: Arc::new(SegQueue::new()),
@@ -200,6 +201,10 @@ impl Driver {
 
     pub fn driver_type(&self) -> DriverType {
         DriverType::Poll
+    }
+
+    fn poller(&self) -> &Poller {
+        &self.notify.poll
     }
 
     pub fn create_op<T: crate::sys::OpCode + 'static>(&self, op: T) -> Key<T> {
@@ -214,10 +219,10 @@ impl Driver {
         queue.push_back_interest(user_data, arg.interest);
         let event = queue.event();
         if need_add {
-            self.poll.add(arg.fd, event)?;
+            self.poller().add(arg.fd, event)?;
         } else {
             let fd = BorrowedFd::borrow_raw(arg.fd);
-            self.poll.modify(fd, event)?;
+            self.poller().modify(fd, event)?;
         }
         Ok(())
     }
@@ -253,7 +258,7 @@ impl Driver {
                 queue.remove(op.user_data());
                 let renew_event = queue.event();
                 if Self::renew(
-                    &self.poll,
+                    &self.notify.poll,
                     &mut self.registry,
                     unsafe { BorrowedFd::borrow_raw(fd) },
                     renew_event,
@@ -293,13 +298,13 @@ impl Driver {
                 #[cfg(freebsd)]
                 {
                     // sigev_notify_kqueue
-                    aiocb.aio_sigevent.sigev_signo = self.poll.as_raw_fd();
+                    aiocb.aio_sigevent.sigev_signo = self.as_raw_fd();
                     aiocb.aio_sigevent.sigev_notify = libc::SIGEV_KEVENT;
                     aiocb.aio_sigevent.sigev_value.sival_ptr = user_data as _;
                 }
                 #[cfg(solarish)]
                 let mut notify = libc::port_notify {
-                    portnfy_port: self.poll.as_raw_fd(),
+                    portnfy_port: self.as_raw_fd(),
                     portnfy_user: user_data as _,
                 };
                 #[cfg(solarish)]
@@ -331,7 +336,7 @@ impl Driver {
     }
 
     fn push_blocking(&mut self, user_data: usize) -> Poll<io::Result<usize>> {
-        let poll = self.poll.clone();
+        let waker = self.waker();
         let completed = self.pool_completed.clone();
         let mut closure = move || {
             let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
@@ -341,7 +346,7 @@ impl Driver {
                 Poll::Ready(res) => res,
             };
             completed.push(Entry::new(user_data, res));
-            poll.notify().ok();
+            waker.wake();
         };
         loop {
             match self.pool.dispatch(closure) {
@@ -372,7 +377,7 @@ impl Driver {
             return Ok(());
         }
         self.events.clear();
-        self.poll.wait(&mut self.events, timeout)?;
+        self.notify.poll.wait(&mut self.events, timeout)?;
         if self.events.is_empty() && timeout.is_some() {
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
         }
@@ -411,7 +416,7 @@ impl Driver {
                     }
                     let renew_event = queue.event();
                     Self::renew(
-                        &self.poll,
+                        &self.notify.poll,
                         &mut self.registry,
                         BorrowedFd::borrow_raw(fd),
                         renew_event,
@@ -443,8 +448,8 @@ impl Driver {
         Ok(())
     }
 
-    pub fn handle(&self) -> NotifyHandle {
-        NotifyHandle::new(self.poll.clone())
+    pub fn waker(&self) -> Waker {
+        Waker::from(self.notify.clone())
     }
 
     pub fn create_buffer_pool(
@@ -475,7 +480,7 @@ impl Driver {
 
 impl AsRawFd for Driver {
     fn as_raw_fd(&self) -> RawFd {
-        self.poll.as_raw_fd()
+        self.poller().as_raw_fd()
     }
 }
 
@@ -484,7 +489,7 @@ impl Drop for Driver {
         for fd in self.registry.keys() {
             unsafe {
                 let fd = BorrowedFd::borrow_raw(*fd);
-                self.poll.delete(fd).ok();
+                self.poller().delete(fd).ok();
             }
         }
     }
@@ -498,17 +503,27 @@ fn entry_cancelled(user_data: usize) -> Entry {
 }
 
 /// A notify handle to the inner driver.
-pub struct NotifyHandle {
-    poll: Arc<Poller>,
+struct Notify {
+    poll: Poller,
 }
 
-impl NotifyHandle {
-    fn new(poll: Arc<Poller>) -> Self {
+impl Notify {
+    fn new(poll: Poller) -> Self {
         Self { poll }
     }
 
     /// Notify the inner driver.
     pub fn notify(&self) -> io::Result<()> {
         self.poll.notify()
+    }
+}
+
+impl Wake for Notify {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.notify().ok();
     }
 }

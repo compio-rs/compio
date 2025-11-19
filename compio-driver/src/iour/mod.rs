@@ -1,7 +1,14 @@
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 #[allow(unused_imports)]
 pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
-use std::{io, os::fd::FromRawFd, pin::Pin, sync::Arc, task::Poll, time::Duration};
+use std::{
+    io,
+    os::fd::FromRawFd,
+    pin::Pin,
+    sync::Arc,
+    task::{Poll, Wake, Waker},
+    time::Duration,
+};
 
 use compio_log::{instrument, trace, warn};
 use crossbeam_queue::SegQueue;
@@ -305,7 +312,7 @@ impl Driver {
     }
 
     fn push_blocking(&mut self, user_data: usize) -> bool {
-        let handle = self.handle();
+        let waker = self.waker();
         let completed = self.pool_completed.clone();
         self.pool
             .dispatch(move || {
@@ -313,7 +320,7 @@ impl Driver {
                 let op_pin = op.as_op_pin();
                 let res = op_pin.call_blocking();
                 completed.push(Entry::new(user_data, res));
-                handle.notify().ok();
+                waker.wake();
             })
             .is_ok()
     }
@@ -343,8 +350,8 @@ impl Driver {
         Ok(())
     }
 
-    pub fn handle(&self) -> NotifyHandle {
-        self.notifier.handle()
+    pub fn waker(&self) -> Waker {
+        self.notifier.waker()
     }
 
     pub fn create_buffer_pool(
@@ -429,7 +436,7 @@ fn timespec(duration: std::time::Duration) -> Timespec {
 
 #[derive(Debug)]
 struct Notifier {
-    fd: Arc<OwnedFd>,
+    notify: Arc<Notify>,
 }
 
 impl Notifier {
@@ -437,14 +444,16 @@ impl Notifier {
     fn new() -> io::Result<Self> {
         let fd = syscall!(libc::eventfd(0, libc::EFD_CLOEXEC | libc::EFD_NONBLOCK))?;
         let fd = unsafe { OwnedFd::from_raw_fd(fd) };
-        Ok(Self { fd: Arc::new(fd) })
+        Ok(Self {
+            notify: Arc::new(Notify::new(fd)),
+        })
     }
 
     pub fn clear(&self) -> io::Result<()> {
         loop {
             let mut buffer = [0u64];
             let res = syscall!(libc::read(
-                self.fd.as_raw_fd(),
+                self.as_raw_fd(),
                 buffer.as_mut_ptr().cast(),
                 std::mem::size_of::<u64>()
             ));
@@ -462,24 +471,25 @@ impl Notifier {
         }
     }
 
-    pub fn handle(&self) -> NotifyHandle {
-        NotifyHandle::new(self.fd.clone())
+    pub fn waker(&self) -> Waker {
+        Waker::from(self.notify.clone())
     }
 }
 
 impl AsRawFd for Notifier {
     fn as_raw_fd(&self) -> RawFd {
-        self.fd.as_raw_fd()
+        self.notify.fd.as_raw_fd()
     }
 }
 
 /// A notify handle to the inner driver.
-pub struct NotifyHandle {
-    fd: Arc<OwnedFd>,
+#[derive(Debug)]
+struct Notify {
+    fd: OwnedFd,
 }
 
-impl NotifyHandle {
-    pub(crate) fn new(fd: Arc<OwnedFd>) -> Self {
+impl Notify {
+    pub(crate) fn new(fd: OwnedFd) -> Self {
         Self { fd }
     }
 
@@ -492,5 +502,15 @@ impl NotifyHandle {
             std::mem::size_of::<u64>(),
         ))?;
         Ok(())
+    }
+}
+
+impl Wake for Notify {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.notify().ok();
     }
 }

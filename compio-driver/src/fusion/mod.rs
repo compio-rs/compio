@@ -8,7 +8,11 @@ pub(crate) mod op;
 
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
-use std::{io, task::Poll, time::Duration};
+use std::{
+    io,
+    task::{Poll, Waker},
+    time::Duration,
+};
 
 use compio_log::warn;
 pub(crate) use iour::is_op_supported;
@@ -105,12 +109,11 @@ impl Driver {
         }
     }
 
-    pub fn handle(&self) -> NotifyHandle {
-        let fuse = match &self.fuse {
-            FuseDriver::Poll(driver) => FuseNotifyHandle::Poll(driver.handle()),
-            FuseDriver::IoUring(driver) => FuseNotifyHandle::IoUring(driver.handle()),
-        };
-        NotifyHandle::from_fuse(fuse)
+    pub fn waker(&self) -> Waker {
+        match &self.fuse {
+            FuseDriver::Poll(driver) => driver.waker(),
+            FuseDriver::IoUring(driver) => driver.waker(),
+        }
     }
 
     pub fn create_buffer_pool(
@@ -140,30 +143,6 @@ impl AsRawFd for Driver {
         match &self.fuse {
             FuseDriver::Poll(driver) => driver.as_raw_fd(),
             FuseDriver::IoUring(driver) => driver.as_raw_fd(),
-        }
-    }
-}
-
-enum FuseNotifyHandle {
-    Poll(poll::NotifyHandle),
-    IoUring(iour::NotifyHandle),
-}
-
-/// A notify handle to the inner driver.
-pub struct NotifyHandle {
-    fuse: FuseNotifyHandle,
-}
-
-impl NotifyHandle {
-    fn from_fuse(fuse: FuseNotifyHandle) -> Self {
-        Self { fuse }
-    }
-
-    /// Notify the inner driver.
-    pub fn notify(&self) -> io::Result<()> {
-        match &self.fuse {
-            FuseNotifyHandle::Poll(handle) => handle.notify(),
-            FuseNotifyHandle::IoUring(handle) => handle.notify(),
         }
     }
 }
