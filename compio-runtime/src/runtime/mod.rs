@@ -5,14 +5,16 @@ use std::{
     future::{Future, ready},
     io,
     panic::AssertUnwindSafe,
-    task::{Context, Poll},
+    sync::Arc,
+    task::{Context, Poll, Wake, Waker},
     time::Duration,
 };
 
 use async_task::Task;
 use compio_buf::IntoInner;
 use compio_driver::{
-    AsRawFd, DriverType, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd, op::Asyncify,
+    AsRawFd, DriverType, Key, NotifyHandle, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
+    op::Asyncify,
 };
 use compio_log::{debug, instrument};
 use futures_util::{FutureExt, future::Either};
@@ -131,16 +133,9 @@ impl Runtime {
         CURRENT_RUNTIME.set(self, f)
     }
 
-    /// Spawns a new asynchronous task, returning a [`Task`] for it.
-    ///
-    /// # Safety
-    ///
-    /// The caller should ensure the captured lifetime long enough.
-    pub unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
+    fn spawn_impl<F: Future + 'static>(&self, future: F) -> Task<F::Output> {
         let notify = self.driver.borrow().handle();
-
-        // SAFETY: See the safety comment of this method.
-        unsafe { self.scheduler.spawn_unchecked(future, notify) }
+        self.scheduler.spawn(future, notify)
     }
 
     /// Low level API to control the runtime.
@@ -152,16 +147,38 @@ impl Runtime {
         self.scheduler.run()
     }
 
+    /// Create a waker that notifies the runtime when woken.
+    pub fn waker(&self) -> Waker {
+        struct BlockOnWaker {
+            notify: NotifyHandle,
+        }
+
+        impl Wake for BlockOnWaker {
+            fn wake(self: Arc<Self>) {
+                self.notify.notify().ok();
+            }
+
+            fn wake_by_ref(self: &Arc<Self>) {
+                self.notify.notify().ok();
+            }
+        }
+
+        let notify = self.driver.borrow().handle();
+        Waker::from(Arc::new(BlockOnWaker { notify }))
+    }
+
     /// Block on the future till it completes.
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
         self.enter(|| {
-            let mut result = None;
-            unsafe { self.spawn_unchecked(async { result = Some(future.await) }) }.detach();
+            let waker = self.waker();
+            let mut context = Context::from_waker(&waker);
+            let mut future = std::pin::pin!(future);
             loop {
-                let remaining_tasks = self.run();
-                if let Some(result) = result.take() {
+                if let Poll::Ready(result) = future.as_mut().poll(&mut context) {
+                    self.run();
                     return result;
                 }
+                let remaining_tasks = self.run();
                 if remaining_tasks {
                     self.poll_with(Some(Duration::ZERO));
                 } else {
@@ -176,7 +193,7 @@ impl Runtime {
     /// Spawning a task enables the task to execute concurrently to other tasks.
     /// There is no guarantee that a spawned task will execute to completion.
     pub fn spawn<F: Future + 'static>(&self, future: F) -> JoinHandle<F::Output> {
-        unsafe { self.spawn_unchecked(AssertUnwindSafe(future).catch_unwind()) }
+        self.spawn_impl(AssertUnwindSafe(future).catch_unwind())
     }
 
     /// Spawns a blocking task in a new thread, and wait for it.
@@ -192,10 +209,7 @@ impl Runtime {
         });
         // It is safe and sound to use `submit` here because the task is spawned
         // immediately.
-        #[allow(deprecated)]
-        unsafe {
-            self.spawn_unchecked(self.submit(op).map(|res| res.1.into_inner()))
-        }
+        self.spawn_impl(self.submit(op).map(|res| res.1.into_inner()))
     }
 
     /// Attach a raw file descriptor/handle/socket to the runtime.
@@ -217,9 +231,7 @@ impl Runtime {
     /// It is safe to send the returned future to another runtime and poll it,
     /// but the exact behavior is not guaranteed, e.g. it may return pending
     /// forever or else.
-    #[deprecated = "use compio::runtime::submit instead"]
-    pub fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
-        #[allow(deprecated)]
+    fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
         self.submit_with_flags(op).map(|(res, _)| res)
     }
 
@@ -233,8 +245,7 @@ impl Runtime {
     /// It is safe to send the returned future to another runtime and poll it,
     /// but the exact behavior is not guaranteed, e.g. it may return pending
     /// forever or else.
-    #[deprecated = "use compio::runtime::submit_with_flags instead"]
-    pub fn submit_with_flags<T: OpCode + 'static>(
+    fn submit_with_flags<T: OpCode + 'static>(
         &self,
         op: T,
     ) -> impl Future<Output = (BufResult<usize, T>, u32)> {
@@ -486,15 +497,7 @@ pub async fn submit<T: OpCode + 'static>(op: T) -> BufResult<usize, T> {
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::with_current`].
 pub async fn submit_with_flags<T: OpCode + 'static>(op: T) -> (BufResult<usize, T>, u32) {
-    let state = Runtime::with_current(|r| r.submit_raw(op));
-    match state {
-        PushEntry::Pending(user_data) => OpFuture::new(user_data).await,
-        PushEntry::Ready(res) => {
-            // submit_flags won't be ready immediately, if ready, it must be error without
-            // flags, or the flags are not necessary
-            (res, 0)
-        }
-    }
+    Runtime::with_current(|r| r.submit_with_flags(op)).await
 }
 
 #[cfg(feature = "time")]

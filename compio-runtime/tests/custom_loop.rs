@@ -5,6 +5,7 @@ fn cf_run_loop() {
         future::Future,
         os::raw::c_void,
         sync::{Arc, Mutex},
+        task::{Context, Poll},
         time::Duration,
     };
 
@@ -45,19 +46,17 @@ fn cf_run_loop() {
 
         pub fn block_on<F: Future>(&self, future: F) -> F::Output {
             self.runtime.enter(|| {
-                let mut result = None;
-                unsafe {
-                    self.runtime
-                        .spawn_unchecked(async { result = Some(future.await) })
-                }
-                .detach();
+                let waker = self.runtime.waker();
+                let mut context = Context::from_waker(&waker);
+                let mut future = std::pin::pin!(future);
                 loop {
                     self.runtime.poll_with(Some(Duration::ZERO));
 
-                    let remaining_tasks = self.runtime.run();
-                    if let Some(result) = result.take() {
+                    if let Poll::Ready(result) = future.as_mut().poll(&mut context) {
+                        self.runtime.run();
                         break result;
                     }
+                    let remaining_tasks = self.runtime.run();
 
                     let timeout = if remaining_tasks {
                         Some(Duration::ZERO)
@@ -108,7 +107,14 @@ fn cf_run_loop() {
 #[cfg(windows)]
 #[test]
 fn message_queue() {
-    use std::{future::Future, mem::MaybeUninit, ptr::null_mut, sync::Mutex, time::Duration};
+    use std::{
+        future::Future,
+        mem::MaybeUninit,
+        ptr::null_mut,
+        sync::Mutex,
+        task::{Context, Poll},
+        time::Duration,
+    };
 
     use compio_driver::AsRawFd;
     use compio_runtime::{
@@ -138,19 +144,17 @@ fn message_queue() {
 
         pub fn block_on<F: Future>(&self, future: F) -> F::Output {
             self.runtime.enter(|| {
-                let mut result = None;
-                unsafe {
-                    self.runtime
-                        .spawn_unchecked(async { result = Some(future.await) })
-                }
-                .detach();
+                let waker = self.runtime.waker();
+                let mut context = Context::from_waker(&waker);
+                let mut future = std::pin::pin!(future);
                 loop {
                     self.runtime.poll_with(Some(Duration::ZERO));
 
-                    let remaining_tasks = self.runtime.run();
-                    if let Some(result) = result.take() {
+                    if let Poll::Ready(result) = future.as_mut().poll(&mut context) {
+                        self.runtime.run();
                         break result;
                     }
+                    let remaining_tasks = self.runtime.run();
 
                     let timeout = if remaining_tasks {
                         Some(Duration::ZERO)
