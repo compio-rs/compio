@@ -2,6 +2,7 @@ use std::{
     ffi::c_void,
     io,
     ptr::{null, null_mut},
+    sync::Arc,
 };
 
 use windows_sys::Win32::{
@@ -12,7 +13,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{Key, OpCode, RawFd, sys::cp, syscall};
+use crate::{Key, OpCode, RawFd, sys::Notify, syscall};
 
 pub struct Wait {
     wait: PTP_WAIT,
@@ -22,10 +23,9 @@ pub struct Wait {
 }
 
 impl Wait {
-    pub fn new(port: &cp::Port, event: RawFd, op: &mut Key<dyn OpCode>) -> io::Result<Self> {
-        let port = port.handle();
+    pub fn new(notify: Arc<Notify>, event: RawFd, op: &mut Key<dyn OpCode>) -> io::Result<Self> {
         let mut context = Box::new(WinThreadpoolWaitContext {
-            port,
+            notify,
             user_data: op.user_data(),
         });
         let wait = syscall!(
@@ -55,7 +55,7 @@ impl Wait {
             _ => Err(io::Error::from_raw_os_error(result as _)),
         };
         let mut op = unsafe { Key::<dyn OpCode>::new_unchecked(context.user_data) };
-        context.port.post(res, op.as_mut_ptr()).ok();
+        context.notify.port.post(res, op.as_mut_ptr()).ok();
     }
 
     pub fn cancel(&mut self) -> io::Result<()> {
@@ -82,6 +82,6 @@ impl Drop for Wait {
 }
 
 struct WinThreadpoolWaitContext {
-    port: cp::PortHandle,
+    notify: Arc<Notify>,
     user_data: usize,
 }

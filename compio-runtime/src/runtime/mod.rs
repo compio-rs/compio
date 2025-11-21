@@ -5,16 +5,14 @@ use std::{
     future::{Future, ready},
     io,
     panic::AssertUnwindSafe,
-    sync::Arc,
-    task::{Context, Poll, Wake, Waker},
+    task::{Context, Poll, Waker},
     time::Duration,
 };
 
 use async_task::Task;
 use compio_buf::IntoInner;
 use compio_driver::{
-    AsRawFd, DriverType, Key, NotifyHandle, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
-    op::Asyncify,
+    AsRawFd, DriverType, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd, op::Asyncify,
 };
 use compio_log::{debug, instrument};
 use futures_util::{FutureExt, future::Either};
@@ -134,8 +132,8 @@ impl Runtime {
     }
 
     fn spawn_impl<F: Future + 'static>(&self, future: F) -> Task<F::Output> {
-        let notify = self.driver.borrow().handle();
-        self.scheduler.spawn(future, notify)
+        let waker = self.driver.borrow().waker();
+        self.scheduler.spawn(future, waker)
     }
 
     /// Low level API to control the runtime.
@@ -149,22 +147,7 @@ impl Runtime {
 
     /// Create a waker that notifies the runtime when woken.
     pub fn waker(&self) -> Waker {
-        struct BlockOnWaker {
-            notify: NotifyHandle,
-        }
-
-        impl Wake for BlockOnWaker {
-            fn wake(self: Arc<Self>) {
-                self.notify.notify().ok();
-            }
-
-            fn wake_by_ref(self: &Arc<Self>) {
-                self.notify.notify().ok();
-            }
-        }
-
-        let notify = self.driver.borrow().handle();
-        Waker::from(Arc::new(BlockOnWaker { notify }))
+        self.driver.borrow().waker()
     }
 
     /// Block on the future till it completes.

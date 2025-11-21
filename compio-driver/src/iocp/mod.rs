@@ -7,7 +7,7 @@ use std::{
     },
     pin::Pin,
     sync::Arc,
-    task::Poll,
+    task::{Poll, Wake, Waker},
     time::Duration,
 };
 
@@ -281,10 +281,9 @@ pub trait OpCode {
 
 /// Low-level driver of IOCP.
 pub(crate) struct Driver {
-    port: cp::Port,
+    notify: Arc<Notify>,
     waits: HashMap<usize, wait::Wait>,
     pool: AsyncifyPool,
-    notify_overlapped: Arc<Overlapped>,
 }
 
 impl Driver {
@@ -293,11 +292,12 @@ impl Driver {
 
         let port = cp::Port::new()?;
         let driver = port.as_raw_handle() as _;
+        let overlapped = Overlapped::new(driver);
+        let notify = Arc::new(Notify::new(port, overlapped));
         Ok(Self {
-            port,
+            notify,
             waits: HashMap::default(),
             pool: builder.create_or_get_thread_pool(),
-            notify_overlapped: Arc::new(Overlapped::new(driver)),
         })
     }
 
@@ -305,12 +305,16 @@ impl Driver {
         DriverType::IOCP
     }
 
+    fn port(&self) -> &cp::Port {
+        &self.notify.port
+    }
+
     pub fn create_op<T: OpCode + 'static>(&self, op: T) -> Key<T> {
-        Key::new(self.port.as_raw_handle() as _, op)
+        Key::new(self.port().as_raw_handle() as _, op)
     }
 
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
-        self.port.attach(fd)
+        self.port().attach(fd)
     }
 
     pub fn cancel(&mut self, op: &mut Key<dyn OpCode>) {
@@ -321,7 +325,7 @@ impl Driver {
             if w.cancel().is_ok() {
                 // The pack has been cancelled successfully, which means no packet will be post
                 // to IOCP. Need not set the result because `create_entry` handles it.
-                self.port.post_raw(overlapped_ptr).ok();
+                self.port().post_raw(overlapped_ptr).ok();
             }
         }
         let op = op.as_op_pin();
@@ -351,20 +355,20 @@ impl Driver {
             },
             OpType::Event(e) => {
                 self.waits
-                    .insert(user_data, wait::Wait::new(&self.port, e, op)?);
+                    .insert(user_data, wait::Wait::new(self.notify.clone(), e, op)?);
                 Poll::Pending
             }
         }
     }
 
     fn push_blocking(&mut self, user_data: usize) -> bool {
-        let port = self.port.handle();
+        let notify = self.notify.clone();
         self.pool
             .dispatch(move || {
                 let mut op = unsafe { Key::<dyn OpCode>::new_unchecked(user_data) };
                 let optr = op.as_mut_ptr();
                 let res = op.operate_blocking();
-                port.post(res, optr).ok();
+                notify.port.post(res, optr).ok();
             })
             .is_ok()
     }
@@ -400,9 +404,9 @@ impl Driver {
     pub unsafe fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
 
-        let notify_user_data = self.notify_overlapped.as_ref() as *const Overlapped as usize;
+        let notify_user_data = &self.notify.overlapped as *const Overlapped as usize;
 
-        for e in self.port.poll(timeout)? {
+        for e in self.notify.port.poll(timeout)? {
             if let Some(e) = Self::create_entry(notify_user_data, &mut self.waits, e) {
                 e.notify();
             }
@@ -411,8 +415,8 @@ impl Driver {
         Ok(())
     }
 
-    pub fn handle(&self) -> NotifyHandle {
-        NotifyHandle::new(self.port.handle(), self.notify_overlapped.clone())
+    pub fn waker(&self) -> Waker {
+        Waker::from(self.notify.clone())
     }
 
     pub fn create_buffer_pool(
@@ -433,24 +437,34 @@ impl Driver {
 
 impl AsRawFd for Driver {
     fn as_raw_fd(&self) -> RawFd {
-        self.port.as_raw_handle() as _
+        self.port().as_raw_handle() as _
     }
 }
 
 /// A notify handle to the inner driver.
-pub struct NotifyHandle {
-    port: cp::PortHandle,
-    overlapped: Arc<Overlapped>,
+struct Notify {
+    port: cp::Port,
+    overlapped: Overlapped,
 }
 
-impl NotifyHandle {
-    fn new(port: cp::PortHandle, overlapped: Arc<Overlapped>) -> Self {
+impl Notify {
+    fn new(port: cp::Port, overlapped: Overlapped) -> Self {
         Self { port, overlapped }
     }
 
     /// Notify the inner driver.
     pub fn notify(&self) -> io::Result<()> {
-        self.port.post_raw(self.overlapped.as_ref())
+        self.port.post_raw(&self.overlapped)
+    }
+}
+
+impl Wake for Notify {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.notify().ok();
     }
 }
 
