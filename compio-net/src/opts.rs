@@ -8,13 +8,13 @@ use crate::Socket;
 pub struct TcpOpts {
     recv_buffer_size: Option<usize>,
     send_buffer_size: Option<usize>,
-    keepalive: bool,
+    keepalive: Option<bool>,
     linger: Option<Duration>,
     read_timeout: Option<Duration>,
     write_timeout: Option<Duration>,
-    reuse_address: bool,
-    reuse_port: bool,
-    nodelay: bool,
+    reuse_address: Option<bool>,
+    reuse_port: Option<bool>,
+    nodelay: Option<bool>,
 }
 
 impl TcpOpts {
@@ -37,7 +37,7 @@ impl TcpOpts {
 
     /// Enables or disables the TCP keepalive option.
     pub fn keepalive(mut self, keepalive: bool) -> Self {
-        self.keepalive = keepalive;
+        self.keepalive = Some(keepalive);
         self
     }
 
@@ -61,19 +61,19 @@ impl TcpOpts {
 
     /// Sets whether the TCP socket should reuse the address.
     pub fn reuse_address(mut self, reuse: bool) -> Self {
-        self.reuse_address = reuse;
+        self.reuse_address = Some(reuse);
         self
     }
 
     /// Sets whether the TCP socket should reuse the port.
     pub fn reuse_port(mut self, reuse: bool) -> Self {
-        self.reuse_port = reuse;
+        self.reuse_port = Some(reuse);
         self
     }
 
     /// Sets whether the TCP socket should disable Nagle's algorithm (no delay).
     pub fn nodelay(mut self, nodelay: bool) -> Self {
-        self.nodelay = nodelay;
+        self.nodelay = Some(nodelay);
         self
     }
 
@@ -84,18 +84,31 @@ impl TcpOpts {
         if let Some(size) = self.send_buffer_size {
             socket.socket.set_send_buffer_size(size)?;
         }
-
-        socket.socket.set_keepalive(self.keepalive)?;
-        socket.socket.set_linger(self.linger)?;
-        socket.socket.set_read_timeout(self.read_timeout)?;
-        socket.socket.set_write_timeout(self.write_timeout)?;
-        socket.socket.set_reuse_address(self.reuse_address)?;
+        if let Some(keepalive) = self.keepalive {
+            socket.socket.set_keepalive(keepalive)?;
+        }
+        if let Some(linger) = self.linger {
+            socket.socket.set_linger(Some(linger))?;
+        }
+        if let Some(read_timeout) = self.read_timeout {
+            socket.socket.set_read_timeout(Some(read_timeout))?;
+        }
+        if let Some(write_timeout) = self.write_timeout {
+            socket.socket.set_write_timeout(Some(write_timeout))?;
+        }
+        if let Some(reuse_address) = self.reuse_address {
+            socket.socket.set_reuse_address(reuse_address)?;
+        }
         #[cfg(all(
             unix,
             not(any(target_os = "illumos", target_os = "solaris", target_os = "cygwin"))
         ))]
-        socket.socket.set_reuse_port(self.reuse_port)?;
-        socket.socket.set_tcp_nodelay(self.nodelay)?;
+        if let Some(reuse_port) = self.reuse_port {
+            socket.socket.set_reuse_port(reuse_port)?;
+        }
+        if let Some(nodelay) = self.nodelay {
+            socket.socket.set_tcp_nodelay(nodelay)?;
+        }
         Ok(())
     }
 }
