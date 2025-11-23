@@ -12,6 +12,7 @@ use compio_driver::ProactorBuilder;
 use tempfile::NamedTempFile;
 
 #[compio_macros::test]
+#[cfg(feature = "fd-sync")]
 async fn multi_threading() {
     const DATA: &str = "Hello world!";
 
@@ -35,32 +36,6 @@ async fn multi_threading() {
     })
     .await
     .unwrap_or_else(|e| resume_unwind(e))
-}
-
-#[compio_macros::test]
-async fn try_clone() {
-    const DATA: &str = "Hello world!";
-
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
-    let addr = listener.local_addr().unwrap();
-
-    let (tx, (mut rx, _)) =
-        futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
-
-    let mut tx = tx.clone();
-    tx.write_all(DATA).await.0.unwrap();
-
-    if let Err(e) = std::thread::spawn(move || {
-        compio::runtime::Runtime::new().unwrap().block_on(async {
-            let buffer = Vec::with_capacity(DATA.len());
-            let ((), buffer) = rx.read_exact(buffer).await.unwrap();
-            assert_eq!(DATA, String::from_utf8(buffer).unwrap());
-        });
-    })
-    .join()
-    {
-        std::panic::resume_unwind(e)
-    }
 }
 
 #[compio_macros::test]

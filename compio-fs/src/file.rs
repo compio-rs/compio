@@ -105,7 +105,7 @@ impl File {
     /// Queries metadata about the underlying file.
     #[cfg(windows)]
     pub async fn metadata(&self) -> io::Result<Metadata> {
-        let file = self.inner.clone();
+        let file = self.inner.try_clone()?;
         compio_runtime::spawn_blocking(move || file.metadata().map(Metadata::from_std))
             .await
             .unwrap_or_else(|e| resume_unwind(e))
@@ -122,7 +122,7 @@ impl File {
     /// Changes the permissions on the underlying file.
     #[cfg(windows)]
     pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
-        let file = self.inner.clone();
+        let file = self.inner.try_clone()?;
         compio_runtime::spawn_blocking(move || file.set_permissions(perm.0))
             .await
             .unwrap_or_else(|e| resume_unwind(e))

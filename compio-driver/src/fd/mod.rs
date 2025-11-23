@@ -7,23 +7,30 @@ use std::{
     mem::ManuallyDrop,
     ops::Deref,
     panic::RefUnwindSafe,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::atomic::Ordering,
     task::Poll,
 };
 
-use futures_util::task::AtomicWaker;
-
 use crate::{AsFd, AsRawFd, BorrowedFd, RawFd};
+
+cfg_if::cfg_if! {
+    if #[cfg(feature = "fd-sync")] {
+        #[path = "sync.rs"]
+        mod types;
+    } else {
+        #[path = "unsync.rs"]
+        mod types;
+    }
+}
+
+use types::{RefPtr, WaitFlag, WakerRegistry};
 
 #[derive(Debug)]
 struct Inner<T> {
     fd: T,
     // whether there is a future waiting
-    waits: AtomicBool,
-    waker: AtomicWaker,
+    waits: WaitFlag,
+    waker: WakerRegistry,
 }
 
 impl<T> RefUnwindSafe for Inner<T> {}
@@ -31,7 +38,7 @@ impl<T> RefUnwindSafe for Inner<T> {}
 /// A shared fd. It is passed to the operations to make sure the fd won't be
 /// closed before the operations complete.
 #[derive(Debug)]
-pub struct SharedFd<T>(Arc<Inner<T>>);
+pub struct SharedFd<T>(RefPtr<Inner<T>>);
 
 impl<T: AsFd> SharedFd<T> {
     /// Create the shared fd from an owned fd.
@@ -46,10 +53,10 @@ impl<T> SharedFd<T> {
     /// # Safety
     /// * T should own the fd.
     pub unsafe fn new_unchecked(fd: T) -> Self {
-        Self(Arc::new(Inner {
+        Self(RefPtr::new(Inner {
             fd,
-            waits: AtomicBool::new(false),
-            waker: AtomicWaker::new(),
+            waits: WaitFlag::new(false),
+            waker: WakerRegistry::new(),
         }))
     }
 
@@ -67,7 +74,7 @@ impl<T> SharedFd<T> {
     unsafe fn try_unwrap_inner(this: &ManuallyDrop<Self>) -> Option<T> {
         let ptr = ManuallyDrop::new(std::ptr::read(&this.0));
         // The ptr is duplicated without increasing the strong count, should forget.
-        match Arc::try_unwrap(ManuallyDrop::into_inner(ptr)) {
+        match RefPtr::try_unwrap(ManuallyDrop::into_inner(ptr)) {
             Ok(inner) => Some(inner.fd),
             Err(ptr) => {
                 std::mem::forget(ptr);
@@ -105,7 +112,7 @@ impl<T> SharedFd<T> {
 impl<T> Drop for SharedFd<T> {
     fn drop(&mut self) {
         // It's OK to wake multiple times.
-        if Arc::strong_count(&self.0) == 2 && self.0.waits.load(Ordering::Acquire) {
+        if RefPtr::strong_count(&self.0) == 2 && self.0.waits.load(Ordering::Acquire) {
             self.0.waker.wake()
         }
     }

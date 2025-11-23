@@ -24,6 +24,8 @@ jobs:
         setup:
           - os: 'ubuntu-22.04'
           - os: 'ubuntu-22.04'
+            features: 'fd-sync'
+          - os: 'ubuntu-22.04'
             features: 'polling' # fusion
           - os: 'ubuntu-22.04'
             features: 'io-uring-sqe128,io-uring-cqe32'
