@@ -5,6 +5,7 @@ use std::{
     future::{Future, ready},
     io,
     panic::AssertUnwindSafe,
+    sync::Arc,
     task::{Context, Poll, Waker},
     time::Duration,
 };
@@ -25,6 +26,12 @@ mod buffer_pool;
 pub use buffer_pool::*;
 
 mod scheduler;
+
+mod opt_waker;
+pub use opt_waker::OptWaker;
+
+mod send_wrapper;
+use send_wrapper::SendWrapper;
 
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerKey, TimerRuntime};
@@ -145,15 +152,26 @@ impl Runtime {
         self.scheduler.run()
     }
 
-    /// Create a waker that notifies the runtime when woken.
+    /// Low level API to control the runtime.
+    ///
+    /// Create a waker that always notifies the runtime when woken.
     pub fn waker(&self) -> Waker {
         self.driver.borrow().waker()
+    }
+
+    /// Low level API to control the runtime.
+    ///
+    /// Create an optimized waker that only notifies the runtime when woken
+    /// from another thread, or when `notify-always` is enabled.
+    pub fn opt_waker(&self) -> Arc<OptWaker> {
+        OptWaker::new(self.waker())
     }
 
     /// Block on the future till it completes.
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
         self.enter(|| {
-            let waker = self.waker();
+            let opt_waker = self.opt_waker();
+            let waker = Waker::from(opt_waker.clone());
             let mut context = Context::from_waker(&waker);
             let mut future = std::pin::pin!(future);
             loop {
@@ -161,7 +179,8 @@ impl Runtime {
                     self.run();
                     return result;
                 }
-                let remaining_tasks = self.run();
+                // We always want to reset the waker here.
+                let remaining_tasks = self.run() | opt_waker.reset();
                 if remaining_tasks {
                     self.poll_with(Some(Duration::ZERO));
                 } else {

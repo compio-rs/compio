@@ -11,13 +11,13 @@ use async_task::{Runnable, Task};
 use crossbeam_queue::SegQueue;
 use slab::Slab;
 
-use crate::runtime::scheduler::{
-    drop_hook::DropHook, local_queue::LocalQueue, send_wrapper::SendWrapper,
+use crate::runtime::{
+    SendWrapper,
+    scheduler::{drop_hook::DropHook, local_queue::LocalQueue},
 };
 
 mod drop_hook;
 mod local_queue;
-mod send_wrapper;
 
 /// A task queue consisting of a local queue and a synchronized queue.
 struct TaskQueue {
