@@ -28,7 +28,7 @@ pub use buffer_pool::*;
 mod scheduler;
 
 mod opt_waker;
-use opt_waker::OptWaker;
+pub use opt_waker::OptWaker;
 
 mod send_wrapper;
 use send_wrapper::SendWrapper;
@@ -175,7 +175,8 @@ impl Runtime {
                     self.run();
                     return result;
                 }
-                let remaining_tasks = self.run() | opt_waker.is_woke();
+                // We always want to reset the waker here.
+                let remaining_tasks = self.run() | opt_waker.reset();
                 if remaining_tasks {
                     self.poll_with(Some(Duration::ZERO));
                 } else {

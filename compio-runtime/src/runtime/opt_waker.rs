@@ -8,6 +8,7 @@ use std::{
 
 use crate::runtime::send_wrapper::SendWrapper;
 
+/// An optimized waker that avoids unnecessary wake-ups on the same thread.
 pub struct OptWaker {
     waker: Waker,
     current_thread: SendWrapper<()>,
@@ -23,8 +24,10 @@ impl OptWaker {
         })
     }
 
-    pub fn is_woke(&self) -> bool {
-        self.is_woke.load(Ordering::Acquire)
+    /// Returns `true` if the waker has been woke, and resets the state to not
+    /// woke.
+    pub fn reset(&self) -> bool {
+        self.is_woke.swap(false, Ordering::AcqRel)
     }
 }
 
@@ -34,9 +37,8 @@ impl Wake for OptWaker {
     }
 
     fn wake_by_ref(self: &Arc<Self>) {
-        if !self.current_thread.valid() {
+        if !self.is_woke.swap(true, Ordering::AcqRel) && !self.current_thread.valid() {
             self.waker.wake_by_ref();
         }
-        self.is_woke.store(true, Ordering::Release);
     }
 }
