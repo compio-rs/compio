@@ -152,13 +152,17 @@ impl Runtime {
         self.scheduler.run()
     }
 
+    /// Low level API to control the runtime.
+    ///
     /// Create a waker that always notifies the runtime when woken.
     pub fn waker(&self) -> Waker {
         self.driver.borrow().waker()
     }
 
+    /// Low level API to control the runtime.
+    ///
     /// Create an optimized waker that only notifies the runtime when woken
-    /// from another thread.
+    /// from another thread, or when `notify-always` is enabled.
     pub fn opt_waker(&self) -> Arc<OptWaker> {
         OptWaker::new(self.waker())
     }
