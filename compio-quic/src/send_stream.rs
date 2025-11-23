@@ -1,6 +1,6 @@
 use std::{
     io,
-    sync::Arc,
+    rc::Rc,
     task::{Context, Poll},
 };
 
@@ -31,13 +31,13 @@ use crate::{ConnectionError, ConnectionInner, StoppedError};
 /// [`finish()`]: SendStream::finish
 #[derive(Debug)]
 pub struct SendStream {
-    conn: Arc<ConnectionInner>,
+    conn: Rc<ConnectionInner>,
     stream: StreamId,
     is_0rtt: bool,
 }
 
 impl SendStream {
-    pub(crate) fn new(conn: Arc<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
+    pub(crate) fn new(conn: Rc<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
         Self {
             conn,
             stream,
@@ -396,7 +396,7 @@ pub(crate) mod h3_impl {
     }
 
     impl<B> SendStream<B> {
-        pub(crate) fn new(conn: Arc<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
+        pub(crate) fn new(conn: Rc<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
             Self {
                 inner: super::SendStream::new(conn, stream, is_0rtt),
                 buf: None,

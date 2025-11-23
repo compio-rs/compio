@@ -59,6 +59,12 @@ impl File {
         })
     }
 
+    pub(crate) unsafe fn from_std_unchecked(file: std::fs::File) -> Self {
+        Self {
+            inner: Attacher::new_unchecked(file),
+        }
+    }
+
     /// Attempts to open a file in read-only mode.
     ///
     /// See the [`OpenOptions::open`] method for more details.
@@ -105,7 +111,7 @@ impl File {
     /// Queries metadata about the underlying file.
     #[cfg(windows)]
     pub async fn metadata(&self) -> io::Result<Metadata> {
-        let file = self.inner.clone();
+        let file = self.inner.try_clone()?;
         compio_runtime::spawn_blocking(move || file.metadata().map(Metadata::from_std))
             .await
             .unwrap_or_else(|e| resume_unwind(e))
@@ -122,7 +128,7 @@ impl File {
     /// Changes the permissions on the underlying file.
     #[cfg(windows)]
     pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
-        let file = self.inner.clone();
+        let file = self.inner.try_clone()?;
         compio_runtime::spawn_blocking(move || file.set_permissions(perm.0))
             .await
             .unwrap_or_else(|e| resume_unwind(e))
@@ -171,6 +177,21 @@ impl File {
     /// [`sync_all`]: File::sync_all
     pub async fn sync_data(&self) -> io::Result<()> {
         self.sync_impl(true).await
+    }
+
+    /// Attempts to clone the file handle.
+    pub fn try_clone(&self) -> io::Result<SyncFile> {
+        self.inner.try_clone().map(SyncFile::new)
+    }
+
+    /// Try to convert into a thread safe file handle.
+    pub fn try_into_sync(self) -> Result<SyncFile, Self> {
+        match self.inner.into_inner().try_unwrap() {
+            Ok(inner) => Ok(SyncFile::new(inner)),
+            Err(fd) => Err(Self {
+                inner: unsafe { Attacher::from_shared_fd_unchecked(fd) },
+            }),
+        }
     }
 }
 
@@ -267,3 +288,29 @@ impl Splittable for &File {
 }
 
 impl_raw_fd!(File, std::fs::File, inner, file);
+
+/// A thread safe file handle.
+#[derive(Debug)]
+pub struct SyncFile {
+    file: std::fs::File,
+}
+
+impl SyncFile {
+    pub(crate) fn new(file: std::fs::File) -> Self {
+        Self { file }
+    }
+
+    /// Attempts to clone the file handle.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        self.file.try_clone().map(Self::new)
+    }
+}
+
+impl IntoInner for SyncFile {
+    type Inner = File;
+
+    fn into_inner(self) -> Self::Inner {
+        // Safety: the handle is cloned from an existing File.
+        unsafe { File::from_std_unchecked(self.file) }
+    }
+}

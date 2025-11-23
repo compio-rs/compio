@@ -1,12 +1,12 @@
 use std::{future::Future, io, path::Path};
 
-use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite, util::Splittable};
 use compio_runtime::{BorrowedBuffer, BufferPool};
 use socket2::{SockAddr, Socket as Socket2, Type};
 
-use crate::{OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, WriteHalf};
+use crate::{OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, SyncSocket, WriteHalf};
 
 /// A Unix socket server, listening for connections.
 ///
@@ -94,9 +94,49 @@ impl UnixListener {
     pub fn local_addr(&self) -> io::Result<SockAddr> {
         self.inner.local_addr()
     }
+
+    /// Attempts to clone the Unix listener.
+    pub fn try_clone(&self) -> io::Result<SyncUnixListener> {
+        self.inner.try_clone().map(SyncUnixListener::new)
+    }
+
+    /// Try to convert into a thread-safe Unix listener.
+    pub fn try_into_sync(self) -> Result<SyncUnixListener, Self> {
+        match self.inner.try_into_sync() {
+            Ok(sync_socket) => Ok(SyncUnixListener::new(sync_socket)),
+            Err(socket) => Err(UnixListener { inner: socket }),
+        }
+    }
 }
 
 impl_raw_fd!(UnixListener, socket2::Socket, inner, socket);
+
+/// A thread-safe Unix listener.
+#[derive(Debug)]
+pub struct SyncUnixListener {
+    inner: SyncSocket,
+}
+
+impl SyncUnixListener {
+    pub(crate) fn new(inner: SyncSocket) -> Self {
+        Self { inner }
+    }
+
+    /// Attempts to clone the Unix listener.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        self.inner.try_clone().map(SyncUnixListener::new)
+    }
+}
+
+impl IntoInner for SyncUnixListener {
+    type Inner = UnixListener;
+
+    fn into_inner(self) -> Self::Inner {
+        UnixListener {
+            inner: self.inner.into_inner(),
+        }
+    }
+}
 
 /// A Unix stream between two local sockets on Windows & WSL.
 ///
@@ -214,6 +254,19 @@ impl UnixStream {
     pub fn into_poll_fd(self) -> io::Result<PollFd<Socket2>> {
         self.inner.into_poll_fd()
     }
+
+    /// Attempts to clone the Unix stream.
+    pub fn try_clone(&self) -> io::Result<SyncUnixStream> {
+        self.inner.try_clone().map(SyncUnixStream::new)
+    }
+
+    /// Try to convert into a thread-safe Unix stream.
+    pub fn try_into_sync(self) -> Result<SyncUnixStream, Self> {
+        match self.inner.try_into_sync() {
+            Ok(sync_socket) => Ok(SyncUnixStream::new(sync_socket)),
+            Err(socket) => Err(UnixStream { inner: socket }),
+        }
+    }
 }
 
 impl AsyncRead for UnixStream {
@@ -329,6 +382,33 @@ impl<'a> Splittable for &'a UnixStream {
 }
 
 impl_raw_fd!(UnixStream, socket2::Socket, inner, socket);
+
+/// A thread-safe Unix stream.
+#[derive(Debug)]
+pub struct SyncUnixStream {
+    inner: SyncSocket,
+}
+
+impl SyncUnixStream {
+    pub(crate) fn new(inner: SyncSocket) -> Self {
+        Self { inner }
+    }
+
+    /// Attempts to clone the Unix stream.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        self.inner.try_clone().map(SyncUnixStream::new)
+    }
+}
+
+impl IntoInner for SyncUnixStream {
+    type Inner = UnixStream;
+
+    fn into_inner(self) -> Self::Inner {
+        UnixStream {
+            inner: self.inner.into_inner(),
+        }
+    }
+}
 
 #[cfg(windows)]
 #[inline]

@@ -33,6 +33,12 @@ impl Socket {
         })
     }
 
+    pub unsafe fn from_socket2_unchecked(socket: Socket2) -> Self {
+        Self {
+            socket: Attacher::new_unchecked(socket),
+        }
+    }
+
     pub fn peer_addr(&self) -> io::Result<SockAddr> {
         self.socket.peer_addr()
     }
@@ -357,6 +363,43 @@ impl Socket {
         )
         .map(|_| ())
     }
+
+    pub fn try_clone(&self) -> io::Result<SyncSocket> {
+        self.socket.try_clone().map(SyncSocket::new)
+    }
+
+    pub fn try_into_sync(self) -> Result<SyncSocket, Self> {
+        match self.socket.into_inner().try_unwrap() {
+            Ok(inner) => Ok(SyncSocket::new(inner)),
+            Err(fd) => Err(Self {
+                socket: unsafe { Attacher::from_shared_fd_unchecked(fd) },
+            }),
+        }
+    }
 }
 
 impl_raw_fd!(Socket, Socket2, socket, socket);
+
+#[derive(Debug)]
+pub struct SyncSocket {
+    socket: Socket2,
+}
+
+impl SyncSocket {
+    pub(crate) fn new(socket: Socket2) -> Self {
+        Self { socket }
+    }
+
+    pub fn try_clone(&self) -> io::Result<Self> {
+        self.socket.try_clone().map(Self::new)
+    }
+}
+
+impl IntoInner for SyncSocket {
+    type Inner = Socket;
+
+    fn into_inner(self) -> Self::Inner {
+        // Safety: the socket is cloned from an existing Socket.
+        unsafe { Socket::from_socket2_unchecked(self.socket) }
+    }
+}

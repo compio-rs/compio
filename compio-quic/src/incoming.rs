@@ -2,7 +2,7 @@ use std::{
     future::{Future, IntoFuture},
     net::{IpAddr, SocketAddr},
     pin::Pin,
-    sync::Arc,
+    rc::Rc,
     task::{Context, Poll},
 };
 
@@ -15,7 +15,7 @@ use crate::{Connecting, Connection, ConnectionError, EndpointInner};
 #[derive(Debug)]
 pub(crate) struct IncomingInner {
     pub(crate) incoming: quinn_proto::Incoming,
-    pub(crate) endpoint: Arc<EndpointInner>,
+    pub(crate) endpoint: Rc<EndpointInner>,
 }
 
 /// An incoming connection for which the server has not yet begun its part
@@ -24,7 +24,7 @@ pub(crate) struct IncomingInner {
 pub struct Incoming(Option<IncomingInner>);
 
 impl Incoming {
-    pub(crate) fn new(incoming: quinn_proto::Incoming, endpoint: Arc<EndpointInner>) -> Self {
+    pub(crate) fn new(incoming: quinn_proto::Incoming, endpoint: Rc<EndpointInner>) -> Self {
         Self(Some(IncomingInner { incoming, endpoint }))
     }
 

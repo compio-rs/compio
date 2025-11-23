@@ -1,10 +1,12 @@
 use std::{
+    cell::RefCell,
     collections::VecDeque,
     io,
     mem::ManuallyDrop,
     net::{SocketAddr, SocketAddrV6},
     pin::pin,
-    sync::{Arc, Mutex},
+    rc::Rc,
+    sync::Arc,
     task::{Context, Poll, Waker},
     time::Instant,
 };
@@ -129,7 +131,7 @@ type ChannelPair<T> = (Sender<T>, Receiver<T>);
 
 #[derive(Debug)]
 pub(crate) struct EndpointInner {
-    state: Mutex<EndpointState>,
+    state: RefCell<EndpointState>,
     socket: Socket,
     ipv6: bool,
     events: ChannelPair<(ConnectionHandle, EndpointEvent)>,
@@ -147,7 +149,7 @@ impl EndpointInner {
         let allow_mtud = !socket.may_fragment();
 
         Ok(Self {
-            state: Mutex::new(EndpointState {
+            state: RefCell::new(EndpointState {
                 endpoint: quinn_proto::Endpoint::new(
                     Arc::new(config),
                     server_config.map(Arc::new),
@@ -174,7 +176,7 @@ impl EndpointInner {
         server_name: &str,
         config: ClientConfig,
     ) -> Result<Connecting, ConnectError> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.borrow_mut();
 
         if state.worker.is_none() {
             return Err(ConnectError::EndpointStopping);
@@ -213,7 +215,7 @@ impl EndpointInner {
         incoming: quinn_proto::Incoming,
         server_config: Option<ServerConfig>,
     ) -> Result<Connecting, ConnectionError> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.borrow_mut();
         let mut resp_buf = Vec::new();
         let now = Instant::now();
         match state
@@ -233,7 +235,7 @@ impl EndpointInner {
     }
 
     pub(crate) fn refuse(&self, incoming: quinn_proto::Incoming) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.borrow_mut();
         let mut resp_buf = Vec::new();
         let transmit = state.endpoint.refuse(incoming, &mut resp_buf);
         self.respond(resp_buf, transmit);
@@ -244,7 +246,7 @@ impl EndpointInner {
         &self,
         incoming: quinn_proto::Incoming,
     ) -> Result<(), quinn_proto::RetryError> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.borrow_mut();
         let mut resp_buf = Vec::new();
         let transmit = state.endpoint.retry(incoming, &mut resp_buf)?;
         self.respond(resp_buf, transmit);
@@ -252,7 +254,7 @@ impl EndpointInner {
     }
 
     pub(crate) fn ignore(&self, incoming: quinn_proto::Incoming) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.borrow_mut();
         state.endpoint.ignore(incoming);
     }
 
@@ -263,8 +265,7 @@ impl EndpointInner {
             self.socket
                 .recv(Vec::with_capacity(
                     self.state
-                        .lock()
-                        .unwrap()
+                        .borrow()
                         .endpoint
                         .config()
                         .get_max_udp_payload_size()
@@ -279,7 +280,7 @@ impl EndpointInner {
         loop {
             let mut state = select! {
                 BufResult(res, recv_buf) = recv_fut => {
-                    let mut state = self.state.lock().unwrap();
+                    let mut state = self.state.borrow_mut();
                     match res {
                         Ok(meta) => state.handle_data(meta, &recv_buf, respond_fn),
                         Err(e) if e.kind() == io::ErrorKind::ConnectionReset => {}
@@ -291,7 +292,7 @@ impl EndpointInner {
                     state
                 },
                 events = event_stream.select_next_some() => {
-                    let mut state = self.state.lock().unwrap();
+                    let mut state = self.state.borrow_mut();
                     for (ch, event) in events {
                         state.handle_event(ch, event);
                     }
@@ -313,7 +314,7 @@ impl EndpointInner {
 /// A QUIC endpoint.
 #[derive(Debug, Clone)]
 pub struct Endpoint {
-    inner: Arc<EndpointInner>,
+    inner: Rc<EndpointInner>,
     /// The client configuration used by `connect`
     pub default_client_config: Option<ClientConfig>,
 }
@@ -326,7 +327,7 @@ impl Endpoint {
         server_config: Option<ServerConfig>,
         default_client_config: Option<ClientConfig>,
     ) -> io::Result<Self> {
-        let inner = Arc::new(EndpointInner::new(socket, config, server_config)?);
+        let inner = Rc::new(EndpointInner::new(socket, config, server_config)?);
         let worker = compio_runtime::spawn({
             let inner = inner.clone();
             async move {
@@ -337,7 +338,7 @@ impl Endpoint {
             }
             .in_current_span()
         });
-        inner.state.lock().unwrap().worker = Some(worker);
+        inner.state.borrow_mut().worker = Some(worker);
         Ok(Self {
             inner,
             default_client_config,
@@ -402,7 +403,7 @@ impl Endpoint {
     /// intermediate `Connecting` future which can be used to e.g. send 0.5-RTT
     /// data.
     pub async fn wait_incoming(&self) -> Option<Incoming> {
-        future::poll_fn(|cx| self.inner.state.lock().unwrap().poll_incoming(cx))
+        future::poll_fn(|cx| self.inner.state.borrow_mut().poll_incoming(cx))
             .await
             .map(|incoming| Incoming::new(incoming, self.inner.clone()))
     }
@@ -415,8 +416,7 @@ impl Endpoint {
     pub fn set_server_config(&self, server_config: Option<ServerConfig>) {
         self.inner
             .state
-            .lock()
-            .unwrap()
+            .borrow_mut()
             .endpoint
             .set_server_config(server_config.map(Arc::new))
     }
@@ -428,7 +428,7 @@ impl Endpoint {
 
     /// Get the number of connections that are currently open.
     pub fn open_connections(&self) -> usize {
-        self.inner.state.lock().unwrap().endpoint.open_connections()
+        self.inner.state.borrow().endpoint.open_connections()
     }
 
     /// Close all of this endpoint's connections immediately and cease accepting
@@ -439,7 +439,7 @@ impl Endpoint {
     /// [`Connection::close()`]: crate::Connection::close
     pub fn close(&self, error_code: VarInt, reason: &[u8]) {
         let reason = Bytes::copy_from_slice(reason);
-        let mut state = self.inner.state.lock().unwrap();
+        let mut state = self.inner.state.borrow_mut();
         if state.close.is_some() {
             return;
         }
@@ -453,7 +453,7 @@ impl Endpoint {
     // Modified from [`SharedFd::try_unwrap_inner`], see notes there.
     unsafe fn try_unwrap_inner(this: &ManuallyDrop<Self>) -> Option<EndpointInner> {
         let ptr = ManuallyDrop::new(std::ptr::read(&this.inner));
-        match Arc::try_unwrap(ManuallyDrop::into_inner(ptr)) {
+        match Rc::try_unwrap(ManuallyDrop::into_inner(ptr)) {
             Ok(inner) => Some(inner),
             Err(ptr) => {
                 std::mem::forget(ptr);
@@ -479,12 +479,12 @@ impl Endpoint {
     ///
     /// [`close()`]: Endpoint::close
     pub async fn shutdown(self) -> io::Result<()> {
-        let worker = self.inner.state.lock().unwrap().worker.take();
+        let worker = self.inner.state.borrow_mut().worker.take();
         if let Some(worker) = worker {
-            if self.inner.state.lock().unwrap().is_idle() {
+            if self.inner.state.borrow().is_idle() {
                 worker.cancel().await;
             } else {
-                self.inner.state.lock().unwrap().exit_on_idle = true;
+                self.inner.state.borrow_mut().exit_on_idle = true;
                 let _ = worker.await;
             }
         }
@@ -511,12 +511,12 @@ impl Endpoint {
 
 impl Drop for Endpoint {
     fn drop(&mut self) {
-        if Arc::strong_count(&self.inner) == 2 {
+        if Rc::strong_count(&self.inner) == 2 {
             // There are actually two cases:
             // 1. User is trying to shutdown the socket.
             self.inner.done.wake();
             // 2. User dropped the endpoint but the worker is still running.
-            self.inner.state.lock().unwrap().exit_on_idle = true;
+            self.inner.state.borrow_mut().exit_on_idle = true;
         }
     }
 }

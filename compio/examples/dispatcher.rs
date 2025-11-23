@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 
 use compio::{
     BufResult,
+    buf::IntoInner,
     dispatcher::Dispatcher,
     io::{AsyncRead, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -33,9 +34,11 @@ async fn main() {
     .detach();
     let mut handles = FuturesUnordered::new();
     for _i in 0..CLIENT_NUM {
-        let (mut srv, _) = listener.accept().await.unwrap();
+        let (srv, _) = listener.accept().await.unwrap();
+        let srv = srv.try_into_sync().unwrap();
         let handle = dispatcher
             .dispatch(move || async move {
+                let mut srv = srv.into_inner();
                 let BufResult(res, buf) = srv.read(Vec::with_capacity(20)).await;
                 res.unwrap();
                 println!("{}", std::str::from_utf8(&buf).unwrap());

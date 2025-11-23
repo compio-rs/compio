@@ -3,18 +3,14 @@ use std::os::fd::FromRawFd;
 #[cfg(windows)]
 use std::os::windows::io::{FromRawHandle, FromRawSocket, RawHandle, RawSocket};
 use std::{
+    cell::{Cell, RefCell},
     future::{Future, poll_fn},
     mem::ManuallyDrop,
     ops::Deref,
     panic::RefUnwindSafe,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    task::Poll,
+    rc::Rc,
+    task::{Poll, Waker},
 };
-
-use futures_util::task::AtomicWaker;
 
 use crate::{AsFd, AsRawFd, BorrowedFd, RawFd};
 
@@ -22,8 +18,8 @@ use crate::{AsFd, AsRawFd, BorrowedFd, RawFd};
 struct Inner<T> {
     fd: T,
     // whether there is a future waiting
-    waits: AtomicBool,
-    waker: AtomicWaker,
+    waits: Cell<bool>,
+    waker: RefCell<Option<Waker>>,
 }
 
 impl<T> RefUnwindSafe for Inner<T> {}
@@ -31,7 +27,11 @@ impl<T> RefUnwindSafe for Inner<T> {}
 /// A shared fd. It is passed to the operations to make sure the fd won't be
 /// closed before the operations complete.
 #[derive(Debug)]
-pub struct SharedFd<T>(Arc<Inner<T>>);
+pub struct SharedFd<T>(Rc<Inner<T>>);
+// We use `Rc` internally to avoid the overhead of `Arc`. It is not `Send` or
+// `Sync`, but we have to access it in another thread when processing blocking
+// operations. We ensure that the access is safe because there will be only
+// one thread accessing it at a time.
 
 impl<T: AsFd> SharedFd<T> {
     /// Create the shared fd from an owned fd.
@@ -46,10 +46,10 @@ impl<T> SharedFd<T> {
     /// # Safety
     /// * T should own the fd.
     pub unsafe fn new_unchecked(fd: T) -> Self {
-        Self(Arc::new(Inner {
+        Self(Rc::new(Inner {
             fd,
-            waits: AtomicBool::new(false),
-            waker: AtomicWaker::new(),
+            waits: Cell::new(false),
+            waker: RefCell::new(None),
         }))
     }
 
@@ -67,7 +67,7 @@ impl<T> SharedFd<T> {
     unsafe fn try_unwrap_inner(this: &ManuallyDrop<Self>) -> Option<T> {
         let ptr = ManuallyDrop::new(std::ptr::read(&this.0));
         // The ptr is duplicated without increasing the strong count, should forget.
-        match Arc::try_unwrap(ManuallyDrop::into_inner(ptr)) {
+        match Rc::try_unwrap(ManuallyDrop::into_inner(ptr)) {
             Ok(inner) => Some(inner.fd),
             Err(ptr) => {
                 std::mem::forget(ptr);
@@ -80,13 +80,13 @@ impl<T> SharedFd<T> {
     pub fn take(self) -> impl Future<Output = Option<T>> {
         let this = ManuallyDrop::new(self);
         async move {
-            if !this.0.waits.swap(true, Ordering::AcqRel) {
+            if !this.0.waits.replace(true) {
                 poll_fn(move |cx| {
                     if let Some(fd) = unsafe { Self::try_unwrap_inner(&this) } {
                         return Poll::Ready(Some(fd));
                     }
 
-                    this.0.waker.register(cx.waker());
+                    this.0.waker.borrow_mut().replace(cx.waker().clone());
 
                     if let Some(fd) = unsafe { Self::try_unwrap_inner(&this) } {
                         Poll::Ready(Some(fd))
@@ -105,8 +105,10 @@ impl<T> SharedFd<T> {
 impl<T> Drop for SharedFd<T> {
     fn drop(&mut self) {
         // It's OK to wake multiple times.
-        if Arc::strong_count(&self.0) == 2 && self.0.waits.load(Ordering::Acquire) {
-            self.0.waker.wake()
+        if Rc::strong_count(&self.0) == 2 && self.0.waits.get() {
+            if let Some(waker) = self.0.waker.borrow_mut().take() {
+                waker.wake()
+            }
         }
     }
 }

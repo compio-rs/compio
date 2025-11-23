@@ -44,6 +44,17 @@ pub enum OwnedFd {
     Socket(OwnedSocket),
 }
 
+impl OwnedFd {
+    /// Creates a new [`OwnedFd`] instance that shares the same underlying
+    /// object as the existing [`OwnedFd`] instance.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        match self {
+            Self::File(fd) => fd.try_clone().map(OwnedFd::File),
+            Self::Socket(s) => s.try_clone().map(OwnedFd::Socket),
+        }
+    }
+}
+
 impl AsRawFd for OwnedFd {
     fn as_raw_fd(&self) -> RawFd {
         match self {
@@ -150,6 +161,17 @@ pub enum BorrowedFd<'a> {
     File(BorrowedHandle<'a>),
     /// Windows socket handle.
     Socket(BorrowedSocket<'a>),
+}
+
+impl<'a> BorrowedFd<'a> {
+    /// Creates a new [`OwnedFd`] instance that shares the same underlying
+    /// object as the existing [`BorrowedFd`] instance.
+    pub fn try_clone_to_owned(&self) -> io::Result<OwnedFd> {
+        match self {
+            Self::File(fd) => fd.try_clone_to_owned().map(OwnedFd::File),
+            Self::Socket(s) => s.try_clone_to_owned().map(OwnedFd::Socket),
+        }
+    }
 }
 
 impl AsRawFd for BorrowedFd<'_> {

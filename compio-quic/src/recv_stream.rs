@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     io,
-    sync::Arc,
+    rc::Rc,
     task::{Context, Poll},
 };
 
@@ -54,7 +54,7 @@ use crate::{ConnectionError, ConnectionInner, StoppedError};
 /// [`Connection::accept_bi`]: crate::Connection::accept_bi
 #[derive(Debug)]
 pub struct RecvStream {
-    conn: Arc<ConnectionInner>,
+    conn: Rc<ConnectionInner>,
     stream: StreamId,
     is_0rtt: bool,
     all_data_read: bool,
@@ -62,7 +62,7 @@ pub struct RecvStream {
 }
 
 impl RecvStream {
-    pub(crate) fn new(conn: Arc<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
+    pub(crate) fn new(conn: Rc<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
         Self {
             conn,
             stream,

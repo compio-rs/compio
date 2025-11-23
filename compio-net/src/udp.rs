@@ -1,11 +1,11 @@
 use std::{future::Future, io, net::SocketAddr};
 
-use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use compio_runtime::{BorrowedBuffer, BufferPool};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
-use crate::{Socket, ToSocketAddrsAsync};
+use crate::{Socket, SyncSocket, ToSocketAddrsAsync};
 
 /// A UDP socket.
 ///
@@ -359,6 +359,46 @@ impl UdpSocket {
     ) -> io::Result<()> {
         self.inner.set_socket_option(level, name, value)
     }
+
+    /// Attempts to clone the UDP socket.
+    pub fn try_clone(&self) -> io::Result<SyncUdpSocket> {
+        Ok(SyncUdpSocket::new(self.inner.try_clone()?))
+    }
+
+    /// Try to convert into a thread-safe UDP socket.
+    pub fn try_into_sync(self) -> Result<SyncUdpSocket, Self> {
+        match self.inner.try_into_sync() {
+            Ok(sync_socket) => Ok(SyncUdpSocket::new(sync_socket)),
+            Err(socket) => Err(UdpSocket { inner: socket }),
+        }
+    }
 }
 
 impl_raw_fd!(UdpSocket, socket2::Socket, inner, socket);
+
+/// A thread-safe UDP socket.
+#[derive(Debug)]
+pub struct SyncUdpSocket {
+    inner: SyncSocket,
+}
+
+impl SyncUdpSocket {
+    pub(crate) fn new(inner: SyncSocket) -> Self {
+        Self { inner }
+    }
+
+    /// Attempts to clone the UDP socket.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        self.inner.try_clone().map(SyncUdpSocket::new)
+    }
+}
+
+impl IntoInner for SyncUdpSocket {
+    type Inner = UdpSocket;
+
+    fn into_inner(self) -> Self::Inner {
+        UdpSocket {
+            inner: self.inner.into_inner(),
+        }
+    }
+}

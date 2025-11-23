@@ -6,7 +6,7 @@
 use std::ptr::null_mut;
 use std::{ffi::OsStr, io, os::windows::io::FromRawHandle, ptr::null};
 
-use compio_buf::{BufResult, IoBuf, IoBufMut};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{AsRawFd, RawFd, ToSharedFd, impl_raw_fd, op::ConnectNamedPipe, syscall};
 use compio_io::{
     AsyncRead, AsyncReadAt, AsyncReadManaged, AsyncReadManagedAt, AsyncWrite, AsyncWriteAt,
@@ -29,7 +29,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{AsyncFd, File, OpenOptions};
+use crate::{AsyncFd, File, OpenOptions, SyncFile};
 
 /// A [Windows named pipe] server.
 ///
@@ -180,6 +180,21 @@ impl NamedPipeServer {
         syscall!(BOOL, DisconnectNamedPipe(self.as_raw_fd() as _))?;
         Ok(())
     }
+
+    /// Attempts to clone the named pipe server.
+    pub fn try_clone(&self) -> io::Result<SyncNamedPipeServer> {
+        self.handle.try_clone().map(SyncNamedPipeServer::new)
+    }
+
+    /// Try to convert the named pipe server into a thread safe handle.
+    pub fn try_into_sync(self) -> Result<SyncNamedPipeServer, Self> {
+        match self.handle.into_inner().try_unwrap() {
+            Ok(file) => Ok(SyncNamedPipeServer::new(file)),
+            Err(fd) => Err(Self {
+                handle: unsafe { AsyncFd::from_shared_fd_unchecked(fd) },
+            }),
+        }
+    }
 }
 
 impl AsyncRead for NamedPipeServer {
@@ -277,6 +292,33 @@ impl Splittable for &NamedPipeServer {
 
 impl_raw_fd!(NamedPipeServer, std::fs::File, handle, file);
 
+/// A thread safe named pipe server.
+#[derive(Debug)]
+pub struct SyncNamedPipeServer {
+    inner: std::fs::File,
+}
+
+impl SyncNamedPipeServer {
+    pub(crate) fn new(inner: std::fs::File) -> Self {
+        Self { inner }
+    }
+
+    /// Attempts to clone the named pipe server.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        self.inner.try_clone().map(Self::new)
+    }
+}
+
+impl IntoInner for SyncNamedPipeServer {
+    type Inner = NamedPipeServer;
+
+    fn into_inner(self) -> Self::Inner {
+        NamedPipeServer {
+            handle: unsafe { AsyncFd::new_unchecked(self.inner) },
+        }
+    }
+}
+
 /// A [Windows named pipe] client.
 ///
 /// Constructed using [`ClientOptions::open`].
@@ -343,6 +385,19 @@ impl NamedPipeClient {
     pub fn info(&self) -> io::Result<PipeInfo> {
         // Safety: we're ensuring the lifetime of the named pipe.
         unsafe { named_pipe_info(self.as_raw_fd()) }
+    }
+
+    /// Attempts to clone the named pipe client.
+    pub fn try_clone(&self) -> io::Result<SyncNamedPipeClient> {
+        self.handle.try_clone().map(SyncNamedPipeClient::new)
+    }
+
+    /// Try to convert the named pipe client into a thread safe handle.
+    pub fn try_into_sync(self) -> Result<SyncNamedPipeClient, Self> {
+        match self.handle.try_into_sync() {
+            Ok(file) => Ok(SyncNamedPipeClient::new(file)),
+            Err(handle) => Err(Self { handle }),
+        }
     }
 }
 
@@ -442,6 +497,33 @@ impl Splittable for &NamedPipeClient {
 }
 
 impl_raw_fd!(NamedPipeClient, std::fs::File, handle, file);
+
+/// A thread safe named pipe client.
+#[derive(Debug)]
+pub struct SyncNamedPipeClient {
+    inner: SyncFile,
+}
+
+impl SyncNamedPipeClient {
+    pub(crate) fn new(inner: SyncFile) -> Self {
+        Self { inner }
+    }
+
+    /// Attempts to clone the named pipe client.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        self.inner.try_clone().map(Self::new)
+    }
+}
+
+impl IntoInner for SyncNamedPipeClient {
+    type Inner = NamedPipeClient;
+
+    fn into_inner(self) -> Self::Inner {
+        NamedPipeClient {
+            handle: self.inner.into_inner(),
+        }
+    }
+}
 
 /// A builder structure for construct a named pipe with named pipe-specific
 /// options. This is required to use for named pipe servers who wants to modify

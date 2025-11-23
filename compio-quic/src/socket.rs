@@ -550,7 +550,7 @@ impl Clone for Socket {
             max_gso_segments: self.max_gso_segments,
             has_gso_error: AtomicBool::new(self.has_gso_error.load(Ordering::Relaxed)),
             #[cfg(freebsd)]
-            encode_src_ip_v4: self.encode_src_ip_v4.clone(),
+            encode_src_ip_v4: self.encode_src_ip_v4,
         }
     }
 }

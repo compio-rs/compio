@@ -1,13 +1,14 @@
 use std::{future::Future, io, net::SocketAddr};
 
-use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite, util::Splittable};
 use compio_runtime::{BorrowedBuffer, BufferPool};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::{
-    OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, TcpOpts, ToSocketAddrsAsync, WriteHalf,
+    OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, SyncSocket, TcpOpts,
+    ToSocketAddrsAsync, WriteHalf,
 };
 
 /// A TCP socket server, listening for connections.
@@ -133,9 +134,49 @@ impl TcpListener {
             .local_addr()
             .map(|addr| addr.as_socket().expect("should be SocketAddr"))
     }
+
+    /// Attempts to clone the TCP listener.
+    pub fn try_clone(&self) -> io::Result<SyncTcpListener> {
+        self.inner.try_clone().map(SyncTcpListener::new)
+    }
+
+    /// Try to convert into a thread-safe TCP listener.
+    pub fn try_into_sync(self) -> Result<SyncTcpListener, Self> {
+        match self.inner.try_into_sync() {
+            Ok(sync_socket) => Ok(SyncTcpListener::new(sync_socket)),
+            Err(socket) => Err(TcpListener { inner: socket }),
+        }
+    }
 }
 
 impl_raw_fd!(TcpListener, socket2::Socket, inner, socket);
+
+/// A thread-safe TCP listener.
+#[derive(Debug)]
+pub struct SyncTcpListener {
+    inner: SyncSocket,
+}
+
+impl SyncTcpListener {
+    pub(crate) fn new(inner: SyncSocket) -> Self {
+        Self { inner }
+    }
+
+    /// Attempts to clone the TCP listener.
+    pub fn try_clone(&self) -> io::Result<Self> {
+        self.inner.try_clone().map(Self::new)
+    }
+}
+
+impl IntoInner for SyncTcpListener {
+    type Inner = TcpListener;
+
+    fn into_inner(self) -> Self::Inner {
+        TcpListener {
+            inner: self.inner.into_inner(),
+        }
+    }
+}
 
 /// A TCP stream between a local and a remote socket.
 ///
@@ -319,6 +360,19 @@ impl TcpStream {
     pub fn set_nodelay(&self, nodelay: bool) -> io::Result<()> {
         self.inner.socket.set_tcp_nodelay(nodelay)
     }
+
+    /// Attempts to clone the TCP stream.
+    pub fn try_clone(&self) -> io::Result<SyncTcpStream> {
+        self.inner.try_clone().map(SyncTcpStream::new)
+    }
+
+    /// Try to convert into a thread-safe TCP stream.
+    pub fn try_into_sync(self) -> Result<SyncTcpStream, Self> {
+        match self.inner.try_into_sync() {
+            Ok(sync_socket) => Ok(SyncTcpStream::new(sync_socket)),
+            Err(socket) => Err(TcpStream { inner: socket }),
+        }
+    }
 }
 
 impl AsyncRead for TcpStream {
@@ -434,3 +488,30 @@ impl<'a> Splittable for &'a TcpStream {
 }
 
 impl_raw_fd!(TcpStream, socket2::Socket, inner, socket);
+
+/// A thread-safe TCP stream.
+#[derive(Debug)]
+pub struct SyncTcpStream {
+    inner: SyncSocket,
+}
+
+impl SyncTcpStream {
+    pub(crate) fn new(inner: SyncSocket) -> Self {
+        Self { inner }
+    }
+
+    /// Attempts to clone the TCP stream.
+    pub fn try_clone(&self) -> io::Result<SyncTcpStream> {
+        self.inner.try_clone().map(SyncTcpStream::new)
+    }
+}
+
+impl IntoInner for SyncTcpStream {
+    type Inner = TcpStream;
+
+    fn into_inner(self) -> Self::Inner {
+        TcpStream {
+            inner: self.inner.into_inner(),
+        }
+    }
+}

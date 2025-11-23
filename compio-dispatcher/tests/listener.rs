@@ -1,6 +1,6 @@
 use std::num::NonZeroUsize;
 
-use compio_buf::arrayvec::ArrayVec;
+use compio_buf::{IntoInner, arrayvec::ArrayVec};
 use compio_dispatcher::Dispatcher;
 use compio_io::{AsyncReadExt, AsyncWriteExt};
 use compio_net::{TcpListener, TcpStream};
@@ -27,9 +27,11 @@ async fn listener_dispatch() {
     });
     let mut handles = FuturesUnordered::new();
     for _i in 0..CLIENT_NUM {
-        let (mut srv, _) = listener.accept().await.unwrap();
+        let (srv, _) = listener.accept().await.unwrap();
+        let srv = srv.try_into_sync().unwrap();
         let handle = dispatcher
             .dispatch(move || async move {
+                let mut srv = srv.into_inner();
                 let (_, buf) = srv.read_exact(ArrayVec::<u8, 12>::new()).await.unwrap();
                 assert_eq!(buf.as_slice(), b"Hello world!");
             })

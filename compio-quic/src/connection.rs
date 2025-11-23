@@ -1,8 +1,10 @@
 use std::{
+    cell::{RefCell, RefMut},
     collections::VecDeque,
     net::{IpAddr, SocketAddr},
     pin::{Pin, pin},
-    sync::{Arc, Mutex, MutexGuard},
+    rc::Rc,
+    sync::Arc,
     task::{Context, Poll, Waker},
     time::{Duration, Instant},
 };
@@ -112,15 +114,15 @@ fn wake_all_streams(wakers: &mut HashMap<StreamId, Waker>) {
 
 #[derive(Debug)]
 pub(crate) struct ConnectionInner {
-    state: Mutex<ConnectionState>,
+    state: RefCell<ConnectionState>,
     handle: ConnectionHandle,
     socket: Socket,
     events_tx: Sender<(ConnectionHandle, EndpointEvent)>,
     events_rx: Receiver<ConnectionEvent>,
 }
 
-fn implicit_close(this: &Arc<ConnectionInner>) {
-    if Arc::strong_count(this) == 2 {
+fn implicit_close(this: &Rc<ConnectionInner>) {
+    if Rc::strong_count(this) == 2 {
         this.state().close(0u32.into(), Bytes::new())
     }
 }
@@ -134,7 +136,7 @@ impl ConnectionInner {
         events_rx: Receiver<ConnectionEvent>,
     ) -> Self {
         Self {
-            state: Mutex::new(ConnectionState {
+            state: RefCell::new(ConnectionState {
                 conn,
                 connected: false,
                 error: None,
@@ -158,12 +160,12 @@ impl ConnectionInner {
     }
 
     #[inline]
-    pub(crate) fn state(&self) -> MutexGuard<'_, ConnectionState> {
-        self.state.lock().unwrap()
+    pub(crate) fn state(&self) -> RefMut<'_, ConnectionState> {
+        self.state.borrow_mut()
     }
 
     #[inline]
-    pub(crate) fn try_state(&self) -> Result<MutexGuard<'_, ConnectionState>, ConnectionError> {
+    pub(crate) fn try_state(&self) -> Result<RefMut<'_, ConnectionState>, ConnectionError> {
         let state = self.state();
         if let Some(error) = &state.error {
             Err(error.clone())
@@ -366,7 +368,7 @@ macro_rules! conn_fn {
 /// In-progress connection attempt future
 #[derive(Debug)]
 #[must_use = "futures/streams/sinks do nothing unless you `.await` or poll them"]
-pub struct Connecting(Arc<ConnectionInner>);
+pub struct Connecting(Rc<ConnectionInner>);
 
 impl Connecting {
     conn_fn!();
@@ -378,7 +380,7 @@ impl Connecting {
         events_tx: Sender<(ConnectionHandle, EndpointEvent)>,
         events_rx: Receiver<ConnectionEvent>,
     ) -> Self {
-        let inner = Arc::new(ConnectionInner::new(
+        let inner = Rc::new(ConnectionInner::new(
             handle, conn, socket, events_tx, events_rx,
         ));
         let worker = compio_runtime::spawn({
@@ -495,7 +497,7 @@ impl Drop for Connecting {
 
 /// A QUIC connection.
 #[derive(Debug, Clone)]
-pub struct Connection(Arc<ConnectionInner>);
+pub struct Connection(Rc<ConnectionInner>);
 
 impl Connection {
     conn_fn!();
@@ -840,7 +842,7 @@ impl Connection {
 
 impl PartialEq for Connection {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
+        Rc::ptr_eq(&self.0, &other.0)
     }
 }
 
@@ -1077,7 +1079,7 @@ pub(crate) mod h3_impl {
     }
 
     impl<B> BidiStream<B> {
-        pub(crate) fn new(conn: Arc<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
+        pub(crate) fn new(conn: Rc<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
             Self {
                 send: SendStream::new(conn.clone(), stream, is_0rtt),
                 recv: RecvStream::new(conn, stream, is_0rtt),

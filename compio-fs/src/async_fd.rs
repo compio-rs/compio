@@ -44,6 +44,18 @@ impl<T: AsFd> AsyncFd<T> {
             inner: Attacher::new_unchecked(source),
         }
     }
+
+    /// Create [`AsyncFd`] from a shared file descriptor without attaching
+    /// the source.
+    ///
+    /// # Safety
+    ///
+    /// See [`AsyncFd::new_unchecked`].
+    pub unsafe fn from_shared_fd_unchecked(fd: SharedFd<T>) -> Self {
+        Self {
+            inner: Attacher::from_shared_fd_unchecked(fd),
+        }
+    }
 }
 
 impl<T: AsFd + 'static> AsyncRead for AsyncFd<T> {

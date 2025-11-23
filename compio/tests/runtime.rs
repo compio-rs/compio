@@ -27,8 +27,11 @@ async fn multi_threading() {
     let ((), buffer) = rx.read_exact(Vec::with_capacity(DATA.len())).await.unwrap();
     assert_eq!(DATA, String::from_utf8(buffer).unwrap());
 
+    let rx = rx.try_into_sync().unwrap();
+
     compio::runtime::spawn_blocking(move || {
         compio::runtime::Runtime::new().unwrap().block_on(async {
+            let mut rx = rx.into_inner();
             let ((), buffer) = rx.read_exact(Vec::with_capacity(DATA.len())).await.unwrap();
             assert_eq!(DATA, String::from_utf8(buffer).unwrap());
         });
@@ -44,14 +47,17 @@ async fn try_clone() {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
 
-    let (tx, (mut rx, _)) =
+    let (tx, (rx, _)) =
         futures_util::try_join!(TcpStream::connect(&addr), listener.accept()).unwrap();
 
     let mut tx = tx.clone();
     tx.write_all(DATA).await.0.unwrap();
 
+    let rx = rx.try_into_sync().unwrap();
+
     if let Err(e) = std::thread::spawn(move || {
         compio::runtime::Runtime::new().unwrap().block_on(async {
+            let mut rx = rx.into_inner();
             let buffer = Vec::with_capacity(DATA.len());
             let ((), buffer) = rx.read_exact(buffer).await.unwrap();
             assert_eq!(DATA, String::from_utf8(buffer).unwrap());
