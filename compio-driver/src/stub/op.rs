@@ -14,6 +14,14 @@ impl<
 {
 }
 
+impl<
+    S,
+    D: std::marker::Send + 'static,
+    F: (FnOnce(&S) -> BufResult<usize, D>) + std::marker::Send + 'static,
+> OpCode for AsyncifyFd<S, F, D>
+{
+}
+
 impl OpCode for OpenFile {}
 
 impl OpCode for CloseFile {}

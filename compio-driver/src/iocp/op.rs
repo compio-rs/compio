@@ -133,6 +133,29 @@ impl<
     }
 }
 
+impl<
+    S,
+    D: std::marker::Send + 'static,
+    F: (FnOnce(&S) -> BufResult<usize, D>) + std::marker::Send + 'static,
+> OpCode for AsyncifyFd<S, F, D>
+{
+    fn op_type(&self) -> OpType {
+        OpType::Blocking
+    }
+
+    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        // Safety: self won't be moved
+        let this = self.get_unchecked_mut();
+        let f = this
+            .f
+            .take()
+            .expect("the operate method could only be called once");
+        let BufResult(res, data) = f(&this.fd);
+        this.data = Some(data);
+        Poll::Ready(res)
+    }
+}
+
 impl OpCode for CloseFile {
     fn op_type(&self) -> OpType {
         OpType::Blocking

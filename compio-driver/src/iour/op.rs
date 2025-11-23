@@ -41,6 +41,29 @@ impl<
     }
 }
 
+impl<
+    S,
+    D: std::marker::Send + 'static,
+    F: (FnOnce(&S) -> BufResult<usize, D>) + std::marker::Send + 'static,
+> OpCode for AsyncifyFd<S, F, D>
+{
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        OpEntry::Blocking
+    }
+
+    fn call_blocking(self: Pin<&mut Self>) -> std::io::Result<usize> {
+        // Safety: self won't be moved
+        let this = unsafe { self.get_unchecked_mut() };
+        let f = this
+            .f
+            .take()
+            .expect("the operate method could only be called once");
+        let BufResult(res, data) = f(&this.fd);
+        this.data = Some(data);
+        res
+    }
+}
+
 impl OpCode for OpenFile {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::OpenAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())

@@ -22,7 +22,7 @@ pub use crate::sys::op::{
 };
 #[cfg(io_uring)]
 pub use crate::sys::op::{ReadManagedAt, RecvManaged};
-use crate::{OwnedFd, TakeBuffer};
+use crate::{OwnedFd, SharedFd, TakeBuffer};
 
 /// Trait to update the buffer length inside the [`BufResult`].
 pub trait BufResultExt {
@@ -136,6 +136,34 @@ impl<F, D> Asyncify<F, D> {
 }
 
 impl<F, D> IntoInner for Asyncify<F, D> {
+    type Inner = D;
+
+    fn into_inner(mut self) -> Self::Inner {
+        self.data.take().expect("the data should not be None")
+    }
+}
+
+/// Spawn a blocking function with a file descriptor in the thread pool.
+pub struct AsyncifyFd<S, F, D> {
+    pub(crate) fd: SharedFd<S>,
+    pub(crate) f: Option<F>,
+    pub(crate) data: Option<D>,
+    _p: PhantomPinned,
+}
+
+impl<S, F, D> AsyncifyFd<S, F, D> {
+    /// Create [`AsyncifyFd`].
+    pub fn new(fd: SharedFd<S>, f: F) -> Self {
+        Self {
+            fd,
+            f: Some(f),
+            data: None,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<S, F, D> IntoInner for AsyncifyFd<S, F, D> {
     type Inner = D;
 
     fn into_inner(mut self) -> Self::Inner {
