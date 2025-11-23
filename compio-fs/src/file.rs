@@ -126,9 +126,24 @@ impl File {
     }
 
     /// Changes the permissions on the underlying file.
+    #[cfg(windows)]
     pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
-        let op = AsyncifyFd::new(self.to_shared_fd(), |file: &std::fs::File| {
+        let op = AsyncifyFd::new(self.to_shared_fd(), move |file: &std::fs::File| {
             BufResult(file.set_permissions(perm.0).map(|_| 0), ())
+        });
+        compio_runtime::submit(op).await.0.map(|_| ())
+    }
+
+    /// Changes the permissions on the underlying file.
+    #[cfg(unix)]
+    pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        use compio_driver::{AsRawFd, syscall};
+
+        let op = AsyncifyFd::new(self.to_shared_fd(), move |file: &std::fs::File| {
+            let res = syscall!(libc::fchmod(file.as_raw_fd(), perm.mode() as libc::mode_t));
+            BufResult(res.map(|_| 0), ())
         });
         compio_runtime::submit(op).await.0.map(|_| ())
     }
