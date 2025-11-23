@@ -135,7 +135,7 @@ impl File {
 
         use compio_driver::{AsRawFd, syscall};
 
-        let file = self.inner.clone();
+        let file = self.inner.try_clone()?;
         compio_runtime::spawn_blocking(move || {
             syscall!(libc::fchmod(file.as_raw_fd(), perm.mode() as libc::mode_t))?;
             Ok(())
