@@ -72,9 +72,10 @@ impl<T> SharedFd<T> {
 
     // SAFETY: if `Some` is returned, the method should not be called again.
     unsafe fn try_unwrap_inner(this: &ManuallyDrop<Self>) -> Option<T> {
-        let ptr = ManuallyDrop::new(std::ptr::read(&this.0));
+        // SAFETY: `this` is not dropped here.
+        let ptr = unsafe { std::ptr::read(&this.0) };
         // The ptr is duplicated without increasing the strong count, should forget.
-        match RefPtr::try_unwrap(ManuallyDrop::into_inner(ptr)) {
+        match RefPtr::try_unwrap(ptr) {
             Ok(inner) => Some(inner.fd),
             Err(ptr) => {
                 std::mem::forget(ptr);
@@ -133,21 +134,21 @@ impl<T: AsFd> AsRawFd for SharedFd<T> {
 #[cfg(windows)]
 impl<T: FromRawHandle> FromRawHandle for SharedFd<T> {
     unsafe fn from_raw_handle(handle: RawHandle) -> Self {
-        Self::new_unchecked(T::from_raw_handle(handle))
+        unsafe { Self::new_unchecked(T::from_raw_handle(handle)) }
     }
 }
 
 #[cfg(windows)]
 impl<T: FromRawSocket> FromRawSocket for SharedFd<T> {
     unsafe fn from_raw_socket(sock: RawSocket) -> Self {
-        Self::new_unchecked(T::from_raw_socket(sock))
+        unsafe { Self::new_unchecked(T::from_raw_socket(sock)) }
     }
 }
 
 #[cfg(unix)]
 impl<T: FromRawFd> FromRawFd for SharedFd<T> {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self::new_unchecked(T::from_raw_fd(fd))
+        unsafe { Self::new_unchecked(T::from_raw_fd(fd)) }
     }
 }
 

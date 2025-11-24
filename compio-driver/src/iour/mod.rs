@@ -325,7 +325,7 @@ impl Driver {
             .is_ok()
     }
 
-    pub unsafe fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         // Anyway we need to submit once, no matter there are entries in squeue.
         trace!("start polling");

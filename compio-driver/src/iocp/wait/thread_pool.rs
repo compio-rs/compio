@@ -48,7 +48,8 @@ impl Wait {
         _wait: PTP_WAIT,
         result: u32,
     ) {
-        let context = &*(context as *mut WinThreadpoolWaitContext);
+        // SAFETY: `context` is a valid pointer.
+        let context = unsafe { &*(context as *mut WinThreadpoolWaitContext) };
         let res = match result {
             WAIT_OBJECT_0 => Ok(0),
             WAIT_TIMEOUT => Err(io::Error::from_raw_os_error(ERROR_TIMEOUT as _)),

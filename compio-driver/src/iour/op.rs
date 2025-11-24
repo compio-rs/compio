@@ -29,7 +29,7 @@ impl<
     }
 
     fn call_blocking(self: Pin<&mut Self>) -> std::io::Result<usize> {
-        // Safety: self won't be moved
+        // SAFETY: self won't be moved
         let this = unsafe { self.get_unchecked_mut() };
         let f = this
             .f
@@ -52,7 +52,7 @@ impl<
     }
 
     fn call_blocking(self: Pin<&mut Self>) -> std::io::Result<usize> {
-        // Safety: self won't be moved
+        // SAFETY: self won't be moved
         let this = unsafe { self.get_unchecked_mut() };
         let f = this
             .f
@@ -713,7 +713,7 @@ mod buf_ring {
             #[cfg(fusion)]
             let buffer_pool = buffer_pool.as_io_uring();
             let result = result.inspect_err(|_| buffer_pool.reuse_buffer(flags))?;
-            // Safety: result is valid
+            // SAFETY: result is valid
             let res = unsafe { buffer_pool.get_buffer(flags, result) };
             #[cfg(fusion)]
             let res = res.map(BorrowedBuffer::new_io_uring);
@@ -769,7 +769,7 @@ mod buf_ring {
             #[cfg(fusion)]
             let buffer_pool = buffer_pool.as_io_uring();
             let result = result.inspect_err(|_| buffer_pool.reuse_buffer(flags))?;
-            // Safety: result is valid
+            // SAFETY: result is valid
             let res = unsafe { buffer_pool.get_buffer(flags, result) };
             #[cfg(fusion)]
             let res = res.map(BorrowedBuffer::new_io_uring);

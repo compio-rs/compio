@@ -88,7 +88,7 @@ impl<S: crate::AsyncRead + 'static> futures_util::AsyncRead for AsyncStream<S> {
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        // Safety:
+        // SAFETY:
         // - The futures won't live longer than the stream.
         // - The inner stream is pinned.
         let inner: &'static mut SyncStream<S> =
@@ -131,7 +131,7 @@ impl<S: crate::AsyncRead + 'static> futures_util::AsyncBufRead for AsyncStream<S
             self.read_future,
             cx,
             inner.fill_read_buf(),
-            // Safety: anyway the slice won't be used after free.
+            // SAFETY: anyway the slice won't be used after free.
             io::BufRead::fill_buf(inner).map(|slice| unsafe { &*(slice as *const _) })
         )
     }

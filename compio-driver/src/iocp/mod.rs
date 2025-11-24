@@ -321,12 +321,12 @@ impl Driver {
         instrument!(compio_log::Level::TRACE, "cancel", ?op);
         trace!("cancel RawOp");
         let overlapped_ptr = op.as_mut_ptr();
-        if let Some(w) = self.waits.get_mut(&op.user_data()) {
-            if w.cancel().is_ok() {
-                // The pack has been cancelled successfully, which means no packet will be post
-                // to IOCP. Need not set the result because `create_entry` handles it.
-                self.port().post_raw(overlapped_ptr).ok();
-            }
+        if let Some(w) = self.waits.get_mut(&op.user_data())
+            && w.cancel().is_ok()
+        {
+            // The pack has been cancelled successfully, which means no packet will be post
+            // to IOCP. Need not set the result because `create_entry` handles it.
+            self.port().post_raw(overlapped_ptr).ok();
         }
         let op = op.as_op_pin();
         // It's OK to fail to cancel.
@@ -348,9 +348,7 @@ impl Driver {
                 } else {
                     // It's OK to wait forever, because any blocking task will notify the IOCP after
                     // it completes.
-                    unsafe {
-                        self.poll(None)?;
-                    }
+                    self.poll(None)?;
                 }
             },
             OpType::Event(e) => {
@@ -401,14 +399,15 @@ impl Driver {
         }
     }
 
-    pub unsafe fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
 
         let notify_user_data = &self.notify.overlapped as *const Overlapped as usize;
 
         for e in self.notify.port.poll(timeout)? {
             if let Some(e) = Self::create_entry(notify_user_data, &mut self.waits, e) {
-                e.notify();
+                // SAFETY: called only once.
+                unsafe { e.notify() }
             }
         }
 

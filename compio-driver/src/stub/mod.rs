@@ -62,7 +62,7 @@ impl Driver {
         Poll::Ready(Err(stub_error()))
     }
 
-    pub unsafe fn poll(&mut self, _timeout: Option<Duration>) -> io::Result<()> {
+    pub fn poll(&mut self, _timeout: Option<Duration>) -> io::Result<()> {
         Err(stub_error())
     }
 

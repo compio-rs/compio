@@ -36,7 +36,7 @@ impl<
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        // Safety: self won't be moved
+        // SAFETY: self won't be moved
         let this = unsafe { self.get_unchecked_mut() };
         let f = this
             .f
@@ -59,7 +59,7 @@ impl<
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        // Safety: self won't be moved
+        // SAFETY: self won't be moved
         let this = unsafe { self.get_unchecked_mut() };
         let f = this
             .f

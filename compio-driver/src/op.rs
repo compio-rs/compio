@@ -353,7 +353,7 @@ pub(crate) mod managed {
             #[cfg(fusion)]
             let buffer_pool = buffer_pool.as_poll();
             let slice = self.op.into_inner();
-            // Safety: result is valid
+            // SAFETY: result is valid
             let res = unsafe { buffer_pool.create_proxy(slice, result) };
             #[cfg(fusion)]
             let res = BorrowedBuffer::new_poll(res);
@@ -391,7 +391,7 @@ pub(crate) mod managed {
             #[cfg(fusion)]
             let buffer_pool = buffer_pool.as_poll();
             let slice = self.op.into_inner();
-            // Safety: result is valid
+            // SAFETY: result is valid
             let res = unsafe { buffer_pool.create_proxy(slice, result) };
             #[cfg(fusion)]
             let res = BorrowedBuffer::new_poll(res);

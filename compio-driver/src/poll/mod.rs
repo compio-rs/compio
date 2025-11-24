@@ -371,7 +371,7 @@ impl Driver {
         true
     }
 
-    pub unsafe fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         if self.poll_blocking() {
             return Ok(());

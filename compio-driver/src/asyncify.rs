@@ -113,7 +113,7 @@ impl AsyncifyPool {
                     if self.thread_limit == 0 {
                         panic!("the thread pool is needed but no worker thread is running");
                     } else if self.counter.load(Ordering::Acquire) >= self.thread_limit {
-                        // Safety: we can ensure the type
+                        // SAFETY: we can ensure the type
                         Err(DispatchError(*unsafe {
                             Box::from_raw(Box::into_raw(f).cast())
                         }))

@@ -51,13 +51,16 @@ fn opcode_metadata<T: OpCode + 'static>() -> usize {
 }
 
 const unsafe fn opcode_dyn_mut(ptr: *mut (), metadata: usize) -> *mut RawOp<dyn OpCode> {
-    OpCodePtrRepr {
-        components: OpCodePtrComponents {
-            data_pointer: ptr,
-            metadata,
-        },
+    // SAFETY: same as `core::ptr::from_raw_parts_mut`.
+    unsafe {
+        OpCodePtrRepr {
+            components: OpCodePtrComponents {
+                data_pointer: ptr,
+                metadata,
+            },
+        }
+        .ptr
     }
-    .ptr
 }
 
 /// A typed wrapper for key of Ops submitted into driver. It doesn't free the
@@ -191,7 +194,7 @@ impl<T: ?Sized> Key<T> {
     /// when the ref count becomes zero. See doc of [`Key::set_cancelled`]
     /// and [`Key::set_result`].
     pub(crate) unsafe fn into_box(mut self) -> Box<RawOp<dyn OpCode>> {
-        Box::from_raw(self.as_dyn_mut_ptr())
+        unsafe { Box::from_raw(self.as_dyn_mut_ptr()) }
     }
 }
 
@@ -203,7 +206,7 @@ impl<T> Key<T> {
     /// Call it only when the op is completed, otherwise it is UB.
     pub(crate) unsafe fn into_inner(self) -> BufResult<usize, T> {
         let op = unsafe { Box::from_raw(self.user_data as *mut RawOp<T>) };
-        BufResult(op.result.take_ready().unwrap_unchecked(), op.op)
+        BufResult(unsafe { op.result.take_ready().unwrap_unchecked() }, op.op)
     }
 }
 

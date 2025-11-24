@@ -66,10 +66,10 @@ impl Drop for BufferPool {
             }
 
             unsafe {
-                // Safety: we own the inner
+                // SAFETY: we own the inner
                 let inner = ManuallyDrop::take(&mut self.inner);
 
-                // Safety: the buffer pool is created by current thread runtime
+                // SAFETY: the buffer pool is created by current thread runtime
                 let _ = runtime.release_buffer_pool(inner);
             }
         });

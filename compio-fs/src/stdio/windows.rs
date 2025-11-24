@@ -103,7 +103,7 @@ struct StaticFd(RawHandle);
 
 impl AsFd for StaticFd {
     fn as_fd(&self) -> BorrowedFd<'_> {
-        // Safety: we only use it for console handles.
+        // SAFETY: we only use it for console handles.
         BorrowedFd::File(unsafe { BorrowedHandle::borrow_raw(self.0) })
     }
 }

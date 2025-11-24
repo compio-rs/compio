@@ -102,7 +102,7 @@ impl Driver {
         }
     }
 
-    pub unsafe fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         match &mut self.fuse {
             FuseDriver::Poll(driver) => driver.poll(timeout),
             FuseDriver::IoUring(driver) => driver.poll(timeout),

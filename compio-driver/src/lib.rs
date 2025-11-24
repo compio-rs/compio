@@ -308,7 +308,7 @@ impl Proactor {
     /// You need to call [`Proactor::pop`] to get the pushed
     /// operations.
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
-        unsafe { self.driver.poll(timeout) }
+        self.driver.poll(timeout)
     }
 
     /// Get the pushed operations from the completion entries.
@@ -358,7 +358,7 @@ impl Proactor {
     /// Caller must make sure to release the buffer pool with the correct
     /// driver, i.e., the one they created the buffer pool with.
     pub unsafe fn release_buffer_pool(&mut self, buffer_pool: BufferPool) -> io::Result<()> {
-        self.driver.release_buffer_pool(buffer_pool)
+        unsafe { self.driver.release_buffer_pool(buffer_pool) }
     }
 }
 
@@ -405,14 +405,16 @@ impl Entry {
         self.result
     }
 
-    /// SAFETY: `user_data` should be a valid pointer.
+    /// # Safety
+    /// * `user_data` should be a valid pointer.
+    /// * Should only be called once.
     pub unsafe fn notify(self) {
         let user_data = self.user_data();
-        let mut op = Key::<()>::new_unchecked(user_data);
+        let mut op = unsafe { Key::<()>::new_unchecked(user_data) };
         op.set_flags(self.flags());
         if op.set_result(self.into_result()) {
             // SAFETY: completed and cancelled.
-            let _ = op.into_box();
+            let _ = unsafe { op.into_box() };
         }
     }
 }
@@ -457,7 +459,7 @@ pub struct ProactorBuilder {
     driver_type: Option<DriverType>,
 }
 
-// Safety: `RawFd` is thread safe.
+// SAFETY: `RawFd` is thread safe.
 unsafe impl Send for ProactorBuilder {}
 unsafe impl Sync for ProactorBuilder {}
 

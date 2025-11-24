@@ -125,16 +125,16 @@ unsafe impl IoBufMut for OwnedBuffer {
 
 impl SetBufInit for OwnedBuffer {
     unsafe fn set_buf_init(&mut self, len: usize) {
-        self.buffer.set_buf_init(len);
+        unsafe { self.buffer.set_buf_init(len) }
     }
 }
 
 impl Drop for OwnedBuffer {
     fn drop(&mut self) {
-        // Safety: `take` is called only once here.
+        // SAFETY: `take` is called only once here.
         self.pool
             .add_buffer(unsafe { ManuallyDrop::take(&mut self.buffer) }.into_inner());
-        // Safety: `drop` is called only once here.
+        // SAFETY: `drop` is called only once here.
         unsafe { ManuallyDrop::drop(&mut self.pool) };
     }
 }
@@ -143,10 +143,10 @@ impl IntoInner for OwnedBuffer {
     type Inner = Slice<Vec<u8>>;
 
     fn into_inner(mut self) -> Self::Inner {
-        // Safety: `self` is forgotten in this method.
+        // SAFETY: `self` is forgotten in this method.
         let buffer = unsafe { ManuallyDrop::take(&mut self.buffer) };
         // The buffer is taken, we only need to drop the Rc.
-        // Safety: `self` is forgotten in this method.
+        // SAFETY: `self` is forgotten in this method.
         unsafe { ManuallyDrop::drop(&mut self.pool) };
         std::mem::forget(self);
         buffer
@@ -179,7 +179,7 @@ impl Debug for BorrowedBuffer<'_> {
 
 impl Drop for BorrowedBuffer<'_> {
     fn drop(&mut self) {
-        // Safety: `take` is called only once here.
+        // SAFETY: `take` is called only once here.
         let buffer = unsafe { ManuallyDrop::take(&mut self.buffer) };
         self.pool.add_buffer(buffer.into_inner());
     }
