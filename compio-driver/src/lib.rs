@@ -134,7 +134,7 @@ macro_rules! impl_raw_fd {
         impl std::os::fd::FromRawFd for $t {
             unsafe fn from_raw_fd(fd: $crate::RawFd) -> Self {
                 Self {
-                    $inner: std::os::fd::FromRawFd::from_raw_fd(fd),
+                    $inner: unsafe { std::os::fd::FromRawFd::from_raw_fd(fd) },
                 }
             }
         }
@@ -150,7 +150,7 @@ macro_rules! impl_raw_fd {
         impl std::os::windows::io::FromRawHandle for $t {
             unsafe fn from_raw_handle(handle: std::os::windows::io::RawHandle) -> Self {
                 Self {
-                    $inner: std::os::windows::io::FromRawHandle::from_raw_handle(handle),
+                    $inner: unsafe { std::os::windows::io::FromRawHandle::from_raw_handle(handle) },
                 }
             }
         }
@@ -173,7 +173,7 @@ macro_rules! impl_raw_fd {
         impl std::os::windows::io::FromRawSocket for $t {
             unsafe fn from_raw_socket(sock: std::os::windows::io::RawSocket) -> Self {
                 Self {
-                    $inner: std::os::windows::io::FromRawSocket::from_raw_socket(sock),
+                    $inner: unsafe { std::os::windows::io::FromRawSocket::from_raw_socket(sock) },
                 }
             }
         }

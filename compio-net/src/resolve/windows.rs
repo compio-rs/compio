@@ -70,10 +70,11 @@ impl AsyncResolver {
     ) {
         // We won't access the overlapped struct outside callback.
         let overlapped_ptr = lpoverlapped.cast::<GAIOverlapped>().cast_mut();
-        if let Some(overlapped) = overlapped_ptr.as_mut() {
-            if let Some(handle) = overlapped.handle.take() {
-                handle.notify();
-            }
+        // SAFETY: `lpoverlapped` is guaranteed to be valid.
+        if let Some(overlapped) = unsafe { overlapped_ptr.as_mut() }
+            && let Some(handle) = overlapped.handle.take()
+        {
+            handle.notify();
         }
     }
 
@@ -83,23 +84,25 @@ impl AsyncResolver {
         handle: EventHandle,
     ) -> Poll<io::Result<()>> {
         self.overlapped.handle = Some(handle);
-        let res = GetAddrInfoExW(
-            self.name.as_ptr(),
-            null(),
-            NS_ALL,
-            null(),
-            hints,
-            &mut self.result,
-            null(),
-            &self.overlapped.base,
-            Some(Self::callback),
-            &mut self.handle,
-        );
+        let res = unsafe {
+            GetAddrInfoExW(
+                self.name.as_ptr(),
+                null(),
+                NS_ALL,
+                null(),
+                hints,
+                &mut self.result,
+                null(),
+                &self.overlapped.base,
+                Some(Self::callback),
+                &mut self.handle,
+            )
+        };
         match res {
             0 => Poll::Ready(Ok(())),
             x if x == ERROR_IO_PENDING as i32 => Poll::Pending,
             _ => {
-                let code = GetLastError();
+                let code = unsafe { GetLastError() };
                 match code {
                     ERROR_IO_PENDING => Poll::Pending,
                     _ => Poll::Ready(Err(io::Error::from_raw_os_error(code as _))),
