@@ -85,6 +85,8 @@ io-uring = [
 ]
 polling = ["dep:polling"]
 
+fd-sync = []
+
 io-uring-sqe128 = []
 io-uring-cqe32 = []
 

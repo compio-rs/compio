@@ -29,3 +29,7 @@ compio-net = { workspace = true }
 compio-macros = { workspace = true }
 
 futures-util = { workspace = true }
+
+[[test]]
+name = "listener"
+required-features = ["compio-driver/fd-sync"]

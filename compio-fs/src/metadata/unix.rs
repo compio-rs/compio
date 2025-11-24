@@ -1,3 +1,4 @@
+pub use std::fs::Permissions;
 use std::{
     io,
     os::unix::prelude::{FileTypeExt, MetadataExt, PermissionsExt},
@@ -7,7 +8,7 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner};
-use compio_driver::{op::PathStat, syscall};
+use compio_driver::op::PathStat;
 
 use crate::path_string;
 
@@ -27,13 +28,10 @@ pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
 }
 
 pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::Result<()> {
-    let path = path_string(path)?;
-    compio_runtime::spawn_blocking(move || {
-        syscall!(libc::chmod(path.as_ptr(), perm.0))?;
-        Ok(())
-    })
-    .await
-    .unwrap_or_else(|e| resume_unwind(e))
+    let path = path.as_ref().to_path_buf();
+    compio_runtime::spawn_blocking(move || std::fs::set_permissions(path, perm))
+        .await
+        .unwrap_or_else(|e| resume_unwind(e))
 }
 
 #[derive(Clone)]
@@ -67,7 +65,7 @@ impl Metadata {
     }
 
     pub fn permissions(&self) -> Permissions {
-        Permissions(self.0.st_mode as _)
+        Permissions::from_mode(self.0.st_mode as _)
     }
 
     pub fn modified(&self) -> io::Result<SystemTime> {
@@ -204,38 +202,5 @@ impl FileTypeExt for FileType {
 
     fn is_socket(&self) -> bool {
         self.is(libc::S_IFSOCK)
-    }
-}
-
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Permissions(pub(crate) libc::mode_t);
-
-impl Permissions {
-    pub fn readonly(&self) -> bool {
-        self.0 & 0o222 == 0
-    }
-
-    pub fn set_readonly(&mut self, readonly: bool) {
-        if readonly {
-            // remove write permission for all classes; equivalent to `chmod a-w <file>`
-            self.0 &= !0o222;
-        } else {
-            // add write permission for all classes; equivalent to `chmod a+w <file>`
-            self.0 |= 0o222;
-        }
-    }
-}
-
-impl PermissionsExt for Permissions {
-    fn mode(&self) -> u32 {
-        self.0 as _
-    }
-
-    fn set_mode(&mut self, mode: u32) {
-        self.0 = mode as _;
-    }
-
-    fn from_mode(mode: u32) -> Self {
-        Self(mode as _)
     }
 }

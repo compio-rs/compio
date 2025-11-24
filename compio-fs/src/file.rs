@@ -1,11 +1,13 @@
-use std::{future::Future, io, mem::ManuallyDrop, panic::resume_unwind, path::Path};
+use std::{future::Future, io, mem::ManuallyDrop, path::Path};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 #[cfg(unix)]
 use compio_driver::op::FileStat;
 use compio_driver::{
     ToSharedFd, impl_raw_fd,
-    op::{BufResultExt, CloseFile, ReadAt, ReadManagedAt, ResultTakeBuffer, Sync, WriteAt},
+    op::{
+        AsyncifyFd, BufResultExt, CloseFile, ReadAt, ReadManagedAt, ResultTakeBuffer, Sync, WriteAt,
+    },
 };
 use compio_io::{AsyncReadAt, AsyncReadManagedAt, AsyncWriteAt, util::Splittable};
 use compio_runtime::{Attacher, BorrowedBuffer, BufferPool};
@@ -105,10 +107,14 @@ impl File {
     /// Queries metadata about the underlying file.
     #[cfg(windows)]
     pub async fn metadata(&self) -> io::Result<Metadata> {
-        let file = self.inner.clone();
-        compio_runtime::spawn_blocking(move || file.metadata().map(Metadata::from_std))
-            .await
-            .unwrap_or_else(|e| resume_unwind(e))
+        let op = AsyncifyFd::new(self.to_shared_fd(), |file: &std::fs::File| {
+            match file.metadata().map(Metadata::from_std) {
+                Ok(meta) => BufResult(Ok(0), Some(meta)),
+                Err(e) => BufResult(Err(e), None),
+            }
+        });
+        let BufResult(res, meta) = compio_runtime::submit(op).await;
+        res.map(|_| meta.into_inner().expect("metadata should be present"))
     }
 
     /// Queries metadata about the underlying file.
@@ -120,28 +126,11 @@ impl File {
     }
 
     /// Changes the permissions on the underlying file.
-    #[cfg(windows)]
     pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
-        let file = self.inner.clone();
-        compio_runtime::spawn_blocking(move || file.set_permissions(perm.0))
-            .await
-            .unwrap_or_else(|e| resume_unwind(e))
-    }
-
-    /// Changes the permissions on the underlying file.
-    #[cfg(unix)]
-    pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
-        use std::os::unix::fs::PermissionsExt;
-
-        use compio_driver::{AsRawFd, syscall};
-
-        let file = self.inner.clone();
-        compio_runtime::spawn_blocking(move || {
-            syscall!(libc::fchmod(file.as_raw_fd(), perm.mode() as libc::mode_t))?;
-            Ok(())
-        })
-        .await
-        .unwrap_or_else(|e| resume_unwind(e))
+        let op = AsyncifyFd::new(self.to_shared_fd(), move |file: &std::fs::File| {
+            BufResult(file.set_permissions(perm.0).map(|_| 0), ())
+        });
+        compio_runtime::submit(op).await.0.map(|_| ())
     }
 
     async fn sync_impl(&self, datasync: bool) -> io::Result<()> {
