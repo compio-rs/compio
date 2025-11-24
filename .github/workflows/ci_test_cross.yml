@@ -1,0 +1,45 @@
+name: TestCross
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        setup:
+          - target: 'x86_64-unknown-freebsd'
+            features: 'native-tls,ring,fd-sync'
+          - target: 'x86_64-unknown-illumos'
+            features: 'native-tls,ring,fd-sync'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup cross-rs
+        run: cargo install cross
+      - name: Test for ${{ matrix.setup.target }}
+        shell: bash
+        run: |
+          set -ex
+
+          ARGS=("--features" "all")
+
+          # Add features if features is not empty
+          if [[ -n "${{ matrix.setup.features }}" ]]; then
+              ARGS+=("--features" "${{ matrix.setup.features }}")
+          fi
+          # Specify target if target is not empty
+          if [[ -n "${{ matrix.setup.target }}" ]]; then
+              ARGS+=("--target" "${{ matrix.setup.target }}")
+          fi
+
+          cross test --workspace "${ARGS[@]}"
