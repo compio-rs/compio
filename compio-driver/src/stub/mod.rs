@@ -13,7 +13,11 @@ compile_warning!("You have to choose at least one of these features: [\"io-uring
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
 #[allow(unused_imports)]
 pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
-use std::{io, task::Poll, time::Duration};
+use std::{
+    io,
+    task::{Poll, Waker},
+    time::Duration,
+};
 
 use crate::{BufferPool, DriverType, Key, ProactorBuilder};
 
@@ -62,8 +66,8 @@ impl Driver {
         Err(stub_error())
     }
 
-    pub fn handle(&self) -> NotifyHandle {
-        stub_unimpl()
+    pub fn waker(&self) -> Waker {
+        futures_util::task::noop_waker()
     }
 
     pub fn create_buffer_pool(
@@ -82,16 +86,5 @@ impl Driver {
 impl AsRawFd for Driver {
     fn as_raw_fd(&self) -> RawFd {
         stub_unimpl()
-    }
-}
-
-/// A notify handle to the inner driver.
-#[derive(Debug, Clone)]
-pub struct NotifyHandle(());
-
-impl NotifyHandle {
-    /// Notify the inner driver.
-    pub fn notify(&self) -> io::Result<()> {
-        Err(stub_error())
     }
 }
