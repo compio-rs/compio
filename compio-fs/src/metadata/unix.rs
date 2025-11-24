@@ -1,5 +1,5 @@
+pub use std::fs::Permissions;
 use std::{
-    fs::Permissions,
     io,
     os::unix::prelude::{FileTypeExt, MetadataExt, PermissionsExt},
     panic::resume_unwind,
@@ -8,7 +8,7 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner};
-use compio_driver::{op::PathStat, syscall};
+use compio_driver::op::PathStat;
 
 use crate::path_string;
 
