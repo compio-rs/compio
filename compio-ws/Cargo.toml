@@ -36,6 +36,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 [features]
 default = []
 native-tls = ["compio-tls/native-tls", "tungstenite/native-tls"]
+native-tls-vendored = ["native-tls", "compio-tls/native-tls-vendored"]
 rustls = ["compio-tls/rustls", "tungstenite/__rustls-tls"]
 rustls-platform-verifier = ["rustls", "dep:rustls-platform-verifier"]
 rustls-native-certs = ["rustls", "dep:rustls-native-certs"]

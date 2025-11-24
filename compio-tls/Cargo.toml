@@ -46,8 +46,11 @@ futures-rustls = { workspace = true, default-features = false, features = [
 [features]
 default = ["native-tls"]
 all = ["native-tls", "rustls"]
-rustls = ["dep:rustls", "dep:futures-rustls", "dep:futures-util"]
 
+native-tls = ["dep:native-tls"]
+native-tls-vendored = ["native-tls", "native-tls/vendored"]
+
+rustls = ["dep:rustls", "dep:futures-rustls", "dep:futures-util"]
 ring = ["rustls", "rustls/ring", "futures-rustls/ring"]
 
 read_buf = ["compio-buf/read_buf", "compio-io/read_buf", "rustls?/read_buf"]

@@ -117,6 +117,10 @@ fd-sync = ["compio-driver/fd-sync"]
 
 enable_log = ["compio-log/enable_log"]
 
+native-tls-vendored = [
+    "compio-tls?/native-tls-vendored",
+    "compio-ws?/native-tls-vendored",
+]
 ring = ["compio-tls?/ring", "compio-quic?/ring", "compio-ws?/ring"]
 
 # Nightly features
