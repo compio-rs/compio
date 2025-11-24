@@ -343,7 +343,12 @@ impl<S: AsFd> OpCode for Accept<S> {
     }
 
     unsafe fn set_result(self: Pin<&mut Self>, fd: usize) {
-        self.get_unchecked_mut().accepted_fd = Some(OwnedFd::from_raw_fd(fd as _));
+        // SAFETY:
+        // * self is pinned
+        // * fd is a valid fd returned from kernel
+        unsafe {
+            self.get_unchecked_mut().accepted_fd = Some(OwnedFd::from_raw_fd(fd as _));
+        }
     }
 }
 

@@ -53,8 +53,7 @@ impl BufferPool {
             )
         })?;
 
-        self.buf_ring
-            .get_buf(buffer_id, available_len)
+        unsafe { self.buf_ring.get_buf(buffer_id, available_len) }
             .map(BorrowedBuffer)
             .ok_or_else(|| io::Error::other(format!("cannot find buffer {buffer_id}")))
     }

@@ -397,7 +397,7 @@ impl Driver {
         let buffer_pool = buffer_pool.into_io_uring();
 
         let buffer_group = buffer_pool.buffer_group();
-        buffer_pool.into_inner().release(&self.inner)?;
+        unsafe { buffer_pool.into_inner().release(&self.inner)? };
         self.buffer_group_ids.remove(buffer_group as _);
 
         Ok(())

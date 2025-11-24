@@ -511,7 +511,7 @@ impl CreateSocket {
             ty |= libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK;
         }
         let fd = syscall!(libc::socket(self.domain, ty, self.protocol))?;
-        let socket = Socket2::from_raw_fd(fd);
+        let socket = unsafe { Socket2::from_raw_fd(fd) };
         #[cfg(not(any(
             target_os = "android",
             target_os = "dragonfly",
@@ -585,7 +585,7 @@ impl OpCode for CloseSocket {
 
 impl<S: AsFd> Accept<S> {
     unsafe fn call(self: Pin<&mut Self>) -> libc::c_int {
-        let this = self.get_unchecked_mut();
+        let this = unsafe { self.get_unchecked_mut() };
         #[cfg(any(
             target_os = "android",
             target_os = "dragonfly",
@@ -597,7 +597,7 @@ impl<S: AsFd> Accept<S> {
             target_os = "openbsd",
             target_os = "cygwin",
         ))]
-        {
+        unsafe {
             libc::accept4(
                 this.fd.as_fd().as_raw_fd(),
                 &mut this.buffer as *mut _ as *mut _,
@@ -623,7 +623,7 @@ impl<S: AsFd> Accept<S> {
                     &mut this.buffer as *mut _ as *mut _,
                     &mut this.addr_len,
                 ))?;
-                let socket = Socket2::from_raw_fd(fd);
+                let socket = unsafe { Socket2::from_raw_fd(fd) };
                 socket.set_cloexec(true)?;
                 socket.set_nonblocking(true)?;
                 Ok(socket.into_raw_fd())
@@ -812,17 +812,19 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
 
 impl<T: IoBufMut, S: AsFd> RecvFrom<T, S> {
     unsafe fn call(self: Pin<&mut Self>) -> libc::ssize_t {
-        let this = self.get_unchecked_mut();
+        let this = unsafe { self.get_unchecked_mut() };
         let fd = this.fd.as_fd().as_raw_fd();
         let slice = this.buffer.as_mut_slice();
-        libc::recvfrom(
-            fd,
-            slice.as_mut_ptr() as _,
-            slice.len(),
-            0,
-            &mut this.addr as *mut _ as _,
-            &mut this.addr_len,
-        )
+        unsafe {
+            libc::recvfrom(
+                fd,
+                slice.as_mut_ptr() as _,
+                slice.len(),
+                0,
+                &mut this.addr as *mut _ as _,
+                &mut this.addr_len,
+            )
+        }
     }
 }
 
@@ -883,7 +885,7 @@ impl<T: IoVectoredBufMut, S: AsFd> RecvFromVectored<T, S> {
     }
 
     unsafe fn call(&mut self) -> libc::ssize_t {
-        libc::recvmsg(self.fd.as_fd().as_raw_fd(), &mut self.msg, 0)
+        unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &mut self.msg, 0) }
     }
 }
 
@@ -935,14 +937,16 @@ impl<T: IoBuf, S> SendTo<T, S> {
 impl<T: IoBuf, S: AsFd> SendTo<T, S> {
     unsafe fn call(&self) -> libc::ssize_t {
         let slice = self.buffer.as_slice();
-        libc::sendto(
-            self.fd.as_fd().as_raw_fd(),
-            slice.as_ptr() as _,
-            slice.len(),
-            0,
-            self.addr.as_ptr().cast(),
-            self.addr.len(),
-        )
+        unsafe {
+            libc::sendto(
+                self.fd.as_fd().as_raw_fd(),
+                slice.as_ptr() as _,
+                slice.len(),
+                0,
+                self.addr.as_ptr().cast(),
+                self.addr.len(),
+            )
+        }
     }
 }
 
@@ -1002,7 +1006,7 @@ impl<T: IoVectoredBuf, S: AsFd> SendToVectored<T, S> {
     }
 
     unsafe fn call(&self) -> libc::ssize_t {
-        libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, 0)
+        unsafe { libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, 0) }
     }
 }
 
@@ -1032,7 +1036,7 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> RecvMsg<T, C, S> {
     unsafe fn call(&mut self) -> libc::ssize_t {
-        libc::recvmsg(self.fd.as_fd().as_raw_fd(), &mut self.msg, 0)
+        unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &mut self.msg, 0) }
     }
 }
 
@@ -1055,7 +1059,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
 
 impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> SendMsg<T, C, S> {
     unsafe fn call(&self) -> libc::ssize_t {
-        libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, 0)
+        unsafe { libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, 0) }
     }
 }
 

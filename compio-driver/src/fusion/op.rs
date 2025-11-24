@@ -27,7 +27,7 @@ macro_rules! op {
                             }
                             self.poll()
                         },
-                        Self::Poll(ref mut op) => op,
+                        Self::Poll(op) => op,
                         Self::IoUring(_) => unreachable!("Current driver is not `io-uring`"),
                     }
                 }
@@ -43,7 +43,7 @@ macro_rules! op {
                             }
                             self.iour()
                         },
-                        Self::IoUring(ref mut op) => op,
+                        Self::IoUring(op) => op,
                         Self::Poll(_) => unreachable!("Current driver is not `polling`"),
                     }
                 }
@@ -124,14 +124,14 @@ macro_rules! mop {
             impl<$($ty: $trait),*> [< $name Inner >]<$($ty),*> {
                 fn poll(&mut self) -> &mut crate::op::managed::$name<$($ty),*> {
                     match self {
-                        Self::Poll(ref mut op) => op,
+                        Self::Poll(op) => op,
                         Self::IoUring(_) => unreachable!("Current driver is not `io-uring`"),
                     }
                 }
 
                 fn iour(&mut self) -> &mut iour::$name<$($ty),*> {
                     match self {
-                        Self::IoUring(ref mut op) => op,
+                        Self::IoUring(op) => op,
                         Self::Poll(_) => unreachable!("Current driver is not `polling`"),
                     }
                 }
