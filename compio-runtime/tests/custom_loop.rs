@@ -89,7 +89,7 @@ fn cf_run_loop() {
                 CFRunLoopStop(run_loop.as_concrete_TypeRef());
             }
         });
-        extern "C" {
+        unsafe extern "C" {
             fn CFRunLoopPerformBlock(rl: CFRunLoopRef, mode: CFStringRef, block: &Block<dyn Fn()>);
         }
         let run_loop = CFRunLoop::get_current();

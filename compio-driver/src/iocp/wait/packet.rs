@@ -13,7 +13,7 @@ use windows_sys::Win32::Foundation::{
 
 use crate::{Key, OpCode, RawFd, sys::Notify};
 
-extern "system" {
+unsafe extern "system" {
     fn NtCreateWaitCompletionPacket(
         WaitCompletionPacketHandle: *mut HANDLE,
         DesiredAccess: u32,
