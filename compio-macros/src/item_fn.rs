@@ -49,11 +49,11 @@ impl RawBodyItemFn {
                     .map(|ident| ident.to_string().to_lowercase())
                     .unwrap_or_default();
                 if ident == "crate" {
-                    if let Expr::Lit(lit) = &name.value {
-                        if let Lit::Str(s) = &lit.lit {
-                            let crate_name = s.parse::<TokenStream>().unwrap();
-                            return Some(quote!(#crate_name::runtime));
-                        }
+                    if let Expr::Lit(lit) = &name.value
+                        && let Lit::Str(s) = &lit.lit
+                    {
+                        let crate_name = s.parse::<TokenStream>().unwrap();
+                        return Some(quote!(#crate_name::runtime));
                     }
                 } else {
                     panic!("Unsupported property {ident}");
