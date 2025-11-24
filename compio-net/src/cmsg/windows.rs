@@ -124,7 +124,7 @@ impl CMsgIter {
     }
 
     pub(crate) unsafe fn current<'a>(&self) -> Option<CMsgRef<'a>> {
-        // SAFETY: cmsg is valid
+        // SAFETY: cmsg is valid or null
         unsafe { self.cmsg.as_ref() }.map(CMsgRef)
     }
 
@@ -136,7 +136,7 @@ impl CMsgIter {
     }
 
     pub(crate) unsafe fn current_mut<'a>(&self) -> Option<CMsgMut<'a>> {
-        // SAFETY: cmsg is valid
+        // SAFETY: cmsg is valid or null
         unsafe { self.cmsg.as_mut() }.map(CMsgMut)
     }
 
