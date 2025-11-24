@@ -76,7 +76,7 @@ unsafe impl<T: IoBufMut> IoBufMut for Uninit<T> {
 
 impl<T: SetBufInit + IoBuf> SetBufInit for Uninit<T> {
     unsafe fn set_buf_init(&mut self, len: usize) {
-        self.0.set_buf_init(self.0.buf_len() + len);
+        unsafe { self.0.set_buf_init(self.0.buf_len() + len) };
         let inner = self.0.as_inner();
         self.0.set_range(inner.buf_len(), inner.buf_capacity());
     }
