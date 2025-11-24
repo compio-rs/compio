@@ -38,10 +38,11 @@ impl<T: AsFd> AsyncFd<T> {
     ///
     /// # Safety
     ///
-    /// The user should handle the attachment correctly.
+    /// * The user should handle the attachment correctly.
+    /// * `T` should be an owned fd.
     pub unsafe fn new_unchecked(source: T) -> Self {
         Self {
-            inner: Attacher::new_unchecked(source),
+            inner: unsafe { Attacher::new_unchecked(source) },
         }
     }
 }
@@ -202,21 +203,21 @@ impl<T: AsFd> Clone for AsyncFd<T> {
 #[cfg(unix)]
 impl<T: AsFd + FromRawFd> FromRawFd for AsyncFd<T> {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self::new_unchecked(FromRawFd::from_raw_fd(fd))
+        unsafe { Self::new_unchecked(FromRawFd::from_raw_fd(fd)) }
     }
 }
 
 #[cfg(windows)]
 impl<T: AsFd + FromRawHandle> FromRawHandle for AsyncFd<T> {
     unsafe fn from_raw_handle(handle: RawHandle) -> Self {
-        Self::new_unchecked(FromRawHandle::from_raw_handle(handle))
+        unsafe { Self::new_unchecked(FromRawHandle::from_raw_handle(handle)) }
     }
 }
 
 #[cfg(windows)]
 impl<T: AsFd + FromRawSocket> FromRawSocket for AsyncFd<T> {
     unsafe fn from_raw_socket(sock: RawSocket) -> Self {
-        Self::new_unchecked(FromRawSocket::from_raw_socket(sock))
+        unsafe { Self::new_unchecked(FromRawSocket::from_raw_socket(sock)) }
     }
 }
 

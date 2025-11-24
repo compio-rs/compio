@@ -25,7 +25,7 @@ impl<S> Attacher<S> {
     ///
     /// * The user should ensure that the source is attached to the current
     ///   driver.
-    /// * `S` should be owned fd.
+    /// * `S` should be an owned fd.
     pub unsafe fn new_unchecked(source: S) -> Self {
         Self {
             source: unsafe { SharedFd::new_unchecked(source) },
