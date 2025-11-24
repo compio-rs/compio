@@ -356,7 +356,7 @@ impl Runtime {
         &self,
         buffer_pool: compio_driver::BufferPool,
     ) -> io::Result<()> {
-        self.driver.borrow_mut().release_buffer_pool(buffer_pool)
+        unsafe { self.driver.borrow_mut().release_buffer_pool(buffer_pool) }
     }
 
     pub(crate) fn id(&self) -> u64 {

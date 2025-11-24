@@ -209,7 +209,7 @@ fn message_queue() {
         unsafe extern "system" fn timer_callback(hwnd: HWND, _msg: u32, id: usize, _dwtime: u32) {
             let handle = GLOBAL_EVENT.lock().unwrap().take().unwrap();
             handle.notify();
-            KillTimer(hwnd, id);
+            unsafe { KillTimer(hwnd, id) };
         }
 
         unsafe {

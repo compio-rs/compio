@@ -23,11 +23,12 @@ impl<S> Attacher<S> {
     ///
     /// # Safety
     ///
-    /// The user should ensure that the source is attached to the current
-    /// driver.
+    /// * The user should ensure that the source is attached to the current
+    ///   driver.
+    /// * `S` should be owned fd.
     pub unsafe fn new_unchecked(source: S) -> Self {
         Self {
-            source: SharedFd::new_unchecked(source),
+            source: unsafe { SharedFd::new_unchecked(source) },
         }
     }
 
@@ -73,21 +74,21 @@ impl<S> Clone for Attacher<S> {
 #[cfg(windows)]
 impl<S: FromRawHandle> FromRawHandle for Attacher<S> {
     unsafe fn from_raw_handle(handle: RawHandle) -> Self {
-        Self::new_unchecked(S::from_raw_handle(handle))
+        unsafe { Self::new_unchecked(S::from_raw_handle(handle)) }
     }
 }
 
 #[cfg(windows)]
 impl<S: FromRawSocket> FromRawSocket for Attacher<S> {
     unsafe fn from_raw_socket(sock: RawSocket) -> Self {
-        Self::new_unchecked(S::from_raw_socket(sock))
+        unsafe { Self::new_unchecked(S::from_raw_socket(sock)) }
     }
 }
 
 #[cfg(unix)]
 impl<S: FromRawFd> FromRawFd for Attacher<S> {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        Self::new_unchecked(S::from_raw_fd(fd))
+        unsafe { Self::new_unchecked(S::from_raw_fd(fd)) }
     }
 }
 
