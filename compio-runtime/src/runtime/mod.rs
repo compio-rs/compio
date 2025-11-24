@@ -233,7 +233,10 @@ impl Runtime {
     /// It is safe to send the returned future to another runtime and poll it,
     /// but the exact behavior is not guaranteed, e.g. it may return pending
     /// forever or else.
-    fn submit<T: OpCode + 'static>(&self, op: T) -> impl Future<Output = BufResult<usize, T>> {
+    fn submit<T: OpCode + 'static>(
+        &self,
+        op: T,
+    ) -> impl Future<Output = BufResult<usize, T>> + use<T> {
         self.submit_with_flags(op).map(|(res, _)| res)
     }
 
@@ -250,7 +253,7 @@ impl Runtime {
     fn submit_with_flags<T: OpCode + 'static>(
         &self,
         op: T,
-    ) -> impl Future<Output = (BufResult<usize, T>, u32)> {
+    ) -> impl Future<Output = (BufResult<usize, T>, u32)> + use<T> {
         match self.submit_raw(op) {
             PushEntry::Pending(user_data) => Either::Left(OpFuture::new(user_data)),
             PushEntry::Ready(res) => {
