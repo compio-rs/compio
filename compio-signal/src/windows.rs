@@ -26,14 +26,14 @@ static HANDLER: LazyLock<Mutex<HashMap<u32, Slab<EventHandle>>>> =
 
 unsafe extern "system" fn ctrl_event_handler(ctrltype: u32) -> BOOL {
     let mut handler = HANDLER.lock().unwrap();
-    if let Some(handlers) = handler.get_mut(&ctrltype) {
-        if !handlers.is_empty() {
-            let handlers = std::mem::replace(handlers, Slab::new());
-            for (_, handler) in handlers {
-                handler.notify();
-            }
-            return 1;
+    if let Some(handlers) = handler.get_mut(&ctrltype)
+        && !handlers.is_empty()
+    {
+        let handlers = std::mem::replace(handlers, Slab::new());
+        for (_, handler) in handlers {
+            handler.notify();
         }
+        return 1;
     }
     0
 }
@@ -53,10 +53,10 @@ fn register(ctrltype: u32, e: &Event) -> usize {
 
 fn unregister(ctrltype: u32, key: usize) {
     let mut handler = HANDLER.lock().unwrap();
-    if let Some(handlers) = handler.get_mut(&ctrltype) {
-        if handlers.contains(key) {
-            let _ = handlers.remove(key);
-        }
+    if let Some(handlers) = handler.get_mut(&ctrltype)
+        && handlers.contains(key)
+    {
+        let _ = handlers.remove(key);
     }
 }
 
