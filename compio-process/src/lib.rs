@@ -303,7 +303,7 @@ impl Command {
         &mut self,
         f: impl FnMut() -> io::Result<()> + Send + Sync + 'static,
     ) -> &mut Self {
-        self.0.pre_exec(f);
+        unsafe { self.0.pre_exec(f) };
         self
     }
 
