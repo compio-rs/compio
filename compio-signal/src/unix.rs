@@ -51,12 +51,12 @@ fn real_signal_handler(mut receiver: PipeReader) {
         if let Ok(()) = res {
             let sig = i32::from_ne_bytes(buffer);
             let mut handler = HANDLER.lock().unwrap();
-            if let Some(fds) = handler.get_mut(&sig) {
-                if !fds.is_empty() {
-                    let fds = std::mem::take(fds);
-                    for (_, fd) in fds {
-                        fd.notify();
-                    }
+            if let Some(fds) = handler.get_mut(&sig)
+                && !fds.is_empty()
+            {
+                let fds = std::mem::take(fds);
+                for (_, fd) in fds {
+                    fd.notify();
                 }
             }
         } else {
@@ -67,7 +67,7 @@ fn real_signal_handler(mut receiver: PipeReader) {
 
 unsafe fn init(sig: i32) -> io::Result<()> {
     let _ = PIPE.deref();
-    if libc::signal(sig, signal_handler as *const () as usize) == libc::SIG_ERR {
+    if unsafe { libc::signal(sig, signal_handler as *const () as usize) } == libc::SIG_ERR {
         Err(io::Error::last_os_error())
     } else {
         Ok(())
@@ -75,7 +75,7 @@ unsafe fn init(sig: i32) -> io::Result<()> {
 }
 
 unsafe fn uninit(sig: i32) -> io::Result<()> {
-    if libc::signal(sig, libc::SIG_DFL) == libc::SIG_ERR {
+    if unsafe { libc::signal(sig, libc::SIG_DFL) } == libc::SIG_ERR {
         Err(io::Error::last_os_error())
     } else {
         Ok(())

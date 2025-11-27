@@ -16,8 +16,10 @@ impl CMsgRef<'_> {
     }
 
     pub(crate) unsafe fn data<T>(&self) -> &T {
-        let data_ptr = CMSG_DATA(self.0);
-        data_ptr.cast::<T>().as_ref().unwrap()
+        unsafe {
+            let data_ptr = CMSG_DATA(self.0);
+            data_ptr.cast::<T>().as_ref().unwrap()
+        }
     }
 }
 
@@ -33,10 +35,12 @@ impl CMsgMut<'_> {
     }
 
     pub(crate) unsafe fn set_data<T>(&mut self, data: T) -> usize {
-        self.0.cmsg_len = CMSG_LEN(std::mem::size_of::<T>() as _) as _;
-        let data_ptr = CMSG_DATA(self.0);
-        std::ptr::write(data_ptr.cast::<T>(), data);
-        CMSG_SPACE(std::mem::size_of::<T>() as _) as _
+        unsafe {
+            self.0.cmsg_len = CMSG_LEN(std::mem::size_of::<T>() as _) as _;
+            let data_ptr = CMSG_DATA(self.0);
+            std::ptr::write(data_ptr.cast::<T>(), data);
+            CMSG_SPACE(std::mem::size_of::<T>() as _) as _
+        }
     }
 }
 
@@ -59,17 +63,20 @@ impl CMsgIter {
     }
 
     pub(crate) unsafe fn current<'a>(&self) -> Option<CMsgRef<'a>> {
-        self.cmsg.as_ref().map(CMsgRef)
+        // SAFETY: cmsg is valid or null
+        unsafe { self.cmsg.as_ref() }.map(CMsgRef)
     }
 
     pub(crate) unsafe fn next(&mut self) {
         if !self.cmsg.is_null() {
-            self.cmsg = CMSG_NXTHDR(&self.msg, self.cmsg);
+            // SAFETY: msg and cmsg are valid
+            self.cmsg = unsafe { CMSG_NXTHDR(&self.msg, self.cmsg) };
         }
     }
 
     pub(crate) unsafe fn current_mut<'a>(&self) -> Option<CMsgMut<'a>> {
-        self.cmsg.as_mut().map(CMsgMut)
+        // SAFETY: cmsg is valid or null
+        unsafe { self.cmsg.as_mut() }.map(CMsgMut)
     }
 
     pub(crate) fn is_aligned<T>(&self) -> bool {

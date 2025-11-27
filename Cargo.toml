@@ -19,7 +19,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-edition = "2021"
+edition = "2024"
 authors = ["Berrysoft <Strawberry_Str@hotmail.com>"]
 readme = "README.md"
 license = "MIT"

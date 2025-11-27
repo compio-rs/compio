@@ -325,7 +325,7 @@ impl Driver {
             .is_ok()
     }
 
-    pub unsafe fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         // Anyway we need to submit once, no matter there are entries in squeue.
         trace!("start polling");
@@ -397,7 +397,7 @@ impl Driver {
         let buffer_pool = buffer_pool.into_io_uring();
 
         let buffer_group = buffer_pool.buffer_group();
-        buffer_pool.into_inner().release(&self.inner)?;
+        unsafe { buffer_pool.into_inner().release(&self.inner)? };
         self.buffer_group_ids.remove(buffer_group as _);
 
         Ok(())

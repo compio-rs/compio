@@ -49,7 +49,7 @@ pub unsafe trait IoBuf: 'static {
     /// It is static to provide convenience from writing self-referenced
     /// structure.
     unsafe fn as_io_slice(&self) -> IoSlice {
-        IoSlice::from_slice(self.as_slice())
+        unsafe { IoSlice::from_slice(self.as_slice()) }
     }
 
     /// Create an [`IoBuffer`] of this buffer.
@@ -60,11 +60,13 @@ pub unsafe trait IoBuf: 'static {
     /// It is static to provide convenience from writing self-referenced
     /// structure.
     unsafe fn as_io_buffer(&self) -> IoBuffer {
-        IoBuffer::new(
-            self.as_buf_ptr().cast_mut().cast(),
-            self.buf_len(),
-            self.buf_capacity(),
-        )
+        unsafe {
+            IoBuffer::new(
+                self.as_buf_ptr().cast_mut().cast(),
+                self.buf_len(),
+                self.buf_capacity(),
+            )
+        }
     }
 
     /// Returns a view of the buffer with the specified range.
@@ -398,7 +400,7 @@ pub unsafe trait IoBufMut: IoBuf + SetBufInit {
     /// It is static to provide convenience from writing self-referenced
     /// structure.
     unsafe fn as_io_slice_mut(&mut self) -> IoSliceMut {
-        IoSliceMut::from_uninit(self.as_mut_slice())
+        unsafe { IoSliceMut::from_uninit(self.as_mut_slice()) }
     }
 }
 
@@ -474,13 +476,14 @@ pub trait SetBufInit {
     ///
     /// # Safety
     ///
-    /// `len` should be less or equal than `buf_capacity()`.
+    /// * `len` should be less or equal than `buf_capacity()`.
+    /// * The bytes in the range `[buf_len(), len)` must be initialized.
     unsafe fn set_buf_init(&mut self, len: usize);
 }
 
 impl<B: SetBufInit + ?Sized> SetBufInit for &'static mut B {
     unsafe fn set_buf_init(&mut self, len: usize) {
-        (**self).set_buf_init(len)
+        unsafe { (**self).set_buf_init(len) }
     }
 }
 
@@ -488,14 +491,14 @@ impl<B: SetBufInit + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 's
     for t_alloc!(Box, B, A)
 {
     unsafe fn set_buf_init(&mut self, len: usize) {
-        (**self).set_buf_init(len)
+        unsafe { (**self).set_buf_init(len) }
     }
 }
 
 impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> SetBufInit for t_alloc!(Vec, u8, A) {
     unsafe fn set_buf_init(&mut self, len: usize) {
         if (**self).buf_len() < len {
-            self.set_len(len);
+            unsafe { self.set_len(len) };
         }
     }
 }
@@ -516,7 +519,7 @@ impl<const N: usize> SetBufInit for [u8; N] {
 impl SetBufInit for bytes::BytesMut {
     unsafe fn set_buf_init(&mut self, len: usize) {
         if (**self).buf_len() < len {
-            self.set_len(len);
+            unsafe { self.set_len(len) };
         }
     }
 }
@@ -535,7 +538,7 @@ impl SetBufInit for std::io::BorrowedBuf<'static> {
 impl<const N: usize> SetBufInit for arrayvec::ArrayVec<u8, N> {
     unsafe fn set_buf_init(&mut self, len: usize) {
         if (**self).buf_len() < len {
-            self.set_len(len);
+            unsafe { self.set_len(len) };
         }
     }
 }
@@ -547,20 +550,20 @@ where
 {
     unsafe fn set_buf_init(&mut self, len: usize) {
         if (**self).buf_len() < len {
-            self.set_len(len);
+            unsafe { self.set_len(len) };
         }
     }
 }
 
 impl<T: IoBufMut> SetBufInit for [T] {
     unsafe fn set_buf_init(&mut self, len: usize) {
-        default_set_buf_init(self.iter_mut(), len)
+        unsafe { default_set_buf_init(self.iter_mut(), len) }
     }
 }
 
 impl<T: IoBufMut, const N: usize> SetBufInit for [T; N] {
     unsafe fn set_buf_init(&mut self, len: usize) {
-        default_set_buf_init(self.iter_mut(), len)
+        unsafe { default_set_buf_init(self.iter_mut(), len) }
     }
 }
 
@@ -568,14 +571,14 @@ impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + 'static> SetB
     for t_alloc!(Vec, T, A)
 {
     unsafe fn set_buf_init(&mut self, len: usize) {
-        default_set_buf_init(self.iter_mut(), len)
+        unsafe { default_set_buf_init(self.iter_mut(), len) }
     }
 }
 
 #[cfg(feature = "arrayvec")]
 impl<T: IoBufMut, const N: usize> SetBufInit for arrayvec::ArrayVec<T, N> {
     unsafe fn set_buf_init(&mut self, len: usize) {
-        default_set_buf_init(self.iter_mut(), len)
+        unsafe { default_set_buf_init(self.iter_mut(), len) }
     }
 }
 
@@ -585,10 +588,15 @@ where
     [T; N]: smallvec::Array<Item = T>,
 {
     unsafe fn set_buf_init(&mut self, len: usize) {
-        default_set_buf_init(self.iter_mut(), len)
+        unsafe { default_set_buf_init(self.iter_mut(), len) }
     }
 }
 
+/// # Safety
+/// * `len` should be less or equal than the sum of `buf_capacity()` of all
+///   buffers.
+/// * The bytes in the range `[buf_len(), new_len)` of each buffer must be
+///   initialized
 unsafe fn default_set_buf_init<'a, B: IoBufMut>(
     iter: impl IntoIterator<Item = &'a mut B>,
     mut len: usize,
@@ -596,10 +604,10 @@ unsafe fn default_set_buf_init<'a, B: IoBufMut>(
     for buf in iter {
         let capacity = (*buf).buf_capacity();
         if len >= capacity {
-            buf.set_buf_init(capacity);
+            unsafe { buf.set_buf_init(capacity) };
             len -= capacity;
         } else {
-            buf.set_buf_init(len);
+            unsafe { buf.set_buf_init(len) };
             len = 0;
         }
     }

@@ -526,10 +526,10 @@ impl Socket {
             Ok(_) => BufResult(Ok(()), buffer),
             Err(e) => {
                 #[cfg(linux)]
-                if let Some(libc::EIO) | Some(libc::EINVAL) = e.raw_os_error() {
-                    if self.max_gso_segments() > 1 {
-                        self.has_gso_error.store(true, Ordering::Relaxed);
-                    }
+                if let Some(libc::EIO) | Some(libc::EINVAL) = e.raw_os_error()
+                    && self.max_gso_segments() > 1
+                {
+                    self.has_gso_error.store(true, Ordering::Relaxed);
                 }
                 BufResult(Err(e), buffer)
             }

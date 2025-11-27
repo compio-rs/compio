@@ -152,29 +152,29 @@ impl CompletionPort {
             // Any thin pointer is OK because we don't use the type of opcode.
             let overlapped_ptr: *mut Overlapped = entry.lpOverlapped.cast();
             let overlapped = unsafe { &*overlapped_ptr };
-            if let Some(current_driver) = current_driver {
-                if overlapped.driver != current_driver {
-                    // Repost the entry to correct port.
-                    if let Err(_e) = syscall!(
-                        BOOL,
-                        PostQueuedCompletionStatus(
-                            overlapped.driver as _,
-                            entry.dwNumberOfBytesTransferred,
-                            entry.lpCompletionKey,
-                            entry.lpOverlapped,
-                        )
-                    ) {
-                        error!(
-                            "fail to repost entry ({}, {}, {:p}) to driver {:p}: {:?}",
-                            entry.dwNumberOfBytesTransferred,
-                            entry.lpCompletionKey,
-                            entry.lpOverlapped,
-                            overlapped.driver,
-                            _e
-                        );
-                    }
-                    return None;
+            if let Some(current_driver) = current_driver
+                && overlapped.driver != current_driver
+            {
+                // Repost the entry to correct port.
+                if let Err(_e) = syscall!(
+                    BOOL,
+                    PostQueuedCompletionStatus(
+                        overlapped.driver as _,
+                        entry.dwNumberOfBytesTransferred,
+                        entry.lpCompletionKey,
+                        entry.lpOverlapped,
+                    )
+                ) {
+                    error!(
+                        "fail to repost entry ({}, {}, {:p}) to driver {:p}: {:?}",
+                        entry.dwNumberOfBytesTransferred,
+                        entry.lpCompletionKey,
+                        entry.lpOverlapped,
+                        overlapped.driver,
+                        _e
+                    );
                 }
+                return None;
             }
             // TODO: *mut OVERLAPPED is *mut IO_STATUS_BLOCK internally, but
             // OVERLAPPED::Internal is not the same size as

@@ -89,7 +89,7 @@ fn cf_run_loop() {
                 CFRunLoopStop(run_loop.as_concrete_TypeRef());
             }
         });
-        extern "C" {
+        unsafe extern "C" {
             fn CFRunLoopPerformBlock(rl: CFRunLoopRef, mode: CFStringRef, block: &Block<dyn Fn()>);
         }
         let run_loop = CFRunLoop::get_current();
@@ -209,7 +209,7 @@ fn message_queue() {
         unsafe extern "system" fn timer_callback(hwnd: HWND, _msg: u32, id: usize, _dwtime: u32) {
             let handle = GLOBAL_EVENT.lock().unwrap().take().unwrap();
             handle.notify();
-            KillTimer(hwnd, id);
+            unsafe { KillTimer(hwnd, id) };
         }
 
         unsafe {

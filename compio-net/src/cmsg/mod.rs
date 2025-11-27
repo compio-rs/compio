@@ -37,7 +37,7 @@ impl CMsgRef<'_> {
     /// The data part must be properly aligned and contains an initialized
     /// instance of `T`.
     pub unsafe fn data<T>(&self) -> &T {
-        self.0.data()
+        unsafe { self.0.data() }
     }
 }
 

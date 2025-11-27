@@ -96,7 +96,7 @@ impl<T> Drop for SendWrapper<T> {
             unsafe {
                 // Drop the inner value
                 //
-                // Safety:
+                // SAFETY:
                 // - We've just checked that it's valid to drop `T` on this thread
                 // - We only move out from `self.data` here and in drop, so `self.data` is
                 //   present

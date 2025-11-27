@@ -53,8 +53,7 @@ impl BufferPool {
             )
         })?;
 
-        self.buf_ring
-            .get_buf(buffer_id, available_len)
+        unsafe { self.buf_ring.get_buf(buffer_id, available_len) }
             .map(BorrowedBuffer)
             .ok_or_else(|| io::Error::other(format!("cannot find buffer {buffer_id}")))
     }
@@ -62,7 +61,7 @@ impl BufferPool {
     pub(crate) fn reuse_buffer(&self, flags: u32) {
         // It ignores invalid flags.
         if let Some(buffer_id) = buffer_select(flags) {
-            // Safety: 0 is always valid length. We just want to get the buffer once and
+            // SAFETY: 0 is always valid length. We just want to get the buffer once and
             // return it immediately.
             unsafe { self.buf_ring.get_buf(buffer_id, 0) };
         }

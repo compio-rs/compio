@@ -92,7 +92,11 @@ impl IoSlice {
     /// The caller must ensure that, during the lifetime of the `IoSlice`, the
     /// slice is valid the and is not used for mutating.
     pub unsafe fn from_slice(slice: &[u8]) -> Self {
-        Self::new(slice.as_ptr() as _, slice.len())
+        // SAFETY:
+        // - the length is correct
+        // - the content of the buffer is initialized
+        // - the slice is not used for mutating while the `IoSlice` is in use
+        unsafe { Self::new(slice.as_ptr() as _, slice.len()) }
     }
 
     /// Get the pointer to the buffer.
@@ -143,7 +147,10 @@ impl IoSliceMut {
     /// The caller must ensure that, during the lifetime of the `IoSliceMut`,
     /// the slice is valid the and is not used for anything else.
     pub unsafe fn from_slice(slice: &mut [u8]) -> Self {
-        Self::new(slice.as_mut_ptr() as _, slice.len())
+        // SAFETY:
+        // - the length is correct
+        // - the slice is not used for anything else while the `IoSliceMut` is in use
+        unsafe { Self::new(slice.as_mut_ptr() as _, slice.len()) }
     }
 
     /// Create a new `IoSliceMut` from a uninitialized slice.
@@ -152,7 +159,10 @@ impl IoSliceMut {
     /// The caller must ensure that, during the lifetime of the `IoSliceMut`,
     /// the slice is valid the and is not used for anything else.
     pub unsafe fn from_uninit(slice: &mut [MaybeUninit<u8>]) -> Self {
-        Self::new(slice.as_mut_ptr(), slice.len())
+        // SAFETY:
+        // - the length is correct
+        // - the slice is not used for anything else while the `IoSliceMut` is in use
+        unsafe { Self::new(slice.as_mut_ptr(), slice.len()) }
     }
 
     /// Get the pointer to the buffer.

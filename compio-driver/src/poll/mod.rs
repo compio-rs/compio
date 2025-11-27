@@ -142,15 +142,15 @@ impl FdQueue {
     }
 
     pub fn pop_interest(&mut self, event: &Event) -> Option<(usize, Interest)> {
-        if event.readable {
-            if let Some(user_data) = self.read_queue.pop_front() {
-                return Some((user_data, Interest::Readable));
-            }
+        if event.readable
+            && let Some(user_data) = self.read_queue.pop_front()
+        {
+            return Some((user_data, Interest::Readable));
         }
-        if event.writable {
-            if let Some(user_data) = self.write_queue.pop_front() {
-                return Some((user_data, Interest::Writable));
-            }
+        if event.writable
+            && let Some(user_data) = self.write_queue.pop_front()
+        {
+            return Some((user_data, Interest::Writable));
         }
         None
     }
@@ -219,9 +219,10 @@ impl Driver {
         queue.push_back_interest(user_data, arg.interest);
         let event = queue.event();
         if need_add {
-            self.poller().add(arg.fd, event)?;
+            // SAFETY: the events are deleted correctly.
+            unsafe { self.poller().add(arg.fd, event)? }
         } else {
-            let fd = BorrowedFd::borrow_raw(arg.fd);
+            let fd = unsafe { BorrowedFd::borrow_raw(arg.fd) };
             self.poller().modify(fd, event)?;
         }
         Ok(())
@@ -371,7 +372,7 @@ impl Driver {
         true
     }
 
-    pub unsafe fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         if self.poll_blocking() {
             return Ok(());
@@ -384,7 +385,8 @@ impl Driver {
         for event in self.events.iter() {
             let user_data = event.key;
             trace!("receive {} for {:?}", user_data, event);
-            let mut op = Key::<dyn crate::sys::OpCode>::new_unchecked(user_data);
+            // SAFETY: user_data is promised to be valid.
+            let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
             let op = op.as_op_pin();
             match op.op_type() {
                 None => {
@@ -400,7 +402,8 @@ impl Driver {
                         .get_mut(&fd)
                         .expect("the fd should be attached");
                     if let Some((user_data, interest)) = queue.pop_interest(&event) {
-                        let mut op = Key::<dyn crate::sys::OpCode>::new_unchecked(user_data);
+                        let mut op =
+                            unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
                         let op = op.as_op_pin();
                         let res = match op.operate() {
                             Poll::Pending => {
@@ -411,14 +414,15 @@ impl Driver {
                             Poll::Ready(res) => Some(res),
                         };
                         if let Some(res) = res {
-                            Entry::new(user_data, res).notify();
+                            // SAFETY: `notify` is called only once.
+                            unsafe { Entry::new(user_data, res).notify() }
                         }
                     }
                     let renew_event = queue.event();
                     Self::renew(
                         &self.notify.poll,
                         &mut self.registry,
-                        BorrowedFd::borrow_raw(fd),
+                        unsafe { BorrowedFd::borrow_raw(fd) },
                         renew_event,
                     )?;
                 }
@@ -436,12 +440,13 @@ impl Driver {
                         }
                         libc::ECANCELED => {
                             // Remove the aiocb from kqueue.
-                            libc::aio_return(aiocbp.as_ptr());
+                            unsafe { libc::aio_return(aiocbp.as_ptr()) };
                             Err(io::Error::from_raw_os_error(libc::ETIMEDOUT))
                         }
                         _ => syscall!(libc::aio_return(aiocbp.as_ptr())).map(|res| res as usize),
                     };
-                    Entry::new(user_data, res).notify();
+                    // SAFETY: `notify` is called only once.
+                    unsafe { Entry::new(user_data, res).notify() }
                 }
             }
         }

@@ -117,7 +117,7 @@ impl NamedPipeServer {
     /// # std::io::Result::Ok(()) });
     /// ```
     pub fn info(&self) -> io::Result<PipeInfo> {
-        // Safety: we're ensuring the lifetime of the named pipe.
+        // SAFETY: we're ensuring the lifetime of the named pipe.
         unsafe { named_pipe_info(self.as_raw_fd()) }
     }
 
@@ -341,7 +341,7 @@ impl NamedPipeClient {
     /// # std::io::Result::Ok(()) });
     /// ```
     pub fn info(&self) -> io::Result<PipeInfo> {
-        // Safety: we're ensuring the lifetime of the named pipe.
+        // SAFETY: we're ensuring the lifetime of the named pipe.
         unsafe { named_pipe_info(self.as_raw_fd()) }
     }
 }

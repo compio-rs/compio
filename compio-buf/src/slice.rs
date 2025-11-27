@@ -108,7 +108,7 @@ unsafe impl<T: IoBufMut> IoBufMut for Slice<T> {
 
 impl<T: SetBufInit> SetBufInit for Slice<T> {
     unsafe fn set_buf_init(&mut self, len: usize) {
-        self.buffer.set_buf_init(self.begin + len)
+        unsafe { self.buffer.set_buf_init(self.begin + len) }
     }
 }
 
@@ -154,16 +154,15 @@ impl<T> VectoredSlice<T> {
 impl<T: IoVectoredBuf> IoVectoredBuf for VectoredSlice<T> {
     unsafe fn iter_io_buffer(&self) -> impl Iterator<Item = IoBuffer> {
         let mut offset = self.begin;
-        self.buf.iter_io_buffer().filter_map(move |buf| {
+        unsafe { self.buf.iter_io_buffer() }.filter_map(move |buf| {
             let len = buf.len();
             let sub = len.min(offset);
             offset -= sub;
             if len - sub > 0 {
-                Some(IoBuffer::new(
-                    buf.as_ptr().add(sub),
-                    len - sub,
-                    buf.capacity() - sub,
-                ))
+                // SAFETY: sub <= len
+                Some(unsafe {
+                    IoBuffer::new(buf.as_ptr().add(sub), len - sub, buf.capacity() - sub)
+                })
             } else {
                 None
             }
@@ -213,13 +212,14 @@ impl<T> VectoredSliceMut<T> {
 impl<T: IoVectoredBuf> IoVectoredBuf for VectoredSliceMut<T> {
     unsafe fn iter_io_buffer(&self) -> impl Iterator<Item = IoBuffer> {
         let mut offset = self.begin;
-        self.buf.iter_io_buffer().filter_map(move |buf| {
+        unsafe { self.buf.iter_io_buffer() }.filter_map(move |buf| {
             let capacity = buf.capacity();
             let sub = capacity.min(offset);
             offset -= sub;
             if capacity - sub > 0 {
                 let len = buf.len().saturating_sub(sub);
-                Some(IoBuffer::new(buf.as_ptr().add(sub), len, capacity - sub))
+                // SAFETY: sub <= capacity
+                Some(unsafe { IoBuffer::new(buf.as_ptr().add(sub), len, capacity - sub) })
             } else {
                 None
             }
@@ -237,7 +237,7 @@ impl<T> IntoInner for VectoredSliceMut<T> {
 
 impl<T: SetBufInit> SetBufInit for VectoredSliceMut<T> {
     unsafe fn set_buf_init(&mut self, len: usize) {
-        self.buf.set_buf_init(self.begin + len);
+        unsafe { self.buf.set_buf_init(self.begin + len) }
     }
 }
 

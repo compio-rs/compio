@@ -17,7 +17,7 @@ macro_rules! read_scalar {
                 const LEN: usize = ::std::mem::size_of::<$t>();
                 let BufResult(res, buf) = self.read_exact(ArrayVec::<u8, LEN>::new()).await;
                 res?;
-                // Safety: We just checked that the buffer is the correct size
+                // SAFETY: We just checked that the buffer is the correct size
                 Ok($t::$be(unsafe { buf.into_inner_unchecked() }))
             }
 
@@ -28,7 +28,7 @@ macro_rules! read_scalar {
                 const LEN: usize = ::std::mem::size_of::<$t>();
                 let BufResult(res, buf) = self.read_exact(ArrayVec::<u8, LEN>::new()).await;
                 res?;
-                // Safety: We just checked that the buffer is the correct size
+                // SAFETY: We just checked that the buffer is the correct size
                 Ok($t::$le(unsafe { buf.into_inner_unchecked() }))
             }
         }
@@ -122,7 +122,7 @@ fn after_read_to_string(res: io::Result<usize>, buf: Vec<u8>) -> BufResult<usize
                 let mut buf = err.into_bytes();
                 buf.clear();
 
-                // Safety: the buffer is empty
+                // SAFETY: the buffer is empty
                 unsafe { String::from_utf8_unchecked(buf) }
             });
 

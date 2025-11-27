@@ -35,7 +35,7 @@ impl<R: Read, B: IoBufMut> OpCode for StdRead<R, B> {
     }
 
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let this = self.get_unchecked_mut();
+        let this = unsafe { self.get_unchecked_mut() };
         let slice = this.buffer.as_mut_slice();
         #[cfg(feature = "read_buf")]
         {
@@ -84,7 +84,7 @@ impl<W: Write, B: IoBuf> OpCode for StdWrite<W, B> {
     }
 
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let this = self.get_unchecked_mut();
+        let this = unsafe { self.get_unchecked_mut() };
         let slice = this.buffer.as_slice();
         this.writer.write(slice).into()
     }
@@ -103,7 +103,7 @@ struct StaticFd(RawHandle);
 
 impl AsFd for StaticFd {
     fn as_fd(&self) -> BorrowedFd<'_> {
-        // Safety: we only use it for console handles.
+        // SAFETY: we only use it for console handles.
         BorrowedFd::File(unsafe { BorrowedHandle::borrow_raw(self.0) })
     }
 }

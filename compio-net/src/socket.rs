@@ -296,7 +296,7 @@ impl Socket {
         .map(|_| {
             debug_assert_eq!(len as usize, size_of::<T>());
             // SAFETY: The value is initialized by `getsockopt`.
-            value.assume_init()
+            unsafe { value.assume_init() }
         })
     }
 
@@ -317,7 +317,7 @@ impl Socket {
         .map(|_| {
             debug_assert_eq!(len as usize, size_of::<T>());
             // SAFETY: The value is initialized by `getsockopt`.
-            value.assume_init()
+            unsafe { value.assume_init() }
         })
     }
 
