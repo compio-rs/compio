@@ -316,9 +316,9 @@ pub(crate) struct EndpointRef(Arc<EndpointInner>);
 
 impl EndpointRef {
     // Modified from [`SharedFd::try_unwrap_inner`], see notes there.
-    unsafe fn try_unwrap_inner(this: &ManuallyDrop<Self>) -> Option<EndpointInner> {
-        let ptr = ManuallyDrop::new(unsafe { std::ptr::read(&this.0) });
-        match Arc::try_unwrap(ManuallyDrop::into_inner(ptr)) {
+    unsafe fn try_unwrap_inner(&self) -> Option<EndpointInner> {
+        let ptr = unsafe { std::ptr::read(&self.0) };
+        match Arc::try_unwrap(ptr) {
             Ok(inner) => Some(inner),
             Err(ptr) => {
                 std::mem::forget(ptr);
