@@ -3,6 +3,7 @@ use std::{
     io,
     mem::ManuallyDrop,
     net::{SocketAddr, SocketAddrV6},
+    ops::Deref,
     pin::pin,
     sync::{Arc, Mutex},
     task::{Context, Poll, Waker},
@@ -310,10 +311,83 @@ impl EndpointInner {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct EndpointRef(Arc<EndpointInner>);
+
+impl EndpointRef {
+    // Modified from [`SharedFd::try_unwrap_inner`], see notes there.
+    unsafe fn try_unwrap_inner(&self) -> Option<EndpointInner> {
+        let ptr = unsafe { std::ptr::read(&self.0) };
+        match Arc::try_unwrap(ptr) {
+            Ok(inner) => Some(inner),
+            Err(ptr) => {
+                std::mem::forget(ptr);
+                None
+            }
+        }
+    }
+
+    async fn shutdown(self) -> io::Result<()> {
+        let (worker, idle) = {
+            let mut state = self.0.state.lock().unwrap();
+            let idle = state.is_idle();
+            if !idle {
+                state.exit_on_idle = true;
+            }
+            (state.worker.take(), idle)
+        };
+        if let Some(worker) = worker {
+            if idle {
+                worker.cancel().await;
+            } else {
+                let _ = worker.await;
+            }
+        }
+
+        let this = ManuallyDrop::new(self);
+        let inner = future::poll_fn(move |cx| {
+            if let Some(inner) = unsafe { Self::try_unwrap_inner(&this) } {
+                return Poll::Ready(inner);
+            }
+
+            this.done.register(cx.waker());
+
+            if let Some(inner) = unsafe { Self::try_unwrap_inner(&this) } {
+                Poll::Ready(inner)
+            } else {
+                Poll::Pending
+            }
+        })
+        .await;
+
+        inner.socket.close().await
+    }
+}
+
+impl Drop for EndpointRef {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.0) == 2 {
+            // There are actually two cases:
+            // 1. User is trying to shutdown the socket.
+            self.0.done.wake();
+            // 2. User dropped the endpoint but the worker is still running.
+            self.0.state.lock().unwrap().exit_on_idle = true;
+        }
+    }
+}
+
+impl Deref for EndpointRef {
+    type Target = EndpointInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 /// A QUIC endpoint.
 #[derive(Debug, Clone)]
 pub struct Endpoint {
-    inner: Arc<EndpointInner>,
+    inner: EndpointRef,
     /// The client configuration used by `connect`
     pub default_client_config: Option<ClientConfig>,
 }
@@ -326,7 +400,7 @@ impl Endpoint {
         server_config: Option<ServerConfig>,
         default_client_config: Option<ClientConfig>,
     ) -> io::Result<Self> {
-        let inner = Arc::new(EndpointInner::new(socket, config, server_config)?);
+        let inner = EndpointRef(Arc::new(EndpointInner::new(socket, config, server_config)?));
         let worker = compio_runtime::spawn({
             let inner = inner.clone();
             async move {
@@ -450,18 +524,6 @@ impl Endpoint {
         state.incoming_wakers.drain(..).for_each(Waker::wake);
     }
 
-    // Modified from [`SharedFd::try_unwrap_inner`], see notes there.
-    unsafe fn try_unwrap_inner(this: &ManuallyDrop<Self>) -> Option<EndpointInner> {
-        let ptr = unsafe { std::ptr::read(&this.inner) };
-        match Arc::try_unwrap(ptr) {
-            Ok(inner) => Some(inner),
-            Err(ptr) => {
-                std::mem::forget(ptr);
-                None
-            }
-        }
-    }
-
     /// Gracefully shutdown the endpoint.
     ///
     /// Wait for all connections on the endpoint to be cleanly shut down and
@@ -479,44 +541,6 @@ impl Endpoint {
     ///
     /// [`close()`]: Endpoint::close
     pub async fn shutdown(self) -> io::Result<()> {
-        let worker = self.inner.state.lock().unwrap().worker.take();
-        if let Some(worker) = worker {
-            if self.inner.state.lock().unwrap().is_idle() {
-                worker.cancel().await;
-            } else {
-                self.inner.state.lock().unwrap().exit_on_idle = true;
-                let _ = worker.await;
-            }
-        }
-
-        let this = ManuallyDrop::new(self);
-        let inner = future::poll_fn(move |cx| {
-            if let Some(inner) = unsafe { Self::try_unwrap_inner(&this) } {
-                return Poll::Ready(inner);
-            }
-
-            this.inner.done.register(cx.waker());
-
-            if let Some(inner) = unsafe { Self::try_unwrap_inner(&this) } {
-                Poll::Ready(inner)
-            } else {
-                Poll::Pending
-            }
-        })
-        .await;
-
-        inner.socket.close().await
-    }
-}
-
-impl Drop for Endpoint {
-    fn drop(&mut self) {
-        if Arc::strong_count(&self.inner) == 2 {
-            // There are actually two cases:
-            // 1. User is trying to shutdown the socket.
-            self.inner.done.wake();
-            // 2. User dropped the endpoint but the worker is still running.
-            self.inner.state.lock().unwrap().exit_on_idle = true;
-        }
+        self.inner.shutdown().await
     }
 }

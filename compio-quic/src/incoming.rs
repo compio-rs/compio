@@ -2,7 +2,6 @@ use std::{
     future::{Future, IntoFuture},
     net::{IpAddr, SocketAddr},
     pin::Pin,
-    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -10,12 +9,12 @@ use futures_util::FutureExt;
 use quinn_proto::ServerConfig;
 use thiserror::Error;
 
-use crate::{Connecting, Connection, ConnectionError, EndpointInner};
+use crate::{Connecting, Connection, ConnectionError, EndpointRef};
 
 #[derive(Debug)]
 pub(crate) struct IncomingInner {
     pub(crate) incoming: quinn_proto::Incoming,
-    pub(crate) endpoint: Arc<EndpointInner>,
+    pub(crate) endpoint: EndpointRef,
 }
 
 /// An incoming connection for which the server has not yet begun its part
@@ -24,7 +23,7 @@ pub(crate) struct IncomingInner {
 pub struct Incoming(Option<IncomingInner>);
 
 impl Incoming {
-    pub(crate) fn new(incoming: quinn_proto::Incoming, endpoint: Arc<EndpointInner>) -> Self {
+    pub(crate) fn new(incoming: quinn_proto::Incoming, endpoint: EndpointRef) -> Self {
         Self(Some(IncomingInner { incoming, endpoint }))
     }
 

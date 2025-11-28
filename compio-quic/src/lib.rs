@@ -33,7 +33,7 @@ pub use send_stream::{SendStream, WriteError};
 
 pub(crate) use crate::{
     connection::{ConnectionEvent, ConnectionInner},
-    endpoint::EndpointInner,
+    endpoint::EndpointRef,
     socket::*,
 };
 
