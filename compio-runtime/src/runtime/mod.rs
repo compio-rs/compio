@@ -290,7 +290,7 @@ impl Runtime {
     pub(crate) fn poll_timer(&self, cx: &mut Context, key: &TimerKey) -> Poll<()> {
         instrument!(compio_log::Level::DEBUG, "poll_timer", ?cx, ?key);
         let mut timer_runtime = self.timer_runtime.borrow_mut();
-        if timer_runtime.remove_completed(key) {
+        if timer_runtime.is_completed(key) {
             debug!("ready");
             Poll::Ready(())
         } else {
