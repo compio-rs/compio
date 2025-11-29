@@ -9,6 +9,7 @@
 //! ```
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(feature = "current_thread_id", feature(current_thread_id))]
 #![warn(missing_docs)]
 
 mod affinity;
