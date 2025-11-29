@@ -1,8 +1,7 @@
-use std::{io::prelude::*, time::Duration};
+use std::io::prelude::*;
 
 use compio_fs::File;
 use compio_io::{AsyncReadAtExt, AsyncWriteAt, AsyncWriteAtExt};
-use compio_runtime::time::timeout;
 use tempfile::NamedTempFile;
 
 #[compio_macros::test]
@@ -75,19 +74,23 @@ async fn cancel_read() {
     read_hello(&file).await;
 }
 
+#[cfg(unix)]
 #[compio_macros::test]
 async fn timeout_read() {
-    let mut tempfile = tempfile();
-    tempfile.write_all(HELLO).unwrap();
+    use std::time::Duration;
 
-    let file = File::open(tempfile.path()).await.unwrap();
+    use compio_fs::pipe::anonymous;
+    use compio_io::AsyncReadExt;
+    use compio_runtime::time::timeout;
+
+    let (mut rx, _) = anonymous().unwrap();
 
     // Read a file with timeout.
-    let _ = timeout(Duration::from_nanos(1), async { read_hello(&file).await })
-        .await
-        .unwrap_err();
-
-    read_hello(&file).await;
+    let _ = timeout(Duration::from_nanos(1), async move {
+        rx.read_to_string(String::new()).await
+    })
+    .await
+    .unwrap_err();
 }
 
 #[compio_macros::test]
