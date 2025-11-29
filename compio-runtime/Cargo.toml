@@ -67,6 +67,9 @@ time = []
 # Enable it to always notify the driver when a task schedules.
 notify-always = []
 
+current_thread_id = []
+nightly = ["current_thread_id"]
+
 [[test]]
 name = "custom_loop"
 required-features = ["event", "time"]

@@ -121,6 +121,7 @@ ring = ["compio-tls?/ring", "compio-quic?/ring", "compio-ws?/ring"]
 
 # Nightly features
 allocator_api = ["compio-buf/allocator_api", "compio-io?/allocator_api"]
+current_thread_id = ["compio-runtime/current_thread_id"]
 lazy_cell = ["compio-signal?/lazy_cell"]
 linux_pidfd = ["compio-process?/linux_pidfd"]
 once_cell_try = [
@@ -139,6 +140,7 @@ try_trait_v2 = ["compio-buf/try_trait_v2"]
 windows_by_handle = ["compio-fs?/windows_by_handle"]
 nightly = [
     "allocator_api",
+    "current_thread_id",
     "lazy_cell",
     "linux_pidfd",
     "once_cell_try",

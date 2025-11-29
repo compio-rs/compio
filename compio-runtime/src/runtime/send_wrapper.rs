@@ -7,15 +7,30 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[cfg(feature = "current_thread_id")]
+use std::thread::current_id;
 use std::{
-    cell::Cell,
     mem::{self, ManuallyDrop},
     thread::{self, ThreadId},
 };
 
-thread_local! {
-    static THREAD_ID: Cell<ThreadId> = Cell::new(thread::current().id());
+#[cfg(not(feature = "current_thread_id"))]
+mod imp {
+    use std::{
+        cell::Cell,
+        thread::{self, ThreadId},
+    };
+    thread_local! {
+        static THREAD_ID: Cell<ThreadId> = Cell::new(thread::current().id());
+    }
+
+    pub fn current_id() -> ThreadId {
+        THREAD_ID.get()
+    }
 }
+
+#[cfg(not(feature = "current_thread_id"))]
+use imp::current_id;
 
 /// A wrapper that copied from `send_wrapper` crate, with our own optimizations.
 pub struct SendWrapper<T> {
@@ -30,7 +45,7 @@ impl<T> SendWrapper<T> {
     pub fn new(data: T) -> SendWrapper<T> {
         SendWrapper {
             data: ManuallyDrop::new(data),
-            thread_id: THREAD_ID.get(),
+            thread_id: current_id(),
         }
     }
 
@@ -38,7 +53,7 @@ impl<T> SendWrapper<T> {
     /// current thread.
     #[inline]
     pub fn valid(&self) -> bool {
-        self.thread_id == THREAD_ID.get()
+        self.thread_id == current_id()
     }
 
     /// Returns a reference to the contained value.
