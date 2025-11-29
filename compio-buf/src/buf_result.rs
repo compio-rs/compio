@@ -14,6 +14,7 @@ use crate::IntoInner;
 /// completes, the buffer is returned no matter if the operation completed
 /// successfully.
 #[must_use]
+#[derive(Debug)]
 pub struct BufResult<T, B>(pub io::Result<T>, pub B);
 
 impl<T, B> BufResult<T, B> {

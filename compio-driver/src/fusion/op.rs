@@ -28,7 +28,7 @@ macro_rules! op {
                             self.poll()
                         },
                         Self::Poll(op) => op,
-                        Self::IoUring(_) => unreachable!("Current driver is not `io-uring`"),
+                        Self::IoUring(_) => unreachable!("Current driver is not `polling`"),
                     }
                 }
 
@@ -44,7 +44,7 @@ macro_rules! op {
                             self.iour()
                         },
                         Self::IoUring(op) => op,
-                        Self::Poll(_) => unreachable!("Current driver is not `polling`"),
+                        Self::Poll(_) => unreachable!("Current driver is not `io-uring`"),
                     }
                 }
             }
