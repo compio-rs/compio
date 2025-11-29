@@ -10,17 +10,6 @@ use std::{
 
 use crate::runtime::Runtime;
 
-pub(crate) enum FutureState {
-    Active(Option<Waker>),
-    Completed,
-}
-
-impl Default for FutureState {
-    fn default() -> Self {
-        Self::Active(None)
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TimerKey {
     deadline: Instant,
@@ -30,7 +19,7 @@ pub struct TimerKey {
 
 pub struct TimerRuntime {
     key: u64,
-    wheel: BTreeMap<TimerKey, FutureState>,
+    wheel: BTreeMap<TimerKey, Waker>,
 }
 
 impl TimerRuntime {
@@ -41,18 +30,9 @@ impl TimerRuntime {
         }
     }
 
-    /// If the timer is completed, remove it and return `true`. Otherwise return
-    /// `false` and keep it.
-    pub fn remove_completed(&mut self, key: &TimerKey) -> bool {
-        let completed = self
-            .wheel
-            .get(key)
-            .map(|state| matches!(state, FutureState::Completed))
-            .unwrap_or_default();
-        if completed {
-            self.wheel.remove(key);
-        }
-        completed
+    /// Return true if the timer has completed.
+    pub fn is_completed(&self, key: &TimerKey) -> bool {
+        !self.wheel.contains_key(key)
     }
 
     /// Insert a new timer. If the deadline is in the past, return `None`.
@@ -61,11 +41,11 @@ impl TimerRuntime {
             return None;
         }
         let key = TimerKey {
-            key: self.key,
             deadline,
+            key: self.key,
             _local_marker: PhantomData,
         };
-        self.wheel.insert(key, FutureState::default());
+        self.wheel.insert(key, Waker::noop().clone());
 
         self.key += 1;
 
@@ -75,7 +55,7 @@ impl TimerRuntime {
     /// Update the waker for a timer.
     pub fn update_waker(&mut self, key: &TimerKey, waker: Waker) {
         if let Some(w) = self.wheel.get_mut(key) {
-            *w = FutureState::Active(Some(waker));
+            *w = waker;
         }
     }
 
@@ -100,14 +80,16 @@ impl TimerRuntime {
 
         let now = Instant::now();
 
-        self.wheel
-            .iter_mut()
-            .take_while(|(k, _)| k.deadline <= now)
-            .for_each(|(_, v)| {
-                if let FutureState::Active(Some(waker)) = replace(v, FutureState::Completed) {
-                    waker.wake();
-                }
-            });
+        let pending = self.wheel.split_off(&TimerKey {
+            deadline: now,
+            key: u64::MAX,
+            _local_marker: PhantomData,
+        });
+
+        let expired = replace(&mut self.wheel, pending);
+        for (_, w) in expired {
+            w.wake();
+        }
     }
 }
 
