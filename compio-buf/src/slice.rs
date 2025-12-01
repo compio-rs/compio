@@ -286,7 +286,7 @@ impl<T: IoVectoredBufMut> IoVectoredBufMut for VectoredSliceMut<T> {
         // Only the first buffer is affected by the offset.
         if idx == 0 {
             let buf = unsafe { self.buf.iter_buffer() }
-                .next()
+                .nth(self.idx)
                 .expect("index out of bounds");
             // It's possible for offset to go beyond buf.len().
             self.buf.capacity_of(self.idx) - buf.len().max(self.offset)
