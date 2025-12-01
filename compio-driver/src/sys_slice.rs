@@ -84,7 +84,7 @@ impl SysSlice {
     ///
     /// # Safety
     /// The caller must ensure that, during the lifetime of the `SysSlice`, the
-    /// slice is valid the and is not used for mutating.
+    /// slice is valid and is not used for mutating.
     pub unsafe fn from_slice(slice: &[u8]) -> Self {
         // SAFETY:
         // - the length is correct
