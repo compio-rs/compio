@@ -148,7 +148,7 @@ impl Runtime {
     ///
     /// # Safety
     ///
-    /// Borrowed variables mut outlive the future.
+    /// Borrowed variables must outlive the future.
     pub unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
         let waker = self.waker();
         unsafe { self.scheduler.spawn_unchecked(future, waker) }
