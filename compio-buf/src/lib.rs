@@ -17,17 +17,17 @@ pub use bumpalo;
 #[cfg(feature = "bytes")]
 pub use bytes;
 
-mod io_slice;
-pub use io_slice::*;
-
-mod buf_result;
-pub use buf_result::*;
+mod io_buffer;
+pub use io_buffer::*;
 
 mod io_buf;
 pub use io_buf::*;
 
 mod io_vec_buf;
 pub use io_vec_buf::*;
+
+mod buf_result;
+pub use buf_result::*;
 
 mod slice;
 pub use slice::*;

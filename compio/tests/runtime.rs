@@ -48,22 +48,14 @@ async fn drop_on_complete() {
     }
 
     unsafe impl IoBuf for MyBuf {
-        fn as_buf_ptr(&self) -> *const u8 {
-            self.data.as_buf_ptr()
-        }
-
-        fn buf_len(&self) -> usize {
-            self.data.buf_len()
-        }
-
-        fn buf_capacity(&self) -> usize {
-            self.data.buf_capacity()
+        unsafe fn buffer(&self) -> IoBuffer {
+            unsafe { self.data.buffer() }
         }
     }
 
     unsafe impl IoBufMut for MyBuf {
-        fn as_buf_mut_ptr(&mut self) -> *mut u8 {
-            self.data.as_buf_mut_ptr()
+        fn uninit_len(&self) -> usize {
+            self.data.uninit_len()
         }
     }
 

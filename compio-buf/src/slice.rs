@@ -26,11 +26,11 @@ use crate::*;
 pub struct Slice<T> {
     buffer: T,
     begin: usize,
-    end: usize,
+    end: Option<usize>,
 }
 
 impl<T> Slice<T> {
-    pub(crate) fn new(buffer: T, begin: usize, end: usize) -> Self {
+    pub(crate) fn new(buffer: T, begin: usize, end: Option<usize>) -> Self {
         Self { buffer, begin, end }
     }
 
@@ -40,13 +40,8 @@ impl<T> Slice<T> {
     }
 
     /// Offset in the underlying buffer at which this slice ends.
-    pub fn end(&self) -> usize {
+    pub fn end(&self) -> Option<usize> {
         self.end
-    }
-
-    pub(crate) fn set_range(&mut self, begin: usize, end: usize) {
-        self.begin = begin;
-        self.end = end;
     }
 
     /// Gets a reference to the underlying buffer.
@@ -64,45 +59,41 @@ impl<T> Slice<T> {
     }
 }
 
-fn slice_mut<T: IoBufMut>(buffer: &mut T) -> &mut [u8] {
-    unsafe { std::slice::from_raw_parts_mut(buffer.as_buf_mut_ptr(), (*buffer).buf_len()) }
-}
-
 impl<T: IoBuf> Deref for Slice<T> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
         let bytes = self.buffer.as_slice();
-        let end = self.end.min(bytes.len());
+        let end = self.end.unwrap_or(bytes.len()).min(bytes.len());
         &bytes[self.begin..end]
     }
 }
 
 impl<T: IoBufMut> DerefMut for Slice<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        let bytes = slice_mut(&mut self.buffer);
-        let end = self.end.min(bytes.len());
-        &mut bytes[self.begin..end]
+        let begin = self.begin();
+        let buf_len = self.buffer.buf_len();
+        let end = self.end().unwrap_or(buf_len).min(buf_len);
+        let ptr = unsafe { self.buffer.buffer() }.as_ptr();
+        unsafe { std::slice::from_raw_parts_mut(ptr.add(begin) as _, end - begin) }
     }
 }
 
 unsafe impl<T: IoBuf> IoBuf for Slice<T> {
-    fn as_buf_ptr(&self) -> *const u8 {
-        self.buffer.as_slice()[self.begin..].as_ptr()
-    }
-
-    fn buf_len(&self) -> usize {
-        self.deref().len()
-    }
-
-    fn buf_capacity(&self) -> usize {
-        self.end - self.begin
+    unsafe fn buffer(&self) -> IoBuffer {
+        // SAFETY: The slice is bounded by &self, as required.
+        unsafe { IoBuffer::from_slice(&self.deref()) }
     }
 }
 
 unsafe impl<T: IoBufMut> IoBufMut for Slice<T> {
-    fn as_buf_mut_ptr(&mut self) -> *mut u8 {
-        slice_mut(&mut self.buffer)[self.begin..].as_mut_ptr()
+    fn uninit_len(&self) -> usize {
+        let begin = self.begin().max(self.buffer.buf_len());
+        if let Some(end) = self.end {
+            end.saturating_sub(begin)
+        } else {
+            self.buffer.buf_capacity() - begin
+        }
     }
 }
 
@@ -120,15 +111,34 @@ impl<T> IntoInner for Slice<T> {
     }
 }
 
-/// An owned view of a vectored buffer.
+/// Type for [`IoVectoredBuf::slice`].
 pub struct VectoredSlice<T> {
     buf: T,
     begin: usize,
+    idx: usize,
+    offset: usize,
 }
 
-impl<T> VectoredSlice<T> {
+impl<T: IoVectoredBuf> VectoredSlice<T> {
     pub(crate) fn new(buf: T, begin: usize) -> Self {
-        Self { buf, begin }
+        let mut offset = begin;
+        let mut idx = 0;
+
+        for b in unsafe { buf.iter_buffer() } {
+            let len = b.len();
+            if len > offset {
+                break;
+            }
+            offset -= len;
+            idx += 1;
+        }
+
+        Self {
+            buf,
+            begin,
+            idx,
+            offset,
+        }
     }
 
     /// Offset in the underlying buffer at which this slice starts.
@@ -152,21 +162,17 @@ impl<T> VectoredSlice<T> {
 }
 
 impl<T: IoVectoredBuf> IoVectoredBuf for VectoredSlice<T> {
-    unsafe fn iter_io_buffer(&self) -> impl Iterator<Item = IoBuffer> {
-        let mut offset = self.begin;
-        unsafe { self.buf.iter_io_buffer() }.filter_map(move |buf| {
-            let len = buf.len();
-            let sub = len.min(offset);
-            offset -= sub;
-            if len - sub > 0 {
-                // SAFETY: sub <= len
-                Some(unsafe {
-                    IoBuffer::new(buf.as_ptr().add(sub), len - sub, buf.capacity() - sub)
-                })
-            } else {
-                None
-            }
-        })
+    unsafe fn iter_buffer(&self) -> impl Iterator<Item = IoBuffer> {
+        unsafe { self.buf.iter_buffer() }
+            .skip(self.idx)
+            .enumerate()
+            .map(move |(idx, buf)| {
+                if idx != 0 {
+                    buf
+                } else {
+                    unsafe { IoBuffer::from_slice(&buf.slice()[self.offset..]) }
+                }
+            })
     }
 }
 
@@ -178,15 +184,59 @@ impl<T> IntoInner for VectoredSlice<T> {
     }
 }
 
-/// An owned view of a vectored buffer.
+impl<T: SetBufInit> SetBufInit for VectoredSlice<T> {
+    unsafe fn set_buf_init(&mut self, len: usize) {
+        unsafe { self.buf.set_buf_init(self.begin + len) }
+    }
+}
+
+impl<T> IntoInner for VectoredSliceMut<T> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buf
+    }
+}
+
+impl<T: IoVectoredBufMut> IoVectoredBufMut for VectoredSlice<T> {
+    fn uninit_len_of(&self, idx: usize) -> usize {
+        self.buf.uninit_len_of(idx + self.idx)
+    }
+
+    fn capacity_of(&self, idx: usize) -> usize {
+        self.buf.capacity_of(idx + self.idx)
+    }
+}
+
+/// Type for mutable slice of [`IoVectoredBufMut`].
 pub struct VectoredSliceMut<T> {
     buf: T,
     begin: usize,
+    idx: usize,
+    offset: usize,
 }
 
-impl<T> VectoredSliceMut<T> {
+/// Type for [`IoVectoredBufMut::slice_mut`].
+impl<T: IoVectoredBufMut> VectoredSliceMut<T> {
     pub(crate) fn new(buf: T, begin: usize) -> Self {
-        Self { buf, begin }
+        let mut offset = begin;
+        let mut idx = 0;
+
+        loop {
+            let cap = buf.capacity_of(idx);
+            if cap > offset {
+                break;
+            }
+            offset -= cap;
+            idx += 1;
+        }
+
+        Self {
+            buf,
+            begin,
+            idx,
+            offset,
+        }
     }
 
     /// Offset in the underlying buffer at which this slice starts.
@@ -209,29 +259,19 @@ impl<T> VectoredSliceMut<T> {
     }
 }
 
-impl<T: IoVectoredBuf> IoVectoredBuf for VectoredSliceMut<T> {
-    unsafe fn iter_io_buffer(&self) -> impl Iterator<Item = IoBuffer> {
-        let mut offset = self.begin;
-        unsafe { self.buf.iter_io_buffer() }.filter_map(move |buf| {
-            let capacity = buf.capacity();
-            let sub = capacity.min(offset);
-            offset -= sub;
-            if capacity - sub > 0 {
-                let len = buf.len().saturating_sub(sub);
-                // SAFETY: sub <= capacity
-                Some(unsafe { IoBuffer::new(buf.as_ptr().add(sub), len, capacity - sub) })
-            } else {
-                None
-            }
-        })
-    }
-}
-
-impl<T> IntoInner for VectoredSliceMut<T> {
-    type Inner = T;
-
-    fn into_inner(self) -> Self::Inner {
-        self.buf
+impl<T: IoVectoredBufMut> IoVectoredBuf for VectoredSliceMut<T> {
+    unsafe fn iter_buffer(&self) -> impl Iterator<Item = IoBuffer> {
+        unsafe { self.buf.iter_buffer() }
+            .skip(self.idx)
+            .enumerate()
+            .map(move |(idx, buf)| {
+                if idx != 0 {
+                    buf
+                } else {
+                    let begin = self.offset.min(buf.len());
+                    unsafe { IoBuffer::from_slice(&buf.slice()[begin..]) }
+                }
+            })
     }
 }
 
@@ -241,4 +281,21 @@ impl<T: SetBufInit> SetBufInit for VectoredSliceMut<T> {
     }
 }
 
-impl<T: IoVectoredBufMut> IoVectoredBufMut for VectoredSliceMut<T> {}
+impl<T: IoVectoredBufMut> IoVectoredBufMut for VectoredSliceMut<T> {
+    fn uninit_len_of(&self, idx: usize) -> usize {
+        // Only the first buffer is affected by the offset.
+        if idx == 0 {
+            let buf = unsafe { self.buf.iter_buffer() }
+                .next()
+                .expect("index out of bounds");
+            // It's possible for offset to go beyond buf.len().
+            self.buf.capacity_of(self.idx) - buf.len().max(self.offset)
+        } else {
+            self.buf.uninit_len_of(idx + self.idx)
+        }
+    }
+
+    fn capacity_of(&self, idx: usize) -> usize {
+        self.buf.capacity_of(idx + self.idx)
+    }
+}

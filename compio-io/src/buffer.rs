@@ -72,18 +72,8 @@ impl Inner {
 
 unsafe impl IoBuf for Inner {
     #[inline]
-    fn as_buf_ptr(&self) -> *const u8 {
-        self.buf.as_ptr()
-    }
-
-    #[inline]
-    fn buf_len(&self) -> usize {
-        self.buf.len()
-    }
-
-    #[inline]
-    fn buf_capacity(&self) -> usize {
-        self.buf.capacity()
+    unsafe fn buffer(&self) -> compio_buf::IoBuffer {
+        unsafe { compio_buf::IoBuffer::from_slice(self.slice()) }
     }
 }
 
@@ -96,8 +86,8 @@ impl SetBufInit for Inner {
 
 unsafe impl IoBufMut for Inner {
     #[inline]
-    fn as_buf_mut_ptr(&mut self) -> *mut u8 {
-        self.buf.as_mut_ptr()
+    fn uninit_len(&self) -> usize {
+        self.buf.capacity() - self.buf.len()
     }
 }
 

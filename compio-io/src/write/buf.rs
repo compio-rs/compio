@@ -1,4 +1,4 @@
-use compio_buf::{BufResult, IntoInner, IoBuf, IoVectoredBuf, buf_try};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, buf_try};
 
 use crate::{
     AsyncWrite, IoResult,

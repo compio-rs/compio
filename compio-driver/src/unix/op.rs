@@ -1,11 +1,9 @@
 use std::{ffi::CString, marker::PhantomPinned, net::Shutdown, os::fd::OwnedFd};
 
-use compio_buf::{
-    IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
-};
+use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
-use crate::op::*;
+use crate::{SysSlice, SysSliceMut, op::*, sys_slice::*};
 
 /// Open or create a file with flags and mode.
 pub struct OpenFile {
@@ -88,7 +86,7 @@ pub struct ReadVectoredAt<T: IoVectoredBufMut, S> {
     pub(crate) fd: S,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
-    pub(crate) slices: Vec<IoSliceMut>,
+    pub(crate) slices: Vec<SysSliceMut>,
     #[cfg(freebsd)]
     pub(crate) aiocb: libc::aiocb,
     _p: PhantomPinned,
@@ -122,7 +120,7 @@ pub struct WriteVectoredAt<T: IoVectoredBuf, S> {
     pub(crate) fd: S,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
-    pub(crate) slices: Vec<IoSlice>,
+    pub(crate) slices: Vec<SysSlice>,
     #[cfg(freebsd)]
     pub(crate) aiocb: libc::aiocb,
     _p: PhantomPinned,
@@ -304,7 +302,7 @@ impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
 pub struct RecvVectored<T: IoVectoredBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
-    pub(crate) slices: Vec<IoSliceMut>,
+    pub(crate) slices: Vec<SysSliceMut>,
     _p: PhantomPinned,
 }
 
@@ -358,7 +356,7 @@ impl<T: IoBuf, S> IntoInner for Send<T, S> {
 pub struct SendVectored<T: IoVectoredBuf, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
-    pub(crate) slices: Vec<IoSlice>,
+    pub(crate) slices: Vec<SysSlice>,
     _p: PhantomPinned,
 }
 
@@ -389,7 +387,7 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) control: C,
-    pub(crate) slices: Vec<IoSliceMut>,
+    pub(crate) slices: Vec<SysSliceMut>,
     _p: PhantomPinned,
 }
 
@@ -416,7 +414,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
     }
 
     pub(crate) unsafe fn set_msg(&mut self) {
-        self.slices = unsafe { self.buffer.io_slices_mut() };
+        self.slices = unsafe { self.buffer.sys_slices_mut() };
 
         self.msg.msg_name = std::ptr::addr_of_mut!(self.addr) as _;
         self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
@@ -448,7 +446,7 @@ pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
     pub(crate) buffer: T,
     pub(crate) control: C,
     pub(crate) addr: SockAddr,
-    pub(crate) slices: Vec<IoSlice>,
+    pub(crate) slices: Vec<SysSlice>,
     _p: PhantomPinned,
 }
 
@@ -475,7 +473,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     }
 
     pub(crate) unsafe fn set_msg(&mut self) {
-        self.slices = unsafe { self.buffer.io_slices() };
+        self.slices = unsafe { self.buffer.sys_slices() };
 
         self.msg.msg_name = self.addr.as_ptr() as _;
         self.msg.msg_namelen = self.addr.len();
