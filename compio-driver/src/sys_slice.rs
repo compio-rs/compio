@@ -149,9 +149,7 @@ pub trait IoVectoredBufExt: IoVectoredBuf {
     /// lifetime of the returned [`SysSlice`]s, and that they are not used for
     /// mutating while the [`SysSlice`]s are in use.
     unsafe fn sys_slices(&self) -> Vec<SysSlice> {
-        unsafe { self.iter_buffer() }
-            .map(|buf| SysSlice::from(buf))
-            .collect()
+        unsafe { self.iter_buffer() }.map(SysSlice::from).collect()
     }
 }
 
@@ -167,7 +165,7 @@ pub trait IoVectoredBufMutExt: IoVectoredBufMut {
     /// anywhere else while the [`SysSliceMut`]s are in use.
     unsafe fn sys_slices_mut(&mut self) -> Vec<SysSliceMut> {
         unsafe { self.iter_buffer_mut() }
-            .map(|buf| SysSliceMut::from(buf))
+            .map(SysSliceMut::from)
             .collect()
     }
 }
