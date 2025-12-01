@@ -240,7 +240,7 @@ pub unsafe trait IoBufMut: IoBuf + SetBufInit {
         // SAFETY:
         // - `buf.ptr` is valid for `buf.len() + uninit_len` bytes.
         // - the pointer is not used for anything else while the `IoBufferMut` is in
-        //   use, guranteed by `&mut self` and `IoBufMut`'s short-live safety contract.
+        //   use, guaranteed by `&mut self` and `IoBufMut`'s short-live safety contract.
         unsafe { IoBufferMut::new(ptr as _, len + uninit_len) }
     }
 
