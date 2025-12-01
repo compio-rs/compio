@@ -139,8 +139,19 @@ impl Runtime {
     }
 
     fn spawn_impl<F: Future + 'static>(&self, future: F) -> Task<F::Output> {
-        let waker = self.driver.borrow().waker();
-        self.scheduler.spawn(future, waker)
+        unsafe { self.spawn_unchecked(future) }
+    }
+
+    /// Low level API to control the runtime.
+    ///
+    /// Spawns a new asynchronous task, returning a [`Task`] for it.
+    ///
+    /// # Safety
+    ///
+    /// Borrowed variables mut outlive the future.
+    pub unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> Task<F::Output> {
+        let waker = self.waker();
+        unsafe { self.scheduler.spawn_unchecked(future, waker) }
     }
 
     /// Low level API to control the runtime.

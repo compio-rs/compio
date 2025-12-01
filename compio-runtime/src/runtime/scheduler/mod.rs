@@ -154,9 +154,9 @@ impl Scheduler {
     }
 
     /// Spawns a new asynchronous task, returning a [`Task`] for it.
-    pub(crate) fn spawn<F>(&self, future: F, waker: Waker) -> Task<F::Output>
+    pub(crate) unsafe fn spawn_unchecked<F>(&self, future: F, waker: Waker) -> Task<F::Output>
     where
-        F: Future + 'static,
+        F: Future,
     {
         let mut active_tasks = self.active_tasks.borrow_mut();
         let task_entry = active_tasks.vacant_entry();
@@ -180,7 +180,7 @@ impl Scheduler {
             move |runnable| task_queue.upgrade_and_push(runnable, &waker)
         };
 
-        let (runnable, task) = async_task::spawn_local(future, schedule);
+        let (runnable, task) = unsafe { async_task::spawn_unchecked(future, schedule) };
 
         // Store the waker.
         task_entry.insert(runnable.waker());
