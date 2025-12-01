@@ -1,4 +1,4 @@
-use std::{fmt::Debug, mem::MaybeUninit,slice};
+use std::{fmt::Debug, mem::MaybeUninit, slice};
 
 /// An unsafely `'static` and platform-agnostic buffer that's initialized.
 ///
@@ -107,7 +107,7 @@ impl IoBufferMut {
         Self { len, ptr }
     }
 
-    /// Create a new [`IoBufferMut`] from an initialized slice.
+    /// Create a new [`IoBufferMut`] from an uninitialized slice.
     ///
     /// # Safety
     /// Data within the range must not be used while the [`IoBufferMut`] is
