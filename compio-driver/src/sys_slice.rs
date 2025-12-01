@@ -1,5 +1,3 @@
-use std::mem::MaybeUninit;
-
 use compio_buf::{IoBuffer, IoBufferMut, IoVectoredBuf, IoVectoredBufMut};
 
 #[cfg(unix)]
@@ -59,37 +57,10 @@ compile_error!("`SysSlice` is only available on unix and windows");
 #[repr(transparent)]
 pub struct SysSlice(sys::Inner);
 
-impl SysSlice {
-    /// Create a new `SysSlice` from a raw pointer and a length.
-    ///
-    /// # Safety
-    /// The caller must ensure that:
-    /// - the pointer is valid for the lifetime of the `SysSlice`
-    /// - the length is correct
-    /// - the content of the buffer is initialized
-    /// - the pointer is not used for mutating while the `SysSlice` is in use
-    pub unsafe fn new(ptr: *const u8, len: usize) -> Self {
-        Self(sys::Inner::new(ptr as _, len))
-    }
-
-    /// Create a new `SysSlice` from an initialized slice.
-    ///
-    /// # Safety
-    /// The caller must ensure that, during the lifetime of the `SysSlice`, the
-    /// slice is valid and is not used for mutating.
-    pub unsafe fn from_slice(slice: &[u8]) -> Self {
-        // SAFETY:
-        // - the length is correct
-        // - the content of the buffer is initialized
-        // - the slice is not used for mutating while the `SysSlice` is in use
-        unsafe { Self::new(slice.as_ptr() as _, slice.len()) }
-    }
-}
-
 impl From<IoBuffer> for SysSlice {
     fn from(value: IoBuffer) -> Self {
         let (ptr, len) = value.into_piece();
-        unsafe { Self::new(ptr, len) }
+        Self(sys::Inner::new(ptr as _, len))
     }
 }
 
@@ -106,37 +77,10 @@ impl From<IoBuffer> for SysSlice {
 #[repr(transparent)]
 pub struct SysSliceMut(sys::Inner);
 
-impl SysSliceMut {
-    /// Create a new [`SysSliceMut`] from a raw pointer and a length.
-    ///
-    /// # Safety
-    /// The caller must ensure that:
-    /// - the pointer is valid for the lifetime of the `SysSliceMut`
-    /// - the length is correct (the content can be uninitialized, but must be
-    ///   accessible)
-    /// - the pointer is not used for anything else while the [`SysSliceMut`] is
-    ///   in use
-    pub unsafe fn new(ptr: *mut MaybeUninit<u8>, len: usize) -> Self {
-        Self(sys::Inner::new(ptr, len))
-    }
-
-    /// Create a new [`SysSliceMut`] from an initialized slice.
-    ///
-    /// # Safety
-    /// The caller must ensure that, during the lifetime of the `SysSliceMut`,
-    /// the slice is valid and is not used for anything else.
-    pub unsafe fn from_slice(slice: &mut [u8]) -> Self {
-        // SAFETY:
-        // - the length is correct
-        // - the slice is not used for anything else while the [`SysSliceMut`] is in use
-        unsafe { Self::new(slice.as_mut_ptr() as _, slice.len()) }
-    }
-}
-
 impl From<IoBufferMut> for SysSliceMut {
     fn from(value: IoBufferMut) -> Self {
         let (ptr, len) = value.into_piece();
-        unsafe { Self::new(ptr, len) }
+        Self(sys::Inner::new(ptr, len))
     }
 }
 

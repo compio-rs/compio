@@ -451,7 +451,7 @@ impl<S: AsFd> RecvFromHeader<S> {
 pub struct RecvFrom<T: IoBufMut, S> {
     header: RecvFromHeader<S>,
     buffer: T,
-    slice: [SysSliceMut; 1],
+    slice: Option<SysSliceMut>,
 }
 
 impl<T: IoBufMut, S> RecvFrom<T, S> {
@@ -460,8 +460,7 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
         Self {
             header: RecvFromHeader::new(fd),
             buffer,
-            // SAFETY: We never use this slice.
-            slice: [unsafe { SysSliceMut::from_slice(&mut []) }],
+            slice: None,
         }
     }
 }
@@ -469,8 +468,10 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
 impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slice[0] = unsafe { this.buffer.buffer_mut() }.into();
-        this.header.create_entry(&mut this.slice)
+        let slice = this
+            .slice
+            .insert(unsafe { this.buffer.buffer_mut() }.into());
+        this.header.create_entry(std::slice::from_mut(slice))
     }
 }
 
@@ -552,7 +553,7 @@ impl<S: AsFd> SendToHeader<S> {
 pub struct SendTo<T: IoBuf, S> {
     header: SendToHeader<S>,
     buffer: T,
-    slice: [SysSlice; 1],
+    slice: Option<SysSlice>,
 }
 
 impl<T: IoBuf, S> SendTo<T, S> {
@@ -561,8 +562,7 @@ impl<T: IoBuf, S> SendTo<T, S> {
         Self {
             header: SendToHeader::new(fd, addr),
             buffer,
-            // SAFETY: We never use this slice.
-            slice: [unsafe { SysSlice::from_slice(&[]) }],
+            slice: None,
         }
     }
 }
@@ -570,8 +570,8 @@ impl<T: IoBuf, S> SendTo<T, S> {
 impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slice[0] = unsafe { this.buffer.buffer() }.into();
-        this.header.create_entry(&mut this.slice)
+        let slice = this.slice.insert(unsafe { this.buffer.buffer() }.into());
+        this.header.create_entry(std::slice::from_mut(slice))
     }
 }
 
