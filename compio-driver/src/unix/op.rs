@@ -3,7 +3,7 @@ use std::{ffi::CString, marker::PhantomPinned, net::Shutdown, os::fd::OwnedFd};
 use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
-use crate::{SysSlice, SysSliceMut, op::*, sys_slice::*};
+use crate::{op::*, sys_slice::*};
 
 /// Open or create a file with flags and mode.
 pub struct OpenFile {

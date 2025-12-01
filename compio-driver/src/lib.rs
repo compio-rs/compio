@@ -37,7 +37,6 @@ mod buffer_pool;
 pub use buffer_pool::*;
 
 mod sys_slice;
-pub(crate) use sys_slice::*;
 
 cfg_if::cfg_if! {
     if #[cfg(windows)] {

@@ -41,14 +41,6 @@ mod sys {
                 buf: ptr,
             })
         }
-
-        pub fn len(&self) -> usize {
-            self.0.len as _
-        }
-
-        pub fn as_ptr(&self) -> *mut MaybeUninit<u8> {
-            self.0.buf
-        }
     }
 }
 

@@ -82,7 +82,7 @@ impl<T: IoBufMut> DerefMut for Slice<T> {
 unsafe impl<T: IoBuf> IoBuf for Slice<T> {
     unsafe fn buffer(&self) -> IoBuffer {
         // SAFETY: The slice is bounded by &self, as required.
-        unsafe { IoBuffer::from_slice(&self.deref()) }
+        unsafe { IoBuffer::from_slice(self.deref()) }
     }
 }
 

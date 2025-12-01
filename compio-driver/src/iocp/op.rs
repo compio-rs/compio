@@ -10,9 +10,7 @@ use std::{
     task::Poll,
 };
 
-use compio_buf::{
-    BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
-};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 use socket2::{SockAddr, SockAddrStorage};
@@ -40,7 +38,7 @@ use windows_sys::{
     core::GUID,
 };
 
-use crate::{AsFd, AsRawFd, OpCode, OpType, RawFd, op::*, syscall};
+use crate::{AsFd, AsRawFd, OpCode, OpType, RawFd, op::*, sys_slice::*, syscall};
 
 #[inline]
 fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
@@ -514,7 +512,7 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvVectored<T, S> {
 impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();
-        let slices = unsafe { self.get_unchecked_mut().buffer.io_slices_mut() };
+        let slices = unsafe { self.get_unchecked_mut().buffer.sys_slices_mut() };
         let mut flags = 0;
         let mut received = 0;
         let res = unsafe {
@@ -611,7 +609,7 @@ impl<T: IoVectoredBuf, S> IntoInner for SendVectored<T, S> {
 
 impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let slices = unsafe { self.buffer.io_slices() };
+        let slices = unsafe { self.buffer.sys_slices() };
         let mut sent = 0;
         let res = unsafe {
             WSASend(
@@ -668,7 +666,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
         let fd = this.fd.as_fd().as_raw_fd();
-        let buffer = unsafe { this.buffer.as_io_slice_mut() };
+        let buffer: SysSliceMut = unsafe { this.buffer.buffer_mut().into() };
         let mut flags = 0;
         let mut received = 0;
         let res = unsafe {
@@ -728,7 +726,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
         let fd = this.fd.as_fd().as_raw_fd();
-        let buffer = unsafe { this.buffer.io_slices_mut() };
+        let buffer = unsafe { this.buffer.sys_slices_mut() };
         let mut flags = 0;
         let mut received = 0;
         let res = unsafe {
@@ -782,7 +780,7 @@ impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
 
 impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let buffer = unsafe { self.buffer.as_io_slice() };
+        let buffer: SysSlice = unsafe { self.buffer.buffer().into() };
         let mut sent = 0;
         let res = unsafe {
             WSASendTo(
@@ -835,7 +833,7 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
 
 impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let buffer = unsafe { self.buffer.io_slices() };
+        let buffer = unsafe { self.buffer.sys_slices() };
         let mut sent = 0;
         let res = unsafe {
             WSASendTo(
@@ -916,14 +914,14 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
 
         let this = unsafe { self.get_unchecked_mut() };
 
-        let mut slices = unsafe { this.buffer.io_slices_mut() };
+        let mut slices = unsafe { this.buffer.sys_slices_mut() };
         this.msg.name = &mut this.addr as *mut _ as _;
         this.msg.namelen = std::mem::size_of::<SOCKADDR_STORAGE>() as _;
         this.msg.lpBuffers = slices.as_mut_ptr() as _;
         this.msg.dwBufferCount = slices.len() as _;
-        // SAFETY: `IoSliceMut` is promised to be the same as `WSABUF`
+        // SAFETY: `SysSliceMut` is promised to be the same as `WSABUF`
         this.msg.Control =
-            unsafe { std::mem::transmute::<IoSliceMut, WSABUF>(this.control.as_io_slice_mut()) };
+            unsafe { std::mem::transmute::<SysSliceMut, WSABUF>(this.control.buffer_mut().into()) };
 
         let mut received = 0;
         let res = unsafe {
@@ -986,14 +984,16 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
 
-        let slices = unsafe { this.buffer.io_slices() };
+        let slices = unsafe { this.buffer.sys_slices() };
         let msg = WSAMSG {
             name: this.addr.as_ptr() as _,
             namelen: this.addr.len(),
             lpBuffers: slices.as_ptr() as _,
             dwBufferCount: slices.len() as _,
-            // SAFETY: `IoSlice` is promised to be the same as `WSABUF`
-            Control: unsafe { std::mem::transmute::<IoSlice, WSABUF>(this.control.as_io_slice()) },
+            // SAFETY: `SysSlice` is promised to be the same as `WSABUF`
+            Control: unsafe {
+                std::mem::transmute::<SysSlice, WSABUF>(this.control.buffer().into())
+            },
             dwFlags: 0,
         };
 

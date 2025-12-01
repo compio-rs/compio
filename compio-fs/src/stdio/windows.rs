@@ -50,10 +50,12 @@ impl<R: Read, B: IoBufMut> OpCode for StdRead<R, B> {
 
             slice.fill(MaybeUninit::new(0));
             this.reader
-                .read(std::slice::from_raw_parts_mut(
-                    this.buffer.as_buf_mut_ptr(),
-                    this.buffer.buf_capacity(),
-                ))
+                .read(unsafe {
+                    std::slice::from_raw_parts_mut(
+                        this.buffer.as_buf_mut_ptr(),
+                        this.buffer.buf_capacity(),
+                    )
+                })
                 .into()
         }
     }

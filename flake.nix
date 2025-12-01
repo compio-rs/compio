@@ -8,33 +8,43 @@
     rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = {
-    nixpkgs,
-    rust-overlay,
-    flake-utils,
-    ...
-  }:
+  outputs =
+    {
+      nixpkgs,
+      rust-overlay,
+      flake-utils,
+      ...
+    }:
     flake-utils.lib.eachDefaultSystem (
-      system: let
-        overlays = [(import rust-overlay)];
+      system:
+      let
+        overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs {
           inherit system overlays;
         };
       in
-        with pkgs; {
-          devShells.default = mkShell {
-            buildInputs = [
-              go
-              cmake
-              glib
-              openssl
-              pkg-config
-              (rust-bin.selectLatestNightlyWith (toolchain:
-                toolchain.default.override {
-                  extensions = ["rust-src"];
-                }))
-            ];
-          };
-        }
+      with pkgs;
+      {
+        devShells.default = mkShell {
+          buildInputs = [
+            go
+            cmake
+            glib
+            openssl
+            pkg-config
+            (rust-bin.selectLatestNightlyWith (
+              toolchain:
+              toolchain.default.override {
+                extensions = [ "rust-src" ];
+                targets = [
+                  "x86_64-pc-windows-gnu"
+                  "x86_64-unknown-linux-gnu"
+                  "aarch64-apple-darwin"
+                ];
+              }
+            ))
+          ];
+        };
+      }
     );
 }

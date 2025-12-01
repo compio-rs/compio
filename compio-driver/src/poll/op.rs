@@ -22,7 +22,7 @@ use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
 use super::{AsFd, Decision, OpCode, OpType, syscall};
 pub use crate::unix::op::*;
-use crate::{IoVectoredBufExt, IoVectoredBufMutExt, SysSlice, SysSliceMut, op::*};
+use crate::{sys_slice::*, op::*};
 
 impl<
     D: std::marker::Send + 'static,
