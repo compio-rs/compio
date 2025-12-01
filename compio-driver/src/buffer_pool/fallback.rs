@@ -104,22 +104,14 @@ impl OwnedBuffer {
 }
 
 unsafe impl IoBuf for OwnedBuffer {
-    fn as_buf_ptr(&self) -> *const u8 {
-        self.buffer.as_buf_ptr()
-    }
-
-    fn buf_len(&self) -> usize {
-        self.buffer.buf_len()
-    }
-
-    fn buf_capacity(&self) -> usize {
-        self.buffer.buf_capacity()
+    unsafe fn buffer(&self) -> compio_buf::IoBuffer {
+        unsafe { self.buffer.buffer() }
     }
 }
 
 unsafe impl IoBufMut for OwnedBuffer {
-    fn as_buf_mut_ptr(&mut self) -> *mut u8 {
-        self.buffer.as_buf_mut_ptr()
+    fn uninit_len(&self) -> usize {
+        self.buffer.uninit_len()
     }
 }
 

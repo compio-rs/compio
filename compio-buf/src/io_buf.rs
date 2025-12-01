@@ -174,9 +174,8 @@ unsafe impl IoBuf for bytes::BytesMut {
 #[cfg(feature = "read_buf")]
 unsafe impl IoBuf for std::io::BorrowedBuf<'static> {
     unsafe fn buffer(&self) -> IoBuffer {
-        let filled = (*self).is_filled();
         // Safety: filled part of BorrowedBuf is always initialized.
-        unsafe { IoBuffer::new(filled.as_ptr(), filled.len()) }
+        unsafe { IoBuffer::from_slice(self.filled()) }
     }
 }
 

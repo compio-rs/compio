@@ -112,8 +112,8 @@ impl<T: IoBuf, const N: usize> IoVectoredBuf for smallvec::SmallVec<[T; N]>
 where
     [T; N]: smallvec::Array<Item = T>,
 {
-    unsafe fn iter_io_buffer(&self) -> impl Iterator<Item = IoBuffer> {
-        self.iter().map(|buf| unsafe { buf.as_io_buffer() })
+    unsafe fn iter_buffer(&self) -> impl Iterator<Item = IoBuffer> {
+        self.iter().map(|buf| unsafe { buf.buffer() })
     }
 }
 
