@@ -132,7 +132,7 @@ impl SysSliceMut {
     ///
     /// # Safety
     /// The caller must ensure that, during the lifetime of the `SysSliceMut`,
-    /// the slice is valid the and is not used for anything else.
+    /// the slice is valid and is not used for anything else.
     pub unsafe fn from_slice(slice: &mut [u8]) -> Self {
         // SAFETY:
         // - the length is correct
