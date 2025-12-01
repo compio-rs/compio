@@ -193,8 +193,8 @@ where
     [u8; N]: smallvec::Array<Item = u8>,
 {
     unsafe fn buffer(&self) -> IoBuffer {
-        // Safety: SmallVec<[_; N]> always holds initialized bytes within `N`.
-        unsafe { IoBuffer::new(self.as_ptr(), N) }
+        // Safety: SmallVec always holds initialized bytes within `self.len()`.
+        unsafe { IoBuffer::new(self.as_ptr(), self.len()) }
     }
 }
 
