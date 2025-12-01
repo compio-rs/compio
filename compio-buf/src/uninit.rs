@@ -1,4 +1,8 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    mem::MaybeUninit,
+    ops::{Deref, DerefMut},
+    slice,
+};
 
 use crate::*;
 
@@ -52,17 +56,21 @@ impl<T> Uninit<T> {
     }
 }
 
-impl<T: IoBuf> Deref for Uninit<T> {
-    type Target = [u8];
+impl<T: IoBufMut> Deref for Uninit<T> {
+    type Target = [MaybeUninit<u8>];
 
     fn deref(&self) -> &Self::Target {
-        &*self.0
+        let ptr = unsafe { self.0.as_ptr().add(self.begin()) as *const MaybeUninit<u8> };
+        let len = self.0.uninit_len();
+        unsafe { slice::from_raw_parts(ptr, len) }
     }
 }
 
 impl<T: IoBufMut> DerefMut for Uninit<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.0
+        let ptr = unsafe { self.0.as_ptr().add(self.begin()) as *mut MaybeUninit<u8> };
+        let len = self.0.uninit_len();
+        unsafe { slice::from_raw_parts_mut(ptr, len) }
     }
 }
 
