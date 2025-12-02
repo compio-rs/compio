@@ -384,10 +384,10 @@ impl<S: AsFd> OpCode for Sync<S> {
         #[cfg(aio)]
         {
             unsafe extern "C" fn aio_fsync(aiocbp: *mut libc::aiocb) -> i32 {
-                libc::aio_fsync(libc::O_SYNC, aiocbp)
+                unsafe { libc::aio_fsync(libc::O_SYNC, aiocbp) }
             }
             unsafe extern "C" fn aio_fdatasync(aiocbp: *mut libc::aiocb) -> i32 {
-                libc::aio_fsync(libc::O_DSYNC, aiocbp)
+                unsafe { libc::aio_fsync(libc::O_DSYNC, aiocbp) }
             }
 
             let this = unsafe { self.get_unchecked_mut() };
