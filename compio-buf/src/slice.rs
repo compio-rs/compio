@@ -59,28 +59,47 @@ impl<T> Slice<T> {
     }
 }
 
+impl<T: IoBuf> Slice<T> {
+    /// Offset in the underlying buffer at which this slice starts. If it
+    /// exceeds the buffer length, returns the buffer length.
+    fn begin_or_len(&self) -> usize {
+        let len = self.buffer.buf_len();
+        self.begin.min(len)
+    }
+
+    /// Offset in the underlying buffer at which this slice ends. If it does not
+    /// exist or exceeds the buffer length, returns the buffer length.
+    fn end_or_len(&self) -> usize {
+        let len = self.buffer.buf_len();
+        self.end.unwrap_or(len).min(len)
+    }
+}
+
+impl<T: IoBufMut> Slice<T> {
+    /// Offset in the underlying buffer at which this slice ends. If it does not
+    /// exist or exceeds the buffer capacity, returns the buffer capacity.
+    fn end_or_cap(&self) -> usize {
+        let cap = self.buffer.buf_capacity();
+        self.end.unwrap_or(cap).min(cap)
+    }
+}
+
 impl<T: IoBuf> Deref for Slice<T> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
         let bytes = self.buffer.as_slice();
-        if self.begin >= bytes.len() {
-            return &[];
-        }
-        let end = self.end.unwrap_or(bytes.len()).min(bytes.len());
-        &bytes[self.begin..end]
+        let begin = self.begin_or_len();
+        let end = self.end_or_len();
+        &bytes[begin..end]
     }
 }
 
 impl<T: IoBufMut> DerefMut for Slice<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        let begin = self.begin();
-        if begin >= self.buffer.buf_len() {
-            return &mut [];
-        }
-        let buf_len = self.buffer.buf_len();
-        let end = self.end().unwrap_or(buf_len).min(buf_len);
-        let ptr = unsafe { self.buffer.buffer() }.as_ptr();
+        let ptr = self.buffer.as_buf_ptr();
+        let begin = self.begin_or_len();
+        let end = self.end_or_len();
         unsafe { std::slice::from_raw_parts_mut(ptr.add(begin) as _, end - begin) }
     }
 }
@@ -95,11 +114,8 @@ unsafe impl<T: IoBuf> IoBuf for Slice<T> {
 unsafe impl<T: IoBufMut> IoBufMut for Slice<T> {
     fn uninit_len(&self) -> usize {
         let begin = self.begin().max(self.buffer.buf_len());
-        if let Some(end) = self.end {
-            end.saturating_sub(begin)
-        } else {
-            self.buffer.buf_capacity() - begin
-        }
+        let end = self.end_or_cap();
+        end - begin
     }
 }
 
