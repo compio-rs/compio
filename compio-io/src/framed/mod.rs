@@ -21,6 +21,9 @@ mod write;
 /// It uses a [`codec`] to encode/decode messages into frames (`T -> Vec<u8>`)
 /// and a [`Framer`] to define how frames are laid out in buffer (`&mut [u8] ->
 /// &mut [u8]`).
+///
+/// [`Sink`]: futures_util::Sink
+/// [`Stream`]: futures_util::Stream
 pub struct Framed<R, W, C, F, In, Out> {
     read_state: read::State<R>,
     write_state: write::State<W>,
@@ -30,6 +33,9 @@ pub struct Framed<R, W, C, F, In, Out> {
 }
 
 /// [`Framed`] with same In ([`Sink`]) and Out ([`Stream::Item`]) type
+///
+/// [`Sink`]: futures_util::Sink
+/// [`Stream::Item`]: futures_util::Stream::Item
 pub type SymmetricFramed<R, W, C, F, Item> = Framed<R, W, C, F, Item, Item>;
 
 impl<R, W, C, F, In, Out> Framed<R, W, C, F, In, Out> {
