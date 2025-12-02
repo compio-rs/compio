@@ -183,7 +183,7 @@ unsafe impl IoBuf for std::io::BorrowedBuf<'static> {
 unsafe impl<const N: usize> IoBuf for arrayvec::ArrayVec<u8, N> {
     unsafe fn buffer(&self) -> IoBuffer {
         // Safety: ArrayVec<_, N> always holds initialized bytes within `N`.
-        unsafe { IoBuffer::new(self.as_ptr(), N) }
+        unsafe { IoBuffer::new(self.as_ptr(), self.len()) }
     }
 }
 

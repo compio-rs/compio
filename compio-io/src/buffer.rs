@@ -73,7 +73,7 @@ impl Inner {
 unsafe impl IoBuf for Inner {
     #[inline]
     unsafe fn buffer(&self) -> compio_buf::IoBuffer {
-        unsafe { compio_buf::IoBuffer::from_slice(self.slice()) }
+        unsafe { self.buf.buffer() }
     }
 }
 
@@ -87,7 +87,7 @@ impl SetBufInit for Inner {
 unsafe impl IoBufMut for Inner {
     #[inline]
     fn uninit_len(&self) -> usize {
-        self.buf.capacity() - self.buf.len()
+        self.buf.uninit_len()
     }
 }
 
