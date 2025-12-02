@@ -123,7 +123,7 @@ impl IoBufferMut {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that the slice is valid the and is not used for
+    /// The caller must ensure that the slice is valid and is not used for
     /// anything else during `'a`.
     pub unsafe fn slice_mut<'a>(self) -> &'a mut [MaybeUninit<u8>] {
         // SAFETY: (by type invariant)
