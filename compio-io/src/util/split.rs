@@ -110,7 +110,7 @@ impl<T> UnsyncReadHalf<T> {
     /// # Panics
     ///
     /// If this [`UnsyncReadHalf`] and the given [`UnsyncWriteHalf`] do not
-    /// originate from the same [`split_unsync`](super::split_unsync) operation
+    /// originate from the same [`split_unsync`] operation
     /// this method will panic.
     #[track_caller]
     pub fn unsplit(self, other: UnsyncWriteHalf<T>) -> T {
