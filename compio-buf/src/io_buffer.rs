@@ -56,7 +56,7 @@ impl IoBuffer {
     }
 
     /// Decompose the [`IoBuffer`] into pointer and length.
-    pub fn into_piece(self) -> (*const u8, usize) {
+    pub fn into_raw_parts(self) -> (*const u8, usize) {
         (self.ptr, self.len)
     }
 
@@ -82,29 +82,29 @@ impl IoBuffer {
 /// lifetime, making interaction with the runtime easier.
 pub struct IoBufferMut {
     ptr: *mut MaybeUninit<u8>,
-    len: usize,
+    cap: usize,
 }
 
 impl Debug for IoBufferMut {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        unsafe { slice::from_raw_parts::<MaybeUninit<u8>>(self.ptr as *const _, self.len) }.fmt(f)
+        unsafe { slice::from_raw_parts::<MaybeUninit<u8>>(self.ptr as *const _, self.cap) }.fmt(f)
     }
 }
 
 impl IoBufferMut {
-    /// Create a new [`IoBufferMut`] from a raw pointer and a length
+    /// Create a new [`IoBufferMut`] from a raw pointer and a capacity
     ///
     /// # Safety
     /// The caller must ensure that:
     /// - the pointer points to a valid memory region of at least `len`
     ///   uninitialized bytes
     /// - the pointer is valid for the lifetime of the [`IoBufferMut`]
-    /// - the length is correct (the content can be uninitialized, but must be
+    /// - the capacity is correct (the content can be uninitialized, but must be
     ///   accessible)
     /// - the pointer is not used for anything else while the [`IoBufferMut`] is
     ///   in use
-    pub unsafe fn new(ptr: *mut MaybeUninit<u8>, len: usize) -> Self {
-        Self { len, ptr }
+    pub unsafe fn new(ptr: *mut MaybeUninit<u8>, cap: usize) -> Self {
+        Self { cap, ptr }
     }
 
     /// Create a new [`IoBufferMut`] from an uninitialized slice.
@@ -115,7 +115,7 @@ impl IoBufferMut {
     pub unsafe fn from_slice(slice: &mut [MaybeUninit<u8>]) -> Self {
         Self {
             ptr: slice.as_mut_ptr(),
-            len: slice.len(),
+            cap: slice.len(),
         }
     }
 
@@ -127,14 +127,14 @@ impl IoBufferMut {
     /// anything else during `'a`.
     pub unsafe fn slice_mut<'a>(self) -> &'a mut [MaybeUninit<u8>] {
         // SAFETY: (by type invariant)
-        // - the length is correct
+        // - the capacity is correct
         // - the slice is not used for anything else while the [`IoBufferMut`] is in use
-        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
+        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.cap) }
     }
 
-    /// Decompose the [`IoBufferMut`] into pointer and length.
-    pub fn into_piece(self) -> (*mut MaybeUninit<u8>, usize) {
-        (self.ptr, self.len)
+    /// Decompose the [`IoBufferMut`] into pointer and capacity.
+    pub fn into_raw_parts(self) -> (*mut MaybeUninit<u8>, usize) {
+        (self.ptr, self.cap)
     }
 
     /// Get the pointer to the buffer.
@@ -142,14 +142,14 @@ impl IoBufferMut {
         self.ptr
     }
 
-    /// Get the total length of the buffer (may include both initialized and
+    /// Get the total capacity of the buffer (may include both initialized and
     /// uninitialized bytes).
-    pub fn len(&self) -> usize {
-        self.len
+    pub fn cap(&self) -> usize {
+        self.cap
     }
 
     /// Check if the buffer is empty.
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.cap() == 0
     }
 }

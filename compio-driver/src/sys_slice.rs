@@ -53,7 +53,7 @@ pub struct SysSlice(sys::Inner);
 
 impl From<IoBuffer> for SysSlice {
     fn from(value: IoBuffer) -> Self {
-        let (ptr, len) = value.into_piece();
+        let (ptr, len) = value.into_raw_parts();
         Self(sys::Inner::new(ptr as _, len))
     }
 }
@@ -73,7 +73,7 @@ pub struct SysSliceMut(sys::Inner);
 
 impl From<IoBufferMut> for SysSliceMut {
     fn from(value: IoBufferMut) -> Self {
-        let (ptr, len) = value.into_piece();
+        let (ptr, len) = value.into_raw_parts();
         Self(sys::Inner::new(ptr, len))
     }
 }

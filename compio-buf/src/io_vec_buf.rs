@@ -159,7 +159,7 @@ pub trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
     unsafe fn iter_buffer_mut(&mut self) -> impl Iterator<Item = IoBufferMut> {
         unsafe {
             self.iter_buffer().enumerate().map(|(idx, buf)| {
-                let (ptr, len) = buf.into_piece();
+                let (ptr, len) = buf.into_raw_parts();
                 let uninit_len = self.uninit_len_of(idx);
                 IoBufferMut::new(ptr as *mut MaybeUninit<u8>, len + uninit_len)
             })
@@ -168,7 +168,7 @@ pub trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
 
     /// The total capacity of all buffers.
     fn total_capacity(&mut self) -> usize {
-        unsafe { self.iter_buffer_mut().map(|buf| buf.len()).sum() }
+        unsafe { self.iter_buffer_mut().map(|buf| buf.cap()).sum() }
     }
 
     /// An iterator over mutable slices.

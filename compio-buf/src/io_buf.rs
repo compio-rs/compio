@@ -38,7 +38,7 @@ pub unsafe trait IoBuf: 'static {
 
     /// Get an immutable slice of the buffer.
     fn as_slice(&self) -> &[u8] {
-        let (ptr, len) = unsafe { self.buffer().into_piece() };
+        let (ptr, len) = unsafe { self.buffer().into_raw_parts() };
         // SAFETY:
         // - returned slice is bounded by &self
         // - &[u8] guarantees to be initialized
@@ -231,7 +231,7 @@ pub unsafe trait IoBufMut: IoBuf + SetBufInit {
     ///
     /// The returned [`IoBufferMut`] must not outlive `&self`.
     unsafe fn buffer_mut(&mut self) -> IoBufferMut {
-        let (ptr, len) = unsafe { (*self).buffer().into_piece() };
+        let (ptr, len) = unsafe { (*self).buffer().into_raw_parts() };
         let uninit_len = (*self).uninit_len();
         // SAFETY:
         // - `buf.ptr` is valid for `buf.len() + uninit_len` bytes.
@@ -245,7 +245,7 @@ pub unsafe trait IoBufMut: IoBuf + SetBufInit {
     fn as_mut_slice(&mut self) -> &mut [MaybeUninit<u8>] {
         let buf = unsafe { self.buffer_mut() };
         // SAFETY: returned slice is bounded by &mut self
-        unsafe { std::slice::from_raw_parts_mut(buf.as_ptr(), buf.len()) }
+        unsafe { std::slice::from_raw_parts_mut(buf.as_ptr(), buf.cap()) }
     }
 
     /// Returns an [`Uninit`], which is a [`Slice`] that only exposes
