@@ -22,6 +22,7 @@ use crate::*;
 /// let slice = buf.uninit();
 ///
 /// println!("{}", slice.uninit_len());
+/// assert_eq!(slice.uninit_len(), 10);
 /// assert_eq!(slice.as_slice(), b"");
 /// assert_eq!(slice.buf_capacity(), 10);
 /// ```

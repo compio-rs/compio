@@ -142,7 +142,8 @@ impl IoBufferMut {
         self.ptr
     }
 
-    /// Get the total length of the buffer (may include both initialized and uninitialized bytes).
+    /// Get the total length of the buffer (may include both initialized and
+    /// uninitialized bytes).
     pub fn len(&self) -> usize {
         self.len
     }
