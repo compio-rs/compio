@@ -22,6 +22,7 @@ mod write;
 /// and a [`Framer`] to define how frames are laid out in buffer (`&mut [u8] ->
 /// &mut [u8]`).
 ///
+/// [`Framer`]: frame::Framer
 /// [`Sink`]: futures_util::Sink
 /// [`Stream`]: futures_util::Stream
 pub struct Framed<R, W, C, F, In, Out> {

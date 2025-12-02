@@ -100,6 +100,9 @@ enum TlsAcceptorInner {
 
 /// A wrapper around a [`native_tls::TlsAcceptor`] or [`rustls::ServerConfig`],
 /// providing an async `accept` method.
+///
+/// [`native_tls::TlsAcceptor`]: https://docs.rs/native-tls/latest/native_tls/struct.TlsAcceptor.html
+/// [`rustls::ServerConfig`]: https://docs.rs/rustls/latest/rustls/server/struct.ServerConfig.html
 #[derive(Clone)]
 pub struct TlsAcceptor(TlsAcceptorInner);
 
