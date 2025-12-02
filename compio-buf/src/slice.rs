@@ -64,6 +64,9 @@ impl<T: IoBuf> Deref for Slice<T> {
 
     fn deref(&self) -> &Self::Target {
         let bytes = self.buffer.as_slice();
+        if self.begin >= bytes.len() {
+            return &[];
+        }
         let end = self.end.unwrap_or(bytes.len()).min(bytes.len());
         &bytes[self.begin..end]
     }
@@ -72,6 +75,9 @@ impl<T: IoBuf> Deref for Slice<T> {
 impl<T: IoBufMut> DerefMut for Slice<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         let begin = self.begin();
+        if begin >= self.buffer.buf_len() {
+            return &mut [];
+        }
         let buf_len = self.buffer.buf_len();
         let end = self.end().unwrap_or(buf_len).min(buf_len);
         let ptr = unsafe { self.buffer.buffer() }.as_ptr();
@@ -298,4 +304,23 @@ impl<T: IoVectoredBufMut> IoVectoredBufMut for VectoredSliceMut<T> {
     fn capacity_of(&self, idx: usize) -> usize {
         self.buf.capacity_of(idx + self.idx)
     }
+}
+
+#[test]
+fn test_slice() {
+    let buf = b"hello world";
+    let slice = buf.slice(6..);
+    assert_eq!(slice.as_slice(), b"world");
+
+    let slice = buf.slice(..5);
+    assert_eq!(slice.as_slice(), b"hello");
+
+    let slice = buf.slice(3..8);
+    assert_eq!(slice.as_slice(), b"lo wo");
+
+    let slice = buf.slice(..);
+    assert_eq!(slice.as_slice(), b"hello world");
+
+    let slice = buf.slice(12..);
+    assert_eq!(slice.as_slice(), b"");
 }

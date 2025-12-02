@@ -64,15 +64,11 @@ pub unsafe trait IoBuf: 'static {
     {
         use std::ops::Bound;
 
-        let len = self.buf_len();
-
         let begin = match range.start_bound() {
             Bound::Included(&n) => n,
             Bound::Excluded(&n) => n + 1,
             Bound::Unbounded => 0,
         };
-
-        assert!(begin <= len);
 
         let end = match range.end_bound() {
             Bound::Included(&n) => Some(n.checked_add(1).expect("out of range")),
