@@ -21,13 +21,7 @@ mod sys {
 mod sys {
     use std::mem::MaybeUninit;
 
-    // Copied from std
-    #[repr(C)]
-    #[allow(clippy::upper_case_acronyms)]
-    struct WSABUF {
-        pub len: u32,
-        pub buf: *mut MaybeUninit<u8>,
-    }
+    use windows_sys::Win32::Networking::WinSock::WSABUF;
 
     #[repr(transparent)]
     pub struct Inner(WSABUF);
@@ -36,7 +30,7 @@ mod sys {
         pub fn new(ptr: *mut MaybeUninit<u8>, len: usize) -> Self {
             Self(WSABUF {
                 len: len as u32,
-                buf: ptr,
+                buf: ptr as _,
             })
         }
     }
