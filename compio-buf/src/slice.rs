@@ -318,7 +318,11 @@ impl<T: IoVectoredBufMut> IoVectoredBufMut for VectoredSliceMut<T> {
     }
 
     fn capacity_of(&self, idx: usize) -> usize {
-        self.buf.capacity_of(idx + self.idx)
+        if idx == 0 {
+            self.buf.capacity_of(self.idx) - self.offset
+        } else {
+            self.buf.capacity_of(idx + self.idx)
+        }
     }
 }
 
