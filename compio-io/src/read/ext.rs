@@ -264,6 +264,7 @@ pub trait AsyncReadAtExt: AsyncReadAt {
     ///
     /// If successful, this function will return the total number of bytes read.
     ///
+    /// [`Ok(0)`]: Ok
     /// [`read_at()`]: AsyncReadAt::read_at
     async fn read_to_end_at<#[cfg(feature = "allocator_api")] A: Allocator + 'static>(
         &self,
