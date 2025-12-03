@@ -86,7 +86,7 @@ pub struct ReadVectoredAt<T: IoVectoredBufMut, S> {
     pub(crate) fd: S,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
-    pub(crate) slices: Vec<SysSliceMut>,
+    pub(crate) slices: Vec<SysSlice>,
     #[cfg(freebsd)]
     pub(crate) aiocb: libc::aiocb,
     _p: PhantomPinned,
@@ -302,7 +302,7 @@ impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
 pub struct RecvVectored<T: IoVectoredBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
-    pub(crate) slices: Vec<SysSliceMut>,
+    pub(crate) slices: Vec<SysSlice>,
     _p: PhantomPinned,
 }
 
@@ -387,7 +387,7 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) control: C,
-    pub(crate) slices: Vec<SysSliceMut>,
+    pub(crate) slices: Vec<SysSlice>,
     _p: PhantomPinned,
 }
 

@@ -666,7 +666,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
         let fd = this.fd.as_fd().as_raw_fd();
-        let buffer: SysSliceMut = unsafe { this.buffer.buffer_mut().into() };
+        let buffer: SysSlice = unsafe { this.buffer.buffer_mut().into() };
         let mut flags = 0;
         let mut received = 0;
         let res = unsafe {
@@ -919,9 +919,9 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
         this.msg.namelen = std::mem::size_of::<SOCKADDR_STORAGE>() as _;
         this.msg.lpBuffers = slices.as_mut_ptr() as _;
         this.msg.dwBufferCount = slices.len() as _;
-        // SAFETY: `SysSliceMut` is promised to be the same as `WSABUF`
+        // SAFETY: `SysSlice` is promised to be the same as `WSABUF`
         this.msg.Control =
-            unsafe { std::mem::transmute::<SysSliceMut, WSABUF>(this.control.buffer_mut().into()) };
+            unsafe { std::mem::transmute::<SysSlice, WSABUF>(this.control.buffer_mut().into()) };
 
         let mut received = 0;
         let res = unsafe {

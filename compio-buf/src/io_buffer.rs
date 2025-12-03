@@ -119,7 +119,7 @@ impl IoBufferMut {
         }
     }
 
-    /// Create a new [`IoBufferMut`] from an uninitialized slice.
+    /// Convert the buffer into a mutable slice.
     ///
     /// # Safety
     ///

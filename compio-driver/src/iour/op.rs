@@ -432,7 +432,7 @@ impl<S> RecvFromHeader<S> {
 }
 
 impl<S: AsFd> RecvFromHeader<S> {
-    pub fn create_entry(&mut self, slices: &mut [SysSliceMut]) -> OpEntry {
+    pub fn create_entry(&mut self, slices: &mut [SysSlice]) -> OpEntry {
         self.msg.msg_name = &mut self.addr as *mut _ as _;
         self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
         self.msg.msg_iov = slices.as_mut_ptr() as _;
@@ -451,7 +451,7 @@ impl<S: AsFd> RecvFromHeader<S> {
 pub struct RecvFrom<T: IoBufMut, S> {
     header: RecvFromHeader<S>,
     buffer: T,
-    slice: Option<SysSliceMut>,
+    slice: Option<SysSlice>,
 }
 
 impl<T: IoBufMut, S> RecvFrom<T, S> {
@@ -488,7 +488,7 @@ impl<T: IoBufMut, S: AsFd> IntoInner for RecvFrom<T, S> {
 pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
     header: RecvFromHeader<S>,
     buffer: T,
-    slice: Vec<SysSliceMut>,
+    slice: Vec<SysSlice>,
 }
 
 impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {

@@ -853,7 +853,7 @@ impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
 pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
-    pub(crate) slices: Vec<SysSliceMut>,
+    pub(crate) slices: Vec<SysSlice>,
     pub(crate) addr: SockAddrStorage,
     pub(crate) msg: libc::msghdr,
     _p: PhantomPinned,

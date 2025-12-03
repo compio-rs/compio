@@ -39,17 +39,17 @@ mod sys {
 #[cfg(not(any(unix, windows)))]
 compile_error!("`SysSlice` is only available on unix and windows");
 
-/// An unsafe, `'static`, initialized, and immutable slice of bytes to interact
+/// An unsafely `'static`, maybe-uninitialized slice of bytes to interact
 /// with system API.
 ///
-/// Like [`IoSlice`] in `std`, `SysSlice` guarantees the ABI compatibility
-/// on unix and windows, but without the lifetime, makes it easier to use with
-/// compio driver at the cost of unsafe to construct. `SysSlice` should only be
-/// used with compio driver.
+/// Like [`IoSlice`] and [`IoSliceMut`] in `std`, `SysSlice` guarantees the ABI
+/// compatibility on unix and windows, but without the lifetime, makes it easier
+/// to use with compio driver at the cost of unsafe to construct.
 ///
 /// [`IoSlice`]: std::io::IoSlice
+/// [`IoSliceMut`]: std::io::IoSliceMut
 #[repr(transparent)]
-pub struct SysSlice(sys::Inner);
+pub(crate) struct SysSlice(sys::Inner);
 
 impl From<IoBuffer> for SysSlice {
     fn from(value: IoBuffer) -> Self {
@@ -58,27 +58,14 @@ impl From<IoBuffer> for SysSlice {
     }
 }
 
-/// An unsafe, `'static`, maybe uninitialized, and mutable slice of bytes to
-/// interact with system API.
-///
-/// Like [`IoSliceMut`] in `std`, [`SysSliceMut`] guarantees the ABI
-/// compatibility on unix and windows, but without the lifetime and accepts
-/// [`MaybeUninit<u8>`], makes it easier to use with compio driver at the cost
-/// of unsafe to construct. [`SysSliceMut`] should only be used with compio
-/// driver.
-///
-/// [`IoSliceMut`]: std::io::IoSliceMut
-#[repr(transparent)]
-pub struct SysSliceMut(sys::Inner);
-
-impl From<IoBufferMut> for SysSliceMut {
+impl From<IoBufferMut> for SysSlice {
     fn from(value: IoBufferMut) -> Self {
         let (ptr, len) = value.into_raw_parts();
-        Self(sys::Inner::new(ptr, len))
+        Self(sys::Inner::new(ptr as _, len))
     }
 }
 
-pub trait IoVectoredBufExt: IoVectoredBuf {
+pub(crate) trait IoVectoredBufExt: IoVectoredBuf {
     /// Convert the vectored buffer into a vector of [`SysSlice`]s.
     ///
     /// # Safety
@@ -93,17 +80,17 @@ pub trait IoVectoredBufExt: IoVectoredBuf {
 
 impl<T: IoVectoredBuf + ?Sized> IoVectoredBufExt for T {}
 
-pub trait IoVectoredBufMutExt: IoVectoredBufMut {
-    /// Convert the vectored buffer into a vector of [`SysSliceMut`]s.
+pub(crate) trait IoVectoredBufMutExt: IoVectoredBufMut {
+    /// Convert the vectored buffer into a vector of [`SysSlice`]s.
     ///
     /// # Safety
     ///
     /// The caller must ensure that the underlying buffers are valid for the
-    /// lifetime of the returned [`SysSliceMut`]s, and that they are not used
-    /// anywhere else while the [`SysSliceMut`]s are in use.
-    unsafe fn sys_slices_mut(&mut self) -> Vec<SysSliceMut> {
+    /// lifetime of the returned [`SysSlice`]s, and that they are not used
+    /// anywhere else while the [`SysSlice`]s are in use.
+    unsafe fn sys_slices_mut(&mut self) -> Vec<SysSlice> {
         unsafe { self.iter_buffer_mut() }
-            .map(SysSliceMut::from)
+            .map(SysSlice::from)
             .collect()
     }
 }
