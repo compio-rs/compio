@@ -9,40 +9,18 @@ use crate::*;
 /// The `IoBuf` trait is implemented by buffer types that can be passed to
 /// immutable completion-based IO operations, like writing its content to a
 /// file. This trait will only take initialized bytes of a buffer into account.
-///
-/// # Safety
-///
-/// The implementer must ensure that they return a valid [`IoBuffer`] in
-/// [`IoBuf::buffer`]. For detail, see safety section in [`IoBuffer::new`].
-pub unsafe trait IoBuf: 'static {
-    /// Create an [`IoBuffer`] for this buffer. It is static to provide
-    /// convenience from writing self-referenced structure.
-    ///
-    /// # Safety
-    ///
-    /// The returned [`IoBuffer`] must not outlive `&self`.
-    unsafe fn buffer(&self) -> IoBuffer;
+pub trait IoBuf: 'static {
+    /// Get the slice of initialized bytes.
+    fn as_slice(&self) -> &[u8];
 
     /// Length of initialized bytes in the buffer.
     fn buf_len(&self) -> usize {
-        // SAFETY: We're only using the length of the buffer here.
-        unsafe { self.buffer().len() }
+        self.as_slice().len()
     }
 
-    /// Get the raw pointer to the buffer.
-    fn as_buf_ptr(&self) -> *const u8 {
-        // SAFETY: We're only taking the pointer here.
-        let buf = unsafe { self.buffer() };
-        buf.as_ptr()
-    }
-
-    /// Get an immutable slice of the buffer.
-    fn as_slice(&self) -> &[u8] {
-        let (ptr, len) = unsafe { self.buffer().into_raw_parts() };
-        // SAFETY:
-        // - returned slice is bounded by &self
-        // - &[u8] guarantees to be initialized
-        unsafe { std::slice::from_raw_parts(ptr, len) }
+    /// Raw pointer to the buffer.
+    fn buf_ptr(&self) -> *const u8 {
+        self.as_slice().as_ptr()
     }
 
     /// Returns a view of the buffer with the specified range.
@@ -84,113 +62,107 @@ pub unsafe trait IoBuf: 'static {
     }
 }
 
-unsafe impl<B: IoBuf + ?Sized> IoBuf for &'static B {
-    unsafe fn buffer(&self) -> IoBuffer {
-        unsafe { (**self).buffer() }
+impl<B: IoBuf + ?Sized> IoBuf for &'static B {
+    fn as_slice(&self) -> &[u8] {
+        (**self).as_slice()
     }
 }
 
-unsafe impl<B: IoBuf + ?Sized> IoBuf for &'static mut B {
-    unsafe fn buffer(&self) -> IoBuffer {
-        unsafe { (**self).buffer() }
+impl<B: IoBuf + ?Sized> IoBuf for &'static mut B {
+    fn as_slice(&self) -> &[u8] {
+        (**self).as_slice()
     }
 }
 
-unsafe impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf
+impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf
     for t_alloc!(Box, B, A)
 {
-    unsafe fn buffer(&self) -> IoBuffer {
-        unsafe { (**self).buffer() }
+    fn as_slice(&self) -> &[u8] {
+        (**self).as_slice()
     }
 }
 
-unsafe impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf
+impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf
     for t_alloc!(Rc, B, A)
 {
-    unsafe fn buffer(&self) -> IoBuffer {
-        unsafe { (**self).buffer() }
+    fn as_slice(&self) -> &[u8] {
+        (**self).as_slice()
     }
 }
 
-unsafe impl IoBuf for [u8] {
-    unsafe fn buffer(&self) -> IoBuffer {
-        unsafe { IoBuffer::from_slice(self) }
+impl IoBuf for [u8] {
+    fn as_slice(&self) -> &[u8] {
+        self
     }
 }
 
-unsafe impl<const N: usize> IoBuf for [u8; N] {
-    unsafe fn buffer(&self) -> IoBuffer {
-        // Safety: [u8; N] always holds initialized bytes within `N`.
-        unsafe { IoBuffer::new(self.as_ptr(), N) }
+impl<const N: usize> IoBuf for [u8; N] {
+    fn as_slice(&self) -> &[u8] {
+        self
     }
 }
 
-unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf
-    for t_alloc!(Vec, u8, A)
-{
-    unsafe fn buffer(&self) -> IoBuffer {
-        unsafe { (**self).buffer() }
+impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf for t_alloc!(Vec, u8, A) {
+    fn as_slice(&self) -> &[u8] {
+        Vec::as_slice(self)
     }
 }
 
-unsafe impl IoBuf for str {
-    unsafe fn buffer(&self) -> IoBuffer {
-        unsafe { IoBuffer::from_slice(self.as_bytes()) }
+impl IoBuf for str {
+    fn as_slice(&self) -> &[u8] {
+        self.as_bytes()
     }
 }
 
-unsafe impl IoBuf for String {
-    unsafe fn buffer(&self) -> IoBuffer {
-        unsafe { self.as_str().buffer() }
+impl IoBuf for String {
+    fn as_slice(&self) -> &[u8] {
+        self.as_bytes()
     }
 }
 
-unsafe impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf
+impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf
     for t_alloc!(Arc, B, A)
 {
-    unsafe fn buffer(&self) -> IoBuffer {
-        unsafe { (**self).buffer() }
+    fn as_slice(&self) -> &[u8] {
+        (**self).as_slice()
     }
 }
 
 #[cfg(feature = "bytes")]
-unsafe impl IoBuf for bytes::Bytes {
-    unsafe fn buffer(&self) -> IoBuffer {
-        unsafe { (**self).buffer() }
+impl IoBuf for bytes::Bytes {
+    fn as_slice(&self) -> &[u8] {
+        (**self).as_slice()
     }
 }
 
 #[cfg(feature = "bytes")]
-unsafe impl IoBuf for bytes::BytesMut {
-    unsafe fn buffer(&self) -> IoBuffer {
-        unsafe { (**self).buffer() }
+impl IoBuf for bytes::BytesMut {
+    fn as_slice(&self) -> &[u8] {
+        (**self).as_slice()
     }
 }
 
 #[cfg(feature = "read_buf")]
-unsafe impl IoBuf for std::io::BorrowedBuf<'static> {
-    unsafe fn buffer(&self) -> IoBuffer {
-        // Safety: filled part of BorrowedBuf is always initialized.
-        unsafe { IoBuffer::from_slice(self.filled()) }
+impl IoBuf for std::io::BorrowedBuf<'static> {
+    fn as_slice(&self) -> &[u8] {
+        self.filled()
     }
 }
 
 #[cfg(feature = "arrayvec")]
-unsafe impl<const N: usize> IoBuf for arrayvec::ArrayVec<u8, N> {
-    unsafe fn buffer(&self) -> IoBuffer {
-        // Safety: ArrayVec<_, N> always holds initialized bytes within `N`.
-        unsafe { IoBuffer::new(self.as_ptr(), self.len()) }
+impl<const N: usize> IoBuf for arrayvec::ArrayVec<u8, N> {
+    fn as_slice(&self) -> &[u8] {
+        self
     }
 }
 
 #[cfg(feature = "smallvec")]
-unsafe impl<const N: usize> IoBuf for smallvec::SmallVec<[u8; N]>
+impl<const N: usize> IoBuf for smallvec::SmallVec<[u8; N]>
 where
     [u8; N]: smallvec::Array<Item = u8>,
 {
-    unsafe fn buffer(&self) -> IoBuffer {
-        // Safety: SmallVec always holds initialized bytes within `self.len()`.
-        unsafe { IoBuffer::new(self.as_ptr(), self.len()) }
+    fn as_slice(&self) -> &[u8] {
+        self
     }
 }
 
@@ -200,52 +172,32 @@ where
 /// mutable completion-based IO operations, like reading content from a file and
 /// write to the buffer. This trait will take all space of a buffer into
 /// account, including uninitialized bytes.
-///
-/// # Safety
-///
-/// The implementer must ensure `(self.buffer().ptr, self.buffer().len() +
-///   uninit_len)` is a valid `&mut [MaybeUninit<u8>]`, that is: the
-/// `uninit_len`-long region after `self.buffer` is accessible for writes,
-/// despite being uninitialized.
-pub unsafe trait IoBufMut: IoBuf + SetBufInit {
-    /// Length of accessible uninitialized bytes following the initialized
-    /// bytes.
-    fn uninit_len(&self) -> usize;
+pub trait IoBufMut: IoBuf + SetBufInit {
+    /// Get the full mutable slice of the buffer, including both initialized
+    /// and uninitialized bytes.
+    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>];
 
     /// Total capacity of the buffer, including both initialized and
     /// uninitialized bytes.
-    fn buf_capacity(&self) -> usize {
-        self.buf_len() + self.uninit_len()
+    fn buf_capacity(&mut self) -> usize {
+        self.as_uninit().len()
     }
 
     /// Get the raw mutable pointer to the buffer.
-    fn as_buf_mut_ptr(&mut self) -> *mut u8 {
-        let buf = unsafe { self.buffer_mut() };
-        buf.as_ptr() as _
+    fn buf_mut_ptr(&mut self) -> *mut MaybeUninit<u8> {
+        (*self).as_slice().as_ptr() as _
     }
 
-    /// Create an [`IoBufferMut`] for this buffer. It is static to provide
-    /// convenience from writing self-referenced structure.
-    ///
-    /// # Safety
-    ///
-    /// The returned [`IoBufferMut`] must not outlive `&self`.
-    unsafe fn buffer_mut(&mut self) -> IoBufferMut {
-        let (ptr, len) = unsafe { (*self).buffer().into_raw_parts() };
-        let uninit_len = (*self).uninit_len();
+    /// Get the mutable slice of initialized bytes. The content is the same as
+    /// `as_slice`, but mutable.
+    fn as_mut_slice(&mut self) -> &mut [u8] {
+        let len = (*self).buf_len();
+        let ptr = (*self).buf_mut_ptr();
         // SAFETY:
-        // - `buf.ptr` is valid for `buf.len() + uninit_len` bytes.
-        // - the pointer is not used for anything else while the `IoBufferMut` is in
-        //   use, guaranteed by `&mut self` and `IoBufMut`'s short-live safety contract.
-        unsafe { IoBufferMut::new(ptr as _, len + uninit_len) }
-    }
-
-    /// Get a mutable slice of the whole buffer, including uninitialized
-    /// bytes.
-    fn as_mut_slice(&mut self) -> &mut [MaybeUninit<u8>] {
-        let buf = unsafe { self.buffer_mut() };
-        // SAFETY: returned slice is bounded by &mut self
-        unsafe { std::slice::from_raw_parts_mut(buf.as_ptr(), buf.cap()) }
+        // - lifetime of the returned slice is bounded by &mut self
+        // - bytes within `len` are guaranteed to be initialized
+        // - the pointer is derived from
+        unsafe { std::slice::from_raw_parts_mut(ptr as *mut u8, len) }
     }
 
     /// Returns an [`Uninit`], which is a [`Slice`] that only exposes
@@ -263,7 +215,7 @@ pub unsafe trait IoBufMut: IoBuf + SetBufInit {
     ///
     /// let mut buf = Vec::from(b"hello world");
     /// buf.reserve_exact(10);
-    /// let slice = buf.uninit();
+    /// let mut slice = buf.uninit();
     ///
     /// assert_eq!(slice.as_slice(), b"");
     /// assert_eq!(slice.buf_capacity(), 10);
@@ -277,74 +229,95 @@ pub unsafe trait IoBufMut: IoBuf + SetBufInit {
 
     /// Indicate whether the buffer has been filled (uninit portion is empty)
     fn is_filled(&mut self) -> bool {
-        let len = (*self).buf_len();
+        let len = (*self).as_slice().len();
         let cap = (*self).buf_capacity();
         len == cap
     }
 }
 
-unsafe impl<B: IoBufMut + ?Sized> IoBufMut for &'static mut B {
-    fn uninit_len(&self) -> usize {
-        (**self).uninit_len()
+impl<B: IoBufMut + ?Sized> IoBufMut for &'static mut B {
+    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        (**self).as_uninit()
     }
 }
 
-unsafe impl<B: IoBufMut + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut
+impl<B: IoBufMut + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut
     for t_alloc!(Box, B, A)
 {
-    fn uninit_len(&self) -> usize {
-        (**self).uninit_len()
+    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        (**self).as_uninit()
     }
 }
 
-unsafe impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut
-    for t_alloc!(Vec, u8, A)
-{
-    fn uninit_len(&self) -> usize {
-        self.capacity() - self.len()
+impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut for t_alloc!(Vec, u8, A) {
+    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        let ptr = self.as_mut_ptr() as *mut MaybeUninit<u8>;
+        let cap = self.capacity();
+        // SAFETY: Vec guarantees that the pointer is valid for `capacity` bytes
+        unsafe { std::slice::from_raw_parts_mut(ptr, cap) }
     }
 }
 
-unsafe impl IoBufMut for [u8] {
-    fn uninit_len(&self) -> usize {
-        0
+impl IoBufMut for [u8] {
+    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        let ptr = self.as_mut_ptr() as *mut MaybeUninit<u8>;
+        let len = self.len();
+        // SAFETY: slice is fully initialized, so treating it as MaybeUninit is safe
+        unsafe { std::slice::from_raw_parts_mut(ptr, len) }
     }
 }
 
-unsafe impl<const N: usize> IoBufMut for [u8; N] {
-    fn uninit_len(&self) -> usize {
-        0
+impl<const N: usize> IoBufMut for [u8; N] {
+    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        let ptr = self.as_mut_ptr() as *mut MaybeUninit<u8>;
+        // SAFETY: array is fully initialized, so treating it as MaybeUninit is safe
+        unsafe { std::slice::from_raw_parts_mut(ptr, N) }
     }
 }
 
 #[cfg(feature = "bytes")]
-unsafe impl IoBufMut for bytes::BytesMut {
-    fn uninit_len(&self) -> usize {
-        (**self).uninit_len()
+impl IoBufMut for bytes::BytesMut {
+    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        let ptr = self.as_mut_ptr() as *mut MaybeUninit<u8>;
+        let cap = self.capacity();
+        // SAFETY: BytesMut guarantees that the pointer is valid for `capacity` bytes
+        unsafe { std::slice::from_raw_parts_mut(ptr, cap) }
     }
 }
 
 #[cfg(feature = "read_buf")]
-unsafe impl IoBufMut for std::io::BorrowedBuf<'static> {
-    fn uninit_len(&self) -> usize {
-        self.capacity() - self.len()
+impl IoBufMut for std::io::BorrowedBuf<'static> {
+    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        let total_cap = self.capacity();
+
+        // SAFETY: We reconstruct the full buffer from the filled portion pointer.
+        // BorrowedBuf guarantees that the underlying buffer has capacity bytes.
+        unsafe {
+            let filled_ptr = self.filled().as_ptr() as *mut MaybeUninit<u8>;
+            std::slice::from_raw_parts_mut(filled_ptr, total_cap)
+        }
     }
 }
 
 #[cfg(feature = "arrayvec")]
-unsafe impl<const N: usize> IoBufMut for arrayvec::ArrayVec<u8, N> {
-    fn uninit_len(&self) -> usize {
-        self.capacity() - self.len()
+impl<const N: usize> IoBufMut for arrayvec::ArrayVec<u8, N> {
+    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        let ptr = self.as_mut_ptr() as *mut MaybeUninit<u8>;
+        // SAFETY: ArrayVec guarantees that the pointer is valid for N bytes
+        unsafe { std::slice::from_raw_parts_mut(ptr, N) }
     }
 }
 
 #[cfg(feature = "smallvec")]
-unsafe impl<const N: usize> IoBufMut for smallvec::SmallVec<[u8; N]>
+impl<const N: usize> IoBufMut for smallvec::SmallVec<[u8; N]>
 where
     [u8; N]: smallvec::Array<Item = u8>,
 {
-    fn uninit_len(&self) -> usize {
-        self.capacity() - self.len()
+    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        let ptr = self.as_mut_ptr() as *mut MaybeUninit<u8>;
+        let cap = self.capacity();
+        // SAFETY: SmallVec guarantees that the pointer is valid for `capacity` bytes
+        unsafe { std::slice::from_raw_parts_mut(ptr, cap) }
     }
 }
 
@@ -355,7 +328,7 @@ pub trait SetBufInit {
     ///
     /// # Safety
     ///
-    /// * `len` must be less or equal than `buffer_mut().len()`.
+    /// * `len` must be less or equal than `as_uninit().len()`.
     /// * The bytes in the range `[buf_len(), len)` must be initialized.
     unsafe fn set_buf_init(&mut self, len: usize);
 }
@@ -405,6 +378,7 @@ impl SetBufInit for bytes::BytesMut {
 
 #[cfg(feature = "read_buf")]
 impl SetBufInit for std::io::BorrowedBuf<'static> {
+    #[allow(unsafe_op_in_unsafe_fn)]
     unsafe fn set_buf_init(&mut self, len: usize) {
         let current_len = (*self).buf_len();
         if current_len < len {
@@ -480,14 +454,11 @@ unsafe fn default_set_buf_init<'a, B: IoBufMut>(
     iter: impl IntoIterator<Item = &'a mut B>,
     mut len: usize,
 ) {
-    for buf in iter {
-        let capacity = (*buf).buf_capacity();
-        if len >= capacity {
-            unsafe { buf.set_buf_init(capacity) };
-            len -= capacity;
-        } else {
-            unsafe { buf.set_buf_init(len) };
-            len = 0;
-        }
+    let mut iter = iter.into_iter();
+    while len > 0 {
+        let Some(curr) = iter.next() else { return };
+        let sub = (*curr).buf_capacity().min(len);
+        unsafe { curr.set_buf_init(sub) };
+        len -= sub;
     }
 }

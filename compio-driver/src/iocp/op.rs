@@ -25,7 +25,7 @@ use windows_sys::{
             CMSGHDR, LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS, LPFN_WSARECVMSG,
             SD_BOTH, SD_RECEIVE, SD_SEND, SIO_GET_EXTENSION_FUNCTION_POINTER,
             SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, SOCKADDR, SOCKADDR_STORAGE,
-            SOL_SOCKET, WSABUF, WSAID_ACCEPTEX, WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS,
+            SOL_SOCKET, WSAID_ACCEPTEX, WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS,
             WSAID_WSARECVMSG, WSAIoctl, WSAMSG, WSARecv, WSARecvFrom, WSASend, WSASendMsg,
             WSASendTo, closesocket, setsockopt, shutdown, socklen_t,
         },
@@ -173,7 +173,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
             overlapped.Anonymous.Anonymous.OffsetHigh = (self.offset >> 32) as _;
         }
         let fd = self.fd.as_fd().as_raw_fd();
-        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
+        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_uninit();
         let mut transferred = 0;
         let res = unsafe {
             ReadFile(
@@ -464,7 +464,7 @@ impl<S: AsFd> OpCode for RecvManaged<S> {
 impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();
-        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
+        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_uninit();
         let mut transferred = 0;
         let res = unsafe {
             ReadFile(
@@ -666,7 +666,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
         let fd = this.fd.as_fd().as_raw_fd();
-        let buffer: SysSlice = unsafe { this.buffer.buffer_mut().into() };
+        let buffer: SysSlice = this.buffer.as_uninit().into();
         let mut flags = 0;
         let mut received = 0;
         let res = unsafe {
@@ -780,7 +780,7 @@ impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
 
 impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let buffer: SysSlice = unsafe { self.buffer.buffer().into() };
+        let buffer: SysSlice = self.buffer.as_slice().into();
         let mut sent = 0;
         let res = unsafe {
             WSASendTo(
@@ -876,7 +876,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
     /// This function will panic if the control message buffer is misaligned.
     pub fn new(fd: S, buffer: T, control: C) -> Self {
         assert!(
-            control.as_buf_ptr().cast::<CMSGHDR>().is_aligned(),
+            control.buf_ptr().cast::<CMSGHDR>().is_aligned(),
             "misaligned control message buffer"
         );
         let addr = SockAddrStorage::zeroed();
@@ -915,13 +915,12 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
         let this = unsafe { self.get_unchecked_mut() };
 
         let mut slices = unsafe { this.buffer.sys_slices_mut() };
+        let sys_slice: SysSlice = this.control.as_uninit().into();
         this.msg.name = &mut this.addr as *mut _ as _;
         this.msg.namelen = std::mem::size_of::<SOCKADDR_STORAGE>() as _;
         this.msg.lpBuffers = slices.as_mut_ptr() as _;
         this.msg.dwBufferCount = slices.len() as _;
-        // SAFETY: `SysSlice` is promised to be the same as `WSABUF`
-        this.msg.Control =
-            unsafe { std::mem::transmute::<SysSlice, WSABUF>(this.control.buffer_mut().into()) };
+        this.msg.Control = sys_slice.into_inner();
 
         let mut received = 0;
         let res = unsafe {
@@ -959,7 +958,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     /// This function will panic if the control message buffer is misaligned.
     pub fn new(fd: S, buffer: T, control: C, addr: SockAddr) -> Self {
         assert!(
-            control.as_buf_ptr().cast::<CMSGHDR>().is_aligned(),
+            control.buf_ptr().cast::<CMSGHDR>().is_aligned(),
             "misaligned control message buffer"
         );
         Self {
@@ -985,15 +984,13 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
         let this = unsafe { self.get_unchecked_mut() };
 
         let slices = unsafe { this.buffer.sys_slices() };
+        let control: SysSlice = this.control.as_slice().into();
         let msg = WSAMSG {
             name: this.addr.as_ptr() as _,
             namelen: this.addr.len(),
             lpBuffers: slices.as_ptr() as _,
             dwBufferCount: slices.len() as _,
-            // SAFETY: `SysSlice` is promised to be the same as `WSABUF`
-            Control: unsafe {
-                std::mem::transmute::<SysSlice, WSABUF>(this.control.buffer().into())
-            },
+            Control: control.into_inner(),
             dwFlags: 0,
         };
 
@@ -1077,12 +1074,12 @@ impl<S: AsFd, I: IoBuf, O: IoBufMut> OpCode for DeviceIoControl<S, I, O> {
         let input_ptr = this
             .input_buffer
             .as_ref()
-            .map_or(std::ptr::null(), |x| x.as_buf_ptr());
+            .map_or(std::ptr::null(), |x| x.buf_ptr());
         let output_len = this.output_buffer.as_ref().map_or(0, |x| x.buf_len());
         let output_ptr = this
             .output_buffer
             .as_mut()
-            .map_or(std::ptr::null_mut(), |x| x.as_buf_mut_ptr());
+            .map_or(std::ptr::null_mut(), |x| x.buf_mut_ptr());
         let mut transferred = 0;
         let res = unsafe {
             DeviceIoControl(

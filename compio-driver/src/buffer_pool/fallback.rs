@@ -103,15 +103,15 @@ impl OwnedBuffer {
     }
 }
 
-unsafe impl IoBuf for OwnedBuffer {
-    unsafe fn buffer(&self) -> compio_buf::IoBuffer {
-        unsafe { self.buffer.buffer() }
+impl IoBuf for OwnedBuffer {
+    fn as_slice(&self) -> &[u8] {
+        self.buffer.as_slice()
     }
 }
 
-unsafe impl IoBufMut for OwnedBuffer {
-    fn uninit_len(&self) -> usize {
-        self.buffer.uninit_len()
+impl IoBufMut for OwnedBuffer {
+    fn as_uninit(&mut self) -> &mut [std::mem::MaybeUninit<u8>] {
+        self.buffer.as_uninit()
     }
 }
 

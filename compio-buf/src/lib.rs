@@ -17,9 +17,6 @@ pub use bumpalo;
 #[cfg(feature = "bytes")]
 pub use bytes;
 
-mod io_buffer;
-pub use io_buffer::*;
-
 mod io_buf;
 pub use io_buf::*;
 

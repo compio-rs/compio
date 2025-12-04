@@ -14,7 +14,7 @@ pub(crate) fn slice_to_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> usize 
 /// Copy the contents of a slice into a buffer implementing [`IoBufMut`].
 #[inline]
 pub(crate) fn slice_to_buf<B: IoBufMut + ?Sized>(src: &[u8], buf: &mut B) -> usize {
-    let len = slice_to_uninit(src, buf.as_mut_slice());
+    let len = slice_to_uninit(src, buf.as_uninit());
     unsafe { buf.set_buf_init(len) };
 
     len

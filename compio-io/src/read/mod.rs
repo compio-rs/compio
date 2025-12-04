@@ -92,7 +92,7 @@ impl AsyncRead for &[u8] {
     async fn read_vectored<T: IoVectoredBufMut>(&mut self, mut buf: T) -> BufResult<usize, T> {
         let mut this = *self; // An immutable slice to track the read position
 
-        for buf in buf.iter_slice_mut() {
+        for buf in buf.iter_uninit_slice() {
             let n = slice_to_uninit(this, buf);
             this = &this[n..];
             if this.is_empty() {
@@ -170,7 +170,7 @@ macro_rules! impl_read_at {
                     let slice = &self[pos as usize..];
                     let mut this = slice;
 
-                    for buf in buf.iter_slice_mut() {
+                    for buf in buf.iter_uninit_slice() {
                         let n = slice_to_uninit(this, buf);
                         this = &this[n..];
                         if this.is_empty() {

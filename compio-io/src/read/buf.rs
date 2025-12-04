@@ -104,7 +104,7 @@ impl<R: AsyncRead> AsyncBufRead for BufReader<R> {
             .await?;
         }
 
-        Ok(buf.slice())
+        Ok(buf.buffer())
     }
 
     fn consume(&mut self, amount: usize) {

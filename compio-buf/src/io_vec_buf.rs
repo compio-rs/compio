@@ -1,28 +1,21 @@
-use std::mem::MaybeUninit;
+use std::{iter, mem::MaybeUninit};
 
-use crate::{
-    IntoInner, IoBuf, IoBufMut, IoBuffer, IoBufferMut, SetBufInit, VectoredSlice, VectoredSliceMut,
-    t_alloc,
-};
+use crate::{IntoInner, IoBuf, IoBufMut, SetBufInit, VectoredSlice, t_alloc};
 
 /// A trait for vectored buffers.
+///
+/// # Note for implementors
+///
+/// The iterator must be idemptotent and always yield the same slices in the
+/// exact same orders, i.e., [`Iterator::enumerate`] will mark the same buffer
+/// with same index.
 pub trait IoVectoredBuf: 'static {
-    /// An iterator over the [`IoBuffer`]s. It is static to provide convenience
-    /// from writing self-referenced structure.
-    ///
-    /// # Safety
-    ///
-    /// All safety requirement for `IoBuffer` must be held.
-    unsafe fn iter_buffer(&self) -> impl Iterator<Item = IoBuffer>;
-
-    /// An iterator over slices.
-    fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
-        unsafe { self.iter_buffer().map(|buf| buf.slice()) }
-    }
+    /// An iterator of initialized slice of the buffers.
+    fn iter_slice(&self) -> impl Iterator<Item = &[u8]>;
 
     /// The total length of all buffers.
     fn total_len(&self) -> usize {
-        unsafe { self.iter_buffer().map(|buf| buf.len()).sum() }
+        self.iter_slice().map(|buf| buf.len()).sum()
     }
 
     /// Wrap self into an owned iterator.
@@ -33,13 +26,13 @@ pub trait IoVectoredBuf: 'static {
         VectoredBufIter::new(self)
     }
 
-    /// Get an owned view of the vectored buffer that only counts in initialized
-    /// bytes. Uninitialized bytes are ignored.
+    /// Get an owned view of the vectored buffer that skips the first
+    /// `begin`-many **initialized** bytes.
     ///
     /// # Examples
     ///
     /// ```
-    /// use compio_buf::{IoBuffer, IoVectoredBuf, VectoredSlice};
+    /// use compio_buf::{IoBuf, IoVectoredBuf, VectoredSlice};
     ///
     /// # fn main() {
     /// /// Create a buffer with given content and capacity.
@@ -52,58 +45,70 @@ pub trait IoVectoredBuf: 'static {
     ///
     /// let bufs = [new_buf(b"hello", 10), new_buf(b"world", 10)];
     /// let vectored_buf = bufs.slice(3);
-    /// let mut iter = unsafe { vectored_buf.iter_buffer() };
+    /// let mut iter = vectored_buf.iter_slice();
     /// let buf1 = iter.next().unwrap();
     /// let buf2 = iter.next().unwrap();
-    /// assert_eq!(&unsafe { buf1.slice() }[..], b"lo");
-    /// assert_eq!(&unsafe { buf2.slice() }[..], b"world");
+    /// assert_eq!(&buf1.as_slice()[..], b"lo");
+    /// assert_eq!(&buf2.as_slice()[..], b"world");
     ///
     /// let bufs = [new_buf(b"hello", 10), new_buf(b"world", 10)];
     /// let vectored_buf = bufs.slice(6);
-    /// let mut iter = unsafe { vectored_buf.iter_buffer() };
+    /// let mut iter = vectored_buf.iter_slice();
     /// let buf1 = iter.next().unwrap();
     /// assert!(iter.next().is_none());
-    /// assert_eq!(&unsafe { buf1.slice() }[..], b"orld");
+    /// assert_eq!(&buf1.as_slice()[..], b"orld");
     /// # }
     /// ```
     fn slice(self, begin: usize) -> VectoredSlice<Self>
     where
         Self: Sized,
     {
-        VectoredSlice::new(self, begin)
+        let mut offset = begin;
+        let mut idx = 0;
+
+        for b in self.iter_slice() {
+            let len = b.len();
+            if len > offset {
+                break;
+            }
+            offset -= len;
+            idx += 1;
+        }
+
+        VectoredSlice::new(self, begin, idx, offset)
     }
 }
 
 impl<T: IoBuf> IoVectoredBuf for &'static [T] {
-    unsafe fn iter_buffer(&self) -> impl Iterator<Item = IoBuffer> {
-        self.iter().map(|buf| unsafe { buf.buffer() })
+    fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
+        self.iter().map(|buf| buf.as_slice())
     }
 }
 
 impl<T: IoBuf> IoVectoredBuf for &'static mut [T] {
-    unsafe fn iter_buffer(&self) -> impl Iterator<Item = IoBuffer> {
-        self.iter().map(|buf| unsafe { buf.buffer() })
+    fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
+        self.iter().map(|buf| buf.as_slice())
     }
 }
 
 impl<T: IoBuf, const N: usize> IoVectoredBuf for [T; N] {
-    unsafe fn iter_buffer(&self) -> impl Iterator<Item = IoBuffer> {
-        self.iter().map(|buf| unsafe { buf.buffer() })
+    fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
+        self.iter().map(|buf| buf.as_slice())
     }
 }
 
 impl<T: IoBuf, #[cfg(feature = "allocator_api")] A: std::alloc::Allocator + 'static> IoVectoredBuf
     for t_alloc!(Vec, T, A)
 {
-    unsafe fn iter_buffer(&self) -> impl Iterator<Item = IoBuffer> {
-        self.iter().map(|buf| unsafe { buf.buffer() })
+    fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
+        self.iter().map(|buf| buf.as_slice())
     }
 }
 
 #[cfg(feature = "arrayvec")]
 impl<T: IoBuf, const N: usize> IoVectoredBuf for arrayvec::ArrayVec<T, N> {
-    unsafe fn iter_buffer(&self) -> impl Iterator<Item = IoBuffer> {
-        self.iter().map(|buf| unsafe { buf.buffer() })
+    fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
+        self.iter().map(|buf| buf.as_slice())
     }
 }
 
@@ -112,79 +117,48 @@ impl<T: IoBuf, const N: usize> IoVectoredBuf for smallvec::SmallVec<[T; N]>
 where
     [T; N]: smallvec::Array<Item = T>,
 {
-    unsafe fn iter_buffer(&self) -> impl Iterator<Item = IoBuffer> {
-        self.iter().map(|buf| unsafe { buf.buffer() })
+    fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
+        self.iter().map(|buf| buf.as_slice())
     }
 }
 
 impl<T: IoBuf, Rest: IoVectoredBuf> IoVectoredBuf for (T, Rest) {
-    unsafe fn iter_buffer(&self) -> impl Iterator<Item = IoBuffer> {
-        unsafe { std::iter::once(self.0.buffer()).chain(self.1.iter_buffer()) }
+    fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
+        std::iter::once(self.0.as_slice()).chain(self.1.iter_slice())
     }
 }
 
 impl<T: IoBuf> IoVectoredBuf for (T,) {
-    unsafe fn iter_buffer(&self) -> impl Iterator<Item = IoBuffer> {
-        unsafe { std::iter::once(self.0.buffer()) }
+    fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
+        std::iter::once(self.0.as_slice())
     }
 }
 
 impl IoVectoredBuf for () {
-    unsafe fn iter_buffer(&self) -> impl Iterator<Item = IoBuffer> {
+    fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
         std::iter::empty()
     }
 }
 
 /// A trait for mutable vectored buffers.
 pub trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
-    /// Get the uninitialized length of the buffer at the given index.
-    fn uninit_len_of(&self, idx: usize) -> usize;
-
-    /// Get the capacity of the buffer at the given index.
-    fn capacity_of(&self, idx: usize) -> usize {
-        unsafe {
-            let buf = self
-                .iter_buffer()
-                .nth(idx)
-                .expect("index out of bounds in capacity_of");
-            buf.len() + self.uninit_len_of(idx)
-        }
-    }
-    /// An iterator for the [`IoSliceMut`]s of the buffers. It is static to
-    /// provide convenience from writing self-referenced structure.
-    ///
-    /// # Safety
-    ///
-    /// All safety requirement for `IoBufferMut` must be held.
-    unsafe fn iter_buffer_mut(&mut self) -> impl Iterator<Item = IoBufferMut> {
-        unsafe {
-            self.iter_buffer().enumerate().map(|(idx, buf)| {
-                let (ptr, len) = buf.into_raw_parts();
-                let uninit_len = self.uninit_len_of(idx);
-                IoBufferMut::new(ptr as *mut MaybeUninit<u8>, len + uninit_len)
-            })
-        }
-    }
+    /// An iterator of maybe uninitialized slice of the buffers.
+    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]>;
 
     /// The total capacity of all buffers.
     fn total_capacity(&mut self) -> usize {
-        unsafe { self.iter_buffer_mut().map(|buf| buf.cap()).sum() }
-    }
-
-    /// An iterator over mutable slices.
-    fn iter_slice_mut(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
-        unsafe { self.iter_buffer_mut().map(|slice| slice.slice_mut()) }
+        self.iter_uninit_slice().map(|buf| buf.len()).sum()
     }
 
     /// Get an owned view of the vectored buffer.
     ///
     /// Unlike [`IoVectoredBuf::slice`], the iterator returned by this function
-    /// will count in both initialized and uninitialized bytes.
+    /// will skip both initialized and uninitialized bytes.
     ///
     /// # Examples
     ///
     /// ```
-    /// use compio_buf::{IoBuffer, IoVectoredBuf, IoVectoredBufMut, VectoredSlice};
+    /// use compio_buf::{IoBuf, IoVectoredBuf, IoVectoredBufMut, VectoredSlice};
     ///
     /// # fn main() {
     /// /// Create a buffer with given content and capacity.
@@ -197,60 +171,56 @@ pub trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
     ///
     /// let bufs = [new_buf(b"hello", 10), new_buf(b"world", 10)];
     /// let vectored_buf = bufs.slice_mut(13);
-    /// let mut iter = unsafe { vectored_buf.iter_buffer() };
+    /// let mut iter = vectored_buf.iter_slice();
     /// let buf1 = iter.next().unwrap();
     /// assert!(iter.next().is_none());
-    /// assert_eq!(&unsafe { buf1.slice() }[..], b"ld");
+    /// assert_eq!(buf1.as_slice(), b"ld");
     /// # }
     /// ```
-    fn slice_mut(self, begin: usize) -> VectoredSliceMut<Self>
+    fn slice_mut(mut self, begin: usize) -> VectoredSlice<Self>
     where
         Self: Sized,
     {
-        VectoredSliceMut::new(self, begin)
+        let mut offset = begin;
+        let mut idx = 0;
+
+        for b in self.iter_uninit_slice() {
+            let len = b.len();
+            if len > offset {
+                break;
+            }
+            offset -= len;
+            idx += 1;
+        }
+
+        VectoredSlice::new(self, begin, idx, offset)
     }
 }
 
 impl<T: IoBufMut> IoVectoredBufMut for &'static mut [T] {
-    fn uninit_len_of(&self, idx: usize) -> usize {
-        self[idx].uninit_len()
-    }
-
-    fn capacity_of(&self, idx: usize) -> usize {
-        self[idx].buf_capacity()
+    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+        self.iter_mut().map(|buf| buf.as_uninit())
     }
 }
 
 impl<T: IoBufMut, const N: usize> IoVectoredBufMut for [T; N] {
-    fn uninit_len_of(&self, idx: usize) -> usize {
-        self[idx].uninit_len()
-    }
-
-    fn capacity_of(&self, idx: usize) -> usize {
-        self[idx].buf_capacity()
+    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+        self.iter_mut().map(|buf| buf.as_uninit())
     }
 }
 
 impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: std::alloc::Allocator + 'static>
     IoVectoredBufMut for t_alloc!(Vec, T, A)
 {
-    fn uninit_len_of(&self, idx: usize) -> usize {
-        self[idx].uninit_len()
-    }
-
-    fn capacity_of(&self, idx: usize) -> usize {
-        self[idx].buf_capacity()
+    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+        self.iter_mut().map(|buf| buf.as_uninit())
     }
 }
 
 #[cfg(feature = "arrayvec")]
 impl<T: IoBufMut, const N: usize> IoVectoredBufMut for arrayvec::ArrayVec<T, N> {
-    fn uninit_len_of(&self, idx: usize) -> usize {
-        self[idx].uninit_len()
-    }
-
-    fn capacity_of(&self, idx: usize) -> usize {
-        self[idx].buf_capacity()
+    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+        self.iter_mut().map(|buf| buf.as_uninit())
     }
 }
 
@@ -259,49 +229,36 @@ impl<T: IoBufMut, const N: usize> IoVectoredBufMut for smallvec::SmallVec<[T; N]
 where
     [T; N]: smallvec::Array<Item = T>,
 {
-    fn uninit_len_of(&self, idx: usize) -> usize {
-        self[idx].uninit_len()
-    }
-
-    fn capacity_of(&self, idx: usize) -> usize {
-        self[idx].buf_capacity()
+    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+        self.iter_mut().map(|buf| buf.as_uninit())
     }
 }
 
 impl<T: IoBufMut, Rest: IoVectoredBufMut> IoVectoredBufMut for (T, Rest) {
-    fn uninit_len_of(&self, idx: usize) -> usize {
-        if idx == 0 {
-            self.0.uninit_len()
-        } else {
-            self.1.uninit_len_of(idx - 1)
-        }
+    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+        let (h, t) = self;
+        iter::once(h.as_uninit()).chain(t.iter_uninit_slice())
     }
 }
 
 impl<T: IoBufMut> IoVectoredBufMut for (T,) {
-    fn uninit_len_of(&self, idx: usize) -> usize {
-        debug_assert!(idx == 0);
-        self.0.uninit_len()
-    }
-
-    fn capacity_of(&self, idx: usize) -> usize {
-        debug_assert!(idx == 0);
-        self.0.buf_capacity()
+    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+        iter::once(self.0.as_uninit())
     }
 }
 
 impl IoVectoredBufMut for () {
-    fn uninit_len_of(&self, _: usize) -> usize {
-        unreachable!("no buffers in empty tuple")
-    }
-
-    fn capacity_of(&self, _: usize) -> usize {
-        unreachable!("no buffers in empty tuple")
+    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+        iter::empty()
     }
 }
 
 impl<T: IoBufMut, Rest: IoVectoredBufMut> SetBufInit for (T, Rest) {
     unsafe fn set_buf_init(&mut self, len: usize) {
+        if len == 0 {
+            return;
+        }
+
         let buf0_len = std::cmp::min(len, self.0.buf_capacity());
 
         // SAFETY: buf0_len <= self.0.buf_capacity()
@@ -327,12 +284,15 @@ impl SetBufInit for () {
 }
 
 /// An owned iterator over a vectored buffer.
+///
+/// Normally one would use [`IoVectoredBuf::owned_iter`] to create this
+/// iterator.
 pub struct VectoredBufIter<T> {
     buf: T,
+    total_filled: usize,
     index: usize,
     len: usize,
-    total_filled: usize,
-    cur_filled: usize,
+    filled: usize,
 }
 
 impl<T> VectoredBufIter<T> {
@@ -341,8 +301,8 @@ impl<T> VectoredBufIter<T> {
     pub fn next(mut self) -> Result<Self, T> {
         self.index += 1;
         if self.index < self.len {
-            self.total_filled += self.cur_filled;
-            self.cur_filled = 0;
+            self.total_filled += self.filled;
+            self.filled = 0;
             Ok(self)
         } else {
             Err(self.buf)
@@ -352,26 +312,17 @@ impl<T> VectoredBufIter<T> {
 
 impl<T: IoVectoredBuf> VectoredBufIter<T> {
     fn new(buf: T) -> Result<Self, T> {
-        let len = unsafe { buf.iter_buffer().count() };
+        let len = buf.iter_slice().count();
         if len > 0 {
             Ok(Self {
                 buf,
                 index: 0,
                 len,
                 total_filled: 0,
-                cur_filled: 0,
+                filled: 0,
             })
         } else {
             Err(buf)
-        }
-    }
-
-    fn current(&self) -> IoBuffer {
-        unsafe {
-            self.buf
-                .iter_buffer()
-                .nth(self.index)
-                .expect("`index` should not exceed `len`")
         }
     }
 }
@@ -384,22 +335,31 @@ impl<T> IntoInner for VectoredBufIter<T> {
     }
 }
 
-unsafe impl<T: IoVectoredBuf> IoBuf for VectoredBufIter<T> {
-    unsafe fn buffer(&self) -> IoBuffer {
-        let slice = unsafe { &self.current().slice()[self.cur_filled..] };
-        unsafe { IoBuffer::from_slice(slice) }
+impl<T: IoVectoredBuf> IoBuf for VectoredBufIter<T> {
+    fn as_slice(&self) -> &[u8] {
+        let curr = self
+            .buf
+            .iter_slice()
+            .nth(self.index)
+            .expect("`index` should not exceed `len`");
+
+        &curr[self.filled..]
     }
 }
 
 impl<T: IoVectoredBuf + SetBufInit> SetBufInit for VectoredBufIter<T> {
     unsafe fn set_buf_init(&mut self, len: usize) {
-        self.cur_filled = len;
-        unsafe { self.buf.set_buf_init(self.total_filled + self.cur_filled) };
+        self.filled = len;
+
+        unsafe { self.buf.set_buf_init(self.total_filled + self.filled) };
     }
 }
 
-unsafe impl<T: IoVectoredBufMut> IoBufMut for VectoredBufIter<T> {
-    fn uninit_len(&self) -> usize {
-        self.buf.uninit_len_of(self.index)
+impl<T: IoVectoredBufMut> IoBufMut for VectoredBufIter<T> {
+    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        self.buf
+            .iter_uninit_slice()
+            .nth(self.index)
+            .expect("`index` should not exceed `len`")
     }
 }

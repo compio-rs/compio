@@ -5,7 +5,7 @@ use std::{
     thread_local,
 };
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoBuffer, SetBufInit};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
 use compio_driver::{OwnedFd, SharedFd, op::Recv, syscall};
 
 thread_local! {
@@ -73,15 +73,17 @@ impl SignalFd {
 
         struct SignalInfo(MaybeUninit<libc::signalfd_siginfo>);
 
-        unsafe impl IoBuf for SignalInfo {
-            unsafe fn buffer(&self) -> compio_buf::IoBuffer {
-                unsafe { IoBuffer::new(self.0.as_ptr().cast(), 0) }
+        impl IoBuf for SignalInfo {
+            fn as_slice(&self) -> &[u8] {
+                let ptr = self.0.as_ptr() as *const u8;
+                unsafe { std::slice::from_raw_parts(ptr, INFO_SIZE) }
             }
         }
 
-        unsafe impl IoBufMut for SignalInfo {
-            fn uninit_len(&self) -> usize {
-                INFO_SIZE
+        impl IoBufMut for SignalInfo {
+            fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+                let ptr = self.0.as_mut_ptr() as *mut _;
+                unsafe { std::slice::from_raw_parts_mut(ptr, INFO_SIZE) }
             }
         }
 

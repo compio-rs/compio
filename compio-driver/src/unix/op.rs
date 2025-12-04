@@ -399,7 +399,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
     /// This function will panic if the control message buffer is misaligned.
     pub fn new(fd: S, buffer: T, control: C) -> Self {
         assert!(
-            control.as_buf_ptr().cast::<libc::cmsghdr>().is_aligned(),
+            control.buf_ptr().cast::<libc::cmsghdr>().is_aligned(),
             "misaligned control message buffer"
         );
         Self {
@@ -420,7 +420,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
         self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
         self.msg.msg_iov = self.slices.as_mut_ptr() as _;
         self.msg.msg_iovlen = self.slices.len() as _;
-        self.msg.msg_control = self.control.as_buf_mut_ptr() as _;
+        self.msg.msg_control = self.control.buf_mut_ptr() as _;
         self.msg.msg_controllen = self.control.buf_capacity() as _;
     }
 }
@@ -458,7 +458,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     /// This function will panic if the control message buffer is misaligned.
     pub fn new(fd: S, buffer: T, control: C, addr: SockAddr) -> Self {
         assert!(
-            control.as_buf_ptr().cast::<libc::cmsghdr>().is_aligned(),
+            control.buf_ptr().cast::<libc::cmsghdr>().is_aligned(),
             "misaligned control message buffer"
         );
         Self {
@@ -479,7 +479,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
         self.msg.msg_namelen = self.addr.len();
         self.msg.msg_iov = self.slices.as_ptr() as _;
         self.msg.msg_iovlen = self.slices.len() as _;
-        self.msg.msg_control = self.control.as_buf_ptr() as _;
+        self.msg.msg_control = self.control.buf_ptr() as _;
         self.msg.msg_controllen = self.control.buf_len() as _;
     }
 }

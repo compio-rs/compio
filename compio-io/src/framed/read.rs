@@ -53,7 +53,7 @@ where
             match &mut this.read_state.inner {
                 StateInner::Idle(idle) => {
                     let (mut io, mut buf) = idle.take().expect("Inconsistent state");
-                    let slice = buf.slice();
+                    let slice = buf.buffer();
 
                     // First try decode from the buffer
                     if let Some(frame) = this.framer.extract(slice) {

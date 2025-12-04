@@ -225,7 +225,7 @@ struct RepeatOne(u8);
 
 impl AsyncRead for RepeatOne {
     async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
-        let slice = buf.as_mut_slice();
+        let slice = buf.as_uninit();
         if !slice.is_empty() {
             slice[0].write(self.0);
             unsafe { buf.set_buf_init(1) };
@@ -238,7 +238,7 @@ impl AsyncRead for RepeatOne {
 
 impl AsyncReadAt for RepeatOne {
     async fn read_at<T: IoBufMut>(&self, mut buf: T, pos: u64) -> BufResult<usize, T> {
-        let slice = buf.as_mut_slice();
+        let slice = buf.as_uninit();
         if !slice.is_empty() {
             if pos == 0 {
                 slice[0].write(0);
@@ -358,7 +358,7 @@ struct ReadOne(Cursor<Vec<u8>>);
 
 impl AsyncRead for ReadOne {
     async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
-        let slice = buf.as_mut_slice();
+        let slice = buf.as_uninit();
         if !slice.is_empty() {
             let ob = [0];
             match self.0.read(ob).await {
@@ -415,7 +415,7 @@ impl AsyncReadAt for ReadOneAt {
                 buf,
             )
         } else {
-            let slice = buf.as_mut_slice();
+            let slice = buf.as_uninit();
             if !slice.is_empty() && pos < self.0.len() {
                 slice[0].write(self.0[pos]);
                 unsafe { buf.set_buf_init(1) };

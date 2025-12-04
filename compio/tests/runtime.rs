@@ -47,15 +47,15 @@ async fn drop_on_complete() {
         _ref_cnt: Arc<()>,
     }
 
-    unsafe impl IoBuf for MyBuf {
-        unsafe fn buffer(&self) -> IoBuffer {
-            unsafe { self.data.buffer() }
+    impl IoBuf for MyBuf {
+        fn as_slice(&self) -> &[u8] {
+            self.data.as_slice()
         }
     }
 
-    unsafe impl IoBufMut for MyBuf {
-        fn uninit_len(&self) -> usize {
-            self.data.uninit_len()
+    impl IoBufMut for MyBuf {
+        fn as_uninit(&mut self) -> &mut [std::mem::MaybeUninit<u8>] {
+            self.data.as_uninit()
         }
     }
 

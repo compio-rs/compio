@@ -166,7 +166,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let fd = Fd(self.fd.as_fd().as_raw_fd());
         let offset = self.offset;
-        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
+        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_uninit();
         opcode::Read::new(fd, slice.as_mut_ptr() as _, slice.len() as _)
             .offset(offset)
             .build()
@@ -365,7 +365,7 @@ impl<S: AsFd> OpCode for Connect<S> {
 impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let fd = self.fd.as_fd().as_raw_fd();
-        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
+        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_uninit();
         opcode::Read::new(Fd(fd), slice.as_mut_ptr() as _, slice.len() as _)
             .build()
             .into()
@@ -468,9 +468,7 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
 impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        let slice = this
-            .slice
-            .insert(unsafe { this.buffer.buffer_mut() }.into());
+        let slice = this.slice.insert(this.buffer.as_uninit().into());
         this.header.create_entry(std::slice::from_mut(slice))
     }
 }
@@ -570,7 +568,7 @@ impl<T: IoBuf, S> SendTo<T, S> {
 impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        let slice = this.slice.insert(unsafe { this.buffer.buffer() }.into());
+        let slice = this.slice.insert(this.buffer.as_slice().into());
         this.header.create_entry(std::slice::from_mut(slice))
     }
 }

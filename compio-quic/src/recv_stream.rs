@@ -501,7 +501,7 @@ pub enum ReadExactError {
 impl AsyncRead for RecvStream {
     async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
         let res = self
-            .read(buf.as_mut_slice())
+            .read(buf.as_uninit())
             .await
             .map(|n| {
                 let n = n.unwrap_or_default();

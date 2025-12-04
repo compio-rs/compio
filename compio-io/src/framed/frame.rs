@@ -118,7 +118,7 @@ impl Framer for LengthDelimited {
         let len = buf.len();
 
         buf.reserve(self.length_field_len);
-        IoBufMut::as_mut_slice(buf).copy_within(0..len, self.length_field_len); // Shift existing data
+        IoBufMut::as_uninit(buf).copy_within(0..len, self.length_field_len); // Shift existing data
         unsafe { buf.set_len(len + self.length_field_len) };
 
         // Write the length at the beginning

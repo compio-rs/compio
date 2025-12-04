@@ -213,7 +213,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
         #[cfg(aio)]
         {
             let this = unsafe { self.get_unchecked_mut() };
-            let slice = this.buffer.as_mut_slice();
+            let slice = this.buffer.as_uninit();
 
             this.aiocb.aio_fildes = this.fd.as_fd().as_raw_fd();
             this.aiocb.aio_offset = this.offset as _;
@@ -238,7 +238,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();
         let offset = self.offset;
-        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
+        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_uninit();
         syscall!(break pread(fd, slice.as_mut_ptr() as _, slice.len() as _, offset as _,))
     }
 }
@@ -700,7 +700,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();
-        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
+        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_uninit();
         syscall!(break libc::read(fd, slice.as_mut_ptr() as _, slice.len()))
     }
 }
@@ -812,7 +812,7 @@ impl<T: IoBufMut, S: AsFd> RecvFrom<T, S> {
     unsafe fn call(self: Pin<&mut Self>) -> libc::ssize_t {
         let this = unsafe { self.get_unchecked_mut() };
         let fd = this.fd.as_fd().as_raw_fd();
-        let slice = this.buffer.as_mut_slice();
+        let slice = this.buffer.as_uninit();
         unsafe {
             libc::recvfrom(
                 fd,

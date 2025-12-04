@@ -66,14 +66,14 @@ impl Inner {
     #[inline]
     pub(crate) fn into_slice(self) -> Slice<Self> {
         let pos = self.pos;
-        IoBuf::slice(self, pos..)
+        self.slice(pos..)
     }
 }
 
-unsafe impl IoBuf for Inner {
+impl IoBuf for Inner {
     #[inline]
-    unsafe fn buffer(&self) -> compio_buf::IoBuffer {
-        unsafe { self.buf.buffer() }
+    fn as_slice(&self) -> &[u8] {
+        self.buf.as_slice()
     }
 }
 
@@ -84,10 +84,10 @@ impl SetBufInit for Inner {
     }
 }
 
-unsafe impl IoBufMut for Inner {
+impl IoBufMut for Inner {
     #[inline]
-    fn uninit_len(&self) -> usize {
-        self.buf.uninit_len()
+    fn as_uninit(&mut self) -> &mut [std::mem::MaybeUninit<u8>] {
+        self.buf.as_uninit()
     }
 }
 
@@ -115,14 +115,14 @@ impl Buffer {
 
     /// Get the initialized but not consumed part of the buffer.
     #[inline]
-    pub fn slice(&self) -> &[u8] {
+    pub fn buffer(&self) -> &[u8] {
         self.inner().slice()
     }
 
     /// If the inner buffer is empty.
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.inner().as_slice().is_empty()
+        self.inner().slice().is_empty()
     }
 
     /// All bytes in the buffer have been read
@@ -190,7 +190,7 @@ impl Buffer {
     ///
     /// https://github.com/compio-rs/compio/issues/209
     pub async fn flush_to(&mut self, writer: &mut impl AsyncWrite) -> IoResult<usize> {
-        if self.slice().is_empty() {
+        if self.inner().slice().is_empty() {
             return Ok(0);
         }
         let mut total = 0;
@@ -217,7 +217,7 @@ impl Buffer {
     /// `bool` indicating if all bytes are read.
     #[inline]
     pub fn advance(&mut self, amount: usize) -> bool {
-        debug_assert!(self.inner().pos + amount <= self.inner().buf_capacity());
+        debug_assert!(self.inner().pos + amount <= self.inner().buf.capacity());
 
         let inner = self.inner_mut();
         inner.pos += amount;
@@ -256,8 +256,8 @@ impl Debug for Buffer {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         let inner = self.inner();
         fmt.debug_struct("Buffer")
-            .field("capacity", &inner.buf_capacity())
-            .field("init", &inner.buf_len())
+            .field("capacity", &inner.buf.capacity())
+            .field("init", &inner.buf.len())
             .field("progress", &inner.pos)
             .finish()
     }
