@@ -37,12 +37,10 @@ pub trait AsyncRead {
     /// Like `read`, except that it reads into a type implements
     /// [`IoVectoredBufMut`].
     ///
-    /// The default implementation will try to read into the buffers in order,
-    /// and stop whenever the reader returns an error, `Ok(0)`, or a length
-    /// less than the length of the buf passed in, meaning it's possible that
-    /// not all buffer space is filled. If guaranteed full read is desired,
-    /// it is recommended to use [`AsyncReadExt::read_vectored_exact`]
-    /// instead.
+    /// The default implementation will read only to first buffer in `buf` with
+    /// non-zero capacity and return, meaning it's possible and likely that not
+    /// all buffer space is filled. If guaranteed full read is desired,
+    /// it is recommended to use [`AsyncReadExt::read_vectored_exact`] instead.
     ///
     /// # Caution
     ///
