@@ -468,7 +468,7 @@ impl AsRawFd for Driver {
 }
 
 /// A notify handle to the inner driver.
-struct Notify {
+pub(crate) struct Notify {
     port: cp::Port,
     overlapped: Overlapped,
 }

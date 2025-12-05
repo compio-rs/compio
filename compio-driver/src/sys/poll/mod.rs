@@ -522,7 +522,7 @@ fn entry_cancelled(user_data: usize) -> Entry {
 }
 
 /// A notify handle to the inner driver.
-struct Notify {
+pub(crate) struct Notify {
     poll: Poller,
 }
 

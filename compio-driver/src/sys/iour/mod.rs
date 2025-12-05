@@ -508,7 +508,7 @@ impl AsRawFd for Notifier {
 
 /// A notify handle to the inner driver.
 #[derive(Debug)]
-struct Notify {
+pub(crate) struct Notify {
     fd: OwnedFd,
 }
 
