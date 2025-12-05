@@ -28,13 +28,35 @@ cfg_if::cfg_if! {
 }
 use io_uring::{
     IoUring,
-    cqueue::more,
+    cqueue::{buffer_select, more},
     opcode::{AsyncCancel, PollAdd},
     types::{Fd, SubmitArgs, Timespec},
 };
 use slab::Slab;
 
 use crate::{AsyncifyPool, BufferPool, DriverType, Entry, Key, ProactorBuilder, syscall};
+
+/// Extra data for RawOp.
+#[derive(Default)]
+pub struct Extra {
+    flags: u32,
+}
+
+impl Extra {
+    pub(crate) fn new(_: RawFd) -> Self {
+        Self { flags: 0 }
+    }
+
+    pub(crate) fn buffer_id(&self) -> Option<u16> {
+        buffer_select(self.flags)
+    }
+}
+
+impl super::Extra {
+    pub(crate) fn set_flags(&mut self, flag: u32) {
+        self.0.flags = flag;
+    }
+}
 
 pub(crate) mod op;
 
@@ -486,7 +508,7 @@ impl AsRawFd for Notifier {
 
 /// A notify handle to the inner driver.
 #[derive(Debug)]
-struct Notify {
+pub(crate) struct Notify {
     fd: OwnedFd,
 }
 

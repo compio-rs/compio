@@ -9,7 +9,6 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use io_uring::cqueue::buffer_select;
 use io_uring_buf_ring::IoUringBufRing;
 
 /// Buffer pool
@@ -43,28 +42,18 @@ impl BufferPool {
     /// * `available_len` should be the returned value from the op.
     pub(crate) unsafe fn get_buffer(
         &self,
-        flags: u32,
+        buffer_id: u16,
         available_len: usize,
     ) -> io::Result<BorrowedBuffer<'_>> {
-        let buffer_id = buffer_select(flags).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("flags {flags} is invalid"),
-            )
-        })?;
-
         unsafe { self.buf_ring.get_buf(buffer_id, available_len) }
             .map(BorrowedBuffer)
             .ok_or_else(|| io::Error::other(format!("cannot find buffer {buffer_id}")))
     }
 
-    pub(crate) fn reuse_buffer(&self, flags: u32) {
-        // It ignores invalid flags.
-        if let Some(buffer_id) = buffer_select(flags) {
-            // SAFETY: 0 is always valid length. We just want to get the buffer once and
-            // return it immediately.
-            unsafe { self.buf_ring.get_buf(buffer_id, 0) };
-        }
+    pub(crate) fn reuse_buffer(&self, buffer_id: u16) {
+        // SAFETY: 0 is always valid length. We just want to get the buffer once and
+        // return it immediately.
+        unsafe { self.buf_ring.get_buf(buffer_id, 0) };
     }
 }
 

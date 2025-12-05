@@ -13,7 +13,8 @@ use std::{
 use async_task::Task;
 use compio_buf::IntoInner;
 use compio_driver::{
-    AsRawFd, DriverType, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd, op::Asyncify,
+    AsRawFd, DriverType, Extra, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
+    op::Asyncify,
 };
 use compio_log::{debug, instrument};
 use futures_util::{FutureExt, future::Either};
@@ -248,29 +249,32 @@ impl Runtime {
         &self,
         op: T,
     ) -> impl Future<Output = BufResult<usize, T>> + use<T> {
-        self.submit_with_flags(op).map(|(res, _)| res)
+        match self.submit_raw(op) {
+            PushEntry::Pending(user_data) => Either::Left(OpFuture::new(user_data)),
+            PushEntry::Ready(res) => Either::Right(ready(res)),
+        }
     }
 
     /// Submit an operation to the runtime.
     ///
     /// The difference between [`Runtime::submit`] is this method will return
-    /// the flags
+    /// the extra data along with the result.
     ///
     /// You only need this when authoring your own [`OpCode`].
     ///
     /// It is safe to send the returned future to another runtime and poll it,
     /// but the exact behavior is not guaranteed, e.g. it may return pending
     /// forever or else.
-    fn submit_with_flags<T: OpCode + 'static>(
+    fn submit_with_extra<T: OpCode + 'static>(
         &self,
         op: T,
-    ) -> impl Future<Output = (BufResult<usize, T>, u32)> + use<T> {
+    ) -> impl Future<Output = (BufResult<usize, T>, Extra)> + use<T> {
         match self.submit_raw(op) {
-            PushEntry::Pending(user_data) => Either::Left(OpFuture::new(user_data)),
+            PushEntry::Pending(user_data) => Either::Left(OpFuture::new_extra(user_data)),
             PushEntry::Ready(res) => {
-                // submit_flags won't be ready immediately, if ready, it must be error without
+                // submit_raw won't be ready immediately, if ready, it must be error without
                 // flags
-                Either::Right(ready((res, 0)))
+                Either::Right(ready((res, Extra::default())))
             }
         }
     }
@@ -288,10 +292,23 @@ impl Runtime {
         &self,
         cx: &mut Context,
         op: Key<T>,
-    ) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
+    ) -> PushEntry<Key<T>, BufResult<usize, T>> {
         instrument!(compio_log::Level::DEBUG, "poll_task", ?op);
         let mut driver = self.driver.borrow_mut();
         driver.pop(op).map_pending(|mut k| {
+            driver.update_waker(&mut k, cx.waker().clone());
+            k
+        })
+    }
+
+    pub(crate) fn poll_task_with_extra<T: OpCode>(
+        &self,
+        cx: &mut Context,
+        op: Key<T>,
+    ) -> PushEntry<Key<T>, (BufResult<usize, T>, Extra)> {
+        instrument!(compio_log::Level::DEBUG, "poll_task_with_extra", ?op);
+        let mut driver = self.driver.borrow_mut();
+        driver.pop_with_extra(op).map_pending(|mut k| {
             driver.update_waker(&mut k, cx.waker().clone());
             k
         })
@@ -502,7 +519,7 @@ pub fn spawn_blocking<T: Send + 'static>(
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::with_current`].
 pub async fn submit<T: OpCode + 'static>(op: T) -> BufResult<usize, T> {
-    submit_with_flags(op).await.0
+    Runtime::with_current(|r| r.submit(op)).await
 }
 
 /// Submit an operation to the current runtime, and return a future for it with
@@ -512,8 +529,8 @@ pub async fn submit<T: OpCode + 'static>(op: T) -> BufResult<usize, T> {
 ///
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::with_current`].
-pub async fn submit_with_flags<T: OpCode + 'static>(op: T) -> (BufResult<usize, T>, u32) {
-    Runtime::with_current(|r| r.submit_with_flags(op)).await
+pub async fn submit_with_extra<T: OpCode + 'static>(op: T) -> (BufResult<usize, T>, Extra) {
+    Runtime::with_current(|r| r.submit_with_extra(op)).await
 }
 
 #[cfg(feature = "time")]

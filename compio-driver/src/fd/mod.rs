@@ -15,11 +15,11 @@ use crate::{AsFd, AsRawFd, BorrowedFd, RawFd};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "fd-sync")] {
-        #[path = "sync.rs"]
-        mod types;
+        mod sync;
+        use sync as types;
     } else {
-        #[path = "unsync.rs"]
-        mod types;
+        mod unsync;
+        use unsync as types;
     }
 }
 

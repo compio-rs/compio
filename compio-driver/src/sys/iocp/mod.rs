@@ -24,6 +24,33 @@ pub(crate) mod op;
 mod cp;
 mod wait;
 
+/// Extra data attached for IOCP.
+pub struct Extra {
+    overlapped: Overlapped,
+}
+
+impl Default for Extra {
+    fn default() -> Self {
+        Self {
+            overlapped: Overlapped::new(std::ptr::null_mut()),
+        }
+    }
+}
+
+impl Extra {
+    pub(crate) fn new(driver: RawFd) -> Self {
+        Self {
+            overlapped: Overlapped::new(driver),
+        }
+    }
+}
+
+impl super::Extra {
+    pub(crate) fn optr(&mut self) -> *mut Overlapped {
+        &mut self.0.overlapped as _
+    }
+}
+
 /// On windows, handle and socket are in the same size.
 /// Both of them could be attached to an IOCP.
 /// Therefore, both could be seen as fd.
@@ -320,25 +347,25 @@ impl Driver {
     pub fn cancel(&mut self, op: &mut Key<dyn OpCode>) {
         instrument!(compio_log::Level::TRACE, "cancel", ?op);
         trace!("cancel RawOp");
-        let overlapped_ptr = op.as_mut_ptr();
+        let optr = op.extra_mut().optr();
         if let Some(w) = self.waits.get_mut(&op.user_data())
             && w.cancel().is_ok()
         {
             // The pack has been cancelled successfully, which means no packet will be post
             // to IOCP. Need not set the result because `create_entry` handles it.
-            self.port().post_raw(overlapped_ptr).ok();
+            self.port().post_raw(optr).ok();
         }
         let op = op.as_op_pin();
         // It's OK to fail to cancel.
         trace!("call OpCode::cancel");
-        unsafe { op.cancel(overlapped_ptr.cast()) }.ok();
+        unsafe { op.cancel(optr.cast()) }.ok();
     }
 
     pub fn push(&mut self, op: &mut Key<dyn OpCode>) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?op);
         let user_data = op.user_data();
         trace!("push RawOp");
-        let optr = op.as_mut_ptr();
+        let optr = op.extra_mut().optr();
         let op_pin = op.as_op_pin();
         match op_pin.op_type() {
             OpType::Overlapped => unsafe { op_pin.operate(optr.cast()) },
@@ -364,7 +391,7 @@ impl Driver {
         self.pool
             .dispatch(move || {
                 let mut op = unsafe { Key::<dyn OpCode>::new_unchecked(user_data) };
-                let optr = op.as_mut_ptr();
+                let optr = op.extra_mut().optr();
                 let res = op.operate_blocking();
                 notify.port.post(res, optr).ok();
             })
@@ -441,7 +468,7 @@ impl AsRawFd for Driver {
 }
 
 /// A notify handle to the inner driver.
-struct Notify {
+pub(crate) struct Notify {
     port: cp::Port,
     overlapped: Overlapped,
 }

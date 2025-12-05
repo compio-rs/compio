@@ -2,7 +2,7 @@ use std::{io, time::Duration};
 
 use compio_buf::BufResult;
 use compio_driver::{
-    AsRawFd, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
+    AsRawFd, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
     op::{Asyncify, CloseFile, ReadAt, ReadManagedAt},
 };
 
@@ -44,24 +44,33 @@ fn open_file(driver: &mut Proactor) -> OwnedFd {
     unsafe { OwnedFd::from_raw_fd(fd as _) }
 }
 
-fn push_and_wait_flags<O: OpCode + 'static>(
+fn push_and_wait_extra<O: OpCode + 'static>(
     driver: &mut Proactor,
     op: O,
-) -> (BufResult<usize, O>, u32) {
+) -> (BufResult<usize, O>, Option<Extra>) {
     match driver.push(op) {
-        PushEntry::Ready(res) => (res, 0),
+        PushEntry::Ready(res) => (res, None),
         PushEntry::Pending(mut user_data) => loop {
             driver.poll(None).unwrap();
-            match driver.pop(user_data) {
+            match driver.pop_with_extra(user_data) {
                 PushEntry::Pending(k) => user_data = k,
-                PushEntry::Ready((res, flags)) => break (res, flags),
+                PushEntry::Ready((res, extra)) => break (res, Some(extra)),
             }
         },
     }
 }
 
 fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult<usize, O> {
-    push_and_wait_flags(driver, op).0
+    match driver.push(op) {
+        PushEntry::Ready(res) => res,
+        PushEntry::Pending(mut user_data) => loop {
+            driver.poll(None).unwrap();
+            match driver.pop(user_data) {
+                PushEntry::Pending(k) => user_data = k,
+                PushEntry::Ready(res) => break res,
+            }
+        },
+    }
 }
 
 #[test]
@@ -139,9 +148,11 @@ fn managed() {
     let pool = driver.create_buffer_pool(4, 1024).unwrap();
 
     let op = ReadManagedAt::new(fd.clone(), 0, &pool, 1024).unwrap();
-    let (BufResult(res, op), flags) = push_and_wait_flags(&mut driver, op);
+    let (BufResult(res, op), extra) = push_and_wait_extra(&mut driver, op);
 
-    let buffer = op.take_buffer(&pool, res, flags).unwrap();
+    let buffer_id = extra.unwrap().buffer_id().expect("Buffer ID missing");
+
+    let buffer = op.take_buffer(&pool, res, buffer_id).unwrap();
     println!("{}", std::str::from_utf8(&buffer).unwrap());
 
     let op = CloseFile::new(fd.try_unwrap().unwrap());

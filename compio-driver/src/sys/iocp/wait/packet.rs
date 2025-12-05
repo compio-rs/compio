@@ -11,7 +11,8 @@ use windows_sys::Win32::Foundation::{
     STATUS_SUCCESS,
 };
 
-use crate::{Key, OpCode, RawFd, sys::Notify};
+use super::super::{Notify, OpCode, RawFd};
+use crate::Key;
 
 unsafe extern "system" {
     fn NtCreateWaitCompletionPacket(
@@ -65,7 +66,7 @@ impl Wait {
                 notify.port.as_raw_handle() as _,
                 event,
                 null_mut(),
-                op.as_mut_ptr().cast(),
+                op.extra_mut().optr().cast(),
                 STATUS_SUCCESS,
                 0,
                 null_mut(),

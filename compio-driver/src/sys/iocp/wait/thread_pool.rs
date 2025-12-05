@@ -56,7 +56,8 @@ impl Wait {
             _ => Err(io::Error::from_raw_os_error(result as _)),
         };
         let mut op = unsafe { Key::<dyn OpCode>::new_unchecked(context.user_data) };
-        context.notify.port.post(res, op.as_mut_ptr()).ok();
+        let ptr = op.extra_mut().optr();
+        context.notify.port.post(res, ptr).ok();
     }
 
     pub fn cancel(&mut self) -> io::Result<()> {

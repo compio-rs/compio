@@ -21,7 +21,7 @@ use libc::{pread64 as pread, preadv64 as preadv, pwrite64 as pwrite, pwritev64 a
 use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
 use super::{AsFd, Decision, OpCode, OpType, syscall};
-pub use crate::unix::op::*;
+pub use crate::sys::unix_op::*;
 use crate::{op::*, sys_slice::*};
 
 impl<

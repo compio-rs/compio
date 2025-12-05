@@ -17,15 +17,10 @@ use compio_log::instrument;
 mod key;
 pub use key::Key;
 
-pub mod op;
-#[cfg(unix)]
-#[cfg_attr(docsrs, doc(cfg(all())))]
-mod unix;
-#[cfg(unix)]
-use unix::Overlapped;
-
 mod asyncify;
 pub use asyncify::*;
+
+pub mod op;
 
 mod fd;
 pub use fd::*;
@@ -36,28 +31,10 @@ pub use driver_type::*;
 mod buffer_pool;
 pub use buffer_pool::*;
 
-mod sys_slice;
-
-cfg_if::cfg_if! {
-    if #[cfg(windows)] {
-        #[path = "iocp/mod.rs"]
-        mod sys;
-    } else if #[cfg(fusion)] {
-        #[path = "fusion/mod.rs"]
-        mod sys;
-    } else if #[cfg(io_uring)] {
-        #[path = "iour/mod.rs"]
-        mod sys;
-    } else if #[cfg(all(target_os = "linux", not(feature = "polling")))] {
-        #[path = "stub/mod.rs"]
-        mod sys;
-    } else if #[cfg(unix)] {
-        #[path = "poll/mod.rs"]
-        mod sys;
-    }
-}
-
+mod sys;
 pub use sys::*;
+
+mod sys_slice;
 
 #[cfg(windows)]
 #[macro_export]
@@ -318,14 +295,34 @@ impl Proactor {
     /// # Panics
     /// This function will panic if the requested operation has not been
     /// completed.
-    pub fn pop<T>(&mut self, op: Key<T>) -> PushEntry<Key<T>, (BufResult<usize, T>, u32)> {
-        instrument!(compio_log::Level::DEBUG, "pop", ?op);
-        if op.has_result() {
-            let flags = op.flags();
+    pub fn pop<T>(&mut self, key: Key<T>) -> PushEntry<Key<T>, BufResult<usize, T>> {
+        instrument!(compio_log::Level::DEBUG, "pop", ?key);
+        if key.has_result() {
             // SAFETY: completed.
-            PushEntry::Ready((unsafe { op.into_inner() }, flags))
+            PushEntry::Ready(unsafe { key.into_inner() })
         } else {
-            PushEntry::Pending(op)
+            PushEntry::Pending(key)
+        }
+    }
+
+    /// Get the pushed operations from the completion entries along the
+    /// [`Extra`] associated.
+    ///
+    /// # Panics
+    /// This function will panic if the requested operation has not been
+    /// completed.
+    pub fn pop_with_extra<T>(
+        &mut self,
+        mut key: Key<T>,
+    ) -> PushEntry<Key<T>, (BufResult<usize, T>, Extra)> {
+        instrument!(compio_log::Level::DEBUG, "pop", ?key);
+        if key.has_result() {
+            let extra = key.take_extra();
+            // SAFETY: completed.
+            let res = unsafe { key.into_inner() };
+            PushEntry::Ready((res, extra))
+        } else {
+            PushEntry::Pending(key)
         }
     }
 
@@ -375,16 +372,30 @@ impl AsRawFd for Proactor {
 pub(crate) struct Entry {
     user_data: usize,
     result: io::Result<usize>,
+
+    #[cfg(io_uring)]
     flags: u32,
 }
 
 impl Entry {
     pub(crate) fn new(user_data: usize, result: io::Result<usize>) -> Self {
-        Self {
-            user_data,
-            result,
-            flags: 0,
+        #[cfg(not(io_uring))]
+        {
+            Self { user_data, result }
         }
+        #[cfg(io_uring)]
+        {
+            Self {
+                user_data,
+                result,
+                flags: 0,
+            }
+        }
+    }
+
+    #[cfg(io_uring)]
+    pub fn flags(&self) -> u32 {
+        self.flags
     }
 
     #[cfg(io_uring)]
@@ -398,10 +409,6 @@ impl Entry {
         self.user_data
     }
 
-    pub fn flags(&self) -> u32 {
-        self.flags
-    }
-
     /// The result of the operation.
     pub fn into_result(self) -> io::Result<usize> {
         self.result
@@ -413,7 +420,8 @@ impl Entry {
     pub unsafe fn notify(self) {
         let user_data = self.user_data();
         let mut op = unsafe { Key::<()>::new_unchecked(user_data) };
-        op.set_flags(self.flags());
+        #[cfg(io_uring)]
+        op.extra_mut().set_flags(self.flags());
         if op.set_result(self.into_result()) {
             // SAFETY: completed and cancelled.
             let _ = unsafe { op.into_box() };

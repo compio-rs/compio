@@ -23,6 +23,20 @@ use crate::{
 
 pub(crate) mod op;
 
+/// Extra data for RawOp.
+///
+/// Polling doesn't need any extra data in RawOp so it's empty.
+#[allow(dead_code)]
+#[derive(Default)]
+pub struct Extra {}
+
+#[allow(dead_code)]
+impl Extra {
+    pub fn new(_: RawFd) -> Self {
+        Self {}
+    }
+}
+
 /// Abstraction of operations.
 pub trait OpCode {
     /// Perform the operation before submit, and return [`Decision`] to
@@ -508,7 +522,7 @@ fn entry_cancelled(user_data: usize) -> Entry {
 }
 
 /// A notify handle to the inner driver.
-struct Notify {
+pub(crate) struct Notify {
     poll: Poller,
 }
 

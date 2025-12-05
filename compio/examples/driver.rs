@@ -52,7 +52,7 @@ fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> (usize, O
             driver.poll(None).unwrap();
             match driver.pop(user_data) {
                 PushEntry::Pending(k) => user_data = k,
-                PushEntry::Ready((res, _)) => break res.unwrap(),
+                PushEntry::Ready(res) => break res.unwrap(),
             }
         },
     }

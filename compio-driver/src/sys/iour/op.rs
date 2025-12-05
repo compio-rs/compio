@@ -14,7 +14,7 @@ use io_uring::{
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
 use super::OpCode;
-pub use crate::unix::op::*;
+pub use crate::sys::unix_op::*;
 use crate::{OpEntry, op::*, sys_slice::*, syscall};
 
 impl<
@@ -709,13 +709,13 @@ mod buf_ring {
             self,
             buffer_pool: &Self::BufferPool,
             result: io::Result<usize>,
-            flags: u32,
+            buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
             #[cfg(fusion)]
             let buffer_pool = buffer_pool.as_io_uring();
-            let result = result.inspect_err(|_| buffer_pool.reuse_buffer(flags))?;
+            let result = result.inspect_err(|_| buffer_pool.reuse_buffer(buffer_id))?;
             // SAFETY: result is valid
-            let res = unsafe { buffer_pool.get_buffer(flags, result) };
+            let res = unsafe { buffer_pool.get_buffer(buffer_id, result) };
             #[cfg(fusion)]
             let res = res.map(BorrowedBuffer::new_io_uring);
             res
@@ -731,7 +731,7 @@ mod buf_ring {
     }
 
     impl<S> RecvManaged<S> {
-        /// Create [`RecvBufferPool`].
+        /// Create [`RecvManaged`].
         pub fn new(fd: S, buffer_pool: &BufferPool, len: usize) -> io::Result<Self> {
             #[cfg(fusion)]
             let buffer_pool = buffer_pool.as_io_uring();
@@ -765,13 +765,13 @@ mod buf_ring {
             self,
             buffer_pool: &Self::BufferPool,
             result: io::Result<usize>,
-            flags: u32,
+            buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
             #[cfg(fusion)]
             let buffer_pool = buffer_pool.as_io_uring();
-            let result = result.inspect_err(|_| buffer_pool.reuse_buffer(flags))?;
+            let result = result.inspect_err(|_| buffer_pool.reuse_buffer(buffer_id))?;
             // SAFETY: result is valid
-            let res = unsafe { buffer_pool.get_buffer(flags, result) };
+            let res = unsafe { buffer_pool.get_buffer(buffer_id, result) };
             #[cfg(fusion)]
             let res = res.map(BorrowedBuffer::new_io_uring);
             res
