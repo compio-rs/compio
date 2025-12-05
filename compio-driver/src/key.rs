@@ -145,6 +145,7 @@ impl<T: ?Sized> Key<T> {
     }
 
     /// Mutable reference to [`Extra`].
+    #[allow(dead_code)] // on polling, this is never used
     pub(crate) fn extra_mut(&mut self) -> &mut Extra {
         &mut self.as_opaque_mut().extra
     }
