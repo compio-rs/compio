@@ -1,4 +1,7 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    mem::MaybeUninit,
+    ops::{Deref, DerefMut},
+};
 
 use crate::*;
 
@@ -26,11 +29,11 @@ use crate::*;
 pub struct Slice<T> {
     buffer: T,
     begin: usize,
-    end: usize,
+    end: Option<usize>,
 }
 
 impl<T> Slice<T> {
-    pub(crate) fn new(buffer: T, begin: usize, end: usize) -> Self {
+    pub(crate) fn new(buffer: T, begin: usize, end: Option<usize>) -> Self {
         Self { buffer, begin, end }
     }
 
@@ -40,13 +43,8 @@ impl<T> Slice<T> {
     }
 
     /// Offset in the underlying buffer at which this slice ends.
-    pub fn end(&self) -> usize {
+    pub fn end(&self) -> Option<usize> {
         self.end
-    }
-
-    pub(crate) fn set_range(&mut self, begin: usize, end: usize) {
-        self.begin = begin;
-        self.end = end;
     }
 
     /// Gets a reference to the underlying buffer.
@@ -64,45 +62,87 @@ impl<T> Slice<T> {
     }
 }
 
-fn slice_mut<T: IoBufMut>(buffer: &mut T) -> &mut [u8] {
-    unsafe { std::slice::from_raw_parts_mut(buffer.as_buf_mut_ptr(), (*buffer).buf_len()) }
+impl<T: IoBuf> Slice<T> {
+    /// Offset in the underlying buffer at which this slice starts. If it
+    /// exceeds the buffer length, returns the buffer length.
+    fn begin_or_len(&self) -> usize {
+        let len = self.buffer.buf_len();
+        self.begin.min(len)
+    }
+
+    /// Offset in the underlying buffer at which this slice ends. If it does not
+    /// exist or exceeds the buffer length, returns the buffer length.
+    fn end_or_len(&self) -> usize {
+        let len = self.buffer.buf_len();
+        self.end.unwrap_or(len).min(len)
+    }
+
+    /// Range of initialized bytes in the slice.
+    fn initialized_range(&self) -> std::ops::Range<usize>
+    where
+        T: IoBuf,
+    {
+        let begin = self.begin_or_len();
+        let end = self.end_or_len();
+        begin..end
+    }
+}
+
+impl<T: IoBufMut> Slice<T> {
+    /// Offset in the underlying buffer at which this slice starts. If it
+    /// exceeds the buffer length, returns the buffer length.
+    fn begin_or_cap(&mut self) -> usize {
+        let cap = self.buffer.buf_capacity();
+        self.begin.min(cap)
+    }
+
+    /// Offset in the underlying buffer at which this slice ends. If it does not
+    /// exist or exceeds the buffer capacity, returns the buffer capacity.
+    fn end_or_cap(&mut self) -> usize {
+        let cap = self.buffer.buf_capacity();
+        self.end.unwrap_or(cap).min(cap)
+    }
+
+    /// Full range of the slice, include uninitialized bytes.
+    fn range(&mut self) -> std::ops::Range<usize>
+    where
+        T: IoBufMut,
+    {
+        let begin = self.begin_or_cap();
+        let end = self.end_or_cap();
+        begin..end
+    }
 }
 
 impl<T: IoBuf> Deref for Slice<T> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
+        let range = self.initialized_range();
         let bytes = self.buffer.as_slice();
-        let end = self.end.min(bytes.len());
-        &bytes[self.begin..end]
+        &bytes[range]
     }
 }
 
 impl<T: IoBufMut> DerefMut for Slice<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        let bytes = slice_mut(&mut self.buffer);
-        let end = self.end.min(bytes.len());
-        &mut bytes[self.begin..end]
+        let range = self.initialized_range();
+        let bytes = self.buffer.as_mut_slice();
+        &mut bytes[range]
     }
 }
 
-unsafe impl<T: IoBuf> IoBuf for Slice<T> {
-    fn as_buf_ptr(&self) -> *const u8 {
-        self.buffer.as_slice()[self.begin..].as_ptr()
-    }
-
-    fn buf_len(&self) -> usize {
-        self.deref().len()
-    }
-
-    fn buf_capacity(&self) -> usize {
-        self.end - self.begin
+impl<T: IoBuf> IoBuf for Slice<T> {
+    fn as_slice(&self) -> &[u8] {
+        self.deref()
     }
 }
 
-unsafe impl<T: IoBufMut> IoBufMut for Slice<T> {
-    fn as_buf_mut_ptr(&mut self) -> *mut u8 {
-        slice_mut(&mut self.buffer)[self.begin..].as_mut_ptr()
+impl<T: IoBufMut> IoBufMut for Slice<T> {
+    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        let range = self.range();
+        let bytes = self.buffer.as_uninit();
+        &mut bytes[range]
     }
 }
 
@@ -120,54 +160,30 @@ impl<T> IntoInner for Slice<T> {
     }
 }
 
-/// An owned view of a vectored buffer.
+/// Return type for [`IoVectoredBuf::slice`] and
+/// [`IoVectoredBufMut::slice_mut`].
+///
+/// # Behavior
+///
+/// When constructing the [`VectoredSlice`], it will first compute how
+/// many buffers to skip. Imaging vectored buffers as concatenated slices, there
+/// will be uninitialized "slots" in between. This slice type provides two
+/// behaviors of how to skip through those slots, controlled by the marker type
+/// `B`:
+///
+/// - [`IoVectoredBuf::slice`]: Ignore uninitialized slots, i.e., skip
+///   `begin`-many **initialized** bytes.
+/// - [`IoVectoredBuf::slice_mut`]: Consider uninitialized slots, i.e., skip
+///   `begin`-many bytes.
+///
+/// This will only affect how the slice is being constructed. The resulting
+/// slice will always expose all of the remaining bytes, no matter initialized
+/// or not (in particular, [`IoVectoredBufMut::iter_uninit_slice`]).
 pub struct VectoredSlice<T> {
     buf: T,
     begin: usize,
-}
-
-impl<T> VectoredSlice<T> {
-    pub(crate) fn new(buf: T, begin: usize) -> Self {
-        Self { buf, begin }
-    }
-
-    /// Offset in the underlying buffer at which this slice starts.
-    pub fn begin(&self) -> usize {
-        self.begin
-    }
-
-    /// Gets a reference to the underlying buffer.
-    ///
-    /// This method escapes the slice's view.
-    pub fn as_inner(&self) -> &T {
-        &self.buf
-    }
-
-    /// Gets a mutable reference to the underlying buffer.
-    ///
-    /// This method escapes the slice's view.
-    pub fn as_inner_mut(&mut self) -> &mut T {
-        &mut self.buf
-    }
-}
-
-impl<T: IoVectoredBuf> IoVectoredBuf for VectoredSlice<T> {
-    unsafe fn iter_io_buffer(&self) -> impl Iterator<Item = IoBuffer> {
-        let mut offset = self.begin;
-        unsafe { self.buf.iter_io_buffer() }.filter_map(move |buf| {
-            let len = buf.len();
-            let sub = len.min(offset);
-            offset -= sub;
-            if len - sub > 0 {
-                // SAFETY: sub <= len
-                Some(unsafe {
-                    IoBuffer::new(buf.as_ptr().add(sub), len - sub, buf.capacity() - sub)
-                })
-            } else {
-                None
-            }
-        })
-    }
+    idx: usize,
+    offset: usize,
 }
 
 impl<T> IntoInner for VectoredSlice<T> {
@@ -178,17 +194,7 @@ impl<T> IntoInner for VectoredSlice<T> {
     }
 }
 
-/// An owned view of a vectored buffer.
-pub struct VectoredSliceMut<T> {
-    buf: T,
-    begin: usize,
-}
-
-impl<T> VectoredSliceMut<T> {
-    pub(crate) fn new(buf: T, begin: usize) -> Self {
-        Self { buf, begin }
-    }
-
+impl<T> VectoredSlice<T> {
     /// Offset in the underlying buffer at which this slice starts.
     pub fn begin(&self) -> usize {
         self.begin
@@ -207,38 +213,60 @@ impl<T> VectoredSliceMut<T> {
     pub fn as_inner_mut(&mut self) -> &mut T {
         &mut self.buf
     }
+
+    pub(crate) fn new(buf: T, begin: usize, idx: usize, offset: usize) -> Self {
+        Self {
+            buf,
+            begin,
+            idx,
+            offset,
+        }
+    }
 }
 
-impl<T: IoVectoredBuf> IoVectoredBuf for VectoredSliceMut<T> {
-    unsafe fn iter_io_buffer(&self) -> impl Iterator<Item = IoBuffer> {
-        let mut offset = self.begin;
-        unsafe { self.buf.iter_io_buffer() }.filter_map(move |buf| {
-            let capacity = buf.capacity();
-            let sub = capacity.min(offset);
-            offset -= sub;
-            if capacity - sub > 0 {
-                let len = buf.len().saturating_sub(sub);
-                // SAFETY: sub <= capacity
-                Some(unsafe { IoBuffer::new(buf.as_ptr().add(sub), len, capacity - sub) })
-            } else {
-                None
-            }
+impl<T: IoVectoredBuf> IoVectoredBuf for VectoredSlice<T> {
+    fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
+        let mut offset = self.offset;
+        self.buf.iter_slice().skip(self.idx).map(move |buf| {
+            let ret = &buf[offset..];
+            offset = 0;
+            ret
         })
     }
 }
 
-impl<T> IntoInner for VectoredSliceMut<T> {
-    type Inner = T;
-
-    fn into_inner(self) -> Self::Inner {
-        self.buf
-    }
-}
-
-impl<T: SetBufInit> SetBufInit for VectoredSliceMut<T> {
+impl<T: SetBufInit> SetBufInit for VectoredSlice<T> {
     unsafe fn set_buf_init(&mut self, len: usize) {
         unsafe { self.buf.set_buf_init(self.begin + len) }
     }
 }
 
-impl<T: IoVectoredBufMut> IoVectoredBufMut for VectoredSliceMut<T> {}
+impl<T: IoVectoredBufMut> IoVectoredBufMut for VectoredSlice<T> {
+    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+        let mut offset = self.offset;
+        self.buf.iter_uninit_slice().skip(self.idx).map(move |buf| {
+            let ret = &mut buf[offset..];
+            offset = 0;
+            ret
+        })
+    }
+}
+
+#[test]
+fn test_slice() {
+    let buf = b"hello world";
+    let slice = buf.slice(6..);
+    assert_eq!(slice.as_slice(), b"world");
+
+    let slice = buf.slice(..5);
+    assert_eq!(slice.as_slice(), b"hello");
+
+    let slice = buf.slice(3..8);
+    assert_eq!(slice.as_slice(), b"lo wo");
+
+    let slice = buf.slice(..);
+    assert_eq!(slice.as_slice(), b"hello world");
+
+    let slice = buf.slice(12..);
+    assert_eq!(slice.as_slice(), b"");
+}

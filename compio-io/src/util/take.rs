@@ -54,7 +54,7 @@ impl<T> Take<T> {
 }
 
 impl<R: AsyncRead> AsyncRead for Take<R> {
-    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
+    async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
         if self.limit == 0 {
             return BufResult(Ok(0), buf);
         }

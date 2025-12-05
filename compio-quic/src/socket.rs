@@ -74,17 +74,9 @@ impl<const N: usize> Ancillary<N> {
     }
 }
 
-unsafe impl<const N: usize> IoBuf for Ancillary<N> {
-    fn as_buf_ptr(&self) -> *const u8 {
-        self.inner.as_buf_ptr()
-    }
-
-    fn buf_len(&self) -> usize {
-        self.len
-    }
-
-    fn buf_capacity(&self) -> usize {
-        N
+impl<const N: usize> IoBuf for Ancillary<N> {
+    fn as_slice(&self) -> &[u8] {
+        &self.inner[..self.len]
     }
 }
 
@@ -95,9 +87,9 @@ impl<const N: usize> SetBufInit for Ancillary<N> {
     }
 }
 
-unsafe impl<const N: usize> IoBufMut for Ancillary<N> {
-    fn as_buf_mut_ptr(&mut self) -> *mut u8 {
-        self.inner.as_buf_mut_ptr()
+impl<const N: usize> IoBufMut for Ancillary<N> {
+    fn as_uninit(&mut self) -> &mut [std::mem::MaybeUninit<u8>] {
+        self.inner.as_uninit()
     }
 }
 

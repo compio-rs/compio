@@ -9,9 +9,7 @@ use std::{
     task::Poll,
 };
 
-use compio_buf::{
-    BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
-};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 #[cfg(not(gnulinux))]
 use libc::open;
 #[cfg(gnulinux)]
@@ -23,8 +21,8 @@ use libc::{pread64 as pread, preadv64 as preadv, pwrite64 as pwrite, pwritev64 a
 use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
 use super::{AsFd, Decision, OpCode, OpType, syscall};
-use crate::op::*;
 pub use crate::unix::op::*;
+use crate::{op::*, sys_slice::*};
 
 impl<
     D: std::marker::Send + 'static,
@@ -215,7 +213,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
         #[cfg(aio)]
         {
             let this = unsafe { self.get_unchecked_mut() };
-            let slice = this.buffer.as_mut_slice();
+            let slice = this.buffer.as_uninit();
 
             this.aiocb.aio_fildes = this.fd.as_fd().as_raw_fd();
             this.aiocb.aio_offset = this.offset as _;
@@ -240,7 +238,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();
         let offset = self.offset;
-        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
+        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_uninit();
         syscall!(break pread(fd, slice.as_mut_ptr() as _, slice.len() as _, offset as _,))
     }
 }
@@ -250,7 +248,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
         #[cfg(freebsd)]
         {
             let this = unsafe { self.get_unchecked_mut() };
-            this.slices = unsafe { this.buffer.io_slices_mut() };
+            this.slices = unsafe { this.buffer.sys_slices_mut() };
 
             this.aiocb.aio_fildes = this.fd.as_fd().as_raw_fd();
             this.aiocb.aio_offset = this.offset as _;
@@ -274,7 +272,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slices = unsafe { this.buffer.io_slices_mut() };
+        this.slices = unsafe { this.buffer.sys_slices_mut() };
         syscall!(
             break preadv(
                 this.fd.as_fd().as_raw_fd(),
@@ -331,7 +329,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
         #[cfg(freebsd)]
         {
             let this = unsafe { self.get_unchecked_mut() };
-            this.slices = unsafe { this.buffer.io_slices() };
+            this.slices = unsafe { this.buffer.sys_slices() };
 
             this.aiocb.aio_fildes = this.fd.as_fd().as_raw_fd();
             this.aiocb.aio_offset = this.offset as _;
@@ -355,7 +353,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slices = unsafe { this.buffer.io_slices() };
+        this.slices = unsafe { this.buffer.sys_slices() };
         syscall!(
             break pwritev(
                 this.fd.as_fd().as_raw_fd(),
@@ -386,10 +384,10 @@ impl<S: AsFd> OpCode for Sync<S> {
         #[cfg(aio)]
         {
             unsafe extern "C" fn aio_fsync(aiocbp: *mut libc::aiocb) -> i32 {
-                libc::aio_fsync(libc::O_SYNC, aiocbp)
+                unsafe { libc::aio_fsync(libc::O_SYNC, aiocbp) }
             }
             unsafe extern "C" fn aio_fdatasync(aiocbp: *mut libc::aiocb) -> i32 {
-                libc::aio_fsync(libc::O_DSYNC, aiocbp)
+                unsafe { libc::aio_fsync(libc::O_DSYNC, aiocbp) }
             }
 
             let this = unsafe { self.get_unchecked_mut() };
@@ -702,7 +700,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();
-        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
+        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_uninit();
         syscall!(break libc::read(fd, slice.as_mut_ptr() as _, slice.len()))
     }
 }
@@ -718,7 +716,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slices = unsafe { this.buffer.io_slices_mut() };
+        this.slices = unsafe { this.buffer.sys_slices_mut() };
         syscall!(
             break libc::readv(
                 this.fd.as_fd().as_raw_fd(),
@@ -761,7 +759,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slices = unsafe { this.buffer.io_slices() };
+        this.slices = unsafe { this.buffer.sys_slices() };
         syscall!(
             break libc::writev(
                 this.fd.as_fd().as_raw_fd(),
@@ -814,7 +812,7 @@ impl<T: IoBufMut, S: AsFd> RecvFrom<T, S> {
     unsafe fn call(self: Pin<&mut Self>) -> libc::ssize_t {
         let this = unsafe { self.get_unchecked_mut() };
         let fd = this.fd.as_fd().as_raw_fd();
-        let slice = this.buffer.as_mut_slice();
+        let slice = this.buffer.as_uninit();
         unsafe {
             libc::recvfrom(
                 fd,
@@ -855,7 +853,7 @@ impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
 pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
-    pub(crate) slices: Vec<IoSliceMut>,
+    pub(crate) slices: Vec<SysSlice>,
     pub(crate) addr: SockAddrStorage,
     pub(crate) msg: libc::msghdr,
     _p: PhantomPinned,
@@ -877,7 +875,7 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
 
 impl<T: IoVectoredBufMut, S: AsFd> RecvFromVectored<T, S> {
     fn set_msg(&mut self) {
-        self.slices = unsafe { self.buffer.io_slices_mut() };
+        self.slices = unsafe { self.buffer.sys_slices_mut() };
         self.msg.msg_name = &mut self.addr as *mut _ as _;
         self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
         self.msg.msg_iov = self.slices.as_mut_ptr() as _;
@@ -977,7 +975,7 @@ pub struct SendToVectored<T: IoVectoredBuf, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
-    pub(crate) slices: Vec<IoSlice>,
+    pub(crate) slices: Vec<SysSlice>,
     pub(crate) msg: libc::msghdr,
     _p: PhantomPinned,
 }
@@ -998,7 +996,7 @@ impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
 
 impl<T: IoVectoredBuf, S: AsFd> SendToVectored<T, S> {
     fn set_msg(&mut self) {
-        self.slices = unsafe { self.buffer.io_slices() };
+        self.slices = unsafe { self.buffer.sys_slices() };
         self.msg.msg_name = &mut self.addr as *mut _ as _;
         self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
         self.msg.msg_iov = self.slices.as_mut_ptr() as _;

@@ -3,7 +3,7 @@ use std::{
     mem::MaybeUninit,
 };
 
-use compio_buf::{BufResult, IntoInner, IoBuf};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 
 use crate::{buffer::Buffer, util::DEFAULT_BUF_SIZE};
 
@@ -96,7 +96,7 @@ impl<S> SyncStream<S> {
 
     /// Returns the available bytes in the read buffer.
     fn available_read(&self) -> &[u8] {
-        self.read_buf.slice()
+        self.read_buf.buffer()
     }
 
     /// Marks `amt` bytes as consumed from the read buffer.

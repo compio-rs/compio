@@ -31,7 +31,7 @@ impl AsyncRead for Repeat {
         &mut self,
         mut buf: B,
     ) -> compio_buf::BufResult<usize, B> {
-        let slice = buf.as_mut_slice();
+        let slice = buf.as_uninit();
 
         let len = slice.len();
         slice.fill(MaybeUninit::new(self.0));

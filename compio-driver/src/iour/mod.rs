@@ -92,6 +92,8 @@ pub trait OpCode {
 
     /// Call the operation in a blocking way. This method will only be called if
     /// [`create_entry`] returns [`OpEntry::Blocking`].
+    ///
+    /// [`create_entry`]: OpCode::create_entry
     fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
         unreachable!("this operation is asynchronous")
     }

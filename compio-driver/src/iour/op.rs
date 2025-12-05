@@ -6,9 +6,7 @@ use std::{
     pin::Pin,
 };
 
-use compio_buf::{
-    BufResult, IntoInner, IoBuf, IoBufMut, IoSlice, IoSliceMut, IoVectoredBuf, IoVectoredBufMut,
-};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use io_uring::{
     opcode,
     types::{Fd, FsyncFlags},
@@ -17,7 +15,7 @@ use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
 use super::OpCode;
 pub use crate::unix::op::*;
-use crate::{OpEntry, op::*, syscall};
+use crate::{OpEntry, op::*, sys_slice::*, syscall};
 
 impl<
     D: std::marker::Send + 'static,
@@ -168,7 +166,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let fd = Fd(self.fd.as_fd().as_raw_fd());
         let offset = self.offset;
-        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
+        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_uninit();
         opcode::Read::new(fd, slice.as_mut_ptr() as _, slice.len() as _)
             .offset(offset)
             .build()
@@ -179,7 +177,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
 impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slices = unsafe { this.buffer.io_slices_mut() };
+        this.slices = unsafe { this.buffer.sys_slices_mut() };
         opcode::Readv::new(
             Fd(this.fd.as_fd().as_raw_fd()),
             this.slices.as_ptr() as _,
@@ -208,7 +206,7 @@ impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
 impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slices = unsafe { this.buffer.io_slices() };
+        this.slices = unsafe { this.buffer.sys_slices() };
         opcode::Writev::new(
             Fd(this.fd.as_fd().as_raw_fd()),
             this.slices.as_ptr() as _,
@@ -367,7 +365,7 @@ impl<S: AsFd> OpCode for Connect<S> {
 impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let fd = self.fd.as_fd().as_raw_fd();
-        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_mut_slice();
+        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_uninit();
         opcode::Read::new(Fd(fd), slice.as_mut_ptr() as _, slice.len() as _)
             .build()
             .into()
@@ -377,7 +375,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
 impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slices = unsafe { this.buffer.io_slices_mut() };
+        this.slices = unsafe { this.buffer.sys_slices_mut() };
         opcode::Readv::new(
             Fd(this.fd.as_fd().as_raw_fd()),
             this.slices.as_ptr() as _,
@@ -404,7 +402,7 @@ impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
 impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slices = unsafe { this.buffer.io_slices() };
+        this.slices = unsafe { this.buffer.sys_slices() };
         opcode::Writev::new(
             Fd(this.fd.as_fd().as_raw_fd()),
             this.slices.as_ptr() as _,
@@ -434,7 +432,7 @@ impl<S> RecvFromHeader<S> {
 }
 
 impl<S: AsFd> RecvFromHeader<S> {
-    pub fn create_entry(&mut self, slices: &mut [IoSliceMut]) -> OpEntry {
+    pub fn create_entry(&mut self, slices: &mut [SysSlice]) -> OpEntry {
         self.msg.msg_name = &mut self.addr as *mut _ as _;
         self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
         self.msg.msg_iov = slices.as_mut_ptr() as _;
@@ -453,7 +451,7 @@ impl<S: AsFd> RecvFromHeader<S> {
 pub struct RecvFrom<T: IoBufMut, S> {
     header: RecvFromHeader<S>,
     buffer: T,
-    slice: [IoSliceMut; 1],
+    slice: Option<SysSlice>,
 }
 
 impl<T: IoBufMut, S> RecvFrom<T, S> {
@@ -462,8 +460,7 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
         Self {
             header: RecvFromHeader::new(fd),
             buffer,
-            // SAFETY: We never use this slice.
-            slice: [unsafe { IoSliceMut::from_slice(&mut []) }],
+            slice: None,
         }
     }
 }
@@ -471,8 +468,8 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
 impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slice[0] = unsafe { this.buffer.as_io_slice_mut() };
-        this.header.create_entry(&mut this.slice)
+        let slice = this.slice.insert(this.buffer.as_uninit().into());
+        this.header.create_entry(std::slice::from_mut(slice))
     }
 }
 
@@ -489,7 +486,7 @@ impl<T: IoBufMut, S: AsFd> IntoInner for RecvFrom<T, S> {
 pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
     header: RecvFromHeader<S>,
     buffer: T,
-    slice: Vec<IoSliceMut>,
+    slice: Vec<SysSlice>,
 }
 
 impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
@@ -506,7 +503,7 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
 impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slice = unsafe { this.buffer.io_slices_mut() };
+        this.slice = unsafe { this.buffer.sys_slices_mut() };
         this.header.create_entry(&mut this.slice)
     }
 }
@@ -539,7 +536,7 @@ impl<S> SendToHeader<S> {
 }
 
 impl<S: AsFd> SendToHeader<S> {
-    pub fn create_entry(&mut self, slices: &mut [IoSlice]) -> OpEntry {
+    pub fn create_entry(&mut self, slices: &mut [SysSlice]) -> OpEntry {
         self.msg.msg_name = self.addr.as_ptr() as _;
         self.msg.msg_namelen = self.addr.len();
         self.msg.msg_iov = slices.as_mut_ptr() as _;
@@ -554,7 +551,7 @@ impl<S: AsFd> SendToHeader<S> {
 pub struct SendTo<T: IoBuf, S> {
     header: SendToHeader<S>,
     buffer: T,
-    slice: [IoSlice; 1],
+    slice: Option<SysSlice>,
 }
 
 impl<T: IoBuf, S> SendTo<T, S> {
@@ -563,8 +560,7 @@ impl<T: IoBuf, S> SendTo<T, S> {
         Self {
             header: SendToHeader::new(fd, addr),
             buffer,
-            // SAFETY: We never use this slice.
-            slice: [unsafe { IoSlice::from_slice(&[]) }],
+            slice: None,
         }
     }
 }
@@ -572,8 +568,8 @@ impl<T: IoBuf, S> SendTo<T, S> {
 impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slice[0] = unsafe { this.buffer.as_io_slice() };
-        this.header.create_entry(&mut this.slice)
+        let slice = this.slice.insert(this.buffer.as_slice().into());
+        this.header.create_entry(std::slice::from_mut(slice))
     }
 }
 
@@ -589,7 +585,7 @@ impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
 pub struct SendToVectored<T: IoVectoredBuf, S> {
     header: SendToHeader<S>,
     buffer: T,
-    slice: Vec<IoSlice>,
+    slice: Vec<SysSlice>,
 }
 
 impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
@@ -606,7 +602,7 @@ impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
 impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = unsafe { self.get_unchecked_mut() };
-        this.slice = unsafe { this.buffer.io_slices() };
+        this.slice = unsafe { this.buffer.sys_slices() };
         this.header.create_entry(&mut this.slice)
     }
 }

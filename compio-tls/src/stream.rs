@@ -77,7 +77,7 @@ impl<S> From<futures_rustls::server::TlsStream<AsyncStream<S>>> for TlsStream<S>
 
 impl<S: AsyncRead + AsyncWrite + 'static> AsyncRead for TlsStream<S> {
     async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
-        let slice = buf.as_mut_slice();
+        let slice = buf.as_uninit();
         slice.fill(MaybeUninit::new(0));
         // SAFETY: The memory has been initialized
         let slice =
