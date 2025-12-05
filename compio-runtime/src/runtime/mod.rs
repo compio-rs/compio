@@ -272,7 +272,7 @@ impl Runtime {
         match self.submit_raw(op) {
             PushEntry::Pending(user_data) => Either::Left(OpFuture::new_extra(user_data)),
             PushEntry::Ready(res) => {
-                // submit_flags won't be ready immediately, if ready, it must be error without
+                // submit_raw won't be ready immediately, if ready, it must be error without
                 // flags
                 Either::Right(ready((res, Extra::default())))
             }

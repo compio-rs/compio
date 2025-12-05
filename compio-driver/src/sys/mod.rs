@@ -53,7 +53,7 @@ impl Extra {
         }
         #[cfg(not(io_uring))]
         {
-            // On other platforms, buffer IDs are not supported nor used, so it's okay tp
+            // On other platforms, buffer IDs are not supported nor used, so it's okay to
             // return `Ok(0)`.
             Ok(0)
         }
