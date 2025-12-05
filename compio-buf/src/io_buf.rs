@@ -529,7 +529,9 @@ impl SetBufInit for std::io::BorrowedBuf<'static> {
     unsafe fn set_buf_init(&mut self, len: usize) {
         let current_len = (*self).buf_len();
         if current_len < len {
-            self.unfilled().advance(len - current_len);
+            // SAFETY: `len - current_len` range is initialized guaranteed by invariant of
+            // `set_buf_init`
+            unsafe { self.unfilled().advance(len - current_len) };
         }
     }
 }
