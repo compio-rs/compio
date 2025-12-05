@@ -21,6 +21,15 @@ use std::{
 
 use crate::{BufferPool, DriverType, Key, ProactorBuilder};
 
+#[derive(Default)]
+pub struct Extra {}
+
+impl Extra {
+    pub fn new(_: RawFd) -> Self {
+        Self {}
+    }
+}
+
 /// Operations.
 pub trait OpCode {}
 

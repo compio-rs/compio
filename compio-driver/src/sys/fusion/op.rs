@@ -4,7 +4,7 @@ use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use socket2::SockAddr;
 
 use super::*;
-pub use crate::unix::op::*;
+pub use crate::sys::unix_op::*;
 
 macro_rules! op {
     (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? )) => {
@@ -165,14 +165,14 @@ macro_rules! mop {
                     self,
                     buffer_pool: &Self::BufferPool,
                     result: io::Result<usize>,
-                    flags: u32,
+                    buffer_id: u16,
                 ) -> io::Result<Self::Buffer<'_>> {
                     match self.inner {
                         [< $name Inner >]::Poll(inner) => {
-                            Ok(inner.take_buffer(buffer_pool, result, flags)?)
+                            Ok(inner.take_buffer(buffer_pool, result, buffer_id)?)
                         }
                         [< $name Inner >]::IoUring(inner) => {
-                            Ok(inner.take_buffer(buffer_pool, result, flags)?)
+                            Ok(inner.take_buffer(buffer_pool, result, buffer_id)?)
                         }
                     }
                 }

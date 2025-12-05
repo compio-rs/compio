@@ -1,9 +1,3 @@
-#[path = "../poll/mod.rs"]
-mod poll;
-
-#[path = "../iour/mod.rs"]
-mod iour;
-
 pub(crate) mod op;
 
 #[cfg_attr(all(doc, docsrs), doc(cfg(all())))]
@@ -15,10 +9,11 @@ use std::{
 };
 
 use compio_log::warn;
-pub(crate) use iour::is_op_supported;
-pub use iour::{OpCode as IourOpCode, OpEntry};
+pub use iour::{Extra, OpCode as IourOpCode, OpEntry};
 pub use poll::{Decision, OpCode as PollOpCode, OpType};
 
+pub(crate) use super::iour::is_op_supported;
+use super::{iour, poll};
 pub use crate::driver_type::DriverType; // Re-export so current user won't be broken
 use crate::{BufferPool, Key, ProactorBuilder};
 

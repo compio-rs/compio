@@ -1,14 +1,12 @@
 cfg_if::cfg_if! {
-    if #[cfg(io_uring)] {
-        cfg_if::cfg_if! {
-            if #[cfg(fusion)] {
-                mod fusion;
-                pub use fusion::*;
-            } else {
-                mod iour;
-                pub use iour::*;
-            }
-        }
+    if #[cfg(all(io_uring, fusion))] {
+        mod iour;
+        mod fallback;
+        mod fusion;
+        pub use fusion::*;
+    } else if #[cfg(io_uring)] {
+        mod iour;
+        pub use iour::*;
     } else {
         mod fallback;
         pub use fallback::*;
@@ -24,12 +22,12 @@ pub trait TakeBuffer {
     /// Buffer pool type.
     type BufferPool;
 
-    /// Take the selected buffer with `buffer_pool`, io `result` and `flags`, if
-    /// io operation is success.
+    /// Take the selected buffer with `buffer_pool`, io `result` and
+    /// `buffer_id`, if io operation is success.
     fn take_buffer(
         self,
         buffer_pool: &Self::BufferPool,
         result: std::io::Result<usize>,
-        flags: u32,
+        buffer_id: u16,
     ) -> std::io::Result<Self::Buffer<'_>>;
 }

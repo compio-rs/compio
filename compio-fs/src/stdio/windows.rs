@@ -185,7 +185,7 @@ impl AsyncReadManaged for &Stdin {
             Ok(res)
         } else {
             let op = RecvManaged::new(self.fd.clone(), buffer_pool, len)?;
-            compio_runtime::submit_with_flags(op)
+            compio_runtime::submit_with_extra(op)
                 .await
                 .take_buffer(buffer_pool)
         }

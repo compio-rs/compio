@@ -2,18 +2,24 @@ use std::{io, marker::PhantomData, mem::MaybeUninit, pin::Pin, task::Waker};
 
 use compio_buf::BufResult;
 
-use crate::{OpCode, Overlapped, PushEntry, RawFd};
+use crate::{Extra, OpCode, PushEntry, RawFd};
 
-/// An operation with other needed information. It should be allocated on the
-/// heap. The pointer to this struct is used as `user_data`, and on Windows, it
-/// is used as the pointer to `OVERLAPPED`.
+/// An operation with other needed information.
+///
+/// It should be allocated on the heap. The pointer to this struct is used as
+/// `user_data`, and on Windows, it is used as the pointer to `OVERLAPPED`.
 ///
 /// `*const RawOp<dyn OpCode>` can be obtained from any `Key<T: OpCode>` by
 /// first casting `Key::user_data` to `*const RawOp<()>`, then upcasted with
 /// `upcast_fn`. It is done in [`Key::as_op_pin`].
 #[repr(C)]
 pub(crate) struct RawOp<T: ?Sized> {
-    header: Overlapped,
+    // Platform-specific extra data.
+    //
+    // - On Windows, it holds the `OVERLAPPED` buffer and a pointer to the driver.
+    // - On Linux with `io_uring`, it holds the flags returned by kernel.
+    // - On other platforms, it is empty.
+    extra: Extra,
     // The cancelled flag and the result here are manual reference counting. The driver holds the
     // strong ref until it completes; the runtime holds the strong ref until the future is
     // dropped.
@@ -21,7 +27,6 @@ pub(crate) struct RawOp<T: ?Sized> {
     // The metadata in `*mut RawOp<dyn OpCode>`
     metadata: usize,
     result: PushEntry<Option<Waker>, io::Result<usize>>,
-    flags: u32,
     op: T,
 }
 
@@ -63,9 +68,10 @@ const unsafe fn opcode_dyn_mut(ptr: *mut (), metadata: usize) -> *mut RawOp<dyn 
     }
 }
 
-/// A typed wrapper for key of Ops submitted into driver. It doesn't free the
-/// inner on dropping. Instead, the memory is managed by the proactor. The inner
-/// is only freed when:
+/// A typed wrapper for key of Ops submitted into driver.
+///
+/// It doesn't free the inner on dropping. Instead, the memory is managed by the
+/// proactor. The inner is only freed when:
 ///
 /// 1. The op is completed and the future asks the result. `into_inner` will be
 ///    called by the proactor.
@@ -82,13 +88,11 @@ impl<T: ?Sized> Unpin for Key<T> {}
 impl<T: OpCode + 'static> Key<T> {
     /// Create [`RawOp`] and get the [`Key`] to it.
     pub(crate) fn new(driver: RawFd, op: T) -> Self {
-        let header = Overlapped::new(driver);
         let raw_op = Box::new(RawOp {
-            header,
+            extra: Extra::new(driver),
             cancelled: false,
             metadata: opcode_metadata::<T>(),
             result: PushEntry::Pending(None),
-            flags: 0,
             op,
         });
         unsafe { Self::new_unchecked(Box::into_raw(raw_op) as _) }
@@ -132,10 +136,17 @@ impl<T: ?Sized> Key<T> {
         unsafe { opcode_dyn_mut(user_data, this.metadata) }
     }
 
-    /// A pointer to OVERLAPPED.
-    #[cfg(windows)]
-    pub(crate) fn as_mut_ptr(&mut self) -> *mut Overlapped {
-        &mut self.as_opaque_mut().header
+    /// Take the inner [`Extra`].
+    pub(crate) fn take_extra(&mut self) -> Extra {
+        std::mem::replace(
+            &mut self.as_opaque_mut().extra,
+            Extra::new(RawFd::default()),
+        )
+    }
+
+    /// Mutable reference to [`Extra`].
+    pub(crate) fn extra_mut(&mut self) -> &mut Extra {
+        &mut self.as_opaque_mut().extra
     }
 
     /// Cancel the op, decrease the ref count. The return value indicates if the
@@ -163,14 +174,6 @@ impl<T: ?Sized> Key<T> {
             w.wake();
         }
         this.cancelled
-    }
-
-    pub(crate) fn set_flags(&mut self, flags: u32) {
-        self.as_opaque_mut().flags = flags;
-    }
-
-    pub(crate) fn flags(&self) -> u32 {
-        self.as_opaque().flags
     }
 
     /// Whether the op is completed.
@@ -228,7 +231,7 @@ impl<T: OpCode + ?Sized> Key<T> {
     pub(crate) fn operate_blocking(&mut self) -> io::Result<usize> {
         use std::task::Poll;
 
-        let optr = self.as_mut_ptr();
+        let optr = self.extra_mut().optr();
         let op = self.as_op_pin();
         let res = unsafe { op.operate(optr.cast()) };
         match res {

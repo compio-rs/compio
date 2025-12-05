@@ -4,15 +4,11 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-#[path = "fallback.rs"]
-mod fallback;
-
-#[path = "iour.rs"]
-mod iour;
-
 pub use fallback::BufferPool as FallbackBufferPool;
 pub(crate) use fallback::OwnedBuffer;
 pub use iour::BufferPool as IoUringBufferPool;
+
+use super::{fallback, iour};
 
 /// Buffer pool
 ///

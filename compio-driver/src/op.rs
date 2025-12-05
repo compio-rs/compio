@@ -22,7 +22,7 @@ pub use crate::sys::op::{
 };
 #[cfg(io_uring)]
 pub use crate::sys::op::{ReadManagedAt, RecvManaged};
-use crate::{OwnedFd, SharedFd, TakeBuffer};
+use crate::{Extra, OwnedFd, SharedFd, TakeBuffer};
 
 /// Trait to update the buffer length inside the [`BufResult`].
 pub trait BufResultExt {
@@ -107,13 +107,13 @@ pub trait ResultTakeBuffer {
     fn take_buffer(self, pool: &Self::BufferPool) -> io::Result<Self::Buffer<'_>>;
 }
 
-impl<T: TakeBuffer> ResultTakeBuffer for (BufResult<usize, T>, u32) {
+impl<T: TakeBuffer> ResultTakeBuffer for (BufResult<usize, T>, Extra) {
     type Buffer<'a> = T::Buffer<'a>;
     type BufferPool = T::BufferPool;
 
     fn take_buffer(self, pool: &Self::BufferPool) -> io::Result<Self::Buffer<'_>> {
-        let (BufResult(result, op), flags) = self;
-        op.take_buffer(pool, result, flags)
+        let (BufResult(result, op), extra) = self;
+        op.take_buffer(pool, result, extra.buffer_id()?)
     }
 }
 
@@ -347,7 +347,7 @@ pub(crate) mod managed {
             self,
             buffer_pool: &BufferPool,
             result: io::Result<usize>,
-            _: u32,
+            _: u16,
         ) -> io::Result<BorrowedBuffer<'_>> {
             let result = result?;
             #[cfg(fusion)]
@@ -385,7 +385,7 @@ pub(crate) mod managed {
             self,
             buffer_pool: &Self::BufferPool,
             result: io::Result<usize>,
-            _: u32,
+            _: u16,
         ) -> io::Result<Self::Buffer<'_>> {
             let result = result?;
             #[cfg(fusion)]
