@@ -25,12 +25,12 @@ pub trait AsyncWrite {
     /// Like `write`, except that it write bytes from a buffer implements
     /// [`IoVectoredBuf`] into the source.
     ///
-    /// The default implementation will try to write from the buffers in order
-    /// as if they're concatenated. It will stop whenever the writer returns
-    /// an error, `Ok(0)`, or a length less than the length of the buf passed
-    /// in, meaning it's possible that not all contents are written. If
-    /// guaranteed full write is desired, it is recommended to use
-    /// [`AsyncWriteExt::write_vectored_all`] instead.
+    /// The default implementation will write from the first buffers with
+    /// non-zero [`buf_len`], meaning it's possible and likely that not all
+    /// contents are written. If guaranteed full write is desired, it is
+    /// recommended to use [`AsyncWriteExt::write_vectored_all`] instead.
+    ///
+    /// [`buf_len`]: IoBuf::buf_len
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         loop_write_vectored!(buf, iter, self.write(iter))
     }
