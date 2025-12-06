@@ -235,13 +235,15 @@ fn read(c: &mut Criterion) {
     group.finish();
 
     let mut group = c.benchmark_group("read-all");
-    group.throughput(Throughput::Bytes(FILE_SIZE * BUFFER_SIZE as u64));
 
-    group.bench_with_input::<_, _, (&Path, u64)>("std", &(&path, FILE_SIZE), read_all_std);
-    group.bench_with_input::<_, _, (&Path, u64)>("tokio", &(&path, FILE_SIZE), read_all_tokio);
-    group.bench_with_input::<_, _, (&Path, u64)>("compio", &(&path, FILE_SIZE), read_all_compio);
+    const TOTAL_SIZE: u64 = FILE_SIZE * BUFFER_SIZE as u64;
+    group.throughput(Throughput::Bytes(TOTAL_SIZE));
+
+    group.bench_with_input::<_, _, (&Path, u64)>("std", &(&path, TOTAL_SIZE), read_all_std);
+    group.bench_with_input::<_, _, (&Path, u64)>("tokio", &(&path, TOTAL_SIZE), read_all_tokio);
+    group.bench_with_input::<_, _, (&Path, u64)>("compio", &(&path, TOTAL_SIZE), read_all_compio);
     #[cfg(target_os = "linux")]
-    group.bench_with_input::<_, _, (&Path, u64)>("monoio", &(&path, FILE_SIZE), read_all_monoio);
+    group.bench_with_input::<_, _, (&Path, u64)>("monoio", &(&path, TOTAL_SIZE), read_all_monoio);
 
     group.finish();
 }
