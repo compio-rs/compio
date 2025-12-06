@@ -55,23 +55,23 @@ impl Driver {
         stub_unimpl()
     }
 
-    pub fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
+    pub fn attach(&mut self, _: RawFd) -> io::Result<()> {
         Err(stub_error())
     }
 
-    pub fn cancel(&mut self, _op: &mut Key<dyn OpCode>) {
+    pub fn cancel(&mut self, _: &mut Key<dyn OpCode>) {
         stub_unimpl()
     }
 
-    pub fn create_op<T: OpCode + 'static>(&self, _op: T) -> Key<T> {
+    pub fn create_op<T: OpCode + 'static>(&self, _: T) -> Key<T> {
         stub_unimpl()
     }
 
-    pub fn push(&mut self, _op: &mut Key<dyn crate::sys::OpCode>) -> Poll<io::Result<usize>> {
+    pub fn push(&mut self, _: &mut Key<dyn crate::sys::OpCode>) -> Poll<io::Result<usize>> {
         Poll::Ready(Err(stub_error()))
     }
 
-    pub fn poll(&mut self, _timeout: Option<Duration>) -> io::Result<()> {
+    pub fn poll(&mut self, _: Option<Duration>) -> io::Result<()> {
         Err(stub_error())
     }
 
@@ -79,15 +79,11 @@ impl Driver {
         futures_util::task::noop_waker()
     }
 
-    pub fn create_buffer_pool(
-        &mut self,
-        _buffer_len: u16,
-        _buffer_size: usize,
-    ) -> io::Result<BufferPool> {
+    pub fn create_buffer_pool(&mut self, _: u16, _: usize) -> io::Result<BufferPool> {
         Err(stub_error())
     }
 
-    pub unsafe fn release_buffer_pool(&mut self, _buffer_pool: BufferPool) -> io::Result<()> {
+    pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
         Err(stub_error())
     }
 }
