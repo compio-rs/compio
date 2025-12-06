@@ -1,10 +1,12 @@
+#![allow(dead_code)]
+
 use std::ffi::CString;
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
 use super::{OpCode, stub_unimpl};
-pub use crate::unix::op::*;
+pub use crate::sys::unix_op::*;
 use crate::{AsFd, op::*};
 
 impl<
