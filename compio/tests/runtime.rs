@@ -132,12 +132,14 @@ async fn arena() {
 
     unsafe impl Allocator for ArenaAllocator {
         fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-            ALLOCATOR.with(|alloc| alloc.allocate(layout))
+            ALLOCATOR.with(|alloc| {
+                let ptr = alloc.alloc_layout(layout);
+                let slice = NonNull::slice_from_raw_parts(ptr, layout.size());
+                Ok(slice)
+            })
         }
 
-        unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-            ALLOCATOR.with(|alloc| unsafe { alloc.deallocate(ptr, layout) })
-        }
+        unsafe fn deallocate(&self, _ptr: NonNull<u8>, _layout: Layout) {}
     }
 
     let file = File::open("Cargo.toml").await.unwrap();
