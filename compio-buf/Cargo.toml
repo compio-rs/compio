@@ -31,7 +31,7 @@ bumpalo = ["dep:bumpalo"]
 bytes = ["dep:bytes"]
 
 # Nightly features
-allocator_api = ["bumpalo?/allocator_api"]
+allocator_api = []
 read_buf = []
 try_trait_v2 = []
 nightly = ["allocator_api", "read_buf", "try_trait_v2"]

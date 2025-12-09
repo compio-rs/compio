@@ -2,6 +2,8 @@
 name = "compio-ws"
 version = "0.2.0"
 description = "WebSocket library for the compio runtime"
+categories = ["asynchronous", "network-programming"]
+keywords = ["async", "net", "websocket"]
 edition = { workspace = true }
 authors = { workspace = true }
 readme = { workspace = true }
