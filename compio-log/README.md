@@ -16,6 +16,6 @@
 
 Logging utilities for compio.
 
-This crate provides internal logging support for compio, built on top of the `tracing` crate. It's used throughout the compio ecosystem for instrumentation and debugging. You shouldn't need to use crate.
+This crate provides internal logging support for compio, built on top of the `tracing` crate. It's used throughout the compio ecosystem for instrumentation and debugging. You shouldn't need to use this crate.
 
 To see logs from compio, enable `enable_log` feature of `compio`, and set up a `tracing` subscriber in your application or testing environment.

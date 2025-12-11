@@ -74,6 +74,6 @@ use compio_io::{AsyncRead, AsyncWrite};
   `compat` feature)
 - `compat::AsyncStream`: Adapts async IO to `futures_util::io` traits
   (requires `compat` feature)
-  
+
 ### Utils
 See docs.rs for detail: `copy`, `null`, `repeat`, `split`, `split_unsync`.
