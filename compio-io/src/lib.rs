@@ -25,7 +25,7 @@
 //!
 //! ### Adapters
 //! - [`framed::Framed`]: Adapts [`AsyncRead`] to [`Stream`] and [`AsyncWrite`]
-//!   to [`Sink`], with framed de/encoding.
+//!   to [`Sink`], with framed en/decoding.
 //! - [`compat::SyncStream`]: Adapts async IO to std blocking io (requires
 //!   `compat` feature)
 //! - [`compat::AsyncStream`]: Adapts async IO to [`futures_util::io`] traits
