@@ -4,9 +4,9 @@ version = "0.10.1"
 description = "High-level runtime for compio"
 categories = ["asynchronous"]
 keywords = ["async", "runtime"]
+readme = "README.md"
 edition = { workspace = true }
 authors = { workspace = true }
-readme = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 

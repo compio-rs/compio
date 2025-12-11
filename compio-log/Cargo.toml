@@ -3,9 +3,9 @@ name = "compio-log"
 version = "0.1.0"
 description = "Log of compio"
 categories = ["asynchronous"]
+readme = "README.md"
 edition = { workspace = true }
 authors = { workspace = true }
-readme = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 
