@@ -4,9 +4,18 @@ on:
   push:
     branches:
       - master
+    paths:
+      - 'rustfmt.toml'
+      - '**/Cargo.toml'
+      - '**/*.rs'
+      - '.github/workflows/ci_format.yml'
   pull_request:
     branches:
       - master
+    paths:
+      - 'rustfmt.toml'
+      - '**/*.rs'
+      - '.github/workflows/ci_format.yml'
 
 env:
   RUST_BACKTRACE: 1
