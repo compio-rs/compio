@@ -4,9 +4,9 @@ version = "0.10.0"
 description = "Networking IO for compio"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
+readme = "README.md"
 edition = { workspace = true }
 authors = { workspace = true }
-readme = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 

@@ -4,9 +4,9 @@ version = "0.2.0"
 description = "WebSocket library for the compio runtime"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net", "websocket"]
+readme = "README.md"
 edition = { workspace = true }
 authors = { workspace = true }
-readme = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 

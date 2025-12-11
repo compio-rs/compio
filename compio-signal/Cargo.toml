@@ -4,9 +4,9 @@ version = "0.8.0"
 description = "Signal handling for compio"
 categories = ["asynchronous"]
 keywords = ["async", "signal"]
+readme = "README.md"
 edition = { workspace = true }
 authors = { workspace = true }
-readme = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 
