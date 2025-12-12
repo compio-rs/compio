@@ -839,7 +839,7 @@ impl<S: AsFd> OpCode for crate::op::managed::RecvManaged<S> {
 
 impl<T: IoVectoredBufMut, S: AsFd> RecvVectored<T, S> {
     unsafe fn call(&mut self) -> libc::ssize_t {
-        unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &mut self.msg, 0) }
+        unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &mut self.msg, self.flags) }
     }
 }
 
@@ -862,7 +862,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
 
 impl<T: IoVectoredBuf, S: AsFd> SendVectored<T, S> {
     unsafe fn call(&self) -> libc::ssize_t {
-        unsafe { libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, 0) }
+        unsafe { libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, self.flags) }
     }
 }
 
@@ -956,20 +956,20 @@ pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
     pub(crate) slices: Vec<SysSlice>,
     pub(crate) addr: SockAddrStorage,
     pub(crate) msg: libc::msghdr,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
     /// Create [`RecvFromVectored`].
     pub fn new(fd: S, buffer: T, flags: i32) -> Self {
-        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
-        msg.msg_flags = flags;
         Self {
             fd,
             buffer,
             slices: vec![],
             addr: SockAddrStorage::zeroed(),
-            msg,
+            msg: unsafe { std::mem::zeroed() },
+            flags,
             _p: PhantomPinned,
         }
     }
@@ -985,7 +985,7 @@ impl<T: IoVectoredBufMut, S: AsFd> RecvFromVectored<T, S> {
     }
 
     unsafe fn call(&mut self) -> libc::ssize_t {
-        unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &mut self.msg, 0) }
+        unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &mut self.msg, self.flags) }
     }
 }
 
@@ -1081,20 +1081,20 @@ pub struct SendToVectored<T: IoVectoredBuf, S> {
     pub(crate) addr: SockAddr,
     pub(crate) slices: Vec<SysSlice>,
     pub(crate) msg: libc::msghdr,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
     /// Create [`SendToVectored`].
     pub fn new(fd: S, buffer: T, addr: SockAddr, flags: i32) -> Self {
-        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
-        msg.msg_flags = flags;
         Self {
             fd,
             buffer,
             addr,
             slices: vec![],
-            msg,
+            msg: unsafe { std::mem::zeroed() },
+            flags,
             _p: PhantomPinned,
         }
     }
@@ -1110,7 +1110,7 @@ impl<T: IoVectoredBuf, S: AsFd> SendToVectored<T, S> {
     }
 
     unsafe fn call(&self) -> libc::ssize_t {
-        unsafe { libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, 0) }
+        unsafe { libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, self.flags) }
     }
 }
 
@@ -1140,7 +1140,7 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> RecvMsg<T, C, S> {
     unsafe fn call(&mut self) -> libc::ssize_t {
-        unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &mut self.msg, 0) }
+        unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &mut self.msg, self.flags) }
     }
 }
 
@@ -1163,7 +1163,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
 
 impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> SendMsg<T, C, S> {
     unsafe fn call(&self) -> libc::ssize_t {
-        unsafe { libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, 0) }
+        unsafe { libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, self.flags) }
     }
 }
 

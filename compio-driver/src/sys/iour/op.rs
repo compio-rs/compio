@@ -430,6 +430,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
         let this = unsafe { self.get_unchecked_mut() };
         unsafe { this.set_msg() };
         opcode::RecvMsg::new(Fd(this.fd.as_fd().as_raw_fd()), &mut this.msg)
+            .flags(this.flags as _)
             .build()
             .into()
     }
@@ -454,6 +455,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
         let this = unsafe { self.get_unchecked_mut() };
         unsafe { this.set_msg() };
         opcode::SendMsg::new(Fd(this.fd.as_fd().as_raw_fd()), &this.msg)
+            .flags(this.flags as _)
             .build()
             .into()
     }
@@ -463,17 +465,17 @@ struct RecvFromHeader<S> {
     pub(crate) fd: S,
     pub(crate) addr: SockAddrStorage,
     pub(crate) msg: libc::msghdr,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
 impl<S> RecvFromHeader<S> {
     pub fn new(fd: S, flags: i32) -> Self {
-        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
-        msg.msg_flags = flags;
         Self {
             fd,
             addr: SockAddrStorage::zeroed(),
-            msg,
+            msg: unsafe { std::mem::zeroed() },
+            flags,
             _p: PhantomPinned,
         }
     }
@@ -486,6 +488,7 @@ impl<S: AsFd> RecvFromHeader<S> {
         self.msg.msg_iov = slices.as_mut_ptr() as _;
         self.msg.msg_iovlen = slices.len() as _;
         opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &mut self.msg)
+            .flags(self.flags as _)
             .build()
             .into()
     }
@@ -569,17 +572,17 @@ struct SendToHeader<S> {
     pub(crate) fd: S,
     pub(crate) addr: SockAddr,
     pub(crate) msg: libc::msghdr,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
 impl<S> SendToHeader<S> {
     pub fn new(fd: S, addr: SockAddr, flags: i32) -> Self {
-        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
-        msg.msg_flags = flags;
         Self {
             fd,
             addr,
-            msg,
+            msg: unsafe { std::mem::zeroed() },
+            flags,
             _p: PhantomPinned,
         }
     }
@@ -592,6 +595,7 @@ impl<S: AsFd> SendToHeader<S> {
         self.msg.msg_iov = slices.as_mut_ptr() as _;
         self.msg.msg_iovlen = slices.len() as _;
         opcode::SendMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &self.msg)
+            .flags(self.flags as _)
             .build()
             .into()
     }
@@ -670,6 +674,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
         let this = unsafe { self.get_unchecked_mut() };
         unsafe { this.set_msg() };
         opcode::RecvMsg::new(Fd(this.fd.as_fd().as_raw_fd()), &mut this.msg)
+            .flags(this.flags as _)
             .build()
             .into()
     }
@@ -680,6 +685,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
         let this = unsafe { self.get_unchecked_mut() };
         unsafe { this.set_msg() };
         opcode::SendMsg::new(Fd(this.fd.as_fd().as_raw_fd()), &this.msg)
+            .flags(this.flags as _)
             .build()
             .into()
     }

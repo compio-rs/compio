@@ -1021,7 +1021,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
             lpBuffers: slices.as_ptr() as _,
             dwBufferCount: slices.len() as _,
             Control: control.into_inner(),
-            dwFlags: this.flags as _,
+            dwFlags: 0,
         };
 
         let mut sent = 0;
@@ -1029,7 +1029,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
             WSASendMsg(
                 this.fd.as_fd().as_raw_fd() as _,
                 &msg,
-                0,
+                this.flags as _,
                 &mut sent,
                 optr,
                 None,

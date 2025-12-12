@@ -334,19 +334,19 @@ pub struct RecvVectored<T: IoVectoredBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<SysSlice>,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
     /// Create [`RecvVectored`].
     pub fn new(fd: S, buffer: T, flags: i32) -> Self {
-        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
-        msg.msg_flags = flags;
         Self {
-            msg,
+            msg: unsafe { std::mem::zeroed() },
             fd,
             buffer,
             slices: vec![],
+            flags,
             _p: PhantomPinned,
         }
     }
@@ -373,19 +373,19 @@ pub struct SendVectored<T: IoVectoredBuf, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<SysSlice>,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBuf, S> SendVectored<T, S> {
     /// Create [`SendVectored`].
     pub fn new(fd: S, buffer: T, flags: i32) -> Self {
-        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
-        msg.msg_flags = flags;
         Self {
-            msg,
+            msg: unsafe { std::mem::zeroed() },
             fd,
             buffer,
             slices: vec![],
+            flags,
             _p: PhantomPinned,
         }
     }
@@ -414,6 +414,7 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
     pub(crate) buffer: T,
     pub(crate) control: C,
     pub(crate) slices: Vec<SysSlice>,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
@@ -428,15 +429,14 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
             control.buf_ptr().cast::<libc::cmsghdr>().is_aligned(),
             "misaligned control message buffer"
         );
-        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
-        msg.msg_flags = flags;
         Self {
             addr: unsafe { std::mem::zeroed() },
-            msg,
+            msg: unsafe { std::mem::zeroed() },
             fd,
             buffer,
             control,
             slices: vec![],
+            flags,
             _p: PhantomPinned,
         }
     }
@@ -475,6 +475,7 @@ pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
     pub(crate) control: C,
     pub(crate) addr: SockAddr,
     pub(crate) slices: Vec<SysSlice>,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
@@ -489,15 +490,14 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
             control.buf_ptr().cast::<libc::cmsghdr>().is_aligned(),
             "misaligned control message buffer"
         );
-        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
-        msg.msg_flags = flags;
         Self {
-            msg,
+            msg: unsafe { std::mem::zeroed() },
             fd,
             buffer,
             control,
             addr,
             slices: vec![],
+            flags,
             _p: PhantomPinned,
         }
     }
