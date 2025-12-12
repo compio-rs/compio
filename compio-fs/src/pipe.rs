@@ -10,7 +10,7 @@ use std::{
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{
     AsRawFd, ToSharedFd, impl_raw_fd,
-    op::{BufResultExt, Recv, RecvManaged, RecvVectored, ResultTakeBuffer, Send, SendVectored},
+    op::{BufResultExt, Read, ReadManaged, ReadVectored, ResultTakeBuffer, Write, WriteVectored},
     syscall,
 };
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
@@ -369,13 +369,13 @@ impl AsyncWrite for Sender {
 impl AsyncWrite for &Sender {
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
         let fd = self.to_shared_fd();
-        let op = Send::new(fd, buffer);
+        let op = Write::new(fd, buffer);
         compio_runtime::submit(op).await.into_inner()
     }
 
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
         let fd = self.to_shared_fd();
-        let op = SendVectored::new(fd, buffer);
+        let op = WriteVectored::new(fd, buffer);
         compio_runtime::submit(op).await.into_inner()
     }
 
@@ -492,13 +492,13 @@ impl AsyncRead for Receiver {
 impl AsyncRead for &Receiver {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
         let fd = self.to_shared_fd();
-        let op = Recv::new(fd, buffer);
+        let op = Read::new(fd, buffer);
         compio_runtime::submit(op).await.into_inner().map_advanced()
     }
 
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buffer: V) -> BufResult<usize, V> {
         let fd = self.to_shared_fd();
-        let op = RecvVectored::new(fd, buffer);
+        let op = ReadVectored::new(fd, buffer);
         compio_runtime::submit(op).await.into_inner().map_advanced()
     }
 }
@@ -527,7 +527,7 @@ impl AsyncReadManaged for &Receiver {
     ) -> io::Result<Self::Buffer<'a>> {
         let fd = self.to_shared_fd();
         let buffer_pool = buffer_pool.try_inner()?;
-        let op = RecvManaged::new(fd, buffer_pool, len)?;
+        let op = ReadManaged::new(fd, buffer_pool, len)?;
         compio_runtime::submit_with_extra(op)
             .await
             .take_buffer(buffer_pool)

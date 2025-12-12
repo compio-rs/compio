@@ -106,10 +106,10 @@ mod iour { pub use crate::sys::iour::{op::*, OpCode}; }
 #[rustfmt::skip]
 mod poll { pub use crate::sys::poll::{op::*, OpCode}; }
 
-op!(<T: IoBufMut, S: AsFd> RecvFrom(fd: S, buffer: T));
-op!(<T: IoBuf, S: AsFd> SendTo(fd: S, buffer: T, addr: SockAddr));
-op!(<T: IoVectoredBufMut, S: AsFd> RecvFromVectored(fd: S, buffer: T));
-op!(<T: IoVectoredBuf, S: AsFd> SendToVectored(fd: S, buffer: T, addr: SockAddr));
+op!(<T: IoBufMut, S: AsFd> RecvFrom(fd: S, buffer: T, flags: i32));
+op!(<T: IoBuf, S: AsFd> SendTo(fd: S, buffer: T, addr: SockAddr, flags: i32));
+op!(<T: IoVectoredBufMut, S: AsFd> RecvFromVectored(fd: S, buffer: T, flags: i32));
+op!(<T: IoVectoredBuf, S: AsFd> SendToVectored(fd: S, buffer: T, addr: SockAddr, flags: i32));
 op!(<S: AsFd> FileStat(fd: S));
 op!(<> PathStat(path: CString, follow_symlink: bool));
 
@@ -204,4 +204,5 @@ macro_rules! mop {
 }
 
 mop!(<S: AsFd> ReadManagedAt(fd: S, offset: u64, pool: &BufferPool, len: usize) with pool);
-mop!(<S: AsFd> RecvManaged(fd: S, pool: &BufferPool, len: usize) with pool);
+mop!(<S: AsFd> ReadManaged(fd: S, pool: &BufferPool, len: usize) with pool);
+mop!(<S: AsFd> RecvManaged(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool);

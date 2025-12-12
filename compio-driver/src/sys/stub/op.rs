@@ -118,12 +118,13 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {}
 pub struct RecvFrom<T: IoBufMut, S> {
     fd: S,
     buffer: T,
+    flags: i32,
 }
 
 impl<T: IoBufMut, S> RecvFrom<T, S> {
     /// Create [`RecvFrom`].
-    pub fn new(fd: S, buffer: T) -> Self {
-        Self { fd, buffer }
+    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+        Self { fd, buffer, flags }
     }
 }
 
@@ -141,12 +142,13 @@ impl<T: IoBufMut, S: AsFd> IntoInner for RecvFrom<T, S> {
 pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
     fd: S,
     buffer: T,
+    flags: i32,
 }
 
 impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
     /// Create [`RecvFromVectored`].
-    pub fn new(fd: S, buffer: T) -> Self {
-        Self { fd, buffer }
+    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+        Self { fd, buffer, flags }
     }
 }
 
@@ -165,12 +167,18 @@ pub struct SendTo<T: IoBuf, S> {
     fd: S,
     buffer: T,
     addr: SockAddr,
+    flags: i32,
 }
 
 impl<T: IoBuf, S> SendTo<T, S> {
     /// Create [`SendTo`].
-    pub fn new(fd: S, buffer: T, addr: SockAddr) -> Self {
-        Self { fd, buffer, addr }
+    pub fn new(fd: S, buffer: T, addr: SockAddr, flags: i32) -> Self {
+        Self {
+            fd,
+            buffer,
+            addr,
+            flags,
+        }
     }
 }
 
@@ -189,12 +197,18 @@ pub struct SendToVectored<T: IoVectoredBuf, S> {
     fd: S,
     buffer: T,
     addr: SockAddr,
+    flags: i32,
 }
 
 impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
     /// Create [`SendToVectored`].
-    pub fn new(fd: S, buffer: T, addr: SockAddr) -> Self {
-        Self { fd, buffer, addr }
+    pub fn new(fd: S, buffer: T, addr: SockAddr, flags: i32) -> Self {
+        Self {
+            fd,
+            buffer,
+            addr,
+            flags,
+        }
     }
 }
 

@@ -18,10 +18,10 @@ pub use crate::sys::op::{ConnectNamedPipe, DeviceIoControl};
 #[cfg(unix)]
 pub use crate::sys::op::{
     CreateDir, CreateSocket, FileStat, HardLink, Interest, OpenFile, PathStat, PollOnce,
-    ReadVectoredAt, Rename, Symlink, Unlink, WriteVectoredAt,
+    ReadVectored, ReadVectoredAt, Rename, Symlink, Unlink, WriteVectored, WriteVectoredAt,
 };
 #[cfg(io_uring)]
-pub use crate::sys::op::{ReadManagedAt, RecvManaged};
+pub use crate::sys::op::{ReadManaged, ReadManagedAt, RecvManaged};
 use crate::{Extra, OwnedFd, SharedFd, TakeBuffer};
 
 /// Trait to update the buffer length inside the [`BufResult`].
