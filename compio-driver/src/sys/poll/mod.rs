@@ -54,6 +54,8 @@ pub trait OpCode {
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>>;
 }
 
+pub use OpCode as PollOpCode;
+
 /// Result of [`OpCode::pre_submit`].
 #[non_exhaustive]
 pub enum Decision {

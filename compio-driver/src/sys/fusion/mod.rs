@@ -9,8 +9,8 @@ use std::{
 };
 
 use compio_log::warn;
-pub use iour::{Extra, OpCode as IourOpCode, OpEntry};
-pub use poll::{Decision, OpCode as PollOpCode, OpType};
+pub use iour::{Extra, IourOpCode, OpEntry};
+pub use poll::{Decision, OpType, PollOpCode};
 
 pub(crate) use super::iour::is_op_supported;
 use super::{iour, poll};

@@ -130,6 +130,8 @@ pub trait OpCode {
     unsafe fn set_result(self: Pin<&mut Self>, _: usize) {}
 }
 
+pub use OpCode as IourOpCode;
+
 /// Low-level driver of io-uring.
 pub(crate) struct Driver {
     inner: IoUring<SEntry, CEntry>,
