@@ -9,7 +9,7 @@ use std::{
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
     AsFd, AsRawFd, BorrowedFd, OpCode, OpType, RawFd, SharedFd,
-    op::{BufResultExt, Recv, RecvManaged, ResultTakeBuffer, Send},
+    op::{BufResultExt, Read as OpRead, ReadManaged, ResultTakeBuffer, Write as OpWrite},
 };
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
 use compio_runtime::{BorrowedBuffer, BufferPool, Runtime};
@@ -147,7 +147,7 @@ impl AsyncRead for Stdin {
             let op = StdRead::new(io::stdin(), buf);
             compio_runtime::submit(op).await.into_inner()
         } else {
-            let op = Recv::new(self.fd.clone(), buf);
+            let op = OpRead::new(self.fd.clone(), buf);
             compio_runtime::submit(op).await.into_inner()
         }
         .map_advanced()
@@ -184,7 +184,7 @@ impl AsyncReadManaged for &Stdin {
             let res = unsafe { buffer_pool.create_proxy(buf, res?) };
             Ok(res)
         } else {
-            let op = RecvManaged::new(self.fd.clone(), buffer_pool, len)?;
+            let op = ReadManaged::new(self.fd.clone(), buffer_pool, len)?;
             compio_runtime::submit_with_extra(op)
                 .await
                 .take_buffer(buffer_pool)
@@ -229,7 +229,7 @@ impl AsyncWrite for Stdout {
             let op = StdWrite::new(io::stdout(), buf);
             compio_runtime::submit(op).await.into_inner()
         } else {
-            let op = Send::new(self.fd.clone(), buf);
+            let op = OpWrite::new(self.fd.clone(), buf);
             compio_runtime::submit(op).await.into_inner()
         }
     }
@@ -280,7 +280,7 @@ impl AsyncWrite for Stderr {
             let op = StdWrite::new(io::stderr(), buf);
             compio_runtime::submit(op).await.into_inner()
         } else {
-            let op = Send::new(self.fd.clone(), buf);
+            let op = OpWrite::new(self.fd.clone(), buf);
             compio_runtime::submit(op).await.into_inner()
         }
     }

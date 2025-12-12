@@ -188,13 +188,13 @@ impl UdpSocket {
     /// Receives a packet of data from the socket into the buffer, returning the
     /// original buffer and quantity of data received.
     pub async fn recv<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        self.inner.recv(buffer).await
+        self.inner.recv(buffer, 0).await
     }
 
     /// Receives a packet of data from the socket into the buffer, returning the
     /// original buffer and quantity of data received.
     pub async fn recv_vectored<T: IoVectoredBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        self.inner.recv_vectored(buffer).await
+        self.inner.recv_vectored(buffer, 0).await
     }
 
     /// Read some bytes from this source with [`BufferPool`] and return
@@ -207,26 +207,26 @@ impl UdpSocket {
         buffer_pool: &'a BufferPool,
         len: usize,
     ) -> io::Result<BorrowedBuffer<'a>> {
-        self.inner.recv_managed(buffer_pool, len).await
+        self.inner.recv_managed(buffer_pool, len, 0).await
     }
 
     /// Sends some data to the socket from the buffer, returning the original
     /// buffer and quantity of data sent.
     pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        self.inner.send(buffer).await
+        self.inner.send(buffer, 0).await
     }
 
     /// Sends some data to the socket from the buffer, returning the original
     /// buffer and quantity of data sent.
     pub async fn send_vectored<T: IoVectoredBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        self.inner.send_vectored(buffer).await
+        self.inner.send_vectored(buffer, 0).await
     }
 
     /// Receives a single datagram message on the socket. On success, returns
     /// the number of bytes received and the origin.
     pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SocketAddr), T> {
         self.inner
-            .recv_from(buffer)
+            .recv_from(buffer, 0)
             .await
             .map_res(|(n, addr)| (n, addr.as_socket().expect("should be SocketAddr")))
     }
@@ -238,7 +238,7 @@ impl UdpSocket {
         buffer: T,
     ) -> BufResult<(usize, SocketAddr), T> {
         self.inner
-            .recv_from_vectored(buffer)
+            .recv_from_vectored(buffer, 0)
             .await
             .map_res(|(n, addr)| (n, addr.as_socket().expect("should be SocketAddr")))
     }
@@ -251,7 +251,7 @@ impl UdpSocket {
         control: C,
     ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
         self.inner
-            .recv_msg(buffer, control)
+            .recv_msg(buffer, control, 0)
             .await
             .map_res(|(n, m, addr)| (n, m, addr.as_socket().expect("should be SocketAddr")))
     }
@@ -264,7 +264,7 @@ impl UdpSocket {
         control: C,
     ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
         self.inner
-            .recv_msg_vectored(buffer, control)
+            .recv_msg_vectored(buffer, control, 0)
             .await
             .map_res(|(n, m, addr)| (n, m, addr.as_socket().expect("should be SocketAddr")))
     }
@@ -277,7 +277,7 @@ impl UdpSocket {
         addr: impl ToSocketAddrsAsync,
     ) -> BufResult<usize, T> {
         super::first_addr_buf(addr, buffer, |addr, buffer| async move {
-            self.inner.send_to(buffer, &SockAddr::from(addr)).await
+            self.inner.send_to(buffer, &SockAddr::from(addr), 0).await
         })
         .await
     }
@@ -291,7 +291,7 @@ impl UdpSocket {
     ) -> BufResult<usize, T> {
         super::first_addr_buf(addr, buffer, |addr, buffer| async move {
             self.inner
-                .send_to_vectored(buffer, &SockAddr::from(addr))
+                .send_to_vectored(buffer, &SockAddr::from(addr), 0)
                 .await
         })
         .await
@@ -310,7 +310,7 @@ impl UdpSocket {
             (buffer, control),
             |addr, (buffer, control)| async move {
                 self.inner
-                    .send_msg(buffer, control, &SockAddr::from(addr))
+                    .send_msg(buffer, control, &SockAddr::from(addr), 0)
                     .await
             },
         )
@@ -330,7 +330,7 @@ impl UdpSocket {
             (buffer, control),
             |addr, (buffer, control)| async move {
                 self.inner
-                    .send_msg_vectored(buffer, control, &SockAddr::from(addr))
+                    .send_msg_vectored(buffer, control, &SockAddr::from(addr), 0)
                     .await
             },
         )
