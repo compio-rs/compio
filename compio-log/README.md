@@ -14,8 +14,8 @@
 [![Check](https://github.com/compio-rs/compio/actions/workflows/ci_check.yml/badge.svg)](https://github.com/compio-rs/compio/actions/workflows/ci_check.yml)
 [![Test](https://github.com/compio-rs/compio/actions/workflows/ci_test.yml/badge.svg)](https://github.com/compio-rs/compio/actions/workflows/ci_test.yml)
 
-Logging utilities for compio.
+Internal logging utilities for compio.
 
-This crate provides internal logging support for compio, built on top of the `tracing` crate. It's used throughout the compio ecosystem for instrumentation and debugging. You shouldn't need to use this crate.
+This crate provides logging support for compio, built on top of the `tracing` crate. It's used throughout the compio ecosystem for instrumentation and debugging.
 
 To see logs from compio, enable `enable_log` feature of `compio`, and set up a `tracing` subscriber in your application or testing environment.

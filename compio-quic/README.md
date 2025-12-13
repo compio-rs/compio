@@ -32,24 +32,16 @@ This crate provides QUIC (Quick UDP Internet Connections) support for compio, bu
 
 ## Usage
 
-Add this to your `Cargo.toml`:
+Use `compio` directly with `quic` feature enabled:
 
-```toml
-[dependencies]
-compio-quic = "0.6"
-```
-
-For HTTP/3 support:
-
-```toml
-[dependencies]
-compio-quic = { version = "0.6", features = ["h3"] }
+```bash
+cargo add compio --features quic
 ```
 
 Example:
 
 ```rust
-use compio_quic::{Endpoint, ClientConfig};
+use compio::quic::{Endpoint, ClientConfig};
 
 let mut endpoint = Endpoint::client("0.0.0.0:0".parse()?)?;
 let connection = endpoint.connect("example.com:443", "example.com").await?;
@@ -58,5 +50,3 @@ let connection = endpoint.connect("example.com:443", "example.com").await?;
 let (mut send, mut recv) = connection.open_bi().await?;
 send.write_all(b"Hello QUIC!").await?;
 ```
-
-This crate is available through the main `compio` crate with the `quic` or `h3` features.

@@ -29,32 +29,8 @@ This crate provides TLS/SSL support for compio networking types. It offers both 
 
 ## Usage
 
-Add this to your `Cargo.toml`:
+Use `compio` directly with `tls` feature and your chosen backend:
 
-```toml
-[dependencies]
-compio-tls = "0.8"
+```bash
+cargo add compio --features tls,rustls # or native-tls
 ```
-
-Choose a TLS backend (native-tls is enabled by default):
-
-```toml
-# For native TLS
-compio-tls = { version = "0.8", features = ["native-tls"] }
-
-# For rustls
-compio-tls = { version = "0.8", features = ["rustls"], default-features = false }
-```
-
-Example:
-
-```rust
-use compio_tls::TlsConnector;
-use compio_net::TcpStream;
-
-let stream = TcpStream::connect("example.com:443").await?;
-let connector = TlsConnector::new();
-let tls_stream = connector.connect("example.com", stream).await?;
-```
-
-This crate is available through the main `compio` crate with the `tls`, `native-tls`, or `rustls` features.

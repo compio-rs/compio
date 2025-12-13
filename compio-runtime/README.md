@@ -16,29 +16,20 @@
 
 High-level runtime for compio.
 
-This crate provides the async runtime that coordinates task execution with the low-level driver. It implements a thread-per-core model with work-stealing task scheduling, providing an efficient foundation for building async applications.
-
-## Features
-
-- Thread-per-core architecture with CPU affinity
-- Work-stealing task scheduler
-- Optional time/timer support
-- Optional event notification primitives
-- Integration with compio-driver for IO operations
+This crate provides the async runtime (executor) that coordinates task execution with the low-level driver (proactor). It implements a thread-per-core model.
 
 ## Usage
 
-Add this to your `Cargo.toml`:
+The recommended way is to use `main` macro with `compio`'s `macros` feature, but you can also use the runtime directly by enabling the `runtime` feature:
 
-```toml
-[dependencies]
-compio-runtime = "0.10"
+```bash
+cargo add compio --features runtime
 ```
 
 Example:
 
 ```rust
-use compio_runtime::Runtime;
+use compio::runtime::Runtime;
 
 let runtime = Runtime::new().unwrap();
 runtime.block_on(async {
@@ -46,4 +37,26 @@ runtime.block_on(async {
 });
 ```
 
-Most users will use this crate indirectly through the main `compio` crate with the `runtime` feature enabled.
+## Configuration
+
+The runtime can be configured using the `RuntimeBuilder`:
+
+```rust
+use compio::runtime::RuntimeBuilder;
+use compio::driver::ProactorBuilder;
+
+let mut proactor = ProactorBuilder::new();
+
+// Configure proactor here, e.g.
+proactor.capacity(1024);
+    
+let runtime = RuntimeBuilder::new()
+    .with_proactor(proactor)
+    // Configure other options here
+    .build()
+    .unwrap();
+
+runtime.block_on(async {
+    // Your async code here
+});
+```
