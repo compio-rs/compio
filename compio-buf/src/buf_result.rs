@@ -142,10 +142,13 @@ impl<T, B> FromResidual<BufResult<Infallible, B>> for BufResult<T, B> {
 /// assert!(foo().is_ok());
 /// ```
 #[cfg(feature = "try_trait_v2")]
-impl<T, B> FromResidual<BufResult<Infallible, B>> for io::Result<T> {
+impl<T, B, E> FromResidual<BufResult<Infallible, B>> for Result<T, E>
+where
+    E: From<io::Error>,
+{
     fn from_residual(residual: BufResult<Infallible, B>) -> Self {
         match residual {
-            BufResult(Err(e), _) => Err(e),
+            BufResult(Err(e), _) => Err(e.into()),
         }
     }
 }
@@ -202,4 +205,45 @@ macro_rules! buf_try {
         let $crate::BufResult(res, buf) = $e;
         (res?, buf)
     }};
+}
+
+#[cfg(test)]
+mod test {
+    #[cfg(feature = "try_trait_v2")]
+    #[test]
+    fn test_buf_result_try() {
+        use crate::BufResult;
+
+        fn returns_buf_result() -> BufResult<i32, i32> {
+            let (a, b) = BufResult(Ok(1), 2)?;
+            assert_eq!(a, 1);
+            assert_eq!(b, 2);
+            (Ok(3), 4).into()
+        }
+        assert!(returns_buf_result().is_ok());
+
+        fn returns_result() -> std::io::Result<i32> {
+            let (a, b) = BufResult(Ok(1), 2)?;
+            assert_eq!(a, 1);
+            assert_eq!(b, 2);
+            Ok(3)
+        }
+        assert!(returns_result().is_ok());
+
+        struct MyError;
+
+        impl From<std::io::Error> for MyError {
+            fn from(_: std::io::Error) -> Self {
+                MyError
+            }
+        }
+
+        fn returns_custom_result() -> Result<i32, MyError> {
+            let (a, b) = BufResult(Ok(1), 2)?;
+            assert_eq!(a, 1);
+            assert_eq!(b, 2);
+            Ok(3)
+        }
+        assert!(returns_custom_result().is_ok());
+    }
 }
