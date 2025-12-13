@@ -4,9 +4,9 @@ version = "0.7.1"
 description = "Buffer trait for completion based async IO"
 categories = ["asynchronous"]
 keywords = ["async"]
+readme = "README.md"
 edition = { workspace = true }
 authors = { workspace = true }
-readme = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 
