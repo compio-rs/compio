@@ -9,14 +9,14 @@ use std::{io, ops::Deref};
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
     AsFd, AsRawFd, BorrowedFd, RawFd, SharedFd, ToSharedFd,
-    op::{BufResultExt, Recv, RecvManaged, ResultTakeBuffer, Send},
+    op::{BufResultExt, Read, ReadManaged, ResultTakeBuffer, Write},
 };
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
 use compio_runtime::{Attacher, BorrowedBuffer, BufferPool};
 #[cfg(unix)]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
-    compio_driver::op::{RecvVectored, SendVectored},
+    compio_driver::op::{ReadVectored, WriteVectored},
 };
 
 /// A wrapper for IO source, providing implementations for [`AsyncRead`] and
@@ -84,7 +84,7 @@ impl<T: AsFd + 'static> AsyncReadManaged for &AsyncFd<T> {
     ) -> io::Result<Self::Buffer<'a>> {
         let fd = self.to_shared_fd();
         let buffer_pool = buffer_pool.try_inner()?;
-        let op = RecvManaged::new(fd, buffer_pool, len)?;
+        let op = ReadManaged::new(fd, buffer_pool, len)?;
         compio_runtime::submit_with_extra(op)
             .await
             .take_buffer(buffer_pool)
@@ -94,14 +94,14 @@ impl<T: AsFd + 'static> AsyncReadManaged for &AsyncFd<T> {
 impl<T: AsFd + 'static> AsyncRead for &AsyncFd<T> {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         let fd = self.inner.to_shared_fd();
-        let op = Recv::new(fd, buf);
+        let op = Read::new(fd, buf);
         compio_runtime::submit(op).await.into_inner().map_advanced()
     }
 
     #[cfg(unix)]
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
         let fd = self.inner.to_shared_fd();
-        let op = RecvVectored::new(fd, buf);
+        let op = ReadVectored::new(fd, buf);
         compio_runtime::submit(op).await.into_inner().map_advanced()
     }
 }
@@ -132,14 +132,14 @@ impl<T: AsFd + 'static> AsyncWrite for AsyncFd<T> {
 impl<T: AsFd + 'static> AsyncWrite for &AsyncFd<T> {
     async fn write<B: IoBuf>(&mut self, buf: B) -> BufResult<usize, B> {
         let fd = self.inner.to_shared_fd();
-        let op = Send::new(fd, buf);
+        let op = Write::new(fd, buf);
         compio_runtime::submit(op).await.into_inner()
     }
 
     #[cfg(unix)]
     async fn write_vectored<V: IoVectoredBuf>(&mut self, buf: V) -> BufResult<usize, V> {
         let fd = self.inner.to_shared_fd();
-        let op = SendVectored::new(fd, buf);
+        let op = WriteVectored::new(fd, buf);
         compio_runtime::submit(op).await.into_inner()
     }
 

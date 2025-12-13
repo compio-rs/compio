@@ -231,12 +231,12 @@ impl AsyncRead for UnixStream {
 impl AsyncRead for &UnixStream {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        self.inner.recv(buf).await
+        self.inner.recv(buf, 0).await
     }
 
     #[inline]
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
-        self.inner.recv_vectored(buf).await
+        self.inner.recv_vectored(buf, 0).await
     }
 }
 
@@ -262,7 +262,7 @@ impl AsyncReadManaged for &UnixStream {
         buffer_pool: &'a Self::BufferPool,
         len: usize,
     ) -> io::Result<Self::Buffer<'a>> {
-        self.inner.recv_managed(buffer_pool, len as _).await
+        self.inner.recv_managed(buffer_pool, len as _, 0).await
     }
 }
 
@@ -291,12 +291,12 @@ impl AsyncWrite for UnixStream {
 impl AsyncWrite for &UnixStream {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        self.inner.send(buf).await
+        self.inner.send(buf, 0).await
     }
 
     #[inline]
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        self.inner.send_vectored(buf).await
+        self.inner.send_vectored(buf, 0).await
     }
 
     #[inline]

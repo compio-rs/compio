@@ -25,7 +25,7 @@ use windows_sys::{
             CMSGHDR, LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS, LPFN_WSARECVMSG,
             SD_BOTH, SD_RECEIVE, SD_SEND, SIO_GET_EXTENSION_FUNCTION_POINTER,
             SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, SOCKADDR, SOCKADDR_STORAGE,
-            SOL_SOCKET, WSAID_ACCEPTEX, WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS,
+            SOL_SOCKET, WSABUF, WSAID_ACCEPTEX, WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS,
             WSAID_WSARECVMSG, WSAIoctl, WSAMSG, WSARecv, WSARecvFrom, WSASend, WSASendMsg,
             WSASendTo, closesocket, setsockopt, shutdown, socklen_t,
         },
@@ -218,6 +218,59 @@ impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
 }
 
 impl<S: AsFd> OpCode for ReadManagedAt<S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        unsafe { self.map_unchecked_mut(|this| &mut this.op).operate(optr) }
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        unsafe { self.map_unchecked_mut(|this| &mut this.op).cancel(optr) }
+    }
+}
+
+impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let fd = self.fd.as_fd().as_raw_fd();
+        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_uninit();
+        let mut transferred = 0;
+        let res = unsafe {
+            ReadFile(
+                fd,
+                slice.as_mut_ptr() as _,
+                slice.len() as _,
+                &mut transferred,
+                optr,
+            )
+        };
+        win32_result(res, transferred)
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd.as_fd().as_raw_fd(), optr)
+    }
+}
+
+impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let slice = self.buffer.as_slice();
+        let mut transferred = 0;
+        let res = unsafe {
+            WriteFile(
+                self.fd.as_fd().as_raw_fd(),
+                slice.as_ptr() as _,
+                slice.len() as _,
+                &mut transferred,
+                optr,
+            )
+        };
+        win32_result(res, transferred)
+    }
+
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd.as_fd().as_raw_fd(), optr)
+    }
+}
+
+impl<S: AsFd> OpCode for ReadManaged<S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         unsafe { self.map_unchecked_mut(|this| &mut this.op).operate(optr) }
     }
@@ -425,29 +478,32 @@ impl<S: AsFd> OpCode for Connect<S> {
     }
 }
 
-/// Receive data from remote.
-pub struct Recv<T: IoBufMut, S> {
-    pub(crate) fd: S,
-    pub(crate) buffer: T,
-    _p: PhantomPinned,
-}
-
-impl<T: IoBufMut, S> Recv<T, S> {
-    /// Create [`Recv`].
-    pub fn new(fd: S, buffer: T) -> Self {
-        Self {
-            fd,
-            buffer,
-            _p: PhantomPinned,
-        }
+impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let fd = self.fd.as_fd().as_raw_fd();
+        let mut flags = self.flags as _;
+        let slice = unsafe { self.get_unchecked_mut().buffer.as_uninit() };
+        let slices = [WSABUF {
+            buf: slice.as_mut_ptr().cast(),
+            len: slice.len() as _,
+        }];
+        let mut received = 0;
+        let res = unsafe {
+            WSARecv(
+                fd as _,
+                slices.as_ptr(),
+                slices.len() as _,
+                &mut received,
+                &mut flags,
+                optr,
+                None,
+            )
+        };
+        winsock_result(res, received)
     }
-}
 
-impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
-    type Inner = T;
-
-    fn into_inner(self) -> Self::Inner {
-        self.buffer
+    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
 
@@ -461,41 +517,21 @@ impl<S: AsFd> OpCode for RecvManaged<S> {
     }
 }
 
-impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let fd = self.fd.as_fd().as_raw_fd();
-        let slice = unsafe { self.get_unchecked_mut() }.buffer.as_uninit();
-        let mut transferred = 0;
-        let res = unsafe {
-            ReadFile(
-                fd,
-                slice.as_mut_ptr() as _,
-                slice.len() as _,
-                &mut transferred,
-                optr,
-            )
-        };
-        win32_result(res, transferred)
-    }
-
-    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
-        cancel(self.fd.as_fd().as_raw_fd(), optr)
-    }
-}
-
 /// Receive data from remote into vectored buffer.
 pub struct RecvVectored<T: IoVectoredBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
     /// Create [`RecvVectored`].
-    pub fn new(fd: S, buffer: T) -> Self {
+    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
         Self {
             fd,
             buffer,
+            flags,
             _p: PhantomPinned,
         }
     }
@@ -512,8 +548,8 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvVectored<T, S> {
 impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();
+        let mut flags = self.flags as _;
         let slices = unsafe { self.get_unchecked_mut().buffer.sys_slices_mut() };
-        let mut flags = 0;
         let mut received = 0;
         let res = unsafe {
             WSARecv(
@@ -534,46 +570,26 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
     }
 }
 
-/// Send data to remote.
-pub struct Send<T: IoBuf, S> {
-    pub(crate) fd: S,
-    pub(crate) buffer: T,
-    _p: PhantomPinned,
-}
-
-impl<T: IoBuf, S> Send<T, S> {
-    /// Create [`Send`].
-    pub fn new(fd: S, buffer: T) -> Self {
-        Self {
-            fd,
-            buffer,
-            _p: PhantomPinned,
-        }
-    }
-}
-
-impl<T: IoBuf, S> IntoInner for Send<T, S> {
-    type Inner = T;
-
-    fn into_inner(self) -> Self::Inner {
-        self.buffer
-    }
-}
-
 impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let slice = self.buffer.as_slice();
-        let mut transferred = 0;
+        let slices = [WSABUF {
+            buf: slice.as_ptr() as _,
+            len: slice.len() as _,
+        }];
+        let mut sent = 0;
         let res = unsafe {
-            WriteFile(
-                self.fd.as_fd().as_raw_fd(),
-                slice.as_ptr() as _,
-                slice.len() as _,
-                &mut transferred,
+            WSASend(
+                self.fd.as_fd().as_raw_fd() as _,
+                slices.as_ptr(),
+                slices.len() as _,
+                &mut sent,
+                self.flags as _,
                 optr,
+                None,
             )
         };
-        win32_result(res, transferred)
+        winsock_result(res, sent)
     }
 
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
@@ -585,15 +601,17 @@ impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
 pub struct SendVectored<T: IoVectoredBuf, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBuf, S> SendVectored<T, S> {
     /// Create [`SendVectored`].
-    pub fn new(fd: S, buffer: T) -> Self {
+    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
         Self {
             fd,
             buffer,
+            flags,
             _p: PhantomPinned,
         }
     }
@@ -617,7 +635,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
                 slices.as_ptr() as _,
                 slices.len() as _,
                 &mut sent,
-                0,
+                self.flags as _,
                 optr,
                 None,
             )
@@ -636,12 +654,13 @@ pub struct RecvFrom<T: IoBufMut, S> {
     pub(crate) buffer: T,
     pub(crate) addr: SockAddrStorage,
     pub(crate) addr_len: socklen_t,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
 impl<T: IoBufMut, S> RecvFrom<T, S> {
     /// Create [`RecvFrom`].
-    pub fn new(fd: S, buffer: T) -> Self {
+    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
         let addr = SockAddrStorage::zeroed();
         let addr_len = addr.size_of();
         Self {
@@ -649,6 +668,7 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
             buffer,
             addr,
             addr_len,
+            flags,
             _p: PhantomPinned,
         }
     }
@@ -667,7 +687,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
         let this = unsafe { self.get_unchecked_mut() };
         let fd = this.fd.as_fd().as_raw_fd();
         let buffer: SysSlice = this.buffer.as_uninit().into();
-        let mut flags = 0;
+        let mut flags = this.flags as _;
         let mut received = 0;
         let res = unsafe {
             WSARecvFrom(
@@ -696,12 +716,13 @@ pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
     pub(crate) buffer: T,
     pub(crate) addr: SockAddrStorage,
     pub(crate) addr_len: socklen_t,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
     /// Create [`RecvFromVectored`].
-    pub fn new(fd: S, buffer: T) -> Self {
+    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
         let addr = SockAddrStorage::zeroed();
         let addr_len = addr.size_of();
         Self {
@@ -709,6 +730,7 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
             buffer,
             addr,
             addr_len,
+            flags,
             _p: PhantomPinned,
         }
     }
@@ -727,7 +749,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
         let this = unsafe { self.get_unchecked_mut() };
         let fd = this.fd.as_fd().as_raw_fd();
         let buffer = unsafe { this.buffer.sys_slices_mut() };
-        let mut flags = 0;
+        let mut flags = this.flags as _;
         let mut received = 0;
         let res = unsafe {
             WSARecvFrom(
@@ -755,16 +777,18 @@ pub struct SendTo<T: IoBuf, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
 impl<T: IoBuf, S> SendTo<T, S> {
     /// Create [`SendTo`].
-    pub fn new(fd: S, buffer: T, addr: SockAddr) -> Self {
+    pub fn new(fd: S, buffer: T, addr: SockAddr, flags: i32) -> Self {
         Self {
             fd,
             buffer,
             addr,
+            flags,
             _p: PhantomPinned,
         }
     }
@@ -788,7 +812,7 @@ impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
                 &buffer as *const _ as _,
                 1,
                 &mut sent,
-                0,
+                self.flags as _,
                 self.addr.as_ptr().cast(),
                 self.addr.len(),
                 optr,
@@ -808,16 +832,18 @@ pub struct SendToVectored<T: IoVectoredBuf, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
     /// Create [`SendToVectored`].
-    pub fn new(fd: S, buffer: T, addr: SockAddr) -> Self {
+    pub fn new(fd: S, buffer: T, addr: SockAddr, flags: i32) -> Self {
         Self {
             fd,
             buffer,
             addr,
+            flags,
             _p: PhantomPinned,
         }
     }
@@ -841,7 +867,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
                 buffer.as_ptr() as _,
                 buffer.len() as _,
                 &mut sent,
-                0,
+                self.flags as _,
                 self.addr.as_ptr().cast(),
                 self.addr.len(),
                 optr,
@@ -874,14 +900,16 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
     /// # Panics
     ///
     /// This function will panic if the control message buffer is misaligned.
-    pub fn new(fd: S, buffer: T, control: C) -> Self {
+    pub fn new(fd: S, buffer: T, control: C, flags: i32) -> Self {
         assert!(
             control.buf_ptr().cast::<CMSGHDR>().is_aligned(),
             "misaligned control message buffer"
         );
         let addr = SockAddrStorage::zeroed();
+        let mut msg: WSAMSG = unsafe { std::mem::zeroed() };
+        msg.dwFlags = flags as _;
         Self {
-            msg: unsafe { std::mem::zeroed() },
+            msg,
             addr,
             fd,
             buffer,
@@ -947,6 +975,7 @@ pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
     buffer: T,
     control: C,
     addr: SockAddr,
+    flags: i32,
     _p: PhantomPinned,
 }
 
@@ -956,7 +985,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     /// # Panics
     ///
     /// This function will panic if the control message buffer is misaligned.
-    pub fn new(fd: S, buffer: T, control: C, addr: SockAddr) -> Self {
+    pub fn new(fd: S, buffer: T, control: C, addr: SockAddr, flags: i32) -> Self {
         assert!(
             control.buf_ptr().cast::<CMSGHDR>().is_aligned(),
             "misaligned control message buffer"
@@ -966,6 +995,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
             buffer,
             control,
             addr,
+            flags,
             _p: PhantomPinned,
         }
     }
@@ -999,7 +1029,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
             WSASendMsg(
                 this.fd.as_fd().as_raw_fd() as _,
                 &msg,
-                0,
+                this.flags as _,
                 &mut sent,
                 optr,
                 None,

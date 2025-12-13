@@ -319,6 +319,18 @@ impl TcpStream {
     pub fn set_nodelay(&self, nodelay: bool) -> io::Result<()> {
         self.inner.socket.set_tcp_nodelay(nodelay)
     }
+
+    /// Sends out-of-band data on this socket.
+    ///
+    /// Out-of-band data is sent with the `MSG_OOB` flag.
+    pub async fn send_out_of_band<T: IoBuf>(&self, buf: T) -> BufResult<usize, T> {
+        #[cfg(unix)]
+        use libc::MSG_OOB;
+        #[cfg(windows)]
+        use windows_sys::Win32::Networking::WinSock::MSG_OOB;
+
+        self.inner.send(buf, MSG_OOB).await
+    }
 }
 
 impl AsyncRead for TcpStream {
@@ -336,12 +348,12 @@ impl AsyncRead for TcpStream {
 impl AsyncRead for &TcpStream {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        self.inner.recv(buf).await
+        self.inner.recv(buf, 0).await
     }
 
     #[inline]
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
-        self.inner.recv_vectored(buf).await
+        self.inner.recv_vectored(buf, 0).await
     }
 }
 
@@ -367,7 +379,7 @@ impl AsyncReadManaged for &TcpStream {
         buffer_pool: &'a Self::BufferPool,
         len: usize,
     ) -> io::Result<Self::Buffer<'a>> {
-        self.inner.recv_managed(buffer_pool, len as _).await
+        self.inner.recv_managed(buffer_pool, len as _, 0).await
     }
 }
 
@@ -396,12 +408,12 @@ impl AsyncWrite for TcpStream {
 impl AsyncWrite for &TcpStream {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        self.inner.send(buf).await
+        self.inner.send(buf, 0).await
     }
 
     #[inline]
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        self.inner.send_vectored(buf).await
+        self.inner.send_vectored(buf, 0).await
     }
 
     #[inline]

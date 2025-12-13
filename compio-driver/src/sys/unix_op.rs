@@ -149,6 +149,62 @@ impl<T: IoVectoredBuf, S> IntoInner for WriteVectoredAt<T, S> {
     }
 }
 
+/// Receive a file into vectored buffer.
+pub struct ReadVectored<T: IoVectoredBufMut, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) slices: Vec<SysSlice>,
+    _p: PhantomPinned,
+}
+
+impl<T: IoVectoredBufMut, S> ReadVectored<T, S> {
+    /// Create [`ReadVectored`].
+    pub fn new(fd: S, buffer: T) -> Self {
+        Self {
+            fd,
+            buffer,
+            slices: vec![],
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<T: IoVectoredBufMut, S> IntoInner for ReadVectored<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+/// Send to a file from vectored buffer.
+pub struct WriteVectored<T: IoVectoredBuf, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) slices: Vec<SysSlice>,
+    _p: PhantomPinned,
+}
+
+impl<T: IoVectoredBuf, S> WriteVectored<T, S> {
+    /// Create [`WriteVectored`].
+    pub fn new(fd: S, buffer: T) -> Self {
+        Self {
+            fd,
+            buffer,
+            slices: vec![],
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<T: IoVectoredBuf, S> IntoInner for WriteVectored<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
 /// Remove file or directory.
 pub struct Unlink {
     pub(crate) path: CString,
@@ -272,49 +328,34 @@ impl<S> Accept<S> {
     }
 }
 
-/// Receive data from remote.
-pub struct Recv<T: IoBufMut, S> {
-    pub(crate) fd: S,
-    pub(crate) buffer: T,
-    _p: PhantomPinned,
-}
-
-impl<T: IoBufMut, S> Recv<T, S> {
-    /// Create [`Recv`].
-    pub fn new(fd: S, buffer: T) -> Self {
-        Self {
-            fd,
-            buffer,
-            _p: PhantomPinned,
-        }
-    }
-}
-
-impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
-    type Inner = T;
-
-    fn into_inner(self) -> Self::Inner {
-        self.buffer
-    }
-}
-
 /// Receive data from remote into vectored buffer.
 pub struct RecvVectored<T: IoVectoredBufMut, S> {
+    pub(crate) msg: libc::msghdr,
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<SysSlice>,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
     /// Create [`RecvVectored`].
-    pub fn new(fd: S, buffer: T) -> Self {
+    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
         Self {
+            msg: unsafe { std::mem::zeroed() },
             fd,
             buffer,
             slices: vec![],
+            flags,
             _p: PhantomPinned,
         }
+    }
+
+    pub(crate) unsafe fn set_msg(&mut self) {
+        self.slices = unsafe { self.buffer.sys_slices_mut() };
+
+        self.msg.msg_iov = self.slices.as_mut_ptr() as _;
+        self.msg.msg_iovlen = self.slices.len() as _;
     }
 }
 
@@ -326,49 +367,34 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvVectored<T, S> {
     }
 }
 
-/// Send data to remote.
-pub struct Send<T: IoBuf, S> {
-    pub(crate) fd: S,
-    pub(crate) buffer: T,
-    _p: PhantomPinned,
-}
-
-impl<T: IoBuf, S> Send<T, S> {
-    /// Create [`Send`].
-    pub fn new(fd: S, buffer: T) -> Self {
-        Self {
-            fd,
-            buffer,
-            _p: PhantomPinned,
-        }
-    }
-}
-
-impl<T: IoBuf, S> IntoInner for Send<T, S> {
-    type Inner = T;
-
-    fn into_inner(self) -> Self::Inner {
-        self.buffer
-    }
-}
-
 /// Send data to remote from vectored buffer.
 pub struct SendVectored<T: IoVectoredBuf, S> {
+    pub(crate) msg: libc::msghdr,
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) slices: Vec<SysSlice>,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
 impl<T: IoVectoredBuf, S> SendVectored<T, S> {
     /// Create [`SendVectored`].
-    pub fn new(fd: S, buffer: T) -> Self {
+    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
         Self {
+            msg: unsafe { std::mem::zeroed() },
             fd,
             buffer,
             slices: vec![],
+            flags,
             _p: PhantomPinned,
         }
+    }
+
+    pub(crate) unsafe fn set_msg(&mut self) {
+        self.slices = unsafe { self.buffer.sys_slices() };
+
+        self.msg.msg_iov = self.slices.as_mut_ptr() as _;
+        self.msg.msg_iovlen = self.slices.len() as _;
     }
 }
 
@@ -388,6 +414,7 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
     pub(crate) buffer: T,
     pub(crate) control: C,
     pub(crate) slices: Vec<SysSlice>,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
@@ -397,7 +424,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
     /// # Panics
     ///
     /// This function will panic if the control message buffer is misaligned.
-    pub fn new(fd: S, buffer: T, control: C) -> Self {
+    pub fn new(fd: S, buffer: T, control: C, flags: i32) -> Self {
         assert!(
             control.buf_ptr().cast::<libc::cmsghdr>().is_aligned(),
             "misaligned control message buffer"
@@ -409,6 +436,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
             buffer,
             control,
             slices: vec![],
+            flags,
             _p: PhantomPinned,
         }
     }
@@ -447,6 +475,7 @@ pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
     pub(crate) control: C,
     pub(crate) addr: SockAddr,
     pub(crate) slices: Vec<SysSlice>,
+    pub(crate) flags: i32,
     _p: PhantomPinned,
 }
 
@@ -456,7 +485,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     /// # Panics
     ///
     /// This function will panic if the control message buffer is misaligned.
-    pub fn new(fd: S, buffer: T, control: C, addr: SockAddr) -> Self {
+    pub fn new(fd: S, buffer: T, control: C, addr: SockAddr, flags: i32) -> Self {
         assert!(
             control.buf_ptr().cast::<libc::cmsghdr>().is_aligned(),
             "misaligned control message buffer"
@@ -468,6 +497,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
             control,
             addr,
             slices: vec![],
+            flags,
             _p: PhantomPinned,
         }
     }

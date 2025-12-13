@@ -6,7 +6,7 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
-use compio_driver::{OwnedFd, SharedFd, op::Recv, syscall};
+use compio_driver::{OwnedFd, SharedFd, op::Read, syscall};
 
 thread_local! {
     static REG_MAP: RefCell<HashMap<i32, usize>> = RefCell::new(HashMap::new());
@@ -94,7 +94,7 @@ impl SignalFd {
         }
 
         let info = SignalInfo(MaybeUninit::<libc::signalfd_siginfo>::uninit());
-        let op = Recv::new(self.fd.clone(), info);
+        let op = Read::new(self.fd.clone(), info);
         let BufResult(res, op) = compio_runtime::submit(op).await;
         let len = res?;
         debug_assert_eq!(len, INFO_SIZE);

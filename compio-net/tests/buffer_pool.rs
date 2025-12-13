@@ -23,12 +23,13 @@ async fn test_tcp_read_buffer_pool() {
         b"test"
     );
 
-    assert!(
+    assert_eq!(
         stream
             .read_managed(&buffer_pool, 0)
             .await
-            .unwrap()
-            .is_empty()
+            .map(|b| b.len())
+            .unwrap_or_default(),
+        0
     );
 }
 
@@ -80,11 +81,12 @@ async fn test_uds_recv_buffer_pool() {
         b"test"
     );
 
-    assert!(
+    assert_eq!(
         server
             .read_managed(&buffer_pool, 0)
             .await
-            .unwrap()
-            .is_empty()
+            .map(|b| b.len())
+            .unwrap_or_default(),
+        0
     );
 }

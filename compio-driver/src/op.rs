@@ -10,18 +10,18 @@ use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
 pub use crate::sys::op::{
-    Accept, Recv, RecvFrom, RecvFromVectored, RecvMsg, RecvVectored, Send, SendMsg, SendTo,
-    SendToVectored, SendVectored,
+    Accept, RecvFrom, RecvFromVectored, RecvMsg, RecvVectored, SendMsg, SendTo, SendToVectored,
+    SendVectored,
 };
 #[cfg(windows)]
 pub use crate::sys::op::{ConnectNamedPipe, DeviceIoControl};
 #[cfg(unix)]
 pub use crate::sys::op::{
     CreateDir, CreateSocket, FileStat, HardLink, Interest, OpenFile, PathStat, PollOnce,
-    ReadVectoredAt, Rename, Symlink, Unlink, WriteVectoredAt,
+    ReadVectored, ReadVectoredAt, Rename, Symlink, Unlink, WriteVectored, WriteVectoredAt,
 };
 #[cfg(io_uring)]
-pub use crate::sys::op::{ReadManagedAt, RecvManaged};
+pub use crate::sys::op::{ReadManaged, ReadManagedAt, RecvManaged};
 use crate::{Extra, OwnedFd, SharedFd, TakeBuffer};
 
 /// Trait to update the buffer length inside the [`BufResult`].
@@ -251,6 +251,120 @@ impl<T: IoBuf, S> IntoInner for WriteAt<T, S> {
     }
 }
 
+/// Read a file.
+pub struct Read<T: IoBufMut, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    _p: PhantomPinned,
+}
+
+impl<T: IoBufMut, S> Read<T, S> {
+    /// Create [`Read`].
+    pub fn new(fd: S, buffer: T) -> Self {
+        Self {
+            fd,
+            buffer,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<T: IoBufMut, S> IntoInner for Read<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+/// Write a file.
+pub struct Write<T: IoBuf, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    _p: PhantomPinned,
+}
+
+impl<T: IoBuf, S> Write<T, S> {
+    /// Create [`Write`].
+    pub fn new(fd: S, buffer: T) -> Self {
+        Self {
+            fd,
+            buffer,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<T: IoBuf, S> IntoInner for Write<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+/// Receive data from remote.
+///
+/// It is only used for socket operations. If you want to read from a pipe, use
+/// [`Read`].
+pub struct Recv<T: IoBufMut, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) flags: i32,
+    _p: PhantomPinned,
+}
+
+impl<T: IoBufMut, S> Recv<T, S> {
+    /// Create [`Recv`].
+    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+        Self {
+            fd,
+            buffer,
+            flags,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+/// Send data to remote.
+///
+/// It is only used for socket operations. If you want to write to a pipe, use
+/// [`Write`].
+pub struct Send<T: IoBuf, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) flags: i32,
+    _p: PhantomPinned,
+}
+
+impl<T: IoBuf, S> Send<T, S> {
+    /// Create [`Send`].
+    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+        Self {
+            fd,
+            buffer,
+            flags,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<T: IoBuf, S> IntoInner for Send<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
 /// Sync data to the disk.
 pub struct Sync<S> {
     pub(crate) fd: S,
@@ -320,7 +434,7 @@ pub(crate) mod managed {
 
     use compio_buf::IntoInner;
 
-    use super::{ReadAt, Recv};
+    use super::{Read, ReadAt, Recv};
     use crate::{BorrowedBuffer, BufferPool, OwnedBuffer, TakeBuffer};
 
     /// Read a file at specified position into managed buffer.
@@ -361,18 +475,59 @@ pub(crate) mod managed {
         }
     }
 
+    /// Read a file into managed buffer.
+    pub struct ReadManaged<S> {
+        pub(crate) op: Read<OwnedBuffer, S>,
+    }
+
+    impl<S> ReadManaged<S> {
+        /// Create [`ReadManaged`].
+        pub fn new(fd: S, pool: &BufferPool, len: usize) -> io::Result<Self> {
+            #[cfg(fusion)]
+            let pool = pool.as_poll();
+            Ok(Self {
+                op: Read::new(fd, pool.get_buffer(len)?),
+            })
+        }
+    }
+
+    impl<S> TakeBuffer for ReadManaged<S> {
+        type Buffer<'a> = BorrowedBuffer<'a>;
+        type BufferPool = BufferPool;
+
+        fn take_buffer(
+            self,
+            buffer_pool: &Self::BufferPool,
+            result: io::Result<usize>,
+            _: u16,
+        ) -> io::Result<Self::Buffer<'_>> {
+            let result = result?;
+            #[cfg(fusion)]
+            let buffer_pool = buffer_pool.as_poll();
+            let slice = self.op.into_inner();
+            // SAFETY: result is valid
+            let res = unsafe { buffer_pool.create_proxy(slice, result) };
+            #[cfg(fusion)]
+            let res = BorrowedBuffer::new_poll(res);
+            Ok(res)
+        }
+    }
+
     /// Receive data from remote into managed buffer.
+    ///
+    /// It is only used for socket operations. If you want to read from a pipe,
+    /// use [`ReadManaged`].
     pub struct RecvManaged<S> {
         pub(crate) op: Recv<OwnedBuffer, S>,
     }
 
     impl<S> RecvManaged<S> {
         /// Create [`RecvManaged`].
-        pub fn new(fd: S, pool: &BufferPool, len: usize) -> io::Result<Self> {
+        pub fn new(fd: S, pool: &BufferPool, len: usize, flags: i32) -> io::Result<Self> {
             #[cfg(fusion)]
             let pool = pool.as_poll();
             Ok(Self {
-                op: Recv::new(fd, pool.get_buffer(len)?),
+                op: Recv::new(fd, pool.get_buffer(len)?, flags),
             })
         }
     }

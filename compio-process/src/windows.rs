@@ -9,7 +9,7 @@ use std::{
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
     OpCode, OpType, ToSharedFd,
-    op::{BufResultExt, Recv, RecvManaged, ResultTakeBuffer, Send},
+    op::{BufResultExt, Read, ReadManaged, ResultTakeBuffer, Write},
     syscall,
 };
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
@@ -52,7 +52,7 @@ pub async fn child_wait(child: process::Child) -> io::Result<process::ExitStatus
 impl AsyncRead for ChildStdout {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
         let fd = self.to_shared_fd();
-        let op = Recv::new(fd, buffer);
+        let op = Read::new(fd, buffer);
         compio_runtime::submit(op).await.into_inner().map_advanced()
     }
 }
@@ -68,7 +68,7 @@ impl AsyncReadManaged for ChildStdout {
     ) -> io::Result<Self::Buffer<'a>> {
         let fd = self.to_shared_fd();
         let buffer_pool = buffer_pool.try_inner()?;
-        let op = RecvManaged::new(fd, buffer_pool, len)?;
+        let op = ReadManaged::new(fd, buffer_pool, len)?;
         compio_runtime::submit_with_extra(op)
             .await
             .take_buffer(buffer_pool)
@@ -78,7 +78,7 @@ impl AsyncReadManaged for ChildStdout {
 impl AsyncRead for ChildStderr {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
         let fd = self.to_shared_fd();
-        let op = Recv::new(fd, buffer);
+        let op = Read::new(fd, buffer);
         compio_runtime::submit(op).await.into_inner().map_advanced()
     }
 }
@@ -94,7 +94,7 @@ impl AsyncReadManaged for ChildStderr {
     ) -> io::Result<Self::Buffer<'a>> {
         let fd = self.to_shared_fd();
         let buffer_pool = buffer_pool.try_inner()?;
-        let op = RecvManaged::new(fd, buffer_pool, len)?;
+        let op = ReadManaged::new(fd, buffer_pool, len)?;
         compio_runtime::submit_with_extra(op)
             .await
             .take_buffer(buffer_pool)
@@ -104,7 +104,7 @@ impl AsyncReadManaged for ChildStderr {
 impl AsyncWrite for ChildStdin {
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
         let fd = self.to_shared_fd();
-        let op = Send::new(fd, buffer);
+        let op = Write::new(fd, buffer);
         compio_runtime::submit(op).await.into_inner()
     }
 
