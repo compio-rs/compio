@@ -38,4 +38,4 @@ let result = dispatcher.dispatch(|| async {
 }).await;
 ```
 
-Notice that you're dispatching a `Send` closure returning `Future` to the other threads. The `Future` returned by the closure does not need to be `Send`, which is convenient for `compio` (as lots of the operations are single-thread and not `Send`).
+Notice that you're dispatching a `Send` closure that returns `Future` to the other threads. The `Future` returned by the closure does not need to be `Send`, which is convenient since lots of the operations are single-thread and not `Send` in `compio`.

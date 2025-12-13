@@ -1,8 +1,6 @@
-//! QUIC implementation for compio
+//! QUIC implementation based on [`quinn-proto`].
 //!
-//! Ported from [`quinn`].
-//!
-//! [`quinn`]: https://docs.rs/quinn
+//! [`quinn-proto`]: https://docs.rs/quinn-proto
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]

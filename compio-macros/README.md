@@ -25,7 +25,7 @@ This crate provides convenience macros for working with the compio runtime, maki
 
 ## Usage
 
-Use `compio::macros` re-exported from `compio` crate, then apply the macros in your application:
+Both `main` and `test` are re-exported in `compio` crate when `macros` feature is enabled:
 
 ```bash
 cargo add compio --features macros
@@ -34,8 +34,6 @@ cargo add compio --features macros
 Example:
 
 ```rust
-use compio_macros::main;
-
 #[compio::main]
 async fn main() {
     println!("Hello from compio!");

@@ -1,4 +1,4 @@
-//! Async TLS streams.
+//! TLS streams.
 
 #![warn(missing_docs)]
 #![cfg_attr(feature = "read_buf", feature(read_buf, core_io_borrowed_buf))]

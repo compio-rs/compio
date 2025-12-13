@@ -1,4 +1,4 @@
-//! Utilities for working with buffers.
+//! Buffer utilities for completion-based IO.
 //!
 //! Completion APIs require passing ownership of buffers to the runtime. The
 //! crate defines [`IoBuf`] and [`IoBufMut`] traits which are implemented by

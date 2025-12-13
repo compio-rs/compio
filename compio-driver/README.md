@@ -26,4 +26,4 @@ The driver manages the submission and completion of IO operations, providing a u
 
 ## Usage
 
-This crate is typically used indirectly through compio runtime, but can also be used directly for low-level control over the IO driver. See examples in compio crate.
+This crate is typically used indirectly through compio runtime, but you can also use it directly for low-level control over the IO driver. See examples in compio crate.

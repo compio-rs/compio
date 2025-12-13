@@ -4,7 +4,7 @@ version = "0.17.0"
 description = "Completion based async runtime"
 categories = ["asynchronous", "filesystem", "network-programming"]
 keywords = ["async", "fs", "iocp", "io-uring", "net"]
-readme = "README.md"
+readme = "../README.md"
 edition = { workspace = true }
 authors = { workspace = true }
 license = { workspace = true }

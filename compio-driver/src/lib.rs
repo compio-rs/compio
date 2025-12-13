@@ -1,4 +1,5 @@
-//! The platform-specified driver.
+//! Platform-specified drivers.
+//!
 //! Some types differ by compilation target.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]

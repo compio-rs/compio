@@ -28,17 +28,16 @@ This crate provides async process spawning and management capabilities for compi
 
 ## Usage
 
-Add this to your `Cargo.toml`:
+Use `compio` directly with `process` feature enabled:
 
-```toml
-[dependencies]
-compio-process = "0.7"
+```bash
+cargo add compio --features process
 ```
 
 Example:
 
 ```rust
-use compio_process::Command;
+use compio::process::Command;
 
 let mut child = Command::new("echo")
     .arg("Hello from compio!")
@@ -47,5 +46,3 @@ let mut child = Command::new("echo")
 let status = child.wait().await?;
 println!("Process exited with: {}", status);
 ```
-
-This crate is available through the main `compio` crate with the `process` feature enabled.

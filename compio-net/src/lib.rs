@@ -1,4 +1,4 @@
-//! Network related.
+//! Network utilities.
 //!
 //! Currently, TCP/UDP/Unix socket are implemented.
 

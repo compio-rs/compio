@@ -1,4 +1,4 @@
-//! Multithreading dispatcher for compio.
+//! Multithreading dispatcher.
 
 #![warn(missing_docs)]
 

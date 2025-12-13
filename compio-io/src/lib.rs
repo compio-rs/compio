@@ -1,4 +1,4 @@
-//! This crate provides traits and utilities for completion-based IO.
+//! Traits and utilities for completion-based IO.
 //!
 //! # Contents
 //! ### Fundamental
