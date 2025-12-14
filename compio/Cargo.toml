@@ -69,7 +69,9 @@ io-uring = ["compio-driver/io-uring"]
 polling = ["compio-driver/polling"]
 io = ["dep:compio-io"]
 io-compat = ["io", "compio-io/compat", "compio-quic?/io-compat"]
-runtime = ["dep:compio-runtime", "dep:compio-fs", "dep:compio-net", "io"]
+fs = ["dep:compio-fs", "runtime", "io"]
+net = ["dep:compio-net", "runtime", "io"]
+runtime = ["dep:compio-runtime"]
 macros = ["dep:compio-macros", "runtime"]
 event = ["compio-runtime/event", "runtime"]
 signal = ["dep:compio-signal", "event"]
@@ -78,11 +80,14 @@ dispatcher = ["dep:compio-dispatcher", "runtime"]
 tls = ["dep:compio-tls"]
 native-tls = ["tls", "compio-tls/native-tls", "compio-ws?/native-tls"]
 rustls = ["tls", "compio-tls/rustls", "compio-ws?/rustls"]
+ring = ["tls", "compio-tls/ring", "compio-quic?/ring", "compio-ws?/ring"]
 process = ["dep:compio-process"]
 quic = ["dep:compio-quic"]
 h3 = ["quic", "compio-quic/h3"]
 ws = ["dep:compio-ws"]
 all = [
+    "fs",
+    "net",
     "time",
     "macros",
     "signal",
@@ -103,8 +108,6 @@ criterion = ["compio-runtime?/criterion"]
 fd-sync = ["compio-driver/fd-sync"]
 
 enable_log = ["compio-log/enable_log"]
-
-ring = ["compio-tls?/ring", "compio-quic?/ring", "compio-ws?/ring"]
 
 # Nightly features
 allocator_api = ["compio-buf/allocator_api", "compio-io?/allocator_api"]
@@ -141,7 +144,7 @@ real_blackbox = ["criterion/real_blackbox"]
 
 [[example]]
 name = "basic"
-required-features = ["macros"]
+required-features = ["macros", "fs"]
 
 [[example]]
 name = "named_pipe"
@@ -149,7 +152,7 @@ required-features = ["macros"]
 
 [[example]]
 name = "net"
-required-features = ["macros"]
+required-features = ["macros", "net"]
 
 [[example]]
 name = "unix"
@@ -170,7 +173,13 @@ required-features = ["macros", "dispatcher", "fd-sync"]
 [[bench]]
 name = "fs"
 harness = false
+required-features = ["fs"]
 
 [[bench]]
 name = "net"
 harness = false
+required-features = ["net"]
+
+[[test]]
+name = "runtime"
+required-features = ["fs", "net", "macros"]
