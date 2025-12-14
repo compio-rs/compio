@@ -15,37 +15,17 @@
 [![Test](https://github.com/compio-rs/compio/actions/workflows/ci_test.yml/badge.svg)](https://github.com/compio-rs/compio/actions/workflows/ci_test.yml)
 [![Telegram](https://img.shields.io/badge/Telegram-compio--rs-blue?logo=telegram)](https://t.me/compio_rs)
 
-A thread-per-core Rust runtime with IOCP/io_uring/polling.
-The name comes from "completion-based IO".
-This crate is inspired by [monoio](https://github.com/bytedance/monoio/).
-
-## Why not Tokio?
-
-Tokio is a great generic-purpose async runtime.
-However, it is poll-based, and even uses [undocumented APIs](https://notgull.net/device-afd/) on Windows.
-We would like some new high-level APIs to perform IOCP/io_uring.
-
-`compio` isn't Tokio-based.
-This is mainly because that no public APIs to control IOCP in `mio`,
-and `tokio` won't expose APIs to control `mio` before `mio` reaches 1.0.
-
-## Why not monoio?
-
-Monoio focuses on Linux and io-uring, and fallbacks to `mio` on other platforms.
-
-## Why not glommio?
-
-It doesn't support Windows.
+A thread-per-core Rust runtime with IOCP/io_uring/polling inspired by [monoio](https://github.com/bytedance/monoio).
 
 ## Quick start
 
 Add `compio` as dependency:
 
-```
-compio = { version = "0.16.0", features = ["macros"] }
+```bash
+cargo add compio --features macros,fs
 ```
 
-Then we can use high level APIs to perform filesystem & net IO.
+Then use the high level APIs provided to perform filesystem & network IO:
 
 ```rust
 use compio::{fs::File, io::AsyncReadAtExt};
@@ -60,7 +40,31 @@ async fn main() {
 }
 ```
 
-You can also control the low-level driver manually. See `driver` example of the repo.
+It's also possible to use the low-level driver (the proactor, without async executor) manually. See [`driver` example](./compio/examples/driver.rs).
+
+## Why the name?
+
+The name comes from "completion-based IO", and follows the non-existent convention that an async runtime should be named with a suffix "io".
+
+## Comparison with other runtimes
+
+### Tokio
+
+Tokio is a great generic-purpose async runtime. However, it is poll-based, and even uses [undocumented APIs](https://notgull.net/device-afd/) on Windows. We would like some new high-level APIs to perform IOCP/io_uring.
+
+`compio` isn't Tokio-based. This is mainly because `mio` does not expose any public APIs to control IOCP, and `tokio` won't expose APIs to control `mio` before `mio` reaches 1.0.
+
+### Monoio
+
+Monoio focuses on Linux and io-uring, and fallbacks to `mio` on other platforms.
+
+### Glommio
+
+Glommio doesn't support Windows.
+
+### Others
+
+There are also lots of other great async runtimes. But most of them are (at the moment when `compio` was created) either poll-based, use io-uring [unsoundly](https://without.boats/blog/io-uring/), or aren't cross-platform. We hope `compio` can fill this gap.
 
 ## Contributing
 

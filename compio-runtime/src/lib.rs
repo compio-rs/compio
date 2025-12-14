@@ -1,4 +1,4 @@
-//! The runtime of compio.
+//! The compio runtime.
 //!
 //! ```
 //! let ans = compio_runtime::Runtime::new().unwrap().block_on(async {

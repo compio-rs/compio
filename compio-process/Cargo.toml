@@ -4,9 +4,9 @@ version = "0.7.0"
 description = "Processes for compio"
 categories = ["asynchronous"]
 keywords = ["async", "process"]
+readme = "README.md"
 edition = { workspace = true }
 authors = { workspace = true }
-readme = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 

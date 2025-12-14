@@ -1,4 +1,4 @@
-//! Async WebSocket support for compio.
+//! WebSocket support based on [`tungstenite`].
 //!
 //! This library is an implementation of WebSocket handshakes and streams for
 //! compio. It is based on the tungstenite crate which implements all required
@@ -6,6 +6,8 @@
 //! integration to it.
 //!
 //! Each WebSocket stream implements message reading and writing.
+//!
+//! [`tungstenite`]: https://docs.rs/tungstenite
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]

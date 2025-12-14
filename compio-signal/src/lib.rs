@@ -1,4 +1,4 @@
-//! Asynchronous signal handling.
+//! Signal utilities.
 //!
 //! # Examples
 //!

@@ -1,4 +1,4 @@
-//! Asynchronous events.
+//! Events utilities.
 
 use std::{
     pin::Pin,

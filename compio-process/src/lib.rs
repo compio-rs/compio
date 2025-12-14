@@ -1,4 +1,4 @@
-//! Process library for compio. It is an extension to [`std::process`].
+//! Process utilities based on [`std::process`].
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(
