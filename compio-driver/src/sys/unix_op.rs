@@ -1,9 +1,10 @@
-use std::{ffi::CString, marker::PhantomPinned, net::Shutdown, os::fd::OwnedFd};
+use std::{ffi::CString, marker::PhantomPinned, net::Shutdown, os::fd::OwnedFd, pin::Pin};
 
 use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use pin_project_lite::pin_project;
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
-use crate::{op::*, sys_slice::*};
+use crate::{op::*, sys::aio::*, sys_slice::*};
 
 /// Open or create a file with flags and mode.
 pub struct OpenFile {
@@ -81,15 +82,17 @@ pub(crate) const fn statx_to_stat(statx: Statx) -> libc::stat {
     stat
 }
 
-/// Read a file at specified position into vectored buffer.
-pub struct ReadVectoredAt<T: IoVectoredBufMut, S> {
-    pub(crate) fd: S,
-    pub(crate) offset: u64,
-    pub(crate) buffer: T,
-    pub(crate) slices: Vec<SysSlice>,
-    #[cfg(freebsd)]
-    pub(crate) aiocb: libc::aiocb,
-    _p: PhantomPinned,
+pin_project! {
+    /// Read a file at specified position into vectored buffer.
+    pub struct ReadVectoredAt<T: IoVectoredBufMut, S> {
+        pub(crate) fd: S,
+        pub(crate) offset: u64,
+        #[pin]
+        pub(crate) buffer: T,
+        pub(crate) slices: Vec<SysSlice>,
+        pub(crate) aiocb: aiocb,
+        _p: PhantomPinned,
+    }
 }
 
 impl<T: IoVectoredBufMut, S> ReadVectoredAt<T, S> {
@@ -100,8 +103,7 @@ impl<T: IoVectoredBufMut, S> ReadVectoredAt<T, S> {
             offset,
             buffer,
             slices: vec![],
-            #[cfg(freebsd)]
-            aiocb: unsafe { std::mem::zeroed() },
+            aiocb: new_aiocb(),
             _p: PhantomPinned,
         }
     }
@@ -115,17 +117,18 @@ impl<T: IoVectoredBufMut, S> IntoInner for ReadVectoredAt<T, S> {
     }
 }
 
-/// Write a file at specified position from vectored buffer.
-pub struct WriteVectoredAt<T: IoVectoredBuf, S> {
-    pub(crate) fd: S,
-    pub(crate) offset: u64,
-    pub(crate) buffer: T,
-    pub(crate) slices: Vec<SysSlice>,
-    #[cfg(freebsd)]
-    pub(crate) aiocb: libc::aiocb,
-    _p: PhantomPinned,
+pin_project! {
+    /// Write a file at specified position from vectored buffer.
+    pub struct WriteVectoredAt<T: IoVectoredBuf, S> {
+        pub(crate) fd: S,
+        pub(crate) offset: u64,
+        #[pin]
+        pub(crate) buffer: T,
+        pub(crate) slices: Vec<SysSlice>,
+        pub(crate) aiocb: aiocb,
+        _p: PhantomPinned,
+    }
 }
-
 impl<T: IoVectoredBuf, S> WriteVectoredAt<T, S> {
     /// Create [`WriteVectoredAt`]
     pub fn new(fd: S, offset: u64, buffer: T) -> Self {
@@ -134,8 +137,7 @@ impl<T: IoVectoredBuf, S> WriteVectoredAt<T, S> {
             offset,
             buffer,
             slices: vec![],
-            #[cfg(freebsd)]
-            aiocb: unsafe { std::mem::zeroed() },
+            aiocb: new_aiocb(),
             _p: PhantomPinned,
         }
     }
@@ -149,12 +151,15 @@ impl<T: IoVectoredBuf, S> IntoInner for WriteVectoredAt<T, S> {
     }
 }
 
-/// Receive a file into vectored buffer.
-pub struct ReadVectored<T: IoVectoredBufMut, S> {
-    pub(crate) fd: S,
-    pub(crate) buffer: T,
-    pub(crate) slices: Vec<SysSlice>,
-    _p: PhantomPinned,
+pin_project! {
+    /// Receive a file into vectored buffer.
+    pub struct ReadVectored<T: IoVectoredBufMut, S> {
+        pub(crate) fd: S,
+        #[pin]
+        pub(crate) buffer: T,
+        pub(crate) slices: Vec<SysSlice>,
+        _p: PhantomPinned,
+    }
 }
 
 impl<T: IoVectoredBufMut, S> ReadVectored<T, S> {
@@ -177,12 +182,15 @@ impl<T: IoVectoredBufMut, S> IntoInner for ReadVectored<T, S> {
     }
 }
 
-/// Send to a file from vectored buffer.
-pub struct WriteVectored<T: IoVectoredBuf, S> {
-    pub(crate) fd: S,
-    pub(crate) buffer: T,
-    pub(crate) slices: Vec<SysSlice>,
-    _p: PhantomPinned,
+pin_project! {
+    /// Send to a file from vectored buffer.
+    pub struct WriteVectored<T: IoVectoredBuf, S> {
+        pub(crate) fd: S,
+        #[pin]
+        pub(crate) buffer: T,
+        pub(crate) slices: Vec<SysSlice>,
+        _p: PhantomPinned,
+    }
 }
 
 impl<T: IoVectoredBuf, S> WriteVectored<T, S> {
@@ -298,13 +306,15 @@ impl<S> ShutdownSocket<S> {
     }
 }
 
-/// Accept a connection.
-pub struct Accept<S> {
-    pub(crate) fd: S,
-    pub(crate) buffer: SockAddrStorage,
-    pub(crate) addr_len: socklen_t,
-    pub(crate) accepted_fd: Option<OwnedFd>,
-    _p: PhantomPinned,
+pin_project! {
+    /// Accept a connection.
+    pub struct Accept<S> {
+        pub(crate) fd: S,
+        pub(crate) buffer: SockAddrStorage,
+        pub(crate) addr_len: socklen_t,
+        pub(crate) accepted_fd: Option<OwnedFd>,
+        _p: PhantomPinned,
+    }
 }
 
 impl<S> Accept<S> {
@@ -328,14 +338,17 @@ impl<S> Accept<S> {
     }
 }
 
-/// Receive data from remote into vectored buffer.
-pub struct RecvVectored<T: IoVectoredBufMut, S> {
-    pub(crate) msg: libc::msghdr,
-    pub(crate) fd: S,
-    pub(crate) buffer: T,
-    pub(crate) slices: Vec<SysSlice>,
-    pub(crate) flags: i32,
-    _p: PhantomPinned,
+pin_project! {
+    /// Receive data from remote into vectored buffer.
+    pub struct RecvVectored<T: IoVectoredBufMut, S> {
+        pub(crate) msg: libc::msghdr,
+        pub(crate) fd: S,
+        #[pin]
+        pub(crate) buffer: T,
+        pub(crate) slices: Vec<SysSlice>,
+        pub(crate) flags: i32,
+        _p: PhantomPinned,
+    }
 }
 
 impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
@@ -351,11 +364,12 @@ impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
         }
     }
 
-    pub(crate) unsafe fn set_msg(&mut self) {
-        self.slices = unsafe { self.buffer.sys_slices_mut() };
+    pub(crate) fn set_msg(self: Pin<&mut Self>) {
+        let this = self.project();
 
-        self.msg.msg_iov = self.slices.as_mut_ptr() as _;
-        self.msg.msg_iovlen = self.slices.len() as _;
+        *this.slices = this.buffer.sys_slices_mut();
+        this.msg.msg_iov = this.slices.as_mut_ptr() as _;
+        this.msg.msg_iovlen = this.slices.len() as _;
     }
 }
 
@@ -366,17 +380,18 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvVectored<T, S> {
         self.buffer
     }
 }
-
-/// Send data to remote from vectored buffer.
-pub struct SendVectored<T: IoVectoredBuf, S> {
-    pub(crate) msg: libc::msghdr,
-    pub(crate) fd: S,
-    pub(crate) buffer: T,
-    pub(crate) slices: Vec<SysSlice>,
-    pub(crate) flags: i32,
-    _p: PhantomPinned,
+pin_project! {
+    /// Send data to remote from vectored buffer.
+    pub struct SendVectored<T: IoVectoredBuf, S> {
+        pub(crate) msg: libc::msghdr,
+        pub(crate) fd: S,
+        #[pin]
+        pub(crate) buffer: T,
+        pub(crate) slices: Vec<SysSlice>,
+        pub(crate) flags: i32,
+        _p: PhantomPinned,
+    }
 }
-
 impl<T: IoVectoredBuf, S> SendVectored<T, S> {
     /// Create [`SendVectored`].
     pub fn new(fd: S, buffer: T, flags: i32) -> Self {
@@ -390,11 +405,12 @@ impl<T: IoVectoredBuf, S> SendVectored<T, S> {
         }
     }
 
-    pub(crate) unsafe fn set_msg(&mut self) {
-        self.slices = unsafe { self.buffer.sys_slices() };
+    pub(crate) fn set_msg(self: Pin<&mut Self>) {
+        let this = self.project();
 
-        self.msg.msg_iov = self.slices.as_mut_ptr() as _;
-        self.msg.msg_iovlen = self.slices.len() as _;
+        *this.slices = this.buffer.as_ref().sys_slices();
+        this.msg.msg_iov = this.slices.as_mut_ptr() as _;
+        this.msg.msg_iovlen = this.slices.len() as _;
     }
 }
 
@@ -406,16 +422,19 @@ impl<T: IoVectoredBuf, S> IntoInner for SendVectored<T, S> {
     }
 }
 
-/// Receive data and source address with ancillary data into vectored buffer.
-pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
-    pub(crate) msg: libc::msghdr,
-    pub(crate) addr: SockAddrStorage,
-    pub(crate) fd: S,
-    pub(crate) buffer: T,
-    pub(crate) control: C,
-    pub(crate) slices: Vec<SysSlice>,
-    pub(crate) flags: i32,
-    _p: PhantomPinned,
+pin_project! {
+    /// Receive data and source address with ancillary data into vectored buffer.
+    pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
+        pub(crate) msg: libc::msghdr,
+        pub(crate) addr: SockAddrStorage,
+        pub(crate) fd: S,
+        #[pin]
+        pub(crate) buffer: T,
+        pub(crate) control: C,
+        pub(crate) slices: Vec<SysSlice>,
+        pub(crate) flags: i32,
+        _p: PhantomPinned,
+    }
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
@@ -441,15 +460,16 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
         }
     }
 
-    pub(crate) unsafe fn set_msg(&mut self) {
-        self.slices = unsafe { self.buffer.sys_slices_mut() };
+    pub(crate) fn set_msg(self: Pin<&mut Self>) {
+        let this = self.project();
+        *this.slices = this.buffer.sys_slices_mut();
 
-        self.msg.msg_name = std::ptr::addr_of_mut!(self.addr) as _;
-        self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
-        self.msg.msg_iov = self.slices.as_mut_ptr() as _;
-        self.msg.msg_iovlen = self.slices.len() as _;
-        self.msg.msg_control = self.control.buf_mut_ptr() as _;
-        self.msg.msg_controllen = self.control.buf_capacity() as _;
+        this.msg.msg_name = this.addr as *mut _ as _;
+        this.msg.msg_namelen = std::mem::size_of_val(this.addr) as _;
+        this.msg.msg_iov = this.slices.as_mut_ptr() as _;
+        this.msg.msg_iovlen = this.slices.len() as _;
+        this.msg.msg_control = this.control.buf_mut_ptr() as _;
+        this.msg.msg_controllen = this.control.buf_capacity() as _;
     }
 }
 
@@ -466,17 +486,21 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
     }
 }
 
-/// Send data to specified address accompanied by ancillary data from vectored
-/// buffer.
-pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
-    pub(crate) msg: libc::msghdr,
-    pub(crate) fd: S,
-    pub(crate) buffer: T,
-    pub(crate) control: C,
-    pub(crate) addr: SockAddr,
-    pub(crate) slices: Vec<SysSlice>,
-    pub(crate) flags: i32,
-    _p: PhantomPinned,
+pin_project! {
+    /// Send data to specified address accompanied by ancillary data from vectored
+    /// buffer.
+    pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
+        pub(crate) msg: libc::msghdr,
+        pub(crate) fd: S,
+        #[pin]
+        pub(crate) buffer: T,
+        #[pin]
+        pub(crate) control: C,
+        pub(crate) addr: SockAddr,
+        pub(crate) slices: Vec<SysSlice>,
+        pub(crate) flags: i32,
+        _p: PhantomPinned,
+    }
 }
 
 impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
@@ -502,15 +526,15 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
         }
     }
 
-    pub(crate) unsafe fn set_msg(&mut self) {
-        self.slices = unsafe { self.buffer.sys_slices() };
-
-        self.msg.msg_name = self.addr.as_ptr() as _;
-        self.msg.msg_namelen = self.addr.len();
-        self.msg.msg_iov = self.slices.as_ptr() as _;
-        self.msg.msg_iovlen = self.slices.len() as _;
-        self.msg.msg_control = self.control.buf_ptr() as _;
-        self.msg.msg_controllen = self.control.buf_len() as _;
+    pub(crate) fn set_msg(self: Pin<&mut Self>) {
+        let this = self.project();
+        *this.slices = this.buffer.as_ref().sys_slices();
+        this.msg.msg_name = this.addr.as_ptr() as _;
+        this.msg.msg_namelen = this.addr.len();
+        this.msg.msg_iov = this.slices.as_ptr() as _;
+        this.msg.msg_iovlen = this.slices.len() as _;
+        this.msg.msg_control = this.control.buf_ptr() as _;
+        this.msg.msg_controllen = this.control.buf_len() as _;
     }
 }
 

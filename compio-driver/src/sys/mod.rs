@@ -60,6 +60,23 @@ impl Extra {
     }
 }
 
+#[cfg(aio)]
+pub(crate) mod aio {
+    pub use libc::aiocb;
+
+    pub fn new_aiocb() -> aiocb {
+        unsafe { std::mem::zeroed() }
+    }
+}
+
+#[cfg(not(aio))]
+pub(crate) mod aio {
+    #[allow(non_camel_case_types)]
+    pub type aiocb = ();
+
+    pub fn new_aiocb() -> aiocb {}
+}
+
 use std::io;
 
 pub use imp::*;
