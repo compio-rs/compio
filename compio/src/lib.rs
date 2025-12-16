@@ -21,6 +21,7 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 #[doc(no_inline)]
 pub use buf::BufResult;

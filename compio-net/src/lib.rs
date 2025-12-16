@@ -5,6 +5,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
 #![warn(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 mod cmsg;
 mod opts;

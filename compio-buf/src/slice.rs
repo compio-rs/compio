@@ -173,7 +173,7 @@ impl<T> IntoInner for Slice<T> {
 ///
 /// - [`IoVectoredBuf::slice`]: Ignore uninitialized slots, i.e., skip
 ///   `begin`-many **initialized** bytes.
-/// - [`IoVectoredBuf::slice_mut`]: Consider uninitialized slots, i.e., skip
+/// - [`IoVectoredBufMut::slice_mut`]: Consider uninitialized slots, i.e., skip
 ///   `begin`-many bytes.
 ///
 /// This will only affect how the slice is being constructed. The resulting

@@ -106,6 +106,7 @@
 //! ```
 
 #![warn(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
 // This is OK as we're thread-per-core and don't need `Send` or other auto trait on anonymous future
 #![allow(async_fn_in_trait)]
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
