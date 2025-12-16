@@ -27,7 +27,11 @@ We adhere to [Rust Code of Conduct](https://www.rust-lang.org/policies/code-of-c
 - Use `cargo fmt --all` with nightly toolchain to format your code (for nightly `rustfmt` features, see detail in [`rustfmt.toml`]).
 - Use `cargo clippy --all` to check any style/code problem.
 - Use [Angular Convention](https://github.com/angular/angular/blob/main/CONTRIBUTING.md#-commit-message-format) when making commits
-- When adding new crate, add `#![warn(missing_docs)]` at the top of `lib.rs`
+- When adding new crate, add following lint headers to the top of `lib.rs`:
+  ```rust
+  #![warn(missing_docs)]
+  #![deny(rustdoc::broken_intra_doc_links)]
+  ``` 
 
 [`rustfmt.toml`]: https://github.com/compio-rs/compio/blob/master/rustfmt.toml
 
