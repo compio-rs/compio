@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::pin::Pin;
 
 use compio_buf::{IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
@@ -56,7 +58,6 @@ mod sys {
 #[repr(transparent)]
 pub(crate) struct SysSlice(sys::Inner);
 
-#[allow(dead_code)]
 impl SysSlice {
     pub fn null() -> Self {
         Self(sys::new(std::ptr::null_mut(), 0))
