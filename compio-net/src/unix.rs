@@ -6,7 +6,7 @@ use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite, util::Splittable};
 use compio_runtime::{BorrowedBuffer, BufferPool};
 use socket2::{SockAddr, Socket as Socket2, Type};
 
-use crate::{OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, WriteHalf};
+use crate::{OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, SocketOpts, WriteHalf};
 
 /// A Unix socket server, listening for connections.
 ///
@@ -44,15 +44,22 @@ pub struct UnixListener {
 impl UnixListener {
     /// Creates a new [`UnixListener`], which will be bound to the specified
     /// file path. The file path cannot yet exist, and will be cleaned up
-    /// upon dropping [`UnixListener`]
+    /// upon dropping [`UnixListener`].
     pub async fn bind(path: impl AsRef<Path>) -> io::Result<Self> {
         Self::bind_addr(&SockAddr::unix(path)?).await
     }
 
     /// Creates a new [`UnixListener`] with [`SockAddr`], which will be bound to
     /// the specified file path. The file path cannot yet exist, and will be
-    /// cleaned up upon dropping [`UnixListener`]
+    /// cleaned up upon dropping [`UnixListener`].
     pub async fn bind_addr(addr: &SockAddr) -> io::Result<Self> {
+        Self::bind_with_options(addr, &SocketOpts::default()).await
+    }
+
+    /// Creates a new [`UnixListener`] with [`SockAddr`] and [`SocketOpts`],
+    /// which will be bound to the specified file path. The file path cannot
+    /// yet exist, and will be cleaned up upon dropping [`UnixListener`].
+    pub async fn bind_with_options(addr: &SockAddr, opts: &SocketOpts) -> io::Result<Self> {
         if !addr.is_unix() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -61,6 +68,7 @@ impl UnixListener {
         }
 
         let socket = Socket::bind(addr, Type::STREAM, None).await?;
+        opts.setup_socket(&socket)?;
         socket.listen(1024)?;
         Ok(UnixListener { inner: socket })
     }
@@ -86,6 +94,21 @@ impl UnixListener {
     /// will be returned.
     pub async fn accept(&self) -> io::Result<(UnixStream, SockAddr)> {
         let (socket, addr) = self.inner.accept().await?;
+        let stream = UnixStream { inner: socket };
+        Ok((stream, addr))
+    }
+
+    /// Accepts a new incoming connection from this listener, and sets options.
+    ///
+    /// This function will yield once a new Unix domain socket connection
+    /// is established. When established, the corresponding [`UnixStream`] and
+    /// will be returned.
+    pub async fn accept_with_options(
+        &self,
+        options: &SocketOpts,
+    ) -> io::Result<(UnixStream, SockAddr)> {
+        let (socket, addr) = self.inner.accept().await?;
+        options.setup_socket(&socket)?;
         let stream = UnixStream { inner: socket };
         Ok((stream, addr))
     }
@@ -125,15 +148,23 @@ pub struct UnixStream {
 impl UnixStream {
     /// Opens a Unix connection to the specified file path. There must be a
     /// [`UnixListener`] or equivalent listening on the corresponding Unix
-    /// domain socket to successfully connect and return a `UnixStream`.
+    /// domain socket to successfully connect and return a [`UnixStream`].
     pub async fn connect(path: impl AsRef<Path>) -> io::Result<Self> {
         Self::connect_addr(&SockAddr::unix(path)?).await
     }
 
     /// Opens a Unix connection to the specified address. There must be a
     /// [`UnixListener`] or equivalent listening on the corresponding Unix
-    /// domain socket to successfully connect and return a `UnixStream`.
+    /// domain socket to successfully connect and return a [`UnixStream`].
     pub async fn connect_addr(addr: &SockAddr) -> io::Result<Self> {
+        Self::connect_with_options(addr, &SocketOpts::default()).await
+    }
+
+    /// Opens a Unix connection to the specified address with [`SocketOpts`].
+    /// There must be a [`UnixListener`] or equivalent listening on the
+    /// corresponding Unix domain socket to successfully connect and return
+    /// a [`UnixStream`].
+    pub async fn connect_with_options(addr: &SockAddr, options: &SocketOpts) -> io::Result<Self> {
         if !addr.is_unix() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -151,6 +182,7 @@ impl UnixStream {
             use socket2::Domain;
             Socket::new(Domain::UNIX, Type::STREAM, None).await?
         };
+        options.setup_socket(&socket)?;
         socket.connect_async(addr).await?;
         let unix_stream = UnixStream { inner: socket };
         Ok(unix_stream)

@@ -2,10 +2,9 @@ use std::time::Duration;
 
 use crate::Socket;
 
-/// Options for configuring TCP sockets.
-/// By default, SO_REUSEADDR is enabled.
+/// Options for configuring sockets.
 #[derive(Default, Debug, Copy, Clone)]
-pub struct TcpOpts {
+pub struct SocketOpts {
     recv_buffer_size: Option<usize>,
     send_buffer_size: Option<usize>,
     keepalive: Option<bool>,
@@ -17,55 +16,59 @@ pub struct TcpOpts {
     nodelay: Option<bool>,
 }
 
-impl TcpOpts {
-    /// Creates a new `TcpOpts` with default settings.
+impl SocketOpts {
+    /// Creates a new [`SocketOpts`] with default settings.
     pub fn new() -> Self {
-        TcpOpts::default()
+        Self::default()
     }
 
-    /// Sets the receive buffer size for the TCP socket.
+    /// Sets the receive buffer size for the socket.
     pub fn recv_buffer_size(mut self, size: usize) -> Self {
         self.recv_buffer_size = Some(size);
         self
     }
 
-    /// Sets the send buffer size for the TCP socket.
+    /// Sets the send buffer size for the socket.
     pub fn send_buffer_size(mut self, size: usize) -> Self {
         self.send_buffer_size = Some(size);
         self
     }
 
-    /// Enables or disables the TCP keepalive option.
+    /// Enables or disables the keepalive option.
+    ///
+    /// Only applicable to connected sockets.
     pub fn keepalive(mut self, keepalive: bool) -> Self {
         self.keepalive = Some(keepalive);
         self
     }
 
-    /// Sets the linger duration for the TCP socket.
+    /// Sets the linger duration for the socket.
     pub fn linger(mut self, duration: Duration) -> Self {
         self.linger = Some(duration);
         self
     }
 
-    /// Sets the read timeout for the TCP socket.
+    /// Sets the read timeout for the socket.
     pub fn read_timeout(mut self, duration: Duration) -> Self {
         self.read_timeout = Some(duration);
         self
     }
 
-    /// Sets the write timeout for the TCP socket.
+    /// Sets the write timeout for the socket.
     pub fn write_timeout(mut self, duration: Duration) -> Self {
         self.write_timeout = Some(duration);
         self
     }
 
-    /// Sets whether the TCP socket should reuse the address.
+    /// Sets whether the socket should reuse the address.
     pub fn reuse_address(mut self, reuse: bool) -> Self {
         self.reuse_address = Some(reuse);
         self
     }
 
-    /// Sets whether the TCP socket should reuse the port.
+    /// Sets whether the socket should reuse the port.
+    ///
+    /// It is no-op on platforms that do not support it.
     pub fn reuse_port(mut self, reuse: bool) -> Self {
         self.reuse_port = Some(reuse);
         self

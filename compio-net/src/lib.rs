@@ -17,7 +17,7 @@ mod udp;
 mod unix;
 
 pub use cmsg::*;
-pub use opts::TcpOpts;
+pub use opts::SocketOpts;
 pub use poll_fd::*;
 pub use resolve::ToSocketAddrsAsync;
 pub(crate) use resolve::{each_addr, first_addr_buf};
