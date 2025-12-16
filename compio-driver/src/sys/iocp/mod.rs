@@ -299,7 +299,7 @@ pub trait OpCode {
     ///
     /// # Safety
     ///
-    /// * Should not use [`Overlapped::op`].
+    /// Implementor should not dereference `optr`.
     unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         let _optr = optr; // ignore it
         Ok(())
