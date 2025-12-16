@@ -695,7 +695,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
         let this = self.project();
         let fd = this.fd.as_fd().as_raw_fd();
         let buffer = this.buffer.sys_slice_mut();
-        let flags = *this.flags as _;
+        let mut flags = *this.flags as _;
         let mut received = 0;
         let res = unsafe {
             WSARecvFrom(
@@ -703,7 +703,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
                 &buffer as *const _ as _,
                 1,
                 &mut received,
-                flags,
+                &mut flags,
                 this.addr as *mut _ as *mut SOCKADDR,
                 this.addr_len,
                 optr,
