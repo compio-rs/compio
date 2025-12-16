@@ -1081,6 +1081,7 @@ pin_project! {
     /// Send data to specified address accompanied by ancillary data from vectored
     /// buffer.
     pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
+        msg: WSAMSG,
         fd: S,
         #[pin]
         buffer: T,
@@ -1105,6 +1106,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
             "misaligned control message buffer"
         );
         Self {
+            msg: unsafe { std::mem::zeroed() },
             fd,
             buffer,
             control,
@@ -1130,7 +1132,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
 
         *this.slices = this.buffer.as_ref().sys_slices();
         let control = this.control.as_ref().sys_slice();
-        let msg = WSAMSG {
+        *this.msg = WSAMSG {
             name: this.addr.as_ptr() as _,
             namelen: this.addr.len(),
             lpBuffers: this.slices.as_ptr() as _,
@@ -1143,7 +1145,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
         let res = unsafe {
             WSASendMsg(
                 this.fd.as_fd().as_raw_fd() as _,
-                &msg,
+                this.msg,
                 *this.flags as _,
                 &mut sent,
                 optr,
