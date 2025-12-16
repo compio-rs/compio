@@ -5,7 +5,7 @@ use compio_driver::impl_raw_fd;
 use compio_runtime::{BorrowedBuffer, BufferPool};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
-use crate::{Socket, ToSocketAddrsAsync};
+use crate::{Socket, SocketOpts, ToSocketAddrsAsync};
 
 /// A UDP socket.
 ///
@@ -94,11 +94,20 @@ pub struct UdpSocket {
 impl UdpSocket {
     /// Creates a new UDP socket and attempt to bind it to the addr provided.
     pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
+        Self::bind_with_options(addr, &SocketOpts::default()).await
+    }
+
+    /// Creates a new UDP socket with [`SocketOpts`] and attempt to bind it to
+    /// the addr provided.
+    pub async fn bind_with_options(
+        addr: impl ToSocketAddrsAsync,
+        opts: &SocketOpts,
+    ) -> io::Result<Self> {
         super::each_addr(addr, |addr| async move {
-            Ok(Self {
-                inner: Socket::bind(&SockAddr::from(addr), Type::DGRAM, Some(Protocol::UDP))
-                    .await?,
-            })
+            let socket =
+                Socket::bind(&SockAddr::from(addr), Type::DGRAM, Some(Protocol::UDP)).await?;
+            opts.setup_socket(&socket)?;
+            Ok(Self { inner: socket })
         })
         .await
     }

@@ -7,7 +7,8 @@ use compio_runtime::{BorrowedBuffer, BufferPool};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::{
-    OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, TcpOpts, ToSocketAddrsAsync, WriteHalf,
+    OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, SocketOpts, ToSocketAddrsAsync,
+    WriteHalf,
 };
 
 /// A TCP socket server, listening for connections.
@@ -55,12 +56,14 @@ impl TcpListener {
     ///
     /// Binding with a port number of 0 will request that the OS assigns a port
     /// to this listener.
+    ///
+    /// It enables the `SO_REUSEADDR` option by default.
     pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
-        Self::bind_with_options(addr, TcpOpts::default().reuse_address(true)).await
+        Self::bind_with_options(addr, &SocketOpts::default().reuse_address(true)).await
     }
 
     /// Creates a new `TcpListener`, which will be bound to the specified
-    /// address using `TcpOpts`.
+    /// address using `SocketOpts`.
     ///
     /// The returned listener is ready for accepting connections.
     ///
@@ -68,7 +71,7 @@ impl TcpListener {
     /// to this listener.
     pub async fn bind_with_options(
         addr: impl ToSocketAddrsAsync,
-        options: TcpOpts,
+        options: &SocketOpts,
     ) -> io::Result<Self> {
         super::each_addr(addr, |addr| async move {
             let sa = SockAddr::from(addr);
@@ -100,7 +103,20 @@ impl TcpListener {
     /// established, the corresponding [`TcpStream`] and the remote peer's
     /// address will be returned.
     pub async fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
+        self.accept_with_options(&SocketOpts::default()).await
+    }
+
+    /// Accepts a new incoming connection from this listener, and sets options.
+    ///
+    /// This function will yield once a new TCP connection is established. When
+    /// established, the corresponding [`TcpStream`] and the remote peer's
+    /// address will be returned.
+    pub async fn accept_with_options(
+        &self,
+        options: &SocketOpts,
+    ) -> io::Result<(TcpStream, SocketAddr)> {
         let (socket, addr) = self.inner.accept().await?;
+        options.setup_socket(&socket)?;
         let stream = TcpStream { inner: socket };
         Ok((stream, addr.as_socket().expect("should be SocketAddr")))
     }
@@ -166,20 +182,13 @@ pub struct TcpStream {
 impl TcpStream {
     /// Opens a TCP connection to a remote host.
     pub async fn connect(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
-        Self::connect_base(addr, None).await
+        Self::connect_with_options(addr, &SocketOpts::default()).await
     }
 
-    /// Opens a TCP connection to a remote host using `TcpOpts`.
+    /// Opens a TCP connection to a remote host using `SocketOpts`.
     pub async fn connect_with_options(
         addr: impl ToSocketAddrsAsync,
-        options: TcpOpts,
-    ) -> io::Result<Self> {
-        Self::connect_base(addr, Some(options)).await
-    }
-
-    async fn connect_base(
-        addr: impl ToSocketAddrsAsync,
-        options: Option<TcpOpts>,
+        options: &SocketOpts,
     ) -> io::Result<Self> {
         use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6};
 
@@ -200,9 +209,7 @@ impl TcpStream {
             } else {
                 Socket::new(addr2.domain(), Type::STREAM, Some(Protocol::TCP)).await?
             };
-            if let Some(options) = &options {
-                options.setup_socket(&socket)?;
-            }
+            options.setup_socket(&socket)?;
             socket.connect_async(&addr2).await?;
             Ok(Self { inner: socket })
         })
@@ -214,25 +221,16 @@ impl TcpStream {
         bind_addr: SocketAddr,
         addr: impl ToSocketAddrsAsync,
     ) -> io::Result<Self> {
-        Self::bind_and_connect_base(bind_addr, addr, None).await
+        Self::bind_and_connect_with_options(bind_addr, addr, &SocketOpts::default()).await
     }
 
     /// Bind to `bind_addr` then opens a TCP connection to a remote host using
-    /// `TcpOpts`.
+    /// `SocketOpts`.
     pub async fn bind_and_connect_with_options(
         bind_addr: SocketAddr,
         addr: impl ToSocketAddrsAsync,
-        options: TcpOpts,
+        options: &SocketOpts,
     ) -> io::Result<Self> {
-        Self::bind_and_connect_base(bind_addr, addr, Some(options)).await
-    }
-
-    async fn bind_and_connect_base(
-        bind_addr: SocketAddr,
-        addr: impl ToSocketAddrsAsync,
-        options: Option<TcpOpts>,
-    ) -> io::Result<Self> {
-        let options = options.unwrap_or_default();
         super::each_addr(addr, |addr| async move {
             let addr = SockAddr::from(addr);
             let bind_addr = SockAddr::from(bind_addr);
