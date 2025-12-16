@@ -11,8 +11,8 @@ use pin_project_lite::pin_project;
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
 pub use crate::sys::op::{
-    Accept, RecvFrom, RecvFromVectored, RecvMsg, RecvVectored, SendMsg, SendTo, SendToVectored,
-    SendVectored,
+    Accept, Recv, RecvFrom, RecvFromVectored, RecvMsg, RecvVectored, Send, SendMsg, SendTo,
+    SendToVectored, SendVectored,
 };
 #[cfg(windows)]
 pub use crate::sys::op::{ConnectNamedPipe, DeviceIoControl};
@@ -306,74 +306,6 @@ impl<T: IoBuf, S> Write<T, S> {
 }
 
 impl<T: IoBuf, S> IntoInner for Write<T, S> {
-    type Inner = T;
-
-    fn into_inner(self) -> Self::Inner {
-        self.buffer
-    }
-}
-
-pin_project! {
-    /// Receive data from remote.
-    ///
-    /// It is only used for socket operations. If you want to read from a pipe, use
-    /// [`Read`].
-    pub struct Recv<T: IoBufMut, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) flags: i32,
-        _p: PhantomPinned,
-    }
-}
-
-impl<T: IoBufMut, S> Recv<T, S> {
-    /// Create [`Recv`].
-    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
-        Self {
-            fd,
-            buffer,
-            flags,
-            _p: PhantomPinned,
-        }
-    }
-}
-
-impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
-    type Inner = T;
-
-    fn into_inner(self) -> Self::Inner {
-        self.buffer
-    }
-}
-
-pin_project! {
-    /// Send data to remote.
-    ///
-    /// It is only used for socket operations. If you want to write to a pipe, use
-    /// [`Write`].
-    pub struct Send<T: IoBuf, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) flags: i32,
-        _p: PhantomPinned,
-    }
-}
-
-impl<T: IoBuf, S> Send<T, S> {
-    /// Create [`Send`].
-    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
-        Self {
-            fd,
-            buffer,
-            flags,
-            _p: PhantomPinned,
-        }
-    }
-}
-
-impl<T: IoBuf, S> IntoInner for Send<T, S> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {

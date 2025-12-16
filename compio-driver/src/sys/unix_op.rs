@@ -339,6 +339,74 @@ impl<S> Accept<S> {
 }
 
 pin_project! {
+    /// Receive data from remote.
+    ///
+    /// It is only used for socket operations. If you want to read from a pipe, use
+    /// [`Read`].
+    pub struct Recv<T: IoBufMut, S> {
+        pub(crate) fd: S,
+        #[pin]
+        pub(crate) buffer: T,
+        pub(crate) flags: i32,
+        _p: PhantomPinned,
+    }
+}
+
+impl<T: IoBufMut, S> Recv<T, S> {
+    /// Create [`Recv`].
+    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+        Self {
+            fd,
+            buffer,
+            flags,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+pin_project! {
+    /// Send data to remote.
+    ///
+    /// It is only used for socket operations. If you want to write to a pipe, use
+    /// [`Write`].
+    pub struct Send<T: IoBuf, S> {
+        pub(crate) fd: S,
+        #[pin]
+        pub(crate) buffer: T,
+        pub(crate) flags: i32,
+        _p: PhantomPinned,
+    }
+}
+
+impl<T: IoBuf, S> Send<T, S> {
+    /// Create [`Send`].
+    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+        Self {
+            fd,
+            buffer,
+            flags,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<T: IoBuf, S> IntoInner for Send<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+pin_project! {
     /// Receive data from remote into vectored buffer.
     pub struct RecvVectored<T: IoVectoredBufMut, S> {
         pub(crate) msg: libc::msghdr,
@@ -380,6 +448,7 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvVectored<T, S> {
         self.buffer
     }
 }
+
 pin_project! {
     /// Send data to remote from vectored buffer.
     pub struct SendVectored<T: IoVectoredBuf, S> {
@@ -392,6 +461,7 @@ pin_project! {
         _p: PhantomPinned,
     }
 }
+
 impl<T: IoVectoredBuf, S> SendVectored<T, S> {
     /// Create [`SendVectored`].
     pub fn new(fd: S, buffer: T, flags: i32) -> Self {
