@@ -11,6 +11,7 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 use std::io::ErrorKind;
 

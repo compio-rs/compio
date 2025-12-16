@@ -11,6 +11,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "current_thread_id", feature(current_thread_id))]
 #![warn(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 mod affinity;
 mod attacher;
