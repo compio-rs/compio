@@ -296,11 +296,11 @@ pub trait OpCode {
     /// Cancel the async IO operation.
     ///
     /// Usually it calls `CancelIoEx`.
-    ///
-    /// # Safety
-    ///
-    /// Implementor should not dereference `optr`.
-    unsafe fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    // # Safety for implementors
+    //
+    // `optr` must not be dereferenced. It's only used as a marker to identify the
+    // operation.
+    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
         let _optr = optr; // ignore it
         Ok(())
     }
@@ -358,7 +358,7 @@ impl Driver {
         let op = op.as_op_pin();
         // It's OK to fail to cancel.
         trace!("call OpCode::cancel");
-        unsafe { op.cancel(optr.cast()) }.ok();
+        op.cancel(optr.cast()).ok();
     }
 
     pub fn push(&mut self, op: &mut Key<dyn OpCode>) -> Poll<io::Result<usize>> {

@@ -87,9 +87,12 @@ impl Metadata {
     /// ## Platform specific
     /// * Windows: The returned value corresponds to the `ftCreationTime` field.
     /// * Unix: The returned value corresponds to `st_ctime` or `st_birthtime`
-    ///   of [`libc::stat`].
-    ///
-    /// [`libc::stat`]: struct@libc::stat
+    ///   of
+    #[cfg_attr(unix, doc = "[`libc::stat`](struct@libc::stat).")]
+    #[cfg_attr(
+        windows,
+        doc = "[`libc::stat`](https://docs.rs/libc/latest/libc/struct.stat.html)."
+    )]
     pub fn created(&self) -> io::Result<SystemTime> {
         self.0.created()
     }
