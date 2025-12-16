@@ -82,10 +82,7 @@ impl OpCode for CloseFile {
 pin_project! {
     /// Get metadata of an opened file.
     pub struct FileStat<S> {
-        // both fd and stat are submitted to kernel
-        #[pin]
         pub(crate) fd: S,
-        #[pin]
         pub(crate) stat: Statx,
     }
 }
@@ -102,12 +99,12 @@ impl<S> FileStat<S> {
 
 impl<S: AsFd> OpCode for FileStat<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let mut this = self.project();
+        let this = self.project();
         static EMPTY_NAME: &[u8] = b"\0";
         opcode::Statx::new(
             Fd(this.fd.as_fd().as_fd().as_raw_fd()),
             EMPTY_NAME.as_ptr().cast(),
-            std::ptr::addr_of_mut!(this.stat).cast(),
+            this.stat as *mut _ as _,
         )
         .flags(libc::AT_EMPTY_PATH)
         .build()

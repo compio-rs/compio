@@ -148,13 +148,11 @@ impl<S> IntoInner for FileStat<S> {
     }
 }
 
-pin_project! {
-    /// Get metadata from path.
-    pub struct PathStat {
-        pub(crate) path: CString,
-        pub(crate) stat: libc::stat,
-        pub(crate) follow_symlink: bool,
-    }
+/// Get metadata from path.
+pub struct PathStat {
+    pub(crate) path: CString,
+    pub(crate) stat: libc::stat,
+    pub(crate) follow_symlink: bool,
 }
 
 impl PathStat {
