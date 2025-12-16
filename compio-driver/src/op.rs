@@ -22,7 +22,7 @@ pub use crate::sys::op::{
     ReadVectored, ReadVectoredAt, Rename, Symlink, Unlink, WriteVectored, WriteVectoredAt,
 };
 #[cfg(io_uring)]
-pub use crate::sys::op::{ReadManagedAt, RecvManaged};
+pub use crate::sys::op::{ReadManaged, ReadManagedAt, RecvManaged};
 use crate::{Extra, OwnedFd, SharedFd, TakeBuffer, sys::aio::*};
 
 /// Trait to update the buffer length inside the [`BufResult`].
@@ -117,7 +117,6 @@ impl<T: TakeBuffer> ResultTakeBuffer for (BufResult<usize, T>, Extra) {
         op.take_buffer(pool, result, extra.buffer_id()?)
     }
 }
-
 
 pin_project! {
     /// Spawn a blocking function in the thread pool.

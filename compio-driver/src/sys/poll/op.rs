@@ -216,14 +216,14 @@ impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
         #[cfg(aio)]
         {
             let this = self.project();
-            let slice = this.buffer.as_uninit();
+            let slice = this.buffer.sys_slice_mut();
 
             this.aiocb.aio_fildes = this.fd.as_fd().as_raw_fd();
-            this.aiocb.aio_offset = this.offset as _;
-            this.aiocb.aio_buf = slice.as_mut_ptr().cast();
+            this.aiocb.aio_offset = *this.offset as _;
+            this.aiocb.aio_buf = slice.ptr().cast();
             this.aiocb.aio_nbytes = slice.len();
 
-            Ok(Decision::aio(&mut this.aiocb, libc::aio_read))
+            Ok(Decision::aio(this.aiocb, libc::aio_read))
         }
         #[cfg(not(aio))]
         {
@@ -288,14 +288,14 @@ impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
         #[cfg(aio)]
         {
             let this = self.project();
-            let slice = this.buffer.sys_slice_mut();
+            let slice = this.buffer.as_ref().sys_slice();
 
             this.aiocb.aio_fildes = this.fd.as_fd().as_raw_fd();
             this.aiocb.aio_offset = *this.offset as _;
             this.aiocb.aio_buf = slice.ptr().cast();
             this.aiocb.aio_nbytes = slice.len();
 
-            Ok(Decision::aio(&mut this.aiocb, libc::aio_write))
+            Ok(Decision::aio(this.aiocb, libc::aio_write))
         }
         #[cfg(not(aio))]
         {
@@ -333,7 +333,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
             this.aiocb.aio_buf = this.slices.as_ptr().cast_mut().cast();
             this.aiocb.aio_nbytes = this.slices.len();
 
-            Ok(Decision::aio(&mut this.aiocb, libc::aio_writev))
+            Ok(Decision::aio(this.aiocb, libc::aio_writev))
         }
         #[cfg(not(freebsd))]
         {
@@ -483,7 +483,7 @@ impl<S: AsFd> OpCode for Sync<S> {
             let this = self.project();
             this.aiocb.aio_fildes = this.fd.as_fd().as_raw_fd();
 
-            let f = if this.datasync {
+            let f = if *this.datasync {
                 aio_fdatasync
             } else {
                 aio_fsync
