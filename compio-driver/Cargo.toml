@@ -24,6 +24,7 @@ cfg-if = { workspace = true }
 flume = { workspace = true, default-features = false }
 futures-util = { workspace = true }
 socket2 = { workspace = true, features = ["all"] }
+pin-project-lite = { workspace = true }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]

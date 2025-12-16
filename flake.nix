@@ -23,26 +23,29 @@
           inherit system overlays;
         };
       in
-        with pkgs; {
-          devShells.default = mkShell {
-            buildInputs = [
-              go
-              cmake
-              glib
-              openssl
-              pkg-config
-              (rust-bin.selectLatestNightlyWith (toolchain:
-                toolchain.default.override {
-                  extensions = ["rust-src"];
-                  targets = [
-                    "x86_64-pc-windows-gnu"
-                    "x86_64-pc-windows-msvc"
-                    "x86_64-unknown-linux-gnu"
-                    "aarch64-apple-darwin"
-                  ];
-                }))
-            ];
-          };
-        }
+      with pkgs;
+      {
+        devShells.default = mkShell {
+          buildInputs = [
+            go
+            cmake
+            glib
+            openssl
+            pkg-config
+            (rust-bin.selectLatestNightlyWith (
+              toolchain:
+              toolchain.default.override {
+                extensions = [ "rust-src" ];
+                targets = [
+                  "x86_64-unknown-linux-gnu"
+                  "x86_64-unknown-freebsd"
+                  "x86_64-pc-windows-gnu"
+                  "aarch64-apple-darwin"
+                ];
+              }
+            ))
+          ];
+        };
+      }
     );
 }
