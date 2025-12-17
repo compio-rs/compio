@@ -665,3 +665,39 @@ unsafe fn default_set_buf_init<'a, B: IoBufMut>(
         len -= sub;
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::IoBufMut;
+
+    #[test]
+    fn test_vec_reserve() {
+        let mut buf = Vec::new();
+        IoBufMut::reserve(&mut buf, 10).unwrap();
+        assert!(buf.capacity() >= 10);
+
+        let mut buf = Vec::new();
+        IoBufMut::reserve_exact(&mut buf, 10).unwrap();
+        assert!(buf.capacity() == 10);
+
+        let mut buf = Box::new(Vec::new());
+        IoBufMut::reserve_exact(&mut buf, 10).unwrap();
+        assert!(buf.capacity() == 10);
+    }
+
+    #[test]
+    #[cfg(feature = "bytes")]
+    fn test_bytes_reserve() {
+        let mut buf = bytes::BytesMut::new();
+        IoBufMut::reserve(&mut buf, 10).unwrap();
+        assert!(buf.capacity() >= 10);
+    }
+
+    #[test]
+    #[cfg(feature = "smallvec")]
+    fn test_smallvec_reserve() {
+        let mut buf = smallvec::SmallVec::<[u8; 8]>::new();
+        IoBufMut::reserve(&mut buf, 10).unwrap();
+        assert!(buf.capacity() >= 10);
+    }
+}
