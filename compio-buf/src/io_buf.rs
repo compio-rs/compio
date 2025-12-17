@@ -412,15 +412,19 @@ impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut for t_al
     fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {
         if let Err(e) = Vec::try_reserve(self, len) {
             return Err(ReserveError::ReserveFailed(Box::new(e)));
-        };
+        }
 
         Ok(())
     }
 
     fn reserve_exact(&mut self, len: usize) -> Result<(), ReserveExactError> {
+        if self.capacity() - self.len() >= len {
+            return Ok(());
+        }
+
         if let Err(e) = Vec::try_reserve_exact(self, len) {
             return Err(ReserveExactError::ReserveFailed(Box::new(e)));
-        };
+        }
 
         if self.capacity() - self.len() != len {
             return Err(ReserveExactError::ExactSizeMismatch {
@@ -464,7 +468,12 @@ impl IoBufMut for bytes::BytesMut {
     }
 
     fn reserve_exact(&mut self, len: usize) -> Result<(), ReserveExactError> {
+        if self.capacity() - self.len() >= len {
+            return Ok(());
+        }
+
         bytes::BytesMut::reserve(self, len);
+
         if self.capacity() - self.len() != len {
             Err(ReserveExactError::ExactSizeMismatch {
                 reserved: self.capacity() - self.len(),
@@ -516,16 +525,21 @@ where
             return Err(ReserveError::ReserveFailed(Box::new(
                 smallvec_err::SmallVecErr(e),
             )));
-        };
+        }
         Ok(())
     }
 
     fn reserve_exact(&mut self, len: usize) -> Result<(), ReserveExactError> {
+        if self.capacity() - self.len() >= len {
+            return Ok(());
+        }
+
         if let Err(e) = smallvec::SmallVec::try_reserve_exact(self, len) {
             return Err(ReserveExactError::ReserveFailed(Box::new(
                 smallvec_err::SmallVecErr(e),
             )));
-        };
+        }
+
         if self.capacity() - self.len() != len {
             return Err(ReserveExactError::ExactSizeMismatch {
                 reserved: self.capacity() - self.len(),
