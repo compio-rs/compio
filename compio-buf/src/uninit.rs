@@ -47,6 +47,14 @@ impl<T: IoBufMut> IoBufMut for Uninit<T> {
         let len = (*self).buf_len();
         &mut self.0.as_uninit()[len..]
     }
+
+    fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {
+        IoBufMut::reserve(self.0.as_inner_mut(), len)
+    }
+
+    fn reserve_exact(&mut self, len: usize) -> Result<(), ReserveExactError> {
+        IoBufMut::reserve_exact(self.0.as_inner_mut(), len)
+    }
 }
 
 impl<T: SetBufInit + IoBuf> SetBufInit for Uninit<T> {

@@ -1,6 +1,6 @@
 #[cfg(feature = "allocator_api")]
 use std::alloc::Allocator;
-use std::{mem::MaybeUninit, rc::Rc, sync::Arc};
+use std::{error::Error, fmt::Display, mem::MaybeUninit, rc::Rc, sync::Arc};
 
 use crate::*;
 
@@ -166,6 +166,119 @@ where
     }
 }
 
+/// An error indicating that reserving capacity for a buffer failed.
+#[derive(Debug)]
+pub enum ReserveError {
+    /// Reservation is not supported.
+    NotSupported,
+
+    /// Reservation failed.
+    ReserveFailed(Box<dyn Error + Send + Sync>),
+}
+
+impl ReserveError {
+    /// Check if the error is `NotSupported`.
+    pub fn is_not_supported(&self) -> bool {
+        matches!(self, ReserveError::NotSupported)
+    }
+}
+
+impl Display for ReserveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReserveError::NotSupported => write!(f, "reservation is not supported"),
+            ReserveError::ReserveFailed(src) => write!(f, "reservation failed: {src}"),
+        }
+    }
+}
+
+impl Error for ReserveError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            ReserveError::ReserveFailed(src) => Some(src.as_ref()),
+            _ => None,
+        }
+    }
+}
+
+/// An error indicating that reserving exact capacity for a buffer failed.
+#[derive(Debug)]
+pub enum ReserveExactError {
+    /// Reservation is not supported.
+    NotSupported,
+
+    /// Reservation failed.
+    ReserveFailed(Box<dyn Error + Send + Sync>),
+
+    /// Reserved size does not match the expected size.
+    ExactSizeMismatch {
+        /// Expected size to reserve
+        expected: usize,
+
+        /// Actual size reserved
+        reserved: usize,
+    },
+}
+
+impl ReserveExactError {
+    /// Check if the error is `NotSupported`.
+    pub fn is_not_supported(&self) -> bool {
+        matches!(self, ReserveExactError::NotSupported)
+    }
+}
+
+impl Display for ReserveExactError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReserveExactError::NotSupported => write!(f, "reservation is not supported"),
+            ReserveExactError::ReserveFailed(src) => write!(f, "reservation failed: {src}"),
+            ReserveExactError::ExactSizeMismatch { reserved, expected } => {
+                write!(
+                    f,
+                    "reserved size mismatch: expected {}, reserved {}",
+                    expected, reserved
+                )
+            }
+        }
+    }
+}
+
+impl From<ReserveError> for ReserveExactError {
+    fn from(err: ReserveError) -> Self {
+        match err {
+            ReserveError::NotSupported => ReserveExactError::NotSupported,
+            ReserveError::ReserveFailed(src) => ReserveExactError::ReserveFailed(src),
+        }
+    }
+}
+
+impl Error for ReserveExactError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            ReserveExactError::ReserveFailed(src) => Some(src.as_ref()),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(feature = "smallvec")]
+mod smallvec_err {
+    use std::{error::Error, fmt::Display};
+
+    use smallvec::CollectionAllocErr;
+
+    #[derive(Debug)]
+    pub(super) struct SmallVecErr(pub CollectionAllocErr);
+
+    impl Display for SmallVecErr {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "SmallVec allocation error: {}", self.0)
+        }
+    }
+
+    impl Error for SmallVecErr {}
+}
+
 /// A trait for mutable buffers.
 ///
 /// The `IoBufMut` trait is implemented by buffer types that can be passed to
@@ -198,6 +311,29 @@ pub trait IoBufMut: IoBuf + SetBufInit {
         // - bytes within `len` are guaranteed to be initialized
         // - the pointer is derived from
         unsafe { std::slice::from_raw_parts_mut(ptr as *mut u8, len) }
+    }
+
+    /// Reserve additional capacity for the buffer.
+    ///
+    /// This is a no-op by default. Types that support dynamic resizing
+    /// (like `Vec<u8>`) will override this method to actually reserve
+    /// capacity. The return value indicates whether the reservation succeeded.
+    /// See [`ReserveError`] for details.
+    fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {
+        let _ = len;
+        Err(ReserveError::NotSupported)
+    }
+
+    /// Reserve exactly `len` additional capacity for the buffer.
+    ///
+    /// By default this falls back to [`IoBufMut::reserve`], which is a no-op
+    /// for most types. Types that support dynamic resizing (like `Vec<u8>`)
+    /// will override this method to actually reserve capacity. The return value
+    /// indicates whether the exact reservation succeeded. See
+    /// [`ReserveExactError`] for details.
+    fn reserve_exact(&mut self, len: usize) -> Result<(), ReserveExactError> {
+        self.reserve(len)?;
+        Ok(())
     }
 
     /// Returns an [`Uninit`], which is a [`Slice`] that only exposes
@@ -239,6 +375,14 @@ impl<B: IoBufMut + ?Sized> IoBufMut for &'static mut B {
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         (**self).as_uninit()
     }
+
+    fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {
+        (**self).reserve(len)
+    }
+
+    fn reserve_exact(&mut self, len: usize) -> Result<(), ReserveExactError> {
+        (**self).reserve_exact(len)
+    }
 }
 
 impl<B: IoBufMut + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut
@@ -246,6 +390,14 @@ impl<B: IoBufMut + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'sta
 {
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         (**self).as_uninit()
+    }
+
+    fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {
+        (**self).reserve(len)
+    }
+
+    fn reserve_exact(&mut self, len: usize) -> Result<(), ReserveExactError> {
+        (**self).reserve_exact(len)
     }
 }
 
@@ -255,6 +407,32 @@ impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut for t_al
         let cap = self.capacity();
         // SAFETY: Vec guarantees that the pointer is valid for `capacity` bytes
         unsafe { std::slice::from_raw_parts_mut(ptr, cap) }
+    }
+
+    fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {
+        if let Err(e) = Vec::try_reserve(self, len) {
+            return Err(ReserveError::ReserveFailed(Box::new(e)));
+        }
+
+        Ok(())
+    }
+
+    fn reserve_exact(&mut self, len: usize) -> Result<(), ReserveExactError> {
+        if self.capacity() - self.len() >= len {
+            return Ok(());
+        }
+
+        if let Err(e) = Vec::try_reserve_exact(self, len) {
+            return Err(ReserveExactError::ReserveFailed(Box::new(e)));
+        }
+
+        if self.capacity() - self.len() != len {
+            return Err(ReserveExactError::ExactSizeMismatch {
+                reserved: self.capacity() - self.len(),
+                expected: len,
+            });
+        }
+        Ok(())
     }
 }
 
@@ -282,6 +460,28 @@ impl IoBufMut for bytes::BytesMut {
         let cap = self.capacity();
         // SAFETY: BytesMut guarantees that the pointer is valid for `capacity` bytes
         unsafe { std::slice::from_raw_parts_mut(ptr, cap) }
+    }
+
+    fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {
+        bytes::BytesMut::reserve(self, len);
+        Ok(())
+    }
+
+    fn reserve_exact(&mut self, len: usize) -> Result<(), ReserveExactError> {
+        if self.capacity() - self.len() >= len {
+            return Ok(());
+        }
+
+        bytes::BytesMut::reserve(self, len);
+
+        if self.capacity() - self.len() != len {
+            Err(ReserveExactError::ExactSizeMismatch {
+                reserved: self.capacity() - self.len(),
+                expected: len,
+            })
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -318,6 +518,35 @@ where
         let cap = self.capacity();
         // SAFETY: SmallVec guarantees that the pointer is valid for `capacity` bytes
         unsafe { std::slice::from_raw_parts_mut(ptr, cap) }
+    }
+
+    fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {
+        if let Err(e) = smallvec::SmallVec::try_reserve(self, len) {
+            return Err(ReserveError::ReserveFailed(Box::new(
+                smallvec_err::SmallVecErr(e),
+            )));
+        }
+        Ok(())
+    }
+
+    fn reserve_exact(&mut self, len: usize) -> Result<(), ReserveExactError> {
+        if self.capacity() - self.len() >= len {
+            return Ok(());
+        }
+
+        if let Err(e) = smallvec::SmallVec::try_reserve_exact(self, len) {
+            return Err(ReserveExactError::ReserveFailed(Box::new(
+                smallvec_err::SmallVecErr(e),
+            )));
+        }
+
+        if self.capacity() - self.len() != len {
+            return Err(ReserveExactError::ExactSizeMismatch {
+                reserved: self.capacity() - self.len(),
+                expected: len,
+            });
+        }
+        Ok(())
     }
 }
 
@@ -462,5 +691,49 @@ unsafe fn default_set_buf_init<'a, B: IoBufMut>(
         let sub = (*curr).buf_capacity().min(len);
         unsafe { curr.set_buf_init(sub) };
         len -= sub;
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::IoBufMut;
+
+    #[test]
+    fn test_vec_reserve() {
+        let mut buf = Vec::new();
+        IoBufMut::reserve(&mut buf, 10).unwrap();
+        assert!(buf.capacity() >= 10);
+
+        let mut buf = Vec::new();
+        IoBufMut::reserve_exact(&mut buf, 10).unwrap();
+        assert!(buf.capacity() == 10);
+
+        let mut buf = Box::new(Vec::new());
+        IoBufMut::reserve_exact(&mut buf, 10).unwrap();
+        assert!(buf.capacity() == 10);
+    }
+
+    #[test]
+    #[cfg(feature = "bytes")]
+    fn test_bytes_reserve() {
+        let mut buf = bytes::BytesMut::new();
+        IoBufMut::reserve(&mut buf, 10).unwrap();
+        assert!(buf.capacity() >= 10);
+    }
+
+    #[test]
+    #[cfg(feature = "smallvec")]
+    fn test_smallvec_reserve() {
+        let mut buf = smallvec::SmallVec::<[u8; 8]>::new();
+        IoBufMut::reserve(&mut buf, 10).unwrap();
+        assert!(buf.capacity() >= 10);
+    }
+
+    #[test]
+    fn test_other_reserve() {
+        let mut buf = [1, 1, 4, 5, 1, 4];
+        let res = IoBufMut::reserve(&mut buf, 10);
+        assert!(res.is_err_and(|x| x.is_not_supported()));
+        assert!(buf.buf_capacity() == 6);
     }
 }
