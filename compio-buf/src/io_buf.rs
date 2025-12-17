@@ -173,7 +173,7 @@ pub enum ReserveError {
     NotSupported,
 
     /// Reservation failed.
-    ReserveFailed(Box<dyn Error>),
+    ReserveFailed(Box<dyn Error + Send + Sync>),
 }
 
 impl ReserveError {
@@ -208,7 +208,7 @@ pub enum ReserveExactError {
     NotSupported,
 
     /// Reservation failed.
-    ReserveFailed(Box<dyn Error>),
+    ReserveFailed(Box<dyn Error + Send + Sync>),
 
     /// Reserved size does not match the expected size.
     ExactSizeMismatch {
