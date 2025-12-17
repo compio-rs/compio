@@ -176,6 +176,13 @@ pub enum ReserveError {
     ReserveFailed(Box<dyn Error>),
 }
 
+impl ReserveError {
+    /// Check if the error is `NotSupported`.
+    pub fn is_not_supported(&self) -> bool {
+        matches!(self, ReserveError::NotSupported)
+    }
+}
+
 impl Display for ReserveError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -211,6 +218,13 @@ pub enum ReserveExactError {
         /// Actual size reserved
         reserved: usize,
     },
+}
+
+impl ReserveExactError {
+    /// Check if the error is `NotSupported`.
+    pub fn is_not_supported(&self) -> bool {
+        matches!(self, ReserveExactError::NotSupported)
+    }
 }
 
 impl Display for ReserveExactError {
@@ -699,5 +713,13 @@ mod test {
         let mut buf = smallvec::SmallVec::<[u8; 8]>::new();
         IoBufMut::reserve(&mut buf, 10).unwrap();
         assert!(buf.capacity() >= 10);
+    }
+
+    #[test]
+    fn test_other_reserve() {
+        let mut buf = [1, 1, 4, 5, 1, 4];
+        let res = IoBufMut::reserve(&mut buf, 10);
+        assert!(res.is_err_and(|x| x.is_not_supported()));
+        assert!(buf.buf_capacity() == 6);
     }
 }
