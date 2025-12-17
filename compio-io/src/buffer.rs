@@ -7,7 +7,9 @@ use std::{
     future::Future,
 };
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit, Slice};
+use compio_buf::{
+    BufResult, IntoInner, IoBuf, IoBufMut, ReserveError, ReserveExactError, SetBufInit, Slice,
+};
 
 use crate::{AsyncWrite, IoResult, util::MISSING_BUF};
 
@@ -88,6 +90,14 @@ impl IoBufMut for Inner {
     #[inline]
     fn as_uninit(&mut self) -> &mut [std::mem::MaybeUninit<u8>] {
         self.buf.as_uninit()
+    }
+
+    fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {
+        IoBufMut::reserve(&mut self.buf, len)
+    }
+
+    fn reserve_exact(&mut self, len: usize) -> Result<(), ReserveExactError> {
+        IoBufMut::reserve_exact(&mut self.buf, len)
     }
 }
 
