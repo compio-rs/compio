@@ -279,10 +279,13 @@ impl EndpointInner {
 
         loop {
             let mut state = select! {
-                BufResult(res, recv_buf) = recv_fut => {
+                BufResult(res, mut recv_buf) = recv_fut => {
                     let mut state = self.state.lock().unwrap();
                     match res {
-                        Ok(meta) => state.handle_data(meta, &recv_buf, respond_fn),
+                        Ok(meta) => {
+                            unsafe { recv_buf.set_len(meta.len) };
+                            state.handle_data(meta, &recv_buf, respond_fn)
+                        }
                         Err(e) if e.kind() == io::ErrorKind::ConnectionReset => {}
                         #[cfg(windows)]
                         Err(e) if e.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_PORT_UNREACHABLE as _) => {}

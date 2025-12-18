@@ -10,9 +10,9 @@ use compio_driver::op::CreateSocket;
 use compio_driver::{
     AsRawFd, ToSharedFd, impl_raw_fd,
     op::{
-        Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored, RecvManaged,
-        RecvMsg, RecvResultExt, RecvVectored, ResultTakeBuffer, Send, SendMsg, SendTo,
-        SendToVectored, SendVectored, ShutdownSocket, VecBufResultExt,
+        Accept, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored, RecvManaged, RecvMsg,
+        RecvResultExt, RecvVectored, ResultTakeBuffer, Send, SendMsg, SendTo, SendToVectored,
+        SendVectored, ShutdownSocket,
     },
     syscall,
 };
@@ -163,7 +163,7 @@ impl Socket {
     pub async fn recv<B: IoBufMut>(&self, buffer: B, flags: i32) -> BufResult<usize, B> {
         let fd = self.to_shared_fd();
         let op = Recv::new(fd, buffer, flags);
-        compio_runtime::submit(op).await.into_inner().map_advanced()
+        compio_runtime::submit(op).await.into_inner()
     }
 
     pub async fn recv_vectored<V: IoVectoredBufMut>(
@@ -173,10 +173,7 @@ impl Socket {
     ) -> BufResult<usize, V> {
         let fd = self.to_shared_fd();
         let op = RecvVectored::new(fd, buffer, flags);
-        compio_runtime::submit(op)
-            .await
-            .into_inner()
-            .map_vec_advanced()
+        compio_runtime::submit(op).await.into_inner()
     }
 
     pub async fn recv_managed<'a>(
@@ -216,11 +213,7 @@ impl Socket {
     ) -> BufResult<(usize, SockAddr), T> {
         let fd = self.to_shared_fd();
         let op = RecvFrom::new(fd, buffer, flags);
-        compio_runtime::submit(op)
-            .await
-            .into_inner()
-            .map_addr()
-            .map_advanced()
+        compio_runtime::submit(op).await.into_inner().map_addr()
     }
 
     pub async fn recv_from_vectored<T: IoVectoredBufMut>(
@@ -230,11 +223,7 @@ impl Socket {
     ) -> BufResult<(usize, SockAddr), T> {
         let fd = self.to_shared_fd();
         let op = RecvFromVectored::new(fd, buffer, flags);
-        compio_runtime::submit(op)
-            .await
-            .into_inner()
-            .map_addr()
-            .map_vec_advanced()
+        compio_runtime::submit(op).await.into_inner().map_addr()
     }
 
     pub async fn recv_msg<T: IoBufMut, C: IoBufMut>(
@@ -256,11 +245,7 @@ impl Socket {
     ) -> BufResult<(usize, usize, SockAddr), (T, C)> {
         let fd = self.to_shared_fd();
         let op = RecvMsg::new(fd, buffer, control, flags);
-        compio_runtime::submit(op)
-            .await
-            .into_inner()
-            .map_addr()
-            .map_vec_advanced()
+        compio_runtime::submit(op).await.into_inner().map_addr()
     }
 
     pub async fn send_to<T: IoBuf>(

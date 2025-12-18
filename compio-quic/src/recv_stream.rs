@@ -503,11 +503,7 @@ impl AsyncRead for RecvStream {
         let res = self
             .read(buf.as_uninit())
             .await
-            .map(|n| {
-                let n = n.unwrap_or_default();
-                unsafe { buf.advance_to(n) }
-                n
-            })
+            .map(|n| n.unwrap_or_default())
             .map_err(Into::into);
         BufResult(res, buf)
     }

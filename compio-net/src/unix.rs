@@ -31,7 +31,8 @@ use crate::{OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, SocketOpts,
 ///
 /// tx.write_all("test").await.0.unwrap();
 ///
-/// let (_, buf) = rx.read_exact(Vec::with_capacity(4)).await.unwrap();
+/// let (_, mut buf) = rx.read_exact(Vec::with_capacity(4)).await.unwrap();
+/// unsafe { buf.set_len(4) };
 ///
 /// assert_eq!(buf, b"test");
 /// # });

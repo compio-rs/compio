@@ -604,9 +604,11 @@ impl ServerOptions {
     /// let buf = Vec::with_capacity(4);
     /// let read = client.read_exact(buf);
     ///
-    /// let (BufResult(write, _), BufResult(read, buf)) = futures_util::join!(write, read);
+    /// let (BufResult(write, _), BufResult(read, mut buf)) = futures_util::join!(write, read);
     /// write.unwrap();
     /// read.unwrap();
+    ///
+    /// unsafe { buf.set_len(4) };
     ///
     /// assert_eq!(&buf[..], b"ping");
     /// # })
@@ -709,9 +711,11 @@ impl ServerOptions {
     /// let buf = Vec::with_capacity(4);
     /// let read = server.read_exact(buf);
     ///
-    /// let (BufResult(write, _), BufResult(read, buf)) = futures_util::join!(write, read);
+    /// let (BufResult(write, _), BufResult(read, mut buf)) = futures_util::join!(write, read);
     /// write.unwrap();
     /// read.unwrap();
+    ///
+    /// unsafe { buf.set_len(4) };
     ///
     /// println!("done reading and writing");
     ///

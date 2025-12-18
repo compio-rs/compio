@@ -9,7 +9,7 @@ use std::{
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
     AsFd, AsRawFd, BorrowedFd, OpCode, OpType, RawFd, SharedFd,
-    op::{BufResultExt, Read as OpRead, ReadManaged, ResultTakeBuffer, Write as OpWrite},
+    op::{Read as OpRead, ReadManaged, ResultTakeBuffer, Write as OpWrite},
 };
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
 use compio_runtime::{BorrowedBuffer, BufferPool, Runtime};
@@ -150,7 +150,6 @@ impl AsyncRead for Stdin {
             let op = OpRead::new(self.fd.clone(), buf);
             compio_runtime::submit(op).await.into_inner()
         }
-        .map_advanced()
     }
 }
 

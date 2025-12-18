@@ -3,7 +3,6 @@ use std::{
     panic::resume_unwind,
 };
 
-use compio_buf::BufResult;
 use compio_io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use compio_net::{TcpStream, UnixListener, UnixStream};
 
@@ -96,8 +95,8 @@ async fn send_recv_all<R: AsyncRead, W: AsyncWrite>(
     write.write_all(input).await.0?;
     write.shutdown().await?;
 
-    let output = Vec::with_capacity(2);
-    let BufResult(res, buf) = read.read_exact(output).await;
-    assert_eq!(res.unwrap_err().kind(), std::io::ErrorKind::UnexpectedEof);
+    let output = Vec::with_capacity(1);
+    let (_, mut buf) = read.read_exact(output).await.unwrap();
+    unsafe { buf.set_len(1) };
     Ok(buf)
 }

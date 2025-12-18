@@ -15,13 +15,14 @@ use crate::{AsyncBufRead, AsyncRead, IoResult};
 /// # compio_runtime::Runtime::new().unwrap().block_on(async {
 /// use compio_io::{self, AsyncRead, AsyncReadExt};
 ///
-/// let (len, buffer) = compio_io::repeat(42)
+/// let (len, mut buffer) = compio_io::repeat(42)
 ///     .read(Vec::with_capacity(3))
 ///     .await
 ///     .unwrap();
 ///
-/// assert_eq!(buffer.as_slice(), [42, 42, 42]);
 /// assert_eq!(len, 3);
+/// unsafe { buffer.set_len(len) };
+/// assert_eq!(buffer.as_slice(), [42, 42, 42]);
 /// # })
 /// ```
 pub struct Repeat(u8);
@@ -35,7 +36,6 @@ impl AsyncRead for Repeat {
 
         let len = slice.len();
         slice.fill(MaybeUninit::new(self.0));
-        unsafe { buf.advance_to(len) };
 
         BufResult(Ok(len), buf)
     }
@@ -60,11 +60,11 @@ impl AsyncBufRead for Repeat {
 /// # compio_runtime::Runtime::new().unwrap().block_on(async {
 /// use compio_io::{self, AsyncRead, AsyncReadExt};
 ///
-/// let ((), buffer) = compio_io::repeat(42)
+/// let ((), mut buffer) = compio_io::repeat(42)
 ///     .read_exact(Vec::with_capacity(3))
 ///     .await
 ///     .unwrap();
-///
+/// unsafe { buffer.set_len(3) };
 /// assert_eq!(buffer.as_slice(), [42, 42, 42]);
 /// # })
 /// ```

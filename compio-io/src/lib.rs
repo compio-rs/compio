@@ -46,10 +46,11 @@
 //! # compio_runtime::Runtime::new().unwrap().block_on(async {
 //!
 //! let mut reader = "Hello, world!".as_bytes();
-//! let (res, buf) = reader.read(Vec::with_capacity(20)).await.unwrap();
+//! let (res, mut buf) = reader.read(Vec::with_capacity(20)).await.unwrap();
 //!
-//! assert_eq!(buf.as_slice(), b"Hello, world!");
 //! assert_eq!(res, 13);
+//! unsafe { buf.set_len(res) };
+//! assert_eq!(buf.as_slice(), b"Hello, world!");
 //! # })
 //! ```
 //!

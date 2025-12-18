@@ -100,10 +100,6 @@ impl AsyncRead for &[u8] {
         let len = self.len() - this.len();
         *self = this;
 
-        unsafe {
-            buf.advance_vec_to(len);
-        }
-
         BufResult(Ok(len), buf)
     }
 }
@@ -176,9 +172,6 @@ macro_rules! impl_read_at {
                     }
 
                     let len = slice.len() - this.len();
-                    unsafe {
-                        buf.advance_vec_to(len);
-                    }
 
                     BufResult(Ok(len), buf)
                 }

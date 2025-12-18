@@ -266,7 +266,16 @@ impl<S: crate::AsyncRead> SyncStream<S> {
 
                 let len = inner.buf_len();
                 let read_slice = inner.slice(len..);
-                self.inner.read(read_slice).await.into_inner()
+                let BufResult(res, mut buf) = self.inner.read(read_slice).await.into_inner();
+                match res {
+                    Ok(n) => {
+                        unsafe {
+                            buf.set_len(len + n);
+                        }
+                        BufResult(Ok(n), buf)
+                    }
+                    Err(e) => BufResult(Err(e), buf),
+                }
             })
             .await?;
         if read == 0 {

@@ -7,9 +7,7 @@ use std::{
     future::Future,
 };
 
-use compio_buf::{
-    BufResult, IntoInner, IoBuf, IoBufMut, ReserveError, ReserveExactError, SetLen, Slice,
-};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, ReserveError, ReserveExactError, Slice};
 
 use crate::{AsyncWrite, IoResult, util::MISSING_BUF};
 
@@ -65,6 +63,12 @@ impl Inner {
         }
     }
 
+    pub unsafe fn set_len(&mut self, len: usize) {
+        unsafe {
+            self.buf.set_len(len);
+        }
+    }
+
     #[inline]
     pub(crate) fn into_slice(self) -> Slice<Self> {
         let pos = self.pos;
@@ -76,13 +80,6 @@ impl IoBuf for Inner {
     #[inline]
     fn as_slice(&self) -> &[u8] {
         self.buf.as_slice()
-    }
-}
-
-impl SetLen for Inner {
-    #[inline]
-    unsafe fn set_len(&mut self, len: usize) {
-        unsafe { self.buf.set_len(len) }
     }
 }
 

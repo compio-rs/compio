@@ -146,12 +146,6 @@ impl<T: IoBufMut> IoBufMut for Slice<T> {
     }
 }
 
-impl<T: SetLen> SetLen for Slice<T> {
-    unsafe fn set_len(&mut self, len: usize) {
-        unsafe { self.buffer.set_len(self.begin + len) }
-    }
-}
-
 impl<T> IntoInner for Slice<T> {
     type Inner = T;
 
@@ -228,16 +222,14 @@ impl<T: IoVectoredBuf> IoVectoredBuf for VectoredSlice<T> {
     fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
         let mut offset = self.offset;
         self.buf.iter_slice().skip(self.idx).map(move |buf| {
-            let ret = &buf[offset..];
+            let ret = if offset < buf.len() {
+                &buf[offset..]
+            } else {
+                &[]
+            };
             offset = 0;
             ret
         })
-    }
-}
-
-impl<T: SetLen> SetLen for VectoredSlice<T> {
-    unsafe fn set_len(&mut self, len: usize) {
-        unsafe { self.buf.set_len(self.begin + len) }
     }
 }
 

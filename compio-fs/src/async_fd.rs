@@ -9,7 +9,7 @@ use std::{io, ops::Deref};
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
     AsFd, AsRawFd, BorrowedFd, RawFd, SharedFd, ToSharedFd,
-    op::{BufResultExt, Read, ReadManaged, ResultTakeBuffer, Write},
+    op::{Read, ReadManaged, ResultTakeBuffer, Write},
 };
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
 use compio_runtime::{Attacher, BorrowedBuffer, BufferPool};
@@ -95,7 +95,7 @@ impl<T: AsFd + 'static> AsyncRead for &AsyncFd<T> {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         let fd = self.inner.to_shared_fd();
         let op = Read::new(fd, buf);
-        compio_runtime::submit(op).await.into_inner().map_advanced()
+        compio_runtime::submit(op).await.into_inner()
     }
 
     #[cfg(unix)]

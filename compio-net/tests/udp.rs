@@ -13,7 +13,8 @@ async fn connect() {
     active.connect(passive_addr).await.unwrap();
     active.send(MSG).await.0.unwrap();
 
-    let (_, buffer) = passive.recv(Vec::with_capacity(20)).await.unwrap();
+    let (len, mut buffer) = passive.recv(Vec::with_capacity(20)).await.unwrap();
+    unsafe { buffer.set_len(len) };
     assert_eq!(MSG.as_bytes(), &buffer);
     assert_eq!(active.local_addr().unwrap(), active_addr);
     assert_eq!(active.peer_addr().unwrap(), passive_addr);
@@ -25,8 +26,10 @@ async fn send_to() {
 
     macro_rules! must_success {
         ($r:expr, $expect_addr:expr) => {
-            let res = $r;
-            assert_eq!(res.0.unwrap().1, $expect_addr);
+            let mut res = $r;
+            let (len, addr) = res.0.unwrap();
+            assert_eq!(addr, $expect_addr);
+            unsafe { res.1.set_len(len) };
             assert_eq!(res.1, MSG.as_bytes());
         };
     }
@@ -81,10 +84,11 @@ async fn send_recv_vectored() {
     active.send_vectored((MSG1, (msg2,))).await.0.unwrap();
 
     let recv_buf: [u8; 6] = [0; 6];
-    let (_, buffer) = passive
+    let (len, mut buffer) = passive
         .recv_vectored((recv_buf, (Vec::with_capacity(20),)))
         .await
         .unwrap();
+    unsafe { buffer.1.0.set_len(len - 6) };
 
     assert_eq!(MSG1.as_bytes(), &buffer.0);
     assert_eq!(MSG2, buffer.1.0.as_slice());

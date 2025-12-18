@@ -1,6 +1,6 @@
 use std::{iter, mem::MaybeUninit};
 
-use crate::{IntoInner, IoBuf, IoBufMut, SetLen, VectoredSlice, t_alloc};
+use crate::{IntoInner, IoBuf, IoBufMut, VectoredSlice, t_alloc};
 
 /// A trait for vectored buffers.
 ///
@@ -141,7 +141,7 @@ impl IoVectoredBuf for () {
 }
 
 /// A trait for mutable vectored buffers.
-pub trait IoVectoredBufMut: IoVectoredBuf + SetLen {
+pub trait IoVectoredBufMut: IoVectoredBuf {
     /// An iterator of maybe uninitialized slice of the buffers.
     fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]>;
 
@@ -253,30 +253,6 @@ impl IoVectoredBufMut for () {
     }
 }
 
-impl<T: IoBufMut, Rest: IoVectoredBufMut> SetLen for (T, Rest) {
-    unsafe fn set_len(&mut self, len: usize) {
-        let head_len = std::cmp::min(len, self.0.buf_capacity());
-        let rest_len = len - head_len;
-
-        // SAFETY: head_len <= self.0.buf_capacity()
-        unsafe { self.0.set_len(head_len) };
-        // SAFETY: propagate
-        unsafe { self.1.set_len(rest_len) };
-    }
-}
-
-impl<T: IoBufMut> SetLen for (T,) {
-    unsafe fn set_len(&mut self, len: usize) {
-        unsafe { self.0.set_len(len) };
-    }
-}
-
-impl SetLen for () {
-    unsafe fn set_len(&mut self, len: usize) {
-        assert_eq!(len, 0, "set_len called with non-zero len on empty buffer");
-    }
-}
-
 /// An owned iterator over a vectored buffer.
 ///
 /// Normally one would use [`IoVectoredBuf::owned_iter`] to create this
@@ -338,14 +314,6 @@ impl<T: IoVectoredBuf> IoBuf for VectoredBufIter<T> {
             .expect("`index` should not exceed `len`");
 
         &curr[self.filled..]
-    }
-}
-
-impl<T: IoVectoredBuf + SetLen> SetLen for VectoredBufIter<T> {
-    unsafe fn set_len(&mut self, len: usize) {
-        self.filled = len;
-
-        unsafe { self.buf.set_len(self.total_filled + self.filled) };
     }
 }
 

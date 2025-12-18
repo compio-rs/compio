@@ -176,7 +176,16 @@ pub trait AsyncReadExt: AsyncRead {
         &mut self,
         mut buf: t_alloc!(Vec, u8, A),
     ) -> BufResult<usize, t_alloc!(Vec, u8, A)> {
-        loop_read_to_end!(buf, total: usize, loop self.read(buf.slice(total..)))
+        let BufResult(res, mut buf) =
+            async { loop_read_to_end!(buf, total: usize, loop self.read(buf.slice(total..))) }
+                .await;
+        match res {
+            Ok(n) => {
+                unsafe { buf.set_len(n) };
+                BufResult(Ok(n), buf)
+            }
+            Err(e) => BufResult(Err(e), buf),
+        }
     }
 
     /// Read the exact number of bytes required to fill the vectored buf.
@@ -271,7 +280,17 @@ pub trait AsyncReadAtExt: AsyncReadAt {
         mut buffer: t_alloc!(Vec, u8, A),
         pos: u64,
     ) -> BufResult<usize, t_alloc!(Vec, u8, A)> {
-        loop_read_to_end!(buffer, total: u64, loop self.read_at(buffer.slice(total as usize..), pos + total))
+        let init_len = buffer.len();
+        let BufResult(res, mut buf) = async {
+            loop_read_to_end!(buffer, total: u64, loop self.read_at(buffer.slice(total as usize + init_len..), pos + total))
+        }.await;
+        match res {
+            Ok(n) => {
+                unsafe { buf.set_len(n) };
+                BufResult(Ok(n), buf)
+            }
+            Err(e) => BufResult(Err(e), buf),
+        }
     }
 
     /// Like [`AsyncReadExt::read_vectored_exact`], expect that it reads at a

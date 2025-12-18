@@ -57,14 +57,6 @@ impl<T: IoBufMut> IoBufMut for Uninit<T> {
     }
 }
 
-impl<T: SetLen + IoBuf> SetLen for Uninit<T> {
-    unsafe fn set_len(&mut self, len: usize) {
-        unsafe {
-            self.0.set_len(len);
-        }
-    }
-}
-
 impl<T> IntoInner for Uninit<T> {
     type Inner = T;
 

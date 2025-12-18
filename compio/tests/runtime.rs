@@ -59,12 +59,6 @@ async fn drop_on_complete() {
         }
     }
 
-    impl SetLen for MyBuf {
-        unsafe fn set_len(&mut self, pos: usize) {
-            unsafe { self.data.set_len(pos) }
-        }
-    }
-
     // Used to test if the buffer dropped.
     let ref_cnt = Arc::new(());
 

@@ -80,20 +80,21 @@ fn io_read_at() {
     block_on(async {
         const SRC: [u8; 6] = [1, 1, 4, 5, 1, 4];
 
-        let (len, buf) = SRC.read_at(ArrayVec::<u8, 10>::new(), 2).await.unwrap();
+        let (len, mut buf) = SRC.read_at(ArrayVec::<u8, 10>::new(), 2).await.unwrap();
 
         assert_eq!(len, 4);
+        unsafe { buf.set_len(len) };
         assert_eq!(buf.as_slice(), [4, 5, 1, 4]);
 
-        let (len, buf) = SRC.read_at(ArrayVec::<u8, 3>::new(), 2).await.unwrap();
+        let (len, mut buf) = SRC.read_at(ArrayVec::<u8, 3>::new(), 2).await.unwrap();
 
         assert_eq!(len, 3);
+        unsafe { buf.set_len(len) };
         assert_eq!(buf.as_slice(), [4, 5, 1]);
 
-        let (len, buf) = SRC.read_at(ArrayVec::<u8, 1>::new(), 7).await.unwrap();
+        let (len, _) = SRC.read_at(ArrayVec::<u8, 1>::new(), 7).await.unwrap();
 
         assert_eq!(len, 0);
-        assert!(buf.as_slice().is_empty());
     })
 }
 
@@ -101,30 +102,39 @@ fn io_read_at() {
 fn readv() {
     block_on(async {
         let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
-        let (len, buf) = src
+        let (len, mut buf) = src
             .read_vectored([Vec::with_capacity(6), Vec::with_capacity(4)])
             .await
             .unwrap();
         assert_eq!(len, 10);
+        unsafe {
+            buf[0].set_len(6);
+            buf[1].set_len(4);
+        }
         assert_eq!(buf[0], [1, 1, 4, 5, 1, 4]);
         assert_eq!(buf[1], [1, 9, 1, 9]);
 
         let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
-        let (len, buf) = src
+        let (len, mut buf) = src
             .read_vectored([vec![0; 6], Vec::with_capacity(10)])
             .await
             .unwrap();
         assert_eq!(len, 13);
+        unsafe {
+            buf[1].set_len(7);
+        }
         assert_eq!(buf[0], [1, 1, 4, 5, 1, 4]);
         assert_eq!(buf[1], [1, 9, 1, 9, 8, 1, 0]);
 
         let mut src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
-        let (len, buf) = src
+        let (len, mut buf) = src
             .read_vectored([vec![], Vec::with_capacity(20)])
             .await
             .unwrap();
         assert_eq!(len, 13);
-        assert!(buf[0].is_empty());
+        unsafe {
+            buf[1].set_len(13);
+        }
         assert_eq!(buf[1], [1, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0]);
     })
 }
@@ -168,21 +178,26 @@ fn readv_at() {
     block_on(async {
         const SRC: [u8; 6] = [1, 1, 4, 5, 1, 4];
 
-        let (len, buf) = SRC
+        let (len, mut buf) = SRC
             .read_vectored_at([ArrayVec::<u8, 5>::new(), ArrayVec::<u8, 5>::new()], 2)
             .await
             .unwrap();
 
         assert_eq!(len, 4);
+        unsafe {
+            buf[0].set_len(4);
+        }
         assert_eq!(buf[0].as_slice(), [4, 5, 1, 4]);
-        assert!(buf[1].is_empty());
 
-        let (len, buf) = SRC
+        let (len, mut buf) = SRC
             .read_vectored_at([vec![0; 3], Vec::with_capacity(1)], 2)
             .await
             .unwrap();
 
         assert_eq!(len, 4);
+        unsafe {
+            buf[1].set_len(1);
+        }
         assert_eq!(buf[0].as_slice(), [4, 5, 1]);
         assert_eq!(buf[1].as_slice(), [4]);
     })
@@ -228,7 +243,6 @@ impl AsyncRead for RepeatOne {
         let slice = buf.as_uninit();
         if !slice.is_empty() {
             slice[0].write(self.0);
-            unsafe { buf.advance_to(1) };
             BufResult(Ok(1), buf)
         } else {
             BufResult(Ok(0), buf)
@@ -245,7 +259,6 @@ impl AsyncReadAt for RepeatOne {
             } else {
                 slice[0].write(self.0);
             }
-            unsafe { buf.advance_to(1) };
             BufResult(Ok(1), buf)
         } else {
             BufResult(Ok(0), buf)
@@ -261,7 +274,8 @@ fn read_exact() {
         let ((), buf) = src.read_exact(vec![0; 5]).await.unwrap();
         assert_eq!(buf, [114; 5]);
 
-        let ((), buf) = src.read_exact_at(Vec::with_capacity(5), 0).await.unwrap();
+        let ((), mut buf) = src.read_exact_at(Vec::with_capacity(5), 0).await.unwrap();
+        unsafe { buf.set_len(5) };
         assert_eq!(buf, [0, 114, 114, 114, 114]);
 
         let ((), bufs) = src
@@ -271,10 +285,13 @@ fn read_exact() {
         assert_eq!(bufs[0], [114; 2]);
         assert_eq!(bufs[1], [114; 3]);
 
-        let ((), bufs) = src
+        let ((), mut bufs) = src
             .read_vectored_exact_at([vec![0; 1], Vec::with_capacity(4)], 0)
             .await
             .unwrap();
+        unsafe {
+            bufs[1].set_len(4);
+        }
         assert_eq!(bufs[0], [0]);
         assert_eq!(bufs[1], [114; 4]);
     })
@@ -367,7 +384,6 @@ impl AsyncRead for ReadOne {
                         BufResult(Ok(0), buf)
                     } else {
                         slice[0].write(ob[0]);
-                        unsafe { buf.advance_to(1) };
                         BufResult(Ok(1), buf)
                     }
                 }
@@ -418,7 +434,6 @@ impl AsyncReadAt for ReadOneAt {
             let slice = buf.as_uninit();
             if !slice.is_empty() && pos < self.0.len() {
                 slice[0].write(self.0[pos]);
-                unsafe { buf.advance_to(1) };
                 BufResult(Ok(1), buf)
             } else {
                 BufResult(Ok(0), buf)

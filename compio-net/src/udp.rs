@@ -49,9 +49,9 @@ use crate::{Socket, SocketOpts, ToSocketAddrsAsync};
 /// socket.send("Hello world!").await.unwrap();
 ///
 /// // read data
-/// let (n_bytes, buf) = other_socket.recv(buf).await.unwrap();
+/// let (n_bytes, mut buf) = other_socket.recv(buf).await.unwrap();
 ///
-/// assert_eq!(n_bytes, buf.len());
+/// unsafe { buf.set_len(n_bytes) };
 /// assert_eq!(buf, b"Hello world!");
 /// # });
 /// ```
@@ -79,10 +79,10 @@ use crate::{Socket, SocketOpts, ToSocketAddrsAsync};
 /// socket.send_to("hello world", second_addr).await.unwrap();
 ///
 /// // read data
-/// let ((n_bytes, addr), buf) = other_socket.recv_from(buf).await.unwrap();
+/// let ((n_bytes, addr), mut buf) = other_socket.recv_from(buf).await.unwrap();
 ///
 /// assert_eq!(addr, first_addr);
-/// assert_eq!(n_bytes, buf.len());
+/// unsafe { buf.set_len(n_bytes) };
 /// assert_eq!(buf, b"hello world");
 /// # });
 /// ```

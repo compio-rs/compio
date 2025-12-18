@@ -6,7 +6,7 @@
 
 use std::{io, marker::PhantomPinned, mem::ManuallyDrop, net::Shutdown};
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, SetLen};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use pin_project_lite::pin_project;
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
@@ -24,88 +24,6 @@ pub use crate::sys::op::{
 #[cfg(io_uring)]
 pub use crate::sys::op::{ReadManaged, ReadManagedAt, RecvManaged};
 use crate::{Extra, OwnedFd, SharedFd, TakeBuffer, sys::aio::*};
-
-/// Trait to update the buffer length inside the [`BufResult`].
-pub trait BufResultExt {
-    /// Call [`SetLen::advance_to`] if the result is [`Ok`].
-    fn map_advanced(self) -> Self;
-}
-
-/// Trait to update the buffer length inside the [`BufResult`].
-pub trait VecBufResultExt {
-    /// Call [`SetLen::advance_vec_to`] if the result is [`Ok`].
-    fn map_vec_advanced(self) -> Self;
-}
-
-impl<T: SetLen + IoBuf> BufResultExt for BufResult<usize, T> {
-    fn map_advanced(self) -> Self {
-        self.map_res(|res| (res, ()))
-            .map_advanced()
-            .map_res(|(res, _)| res)
-    }
-}
-
-impl<T: SetLen + IoVectoredBuf> VecBufResultExt for BufResult<usize, T> {
-    fn map_vec_advanced(self) -> Self {
-        self.map_res(|res| (res, ()))
-            .map_vec_advanced()
-            .map_res(|(res, _)| res)
-    }
-}
-
-impl<T: SetLen + IoBuf, O> BufResultExt for BufResult<(usize, O), T> {
-    fn map_advanced(self) -> Self {
-        self.map(|(init, obj), mut buffer| {
-            unsafe {
-                buffer.advance_to(init);
-            }
-            ((init, obj), buffer)
-        })
-    }
-}
-
-impl<T: SetLen + IoVectoredBuf, O> VecBufResultExt for BufResult<(usize, O), T> {
-    fn map_vec_advanced(self) -> Self {
-        self.map(|(init, obj), mut buffer| {
-            unsafe {
-                buffer.advance_vec_to(init);
-            }
-            ((init, obj), buffer)
-        })
-    }
-}
-
-impl<T: SetLen + IoBuf, C: SetLen + IoBuf, O> BufResultExt
-    for BufResult<(usize, usize, O), (T, C)>
-{
-    fn map_advanced(self) -> Self {
-        self.map(
-            |(init_buffer, init_control, obj), (mut buffer, mut control)| {
-                unsafe {
-                    buffer.advance_to(init_buffer);
-                    control.advance_to(init_control);
-                }
-                ((init_buffer, init_control, obj), (buffer, control))
-            },
-        )
-    }
-}
-
-impl<T: SetLen + IoVectoredBuf, C: SetLen + IoBuf, O> VecBufResultExt
-    for BufResult<(usize, usize, O), (T, C)>
-{
-    fn map_vec_advanced(self) -> Self {
-        self.map(
-            |(init_buffer, init_control, obj), (mut buffer, mut control)| {
-                unsafe {
-                    buffer.advance_vec_to(init_buffer);
-                    control.advance_to(init_control);
-                }
-                ((init_buffer, init_control, obj), (buffer, control))
-            },
-        )
-    }
-}
 
 /// Helper trait for [`RecvFrom`], [`RecvFromVectored`] and [`RecvMsg`].
 pub trait RecvResultExt {

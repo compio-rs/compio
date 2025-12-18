@@ -16,7 +16,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetLen, buf_try};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, buf_try};
 use compio_net::{CMsgBuilder, CMsgIter, UdpSocket};
 use quinn_proto::{EcnCodepoint, Transmit};
 #[cfg(windows)]
@@ -77,13 +77,6 @@ impl<const N: usize> Ancillary<N> {
 impl<const N: usize> IoBuf for Ancillary<N> {
     fn as_slice(&self) -> &[u8] {
         &self.inner[..self.len]
-    }
-}
-
-impl<const N: usize> SetLen for Ancillary<N> {
-    unsafe fn set_len(&mut self, len: usize) {
-        debug_assert!(len <= N);
-        self.len = len;
     }
 }
 
@@ -327,8 +320,9 @@ impl Socket {
     pub async fn recv<T: IoBufMut>(&self, buffer: T) -> BufResult<RecvMeta, T> {
         let control = Ancillary::<CMSG_LEN>::new();
 
-        let BufResult(res, (buffer, control)) = self.inner.recv_msg(buffer, control).await;
-        let ((len, _, remote), buffer) = buf_try!(res, buffer);
+        let BufResult(res, (buffer, mut control)) = self.inner.recv_msg(buffer, control).await;
+        let ((len, control_len, remote), buffer) = buf_try!(res, buffer);
+        control.len = control_len;
 
         let mut ecn_bits = 0u8;
         let mut local_ip = None;
@@ -571,10 +565,11 @@ mod tests {
         let expected_datagrams = transmit.size / segment_size;
         let mut datagrams = 0;
         while datagrams < expected_datagrams {
-            let (meta, buf) = passive
+            let (meta, mut buf) = passive
                 .recv(Vec::with_capacity(u16::MAX as usize))
                 .await
                 .unwrap();
+            unsafe { buf.set_len(meta.len) };
             let segments = meta.len / meta.stride;
             for i in 0..segments {
                 assert_eq!(
