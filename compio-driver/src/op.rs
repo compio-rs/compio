@@ -6,7 +6,7 @@
 
 use std::{io, marker::PhantomPinned, mem::ManuallyDrop, net::Shutdown};
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, SetLen};
 use pin_project_lite::pin_project;
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
@@ -27,11 +27,17 @@ use crate::{Extra, OwnedFd, SharedFd, TakeBuffer, sys::aio::*};
 
 /// Trait to update the buffer length inside the [`BufResult`].
 pub trait BufResultExt {
-    /// Call [`SetBufInit::set_buf_init`] if the result is [`Ok`].
+    /// Call [`SetLen::advance_to`] if the result is [`Ok`].
     fn map_advanced(self) -> Self;
 }
 
-impl<T: SetBufInit> BufResultExt for BufResult<usize, T> {
+/// Trait to update the buffer length inside the [`BufResult`].
+pub trait VecBufResultExt {
+    /// Call [`SetLen::advance_vec_to`] if the result is [`Ok`].
+    fn map_vec_advanced(self) -> Self;
+}
+
+impl<T: SetLen + IoBuf> BufResultExt for BufResult<usize, T> {
     fn map_advanced(self) -> Self {
         self.map_res(|res| (res, ()))
             .map_advanced()
@@ -39,24 +45,61 @@ impl<T: SetBufInit> BufResultExt for BufResult<usize, T> {
     }
 }
 
-impl<T: SetBufInit, O> BufResultExt for BufResult<(usize, O), T> {
+impl<T: SetLen + IoVectoredBuf> VecBufResultExt for BufResult<usize, T> {
+    fn map_vec_advanced(self) -> Self {
+        self.map_res(|res| (res, ()))
+            .map_vec_advanced()
+            .map_res(|(res, _)| res)
+    }
+}
+
+impl<T: SetLen + IoBuf, O> BufResultExt for BufResult<(usize, O), T> {
     fn map_advanced(self) -> Self {
         self.map(|(init, obj), mut buffer| {
             unsafe {
-                buffer.set_buf_init(init);
+                buffer.advance_to(init);
             }
             ((init, obj), buffer)
         })
     }
 }
 
-impl<T: SetBufInit, C: SetBufInit, O> BufResultExt for BufResult<(usize, usize, O), (T, C)> {
+impl<T: SetLen + IoVectoredBuf, O> VecBufResultExt for BufResult<(usize, O), T> {
+    fn map_vec_advanced(self) -> Self {
+        self.map(|(init, obj), mut buffer| {
+            unsafe {
+                buffer.advance_vec_to(init);
+            }
+            ((init, obj), buffer)
+        })
+    }
+}
+
+impl<T: SetLen + IoBuf, C: SetLen + IoBuf, O> BufResultExt
+    for BufResult<(usize, usize, O), (T, C)>
+{
     fn map_advanced(self) -> Self {
         self.map(
             |(init_buffer, init_control, obj), (mut buffer, mut control)| {
                 unsafe {
-                    buffer.set_buf_init(init_buffer);
-                    control.set_buf_init(init_control);
+                    buffer.advance_to(init_buffer);
+                    control.advance_to(init_control);
+                }
+                ((init_buffer, init_control, obj), (buffer, control))
+            },
+        )
+    }
+}
+
+impl<T: SetLen + IoVectoredBuf, C: SetLen + IoBuf, O> VecBufResultExt
+    for BufResult<(usize, usize, O), (T, C)>
+{
+    fn map_vec_advanced(self) -> Self {
+        self.map(
+            |(init_buffer, init_control, obj), (mut buffer, mut control)| {
+                unsafe {
+                    buffer.advance_vec_to(init_buffer);
+                    control.advance_to(init_control);
                 }
                 ((init_buffer, init_control, obj), (buffer, control))
             },

@@ -59,9 +59,9 @@ async fn drop_on_complete() {
         }
     }
 
-    impl SetBufInit for MyBuf {
-        unsafe fn set_buf_init(&mut self, pos: usize) {
-            unsafe { self.data.set_buf_init(pos) }
+    impl SetLen for MyBuf {
+        unsafe fn set_len(&mut self, pos: usize) {
+            unsafe { self.data.set_len(pos) }
         }
     }
 

@@ -12,7 +12,7 @@ use compio_driver::{
     op::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromVectored, RecvManaged,
         RecvMsg, RecvResultExt, RecvVectored, ResultTakeBuffer, Send, SendMsg, SendTo,
-        SendToVectored, SendVectored, ShutdownSocket,
+        SendToVectored, SendVectored, ShutdownSocket, VecBufResultExt,
     },
     syscall,
 };
@@ -173,7 +173,10 @@ impl Socket {
     ) -> BufResult<usize, V> {
         let fd = self.to_shared_fd();
         let op = RecvVectored::new(fd, buffer, flags);
-        compio_runtime::submit(op).await.into_inner().map_advanced()
+        compio_runtime::submit(op)
+            .await
+            .into_inner()
+            .map_vec_advanced()
     }
 
     pub async fn recv_managed<'a>(
@@ -231,7 +234,7 @@ impl Socket {
             .await
             .into_inner()
             .map_addr()
-            .map_advanced()
+            .map_vec_advanced()
     }
 
     pub async fn recv_msg<T: IoBufMut, C: IoBufMut>(
@@ -257,7 +260,7 @@ impl Socket {
             .await
             .into_inner()
             .map_addr()
-            .map_advanced()
+            .map_vec_advanced()
     }
 
     pub async fn send_to<T: IoBuf>(

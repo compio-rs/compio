@@ -8,7 +8,7 @@ use std::{
 };
 
 use compio_buf::{
-    BufResult, IntoInner, IoBuf, IoBufMut, ReserveError, ReserveExactError, SetBufInit, Slice,
+    BufResult, IntoInner, IoBuf, IoBufMut, ReserveError, ReserveExactError, SetLen, Slice,
 };
 
 use crate::{AsyncWrite, IoResult, util::MISSING_BUF};
@@ -79,10 +79,10 @@ impl IoBuf for Inner {
     }
 }
 
-impl SetBufInit for Inner {
+impl SetLen for Inner {
     #[inline]
-    unsafe fn set_buf_init(&mut self, len: usize) {
-        unsafe { self.buf.set_buf_init(len) }
+    unsafe fn set_len(&mut self, len: usize) {
+        unsafe { self.buf.set_len(len) }
     }
 }
 

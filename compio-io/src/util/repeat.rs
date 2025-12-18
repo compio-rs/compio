@@ -35,7 +35,7 @@ impl AsyncRead for Repeat {
 
         let len = slice.len();
         slice.fill(MaybeUninit::new(self.0));
-        unsafe { buf.set_buf_init(len) };
+        unsafe { buf.advance_to(len) };
 
         BufResult(Ok(len), buf)
     }

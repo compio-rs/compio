@@ -176,9 +176,14 @@ impl AsyncReadAt for File {
         buffer: T,
         pos: u64,
     ) -> BufResult<usize, T> {
+        use compio_driver::op::VecBufResultExt;
+
         let fd = self.inner.to_shared_fd();
         let op = ReadVectoredAt::new(fd, pos, buffer);
-        compio_runtime::submit(op).await.into_inner().map_advanced()
+        compio_runtime::submit(op)
+            .await
+            .into_inner()
+            .map_vec_advanced()
     }
 }
 

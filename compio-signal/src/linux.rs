@@ -5,7 +5,7 @@ use std::{
     thread_local,
 };
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetLen};
 use compio_driver::{OwnedFd, SharedFd, op::Read, syscall};
 
 thread_local! {
@@ -87,8 +87,8 @@ impl SignalFd {
             }
         }
 
-        impl SetBufInit for SignalInfo {
-            unsafe fn set_buf_init(&mut self, len: usize) {
+        impl SetLen for SignalInfo {
+            unsafe fn set_len(&mut self, len: usize) {
                 debug_assert!(len <= INFO_SIZE)
             }
         }
