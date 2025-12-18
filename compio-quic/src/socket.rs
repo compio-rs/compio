@@ -68,7 +68,7 @@ impl<const N: usize> Ancillary<N> {
     fn new() -> Self {
         Self {
             inner: [0u8; N],
-            len: N,
+            len: 0,
             _align: [],
         }
     }
@@ -84,16 +84,6 @@ impl<const N: usize> SetLen for Ancillary<N> {
     unsafe fn set_len(&mut self, len: usize) {
         debug_assert!(len <= N);
         self.len = len;
-    }
-
-    // FIXME(George-Miao, AsakuraMizu): this is not the desired behavior, only
-    // served as a workaround for now.
-    // See: https://github.com/compio-rs/compio/issues/580
-    unsafe fn advance_to(&mut self, len: usize)
-    where
-        Self: IoBuf,
-    {
-        unsafe { self.set_len(len) };
     }
 }
 
@@ -423,7 +413,7 @@ impl Socket {
         let ecn = transmit.ecn.map_or(0, |x| x as u8);
 
         let mut control = Ancillary::<CMSG_LEN>::new();
-        let mut builder = CMsgBuilder::new(&mut control);
+        let mut builder = CMsgBuilder::new(control.as_uninit());
 
         // ECN
         if is_ipv4 {

@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, mem::MaybeUninit};
 
 cfg_if::cfg_if! {
     if #[cfg(windows)] {
@@ -93,10 +93,11 @@ impl<'a> CMsgBuilder<'a> {
     ///
     /// This function will panic if the buffer is too short or not properly
     /// aligned.
-    pub fn new(buffer: &'a mut [u8]) -> Self {
-        buffer.fill(0);
+    pub fn new(buffer: &'a mut [MaybeUninit<u8>]) -> Self {
+        // TODO: optimize zeroing
+        buffer.fill(MaybeUninit::new(0));
         Self {
-            inner: sys::CMsgIter::new(buffer.as_ptr(), buffer.len()),
+            inner: sys::CMsgIter::new(buffer.as_ptr().cast(), buffer.len()),
             len: 0,
             _p: PhantomData,
         }
