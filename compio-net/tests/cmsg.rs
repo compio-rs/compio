@@ -1,11 +1,13 @@
+use std::mem::MaybeUninit;
+
 use aligned_array::{A8, Aligned};
-use compio_buf::IoBuf;
+use compio_buf::{IoBuf, IoBufMut};
 use compio_net::{CMsgBuilder, CMsgIter};
 
 #[test]
 fn test_cmsg() {
     let mut buf: Aligned<A8, [u8; 64]> = Aligned([0u8; 64]);
-    let mut builder = CMsgBuilder::new(buf.as_mut_slice());
+    let mut builder = CMsgBuilder::new(buf.as_uninit());
 
     builder.try_push(0, 0, ()).unwrap(); // 16 / 12
     builder.try_push(1, 1, u32::MAX).unwrap(); // 16 + 4 + 4 / 12 + 4
@@ -36,13 +38,13 @@ fn test_cmsg() {
 #[test]
 #[should_panic]
 fn invalid_buffer_length() {
-    let mut buf = [0u8; 1];
+    let mut buf = [MaybeUninit::new(0u8); 1];
     CMsgBuilder::new(&mut buf);
 }
 
 #[test]
 #[should_panic]
 fn invalid_buffer_alignment() {
-    let mut buf = [0u8; 64];
+    let mut buf = [MaybeUninit::new(0u8); 64];
     CMsgBuilder::new(&mut buf[1..]);
 }
