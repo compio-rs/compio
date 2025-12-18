@@ -496,16 +496,15 @@ impl AsyncRead for &Receiver {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
         let fd = self.to_shared_fd();
         let op = Read::new(fd, buffer);
-        compio_runtime::submit(op).await.into_inner().map_advanced()
+        let res = compio_runtime::submit(op).await.into_inner();
+        unsafe { res.map_advanced() }
     }
 
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buffer: V) -> BufResult<usize, V> {
         let fd = self.to_shared_fd();
         let op = ReadVectored::new(fd, buffer);
-        compio_runtime::submit(op)
-            .await
-            .into_inner()
-            .map_vec_advanced()
+        let res = compio_runtime::submit(op).await.into_inner();
+        unsafe { res.map_vec_advanced() }
     }
 }
 
