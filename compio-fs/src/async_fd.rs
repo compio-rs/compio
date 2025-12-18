@@ -95,7 +95,8 @@ impl<T: AsFd + 'static> AsyncRead for &AsyncFd<T> {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         let fd = self.inner.to_shared_fd();
         let op = Read::new(fd, buf);
-        compio_runtime::submit(op).await.into_inner().map_advanced()
+        let res = compio_runtime::submit(op).await.into_inner();
+        unsafe { res.map_advanced() }
     }
 
     #[cfg(unix)]
@@ -104,10 +105,8 @@ impl<T: AsFd + 'static> AsyncRead for &AsyncFd<T> {
 
         let fd = self.inner.to_shared_fd();
         let op = ReadVectored::new(fd, buf);
-        compio_runtime::submit(op)
-            .await
-            .into_inner()
-            .map_vec_advanced()
+        let res = compio_runtime::submit(op).await.into_inner();
+        unsafe { res.map_vec_advanced() }
     }
 }
 

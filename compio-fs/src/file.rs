@@ -167,7 +167,8 @@ impl AsyncReadAt for File {
     async fn read_at<T: IoBufMut>(&self, buffer: T, pos: u64) -> BufResult<usize, T> {
         let fd = self.inner.to_shared_fd();
         let op = ReadAt::new(fd, pos, buffer);
-        compio_runtime::submit(op).await.into_inner().map_advanced()
+        let res = compio_runtime::submit(op).await.into_inner();
+        unsafe { res.map_advanced() }
     }
 
     #[cfg(all(unix, not(solarish)))]
@@ -180,10 +181,8 @@ impl AsyncReadAt for File {
 
         let fd = self.inner.to_shared_fd();
         let op = ReadVectoredAt::new(fd, pos, buffer);
-        compio_runtime::submit(op)
-            .await
-            .into_inner()
-            .map_vec_advanced()
+        let res = compio_runtime::submit(op).await.into_inner();
+        unsafe { res.map_vec_advanced() }
     }
 }
 

@@ -28,33 +28,45 @@ use crate::{Extra, OwnedFd, SharedFd, TakeBuffer, sys::aio::*};
 /// Trait to update the buffer length inside the [`BufResult`].
 pub trait BufResultExt {
     /// Call [`SetLen::advance_to`] if the result is [`Ok`].
-    fn map_advanced(self) -> Self;
+    ///
+    /// # Safety
+    ///
+    /// The result value must be a valid length to advance to.
+    unsafe fn map_advanced(self) -> Self;
 }
 
 /// Trait to update the buffer length inside the [`BufResult`].
 pub trait VecBufResultExt {
     /// Call [`SetLen::advance_vec_to`] if the result is [`Ok`].
-    fn map_vec_advanced(self) -> Self;
+    ///
+    /// # Safety
+    ///
+    /// The result value must be a valid length to advance to.
+    unsafe fn map_vec_advanced(self) -> Self;
 }
 
 impl<T: SetLen + IoBuf> BufResultExt for BufResult<usize, T> {
-    fn map_advanced(self) -> Self {
-        self.map_res(|res| (res, ()))
-            .map_advanced()
-            .map_res(|(res, _)| res)
+    unsafe fn map_advanced(self) -> Self {
+        unsafe {
+            self.map_res(|res| (res, ()))
+                .map_advanced()
+                .map_res(|(res, _)| res)
+        }
     }
 }
 
 impl<T: SetLen + IoVectoredBuf> VecBufResultExt for BufResult<usize, T> {
-    fn map_vec_advanced(self) -> Self {
-        self.map_res(|res| (res, ()))
-            .map_vec_advanced()
-            .map_res(|(res, _)| res)
+    unsafe fn map_vec_advanced(self) -> Self {
+        unsafe {
+            self.map_res(|res| (res, ()))
+                .map_vec_advanced()
+                .map_res(|(res, _)| res)
+        }
     }
 }
 
 impl<T: SetLen + IoBuf, O> BufResultExt for BufResult<(usize, O), T> {
-    fn map_advanced(self) -> Self {
+    unsafe fn map_advanced(self) -> Self {
         self.map(|(init, obj), mut buffer| {
             unsafe {
                 buffer.advance_to(init);
@@ -65,7 +77,7 @@ impl<T: SetLen + IoBuf, O> BufResultExt for BufResult<(usize, O), T> {
 }
 
 impl<T: SetLen + IoVectoredBuf, O> VecBufResultExt for BufResult<(usize, O), T> {
-    fn map_vec_advanced(self) -> Self {
+    unsafe fn map_vec_advanced(self) -> Self {
         self.map(|(init, obj), mut buffer| {
             unsafe {
                 buffer.advance_vec_to(init);
@@ -78,7 +90,7 @@ impl<T: SetLen + IoVectoredBuf, O> VecBufResultExt for BufResult<(usize, O), T> 
 impl<T: SetLen + IoBuf, C: SetLen + IoBuf, O> BufResultExt
     for BufResult<(usize, usize, O), (T, C)>
 {
-    fn map_advanced(self) -> Self {
+    unsafe fn map_advanced(self) -> Self {
         self.map(
             |(init_buffer, init_control, obj), (mut buffer, mut control)| {
                 unsafe {
@@ -94,7 +106,7 @@ impl<T: SetLen + IoBuf, C: SetLen + IoBuf, O> BufResultExt
 impl<T: SetLen + IoVectoredBuf, C: SetLen + IoBuf, O> VecBufResultExt
     for BufResult<(usize, usize, O), (T, C)>
 {
-    fn map_vec_advanced(self) -> Self {
+    unsafe fn map_vec_advanced(self) -> Self {
         self.map(
             |(init_buffer, init_control, obj), (mut buffer, mut control)| {
                 unsafe {

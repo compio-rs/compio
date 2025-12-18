@@ -143,14 +143,14 @@ impl Stdin {
 
 impl AsyncRead for Stdin {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        if self.isatty {
+        let res = if self.isatty {
             let op = StdRead::new(io::stdin(), buf);
             compio_runtime::submit(op).await.into_inner()
         } else {
             let op = OpRead::new(self.fd.clone(), buf);
             compio_runtime::submit(op).await.into_inner()
-        }
-        .map_advanced()
+        };
+        unsafe { res.map_advanced() }
     }
 }
 
