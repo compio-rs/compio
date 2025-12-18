@@ -85,6 +85,16 @@ impl<const N: usize> SetLen for Ancillary<N> {
         debug_assert!(len <= N);
         self.len = len;
     }
+
+    // FIXME(George-Miao, AsakuraMizu): this is not the desired behavior, only
+    // served as a workaround for now.
+    // See: https://github.com/compio-rs/compio/issues/580
+    unsafe fn advance_to(&mut self, len: usize)
+    where
+        Self: IoBuf,
+    {
+        unsafe { self.set_len(len) };
+    }
 }
 
 impl<const N: usize> IoBufMut for Ancillary<N> {
