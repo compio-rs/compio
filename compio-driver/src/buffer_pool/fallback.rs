@@ -14,7 +14,7 @@ use std::{
     rc::Rc,
 };
 
-use compio_buf::{IntoInner, IoBuf, IoBufMut, SetBufInit, Slice};
+use compio_buf::{IntoInner, IoBuf, IoBufMut, SetLen, Slice};
 
 struct BufferPoolInner {
     buffers: RefCell<VecDeque<Vec<u8>>>,
@@ -82,7 +82,7 @@ impl BufferPool {
     #[doc(hidden)]
     pub unsafe fn create_proxy(&self, mut slice: OwnedBuffer, len: usize) -> BorrowedBuffer<'_> {
         unsafe {
-            slice.set_buf_init(len);
+            slice.advance_to(len);
         }
         BorrowedBuffer::new(slice.into_inner(), self)
     }
@@ -115,9 +115,9 @@ impl IoBufMut for OwnedBuffer {
     }
 }
 
-impl SetBufInit for OwnedBuffer {
-    unsafe fn set_buf_init(&mut self, len: usize) {
-        unsafe { self.buffer.set_buf_init(len) }
+impl SetLen for OwnedBuffer {
+    unsafe fn set_len(&mut self, len: usize) {
+        unsafe { self.buffer.set_len(len) }
     }
 }
 

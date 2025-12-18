@@ -27,11 +27,10 @@ pub trait AsyncRead {
     /// - This function read data to the **beginning** of the buffer; that is,
     ///   all existing data in the buffer will be overwritten. To read data to
     ///   the end of the buffer, use [`AsyncReadExt::append`].
-    /// - Implementor **MUST** update the buffer init via
-    ///   [`SetBufInit::set_buf_init`] after reading, and no further update
-    ///   should be made by caller.
+    /// - Implementor **MUST** update the buffer init via [`SetLen::set_len`]
+    ///   after reading, and no further update should be made by caller.
     ///
-    /// [`SetBufInit::set_buf_init`]: compio_buf::SetBufInit::set_buf_init
+    /// [`SetLen::set_len`]: compio_buf::SetLen::set_len
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B>;
 
     /// Like `read`, except that it reads into a type implements
@@ -45,9 +44,9 @@ pub trait AsyncRead {
     /// # Caution
     ///
     /// Implementor **MUST** update the buffer init via
-    /// [`SetBufInit::set_buf_init`] after reading.
+    /// [`SetLen::set_len`] after reading.
     ///
-    /// [`SetBufInit::set_buf_init`]: compio_buf::SetBufInit::set_buf_init
+    /// [`SetLen::set_len`]: compio_buf::SetLen::set_len
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
         loop_read_vectored!(buf, iter, self.read(iter))
     }
@@ -102,7 +101,7 @@ impl AsyncRead for &[u8] {
         *self = this;
 
         unsafe {
-            buf.set_buf_init(len);
+            buf.advance_vec_to(len);
         }
 
         BufResult(Ok(len), buf)
@@ -178,7 +177,7 @@ macro_rules! impl_read_at {
 
                     let len = slice.len() - this.len();
                     unsafe {
-                        buf.set_buf_init(len);
+                        buf.advance_vec_to(len);
                     }
 
                     BufResult(Ok(len), buf)

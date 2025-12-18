@@ -30,6 +30,7 @@
             go
             cmake
             glib
+            lldb
             openssl
             pkg-config
             (rust-bin.selectLatestNightlyWith (

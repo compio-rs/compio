@@ -505,7 +505,7 @@ impl AsyncRead for RecvStream {
             .await
             .map(|n| {
                 let n = n.unwrap_or_default();
-                unsafe { buf.set_buf_init(n) }
+                unsafe { buf.advance_to(n) }
                 n
             })
             .map_err(Into::into);

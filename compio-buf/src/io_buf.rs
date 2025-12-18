@@ -285,7 +285,7 @@ mod smallvec_err {
 /// mutable completion-based IO operations, like reading content from a file and
 /// write to the buffer. This trait will take all space of a buffer into
 /// account, including uninitialized bytes.
-pub trait IoBufMut: IoBuf + SetBufInit {
+pub trait IoBufMut: IoBuf + SetLen {
     /// Get the full mutable slice of the buffer, including both initialized
     /// and uninitialized bytes.
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>];
@@ -340,7 +340,7 @@ pub trait IoBufMut: IoBuf + SetBufInit {
     /// uninitialized bytes.
     ///
     /// It will always point to the uninitialized area of a [`IoBufMut`] even
-    /// after reading in some bytes, which is done by [`SetBufInit`]. This
+    /// after reading in some bytes, which is done by [`SetLen`]. This
     /// is useful for writing data into buffer without overwriting any
     /// existing bytes.
     ///
@@ -551,76 +551,112 @@ where
 }
 
 /// A helper trait for `set_len` like methods.
-pub trait SetBufInit {
-    /// Set the buffer length. If `len` is less than the current length, this
-    /// operation must be a no-op.
+pub trait SetLen {
+    /// Set the buffer length.
     ///
     /// # Safety
     ///
     /// * `len` must be less or equal than `as_uninit().len()`.
     /// * The bytes in the range `[buf_len(), len)` must be initialized.
-    unsafe fn set_buf_init(&mut self, len: usize);
-}
+    unsafe fn set_len(&mut self, len: usize);
 
-impl<B: SetBufInit + ?Sized> SetBufInit for &'static mut B {
-    unsafe fn set_buf_init(&mut self, len: usize) {
-        unsafe { (**self).set_buf_init(len) }
-    }
-}
-
-impl<B: SetBufInit + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> SetBufInit
-    for t_alloc!(Box, B, A)
-{
-    unsafe fn set_buf_init(&mut self, len: usize) {
-        unsafe { (**self).set_buf_init(len) }
-    }
-}
-
-impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> SetBufInit for t_alloc!(Vec, u8, A) {
-    unsafe fn set_buf_init(&mut self, len: usize) {
-        if (**self).buf_len() < len {
+    /// Set the buffer length to `len`. If `len` is less than the current
+    /// length, this operation is a no-op.
+    ///
+    /// # Safety
+    ///
+    /// * `len` must be less or equal than `as_uninit().len()`.
+    /// * The bytes in the range `[buf_len(), len)` must be initialized.
+    unsafe fn advance_to(&mut self, len: usize)
+    where
+        Self: IoBuf,
+    {
+        let current_len = (*self).buf_len();
+        if len > current_len {
             unsafe { self.set_len(len) };
         }
     }
+
+    /// Set the vector buffer's total length to `len`. If `len` is less than the
+    /// current total length, this operation is a no-op.
+    ///
+    /// # Safety
+    ///
+    /// * `len` must be less or equal than `total_len()`.
+    /// * The bytes in the range `[total_len(), len)` must be initialized.
+    unsafe fn advance_vec_to(&mut self, len: usize)
+    where
+        Self: IoVectoredBuf,
+    {
+        let current_len = (*self).total_len();
+        if len > current_len {
+            unsafe { self.set_len(len) };
+        }
+    }
+
+    /// Clear the buffer, setting its length to 0 without touching its content
+    /// or capacity.
+    fn clear(&mut self)
+    where
+        Self: IoBuf,
+    {
+        // SAFETY: setting length to 0 is always valid
+        unsafe { self.set_len(0) };
+    }
 }
 
-impl SetBufInit for [u8] {
-    unsafe fn set_buf_init(&mut self, len: usize) {
+impl<B: SetLen + ?Sized> SetLen for &'static mut B {
+    unsafe fn set_len(&mut self, len: usize) {
+        unsafe { (**self).set_len(len) }
+    }
+}
+
+impl<B: SetLen + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> SetLen
+    for t_alloc!(Box, B, A)
+{
+    unsafe fn set_len(&mut self, len: usize) {
+        unsafe { (**self).set_len(len) }
+    }
+}
+
+impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> SetLen for t_alloc!(Vec, u8, A) {
+    unsafe fn set_len(&mut self, len: usize) {
+        unsafe { self.set_len(len) };
+    }
+}
+
+impl SetLen for [u8] {
+    unsafe fn set_len(&mut self, len: usize) {
         debug_assert!(len <= self.len());
     }
 }
 
-impl<const N: usize> SetBufInit for [u8; N] {
-    unsafe fn set_buf_init(&mut self, len: usize) {
+impl<const N: usize> SetLen for [u8; N] {
+    unsafe fn set_len(&mut self, len: usize) {
         debug_assert!(len <= N);
     }
 }
 
 #[cfg(feature = "bytes")]
-impl SetBufInit for bytes::BytesMut {
-    unsafe fn set_buf_init(&mut self, len: usize) {
-        if (**self).buf_len() < len {
-            unsafe { self.set_len(len) };
-        }
+impl SetLen for bytes::BytesMut {
+    unsafe fn set_len(&mut self, len: usize) {
+        unsafe { self.set_len(len) };
     }
 }
 
 #[cfg(feature = "read_buf")]
-impl SetBufInit for std::io::BorrowedBuf<'static> {
-    #[allow(unsafe_op_in_unsafe_fn)]
-    unsafe fn set_buf_init(&mut self, len: usize) {
-        let current_len = (*self).buf_len();
-        if current_len < len {
-            // SAFETY: `len - current_len` range is initialized guaranteed by invariant of
-            // `set_buf_init`
-            unsafe { self.unfilled().advance(len - current_len) };
-        }
+impl SetLen for std::io::BorrowedBuf<'static> {
+    unsafe fn set_len(&mut self, len: usize) {
+        debug_assert!(self.capacity() >= len);
+
+        // SAFETY: `len` range is initialized guaranteed by invariant of `set_len`
+        self.clear().unfilled().advance(len);
     }
 }
 
 #[cfg(feature = "arrayvec")]
-impl<const N: usize> SetBufInit for arrayvec::ArrayVec<u8, N> {
-    unsafe fn set_buf_init(&mut self, len: usize) {
+impl<const N: usize> SetLen for arrayvec::ArrayVec<u8, N> {
+    unsafe fn set_len(&mut self, len: usize) {
         if (**self).buf_len() < len {
             unsafe { self.set_len(len) };
         }
@@ -628,51 +664,51 @@ impl<const N: usize> SetBufInit for arrayvec::ArrayVec<u8, N> {
 }
 
 #[cfg(feature = "smallvec")]
-impl<const N: usize> SetBufInit for smallvec::SmallVec<[u8; N]>
+impl<const N: usize> SetLen for smallvec::SmallVec<[u8; N]>
 where
     [u8; N]: smallvec::Array<Item = u8>,
 {
-    unsafe fn set_buf_init(&mut self, len: usize) {
+    unsafe fn set_len(&mut self, len: usize) {
         if (**self).buf_len() < len {
             unsafe { self.set_len(len) };
         }
     }
 }
 
-impl<T: IoBufMut> SetBufInit for [T] {
-    unsafe fn set_buf_init(&mut self, len: usize) {
-        unsafe { default_set_buf_init(self.iter_mut(), len) }
+impl<T: IoBufMut> SetLen for [T] {
+    unsafe fn set_len(&mut self, len: usize) {
+        unsafe { default_set_len(self.iter_mut(), len) }
     }
 }
 
-impl<T: IoBufMut, const N: usize> SetBufInit for [T; N] {
-    unsafe fn set_buf_init(&mut self, len: usize) {
-        unsafe { default_set_buf_init(self.iter_mut(), len) }
+impl<T: IoBufMut, const N: usize> SetLen for [T; N] {
+    unsafe fn set_len(&mut self, len: usize) {
+        unsafe { default_set_len(self.iter_mut(), len) }
     }
 }
 
-impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + 'static> SetBufInit
+impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: Allocator + 'static> SetLen
     for t_alloc!(Vec, T, A)
 {
-    unsafe fn set_buf_init(&mut self, len: usize) {
-        unsafe { default_set_buf_init(self.iter_mut(), len) }
+    unsafe fn set_len(&mut self, len: usize) {
+        unsafe { default_set_len(self.iter_mut(), len) }
     }
 }
 
 #[cfg(feature = "arrayvec")]
-impl<T: IoBufMut, const N: usize> SetBufInit for arrayvec::ArrayVec<T, N> {
-    unsafe fn set_buf_init(&mut self, len: usize) {
-        unsafe { default_set_buf_init(self.iter_mut(), len) }
+impl<T: IoBufMut, const N: usize> SetLen for arrayvec::ArrayVec<T, N> {
+    unsafe fn set_len(&mut self, len: usize) {
+        unsafe { default_set_len(self.iter_mut(), len) }
     }
 }
 
 #[cfg(feature = "smallvec")]
-impl<T: IoBufMut, const N: usize> SetBufInit for smallvec::SmallVec<[T; N]>
+impl<T: IoBufMut, const N: usize> SetLen for smallvec::SmallVec<[T; N]>
 where
     [T; N]: smallvec::Array<Item = T>,
 {
-    unsafe fn set_buf_init(&mut self, len: usize) {
-        unsafe { default_set_buf_init(self.iter_mut(), len) }
+    unsafe fn set_len(&mut self, len: usize) {
+        unsafe { default_set_len(self.iter_mut(), len) }
     }
 }
 
@@ -681,7 +717,7 @@ where
 ///   buffers.
 /// * The bytes in the range `[buf_len(), new_len)` of each buffer must be
 ///   initialized
-unsafe fn default_set_buf_init<'a, B: IoBufMut>(
+unsafe fn default_set_len<'a, B: IoBufMut>(
     iter: impl IntoIterator<Item = &'a mut B>,
     mut len: usize,
 ) {
@@ -689,7 +725,7 @@ unsafe fn default_set_buf_init<'a, B: IoBufMut>(
     while len > 0 {
         let Some(curr) = iter.next() else { return };
         let sub = (*curr).buf_capacity().min(len);
-        unsafe { curr.set_buf_init(sub) };
+        unsafe { curr.set_len(sub) };
         len -= sub;
     }
 }

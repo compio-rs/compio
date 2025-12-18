@@ -10,7 +10,10 @@ use std::{
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{
     AsRawFd, ToSharedFd, impl_raw_fd,
-    op::{BufResultExt, Read, ReadManaged, ReadVectored, ResultTakeBuffer, Write, WriteVectored},
+    op::{
+        BufResultExt, Read, ReadManaged, ReadVectored, ResultTakeBuffer, VecBufResultExt, Write,
+        WriteVectored,
+    },
     syscall,
 };
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
@@ -499,7 +502,10 @@ impl AsyncRead for &Receiver {
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buffer: V) -> BufResult<usize, V> {
         let fd = self.to_shared_fd();
         let op = ReadVectored::new(fd, buffer);
-        compio_runtime::submit(op).await.into_inner().map_advanced()
+        compio_runtime::submit(op)
+            .await
+            .into_inner()
+            .map_vec_advanced()
     }
 }
 

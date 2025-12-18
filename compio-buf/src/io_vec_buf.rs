@@ -1,6 +1,6 @@
 use std::{iter, mem::MaybeUninit};
 
-use crate::{IntoInner, IoBuf, IoBufMut, SetBufInit, VectoredSlice, t_alloc};
+use crate::{IntoInner, IoBuf, IoBufMut, SetLen, VectoredSlice, t_alloc};
 
 /// A trait for vectored buffers.
 ///
@@ -141,7 +141,7 @@ impl IoVectoredBuf for () {
 }
 
 /// A trait for mutable vectored buffers.
-pub trait IoVectoredBufMut: IoVectoredBuf + SetBufInit {
+pub trait IoVectoredBufMut: IoVectoredBuf + SetLen {
     /// An iterator of maybe uninitialized slice of the buffers.
     fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]>;
 
@@ -253,33 +253,27 @@ impl IoVectoredBufMut for () {
     }
 }
 
-impl<T: IoBufMut, Rest: IoVectoredBufMut> SetBufInit for (T, Rest) {
-    unsafe fn set_buf_init(&mut self, len: usize) {
-        if len == 0 {
-            return;
-        }
+impl<T: IoBufMut, Rest: IoVectoredBufMut> SetLen for (T, Rest) {
+    unsafe fn set_len(&mut self, len: usize) {
+        let head_len = std::cmp::min(len, self.0.buf_capacity());
+        let rest_len = len - head_len;
 
-        let buf0_len = std::cmp::min(len, self.0.buf_capacity());
-
-        // SAFETY: buf0_len <= self.0.buf_capacity()
-        unsafe { self.0.set_buf_init(buf0_len) };
+        // SAFETY: head_len <= self.0.buf_capacity()
+        unsafe { self.0.set_len(head_len) };
         // SAFETY: propagate
-        unsafe { self.1.set_buf_init(len - buf0_len) };
+        unsafe { self.1.set_len(rest_len) };
     }
 }
 
-impl<T: IoBufMut> SetBufInit for (T,) {
-    unsafe fn set_buf_init(&mut self, len: usize) {
-        unsafe { self.0.set_buf_init(len) };
+impl<T: IoBufMut> SetLen for (T,) {
+    unsafe fn set_len(&mut self, len: usize) {
+        unsafe { self.0.set_len(len) };
     }
 }
 
-impl SetBufInit for () {
-    unsafe fn set_buf_init(&mut self, len: usize) {
-        assert_eq!(
-            len, 0,
-            "set_buf_init called with non-zero len on empty buffer"
-        );
+impl SetLen for () {
+    unsafe fn set_len(&mut self, len: usize) {
+        assert_eq!(len, 0, "set_len called with non-zero len on empty buffer");
     }
 }
 
@@ -347,11 +341,11 @@ impl<T: IoVectoredBuf> IoBuf for VectoredBufIter<T> {
     }
 }
 
-impl<T: IoVectoredBuf + SetBufInit> SetBufInit for VectoredBufIter<T> {
-    unsafe fn set_buf_init(&mut self, len: usize) {
+impl<T: IoVectoredBuf + SetLen> SetLen for VectoredBufIter<T> {
+    unsafe fn set_len(&mut self, len: usize) {
         self.filled = len;
 
-        unsafe { self.buf.set_buf_init(self.total_filled + self.filled) };
+        unsafe { self.buf.set_len(self.total_filled + self.filled) };
     }
 }
 

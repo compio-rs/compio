@@ -57,10 +57,10 @@ impl<T: IoBufMut> IoBufMut for Uninit<T> {
     }
 }
 
-impl<T: SetBufInit + IoBuf> SetBufInit for Uninit<T> {
-    unsafe fn set_buf_init(&mut self, len: usize) {
+impl<T: SetLen + IoBuf> SetLen for Uninit<T> {
+    unsafe fn set_len(&mut self, len: usize) {
         unsafe {
-            self.0.set_buf_init(len);
+            self.0.set_len(len);
         }
     }
 }

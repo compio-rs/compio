@@ -146,9 +146,9 @@ impl<T: IoBufMut> IoBufMut for Slice<T> {
     }
 }
 
-impl<T: SetBufInit> SetBufInit for Slice<T> {
-    unsafe fn set_buf_init(&mut self, len: usize) {
-        unsafe { self.buffer.set_buf_init(self.begin + len) }
+impl<T: SetLen> SetLen for Slice<T> {
+    unsafe fn set_len(&mut self, len: usize) {
+        unsafe { self.buffer.set_len(self.begin + len) }
     }
 }
 
@@ -235,9 +235,9 @@ impl<T: IoVectoredBuf> IoVectoredBuf for VectoredSlice<T> {
     }
 }
 
-impl<T: SetBufInit> SetBufInit for VectoredSlice<T> {
-    unsafe fn set_buf_init(&mut self, len: usize) {
-        unsafe { self.buf.set_buf_init(self.begin + len) }
+impl<T: SetLen> SetLen for VectoredSlice<T> {
+    unsafe fn set_len(&mut self, len: usize) {
+        unsafe { self.buf.set_len(self.begin + len) }
     }
 }
 

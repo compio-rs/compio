@@ -100,9 +100,14 @@ impl<T: AsFd + 'static> AsyncRead for &AsyncFd<T> {
 
     #[cfg(unix)]
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
+        use compio_driver::op::VecBufResultExt;
+
         let fd = self.inner.to_shared_fd();
         let op = ReadVectored::new(fd, buf);
-        compio_runtime::submit(op).await.into_inner().map_advanced()
+        compio_runtime::submit(op)
+            .await
+            .into_inner()
+            .map_vec_advanced()
     }
 }
 

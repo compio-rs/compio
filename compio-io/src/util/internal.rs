@@ -15,7 +15,7 @@ pub(crate) fn slice_to_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> usize 
 #[inline]
 pub(crate) fn slice_to_buf<B: IoBufMut + ?Sized>(src: &[u8], buf: &mut B) -> usize {
     let len = slice_to_uninit(src, buf.as_uninit());
-    unsafe { buf.set_buf_init(len) };
+    unsafe { buf.advance_to(len) };
 
     len
 }

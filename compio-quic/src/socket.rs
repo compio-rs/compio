@@ -16,7 +16,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetBufInit, buf_try};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetLen, buf_try};
 use compio_net::{CMsgBuilder, CMsgIter, UdpSocket};
 use quinn_proto::{EcnCodepoint, Transmit};
 #[cfg(windows)]
@@ -80,10 +80,20 @@ impl<const N: usize> IoBuf for Ancillary<N> {
     }
 }
 
-impl<const N: usize> SetBufInit for Ancillary<N> {
-    unsafe fn set_buf_init(&mut self, len: usize) {
+impl<const N: usize> SetLen for Ancillary<N> {
+    unsafe fn set_len(&mut self, len: usize) {
         debug_assert!(len <= N);
         self.len = len;
+    }
+
+    // FIXME(George-Miao, AsakuraMizu): this is not the desired behavior, only
+    // served as a workaround for now.
+    // See: https://github.com/compio-rs/compio/issues/580
+    unsafe fn advance_to(&mut self, len: usize)
+    where
+        Self: IoBuf,
+    {
+        unsafe { self.set_len(len) };
     }
 }
 

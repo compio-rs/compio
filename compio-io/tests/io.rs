@@ -228,7 +228,7 @@ impl AsyncRead for RepeatOne {
         let slice = buf.as_uninit();
         if !slice.is_empty() {
             slice[0].write(self.0);
-            unsafe { buf.set_buf_init(1) };
+            unsafe { buf.advance_to(1) };
             BufResult(Ok(1), buf)
         } else {
             BufResult(Ok(0), buf)
@@ -245,7 +245,7 @@ impl AsyncReadAt for RepeatOne {
             } else {
                 slice[0].write(self.0);
             }
-            unsafe { buf.set_buf_init(1) };
+            unsafe { buf.advance_to(1) };
             BufResult(Ok(1), buf)
         } else {
             BufResult(Ok(0), buf)
@@ -367,7 +367,7 @@ impl AsyncRead for ReadOne {
                         BufResult(Ok(0), buf)
                     } else {
                         slice[0].write(ob[0]);
-                        unsafe { buf.set_buf_init(1) };
+                        unsafe { buf.advance_to(1) };
                         BufResult(Ok(1), buf)
                     }
                 }
@@ -418,7 +418,7 @@ impl AsyncReadAt for ReadOneAt {
             let slice = buf.as_uninit();
             if !slice.is_empty() && pos < self.0.len() {
                 slice[0].write(self.0[pos]);
-                unsafe { buf.set_buf_init(1) };
+                unsafe { buf.advance_to(1) };
                 BufResult(Ok(1), buf)
             } else {
                 BufResult(Ok(0), buf)

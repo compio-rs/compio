@@ -87,7 +87,7 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncRead for TlsStream<S> {
             TlsStreamInner::NativeTls(s) => loop {
                 match io::Read::read(s, slice) {
                     Ok(res) => {
-                        unsafe { buf.set_buf_init(res) };
+                        unsafe { buf.advance_to(res) };
                         return BufResult(Ok(res), buf);
                     }
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -104,7 +104,7 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncRead for TlsStream<S> {
                 let res = futures_util::AsyncReadExt::read(s, slice).await;
                 let res = match res {
                     Ok(len) => {
-                        unsafe { buf.set_buf_init(len) };
+                        unsafe { buf.advance_to(len) };
                         Ok(len)
                     }
                     // TLS streams may return UnexpectedEof when the connection is closed.
