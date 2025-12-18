@@ -89,13 +89,6 @@ impl<T: IoBuf> Slice<T> {
 }
 
 impl<T: IoBufMut> Slice<T> {
-    /// Offset in the underlying buffer at which this slice starts. If it
-    /// exceeds the buffer length, returns the buffer length.
-    fn begin_or_cap(&mut self) -> usize {
-        let cap = self.buffer.buf_capacity();
-        self.begin.min(cap)
-    }
-
     /// Offset in the underlying buffer at which this slice ends. If it does not
     /// exist or exceeds the buffer capacity, returns the buffer capacity.
     fn end_or_cap(&mut self) -> usize {
@@ -108,7 +101,7 @@ impl<T: IoBufMut> Slice<T> {
     where
         T: IoBufMut,
     {
-        let begin = self.begin_or_cap();
+        let begin = self.begin_or_len();
         let end = self.end_or_cap();
         begin..end
     }
