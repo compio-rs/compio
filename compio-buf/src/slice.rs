@@ -33,7 +33,9 @@ pub struct Slice<T> {
 }
 
 impl<T> Slice<T> {
-    pub(crate) fn new(buffer: T, begin: usize, end: Option<usize>) -> Self {
+    /// # Safety
+    /// begin <= buf_len
+    pub(crate) unsafe fn new(buffer: T, begin: usize, end: Option<usize>) -> Self {
         Self { buffer, begin, end }
     }
 
@@ -63,13 +65,6 @@ impl<T> Slice<T> {
 }
 
 impl<T: IoBuf> Slice<T> {
-    /// Offset in the underlying buffer at which this slice starts. If it
-    /// exceeds the buffer length, returns the buffer length.
-    fn begin_or_len(&self) -> usize {
-        let len = self.buffer.buf_len();
-        self.begin.min(len)
-    }
-
     /// Offset in the underlying buffer at which this slice ends. If it does not
     /// exist or exceeds the buffer length, returns the buffer length.
     fn end_or_len(&self) -> usize {
@@ -78,13 +73,9 @@ impl<T: IoBuf> Slice<T> {
     }
 
     /// Range of initialized bytes in the slice.
-    fn initialized_range(&self) -> std::ops::Range<usize>
-    where
-        T: IoBuf,
-    {
-        let begin = self.begin_or_len();
+    fn initialized_range(&self) -> std::ops::Range<usize> {
         let end = self.end_or_len();
-        begin..end
+        self.begin..end
     }
 }
 
@@ -97,13 +88,9 @@ impl<T: IoBufMut> Slice<T> {
     }
 
     /// Full range of the slice, include uninitialized bytes.
-    fn range(&mut self) -> std::ops::Range<usize>
-    where
-        T: IoBufMut,
-    {
-        let begin = self.begin_or_len();
+    fn range(&mut self) -> std::ops::Range<usize> {
         let end = self.end_or_cap();
-        begin..end
+        self.begin..end
     }
 }
 

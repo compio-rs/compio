@@ -54,11 +54,14 @@ pub trait IoBuf: 'static {
             Bound::Unbounded => None,
         };
 
+        assert!(begin <= self.buf_len());
+
         if let Some(end) = end {
             assert!(begin <= end);
         }
 
-        Slice::new(self, begin, end)
+        // SAFETY: begin <= self.buf_len()
+        unsafe { Slice::new(self, begin, end) }
     }
 }
 
