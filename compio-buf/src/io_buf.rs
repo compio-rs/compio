@@ -72,13 +72,13 @@ pub trait IoBuf: 'static {
 
 impl<B: IoBuf + ?Sized> IoBuf for &'static B {
     fn as_slice(&self) -> &[u8] {
-        (**self).as_slice()
+        IoBuf::as_slice(&**self)
     }
 }
 
 impl<B: IoBuf + ?Sized> IoBuf for &'static mut B {
     fn as_slice(&self) -> &[u8] {
-        (**self).as_slice()
+        IoBuf::as_slice(&**self)
     }
 }
 
@@ -86,7 +86,7 @@ impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static
     for t_alloc!(Box, B, A)
 {
     fn as_slice(&self) -> &[u8] {
-        (**self).as_slice()
+        IoBuf::as_slice(&**self)
     }
 }
 
@@ -94,7 +94,7 @@ impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static
     for t_alloc!(Rc, B, A)
 {
     fn as_slice(&self) -> &[u8] {
-        (**self).as_slice()
+        IoBuf::as_slice(&**self)
     }
 }
 
@@ -112,7 +112,7 @@ impl<const N: usize> IoBuf for [u8; N] {
 
 impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf for t_alloc!(Vec, u8, A) {
     fn as_slice(&self) -> &[u8] {
-        Vec::as_slice(self)
+        self
     }
 }
 
@@ -132,21 +132,21 @@ impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static
     for t_alloc!(Arc, B, A)
 {
     fn as_slice(&self) -> &[u8] {
-        (**self).as_slice()
+        IoBuf::as_slice(&**self)
     }
 }
 
 #[cfg(feature = "bytes")]
 impl IoBuf for bytes::Bytes {
     fn as_slice(&self) -> &[u8] {
-        (**self).as_slice()
+        self
     }
 }
 
 #[cfg(feature = "bytes")]
 impl IoBuf for bytes::BytesMut {
     fn as_slice(&self) -> &[u8] {
-        (**self).as_slice()
+        self
     }
 }
 
