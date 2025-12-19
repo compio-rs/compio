@@ -36,6 +36,11 @@ pub trait IoBuf: 'static {
     /// let buf = b"hello world";
     /// assert_eq!(buf.slice(6..).as_slice(), b"world");
     /// ```
+    ///
+    /// # Panics
+    /// Panics if:
+    /// * begin > buf_len()
+    /// * end < begin
     fn slice(self, range: impl std::ops::RangeBounds<usize>) -> Slice<Self>
     where
         Self: Sized,
