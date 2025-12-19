@@ -247,6 +247,6 @@ fn test_slice() {
     let slice = buf.slice(..);
     assert_eq!(slice.as_slice(), b"hello world");
 
-    let slice = buf.slice(12..);
+    let slice = buf.slice(11..);
     assert_eq!(slice.as_slice(), b"");
 }
