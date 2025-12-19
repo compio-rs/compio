@@ -298,7 +298,7 @@ pub trait IoBufMut: IoBuf + SetLen {
 
     /// Get the raw mutable pointer to the buffer.
     fn buf_mut_ptr(&mut self) -> *mut MaybeUninit<u8> {
-        (*self).as_slice().as_ptr() as _
+        self.as_uninit().as_mut_ptr()
     }
 
     /// Get the mutable slice of initialized bytes. The content is the same as
