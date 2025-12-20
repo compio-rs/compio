@@ -109,14 +109,13 @@ async fn compio_quic_echo_client(
     data: &[u8],
     iters: u64,
 ) -> Duration {
-    let start = Instant::now();
-
     let conn = client
         .connect(remote, "localhost", None)
         .unwrap()
         .await
         .unwrap();
 
+    let start = Instant::now();
     let mut futures = (0..iters)
         .map(|_| async {
             let (mut send, mut recv) = conn.open_bi_wait().await.unwrap();
@@ -148,10 +147,9 @@ async fn quinn_echo_client(
     data: &[u8],
     iters: u64,
 ) -> Duration {
-    let start = Instant::now();
-
     let conn = client.connect(remote, "localhost").unwrap().await.unwrap();
 
+    let start = Instant::now();
     let mut futures = (0..iters)
         .map(|_| async {
             let (mut send, mut recv) = conn.open_bi().await.unwrap();
@@ -168,8 +166,12 @@ async fn quinn_echo_client(
         .collect::<FuturesUnordered<_>>();
     while futures.next().await.is_some() {}
 
-    // FIXME: wait for the connection to be fully closed
-    start.elapsed()
+    let elapsed = start.elapsed();
+
+    conn.close(0u32.into(), b"done");
+    conn.closed().await;
+
+    elapsed
 }
 
 fn main() {
@@ -216,7 +218,10 @@ fn main() {
     let mut g = c.benchmark_group("quic-echo");
     g.throughput(Throughput::Bytes((DATA_SIZE * 2) as u64));
 
-    for (server_name, remote) in [("compio-quic", compio_quic_server), ("quinn", quinn_server)] {
+    for (server_name, remote) in [
+        ("compio-quic-server", compio_quic_server),
+        ("quinn-server", quinn_server),
+    ] {
         g.bench_function(BenchmarkId::new("compio-quic", server_name), |b| {
             b.to_async(&compio_rt).iter_custom(|iters| {
                 compio_quic_echo_client(&compio_quic_client, remote, &data, iters)
