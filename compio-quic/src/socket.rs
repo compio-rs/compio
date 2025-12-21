@@ -107,7 +107,7 @@ impl<const N: usize> DerefMut for Ancillary<N> {
     }
 }
 
-#[cfg(linux)]
+#[cfg(linux_all)]
 #[inline]
 fn max_gso_segments(socket: &UdpSocket) -> io::Result<usize> {
     unsafe {
@@ -123,7 +123,7 @@ fn max_gso_segments(socket: &UdpSocket) -> io::Result<usize> {
     }
     Ok(512)
 }
-#[cfg(not(any(linux, windows)))]
+#[cfg(not(any(linux_all, windows)))]
 #[inline]
 fn max_gso_segments(_socket: &UdpSocket) -> io::Result<usize> {
     Err(io::Error::from(io::ErrorKind::Unsupported))
@@ -266,9 +266,9 @@ impl Socket {
         }
 
         // GRO
-        #[allow(unused_mut)] // only mutable on Linux and Windows
+        #[allow(unused_mut)]
         let mut max_gro_segments = 1;
-        #[cfg(linux)]
+        #[cfg(linux_all)]
         if set_socket_option!(socket, libc::SOL_UDP, libc::UDP_GRO, &1) {
             max_gro_segments = 64;
         }
@@ -332,7 +332,7 @@ impl Socket {
 
         let mut ecn_bits = 0u8;
         let mut local_ip = None;
-        #[allow(unused_mut)] // only mutable on Linux
+        #[allow(unused_mut)]
         let mut stride = len;
 
         // SAFETY: `control` contains valid data
@@ -386,7 +386,7 @@ impl Socket {
                     }
 
                     // GRO
-                    #[cfg(linux)]
+                    #[cfg(linux_all)]
                     (libc::SOL_UDP, libc::UDP_GRO) => stride = *cmsg.data::<libc::c_int>() as usize,
                     #[cfg(windows)]
                     (WinSock::IPPROTO_UDP, UDP_COALESCED_INFO) => {
@@ -493,7 +493,7 @@ impl Socket {
 
         // GSO
         if let Some(segment_size) = transmit.segment_size {
-            #[cfg(linux)]
+            #[cfg(linux_all)]
             builder.try_push(libc::SOL_UDP, libc::UDP_SEGMENT, segment_size as u16);
             #[cfg(windows)]
             builder.try_push(
@@ -501,7 +501,7 @@ impl Socket {
                 WinSock::UDP_SEND_MSG_SIZE,
                 segment_size as u32,
             );
-            #[cfg(not(any(linux, windows)))]
+            #[cfg(not(any(linux_all, windows)))]
             let _ = segment_size;
         }
 
@@ -517,7 +517,7 @@ impl Socket {
         match res {
             Ok(_) => BufResult(Ok(()), buffer),
             Err(e) => {
-                #[cfg(linux)]
+                #[cfg(linux_all)]
                 if let Some(libc::EIO) | Some(libc::EINVAL) = e.raw_os_error()
                     && self.max_gso_segments() > 1
                 {
