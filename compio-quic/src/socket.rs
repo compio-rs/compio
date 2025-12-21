@@ -191,13 +191,13 @@ impl Socket {
             #[cfg(all(unix, not(any(non_freebsd, solarish))))]
             set_socket_option!(socket, libc::IPPROTO_IP, libc::IP_RECVTOS, &1);
             #[cfg(windows)]
-            set_socket_option!(socket, WinSock::IPPROTO_IP, WinSock::IP_ECN, &1);
+            set_socket_option!(socket, WinSock::IPPROTO_IP, WinSock::IP_RECVECN, &1);
         }
         if is_ipv6 {
             #[cfg(unix)]
             set_socket_option!(socket, libc::IPPROTO_IPV6, libc::IPV6_RECVTCLASS, &1);
             #[cfg(windows)]
-            set_socket_option!(socket, WinSock::IPPROTO_IPV6, WinSock::IPV6_ECN, &1);
+            set_socket_option!(socket, WinSock::IPPROTO_IPV6, WinSock::IPV6_RECVECN, &1);
         }
 
         // pktinfo / destination address
