@@ -44,6 +44,9 @@ jobs:
             . "$HOME/.cargo/env"
             set -ex
 
+            # Workaround to set the correct working directory
+            cd work/compio/compio
+
             ARGS="--features all"
 
             # Add feature "nightly" if toolchain is nightly
