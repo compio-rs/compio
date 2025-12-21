@@ -20,7 +20,8 @@ impl AsyncRead for ChildStdout {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
         let fd = self.to_shared_fd();
         let op = Read::new(fd, buffer);
-        compio_runtime::submit(op).await.into_inner().map_advanced()
+        let res = compio_runtime::submit(op).await.into_inner();
+        unsafe { res.map_advanced() }
     }
 }
 
@@ -46,7 +47,8 @@ impl AsyncRead for ChildStderr {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
         let fd = self.to_shared_fd();
         let op = Read::new(fd, buffer);
-        compio_runtime::submit(op).await.into_inner().map_advanced()
+        let res = compio_runtime::submit(op).await.into_inner();
+        unsafe { res.map_advanced() }
     }
 }
 

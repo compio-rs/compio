@@ -36,6 +36,11 @@ pub trait IoBuf: 'static {
     /// let buf = b"hello world";
     /// assert_eq!(buf.slice(6..).as_slice(), b"world");
     /// ```
+    ///
+    /// # Panics
+    /// Panics if:
+    /// * begin > buf_len()
+    /// * end < begin
     fn slice(self, range: impl std::ops::RangeBounds<usize>) -> Slice<Self>
     where
         Self: Sized,
@@ -54,23 +59,26 @@ pub trait IoBuf: 'static {
             Bound::Unbounded => None,
         };
 
+        assert!(begin <= self.buf_len());
+
         if let Some(end) = end {
             assert!(begin <= end);
         }
 
-        Slice::new(self, begin, end)
+        // SAFETY: begin <= self.buf_len()
+        unsafe { Slice::new(self, begin, end) }
     }
 }
 
 impl<B: IoBuf + ?Sized> IoBuf for &'static B {
     fn as_slice(&self) -> &[u8] {
-        (**self).as_slice()
+        IoBuf::as_slice(&**self)
     }
 }
 
 impl<B: IoBuf + ?Sized> IoBuf for &'static mut B {
     fn as_slice(&self) -> &[u8] {
-        (**self).as_slice()
+        IoBuf::as_slice(&**self)
     }
 }
 
@@ -78,7 +86,7 @@ impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static
     for t_alloc!(Box, B, A)
 {
     fn as_slice(&self) -> &[u8] {
-        (**self).as_slice()
+        IoBuf::as_slice(&**self)
     }
 }
 
@@ -86,7 +94,7 @@ impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static
     for t_alloc!(Rc, B, A)
 {
     fn as_slice(&self) -> &[u8] {
-        (**self).as_slice()
+        IoBuf::as_slice(&**self)
     }
 }
 
@@ -104,7 +112,7 @@ impl<const N: usize> IoBuf for [u8; N] {
 
 impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf for t_alloc!(Vec, u8, A) {
     fn as_slice(&self) -> &[u8] {
-        Vec::as_slice(self)
+        self
     }
 }
 
@@ -124,21 +132,21 @@ impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static
     for t_alloc!(Arc, B, A)
 {
     fn as_slice(&self) -> &[u8] {
-        (**self).as_slice()
+        IoBuf::as_slice(&**self)
     }
 }
 
 #[cfg(feature = "bytes")]
 impl IoBuf for bytes::Bytes {
     fn as_slice(&self) -> &[u8] {
-        (**self).as_slice()
+        self
     }
 }
 
 #[cfg(feature = "bytes")]
 impl IoBuf for bytes::BytesMut {
     fn as_slice(&self) -> &[u8] {
-        (**self).as_slice()
+        self
     }
 }
 
@@ -298,7 +306,7 @@ pub trait IoBufMut: IoBuf + SetLen {
 
     /// Get the raw mutable pointer to the buffer.
     fn buf_mut_ptr(&mut self) -> *mut MaybeUninit<u8> {
-        (*self).as_slice().as_ptr() as _
+        self.as_uninit().as_mut_ptr()
     }
 
     /// Get the mutable slice of initialized bytes. The content is the same as
