@@ -1,3 +1,4 @@
+use compio_io::AsyncWrite;
 use compio_quic::ServerBuilder;
 use tracing_subscriber::EnvFilter;
 
@@ -24,8 +25,7 @@ async fn main() {
 
         let (mut send, mut recv) = conn.accept_bi().await.unwrap();
 
-        let mut buf = vec![];
-        recv.read_to_end(&mut buf).await.unwrap();
+        let buf = recv.read_to_end(usize::MAX).await.unwrap();
         println!("{buf:?}");
 
         send.write(&[4, 5, 6]).await.unwrap();
