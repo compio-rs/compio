@@ -178,35 +178,6 @@ impl SendStream {
         }
     }
 
-    /// Write bytes to the stream.
-    ///
-    /// Yields the number of bytes written on success. Congestion and flow
-    /// control may cause this to be shorter than `buf.len()`, indicating
-    /// that only a prefix of `buf` was written.
-    ///
-    /// This operation is cancel-safe.
-    pub async fn write(&mut self, buf: &[u8]) -> Result<usize, WriteError> {
-        poll_fn(|cx| self.execute_poll_write(cx, |mut stream| stream.write(buf))).await
-    }
-
-    /// Convenience method to write an entire buffer to the stream.
-    ///
-    /// This operation is *not* cancel-safe.
-    pub async fn write_all(&mut self, buf: &[u8]) -> Result<(), WriteError> {
-        let mut count = 0;
-        poll_fn(|cx| {
-            loop {
-                if count == buf.len() {
-                    return Poll::Ready(Ok(()));
-                }
-                let n =
-                    ready!(self.execute_poll_write(cx, |mut stream| stream.write(&buf[count..])))?;
-                count += n;
-            }
-        })
-        .await
-    }
-
     /// Write chunks to the stream.
     ///
     /// Yields the number of bytes and chunks written on success.
@@ -328,7 +299,10 @@ impl From<WriteError> for io::Error {
 
 impl AsyncWrite for SendStream {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let res = self.write(buf.as_init()).await.map_err(Into::into);
+        let res =
+            poll_fn(|cx| self.execute_poll_write(cx, |mut stream| stream.write(buf.as_init())))
+                .await
+                .map_err(Into::into);
         BufResult(res, buf)
     }
 

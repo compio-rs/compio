@@ -1,5 +1,6 @@
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 
+use compio_io::AsyncWrite;
 use compio_quic::ClientBuilder;
 use tracing_subscriber::EnvFilter;
 
@@ -30,8 +31,7 @@ async fn main() {
         send.write(&[1, 2, 3]).await.unwrap();
         send.finish().unwrap();
 
-        let mut buf = vec![];
-        recv.read_to_end(&mut buf).await.unwrap();
+        let buf = recv.read_to_end(usize::MAX).await.unwrap();
         println!("{buf:?}");
 
         conn.close(1u32.into(), b"bye");
