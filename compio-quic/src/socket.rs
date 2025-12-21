@@ -492,7 +492,9 @@ impl Socket {
         }
 
         // GSO
-        if let Some(segment_size) = transmit.segment_size {
+        if let Some(segment_size) = transmit.segment_size
+            && segment_size < transmit.size
+        {
             #[cfg(linux_all)]
             builder.try_push(libc::SOL_UDP, libc::UDP_SEGMENT, segment_size as u16);
             #[cfg(windows)]
