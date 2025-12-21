@@ -113,7 +113,7 @@ fn max_gso_segments(socket: &UdpSocket) -> io::Result<usize> {
     unsafe {
         socket.get_socket_option::<libc::c_int>(libc::SOL_UDP, libc::UDP_SEGMENT)?;
     }
-    Ok(64)
+    Ok(32)
 }
 #[cfg(windows)]
 #[inline]
