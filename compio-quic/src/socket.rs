@@ -248,15 +248,10 @@ impl Socket {
                     &libc::IPV6_PMTUDISC_PROBE,
                 );
             }
-            #[cfg(all(unix, not(non_freebsd)))]
+            #[cfg(unix)]
             {
                 may_fragment |=
                     set_socket_option!(socket, libc::IPPROTO_IPV6, libc::IPV6_DONTFRAG, &1);
-            }
-            #[cfg(non_freebsd)]
-            {
-                // FIXME: workaround until https://github.com/rust-lang/libc/pull/3716 is released (at least in 0.2.155)
-                may_fragment |= set_socket_option!(socket, libc::IPPROTO_IPV6, 62, &1);
             }
             #[cfg(windows)]
             {
