@@ -129,10 +129,32 @@ fn max_gso_segments(_socket: &UdpSocket) -> io::Result<usize> {
     Err(io::Error::from(io::ErrorKind::Unsupported))
 }
 
+#[inline]
+fn error_is_unsupported(e: &io::Error) -> bool {
+    if matches!(
+        e.kind(),
+        io::ErrorKind::Unsupported | io::ErrorKind::InvalidInput
+    ) {
+        return true;
+    }
+    let Some(raw) = e.raw_os_error() else {
+        return false;
+    };
+    #[cfg(unix)]
+    {
+        raw == libc::ENOPROTOOPT
+    }
+    #[cfg(windows)]
+    {
+        raw == WinSock::WSAENOPROTOOPT
+    }
+}
+
 macro_rules! set_socket_option {
     ($socket:expr, $level:expr, $name:expr, $value:expr $(,)?) => {
         match unsafe { $socket.set_socket_option($level, $name, $value) } {
             Ok(()) => true,
+            Err(e) if error_is_unsupported(&e) => false,
             Err(e) => {
                 compio_log::warn!(
                     level = stringify!($level),
@@ -140,20 +162,7 @@ macro_rules! set_socket_option {
                     "failed to set socket option: {}",
                     e
                 );
-                if e.kind() == io::ErrorKind::InvalidInput {
-                    true
-                } else if e.raw_os_error()
-                    == Some(
-                        #[cfg(unix)]
-                        libc::ENOPROTOOPT,
-                        #[cfg(windows)]
-                        WinSock::WSAENOPROTOOPT,
-                    )
-                {
-                    false
-                } else {
-                    return Err(e);
-                }
+                return Err(e);
             }
         }
     };
@@ -217,6 +226,7 @@ impl Socket {
         }
 
         // disable fragmentation
+        #[allow(unused_mut)]
         let mut may_fragment = false;
         if is_ipv4 {
             #[cfg(linux_all)]
@@ -539,7 +549,7 @@ impl Clone for Socket {
             max_gso_segments: self.max_gso_segments,
             has_gso_error: AtomicBool::new(self.has_gso_error.load(Ordering::Relaxed)),
             #[cfg(freebsd)]
-            encode_src_ip_v4: self.encode_src_ip_v4.clone(),
+            encode_src_ip_v4: self.encode_src_ip_v4,
         }
     }
 }
