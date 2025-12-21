@@ -7,7 +7,7 @@ fn main() {
         linux_all: { any(target_os = "linux", target_os = "android") },
         freebsd: { target_os = "freebsd" },
         netbsd: { target_os = "netbsd" },
-        non_freebsd: { any(target_os = "openbsd", target_os = "netbsd") },
+        non_freebsd: { any(target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly") },
         bsd: { any(freebsd, non_freebsd) },
         solarish: { any(target_os = "illumos", target_os = "solaris") },
         apple: { target_vendor = "apple" },
