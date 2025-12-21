@@ -277,7 +277,7 @@ impl Socket {
         if set_socket_option!(socket, libc::SOL_UDP, libc::UDP_GRO, &1) {
             max_gro_segments = 64;
         }
-        #[cfg(windows)]
+        #[cfg(all(windows, feature = "windows-gro"))]
         if set_socket_option!(
             socket,
             WinSock::IPPROTO_UDP,
