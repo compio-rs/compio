@@ -335,7 +335,7 @@ impl RecvStream {
         .await
     }
 
-    /// Convenience method to read all remaining data into a buffer
+    /// Convenience method to read all remaining data into a buffer.
     ///
     /// Fails with [`ReadError::TooLong`] on reading more than `size_limit`
     /// bytes, discarding all data read. Uses unordered reads to be more
@@ -343,7 +343,7 @@ impl RecvStream {
     /// set to limit worst-case memory use.
     ///
     /// If unordered reads have already been made, the resulting buffer may have
-    /// gaps containing arbitrary data.
+    /// gaps containing zeros.
     ///
     /// This operation is *not* cancel-safe.
     pub async fn read_to_end(&mut self, size_limit: usize) -> Result<Vec<u8>, ReadError> {
@@ -470,7 +470,7 @@ impl From<ReadError> for io::Error {
             Reset { .. } | ZeroRttRejected => io::ErrorKind::ConnectionReset,
             ConnectionLost(_) | ClosedStream => io::ErrorKind::NotConnected,
             IllegalOrderedRead => io::ErrorKind::InvalidInput,
-            TooLong => io::ErrorKind::OutOfMemory,
+            TooLong => io::ErrorKind::InvalidData,
         };
         Self::new(kind, x)
     }
