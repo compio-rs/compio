@@ -74,7 +74,7 @@ impl Inner {
 
 impl IoBuf for Inner {
     #[inline]
-    fn as_slice(&self) -> &[u8] {
+    fn as_init(&self) -> &[u8] {
         self.buf.as_slice()
     }
 }

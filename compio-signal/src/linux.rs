@@ -74,7 +74,7 @@ impl SignalFd {
         struct SignalInfo(MaybeUninit<libc::signalfd_siginfo>);
 
         impl IoBuf for SignalInfo {
-            fn as_slice(&self) -> &[u8] {
+            fn as_init(&self) -> &[u8] {
                 let ptr = self.0.as_ptr() as *const u8;
                 unsafe { std::slice::from_raw_parts(ptr, INFO_SIZE) }
             }

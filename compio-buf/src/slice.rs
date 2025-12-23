@@ -99,7 +99,7 @@ impl<T: IoBuf> Deref for Slice<T> {
 
     fn deref(&self) -> &Self::Target {
         let range = self.initialized_range();
-        let bytes = self.buffer.as_slice();
+        let bytes = self.buffer.as_init();
         &bytes[range]
     }
 }
@@ -113,7 +113,7 @@ impl<T: IoBufMut> DerefMut for Slice<T> {
 }
 
 impl<T: IoBuf> IoBuf for Slice<T> {
-    fn as_slice(&self) -> &[u8] {
+    fn as_init(&self) -> &[u8] {
         self.deref()
     }
 }
@@ -236,17 +236,17 @@ impl<T: IoVectoredBufMut> IoVectoredBufMut for VectoredSlice<T> {
 fn test_slice() {
     let buf = b"hello world";
     let slice = buf.slice(6..);
-    assert_eq!(slice.as_slice(), b"world");
+    assert_eq!(slice.as_init(), b"world");
 
     let slice = buf.slice(..5);
-    assert_eq!(slice.as_slice(), b"hello");
+    assert_eq!(slice.as_init(), b"hello");
 
     let slice = buf.slice(3..8);
-    assert_eq!(slice.as_slice(), b"lo wo");
+    assert_eq!(slice.as_init(), b"lo wo");
 
     let slice = buf.slice(..);
-    assert_eq!(slice.as_slice(), b"hello world");
+    assert_eq!(slice.as_init(), b"hello world");
 
     let slice = buf.slice(11..);
-    assert_eq!(slice.as_slice(), b"");
+    assert_eq!(slice.as_init(), b"");
 }

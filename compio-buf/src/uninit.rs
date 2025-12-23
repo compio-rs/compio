@@ -37,8 +37,8 @@ impl<T> Uninit<T> {
 }
 
 impl<T: IoBuf> IoBuf for Uninit<T> {
-    fn as_slice(&self) -> &[u8] {
-        self.0.as_slice() // this is always &[] but we can't return &[] since the pointer will be different
+    fn as_init(&self) -> &[u8] {
+        self.0.as_init() // this is always &[] but we can't return &[] since the pointer will be different
     }
 }
 

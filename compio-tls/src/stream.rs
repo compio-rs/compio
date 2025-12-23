@@ -137,7 +137,7 @@ async fn flush_impl(s: &mut native_tls::TlsStream<SyncStream<impl AsyncWrite>>) 
 
 impl<S: AsyncRead + AsyncWrite + 'static> AsyncWrite for TlsStream<S> {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let slice = buf.as_slice();
+        let slice = buf.as_init();
         match &mut self.0 {
             #[cfg(feature = "native-tls")]
             TlsStreamInner::NativeTls(s) => loop {

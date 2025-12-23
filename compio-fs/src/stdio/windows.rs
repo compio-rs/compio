@@ -87,7 +87,7 @@ impl<W: Write, B: IoBuf> OpCode for StdWrite<W, B> {
 
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
-        let slice = this.buffer.as_slice();
+        let slice = this.buffer.as_init();
         this.writer.write(slice).into()
     }
 }

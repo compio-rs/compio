@@ -83,17 +83,17 @@ fn io_read_at() {
         let (len, buf) = SRC.read_at(ArrayVec::<u8, 10>::new(), 2).await.unwrap();
 
         assert_eq!(len, 4);
-        assert_eq!(buf.as_slice(), [4, 5, 1, 4]);
+        assert_eq!(buf.as_init(), [4, 5, 1, 4]);
 
         let (len, buf) = SRC.read_at(ArrayVec::<u8, 3>::new(), 2).await.unwrap();
 
         assert_eq!(len, 3);
-        assert_eq!(buf.as_slice(), [4, 5, 1]);
+        assert_eq!(buf.as_init(), [4, 5, 1]);
 
         let (len, buf) = SRC.read_at(ArrayVec::<u8, 1>::new(), 7).await.unwrap();
 
         assert_eq!(len, 0);
-        assert!(buf.as_slice().is_empty());
+        assert!(buf.as_init().is_empty());
     })
 }
 
@@ -174,7 +174,7 @@ fn readv_at() {
             .unwrap();
 
         assert_eq!(len, 4);
-        assert_eq!(buf[0].as_slice(), [4, 5, 1, 4]);
+        assert_eq!(buf[0].as_init(), [4, 5, 1, 4]);
         assert!(buf[1].is_empty());
 
         let (len, buf) = SRC
@@ -183,8 +183,8 @@ fn readv_at() {
             .unwrap();
 
         assert_eq!(len, 4);
-        assert_eq!(buf[0].as_slice(), [4, 5, 1]);
-        assert_eq!(buf[1].as_slice(), [4]);
+        assert_eq!(buf[0].as_init(), [4, 5, 1]);
+        assert_eq!(buf[1].as_init(), [4]);
     })
 }
 
@@ -284,7 +284,7 @@ struct WriteOne(Vec<u8>);
 
 impl AsyncWrite for WriteOne {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let slice = buf.as_slice();
+        let slice = buf.as_init();
         if !slice.is_empty() {
             self.0.push(slice[0]);
             BufResult(Ok(1), buf)
@@ -314,7 +314,7 @@ impl AsyncWriteAt for WriteOne {
                 buf,
             )
         } else {
-            let slice = buf.as_slice();
+            let slice = buf.as_init();
             if !slice.is_empty() {
                 if pos == self.0.len() {
                     self.0.push(slice[0]);

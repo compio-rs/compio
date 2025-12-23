@@ -198,7 +198,7 @@ impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
             overlapped.Anonymous.Anonymous.Offset = (self.offset & 0xFFFFFFFF) as _;
             overlapped.Anonymous.Anonymous.OffsetHigh = (self.offset >> 32) as _;
         }
-        let slice = self.buffer.as_slice();
+        let slice = self.buffer.as_init();
         let mut transferred = 0;
         let res = unsafe {
             WriteFile(
@@ -251,7 +251,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
 
 impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
     unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let slice = self.buffer.as_slice();
+        let slice = self.buffer.as_init();
         let mut transferred = 0;
         let res = unsafe {
             WriteFile(

@@ -104,8 +104,8 @@ impl OwnedBuffer {
 }
 
 impl IoBuf for OwnedBuffer {
-    fn as_slice(&self) -> &[u8] {
-        self.buffer.as_slice()
+    fn as_init(&self) -> &[u8] {
+        self.buffer.as_init()
     }
 }
 

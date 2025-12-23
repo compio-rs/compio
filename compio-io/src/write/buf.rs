@@ -66,7 +66,7 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
             .with_sync(|w| {
                 let len = w.buf_len();
                 let mut w = w.slice(len..);
-                let written = slice_to_buf(buf.as_slice(), &mut w);
+                let written = slice_to_buf(buf.as_init(), &mut w);
                 BufResult(Ok(written), w.into_inner())
             })
             .expect("Closure always return Ok");
