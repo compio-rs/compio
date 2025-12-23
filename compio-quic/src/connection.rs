@@ -7,8 +7,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use compio_buf::{BufResult, bytes::Bytes};
-use compio_log::{Instrument, error};
+use compio_buf::bytes::Bytes;
+use compio_log::Instrument;
 use compio_runtime::JoinHandle;
 use flume::{Receiver, Sender};
 use futures_util::{
@@ -212,11 +212,9 @@ impl ConnectionInner {
                     }
                     state
                 },
-                BufResult::<(), Vec<u8>>(res, mut buf) = transmit_fut => {
-                    #[allow(unused)]
-                    if let Err(e) = res {
-                        error!("I/O error: {}", e);
-                    }
+                buf = transmit_fut => {
+                    // The following line is required to avoid "type annotations needed" error
+                    let mut buf: Vec<_> = buf;
                     buf.clear();
                     send_buf = Some(buf);
                     self.state()

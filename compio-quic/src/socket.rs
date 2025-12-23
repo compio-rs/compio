@@ -413,7 +413,7 @@ impl Socket {
         BufResult(Ok(meta), buffer)
     }
 
-    pub async fn send<T: IoBuf>(&self, buffer: T, transmit: &Transmit) -> BufResult<(), T> {
+    pub async fn send<T: IoBuf>(&self, buffer: T, transmit: &Transmit) -> T {
         let is_ipv4 = transmit.destination.ip().to_canonical().is_ipv4();
         let ecn = transmit.ecn.map_or(0, |x| x as u8);
 
@@ -515,24 +515,35 @@ impl Socket {
         let len = builder.finish();
         control.len = len;
 
-        let buffer = buffer.slice(0..transmit.size);
-        let BufResult(res, (buffer, _)) = self
-            .inner
-            .send_msg(buffer, control, transmit.destination)
-            .await;
-        let buffer = buffer.into_inner();
-        match res {
-            Ok(_) => BufResult(Ok(()), buffer),
-            Err(e) => {
-                #[cfg(linux_all)]
-                if let Some(libc::EIO) | Some(libc::EINVAL) = e.raw_os_error()
-                    && self.max_gso_segments() > 1
-                {
-                    self.has_gso_error.store(true, Ordering::Relaxed);
+        let mut buffer = buffer.slice(0..transmit.size);
+
+        loop {
+            let res;
+            BufResult(res, (buffer, control)) = self
+                .inner
+                .send_msg(buffer, control, transmit.destination)
+                .await;
+
+            match res {
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Ok(_) => break,
+                Err(e) => {
+                    #[cfg(linux_all)]
+                    if matches!(e.raw_os_error(), Some(libc::EIO) | Some(libc::EINVAL))
+                        && self.max_gso_segments() > 1
+                    {
+                        self.has_gso_error.store(true, Ordering::Relaxed);
+                    }
+                    #[cfg(unix)]
+                    if matches!(e.raw_os_error(), Some(libc::EMSGSIZE)) {
+                        break;
+                    }
+                    compio_log::info!("failed to send UDP datagram: {e:?}, {transmit:?}");
                 }
-                BufResult(Err(e), buffer)
             }
         }
+
+        buffer.into_inner()
     }
 
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
@@ -572,7 +583,7 @@ mod tests {
         let passive_addr = passive.local_addr().unwrap();
         let active_addr = active.local_addr().unwrap();
 
-        let (_, content) = active.send(content, &transmit).await.unwrap();
+        let content = active.send(content, &transmit).await;
 
         let segment_size = transmit.segment_size.unwrap_or(transmit.size);
         let expected_datagrams = transmit.size / segment_size;
