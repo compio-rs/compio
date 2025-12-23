@@ -75,7 +75,7 @@ impl<const N: usize> Ancillary<N> {
 }
 
 impl<const N: usize> IoBuf for Ancillary<N> {
-    fn as_slice(&self) -> &[u8] {
+    fn as_init(&self) -> &[u8] {
         &self.inner[..self.len]
     }
 }
@@ -578,7 +578,7 @@ mod tests {
             let segments = meta.len / meta.stride;
             for i in 0..segments {
                 assert_eq!(
-                    &content.as_slice()
+                    &content.as_init()
                         [(datagrams + i) * segment_size..(datagrams + i + 1) * segment_size],
                     &buf[(i * meta.stride)..((i + 1) * meta.stride)]
                 );

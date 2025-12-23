@@ -307,7 +307,7 @@ impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        let slice = self.buffer.as_slice();
+        let slice = self.buffer.as_init();
         syscall!(
             break pwrite(
                 self.fd.as_fd().as_raw_fd(),
@@ -420,7 +420,7 @@ impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        let slice = self.buffer.as_slice();
+        let slice = self.buffer.as_init();
         syscall!(
             break libc::write(
                 self.fd.as_fd().as_raw_fd(),
@@ -802,7 +802,7 @@ impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        let slice = self.buffer.as_slice();
+        let slice = self.buffer.as_init();
         syscall!(
             break libc::send(
                 self.fd.as_fd().as_raw_fd(),
@@ -1038,7 +1038,7 @@ impl<T: IoBuf, S> SendTo<T, S> {
 
 impl<T: IoBuf, S: AsFd> SendTo<T, S> {
     unsafe fn call(&self) -> libc::ssize_t {
-        let slice = self.buffer.as_slice();
+        let slice = self.buffer.as_init();
         unsafe {
             libc::sendto(
                 self.fd.as_fd().as_raw_fd(),

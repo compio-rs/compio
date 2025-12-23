@@ -48,7 +48,7 @@ async fn drop_on_complete() {
     }
 
     impl IoBuf for MyBuf {
-        fn as_slice(&self) -> &[u8] {
+        fn as_init(&self) -> &[u8] {
             self.data.as_slice()
         }
     }

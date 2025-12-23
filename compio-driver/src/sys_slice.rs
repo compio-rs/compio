@@ -106,7 +106,7 @@ pub(crate) trait IoBufExt: IoBuf {
     ///
     /// This will only include initialized memory.
     fn sys_slice(self: Pin<&Self>) -> SysSlice {
-        SysSlice::from_slice(self.as_slice())
+        SysSlice::from_slice(self.as_init())
     }
 }
 

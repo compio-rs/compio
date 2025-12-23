@@ -48,15 +48,15 @@ pub trait IoVectoredBuf: 'static {
     /// let mut iter = vectored_buf.iter_slice();
     /// let buf1 = iter.next().unwrap();
     /// let buf2 = iter.next().unwrap();
-    /// assert_eq!(&buf1.as_slice()[..], b"lo");
-    /// assert_eq!(&buf2.as_slice()[..], b"world");
+    /// assert_eq!(&buf1.as_init()[..], b"lo");
+    /// assert_eq!(&buf2.as_init()[..], b"world");
     ///
     /// let bufs = [new_buf(b"hello", 10), new_buf(b"world", 10)];
     /// let vectored_buf = bufs.slice(6);
     /// let mut iter = vectored_buf.iter_slice();
     /// let buf1 = iter.next().unwrap();
     /// assert!(iter.next().is_none());
-    /// assert_eq!(&buf1.as_slice()[..], b"orld");
+    /// assert_eq!(&buf1.as_init()[..], b"orld");
     /// # }
     /// ```
     fn slice(self, begin: usize) -> VectoredSlice<Self>
@@ -81,19 +81,19 @@ pub trait IoVectoredBuf: 'static {
 
 impl<T: IoBuf> IoVectoredBuf for &'static [T] {
     fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
-        self.iter().map(|buf| buf.as_slice())
+        self.iter().map(|buf| buf.as_init())
     }
 }
 
 impl<T: IoBuf> IoVectoredBuf for &'static mut [T] {
     fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
-        self.iter().map(|buf| buf.as_slice())
+        self.iter().map(|buf| buf.as_init())
     }
 }
 
 impl<T: IoBuf, const N: usize> IoVectoredBuf for [T; N] {
     fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
-        self.iter().map(|buf| buf.as_slice())
+        self.iter().map(|buf| buf.as_init())
     }
 }
 
@@ -101,14 +101,14 @@ impl<T: IoBuf, #[cfg(feature = "allocator_api")] A: std::alloc::Allocator + 'sta
     for t_alloc!(Vec, T, A)
 {
     fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
-        self.iter().map(|buf| buf.as_slice())
+        self.iter().map(|buf| buf.as_init())
     }
 }
 
 #[cfg(feature = "arrayvec")]
 impl<T: IoBuf, const N: usize> IoVectoredBuf for arrayvec::ArrayVec<T, N> {
     fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
-        self.iter().map(|buf| buf.as_slice())
+        self.iter().map(|buf| buf.as_init())
     }
 }
 
@@ -118,19 +118,19 @@ where
     [T; N]: smallvec::Array<Item = T>,
 {
     fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
-        self.iter().map(|buf| buf.as_slice())
+        self.iter().map(|buf| buf.as_init())
     }
 }
 
 impl<T: IoBuf, Rest: IoVectoredBuf> IoVectoredBuf for (T, Rest) {
     fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
-        std::iter::once(self.0.as_slice()).chain(self.1.iter_slice())
+        std::iter::once(self.0.as_init()).chain(self.1.iter_slice())
     }
 }
 
 impl<T: IoBuf> IoVectoredBuf for (T,) {
     fn iter_slice(&self) -> impl Iterator<Item = &[u8]> {
-        std::iter::once(self.0.as_slice())
+        std::iter::once(self.0.as_init())
     }
 }
 
@@ -174,7 +174,7 @@ pub trait IoVectoredBufMut: IoVectoredBuf + SetLen {
     /// let mut iter = vectored_buf.iter_slice();
     /// let buf1 = iter.next().unwrap();
     /// assert!(iter.next().is_none());
-    /// assert_eq!(buf1.as_slice(), b"ld");
+    /// assert_eq!(buf1.as_init(), b"ld");
     /// # }
     /// ```
     fn slice_mut(mut self, begin: usize) -> VectoredSlice<Self>
@@ -330,7 +330,7 @@ impl<T> IntoInner for VectoredBufIter<T> {
 }
 
 impl<T: IoVectoredBuf> IoBuf for VectoredBufIter<T> {
-    fn as_slice(&self) -> &[u8] {
+    fn as_init(&self) -> &[u8] {
         let curr = self
             .buf
             .iter_slice()

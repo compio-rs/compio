@@ -86,7 +86,7 @@ impl<W: AsyncWrite + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator> Asy
 /// will grow as needed.
 impl<#[cfg(feature = "allocator_api")] A: Allocator> AsyncWrite for t_alloc!(Vec, u8, A) {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        self.extend_from_slice(buf.as_slice());
+        self.extend_from_slice(buf.as_init());
         BufResult(Ok(buf.buf_len()), buf)
     }
 
@@ -159,7 +159,7 @@ impl<W: AsyncWriteAt + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator> A
 
 impl AsyncWrite for &mut [u8] {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let slice = buf.as_slice();
+        let slice = buf.as_init();
         BufResult(std::io::Write::write(self, slice), buf)
     }
 
@@ -170,7 +170,7 @@ impl AsyncWrite for &mut [u8] {
         };
         let mut total = 0;
         loop {
-            let n = match std::io::Write::write(self, iter.as_slice()) {
+            let n = match std::io::Write::write(self, iter.as_init()) {
                 Ok(n) => n,
                 // TODO: unlikely
                 Err(e) => return BufResult(Err(e), iter.into_inner()),
@@ -201,7 +201,7 @@ macro_rules! impl_write_at {
             impl<$(const $len: usize)?> AsyncWriteAt for $ty {
                 async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
                     let pos = (pos as usize).min(self.len());
-                    let slice = buf.as_slice();
+                    let slice = buf.as_init();
                     let n = slice.len().min(self.len() - pos);
                     self[pos..pos + n].copy_from_slice(&slice[..n]);
                     BufResult(Ok(n), buf)
@@ -243,7 +243,7 @@ impl_write_at!([u8], const LEN => [u8; LEN]);
 impl<#[cfg(feature = "allocator_api")] A: Allocator> AsyncWriteAt for t_alloc!(Vec, u8, A) {
     async fn write_at<T: IoBuf>(&mut self, buf: T, pos: u64) -> BufResult<usize, T> {
         let pos = pos as usize;
-        let slice = buf.as_slice();
+        let slice = buf.as_init();
         if pos <= self.len() {
             let n = slice.len().min(self.len() - pos);
             if n < slice.len() {

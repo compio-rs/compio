@@ -11,16 +11,16 @@ use crate::*;
 /// file. This trait will only take initialized bytes of a buffer into account.
 pub trait IoBuf: 'static {
     /// Get the slice of initialized bytes.
-    fn as_slice(&self) -> &[u8];
+    fn as_init(&self) -> &[u8];
 
     /// Length of initialized bytes in the buffer.
     fn buf_len(&self) -> usize {
-        self.as_slice().len()
+        self.as_init().len()
     }
 
     /// Raw pointer to the buffer.
     fn buf_ptr(&self) -> *const u8 {
-        self.as_slice().as_ptr()
+        self.as_init().as_ptr()
     }
 
     /// Returns a view of the buffer with the specified range.
@@ -34,7 +34,7 @@ pub trait IoBuf: 'static {
     /// use compio_buf::IoBuf;
     ///
     /// let buf = b"hello world";
-    /// assert_eq!(buf.slice(6..).as_slice(), b"world");
+    /// assert_eq!(buf.slice(6..).as_init(), b"world");
     /// ```
     ///
     /// # Panics
@@ -71,59 +71,59 @@ pub trait IoBuf: 'static {
 }
 
 impl<B: IoBuf + ?Sized> IoBuf for &'static B {
-    fn as_slice(&self) -> &[u8] {
-        IoBuf::as_slice(&**self)
+    fn as_init(&self) -> &[u8] {
+        (**self).as_init()
     }
 }
 
 impl<B: IoBuf + ?Sized> IoBuf for &'static mut B {
-    fn as_slice(&self) -> &[u8] {
-        IoBuf::as_slice(&**self)
+    fn as_init(&self) -> &[u8] {
+        (**self).as_init()
     }
 }
 
 impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf
     for t_alloc!(Box, B, A)
 {
-    fn as_slice(&self) -> &[u8] {
-        IoBuf::as_slice(&**self)
+    fn as_init(&self) -> &[u8] {
+        (**self).as_init()
     }
 }
 
 impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf
     for t_alloc!(Rc, B, A)
 {
-    fn as_slice(&self) -> &[u8] {
-        IoBuf::as_slice(&**self)
+    fn as_init(&self) -> &[u8] {
+        (**self).as_init()
     }
 }
 
 impl IoBuf for [u8] {
-    fn as_slice(&self) -> &[u8] {
+    fn as_init(&self) -> &[u8] {
         self
     }
 }
 
 impl<const N: usize> IoBuf for [u8; N] {
-    fn as_slice(&self) -> &[u8] {
+    fn as_init(&self) -> &[u8] {
         self
     }
 }
 
 impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf for t_alloc!(Vec, u8, A) {
-    fn as_slice(&self) -> &[u8] {
+    fn as_init(&self) -> &[u8] {
         self
     }
 }
 
 impl IoBuf for str {
-    fn as_slice(&self) -> &[u8] {
+    fn as_init(&self) -> &[u8] {
         self.as_bytes()
     }
 }
 
 impl IoBuf for String {
-    fn as_slice(&self) -> &[u8] {
+    fn as_init(&self) -> &[u8] {
         self.as_bytes()
     }
 }
@@ -131,35 +131,35 @@ impl IoBuf for String {
 impl<B: IoBuf + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBuf
     for t_alloc!(Arc, B, A)
 {
-    fn as_slice(&self) -> &[u8] {
-        IoBuf::as_slice(&**self)
+    fn as_init(&self) -> &[u8] {
+        (**self).as_init()
     }
 }
 
 #[cfg(feature = "bytes")]
 impl IoBuf for bytes::Bytes {
-    fn as_slice(&self) -> &[u8] {
+    fn as_init(&self) -> &[u8] {
         self
     }
 }
 
 #[cfg(feature = "bytes")]
 impl IoBuf for bytes::BytesMut {
-    fn as_slice(&self) -> &[u8] {
+    fn as_init(&self) -> &[u8] {
         self
     }
 }
 
 #[cfg(feature = "read_buf")]
 impl IoBuf for std::io::BorrowedBuf<'static> {
-    fn as_slice(&self) -> &[u8] {
+    fn as_init(&self) -> &[u8] {
         self.filled()
     }
 }
 
 #[cfg(feature = "arrayvec")]
 impl<const N: usize> IoBuf for arrayvec::ArrayVec<u8, N> {
-    fn as_slice(&self) -> &[u8] {
+    fn as_init(&self) -> &[u8] {
         self
     }
 }
@@ -169,7 +169,7 @@ impl<const N: usize> IoBuf for smallvec::SmallVec<[u8; N]>
 where
     [u8; N]: smallvec::Array<Item = u8>,
 {
-    fn as_slice(&self) -> &[u8] {
+    fn as_init(&self) -> &[u8] {
         self
     }
 }
@@ -185,7 +185,9 @@ pub enum ReserveError {
 }
 
 impl ReserveError {
-    /// Check if the error is `NotSupported`.
+    /// Check if the error is [`NotSupported`].
+    ///
+    /// [`NotSupported`]: ReserveError::NotSupported
     pub fn is_not_supported(&self) -> bool {
         matches!(self, ReserveError::NotSupported)
     }
@@ -229,7 +231,9 @@ pub enum ReserveExactError {
 }
 
 impl ReserveExactError {
-    /// Check if the error is `NotSupported`.
+    /// Check if the error is [`NotSupported`]
+    ///
+    /// [`NotSupported`]: ReserveExactError::NotSupported
     pub fn is_not_supported(&self) -> bool {
         matches!(self, ReserveExactError::NotSupported)
     }
@@ -310,7 +314,7 @@ pub trait IoBufMut: IoBuf + SetLen {
     }
 
     /// Get the mutable slice of initialized bytes. The content is the same as
-    /// `as_slice`, but mutable.
+    /// [`IoBuf::as_init`], but mutable.
     fn as_mut_slice(&mut self) -> &mut [u8] {
         let len = (*self).buf_len();
         let ptr = (*self).buf_mut_ptr();
@@ -361,7 +365,7 @@ pub trait IoBufMut: IoBuf + SetLen {
     /// buf.reserve_exact(10);
     /// let mut slice = buf.uninit();
     ///
-    /// assert_eq!(slice.as_slice(), b"");
+    /// assert_eq!(slice.as_init(), b"");
     /// assert_eq!(slice.buf_capacity(), 10);
     /// ```
     fn uninit(self) -> Uninit<Self>
@@ -373,7 +377,7 @@ pub trait IoBufMut: IoBuf + SetLen {
 
     /// Indicate whether the buffer has been filled (uninit portion is empty)
     fn is_filled(&mut self) -> bool {
-        let len = (*self).as_slice().len();
+        let len = (*self).as_init().len();
         let cap = (*self).buf_capacity();
         len == cap
     }

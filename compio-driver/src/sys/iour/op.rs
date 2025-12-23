@@ -192,7 +192,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
 
 impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let slice = self.buffer.as_slice();
+        let slice = self.buffer.as_init();
         opcode::Write::new(
             Fd(self.fd.as_fd().as_raw_fd()),
             slice.as_ptr(),
@@ -245,7 +245,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
 
 impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let slice = self.buffer.as_slice();
+        let slice = self.buffer.as_init();
         opcode::Write::new(
             Fd(self.fd.as_fd().as_raw_fd()),
             slice.as_ptr(),
@@ -436,7 +436,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
 
 impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let slice = self.buffer.as_slice();
+        let slice = self.buffer.as_init();
         opcode::Send::new(
             Fd(self.fd.as_fd().as_raw_fd()),
             slice.as_ptr(),

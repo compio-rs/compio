@@ -329,7 +329,7 @@ impl From<WriteError> for io::Error {
 
 impl AsyncWrite for SendStream {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let res = self.write(buf.as_slice()).await.map_err(Into::into);
+        let res = self.write(buf.as_init()).await.map_err(Into::into);
         BufResult(res, buf)
     }
 
