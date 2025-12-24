@@ -525,22 +525,23 @@ impl Socket {
                 .await;
 
             match res {
+                Ok(_) => {}
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-                Ok(_) => break,
-                Err(e) => {
-                    #[cfg(linux_all)]
-                    if matches!(e.raw_os_error(), Some(libc::EIO) | Some(libc::EINVAL))
-                        && self.max_gso_segments() > 1
-                    {
-                        self.has_gso_error.store(true, Ordering::Relaxed);
-                    }
+                Err(e) => match e.raw_os_error() {
                     #[cfg(unix)]
-                    if matches!(e.raw_os_error(), Some(libc::EMSGSIZE)) {
-                        break;
+                    Some(libc::EMSGSIZE) => {}
+                    _ => {
+                        #[cfg(linux_all)]
+                        if matches!(e.raw_os_error(), Some(libc::EIO) | Some(libc::EINVAL))
+                            && self.max_gso_segments() > 1
+                        {
+                            self.has_gso_error.store(true, Ordering::Relaxed);
+                        }
+                        compio_log::info!("failed to send UDP datagram: {e:?}, {transmit:?}");
                     }
-                    compio_log::info!("failed to send UDP datagram: {e:?}, {transmit:?}");
-                }
+                },
             }
+            break;
         }
 
         buffer.into_inner()
