@@ -70,6 +70,7 @@ native-certs = ["dep:rustls-native-certs"]
 webpki-roots = ["dep:webpki-roots"]
 h3 = ["dep:h3", "dep:h3-datagram"]
 ring = ["quinn-proto/rustls-ring"]
+windows-gro = []
 
 [[example]]
 name = "http3-client"

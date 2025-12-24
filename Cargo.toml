@@ -49,7 +49,7 @@ flume = { version = "0.12.0", default-features = false }
 futures-channel = "0.3.29"
 futures-rustls = { version = "0.26.0", default-features = false }
 futures-util = "0.3.29"
-libc = "0.2.164"
+libc = "0.2.175"
 native-tls = "0.2.13"
 nix = "0.30.1"
 once_cell = "1.18.0"

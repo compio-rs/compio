@@ -204,7 +204,7 @@ impl EndpointInner {
     fn respond(&self, buf: Vec<u8>, transmit: Transmit) {
         let socket = self.socket.clone();
         compio_runtime::spawn(async move {
-            let _ = socket.send(buf, &transmit).await;
+            socket.send(buf, &transmit).await;
         })
         .detach();
     }
