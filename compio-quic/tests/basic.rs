@@ -4,6 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use compio_io::AsyncWriteExt;
 use compio_quic::{ClientBuilder, ConnectionError, Endpoint, TransportConfig};
 use futures_util::join;
 
@@ -102,8 +103,7 @@ async fn read_after_close() {
                 .await
                 .unwrap();
             let mut recv = conn.accept_uni().await.unwrap();
-            let mut buf = vec![];
-            recv.read_to_end(&mut buf).await.unwrap();
+            let (_, buf) = recv.read_to_end(vec![]).await.unwrap();
             assert_eq!(buf, MSG);
         },
     );
@@ -159,8 +159,7 @@ async fn zero_rtt() {
                 join!(
                     async {
                         while let Ok(mut recv) = conn.accept_uni().await {
-                            let mut buf = vec![];
-                            recv.read_to_end(&mut buf).await.unwrap();
+                            let (_, buf) = recv.read_to_end(vec![]).await.unwrap();
                             assert_eq!(buf, MSG0);
                         }
                     },
@@ -188,14 +187,13 @@ async fn zero_rtt() {
                     .await
                     .unwrap();
 
-                let mut buf = vec![];
                 let mut recv = conn.accept_uni().await.unwrap();
-                recv.read_to_end(&mut buf).await.expect("read_to_end");
+                let (_, mut buf) = recv.read_to_end(vec![]).await.expect("read_to_end");
                 assert_eq!(buf, MSG0);
 
                 buf.clear();
                 let mut recv = conn.accept_uni().await.unwrap();
-                recv.read_to_end(&mut buf).await.expect("read_to_end");
+                let (_, buf) = recv.read_to_end(buf).await.expect("read_to_end");
                 assert_eq!(buf, MSG1);
             }
 
@@ -209,16 +207,15 @@ async fn zero_rtt() {
             send.write_all(MSG0).await.unwrap();
             send.finish().unwrap();
 
-            let mut buf = vec![];
             let mut recv = conn.accept_uni().await.unwrap();
-            recv.read_to_end(&mut buf).await.expect("read_to_end");
+            let (_, mut buf) = recv.read_to_end(vec![]).await.expect("read_to_end");
             assert_eq!(buf, MSG0);
 
             assert!(conn.accepted_0rtt().await.unwrap());
 
             buf.clear();
             let mut recv = conn.accept_uni().await.unwrap();
-            recv.read_to_end(&mut buf).await.expect("read_to_end");
+            let (_, buf) = recv.read_to_end(buf).await.expect("read_to_end");
             assert_eq!(buf, MSG1);
         },
     );
