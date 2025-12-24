@@ -336,42 +336,47 @@ impl RecvStream {
 
     /// Convenience method to read all remaining data into a buffer.
     ///
-    /// Fails with [`ReadError::TooLong`] on reading more than `size_limit`
-    /// bytes, discarding all data read. Uses unordered reads to be more
-    /// efficient than using `AsyncRead` would allow. `size_limit` should be
-    /// set to limit worst-case memory use.
-    ///
     /// If unordered reads have already been made, the resulting buffer may have
     /// gaps containing zeros.
     ///
     /// This operation is *not* cancel-safe.
-    pub async fn read_to_end(&mut self, size_limit: usize) -> Result<Vec<u8>, ReadError> {
+    pub async fn read_to_end<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
         let mut start = u64::MAX;
         let mut end = 0;
         let mut chunks = vec![];
         loop {
-            let Some(chunk) = self.read_chunk(usize::MAX, false).await? else {
-                break;
+            let chunk = match self.read_chunk(usize::MAX, false).await {
+                Ok(Some(chunk)) => chunk,
+                Ok(None) => break,
+                Err(e) => return BufResult(Err(e.into()), buf),
             };
             start = start.min(chunk.offset);
             end = end.max(chunk.offset + chunk.bytes.len() as u64);
-            if (end - start) > size_limit as u64 {
-                return Err(ReadError::TooLong);
-            }
             chunks.push((chunk.offset, chunk.bytes));
         }
         if start == u64::MAX || start >= end {
             // no data read
-            return Ok(vec![]);
+            return BufResult(Ok(0), buf);
         }
         let len = (end - start) as usize;
-        let mut buffer = vec![0u8; len];
+        let cap = buf.buf_capacity();
+        let needed = len.saturating_sub(cap);
+        if needed > 0
+            && let Err(e) = buf.reserve(needed)
+        {
+            return BufResult(Err(io::Error::new(io::ErrorKind::InvalidData, e)), buf);
+        }
+        let slice = &mut buf.as_uninit()[..len];
+        slice.fill(MaybeUninit::new(0));
         for (offset, bytes) in chunks {
             let offset = (offset - start) as usize;
             let buf_len = bytes.len();
-            buffer[offset..offset + buf_len].copy_from_slice(&bytes);
+            slice[offset..offset + buf_len].copy_from_slice(unsafe {
+                std::slice::from_raw_parts(bytes.as_ptr().cast(), buf_len)
+            });
         }
-        Ok(buffer)
+        unsafe { buf.advance_to(len) }
+        BufResult(Ok(len), buf)
     }
 }
 
@@ -437,11 +442,6 @@ pub enum ReadError {
     /// [`Connecting::into_0rtt()`]: crate::Connecting::into_0rtt()
     #[error("0-RTT rejected")]
     ZeroRttRejected,
-    /// The stream is larger than the user-supplied limit.
-    ///
-    /// Can only occur when using [`read_to_end()`](RecvStream::read_to_end).
-    #[error("the stream is larger than the user-supplied limit")]
-    TooLong,
 }
 
 impl From<ReadableError> for ReadError {
@@ -469,7 +469,6 @@ impl From<ReadError> for io::Error {
             Reset { .. } | ZeroRttRejected => io::ErrorKind::ConnectionReset,
             ConnectionLost(_) | ClosedStream => io::ErrorKind::NotConnected,
             IllegalOrderedRead => io::ErrorKind::InvalidInput,
-            TooLong => io::ErrorKind::InvalidData,
         };
         Self::new(kind, x)
     }
