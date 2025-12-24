@@ -25,7 +25,7 @@ async fn main() {
 
         let (mut send, mut recv) = conn.accept_bi().await.unwrap();
 
-        let buf = recv.read_to_end(usize::MAX).await.unwrap();
+        let (_, buf) = recv.read_to_end(vec![]).await.unwrap();
         println!("{buf:?}");
 
         send.write(&[4, 5, 6]).await.unwrap();

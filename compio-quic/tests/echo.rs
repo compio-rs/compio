@@ -89,13 +89,13 @@ async fn run_echo(args: EchoArgs) {
                 let (mut send, mut recv) = conn.open_bi_wait().await.unwrap();
                 let msg = gen_data(args.stream_size);
 
-                let (msg, data) = join!(
+                let (msg, (_, data)) = join!(
                     async {
                         let (_, msg) = send.write_all(msg).await.unwrap();
                         send.finish().unwrap();
                         msg
                     },
-                    async { recv.read_to_end(usize::MAX).await.unwrap() }
+                    async { recv.read_to_end(vec![]).await.unwrap() }
                 );
 
                 assert_eq!(data, msg);

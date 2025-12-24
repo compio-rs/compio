@@ -31,7 +31,7 @@ async fn main() {
         send.write(&[1, 2, 3]).await.unwrap();
         send.finish().unwrap();
 
-        let buf = recv.read_to_end(usize::MAX).await.unwrap();
+        let (_, buf) = recv.read_to_end(vec![]).await.unwrap();
         println!("{buf:?}");
 
         conn.close(1u32.into(), b"bye");

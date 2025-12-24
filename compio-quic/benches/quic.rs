@@ -125,7 +125,7 @@ async fn compio_quic_echo_client(
                     send.finish().unwrap();
                 },
                 async {
-                    recv.read_to_end(usize::MAX).await.unwrap();
+                    recv.read_to_end(vec![]).await.unwrap();
                 }
             );
         })

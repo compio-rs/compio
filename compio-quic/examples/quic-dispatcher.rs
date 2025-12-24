@@ -62,7 +62,7 @@ async fn main() {
             .dispatch(move || async move {
                 let conn = incoming.await.unwrap();
                 let mut recv = conn.accept_uni().await.unwrap();
-                let buf = recv.read_to_end(usize::MAX).await.unwrap();
+                let (_, buf) = recv.read_to_end(vec![]).await.unwrap();
                 println!("{}", std::str::from_utf8(&buf).unwrap());
             })
             .unwrap();
