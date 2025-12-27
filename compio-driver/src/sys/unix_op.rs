@@ -20,10 +20,8 @@ impl OpenFile {
     }
 }
 
-/// [`libc::stat`]
 #[cfg(not(gnulinux))]
 pub use libc::stat as Stat;
-/// [`libc::stat64`]
 #[cfg(gnulinux)]
 pub use libc::stat64 as Stat;
 #[cfg(gnulinux)]
