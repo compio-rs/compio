@@ -11,9 +11,9 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 #[cfg(not(gnulinux))]
-use libc::open;
+use libc::{lstat, open, stat};
 #[cfg(gnulinux)]
-use libc::open64 as open;
+use libc::{lstat64 as lstat, open64 as open, stat64 as stat};
 #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "hurd")))]
 use libc::{pread, preadv, pwrite, pwritev};
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "hurd"))]
@@ -96,7 +96,7 @@ pin_project! {
     /// Get metadata of an opened file.
     pub struct FileStat<S> {
         pub(crate) fd: S,
-        pub(crate) stat: libc::stat,
+        pub(crate) stat: Stat,
     }
 }
 
@@ -141,7 +141,7 @@ impl<S: AsFd> OpCode for FileStat<S> {
 }
 
 impl<S> IntoInner for FileStat<S> {
-    type Inner = libc::stat;
+    type Inner = Stat;
 
     fn into_inner(self) -> Self::Inner {
         self.stat
@@ -151,7 +151,7 @@ impl<S> IntoInner for FileStat<S> {
 /// Get metadata from path.
 pub struct PathStat {
     pub(crate) path: CString,
-    pub(crate) stat: libc::stat,
+    pub(crate) stat: Stat,
     pub(crate) follow_symlink: bool,
 }
 
@@ -191,18 +191,14 @@ impl OpCode for PathStat {
         }
         #[cfg(not(gnulinux))]
         {
-            let f = if self.follow_symlink {
-                libc::stat
-            } else {
-                libc::lstat
-            };
+            let f = if self.follow_symlink { stat } else { lstat };
             Poll::Ready(Ok(syscall!(f(self.path.as_ptr(), &mut self.stat))? as _))
         }
     }
 }
 
 impl IntoInner for PathStat {
-    type Inner = libc::stat;
+    type Inner = Stat;
 
     fn into_inner(self) -> Self::Inner {
         self.stat
