@@ -11,9 +11,9 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 #[cfg(not(gnulinux))]
-use libc::{lstat, open, stat};
+use libc::{fstat, lstat, open, stat};
 #[cfg(gnulinux)]
-use libc::{lstat64 as lstat, open64 as open, stat64 as stat};
+use libc::{fstat64 as fstat, lstat64 as lstat, open64 as open, stat64 as stat};
 #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "hurd")))]
 use libc::{pread, preadv, pwrite, pwritev};
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "hurd"))]
@@ -134,7 +134,7 @@ impl<S: AsFd> OpCode for FileStat<S> {
         #[cfg(not(gnulinux))]
         {
             Poll::Ready(Ok(
-                syscall!(libc::fstat(this.fd.as_fd().as_raw_fd(), this.stat))? as _,
+                syscall!(fstat(this.fd.as_fd().as_raw_fd(), this.stat))? as _
             ))
         }
     }
