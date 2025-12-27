@@ -20,8 +20,12 @@ impl OpenFile {
     }
 }
 
+#[cfg(not(gnulinux))]
+pub use libc::stat as Stat;
 #[cfg(gnulinux)]
-pub(crate) type Statx = libc::statx;
+pub use libc::stat64 as Stat;
+#[cfg(gnulinux)]
+pub(crate) use libc::statx as Statx;
 
 #[cfg(all(target_os = "linux", not(target_env = "gnu")))]
 #[repr(C)]
@@ -61,23 +65,23 @@ pub(crate) struct Statx {
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) const fn statx_to_stat(statx: Statx) -> libc::stat {
-    let mut stat: libc::stat = unsafe { std::mem::zeroed() };
-    stat.st_dev = libc::makedev(statx.stx_dev_major, statx.stx_dev_minor);
-    stat.st_ino = statx.stx_ino;
+pub(crate) const fn statx_to_stat(statx: Statx) -> Stat {
+    let mut stat: Stat = unsafe { std::mem::zeroed() };
+    stat.st_dev = libc::makedev(statx.stx_dev_major, statx.stx_dev_minor) as _;
+    stat.st_ino = statx.stx_ino as _;
     stat.st_nlink = statx.stx_nlink as _;
     stat.st_mode = statx.stx_mode as _;
-    stat.st_uid = statx.stx_uid;
-    stat.st_gid = statx.stx_gid;
-    stat.st_rdev = libc::makedev(statx.stx_rdev_major, statx.stx_rdev_minor);
+    stat.st_uid = statx.stx_uid as _;
+    stat.st_gid = statx.stx_gid as _;
+    stat.st_rdev = libc::makedev(statx.stx_rdev_major, statx.stx_rdev_minor) as _;
     stat.st_size = statx.stx_size as _;
     stat.st_blksize = statx.stx_blksize as _;
     stat.st_blocks = statx.stx_blocks as _;
-    stat.st_atime = statx.stx_atime.tv_sec;
+    stat.st_atime = statx.stx_atime.tv_sec as _;
     stat.st_atime_nsec = statx.stx_atime.tv_nsec as _;
-    stat.st_mtime = statx.stx_mtime.tv_sec;
+    stat.st_mtime = statx.stx_mtime.tv_sec as _;
     stat.st_mtime_nsec = statx.stx_mtime.tv_nsec as _;
-    stat.st_ctime = statx.stx_btime.tv_sec;
+    stat.st_ctime = statx.stx_btime.tv_sec as _;
     stat.st_ctime_nsec = statx.stx_btime.tv_nsec as _;
     stat
 }

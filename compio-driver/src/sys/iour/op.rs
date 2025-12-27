@@ -113,7 +113,7 @@ impl<S: AsFd> OpCode for FileStat<S> {
 }
 
 impl<S> IntoInner for FileStat<S> {
-    type Inner = libc::stat;
+    type Inner = Stat;
 
     fn into_inner(self) -> Self::Inner {
         statx_to_stat(self.stat)
@@ -156,7 +156,7 @@ impl OpCode for PathStat {
 }
 
 impl IntoInner for PathStat {
-    type Inner = libc::stat;
+    type Inner = Stat;
 
     fn into_inner(self) -> Self::Inner {
         statx_to_stat(self.stat)

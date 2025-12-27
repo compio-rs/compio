@@ -8,7 +8,7 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner};
-use compio_driver::op::PathStat;
+use compio_driver::op::{PathStat, Stat};
 
 use crate::path_string;
 
@@ -35,11 +35,11 @@ pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::R
 }
 
 #[derive(Clone)]
-pub struct Metadata(pub(crate) libc::stat);
+pub struct Metadata(pub(crate) Stat);
 
 impl Metadata {
-    /// Create from [`libc::stat`].
-    pub fn from_stat(stat: libc::stat) -> Self {
+    /// Create from [`Stat`].
+    pub fn from_stat(stat: Stat) -> Self {
         Self(stat)
     }
 
@@ -114,11 +114,11 @@ impl MetadataExt for Metadata {
     }
 
     fn uid(&self) -> u32 {
-        self.0.st_uid
+        self.0.st_uid as _
     }
 
     fn gid(&self) -> u32 {
-        self.0.st_gid
+        self.0.st_gid as _
     }
 
     fn rdev(&self) -> u64 {
