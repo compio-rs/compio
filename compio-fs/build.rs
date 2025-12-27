@@ -8,5 +8,6 @@ fn main() {
             target_vendor = "apple"
         ) },
         solarish: { any(target_os = "illumos", target_os = "solaris") },
+        gnulinux: { all(target_os = "linux", target_env = "gnu") },
     }
 }

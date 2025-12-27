@@ -10,6 +10,9 @@ mod sys;
 use std::os::windows::fs::{FileTypeExt, MetadataExt};
 use std::{io, path::Path, time::SystemTime};
 
+#[cfg(unix)]
+use compio_driver::op::Stat;
+
 /// Given a path, query the file system to get information about a file,
 /// directory, etc.
 pub async fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
@@ -88,7 +91,8 @@ impl Metadata {
     /// * Windows: The returned value corresponds to the `ftCreationTime` field.
     /// * Unix: The returned value corresponds to `st_ctime` or `st_birthtime`
     ///   of
-    #[cfg_attr(unix, doc = "[`libc::stat`](struct@libc::stat).")]
+    #[cfg_attr(all(unix, not(gnulinux)), doc = "[`libc::stat`](struct@libc::stat).")]
+    #[cfg_attr(gnulinux, doc = "[`libc::stat64`](struct@libc::stat64).")]
     #[cfg_attr(
         windows,
         doc = "[`libc::stat`](https://docs.rs/libc/latest/libc/struct.stat.html)."
@@ -151,10 +155,10 @@ impl Metadata {
 
 #[cfg(unix)]
 impl Metadata {
-    /// Create from [`libc::stat`]
-    ///
-    /// [`libc::stat`]: struct@libc::stat
-    pub fn from_stat(stat: libc::stat) -> Self {
+    /// Create from
+    #[cfg_attr(not(gnulinux), doc = "[`libc::stat`](struct@libc::stat).")]
+    #[cfg_attr(gnulinux, doc = "[`libc::stat64`](struct@libc::stat64).")]
+    pub fn from_stat(stat: Stat) -> Self {
         Self(sys::Metadata::from_stat(stat))
     }
 }
