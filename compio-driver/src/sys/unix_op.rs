@@ -26,9 +26,8 @@ pub use libc::stat as Stat;
 /// [`libc::stat64`]
 #[cfg(gnulinux)]
 pub use libc::stat64 as Stat;
-
 #[cfg(gnulinux)]
-pub(crate) type Statx = libc::statx;
+pub(crate) use libc::statx as Statx;
 
 #[cfg(all(target_os = "linux", not(target_env = "gnu")))]
 #[repr(C)]
