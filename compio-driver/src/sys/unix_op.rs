@@ -523,8 +523,8 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
             "misaligned control message buffer"
         );
         Self {
-            addr: unsafe { std::mem::zeroed() },
             msg: unsafe { std::mem::zeroed() },
+            addr: SockAddrStorage::zeroed(),
             fd,
             buffer,
             control,
@@ -539,7 +539,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
         *this.slices = this.buffer.sys_slices_mut();
 
         this.msg.msg_name = this.addr as *mut _ as _;
-        this.msg.msg_namelen = std::mem::size_of_val(this.addr) as _;
+        this.msg.msg_namelen = this.addr.size_of() as _;
         this.msg.msg_iov = this.slices.as_mut_ptr() as _;
         this.msg.msg_iovlen = this.slices.len() as _;
         this.msg.msg_control = this.control.buf_mut_ptr() as _;

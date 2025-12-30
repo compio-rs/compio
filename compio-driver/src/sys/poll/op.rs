@@ -977,7 +977,7 @@ impl<T: IoVectoredBufMut, S: AsFd> RecvFromVectored<T, S> {
         let this = self.project();
         *this.slices = this.buffer.sys_slices_mut();
         this.msg.msg_name = this.addr as *mut _ as _;
-        this.msg.msg_namelen = std::mem::size_of_val(this.addr) as _;
+        this.msg.msg_namelen = this.addr.size_of() as _;
         this.msg.msg_iov = this.slices.as_mut_ptr() as _;
         this.msg.msg_iovlen = this.slices.len() as _;
     }
@@ -1108,7 +1108,7 @@ impl<T: IoVectoredBuf, S: AsFd> SendToVectored<T, S> {
         let this = self.project();
         *this.slices = this.buffer.as_ref().sys_slices();
         this.msg.msg_name = this.addr as *mut _ as _;
-        this.msg.msg_namelen = std::mem::size_of_val(this.addr) as _;
+        this.msg.msg_namelen = this.addr.size_of() as _;
         this.msg.msg_iov = this.slices.as_mut_ptr() as _;
         this.msg.msg_iovlen = this.slices.len() as _;
     }

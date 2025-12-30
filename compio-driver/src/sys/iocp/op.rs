@@ -1054,7 +1054,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
 
         *this.slices = this.buffer.sys_slices_mut();
         this.msg.name = this.addr as *mut _ as _;
-        this.msg.namelen = std::mem::size_of::<SOCKADDR_STORAGE>() as _;
+        this.msg.namelen = this.addr.size_of() as _;
         this.msg.lpBuffers = this.slices.as_mut_ptr() as _;
         this.msg.dwBufferCount = this.slices.len() as _;
         this.msg.Control = this.control.sys_slice_mut().into_inner();
