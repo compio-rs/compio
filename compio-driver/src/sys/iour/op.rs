@@ -494,7 +494,7 @@ impl<S> RecvFromHeader<S> {
 impl<S: AsFd> RecvFromHeader<S> {
     pub fn create_entry(&mut self, slices: &mut [SysSlice]) -> OpEntry {
         self.msg.msg_name = &mut self.addr as *mut _ as _;
-        self.msg.msg_namelen = std::mem::size_of_val(&self.addr) as _;
+        self.msg.msg_namelen = self.addr.size_of() as _;
         self.msg.msg_iov = slices.as_mut_ptr() as _;
         self.msg.msg_iovlen = slices.len() as _;
         opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &mut self.msg)
