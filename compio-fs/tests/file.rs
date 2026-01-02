@@ -1,7 +1,11 @@
 use std::io::prelude::*;
 
 use compio_fs::File;
+#[cfg(linux_all)]
+use compio_fs::pipe::{anonymous, splice};
 use compio_io::{AsyncReadAtExt, AsyncWriteAt, AsyncWriteAtExt};
+#[cfg(linux_all)]
+use compio_io::{AsyncReadExt, AsyncWriteExt};
 use tempfile::NamedTempFile;
 
 #[compio_macros::test]
@@ -133,6 +137,57 @@ async fn hidden_file_truncation() {
 
 fn tempfile() -> NamedTempFile {
     NamedTempFile::new().unwrap()
+}
+
+#[cfg(linux_all)]
+#[compio_macros::test]
+async fn splice_file_to_pipe() {
+    let mut tempfile = tempfile();
+    tempfile.write_all(HELLO).unwrap();
+
+    let file = File::open(tempfile.path()).await.unwrap();
+    let (mut rx, tx) = anonymous().unwrap();
+
+    let n = splice(&file, &tx, HELLO.len() as u32)
+        .offset_in(0)
+        .await
+        .unwrap();
+    assert_eq!(n, HELLO.len());
+
+    drop(tx);
+    let (_, buf) = rx
+        .read_exact(Vec::with_capacity(HELLO.len()))
+        .await
+        .unwrap();
+    assert_eq!(&buf, HELLO);
+}
+
+#[cfg(linux_all)]
+#[compio_macros::test]
+async fn splice_pipe_to_file() {
+    let tempfile = tempfile();
+
+    let file = compio_fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(tempfile.path())
+        .await
+        .unwrap();
+    let (rx, mut tx) = anonymous().unwrap();
+
+    tx.write_all(HELLO).await.unwrap();
+    drop(tx);
+
+    let n = splice(&rx, &file, HELLO.len() as u32)
+        .offset_out(0)
+        .await
+        .unwrap();
+    assert_eq!(n, HELLO.len());
+
+    file.sync_all().await.unwrap();
+    let contents = std::fs::read(tempfile.path()).unwrap();
+    assert_eq!(&contents, HELLO);
 }
 
 async fn poll_once(future: impl std::future::Future) {
