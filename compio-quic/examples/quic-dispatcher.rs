@@ -1,6 +1,7 @@
 use std::num::NonZeroUsize;
 
 use compio_dispatcher::Dispatcher;
+use compio_io::AsyncWriteExt;
 use compio_quic::{ClientBuilder, Endpoint, ServerBuilder};
 use compio_runtime::spawn;
 use futures_util::{StreamExt, stream::FuturesUnordered};
@@ -40,9 +41,7 @@ async fn main() {
                         .await
                         .unwrap();
                     let mut send = conn.open_uni().unwrap();
-                    send.write_all(format!("Hello world {i}!").as_bytes())
-                        .await
-                        .unwrap();
+                    send.write_all(format!("Hello world {i}!")).await.unwrap();
                     send.finish().unwrap();
                     send.stopped().await.unwrap();
                 }
@@ -63,8 +62,7 @@ async fn main() {
             .dispatch(move || async move {
                 let conn = incoming.await.unwrap();
                 let mut recv = conn.accept_uni().await.unwrap();
-                let mut buf = vec![];
-                recv.read_to_end(&mut buf).await.unwrap();
+                let (_, buf) = recv.read_to_end(vec![]).await.unwrap();
                 println!("{}", std::str::from_utf8(&buf).unwrap());
             })
             .unwrap();
