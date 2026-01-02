@@ -20,6 +20,8 @@ use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
 use compio_runtime::{BorrowedBuffer, BufferPool};
 
 use crate::File;
+#[cfg(linux_all)]
+pub use crate::splice::*;
 
 /// Creates a pair of anonymous pipe.
 ///

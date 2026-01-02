@@ -33,6 +33,9 @@ pub mod named_pipe;
 #[cfg(unix)]
 pub mod pipe;
 
+#[cfg(linux_all)]
+mod splice;
+
 #[cfg(unix)]
 pub(crate) fn path_string(path: impl AsRef<std::path::Path>) -> std::io::Result<std::ffi::CString> {
     use std::os::unix::ffi::OsStrExt;
