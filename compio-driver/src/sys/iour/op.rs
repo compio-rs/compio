@@ -168,10 +168,14 @@ impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
         let this = self.project();
         let fd = Fd(this.fd.as_fd().as_raw_fd());
         let slice = this.buffer.sys_slice_mut();
-        opcode::Read::new(fd, slice.ptr() as _, slice.len() as _)
-            .offset(*this.offset)
-            .build()
-            .into()
+        opcode::Read::new(
+            fd,
+            slice.ptr() as _,
+            slice.len().try_into().unwrap_or(u32::MAX),
+        )
+        .offset(*this.offset)
+        .build()
+        .into()
     }
 }
 
@@ -182,7 +186,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
         opcode::Readv::new(
             Fd(this.fd.as_fd().as_raw_fd()),
             this.slices.as_ptr() as _,
-            this.slices.len() as _,
+            this.slices.len().try_into().unwrap_or(u32::MAX),
         )
         .offset(*this.offset)
         .build()
@@ -196,7 +200,7 @@ impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
         opcode::Write::new(
             Fd(self.fd.as_fd().as_raw_fd()),
             slice.as_ptr(),
-            slice.len() as _,
+            slice.len().try_into().unwrap_or(u32::MAX),
         )
         .offset(self.offset)
         .build()
@@ -211,7 +215,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
         opcode::Writev::new(
             Fd(this.fd.as_fd().as_raw_fd()),
             this.slices.as_ptr() as _,
-            this.slices.len() as _,
+            this.slices.len().try_into().unwrap_or(u32::MAX),
         )
         .offset(*this.offset)
         .build()
@@ -223,9 +227,13 @@ impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let fd = self.fd.as_fd().as_raw_fd();
         let slice = self.project().buffer.sys_slice_mut();
-        opcode::Read::new(Fd(fd), slice.ptr() as _, slice.len() as _)
-            .build()
-            .into()
+        opcode::Read::new(
+            Fd(fd),
+            slice.ptr() as _,
+            slice.len().try_into().unwrap_or(u32::MAX),
+        )
+        .build()
+        .into()
     }
 }
 
@@ -236,7 +244,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
         opcode::Readv::new(
             Fd(this.fd.as_fd().as_raw_fd()),
             this.slices.as_ptr() as _,
-            this.slices.len() as _,
+            this.slices.len().try_into().unwrap_or(u32::MAX),
         )
         .build()
         .into()
@@ -249,7 +257,7 @@ impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
         opcode::Write::new(
             Fd(self.fd.as_fd().as_raw_fd()),
             slice.as_ptr(),
-            slice.len() as _,
+            slice.len().try_into().unwrap_or(u32::MAX),
         )
         .build()
         .into()
@@ -263,7 +271,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
         opcode::Writev::new(
             Fd(this.fd.as_fd().as_raw_fd()),
             this.slices.as_ptr() as _,
-            this.slices.len() as _,
+            this.slices.len().try_into().unwrap_or(u32::MAX),
         )
         .build()
         .into()
@@ -416,10 +424,14 @@ impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
         let fd = self.fd.as_fd().as_raw_fd();
         let flags = self.flags;
         let slice = self.project().buffer.sys_slice_mut();
-        opcode::Recv::new(Fd(fd), slice.ptr() as _, slice.len() as _)
-            .flags(flags)
-            .build()
-            .into()
+        opcode::Recv::new(
+            Fd(fd),
+            slice.ptr() as _,
+            slice.len().try_into().unwrap_or(u32::MAX),
+        )
+        .flags(flags)
+        .build()
+        .into()
     }
 }
 
@@ -440,7 +452,7 @@ impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
         opcode::Send::new(
             Fd(self.fd.as_fd().as_raw_fd()),
             slice.as_ptr(),
-            slice.len() as _,
+            slice.len().try_into().unwrap_or(u32::MAX),
         )
         .flags(self.flags)
         .build()
