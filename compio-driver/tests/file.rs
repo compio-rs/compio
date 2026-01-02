@@ -158,3 +158,23 @@ fn managed() {
     let op = CloseFile::new(fd.try_unwrap().unwrap());
     push_and_wait(&mut driver, op).unwrap();
 }
+
+#[test]
+#[cfg(all(io_uring, target_pointer_width = "64"))]
+fn read_len_over_u32() {
+    let mut driver = Proactor::new().unwrap();
+
+    let fd = open_file(&mut driver);
+    let fd = SharedFd::new(fd);
+    driver.attach(fd.as_raw_fd()).unwrap();
+
+    let buffer = Vec::with_capacity(1 << 32);
+
+    let op = ReadAt::new(fd.clone(), 0, buffer);
+    let (res, _) = push_and_wait(&mut driver, op).unwrap();
+
+    assert!(res > 0);
+
+    let op = CloseFile::new(fd.try_unwrap().unwrap());
+    push_and_wait(&mut driver, op).unwrap();
+}
