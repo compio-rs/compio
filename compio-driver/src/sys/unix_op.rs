@@ -641,3 +641,39 @@ impl<S> PollOnce<S> {
         Self { fd, interest }
     }
 }
+
+/// Splice data between two file descriptors.
+#[cfg(linux_all)]
+pub struct Splice<S1, S2> {
+    pub(crate) fd_in: S1,
+    pub(crate) offset_in: i64,
+    pub(crate) fd_out: S2,
+    pub(crate) offset_out: i64,
+    pub(crate) len: u32,
+    pub(crate) flags: u32,
+}
+
+#[cfg(linux_all)]
+impl<S1, S2> Splice<S1, S2> {
+    /// Create [`Splice`].
+    ///
+    /// `offset_in` and `offset_out` specify the offset to read from and write
+    /// to. Use `-1` for pipe ends or to use/update the current file
+    /// position.
+    pub fn new(fd_in: S1, offset_in: i64, fd_out: S2, offset_out: i64, len: u32) -> Self {
+        Self {
+            fd_in,
+            offset_in,
+            fd_out,
+            offset_out,
+            len,
+            flags: 0,
+        }
+    }
+
+    /// Set splice flags.
+    pub fn flags(mut self, flags: u32) -> Self {
+        self.flags = flags;
+        self
+    }
+}
