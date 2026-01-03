@@ -92,6 +92,20 @@ impl OpCode for CloseFile {
     }
 }
 
+impl<S: AsFd> OpCode for TruncateFile<S> {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::Blocking)
+    }
+
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        let size: libc::off64_t = self
+            .size
+            .try_into()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        Poll::Ready(syscall!(libc::ftruncate64(self.fd.as_fd().as_raw_fd(), size)).map(|v| v as _))
+    }
+}
+
 pin_project! {
     /// Get metadata of an opened file.
     pub struct FileStat<S> {

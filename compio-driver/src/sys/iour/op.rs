@@ -79,6 +79,26 @@ impl OpCode for CloseFile {
     }
 }
 
+impl<S: AsFd> OpCode for TruncateFile<S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        if super::is_op_supported(opcode::Ftruncate::CODE) {
+            return opcode::Ftruncate::new(Fd(self.fd.as_fd().as_raw_fd()), self.size)
+                .build()
+                .into();
+        }
+
+        OpEntry::Blocking
+    }
+
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        let size: libc::off64_t = self
+            .size
+            .try_into()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        syscall!(libc::ftruncate64(self.fd.as_fd().as_raw_fd(), size)).map(|v| v as _)
+    }
+}
+
 pin_project! {
     /// Get metadata of an opened file.
     pub struct FileStat<S> {

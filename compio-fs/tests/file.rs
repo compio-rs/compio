@@ -1,8 +1,30 @@
 use std::io::prelude::*;
 
-use compio_fs::File;
+use compio_fs::{File, OpenOptions};
 use compio_io::{AsyncReadAtExt, AsyncWriteAt, AsyncWriteAtExt};
 use tempfile::NamedTempFile;
+
+async fn setlen_run(file: &File, size: u64) {
+    file.set_len(size).await.unwrap();
+    compio_runtime::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    let meta = file.metadata().await.unwrap();
+    assert_eq!(size, meta.len());
+}
+
+#[compio_macros::test]
+async fn iouring_setlen_non_fixed() {
+    let tempfile = tempfile();
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(tempfile.path())
+        .await
+        .unwrap();
+    setlen_run(&file, 5).await;
+
+    setlen_run(&file, 0).await;
+}
 
 #[compio_macros::test]
 async fn metadata() {
