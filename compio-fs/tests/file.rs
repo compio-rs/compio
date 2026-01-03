@@ -4,6 +4,25 @@ use compio_fs::File;
 use compio_io::{AsyncReadAtExt, AsyncWriteAt, AsyncWriteAtExt};
 use tempfile::NamedTempFile;
 
+async fn setlen_run(file: &File, size: u64) {
+    file.set_len(size).await.unwrap();
+    compio_runtime::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    let meta = file.metadata().await.unwrap();
+    assert_eq!(size, meta.len());
+}
+
+#[compio_macros::test]
+async fn iouring_setlen_non_fixed() {
+    let mut size = 5;
+    let tempfile = tempfile();
+    let file = File::create(tempfile.path()).await.unwrap();
+    setlen_run(&file, size).await;
+
+    size = 0;
+    setlen_run(&file, size).await;
+}
+
 #[compio_macros::test]
 async fn metadata() {
     let meta = compio_fs::metadata("Cargo.toml").await.unwrap();

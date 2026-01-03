@@ -2,9 +2,32 @@ use std::{io, time::Duration};
 
 use compio_buf::BufResult;
 use compio_driver::{
-    AsRawFd, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
-    op::{Asyncify, CloseFile, ReadAt, ReadManagedAt},
+    AsRawFd, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer, ToSharedFd,
+    op::{Asyncify, CloseFile, ReadAt, ReadManagedAt, TruncateFile},
 };
+
+#[test]
+///Tested with arg --features polling
+fn truncate_file_poll() {
+    let mut driver = Proactor::builder()
+        .driver_type(compio_driver::DriverType::Poll)
+        .build()
+        .unwrap();
+    let v = driver.driver_type();
+    assert_eq!(v, compio_driver::DriverType::Poll);
+
+    let fd = std::fs::File::create_new("temp.txt").unwrap();
+    let file = SharedFd::new(fd);
+    driver.attach(file.as_raw_fd()).unwrap();
+
+    let mut size = 5;
+    let mut op = TruncateFile::new(file.to_shared_fd(), size);
+    push_and_wait(&mut driver, op);
+
+    let meta = file.metadata().unwrap();
+    std::fs::remove_file("temp.txt").unwrap();
+    assert_eq!(size, meta.len());
+}
 
 #[cfg(windows)]
 fn open_file(driver: &mut Proactor) -> OwnedFd {
