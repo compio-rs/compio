@@ -98,8 +98,11 @@ impl<S: AsFd> OpCode for TruncateFile<S> {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        rustix::fs::ftruncate(self.fd.as_fd(), self.size)?;
-        Poll::Ready(Ok(0))
+        let size: libc::off64_t = self
+            .size
+            .try_into()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        Poll::Ready(syscall!(libc::ftruncate64(self.fd.as_fd().as_raw_fd(), size)).map(|v| v as _))
     }
 }
 

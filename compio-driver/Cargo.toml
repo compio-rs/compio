@@ -20,7 +20,6 @@ compio-buf = { workspace = true }
 compio-log = { workspace = true }
 
 # Utils
-rustix = { workspace = true, features = ["fs"] }
 cfg-if = { workspace = true }
 flume = { workspace = true, default-features = false }
 futures-util = { workspace = true }

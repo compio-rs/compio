@@ -41,14 +41,6 @@ impl<S: AsFd> TruncateFile<S> {
     }
 }
 
-impl<S: AsFd> IntoInner for TruncateFile<S> {
-    type Inner = ();
-
-    fn into_inner(self) -> Self::Inner {
-        ()
-    }
-}
-
 #[cfg(not(gnulinux))]
 pub use libc::stat as Stat;
 #[cfg(gnulinux)]

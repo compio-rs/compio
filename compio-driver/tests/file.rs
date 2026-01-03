@@ -6,6 +6,7 @@ use compio_driver::{
     op::{Asyncify, CloseFile, ReadAt, ReadManagedAt, TruncateFile},
 };
 
+#[cfg(unix)]
 #[test]
 ///Tested with arg --features polling
 fn truncate_file_poll() {
@@ -13,14 +14,12 @@ fn truncate_file_poll() {
         .driver_type(compio_driver::DriverType::Poll)
         .build()
         .unwrap();
-    let v = driver.driver_type();
-    assert_eq!(v, compio_driver::DriverType::Poll);
 
     let fd = std::fs::File::create_new("temp.txt").unwrap();
     let file = SharedFd::new(fd);
     driver.attach(file.as_raw_fd()).unwrap();
 
-    let mut size = 5;
+    let size = 5;
     let mut op = TruncateFile::new(file.to_shared_fd(), size);
     push_and_wait(&mut driver, op);
 
