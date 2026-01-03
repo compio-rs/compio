@@ -725,6 +725,22 @@ impl<S: AsFd> OpCode for PollOnce<S> {
     }
 }
 
+#[cfg(linux_all)]
+impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        opcode::Splice::new(
+            Fd(self.fd_in.as_fd().as_raw_fd()),
+            self.offset_in,
+            Fd(self.fd_out.as_fd().as_raw_fd()),
+            self.offset_out,
+            self.len,
+        )
+        .flags(self.flags)
+        .build()
+        .into()
+    }
+}
+
 mod buf_ring {
     use std::{
         io,

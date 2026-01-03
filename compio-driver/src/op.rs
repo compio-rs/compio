@@ -10,6 +10,8 @@ use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, SetLen};
 use pin_project_lite::pin_project;
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
+#[cfg(linux_all)]
+pub use crate::sys::op::Splice;
 pub use crate::sys::op::{
     Accept, Recv, RecvFrom, RecvFromVectored, RecvMsg, RecvVectored, Send, SendMsg, SendTo,
     SendToVectored, SendVectored,
