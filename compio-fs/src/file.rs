@@ -117,6 +117,19 @@ impl File {
         res.map(|_| meta.into_inner().expect("metadata should be present"))
     }
 
+    #[cfg(unix)]
+    /// Truncates or extends the underlying file, updating the size of this file
+    /// to become `size`.
+    ///
+    /// NOTE: On Linux kernel >= 6.9 or when io uring is disabled, the operation will be offloaded to the separate blocking
+    /// thread
+    pub async fn set_len(&self, size: u64) -> io::Result<()> {
+        use compio_driver::op::TruncateFile;
+
+        let op = TruncateFile::new(self.to_shared_fd(), size);
+        compio_runtime::submit(op).await.0.map(|_| ())
+    }
+
     /// Queries metadata about the underlying file.
     #[cfg(unix)]
     pub async fn metadata(&self) -> io::Result<Metadata> {

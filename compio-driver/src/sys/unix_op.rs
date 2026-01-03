@@ -1,4 +1,10 @@
-use std::{ffi::CString, marker::PhantomPinned, net::Shutdown, os::fd::OwnedFd, pin::Pin};
+use std::{
+    ffi::CString,
+    marker::PhantomPinned,
+    net::Shutdown,
+    os::fd::{AsFd, OwnedFd},
+    pin::Pin,
+};
 
 use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use pin_project_lite::pin_project;
@@ -17,6 +23,29 @@ impl OpenFile {
     /// Create [`OpenFile`].
     pub fn new(path: CString, flags: i32, mode: libc::mode_t) -> Self {
         Self { path, flags, mode }
+    }
+}
+
+#[derive(Debug)]
+///  Truncates or extends the underlying file, updating the size of this file to
+/// become `size`.
+pub struct TruncateFile<S: AsFd> {
+    pub(crate) fd: S,
+    pub(crate) size: u64,
+}
+
+impl<S: AsFd> TruncateFile<S> {
+    /// Create [`TruncateFile`].
+    pub fn new(fd: S, size: u64) -> Self {
+        Self { fd, size }
+    }
+}
+
+impl<S: AsFd> IntoInner for TruncateFile<S> {
+    type Inner = ();
+
+    fn into_inner(self) -> Self::Inner {
+        ()
     }
 }
 

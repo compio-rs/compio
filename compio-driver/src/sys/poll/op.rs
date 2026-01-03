@@ -92,6 +92,17 @@ impl OpCode for CloseFile {
     }
 }
 
+impl<S: AsFd> OpCode for TruncateFile<S> {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::Blocking)
+    }
+
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        rustix::fs::ftruncate(self.fd.as_fd(), self.size)?;
+        Poll::Ready(Ok(0))
+    }
+}
+
 pin_project! {
     /// Get metadata of an opened file.
     pub struct FileStat<S> {
