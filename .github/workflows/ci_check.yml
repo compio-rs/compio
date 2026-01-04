@@ -42,3 +42,16 @@ jobs:
       - name: Check Docs
         run: |
           cargo doc --workspace --all-features --no-deps
+
+  check_stub:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust Toolchain
+        run: |
+          rustup default nightly
+      - name: Check
+        shell: bash
+        # We only make sure that the stub driver compiles.
+        run: |
+          cargo check --all-features --all-targets
