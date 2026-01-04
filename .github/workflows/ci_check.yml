@@ -54,4 +54,4 @@ jobs:
         shell: bash
         # We only make sure that the stub driver compiles.
         run: |
-          cargo check --all-features --all-targets
+          cargo check --features all,nightly,ring,fd-sync --no-default-features --all-targets
