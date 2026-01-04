@@ -8,9 +8,10 @@ use compio_driver::{
 
 #[cfg(unix)]
 #[test]
-///Tested with arg --features polling
+///Run it with arg --features polling
 fn truncate_file_poll() {
     let mut driver = Proactor::builder()
+        //necessary otherwise it will be defaulted to io uring
         .driver_type(compio_driver::DriverType::Poll)
         .build()
         .unwrap();

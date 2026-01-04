@@ -2,7 +2,7 @@ use std::{
     ffi::CString,
     marker::PhantomPinned,
     net::Shutdown,
-    os::fd::{AsFd, OwnedFd},
+    os::fd::{AsFd, AsRawFd, OwnedFd},
     pin::Pin,
 };
 
@@ -11,6 +11,21 @@ use pin_project_lite::pin_project;
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
 use crate::{op::*, sys::aio::*, sys_slice::*};
+
+#[cfg(not(any(
+    all(target_os = "linux", not(target_env = "musl")),
+    target_os = "android",
+    target_os = "l4re",
+    target_os = "hurd"
+)))]
+use libc::{ftruncate as ftruncate64, off_t as off64_t};
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "musl")),
+    target_os = "android",
+    target_os = "l4re",
+    target_os = "hurd"
+))]
+use libc::{ftruncate64, off64_t};
 
 /// Open or create a file with flags and mode.
 pub struct OpenFile {
@@ -38,6 +53,14 @@ impl<S: AsFd> TruncateFile<S> {
     /// Create [`TruncateFile`].
     pub fn new(fd: S, size: u64) -> Self {
         Self { fd, size }
+    }
+
+    pub fn truncate(&self) -> std::io::Result<usize> {
+        let size: off64_t = self
+            .size
+            .try_into()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+        crate::syscall!(ftruncate64(self.fd.as_fd().as_raw_fd(), size)).map(|v| v as _)
     }
 }
 

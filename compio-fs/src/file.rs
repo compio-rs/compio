@@ -132,8 +132,8 @@ impl File {
     /// Truncates or extends the underlying file, updating the size of this file
     /// to become `size`.
     ///
-    /// NOTE: On Linux kernel <= 6.9 or when io uring is disabled, the operation will be offloaded to the separate blocking
-    /// thread
+    /// NOTE: On Linux kernel <= 6.9 or when io uring is disabled, the operation
+    /// will be offloaded to the separate blocking thread
     pub async fn set_len(&self, size: u64) -> io::Result<()> {
         use compio_driver::op::TruncateFile;
 
