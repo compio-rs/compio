@@ -8,13 +8,8 @@ use compio_driver::{
 
 #[cfg(unix)]
 #[test]
-///Run it with arg --features polling
 fn truncate_file_poll() {
-    let mut driver = Proactor::builder()
-        //necessary otherwise it will be defaulted to io uring
-        .driver_type(compio_driver::DriverType::Poll)
-        .build()
-        .unwrap();
+    let mut driver = Proactor::builder().build().unwrap();
 
     let fd = std::fs::File::create_new("temp.txt").unwrap();
     let file = SharedFd::new(fd);
