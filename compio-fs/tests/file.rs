@@ -6,7 +6,8 @@ use tempfile::NamedTempFile;
 
 async fn setlen_run(file: &File, size: u64) {
     file.set_len(size).await.unwrap();
-    compio_runtime::time::sleep(std::time::Duration::from_secs(1)).await;
+    // For predictability. Give the uring just enough time to ensure that it's completed
+    compio_runtime::time::sleep(std::time::Duration::from_millis(0)).await;
 
     let meta = file.metadata().await.unwrap();
     assert_eq!(size, meta.len());
