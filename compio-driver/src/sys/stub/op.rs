@@ -28,6 +28,8 @@ impl OpCode for OpenFile {}
 
 impl OpCode for CloseFile {}
 
+impl OpCode for TruncateFile {}
+
 /// Get metadata of an opened file.
 pub struct FileStat<S> {
     pub(crate) fd: S,
