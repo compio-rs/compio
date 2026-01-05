@@ -48,6 +48,12 @@ scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 /// `Err` when the spawned future panicked.
 pub type JoinHandle<T> = Task<Result<T, Box<dyn Any + Send>>>;
 
+/// Return type for [`Runtime::submit`]
+pub type SubmitFuture<T> = Either<Ready<BufResult<usize, T>>, OpFuture<T, ()>>;
+
+/// Return type for [`Runtime::submit_with_extra`]
+pub type SubmitFutureWithExtra<T> = Either<Ready<(BufResult<usize, T>, Extra)>, OpFuture<T, Extra>>;
+
 thread_local! {
     static RUNTIME_ID: Cell<u64> = const { Cell::new(0) };
 }
@@ -245,13 +251,10 @@ impl Runtime {
     /// It is safe to send the returned future to another runtime and poll it,
     /// but the exact behavior is not guaranteed, e.g. it may return pending
     /// forever or else.
-    fn submit<T: OpCode + 'static>(
-        &self,
-        op: T,
-    ) -> impl Future<Output = BufResult<usize, T>> + use<T> {
+    fn submit<T: OpCode + 'static>(&self, op: T) -> SubmitFuture<T> {
         match self.submit_raw(op) {
-            PushEntry::Pending(user_data) => Either::Left(OpFuture::new(user_data)),
-            PushEntry::Ready(res) => Either::Right(ready(res)),
+            PushEntry::Ready(res) => Either::Left(ready(res)),
+            PushEntry::Pending(user_data) => Either::Right(OpFuture::new(user_data)),
         }
     }
 
@@ -265,17 +268,14 @@ impl Runtime {
     /// It is safe to send the returned future to another runtime and poll it,
     /// but the exact behavior is not guaranteed, e.g. it may return pending
     /// forever or else.
-    fn submit_with_extra<T: OpCode + 'static>(
-        &self,
-        op: T,
-    ) -> impl Future<Output = (BufResult<usize, T>, Extra)> + use<T> {
+    fn submit_with_extra<T: OpCode + 'static>(&self, op: T) -> SubmitFutureWithExtra<T> {
         match self.submit_raw(op) {
-            PushEntry::Pending(user_data) => Either::Left(OpFuture::new_extra(user_data)),
             PushEntry::Ready(res) => {
                 // submit_raw won't be ready immediately, if ready, it must be error without
                 // flags
-                Either::Right(ready((res, Extra::default())))
+                Either::Left(ready((res, Extra::default())))
             }
+            PushEntry::Pending(user_data) => Either::Right(OpFuture::new_extra(user_data)),
         }
     }
 
