@@ -28,7 +28,7 @@ impl OpCode for OpenFile {}
 
 impl OpCode for CloseFile {}
 
-impl OpCode for TruncateFile {}
+impl<S: AsFd> OpCode for TruncateFile<S> {}
 
 /// Get metadata of an opened file.
 pub struct FileStat<S> {
