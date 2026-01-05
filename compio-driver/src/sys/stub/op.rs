@@ -43,7 +43,7 @@ impl<S> FileStat<S> {
 impl<S: AsFd> OpCode for FileStat<S> {}
 
 impl<S> IntoInner for FileStat<S> {
-    type Inner = libc::stat;
+    type Inner = Stat;
 
     fn into_inner(self) -> Self::Inner {
         stub_unimpl()
@@ -69,7 +69,7 @@ impl PathStat {
 impl OpCode for PathStat {}
 
 impl IntoInner for PathStat {
-    type Inner = libc::stat;
+    type Inner = Stat;
 
     fn into_inner(self) -> Self::Inner {
         stub_unimpl()
@@ -83,6 +83,14 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {}
 impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {}
 
 impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {}
+
+impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {}
+
+impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {}
+
+impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {}
+
+impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {}
 
 impl<S: AsFd> OpCode for Sync<S> {}
 
@@ -229,5 +237,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {}
 impl<S: AsFd> OpCode for PollOnce<S> {}
 
 impl<S: AsFd> OpCode for crate::op::managed::ReadManagedAt<S> {}
+
+impl<S: AsFd> OpCode for crate::op::managed::ReadManaged<S> {}
 
 impl<S: AsFd> OpCode for crate::op::managed::RecvManaged<S> {}
