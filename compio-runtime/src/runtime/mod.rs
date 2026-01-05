@@ -63,6 +63,7 @@ impl<T: OpCode> Future for Submit<T> {
 
 /// Return type for [`Runtime::submit_with_extra`]
 pub struct SubmitWithExtra<T: OpCode> {
+    #[allow(clippy::type_complexity)]
     inner: Either<Ready<(BufResult<usize, T>, Extra)>, OpFuture<T, Extra>>,
 }
 
