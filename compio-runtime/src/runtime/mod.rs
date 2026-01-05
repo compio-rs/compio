@@ -2,7 +2,7 @@ use std::{
     any::Any,
     cell::{Cell, RefCell},
     collections::HashSet,
-    future::{Future, ready},
+    future::{Future, Ready, ready},
     io,
     panic::AssertUnwindSafe,
     sync::Arc,
@@ -47,6 +47,33 @@ scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 /// Type alias for `Task<Result<T, Box<dyn Any + Send>>>`, which resolves to an
 /// `Err` when the spawned future panicked.
 pub type JoinHandle<T> = Task<Result<T, Box<dyn Any + Send>>>;
+
+/// Return type for [`Runtime::submit`]
+pub struct Submit<T: OpCode> {
+    inner: Either<Ready<BufResult<usize, T>>, OpFuture<T, ()>>,
+}
+
+impl<T: OpCode> Future for Submit<T> {
+    type Output = BufResult<usize, T>;
+
+    fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.inner.poll_unpin(cx)
+    }
+}
+
+/// Return type for [`Runtime::submit_with_extra`]
+pub struct SubmitWithExtra<T: OpCode> {
+    #[allow(clippy::type_complexity)]
+    inner: Either<Ready<(BufResult<usize, T>, Extra)>, OpFuture<T, Extra>>,
+}
+
+impl<T: OpCode> Future for SubmitWithExtra<T> {
+    type Output = (BufResult<usize, T>, Extra);
+
+    fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.inner.poll_unpin(cx)
+    }
+}
 
 thread_local! {
     static RUNTIME_ID: Cell<u64> = const { Cell::new(0) };
@@ -245,14 +272,12 @@ impl Runtime {
     /// It is safe to send the returned future to another runtime and poll it,
     /// but the exact behavior is not guaranteed, e.g. it may return pending
     /// forever or else.
-    fn submit<T: OpCode + 'static>(
-        &self,
-        op: T,
-    ) -> impl Future<Output = BufResult<usize, T>> + use<T> {
-        match self.submit_raw(op) {
-            PushEntry::Pending(user_data) => Either::Left(OpFuture::new(user_data)),
-            PushEntry::Ready(res) => Either::Right(ready(res)),
-        }
+    fn submit<T: OpCode + 'static>(&self, op: T) -> Submit<T> {
+        let inner = match self.submit_raw(op) {
+            PushEntry::Ready(res) => Either::Left(ready(res)),
+            PushEntry::Pending(user_data) => Either::Right(OpFuture::new(user_data)),
+        };
+        Submit { inner }
     }
 
     /// Submit an operation to the runtime.
@@ -265,18 +290,16 @@ impl Runtime {
     /// It is safe to send the returned future to another runtime and poll it,
     /// but the exact behavior is not guaranteed, e.g. it may return pending
     /// forever or else.
-    fn submit_with_extra<T: OpCode + 'static>(
-        &self,
-        op: T,
-    ) -> impl Future<Output = (BufResult<usize, T>, Extra)> + use<T> {
-        match self.submit_raw(op) {
-            PushEntry::Pending(user_data) => Either::Left(OpFuture::new_extra(user_data)),
+    fn submit_with_extra<T: OpCode + 'static>(&self, op: T) -> SubmitWithExtra<T> {
+        let inner = match self.submit_raw(op) {
             PushEntry::Ready(res) => {
                 // submit_raw won't be ready immediately, if ready, it must be error without
                 // flags
-                Either::Right(ready((res, Extra::default())))
+                Either::Left(ready((res, Extra::default())))
             }
-        }
+            PushEntry::Pending(user_data) => Either::Right(OpFuture::new_extra(user_data)),
+        };
+        SubmitWithExtra { inner }
     }
 
     pub(crate) fn cancel_op<T: OpCode>(&self, op: Key<T>) {
