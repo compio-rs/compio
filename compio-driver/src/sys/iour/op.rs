@@ -732,7 +732,7 @@ impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
             self.offset_in,
             Fd(self.fd_out.as_fd().as_raw_fd()),
             self.offset_out,
-            self.len,
+            self.len.try_into().unwrap_or(u32::MAX),
         )
         .flags(self.flags)
         .build()

@@ -1228,7 +1228,7 @@ impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
             offset_in_ptr,
             self.fd_out.as_fd().as_raw_fd(),
             offset_out_ptr,
-            self.len as _,
+            self.len,
             self.flags as _,
         ))? as _))
     }

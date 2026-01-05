@@ -649,7 +649,7 @@ pub struct Splice<S1, S2> {
     pub(crate) offset_in: i64,
     pub(crate) fd_out: S2,
     pub(crate) offset_out: i64,
-    pub(crate) len: u32,
+    pub(crate) len: usize,
     pub(crate) flags: u32,
 }
 
@@ -665,7 +665,7 @@ impl<S1, S2> Splice<S1, S2> {
         offset_in: i64,
         fd_out: S2,
         offset_out: i64,
-        len: u32,
+        len: usize,
         flags: u32,
     ) -> Self {
         Self {
