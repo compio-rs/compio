@@ -160,7 +160,7 @@ fn managed() {
 }
 
 #[test]
-#[cfg(all(io_uring, target_pointer_width = "64"))]
+#[cfg(all(target_pointer_width = "64", any(io_uring, target_os = "windows")))]
 fn read_len_over_u32() {
     let mut driver = Proactor::new().unwrap();
 
