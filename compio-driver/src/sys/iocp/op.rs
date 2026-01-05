@@ -204,7 +204,7 @@ impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
             WriteFile(
                 self.fd.as_fd().as_raw_fd(),
                 slice.as_ptr() as _,
-                slice.len() as _,
+                slice.len().try_into().unwrap_or(u32::MAX),
                 &mut transferred,
                 optr,
             )
@@ -257,7 +257,7 @@ impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
             WriteFile(
                 self.fd.as_fd().as_raw_fd(),
                 slice.as_ptr() as _,
-                slice.len() as _,
+                slice.len().try_into().unwrap_or(u32::MAX),
                 &mut transferred,
                 optr,
             )
