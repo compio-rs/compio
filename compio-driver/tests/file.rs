@@ -18,12 +18,12 @@ fn truncate_file_poll() {
     driver.attach(file.as_raw_fd()).unwrap();
 
     let size = 5;
-    let mut op = TruncateFile::new(file.to_shared_fd(), size);
-    push_and_wait(&mut driver, op);
+    let op = TruncateFile::new(file.to_shared_fd(), size);
+    let _ = push_and_wait(&mut driver, op);
 
     let meta = file.metadata().unwrap();
     std::fs::remove_file("temp.txt").unwrap();
-    assert_eq!(size, meta.len());
+    assert_eq!(5, meta.len());
 }
 
 #[cfg(windows)]

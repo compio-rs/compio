@@ -7,11 +7,6 @@ use std::{
 };
 
 use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use pin_project_lite::pin_project;
-use socket2::{SockAddr, SockAddrStorage, socklen_t};
-
-use crate::{op::*, sys::aio::*, sys_slice::*};
-
 #[cfg(not(any(
     all(target_os = "linux", not(target_env = "musl")),
     target_os = "android",
@@ -26,6 +21,10 @@ use libc::{ftruncate as ftruncate64, off_t as off64_t};
     target_os = "hurd"
 ))]
 use libc::{ftruncate64, off64_t};
+use pin_project_lite::pin_project;
+use socket2::{SockAddr, SockAddrStorage, socklen_t};
+
+use crate::{op::*, sys::aio::*, sys_slice::*};
 
 /// Open or create a file with flags and mode.
 pub struct OpenFile {
