@@ -2,7 +2,7 @@ use std::{
     any::Any,
     cell::{Cell, RefCell},
     collections::HashSet,
-    future::{Future, ready},
+    future::{Future, Ready, ready},
     io,
     panic::AssertUnwindSafe,
     sync::Arc,
