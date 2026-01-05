@@ -2,13 +2,15 @@ use std::{io, time::Duration};
 
 use compio_buf::BufResult;
 use compio_driver::{
-    AsRawFd, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer, ToSharedFd,
-    op::{Asyncify, CloseFile, ReadAt, ReadManagedAt, TruncateFile},
+    AsRawFd, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
+    op::{Asyncify, CloseFile, ReadAt, ReadManagedAt},
 };
 
 #[cfg(unix)]
 #[test]
 fn truncate_file_poll() {
+    use compio_driver::{ToSharedFd, op::TruncateFile};
+
     let mut driver = Proactor::builder().build().unwrap();
 
     let fd = std::fs::File::create_new("temp.txt").unwrap();

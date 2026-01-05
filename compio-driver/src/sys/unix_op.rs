@@ -55,7 +55,7 @@ impl<S: AsFd> TruncateFile<S> {
         Self { fd, size }
     }
 
-    pub fn truncate(&self) -> std::io::Result<usize> {
+    pub(crate) fn truncate(&self) -> std::io::Result<usize> {
         let size: off64_t = self
             .size
             .try_into()
