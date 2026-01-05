@@ -1207,7 +1207,7 @@ impl<S: AsFd> OpCode for PollOnce<S> {
 #[cfg(linux_all)]
 impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::Blocking)
+        Ok(Decision::wait_readable(self.fd_in.as_fd().as_raw_fd()))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -1223,6 +1223,8 @@ impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
         } else {
             &mut offset_out
         };
+        // We don't wait for `fd_out` here. It's users' responsibility to ensure it's
+        // writable.
         Poll::Ready(Ok(syscall!(libc::splice(
             self.fd_in.as_fd().as_raw_fd(),
             offset_in_ptr,
