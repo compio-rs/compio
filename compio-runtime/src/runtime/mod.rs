@@ -49,11 +49,11 @@ scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 pub type JoinHandle<T> = Task<Result<T, Box<dyn Any + Send>>>;
 
 /// Return type for [`Runtime::submit`]
-pub struct SubmitFuture<T: OpCode> {
+pub struct Submit<T: OpCode> {
     inner: Either<Ready<BufResult<usize, T>>, OpFuture<T, ()>>,
 }
 
-impl<T: OpCode> Future for SubmitFuture<T> {
+impl<T: OpCode> Future for Submit<T> {
     type Output = BufResult<usize, T>;
 
     fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -62,11 +62,11 @@ impl<T: OpCode> Future for SubmitFuture<T> {
 }
 
 /// Return type for [`Runtime::submit_with_extra`]
-pub struct SubmitFutureWithExtra<T: OpCode> {
+pub struct SubmitWithExtra<T: OpCode> {
     inner: Either<Ready<(BufResult<usize, T>, Extra)>, OpFuture<T, Extra>>,
 }
 
-impl<T: OpCode> Future for SubmitFutureWithExtra<T> {
+impl<T: OpCode> Future for SubmitWithExtra<T> {
     type Output = (BufResult<usize, T>, Extra);
 
     fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -271,12 +271,12 @@ impl Runtime {
     /// It is safe to send the returned future to another runtime and poll it,
     /// but the exact behavior is not guaranteed, e.g. it may return pending
     /// forever or else.
-    fn submit<T: OpCode + 'static>(&self, op: T) -> SubmitFuture<T> {
+    fn submit<T: OpCode + 'static>(&self, op: T) -> Submit<T> {
         let inner = match self.submit_raw(op) {
             PushEntry::Ready(res) => Either::Left(ready(res)),
             PushEntry::Pending(user_data) => Either::Right(OpFuture::new(user_data)),
         };
-        SubmitFuture { inner }
+        Submit { inner }
     }
 
     /// Submit an operation to the runtime.
@@ -289,7 +289,7 @@ impl Runtime {
     /// It is safe to send the returned future to another runtime and poll it,
     /// but the exact behavior is not guaranteed, e.g. it may return pending
     /// forever or else.
-    fn submit_with_extra<T: OpCode + 'static>(&self, op: T) -> SubmitFutureWithExtra<T> {
+    fn submit_with_extra<T: OpCode + 'static>(&self, op: T) -> SubmitWithExtra<T> {
         let inner = match self.submit_raw(op) {
             PushEntry::Ready(res) => {
                 // submit_raw won't be ready immediately, if ready, it must be error without
@@ -298,7 +298,7 @@ impl Runtime {
             }
             PushEntry::Pending(user_data) => Either::Right(OpFuture::new_extra(user_data)),
         };
-        SubmitFutureWithExtra { inner }
+        SubmitWithExtra { inner }
     }
 
     pub(crate) fn cancel_op<T: OpCode>(&self, op: Key<T>) {
