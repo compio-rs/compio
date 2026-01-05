@@ -238,6 +238,8 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {}
 
 impl<S: AsFd> OpCode for PollOnce<S> {}
 
+impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {}
+
 impl<S: AsFd> OpCode for crate::op::managed::ReadManagedAt<S> {}
 
 impl<S: AsFd> OpCode for crate::op::managed::ReadManaged<S> {}

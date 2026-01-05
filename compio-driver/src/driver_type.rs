@@ -25,11 +25,14 @@ impl DriverType {
             Fsync::CODE,
             Accept::CODE,
             Connect::CODE,
+            Recv::CODE,
+            Send::CODE,
             RecvMsg::CODE,
             SendMsg::CODE,
             AsyncCancel::CODE,
             OpenAt::CODE,
             Close::CODE,
+            Splice::CODE,
             Shutdown::CODE,
         ];
 
