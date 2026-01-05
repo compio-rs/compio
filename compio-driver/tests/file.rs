@@ -6,6 +6,26 @@ use compio_driver::{
     op::{Asyncify, CloseFile, ReadAt, ReadManagedAt},
 };
 
+#[cfg(unix)]
+#[test]
+fn truncate_file_poll() {
+    use compio_driver::{ToSharedFd, op::TruncateFile};
+
+    let mut driver = Proactor::builder().build().unwrap();
+
+    let fd = std::fs::File::create_new("temp.txt").unwrap();
+    let file = SharedFd::new(fd);
+    driver.attach(file.as_raw_fd()).unwrap();
+
+    let size = 5;
+    let op = TruncateFile::new(file.to_shared_fd(), size);
+    let _ = push_and_wait(&mut driver, op);
+
+    let meta = file.metadata().unwrap();
+    std::fs::remove_file("temp.txt").unwrap();
+    assert_eq!(5, meta.len());
+}
+
 #[cfg(windows)]
 fn open_file(driver: &mut Proactor) -> OwnedFd {
     use std::os::windows::{

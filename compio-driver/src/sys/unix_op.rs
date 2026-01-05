@@ -1,6 +1,26 @@
-use std::{ffi::CString, marker::PhantomPinned, net::Shutdown, os::fd::OwnedFd, pin::Pin};
+use std::{
+    ffi::CString,
+    marker::PhantomPinned,
+    net::Shutdown,
+    os::fd::{AsFd, AsRawFd, OwnedFd},
+    pin::Pin,
+};
 
 use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+#[cfg(not(any(
+    all(target_os = "linux", not(target_env = "musl")),
+    target_os = "android",
+    target_os = "l4re",
+    target_os = "hurd"
+)))]
+use libc::{ftruncate as ftruncate64, off_t as off64_t};
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "musl")),
+    target_os = "android",
+    target_os = "l4re",
+    target_os = "hurd"
+))]
+use libc::{ftruncate64, off64_t};
 use pin_project_lite::pin_project;
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
@@ -17,6 +37,29 @@ impl OpenFile {
     /// Create [`OpenFile`].
     pub fn new(path: CString, flags: i32, mode: libc::mode_t) -> Self {
         Self { path, flags, mode }
+    }
+}
+
+#[derive(Debug)]
+///  Truncates or extends the underlying file, updating the size of this file to
+/// become `size`.
+pub struct TruncateFile<S: AsFd> {
+    pub(crate) fd: S,
+    pub(crate) size: u64,
+}
+
+impl<S: AsFd> TruncateFile<S> {
+    /// Create [`TruncateFile`].
+    pub fn new(fd: S, size: u64) -> Self {
+        Self { fd, size }
+    }
+
+    pub(crate) fn truncate(&self) -> std::io::Result<usize> {
+        let size: off64_t = self
+            .size
+            .try_into()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+        crate::syscall!(ftruncate64(self.fd.as_fd().as_raw_fd(), size)).map(|v| v as _)
     }
 }
 

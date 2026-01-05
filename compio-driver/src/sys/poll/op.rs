@@ -92,6 +92,16 @@ impl OpCode for CloseFile {
     }
 }
 
+impl<S: AsFd> OpCode for TruncateFile<S> {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        Ok(Decision::Blocking)
+    }
+
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        Poll::Ready(self.truncate())
+    }
+}
+
 pin_project! {
     /// Get metadata of an opened file.
     pub struct FileStat<S> {
