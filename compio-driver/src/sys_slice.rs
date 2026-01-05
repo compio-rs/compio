@@ -26,7 +26,7 @@ mod sys {
 
     pub fn new(ptr: *mut MaybeUninit<u8>, len: usize) -> Inner {
         Inner {
-            len: len as u32,
+            len: len.try_into().unwrap_or(u32::MAX),
             buf: ptr as _,
         }
     }
