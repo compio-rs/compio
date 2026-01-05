@@ -725,7 +725,6 @@ impl<S: AsFd> OpCode for PollOnce<S> {
     }
 }
 
-#[cfg(linux_all)]
 impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::Splice::new(
