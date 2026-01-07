@@ -63,6 +63,8 @@ pub enum Decision {
     Completed(usize),
     /// Async operation, needs to submit
     Wait(WaitArg),
+    /// Async operation on two fds, needs to submit
+    Wait2(WaitArg, WaitArg),
     /// Blocking operation, needs to be spawned in another thread
     Blocking,
     /// AIO operation, needs to be spawned to the kernel.
@@ -84,6 +86,20 @@ impl Decision {
     /// Decide to wait for the given fd to be writable.
     pub fn wait_writable(fd: RawFd) -> Self {
         Self::wait_for(fd, Interest::Writable)
+    }
+
+    /// Decide to wait for two fds with the given interests.
+    pub fn wait_for_two(fd1: RawFd, interest1: Interest, fd2: RawFd, interest2: Interest) -> Self {
+        Self::Wait2(
+            WaitArg {
+                fd: fd1,
+                interest: interest1,
+            },
+            WaitArg {
+                fd: fd2,
+                interest: interest2,
+            },
+        )
     }
 
     /// Decide to spawn an AIO operation. `submit` is a method like `aio_read`.
@@ -178,6 +194,8 @@ impl FdQueue {
 pub enum OpType {
     /// The operation polls an fd.
     Fd(RawFd),
+    /// The operation polls two fds (like `splice`).
+    Fd2(RawFd, RawFd),
     /// The operation submits an AIO.
     #[cfg(aio)]
     Aio(NonNull<libc::aiocb>),
@@ -263,26 +281,35 @@ impl Driver {
         Ok(())
     }
 
+    fn cancel_fd(&mut self, op: &mut Key<dyn crate::sys::OpCode>, fd: RawFd) {
+        let queue = self
+            .registry
+            .get_mut(&fd)
+            .expect("the fd should be attached");
+        queue.remove(op.user_data());
+        let renew_event = queue.event();
+        if Self::renew(
+            &self.notify.poll,
+            &mut self.registry,
+            unsafe { BorrowedFd::borrow_raw(fd) },
+            renew_event,
+        )
+        .is_ok()
+        {
+            self.pool_completed.push(entry_cancelled(op.user_data()));
+        }
+    }
+
     pub fn cancel(&mut self, op: &mut Key<dyn crate::sys::OpCode>) {
         let op_pin = op.as_op_pin();
         match op_pin.op_type() {
             None => {}
             Some(OpType::Fd(fd)) => {
-                let queue = self
-                    .registry
-                    .get_mut(&fd)
-                    .expect("the fd should be attached");
-                queue.remove(op.user_data());
-                let renew_event = queue.event();
-                if Self::renew(
-                    &self.notify.poll,
-                    &mut self.registry,
-                    unsafe { BorrowedFd::borrow_raw(fd) },
-                    renew_event,
-                )
-                .is_ok()
-                {
-                    self.pool_completed.push(entry_cancelled(op.user_data()));
+                self.cancel_fd(op, fd);
+            }
+            Some(OpType::Fd2(fd1, fd2)) => {
+                for &fd in &[fd1, fd2] {
+                    self.cancel_fd(op, fd);
                 }
             }
             #[cfg(aio)]
@@ -305,6 +332,14 @@ impl Driver {
                     self.submit(user_data, arg)?;
                 }
                 trace!("register {:?}", arg);
+                Poll::Pending
+            }
+            Decision::Wait2(arg1, arg2) => {
+                unsafe {
+                    self.submit(user_data, arg1)?;
+                    self.submit(user_data, arg2)?;
+                }
+                trace!("register {:?} and {:?}", arg1, arg2);
                 Poll::Pending
             }
             Decision::Completed(res) => Poll::Ready(Ok(res)),
@@ -388,6 +423,53 @@ impl Driver {
         true
     }
 
+    /// # Safety
+    ///
+    /// User should respect the return value. If it is true, the op has been
+    /// operated and notified. The next calling site should pass `operate` as
+    /// false.
+    unsafe fn poll_fd(
+        poll: &Poller,
+        registry: &mut HashMap<RawFd, FdQueue>,
+        event: &Event,
+        fd: RawFd,
+        operate: bool,
+    ) -> io::Result<bool> {
+        let mut notified = false;
+        // If it's an FD op, the returned user_data is only for calling `op_type`. We
+        // need to pop the real user_data from the queue.
+        let queue = registry.get_mut(&fd).expect("the fd should be attached");
+        if let Some((user_data, interest)) = queue.pop_interest(event) {
+            let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
+            let op = op.as_op_pin();
+            let res = if operate {
+                match op.operate() {
+                    Poll::Pending => {
+                        // The operation should go back to the front.
+                        queue.push_front_interest(user_data, interest);
+                        None
+                    }
+                    Poll::Ready(res) => Some(res),
+                }
+            } else {
+                None
+            };
+            if let Some(res) = res {
+                // SAFETY: `notify` is called only once.
+                unsafe { Entry::new(user_data, res).notify() };
+                notified = true;
+            }
+        }
+        let renew_event = queue.event();
+        Self::renew(
+            poll,
+            registry,
+            unsafe { BorrowedFd::borrow_raw(fd) },
+            renew_event,
+        )?;
+        Ok(notified)
+    }
+
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         if self.poll_blocking() {
@@ -410,38 +492,14 @@ impl Driver {
                     // one-shot. It is safe to ignore it.
                     trace!("op {} is completed", user_data);
                 }
-                Some(OpType::Fd(fd)) => {
-                    // If it's an FD op, the returned user_data is only for calling `op_type`. We
-                    // need to pop the real user_data from the queue.
-                    let queue = self
-                        .registry
-                        .get_mut(&fd)
-                        .expect("the fd should be attached");
-                    if let Some((user_data, interest)) = queue.pop_interest(&event) {
-                        let mut op =
-                            unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
-                        let op = op.as_op_pin();
-                        let res = match op.operate() {
-                            Poll::Pending => {
-                                // The operation should go back to the front.
-                                queue.push_front_interest(user_data, interest);
-                                None
-                            }
-                            Poll::Ready(res) => Some(res),
-                        };
-                        if let Some(res) = res {
-                            // SAFETY: `notify` is called only once.
-                            unsafe { Entry::new(user_data, res).notify() }
-                        }
+                Some(OpType::Fd(fd)) => unsafe {
+                    Self::poll_fd(&self.notify.poll, &mut self.registry, &event, fd, true)?;
+                },
+                Some(OpType::Fd2(fd1, fd2)) => unsafe {
+                    if !Self::poll_fd(&self.notify.poll, &mut self.registry, &event, fd1, true)? {
+                        Self::poll_fd(&self.notify.poll, &mut self.registry, &event, fd2, false)?;
                     }
-                    let renew_event = queue.event();
-                    Self::renew(
-                        &self.notify.poll,
-                        &mut self.registry,
-                        unsafe { BorrowedFd::borrow_raw(fd) },
-                        renew_event,
-                    )?;
-                }
+                },
                 #[cfg(aio)]
                 Some(OpType::Aio(aiocbp)) => {
                     let err = unsafe { libc::aio_error(aiocbp.as_ptr()) };
