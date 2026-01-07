@@ -260,10 +260,9 @@ impl Proactor {
         instrument!(compio_log::Level::DEBUG, "cancel", ?op);
         if op.set_cancelled() {
             // SAFETY: completed.
-            Some(unsafe { op.into_inner() })
+            Some(unsafe { op.take_result() })
         } else {
-            self.driver
-                .cancel(&mut unsafe { Key::<dyn OpCode>::new_unchecked(op.user_data()) });
+            self.driver.cancel(&mut op.into_dyn());
             None
         }
     }
@@ -271,16 +270,13 @@ impl Proactor {
     /// Push an operation into the driver, and return the unique key, called
     /// user-defined data, associated with it.
     pub fn push<T: OpCode + 'static>(&mut self, op: T) -> PushEntry<Key<T>, BufResult<usize, T>> {
-        let mut op = self.driver.create_op(op);
-        match self
-            .driver
-            .push(&mut unsafe { Key::<dyn OpCode>::new_unchecked(op.user_data()) })
-        {
-            Poll::Pending => PushEntry::Pending(op),
+        let mut key = self.driver.create_op(op);
+        match self.driver.push(key.as_dyn_mut()) {
+            Poll::Pending => PushEntry::Pending(key),
             Poll::Ready(res) => {
-                op.set_result(res);
+                key.set_result(res);
                 // SAFETY: just completed.
-                PushEntry::Ready(unsafe { op.into_inner() })
+                PushEntry::Ready(unsafe { key.take_result() })
             }
         }
     }
@@ -301,7 +297,7 @@ impl Proactor {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
             // SAFETY: completed.
-            PushEntry::Ready(unsafe { key.into_inner() })
+            PushEntry::Ready(unsafe { key.take_result() })
         } else {
             PushEntry::Pending(key)
         }
@@ -321,7 +317,7 @@ impl Proactor {
         if key.has_result() {
             let extra = key.take_extra();
             // SAFETY: completed.
-            let res = unsafe { key.into_inner() };
+            let res = unsafe { key.take_result() };
             PushEntry::Ready((res, extra))
         } else {
             PushEntry::Pending(key)

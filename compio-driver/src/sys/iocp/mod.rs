@@ -355,7 +355,7 @@ impl Driver {
             // to IOCP. Need not set the result because `create_entry` handles it.
             self.port().post_raw(optr).ok();
         }
-        let op = op.as_op_pin();
+        let op = op.as_pinned_op();
         // It's OK to fail to cancel.
         trace!("call OpCode::cancel");
         op.cancel(optr.cast()).ok();
@@ -366,7 +366,7 @@ impl Driver {
         let user_data = op.user_data();
         trace!("push RawOp");
         let optr = op.extra_mut().optr();
-        let op_pin = op.as_op_pin();
+        let op_pin = op.as_pinned_op();
         match op_pin.op_type() {
             OpType::Overlapped => unsafe { op_pin.operate(optr.cast()) },
             OpType::Blocking => loop {
