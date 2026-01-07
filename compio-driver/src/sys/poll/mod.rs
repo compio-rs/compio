@@ -13,6 +13,7 @@ use std::{
     time::Duration,
 };
 
+use compio_buf::smallvec::SmallVec;
 use compio_log::{instrument, trace};
 use crossbeam_queue::SegQueue;
 use polling::{Event, Events, Poller};
@@ -62,9 +63,7 @@ pub enum Decision {
     /// Instant operation, no need to submit
     Completed(usize),
     /// Async operation, needs to submit
-    Wait(WaitArg),
-    /// Async operation on two fds, needs to submit
-    Wait2(WaitArg, WaitArg),
+    Wait(SmallVec<[WaitArg; 1]>),
     /// Blocking operation, needs to be spawned in another thread
     Blocking,
     /// AIO operation, needs to be spawned to the kernel.
@@ -75,7 +74,7 @@ pub enum Decision {
 impl Decision {
     /// Decide to wait for the given fd with the given interest.
     pub fn wait_for(fd: RawFd, interest: Interest) -> Self {
-        Self::Wait(WaitArg { fd, interest })
+        Self::Wait(SmallVec::from_iter([WaitArg { fd, interest }]))
     }
 
     /// Decide to wait for the given fd to be readable.
@@ -90,7 +89,7 @@ impl Decision {
 
     /// Decide to wait for two fds with the given interests.
     pub fn wait_for_two(fd1: RawFd, interest1: Interest, fd2: RawFd, interest2: Interest) -> Self {
-        Self::Wait2(
+        Self::Wait(SmallVec::from_iter([
             WaitArg {
                 fd: fd1,
                 interest: interest1,
@@ -99,7 +98,7 @@ impl Decision {
                 fd: fd2,
                 interest: interest2,
             },
-        )
+        ]))
     }
 
     /// Decide to spawn an AIO operation. `submit` is a method like `aio_read`.
@@ -193,12 +192,16 @@ impl FdQueue {
 #[non_exhaustive]
 pub enum OpType {
     /// The operation polls an fd.
-    Fd(RawFd),
-    /// The operation polls two fds (like `splice`).
-    Fd2(RawFd, RawFd),
+    Fd(SmallVec<[RawFd; 1]>),
     /// The operation submits an AIO.
     #[cfg(aio)]
     Aio(NonNull<libc::aiocb>),
+}
+
+impl OpType {
+    pub(crate) fn fd<T: AsFd>(fd: &T) -> Self {
+        Self::Fd(SmallVec::from_iter([fd.as_fd().as_raw_fd()]))
+    }
 }
 
 /// Low-level driver of polling.
@@ -296,12 +299,12 @@ impl Driver {
         let op_pin = op.as_op_pin();
         match op_pin.op_type() {
             None => {}
-            Some(OpType::Fd(fd)) => {
-                self.cancel_fd(op, fd, true);
-            }
-            Some(OpType::Fd2(fd1, fd2)) => {
-                self.cancel_fd(op, fd1, true);
-                self.cancel_fd(op, fd2, false);
+            Some(OpType::Fd(fds)) => {
+                let mut push = true;
+                for fd in fds {
+                    self.cancel_fd(op, fd, push);
+                    push = false;
+                }
             }
             #[cfg(aio)]
             Some(OpType::Aio(aiocbp)) => {
@@ -317,20 +320,14 @@ impl Driver {
         let user_data = op.user_data();
         let op_pin = op.as_op_pin();
         match op_pin.pre_submit()? {
-            Decision::Wait(arg) => {
+            Decision::Wait(args) => {
                 // SAFETY: fd is from the OpCode.
                 unsafe {
-                    self.submit(user_data, arg)?;
+                    for arg in args {
+                        self.submit(user_data, arg)?;
+                    }
                 }
-                trace!("register {:?}", arg);
-                Poll::Pending
-            }
-            Decision::Wait2(arg1, arg2) => {
-                unsafe {
-                    self.submit(user_data, arg1)?;
-                    self.submit(user_data, arg2)?;
-                }
-                trace!("register {:?} and {:?}", arg1, arg2);
+                trace!("register {:?}", args);
                 Poll::Pending
             }
             Decision::Completed(res) => Poll::Ready(Ok(res)),
@@ -419,8 +416,7 @@ impl Driver {
     /// User should respect the return value. If it is true, the op has been
     /// operated and notified. The next calling site should pass `operate` as
     /// false.
-    unsafe fn poll_fd(&mut self, event: &Event, fd: RawFd, operate: bool) -> io::Result<bool> {
-        let mut notified = false;
+    unsafe fn poll_fd(&mut self, event: &Event, fd: RawFd, operate: bool) -> io::Result<()> {
         // If it's an FD op, the returned user_data is only for calling `op_type`. We
         // need to pop the real user_data from the queue.
         let queue = self
@@ -445,12 +441,11 @@ impl Driver {
             if let Some(res) = res {
                 // SAFETY: `notify` is called only once.
                 unsafe { Entry::new(user_data, res).notify() };
-                notified = true;
             }
         }
         let renew_event = queue.event();
         self.renew(unsafe { BorrowedFd::borrow_raw(fd) }, renew_event)?;
-        Ok(notified)
+        Ok(())
     }
 
     fn with_events<F>(&mut self, f: F) -> io::Result<()>
@@ -488,12 +483,11 @@ impl Driver {
                         // one-shot. It is safe to ignore it.
                         trace!("op {} is completed", user_data);
                     }
-                    Some(OpType::Fd(fd)) => unsafe {
-                        this.poll_fd(&event, fd, true)?;
-                    },
-                    Some(OpType::Fd2(fd1, fd2)) => unsafe {
-                        if !this.poll_fd(&event, fd1, true)? {
-                            this.poll_fd(&event, fd2, false)?;
+                    Some(OpType::Fd(fds)) => unsafe {
+                        let mut operate = true;
+                        for fd in fds {
+                            this.poll_fd(&event, fd, operate)?;
+                            operate = false
                         }
                     },
                     #[cfg(aio)]

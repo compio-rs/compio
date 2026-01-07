@@ -31,6 +31,8 @@ pub use buf::arrayvec;
 pub use buf::bumpalo;
 #[cfg(feature = "bytes")]
 pub use buf::bytes;
+#[cfg(feature = "smallvec")]
+pub use buf::smallvec;
 #[cfg(feature = "dispatcher")]
 #[doc(inline)]
 pub use compio_dispatcher as dispatcher;

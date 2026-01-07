@@ -103,6 +103,7 @@ all = [
 arrayvec = ["compio-buf/arrayvec"]
 bumpalo = ["compio-buf/bumpalo"]
 bytes = ["compio-buf/bytes"]
+smallvec = ["compio-buf/smallvec"]
 criterion = ["compio-runtime?/criterion"]
 
 fd-sync = ["compio-driver/fd-sync"]

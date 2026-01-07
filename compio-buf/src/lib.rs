@@ -17,6 +17,8 @@ pub use arrayvec;
 pub use bumpalo;
 #[cfg(feature = "bytes")]
 pub use bytes;
+#[cfg(feature = "smallvec")]
+pub use smallvec;
 
 mod io_buf;
 pub use io_buf::*;

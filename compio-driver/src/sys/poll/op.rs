@@ -388,7 +388,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
+        Some(OpType::fd(&self.fd))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -404,7 +404,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
+        Some(OpType::fd(&self.fd))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -426,7 +426,7 @@ impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
+        Some(OpType::fd(&self.fd))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -447,7 +447,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
+        Some(OpType::fd(&self.fd))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -734,7 +734,7 @@ impl<S: AsFd> OpCode for Accept<S> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
+        Some(OpType::fd(&self.fd))
     }
 
     fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -761,7 +761,7 @@ impl<S: AsFd> OpCode for Connect<S> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
+        Some(OpType::fd(&self.fd))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -791,7 +791,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
+        Some(OpType::fd(&self.fd))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -808,7 +808,7 @@ impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
+        Some(OpType::fd(&self.fd))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -853,7 +853,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
+        Some(OpType::fd(&self.fd))
     }
 
     fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -875,7 +875,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
+        Some(OpType::fd(&self.fd))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -937,7 +937,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
+        Some(OpType::fd(&self.fd))
     }
 
     fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -1006,7 +1006,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
+        Some(OpType::fd(&self.fd))
     }
 
     fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -1068,7 +1068,7 @@ impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
+        Some(OpType::fd(&self.fd))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -1136,7 +1136,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
+        Some(OpType::fd(&self.fd))
     }
 
     fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -1167,7 +1167,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
+        Some(OpType::fd(&self.fd))
     }
 
     fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -1189,7 +1189,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
+        Some(OpType::fd(&self.fd))
     }
 
     fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -1206,7 +1206,7 @@ impl<S: AsFd> OpCode for PollOnce<S> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd(self.fd.as_fd().as_raw_fd()))
+        Some(OpType::fd(&self.fd))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
@@ -1226,10 +1226,12 @@ impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::Fd2(
+        use compio_buf::smallvec::SmallVec;
+
+        Some(OpType::Fd(SmallVec::from_iter([
             self.fd_in.as_fd().as_raw_fd(),
             self.fd_out.as_fd().as_raw_fd(),
-        ))
+        ])))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {

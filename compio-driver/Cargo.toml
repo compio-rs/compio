@@ -71,7 +71,7 @@ io-uring = [
     "dep:slab",
     "dep:once_cell",
 ]
-polling = ["dep:polling"]
+polling = ["dep:polling", "compio-buf/smallvec"]
 
 fd-sync = []
 
