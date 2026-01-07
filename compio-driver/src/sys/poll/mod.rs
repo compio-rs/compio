@@ -5,7 +5,7 @@ pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::ptr::NonNull;
 use std::{
     collections::{HashMap, VecDeque},
-    io,
+    io, mem,
     num::NonZeroUsize,
     pin::Pin,
     sync::Arc,
@@ -262,17 +262,12 @@ impl Driver {
         Ok(())
     }
 
-    fn renew(
-        poll: &Poller,
-        registry: &mut HashMap<RawFd, FdQueue>,
-        fd: BorrowedFd,
-        renew_event: Event,
-    ) -> io::Result<()> {
+    fn renew(&mut self, fd: BorrowedFd, renew_event: Event) -> io::Result<()> {
         if !renew_event.readable && !renew_event.writable {
-            poll.delete(fd)?;
-            registry.remove(&fd.as_raw_fd());
+            self.notify.poll.delete(fd)?;
+            self.registry.remove(&fd.as_raw_fd());
         } else {
-            poll.modify(fd, renew_event)?;
+            self.notify.poll.modify(fd, renew_event)?;
         }
         Ok(())
     }
@@ -288,13 +283,9 @@ impl Driver {
             .expect("the fd should be attached");
         queue.remove(op.user_data());
         let renew_event = queue.event();
-        if Self::renew(
-            &self.notify.poll,
-            &mut self.registry,
-            unsafe { BorrowedFd::borrow_raw(fd) },
-            renew_event,
-        )
-        .is_ok()
+        if self
+            .renew(unsafe { BorrowedFd::borrow_raw(fd) }, renew_event)
+            .is_ok()
         {
             self.pool_completed.push(entry_cancelled(op.user_data()));
         }
@@ -428,17 +419,14 @@ impl Driver {
     /// User should respect the return value. If it is true, the op has been
     /// operated and notified. The next calling site should pass `operate` as
     /// false.
-    unsafe fn poll_fd(
-        poll: &Poller,
-        registry: &mut HashMap<RawFd, FdQueue>,
-        event: &Event,
-        fd: RawFd,
-        operate: bool,
-    ) -> io::Result<bool> {
+    unsafe fn poll_fd(&mut self, event: &Event, fd: RawFd, operate: bool) -> io::Result<bool> {
         let mut notified = false;
         // If it's an FD op, the returned user_data is only for calling `op_type`. We
         // need to pop the real user_data from the queue.
-        let queue = registry.get_mut(&fd).expect("the fd should be attached");
+        let queue = self
+            .registry
+            .get_mut(&fd)
+            .expect("the fd should be attached");
         if let Some((user_data, interest)) = queue.pop_interest(event) {
             let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
             let op = op.as_op_pin();
@@ -461,13 +449,19 @@ impl Driver {
             }
         }
         let renew_event = queue.event();
-        Self::renew(
-            poll,
-            registry,
-            unsafe { BorrowedFd::borrow_raw(fd) },
-            renew_event,
-        )?;
+        self.renew(unsafe { BorrowedFd::borrow_raw(fd) }, renew_event)?;
         Ok(notified)
+    }
+
+    fn with_events<F>(&mut self, f: F) -> io::Result<()>
+    where
+        F: FnOnce(&mut Self, &mut Events) -> io::Result<()>,
+    {
+        // create a new Events costs nothing (Vec::new)
+        let mut events = mem::take(&mut self.events);
+        let res = f(self, &mut events);
+        self.events = events;
+        res
     }
 
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
@@ -480,51 +474,56 @@ impl Driver {
         if self.events.is_empty() && timeout.is_some() {
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
         }
-        for event in self.events.iter() {
-            let user_data = event.key;
-            trace!("receive {} for {:?}", user_data, event);
-            // SAFETY: user_data is promised to be valid.
-            let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
-            let op = op.as_op_pin();
-            match op.op_type() {
-                None => {
-                    // On epoll, multiple event may be received even if it is registered as
-                    // one-shot. It is safe to ignore it.
-                    trace!("op {} is completed", user_data);
-                }
-                Some(OpType::Fd(fd)) => unsafe {
-                    Self::poll_fd(&self.notify.poll, &mut self.registry, &event, fd, true)?;
-                },
-                Some(OpType::Fd2(fd1, fd2)) => unsafe {
-                    if !Self::poll_fd(&self.notify.poll, &mut self.registry, &event, fd1, true)? {
-                        Self::poll_fd(&self.notify.poll, &mut self.registry, &event, fd2, false)?;
+
+        self.with_events(|this, events| {
+            for event in events.iter() {
+                let user_data = event.key;
+                trace!("receive {} for {:?}", user_data, event);
+                // SAFETY: user_data is promised to be valid.
+                let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
+                let op = op.as_op_pin();
+                match op.op_type() {
+                    None => {
+                        // On epoll, multiple event may be received even if it is registered as
+                        // one-shot. It is safe to ignore it.
+                        trace!("op {} is completed", user_data);
                     }
-                },
-                #[cfg(aio)]
-                Some(OpType::Aio(aiocbp)) => {
-                    let err = unsafe { libc::aio_error(aiocbp.as_ptr()) };
-                    let res = match err {
-                        // If the user_data is reused but the previously registered event still
-                        // emits (for example, HUP in epoll; however it is impossible now
-                        // because we only use AIO on FreeBSD), we'd better ignore the current
-                        // one and wait for the real event.
-                        libc::EINPROGRESS => {
-                            trace!("op {} is not completed", user_data);
-                            continue;
+                    Some(OpType::Fd(fd)) => unsafe {
+                        this.poll_fd(&event, fd, true)?;
+                    },
+                    Some(OpType::Fd2(fd1, fd2)) => unsafe {
+                        if !this.poll_fd(&event, fd1, true)? {
+                            this.poll_fd(&event, fd2, false)?;
                         }
-                        libc::ECANCELED => {
-                            // Remove the aiocb from kqueue.
-                            unsafe { libc::aio_return(aiocbp.as_ptr()) };
-                            Err(io::Error::from_raw_os_error(libc::ETIMEDOUT))
-                        }
-                        _ => syscall!(libc::aio_return(aiocbp.as_ptr())).map(|res| res as usize),
-                    };
-                    // SAFETY: `notify` is called only once.
-                    unsafe { Entry::new(user_data, res).notify() }
+                    },
+                    #[cfg(aio)]
+                    Some(OpType::Aio(aiocbp)) => {
+                        let err = unsafe { libc::aio_error(aiocbp.as_ptr()) };
+                        let res = match err {
+                            // If the user_data is reused but the previously registered event still
+                            // emits (for example, HUP in epoll; however it is impossible now
+                            // because we only use AIO on FreeBSD), we'd better ignore the current
+                            // one and wait for the real event.
+                            libc::EINPROGRESS => {
+                                trace!("op {} is not completed", user_data);
+                                continue;
+                            }
+                            libc::ECANCELED => {
+                                // Remove the aiocb from kqueue.
+                                unsafe { libc::aio_return(aiocbp.as_ptr()) };
+                                Err(io::Error::from_raw_os_error(libc::ETIMEDOUT))
+                            }
+                            _ => {
+                                syscall!(libc::aio_return(aiocbp.as_ptr())).map(|res| res as usize)
+                            }
+                        };
+                        // SAFETY: `notify` is called only once.
+                        unsafe { Entry::new(user_data, res).notify() }
+                    }
                 }
             }
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     pub fn waker(&self) -> Waker {
