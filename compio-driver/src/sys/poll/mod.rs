@@ -280,7 +280,7 @@ impl Driver {
         let queue = self
             .registry
             .get_mut(&fd)
-            .expect("the fd should be attached");
+            .expect("the fd should be submitted");
         queue.remove(op.user_data());
         let renew_event = queue.event();
         if self
@@ -426,7 +426,7 @@ impl Driver {
         let queue = self
             .registry
             .get_mut(&fd)
-            .expect("the fd should be attached");
+            .expect("the fd should be submitted");
         if let Some((user_data, interest)) = queue.pop_interest(event) {
             let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
             let op = op.as_op_pin();
