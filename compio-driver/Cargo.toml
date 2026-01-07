@@ -55,6 +55,7 @@ slab = { workspace = true, optional = true }
 # Other platform dependencies
 [target.'cfg(all(not(target_os = "linux"), unix))'.dependencies]
 polling = "3.3.0"
+compio-buf = { workspace = true, features = ["smallvec"] }
 
 [target.'cfg(unix)'.dependencies]
 crossbeam-queue = { workspace = true }

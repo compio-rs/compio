@@ -267,10 +267,10 @@ impl Driver {
 
     fn renew(&mut self, fd: BorrowedFd, renew_event: Event) -> io::Result<()> {
         if !renew_event.readable && !renew_event.writable {
-            self.notify.poll.delete(fd)?;
+            self.poller().delete(fd)?;
             self.registry.remove(&fd.as_raw_fd());
         } else {
-            self.notify.poll.modify(fd, renew_event)?;
+            self.poller().modify(fd, renew_event)?;
         }
         Ok(())
     }
@@ -279,31 +279,32 @@ impl Driver {
         Ok(())
     }
 
-    fn cancel_fd(&mut self, op: &mut Key<dyn crate::sys::OpCode>, fd: RawFd, push_entry: bool) {
+    /// Cancel the given op from the corresponding queue of the fd and renew the
+    /// fd event.
+    ///
+    /// Returns the result of renewing the fd event.
+    fn cancel_fd(&mut self, op: &mut Key<dyn crate::sys::OpCode>, fd: RawFd) -> io::Result<()> {
         let queue = self
             .registry
             .get_mut(&fd)
             .expect("the fd should be submitted");
         queue.remove(op.user_data());
         let renew_event = queue.event();
-        if self
-            .renew(unsafe { BorrowedFd::borrow_raw(fd) }, renew_event)
-            .is_ok()
-            && push_entry
-        {
-            self.pool_completed.push(entry_cancelled(op.user_data()));
-        }
+        self.renew(unsafe { BorrowedFd::borrow_raw(fd) }, renew_event)
     }
 
+    /// Cancel the given operation.
     pub fn cancel(&mut self, op: &mut Key<dyn crate::sys::OpCode>) {
         let op_pin = op.as_pinned_op();
         match op_pin.op_type() {
             None => {}
             Some(OpType::Fd(fds)) => {
-                let mut push = true;
+                let mut cancelled = true;
                 for fd in fds {
-                    self.cancel_fd(op, fd, push);
-                    push = false;
+                    cancelled = cancelled && self.cancel_fd(op, fd).is_ok();
+                }
+                if cancelled {
+                    self.pool_completed.push(entry_cancelled(op.user_data()));
                 }
             }
             #[cfg(aio)]
@@ -411,11 +412,6 @@ impl Driver {
         true
     }
 
-    /// # Safety
-    ///
-    /// User should respect the return value. If it is true, the op has been
-    /// operated and notified. The next calling site should pass `operate` as
-    /// false.
     unsafe fn poll_fd(&mut self, event: &Event, fd: RawFd, operate: bool) -> io::Result<()> {
         // If it's an FD op, the returned user_data is only for calling `op_type`. We
         // need to pop the real user_data from the queue.
@@ -425,22 +421,17 @@ impl Driver {
             .expect("the fd should be submitted");
         if let Some((user_data, interest)) = queue.pop_interest(event) {
             let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
-            let op = op.as_pinned_op();
-            let res = if operate {
-                match op.operate() {
+            if operate {
+                match op.as_pinned_op().operate() {
                     Poll::Pending => {
                         // The operation should go back to the front.
                         queue.push_front_interest(user_data, interest);
-                        None
                     }
-                    Poll::Ready(res) => Some(res),
+                    Poll::Ready(res) => {
+                        // SAFETY: `notify` is called only once.
+                        unsafe { Entry::new(user_data, res).notify() };
+                    }
                 }
-            } else {
-                None
-            };
-            if let Some(res) = res {
-                // SAFETY: `notify` is called only once.
-                unsafe { Entry::new(user_data, res).notify() };
             }
         }
         let renew_event = queue.event();
@@ -484,10 +475,8 @@ impl Driver {
                         trace!("op {} is completed", user_data);
                     }
                     Some(OpType::Fd(fds)) => unsafe {
-                        let mut operate = true;
-                        for fd in fds {
-                            this.poll_fd(&event, fd, operate)?;
-                            operate = false
+                        for (idx, fd) in fds.into_iter().enumerate() {
+                            this.poll_fd(&event, fd, idx == 0)?;
                         }
                     },
                     #[cfg(aio)]
