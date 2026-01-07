@@ -276,7 +276,7 @@ impl Driver {
         Ok(())
     }
 
-    fn cancel_fd(&mut self, op: &mut Key<dyn crate::sys::OpCode>, fd: RawFd) {
+    fn cancel_fd(&mut self, op: &mut Key<dyn crate::sys::OpCode>, fd: RawFd, push_entry: bool) {
         let queue = self
             .registry
             .get_mut(&fd)
@@ -286,6 +286,7 @@ impl Driver {
         if self
             .renew(unsafe { BorrowedFd::borrow_raw(fd) }, renew_event)
             .is_ok()
+            && push_entry
         {
             self.pool_completed.push(entry_cancelled(op.user_data()));
         }
@@ -296,12 +297,11 @@ impl Driver {
         match op_pin.op_type() {
             None => {}
             Some(OpType::Fd(fd)) => {
-                self.cancel_fd(op, fd);
+                self.cancel_fd(op, fd, true);
             }
             Some(OpType::Fd2(fd1, fd2)) => {
-                for &fd in &[fd1, fd2] {
-                    self.cancel_fd(op, fd);
-                }
+                self.cancel_fd(op, fd1, true);
+                self.cancel_fd(op, fd2, false);
             }
             #[cfg(aio)]
             Some(OpType::Aio(aiocbp)) => {
