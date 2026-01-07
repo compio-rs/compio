@@ -49,6 +49,8 @@ scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 pub type JoinHandle<T> = Task<Result<T, Box<dyn Any + Send>>>;
 
 /// Return type for [`Runtime::submit`]
+///
+/// This implements `Future<Output = BufResult<usize, T>>`.
 pub struct Submit<T: OpCode> {
     inner: Either<Ready<BufResult<usize, T>>, OpFuture<T, ()>>,
 }
@@ -62,6 +64,8 @@ impl<T: OpCode> Future for Submit<T> {
 }
 
 /// Return type for [`Runtime::submit_with_extra`]
+///
+/// This implements `Future<Output = (BufResult<usize, T>, Extra)>`.
 pub struct SubmitWithExtra<T: OpCode> {
     #[allow(clippy::type_complexity)]
     inner: Either<Ready<(BufResult<usize, T>, Extra)>, OpFuture<T, Extra>>,
@@ -541,8 +545,8 @@ pub fn spawn_blocking<T: Send + 'static>(
 ///
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::with_current`].
-pub async fn submit<T: OpCode + 'static>(op: T) -> BufResult<usize, T> {
-    Runtime::with_current(|r| r.submit(op)).await
+pub fn submit<T: OpCode + 'static>(op: T) -> Submit<T> {
+    Runtime::with_current(|r| r.submit(op))
 }
 
 /// Submit an operation to the current runtime, and return a future for it with
@@ -552,8 +556,8 @@ pub async fn submit<T: OpCode + 'static>(op: T) -> BufResult<usize, T> {
 ///
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::with_current`].
-pub async fn submit_with_extra<T: OpCode + 'static>(op: T) -> (BufResult<usize, T>, Extra) {
-    Runtime::with_current(|r| r.submit_with_extra(op)).await
+pub fn submit_with_extra<T: OpCode + 'static>(op: T) -> SubmitWithExtra<T> {
+    Runtime::with_current(|r| r.submit_with_extra(op))
 }
 
 #[cfg(feature = "time")]
