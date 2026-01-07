@@ -91,6 +91,7 @@ const unsafe fn opcode_dyn_mut(
 ///    called by the proactor.
 /// 2. The op is completed and the future cancels it. `into_box` will be called
 ///    by the proactor.
+#[repr(transparent)]
 pub struct Key<T: ?Sized> {
     user_data: ManuallyDrop<Box<RawOp<()>>>,
     _p: PhantomData<Box<RawOp<T>>>,
@@ -126,6 +127,30 @@ impl<T: OpCode + 'static> Key<T> {
     }
 }
 
+impl<T: OpCode> Key<T> {
+    /// Convert to a `Key<dyn OpCode>`.
+    pub fn into_dyn(self) -> Key<dyn OpCode> {
+        Key {
+            user_data: self.user_data,
+            _p: PhantomData,
+        }
+    }
+
+    /// As a reference of `Key<dyn OpCode>`.
+    pub fn as_dyn(&self) -> &Key<dyn OpCode> {
+        // SAFETY: the layout of `Key<T>` and `Key<dyn OpCode>` are the same guaranteed
+        // by `repr(transparent)`.
+        unsafe { std::mem::transmute(self) }
+    }
+
+    /// As a mutable reference of `Key<dyn OpCode>`.
+    pub fn as_dyn_mut(&mut self) -> &mut Key<dyn OpCode> {
+        // SAFETY: the layout of `Key<T>` and `Key<dyn OpCode>` are the same guaranteed
+        // by `repr(transparent)`.
+        unsafe { std::mem::transmute(self) }
+    }
+}
+
 impl<T: ?Sized> Key<T> {
     /// Create a new `Key` with the given user data.
     ///
@@ -154,7 +179,7 @@ impl<T: ?Sized> Key<T> {
         self.user_data.as_mut()
     }
 
-    fn as_dyn_mut(&mut self) -> &mut RawOp<dyn OpCode> {
+    fn as_dyn_op(&mut self) -> &mut RawOp<dyn OpCode> {
         let ptr = self.as_non_null();
         let metadata = self.as_mut().metadata;
         // SAFETY: metadata from `Key::new`.
@@ -192,7 +217,7 @@ impl<T: ?Sized> Key<T> {
     /// set. The return value indicates if the op is cancelled. If so, the
     /// op should be dropped because it is useless.
     pub(crate) fn set_result(&mut self, res: io::Result<usize>) -> bool {
-        let this = self.as_dyn_mut();
+        let this = self.as_dyn_op();
         #[cfg(io_uring)]
         if let Ok(res) = res {
             unsafe {
@@ -230,17 +255,17 @@ impl<T: ?Sized> Key<T> {
     pub(crate) unsafe fn into_box(mut self) -> Box<RawOp<dyn OpCode>> {
         // SAFETY: user_data is created as `Box<RawOp<T>>`, which is fine to be casted
         // to `Box<RawOp<dyn OpCode>>`.
-        unsafe { Box::from_raw(self.as_dyn_mut()) }
+        unsafe { Box::from_raw(self.as_dyn_op()) }
     }
 }
 
 impl<T> Key<T> {
-    /// Get the inner result if it is completed.
+    /// Take the inner result if it is completed.
     ///
     /// # Safety
     ///
     /// Call it only when the op is completed, otherwise it is UB.
-    pub(crate) unsafe fn into_inner(self) -> BufResult<usize, T> {
+    pub(crate) unsafe fn take_result(self) -> BufResult<usize, T> {
         // TODO(George-Miao): use `Box::from_non_null` when `box_vec_non_null` is
         // stablized
         let op = unsafe { Box::from_raw(self.cast::<T>().as_ptr()) };
@@ -250,12 +275,10 @@ impl<T> Key<T> {
 
 impl<T: OpCode + ?Sized> Key<T> {
     /// Pin the inner op.
-    pub(crate) fn as_op_pin(&mut self) -> Pin<&mut dyn OpCode> {
-        // SAFETY: the inner won't be moved.
-        unsafe {
-            let this = self.as_dyn_mut();
-            Pin::new_unchecked(&mut this.op)
-        }
+    pub(crate) fn as_pinned_op(&mut self) -> Pin<&mut dyn OpCode> {
+        let this = self.as_dyn_op();
+        // SAFETY: the inner is pinned with Box.
+        unsafe { Pin::new_unchecked(&mut this.op) }
     }
 
     /// Call [`OpCode::operate`] and assume that it is not an overlapped op,
@@ -267,7 +290,7 @@ impl<T: OpCode + ?Sized> Key<T> {
         use std::task::Poll;
 
         let optr = self.extra_mut().optr();
-        let op = self.as_op_pin();
+        let op = self.as_pinned_op();
         let res = unsafe { op.operate(optr.cast()) };
         match res {
             Poll::Pending => unreachable!("this operation is not overlapped"),

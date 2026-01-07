@@ -296,7 +296,7 @@ impl Driver {
     }
 
     pub fn cancel(&mut self, op: &mut Key<dyn crate::sys::OpCode>) {
-        let op_pin = op.as_op_pin();
+        let op_pin = op.as_pinned_op();
         match op_pin.op_type() {
             None => {}
             Some(OpType::Fd(fds)) => {
@@ -318,7 +318,7 @@ impl Driver {
     pub fn push(&mut self, op: &mut Key<dyn crate::sys::OpCode>) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?op);
         let user_data = op.user_data();
-        let op_pin = op.as_op_pin();
+        let op_pin = op.as_pinned_op();
         match op_pin.pre_submit()? {
             Decision::Wait(args) => {
                 // SAFETY: fd is from the OpCode.
@@ -380,7 +380,7 @@ impl Driver {
         let completed = self.pool_completed.clone();
         let mut closure = move || {
             let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
-            let op_pin = op.as_op_pin();
+            let op_pin = op.as_pinned_op();
             let res = match op_pin.operate() {
                 Poll::Pending => unreachable!("this operation is not non-blocking"),
                 Poll::Ready(res) => res,
