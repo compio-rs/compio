@@ -314,7 +314,7 @@ impl Driver {
     pub fn push(&mut self, op: &mut Key<dyn crate::sys::OpCode>) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?op);
         let user_data = op.user_data();
-        let op_pin = op.as_op_pin();
+        let op_pin = op.as_pinned_op();
         trace!("push RawOp");
         match op_pin.create_entry() {
             OpEntry::Submission(entry) => {
@@ -343,7 +343,7 @@ impl Driver {
         self.pool
             .dispatch(move || {
                 let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
-                let op_pin = op.as_op_pin();
+                let op_pin = op.as_pinned_op();
                 let res = op_pin.call_blocking();
                 completed.push(Entry::new(user_data, res));
                 waker.wake();
