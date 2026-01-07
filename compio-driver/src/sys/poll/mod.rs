@@ -321,13 +321,13 @@ impl Driver {
         let op_pin = op.as_pinned_op();
         match op_pin.pre_submit()? {
             Decision::Wait(args) => {
+                trace!("register {:?}", args);
                 // SAFETY: fd is from the OpCode.
                 unsafe {
                     for arg in args {
                         self.submit(user_data, arg)?;
                     }
                 }
-                trace!("register {:?}", args);
                 Poll::Pending
             }
             Decision::Completed(res) => Poll::Ready(Ok(res)),
@@ -425,7 +425,7 @@ impl Driver {
             .expect("the fd should be submitted");
         if let Some((user_data, interest)) = queue.pop_interest(event) {
             let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
-            let op = op.as_op_pin();
+            let op = op.as_pinned_op();
             let res = if operate {
                 match op.operate() {
                     Poll::Pending => {
@@ -476,7 +476,7 @@ impl Driver {
                 trace!("receive {} for {:?}", user_data, event);
                 // SAFETY: user_data is promised to be valid.
                 let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
-                let op = op.as_op_pin();
+                let op = op.as_pinned_op();
                 match op.op_type() {
                     None => {
                         // On epoll, multiple event may be received even if it is registered as
