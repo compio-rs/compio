@@ -1,4 +1,14 @@
-use std::{io, marker::PhantomData, mem::MaybeUninit, pin::Pin, task::Waker};
+// TODO: We can change to `ThinBox` when it is stabilized.
+
+use std::{
+    hash::Hash,
+    io,
+    marker::PhantomData,
+    mem::{ManuallyDrop, MaybeUninit},
+    pin::Pin,
+    ptr::NonNull,
+    task::Waker,
+};
 
 use compio_buf::BufResult;
 
@@ -9,9 +19,10 @@ use crate::{Extra, OpCode, PushEntry, RawFd};
 /// It should be allocated on the heap. The pointer to this struct is used as
 /// `user_data`, and on Windows, it is used as the pointer to `OVERLAPPED`.
 ///
-/// `*const RawOp<dyn OpCode>` can be obtained from any `Key<T: OpCode>` by
-/// first casting `Key::user_data` to `*const RawOp<()>`, then upcasted with
-/// `upcast_fn`. It is done in [`Key::as_op_pin`].
+/// You should not use `RawOp` directly. Instead, use [`Key`] to manage the
+/// pointer to it. Crucially, a pointer to `RawOp<T>` can be safely cast to
+/// `RawOp<()>` guaranteed by `repr(C)`, and vice versa with metadata stored in
+/// `RawOp`.
 #[repr(C)]
 pub(crate) struct RawOp<T: ?Sized> {
     // Platform-specific extra data.
@@ -32,14 +43,14 @@ pub(crate) struct RawOp<T: ?Sized> {
 
 #[repr(C)]
 union OpCodePtrRepr {
-    ptr: *mut RawOp<dyn OpCode>,
+    ptr: NonNull<RawOp<dyn OpCode>>,
     components: OpCodePtrComponents,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct OpCodePtrComponents {
-    data_pointer: *mut (),
+    data_pointer: NonNull<RawOp<()>>,
     metadata: usize,
 }
 
@@ -48,14 +59,17 @@ fn opcode_metadata<T: OpCode + 'static>() -> usize {
     // SAFETY: same as `core::ptr::metadata`.
     unsafe {
         OpCodePtrRepr {
-            ptr: op.as_mut_ptr(),
+            ptr: NonNull::new(op.as_mut_ptr() as _).expect("ptr to local shouldn't be null"),
         }
         .components
         .metadata
     }
 }
 
-const unsafe fn opcode_dyn_mut(ptr: *mut (), metadata: usize) -> *mut RawOp<dyn OpCode> {
+const unsafe fn opcode_dyn_mut(
+    ptr: NonNull<RawOp<()>>,
+    metadata: usize,
+) -> NonNull<RawOp<dyn OpCode>> {
     // SAFETY: same as `core::ptr::from_raw_parts_mut`.
     unsafe {
         OpCodePtrRepr {
@@ -77,10 +91,23 @@ const unsafe fn opcode_dyn_mut(ptr: *mut (), metadata: usize) -> *mut RawOp<dyn 
 ///    called by the proactor.
 /// 2. The op is completed and the future cancels it. `into_box` will be called
 ///    by the proactor.
-#[derive(PartialEq, Eq, Hash)]
 pub struct Key<T: ?Sized> {
-    user_data: *mut (),
+    user_data: ManuallyDrop<Box<RawOp<()>>>,
     _p: PhantomData<Box<RawOp<T>>>,
+}
+
+impl<T: ?Sized> PartialEq for Key<T> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.user_data.as_ref(), other.user_data.as_ref())
+    }
+}
+
+impl<T: ?Sized> Eq for Key<T> {}
+
+impl<T: ?Sized> Hash for Key<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (self.user_data.as_ref() as *const _ as usize).hash(state)
+    }
 }
 
 impl<T: ?Sized> Unpin for Key<T> {}
@@ -109,52 +136,55 @@ impl<T: ?Sized> Key<T> {
     /// `dyn OpCode`.
     pub unsafe fn new_unchecked(user_data: usize) -> Self {
         Self {
-            user_data: user_data as _,
+            user_data: ManuallyDrop::new(unsafe { Box::from_raw(user_data as _) }),
             _p: PhantomData,
         }
     }
 
     /// Get the unique user-defined data.
     pub fn user_data(&self) -> usize {
-        self.user_data as _
+        self.as_non_null().as_ptr() as usize
     }
 
-    fn as_opaque(&self) -> &RawOp<()> {
-        // SAFETY: user_data is unique and RawOp is repr(C).
-        unsafe { &*(self.user_data as *const RawOp<()>) }
+    fn as_ref(&self) -> &RawOp<()> {
+        self.user_data.as_ref()
     }
 
-    fn as_opaque_mut(&mut self) -> &mut RawOp<()> {
-        // SAFETY: see `as_opaque`.
-        unsafe { &mut *(self.user_data as *mut RawOp<()>) }
+    fn as_mut(&mut self) -> &mut RawOp<()> {
+        self.user_data.as_mut()
     }
 
-    fn as_dyn_mut_ptr(&mut self) -> *mut RawOp<dyn OpCode> {
-        let user_data = self.user_data;
-        let this = self.as_opaque_mut();
+    fn as_dyn_mut(&mut self) -> &mut RawOp<dyn OpCode> {
+        let ptr = self.as_non_null();
+        let metadata = self.as_mut().metadata;
         // SAFETY: metadata from `Key::new`.
-        unsafe { opcode_dyn_mut(user_data, this.metadata) }
+        unsafe { opcode_dyn_mut(ptr, metadata).as_mut() }
+    }
+
+    fn as_non_null(&self) -> NonNull<RawOp<()>> {
+        NonNull::from_ref(self.user_data.as_ref())
+    }
+
+    fn cast<U>(&self) -> NonNull<RawOp<U>> {
+        self.as_non_null().cast()
     }
 
     /// Take the inner [`Extra`].
     pub(crate) fn take_extra(&mut self) -> Extra {
-        std::mem::replace(
-            &mut self.as_opaque_mut().extra,
-            Extra::new(RawFd::default()),
-        )
+        std::mem::replace(&mut self.as_mut().extra, Extra::new(RawFd::default()))
     }
 
     /// Mutable reference to [`Extra`].
     #[allow(dead_code)] // on polling, this is never used
     pub(crate) fn extra_mut(&mut self) -> &mut Extra {
-        &mut self.as_opaque_mut().extra
+        &mut self.as_mut().extra
     }
 
     /// Cancel the op, decrease the ref count. The return value indicates if the
     /// op is completed. If so, the op should be dropped because it is
     /// useless.
     pub(crate) fn set_cancelled(&mut self) -> bool {
-        self.as_opaque_mut().cancelled = true;
+        self.as_mut().cancelled = true;
         self.has_result()
     }
 
@@ -162,7 +192,7 @@ impl<T: ?Sized> Key<T> {
     /// set. The return value indicates if the op is cancelled. If so, the
     /// op should be dropped because it is useless.
     pub(crate) fn set_result(&mut self, res: io::Result<usize>) -> bool {
-        let this = unsafe { &mut *self.as_dyn_mut_ptr() };
+        let this = self.as_dyn_mut();
         #[cfg(io_uring)]
         if let Ok(res) = res {
             unsafe {
@@ -179,12 +209,12 @@ impl<T: ?Sized> Key<T> {
 
     /// Whether the op is completed.
     pub(crate) fn has_result(&self) -> bool {
-        self.as_opaque().result.is_ready()
+        self.as_ref().result.is_ready()
     }
 
     /// Set waker of the current future.
     pub(crate) fn set_waker(&mut self, waker: Waker) {
-        if let PushEntry::Pending(w) = &mut self.as_opaque_mut().result {
+        if let PushEntry::Pending(w) = &mut self.as_mut().result {
             *w = Some(waker)
         }
     }
@@ -198,7 +228,9 @@ impl<T: ?Sized> Key<T> {
     /// when the ref count becomes zero. See doc of [`Key::set_cancelled`]
     /// and [`Key::set_result`].
     pub(crate) unsafe fn into_box(mut self) -> Box<RawOp<dyn OpCode>> {
-        unsafe { Box::from_raw(self.as_dyn_mut_ptr()) }
+        // SAFETY: user_data is created as `Box<RawOp<T>>`, which is fine to be casted
+        // to `Box<RawOp<dyn OpCode>>`.
+        unsafe { Box::from_raw(self.as_dyn_mut()) }
     }
 }
 
@@ -209,7 +241,9 @@ impl<T> Key<T> {
     ///
     /// Call it only when the op is completed, otherwise it is UB.
     pub(crate) unsafe fn into_inner(self) -> BufResult<usize, T> {
-        let op = unsafe { Box::from_raw(self.user_data as *mut RawOp<T>) };
+        // TODO(George-Miao): use `Box::from_non_null` when `box_vec_non_null` is
+        // stablized
+        let op = unsafe { Box::from_raw(self.cast::<T>().as_ptr()) };
         BufResult(unsafe { op.result.take_ready().unwrap_unchecked() }, op.op)
     }
 }
@@ -219,7 +253,7 @@ impl<T: OpCode + ?Sized> Key<T> {
     pub(crate) fn as_op_pin(&mut self) -> Pin<&mut dyn OpCode> {
         // SAFETY: the inner won't be moved.
         unsafe {
-            let this = &mut *self.as_dyn_mut_ptr();
+            let this = self.as_dyn_mut();
             Pin::new_unchecked(&mut this.op)
         }
     }
