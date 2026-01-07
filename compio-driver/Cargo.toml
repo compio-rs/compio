@@ -60,6 +60,9 @@ polling = "3.3.0"
 crossbeam-queue = { workspace = true }
 libc = { workspace = true }
 
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dev-dependencies]
+rustix = { workspace = true, features = ["pipe"] }
+
 [build-dependencies]
 cfg_aliases = { workspace = true }
 
