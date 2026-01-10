@@ -15,7 +15,7 @@ pub use poll::{Decision, OpType, PollOpCode};
 pub(crate) use super::iour::is_op_supported;
 use super::{iour, poll};
 pub use crate::driver_type::DriverType; // Re-export so current user won't be broken
-use crate::{BufferPool, Key, ProactorBuilder};
+use crate::{BufferPool, Key, ProactorBuilder, key::ErasedKey};
 
 /// Fused [`OpCode`]
 ///
@@ -69,10 +69,10 @@ impl Driver {
         }
     }
 
-    pub fn create_op<T: OpCode + 'static>(&self, op: T) -> Key<T> {
+    pub fn create_key<T: OpCode + 'static>(&self, op: T) -> Key<T> {
         match &self.fuse {
-            FuseDriver::Poll(driver) => driver.create_op(op),
-            FuseDriver::IoUring(driver) => driver.create_op(op),
+            FuseDriver::Poll(driver) => driver.create_key(op),
+            FuseDriver::IoUring(driver) => driver.create_key(op),
         }
     }
 
@@ -83,14 +83,14 @@ impl Driver {
         }
     }
 
-    pub fn cancel(&mut self, op: &mut Key<dyn OpCode>) {
+    pub fn cancel<T>(&mut self, key: Key<T>) {
         match &mut self.fuse {
-            FuseDriver::Poll(driver) => driver.cancel(op),
-            FuseDriver::IoUring(driver) => driver.cancel(op),
+            FuseDriver::Poll(driver) => driver.cancel(key),
+            FuseDriver::IoUring(driver) => driver.cancel(key),
         }
     }
 
-    pub fn push(&mut self, op: &mut Key<dyn OpCode>) -> Poll<io::Result<usize>> {
+    pub fn push(&mut self, op: ErasedKey) -> Poll<io::Result<usize>> {
         match &mut self.fuse {
             FuseDriver::Poll(driver) => driver.push(op),
             FuseDriver::IoUring(driver) => driver.push(op),

@@ -17,7 +17,9 @@ use windows_sys::Win32::{
     System::IO::OVERLAPPED,
 };
 
-use crate::{AsyncifyPool, BufferPool, DriverType, Entry, Key, ProactorBuilder};
+use crate::{
+    AsyncifyPool, BufferPool, DriverType, Entry, ErasedKey, Key, ProactorBuilder, key::RefExt,
+};
 
 pub(crate) mod op;
 
@@ -336,7 +338,7 @@ impl Driver {
         &self.notify.port
     }
 
-    pub fn create_op<T: OpCode + 'static>(&self, op: T) -> Key<T> {
+    pub fn create_key<T: OpCode + 'static>(&self, op: T) -> Key<T> {
         Key::new(self.port().as_raw_handle() as _, op)
     }
 
@@ -344,55 +346,64 @@ impl Driver {
         self.port().attach(fd)
     }
 
-    pub fn cancel(&mut self, op: &mut Key<dyn OpCode>) {
-        instrument!(compio_log::Level::TRACE, "cancel", ?op);
+    pub fn cancel<T>(&mut self, key: Key<T>) {
+        instrument!(compio_log::Level::TRACE, "cancel", ?key);
         trace!("cancel RawOp");
-        let optr = op.extra_mut().optr();
-        if let Some(w) = self.waits.get_mut(&op.user_data())
+        let optr = key.borrow().extra_mut().optr();
+        if let Some(w) = self.waits.get_mut(&key.as_user_data())
             && w.cancel().is_ok()
         {
             // The pack has been cancelled successfully, which means no packet will be post
             // to IOCP. Need not set the result because `create_entry` handles it.
             self.port().post_raw(optr).ok();
         }
-        let op = op.as_pinned_op();
-        // It's OK to fail to cancel.
         trace!("call OpCode::cancel");
-        op.cancel(optr.cast()).ok();
+        // It's OK to fail to cancel.
+        key.borrow().pinned_op().cancel(optr.cast()).ok();
     }
 
-    pub fn push(&mut self, op: &mut Key<dyn OpCode>) -> Poll<io::Result<usize>> {
-        instrument!(compio_log::Level::TRACE, "push", ?op);
-        let user_data = op.user_data();
+    pub fn push(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
+        instrument!(compio_log::Level::TRACE, "push", ?key);
         trace!("push RawOp");
+        let mut op = key.borrow();
         let optr = op.extra_mut().optr();
-        let op_pin = op.as_pinned_op();
-        match op_pin.op_type() {
-            OpType::Overlapped => unsafe { op_pin.operate(optr.cast()) },
-            OpType::Blocking => loop {
-                if self.push_blocking(user_data) {
-                    break Poll::Pending;
-                } else {
-                    // It's OK to wait forever, because any blocking task will notify the IOCP after
-                    // it completes.
-                    self.poll(None)?;
+        let pinned = op.pinned_op();
+        let op_type = pinned.op_type();
+        match op_type {
+            OpType::Overlapped => unsafe { pinned.operate(optr.cast()) },
+            OpType::Blocking => {
+                drop(op);
+                loop {
+                    if self.push_blocking(key.clone()) {
+                        break Poll::Pending;
+                    } else {
+                        // It's OK to wait forever, because any blocking task will notify the IOCP
+                        // after it completes.
+                        self.poll(None)?;
+                    }
                 }
-            },
+            }
             OpType::Event(e) => {
-                self.waits
-                    .insert(user_data, wait::Wait::new(self.notify.clone(), e, op)?);
+                drop(op);
+                self.waits.insert(
+                    key.as_user_data(),
+                    wait::Wait::new(self.notify.clone(), e, key)?,
+                );
                 Poll::Pending
             }
         }
     }
 
-    fn push_blocking(&mut self, user_data: usize) -> bool {
+    fn push_blocking(&mut self, key: ErasedKey) -> bool {
         let notify = self.notify.clone();
+        // SAFETY: we're submitting into the driver, so it's safe to freeze here.
+        let mut key = unsafe { key.freeze() };
+
         self.pool
             .dispatch(move || {
-                let mut op = unsafe { Key::<dyn OpCode>::new_unchecked(user_data) };
-                let optr = op.extra_mut().optr();
+                let op = key.as_mut();
                 let res = op.operate_blocking();
+                let optr = op.extra_mut().optr();
                 notify.port.post(res, optr).ok();
             })
             .is_ok()
@@ -404,26 +415,31 @@ impl Driver {
         entry: Entry,
     ) -> Option<Entry> {
         let user_data = entry.user_data();
-        if user_data != notify_user_data {
-            if let Some(w) = waits.remove(&user_data) {
-                if w.is_cancelled() {
-                    Some(Entry::new(
-                        user_data,
-                        Err(io::Error::from_raw_os_error(ERROR_CANCELLED as _)),
-                    ))
-                } else if entry.result.is_err() {
-                    Some(entry)
-                } else {
-                    let mut op = unsafe { Key::<dyn OpCode>::new_unchecked(user_data) };
-                    let result = op.operate_blocking();
-                    Some(Entry::new(user_data, result))
-                }
-            } else {
-                Some(entry)
-            }
-        } else {
-            None
+
+        // Ignore existing entries
+        if user_data == notify_user_data {
+            return None;
         }
+
+        // if there's no wait, just return the entry
+        let Some(w) = waits.remove(&user_data) else {
+            return Some(entry);
+        };
+
+        let entry = if w.is_cancelled() {
+            Entry::new(
+                entry.into_key(),
+                Err(io::Error::from_raw_os_error(ERROR_CANCELLED as _)),
+            )
+        } else if entry.result.is_err() {
+            entry
+        } else {
+            let key = entry.into_key();
+            let result = key.borrow().operate_blocking();
+            Entry::new(key, result)
+        };
+
+        Some(entry)
     }
 
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
@@ -433,8 +449,7 @@ impl Driver {
 
         for e in self.notify.port.poll(timeout)? {
             if let Some(e) = Self::create_entry(notify_user_data, &mut self.waits, e) {
-                // SAFETY: called only once.
-                unsafe { e.notify() }
+                e.notify()
             }
         }
 

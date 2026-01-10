@@ -76,7 +76,7 @@ where
 impl<T: OpCode, E> Drop for OpFuture<T, E> {
     fn drop(&mut self) {
         if let Some(key) = self.key.take() {
-            Runtime::with_current(|r| r.cancel_op(key));
+            Runtime::with_current(|r| r.cancel(key));
         }
     }
 }

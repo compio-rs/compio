@@ -25,6 +25,7 @@ flume = { workspace = true, default-features = false }
 futures-util = { workspace = true }
 socket2 = { workspace = true, features = ["all"] }
 pin-project-lite = { workspace = true }
+thin-cell = { version = "0.1.1" }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]

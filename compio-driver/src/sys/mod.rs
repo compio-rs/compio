@@ -28,6 +28,12 @@ cfg_if::cfg_if! {
 #[derive(Default)]
 pub struct Extra(imp::Extra);
 
+impl Debug for Extra {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Extra").field("sys", &"<...>").finish()
+    }
+}
+
 impl Extra {
     pub(crate) fn new(driver: RawFd) -> Self {
         Self(imp::Extra::new(driver))
@@ -77,7 +83,7 @@ pub(crate) mod aio {
     pub fn new_aiocb() -> aiocb {}
 }
 
-use std::io;
+use std::{fmt::Debug, io};
 
 pub use imp::*;
 

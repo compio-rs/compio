@@ -39,7 +39,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{Entry, Overlapped, RawFd, syscall};
+use crate::{Entry, ErasedKey, Overlapped, RawFd, syscall};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "iocp-global")] {
@@ -195,7 +195,8 @@ impl CompletionPort {
                     _ => Err(io::Error::from_raw_os_error(error as _)),
                 }
             };
-            Some(Entry::new(overlapped_ptr as usize, res))
+            let key = unsafe { ErasedKey::from_raw(overlapped_ptr as usize) };
+            Some(Entry::new(key, res))
         }))
     }
 }

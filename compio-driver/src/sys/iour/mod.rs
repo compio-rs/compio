@@ -34,7 +34,11 @@ use io_uring::{
 };
 use slab::Slab;
 
-use crate::{AsyncifyPool, BufferPool, DriverType, Entry, Key, ProactorBuilder, syscall};
+use crate::{
+    AsyncifyPool, BufferPool, DriverType, Entry, ProactorBuilder,
+    key::{ErasedKey, Key, RefExt},
+    syscall,
+};
 
 /// Extra data for RawOp.
 #[derive(Default)]
@@ -226,9 +230,7 @@ impl Driver {
         // Cheaper than pop.
         if !self.pool_completed.is_empty() {
             while let Some(entry) = self.pool_completed.pop() {
-                unsafe {
-                    entry.notify();
-                }
+                entry.notify();
             }
         }
     }
@@ -249,15 +251,13 @@ impl Driver {
                     }
                     self.notifier.clear().expect("cannot clear notifier");
                 }
-                _ => unsafe {
-                    create_entry(entry).notify();
-                },
+                _ => create_entry(entry).notify(),
             }
         }
         has_entry
     }
 
-    pub fn create_op<T: crate::sys::OpCode + 'static>(&self, op: T) -> Key<T> {
+    pub fn create_key<T: crate::sys::OpCode + 'static>(&self, op: T) -> Key<T> {
         Key::new(self.as_raw_fd(), op)
     }
 
@@ -265,8 +265,8 @@ impl Driver {
         Ok(())
     }
 
-    pub fn cancel(&mut self, op: &mut Key<dyn crate::sys::OpCode>) {
-        instrument!(compio_log::Level::TRACE, "cancel", ?op);
+    pub fn cancel<T>(&mut self, key: Key<T>) {
+        instrument!(compio_log::Level::TRACE, "cancel", ?key);
         trace!("cancel RawOp");
         unsafe {
             #[allow(clippy::useless_conversion)]
@@ -274,7 +274,7 @@ impl Driver {
                 .inner
                 .submission()
                 .push(
-                    &AsyncCancel::new(op.user_data() as _)
+                    &AsyncCancel::new(key.into_raw() as _)
                         .build()
                         .user_data(Self::CANCEL)
                         .into(),
@@ -311,24 +311,25 @@ impl Driver {
         }
     }
 
-    pub fn push(&mut self, op: &mut Key<dyn crate::sys::OpCode>) -> Poll<io::Result<usize>> {
-        instrument!(compio_log::Level::TRACE, "push", ?op);
-        let user_data = op.user_data();
-        let op_pin = op.as_pinned_op();
+    pub fn push(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
+        instrument!(compio_log::Level::TRACE, "push", ?key);
+        let entry = key.borrow().pinned_op().create_entry();
         trace!("push RawOp");
-        match op_pin.create_entry() {
+        match entry {
             OpEntry::Submission(entry) => {
+                let user_data = key.into_raw();
                 #[allow(clippy::useless_conversion)]
                 self.push_raw(entry.user_data(user_data as _).into())?;
                 Poll::Pending
             }
             #[cfg(feature = "io-uring-sqe128")]
             OpEntry::Submission128(entry) => {
+                let user_data = key.into_raw();
                 self.push_raw(entry.user_data(user_data as _))?;
                 Poll::Pending
             }
             OpEntry::Blocking => loop {
-                if self.push_blocking(user_data) {
+                if self.push_blocking(key.clone()) {
                     break Poll::Pending;
                 } else {
                     self.poll_blocking();
@@ -337,15 +338,15 @@ impl Driver {
         }
     }
 
-    fn push_blocking(&mut self, user_data: usize) -> bool {
+    fn push_blocking(&mut self, key: ErasedKey) -> bool {
         let waker = self.waker();
         let completed = self.pool_completed.clone();
+        // SAFETY: we're submitting into the driver, so it's safe to freeze here.
+        let mut key = unsafe { key.freeze() };
         self.pool
             .dispatch(move || {
-                let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
-                let op_pin = op.as_pinned_op();
-                let res = op_pin.call_blocking();
-                completed.push(Entry::new(user_data, res));
+                let res = key.pinned_op().call_blocking();
+                completed.push(Entry::new(key.into_inner(), res));
                 waker.wake();
             })
             .is_ok()
@@ -448,7 +449,8 @@ fn create_entry(cq_entry: CEntry) -> Entry {
     } else {
         Ok(result as _)
     };
-    let mut entry = Entry::new(cq_entry.user_data() as _, result);
+    let key = unsafe { ErasedKey::from_raw(cq_entry.user_data() as _) };
+    let mut entry = Entry::new(key, result);
     entry.set_flags(cq_entry.flags());
 
     entry

@@ -13,7 +13,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{Key, OpCode, RawFd, sys::Notify, syscall};
+use crate::{ErasedKey, RawFd, sys::Notify, syscall};
 
 pub struct Wait {
     wait: PTP_WAIT,
@@ -23,10 +23,10 @@ pub struct Wait {
 }
 
 impl Wait {
-    pub fn new(notify: Arc<Notify>, event: RawFd, op: &mut Key<dyn OpCode>) -> io::Result<Self> {
+    pub fn new(notify: Arc<Notify>, event: RawFd, key: ErasedKey) -> io::Result<Self> {
         let mut context = Box::new(WinThreadpoolWaitContext {
             notify,
-            user_data: op.user_data(),
+            user_data: key.into_raw(),
         });
         let wait = syscall!(
             BOOL,
@@ -55,8 +55,8 @@ impl Wait {
             WAIT_TIMEOUT => Err(io::Error::from_raw_os_error(ERROR_TIMEOUT as _)),
             _ => Err(io::Error::from_raw_os_error(result as _)),
         };
-        let mut op = unsafe { Key::<dyn OpCode>::new_unchecked(context.user_data) };
-        let ptr = op.extra_mut().optr();
+        let key = unsafe { ErasedKey::from_raw(context.user_data) };
+        let ptr = key.borrow().extra_mut().optr();
         context.notify.port.post(res, ptr).ok();
     }
 

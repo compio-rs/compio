@@ -306,7 +306,7 @@ impl Runtime {
         SubmitWithExtra { inner }
     }
 
-    pub(crate) fn cancel_op<T: OpCode>(&self, op: Key<T>) {
+    pub(crate) fn cancel<T: OpCode>(&self, op: Key<T>) {
         self.driver.borrow_mut().cancel(op);
     }
 
@@ -318,11 +318,11 @@ impl Runtime {
     pub(crate) fn poll_task<T: OpCode>(
         &self,
         cx: &mut Context,
-        op: Key<T>,
+        key: Key<T>,
     ) -> PushEntry<Key<T>, BufResult<usize, T>> {
-        instrument!(compio_log::Level::DEBUG, "poll_task", ?op);
+        instrument!(compio_log::Level::DEBUG, "poll_task", ?key);
         let mut driver = self.driver.borrow_mut();
-        driver.pop(op).map_pending(|mut k| {
+        driver.pop(key).map_pending(|mut k| {
             driver.update_waker(&mut k, cx.waker().clone());
             k
         })
@@ -331,11 +331,11 @@ impl Runtime {
     pub(crate) fn poll_task_with_extra<T: OpCode>(
         &self,
         cx: &mut Context,
-        op: Key<T>,
+        key: Key<T>,
     ) -> PushEntry<Key<T>, (BufResult<usize, T>, Extra)> {
-        instrument!(compio_log::Level::DEBUG, "poll_task_with_extra", ?op);
+        instrument!(compio_log::Level::DEBUG, "poll_task_with_extra", ?key);
         let mut driver = self.driver.borrow_mut();
-        driver.pop_with_extra(op).map_pending(|mut k| {
+        driver.pop_with_extra(key).map_pending(|mut k| {
             driver.update_waker(&mut k, cx.waker().clone());
             k
         })
