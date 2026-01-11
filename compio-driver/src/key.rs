@@ -17,13 +17,8 @@ use crate::{Extra, OpCode, PushEntry, RawFd};
 
 /// An operation with other needed information.
 ///
-/// It should be allocated on the heap. The pointer to this struct is used as
-/// `user_data`, and on Windows, it is used as the pointer to `OVERLAPPED`.
-///
 /// You should not use `RawOp` directly. Instead, use [`Key`] to manage the
-/// pointer to it. Crucially, a pointer to `RawOp<T>` can be safely cast to
-/// `RawOp<dyn OpCode>` guaranteed by `repr(C)`, and vice versa with metadata
-/// stored in [`ThinCell`].
+/// reference-counted pointer to it.
 #[repr(C)]
 pub(crate) struct RawOp<T: ?Sized> {
     // Platform-specific extra data.
@@ -50,7 +45,7 @@ impl<T: ?Sized> RawOp<T> {
         &mut self.extra
     }
 
-    pub fn pinned_op(&mut self) -> Pin<&mut T> {
+    fn pinned_op(&mut self) -> Pin<&mut T> {
         // SAFETY: inner is always pinned with ThinCell.
         unsafe { Pin::new_unchecked(&mut self.op) }
     }
@@ -87,6 +82,8 @@ impl<T: ?Sized> Debug for RawOp<T> {
 }
 
 /// A typed wrapper for key of Ops submitted into driver.
+///
+/// See [`ErasedKey`] for more details.
 #[repr(transparent)]
 pub struct Key<T> {
     erased: ErasedKey,
@@ -151,6 +148,11 @@ impl<T> DerefMut for Key<T> {
     }
 }
 
+/// A type-erased reference-counted pointer to an operation.
+///
+/// Internally, it uses [`ThinCell`] to manage the reference count and borrowing
+/// state. It provides methods to manipulate the underlying operation, such as
+/// setting results, checking completion status, and cancelling the operation.
 #[derive(Clone)]
 #[repr(transparent)]
 pub struct ErasedKey {
@@ -219,7 +221,7 @@ impl ErasedKey {
 
     /// Get the pointer as `user_data`.
     ///
-    /// **Do not** call [`from_raw`](Self::from_raw) from the returned value of
+    /// **Do not** call [`from_raw`](Self::from_raw) on the returned value of
     /// this method.
     pub(crate) fn as_user_data(&self) -> usize {
         self.inner.as_ptr() as _
