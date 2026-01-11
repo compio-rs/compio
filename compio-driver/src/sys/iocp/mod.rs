@@ -27,6 +27,7 @@ mod cp;
 mod wait;
 
 /// Extra data attached for IOCP.
+#[repr(C)]
 pub struct Extra {
     overlapped: Overlapped,
 }

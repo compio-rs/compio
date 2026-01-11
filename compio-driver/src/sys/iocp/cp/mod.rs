@@ -195,7 +195,7 @@ impl CompletionPort {
                     _ => Err(io::Error::from_raw_os_error(error as _)),
                 }
             };
-            let key = unsafe { ErasedKey::from_raw(overlapped_ptr as usize) };
+            let key = unsafe { ErasedKey::from_optr(overlapped_ptr) };
             Some(Entry::new(key, res))
         }))
     }

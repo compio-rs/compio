@@ -31,6 +31,9 @@ pub(crate) struct RawOp<T: ?Sized> {
     // - On Windows, it holds the `OVERLAPPED` buffer and a pointer to the driver.
     // - On Linux with `io_uring`, it holds the flags returned by kernel.
     // - On other platforms, it is empty.
+    //
+    // Extra MUST be the first field to guarantee the layout for casting on windows. An invariant
+    // on IOCP driver is that `RawOp` pointer is the same as `OVERLAPPED` pointer.
     extra: Extra,
     // The cancelled flag and the result here are manual reference counting. The driver holds the
     // strong ref until it completes; the runtime holds the strong ref until the future is
@@ -194,6 +197,19 @@ impl ErasedKey {
     /// created by [`Key::into_raw`].
     pub(crate) unsafe fn from_raw(user_data: usize) -> Self {
         let inner = unsafe { ThinCell::from_raw(user_data as *mut ()) };
+        Self { inner }
+    }
+
+    /// Create from `user_data` pointer.
+    ///
+    /// # Safety
+    ///
+    /// `user_data` must be a valid pointer to `RawOp<dyn OpCode>` previously
+    /// created by [`Key::into_raw`].
+    #[cfg(windows)]
+    pub(crate) unsafe fn from_optr(optr: *mut crate::sys::Overlapped) -> Self {
+        let ptr = unsafe { optr.cast::<usize>().offset(-2).cast() };
+        let inner = unsafe { ThinCell::from_raw(ptr) };
         Self { inner }
     }
 
