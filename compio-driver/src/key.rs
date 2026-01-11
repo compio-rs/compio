@@ -22,8 +22,8 @@ use crate::{Extra, OpCode, PushEntry, RawFd};
 ///
 /// You should not use `RawOp` directly. Instead, use [`Key`] to manage the
 /// pointer to it. Crucially, a pointer to `RawOp<T>` can be safely cast to
-/// `RawOp<()>` guaranteed by `repr(C)`, and vice versa with metadata stored in
-/// `RawOp`.
+/// `RawOp<dyn OpCode>` guaranteed by `repr(C)`, and vice versa with metadata
+/// stored in [`ThinCell`].
 #[repr(C)]
 pub(crate) struct RawOp<T: ?Sized> {
     // Platform-specific extra data.
@@ -35,9 +35,7 @@ pub(crate) struct RawOp<T: ?Sized> {
     // Extra MUST be the first field to guarantee the layout for casting on windows. An invariant
     // on IOCP driver is that `RawOp` pointer is the same as `OVERLAPPED` pointer.
     extra: Extra,
-    // The cancelled flag and the result here are manual reference counting. The driver holds the
-    // strong ref until it completes; the runtime holds the strong ref until the future is
-    // dropped.
+    // The cancelled flag indicates the op has been cancelled.
     cancelled: bool,
     result: PushEntry<Option<Waker>, io::Result<usize>>,
     pub(crate) op: T,
@@ -53,7 +51,7 @@ impl<T: ?Sized> RawOp<T> {
     }
 
     pub fn pinned_op(&mut self) -> Pin<&mut T> {
-        // SAFETY: inner is always pinned with Box.
+        // SAFETY: inner is always pinned with ThinCell.
         unsafe { Pin::new_unchecked(&mut self.op) }
     }
 }
@@ -209,13 +207,7 @@ impl ErasedKey {
     #[cfg(windows)]
     pub(crate) unsafe fn from_optr(optr: *mut crate::sys::Overlapped) -> Self {
         let ptr = unsafe { optr.cast::<usize>().offset(-2).cast() };
-        // SAFETY: We create a temporary ThinCell from the raw pointer.
-        // This doesn't increment the ref count, so we need to clone it
-        // (which increments ref count) and forget the temporary to avoid
-        // double-free when both the user's key and this new key are dropped.
-        let temp = unsafe { ThinCell::from_raw(ptr) };
-        let inner = temp.clone();
-        std::mem::forget(temp);
+        let inner = unsafe { ThinCell::from_raw(ptr) };
         Self { inner }
     }
 
@@ -227,7 +219,8 @@ impl ErasedKey {
 
     /// Get the pointer as `user_data`.
     ///
-    /// **Do not** call `from_user_data` from the returned value of this method.
+    /// **Do not** call [`from_raw`](Self::from_raw) from the returned value of
+    /// this method.
     pub(crate) fn as_user_data(&self) -> usize {
         self.inner.as_ptr() as _
     }
@@ -247,13 +240,12 @@ impl ErasedKey {
         std::mem::replace(&mut self.borrow().extra, Extra::new(RawFd::default()))
     }
 
-    /// Cancel the op, decrease the ref count.
+    /// Cancel the op.
     pub(crate) fn set_cancelled(&self) {
         self.borrow().cancelled = true;
     }
 
-    /// Complete the op, decrease the ref count, and wake up the future if a
-    /// waker is set.
+    /// Complete the op and wake up the future if a waker is set.
     pub(crate) fn set_result(&self, res: io::Result<usize>) {
         let mut this = self.borrow();
         #[cfg(io_uring)]

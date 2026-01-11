@@ -13,7 +13,11 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{ErasedKey, RawFd, sys::Notify, syscall};
+use crate::{
+    ErasedKey, RawFd,
+    sys::{Notify, Overlapped},
+    syscall,
+};
 
 pub struct Wait {
     wait: PTP_WAIT,

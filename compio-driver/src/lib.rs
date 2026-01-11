@@ -1,4 +1,4 @@
-//! Platform-specified drivers.
+//! Platform-specific drivers.
 //!
 //! Some types differ by compilation target.
 
