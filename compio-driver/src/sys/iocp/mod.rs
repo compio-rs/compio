@@ -371,7 +371,14 @@ impl Driver {
         let pinned = op.pinned_op();
         let op_type = pinned.op_type();
         match op_type {
-            OpType::Overlapped => unsafe { pinned.operate(optr.cast()) },
+            OpType::Overlapped => unsafe {
+                let res = pinned.operate(optr.cast());
+                drop(op);
+                if res.is_pending() {
+                    key.into_raw();
+                }
+                res
+            },
             OpType::Blocking => {
                 drop(op);
                 loop {
@@ -411,19 +418,22 @@ impl Driver {
     }
 
     fn create_entry(
-        notify_user_data: usize,
+        notify: *const Overlapped,
         waits: &mut HashMap<usize, wait::Wait>,
-        entry: Entry,
+        entry: cp::RawEntry,
     ) -> Option<Entry> {
-        let user_data = entry.user_data();
-
         // Ignore existing entries
-        if user_data == notify_user_data {
+        if entry.overlapped.cast_const() == notify {
             return None;
         }
 
+        let entry = Entry::new(
+            unsafe { ErasedKey::from_optr(entry.overlapped) },
+            entry.result,
+        );
+
         // if there's no wait, just return the entry
-        let Some(w) = waits.remove(&user_data) else {
+        let Some(w) = waits.remove(&entry.user_data()) else {
             return Some(entry);
         };
 
@@ -436,7 +446,10 @@ impl Driver {
             entry
         } else {
             let key = entry.into_key();
-            let result = key.borrow().operate_blocking();
+            // FIXME: If the op is `Event`, the overlapped ptr is passed without increasing
+            // the ref count. We clone it here to keep balance. But it's not elegant.
+            let mut fkey = unsafe { key.clone().freeze() };
+            let result = fkey.as_mut().operate_blocking();
             Entry::new(key, result)
         };
 
@@ -446,10 +459,10 @@ impl Driver {
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
 
-        let notify_user_data = &self.notify.overlapped as *const Overlapped as usize;
+        let notify = &self.notify.overlapped as *const Overlapped;
 
         for e in self.notify.port.poll(timeout)? {
-            if let Some(e) = Self::create_entry(notify_user_data, &mut self.waits, e) {
+            if let Some(e) = Self::create_entry(notify, &mut self.waits, e) {
                 e.notify()
             }
         }

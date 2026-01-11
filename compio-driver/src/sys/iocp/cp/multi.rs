@@ -4,8 +4,8 @@ use std::{
     time::Duration,
 };
 
-use super::CompletionPort;
-use crate::{Entry, Overlapped, RawFd};
+use super::{CompletionPort, RawEntry};
+use crate::{Overlapped, RawFd};
 
 pub struct Port {
     port: CompletionPort,
@@ -30,7 +30,10 @@ impl Port {
         self.port.post_raw(optr)
     }
 
-    pub fn poll(&self, timeout: Option<Duration>) -> io::Result<impl Iterator<Item = Entry> + '_> {
+    pub fn poll(
+        &self,
+        timeout: Option<Duration>,
+    ) -> io::Result<impl Iterator<Item = RawEntry> + '_> {
         let current_id = self.as_raw_handle() as _;
         self.port.poll(timeout, Some(current_id))
     }

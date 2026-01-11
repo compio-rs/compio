@@ -39,7 +39,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{Entry, ErasedKey, Overlapped, RawFd, syscall};
+use crate::{Overlapped, RawFd, syscall};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "iocp-global")] {
@@ -139,7 +139,7 @@ impl CompletionPort {
         &self,
         timeout: Option<Duration>,
         current_driver: Option<RawFd>,
-    ) -> io::Result<impl Iterator<Item = Entry>> {
+    ) -> io::Result<impl Iterator<Item = RawEntry>> {
         let mut entries = Vec::with_capacity(Self::DEFAULT_CAPACITY);
         let len = match self.poll_raw(timeout, entries.spare_capacity_mut()) {
             Ok(len) => len,
@@ -195,8 +195,7 @@ impl CompletionPort {
                     _ => Err(io::Error::from_raw_os_error(error as _)),
                 }
             };
-            let key = unsafe { ErasedKey::from_optr(overlapped_ptr) };
-            Some(Entry::new(key, res))
+            Some(RawEntry::new(overlapped_ptr, res))
         }))
     }
 }
@@ -204,6 +203,17 @@ impl CompletionPort {
 impl AsRawHandle for CompletionPort {
     fn as_raw_handle(&self) -> RawHandle {
         self.port.as_raw_handle()
+    }
+}
+
+pub(crate) struct RawEntry {
+    pub overlapped: *mut Overlapped,
+    pub result: io::Result<usize>,
+}
+
+impl RawEntry {
+    pub fn new(overlapped: *mut Overlapped, result: io::Result<usize>) -> Self {
+        Self { overlapped, result }
     }
 }
 

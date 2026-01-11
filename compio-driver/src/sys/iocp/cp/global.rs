@@ -11,8 +11,8 @@ use compio_log::*;
 use once_cell::sync::OnceCell as OnceLock;
 use windows_sys::Win32::System::IO::PostQueuedCompletionStatus;
 
-use super::CompletionPort;
-use crate::{Entry, Overlapped, RawFd, syscall};
+use super::{CompletionPort, RawEntry};
+use crate::{Overlapped, RawFd, syscall};
 
 struct GlobalPort {
     port: CompletionPort,
@@ -111,7 +111,10 @@ impl Port {
         self.port.post_raw(optr)
     }
 
-    pub fn poll(&self, timeout: Option<Duration>) -> io::Result<impl Iterator<Item = Entry> + '_> {
+    pub fn poll(
+        &self,
+        timeout: Option<Duration>,
+    ) -> io::Result<impl Iterator<Item = RawEntry> + '_> {
         self.port.poll(timeout, None)
     }
 }
