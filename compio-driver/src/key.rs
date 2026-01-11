@@ -200,16 +200,22 @@ impl ErasedKey {
         Self { inner }
     }
 
-    /// Create from `user_data` pointer.
+    /// Create from `Overlapped` pointer.
     ///
     /// # Safety
     ///
-    /// `user_data` must be a valid pointer to `RawOp<dyn OpCode>` previously
-    /// created by [`Key::into_raw`].
+    /// `optr` must be a valid pointer to `Overlapped` stored in `Extra` of
+    /// `RawOp<dyn OpCode>`.
     #[cfg(windows)]
     pub(crate) unsafe fn from_optr(optr: *mut crate::sys::Overlapped) -> Self {
         let ptr = unsafe { optr.cast::<usize>().offset(-2).cast() };
-        let inner = unsafe { ThinCell::from_raw(ptr) };
+        // SAFETY: We create a temporary ThinCell from the raw pointer.
+        // This doesn't increment the ref count, so we need to clone it
+        // (which increments ref count) and forget the temporary to avoid
+        // double-free when both the user's key and this new key are dropped.
+        let temp = unsafe { ThinCell::from_raw(ptr) };
+        let inner = temp.clone();
+        std::mem::forget(temp);
         Self { inner }
     }
 
