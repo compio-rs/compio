@@ -1,4 +1,4 @@
-//! Platform-specified drivers.
+//! Platform-specific drivers.
 //!
 //! Some types differ by compilation target.
 
@@ -35,6 +35,8 @@ pub use buffer_pool::*;
 
 mod sys;
 pub use sys::*;
+
+use crate::key::ErasedKey;
 
 mod sys_slice;
 
@@ -174,6 +176,7 @@ macro_rules! impl_raw_fd {
 }
 
 /// The return type of [`Proactor::push`].
+#[derive(Debug)]
 pub enum PushEntry<K, R> {
     /// The operation is pushed to the submission queue.
     Pending(K),
@@ -251,32 +254,30 @@ impl Proactor {
         self.driver.attach(fd)
     }
 
-    /// Cancel an operation with the pushed user-defined data.
+    /// Cancel an operation with the pushed [`Key`].
     ///
     /// The cancellation is not reliable. The underlying operation may continue,
-    /// but just don't return from [`Proactor::poll`]. Therefore, although an
-    /// operation is cancelled, you should not reuse its `user_data`.
-    pub fn cancel<T: OpCode>(&mut self, mut op: Key<T>) -> Option<BufResult<usize, T>> {
-        instrument!(compio_log::Level::DEBUG, "cancel", ?op);
-        if op.set_cancelled() {
-            // SAFETY: completed.
-            Some(unsafe { op.take_result() })
+    /// but just don't return from [`Proactor::poll`].
+    pub fn cancel<T: OpCode>(&mut self, key: Key<T>) -> Option<BufResult<usize, T>> {
+        instrument!(compio_log::Level::DEBUG, "cancel", ?key);
+        key.set_cancelled();
+        if key.has_result() {
+            Some(key.take_result())
         } else {
-            self.driver.cancel(&mut op.into_dyn());
+            self.driver.cancel(key);
             None
         }
     }
 
-    /// Push an operation into the driver, and return the unique key, called
-    /// user-defined data, associated with it.
+    /// Push an operation into the driver, and return the unique key [`Key`],
+    /// associated with it.
     pub fn push<T: OpCode + 'static>(&mut self, op: T) -> PushEntry<Key<T>, BufResult<usize, T>> {
-        let mut key = self.driver.create_op(op);
-        match self.driver.push(key.as_dyn_mut()) {
+        let key = self.driver.create_key(op);
+        match self.driver.push(key.clone().erase()) {
             Poll::Pending => PushEntry::Pending(key),
             Poll::Ready(res) => {
                 key.set_result(res);
-                // SAFETY: just completed.
-                PushEntry::Ready(unsafe { key.take_result() })
+                PushEntry::Ready(key.take_result())
             }
         }
     }
@@ -296,8 +297,7 @@ impl Proactor {
     pub fn pop<T>(&mut self, key: Key<T>) -> PushEntry<Key<T>, BufResult<usize, T>> {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
-            // SAFETY: completed.
-            PushEntry::Ready(unsafe { key.take_result() })
+            PushEntry::Ready(key.take_result())
         } else {
             PushEntry::Pending(key)
         }
@@ -311,13 +311,12 @@ impl Proactor {
     /// completed.
     pub fn pop_with_extra<T>(
         &mut self,
-        mut key: Key<T>,
+        key: Key<T>,
     ) -> PushEntry<Key<T>, (BufResult<usize, T>, Extra)> {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
             let extra = key.take_extra();
-            // SAFETY: completed.
-            let res = unsafe { key.take_result() };
+            let res = key.take_result();
             PushEntry::Ready((res, extra))
         } else {
             PushEntry::Pending(key)
@@ -366,29 +365,45 @@ impl AsRawFd for Proactor {
 }
 
 /// An completed entry returned from kernel.
+///
+/// This represents the ownership of [`Key`] passed into the kernel is given
+/// back from it to the driver.
 #[derive(Debug)]
 pub(crate) struct Entry {
-    user_data: usize,
+    key: ErasedKey,
     result: io::Result<usize>,
 
     #[cfg(io_uring)]
     flags: u32,
 }
 
+unsafe impl Send for Entry {}
+unsafe impl Sync for Entry {}
+
 impl Entry {
-    pub(crate) fn new(user_data: usize, result: io::Result<usize>) -> Self {
+    pub(crate) fn new(key: ErasedKey, result: io::Result<usize>) -> Self {
         #[cfg(not(io_uring))]
         {
-            Self { user_data, result }
+            Self { key, result }
         }
         #[cfg(io_uring)]
         {
             Self {
-                user_data,
+                key,
                 result,
                 flags: 0,
             }
         }
+    }
+
+    #[allow(dead_code)]
+    pub fn user_data(&self) -> usize {
+        self.key.as_user_data()
+    }
+
+    #[allow(dead_code)]
+    pub fn into_key(self) -> ErasedKey {
+        self.key
     }
 
     #[cfg(io_uring)]
@@ -402,28 +417,10 @@ impl Entry {
         self.flags = flags;
     }
 
-    /// The user-defined data returned by [`Proactor::push`].
-    pub fn user_data(&self) -> usize {
-        self.user_data
-    }
-
-    /// The result of the operation.
-    pub fn into_result(self) -> io::Result<usize> {
-        self.result
-    }
-
-    /// # Safety
-    /// * `user_data` should be a valid pointer.
-    /// * Should only be called once.
-    pub unsafe fn notify(self) {
-        let user_data = self.user_data();
-        let mut op = unsafe { Key::<()>::new_unchecked(user_data) };
+    pub fn notify(self) {
         #[cfg(io_uring)]
-        op.extra_mut().set_flags(self.flags());
-        if op.set_result(self.into_result()) {
-            // SAFETY: completed and cancelled.
-            let _ = unsafe { op.into_box() };
-        }
+        self.key.borrow().extra_mut().set_flags(self.flags());
+        self.key.set_result(self.result);
     }
 }
 

@@ -11,8 +11,8 @@ use windows_sys::Win32::Foundation::{
     STATUS_SUCCESS,
 };
 
-use super::super::{Notify, OpCode, RawFd};
-use crate::Key;
+use super::super::{Notify, RawFd};
+use crate::ErasedKey;
 
 unsafe extern "system" {
     fn NtCreateWaitCompletionPacket(
@@ -54,7 +54,7 @@ fn check_status(status: NTSTATUS) -> io::Result<()> {
 }
 
 impl Wait {
-    pub fn new(notify: Arc<Notify>, event: RawFd, op: &mut Key<dyn OpCode>) -> io::Result<Self> {
+    pub fn new(notify: Arc<Notify>, event: RawFd, key: ErasedKey) -> io::Result<Self> {
         let mut handle = null_mut();
         check_status(unsafe {
             NtCreateWaitCompletionPacket(&mut handle, GENERIC_READ | GENERIC_WRITE, null_mut())
@@ -66,7 +66,7 @@ impl Wait {
                 notify.port.as_raw_handle() as _,
                 event,
                 null_mut(),
-                op.extra_mut().optr().cast(),
+                key.into_optr().cast(),
                 STATUS_SUCCESS,
                 0,
                 null_mut(),

@@ -18,7 +18,10 @@ use crossbeam_queue::SegQueue;
 use polling::{Event, Events, Poller};
 
 use crate::{
-    AsyncifyPool, BufferPool, DriverType, Entry, Key, ProactorBuilder, op::Interest, syscall,
+    AsyncifyPool, BufferPool, DriverType, Entry, ErasedKey, ProactorBuilder,
+    key::{BorrowedKey, Key, RefExt},
+    op::Interest,
+    syscall,
 };
 
 pub(crate) mod op;
@@ -223,16 +226,16 @@ impl Driver {
         &self.notify.poll
     }
 
-    pub fn create_op<T: crate::sys::OpCode + 'static>(&self, op: T) -> Key<T> {
+    pub fn create_key<T: crate::sys::OpCode + 'static>(&self, op: T) -> Key<T> {
         Key::new(self.as_raw_fd(), op)
     }
 
     /// # Safety
     /// The input fd should be valid.
-    unsafe fn submit(&mut self, user_data: usize, arg: WaitArg) -> io::Result<()> {
+    unsafe fn submit(&mut self, key: ErasedKey, arg: WaitArg) -> io::Result<()> {
         let need_add = !self.registry.contains_key(&arg.fd);
         let queue = self.registry.entry(arg.fd).or_default();
-        queue.push_back_interest(user_data, arg.interest);
+        queue.push_back_interest(key.into_raw(), arg.interest);
         let event = queue.event();
         if need_add {
             // SAFETY: the events are deleted correctly.
@@ -263,16 +266,17 @@ impl Driver {
         Ok(())
     }
 
-    pub fn cancel(&mut self, op: &mut Key<dyn crate::sys::OpCode>) {
-        let op_pin = op.as_pinned_op();
-        match op_pin.op_type() {
+    pub fn cancel<T>(&mut self, key: Key<T>) {
+        let op_type = key.borrow().pinned_op().op_type();
+        match op_type {
             None => {}
             Some(OpType::Fd(fd)) => {
                 let queue = self
                     .registry
                     .get_mut(&fd)
                     .expect("the fd should be attached");
-                queue.remove(op.user_data());
+                queue.remove(key.as_user_data());
+
                 let renew_event = queue.event();
                 if Self::renew(
                     &self.notify.poll,
@@ -282,7 +286,7 @@ impl Driver {
                 )
                 .is_ok()
                 {
-                    self.pool_completed.push(entry_cancelled(op.user_data()));
+                    self.pool_completed.push(Entry::new_cancelled(key.erase()));
                 }
             }
             #[cfg(aio)]
@@ -294,24 +298,22 @@ impl Driver {
         }
     }
 
-    pub fn push(&mut self, op: &mut Key<dyn crate::sys::OpCode>) -> Poll<io::Result<usize>> {
-        instrument!(compio_log::Level::TRACE, "push", ?op);
-        let user_data = op.user_data();
-        let op_pin = op.as_pinned_op();
-        match op_pin.pre_submit()? {
+    pub fn push(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
+        instrument!(compio_log::Level::TRACE, "push", ?key);
+        let decision = key.borrow().pinned_op().pre_submit()?;
+        match decision {
             Decision::Wait(arg) => {
                 // SAFETY: fd is from the OpCode.
-                unsafe {
-                    self.submit(user_data, arg)?;
-                }
+                unsafe { self.submit(key, arg) }?;
                 trace!("register {:?}", arg);
                 Poll::Pending
             }
             Decision::Completed(res) => Poll::Ready(Ok(res)),
-            Decision::Blocking => self.push_blocking(user_data),
+            Decision::Blocking => self.push_blocking(key),
             #[cfg(aio)]
             Decision::Aio(AioControl { mut aiocbp, submit }) => {
                 let aiocb = unsafe { aiocbp.as_mut() };
+                let user_data = key.as_user_data();
                 #[cfg(freebsd)]
                 {
                     // sigev_notify_kqueue
@@ -330,7 +332,11 @@ impl Driver {
                     aiocb.aio_sigevent.sigev_value.sival_ptr = &mut notify as *mut _ as _;
                 }
                 match syscall!(submit(aiocbp.as_ptr())) {
-                    Ok(_) => Poll::Pending,
+                    Ok(_) => {
+                        // Key is successfully submitted, leak it on this side.
+                        key.into_raw();
+                        Poll::Pending
+                    }
                     // FreeBSD:
                     //   * EOPNOTSUPP: It's on a filesystem without AIO support. Just fallback to
                     //     blocking IO.
@@ -344,7 +350,7 @@ impl Driver {
                             Some(libc::EOPNOTSUPP) | Some(libc::EAGAIN)
                         ) =>
                     {
-                        self.push_blocking(user_data)
+                        self.push_blocking(key)
                     }
                     Err(e) => Poll::Ready(Err(e)),
                 }
@@ -352,17 +358,19 @@ impl Driver {
         }
     }
 
-    fn push_blocking(&mut self, user_data: usize) -> Poll<io::Result<usize>> {
+    fn push_blocking(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
         let waker = self.waker();
         let completed = self.pool_completed.clone();
+        // SAFETY: we're submitting into the driver, so it's safe to freeze here.
+        let mut key = unsafe { key.freeze() };
+
         let mut closure = move || {
-            let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
-            let op_pin = op.as_pinned_op();
-            let res = match op_pin.operate() {
+            let poll = key.pinned_op().operate();
+            let res = match poll {
                 Poll::Pending => unreachable!("this operation is not non-blocking"),
                 Poll::Ready(res) => res,
             };
-            completed.push(Entry::new(user_data, res));
+            completed.push(Entry::new(key.into_inner(), res));
             waker.wake();
         };
         loop {
@@ -381,9 +389,7 @@ impl Driver {
             return false;
         }
         while let Some(entry) = self.pool_completed.pop() {
-            unsafe {
-                entry.notify();
-            }
+            entry.notify();
         }
         true
     }
@@ -402,9 +408,9 @@ impl Driver {
             let user_data = event.key;
             trace!("receive {} for {:?}", user_data, event);
             // SAFETY: user_data is promised to be valid.
-            let mut op = unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
-            let op = op.as_pinned_op();
-            match op.op_type() {
+            let op = unsafe { BorrowedKey::from_raw(user_data) };
+            let op_type = op.borrow().pinned_op().op_type();
+            match op_type {
                 None => {
                     // On epoll, multiple event may be received even if it is registered as
                     // one-shot. It is safe to ignore it.
@@ -418,21 +424,13 @@ impl Driver {
                         .get_mut(&fd)
                         .expect("the fd should be attached");
                     if let Some((user_data, interest)) = queue.pop_interest(&event) {
-                        let mut op =
-                            unsafe { Key::<dyn crate::sys::OpCode>::new_unchecked(user_data) };
-                        let op = op.as_pinned_op();
-                        let res = match op.operate() {
-                            Poll::Pending => {
-                                // The operation should go back to the front.
-                                queue.push_front_interest(user_data, interest);
-                                None
-                            }
-                            Poll::Ready(res) => Some(res),
+                        let poll = op.borrow().pinned_op().operate();
+
+                        match poll {
+                            // The operation should go back to the front.
+                            Poll::Pending => queue.push_front_interest(user_data, interest),
+                            Poll::Ready(res) => Entry::new(op.upgrade(), res).notify(),
                         };
-                        if let Some(res) = res {
-                            // SAFETY: `notify` is called only once.
-                            unsafe { Entry::new(user_data, res).notify() }
-                        }
                     }
                     let renew_event = queue.event();
                     Self::renew(
@@ -461,8 +459,7 @@ impl Driver {
                         }
                         _ => syscall!(libc::aio_return(aiocbp.as_ptr())).map(|res| res as usize),
                     };
-                    // SAFETY: `notify` is called only once.
-                    unsafe { Entry::new(user_data, res).notify() }
+                    Entry::new(op.upgrade(), res).notify()
                 }
             }
         }
@@ -516,11 +513,10 @@ impl Drop for Driver {
     }
 }
 
-fn entry_cancelled(user_data: usize) -> Entry {
-    Entry::new(
-        user_data,
-        Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)),
-    )
+impl Entry {
+    pub(crate) fn new_cancelled(key: ErasedKey) -> Self {
+        Entry::new(key, Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)))
+    }
 }
 
 /// A notify handle to the inner driver.

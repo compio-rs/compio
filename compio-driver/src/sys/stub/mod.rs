@@ -19,7 +19,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{BufferPool, DriverType, Key, ProactorBuilder};
+use crate::{BufferPool, DriverType, ErasedKey, Key, ProactorBuilder};
 
 #[derive(Default)]
 pub struct Extra {}
@@ -47,7 +47,7 @@ fn stub_unimpl() -> ! {
 pub(crate) struct Driver(());
 
 impl Driver {
-    pub fn new(_builder: &ProactorBuilder) -> io::Result<Self> {
+    pub fn new(_: &ProactorBuilder) -> io::Result<Self> {
         Err(stub_error())
     }
 
@@ -59,15 +59,15 @@ impl Driver {
         Err(stub_error())
     }
 
-    pub fn cancel(&mut self, _: &mut Key<dyn OpCode>) {
+    pub fn cancel<T: OpCode>(&mut self, _: Key<T>) {
         stub_unimpl()
     }
 
-    pub fn create_op<T: OpCode + 'static>(&self, _: T) -> Key<T> {
+    pub fn create_key<T: OpCode + 'static>(&self, _: T) -> Key<T> {
         stub_unimpl()
     }
 
-    pub fn push(&mut self, _: &mut Key<dyn crate::sys::OpCode>) -> Poll<io::Result<usize>> {
+    pub fn push(&mut self, _: ErasedKey) -> Poll<io::Result<usize>> {
         Poll::Ready(Err(stub_error()))
     }
 
