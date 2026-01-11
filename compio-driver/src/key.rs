@@ -219,6 +219,12 @@ impl ErasedKey {
         Self { inner }
     }
 
+    /// Leak self into a pointer to `Overlapped`.
+    #[cfg(windows)]
+    pub(crate) fn into_optr(self) -> *mut crate::sys::Overlapped {
+        unsafe { self.inner.leak().cast::<usize>().add(2).cast() }
+    }
+
     /// Get the pointer as `user_data`.
     ///
     /// **Do not** call `from_user_data` from the returned value of this method.

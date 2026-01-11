@@ -26,7 +26,7 @@ impl Wait {
     pub fn new(notify: Arc<Notify>, event: RawFd, key: ErasedKey) -> io::Result<Self> {
         let mut context = Box::new(WinThreadpoolWaitContext {
             notify,
-            user_data: key.into_raw(),
+            optr: key.into_optr(),
         });
         let wait = syscall!(
             BOOL,
@@ -55,10 +55,7 @@ impl Wait {
             WAIT_TIMEOUT => Err(io::Error::from_raw_os_error(ERROR_TIMEOUT as _)),
             _ => Err(io::Error::from_raw_os_error(result as _)),
         };
-        let key = unsafe { ErasedKey::from_raw(context.user_data) };
-        let mut key = unsafe { key.freeze() };
-        let ptr = key.as_mut().extra_mut().optr();
-        context.notify.port.post(res, ptr).ok();
+        context.notify.port.post(res, context.optr).ok();
     }
 
     pub fn cancel(&mut self) -> io::Result<()> {
@@ -86,5 +83,5 @@ impl Drop for Wait {
 
 struct WinThreadpoolWaitContext {
     notify: Arc<Notify>,
-    user_data: usize,
+    optr: *mut Overlapped,
 }
