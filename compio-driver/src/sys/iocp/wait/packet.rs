@@ -60,13 +60,14 @@ impl Wait {
             NtCreateWaitCompletionPacket(&mut handle, GENERIC_READ | GENERIC_WRITE, null_mut())
         })?;
         let handle = unsafe { OwnedHandle::from_raw_handle(handle as _) };
+        let mut key = unsafe { key.freeze() };
         check_status(unsafe {
             NtAssociateWaitCompletionPacket(
                 handle.as_raw_handle() as _,
                 notify.port.as_raw_handle() as _,
                 event,
                 null_mut(),
-                key.borrow().extra_mut().optr().cast(),
+                key.as_mut().extra_mut().optr().cast(),
                 STATUS_SUCCESS,
                 0,
                 null_mut(),

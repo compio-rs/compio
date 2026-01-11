@@ -56,7 +56,8 @@ impl Wait {
             _ => Err(io::Error::from_raw_os_error(result as _)),
         };
         let key = unsafe { ErasedKey::from_raw(context.user_data) };
-        let ptr = key.borrow().extra_mut().optr();
+        let mut key = unsafe { key.freeze() };
+        let ptr = key.as_mut().extra_mut().optr();
         context.notify.port.post(res, ptr).ok();
     }
 

@@ -446,10 +446,7 @@ impl Driver {
             entry
         } else {
             let key = entry.into_key();
-            // FIXME: If the op is `Event`, the overlapped ptr is passed without increasing
-            // the ref count. We clone it here to keep balance. But it's not elegant.
-            let mut fkey = unsafe { key.clone().freeze() };
-            let result = fkey.as_mut().operate_blocking();
+            let result = key.borrow().operate_blocking();
             Entry::new(key, result)
         };
 
