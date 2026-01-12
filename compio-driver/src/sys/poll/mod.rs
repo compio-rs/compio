@@ -199,13 +199,12 @@ impl Driver {
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         instrument!(compio_log::Level::TRACE, "new", ?builder);
         trace!("new poll driver");
-        let entries = builder.capacity as usize; // for the sake of consistency, use u32 like iour
-        let events = if entries == 0 {
-            Events::new()
-        } else {
-            Events::with_capacity(NonZeroUsize::new(entries).unwrap())
-        };
 
+        let events = if let Some(cap) = NonZeroUsize::new(builder.capacity as _) {
+            Events::with_capacity(cap)
+        } else {
+            Events::new()
+        };
         let poll = Poller::new()?;
         let notify = Arc::new(Notify::new(poll));
 
@@ -222,12 +221,22 @@ impl Driver {
         DriverType::Poll
     }
 
+    pub fn create_key<T: crate::sys::OpCode + 'static>(&self, op: T) -> Key<T> {
+        Key::new(self.as_raw_fd(), op)
+    }
+
     fn poller(&self) -> &Poller {
         &self.notify.poll
     }
 
-    pub fn create_key<T: crate::sys::OpCode + 'static>(&self, op: T) -> Key<T> {
-        Key::new(self.as_raw_fd(), op)
+    fn with_events<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut Self, &mut Events) -> R,
+    {
+        let mut events = std::mem::take(&mut self.events);
+        let res = f(self, &mut events);
+        self.events = events;
+        res
     }
 
     /// # Safety
@@ -247,17 +256,12 @@ impl Driver {
         Ok(())
     }
 
-    fn renew(
-        poll: &Poller,
-        registry: &mut HashMap<RawFd, FdQueue>,
-        fd: BorrowedFd,
-        renew_event: Event,
-    ) -> io::Result<()> {
+    fn renew(&mut self, fd: BorrowedFd, renew_event: Event) -> io::Result<()> {
         if !renew_event.readable && !renew_event.writable {
-            poll.delete(fd)?;
-            registry.remove(&fd.as_raw_fd());
+            self.poller().delete(fd)?;
+            self.registry.remove(&fd.as_raw_fd());
         } else {
-            poll.modify(fd, renew_event)?;
+            self.poller().modify(fd, renew_event)?;
         }
         Ok(())
     }
@@ -278,14 +282,8 @@ impl Driver {
                 queue.remove(key.as_user_data());
 
                 let renew_event = queue.event();
-                if Self::renew(
-                    &self.notify.poll,
-                    &mut self.registry,
-                    unsafe { BorrowedFd::borrow_raw(fd) },
-                    renew_event,
-                )
-                .is_ok()
-                {
+                let fd = unsafe { BorrowedFd::borrow_raw(fd) };
+                if self.renew(fd, renew_event).is_ok() {
                     self.pool_completed.push(Entry::new_cancelled(key.erase()));
                 }
             }
@@ -404,66 +402,67 @@ impl Driver {
         if self.events.is_empty() && timeout.is_some() {
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
         }
-        for event in self.events.iter() {
-            let user_data = event.key;
-            trace!("receive {} for {:?}", user_data, event);
-            // SAFETY: user_data is promised to be valid.
-            let op = unsafe { BorrowedKey::from_raw(user_data) };
-            let op_type = op.borrow().pinned_op().op_type();
-            match op_type {
-                None => {
-                    // On epoll, multiple event may be received even if it is registered as
-                    // one-shot. It is safe to ignore it.
-                    trace!("op {} is completed", user_data);
-                }
-                Some(OpType::Fd(fd)) => {
-                    // If it's an FD op, the returned user_data is only for calling `op_type`. We
-                    // need to pop the real user_data from the queue.
-                    let queue = self
-                        .registry
-                        .get_mut(&fd)
-                        .expect("the fd should be attached");
-                    if let Some((user_data, interest)) = queue.pop_interest(&event) {
-                        let poll = op.borrow().pinned_op().operate();
-
-                        match poll {
-                            // The operation should go back to the front.
-                            Poll::Pending => queue.push_front_interest(user_data, interest),
-                            Poll::Ready(res) => Entry::new(op.upgrade(), res).notify(),
-                        };
+        self.with_events(|this, events| {
+            for event in events.iter() {
+                let user_data = event.key;
+                trace!("receive {} for {:?}", user_data, event);
+                // SAFETY: user_data is promised to be valid.
+                let op = unsafe { BorrowedKey::from_raw(user_data) };
+                let op_type = op.borrow().pinned_op().op_type();
+                match op_type {
+                    None => {
+                        // On epoll, multiple event may be received even if it is registered as
+                        // one-shot. It is safe to ignore it.
+                        trace!("op {} is completed", user_data);
                     }
-                    let renew_event = queue.event();
-                    Self::renew(
-                        &self.notify.poll,
-                        &mut self.registry,
-                        unsafe { BorrowedFd::borrow_raw(fd) },
-                        renew_event,
-                    )?;
-                }
-                #[cfg(aio)]
-                Some(OpType::Aio(aiocbp)) => {
-                    let err = unsafe { libc::aio_error(aiocbp.as_ptr()) };
-                    let res = match err {
-                        // If the user_data is reused but the previously registered event still
-                        // emits (for example, HUP in epoll; however it is impossible now
-                        // because we only use AIO on FreeBSD), we'd better ignore the current
-                        // one and wait for the real event.
-                        libc::EINPROGRESS => {
-                            trace!("op {} is not completed", user_data);
-                            continue;
+                    Some(OpType::Fd(fd)) => {
+                        // If it's an FD op, the returned user_data is only for calling `op_type`.
+                        // We need to pop the real user_data from the queue.
+                        let queue = this
+                            .registry
+                            .get_mut(&fd)
+                            .expect("the fd should be attached");
+                        if let Some((user_data, interest)) = queue.pop_interest(&event) {
+                            let poll = op.borrow().pinned_op().operate();
+
+                            match poll {
+                                // The operation should go back to the front.
+                                Poll::Pending => queue.push_front_interest(user_data, interest),
+                                Poll::Ready(res) => Entry::new(op.upgrade(), res).notify(),
+                            };
                         }
-                        libc::ECANCELED => {
-                            // Remove the aiocb from kqueue.
-                            unsafe { libc::aio_return(aiocbp.as_ptr()) };
-                            Err(io::Error::from_raw_os_error(libc::ETIMEDOUT))
-                        }
-                        _ => syscall!(libc::aio_return(aiocbp.as_ptr())).map(|res| res as usize),
-                    };
-                    Entry::new(op.upgrade(), res).notify()
+                        let renew_event = queue.event();
+                        let fd = unsafe { BorrowedFd::borrow_raw(fd) };
+                        this.renew(fd, renew_event)?;
+                    }
+                    #[cfg(aio)]
+                    Some(OpType::Aio(aiocbp)) => {
+                        let err = unsafe { libc::aio_error(aiocbp.as_ptr()) };
+                        let res = match err {
+                            // If the user_data is reused but the previously registered event still
+                            // emits (for example, HUP in epoll; however it is impossible now
+                            // because we only use AIO on FreeBSD), we'd better ignore the current
+                            // one and wait for the real event.
+                            libc::EINPROGRESS => {
+                                trace!("op {} is not completed", user_data);
+                                continue;
+                            }
+                            libc::ECANCELED => {
+                                // Remove the aiocb from kqueue.
+                                unsafe { libc::aio_return(aiocbp.as_ptr()) };
+                                Err(io::Error::from_raw_os_error(libc::ETIMEDOUT))
+                            }
+                            _ => {
+                                syscall!(libc::aio_return(aiocbp.as_ptr())).map(|res| res as usize)
+                            }
+                        };
+                        Entry::new(op.upgrade(), res).notify()
+                    }
                 }
             }
-        }
-        Ok(())
+
+            Ok(())
+        })
     }
 
     pub fn waker(&self) -> Waker {
