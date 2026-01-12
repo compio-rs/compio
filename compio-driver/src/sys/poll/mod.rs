@@ -79,6 +79,11 @@ impl Decision {
         Self::Wait(SmallVec::from_buf([WaitArg { fd, interest }]))
     }
 
+    /// Decide to wait for many fds.
+    pub fn wait_for_many(args: Multi<WaitArg>) -> Self {
+        Self::Wait(args)
+    }
+
     /// Decide to wait for the given fd to be readable.
     pub fn wait_readable(fd: RawFd) -> Self {
         Self::wait_for(fd, Interest::Readable)
