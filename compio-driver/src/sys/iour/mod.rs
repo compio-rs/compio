@@ -41,13 +41,13 @@ use crate::{
 };
 
 /// Extra data for RawOp.
-#[derive(Default)]
+#[derive(Clone, Copy)]
 pub struct Extra {
     flags: u32,
 }
 
 impl Extra {
-    pub(crate) fn new(_: RawFd) -> Self {
+    pub(crate) fn new() -> Self {
         Self { flags: 0 }
     }
 
@@ -58,7 +58,9 @@ impl Extra {
 
 impl super::Extra {
     pub(crate) fn set_flags(&mut self, flag: u32) {
-        self.0.flags = flag;
+        if let Some(extra) = self.as_iour_mut() {
+            extra.flags = flag;
+        }
     }
 }
 
@@ -257,8 +259,8 @@ impl Driver {
         has_entry
     }
 
-    pub fn create_key<T: crate::sys::OpCode + 'static>(&self, op: T) -> Key<T> {
-        Key::new(self.as_raw_fd(), op)
+    pub fn default_extra(&self) -> Extra {
+        Extra::new()
     }
 
     pub fn attach(&mut self, _fd: RawFd) -> io::Result<()> {

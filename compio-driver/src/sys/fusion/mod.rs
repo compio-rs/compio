@@ -9,13 +9,31 @@ use std::{
 };
 
 use compio_log::warn;
-pub use iour::{Extra, IourOpCode, OpEntry};
+pub use iour::{IourOpCode, OpEntry};
 pub use poll::{Decision, OpType, PollOpCode};
 
 pub(crate) use super::iour::is_op_supported;
 use super::{iour, poll};
 pub use crate::driver_type::DriverType; // Re-export so current user won't be broken
 use crate::{BufferPool, Key, ProactorBuilder, key::ErasedKey};
+
+#[derive(Clone, Copy)]
+pub enum Extra {
+    Poll(poll::Extra),
+    IoUring(iour::Extra),
+}
+
+impl From<poll::Extra> for Extra {
+    fn from(inner: poll::Extra) -> Self {
+        Self::Poll(inner)
+    }
+}
+
+impl From<iour::Extra> for Extra {
+    fn from(inner: iour::Extra) -> Self {
+        Self::IoUring(inner)
+    }
+}
 
 /// Fused [`OpCode`]
 ///
@@ -50,6 +68,7 @@ impl Driver {
                 Ok(driver) => Ok(Self {
                     fuse: FuseDriver::IoUring(driver),
                 }),
+                // use _e here so that when `enable_log` is disabled, clippy won't complain
                 Err(_e) if fallback => {
                     warn!("Fail to create io-uring driver: {_e:?}, fallback to polling driver.");
                     Ok(Self {
@@ -69,10 +88,10 @@ impl Driver {
         }
     }
 
-    pub fn create_key<T: OpCode + 'static>(&self, op: T) -> Key<T> {
+    pub fn default_extra(&self) -> Extra {
         match &self.fuse {
-            FuseDriver::Poll(driver) => driver.create_key(op),
-            FuseDriver::IoUring(driver) => driver.create_key(op),
+            FuseDriver::Poll(driver) => Extra::Poll(driver.default_extra()),
+            FuseDriver::IoUring(driver) => Extra::IoUring(driver.default_extra()),
         }
     }
 

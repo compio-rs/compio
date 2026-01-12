@@ -27,15 +27,11 @@ use crate::{
 pub(crate) mod op;
 
 /// Extra data for RawOp.
-///
-/// Polling doesn't need any extra data in RawOp so it's empty.
-#[allow(dead_code)]
-#[derive(Default)]
+#[derive(Clone, Copy)]
 pub struct Extra {}
 
-#[allow(dead_code)]
 impl Extra {
-    pub fn new(_: RawFd) -> Self {
+    pub fn new() -> Self {
         Self {}
     }
 }
@@ -221,8 +217,8 @@ impl Driver {
         DriverType::Poll
     }
 
-    pub fn create_key<T: crate::sys::OpCode + 'static>(&self, op: T) -> Key<T> {
-        Key::new(self.as_raw_fd(), op)
+    pub fn default_extra(&self) -> Extra {
+        Extra::new()
     }
 
     fn poller(&self) -> &Poller {

@@ -269,6 +269,10 @@ impl Runtime {
         self.driver.borrow_mut().push(op)
     }
 
+    fn default_extra(&self) -> Extra {
+        self.driver.borrow().default_extra()
+    }
+
     /// Submit an operation to the runtime.
     ///
     /// You only need this when authoring your own [`OpCode`].
@@ -299,7 +303,7 @@ impl Runtime {
             PushEntry::Ready(res) => {
                 // submit_raw won't be ready immediately, if ready, it must be error without
                 // flags
-                Either::Left(ready((res, Extra::default())))
+                Either::Left(ready((res, self.default_extra())))
             }
             PushEntry::Pending(user_data) => Either::Right(OpFuture::new_extra(user_data)),
         };

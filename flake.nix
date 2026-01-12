@@ -33,6 +33,7 @@
             lldb
             openssl
             pkg-config
+            cargo-nextest
             (rust-bin.selectLatestNightlyWith (
               toolchain:
               toolchain.default.override {
