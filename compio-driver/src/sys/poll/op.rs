@@ -1225,6 +1225,13 @@ impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
         ]))
     }
 
+    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+        Some(OpType::fds([
+            self.fd_in.as_fd().as_raw_fd(),
+            self.fd_out.as_fd().as_raw_fd(),
+        ]))
+    }
+
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let mut offset_in = self.offset_in;
         let mut offset_out = self.offset_out;

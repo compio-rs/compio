@@ -321,7 +321,7 @@ impl Proactor {
     ) -> PushEntry<Key<T>, (BufResult<usize, T>, Extra)> {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
-            let extra = key.take_extra();
+            let extra = key.swap_extra(self.default_extra());
             let res = key.take_result();
             PushEntry::Ready((res, extra))
         } else {

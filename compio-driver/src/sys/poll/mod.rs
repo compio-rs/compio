@@ -59,13 +59,22 @@ impl Extra {
     }
 
     fn handle_event(&mut self, fd: RawFd) -> bool {
-        self.track.iter_mut().all(|track| {
+        // First pass: mark all tracks matching this fd as ready.
+        let mut found = false;
+        for track in self.track.iter_mut() {
             if track.arg.fd == fd {
                 track.ready = true;
+                found = true;
             }
+        }
 
-            track.ready
-        })
+        // If no track corresponds to this fd, the overall operation is not ready.
+        if !found {
+            return false;
+        }
+
+        // Second pass: check if all tracks are ready.
+        self.track.iter().all(|track| track.ready)
     }
 }
 
@@ -101,7 +110,7 @@ impl super::Extra {
 ///
 /// # Implementation notes
 ///
-/// If `pre_submit` returns `Decision:Wait`], `op_tyoe` must also return
+/// If `pre_submit` returns `Decision::Wait`, `op_type` must also return
 /// `Some(OpType::Fd)` with same fds as the `WaitArg`s. Similarly, if
 /// `pre_submit` returns `Decision::Aio`, `op_type` must return
 /// `Some(OpType::Aio)` with the correct `aiocb` pointer.
