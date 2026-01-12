@@ -26,7 +26,7 @@ futures-util = { workspace = true }
 socket2 = { workspace = true, features = ["all"] }
 pin-project-lite = { workspace = true }
 thin-cell = { version = "0.1.1" }
-smallvec = { workspace = true, optional = true }
+smallvec = { workspace = true, optional = true, features = ["union"] }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]

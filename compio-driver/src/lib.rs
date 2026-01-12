@@ -321,7 +321,7 @@ impl Proactor {
     ) -> PushEntry<Key<T>, (BufResult<usize, T>, Extra)> {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
-            let extra = key.extra();
+            let extra = key.take_extra();
             let res = key.take_result();
             PushEntry::Ready((res, extra))
         } else {
@@ -404,7 +404,7 @@ impl Entry {
 
     #[allow(dead_code)]
     pub fn user_data(&self) -> usize {
-        self.key.as_user_data()
+        self.key.as_raw()
     }
 
     #[allow(dead_code)]

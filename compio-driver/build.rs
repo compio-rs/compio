@@ -15,6 +15,7 @@ fn main() {
         solarish: { any(target_os = "illumos", target_os = "solaris") },
         aio: { any(freebsd, solarish) },
         io_uring: { all(target_os = "linux", feature = "io-uring") },
+        polling: { all(unix, any(not(target_os = "linux"), feature = "polling")) },
         fusion: { all(target_os = "linux", feature = "io-uring", feature = "polling") },
 
         // fuchsia & aix also support splice, but it's OK here because we cannot test them.

@@ -1217,7 +1217,12 @@ impl<S: AsFd> OpCode for PollOnce<S> {
 #[cfg(linux_all)]
 impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        Ok(Decision::wait_readable(self.fd_in.as_fd().as_raw_fd()))
+        use super::WaitArg;
+
+        Ok(Decision::wait_for_many([
+            WaitArg::readable(self.fd_in.as_fd().as_raw_fd()),
+            WaitArg::writable(self.fd_out.as_fd().as_raw_fd()),
+        ]))
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {

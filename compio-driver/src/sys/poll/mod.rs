@@ -27,17 +27,87 @@ use crate::{
 
 pub(crate) mod op;
 
+struct Track {
+    arg: WaitArg,
+    ready: bool,
+}
+
+impl From<WaitArg> for Track {
+    fn from(arg: WaitArg) -> Self {
+        Self { arg, ready: false }
+    }
+}
+
 /// Extra data for RawOp.
-#[derive(Clone, Copy)]
-pub struct Extra {}
+pub struct Extra {
+    track: Multi<Track>,
+}
 
 impl Extra {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            track: Multi::new(),
+        }
+    }
+
+    fn reset(&mut self) {
+        self.track.iter_mut().for_each(|t| t.ready = false);
+    }
+
+    fn set_args(&mut self, args: Multi<WaitArg>) {
+        self.track = args.into_iter().map(Into::into).collect();
+    }
+
+    fn handle_event(&mut self, fd: RawFd) -> bool {
+        self.track.iter_mut().all(|track| {
+            if track.arg.fd == fd {
+                track.ready = true;
+            }
+
+            track.ready
+        })
+    }
+}
+
+#[allow(dead_code)]
+#[cfg(not(fusion))]
+impl super::Extra {
+    pub(super) fn try_as_poll(&self) -> Option<&Extra> {
+        Some(&self.0)
+    }
+
+    pub(super) fn try_as_poll_mut(&mut self) -> Option<&mut Extra> {
+        Some(&mut self.0)
+    }
+}
+
+#[allow(dead_code)]
+impl super::Extra {
+    pub(super) fn as_poll(&self) -> &Extra {
+        self.try_as_poll().expect("Current driver is not `polling`")
+    }
+
+    pub(super) fn as_poll_mut(&mut self) -> &mut Extra {
+        self.try_as_poll_mut()
+            .expect("Current driver is not `polling`")
+    }
+
+    fn handle_event(&mut self, fd: RawFd) -> bool {
+        self.as_poll_mut().handle_event(fd)
     }
 }
 
 /// Abstraction of operations.
+///
+/// # Implementation notes
+///
+/// If [`pre_submit`] returns [`Decision::Wait`], [`op_tyoe`] must also return
+/// `Some(OpType::Fd)` with same fds as the [`WaitArg`]s. Similarly, if
+/// [`pre_submit`] returns `Decision::Aio`, [`op_type`] must return
+/// `Some(OpType::Aio)` with the correct `aiocb` pointer.
+///
+/// [`pre_submit`]: OpCode::pre_submit
+/// [`op_tyoe`]: OpCode::op_type
 pub trait OpCode {
     /// Perform the operation before submit, and return [`Decision`] to
     /// indicate whether submitting the operation to polling is required.
@@ -80,8 +150,8 @@ impl Decision {
     }
 
     /// Decide to wait for many fds.
-    pub fn wait_for_many(args: Multi<WaitArg>) -> Self {
-        Self::Wait(args)
+    pub fn wait_for_many<I: IntoIterator<Item = WaitArg>>(args: I) -> Self {
+        Self::Wait(Multi::from_iter(args))
     }
 
     /// Decide to wait for the given fd to be readable.
@@ -114,6 +184,24 @@ pub struct WaitArg {
     pub fd: RawFd,
     /// The interest to be registered.
     pub interest: Interest,
+}
+
+impl WaitArg {
+    /// Create a new readable `WaitArg`.
+    pub fn readable(fd: RawFd) -> Self {
+        Self {
+            fd,
+            interest: Interest::Readable,
+        }
+    }
+
+    /// Create a new writable `WaitArg`.
+    pub fn writable(fd: RawFd) -> Self {
+        Self {
+            fd,
+            interest: Interest::Writable,
+        }
+    }
 }
 
 /// Meta of AIO operations.
@@ -156,11 +244,11 @@ impl FdQueue {
         let mut event = Event::none(0);
         if let Some(key) = self.read_queue.front() {
             event.readable = true;
-            event.key = key.as_user_data();
+            event.key = key.as_raw();
         }
         if let Some(key) = self.write_queue.front() {
             event.writable = true;
-            event.key = key.as_user_data();
+            event.key = key.as_raw();
         }
         event
     }
@@ -251,12 +339,39 @@ impl Driver {
         res
     }
 
-    /// # Safety
+    fn get_queue(&mut self, fd: RawFd) -> &mut FdQueue {
+        self.registry
+            .get_mut(&fd)
+            .expect("the fd should be submitted")
+    }
+
+    /// Submit a new operation to the end of the queue.
+    ///
+    ///  # Safety
     /// The input fd should be valid.
     unsafe fn submit(&mut self, key: ErasedKey, arg: WaitArg) -> io::Result<()> {
         let need_add = !self.registry.contains_key(&arg.fd);
         let queue = self.registry.entry(arg.fd).or_default();
         queue.push_back_interest(key, arg.interest);
+        let event = queue.event();
+        if need_add {
+            // SAFETY: the events are deleted correctly.
+            unsafe { self.poller().add(arg.fd, event)? }
+        } else {
+            let fd = unsafe { BorrowedFd::borrow_raw(arg.fd) };
+            self.poller().modify(fd, event)?;
+        }
+        Ok(())
+    }
+
+    /// Submit a new operation to the front of the queue.
+    ///
+    /// # Safety
+    /// The input fd should be valid.
+    unsafe fn submit_front(&mut self, key: ErasedKey, arg: WaitArg) -> io::Result<()> {
+        let need_add = !self.registry.contains_key(&arg.fd);
+        let queue = self.registry.entry(arg.fd).or_default();
+        queue.push_front_interest(key, arg.interest);
         let event = queue.event();
         if need_add {
             // SAFETY: the events are deleted correctly.
@@ -279,10 +394,7 @@ impl Driver {
     }
 
     fn cancel_one(&mut self, key: ErasedKey, fd: RawFd) -> Option<Entry> {
-        let queue = self
-            .registry
-            .get_mut(&fd)
-            .expect("the fd should be attached");
+        let queue = self.get_queue(fd);
 
         queue.remove(&key);
 
@@ -321,7 +433,15 @@ impl Driver {
 
     pub fn push(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?key);
-        let decision = key.borrow().pinned_op().pre_submit()?;
+        let decision = {
+            let mut op = key.borrow();
+            let decision = op.pinned_op().pre_submit()?;
+            if let Decision::Wait(ref args) = decision {
+                op.extra_mut().as_poll_mut().set_args(args.clone());
+            }
+            decision
+        };
+
         match decision {
             Decision::Wait(args) => {
                 for arg in args {
@@ -336,7 +456,7 @@ impl Driver {
             #[cfg(aio)]
             Decision::Aio(AioControl { mut aiocbp, submit }) => {
                 let aiocb = unsafe { aiocbp.as_mut() };
-                let user_data = key.as_user_data();
+                let user_data = key.as_raw();
                 #[cfg(freebsd)]
                 {
                     // sigev_notify_kqueue
@@ -417,23 +537,35 @@ impl Driver {
         true
     }
 
+    #[allow(clippy::blocks_in_conditions)]
     fn poll_one(&mut self, event: Event, fd: RawFd) -> io::Result<()> {
         // If it's an FD op, the returned user_data is only for calling `op_type`.
         // We need to pop the real user_data from the queue.
-        let queue = self
-            .registry
-            .get_mut(&fd)
-            .expect("the fd should be attached");
-        if let Some((key, interest)) = queue.pop_interest(&event) {
-            let poll = key.borrow().pinned_op().operate();
+        let queue = self.get_queue(fd);
 
-            match poll {
-                // The operation should go back to the front.
-                Poll::Pending => queue.push_front_interest(key, interest),
-                Poll::Ready(res) => Entry::new(key, res).notify(),
+        if let Some((key, _)) = queue.pop_interest(&event)
+            && let mut op = key.borrow()
+            && op.extra_mut().handle_event(fd)
+        {
+            // Add brace here to force `Ref` drop within the scrutinee
+            match { op.pinned_op().operate() } {
+                // Submit all fd's back to the front of the queue
+                Poll::Pending => {
+                    let extra = op.extra_mut().as_poll_mut();
+                    extra.reset();
+                    // `FdQueue` may have been removed, need to submit again
+                    for t in extra.track.iter() {
+                        unsafe { self.submit_front(key.clone(), t.arg) }?
+                    }
+                }
+                Poll::Ready(res) => {
+                    drop(op);
+                    Entry::new(key, res).notify()
+                }
             };
         }
-        let renew_event = queue.event();
+
+        let renew_event = self.get_queue(fd).event();
         let fd = unsafe { BorrowedFd::borrow_raw(fd) };
         self.renew(fd, renew_event)
     }

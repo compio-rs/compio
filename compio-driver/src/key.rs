@@ -25,11 +25,11 @@ pub(crate) struct RawOp<T: ?Sized> {
     //
     // - On Windows, it holds the `OVERLAPPED` buffer and a pointer to the driver.
     // - On Linux with `io_uring`, it holds the flags returned by kernel.
-    // - On other platforms, it is empty.
+    // - On other platforms, it stores tracker for multi-fd `OpCocde`s.
     //
     // Extra MUST be the first field to guarantee the layout for casting on windows. An invariant
     // on IOCP driver is that `RawOp` pointer is the same as `OVERLAPPED` pointer.
-    extra: Extra,
+    extra: Option<Extra>,
     // The cancelled flag indicates the op has been cancelled.
     cancelled: bool,
     result: PushEntry<Option<Waker>, io::Result<usize>>,
@@ -38,11 +38,11 @@ pub(crate) struct RawOp<T: ?Sized> {
 
 impl<T: ?Sized> RawOp<T> {
     pub fn extra(&self) -> &Extra {
-        &self.extra
+        self.extra.as_ref().expect("Extra has been taken")
     }
 
     pub fn extra_mut(&mut self) -> &mut Extra {
-        &mut self.extra
+        self.extra.as_mut().expect("Extra has been taken")
     }
 
     fn pinned_op(&mut self) -> Pin<&mut T> {
@@ -60,7 +60,7 @@ impl<T: OpCode + ?Sized> RawOp<T> {
     pub fn operate_blocking(&mut self) -> io::Result<usize> {
         use std::task::Poll;
 
-        let optr = self.extra.optr();
+        let optr = self.extra_mut().optr();
         let op = self.pinned_op();
         let res = unsafe { op.operate(optr.cast()) };
         match res {
@@ -134,7 +134,7 @@ impl<T: OpCode + 'static> Key<T> {
     }
 
     pub(crate) fn set_extra(&self, extra: impl Into<Extra>) {
-        self.borrow().extra = extra.into();
+        self.borrow().extra = Some(extra.into());
     }
 }
 
@@ -183,7 +183,7 @@ impl ErasedKey {
     /// Create [`RawOp`] and get the [`ErasedKey`] to it.
     pub(crate) fn new<T: OpCode + 'static>(op: T, extra: Extra) -> Self {
         let raw_op = RawOp {
-            extra,
+            extra: Some(extra),
             cancelled: false,
             result: PushEntry::Pending(None),
             op,
@@ -227,7 +227,7 @@ impl ErasedKey {
     ///
     /// **Do not** call [`from_raw`](Self::from_raw) on the returned value of
     /// this method.
-    pub(crate) fn as_user_data(&self) -> usize {
+    pub(crate) fn as_raw(&self) -> usize {
         self.inner.as_ptr() as _
     }
 
@@ -241,14 +241,14 @@ impl ErasedKey {
         self.inner.borrow()
     }
 
-    /// Take the inner [`Extra`].
-    pub(crate) fn extra(&self) -> Extra {
-        self.borrow().extra
-    }
-
     /// Cancel the op.
     pub(crate) fn set_cancelled(&self) {
         self.borrow().cancelled = true;
+    }
+
+    /// Whether the op is completed.
+    pub(crate) fn has_result(&self) -> bool {
+        self.borrow().result.is_ready()
     }
 
     /// Complete the op and wake up the future if a waker is set.
@@ -267,9 +267,13 @@ impl ErasedKey {
         }
     }
 
-    /// Whether the op is completed.
-    pub(crate) fn has_result(&self) -> bool {
-        self.borrow().result.is_ready()
+    /// Take the inner [`Extra`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the extra has already been taken.
+    pub(crate) fn take_extra(&self) -> Extra {
+        self.borrow().extra.take().expect("Extra has been taken")
     }
 
     /// Set waker of the current future.

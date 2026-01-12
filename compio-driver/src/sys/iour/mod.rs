@@ -41,7 +41,6 @@ use crate::{
 };
 
 /// Extra data for RawOp.
-#[derive(Clone, Copy)]
 pub struct Extra {
     flags: u32,
 }
@@ -56,11 +55,31 @@ impl Extra {
     }
 }
 
+#[cfg(not(fusion))]
 impl super::Extra {
+    pub(super) fn try_as_iour(&self) -> Option<&Extra> {
+        Some(&self.0)
+    }
+
+    pub(super) fn try_as_iour_mut(&mut self) -> Option<&mut Extra> {
+        Some(&mut self.0)
+    }
+}
+
+#[allow(dead_code)]
+impl super::Extra {
+    pub(super) fn as_iour(&self) -> &Extra {
+        self.try_as_iour()
+            .expect("Current driver is not `io_uring`")
+    }
+
+    pub(super) fn as_iour_mut(&mut self) -> &mut Extra {
+        self.try_as_iour_mut()
+            .expect("Current driver is not `io_uring`")
+    }
+
     pub(crate) fn set_flags(&mut self, flag: u32) {
-        if let Some(extra) = self.as_iour_mut() {
-            extra.flags = flag;
-        }
+        self.as_iour_mut().flags = flag;
     }
 }
 

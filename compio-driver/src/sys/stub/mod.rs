@@ -21,7 +21,6 @@ use std::{
 
 use crate::{BufferPool, DriverType, ErasedKey, Key, ProactorBuilder};
 
-#[derive(Clone, Copy)]
 pub struct Extra {}
 
 impl Extra {
