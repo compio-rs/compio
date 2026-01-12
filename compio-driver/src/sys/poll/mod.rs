@@ -56,7 +56,7 @@ pub trait OpCode {
 
 pub use OpCode as PollOpCode;
 
-/// One or more items.
+/// One item in local or more items on heap.
 type Multi<T> = SmallVec<[T; 1]>;
 
 /// Result of [`OpCode::pre_submit`].
@@ -483,7 +483,8 @@ impl Driver {
                                 syscall!(libc::aio_return(aiocbp.as_ptr())).map(|res| res as usize)
                             }
                         };
-                        Entry::new(op.upgrade(), res).notify()
+                        let key = unsafe { ErasedKey::from_raw(event.key) };
+                        Entry::new(key, res).notify()
                     }
                 }
             }
