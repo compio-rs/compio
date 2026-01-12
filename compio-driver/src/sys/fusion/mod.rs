@@ -68,8 +68,9 @@ impl Driver {
                 Ok(driver) => Ok(Self {
                     fuse: FuseDriver::IoUring(driver),
                 }),
-                Err(e) if fallback => {
-                    warn!("Fail to create io-uring driver: {e:?}, fallback to polling driver.");
+                // use _e here so that when `enable_log` is disabled, clippy won't complain
+                Err(_e) if fallback => {
+                    warn!("Fail to create io-uring driver: {_e:?}, fallback to polling driver.");
                     Ok(Self {
                         fuse: FuseDriver::Poll(poll::Driver::new(builder)?),
                     })
