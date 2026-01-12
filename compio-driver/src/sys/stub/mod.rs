@@ -21,11 +21,11 @@ use std::{
 
 use crate::{BufferPool, DriverType, ErasedKey, Key, ProactorBuilder};
 
-#[derive(Default)]
+#[derive(Clone, Copy)]
 pub struct Extra {}
 
 impl Extra {
-    pub fn new(_: RawFd) -> Self {
+    pub fn new() -> Self {
         Self {}
     }
 }
@@ -63,8 +63,8 @@ impl Driver {
         stub_unimpl()
     }
 
-    pub fn create_key<T: OpCode + 'static>(&self, _: T) -> Key<T> {
-        stub_unimpl()
+    pub fn default_extra(&self) -> Extra {
+        Extra::new()
     }
 
     pub fn push(&mut self, _: ErasedKey) -> Poll<io::Result<usize>> {

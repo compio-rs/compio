@@ -39,7 +39,7 @@ impl Extra {
             }
         }
         #[cfg(not(fusion))]
-        self.0
+        Some(&self.0)
     }
 
     #[cfg(io_uring)]
@@ -53,7 +53,7 @@ impl Extra {
             }
         }
         #[cfg(not(fusion))]
-        self.0
+        Some(&mut self.0)
     }
 
     /// Try to get the buffer ID associated with this operation.
