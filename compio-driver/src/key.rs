@@ -82,8 +82,6 @@ impl<T: ?Sized> Debug for RawOp<T> {
 }
 
 /// A typed wrapper for key of Ops submitted into driver.
-///
-/// See [`ErasedKey`] for more details.
 #[repr(transparent)]
 pub struct Key<T> {
     erased: ErasedKey,

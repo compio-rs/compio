@@ -101,13 +101,10 @@ impl super::Extra {
 ///
 /// # Implementation notes
 ///
-/// If [`pre_submit`] returns [`Decision::Wait`], [`op_tyoe`] must also return
-/// `Some(OpType::Fd)` with same fds as the [`WaitArg`]s. Similarly, if
-/// [`pre_submit`] returns `Decision::Aio`, [`op_type`] must return
+/// If `pre_submit` returns `Decision:Wait`], `op_tyoe` must also return
+/// `Some(OpType::Fd)` with same fds as the `WaitArg`s. Similarly, if
+/// `pre_submit` returns `Decision::Aio`, `op_type` must return
 /// `Some(OpType::Aio)` with the correct `aiocb` pointer.
-///
-/// [`pre_submit`]: OpCode::pre_submit
-/// [`op_tyoe`]: OpCode::op_type
 pub trait OpCode {
     /// Perform the operation before submit, and return [`Decision`] to
     /// indicate whether submitting the operation to polling is required.
