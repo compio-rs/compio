@@ -13,7 +13,7 @@ use std::{
 use compio_buf::BufResult;
 use thin_cell::{Ref, ThinCell};
 
-use crate::{Extra, OpCode, PushEntry, RawFd};
+use crate::{Extra, OpCode, PushEntry};
 
 /// An operation with other needed information.
 ///
@@ -124,13 +124,17 @@ impl<T> Key<T> {
 
 impl<T: OpCode + 'static> Key<T> {
     /// Create [`RawOp`] and get the [`Key`] to it.
-    pub(crate) fn new(driver: RawFd, op: T) -> Self {
-        let erased = ErasedKey::new(driver, op);
+    pub(crate) fn new(op: T, extra: impl Into<Extra>) -> Self {
+        let erased = ErasedKey::new(op, extra.into());
 
         Self {
             erased,
             _p: std::marker::PhantomData,
         }
+    }
+
+    pub(crate) fn set_extra(&self, extra: impl Into<Extra>) {
+        self.borrow().extra = extra.into();
     }
 }
 
@@ -177,9 +181,9 @@ impl Unpin for ErasedKey {}
 
 impl ErasedKey {
     /// Create [`RawOp`] and get the [`ErasedKey`] to it.
-    pub(crate) fn new<T: OpCode + 'static>(driver: RawFd, op: T) -> Self {
+    pub(crate) fn new<T: OpCode + 'static>(op: T, extra: Extra) -> Self {
         let raw_op = RawOp {
-            extra: Extra::new(driver),
+            extra,
             cancelled: false,
             result: PushEntry::Pending(None),
             op,
@@ -238,8 +242,8 @@ impl ErasedKey {
     }
 
     /// Take the inner [`Extra`].
-    pub(crate) fn take_extra(&self) -> Extra {
-        std::mem::replace(&mut self.borrow().extra, Extra::new(RawFd::default()))
+    pub(crate) fn extra(&self) -> Extra {
+        self.borrow().extra
     }
 
     /// Cancel the op.

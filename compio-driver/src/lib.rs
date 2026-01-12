@@ -238,6 +238,11 @@ impl Proactor {
         })
     }
 
+    /// Get a default [`Extra`] for underlying driver.
+    pub fn default_extra(&self) -> Extra {
+        self.driver.default_extra().into()
+    }
+
     /// The current driver type.
     pub fn driver_type(&self) -> DriverType {
         self.driver.driver_type()
@@ -272,7 +277,8 @@ impl Proactor {
     /// Push an operation into the driver, and return the unique key [`Key`],
     /// associated with it.
     pub fn push<T: OpCode + 'static>(&mut self, op: T) -> PushEntry<Key<T>, BufResult<usize, T>> {
-        let key = self.driver.create_key(op);
+        let extra = self.default_extra();
+        let key = Key::new(op, extra);
         match self.driver.push(key.clone().erase()) {
             Poll::Pending => PushEntry::Pending(key),
             Poll::Ready(res) => {
@@ -315,7 +321,7 @@ impl Proactor {
     ) -> PushEntry<Key<T>, (BufResult<usize, T>, Extra)> {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
-            let extra = key.take_extra();
+            let extra = key.extra();
             let res = key.take_result();
             PushEntry::Ready((res, extra))
         } else {

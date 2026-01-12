@@ -28,6 +28,7 @@ mod wait;
 
 /// Extra data attached for IOCP.
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct Extra {
     overlapped: Overlapped,
 }
@@ -339,8 +340,8 @@ impl Driver {
         &self.notify.port
     }
 
-    pub fn create_key<T: OpCode + 'static>(&self, op: T) -> Key<T> {
-        Key::new(self.port().as_raw_handle() as _, op)
+    pub fn default_extra(&self) -> Extra {
+        Extra::new(self.port().as_raw_handle() as _)
     }
 
     pub fn attach(&mut self, fd: RawFd) -> io::Result<()> {
@@ -522,6 +523,7 @@ impl Wake for Notify {
 
 /// The overlapped struct we actually used for IOCP.
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct Overlapped {
     /// The base [`OVERLAPPED`].
     pub base: OVERLAPPED,
