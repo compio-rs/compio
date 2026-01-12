@@ -4,8 +4,9 @@ use super::*;
 
 /// Platform-specific extra data associated with a driver instance.
 ///
-/// This is currently only useful for `io_uring` drivers to store the flags
-/// returned by kernel for retrieving buffers from buffer pool.
+/// - On Windows, it holds the `OVERLAPPED` buffer and a pointer to the driver.
+/// - On Linux with `io_uring`, it holds the flags returned by kernel.
+/// - On other platforms, it is empty.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct Extra(pub(super) imp::Extra);
