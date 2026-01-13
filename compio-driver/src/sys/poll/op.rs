@@ -1226,7 +1226,7 @@ impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
     }
 
     fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        Some(OpType::fds([
+        Some(OpType::multi_fd([
             self.fd_in.as_fd().as_raw_fd(),
             self.fd_out.as_fd().as_raw_fd(),
         ]))

@@ -290,6 +290,11 @@ impl OpType {
     pub fn fd(fd: RawFd) -> Self {
         Self::Fd(SmallVec::from_buf([fd]))
     }
+
+    /// Create an [`OpType::Fd`] with multiple [`RawFd`]s.
+    pub fn multi_fd<I: IntoIterator<Item = RawFd>>(fds: I) -> Self {
+        Self::Fd(Multi::from_iter(fds))
+    }
 }
 
 /// Low-level driver of polling.
@@ -439,17 +444,13 @@ impl Driver {
 
     pub fn push(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?key);
-        let decision = {
-            let mut op = key.borrow();
-            let decision = op.pinned_op().pre_submit()?;
-            if let Decision::Wait(ref args) = decision {
-                op.extra_mut().as_poll_mut().set_args(args.clone());
-            }
-            decision
-        };
 
-        match decision {
+        match { key.borrow().pinned_op().pre_submit()? } {
             Decision::Wait(args) => {
+                key.borrow()
+                    .extra_mut()
+                    .as_poll_mut()
+                    .set_args(args.clone());
                 for arg in args {
                     // SAFETY: fd is from the OpCode.
                     unsafe { self.submit(key.clone(), arg) }?;
