@@ -425,12 +425,13 @@ impl Driver {
         match op_type {
             None => {}
             Some(OpType::Fd(fds)) => {
-                let mut entry = None;
+                let mut pushed = false;
                 for fd in fds {
-                    entry = self.cancel_one(key.clone().erase(), fd);
-                }
-                if let Some(entry) = entry {
-                    self.pool_completed.push(entry);
+                    let entry = self.cancel_one(key.clone().erase(), fd);
+                    if !pushed && let Some(entry) = entry {
+                        self.pool_completed.push(entry);
+                        pushed = true;
+                    }
                 }
             }
             #[cfg(aio)]
