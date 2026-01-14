@@ -135,7 +135,7 @@ impl<S: AsFd> OpCode for FileStat<S> {
                 this.fd.as_fd().as_raw_fd(),
                 EMPTY_NAME.as_ptr().cast(),
                 libc::AT_EMPTY_PATH,
-                0,
+                statx_mask(),
                 &mut s
             ))?;
             *this.stat = statx_to_stat(s);
@@ -193,7 +193,7 @@ impl OpCode for PathStat {
                 libc::AT_FDCWD,
                 self.path.as_ptr(),
                 flags,
-                0,
+                statx_mask(),
                 &mut s
             ))?;
             self.stat = statx_to_stat(s);

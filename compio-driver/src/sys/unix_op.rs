@@ -108,6 +108,25 @@ pub(crate) struct Statx {
 }
 
 #[cfg(target_os = "linux")]
+pub(crate) const fn statx_mask() -> u32 {
+    // Set mask to ensure all known fields are filled
+    libc::STATX_TYPE
+        | libc::STATX_MODE
+        | libc::STATX_NLINK
+        | libc::STATX_UID
+        | libc::STATX_GID
+        | libc::STATX_ATIME
+        | libc::STATX_MTIME
+        | libc::STATX_CTIME
+        | libc::STATX_INO
+        | libc::STATX_SIZE
+        | libc::STATX_BLOCKS
+        | libc::STATX_BTIME
+        | libc::STATX_MNT_ID
+        | libc::STATX_DIOALIGN
+}
+
+#[cfg(target_os = "linux")]
 pub(crate) const fn statx_to_stat(statx: Statx) -> Stat {
     let mut stat: Stat = unsafe { std::mem::zeroed() };
     stat.st_dev = libc::makedev(statx.stx_dev_major, statx.stx_dev_minor) as _;
