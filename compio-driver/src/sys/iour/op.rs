@@ -123,6 +123,7 @@ impl<S: AsFd> OpCode for FileStat<S> {
             this.stat as *mut _ as _,
         )
         .flags(libc::AT_EMPTY_PATH)
+        .mask(statx_mask())
         .build()
         .into()
     }
@@ -166,6 +167,7 @@ impl OpCode for PathStat {
             std::ptr::addr_of_mut!(self.stat).cast(),
         )
         .flags(flags)
+        .mask(statx_mask())
         .build()
         .into()
     }
