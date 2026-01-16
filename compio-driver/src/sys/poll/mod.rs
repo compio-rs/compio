@@ -350,6 +350,10 @@ impl Driver {
         res
     }
 
+    fn try_get_queue(&mut self, fd: RawFd) -> Option<&mut FdQueue> {
+        self.registry.get_mut(&fd)
+    }
+
     fn get_queue(&mut self, fd: RawFd) -> &mut FdQueue {
         self.registry
             .get_mut(&fd)
@@ -405,7 +409,7 @@ impl Driver {
     }
 
     fn cancel_one(&mut self, key: ErasedKey, fd: RawFd) -> Option<Entry> {
-        let queue = self.get_queue(fd);
+        let queue = self.try_get_queue(fd)?;
 
         queue.remove(&key);
 
@@ -549,7 +553,9 @@ impl Driver {
     fn poll_one(&mut self, event: Event, fd: RawFd) -> io::Result<()> {
         // If it's an FD op, the returned user_data is only for calling `op_type`.
         // We need to pop the real user_data from the queue.
-        let queue = self.get_queue(fd);
+        let Some(queue) = self.try_get_queue(fd) else {
+            return Ok(());
+        };
 
         if let Some((key, _)) = queue.pop_interest(&event)
             && let mut op = key.borrow()
