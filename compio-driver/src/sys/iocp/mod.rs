@@ -28,7 +28,6 @@ mod wait;
 
 /// Extra data attached for IOCP.
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct Extra {
     overlapped: Overlapped,
 }
@@ -352,7 +351,7 @@ impl Driver {
         instrument!(compio_log::Level::TRACE, "cancel", ?key);
         trace!("cancel RawOp");
         let optr = key.borrow().extra_mut().optr();
-        if let Some(w) = self.waits.get_mut(&key.as_user_data())
+        if let Some(w) = self.waits.get_mut(&key.as_raw())
             && w.cancel().is_ok()
         {
             // The pack has been cancelled successfully, which means no packet will be post
@@ -394,10 +393,8 @@ impl Driver {
             }
             OpType::Event(e) => {
                 drop(op);
-                self.waits.insert(
-                    key.as_user_data(),
-                    wait::Wait::new(self.notify.clone(), e, key)?,
-                );
+                self.waits
+                    .insert(key.as_raw(), wait::Wait::new(self.notify.clone(), e, key)?);
                 Poll::Pending
             }
         }
@@ -523,7 +520,6 @@ impl Wake for Notify {
 
 /// The overlapped struct we actually used for IOCP.
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct Overlapped {
     /// The base [`OVERLAPPED`].
     pub base: OVERLAPPED,

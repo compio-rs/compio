@@ -25,7 +25,7 @@ pub(crate) struct RawOp<T: ?Sized> {
     //
     // - On Windows, it holds the `OVERLAPPED` buffer and a pointer to the driver.
     // - On Linux with `io_uring`, it holds the flags returned by kernel.
-    // - On other platforms, it is empty.
+    // - On other platforms, it stores tracker for multi-fd `OpCode`s.
     //
     // Extra MUST be the first field to guarantee the layout for casting on windows. An invariant
     // on IOCP driver is that `RawOp` pointer is the same as `OVERLAPPED` pointer.
@@ -60,7 +60,7 @@ impl<T: OpCode + ?Sized> RawOp<T> {
     pub fn operate_blocking(&mut self) -> io::Result<usize> {
         use std::task::Poll;
 
-        let optr = self.extra.optr();
+        let optr = self.extra_mut().optr();
         let op = self.pinned_op();
         let res = unsafe { op.operate(optr.cast()) };
         match res {
@@ -82,8 +82,6 @@ impl<T: ?Sized> Debug for RawOp<T> {
 }
 
 /// A typed wrapper for key of Ops submitted into driver.
-///
-/// See [`ErasedKey`] for more details.
 #[repr(transparent)]
 pub struct Key<T> {
     erased: ErasedKey,
@@ -227,7 +225,7 @@ impl ErasedKey {
     ///
     /// **Do not** call [`from_raw`](Self::from_raw) on the returned value of
     /// this method.
-    pub(crate) fn as_user_data(&self) -> usize {
+    pub(crate) fn as_raw(&self) -> usize {
         self.inner.as_ptr() as _
     }
 
@@ -241,14 +239,14 @@ impl ErasedKey {
         self.inner.borrow()
     }
 
-    /// Take the inner [`Extra`].
-    pub(crate) fn extra(&self) -> Extra {
-        self.borrow().extra
-    }
-
     /// Cancel the op.
     pub(crate) fn set_cancelled(&self) {
         self.borrow().cancelled = true;
+    }
+
+    /// Whether the op is completed.
+    pub(crate) fn has_result(&self) -> bool {
+        self.borrow().result.is_ready()
     }
 
     /// Complete the op and wake up the future if a waker is set.
@@ -267,9 +265,10 @@ impl ErasedKey {
         }
     }
 
-    /// Whether the op is completed.
-    pub(crate) fn has_result(&self) -> bool {
-        self.borrow().result.is_ready()
+    /// Swap the inner [`Extra`] with the provided one, returning the previous
+    /// value.
+    pub(crate) fn swap_extra(&self, extra: Extra) -> Extra {
+        std::mem::replace(&mut self.borrow().extra, extra)
     }
 
     /// Set waker of the current future.

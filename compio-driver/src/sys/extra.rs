@@ -8,7 +8,6 @@ use super::*;
 /// - On Linux with `io_uring`, it holds the flags returned by kernel.
 /// - On other platforms, it is empty.
 #[repr(transparent)]
-#[derive(Clone, Copy)]
 pub struct Extra(pub(super) imp::Extra);
 
 impl Debug for Extra {
@@ -28,34 +27,6 @@ impl Extra {
         Self(inner)
     }
 
-    #[cfg(io_uring)]
-    pub(super) fn as_iour(&self) -> Option<&iour::Extra> {
-        #[cfg(fusion)]
-        {
-            if let imp::Extra::IoUring(extra) = &self.0 {
-                Some(extra)
-            } else {
-                None
-            }
-        }
-        #[cfg(not(fusion))]
-        Some(&self.0)
-    }
-
-    #[cfg(io_uring)]
-    pub(super) fn as_iour_mut(&mut self) -> Option<&mut iour::Extra> {
-        #[cfg(fusion)]
-        {
-            if let imp::Extra::IoUring(extra) = &mut self.0 {
-                Some(extra)
-            } else {
-                None
-            }
-        }
-        #[cfg(not(fusion))]
-        Some(&mut self.0)
-    }
-
     /// Try to get the buffer ID associated with this operation.
     ///
     /// # Behavior
@@ -70,7 +41,7 @@ impl Extra {
     pub fn buffer_id(&self) -> io::Result<u16> {
         #[cfg(io_uring)]
         {
-            if let Some(extra) = self.as_iour() {
+            if let Some(extra) = self.try_as_iour() {
                 extra
                     .buffer_id()
                     .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "flags are invalid"))
