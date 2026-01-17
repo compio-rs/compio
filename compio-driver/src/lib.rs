@@ -16,6 +16,8 @@ use std::{
 use compio_buf::BufResult;
 use compio_log::instrument;
 
+mod macros;
+
 mod key;
 pub use key::Key;
 
@@ -39,141 +41,6 @@ pub use sys::*;
 use crate::key::ErasedKey;
 
 mod sys_slice;
-
-#[cfg(windows)]
-#[macro_export]
-#[doc(hidden)]
-macro_rules! syscall {
-    (BOOL, $e:expr) => {
-        $crate::syscall!($e, == 0)
-    };
-    (SOCKET, $e:expr) => {
-        $crate::syscall!($e, != 0)
-    };
-    (HANDLE, $e:expr) => {
-        $crate::syscall!($e, == ::windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE)
-    };
-    ($e:expr, $op: tt $rhs: expr) => {{
-        #[allow(unused_unsafe)]
-        let res = unsafe { $e };
-        if res $op $rhs {
-            Err(::std::io::Error::last_os_error())
-        } else {
-            Ok(res)
-        }
-    }};
-}
-
-/// Helper macro to execute a system call
-#[cfg(unix)]
-#[macro_export]
-#[doc(hidden)]
-macro_rules! syscall {
-    (break $e:expr) => {
-        loop {
-            match $crate::syscall!($e) {
-                Ok(fd) => break ::std::task::Poll::Ready(Ok(fd as usize)),
-                Err(e) if e.kind() == ::std::io::ErrorKind::WouldBlock || e.raw_os_error() == Some(::libc::EINPROGRESS)
-                    => break ::std::task::Poll::Pending,
-                Err(e) if e.kind() == ::std::io::ErrorKind::Interrupted => {},
-                Err(e) => break ::std::task::Poll::Ready(Err(e)),
-            }
-        }
-    };
-    ($e:expr, $f:ident($fd:expr)) => {
-        match $crate::syscall!(break $e) {
-            ::std::task::Poll::Pending => Ok($crate::sys::Decision::$f($fd)),
-            ::std::task::Poll::Ready(Ok(res)) => Ok($crate::sys::Decision::Completed(res)),
-            ::std::task::Poll::Ready(Err(e)) => Err(e),
-        }
-    };
-    ($e:expr) => {{
-        #[allow(unused_unsafe)]
-        let res = unsafe { $e };
-        if res == -1 {
-            Err(::std::io::Error::last_os_error())
-        } else {
-            Ok(res)
-        }
-    }};
-}
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! impl_raw_fd {
-    ($t:ty, $it:ty, $inner:ident) => {
-        impl $crate::AsRawFd for $t {
-            fn as_raw_fd(&self) -> $crate::RawFd {
-                self.$inner.as_raw_fd()
-            }
-        }
-        #[cfg(unix)]
-        impl std::os::fd::AsFd for $t {
-            fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
-                self.$inner.as_fd()
-            }
-        }
-        #[cfg(unix)]
-        impl std::os::fd::FromRawFd for $t {
-            unsafe fn from_raw_fd(fd: $crate::RawFd) -> Self {
-                Self {
-                    $inner: unsafe { std::os::fd::FromRawFd::from_raw_fd(fd) },
-                }
-            }
-        }
-        impl $crate::ToSharedFd<$it> for $t {
-            fn to_shared_fd(&self) -> $crate::SharedFd<$it> {
-                self.$inner.to_shared_fd()
-            }
-        }
-    };
-    ($t:ty, $it:ty, $inner:ident,file) => {
-        $crate::impl_raw_fd!($t, $it, $inner);
-        #[cfg(windows)]
-        impl std::os::windows::io::FromRawHandle for $t {
-            unsafe fn from_raw_handle(handle: std::os::windows::io::RawHandle) -> Self {
-                Self {
-                    $inner: unsafe { std::os::windows::io::FromRawHandle::from_raw_handle(handle) },
-                }
-            }
-        }
-        #[cfg(windows)]
-        impl std::os::windows::io::AsHandle for $t {
-            fn as_handle(&self) -> std::os::windows::io::BorrowedHandle {
-                self.$inner.as_handle()
-            }
-        }
-        #[cfg(windows)]
-        impl std::os::windows::io::AsRawHandle for $t {
-            fn as_raw_handle(&self) -> std::os::windows::io::RawHandle {
-                self.$inner.as_raw_handle()
-            }
-        }
-    };
-    ($t:ty, $it:ty, $inner:ident,socket) => {
-        $crate::impl_raw_fd!($t, $it, $inner);
-        #[cfg(windows)]
-        impl std::os::windows::io::FromRawSocket for $t {
-            unsafe fn from_raw_socket(sock: std::os::windows::io::RawSocket) -> Self {
-                Self {
-                    $inner: unsafe { std::os::windows::io::FromRawSocket::from_raw_socket(sock) },
-                }
-            }
-        }
-        #[cfg(windows)]
-        impl std::os::windows::io::AsSocket for $t {
-            fn as_socket(&self) -> std::os::windows::io::BorrowedSocket {
-                self.$inner.as_socket()
-            }
-        }
-        #[cfg(windows)]
-        impl std::os::windows::io::AsRawSocket for $t {
-            fn as_raw_socket(&self) -> std::os::windows::io::RawSocket {
-                self.$inner.as_raw_socket()
-            }
-        }
-    };
-}
 
 /// The return type of [`Proactor::push`].
 #[derive(Debug)]
@@ -276,8 +143,20 @@ impl Proactor {
 
     /// Push an operation into the driver, and return the unique key [`Key`],
     /// associated with it.
-    pub fn push<T: OpCode + 'static>(&mut self, op: T) -> PushEntry<Key<T>, BufResult<usize, T>> {
-        let extra = self.default_extra();
+    pub fn push<T: sys::OpCode + 'static>(
+        &mut self,
+        op: T,
+    ) -> PushEntry<Key<T>, BufResult<usize, T>> {
+        self.push_with_extra(op, self.default_extra())
+    }
+
+    /// Push an operation into the driver with user-defined [`Extra`], and
+    /// return the unique key [`Key`], associated with it.
+    pub fn push_with_extra<T: sys::OpCode + 'static>(
+        &mut self,
+        op: T,
+        extra: Extra,
+    ) -> PushEntry<Key<T>, BufResult<usize, T>> {
         let key = Key::new(op, extra);
         match self.driver.push(key.clone().erase()) {
             Poll::Pending => PushEntry::Pending(key),
@@ -361,6 +240,26 @@ impl Proactor {
     /// driver, i.e., the one they created the buffer pool with.
     pub unsafe fn release_buffer_pool(&mut self, buffer_pool: BufferPool) -> io::Result<()> {
         unsafe { self.driver.release_buffer_pool(buffer_pool) }
+    }
+
+    /// Register a new personality in io-uring driver.
+    ///
+    /// Returns the personality id, which can be used with
+    /// [`Extra::set_personality`] to set the personality for an operation.
+    ///
+    /// See [`Submitter::register_personality`] for more.
+    ///
+    /// [`Submitter::register_personality`]: io_uring::Submitter::register_personality
+    #[cfg(io_uring)]
+    pub fn register_personality(&self) -> io::Result<u16> {
+        let Some(iour) = self.driver.as_iour() else {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "Personality is only supported on io-uring driver",
+            ));
+        };
+
+        iour.register_personality()
     }
 }
 
