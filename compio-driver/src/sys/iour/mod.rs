@@ -42,7 +42,6 @@ use crate::{
 
 mod extra;
 pub use extra::Extra;
-
 pub(crate) mod op;
 
 pub(crate) fn is_op_supported(code: u8) -> bool {

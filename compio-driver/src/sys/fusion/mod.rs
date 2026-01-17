@@ -36,7 +36,7 @@ impl From<iour::Extra> for Extra {
 
 #[allow(dead_code)]
 impl super::Extra {
-    pub(super) fn try_as_iour(&self) -> Option<&iour::Extra> {
+    pub(in crate::sys) fn try_as_iour(&self) -> Option<&iour::Extra> {
         if let Extra::IoUring(extra) = &self.0 {
             Some(extra)
         } else {
@@ -44,7 +44,7 @@ impl super::Extra {
         }
     }
 
-    pub(super) fn try_as_iour_mut(&mut self) -> Option<&mut iour::Extra> {
+    pub(in crate::sys) fn try_as_iour_mut(&mut self) -> Option<&mut iour::Extra> {
         if let Extra::IoUring(extra) = &mut self.0 {
             Some(extra)
         } else {
@@ -52,7 +52,7 @@ impl super::Extra {
         }
     }
 
-    pub(super) fn try_as_poll(&self) -> Option<&poll::Extra> {
+    pub(in crate::sys) fn try_as_poll(&self) -> Option<&poll::Extra> {
         if let Extra::Poll(extra) = &self.0 {
             Some(extra)
         } else {
@@ -60,7 +60,7 @@ impl super::Extra {
         }
     }
 
-    pub(super) fn try_as_poll_mut(&mut self) -> Option<&mut poll::Extra> {
+    pub(in crate::sys) fn try_as_poll_mut(&mut self) -> Option<&mut poll::Extra> {
         if let Extra::Poll(extra) = &mut self.0 {
             Some(extra)
         } else {

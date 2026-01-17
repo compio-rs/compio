@@ -27,23 +27,23 @@ impl Extra {
 
 #[cfg(not(fusion))]
 impl crate::sys::Extra {
-    pub(super) fn try_as_iour(&self) -> Option<&Extra> {
+    pub(in crate::sys) fn try_as_iour(&self) -> Option<&Extra> {
         Some(&self.0)
     }
 
-    pub(super) fn try_as_iour_mut(&mut self) -> Option<&mut Extra> {
+    pub(in crate::sys) fn try_as_iour_mut(&mut self) -> Option<&mut Extra> {
         Some(&mut self.0)
     }
 }
 
 #[allow(dead_code)]
 impl crate::sys::Extra {
-    pub(super) fn as_iour(&self) -> &Extra {
+    pub(in crate::sys) fn as_iour(&self) -> &Extra {
         self.try_as_iour()
             .expect("Current driver is not `io_uring`")
     }
 
-    pub(super) fn as_iour_mut(&mut self) -> &mut Extra {
+    pub(in crate::sys) fn as_iour_mut(&mut self) -> &mut Extra {
         self.try_as_iour_mut()
             .expect("Current driver is not `io_uring`")
     }
