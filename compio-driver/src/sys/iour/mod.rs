@@ -28,7 +28,7 @@ cfg_if::cfg_if! {
 }
 use io_uring::{
     IoUring,
-    cqueue::{buffer_select, more},
+    cqueue::more,
     opcode::{AsyncCancel, PollAdd},
     types::{Fd, SubmitArgs, Timespec},
 };
@@ -40,48 +40,8 @@ use crate::{
     syscall,
 };
 
-/// Extra data for RawOp.
-pub struct Extra {
-    flags: u32,
-}
-
-impl Extra {
-    pub(crate) fn new() -> Self {
-        Self { flags: 0 }
-    }
-
-    pub(crate) fn buffer_id(&self) -> Option<u16> {
-        buffer_select(self.flags)
-    }
-}
-
-#[cfg(not(fusion))]
-impl super::Extra {
-    pub(super) fn try_as_iour(&self) -> Option<&Extra> {
-        Some(&self.0)
-    }
-
-    pub(super) fn try_as_iour_mut(&mut self) -> Option<&mut Extra> {
-        Some(&mut self.0)
-    }
-}
-
-#[allow(dead_code)]
-impl super::Extra {
-    pub(super) fn as_iour(&self) -> &Extra {
-        self.try_as_iour()
-            .expect("Current driver is not `io_uring`")
-    }
-
-    pub(super) fn as_iour_mut(&mut self) -> &mut Extra {
-        self.try_as_iour_mut()
-            .expect("Current driver is not `io_uring`")
-    }
-
-    pub(crate) fn set_flags(&mut self, flag: u32) {
-        self.as_iour_mut().flags = flag;
-    }
-}
+mod extra;
+pub use extra::Extra;
 
 pub(crate) mod op;
 
@@ -117,6 +77,21 @@ pub enum OpEntry {
     Submission128(io_uring::squeue::Entry128),
     /// This operation is a blocking one.
     Blocking,
+}
+
+impl OpEntry {
+    fn personality(self, personality: Option<u16>) -> Self {
+        let Some(personality) = personality else {
+            return self;
+        };
+
+        match self {
+            Self::Submission(entry) => Self::Submission(entry.personality(personality)),
+            #[cfg(feature = "io-uring-sqe128")]
+            Self::Submission128(entry) => Self::Submission128(entry.personality(personality)),
+            Self::Blocking => Self::Blocking,
+        }
+    }
 }
 
 impl From<io_uring::squeue::Entry> for OpEntry {
@@ -206,6 +181,15 @@ impl Driver {
 
     pub fn driver_type(&self) -> DriverType {
         DriverType::IoUring
+    }
+
+    #[allow(dead_code)]
+    pub fn as_iour(&self) -> Option<&Self> {
+        Some(self)
+    }
+
+    pub fn register_personality(&self) -> io::Result<u16> {
+        self.inner.submitter().register_personality()
     }
 
     // Auto means that it choose to wait or not automatically.
@@ -334,8 +318,13 @@ impl Driver {
 
     pub fn push(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?key);
-        let entry = key.borrow().pinned_op().create_entry();
-        trace!("push RawOp");
+        let personality = key.borrow().extra().as_iour().get_personality();
+        let entry = key
+            .borrow()
+            .pinned_op()
+            .create_entry()
+            .personality(personality);
+        trace!(?personality, "push RawOp");
         match entry {
             OpEntry::Submission(entry) => {
                 let user_data = key.into_raw();

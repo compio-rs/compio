@@ -115,6 +115,15 @@ impl Driver {
         }
     }
 
+    #[allow(dead_code)]
+    pub fn as_iour(&self) -> Option<&iour::Driver> {
+        if let FuseDriver::IoUring(driver) = &self.fuse {
+            Some(driver)
+        } else {
+            None
+        }
+    }
+
     pub fn driver_type(&self) -> DriverType {
         match &self.fuse {
             FuseDriver::Poll(driver) => driver.driver_type(),
