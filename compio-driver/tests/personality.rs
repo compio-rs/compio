@@ -9,6 +9,7 @@ fn push_and_wait<O: OpCode + 'static>(
     personality: u16,
 ) -> BufResult<usize, O> {
     let extra = driver.default_extra().with_personality(personality);
+    assert!(extra.get_personality() == Some(personality));
     match driver.push_with_extra(op, extra) {
         PushEntry::Ready(res) => res,
         PushEntry::Pending(mut user_data) => loop {

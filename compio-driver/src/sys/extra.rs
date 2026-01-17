@@ -51,7 +51,7 @@ impl Extra {
     /// does not support it, returns [`None`].
     ///
     /// [`set_personality`]: Extra::set_personality
-    pub fn get_personality(&mut self) -> Option<u16> {
+    pub fn get_personality(&self) -> Option<u16> {
         #[cfg(io_uring)]
         if let Some(extra) = self.try_as_iour() {
             extra.get_personality()
