@@ -82,7 +82,7 @@ required-features = ["h3"]
 
 [[example]]
 name = "quic-dispatcher"
-required-features = ["compio-driver/fd-sync"]
+required-features = ["compio-driver/sync"]
 
 [[bench]]
 name = "quic"

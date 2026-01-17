@@ -105,7 +105,7 @@ bumpalo = ["compio-buf/bumpalo"]
 bytes = ["compio-buf/bytes"]
 criterion = ["compio-runtime?/criterion"]
 
-fd-sync = ["compio-driver/fd-sync"]
+sync = ["compio-driver/sync"]
 
 enable_log = ["compio-log/enable_log"]
 
@@ -168,7 +168,7 @@ required-features = ["time", "signal", "macros"]
 
 [[example]]
 name = "dispatcher"
-required-features = ["macros", "dispatcher", "fd-sync"]
+required-features = ["macros", "dispatcher", "sync"]
 
 [[bench]]
 name = "fs"
