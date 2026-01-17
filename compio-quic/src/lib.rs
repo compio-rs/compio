@@ -29,6 +29,18 @@ pub use endpoint::Endpoint;
 pub use incoming::{Incoming, IncomingFuture};
 pub use recv_stream::{ReadError, ReadExactError, RecvStream};
 pub use send_stream::{SendStream, WriteError};
+#[cfg(feature = "sync")]
+pub(crate) use synchrony::sync::{
+    atomic::AtomicBool,
+    mutex_blocking::{Mutex, MutexGuard},
+    shared::Shared,
+};
+#[cfg(not(feature = "sync"))]
+pub(crate) use synchrony::unsync::{
+    atomic::AtomicBool,
+    mutex_blocking::{Mutex, MutexGuard},
+    shared::Shared,
+};
 
 pub(crate) use crate::{
     connection::{ConnectionEvent, ConnectionInner},

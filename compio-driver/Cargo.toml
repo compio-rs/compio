@@ -27,7 +27,7 @@ socket2 = { workspace = true, features = ["all"] }
 pin-project-lite = { workspace = true }
 thin-cell = { version = "0.1.1" }
 smallvec = { workspace = true, optional = true, features = ["union"] }
-synchrony = { version = "0.1.0", features = ["waker_slot"] }
+synchrony = { workspace = true, features = ["waker_slot"] }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]

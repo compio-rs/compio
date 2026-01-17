@@ -13,7 +13,7 @@ use std::{
     io,
     net::{IpAddr, SocketAddr},
     ops::{Deref, DerefMut},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::Ordering,
 };
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetLen, buf_try};
@@ -21,6 +21,8 @@ use compio_net::{CMsgBuilder, CMsgIter, UdpSocket};
 use quinn_proto::{EcnCodepoint, Transmit};
 #[cfg(windows)]
 use windows_sys::Win32::Networking::WinSock;
+
+use crate::AtomicBool;
 
 /// Metadata for a single buffer filled with bytes received from the network
 ///
