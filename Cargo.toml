@@ -70,7 +70,6 @@ widestring = "1.0.2"
 windows-sys = "0.61.0"
 thiserror = "2.0.3"
 smallvec = "1.13.2"
-rustix = "1.0.0"
 
 [profile.bench]
 debug = true
