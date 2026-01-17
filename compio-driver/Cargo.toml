@@ -55,7 +55,7 @@ paste = { workspace = true }
 slab = { workspace = true, optional = true }
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dev-dependencies]
-rustix = { workspace = true, features = ["pipe"] }
+nix = { workspace = true, features = ["fs"] }
 
 # Other platform dependencies
 [target.'cfg(all(not(target_os = "linux"), unix))'.dependencies]

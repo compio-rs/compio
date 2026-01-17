@@ -5,7 +5,7 @@ use compio_driver::{
     AsRawFd, OpCode, Proactor, PushEntry, SharedFd,
     op::{Read, Splice, Write},
 };
-use rustix::pipe::{PipeFlags, pipe_with};
+use nix::{fcntl::OFlag, unistd::pipe2};
 
 fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult<usize, O> {
     match driver.push(op) {
@@ -24,13 +24,13 @@ fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult
 fn splice() {
     let mut driver = Proactor::new().unwrap();
 
-    let mut flags = PipeFlags::CLOEXEC;
+    let mut flags = OFlag::O_CLOEXEC;
     if driver.driver_type().is_polling() {
-        flags |= PipeFlags::NONBLOCK;
+        flags |= OFlag::O_NONBLOCK;
     }
 
-    let (rx, tx) = pipe_with(flags).unwrap();
-    let (rx1, tx1) = pipe_with(flags).unwrap();
+    let (rx, tx) = pipe2(flags).unwrap();
+    let (rx1, tx1) = pipe2(flags).unwrap();
     println!(
         "rx={}, tx={}, rx1={}, tx1={}",
         rx.as_raw_fd(),
