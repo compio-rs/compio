@@ -1,5 +1,7 @@
 //! Traits and implementations for frame extraction and enclosing
 
+use std::io;
+
 use compio_buf::{
     IoBufMut,
     bytes::{Buf, BufMut},
@@ -63,7 +65,7 @@ pub trait Framer {
     /// - `Ok(Some(frame))` if a complete frame is found.
     /// - `Ok(None)` if no complete frame is found.
     /// - `Err(io::Error)` if an error occurs during extraction.
-    fn extract(&mut self, buf: &[u8]) -> Option<Frame>;
+    fn extract(&mut self, buf: &[u8]) -> io::Result<Option<Frame>>;
 }
 
 /// A simple extractor that frames data by its length.
@@ -129,9 +131,9 @@ impl Framer for LengthDelimited {
         }
     }
 
-    fn extract(&mut self, mut buf: &[u8]) -> Option<Frame> {
+    fn extract(&mut self, mut buf: &[u8]) -> io::Result<Option<Frame>> {
         if buf.len() < self.length_field_len {
-            return None;
+            return Ok(None);
         }
 
         let len = if self.length_field_is_big_endian {
@@ -141,10 +143,10 @@ impl Framer for LengthDelimited {
         } as usize;
 
         if buf.len() < len {
-            return None;
+            return Ok(None);
         }
 
-        Some(Frame::new(self.length_field_len, len, 0))
+        Ok(Some(Frame::new(self.length_field_len, len, 0)))
     }
 }
 
@@ -164,14 +166,15 @@ impl<const C: char> Framer for CharDelimited<C> {
         buf.push(C as u8);
     }
 
-    fn extract(&mut self, buf: &[u8]) -> Option<Frame> {
+    fn extract(&mut self, buf: &[u8]) -> io::Result<Option<Frame>> {
         if buf.is_empty() {
-            return None;
+            return Ok(None);
         }
 
-        buf.iter()
+        Ok(buf
+            .iter()
             .position(|&b| b == C as u8)
-            .map(|pos| Frame::new(0, pos, 1))
+            .map(|pos| Frame::new(0, pos, 1)))
     }
 }
 
@@ -189,9 +192,9 @@ impl<'a> AnyDelimited<'a> {
 }
 
 impl Framer for AnyDelimited<'_> {
-    fn extract(&mut self, buf: &[u8]) -> Option<Frame> {
+    fn extract(&mut self, buf: &[u8]) -> io::Result<Option<Frame>> {
         if buf.is_empty() {
-            return None;
+            return Ok(None);
         }
 
         // Search for the first occurrence of any byte in `self.bytes`
@@ -200,9 +203,9 @@ impl Framer for AnyDelimited<'_> {
             .windows(self.bytes.len())
             .position(|window| window == self.bytes)
         {
-            Some(Frame::new(0, pos, self.bytes.len()))
+            Ok(Some(Frame::new(0, pos, self.bytes.len())))
         } else {
-            None
+            Ok(None)
         }
     }
 

@@ -56,7 +56,7 @@ where
                     let slice = buf.buffer();
 
                     // First try decode from the buffer
-                    if let Some(frame) = this.framer.extract(slice) {
+                    if let Some(frame) = this.framer.extract(slice)? {
                         let decoded = this.codec.decode(frame.payload(slice))?;
                         buf.advance(frame.len());
 
