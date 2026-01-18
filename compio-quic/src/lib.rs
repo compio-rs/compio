@@ -29,6 +29,10 @@ pub use endpoint::Endpoint;
 pub use incoming::{Incoming, IncomingFuture};
 pub use recv_stream::{ReadError, ReadExactError, RecvStream};
 pub use send_stream::{SendStream, WriteError};
+#[cfg(feature = "sync")]
+pub(crate) use synchrony::sync;
+#[cfg(not(feature = "sync"))]
+pub(crate) use synchrony::unsync as sync;
 
 pub(crate) use crate::{
     connection::{ConnectionEvent, ConnectionInner},

@@ -32,4 +32,4 @@ futures-util = { workspace = true }
 
 [[test]]
 name = "listener"
-required-features = ["compio-driver/fd-sync"]
+required-features = ["compio-driver/sync"]
