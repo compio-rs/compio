@@ -129,21 +129,13 @@ impl EndpointState {
 
 type ChannelPair<T> = (Sender<T>, Receiver<T>);
 
+#[derive(Debug)]
 pub(crate) struct EndpointInner {
     state: Mutex<EndpointState>,
     socket: Socket,
     ipv6: bool,
     events: ChannelPair<(ConnectionHandle, EndpointEvent)>,
     done: AtomicWaker,
-}
-
-// FIXME: derive(Debug)
-impl Debug for EndpointInner {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EndpointInner")
-            .field("state", &*self.state.lock())
-            .finish()
-    }
 }
 
 impl EndpointInner {

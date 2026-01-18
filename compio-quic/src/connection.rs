@@ -110,21 +110,13 @@ fn wake_all_streams(wakers: &mut HashMap<StreamId, Waker>) {
     wakers.drain().for_each(|(_, waker)| waker.wake())
 }
 
+#[derive(Debug)]
 pub(crate) struct ConnectionInner {
     state: Mutex<ConnectionState>,
     handle: ConnectionHandle,
     socket: Socket,
     events_tx: Sender<(ConnectionHandle, EndpointEvent)>,
     events_rx: Receiver<ConnectionEvent>,
-}
-
-// FIXME: derive(Debug)
-impl Debug for ConnectionInner {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ConnectionInner")
-            .field("state", &*self.state.lock())
-            .finish()
-    }
 }
 
 fn implicit_close(this: &Shared<ConnectionInner>) {
@@ -619,11 +611,7 @@ impl Connection {
             let _ = worker.await;
         }
 
-        // FIXME: unwrap_err
-        match self.0.try_state() {
-            Err(e) => e,
-            Ok(_) => unreachable!(),
-        }
+        self.0.try_state().unwrap_err()
     }
 
     /// If the connection is closed, the reason why.
