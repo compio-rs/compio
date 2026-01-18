@@ -1,6 +1,5 @@
 use std::{
     io,
-    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -10,7 +9,7 @@ use futures_util::{future::poll_fn, ready};
 use quinn_proto::{ClosedStream, FinishError, StreamId, VarInt, Written};
 use thiserror::Error;
 
-use crate::{ConnectionError, ConnectionInner, StoppedError};
+use crate::{ConnectionError, ConnectionInner, StoppedError, sync::shared::Shared};
 
 /// A stream that can only be used to send data.
 ///
@@ -31,13 +30,13 @@ use crate::{ConnectionError, ConnectionInner, StoppedError};
 /// [`finish()`]: SendStream::finish
 #[derive(Debug)]
 pub struct SendStream {
-    conn: Arc<ConnectionInner>,
+    conn: Shared<ConnectionInner>,
     stream: StreamId,
     is_0rtt: bool,
 }
 
 impl SendStream {
-    pub(crate) fn new(conn: Arc<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
+    pub(crate) fn new(conn: Shared<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
         Self {
             conn,
             stream,
@@ -396,7 +395,7 @@ pub(crate) mod h3_impl {
     }
 
     impl<B> SendStream<B> {
-        pub(crate) fn new(conn: Arc<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
+        pub(crate) fn new(conn: Shared<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
             Self {
                 inner: super::SendStream::new(conn, stream, is_0rtt),
                 buf: None,

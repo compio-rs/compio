@@ -14,23 +14,21 @@ use std::{
 use crate::{AsFd, AsRawFd, BorrowedFd, RawFd};
 
 cfg_if::cfg_if! {
-    if #[cfg(feature = "fd-sync")] {
-        mod sync;
-        use sync as types;
+    if #[cfg(feature = "sync")] {
+        use synchrony::sync;
     } else {
-        mod unsync;
-        use unsync as types;
+        use synchrony::unsync as sync;
     }
 }
 
-use types::{RefPtr, WaitFlag, WakerRegistry};
+use sync::{atomic::AtomicBool, shared::Shared, waker_slot::WakerSlot};
 
 #[derive(Debug)]
 struct Inner<T> {
     fd: T,
     // whether there is a future waiting
-    waits: WaitFlag,
-    waker: WakerRegistry,
+    waits: AtomicBool,
+    waker: WakerSlot,
 }
 
 impl<T> RefUnwindSafe for Inner<T> {}
@@ -38,7 +36,7 @@ impl<T> RefUnwindSafe for Inner<T> {}
 /// A shared fd. It is passed to the operations to make sure the fd won't be
 /// closed before the operations complete.
 #[derive(Debug)]
-pub struct SharedFd<T>(RefPtr<Inner<T>>);
+pub struct SharedFd<T>(Shared<Inner<T>>);
 
 impl<T: AsFd> SharedFd<T> {
     /// Create the shared fd from an owned fd.
@@ -53,10 +51,10 @@ impl<T> SharedFd<T> {
     /// # Safety
     /// * T should own the fd.
     pub unsafe fn new_unchecked(fd: T) -> Self {
-        Self(RefPtr::new(Inner {
+        Self(Shared::new(Inner {
             fd,
-            waits: WaitFlag::new(false),
-            waker: WakerRegistry::new(),
+            waits: AtomicBool::new(false),
+            waker: WakerSlot::new(),
         }))
     }
 
@@ -75,7 +73,7 @@ impl<T> SharedFd<T> {
         // SAFETY: `this` is not dropped here.
         let ptr = unsafe { std::ptr::read(&this.0) };
         // The ptr is duplicated without increasing the strong count, should forget.
-        match RefPtr::try_unwrap(ptr) {
+        match Shared::try_unwrap(ptr) {
             Ok(inner) => Some(inner.fd),
             Err(ptr) => {
                 std::mem::forget(ptr);
@@ -113,7 +111,7 @@ impl<T> SharedFd<T> {
 impl<T> Drop for SharedFd<T> {
     fn drop(&mut self) {
         // It's OK to wake multiple times.
-        if RefPtr::strong_count(&self.0) == 2 && self.0.waits.load(Ordering::Acquire) {
+        if Shared::strong_count(&self.0) == 2 && self.0.waits.load(Ordering::Acquire) {
             self.0.waker.wake()
         }
     }

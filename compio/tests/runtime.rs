@@ -12,7 +12,7 @@ use compio_driver::ProactorBuilder;
 use tempfile::NamedTempFile;
 
 #[compio_macros::test]
-#[cfg(feature = "fd-sync")]
+#[cfg(feature = "sync")]
 async fn multi_threading() {
     const DATA: &str = "Hello world!";
 

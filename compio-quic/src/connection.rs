@@ -1,8 +1,8 @@
 use std::{
     collections::VecDeque,
+    fmt::Debug,
     net::{IpAddr, SocketAddr},
     pin::{Pin, pin},
-    sync::{Arc, Mutex, MutexGuard},
     task::{Context, Poll, Waker},
     time::{Duration, Instant},
 };
@@ -25,7 +25,13 @@ use quinn_proto::{
 use rustc_hash::FxHashMap as HashMap;
 use thiserror::Error;
 
-use crate::{RecvStream, SendStream, Socket};
+use crate::{
+    RecvStream, SendStream, Socket,
+    sync::{
+        mutex_blocking::{Mutex, MutexGuard},
+        shared::Shared,
+    },
+};
 
 #[derive(Debug)]
 pub(crate) enum ConnectionEvent {
@@ -119,8 +125,8 @@ pub(crate) struct ConnectionInner {
     events_rx: Receiver<ConnectionEvent>,
 }
 
-fn implicit_close(this: &Arc<ConnectionInner>) {
-    if Arc::strong_count(this) == 2 {
+fn implicit_close(this: &Shared<ConnectionInner>) {
+    if Shared::strong_count(this) == 2 {
         this.state().close(0u32.into(), Bytes::new())
     }
 }
@@ -159,7 +165,7 @@ impl ConnectionInner {
 
     #[inline]
     pub(crate) fn state(&self) -> MutexGuard<'_, ConnectionState> {
-        self.state.lock().unwrap()
+        self.state.lock()
     }
 
     #[inline]
@@ -364,7 +370,7 @@ macro_rules! conn_fn {
 /// In-progress connection attempt future
 #[derive(Debug)]
 #[must_use = "futures/streams/sinks do nothing unless you `.await` or poll them"]
-pub struct Connecting(Arc<ConnectionInner>);
+pub struct Connecting(Shared<ConnectionInner>);
 
 impl Connecting {
     conn_fn!();
@@ -376,7 +382,7 @@ impl Connecting {
         events_tx: Sender<(ConnectionHandle, EndpointEvent)>,
         events_rx: Receiver<ConnectionEvent>,
     ) -> Self {
-        let inner = Arc::new(ConnectionInner::new(
+        let inner = Shared::new(ConnectionInner::new(
             handle, conn, socket, events_tx, events_rx,
         ));
         let worker = compio_runtime::spawn({
@@ -493,7 +499,7 @@ impl Drop for Connecting {
 
 /// A QUIC connection.
 #[derive(Debug, Clone)]
-pub struct Connection(Arc<ConnectionInner>);
+pub struct Connection(Shared<ConnectionInner>);
 
 impl Connection {
     conn_fn!();
@@ -838,7 +844,7 @@ impl Connection {
 
 impl PartialEq for Connection {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
+        Shared::ptr_eq(&self.0, &other.0)
     }
 }
 
@@ -981,6 +987,8 @@ pub enum OpenStreamError {
 
 #[cfg(feature = "h3")]
 pub(crate) mod h3_impl {
+    use std::sync::Arc;
+
     use compio_buf::bytes::Buf;
     use futures_util::ready;
     use h3::{
@@ -1075,7 +1083,7 @@ pub(crate) mod h3_impl {
     }
 
     impl<B> BidiStream<B> {
-        pub(crate) fn new(conn: Arc<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
+        pub(crate) fn new(conn: Shared<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
             Self {
                 send: SendStream::new(conn.clone(), stream, is_0rtt),
                 recv: RecvStream::new(conn, stream, is_0rtt),
