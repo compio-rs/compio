@@ -272,10 +272,16 @@ impl ErasedKey {
     }
 
     /// Set waker of the current future.
-    pub(crate) fn set_waker(&self, waker: Waker) {
-        if let PushEntry::Pending(w) = &mut self.borrow().result {
-            *w = Some(waker)
+    pub(crate) fn set_waker(&self, waker: &Waker) {
+        let PushEntry::Pending(w) = &mut self.borrow().result else {
+            return;
+        };
+
+        if w.as_ref().is_some_and(|w| w.will_wake(waker)) {
+            return;
         }
+
+        *w = Some(waker.clone());
     }
 
     /// Take the inner result if it is completed.

@@ -25,8 +25,9 @@ pub mod time;
 pub use async_task::Task;
 pub use attacher::*;
 use compio_buf::BufResult;
+#[allow(hidden_glob_reexports, unused)]
+use runtime::RuntimeInner; // used to shadow glob export so that RuntimeInner is not exported
 pub use runtime::*;
-
 /// Macro that asserts a type *DOES NOT* implement some trait. Shamelessly
 /// copied from <https://users.rust-lang.org/t/a-macro-to-assert-that-a-type-does-not-implement-trait-bounds/31179>.
 ///

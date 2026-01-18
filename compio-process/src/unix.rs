@@ -37,7 +37,7 @@ impl AsyncReadManaged for ChildStdout {
         let fd = self.to_shared_fd();
         let buffer_pool = buffer_pool.try_inner()?;
         let op = ReadManaged::new(fd, buffer_pool, len)?;
-        compio_runtime::submit_with_extra(op)
+        compio_runtime::submit(op).with_extra()
             .await
             .take_buffer(buffer_pool)
     }
@@ -64,7 +64,7 @@ impl AsyncReadManaged for ChildStderr {
         let fd = self.to_shared_fd();
         let buffer_pool = buffer_pool.try_inner()?;
         let op = ReadManaged::new(fd, buffer_pool, len)?;
-        compio_runtime::submit_with_extra(op)
+        compio_runtime::submit(op).with_extra()
             .await
             .take_buffer(buffer_pool)
     }
