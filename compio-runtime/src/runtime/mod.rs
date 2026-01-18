@@ -2,9 +2,11 @@ use std::{
     any::Any,
     cell::{Cell, RefCell},
     collections::HashSet,
-    future::{Future, Ready, ready},
+    future::Future,
     io,
+    ops::Deref,
     panic::AssertUnwindSafe,
+    rc::Rc,
     sync::Arc,
     task::{Context, Poll, Waker},
     time::Duration,
@@ -17,9 +19,9 @@ use compio_driver::{
     op::Asyncify,
 };
 use compio_log::{debug, instrument};
-use futures_util::{FutureExt, future::Either};
+use futures_util::FutureExt;
 
-pub(crate) mod op;
+pub mod future;
 #[cfg(feature = "time")]
 pub(crate) mod time;
 
@@ -39,7 +41,7 @@ use crate::runtime::time::{TimerFuture, TimerKey, TimerRuntime};
 use crate::{
     BufResult,
     affinity::bind_to_cpu_set,
-    runtime::{op::OpFuture, scheduler::Scheduler},
+    runtime::{future::Submit, scheduler::Scheduler},
 };
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
@@ -48,44 +50,12 @@ scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 /// `Err` when the spawned future panicked.
 pub type JoinHandle<T> = Task<Result<T, Box<dyn Any + Send>>>;
 
-/// Return type for [`Runtime::submit`]
-///
-/// This implements `Future<Output = BufResult<usize, T>>`.
-pub struct Submit<T: OpCode> {
-    inner: Either<Ready<BufResult<usize, T>>, OpFuture<T, ()>>,
-}
-
-impl<T: OpCode> Future for Submit<T> {
-    type Output = BufResult<usize, T>;
-
-    fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.inner.poll_unpin(cx)
-    }
-}
-
-/// Return type for [`Runtime::submit_with_extra`]
-///
-/// This implements `Future<Output = (BufResult<usize, T>, Extra)>`.
-pub struct SubmitWithExtra<T: OpCode> {
-    #[allow(clippy::type_complexity)]
-    inner: Either<Ready<(BufResult<usize, T>, Extra)>, OpFuture<T, Extra>>,
-}
-
-impl<T: OpCode> Future for SubmitWithExtra<T> {
-    type Output = (BufResult<usize, T>, Extra);
-
-    fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.inner.poll_unpin(cx)
-    }
-}
-
 thread_local! {
     static RUNTIME_ID: Cell<u64> = const { Cell::new(0) };
 }
 
-/// The async runtime of compio. It is a thread local runtime, and cannot be
-/// sent to other threads.
-pub struct Runtime {
+/// Inner structure of [`Runtime`].
+pub struct RuntimeInner {
     driver: RefCell<Proactor>,
     scheduler: Scheduler,
     #[cfg(feature = "time")]
@@ -100,6 +70,20 @@ pub struct Runtime {
     id: u64,
 }
 
+/// The async runtime of compio.
+///
+/// It is a thread-local runtime, meaning it cannot be sent to other threads.
+#[derive(Clone)]
+pub struct Runtime(Rc<RuntimeInner>);
+
+impl Deref for Runtime {
+    type Target = RuntimeInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl Runtime {
     /// Create [`Runtime`] with default config.
     pub fn new() -> io::Result<Self> {
@@ -109,26 +93,6 @@ impl Runtime {
     /// Create a builder for [`Runtime`].
     pub fn builder() -> RuntimeBuilder {
         RuntimeBuilder::new()
-    }
-
-    fn with_builder(builder: &RuntimeBuilder) -> io::Result<Self> {
-        let RuntimeBuilder {
-            proactor_builder,
-            thread_affinity,
-            event_interval,
-        } = builder;
-        let id = RUNTIME_ID.get();
-        RUNTIME_ID.set(id + 1);
-        if !thread_affinity.is_empty() {
-            bind_to_cpu_set(thread_affinity);
-        }
-        Ok(Self {
-            driver: RefCell::new(proactor_builder.build()?),
-            scheduler: Scheduler::new(*event_interval),
-            #[cfg(feature = "time")]
-            timer_runtime: RefCell::new(TimerRuntime::new()),
-            id,
-        })
     }
 
     /// The current driver type.
@@ -150,7 +114,7 @@ impl Runtime {
     ///
     /// ## Panics
     ///
-    /// This method will panic if there are no running [`Runtime`].
+    /// This method will panic if there is no running [`Runtime`].
     pub fn with_current<T, F: FnOnce(&Self) -> T>(f: F) -> T {
         #[cold]
         fn not_in_compio_runtime() -> ! {
@@ -265,8 +229,16 @@ impl Runtime {
         self.driver.borrow_mut().attach(fd)
     }
 
-    fn submit_raw<T: OpCode + 'static>(&self, op: T) -> PushEntry<Key<T>, BufResult<usize, T>> {
-        self.driver.borrow_mut().push(op)
+    fn submit_raw<T: OpCode + 'static>(
+        &self,
+        op: T,
+        extra: Option<Extra>,
+    ) -> PushEntry<Key<T>, BufResult<usize, T>> {
+        let mut this = self.driver.borrow_mut();
+        match extra {
+            Some(e) => this.push_with_extra(op, e),
+            None => this.push(op),
+        }
     }
 
     fn default_extra(&self) -> Extra {
@@ -276,38 +248,8 @@ impl Runtime {
     /// Submit an operation to the runtime.
     ///
     /// You only need this when authoring your own [`OpCode`].
-    ///
-    /// It is safe to send the returned future to another runtime and poll it,
-    /// but the exact behavior is not guaranteed, e.g. it may return pending
-    /// forever or else.
     fn submit<T: OpCode + 'static>(&self, op: T) -> Submit<T> {
-        let inner = match self.submit_raw(op) {
-            PushEntry::Ready(res) => Either::Left(ready(res)),
-            PushEntry::Pending(user_data) => Either::Right(OpFuture::new(user_data)),
-        };
-        Submit { inner }
-    }
-
-    /// Submit an operation to the runtime.
-    ///
-    /// The difference between [`Runtime::submit`] is this method will return
-    /// the extra data along with the result.
-    ///
-    /// You only need this when authoring your own [`OpCode`].
-    ///
-    /// It is safe to send the returned future to another runtime and poll it,
-    /// but the exact behavior is not guaranteed, e.g. it may return pending
-    /// forever or else.
-    fn submit_with_extra<T: OpCode + 'static>(&self, op: T) -> SubmitWithExtra<T> {
-        let inner = match self.submit_raw(op) {
-            PushEntry::Ready(res) => {
-                // submit_raw won't be ready immediately, if ready, it must be error without
-                // flags
-                Either::Left(ready((res, self.default_extra())))
-            }
-            PushEntry::Pending(user_data) => Either::Right(OpFuture::new_extra(user_data)),
-        };
-        SubmitWithExtra { inner }
+        Submit::new(self.clone(), op)
     }
 
     pub(crate) fn cancel<T: OpCode>(&self, op: Key<T>) {
@@ -321,13 +263,13 @@ impl Runtime {
 
     pub(crate) fn poll_task<T: OpCode>(
         &self,
-        cx: &mut Context,
+        waker: &Waker,
         key: Key<T>,
     ) -> PushEntry<Key<T>, BufResult<usize, T>> {
         instrument!(compio_log::Level::DEBUG, "poll_task", ?key);
         let mut driver = self.driver.borrow_mut();
         driver.pop(key).map_pending(|mut k| {
-            driver.update_waker(&mut k, cx.waker().clone());
+            driver.update_waker(&mut k, waker);
             k
         })
     }
@@ -340,7 +282,7 @@ impl Runtime {
         instrument!(compio_log::Level::DEBUG, "poll_task_with_extra", ?key);
         let mut driver = self.driver.borrow_mut();
         driver.pop_with_extra(key).map_pending(|mut k| {
-            driver.update_waker(&mut k, cx.waker().clone());
+            driver.update_waker(&mut k, cx.waker());
             k
         })
     }
@@ -425,6 +367,11 @@ impl Runtime {
 
 impl Drop for Runtime {
     fn drop(&mut self) {
+        // this is not the last runtime reference, no need to clear
+        if Rc::strong_count(&self.0) > 1 {
+            return;
+        }
+
         self.enter(|| {
             self.scheduler.clear();
         })
@@ -498,7 +445,24 @@ impl RuntimeBuilder {
 
     /// Build [`Runtime`].
     pub fn build(&self) -> io::Result<Runtime> {
-        Runtime::with_builder(self)
+        let RuntimeBuilder {
+            proactor_builder,
+            thread_affinity,
+            event_interval,
+        } = self;
+        let id = RUNTIME_ID.get();
+        RUNTIME_ID.set(id + 1);
+        if !thread_affinity.is_empty() {
+            bind_to_cpu_set(thread_affinity);
+        }
+        let inner = RuntimeInner {
+            driver: RefCell::new(proactor_builder.build()?),
+            scheduler: Scheduler::new(*event_interval),
+            #[cfg(feature = "time")]
+            timer_runtime: RefCell::new(TimerRuntime::new()),
+            id,
+        };
+        Ok(Runtime(Rc::new(inner)))
     }
 }
 
@@ -547,8 +511,9 @@ pub fn spawn_blocking<T: Send + 'static>(
 ///
 /// ## Panics
 ///
-/// This method doesn't create runtime. It tries to obtain the current runtime
-/// by [`Runtime::with_current`].
+/// This method doesn't create runtime and will panic if it's not within a
+/// runtime. It tries to obtain the current runtime by
+/// [`Runtime::with_current`].
 pub fn submit<T: OpCode + 'static>(op: T) -> Submit<T> {
     Runtime::with_current(|r| r.submit(op))
 }
@@ -560,8 +525,9 @@ pub fn submit<T: OpCode + 'static>(op: T) -> Submit<T> {
 ///
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::with_current`].
-pub fn submit_with_extra<T: OpCode + 'static>(op: T) -> SubmitWithExtra<T> {
-    Runtime::with_current(|r| r.submit_with_extra(op))
+#[deprecated(since = "0.8.0", note = "use `submit(op).with_extra()` instead")]
+pub fn submit_with_extra<T: OpCode + 'static>(op: T) -> Submit<T, Extra> {
+    Runtime::with_current(|r| r.submit(op).with_extra())
 }
 
 #[cfg(feature = "time")]

@@ -223,7 +223,8 @@ impl AsyncReadManagedAt for File {
         let fd = self.inner.to_shared_fd();
         let buffer_pool = buffer_pool.try_inner()?;
         let op = ReadManagedAt::new(fd, pos, buffer_pool, len)?;
-        compio_runtime::submit_with_extra(op)
+        compio_runtime::submit(op)
+            .with_extra()
             .await
             .take_buffer(buffer_pool)
     }
