@@ -395,7 +395,7 @@ pub(crate) mod h3_impl {
     }
 
     impl<B> SendStream<B> {
-        pub(crate) fn new(conn: Arc<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
+        pub(crate) fn new(conn: Shared<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
             Self {
                 inner: super::SendStream::new(conn, stream, is_0rtt),
                 buf: None,

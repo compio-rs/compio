@@ -1006,7 +1006,7 @@ pub(crate) mod h3_impl {
                 },
                 TimedOut => Self::Timeout,
 
-                e => Self::Undefined(Arc::new(e)),
+                e => Self::Undefined(Shared::new(e)),
             }
         }
     }
@@ -1075,7 +1075,7 @@ pub(crate) mod h3_impl {
     }
 
     impl<B> BidiStream<B> {
-        pub(crate) fn new(conn: Arc<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
+        pub(crate) fn new(conn: Shared<ConnectionInner>, stream: StreamId, is_0rtt: bool) -> Self {
             Self {
                 send: SendStream::new(conn.clone(), stream, is_0rtt),
                 recv: RecvStream::new(conn, stream, is_0rtt),
