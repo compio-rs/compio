@@ -987,6 +987,8 @@ pub enum OpenStreamError {
 
 #[cfg(feature = "h3")]
 pub(crate) mod h3_impl {
+    use std::sync::Arc;
+
     use compio_buf::bytes::Buf;
     use futures_util::ready;
     use h3::{
@@ -1012,7 +1014,7 @@ pub(crate) mod h3_impl {
                 },
                 TimedOut => Self::Timeout,
 
-                e => Self::Undefined(Shared::new(e)),
+                e => Self::Undefined(Arc::new(e)),
             }
         }
     }
