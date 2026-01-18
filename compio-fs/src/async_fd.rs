@@ -85,7 +85,8 @@ impl<T: AsFd + 'static> AsyncReadManaged for &AsyncFd<T> {
         let fd = self.to_shared_fd();
         let buffer_pool = buffer_pool.try_inner()?;
         let op = ReadManaged::new(fd, buffer_pool, len)?;
-        compio_runtime::submit(op).with_extra()
+        compio_runtime::submit(op)
+            .with_extra()
             .await
             .take_buffer(buffer_pool)
     }

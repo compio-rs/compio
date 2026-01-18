@@ -21,7 +21,7 @@ use compio_driver::{
 use compio_log::{debug, instrument};
 use futures_util::FutureExt;
 
-pub(crate) mod future;
+pub mod future;
 #[cfg(feature = "time")]
 pub(crate) mod time;
 

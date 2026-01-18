@@ -1,3 +1,5 @@
+//! Future for submitting operations to the runtime.
+
 use std::{
     future::Future,
     marker::PhantomData,
@@ -22,7 +24,13 @@ impl ContextExt for Context<'_> {
     }
 }
 
-/// Return type for `Runtime::submit` and `Runtime::submit_with_extra`
+/// Return type for `Runtime::submit`
+///
+/// By default, this implements `Future<Output = BufResult<usize, T>>`. If
+/// [`Extra`] is needed, call [`.with_extra()`] to get a `Submit<T, Extra>`
+/// which implements `Future<Output = (BufResult<usize, T>, Extra)>`.
+///
+/// [`.with_extra()`]: Submit::with_extra
 pub struct Submit<T: OpCode, E = ()> {
     runtime: Runtime,
     state: Option<State<T, E>>,
@@ -41,6 +49,10 @@ impl<T: OpCode> Submit<T, ()> {
         }
     }
 
+    /// Convert this future to one that returns [`Extra`] along with the result.
+    ///
+    /// This is useful if you need to access extra information provided by the
+    /// runtime upon completion of the operation.
     pub fn with_extra(mut self) -> Submit<T, Extra> {
         let runtime = self.runtime.clone();
         let Some(state) = self.state.take() else {
