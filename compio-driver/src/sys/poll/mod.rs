@@ -25,6 +25,8 @@ use crate::{
     syscall,
 };
 
+mod extra;
+pub use extra::Extra;
 pub(crate) mod op;
 
 struct Track {
@@ -35,74 +37,6 @@ struct Track {
 impl From<WaitArg> for Track {
     fn from(arg: WaitArg) -> Self {
         Self { arg, ready: false }
-    }
-}
-
-/// Extra data for RawOp.
-pub struct Extra {
-    track: Multi<Track>,
-}
-
-impl Extra {
-    pub fn new() -> Self {
-        Self {
-            track: Multi::new(),
-        }
-    }
-
-    fn reset(&mut self) {
-        self.track.iter_mut().for_each(|t| t.ready = false);
-    }
-
-    fn set_args(&mut self, args: Multi<WaitArg>) {
-        self.track = args.into_iter().map(Into::into).collect();
-    }
-
-    fn handle_event(&mut self, fd: RawFd) -> bool {
-        // First pass: mark all tracks matching this fd as ready.
-        let mut found = false;
-        for track in self.track.iter_mut() {
-            if track.arg.fd == fd {
-                track.ready = true;
-                found = true;
-            }
-        }
-
-        // If no track corresponds to this fd, the overall operation is not ready.
-        if !found {
-            return false;
-        }
-
-        // Second pass: check if all tracks are ready.
-        self.track.iter().all(|track| track.ready)
-    }
-}
-
-#[allow(dead_code)]
-#[cfg(not(fusion))]
-impl super::Extra {
-    pub(super) fn try_as_poll(&self) -> Option<&Extra> {
-        Some(&self.0)
-    }
-
-    pub(super) fn try_as_poll_mut(&mut self) -> Option<&mut Extra> {
-        Some(&mut self.0)
-    }
-}
-
-#[allow(dead_code)]
-impl super::Extra {
-    pub(super) fn as_poll(&self) -> &Extra {
-        self.try_as_poll().expect("Current driver is not `polling`")
-    }
-
-    pub(super) fn as_poll_mut(&mut self) -> &mut Extra {
-        self.try_as_poll_mut()
-            .expect("Current driver is not `polling`")
-    }
-
-    fn handle_event(&mut self, fd: RawFd) -> bool {
-        self.as_poll_mut().handle_event(fd)
     }
 }
 
@@ -559,7 +493,7 @@ impl Driver {
 
         if let Some((key, _)) = queue.pop_interest(&event)
             && let mut op = key.borrow()
-            && op.extra_mut().handle_event(fd)
+            && op.extra_mut().as_poll_mut().handle_event(fd)
         {
             // Add brace here to force `Ref` drop within the scrutinee
             match { op.pinned_op().operate() } {
