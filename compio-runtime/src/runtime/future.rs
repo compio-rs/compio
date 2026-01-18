@@ -41,6 +41,15 @@ enum State<T: OpCode, E> {
     Submitted { key: Key<T>, _p: PhantomData<E> },
 }
 
+impl<T: OpCode, E> State<T, E> {
+    fn submitted(key: Key<T>) -> Self {
+        State::Submitted {
+            key,
+            _p: PhantomData,
+        }
+    }
+}
+
 impl<T: OpCode> Submit<T, ()> {
     pub(crate) fn new(runtime: Runtime, op: T) -> Self {
         Submit {
@@ -84,10 +93,7 @@ impl<T: OpCode + 'static> Future for Submit<T, ()> {
             match this.state.take().expect("Cannot poll after ready") {
                 State::Submitted { key, .. } => match this.runtime.poll_task(cx.waker(), key) {
                     PushEntry::Pending(key) => {
-                        this.state = Some(State::Submitted {
-                            key,
-                            _p: PhantomData,
-                        });
+                        this.state = Some(State::submitted(key));
                         return Poll::Pending;
                     }
                     PushEntry::Ready(res) => return Poll::Ready(res),
@@ -95,12 +101,7 @@ impl<T: OpCode + 'static> Future for Submit<T, ()> {
                 State::Idle { op } => {
                     let extra = cx.as_extra(|| this.runtime.default_extra());
                     match this.runtime.submit_raw(op, extra) {
-                        PushEntry::Pending(key) => {
-                            this.state = Some(State::Submitted {
-                                key,
-                                _p: PhantomData,
-                            });
-                        }
+                        PushEntry::Pending(key) => this.state = Some(State::submitted(key)),
                         PushEntry::Ready(res) => {
                             return Poll::Ready(res);
                         }
@@ -120,10 +121,7 @@ impl<T: OpCode + 'static> Future for Submit<T, Extra> {
             match this.state.take().expect("Cannot poll after ready") {
                 State::Submitted { key, .. } => match this.runtime.poll_task_with_extra(cx, key) {
                     PushEntry::Pending(key) => {
-                        this.state = Some(State::Submitted {
-                            key,
-                            _p: PhantomData,
-                        });
+                        this.state = Some(State::submitted(key));
                         return Poll::Pending;
                     }
                     PushEntry::Ready(res) => return Poll::Ready(res),
@@ -131,12 +129,7 @@ impl<T: OpCode + 'static> Future for Submit<T, Extra> {
                 State::Idle { op } => {
                     let extra = cx.as_extra(|| this.runtime.default_extra());
                     match this.runtime.submit_raw(op, extra) {
-                        PushEntry::Pending(key) => {
-                            this.state = Some(State::Submitted {
-                                key,
-                                _p: PhantomData,
-                            });
-                        }
+                        PushEntry::Pending(key) => this.state = Some(State::submitted(key)),
                         PushEntry::Ready(res) => {
                             return Poll::Ready((res, this.runtime.default_extra()));
                         }
