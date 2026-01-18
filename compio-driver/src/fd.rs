@@ -15,13 +15,13 @@ use crate::{AsFd, AsRawFd, BorrowedFd, RawFd};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "sync")] {
-        use synchrony::sync as types;
+        use synchrony::sync;
     } else {
-        use synchrony::unsync as types;
+        use synchrony::unsync as sync;
     }
 }
 
-use types::{atomic::AtomicBool, shared::Shared, waker_slot::WakerSlot};
+use sync::{atomic::AtomicBool, shared::Shared, waker_slot::WakerSlot};
 
 #[derive(Debug)]
 struct Inner<T> {

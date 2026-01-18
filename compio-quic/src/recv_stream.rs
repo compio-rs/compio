@@ -13,7 +13,7 @@ use futures_util::{future::poll_fn, ready};
 use quinn_proto::{Chunk, Chunks, ClosedStream, ReadableError, StreamId, VarInt};
 use thiserror::Error;
 
-use crate::{ConnectionError, ConnectionInner, Shared, StoppedError};
+use crate::{ConnectionError, ConnectionInner, StoppedError, sync::shared::Shared};
 
 /// A stream that can only be used to receive data
 ///

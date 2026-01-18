@@ -9,7 +9,7 @@ use futures_util::{future::poll_fn, ready};
 use quinn_proto::{ClosedStream, FinishError, StreamId, VarInt, Written};
 use thiserror::Error;
 
-use crate::{ConnectionError, ConnectionInner, Shared, StoppedError};
+use crate::{ConnectionError, ConnectionInner, StoppedError, sync::shared::Shared};
 
 /// A stream that can only be used to send data.
 ///

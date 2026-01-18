@@ -30,7 +30,10 @@ use quinn_proto::{
 };
 use rustc_hash::FxHashMap as HashMap;
 
-use crate::{Connecting, ConnectionEvent, Incoming, Mutex, RecvMeta, Shared, Socket};
+use crate::{
+    Connecting, ConnectionEvent, Incoming, RecvMeta, Socket,
+    sync::{mutex_blocking::Mutex, shared::Shared},
+};
 
 #[derive(Debug)]
 struct EndpointState {

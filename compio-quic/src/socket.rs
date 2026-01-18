@@ -22,7 +22,7 @@ use quinn_proto::{EcnCodepoint, Transmit};
 #[cfg(windows)]
 use windows_sys::Win32::Networking::WinSock;
 
-use crate::AtomicBool;
+use crate::sync::atomic::AtomicBool;
 
 /// Metadata for a single buffer filled with bytes received from the network
 ///

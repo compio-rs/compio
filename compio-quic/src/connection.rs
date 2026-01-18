@@ -25,7 +25,13 @@ use quinn_proto::{
 use rustc_hash::FxHashMap as HashMap;
 use thiserror::Error;
 
-use crate::{Mutex, MutexGuard, RecvStream, SendStream, Shared, Socket};
+use crate::{
+    RecvStream, SendStream, Socket,
+    sync::{
+        mutex_blocking::{Mutex, MutexGuard},
+        shared::Shared,
+    },
+};
 
 #[derive(Debug)]
 pub(crate) enum ConnectionEvent {
