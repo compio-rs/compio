@@ -12,6 +12,10 @@ impl Extra {
         }
     }
 
+    pub(crate) fn next_fd(&self) -> Option<RawFd> {
+        self.track.iter().find(|t| !t.ready).map(|t| t.arg.fd)
+    }
+
     pub(super) fn reset(&mut self) {
         self.track.iter_mut().for_each(|t| t.ready = false);
     }

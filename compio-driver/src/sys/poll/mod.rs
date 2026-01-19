@@ -284,10 +284,6 @@ impl Driver {
         res
     }
 
-    fn try_get_queue(&mut self, fd: RawFd) -> Option<&mut FdQueue> {
-        self.registry.get_mut(&fd)
-    }
-
     fn get_queue(&mut self, fd: RawFd) -> &mut FdQueue {
         self.registry
             .get_mut(&fd)
@@ -299,17 +295,21 @@ impl Driver {
     ///  # Safety
     /// The input fd should be valid.
     unsafe fn submit(&mut self, key: ErasedKey, arg: WaitArg) -> io::Result<()> {
-        let need_add = !self.registry.contains_key(&arg.fd);
-        let queue = self.registry.entry(arg.fd).or_default();
-        queue.push_back_interest(key, arg.interest);
+        let Self {
+            registry, notify, ..
+        } = self;
+        let need_add = !registry.contains_key(&arg.fd);
+        let queue = registry.entry(arg.fd).or_default();
         let event = queue.event();
         if need_add {
             // SAFETY: the events are deleted correctly.
-            unsafe { self.poller().add(arg.fd, event)? }
+            unsafe { notify.poll.add(arg.fd, event)? }
         } else {
             let fd = unsafe { BorrowedFd::borrow_raw(arg.fd) };
-            self.poller().modify(fd, event)?;
+            notify.poll.modify(fd, event)?;
         }
+        // Only push the key if the submission is successful.
+        queue.push_back_interest(key, arg.interest);
         Ok(())
     }
 
@@ -343,7 +343,7 @@ impl Driver {
     }
 
     fn cancel_one(&mut self, key: ErasedKey, fd: RawFd) -> Option<Entry> {
-        let queue = self.try_get_queue(fd)?;
+        let queue = self.get_queue(fd);
 
         queue.remove(&key);
 
@@ -383,7 +383,6 @@ impl Driver {
 
     pub fn push(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?key);
-
         match { key.borrow().pinned_op().pre_submit()? } {
             Decision::Wait(args) => {
                 key.borrow()
@@ -485,11 +484,7 @@ impl Driver {
 
     #[allow(clippy::blocks_in_conditions)]
     fn poll_one(&mut self, event: Event, fd: RawFd) -> io::Result<()> {
-        // If it's an FD op, the returned user_data is only for calling `op_type`.
-        // We need to pop the real user_data from the queue.
-        let Some(queue) = self.try_get_queue(fd) else {
-            return Ok(());
-        };
+        let queue = self.get_queue(fd);
 
         if let Some((key, _)) = queue.pop_interest(&event)
             && let mut op = key.borrow()
@@ -532,20 +527,23 @@ impl Driver {
             for event in events.iter() {
                 trace!("receive {} for {:?}", event.key, event);
                 // SAFETY: user_data is promised to be valid.
-                let op_type = unsafe { BorrowedKey::from_raw(event.key) }
-                    .borrow()
-                    .pinned_op()
-                    .op_type();
+                let key = unsafe { BorrowedKey::from_raw(event.key) };
+                let mut op = key.borrow();
+                let op_type = op.pinned_op().op_type();
                 match op_type {
                     None => {
                         // On epoll, multiple event may be received even if it is registered as
                         // one-shot. It is safe to ignore it.
                         trace!("op {} is completed", event.key);
                     }
-                    Some(OpType::Fd(fds)) => {
-                        for fd in fds {
-                            this.poll_one(event, fd)?;
-                        }
+                    Some(OpType::Fd(_)) => {
+                        let fd = op
+                            .extra()
+                            .as_poll()
+                            .next_fd()
+                            .expect("op shouldn't be ready");
+                        drop(op);
+                        this.poll_one(event, fd)?;
                     }
                     #[cfg(aio)]
                     Some(OpType::Aio(aiocbp)) => {
