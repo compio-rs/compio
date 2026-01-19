@@ -290,6 +290,13 @@ impl Driver {
         }
     }
 
+    fn push_raw_with_key(&mut self, entry: SEntry, key: ErasedKey) -> io::Result<()> {
+        let entry = entry.user_data(key.as_raw() as _);
+        self.push_raw(entry)?; // if push failed, do not leak the key. Drop it upon return.
+        key.into_raw();
+        Ok(())
+    }
+
     fn push_raw(&mut self, entry: SEntry) -> io::Result<()> {
         loop {
             let mut squeue = self.inner.submission();
@@ -326,15 +333,13 @@ impl Driver {
         trace!(?personality, "push RawOp");
         match entry {
             OpEntry::Submission(entry) => {
-                let user_data = key.into_raw();
                 #[allow(clippy::useless_conversion)]
-                self.push_raw(entry.user_data(user_data as _).into())?;
+                self.push_raw_with_key(entry.into(), key)?;
                 Poll::Pending
             }
             #[cfg(feature = "io-uring-sqe128")]
             OpEntry::Submission128(entry) => {
-                let user_data = key.into_raw();
-                self.push_raw(entry.user_data(user_data as _))?;
+                self.push_raw_with_key(entry, key)?;
                 Poll::Pending
             }
             OpEntry::Blocking => loop {
