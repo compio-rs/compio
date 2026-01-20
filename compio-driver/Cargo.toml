@@ -55,7 +55,7 @@ polling = { version = "3.3.0", optional = true }
 paste = { workspace = true }
 slab = { workspace = true, optional = true }
 
-[target.'cfg(any(target_os = "linux", target_os = "android"))'.dev-dependencies]
+[dev-dependencies]
 nix = { workspace = true, features = ["fs"] }
 
 # Other platform dependencies
