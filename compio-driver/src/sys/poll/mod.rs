@@ -165,7 +165,7 @@ struct FdQueue {
 /// It is returned when an interest is pushed, and can be used to remove the
 /// interest later. However do be careful that the index may be invalid or does
 /// not correspond to the one inserted if other interests are added or removed
-/// before it (tactou).
+/// before it (toctou).
 struct RemoveToken {
     idx: usize,
     is_read: bool,
