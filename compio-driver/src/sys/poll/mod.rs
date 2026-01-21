@@ -596,6 +596,7 @@ impl Driver {
                     }
                     #[cfg(aio)]
                     Some(OpType::Aio(aiocbp)) => {
+                        drop(op);
                         let err = unsafe { libc::aio_error(aiocbp.as_ptr()) };
                         let res = match err {
                             // If the user_data is reused but the previously registered event still
