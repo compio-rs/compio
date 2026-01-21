@@ -160,19 +160,64 @@ struct FdQueue {
     write_queue: VecDeque<ErasedKey>,
 }
 
+/// A token to remove an interest from `FdQueue`.
+///
+/// It is returned when an interest is pushed, and can be used to remove the
+/// interest later. However do be careful that the index may be invalid or does
+/// not correspond to the one inserted if other interests are added or removed
+/// before it (tactou).
+struct RemoveToken {
+    idx: usize,
+    is_read: bool,
+}
+
+impl RemoveToken {
+    fn read(idx: usize) -> Self {
+        Self { idx, is_read: true }
+    }
+
+    fn write(idx: usize) -> Self {
+        Self {
+            idx,
+            is_read: false,
+        }
+    }
+}
+
 impl FdQueue {
-    pub fn push_back_interest(&mut self, key: ErasedKey, interest: Interest) {
-        match interest {
-            Interest::Readable => self.read_queue.push_back(key),
-            Interest::Writable => self.write_queue.push_back(key),
+    fn remove_token(&mut self, token: RemoveToken) -> Option<ErasedKey> {
+        if token.is_read {
+            self.read_queue.remove(token.idx)
+        } else {
+            self.write_queue.remove(token.idx)
         }
     }
 
-    pub fn push_front_interest(&mut self, key: ErasedKey, interest: Interest) {
+    pub fn push_back_interest(&mut self, key: ErasedKey, interest: Interest) -> RemoveToken {
         match interest {
-            Interest::Readable => self.read_queue.push_front(key),
-            Interest::Writable => self.write_queue.push_front(key),
+            Interest::Readable => {
+                self.read_queue.push_back(key);
+                RemoveToken::read(self.read_queue.len() - 1)
+            }
+            Interest::Writable => {
+                self.write_queue.push_back(key);
+                RemoveToken::write(self.write_queue.len() - 1)
+            }
         }
+    }
+
+    pub fn push_front_interest(&mut self, key: ErasedKey, interest: Interest) -> RemoveToken {
+        let is_read = match interest {
+            Interest::Readable => {
+                self.read_queue.push_front(key);
+                true
+            }
+            Interest::Writable => {
+                self.write_queue.push_front(key);
+                false
+            }
+        };
+        RemoveToken { idx: 0, is_read }
     }
 
     pub fn remove(&mut self, key: &ErasedKey) {
@@ -300,17 +345,21 @@ impl Driver {
         } = self;
         let need_add = !registry.contains_key(&arg.fd);
         let queue = registry.entry(arg.fd).or_default();
+        let token = queue.push_back_interest(key, arg.interest);
         let event = queue.event();
-        if need_add {
+        let res = if need_add {
             // SAFETY: the events are deleted correctly.
-            unsafe { notify.poll.add(arg.fd, event)? }
+            unsafe { notify.poll.add(arg.fd, event) }
         } else {
             let fd = unsafe { BorrowedFd::borrow_raw(arg.fd) };
-            notify.poll.modify(fd, event)?;
+            notify.poll.modify(fd, event)
+        };
+        if res.is_err() {
+            // Rollback the push if submission failed.
+            queue.remove_token(token);
         }
-        // Only push the key if the submission is successful.
-        queue.push_back_interest(key, arg.interest);
-        Ok(())
+
+        res
     }
 
     /// Submit a new operation to the front of the queue.
