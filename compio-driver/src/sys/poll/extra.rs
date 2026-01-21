@@ -25,11 +25,11 @@ impl Extra {
     }
 
     pub(super) fn handle_event(&mut self, fd: RawFd) -> bool {
-        self.track.iter_mut().all(|t| {
+        self.track.iter_mut().fold(true, |curr, t| {
             if t.arg.fd == fd {
                 t.ready = true;
             }
-            t.ready
+            curr && t.ready
         })
     }
 }
