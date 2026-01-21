@@ -185,6 +185,10 @@ impl RemoveToken {
 }
 
 impl FdQueue {
+    fn is_empty(&self) -> bool {
+        self.read_queue.is_empty() && self.write_queue.is_empty()
+    }
+
     fn remove_token(&mut self, token: RemoveToken) -> Option<ErasedKey> {
         if token.is_read {
             self.read_queue.remove(token.idx)
@@ -357,6 +361,9 @@ impl Driver {
         if res.is_err() {
             // Rollback the push if submission failed.
             queue.remove_token(token);
+            if queue.is_empty() {
+                registry.remove(&arg.fd);
+            }
         }
 
         res
