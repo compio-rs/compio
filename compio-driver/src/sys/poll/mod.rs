@@ -333,10 +333,12 @@ impl Driver {
         res
     }
 
+    fn try_get_queue(&mut self, fd: RawFd) -> Option<&mut FdQueue> {
+        self.registry.get_mut(&fd)
+    }
+
     fn get_queue(&mut self, fd: RawFd) -> &mut FdQueue {
-        self.registry
-            .get_mut(&fd)
-            .expect("the fd should be submitted")
+        self.try_get_queue(fd).expect("the fd should be submitted")
     }
 
     /// Submit a new operation to the end of the queue.
@@ -398,15 +400,22 @@ impl Driver {
         Ok(())
     }
 
-    fn cancel_one(&mut self, key: ErasedKey, fd: RawFd) -> Option<Entry> {
-        let queue = self.get_queue(fd);
-
-        queue.remove(&key);
-
+    /// Remove one interest from the queue.
+    fn remove_one(&mut self, key: &ErasedKey, fd: RawFd) -> io::Result<()> {
+        let Some(queue) = self.try_get_queue(fd) else {
+            return Ok(());
+        };
+        queue.remove(key);
         let renew_event = queue.event();
-        let fd = unsafe { BorrowedFd::borrow_raw(fd) };
+        if queue.is_empty() {
+            self.registry.remove(&fd);
+        }
+        self.renew(unsafe { BorrowedFd::borrow_raw(fd) }, renew_event)
+    }
 
-        self.renew(fd, renew_event)
+    /// Remove one interest from the queue, and emit a cancelled entry.
+    fn cancel_one(&mut self, key: ErasedKey, fd: RawFd) -> Option<Entry> {
+        self.remove_one(&key, fd)
             .map_or(None, |_| Some(Entry::new_cancelled(key)))
     }
 
@@ -445,9 +454,17 @@ impl Driver {
                     .extra_mut()
                     .as_poll_mut()
                     .set_args(args.clone());
-                for arg in args {
+                for arg in args.iter().copied() {
                     // SAFETY: fd is from the OpCode.
-                    unsafe { self.submit(key.clone(), arg) }?;
+                    let res = unsafe { self.submit(key.clone(), arg) };
+                    // if submission fails, remove all previously submitted fds.
+                    if let Err(e) = res {
+                        args.into_iter().for_each(|arg| {
+                            // we don't care about renew errors
+                            let _ = self.remove_one(&key, arg.fd);
+                        });
+                        return Poll::Ready(Err(e));
+                    }
                     trace!("register {:?}", arg);
                 }
                 Poll::Pending
@@ -554,7 +571,14 @@ impl Driver {
                     extra.reset();
                     // `FdQueue` may have been removed, need to submit again
                     for t in extra.track.iter() {
-                        unsafe { self.submit_front(key.clone(), t.arg) }?
+                        let res = unsafe { self.submit_front(key.clone(), t.arg) };
+                        if let Err(e) = res {
+                            // On error, remove all previously submitted fds.
+                            for t in extra.track.iter() {
+                                let _ = self.remove_one(&key, t.arg.fd);
+                            }
+                            return Err(e);
+                        }
                     }
                 }
                 Poll::Ready(res) => {
@@ -593,11 +617,10 @@ impl Driver {
                         trace!("op {} is completed", event.key);
                     }
                     Some(OpType::Fd(_)) => {
-                        let fd = op
-                            .extra()
-                            .as_poll()
-                            .next_fd()
-                            .expect("op shouldn't be ready");
+                        // FIXME: This should not happen
+                        let Some(fd) = op.extra().as_poll().next_fd() else {
+                            return Ok(());
+                        };
                         drop(op);
                         this.poll_one(event, fd)?;
                     }
