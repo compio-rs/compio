@@ -12,6 +12,10 @@ impl Extra {
         }
     }
 
+    pub(crate) fn next_fd(&self) -> Option<RawFd> {
+        self.track.iter().find(|t| !t.ready).map(|t| t.arg.fd)
+    }
+
     pub(super) fn reset(&mut self) {
         self.track.iter_mut().for_each(|t| t.ready = false);
     }
@@ -21,22 +25,12 @@ impl Extra {
     }
 
     pub(super) fn handle_event(&mut self, fd: RawFd) -> bool {
-        // First pass: mark all tracks matching this fd as ready.
-        let mut found = false;
-        for track in self.track.iter_mut() {
-            if track.arg.fd == fd {
-                track.ready = true;
-                found = true;
+        self.track.iter_mut().fold(true, |curr, t| {
+            if t.arg.fd == fd {
+                t.ready = true;
             }
-        }
-
-        // If no track corresponds to this fd, the overall operation is not ready.
-        if !found {
-            return false;
-        }
-
-        // Second pass: check if all tracks are ready.
-        self.track.iter().all(|track| track.ready)
+            curr && t.ready
+        })
     }
 }
 

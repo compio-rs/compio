@@ -160,19 +160,68 @@ struct FdQueue {
     write_queue: VecDeque<ErasedKey>,
 }
 
+/// A token to remove an interest from `FdQueue`.
+///
+/// It is returned when an interest is pushed, and can be used to remove the
+/// interest later. However do be careful that the index may be invalid or does
+/// not correspond to the one inserted if other interests are added or removed
+/// before it (toctou).
+struct RemoveToken {
+    idx: usize,
+    is_read: bool,
+}
+
+impl RemoveToken {
+    fn read(idx: usize) -> Self {
+        Self { idx, is_read: true }
+    }
+
+    fn write(idx: usize) -> Self {
+        Self {
+            idx,
+            is_read: false,
+        }
+    }
+}
+
 impl FdQueue {
-    pub fn push_back_interest(&mut self, key: ErasedKey, interest: Interest) {
-        match interest {
-            Interest::Readable => self.read_queue.push_back(key),
-            Interest::Writable => self.write_queue.push_back(key),
+    fn is_empty(&self) -> bool {
+        self.read_queue.is_empty() && self.write_queue.is_empty()
+    }
+
+    fn remove_token(&mut self, token: RemoveToken) -> Option<ErasedKey> {
+        if token.is_read {
+            self.read_queue.remove(token.idx)
+        } else {
+            self.write_queue.remove(token.idx)
         }
     }
 
-    pub fn push_front_interest(&mut self, key: ErasedKey, interest: Interest) {
+    pub fn push_back_interest(&mut self, key: ErasedKey, interest: Interest) -> RemoveToken {
         match interest {
-            Interest::Readable => self.read_queue.push_front(key),
-            Interest::Writable => self.write_queue.push_front(key),
+            Interest::Readable => {
+                self.read_queue.push_back(key);
+                RemoveToken::read(self.read_queue.len() - 1)
+            }
+            Interest::Writable => {
+                self.write_queue.push_back(key);
+                RemoveToken::write(self.write_queue.len() - 1)
+            }
         }
+    }
+
+    pub fn push_front_interest(&mut self, key: ErasedKey, interest: Interest) -> RemoveToken {
+        let is_read = match interest {
+            Interest::Readable => {
+                self.read_queue.push_front(key);
+                true
+            }
+            Interest::Writable => {
+                self.write_queue.push_front(key);
+                false
+            }
+        };
+        RemoveToken { idx: 0, is_read }
     }
 
     pub fn remove(&mut self, key: &ErasedKey) {
@@ -289,9 +338,7 @@ impl Driver {
     }
 
     fn get_queue(&mut self, fd: RawFd) -> &mut FdQueue {
-        self.registry
-            .get_mut(&fd)
-            .expect("the fd should be submitted")
+        self.try_get_queue(fd).expect("the fd should be submitted")
     }
 
     /// Submit a new operation to the end of the queue.
@@ -299,18 +346,29 @@ impl Driver {
     ///  # Safety
     /// The input fd should be valid.
     unsafe fn submit(&mut self, key: ErasedKey, arg: WaitArg) -> io::Result<()> {
-        let need_add = !self.registry.contains_key(&arg.fd);
-        let queue = self.registry.entry(arg.fd).or_default();
-        queue.push_back_interest(key, arg.interest);
+        let Self {
+            registry, notify, ..
+        } = self;
+        let need_add = !registry.contains_key(&arg.fd);
+        let queue = registry.entry(arg.fd).or_default();
+        let token = queue.push_back_interest(key, arg.interest);
         let event = queue.event();
-        if need_add {
+        let res = if need_add {
             // SAFETY: the events are deleted correctly.
-            unsafe { self.poller().add(arg.fd, event)? }
+            unsafe { notify.poll.add(arg.fd, event) }
         } else {
             let fd = unsafe { BorrowedFd::borrow_raw(arg.fd) };
-            self.poller().modify(fd, event)?;
+            notify.poll.modify(fd, event)
+        };
+        if res.is_err() {
+            // Rollback the push if submission failed.
+            queue.remove_token(token);
+            if queue.is_empty() {
+                registry.remove(&arg.fd);
+            }
         }
-        Ok(())
+
+        res
     }
 
     /// Submit a new operation to the front of the queue.
@@ -342,15 +400,22 @@ impl Driver {
         Ok(())
     }
 
-    fn cancel_one(&mut self, key: ErasedKey, fd: RawFd) -> Option<Entry> {
-        let queue = self.try_get_queue(fd)?;
-
-        queue.remove(&key);
-
+    /// Remove one interest from the queue.
+    fn remove_one(&mut self, key: &ErasedKey, fd: RawFd) -> io::Result<()> {
+        let Some(queue) = self.try_get_queue(fd) else {
+            return Ok(());
+        };
+        queue.remove(key);
         let renew_event = queue.event();
-        let fd = unsafe { BorrowedFd::borrow_raw(fd) };
+        if queue.is_empty() {
+            self.registry.remove(&fd);
+        }
+        self.renew(unsafe { BorrowedFd::borrow_raw(fd) }, renew_event)
+    }
 
-        self.renew(fd, renew_event)
+    /// Remove one interest from the queue, and emit a cancelled entry.
+    fn cancel_one(&mut self, key: ErasedKey, fd: RawFd) -> Option<Entry> {
+        self.remove_one(&key, fd)
             .map_or(None, |_| Some(Entry::new_cancelled(key)))
     }
 
@@ -383,16 +448,23 @@ impl Driver {
 
     pub fn push(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?key);
-
         match { key.borrow().pinned_op().pre_submit()? } {
             Decision::Wait(args) => {
                 key.borrow()
                     .extra_mut()
                     .as_poll_mut()
                     .set_args(args.clone());
-                for arg in args {
+                for arg in args.iter().copied() {
                     // SAFETY: fd is from the OpCode.
-                    unsafe { self.submit(key.clone(), arg) }?;
+                    let res = unsafe { self.submit(key.clone(), arg) };
+                    // if submission fails, remove all previously submitted fds.
+                    if let Err(e) = res {
+                        args.into_iter().for_each(|arg| {
+                            // we don't care about renew errors
+                            let _ = self.remove_one(&key, arg.fd);
+                        });
+                        return Poll::Ready(Err(e));
+                    }
                     trace!("register {:?}", arg);
                 }
                 Poll::Pending
@@ -485,11 +557,7 @@ impl Driver {
 
     #[allow(clippy::blocks_in_conditions)]
     fn poll_one(&mut self, event: Event, fd: RawFd) -> io::Result<()> {
-        // If it's an FD op, the returned user_data is only for calling `op_type`.
-        // We need to pop the real user_data from the queue.
-        let Some(queue) = self.try_get_queue(fd) else {
-            return Ok(());
-        };
+        let queue = self.get_queue(fd);
 
         if let Some((key, _)) = queue.pop_interest(&event)
             && let mut op = key.borrow()
@@ -503,7 +571,14 @@ impl Driver {
                     extra.reset();
                     // `FdQueue` may have been removed, need to submit again
                     for t in extra.track.iter() {
-                        unsafe { self.submit_front(key.clone(), t.arg) }?
+                        let res = unsafe { self.submit_front(key.clone(), t.arg) };
+                        if let Err(e) = res {
+                            // On error, remove all previously submitted fds.
+                            for t in extra.track.iter() {
+                                let _ = self.remove_one(&key, t.arg.fd);
+                            }
+                            return Err(e);
+                        }
                     }
                 }
                 Poll::Ready(res) => {
@@ -532,23 +607,26 @@ impl Driver {
             for event in events.iter() {
                 trace!("receive {} for {:?}", event.key, event);
                 // SAFETY: user_data is promised to be valid.
-                let op_type = unsafe { BorrowedKey::from_raw(event.key) }
-                    .borrow()
-                    .pinned_op()
-                    .op_type();
+                let key = unsafe { BorrowedKey::from_raw(event.key) };
+                let mut op = key.borrow();
+                let op_type = op.pinned_op().op_type();
                 match op_type {
                     None => {
                         // On epoll, multiple event may be received even if it is registered as
                         // one-shot. It is safe to ignore it.
                         trace!("op {} is completed", event.key);
                     }
-                    Some(OpType::Fd(fds)) => {
-                        for fd in fds {
-                            this.poll_one(event, fd)?;
-                        }
+                    Some(OpType::Fd(_)) => {
+                        // FIXME: This should not happen
+                        let Some(fd) = op.extra().as_poll().next_fd() else {
+                            return Ok(());
+                        };
+                        drop(op);
+                        this.poll_one(event, fd)?;
                     }
                     #[cfg(aio)]
                     Some(OpType::Aio(aiocbp)) => {
+                        drop(op);
                         let err = unsafe { libc::aio_error(aiocbp.as_ptr()) };
                         let res = match err {
                             // If the user_data is reused but the previously registered event still
