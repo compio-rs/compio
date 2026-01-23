@@ -247,19 +247,54 @@ impl Proactor {
     /// Returns the personality id, which can be used with
     /// [`Extra::set_personality`] to set the personality for an operation.
     ///
-    /// See [`Submitter::register_personality`] for more.
+    /// This only works on `io_uring` driver. It will return an [`Unsupported`]
+    /// error on other drivers. See [`Submitter::register_personality`] for
+    /// more.
     ///
-    /// [`Submitter::register_personality`]: io_uring::Submitter::register_personality
-    #[cfg(io_uring)]
+    /// [`Unsupported`]: std::io::ErrorKind::Unsupported
+    /// [`Submitter::register_personality`]: https://docs.rs/io-uring/latest/io_uring/struct.Submitter.html#method.register_personality
     pub fn register_personality(&self) -> io::Result<u16> {
-        let Some(iour) = self.driver.as_iour() else {
-            return Err(io::Error::new(
+        fn unsupported() -> io::Error {
+            io::Error::new(
                 io::ErrorKind::Unsupported,
                 "Personality is only supported on io-uring driver",
-            ));
-        };
+            )
+        }
 
-        iour.register_personality()
+        #[cfg(io_uring)]
+        match self.driver.as_iour() {
+            Some(iour) => iour.register_personality(),
+            None => Err(unsupported()),
+        }
+
+        #[cfg(not(io_uring))]
+        Err(unsupported())
+    }
+
+    /// Unregister the given personality in io-uring driver.
+    ///
+    /// This only works on `io_uring` driver. It will return an [`Unsupported`]
+    /// error on other drivers. See [`Submitter::unregister_personality`] for
+    /// more.
+    ///
+    /// [`Unsupported`]: std::io::ErrorKind::Unsupported
+    /// [`Submitter::unregister_personality`]: https://docs.rs/io-uring/latest/io_uring/struct.Submitter.html#method.unregister_personality
+    pub fn unregister_personality(&self, personality: u16) -> io::Result<()> {
+        fn unsupported(_: u16) -> io::Error {
+            io::Error::new(
+                io::ErrorKind::Unsupported,
+                "Personality is only supported on io-uring driver",
+            )
+        }
+
+        #[cfg(io_uring)]
+        match self.driver.as_iour() {
+            Some(iour) => iour.unregister_personality(personality),
+            None => Err(unsupported(personality)),
+        }
+
+        #[cfg(not(io_uring))]
+        Err(unsupported(personality))
     }
 }
 

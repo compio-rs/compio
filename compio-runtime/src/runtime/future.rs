@@ -17,6 +17,17 @@ trait ContextExt {
     fn as_extra(&mut self, extra: impl FnOnce() -> Extra) -> Option<Extra>;
 }
 
+#[cfg(feature = "future-combinator")]
+impl ContextExt for Context<'_> {
+    fn as_extra(&mut self, extra: impl FnOnce() -> Extra) -> Option<Extra> {
+        let ext = self.ext().downcast_mut::<crate::future::Ext>()?;
+        let mut extra = extra();
+        ext.set_extra(&mut extra);
+        Some(extra)
+    }
+}
+
+#[cfg(not(feature = "future-combinator"))]
 impl ContextExt for Context<'_> {
     fn as_extra(&mut self, extra: impl FnOnce() -> Extra) -> Option<Extra> {
         let _ = extra;

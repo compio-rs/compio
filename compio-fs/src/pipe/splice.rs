@@ -9,7 +9,7 @@ use std::{
 };
 
 use compio_driver::{SharedFd, ToSharedFd, op::Splice as SpliceOp};
-use compio_runtime::future::Submit;
+use compio_runtime::Submit;
 
 /// Splice data between two file descriptors without copying through userspace.
 ///

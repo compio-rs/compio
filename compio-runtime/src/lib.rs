@@ -10,6 +10,7 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "current_thread_id", feature(current_thread_id))]
+#![cfg_attr(feature = "future-combinator", feature(context_ext, local_waker))]
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
@@ -19,6 +20,8 @@ mod runtime;
 
 #[cfg(feature = "event")]
 pub mod event;
+#[cfg(feature = "future-combinator")]
+pub mod future;
 #[cfg(feature = "time")]
 pub mod time;
 

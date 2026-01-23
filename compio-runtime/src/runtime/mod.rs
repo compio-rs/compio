@@ -21,7 +21,9 @@ use compio_driver::{
 use compio_log::{debug, instrument};
 use futures_util::FutureExt;
 
-pub mod future;
+mod future;
+pub use future::Submit;
+
 #[cfg(feature = "time")]
 pub(crate) mod time;
 
@@ -38,11 +40,7 @@ use send_wrapper::SendWrapper;
 
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerKey, TimerRuntime};
-use crate::{
-    BufResult,
-    affinity::bind_to_cpu_set,
-    runtime::{future::Submit, scheduler::Scheduler},
-};
+use crate::{BufResult, affinity::bind_to_cpu_set, runtime::scheduler::Scheduler};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 
@@ -362,6 +360,29 @@ impl Runtime {
 
     pub(crate) fn id(&self) -> u64 {
         self.id
+    }
+
+    /// Register the personality for the runtime.
+    ///
+    /// This is only supported on io-uring driver, and will return an
+    /// [`Unsupported`] io error on all other drivers.
+    ///
+    /// The returned personality can be used with `FutureExt::with_personality`
+    /// if the `future-combinator` feature is turned on.
+    ///
+    /// [`Unsupported`]: std::io::ErrorKind::Unsupported
+    pub fn register_personality(&self) -> io::Result<u16> {
+        self.driver.borrow_mut().register_personality()
+    }
+
+    /// Unregister the given personality for the runtime.
+    ///
+    /// This is only supported on io-uring driver, and will return an
+    /// [`Unsupported`] io error on all other drivers.
+    ///
+    /// [`Unsupported`]: std::io::ErrorKind::Unsupported
+    pub fn unregister_personality(&self, personality: u16) -> io::Result<()> {
+        self.driver.borrow_mut().unregister_personality(personality)
     }
 }
 
