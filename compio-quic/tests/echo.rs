@@ -4,6 +4,7 @@ use std::{
 };
 
 use compio_buf::bytes::Bytes;
+use compio_io::AsyncWriteExt;
 use compio_quic::{Endpoint, RecvStream, SendStream, TransportConfig};
 
 mod common;
@@ -88,16 +89,13 @@ async fn run_echo(args: EchoArgs) {
                 let (mut send, mut recv) = conn.open_bi_wait().await.unwrap();
                 let msg = gen_data(args.stream_size);
 
-                let (_, data) = join!(
+                let (msg, (_, data)) = join!(
                     async {
-                        send.write_all(&msg).await.unwrap();
+                        let (_, msg) = send.write_all(msg).await.unwrap();
                         send.finish().unwrap();
+                        msg
                     },
-                    async {
-                        let mut buf = vec![];
-                        recv.read_to_end(&mut buf).await.unwrap();
-                        buf
-                    }
+                    async { recv.read_to_end(vec![]).await.unwrap() }
                 );
 
                 assert_eq!(data, msg);

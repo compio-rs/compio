@@ -89,3 +89,4 @@ required-features = ["compio-driver/sync"]
 [[bench]]
 name = "quic"
 harness = false
+required-features = ["io-compat"]

@@ -118,15 +118,15 @@ async fn compio_quic_echo_client(
     let start = Instant::now();
     let mut futures = (0..iters)
         .map(|_| async {
-            let (mut send, mut recv) = conn.open_bi_wait().await.unwrap();
+            let (send, mut recv) = conn.open_bi_wait().await.unwrap();
+            let mut send = send.into_compat();
             futures_util::join!(
                 async {
                     send.write_all(data).await.unwrap();
                     send.finish().unwrap();
                 },
                 async {
-                    let mut buf = vec![];
-                    recv.read_to_end(&mut buf).await.unwrap();
+                    recv.read_to_end(vec![]).await.unwrap();
                 }
             );
         })
