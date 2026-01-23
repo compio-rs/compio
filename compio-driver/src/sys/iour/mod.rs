@@ -191,6 +191,10 @@ impl Driver {
         self.inner.submitter().register_personality()
     }
 
+    pub fn unregister_personality(&self, personality: u16) -> io::Result<()> {
+        self.inner.submitter().unregister_personality(personality)
+    }
+
     // Auto means that it choose to wait or not automatically.
     fn submit_auto(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "submit_auto", ?timeout);
