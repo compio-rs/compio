@@ -220,10 +220,9 @@ impl RecvStream {
     /// Attempts to read from the stream into the provided buffer
     ///
     /// On success, returns `Poll::Ready(Ok(num_bytes_read))` and places data
-    /// into `buf`. If this returns zero bytes read (and `buf` has a
-    /// non-zero length), that indicates that the remote
-    /// side has [`finish`]ed the stream and the local side has already read all
-    /// bytes.
+    /// into `buf`. If the buffer passed in has non-zero length and a 0 is
+    /// returned, that indicates that the remote side has [`finish`]ed the
+    /// stream and the local side has already read all bytes.
     ///
     /// If no data is available for reading, this returns `Poll::Pending` and
     /// arranges for the current task (via `cx.waker()`) to be notified when
@@ -364,7 +363,7 @@ impl RecvStream {
         if needed > 0
             && let Err(e) = buf.reserve(needed)
         {
-            return BufResult(Err(io::Error::new(io::ErrorKind::InvalidData, e)), buf);
+            return BufResult(Err(io::Error::new(io::ErrorKind::OutOfMemory, e)), buf);
         }
         let slice = &mut buf.as_uninit()[..len];
         slice.fill(MaybeUninit::new(0));
