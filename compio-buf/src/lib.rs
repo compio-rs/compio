@@ -10,6 +10,12 @@
 #![cfg_attr(feature = "try_trait_v2", feature(try_trait_v2, try_trait_v2_residual))]
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![doc(
+    html_logo_url = "https://github.com/compio-rs/compio-logo/raw/refs/heads/master/generated/colored-bold.svg"
+)]
+#![doc(
+    html_favicon_url = "https://github.com/compio-rs/compio-logo/raw/refs/heads/master/generated/colored-bold.svg"
+)]
 
 #[cfg(feature = "arrayvec")]
 pub use arrayvec;

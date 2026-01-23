@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Compio Documentation</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        max-width: 800px;
+        margin: 50px auto;
+        padding: 20px;
+        line-height: 1.6;
+      }
+      .logo-container {
+        text-align: center;
+        margin-bottom: 10lvh;
+      }
+      .logo-container img {
+        height: 150px;
+        max-width: 100%;
+        width: auto;
+      }
+      h1 {
+        color: #333;
+      }
+      .platform-list {
+        list-style: none;
+        padding: 0;
+      }
+      .platform-list li {
+        margin: 15px 0;
+      }
+      .platform-list a {
+        display: block;
+        padding: 15px 20px;
+        background: #f5f5f5;
+        color: #333;
+        text-decoration: none;
+        border-radius: 5px;
+        transition: background 0.3s;
+      }
+      .platform-list a:hover {
+        background: #e0e0e0;
+      }
+      .platform-name {
+        font-weight: bold;
+        font-size: 1.1em;
+      }
+      .platform-target {
+        color: #666;
+        font-size: 0.9em;
+      }
+      .warning {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        border-radius: 5px;
+        padding: 15px 20px;
+        margin-bottom: 20px;
+        color: #856404;
+      }
+      .warning strong {
+        color: #856404;
+      }
+      .warning a {
+        color: #0066cc;
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="logo-container">
+      <a href="https://compio.rs">
+        <img
+          src="https://github.com/compio-rs/compio-logo/raw/refs/heads/master/generated/colored-with-text.svg"
+          alt="Compio Logo"
+        />
+      </a>
+    </div>
+    <div class="warning">
+      <strong>Warning:</strong> This documentation is built from the <code>master</code> branch and may differ from the
+      APIs of released versions. To view documentation for released versions, please visit
+      <a href="https://docs.rs/compio" target="_blank" rel="noopener noreferrer">docs.rs</a>.
+    </div>
+    <p>Select a platform to view the documentation:</p>
+    <ul class="platform-list">
+      <li>
+        <a href="x86_64-unknown-linux-gnu/compio/index.html">
+          <div class="platform-name">Linux</div>
+          <div class="platform-target">x86_64-unknown-linux-gnu</div>
+        </a>
+      </li>
+      <li>
+        <a href="x86_64-pc-windows-msvc/compio/index.html">
+          <div class="platform-name">Windows</div>
+          <div class="platform-target">x86_64-pc-windows-msvc</div>
+        </a>
+      </li>
+      <li>
+        <a href="aarch64-apple-darwin/compio/index.html">
+          <div class="platform-name">macOS (Apple Silicon)</div>
+          <div class="platform-target">aarch64-apple-darwin</div>
+        </a>
+      </li>
+    </ul>
+  </body>
+</html>

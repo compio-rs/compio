@@ -1,3 +1,10 @@
+#![doc(
+    html_logo_url = "https://github.com/compio-rs/compio-logo/raw/refs/heads/master/generated/colored-bold.svg"
+)]
+#![doc(
+    html_favicon_url = "https://github.com/compio-rs/compio-logo/raw/refs/heads/master/generated/colored-bold.svg"
+)]
+
 #[cfg_attr(not(feature = "enable_log"), doc(hidden))]
 pub use tracing::*;
 
