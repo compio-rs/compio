@@ -552,7 +552,7 @@ mod compat {
         ///
         /// See [`read()`] for details. This operation is *not* cancel-safe.
         ///
-        /// [`read()`]: RecvStream::read
+        /// [`read()`]: CompatRecvStream::read
         pub async fn read_exact(&mut self, mut buf: impl BufMut) -> Result<(), ReadExactError> {
             poll_fn(|cx| {
                 while buf.has_remaining_mut() {
