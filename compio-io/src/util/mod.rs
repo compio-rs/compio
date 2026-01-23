@@ -1,8 +1,6 @@
 //! IO related utilities functions for ease of use.
 use crate::{AsyncRead, AsyncWrite, AsyncWriteExt, IoResult};
 
-mod bilock;
-
 mod take;
 pub use take::Take;
 

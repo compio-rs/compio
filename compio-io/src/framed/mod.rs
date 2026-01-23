@@ -71,11 +71,10 @@ impl<R, W, C, F, In, Out> Framed<R, W, C, F, In, Out> {
     ///
     /// Some types like the ones mentioned above are multiplexed by nature, so
     /// they implement the [`Splittable`] trait by themselves. For other types,
-    /// you may want to wrap them in [`Split`] or [`UnsyncSplit`] first, which
-    /// uses lock or `RefCell` under the hood.
+    /// you may want to wrap them in [`Split`] first, which uses lock or
+    /// `RefCell` under the hood.
     ///
     /// [`Split`]: crate::util::split::Split
-    /// [`UnsyncSplit`]: crate::util::split::UnsyncSplit
     pub fn with_duplex<Io: Splittable>(
         self,
         io: Io,

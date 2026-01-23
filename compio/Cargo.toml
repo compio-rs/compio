@@ -105,7 +105,7 @@ bumpalo = ["compio-buf/bumpalo"]
 bytes = ["compio-buf/bytes"]
 criterion = ["compio-runtime?/criterion"]
 
-sync = ["compio-driver/sync", "compio-quic?/sync"]
+sync = ["compio-driver/sync", "compio-quic?/sync", "compio-io?/sync"]
 
 enable_log = ["compio-log/enable_log"]
 

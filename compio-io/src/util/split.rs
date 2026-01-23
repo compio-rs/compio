@@ -1,25 +1,16 @@
 //! Functionality to split an I/O type into separate read and write halves.
 
-use std::{fmt::Debug, sync::Arc};
+use std::fmt::Debug;
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use futures_util::lock::Mutex;
 
-use crate::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt, IoResult, util::bilock::BiLock};
+use crate::{AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt, IoResult, sync::bilock::BiLock};
 
 /// Splits a single value implementing `AsyncRead + AsyncWrite` into separate
-/// [`AsyncRead`] and [`AsyncWrite`] handles.with internal synchronization.
+/// [`AsyncRead`] and [`AsyncWrite`] handles with or without internal
+/// synchronization dependes on whether `sync` feature is turned on.
 pub fn split<T: AsyncRead + AsyncWrite>(stream: T) -> (ReadHalf<T>, WriteHalf<T>) {
     Split::new(stream).split()
-}
-
-/// Splits a single value implementing `AsyncRead + AsyncWrite` into separate
-/// [`AsyncRead`] and [`AsyncWrite`] handles without internal synchronization
-/// (not `Send` and `Sync`).
-pub fn split_unsync<T: AsyncRead + AsyncWrite>(
-    stream: T,
-) -> (UnsyncReadHalf<T>, UnsyncWriteHalf<T>) {
-    UnsyncSplit::new(stream).split()
 }
 
 /// A trait for types that can be split into separate read and write halves.
@@ -30,6 +21,7 @@ pub fn split_unsync<T: AsyncRead + AsyncWrite>(
 /// operations from different tasks.
 ///
 /// # Implementor
+///
 /// - Any `(R, W)` tuple implements this trait.
 /// - `TcpStream`, `UnixStream` and references to them in `compio::net`
 ///   implement this trait without any lock thanks to the underlying sockets'
@@ -38,8 +30,8 @@ pub fn split_unsync<T: AsyncRead + AsyncWrite>(
 ///   [`ReadHalf`] and [`WriteHalf`] being the file itself since it's
 ///   reference-counted under the hood.
 /// - For other type to be compatible with this trait, it must be wrapped with
-///   [`UnsyncSplit`] or [`Split`], which wrap the type in a unsynced or synced
-///   lock respectively.
+///   [`Split`], which wrap the type in a unsynced or synced lock depends on
+///   whether `sync` feature is turned on.
 pub trait Splittable {
     /// The type of the read half, which normally implements [`AsyncRead`] or
     /// [`AsyncReadAt`].
@@ -58,39 +50,6 @@ pub trait Splittable {
     fn split(self) -> (Self::ReadHalf, Self::WriteHalf);
 }
 
-/// Enables splitting an I/O type into separate read and write halves
-/// without requiring thread-safety.
-///
-/// # Examples
-///
-/// ```ignore
-/// use compio::io::util::UnsyncSplit;
-///
-/// // Create a splittable stream
-/// let stream = /* some stream */;
-/// let unsync = UnsyncSplit::new(stream);
-/// let (read_half, write_half) = unsync.split();
-/// ```
-#[derive(Debug)]
-pub struct UnsyncSplit<T>(BiLock<T>, BiLock<T>);
-
-impl<T> UnsyncSplit<T> {
-    /// Creates a new `UnsyncSplit` from the given stream.
-    pub fn new(stream: T) -> Self {
-        let (r, w) = BiLock::new(stream);
-        UnsyncSplit(r, w)
-    }
-}
-
-impl<T> Splittable for UnsyncSplit<T> {
-    type ReadHalf = UnsyncReadHalf<T>;
-    type WriteHalf = UnsyncWriteHalf<T>;
-
-    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
-        (UnsyncReadHalf(self.0), UnsyncWriteHalf(self.1))
-    }
-}
-
 impl<R, W> Splittable for (R, W) {
     type ReadHalf = R;
     type WriteHalf = W;
@@ -100,86 +59,15 @@ impl<R, W> Splittable for (R, W) {
     }
 }
 
-/// The readable half of a value returned from [`split`].
-#[derive(Debug)]
-pub struct UnsyncReadHalf<T>(BiLock<T>);
-
-impl<T> UnsyncReadHalf<T> {
-    /// Reunites with a previously split [`UnsyncWriteHalf`].
-    ///
-    /// # Panics
-    ///
-    /// If this [`UnsyncReadHalf`] and the given [`UnsyncWriteHalf`] do not
-    /// originate from the same [`split_unsync`] operation
-    /// this method will panic.
-    #[track_caller]
-    pub fn unsplit(self, other: UnsyncWriteHalf<T>) -> T {
-        self.0.try_join(other.0).expect(
-            "`UnsyncReadHalf` and `UnsyncWriteHalf` must originate from the same `UnsyncSplit`",
-        )
-    }
-}
-
-impl<T: AsyncRead> AsyncRead for UnsyncReadHalf<T> {
-    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        self.0.lock().await.read(buf).await
-    }
-
-    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
-        self.0.lock().await.read_vectored(buf).await
-    }
-}
-
-impl<T: AsyncReadAt> AsyncReadAt for UnsyncReadHalf<T> {
-    async fn read_at<B: IoBufMut>(&self, buf: B, pos: u64) -> BufResult<usize, B> {
-        self.0.lock().await.read_at(buf, pos).await
-    }
-}
-
-/// The writable half of a value returned from [`split`](super::split).
-#[derive(Debug)]
-pub struct UnsyncWriteHalf<T>(BiLock<T>);
-
-impl<T: AsyncWrite> AsyncWrite for UnsyncWriteHalf<T> {
-    async fn write<B: IoBuf>(&mut self, buf: B) -> BufResult<usize, B> {
-        self.0.lock().await.write(buf).await
-    }
-
-    async fn write_vectored<B: IoVectoredBuf>(&mut self, buf: B) -> BufResult<usize, B> {
-        self.0.lock().await.write_vectored(buf).await
-    }
-
-    async fn flush(&mut self) -> IoResult<()> {
-        self.0.lock().await.flush().await
-    }
-
-    async fn shutdown(&mut self) -> IoResult<()> {
-        self.0.lock().await.shutdown().await
-    }
-}
-
-impl<T: AsyncWriteAt> AsyncWriteAt for UnsyncWriteHalf<T> {
-    async fn write_at<B: IoBuf>(&mut self, buf: B, pos: u64) -> BufResult<usize, B> {
-        self.0.lock().await.write_at(buf, pos).await
-    }
-
-    async fn write_vectored_at<B: IoVectoredBuf>(
-        &mut self,
-        buf: B,
-        pos: u64,
-    ) -> BufResult<usize, B> {
-        self.0.lock().await.write_vectored_at(buf, pos).await
-    }
-}
-
 /// Splitting an I/O type into separate read and write halves
 #[derive(Debug)]
-pub struct Split<T>(Arc<Mutex<T>>);
+pub struct Split<T>(BiLock<T>, BiLock<T>);
 
 impl<T> Split<T> {
     /// Creates a new `Split` from the given stream.
     pub fn new(stream: T) -> Self {
-        Split(Arc::new(Mutex::new(stream)))
+        let (l, r) = BiLock::new(stream);
+        Split(l, r)
     }
 }
 
@@ -188,13 +76,13 @@ impl<T: AsyncRead + AsyncWrite> Splittable for Split<T> {
     type WriteHalf = WriteHalf<T>;
 
     fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
-        (ReadHalf(self.0.clone()), WriteHalf(self.0))
+        (ReadHalf(self.0), WriteHalf(self.1))
     }
 }
 
 /// The readable half of a value returned from [`split`](super::split).
 #[derive(Debug)]
-pub struct ReadHalf<T>(Arc<Mutex<T>>);
+pub struct ReadHalf<T>(BiLock<T>);
 
 impl<T: Unpin> ReadHalf<T> {
     /// Reunites with a previously split [`WriteHalf`].
@@ -207,18 +95,13 @@ impl<T: Unpin> ReadHalf<T> {
     /// of the two halves.
     #[track_caller]
     pub fn unsplit(self, w: WriteHalf<T>) -> T {
-        if Arc::ptr_eq(&self.0, &w.0) {
-            drop(w);
-            let inner = Arc::try_unwrap(self.0).expect("`Arc::try_unwrap` failed");
-            inner.into_inner()
-        } else {
-            #[cold]
-            fn panic_unrelated() -> ! {
-                panic!("Unrelated `WriteHalf` passed to `ReadHalf::unsplit`.")
-            }
+        self.0.try_join(w.0).expect("Not the same pair")
+    }
 
-            panic_unrelated()
-        }
+    /// Try to reunites with a previously split [`WriteHalf`].
+    #[track_caller]
+    pub fn try_unsplit(self, w: WriteHalf<T>) -> Option<T> {
+        self.0.try_join(w.0)
     }
 }
 
@@ -240,7 +123,7 @@ impl<T: AsyncReadAt> AsyncReadAt for ReadHalf<T> {
 
 /// The writable half of a value returned from [`split`](super::split).
 #[derive(Debug)]
-pub struct WriteHalf<T>(Arc<Mutex<T>>);
+pub struct WriteHalf<T>(BiLock<T>);
 
 impl<T: AsyncWrite> AsyncWrite for WriteHalf<T> {
     async fn write<B: IoBuf>(&mut self, buf: B) -> BufResult<usize, B> {
