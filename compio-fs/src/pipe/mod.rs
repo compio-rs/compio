@@ -21,6 +21,12 @@ use compio_runtime::{BorrowedBuffer, BufferPool};
 
 use crate::File;
 
+#[cfg(linux_all)]
+mod splice;
+
+#[cfg(linux_all)]
+pub use splice::*;
+
 /// Creates a pair of anonymous pipe.
 ///
 /// ```

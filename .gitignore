@@ -9,3 +9,6 @@
 /.vscode
 /.zed
 /.idea
+
+# Bacon config
+bacon.toml
