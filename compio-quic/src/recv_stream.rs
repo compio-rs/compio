@@ -217,25 +217,13 @@ impl RecvStream {
         }
     }
 
-    /// Attempts to read from the stream into the provided buffer
-    ///
-    /// On success, returns `Poll::Ready(Ok(num_bytes_read))` and places data
-    /// into `buf`. If the buffer passed in has non-zero length and a 0 is
-    /// returned, that indicates that the remote side has [`finish`]ed the
-    /// stream and the local side has already read all bytes.
-    ///
-    /// If no data is available for reading, this returns `Poll::Pending` and
-    /// arranges for the current task (via `cx.waker()`) to be notified when
-    /// the stream becomes readable or is closed.
-    ///
-    /// [`finish`]: crate::SendStream::finish
-    pub fn poll_read_uninit(
+    pub(crate) fn poll_read_impl(
         &mut self,
         cx: &mut Context,
         buf: &mut [MaybeUninit<u8>],
-    ) -> Poll<Result<usize, ReadError>> {
+    ) -> Poll<Result<Option<usize>, ReadError>> {
         if buf.is_empty() {
-            return Poll::Ready(Ok(0));
+            return Poll::Ready(Ok(Some(0)));
         }
 
         self.execute_poll_read(cx, true, |chunks| {
@@ -261,7 +249,27 @@ impl RecvStream {
                 }
             }
         })
-        .map(|res| res.map(|n| n.unwrap_or_default()))
+    }
+
+    /// Attempts to read from the stream into the provided buffer
+    ///
+    /// On success, returns `Poll::Ready(Ok(num_bytes_read))` and places data
+    /// into `buf`. If the buffer passed in has non-zero length and a 0 is
+    /// returned, that indicates that the remote side has [`finish`]ed the
+    /// stream and the local side has already read all bytes.
+    ///
+    /// If no data is available for reading, this returns `Poll::Pending` and
+    /// arranges for the current task (via `cx.waker()`) to be notified when
+    /// the stream becomes readable or is closed.
+    ///
+    /// [`finish`]: crate::SendStream::finish
+    pub fn poll_read_uninit(
+        &mut self,
+        cx: &mut Context,
+        buf: &mut [MaybeUninit<u8>],
+    ) -> Poll<Result<usize, ReadError>> {
+        self.poll_read_impl(cx, buf)
+            .map(|res| res.map(|n| n.unwrap_or_default()))
     }
 
     /// Read the next segment of data.
@@ -376,6 +384,12 @@ impl RecvStream {
         }
         unsafe { buf.advance_to(len) }
         BufResult(Ok(len), buf)
+    }
+
+    /// Convert into an [`futures_util`] compatible stream.
+    #[cfg(feature = "io-compat")]
+    pub fn into_compat(self) -> CompatRecvStream {
+        CompatRecvStream(self)
     }
 }
 
@@ -495,20 +509,105 @@ impl AsyncRead for RecvStream {
 }
 
 #[cfg(feature = "io-compat")]
-impl futures_util::AsyncRead for RecvStream {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
-        // SAFETY: buf is valid
-        self.get_mut()
-            .poll_read_uninit(cx, unsafe {
-                std::slice::from_raw_parts_mut(buf.as_mut_ptr().cast(), buf.len())
+mod compat {
+    use std::{
+        ops::{Deref, DerefMut},
+        pin::Pin,
+        task::ready,
+    };
+
+    use compio_buf::{IntoInner, bytes::BufMut};
+
+    use super::*;
+
+    /// A [`futures_util`] compatible receive stream.
+    pub struct CompatRecvStream(pub(super) RecvStream);
+
+    impl CompatRecvStream {
+        fn poll_read(
+            &mut self,
+            cx: &mut Context,
+            mut buf: impl BufMut,
+        ) -> Poll<Result<Option<usize>, ReadError>> {
+            self.poll_read_impl(cx, unsafe { buf.chunk_mut().as_uninit_slice_mut() })
+                .map(|res| {
+                    if let Ok(Some(n)) = &res {
+                        unsafe { buf.advance_mut(*n) }
+                    }
+                    res
+                })
+        }
+
+        /// Read data contiguously from the stream.
+        ///
+        /// Yields the number of bytes read into `buf` on success, or `None` if
+        /// the stream was finished.
+        ///
+        /// This operation is cancel-safe.
+        pub async fn read(&mut self, mut buf: impl BufMut) -> Result<Option<usize>, ReadError> {
+            poll_fn(|cx| self.poll_read(cx, &mut buf)).await
+        }
+
+        /// Read an exact number of bytes contiguously from the stream.
+        ///
+        /// See [`read()`] for details. This operation is *not* cancel-safe.
+        ///
+        /// [`read()`]: RecvStream::read
+        pub async fn read_exact(&mut self, mut buf: impl BufMut) -> Result<(), ReadExactError> {
+            poll_fn(|cx| {
+                while buf.has_remaining_mut() {
+                    if ready!(self.poll_read(cx, &mut buf))?.is_none() {
+                        return Poll::Ready(Err(ReadExactError::FinishedEarly(
+                            buf.remaining_mut(),
+                        )));
+                    }
+                }
+                Poll::Ready(Ok(()))
             })
-            .map_err(Into::into)
+            .await
+        }
+    }
+
+    impl IntoInner for CompatRecvStream {
+        type Inner = RecvStream;
+
+        fn into_inner(self) -> Self::Inner {
+            self.0
+        }
+    }
+
+    impl Deref for CompatRecvStream {
+        type Target = RecvStream;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl DerefMut for CompatRecvStream {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
+    }
+
+    impl futures_util::AsyncRead for CompatRecvStream {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut [u8],
+        ) -> Poll<io::Result<usize>> {
+            // SAFETY: buf is valid
+            self.get_mut()
+                .poll_read_uninit(cx, unsafe {
+                    std::slice::from_raw_parts_mut(buf.as_mut_ptr().cast(), buf.len())
+                })
+                .map_err(Into::into)
+        }
     }
 }
+
+#[cfg(feature = "io-compat")]
+pub use compat::CompatRecvStream;
 
 #[cfg(feature = "h3")]
 pub(crate) mod h3_impl {

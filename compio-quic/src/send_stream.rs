@@ -207,6 +207,12 @@ impl SendStream {
         })
         .await
     }
+
+    /// Convert this stream into a [`futures_util`] compatible stream.
+    #[cfg(feature = "io-compat")]
+    pub fn into_compat(self) -> CompatSendStream {
+        CompatSendStream(self)
+    }
 }
 
 impl Drop for SendStream {
@@ -317,26 +323,97 @@ impl AsyncWrite for SendStream {
 }
 
 #[cfg(feature = "io-compat")]
-impl futures_util::AsyncWrite for SendStream {
-    fn poll_write(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        self.get_mut()
-            .execute_poll_write(cx, |mut stream| stream.write(buf))
-            .map_err(Into::into)
+mod compat {
+    use std::{
+        ops::{Deref, DerefMut},
+        pin::Pin,
+    };
+
+    use compio_buf::IntoInner;
+
+    use super::*;
+
+    /// A [`futures_util`] compatible send stream.
+    pub struct CompatSendStream(pub(super) SendStream);
+
+    impl CompatSendStream {
+        /// Write bytes to the stream.
+        ///
+        /// Yields the number of bytes written on success. Congestion and flow
+        /// control may cause this to be shorter than `buf.len()`, indicating
+        /// that only a prefix of `buf` was written.
+        ///
+        /// This operation is cancel-safe.
+        pub async fn write(&mut self, buf: &[u8]) -> Result<usize, WriteError> {
+            poll_fn(|cx| self.execute_poll_write(cx, |mut stream| stream.write(buf))).await
+        }
+
+        /// Convenience method to write an entire buffer to the stream.
+        ///
+        /// This operation is *not* cancel-safe.
+        pub async fn write_all(&mut self, buf: &[u8]) -> Result<(), WriteError> {
+            let mut count = 0;
+            poll_fn(|cx| {
+                loop {
+                    if count == buf.len() {
+                        return Poll::Ready(Ok(()));
+                    }
+                    let n = ready!(
+                        self.execute_poll_write(cx, |mut stream| stream.write(&buf[count..]))
+                    )?;
+                    count += n;
+                }
+            })
+            .await
+        }
     }
 
-    fn poll_flush(self: std::pin::Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Poll::Ready(Ok(()))
+    impl IntoInner for CompatSendStream {
+        type Inner = SendStream;
+
+        fn into_inner(self) -> Self::Inner {
+            self.0
+        }
     }
 
-    fn poll_close(self: std::pin::Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.get_mut().finish()?;
-        Poll::Ready(Ok(()))
+    impl Deref for CompatSendStream {
+        type Target = SendStream;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl DerefMut for CompatSendStream {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
+    }
+
+    impl futures_util::AsyncWrite for CompatSendStream {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            self.get_mut()
+                .execute_poll_write(cx, |mut stream| stream.write(buf))
+                .map_err(Into::into)
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            self.get_mut().finish()?;
+            Poll::Ready(Ok(()))
+        }
     }
 }
+
+#[cfg(feature = "io-compat")]
+pub use compat::CompatSendStream;
 
 #[cfg(feature = "h3")]
 pub(crate) mod h3_impl {

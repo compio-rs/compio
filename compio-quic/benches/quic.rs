@@ -6,7 +6,7 @@ use std::{
 
 use compio_buf::bytes::Bytes;
 use criterion::{BenchmarkId, Criterion, Throughput};
-use futures_util::{AsyncWriteExt, StreamExt, stream::FuturesUnordered};
+use futures_util::{StreamExt, stream::FuturesUnordered};
 use rand::{RngCore, rng};
 
 macro_rules! compio_spawn {
@@ -118,7 +118,8 @@ async fn compio_quic_echo_client(
     let start = Instant::now();
     let mut futures = (0..iters)
         .map(|_| async {
-            let (mut send, mut recv) = conn.open_bi_wait().await.unwrap();
+            let (send, mut recv) = conn.open_bi_wait().await.unwrap();
+            let mut send = send.into_compat();
             futures_util::join!(
                 async {
                     send.write_all(data).await.unwrap();
