@@ -114,6 +114,12 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 use std::{future::Future, pin::Pin};
+
+#[cfg(feature = "sync")]
+use synchrony::sync;
+#[cfg(not(feature = "sync"))]
+use synchrony::unsync as sync;
+
 type PinBoxFuture<T> = Pin<Box<dyn Future<Output = T>>>;
 
 mod buffer;
@@ -129,8 +135,5 @@ pub(crate) type IoResult<T> = std::io::Result<T>;
 
 pub use read::*;
 #[doc(inline)]
-pub use util::{
-    copy, null, repeat,
-    split::{split, split_unsync},
-};
+pub use util::{copy, null, repeat, split::split};
 pub use write::*;
