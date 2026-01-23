@@ -1,0 +1,95 @@
+name: Deploy Documentation
+
+on:
+  push:
+    branches:
+      - ci/deploy-docs
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_BACKTRACE: 1
+  RUSTDOCFLAGS: "--enable-index-page -Zunstable-options --cfg docsrs"
+
+jobs:
+  build-docs:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact-name: docs-linux
+          - os: windows-latest
+            target: x86_64-pc-windows-gnu
+            artifact-name: docs-windows
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact-name: docs-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
+        run: |
+          rustup toolchain install nightly
+          rustup default nightly
+          rustup target add ${{ matrix.target }}
+
+      - name: Build Documentation for ${{ matrix.target }}
+        run: |
+          cargo doc --workspace --no-deps --all-features --target ${{ matrix.target }}
+
+      - name: Prepare documentation artifact
+        shell: bash
+        run: |
+          mkdir -p docs-output/${{ matrix.target }}
+          cp -r target/${{ matrix.target }}/doc/* docs-output/${{ matrix.target }}/
+
+      - name: Upload documentation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: docs-output/${{ matrix.target }}
+          retention-days: 1
+
+  deploy:
+    needs: build-docs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux docs
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-linux
+          path: public/x86_64-unknown-linux-gnu
+
+      - name: Download Windows docs
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-windows
+          path: public/x86_64-pc-windows-gnu
+
+      - name: Download Darwin docs
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-darwin
+          path: public/aarch64-apple-darwin
+
+      - name: Copy index page
+        run: |
+          cp docs/index.html public/index.html
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          command: deploy --assets public --name compio-docs --compatibility-date 2026-01-23
