@@ -107,6 +107,12 @@
 
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![doc(
+    html_logo_url = "https://github.com/compio-rs/compio-logo/raw/refs/heads/master/generated/colored-bold.svg"
+)]
+#![doc(
+    html_favicon_url = "https://github.com/compio-rs/compio-logo/raw/refs/heads/master/generated/colored-bold.svg"
+)]
 // This is OK as we're thread-per-core and don't need `Send` or other auto trait on anonymous future
 #![allow(async_fn_in_trait)]
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
