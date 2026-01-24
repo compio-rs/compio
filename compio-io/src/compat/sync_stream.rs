@@ -179,18 +179,20 @@ impl<S> Write for SyncStream<S> {
         }
 
         let written = self.write_buf.with_sync(|mut inner| {
-            let res = if inner.buf_len() + buf.len() > self.max_buffer_size {
-                let space = self.max_buffer_size - inner.buf_len();
-                if space == 0 {
-                    Err(would_block("write buffer full, need to flush"))
+            let res = (|| {
+                if inner.buf_len() + buf.len() > self.max_buffer_size {
+                    let space = self.max_buffer_size - inner.buf_len();
+                    if space == 0 {
+                        Err(would_block("write buffer full, need to flush"))
+                    } else {
+                        inner.extend_from_slice(&buf[..space])?;
+                        Ok(space)
+                    }
                 } else {
-                    let _ = inner.extend_from_slice(&buf[..space]);
-                    Ok(space)
+                    inner.extend_from_slice(buf)?;
+                    Ok(buf.len())
                 }
-            } else {
-                let _ = inner.extend_from_slice(buf);
-                Ok(buf.len())
-            };
+            })();
             BufResult(res, inner)
         })?;
 

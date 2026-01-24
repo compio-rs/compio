@@ -17,7 +17,7 @@ pub trait Encoder<Item, B: IoBufMut> {
     ///
     /// The `buf` is *guaranteed* to have 0 initialized bytes (`buf_len()` ==
     /// 0). If the function is returned successfully, all initialized bytes will
-    /// be treated as valid content to be transimitted.
+    /// be treated as valid content to be transmitted.
     fn encode(&mut self, item: Item, buf: &mut B) -> Result<(), Self::Error>;
 }
 

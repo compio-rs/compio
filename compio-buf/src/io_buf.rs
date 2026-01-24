@@ -80,13 +80,13 @@ pub trait IoBuf: 'static {
     where
         Self: Sized,
     {
-        Reader(self)
+        Reader::new(self)
     }
 
     /// Create a [`ReaderRef`] from a reference of the buffer, which
     /// implements [`std::io::Read`].
     fn as_reader(&self) -> ReaderRef<'_, Self> {
-        ReaderRef(self)
+        ReaderRef::new(self)
     }
 }
 
@@ -203,7 +203,7 @@ pub enum ReserveError {
 
     /// Reservation failed.
     ///
-    /// This is usally caused by out-of-memory.
+    /// This is usually caused by out-of-memory.
     ReserveFailed(Box<dyn Error + Send + Sync>),
 }
 
@@ -256,7 +256,7 @@ pub enum ReserveExactError {
 
     /// Reservation failed.
     ///
-    /// This is usally caused by out-of-memory.
+    /// This is usually caused by out-of-memory.
     ReserveFailed(Box<dyn Error + Send + Sync>),
 
     /// Reserved size does not match the expected size.
@@ -428,7 +428,7 @@ pub trait IoBufMut: IoBuf + SetLen {
 
     /// Reserve additional capacity for the buffer.
     ///
-    /// By default, this checkes if the spare capacity is enough to fit in
+    /// By default, this checks if the spare capacity is enough to fit in
     /// `len`-bytes. If it does, returns `Ok(())`, and otherwise returns
     /// [`Err(ReserveError::NotSupported)`]. Types that support dynamic
     /// resizing (like `Vec<u8>`) will override this method to actually
@@ -441,8 +441,7 @@ pub trait IoBufMut: IoBuf + SetLen {
     /// [`Err(ReserveError::NotSupported)`]: ReserveError::NotSupported
     fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {
         let init = (*self).buf_len();
-        let cap = self.buf_capacity() - init;
-        if init + len <= cap {
+        if len <= self.buf_capacity() - init {
             return Ok(());
         }
         Err(ReserveError::NotSupported)
@@ -495,13 +494,13 @@ pub trait IoBufMut: IoBuf + SetLen {
     where
         Self: Sized,
     {
-        Writer(self)
+        Writer::new(self)
     }
 
     /// Create a [`Writer`] from a mutable reference of the buffer, which
     /// implements [`std::io::Write`].
     fn as_writer(&mut self) -> WriterRef<'_, Self> {
-        WriterRef(self)
+        WriterRef::new(self)
     }
 
     /// Indicate whether the buffer has been filled (uninit portion is empty)
@@ -700,6 +699,21 @@ pub trait SetLen {
     /// * `len` must be less or equal than `as_uninit().len()`.
     /// * The bytes in the range `[buf_len(), len)` must be initialized.
     unsafe fn set_len(&mut self, len: usize);
+
+    /// Advance the buffer length by `len`.
+    ///
+    /// # Safety
+    ///
+    /// * The bytes in the range `[buf_len(), buf_len() + len)` must be
+    ///   initialized.
+    unsafe fn advance(&mut self, len: usize)
+    where
+        Self: IoBuf,
+    {
+        let current_len = (*self).buf_len();
+        let new_len = current_len.checked_add(len).expect("length overflow");
+        unsafe { self.set_len(new_len) };
+    }
 
     /// Set the buffer length to `len`. If `len` is less than the current
     /// length, this operation is a no-op.

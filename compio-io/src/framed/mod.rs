@@ -46,7 +46,7 @@ pub struct Framed<R, W, C, F, In, Out, B = Vec<u8>> {
 ///
 /// [`Sink`]: futures_util::Sink
 /// [`Stream::Item`]: futures_util::Stream::Item
-pub type SymmetricFramed<R, W, C, F, T, B> = Framed<R, W, C, F, T, T, B>;
+pub type SymmetricFramed<R, W, C, F, T, B = Vec<u8>> = Framed<R, W, C, F, T, T, B>;
 
 impl<R, W, C, F, In, Out, B> Framed<R, W, C, F, In, Out, B> {
     /// Change the reader of the `Framed` object.

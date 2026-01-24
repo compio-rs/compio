@@ -34,7 +34,9 @@ pub struct Slice<T> {
 
 impl<T> Slice<T> {
     /// # Safety
-    /// begin <= buf_len
+    ///
+    /// User must ensure that `begin` is less than or equal to the length of the
+    /// underlying buffer.
     pub(crate) unsafe fn new(buffer: T, begin: usize, end: Option<usize>) -> Self {
         Self { buffer, begin, end }
     }
@@ -44,9 +46,24 @@ impl<T> Slice<T> {
         self.begin
     }
 
+    /// Sets the begin offset of the slice.
+    ///
+    /// # Safety
+    ///
+    /// User must ensure that `begin` is less than or equal to the length of the
+    /// underlying buffer.
+    pub unsafe fn set_begin_unchecked(&mut self, begin: usize) {
+        self.begin = begin;
+    }
+
     /// Offset in the underlying buffer at which this slice ends.
     pub fn end(&self) -> Option<usize> {
         self.end
+    }
+
+    /// Sets the end offset of the slice.
+    pub fn set_end(&mut self, end: usize) {
+        self.end = Some(end);
     }
 
     /// Gets a reference to the underlying buffer.
@@ -61,6 +78,19 @@ impl<T> Slice<T> {
     /// This method escapes the slice's view.
     pub fn as_inner_mut(&mut self) -> &mut T {
         &mut self.buffer
+    }
+}
+
+impl<T: IoBuf> Slice<T> {
+    /// Sets the begin offset of the slice.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `begin` is greater than the length of the underlying buffer.
+    pub fn set_begin(&mut self, begin: usize) {
+        assert!(begin <= self.buffer.buf_len());
+        // Safety: we just checked the invariant
+        unsafe { self.set_begin_unchecked(begin) }
     }
 }
 
@@ -84,7 +114,7 @@ impl<T: IoBuf> Slice<Slice<T>> {
 
 #[cfg(feature = "bytes")]
 impl Slice<bytes::Bytes> {
-    /// A convinient function to slice the underlying [`Bytes`] with
+    /// A convenient function to slice the underlying [`Bytes`] with
     /// [`Bytes::slice`].
     ///
     /// The returned `Bytes` will deref to the same byte slice as this
