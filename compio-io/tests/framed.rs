@@ -70,6 +70,7 @@ async fn test_framed() {
     let codec = SerdeJsonCodec::new();
     let framer = LengthDelimited::new();
     let buf = Rc::new(Mutex::new(vec![]));
+    let ins = buf.clone();
     let r = InMemoryPipe(Cursor::new(buf.clone()));
     let w = InMemoryPipe(Cursor::new(buf));
     let mut framed = Framed::symmetric::<Test>(codec, framer)
@@ -78,10 +79,15 @@ async fn test_framed() {
 
     let origin = Test {
         foo: "hello, world!".to_owned(),
-        bar: 114514,
+        bar: 114514111,
     };
     framed.send(origin.clone()).await.unwrap();
     framed.send(origin.clone()).await.unwrap();
+
+    let b = ins.lock().await;
+    let l = String::from_utf8_lossy(b.as_slice());
+    println!("{}", l);
+    drop(b);
 
     let des = framed.next().await.unwrap().unwrap();
     println!("{des:?}");

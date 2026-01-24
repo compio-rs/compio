@@ -176,7 +176,7 @@ impl AsyncWrite for &mut [u8] {
                 Err(e) => return BufResult(Err(e), iter.into_inner()),
             };
             total += n;
-            if self.is_empty() {
+            if (**self).is_empty() {
                 return BufResult(Ok(total), iter.into_inner());
             }
             match iter.next() {
@@ -221,7 +221,7 @@ macro_rules! impl_write_at {
                             BufResult(Err(e), iter) => return BufResult(Err(e), iter.into_inner()),
                         };
                         total += n;
-                        if self.is_empty() {
+                        if (*self).is_empty() {
                             return BufResult(Ok(total), iter.into_inner());
                         }
                         match iter.next() {

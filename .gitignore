@@ -12,3 +12,6 @@
 
 # Bacon config
 bacon.toml
+
+# Cross config
+Cross.toml

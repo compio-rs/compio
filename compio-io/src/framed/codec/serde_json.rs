@@ -6,6 +6,7 @@
 //! # Examples
 //!
 //! ```
+//! use compio_buf::IoBuf;
 //! use compio_io::framed::codec::{Decoder, Encoder, serde_json::SerdeJsonCodec};
 //! use serde::{Deserialize, Serialize};
 //!
@@ -26,7 +27,8 @@
 //! codec.encode(person, &mut buffer).unwrap();
 //!
 //! // Decoding
-//! let decoded: Person = codec.decode(&buffer).unwrap();
+//! let buf = buffer.slice(..);
+//! let decoded: Person = codec.decode(&buf).unwrap();
 //! assert_eq!(decoded.name, "Alice");
 //! assert_eq!(decoded.age, 30);
 //! ```
@@ -36,6 +38,7 @@
 
 use std::io;
 
+use compio_buf::{IoBuf, IoBufMut, Slice};
 use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
@@ -92,23 +95,51 @@ pub enum SerdeJsonCodecError {
     IoError(#[from] io::Error),
 }
 
-impl<T: Serialize> Encoder<T> for SerdeJsonCodec {
+impl<T: Serialize, B: IoBufMut> Encoder<T, B> for SerdeJsonCodec {
     type Error = SerdeJsonCodecError;
 
-    fn encode(&mut self, item: T, buf: &mut Vec<u8>) -> Result<(), Self::Error> {
+    fn encode(&mut self, item: T, buf: &mut B) -> Result<(), Self::Error> {
+        let writer = buf.as_writer();
         if self.pretty {
-            serde_json::to_writer_pretty(buf, &item)
+            serde_json::to_writer_pretty(writer, &item)
         } else {
-            serde_json::to_writer(buf, &item)
+            serde_json::to_writer(writer, &item)
         }
         .map_err(SerdeJsonCodecError::SerdeJsonError)
     }
 }
 
-impl<T: DeserializeOwned> Decoder<T> for SerdeJsonCodec {
+impl<T: DeserializeOwned, B: IoBuf> Decoder<T, B> for SerdeJsonCodec {
     type Error = SerdeJsonCodecError;
 
-    fn decode(&mut self, buf: &[u8]) -> Result<T, Self::Error> {
+    fn decode(&mut self, buf: &Slice<B>) -> Result<T, Self::Error> {
         serde_json::from_slice(buf).map_err(SerdeJsonCodecError::SerdeJsonError)
     }
+}
+
+#[test]
+fn test_serde_json_codec() {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    struct TestStruct {
+        id: u32,
+        name: String,
+    }
+
+    let mut codec = SerdeJsonCodec::new();
+    let item = TestStruct {
+        id: 114514,
+        name: "Test".to_string(),
+    };
+
+    // Test encoding
+    let mut buffer = Vec::new();
+    codec.encode(item.clone(), &mut buffer).unwrap();
+
+    // Test decoding
+    let slice = buffer.slice(..);
+    let decoded: TestStruct = codec.decode(&slice).unwrap();
+
+    assert_eq!(item, decoded);
 }

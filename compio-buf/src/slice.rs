@@ -64,6 +64,24 @@ impl<T> Slice<T> {
     }
 }
 
+impl<T: IoBuf> Slice<Slice<T>> {
+    /// Flatten nested slices into a single slice.
+    pub fn flatten(self) -> Slice<T> {
+        let large_begin = self.buffer.begin;
+        let large_end = self.buffer.end;
+
+        let new_begin = large_begin + self.begin;
+        let new_end = match (self.end, large_end) {
+            (Some(small_end), Some(large_end)) => Some((large_begin + small_end).min(large_end)),
+            (Some(small_end), None) => Some(large_begin + small_end),
+            (None, large_end) => large_end,
+        };
+
+        // Safety: inner.begin + outer.begin <= buf_len
+        unsafe { Slice::new(self.buffer.buffer, new_begin, new_end) }
+    }
+}
+
 impl<T: IoBuf> Slice<T> {
     /// Offset in the underlying buffer at which this slice ends. If it does not
     /// exist or exceeds the buffer length, returns the buffer length.
@@ -123,6 +141,24 @@ impl<T: IoBufMut> IoBufMut for Slice<T> {
         let range = self.range();
         let bytes = self.buffer.as_uninit();
         &mut bytes[range]
+    }
+
+    fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {
+        if self.end.is_some() {
+            // Cannot reserve on a fixed-size slice
+            Err(ReserveError::NotSupported)
+        } else {
+            self.buffer.reserve(len)
+        }
+    }
+
+    fn reserve_exact(&mut self, len: usize) -> Result<(), ReserveExactError> {
+        if self.end.is_some() {
+            // Cannot reserve on a fixed-size slice
+            Err(ReserveExactError::NotSupported)
+        } else {
+            self.buffer.reserve_exact(len)
+        }
     }
 }
 

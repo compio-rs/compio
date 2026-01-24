@@ -3,7 +3,7 @@
 use std::io;
 
 use compio_buf::{
-    IoBufMut,
+    IoBuf, IoBufMut, Slice,
     bytes::{Buf, BufMut},
 };
 
@@ -42,22 +42,22 @@ impl Frame {
     }
 
     /// Slice payload out of the buffer
-    pub fn payload<'a>(&self, buf: &'a [u8]) -> &'a [u8] {
-        &buf[self.prefix..self.prefix + self.payload]
+    pub fn slice<B: IoBuf>(&self, buf: B) -> Slice<B> {
+        buf.slice(self.prefix..self.prefix + self.payload)
     }
 }
 
 /// Enclosing and extracting frames in a buffer.
-pub trait Framer {
+pub trait Framer<B: IoBufMut> {
     /// Enclose a frame in the given buffer.
     ///
-    /// All initialized bytes in `buf` (`buf[0..buf.len()]`) are valid and
+    /// All initialized bytes in `buf` (`buf[0..buf.buf_len()]`) are valid and
     /// required to be enclosed. All modifications should happen in-place; one
-    /// can use [`slice::copy_within`] or a temporary buffer if prepending data
-    /// is necessary.
+    /// can use [`IoBufMut::reserve`], [`IoBufMut::copy_within`] or a temporary
+    /// buffer if prepending data is necessary.
     ///
     /// [`slice::copy_within`]: https://doc.rust-lang.org/std/primitive.slice.html#method.copy_within
-    fn enclose(&mut self, buf: &mut Vec<u8>);
+    fn enclose(&mut self, buf: &mut B);
 
     /// Extract a frame from the given buffer.
     ///
@@ -65,7 +65,7 @@ pub trait Framer {
     /// - `Ok(Some(frame))` if a complete frame is found.
     /// - `Ok(None)` if no complete frame is found.
     /// - `Err(io::Error)` if an error occurs during extraction.
-    fn extract(&mut self, buf: &[u8]) -> io::Result<Option<Frame>>;
+    fn extract(&mut self, buf: &Slice<B>) -> io::Result<Option<Frame>>;
 }
 
 /// A simple extractor that frames data by its length.
@@ -115,26 +115,30 @@ impl LengthDelimited {
     }
 }
 
-impl Framer for LengthDelimited {
-    fn enclose(&mut self, buf: &mut Vec<u8>) {
-        let len = buf.len();
+impl<B: IoBufMut> Framer<B> for LengthDelimited {
+    fn enclose(&mut self, buf: &mut B) {
+        let len = (*buf).buf_len();
 
-        buf.reserve(self.length_field_len);
-        IoBufMut::as_uninit(buf).copy_within(0..len, self.length_field_len); // Shift existing data
-        unsafe { buf.set_len(len + self.length_field_len) };
+        buf.reserve(self.length_field_len).expect("Reserve failed");
+        buf.copy_within(0..len, self.length_field_len); // Shift existing data
+        unsafe { buf.advance_to(len + self.length_field_len) };
+
+        let slice = buf.as_mut_slice();
 
         // Write the length at the beginning
         if self.length_field_is_big_endian {
-            (&mut buf[0..self.length_field_len]).put_uint(len as _, self.length_field_len);
+            (&mut slice[0..self.length_field_len]).put_uint(len as _, self.length_field_len);
         } else {
-            (&mut buf[0..self.length_field_len]).put_uint_le(len as _, self.length_field_len);
+            (&mut slice[0..self.length_field_len]).put_uint_le(len as _, self.length_field_len);
         }
     }
 
-    fn extract(&mut self, mut buf: &[u8]) -> io::Result<Option<Frame>> {
+    fn extract(&mut self, buf: &Slice<B>) -> io::Result<Option<Frame>> {
         if buf.len() < self.length_field_len {
             return Ok(None);
         }
+
+        let mut buf = buf.as_init();
 
         let len = if self.length_field_is_big_endian {
             buf.get_uint(self.length_field_len)
@@ -150,31 +154,35 @@ impl Framer for LengthDelimited {
     }
 }
 
-/// A generic delimiter that uses a single character.
+/// A generic delimiter that uses a single character encoded as UTF-8.
+///
+/// If you need to use a multi-byte delimiter or other encodings, consider using
+/// [`AnyDelimited`].
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CharDelimited<const C: char> {}
+pub struct CharDelimited<const C: char> {
+    char_buf: [u8; 4],
+}
 
 impl<const C: char> CharDelimited<C> {
     /// Creates a new `CharDelimited`
     pub fn new() -> Self {
-        Self {}
+        Self { char_buf: [0; 4] }
+    }
+
+    fn as_any_delimited(&mut self) -> AnyDelimited<'_> {
+        let bytes = C.encode_utf8(&mut self.char_buf).as_bytes();
+
+        AnyDelimited::new(bytes)
     }
 }
 
-impl<const C: char> Framer for CharDelimited<C> {
-    fn enclose(&mut self, buf: &mut Vec<u8>) {
-        buf.push(C as u8);
+impl<B: IoBufMut, const C: char> Framer<B> for CharDelimited<C> {
+    fn enclose(&mut self, buf: &mut B) {
+        self.as_any_delimited().enclose(buf);
     }
 
-    fn extract(&mut self, buf: &[u8]) -> io::Result<Option<Frame>> {
-        if buf.is_empty() {
-            return Ok(None);
-        }
-
-        Ok(buf
-            .iter()
-            .position(|&b| b == C as u8)
-            .map(|pos| Frame::new(0, pos, 1)))
+    fn extract(&mut self, buf: &Slice<B>) -> io::Result<Option<Frame>> {
+        self.as_any_delimited().extract(buf)
     }
 }
 
@@ -191,14 +199,14 @@ impl<'a> AnyDelimited<'a> {
     }
 }
 
-impl Framer for AnyDelimited<'_> {
-    fn extract(&mut self, buf: &[u8]) -> io::Result<Option<Frame>> {
+impl<B: IoBufMut> Framer<B> for AnyDelimited<'_> {
+    fn extract(&mut self, buf: &Slice<B>) -> io::Result<Option<Frame>> {
         if buf.is_empty() {
             return Ok(None);
         }
 
         // Search for the first occurrence of any byte in `self.bytes`
-        // TODO(George-Miao): Optimize if performance is a concern
+        // TODO(George-Miao): Optimize with memchr if performance is a concern
         if let Some(pos) = buf
             .windows(self.bytes.len())
             .position(|window| window == self.bytes)
@@ -209,10 +217,50 @@ impl Framer for AnyDelimited<'_> {
         }
     }
 
-    fn enclose(&mut self, buf: &mut Vec<u8>) {
-        buf.extend_from_slice(self.bytes);
+    fn enclose(&mut self, buf: &mut B) {
+        buf.extend_from_slice(self.bytes)
+            .expect("Failed to append delimiter");
     }
 }
 
 /// Delimiter that uses newline characters (`\n`) as delimiters.
 pub type LineDelimited = CharDelimited<'\n'>;
+
+#[cfg(test)]
+mod tests {
+    use compio_buf::{IntoInner, IoBufMut};
+
+    use super::*;
+
+    #[test]
+    fn test_length_delimited() {
+        let mut framer = LengthDelimited::new();
+
+        let mut buf = Vec::from(b"hello");
+        framer.enclose(&mut buf);
+        assert_eq!(&buf.as_slice()[..9], b"\x00\x00\x00\x05hello");
+
+        let buf = buf.slice(..);
+        let frame = framer.extract(&buf).unwrap().unwrap();
+        let buf = buf.into_inner();
+        assert_eq!(frame, Frame::new(4, 5, 0));
+        let payload = frame.slice(buf);
+        assert_eq!(payload.as_init(), b"hello");
+    }
+
+    #[test]
+    fn test_char_delimited() {
+        let mut framer = CharDelimited::<'ℝ'>::new();
+
+        let mut buf = Vec::new();
+        IoBufMut::extend_from_slice(&mut buf, b"hello").unwrap();
+        framer.enclose(&mut buf);
+        assert_eq!(buf.as_slice(), "helloℝ".as_init());
+
+        let buf = buf.slice(..);
+        let frame = framer.extract(&buf).unwrap().unwrap();
+        assert_eq!(frame, Frame::new(0, 5, 3));
+        let payload = frame.slice(buf);
+        assert_eq!(payload.as_init(), b"hello");
+    }
+}
