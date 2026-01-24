@@ -82,6 +82,22 @@ impl<T: IoBuf> Slice<Slice<T>> {
     }
 }
 
+#[cfg(feature = "bytes")]
+impl Slice<bytes::Bytes> {
+    /// A convinient function to slice the underlying [`Bytes`] with
+    /// [`Bytes::slice`].
+    ///
+    /// The returned `Bytes` will deref to the same byte slice as this
+    /// [`Slice`].
+    ///
+    /// [`Bytes`]: bytes::Bytes
+    /// [`Bytes::slice`]: bytes::Bytes::slice
+    pub fn slice_bytes(&self) -> bytes::Bytes {
+        let range = self.initialized_range();
+        bytes::Bytes::slice(&self.buffer, range)
+    }
+}
+
 impl<T: IoBuf> Slice<T> {
     /// Offset in the underlying buffer at which this slice ends. If it does not
     /// exist or exceeds the buffer length, returns the buffer length.
