@@ -3,45 +3,62 @@ use std::{
     task::{Context, Poll, ready},
 };
 
-use compio_buf::BufResult;
+use compio_buf::{BufResult, IntoInner, IoBufMut};
 use futures_util::Stream;
 
 use super::*;
 use crate::{AsyncReadExt, PinBoxFuture, buffer::Buffer, framed::frame::Framer};
 
-type ReadResult = BufResult<usize, Buffer>;
+type ReadResult<B> = BufResult<usize, Buffer<B>>;
 
-pub struct State<Io> {
-    inner: StateInner<Io>,
+pub struct State<Io, B> {
+    inner: StateInner<Io, B>,
     eof: bool,
 }
 
-impl<Io> State<Io> {
-    pub fn new(io: Io, buf: Buffer) -> Self {
-        State {
-            inner: StateInner::Idle(Some((io, buf))),
-            eof: false,
-        }
-    }
-
+impl<Io> State<Io, Vec<u8>> {
     pub fn empty() -> Self {
         State {
-            inner: StateInner::Idle(None),
+            inner: StateInner::Configuring(None, Some(Buffer::new())),
             eof: false,
         }
     }
 }
 
-enum StateInner<Io> {
-    Idle(Option<(Io, Buffer)>),
-    Reading(PinBoxFuture<(Io, ReadResult)>),
+impl<Io, B> State<Io, B> {
+    pub fn with_io<I>(self, io: I) -> State<I, B> {
+        let StateInner::Configuring(_, b) = self.inner else {
+            panic_config_polled()
+        };
+        State {
+            inner: StateInner::Configuring(Some(io), b),
+            eof: false,
+        }
+    }
+
+    pub fn with_buf<Buf: IoBufMut>(self, buf: Buf) -> State<Io, Buf> {
+        let StateInner::Configuring(io, _) = self.inner else {
+            panic_config_polled()
+        };
+        State {
+            inner: StateInner::Configuring(io, Some(Buffer::new_with(buf))),
+            eof: false,
+        }
+    }
 }
 
-impl<R, W, C, F, In, Out> Stream for Framed<R, W, C, F, In, Out>
+enum StateInner<Io, B> {
+    Configuring(Option<Io>, Option<Buffer<B>>),
+    Idle(Option<(Io, Buffer<B>)>),
+    Reading(PinBoxFuture<(Io, ReadResult<B>)>),
+}
+
+impl<R, W, C, F, In, Out, B> Stream for Framed<R, W, C, F, In, Out, B>
 where
     R: AsyncRead + 'static,
-    C: Decoder<Out>,
-    F: Framer,
+    C: Decoder<Out, B>,
+    F: Framer<B>,
+    B: IoBufMut,
     Self: Unpin,
 {
     type Item = Result<Out, C::Error>;
@@ -51,22 +68,34 @@ where
 
         loop {
             match &mut this.read_state.inner {
+                StateInner::Configuring(io, buf) => {
+                    let io = io.take().expect("Inconsistent state");
+                    let buf = buf.take().expect("Inconsistent state");
+                    this.read_state.inner = StateInner::Idle(Some((io, buf)));
+                }
                 StateInner::Idle(idle) => {
                     let (mut io, mut buf) = idle.take().expect("Inconsistent state");
-                    let slice = buf.buffer();
 
                     // First try decode from the buffer
-                    if let Some(frame) = this.framer.extract(slice)? {
-                        let decoded = this.codec.decode(frame.payload(slice))?;
-                        buf.advance(frame.len());
+                    let inner = buf.inner();
+                    if let Some(frame) = this.framer.extract(inner)? {
+                        let (begin, end) = (inner.begin(), inner.end());
+                        let slice = frame.slice(buf.take_inner()).flatten(); // focus on only the payload
+                        let decoded = this.codec.decode(&slice);
+                        let inner = slice.into_inner();
+                        if let Some(end) = end {
+                            buf.restore_inner(inner.slice(begin..end));
+                        } else {
+                            buf.restore_inner(inner.slice(begin..));
+                        }
 
-                        if buf.all_done() {
+                        if buf.advance(frame.len()) {
                             buf.reset();
                         }
 
                         this.read_state.inner = StateInner::Idle(Some((io, buf)));
 
-                        return Poll::Ready(Some(Ok(decoded)));
+                        return Poll::Ready(Some(decoded));
                     }
 
                     buf.reserve(16);

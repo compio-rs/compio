@@ -34,7 +34,9 @@ pub struct Slice<T> {
 
 impl<T> Slice<T> {
     /// # Safety
-    /// begin <= buf_len
+    ///
+    /// User must ensure that `begin` is less than or equal to the length of the
+    /// underlying buffer.
     pub(crate) unsafe fn new(buffer: T, begin: usize, end: Option<usize>) -> Self {
         Self { buffer, begin, end }
     }
@@ -44,9 +46,24 @@ impl<T> Slice<T> {
         self.begin
     }
 
+    /// Sets the begin offset of the slice.
+    ///
+    /// # Safety
+    ///
+    /// User must ensure that `begin` is less than or equal to the length of the
+    /// underlying buffer.
+    pub unsafe fn set_begin_unchecked(&mut self, begin: usize) {
+        self.begin = begin;
+    }
+
     /// Offset in the underlying buffer at which this slice ends.
     pub fn end(&self) -> Option<usize> {
         self.end
+    }
+
+    /// Sets the end offset of the slice.
+    pub fn set_end(&mut self, end: usize) {
+        self.end = Some(end);
     }
 
     /// Gets a reference to the underlying buffer.
@@ -61,6 +78,53 @@ impl<T> Slice<T> {
     /// This method escapes the slice's view.
     pub fn as_inner_mut(&mut self) -> &mut T {
         &mut self.buffer
+    }
+}
+
+impl<T: IoBuf> Slice<T> {
+    /// Sets the begin offset of the slice.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `begin` is greater than the length of the underlying buffer.
+    pub fn set_begin(&mut self, begin: usize) {
+        assert!(begin <= self.buffer.buf_len());
+        // Safety: we just checked the invariant
+        unsafe { self.set_begin_unchecked(begin) }
+    }
+}
+
+impl<T: IoBuf> Slice<Slice<T>> {
+    /// Flatten nested slices into a single slice.
+    pub fn flatten(self) -> Slice<T> {
+        let large_begin = self.buffer.begin;
+        let large_end = self.buffer.end;
+
+        let new_begin = large_begin + self.begin;
+        let new_end = match (self.end, large_end) {
+            (Some(small_end), Some(large_end)) => Some((large_begin + small_end).min(large_end)),
+            (Some(small_end), None) => Some(large_begin + small_end),
+            (None, large_end) => large_end,
+        };
+
+        // Safety: inner.begin + outer.begin <= buf_len
+        unsafe { Slice::new(self.buffer.buffer, new_begin, new_end) }
+    }
+}
+
+#[cfg(feature = "bytes")]
+impl Slice<bytes::Bytes> {
+    /// A convenient function to slice the underlying [`Bytes`] with
+    /// [`Bytes::slice`].
+    ///
+    /// The returned `Bytes` will deref to the same byte slice as this
+    /// [`Slice`].
+    ///
+    /// [`Bytes`]: bytes::Bytes
+    /// [`Bytes::slice`]: bytes::Bytes::slice
+    pub fn slice_bytes(&self) -> bytes::Bytes {
+        let range = self.initialized_range();
+        bytes::Bytes::slice(&self.buffer, range)
     }
 }
 
@@ -123,6 +187,24 @@ impl<T: IoBufMut> IoBufMut for Slice<T> {
         let range = self.range();
         let bytes = self.buffer.as_uninit();
         &mut bytes[range]
+    }
+
+    fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {
+        if self.end.is_some() {
+            // Cannot reserve on a fixed-size slice
+            Err(ReserveError::NotSupported)
+        } else {
+            self.buffer.reserve(len)
+        }
+    }
+
+    fn reserve_exact(&mut self, len: usize) -> Result<(), ReserveExactError> {
+        if self.end.is_some() {
+            // Cannot reserve on a fixed-size slice
+            Err(ReserveExactError::NotSupported)
+        } else {
+            self.buffer.reserve_exact(len)
+        }
     }
 }
 

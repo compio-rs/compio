@@ -20,6 +20,7 @@ serde = { version = "1.0.219", optional = true }
 serde_json = { version = "1.0.140", optional = true }
 
 [dev-dependencies]
+compio-driver = { workspace = true, features = ["io-uring"] }
 compio-runtime = { workspace = true }
 compio-macros = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }

@@ -1,6 +1,6 @@
 #[cfg(feature = "allocator_api")]
 use std::alloc::Allocator;
-use std::{error::Error, fmt::Display, mem::MaybeUninit, rc::Rc, sync::Arc};
+use std::{error::Error, fmt::Display, mem::MaybeUninit, ops::RangeBounds, rc::Rc, sync::Arc};
 
 use crate::*;
 
@@ -21,6 +21,11 @@ pub trait IoBuf: 'static {
     /// Raw pointer to the buffer.
     fn buf_ptr(&self) -> *const u8 {
         self.as_init().as_ptr()
+    }
+
+    /// Check if the buffer is empty.
+    fn is_empty(&self) -> bool {
+        self.buf_len() == 0
     }
 
     /// Returns a view of the buffer with the specified range.
@@ -67,6 +72,21 @@ pub trait IoBuf: 'static {
 
         // SAFETY: begin <= self.buf_len()
         unsafe { Slice::new(self, begin, end) }
+    }
+
+    /// Create a [`Reader`] from this buffer, which implements
+    /// [`std::io::Read`].
+    fn into_reader(self) -> Reader<Self>
+    where
+        Self: Sized,
+    {
+        Reader::new(self)
+    }
+
+    /// Create a [`ReaderRef`] from a reference of the buffer, which
+    /// implements [`std::io::Read`].
+    fn as_reader(&self) -> ReaderRef<'_, Self> {
+        ReaderRef::new(self)
     }
 }
 
@@ -175,12 +195,15 @@ where
 }
 
 /// An error indicating that reserving capacity for a buffer failed.
+#[must_use]
 #[derive(Debug)]
 pub enum ReserveError {
     /// Reservation is not supported.
     NotSupported,
 
     /// Reservation failed.
+    ///
+    /// This is usually caused by out-of-memory.
     ReserveFailed(Box<dyn Error + Send + Sync>),
 }
 
@@ -211,13 +234,29 @@ impl Error for ReserveError {
     }
 }
 
+impl From<ReserveError> for std::io::Error {
+    fn from(value: ReserveError) -> Self {
+        match value {
+            ReserveError::NotSupported => {
+                std::io::Error::new(std::io::ErrorKind::Unsupported, "reservation not supported")
+            }
+            ReserveError::ReserveFailed(src) => {
+                std::io::Error::new(std::io::ErrorKind::OutOfMemory, src)
+            }
+        }
+    }
+}
+
 /// An error indicating that reserving exact capacity for a buffer failed.
+#[must_use]
 #[derive(Debug)]
 pub enum ReserveExactError {
     /// Reservation is not supported.
     NotSupported,
 
     /// Reservation failed.
+    ///
+    /// This is usually caused by out-of-memory.
     ReserveFailed(Box<dyn Error + Send + Sync>),
 
     /// Reserved size does not match the expected size.
@@ -269,6 +308,22 @@ impl Error for ReserveExactError {
         match self {
             ReserveExactError::ReserveFailed(src) => Some(src.as_ref()),
             _ => None,
+        }
+    }
+}
+
+impl From<ReserveExactError> for std::io::Error {
+    fn from(value: ReserveExactError) -> Self {
+        match value {
+            ReserveExactError::NotSupported => {
+                std::io::Error::new(std::io::ErrorKind::Unsupported, "reservation not supported")
+            }
+            ReserveExactError::ReserveFailed(src) => {
+                std::io::Error::new(std::io::ErrorKind::OutOfMemory, src)
+            }
+            ReserveExactError::ExactSizeMismatch { expected, reserved } => std::io::Error::other(
+                format!("reserved size mismatch: expected {expected}, reserved {reserved}",),
+            ),
         }
     }
 }
@@ -325,24 +380,82 @@ pub trait IoBufMut: IoBuf + SetLen {
         unsafe { std::slice::from_raw_parts_mut(ptr as *mut u8, len) }
     }
 
+    /// Extend the buffer by copying bytes from `src`.
+    ///
+    /// The buffer will reserve additional capacity if necessary, and return an
+    /// error when reservation failed.
+    ///
+    /// Notice that this may move the memory of the buffer, so it's UB to
+    /// call this after the buffer is being pinned.
+    // FIXME: Change to `slice::write_copy_of_slice` when stabilized
+    fn extend_from_slice(&mut self, src: &[u8]) -> Result<(), ReserveError> {
+        let len = src.len();
+        let init = (*self).buf_len();
+        self.reserve(len)?;
+        let ptr = self.buf_mut_ptr().wrapping_add(init);
+
+        unsafe {
+            // SAFETY:
+            // - we have reserved enough capacity so the ptr and len stays in one allocation
+            // - src is valid for len bytes
+            // - ptr is valid for len bytes
+            // - &mut self guarantees that src cannot overlap with dst
+            std::ptr::copy_nonoverlapping(src.as_ptr() as _, ptr, len);
+
+            // SAFETY: the bytes in range [init, init + len) are initialized now
+            self.advance_to(init + len);
+        }
+
+        Ok(())
+    }
+
+    /// Like [`slice::copy_within`], copy a range of bytes within the buffer to
+    /// another location in the same buffer. This will count in both initialized
+    /// and uninitialized bytes.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the source or destination range is out of
+    /// bounds.
+    ///
+    /// [`slice::copy_within`]: https://doc.rust-lang.org/std/primitive.slice.html#method.copy_within
+    fn copy_within<R>(&mut self, src: R, dest: usize)
+    where
+        R: RangeBounds<usize>,
+    {
+        self.as_uninit().copy_within(src, dest);
+    }
+
     /// Reserve additional capacity for the buffer.
     ///
-    /// This is a no-op by default. Types that support dynamic resizing
-    /// (like `Vec<u8>`) will override this method to actually reserve
-    /// capacity. The return value indicates whether the reservation succeeded.
-    /// See [`ReserveError`] for details.
+    /// By default, this checks if the spare capacity is enough to fit in
+    /// `len`-bytes. If it does, returns `Ok(())`, and otherwise returns
+    /// [`Err(ReserveError::NotSupported)`]. Types that support dynamic
+    /// resizing (like `Vec<u8>`) will override this method to actually
+    /// reserve capacity. The return value indicates whether the reservation
+    /// succeeded. See [`ReserveError`] for details.
+    ///
+    /// Notice that this may move the memory of the buffer, so it's UB to
+    /// call this after the buffer is being pinned.
+    ///
+    /// [`Err(ReserveError::NotSupported)`]: ReserveError::NotSupported
     fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {
-        let _ = len;
+        let init = (*self).buf_len();
+        if len <= self.buf_capacity() - init {
+            return Ok(());
+        }
         Err(ReserveError::NotSupported)
     }
 
     /// Reserve exactly `len` additional capacity for the buffer.
     ///
-    /// By default this falls back to [`IoBufMut::reserve`], which is a no-op
-    /// for most types. Types that support dynamic resizing (like `Vec<u8>`)
-    /// will override this method to actually reserve capacity. The return value
-    /// indicates whether the exact reservation succeeded. See
-    /// [`ReserveExactError`] for details.
+    /// By default this falls back to [`IoBufMut::reserve`]. Types that support
+    /// dynamic resizing (like `Vec<u8>`) will override this method to
+    /// actually reserve capacity. The return value indicates whether the
+    /// exact reservation succeeded. See [`ReserveExactError`] for details.
+    ///
+    /// Notice that this may move the memory of the buffer, so it's UB to
+    /// call this after the buffer is being pinned.
     fn reserve_exact(&mut self, len: usize) -> Result<(), ReserveExactError> {
         self.reserve(len)?;
         Ok(())
@@ -373,6 +486,21 @@ pub trait IoBufMut: IoBuf + SetLen {
         Self: Sized,
     {
         Uninit::new(self)
+    }
+
+    /// Create a [`Writer`] from this buffer, which implements
+    /// [`std::io::Write`].
+    fn into_writer(self) -> Writer<Self>
+    where
+        Self: Sized,
+    {
+        Writer::new(self)
+    }
+
+    /// Create a [`Writer`] from a mutable reference of the buffer, which
+    /// implements [`std::io::Write`].
+    fn as_writer(&mut self) -> WriterRef<'_, Self> {
+        WriterRef::new(self)
     }
 
     /// Indicate whether the buffer has been filled (uninit portion is empty)
@@ -571,6 +699,21 @@ pub trait SetLen {
     /// * `len` must be less or equal than `as_uninit().len()`.
     /// * The bytes in the range `[buf_len(), len)` must be initialized.
     unsafe fn set_len(&mut self, len: usize);
+
+    /// Advance the buffer length by `len`.
+    ///
+    /// # Safety
+    ///
+    /// * The bytes in the range `[buf_len(), buf_len() + len)` must be
+    ///   initialized.
+    unsafe fn advance(&mut self, len: usize)
+    where
+        Self: IoBuf,
+    {
+        let current_len = (*self).buf_len();
+        let new_len = current_len.checked_add(len).expect("length overflow");
+        unsafe { self.set_len(new_len) };
+    }
 
     /// Set the buffer length to `len`. If `len` is less than the current
     /// length, this operation is a no-op.
@@ -783,5 +926,16 @@ mod test {
         let res = IoBufMut::reserve(&mut buf, 10);
         assert!(res.is_err_and(|x| x.is_not_supported()));
         assert!(buf.buf_capacity() == 6);
+    }
+
+    #[test]
+    fn test_extend() {
+        let mut buf = Vec::from(b"hello");
+        IoBufMut::extend_from_slice(&mut buf, b" world").unwrap();
+        assert_eq!(buf.as_slice(), b"hello world");
+
+        let mut buf = [];
+        let res = IoBufMut::extend_from_slice(&mut buf, b" ");
+        assert!(res.is_err_and(|x| x.is_not_supported()));
     }
 }

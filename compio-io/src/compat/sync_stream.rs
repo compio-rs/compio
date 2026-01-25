@@ -179,18 +179,20 @@ impl<S> Write for SyncStream<S> {
         }
 
         let written = self.write_buf.with_sync(|mut inner| {
-            let res = if inner.buf_len() + buf.len() > self.max_buffer_size {
-                let space = self.max_buffer_size - inner.buf_len();
-                if space == 0 {
-                    Err(would_block("write buffer full, need to flush"))
+            let res = (|| {
+                if inner.buf_len() + buf.len() > self.max_buffer_size {
+                    let space = self.max_buffer_size - inner.buf_len();
+                    if space == 0 {
+                        Err(would_block("write buffer full, need to flush"))
+                    } else {
+                        inner.extend_from_slice(&buf[..space])?;
+                        Ok(space)
+                    }
                 } else {
-                    inner.extend_from_slice(&buf[..space]);
-                    Ok(space)
+                    inner.extend_from_slice(buf)?;
+                    Ok(buf.len())
                 }
-            } else {
-                inner.extend_from_slice(buf);
-                Ok(buf.len())
-            };
+            })();
             BufResult(res, inner)
         })?;
 
@@ -261,7 +263,7 @@ impl<S: crate::AsyncRead> SyncStream<S> {
                 let target_space = self.base_capacity;
                 if available_space < target_space {
                     let new_capacity = current_len + target_space;
-                    inner.reserve_exact(new_capacity - capacity);
+                    let _ = inner.reserve_exact(new_capacity - capacity);
                 }
 
                 let len = inner.buf_len();
