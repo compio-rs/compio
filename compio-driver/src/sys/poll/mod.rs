@@ -634,7 +634,7 @@ impl Driver {
                             // because we only use AIO on FreeBSD), we'd better ignore the current
                             // one and wait for the real event.
                             libc::EINPROGRESS => {
-                                trace!("op {} is not completed", user_data);
+                                trace!("op {} is not completed", key.as_raw());
                                 continue;
                             }
                             libc::ECANCELED => {
