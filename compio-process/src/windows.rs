@@ -28,7 +28,7 @@ impl WaitProcess {
     }
 }
 
-impl OpCode for WaitProcess {
+unsafe impl OpCode for WaitProcess {
     fn op_type(&self) -> OpType {
         OpType::Event(self.child.as_raw_handle() as _)
     }

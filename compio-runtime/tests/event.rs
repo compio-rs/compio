@@ -35,7 +35,7 @@ fn win32_event() {
         event: OwnedHandle,
     }
 
-    impl OpCode for WaitEvent {
+    unsafe impl OpCode for WaitEvent {
         fn op_type(&self) -> OpType {
             OpType::Event(self.event.as_raw_handle() as _)
         }

@@ -197,7 +197,7 @@ impl<T> IntoInner for WaitWSAEvent<T> {
     }
 }
 
-impl<T: AsFd> OpCode for WaitWSAEvent<T> {
+unsafe impl<T: AsFd> OpCode for WaitWSAEvent<T> {
     fn op_type(&self) -> OpType {
         OpType::Event(self.ev_object.as_raw_fd())
     }

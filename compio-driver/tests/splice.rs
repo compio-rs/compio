@@ -79,7 +79,7 @@ mod splice_impl {
         }
     }
 
-    impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
+    unsafe impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
         fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
             Ok(Decision::wait_for_many([
                 WaitArg::readable(self.fd_in.as_fd().as_raw_fd()),

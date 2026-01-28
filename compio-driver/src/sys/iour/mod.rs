@@ -107,7 +107,12 @@ impl From<io_uring::squeue::Entry128> for OpEntry {
 }
 
 /// Abstraction of io-uring operations.
-pub trait OpCode {
+///
+/// # Safety
+///
+/// The returned Entry from `create_entry` must be valid until the operation is
+/// completed.
+pub unsafe trait OpCode {
     /// Create submission entry.
     fn create_entry(self: Pin<&mut Self>) -> OpEntry;
 
