@@ -287,7 +287,7 @@ impl Driver {
                 .inner
                 .submission()
                 .push(
-                    &AsyncCancel::new(key.into_raw() as _)
+                    &AsyncCancel::new(key.as_raw() as _)
                         .build()
                         .user_data(Self::CANCEL)
                         .into(),
