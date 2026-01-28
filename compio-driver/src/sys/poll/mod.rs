@@ -42,13 +42,13 @@ impl From<WaitArg> for Track {
 
 /// Abstraction of operations.
 ///
-/// # Implementation notes
+/// # Safety
 ///
 /// If `pre_submit` returns `Decision::Wait`, `op_type` must also return
 /// `Some(OpType::Fd)` with same fds as the `WaitArg`s. Similarly, if
 /// `pre_submit` returns `Decision::Aio`, `op_type` must return
 /// `Some(OpType::Aio)` with the correct `aiocb` pointer.
-pub trait OpCode {
+pub unsafe trait OpCode {
     /// Perform the operation before submit, and return [`Decision`] to
     /// indicate whether submitting the operation to polling is required.
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision>;

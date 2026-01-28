@@ -77,7 +77,7 @@ macro_rules! op {
             }
         }
 
-        impl<$($ty: $trait),*> poll::OpCode for $name<$($ty),*> {
+        unsafe impl<$($ty: $trait),*> poll::OpCode for $name<$($ty),*> {
             fn pre_submit(self: std::pin::Pin<&mut Self>) -> std::io::Result<crate::Decision> {
                 unsafe { self.map_unchecked_mut(|x| x.inner.poll() ) }.pre_submit()
             }
@@ -93,7 +93,7 @@ macro_rules! op {
             }
         }
 
-        impl<$($ty: $trait),*> iour::OpCode for $name<$($ty),*> {
+        unsafe impl<$($ty: $trait),*> iour::OpCode for $name<$($ty),*> {
             fn create_entry(self: std::pin::Pin<&mut Self>) -> OpEntry {
                 unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.create_entry()
             }
@@ -179,7 +179,7 @@ macro_rules! mop {
             }
         }
 
-        impl<$($ty: $trait),*> poll::OpCode for $name<$($ty),*> {
+        unsafe impl<$($ty: $trait),*> poll::OpCode for $name<$($ty),*> {
             fn pre_submit(self: std::pin::Pin<&mut Self>) -> std::io::Result<crate::Decision> {
                 unsafe { self.map_unchecked_mut(|x| x.inner.poll() ) }.pre_submit()
             }
@@ -195,7 +195,7 @@ macro_rules! mop {
             }
         }
 
-        impl<$($ty: $trait),*> iour::OpCode for $name<$($ty),*> {
+        unsafe impl<$($ty: $trait),*> iour::OpCode for $name<$($ty),*> {
             fn create_entry(self: std::pin::Pin<&mut Self>) -> OpEntry {
                 unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.create_entry()
             }

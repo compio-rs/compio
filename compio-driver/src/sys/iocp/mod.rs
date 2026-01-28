@@ -274,7 +274,12 @@ pub enum OpType {
 }
 
 /// Abstraction of IOCP operations.
-pub trait OpCode {
+///
+/// # Safety
+///
+/// Implementors must ensure that the operation is safe to be polled
+/// according to the returned [`OpType`].
+pub unsafe trait OpCode {
     /// Determines that the operation is really overlapped defined by Windows
     /// API. If not, the driver will try to operate it in another thread.
     fn op_type(&self) -> OpType {

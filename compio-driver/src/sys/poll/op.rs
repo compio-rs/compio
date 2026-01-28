@@ -25,7 +25,7 @@ use super::{AsFd, Decision, OpCode, OpType, syscall};
 pub use crate::sys::unix_op::*;
 use crate::{op::*, sys_slice::*};
 
-impl<
+unsafe impl<
     D: std::marker::Send + 'static,
     F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + 'static,
 > OpCode for Asyncify<F, D>
@@ -46,7 +46,7 @@ impl<
     }
 }
 
-impl<
+unsafe impl<
     S,
     D: std::marker::Send + 'static,
     F: (FnOnce(&S) -> BufResult<usize, D>) + std::marker::Send + 'static,
@@ -68,7 +68,7 @@ impl<
     }
 }
 
-impl OpCode for OpenFile {
+unsafe impl OpCode for OpenFile {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -82,7 +82,7 @@ impl OpCode for OpenFile {
     }
 }
 
-impl OpCode for CloseFile {
+unsafe impl OpCode for CloseFile {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -92,7 +92,7 @@ impl OpCode for CloseFile {
     }
 }
 
-impl<S: AsFd> OpCode for TruncateFile<S> {
+unsafe impl<S: AsFd> OpCode for TruncateFile<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -120,7 +120,7 @@ impl<S> FileStat<S> {
     }
 }
 
-impl<S: AsFd> OpCode for FileStat<S> {
+unsafe impl<S: AsFd> OpCode for FileStat<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -176,7 +176,7 @@ impl PathStat {
     }
 }
 
-impl OpCode for PathStat {
+unsafe impl OpCode for PathStat {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -219,7 +219,7 @@ impl IntoInner for PathStat {
     }
 }
 
-impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
+unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         #[cfg(aio)]
         {
@@ -252,7 +252,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
+unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         #[cfg(freebsd)]
         {
@@ -291,7 +291,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
     }
 }
 
-impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
+unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         #[cfg(aio)]
         {
@@ -329,7 +329,7 @@ impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
+unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         #[cfg(freebsd)]
         {
@@ -368,7 +368,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
     }
 }
 
-impl<S: AsFd> OpCode for crate::op::managed::ReadManagedAt<S> {
+unsafe impl<S: AsFd> OpCode for crate::op::managed::ReadManagedAt<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         self.project().op.pre_submit()
     }
@@ -382,7 +382,7 @@ impl<S: AsFd> OpCode for crate::op::managed::ReadManagedAt<S> {
     }
 }
 
-impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
+unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_readable(self.fd.as_fd().as_raw_fd()))
     }
@@ -398,7 +398,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
+unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_readable(self.fd.as_fd().as_raw_fd()))
     }
@@ -420,7 +420,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
     }
 }
 
-impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
+unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_writable(self.fd.as_fd().as_raw_fd()))
     }
@@ -441,7 +441,7 @@ impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
+unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_writable(self.fd.as_fd().as_raw_fd()))
     }
@@ -463,7 +463,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
     }
 }
 
-impl<S: AsFd> OpCode for crate::op::managed::ReadManaged<S> {
+unsafe impl<S: AsFd> OpCode for crate::op::managed::ReadManaged<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         self.project().op.pre_submit()
     }
@@ -477,7 +477,7 @@ impl<S: AsFd> OpCode for crate::op::managed::ReadManaged<S> {
     }
 }
 
-impl<S: AsFd> OpCode for Sync<S> {
+unsafe impl<S: AsFd> OpCode for Sync<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         #[cfg(aio)]
         {
@@ -526,7 +526,7 @@ impl<S: AsFd> OpCode for Sync<S> {
     }
 }
 
-impl OpCode for Unlink {
+unsafe impl OpCode for Unlink {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -541,7 +541,7 @@ impl OpCode for Unlink {
     }
 }
 
-impl OpCode for CreateDir {
+unsafe impl OpCode for CreateDir {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -552,7 +552,7 @@ impl OpCode for CreateDir {
     }
 }
 
-impl OpCode for Rename {
+unsafe impl OpCode for Rename {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -563,7 +563,7 @@ impl OpCode for Rename {
     }
 }
 
-impl OpCode for Symlink {
+unsafe impl OpCode for Symlink {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -574,7 +574,7 @@ impl OpCode for Symlink {
     }
 }
 
-impl OpCode for HardLink {
+unsafe impl OpCode for HardLink {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -645,7 +645,7 @@ impl CreateSocket {
     }
 }
 
-impl OpCode for CreateSocket {
+unsafe impl OpCode for CreateSocket {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -655,7 +655,7 @@ impl OpCode for CreateSocket {
     }
 }
 
-impl<S: AsFd> OpCode for ShutdownSocket<S> {
+unsafe impl<S: AsFd> OpCode for ShutdownSocket<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -667,7 +667,7 @@ impl<S: AsFd> OpCode for ShutdownSocket<S> {
     }
 }
 
-impl OpCode for CloseSocket {
+unsafe impl OpCode for CloseSocket {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -727,7 +727,7 @@ impl<S: AsFd> Accept<S> {
     }
 }
 
-impl<S: AsFd> OpCode for Accept<S> {
+unsafe impl<S: AsFd> OpCode for Accept<S> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         let fd = self.fd.as_fd().as_raw_fd();
         syscall!(self.as_mut().call(), wait_readable(fd))
@@ -748,7 +748,7 @@ impl<S: AsFd> OpCode for Accept<S> {
     }
 }
 
-impl<S: AsFd> OpCode for Connect<S> {
+unsafe impl<S: AsFd> OpCode for Connect<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         syscall!(
             libc::connect(
@@ -785,7 +785,7 @@ impl<S: AsFd> OpCode for Connect<S> {
     }
 }
 
-impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
+unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_readable(self.fd.as_fd().as_raw_fd()))
     }
@@ -802,7 +802,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
     }
 }
 
-impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
+unsafe impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_writable(self.fd.as_fd().as_raw_fd()))
     }
@@ -824,7 +824,7 @@ impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
     }
 }
 
-impl<S: AsFd> OpCode for crate::op::managed::RecvManaged<S> {
+unsafe impl<S: AsFd> OpCode for crate::op::managed::RecvManaged<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         self.project().op.pre_submit()
     }
@@ -845,7 +845,7 @@ impl<T: IoVectoredBufMut, S: AsFd> RecvVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
+unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         self.as_mut().set_msg();
         let fd = self.fd.as_fd().as_raw_fd();
@@ -867,7 +867,7 @@ impl<T: IoVectoredBuf, S: AsFd> SendVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
+unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         self.as_mut().set_msg();
         let fd = self.as_mut().project().fd.as_fd().as_raw_fd();
@@ -930,7 +930,7 @@ impl<T: IoBufMut, S: AsFd> RecvFrom<T, S> {
     }
 }
 
-impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
+unsafe impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         let fd = self.fd.as_fd().as_raw_fd();
         syscall!(self.as_mut().call(), wait_readable(fd))
@@ -998,7 +998,7 @@ impl<T: IoVectoredBufMut, S: AsFd> RecvFromVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
+unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         self.as_mut().set_msg();
         let fd = self.as_mut().project().fd.as_fd().as_raw_fd();
@@ -1062,7 +1062,7 @@ impl<T: IoBuf, S: AsFd> SendTo<T, S> {
     }
 }
 
-impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
+unsafe impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         syscall!(self.call(), wait_writable(self.fd.as_fd().as_raw_fd()))
     }
@@ -1128,7 +1128,7 @@ impl<T: IoVectoredBuf, S: AsFd> SendToVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
+unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         self.as_mut().set_msg();
         let fd = self.fd.as_fd().as_raw_fd();
@@ -1159,7 +1159,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> RecvMsg<T, C, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
+unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         self.as_mut().set_msg();
         let fd = self.fd.as_fd().as_raw_fd();
@@ -1181,7 +1181,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> SendMsg<T, C, S> {
     }
 }
 
-impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
+unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
     fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
         self.as_mut().set_msg();
         let fd = self.fd.as_fd().as_raw_fd();
@@ -1197,7 +1197,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
     }
 }
 
-impl<S: AsFd> OpCode for PollOnce<S> {
+unsafe impl<S: AsFd> OpCode for PollOnce<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::wait_for(
             self.fd.as_fd().as_raw_fd(),
@@ -1215,7 +1215,7 @@ impl<S: AsFd> OpCode for PollOnce<S> {
 }
 
 #[cfg(linux_all)]
-impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
+unsafe impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         use super::WaitArg;
 

@@ -18,7 +18,7 @@ use super::OpCode;
 pub use crate::sys::unix_op::*;
 use crate::{OpEntry, op::*, sys_slice::*, syscall};
 
-impl<
+unsafe impl<
     D: std::marker::Send + 'static,
     F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + 'static,
 > OpCode for Asyncify<F, D>
@@ -39,7 +39,7 @@ impl<
     }
 }
 
-impl<
+unsafe impl<
     S,
     D: std::marker::Send + 'static,
     F: (FnOnce(&S) -> BufResult<usize, D>) + std::marker::Send + 'static,
@@ -61,7 +61,7 @@ impl<
     }
 }
 
-impl OpCode for OpenFile {
+unsafe impl OpCode for OpenFile {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::OpenAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())
             .flags(self.flags | libc::O_CLOEXEC)
@@ -71,7 +71,7 @@ impl OpCode for OpenFile {
     }
 }
 
-impl OpCode for CloseFile {
+unsafe impl OpCode for CloseFile {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::Close::new(Fd(self.fd.as_fd().as_raw_fd()))
             .build()
@@ -79,7 +79,7 @@ impl OpCode for CloseFile {
     }
 }
 
-impl<S: AsFd> OpCode for TruncateFile<S> {
+unsafe impl<S: AsFd> OpCode for TruncateFile<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         if super::is_op_supported(opcode::Ftruncate::CODE) {
             return opcode::Ftruncate::new(Fd(self.fd.as_fd().as_raw_fd()), self.size)
@@ -113,7 +113,7 @@ impl<S> FileStat<S> {
     }
 }
 
-impl<S: AsFd> OpCode for FileStat<S> {
+unsafe impl<S: AsFd> OpCode for FileStat<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = self.project();
         static EMPTY_NAME: &[u8] = b"\0";
@@ -155,7 +155,7 @@ impl PathStat {
     }
 }
 
-impl OpCode for PathStat {
+unsafe impl OpCode for PathStat {
     fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
         let mut flags = libc::AT_EMPTY_PATH;
         if !self.follow_symlink {
@@ -181,7 +181,7 @@ impl IntoInner for PathStat {
     }
 }
 
-impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
+unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = self.project();
         let fd = Fd(this.fd.as_fd().as_raw_fd());
@@ -197,7 +197,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
+unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = self.project();
         *this.slices = this.buffer.sys_slices_mut();
@@ -212,7 +212,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
     }
 }
 
-impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
+unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let slice = self.buffer.as_init();
         opcode::Write::new(
@@ -226,7 +226,7 @@ impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
+unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = self.project();
         *this.slices = this.buffer.as_ref().sys_slices();
@@ -241,7 +241,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
     }
 }
 
-impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
+unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let fd = self.fd.as_fd().as_raw_fd();
         let slice = self.project().buffer.sys_slice_mut();
@@ -255,7 +255,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
+unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = self.project();
         *this.slices = this.buffer.sys_slices_mut();
@@ -269,7 +269,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
     }
 }
 
-impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
+unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let slice = self.buffer.as_init();
         opcode::Write::new(
@@ -282,7 +282,7 @@ impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
+unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = self.project();
         *this.slices = this.buffer.as_ref().sys_slices();
@@ -296,7 +296,7 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
     }
 }
 
-impl<S: AsFd> OpCode for Sync<S> {
+unsafe impl<S: AsFd> OpCode for Sync<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::Fsync::new(Fd(self.fd.as_fd().as_raw_fd()))
             .flags(if self.datasync {
@@ -309,7 +309,7 @@ impl<S: AsFd> OpCode for Sync<S> {
     }
 }
 
-impl OpCode for Unlink {
+unsafe impl OpCode for Unlink {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::UnlinkAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())
             .flags(if self.dir { libc::AT_REMOVEDIR } else { 0 })
@@ -318,7 +318,7 @@ impl OpCode for Unlink {
     }
 }
 
-impl OpCode for CreateDir {
+unsafe impl OpCode for CreateDir {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::MkDirAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())
             .mode(self.mode)
@@ -327,7 +327,7 @@ impl OpCode for CreateDir {
     }
 }
 
-impl OpCode for Rename {
+unsafe impl OpCode for Rename {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::RenameAt::new(
             Fd(libc::AT_FDCWD),
@@ -340,7 +340,7 @@ impl OpCode for Rename {
     }
 }
 
-impl OpCode for Symlink {
+unsafe impl OpCode for Symlink {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::SymlinkAt::new(
             Fd(libc::AT_FDCWD),
@@ -352,7 +352,7 @@ impl OpCode for Symlink {
     }
 }
 
-impl OpCode for HardLink {
+unsafe impl OpCode for HardLink {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::LinkAt::new(
             Fd(libc::AT_FDCWD),
@@ -365,7 +365,7 @@ impl OpCode for HardLink {
     }
 }
 
-impl OpCode for CreateSocket {
+unsafe impl OpCode for CreateSocket {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         if super::is_op_supported(opcode::Socket::CODE) {
             opcode::Socket::new(
@@ -389,7 +389,7 @@ impl OpCode for CreateSocket {
     }
 }
 
-impl<S: AsFd> OpCode for ShutdownSocket<S> {
+unsafe impl<S: AsFd> OpCode for ShutdownSocket<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::Shutdown::new(Fd(self.fd.as_fd().as_raw_fd()), self.how())
             .build()
@@ -397,7 +397,7 @@ impl<S: AsFd> OpCode for ShutdownSocket<S> {
     }
 }
 
-impl OpCode for CloseSocket {
+unsafe impl OpCode for CloseSocket {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::Close::new(Fd(self.fd.as_fd().as_raw_fd()))
             .build()
@@ -405,7 +405,7 @@ impl OpCode for CloseSocket {
     }
 }
 
-impl<S: AsFd> OpCode for Accept<S> {
+unsafe impl<S: AsFd> OpCode for Accept<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = self.project();
         opcode::Accept::new(
@@ -425,7 +425,7 @@ impl<S: AsFd> OpCode for Accept<S> {
     }
 }
 
-impl<S: AsFd> OpCode for Connect<S> {
+unsafe impl<S: AsFd> OpCode for Connect<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::Connect::new(
             Fd(self.fd.as_fd().as_raw_fd()),
@@ -437,7 +437,7 @@ impl<S: AsFd> OpCode for Connect<S> {
     }
 }
 
-impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
+unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let fd = self.fd.as_fd().as_raw_fd();
         let flags = self.flags;
@@ -453,7 +453,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
+unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
     fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
         self.as_mut().set_msg();
         let this = self.project();
@@ -464,7 +464,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
     }
 }
 
-impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
+unsafe impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let slice = self.buffer.as_init();
         opcode::Send::new(
@@ -478,7 +478,7 @@ impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
+unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
     fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
         self.as_mut().set_msg();
         let this = self.project();
@@ -547,7 +547,7 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
     }
 }
 
-impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
+unsafe impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = self.project();
         let slice = this.slice.insert(this.buffer.sys_slice_mut());
@@ -585,7 +585,7 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
+unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = self.project();
         *this.slice = this.buffer.sys_slices_mut();
@@ -656,7 +656,7 @@ impl<T: IoBuf, S> SendTo<T, S> {
     }
 }
 
-impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
+unsafe impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = self.project();
         let slice = this.slice.insert(this.buffer.as_ref().sys_slice());
@@ -693,7 +693,7 @@ impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
+unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = self.project();
         *this.slice = this.buffer.as_ref().sys_slices();
@@ -709,7 +709,7 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
     }
 }
 
-impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
+unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
     fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
         self.as_mut().set_msg();
         let this = self.project();
@@ -720,7 +720,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
     }
 }
 
-impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
+unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
     fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
         self.as_mut().set_msg();
         let this = self.project();
@@ -731,7 +731,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
     }
 }
 
-impl<S: AsFd> OpCode for PollOnce<S> {
+unsafe impl<S: AsFd> OpCode for PollOnce<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let flags = match self.interest {
             Interest::Readable => libc::POLLIN,
@@ -743,7 +743,7 @@ impl<S: AsFd> OpCode for PollOnce<S> {
     }
 }
 
-impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
+unsafe impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::Splice::new(
             Fd(self.fd_in.as_fd().as_raw_fd()),
@@ -799,7 +799,7 @@ mod buf_ring {
         }
     }
 
-    impl<S: AsFd> OpCode for ReadManagedAt<S> {
+    unsafe impl<S: AsFd> OpCode for ReadManagedAt<S> {
         fn create_entry(self: Pin<&mut Self>) -> OpEntry {
             let fd = Fd(self.fd.as_fd().as_raw_fd());
             let offset = self.offset;
@@ -857,7 +857,7 @@ mod buf_ring {
         }
     }
 
-    impl<S: AsFd> OpCode for ReadManaged<S> {
+    unsafe impl<S: AsFd> OpCode for ReadManaged<S> {
         fn create_entry(self: Pin<&mut Self>) -> OpEntry {
             let fd = self.fd.as_fd().as_raw_fd();
             opcode::Read::new(Fd(fd), ptr::null_mut(), self.len)
@@ -915,7 +915,7 @@ mod buf_ring {
         }
     }
 
-    impl<S: AsFd> OpCode for RecvManaged<S> {
+    unsafe impl<S: AsFd> OpCode for RecvManaged<S> {
         fn create_entry(self: Pin<&mut Self>) -> OpEntry {
             let fd = self.fd.as_fd().as_raw_fd();
             opcode::Recv::new(Fd(fd), ptr::null_mut(), self.len)
