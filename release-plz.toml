@@ -1,0 +1,4 @@
+[changelog]
+commit_parsers = [
+    { message = "^refactor", group = "changed" }
+]
