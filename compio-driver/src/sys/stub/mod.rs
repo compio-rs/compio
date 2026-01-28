@@ -30,7 +30,7 @@ impl Extra {
 }
 
 /// Operations.
-pub trait OpCode {}
+pub unsafe trait OpCode {}
 
 pub mod op;
 

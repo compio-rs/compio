@@ -68,7 +68,7 @@ impl<
     }
 }
 
-impl OpCode for OpenFile {
+unsafe impl OpCode for OpenFile {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -82,7 +82,7 @@ impl OpCode for OpenFile {
     }
 }
 
-impl OpCode for CloseFile {
+unsafe impl OpCode for CloseFile {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -176,7 +176,7 @@ impl PathStat {
     }
 }
 
-impl OpCode for PathStat {
+unsafe impl OpCode for PathStat {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -526,7 +526,7 @@ impl<S: AsFd> OpCode for Sync<S> {
     }
 }
 
-impl OpCode for Unlink {
+unsafe impl OpCode for Unlink {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -541,7 +541,7 @@ impl OpCode for Unlink {
     }
 }
 
-impl OpCode for CreateDir {
+unsafe impl OpCode for CreateDir {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -552,7 +552,7 @@ impl OpCode for CreateDir {
     }
 }
 
-impl OpCode for Rename {
+unsafe impl OpCode for Rename {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -563,7 +563,7 @@ impl OpCode for Rename {
     }
 }
 
-impl OpCode for Symlink {
+unsafe impl OpCode for Symlink {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -574,7 +574,7 @@ impl OpCode for Symlink {
     }
 }
 
-impl OpCode for HardLink {
+unsafe impl OpCode for HardLink {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -645,7 +645,7 @@ impl CreateSocket {
     }
 }
 
-impl OpCode for CreateSocket {
+unsafe impl OpCode for CreateSocket {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -667,7 +667,7 @@ impl<S: AsFd> OpCode for ShutdownSocket<S> {
     }
 }
 
-impl OpCode for CloseSocket {
+unsafe impl OpCode for CloseSocket {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }

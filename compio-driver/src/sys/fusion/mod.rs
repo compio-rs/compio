@@ -72,7 +72,7 @@ impl super::Extra {
 /// Fused [`OpCode`]
 ///
 /// This trait encapsulates both operation for `io-uring` and `polling`
-pub trait OpCode: PollOpCode + IourOpCode {}
+pub unsafe trait OpCode: PollOpCode + IourOpCode {}
 
 impl<T: PollOpCode + IourOpCode + ?Sized> OpCode for T {}
 

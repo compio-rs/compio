@@ -154,7 +154,7 @@ impl<
     }
 }
 
-impl OpCode for CloseFile {
+unsafe impl OpCode for CloseFile {
     fn op_type(&self) -> OpType {
         OpType::Blocking
     }
@@ -309,7 +309,7 @@ impl<S: AsFd> OpCode for ShutdownSocket<S> {
     }
 }
 
-impl OpCode for CloseSocket {
+unsafe impl OpCode for CloseSocket {
     fn op_type(&self) -> OpType {
         OpType::Blocking
     }

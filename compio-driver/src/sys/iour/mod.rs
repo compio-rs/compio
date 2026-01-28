@@ -107,7 +107,7 @@ impl From<io_uring::squeue::Entry128> for OpEntry {
 }
 
 /// Abstraction of io-uring operations.
-pub trait OpCode {
+pub unsafe trait OpCode {
     /// Create submission entry.
     fn create_entry(self: Pin<&mut Self>) -> OpEntry;
 

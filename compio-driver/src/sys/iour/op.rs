@@ -61,7 +61,7 @@ impl<
     }
 }
 
-impl OpCode for OpenFile {
+unsafe impl OpCode for OpenFile {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::OpenAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())
             .flags(self.flags | libc::O_CLOEXEC)
@@ -71,7 +71,7 @@ impl OpCode for OpenFile {
     }
 }
 
-impl OpCode for CloseFile {
+unsafe impl OpCode for CloseFile {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::Close::new(Fd(self.fd.as_fd().as_raw_fd()))
             .build()
@@ -155,7 +155,7 @@ impl PathStat {
     }
 }
 
-impl OpCode for PathStat {
+unsafe impl OpCode for PathStat {
     fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
         let mut flags = libc::AT_EMPTY_PATH;
         if !self.follow_symlink {
@@ -309,7 +309,7 @@ impl<S: AsFd> OpCode for Sync<S> {
     }
 }
 
-impl OpCode for Unlink {
+unsafe impl OpCode for Unlink {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::UnlinkAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())
             .flags(if self.dir { libc::AT_REMOVEDIR } else { 0 })
@@ -318,7 +318,7 @@ impl OpCode for Unlink {
     }
 }
 
-impl OpCode for CreateDir {
+unsafe impl OpCode for CreateDir {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::MkDirAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())
             .mode(self.mode)
@@ -327,7 +327,7 @@ impl OpCode for CreateDir {
     }
 }
 
-impl OpCode for Rename {
+unsafe impl OpCode for Rename {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::RenameAt::new(
             Fd(libc::AT_FDCWD),
@@ -340,7 +340,7 @@ impl OpCode for Rename {
     }
 }
 
-impl OpCode for Symlink {
+unsafe impl OpCode for Symlink {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::SymlinkAt::new(
             Fd(libc::AT_FDCWD),
@@ -352,7 +352,7 @@ impl OpCode for Symlink {
     }
 }
 
-impl OpCode for HardLink {
+unsafe impl OpCode for HardLink {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::LinkAt::new(
             Fd(libc::AT_FDCWD),
@@ -365,7 +365,7 @@ impl OpCode for HardLink {
     }
 }
 
-impl OpCode for CreateSocket {
+unsafe impl OpCode for CreateSocket {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         if super::is_op_supported(opcode::Socket::CODE) {
             opcode::Socket::new(
@@ -397,7 +397,7 @@ impl<S: AsFd> OpCode for ShutdownSocket<S> {
     }
 }
 
-impl OpCode for CloseSocket {
+unsafe impl OpCode for CloseSocket {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::Close::new(Fd(self.fd.as_fd().as_raw_fd()))
             .build()
