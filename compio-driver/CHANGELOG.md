@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.11.0](https://github.com/compio-rs/compio/compare/compio-driver-v0.10.0...compio-driver-v0.11.0) - 2026-01-28
+## [0.11.1](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added
 
@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- *(driver)* [**breaking**] make opcode unsafe ([#650](https://github.com/compio-rs/compio/pull/650))
 - *(runtime)* [**breaking**] submit future ([#632](https://github.com/compio-rs/compio/pull/632))
 - *(driver)* extra ([#624](https://github.com/compio-rs/compio/pull/624))
 - *(driver,poll)* with_events ([#622](https://github.com/compio-rs/compio/pull/622))
@@ -43,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- *(driver,iour)* cancel leaks the key ([#652](https://github.com/compio-rs/compio/pull/652))
 - *(driver)* user_data does not exist ([#643](https://github.com/compio-rs/compio/pull/643))
 - *(driver)* multi fd ([#636](https://github.com/compio-rs/compio/pull/636))
 - *(driver, IOCP)* cap buf, sys_slice length to u32 ([#613](https://github.com/compio-rs/compio/pull/613))
