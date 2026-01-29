@@ -10,10 +10,6 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-#[cfg(not(gnulinux))]
-use libc::open;
-#[cfg(gnulinux)]
-use libc::open64 as open;
 #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "hurd")))]
 use libc::{pread, preadv, pwrite, pwritev};
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "hurd"))]
@@ -74,11 +70,7 @@ unsafe impl OpCode for OpenFile {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(Ok(syscall!(open(
-            self.path.as_ptr(),
-            self.flags | libc::O_CLOEXEC,
-            self.mode as libc::c_int
-        ))? as _))
+        Poll::Ready(self.call())
     }
 }
 
@@ -88,7 +80,7 @@ unsafe impl OpCode for CloseFile {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(Ok(syscall!(libc::close(self.fd.as_fd().as_raw_fd()))? as _))
+        Poll::Ready(self.call())
     }
 }
 
@@ -98,7 +90,7 @@ unsafe impl<S: AsFd> OpCode for TruncateFile<S> {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(self.truncate())
+        Poll::Ready(self.call())
     }
 }
 
@@ -532,12 +524,7 @@ unsafe impl OpCode for Unlink {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        if self.dir {
-            syscall!(libc::rmdir(self.path.as_ptr()))?;
-        } else {
-            syscall!(libc::unlink(self.path.as_ptr()))?;
-        }
-        Poll::Ready(Ok(0))
+        Poll::Ready(self.call())
     }
 }
 
@@ -547,8 +534,7 @@ unsafe impl OpCode for CreateDir {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        syscall!(libc::mkdir(self.path.as_ptr(), self.mode))?;
-        Poll::Ready(Ok(0))
+        Poll::Ready(self.call())
     }
 }
 
@@ -558,8 +544,7 @@ unsafe impl OpCode for Rename {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        syscall!(libc::rename(self.old_path.as_ptr(), self.new_path.as_ptr()))?;
-        Poll::Ready(Ok(0))
+        Poll::Ready(self.call())
     }
 }
 
@@ -569,8 +554,7 @@ unsafe impl OpCode for Symlink {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        syscall!(libc::symlink(self.source.as_ptr(), self.target.as_ptr()))?;
-        Poll::Ready(Ok(0))
+        Poll::Ready(self.call())
     }
 }
 
@@ -580,8 +564,7 @@ unsafe impl OpCode for HardLink {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        syscall!(libc::link(self.source.as_ptr(), self.target.as_ptr()))?;
-        Poll::Ready(Ok(0))
+        Poll::Ready(self.call())
     }
 }
 
@@ -661,9 +644,7 @@ unsafe impl<S: AsFd> OpCode for ShutdownSocket<S> {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(Ok(
-            syscall!(libc::shutdown(self.fd.as_fd().as_raw_fd(), self.how()))? as _,
-        ))
+        Poll::Ready(self.call())
     }
 }
 
@@ -673,7 +654,7 @@ unsafe impl OpCode for CloseSocket {
     }
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(Ok(syscall!(libc::close(self.fd.as_fd().as_raw_fd()))? as _))
+        Poll::Ready(self.call())
     }
 }
 
@@ -1245,15 +1226,15 @@ unsafe impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
         } else {
             &mut offset_out
         };
-        // We don't wait for `fd_out` here. It's users' responsibility to ensure it's
-        // writable.
-        Poll::Ready(Ok(syscall!(libc::splice(
-            self.fd_in.as_fd().as_raw_fd(),
-            offset_in_ptr,
-            self.fd_out.as_fd().as_raw_fd(),
-            offset_out_ptr,
-            self.len,
-            self.flags as _,
-        ))? as _))
+        syscall!(
+            break libc::splice(
+                self.fd_in.as_fd().as_raw_fd(),
+                offset_in_ptr,
+                self.fd_out.as_fd().as_raw_fd(),
+                offset_out_ptr,
+                self.len,
+                self.flags | libc::SPLICE_F_NONBLOCK,
+            )
+        )
     }
 }

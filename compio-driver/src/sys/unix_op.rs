@@ -1,5 +1,6 @@
 use std::{
     ffi::CString,
+    io,
     marker::PhantomPinned,
     net::Shutdown,
     os::fd::{AsFd, AsRawFd, OwnedFd},
@@ -7,6 +8,10 @@ use std::{
 };
 
 use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+#[cfg(not(gnulinux))]
+use libc::open;
+#[cfg(gnulinux)]
+use libc::open64 as open;
 #[cfg(not(any(
     all(target_os = "linux", not(target_env = "musl")),
     target_os = "android",
@@ -24,7 +29,7 @@ use libc::{ftruncate64, off64_t};
 use pin_project_lite::pin_project;
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
-use crate::{op::*, sys::aio::*, sys_slice::*};
+use crate::{op::*, sys::aio::*, sys_slice::*, syscall};
 
 /// Open or create a file with flags and mode.
 pub struct OpenFile {
@@ -37,6 +42,20 @@ impl OpenFile {
     /// Create [`OpenFile`].
     pub fn new(path: CString, flags: i32, mode: libc::mode_t) -> Self {
         Self { path, flags, mode }
+    }
+
+    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+        Ok(syscall!(open(
+            self.path.as_ptr(),
+            self.flags | libc::O_CLOEXEC,
+            self.mode as libc::c_int
+        ))? as _)
+    }
+}
+
+impl CloseFile {
+    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+        Ok(syscall!(libc::close(self.fd.as_fd().as_raw_fd()))? as _)
     }
 }
 
@@ -54,11 +73,11 @@ impl<S: AsFd> TruncateFile<S> {
         Self { fd, size }
     }
 
-    pub(crate) fn truncate(&self) -> std::io::Result<usize> {
+    pub(crate) fn call(&self) -> io::Result<usize> {
         let size: off64_t = self
             .size
             .try_into()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
         crate::syscall!(ftruncate64(self.fd.as_fd().as_raw_fd(), size)).map(|v| v as _)
     }
 }
@@ -290,6 +309,14 @@ impl Unlink {
     pub fn new(path: CString, dir: bool) -> Self {
         Self { path, dir }
     }
+
+    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+        if self.dir {
+            Ok(syscall!(libc::rmdir(self.path.as_ptr()))? as _)
+        } else {
+            Ok(syscall!(libc::unlink(self.path.as_ptr()))? as _)
+        }
+    }
 }
 
 /// Create a directory.
@@ -302,6 +329,10 @@ impl CreateDir {
     /// Create [`CreateDir`].
     pub fn new(path: CString, mode: libc::mode_t) -> Self {
         Self { path, mode }
+    }
+
+    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+        Ok(syscall!(libc::mkdir(self.path.as_ptr(), self.mode))? as _)
     }
 }
 
@@ -316,6 +347,10 @@ impl Rename {
     pub fn new(old_path: CString, new_path: CString) -> Self {
         Self { old_path, new_path }
     }
+
+    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+        Ok(syscall!(libc::rename(self.old_path.as_ptr(), self.new_path.as_ptr()))? as _)
+    }
 }
 
 /// Create a symlink.
@@ -329,6 +364,10 @@ impl Symlink {
     pub fn new(source: CString, target: CString) -> Self {
         Self { source, target }
     }
+
+    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+        Ok(syscall!(libc::symlink(self.source.as_ptr(), self.target.as_ptr()))? as _)
+    }
 }
 
 /// Create a hard link.
@@ -341,6 +380,10 @@ impl HardLink {
     /// Create [`HardLink`]. `target` is a hard link to `source`.
     pub fn new(source: CString, target: CString) -> Self {
         Self { source, target }
+    }
+
+    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+        Ok(syscall!(libc::link(self.source.as_ptr(), self.target.as_ptr()))? as _)
     }
 }
 
@@ -362,13 +405,23 @@ impl CreateSocket {
     }
 }
 
-impl<S> ShutdownSocket<S> {
+impl<S: AsFd> ShutdownSocket<S> {
     pub(crate) fn how(&self) -> i32 {
         match self.how {
             Shutdown::Write => libc::SHUT_WR,
             Shutdown::Read => libc::SHUT_RD,
             Shutdown::Both => libc::SHUT_RDWR,
         }
+    }
+
+    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+        Ok(syscall!(libc::shutdown(self.fd.as_fd().as_raw_fd(), self.how()))? as _)
+    }
+}
+
+impl CloseSocket {
+    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+        Ok(syscall!(libc::close(self.fd.as_fd().as_raw_fd()))? as _)
     }
 }
 

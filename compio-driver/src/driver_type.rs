@@ -29,11 +29,7 @@ impl DriverType {
             Send::CODE,
             RecvMsg::CODE,
             SendMsg::CODE,
-            AsyncCancel::CODE,
-            OpenAt::CODE,
-            Close::CODE,
-            Splice::CODE,
-            Shutdown::CODE,
+            PollAdd::CODE,
         ];
 
         if USED_OP.iter().all(|op| crate::sys::is_op_supported(*op)) {

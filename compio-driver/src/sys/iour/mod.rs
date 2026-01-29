@@ -342,22 +342,30 @@ impl Driver {
         trace!(?personality, "push RawOp");
         match entry {
             OpEntry::Submission(entry) => {
-                #[allow(clippy::useless_conversion)]
-                self.push_raw_with_key(entry.into(), key)?;
-                Poll::Pending
+                if is_op_supported(entry.get_opcode() as _) {
+                    #[allow(clippy::useless_conversion)]
+                    self.push_raw_with_key(entry.into(), key)?;
+                    Poll::Pending
+                } else {
+                    self.push_blocking_loop(key)
+                }
             }
             #[cfg(feature = "io-uring-sqe128")]
             OpEntry::Submission128(entry) => {
                 self.push_raw_with_key(entry, key)?;
                 Poll::Pending
             }
-            OpEntry::Blocking => loop {
-                if self.push_blocking(key.clone()) {
-                    break Poll::Pending;
-                } else {
-                    self.poll_blocking();
-                }
-            },
+            OpEntry::Blocking => self.push_blocking_loop(key),
+        }
+    }
+
+    fn push_blocking_loop(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
+        loop {
+            if self.push_blocking(key.clone()) {
+                break Poll::Pending;
+            } else {
+                self.poll_blocking();
+            }
         }
     }
 

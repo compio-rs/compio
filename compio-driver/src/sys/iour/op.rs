@@ -69,6 +69,10 @@ unsafe impl OpCode for OpenFile {
             .build()
             .into()
     }
+
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        self.call()
+    }
 }
 
 unsafe impl OpCode for CloseFile {
@@ -77,21 +81,21 @@ unsafe impl OpCode for CloseFile {
             .build()
             .into()
     }
+
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        self.call()
+    }
 }
 
 unsafe impl<S: AsFd> OpCode for TruncateFile<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        if super::is_op_supported(opcode::Ftruncate::CODE) {
-            return opcode::Ftruncate::new(Fd(self.fd.as_fd().as_raw_fd()), self.size)
-                .build()
-                .into();
-        }
-
-        OpEntry::Blocking
+        opcode::Ftruncate::new(Fd(self.fd.as_fd().as_raw_fd()), self.size)
+            .build()
+            .into()
     }
 
     fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
-        self.truncate()
+        self.call()
     }
 }
 
@@ -126,6 +130,19 @@ unsafe impl<S: AsFd> OpCode for FileStat<S> {
         .mask(statx_mask())
         .build()
         .into()
+    }
+
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        let this = self.project();
+        static EMPTY_NAME: &[u8] = b"\0";
+        let res = syscall!(libc::statx(
+            this.fd.as_fd().as_raw_fd(),
+            EMPTY_NAME.as_ptr().cast(),
+            libc::AT_EMPTY_PATH,
+            statx_mask(),
+            this.stat as *mut _ as _
+        ))?;
+        Ok(res as _)
     }
 }
 
@@ -170,6 +187,21 @@ unsafe impl OpCode for PathStat {
         .mask(statx_mask())
         .build()
         .into()
+    }
+
+    fn call_blocking(mut self: Pin<&mut Self>) -> io::Result<usize> {
+        let mut flags = libc::AT_EMPTY_PATH;
+        if !self.follow_symlink {
+            flags |= libc::AT_SYMLINK_NOFOLLOW;
+        }
+        let res = syscall!(libc::statx(
+            libc::AT_FDCWD,
+            self.path.as_ptr(),
+            flags,
+            statx_mask(),
+            std::ptr::addr_of_mut!(self.stat).cast()
+        ))?;
+        Ok(res as _)
     }
 }
 
@@ -316,6 +348,10 @@ unsafe impl OpCode for Unlink {
             .build()
             .into()
     }
+
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        self.call()
+    }
 }
 
 unsafe impl OpCode for CreateDir {
@@ -324,6 +360,10 @@ unsafe impl OpCode for CreateDir {
             .mode(self.mode)
             .build()
             .into()
+    }
+
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        self.call()
     }
 }
 
@@ -338,6 +378,10 @@ unsafe impl OpCode for Rename {
         .build()
         .into()
     }
+
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        self.call()
+    }
 }
 
 unsafe impl OpCode for Symlink {
@@ -349,6 +393,10 @@ unsafe impl OpCode for Symlink {
         )
         .build()
         .into()
+    }
+
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        self.call()
     }
 }
 
@@ -363,21 +411,21 @@ unsafe impl OpCode for HardLink {
         .build()
         .into()
     }
+
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        self.call()
+    }
 }
 
 unsafe impl OpCode for CreateSocket {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        if super::is_op_supported(opcode::Socket::CODE) {
-            opcode::Socket::new(
-                self.domain,
-                self.socket_type | libc::SOCK_CLOEXEC,
-                self.protocol,
-            )
-            .build()
-            .into()
-        } else {
-            OpEntry::Blocking
-        }
+        opcode::Socket::new(
+            self.domain,
+            self.socket_type | libc::SOCK_CLOEXEC,
+            self.protocol,
+        )
+        .build()
+        .into()
     }
 
     fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
@@ -395,6 +443,10 @@ unsafe impl<S: AsFd> OpCode for ShutdownSocket<S> {
             .build()
             .into()
     }
+
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        self.call()
+    }
 }
 
 unsafe impl OpCode for CloseSocket {
@@ -402,6 +454,10 @@ unsafe impl OpCode for CloseSocket {
         opcode::Close::new(Fd(self.fd.as_fd().as_raw_fd()))
             .build()
             .into()
+    }
+
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        self.call()
     }
 }
 
@@ -755,6 +811,29 @@ unsafe impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
         .flags(self.flags)
         .build()
         .into()
+    }
+
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        let mut offset_in = self.offset_in;
+        let mut offset_out = self.offset_out;
+        let offset_in_ptr = if offset_in < 0 {
+            std::ptr::null_mut()
+        } else {
+            &mut offset_in
+        };
+        let offset_out_ptr = if offset_out < 0 {
+            std::ptr::null_mut()
+        } else {
+            &mut offset_out
+        };
+        Ok(syscall!(libc::splice(
+            self.fd_in.as_fd().as_raw_fd(),
+            offset_in_ptr,
+            self.fd_out.as_fd().as_raw_fd(),
+            offset_out_ptr,
+            self.len,
+            self.flags,
+        ))? as _)
     }
 }
 
