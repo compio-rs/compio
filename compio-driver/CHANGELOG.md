@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- *(driver)* [**breaking**] full iour fallback ([#656](https://github.com/compio-rs/compio/pull/656))
 - *(runtime)* future combinator ([#639](https://github.com/compio-rs/compio/pull/639))
 - *(fs)* splice ([#635](https://github.com/compio-rs/compio/pull/635))
 - *(driver)* fake splice test ([#638](https://github.com/compio-rs/compio/pull/638))
