@@ -36,6 +36,10 @@ pub mod named_pipe;
 #[cfg(unix)]
 pub mod pipe;
 
+/// Providing functionalities to wait for readiness.
+#[deprecated(since = "0.12.0", note = "Use `compio_runtime::fd::AsyncFd` instead")]
+pub type AsyncFd<T> = compio_runtime::fd::AsyncFd<T>;
+
 #[cfg(unix)]
 pub(crate) fn path_string(path: impl AsRef<std::path::Path>) -> std::io::Result<std::ffi::CString> {
     use std::os::unix::ffi::OsStrExt;
