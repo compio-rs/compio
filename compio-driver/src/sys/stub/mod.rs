@@ -19,7 +19,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{BufferPool, DriverType, ErasedKey, Key, ProactorBuilder};
+use crate::{BufferPool, DriverType, ErasedKey, ProactorBuilder};
 
 pub struct Extra {}
 
@@ -58,7 +58,7 @@ impl Driver {
         Err(stub_error())
     }
 
-    pub fn cancel<T: OpCode>(&mut self, _: Key<T>) {
+    pub fn cancel(&mut self, _: ErasedKey) {
         stub_unimpl()
     }
 

@@ -20,7 +20,7 @@ use smallvec::SmallVec;
 
 use crate::{
     AsyncifyPool, BufferPool, DriverType, Entry, ErasedKey, ProactorBuilder,
-    key::{BorrowedKey, Key, RefExt},
+    key::{BorrowedKey, RefExt},
     op::Interest,
     syscall,
 };
@@ -423,14 +423,14 @@ impl Driver {
         Ok(())
     }
 
-    pub fn cancel<T>(&mut self, key: Key<T>) {
+    pub fn cancel(&mut self, key: ErasedKey) {
         let op_type = key.borrow().pinned_op().op_type();
         match op_type {
             None => {}
             Some(OpType::Fd(fds)) => {
                 let mut pushed = false;
                 for fd in fds {
-                    let entry = self.cancel_one(key.clone().erase(), fd);
+                    let entry = self.cancel_one(key.clone(), fd);
                     if !pushed && let Some(entry) = entry {
                         self.pool_completed.push(entry);
                         pushed = true;

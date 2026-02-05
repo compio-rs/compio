@@ -5,6 +5,7 @@ use compio_driver::{
     AsRawFd, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
     op::{Asyncify, CloseFile, ReadAt, ReadManagedAt},
 };
+mod pipe2;
 
 #[cfg(unix)]
 #[test]
@@ -130,6 +131,42 @@ fn register_multiple() {
     }
 
     // Don't async close because the reading operations may have not completed.
+}
+
+#[test]
+#[cfg(unix)]
+fn cancel_token() {
+    use nix::fcntl::OFlag;
+
+    let mut driver = Proactor::new().unwrap();
+
+    let mut flags = OFlag::O_CLOEXEC;
+    if driver.driver_type().is_polling() {
+        flags |= OFlag::O_NONBLOCK;
+    }
+
+    let (r, _w) = pipe2::pipe2(flags).unwrap();
+
+    let mut key = match driver.push(ReadAt::new(r, 0, Vec::with_capacity(1024))) {
+        PushEntry::Pending(key) => key,
+        PushEntry::Ready(res) => {
+            res.unwrap();
+            return;
+        }
+    };
+
+    let token = driver.register_cancel(key.clone());
+    assert!(driver.cancel_token(token));
+
+    let res = loop {
+        driver.poll(None).unwrap();
+        match driver.pop(key) {
+            PushEntry::Pending(k) => key = k,
+            PushEntry::Ready(res) => break res,
+        }
+    };
+
+    assert!(res.0.is_err())
 }
 
 #[test]

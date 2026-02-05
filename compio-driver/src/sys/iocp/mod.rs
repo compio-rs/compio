@@ -17,9 +17,7 @@ use windows_sys::Win32::{
     System::IO::OVERLAPPED,
 };
 
-use crate::{
-    AsyncifyPool, BufferPool, DriverType, Entry, ErasedKey, Key, ProactorBuilder, key::RefExt,
-};
+use crate::{AsyncifyPool, BufferPool, DriverType, Entry, ErasedKey, ProactorBuilder, key::RefExt};
 
 pub(crate) mod op;
 
@@ -352,7 +350,7 @@ impl Driver {
         self.port().attach(fd)
     }
 
-    pub fn cancel<T>(&mut self, key: Key<T>) {
+    pub fn cancel(&mut self, key: ErasedKey) {
         instrument!(compio_log::Level::TRACE, "cancel", ?key);
         trace!("cancel RawOp");
         let optr = key.borrow().extra_mut().optr();
