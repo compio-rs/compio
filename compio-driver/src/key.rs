@@ -4,7 +4,7 @@ use std::{
     fmt::{self, Debug},
     hash::Hash,
     io,
-    mem::ManuallyDrop,
+    mem::{self, ManuallyDrop},
     ops::{Deref, DerefMut},
     pin::Pin,
     task::Waker,
@@ -255,9 +255,7 @@ impl ErasedKey {
     /// Set the `cancelled` flag, returning whether it was already cancelled.
     pub(crate) fn set_cancelled(&self) -> bool {
         let mut op = self.borrow();
-        let is_cancelled = op.cancelled;
-        op.cancelled = true;
-        is_cancelled
+        mem::replace(&mut op.cancelled, true)
     }
 
     /// Whether the op is completed.
