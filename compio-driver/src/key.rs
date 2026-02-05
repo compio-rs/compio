@@ -4,7 +4,7 @@ use std::{
     fmt::{self, Debug},
     hash::Hash,
     io,
-    mem::ManuallyDrop,
+    mem::{self, ManuallyDrop},
     ops::{Deref, DerefMut},
     pin::Pin,
     task::Waker,
@@ -114,6 +114,12 @@ impl<T> Key<T> {
         self.erased
     }
 
+    /// Take the inner result if it is completed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the result is not ready or the `Key` is not unique (multiple
+    /// references or borrowed).
     pub(crate) fn take_result(self) -> BufResult<usize, T> {
         // SAFETY: `Key` invariant guarantees that `T` is the actual concrete type.
         unsafe { self.erased.take_result::<T>() }
@@ -177,6 +183,13 @@ impl Hash for ErasedKey {
 
 impl Unpin for ErasedKey {}
 
+impl std::borrow::Borrow<usize> for ErasedKey {
+    fn borrow(&self) -> &usize {
+        // SAFETY: `ThinCell` guarantees to be the same as a thin pointer (one `usize`)
+        unsafe { std::mem::transmute(&self.inner) }
+    }
+}
+
 impl ErasedKey {
     /// Create [`RawOp`] and get the [`ErasedKey`] to it.
     pub(crate) fn new<T: OpCode + 'static>(op: T, extra: Extra) -> Self {
@@ -239,14 +252,20 @@ impl ErasedKey {
         self.inner.borrow()
     }
 
-    /// Cancel the op.
-    pub(crate) fn set_cancelled(&self) {
-        self.borrow().cancelled = true;
+    /// Set the `cancelled` flag, returning whether it was already cancelled.
+    pub(crate) fn set_cancelled(&self) -> bool {
+        let mut op = self.borrow();
+        mem::replace(&mut op.cancelled, true)
     }
 
     /// Whether the op is completed.
     pub(crate) fn has_result(&self) -> bool {
         self.borrow().result.is_ready()
+    }
+
+    /// Whether the key is uniquely owned.
+    pub(crate) fn is_unique(&self) -> bool {
+        ThinCell::count(&self.inner) == 1
     }
 
     /// Complete the op and wake up the future if a waker is set.
@@ -380,5 +399,22 @@ pub trait RefExt {
 impl RefExt for Ref<'_, RawOp<dyn OpCode>> {
     fn pinned_op(&mut self) -> Pin<&mut dyn OpCode> {
         self.deref_mut().pinned_op()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::borrow::Borrow;
+
+    use compio_buf::BufResult;
+
+    use crate::{Proactor, key::ErasedKey, op::Asyncify};
+
+    #[test]
+    fn test_key_borrow() {
+        let driver = Proactor::new().unwrap();
+        let extra = driver.default_extra();
+        let key = ErasedKey::new(Asyncify::new(|| BufResult(Ok(0), [0u8])), extra);
+        assert_eq!(&key.as_raw(), Borrow::<usize>::borrow(&key));
     }
 }

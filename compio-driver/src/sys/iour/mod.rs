@@ -36,7 +36,7 @@ use slab::Slab;
 
 use crate::{
     AsyncifyPool, BufferPool, DriverType, Entry, ProactorBuilder,
-    key::{ErasedKey, Key, RefExt},
+    key::{ErasedKey, RefExt},
     syscall,
 };
 
@@ -278,7 +278,7 @@ impl Driver {
         Ok(())
     }
 
-    pub fn cancel<T>(&mut self, key: Key<T>) {
+    pub fn cancel(&mut self, key: ErasedKey) {
         instrument!(compio_log::Level::TRACE, "cancel", ?key);
         trace!("cancel RawOp");
         unsafe {

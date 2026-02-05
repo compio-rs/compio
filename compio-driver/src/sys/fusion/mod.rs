@@ -15,7 +15,7 @@ pub use poll::{Decision, OpType, PollOpCode};
 pub(crate) use super::iour::is_op_supported;
 use super::{iour, poll};
 pub use crate::driver_type::DriverType; // Re-export so current user won't be broken
-use crate::{BufferPool, Key, ProactorBuilder, key::ErasedKey};
+use crate::{BufferPool, ProactorBuilder, key::ErasedKey};
 
 pub enum Extra {
     Poll(poll::Extra),
@@ -145,7 +145,7 @@ impl Driver {
         }
     }
 
-    pub fn cancel<T>(&mut self, key: Key<T>) {
+    pub fn cancel(&mut self, key: ErasedKey) {
         match &mut self.fuse {
             FuseDriver::Poll(driver) => driver.cancel(key),
             FuseDriver::IoUring(driver) => driver.cancel(key),

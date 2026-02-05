@@ -44,6 +44,9 @@ pub use buffer_pool::*;
 mod sys;
 pub use sys::*;
 
+mod cancel;
+pub use cancel::*;
+
 use crate::key::ErasedKey;
 
 mod sys_slice;
@@ -92,6 +95,7 @@ impl<K, R> PushEntry<K, R> {
 /// It owns the operations to keep the driver safe.
 pub struct Proactor {
     driver: Driver,
+    cancel: CancelRegistry,
 }
 
 impl Proactor {
@@ -108,6 +112,7 @@ impl Proactor {
     fn with_builder(builder: &ProactorBuilder) -> io::Result<Self> {
         Ok(Self {
             driver: Driver::new(builder)?,
+            cancel: CancelRegistry::new(),
         })
     }
 
@@ -134,17 +139,52 @@ impl Proactor {
 
     /// Cancel an operation with the pushed [`Key`].
     ///
+    /// Returns the result if the key is unique and the operation is completed.
+    ///
     /// The cancellation is not reliable. The underlying operation may continue,
     /// but just don't return from [`Proactor::poll`].
     pub fn cancel<T: OpCode>(&mut self, key: Key<T>) -> Option<BufResult<usize, T>> {
         instrument!(compio_log::Level::DEBUG, "cancel", ?key);
-        key.set_cancelled();
-        if key.has_result() {
+        if key.set_cancelled() {
+            return None;
+        }
+        self.cancel.remove(&key);
+        if key.is_unique() && key.has_result() {
             Some(key.take_result())
         } else {
-            self.driver.cancel(key);
+            self.driver.cancel(key.erase());
             None
         }
+    }
+
+    /// Cancel an operation with a [`Cancel`] token.
+    ///
+    /// Returns if a cancellation has been issued.
+    ///
+    /// The cancellation is not reliable. The underlying operation may continue,
+    /// but just don't return from [`Proactor::pop`]. This will do nothing if
+    /// the operation has already been completed or cancelled before.
+    pub fn cancel_token(&mut self, token: Cancel) -> bool {
+        let Some(key) = self.cancel.take(token) else {
+            return false;
+        };
+        if key.set_cancelled() || key.has_result() {
+            return false;
+        }
+        self.driver.cancel(key);
+        true
+    }
+
+    /// Create a [`Cancel`] that can be used to cancel the operation even
+    /// without the key.
+    ///
+    /// This acts like a weak reference to the [`Key`], but can only be used to
+    /// cancel the operation with [`Proactor::cancel_token`]. Extra copy of
+    /// [`Key`] may cause [`Proactor::pop`] to panic while keys registered
+    /// as [`Cancel`] will be properly handled. So this is useful in cases
+    /// where you're not sure if the operation will be cancelled.
+    pub fn register_cancel<T: OpCode>(&mut self, key: Key<T>) -> Cancel {
+        self.cancel.register(key)
     }
 
     /// Push an operation into the driver, and return the unique key [`Key`],
@@ -183,11 +223,12 @@ impl Proactor {
     /// Get the pushed operations from the completion entries.
     ///
     /// # Panics
-    /// This function will panic if the requested operation has not been
-    /// completed.
+    ///
+    /// This function will panic if the [`Key`] is not unique.
     pub fn pop<T>(&mut self, key: Key<T>) -> PushEntry<Key<T>, BufResult<usize, T>> {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
+            self.cancel.remove(&key);
             PushEntry::Ready(key.take_result())
         } else {
             PushEntry::Pending(key)
@@ -198,14 +239,15 @@ impl Proactor {
     /// [`Extra`] associated.
     ///
     /// # Panics
-    /// This function will panic if the requested operation has not been
-    /// completed.
+    ///
+    /// This function will panic if the [`Key`] is not unique.
     pub fn pop_with_extra<T>(
         &mut self,
         key: Key<T>,
     ) -> PushEntry<Key<T>, (BufResult<usize, T>, Extra)> {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
+            self.cancel.remove(&key);
             let extra = key.swap_extra(self.default_extra());
             let res = key.take_result();
             PushEntry::Ready((res, extra))
