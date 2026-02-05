@@ -37,7 +37,7 @@ pub mod named_pipe;
 pub mod pipe;
 
 /// Providing functionalities to wait for readiness.
-#[deprecated(since = "0.12.0", note = "Use `compio_runtime::fd::AsyncFd` instead")]
+#[deprecated(since = "0.12.0", note = "Use `compio::runtime::fd::AsyncFd` instead")]
 pub type AsyncFd<T> = compio_runtime::fd::AsyncFd<T>;
 
 #[cfg(unix)]

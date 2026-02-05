@@ -24,7 +24,7 @@ mod unix;
 
 pub use cmsg::*;
 /// Providing functionalities to wait for readiness.
-#[deprecated(since = "0.12.0", note = "Use `compio_runtime::fd::PollFd` instead")]
+#[deprecated(since = "0.12.0", note = "Use `compio::runtime::fd::PollFd` instead")]
 pub type PollFd<T> = compio_runtime::fd::PollFd<T>;
 pub use opts::SocketOpts;
 pub use resolve::ToSocketAddrsAsync;
