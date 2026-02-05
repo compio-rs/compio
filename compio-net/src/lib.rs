@@ -15,7 +15,6 @@
 
 mod cmsg;
 mod opts;
-mod poll_fd;
 mod resolve;
 mod socket;
 pub(crate) mod split;
@@ -25,7 +24,6 @@ mod unix;
 
 pub use cmsg::*;
 pub use opts::SocketOpts;
-pub use poll_fd::*;
 pub use resolve::ToSocketAddrsAsync;
 pub(crate) use resolve::{each_addr, first_addr_buf};
 pub(crate) use socket::*;

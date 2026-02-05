@@ -158,7 +158,7 @@ impl WSAEvent {
         };
         loop {
             let op = WaitWSAEvent::new(socket, ev_object, event);
-            let BufResult(res, op) = compio_runtime::submit(op).await;
+            let BufResult(res, op) = crate::submit(op).await;
             WaitWSAEvent {
                 socket,
                 ev_object,

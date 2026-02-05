@@ -3,12 +3,11 @@ use std::{future::Future, io, net::SocketAddr};
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite, util::Splittable};
-use compio_runtime::{BorrowedBuffer, BufferPool};
+use compio_runtime::{BorrowedBuffer, BufferPool, fd::PollFd};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::{
-    OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, SocketOpts, ToSocketAddrsAsync,
-    WriteHalf,
+    OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, SocketOpts, ToSocketAddrsAsync, WriteHalf,
 };
 
 /// A TCP socket server, listening for connections.

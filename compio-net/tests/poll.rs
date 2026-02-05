@@ -3,7 +3,7 @@ use std::{
     net::{Ipv4Addr, SocketAddrV4},
 };
 
-use compio_net::PollFd;
+use compio_runtime::fd::PollFd;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 
 fn is_would_block(e: &io::Error) -> bool {

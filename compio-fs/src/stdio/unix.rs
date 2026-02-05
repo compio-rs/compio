@@ -3,11 +3,10 @@ use std::io;
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{AsFd, AsRawFd, BorrowedFd, RawFd};
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
-use compio_runtime::{BorrowedBuffer, BufferPool};
+use compio_runtime::{BorrowedBuffer, BufferPool, fd::AsyncFd};
 
 #[cfg(doc)]
 use super::{stderr, stdin, stdout};
-use crate::AsyncFd;
 
 #[derive(Debug)]
 struct StaticFd(RawFd);
