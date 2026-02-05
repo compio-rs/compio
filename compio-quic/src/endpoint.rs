@@ -1,11 +1,13 @@
 use std::{
     collections::VecDeque,
     fmt::Debug,
+    future::poll_fn,
     io,
     mem::ManuallyDrop,
     net::{SocketAddr, SocketAddrV6},
     ops::Deref,
     pin::pin,
+    ptr,
     sync::Arc,
     task::{Context, Poll, Waker},
     time::Instant,
@@ -318,16 +320,10 @@ impl EndpointInner {
 pub(crate) struct EndpointRef(Shared<EndpointInner>);
 
 impl EndpointRef {
-    // Modified from [`SharedFd::try_unwrap_inner`], see notes there.
-    unsafe fn try_unwrap_inner(&self) -> Option<EndpointInner> {
-        let ptr = unsafe { std::ptr::read(&self.0) };
-        match Shared::try_unwrap(ptr) {
-            Ok(inner) => Some(inner),
-            Err(ptr) => {
-                std::mem::forget(ptr);
-                None
-            }
-        }
+    fn into_inner(self) -> Shared<EndpointInner> {
+        let this = ManuallyDrop::new(self);
+        // SAFETY: `this` is not dropped here, and we're consuming Self
+        unsafe { ptr::read(&this.0) }
     }
 
     async fn shutdown(self) -> io::Result<()> {
@@ -347,18 +343,21 @@ impl EndpointRef {
             }
         }
 
-        let this = ManuallyDrop::new(self);
-        let inner = future::poll_fn(move |cx| {
-            if let Some(inner) = unsafe { Self::try_unwrap_inner(&this) } {
-                return Poll::Ready(inner);
-            }
+        let mut this = Some(self.into_inner());
+        let inner = poll_fn(move |cx| {
+            let s = match Shared::try_unwrap(this.take().unwrap()) {
+                Ok(inner) => return Poll::Ready(inner),
+                Err(s) => s,
+            };
 
-            this.done.register(cx.waker());
+            s.done.register(cx.waker());
 
-            if let Some(inner) = unsafe { Self::try_unwrap_inner(&this) } {
-                Poll::Ready(inner)
-            } else {
-                Poll::Pending
+            match Shared::try_unwrap(s) {
+                Ok(inner) => Poll::Ready(inner),
+                Err(s) => {
+                    this.replace(s);
+                    Poll::Pending
+                }
             }
         })
         .await;
