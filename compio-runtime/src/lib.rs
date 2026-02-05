@@ -22,6 +22,7 @@
 
 mod affinity;
 mod attacher;
+pub mod fd;
 mod runtime;
 
 #[cfg(feature = "event")]

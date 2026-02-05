@@ -15,7 +15,6 @@
 
 mod cmsg;
 mod opts;
-mod poll_fd;
 mod resolve;
 mod socket;
 pub(crate) mod split;
@@ -24,8 +23,10 @@ mod udp;
 mod unix;
 
 pub use cmsg::*;
+/// Providing functionalities to wait for readiness.
+#[deprecated(since = "0.12.0", note = "Use `compio_runtime::fd::PollFd` instead")]
+pub type PollFd<T> = compio_runtime::fd::PollFd<T>;
 pub use opts::SocketOpts;
-pub use poll_fd::*;
 pub use resolve::ToSocketAddrsAsync;
 pub(crate) use resolve::{each_addr, first_addr_buf};
 pub(crate) use socket::*;

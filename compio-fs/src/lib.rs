@@ -30,14 +30,15 @@ pub use stdio::*;
 mod utils;
 pub use utils::*;
 
-mod async_fd;
-pub use async_fd::*;
-
 #[cfg(windows)]
 pub mod named_pipe;
 
 #[cfg(unix)]
 pub mod pipe;
+
+/// Providing functionalities to wait for readiness.
+#[deprecated(since = "0.12.0", note = "Use `compio_runtime::fd::AsyncFd` instead")]
+pub type AsyncFd<T> = compio_runtime::fd::AsyncFd<T>;
 
 #[cfg(unix)]
 pub(crate) fn path_string(path: impl AsRef<std::path::Path>) -> std::io::Result<std::ffi::CString> {

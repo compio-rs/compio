@@ -28,14 +28,14 @@ impl<T: AsFd + 'static> PollFd<T> {
 
     pub async fn read_ready(&self) -> io::Result<()> {
         let op = PollOnce::new(self.to_shared_fd(), Interest::Readable);
-        let BufResult(res, _) = compio_runtime::submit(op).await;
+        let BufResult(res, _) = crate::submit(op).await;
         res?;
         Ok(())
     }
 
     pub async fn write_ready(&self) -> io::Result<()> {
         let op = PollOnce::new(self.to_shared_fd(), Interest::Writable);
-        let BufResult(res, _) = compio_runtime::submit(op).await;
+        let BufResult(res, _) = crate::submit(op).await;
         res?;
         Ok(())
     }

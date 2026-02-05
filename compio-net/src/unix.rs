@@ -3,10 +3,10 @@ use std::{future::Future, io, path::Path};
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite, util::Splittable};
-use compio_runtime::{BorrowedBuffer, BufferPool};
+use compio_runtime::{BorrowedBuffer, BufferPool, fd::PollFd};
 use socket2::{SockAddr, Socket as Socket2, Type};
 
-use crate::{OwnedReadHalf, OwnedWriteHalf, PollFd, ReadHalf, Socket, SocketOpts, WriteHalf};
+use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, SocketOpts, WriteHalf};
 
 /// A Unix socket server, listening for connections.
 ///

@@ -19,7 +19,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 compio-buf = { workspace = true }
 compio-driver = { workspace = true }
 compio-io = { workspace = true }
-compio-runtime = { workspace = true }
+compio-runtime = { workspace = true, features = ["async-fd"] }
 
 cfg-if = { workspace = true }
 pin-project-lite = { workspace = true }

@@ -12,7 +12,7 @@ use compio_io::{
     AsyncRead, AsyncReadAt, AsyncReadManaged, AsyncReadManagedAt, AsyncWrite, AsyncWriteAt,
     util::Splittable,
 };
-use compio_runtime::{BorrowedBuffer, BufferPool};
+use compio_runtime::{BorrowedBuffer, BufferPool, fd::AsyncFd};
 use widestring::U16CString;
 use windows_sys::Win32::{
     Storage::FileSystem::{
@@ -29,7 +29,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{AsyncFd, File, OpenOptions};
+use crate::{File, OpenOptions};
 
 /// A [Windows named pipe] server.
 ///

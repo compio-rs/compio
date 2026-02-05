@@ -16,10 +16,8 @@ use compio_driver::{
     },
     syscall,
 };
-use compio_runtime::{Attacher, BorrowedBuffer, BufferPool};
+use compio_runtime::{Attacher, BorrowedBuffer, BufferPool, fd::PollFd};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
-
-use crate::PollFd;
 
 #[derive(Debug, Clone)]
 pub struct Socket {

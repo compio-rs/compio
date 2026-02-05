@@ -15,18 +15,20 @@ use std::{io, ops::Deref};
 use compio_buf::IntoInner;
 use compio_driver::{AsFd, AsRawFd, BorrowedFd, RawFd, SharedFd, ToSharedFd};
 
-/// A wrapper for socket, providing functionalities to wait for readiness.
+/// Providing functionalities to wait for readiness.
 #[derive(Debug)]
 pub struct PollFd<T: AsFd>(sys::PollFd<T>);
 
 impl<T: AsFd> PollFd<T> {
-    /// Create [`PollFd`] without attaching the source. Ready-based sources need
-    /// not to be attached.
+    /// Create [`PollFd`] without attaching the source.
+    ///
+    /// Ready-based sources does not need to be attached.
     pub fn new(source: T) -> io::Result<Self> {
         Self::from_shared_fd(SharedFd::new(source))
     }
 
-    pub(crate) fn from_shared_fd(inner: SharedFd<T>) -> io::Result<Self> {
+    /// Create [`PollFd`] from a shared file descriptor.
+    pub fn from_shared_fd(inner: SharedFd<T>) -> io::Result<Self> {
         Ok(Self(sys::PollFd::new(inner)?))
     }
 }
