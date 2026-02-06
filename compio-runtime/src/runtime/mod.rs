@@ -546,7 +546,7 @@ pub fn submit<T: OpCode + 'static>(op: T) -> Submit<T> {
 ///
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::with_current`].
-#[deprecated(since = "0.8.0", note = "use `submit(op).with_extra()` instead")]
+#[deprecated(since = "0.11.0", note = "use `submit(op).with_extra()` instead")]
 pub fn submit_with_extra<T: OpCode + 'static>(op: T) -> Submit<T, Extra> {
     Runtime::with_current(|r| r.submit(op).with_extra())
 }
