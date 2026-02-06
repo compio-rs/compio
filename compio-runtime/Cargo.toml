@@ -32,6 +32,7 @@ scoped-tls = "1.0.1"
 slab = { workspace = true }
 socket2 = { workspace = true }
 pin-project-lite = { workspace = true }
+synchrony = { workspace = true, features = ["event"] }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]

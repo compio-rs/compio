@@ -22,6 +22,7 @@
 
 mod affinity;
 mod attacher;
+mod cancel;
 pub mod fd;
 mod runtime;
 
@@ -34,6 +35,7 @@ pub mod time;
 
 pub use async_task::Task;
 pub use attacher::*;
+pub use cancel::CancelToken;
 use compio_buf::BufResult;
 #[allow(hidden_glob_reexports, unused)]
 use runtime::RuntimeInner; // used to shadow glob export so that RuntimeInner is not exported
