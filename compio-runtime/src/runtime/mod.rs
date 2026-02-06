@@ -2,6 +2,7 @@ use std::{
     any::Any,
     cell::{Cell, RefCell},
     collections::HashSet,
+    fmt::Debug,
     future::Future,
     io,
     ops::Deref,
@@ -15,14 +16,14 @@ use std::{
 use async_task::Task;
 use compio_buf::IntoInner;
 use compio_driver::{
-    AsRawFd, DriverType, Extra, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
+    AsRawFd, Cancel, DriverType, Extra, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
     op::Asyncify,
 };
 use compio_log::{debug, instrument};
 use futures_util::FutureExt;
 
 mod future;
-pub use future::Submit;
+pub use future::*;
 
 #[cfg(feature = "time")]
 pub(crate) mod time;
@@ -52,6 +53,11 @@ thread_local! {
     static RUNTIME_ID: Cell<u64> = const { Cell::new(0) };
 }
 
+#[cold]
+fn not_in_compio_runtime() -> ! {
+    panic!("not in a compio runtime")
+}
+
 /// Inner structure of [`Runtime`].
 pub struct RuntimeInner {
     driver: RefCell<Proactor>,
@@ -73,6 +79,16 @@ pub struct RuntimeInner {
 /// It is a thread-local runtime, meaning it cannot be sent to other threads.
 #[derive(Clone)]
 pub struct Runtime(Rc<RuntimeInner>);
+
+impl Debug for Runtime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s = f.debug_struct("Runtime");
+        s.field("driver", &"...").field("scheduler", &"...");
+        #[cfg(feature = "time")]
+        s.field("timer_runtime", &"...");
+        s.field("id", &self.id).finish()
+    }
+}
 
 impl Deref for Runtime {
     type Target = RuntimeInner;
@@ -114,13 +130,31 @@ impl Runtime {
     ///
     /// This method will panic if there is no running [`Runtime`].
     pub fn with_current<T, F: FnOnce(&Self) -> T>(f: F) -> T {
-        #[cold]
-        fn not_in_compio_runtime() -> ! {
-            panic!("not in a compio runtime")
-        }
-
         if CURRENT_RUNTIME.is_set() {
             CURRENT_RUNTIME.with(f)
+        } else {
+            not_in_compio_runtime()
+        }
+    }
+
+    /// Try to get the current runtime, and if no runtime is running, return
+    /// `None`.
+    pub fn try_current() -> Option<Self> {
+        if CURRENT_RUNTIME.is_set() {
+            Some(CURRENT_RUNTIME.with(|r| r.clone()))
+        } else {
+            None
+        }
+    }
+
+    /// Get the current runtime.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if there is no running [`Runtime`].
+    pub fn current() -> Self {
+        if CURRENT_RUNTIME.is_set() {
+            CURRENT_RUNTIME.with(|r| r.clone())
         } else {
             not_in_compio_runtime()
         }
@@ -250,8 +284,16 @@ impl Runtime {
         Submit::new(self.clone(), op)
     }
 
-    pub(crate) fn cancel<T: OpCode>(&self, op: Key<T>) {
-        self.driver.borrow_mut().cancel(op);
+    pub(crate) fn cancel<T: OpCode>(&self, key: Key<T>) {
+        self.driver.borrow_mut().cancel(key);
+    }
+
+    pub(crate) fn register_cancel<T: OpCode>(&self, key: &Key<T>) -> Cancel {
+        self.driver.borrow_mut().register_cancel(key)
+    }
+
+    pub(crate) fn cancel_token(&self, token: Cancel) -> bool {
+        self.driver.borrow_mut().cancel_token(token)
     }
 
     #[cfg(feature = "time")]

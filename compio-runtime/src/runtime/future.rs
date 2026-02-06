@@ -11,27 +11,35 @@ use compio_buf::BufResult;
 use compio_driver::{Extra, Key, OpCode, PushEntry};
 use futures_util::future::FusedFuture;
 
-use crate::runtime::Runtime;
+use crate::{CancelToken, runtime::Runtime};
 
-trait ContextExt {
-    fn as_extra(&mut self, extra: impl FnOnce() -> Extra) -> Option<Extra>;
-}
+pub(crate) trait ContextExt {
+    fn as_cancel(&mut self) -> Option<&CancelToken> {
+        None
+    }
 
-#[cfg(feature = "future-combinator")]
-impl ContextExt for Context<'_> {
-    fn as_extra(&mut self, extra: impl FnOnce() -> Extra) -> Option<Extra> {
-        let ext = self.ext().downcast_mut::<crate::future::Ext>()?;
-        let mut extra = extra();
-        ext.set_extra(&mut extra);
-        Some(extra)
+    fn as_extra(&mut self, default: impl FnOnce() -> Extra) -> Option<Extra> {
+        let _ = default;
+        None
     }
 }
 
 #[cfg(not(feature = "future-combinator"))]
+impl ContextExt for Context<'_> {}
+
+#[cfg(feature = "future-combinator")]
 impl ContextExt for Context<'_> {
-    fn as_extra(&mut self, extra: impl FnOnce() -> Extra) -> Option<Extra> {
-        let _ = extra;
-        None
+    fn as_cancel(&mut self) -> Option<&CancelToken> {
+        self.ext()
+            .downcast_ref::<crate::future::Ext>()?
+            .get_cancel()
+    }
+
+    fn as_extra(&mut self, default: impl FnOnce() -> Extra) -> Option<Extra> {
+        let ext = self.ext().downcast_mut::<crate::future::Ext>()?;
+        let mut extra = default();
+        ext.set_extra(&mut extra);
+        Some(extra)
     }
 }
 
@@ -112,7 +120,15 @@ impl<T: OpCode + 'static> Future for Submit<T, ()> {
                 State::Idle { op } => {
                     let extra = cx.as_extra(|| this.runtime.default_extra());
                     match this.runtime.submit_raw(op, extra) {
-                        PushEntry::Pending(key) => this.state = Some(State::submitted(key)),
+                        PushEntry::Pending(key) => {
+                            // TODO: Should we register it only the first time or every time it's
+                            // being polled?
+                            if let Some(cancel) = cx.as_cancel() {
+                                cancel.register(&key);
+                            };
+
+                            this.state = Some(State::submitted(key))
+                        }
                         PushEntry::Ready(res) => {
                             return Poll::Ready(res);
                         }
@@ -140,7 +156,13 @@ impl<T: OpCode + 'static> Future for Submit<T, Extra> {
                 State::Idle { op } => {
                     let extra = cx.as_extra(|| this.runtime.default_extra());
                     match this.runtime.submit_raw(op, extra) {
-                        PushEntry::Pending(key) => this.state = Some(State::submitted(key)),
+                        PushEntry::Pending(key) => {
+                            if let Some(cancel) = cx.as_cancel() {
+                                cancel.register(&key);
+                            }
+
+                            this.state = Some(State::submitted(key))
+                        }
                         PushEntry::Ready(res) => {
                             return Poll::Ready((res, this.runtime.default_extra()));
                         }

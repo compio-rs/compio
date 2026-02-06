@@ -183,7 +183,7 @@ impl Proactor {
     /// [`Key`] may cause [`Proactor::pop`] to panic while keys registered
     /// as [`Cancel`] will be properly handled. So this is useful in cases
     /// where you're not sure if the operation will be cancelled.
-    pub fn register_cancel<T: OpCode>(&mut self, key: Key<T>) -> Cancel {
+    pub fn register_cancel<T: OpCode>(&mut self, key: &Key<T>) -> Cancel {
         self.cancel.register(key)
     }
 

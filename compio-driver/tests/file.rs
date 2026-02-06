@@ -155,7 +155,7 @@ fn cancel_token() {
         }
     };
 
-    let token = driver.register_cancel(key.clone());
+    let token = driver.register_cancel(&key);
     assert!(driver.cancel_token(token));
 
     let res = loop {
