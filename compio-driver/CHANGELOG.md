@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.2](https://github.com/compio-rs/compio/compare/compio-driver-v0.11.1...compio-driver-v0.11.2) - 2026-02-06
+
+### Added
+
+- *(runtime)* cancel & future combinator ([#665](https://github.com/compio-rs/compio/pull/665))
+- *(driver)* cancel token ([#660](https://github.com/compio-rs/compio/pull/660))
+
+### Changed
+
+- *(driver)* shared fd ([#661](https://github.com/compio-rs/compio/pull/661))
+
 ## [0.11.1](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added
