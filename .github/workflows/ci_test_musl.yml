@@ -22,7 +22,7 @@ jobs:
       matrix:
         setup:
           - target: 'x86_64-unknown-linux-musl'
-            features: 'native-tls-vendored,ring,sync'
+            features: 'native-tls-vendored,ring,sync,polling'
     steps:
       - uses: actions/checkout@v4
       - name: Setup cross-rs
