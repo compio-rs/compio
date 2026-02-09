@@ -8,6 +8,7 @@ use compio_io::{
     AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt,
     framed::{Framed, codec::serde_json::SerdeJsonCodec, frame::LengthDelimited},
 };
+use futures_executor::block_on;
 use futures_util::{SinkExt, StreamExt, lock::Mutex};
 use serde::{Deserialize, Serialize};
 
@@ -65,39 +66,41 @@ impl AsyncWrite for InMemoryPipe {
     }
 }
 
-#[compio_macros::test]
-async fn test_framed() {
-    let codec = SerdeJsonCodec::new();
-    let framer = LengthDelimited::new();
-    let buf = Rc::new(Mutex::new(vec![]));
-    let ins = buf.clone();
-    let r = InMemoryPipe(Cursor::new(buf.clone()));
-    let w = InMemoryPipe(Cursor::new(buf));
-    let mut framed = Framed::symmetric::<Test>(codec, framer)
-        .with_reader(r)
-        .with_writer(w);
+#[test]
+fn test_framed() {
+    block_on(async {
+        let codec = SerdeJsonCodec::new();
+        let framer = LengthDelimited::new();
+        let buf = Rc::new(Mutex::new(vec![]));
+        let ins = buf.clone();
+        let r = InMemoryPipe(Cursor::new(buf.clone()));
+        let w = InMemoryPipe(Cursor::new(buf));
+        let mut framed = Framed::symmetric::<Test>(codec, framer)
+            .with_reader(r)
+            .with_writer(w);
 
-    let origin = Test {
-        foo: "hello, world!".to_owned(),
-        bar: 114514111,
-    };
-    framed.send(origin.clone()).await.unwrap();
-    framed.send(origin.clone()).await.unwrap();
+        let origin = Test {
+            foo: "hello, world!".to_owned(),
+            bar: 114514111,
+        };
+        framed.send(origin.clone()).await.unwrap();
+        framed.send(origin.clone()).await.unwrap();
 
-    let b = ins.lock().await;
-    let l = String::from_utf8_lossy(b.as_slice());
-    println!("{}", l);
-    drop(b);
+        let b = ins.lock().await;
+        let l = String::from_utf8_lossy(b.as_slice());
+        println!("{}", l);
+        drop(b);
 
-    let des = framed.next().await.unwrap().unwrap();
-    println!("{des:?}");
+        let des = framed.next().await.unwrap().unwrap();
+        println!("{des:?}");
 
-    assert_eq!(origin, des);
-    let des = framed.next().await.unwrap().unwrap();
-    println!("{des:?}");
+        assert_eq!(origin, des);
+        let des = framed.next().await.unwrap().unwrap();
+        println!("{des:?}");
 
-    assert_eq!(origin, des);
+        assert_eq!(origin, des);
 
-    let res = framed.next().await;
-    assert!(res.is_none());
+        let res = framed.next().await;
+        assert!(res.is_none());
+    })
 }
