@@ -272,7 +272,9 @@ impl ErasedKey {
     pub(crate) fn set_result(&self, res: io::Result<usize>) {
         let mut this = self.borrow();
         #[cfg(io_uring)]
-        if let Ok(res) = res {
+        if let Ok(res) = res
+            && this.extra.is_iour()
+        {
             unsafe {
                 Pin::new_unchecked(&mut this.op).set_result(res);
             }

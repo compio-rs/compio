@@ -36,6 +36,14 @@ impl From<iour::Extra> for Extra {
 
 #[allow(dead_code)]
 impl super::Extra {
+    pub(crate) fn is_iour(&self) -> bool {
+        matches!(self.0, Extra::IoUring(_))
+    }
+
+    pub(crate) fn is_poll(&self) -> bool {
+        matches!(self.0, Extra::Poll(_))
+    }
+
     pub(in crate::sys) fn try_as_iour(&self) -> Option<&iour::Extra> {
         if let Extra::IoUring(extra) = &self.0 {
             Some(extra)
