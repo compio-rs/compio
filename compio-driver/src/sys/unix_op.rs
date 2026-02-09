@@ -167,6 +167,30 @@ pub(crate) const fn statx_to_stat(statx: Statx) -> Stat {
     stat
 }
 
+#[cfg(all(target_os = "linux", not(target_env = "gnu")))]
+pub(crate) const fn stat_to_statx(stat: Stat) -> Statx {
+    let mut statx: Statx = unsafe { std::mem::zeroed() };
+    statx.stx_dev_major = libc::major(stat.st_dev as _) as _;
+    statx.stx_dev_minor = libc::minor(stat.st_dev as _) as _;
+    statx.stx_ino = stat.st_ino as _;
+    statx.stx_nlink = stat.st_nlink as _;
+    statx.stx_mode = stat.st_mode as _;
+    statx.stx_uid = stat.st_uid as _;
+    statx.stx_gid = stat.st_gid as _;
+    statx.stx_rdev_major = libc::major(stat.st_rdev as _) as _;
+    statx.stx_rdev_minor = libc::minor(stat.st_rdev as _) as _;
+    statx.stx_size = stat.st_size as _;
+    statx.stx_blksize = stat.st_blksize as _;
+    statx.stx_blocks = stat.st_blocks as _;
+    statx.stx_atime.tv_sec = stat.st_atime as _;
+    statx.stx_atime.tv_nsec = stat.st_atime_nsec as _;
+    statx.stx_mtime.tv_sec = stat.st_mtime as _;
+    statx.stx_mtime.tv_nsec = stat.st_mtime_nsec as _;
+    statx.stx_btime.tv_sec = stat.st_ctime as _;
+    statx.stx_btime.tv_nsec = stat.st_ctime_nsec as _;
+    statx
+}
+
 pin_project! {
     /// Read a file at specified position into vectored buffer.
     pub struct ReadVectoredAt<T: IoVectoredBufMut, S> {
