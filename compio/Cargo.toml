@@ -79,6 +79,10 @@ time = ["compio-runtime/time", "runtime"]
 dispatcher = ["dep:compio-dispatcher", "runtime"]
 tls = ["dep:compio-tls"]
 native-tls = ["tls", "compio-tls/native-tls", "compio-ws?/native-tls"]
+native-tls-vendored = [
+    "compio-tls/native-tls-vendored",
+    "compio-ws?/native-tls-vendored",
+]
 rustls = ["tls", "compio-tls/rustls", "compio-ws?/rustls"]
 ring = ["tls", "compio-tls/ring", "compio-quic?/ring", "compio-ws?/ring"]
 process = ["dep:compio-process"]
