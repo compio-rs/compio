@@ -39,6 +39,10 @@ fn open_file(driver: &mut Proactor, personality: u16) -> OwnedFd {
 #[test]
 fn read_with_personality() {
     let mut driver = Proactor::new().expect("failed to create proactor");
+    if !matches!(driver.driver_type(), DriverType::IoUring) {
+        eprintln!("Current driver does not support personality, skipping test");
+        return;
+    }
     let personality = driver
         .register_personality()
         .expect("failed to register personality");
