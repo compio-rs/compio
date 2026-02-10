@@ -23,6 +23,9 @@ jobs:
         setup:
           - target: 'x86_64-unknown-linux-musl'
             features: 'native-tls-vendored,ring,sync,polling'
+        setup:
+          - target: 'aarch64-unknown-linux-musl'
+            features: 'native-tls-vendored,ring,sync,polling'
     steps:
       - uses: actions/checkout@v4
       - name: Setup cross-rs
