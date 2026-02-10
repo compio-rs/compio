@@ -218,7 +218,11 @@ unsafe impl OpCode for PathStat {
     #[cfg(not(gnulinux))]
     fn call_blocking(mut self: Pin<&mut Self>) -> io::Result<usize> {
         let mut stat = unsafe { std::mem::zeroed() };
-        let res = syscall!(libc::stat(self.path.as_ptr(), &mut stat))?;
+        let res = if self.follow_symlink {
+            syscall!(libc::stat(self.path.as_ptr(), &mut stat))?
+        } else {
+            syscall!(libc::lstat(self.path.as_ptr(), &mut stat))?
+        };
         self.stat = stat_to_statx(stat);
         Ok(res as _)
     }
