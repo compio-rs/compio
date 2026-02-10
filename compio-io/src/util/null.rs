@@ -62,7 +62,7 @@ impl Splittable for Null {
 /// ```
 /// use compio_io::{AsyncRead, AsyncWrite, null};
 ///
-/// # compio_runtime::Runtime::new().unwrap().block_on(async {
+/// # futures_executor::block_on(async {
 /// let mut buf = Vec::with_capacity(10);
 /// let mut null = null();
 ///

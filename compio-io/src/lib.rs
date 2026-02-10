@@ -43,7 +43,7 @@
 //! ```
 //! use compio_buf::BufResult;
 //! use compio_io::AsyncRead;
-//! # compio_runtime::Runtime::new().unwrap().block_on(async {
+//! # futures_executor::block_on(async {
 //!
 //! let mut reader = "Hello, world!".as_bytes();
 //! let (res, buf) = reader.read(Vec::with_capacity(20)).await.unwrap();
@@ -64,7 +64,7 @@
 //!
 //! use compio_buf::BufResult;
 //! use compio_io::AsyncWrite;
-//! # compio_runtime::Runtime::new().unwrap().block_on(async {
+//! # futures_executor::block_on(async {
 //!
 //! let mut writer = Cursor::new([0; 6]);
 //! writer.set_position(2);
@@ -81,7 +81,7 @@
 //! ```
 //! use compio_buf::BufResult;
 //! use compio_io::AsyncWrite;
-//! # compio_runtime::Runtime::new().unwrap().block_on(async {
+//! # futures_executor::block_on(async {
 //!
 //! let mut writer = vec![1, 2, 3];
 //! let (_, buf) = writer.write(vec![3, 2, 1]).await.unwrap();

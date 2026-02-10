@@ -27,6 +27,10 @@ impl Extra {
 
 #[cfg(not(fusion))]
 impl crate::sys::Extra {
+    pub(crate) fn is_iour(&self) -> bool {
+        true
+    }
+
     pub(in crate::sys) fn try_as_iour(&self) -> Option<&Extra> {
         Some(&self.0)
     }
@@ -49,6 +53,8 @@ impl crate::sys::Extra {
     }
 
     pub(crate) fn set_flags(&mut self, flag: u32) {
-        self.as_iour_mut().flags = flag;
+        if let Some(extra) = self.try_as_iour_mut() {
+            extra.flags = flag;
+        }
     }
 }
