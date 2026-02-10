@@ -126,15 +126,10 @@ pub(crate) struct Statx {
     __statx_pad3: [u64; 12],
 }
 
-#[cfg(gnulinux)]
+#[cfg(target_os = "linux")]
 pub(crate) const fn statx_mask() -> u32 {
     // Set mask to ensure all known fields are filled
-    libc::STATX_ALL | libc::STATX_MNT_ID | libc::STATX_DIOALIGN
-}
-
-#[cfg(not(gnulinux))]
-pub(crate) const fn statx_mask() -> u32 {
-    // The same as above
+    // libc::STATX_ALL | libc::STATX_MNT_ID | libc::STATX_DIOALIGN
     0x3FFF
 }
 
