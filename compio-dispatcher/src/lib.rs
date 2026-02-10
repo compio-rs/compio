@@ -22,6 +22,11 @@ use compio_driver::{AsyncifyPool, DispatchError, Dispatchable, ProactorBuilder};
 use compio_runtime::{JoinHandle as CompioJoinHandle, Runtime};
 use flume::{Sender, unbounded};
 use futures_channel::oneshot;
+#[cfg(unix)]
+use libc::{
+    SIG_BLOCK, SIG_SETMASK, SIGHUP, SIGINT, SIGPIPE, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2,
+    pthread_sigmask, sigaddset, sigemptyset, sigset_t,
+};
 
 type Spawning = Box<dyn Spawnable + Send>;
 
@@ -83,6 +88,8 @@ impl Dispatcher {
         let DispatcherBuilder {
             nthreads,
             concurrent,
+            #[cfg(unix)]
+            block_signals,
             stack_size,
             mut thread_affinity,
             mut names,
@@ -91,6 +98,28 @@ impl Dispatcher {
         proactor_builder.force_reuse_thread_pool();
         let pool = proactor_builder.create_or_get_thread_pool();
         let (sender, receiver) = unbounded::<Spawning>();
+
+        // Block standard signals before spawning workers.
+        #[cfg(unix)]
+        let old_sigmask = if block_signals {
+            Some(unsafe {
+                let mut new_mask: sigset_t = std::mem::zeroed();
+                sigemptyset(&mut new_mask);
+                sigaddset(&mut new_mask, SIGINT);
+                sigaddset(&mut new_mask, SIGTERM);
+                sigaddset(&mut new_mask, SIGQUIT);
+                sigaddset(&mut new_mask, SIGHUP);
+                sigaddset(&mut new_mask, SIGUSR1);
+                sigaddset(&mut new_mask, SIGUSR2);
+                sigaddset(&mut new_mask, SIGPIPE);
+
+                let mut old_mask: sigset_t = std::mem::zeroed();
+                pthread_sigmask(SIG_BLOCK, &new_mask, &mut old_mask);
+                old_mask
+            })
+        } else {
+            None
+        };
 
         let threads = (0..nthreads)
             .map({
@@ -135,6 +164,15 @@ impl Dispatcher {
                 }
             })
             .collect::<io::Result<Vec<_>>>()?;
+
+        // Restore the original signal mask.
+        #[cfg(unix)]
+        if let Some(old_mask) = old_sigmask {
+            unsafe {
+                pthread_sigmask(SIG_SETMASK, &old_mask, std::ptr::null_mut());
+            }
+        }
+
         Ok(Self {
             sender,
             threads,
@@ -238,6 +276,8 @@ impl Dispatcher {
 pub struct DispatcherBuilder {
     nthreads: usize,
     concurrent: bool,
+    #[cfg(unix)]
+    block_signals: bool,
     stack_size: Option<usize>,
     thread_affinity: Option<Box<dyn FnMut(usize) -> HashSet<usize>>>,
     names: Option<Box<dyn FnMut(usize) -> String>>,
@@ -250,6 +290,8 @@ impl DispatcherBuilder {
         Self {
             nthreads: available_parallelism().map(|n| n.get()).unwrap_or(1),
             concurrent: true,
+            #[cfg(unix)]
+            block_signals: true,
             stack_size: None,
             thread_affinity: None,
             names: None,
@@ -277,6 +319,16 @@ impl DispatcherBuilder {
     /// Set the size of stack of the worker threads.
     pub fn stack_size(mut self, s: usize) -> Self {
         self.stack_size = Some(s);
+        self
+    }
+
+    /// Block standard signals on worker threads. Default to be `true`.
+    ///
+    /// When enabled, `SIGINT`, `SIGTERM`, `SIGQUIT`, `SIGHUP`, `SIGUSR1`,
+    /// `SIGUSR2`, and `SIGPIPE` are masked on worker threads.
+    #[cfg(unix)]
+    pub fn block_signals(mut self, block_signals: bool) -> Self {
+        self.block_signals = block_signals;
         self
     }
 

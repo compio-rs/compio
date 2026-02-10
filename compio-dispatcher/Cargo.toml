@@ -22,6 +22,9 @@ compio-runtime = { workspace = true }
 flume = { workspace = true, default-features = false, features = ["async"] }
 futures-channel = { workspace = true }
 
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
 [dev-dependencies]
 compio-buf = { workspace = true }
 compio-io = { workspace = true }
