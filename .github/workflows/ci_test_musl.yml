@@ -1,0 +1,48 @@
+name: TestMusl
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        setup:
+          - target: 'x86_64-unknown-linux-musl'
+            features: 'native-tls-vendored,ring,sync,polling'
+          - target: 'aarch64-unknown-linux-musl'
+            features: 'native-tls-vendored,ring,sync,polling'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup cross-rs
+        uses: taiki-e/install-action@cross
+      - name: Test for ${{ matrix.setup.target }}
+        shell: bash
+        run: |
+          set -ex
+
+          ARGS=("--features" "all")
+
+          # Add features if features is not empty
+          if [[ -n "${{ matrix.setup.features }}" ]]; then
+              ARGS+=("--features" "${{ matrix.setup.features }}")
+          fi
+          # Specify target if target is not empty
+          if [[ -n "${{ matrix.setup.target }}" ]]; then
+              ARGS+=("--target" "${{ matrix.setup.target }}")
+          fi
+
+          cross test --workspace "${ARGS[@]}"

@@ -13,9 +13,9 @@ use rand::{Rng, RngCore, rng};
 use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 mod monoio_wrap;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 use monoio_wrap::MonoioRuntime;
 
 criterion_group!(fs, read, write);
@@ -104,7 +104,7 @@ fn read_compio_join(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
     })
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 fn read_monoio(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
     let runtime = MonoioRuntime::new();
     b.to_async(&runtime).iter_custom(|iter| async move {
@@ -179,7 +179,7 @@ fn read_all_compio(b: &mut Bencher, (path, len): &(&Path, u64)) {
     })
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 fn read_all_monoio(b: &mut Bencher, (path, len): &(&Path, u64)) {
     let runtime = MonoioRuntime::new();
     b.to_async(&runtime).iter_custom(|iter| async move {
@@ -229,7 +229,7 @@ fn read(c: &mut Criterion) {
         &(&path, &offsets),
         read_compio_join,
     );
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
     group.bench_with_input::<_, _, (&Path, &[u64])>("monoio", &(&path, &offsets), read_monoio);
 
     group.finish();
@@ -242,7 +242,7 @@ fn read(c: &mut Criterion) {
     group.bench_with_input::<_, _, (&Path, u64)>("std", &(&path, TOTAL_SIZE), read_all_std);
     group.bench_with_input::<_, _, (&Path, u64)>("tokio", &(&path, TOTAL_SIZE), read_all_tokio);
     group.bench_with_input::<_, _, (&Path, u64)>("compio", &(&path, TOTAL_SIZE), read_all_compio);
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
     group.bench_with_input::<_, _, (&Path, u64)>("monoio", &(&path, TOTAL_SIZE), read_all_monoio);
 
     group.finish();
@@ -343,7 +343,7 @@ fn write_compio_join(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64],
     })
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 fn write_monoio(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64], &[u8])) {
     let runtime = MonoioRuntime::new();
     let content = content.to_vec();
@@ -369,7 +369,7 @@ fn write_monoio(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64], &[u8
     })
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 fn write_monoio_join(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64], &[u8])) {
     let runtime = MonoioRuntime::new();
     let content = content.to_vec();
@@ -477,7 +477,7 @@ fn write_all_compio(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
     })
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 fn write_all_monoio(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
     let runtime = MonoioRuntime::new();
     let content = content.to_vec();
@@ -563,13 +563,13 @@ fn write(c: &mut Criterion) {
         &(&path, &offsets, &single_content),
         write_compio_join,
     );
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
     group.bench_with_input::<_, _, (&Path, &[u64], &[u8])>(
         "monoio",
         &(&path, &offsets, &single_content),
         write_monoio,
     );
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
     group.bench_with_input::<_, _, (&Path, &[u64], &[u8])>(
         "monoio-join",
         &(&path, &offsets, &single_content),
@@ -584,7 +584,7 @@ fn write(c: &mut Criterion) {
     group.bench_with_input::<_, _, (&Path, &[u8])>("std", &(&path, &content), write_all_std);
     group.bench_with_input::<_, _, (&Path, &[u8])>("tokio", &(&path, &content), write_all_tokio);
     group.bench_with_input::<_, _, (&Path, &[u8])>("compio", &(&path, &content), write_all_compio);
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
     group.bench_with_input::<_, _, (&Path, &[u8])>("monoio", &(&path, &content), write_all_monoio);
 
     group.finish()

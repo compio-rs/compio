@@ -47,6 +47,7 @@ futures-rustls = { workspace = true, default-features = false, features = [
 default = ["native-tls"]
 all = ["native-tls", "rustls"]
 rustls = ["dep:rustls", "dep:futures-rustls", "dep:futures-util"]
+native-tls-vendored = ["native-tls/vendored"]
 
 ring = ["rustls", "rustls/ring", "futures-rustls/ring"]
 
