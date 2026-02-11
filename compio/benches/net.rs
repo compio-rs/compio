@@ -3,9 +3,9 @@ use std::{net::Ipv4Addr, rc::Rc, time::Instant};
 use criterion::{Bencher, Criterion, Throughput, criterion_group, criterion_main};
 use rand::{RngCore, rng};
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 mod monoio_wrap;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 use monoio_wrap::MonoioRuntime;
 
 criterion_group!(net, echo);
@@ -62,7 +62,7 @@ where
     futures_util::join!(client, server);
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 async fn echo_monoio_impl<T, R>(mut tx: T, mut rx: R, mut content: Box<[u8; BUFFER_SIZE]>)
 where
     T: monoio::io::AsyncReadRent + monoio::io::AsyncWriteRent,
@@ -135,7 +135,7 @@ fn echo_compio_tcp(b: &mut Bencher, content: Rc<[u8; BUFFER_SIZE]>) {
     })
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 fn echo_monoio_tcp(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
     use monoio::net::{TcpListener, TcpStream};
 
@@ -256,7 +256,7 @@ fn echo_compio_unix(b: &mut Bencher, content: Rc<[u8; BUFFER_SIZE]>) {
     })
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 fn echo_monoio_unix(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
     use monoio::net::{UnixListener, UnixStream};
 
@@ -295,7 +295,7 @@ fn echo(c: &mut Criterion) {
 
     group.bench_function("tokio-tcp", |b| echo_tokio_tcp(b, &content));
     group.bench_function("compio-tcp", |b| echo_compio_tcp(b, content.clone()));
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
     group.bench_function("monoio-tcp", |b| echo_monoio_tcp(b, &content));
 
     #[cfg(windows)]
@@ -308,7 +308,7 @@ fn echo(c: &mut Criterion) {
     #[cfg(unix)]
     group.bench_function("tokio-unix", |b| echo_tokio_unix(b, &content));
     group.bench_function("compio-unix", |b| echo_compio_unix(b, content.clone()));
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
     group.bench_function("monoio-unix", |b| echo_monoio_unix(b, &content));
 
     group.finish();

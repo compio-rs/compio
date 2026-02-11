@@ -132,6 +132,7 @@ unsafe impl<S: AsFd> OpCode for FileStat<S> {
         .into()
     }
 
+    #[cfg(gnulinux)]
     fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
         let this = self.project();
         static EMPTY_NAME: &[u8] = b"\0";
@@ -142,6 +143,15 @@ unsafe impl<S: AsFd> OpCode for FileStat<S> {
             statx_mask(),
             this.stat as *mut _ as _
         ))?;
+        Ok(res as _)
+    }
+
+    #[cfg(not(gnulinux))]
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        let this = self.project();
+        let mut stat = unsafe { std::mem::zeroed() };
+        let res = syscall!(libc::fstat(this.fd.as_fd().as_raw_fd(), &mut stat))?;
+        *this.stat = stat_to_statx(stat);
         Ok(res as _)
     }
 }
@@ -189,6 +199,7 @@ unsafe impl OpCode for PathStat {
         .into()
     }
 
+    #[cfg(gnulinux)]
     fn call_blocking(mut self: Pin<&mut Self>) -> io::Result<usize> {
         let mut flags = libc::AT_EMPTY_PATH;
         if !self.follow_symlink {
@@ -201,6 +212,18 @@ unsafe impl OpCode for PathStat {
             statx_mask(),
             std::ptr::addr_of_mut!(self.stat).cast()
         ))?;
+        Ok(res as _)
+    }
+
+    #[cfg(not(gnulinux))]
+    fn call_blocking(mut self: Pin<&mut Self>) -> io::Result<usize> {
+        let mut stat = unsafe { std::mem::zeroed() };
+        let res = if self.follow_symlink {
+            syscall!(libc::stat(self.path.as_ptr(), &mut stat))?
+        } else {
+            syscall!(libc::lstat(self.path.as_ptr(), &mut stat))?
+        };
+        self.stat = stat_to_statx(stat);
         Ok(res as _)
     }
 }

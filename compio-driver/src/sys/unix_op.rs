@@ -129,20 +129,8 @@ pub(crate) struct Statx {
 #[cfg(target_os = "linux")]
 pub(crate) const fn statx_mask() -> u32 {
     // Set mask to ensure all known fields are filled
-    libc::STATX_TYPE
-        | libc::STATX_MODE
-        | libc::STATX_NLINK
-        | libc::STATX_UID
-        | libc::STATX_GID
-        | libc::STATX_ATIME
-        | libc::STATX_MTIME
-        | libc::STATX_CTIME
-        | libc::STATX_INO
-        | libc::STATX_SIZE
-        | libc::STATX_BLOCKS
-        | libc::STATX_BTIME
-        | libc::STATX_MNT_ID
-        | libc::STATX_DIOALIGN
+    // libc::STATX_ALL | libc::STATX_MNT_ID | libc::STATX_DIOALIGN
+    0x3FFF
 }
 
 #[cfg(target_os = "linux")]
@@ -165,6 +153,30 @@ pub(crate) const fn statx_to_stat(statx: Statx) -> Stat {
     stat.st_ctime = statx.stx_btime.tv_sec as _;
     stat.st_ctime_nsec = statx.stx_btime.tv_nsec as _;
     stat
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "gnu")))]
+pub(crate) const fn stat_to_statx(stat: Stat) -> Statx {
+    let mut statx: Statx = unsafe { std::mem::zeroed() };
+    statx.stx_dev_major = libc::major(stat.st_dev as _) as _;
+    statx.stx_dev_minor = libc::minor(stat.st_dev as _) as _;
+    statx.stx_ino = stat.st_ino as _;
+    statx.stx_nlink = stat.st_nlink as _;
+    statx.stx_mode = stat.st_mode as _;
+    statx.stx_uid = stat.st_uid as _;
+    statx.stx_gid = stat.st_gid as _;
+    statx.stx_rdev_major = libc::major(stat.st_rdev as _) as _;
+    statx.stx_rdev_minor = libc::minor(stat.st_rdev as _) as _;
+    statx.stx_size = stat.st_size as _;
+    statx.stx_blksize = stat.st_blksize as _;
+    statx.stx_blocks = stat.st_blocks as _;
+    statx.stx_atime.tv_sec = stat.st_atime as _;
+    statx.stx_atime.tv_nsec = stat.st_atime_nsec as _;
+    statx.stx_mtime.tv_sec = stat.st_mtime as _;
+    statx.stx_mtime.tv_nsec = stat.st_mtime_nsec as _;
+    statx.stx_btime.tv_sec = stat.st_ctime as _;
+    statx.stx_btime.tv_nsec = stat.st_ctime_nsec as _;
+    statx
 }
 
 pin_project! {
