@@ -11,7 +11,6 @@ use std::{
 };
 
 use compio_log::{instrument, trace, warn};
-use crossbeam_queue::SegQueue;
 cfg_if::cfg_if! {
     if #[cfg(feature = "io-uring-cqe32")] {
         use io_uring::cqueue::Entry32 as CEntry;
@@ -26,6 +25,7 @@ cfg_if::cfg_if! {
         use io_uring::squeue::Entry as SEntry;
     }
 }
+use flume::{Receiver, Sender};
 use io_uring::{
     IoUring,
     cqueue::more,
@@ -141,7 +141,7 @@ pub(crate) struct Driver {
     inner: IoUring<SEntry, CEntry>,
     notifier: Notifier,
     pool: AsyncifyPool,
-    pool_completed: Arc<SegQueue<Entry>>,
+    completed: (Sender<Entry>, Receiver<Entry>),
     buffer_group_ids: Slab<()>,
     need_push_notifier: bool,
 }
@@ -177,7 +177,7 @@ impl Driver {
             inner,
             notifier,
             pool: builder.create_or_get_thread_pool(),
-            pool_completed: Arc::new(SegQueue::new()),
+            completed: flume::unbounded(),
             buffer_group_ids: Slab::new(),
             need_push_notifier: true,
         })
@@ -240,11 +240,8 @@ impl Driver {
     }
 
     fn poll_blocking(&mut self) {
-        // Cheaper than pop.
-        if !self.pool_completed.is_empty() {
-            while let Some(entry) = self.pool_completed.pop() {
-                entry.notify();
-            }
+        while let Ok(entry) = self.completed.1.try_recv() {
+            entry.notify();
         }
     }
 
@@ -339,53 +336,44 @@ impl Driver {
             .pinned_op()
             .create_entry()
             .personality(personality);
-        trace!(?personality, "push RawOp");
+        trace!(?personality, "push Key");
         match entry {
             OpEntry::Submission(entry) => {
                 if is_op_supported(entry.get_opcode() as _) {
                     #[allow(clippy::useless_conversion)]
                     self.push_raw_with_key(entry.into(), key)?;
-                    Poll::Pending
                 } else {
-                    self.push_blocking_loop(key)
+                    self.push_blocking(key)
                 }
             }
             #[cfg(feature = "io-uring-sqe128")]
             OpEntry::Submission128(entry) => {
                 self.push_raw_with_key(entry, key)?;
-                Poll::Pending
             }
-            OpEntry::Blocking => self.push_blocking_loop(key),
+            OpEntry::Blocking => self.push_blocking(key),
         }
+        Poll::Pending
     }
 
-    fn push_blocking_loop(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
-        loop {
-            if self.push_blocking(key.clone()) {
-                break Poll::Pending;
-            } else {
-                self.poll_blocking();
-            }
-        }
-    }
-
-    fn push_blocking(&mut self, key: ErasedKey) -> bool {
+    fn push_blocking(&mut self, key: ErasedKey) {
         let waker = self.waker();
-        let completed = self.pool_completed.clone();
+        let completed = self.completed.0.clone();
         // SAFETY: we're submitting into the driver, so it's safe to freeze here.
         let mut key = unsafe { key.freeze() };
-        self.pool
-            .dispatch(move || {
-                let res = key.pinned_op().call_blocking();
-                completed.push(Entry::new(key.into_inner(), res));
-                waker.wake();
-            })
-            .is_ok()
+        let mut closure = move || {
+            let res = key.pinned_op().call_blocking();
+            let _ = completed.send(Entry::new(key.into_inner(), res));
+            waker.wake();
+        };
+        while let Err(e) = self.pool.dispatch(closure) {
+            closure = e.0;
+        }
+        self.poll_blocking();
     }
 
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
-        // Anyway we need to submit once, no matter there are entries in squeue.
+        // Anyway we need to submit once, no matter if there are entries in squeue.
         trace!("start polling");
 
         if self.need_push_notifier {
