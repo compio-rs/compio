@@ -22,11 +22,15 @@ compio-runtime = { workspace = true }
 flume = { workspace = true, default-features = false, features = ["async"] }
 futures-channel = { workspace = true }
 
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["signal"] }
+
 [dev-dependencies]
 compio-buf = { workspace = true }
 compio-io = { workspace = true }
 compio-net = { workspace = true }
 compio-macros = { workspace = true }
+compio-signal = { workspace = true }
 
 futures-util = { workspace = true }
 
