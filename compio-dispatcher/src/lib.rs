@@ -22,11 +22,9 @@ use compio_driver::{AsyncifyPool, DispatchError, Dispatchable, ProactorBuilder};
 use compio_runtime::{JoinHandle as CompioJoinHandle, Runtime};
 use flume::{Sender, unbounded};
 use futures_channel::oneshot;
+
 #[cfg(unix)]
-use libc::{
-    SIG_BLOCK, SIG_SETMASK, SIGHUP, SIGINT, SIGPIPE, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2,
-    pthread_sigmask, sigaddset, sigemptyset, sigset_t,
-};
+mod unix;
 
 type Spawning = Box<dyn Spawnable + Send>;
 
@@ -101,25 +99,7 @@ impl Dispatcher {
 
         // Block standard signals before spawning workers.
         #[cfg(unix)]
-        let old_sigmask = if block_signals {
-            Some(unsafe {
-                let mut new_mask: sigset_t = std::mem::zeroed();
-                sigemptyset(&mut new_mask);
-                sigaddset(&mut new_mask, SIGINT);
-                sigaddset(&mut new_mask, SIGTERM);
-                sigaddset(&mut new_mask, SIGQUIT);
-                sigaddset(&mut new_mask, SIGHUP);
-                sigaddset(&mut new_mask, SIGUSR1);
-                sigaddset(&mut new_mask, SIGUSR2);
-                sigaddset(&mut new_mask, SIGPIPE);
-
-                let mut old_mask: sigset_t = std::mem::zeroed();
-                pthread_sigmask(SIG_BLOCK, &new_mask, &mut old_mask);
-                old_mask
-            })
-        } else {
-            None
-        };
+        let _g = unix::mask_signal(block_signals)?;
 
         let threads = (0..nthreads)
             .map({
@@ -164,14 +144,6 @@ impl Dispatcher {
                 }
             })
             .collect::<io::Result<Vec<_>>>()?;
-
-        // Restore the original signal mask.
-        #[cfg(unix)]
-        if let Some(old_mask) = old_sigmask {
-            unsafe {
-                pthread_sigmask(SIG_SETMASK, &old_mask, std::ptr::null_mut());
-            }
-        }
 
         Ok(Self {
             sender,

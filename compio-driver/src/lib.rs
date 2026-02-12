@@ -528,40 +528,42 @@ impl ProactorBuilder {
         self.pool_builder.create_or_reuse()
     }
 
-    /// Set `io-uring` sqpoll idle milliseconds, when `sqpoll_idle` is set,
-    /// io-uring sqpoll feature will be enabled
+    /// Set `io-uring` sqpoll idle duration,
+    ///
+    /// This will also enable io-uring's sqpoll feature.
     ///
     /// # Notes
     ///
     /// - Only effective when the `io-uring` feature is enabled
-    /// - `idle` must >= 1ms, otherwise will set sqpoll idle 0ms
+    /// - `idle` must be >= 1ms, otherwise sqpoll idle will be set to 0 ms
     /// - `idle` will be rounded down
     pub fn sqpoll_idle(&mut self, idle: Duration) -> &mut Self {
         self.sqpoll_idle = Some(idle);
         self
     }
 
-    /// `coop_taskrun` feature has been available since Linux Kernel 5.19. This
-    /// will optimize performance for most cases, especially compio is a single
+    /// Optimize performance for most cases, especially compio is a single
     /// thread runtime.
     ///
     /// However, it can't run with sqpoll feature.
     ///
     /// # Notes
     ///
+    /// - Available since Linux Kernel 5.19.
     /// - Only effective when the `io-uring` feature is enabled
     pub fn coop_taskrun(&mut self, enable: bool) -> &mut Self {
         self.coop_taskrun = enable;
         self
     }
 
-    /// `taskrun_flag` feature has been available since Linux Kernel 5.19. This
-    /// allows io-uring driver can know if any cqes are available when try to
-    /// push sqe to sq. This should be enabled with
-    /// [`coop_taskrun`](Self::coop_taskrun)
+    /// Allows io-uring driver to know if any cqe's are available when try to
+    /// push an sqe to the submission queue.
+    ///
+    /// This should be enabled with [`coop_taskrun`](Self::coop_taskrun)
     ///
     /// # Notes
     ///
+    /// - Available since Linux Kernel 5.19.
     /// - Only effective when the `io-uring` feature is enabled
     pub fn taskrun_flag(&mut self, enable: bool) -> &mut Self {
         self.taskrun_flag = enable;
@@ -578,8 +580,9 @@ impl ProactorBuilder {
         self
     }
 
-    /// Force a driver type to use. It is ignored if the fusion driver is
-    /// disabled.
+    /// Force a driver type to use.
+    ///
+    /// It is ignored if the fusion driver is disabled.
     pub fn driver_type(&mut self, t: DriverType) -> &mut Self {
         self.driver_type = Some(t);
         self
