@@ -102,12 +102,14 @@ macro_rules! resolve_set {
             fn _check() { _assert_impl::<$resolver>(); }
         };
 
+        #[inline]
         #[unsafe(no_mangle)]
         pub fn __compio_resolve_create(host: &str, port: u16) -> *mut () {
             let resolver = ::std::boxed::Box::new(<$resolver as $crate::ExternResolve>::new(host, port));
             ::std::boxed::Box::into_raw(resolver) as *mut ()
         }
 
+        #[inline]
         #[unsafe(no_mangle)]
         pub fn __compio_resolve_poll(
             handle: *mut (),
@@ -119,9 +121,10 @@ macro_rules! resolve_set {
             $crate::ExternResolve::poll(resolver, waker)
         }
 
+        #[inline]
         #[unsafe(no_mangle)]
         pub fn __compio_resolve_drop(handle: *mut ()) {
-            let _ = unsafe { ::std::boxed::Box::from_raw(handle as *mut $resolver) };
+            drop(unsafe { ::std::boxed::Box::from_raw(handle as *mut $resolver) });
         }
     };
 }
