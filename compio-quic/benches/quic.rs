@@ -7,7 +7,7 @@ use std::{
 use compio_buf::bytes::Bytes;
 use criterion::{BenchmarkId, Criterion, Throughput};
 use futures_util::{StreamExt, stream::FuturesUnordered};
-use rand::{RngCore, rng};
+use rand::{Rng, rng};
 
 macro_rules! compio_spawn {
     ($fut:expr) => {
