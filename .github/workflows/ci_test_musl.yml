@@ -4,9 +4,17 @@ on:
   push:
     branches:
       - master
+    paths:
+      - '**/*.rs'
+      - '**/Cargo.toml'
+      - '.github/workflows/ci_test_musl.yml'
   pull_request:
     branches:
       - master
+    paths:
+      - '**/*.rs'
+      - '**/Cargo.toml'
+      - '.github/workflows/ci_test_musl.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
