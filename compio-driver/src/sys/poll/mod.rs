@@ -14,7 +14,7 @@ use std::{
 };
 
 use compio_log::{instrument, trace};
-use crossbeam_queue::SegQueue;
+use flume::{Receiver, Sender};
 use polling::{Event, Events, Poller};
 use smallvec::SmallVec;
 
@@ -286,7 +286,8 @@ pub(crate) struct Driver {
     notify: Arc<Notify>,
     registry: HashMap<RawFd, FdQueue>,
     pool: AsyncifyPool,
-    pool_completed: Arc<SegQueue<Entry>>,
+    completed_tx: Sender<Entry>,
+    completed_rx: Receiver<Entry>,
 }
 
 impl Driver {
@@ -301,13 +302,15 @@ impl Driver {
         };
         let poll = Poller::new()?;
         let notify = Arc::new(Notify::new(poll));
+        let (completed_tx, completed_rx) = flume::unbounded();
 
         Ok(Self {
             events,
             notify,
             registry: HashMap::new(),
             pool: builder.create_or_get_thread_pool(),
-            pool_completed: Arc::new(SegQueue::new()),
+            completed_tx,
+            completed_rx,
         })
     }
 
@@ -432,7 +435,7 @@ impl Driver {
                 for fd in fds {
                     let entry = self.cancel_one(key.clone(), fd);
                     if !pushed && let Some(entry) = entry {
-                        self.pool_completed.push(entry);
+                        _ = self.completed_tx.send(entry);
                         pushed = true;
                     }
                 }
@@ -470,7 +473,10 @@ impl Driver {
                 Poll::Pending
             }
             Decision::Completed(res) => Poll::Ready(Ok(res)),
-            Decision::Blocking => self.push_blocking(key),
+            Decision::Blocking => {
+                self.push_blocking(key);
+                Poll::Pending
+            }
             #[cfg(aio)]
             Decision::Aio(AioControl { mut aiocbp, submit }) => {
                 let aiocb = unsafe { aiocbp.as_mut() };
@@ -511,7 +517,8 @@ impl Driver {
                             Some(libc::EOPNOTSUPP) | Some(libc::EAGAIN)
                         ) =>
                     {
-                        self.push_blocking(key)
+                        self.push_blocking(key);
+                        Poll::Pending
                     }
                     Err(e) => Poll::Ready(Err(e)),
                 }
@@ -519,9 +526,9 @@ impl Driver {
         }
     }
 
-    fn push_blocking(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
+    fn push_blocking(&mut self, key: ErasedKey) {
         let waker = self.waker();
-        let completed = self.pool_completed.clone();
+        let completed = self.completed_tx.clone();
         // SAFETY: we're submitting into the driver, so it's safe to freeze here.
         let mut key = unsafe { key.freeze() };
 
@@ -531,28 +538,23 @@ impl Driver {
                 Poll::Pending => unreachable!("this operation is not non-blocking"),
                 Poll::Ready(res) => res,
             };
-            completed.push(Entry::new(key.into_inner(), res));
+            let _ = completed.send(Entry::new(key.into_inner(), res));
             waker.wake();
         };
-        loop {
-            match self.pool.dispatch(closure) {
-                Ok(()) => return Poll::Pending,
-                Err(e) => {
-                    closure = e.0;
-                    self.poll_blocking();
-                }
-            }
+
+        while let Err(e) = self.pool.dispatch(closure) {
+            closure = e.0;
+            self.poll_completed();
         }
     }
 
-    fn poll_blocking(&mut self) -> bool {
-        if self.pool_completed.is_empty() {
-            return false;
-        }
-        while let Some(entry) = self.pool_completed.pop() {
+    fn poll_completed(&mut self) -> bool {
+        let mut ret = false;
+        while let Ok(entry) = self.completed_rx.try_recv() {
             entry.notify();
+            ret = true;
         }
-        true
+        ret
     }
 
     #[allow(clippy::blocks_in_conditions)]
@@ -595,7 +597,7 @@ impl Driver {
 
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
-        if self.poll_blocking() {
+        if self.poll_completed() {
             return Ok(());
         }
         self.events.clear();
