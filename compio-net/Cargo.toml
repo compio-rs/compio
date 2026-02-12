@@ -45,6 +45,8 @@ futures-util = { workspace = true }
 tempfile = { workspace = true }
 
 [features]
+extern_resolve = []
+disable_extern_resolve_when_all_features = []
 # Nightly features
 once_cell_try = []
 nightly = ["once_cell_try"]

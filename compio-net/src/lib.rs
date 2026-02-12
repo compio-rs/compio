@@ -28,6 +28,8 @@ pub use cmsg::*;
 pub type PollFd<T> = compio_runtime::fd::PollFd<T>;
 pub use opts::SocketOpts;
 pub use resolve::ToSocketAddrsAsync;
+#[cfg(all(feature = "extern_resolve", not(feature = "disable_extern_resolve_when_all_features")))]
+pub use resolve::ExternResolve;
 pub(crate) use resolve::{each_addr, first_addr_buf};
 pub(crate) use socket::*;
 pub use split::*;

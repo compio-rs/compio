@@ -1,5 +1,8 @@
 cfg_if::cfg_if! {
-    if #[cfg(windows)] {
+    if #[cfg(all(feature = "extern_resolve", not(feature = "disable_extern_resolve_when_all_features")))] {
+        #[path = "extern_resolve.rs"]
+        mod sys;
+    } else if #[cfg(windows)] {
         #[path = "windows.rs"]
         mod sys;
     } else if #[cfg(unix)] {
@@ -17,6 +20,8 @@ use std::{
 use compio_buf::{BufResult, buf_try};
 use either::Either;
 pub use sys::resolve_sock_addrs;
+#[cfg(all(feature = "extern_resolve", not(feature = "disable_extern_resolve_when_all_features")))]
+pub use sys::ExternResolve;
 
 /// A trait for objects which can be converted or resolved to one or more
 /// [`SocketAddr`] values.
