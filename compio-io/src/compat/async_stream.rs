@@ -182,10 +182,14 @@ impl<S: crate::AsyncWrite + 'static> futures_util::AsyncWrite for AsyncStream<S>
             return Poll::Pending;
         }
 
-        let inner: &'static mut SyncStream<S> =
-            unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
-        let res = poll_future!(self.shutdown_future, cx, inner.get_mut().shutdown());
-        Poll::Ready(res)
+        if self.inner.has_pending_write() {
+            self.poll_flush(cx)
+        } else {
+            let inner: &'static mut SyncStream<S> =
+                unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
+            let res = poll_future!(self.shutdown_future, cx, inner.get_mut().shutdown());
+            Poll::Ready(res)
+        }
     }
 }
 
