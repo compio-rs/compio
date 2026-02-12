@@ -21,7 +21,7 @@ compio-buf = { workspace = true }
 compio-log = { workspace = true }
 compio-io = { workspace = true, optional = true }
 
-async-task = "4.5.0"
+async-task = "4.7.1"
 cfg-if = { workspace = true, optional = true }
 criterion = { workspace = true, optional = true }
 core_affinity = "0.8.3"
@@ -46,8 +46,8 @@ libc = { workspace = true }
 windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
-core-foundation = "0.10.0"
-block2 = "0.6.0"
+core-foundation = "0.10.1"
+block2 = "0.6.2"
 
 [features]
 event = ["dep:cfg-if", "compio-buf/arrayvec"]

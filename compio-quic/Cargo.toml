@@ -22,7 +22,7 @@ compio-log = { workspace = true }
 compio-net = { workspace = true }
 compio-runtime = { workspace = true, features = ["time"] }
 
-quinn-proto = { version = "0.11.10", default-features = false }
+quinn-proto = { version = "0.11.13", default-features = false }
 rustls = { workspace = true }
 rustls-platform-verifier = { workspace = true, optional = true }
 rustls-native-certs = { workspace = true, optional = true }
@@ -34,7 +34,7 @@ h3-datagram = { version = "0.0.2", optional = true }
 flume = { workspace = true, default-features = false, features = ["async"] }
 futures-util = { workspace = true }
 thiserror = { workspace = true }
-rustc-hash = "2.0.0"
+rustc-hash = "2.1.1"
 synchrony = { workspace = true }
 
 # Windows specific dependencies
@@ -55,10 +55,10 @@ compio-macros = { workspace = true }
 compio-runtime = { workspace = true, features = ["criterion"] }
 
 criterion = { workspace = true, features = ["async_tokio"] }
-http = "1.1.0"
-quinn = "0.11.6"
+http = "1.4.0"
+quinn = "0.11.9"
 rand = { workspace = true }
-rcgen = "0.14.1"
+rcgen = "0.14.7"
 socket2 = { workspace = true, features = ["all"] }
 tokio = { workspace = true, features = ["macros", "rt"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }

@@ -16,13 +16,13 @@ futures-util = { workspace = true, features = ["sink"] }
 paste = { workspace = true }
 synchrony = { workspace = true, features = ["bilock"] }
 thiserror = { workspace = true, optional = true }
-serde = { version = "1.0.219", optional = true }
-serde_json = { version = "1.0.140", optional = true }
+serde = { version = "1.0.228", optional = true }
+serde_json = { version = "1.0.149", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
-serde = { version = "1.0.219", features = ["derive"] }
-futures-executor = "0.3.30"
+serde = { version = "1.0.228", features = ["derive"] }
+futures-executor = "0.3.31"
 
 [features]
 default = []

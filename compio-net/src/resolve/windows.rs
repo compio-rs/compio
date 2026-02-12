@@ -174,6 +174,16 @@ pub async fn resolve_sock_addrs(
 ) -> io::Result<std::vec::IntoIter<SocketAddr>> {
     use compio_runtime::event::Event;
 
+    // Check cache first
+    #[cfg(feature = "dns-cache")]
+    if let Some(addrs) = crate::resolve::DNS_CACHE.get(host).await {
+        return Ok(addrs
+            .into_iter()
+            .map(|ip| SocketAddr::new(ip, port))
+            .collect::<Vec<_>>()
+            .into_iter());
+    }
+
     let mut resolver = AsyncResolver::new(host, port)?;
     let mut hints: ADDRINFOEXW = unsafe { std::mem::zeroed() };
     hints.ai_family = AF_UNSPEC as _;
@@ -191,5 +201,20 @@ pub async fn resolve_sock_addrs(
         }
     }
 
-    unsafe { resolver.addrs() }
+    let addrs = unsafe { resolver.addrs() }?;
+
+    #[cfg(feature = "dns-cache")]
+    {
+        let addrs: Vec<_> = addrs.collect();
+        let ips: Vec<_> = addrs.iter().map(|addr| addr.ip()).collect();
+        // Use a default TTL of 60 seconds because GetAddrInfoExW doesn't provide TTL.
+        // If the result is empty, we also cache it for 60s (negative cache).
+        crate::resolve::DNS_CACHE
+            .insert(host.to_string(), ips, 60)
+            .await;
+        Ok(addrs.into_iter())
+    }
+
+    #[cfg(not(feature = "dns-cache"))]
+    Ok(addrs)
 }

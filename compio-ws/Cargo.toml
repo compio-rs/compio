@@ -32,7 +32,7 @@ compio-macros = { workspace = true }
 compio-runtime = { workspace = true }
 
 futures-channel = { workspace = true }
-rustls-pemfile = "2.0"
+rustls-pemfile = "2.2"
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [features]

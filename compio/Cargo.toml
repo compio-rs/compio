@@ -61,7 +61,7 @@ nix = { workspace = true, features = ["fs"] }
 libc = { workspace = true }
 
 [target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dev-dependencies]
-monoio = { version = "0.2.2", default-features = false, features = ["iouring"] }
+monoio = { version = "0.2.4", default-features = false, features = ["iouring"] }
 
 [features]
 default = ["runtime", "io-uring"]

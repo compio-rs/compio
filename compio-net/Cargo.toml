@@ -19,11 +19,12 @@ rustdoc-args = ["--cfg", "docsrs"]
 compio-buf = { workspace = true }
 compio-driver = { workspace = true }
 compio-io = { workspace = true }
-compio-runtime = { workspace = true, features = ["event"] }
+compio-runtime = { workspace = true, features = ["event", "time"] }
 
 cfg-if = { workspace = true }
-either = "1.9.0"
+either = "1.15.0"
 once_cell = { workspace = true }
+scc = { version = "2", optional = true }
 socket2 = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
@@ -36,6 +37,10 @@ windows-sys = { workspace = true, features = [
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
+fastrand = "2.3"
+futures-util = { workspace = true }
+logos = "0.16"
+zerocopy = { version = "0.8.39", features = ["derive"] }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
@@ -45,6 +50,8 @@ futures-util = { workspace = true }
 tempfile = { workspace = true }
 
 [features]
+default = ["dns-cache"]
+dns-cache = ["scc"]
 # Nightly features
 once_cell_try = []
 nightly = ["once_cell_try"]

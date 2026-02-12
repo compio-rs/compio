@@ -3,10 +3,17 @@ cfg_if::cfg_if! {
         #[path = "windows.rs"]
         mod sys;
     } else if #[cfg(unix)] {
-        #[path = "unix.rs"]
+        #[path = "unix/mod.rs"]
         mod sys;
     }
 }
+
+#[cfg(feature = "dns-cache")]
+pub(crate) mod cache;
+
+#[cfg(feature = "dns-cache")]
+pub(crate) static DNS_CACHE: once_cell::sync::Lazy<cache::DnsCache> =
+    once_cell::sync::Lazy::new(cache::DnsCache::new);
 
 use std::{
     future::Future,
