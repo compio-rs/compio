@@ -9,7 +9,7 @@ use compio_buf::{IntoInner, IoBuf};
 use compio_io::{AsyncReadAt, AsyncWriteAt};
 use criterion::{Bencher, Criterion, Throughput, criterion_group, criterion_main};
 use futures_util::{StreamExt, stream::FuturesUnordered};
-use rand::{Rng, RngCore, rng};
+use rand::{Rng, RngExt, rng};
 use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
