@@ -10,7 +10,9 @@ use std::{
 use compio_buf::bytes::Bytes;
 use compio_log::Instrument;
 use compio_runtime::JoinHandle;
-use flume::{Receiver, Sender};
+type Receiver<T> = crossfire::AsyncRx<crossfire::spsc::List<T>>;
+// type Sender<T> = crossfire::Tx<crossfire::spsc::List<T>>;
+type MultiSender<T> = crossfire::MTx<crossfire::mpsc::List<T>>;
 use futures_util::{
     Future, FutureExt, StreamExt,
     future::{self, Fuse, FusedFuture, LocalBoxFuture},
@@ -55,6 +57,7 @@ pub(crate) struct ConnectionState {
     pub(crate) writable: HashMap<StreamId, Waker>,
     pub(crate) readable: HashMap<StreamId, Waker>,
     pub(crate) stopped: HashMap<StreamId, Waker>,
+    pub(crate) events_rx: Option<Receiver<ConnectionEvent>>,
 }
 
 impl ConnectionState {
@@ -121,8 +124,7 @@ pub(crate) struct ConnectionInner {
     state: Mutex<ConnectionState>,
     handle: ConnectionHandle,
     socket: Socket,
-    events_tx: Sender<(ConnectionHandle, EndpointEvent)>,
-    events_rx: Receiver<ConnectionEvent>,
+    events_tx: MultiSender<(ConnectionHandle, EndpointEvent)>,
 }
 
 fn implicit_close(this: &Shared<ConnectionInner>) {
@@ -136,7 +138,7 @@ impl ConnectionInner {
         handle: ConnectionHandle,
         conn: quinn_proto::Connection,
         socket: Socket,
-        events_tx: Sender<(ConnectionHandle, EndpointEvent)>,
+        events_tx: MultiSender<(ConnectionHandle, EndpointEvent)>,
         events_rx: Receiver<ConnectionEvent>,
     ) -> Self {
         Self {
@@ -155,11 +157,11 @@ impl ConnectionInner {
                 writable: HashMap::default(),
                 readable: HashMap::default(),
                 stopped: HashMap::default(),
+                events_rx: Some(events_rx),
             }),
             handle,
             socket,
             events_tx,
-            events_rx,
         }
     }
 
@@ -195,7 +197,9 @@ impl ConnectionInner {
         .fuse();
 
         let mut timer = Timer::new();
-        let mut event_stream = self.events_rx.stream().ready_chunks(100);
+        let rx = self.state.lock().events_rx.take().unwrap();
+        let event_stream = crossfire::stream::AsyncStream::new(rx);
+        let mut event_stream = pin!(event_stream.ready_chunks(100));
         let mut send_buf = Some(Vec::with_capacity(self.state().conn.current_mtu() as usize));
         let mut transmit_fut = pin!(Fuse::terminated());
 
@@ -242,7 +246,7 @@ impl ConnectionInner {
             timer.reset(state.conn.poll_timeout());
 
             while let Some(event) = state.conn.poll_endpoint_events() {
-                let _ = self.events_tx.send((self.handle, event));
+                let _ = self.events_tx.try_send((self.handle, event));
             }
 
             while let Some(event) = state.conn.poll() {
@@ -379,7 +383,7 @@ impl Connecting {
         handle: ConnectionHandle,
         conn: quinn_proto::Connection,
         socket: Socket,
-        events_tx: Sender<(ConnectionHandle, EndpointEvent)>,
+        events_tx: MultiSender<(ConnectionHandle, EndpointEvent)>,
         events_rx: Receiver<ConnectionEvent>,
     ) -> Self {
         let inner = Shared::new(ConnectionInner::new(

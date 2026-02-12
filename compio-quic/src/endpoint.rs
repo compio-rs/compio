@@ -14,12 +14,15 @@ use std::{
 };
 
 use compio_buf::{BufResult, bytes::Bytes};
-use compio_log::{Instrument, error};
+use compio_log::{Instrument, error, warn};
 #[cfg(rustls)]
 use compio_net::ToSocketAddrsAsync;
 use compio_net::UdpSocket;
 use compio_runtime::JoinHandle;
-use flume::{Receiver, Sender, unbounded};
+type Receiver<T> = crossfire::AsyncRx<crossfire::spsc::List<T>>;
+type Sender<T> = crossfire::Tx<crossfire::spsc::List<T>>;
+type MultiReceiver<T> = crossfire::AsyncRx<crossfire::mpsc::List<T>>;
+type MultiSender<T> = crossfire::MTx<crossfire::mpsc::List<T>>;
 use futures_util::{
     FutureExt, StreamExt,
     future::{self},
@@ -46,6 +49,7 @@ struct EndpointState {
     exit_on_idle: bool,
     incoming: VecDeque<quinn_proto::Incoming>,
     incoming_wakers: VecDeque<Waker>,
+    events_rx: Option<MultiReceiver<(ConnectionHandle, EndpointEvent)>>,
 }
 
 impl EndpointState {
@@ -73,11 +77,14 @@ impl EndpointState {
                     }
                 }
                 Some(DatagramEvent::ConnectionEvent(ch, event)) => {
-                    let _ = self
+                    if let Err(e) = self
                         .connections
                         .get(&ch)
                         .unwrap()
-                        .send(ConnectionEvent::Proto(event));
+                        .try_send(ConnectionEvent::Proto(event))
+                    {
+                        warn!("failed to send event to connection {ch:?}: {e:?}");
+                    }
                 }
                 Some(DatagramEvent::Response(transmit)) => respond_fn(resp_buf, transmit),
                 None => {}
@@ -89,13 +96,15 @@ impl EndpointState {
         if event.is_drained() {
             self.connections.remove(&ch);
         }
-        if let Some(event) = self.endpoint.handle_event(ch, event) {
-            let _ = self
+        if let Some(event) = self.endpoint.handle_event(ch, event)
+            && let Err(e) = self
                 .connections
                 .get(&ch)
                 .unwrap()
-                .send(ConnectionEvent::Proto(event));
-        }
+                .try_send(ConnectionEvent::Proto(event))
+            {
+                warn!("failed to send event to connection {ch:?}: {e:?}");
+            }
     }
 
     fn is_idle(&self) -> bool {
@@ -120,26 +129,28 @@ impl EndpointState {
         handle: ConnectionHandle,
         conn: quinn_proto::Connection,
         socket: Socket,
-        events_tx: Sender<(ConnectionHandle, EndpointEvent)>,
+        events_tx: MultiSender<(ConnectionHandle, EndpointEvent)>,
     ) -> Connecting {
-        let (tx, rx) = unbounded();
-        if let Some((error_code, reason)) = &self.close {
-            tx.send(ConnectionEvent::Close(*error_code, reason.clone()))
-                .unwrap();
-        }
+        let (tx, rx) = crossfire::spsc::unbounded_async();
+        let rx: Receiver<ConnectionEvent> = rx;
+        let tx: Sender<ConnectionEvent> = tx;
+        if let Some((error_code, reason)) = &self.close
+            && let Err(e) = tx.try_send(ConnectionEvent::Close(*error_code, reason.clone())) {
+                warn!("failed to send close event to connection {handle:?}: {e:?}");
+            }
         self.connections.insert(handle, tx);
         Connecting::new(handle, conn, socket, events_tx, rx)
     }
 }
 
-type ChannelPair<T> = (Sender<T>, Receiver<T>);
+// type ChannelPair<T> = (Sender<T>, Receiver<T>);
 
 #[derive(Debug)]
 pub(crate) struct EndpointInner {
     state: Mutex<EndpointState>,
     socket: Socket,
     ipv6: bool,
-    events: ChannelPair<(ConnectionHandle, EndpointEvent)>,
+    events_tx: MultiSender<(ConnectionHandle, EndpointEvent)>,
     done: AtomicWaker,
 }
 
@@ -152,6 +163,10 @@ impl EndpointInner {
         let socket = Socket::new(socket)?;
         let ipv6 = socket.local_addr()?.is_ipv6();
         let allow_mtud = !socket.may_fragment();
+
+        let (tx, rx) = crossfire::mpsc::unbounded_async();
+        let tx: MultiSender<(ConnectionHandle, EndpointEvent)> = tx;
+        let rx: MultiReceiver<(ConnectionHandle, EndpointEvent)> = rx;
 
         Ok(Self {
             state: Mutex::new(EndpointState {
@@ -167,10 +182,11 @@ impl EndpointInner {
                 exit_on_idle: false,
                 incoming: VecDeque::new(),
                 incoming_wakers: VecDeque::new(),
+                events_rx: Some(rx),
             }),
             socket,
             ipv6,
-            events: unbounded(),
+            events_tx: tx,
             done: AtomicWaker::new(),
         })
     }
@@ -204,7 +220,7 @@ impl EndpointInner {
             .endpoint
             .connect(Instant::now(), config, remote, server_name)?;
 
-        Ok(state.new_connection(handle, conn, self.socket.clone(), self.events.0.clone()))
+        Ok(state.new_connection(handle, conn, self.socket.clone(), self.events_tx.clone()))
     }
 
     fn respond(&self, buf: Vec<u8>, transmit: Transmit) {
@@ -228,7 +244,7 @@ impl EndpointInner {
             .accept(incoming, now, &mut resp_buf, server_config.map(Arc::new))
         {
             Ok((handle, conn)) => {
-                Ok(state.new_connection(handle, conn, self.socket.clone(), self.events.0.clone()))
+                Ok(state.new_connection(handle, conn, self.socket.clone(), self.events_tx.clone()))
             }
             Err(err) => {
                 if let Some(transmit) = err.response {
@@ -280,7 +296,9 @@ impl EndpointInner {
                 .fuse()
         );
 
-        let mut event_stream = self.events.1.stream().ready_chunks(100);
+        let rx = self.state.lock().events_rx.take().unwrap();
+        let event_stream = crossfire::stream::AsyncStream::new(rx);
+        let mut event_stream = pin!(event_stream.ready_chunks(100));
 
         loop {
             let mut state = select! {
@@ -523,8 +541,10 @@ impl Endpoint {
             return;
         }
         state.close = Some((error_code, reason.clone()));
-        for conn in state.connections.values() {
-            let _ = conn.send(ConnectionEvent::Close(error_code, reason.clone()));
+        for (ch, conn) in state.connections.iter() {
+            if let Err(e) = conn.try_send(ConnectionEvent::Close(error_code, reason.clone())) {
+                warn!("failed to send close event to connection {ch:?}: {e:?}");
+            }
         }
         state.incoming_wakers.drain(..).for_each(Waker::wake);
     }

@@ -21,7 +21,7 @@ compio-log = { workspace = true }
 
 # Utils
 cfg-if = { workspace = true }
-flume = { workspace = true, default-features = false }
+crossfire = { workspace = true, default-features = false }
 futures-util = { workspace = true }
 socket2 = { workspace = true, features = ["all"] }
 pin-project-lite = { workspace = true }

@@ -19,7 +19,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 compio-driver = { workspace = true }
 compio-runtime = { workspace = true }
 
-flume = { workspace = true, default-features = false, features = ["async"] }
+crossfire = { workspace = true, default-features = false }
 futures-channel = { workspace = true }
 
 [dev-dependencies]

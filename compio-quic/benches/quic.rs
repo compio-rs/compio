@@ -53,7 +53,7 @@ fn start_compio_quic_server(
     cert: rustls::pki_types::CertificateDer<'static>,
     key_der: rustls::pki_types::PrivateKeyDer<'static>,
 ) -> SocketAddr {
-    let (tx, rx) = flume::bounded(0);
+    let (tx, rx) = crossfire::spsc::bounded_blocking(1);
 
     std::thread::spawn(move || {
         compio_runtime::Runtime::new().unwrap().block_on(async {
@@ -78,7 +78,7 @@ fn start_quinn_server(
     cert: rustls::pki_types::CertificateDer<'static>,
     key_der: rustls::pki_types::PrivateKeyDer<'static>,
 ) -> SocketAddr {
-    let (tx, rx) = flume::bounded(0);
+    let (tx, rx) = crossfire::spsc::bounded_blocking(1);
 
     std::thread::spawn(move || {
         tokio::runtime::Builder::new_current_thread()

@@ -20,7 +20,10 @@ use std::{
 
 use compio_driver::{AsyncifyPool, DispatchError, Dispatchable, ProactorBuilder};
 use compio_runtime::{JoinHandle as CompioJoinHandle, Runtime};
-use flume::{Sender, unbounded};
+use crossfire::{MAsyncRx, MTx};
+
+type Receiver<T> = MAsyncRx<crossfire::mpmc::List<T>>;
+type Sender<T> = MTx<crossfire::mpmc::List<T>>;
 use futures_channel::oneshot;
 
 type Spawning = Box<dyn Spawnable + Send>;
@@ -90,13 +93,14 @@ impl Dispatcher {
         } = builder;
         proactor_builder.force_reuse_thread_pool();
         let pool = proactor_builder.create_or_get_thread_pool();
-        let (sender, receiver) = unbounded::<Spawning>();
+        let (sender, receiver): (Sender<Spawning>, Receiver<Spawning>) =
+            crossfire::mpmc::unbounded_async::<Spawning>();
 
         let threads = (0..nthreads)
             .map({
                 |index| {
                     let proactor_builder = proactor_builder.clone();
-                    let receiver = receiver.clone();
+                    let receiver: Receiver<Spawning> = receiver.clone();
 
                     let thread_builder = std::thread::Builder::new();
                     let thread_builder = if let Some(s) = stack_size {
@@ -122,8 +126,9 @@ impl Dispatcher {
                             .build()
                             .expect("cannot create compio runtime")
                             .block_on(async move {
-                                while let Ok(f) = receiver.recv_async().await {
-                                    let task = Runtime::with_current(|rt| f.spawn(rt));
+                                while let Ok(f) = receiver.recv().await {
+                                    let task: CompioJoinHandle<()> =
+                                        Runtime::with_current(|rt| f.spawn(rt));
                                     if concurrent {
                                         task.detach()
                                     } else {

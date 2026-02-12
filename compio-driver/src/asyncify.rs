@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use flume::{Receiver, Sender, TrySendError, bounded};
+use crossfire::mpmc;
 
 /// An error that may be emitted when all worker threads are busy. It simply
 /// returns the dispatchable value with a convenient [`fmt::Debug`] and
@@ -64,7 +64,7 @@ impl Drop for CounterGuard {
 }
 
 fn worker(
-    receiver: Receiver<BoxedDispatchable>,
+    receiver: crossfire::MRx<mpmc::Array<BoxedDispatchable>>,
     counter: Arc<AtomicUsize>,
     timeout: Duration,
 ) -> impl FnOnce() {
@@ -72,7 +72,7 @@ fn worker(
         counter.fetch_add(1, Ordering::AcqRel);
         let _guard = CounterGuard(counter);
         while let Ok(f) = receiver.recv_timeout(timeout) {
-            f.run();
+            Dispatchable::run(f);
         }
     }
 }
@@ -80,8 +80,8 @@ fn worker(
 /// A thread pool to perform blocking operations in other threads.
 #[derive(Debug, Clone)]
 pub struct AsyncifyPool {
-    sender: Sender<BoxedDispatchable>,
-    receiver: Receiver<BoxedDispatchable>,
+    sender: crossfire::MTx<mpmc::Array<BoxedDispatchable>>,
+    receiver: crossfire::MRx<mpmc::Array<BoxedDispatchable>>,
     counter: Arc<AtomicUsize>,
     thread_limit: usize,
     recv_timeout: Duration,
@@ -91,7 +91,7 @@ impl AsyncifyPool {
     /// Create [`AsyncifyPool`] with thread number limit and channel receive
     /// timeout.
     pub fn new(thread_limit: usize, recv_timeout: Duration) -> Self {
-        let (sender, receiver) = bounded(0);
+        let (sender, receiver) = mpmc::bounded_blocking(1);
         Self {
             sender,
             receiver,
@@ -106,10 +106,22 @@ impl AsyncifyPool {
     /// limit has been reached, it will return an error with the original
     /// dispatchable.
     pub fn dispatch<D: Dispatchable>(&self, f: D) -> Result<(), DispatchError<D>> {
+        if self.thread_limit == 0 {
+            panic!("the thread pool is needed but no worker thread is running");
+        }
         match self.sender.try_send(Box::new(f) as BoxedDispatchable) {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                if self.counter.load(Ordering::Acquire) < self.thread_limit {
+                    std::thread::spawn(worker(
+                        self.receiver.clone(),
+                        self.counter.clone(),
+                        self.recv_timeout,
+                    ));
+                }
+                Ok(())
+            }
             Err(e) => match e {
-                TrySendError::Full(f) => {
+                crossfire::TrySendError::Full(f) => {
                     if self.thread_limit == 0 {
                         panic!("the thread pool is needed but no worker thread is running");
                     } else if self.counter.load(Ordering::Acquire) >= self.thread_limit {
@@ -127,7 +139,7 @@ impl AsyncifyPool {
                         Ok(())
                     }
                 }
-                TrySendError::Disconnected(_) => {
+                crossfire::TrySendError::Disconnected(_) => {
                     unreachable!("receiver should not all disconnected")
                 }
             },
