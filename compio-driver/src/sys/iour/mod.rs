@@ -141,7 +141,8 @@ pub(crate) struct Driver {
     inner: IoUring<SEntry, CEntry>,
     notifier: Notifier,
     pool: AsyncifyPool,
-    completed: (Sender<Entry>, Receiver<Entry>),
+    completed_tx: Sender<Entry>,
+    completed_rx: Receiver<Entry>,
     buffer_group_ids: Slab<()>,
     need_push_notifier: bool,
 }
@@ -173,11 +174,14 @@ impl Driver {
             submitter.register_eventfd(fd)?;
         }
 
+        let (completed_tx, completed_rx) = flume::unbounded();
+
         Ok(Self {
             inner,
             notifier,
+            completed_tx,
+            completed_rx,
             pool: builder.create_or_get_thread_pool(),
-            completed: flume::unbounded(),
             buffer_group_ids: Slab::new(),
             need_push_notifier: true,
         })
@@ -240,7 +244,7 @@ impl Driver {
     }
 
     fn poll_blocking(&mut self) {
-        while let Ok(entry) = self.completed.1.try_recv() {
+        while let Ok(entry) = self.completed_rx.try_recv() {
             entry.notify();
         }
     }
@@ -357,7 +361,7 @@ impl Driver {
 
     fn push_blocking(&mut self, key: ErasedKey) {
         let waker = self.waker();
-        let completed = self.completed.0.clone();
+        let completed = self.completed_tx.clone();
         // SAFETY: we're submitting into the driver, so it's safe to freeze here.
         let mut key = unsafe { key.freeze() };
         let mut closure = move || {
@@ -367,6 +371,9 @@ impl Driver {
         };
         while let Err(e) = self.pool.dispatch(closure) {
             closure = e.0;
+            // do something to avoid busy loop
+            self.poll_blocking();
+            std::thread::yield_now();
         }
         self.poll_blocking();
     }
