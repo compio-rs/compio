@@ -26,6 +26,9 @@ type Receiver<T> = MAsyncRx<crossfire::mpmc::List<T>>;
 type Sender<T> = MTx<crossfire::mpmc::List<T>>;
 use futures_channel::oneshot;
 
+#[cfg(unix)]
+mod unix;
+
 type Spawning = Box<dyn Spawnable + Send>;
 
 trait Spawnable {
@@ -86,6 +89,8 @@ impl Dispatcher {
         let DispatcherBuilder {
             nthreads,
             concurrent,
+            #[cfg(unix)]
+            block_signals,
             stack_size,
             mut thread_affinity,
             mut names,
@@ -95,6 +100,10 @@ impl Dispatcher {
         let pool = proactor_builder.create_or_get_thread_pool();
         let (sender, receiver): (Sender<Spawning>, Receiver<Spawning>) =
             crossfire::mpmc::unbounded_async::<Spawning>();
+
+        // Block standard signals before spawning workers.
+        #[cfg(unix)]
+        let _g = unix::mask_signal(block_signals)?;
 
         let threads = (0..nthreads)
             .map({
@@ -140,6 +149,7 @@ impl Dispatcher {
                 }
             })
             .collect::<io::Result<Vec<_>>>()?;
+
         Ok(Self {
             sender,
             threads,
@@ -243,6 +253,8 @@ impl Dispatcher {
 pub struct DispatcherBuilder {
     nthreads: usize,
     concurrent: bool,
+    #[cfg(unix)]
+    block_signals: bool,
     stack_size: Option<usize>,
     thread_affinity: Option<Box<dyn FnMut(usize) -> HashSet<usize>>>,
     names: Option<Box<dyn FnMut(usize) -> String>>,
@@ -255,6 +267,8 @@ impl DispatcherBuilder {
         Self {
             nthreads: available_parallelism().map(|n| n.get()).unwrap_or(1),
             concurrent: true,
+            #[cfg(unix)]
+            block_signals: true,
             stack_size: None,
             thread_affinity: None,
             names: None,
@@ -282,6 +296,33 @@ impl DispatcherBuilder {
     /// Set the size of stack of the worker threads.
     pub fn stack_size(mut self, s: usize) -> Self {
         self.stack_size = Some(s);
+        self
+    }
+
+    /// Block standard signals on worker threads.
+    ///
+    /// Default to `true`. When enabled, `SIGINT`, `SIGTERM`, `SIGQUIT`,
+    /// `SIGHUP`, `SIGUSR1`, `SIGUSR2`, and `SIGPIPE` are masked on worker
+    /// threads.
+    ///
+    /// This option only has effect on Unix systems. On non-Unix systems, this
+    /// method does nothing.
+    ///
+    /// On Unix systems, when [`Dispatcher`] spawns worker threads, they inherit
+    /// the parent thread's signal mask. By default, SIGINT (Ctrl-C) and other
+    /// signals can be delivered to any thread in the process. If a worker
+    /// thread receives the signal before the async signal handler is polled on
+    /// the main thread, the default signal handler runs (terminating the
+    /// process) instead of the compio signal handler.
+    ///
+    /// This is a well-known issue in multi-threaded Unix applications and
+    /// requires explicit signal masking.
+    #[allow(unused)]
+    pub fn block_signals(mut self, block_signals: bool) -> Self {
+        #[cfg(unix)]
+        {
+            self.block_signals = block_signals;
+        }
         self
     }
 

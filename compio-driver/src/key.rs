@@ -347,6 +347,9 @@ impl Debug for ErasedKey {
 }
 
 /// A frozen view into a [`Key`].
+///
+/// It's guaranteed to have the same layout as [`ErasedKey`].
+#[repr(transparent)]
 pub(crate) struct FrozenKey {
     inner: ManuallyDrop<ErasedKey>,
 }

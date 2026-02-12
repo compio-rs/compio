@@ -384,15 +384,8 @@ impl Driver {
             },
             OpType::Blocking => {
                 drop(op);
-                loop {
-                    if self.push_blocking(key.clone()) {
-                        break Poll::Pending;
-                    } else {
-                        // It's OK to wait forever, because any blocking task will notify the IOCP
-                        // after it completes.
-                        self.poll(None)?;
-                    }
-                }
+                self.push_blocking(key);
+                Poll::Pending
             }
             OpType::Event(e) => {
                 drop(op);
@@ -403,19 +396,22 @@ impl Driver {
         }
     }
 
-    fn push_blocking(&mut self, key: ErasedKey) -> bool {
+    fn push_blocking(&mut self, key: ErasedKey) {
         let notify = self.notify.clone();
         // SAFETY: we're submitting into the driver, so it's safe to freeze here.
         let mut key = unsafe { key.freeze() };
 
-        self.pool
-            .dispatch(move || {
-                let op = key.as_mut();
-                let res = op.operate_blocking();
-                let optr = op.extra_mut().optr();
-                notify.port.post(res, optr).ok();
-            })
-            .is_ok()
+        let mut closure = move || {
+            let op = key.as_mut();
+            let res = op.operate_blocking();
+            let optr = op.extra_mut().optr();
+            // key will be unfronzen in `create_entry` when the result is ready
+            notify.port.post(res, optr).ok();
+        };
+
+        while let Err(e) = self.pool.dispatch(closure) {
+            closure = e.0;
+        }
     }
 
     fn create_entry(
