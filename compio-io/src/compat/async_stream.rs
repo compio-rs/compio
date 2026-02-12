@@ -177,12 +177,8 @@ impl<S: crate::AsyncWrite + 'static> futures_util::AsyncWrite for AsyncStream<S>
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         // Avoid shutdown on flush because the inner buffer might be passed to the
         // driver.
-        if self.write_future.is_some() {
+        if self.write_future.is_some() || self.inner.has_pending_write() {
             debug_assert!(self.shutdown_future.is_none());
-            return Poll::Pending;
-        }
-
-        if self.inner.has_pending_write() {
             self.poll_flush(cx)
         } else {
             let inner: &'static mut SyncStream<S> =
