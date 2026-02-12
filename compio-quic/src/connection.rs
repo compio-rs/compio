@@ -11,8 +11,7 @@ use compio_buf::bytes::Bytes;
 use compio_log::Instrument;
 use compio_runtime::JoinHandle;
 type Receiver<T> = crossfire::AsyncRx<crossfire::spsc::List<T>>;
-// type Sender<T> = crossfire::Tx<crossfire::spsc::List<T>>;
-type MultiSender<T> = crossfire::MTx<crossfire::mpsc::List<T>>;
+type Sender<T> = crossfire::MTx<crossfire::mpsc::List<T>>;
 use futures_util::{
     Future, FutureExt, StreamExt,
     future::{self, Fuse, FusedFuture, LocalBoxFuture},
@@ -124,7 +123,7 @@ pub(crate) struct ConnectionInner {
     state: Mutex<ConnectionState>,
     handle: ConnectionHandle,
     socket: Socket,
-    events_tx: MultiSender<(ConnectionHandle, EndpointEvent)>,
+    events_tx: Sender<(ConnectionHandle, EndpointEvent)>,
 }
 
 fn implicit_close(this: &Shared<ConnectionInner>) {
@@ -138,7 +137,7 @@ impl ConnectionInner {
         handle: ConnectionHandle,
         conn: quinn_proto::Connection,
         socket: Socket,
-        events_tx: MultiSender<(ConnectionHandle, EndpointEvent)>,
+        events_tx: Sender<(ConnectionHandle, EndpointEvent)>,
         events_rx: Receiver<ConnectionEvent>,
     ) -> Self {
         Self {
@@ -383,7 +382,7 @@ impl Connecting {
         handle: ConnectionHandle,
         conn: quinn_proto::Connection,
         socket: Socket,
-        events_tx: MultiSender<(ConnectionHandle, EndpointEvent)>,
+        events_tx: Sender<(ConnectionHandle, EndpointEvent)>,
         events_rx: Receiver<ConnectionEvent>,
     ) -> Self {
         let inner = Shared::new(ConnectionInner::new(

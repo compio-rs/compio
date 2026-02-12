@@ -14,7 +14,7 @@ use std::{
 };
 
 use compio_log::{instrument, trace};
-use flume::{Receiver, Sender};
+use crossfire::mpsc;
 use polling::{Event, Events, Poller};
 use smallvec::SmallVec;
 
@@ -286,8 +286,8 @@ pub(crate) struct Driver {
     notify: Arc<Notify>,
     registry: HashMap<RawFd, FdQueue>,
     pool: AsyncifyPool,
-    completed_tx: Sender<Entry>,
-    completed_rx: Receiver<Entry>,
+    completed_tx: crossfire::MTx<mpsc::List<Entry>>,
+    completed_rx: crossfire::Rx<mpsc::List<Entry>>,
 }
 
 impl Driver {
@@ -302,7 +302,7 @@ impl Driver {
         };
         let poll = Poller::new()?;
         let notify = Arc::new(Notify::new(poll));
-        let (completed_tx, completed_rx) = flume::unbounded();
+        let (completed_tx, completed_rx) = mpsc::unbounded_blocking();
 
         Ok(Self {
             events,
@@ -533,10 +533,9 @@ impl Driver {
         let mut key = unsafe { key.freeze() };
 
         let mut closure = move || {
-            let poll = key.pinned_op().operate();
-            let res = match poll {
-                Poll::Pending => unreachable!("this operation is not non-blocking"),
+            let res = match key.pinned_op().operate() {
                 Poll::Ready(res) => res,
+                Poll::Pending => unreachable!("this operation is not non-blocking"),
             };
             let _ = completed.send(Entry::new(key.into_inner(), res));
             waker.wake();
@@ -602,6 +601,7 @@ impl Driver {
         }
         self.events.clear();
         self.notify.poll.wait(&mut self.events, timeout)?;
+        self.poll_completed();
         if self.events.is_empty() && timeout.is_some() {
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
         }

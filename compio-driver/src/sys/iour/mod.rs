@@ -25,7 +25,7 @@ cfg_if::cfg_if! {
         use io_uring::squeue::Entry as SEntry;
     }
 }
-use flume::{Receiver, Sender};
+use crossfire::mpsc;
 use io_uring::{
     IoUring,
     cqueue::more,
@@ -141,8 +141,8 @@ pub(crate) struct Driver {
     inner: IoUring<SEntry, CEntry>,
     notifier: Notifier,
     pool: AsyncifyPool,
-    completed_tx: Sender<Entry>,
-    completed_rx: Receiver<Entry>,
+    completed_tx: crossfire::MTx<mpsc::List<Entry>>,
+    completed_rx: crossfire::Rx<mpsc::List<Entry>>,
     buffer_group_ids: Slab<()>,
     need_push_notifier: bool,
 }
@@ -174,7 +174,7 @@ impl Driver {
             submitter.register_eventfd(fd)?;
         }
 
-        let (completed_tx, completed_rx) = flume::unbounded();
+        let (completed_tx, completed_rx) = mpsc::unbounded_blocking();
 
         Ok(Self {
             inner,

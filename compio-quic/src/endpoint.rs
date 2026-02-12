@@ -19,7 +19,6 @@ use compio_log::{Instrument, error, warn};
 use compio_net::ToSocketAddrsAsync;
 use compio_net::UdpSocket;
 use compio_runtime::JoinHandle;
-type Receiver<T> = crossfire::AsyncRx<crossfire::spsc::List<T>>;
 type Sender<T> = crossfire::Tx<crossfire::spsc::List<T>>;
 type MultiReceiver<T> = crossfire::AsyncRx<crossfire::mpsc::List<T>>;
 type MultiSender<T> = crossfire::MTx<crossfire::mpsc::List<T>>;
@@ -102,9 +101,9 @@ impl EndpointState {
                 .get(&ch)
                 .unwrap()
                 .try_send(ConnectionEvent::Proto(event))
-            {
-                warn!("failed to send event to connection {ch:?}: {e:?}");
-            }
+        {
+            warn!("failed to send event to connection {ch:?}: {e:?}");
+        }
     }
 
     fn is_idle(&self) -> bool {
@@ -132,18 +131,15 @@ impl EndpointState {
         events_tx: MultiSender<(ConnectionHandle, EndpointEvent)>,
     ) -> Connecting {
         let (tx, rx) = crossfire::spsc::unbounded_async();
-        let rx: Receiver<ConnectionEvent> = rx;
-        let tx: Sender<ConnectionEvent> = tx;
         if let Some((error_code, reason)) = &self.close
-            && let Err(e) = tx.try_send(ConnectionEvent::Close(*error_code, reason.clone())) {
-                warn!("failed to send close event to connection {handle:?}: {e:?}");
-            }
+            && let Err(e) = tx.try_send(ConnectionEvent::Close(*error_code, reason.clone()))
+        {
+            warn!("failed to send close event to connection {handle:?}: {e:?}");
+        }
         self.connections.insert(handle, tx);
         Connecting::new(handle, conn, socket, events_tx, rx)
     }
 }
-
-// type ChannelPair<T> = (Sender<T>, Receiver<T>);
 
 #[derive(Debug)]
 pub(crate) struct EndpointInner {
@@ -165,8 +161,6 @@ impl EndpointInner {
         let allow_mtud = !socket.may_fragment();
 
         let (tx, rx) = crossfire::mpsc::unbounded_async();
-        let tx: MultiSender<(ConnectionHandle, EndpointEvent)> = tx;
-        let rx: MultiReceiver<(ConnectionHandle, EndpointEvent)> = rx;
 
         Ok(Self {
             state: Mutex::new(EndpointState {
