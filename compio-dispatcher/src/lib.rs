@@ -312,6 +312,7 @@ impl DispatcherBuilder {
     ///
     /// This is a well-known issue in multi-threaded Unix applications and
     /// requires explicit signal masking.
+    #[allow(unused)]
     pub fn block_signals(mut self, block_signals: bool) -> Self {
         #[cfg(unix)]
         {
