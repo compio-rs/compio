@@ -322,13 +322,29 @@ impl DispatcherBuilder {
         self
     }
 
-    /// Block standard signals on worker threads. Default to be `true`.
+    /// Block standard signals on worker threads.
     ///
-    /// When enabled, `SIGINT`, `SIGTERM`, `SIGQUIT`, `SIGHUP`, `SIGUSR1`,
-    /// `SIGUSR2`, and `SIGPIPE` are masked on worker threads.
-    #[cfg(unix)]
+    /// Default to `true`. When enabled, `SIGINT`, `SIGTERM`, `SIGQUIT`,
+    /// `SIGHUP`, `SIGUSR1`, `SIGUSR2`, and `SIGPIPE` are masked on worker
+    /// threads.
+    ///
+    /// This option only has effect on Unix systems. On non-Unix systems, this
+    /// method does nothing.
+    ///
+    /// On Unix systems, when [`Dispatcher`] spawns worker threads, they inherit
+    /// the parent thread's signal mask. By default, SIGINT (Ctrl-C) and other
+    /// signals can be delivered to any thread in the process. If a worker
+    /// thread receives the signal before the async signal handler is polled on
+    /// the main thread, the default signal handler runs (terminating the
+    /// process) instead of the compio signal handler.
+    ///
+    /// This is a well-known issue in multi-threaded Unix applications and
+    /// requires explicit signal masking.
     pub fn block_signals(mut self, block_signals: bool) -> Self {
-        self.block_signals = block_signals;
+        #[cfg(unix)]
+        {
+            self.block_signals = block_signals;
+        }
         self
     }
 
