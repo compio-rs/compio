@@ -196,3 +196,22 @@ impl<S: Debug> Debug for AsyncStream<S> {
             .finish_non_exhaustive()
     }
 }
+
+#[cfg(test)]
+mod test {
+    use futures_executor::block_on;
+    use futures_util::AsyncWriteExt;
+
+    use super::AsyncStream;
+
+    #[test]
+    fn close() {
+        block_on(async {
+            let mut stream = AsyncStream::new(Vec::<u8>::new());
+            let n = stream.write(b"hello").await.unwrap();
+            assert_eq!(n, 5);
+            stream.close().await.unwrap();
+            assert_eq!(stream.get_ref(), b"hello");
+        })
+    }
+}
