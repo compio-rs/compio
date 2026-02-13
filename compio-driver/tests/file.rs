@@ -104,6 +104,9 @@ fn timeout() {
 
     let err = driver.poll(Some(Duration::from_secs(1))).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+
+    let err = driver.poll(Some(Duration::from_millis(1))).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::TimedOut);
 }
 
 #[test]
