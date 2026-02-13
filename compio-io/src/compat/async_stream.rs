@@ -177,15 +177,15 @@ impl<S: crate::AsyncWrite + 'static> futures_util::AsyncWrite for AsyncStream<S>
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         // Avoid shutdown on flush because the inner buffer might be passed to the
         // driver.
-        if self.write_future.is_some() {
+        if self.write_future.is_some() || self.inner.has_pending_write() {
             debug_assert!(self.shutdown_future.is_none());
-            return Poll::Pending;
+            self.poll_flush(cx)
+        } else {
+            let inner: &'static mut SyncStream<S> =
+                unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
+            let res = poll_future!(self.shutdown_future, cx, inner.get_mut().shutdown());
+            Poll::Ready(res)
         }
-
-        let inner: &'static mut SyncStream<S> =
-            unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
-        let res = poll_future!(self.shutdown_future, cx, inner.get_mut().shutdown());
-        Poll::Ready(res)
     }
 }
 
@@ -194,5 +194,24 @@ impl<S: Debug> Debug for AsyncStream<S> {
         f.debug_struct("AsyncStream")
             .field("inner", &self.inner)
             .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use futures_executor::block_on;
+    use futures_util::AsyncWriteExt;
+
+    use super::AsyncStream;
+
+    #[test]
+    fn close() {
+        block_on(async {
+            let mut stream = AsyncStream::new(Vec::<u8>::new());
+            let n = stream.write(b"hello").await.unwrap();
+            assert_eq!(n, 5);
+            stream.close().await.unwrap();
+            assert_eq!(stream.get_ref(), b"hello");
+        })
     }
 }

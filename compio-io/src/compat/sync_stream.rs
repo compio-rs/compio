@@ -125,6 +125,10 @@ impl<S> SyncStream<S> {
 
         Ok(to_read)
     }
+
+    pub(crate) fn has_pending_write(&self) -> bool {
+        !self.write_buf.is_empty()
+    }
 }
 
 impl<S> Read for SyncStream<S> {
