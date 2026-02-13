@@ -855,7 +855,7 @@ where
 #[cfg(feature = "memmap2")]
 impl SetLen for memmap2::MmapMut {
     unsafe fn set_len(&mut self, len: usize) {
-        assert!(len <= self.len())
+        debug_assert!(len <= self.len())
     }
 }
 
@@ -947,6 +947,39 @@ mod test {
         let mut buf = smallvec::SmallVec::<[u8; 8]>::new();
         IoBufMut::reserve(&mut buf, 10).unwrap();
         assert!(buf.capacity() >= 10);
+    }
+
+    #[test]
+    #[cfg(feature = "memmap2")]
+    fn tests_memmap2() {
+        use std::{
+            fs::{OpenOptions, remove_file},
+            io::{Seek, SeekFrom, Write},
+        };
+
+        use memmap2::MmapOptions;
+
+        use super::*;
+
+        let path = std::env::temp_dir().join("compio_buf_mmap_mut_test");
+
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&path)
+            .unwrap();
+        let data = b"hello memmap2";
+        file.write_all(data).unwrap();
+        file.flush().unwrap();
+        file.seek(SeekFrom::Start(0)).unwrap();
+        let mmap = unsafe { MmapOptions::new().map(&file).unwrap() };
+
+        let uninit_slice = mmap.as_init();
+        assert_eq!(uninit_slice, data);
+
+        remove_file(path).unwrap();
     }
 
     #[test]

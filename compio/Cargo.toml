@@ -107,6 +107,8 @@ all = [
 arrayvec = ["compio-buf/arrayvec"]
 bumpalo = ["compio-buf/bumpalo"]
 bytes = ["compio-buf/bytes"]
+memmap2 = ["compio-buf/memmap2"]
+
 criterion = ["compio-runtime?/criterion"]
 
 sync = ["compio-driver/sync", "compio-quic?/sync", "compio-io?/sync"]
