@@ -51,4 +51,4 @@ jobs:
                 ARGS="$ARGS --features nightly"
             fi
 
-            RUST_BACKTRACE=1 cargo +${{ matrix.toolchain }} test --workspace $ARGS
+            RUST_BACKTRACE=1 cargo +${{ matrix.toolchain }} test --workspace $ARGS -- timeout
