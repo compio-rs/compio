@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-use compio_log::{instrument, trace};
+use compio_log::{instrument, trace, warn};
 use flume::{Receiver, Sender};
 use polling::{Event, Events, Poller};
 use smallvec::SmallVec;
