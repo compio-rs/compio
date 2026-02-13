@@ -194,6 +194,20 @@ where
     }
 }
 
+#[cfg(feature = "memmap2")]
+impl IoBuf for memmap2::Mmap {
+    fn as_init(&self) -> &[u8] {
+        self
+    }
+}
+
+#[cfg(feature = "memmap2")]
+impl IoBuf for memmap2::MmapMut {
+    fn as_init(&self) -> &[u8] {
+        self
+    }
+}
+
 /// An error indicating that reserving capacity for a buffer failed.
 #[must_use]
 #[derive(Debug)]
@@ -690,6 +704,14 @@ where
     }
 }
 
+#[cfg(feature = "memmap2")]
+impl IoBufMut for memmap2::MmapMut {
+    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        // Safety: &mut [u8] is valid &mut [MaybeUninit<u8>]
+        unsafe { std::mem::transmute(self.as_mut_slice()) }
+    }
+}
+
 /// A helper trait for `set_len` like methods.
 pub trait SetLen {
     /// Set the buffer length.
@@ -827,6 +849,13 @@ where
         if (**self).buf_len() < len {
             unsafe { self.set_len(len) };
         }
+    }
+}
+
+#[cfg(feature = "memmap2")]
+impl SetLen for memmap2::MmapMut {
+    unsafe fn set_len(&mut self, len: usize) {
+        assert!(len <= self.len())
     }
 }
 

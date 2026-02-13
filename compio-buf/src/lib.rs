@@ -23,6 +23,8 @@ pub use arrayvec;
 pub use bumpalo;
 #[cfg(feature = "bytes")]
 pub use bytes;
+#[cfg(feature = "memmap2")]
+pub use memmap2;
 
 mod io;
 pub use io::*;
