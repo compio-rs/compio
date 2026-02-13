@@ -598,6 +598,7 @@ impl Driver {
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         if self.poll_completed() {
+            warn!("completed blocking entry");
             return Ok(());
         }
         self.events.clear();
@@ -605,6 +606,7 @@ impl Driver {
         if self.events.is_empty() && timeout.is_some() {
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
         }
+        warn!("{} events received: {:?}", self.events.len(), self.events);
         self.with_events(|this, events| {
             for event in events.iter() {
                 trace!("receive {} for {:?}", event.key, event);

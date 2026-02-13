@@ -57,6 +57,7 @@ slab = { workspace = true, optional = true }
 
 [dev-dependencies]
 nix = { workspace = true, features = ["fs"] }
+tracing-subscriber = { workspace = true }
 
 # Other platform dependencies
 [target.'cfg(all(not(target_os = "linux"), unix))'.dependencies]

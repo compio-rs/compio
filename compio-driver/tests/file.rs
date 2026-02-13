@@ -96,6 +96,10 @@ fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult
 
 #[test]
 fn timeout() {
+    tracing_subscriber::fmt()
+        .with_max_level(compio_log::Level::TRACE)
+        .init();
+
     let mut driver = Proactor::new().unwrap();
 
     let err = driver.poll(Some(Duration::from_secs(1))).unwrap_err();
