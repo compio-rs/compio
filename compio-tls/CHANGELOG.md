@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1](https://github.com/compio-rs/compio/compare/compio-tls-v0.9.0...compio-tls-v0.9.1) - 2026-02-14
+
+### Added
+
+- *(tls)* add LazyConfigAcceptor for rustls ([#686](https://github.com/compio-rs/compio/pull/686))
+
+### Fixed
+
+- *(driver)* statx on musl ([#669](https://github.com/compio-rs/compio/pull/669))
+
 ## [0.9.0](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added

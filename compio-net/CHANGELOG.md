@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0](https://github.com/compio-rs/compio/compare/compio-net-v0.11.0...compio-net-v0.12.0) - 2026-02-14
+
+### Changed
+
+- [**breaking**] move {Async,Poll}Fd to runtime ([#662](https://github.com/compio-rs/compio/pull/662))
+
+### Other
+
+- compio::runtime instead of compio_runtime ([#664](https://github.com/compio-rs/compio/pull/664))
+
 ## [0.11.0](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added
