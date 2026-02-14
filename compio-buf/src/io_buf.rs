@@ -194,6 +194,20 @@ where
     }
 }
 
+#[cfg(feature = "memmap2")]
+impl IoBuf for memmap2::Mmap {
+    fn as_init(&self) -> &[u8] {
+        self
+    }
+}
+
+#[cfg(feature = "memmap2")]
+impl IoBuf for memmap2::MmapMut {
+    fn as_init(&self) -> &[u8] {
+        self
+    }
+}
+
 /// An error indicating that reserving capacity for a buffer failed.
 #[must_use]
 #[derive(Debug)]
@@ -690,6 +704,14 @@ where
     }
 }
 
+#[cfg(feature = "memmap2")]
+impl IoBufMut for memmap2::MmapMut {
+    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        // Safety: &mut [u8] is valid &mut [MaybeUninit<u8>]
+        unsafe { std::mem::transmute(self.as_mut_slice()) }
+    }
+}
+
 /// A helper trait for `set_len` like methods.
 pub trait SetLen {
     /// Set the buffer length.
@@ -830,6 +852,13 @@ where
     }
 }
 
+#[cfg(feature = "memmap2")]
+impl SetLen for memmap2::MmapMut {
+    unsafe fn set_len(&mut self, len: usize) {
+        debug_assert!(len <= self.len())
+    }
+}
+
 impl<T: IoBufMut> SetLen for [T] {
     unsafe fn set_len(&mut self, len: usize) {
         unsafe { default_set_len(self.iter_mut(), len) }
@@ -918,6 +947,39 @@ mod test {
         let mut buf = smallvec::SmallVec::<[u8; 8]>::new();
         IoBufMut::reserve(&mut buf, 10).unwrap();
         assert!(buf.capacity() >= 10);
+    }
+
+    #[test]
+    #[cfg(feature = "memmap2")]
+    fn tests_memmap2() {
+        use std::{
+            fs::{OpenOptions, remove_file},
+            io::{Seek, SeekFrom, Write},
+        };
+
+        use memmap2::MmapOptions;
+
+        use super::*;
+
+        let path = std::env::temp_dir().join("compio_buf_mmap_mut_test");
+
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&path)
+            .unwrap();
+        let data = b"hello memmap2";
+        file.write_all(data).unwrap();
+        file.flush().unwrap();
+        file.seek(SeekFrom::Start(0)).unwrap();
+        let mmap = unsafe { MmapOptions::new().map(&file).unwrap() };
+
+        let uninit_slice = mmap.as_init();
+        assert_eq!(uninit_slice, data);
+
+        remove_file(path).unwrap();
     }
 
     #[test]
