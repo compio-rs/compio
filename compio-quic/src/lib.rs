@@ -51,33 +51,6 @@ pub(crate) use crate::{
     socket::*,
 };
 
-/// Errors from [`SendStream::stopped`] and [`RecvStream::stopped`].
-#[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
-pub enum StoppedError {
-    /// The connection was lost
-    #[error("connection lost")]
-    ConnectionLost(#[from] ConnectionError),
-    /// This was a 0-RTT stream and the server rejected it
-    ///
-    /// Can only occur on clients for 0-RTT streams, which can be opened using
-    /// [`Connecting::into_0rtt()`].
-    ///
-    /// [`Connecting::into_0rtt()`]: crate::Connecting::into_0rtt()
-    #[error("0-RTT rejected")]
-    ZeroRttRejected,
-}
-
-impl From<StoppedError> for std::io::Error {
-    fn from(x: StoppedError) -> Self {
-        use StoppedError::*;
-        let kind = match x {
-            ZeroRttRejected => std::io::ErrorKind::ConnectionReset,
-            ConnectionLost(_) => std::io::ErrorKind::NotConnected,
-        };
-        Self::new(kind, x)
-    }
-}
-
 /// HTTP/3 support via [`h3`].
 #[cfg(feature = "h3")]
 pub mod h3 {
