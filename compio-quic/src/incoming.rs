@@ -63,7 +63,7 @@ impl Incoming {
         inner
             .endpoint
             .retry(inner.incoming)
-            .map_err(|e| RetryError(Self::new(e.into_incoming(), inner.endpoint)))
+            .map_err(|e| RetryError(Box::new(Self::new(e.into_incoming(), inner.endpoint))))
     }
 
     /// Ignore this incoming connection attempt, not sending any packet in
@@ -120,12 +120,12 @@ impl Drop for Incoming {
 /// address validation token from a previous retry.
 #[derive(Debug, Error)]
 #[error("retry() with validated Incoming")]
-pub struct RetryError(Incoming);
+pub struct RetryError(Box<Incoming>);
 
 impl RetryError {
     /// Get the [`Incoming`]
     pub fn into_incoming(self) -> Incoming {
-        self.0
+        *self.0
     }
 }
 
