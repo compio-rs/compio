@@ -9,7 +9,7 @@ use futures_util::{future::poll_fn, ready};
 use quinn_proto::{ClosedStream, FinishError, StreamId, VarInt, Written};
 use thiserror::Error;
 
-use crate::{ConnectionError, ConnectionInner, StoppedError, sync::shared::Shared};
+use crate::{ConnectionError, ConnectionInner, sync::shared::Shared};
 
 /// A stream that can only be used to send data.
 ///
@@ -298,6 +298,33 @@ impl From<WriteError> for io::Error {
             ConnectionLost(_) | ClosedStream => io::ErrorKind::NotConnected,
             #[cfg(feature = "h3")]
             NotReady => io::ErrorKind::Other,
+        };
+        Self::new(kind, x)
+    }
+}
+
+/// Errors that arise while monitoring for a send stream stop from the peer
+#[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
+pub enum StoppedError {
+    /// The connection was lost
+    #[error("connection lost")]
+    ConnectionLost(#[from] ConnectionError),
+    /// This was a 0-RTT stream and the server rejected it
+    ///
+    /// Can only occur on clients for 0-RTT streams, which can be opened using
+    /// [`Connecting::into_0rtt()`].
+    ///
+    /// [`Connecting::into_0rtt()`]: crate::Connecting::into_0rtt()
+    #[error("0-RTT rejected")]
+    ZeroRttRejected,
+}
+
+impl From<StoppedError> for io::Error {
+    fn from(x: StoppedError) -> Self {
+        use StoppedError::*;
+        let kind = match x {
+            ZeroRttRejected => io::ErrorKind::ConnectionReset,
+            ConnectionLost(_) => io::ErrorKind::NotConnected,
         };
         Self::new(kind, x)
     }
