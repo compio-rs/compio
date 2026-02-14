@@ -6,7 +6,7 @@ use std::{
 };
 
 use futures_util::FutureExt;
-use quinn_proto::ServerConfig;
+use quinn_proto::{ConnectionId, ServerConfig};
 use thiserror::Error;
 
 use crate::{Connecting, Connection, ConnectionError, EndpointRef};
@@ -91,6 +91,19 @@ impl Incoming {
     /// they can receive traffic sent to `self.remote_address()`.
     pub fn remote_address_validated(&self) -> bool {
         self.0.as_ref().unwrap().incoming.remote_address_validated()
+    }
+
+    /// Whether it is legal to respond with a retry packet
+    ///
+    /// If `self.remote_address_validated()` is false, `self.may_retry()` is
+    /// guaranteed to be true. The inverse is not guaranteed.
+    pub fn may_retry(&self) -> bool {
+        self.0.as_ref().unwrap().incoming.may_retry()
+    }
+
+    /// The original destination CID when initiating the connection
+    pub fn orig_dst_cid(&self) -> ConnectionId {
+        *self.0.as_ref().unwrap().incoming.orig_dst_cid()
     }
 }
 
