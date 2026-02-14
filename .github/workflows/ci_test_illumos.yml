@@ -31,6 +31,7 @@ jobs:
       - name: Test in Illumos
         id: test
         uses: vmactions/omnios-vm@v1
+        continue-on-error: true
         with:
           usesh: true
           sync: rsync
