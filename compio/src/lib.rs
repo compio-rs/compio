@@ -70,10 +70,10 @@ pub use compio_tls as tls;
 #[doc(inline)]
 pub use compio_ws as ws;
 #[cfg(feature = "event")]
-#[doc(no_inline)]
+#[doc(inline)]
 pub use runtime::event;
 #[cfg(feature = "time")]
-#[doc(no_inline)]
+#[doc(inline)]
 pub use runtime::time;
 #[cfg(feature = "native-tls")]
 pub use tls::native_tls;
