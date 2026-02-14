@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1](https://github.com/compio-rs/compio/compare/compio-io-v0.9.0...compio-io-v0.9.1) - 2026-02-14
+
+### Fixed
+
+- *(io)* flush manually in poll_close ([#681](https://github.com/compio-rs/compio/pull/681))
+- *(driver)* the fusion driver with polling variant ([#670](https://github.com/compio-rs/compio/pull/670))
+
 ## [0.9.0](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added
