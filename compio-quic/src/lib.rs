@@ -14,10 +14,15 @@
 
 pub use quinn_proto::{
     AckFrequencyConfig, ApplicationClose, Chunk, ClientConfig, ClosedStream, ConfigError,
-    ConnectError, ConnectionClose, ConnectionStats, EndpointConfig, IdleTimeout,
-    MtuDiscoveryConfig, ServerConfig, StreamId, Transmit, TransportConfig, VarInt, congestion,
-    crypto,
+    ConnectError, ConnectionClose, ConnectionId, ConnectionIdGenerator, ConnectionStats, Dir,
+    EcnCodepoint, EndpointConfig, FrameStats, FrameType, IdleTimeout, MtuDiscoveryConfig,
+    NoneTokenLog, NoneTokenStore, PathStats, ServerConfig, Side, StdSystemTime, StreamId,
+    TimeSource, TokenLog, TokenMemoryCache, TokenReuseError, TokenStore, Transmit, TransportConfig,
+    TransportErrorCode, UdpStats, ValidationTokenConfig, VarInt, VarIntBoundsExceeded, Written,
+    congestion, crypto,
 };
+#[cfg(feature = "qlog")]
+pub use quinn_proto::{QlogConfig, QlogStream};
 
 #[cfg(rustls)]
 mod builder;

@@ -22,7 +22,7 @@ compio-log = { workspace = true }
 compio-net = { workspace = true }
 compio-runtime = { workspace = true, features = ["time"] }
 
-quinn-proto = { version = "0.11.10", default-features = false }
+quinn-proto = { version = "0.11.13", default-features = false }
 rustls = { workspace = true }
 rustls-platform-verifier = { workspace = true, optional = true }
 rustls-native-certs = { workspace = true, optional = true }
@@ -56,7 +56,7 @@ compio-runtime = { workspace = true, features = ["criterion"] }
 
 criterion = { workspace = true, features = ["async_tokio"] }
 http = "1.1.0"
-quinn = "0.11.6"
+quinn = "0.11.9"
 rand = { workspace = true }
 rcgen = "0.14.1"
 socket2 = { workspace = true, features = ["all"] }
@@ -69,6 +69,7 @@ io-compat = ["futures-util/io"]
 platform-verifier = ["dep:rustls-platform-verifier"]
 native-certs = ["dep:rustls-native-certs"]
 webpki-roots = ["dep:webpki-roots"]
+qlog = ["quinn-proto/qlog"]
 h3 = ["dep:h3", "dep:h3-datagram"]
 ring = ["quinn-proto/rustls-ring"]
 windows-gro = []
