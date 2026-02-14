@@ -23,3 +23,8 @@ mod stream;
 pub use adapter::*;
 pub use maybe::*;
 pub use stream::*;
+
+#[cfg(feature = "rustls")]
+mod rtls;
+#[cfg(feature = "rustls")]
+pub use rtls::*;
