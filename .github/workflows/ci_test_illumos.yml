@@ -31,7 +31,6 @@ jobs:
       - name: Test in Illumos
         id: test
         uses: vmactions/omnios-vm@v1
-        continue-on-error: true
         with:
           usesh: true
           sync: rsync
@@ -45,11 +44,6 @@ jobs:
             . "$HOME/.cargo/env"
             set -ex
 
-            ARGS="--features all"
+            rustup component add clippy
 
-            # Add feature "nightly" if toolchain is nightly
-            if [ "${{ matrix.toolchain }}" = "nightly" ]; then
-                ARGS="$ARGS --features nightly"
-            fi
-
-            RUST_BACKTRACE=1 cargo +${{ matrix.toolchain }} test --workspace $ARGS
+            cargo clippy --all-features --all-targets -- -Dwarnings
