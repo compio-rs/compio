@@ -20,12 +20,7 @@ use compio_net::ToSocketAddrsAsync;
 use compio_net::UdpSocket;
 use compio_runtime::JoinHandle;
 use flume::{Receiver, Sender, unbounded};
-use futures_util::{
-    FutureExt, StreamExt,
-    future::{self},
-    select,
-    task::AtomicWaker,
-};
+use futures_util::{FutureExt, StreamExt, future, select, task::AtomicWaker};
 use quinn_proto::{
     ClientConfig, ConnectError, ConnectionError, ConnectionHandle, DatagramEvent, EndpointConfig,
     EndpointEvent, ServerConfig, Transmit, VarInt,
@@ -129,6 +124,14 @@ impl EndpointState {
         }
         self.connections.insert(handle, tx);
         Connecting::new(handle, conn, socket, events_tx, rx)
+    }
+}
+
+impl Drop for EndpointState {
+    fn drop(&mut self) {
+        for incoming in self.incoming.drain(..) {
+            self.endpoint.ignore(incoming);
+        }
     }
 }
 
