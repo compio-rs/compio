@@ -28,6 +28,7 @@ pin-project-lite = { workspace = true }
 thin-cell = { version = "0.1.1" }
 smallvec = { workspace = true, optional = true, features = ["union"] }
 synchrony = { workspace = true, features = ["waker_slot"] }
+bitflags = { version = "2.11.0" }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]

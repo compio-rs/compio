@@ -11,28 +11,17 @@ pub enum DriverType {
 }
 
 impl DriverType {
-    /// Get the underlying driver type
+    /// Suggest the driver type base on OpCode availability.
+    ///
+    /// This is used when the user doesn't specify a driver type, and the driver
+    /// will choose the best one based on the supported OpCodes.
     #[cfg(fusion)]
-    pub(crate) fn suggest() -> DriverType {
-        use io_uring::opcode::*;
+    pub(crate) fn suggest(additional: crate::op::OpCodeFlag) -> DriverType {
+        use crate::op::OpCodeFlag;
 
-        // Add more opcodes here if used
-        const USED_OP: &[u8] = &[
-            Read::CODE,
-            Readv::CODE,
-            Write::CODE,
-            Writev::CODE,
-            Fsync::CODE,
-            Accept::CODE,
-            Connect::CODE,
-            Recv::CODE,
-            Send::CODE,
-            RecvMsg::CODE,
-            SendMsg::CODE,
-            PollAdd::CODE,
-        ];
+        let flags = additional | OpCodeFlag::basic();
 
-        if USED_OP.iter().all(|op| crate::sys::is_op_supported(*op)) {
+        if flags.get_codes().all(crate::sys::is_op_supported) {
             DriverType::IoUring
         } else {
             DriverType::Poll
