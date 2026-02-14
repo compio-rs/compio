@@ -96,7 +96,7 @@ impl Driver {
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         let (ty, fallback) = match &builder.driver_type {
             Some(t) => (*t, false),
-            None => (DriverType::suggest(), true),
+            None => (DriverType::suggest(builder.op_flags), true),
         };
         match ty {
             DriverType::Poll => Ok(Self {

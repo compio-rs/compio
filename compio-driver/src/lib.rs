@@ -47,7 +47,7 @@ pub use sys::*;
 mod cancel;
 pub use cancel::*;
 
-use crate::key::ErasedKey;
+use crate::{key::ErasedKey, op::OpCodeFlag};
 
 mod sys_slice;
 
@@ -450,6 +450,7 @@ pub struct ProactorBuilder {
     taskrun_flag: bool,
     eventfd: Option<RawFd>,
     driver_type: Option<DriverType>,
+    op_flags: OpCodeFlag,
 }
 
 // SAFETY: `RawFd` is thread safe.
@@ -473,6 +474,7 @@ impl ProactorBuilder {
             taskrun_flag: false,
             eventfd: None,
             driver_type: None,
+            op_flags: OpCodeFlag::empty(),
         }
     }
 
@@ -577,6 +579,27 @@ impl ProactorBuilder {
     /// - Only effective when the `io-uring` feature is enabled
     pub fn register_eventfd(&mut self, fd: RawFd) -> &mut Self {
         self.eventfd = Some(fd);
+        self
+    }
+
+    /// Set which io-uring [`OpCode`] must be supported by the driver.
+    ///
+    /// Support for io-uring opcodes varies by kernel version. Setting this
+    /// will force the driver to check for support of the specified opcodes, and
+    /// when any of them are not supported:
+    /// - Fallback to `polling` driver if `fusion` driver is enabled,
+    /// - Return an [`Unsupported`] error when building the proactor otherwise.
+    ///
+    /// # Notes
+    ///
+    /// - Only effective when the `io-uring` feature is enabled
+    /// - [`OpCodeFlag`] is a bitflag struct, you can combine multiple opcodes
+    ///   with bitwise OR or use [`OpCodeFlag::all`] to require all opcodes to
+    ///   be supported.
+    ///
+    /// [`Unsupported`]: std::io::ErrorKind::Unsupported
+    pub fn detect_opcode_support(&mut self, flags: OpCodeFlag) -> &mut Self {
+        self.op_flags = flags;
         self
     }
 
