@@ -36,10 +36,10 @@ mod socket;
 #[cfg(rustls)]
 pub use builder::{ClientBuilder, ServerBuilder};
 pub use connection::{Connecting, Connection, ConnectionError};
-pub use endpoint::Endpoint;
+pub use endpoint::{Endpoint, EndpointStats};
 pub use incoming::{Incoming, IncomingFuture};
-pub use recv_stream::{ReadError, ReadExactError, RecvStream};
-pub use send_stream::{SendStream, WriteError};
+pub use recv_stream::{ReadError, ReadExactError, RecvStream, ResetError};
+pub use send_stream::{SendStream, StoppedError, WriteError};
 #[cfg(feature = "sync")]
 pub(crate) use synchrony::sync;
 #[cfg(not(feature = "sync"))]
