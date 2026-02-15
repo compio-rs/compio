@@ -46,7 +46,7 @@ Example:
 ```rust
 use compio::ws::connect_async;
 
-let (mut ws_stream, _) = connect_async("wss://example.com/socket").await?;
+let (mut ws_stream, _) = connect_async("wss://echo.websocket.org").await?;
 
 // Send and receive messages
 ws_stream.send(Message::text("Hello WebSocket!")).await?;
