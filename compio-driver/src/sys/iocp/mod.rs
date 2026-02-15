@@ -228,6 +228,12 @@ impl AsFd for OwnedHandle {
     }
 }
 
+impl AsFd for BorrowedHandle<'_> {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        (*self).into()
+    }
+}
+
 impl AsFd for socket2::Socket {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.as_socket().into()
@@ -237,6 +243,12 @@ impl AsFd for socket2::Socket {
 impl AsFd for OwnedSocket {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.as_socket().into()
+    }
+}
+
+impl AsFd for BorrowedSocket<'_> {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        (*self).into()
     }
 }
 
