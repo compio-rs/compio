@@ -44,7 +44,7 @@ Example:
 use compio::quic::{Endpoint, ClientConfig};
 
 let mut endpoint = Endpoint::client("0.0.0.0:0".parse()?)?;
-let connection = endpoint.connect("example.com:443", "example.com").await?;
+let connection = endpoint.connect("compio.rs:443", "compio.rs").await?;
 
 // Use the QUIC connection
 let (mut send, mut recv) = connection.open_bi().await?;

@@ -3,11 +3,11 @@ use compio_net::TcpStream;
 use compio_tls::TlsConnector;
 
 async fn connect(connector: TlsConnector) {
-    let stream = TcpStream::connect("www.example.com:443").await.unwrap();
-    let mut stream = connector.connect("www.example.com", stream).await.unwrap();
+    let stream = TcpStream::connect("compio.rs:443").await.unwrap();
+    let mut stream = connector.connect("compio.rs", stream).await.unwrap();
 
     stream
-        .write_all("GET / HTTP/1.1\r\nHost:www.example.com\r\nConnection: close\r\n\r\n")
+        .write_all("GET / HTTP/1.1\r\nHost:compio.rs\r\nConnection: close\r\n\r\n")
         .await
         .unwrap();
     stream.flush().await.unwrap();
