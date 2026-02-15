@@ -568,7 +568,7 @@ impl Connection {
         state.wake();
     }
 
-    /// See [`proto::TransportConfig::send_window()`]
+    /// See [`quinn_proto::TransportConfig::send_window()`]
     pub fn set_send_window(&self, send_window: u64) {
         let mut state = self.0.state();
         state.conn.set_send_window(send_window);
