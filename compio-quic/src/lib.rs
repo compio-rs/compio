@@ -54,6 +54,7 @@ pub(crate) use crate::{
 /// HTTP/3 support via [`h3`].
 #[cfg(feature = "h3")]
 pub mod h3 {
+    #[doc(no_inline)]
     pub use h3::*;
 
     pub use crate::{
