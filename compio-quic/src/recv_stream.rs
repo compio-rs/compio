@@ -10,7 +10,7 @@ use futures_util::future::poll_fn;
 use quinn_proto::{Chunk, Chunks, ClosedStream, ReadableError, StreamId, VarInt};
 use thiserror::Error;
 
-use crate::{ConnectionError, ConnectionInner, StoppedError, sync::shared::Shared};
+use crate::{ConnectionError, ConnectionInner, sync::shared::Shared};
 
 /// A stream that can only be used to receive data
 ///
@@ -98,23 +98,22 @@ impl RecvStream {
         Ok(())
     }
 
-    /// Completes when the stream has been reset by the peer or otherwise
-    /// closed.
+    /// Completes when the stream has been reset by the peer or otherwise closed
     ///
     /// Yields `Some` with the reset error code when the stream is reset by the
     /// peer. Yields `None` when the stream was previously
     /// [`stop()`](Self::stop)ed, or when the stream was
     /// [`finish()`](crate::SendStream::finish)ed by the peer and all data has
-    /// been received, after which it is no longer meaningful for the stream to
-    /// be reset.
+    /// been received, after which it is no longer meaningful for the stream
+    /// to be reset.
     ///
     /// This operation is cancel-safe.
-    pub async fn stopped(&mut self) -> Result<Option<VarInt>, StoppedError> {
+    pub async fn received_reset(&mut self) -> Result<Option<VarInt>, ResetError> {
         poll_fn(|cx| {
             let mut state = self.conn.state();
 
             if self.is_0rtt && !state.check_0rtt() {
-                return Poll::Ready(Err(StoppedError::ZeroRttRejected));
+                return Poll::Ready(Err(ResetError::ZeroRttRejected));
             }
             if let Some(code) = self.reset {
                 return Poll::Ready(Ok(Some(code)));
@@ -466,11 +465,11 @@ impl From<ReadableError> for ReadError {
     }
 }
 
-impl From<StoppedError> for ReadError {
-    fn from(e: StoppedError) -> Self {
+impl From<ResetError> for ReadError {
+    fn from(e: ResetError) -> Self {
         match e {
-            StoppedError::ConnectionLost(e) => Self::ConnectionLost(e),
-            StoppedError::ZeroRttRejected => Self::ZeroRttRejected,
+            ResetError::ConnectionLost(e) => Self::ConnectionLost(e),
+            ResetError::ZeroRttRejected => Self::ZeroRttRejected,
         }
     }
 }
@@ -496,6 +495,33 @@ pub enum ReadExactError {
     /// A read error occurred
     #[error(transparent)]
     ReadError(#[from] ReadError),
+}
+
+/// Errors that arise while waiting for a stream to be reset
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum ResetError {
+    /// The connection was lost
+    #[error("connection lost")]
+    ConnectionLost(#[from] ConnectionError),
+    /// This was a 0-RTT stream and the server rejected it
+    ///
+    /// Can only occur on clients for 0-RTT streams, which can be opened using
+    /// [`Connecting::into_0rtt()`].
+    ///
+    /// [`Connecting::into_0rtt()`]: crate::Connecting::into_0rtt()
+    #[error("0-RTT rejected")]
+    ZeroRttRejected,
+}
+
+impl From<ResetError> for io::Error {
+    fn from(x: ResetError) -> Self {
+        use ResetError::*;
+        let kind = match x {
+            ZeroRttRejected => io::ErrorKind::ConnectionReset,
+            ConnectionLost(_) => io::ErrorKind::NotConnected,
+        };
+        Self::new(kind, x)
+    }
 }
 
 impl AsyncRead for RecvStream {

@@ -20,12 +20,7 @@ use compio_net::ToSocketAddrsAsync;
 use compio_net::UdpSocket;
 use compio_runtime::JoinHandle;
 use flume::{Receiver, Sender, unbounded};
-use futures_util::{
-    FutureExt, StreamExt,
-    future::{self},
-    select,
-    task::AtomicWaker,
-};
+use futures_util::{FutureExt, StreamExt, future, select, task::AtomicWaker};
 use quinn_proto::{
     ClientConfig, ConnectError, ConnectionError, ConnectionHandle, DatagramEvent, EndpointConfig,
     EndpointEvent, ServerConfig, Transmit, VarInt,
@@ -46,6 +41,21 @@ struct EndpointState {
     exit_on_idle: bool,
     incoming: VecDeque<quinn_proto::Incoming>,
     incoming_wakers: VecDeque<Waker>,
+    stats: EndpointStats,
+}
+
+/// Statistics on [Endpoint] activity
+#[non_exhaustive]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct EndpointStats {
+    /// Cumulative number of Quic handshakes accepted by this [Endpoint]
+    pub accepted_handshakes: u64,
+    /// Cumulative number of Quic handshakes sent from this [Endpoint]
+    pub outgoing_handshakes: u64,
+    /// Cumulative number of Quic handshakes refused on this [Endpoint]
+    pub refused_handshakes: u64,
+    /// Cumulative number of Quic handshakes ignored on this [Endpoint]
+    pub ignored_handshakes: u64,
 }
 
 impl EndpointState {
@@ -132,6 +142,14 @@ impl EndpointState {
     }
 }
 
+impl Drop for EndpointState {
+    fn drop(&mut self) {
+        for incoming in self.incoming.drain(..) {
+            self.endpoint.ignore(incoming);
+        }
+    }
+}
+
 type ChannelPair<T> = (Sender<T>, Receiver<T>);
 
 #[derive(Debug)]
@@ -167,6 +185,7 @@ impl EndpointInner {
                 exit_on_idle: false,
                 incoming: VecDeque::new(),
                 incoming_wakers: VecDeque::new(),
+                stats: EndpointStats::default(),
             }),
             socket,
             ipv6,
@@ -203,6 +222,7 @@ impl EndpointInner {
         let (handle, conn) = state
             .endpoint
             .connect(Instant::now(), config, remote, server_name)?;
+        state.stats.outgoing_handshakes += 1;
 
         Ok(state.new_connection(handle, conn, self.socket.clone(), self.events.0.clone()))
     }
@@ -228,6 +248,7 @@ impl EndpointInner {
             .accept(incoming, now, &mut resp_buf, server_config.map(Arc::new))
         {
             Ok((handle, conn)) => {
+                state.stats.accepted_handshakes += 1;
                 Ok(state.new_connection(handle, conn, self.socket.clone(), self.events.0.clone()))
             }
             Err(err) => {
@@ -241,6 +262,7 @@ impl EndpointInner {
 
     pub(crate) fn refuse(&self, incoming: quinn_proto::Incoming) {
         let mut state = self.state.lock();
+        state.stats.refused_handshakes += 1;
         let mut resp_buf = Vec::new();
         let transmit = state.endpoint.refuse(incoming, &mut resp_buf);
         self.respond(resp_buf, transmit);
@@ -260,6 +282,7 @@ impl EndpointInner {
 
     pub(crate) fn ignore(&self, incoming: quinn_proto::Incoming) {
         let mut state = self.state.lock();
+        state.stats.ignored_handshakes += 1;
         state.endpoint.ignore(incoming);
     }
 
@@ -457,6 +480,11 @@ impl Endpoint {
     pub async fn server(addr: impl ToSocketAddrsAsync, config: ServerConfig) -> io::Result<Self> {
         let socket = UdpSocket::bind(addr).await?;
         Self::new(socket, EndpointConfig::default(), Some(config), None)
+    }
+
+    /// Returns relevant stats from this Endpoint
+    pub fn stats(&self) -> EndpointStats {
+        self.inner.state.lock().stats
     }
 
     /// Connect to a remote endpoint.

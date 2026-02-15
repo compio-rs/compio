@@ -12,14 +12,14 @@ use compio_log::Instrument;
 use compio_runtime::JoinHandle;
 use flume::{Receiver, Sender};
 use futures_util::{
-    Future, FutureExt, StreamExt,
+    FutureExt, StreamExt,
     future::{self, Fuse, FusedFuture, LocalBoxFuture},
     select, stream,
 };
 #[cfg(rustls)]
 use quinn_proto::crypto::rustls::HandshakeData;
 use quinn_proto::{
-    ConnectionHandle, ConnectionStats, Dir, EndpointEvent, StreamEvent, StreamId, VarInt,
+    ConnectionHandle, ConnectionStats, Dir, EndpointEvent, Side, StreamEvent, StreamId, VarInt,
     congestion::Controller,
 };
 use rustc_hash::FxHashMap as HashMap;
@@ -294,6 +294,11 @@ impl ConnectionInner {
 
 macro_rules! conn_fn {
     () => {
+        /// The side of the connection (client or server)
+        pub fn side(&self) -> Side {
+            self.0.state().conn.side()
+        }
+
         /// The local IP address which was used when the peer established
         /// the connection.
         ///
@@ -339,6 +344,14 @@ macro_rules! conn_fn {
                 .crypto_session()
                 .peer_identity()
                 .map(|v| v.downcast().unwrap())
+        }
+
+        /// A stable identifier for this connection
+        ///
+        /// Peer addresses and connection IDs can change, but this value will remain
+        /// fixed for the lifetime of the connection.
+        pub fn stable_id(&self) -> usize {
+            Shared::as_ptr(&self.0) as usize
         }
 
         /// Derive keying material from this connection's TLS session secrets.
@@ -504,6 +517,13 @@ pub struct Connection(Shared<ConnectionInner>);
 impl Connection {
     conn_fn!();
 
+    /// Update traffic keys spontaneously
+    ///
+    /// This primarily exists for testing purposes.
+    pub fn force_key_update(&self) {
+        self.0.state().conn.force_key_update()
+    }
+
     /// Parameters negotiated during the handshake.
     #[cfg(rustls)]
     pub fn handshake_data(&mut self) -> Result<Box<HandshakeData>, ConnectionError> {
@@ -545,6 +565,13 @@ impl Connection {
         let mut state = self.0.state();
         state.conn.set_max_concurrent_streams(Dir::Uni, count);
         // May need to send MAX_STREAMS to make progress
+        state.wake();
+    }
+
+    /// See [`quinn_proto::TransportConfig::send_window()`]
+    pub fn set_send_window(&self, send_window: u64) {
+        let mut state = self.0.state();
+        state.conn.set_send_window(send_window);
         state.wake();
     }
 
