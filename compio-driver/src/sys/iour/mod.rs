@@ -154,6 +154,15 @@ impl Driver {
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         instrument!(compio_log::Level::TRACE, "new", ?builder);
         trace!("new iour driver");
+        // if op_flags is empty, this loop will not run
+        for code in builder.op_flags.get_codes() {
+            if !is_op_supported(code) {
+                return Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    format!("io-uring does not support opcode {code:?}({code})"),
+                ));
+            }
+        }
         let notifier = Notifier::new()?;
         let mut io_uring_builder = IoUring::builder();
         if let Some(sqpoll_idle) = builder.sqpoll_idle {
