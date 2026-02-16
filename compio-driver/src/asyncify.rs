@@ -9,9 +9,10 @@ use std::{
 
 use flume::{Receiver, Sender, TrySendError, bounded};
 
-/// An error that may be emitted when all worker threads are busy. It simply
-/// returns the dispatchable value with a convenient [`fmt::Debug`] and
-/// [`fmt::Display`] implementation.
+/// An error that may be emitted when all worker threads are busy.
+///
+/// It simply contains the dispatchable value with a convenient [`fmt::Debug`]
+/// and [`fmt::Display`] implementation.
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct DispatchError<T>(pub T);
 
@@ -38,9 +39,12 @@ impl<T> std::error::Error for DispatchError<T> {}
 
 type BoxedDispatchable = Box<dyn Dispatchable + Send>;
 
-/// A trait for dispatching a closure. It's implemented for all `FnOnce() + Send
-/// + 'static` but may also be implemented for any other types that are `Send`
-///   and `'static`.
+/// A trait for dispatching a closure.
+///
+/// Used by [`AsyncifyPool`] to run closures in other threads.
+///
+/// It's implemented for all `FnOnce() + Send + 'static` but may also be
+/// implemented for any other types that are `Send` and `'static`.
 pub trait Dispatchable: Send + 'static {
     /// Run the dispatchable
     fn run(self: Box<Self>);
