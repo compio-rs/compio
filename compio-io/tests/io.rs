@@ -223,6 +223,22 @@ fn writev_at() {
     })
 }
 
+#[test]
+fn repeat_read_vectored() {
+    block_on(async {
+        let mut src = compio_io::repeat(42);
+
+        let (len, bufs) = src
+            .read_vectored([Vec::with_capacity(3), Vec::with_capacity(2)])
+            .await
+            .unwrap();
+
+        assert_eq!(len, 5);
+        assert_eq!(bufs[0], [42, 42, 42]);
+        assert_eq!(bufs[1], [42, 42]);
+    })
+}
+
 struct RepeatOne(u8);
 
 impl AsyncRead for RepeatOne {
