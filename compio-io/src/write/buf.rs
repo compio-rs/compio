@@ -1,7 +1,7 @@
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, buf_try};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, buf_try};
 
 use crate::{
-    AsyncWrite, IoResult,
+    AsyncBufRead, AsyncRead, AsyncWrite, IoResult,
     buffer::Buffer,
     util::{DEFAULT_BUF_SIZE, slice_to_buf},
 };
@@ -17,6 +17,10 @@ use crate::{
 /// help when writing very large amounts at once, or writing just one or a few
 /// times. It also provides no advantage when writing to a destination that is
 /// in memory, like a `Vec<u8>`.
+///
+/// If the underlying writer also implements [`AsyncRead`] or [`AsyncBufRead`],
+/// `BufWriter<W>` forwards read operations directly to the inner reader without
+/// flushing the write buffer.
 ///
 /// Dropping `BufWriter<W>` also discards any bytes left in the buffer, so it is
 /// critical to call [`flush`] before `BufWriter<W>` is dropped. Calling
@@ -113,6 +117,26 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
     async fn shutdown(&mut self) -> IoResult<()> {
         self.flush().await?;
         self.writer.shutdown().await
+    }
+}
+
+impl<W: AsyncRead + AsyncWrite> AsyncRead for BufWriter<W> {
+    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
+        self.writer.read(buf).await
+    }
+
+    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
+        self.writer.read_vectored(buf).await
+    }
+}
+
+impl<W: AsyncBufRead + AsyncWrite> AsyncBufRead for BufWriter<W> {
+    async fn fill_buf(&mut self) -> IoResult<&'_ [u8]> {
+        self.writer.fill_buf().await
+    }
+
+    fn consume(&mut self, amount: usize) {
+        self.writer.consume(amount)
     }
 }
 

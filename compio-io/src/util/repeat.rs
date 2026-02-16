@@ -1,6 +1,6 @@
 use std::mem::MaybeUninit;
 
-use compio_buf::BufResult;
+use compio_buf::{BufResult, IoVectoredBufMut};
 
 use crate::{AsyncBufRead, AsyncRead, IoResult};
 
@@ -35,7 +35,23 @@ impl AsyncRead for Repeat {
 
         let len = slice.len();
         slice.fill(MaybeUninit::new(self.0));
+        // SAFETY: we just initialized exactly `len` bytes in `buf` from index 0.
         unsafe { buf.advance_to(len) };
+
+        BufResult(Ok(len), buf)
+    }
+
+    async fn read_vectored<V: IoVectoredBufMut>(&mut self, mut buf: V) -> BufResult<usize, V> {
+        let mut len: usize = 0;
+        for slice in buf.iter_uninit_slice() {
+            len = len
+                .checked_add(slice.len())
+                .expect("total vectored buffer length overflow");
+            slice.fill(MaybeUninit::new(self.0));
+        }
+        debug_assert_eq!(len, buf.total_capacity());
+        // SAFETY: every byte counted in `len` is initialized in the loop above.
+        unsafe { buf.advance_vec_to(len) };
 
         BufResult(Ok(len), buf)
     }

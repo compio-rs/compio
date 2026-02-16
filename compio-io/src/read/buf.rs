@@ -1,6 +1,6 @@
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut, buf_try};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, buf_try};
 
-use crate::{AsyncRead, IoResult, buffer::Buffer, util::DEFAULT_BUF_SIZE};
+use crate::{AsyncRead, AsyncWrite, IoResult, buffer::Buffer, util::DEFAULT_BUF_SIZE};
 /// # AsyncBufRead
 ///
 /// Async read with buffered content.
@@ -33,6 +33,10 @@ impl<A: AsyncBufRead + ?Sized> AsyncBufRead for &mut A {
 /// help when reading very large amounts at once, or reading just one or a few
 /// times. It also provides no advantage when reading from a source that is
 /// already in memory, like a `Vec<u8>`.
+///
+/// If the underlying reader also implements [`AsyncWrite`], `BufReader<R>`
+/// forwards write operations directly to the inner writer without touching the
+/// read buffer.
 ///
 /// When the `BufReader<R>` is dropped, the contents of its buffer will be
 /// discarded. Reading from the underlying reader after unwrapping the
@@ -109,6 +113,24 @@ impl<R: AsyncRead> AsyncBufRead for BufReader<R> {
 
     fn consume(&mut self, amount: usize) {
         self.buf.advance(amount);
+    }
+}
+
+impl<R: AsyncRead + AsyncWrite> AsyncWrite for BufReader<R> {
+    async fn write<B: IoBuf>(&mut self, buf: B) -> BufResult<usize, B> {
+        self.reader.write(buf).await
+    }
+
+    async fn write_vectored<B: IoVectoredBuf>(&mut self, buf: B) -> BufResult<usize, B> {
+        self.reader.write_vectored(buf).await
+    }
+
+    async fn flush(&mut self) -> IoResult<()> {
+        self.reader.flush().await
+    }
+
+    async fn shutdown(&mut self) -> IoResult<()> {
+        self.reader.shutdown().await
     }
 }
 
