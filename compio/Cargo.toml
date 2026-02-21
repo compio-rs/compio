@@ -84,6 +84,7 @@ native-tls-vendored = [
 ]
 rustls = ["tls", "compio-tls/rustls", "compio-ws?/rustls"]
 ring = ["tls", "compio-tls/ring", "compio-quic?/ring", "compio-ws?/ring"]
+py-dynamic-openssl = ["tls", "compio-tls/py-dynamic-openssl"]
 process = ["dep:compio-process"]
 quic = ["dep:compio-quic"]
 h3 = ["quic", "compio-quic/h3"]
