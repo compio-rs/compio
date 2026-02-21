@@ -75,6 +75,35 @@ impl<S> From<futures_rustls::server::TlsStream<AsyncStream<S>>> for TlsStream<S>
     }
 }
 
+#[cfg(feature = "native-tls")]
+#[inline]
+async fn drive<S, F, T>(s: &mut native_tls::TlsStream<SyncStream<S>>, mut f: F) -> io::Result<T>
+where
+    S: AsyncRead + AsyncWrite,
+    F: FnMut(&mut native_tls::TlsStream<SyncStream<S>>) -> io::Result<T>,
+{
+    loop {
+        match f(s) {
+            Ok(res) => {
+                let s = s.get_mut();
+                if s.has_pending_write() {
+                    s.flush_write_buf().await?;
+                }
+                break Ok(res);
+            }
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                let s = s.get_mut();
+                if s.has_pending_write() {
+                    s.flush_write_buf().await?;
+                } else {
+                    s.fill_read_buf().await?;
+                }
+            }
+            Err(e) => break Err(e),
+        }
+    }
+}
+
 impl<S: AsyncRead + AsyncWrite + 'static> AsyncRead for TlsStream<S> {
     async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
         let slice = buf.as_uninit();
@@ -84,20 +113,12 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncRead for TlsStream<S> {
             unsafe { std::slice::from_raw_parts_mut::<u8>(slice.as_mut_ptr().cast(), slice.len()) };
         match &mut self.0 {
             #[cfg(feature = "native-tls")]
-            TlsStreamInner::NativeTls(s) => loop {
-                match io::Read::read(s, slice) {
-                    Ok(res) => {
-                        unsafe { buf.advance_to(res) };
-                        return BufResult(Ok(res), buf);
-                    }
-                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        match s.get_mut().fill_read_buf().await {
-                            Ok(_) => continue,
-                            Err(e) => return BufResult(Err(e), buf),
-                        }
-                    }
-                    res => return BufResult(res, buf),
+            TlsStreamInner::NativeTls(s) => match drive(s, |s| io::Read::read(s, slice)).await {
+                Ok(res) => {
+                    unsafe { buf.advance_to(res) };
+                    BufResult(Ok(res), buf)
                 }
+                res => BufResult(res, buf),
             },
             #[cfg(feature = "rustls")]
             TlsStreamInner::Rustls(s) => {
@@ -140,16 +161,10 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncWrite for TlsStream<S> {
         let slice = buf.as_init();
         match &mut self.0 {
             #[cfg(feature = "native-tls")]
-            TlsStreamInner::NativeTls(s) => loop {
-                let res = io::Write::write(s, slice);
-                match res {
-                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => match flush_impl(s).await {
-                        Ok(_) => continue,
-                        Err(e) => return BufResult(Err(e), buf),
-                    },
-                    _ => return BufResult(res, buf),
-                }
-            },
+            TlsStreamInner::NativeTls(s) => {
+                let res = drive(s, |s| io::Write::write(s, slice)).await;
+                BufResult(res, buf)
+            }
             #[cfg(feature = "rustls")]
             TlsStreamInner::Rustls(s) => {
                 let res = futures_util::AsyncWriteExt::write(s, slice).await;
@@ -175,7 +190,17 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncWrite for TlsStream<S> {
         self.flush().await?;
         match &mut self.0 {
             #[cfg(feature = "native-tls")]
-            TlsStreamInner::NativeTls(s) => s.get_mut().get_mut().shutdown().await,
+            TlsStreamInner::NativeTls(s) => {
+                // Send close_notify alert, then shutdown the underlying stream.
+                // Note, this implementation is platform-specific relying on how
+                // native-tls handles shutdown. In general, it's consistent on
+                // first call (sending close_notify); but it may or may not block
+                // and wait for the peer to respond with close_notify on any
+                // subsequent calls. Here we just let such behavior propagate,
+                // and suggest the users to call shutdown() at most once.
+                drive(s, |s| s.shutdown()).await?;
+                s.get_mut().get_mut().shutdown().await
+            }
             #[cfg(feature = "rustls")]
             TlsStreamInner::Rustls(s) => futures_util::AsyncWriteExt::close(s).await,
             #[cfg(not(any(feature = "native-tls", feature = "rustls")))]

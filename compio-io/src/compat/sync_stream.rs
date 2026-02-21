@@ -126,7 +126,9 @@ impl<S> SyncStream<S> {
         Ok(to_read)
     }
 
-    pub(crate) fn has_pending_write(&self) -> bool {
+    /// Returns `true` if there is pending data in the write buffer that needs
+    /// to be flushed.
+    pub fn has_pending_write(&self) -> bool {
         !self.write_buf.is_empty()
     }
 }

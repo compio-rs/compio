@@ -163,14 +163,19 @@ async fn handshake_native_tls<S: AsyncRead + AsyncWrite>(
     loop {
         match res {
             Ok(mut s) => {
-                s.get_mut().flush_write_buf().await?;
+                if s.get_mut().has_pending_write() {
+                    s.get_mut().flush_write_buf().await?;
+                }
                 return Ok(TlsStream::from(s));
             }
             Err(e) => match e {
                 HandshakeError::Failure(e) => return Err(io::Error::other(e)),
                 HandshakeError::WouldBlock(mut mid_stream) => {
-                    if mid_stream.get_mut().flush_write_buf().await? == 0 {
-                        mid_stream.get_mut().fill_read_buf().await?;
+                    let s = mid_stream.get_mut();
+                    if s.has_pending_write() {
+                        s.flush_write_buf().await?;
+                    } else {
+                        s.fill_read_buf().await?;
                     }
                     res = mid_stream.handshake();
                 }
