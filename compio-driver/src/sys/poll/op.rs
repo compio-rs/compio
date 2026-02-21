@@ -150,17 +150,21 @@ impl<S> IntoInner for FileStat<S> {
     }
 }
 
-/// Get metadata from path.
-pub struct PathStat {
-    pub(crate) path: CString,
-    pub(crate) stat: Stat,
-    pub(crate) follow_symlink: bool,
+pin_project! {
+    /// Get metadata from path.
+    pub struct PathStat<S: AsFd> {
+        pub(crate) dirfd: S,
+        pub(crate) path: CString,
+        pub(crate) stat: Stat,
+        pub(crate) follow_symlink: bool,
+    }
 }
 
-impl PathStat {
+impl<S: AsFd> PathStat<S> {
     /// Create [`PathStat`].
-    pub fn new(path: CString, follow_symlink: bool) -> Self {
+    pub fn new(dirfd: S, path: CString, follow_symlink: bool) -> Self {
         Self {
+            dirfd,
             path,
             stat: unsafe { std::mem::zeroed() },
             follow_symlink,
@@ -168,42 +172,42 @@ impl PathStat {
     }
 }
 
-unsafe impl OpCode for PathStat {
+unsafe impl<S: AsFd> OpCode for PathStat<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        let this = self.project();
+        let mut flags = libc::AT_EMPTY_PATH;
+        if !*this.follow_symlink {
+            flags |= libc::AT_SYMLINK_NOFOLLOW;
+        }
         #[cfg(gnulinux)]
-        {
-            let mut flags = libc::AT_EMPTY_PATH;
-            if !self.follow_symlink {
-                flags |= libc::AT_SYMLINK_NOFOLLOW;
-            }
+        let res = {
             let mut s: libc::statx = unsafe { std::mem::zeroed() };
-            syscall!(libc::statx(
-                libc::AT_FDCWD,
-                self.path.as_ptr(),
+            let res = syscall!(libc::statx(
+                this.dirfd.as_fd().as_raw_fd(),
+                this.path.as_ptr(),
                 flags,
                 statx_mask(),
                 &mut s
             ))?;
-            self.stat = statx_to_stat(s);
-            Poll::Ready(Ok(0))
-        }
+            *this.stat = statx_to_stat(s);
+            res
+        };
         #[cfg(not(gnulinux))]
-        {
-            let f = if self.follow_symlink {
-                libc::stat
-            } else {
-                libc::lstat
-            };
-            Poll::Ready(Ok(syscall!(f(self.path.as_ptr(), &mut self.stat))? as _))
-        }
+        let res = syscall!(libc::fstatat(
+            this.dirfd.as_fd().as_raw_fd(),
+            this.path.as_ptr(),
+            this.stat,
+            flags
+        ))?;
+        Poll::Ready(Ok(res as _))
     }
 }
 
-impl IntoInner for PathStat {
+impl<S: AsFd> IntoInner for PathStat<S> {
     type Inner = Stat;
 
     fn into_inner(self) -> Self::Inner {
