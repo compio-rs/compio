@@ -13,6 +13,7 @@ async fn connect(connector: TlsConnector) {
     stream.flush().await.unwrap();
     let (_, res) = stream.read_to_end(vec![]).await.unwrap();
     println!("{}", String::from_utf8_lossy(&res));
+    stream.shutdown().await.unwrap();
 }
 
 #[cfg(feature = "native-tls")]
