@@ -179,12 +179,12 @@ unsafe impl<S: AsFd> OpCode for PathStat<S> {
 
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let this = self.project();
-        let mut flags = libc::AT_EMPTY_PATH;
-        if !*this.follow_symlink {
-            flags |= libc::AT_SYMLINK_NOFOLLOW;
-        }
         #[cfg(gnulinux)]
         let res = {
+            let mut flags = libc::AT_EMPTY_PATH;
+            if !*this.follow_symlink {
+                flags |= libc::AT_SYMLINK_NOFOLLOW;
+            }
             let mut s: libc::statx = unsafe { std::mem::zeroed() };
             let res = syscall!(libc::statx(
                 this.dirfd.as_fd().as_raw_fd(),
@@ -196,13 +196,23 @@ unsafe impl<S: AsFd> OpCode for PathStat<S> {
             *this.stat = statx_to_stat(s);
             res
         };
+        // Some platforms don't support `AT_EMPTY_PATH`, so we have to use `fstat` when
+        // the path is empty.
         #[cfg(not(gnulinux))]
-        let res = syscall!(libc::fstatat(
-            this.dirfd.as_fd().as_raw_fd(),
-            this.path.as_ptr(),
-            this.stat,
-            flags
-        ))?;
+        let res = if this.path.is_empty() {
+            syscall!(libc::fstat(this.dirfd.as_fd().as_raw_fd(), this.stat))?
+        } else {
+            syscall!(libc::fstatat(
+                this.dirfd.as_fd().as_raw_fd(),
+                this.path.as_ptr(),
+                this.stat,
+                if !*this.follow_symlink {
+                    libc::AT_SYMLINK_NOFOLLOW
+                } else {
+                    0
+                }
+            ))?
+        };
         Poll::Ready(Ok(res as _))
     }
 }
