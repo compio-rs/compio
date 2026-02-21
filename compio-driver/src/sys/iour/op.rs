@@ -61,9 +61,9 @@ unsafe impl<
     }
 }
 
-unsafe impl OpCode for OpenFile {
+unsafe impl<S: AsFd> OpCode for OpenFile<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        opcode::OpenAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())
+        opcode::OpenAt::new(Fd(self.dirfd.as_fd().as_raw_fd()), self.path.as_ptr())
             .flags(self.flags | libc::O_CLOEXEC)
             .mode(self.mode)
             .build()
@@ -364,9 +364,9 @@ unsafe impl<S: AsFd> OpCode for Sync<S> {
     }
 }
 
-unsafe impl OpCode for Unlink {
+unsafe impl<S: AsFd> OpCode for Unlink<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        opcode::UnlinkAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())
+        opcode::UnlinkAt::new(Fd(self.dirfd.as_fd().as_raw_fd()), self.path.as_ptr())
             .flags(if self.dir { libc::AT_REMOVEDIR } else { 0 })
             .build()
             .into()
@@ -377,9 +377,9 @@ unsafe impl OpCode for Unlink {
     }
 }
 
-unsafe impl OpCode for CreateDir {
+unsafe impl<S: AsFd> OpCode for CreateDir<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        opcode::MkDirAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())
+        opcode::MkDirAt::new(Fd(self.dirfd.as_fd().as_raw_fd()), self.path.as_ptr())
             .mode(self.mode)
             .build()
             .into()
@@ -390,12 +390,12 @@ unsafe impl OpCode for CreateDir {
     }
 }
 
-unsafe impl OpCode for Rename {
+unsafe impl<S1: AsFd, S2: AsFd> OpCode for Rename<S1, S2> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::RenameAt::new(
-            Fd(libc::AT_FDCWD),
+            Fd(self.old_dirfd.as_fd().as_raw_fd()),
             self.old_path.as_ptr(),
-            Fd(libc::AT_FDCWD),
+            Fd(self.new_dirfd.as_fd().as_raw_fd()),
             self.new_path.as_ptr(),
         )
         .build()
@@ -407,10 +407,10 @@ unsafe impl OpCode for Rename {
     }
 }
 
-unsafe impl OpCode for Symlink {
+unsafe impl<S: AsFd> OpCode for Symlink<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::SymlinkAt::new(
-            Fd(libc::AT_FDCWD),
+            Fd(self.dirfd.as_fd().as_raw_fd()),
             self.source.as_ptr(),
             self.target.as_ptr(),
         )
@@ -423,12 +423,12 @@ unsafe impl OpCode for Symlink {
     }
 }
 
-unsafe impl OpCode for HardLink {
+unsafe impl<S1: AsFd, S2: AsFd> OpCode for HardLink<S1, S2> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::LinkAt::new(
-            Fd(libc::AT_FDCWD),
+            Fd(self.source_dirfd.as_fd().as_raw_fd()),
             self.source.as_ptr(),
-            Fd(libc::AT_FDCWD),
+            Fd(self.target_dirfd.as_fd().as_raw_fd()),
             self.target.as_ptr(),
         )
         .build()

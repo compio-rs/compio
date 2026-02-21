@@ -3,15 +3,15 @@ use std::{
     io,
     marker::PhantomPinned,
     net::Shutdown,
-    os::fd::{AsFd, AsRawFd, OwnedFd},
+    os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd},
     pin::Pin,
 };
 
 use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 #[cfg(not(gnulinux))]
-use libc::open;
+use libc::openat;
 #[cfg(gnulinux)]
-use libc::open64 as open;
+use libc::openat64 as openat;
 #[cfg(not(any(
     all(target_os = "linux", not(target_env = "musl")),
     target_os = "android",
@@ -31,21 +31,44 @@ use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
 use crate::{op::*, sys::aio::*, sys_slice::*, syscall};
 
+/// A special file descriptor that always refers to the current working
+/// directory. It represents [`AT_FDCWD`](libc::AT_FDCWD) in libc.
+pub struct CurrentDir;
+
+impl AsRawFd for CurrentDir {
+    fn as_raw_fd(&self) -> RawFd {
+        libc::AT_FDCWD
+    }
+}
+
+impl AsFd for CurrentDir {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        unsafe { BorrowedFd::borrow_raw(libc::AT_FDCWD) }
+    }
+}
+
 /// Open or create a file with flags and mode.
-pub struct OpenFile {
+pub struct OpenFile<S: AsFd> {
+    pub(crate) dirfd: S,
     pub(crate) path: CString,
     pub(crate) flags: i32,
     pub(crate) mode: libc::mode_t,
 }
 
-impl OpenFile {
+impl<S: AsFd> OpenFile<S> {
     /// Create [`OpenFile`].
-    pub fn new(path: CString, flags: i32, mode: libc::mode_t) -> Self {
-        Self { path, flags, mode }
+    pub fn new(dirfd: S, path: CString, flags: i32, mode: libc::mode_t) -> Self {
+        Self {
+            dirfd,
+            path,
+            flags,
+            mode,
+        }
     }
 
     pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
-        Ok(syscall!(open(
+        Ok(syscall!(openat(
+            self.dirfd.as_fd().as_raw_fd(),
             self.path.as_ptr(),
             self.flags | libc::O_CLOEXEC,
             self.mode as libc::c_int
@@ -311,91 +334,131 @@ impl<T: IoVectoredBuf, S> IntoInner for WriteVectored<T, S> {
 }
 
 /// Remove file or directory.
-pub struct Unlink {
+pub struct Unlink<S: AsFd> {
+    pub(crate) dirfd: S,
     pub(crate) path: CString,
     pub(crate) dir: bool,
 }
 
-impl Unlink {
+impl<S: AsFd> Unlink<S> {
     /// Create [`Unlink`].
-    pub fn new(path: CString, dir: bool) -> Self {
-        Self { path, dir }
+    pub fn new(dirfd: S, path: CString, dir: bool) -> Self {
+        Self { dirfd, path, dir }
     }
 
     pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
-        if self.dir {
-            Ok(syscall!(libc::rmdir(self.path.as_ptr()))? as _)
-        } else {
-            Ok(syscall!(libc::unlink(self.path.as_ptr()))? as _)
-        }
+        Ok(syscall!(libc::unlinkat(
+            self.dirfd.as_fd().as_raw_fd(),
+            self.path.as_ptr(),
+            if self.dir { libc::AT_REMOVEDIR } else { 0 }
+        ))? as _)
     }
 }
 
 /// Create a directory.
-pub struct CreateDir {
+pub struct CreateDir<S: AsFd> {
+    pub(crate) dirfd: S,
     pub(crate) path: CString,
     pub(crate) mode: libc::mode_t,
 }
 
-impl CreateDir {
+impl<S: AsFd> CreateDir<S> {
     /// Create [`CreateDir`].
-    pub fn new(path: CString, mode: libc::mode_t) -> Self {
-        Self { path, mode }
+    pub fn new(dirfd: S, path: CString, mode: libc::mode_t) -> Self {
+        Self { dirfd, path, mode }
     }
 
     pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
-        Ok(syscall!(libc::mkdir(self.path.as_ptr(), self.mode))? as _)
+        Ok(syscall!(libc::mkdirat(
+            self.dirfd.as_fd().as_raw_fd(),
+            self.path.as_ptr(),
+            self.mode
+        ))? as _)
     }
 }
 
 /// Rename a file or directory.
-pub struct Rename {
+pub struct Rename<S1: AsFd, S2: AsFd> {
+    pub(crate) old_dirfd: S1,
     pub(crate) old_path: CString,
+    pub(crate) new_dirfd: S2,
     pub(crate) new_path: CString,
 }
 
-impl Rename {
+impl<S1: AsFd, S2: AsFd> Rename<S1, S2> {
     /// Create [`Rename`].
-    pub fn new(old_path: CString, new_path: CString) -> Self {
-        Self { old_path, new_path }
+    pub fn new(old_dirfd: S1, old_path: CString, new_dirfd: S2, new_path: CString) -> Self {
+        Self {
+            old_dirfd,
+            old_path,
+            new_dirfd,
+            new_path,
+        }
     }
 
     pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
-        Ok(syscall!(libc::rename(self.old_path.as_ptr(), self.new_path.as_ptr()))? as _)
+        Ok(syscall!(libc::renameat(
+            self.old_dirfd.as_fd().as_raw_fd(),
+            self.old_path.as_ptr(),
+            self.new_dirfd.as_fd().as_raw_fd(),
+            self.new_path.as_ptr()
+        ))? as _)
     }
 }
 
 /// Create a symlink.
-pub struct Symlink {
+pub struct Symlink<S: AsFd> {
     pub(crate) source: CString,
+    pub(crate) dirfd: S,
     pub(crate) target: CString,
 }
 
-impl Symlink {
+impl<S: AsFd> Symlink<S> {
     /// Create [`Symlink`]. `target` is a symlink to `source`.
-    pub fn new(source: CString, target: CString) -> Self {
-        Self { source, target }
+    pub fn new(source: CString, dirfd: S, target: CString) -> Self {
+        Self {
+            source,
+            dirfd,
+            target,
+        }
     }
 
     pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
-        Ok(syscall!(libc::symlink(self.source.as_ptr(), self.target.as_ptr()))? as _)
+        Ok(syscall!(libc::symlinkat(
+            self.source.as_ptr(),
+            self.dirfd.as_fd().as_raw_fd(),
+            self.target.as_ptr()
+        ))? as _)
     }
 }
 
 /// Create a hard link.
-pub struct HardLink {
+pub struct HardLink<S1: AsFd, S2: AsFd> {
+    pub(crate) source_dirfd: S1,
     pub(crate) source: CString,
+    pub(crate) target_dirfd: S2,
     pub(crate) target: CString,
 }
 
-impl HardLink {
+impl<S1: AsFd, S2: AsFd> HardLink<S1, S2> {
     /// Create [`HardLink`]. `target` is a hard link to `source`.
-    pub fn new(source: CString, target: CString) -> Self {
-        Self { source, target }
+    pub fn new(source_dirfd: S1, source: CString, target_dirfd: S2, target: CString) -> Self {
+        Self {
+            source_dirfd,
+            source,
+            target_dirfd,
+            target,
+        }
     }
 
     pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
-        Ok(syscall!(libc::link(self.source.as_ptr(), self.target.as_ptr()))? as _)
+        Ok(syscall!(libc::linkat(
+            self.source_dirfd.as_fd().as_raw_fd(),
+            self.source.as_ptr(),
+            self.target_dirfd.as_fd().as_raw_fd(),
+            self.target.as_ptr(),
+            0
+        ))? as _)
     }
 }
 

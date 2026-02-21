@@ -64,7 +64,7 @@ unsafe impl<
     }
 }
 
-unsafe impl OpCode for OpenFile {
+unsafe impl<S: AsFd> OpCode for OpenFile<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -518,7 +518,7 @@ unsafe impl<S: AsFd> OpCode for Sync<S> {
     }
 }
 
-unsafe impl OpCode for Unlink {
+unsafe impl<S: AsFd> OpCode for Unlink<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -528,7 +528,7 @@ unsafe impl OpCode for Unlink {
     }
 }
 
-unsafe impl OpCode for CreateDir {
+unsafe impl<S: AsFd> OpCode for CreateDir<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -538,7 +538,7 @@ unsafe impl OpCode for CreateDir {
     }
 }
 
-unsafe impl OpCode for Rename {
+unsafe impl<S1: AsFd, S2: AsFd> OpCode for Rename<S1, S2> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -548,7 +548,7 @@ unsafe impl OpCode for Rename {
     }
 }
 
-unsafe impl OpCode for Symlink {
+unsafe impl<S: AsFd> OpCode for Symlink<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -558,7 +558,7 @@ unsafe impl OpCode for Symlink {
     }
 }
 
-unsafe impl OpCode for HardLink {
+unsafe impl<S1: AsFd, S2: AsFd> OpCode for HardLink<S1, S2> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
