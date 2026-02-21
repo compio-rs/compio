@@ -24,7 +24,7 @@ impl<
 {
 }
 
-impl OpCode for OpenFile {}
+impl<S: AsFd> OpCode for OpenFile<S> {}
 
 impl OpCode for CloseFile {}
 
@@ -53,24 +53,26 @@ impl<S> IntoInner for FileStat<S> {
 }
 
 /// Get metadata from path.
-pub struct PathStat {
+pub struct PathStat<S: AsFd> {
+    pub(crate) dirfd: S,
     pub(crate) path: CString,
     pub(crate) follow_symlink: bool,
 }
 
-impl PathStat {
+impl<S: AsFd> PathStat<S> {
     /// Create [`PathStat`].
-    pub fn new(path: CString, follow_symlink: bool) -> Self {
+    pub fn new(dirfd: S, path: CString, follow_symlink: bool) -> Self {
         Self {
+            dirfd,
             path,
             follow_symlink,
         }
     }
 }
 
-impl OpCode for PathStat {}
+impl<S: AsFd> OpCode for PathStat<S> {}
 
-impl IntoInner for PathStat {
+impl<S: AsFd> IntoInner for PathStat<S> {
     type Inner = Stat;
 
     fn into_inner(self) -> Self::Inner {
@@ -96,15 +98,15 @@ impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {}
 
 impl<S: AsFd> OpCode for Sync<S> {}
 
-impl OpCode for Unlink {}
+impl<S: AsFd> OpCode for Unlink<S> {}
 
-impl OpCode for CreateDir {}
+impl<S: AsFd> OpCode for CreateDir<S> {}
 
-impl OpCode for Rename {}
+impl<S1: AsFd, S2: AsFd> OpCode for Rename<S1, S2> {}
 
-impl OpCode for Symlink {}
+impl<S: AsFd> OpCode for Symlink<S> {}
 
-impl OpCode for HardLink {}
+impl<S1: AsFd, S2: AsFd> OpCode for HardLink<S1, S2> {}
 
 impl OpCode for CreateSocket {}
 

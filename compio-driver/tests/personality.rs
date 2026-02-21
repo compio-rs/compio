@@ -1,7 +1,10 @@
 #![cfg(io_uring)]
 
 use compio_buf::BufResult;
-use compio_driver::{op::ReadAt, *};
+use compio_driver::{
+    op::{CurrentDir, ReadAt},
+    *,
+};
 
 fn push_and_wait<O: OpCode + 'static>(
     driver: &mut Proactor,
@@ -28,6 +31,7 @@ fn open_file(driver: &mut Proactor, personality: u16) -> OwnedFd {
     use compio_driver::op::OpenFile;
 
     let op = OpenFile::new(
+        CurrentDir,
         CString::new("Cargo.toml").unwrap(),
         libc::O_CLOEXEC | libc::O_RDONLY,
         0o666,

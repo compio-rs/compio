@@ -34,9 +34,10 @@ fn open_file(driver: &mut Proactor) -> OwnedFd {
 fn open_file(driver: &mut Proactor) -> OwnedFd {
     use std::{ffi::CString, os::fd::FromRawFd};
 
-    use compio_driver::op::OpenFile;
+    use compio_driver::op::{CurrentDir, OpenFile};
 
     let op = OpenFile::new(
+        CurrentDir,
         CString::new("Cargo.toml").unwrap(),
         libc::O_CLOEXEC | libc::O_RDONLY,
         0o666,

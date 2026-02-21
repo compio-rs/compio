@@ -111,7 +111,7 @@ op!(<T: IoBuf, S: AsFd> SendTo(fd: S, buffer: T, addr: SockAddr, flags: i32));
 op!(<T: IoVectoredBufMut, S: AsFd> RecvFromVectored(fd: S, buffer: T, flags: i32));
 op!(<T: IoVectoredBuf, S: AsFd> SendToVectored(fd: S, buffer: T, addr: SockAddr, flags: i32));
 op!(<S: AsFd> FileStat(fd: S));
-op!(<> PathStat(path: CString, follow_symlink: bool));
+op!(<S: AsFd> PathStat(dirfd: S, path: CString, follow_symlink: bool));
 
 macro_rules! mop {
     (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? ) with $pool:ident) => {
