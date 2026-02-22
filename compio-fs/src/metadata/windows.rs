@@ -52,10 +52,11 @@ pub async fn symlink_metadata_at(dir: &File, path: impl AsRef<Path>) -> io::Resu
 pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::Result<()> {
     let path = path.as_ref().to_path_buf();
     compio_runtime::spawn_blocking(move || {
-        let f = std::fs::File::open(path)?;
-        let mut p = f.metadata()?.permissions();
+        // Preserve existing permissions, only updating the readonly flag, while
+        // using std::fs::set_permissions so both files and directories work.
+        let mut p = std::fs::metadata(&path)?.permissions();
         p.set_readonly(perm.readonly());
-        f.set_permissions(p)
+        std::fs::set_permissions(&path, p)
     })
     .await
     .unwrap_or_else(|e| resume_unwind(e))

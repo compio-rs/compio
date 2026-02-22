@@ -160,7 +160,7 @@ impl Dir {
     }
 
     /// Rename a file or directory to a new name, replacing the original file if
-    /// to already exists.
+    /// it already exists.
     pub async fn rename(
         &self,
         from: impl AsRef<Path>,
