@@ -68,8 +68,11 @@ pub struct Metadata {
     last_access_time: u64,
     last_write_time: u64,
     file_size: u64,
+    #[cfg(feature = "windows_by_handle")]
     volume_serial_number: Option<u32>,
+    #[cfg(feature = "windows_by_handle")]
     number_of_links: Option<u32>,
+    #[cfg(feature = "windows_by_handle")]
     file_index: Option<u64>,
     file_type: FileType,
     permissions: Permissions,
@@ -131,14 +134,17 @@ impl Metadata {
         self.last_write_time
     }
 
+    #[cfg(feature = "windows_by_handle")]
     pub fn volume_serial_number(&self) -> Option<u32> {
         self.volume_serial_number
     }
 
+    #[cfg(feature = "windows_by_handle")]
     pub fn number_of_links(&self) -> Option<u32> {
         self.number_of_links
     }
 
+    #[cfg(feature = "windows_by_handle")]
     pub fn file_index(&self) -> Option<u64> {
         self.file_index
     }
@@ -152,8 +158,11 @@ impl From<std::fs::Metadata> for Metadata {
             last_access_time: value.last_access_time(),
             last_write_time: value.last_write_time(),
             file_size: value.file_size(),
+            #[cfg(feature = "windows_by_handle")]
             volume_serial_number: value.volume_serial_number(),
+            #[cfg(feature = "windows_by_handle")]
             number_of_links: value.number_of_links(),
+            #[cfg(feature = "windows_by_handle")]
             file_index: value.file_index(),
             file_type: value.file_type().into(),
             permissions: value.permissions().into(),
@@ -180,8 +189,11 @@ impl From<cap_primitives::fs::Metadata> for Metadata {
             last_access_time: value.last_access_time(),
             last_write_time: value.last_write_time(),
             file_size: value.file_size(),
+            #[cfg(feature = "windows_by_handle")]
             volume_serial_number: value.volume_serial_number(),
+            #[cfg(feature = "windows_by_handle")]
             number_of_links: value.number_of_links(),
+            #[cfg(feature = "windows_by_handle")]
             file_index: value.file_index(),
             file_type: value.file_type().into(),
             permissions: value.permissions().into(),
