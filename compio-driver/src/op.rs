@@ -234,6 +234,38 @@ impl<S, F, D> IntoInner for AsyncifyFd<S, F, D> {
     }
 }
 
+pin_project! {
+   /// Spawn a blocking function with two file descriptors in the thread pool.
+    pub struct AsyncifyFd2<S1, S2, F, D> {
+        pub(crate) fd1: SharedFd<S1>,
+        pub(crate) fd2: SharedFd<S2>,
+        pub(crate) f: Option<F>,
+        pub(crate) data: Option<D>,
+        _p: PhantomPinned,
+    }
+}
+
+impl<S1, S2, F, D> AsyncifyFd2<S1, S2, F, D> {
+    /// Create [`AsyncifyFd2`].
+    pub fn new(fd1: SharedFd<S1>, fd2: SharedFd<S2>, f: F) -> Self {
+        Self {
+            fd1,
+            fd2,
+            f: Some(f),
+            data: None,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+impl<S1, S2, F, D> IntoInner for AsyncifyFd2<S1, S2, F, D> {
+    type Inner = D;
+
+    fn into_inner(mut self) -> Self::Inner {
+        self.data.take().expect("the data should not be None")
+    }
+}
+
 /// Close the file fd.
 pub struct CloseFile {
     pub(crate) fd: ManuallyDrop<OwnedFd>,

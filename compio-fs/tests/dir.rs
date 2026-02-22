@@ -17,3 +17,14 @@ async fn read_file() {
     assert!(meta.is_file());
     assert_eq!(contents.len() as u64, meta.len());
 }
+
+#[compio_macros::test]
+async fn rename() {
+    let dir = Dir::open(".").await.unwrap();
+    dir.create_dir("test").await.unwrap();
+    dir.rename("test", &dir, "test2").await.unwrap();
+    assert!(dir.open_dir("test").await.is_err());
+    let test2 = dir.open_dir("test2").await.unwrap();
+    test2.remove_dir(".").await.unwrap();
+    assert!(dir.open_dir("test2").await.is_err());
+}

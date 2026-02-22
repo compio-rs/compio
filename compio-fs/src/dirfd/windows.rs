@@ -66,7 +66,14 @@ impl Dir {
         target_dir: &Self,
         target: impl AsRef<Path>,
     ) -> io::Result<()> {
-        todo!()
+        let source = source.as_ref().to_path_buf();
+        let target = target.as_ref().to_path_buf();
+        crate::spawn_blocking_with2(
+            self.to_shared_fd(),
+            target_dir.to_shared_fd(),
+            move |sdir, tdir| cap_primitives::fs::hard_link(sdir, &source, tdir, &target),
+        )
+        .await
     }
 
     pub async fn rename(
@@ -75,7 +82,14 @@ impl Dir {
         to_dir: &Self,
         to: impl AsRef<Path>,
     ) -> io::Result<()> {
-        todo!()
+        let from = from.as_ref().to_path_buf();
+        let to = to.as_ref().to_path_buf();
+        crate::spawn_blocking_with2(
+            self.to_shared_fd(),
+            to_dir.to_shared_fd(),
+            move |fdir, tdir| cap_primitives::fs::rename(fdir, &from, tdir, &to),
+        )
+        .await
     }
 
     pub async fn remove_file(&self, path: impl AsRef<Path>) -> io::Result<()> {

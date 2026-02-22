@@ -70,3 +70,20 @@ pub(crate) async fn spawn_blocking_with<T: 'static, R: Send + 'static>(
     res?;
     Ok(meta.into_inner().expect("result should be present"))
 }
+
+#[cfg(windows)]
+pub(crate) async fn spawn_blocking_with2<T1: 'static, T2: 'static, R: Send + 'static>(
+    fd1: SharedFd<T1>,
+    fd2: SharedFd<T2>,
+    f: impl FnOnce(&T1, &T2) -> std::io::Result<R> + Send + 'static,
+) -> std::io::Result<R> {
+    use compio_driver::op::AsyncifyFd2;
+
+    let op = AsyncifyFd2::new(fd1, fd2, move |fd1: &T1, fd2: &T2| match f(fd1, fd2) {
+        Ok(res) => BufResult(Ok(0), Some(res)),
+        Err(e) => BufResult(Err(e), None),
+    });
+    let BufResult(res, meta) = compio_runtime::submit(op).await;
+    res?;
+    Ok(meta.into_inner().expect("result should be present"))
+}

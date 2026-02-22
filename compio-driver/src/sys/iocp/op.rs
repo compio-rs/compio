@@ -154,6 +154,30 @@ unsafe impl<
     }
 }
 
+unsafe impl<
+    S1,
+    S2,
+    D: std::marker::Send + 'static,
+    F: (FnOnce(&S1, &S2) -> BufResult<usize, D>) + std::marker::Send + 'static,
+> OpCode for AsyncifyFd2<S1, S2, F, D>
+{
+    fn op_type(&self) -> OpType {
+        OpType::Blocking
+    }
+
+    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        // SAFETY: self won't be moved
+        let this = self.project();
+        let f = this
+            .f
+            .take()
+            .expect("the operate method could only be called once");
+        let BufResult(res, data) = f(this.fd1, this.fd2);
+        *this.data = Some(data);
+        Poll::Ready(res)
+    }
+}
+
 unsafe impl OpCode for CloseFile {
     fn op_type(&self) -> OpType {
         OpType::Blocking
