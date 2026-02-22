@@ -55,6 +55,18 @@ pub(crate) fn path_string(path: impl AsRef<std::path::Path>) -> std::io::Result<
     })
 }
 
+#[cfg(unix)]
+pub(crate) fn check_relative(p: &std::path::Path) -> std::io::Result<()> {
+    if p.is_absolute() {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "path must be relative",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 use compio_buf::{BufResult, IntoInner};
 use compio_driver::{SharedFd, op::AsyncifyFd};
 

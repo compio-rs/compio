@@ -70,6 +70,11 @@ impl Dir {
         target_dir: &Self,
         target: impl AsRef<Path>,
     ) -> io::Result<()> {
+        let source = source.as_ref();
+        crate::check_relative(source)?;
+        let target = target.as_ref();
+        crate::check_relative(target)?;
+
         let source = path_string(source)?;
         let target = path_string(target)?;
         let op = HardLink::new(
@@ -87,6 +92,9 @@ impl Dir {
         original: impl AsRef<Path>,
         link: impl AsRef<Path>,
     ) -> io::Result<()> {
+        let link = link.as_ref();
+        crate::check_relative(link)?;
+
         let original = path_string(original)?;
         let link = path_string(link)?;
         let op = Symlink::new(original, self.inner.to_shared_fd(), link);
@@ -100,6 +108,11 @@ impl Dir {
         to_dir: &Self,
         to: impl AsRef<Path>,
     ) -> io::Result<()> {
+        let from = from.as_ref();
+        crate::check_relative(from)?;
+        let to = to.as_ref();
+        crate::check_relative(to)?;
+
         let from = path_string(from)?;
         let to = path_string(to)?;
         let op = Rename::new(
@@ -113,6 +126,9 @@ impl Dir {
     }
 
     pub async fn remove_file(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        let path = path.as_ref();
+        crate::check_relative(path)?;
+
         let path = path_string(path)?;
         let op = Unlink::new(self.inner.to_shared_fd(), path, false);
         compio_runtime::submit(op).await.0?;
@@ -120,6 +136,9 @@ impl Dir {
     }
 
     pub async fn remove_dir(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        let path = path.as_ref();
+        crate::check_relative(path)?;
+
         let path = path_string(path)?;
         let op = Unlink::new(self.inner.to_shared_fd(), path, true);
         compio_runtime::submit(op).await.0?;

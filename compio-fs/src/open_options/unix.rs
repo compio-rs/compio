@@ -99,6 +99,8 @@ impl OpenOptions {
     }
 
     pub async fn open_at(&self, dir: &File, path: impl AsRef<Path>) -> io::Result<File> {
+        let path = path.as_ref();
+        crate::check_relative(path)?;
         self.open_impl(dir.to_shared_fd(), path).await
     }
 }

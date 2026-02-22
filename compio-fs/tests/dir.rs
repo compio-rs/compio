@@ -29,3 +29,10 @@ async fn rename() {
     dir.remove_dir("test2").await.unwrap();
     assert!(dir.open_dir("test2").await.is_err());
 }
+
+#[compio_macros::test]
+#[should_panic]
+async fn test_absolute() {
+    let dir = Dir::open(".").await.unwrap();
+    dir.open_dir("/usr").await.unwrap();
+}
