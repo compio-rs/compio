@@ -140,6 +140,18 @@ impl File {
     }
 
     /// Changes the permissions on the underlying file.
+    #[cfg(windows)]
+    pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
+        crate::spawn_blocking_with(self.to_shared_fd(), move |file| {
+            let mut p = file.metadata()?.permissions();
+            p.set_readonly(perm.readonly());
+            file.set_permissions(p)
+        })
+        .await
+    }
+
+    /// Changes the permissions on the underlying file.
+    #[cfg(unix)]
     pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
         crate::spawn_blocking_with(self.to_shared_fd(), |file| file.set_permissions(perm.0)).await
     }

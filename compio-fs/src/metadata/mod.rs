@@ -6,8 +6,6 @@ mod sys;
 #[path = "windows.rs"]
 mod sys;
 
-#[cfg(windows)]
-use std::os::windows::fs::{FileTypeExt, MetadataExt};
 use std::{io, path::Path, time::SystemTime};
 
 #[cfg(unix)]
@@ -119,7 +117,7 @@ impl Metadata {
 impl Metadata {
     /// Create [`Metadata`] from [`std::fs::Metadata`].
     pub fn from_std(m: std::fs::Metadata) -> Self {
-        Self(m)
+        Self(sys::Metadata::from(m))
     }
 
     /// Returns the value of the `dwFileAttributes` field of this metadata.

@@ -1,7 +1,7 @@
 use std::{io, path::Path};
 
 use compio_driver::ToSharedFd;
-use windows_sys::Win32::Storage::FileSystem::{FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE};
+use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_BACKUP_SEMANTICS;
 
 use crate::{DirBuilder, File, Metadata, OpenOptions, metadata_at, symlink_metadata_at};
 
