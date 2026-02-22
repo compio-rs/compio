@@ -47,7 +47,7 @@ pub(crate) struct Driver(());
 
 impl Driver {
     pub fn new(_: &ProactorBuilder) -> io::Result<Self> {
-        Err(stub_error())
+        Ok(Self(()))
     }
 
     pub fn driver_type(&self) -> DriverType {
@@ -55,12 +55,10 @@ impl Driver {
     }
 
     pub fn attach(&mut self, _: RawFd) -> io::Result<()> {
-        Err(stub_error())
+        Ok(())
     }
 
-    pub fn cancel(&mut self, _: ErasedKey) {
-        stub_unimpl()
-    }
+    pub fn cancel(&mut self, _: ErasedKey) {}
 
     pub fn default_extra(&self) -> Extra {
         Extra::new()
@@ -71,7 +69,7 @@ impl Driver {
     }
 
     pub fn poll(&mut self, _: Option<Duration>) -> io::Result<()> {
-        Err(stub_error())
+        Ok(())
     }
 
     pub fn waker(&self) -> Waker {
@@ -83,7 +81,7 @@ impl Driver {
     }
 
     pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
-        Err(stub_error())
+        Ok(())
     }
 }
 
