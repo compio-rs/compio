@@ -4,7 +4,7 @@ use std::{
     mem::{ManuallyDrop, MaybeUninit},
 };
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, buf_try};
 #[cfg(unix)]
 use compio_driver::op::CreateSocket;
 use compio_driver::{
@@ -59,17 +59,14 @@ impl Socket {
 
     #[cfg(unix)]
     pub async fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
-        use std::os::fd::FromRawFd;
-
         let op = CreateSocket::new(
             domain.into(),
             ty.into(),
             protocol.map(|p| p.into()).unwrap_or_default(),
         );
-        let BufResult(res, _) = compio_runtime::submit(op).await;
-        let socket = unsafe { Socket2::from_raw_fd(res? as _) };
+        let (_, op) = buf_try!(@try compio_runtime::submit(op).await);
 
-        Self::from_socket2(socket)
+        Self::from_socket2(op.into_inner())
     }
 
     pub async fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
@@ -88,27 +85,17 @@ impl Socket {
 
     pub async fn connect_async(&self, addr: &SockAddr) -> io::Result<()> {
         let op = Connect::new(self.to_shared_fd(), addr.clone());
-        let BufResult(res, _op) = compio_runtime::submit(op).await;
+        let (_, _op) = buf_try!(@try compio_runtime::submit(op).await);
         #[cfg(windows)]
-        {
-            res?;
-            _op.update_context()?;
-            Ok(())
-        }
-        #[cfg(unix)]
-        {
-            res.map(|_| ())
-        }
+        _op.update_context()?;
+        Ok(())
     }
 
     #[cfg(unix)]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
-        use std::os::fd::FromRawFd;
-
         let op = Accept::new(self.to_shared_fd());
-        let BufResult(res, op) = compio_runtime::submit(op).await;
-        let addr = op.into_addr();
-        let accept_sock = unsafe { Socket2::from_raw_fd(res? as _) };
+        let (_, op) = buf_try!(@try compio_runtime::submit(op).await);
+        let (accept_sock, addr) = op.into_addr();
         let accept_sock = Self::from_socket2(accept_sock)?;
         Ok((accept_sock, addr))
     }
@@ -126,8 +113,7 @@ impl Socket {
                 .await
                 .unwrap_or_else(|e| resume_unwind(e))?;
         let op = Accept::new(self.to_shared_fd(), accept_sock);
-        let BufResult(res, op) = compio_runtime::submit(op).await;
-        res?;
+        let (_, op) = buf_try!(@try compio_runtime::submit(op).await);
         op.update_context()?;
         let (accept_sock, addr) = op.into_addr()?;
         Ok((Self::from_socket2(accept_sock)?, addr))

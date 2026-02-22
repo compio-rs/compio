@@ -12,7 +12,7 @@ use io_uring::{
     types::{Fd, FsyncFlags},
 };
 use pin_project_lite::pin_project;
-use socket2::{SockAddr, SockAddrStorage, socklen_t};
+use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
 use super::OpCode;
 pub use crate::sys::unix_op::*;
@@ -72,6 +72,12 @@ unsafe impl<S: AsFd> OpCode for OpenFile<S> {
 
     fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
         self.call()
+    }
+
+    unsafe fn set_result(self: Pin<&mut Self>, fd: usize) {
+        // SAFETY: fd is a valid fd returned from kernel
+        let fd = unsafe { OwnedFd::from_raw_fd(fd as _) };
+        *self.project().opened_fd = Some(fd);
     }
 }
 
@@ -470,6 +476,12 @@ unsafe impl OpCode for CreateSocket {
             self.protocol
         ))? as _)
     }
+
+    unsafe fn set_result(self: Pin<&mut Self>, fd: usize) {
+        // SAFETY: fd is a valid fd returned from kernel
+        let fd = unsafe { Socket2::from_raw_fd(fd as _) };
+        *self.project().opened_fd = Some(fd);
+    }
 }
 
 unsafe impl<S: AsFd> OpCode for ShutdownSocket<S> {
@@ -511,7 +523,7 @@ unsafe impl<S: AsFd> OpCode for Accept<S> {
 
     unsafe fn set_result(self: Pin<&mut Self>, fd: usize) {
         // SAFETY: fd is a valid fd returned from kernel
-        let fd = unsafe { OwnedFd::from_raw_fd(fd as _) };
+        let fd = unsafe { Socket2::from_raw_fd(fd as _) };
         *self.project().accepted_fd = Some(fd);
     }
 }

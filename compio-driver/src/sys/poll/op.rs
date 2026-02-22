@@ -4,7 +4,7 @@ use std::{
     ffi::CString,
     io,
     marker::PhantomPinned,
-    os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd},
+    os::fd::{AsRawFd, FromRawFd, OwnedFd},
     pin::Pin,
     task::Poll,
 };
@@ -69,8 +69,10 @@ unsafe impl<S: AsFd> OpCode for OpenFile<S> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(self.call())
+    fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        let fd = self.as_mut().call()?;
+        *self.project().opened_fd = Some(unsafe { OwnedFd::from_raw_fd(fd as _) });
+        Poll::Ready(Ok(fd))
     }
 }
 
@@ -638,7 +640,8 @@ impl CreateSocket {
             target_os = "cygwin",
         )))]
         socket.set_nonblocking(true)?;
-        Ok(socket.into_raw_fd())
+        *self.project().opened_fd = Some(socket);
+        Ok(fd)
     }
 }
 
@@ -736,7 +739,7 @@ unsafe impl<S: AsFd> OpCode for Accept<S> {
         let res = syscall!(break self.as_mut().call());
         if let Poll::Ready(Ok(fd)) = res {
             // Safety: we own the fd returned by accept/accept4
-            let fd = unsafe { OwnedFd::from_raw_fd(fd as _) };
+            let fd = unsafe { Socket2::from_raw_fd(fd as _) };
             *self.project().accepted_fd = Some(fd);
         }
         res
