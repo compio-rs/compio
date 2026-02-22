@@ -112,6 +112,10 @@ impl Dir {
     ///
     /// The `original` argument provides the target of the symlink. The `link`
     /// argument provides the name of the created symlink.
+    ///
+    /// Despite the argument ordering, `original` is not resolved relative to
+    /// self here. `link` is resolved relative to self, and `original` is
+    /// not resolved within this function.
     #[cfg(unix)]
     pub async fn symlink(
         &self,
@@ -119,6 +123,40 @@ impl Dir {
         link: impl AsRef<Path>,
     ) -> io::Result<()> {
         self.inner.symlink(original, link).await
+    }
+
+    /// Creates a new file symbolic link on a filesystem.
+    ///
+    /// The `original` argument provides the target of the symlink. The `link`
+    /// argument provides the name of the created symlink.
+    ///
+    /// Despite the argument ordering, `original` is not resolved relative to
+    /// self here. `link` is resolved relative to self, and `original` is
+    /// not resolved within this function.
+    #[cfg(windows)]
+    pub async fn symlink_file(
+        &self,
+        original: impl AsRef<Path>,
+        link: impl AsRef<Path>,
+    ) -> io::Result<()> {
+        self.inner.symlink_file(original, link).await
+    }
+
+    /// Creates a new directory symlink on a filesystem.
+    ///
+    /// The `original` argument provides the target of the symlink. The `link`
+    /// argument provides the name of the created symlink.
+    ///
+    /// Despite the argument ordering, `original` is not resolved relative to
+    /// self here. `link` is resolved relative to self, and `original` is
+    /// not resolved within this function.
+    #[cfg(windows)]
+    pub async fn symlink_dir(
+        &self,
+        original: impl AsRef<Path>,
+        link: impl AsRef<Path>,
+    ) -> io::Result<()> {
+        self.inner.symlink_dir(original, link).await
     }
 
     /// Rename a file or directory to a new name, replacing the original file if

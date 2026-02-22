@@ -76,6 +76,32 @@ impl Dir {
         .await
     }
 
+    pub async fn symlink_file(
+        &self,
+        original: impl AsRef<Path>,
+        link: impl AsRef<Path>,
+    ) -> io::Result<()> {
+        let original = original.as_ref().to_path_buf();
+        let link = link.as_ref().to_path_buf();
+        crate::spawn_blocking_with(self.to_shared_fd(), move |dir| {
+            cap_primitives::fs::symlink_file(&original, dir, &link)
+        })
+        .await
+    }
+
+    pub async fn symlink_dir(
+        &self,
+        original: impl AsRef<Path>,
+        link: impl AsRef<Path>,
+    ) -> io::Result<()> {
+        let original = original.as_ref().to_path_buf();
+        let link = link.as_ref().to_path_buf();
+        crate::spawn_blocking_with(self.to_shared_fd(), move |dir| {
+            cap_primitives::fs::symlink_dir(&original, dir, &link)
+        })
+        .await
+    }
+
     pub async fn rename(
         &self,
         from: impl AsRef<Path>,
