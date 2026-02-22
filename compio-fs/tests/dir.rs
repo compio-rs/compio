@@ -25,6 +25,7 @@ async fn rename() {
     dir.rename("test", &dir, "test2").await.unwrap();
     assert!(dir.open_dir("test").await.is_err());
     let test2 = dir.open_dir("test2").await.unwrap();
-    test2.remove_dir(".").await.unwrap();
+    drop(test2);
+    dir.remove_dir("test2").await.unwrap();
     assert!(dir.open_dir("test2").await.is_err());
 }
