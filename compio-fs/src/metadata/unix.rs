@@ -8,13 +8,13 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner};
-use compio_driver::op::{PathStat, Stat};
+use compio_driver::op::{CurrentDir, PathStat, Stat};
 
 use crate::path_string;
 
 async fn metadata_impl(path: impl AsRef<Path>, follow_symlink: bool) -> io::Result<Metadata> {
     let path = path_string(path)?;
-    let op = PathStat::new(path, follow_symlink);
+    let op = PathStat::new(CurrentDir, path, follow_symlink);
     let BufResult(res, op) = compio_runtime::submit(op).await;
     res.map(|_| Metadata::from_stat(op.into_inner()))
 }

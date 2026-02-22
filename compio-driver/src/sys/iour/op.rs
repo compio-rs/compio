@@ -61,9 +61,9 @@ unsafe impl<
     }
 }
 
-unsafe impl OpCode for OpenFile {
+unsafe impl<S: AsFd> OpCode for OpenFile<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        opcode::OpenAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())
+        opcode::OpenAt::new(Fd(self.dirfd.as_fd().as_raw_fd()), self.path.as_ptr())
             .flags(self.flags | libc::O_CLOEXEC)
             .mode(self.mode)
             .build()
@@ -164,17 +164,21 @@ impl<S> IntoInner for FileStat<S> {
     }
 }
 
-/// Get metadata from path.
-pub struct PathStat {
-    pub(crate) path: CString,
-    pub(crate) stat: Statx,
-    pub(crate) follow_symlink: bool,
+pin_project! {
+    /// Get metadata from path.
+    pub struct PathStat<S: AsFd> {
+        pub(crate) dirfd: S,
+        pub(crate) path: CString,
+        pub(crate) stat: Statx,
+        pub(crate) follow_symlink: bool,
+    }
 }
 
-impl PathStat {
+impl<S: AsFd> PathStat<S> {
     /// Create [`PathStat`].
-    pub fn new(path: CString, follow_symlink: bool) -> Self {
+    pub fn new(dirfd: S, path: CString, follow_symlink: bool) -> Self {
         Self {
+            dirfd,
             path,
             stat: unsafe { std::mem::zeroed() },
             follow_symlink,
@@ -182,16 +186,17 @@ impl PathStat {
     }
 }
 
-unsafe impl OpCode for PathStat {
-    fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
+unsafe impl<S: AsFd> OpCode for PathStat<S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let this = self.project();
         let mut flags = libc::AT_EMPTY_PATH;
-        if !self.follow_symlink {
+        if !*this.follow_symlink {
             flags |= libc::AT_SYMLINK_NOFOLLOW;
         }
         opcode::Statx::new(
-            Fd(libc::AT_FDCWD),
-            self.path.as_ptr(),
-            std::ptr::addr_of_mut!(self.stat).cast(),
+            Fd(this.dirfd.as_fd().as_raw_fd()),
+            this.path.as_ptr(),
+            this.stat as *mut _ as _,
         )
         .flags(flags)
         .mask(statx_mask())
@@ -200,35 +205,42 @@ unsafe impl OpCode for PathStat {
     }
 
     #[cfg(gnulinux)]
-    fn call_blocking(mut self: Pin<&mut Self>) -> io::Result<usize> {
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        let this = self.project();
         let mut flags = libc::AT_EMPTY_PATH;
-        if !self.follow_symlink {
+        if !*this.follow_symlink {
             flags |= libc::AT_SYMLINK_NOFOLLOW;
         }
         let res = syscall!(libc::statx(
-            libc::AT_FDCWD,
-            self.path.as_ptr(),
+            this.dirfd.as_fd().as_raw_fd(),
+            this.path.as_ptr(),
             flags,
             statx_mask(),
-            std::ptr::addr_of_mut!(self.stat).cast()
+            this.stat
         ))?;
         Ok(res as _)
     }
 
     #[cfg(not(gnulinux))]
-    fn call_blocking(mut self: Pin<&mut Self>) -> io::Result<usize> {
+    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+        let this = self.project();
+        let mut flags = libc::AT_EMPTY_PATH;
+        if !*this.follow_symlink {
+            flags |= libc::AT_SYMLINK_NOFOLLOW;
+        }
         let mut stat = unsafe { std::mem::zeroed() };
-        let res = if self.follow_symlink {
-            syscall!(libc::stat(self.path.as_ptr(), &mut stat))?
-        } else {
-            syscall!(libc::lstat(self.path.as_ptr(), &mut stat))?
-        };
-        self.stat = stat_to_statx(stat);
+        let res = syscall!(libc::fstatat(
+            this.dirfd.as_fd().as_raw_fd(),
+            this.path.as_ptr(),
+            &mut stat,
+            flags
+        ))?;
+        *this.stat = stat_to_statx(stat);
         Ok(res as _)
     }
 }
 
-impl IntoInner for PathStat {
+impl<S: AsFd> IntoInner for PathStat<S> {
     type Inner = Stat;
 
     fn into_inner(self) -> Self::Inner {
@@ -364,9 +376,9 @@ unsafe impl<S: AsFd> OpCode for Sync<S> {
     }
 }
 
-unsafe impl OpCode for Unlink {
+unsafe impl<S: AsFd> OpCode for Unlink<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        opcode::UnlinkAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())
+        opcode::UnlinkAt::new(Fd(self.dirfd.as_fd().as_raw_fd()), self.path.as_ptr())
             .flags(if self.dir { libc::AT_REMOVEDIR } else { 0 })
             .build()
             .into()
@@ -377,9 +389,9 @@ unsafe impl OpCode for Unlink {
     }
 }
 
-unsafe impl OpCode for CreateDir {
+unsafe impl<S: AsFd> OpCode for CreateDir<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        opcode::MkDirAt::new(Fd(libc::AT_FDCWD), self.path.as_ptr())
+        opcode::MkDirAt::new(Fd(self.dirfd.as_fd().as_raw_fd()), self.path.as_ptr())
             .mode(self.mode)
             .build()
             .into()
@@ -390,12 +402,12 @@ unsafe impl OpCode for CreateDir {
     }
 }
 
-unsafe impl OpCode for Rename {
+unsafe impl<S1: AsFd, S2: AsFd> OpCode for Rename<S1, S2> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::RenameAt::new(
-            Fd(libc::AT_FDCWD),
+            Fd(self.old_dirfd.as_fd().as_raw_fd()),
             self.old_path.as_ptr(),
-            Fd(libc::AT_FDCWD),
+            Fd(self.new_dirfd.as_fd().as_raw_fd()),
             self.new_path.as_ptr(),
         )
         .build()
@@ -407,10 +419,10 @@ unsafe impl OpCode for Rename {
     }
 }
 
-unsafe impl OpCode for Symlink {
+unsafe impl<S: AsFd> OpCode for Symlink<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::SymlinkAt::new(
-            Fd(libc::AT_FDCWD),
+            Fd(self.dirfd.as_fd().as_raw_fd()),
             self.source.as_ptr(),
             self.target.as_ptr(),
         )
@@ -423,12 +435,12 @@ unsafe impl OpCode for Symlink {
     }
 }
 
-unsafe impl OpCode for HardLink {
+unsafe impl<S1: AsFd, S2: AsFd> OpCode for HardLink<S1, S2> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::LinkAt::new(
-            Fd(libc::AT_FDCWD),
+            Fd(self.source_dirfd.as_fd().as_raw_fd()),
             self.source.as_ptr(),
-            Fd(libc::AT_FDCWD),
+            Fd(self.target_dirfd.as_fd().as_raw_fd()),
             self.target.as_ptr(),
         )
         .build()
