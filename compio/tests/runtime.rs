@@ -160,6 +160,13 @@ async fn wake_cross_thread() {
     thread.join().unwrap().unwrap();
 }
 
+#[compio_macros::test]
+#[cfg(unix)]
+async fn cancel_open_file() {
+    let fut = compio_fs::File::open("Cargo.toml");
+    poll_once(fut).await;
+}
+
 fn tempfile() -> NamedTempFile {
     NamedTempFile::new().unwrap()
 }
