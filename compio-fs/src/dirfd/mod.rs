@@ -15,12 +15,16 @@ mod sys;
 
 /// A reference to an open directory on a filesystem.
 #[derive(Debug, Clone)]
-pub struct Dir(sys::Dir);
+pub struct Dir {
+    inner: sys::Dir,
+}
 
 impl Dir {
     /// Opens a directory at the specified path and returns a reference to it.
     pub async fn open(path: impl AsRef<Path>) -> io::Result<Self> {
-        sys::Dir::open(path).await.map(Dir)
+        Ok(Dir {
+            inner: sys::Dir::open(path).await?,
+        })
     }
 
     /// Opens a file at `path` with the options specified by `options`.
@@ -29,7 +33,7 @@ impl Dir {
         path: impl AsRef<Path>,
         options: &OpenOptions,
     ) -> io::Result<File> {
-        self.0.open_file_with(path, options).await
+        self.inner.open_file_with(path, options).await
     }
 
     /// Attempts to open a file in read-only mode.
@@ -49,7 +53,9 @@ impl Dir {
 
     /// Attempts to open a directory.
     pub async fn open_dir(&self, path: impl AsRef<Path>) -> io::Result<Self> {
-        self.0.open_dir(path).await.map(Dir)
+        Ok(Self {
+            inner: self.inner.open_dir(path).await?,
+        })
     }
 
     /// Creates the specified directory with the options configured in this
@@ -59,7 +65,7 @@ impl Dir {
         path: impl AsRef<Path>,
         builder: &DirBuilder,
     ) -> io::Result<()> {
-        self.0.create_dir_with(path, builder).await
+        self.inner.create_dir_with(path, builder).await
     }
 
     /// Creates a new, empty directory at the provided path.
@@ -76,18 +82,18 @@ impl Dir {
 
     /// Queries metadata about the underlying directory.
     pub async fn dir_metadata(&self) -> io::Result<Metadata> {
-        self.0.dir_metadata().await
+        self.inner.dir_metadata().await
     }
 
     /// Given a path, query the file system to get information about a file,
     /// directory, etc.
     pub async fn metadata(&self, path: impl AsRef<Path>) -> io::Result<Metadata> {
-        self.0.metadata(path).await
+        self.inner.metadata(path).await
     }
 
     /// Query the metadata about a file without following symlinks.
     pub async fn symlink_metadata(&self, path: impl AsRef<Path>) -> io::Result<Metadata> {
-        self.0.symlink_metadata(path).await
+        self.inner.symlink_metadata(path).await
     }
 
     /// Creates a new hard link on a filesystem.
@@ -97,7 +103,9 @@ impl Dir {
         target_dir: &Self,
         target: impl AsRef<Path>,
     ) -> io::Result<()> {
-        self.0.hard_link(source, &target_dir.0, target).await
+        self.inner
+            .hard_link(source, &target_dir.inner, target)
+            .await
     }
 
     /// Creates a new symbolic link on a filesystem.
@@ -110,7 +118,7 @@ impl Dir {
         original: impl AsRef<Path>,
         link: impl AsRef<Path>,
     ) -> io::Result<()> {
-        self.0.symlink(original, link).await
+        self.inner.symlink(original, link).await
     }
 
     /// Rename a file or directory to a new name, replacing the original file if
@@ -121,17 +129,17 @@ impl Dir {
         to_dir: &Self,
         to: impl AsRef<Path>,
     ) -> io::Result<()> {
-        self.0.rename(from, &to_dir.0, to).await
+        self.inner.rename(from, &to_dir.inner, to).await
     }
 
     /// Removes a file from a filesystem.
     pub async fn remove_file(&self, path: impl AsRef<Path>) -> io::Result<()> {
-        self.0.remove_file(path).await
+        self.inner.remove_file(path).await
     }
 
     /// Removes an empty directory.
     pub async fn remove_dir(&self, path: impl AsRef<Path>) -> io::Result<()> {
-        self.0.remove_dir(path).await
+        self.inner.remove_dir(path).await
     }
 
     /// Read the entire contents of a file into a bytes vector.
@@ -148,3 +156,5 @@ impl Dir {
         file.write_all_at(buf, 0).await
     }
 }
+
+compio_driver::impl_raw_fd!(Dir, std::fs::File, inner);

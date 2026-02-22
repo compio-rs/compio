@@ -128,7 +128,6 @@ impl OpenOptions {
         self.0.open(path).await
     }
 
-    #[cfg(unix)]
     pub(crate) async fn open_at(&self, dir: &File, path: impl AsRef<Path>) -> io::Result<File> {
         self.0.open_at(dir, path).await
     }

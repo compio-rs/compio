@@ -54,3 +54,19 @@ pub(crate) fn path_string(path: impl AsRef<std::path::Path>) -> std::io::Result<
         )
     })
 }
+
+use compio_buf::{BufResult, IntoInner};
+use compio_driver::{SharedFd, op::AsyncifyFd};
+
+pub(crate) async fn spawn_blocking_with<T: 'static, R: Send + 'static>(
+    fd: SharedFd<T>,
+    f: impl FnOnce(&T) -> std::io::Result<R> + Send + 'static,
+) -> std::io::Result<R> {
+    let op = AsyncifyFd::new(fd, move |fd: &T| match f(fd) {
+        Ok(res) => BufResult(Ok(0), Some(res)),
+        Err(e) => BufResult(Err(e), None),
+    });
+    let BufResult(res, meta) = compio_runtime::submit(op).await;
+    res?;
+    Ok(meta.into_inner().expect("result should be present"))
+}

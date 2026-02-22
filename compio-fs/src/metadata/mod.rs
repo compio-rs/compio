@@ -24,12 +24,10 @@ pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
     sys::symlink_metadata(path).await.map(Metadata)
 }
 
-#[cfg(unix)]
 pub(crate) async fn metadata_at(dir: &crate::File, path: impl AsRef<Path>) -> io::Result<Metadata> {
     sys::metadata_at(dir, path).await.map(Metadata)
 }
 
-#[cfg(unix)]
 pub(crate) async fn symlink_metadata_at(
     dir: &crate::File,
     path: impl AsRef<Path>,
