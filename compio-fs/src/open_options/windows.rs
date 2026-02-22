@@ -78,8 +78,7 @@ impl OpenOptions {
     }
 
     pub async fn open(&self, p: impl AsRef<Path>) -> io::Result<File> {
-        let mut opt = std::fs::OpenOptions::from(self);
-        opt.attributes(FILE_FLAG_OVERLAPPED);
+        let opt = std::fs::OpenOptions::from(self);
         let p = p.as_ref().to_path_buf();
         let file = compio_runtime::spawn_blocking(move || opt.open(p))
             .await
@@ -88,10 +87,7 @@ impl OpenOptions {
     }
 
     pub async fn open_at(&self, dir: &File, p: impl AsRef<Path>) -> io::Result<File> {
-        use cap_primitives::fs::OpenOptionsExt;
-
-        let mut opt = cap_primitives::fs::OpenOptions::from(self);
-        opt.attributes(FILE_FLAG_OVERLAPPED);
+        let opt = cap_primitives::fs::OpenOptions::from(self);
         let p = p.as_ref().to_path_buf();
         let file = crate::spawn_blocking_with(dir.to_shared_fd(), move |dir| {
             cap_primitives::fs::open(dir, &p, &opt)
@@ -109,7 +105,7 @@ impl From<&OpenOptions> for std::fs::OpenOptions {
             .truncate(value.truncate)
             .create(value.create)
             .create_new(value.create_new)
-            .custom_flags(value.custom_flags)
+            .custom_flags(value.custom_flags | FILE_FLAG_OVERLAPPED)
             .share_mode(value.share_mode)
             .attributes(value.attributes)
             .security_qos_flags(value.security_qos_flags);
@@ -130,7 +126,7 @@ impl From<&OpenOptions> for cap_primitives::fs::OpenOptions {
             .truncate(value.truncate)
             .create(value.create)
             .create_new(value.create_new)
-            .custom_flags(value.custom_flags)
+            .custom_flags(value.custom_flags | FILE_FLAG_OVERLAPPED)
             .share_mode(value.share_mode)
             .attributes(value.attributes)
             .security_qos_flags(value.security_qos_flags);
