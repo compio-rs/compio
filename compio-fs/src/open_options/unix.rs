@@ -1,7 +1,10 @@
-use std::{io, path::Path};
+use std::{io, os::fd::AsFd, path::Path};
 
 use compio_buf::{IntoInner, buf_try};
-use compio_driver::op::{CurrentDir, OpenFile};
+use compio_driver::{
+    ToSharedFd,
+    op::{CurrentDir, OpenFile},
+};
 
 use crate::{File, path_string};
 
@@ -80,14 +83,22 @@ impl OpenOptions {
         })
     }
 
-    pub async fn open(&self, p: impl AsRef<Path>) -> io::Result<File> {
+    async fn open_impl(&self, dir: impl AsFd + 'static, p: impl AsRef<Path>) -> io::Result<File> {
         let flags = libc::O_CLOEXEC
             | self.get_access_mode()?
             | self.get_creation_mode()?
-            | (self.custom_flags as libc::c_int & !libc::O_ACCMODE);
+            | (self.custom_flags & !libc::O_ACCMODE);
         let p = path_string(p)?;
-        let op = OpenFile::new(CurrentDir, p, flags, self.mode);
+        let op = OpenFile::new(dir, p, flags, self.mode);
         let (_, op) = buf_try!(@try compio_runtime::submit(op).await);
         File::from_std(op.into_inner().into())
+    }
+
+    pub async fn open(&self, p: impl AsRef<Path>) -> io::Result<File> {
+        self.open_impl(CurrentDir, p).await
+    }
+
+    pub async fn open_at(&self, dir: &File, path: impl AsRef<Path>) -> io::Result<File> {
+        self.open_impl(dir.to_shared_fd(), path).await
     }
 }

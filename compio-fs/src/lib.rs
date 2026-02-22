@@ -30,6 +30,9 @@ pub use stdio::*;
 mod utils;
 pub use utils::*;
 
+mod dirfd;
+pub use dirfd::*;
+
 #[cfg(windows)]
 pub mod named_pipe;
 

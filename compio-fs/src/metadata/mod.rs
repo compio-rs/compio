@@ -24,6 +24,19 @@ pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
     sys::symlink_metadata(path).await.map(Metadata)
 }
 
+#[cfg(unix)]
+pub(crate) async fn metadata_at(dir: &crate::File, path: impl AsRef<Path>) -> io::Result<Metadata> {
+    sys::metadata_at(dir, path).await.map(Metadata)
+}
+
+#[cfg(unix)]
+pub(crate) async fn symlink_metadata_at(
+    dir: &crate::File,
+    path: impl AsRef<Path>,
+) -> io::Result<Metadata> {
+    sys::symlink_metadata_at(dir, path).await.map(Metadata)
+}
+
 /// Changes the permissions found on a file or a directory.
 pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::Result<()> {
     sys::set_permissions(path, perm.0).await

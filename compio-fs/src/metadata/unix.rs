@@ -1,30 +1,48 @@
 pub use std::fs::Permissions;
 use std::{
     io,
-    os::unix::prelude::{FileTypeExt, MetadataExt, PermissionsExt},
+    os::{
+        fd::AsFd,
+        unix::prelude::{FileTypeExt, MetadataExt, PermissionsExt},
+    },
     panic::resume_unwind,
     path::Path,
     time::{Duration, SystemTime},
 };
 
 use compio_buf::{BufResult, IntoInner};
-use compio_driver::op::{CurrentDir, PathStat, Stat};
+use compio_driver::{
+    ToSharedFd,
+    op::{CurrentDir, PathStat, Stat},
+};
 
-use crate::path_string;
+use crate::{File, path_string};
 
-async fn metadata_impl(path: impl AsRef<Path>, follow_symlink: bool) -> io::Result<Metadata> {
+async fn metadata_impl(
+    dir: impl AsFd + 'static,
+    path: impl AsRef<Path>,
+    follow_symlink: bool,
+) -> io::Result<Metadata> {
     let path = path_string(path)?;
-    let op = PathStat::new(CurrentDir, path, follow_symlink);
+    let op = PathStat::new(dir, path, follow_symlink);
     let BufResult(res, op) = compio_runtime::submit(op).await;
     res.map(|_| Metadata::from_stat(op.into_inner()))
 }
 
 pub async fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
-    metadata_impl(path, true).await
+    metadata_impl(CurrentDir, path, true).await
 }
 
 pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
-    metadata_impl(path, false).await
+    metadata_impl(CurrentDir, path, false).await
+}
+
+pub async fn metadata_at(dir: &File, path: impl AsRef<Path>) -> io::Result<Metadata> {
+    metadata_impl(dir.to_shared_fd(), path, true).await
+}
+
+pub async fn symlink_metadata_at(dir: &File, path: impl AsRef<Path>) -> io::Result<Metadata> {
+    metadata_impl(dir.to_shared_fd(), path, false).await
 }
 
 pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::Result<()> {

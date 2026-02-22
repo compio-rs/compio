@@ -144,6 +144,57 @@ impl DirBuilder {
             Err(e) => Err(e),
         }
     }
+
+    #[cfg(unix)]
+    pub(crate) async fn create_at(&self, dir: &File, path: &Path) -> io::Result<()> {
+        if path.is_absolute() {
+            self.create(path).await
+        } else if self.recursive {
+            self.create_dir_all_at(dir, path).await
+        } else {
+            self.inner.create_at(dir, path).await
+        }
+    }
+
+    #[cfg(unix)]
+    async fn create_dir_all_at(&self, dir: &File, path: &Path) -> io::Result<()> {
+        use crate::metadata_at;
+
+        if path == Path::new("") {
+            return Ok(());
+        }
+        match self.inner.create_at(dir, path).await {
+            Ok(()) => return Ok(()),
+            Err(ref e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(_)
+                if metadata_at(dir, path)
+                    .await
+                    .map(|m| m.is_dir())
+                    .unwrap_or_default() =>
+            {
+                return Ok(());
+            }
+            Err(e) => return Err(e),
+        }
+        match path.parent() {
+            Some(p) => Box::pin(self.create_dir_all_at(dir, p)).await?,
+            None => {
+                return Err(io::Error::other("failed to create whole tree"));
+            }
+        }
+        match self.inner.create_at(dir, path).await {
+            Ok(()) => Ok(()),
+            Err(_)
+                if metadata_at(dir, path)
+                    .await
+                    .map(|m| m.is_dir())
+                    .unwrap_or_default() =>
+            {
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
 }
 
 #[cfg(unix)]

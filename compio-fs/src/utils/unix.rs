@@ -1,8 +1,11 @@
-use std::{io, path::Path};
+use std::{io, os::fd::AsFd, path::Path};
 
-use compio_driver::op::{CreateDir, CurrentDir, HardLink, Rename, Symlink, Unlink};
+use compio_driver::{
+    ToSharedFd,
+    op::{CreateDir, CurrentDir, HardLink, Rename, Symlink, Unlink},
+};
 
-use crate::path_string;
+use crate::{File, path_string};
 
 async fn unlink(path: impl AsRef<Path>, dir: bool) -> io::Result<()> {
     let path = path_string(path)?;
@@ -56,10 +59,18 @@ impl DirBuilder {
         self.mode = mode;
     }
 
-    pub async fn create(&self, path: &Path) -> io::Result<()> {
+    async fn create_impl(&self, dir: impl AsFd + 'static, path: &Path) -> io::Result<()> {
         let path = path_string(path)?;
-        let op = CreateDir::new(CurrentDir, path, self.mode as _);
+        let op = CreateDir::new(dir, path, self.mode as _);
         compio_runtime::submit(op).await.0?;
         Ok(())
+    }
+
+    pub async fn create(&self, path: &Path) -> io::Result<()> {
+        self.create_impl(CurrentDir, path).await
+    }
+
+    pub async fn create_at(&self, dir: &File, path: &Path) -> io::Result<()> {
+        self.create_impl(dir.to_shared_fd(), path).await
     }
 }
