@@ -4,7 +4,7 @@ use std::{
     ffi::CString,
     io,
     marker::PhantomPinned,
-    os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd},
+    os::fd::{AsRawFd, FromRawFd, OwnedFd},
     pin::Pin,
     task::Poll,
 };
@@ -69,8 +69,10 @@ unsafe impl<S: AsFd> OpCode for OpenFile<S> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(self.call())
+    fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        let fd = self.as_mut().call()?;
+        *self.project().opened_fd = Some(unsafe { OwnedFd::from_raw_fd(fd as _) });
+        Poll::Ready(Ok(fd))
     }
 }
 
@@ -638,7 +640,8 @@ impl CreateSocket {
             target_os = "cygwin",
         )))]
         socket.set_nonblocking(true)?;
-        Ok(socket.into_raw_fd())
+        *self.project().opened_fd = Some(socket);
+        Ok(fd)
     }
 }
 
@@ -673,40 +676,44 @@ unsafe impl OpCode for CloseSocket {
 }
 
 impl<S: AsFd> Accept<S> {
+    // If the first call succeeds, there won't be another call.
     unsafe fn call(self: Pin<&mut Self>) -> libc::c_int {
         let this = self.project();
-        #[cfg(any(
-            target_os = "android",
-            target_os = "dragonfly",
-            target_os = "freebsd",
-            target_os = "fuchsia",
-            target_os = "illumos",
-            target_os = "linux",
-            target_os = "netbsd",
-            target_os = "openbsd",
-            target_os = "cygwin",
-        ))]
-        unsafe {
-            libc::accept4(
-                this.fd.as_fd().as_raw_fd(),
-                this.buffer as *mut _ as *mut _,
-                this.addr_len,
-                libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC,
-            )
-        }
-        #[cfg(not(any(
-            target_os = "android",
-            target_os = "dragonfly",
-            target_os = "freebsd",
-            target_os = "fuchsia",
-            target_os = "illumos",
-            target_os = "linux",
-            target_os = "netbsd",
-            target_os = "openbsd",
-            target_os = "cygwin",
-        )))]
-        {
-            || -> io::Result<libc::c_int> {
+        || -> io::Result<libc::c_int> {
+            #[cfg(any(
+                target_os = "android",
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "fuchsia",
+                target_os = "illumos",
+                target_os = "linux",
+                target_os = "netbsd",
+                target_os = "openbsd",
+                target_os = "cygwin",
+            ))]
+            {
+                let fd = syscall!(libc::accept4(
+                    this.fd.as_fd().as_raw_fd(),
+                    this.buffer as *mut _ as *mut _,
+                    this.addr_len,
+                    libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC,
+                ))?;
+                let socket = unsafe { Socket2::from_raw_fd(fd) };
+                *this.accepted_fd = Some(socket);
+                Ok(fd)
+            }
+            #[cfg(not(any(
+                target_os = "android",
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "fuchsia",
+                target_os = "illumos",
+                target_os = "linux",
+                target_os = "netbsd",
+                target_os = "openbsd",
+                target_os = "cygwin",
+            )))]
+            {
                 let fd = syscall!(libc::accept(
                     this.fd.as_fd().as_raw_fd(),
                     this.buffer as *mut _ as *mut _,
@@ -715,10 +722,11 @@ impl<S: AsFd> Accept<S> {
                 let socket = unsafe { Socket2::from_raw_fd(fd) };
                 socket.set_cloexec(true)?;
                 socket.set_nonblocking(true)?;
-                Ok(socket.into_raw_fd())
-            }()
-            .unwrap_or(-1)
-        }
+                *this.accepted_fd = Some(socket);
+                Ok(fd)
+            }
+        }()
+        .unwrap_or(-1)
     }
 }
 
@@ -733,13 +741,7 @@ unsafe impl<S: AsFd> OpCode for Accept<S> {
     }
 
     fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        let res = syscall!(break self.as_mut().call());
-        if let Poll::Ready(Ok(fd)) = res {
-            // Safety: we own the fd returned by accept/accept4
-            let fd = unsafe { OwnedFd::from_raw_fd(fd as _) };
-            *self.project().accepted_fd = Some(fd);
-        }
-        res
+        syscall!(break self.as_mut().call())
     }
 }
 

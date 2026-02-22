@@ -27,7 +27,7 @@ use libc::{ftruncate as ftruncate64, off_t as off64_t};
 ))]
 use libc::{ftruncate64, off64_t};
 use pin_project_lite::pin_project;
-use socket2::{SockAddr, SockAddrStorage, socklen_t};
+use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
 use crate::{op::*, sys::aio::*, sys_slice::*, syscall};
 
@@ -47,12 +47,15 @@ impl AsFd for CurrentDir {
     }
 }
 
-/// Open or create a file with flags and mode.
-pub struct OpenFile<S: AsFd> {
-    pub(crate) dirfd: S,
-    pub(crate) path: CString,
-    pub(crate) flags: i32,
-    pub(crate) mode: libc::mode_t,
+pin_project! {
+    /// Open or create a file with flags and mode.
+    pub struct OpenFile<S: AsFd> {
+        pub(crate) dirfd: S,
+        pub(crate) path: CString,
+        pub(crate) flags: i32,
+        pub(crate) mode: libc::mode_t,
+        pub(crate) opened_fd: Option<OwnedFd>,
+    }
 }
 
 impl<S: AsFd> OpenFile<S> {
@@ -63,6 +66,7 @@ impl<S: AsFd> OpenFile<S> {
             path,
             flags,
             mode,
+            opened_fd: None,
         }
     }
 
@@ -73,6 +77,14 @@ impl<S: AsFd> OpenFile<S> {
             self.flags | libc::O_CLOEXEC,
             self.mode as libc::c_int
         ))? as _)
+    }
+}
+
+impl<S: AsFd> IntoInner for OpenFile<S> {
+    type Inner = OwnedFd;
+
+    fn into_inner(self) -> Self::Inner {
+        self.opened_fd.expect("file not opened")
     }
 }
 
@@ -462,11 +474,14 @@ impl<S1: AsFd, S2: AsFd> HardLink<S1, S2> {
     }
 }
 
-/// Create a socket.
-pub struct CreateSocket {
-    pub(crate) domain: i32,
-    pub(crate) socket_type: i32,
-    pub(crate) protocol: i32,
+pin_project! {
+    /// Create a socket.
+    pub struct CreateSocket {
+        pub(crate) domain: i32,
+        pub(crate) socket_type: i32,
+        pub(crate) protocol: i32,
+        pub(crate) opened_fd: Option<Socket2>,
+    }
 }
 
 impl CreateSocket {
@@ -476,7 +491,16 @@ impl CreateSocket {
             domain,
             socket_type,
             protocol,
+            opened_fd: None,
         }
+    }
+}
+
+impl IntoInner for CreateSocket {
+    type Inner = Socket2;
+
+    fn into_inner(self) -> Self::Inner {
+        self.opened_fd.expect("socket not created")
     }
 }
 
@@ -506,7 +530,7 @@ pin_project! {
         pub(crate) fd: S,
         pub(crate) buffer: SockAddrStorage,
         pub(crate) addr_len: socklen_t,
-        pub(crate) accepted_fd: Option<OwnedFd>,
+        pub(crate) accepted_fd: Option<Socket2>,
         _p: PhantomPinned,
     }
 }
@@ -526,9 +550,9 @@ impl<S> Accept<S> {
     }
 
     /// Get the remote address from the inner buffer.
-    pub fn into_addr(mut self) -> SockAddr {
-        std::mem::forget(self.accepted_fd.take());
-        unsafe { SockAddr::new(self.buffer, self.addr_len) }
+    pub fn into_addr(mut self) -> (Socket2, SockAddr) {
+        let socket = self.accepted_fd.take().expect("socket not accepted");
+        (socket, unsafe { SockAddr::new(self.buffer, self.addr_len) })
     }
 }
 

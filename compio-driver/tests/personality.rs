@@ -1,6 +1,6 @@
 #![cfg(io_uring)]
 
-use compio_buf::BufResult;
+use compio_buf::{BufResult, IntoInner};
 use compio_driver::{
     op::{CurrentDir, ReadAt},
     *,
@@ -26,7 +26,7 @@ fn push_and_wait<O: OpCode + 'static>(
 }
 
 fn open_file(driver: &mut Proactor, personality: u16) -> OwnedFd {
-    use std::{ffi::CString, os::fd::FromRawFd};
+    use std::ffi::CString;
 
     use compio_driver::op::OpenFile;
 
@@ -36,8 +36,8 @@ fn open_file(driver: &mut Proactor, personality: u16) -> OwnedFd {
         libc::O_CLOEXEC | libc::O_RDONLY,
         0o666,
     );
-    let (fd, _) = push_and_wait(driver, op, personality).unwrap();
-    unsafe { OwnedFd::from_raw_fd(fd as _) }
+    let (_, op) = push_and_wait(driver, op, personality).unwrap();
+    op.into_inner()
 }
 
 #[test]

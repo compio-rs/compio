@@ -32,7 +32,7 @@ fn open_file(driver: &mut Proactor) -> OwnedFd {
 
 #[cfg(unix)]
 fn open_file(driver: &mut Proactor) -> OwnedFd {
-    use std::{ffi::CString, os::fd::FromRawFd};
+    use std::ffi::CString;
 
     use compio_driver::op::{CurrentDir, OpenFile};
 
@@ -42,8 +42,8 @@ fn open_file(driver: &mut Proactor) -> OwnedFd {
         libc::O_CLOEXEC | libc::O_RDONLY,
         0o666,
     );
-    let (fd, _) = push_and_wait(driver, op);
-    unsafe { OwnedFd::from_raw_fd(fd as _) }
+    let (_, op) = push_and_wait(driver, op);
+    op.into_inner()
 }
 
 fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> (usize, O) {

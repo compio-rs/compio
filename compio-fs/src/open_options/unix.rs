@@ -1,9 +1,7 @@
-use std::{io, os::fd::FromRawFd, path::Path};
+use std::{io, path::Path};
 
-use compio_driver::{
-    RawFd,
-    op::{CurrentDir, OpenFile},
-};
+use compio_buf::{IntoInner, buf_try};
+use compio_driver::op::{CurrentDir, OpenFile};
 
 use crate::{File, path_string};
 
@@ -89,7 +87,7 @@ impl OpenOptions {
             | (self.custom_flags as libc::c_int & !libc::O_ACCMODE);
         let p = path_string(p)?;
         let op = OpenFile::new(CurrentDir, p, flags, self.mode);
-        let fd = compio_runtime::submit(op).await.0? as RawFd;
-        File::from_std(unsafe { std::fs::File::from_raw_fd(fd) })
+        let (_, op) = buf_try!(@try compio_runtime::submit(op).await);
+        File::from_std(op.into_inner().into())
     }
 }
