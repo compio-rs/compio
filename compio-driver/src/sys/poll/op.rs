@@ -709,6 +709,8 @@ impl<S: AsFd> Accept<S> {
             target_os = "cygwin",
         )))]
         {
+            use std::os::fd::IntoRawFd;
+
             || -> io::Result<libc::c_int> {
                 let fd = syscall!(libc::accept(
                     this.fd.as_fd().as_raw_fd(),
