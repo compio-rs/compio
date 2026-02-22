@@ -33,6 +33,11 @@ async fn rename() {
 #[compio_macros::test]
 #[should_panic]
 async fn test_absolute() {
+    #[cfg(unix)]
+    const ABSOLUTE_PATH: &str = "/usr";
+    #[cfg(windows)]
+    const ABSOLUTE_PATH: &str = "C:\\";
+
     let dir = Dir::open(".").await.unwrap();
-    dir.open_dir("/usr").await.unwrap();
+    dir.open_dir(ABSOLUTE_PATH).await.unwrap();
 }
