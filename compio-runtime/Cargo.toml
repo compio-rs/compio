@@ -22,7 +22,7 @@ compio-log = { workspace = true }
 compio-io = { workspace = true, optional = true }
 
 async-task = "4.5.0"
-cfg-if = { workspace = true, optional = true }
+cfg-if = { workspace = true }
 criterion = { workspace = true, optional = true }
 core_affinity = "0.8.3"
 crossbeam-queue = { workspace = true }
@@ -50,7 +50,7 @@ core-foundation = "0.10.0"
 block2 = "0.6.0"
 
 [features]
-event = ["dep:cfg-if", "compio-buf/arrayvec"]
+event = ["compio-buf/arrayvec"]
 time = []
 async-fd = ["dep:compio-io"]
 
