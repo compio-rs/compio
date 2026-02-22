@@ -30,3 +30,7 @@ pub use stream::*;
 mod rtls;
 #[cfg(feature = "rustls")]
 pub use rtls::*;
+
+#[cfg(feature = "py-dynamic-openssl")]
+#[doc(hidden)]
+mod py_ossl;

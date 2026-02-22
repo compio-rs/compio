@@ -31,7 +31,7 @@ impl<S> TlsStreamInner<S> {
             #[cfg(feature = "rustls")]
             Self::Rustls(s) => s.get_ref().1.alpn_protocol().map(Cow::from),
             #[cfg(feature = "py-dynamic-openssl")]
-            Self::PyDynamicOpenSsl(s) => py::negotiated_alpn(s),
+            Self::PyDynamicOpenSsl(s) => crate::py_ossl::negotiated_alpn(s),
             #[cfg(not(any(
                 feature = "native-tls",
                 feature = "rustls",
@@ -84,6 +84,14 @@ impl<S> From<futures_rustls::server::TlsStream<AsyncStream<S>>> for TlsStream<S>
         Self(TlsStreamInner::Rustls(futures_rustls::TlsStream::Server(
             value,
         )))
+    }
+}
+
+#[cfg(feature = "py-dynamic-openssl")]
+#[doc(hidden)]
+impl<S> From<compio_py_dynamic_openssl::ssl::SslStream<SyncStream<S>>> for TlsStream<S> {
+    fn from(value: compio_py_dynamic_openssl::ssl::SslStream<SyncStream<S>>) -> Self {
+        Self(TlsStreamInner::PyDynamicOpenSsl(value))
     }
 }
 
@@ -148,7 +156,7 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncRead for TlsStream<S> {
                 BufResult(res, buf)
             }
             #[cfg(feature = "py-dynamic-openssl")]
-            TlsStreamInner::PyDynamicOpenSsl(s) => match py::read(s, slice).await {
+            TlsStreamInner::PyDynamicOpenSsl(s) => match crate::py_ossl::read(s, slice).await {
                 Ok(res) => {
                     unsafe { buf.advance_to(res) };
                     BufResult(Ok(res), buf)
@@ -196,7 +204,7 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncWrite for TlsStream<S> {
             }
             #[cfg(feature = "py-dynamic-openssl")]
             TlsStreamInner::PyDynamicOpenSsl(s) => {
-                let res = py::write(s, slice).await;
+                let res = crate::py_ossl::write(s, slice).await;
                 BufResult(res, buf)
             }
             #[cfg(not(any(
@@ -243,141 +251,13 @@ impl<S: AsyncRead + AsyncWrite + 'static> AsyncWrite for TlsStream<S> {
             #[cfg(feature = "rustls")]
             TlsStreamInner::Rustls(s) => futures_util::AsyncWriteExt::close(s).await,
             #[cfg(feature = "py-dynamic-openssl")]
-            TlsStreamInner::PyDynamicOpenSsl(s) => py::shutdown(s).await,
+            TlsStreamInner::PyDynamicOpenSsl(s) => crate::py_ossl::shutdown(s).await,
             #[cfg(not(any(
                 feature = "native-tls",
                 feature = "rustls",
                 feature = "py-dynamic-openssl",
             )))]
             TlsStreamInner::None(f, ..) => match *f {},
-        }
-    }
-}
-
-#[cfg(feature = "py-dynamic-openssl")]
-#[doc(hidden)]
-mod py {
-    use std::{borrow::Cow, io};
-
-    use compio_io::{AsyncRead, AsyncWrite, compat::SyncStream};
-    use compio_py_dynamic_openssl::ssl::{Error, ErrorCode, ShutdownResult, SslStream};
-
-    use super::{TlsStream, TlsStreamInner};
-
-    impl<S> From<SslStream<SyncStream<S>>> for TlsStream<S> {
-        fn from(value: SslStream<SyncStream<S>>) -> Self {
-            Self(TlsStreamInner::PyDynamicOpenSsl(value))
-        }
-    }
-
-    enum DriveResult<T> {
-        WantRead,
-        WantWrite,
-        Ready(io::Result<T>),
-    }
-
-    impl<T> From<Error> for DriveResult<T> {
-        fn from(e: Error) -> Self {
-            match e.code() {
-                ErrorCode::WANT_READ => DriveResult::WantRead,
-                ErrorCode::WANT_WRITE => DriveResult::WantWrite,
-                _ => DriveResult::Ready(Err(e.into_io_error().unwrap_or_else(io::Error::other))),
-            }
-        }
-    }
-
-    impl<T> From<Result<T, Error>> for DriveResult<T> {
-        fn from(res: Result<T, Error>) -> Self {
-            match res {
-                Ok(t) => DriveResult::Ready(Ok(t)),
-                Err(e) => e.into(),
-            }
-        }
-    }
-
-    #[inline]
-    async fn drive<S, F, T>(s: &mut SslStream<SyncStream<S>>, mut f: F) -> io::Result<T>
-    where
-        S: AsyncRead + AsyncWrite,
-        F: FnMut(&mut SslStream<SyncStream<S>>) -> DriveResult<T>,
-    {
-        loop {
-            let res = f(s);
-            let s = s.get_mut();
-            if s.has_pending_write() {
-                s.flush_write_buf().await?;
-            }
-            match res {
-                DriveResult::Ready(res) => break res,
-                DriveResult::WantRead => _ = s.fill_read_buf().await?,
-                DriveResult::WantWrite => {}
-            }
-        }
-    }
-    pub(crate) fn negotiated_alpn<S>(s: &SslStream<SyncStream<S>>) -> Option<Cow<'_, [u8]>> {
-        s.ssl()
-            .selected_alpn_protocol()
-            .map(|alpn| alpn.to_vec())
-            .map(Cow::from)
-    }
-
-    pub(crate) async fn read<S>(
-        s: &mut SslStream<SyncStream<S>>,
-        slice: &mut [u8],
-    ) -> io::Result<usize>
-    where
-        S: AsyncRead + AsyncWrite,
-    {
-        drive(s, |s| match s.ssl_read(slice) {
-            Ok(n) => DriveResult::Ready(Ok(n)),
-            Err(e) => match e.code() {
-                ErrorCode::ZERO_RETURN => DriveResult::Ready(Ok(0)),
-                ErrorCode::SYSCALL if e.io_error().is_none() => DriveResult::Ready(Ok(0)),
-                _ => e.into(),
-            },
-        })
-        .await
-    }
-
-    pub(crate) async fn write<S>(
-        s: &mut SslStream<SyncStream<S>>,
-        slice: &[u8],
-    ) -> io::Result<usize>
-    where
-        S: AsyncRead + AsyncWrite,
-    {
-        drive(s, |s| s.ssl_write(slice).into()).await
-    }
-
-    pub(crate) async fn shutdown<S>(s: &mut SslStream<SyncStream<S>>) -> io::Result<()>
-    where
-        S: AsyncRead + AsyncWrite,
-    {
-        let res = drive(s, |s| match s.shutdown() {
-            Ok(res) => DriveResult::Ready(Ok(res)),
-            Err(e) => {
-                if e.code() == ErrorCode::ZERO_RETURN {
-                    DriveResult::Ready(Ok(ShutdownResult::Received))
-                } else {
-                    e.into()
-                }
-            }
-        })
-        .await?;
-        if let Err(e) = s.get_mut().get_mut().shutdown().await
-            && e.kind() != io::ErrorKind::NotConnected
-        {
-            return Err(e);
-        }
-        match res {
-            // If close_notify has been sent but the peer has not responded with
-            // close_notify, we let the caller know by returning Err(WouldBlock).
-            // This behavior is different from the others as a Python-only hack.
-            ShutdownResult::Sent => Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "close_notify sent",
-            )),
-            ShutdownResult::Received => Ok(()),
         }
     }
 }
