@@ -6,8 +6,6 @@ mod sys;
 #[path = "windows.rs"]
 mod sys;
 
-#[cfg(windows)]
-use std::os::windows::fs::{FileTypeExt, MetadataExt};
 use std::{io, path::Path, time::SystemTime};
 
 #[cfg(unix)]
@@ -22,6 +20,19 @@ pub async fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
 /// Query the metadata about a file without following symlinks.
 pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
     sys::symlink_metadata(path).await.map(Metadata)
+}
+
+#[cfg(dirfd)]
+pub(crate) async fn metadata_at(dir: &crate::File, path: impl AsRef<Path>) -> io::Result<Metadata> {
+    sys::metadata_at(dir, path).await.map(Metadata)
+}
+
+#[cfg(dirfd)]
+pub(crate) async fn symlink_metadata_at(
+    dir: &crate::File,
+    path: impl AsRef<Path>,
+) -> io::Result<Metadata> {
+    sys::symlink_metadata_at(dir, path).await.map(Metadata)
 }
 
 /// Changes the permissions found on a file or a directory.
@@ -108,7 +119,7 @@ impl Metadata {
 impl Metadata {
     /// Create [`Metadata`] from [`std::fs::Metadata`].
     pub fn from_std(m: std::fs::Metadata) -> Self {
-        Self(m)
+        Self(sys::Metadata::from(m))
     }
 
     /// Returns the value of the `dwFileAttributes` field of this metadata.

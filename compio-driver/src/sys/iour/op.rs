@@ -61,6 +61,29 @@ unsafe impl<
     }
 }
 
+unsafe impl<
+    S1,
+    S2,
+    D: std::marker::Send + 'static,
+    F: (FnOnce(&S1, &S2) -> BufResult<usize, D>) + std::marker::Send + 'static,
+> OpCode for AsyncifyFd2<S1, S2, F, D>
+{
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        OpEntry::Blocking
+    }
+
+    fn call_blocking(self: Pin<&mut Self>) -> std::io::Result<usize> {
+        let this = self.project();
+        let f = this
+            .f
+            .take()
+            .expect("the operate method could only be called once");
+        let BufResult(res, data) = f(this.fd1, this.fd2);
+        *this.data = Some(data);
+        res
+    }
+}
+
 unsafe impl<S: AsFd> OpCode for OpenFile<S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         opcode::OpenAt::new(Fd(self.dirfd.as_fd().as_raw_fd()), self.path.as_ptr())

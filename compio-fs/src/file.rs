@@ -5,9 +5,7 @@ use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::op::FileStat;
 use compio_driver::{
     ToSharedFd, impl_raw_fd,
-    op::{
-        AsyncifyFd, BufResultExt, CloseFile, ReadAt, ReadManagedAt, ResultTakeBuffer, Sync, WriteAt,
-    },
+    op::{BufResultExt, CloseFile, ReadAt, ReadManagedAt, ResultTakeBuffer, Sync, WriteAt},
 };
 use compio_io::{AsyncReadAt, AsyncReadManagedAt, AsyncWriteAt, util::Splittable};
 use compio_runtime::{Attacher, BorrowedBuffer, BufferPool};
@@ -107,25 +105,17 @@ impl File {
     /// Queries metadata about the underlying file.
     #[cfg(windows)]
     pub async fn metadata(&self) -> io::Result<Metadata> {
-        let op = AsyncifyFd::new(self.to_shared_fd(), |file: &std::fs::File| {
-            match file.metadata().map(Metadata::from_std) {
-                Ok(meta) => BufResult(Ok(0), Some(meta)),
-                Err(e) => BufResult(Err(e), None),
-            }
-        });
-        let BufResult(res, meta) = compio_runtime::submit(op).await;
-        res.map(|_| meta.into_inner().expect("metadata should be present"))
+        crate::spawn_blocking_with(self.to_shared_fd(), |file| {
+            file.metadata().map(Metadata::from_std)
+        })
+        .await
     }
 
     #[cfg(windows)]
     /// Truncates or extends the underlying file, updating the size of this file
     /// to become `size`.
     pub async fn set_len(&self, size: u64) -> io::Result<()> {
-        let op = AsyncifyFd::new(self.to_shared_fd(), move |file: &std::fs::File| {
-            BufResult(file.set_len(size).map(|_| 0), ())
-        });
-
-        compio_runtime::submit(op).await.0.map(|_| ())
+        crate::spawn_blocking_with(self.to_shared_fd(), move |file| file.set_len(size)).await
     }
 
     #[cfg(unix)]
@@ -150,11 +140,24 @@ impl File {
     }
 
     /// Changes the permissions on the underlying file.
+    #[cfg(windows)]
     pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
-        let op = AsyncifyFd::new(self.to_shared_fd(), move |file: &std::fs::File| {
-            BufResult(file.set_permissions(perm.0).map(|_| 0), ())
-        });
-        compio_runtime::submit(op).await.0.map(|_| ())
+        crate::spawn_blocking_with(self.to_shared_fd(), move |file| {
+            if let Some(p) = perm.0.original {
+                file.set_permissions(p)
+            } else {
+                let mut p = file.metadata()?.permissions();
+                p.set_readonly(perm.readonly());
+                file.set_permissions(p)
+            }
+        })
+        .await
+    }
+
+    /// Changes the permissions on the underlying file.
+    #[cfg(unix)]
+    pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
+        crate::spawn_blocking_with(self.to_shared_fd(), |file| file.set_permissions(perm.0)).await
     }
 
     async fn sync_impl(&self, datasync: bool) -> io::Result<()> {

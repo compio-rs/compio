@@ -1,5 +1,9 @@
 use std::{io, panic::resume_unwind, path::Path};
 
+use compio_driver::ToSharedFd;
+
+use crate::File;
+
 pub async fn remove_file(path: impl AsRef<Path>) -> io::Result<()> {
     let path = path.as_ref().to_path_buf();
     compio_runtime::spawn_blocking(move || std::fs::remove_file(path))
@@ -58,5 +62,14 @@ impl DirBuilder {
         compio_runtime::spawn_blocking(move || std::fs::create_dir(path))
             .await
             .unwrap_or_else(|e| resume_unwind(e))
+    }
+
+    #[cfg(dirfd)]
+    pub async fn create_at(&self, dir: &File, path: &Path) -> io::Result<()> {
+        let path = path.to_path_buf();
+        crate::spawn_blocking_with(dir.to_shared_fd(), move |dir| {
+            cap_primitives::fs::create_dir(dir, &path, &cap_primitives::fs::DirOptions::new())
+        })
+        .await
     }
 }
