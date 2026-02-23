@@ -55,11 +55,14 @@ pub async fn symlink_metadata_at(dir: &File, path: impl AsRef<Path>) -> io::Resu
 pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::Result<()> {
     let path = path.as_ref().to_path_buf();
     compio_runtime::spawn_blocking(move || {
-        // Preserve existing permissions, only updating the readonly flag, while
-        // using std::fs::set_permissions so both files and directories work.
-        let mut p = std::fs::metadata(&path)?.permissions();
-        p.set_readonly(perm.readonly());
-        std::fs::set_permissions(&path, p)
+        // Reduce syscalls at best effort.
+        if let Some(p) = perm.original {
+            std::fs::set_permissions(&path, p)
+        } else {
+            let mut p = std::fs::metadata(&path)?.permissions();
+            p.set_readonly(perm.readonly());
+            std::fs::set_permissions(&path, p)
+        }
     })
     .await
     .unwrap_or_else(|e| resume_unwind(e))
@@ -107,7 +110,7 @@ impl Metadata {
     }
 
     pub fn permissions(&self) -> Permissions {
-        self.permissions
+        self.permissions.clone()
     }
 
     pub fn modified(&self) -> io::Result<SystemTime> {
@@ -218,9 +221,10 @@ impl From<cap_primitives::fs::Metadata> for Metadata {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Permissions {
     readonly: bool,
+    pub(crate) original: Option<std::fs::Permissions>,
 }
 
 impl Permissions {
@@ -230,6 +234,9 @@ impl Permissions {
 
     pub fn set_readonly(&mut self, readonly: bool) {
         self.readonly = readonly;
+        if let Some(p) = &mut self.original {
+            p.set_readonly(readonly);
+        }
     }
 }
 
@@ -237,6 +244,7 @@ impl From<std::fs::Permissions> for Permissions {
     fn from(value: std::fs::Permissions) -> Self {
         Self {
             readonly: value.readonly(),
+            original: Some(value),
         }
     }
 }
@@ -246,6 +254,7 @@ impl From<cap_primitives::fs::Permissions> for Permissions {
     fn from(value: cap_primitives::fs::Permissions) -> Self {
         Self {
             readonly: value.readonly(),
+            original: None,
         }
     }
 }
