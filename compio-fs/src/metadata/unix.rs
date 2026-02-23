@@ -38,14 +38,10 @@ pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
 }
 
 pub async fn metadata_at(dir: &File, path: impl AsRef<Path>) -> io::Result<Metadata> {
-    let path = path.as_ref();
-    crate::check_relative(path)?;
     metadata_impl(dir.to_shared_fd(), path, true).await
 }
 
 pub async fn symlink_metadata_at(dir: &File, path: impl AsRef<Path>) -> io::Result<Metadata> {
-    let path = path.as_ref();
-    crate::check_relative(path)?;
     metadata_impl(dir.to_shared_fd(), path, false).await
 }
 

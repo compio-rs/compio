@@ -14,6 +14,13 @@ mod sys;
 mod sys;
 
 /// A reference to an open directory on a filesystem.
+///
+/// ## Platform specific
+/// * Windows: the operations are forwarded to `cap-primitives`. They will treat
+///   self as the root of the filesystem.
+/// * Unix: the operatiosn are forwarded to syscalls directly. They don't limit
+///   the path to be under self. If the path is absolute, the directory
+///   represented by self will be ignored.
 #[derive(Debug, Clone)]
 pub struct Dir {
     inner: sys::Dir,

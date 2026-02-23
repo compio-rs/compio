@@ -146,8 +146,9 @@ impl DirBuilder {
     }
 
     pub(crate) async fn create_at(&self, dir: &File, path: &Path) -> io::Result<()> {
-        crate::check_relative(path)?;
-        if self.recursive {
+        if path.is_absolute() {
+            self.create(path).await
+        } else if self.recursive {
             self.create_dir_all_at(dir, path).await
         } else {
             self.inner.create_at(dir, path).await
