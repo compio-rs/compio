@@ -30,7 +30,9 @@ pub use stdio::*;
 mod utils;
 pub use utils::*;
 
+#[cfg(dirfd)]
 mod dirfd;
+#[cfg(dirfd)]
 pub use dirfd::*;
 
 #[cfg(windows)]
@@ -73,7 +75,7 @@ pub(crate) async fn spawn_blocking_with<T: 'static, R: Send + 'static>(
     Ok(meta.into_inner().expect("result should be present"))
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, dirfd))]
 pub(crate) async fn spawn_blocking_with2<T1: 'static, T2: 'static, R: Send + 'static>(
     fd1: SharedFd<T1>,
     fd2: SharedFd<T2>,

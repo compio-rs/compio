@@ -70,6 +70,7 @@ impl DirBuilder {
         self.create_impl(CurrentDir, path).await
     }
 
+    #[cfg(dirfd)]
     pub async fn create_at(&self, dir: &File, path: &Path) -> io::Result<()> {
         self.create_impl(dir.to_shared_fd(), path).await
     }

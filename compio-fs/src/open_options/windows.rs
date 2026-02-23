@@ -86,6 +86,7 @@ impl OpenOptions {
         File::from_std(file)
     }
 
+    #[cfg(dirfd)]
     pub async fn open_at(&self, dir: &File, p: impl AsRef<Path>) -> io::Result<File> {
         let opt = cap_primitives::fs::OpenOptions::from(self);
         let p = p.as_ref().to_path_buf();
@@ -116,6 +117,7 @@ impl From<&OpenOptions> for std::fs::OpenOptions {
     }
 }
 
+#[cfg(dirfd)]
 impl From<&OpenOptions> for cap_primitives::fs::OpenOptions {
     fn from(value: &OpenOptions) -> Self {
         use cap_primitives::fs::OpenOptionsExt;

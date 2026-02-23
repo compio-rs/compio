@@ -64,6 +64,7 @@ impl DirBuilder {
             .unwrap_or_else(|e| resume_unwind(e))
     }
 
+    #[cfg(dirfd)]
     pub async fn create_at(&self, dir: &File, path: &Path) -> io::Result<()> {
         let path = path.to_path_buf();
         crate::spawn_blocking_with(dir.to_shared_fd(), move |dir| {

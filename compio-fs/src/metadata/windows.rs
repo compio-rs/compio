@@ -20,6 +20,7 @@ pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
         .map(Metadata::from)
 }
 
+#[cfg(dirfd)]
 async fn metadata_at_impl(
     dir: &File,
     path: impl AsRef<Path>,
@@ -41,10 +42,12 @@ async fn metadata_at_impl(
     .map(Metadata::from)
 }
 
+#[cfg(dirfd)]
 pub async fn metadata_at(dir: &File, path: impl AsRef<Path>) -> io::Result<Metadata> {
     metadata_at_impl(dir, path, true).await
 }
 
+#[cfg(dirfd)]
 pub async fn symlink_metadata_at(dir: &File, path: impl AsRef<Path>) -> io::Result<Metadata> {
     metadata_at_impl(dir, path, false).await
 }
@@ -180,6 +183,7 @@ impl From<std::fs::Metadata> for Metadata {
     }
 }
 
+#[cfg(dirfd)]
 impl From<cap_primitives::fs::Metadata> for Metadata {
     fn from(value: cap_primitives::fs::Metadata) -> Self {
         use cap_primitives::fs::MetadataExt;
@@ -237,6 +241,7 @@ impl From<std::fs::Permissions> for Permissions {
     }
 }
 
+#[cfg(dirfd)]
 impl From<cap_primitives::fs::Permissions> for Permissions {
     fn from(value: cap_primitives::fs::Permissions) -> Self {
         Self {
@@ -282,6 +287,7 @@ impl From<std::fs::FileType> for FileType {
     }
 }
 
+#[cfg(dirfd)]
 impl From<cap_primitives::fs::FileType> for FileType {
     fn from(value: cap_primitives::fs::FileType) -> Self {
         Self {

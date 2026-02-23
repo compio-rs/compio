@@ -37,10 +37,12 @@ pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
     metadata_impl(CurrentDir, path, false).await
 }
 
+#[cfg(dirfd)]
 pub async fn metadata_at(dir: &File, path: impl AsRef<Path>) -> io::Result<Metadata> {
     metadata_impl(dir.to_shared_fd(), path, true).await
 }
 
+#[cfg(dirfd)]
 pub async fn symlink_metadata_at(dir: &File, path: impl AsRef<Path>) -> io::Result<Metadata> {
     metadata_impl(dir.to_shared_fd(), path, false).await
 }

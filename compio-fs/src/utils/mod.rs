@@ -145,6 +145,7 @@ impl DirBuilder {
         }
     }
 
+    #[cfg(dirfd)]
     pub(crate) async fn create_at(&self, dir: &File, path: &Path) -> io::Result<()> {
         if path.is_absolute() {
             self.create(path).await
@@ -155,6 +156,7 @@ impl DirBuilder {
         }
     }
 
+    #[cfg(dirfd)]
     async fn create_dir_all_at(&self, dir: &File, path: &Path) -> io::Result<()> {
         use crate::metadata_at;
 

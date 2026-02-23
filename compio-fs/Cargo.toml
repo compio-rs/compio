@@ -35,7 +35,7 @@ windows-sys = { workspace = true, features = [
     "Win32_System_SystemServices",
 ] }
 
-cap-primitives = "4.0.0"
+cap-primitives = { version = "4.0.0", optional = true }
 
 # Windows specific dev dependencies
 [target.'cfg(windows)'.dev-dependencies]
@@ -66,6 +66,12 @@ nix = { workspace = true, features = ["fs"] }
 compio-net = { workspace = true }
 
 [features]
+dir = ["dep:cap-primitives"]
+
 read_buf = ["compio-buf/read_buf", "compio-io/read_buf"]
 windows_by_handle = []
 nightly = ["read_buf", "windows_by_handle"]
+
+[[test]]
+name = "dir"
+required-features = ["dir"]

@@ -70,6 +70,7 @@ polling = ["compio-driver/polling"]
 io = ["dep:compio-io"]
 io-compat = ["io", "compio-io/compat", "compio-quic?/io-compat"]
 fs = ["dep:compio-fs", "runtime", "io"]
+fs-dir = ["fs", "compio-fs/dir"]
 net = ["dep:compio-net", "runtime", "io"]
 runtime = ["dep:compio-runtime"]
 macros = ["dep:compio-macros", "runtime"]
@@ -91,6 +92,7 @@ h3 = ["quic", "compio-quic/h3"]
 ws = ["dep:compio-ws"]
 all = [
     "fs",
+    "fs-dir",
     "net",
     "time",
     "macros",
@@ -191,3 +193,7 @@ required-features = ["net"]
 [[test]]
 name = "runtime"
 required-features = ["fs", "net", "macros"]
+
+[[test]]
+name = "accept"
+required-features = ["net"]

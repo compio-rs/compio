@@ -98,6 +98,7 @@ impl OpenOptions {
         self.open_impl(CurrentDir, p).await
     }
 
+    #[cfg(dirfd)]
     pub async fn open_at(&self, dir: &File, path: impl AsRef<Path>) -> io::Result<File> {
         self.open_impl(dir.to_shared_fd(), path).await
     }
