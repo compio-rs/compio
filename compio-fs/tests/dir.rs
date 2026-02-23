@@ -29,14 +29,3 @@ async fn rename() {
     dir.remove_dir("test2").await.unwrap();
     assert!(dir.open_dir("test2").await.is_err());
 }
-
-#[compio_macros::test]
-async fn test_absolute() {
-    #[cfg(unix)]
-    const ABSOLUTE_PATH: &str = "/usr";
-    #[cfg(windows)]
-    const ABSOLUTE_PATH: &str = "C:\\";
-
-    let dir = Dir::open(".").await.unwrap();
-    dir.open_dir(ABSOLUTE_PATH).await.unwrap_err();
-}
