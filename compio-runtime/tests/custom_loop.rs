@@ -18,7 +18,7 @@ fn cf_run_loop() {
         runloop::{CFRunLoop, CFRunLoopRef, CFRunLoopStop, kCFRunLoopDefaultMode},
         string::CFStringRef,
     };
-    use synchrony::unsync::async_flag::AsyncFlag as Event;
+    use synchrony::sync::async_flag::AsyncFlag as Event;
 
     struct CFRunLoopRuntime {
         runtime: Runtime,
