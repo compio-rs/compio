@@ -209,6 +209,7 @@ macro_rules! mop {
 mop!(<S: AsFd> ReadManagedAt(fd: S, offset: u64, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> ReadManaged(fd: S, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> RecvManaged(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool);
+<<<<<<< HEAD
 mop!(<S: AsFd> RecvFromManaged(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool, buffer: (crate::BorrowedBuffer<'a>, SockAddr)); //     fn poll(&mut self) -> &mut crate::op::managed::RecvFromManaged<S> {
 //         match self {
 //             Self::Poll(op) => op,
@@ -287,3 +288,6 @@ mop!(<S: AsFd> RecvFromManaged(fd: S, pool: &BufferPool, len: usize, flags: i32)
 //         unsafe { self.map_unchecked_mut(|x| x.inner.iour()) }.create_entry()
 //     }
 // }
+=======
+mop!(<S: AsFd> RecvFromManaged(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool, buffer: (crate::BorrowedBuffer<'a>, SockAddr));
+>>>>>>> 42f6bb3 (refacor(driver): allow custom buffer type with mop)
