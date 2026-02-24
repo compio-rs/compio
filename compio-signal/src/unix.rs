@@ -9,11 +9,11 @@ use std::{
     sync::Mutex,
 };
 
-use compio_runtime::event::{Event, EventHandle};
 #[cfg(not(feature = "lazy_cell"))]
 use once_cell::sync::Lazy as LazyLock;
 use os_pipe::{PipeReader, PipeWriter};
 use slab::Slab;
+use synchrony::sync::async_flag::{AsyncFlag as Event, AsyncFlagHandle as EventHandle};
 
 static HANDLER: LazyLock<Mutex<HashMap<i32, Slab<EventHandle>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));

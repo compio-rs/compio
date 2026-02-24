@@ -9,10 +9,10 @@ use std::{
 };
 
 use compio_driver::syscall;
-use compio_runtime::event::EventHandle;
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 use socket2::SockAddr;
+use synchrony::sync::async_flag::{AsyncFlag as Event, AsyncFlagHandle as EventHandle};
 use widestring::U16CString;
 use windows_sys::Win32::{
     Foundation::{ERROR_IO_PENDING, GetLastError, HANDLE},
@@ -172,8 +172,6 @@ pub async fn resolve_sock_addrs(
     host: &str,
     port: u16,
 ) -> io::Result<std::vec::IntoIter<SocketAddr>> {
-    use compio_runtime::event::Event;
-
     let mut resolver = AsyncResolver::new(host, port)?;
     let mut hints: ADDRINFOEXW = unsafe { std::mem::zeroed() };
     hints.ai_family = AF_UNSPEC as _;

@@ -69,9 +69,6 @@ pub use compio_tls as tls;
 #[cfg(feature = "ws")]
 #[doc(inline)]
 pub use compio_ws as ws;
-#[cfg(feature = "event")]
-#[doc(inline)]
-pub use runtime::event;
 #[cfg(feature = "time")]
 #[doc(inline)]
 pub use runtime::time;

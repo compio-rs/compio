@@ -11,13 +11,14 @@ fn cf_run_loop() {
 
     use block2::{Block, StackBlock};
     use compio_driver::AsRawFd;
-    use compio_runtime::{Runtime, event::Event};
+    use compio_runtime::Runtime;
     use core_foundation::{
         base::TCFType,
         filedescriptor::{CFFileDescriptor, CFFileDescriptorRef, kCFFileDescriptorReadCallBack},
         runloop::{CFRunLoop, CFRunLoopRef, CFRunLoopStop, kCFRunLoopDefaultMode},
         string::CFStringRef,
     };
+    use synchrony::unsync::async_flag::AsyncFlag as Event;
 
     struct CFRunLoopRuntime {
         runtime: Runtime,
@@ -117,10 +118,8 @@ fn message_queue() {
     };
 
     use compio_driver::AsRawFd;
-    use compio_runtime::{
-        Runtime,
-        event::{Event, EventHandle},
-    };
+    use compio_runtime::Runtime;
+    use synchrony::sync::async_flag::{AsyncFlag as Event, AsyncFlagHandle as EventHandle};
     use windows_sys::Win32::{
         Foundation::{HANDLE, HWND, WAIT_FAILED},
         System::Threading::INFINITE,

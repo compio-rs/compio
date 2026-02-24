@@ -15,8 +15,6 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-# Workspace dependencies
-compio-runtime = { workspace = true, features = ["event"] }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
@@ -32,6 +30,7 @@ windows-sys = { workspace = true, features = [
 [target.'cfg(target_os = "linux")'.dependencies]
 compio-buf = { workspace = true }
 compio-driver = { workspace = true }
+compio-runtime = { workspace = true }
 
 # Unix specific dependencies
 [target.'cfg(unix)'.dependencies]
@@ -41,6 +40,12 @@ libc = { workspace = true }
 once_cell = { workspace = true }
 os_pipe = { workspace = true }
 slab = { workspace = true }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+synchrony = { workspace = true, features = ["async_flag"] }
+
+[dev-dependencies]
+compio-runtime = { workspace = true }
 
 [features]
 # Nightly features

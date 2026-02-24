@@ -7,12 +7,12 @@ use std::sync::OnceLock;
 use std::{collections::HashMap, io, sync::Mutex};
 
 use compio_driver::syscall;
-use compio_runtime::event::{Event, EventHandle};
 #[cfg(not(feature = "lazy_cell"))]
 use once_cell::sync::Lazy as LazyLock;
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 use slab::Slab;
+use synchrony::sync::async_flag::{AsyncFlag as Event, AsyncFlagHandle as EventHandle};
 use windows_sys::{
     Win32::System::Console::{
         CTRL_BREAK_EVENT, CTRL_C_EVENT, CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT,

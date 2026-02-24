@@ -49,8 +49,10 @@ windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
 core-foundation = "0.10.0"
 block2 = "0.6.0"
 
+[target.'cfg(any(windows, target_os = "macos"))'.dev-dependencies]
+synchrony = { workspace = true, features = ["async_flag"] }
+
 [features]
-event = ["compio-buf/arrayvec"]
 time = []
 async-fd = ["dep:compio-io"]
 
@@ -63,11 +65,10 @@ nightly = ["current_thread_id", "future-combinator"]
 
 [[test]]
 name = "custom_loop"
-required-features = ["event", "time"]
+required-features = ["time"]
 
 [[test]]
 name = "event"
-required-features = ["event"]
 
 [[test]]
 name = "drop"
