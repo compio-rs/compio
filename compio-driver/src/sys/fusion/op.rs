@@ -102,11 +102,9 @@ macro_rules! op {
 }
 
 #[rustfmt::skip]
-mod iour { pub use crate::sys::iour::{op::*, OpCode};
-}
+mod iour { pub use crate::sys::iour::{op::*, OpCode}; }
 #[rustfmt::skip]
-mod poll { pub use crate::sys::poll::{op::*, OpCode};
-}
+mod poll { pub use crate::sys::poll::{op::*, OpCode}; }
 
 op!(<T: IoBufMut, S: AsFd> RecvFrom(fd: S, buffer: T, flags: i32));
 op!(<T: IoBuf, S: AsFd> SendTo(fd: S, buffer: T, addr: SockAddr, flags: i32));
