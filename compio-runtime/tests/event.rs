@@ -1,10 +1,9 @@
-use std::panic::resume_unwind;
-
 #[test]
 #[cfg(windows)]
 fn win32_event() {
     use std::{
         os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
+        panic::resume_unwind,
         pin::Pin,
         ptr::null,
         task::Poll,
