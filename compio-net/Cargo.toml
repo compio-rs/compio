@@ -19,7 +19,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 compio-buf = { workspace = true }
 compio-driver = { workspace = true }
 compio-io = { workspace = true }
-compio-runtime = { workspace = true, features = ["event"] }
+compio-runtime = { workspace = true }
 
 cfg-if = { workspace = true }
 either = "1.9.0"
@@ -33,6 +33,7 @@ windows-sys = { workspace = true, features = [
     "Win32_Networking_WinSock",
     "Win32_System_IO",
 ] }
+synchrony = { workspace = true, features = ["async_flag"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

@@ -1,25 +1,9 @@
-use std::panic::resume_unwind;
-
-use compio_runtime::event::Event;
-
-#[test]
-fn event_handle() {
-    compio_runtime::Runtime::new().unwrap().block_on(async {
-        let event = Event::new();
-        let handle = event.handle();
-        let task = compio_runtime::spawn_blocking(move || {
-            handle.notify();
-        });
-        event.wait().await;
-        task.await.unwrap_or_else(|e| resume_unwind(e));
-    })
-}
-
 #[test]
 #[cfg(windows)]
 fn win32_event() {
     use std::{
         os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
+        panic::resume_unwind,
         pin::Pin,
         ptr::null,
         task::Poll,

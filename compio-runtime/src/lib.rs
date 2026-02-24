@@ -26,8 +26,6 @@ mod cancel;
 pub mod fd;
 mod runtime;
 
-#[cfg(feature = "event")]
-pub mod event;
 #[cfg(feature = "future-combinator")]
 pub mod future;
 #[cfg(feature = "time")]
