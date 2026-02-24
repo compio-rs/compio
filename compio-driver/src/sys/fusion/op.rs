@@ -117,6 +117,9 @@ op!(<S: AsFd> PathStat(dirfd: S, path: CString, follow_symlink: bool));
 
 macro_rules! mop {
     (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? ) with $pool:ident) => {
+        mop!{ < $($ty: $trait),* > $name ( $( $arg: $arg_t ),* ) with $pool, buffer: crate::BorrowedBuffer<'a> }
+    };
+    (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? ) with $pool:ident, buffer: $buffer:ty) => {
         ::paste::paste!{
             enum [< $name Inner >] <$($ty: $trait),*> {
                 Poll(crate::op::managed::$name<$($ty),*>),
@@ -161,7 +164,7 @@ macro_rules! mop {
 
             impl<$($ty: $trait),*> crate::TakeBuffer for $name<$($ty),*> {
                 type BufferPool = crate::BufferPool;
-                type Buffer<'a> = crate::BorrowedBuffer<'a>;
+                type Buffer<'a> = $buffer;
 
                 fn take_buffer(
                     self,
@@ -208,87 +211,81 @@ macro_rules! mop {
 mop!(<S: AsFd> ReadManagedAt(fd: S, offset: u64, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> ReadManaged(fd: S, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> RecvManaged(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool);
+mop!(<S: AsFd> RecvFromManaged(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool, buffer: (crate::BorrowedBuffer<'a>, SockAddr)); //     fn poll(&mut self) -> &mut crate::op::managed::RecvFromManaged<S> {
+//         match self {
+//             Self::Poll(op) => op,
+//             Self::IoUring(_) => unreachable!("Current driver is not
+// `io-uring`"),         }
+//     }
 
-enum RecvFromManagedInner<S: AsFd> {
-    Poll(crate::op::managed::RecvFromManaged<S>),
-    IoUring(iour::RecvFromManaged<S>),
-}
+//     fn iour(&mut self) -> &mut iour::RecvFromManaged<S> {
+//         match self {
+//             Self::IoUring(op) => op,
+//             Self::Poll(_) => unreachable!("Current driver is not `polling`"),
+//         }
+//     }
+// }
 
-impl<S: AsFd> RecvFromManagedInner<S> {
-    fn poll(&mut self) -> &mut crate::op::managed::RecvFromManaged<S> {
-        match self {
-            Self::Poll(op) => op,
-            Self::IoUring(_) => unreachable!("Current driver is not `io-uring`"),
-        }
-    }
+// /// A fused `RecvFromManaged` operation
+// pub struct RecvFromManaged<S: AsFd> {
+//     inner: RecvFromManagedInner<S>,
+// }
 
-    fn iour(&mut self) -> &mut iour::RecvFromManaged<S> {
-        match self {
-            Self::IoUring(op) => op,
-            Self::Poll(_) => unreachable!("Current driver is not `polling`"),
-        }
-    }
-}
+// impl<S: AsFd> RecvFromManaged<S> {
+//     /// Create a new `RecvFromManaged`.
+//     pub fn new(fd: S, pool: &BufferPool, len: usize, flags: i32) ->
+// std::io::Result<Self> {         Ok(if pool.is_io_uring() {
+//             Self {
+//                 inner:
+// RecvFromManagedInner::IoUring(iour::RecvFromManaged::new(
+// fd, pool, len, flags,                 )?),
+//             }
+//         } else {
+//             Self {
+//                 inner:
+// RecvFromManagedInner::Poll(crate::op::managed::RecvFromManaged::new(
+//                     fd, pool, len, flags,
+//                 )?),
+//             }
+//         })
+//     }
+// }
 
-/// A fused `RecvFromManaged` operation
-pub struct RecvFromManaged<S: AsFd> {
-    inner: RecvFromManagedInner<S>,
-}
+// impl<S: AsFd> crate::TakeBuffer for RecvFromManaged<S> {
+//     type Buffer<'a> = (crate::BorrowedBuffer<'a>, SockAddr);
+//     type BufferPool = crate::BufferPool;
 
-impl<S: AsFd> RecvFromManaged<S> {
-    /// Create a new `RecvFromManaged`.
-    pub fn new(fd: S, pool: &BufferPool, len: usize, flags: i32) -> std::io::Result<Self> {
-        Ok(if pool.is_io_uring() {
-            Self {
-                inner: RecvFromManagedInner::IoUring(iour::RecvFromManaged::new(
-                    fd, pool, len, flags,
-                )?),
-            }
-        } else {
-            Self {
-                inner: RecvFromManagedInner::Poll(crate::op::managed::RecvFromManaged::new(
-                    fd, pool, len, flags,
-                )?),
-            }
-        })
-    }
-}
+//     fn take_buffer(
+//         self,
+//         buffer_pool: &Self::BufferPool,
+//         result: io::Result<usize>,
+//         buffer_id: u16,
+//     ) -> io::Result<Self::Buffer<'_>> {
+//         match self.inner {
+//             RecvFromManagedInner::Poll(inner) =>
+// inner.take_buffer(buffer_pool, result, buffer_id),
+// RecvFromManagedInner::IoUring(inner) => {
+// inner.take_buffer(buffer_pool, result, buffer_id)             }
+//         }
+//     }
+// }
 
-impl<S: AsFd> crate::TakeBuffer for RecvFromManaged<S> {
-    type Buffer<'a> = (crate::BorrowedBuffer<'a>, SockAddr);
-    type BufferPool = crate::BufferPool;
+// unsafe impl<S: AsFd> poll::OpCode for RecvFromManaged<S> {
+//     fn pre_submit(self: std::pin::Pin<&mut Self>) ->
+// std::io::Result<crate::Decision> {         unsafe {
+// self.map_unchecked_mut(|x| x.inner.poll()) }.pre_submit()     }
 
-    fn take_buffer(
-        self,
-        buffer_pool: &Self::BufferPool,
-        result: io::Result<usize>,
-        buffer_id: u16,
-    ) -> io::Result<Self::Buffer<'_>> {
-        match self.inner {
-            RecvFromManagedInner::Poll(inner) => inner.take_buffer(buffer_pool, result, buffer_id),
-            RecvFromManagedInner::IoUring(inner) => {
-                inner.take_buffer(buffer_pool, result, buffer_id)
-            }
-        }
-    }
-}
+//     fn op_type(self: std::pin::Pin<&mut Self>) -> Option<OpType> {
+//         unsafe { self.map_unchecked_mut(|x| x.inner.poll()) }.op_type()
+//     }
 
-unsafe impl<S: AsFd> poll::OpCode for RecvFromManaged<S> {
-    fn pre_submit(self: std::pin::Pin<&mut Self>) -> std::io::Result<crate::Decision> {
-        unsafe { self.map_unchecked_mut(|x| x.inner.poll()) }.pre_submit()
-    }
+//     fn operate(self: std::pin::Pin<&mut Self>) ->
+// std::task::Poll<std::io::Result<usize>> {         unsafe {
+// self.map_unchecked_mut(|x| x.inner.poll()) }.operate()     }
+// }
 
-    fn op_type(self: std::pin::Pin<&mut Self>) -> Option<OpType> {
-        unsafe { self.map_unchecked_mut(|x| x.inner.poll()) }.op_type()
-    }
-
-    fn operate(self: std::pin::Pin<&mut Self>) -> std::task::Poll<std::io::Result<usize>> {
-        unsafe { self.map_unchecked_mut(|x| x.inner.poll()) }.operate()
-    }
-}
-
-unsafe impl<S: AsFd> iour::OpCode for RecvFromManaged<S> {
-    fn create_entry(self: std::pin::Pin<&mut Self>) -> OpEntry {
-        unsafe { self.map_unchecked_mut(|x| x.inner.iour()) }.create_entry()
-    }
-}
+// unsafe impl<S: AsFd> iour::OpCode for RecvFromManaged<S> {
+//     fn create_entry(self: std::pin::Pin<&mut Self>) -> OpEntry {
+//         unsafe { self.map_unchecked_mut(|x| x.inner.iour()) }.create_entry()
+//     }
+// }
