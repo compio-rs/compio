@@ -219,6 +219,22 @@ impl UdpSocket {
         self.inner.recv_managed(buffer_pool, len, 0).await
     }
 
+    /// Read some bytes from this source with [`BufferPool`] and return
+    /// a [`BorrowedBuffer`] with the sender address.
+    ///
+    /// If `len` == 0, will use [`BufferPool`] inner buffer size as the max len,
+    /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
+    pub async fn recv_from_managed<'a>(
+        &self,
+        buffer_pool: &'a BufferPool,
+        len: usize,
+    ) -> io::Result<(BorrowedBuffer<'a>, SocketAddr)> {
+        self.inner
+            .recv_from_managed(buffer_pool, len, 0)
+            .await
+            .map(|(buffer, addr)| (buffer, addr.as_socket().expect("should be SocketAddr")))
+    }
+
     /// Sends some data to the socket from the buffer, returning the original
     /// buffer and quantity of data sent.
     pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {

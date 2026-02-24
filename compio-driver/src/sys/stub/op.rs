@@ -256,3 +256,5 @@ impl<S: AsFd> OpCode for crate::op::managed::ReadManagedAt<S> {}
 impl<S: AsFd> OpCode for crate::op::managed::ReadManaged<S> {}
 
 impl<S: AsFd> OpCode for crate::op::managed::RecvManaged<S> {}
+
+impl<S: AsFd> OpCode for crate::op::managed::RecvFromManaged<S> {}
