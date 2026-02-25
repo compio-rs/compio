@@ -6,7 +6,6 @@ categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net", "quic"]
 readme = "README.md"
 edition = { workspace = true }
-authors = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 

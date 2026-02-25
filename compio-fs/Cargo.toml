@@ -6,7 +6,6 @@ categories = ["asynchronous", "filesystem"]
 keywords = ["async", "fs"]
 readme = "README.md"
 edition = { workspace = true }
-authors = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 
