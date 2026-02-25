@@ -59,6 +59,24 @@ async fn test_udp_read_buffer_pool() {
 }
 
 #[compio_macros::test]
+async fn test_udp_recv_from_buffer_pool() {
+    let listener = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
+    let listener_addr = listener.local_addr().unwrap();
+    let connected = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
+    let connected_addr = connected.local_addr().unwrap();
+
+    compio_runtime::spawn(async move {
+        connected.send_to(b"test", listener_addr).await.unwrap();
+    })
+    .detach();
+
+    let buffer_pool = BufferPool::new(1, 4).unwrap();
+    let (buffer, addr) = listener.recv_from_managed(&buffer_pool, 0).await.unwrap();
+    assert_eq!(buffer.as_ref(), b"test");
+    assert_eq!(addr, connected_addr);
+}
+
+#[compio_macros::test]
 async fn test_uds_recv_buffer_pool() {
     let dir = tempfile::Builder::new()
         .prefix("compio-uds-buffer-pool-tests")
