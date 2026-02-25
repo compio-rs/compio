@@ -578,6 +578,16 @@ unsafe impl<S: AsFd> OpCode for RecvManaged<S> {
     }
 }
 
+unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
+    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        unsafe { self.project().op.operate(optr) }
+    }
+
+    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+        self.project().op.cancel(optr)
+    }
+}
+
 pin_project! {
     /// Receive data from remote into vectored buffer.
     pub struct RecvVectored<T: IoVectoredBufMut, S> {

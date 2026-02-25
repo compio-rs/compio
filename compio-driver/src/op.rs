@@ -25,7 +25,7 @@ pub use crate::sys::op::{
     WriteVectored, WriteVectoredAt,
 };
 #[cfg(io_uring)]
-pub use crate::sys::op::{ReadManaged, ReadManagedAt, RecvManaged};
+pub use crate::sys::op::{ReadManaged, ReadManagedAt, RecvFromManaged, RecvManaged};
 use crate::{Extra, OwnedFd, SharedFd, TakeBuffer, sys::aio::*};
 
 /// Trait to update the buffer length inside the [`BufResult`].
@@ -471,9 +471,10 @@ pub(crate) mod managed {
 
     use compio_buf::IntoInner;
     use pin_project_lite::pin_project;
+    use socket2::SockAddr;
 
-    use super::{Read, ReadAt, Recv};
-    use crate::{BorrowedBuffer, BufferPool, OwnedBuffer, TakeBuffer};
+    use super::{Read, ReadAt, Recv, RecvFrom};
+    use crate::{AsFd, BorrowedBuffer, BufferPool, OwnedBuffer, TakeBuffer};
 
     pin_project! {
         /// Read a file at specified position into managed buffer.
@@ -598,6 +599,48 @@ pub(crate) mod managed {
             #[cfg(fusion)]
             let res = BorrowedBuffer::new_poll(res);
             Ok(res)
+        }
+    }
+
+    pin_project! {
+        /// Receive data and source address into managed buffer.
+        pub struct RecvFromManaged<S: AsFd> {
+            #[pin]
+            pub(crate) op: RecvFrom<OwnedBuffer, S>,
+        }
+    }
+
+    impl<S: AsFd> RecvFromManaged<S> {
+        /// Create [`RecvFromManaged`].
+        pub fn new(fd: S, pool: &BufferPool, len: usize, flags: i32) -> io::Result<Self> {
+            #[cfg(fusion)]
+            let pool = pool.as_poll();
+            Ok(Self {
+                op: RecvFrom::new(fd, pool.get_buffer(len)?, flags),
+            })
+        }
+    }
+
+    impl<S: AsFd> TakeBuffer for RecvFromManaged<S> {
+        type Buffer<'a> = (BorrowedBuffer<'a>, SockAddr);
+        type BufferPool = BufferPool;
+
+        fn take_buffer(
+            self,
+            buffer_pool: &Self::BufferPool,
+            result: io::Result<usize>,
+            _: u16,
+        ) -> io::Result<Self::Buffer<'_>> {
+            let result = result?;
+            #[cfg(fusion)]
+            let buffer_pool = buffer_pool.as_poll();
+            let (slice, addr_buffer, addr_size) = self.op.into_inner();
+            let addr = unsafe { SockAddr::new(addr_buffer, addr_size) };
+            // SAFETY: result is valid
+            let res = unsafe { buffer_pool.create_proxy(slice, result) };
+            #[cfg(fusion)]
+            let res = BorrowedBuffer::new_poll(res);
+            Ok((res, addr))
         }
     }
 }
