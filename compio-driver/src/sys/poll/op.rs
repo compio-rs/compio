@@ -819,6 +819,20 @@ unsafe impl<S: AsFd> OpCode for crate::op::managed::RecvManaged<S> {
     }
 }
 
+unsafe impl<S: AsFd> OpCode for crate::op::managed::RecvFromManaged<S> {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        self.project().op.pre_submit()
+    }
+
+    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+        self.project().op.op_type()
+    }
+
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        self.project().op.operate()
+    }
+}
+
 impl<T: IoVectoredBufMut, S: AsFd> RecvVectored<T, S> {
     unsafe fn call(self: Pin<&mut Self>) -> libc::ssize_t {
         let this = self.project();

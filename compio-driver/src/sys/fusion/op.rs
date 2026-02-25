@@ -115,6 +115,9 @@ op!(<> PathStat(path: CString, follow_symlink: bool));
 
 macro_rules! mop {
     (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? ) with $pool:ident) => {
+        mop!{ < $($ty: $trait),* > $name ( $( $arg: $arg_t ),* ) with $pool, buffer: crate::BorrowedBuffer<'a> }
+    };
+    (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? ) with $pool:ident, buffer: $buffer:ty) => {
         ::paste::paste!{
             enum [< $name Inner >] <$($ty: $trait),*> {
                 Poll(crate::op::managed::$name<$($ty),*>),
@@ -159,7 +162,7 @@ macro_rules! mop {
 
             impl<$($ty: $trait),*> crate::TakeBuffer for $name<$($ty),*> {
                 type BufferPool = crate::BufferPool;
-                type Buffer<'a> = crate::BorrowedBuffer<'a>;
+                type Buffer<'a> = $buffer;
 
                 fn take_buffer(
                     self,
@@ -206,3 +209,4 @@ macro_rules! mop {
 mop!(<S: AsFd> ReadManagedAt(fd: S, offset: u64, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> ReadManaged(fd: S, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> RecvManaged(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool);
+mop!(<S: AsFd> RecvFromManaged(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool, buffer: (crate::BorrowedBuffer<'a>, SockAddr));

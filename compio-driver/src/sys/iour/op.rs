@@ -870,6 +870,8 @@ mod buf_ring {
     };
 
     use io_uring::{opcode, squeue::Flags, types::Fd};
+    use pin_project_lite::pin_project;
+    use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
     use super::OpCode;
     use crate::{BorrowedBuffer, BufferPool, OpEntry, TakeBuffer};
@@ -1049,6 +1051,83 @@ mod buf_ring {
             res
         }
     }
+
+    pin_project! {
+        /// Receive data and source address into managed buffer.
+        pub struct RecvFromManaged<S> {
+            fd: S,
+            buffer_group: u16,
+            flags: i32,
+            addr: SockAddrStorage,
+            addr_len: socklen_t,
+            iovec: libc::iovec,
+            msg: libc::msghdr,
+            _p: PhantomPinned,
+        }
+    }
+
+    impl<S> RecvFromManaged<S> {
+        /// Create [`RecvFromManaged`].
+        pub fn new(fd: S, buffer_pool: &BufferPool, len: usize, flags: i32) -> io::Result<Self> {
+            #[cfg(fusion)]
+            let buffer_pool = buffer_pool.as_io_uring();
+            let len: u32 = len.try_into().map_err(|_| {
+                io::Error::new(io::ErrorKind::InvalidInput, "required length too long")
+            })?;
+            let addr = SockAddrStorage::zeroed();
+            Ok(Self {
+                fd,
+                buffer_group: buffer_pool.buffer_group(),
+                flags,
+                addr_len: addr.size_of() as _,
+                addr,
+                iovec: libc::iovec {
+                    iov_base: ptr::null_mut(),
+                    iov_len: len as _,
+                },
+                msg: unsafe { std::mem::zeroed() },
+                _p: PhantomPinned,
+            })
+        }
+    }
+
+    unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
+        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+            let this = self.project();
+            this.msg.msg_name = this.addr as *mut _ as _;
+            this.msg.msg_namelen = *this.addr_len;
+            this.msg.msg_iov = this.iovec as *const _ as *mut _;
+            this.msg.msg_iovlen = 1;
+            opcode::RecvMsg::new(Fd(this.fd.as_fd().as_raw_fd()), this.msg)
+                .flags(*this.flags as _)
+                .buf_group(*this.buffer_group)
+                .build()
+                .flags(Flags::BUFFER_SELECT)
+                .into()
+        }
+    }
+
+    impl<S> TakeBuffer for RecvFromManaged<S> {
+        type Buffer<'a> = (BorrowedBuffer<'a>, SockAddr);
+        type BufferPool = BufferPool;
+
+        fn take_buffer(
+            self,
+            buffer_pool: &Self::BufferPool,
+            result: io::Result<usize>,
+            buffer_id: u16,
+        ) -> io::Result<Self::Buffer<'_>> {
+            #[cfg(fusion)]
+            let buffer_pool = buffer_pool.as_io_uring();
+            let result = result.inspect_err(|_| buffer_pool.reuse_buffer(buffer_id))?;
+            let addr = unsafe { SockAddr::new(self.addr, self.addr_len) };
+            // SAFETY: result is valid
+            let buffer = unsafe { buffer_pool.get_buffer(buffer_id, result) }?;
+            #[cfg(fusion)]
+            let buffer = BorrowedBuffer::new_io_uring(buffer);
+            Ok((buffer, addr))
+        }
+    }
 }
 
-pub use buf_ring::{ReadManaged, ReadManagedAt, RecvManaged};
+pub use buf_ring::{ReadManaged, ReadManagedAt, RecvFromManaged, RecvManaged};
