@@ -1,18 +1,13 @@
 use std::{borrow::Cow, io};
 
 use compio_io::{AsyncRead, AsyncWrite, compat::SyncStream};
-use compio_py_dynamic_openssl::ssl::{Error, ErrorCode, ShutdownResult, SslStream};
+use compio_py_dynamic_openssl::ssl::{Error, ErrorCode, HandshakeError, ShutdownResult, SslStream};
 
 use crate::TlsStream;
 
 pub(crate) async fn handshake<S: AsyncRead + AsyncWrite>(
-    mut res: Result<
-        compio_py_dynamic_openssl::ssl::SslStream<SyncStream<S>>,
-        compio_py_dynamic_openssl::ssl::HandshakeError<SyncStream<S>>,
-    >,
+    mut res: Result<SslStream<SyncStream<S>>, HandshakeError<SyncStream<S>>>,
 ) -> io::Result<TlsStream<S>> {
-    use compio_py_dynamic_openssl::ssl::HandshakeError;
-
     loop {
         match res {
             Ok(mut s) => {
