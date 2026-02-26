@@ -90,6 +90,12 @@ impl<T, B> BufResult<T, B> {
     pub fn unwrap(self) -> (T, B) {
         (self.0.unwrap(), self.1)
     }
+
+    /// Returns the parts, consuming the `self` value.
+    #[inline]
+    pub fn into_parts(self) -> (io::Result<T>, B) {
+        (self.0, self.1)
+    }
 }
 
 impl<T, B> From<(io::Result<T>, B)> for BufResult<T, B> {
