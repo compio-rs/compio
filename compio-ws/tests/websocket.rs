@@ -174,3 +174,41 @@ async fn test_multiple_messages() {
         assert_eq!(response, Message::Text(msg.into()));
     }
 }
+
+#[compio_macros::test]
+#[cfg(feature = "io-compat")]
+async fn compat_ping_pong() {
+    use futures_util::{SinkExt, StreamExt};
+
+    let (tx, rx) = oneshot::channel();
+
+    compio_runtime::spawn(async move {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tx.send(addr).unwrap();
+
+        let (stream, _) = listener.accept().await.unwrap();
+        let ws = accept_async(stream).await.unwrap();
+        let mut ws = ws.into_compat();
+
+        let msg = ws.next().await.unwrap().unwrap();
+        if let Message::Ping(data) = msg {
+            ws.send(Message::Pong(data)).await.unwrap();
+        }
+    })
+    .detach();
+
+    let addr = rx.await.unwrap();
+
+    let tcp = TcpStream::connect(&addr).await.unwrap();
+    let (ws, _) = client_async(&format!("ws://{}", addr), tcp).await.unwrap();
+    let mut ws = ws.into_compat();
+
+    let ping_data = vec![42];
+    ws.send(Message::Ping(ping_data.clone().into()))
+        .await
+        .unwrap();
+
+    let response = ws.next().await.unwrap().unwrap();
+    assert_eq!(response, Message::Pong(ping_data.into()));
+}
