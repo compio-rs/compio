@@ -24,8 +24,6 @@ rustls = { workspace = true, default-features = false, optional = true, features
     "tls12",
 ] }
 compio-py-dynamic-openssl = { workspace = true, optional = true }
-# We want to enable it only if "py-dynamic-openssl" is enabled.
-pyo3 = { version = "0.28.2", optional = true }
 
 futures-rustls = { workspace = true, default-features = false, optional = true, features = [
     "logging",
@@ -50,7 +48,7 @@ default = ["native-tls"]
 all = ["native-tls", "rustls"]
 rustls = ["dep:rustls", "dep:futures-rustls", "dep:futures-util"]
 native-tls-vendored = ["native-tls/vendored"]
-py-dynamic-openssl = ["dep:compio-py-dynamic-openssl", "dep:pyo3"]
+py-dynamic-openssl = ["dep:compio-py-dynamic-openssl"]
 
 ring = ["rustls", "rustls/ring", "futures-rustls/ring"]
 

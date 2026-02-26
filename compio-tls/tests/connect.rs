@@ -44,6 +44,7 @@ async fn rtls() {
 #[cfg(feature = "py-dynamic-openssl")]
 #[compio_macros::test]
 async fn py_ossl() {
+    use compio_py_dynamic_openssl::pyo3;
     use pyo3::types::IntoPyDict;
 
     pyo3::Python::initialize();
@@ -58,7 +59,7 @@ async fn py_ossl() {
                 Some(&[("ssl", module)].into_py_dict(py).unwrap()),
             )
             .unwrap();
-        compio_py_dynamic_openssl::SSLContext::try_from(&context).unwrap()
+        compio_py_dynamic_openssl::SSLContext::try_from(context).unwrap()
     });
     let connector = TlsConnector::from(context);
 
