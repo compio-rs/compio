@@ -8,7 +8,7 @@
 # Editor directories
 /.vscode
 /.zed
-/.idea
+.idea
 
 # Bacon config
 bacon.toml
