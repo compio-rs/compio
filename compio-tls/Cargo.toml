@@ -43,6 +43,8 @@ futures-rustls = { workspace = true, default-features = false, features = [
     "ring",
 ] }
 
+pyo3 = "0.28.2"
+
 [features]
 default = ["native-tls"]
 all = ["native-tls", "rustls"]
