@@ -116,6 +116,12 @@ pub unsafe trait OpCode {
     /// Create submission entry.
     fn create_entry(self: Pin<&mut Self>) -> OpEntry;
 
+    /// Create submission entry for fallback. This method will only be called if
+    /// `create_entry` returns an entry with unsupported opcode.
+    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
+        OpEntry::Blocking
+    }
+
     /// Call the operation in a blocking way. This method will only be called if
     /// [`create_entry`] returns [`OpEntry::Blocking`].
     ///
@@ -344,26 +350,50 @@ impl Driver {
     pub fn push(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?key);
         let personality = key.borrow().extra().as_iour().get_personality();
-        let entry = key
+        let mut op_entry = key
             .borrow()
             .pinned_op()
             .create_entry()
             .personality(personality);
+        let mut fallbacked = false;
         trace!(?personality, "push Key");
-        match entry {
-            OpEntry::Submission(entry) => {
-                if is_op_supported(entry.get_opcode() as _) {
-                    #[allow(clippy::useless_conversion)]
-                    self.push_raw_with_key(entry.into(), key)?;
-                } else {
-                    self.push_blocking(key)
+        loop {
+            match op_entry {
+                OpEntry::Submission(entry) => {
+                    if is_op_supported(entry.get_opcode() as _) {
+                        #[allow(clippy::useless_conversion)]
+                        self.push_raw_with_key(entry.into(), key)?;
+                    } else if !fallbacked {
+                        op_entry = key
+                            .borrow()
+                            .pinned_op()
+                            .create_entry_fallback()
+                            .personality(personality);
+                        fallbacked = true;
+                        continue;
+                    } else {
+                        self.push_blocking(key);
+                    }
                 }
+                #[cfg(feature = "io-uring-sqe128")]
+                OpEntry::Submission128(entry) => {
+                    if is_op_supported(entry.get_opcode() as _) {
+                        self.push_raw_with_key(entry, key)?;
+                    } else if !fallbacked {
+                        op_entry = key
+                            .borrow()
+                            .pinned_op()
+                            .create_entry_fallback()
+                            .personality(personality);
+                        fallbacked = true;
+                        continue;
+                    } else {
+                        self.push_blocking(key);
+                    }
+                }
+                OpEntry::Blocking => self.push_blocking(key),
             }
-            #[cfg(feature = "io-uring-sqe128")]
-            OpEntry::Submission128(entry) => {
-                self.push_raw_with_key(entry, key)?;
-            }
-            OpEntry::Blocking => self.push_blocking(key),
+            break;
         }
         Poll::Pending
     }
