@@ -9,7 +9,7 @@ use compio_buf::BufResult;
 use compio_driver::{
     AsRawFd, BufferPool, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
     op::{
-        Asyncify, CloseFile, CloseSocket, ReadAt, ReadManagedAt, ReadMulti, RecvMulti,
+        Asyncify, CloseFile, CloseSocket, ReadAt, ReadManagedAt, ReadMultiAt, RecvMulti,
         ResultTakeBuffer,
     },
 };
@@ -274,7 +274,7 @@ fn read_multi() {
 
     let pool = driver.create_buffer_pool(4, 1024).unwrap();
 
-    let op = ReadMulti::new(fd.clone(), &pool, 1024).unwrap();
+    let op = ReadMultiAt::new(fd.clone(), 0, &pool, 1024).unwrap();
     let buffer = push_and_wait_multi(&mut driver, op, &pool);
 
     println!("{}", std::str::from_utf8(&buffer).unwrap());
