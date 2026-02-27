@@ -477,6 +477,21 @@ pub(crate) mod managed {
     use super::{Read, ReadAt, Recv, RecvFrom};
     use crate::{AsFd, BorrowedBuffer, BufferPool, OwnedBuffer, TakeBuffer};
 
+    fn take_buffer(
+        slice: OwnedBuffer,
+        buffer_pool: &BufferPool,
+        result: io::Result<usize>,
+    ) -> io::Result<BorrowedBuffer<'_>> {
+        let result = result?;
+        #[cfg(fusion)]
+        let buffer_pool = buffer_pool.as_poll();
+        // SAFETY: result is valid
+        let res = unsafe { buffer_pool.create_proxy(slice, result) };
+        #[cfg(fusion)]
+        let res = BorrowedBuffer::new_poll(res);
+        Ok(res)
+    }
+
     pin_project! {
         /// Read a file at specified position into managed buffer.
         pub struct ReadManagedAt<S> {
@@ -506,15 +521,7 @@ pub(crate) mod managed {
             result: io::Result<usize>,
             _: u16,
         ) -> io::Result<BorrowedBuffer<'_>> {
-            let result = result?;
-            #[cfg(fusion)]
-            let buffer_pool = buffer_pool.as_poll();
-            let slice = self.op.into_inner();
-            // SAFETY: result is valid
-            let res = unsafe { buffer_pool.create_proxy(slice, result) };
-            #[cfg(fusion)]
-            let res = BorrowedBuffer::new_poll(res);
-            Ok(res)
+            take_buffer(self.op.into_inner(), buffer_pool, result)
         }
     }
 
@@ -547,15 +554,7 @@ pub(crate) mod managed {
             result: io::Result<usize>,
             _: u16,
         ) -> io::Result<Self::Buffer<'_>> {
-            let result = result?;
-            #[cfg(fusion)]
-            let buffer_pool = buffer_pool.as_poll();
-            let slice = self.op.into_inner();
-            // SAFETY: result is valid
-            let res = unsafe { buffer_pool.create_proxy(slice, result) };
-            #[cfg(fusion)]
-            let res = BorrowedBuffer::new_poll(res);
-            Ok(res)
+            take_buffer(self.op.into_inner(), buffer_pool, result)
         }
     }
 
@@ -591,15 +590,7 @@ pub(crate) mod managed {
             result: io::Result<usize>,
             _: u16,
         ) -> io::Result<Self::Buffer<'_>> {
-            let result = result?;
-            #[cfg(fusion)]
-            let buffer_pool = buffer_pool.as_poll();
-            let slice = self.op.into_inner();
-            // SAFETY: result is valid
-            let res = unsafe { buffer_pool.create_proxy(slice, result) };
-            #[cfg(fusion)]
-            let res = BorrowedBuffer::new_poll(res);
-            Ok(res)
+            take_buffer(self.op.into_inner(), buffer_pool, result)
         }
     }
 
