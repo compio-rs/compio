@@ -19,6 +19,8 @@ use std::{
     time::Duration,
 };
 
+use compio_buf::BufResult;
+
 use crate::{BufferPool, DriverType, ErasedKey, ProactorBuilder};
 
 pub struct Extra {}
@@ -82,6 +84,10 @@ impl Driver {
 
     pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
         Ok(())
+    }
+
+    pub fn pop_multishot(&mut self, _: &ErasedKey) -> Option<BufResult<usize, crate::sys::Extra>> {
+        None
     }
 }
 

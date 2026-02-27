@@ -256,6 +256,14 @@ impl Proactor {
         }
     }
 
+    /// Get one completion entry for a multishot operation. If it returns
+    /// [`None`], the user should call [`Proactor::pop_with_extra`] to get the
+    /// final result of the operation.
+    pub fn pop_multishot<T>(&mut self, key: &Key<T>) -> Option<BufResult<usize, Extra>> {
+        instrument!(compio_log::Level::DEBUG, "pop_multishot", ?key);
+        self.driver.pop_multishot(key)
+    }
+
     /// Update the waker of the specified op.
     pub fn update_waker<T>(&mut self, op: &mut Key<T>, waker: &Waker) {
         op.set_waker(waker);
