@@ -1,9 +1,9 @@
-use std::{io, time::Duration};
+use std::{io, ops::Deref, time::Duration};
 
 use compio_buf::BufResult;
 use compio_driver::{
-    AsRawFd, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
-    op::{Asyncify, CloseFile, ReadAt, ReadManagedAt},
+    AsRawFd, BufferPool, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
+    op::{Asyncify, CloseFile, ReadAt, ReadManagedAt, ReadMulti, ResultTakeBuffer},
 };
 mod pipe2;
 
@@ -93,6 +93,42 @@ fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult
                 PushEntry::Ready(res) => break res,
             }
         },
+    }
+}
+
+fn push_and_wait_multi<O: OpCode + TakeBuffer<BufferPool = BufferPool> + 'static>(
+    driver: &mut Proactor,
+    op: O,
+    pool: &BufferPool,
+) -> Vec<u8>
+where
+    for<'a> O::Buffer<'a>: Deref<Target = [u8]>,
+{
+    match driver.push(op) {
+        PushEntry::Ready(res) => {
+            let buf = (res, driver.default_extra()).take_buffer(pool).unwrap();
+            buf.to_vec()
+        }
+        PushEntry::Pending(mut user_data) => {
+            let mut buffer = vec![];
+            loop {
+                driver.poll(None).unwrap();
+                if let Some(res) = driver.pop_multishot(&user_data) {
+                    let slice = res.take_buffer(pool).unwrap();
+                    buffer.extend_from_slice(&slice);
+                } else {
+                    match driver.pop_with_extra(user_data) {
+                        PushEntry::Pending(k) => user_data = k,
+                        PushEntry::Ready(res) => {
+                            let slice = res.take_buffer(pool).unwrap();
+                            buffer.extend_from_slice(&slice);
+                            break;
+                        }
+                    }
+                }
+            }
+            buffer
+        }
     }
 }
 
@@ -212,6 +248,25 @@ fn managed() {
     let buffer_id = extra.unwrap().buffer_id().expect("Buffer ID missing");
 
     let buffer = op.take_buffer(&pool, res, buffer_id).unwrap();
+    println!("{}", std::str::from_utf8(&buffer).unwrap());
+
+    let op = CloseFile::new(fd.try_unwrap().unwrap());
+    push_and_wait(&mut driver, op).unwrap();
+}
+
+#[test]
+fn read_multi() {
+    let mut driver = Proactor::new().unwrap();
+
+    let fd = open_file(&mut driver);
+    let fd = SharedFd::new(fd);
+    driver.attach(fd.as_raw_fd()).unwrap();
+
+    let pool = driver.create_buffer_pool(4, 1024).unwrap();
+
+    let op = ReadMulti::new(fd.clone(), &pool, 1024).unwrap();
+    let buffer = push_and_wait_multi(&mut driver, op, &pool);
+
     println!("{}", std::str::from_utf8(&buffer).unwrap());
 
     let op = CloseFile::new(fd.try_unwrap().unwrap());
