@@ -657,7 +657,7 @@ pub(crate) mod managed {
 
     /// Read a file at specified position into multiple managed buffers.
     pub type ReadMultiAt<S> = ReadManagedAt<S>;
-    /// Receive data from remote into multiple managed buffers.
+    /// Read a file into multiple managed buffers.
     pub type ReadMulti<S> = ReadManaged<S>;
     /// Receive data from remote into multiple managed buffers.
     pub type RecvMulti<S> = RecvManaged<S>;

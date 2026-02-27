@@ -992,7 +992,7 @@ mod buf_ring {
         }
     }
 
-    /// Receive data from remote.
+    /// Read a file.
     pub struct ReadManaged<S> {
         fd: S,
         buffer_group: u16,
@@ -1217,7 +1217,7 @@ mod buf_ring {
     }
 
     pin_project! {
-        /// Receive data from remote into multiple managed buffers.
+        /// Read a file into multiple managed buffers.
         pub struct ReadMulti<S> {
             #[pin]
             inner: ReadManaged<S>,
