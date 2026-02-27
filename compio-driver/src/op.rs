@@ -190,6 +190,7 @@ impl ResultTakeBuffer for BufResult<usize, Extra> {
         }
         #[cfg(not(io_uring))]
         {
+            let _pool = pool;
             unreachable!("take_buffer should not be called for non-io-uring ops")
         }
     }
@@ -654,8 +655,11 @@ pub(crate) mod managed {
         }
     }
 
+    /// Read a file at specified position into multiple managed buffers.
     pub type ReadMultiAt<S> = ReadManagedAt<S>;
+    /// Receive data from remote into multiple managed buffers.
     pub type ReadMulti<S> = ReadManaged<S>;
+    /// Receive data from remote into multiple managed buffers.
     pub type RecvMulti<S> = RecvManaged<S>;
 }
 
