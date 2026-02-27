@@ -13,7 +13,13 @@ enum TlsConnectorInner {
     NativeTls(native_tls::TlsConnector),
     #[cfg(feature = "rustls")]
     Rustls(futures_rustls::TlsConnector),
-    #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+    #[cfg(feature = "py-dynamic-openssl")]
+    PyDynamicOpenSsl(compio_py_dynamic_openssl::SSLContext),
+    #[cfg(not(any(
+        feature = "native-tls",
+        feature = "rustls",
+        feature = "py-dynamic-openssl"
+    )))]
     None(std::convert::Infallible),
 }
 
@@ -24,7 +30,13 @@ impl Debug for TlsConnectorInner {
             Self::NativeTls(_) => f.debug_tuple("NativeTls").finish(),
             #[cfg(feature = "rustls")]
             Self::Rustls(_) => f.debug_tuple("Rustls").finish(),
-            #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+            #[cfg(feature = "py-dynamic-openssl")]
+            Self::PyDynamicOpenSsl(_) => f.debug_tuple("PyDynamicOpenSsl").finish(),
+            #[cfg(not(any(
+                feature = "native-tls",
+                feature = "rustls",
+                feature = "py-dynamic-openssl"
+            )))]
             Self::None(f) => match *f {},
         }
     }
@@ -46,6 +58,14 @@ impl From<native_tls::TlsConnector> for TlsConnector {
 impl From<std::sync::Arc<rustls::ClientConfig>> for TlsConnector {
     fn from(value: std::sync::Arc<rustls::ClientConfig>) -> Self {
         Self(TlsConnectorInner::Rustls(value.into()))
+    }
+}
+
+#[cfg(feature = "py-dynamic-openssl")]
+#[doc(hidden)]
+impl From<compio_py_dynamic_openssl::SSLContext> for TlsConnector {
+    fn from(value: compio_py_dynamic_openssl::SSLContext) -> Self {
+        Self(TlsConnectorInner::PyDynamicOpenSsl(value))
     }
 }
 
@@ -82,7 +102,15 @@ impl TlsConnector {
                     .await?;
                 Ok(TlsStream::from(client))
             }
-            #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+            #[cfg(feature = "py-dynamic-openssl")]
+            TlsConnectorInner::PyDynamicOpenSsl(c) => {
+                crate::py_ossl::handshake(c.connect(domain, SyncStream::new(stream))).await
+            }
+            #[cfg(not(any(
+                feature = "native-tls",
+                feature = "rustls",
+                feature = "py-dynamic-openssl"
+            )))]
             TlsConnectorInner::None(f) => match *f {},
         }
     }
@@ -94,7 +122,13 @@ enum TlsAcceptorInner {
     NativeTls(native_tls::TlsAcceptor),
     #[cfg(feature = "rustls")]
     Rustls(futures_rustls::TlsAcceptor),
-    #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+    #[cfg(feature = "py-dynamic-openssl")]
+    PyDynamicOpenSsl(compio_py_dynamic_openssl::SSLContext),
+    #[cfg(not(any(
+        feature = "native-tls",
+        feature = "rustls",
+        feature = "py-dynamic-openssl"
+    )))]
     None(std::convert::Infallible),
 }
 
@@ -117,6 +151,13 @@ impl From<native_tls::TlsAcceptor> for TlsAcceptor {
 impl From<std::sync::Arc<rustls::ServerConfig>> for TlsAcceptor {
     fn from(value: std::sync::Arc<rustls::ServerConfig>) -> Self {
         Self(TlsAcceptorInner::Rustls(value.into()))
+    }
+}
+
+#[cfg(feature = "py-dynamic-openssl")]
+impl From<compio_py_dynamic_openssl::SSLContext> for TlsAcceptor {
+    fn from(value: compio_py_dynamic_openssl::SSLContext) -> Self {
+        Self(TlsAcceptorInner::PyDynamicOpenSsl(value))
     }
 }
 
@@ -145,7 +186,15 @@ impl TlsAcceptor {
                 let server = c.accept(AsyncStream::new(stream)).await?;
                 Ok(TlsStream::from(server))
             }
-            #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+            #[cfg(feature = "py-dynamic-openssl")]
+            TlsAcceptorInner::PyDynamicOpenSsl(a) => {
+                crate::py_ossl::handshake(a.accept(SyncStream::new(stream))).await
+            }
+            #[cfg(not(any(
+                feature = "native-tls",
+                feature = "rustls",
+                feature = "py-dynamic-openssl"
+            )))]
             TlsAcceptorInner::None(f) => match *f {},
         }
     }

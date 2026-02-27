@@ -45,6 +45,8 @@ jobs:
             no_default_features: true
           - os: 'ubuntu-22.04'
             features: 'codec-serde-json'
+          - os: 'ubuntu-22.04'
+            features: 'native-tls,ring,py-dynamic-openssl'
           - os: 'windows-latest'
             target: 'x86_64-pc-windows-msvc'
           - os: 'windows-latest'
@@ -57,8 +59,13 @@ jobs:
           - os: 'windows-latest'
             target: 'x86_64-pc-windows-msvc'
             features: 'iocp-wait-packet'
+          - os: 'windows-latest'
+            target: 'x86_64-pc-windows-msvc'
+            features: 'native-tls,ring,py-dynamic-openssl'
           - os: 'macos-14'
           - os: 'macos-15'
+          - os: 'macos-15'
+            features: 'native-tls,ring,py-dynamic-openssl'
     steps:
       - uses: actions/checkout@v4
       - name: Setup Rust Toolchain
