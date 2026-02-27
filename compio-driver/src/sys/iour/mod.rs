@@ -360,7 +360,7 @@ impl Driver {
             .pinned_op()
             .create_entry()
             .personality(personality);
-        let mut fallbacked = false;
+        let mut has_fallbacked = false;
         trace!(?personality, "push Key");
         loop {
             match op_entry {
@@ -368,13 +368,13 @@ impl Driver {
                     if is_op_supported(entry.get_opcode() as _) {
                         #[allow(clippy::useless_conversion)]
                         self.push_raw_with_key(entry.into(), key)?;
-                    } else if !fallbacked {
+                    } else if !has_fallbacked {
                         op_entry = key
                             .borrow()
                             .pinned_op()
                             .create_entry_fallback()
                             .personality(personality);
-                        fallbacked = true;
+                        has_fallbacked = true;
                         continue;
                     } else {
                         self.push_blocking(key);
@@ -384,13 +384,13 @@ impl Driver {
                 OpEntry::Submission128(entry) => {
                     if is_op_supported(entry.get_opcode() as _) {
                         self.push_raw_with_key(entry, key)?;
-                    } else if !fallbacked {
+                    } else if !has_fallbacked {
                         op_entry = key
                             .borrow()
                             .pinned_op()
                             .create_entry_fallback()
                             .personality(personality);
-                        fallbacked = true;
+                        has_fallbacked = true;
                         continue;
                     } else {
                         self.push_blocking(key);
