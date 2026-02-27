@@ -1172,6 +1172,51 @@ mod buf_ring {
     }
 
     pin_project! {
+        /// Read a file at specified position into multiple managed buffers.
+        pub struct ReadMultiAt<S> {
+            #[pin]
+            inner: ReadManagedAt<S>,
+        }
+    }
+
+    impl<S> ReadMultiAt<S> {
+        /// Create [`ReadMultiAt`].
+        pub fn new(fd: S, offset: u64, buffer_pool: &BufferPool, len: usize) -> io::Result<Self> {
+            Ok(Self {
+                inner: ReadManagedAt::new(fd, offset, buffer_pool, len)?,
+            })
+        }
+    }
+
+    unsafe impl<S: AsFd> OpCode for ReadMultiAt<S> {
+        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+            let fd = self.inner.fd.as_fd().as_raw_fd();
+            opcode::ReadMulti::new(Fd(fd), self.inner.len, self.inner.buffer_group)
+                .offset(self.inner.offset)
+                .build()
+                .into()
+        }
+
+        fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
+            self.project().inner.create_entry()
+        }
+    }
+
+    impl<S> TakeBuffer for ReadMultiAt<S> {
+        type Buffer<'a> = BorrowedBuffer<'a>;
+        type BufferPool = BufferPool;
+
+        fn take_buffer(
+            self,
+            buffer_pool: &Self::BufferPool,
+            result: io::Result<usize>,
+            buffer_id: u16,
+        ) -> io::Result<Self::Buffer<'_>> {
+            take_buffer(buffer_pool, result, buffer_id)
+        }
+    }
+
+    pin_project! {
         /// Receive data from remote into multiple managed buffers.
         pub struct ReadMulti<S> {
             #[pin]
@@ -1215,7 +1260,54 @@ mod buf_ring {
             take_buffer(buffer_pool, result, buffer_id)
         }
     }
+
+    pin_project! {
+        /// Receive data from remote into multiple managed buffers.
+        pub struct RecvMulti<S> {
+            #[pin]
+            inner: RecvManaged<S>,
+        }
+    }
+
+    impl<S> RecvMulti<S> {
+        /// Create [`RecvMulti`].
+        pub fn new(fd: S, buffer_pool: &BufferPool, len: usize, flags: i32) -> io::Result<Self> {
+            Ok(Self {
+                inner: RecvManaged::new(fd, buffer_pool, len, flags)?,
+            })
+        }
+    }
+
+    unsafe impl<S: AsFd> OpCode for RecvMulti<S> {
+        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+            let fd = self.inner.fd.as_fd().as_raw_fd();
+            opcode::RecvMulti::new(Fd(fd), self.inner.buffer_group)
+                .flags(self.inner.flags)
+                .build()
+                .into()
+        }
+
+        fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
+            self.project().inner.create_entry()
+        }
+    }
+
+    impl<S> TakeBuffer for RecvMulti<S> {
+        type Buffer<'a> = BorrowedBuffer<'a>;
+        type BufferPool = BufferPool;
+
+        fn take_buffer(
+            self,
+            buffer_pool: &Self::BufferPool,
+            result: io::Result<usize>,
+            buffer_id: u16,
+        ) -> io::Result<Self::Buffer<'_>> {
+            take_buffer(buffer_pool, result, buffer_id)
+        }
+    }
 }
 
 pub(crate) use buf_ring::take_buffer;
-pub use buf_ring::{ReadManaged, ReadManagedAt, ReadMulti, RecvFromManaged, RecvManaged};
+pub use buf_ring::{
+    ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvManaged, RecvMulti,
+};

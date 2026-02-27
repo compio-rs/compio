@@ -25,7 +25,9 @@ pub use crate::sys::op::{
     WriteVectored, WriteVectoredAt,
 };
 #[cfg(io_uring)]
-pub use crate::sys::op::{ReadManaged, ReadManagedAt, ReadMulti, RecvFromManaged, RecvManaged};
+pub use crate::sys::op::{
+    ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvManaged, RecvMulti,
+};
 use crate::{Extra, OwnedFd, SharedFd, TakeBuffer, sys::aio::*};
 
 /// Trait to update the buffer length inside the [`BufResult`].
@@ -652,7 +654,9 @@ pub(crate) mod managed {
         }
     }
 
+    pub type ReadMultiAt<S> = ReadManagedAt<S>;
     pub type ReadMulti<S> = ReadManaged<S>;
+    pub type RecvMulti<S> = RecvManaged<S>;
 }
 
 #[cfg(not(io_uring))]
