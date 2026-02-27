@@ -45,6 +45,7 @@ use crate::{
 mod extra;
 pub use extra::Extra;
 pub(crate) mod op;
+pub(crate) use op::take_buffer;
 
 pub(crate) fn is_op_supported(code: u8) -> bool {
     #[cfg(feature = "once_cell_try")]
