@@ -169,12 +169,6 @@ impl<S> WebSocketStream<S> {
     pub fn get_mut(&mut self) -> &mut S {
         self.inner.get_mut().get_mut()
     }
-
-    /// Convert this stream into a [`futures_util`] compatible stream.
-    #[cfg(feature = "io-compat")]
-    pub fn into_compat(self) -> CompatWebSocketStream<S> {
-        CompatWebSocketStream::new(self)
-    }
 }
 
 impl<S> WebSocketStream<S>
@@ -290,6 +284,16 @@ where
             }
         }
         self.flush().await
+    }
+
+    /// Convert this stream into a [`futures_util`] compatible stream.
+    #[cfg(feature = "io-compat")]
+    pub fn into_compat(self) -> CompatWebSocketStream<S>
+    // Ensure internal mutability of the stream.
+    where
+        for<'a> &'a S: AsyncRead + AsyncWrite,
+    {
+        CompatWebSocketStream::new(self)
     }
 }
 
