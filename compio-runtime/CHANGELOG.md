@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0](https://github.com/compio-rs/compio/compare/compio-runtime-v0.11.0...compio-runtime-v0.12.0) - 2026-02-27
+
+### Added
+
+- *(runtime)* [**breaking**] remove event ([#707](https://github.com/compio-rs/compio/pull/707))
+- *(runtime)* cancel & future combinator ([#665](https://github.com/compio-rs/compio/pull/665))
+
+### Changed
+
+- [**breaking**] move {Async,Poll}Fd to runtime ([#662](https://github.com/compio-rs/compio/pull/662))
+
+### Fixed
+
+- *(runtime)* cfg-if not available without event ([#706](https://github.com/compio-rs/compio/pull/706))
+
+### Other
+
+- remove "authors" field in metadata ([#711](https://github.com/compio-rs/compio/pull/711))
+- fix deprecation note ([#666](https://github.com/compio-rs/compio/pull/666))
+
 ## [0.11.0](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added
