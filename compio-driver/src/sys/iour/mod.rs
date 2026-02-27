@@ -122,10 +122,15 @@ pub unsafe trait OpCode {
         OpEntry::Blocking
     }
 
-    /// Call the operation in a blocking way. This method will only be called if
-    /// [`create_entry`] returns [`OpEntry::Blocking`].
+    /// Call the operation in a blocking way. This method will be called if
+    /// * [`create_entry`] returns [`OpEntry::Blocking`].
+    /// * [`create_entry`] returns an entry with unsupported opcode, and
+    ///   [`create_entry_fallback`] returns [`OpEntry::Blocking`].
+    /// * [`create_entry`] and [`create_entry_fallback`] both return an entry
+    ///   with unsupported opcode.
     ///
     /// [`create_entry`]: OpCode::create_entry
+    /// [`create_entry_fallback`]: OpCode::create_entry_fallback
     fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
         unreachable!("this operation is asynchronous")
     }
