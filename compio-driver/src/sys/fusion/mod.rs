@@ -13,7 +13,7 @@ use compio_log::warn;
 pub use iour::{IourOpCode, OpEntry};
 pub use poll::{Decision, OpType, PollOpCode};
 
-pub(crate) use super::iour::is_op_supported;
+pub(crate) use super::iour::{is_op_supported, op::take_buffer};
 use super::{iour, poll};
 pub use crate::driver_type::DriverType; // Re-export so current user won't be broken
 use crate::{BufferPool, ProactorBuilder, key::ErasedKey};

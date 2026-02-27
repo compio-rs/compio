@@ -923,7 +923,7 @@ mod buf_ring {
     use super::OpCode;
     use crate::{BorrowedBuffer, BufferPool, OpEntry, TakeBuffer};
 
-    fn take_buffer(
+    pub(crate) fn take_buffer(
         buffer_pool: &BufferPool,
         result: io::Result<usize>,
         buffer_id: u16,
@@ -1171,4 +1171,5 @@ mod buf_ring {
     }
 }
 
+pub(crate) use buf_ring::take_buffer;
 pub use buf_ring::{ReadManaged, ReadManagedAt, RecvFromManaged, RecvManaged};

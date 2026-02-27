@@ -176,6 +176,23 @@ impl<T: TakeBuffer> ResultTakeBuffer for (BufResult<usize, T>, Extra) {
     }
 }
 
+impl ResultTakeBuffer for BufResult<usize, Extra> {
+    type Buffer<'a> = crate::BorrowedBuffer<'a>;
+    type BufferPool = crate::BufferPool;
+
+    fn take_buffer(self, pool: &Self::BufferPool) -> io::Result<Self::Buffer<'_>> {
+        #[cfg(io_uring)]
+        {
+            let BufResult(result, extra) = self;
+            crate::sys::take_buffer(pool, result, extra.buffer_id()?)
+        }
+        #[cfg(not(io_uring))]
+        {
+            unreachable!("take_buffer should not be called for non-io-uring ops")
+        }
+    }
+}
+
 pin_project! {
     /// Spawn a blocking function in the thread pool.
     pub struct Asyncify<F, D> {
