@@ -923,6 +923,21 @@ mod buf_ring {
     use super::OpCode;
     use crate::{BorrowedBuffer, BufferPool, OpEntry, TakeBuffer};
 
+    fn take_buffer(
+        buffer_pool: &BufferPool,
+        result: io::Result<usize>,
+        buffer_id: u16,
+    ) -> io::Result<BorrowedBuffer<'_>> {
+        #[cfg(fusion)]
+        let buffer_pool = buffer_pool.as_io_uring();
+        let result = result.inspect_err(|_| buffer_pool.reuse_buffer(buffer_id))?;
+        // SAFETY: result is valid
+        let res = unsafe { buffer_pool.get_buffer(buffer_id, result) };
+        #[cfg(fusion)]
+        let res = res.map(BorrowedBuffer::new_io_uring);
+        res
+    }
+
     /// Read a file at specified position into specified buffer.
     #[derive(Debug)]
     pub struct ReadManagedAt<S> {
@@ -973,14 +988,7 @@ mod buf_ring {
             result: io::Result<usize>,
             buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
-            #[cfg(fusion)]
-            let buffer_pool = buffer_pool.as_io_uring();
-            let result = result.inspect_err(|_| buffer_pool.reuse_buffer(buffer_id))?;
-            // SAFETY: result is valid
-            let res = unsafe { buffer_pool.get_buffer(buffer_id, result) };
-            #[cfg(fusion)]
-            let res = res.map(BorrowedBuffer::new_io_uring);
-            res
+            take_buffer(buffer_pool, result, buffer_id)
         }
     }
 
@@ -1029,14 +1037,7 @@ mod buf_ring {
             result: io::Result<usize>,
             buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
-            #[cfg(fusion)]
-            let buffer_pool = buffer_pool.as_io_uring();
-            let result = result.inspect_err(|_| buffer_pool.reuse_buffer(buffer_id))?;
-            // SAFETY: result is valid
-            let res = unsafe { buffer_pool.get_buffer(buffer_id, result) };
-            #[cfg(fusion)]
-            let res = res.map(BorrowedBuffer::new_io_uring);
-            res
+            take_buffer(buffer_pool, result, buffer_id)
         }
     }
 
@@ -1088,14 +1089,7 @@ mod buf_ring {
             result: io::Result<usize>,
             buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
-            #[cfg(fusion)]
-            let buffer_pool = buffer_pool.as_io_uring();
-            let result = result.inspect_err(|_| buffer_pool.reuse_buffer(buffer_id))?;
-            // SAFETY: result is valid
-            let res = unsafe { buffer_pool.get_buffer(buffer_id, result) };
-            #[cfg(fusion)]
-            let res = res.map(BorrowedBuffer::new_io_uring);
-            res
+            take_buffer(buffer_pool, result, buffer_id)
         }
     }
 
