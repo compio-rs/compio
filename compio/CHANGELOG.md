@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0](https://github.com/compio-rs/compio/compare/compio-v0.18.0...compio-v0.19.0) - 2026-02-27
+
+### Added
+
+- *(tls)* support py-dynamic-openssl ([#700](https://github.com/compio-rs/compio/pull/700))
+- *(runtime)* [**breaking**] remove event ([#707](https://github.com/compio-rs/compio/pull/707))
+- *(fs)* dirfd support ([#703](https://github.com/compio-rs/compio/pull/703))
+- *(driver,unix)* [**breaking**] support dirfd relative fs ops ([#699](https://github.com/compio-rs/compio/pull/699))
+- *(buf)* add support for memmap2 ([#684](https://github.com/compio-rs/compio/pull/684))
+
+### Fixed
+
+- *(driver,unix)* `set_result` for `OpenFile` & `CreateSocket` ([#701](https://github.com/compio-rs/compio/pull/701))
+- *(driver)* statx on musl ([#669](https://github.com/compio-rs/compio/pull/669))
+- *(driver)* the fusion driver with polling variant ([#670](https://github.com/compio-rs/compio/pull/670))
+
+### Other
+
+- remove "authors" field in metadata ([#711](https://github.com/compio-rs/compio/pull/711))
+- make event and time inline ([#688](https://github.com/compio-rs/compio/pull/688))
+- *(deps)* update rand requirement from 0.9.0 to 0.10.0 ([#671](https://github.com/compio-rs/compio/pull/671))
+
 ## [0.18.0](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added

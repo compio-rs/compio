@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1](https://github.com/compio-rs/compio/compare/compio-io-v0.9.0...compio-io-v0.9.1) - 2026-02-27
+
+### Added
+
+- *(io)* add duplex forwarding for BufReader/BufWriter ([#695](https://github.com/compio-rs/compio/pull/695))
+
+### Fixed
+
+- *(tls,io)* multiple native-tls issues ([#698](https://github.com/compio-rs/compio/pull/698))
+- *(io)* flush manually in poll_close ([#681](https://github.com/compio-rs/compio/pull/681))
+- *(driver)* the fusion driver with polling variant ([#670](https://github.com/compio-rs/compio/pull/670))
+
+### Other
+
+- remove "authors" field in metadata ([#711](https://github.com/compio-rs/compio/pull/711))
+
 ## [0.9.0](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added

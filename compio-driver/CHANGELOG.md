@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0](https://github.com/compio-rs/compio/compare/compio-driver-v0.11.1...compio-driver-v0.12.0) - 2026-02-27
+
+### Added
+
+- *(driver)* entry fallback ([#716](https://github.com/compio-rs/compio/pull/716))
+- *(driver)* add recv_from_managed operation support ([#709](https://github.com/compio-rs/compio/pull/709))
+- *(fs)* dirfd support ([#703](https://github.com/compio-rs/compio/pull/703))
+- *(driver,unix)* [**breaking**] support dirfd relative fs ops ([#699](https://github.com/compio-rs/compio/pull/699))
+- *(driver,iocp)* impl AsFd for borrowed handle ([#694](https://github.com/compio-rs/compio/pull/694))
+- *(driver)* force OpCode support ([#690](https://github.com/compio-rs/compio/pull/690))
+- *(dispatcher)* block standard POSIX signals on worker threads ([#672](https://github.com/compio-rs/compio/pull/672))
+- *(runtime)* cancel & future combinator ([#665](https://github.com/compio-rs/compio/pull/665))
+- *(driver)* cancel token ([#660](https://github.com/compio-rs/compio/pull/660))
+
+### Changed
+
+- *(driver)* shared fd ([#661](https://github.com/compio-rs/compio/pull/661))
+
+### Fixed
+
+- *(driver,stub)* allow creation ([#705](https://github.com/compio-rs/compio/pull/705))
+- *(driver,unix)* `set_result` for `OpenFile` & `CreateSocket` ([#701](https://github.com/compio-rs/compio/pull/701))
+- *(driver)* key is not unique when spawn_blocking ([#675](https://github.com/compio-rs/compio/pull/675))
+- *(driver)* statx on musl ([#669](https://github.com/compio-rs/compio/pull/669))
+- *(driver)* the fusion driver with polling variant ([#670](https://github.com/compio-rs/compio/pull/670))
+
+### Other
+
+- remove "authors" field in metadata ([#711](https://github.com/compio-rs/compio/pull/711))
+- *(driver)* fix doc for Dispatchable ([#693](https://github.com/compio-rs/compio/pull/693))
+
 ## [0.11.1](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added

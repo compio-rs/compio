@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1](https://github.com/compio-rs/compio/compare/compio-buf-v0.8.0...compio-buf-v0.8.1) - 2026-02-27
+
+### Added
+
+- *(buf)* add into_parts for BufResult ([#712](https://github.com/compio-rs/compio/pull/712))
+- *(buf)* add support for memmap2 ([#684](https://github.com/compio-rs/compio/pull/684))
+
+### Other
+
+- remove "authors" field in metadata ([#711](https://github.com/compio-rs/compio/pull/711))
+- release 0.18 ([#653](https://github.com/compio-rs/compio/pull/653))
+
 ## [0.8.0](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added
