@@ -366,6 +366,13 @@ impl FrozenKey {
     pub fn into_inner(self) -> ErasedKey {
         ManuallyDrop::into_inner(self.inner)
     }
+
+    #[cfg(io_uring)]
+    pub fn wake_by_ref(&mut self) {
+        if let PushEntry::Pending(Some(w)) = &self.as_mut().result {
+            w.wake_by_ref();
+        }
+    }
 }
 
 unsafe impl Send for FrozenKey {}

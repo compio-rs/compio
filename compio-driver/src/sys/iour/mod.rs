@@ -2,6 +2,7 @@
 #[allow(unused_imports)]
 pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::{
+    collections::{BTreeMap, VecDeque},
     io,
     os::fd::FromRawFd,
     pin::Pin,
@@ -10,6 +11,7 @@ use std::{
     time::Duration,
 };
 
+use compio_buf::BufResult;
 use compio_log::{instrument, trace, warn};
 cfg_if::cfg_if! {
     if #[cfg(feature = "io-uring-cqe32")] {
@@ -156,6 +158,7 @@ pub(crate) struct Driver {
     completed_rx: Receiver<Entry>,
     buffer_group_ids: Slab<()>,
     need_push_notifier: bool,
+    multishot_results: BTreeMap<usize, VecDeque<CEntry>>,
 }
 
 impl Driver {
@@ -204,6 +207,7 @@ impl Driver {
             pool: builder.create_or_get_thread_pool(),
             buffer_group_ids: Slab::new(),
             need_push_notifier: true,
+            multishot_results: BTreeMap::new(),
         })
     }
 
@@ -285,7 +289,21 @@ impl Driver {
                     }
                     self.notifier.clear().expect("cannot clear notifier");
                 }
-                _ => create_entry(entry).notify(),
+                key => {
+                    let flags = entry.flags();
+                    if more(flags) {
+                        unsafe {
+                            let key = ErasedKey::from_raw(key as _);
+                            key.freeze().wake_by_ref();
+                        }
+                        self.multishot_results
+                            .entry(key as _)
+                            .or_default()
+                            .push_back(entry);
+                    } else {
+                        create_entry(entry).notify()
+                    }
+                }
             }
         }
         has_entry
@@ -318,6 +336,7 @@ impl Driver {
                 warn!("could not push AsyncCancel entry");
             }
         }
+        self.multishot_results.remove(&key.as_raw());
     }
 
     fn push_raw_with_key(&mut self, entry: SEntry, key: ErasedKey) -> io::Result<()> {
@@ -499,6 +518,22 @@ impl Driver {
 
         Ok(())
     }
+
+    pub fn pop_multishot(
+        &mut self,
+        key: &ErasedKey,
+    ) -> Option<BufResult<usize, crate::sys::Extra>> {
+        if let Some(queue) = self.multishot_results.get_mut(&key.as_raw())
+            && let Some(entry) = queue.pop_front()
+        {
+            let result = create_result(entry.result());
+            #[allow(clippy::useless_conversion)]
+            let mut extra: crate::sys::Extra = self.default_extra().into();
+            extra.set_flags(entry.flags());
+            return Some(BufResult(result, extra));
+        }
+        None
+    }
 }
 
 impl AsRawFd for Driver {
@@ -509,7 +544,16 @@ impl AsRawFd for Driver {
 
 fn create_entry(cq_entry: CEntry) -> Entry {
     let result = cq_entry.result();
-    let result = if result < 0 {
+    let result = create_result(result);
+    let key = unsafe { ErasedKey::from_raw(cq_entry.user_data() as _) };
+    let mut entry = Entry::new(key, result);
+    entry.set_flags(cq_entry.flags());
+
+    entry
+}
+
+fn create_result(result: i32) -> io::Result<usize> {
+    if result < 0 {
         let result = if result == -libc::ECANCELED {
             libc::ETIMEDOUT
         } else {
@@ -518,12 +562,7 @@ fn create_entry(cq_entry: CEntry) -> Entry {
         Err(io::Error::from_raw_os_error(result))
     } else {
         Ok(result as _)
-    };
-    let key = unsafe { ErasedKey::from_raw(cq_entry.user_data() as _) };
-    let mut entry = Entry::new(key, result);
-    entry.set_flags(cq_entry.flags());
-
-    entry
+    }
 }
 
 fn timespec(duration: std::time::Duration) -> Timespec {
