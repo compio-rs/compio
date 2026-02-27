@@ -47,3 +47,7 @@ webpki-roots = ["rustls", "dep:webpki-roots"]
 ring = ["compio-tls/ring"]
 
 io-compat = ["dep:futures-util"]
+
+[[example]]
+name = "ws_split"
+required-features = ["io-compat"]
