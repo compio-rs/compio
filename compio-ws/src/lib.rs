@@ -221,13 +221,12 @@ where
     /// Send a message on the WebSocket stream.
     pub async fn send(&mut self, message: Message) -> Result<(), WsError> {
         match self.inner.write(message) {
-            Ok(()) => Ok(()),
-            Err(WsError::Io(ref e)) if e.kind() == ErrorKind::WouldBlock => {
-                // Need to flush the write buffer before we can send the message
-                self.flush().await
-            }
-            Err(e) => Err(e),
+            Ok(()) => {}
+            Err(WsError::Io(ref e)) if e.kind() == ErrorKind::WouldBlock => {}
+            Err(e) => return Err(e),
         }
+        // Need to flush the write buffer before we can send the message
+        self.flush().await
     }
 
     /// Read a message from the WebSocket stream.
