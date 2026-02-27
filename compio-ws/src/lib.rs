@@ -233,10 +233,7 @@ where
     pub async fn read(&mut self) -> Result<Message, WsError> {
         loop {
             match self.inner.read() {
-                Ok(msg) => {
-                    self.flush().await?;
-                    return Ok(msg);
-                }
+                Ok(msg) => return Ok(msg),
                 Err(WsError::Io(ref e)) if e.kind() == ErrorKind::WouldBlock => {
                     // Need more data - fill the read buffer
                     self.inner
@@ -245,10 +242,7 @@ where
                         .await
                         .map_err(WsError::Io)?;
                 }
-                Err(e) => {
-                    let _ = self.flush().await;
-                    return Err(e);
-                }
+                Err(e) => return Err(e),
             }
         }
     }

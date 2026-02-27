@@ -15,6 +15,8 @@ type PinBoxFuture<T> = Pin<Box<dyn Future<Output = T>>>;
 /// A [`futures_util`] compatible WebSocket stream.
 pub struct CompatWebSocketStream<S> {
     inner: Pin<Box<WebSocketStream<S>>>,
+    // read_future & write_future are independent, but both of them are mutually exclusive with
+    // close_future.
     read_future: Option<PinBoxFuture<Result<Message, WsError>>>,
     write_future: Option<PinBoxFuture<Result<(), WsError>>>,
     close_future: Option<PinBoxFuture<Result<(), WsError>>>,
@@ -112,6 +114,9 @@ impl<S: AsyncRead + AsyncWrite + 'static> Sink<Message> for CompatWebSocketStrea
         if self.write_future.is_some() || self.inner.inner.get_ref().has_pending_write() {
             debug_assert!(self.close_future.is_none());
             self.poll_flush(cx)
+        } else if self.read_future.is_some() {
+            debug_assert!(self.close_future.is_none());
+            Poll::Pending
         } else {
             let inner: &'static mut WebSocketStream<S> =
                 unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
@@ -125,6 +130,11 @@ impl<S: AsyncRead + AsyncWrite + 'static> Stream for CompatWebSocketStream<S> {
     type Item = Result<Message, WsError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if self.close_future.is_some() {
+            debug_assert!(self.read_future.is_none());
+            return Poll::Ready(None);
+        }
+
         let inner: &'static mut WebSocketStream<S> =
             unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
 
