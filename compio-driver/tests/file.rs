@@ -1,9 +1,17 @@
-use std::{io, ops::Deref, time::Duration};
+use std::{
+    io::{self, Write},
+    net::{TcpListener, TcpStream},
+    ops::Deref,
+    time::Duration,
+};
 
 use compio_buf::BufResult;
 use compio_driver::{
     AsRawFd, BufferPool, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
-    op::{Asyncify, CloseFile, ReadAt, ReadManagedAt, ReadMulti, ResultTakeBuffer},
+    op::{
+        Asyncify, CloseFile, CloseSocket, ReadAt, ReadManagedAt, ReadMulti, RecvMulti,
+        ResultTakeBuffer,
+    },
 };
 mod pipe2;
 
@@ -105,25 +113,27 @@ where
     for<'a> O::Buffer<'a>: Deref<Target = [u8]>,
 {
     match driver.push(op) {
-        PushEntry::Ready(res) => {
-            let buf = (res, driver.default_extra()).take_buffer(pool).unwrap();
-            buf.to_vec()
-        }
+        PushEntry::Ready(res) => match (res, driver.default_extra()).take_buffer(pool) {
+            Ok(slice) => slice.to_vec(),
+            Err(_) => vec![],
+        },
         PushEntry::Pending(mut user_data) => {
             let mut buffer = vec![];
             loop {
                 driver.poll(None).unwrap();
-                if let Some(res) = driver.pop_multishot(&user_data) {
-                    let slice = res.take_buffer(pool).unwrap();
-                    buffer.extend_from_slice(&slice);
-                } else {
-                    match driver.pop_with_extra(user_data) {
-                        PushEntry::Pending(k) => user_data = k,
-                        PushEntry::Ready(res) => {
-                            let slice = res.take_buffer(pool).unwrap();
-                            buffer.extend_from_slice(&slice);
-                            break;
+                while let Some(res) = driver.pop_multishot(&user_data) {
+                    match res.take_buffer(pool) {
+                        Ok(slice) => buffer.extend_from_slice(&slice),
+                        Err(_) => break,
+                    }
+                }
+                match driver.pop_with_extra(user_data) {
+                    PushEntry::Pending(k) => user_data = k,
+                    PushEntry::Ready(res) => {
+                        if let Ok(slice) = res.take_buffer(pool) {
+                            buffer.extend_from_slice(&slice)
                         }
+                        break;
                     }
                 }
             }
@@ -270,6 +280,46 @@ fn read_multi() {
     println!("{}", std::str::from_utf8(&buffer).unwrap());
 
     let op = CloseFile::new(fd.try_unwrap().unwrap());
+    push_and_wait(&mut driver, op).unwrap();
+}
+
+#[test]
+fn recv_multi() {
+    let mut driver = Proactor::new().unwrap();
+
+    let server = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = server.local_addr().unwrap();
+    std::thread::spawn(move || {
+        let (mut stream, _) = server.accept().unwrap();
+        stream.write_all(b"hello ").unwrap();
+        stream.write_all(b"world").unwrap();
+        stream.shutdown(std::net::Shutdown::Both).unwrap();
+    });
+
+    let stream = TcpStream::connect(addr).unwrap();
+    let stream = socket2::Socket::from(stream);
+    if driver.driver_type().is_polling() {
+        stream.set_nonblocking(true).unwrap();
+    }
+    let stream = SharedFd::new(stream);
+
+    driver.attach(stream.as_raw_fd()).unwrap();
+
+    let pool = driver.create_buffer_pool(4, 1024).unwrap();
+
+    let mut buffer = vec![];
+    loop {
+        let op = RecvMulti::new(stream.clone(), &pool, 0, 0).unwrap();
+        let slice = push_and_wait_multi(&mut driver, op, &pool);
+        if slice.is_empty() {
+            break;
+        }
+        buffer.extend_from_slice(&slice);
+    }
+    assert_eq!(buffer, b"hello world");
+
+    let stream = stream.try_unwrap().unwrap();
+    let op = CloseSocket::new(stream.into());
     push_and_wait(&mut driver, op).unwrap();
 }
 
