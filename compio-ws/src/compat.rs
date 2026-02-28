@@ -127,7 +127,10 @@ impl<S: AsyncRead + AsyncWrite + 'static> CompatWebSocketStream<S> {
         loop {
             match self.flushing {
                 Flushing::None => {
-                    // FIXME: is it safe?
+                    if self.write_future.is_some() {
+                        ready!(self.as_mut().poll_flush_write_buf())?;
+                    }
+                    // FIXME: `read_future` is not checked.
                     let inner = unsafe { self.inner.as_mut().get_unchecked_mut() };
                     self.flushing = match inner.inner.flush() {
                         Ok(()) => Flushing::Flushed,
@@ -157,16 +160,18 @@ impl<S: AsyncRead + AsyncWrite + 'static> Sink<Message> for CompatWebSocketStrea
     type Error = tungstenite::Error;
 
     fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.ready_waker.replace(cx.waker().clone());
+        // Ensure that there is no self-referential future.
+        // FIXME: `read_future` is not checked.
         if self.write_future.is_some() {
-            self.ready_waker.replace(cx.waker().clone());
-            self.poll_flush_write_buf().map_ok(|_| ())
-        } else {
-            Poll::Ready(Ok(()))
+            ready!(self.as_mut().poll_flush_write_buf())?;
         }
+        self.read_waker.take();
+        Poll::Ready(Ok(()))
     }
 
     fn start_send(mut self: Pin<&mut Self>, item: Message) -> Result<(), Self::Error> {
-        // FIXME: is it safe?
+        // SAFETY: exclusive access guaranteed by the sink contract and `poll_ready`.
         let inner = unsafe { self.inner.as_mut().get_unchecked_mut() };
         match inner.inner.write(item) {
             Ok(()) => Ok(()),
@@ -185,7 +190,13 @@ impl<S: AsyncRead + AsyncWrite + 'static> Sink<Message> for CompatWebSocketStrea
         loop {
             match self.closing {
                 Closing::None => {
-                    // FIXME: is it safe?
+                    if self.write_future.is_some() {
+                        ready!(self.as_mut().poll_flush_write_buf())?;
+                    }
+                    if self.read_future.is_some() {
+                        ready!(self.as_mut().poll_fill_read_buf())?;
+                    }
+                    // SAFETY: no self-referential future
                     let inner = unsafe { self.inner.as_mut().get_unchecked_mut() };
                     self.closing = match inner.inner.close(None) {
                         Ok(()) => Closing::Closed,
@@ -197,6 +208,9 @@ impl<S: AsyncRead + AsyncWrite + 'static> Sink<Message> for CompatWebSocketStrea
                     }
                 }
                 Closing::WouldBlockFlush => {
+                    if self.read_future.is_some() {
+                        ready!(self.as_mut().poll_fill_read_buf())?;
+                    }
                     let flushed = ready!(self.as_mut().poll_flush_write_buf())?;
                     self.closing = if flushed == 0 {
                         Closing::WouldBlockFill
@@ -205,6 +219,9 @@ impl<S: AsyncRead + AsyncWrite + 'static> Sink<Message> for CompatWebSocketStrea
                     }
                 }
                 Closing::WouldBlockFill => {
+                    if self.write_future.is_some() {
+                        ready!(self.as_mut().poll_flush_write_buf())?;
+                    }
                     ready!(self.as_mut().poll_fill_read_buf())?;
                     self.closing = Closing::None;
                 }
@@ -227,7 +244,10 @@ impl<S: AsyncRead + AsyncWrite + 'static> Stream for CompatWebSocketStream<S> {
         loop {
             match std::mem::replace(&mut self.reading, Reading::None) {
                 Reading::None => {
-                    // FIXME: is it safe?
+                    if self.read_future.is_some() {
+                        ready!(self.as_mut().poll_fill_read_buf())?;
+                    }
+                    // FIXME: `write_future` is not checked.
                     let inner = unsafe { self.inner.as_mut().get_unchecked_mut() };
                     self.reading = match inner.inner.read() {
                         Ok(msg) => Reading::AfterRead(Ok(msg)),
