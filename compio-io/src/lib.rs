@@ -134,6 +134,7 @@ pub mod framed;
 #[cfg(feature = "compat")]
 pub mod compat;
 mod read;
+pub mod socket;
 pub mod util;
 mod write;
 
