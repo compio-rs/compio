@@ -227,16 +227,18 @@ where
     pub async fn read(&mut self) -> Result<Message, WsError> {
         loop {
             match self.inner.read() {
-                Ok(msg) => return Ok(msg),
+                Ok(msg) => {
+                    self.flush().await?;
+                    return Ok(msg);
+                }
                 Err(WsError::Io(ref e)) if e.kind() == ErrorKind::WouldBlock => {
                     // Need more data - fill the read buffer
-                    self.inner
-                        .get_mut()
-                        .fill_read_buf()
-                        .await
-                        .map_err(WsError::Io)?;
+                    self.fill_read_buf().await?;
                 }
-                Err(e) => return Err(e),
+                Err(e) => {
+                    let _ = self.flush().await;
+                    return Err(e);
+                }
             }
         }
     }
@@ -247,21 +249,13 @@ where
             match self.inner.flush() {
                 Ok(()) => break,
                 Err(WsError::Io(ref e)) if e.kind() == ErrorKind::WouldBlock => {
-                    self.inner
-                        .get_mut()
-                        .flush_write_buf()
-                        .await
-                        .map_err(WsError::Io)?;
+                    self.flush_write_buf().await?;
                 }
                 Err(WsError::ConnectionClosed) => break,
                 Err(e) => return Err(e),
             }
         }
-        self.inner
-            .get_mut()
-            .flush_write_buf()
-            .await
-            .map_err(WsError::Io)?;
+        self.flush_write_buf().await?;
         Ok(())
     }
 
@@ -271,12 +265,9 @@ where
             match self.inner.close(close_frame.clone()) {
                 Ok(()) => break,
                 Err(WsError::Io(ref e)) if e.kind() == ErrorKind::WouldBlock => {
-                    let sync_stream = self.inner.get_mut();
-
-                    let flushed = sync_stream.flush_write_buf().await.map_err(WsError::Io)?;
-
+                    let flushed = self.flush_write_buf().await?;
                     if flushed == 0 {
-                        sync_stream.fill_read_buf().await.map_err(WsError::Io)?;
+                        self.fill_read_buf().await?;
                     }
                 }
                 Err(WsError::ConnectionClosed) => break,
@@ -284,6 +275,22 @@ where
             }
         }
         self.flush().await
+    }
+
+    pub(crate) async fn flush_write_buf(&mut self) -> Result<usize, WsError> {
+        self.inner
+            .get_mut()
+            .flush_write_buf()
+            .await
+            .map_err(WsError::Io)
+    }
+
+    pub(crate) async fn fill_read_buf(&mut self) -> Result<usize, WsError> {
+        self.inner
+            .get_mut()
+            .fill_read_buf()
+            .await
+            .map_err(WsError::Io)
     }
 
     /// Convert this stream into a [`futures_util`] compatible stream.
