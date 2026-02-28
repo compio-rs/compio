@@ -527,6 +527,9 @@ impl Driver {
         if let Some(queue) = self.multishot_results.get_mut(&key.as_raw())
             && let Some(entry) = queue.pop_front()
         {
+            if queue.is_empty() {
+                self.multishot_results.remove(&key.as_raw());
+            }
             let result = create_result(entry.result());
             #[allow(clippy::useless_conversion)]
             let mut extra: crate::sys::Extra = self.default_extra().into();
