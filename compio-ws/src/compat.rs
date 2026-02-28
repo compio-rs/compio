@@ -2,7 +2,7 @@ use std::{
     ops::Deref,
     pin::Pin,
     sync::Arc,
-    task::{Context, Poll, Wake, Waker},
+    task::{Context, Poll, Wake, Waker, ready},
 };
 
 use compio_io::{AsyncRead, AsyncWrite};
@@ -13,13 +13,27 @@ use crate::{WebSocketStream, WsError};
 
 type PinBoxFuture<T> = Pin<Box<dyn Future<Output = T>>>;
 
+enum Flushing {
+    None,
+    WouldBlock,
+    Flushed,
+}
+
+enum Closing {
+    None,
+    WouldBlockFlush,
+    WouldBlockFill,
+    Closed,
+}
+
 /// A [`futures_util`] compatible WebSocket stream.
 pub struct CompatWebSocketStream<S> {
     inner: Pin<Box<WebSocketStream<S>>>,
     read_future: Option<PinBoxFuture<Result<usize, WsError>>>,
     write_future: Option<PinBoxFuture<Result<usize, WsError>>>,
     flush_waker: Option<Waker>,
-    flushed: bool,
+    flushing: Flushing,
+    closing: Closing,
 }
 
 impl<S> CompatWebSocketStream<S> {
@@ -29,7 +43,8 @@ impl<S> CompatWebSocketStream<S> {
             read_future: None,
             write_future: None,
             flush_waker: None,
-            flushed: false,
+            flushing: Flushing::None,
+            closing: Closing::None,
         }
     }
 }
@@ -85,16 +100,24 @@ impl<S: AsyncRead + AsyncWrite + 'static> CompatWebSocketStream<S> {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<usize, WsError>> {
+        // SAFETY:
+        // - The futures won't live longer than the stream.
+        // - The inner stream is pinned.
         let inner: &'static mut WebSocketStream<S> =
             unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
-        let res = poll_future!(self.write_future, cx, inner.flush_write_buf());
-        Poll::Ready(res)
+        if self.write_future.is_none() {
+            self.write_future.replace(Box::pin(inner.flush_write_buf()));
+        }
+        self.poll_ready_impl(cx, true)
     }
 
     fn poll_fill_impl(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<usize, WsError>> {
+        // SAFETY:
+        // - The futures won't live longer than the stream.
+        // - The inner stream is pinned.
         let inner: &'static mut WebSocketStream<S> =
             unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
         let res = poll_future!(self.read_future, cx, inner.fill_read_buf());
@@ -105,7 +128,7 @@ impl<S: AsyncRead + AsyncWrite + 'static> CompatWebSocketStream<S> {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         set_waker: bool,
-    ) -> Poll<Result<(), WsError>> {
+    ) -> Poll<Result<usize, WsError>> {
         if let Some(mut fut) = self.write_future.take() {
             let res = match fut.as_mut().poll(cx) {
                 Poll::Pending => {
@@ -115,7 +138,7 @@ impl<S: AsyncRead + AsyncWrite + 'static> CompatWebSocketStream<S> {
                     }
                     Poll::Pending
                 }
-                Poll::Ready(Ok(_)) => Poll::Ready(Ok(())),
+                Poll::Ready(Ok(len)) => Poll::Ready(Ok(len)),
                 Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
             };
             if res.is_ready() {
@@ -123,7 +146,7 @@ impl<S: AsyncRead + AsyncWrite + 'static> CompatWebSocketStream<S> {
             }
             res
         } else {
-            Poll::Ready(Ok(()))
+            Poll::Ready(Ok(0))
         }
     }
 }
@@ -132,12 +155,12 @@ impl<S: AsyncRead + AsyncWrite + 'static> Sink<Message> for CompatWebSocketStrea
     type Error = tungstenite::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.poll_ready_impl(cx, true)
+        self.poll_ready_impl(cx, true).map_ok(|_| ())
     }
 
     fn start_send(mut self: Pin<&mut Self>, item: Message) -> Result<(), Self::Error> {
-        let inner: &'static mut WebSocketStream<S> =
-            unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
+        // FIXME: is it safe?
+        let inner = unsafe { self.inner.as_mut().get_unchecked_mut() };
         match inner.inner.write(item) {
             Ok(()) => Ok(()),
             Err(WsError::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(()),
@@ -146,52 +169,67 @@ impl<S: AsyncRead + AsyncWrite + 'static> Sink<Message> for CompatWebSocketStrea
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        std::task::ready!(self.as_mut().poll_ready_impl(cx, true))?;
-
-        if !self.flushed {
-            let inner: &'static mut WebSocketStream<S> =
-                unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
-            let res = match poll_future_would_block!(
-                self.write_future,
-                cx,
-                inner.flush_write_buf(),
-                inner.inner.flush()
-            ) {
-                Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-                Poll::Ready(Err(WsError::ConnectionClosed)) => Poll::Ready(Ok(())),
-                Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-                Poll::Pending => Poll::Pending,
-            };
-            if let Poll::Ready(Ok(())) = res {
-                let inner: &'static mut WebSocketStream<S> =
-                    unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
-                self.flushed = true;
-                self.write_future = Some(Box::pin(inner.flush_write_buf()));
-                std::task::ready!(self.as_mut().poll_ready_impl(cx, true))?;
+        loop {
+            match self.flushing {
+                Flushing::None => {
+                    // FIXME: is it safe?
+                    let inner = unsafe { self.inner.as_mut().get_unchecked_mut() };
+                    self.flushing = match inner.inner.flush() {
+                        Ok(()) => Flushing::Flushed,
+                        Err(WsError::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            Flushing::WouldBlock
+                        }
+                        Err(WsError::ConnectionClosed) => Flushing::Flushed,
+                        Err(e) => return Poll::Ready(Err(e)),
+                    }
+                }
+                Flushing::WouldBlock => {
+                    ready!(self.as_mut().poll_flush_impl(cx))?;
+                    self.flushing = Flushing::None
+                }
+                Flushing::Flushed => {
+                    ready!(self.as_mut().poll_flush_impl(cx))?;
+                    self.flushing = Flushing::None;
+                    return Poll::Ready(Ok(()));
+                }
             }
-            res
-        } else {
-            self.flushed = false;
-            Poll::Ready(Ok(()))
         }
     }
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let inner: &'static mut WebSocketStream<S> =
-            unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
-        match inner.inner.close(None) {
-            Ok(()) => {}
-            Err(WsError::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                let flushed = std::task::ready!(self.as_mut().poll_flush_impl(cx))?;
-                if flushed == 0 {
-                    std::task::ready!(self.as_mut().poll_fill_impl(cx))?;
+        loop {
+            match self.closing {
+                Closing::None => {
+                    // FIXME: is it safe?
+                    let inner = unsafe { self.inner.as_mut().get_unchecked_mut() };
+                    self.closing = match inner.inner.close(None) {
+                        Ok(()) => Closing::Closed,
+                        Err(WsError::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            Closing::WouldBlockFlush
+                        }
+                        Err(WsError::ConnectionClosed) => Closing::Closed,
+                        Err(e) => return Poll::Ready(Err(e)),
+                    }
                 }
-                return Poll::Pending;
+                Closing::WouldBlockFlush => {
+                    let flushed = ready!(self.as_mut().poll_flush_impl(cx))?;
+                    self.closing = if flushed == 0 {
+                        Closing::WouldBlockFill
+                    } else {
+                        Closing::None
+                    }
+                }
+                Closing::WouldBlockFill => {
+                    ready!(self.as_mut().poll_fill_impl(cx))?;
+                    self.closing = Closing::None;
+                }
+                Closing::Closed => {
+                    ready!(self.as_mut().poll_flush(cx))?;
+                    self.closing = Closing::None;
+                    return Poll::Ready(Ok(()));
+                }
             }
-            Err(WsError::ConnectionClosed) => {}
-            Err(e) => return Poll::Ready(Err(e)),
         }
-        self.poll_flush(cx)
     }
 }
 
@@ -199,6 +237,9 @@ impl<S: AsyncRead + AsyncWrite + 'static> Stream for CompatWebSocketStream<S> {
     type Item = Result<Message, WsError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        // SAFETY:
+        // - The futures won't live longer than the stream.
+        // - The inner stream is pinned.
         let inner: &'static mut WebSocketStream<S> =
             unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
         let res = match poll_future_would_block!(
