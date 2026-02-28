@@ -26,14 +26,24 @@ enum Closing {
     Closed,
 }
 
+enum Reading {
+    None,
+    AfterRead(Result<Message, WsError>),
+    WouldBlock,
+}
+
 /// A [`futures_util`] compatible WebSocket stream.
 pub struct CompatWebSocketStream<S> {
     inner: Pin<Box<WebSocketStream<S>>>,
     read_future: Option<PinBoxFuture<Result<usize, WsError>>>,
     write_future: Option<PinBoxFuture<Result<usize, WsError>>>,
+    ready_waker: Option<Waker>,
     flush_waker: Option<Waker>,
+    close_waker: Option<Waker>,
+    read_waker: Option<Waker>,
     flushing: Flushing,
     closing: Closing,
+    reading: Reading,
 }
 
 impl<S> CompatWebSocketStream<S> {
@@ -42,9 +52,13 @@ impl<S> CompatWebSocketStream<S> {
             inner: Box::pin(stream),
             read_future: None,
             write_future: None,
+            ready_waker: None,
             flush_waker: None,
+            close_waker: None,
+            read_waker: None,
             flushing: Flushing::None,
             closing: Closing::None,
+            reading: Reading::None,
         }
     }
 }
@@ -74,101 +88,42 @@ macro_rules! poll_future {
     }};
 }
 
-macro_rules! poll_future_would_block {
-    ($f:expr, $cx:expr, $e:expr, $io:expr) => {{
-        if let Some(mut f) = $f.take() {
-            if f.as_mut().poll($cx).is_pending() {
-                $f.replace(f);
-                return Poll::Pending;
-            }
-        }
-
-        match $io {
-            Ok(len) => Poll::Ready(Ok(len)),
-            Err(WsError::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                $f.replace(Box::pin($e));
-                $cx.waker().wake_by_ref();
-                Poll::Pending
-            }
-            Err(e) => Poll::Ready(Err(e)),
-        }
-    }};
-}
-
 impl<S: AsyncRead + AsyncWrite + 'static> CompatWebSocketStream<S> {
-    fn poll_flush_impl(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<usize, WsError>> {
+    fn poll_flush_write_buf(mut self: Pin<&mut Self>) -> Poll<Result<usize, WsError>> {
         // SAFETY:
         // - The futures won't live longer than the stream.
         // - The inner stream is pinned.
         let inner: &'static mut WebSocketStream<S> =
             unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
-        if self.write_future.is_none() {
-            self.write_future.replace(Box::pin(inner.flush_write_buf()));
-        }
-        self.poll_ready_impl(cx, true)
+        let arr = WakerArray([
+            self.ready_waker.as_ref().cloned(),
+            self.flush_waker.as_ref().cloned(),
+            self.close_waker.as_ref().cloned(),
+            self.read_waker.as_ref().cloned(),
+        ]);
+        let waker = Waker::from(Arc::new(arr));
+        let cx = &mut Context::from_waker(&waker);
+        let res = poll_future!(self.write_future, cx, inner.flush_write_buf());
+        Poll::Ready(res)
     }
 
-    fn poll_fill_impl(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<usize, WsError>> {
+    fn poll_fill_read_buf(mut self: Pin<&mut Self>) -> Poll<Result<usize, WsError>> {
         // SAFETY:
         // - The futures won't live longer than the stream.
         // - The inner stream is pinned.
         let inner: &'static mut WebSocketStream<S> =
             unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
+        let arr = WakerArray([
+            self.close_waker.as_ref().cloned(),
+            self.read_waker.as_ref().cloned(),
+        ]);
+        let waker = Waker::from(Arc::new(arr));
+        let cx = &mut Context::from_waker(&waker);
         let res = poll_future!(self.read_future, cx, inner.fill_read_buf());
         Poll::Ready(res)
     }
 
-    fn poll_ready_impl(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        set_waker: bool,
-    ) -> Poll<Result<usize, WsError>> {
-        if let Some(mut fut) = self.write_future.take() {
-            let res = match fut.as_mut().poll(cx) {
-                Poll::Pending => {
-                    self.write_future.replace(fut);
-                    if set_waker {
-                        self.flush_waker.replace(cx.waker().clone());
-                    }
-                    Poll::Pending
-                }
-                Poll::Ready(Ok(len)) => Poll::Ready(Ok(len)),
-                Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-            };
-            if res.is_ready() {
-                self.flush_waker.take();
-            }
-            res
-        } else {
-            Poll::Ready(Ok(0))
-        }
-    }
-}
-
-impl<S: AsyncRead + AsyncWrite + 'static> Sink<Message> for CompatWebSocketStream<S> {
-    type Error = tungstenite::Error;
-
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.poll_ready_impl(cx, true).map_ok(|_| ())
-    }
-
-    fn start_send(mut self: Pin<&mut Self>, item: Message) -> Result<(), Self::Error> {
-        // FIXME: is it safe?
-        let inner = unsafe { self.inner.as_mut().get_unchecked_mut() };
-        match inner.inner.write(item) {
-            Ok(()) => Ok(()),
-            Err(WsError::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(()),
-            Err(e) => Err(e),
-        }
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_flush_impl(mut self: Pin<&mut Self>) -> Poll<Result<(), WsError>> {
         loop {
             match self.flushing {
                 Flushing::None => {
@@ -184,19 +139,49 @@ impl<S: AsyncRead + AsyncWrite + 'static> Sink<Message> for CompatWebSocketStrea
                     }
                 }
                 Flushing::WouldBlock => {
-                    ready!(self.as_mut().poll_flush_impl(cx))?;
+                    ready!(self.as_mut().poll_flush_write_buf())?;
                     self.flushing = Flushing::None
                 }
                 Flushing::Flushed => {
-                    ready!(self.as_mut().poll_flush_impl(cx))?;
+                    ready!(self.as_mut().poll_flush_write_buf())?;
                     self.flushing = Flushing::None;
+                    self.flush_waker.take();
                     return Poll::Ready(Ok(()));
                 }
             }
         }
     }
+}
+
+impl<S: AsyncRead + AsyncWrite + 'static> Sink<Message> for CompatWebSocketStream<S> {
+    type Error = tungstenite::Error;
+
+    fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        if self.write_future.is_some() {
+            self.ready_waker.replace(cx.waker().clone());
+            self.poll_flush_write_buf().map_ok(|_| ())
+        } else {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    fn start_send(mut self: Pin<&mut Self>, item: Message) -> Result<(), Self::Error> {
+        // FIXME: is it safe?
+        let inner = unsafe { self.inner.as_mut().get_unchecked_mut() };
+        match inner.inner.write(item) {
+            Ok(()) => Ok(()),
+            Err(WsError::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.flush_waker.replace(cx.waker().clone());
+        self.poll_flush_impl()
+    }
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.close_waker.replace(cx.waker().clone());
         loop {
             match self.closing {
                 Closing::None => {
@@ -212,7 +197,7 @@ impl<S: AsyncRead + AsyncWrite + 'static> Sink<Message> for CompatWebSocketStrea
                     }
                 }
                 Closing::WouldBlockFlush => {
-                    let flushed = ready!(self.as_mut().poll_flush_impl(cx))?;
+                    let flushed = ready!(self.as_mut().poll_flush_write_buf())?;
                     self.closing = if flushed == 0 {
                         Closing::WouldBlockFill
                     } else {
@@ -220,11 +205,12 @@ impl<S: AsyncRead + AsyncWrite + 'static> Sink<Message> for CompatWebSocketStrea
                     }
                 }
                 Closing::WouldBlockFill => {
-                    ready!(self.as_mut().poll_fill_impl(cx))?;
+                    ready!(self.as_mut().poll_fill_read_buf())?;
                     self.closing = Closing::None;
                 }
                 Closing::Closed => {
-                    ready!(self.as_mut().poll_flush(cx))?;
+                    self.close_waker.take();
+                    ready!(self.as_mut().poll_flush_impl())?;
                     self.closing = Closing::None;
                     return Poll::Ready(Ok(()));
                 }
@@ -237,44 +223,54 @@ impl<S: AsyncRead + AsyncWrite + 'static> Stream for CompatWebSocketStream<S> {
     type Item = Result<Message, WsError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // SAFETY:
-        // - The futures won't live longer than the stream.
-        // - The inner stream is pinned.
-        let inner: &'static mut WebSocketStream<S> =
-            unsafe { &mut *(self.inner.as_mut().get_unchecked_mut() as *mut _) };
-        let res = match poll_future_would_block!(
-            self.read_future,
-            cx,
-            inner.fill_read_buf(),
-            inner.inner.read()
-        ) {
-            Poll::Ready(Ok(msg)) => Poll::Ready(Some(Ok(msg))),
-            Poll::Ready(Err(WsError::ConnectionClosed | WsError::AlreadyClosed)) => {
-                Poll::Ready(None)
-            }
-            Poll::Ready(Err(e)) => Poll::Ready(Some(Err(e))),
-            Poll::Pending => Poll::Pending,
-        };
-        if self.write_future.is_some() {
-            let waker = self.flush_waker.as_ref().unwrap_or_else(|| Waker::noop());
-            let waker_array = WakerArray([cx.waker().clone(), waker.clone()]);
-            let waker = Waker::from(Arc::new(waker_array));
-            let mut cx = Context::from_waker(&waker);
-            let ready_res = self.as_mut().poll_ready_impl(&mut cx, false);
-            if let Poll::Ready(Err(e)) = ready_res
-                && let Poll::Ready(Some(Ok(_))) = &res
-            {
-                return Poll::Ready(Some(Err(e)));
+        self.read_waker.replace(cx.waker().clone());
+        loop {
+            match std::mem::replace(&mut self.reading, Reading::None) {
+                Reading::None => {
+                    // FIXME: is it safe?
+                    let inner = unsafe { self.inner.as_mut().get_unchecked_mut() };
+                    self.reading = match inner.inner.read() {
+                        Ok(msg) => Reading::AfterRead(Ok(msg)),
+                        Err(WsError::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            Reading::WouldBlock
+                        }
+                        Err(WsError::AlreadyClosed | WsError::ConnectionClosed) => {
+                            return Poll::Ready(None);
+                        }
+                        Err(e) => Reading::AfterRead(Err(e)),
+                    }
+                }
+                Reading::WouldBlock => {
+                    ready!(self.as_mut().poll_fill_read_buf())?;
+                }
+                Reading::AfterRead(res) => {
+                    let res = match self.as_mut().poll_flush_impl() {
+                        Poll::Pending => res,
+                        Poll::Ready(Ok(())) => res,
+                        Poll::Ready(Err(e)) => {
+                            if let Err(ori_e) = res {
+                                Err(ori_e)
+                            } else {
+                                Err(e)
+                            }
+                        }
+                    };
+                    self.read_waker.take();
+                    return Poll::Ready(Some(res));
+                }
             }
         }
-        res
     }
 }
 
-struct WakerArray<const N: usize>([Waker; N]);
+struct WakerArray<const N: usize>([Option<Waker>; N]);
 
 impl<const N: usize> Wake for WakerArray<N> {
     fn wake(self: Arc<Self>) {
-        self.0.iter().for_each(|w| w.wake_by_ref());
+        self.0.iter().for_each(|w| {
+            if let Some(w) = w {
+                w.wake_by_ref()
+            }
+        });
     }
 }
