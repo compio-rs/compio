@@ -299,8 +299,9 @@ where
     // Ensure internal mutability of the stream.
     where
         for<'a> &'a S: AsyncRead + AsyncWrite,
+        S: Unpin,
     {
-        CompatWebSocketStream::new(self)
+        CompatWebSocketStream::new(self.inner)
     }
 }
 
