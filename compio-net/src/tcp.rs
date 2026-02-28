@@ -2,7 +2,11 @@ use std::{future::Future, io, net::SocketAddr};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
-use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite, util::Splittable};
+use compio_io::{
+    AsyncRead, AsyncReadManaged, AsyncWrite,
+    socket::{AsyncRecvMsg, AsyncSendMsg},
+    util::Splittable,
+};
 use compio_runtime::{BorrowedBuffer, BufferPool, fd::PollFd};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
@@ -380,6 +384,56 @@ impl AsyncReadManaged for &TcpStream {
     }
 }
 
+impl AsyncRecvMsg<SocketAddr> for TcpStream {
+    #[inline]
+    async fn recv_msg<T: IoBufMut, C: IoBufMut>(
+        &mut self,
+        buffer: T,
+        control: C,
+        flags: i32,
+    ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
+        (&*self).recv_msg(buffer, control, flags).await
+    }
+
+    #[inline]
+    async fn recv_msg_vectored<T: IoVectoredBufMut, C: IoBufMut>(
+        &mut self,
+        buffer: T,
+        control: C,
+        flags: i32,
+    ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
+        (&*self).recv_msg_vectored(buffer, control, flags).await
+    }
+}
+
+impl AsyncRecvMsg<SocketAddr> for &TcpStream {
+    #[inline]
+    async fn recv_msg<T: IoBufMut, C: IoBufMut>(
+        &mut self,
+        buffer: T,
+        control: C,
+        flags: i32,
+    ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
+        self.inner
+            .recv_msg(buffer, control, flags)
+            .await
+            .map_res(|(res, len, addr)| (res, len, addr.as_socket().expect("IP socket address")))
+    }
+
+    #[inline]
+    async fn recv_msg_vectored<T: IoVectoredBufMut, C: IoBufMut>(
+        &mut self,
+        buffer: T,
+        control: C,
+        flags: i32,
+    ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
+        self.inner
+            .recv_msg_vectored(buffer, control, flags)
+            .await
+            .map_res(|(res, len, addr)| (res, len, addr.as_socket().expect("IP socket address")))
+    }
+}
+
 impl AsyncWrite for TcpStream {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
@@ -421,6 +475,60 @@ impl AsyncWrite for &TcpStream {
     #[inline]
     async fn shutdown(&mut self) -> io::Result<()> {
         self.inner.shutdown().await
+    }
+}
+
+impl AsyncSendMsg<SocketAddr> for TcpStream {
+    #[inline]
+    async fn send_msg<T: IoBuf, C: IoBuf>(
+        &mut self,
+        buffer: T,
+        control: C,
+        addr: &SocketAddr,
+        flags: i32,
+    ) -> BufResult<usize, (T, C)> {
+        (&*self).send_msg(buffer, control, addr, flags).await
+    }
+
+    #[inline]
+    async fn send_msg_vectored<T: IoVectoredBuf, C: IoBuf>(
+        &mut self,
+        buffer: T,
+        control: C,
+        addr: &SocketAddr,
+        flags: i32,
+    ) -> BufResult<usize, (T, C)> {
+        (&*self)
+            .send_msg_vectored(buffer, control, addr, flags)
+            .await
+    }
+}
+
+impl AsyncSendMsg<SocketAddr> for &TcpStream {
+    #[inline]
+    async fn send_msg<T: IoBuf, C: IoBuf>(
+        &mut self,
+        buffer: T,
+        control: C,
+        addr: &SocketAddr,
+        flags: i32,
+    ) -> BufResult<usize, (T, C)> {
+        self.inner
+            .send_msg(buffer, control, &(*addr).into(), flags)
+            .await
+    }
+
+    #[inline]
+    async fn send_msg_vectored<T: IoVectoredBuf, C: IoBuf>(
+        &mut self,
+        buffer: T,
+        control: C,
+        addr: &SocketAddr,
+        flags: i32,
+    ) -> BufResult<usize, (T, C)> {
+        self.inner
+            .send_msg_vectored(buffer, control, &(*addr).into(), flags)
+            .await
     }
 }
 

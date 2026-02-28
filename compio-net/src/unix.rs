@@ -2,11 +2,20 @@ use std::{future::Future, io, path::Path};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
-use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite, util::Splittable};
+use compio_io::{
+    AsyncRead, AsyncReadManaged, AsyncWrite,
+    socket::{AsyncRecvMsg, AsyncSendMsg},
+    util::Splittable,
+};
 use compio_runtime::{BorrowedBuffer, BufferPool, fd::PollFd};
 use socket2::{SockAddr, Socket as Socket2, Type};
 
 use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, SocketOpts, WriteHalf};
+
+#[cfg(unix)]
+type NativeSockAddr = std::os::unix::net::SocketAddr;
+#[cfg(windows)]
+type NativeSockAddr = windows_sys::Win32::Networking::WinSock::SOCKADDR_UN;
 
 /// A Unix socket server, listening for connections.
 ///
@@ -298,6 +307,74 @@ impl AsyncReadManaged for &UnixStream {
     }
 }
 
+impl AsyncRecvMsg<NativeSockAddr> for UnixStream {
+    #[inline]
+    async fn recv_msg<T: IoBufMut, C: IoBufMut>(
+        &mut self,
+        buffer: T,
+        control: C,
+        flags: i32,
+    ) -> BufResult<(usize, usize, NativeSockAddr), (T, C)> {
+        (&*self).recv_msg(buffer, control, flags).await
+    }
+
+    #[inline]
+    async fn recv_msg_vectored<T: IoVectoredBufMut, C: IoBufMut>(
+        &mut self,
+        buffer: T,
+        control: C,
+        flags: i32,
+    ) -> BufResult<(usize, usize, NativeSockAddr), (T, C)> {
+        (&*self).recv_msg_vectored(buffer, control, flags).await
+    }
+}
+
+impl AsyncRecvMsg<NativeSockAddr> for &UnixStream {
+    #[inline]
+    async fn recv_msg<T: IoBufMut, C: IoBufMut>(
+        &mut self,
+        buffer: T,
+        control: C,
+        flags: i32,
+    ) -> BufResult<(usize, usize, NativeSockAddr), (T, C)> {
+        self.inner
+            .recv_msg(buffer, control, flags)
+            .await
+            .map_res(|(res, len, addr)| {
+                #[cfg(unix)]
+                {
+                    (res, len, addr.as_unix().expect("UNIX socket address"))
+                }
+                #[cfg(windows)]
+                unsafe {
+                    (res, len, *addr.as_storage().view_as::<NativeSockAddr>())
+                }
+            })
+    }
+
+    #[inline]
+    async fn recv_msg_vectored<T: IoVectoredBufMut, C: IoBufMut>(
+        &mut self,
+        buffer: T,
+        control: C,
+        flags: i32,
+    ) -> BufResult<(usize, usize, NativeSockAddr), (T, C)> {
+        self.inner
+            .recv_msg_vectored(buffer, control, flags)
+            .await
+            .map_res(|(res, len, addr)| {
+                #[cfg(unix)]
+                {
+                    (res, len, addr.as_unix().expect("UNIX socket address"))
+                }
+                #[cfg(windows)]
+                unsafe {
+                    (res, len, *addr.as_storage().view_as::<NativeSockAddr>())
+                }
+            })
+    }
+}
+
 impl AsyncWrite for UnixStream {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
@@ -339,6 +416,58 @@ impl AsyncWrite for &UnixStream {
     #[inline]
     async fn shutdown(&mut self) -> io::Result<()> {
         self.inner.shutdown().await
+    }
+}
+
+impl AsyncSendMsg<SockAddr> for UnixStream {
+    #[inline]
+    async fn send_msg<T: IoBuf, C: IoBuf>(
+        &mut self,
+        buffer: T,
+        control: C,
+        addr: &SockAddr,
+        flags: i32,
+    ) -> BufResult<usize, (T, C)> {
+        (&*self).send_msg(buffer, control, addr, flags).await
+    }
+
+    #[inline]
+    async fn send_msg_vectored<T: IoVectoredBuf, C: IoBuf>(
+        &mut self,
+        buffer: T,
+        control: C,
+        addr: &SockAddr,
+        flags: i32,
+    ) -> BufResult<usize, (T, C)> {
+        (&*self)
+            .send_msg_vectored(buffer, control, addr, flags)
+            .await
+    }
+}
+
+impl AsyncSendMsg<SockAddr> for &UnixStream {
+    #[inline]
+    async fn send_msg<T: IoBuf, C: IoBuf>(
+        &mut self,
+        buffer: T,
+        control: C,
+        addr: &SockAddr,
+        flags: i32,
+    ) -> BufResult<usize, (T, C)> {
+        self.inner.send_msg(buffer, control, addr, flags).await
+    }
+
+    #[inline]
+    async fn send_msg_vectored<T: IoVectoredBuf, C: IoBuf>(
+        &mut self,
+        buffer: T,
+        control: C,
+        addr: &SockAddr,
+        flags: i32,
+    ) -> BufResult<usize, (T, C)> {
+        self.inner
+            .send_msg_vectored(buffer, control, addr, flags)
+            .await
     }
 }
 
