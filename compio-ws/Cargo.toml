@@ -26,6 +26,8 @@ rustls-platform-verifier = { workspace = true, optional = true }
 rustls-native-certs = { workspace = true, optional = true }
 webpki-roots = { workspace = true, optional = true }
 
+futures-util = { workspace = true, optional = true, features = ["sink"] }
+
 [dev-dependencies]
 compio-macros = { workspace = true }
 compio-runtime = { workspace = true }
@@ -43,3 +45,9 @@ rustls-platform-verifier = ["rustls", "dep:rustls-platform-verifier"]
 rustls-native-certs = ["rustls", "dep:rustls-native-certs"]
 webpki-roots = ["rustls", "dep:webpki-roots"]
 ring = ["compio-tls/ring"]
+
+io-compat = ["dep:futures-util"]
+
+[[example]]
+name = "ws_split"
+required-features = ["io-compat"]
