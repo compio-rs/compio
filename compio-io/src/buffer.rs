@@ -97,6 +97,10 @@ impl<B> Buffer<B> {
     fn buf_mut(&mut self) -> &mut B {
         self.inner_mut().as_inner_mut()
     }
+
+    pub(crate) fn has_inner(&self) -> bool {
+        self.0.is_some()
+    }
 }
 
 impl<B: IoBufMut> Buffer<B> {
