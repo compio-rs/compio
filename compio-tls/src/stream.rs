@@ -126,7 +126,10 @@ where
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> AsyncRead for TlsStream<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + 'static> AsyncRead for TlsStream<S>
+where
+    for<'a> &'a S: AsyncRead + AsyncWrite,
+{
     async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
         let slice = buf.as_uninit();
         slice.fill(MaybeUninit::new(0));
@@ -190,7 +193,10 @@ async fn flush_impl(s: &mut native_tls::TlsStream<SyncStream<impl AsyncWrite>>) 
     Ok(())
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> AsyncWrite for TlsStream<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + 'static> AsyncWrite for TlsStream<S>
+where
+    for<'a> &'a S: AsyncRead + AsyncWrite,
+{
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         let slice = buf.as_init();
         match &mut self.0 {

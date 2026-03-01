@@ -46,6 +46,7 @@ impl<S> MaybeTlsStream<S> {
 impl<S> AsyncRead for MaybeTlsStream<S>
 where
     S: AsyncRead + AsyncWrite + Unpin + 'static,
+    for<'a> &'a S: AsyncRead + AsyncWrite,
 {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         match &mut self.0 {
@@ -58,6 +59,7 @@ where
 impl<S> AsyncWrite for MaybeTlsStream<S>
 where
     S: AsyncRead + AsyncWrite + Unpin + 'static,
+    for<'a> &'a S: AsyncRead + AsyncWrite,
 {
     async fn write<B: IoBuf>(&mut self, buf: B) -> BufResult<usize, B> {
         match &mut self.0 {

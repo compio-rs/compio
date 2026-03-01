@@ -86,7 +86,10 @@ impl TlsConnector {
         &self,
         domain: &str,
         stream: S,
-    ) -> io::Result<TlsStream<S>> {
+    ) -> io::Result<TlsStream<S>>
+    where
+        for<'a> &'a S: AsyncRead + AsyncWrite,
+    {
         match &self.0 {
             #[cfg(feature = "native-tls")]
             TlsConnectorInner::NativeTls(c) => {
@@ -175,7 +178,10 @@ impl TlsAcceptor {
     pub async fn accept<S: AsyncRead + AsyncWrite + Unpin + 'static>(
         &self,
         stream: S,
-    ) -> io::Result<TlsStream<S>> {
+    ) -> io::Result<TlsStream<S>>
+    where
+        for<'a> &'a S: AsyncRead + AsyncWrite,
+    {
         match &self.0 {
             #[cfg(feature = "native-tls")]
             TlsAcceptorInner::NativeTls(c) => {

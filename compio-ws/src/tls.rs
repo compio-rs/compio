@@ -119,6 +119,7 @@ async fn wrap_stream<S>(
 ) -> Result<MaybeTlsStream<S>, Error>
 where
     S: AsyncRead + AsyncWrite + Unpin + 'static,
+    for<'a> &'a S: AsyncRead + AsyncWrite,
 {
     match mode {
         Mode::Plain => Ok(MaybeTlsStream::new_plain(socket)),
@@ -176,6 +177,7 @@ pub async fn client_async_tls<R, S>(
 where
     R: IntoClientRequest,
     S: AsyncRead + AsyncWrite + Unpin + 'static,
+    for<'a> &'a S: AsyncRead + AsyncWrite,
 {
     client_async_tls_with_config(request, stream, None, None).await
 }
@@ -191,6 +193,7 @@ pub async fn client_async_tls_with_config<R, S>(
 where
     R: IntoClientRequest,
     S: AsyncRead + AsyncWrite + Unpin + 'static,
+    for<'a> &'a S: AsyncRead + AsyncWrite,
 {
     let request: Request = request.into_client_request()?;
 
