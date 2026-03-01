@@ -189,7 +189,8 @@ async fn compat_ping_pong() {
 
         let (stream, _) = listener.accept().await.unwrap();
         let ws = accept_async(stream).await.unwrap();
-        let mut ws = ws.into_compat();
+        let ws = ws.into_compat();
+        let mut ws = std::pin::pin!(ws);
 
         let msg = ws.next().await.unwrap().unwrap();
         if let Message::Ping(data) = msg {
@@ -202,7 +203,8 @@ async fn compat_ping_pong() {
 
     let tcp = TcpStream::connect(&addr).await.unwrap();
     let (ws, _) = client_async(&format!("ws://{}", addr), tcp).await.unwrap();
-    let mut ws = ws.into_compat();
+    let ws = ws.into_compat();
+    let mut ws = std::pin::pin!(ws);
 
     let ping_data = vec![42];
     ws.send(Message::Ping(ping_data.clone().into()))

@@ -1,4 +1,5 @@
 use std::{
+    marker::PhantomPinned,
     ops::Deref,
     pin::Pin,
     sync::Arc,
@@ -7,6 +8,7 @@ use std::{
 
 use compio_io::{AsyncRead, AsyncWrite, compat::SyncStream};
 use futures_util::{Sink, Stream};
+use pin_project_lite::pin_project;
 use tungstenite::{Message, WebSocket};
 
 use crate::WsError;
@@ -32,24 +34,30 @@ enum Reading {
     WouldBlock,
 }
 
-/// A [`futures_util`] compatible WebSocket stream.
-pub struct CompatWebSocketStream<S> {
-    inner: Pin<Box<WebSocket<SyncStream<S>>>>,
-    read_future: Option<PinBoxFuture<Result<usize, std::io::Error>>>,
-    write_future: Option<PinBoxFuture<Result<usize, std::io::Error>>>,
-    ready_waker: Option<Waker>,
-    flush_waker: Option<Waker>,
-    close_waker: Option<Waker>,
-    read_waker: Option<Waker>,
-    flushing: Flushing,
-    closing: Closing,
-    reading: Reading,
+pin_project! {
+    /// A [`futures_util`] compatible WebSocket stream.
+    pub struct CompatWebSocketStream<S> {
+        #[pin]
+        inner: WebSocket<SyncStream<S>>,
+        read_future: Option<PinBoxFuture<Result<usize, std::io::Error>>>,
+        write_future: Option<PinBoxFuture<Result<usize, std::io::Error>>>,
+        ready_waker: Option<Waker>,
+        flush_waker: Option<Waker>,
+        close_waker: Option<Waker>,
+        read_waker: Option<Waker>,
+        flushing: Flushing,
+        closing: Closing,
+        reading: Reading,
+        // This is a self-referential struct, so we need to prevent it from being `Unpin`.
+        #[pin]
+        _p: PhantomPinned,
+    }
 }
 
 impl<S> CompatWebSocketStream<S> {
     pub(super) fn new(stream: WebSocket<SyncStream<S>>) -> Self {
         Self {
-            inner: Box::pin(stream),
+            inner: stream,
             read_future: None,
             write_future: None,
             ready_waker: None,
@@ -59,6 +67,7 @@ impl<S> CompatWebSocketStream<S> {
             flushing: Flushing::None,
             closing: Closing::None,
             reading: Reading::None,
+            _p: PhantomPinned,
         }
     }
 }
@@ -96,7 +105,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + 'static> CompatWebSocketStream<S>
 where
     for<'a> &'a S: AsyncRead + AsyncWrite,
 {
-    fn poll_flush_write_buf(mut self: Pin<&mut Self>) -> Poll<Result<usize, WsError>> {
+    fn poll_flush_write_buf(self: Pin<&mut Self>) -> Poll<Result<usize, WsError>> {
+        let this = self.project();
         // SAFETY:
         // - The future won't live longer than the stream.
         // - The stream is `Unpin`, and is internally mutable.
@@ -107,20 +117,21 @@ where
         // - The sync methods of `SyncStream` check if the inner buffer is already
         //   borrowed, and returns `WouldBlock` if it is.
         let inner: &'static mut SyncStream<S> =
-            unsafe { extend_lifetime(self.inner.as_mut().get_mut().get_mut()) };
+            unsafe { extend_lifetime(this.inner.get_mut().get_mut()) };
         let arr = WakerArray([
-            self.ready_waker.as_ref().cloned(),
-            self.flush_waker.as_ref().cloned(),
-            self.close_waker.as_ref().cloned(),
-            self.read_waker.as_ref().cloned(),
+            this.ready_waker.as_ref().cloned(),
+            this.flush_waker.as_ref().cloned(),
+            this.close_waker.as_ref().cloned(),
+            this.read_waker.as_ref().cloned(),
         ]);
         let waker = Waker::from(Arc::new(arr));
         let cx = &mut Context::from_waker(&waker);
-        let res = poll_future!(self.write_future, cx, inner.flush_write_buf());
+        let res = poll_future!(this.write_future, cx, inner.flush_write_buf());
         Poll::Ready(res.map_err(WsError::Io))
     }
 
-    fn poll_fill_read_buf(mut self: Pin<&mut Self>) -> Poll<Result<usize, WsError>> {
+    fn poll_fill_read_buf(self: Pin<&mut Self>) -> Poll<Result<usize, WsError>> {
+        let this = self.project();
         // SAFETY:
         // - The future won't live longer than the stream.
         // - The stream is `Unpin`, and is internally mutable.
@@ -131,22 +142,23 @@ where
         // - The sync methods of `SyncStream` check if the inner buffer is already
         //   borrowed, and returns `WouldBlock` if it is.
         let inner: &'static mut SyncStream<S> =
-            unsafe { extend_lifetime(self.inner.as_mut().get_mut().get_mut()) };
+            unsafe { extend_lifetime(this.inner.get_mut().get_mut()) };
         let arr = WakerArray([
-            self.close_waker.as_ref().cloned(),
-            self.read_waker.as_ref().cloned(),
+            this.close_waker.as_ref().cloned(),
+            this.read_waker.as_ref().cloned(),
         ]);
         let waker = Waker::from(Arc::new(arr));
         let cx = &mut Context::from_waker(&waker);
-        let res = poll_future!(self.read_future, cx, inner.fill_read_buf());
+        let res = poll_future!(this.read_future, cx, inner.fill_read_buf());
         Poll::Ready(res.map_err(WsError::Io))
     }
 
     fn poll_flush_impl(mut self: Pin<&mut Self>) -> Poll<Result<(), WsError>> {
         loop {
-            match self.flushing {
+            let mut this = self.as_mut().project();
+            match this.flushing {
                 Flushing::None => {
-                    self.flushing = match self.inner.flush() {
+                    *this.flushing = match this.inner.flush() {
                         Ok(()) => Flushing::Flushed,
                         Err(WsError::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
                             Flushing::WouldBlock
@@ -157,12 +169,13 @@ where
                 }
                 Flushing::WouldBlock => {
                     ready!(self.as_mut().poll_flush_write_buf())?;
-                    self.flushing = Flushing::None
+                    *self.as_mut().project().flushing = Flushing::None
                 }
                 Flushing::Flushed => {
                     ready!(self.as_mut().poll_flush_write_buf())?;
-                    self.flushing = Flushing::None;
-                    self.flush_waker.take();
+                    let this = self.as_mut().project();
+                    *this.flushing = Flushing::None;
+                    this.flush_waker.take();
                     return Poll::Ready(Ok(()));
                 }
             }
@@ -178,15 +191,18 @@ where
 
     fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         if self.write_future.is_some() {
-            self.ready_waker.replace(cx.waker().clone());
+            self.as_mut()
+                .project()
+                .ready_waker
+                .replace(cx.waker().clone());
             ready!(self.as_mut().poll_flush_write_buf())?;
-            self.read_waker.take();
+            self.as_mut().project().read_waker.take();
         }
         Poll::Ready(Ok(()))
     }
 
-    fn start_send(mut self: Pin<&mut Self>, item: Message) -> Result<(), Self::Error> {
-        match self.inner.write(item) {
+    fn start_send(self: Pin<&mut Self>, item: Message) -> Result<(), Self::Error> {
+        match self.project().inner.write(item) {
             Ok(()) => Ok(()),
             Err(WsError::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(()),
             Err(e) => Err(e),
@@ -194,16 +210,23 @@ where
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.flush_waker.replace(cx.waker().clone());
+        self.as_mut()
+            .project()
+            .flush_waker
+            .replace(cx.waker().clone());
         self.poll_flush_impl()
     }
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.close_waker.replace(cx.waker().clone());
+        self.as_mut()
+            .project()
+            .close_waker
+            .replace(cx.waker().clone());
         loop {
-            match self.closing {
+            let mut this = self.as_mut().project();
+            match this.closing {
                 Closing::None => {
-                    self.closing = match self.inner.close(None) {
+                    *this.closing = match this.inner.close(None) {
                         Ok(()) => Closing::Closed,
                         Err(WsError::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
                             Closing::WouldBlockFlush
@@ -214,7 +237,7 @@ where
                 }
                 Closing::WouldBlockFlush => {
                     let flushed = ready!(self.as_mut().poll_flush_write_buf())?;
-                    self.closing = if flushed == 0 {
+                    *self.as_mut().project().closing = if flushed == 0 {
                         Closing::WouldBlockFill
                     } else {
                         Closing::None
@@ -222,12 +245,13 @@ where
                 }
                 Closing::WouldBlockFill => {
                     ready!(self.as_mut().poll_fill_read_buf())?;
-                    self.closing = Closing::None;
+                    *self.as_mut().project().closing = Closing::None;
                 }
                 Closing::Closed => {
-                    self.close_waker.take();
                     ready!(self.as_mut().poll_flush_impl())?;
-                    self.closing = Closing::None;
+                    let this = self.as_mut().project();
+                    *this.closing = Closing::None;
+                    this.close_waker.take();
                     return Poll::Ready(Ok(()));
                 }
             }
@@ -242,11 +266,15 @@ where
     type Item = Result<Message, WsError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.read_waker.replace(cx.waker().clone());
+        self.as_mut()
+            .project()
+            .read_waker
+            .replace(cx.waker().clone());
         loop {
-            match std::mem::replace(&mut self.reading, Reading::None) {
+            let mut this = self.as_mut().project();
+            match std::mem::replace(this.reading, Reading::None) {
                 Reading::None => {
-                    self.reading = match self.inner.read() {
+                    *this.reading = match this.inner.read() {
                         Ok(msg) => Reading::AfterRead(Ok(msg)),
                         Err(WsError::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
                             Reading::WouldBlock
@@ -272,7 +300,7 @@ where
                             }
                         }
                     };
-                    self.read_waker.take();
+                    self.as_mut().project().read_waker.take();
                     return Poll::Ready(Some(res));
                 }
             }
