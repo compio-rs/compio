@@ -118,7 +118,7 @@ async fn wrap_stream<S>(
     mode: Mode,
 ) -> Result<MaybeTlsStream<S>, Error>
 where
-    S: AsyncRead + AsyncWrite + 'static,
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
 {
     match mode {
         Mode::Plain => Ok(MaybeTlsStream::new_plain(socket)),
