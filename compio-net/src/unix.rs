@@ -307,7 +307,9 @@ impl AsyncReadManaged for &UnixStream {
     }
 }
 
-impl AsyncRecvMsg<NativeSockAddr> for UnixStream {
+impl AsyncRecvMsg for UnixStream {
+    type AddrType = NativeSockAddr;
+
     #[inline]
     async fn recv_msg<T: IoBufMut, C: IoBufMut>(
         &mut self,
@@ -329,7 +331,8 @@ impl AsyncRecvMsg<NativeSockAddr> for UnixStream {
     }
 }
 
-impl AsyncRecvMsg<NativeSockAddr> for &UnixStream {
+impl AsyncRecvMsg for &UnixStream {
+    type AddrType = NativeSockAddr;
     #[inline]
     async fn recv_msg<T: IoBufMut, C: IoBufMut>(
         &mut self,
@@ -419,7 +422,9 @@ impl AsyncWrite for &UnixStream {
     }
 }
 
-impl AsyncSendMsg<SockAddr> for UnixStream {
+impl AsyncSendMsg for UnixStream {
+    type AddrType = SockAddr;
+
     #[inline]
     async fn send_msg<T: IoBuf, C: IoBuf>(
         &mut self,
@@ -445,7 +450,9 @@ impl AsyncSendMsg<SockAddr> for UnixStream {
     }
 }
 
-impl AsyncSendMsg<SockAddr> for &UnixStream {
+impl AsyncSendMsg for &UnixStream {
+    type AddrType = SockAddr;
+
     #[inline]
     async fn send_msg<T: IoBuf, C: IoBuf>(
         &mut self,

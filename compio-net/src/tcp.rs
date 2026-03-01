@@ -384,7 +384,9 @@ impl AsyncReadManaged for &TcpStream {
     }
 }
 
-impl AsyncRecvMsg<SocketAddr> for TcpStream {
+impl AsyncRecvMsg for TcpStream {
+    type AddrType = SocketAddr;
+
     #[inline]
     async fn recv_msg<T: IoBufMut, C: IoBufMut>(
         &mut self,
@@ -406,7 +408,9 @@ impl AsyncRecvMsg<SocketAddr> for TcpStream {
     }
 }
 
-impl AsyncRecvMsg<SocketAddr> for &TcpStream {
+impl AsyncRecvMsg for &TcpStream {
+    type AddrType = SocketAddr;
+
     #[inline]
     async fn recv_msg<T: IoBufMut, C: IoBufMut>(
         &mut self,
@@ -478,7 +482,9 @@ impl AsyncWrite for &TcpStream {
     }
 }
 
-impl AsyncSendMsg<SocketAddr> for TcpStream {
+impl AsyncSendMsg for TcpStream {
+    type AddrType = SocketAddr;
+
     #[inline]
     async fn send_msg<T: IoBuf, C: IoBuf>(
         &mut self,
@@ -504,7 +510,9 @@ impl AsyncSendMsg<SocketAddr> for TcpStream {
     }
 }
 
-impl AsyncSendMsg<SocketAddr> for &TcpStream {
+impl AsyncSendMsg for &TcpStream {
+    type AddrType = SocketAddr;
+
     #[inline]
     async fn send_msg<T: IoBuf, C: IoBuf>(
         &mut self,
