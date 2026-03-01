@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use compio_io::compat::AsyncStream;
+use compio_io::compat::{AsyncReadStream, AsyncWriteStream};
 use futures_executor::block_on;
 use futures_util::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
@@ -8,7 +8,7 @@ use futures_util::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 fn async_compat_read() {
     block_on(async {
         let src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
-        let stream = AsyncStream::new(src);
+        let stream = AsyncReadStream::new(src);
         let mut stream = std::pin::pin!(stream);
 
         let mut buf = [0; 6];
@@ -28,7 +28,7 @@ fn async_compat_read() {
 fn async_compat_bufread() {
     block_on(async {
         let src = &[1u8, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0][..];
-        let stream = AsyncStream::new(src);
+        let stream = AsyncReadStream::new(src);
         let mut stream = std::pin::pin!(stream);
 
         let slice = stream.fill_buf().await.unwrap();
@@ -47,7 +47,7 @@ fn async_compat_bufread() {
 fn async_compat_write() {
     block_on(async {
         let dst = Cursor::new([0u8; 10]);
-        let stream = AsyncStream::new(dst);
+        let stream = AsyncWriteStream::new(dst);
         let mut stream = std::pin::pin!(stream);
 
         let len = stream.write(&[1, 1, 4, 5, 1, 4]).await.unwrap();
@@ -58,7 +58,7 @@ fn async_compat_write() {
         assert_eq!(stream.get_ref().get_ref(), &[1, 1, 4, 5, 1, 4, 0, 0, 0, 0]);
 
         let dst = Cursor::new([0u8; 10]);
-        let stream = AsyncStream::with_capacity(10, dst);
+        let stream = AsyncWriteStream::with_capacity(10, dst);
         let mut stream = std::pin::pin!(stream);
 
         let len = stream
@@ -76,7 +76,7 @@ fn async_compat_write() {
 fn async_compat_flush_fail() {
     block_on(async {
         let dst = Cursor::new([0u8; 10]);
-        let stream = AsyncStream::new(dst);
+        let stream = AsyncWriteStream::new(dst);
         let mut stream = std::pin::pin!(stream);
         let len = stream
             .write(&[1, 1, 4, 5, 1, 4, 1, 9, 1, 9, 8, 1, 0])

@@ -44,7 +44,7 @@ pub struct SyncStream<S> {
 
 impl<S> SyncStream<S> {
     // 64MiB max
-    const DEFAULT_MAX_BUFFER: usize = 64 * 1024 * 1024;
+    pub(crate) const DEFAULT_MAX_BUFFER: usize = 64 * 1024 * 1024;
 
     /// Creates a new `SyncStream` with default buffer sizes.
     ///
@@ -68,6 +68,23 @@ impl<S> SyncStream<S> {
             inner: stream,
             read_buf: Buffer::with_capacity(base_capacity),
             write_buf: Buffer::with_capacity(base_capacity),
+            eof: false,
+            base_capacity,
+            max_buffer_size,
+        }
+    }
+
+    pub(crate) fn with_limits2(
+        read_capacity: usize,
+        write_capacity: usize,
+        base_capacity: usize,
+        max_buffer_size: usize,
+        stream: S,
+    ) -> Self {
+        Self {
+            inner: stream,
+            read_buf: Buffer::with_capacity(read_capacity),
+            write_buf: Buffer::with_capacity(write_capacity),
             eof: false,
             base_capacity,
             max_buffer_size,
