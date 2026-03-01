@@ -183,6 +183,17 @@ where
     }
 }
 
+fn replace_waker(waker_slot: &mut Option<Waker>, waker: &Waker) {
+    let replace = match waker_slot {
+        Some(w) if !w.will_wake(waker) => true,
+        None => true,
+        _ => false,
+    };
+    if replace {
+        waker_slot.replace(waker.clone());
+    }
+}
+
 impl<S: AsyncRead + AsyncWrite + Unpin + 'static> Sink<Message> for CompatWebSocketStream<S>
 where
     for<'a> &'a S: AsyncRead + AsyncWrite,
@@ -191,10 +202,7 @@ where
 
     fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         if self.write_future.is_some() {
-            self.as_mut()
-                .project()
-                .ready_waker
-                .replace(cx.waker().clone());
+            replace_waker(self.as_mut().project().ready_waker, cx.waker());
             ready!(self.as_mut().poll_flush_write_buf())?;
             self.as_mut().project().read_waker.take();
         }
@@ -210,18 +218,12 @@ where
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.as_mut()
-            .project()
-            .flush_waker
-            .replace(cx.waker().clone());
+        replace_waker(self.as_mut().project().flush_waker, cx.waker());
         self.poll_flush_impl()
     }
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.as_mut()
-            .project()
-            .close_waker
-            .replace(cx.waker().clone());
+        replace_waker(self.as_mut().project().close_waker, cx.waker());
         loop {
             let mut this = self.as_mut().project();
             match this.closing {
@@ -266,10 +268,7 @@ where
     type Item = Result<Message, WsError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.as_mut()
-            .project()
-            .read_waker
-            .replace(cx.waker().clone());
+        replace_waker(self.as_mut().project().read_waker, cx.waker());
         loop {
             let mut this = self.as_mut().project();
             match std::mem::replace(this.reading, Reading::None) {
