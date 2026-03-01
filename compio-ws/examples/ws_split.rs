@@ -34,13 +34,18 @@ async fn run_client() -> WebSocketStream<TcpStream> {
     let (mut ws, _) = client_async("ws://127.0.0.1:8081", stream).await.unwrap();
     println!("Connected");
     let data = vec![0; MSG_LEN];
+    let ping_data = vec![42];
     for _ in 0..N {
+        ws.send(Message::Ping(ping_data.clone().into()))
+            .await
+            .unwrap();
         ws.send(Message::Binary(data.clone().into())).await.unwrap();
     }
     println!("Client sent all messages");
 
     let mut n = 0;
     loop {
+        ws.read().await.unwrap();
         ws.read().await.unwrap();
         n += 1;
         if n >= N {
@@ -56,6 +61,7 @@ async fn server_recv_task(
 ) -> SplitStream<CompatWebSocketStream<TcpStream>> {
     let mut n = 0;
     loop {
+        ws.next().await.unwrap().unwrap();
         ws.next().await.unwrap().unwrap();
         n += 1;
         if n >= N {
@@ -73,6 +79,7 @@ async fn server_send_task(
     for _ in 0..N {
         ws.send(Message::Binary(data.clone().into())).await.unwrap();
     }
+    ws.close().await.unwrap();
     println!("Server sent all messages");
     ws
 }
