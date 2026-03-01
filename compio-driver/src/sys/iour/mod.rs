@@ -216,6 +216,16 @@ impl Driver {
         Some(self)
     }
 
+    pub fn register_files(&self, fds: &[RawFd]) -> io::Result<()> {
+        self.inner.submitter().register_files(fds)?;
+        Ok(())
+    }
+
+    pub fn unregister_files(&self) -> io::Result<()> {
+        self.inner.submitter().unregister_files()?;
+        Ok(())
+    }
+
     pub fn register_personality(&self) -> io::Result<u16> {
         self.inner.submitter().register_personality()
     }
