@@ -4,7 +4,8 @@ use std::{
     marker::PhantomPinned,
     mem::MaybeUninit,
     pin::Pin,
-    task::{Context, Poll},
+    sync::Arc,
+    task::{Context, Poll, Wake, Waker, ready},
 };
 
 use pin_project_lite::pin_project;
@@ -19,6 +20,12 @@ pin_project! {
         read_future: Option<PinBoxFuture<io::Result<usize>>>,
         write_future: Option<PinBoxFuture<io::Result<usize>>>,
         shutdown_future: Option<PinBoxFuture<io::Result<()>>>,
+        read_waker: Option<Waker>,
+        read_uninit_waker: Option<Waker>,
+        read_buf_waker: Option<Waker>,
+        write_waker: Option<Waker>,
+        flush_waker: Option<Waker>,
+        close_waker: Option<Waker>,
         #[pin]
         _p: PhantomPinned,
     }
@@ -41,6 +48,12 @@ impl<S> AsyncStream<S> {
             read_future: None,
             write_future: None,
             shutdown_future: None,
+            read_waker: None,
+            read_uninit_waker: None,
+            read_buf_waker: None,
+            write_waker: None,
+            flush_waker: None,
+            close_waker: None,
             _p: PhantomPinned,
         }
     }
@@ -70,6 +83,9 @@ pin_project! {
         #[pin]
         inner: SyncStream<S>,
         read_future: Option<PinBoxFuture<io::Result<usize>>>,
+        read_waker: Option<Waker>,
+        read_uninit_waker: Option<Waker>,
+        read_buf_waker: Option<Waker>,
         #[pin]
         _p: PhantomPinned,
     }
@@ -96,6 +112,9 @@ impl<S> AsyncReadStream<S> {
         Self {
             inner,
             read_future: None,
+            read_waker: None,
+            read_uninit_waker: None,
+            read_buf_waker: None,
             _p: PhantomPinned,
         }
     }
@@ -124,6 +143,9 @@ pin_project! {
         #[pin]
         inner: SyncStream<S>,
         write_future: Option<PinBoxFuture<io::Result<usize>>>,
+        write_waker: Option<Waker>,
+        flush_waker: Option<Waker>,
+        close_waker: Option<Waker>,
         #[pin]
         _p: PhantomPinned,
     }
@@ -150,6 +172,9 @@ impl<S> AsyncWriteStream<S> {
         Self {
             inner,
             write_future: None,
+            write_waker: None,
+            flush_waker: None,
+            close_waker: None,
             _p: PhantomPinned,
         }
     }
@@ -188,22 +213,19 @@ macro_rules! poll_future {
 }
 
 macro_rules! poll_future_would_block {
-    ($f:expr, $cx:expr, $e:expr, $io:expr) => {{
-        if let Some(mut f) = $f.take() {
-            if f.as_mut().poll($cx).is_pending() {
-                $f.replace(f);
-                return Poll::Pending;
-            }
-        }
-
+    ($cx:expr, $w:expr, $io:expr, $f:expr) => {{
         match $io {
-            Ok(len) => Poll::Ready(Ok(len)),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                $f.replace(Box::pin($e));
-                $cx.waker().wake_by_ref();
-                Poll::Pending
+            Ok(res) => {
+                $w.take();
+                return Poll::Ready(Ok(res));
             }
-            Err(e) => Poll::Ready(Err(e)),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                ready!($f)?;
+            }
+            Err(e) => {
+                $w.take();
+                return Poll::Ready(Err(e));
+            }
         }
     }};
 }
@@ -216,36 +238,39 @@ unsafe fn extend_lifetime<T: ?Sized>(t: &T) -> &'static T {
     unsafe { &*(t as *const T) }
 }
 
-fn poll_read<S: AsyncRead + Unpin + 'static>(
-    inner: &'static mut SyncStream<S>,
-    cx: &mut Context<'_>,
-    fut: &mut Option<PinBoxFuture<io::Result<usize>>>,
-    buf: &mut [u8],
-) -> Poll<io::Result<usize>> {
-    poll_future_would_block!(fut, cx, inner.fill_read_buf(), io::Read::read(inner, buf))
+fn replace_waker(waker_slot: &mut Option<Waker>, waker: &Waker) {
+    let replace = match waker_slot {
+        Some(w) if !w.will_wake(waker) => true,
+        None => true,
+        _ => false,
+    };
+    if replace {
+        waker_slot.replace(waker.clone());
+    }
 }
 
-fn poll_read_uninit<S: AsyncRead + Unpin + 'static>(
-    inner: &'static mut SyncStream<S>,
-    cx: &mut Context<'_>,
-    fut: &mut Option<PinBoxFuture<io::Result<usize>>>,
-    buf: &mut [MaybeUninit<u8>],
-) -> Poll<io::Result<usize>> {
-    poll_future_would_block!(fut, cx, inner.fill_read_buf(), inner.read_buf_uninit(buf))
-}
-
-fn poll_fill_buf<S: AsyncRead + Unpin + 'static>(
-    inner: &'static mut SyncStream<S>,
-    cx: &mut Context<'_>,
-    fut: &mut Option<PinBoxFuture<io::Result<usize>>>,
-) -> Poll<io::Result<&'static [u8]>> {
-    poll_future_would_block!(
-        fut,
-        cx,
-        inner.fill_read_buf(),
-        // SAFETY: the future is none when ready.
-        io::BufRead::fill_buf(inner).map(|slice| unsafe { extend_lifetime(slice) })
-    )
+impl<S: AsyncRead + Unpin + 'static> AsyncStream<S>
+where
+    for<'a> &'a S: AsyncRead,
+{
+    fn poll_read_impl(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        let this = self.project();
+        // SAFETY:
+        // - The future won't live longer than the stream.
+        // - The stream is internally mutable.
+        // - The future only accesses the corresponding buffer and fields.
+        //   - No access overlap between the futures.
+        let inner = unsafe { extend_lifetime_mut(this.inner.get_mut()) };
+        let arr = WakerArray([
+            this.read_waker.as_ref().cloned(),
+            this.read_uninit_waker.as_ref().cloned(),
+            this.read_buf_waker.as_ref().cloned(),
+        ]);
+        let waker = Waker::from(Arc::new(arr));
+        let cx = &mut Context::from_waker(&waker);
+        let res = poll_future!(this.read_future, cx, inner.fill_read_buf());
+        Poll::Ready(res)
+    }
 }
 
 impl<S: AsyncRead + Unpin + 'static> futures_util::AsyncRead for AsyncStream<S>
@@ -253,33 +278,20 @@ where
     for<'a> &'a S: AsyncRead,
 {
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        // SAFETY:
-        // - The future won't live longer than the stream.
-        // - The stream is `Unpin`, and is internally mutable.
-        // - The future only accesses the corresponding buffer and fields.
-        //   - No access overlap between the futures.
-        let inner = unsafe { extend_lifetime_mut(this.inner.get_mut()) };
-        poll_read(inner, cx, this.read_future, buf)
-    }
-}
-
-impl<S: AsyncRead + Unpin + 'static> futures_util::AsyncRead for AsyncReadStream<S> {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        // SAFETY:
-        // - The future won't live longer than the stream.
-        // - The stream is `Unpin`.
-        let inner = unsafe { extend_lifetime_mut(this.inner.get_mut()) };
-        poll_read(inner, cx, this.read_future, buf)
+        replace_waker(self.as_mut().project().read_waker, cx.waker());
+        loop {
+            let this = self.as_mut().project();
+            poll_future_would_block!(
+                cx,
+                this.read_waker,
+                io::Read::read(this.inner.get_mut(), buf),
+                self.as_mut().poll_read_impl()
+            )
+        }
     }
 }
 
@@ -291,14 +303,82 @@ where
     ///
     /// On success, returns `Poll::Ready(Ok(num_bytes_read))`.
     pub fn poll_read_uninit(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut [MaybeUninit<u8>],
     ) -> Poll<io::Result<usize>> {
+        replace_waker(self.as_mut().project().read_uninit_waker, cx.waker());
+        loop {
+            let this = self.as_mut().project();
+            poll_future_would_block!(
+                cx,
+                this.read_uninit_waker,
+                this.inner.get_mut().read_buf_uninit(buf),
+                self.as_mut().poll_read_impl()
+            )
+        }
+    }
+}
+
+impl<S: AsyncRead + Unpin + 'static> futures_util::AsyncBufRead for AsyncStream<S>
+where
+    for<'a> &'a S: AsyncRead,
+{
+    fn poll_fill_buf(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
+        replace_waker(self.as_mut().project().read_buf_waker, cx.waker());
+        loop {
+            let this = self.as_mut().project();
+            poll_future_would_block!(
+                cx,
+                this.read_buf_waker,
+                // SAFETY: The buffer won't be accessed after the future is ready, and the future
+                // won't live longer than the stream.
+                io::BufRead::fill_buf(this.inner.get_mut()).map(|s| unsafe { extend_lifetime(s) }),
+                self.as_mut().poll_read_impl()
+            )
+        }
+    }
+
+    fn consume(self: Pin<&mut Self>, amt: usize) {
+        self.project().inner.consume(amt)
+    }
+}
+
+impl<S: AsyncRead + Unpin + 'static> AsyncReadStream<S> {
+    fn poll_read_impl(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         let this = self.project();
-        let inner: &'static mut SyncStream<S> =
-            unsafe { extend_lifetime_mut(this.inner.get_mut()) };
-        poll_read_uninit(inner, cx, this.read_future, buf)
+        // SAFETY:
+        // - The future won't live longer than the stream.
+        // - The stream is `Unpin`.
+        let inner = unsafe { extend_lifetime_mut(this.inner.get_mut()) };
+        let arr = WakerArray([
+            this.read_waker.as_ref().cloned(),
+            this.read_uninit_waker.as_ref().cloned(),
+            this.read_buf_waker.as_ref().cloned(),
+        ]);
+        let waker = Waker::from(Arc::new(arr));
+        let cx = &mut Context::from_waker(&waker);
+        let res = poll_future!(this.read_future, cx, inner.fill_read_buf());
+        Poll::Ready(res)
+    }
+}
+
+impl<S: AsyncRead + Unpin + 'static> futures_util::AsyncRead for AsyncReadStream<S> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        replace_waker(self.as_mut().project().read_waker, cx.waker());
+        loop {
+            let this = self.as_mut().project();
+            poll_future_would_block!(
+                cx,
+                this.read_waker,
+                io::Read::read(this.inner.get_mut(), buf),
+                self.as_mut().poll_read_impl()
+            )
+        }
     }
 }
 
@@ -307,39 +387,36 @@ impl<S: AsyncRead + Unpin + 'static> AsyncReadStream<S> {
     ///
     /// On success, returns `Poll::Ready(Ok(num_bytes_read))`.
     pub fn poll_read_uninit(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut [MaybeUninit<u8>],
     ) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        let inner: &'static mut SyncStream<S> =
-            unsafe { extend_lifetime_mut(this.inner.get_mut()) };
-        poll_read_uninit(inner, cx, this.read_future, buf)
+        replace_waker(self.as_mut().project().read_uninit_waker, cx.waker());
+        loop {
+            let this = self.as_mut().project();
+            poll_future_would_block!(
+                cx,
+                this.read_uninit_waker,
+                this.inner.get_mut().read_buf_uninit(buf),
+                self.as_mut().poll_read_impl()
+            )
+        }
     }
 }
-
-impl<S: AsyncRead + Unpin + 'static> futures_util::AsyncBufRead for AsyncStream<S>
-where
-    for<'a> &'a S: AsyncRead,
-{
-    fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
-        let this = self.project();
-        let inner: &'static mut SyncStream<S> =
-            unsafe { extend_lifetime_mut(this.inner.get_mut()) };
-        poll_fill_buf(inner, cx, this.read_future)
-    }
-
-    fn consume(self: Pin<&mut Self>, amt: usize) {
-        self.project().inner.consume(amt)
-    }
-}
-
 impl<S: AsyncRead + Unpin + 'static> futures_util::AsyncBufRead for AsyncReadStream<S> {
-    fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
-        let this = self.project();
-        let inner: &'static mut SyncStream<S> =
-            unsafe { extend_lifetime_mut(this.inner.get_mut()) };
-        poll_fill_buf(inner, cx, this.read_future)
+    fn poll_fill_buf(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
+        replace_waker(self.as_mut().project().read_buf_waker, cx.waker());
+        loop {
+            let this = self.as_mut().project();
+            poll_future_would_block!(
+                cx,
+                this.read_buf_waker,
+                // SAFETY: The buffer won't be accessed after the future is ready, and the future
+                // won't live longer than the stream.
+                io::BufRead::fill_buf(this.inner.get_mut()).map(|s| unsafe { extend_lifetime(s) }),
+                self.as_mut().poll_read_impl()
+            )
+        }
     }
 
     fn consume(self: Pin<&mut Self>, amt: usize) {
@@ -347,27 +424,47 @@ impl<S: AsyncRead + Unpin + 'static> futures_util::AsyncBufRead for AsyncReadStr
     }
 }
 
-fn poll_write<S: AsyncWrite + Unpin + 'static>(
-    inner: &'static mut SyncStream<S>,
-    cx: &mut Context<'_>,
-    fut: &mut Option<PinBoxFuture<io::Result<usize>>>,
-    buf: &[u8],
-) -> Poll<io::Result<usize>> {
-    poll_future_would_block!(
-        fut,
-        cx,
-        inner.flush_write_buf(),
-        io::Write::write(inner, buf)
-    )
-}
+impl<S: AsyncWrite + Unpin + 'static> AsyncStream<S>
+where
+    for<'a> &'a S: AsyncWrite,
+{
+    fn poll_flush_impl(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        let this = self.project();
+        // SAFETY:
+        // - The future won't live longer than the stream.
+        // - The stream is internally mutable.
+        // - The future only accesses the corresponding buffer and fields.
+        //   - No access overlap between the futures.
+        let inner = unsafe { extend_lifetime_mut(this.inner.get_mut()) };
+        let arr = WakerArray([
+            this.write_waker.as_ref().cloned(),
+            this.flush_waker.as_ref().cloned(),
+            this.close_waker.as_ref().cloned(),
+        ]);
+        let waker = Waker::from(Arc::new(arr));
+        let cx = &mut Context::from_waker(&waker);
+        let res = poll_future!(this.write_future, cx, inner.flush_write_buf());
+        Poll::Ready(res)
+    }
 
-fn poll_flush<S: AsyncWrite + Unpin + 'static>(
-    inner: &'static mut SyncStream<S>,
-    cx: &mut Context<'_>,
-    fut: &mut Option<PinBoxFuture<io::Result<usize>>>,
-) -> Poll<io::Result<()>> {
-    poll_future!(fut, cx, inner.flush_write_buf())?;
-    Poll::Ready(Ok(()))
+    fn poll_close_impl(self: Pin<&mut Self>) -> Poll<io::Result<()>> {
+        let this = self.project();
+        // SAFETY:
+        // - The future won't live longer than the stream.
+        // - The stream is internally mutable.
+        // - The future only accesses the corresponding buffer and fields.
+        //   - No access overlap between the futures.
+        let inner = unsafe { extend_lifetime_mut(this.inner.get_mut()) };
+        let arr = WakerArray([
+            this.write_waker.as_ref().cloned(),
+            this.flush_waker.as_ref().cloned(),
+            this.close_waker.as_ref().cloned(),
+        ]);
+        let waker = Waker::from(Arc::new(arr));
+        let cx = &mut Context::from_waker(&waker);
+        let res = poll_future!(this.shutdown_future, cx, inner.get_mut().shutdown());
+        Poll::Ready(res)
+    }
 }
 
 impl<S: AsyncWrite + Unpin + 'static> futures_util::AsyncWrite for AsyncStream<S>
@@ -375,70 +472,100 @@ where
     for<'a> &'a S: AsyncWrite,
 {
     fn poll_write(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
+        replace_waker(self.as_mut().project().write_waker, cx.waker());
         if self.shutdown_future.is_some() {
             debug_assert!(self.write_future.is_none());
-            return Poll::Pending;
+            ready!(self.as_mut().poll_close_impl())?;
         }
-
-        let this = self.project();
-        let inner: &'static mut SyncStream<S> =
-            unsafe { extend_lifetime_mut(this.inner.get_mut()) };
-        poll_write(inner, cx, this.write_future, buf)
+        loop {
+            let this = self.as_mut().project();
+            poll_future_would_block!(
+                cx,
+                this.write_waker,
+                io::Write::write(this.inner.get_mut(), buf),
+                self.as_mut().poll_flush_impl()
+            )
+        }
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        replace_waker(self.as_mut().project().flush_waker, cx.waker());
         if self.shutdown_future.is_some() {
             debug_assert!(self.write_future.is_none());
-            return Poll::Pending;
+            ready!(self.as_mut().poll_close_impl())?;
         }
-
-        let this = self.project();
-        let inner: &'static mut SyncStream<S> =
-            unsafe { extend_lifetime_mut(this.inner.get_mut()) };
-        poll_flush(inner, cx, this.write_future)
+        let res = ready!(self.as_mut().poll_flush_impl());
+        self.project().flush_waker.take();
+        Poll::Ready(res.map(|_| ()))
     }
 
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        replace_waker(self.as_mut().project().close_waker, cx.waker());
         // Avoid shutdown on flush because the inner buffer might be passed to the
         // driver.
         if self.write_future.is_some() || self.inner.has_pending_write() {
             debug_assert!(self.shutdown_future.is_none());
-            self.poll_flush(cx)
-        } else {
-            let this = self.project();
-            let inner: &'static mut SyncStream<S> =
-                unsafe { extend_lifetime_mut(this.inner.get_mut()) };
-            let res = poll_future!(this.shutdown_future, cx, inner.get_mut().shutdown());
-            Poll::Ready(res)
+            ready!(self.as_mut().poll_flush_impl())?;
         }
+        let res = ready!(self.as_mut().poll_close_impl());
+        self.project().close_waker.take();
+        Poll::Ready(res)
+    }
+}
+
+impl<S: AsyncWrite + Unpin + 'static> AsyncWriteStream<S> {
+    fn poll_flush_impl(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        let this = self.project();
+        // SAFETY:
+        // - The future won't live longer than the stream.
+        // - The stream is `Unpin`.
+        let inner = unsafe { extend_lifetime_mut(this.inner.get_mut()) };
+        let arr = WakerArray([
+            this.write_waker.as_ref().cloned(),
+            this.flush_waker.as_ref().cloned(),
+            this.close_waker.as_ref().cloned(),
+        ]);
+        let waker = Waker::from(Arc::new(arr));
+        let cx = &mut Context::from_waker(&waker);
+        let res = poll_future!(this.write_future, cx, inner.flush_write_buf());
+        Poll::Ready(res)
     }
 }
 
 impl<S: AsyncWrite + Unpin + 'static> futures_util::AsyncWrite for AsyncWriteStream<S> {
     fn poll_write(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        let inner: &'static mut SyncStream<S> =
-            unsafe { extend_lifetime_mut(this.inner.get_mut()) };
-        poll_write(inner, cx, this.write_future, buf)
+        replace_waker(self.as_mut().project().write_waker, cx.waker());
+        loop {
+            let this = self.as_mut().project();
+            poll_future_would_block!(
+                cx,
+                this.write_waker,
+                io::Write::write(this.inner.get_mut(), buf),
+                self.as_mut().poll_flush_impl()
+            )
+        }
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let this = self.project();
-        let inner: &'static mut SyncStream<S> =
-            unsafe { extend_lifetime_mut(this.inner.get_mut()) };
-        poll_flush(inner, cx, this.write_future)
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        replace_waker(self.as_mut().project().flush_waker, cx.waker());
+        let res = ready!(self.as_mut().poll_flush_impl());
+        self.project().flush_waker.take();
+        Poll::Ready(res.map(|_| ()))
     }
 
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.poll_flush(cx)
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        replace_waker(self.as_mut().project().close_waker, cx.waker());
+        let res = ready!(self.as_mut().poll_flush_impl());
+        self.project().close_waker.take();
+        Poll::Ready(res.map(|_| ()))
     }
 }
 
@@ -447,6 +574,18 @@ impl<S: Debug> Debug for AsyncStream<S> {
         f.debug_struct("AsyncStream")
             .field("inner", &self.inner)
             .finish_non_exhaustive()
+    }
+}
+
+struct WakerArray<const N: usize>([Option<Waker>; N]);
+
+impl<const N: usize> Wake for WakerArray<N> {
+    fn wake(self: Arc<Self>) {
+        self.0.iter().for_each(|w| {
+            if let Some(w) = w {
+                w.wake_by_ref()
+            }
+        });
     }
 }
 
