@@ -138,11 +138,12 @@ impl<S> AsyncReadStream<S> {
 pin_project! {
     /// A write stream wrapper for [`futures_util::io`].
     ///
-    /// It doesn't support read and shutdown operations, making looser requirements on the inner stream.
+    /// It doesn't support read operations, making looser requirements on the inner stream.
     pub struct AsyncWriteStream<S> {
         #[pin]
         inner: SyncStream<S>,
         write_future: Option<PinBoxFuture<io::Result<usize>>>,
+        shutdown_future: Option<PinBoxFuture<io::Result<()>>>,
         write_waker: Option<Waker>,
         flush_waker: Option<Waker>,
         close_waker: Option<Waker>,
@@ -172,6 +173,7 @@ impl<S> AsyncWriteStream<S> {
         Self {
             inner,
             write_future: None,
+            shutdown_future: None,
             write_waker: None,
             flush_waker: None,
             close_waker: None,
@@ -534,6 +536,23 @@ impl<S: AsyncWrite + Unpin + 'static> AsyncWriteStream<S> {
         let res = poll_future!(this.write_future, cx, inner.flush_write_buf());
         Poll::Ready(res)
     }
+
+    fn poll_close_impl(self: Pin<&mut Self>) -> Poll<io::Result<()>> {
+        let this = self.project();
+        // SAFETY:
+        // - The future won't live longer than the stream.
+        // - The stream is `Unpin`.
+        let inner = unsafe { extend_lifetime_mut(this.inner.get_mut()) };
+        let arr = WakerArray([
+            this.write_waker.as_ref().cloned(),
+            this.flush_waker.as_ref().cloned(),
+            this.close_waker.as_ref().cloned(),
+        ]);
+        let waker = Waker::from(Arc::new(arr));
+        let cx = &mut Context::from_waker(&waker);
+        let res = poll_future!(this.shutdown_future, cx, inner.get_mut().shutdown());
+        Poll::Ready(res)
+    }
 }
 
 impl<S: AsyncWrite + Unpin + 'static> futures_util::AsyncWrite for AsyncWriteStream<S> {
@@ -543,6 +562,10 @@ impl<S: AsyncWrite + Unpin + 'static> futures_util::AsyncWrite for AsyncWriteStr
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         replace_waker(self.as_mut().project().write_waker, cx.waker());
+        if self.shutdown_future.is_some() {
+            debug_assert!(self.write_future.is_none());
+            ready!(self.as_mut().poll_close_impl())?;
+        }
         loop {
             let this = self.as_mut().project();
             poll_future_would_block!(
@@ -556,6 +579,10 @@ impl<S: AsyncWrite + Unpin + 'static> futures_util::AsyncWrite for AsyncWriteStr
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         replace_waker(self.as_mut().project().flush_waker, cx.waker());
+        if self.shutdown_future.is_some() {
+            debug_assert!(self.write_future.is_none());
+            ready!(self.as_mut().poll_close_impl())?;
+        }
         let res = ready!(self.as_mut().poll_flush_impl());
         self.project().flush_waker.take();
         Poll::Ready(res.map(|_| ()))
@@ -563,9 +590,15 @@ impl<S: AsyncWrite + Unpin + 'static> futures_util::AsyncWrite for AsyncWriteStr
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         replace_waker(self.as_mut().project().close_waker, cx.waker());
-        let res = ready!(self.as_mut().poll_flush_impl());
+        // Avoid shutdown on flush because the inner buffer might be passed to the
+        // driver.
+        if self.write_future.is_some() || self.inner.has_pending_write() {
+            debug_assert!(self.shutdown_future.is_none());
+            ready!(self.as_mut().poll_flush_impl())?;
+        }
+        let res = ready!(self.as_mut().poll_close_impl());
         self.project().close_waker.take();
-        Poll::Ready(res.map(|_| ()))
+        Poll::Ready(res)
     }
 }
 
