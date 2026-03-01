@@ -404,6 +404,26 @@ impl Runtime {
         self.id
     }
 
+    /// Register file descriptors for fixed-file operations.
+    ///
+    /// This is only supported on io-uring driver, and will return an
+    /// [`Unsupported`] io error on all other drivers.
+    ///
+    /// [`Unsupported`]: std::io::ErrorKind::Unsupported
+    pub fn register_files(&self, fds: &[RawFd]) -> io::Result<()> {
+        self.driver.borrow_mut().register_files(fds)
+    }
+
+    /// Unregister previously registered file descriptors.
+    ///
+    /// This is only supported on io-uring driver, and will return an
+    /// [`Unsupported`] io error on all other drivers.
+    ///
+    /// [`Unsupported`]: std::io::ErrorKind::Unsupported
+    pub fn unregister_files(&self) -> io::Result<()> {
+        self.driver.borrow_mut().unregister_files()
+    }
+
     /// Register the personality for the runtime.
     ///
     /// This is only supported on io-uring driver, and will return an
@@ -591,6 +611,38 @@ pub fn submit<T: OpCode + 'static>(op: T) -> Submit<T> {
 #[deprecated(since = "0.11.0", note = "use `submit(op).with_extra()` instead")]
 pub fn submit_with_extra<T: OpCode + 'static>(op: T) -> Submit<T, Extra> {
     Runtime::with_current(|r| r.submit(op).with_extra())
+}
+
+/// Register file descriptors for fixed-file operations with the current
+/// runtime's io_uring instance.
+///
+/// This only works on `io_uring` driver. It will return an [`Unsupported`]
+/// error on other drivers.
+///
+/// ## Panics
+///
+/// This method doesn't create runtime. It tries to obtain the current runtime
+/// by [`Runtime::with_current`].
+///
+/// [`Unsupported`]: std::io::ErrorKind::Unsupported
+pub fn register_files(fds: &[RawFd]) -> io::Result<()> {
+    Runtime::with_current(|r| r.register_files(fds))
+}
+
+/// Unregister previously registered file descriptors from the current
+/// runtime's io_uring instance.
+///
+/// This only works on `io_uring` driver. It will return an [`Unsupported`]
+/// error on other drivers.
+///
+/// ## Panics
+///
+/// This method doesn't create runtime. It tries to obtain the current runtime
+/// by [`Runtime::with_current`].
+///
+/// [`Unsupported`]: std::io::ErrorKind::Unsupported
+pub fn unregister_files() -> io::Result<()> {
+    Runtime::with_current(|r| r.unregister_files())
 }
 
 #[cfg(feature = "time")]
