@@ -204,7 +204,7 @@ where
         if self.write_future.is_some() {
             replace_waker(self.as_mut().project().ready_waker, cx.waker());
             ready!(self.as_mut().poll_flush_write_buf())?;
-            self.as_mut().project().read_waker.take();
+            self.as_mut().project().ready_waker.take();
         }
         Poll::Ready(Ok(()))
     }
