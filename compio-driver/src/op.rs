@@ -132,7 +132,7 @@ pub trait RecvResultExt {
 }
 
 impl<T> RecvResultExt for BufResult<usize, (T, SockAddrStorage, socklen_t)> {
-    type RecvResult = BufResult<(usize, SockAddr), T>;
+    type RecvResult = BufResult<(usize, Option<SockAddr>), T>;
 
     fn map_addr(self) -> Self::RecvResult {
         self.map_buffer(|(buffer, addr_buffer, addr_size)| (buffer, addr_buffer, addr_size, 0))
@@ -142,12 +142,13 @@ impl<T> RecvResultExt for BufResult<usize, (T, SockAddrStorage, socklen_t)> {
 }
 
 impl<T> RecvResultExt for BufResult<usize, (T, SockAddrStorage, socklen_t, usize)> {
-    type RecvResult = BufResult<(usize, usize, SockAddr), T>;
+    type RecvResult = BufResult<(usize, usize, Option<SockAddr>), T>;
 
     fn map_addr(self) -> Self::RecvResult {
         self.map2(
             |res, (buffer, addr_buffer, addr_size, len)| {
-                let addr = unsafe { SockAddr::new(addr_buffer, addr_size) };
+                let addr =
+                    (addr_size > 0).then(|| unsafe { SockAddr::new(addr_buffer, addr_size) });
                 ((res, len, addr), buffer)
             },
             |(buffer, ..)| buffer,

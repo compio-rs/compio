@@ -250,10 +250,13 @@ impl UdpSocket {
     /// Receives a single datagram message on the socket. On success, returns
     /// the number of bytes received and the origin.
     pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SocketAddr), T> {
-        self.inner
-            .recv_from(buffer, 0)
-            .await
-            .map_res(|(n, addr)| (n, addr.as_socket().expect("should be SocketAddr")))
+        self.inner.recv_from(buffer, 0).await.map_res(|(n, addr)| {
+            let addr = addr
+                .expect("should have addr")
+                .as_socket()
+                .expect("should be SocketAddr");
+            (n, addr)
+        })
     }
 
     /// Receives a single datagram message on the socket. On success, returns
@@ -265,7 +268,13 @@ impl UdpSocket {
         self.inner
             .recv_from_vectored(buffer, 0)
             .await
-            .map_res(|(n, addr)| (n, addr.as_socket().expect("should be SocketAddr")))
+            .map_res(|(n, addr)| {
+                let addr = addr
+                    .expect("should have addr")
+                    .as_socket()
+                    .expect("should be SocketAddr");
+                (n, addr)
+            })
     }
 
     /// Receives a single datagram message and ancillary data on the socket. On
@@ -278,7 +287,13 @@ impl UdpSocket {
         self.inner
             .recv_msg(buffer, control, 0)
             .await
-            .map_res(|(n, m, addr)| (n, m, addr.as_socket().expect("should be SocketAddr")))
+            .map_res(|(n, m, addr)| {
+                let addr = addr
+                    .expect("should have addr")
+                    .as_socket()
+                    .expect("should be SocketAddr");
+                (n, m, addr)
+            })
     }
 
     /// Receives a single datagram message and ancillary data on the socket. On
@@ -291,7 +306,13 @@ impl UdpSocket {
         self.inner
             .recv_msg_vectored(buffer, control, 0)
             .await
-            .map_res(|(n, m, addr)| (n, m, addr.as_socket().expect("should be SocketAddr")))
+            .map_res(|(n, m, addr)| {
+                let addr = addr
+                    .expect("should have addr")
+                    .as_socket()
+                    .expect("should be SocketAddr");
+                (n, m, addr)
+            })
     }
 
     /// Sends data on the socket to the given address. On success, returns the
@@ -335,7 +356,7 @@ impl UdpSocket {
             (buffer, control),
             |addr, (buffer, control)| async move {
                 self.inner
-                    .send_msg(buffer, control, &SockAddr::from(addr), 0)
+                    .send_msg(buffer, control, Some(&SockAddr::from(addr)), 0)
                     .await
             },
         )
@@ -355,7 +376,7 @@ impl UdpSocket {
             (buffer, control),
             |addr, (buffer, control)| async move {
                 self.inner
-                    .send_msg_vectored(buffer, control, &SockAddr::from(addr), 0)
+                    .send_msg_vectored(buffer, control, Some(&SockAddr::from(addr)), 0)
                     .await
             },
         )
