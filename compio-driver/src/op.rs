@@ -623,7 +623,7 @@ pub(crate) mod managed {
     }
 
     impl<S: AsFd> TakeBuffer for RecvFromManaged<S> {
-        type Buffer<'a> = (BorrowedBuffer<'a>, SockAddr);
+        type Buffer<'a> = (BorrowedBuffer<'a>, Option<SockAddr>);
         type BufferPool = BufferPool;
 
         fn take_buffer(
@@ -636,7 +636,7 @@ pub(crate) mod managed {
             #[cfg(fusion)]
             let buffer_pool = buffer_pool.as_poll();
             let (slice, addr_buffer, addr_size) = self.op.into_inner();
-            let addr = unsafe { SockAddr::new(addr_buffer, addr_size) };
+            let addr = (addr_size > 0).then(|| unsafe { SockAddr::new(addr_buffer, addr_size) });
             // SAFETY: result is valid
             let res = unsafe { buffer_pool.create_proxy(slice, result) };
             #[cfg(fusion)]

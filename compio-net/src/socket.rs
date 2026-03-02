@@ -182,7 +182,7 @@ impl Socket {
         buffer_pool: &'a BufferPool,
         len: usize,
         flags: i32,
-    ) -> io::Result<(BorrowedBuffer<'a>, SockAddr)> {
+    ) -> io::Result<(BorrowedBuffer<'a>, Option<SockAddr>)> {
         let fd = self.to_shared_fd();
         let buffer_pool = buffer_pool.try_inner()?;
         let op = RecvFromManaged::new(fd, buffer_pool, len, flags)?;

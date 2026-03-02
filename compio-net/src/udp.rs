@@ -232,7 +232,13 @@ impl UdpSocket {
         self.inner
             .recv_from_managed(buffer_pool, len, 0)
             .await
-            .map(|(buffer, addr)| (buffer, addr.as_socket().expect("should be SocketAddr")))
+            .map(|(buffer, addr)| {
+                let addr = addr
+                    .expect("should have addr")
+                    .as_socket()
+                    .expect("should be SocketAddr");
+                (buffer, addr)
+            })
     }
 
     /// Sends some data to the socket from the buffer, returning the original
