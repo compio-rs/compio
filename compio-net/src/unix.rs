@@ -12,11 +12,6 @@ use socket2::{SockAddr, Socket as Socket2, Type};
 
 use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, SocketOpts, WriteHalf};
 
-#[cfg(unix)]
-type NativeSockAddr = std::os::unix::net::SocketAddr;
-#[cfg(windows)]
-type NativeSockAddr = windows_sys::Win32::Networking::WinSock::SOCKADDR_UN;
-
 /// A Unix socket server, listening for connections.
 ///
 /// You can accept a new connection by using the [`UnixListener::accept`]
@@ -308,7 +303,7 @@ impl AsyncReadManaged for &UnixStream {
 }
 
 impl AsyncRecvMsg for UnixStream {
-    type AddrType = NativeSockAddr;
+    type AddrType = SockAddr;
 
     #[inline]
     async fn recv_msg<T: IoBufMut, C: IoBufMut>(
@@ -316,7 +311,7 @@ impl AsyncRecvMsg for UnixStream {
         buffer: T,
         control: C,
         flags: i32,
-    ) -> BufResult<(usize, usize, NativeSockAddr), (T, C)> {
+    ) -> BufResult<(usize, usize, SockAddr), (T, C)> {
         (&*self).recv_msg(buffer, control, flags).await
     }
 
@@ -326,33 +321,22 @@ impl AsyncRecvMsg for UnixStream {
         buffer: T,
         control: C,
         flags: i32,
-    ) -> BufResult<(usize, usize, NativeSockAddr), (T, C)> {
+    ) -> BufResult<(usize, usize, SockAddr), (T, C)> {
         (&*self).recv_msg_vectored(buffer, control, flags).await
     }
 }
 
 impl AsyncRecvMsg for &UnixStream {
-    type AddrType = NativeSockAddr;
+    type AddrType = SockAddr;
+
     #[inline]
     async fn recv_msg<T: IoBufMut, C: IoBufMut>(
         &mut self,
         buffer: T,
         control: C,
         flags: i32,
-    ) -> BufResult<(usize, usize, NativeSockAddr), (T, C)> {
-        self.inner
-            .recv_msg(buffer, control, flags)
-            .await
-            .map_res(|(res, len, addr)| {
-                #[cfg(unix)]
-                {
-                    (res, len, addr.as_unix().expect("UNIX socket address"))
-                }
-                #[cfg(windows)]
-                unsafe {
-                    (res, len, *addr.as_storage().view_as::<NativeSockAddr>())
-                }
-            })
+    ) -> BufResult<(usize, usize, SockAddr), (T, C)> {
+        self.inner.recv_msg(buffer, control, flags).await
     }
 
     #[inline]
@@ -361,20 +345,8 @@ impl AsyncRecvMsg for &UnixStream {
         buffer: T,
         control: C,
         flags: i32,
-    ) -> BufResult<(usize, usize, NativeSockAddr), (T, C)> {
-        self.inner
-            .recv_msg_vectored(buffer, control, flags)
-            .await
-            .map_res(|(res, len, addr)| {
-                #[cfg(unix)]
-                {
-                    (res, len, addr.as_unix().expect("UNIX socket address"))
-                }
-                #[cfg(windows)]
-                unsafe {
-                    (res, len, *addr.as_storage().view_as::<NativeSockAddr>())
-                }
-            })
+    ) -> BufResult<(usize, usize, SockAddr), (T, C)> {
+        self.inner.recv_msg_vectored(buffer, control, flags).await
     }
 }
 
