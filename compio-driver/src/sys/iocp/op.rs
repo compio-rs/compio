@@ -1166,21 +1166,23 @@ unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
 
         *this.slices = this.buffer.as_ref().sys_slices();
         let control = this.control.as_ref().sys_slice();
-        *this.msg = WSAMSG {
-            name: this
-                .addr
-                .as_ref()
-                .map(|addr| addr.as_ptr() as _)
-                .unwrap_or_default(),
-            namelen: this
-                .addr
-                .as_ref()
-                .map(|addr| addr.len())
-                .unwrap_or_default(),
-            lpBuffers: this.slices.as_ptr() as _,
-            dwBufferCount: this.slices.len() as _,
-            Control: control.into_inner(),
-            dwFlags: 0,
+        *this.msg = match this.addr.as_ref() {
+            Some(addr) => WSAMSG {
+                name: addr.as_ptr() as _,
+                namelen: addr.len() as _,
+                lpBuffers: this.slices.as_ptr() as _,
+                dwBufferCount: this.slices.len() as _,
+                Control: control.into_inner(),
+                dwFlags: 0,
+            },
+            None => WSAMSG {
+                name: null_mut(),
+                namelen: 0,
+                lpBuffers: this.slices.as_ptr() as _,
+                dwBufferCount: this.slices.len() as _,
+                Control: control.into_inner(),
+                dwFlags: 0,
+            },
         };
 
         let mut sent = 0;

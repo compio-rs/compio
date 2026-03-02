@@ -817,9 +817,15 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     pub(crate) fn set_msg(self: Pin<&mut Self>) {
         let this = self.project();
         *this.slices = this.buffer.as_ref().sys_slices();
-        if let Some(addr) = this.addr.as_ref() {
-            this.msg.msg_name = addr.as_ptr() as _;
-            this.msg.msg_namelen = addr.len();
+        match this.addr.as_ref() {
+            Some(addr) => {
+                this.msg.msg_name = addr.as_ptr() as _;
+                this.msg.msg_namelen = addr.len();
+            }
+            None => {
+                this.msg.msg_name = std::ptr::null_mut();
+                this.msg.msg_namelen = 0;
+            }
         }
         this.msg.msg_iov = this.slices.as_ptr() as _;
         this.msg.msg_iovlen = this.slices.len() as _;
