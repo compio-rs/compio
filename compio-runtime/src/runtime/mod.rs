@@ -280,7 +280,7 @@ impl Runtime {
     /// Submit an operation to the runtime.
     ///
     /// You only need this when authoring your own [`OpCode`].
-    fn submit<T: OpCode + 'static>(&self, op: T) -> Submit<T> {
+    pub fn submit<T: OpCode + 'static>(&self, op: T) -> Submit<T> {
         Submit::new(self.clone(), op)
     }
 
@@ -599,18 +599,6 @@ pub fn spawn_blocking<T: Send + 'static>(
 /// [`Runtime::with_current`].
 pub fn submit<T: OpCode + 'static>(op: T) -> Submit<T> {
     Runtime::with_current(|r| r.submit(op))
-}
-
-/// Submit an operation to the current runtime, and return a future for it with
-/// flags.
-///
-/// ## Panics
-///
-/// This method doesn't create runtime. It tries to obtain the current runtime
-/// by [`Runtime::with_current`].
-#[deprecated(since = "0.11.0", note = "use `submit(op).with_extra()` instead")]
-pub fn submit_with_extra<T: OpCode + 'static>(op: T) -> Submit<T, Extra> {
-    Runtime::with_current(|r| r.submit(op).with_extra())
 }
 
 /// Register file descriptors for fixed-file operations with the current
