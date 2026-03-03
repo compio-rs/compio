@@ -536,7 +536,7 @@ impl Driver {
         &mut self,
         key: &ErasedKey,
     ) -> Option<BufResult<usize, crate::sys::Extra>> {
-        let queue = self.multishot_results.get_mut(&key.as_raw())?;
+        let queue = self.multishot_results.get_mut(key)?;
         let entry = queue.pop_front()?;
         let result = create_result(entry.result());
         #[allow(clippy::useless_conversion)]
