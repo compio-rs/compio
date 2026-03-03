@@ -9,8 +9,16 @@
 //! - [`AncillaryIter`]: An iterator over a buffer of ancillary messages.
 //! - [`AncillaryBuilder`]: A builder for constructing ancillary messages into a
 //!   caller-supplied send buffer.
+//! - [`AncillaryBuf`]: A fixed-size, properly aligned stack buffer for
+//!   ancillary data
 
-use std::{marker::PhantomData, mem::MaybeUninit};
+use std::{
+    marker::PhantomData,
+    mem::MaybeUninit,
+    ops::{Deref, DerefMut},
+};
+
+use compio_buf::{IoBuf, IoBufMut, SetLen};
 
 cfg_if::cfg_if! {
     if #[cfg(windows)] {
@@ -139,5 +147,63 @@ impl<'a> AncillaryBuilder<'a> {
         }
 
         Some(())
+    }
+}
+
+/// A fixed-size, stack-allocated buffer for ancillary (control) messages.
+///
+/// Properly aligned for the platform's control message header type
+/// (`cmsghdr` on Unix, `CMSGHDR` on Windows), so it can be passed directly
+/// to [`AncillaryIter`] and [`AncillaryBuilder`].
+pub struct AncillaryBuf<const N: usize> {
+    inner: [u8; N],
+    len: usize,
+    #[cfg(unix)]
+    _align: [libc::cmsghdr; 0],
+    #[cfg(windows)]
+    _align: [WinSock::CMSGHDR; 0],
+}
+
+impl<const N: usize> AncillaryBuf<N> {
+    /// Create a new zeroed [`AncillaryBuf`].
+    pub fn new() -> Self {
+        Self {
+            inner: [0u8; N],
+            len: 0,
+            _align: [],
+        }
+    }
+}
+
+impl<const N: usize> IoBuf for AncillaryBuf<N> {
+    fn as_init(&self) -> &[u8] {
+        &self.inner[..self.len]
+    }
+}
+
+impl<const N: usize> SetLen for AncillaryBuf<N> {
+    unsafe fn set_len(&mut self, len: usize) {
+        debug_assert!(len <= N);
+        self.len = len;
+    }
+}
+
+impl<const N: usize> IoBufMut for AncillaryBuf<N> {
+    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        self.inner.as_uninit()
+    }
+}
+
+impl<const N: usize> Deref for AncillaryBuf<N> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner[0..self.len]
+    }
+}
+
+impl<const N: usize> DerefMut for AncillaryBuf<N> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner[0..self.len]
     }
 }
