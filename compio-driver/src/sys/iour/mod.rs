@@ -350,7 +350,7 @@ impl Driver {
                 warn!("could not push AsyncCancel entry");
             }
         }
-        self.multishot_results.remove(&key.as_raw());
+        self.cleanup_multishot(&key);
     }
 
     fn push_raw_with_key(&mut self, entry: SEntry, key: ErasedKey) -> io::Result<()> {
@@ -544,6 +544,10 @@ impl Driver {
         let mut extra: crate::sys::Extra = self.default_extra().into();
         extra.set_flags(entry.flags());
         Some(BufResult(result, extra))
+    }
+
+    pub fn cleanup_multishot(&mut self, key: &ErasedKey) {
+        self.multishot_results.remove(&key.as_raw());
     }
 }
 

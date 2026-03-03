@@ -229,6 +229,7 @@ impl Proactor {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
             self.cancel.remove(&key);
+            self.driver.cleanup_multishot(&key);
             PushEntry::Ready(key.take_result())
         } else {
             PushEntry::Pending(key)
@@ -248,6 +249,7 @@ impl Proactor {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
             self.cancel.remove(&key);
+            self.driver.cleanup_multishot(&key);
             let extra = key.swap_extra(self.default_extra());
             let res = key.take_result();
             PushEntry::Ready((res, extra))

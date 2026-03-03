@@ -210,6 +210,13 @@ impl Driver {
             FuseDriver::IoUring(driver) => driver.pop_multishot(key),
         }
     }
+
+    pub fn cleanup_multishot(&mut self, key: &ErasedKey) {
+        match &mut self.fuse {
+            FuseDriver::Poll(driver) => driver.cleanup_multishot(key),
+            FuseDriver::IoUring(driver) => driver.cleanup_multishot(key),
+        }
+    }
 }
 
 impl AsRawFd for Driver {
