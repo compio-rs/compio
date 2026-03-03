@@ -157,7 +157,7 @@ pub(crate) struct Driver {
     completed_rx: Receiver<Entry>,
     buffer_group_ids: Slab<()>,
     need_push_notifier: bool,
-    _local_marker: PhantomData<*mut ()>,
+    _local_marker: PhantomData<ErasedKey>,
 }
 
 impl Driver {
