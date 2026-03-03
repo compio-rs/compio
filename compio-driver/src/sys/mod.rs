@@ -44,3 +44,6 @@ pub(crate) mod aio {
 
     pub fn new_aiocb() -> aiocb {}
 }
+
+crate::assert_not_impl!(Driver, Send);
+crate::assert_not_impl!(Driver, Sync);

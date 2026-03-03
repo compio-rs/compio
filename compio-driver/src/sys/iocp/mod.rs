@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     io,
+    marker::PhantomData,
     os::windows::io::{
         AsHandle, AsRawHandle, AsRawSocket, AsSocket, BorrowedHandle, BorrowedSocket, OwnedHandle,
         OwnedSocket,
@@ -329,6 +330,7 @@ pub(crate) struct Driver {
     notify: Arc<Notify>,
     waits: HashMap<usize, wait::Wait>,
     pool: AsyncifyPool,
+    _local_marker: PhantomData<ErasedKey>,
 }
 
 impl Driver {
@@ -343,6 +345,7 @@ impl Driver {
             notify,
             waits: HashMap::default(),
             pool: builder.create_or_get_thread_pool(),
+            _local_marker: PhantomData,
         })
     }
 

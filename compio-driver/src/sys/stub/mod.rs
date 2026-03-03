@@ -15,6 +15,7 @@ compile_warning!("You have to choose at least one of these features: [\"io-uring
 pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::{
     io,
+    marker::PhantomData,
     task::{Poll, Waker},
     time::Duration,
 };
@@ -43,11 +44,11 @@ fn stub_unimpl() -> ! {
 }
 
 #[derive(Debug)]
-pub(crate) struct Driver(());
+pub(crate) struct Driver(PhantomData<ErasedKey>);
 
 impl Driver {
     pub fn new(_: &ProactorBuilder) -> io::Result<Self> {
-        Ok(Self(()))
+        Ok(Self(PhantomData))
     }
 
     pub fn driver_type(&self) -> DriverType {
