@@ -89,3 +89,7 @@ struct WinThreadpoolWaitContext {
     notify: Arc<Notify>,
     optr: *mut Overlapped,
 }
+
+// SAFETY: `optr` is used as a thread-safe key.
+unsafe impl Send for WinThreadpoolWaitContext {}
+unsafe impl Sync for WinThreadpoolWaitContext {}
