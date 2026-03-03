@@ -537,19 +537,13 @@ impl Driver {
         &mut self,
         key: &ErasedKey,
     ) -> Option<BufResult<usize, crate::sys::Extra>> {
-        if let Some(queue) = self.multishot_results.get_mut(&key.as_raw())
-            && let Some(entry) = queue.pop_front()
-        {
-            if queue.is_empty() {
-                self.multishot_results.remove(&key.as_raw());
-            }
-            let result = create_result(entry.result());
-            #[allow(clippy::useless_conversion)]
-            let mut extra: crate::sys::Extra = self.default_extra().into();
-            extra.set_flags(entry.flags());
-            return Some(BufResult(result, extra));
-        }
-        None
+        let queue = self.multishot_results.get_mut(&key.as_raw())?;
+        let entry = queue.pop_front()?;
+        let result = create_result(entry.result());
+        #[allow(clippy::useless_conversion)]
+        let mut extra: crate::sys::Extra = self.default_extra().into();
+        extra.set_flags(entry.flags());
+        Some(BufResult(result, extra))
     }
 }
 
