@@ -241,12 +241,7 @@ unsafe fn extend_lifetime<T: ?Sized>(t: &T) -> &'static T {
 }
 
 fn replace_waker(waker_slot: &mut Option<Waker>, waker: &Waker) {
-    let replace = match waker_slot {
-        Some(w) if !w.will_wake(waker) => true,
-        None => true,
-        _ => false,
-    };
-    if replace {
+    if !waker_slot.as_ref().is_some_and(|w| w.will_wake(waker)) {
         waker_slot.replace(waker.clone());
     }
 }
