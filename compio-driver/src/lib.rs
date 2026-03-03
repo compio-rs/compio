@@ -679,9 +679,9 @@ impl ProactorBuilder {
 
 #[cfg(test)]
 mod test {
-    const fn assert_send_sync<T: Send>() {}
+    const fn assert_send<T: Send>() {}
 
     const _: () = {
-        assert_send_sync::<super::Proactor>();
+        assert_send::<super::Proactor>();
     };
 }
