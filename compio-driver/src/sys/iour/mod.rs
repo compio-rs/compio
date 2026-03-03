@@ -39,7 +39,7 @@ use slab::Slab;
 
 use crate::{
     AsyncifyPool, BufferPool, DriverType, Entry, ProactorBuilder,
-    key::{ErasedKey, RefExt},
+    key::{BorrowedKey, ErasedKey, RefExt},
     syscall,
 };
 
@@ -307,8 +307,7 @@ impl Driver {
                     let flags = entry.flags();
                     if more(flags) {
                         unsafe {
-                            let key = ErasedKey::from_raw(key as _);
-                            key.freeze().wake_by_ref();
+                            BorrowedKey::from_raw(key as _).borrow().wake_by_ref();
                         }
                         self.multishot_results
                             .entry(key as _)
