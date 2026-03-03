@@ -67,7 +67,12 @@ default = ["runtime", "io-uring"]
 io-uring = ["compio-driver/io-uring"]
 polling = ["compio-driver/polling"]
 io = ["dep:compio-io"]
-io-compat = ["io", "compio-io/compat", "compio-quic?/io-compat"]
+io-compat = [
+    "io",
+    "compio-io/compat",
+    "compio-quic?/io-compat",
+    "compio-ws?/io-compat",
+]
 fs = ["dep:compio-fs", "runtime", "io"]
 fs-dir = ["fs", "compio-fs/dir"]
 net = ["dep:compio-net", "runtime", "io"]

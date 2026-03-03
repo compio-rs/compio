@@ -95,8 +95,12 @@ impl<S> SyncStream<S> {
     }
 
     /// Returns the available bytes in the read buffer.
-    fn available_read(&self) -> &[u8] {
-        self.read_buf.buffer()
+    fn available_read(&self) -> io::Result<&[u8]> {
+        if self.read_buf.has_inner() {
+            Ok(self.read_buf.buffer())
+        } else {
+            Err(would_block("the read buffer is in use"))
+        }
     }
 
     /// Marks `amt` bytes as consumed from the read buffer.
@@ -158,7 +162,7 @@ impl<S> Read for SyncStream<S> {
 
 impl<S> BufRead for SyncStream<S> {
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
-        let available = self.available_read();
+        let available = self.available_read()?;
 
         if available.is_empty() && !self.eof {
             return Err(would_block("need to fill read buffer"));
@@ -179,6 +183,9 @@ impl<S> Write for SyncStream<S> {
     /// capacity. In the latter case, it may write partial data before
     /// returning `WouldBlock`.
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if !self.write_buf.has_inner() {
+            return Err(would_block("the write buffer is in use"));
+        }
         // Check if we should flush first
         if self.write_buf.need_flush() && !self.write_buf.is_empty() {
             return Err(would_block("need to flush write buffer"));
