@@ -3,6 +3,7 @@
 //! Some types differ by compilation target.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(feature = "current_thread_id", feature(current_thread_id))]
 #![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
@@ -46,6 +47,8 @@ pub use sys::*;
 
 mod cancel;
 pub use cancel::*;
+
+mod thread_map;
 
 use crate::{key::ErasedKey, op::OpCodeFlag};
 
@@ -185,6 +188,15 @@ impl Proactor {
     /// where you're not sure if the operation will be cancelled.
     pub fn register_cancel<T: OpCode>(&mut self, key: &Key<T>) -> Cancel {
         self.cancel.register(key)
+    }
+
+    /// Register all cancel tokens in the current thread.
+    ///
+    /// [`Proactor`] is [`Send`], while the cancel tokens are thread-local, so
+    /// this is useful when you move the proactor to another thread but want to
+    /// avoid memory leaks.
+    pub fn unregister_cancel(&mut self) {
+        self.cancel.clear();
     }
 
     /// Push an operation into the driver, and return the unique key [`Key`],
@@ -663,4 +675,13 @@ impl ProactorBuilder {
     pub fn build(&self) -> io::Result<Proactor> {
         Proactor::with_builder(self)
     }
+}
+
+#[cfg(test)]
+mod test {
+    const fn assert_send_sync<T: Send>() {}
+
+    const _: () = {
+        assert_send_sync::<super::Proactor>();
+    };
 }

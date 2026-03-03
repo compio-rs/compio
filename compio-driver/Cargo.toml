@@ -89,6 +89,7 @@ iocp-global = []
 iocp-wait-packet = []
 
 # Nightly features
+current_thread_id = []
 once_cell_try = []
 proc_macro_diagnostic = ["dep:compile_warning"]
-nightly = ["once_cell_try", "proc_macro_diagnostic"]
+nightly = ["current_thread_id", "once_cell_try", "proc_macro_diagnostic"]

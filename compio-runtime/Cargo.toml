@@ -59,7 +59,7 @@ async-fd = ["dep:compio-io"]
 notify-always = []
 
 future-combinator = []
-current_thread_id = []
+current_thread_id = ["compio-driver/current_thread_id"]
 nightly = ["current_thread_id", "future-combinator"]
 
 [[test]]
