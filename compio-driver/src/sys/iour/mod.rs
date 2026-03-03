@@ -2,9 +2,8 @@
 #[allow(unused_imports)]
 pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{HashMap, VecDeque},
     io,
-    marker::PhantomData,
     os::fd::FromRawFd,
     pin::Pin,
     sync::Arc,
@@ -160,8 +159,7 @@ pub(crate) struct Driver {
     completed_rx: Receiver<Entry>,
     buffer_group_ids: Slab<()>,
     need_push_notifier: bool,
-    multishot_results: BTreeMap<usize, VecDeque<CEntry>>,
-    _local_marker: PhantomData<ErasedKey>,
+    multishot_results: HashMap<ErasedKey, VecDeque<CEntry>>,
 }
 
 impl Driver {
@@ -210,8 +208,7 @@ impl Driver {
             pool: builder.create_or_get_thread_pool(),
             buffer_group_ids: Slab::new(),
             need_push_notifier: true,
-            multishot_results: BTreeMap::new(),
-            _local_marker: PhantomData,
+            multishot_results: HashMap::new(),
         })
     }
 
@@ -306,11 +303,10 @@ impl Driver {
                 key => {
                     let flags = entry.flags();
                     if more(flags) {
-                        unsafe {
-                            BorrowedKey::from_raw(key as _).borrow().wake_by_ref();
-                        }
+                        let key = unsafe { BorrowedKey::from_raw(key as _) };
+                        key.borrow().wake_by_ref();
                         self.multishot_results
-                            .entry(key as _)
+                            .entry(key.clone())
                             .or_default()
                             .push_back(entry);
                     } else {
@@ -546,7 +542,7 @@ impl Driver {
     }
 
     pub fn cleanup_multishot(&mut self, key: &ErasedKey) {
-        self.multishot_results.remove(&key.as_raw());
+        self.multishot_results.remove(key);
     }
 }
 
