@@ -1155,7 +1155,7 @@ mod buf_ring {
     }
 
     impl<S> TakeBuffer for RecvFromManaged<S> {
-        type Buffer<'a> = (BorrowedBuffer<'a>, SockAddr);
+        type Buffer<'a> = (BorrowedBuffer<'a>, Option<SockAddr>);
         type BufferPool = BufferPool;
 
         fn take_buffer(
@@ -1167,7 +1167,8 @@ mod buf_ring {
             #[cfg(fusion)]
             let buffer_pool = buffer_pool.as_io_uring();
             let result = result.inspect_err(|_| buffer_pool.reuse_buffer(buffer_id))?;
-            let addr = unsafe { SockAddr::new(self.addr, self.addr_len) };
+            let addr =
+                (self.addr_len > 0).then(|| unsafe { SockAddr::new(self.addr, self.addr_len) });
             // SAFETY: result is valid
             let buffer = unsafe { buffer_pool.get_buffer(buffer_id, result) }?;
             #[cfg(fusion)]
