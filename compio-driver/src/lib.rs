@@ -98,6 +98,9 @@ pub struct Proactor {
     cancel: CancelRegistry,
 }
 
+assert_not_impl!(Proactor, Send);
+assert_not_impl!(Proactor, Sync);
+
 impl Proactor {
     /// Create [`Proactor`] with 1024 entries.
     pub fn new() -> io::Result<Self> {

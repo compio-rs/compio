@@ -115,7 +115,8 @@ impl Drop for TimerFuture {
     }
 }
 
-crate::assert_not_impl!(TimerFuture, Send, Sync);
+compio_driver::assert_not_impl!(TimerFuture, Send);
+compio_driver::assert_not_impl!(TimerFuture, Sync);
 
 #[test]
 fn timer_min_timeout() {
