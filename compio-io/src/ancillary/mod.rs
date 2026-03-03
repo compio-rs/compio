@@ -1,3 +1,15 @@
+//! Ancillary data (control message) support for connected streams.
+//!
+//! Ancillary messages are used to pass out-of-band information such as file
+//! descriptors (Unix domain sockets), credentials, or kTLS record types.
+//!
+//! # Types
+//!
+//! - [`AncillaryRef`]: A reference to a single ancillary data entry.
+//! - [`AncillaryIter`]: An iterator over a buffer of ancillary messages.
+//! - [`AncillaryBuilder`]: A builder for constructing ancillary messages into a
+//!   caller-supplied send buffer.
+
 use std::{marker::PhantomData, mem::MaybeUninit};
 
 cfg_if::cfg_if! {
@@ -10,10 +22,10 @@ cfg_if::cfg_if! {
     }
 }
 
-/// Reference to a control message.
-pub struct CMsgRef<'a>(sys::CMsgRef<'a>);
+/// Reference to an ancillary (control) message.
+pub struct AncillaryRef<'a>(sys::CMsgRef<'a>);
 
-impl CMsgRef<'_> {
+impl AncillaryRef<'_> {
     /// Returns the level of the control message.
     pub fn level(&self) -> i32 {
         self.0.level()
@@ -41,14 +53,14 @@ impl CMsgRef<'_> {
     }
 }
 
-/// An iterator for control messages.
-pub struct CMsgIter<'a> {
+/// An iterator for ancillary (control) messages.
+pub struct AncillaryIter<'a> {
     inner: sys::CMsgIter,
     _p: PhantomData<&'a ()>,
 }
 
-impl<'a> CMsgIter<'a> {
-    /// Create [`CMsgIter`] with the given buffer.
+impl<'a> AncillaryIter<'a> {
+    /// Create [`AncillaryIter`] with the given buffer.
     ///
     /// # Panics
     ///
@@ -66,28 +78,28 @@ impl<'a> CMsgIter<'a> {
     }
 }
 
-impl<'a> Iterator for CMsgIter<'a> {
-    type Item = CMsgRef<'a>;
+impl<'a> Iterator for AncillaryIter<'a> {
+    type Item = AncillaryRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         unsafe {
             let cmsg = self.inner.current();
             self.inner.next();
-            cmsg.map(CMsgRef)
+            cmsg.map(AncillaryRef)
         }
     }
 }
 
-/// Helper to construct control message.
-pub struct CMsgBuilder<'a> {
+/// Helper to construct ancillary (control) messages.
+pub struct AncillaryBuilder<'a> {
     inner: sys::CMsgIter,
     len: usize,
     _p: PhantomData<&'a mut ()>,
 }
 
-impl<'a> CMsgBuilder<'a> {
-    /// Create [`CMsgBuilder`] with the given buffer. The buffer will be zeroed
-    /// on creation.
+impl<'a> AncillaryBuilder<'a> {
+    /// Create [`AncillaryBuilder`] with the given buffer. The buffer will be
+    /// zeroed on creation.
     ///
     /// # Panics
     ///
