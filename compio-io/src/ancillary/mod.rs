@@ -15,6 +15,11 @@
 //!   ancillary data payloads.
 //! - [`CodecError`]: Error type for encoding/decoding operations.
 //!
+//! # Traits
+//!
+//! - [`AsyncReadAncillary`]: read data together with ancillary data
+//! - [`AsyncWriteAncillary`]: write data together with ancillary data
+//!
 //! # Functions
 //!
 //! - [`ancillary_space`]: Helper function to calculate ancillary message size
@@ -27,33 +32,52 @@
 //!
 //! # Example
 //!
+//! Send and receive a file descriptor over a Unix socket pair using
+//! `SCM_RIGHTS`:
+//!
 //! ```
-//! use compio_io::ancillary::{AncillaryBuf, AncillaryIter, CodecError, ancillary_space};
+//! # #[cfg(unix)] {
+//! use std::os::unix::io::RawFd;
 //!
-//! const LEVEL: i32 = 1;
-//! const TYPE: i32 = 2;
+//! use compio_io::ancillary::*;
+//! use compio_net::UnixStream;
 //!
-//! // Build a buffer containing two `u32` ancillary messages.
-//! let mut buf = AncillaryBuf::<{ ancillary_space::<u32>() * 2 }>::new();
-//! let mut builder = buf.builder();
-//! builder.push(LEVEL, TYPE, &42u32).unwrap();
-//! builder.push(LEVEL, TYPE, &43u32).unwrap();
-//! // Buffer is full, cannot add more messages.
-//! assert!(matches!(
-//!     builder.push(LEVEL, TYPE, &44u32),
-//!     Err(CodecError::BufferTooSmall)
-//! ));
+//! const BUF_SIZE: usize = ancillary_space::<RawFd>();
 //!
-//! // Read back the messages.
-//! unsafe {
-//!     let mut iter = AncillaryIter::new(&buf);
-//!     let msg = iter.next().unwrap();
-//!     assert_eq!(msg.level(), LEVEL);
-//!     assert_eq!(msg.ty(), TYPE);
-//!     assert_eq!(msg.data::<u32>().unwrap(), 42u32);
-//!     assert_eq!(iter.next().unwrap().data::<u32>().unwrap(), 43u32);
-//!     assert!(iter.next().is_none());
-//! }
+//! # compio_runtime::Runtime::new().unwrap().block_on(async {
+//! // Create a socket pair.
+//! let (std_a, std_b) = std::os::unix::net::UnixStream::pair().unwrap();
+//! let mut a = UnixStream::from_std(std_a).unwrap();
+//! let mut b = UnixStream::from_std(std_b).unwrap();
+//!
+//! // Pass fd 0 (stdin) as ancillary data via SCM_RIGHTS.
+//! let mut ctrl_send = AncillaryBuf::<BUF_SIZE>::new();
+//! let mut builder = ctrl_send.builder();
+//! builder
+//!     .push(libc::SOL_SOCKET, libc::SCM_RIGHTS, &(0 as RawFd))
+//!     .unwrap();
+//!
+//! // Send the payload together with the ancillary data.
+//! a.write_with_ancillary(b"hello", ctrl_send).await.0.unwrap();
+//!
+//! // Receive on the other end.
+//! let payload = Vec::with_capacity(5);
+//! let ctrl_recv = AncillaryBuf::<BUF_SIZE>::new();
+//! let ((_, ctrl_len), (payload, ctrl_recv)) =
+//!     b.read_with_ancillary(payload, ctrl_recv).await.unwrap();
+//!
+//! assert_eq!(&payload[..], b"hello");
+//!
+//! // Parse the received ancillary messages.
+//! let mut iter = unsafe { AncillaryIter::new(&ctrl_recv[..ctrl_len]) };
+//! let msg = iter.next().unwrap();
+//! assert_eq!(msg.level(), libc::SOL_SOCKET);
+//! assert_eq!(msg.ty(), libc::SCM_RIGHTS);
+//! // The kernel duplicates the fd, so the received value may differ.
+//! let _received_fd = unsafe { msg.data::<RawFd>() };
+//! assert!(iter.next().is_none());
+//! # });
+//! # }
 //! ```
 
 use std::{
@@ -66,6 +90,10 @@ use std::{
 use compio_buf::{IoBuf, IoBufMut, SetLen};
 #[cfg(windows)]
 use windows_sys::Win32::Networking::WinSock;
+
+mod io;
+
+pub use self::io::*;
 
 cfg_if::cfg_if! {
     if #[cfg(windows)] {
