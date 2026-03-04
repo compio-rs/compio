@@ -3,6 +3,7 @@
 pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::{
     io,
+    marker::PhantomData,
     os::fd::FromRawFd,
     pin::Pin,
     sync::Arc,
@@ -156,6 +157,7 @@ pub(crate) struct Driver {
     completed_rx: Receiver<Entry>,
     buffer_group_ids: Slab<()>,
     need_push_notifier: bool,
+    _local_marker: PhantomData<ErasedKey>,
 }
 
 impl Driver {
@@ -204,6 +206,7 @@ impl Driver {
             pool: builder.create_or_get_thread_pool(),
             buffer_group_ids: Slab::new(),
             need_push_notifier: true,
+            _local_marker: PhantomData,
         })
     }
 
@@ -214,6 +217,16 @@ impl Driver {
     #[allow(dead_code)]
     pub fn as_iour(&self) -> Option<&Self> {
         Some(self)
+    }
+
+    pub fn register_files(&self, fds: &[RawFd]) -> io::Result<()> {
+        self.inner.submitter().register_files(fds)?;
+        Ok(())
+    }
+
+    pub fn unregister_files(&self) -> io::Result<()> {
+        self.inner.submitter().unregister_files()?;
+        Ok(())
     }
 
     pub fn register_personality(&self) -> io::Result<u16> {

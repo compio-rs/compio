@@ -14,9 +14,19 @@ compio-buf = { workspace = true, features = ["arrayvec", "bytes"] }
 futures-util = { workspace = true, features = ["sink"] }
 paste = { workspace = true }
 synchrony = { workspace = true, features = ["bilock"] }
+
+cfg-if = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
 serde = { version = "1.0.219", optional = true }
 serde_json = { version = "1.0.140", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true, optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, optional = true, features = [
+    "Win32_Networking_WinSock",
+] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
@@ -27,6 +37,7 @@ futures-executor = "0.3.30"
 default = []
 compat = ["futures-util/io"]
 sync = []
+ancillary = ["dep:cfg-if", "dep:libc", "dep:windows-sys"]
 
 # Codecs
 # Serde json codec

@@ -98,6 +98,9 @@ pub struct Proactor {
     cancel: CancelRegistry,
 }
 
+assert_not_impl!(Proactor, Send);
+assert_not_impl!(Proactor, Sync);
+
 impl Proactor {
     /// Create [`Proactor`] with 1024 entries.
     pub fn new() -> io::Result<Self> {
@@ -288,6 +291,54 @@ impl Proactor {
     /// driver, i.e., the one they created the buffer pool with.
     pub unsafe fn release_buffer_pool(&mut self, buffer_pool: BufferPool) -> io::Result<()> {
         unsafe { self.driver.release_buffer_pool(buffer_pool) }
+    }
+
+    /// Register file descriptors for fixed-file operations with io_uring.
+    ///
+    /// This only works on `io_uring` driver. It will return an [`Unsupported`]
+    /// error on other drivers.
+    ///
+    /// [`Unsupported`]: std::io::ErrorKind::Unsupported
+    pub fn register_files(&self, fds: &[RawFd]) -> io::Result<()> {
+        fn unsupported(_: &[RawFd]) -> io::Error {
+            io::Error::new(
+                io::ErrorKind::Unsupported,
+                "Fixed-file registration is only supported on io-uring driver",
+            )
+        }
+
+        #[cfg(io_uring)]
+        match self.driver.as_iour() {
+            Some(iour) => iour.register_files(fds),
+            None => Err(unsupported(fds)),
+        }
+
+        #[cfg(not(io_uring))]
+        Err(unsupported(fds))
+    }
+
+    /// Unregister previously registered file descriptors.
+    ///
+    /// This only works on `io_uring` driver. It will return an [`Unsupported`]
+    /// error on other drivers.
+    ///
+    /// [`Unsupported`]: std::io::ErrorKind::Unsupported
+    pub fn unregister_files(&self) -> io::Result<()> {
+        fn unsupported() -> io::Error {
+            io::Error::new(
+                io::ErrorKind::Unsupported,
+                "Fixed-file unregistration is only supported on io-uring driver",
+            )
+        }
+
+        #[cfg(io_uring)]
+        match self.driver.as_iour() {
+            Some(iour) => iour.unregister_files(),
+            None => Err(unsupported()),
+        }
+
+        #[cfg(not(io_uring))]
+        Err(unsupported())
     }
 
     /// Register a new personality in io-uring driver.

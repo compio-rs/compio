@@ -1121,7 +1121,7 @@ pin_project! {
         buffer: T,
         #[pin]
         control: C,
-        addr: SockAddr,
+        addr: Option<SockAddr>,
         slices: Vec<SysSlice>,
         flags: i32,
         _p: PhantomPinned,
@@ -1134,7 +1134,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     /// # Panics
     ///
     /// This function will panic if the control message buffer is misaligned.
-    pub fn new(fd: S, buffer: T, control: C, addr: SockAddr, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, control: C, addr: Option<SockAddr>, flags: i32) -> Self {
         assert!(
             control.buf_ptr().cast::<CMSGHDR>().is_aligned(),
             "misaligned control message buffer"
@@ -1166,13 +1166,23 @@ unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
 
         *this.slices = this.buffer.as_ref().sys_slices();
         let control = this.control.as_ref().sys_slice();
-        *this.msg = WSAMSG {
-            name: this.addr.as_ptr() as _,
-            namelen: this.addr.len(),
-            lpBuffers: this.slices.as_ptr() as _,
-            dwBufferCount: this.slices.len() as _,
-            Control: control.into_inner(),
-            dwFlags: 0,
+        *this.msg = match this.addr.as_ref() {
+            Some(addr) => WSAMSG {
+                name: addr.as_ptr() as _,
+                namelen: addr.len() as _,
+                lpBuffers: this.slices.as_ptr() as _,
+                dwBufferCount: this.slices.len() as _,
+                Control: control.into_inner(),
+                dwFlags: 0,
+            },
+            None => WSAMSG {
+                name: null_mut(),
+                namelen: 0,
+                lpBuffers: this.slices.as_ptr() as _,
+                dwBufferCount: this.slices.len() as _,
+                Control: control.into_inner(),
+                dwFlags: 0,
+            },
         };
 
         let mut sent = 0;

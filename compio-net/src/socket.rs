@@ -182,7 +182,7 @@ impl Socket {
         buffer_pool: &'a BufferPool,
         len: usize,
         flags: i32,
-    ) -> io::Result<(BorrowedBuffer<'a>, SockAddr)> {
+    ) -> io::Result<(BorrowedBuffer<'a>, Option<SockAddr>)> {
         let fd = self.to_shared_fd();
         let buffer_pool = buffer_pool.try_inner()?;
         let op = RecvFromManaged::new(fd, buffer_pool, len, flags)?;
@@ -212,7 +212,7 @@ impl Socket {
         &self,
         buffer: T,
         flags: i32,
-    ) -> BufResult<(usize, SockAddr), T> {
+    ) -> BufResult<(usize, Option<SockAddr>), T> {
         let fd = self.to_shared_fd();
         let op = RecvFrom::new(fd, buffer, flags);
         let res = compio_runtime::submit(op).await.into_inner().map_addr();
@@ -223,7 +223,7 @@ impl Socket {
         &self,
         buffer: T,
         flags: i32,
-    ) -> BufResult<(usize, SockAddr), T> {
+    ) -> BufResult<(usize, Option<SockAddr>), T> {
         let fd = self.to_shared_fd();
         let op = RecvFromVectored::new(fd, buffer, flags);
         let res = compio_runtime::submit(op).await.into_inner().map_addr();
@@ -235,7 +235,7 @@ impl Socket {
         buffer: T,
         control: C,
         flags: i32,
-    ) -> BufResult<(usize, usize, SockAddr), (T, C)> {
+    ) -> BufResult<(usize, usize, Option<SockAddr>), (T, C)> {
         self.recv_msg_vectored([buffer], control, flags)
             .await
             .map_buffer(|([buffer], control)| (buffer, control))
@@ -246,7 +246,7 @@ impl Socket {
         buffer: T,
         control: C,
         flags: i32,
-    ) -> BufResult<(usize, usize, SockAddr), (T, C)> {
+    ) -> BufResult<(usize, usize, Option<SockAddr>), (T, C)> {
         let fd = self.to_shared_fd();
         let op = RecvMsg::new(fd, buffer, control, flags);
         let res = compio_runtime::submit(op).await.into_inner().map_addr();
@@ -279,7 +279,7 @@ impl Socket {
         &self,
         buffer: T,
         control: C,
-        addr: &SockAddr,
+        addr: Option<&SockAddr>,
         flags: i32,
     ) -> BufResult<usize, (T, C)> {
         self.send_msg_vectored([buffer], control, addr, flags)
@@ -291,11 +291,11 @@ impl Socket {
         &self,
         buffer: T,
         control: C,
-        addr: &SockAddr,
+        addr: Option<&SockAddr>,
         flags: i32,
     ) -> BufResult<usize, (T, C)> {
         let fd = self.to_shared_fd();
-        let op = SendMsg::new(fd, buffer, control, addr.clone(), flags);
+        let op = SendMsg::new(fd, buffer, control, addr.cloned(), flags);
         compio_runtime::submit(op).await.into_inner()
     }
 
