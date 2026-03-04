@@ -15,8 +15,8 @@ use std::{
     sync::atomic::Ordering,
 };
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetLen, buf_try};
-use compio_io::ancillary::{AncillaryBuf, AncillaryBuilder, AncillaryIter};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, buf_try};
+use compio_io::ancillary::{AncillaryBuf, AncillaryIter};
 use compio_net::UdpSocket;
 use quinn_proto::{EcnCodepoint, Transmit};
 #[cfg(windows)]
@@ -367,8 +367,7 @@ impl Socket {
         let is_ipv4 = transmit.destination.ip().to_canonical().is_ipv4();
         let ecn = transmit.ecn.map_or(0, |x| x as u8);
 
-        let mut control = AncillaryBuf::<CMSG_LEN>::new();
-        let mut builder = AncillaryBuilder::new(control.as_uninit());
+        let mut builder = AncillaryBuf::<CMSG_LEN>::builder();
 
         // ECN
         if is_ipv4 {
@@ -462,9 +461,7 @@ impl Socket {
             let _ = segment_size;
         }
 
-        let len = builder.finish();
-        // SAFETY: AncillaryBuilder ensures the buffer is initialized within len
-        unsafe { control.set_len(len) };
+        let mut control = builder.finish();
 
         let mut buffer = buffer.slice(0..transmit.size);
 
