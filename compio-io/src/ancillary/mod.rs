@@ -19,6 +19,8 @@ use std::{
 };
 
 use compio_buf::{IoBuf, IoBufMut, SetLen};
+#[cfg(windows)]
+use windows_sys::Win32::Networking::WinSock;
 
 cfg_if::cfg_if! {
     if #[cfg(windows)] {
@@ -172,6 +174,12 @@ impl<const N: usize> AncillaryBuf<N> {
     /// least one control message header.
     pub fn builder() -> AncillaryBuilder<N> {
         AncillaryBuilder::new()
+    }
+}
+
+impl<const N: usize> Default for AncillaryBuf<N> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
