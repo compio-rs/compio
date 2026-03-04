@@ -11,6 +11,11 @@
 //!   caller-supplied send buffer.
 //! - [`AncillaryBuf`]: A fixed-size, properly aligned stack buffer for
 //!   ancillary data
+//!
+//! # Traits
+//!
+//! - [`AsyncReadAncillary`]: read data together with ancillary data
+//! - [`AsyncWriteAncillary`]: write data together with ancillary data
 
 use std::{
     marker::PhantomData,
@@ -21,6 +26,10 @@ use std::{
 use compio_buf::{IoBuf, IoBufMut, SetLen};
 #[cfg(windows)]
 use windows_sys::Win32::Networking::WinSock;
+
+mod io;
+
+pub use io::*;
 
 cfg_if::cfg_if! {
     if #[cfg(windows)] {
