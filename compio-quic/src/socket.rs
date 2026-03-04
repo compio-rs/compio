@@ -12,12 +12,12 @@ use std::{
     future::Future,
     io,
     net::{IpAddr, SocketAddr},
-    ops::{Deref, DerefMut},
     sync::atomic::Ordering,
 };
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetLen, buf_try};
-use compio_net::{CMsgBuilder, CMsgIter, UdpSocket};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, buf_try};
+use compio_io::ancillary::{AncillaryBuf, AncillaryIter};
+use compio_net::UdpSocket;
 use quinn_proto::{EcnCodepoint, Transmit};
 #[cfg(windows)]
 use windows_sys::Win32::Networking::WinSock;
@@ -56,58 +56,6 @@ pub(crate) struct RecvMeta {
 }
 
 const CMSG_LEN: usize = 128;
-
-struct Ancillary<const N: usize> {
-    inner: [u8; N],
-    len: usize,
-    #[cfg(unix)]
-    _align: [libc::cmsghdr; 0],
-    #[cfg(windows)]
-    _align: [WinSock::CMSGHDR; 0],
-}
-
-impl<const N: usize> Ancillary<N> {
-    fn new() -> Self {
-        Self {
-            inner: [0u8; N],
-            len: 0,
-            _align: [],
-        }
-    }
-}
-
-impl<const N: usize> IoBuf for Ancillary<N> {
-    fn as_init(&self) -> &[u8] {
-        &self.inner[..self.len]
-    }
-}
-
-impl<const N: usize> SetLen for Ancillary<N> {
-    unsafe fn set_len(&mut self, len: usize) {
-        debug_assert!(len <= N);
-        self.len = len;
-    }
-}
-
-impl<const N: usize> IoBufMut for Ancillary<N> {
-    fn as_uninit(&mut self) -> &mut [std::mem::MaybeUninit<u8>] {
-        self.inner.as_uninit()
-    }
-}
-
-impl<const N: usize> Deref for Ancillary<N> {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner[0..self.len]
-    }
-}
-
-impl<const N: usize> DerefMut for Ancillary<N> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner[0..self.len]
-    }
-}
 
 #[cfg(linux_all)]
 #[inline]
@@ -332,7 +280,7 @@ impl Socket {
     }
 
     pub async fn recv<T: IoBufMut>(&self, buffer: T) -> BufResult<RecvMeta, T> {
-        let control = Ancillary::<CMSG_LEN>::new();
+        let control = AncillaryBuf::<CMSG_LEN>::new();
 
         let BufResult(res, (buffer, control)) = self.inner.recv_msg(buffer, control).await;
         let ((len, _, remote), buffer) = buf_try!(res, buffer);
@@ -344,7 +292,7 @@ impl Socket {
 
         // SAFETY: `control` contains valid data
         unsafe {
-            for cmsg in CMsgIter::new(&control) {
+            for cmsg in AncillaryIter::new(&control) {
                 #[cfg(windows)]
                 const UDP_COALESCED_INFO: i32 = WinSock::UDP_COALESCED_INFO as i32;
 
@@ -419,8 +367,7 @@ impl Socket {
         let is_ipv4 = transmit.destination.ip().to_canonical().is_ipv4();
         let ecn = transmit.ecn.map_or(0, |x| x as u8);
 
-        let mut control = Ancillary::<CMSG_LEN>::new();
-        let mut builder = CMsgBuilder::new(control.as_uninit());
+        let mut builder = AncillaryBuf::<CMSG_LEN>::builder();
 
         // ECN
         if is_ipv4 {
@@ -514,8 +461,7 @@ impl Socket {
             let _ = segment_size;
         }
 
-        let len = builder.finish();
-        control.len = len;
+        let mut control = builder.finish();
 
         let mut buffer = buffer.slice(0..transmit.size);
 
