@@ -16,6 +16,15 @@
 //! - [`BufReader`]: An async reader with internal buffer
 //! - [`BufWriter`]: An async writer with internal buffer
 //!
+//! ### Managed IO
+//!
+//! - [`AsyncReadManaged`]: Async read with a managed buffer
+//! - [`AsyncReadManagedAt`]: Async read with a managed buffer and offset
+//! - [`AsyncReadMulti`]: Async read, and returns a stream of multiple managed
+//!   buffers
+//! - [`AsyncReadMultiAt`]: Async read with offset, and returns a stream of
+//!   multiple managed buffers
+//!
 //! ### Extension
 //!
 //! - [`AsyncReadExt`]: Extension trait for [`AsyncRead`]
