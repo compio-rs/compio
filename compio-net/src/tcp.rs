@@ -10,7 +10,7 @@ use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use compio_io::{
     AsyncRead, AsyncReadManaged, AsyncWrite,
-    socket::{AsyncRecvMsg, AsyncSendMsg},
+    ancillary::{AsyncReadAncillary, AsyncWriteAncillary},
     util::Splittable,
 };
 use compio_runtime::{BorrowedBuffer, BufferPool, fd::PollFd};
@@ -455,57 +455,49 @@ impl AsyncReadManaged for &TcpStream {
     }
 }
 
-impl AsyncRecvMsg for TcpStream {
-    type AddrType = SocketAddr;
-
+impl AsyncReadAncillary for TcpStream {
     #[inline]
-    async fn recv_msg<T: IoBufMut, C: IoBufMut>(
+    async fn read_with_ancillary<T: IoBufMut, C: IoBufMut>(
         &mut self,
         buffer: T,
         control: C,
-        flags: i32,
-    ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
-        (&*self).recv_msg(buffer, control, flags).await
+    ) -> BufResult<(usize, usize), (T, C)> {
+        (&*self).read_with_ancillary(buffer, control).await
     }
 
     #[inline]
-    async fn recv_msg_vectored<T: IoVectoredBufMut, C: IoBufMut>(
+    async fn read_vectored_with_ancillary<T: IoVectoredBufMut, C: IoBufMut>(
         &mut self,
         buffer: T,
         control: C,
-        flags: i32,
-    ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
-        (&*self).recv_msg_vectored(buffer, control, flags).await
+    ) -> BufResult<(usize, usize), (T, C)> {
+        (&*self).read_vectored_with_ancillary(buffer, control).await
     }
 }
 
-impl AsyncRecvMsg for &TcpStream {
-    type AddrType = SocketAddr;
-
+impl AsyncReadAncillary for &TcpStream {
     #[inline]
-    async fn recv_msg<T: IoBufMut, C: IoBufMut>(
+    async fn read_with_ancillary<T: IoBufMut, C: IoBufMut>(
         &mut self,
         buffer: T,
         control: C,
-        flags: i32,
-    ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
+    ) -> BufResult<(usize, usize), (T, C)> {
         self.inner
-            .recv_msg(buffer, control, flags)
+            .recv_msg(buffer, control, 0)
             .await
-            .map_res(|(res, len, addr)| (res, len, addr.as_socket().expect("IP socket address")))
+            .map_res(|(res, len, _addr)| (res, len))
     }
 
     #[inline]
-    async fn recv_msg_vectored<T: IoVectoredBufMut, C: IoBufMut>(
+    async fn read_vectored_with_ancillary<T: IoVectoredBufMut, C: IoBufMut>(
         &mut self,
         buffer: T,
         control: C,
-        flags: i32,
-    ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
+    ) -> BufResult<(usize, usize), (T, C)> {
         self.inner
-            .recv_msg_vectored(buffer, control, flags)
+            .recv_msg_vectored(buffer, control, 0)
             .await
-            .map_res(|(res, len, addr)| (res, len, addr.as_socket().expect("IP socket address")))
+            .map_res(|(res, len, _addr)| (res, len))
     }
 }
 
@@ -553,61 +545,45 @@ impl AsyncWrite for &TcpStream {
     }
 }
 
-impl AsyncSendMsg for TcpStream {
-    type AddrType = SocketAddr;
-
+impl AsyncWriteAncillary for TcpStream {
     #[inline]
-    async fn send_msg<T: IoBuf, C: IoBuf>(
+    async fn write_with_ancillary<T: IoBuf, C: IoBuf>(
         &mut self,
         buffer: T,
         control: C,
-        addr: &SocketAddr,
-        flags: i32,
     ) -> BufResult<usize, (T, C)> {
-        (&*self).send_msg(buffer, control, addr, flags).await
+        (&*self).write_with_ancillary(buffer, control).await
     }
 
     #[inline]
-    async fn send_msg_vectored<T: IoVectoredBuf, C: IoBuf>(
+    async fn write_vectored_with_ancillary<T: IoVectoredBuf, C: IoBuf>(
         &mut self,
         buffer: T,
         control: C,
-        addr: &SocketAddr,
-        flags: i32,
     ) -> BufResult<usize, (T, C)> {
         (&*self)
-            .send_msg_vectored(buffer, control, addr, flags)
+            .write_vectored_with_ancillary(buffer, control)
             .await
     }
 }
 
-impl AsyncSendMsg for &TcpStream {
-    type AddrType = SocketAddr;
-
+impl AsyncWriteAncillary for &TcpStream {
     #[inline]
-    async fn send_msg<T: IoBuf, C: IoBuf>(
+    async fn write_with_ancillary<T: IoBuf, C: IoBuf>(
         &mut self,
         buffer: T,
         control: C,
-        addr: &SocketAddr,
-        flags: i32,
     ) -> BufResult<usize, (T, C)> {
-        self.inner
-            .send_msg(buffer, control, &(*addr).into(), flags)
-            .await
+        self.inner.send_msg(buffer, control, None, 0).await
     }
 
     #[inline]
-    async fn send_msg_vectored<T: IoVectoredBuf, C: IoBuf>(
+    async fn write_vectored_with_ancillary<T: IoVectoredBuf, C: IoBuf>(
         &mut self,
         buffer: T,
         control: C,
-        addr: &SocketAddr,
-        flags: i32,
     ) -> BufResult<usize, (T, C)> {
-        self.inner
-            .send_msg_vectored(buffer, control, &(*addr).into(), flags)
-            .await
+        self.inner.send_msg_vectored(buffer, control, None, 0).await
     }
 }
 
