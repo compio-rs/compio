@@ -23,21 +23,21 @@ mod unix;
 
 /// Reference to a control message.
 #[deprecated(
-    since = "0.19.0",
+    since = "0.12.0",
     note = "use `compio_io::ancillary::AncillaryRef` instead"
 )]
 pub type CMsgRef<'a> = compio_io::ancillary::AncillaryRef<'a>;
 
 /// An iterator for control messages.
 #[deprecated(
-    since = "0.19.0",
+    since = "0.12.0",
     note = "use `compio_io::ancillary::AncillaryIter` instead"
 )]
 pub type CMsgIter<'a> = compio_io::ancillary::AncillaryIter<'a>;
 
 /// Helper to construct control message.
 #[deprecated(
-    since = "0.19.0",
+    since = "0.12.0",
     note = "use `compio_io::ancillary::AncillaryBuilder` instead"
 )]
 pub type CMsgBuilder<'a> = compio_io::ancillary::AncillaryBuilder<'a>;
