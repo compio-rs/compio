@@ -13,6 +13,7 @@ repository = { workspace = true }
 compio-buf = { workspace = true, features = ["arrayvec", "bytes"] }
 futures-util = { workspace = true, features = ["sink"] }
 paste = { workspace = true }
+pin-project-lite = { workspace = true, optional = true }
 synchrony = { workspace = true, features = ["bilock"] }
 
 cfg-if = { workspace = true, optional = true }
@@ -36,7 +37,7 @@ futures-executor = "0.3.30"
 
 [features]
 default = []
-compat = ["futures-util/io"]
+compat = ["futures-util/io", "dep:pin-project-lite"]
 sync = []
 ancillary = ["dep:cfg-if", "dep:libc", "dep:windows-sys"]
 

@@ -1,3 +1,5 @@
+#[cfg(feature = "rustls")]
+use std::pin::Pin;
 use std::{borrow::Cow, io, mem::MaybeUninit};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
@@ -12,7 +14,7 @@ enum TlsStreamInner<S> {
     #[cfg(feature = "native-tls")]
     NativeTls(native_tls::TlsStream<SyncStream<S>>),
     #[cfg(feature = "rustls")]
-    Rustls(futures_rustls::TlsStream<AsyncStream<S>>),
+    Rustls(futures_rustls::TlsStream<Pin<Box<AsyncStream<S>>>>),
     #[cfg(feature = "py-dynamic-openssl")]
     PyDynamicOpenSsl(compio_py_dynamic_openssl::ssl::SslStream<SyncStream<S>>),
     #[cfg(not(any(
@@ -69,8 +71,8 @@ impl<S> From<native_tls::TlsStream<SyncStream<S>>> for TlsStream<S> {
 
 #[cfg(feature = "rustls")]
 #[doc(hidden)]
-impl<S> From<futures_rustls::client::TlsStream<AsyncStream<S>>> for TlsStream<S> {
-    fn from(value: futures_rustls::client::TlsStream<AsyncStream<S>>) -> Self {
+impl<S> From<futures_rustls::client::TlsStream<Pin<Box<AsyncStream<S>>>>> for TlsStream<S> {
+    fn from(value: futures_rustls::client::TlsStream<Pin<Box<AsyncStream<S>>>>) -> Self {
         Self(TlsStreamInner::Rustls(futures_rustls::TlsStream::Client(
             value,
         )))
@@ -79,8 +81,8 @@ impl<S> From<futures_rustls::client::TlsStream<AsyncStream<S>>> for TlsStream<S>
 
 #[cfg(feature = "rustls")]
 #[doc(hidden)]
-impl<S> From<futures_rustls::server::TlsStream<AsyncStream<S>>> for TlsStream<S> {
-    fn from(value: futures_rustls::server::TlsStream<AsyncStream<S>>) -> Self {
+impl<S> From<futures_rustls::server::TlsStream<Pin<Box<AsyncStream<S>>>>> for TlsStream<S> {
+    fn from(value: futures_rustls::server::TlsStream<Pin<Box<AsyncStream<S>>>>) -> Self {
         Self(TlsStreamInner::Rustls(futures_rustls::TlsStream::Server(
             value,
         )))
@@ -124,7 +126,10 @@ where
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + 'static> AsyncRead for TlsStream<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + 'static> AsyncRead for TlsStream<S>
+where
+    for<'a> &'a S: AsyncRead + AsyncWrite,
+{
     async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
         let slice = buf.as_uninit();
         slice.fill(MaybeUninit::new(0));
@@ -188,7 +193,10 @@ async fn flush_impl(s: &mut native_tls::TlsStream<SyncStream<impl AsyncWrite>>) 
     Ok(())
 }
 
-impl<S: AsyncRead + AsyncWrite + 'static> AsyncWrite for TlsStream<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + 'static> AsyncWrite for TlsStream<S>
+where
+    for<'a> &'a S: AsyncRead + AsyncWrite,
+{
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         let slice = buf.as_init();
         match &mut self.0 {
