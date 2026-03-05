@@ -128,6 +128,8 @@ use synchrony::unsync as sync;
 
 type PinBoxFuture<T> = Pin<Box<dyn Future<Output = T>>>;
 
+#[cfg(feature = "ancillary")]
+pub mod ancillary;
 mod buffer;
 pub mod framed;
 

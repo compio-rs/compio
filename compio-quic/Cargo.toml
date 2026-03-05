@@ -15,7 +15,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 # Workspace dependencies
-compio-io = { workspace = true }
+compio-io = { workspace = true, features = ["ancillary"] }
 compio-buf = { workspace = true, features = ["bytes"] }
 compio-log = { workspace = true }
 compio-net = { workspace = true }

@@ -17,7 +17,8 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetLen, buf_try};
-use compio_net::{CMsgBuilder, CMsgIter, UdpSocket};
+use compio_io::ancillary::{AncillaryBuilder, AncillaryIter};
+use compio_net::UdpSocket;
 use quinn_proto::{EcnCodepoint, Transmit};
 #[cfg(windows)]
 use windows_sys::Win32::Networking::WinSock;
@@ -344,7 +345,7 @@ impl Socket {
 
         // SAFETY: `control` contains valid data
         unsafe {
-            for cmsg in CMsgIter::new(&control) {
+            for cmsg in AncillaryIter::new(&control) {
                 #[cfg(windows)]
                 const UDP_COALESCED_INFO: i32 = WinSock::UDP_COALESCED_INFO as i32;
 
@@ -420,7 +421,7 @@ impl Socket {
         let ecn = transmit.ecn.map_or(0, |x| x as u8);
 
         let mut control = Ancillary::<CMSG_LEN>::new();
-        let mut builder = CMsgBuilder::new(control.as_uninit());
+        let mut builder = AncillaryBuilder::new(control.as_uninit());
 
         // ECN
         if is_ipv4 {
