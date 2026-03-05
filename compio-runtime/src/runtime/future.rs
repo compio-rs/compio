@@ -146,13 +146,15 @@ impl<T: OpCode + 'static> Future for Submit<T, Extra> {
         let this = unsafe { self.get_unchecked_mut() };
         loop {
             match this.state.take().expect("Cannot poll after ready") {
-                State::Submitted { key, .. } => match this.runtime.poll_task_with_extra(cx, key) {
-                    PushEntry::Pending(key) => {
-                        this.state = Some(State::submitted(key));
-                        return Poll::Pending;
+                State::Submitted { key, .. } => {
+                    match this.runtime.poll_task_with_extra(cx.waker(), key) {
+                        PushEntry::Pending(key) => {
+                            this.state = Some(State::submitted(key));
+                            return Poll::Pending;
+                        }
+                        PushEntry::Ready(res) => return Poll::Ready(res),
                     }
-                    PushEntry::Ready(res) => return Poll::Ready(res),
-                },
+                }
                 State::Idle { op } => {
                     let extra = cx.as_extra(|| this.runtime.default_extra());
                     match this.runtime.submit_raw(op, extra) {
