@@ -25,7 +25,9 @@ pub use crate::sys::op::{
     WriteVectored, WriteVectoredAt,
 };
 #[cfg(io_uring)]
-pub use crate::sys::op::{ReadManaged, ReadManagedAt, RecvFromManaged, RecvManaged};
+pub use crate::sys::op::{
+    ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvManaged, RecvMulti,
+};
 use crate::{Extra, OwnedFd, SharedFd, TakeBuffer, sys::aio::*};
 
 /// Trait to update the buffer length inside the [`BufResult`].
@@ -174,6 +176,24 @@ impl<T: TakeBuffer> ResultTakeBuffer for (BufResult<usize, T>, Extra) {
     fn take_buffer(self, pool: &Self::BufferPool) -> io::Result<Self::Buffer<'_>> {
         let (BufResult(result, op), extra) = self;
         op.take_buffer(pool, result, extra.buffer_id()?)
+    }
+}
+
+impl ResultTakeBuffer for BufResult<usize, Extra> {
+    type Buffer<'a> = crate::BorrowedBuffer<'a>;
+    type BufferPool = crate::BufferPool;
+
+    fn take_buffer(self, pool: &Self::BufferPool) -> io::Result<Self::Buffer<'_>> {
+        #[cfg(io_uring)]
+        {
+            let BufResult(result, extra) = self;
+            crate::sys::take_buffer(pool, result, extra.buffer_id()?)
+        }
+        #[cfg(not(io_uring))]
+        {
+            let _pool = pool;
+            unreachable!("take_buffer should not be called for non-io-uring ops")
+        }
     }
 }
 
@@ -477,6 +497,21 @@ pub(crate) mod managed {
     use super::{Read, ReadAt, Recv, RecvFrom};
     use crate::{AsFd, BorrowedBuffer, BufferPool, OwnedBuffer, TakeBuffer};
 
+    fn take_buffer(
+        slice: OwnedBuffer,
+        buffer_pool: &BufferPool,
+        result: io::Result<usize>,
+    ) -> io::Result<BorrowedBuffer<'_>> {
+        let result = result?;
+        #[cfg(fusion)]
+        let buffer_pool = buffer_pool.as_poll();
+        // SAFETY: result is valid
+        let res = unsafe { buffer_pool.create_proxy(slice, result) };
+        #[cfg(fusion)]
+        let res = BorrowedBuffer::new_poll(res);
+        Ok(res)
+    }
+
     pin_project! {
         /// Read a file at specified position into managed buffer.
         pub struct ReadManagedAt<S> {
@@ -506,15 +541,7 @@ pub(crate) mod managed {
             result: io::Result<usize>,
             _: u16,
         ) -> io::Result<BorrowedBuffer<'_>> {
-            let result = result?;
-            #[cfg(fusion)]
-            let buffer_pool = buffer_pool.as_poll();
-            let slice = self.op.into_inner();
-            // SAFETY: result is valid
-            let res = unsafe { buffer_pool.create_proxy(slice, result) };
-            #[cfg(fusion)]
-            let res = BorrowedBuffer::new_poll(res);
-            Ok(res)
+            take_buffer(self.op.into_inner(), buffer_pool, result)
         }
     }
 
@@ -547,15 +574,7 @@ pub(crate) mod managed {
             result: io::Result<usize>,
             _: u16,
         ) -> io::Result<Self::Buffer<'_>> {
-            let result = result?;
-            #[cfg(fusion)]
-            let buffer_pool = buffer_pool.as_poll();
-            let slice = self.op.into_inner();
-            // SAFETY: result is valid
-            let res = unsafe { buffer_pool.create_proxy(slice, result) };
-            #[cfg(fusion)]
-            let res = BorrowedBuffer::new_poll(res);
-            Ok(res)
+            take_buffer(self.op.into_inner(), buffer_pool, result)
         }
     }
 
@@ -591,15 +610,7 @@ pub(crate) mod managed {
             result: io::Result<usize>,
             _: u16,
         ) -> io::Result<Self::Buffer<'_>> {
-            let result = result?;
-            #[cfg(fusion)]
-            let buffer_pool = buffer_pool.as_poll();
-            let slice = self.op.into_inner();
-            // SAFETY: result is valid
-            let res = unsafe { buffer_pool.create_proxy(slice, result) };
-            #[cfg(fusion)]
-            let res = BorrowedBuffer::new_poll(res);
-            Ok(res)
+            take_buffer(self.op.into_inner(), buffer_pool, result)
         }
     }
 
@@ -644,6 +655,13 @@ pub(crate) mod managed {
             Ok((res, addr))
         }
     }
+
+    /// Read a file at specified position into multiple managed buffers.
+    pub type ReadMultiAt<S> = ReadManagedAt<S>;
+    /// Read a file into multiple managed buffers.
+    pub type ReadMulti<S> = ReadManaged<S>;
+    /// Receive data from remote into multiple managed buffers.
+    pub type RecvMulti<S> = RecvManaged<S>;
 }
 
 #[cfg(not(io_uring))]

@@ -49,6 +49,13 @@ impl<T: ?Sized> RawOp<T> {
         // SAFETY: inner is always pinned with ThinCell.
         unsafe { Pin::new_unchecked(&mut self.op) }
     }
+
+    #[cfg(io_uring)]
+    pub fn wake_by_ref(&mut self) {
+        if let PushEntry::Pending(Some(w)) = &self.result {
+            w.wake_by_ref();
+        }
+    }
 }
 
 #[cfg(windows)]

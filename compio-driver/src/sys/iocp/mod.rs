@@ -12,6 +12,7 @@ use std::{
     time::Duration,
 };
 
+use compio_buf::BufResult;
 use compio_log::{instrument, trace};
 use windows_sys::Win32::{
     Foundation::{ERROR_CANCELLED, HANDLE},
@@ -497,6 +498,12 @@ impl Driver {
     pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
         Ok(())
     }
+
+    pub fn pop_multishot(&mut self, _: &ErasedKey) -> Option<BufResult<usize, crate::sys::Extra>> {
+        None
+    }
+
+    pub fn cleanup_multishot(&mut self, _: &ErasedKey) {}
 }
 
 impl AsRawFd for Driver {

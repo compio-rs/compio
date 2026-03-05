@@ -232,6 +232,7 @@ impl Proactor {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
             self.cancel.remove(&key);
+            self.driver.cleanup_multishot(&key);
             PushEntry::Ready(key.take_result())
         } else {
             PushEntry::Pending(key)
@@ -251,12 +252,21 @@ impl Proactor {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
             self.cancel.remove(&key);
+            self.driver.cleanup_multishot(&key);
             let extra = key.swap_extra(self.default_extra());
             let res = key.take_result();
             PushEntry::Ready((res, extra))
         } else {
             PushEntry::Pending(key)
         }
+    }
+
+    /// Get one completion entry for a multishot operation. If it returns
+    /// [`None`], the user should call [`Proactor::pop_with_extra`] to get the
+    /// final result of the operation.
+    pub fn pop_multishot<T>(&mut self, key: &Key<T>) -> Option<BufResult<usize, Extra>> {
+        instrument!(compio_log::Level::DEBUG, "pop_multishot", ?key);
+        self.driver.pop_multishot(key)
     }
 
     /// Update the waker of the specified op.
