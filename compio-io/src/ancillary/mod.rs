@@ -8,9 +8,9 @@
 //! - [`AncillaryRef`]: A reference to a single ancillary data entry.
 //! - [`AncillaryIter`]: An iterator over a buffer of ancillary messages.
 //! - [`AncillaryBuilder`]: A builder for constructing ancillary messages into a
-//!   caller-supplied send buffer.
+//!   [`AncillaryBuf`].
 //! - [`AncillaryBuf`]: A fixed-size, properly aligned stack buffer for
-//!   ancillary data
+//!   ancillary data.
 //!
 //! # Example
 //!
@@ -289,9 +289,9 @@ pub const fn ancillary_space<T>() -> usize {
     #[cfg(unix)]
     // SAFETY: CMSG_SPACE is always safe
     unsafe {
-        libc::CMSG_SPACE(size_of::<T>() as libc::c_uint) as usize
+        libc::CMSG_SPACE(std::mem::size_of::<T>() as libc::c_uint) as usize
     }
 
     #[cfg(windows)]
-    sys::wsa_cmsg_space(size_of::<T>())
+    sys::wsa_cmsg_space(std::mem::size_of::<T>())
 }
