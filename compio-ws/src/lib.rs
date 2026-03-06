@@ -10,6 +10,7 @@
 //! [`tungstenite`]: https://docs.rs/tungstenite
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![allow(unused_features)]
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![doc(

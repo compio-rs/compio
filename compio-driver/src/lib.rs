@@ -4,6 +4,7 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
+#![allow(unused_features)]
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![doc(
