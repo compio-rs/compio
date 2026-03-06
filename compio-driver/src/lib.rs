@@ -271,7 +271,7 @@ impl Proactor {
     }
 
     /// Update the waker of the specified op.
-    pub fn update_waker<T>(&mut self, op: &mut Key<T>, waker: &Waker) {
+    pub fn update_waker<T>(&mut self, op: &Key<T>, waker: &Waker) {
         op.set_waker(waker);
     }
 
