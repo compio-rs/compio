@@ -316,13 +316,13 @@ impl Runtime {
 
     pub(crate) fn poll_task_with_extra<T: OpCode>(
         &self,
-        cx: &mut Context,
+        waker: &Waker,
         key: Key<T>,
     ) -> PushEntry<Key<T>, (BufResult<usize, T>, Extra)> {
         instrument!(compio_log::Level::DEBUG, "poll_task_with_extra", ?key);
         let mut driver = self.driver.borrow_mut();
         driver.pop_with_extra(key).map_pending(|mut k| {
-            driver.update_waker(&mut k, cx.waker());
+            driver.update_waker(&mut k, waker);
             k
         })
     }
