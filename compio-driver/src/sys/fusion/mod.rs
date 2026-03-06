@@ -18,61 +18,8 @@ use super::{iour, poll};
 pub use crate::driver_type::DriverType; // Re-export so current user won't be broken
 use crate::{BufferPool, ProactorBuilder, key::ErasedKey};
 
-pub enum Extra {
-    Poll(poll::Extra),
-    IoUring(iour::Extra),
-}
-
-impl From<poll::Extra> for Extra {
-    fn from(inner: poll::Extra) -> Self {
-        Self::Poll(inner)
-    }
-}
-
-impl From<iour::Extra> for Extra {
-    fn from(inner: iour::Extra) -> Self {
-        Self::IoUring(inner)
-    }
-}
-
-#[allow(dead_code)]
-impl super::Extra {
-    pub(crate) fn is_iour(&self) -> bool {
-        matches!(self.0, Extra::IoUring(_))
-    }
-
-    pub(in crate::sys) fn try_as_iour(&self) -> Option<&iour::Extra> {
-        if let Extra::IoUring(extra) = &self.0 {
-            Some(extra)
-        } else {
-            None
-        }
-    }
-
-    pub(in crate::sys) fn try_as_iour_mut(&mut self) -> Option<&mut iour::Extra> {
-        if let Extra::IoUring(extra) = &mut self.0 {
-            Some(extra)
-        } else {
-            None
-        }
-    }
-
-    pub(in crate::sys) fn try_as_poll(&self) -> Option<&poll::Extra> {
-        if let Extra::Poll(extra) = &self.0 {
-            Some(extra)
-        } else {
-            None
-        }
-    }
-
-    pub(in crate::sys) fn try_as_poll_mut(&mut self) -> Option<&mut poll::Extra> {
-        if let Extra::Poll(extra) = &mut self.0 {
-            Some(extra)
-        } else {
-            None
-        }
-    }
-}
+mod extra;
+pub(in crate::sys) use extra::Extra;
 
 /// Fused [`OpCode`]
 ///
@@ -136,7 +83,7 @@ impl Driver {
         }
     }
 
-    pub fn default_extra(&self) -> Extra {
+    pub(in crate::sys) fn default_extra(&self) -> Extra {
         match &self.fuse {
             FuseDriver::Poll(driver) => Extra::Poll(driver.default_extra()),
             FuseDriver::IoUring(driver) => Extra::IoUring(driver.default_extra()),

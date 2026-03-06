@@ -28,6 +28,10 @@ mod extra;
 pub use extra::Extra;
 pub use imp::*;
 
+pub(crate) fn default_extra(driver: &Driver) -> Extra {
+    driver.default_extra().into()
+}
+
 #[cfg(aio)]
 pub(crate) mod aio {
     pub use libc::aiocb;

@@ -1,7 +1,7 @@
 use super::*;
 
 /// Extra data for RawOp.
-pub struct Extra {
+pub(in crate::sys) struct Extra {
     pub(super) track: Multi<Track>,
 }
 
@@ -12,19 +12,19 @@ impl Extra {
         }
     }
 
-    pub(crate) fn next_fd(&self) -> Option<RawFd> {
+    pub fn next_fd(&self) -> Option<RawFd> {
         self.track.iter().find(|t| !t.ready).map(|t| t.arg.fd)
     }
 
-    pub(super) fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.track.iter_mut().for_each(|t| t.ready = false);
     }
 
-    pub(super) fn set_args(&mut self, args: Multi<WaitArg>) {
+    pub fn set_args(&mut self, args: Multi<WaitArg>) {
         self.track = args.into_iter().map(Into::into).collect();
     }
 
-    pub(super) fn handle_event(&mut self, fd: RawFd) -> bool {
+    pub fn handle_event(&mut self, fd: RawFd) -> bool {
         self.track.iter_mut().fold(true, |curr, t| {
             if t.arg.fd == fd {
                 t.ready = true;
@@ -37,7 +37,7 @@ impl Extra {
 #[allow(dead_code)]
 #[cfg(not(fusion))]
 impl crate::sys::Extra {
-    pub(crate) fn is_iour(&self) -> bool {
+    pub(in crate::sys) fn is_iour(&self) -> bool {
         false
     }
 

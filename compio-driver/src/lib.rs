@@ -43,7 +43,7 @@ mod buffer_pool;
 pub use buffer_pool::*;
 
 mod sys;
-pub use sys::*;
+pub use sys::{Extra, *};
 
 mod cancel;
 pub use cancel::*;
@@ -122,7 +122,7 @@ impl Proactor {
 
     /// Get a default [`Extra`] for underlying driver.
     pub fn default_extra(&self) -> Extra {
-        self.driver.default_extra().into()
+        sys::default_extra(&self.driver)
     }
 
     /// The current driver type.

@@ -27,7 +27,7 @@ use crate::{
 };
 
 mod extra;
-pub use extra::Extra;
+pub(in crate::sys) use extra::Extra;
 pub(crate) mod op;
 
 struct Track {
@@ -319,7 +319,7 @@ impl Driver {
         DriverType::Poll
     }
 
-    pub fn default_extra(&self) -> Extra {
+    pub(in crate::sys) fn default_extra(&self) -> Extra {
         Extra::new()
     }
 
