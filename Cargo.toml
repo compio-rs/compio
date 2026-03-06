@@ -71,6 +71,7 @@ windows-sys = "0.61.0"
 thiserror = "2.0.3"
 smallvec = "1.13.2"
 synchrony = "0.1.4"
+thin-cell = "0.2.0"
 
 [profile.bench]
 debug = true
