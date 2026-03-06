@@ -5,6 +5,7 @@
     all(feature = "linux_pidfd", target_os = "linux"),
     feature(linux_pidfd)
 )]
+#![allow(unused_features)]
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![doc(
