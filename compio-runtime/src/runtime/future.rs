@@ -9,7 +9,7 @@ use std::{
 
 use compio_buf::BufResult;
 use compio_driver::{Extra, Key, OpCode, PushEntry};
-use futures_util::{Stream, future::FusedFuture};
+use futures_util::future::FusedFuture;
 
 use crate::{CancelToken, runtime::Runtime};
 
