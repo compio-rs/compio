@@ -11,7 +11,7 @@ use std::{
 };
 
 use compio_buf::BufResult;
-use thin_cell::{Ref, ThinCell};
+use thin_cell::unsync::{Ref, ThinCell};
 
 use crate::{Extra, OpCode, PushEntry};
 
