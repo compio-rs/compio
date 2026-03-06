@@ -21,7 +21,7 @@ impl<I: Into<imp::Extra>> From<I> for Extra {
 }
 
 impl Extra {
-    pub(super) fn new(inner: imp::Extra) -> Self {
+    pub(in crate::sys) fn new(inner: imp::Extra) -> Self {
         Self(inner)
     }
 

@@ -24,7 +24,7 @@ use compio_buf::BufResult;
 
 use crate::{BufferPool, DriverType, ErasedKey, ProactorBuilder};
 
-pub struct Extra {}
+pub(in crate::sys) struct Extra {}
 
 impl Extra {
     pub fn new() -> Self {
@@ -63,7 +63,7 @@ impl Driver {
 
     pub fn cancel(&mut self, _: ErasedKey) {}
 
-    pub fn default_extra(&self) -> Extra {
+    pub(in crate::sys) fn default_extra(&self) -> Extra {
         Extra::new()
     }
 
