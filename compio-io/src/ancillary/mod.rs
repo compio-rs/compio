@@ -21,11 +21,11 @@
 //! const TYPE: i32 = 2;
 //!
 //! // Build a buffer containing two `u32` ancillary messages.
-//! let mut builder = AncillaryBuf::<{ ancillary_space::<u32>() * 2 }>::builder();
+//! let mut buf = AncillaryBuf::<{ ancillary_space::<u32>() * 2 }>::new();
+//! let mut builder = buf.builder();
 //! builder.try_push(LEVEL, TYPE, 42u32).unwrap();
 //! builder.try_push(LEVEL, TYPE, 43u32).unwrap();
 //! assert!(builder.try_push(LEVEL, TYPE, 44u32).is_none()); // buffer is full
-//! let buf = builder.finish();
 //!
 //! // Read it back.
 //! unsafe {
@@ -128,22 +128,18 @@ impl<'a> Iterator for AncillaryIter<'a> {
 }
 
 /// Helper to construct ancillary (control) messages.
-pub struct AncillaryBuilder<const N: usize> {
-    buffer: Box<AncillaryBuf<N>>,
+pub struct AncillaryBuilder<'a, const N: usize> {
     inner: sys::CMsgIter,
+    buffer: &'a mut AncillaryBuf<N>,
 }
 
-impl<const N: usize> AncillaryBuilder<N> {
-    fn new() -> Self {
-        let mut buffer = Box::new(AncillaryBuf::new());
-        let inner = sys::CMsgIter::new(buffer.as_uninit().as_ptr().cast(), buffer.buf_capacity());
-        Self { buffer, inner }
-    }
-
-    /// Finishes building, returns the ancillary buffer containing the
-    /// constructed control messages.
-    pub fn finish(self) -> AncillaryBuf<N> {
-        *self.buffer
+impl<'a, const N: usize> AncillaryBuilder<'a, N> {
+    fn new(buffer: &'a mut AncillaryBuf<N>) -> Self {
+        // TODO: optimize zeroing
+        buffer.as_uninit().fill(MaybeUninit::new(0));
+        buffer.len = 0;
+        let inner = sys::CMsgIter::new(buffer.as_ptr(), buffer.buf_capacity());
+        Self { inner, buffer }
     }
 
     /// Try to append a control message entry into the buffer. If the buffer
@@ -192,15 +188,14 @@ impl<const N: usize> AncillaryBuf<N> {
         }
     }
 
-    /// Creates an [`AncillaryBuilder`] for constructing ancillary messages into
-    /// this buffer.
+    /// Create [`AncillaryBuilder`] with this buffer. The buffer will be zeroed
+    /// on creation.
     ///
     /// # Panics
     ///
-    /// This function will panic if the buffer size `N` is too small to hold at
-    /// least one control message header.
-    pub fn builder() -> AncillaryBuilder<N> {
-        AncillaryBuilder::new()
+    /// This function will panic if this buffer is too short.
+    pub fn builder(&mut self) -> AncillaryBuilder<'_, N> {
+        AncillaryBuilder::new(self)
     }
 }
 

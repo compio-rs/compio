@@ -367,7 +367,8 @@ impl Socket {
         let is_ipv4 = transmit.destination.ip().to_canonical().is_ipv4();
         let ecn = transmit.ecn.map_or(0, |x| x as u8);
 
-        let mut builder = AncillaryBuf::<CMSG_LEN>::builder();
+        let mut control = AncillaryBuf::<CMSG_LEN>::new();
+        let mut builder = control.builder();
 
         // ECN
         if is_ipv4 {
@@ -460,8 +461,6 @@ impl Socket {
             #[cfg(not(any(linux_all, windows)))]
             let _ = segment_size;
         }
-
-        let mut control = builder.finish();
 
         let mut buffer = buffer.slice(0..transmit.size);
 
