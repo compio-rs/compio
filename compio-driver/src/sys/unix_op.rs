@@ -81,10 +81,10 @@ impl<S: AsFd> OpenFile<S> {
 }
 
 impl<S: AsFd> IntoInner for OpenFile<S> {
-    type Inner = OwnedFd;
+    type Inner = Option<OwnedFd>;
 
     fn into_inner(self) -> Self::Inner {
-        self.opened_fd.expect("file not opened")
+        self.opened_fd
     }
 }
 
@@ -115,6 +115,12 @@ impl<S: AsFd> TruncateFile<S> {
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
         crate::syscall!(ftruncate64(self.fd.as_fd().as_raw_fd(), size)).map(|v| v as _)
     }
+}
+
+impl<S: AsFd> IntoInner for TruncateFile<S> {
+    type Inner = ();
+
+    fn into_inner(self) -> Self::Inner {}
 }
 
 #[cfg(not(gnulinux))]
@@ -367,6 +373,12 @@ impl<S: AsFd> Unlink<S> {
     }
 }
 
+impl<S: AsFd> IntoInner for Unlink<S> {
+    type Inner = ();
+
+    fn into_inner(self) -> Self::Inner {}
+}
+
 /// Create a directory.
 pub struct CreateDir<S: AsFd> {
     pub(crate) dirfd: S,
@@ -387,6 +399,12 @@ impl<S: AsFd> CreateDir<S> {
             self.mode
         ))? as _)
     }
+}
+
+impl<S: AsFd> IntoInner for CreateDir<S> {
+    type Inner = ();
+
+    fn into_inner(self) -> Self::Inner {}
 }
 
 /// Rename a file or directory.
@@ -418,6 +436,12 @@ impl<S1: AsFd, S2: AsFd> Rename<S1, S2> {
     }
 }
 
+impl<S1: AsFd, S2: AsFd> IntoInner for Rename<S1, S2> {
+    type Inner = ();
+
+    fn into_inner(self) -> Self::Inner {}
+}
+
 /// Create a symlink.
 pub struct Symlink<S: AsFd> {
     pub(crate) source: CString,
@@ -442,6 +466,12 @@ impl<S: AsFd> Symlink<S> {
             self.target.as_ptr()
         ))? as _)
     }
+}
+
+impl<S: AsFd> IntoInner for Symlink<S> {
+    type Inner = ();
+
+    fn into_inner(self) -> Self::Inner {}
 }
 
 /// Create a hard link.
@@ -474,6 +504,12 @@ impl<S1: AsFd, S2: AsFd> HardLink<S1, S2> {
     }
 }
 
+impl<S1: AsFd, S2: AsFd> IntoInner for HardLink<S1, S2> {
+    type Inner = ();
+
+    fn into_inner(self) -> Self::Inner {}
+}
+
 pin_project! {
     /// Create a socket.
     pub struct CreateSocket {
@@ -497,10 +533,10 @@ impl CreateSocket {
 }
 
 impl IntoInner for CreateSocket {
-    type Inner = Socket2;
+    type Inner = Option<Socket2>;
 
     fn into_inner(self) -> Self::Inner {
-        self.opened_fd.expect("socket not created")
+        self.opened_fd
     }
 }
 
@@ -550,9 +586,27 @@ impl<S> Accept<S> {
     }
 
     /// Get the remote address from the inner buffer.
-    pub fn into_addr(mut self) -> (Socket2, SockAddr) {
-        let socket = self.accepted_fd.take().expect("socket not accepted");
-        (socket, unsafe { SockAddr::new(self.buffer, self.addr_len) })
+    fn into_addr(mut self) -> Option<(Socket2, SockAddr)> {
+        let socket = self.accepted_fd.take()?;
+        Some((socket, unsafe { SockAddr::new(self.buffer, self.addr_len) }))
+    }
+}
+
+impl<S> IntoInner for Accept<S> {
+    type Inner = Option<(Socket2, SockAddr)>;
+
+    fn into_inner(self) -> Self::Inner {
+        self.into_addr()
+    }
+}
+
+pub struct ConnectResult(());
+
+impl<S> IntoInner for Connect<S> {
+    type Inner = ConnectResult;
+
+    fn into_inner(self) -> Self::Inner {
+        ConnectResult(())
     }
 }
 
@@ -864,6 +918,12 @@ impl<S> PollOnce<S> {
     }
 }
 
+impl<S> IntoInner for PollOnce<S> {
+    type Inner = ();
+
+    fn into_inner(self) -> Self::Inner {}
+}
+
 /// Splice data between two file descriptors.
 #[cfg(linux_all)]
 pub struct Splice<S1, S2> {
@@ -899,4 +959,11 @@ impl<S1, S2> Splice<S1, S2> {
             flags,
         }
     }
+}
+
+#[cfg(linux_all)]
+impl<S1, S2> IntoInner for Splice<S1, S2> {
+    type Inner = ();
+
+    fn into_inner(self) -> Self::Inner {}
 }

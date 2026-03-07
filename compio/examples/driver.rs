@@ -43,10 +43,13 @@ fn open_file(driver: &mut Proactor) -> OwnedFd {
         0o666,
     );
     let (_, op) = push_and_wait(driver, op);
-    op.into_inner()
+    op.expect("file not opened")
 }
 
-fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> (usize, O) {
+fn push_and_wait<O: OpCode + IntoInner + 'static>(
+    driver: &mut Proactor,
+    op: O,
+) -> (usize, O::Inner) {
     match driver.push(op) {
         PushEntry::Ready(res) => res.unwrap(),
         PushEntry::Pending(mut user_data) => loop {
@@ -67,9 +70,8 @@ fn main() {
     driver.attach(fd.as_raw_fd()).unwrap();
 
     let op = ReadAt::new(fd.clone(), 0, Vec::with_capacity(4096));
-    let (n, op) = push_and_wait(&mut driver, op);
+    let (n, mut buffer) = push_and_wait(&mut driver, op);
 
-    let mut buffer = op.into_inner();
     unsafe {
         buffer.set_len(n);
     }

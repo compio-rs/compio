@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use compio_buf::BufResult;
+use compio_buf::{BufResult, IntoInner};
 use compio_driver::{
     AsRawFd, BufferPool, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
     op::{
@@ -62,7 +62,6 @@ fn open_file(driver: &mut Proactor) -> OwnedFd {
 fn open_file(driver: &mut Proactor) -> OwnedFd {
     use std::ffi::CString;
 
-    use compio_buf::IntoInner;
     use compio_driver::op::{CurrentDir, OpenFile};
 
     let op = OpenFile::new(
@@ -72,13 +71,13 @@ fn open_file(driver: &mut Proactor) -> OwnedFd {
         0o666,
     );
     let (_, op) = push_and_wait(driver, op).unwrap();
-    op.into_inner()
+    op.expect("file not opened")
 }
 
-fn push_and_wait_extra<O: OpCode + 'static>(
+fn push_and_wait_extra<O: OpCode + IntoInner + 'static>(
     driver: &mut Proactor,
     op: O,
-) -> (BufResult<usize, O>, Option<Extra>) {
+) -> (BufResult<usize, O::Inner>, Option<Extra>) {
     match driver.push(op) {
         PushEntry::Ready(res) => (res, None),
         PushEntry::Pending(mut user_data) => loop {
@@ -91,7 +90,10 @@ fn push_and_wait_extra<O: OpCode + 'static>(
     }
 }
 
-fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult<usize, O> {
+fn push_and_wait<O: OpCode + IntoInner + 'static>(
+    driver: &mut Proactor,
+    op: O,
+) -> BufResult<usize, O::Inner> {
     match driver.push(op) {
         PushEntry::Ready(res) => res,
         PushEntry::Pending(mut user_data) => loop {
@@ -104,13 +106,14 @@ fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult
     }
 }
 
-fn push_and_wait_multi<O: OpCode + TakeBuffer<BufferPool = BufferPool> + 'static>(
+fn push_and_wait_multi<O: OpCode + IntoInner + 'static>(
     driver: &mut Proactor,
     op: O,
     pool: &BufferPool,
 ) -> Vec<u8>
 where
-    for<'a> O::Buffer<'a>: Deref<Target = [u8]>,
+    O::Inner: TakeBuffer<BufferPool = BufferPool>,
+    for<'a> <O::Inner as TakeBuffer>::Buffer<'a>: Deref<Target = [u8]>,
 {
     match driver.push(op) {
         PushEntry::Ready(res) => match (res, driver.default_extra()).take_buffer(pool) {

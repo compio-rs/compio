@@ -1,6 +1,6 @@
 use std::{io, panic::resume_unwind, process};
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
+use compio_buf::{BufResult, IoBuf, IoBufMut};
 use compio_driver::{
     ToSharedFd,
     op::{BufResultExt, Read, ReadManaged, ResultTakeBuffer, Write},
@@ -20,7 +20,7 @@ impl AsyncRead for ChildStdout {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
         let fd = self.to_shared_fd();
         let op = Read::new(fd, buffer);
-        let res = compio_runtime::submit(op).await.into_inner();
+        let res = compio_runtime::submit(op).await;
         unsafe { res.map_advanced() }
     }
 }
@@ -48,7 +48,7 @@ impl AsyncRead for ChildStderr {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
         let fd = self.to_shared_fd();
         let op = Read::new(fd, buffer);
-        let res = compio_runtime::submit(op).await.into_inner();
+        let res = compio_runtime::submit(op).await;
         unsafe { res.map_advanced() }
     }
 }
@@ -76,7 +76,7 @@ impl AsyncWrite for ChildStdin {
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
         let fd = self.to_shared_fd();
         let op = Write::new(fd, buffer);
-        compio_runtime::submit(op).await.into_inner()
+        compio_runtime::submit(op).await
     }
 
     async fn flush(&mut self) -> io::Result<()> {

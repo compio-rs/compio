@@ -250,7 +250,7 @@ impl Runtime {
         });
         // It is safe and sound to use `submit` here because the task is spawned
         // immediately.
-        self.spawn_impl(self.submit(op).map(|res| res.1.into_inner()))
+        self.spawn_impl(self.submit(op).map(|res| res.1))
     }
 
     /// Attach a raw file descriptor/handle/socket to the runtime.
@@ -261,11 +261,11 @@ impl Runtime {
         self.driver.borrow_mut().attach(fd)
     }
 
-    fn submit_raw<T: OpCode + 'static>(
+    fn submit_raw<T: OpCode + IntoInner + 'static>(
         &self,
         op: T,
         extra: Option<Extra>,
-    ) -> PushEntry<Key<T>, BufResult<usize, T>> {
+    ) -> PushEntry<Key<T>, BufResult<usize, T::Inner>> {
         let mut this = self.driver.borrow_mut();
         match extra {
             Some(e) => this.push_with_extra(op, e),
@@ -280,11 +280,11 @@ impl Runtime {
     /// Submit an operation to the runtime.
     ///
     /// You only need this when authoring your own [`OpCode`].
-    pub fn submit<T: OpCode + 'static>(&self, op: T) -> Submit<T> {
+    pub fn submit<T: OpCode + IntoInner + 'static>(&self, op: T) -> Submit<T> {
         Submit::new(self.clone(), op)
     }
 
-    pub(crate) fn cancel<T: OpCode>(&self, key: Key<T>) {
+    pub(crate) fn cancel<T: OpCode + IntoInner>(&self, key: Key<T>) {
         self.driver.borrow_mut().cancel(key);
     }
 
@@ -301,11 +301,11 @@ impl Runtime {
         self.timer_runtime.borrow_mut().cancel(key);
     }
 
-    pub(crate) fn poll_task<T: OpCode>(
+    pub(crate) fn poll_task<T: OpCode + IntoInner>(
         &self,
         waker: &Waker,
         key: Key<T>,
-    ) -> PushEntry<Key<T>, BufResult<usize, T>> {
+    ) -> PushEntry<Key<T>, BufResult<usize, T::Inner>> {
         instrument!(compio_log::Level::DEBUG, "poll_task", ?key);
         let mut driver = self.driver.borrow_mut();
         driver.pop(key).map_pending(|k| {
@@ -314,11 +314,12 @@ impl Runtime {
         })
     }
 
-    pub(crate) fn poll_task_with_extra<T: OpCode>(
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn poll_task_with_extra<T: OpCode + IntoInner>(
         &self,
         waker: &Waker,
         key: Key<T>,
-    ) -> PushEntry<Key<T>, (BufResult<usize, T>, Extra)> {
+    ) -> PushEntry<Key<T>, (BufResult<usize, T::Inner>, Extra)> {
         instrument!(compio_log::Level::DEBUG, "poll_task_with_extra", ?key);
         let mut driver = self.driver.borrow_mut();
         driver.pop_with_extra(key).map_pending(|k| {
@@ -597,7 +598,7 @@ pub fn spawn_blocking<T: Send + 'static>(
 /// This method doesn't create runtime and will panic if it's not within a
 /// runtime. It tries to obtain the current runtime by
 /// [`Runtime::with_current`].
-pub fn submit<T: OpCode + 'static>(op: T) -> Submit<T> {
+pub fn submit<T: OpCode + IntoInner + 'static>(op: T) -> Submit<T> {
     Runtime::with_current(|r| r.submit(op))
 }
 

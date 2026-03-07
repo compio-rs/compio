@@ -22,6 +22,7 @@ mod splice_impl {
         task::{Poll, ready},
     };
 
+    use compio_buf::IntoInner;
     use compio_driver::{Decision, OpCode, OpType, WaitArg, syscall};
 
     pub const SPLICE_F_NONBLOCK: u32 = 0;
@@ -80,12 +81,21 @@ mod splice_impl {
             )
         }
     }
+
+    impl<S1, S2> IntoInner for Splice<S1, S2> {
+        type Inner = ();
+
+        fn into_inner(self) -> Self::Inner {}
+    }
 }
 
 #[cfg(not(linux_all))]
 use splice_impl::{SPLICE_F_NONBLOCK, Splice};
 
-fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult<usize, O> {
+fn push_and_wait<O: OpCode + IntoInner + 'static>(
+    driver: &mut Proactor,
+    op: O,
+) -> BufResult<usize, O::Inner> {
     match driver.push(op) {
         PushEntry::Ready(res) => res,
         PushEntry::Pending(mut user_data) => loop {
@@ -130,8 +140,7 @@ fn splice() {
 
     push_and_wait(&mut driver, write_op).unwrap();
     push_and_wait(&mut driver, splice_op).unwrap();
-    let (res, op) = push_and_wait(&mut driver, read_op).unwrap();
-    let mut buf = op.into_inner();
+    let (res, mut buf) = push_and_wait(&mut driver, read_op).unwrap();
     assert_eq!(res, 11);
     unsafe { buf.set_len(res) }
     assert_eq!(&buf[..], b"hello world");

@@ -10,7 +10,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use compio_buf::{BufResult, IntoInner};
+use compio_buf::BufResult;
 use compio_driver::{
     ToSharedFd,
     op::{CurrentDir, PathStat, Stat},
@@ -25,8 +25,8 @@ async fn metadata_impl(
 ) -> io::Result<Metadata> {
     let path = path_string(path)?;
     let op = PathStat::new(dir, path, follow_symlink);
-    let BufResult(res, op) = compio_runtime::submit(op).await;
-    res.map(|_| Metadata::from_stat(op.into_inner()))
+    let BufResult(res, stat) = compio_runtime::submit(op).await;
+    res.map(|_| Metadata::from_stat(stat))
 }
 
 pub async fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {

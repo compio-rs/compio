@@ -20,7 +20,7 @@ use std::{
     time::Duration,
 };
 
-use compio_buf::BufResult;
+use compio_buf::{BufResult, IntoInner};
 use compio_log::instrument;
 
 mod macros;
@@ -147,14 +147,17 @@ impl Proactor {
     ///
     /// The cancellation is not reliable. The underlying operation may continue,
     /// but just don't return from [`Proactor::poll`].
-    pub fn cancel<T: OpCode>(&mut self, key: Key<T>) -> Option<BufResult<usize, T>> {
+    pub fn cancel<T: OpCode + IntoInner>(
+        &mut self,
+        key: Key<T>,
+    ) -> Option<BufResult<usize, T::Inner>> {
         instrument!(compio_log::Level::DEBUG, "cancel", ?key);
         if key.set_cancelled() {
             return None;
         }
         self.cancel.remove(&key);
         if key.is_unique() && key.has_result() {
-            Some(key.take_result())
+            Some(key.take_result().into_inner())
         } else {
             self.driver.cancel(key.erase());
             None
@@ -193,26 +196,26 @@ impl Proactor {
 
     /// Push an operation into the driver, and return the unique key [`Key`],
     /// associated with it.
-    pub fn push<T: sys::OpCode + 'static>(
+    pub fn push<T: sys::OpCode + IntoInner + 'static>(
         &mut self,
         op: T,
-    ) -> PushEntry<Key<T>, BufResult<usize, T>> {
+    ) -> PushEntry<Key<T>, BufResult<usize, T::Inner>> {
         self.push_with_extra(op, self.default_extra())
     }
 
     /// Push an operation into the driver with user-defined [`Extra`], and
     /// return the unique key [`Key`], associated with it.
-    pub fn push_with_extra<T: sys::OpCode + 'static>(
+    pub fn push_with_extra<T: sys::OpCode + IntoInner + 'static>(
         &mut self,
         op: T,
         extra: Extra,
-    ) -> PushEntry<Key<T>, BufResult<usize, T>> {
+    ) -> PushEntry<Key<T>, BufResult<usize, T::Inner>> {
         let key = Key::new(op, extra);
         match self.driver.push(key.clone().erase()) {
             Poll::Pending => PushEntry::Pending(key),
             Poll::Ready(res) => {
                 key.set_result(res);
-                PushEntry::Ready(key.take_result())
+                PushEntry::Ready(key.take_result().into_inner())
             }
         }
     }
@@ -229,12 +232,15 @@ impl Proactor {
     /// # Panics
     ///
     /// This function will panic if the [`Key`] is not unique.
-    pub fn pop<T>(&mut self, key: Key<T>) -> PushEntry<Key<T>, BufResult<usize, T>> {
+    pub fn pop<T: IntoInner>(
+        &mut self,
+        key: Key<T>,
+    ) -> PushEntry<Key<T>, BufResult<usize, T::Inner>> {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
             self.cancel.remove(&key);
             self.driver.cleanup_multishot(&key);
-            PushEntry::Ready(key.take_result())
+            PushEntry::Ready(key.take_result().into_inner())
         } else {
             PushEntry::Pending(key)
         }
@@ -246,16 +252,17 @@ impl Proactor {
     /// # Panics
     ///
     /// This function will panic if the [`Key`] is not unique.
-    pub fn pop_with_extra<T>(
+    #[allow(clippy::type_complexity)]
+    pub fn pop_with_extra<T: IntoInner>(
         &mut self,
         key: Key<T>,
-    ) -> PushEntry<Key<T>, (BufResult<usize, T>, Extra)> {
+    ) -> PushEntry<Key<T>, (BufResult<usize, T::Inner>, Extra)> {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
             self.cancel.remove(&key);
             self.driver.cleanup_multishot(&key);
             let extra = key.swap_extra(self.default_extra());
-            let res = key.take_result();
+            let res = key.take_result().into_inner();
             PushEntry::Ready((res, extra))
         } else {
             PushEntry::Pending(key)
