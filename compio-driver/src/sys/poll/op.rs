@@ -762,6 +762,20 @@ unsafe impl<S: AsFd> OpCode for Accept<S> {
     }
 }
 
+unsafe impl<S: AsFd> OpCode for crate::op::managed::AcceptMulti<S> {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        self.project().op.pre_submit()
+    }
+
+    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+        self.project().op.op_type()
+    }
+
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        self.project().op.operate()
+    }
+}
+
 unsafe impl<S: AsFd> OpCode for Connect<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         syscall!(

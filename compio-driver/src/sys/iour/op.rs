@@ -908,17 +908,17 @@ mod buf_ring {
     use std::{
         io,
         marker::PhantomPinned,
-        os::fd::{AsFd, AsRawFd},
+        os::fd::{AsFd, AsRawFd, FromRawFd},
         pin::Pin,
         ptr,
     };
 
     use io_uring::{opcode, squeue::Flags, types::Fd};
     use pin_project_lite::pin_project;
-    use socket2::{SockAddr, SockAddrStorage, socklen_t};
+    use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
     use super::OpCode;
-    use crate::{BorrowedBuffer, BufferPool, OpEntry, TakeBuffer};
+    use crate::{BorrowedBuffer, BufferPool, OpEntry, TakeBuffer, op::managed::AcceptMulti};
 
     pub(crate) fn take_buffer(
         buffer_pool: &BufferPool,
@@ -1301,6 +1301,25 @@ mod buf_ring {
             buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
             take_buffer(buffer_pool, result, buffer_id)
+        }
+    }
+
+    unsafe impl<S: AsFd> OpCode for AcceptMulti<S> {
+        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+            let this = self.project();
+            opcode::AcceptMulti::new(Fd(this.op.fd.as_fd().as_raw_fd()))
+                .flags(libc::SOCK_CLOEXEC)
+                .build()
+                .into()
+        }
+
+        fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
+            self.project().op.create_entry()
+        }
+
+        unsafe fn drop_result(self: Pin<&mut Self>, fd: usize) {
+            // SAFETY: fd is a valid fd returned from kernel
+            let _ = unsafe { Socket2::from_raw_fd(fd as _) };
         }
     }
 }

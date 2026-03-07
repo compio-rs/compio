@@ -556,6 +556,17 @@ impl<S> Accept<S> {
     }
 }
 
+impl<S> AcceptMulti<S> {
+    /// Get the accepted socket.
+    ///
+    /// # Safety
+    ///
+    /// The `result` must be the result of this operation.
+    pub unsafe fn result(&self, result: io::Result<usize>) -> io::Result<Socket2> {
+        result.map(|fd| unsafe { Socket2::from_raw_fd(fd as _) })
+    }
+}
+
 pin_project! {
     /// Receive data from remote.
     ///

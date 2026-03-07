@@ -494,7 +494,7 @@ pub(crate) mod managed {
     use pin_project_lite::pin_project;
     use socket2::SockAddr;
 
-    use super::{Read, ReadAt, Recv, RecvFrom};
+    use super::{Accept, Read, ReadAt, Recv, RecvFrom};
     use crate::{AsFd, BorrowedBuffer, BufferPool, OwnedBuffer, TakeBuffer};
 
     fn take_buffer(
@@ -662,10 +662,30 @@ pub(crate) mod managed {
     pub type ReadMulti<S> = ReadManaged<S>;
     /// Receive data from remote into multiple managed buffers.
     pub type RecvMulti<S> = RecvManaged<S>;
+
+    pin_project! {
+        /// Accept multiple connections.
+        pub struct AcceptMulti<S> {
+            #[pin]
+            pub(crate) op: Accept<S>,
+        }
+    }
+
+    impl<S> AcceptMulti<S> {
+        /// Create [`AcceptMulti`].
+        pub fn new(fd: S) -> Self {
+            Self {
+                op: super::Accept::new(fd),
+            }
+        }
+    }
 }
 
+pub use managed::AcceptMulti;
 #[cfg(not(io_uring))]
-pub use managed::*;
+pub use managed::{
+    ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvManaged, RecvMulti,
+};
 
 bitflags::bitflags! {
     /// Flags for operations.
