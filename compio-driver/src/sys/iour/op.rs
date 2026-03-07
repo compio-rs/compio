@@ -1,8 +1,9 @@
 use std::{
+    collections::VecDeque,
     ffi::CString,
     io,
     marker::PhantomPinned,
-    os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd},
+    os::fd::{AsFd, AsRawFd, FromRawFd, IntoRawFd, OwnedFd},
     pin::Pin,
 };
 
@@ -554,6 +555,82 @@ unsafe impl<S: AsFd> OpCode for Accept<S> {
             let fd = unsafe { Socket2::from_raw_fd(*fd as _) };
             *self.project().accepted_fd = Some(fd);
         }
+    }
+}
+
+struct AcceptMultishotResult {
+    res: io::Result<Socket2>,
+    extra: crate::Extra,
+}
+
+impl AcceptMultishotResult {
+    pub unsafe fn new(res: io::Result<usize>, extra: crate::Extra) -> Self {
+        Self {
+            res: res.map(|fd| unsafe { Socket2::from_raw_fd(fd as _) }),
+            extra,
+        }
+    }
+
+    pub fn into_result(self) -> BufResult<usize, crate::Extra> {
+        BufResult(self.res.map(|fd| fd.into_raw_fd() as _), self.extra)
+    }
+}
+
+pin_project! {
+    /// Accept multiple connections.
+    pub struct AcceptMulti<S> {
+        #[pin]
+        pub(crate) op: Accept<S>,
+        multishots: VecDeque<AcceptMultishotResult>
+    }
+}
+
+impl<S> AcceptMulti<S> {
+    /// Create [`AcceptMulti`].
+    pub fn new(fd: S) -> Self {
+        Self {
+            op: Accept::new(fd),
+            multishots: VecDeque::new(),
+        }
+    }
+}
+
+unsafe impl<S: AsFd> OpCode for AcceptMulti<S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let this = self.project();
+        opcode::AcceptMulti::new(Fd(this.op.fd.as_fd().as_raw_fd()))
+            .flags(libc::SOCK_CLOEXEC)
+            .build()
+            .into()
+    }
+
+    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
+        self.project().op.create_entry()
+    }
+
+    unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &crate::Extra) {
+        unsafe { self.project().op.set_result(res, extra) }
+    }
+
+    unsafe fn push_multishot(self: Pin<&mut Self>, res: io::Result<usize>, extra: crate::Extra) {
+        self.project()
+            .multishots
+            .push_back(unsafe { AcceptMultishotResult::new(res, extra) });
+    }
+
+    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::sys::Extra>> {
+        self.project()
+            .multishots
+            .pop_front()
+            .map(|res| res.into_result())
+    }
+}
+
+impl<S> IntoInner for AcceptMulti<S> {
+    type Inner = (Socket2, SockAddr);
+
+    fn into_inner(self) -> Self::Inner {
+        self.op.into_inner()
     }
 }
 

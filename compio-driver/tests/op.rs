@@ -1,5 +1,3 @@
-#![feature(gen_blocks)]
-
 use std::{
     io::{self, Write},
     net::{TcpListener, TcpStream},
@@ -15,6 +13,9 @@ use compio_driver::{
     },
 };
 mod pipe2;
+
+#[cfg(unix)]
+use compio_driver::op::AcceptMulti;
 
 #[cfg(unix)]
 #[test]
@@ -341,6 +342,55 @@ fn recv_multi() {
     let stream = stream.try_unwrap().unwrap();
     let op = CloseSocket::new(stream.into());
     push_and_wait(&mut driver, op).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn accept_multi() {
+    let server = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = server.local_addr().unwrap();
+
+    let handle = std::thread::spawn(move || {
+        let mut driver = Proactor::new().unwrap();
+
+        let server = socket2::Socket::from(server);
+        if driver.driver_type().is_polling() {
+            server.set_nonblocking(true).unwrap();
+        }
+        let server = SharedFd::new(server);
+
+        driver.attach(server.as_raw_fd()).unwrap();
+
+        let mut i = 0;
+        loop {
+            let op = AcceptMulti::new(server.clone());
+            for BufResult(res, _) in push_and_wait_multi(&mut driver, op) {
+                let mut client = unsafe {
+                    use std::os::fd::FromRawFd;
+                    socket2::Socket::from_raw_fd(res.unwrap() as _)
+                };
+                client
+                    .write_all(format!("Hello, {}", i).as_bytes())
+                    .unwrap();
+                client.shutdown(std::net::Shutdown::Both).unwrap();
+                i += 1;
+                if i >= 2 {
+                    return;
+                }
+            }
+        }
+    });
+    for i in 0..2 {
+        use std::io::Read;
+
+        let mut client = TcpStream::connect(addr).unwrap();
+        let mut s = String::new();
+        client.read_to_string(&mut s).unwrap();
+        assert_eq!(s, format!("Hello, {}", i));
+    }
+    if let Err(e) = handle.join() {
+        std::panic::resume_unwind(e)
+    }
 }
 
 #[test]

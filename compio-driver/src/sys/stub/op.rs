@@ -125,6 +125,8 @@ impl OpCode for CloseSocket {}
 
 impl<S: AsFd> OpCode for Accept<S> {}
 
+impl<S: AsFd> OpCode for AcceptMulti<S> {}
+
 impl<S: AsFd> OpCode for Connect<S> {}
 
 impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {}

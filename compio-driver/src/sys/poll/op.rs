@@ -768,6 +768,44 @@ unsafe impl<S: AsFd> OpCode for Accept<S> {
     }
 }
 
+pin_project! {
+    /// Accept multiple connections.
+    pub struct AcceptMulti<S> {
+        #[pin]
+        pub(crate) op: Accept<S>,
+    }
+}
+
+impl<S> AcceptMulti<S> {
+    /// Create [`AcceptMulti`].
+    pub fn new(fd: S) -> Self {
+        Self {
+            op: Accept::new(fd),
+        }
+    }
+}
+
+unsafe impl<S: AsFd> OpCode for AcceptMulti<S> {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        self.project().op.pre_submit()
+    }
+
+    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+        self.project().op.op_type()
+    }
+
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        self.project().op.operate()
+    }
+}
+
+impl<S> IntoInner for AcceptMulti<S> {
+    type Inner = (Socket2, SockAddr);
+
+    fn into_inner(self) -> Self::Inner {
+        self.op.into_inner()
+    }
+}
 unsafe impl<S: AsFd> OpCode for Connect<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         syscall!(

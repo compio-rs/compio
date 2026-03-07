@@ -95,7 +95,7 @@ impl Socket {
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         let op = Accept::new(self.to_shared_fd());
         let (_, op) = buf_try!(@try compio_runtime::submit(op).await);
-        let (accept_sock, addr) = op.into_addr();
+        let (accept_sock, addr) = op.into_inner();
         let accept_sock = Self::from_socket2(accept_sock)?;
         Ok((accept_sock, addr))
     }
