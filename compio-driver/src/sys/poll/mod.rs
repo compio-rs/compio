@@ -63,6 +63,13 @@ pub unsafe trait OpCode {
     /// event. If this operation is blocking, the return value should be
     /// [`Poll::Ready`].
     fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>>;
+
+    /// Drop the result when it is cancelled.
+    ///
+    /// # Safety
+    ///
+    /// Users should not call it.
+    unsafe fn drop_result(self: Pin<&mut Self>, _: usize) {}
 }
 
 pub use OpCode as PollOpCode;
@@ -447,6 +454,17 @@ impl Driver {
                 let fd = aiocb.aio_fildes;
                 syscall!(libc::aio_cancel(fd, aiocbp.as_ptr())).ok();
             }
+        }
+    }
+
+    pub fn drop_result<T: OpCode + ?Sized>(
+        &self,
+        op: Pin<&mut T>,
+        res: io::Result<usize>,
+        _: crate::sys::Extra,
+    ) {
+        if let Ok(res) = res {
+            unsafe { op.drop_result(res) }
         }
     }
 

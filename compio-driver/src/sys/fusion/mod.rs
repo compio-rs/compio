@@ -4,6 +4,7 @@ pub(crate) mod op;
 pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::{
     io,
+    pin::Pin,
     task::{Poll, Waker},
     time::Duration,
 };
@@ -101,6 +102,18 @@ impl Driver {
         match &mut self.fuse {
             FuseDriver::Poll(driver) => driver.cancel(key),
             FuseDriver::IoUring(driver) => driver.cancel(key),
+        }
+    }
+
+    pub fn drop_result<T: OpCode + ?Sized>(
+        &self,
+        op: Pin<&mut T>,
+        res: io::Result<usize>,
+        extra: crate::sys::Extra,
+    ) {
+        match &self.fuse {
+            FuseDriver::Poll(driver) => driver.drop_result(op, res, extra),
+            FuseDriver::IoUring(driver) => driver.drop_result(op, res, extra),
         }
     }
 

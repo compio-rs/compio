@@ -285,7 +285,7 @@ impl Runtime {
     }
 
     pub(crate) fn cancel<T: OpCode>(&self, key: Key<T>) {
-        self.driver.borrow_mut().cancel(key);
+        self.driver.borrow_mut().cancel_ignore(key);
     }
 
     pub(crate) fn register_cancel<T: OpCode>(&self, key: &Key<T>) -> Cancel {

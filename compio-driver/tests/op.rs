@@ -63,7 +63,6 @@ fn open_file(driver: &mut Proactor) -> OwnedFd {
 fn open_file(driver: &mut Proactor) -> OwnedFd {
     use std::ffi::CString;
 
-    use compio_buf::IntoInner;
     use compio_driver::op::{CurrentDir, OpenFile};
 
     let op = OpenFile::new(
@@ -72,8 +71,8 @@ fn open_file(driver: &mut Proactor) -> OwnedFd {
         libc::O_CLOEXEC | libc::O_RDONLY,
         0o666,
     );
-    let (_, op) = push_and_wait(driver, op).unwrap();
-    op.into_inner()
+    let BufResult(res, op) = push_and_wait(driver, op);
+    unsafe { op.result(res).unwrap() }
 }
 
 fn push_and_wait_extra<O: OpCode + 'static>(
@@ -180,7 +179,7 @@ fn register_multiple() {
 
     // Cancel the entries to drop the ops, and decrease the ref count of fd.
     for key in keys {
-        driver.cancel(key);
+        driver.cancel_ignore(key);
     }
 
     // Don't async close because the reading operations may have not completed.

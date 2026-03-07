@@ -48,7 +48,10 @@ pub use sys::{Extra, *};
 mod cancel;
 pub use cancel::*;
 
-use crate::{key::ErasedKey, op::OpCodeFlag};
+use crate::{
+    key::{ErasedKey, RefExt},
+    op::OpCodeFlag,
+};
 
 mod sys_slice;
 
@@ -147,17 +150,47 @@ impl Proactor {
     ///
     /// The cancellation is not reliable. The underlying operation may continue,
     /// but just don't return from [`Proactor::poll`].
+    #[must_use]
     pub fn cancel<T: OpCode>(&mut self, key: Key<T>) -> Option<BufResult<usize, T>> {
-        instrument!(compio_log::Level::DEBUG, "cancel", ?key);
+        self.cancel_with_extra(key).map(|(res, _)| res)
+    }
+
+    /// Cancel an operation with the pushed [`Key`].
+    ///
+    /// Returns the result if the key is unique and the operation is completed.
+    ///
+    /// The cancellation is not reliable. The underlying operation may continue,
+    /// but just don't return from [`Proactor::poll`].
+    #[must_use]
+    pub fn cancel_with_extra<T: OpCode>(
+        &mut self,
+        key: Key<T>,
+    ) -> Option<(BufResult<usize, T>, Extra)> {
+        instrument!(compio_log::Level::DEBUG, "cancel_with_extra", ?key);
         if key.set_cancelled() {
             return None;
         }
         self.cancel.remove(&key);
         if key.is_unique() && key.has_result() {
-            Some(key.take_result())
+            let extra = key.swap_extra(self.default_extra());
+            Some((key.take_result(), extra))
         } else {
             self.driver.cancel(key.erase());
             None
+        }
+    }
+
+    /// Cancel an operation with the pushed [`Key`], and ignore the result.
+    pub fn cancel_ignore<T: OpCode>(&mut self, key: Key<T>) {
+        instrument!(compio_log::Level::DEBUG, "cancel_ignore", ?key);
+        while let Some(BufResult(res, extra)) = self.pop_multishot(&key) {
+            let mut op = key.borrow();
+            let op = op.pinned_op();
+            self.driver.drop_result(op, res, extra);
+        }
+        if let Some((BufResult(res, op), extra)) = self.cancel_with_extra(key) {
+            let op = std::pin::pin!(op);
+            self.driver.drop_result(op, res, extra);
         }
     }
 

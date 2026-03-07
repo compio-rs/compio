@@ -97,10 +97,9 @@ unsafe impl<S: AsFd> OpCode for OpenFile<S> {
         self.call()
     }
 
-    unsafe fn set_result(self: Pin<&mut Self>, fd: usize) {
+    unsafe fn drop_result(self: Pin<&mut Self>, fd: usize) {
         // SAFETY: fd is a valid fd returned from kernel
-        let fd = unsafe { OwnedFd::from_raw_fd(fd as _) };
-        *self.project().opened_fd = Some(fd);
+        let _ = unsafe { OwnedFd::from_raw_fd(fd as _) };
     }
 }
 
@@ -500,10 +499,9 @@ unsafe impl OpCode for CreateSocket {
         ))? as _)
     }
 
-    unsafe fn set_result(self: Pin<&mut Self>, fd: usize) {
+    unsafe fn drop_result(self: Pin<&mut Self>, fd: usize) {
         // SAFETY: fd is a valid fd returned from kernel
-        let fd = unsafe { Socket2::from_raw_fd(fd as _) };
-        *self.project().opened_fd = Some(fd);
+        let _ = unsafe { Socket2::from_raw_fd(fd as _) };
     }
 }
 
@@ -544,10 +542,9 @@ unsafe impl<S: AsFd> OpCode for Accept<S> {
         .into()
     }
 
-    unsafe fn set_result(self: Pin<&mut Self>, fd: usize) {
+    unsafe fn drop_result(self: Pin<&mut Self>, fd: usize) {
         // SAFETY: fd is a valid fd returned from kernel
-        let fd = unsafe { Socket2::from_raw_fd(fd as _) };
-        *self.project().accepted_fd = Some(fd);
+        let _ = unsafe { Socket2::from_raw_fd(fd as _) };
     }
 }
 
