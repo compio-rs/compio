@@ -1,13 +1,14 @@
+#![feature(gen_blocks)]
+
 use std::{
     io::{self, Write},
     net::{TcpListener, TcpStream},
-    ops::Deref,
     time::Duration,
 };
 
 use compio_buf::BufResult;
 use compio_driver::{
-    AsRawFd, BufferPool, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
+    AsRawFd, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
     op::{
         Asyncify, CloseFile, CloseSocket, ReadAt, ReadManagedAt, ReadMultiAt, RecvMulti,
         ResultTakeBuffer,
@@ -104,42 +105,46 @@ fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult
     }
 }
 
-fn push_and_wait_multi<O: OpCode + TakeBuffer<BufferPool = BufferPool> + 'static>(
+fn push_and_wait_multi<O: OpCode + 'static>(
     driver: &mut Proactor,
     op: O,
-    pool: &BufferPool,
-) -> Vec<u8>
-where
-    for<'a> O::Buffer<'a>: Deref<Target = [u8]>,
-{
-    match driver.push(op) {
-        PushEntry::Ready(res) => match (res, driver.default_extra()).take_buffer(pool) {
-            Ok(slice) => slice.to_vec(),
-            Err(_) => vec![],
-        },
-        PushEntry::Pending(mut user_data) => {
-            let mut buffer = vec![];
-            loop {
-                driver.poll(None).unwrap();
-                while let Some(res) = driver.pop_multishot(&user_data) {
-                    match res.take_buffer(pool) {
-                        Ok(slice) => buffer.extend_from_slice(&slice),
-                        Err(_) => break,
-                    }
+) -> impl Iterator<Item = BufResult<usize, Extra>> + '_ {
+    let mut op = Some(op);
+    let mut user_data = None;
+    let mut finished = false;
+
+    std::iter::from_fn(move || {
+        if finished {
+            return None;
+        }
+
+        if user_data.is_none() {
+            match driver.push(op.take().expect("operation should be pushed once")) {
+                PushEntry::Ready(BufResult(res, _)) => {
+                    finished = true;
+                    return Some(BufResult(res, driver.default_extra()));
                 }
-                match driver.pop_with_extra(user_data) {
-                    PushEntry::Pending(k) => user_data = k,
-                    PushEntry::Ready(res) => {
-                        if let Ok(slice) = res.take_buffer(pool) {
-                            buffer.extend_from_slice(&slice)
-                        }
-                        break;
-                    }
+                PushEntry::Pending(k) => user_data = Some(k),
+            }
+        }
+
+        loop {
+            if let Some(res) = user_data.as_ref().and_then(|key| driver.pop_multishot(key)) {
+                return Some(res);
+            }
+
+            let key = user_data.take().expect("pending key should exist");
+            match driver.pop_with_extra(key) {
+                PushEntry::Pending(k) => user_data = Some(k),
+                PushEntry::Ready((BufResult(res, _), extra)) => {
+                    finished = true;
+                    return Some(BufResult(res, extra));
                 }
             }
-            buffer
+
+            driver.poll(None).unwrap();
         }
-    }
+    })
 }
 
 #[test]
@@ -275,7 +280,13 @@ fn read_multi() {
     let pool = driver.create_buffer_pool(4, 1024).unwrap();
 
     let op = ReadMultiAt::new(fd.clone(), 0, &pool, 1024).unwrap();
-    let buffer = push_and_wait_multi(&mut driver, op, &pool);
+    let buffer = push_and_wait_multi(&mut driver, op)
+        .map(|res| res.take_buffer(&pool).map(|buf| buf.to_vec()))
+        .collect::<io::Result<Vec<_>>>()
+        .unwrap()
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
 
     println!("{}", std::str::from_utf8(&buffer).unwrap());
 
@@ -310,7 +321,16 @@ fn recv_multi() {
     let mut buffer = vec![];
     loop {
         let op = RecvMulti::new(stream.clone(), &pool, 0, 0).unwrap();
-        let slice = push_and_wait_multi(&mut driver, op, &pool);
+        let slice = push_and_wait_multi(&mut driver, op)
+            .map(|res| {
+                res.take_buffer(&pool)
+                    .map(|buf| buf.to_vec())
+                    .unwrap_or_default()
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
         if slice.is_empty() {
             break;
         }
