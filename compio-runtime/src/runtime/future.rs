@@ -42,17 +42,31 @@ impl ContextExt for Context<'_> {
         Some(extra)
     }
 }
+pin_project_lite::pin_project! {
+    /// Returned [`Future`] for [`Runtime::submit`].
+    ///
+    /// When this is dropped and operation haven't finished yet, it will try to
+    /// cancel the operation.
+    ///
+    /// By default, this implements `Future<Output = BufResult<usize, T>>`. If
+    /// [`Extra`] is needed, call [`.with_extra()`] to get a `Submit<T, Extra>`
+    /// which implements `Future<Output = (BufResult<usize, T>, Extra)>`.
+    ///
+    /// [`.with_extra()`]: Submit::with_extra
+    pub struct Submit<T: OpCode, E = ()> {
+        runtime: Runtime,
+        state: Option<State<T, E>>,
+    }
 
-/// Return type for `Runtime::submit`
-///
-/// By default, this implements `Future<Output = BufResult<usize, T>>`. If
-/// [`Extra`] is needed, call [`.with_extra()`] to get a `Submit<T, Extra>`
-/// which implements `Future<Output = (BufResult<usize, T>, Extra)>`.
-///
-/// [`.with_extra()`]: Submit::with_extra
-pub struct Submit<T: OpCode, E = ()> {
-    runtime: Runtime,
-    state: Option<State<T, E>>,
+    impl<T: OpCode, E> PinnedDrop for Submit<T, E> {
+        fn drop(this: Pin<&mut Self>) {
+            let this = this.project();
+            if let Some(State::Submitted { key, .. }) = this.state.take() {
+                this.runtime.cancel(key);
+            }
+        }
+    }
+
 }
 
 enum State<T: OpCode, E> {
@@ -107,12 +121,13 @@ impl<T: OpCode + 'static> Future for Submit<T, ()> {
     type Output = BufResult<usize, T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+        let this = self.project();
+
         loop {
             match this.state.take().expect("Cannot poll after ready") {
                 State::Submitted { key, .. } => match this.runtime.poll_task(cx.waker(), key) {
                     PushEntry::Pending(key) => {
-                        this.state = Some(State::submitted(key));
+                        *this.state = Some(State::submitted(key));
                         return Poll::Pending;
                     }
                     PushEntry::Ready(res) => return Poll::Ready(res),
@@ -127,7 +142,7 @@ impl<T: OpCode + 'static> Future for Submit<T, ()> {
                                 cancel.register(&key);
                             };
 
-                            this.state = Some(State::submitted(key))
+                            *this.state = Some(State::submitted(key))
                         }
                         PushEntry::Ready(res) => {
                             return Poll::Ready(res);
@@ -143,13 +158,14 @@ impl<T: OpCode + 'static> Future for Submit<T, Extra> {
     type Output = (BufResult<usize, T>, Extra);
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
+        let this = self.project();
+
         loop {
             match this.state.take().expect("Cannot poll after ready") {
                 State::Submitted { key, .. } => {
                     match this.runtime.poll_task_with_extra(cx.waker(), key) {
                         PushEntry::Pending(key) => {
-                            this.state = Some(State::submitted(key));
+                            *this.state = Some(State::submitted(key));
                             return Poll::Pending;
                         }
                         PushEntry::Ready(res) => return Poll::Ready(res),
@@ -163,7 +179,7 @@ impl<T: OpCode + 'static> Future for Submit<T, Extra> {
                                 cancel.register(&key);
                             }
 
-                            this.state = Some(State::submitted(key))
+                            *this.state = Some(State::submitted(key))
                         }
                         PushEntry::Ready(res) => {
                             return Poll::Ready((res, this.runtime.default_extra()));
@@ -181,13 +197,5 @@ where
 {
     fn is_terminated(&self) -> bool {
         self.state.is_none()
-    }
-}
-
-impl<T: OpCode, E> Drop for Submit<T, E> {
-    fn drop(&mut self) {
-        if let Some(State::Submitted { key, .. }) = self.state.take() {
-            self.runtime.cancel(key);
-        }
     }
 }
