@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0](https://github.com/compio-rs/compio/compare/compio-io-v0.9.0...compio-io-v0.10.0) - 2026-03-07
+
+### Added
+
+- *(ws)* futures compat ([#713](https://github.com/compio-rs/compio/pull/713))
+- *(io)* add duplex forwarding for BufReader/BufWriter ([#695](https://github.com/compio-rs/compio/pull/695))
+
+### Changed
+
+- *(io,tls,ws)* [**breaking**] use pin-project-lite ([#720](https://github.com/compio-rs/compio/pull/720))
+- *(io,quic)* move quic Ancillary to io ([#734](https://github.com/compio-rs/compio/pull/734))
+- *(io,net)* move cmsg to io ancillary ([#730](https://github.com/compio-rs/compio/pull/730))
+
+### Fixed
+
+- unused_features ([#739](https://github.com/compio-rs/compio/pull/739))
+- *(tls,io)* multiple native-tls issues ([#698](https://github.com/compio-rs/compio/pull/698))
+- *(io)* flush manually in poll_close ([#681](https://github.com/compio-rs/compio/pull/681))
+- *(driver)* the fusion driver with polling variant ([#670](https://github.com/compio-rs/compio/pull/670))
+
+### Other
+
+- remove "authors" field in metadata ([#711](https://github.com/compio-rs/compio/pull/711))
+
 ## [0.9.0](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added
