@@ -7,7 +7,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use compio_buf::BufResult;
+use compio_buf::{BufResult, IntoInner};
 use compio_driver::{Extra, Key, OpCode, PushEntry};
 use futures_util::future::FusedFuture;
 
@@ -50,7 +50,7 @@ impl ContextExt for Context<'_> {
 /// which implements `Future<Output = (BufResult<usize, T>, Extra)>`.
 ///
 /// [`.with_extra()`]: Submit::with_extra
-pub struct Submit<T: OpCode, E = ()> {
+pub struct Submit<T: OpCode + IntoInner, E = ()> {
     runtime: Runtime,
     state: Option<State<T, E>>,
 }
@@ -69,7 +69,7 @@ impl<T: OpCode, E> State<T, E> {
     }
 }
 
-impl<T: OpCode> Submit<T, ()> {
+impl<T: OpCode + IntoInner> Submit<T, ()> {
     pub(crate) fn new(runtime: Runtime, op: T) -> Self {
         Submit {
             runtime,
@@ -103,8 +103,8 @@ impl<T: OpCode> Submit<T, ()> {
     }
 }
 
-impl<T: OpCode + 'static> Future for Submit<T, ()> {
-    type Output = BufResult<usize, T>;
+impl<T: OpCode + IntoInner + 'static> Future for Submit<T, ()> {
+    type Output = BufResult<usize, T::Inner>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -139,8 +139,8 @@ impl<T: OpCode + 'static> Future for Submit<T, ()> {
     }
 }
 
-impl<T: OpCode + 'static> Future for Submit<T, Extra> {
-    type Output = (BufResult<usize, T>, Extra);
+impl<T: OpCode + IntoInner + 'static> Future for Submit<T, Extra> {
+    type Output = (BufResult<usize, T::Inner>, Extra);
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -175,7 +175,7 @@ impl<T: OpCode + 'static> Future for Submit<T, Extra> {
     }
 }
 
-impl<T: OpCode, E> FusedFuture for Submit<T, E>
+impl<T: OpCode + IntoInner, E> FusedFuture for Submit<T, E>
 where
     Submit<T, E>: Future,
 {
@@ -184,7 +184,7 @@ where
     }
 }
 
-impl<T: OpCode, E> Drop for Submit<T, E> {
+impl<T: OpCode + IntoInner, E> Drop for Submit<T, E> {
     fn drop(&mut self) {
         if let Some(State::Submitted { key, .. }) = self.state.take() {
             self.runtime.cancel(key);

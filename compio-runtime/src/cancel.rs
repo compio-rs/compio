@@ -9,6 +9,7 @@ use std::{
     task::{Context, Poll},
 };
 
+use compio_buf::IntoInner;
 use compio_driver::{Cancel, Key, OpCode};
 use futures_util::{FutureExt, ready};
 use synchrony::unsync::event::{Event, EventListener};
@@ -95,7 +96,7 @@ impl CancelToken {
     ///
     /// Multiple registrations of the same key does nothing, and the key will
     /// only be cancelled once.
-    pub fn register<T: OpCode>(&self, key: &Key<T>) {
+    pub fn register<T: OpCode + IntoInner>(&self, key: &Key<T>) {
         if self.0.is_cancelled.get() {
             self.0.runtime.cancel(key.clone());
         } else {

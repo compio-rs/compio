@@ -136,7 +136,7 @@ impl File {
     pub async fn metadata(&self) -> io::Result<Metadata> {
         let op = FileStat::new(self.to_shared_fd());
         let BufResult(res, op) = compio_runtime::submit(op).await;
-        res.map(|_| Metadata::from_stat(op.into_inner()))
+        res.map(|_| Metadata::from_stat(op))
     }
 
     /// Changes the permissions on the underlying file.
@@ -194,7 +194,7 @@ impl AsyncReadAt for File {
     async fn read_at<T: IoBufMut>(&self, buffer: T, pos: u64) -> BufResult<usize, T> {
         let fd = self.inner.to_shared_fd();
         let op = ReadAt::new(fd, pos, buffer);
-        let res = compio_runtime::submit(op).await.into_inner();
+        let res = compio_runtime::submit(op).await;
         unsafe { res.map_advanced() }
     }
 
@@ -208,7 +208,7 @@ impl AsyncReadAt for File {
 
         let fd = self.inner.to_shared_fd();
         let op = ReadVectoredAt::new(fd, pos, buffer);
-        let res = compio_runtime::submit(op).await.into_inner();
+        let res = compio_runtime::submit(op).await;
         unsafe { res.map_vec_advanced() }
     }
 }
@@ -254,7 +254,7 @@ impl AsyncWriteAt for &File {
     async fn write_at<T: IoBuf>(&mut self, buffer: T, pos: u64) -> BufResult<usize, T> {
         let fd = self.inner.to_shared_fd();
         let op = WriteAt::new(fd, pos, buffer);
-        compio_runtime::submit(op).await.into_inner()
+        compio_runtime::submit(op).await
     }
 
     #[cfg(all(unix, not(solarish)))]
@@ -265,7 +265,7 @@ impl AsyncWriteAt for &File {
     ) -> BufResult<usize, T> {
         let fd = self.inner.to_shared_fd();
         let op = WriteVectoredAt::new(fd, pos, buffer);
-        compio_runtime::submit(op).await.into_inner()
+        compio_runtime::submit(op).await
     }
 }
 

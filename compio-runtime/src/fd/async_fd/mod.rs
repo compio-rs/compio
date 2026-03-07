@@ -96,7 +96,7 @@ impl<T: AsFd + 'static> AsyncRead for &AsyncFd<T> {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         let fd = self.inner.to_shared_fd();
         let op = Read::new(fd, buf);
-        let res = crate::submit(op).await.into_inner();
+        let res = crate::submit(op).await;
         unsafe { res.map_advanced() }
     }
 
@@ -106,7 +106,7 @@ impl<T: AsFd + 'static> AsyncRead for &AsyncFd<T> {
 
         let fd = self.inner.to_shared_fd();
         let op = ReadVectored::new(fd, buf);
-        let res = crate::submit(op).await.into_inner();
+        let res = crate::submit(op).await;
         unsafe { res.map_vec_advanced() }
     }
 }
@@ -138,14 +138,14 @@ impl<T: AsFd + 'static> AsyncWrite for &AsyncFd<T> {
     async fn write<B: IoBuf>(&mut self, buf: B) -> BufResult<usize, B> {
         let fd = self.inner.to_shared_fd();
         let op = Write::new(fd, buf);
-        crate::submit(op).await.into_inner()
+        crate::submit(op).await
     }
 
     #[cfg(unix)]
     async fn write_vectored<V: IoVectoredBuf>(&mut self, buf: V) -> BufResult<usize, V> {
         let fd = self.inner.to_shared_fd();
         let op = WriteVectored::new(fd, buf);
-        crate::submit(op).await.into_inner()
+        crate::submit(op).await
     }
 
     async fn flush(&mut self) -> io::Result<()> {

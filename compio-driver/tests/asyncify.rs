@@ -1,4 +1,4 @@
-use compio_buf::BufResult;
+use compio_buf::{BufResult, IntoInner};
 use compio_driver::{Key, OpCode, Proactor, PushEntry, op::Asyncify};
 
 fn take_key<T: OpCode, R>(res: PushEntry<Key<T>, R>) -> Key<T> {
@@ -10,7 +10,10 @@ fn take_key<T: OpCode, R>(res: PushEntry<Key<T>, R>) -> Key<T> {
     }
 }
 
-fn wait_for<T: OpCode>(driver: &mut Proactor, mut key: Key<T>) -> BufResult<usize, T> {
+fn wait_for<T: OpCode + IntoInner>(
+    driver: &mut Proactor,
+    mut key: Key<T>,
+) -> BufResult<usize, T::Inner> {
     loop {
         driver.poll(None).unwrap();
         match driver.pop(key) {

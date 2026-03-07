@@ -301,6 +301,12 @@ impl CloseFile {
     }
 }
 
+impl IntoInner for CloseFile {
+    type Inner = ();
+
+    fn into_inner(self) -> Self::Inner {}
+}
+
 pin_project! {
     /// Read a file at specified position into specified buffer.
     #[derive(Debug)]
@@ -446,6 +452,12 @@ impl<S> Sync<S> {
     }
 }
 
+impl<S> IntoInner for Sync<S> {
+    type Inner = ();
+
+    fn into_inner(self) -> Self::Inner {}
+}
+
 /// Shutdown a socket.
 pub struct ShutdownSocket<S> {
     pub(crate) fd: S,
@@ -457,6 +469,12 @@ impl<S> ShutdownSocket<S> {
     pub fn new(fd: S, how: Shutdown) -> Self {
         Self { fd, how }
     }
+}
+
+impl<S> IntoInner for ShutdownSocket<S> {
+    type Inner = ();
+
+    fn into_inner(self) -> Self::Inner {}
 }
 
 /// Close socket fd.
@@ -471,6 +489,12 @@ impl CloseSocket {
             fd: ManuallyDrop::new(fd),
         }
     }
+}
+
+impl IntoInner for CloseSocket {
+    type Inner = ();
+
+    fn into_inner(self) -> Self::Inner {}
 }
 
 /// Connect to a remote address.
@@ -492,24 +516,35 @@ pub(crate) mod managed {
 
     use compio_buf::IntoInner;
     use pin_project_lite::pin_project;
-    use socket2::SockAddr;
+    use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
     use super::{Read, ReadAt, Recv, RecvFrom};
     use crate::{AsFd, BorrowedBuffer, BufferPool, OwnedBuffer, TakeBuffer};
 
-    fn take_buffer(
-        slice: OwnedBuffer,
-        buffer_pool: &BufferPool,
-        result: io::Result<usize>,
-    ) -> io::Result<BorrowedBuffer<'_>> {
-        let result = result?;
-        #[cfg(fusion)]
-        let buffer_pool = buffer_pool.as_poll();
-        // SAFETY: result is valid
-        let res = unsafe { buffer_pool.create_proxy(slice, result) };
-        #[cfg(fusion)]
-        let res = BorrowedBuffer::new_poll(res);
-        Ok(res)
+    /// The result of [`ReadManaged`], [`ReadManagedAt`], and [`RecvManaged`].
+    pub struct ReadManagedResult {
+        inner: OwnedBuffer,
+    }
+
+    impl TakeBuffer for ReadManagedResult {
+        type Buffer<'a> = BorrowedBuffer<'a>;
+        type BufferPool = BufferPool;
+
+        fn take_buffer(
+            self,
+            buffer_pool: &BufferPool,
+            result: io::Result<usize>,
+            _: u16,
+        ) -> io::Result<BorrowedBuffer<'_>> {
+            let result = result?;
+            #[cfg(fusion)]
+            let buffer_pool = buffer_pool.as_poll();
+            // SAFETY: result is valid
+            let res = unsafe { buffer_pool.create_proxy(self.inner, result) };
+            #[cfg(fusion)]
+            let res = BorrowedBuffer::new_poll(res);
+            Ok(res)
+        }
     }
 
     pin_project! {
@@ -531,17 +566,13 @@ pub(crate) mod managed {
         }
     }
 
-    impl<S> TakeBuffer for ReadManagedAt<S> {
-        type Buffer<'a> = BorrowedBuffer<'a>;
-        type BufferPool = BufferPool;
+    impl<S> IntoInner for ReadManagedAt<S> {
+        type Inner = ReadManagedResult;
 
-        fn take_buffer(
-            self,
-            buffer_pool: &BufferPool,
-            result: io::Result<usize>,
-            _: u16,
-        ) -> io::Result<BorrowedBuffer<'_>> {
-            take_buffer(self.op.into_inner(), buffer_pool, result)
+        fn into_inner(self) -> Self::Inner {
+            ReadManagedResult {
+                inner: self.op.into_inner(),
+            }
         }
     }
 
@@ -564,17 +595,13 @@ pub(crate) mod managed {
         }
     }
 
-    impl<S> TakeBuffer for ReadManaged<S> {
-        type Buffer<'a> = BorrowedBuffer<'a>;
-        type BufferPool = BufferPool;
+    impl<S> IntoInner for ReadManaged<S> {
+        type Inner = ReadManagedResult;
 
-        fn take_buffer(
-            self,
-            buffer_pool: &Self::BufferPool,
-            result: io::Result<usize>,
-            _: u16,
-        ) -> io::Result<Self::Buffer<'_>> {
-            take_buffer(self.op.into_inner(), buffer_pool, result)
+        fn into_inner(self) -> Self::Inner {
+            ReadManagedResult {
+                inner: self.op.into_inner(),
+            }
         }
     }
 
@@ -600,17 +627,13 @@ pub(crate) mod managed {
         }
     }
 
-    impl<S> TakeBuffer for RecvManaged<S> {
-        type Buffer<'a> = BorrowedBuffer<'a>;
-        type BufferPool = BufferPool;
+    impl<S> IntoInner for RecvManaged<S> {
+        type Inner = ReadManagedResult;
 
-        fn take_buffer(
-            self,
-            buffer_pool: &Self::BufferPool,
-            result: io::Result<usize>,
-            _: u16,
-        ) -> io::Result<Self::Buffer<'_>> {
-            take_buffer(self.op.into_inner(), buffer_pool, result)
+        fn into_inner(self) -> Self::Inner {
+            ReadManagedResult {
+                inner: self.op.into_inner(),
+            }
         }
     }
 
@@ -633,7 +656,27 @@ pub(crate) mod managed {
         }
     }
 
-    impl<S: AsFd> TakeBuffer for RecvFromManaged<S> {
+    impl<S: AsFd> IntoInner for RecvFromManaged<S> {
+        type Inner = RecvFromManagedResult;
+
+        fn into_inner(self) -> Self::Inner {
+            let (inner, addr_buffer, addr_size) = self.op.into_inner();
+            RecvFromManagedResult {
+                inner,
+                addr_buffer,
+                addr_size,
+            }
+        }
+    }
+
+    /// The result of [`RecvFromManaged`].
+    pub struct RecvFromManagedResult {
+        inner: OwnedBuffer,
+        addr_buffer: SockAddrStorage,
+        addr_size: socklen_t,
+    }
+
+    impl TakeBuffer for RecvFromManagedResult {
         type Buffer<'a> = (BorrowedBuffer<'a>, Option<SockAddr>);
         type BufferPool = BufferPool;
 
@@ -646,10 +689,10 @@ pub(crate) mod managed {
             let result = result?;
             #[cfg(fusion)]
             let buffer_pool = buffer_pool.as_poll();
-            let (slice, addr_buffer, addr_size) = self.op.into_inner();
-            let addr = (addr_size > 0).then(|| unsafe { SockAddr::new(addr_buffer, addr_size) });
+            let addr = (self.addr_size > 0)
+                .then(|| unsafe { SockAddr::new(self.addr_buffer, self.addr_size) });
             // SAFETY: result is valid
-            let res = unsafe { buffer_pool.create_proxy(slice, result) };
+            let res = unsafe { buffer_pool.create_proxy(self.inner, result) };
             #[cfg(fusion)]
             let res = BorrowedBuffer::new_poll(res);
             Ok((res, addr))
