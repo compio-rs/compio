@@ -308,8 +308,8 @@ impl Runtime {
     ) -> PushEntry<Key<T>, BufResult<usize, T>> {
         instrument!(compio_log::Level::DEBUG, "poll_task", ?key);
         let mut driver = self.driver.borrow_mut();
-        driver.pop(key).map_pending(|mut k| {
-            driver.update_waker(&mut k, waker);
+        driver.pop(key).map_pending(|k| {
+            driver.update_waker(&k, waker);
             k
         })
     }
@@ -321,8 +321,8 @@ impl Runtime {
     ) -> PushEntry<Key<T>, (BufResult<usize, T>, Extra)> {
         instrument!(compio_log::Level::DEBUG, "poll_task_with_extra", ?key);
         let mut driver = self.driver.borrow_mut();
-        driver.pop_with_extra(key).map_pending(|mut k| {
-            driver.update_waker(&mut k, waker);
+        driver.pop_with_extra(key).map_pending(|k| {
+            driver.update_waker(&k, waker);
             k
         })
     }
@@ -336,7 +336,7 @@ impl Runtime {
             Poll::Ready(())
         } else {
             debug!("pending");
-            timer_runtime.update_waker(key, cx.waker().clone());
+            timer_runtime.update_waker(key, cx.waker());
             Poll::Pending
         }
     }
