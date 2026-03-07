@@ -1,6 +1,6 @@
 use std::{io, os::fd::AsFd, path::Path};
 
-use compio_buf::{IntoInner, buf_try};
+use compio_buf::buf_try;
 use compio_driver::{
     ToSharedFd,
     op::{CurrentDir, OpenFile},
@@ -90,8 +90,8 @@ impl OpenOptions {
             | (self.custom_flags & !libc::O_ACCMODE);
         let p = path_string(p)?;
         let op = OpenFile::new(dir, p, flags, self.mode);
-        let (_, op) = buf_try!(@try compio_runtime::submit(op).await);
-        File::from_std(op.into_inner().into())
+        let (res, op) = buf_try!(@try compio_runtime::submit(op).await);
+        File::from_std(unsafe { op.result(Ok(res)) }?.into())
     }
 
     pub async fn open(&self, p: impl AsRef<Path>) -> io::Result<File> {

@@ -1,6 +1,6 @@
 #![cfg(io_uring)]
 
-use compio_buf::{BufResult, IntoInner};
+use compio_buf::BufResult;
 use compio_driver::{
     op::{CurrentDir, ReadAt},
     *,
@@ -36,8 +36,8 @@ fn open_file(driver: &mut Proactor, personality: u16) -> OwnedFd {
         libc::O_CLOEXEC | libc::O_RDONLY,
         0o666,
     );
-    let (_, op) = push_and_wait(driver, op, personality).unwrap();
-    op.into_inner()
+    let BufResult(res, op) = push_and_wait(driver, op, personality);
+    unsafe { op.result(res).unwrap() }
 }
 
 #[test]

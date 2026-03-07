@@ -4,7 +4,7 @@ use std::{
     ffi::CString,
     io,
     marker::PhantomPinned,
-    os::fd::{AsRawFd, FromRawFd, OwnedFd},
+    os::fd::{AsRawFd, FromRawFd, IntoRawFd},
     pin::Pin,
     task::Poll,
 };
@@ -93,9 +93,7 @@ unsafe impl<S: AsFd> OpCode for OpenFile<S> {
     }
 
     fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        let fd = self.as_mut().call()?;
-        *self.project().opened_fd = Some(unsafe { OwnedFd::from_raw_fd(fd as _) });
-        Poll::Ready(Ok(fd))
+        Poll::Ready(self.as_mut().call())
     }
 }
 
@@ -663,8 +661,7 @@ impl CreateSocket {
             target_os = "cygwin",
         )))]
         socket.set_nonblocking(true)?;
-        *self.project().opened_fd = Some(socket);
-        Ok(fd)
+        Ok(socket.into_raw_fd())
     }
 }
 
@@ -721,8 +718,6 @@ impl<S: AsFd> Accept<S> {
                     this.addr_len,
                     libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC,
                 ))?;
-                let socket = unsafe { Socket2::from_raw_fd(fd) };
-                *this.accepted_fd = Some(socket);
                 Ok(fd)
             }
             #[cfg(not(any(
@@ -745,8 +740,7 @@ impl<S: AsFd> Accept<S> {
                 let socket = unsafe { Socket2::from_raw_fd(fd) };
                 socket.set_cloexec(true)?;
                 socket.set_nonblocking(true)?;
-                *this.accepted_fd = Some(socket);
-                Ok(fd)
+                Ok(socket.into_raw_fd())
             }
         }()
         .unwrap_or(-1)
@@ -765,6 +759,20 @@ unsafe impl<S: AsFd> OpCode for Accept<S> {
 
     fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
         syscall!(break self.as_mut().call())
+    }
+}
+
+unsafe impl<S: AsFd> OpCode for AcceptMulti<S> {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        self.project().op.pre_submit()
+    }
+
+    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+        self.project().op.op_type()
+    }
+
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        self.project().op.operate()
     }
 }
 

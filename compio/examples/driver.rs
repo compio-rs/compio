@@ -42,8 +42,8 @@ fn open_file(driver: &mut Proactor) -> OwnedFd {
         libc::O_CLOEXEC | libc::O_RDONLY,
         0o666,
     );
-    let (_, op) = push_and_wait(driver, op);
-    op.into_inner()
+    let (res, op) = push_and_wait(driver, op);
+    unsafe { op.result(Ok(res)).unwrap() }
 }
 
 fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> (usize, O) {

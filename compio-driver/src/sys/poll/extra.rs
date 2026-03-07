@@ -37,10 +37,6 @@ impl Extra {
 #[allow(dead_code)]
 #[cfg(not(fusion))]
 impl crate::sys::Extra {
-    pub(in crate::sys) fn is_iour(&self) -> bool {
-        false
-    }
-
     pub(in crate::sys) fn try_as_poll(&self) -> Option<&Extra> {
         Some(&self.0)
     }

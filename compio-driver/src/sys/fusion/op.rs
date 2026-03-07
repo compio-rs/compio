@@ -7,23 +7,26 @@ use super::*;
 pub use crate::sys::unix_op::*;
 
 macro_rules! op {
-    (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? )) => {
+    (<$($ty:ident: $trait:ident),* $(,)?> $name:ident ( $($arg:ident: $arg_t:ty),* $(,)? )) => {
+        op!(< $($ty: $trait),* > $name {poll::$name, iour::$name} ( $( $arg: $arg_t ),* ));
+    };
+    (<$($ty:ident: $trait:ident),* $(,)?> $name:ident {$pollname:path, $iourname:path} ( $($arg:ident: $arg_t:ty),* $(,)? )) => {
         ::paste::paste!{
             enum [< $name Inner >] <$($ty: $trait),*> {
                 Uninit($($arg_t),*),
-                Poll(poll::$name<$($ty),*>),
-                IoUring(iour::$name<$($ty),*>),
+                Poll($pollname<$($ty),*>),
+                IoUring($iourname<$($ty),*>),
             }
 
             impl<$($ty: $trait),*> [< $name Inner >]<$($ty),*> {
-                fn poll(&mut self) -> &mut poll::$name<$($ty),*> {
+                fn poll(&mut self) -> &mut $pollname<$($ty),*> {
                     match self {
                         Self::Uninit(..) => {
                             unsafe {
                                 let Self::Uninit($($arg),*) = std::ptr::read(self) else {
                                     unreachable_unchecked()
                                 };
-                                std::ptr::write(self, Self::Poll(poll::$name::new($($arg),*)));
+                                std::ptr::write(self, Self::Poll($pollname::new($($arg),*)));
                             }
                             self.poll()
                         },
@@ -32,14 +35,14 @@ macro_rules! op {
                     }
                 }
 
-                fn iour(&mut self) -> &mut iour::$name<$($ty),*> {
+                fn iour(&mut self) -> &mut $iourname<$($ty),*> {
                     match self {
                         Self::Uninit(..) => {
                             unsafe {
                                 let Self::Uninit($($arg),*) = std::ptr::read(self) else {
                                     unreachable_unchecked()
                                 };
-                                std::ptr::write(self, Self::IoUring(iour::$name::new($($arg),*)));
+                                std::ptr::write(self, Self::IoUring($iourname::new($($arg),*)));
                             }
                             self.iour()
                         },
@@ -55,7 +58,7 @@ macro_rules! op {
             }
 
             impl<$($ty: $trait),*> IntoInner for $name <$($ty),*> {
-                type Inner = <poll::$name<$($ty),*> as IntoInner>::Inner;
+                type Inner = <$pollname<$($ty),*> as IntoInner>::Inner;
 
                 fn into_inner(mut self) -> Self::Inner {
                     match self.inner {

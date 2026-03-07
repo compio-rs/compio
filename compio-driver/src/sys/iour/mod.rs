@@ -138,14 +138,12 @@ pub unsafe trait OpCode {
         unreachable!("this operation is asynchronous")
     }
 
-    /// Set the result when it successfully completes.
-    /// The operation stores the result and is responsible to release it if the
-    /// operation is cancelled.
+    /// Drop the result when it is cancelled.
     ///
     /// # Safety
     ///
     /// Users should not call it.
-    unsafe fn set_result(self: Pin<&mut Self>, _: usize) {}
+    unsafe fn drop_result(self: Pin<&mut Self>, _: usize) {}
 }
 
 pub use OpCode as IourOpCode;
@@ -346,6 +344,17 @@ impl Driver {
             }
         }
         self.cleanup_multishot(&key);
+    }
+
+    pub fn drop_result<T: OpCode + ?Sized>(
+        &self,
+        op: Pin<&mut T>,
+        res: io::Result<usize>,
+        _: crate::sys::Extra,
+    ) {
+        if let Ok(res) = res {
+            unsafe { op.drop_result(res) }
+        }
     }
 
     fn push_raw_with_key(&mut self, entry: SEntry, key: ErasedKey) -> io::Result<()> {

@@ -64,9 +64,9 @@ impl Socket {
             ty.into(),
             protocol.map(|p| p.into()).unwrap_or_default(),
         );
-        let (_, op) = buf_try!(@try compio_runtime::submit(op).await);
+        let (res, op) = buf_try!(@try compio_runtime::submit(op).await);
 
-        Self::from_socket2(op.into_inner())
+        Self::from_socket2(unsafe { op.result(Ok(res))? })
     }
 
     pub async fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
@@ -94,8 +94,8 @@ impl Socket {
     #[cfg(unix)]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         let op = Accept::new(self.to_shared_fd());
-        let (_, op) = buf_try!(@try compio_runtime::submit(op).await);
-        let (accept_sock, addr) = op.into_addr();
+        let (res, op) = buf_try!(@try compio_runtime::submit(op).await);
+        let (accept_sock, addr) = unsafe { op.result(Ok(res))? };
         let accept_sock = Self::from_socket2(accept_sock)?;
         Ok((accept_sock, addr))
     }

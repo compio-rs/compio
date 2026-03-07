@@ -473,6 +473,23 @@ impl CloseSocket {
     }
 }
 
+pin_project! {
+    /// Accept multiple connections.
+    pub struct AcceptMulti<S> {
+        #[pin]
+        pub(crate) op: Accept<S>,
+    }
+}
+
+impl<S> AcceptMulti<S> {
+    /// Create [`AcceptMulti`].
+    pub fn new(fd: S) -> Self {
+        Self {
+            op: Accept::new(fd),
+        }
+    }
+}
+
 /// Connect to a remote address.
 pub struct Connect<S> {
     pub(crate) fd: S,
@@ -665,7 +682,9 @@ pub(crate) mod managed {
 }
 
 #[cfg(not(io_uring))]
-pub use managed::*;
+pub use managed::{
+    ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvManaged, RecvMulti,
+};
 
 bitflags::bitflags! {
     /// Flags for operations.

@@ -3,7 +3,7 @@ use std::{
     io,
     marker::PhantomPinned,
     net::Shutdown,
-    os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd},
+    os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd},
     pin::Pin,
 };
 
@@ -54,7 +54,6 @@ pin_project! {
         pub(crate) path: CString,
         pub(crate) flags: i32,
         pub(crate) mode: libc::mode_t,
-        pub(crate) opened_fd: Option<OwnedFd>,
     }
 }
 
@@ -66,7 +65,6 @@ impl<S: AsFd> OpenFile<S> {
             path,
             flags,
             mode,
-            opened_fd: None,
         }
     }
 
@@ -78,13 +76,14 @@ impl<S: AsFd> OpenFile<S> {
             self.mode as libc::c_int
         ))? as _)
     }
-}
 
-impl<S: AsFd> IntoInner for OpenFile<S> {
-    type Inner = OwnedFd;
-
-    fn into_inner(self) -> Self::Inner {
-        self.opened_fd.expect("file not opened")
+    /// Get the opened file.
+    ///
+    /// # Safety
+    ///
+    /// The `result` must be the result of this operation.
+    pub unsafe fn result(self, result: io::Result<usize>) -> io::Result<OwnedFd> {
+        result.map(|fd| unsafe { OwnedFd::from_raw_fd(fd as _) })
     }
 }
 
@@ -480,7 +479,6 @@ pin_project! {
         pub(crate) domain: i32,
         pub(crate) socket_type: i32,
         pub(crate) protocol: i32,
-        pub(crate) opened_fd: Option<Socket2>,
     }
 }
 
@@ -491,16 +489,16 @@ impl CreateSocket {
             domain,
             socket_type,
             protocol,
-            opened_fd: None,
         }
     }
-}
 
-impl IntoInner for CreateSocket {
-    type Inner = Socket2;
-
-    fn into_inner(self) -> Self::Inner {
-        self.opened_fd.expect("socket not created")
+    /// Get the created socket.
+    ///
+    /// # Safety
+    ///
+    /// The `result` must be the result of this operation.
+    pub unsafe fn result(self, result: io::Result<usize>) -> io::Result<Socket2> {
+        result.map(|fd| unsafe { Socket2::from_raw_fd(fd as _) })
     }
 }
 
@@ -530,7 +528,6 @@ pin_project! {
         pub(crate) fd: S,
         pub(crate) buffer: SockAddrStorage,
         pub(crate) addr_len: socklen_t,
-        pub(crate) accepted_fd: Option<Socket2>,
         _p: PhantomPinned,
     }
 }
@@ -544,15 +541,29 @@ impl<S> Accept<S> {
             fd,
             buffer,
             addr_len,
-            accepted_fd: None,
             _p: PhantomPinned,
         }
     }
 
     /// Get the remote address from the inner buffer.
-    pub fn into_addr(mut self) -> (Socket2, SockAddr) {
-        let socket = self.accepted_fd.take().expect("socket not accepted");
-        (socket, unsafe { SockAddr::new(self.buffer, self.addr_len) })
+    ///
+    /// # Safety
+    ///
+    /// The `result` must be the result of this operation.
+    pub unsafe fn result(self, result: io::Result<usize>) -> io::Result<(Socket2, SockAddr)> {
+        let socket = unsafe { Socket2::from_raw_fd(result? as _) };
+        Ok((socket, unsafe { SockAddr::new(self.buffer, self.addr_len) }))
+    }
+}
+
+impl<S: FromRawFd> AcceptMulti<S> {
+    /// Get the accepted socket.
+    ///
+    /// # Safety
+    ///
+    /// The `result` must be the result of this operation.
+    pub unsafe fn result(result: io::Result<usize>) -> io::Result<S> {
+        result.map(|fd| unsafe { S::from_raw_fd(fd as _) })
     }
 }
 
