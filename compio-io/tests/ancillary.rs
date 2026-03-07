@@ -1,22 +1,19 @@
 use std::mem::MaybeUninit;
 
-use aligned_array::{A8, Aligned};
-use compio_buf::{IoBuf, IoBufMut};
-use compio_io::ancillary::{AncillaryBuilder, AncillaryIter};
+use compio_buf::IoBuf;
+use compio_io::ancillary::{AncillaryBuf, AncillaryIter, CMsgBuilder};
 
 #[test]
 fn test_cmsg() {
-    let mut buf: Aligned<A8, [u8; 64]> = Aligned([0u8; 64]);
-    let mut builder = AncillaryBuilder::new(buf.as_uninit());
+    let mut buf = AncillaryBuf::<64>::new();
+    let mut builder = buf.builder();
 
     builder.try_push(0, 0, ()).unwrap(); // 16 / 12
     builder.try_push(1, 1, u32::MAX).unwrap(); // 16 + 4 + 4 / 12 + 4
     builder.try_push(2, 2, i64::MIN).unwrap(); // 16 + 8 / 12 + 8
-    let len = builder.finish();
-    assert!(len == 64 || len == 48);
+    assert!(buf.buf_len() == 64 || buf.buf_len() == 48);
 
     unsafe {
-        let buf = buf.slice(..len);
         let mut iter = AncillaryIter::new(&buf);
 
         let cmsg = iter.next().unwrap();
@@ -38,13 +35,12 @@ fn test_cmsg() {
 #[test]
 #[should_panic]
 fn invalid_buffer_length() {
-    let mut buf = [MaybeUninit::new(0u8); 1];
-    AncillaryBuilder::new(&mut buf);
+    AncillaryBuf::<1>::new().builder();
 }
 
 #[test]
 #[should_panic]
 fn invalid_buffer_alignment() {
     let mut buf = [MaybeUninit::new(0u8); 64];
-    AncillaryBuilder::new(&mut buf[1..]);
+    CMsgBuilder::new(&mut buf[1..]);
 }

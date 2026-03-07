@@ -50,7 +50,7 @@ unsafe fn wsa_cmsg_data(cmsg: *const CMSGHDR) -> *mut u8 {
 }
 
 #[inline]
-const fn wsa_cmsg_space(length: usize) -> usize {
+pub(crate) const fn wsa_cmsg_space(length: usize) -> usize {
     WSA_CMSGDATA_OFFSET + wsa_cmsghdr_align(length)
 }
 
