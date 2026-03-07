@@ -917,8 +917,8 @@ mod buf_ring {
     use pin_project_lite::pin_project;
     use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
-    use super::OpCode;
-    use crate::{BorrowedBuffer, BufferPool, OpEntry, TakeBuffer, op::managed::AcceptMulti};
+    use super::{AcceptMulti, OpCode};
+    use crate::{BorrowedBuffer, BufferPool, OpEntry, TakeBuffer};
 
     pub(crate) fn take_buffer(
         buffer_pool: &BufferPool,

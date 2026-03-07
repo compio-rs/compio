@@ -762,7 +762,7 @@ unsafe impl<S: AsFd> OpCode for Accept<S> {
     }
 }
 
-unsafe impl<S: AsFd> OpCode for crate::op::managed::AcceptMulti<S> {
+unsafe impl<S: AsFd> OpCode for AcceptMulti<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         self.project().op.pre_submit()
     }
