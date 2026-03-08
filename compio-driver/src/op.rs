@@ -495,10 +495,10 @@ pub(crate) mod managed {
     use socket2::SockAddr;
 
     use super::{Read, ReadAt, Recv, RecvFrom};
-    use crate::{AsFd, BorrowedBuffer, BufferPool, OwnedBuffer, TakeBuffer};
+    use crate::{AsFd, BorrowedBuffer, BufferPool, FallbackOwnedBuffer, TakeBuffer};
 
     fn take_buffer(
-        slice: OwnedBuffer,
+        slice: FallbackOwnedBuffer,
         buffer_pool: &BufferPool,
         result: io::Result<usize>,
     ) -> io::Result<BorrowedBuffer<'_>> {
@@ -516,7 +516,7 @@ pub(crate) mod managed {
         /// Read a file at specified position into managed buffer.
         pub struct ReadManagedAt<S> {
             #[pin]
-            pub(crate) op: ReadAt<OwnedBuffer, S>,
+            pub(crate) op: ReadAt<FallbackOwnedBuffer, S>,
         }
     }
 
@@ -549,7 +549,7 @@ pub(crate) mod managed {
         /// Read a file into managed buffer.
         pub struct ReadManaged<S> {
             #[pin]
-            pub(crate) op: Read<OwnedBuffer, S>,
+            pub(crate) op: Read<FallbackOwnedBuffer, S>,
         }
     }
 
@@ -585,7 +585,7 @@ pub(crate) mod managed {
         /// use [`ReadManaged`].
         pub struct RecvManaged<S> {
             #[pin]
-            pub(crate) op: Recv<OwnedBuffer, S>,
+            pub(crate) op: Recv<FallbackOwnedBuffer, S>,
         }
     }
 
@@ -618,7 +618,7 @@ pub(crate) mod managed {
         /// Receive data and source address into managed buffer.
         pub struct RecvFromManaged<S: AsFd> {
             #[pin]
-            pub(crate) op: RecvFrom<OwnedBuffer, S>,
+            pub(crate) op: RecvFrom<FallbackOwnedBuffer, S>,
         }
     }
 

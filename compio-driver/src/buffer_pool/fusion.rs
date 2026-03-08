@@ -5,8 +5,9 @@ use std::{
 };
 
 pub use fallback::BufferPool as FallbackBufferPool;
-pub(crate) use fallback::OwnedBuffer;
+pub(crate) use fallback::OwnedBuffer as FallbackOwnedBuffer;
 pub use iour::BufferPool as IoUringBufferPool;
+pub(crate) use iour::OwnedBuffer as IoUringOwnedBuffer;
 
 use super::{fallback, iour};
 
