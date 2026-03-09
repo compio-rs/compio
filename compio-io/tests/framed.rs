@@ -6,11 +6,7 @@ use std::{
 use compio_buf::{BufResult, IoBuf, IoBufMut};
 use compio_io::{
     AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt, BufReader,
-    framed::{
-        Framed,
-        codec::serde_json::SerdeJsonCodec,
-        frame::LengthDelimited,
-    },
+    framed::{Framed, codec::serde_json::SerdeJsonCodec, frame::LengthDelimited},
 };
 use futures_executor::block_on;
 use futures_util::{SinkExt, StreamExt, lock::Mutex};

@@ -8,7 +8,14 @@ use std::marker::PhantomData;
 use compio_buf::{IoBufMut, bytes::Bytes};
 use futures_util::FutureExt;
 
-use crate::{AsyncRead, framed::{codec::{Decoder, bytes::BytesCodec}, frame::NoopFramer}, util::Splittable};
+use crate::{
+    AsyncRead,
+    framed::{
+        codec::{Decoder, bytes::BytesCodec},
+        frame::NoopFramer,
+    },
+    util::Splittable,
+};
 
 pub mod codec;
 pub mod frame;
