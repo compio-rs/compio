@@ -149,7 +149,7 @@ type BytesFramed<R, W> = Framed<R, W, BytesCodec, NoopFramer, Bytes, Bytes>;
 impl BytesFramed<(), ()> {
     /// Creates a new `Framed` with the given I/O object, codec, and framer with
     /// bytes as the input and output type.
-    pub fn new_bytes() -> Framed<(), (), BytesCodec, NoopFramer, Bytes, Bytes> {
+    pub fn new_bytes() -> Self {
         Framed {
             read_state: read::State::empty(),
             write_state: write::State::empty(),
