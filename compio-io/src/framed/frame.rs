@@ -226,9 +226,9 @@ impl<B: IoBufMut> Framer<B> for AnyDelimited<'_> {
 /// Delimiter that uses newline characters (`\n`) as delimiters.
 pub type LineDelimited = CharDelimited<'\n'>;
 
-/// A simple extractor that frames data by its length.
+/// A framer that does nothing.
 ///
-/// It uses 8 bytes to represent the length of the data at the beginning.
+/// It simply reserves space in the buffer without adding any framing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NoopFramer {
     max_size: usize,
