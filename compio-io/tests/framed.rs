@@ -115,7 +115,7 @@ fn test_bytes_framed() {
         let mut s = String::new();
         while let Some(result) = framed.next().await {
             let bytes = result.unwrap();
-            s.push_str(&str::from_utf8(&bytes).unwrap());
+            s.push_str(str::from_utf8(&bytes).unwrap());
         }
         assert_eq!(s, "Hello, world!");
         let res = framed.next().await;
