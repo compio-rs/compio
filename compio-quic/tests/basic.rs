@@ -264,3 +264,30 @@ async fn two_datagram_readers() {
     assert!(a == MSG1 || b == MSG1);
     assert!(a == MSG2 || b == MSG2);
 }
+
+#[compio_macros::test]
+async fn try_recv_datagram() {
+    let _guard = subscribe();
+
+    let endpoint = endpoint().await;
+
+    const MSG1: &[u8] = b"one";
+    const MSG2: &[u8] = b"two";
+
+    let (conn1, conn2) = join!(
+        async {
+            endpoint
+                .connect(endpoint.local_addr().unwrap(), "localhost", None)
+                .unwrap()
+                .await
+                .unwrap()
+        },
+        async { endpoint.wait_incoming().await.unwrap().await.unwrap() },
+    );
+
+    conn1.send_datagram_wait(MSG1.into()).await.unwrap();
+    conn1.send_datagram_wait(MSG2.into()).await.unwrap();
+
+    assert_eq!(conn2.recv_datagram().await.unwrap(), MSG1);
+    assert_eq!(conn2.try_recv_datagram().unwrap().unwrap(), MSG2);
+}
