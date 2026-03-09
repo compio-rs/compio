@@ -254,7 +254,7 @@ impl NoopFramer {
 
 impl<B: IoBufMut> Framer<B> for NoopFramer {
     fn enclose(&mut self, buf: &mut B) {
-        buf.reserve(self.max_size).expect("Reserve failed");
+        
     }
 
     fn extract(&mut self, buf: &Slice<B>) -> io::Result<Option<Frame>> {
