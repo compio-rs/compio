@@ -29,7 +29,7 @@ use crate::framed::codec::{Decoder, Encoder};
 
 /// A codec for bytes serialization and deserialization.
 ///
-/// This codec can be used to encode and decode bytes.
+/// This codec can be used to write into and read from [`Bytes`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BytesCodec;
 
