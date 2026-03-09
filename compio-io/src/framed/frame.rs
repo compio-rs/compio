@@ -253,7 +253,7 @@ impl NoopFramer {
 }
 
 impl<B: IoBufMut> Framer<B> for NoopFramer {
-    fn enclose(&mut self, buf: &mut B) {}
+    fn enclose(&mut self, _buf: &mut B) {}
 
     fn extract(&mut self, buf: &Slice<B>) -> io::Result<Option<Frame>> {
         if buf.is_empty() {
