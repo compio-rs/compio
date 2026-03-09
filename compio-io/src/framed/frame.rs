@@ -226,6 +226,50 @@ impl<B: IoBufMut> Framer<B> for AnyDelimited<'_> {
 /// Delimiter that uses newline characters (`\n`) as delimiters.
 pub type LineDelimited = CharDelimited<'\n'>;
 
+/// A framer that does nothing.
+///
+/// It simply reserves space in the buffer without adding any framing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NoopFramer {
+    max_size: usize,
+}
+
+impl Default for NoopFramer {
+    fn default() -> Self {
+        Self { max_size: 4096 }
+    }
+}
+
+impl NoopFramer {
+    /// Creates a new `NoopFramer` framer.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns the size of the capacity.
+    pub fn max_size(&self) -> usize {
+        self.max_size
+    }
+}
+
+impl<B: IoBufMut> Framer<B> for NoopFramer {
+    fn enclose(&mut self, _: &mut B) {}
+
+    fn extract(&mut self, buf: &Slice<B>) -> io::Result<Option<Frame>> {
+        if buf.is_empty() {
+            return Ok(None);
+        }
+
+        let len = if buf.len() < self.max_size {
+            buf.len()
+        } else {
+            self.max_size
+        };
+
+        Ok(Some(Frame::new(0, len, 0)))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use compio_buf::{IntoInner, IoBufMut};
@@ -244,6 +288,22 @@ mod tests {
         let frame = framer.extract(&buf).unwrap().unwrap();
         let buf = buf.into_inner();
         assert_eq!(frame, Frame::new(4, 5, 0));
+        let payload = frame.slice(buf);
+        assert_eq!(payload.as_init(), b"hello");
+    }
+
+    #[test]
+    fn test_noop_framer() {
+        let mut framer = NoopFramer::new();
+
+        let mut buf = Vec::from(b"hello");
+        framer.enclose(&mut buf);
+        assert_eq!(&buf.as_slice()[..5], b"hello");
+
+        let buf = buf.slice(..);
+        let frame = framer.extract(&buf).unwrap().unwrap();
+        let buf = buf.into_inner();
+        assert_eq!(frame, Frame::new(0, 5, 0));
         let payload = frame.slice(buf);
         assert_eq!(payload.as_init(), b"hello");
     }
