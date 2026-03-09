@@ -5,6 +5,8 @@ use std::io;
 
 use compio_buf::{IoBuf, IoBufMut, Slice};
 
+pub mod bytes;
+
 #[cfg(feature = "codec-serde-json")]
 pub mod serde_json;
 

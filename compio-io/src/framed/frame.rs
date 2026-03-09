@@ -226,6 +226,52 @@ impl<B: IoBufMut> Framer<B> for AnyDelimited<'_> {
 /// Delimiter that uses newline characters (`\n`) as delimiters.
 pub type LineDelimited = CharDelimited<'\n'>;
 
+/// A simple extractor that frames data by its length.
+///
+/// It uses 8 bytes to represent the length of the data at the beginning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CapacityDelimited {
+    size: usize,
+}
+
+impl Default for CapacityDelimited {
+    fn default() -> Self {
+        Self { size: 4096 }
+    }
+}
+
+impl CapacityDelimited {
+    /// Creates a new `CapacityDelimited` framer.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns the size of the capacity.
+    pub fn size(&self) -> usize {
+        self.size
+    }
+}
+
+impl<B: IoBufMut> Framer<B> for CapacityDelimited {
+    fn enclose(&mut self, buf: &mut B) {
+        buf.reserve(self.size).expect("Reserve failed");
+    }
+
+    fn extract(&mut self, buf: &Slice<B>) -> io::Result<Option<Frame>> {
+        if buf.is_empty() {
+            return Ok(None);
+        }
+
+        let len = if buf.len() < self.size {
+            buf.len()
+        } else {
+            self.size
+        };
+
+        Ok(Some(Frame::new(0, len, 0)))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use compio_buf::{IntoInner, IoBufMut};
@@ -247,6 +293,22 @@ mod tests {
         let payload = frame.slice(buf);
         assert_eq!(payload.as_init(), b"hello");
     }
+
+    #[test]
+    fn test_capacity_delimited() {
+        let mut framer = CapacityDelimited::new();
+
+        let mut buf = Vec::from(b"hello");
+        framer.enclose(&mut buf);
+        assert_eq!(&buf.as_slice()[..5], b"hello");
+
+        let buf = buf.slice(..);
+        let frame = framer.extract(&buf).unwrap().unwrap();
+        let buf = buf.into_inner();
+        assert_eq!(frame, Frame::new(0, 5, 0));
+        let payload = frame.slice(buf);
+        assert_eq!(payload.as_init(), b"hello");
+    }    
 
     #[test]
     fn test_char_delimited() {

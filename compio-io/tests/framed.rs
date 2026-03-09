@@ -5,8 +5,12 @@ use std::{
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
 use compio_io::{
-    AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt,
-    framed::{Framed, codec::serde_json::SerdeJsonCodec, frame::LengthDelimited},
+    AsyncRead, AsyncReadAt, AsyncWrite, AsyncWriteAt, BufReader, framed::{
+        Framed,
+        bytes::{BytesFramed, BytesFramedExt},
+        codec::serde_json::SerdeJsonCodec,
+        frame::LengthDelimited,
+    }
 };
 use futures_executor::block_on;
 use futures_util::{SinkExt, StreamExt, lock::Mutex};
@@ -101,6 +105,26 @@ fn test_framed() {
         assert_eq!(origin, des);
 
         let res = framed.next().await;
+        assert!(res.is_none());
+    })
+}
+
+#[test]
+fn test_bytes_framed() {
+    block_on(async {
+        let buf = b"Hello, world!".to_vec();
+        let r = BufReader::with_capacity(5, Cursor::new(buf));
+
+        let framed = BytesFramed::from_reader(r);
+        let mut stream = framed.bytes();
+
+        let mut s = String::new();
+        while let Some(result) = stream.next().await {
+            let bytes = result.unwrap();
+            s.push_str(&String::from_utf8(bytes.to_vec()).unwrap());
+        }
+        assert_eq!(s, "Hello, world!");
+        let res = stream.next().await;
         assert!(res.is_none());
     })
 }

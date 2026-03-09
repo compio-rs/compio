@@ -10,6 +10,7 @@ use futures_util::FutureExt;
 
 use crate::{AsyncRead, framed::codec::Decoder, util::Splittable};
 
+pub mod bytes;
 pub mod codec;
 pub mod frame;
 
