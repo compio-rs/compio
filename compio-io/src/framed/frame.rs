@@ -308,7 +308,7 @@ mod tests {
         assert_eq!(frame, Frame::new(0, 5, 0));
         let payload = frame.slice(buf);
         assert_eq!(payload.as_init(), b"hello");
-    }    
+    }
 
     #[test]
     fn test_char_delimited() {

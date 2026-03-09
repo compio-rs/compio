@@ -5,17 +5,14 @@
 
 use std::marker::PhantomData;
 
-use compio_buf::IoBufMut;
+use compio_buf::{IoBufMut, bytes::Bytes};
 use futures_util::FutureExt;
 
-use crate::{AsyncRead, framed::codec::Decoder, util::Splittable};
-
-pub use bytes::BytesFramed;
+use crate::{AsyncRead, framed::{codec::{Decoder, bytes::BytesCodec}, frame::NoopFramer}, util::Splittable};
 
 pub mod codec;
 pub mod frame;
 
-mod bytes;
 mod read;
 mod write;
 
@@ -142,6 +139,20 @@ impl<C, F> Framed<(), (), C, F, (), (), ()> {
             write_state: write::State::empty(),
             codec,
             framer,
+            types: PhantomData,
+        }
+    }
+}
+
+impl Framed<(), (), BytesCodec, NoopFramer, (), ()> {
+    /// Creates a new `Framed` with the given I/O object, codec, and framer with
+    /// bytes as the input and output type.
+    pub fn new_bytes() -> Framed<(), (), BytesCodec, NoopFramer, Bytes, Bytes> {
+        Framed {
+            read_state: read::State::empty(),
+            write_state: write::State::empty(),
+            codec: BytesCodec::new(),
+            framer: NoopFramer::new(),
             types: PhantomData,
         }
     }

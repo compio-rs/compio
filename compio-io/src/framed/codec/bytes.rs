@@ -1,5 +1,5 @@
 //! [`Encoder`]/[`Decoder`] implementation with Bytes
-//! 
+//!
 //! This module provides a codec implementation for bytes serialization and
 //! deserialization (noop per se).
 //!
@@ -31,7 +31,7 @@ use crate::framed::codec::{Decoder, Encoder};
 ///
 /// This codec can be used to encode and decode bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BytesCodec {}
+pub struct BytesCodec;
 
 impl BytesCodec {
     /// Creates a new `BytesCodec`.
