@@ -1,3 +1,26 @@
+//! [`Encoder`]/[`Decoder`] implementation with Bytes
+//! 
+//! This module provides a codec implementation for bytes serialization and
+//! deserialization (noop per se).
+//!
+//! # Examples
+//!
+//! ```
+//! use compio_buf::IoBuf;
+//! use compio_io::framed::codec::{Decoder, Encoder, bytes::BytesCodec};
+//! use compio_buf::bytes::Bytes;
+//!
+//! let mut codec = BytesCodec::new();
+//! let data = Bytes::from("Hello, world!");
+//!
+//! // Encoding
+//! let mut buffer = Vec::new();
+//! codec.encode(data.clone(), &mut buffer).unwrap();
+//!
+//! // Decoding
+//! let decoded = codec.decode(&buffer.as_slice()).unwrap();
+//! assert_eq!(decoded, data);
+//! ```
 use std::io::{self, Write};
 
 use compio_buf::{IoBuf, IoBufMut, Slice, bytes::Bytes};

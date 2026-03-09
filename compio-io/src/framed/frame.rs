@@ -230,31 +230,31 @@ pub type LineDelimited = CharDelimited<'\n'>;
 ///
 /// It uses 8 bytes to represent the length of the data at the beginning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CapacityDelimited {
-    size: usize,
+pub struct NoopFramer {
+    max_size: usize,
 }
 
-impl Default for CapacityDelimited {
+impl Default for NoopFramer {
     fn default() -> Self {
-        Self { size: 4096 }
+        Self { max_size: 4096 }
     }
 }
 
-impl CapacityDelimited {
-    /// Creates a new `CapacityDelimited` framer.
+impl NoopFramer {
+    /// Creates a new `NoopFramer` framer.
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Returns the size of the capacity.
-    pub fn size(&self) -> usize {
-        self.size
+    pub fn max_size(&self) -> usize {
+        self.max_size
     }
 }
 
-impl<B: IoBufMut> Framer<B> for CapacityDelimited {
+impl<B: IoBufMut> Framer<B> for NoopFramer {
     fn enclose(&mut self, buf: &mut B) {
-        buf.reserve(self.size).expect("Reserve failed");
+        buf.reserve(self.max_size).expect("Reserve failed");
     }
 
     fn extract(&mut self, buf: &Slice<B>) -> io::Result<Option<Frame>> {
@@ -262,10 +262,10 @@ impl<B: IoBufMut> Framer<B> for CapacityDelimited {
             return Ok(None);
         }
 
-        let len = if buf.len() < self.size {
+        let len = if buf.len() < self.max_size {
             buf.len()
         } else {
-            self.size
+            self.max_size
         };
 
         Ok(Some(Frame::new(0, len, 0)))
@@ -295,8 +295,8 @@ mod tests {
     }
 
     #[test]
-    fn test_capacity_delimited() {
-        let mut framer = CapacityDelimited::new();
+    fn test_noop_framer() {
+        let mut framer = NoopFramer::new();
 
         let mut buf = Vec::from(b"hello");
         framer.enclose(&mut buf);
