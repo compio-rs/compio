@@ -6,9 +6,8 @@
 //! # Examples
 //!
 //! ```
-//! use compio_buf::IoBuf;
+//! use compio_buf::{IoBuf, bytes::Bytes};
 //! use compio_io::framed::codec::{Decoder, Encoder, bytes::BytesCodec};
-//! use compio_buf::bytes::Bytes;
 //!
 //! let mut codec = BytesCodec::new();
 //! let data = Bytes::from("Hello, world!");
