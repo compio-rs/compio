@@ -10,7 +10,7 @@ async fn connect(connector: TlsConnector) {
         .unwrap();
 
     stream
-        .write_all("GET / HTTP/1.1\r\nHost:sha256.badssl.com\r\nConnection: close\r\n\r\n")
+        .write_all("GET / HTTP/1.1\r\nHost: sha256.badssl.com\r\nConnection: close\r\n\r\n")
         .await
         .unwrap();
     stream.flush().await.unwrap();
