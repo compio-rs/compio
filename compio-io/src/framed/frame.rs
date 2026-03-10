@@ -1,6 +1,6 @@
 //! Traits and implementations for frame extraction and enclosing
 
-use std::io::{self, Write};
+use std::io;
 
 use compio_buf::{IoBuf, IoBufMut, Slice};
 
@@ -121,12 +121,13 @@ impl<B: IoBufMut> Framer<B> for LengthDelimited {
         unsafe { buf.advance_to(len + self.length_field_len) };
 
         let slice = buf.as_mut_slice();
+        let lfl = self.length_field_len.min(8);
 
         // Write the length at the beginning
         let len_bytes = if self.length_field_is_big_endian {
-            len.to_be_bytes()
+            &len.to_be_bytes()[(8 - lfl)..]
         } else {
-            len.to_le_bytes()
+            &len.to_le_bytes()[..lfl]
         };
         slice[0..self.length_field_len].copy_from_slice(&len_bytes[0..self.length_field_len]);
     }
@@ -137,13 +138,16 @@ impl<B: IoBufMut> Framer<B> for LengthDelimited {
         }
 
         let buf = buf.as_init();
-        let len_bytes = buf[..self.length_field_len].try_into().unwrap();
+        let lfl = self.length_field_len.min(8);
+        let mut len_bytes = [0; _];
 
         let len = if self.length_field_is_big_endian {
-            usize::from_be_bytes(len_bytes)
+            len_bytes[(8 - lfl)..].copy_from_slice(&buf[..lfl]);
+            u64::from_be_bytes(len_bytes)
         } else {
-            usize::from_le_bytes(len_bytes)
-        };
+            len_bytes[..lfl].copy_from_slice(&buf[..lfl]);
+            u64::from_le_bytes(len_bytes)
+        } as usize;
 
         if buf.len() < self.length_field_len + len {
             return Ok(None);

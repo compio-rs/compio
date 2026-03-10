@@ -148,13 +148,15 @@ impl<C, F> Framed<(), (), C, F, (), (), ()> {
     }
 }
 
-/// [`Framed`] that brigdes io with [`Bytes`].
+/// [`Framed`] that bridges [`AsyncRead`]/[`AsyncWrite`] with [`Bytes`].
 ///
 /// This is useful when you want to read/write raw bytes into/from [`Bytes`]
 /// without any additional framing or de/encoding.
 ///
 /// See also: [`ReaderStream`] and [`ReaderStream`].
 ///
+/// [`Bytes`]: compio_buf::bytes::Bytes
+/// [`AsyncWrite`]: crate::AsyncWrite
 /// [`ReaderStream`]: https://docs.rs/tokio-util/latest/tokio_util/io/struct.ReaderStream.html
 /// [`StreamReader`]: https://docs.rs/tokio-util/latest/tokio_util/io/struct.StreamReader.html
 #[cfg(feature = "bytes")]
@@ -169,11 +171,12 @@ pub type BytesFramed<R, W> = Framed<
 
 #[cfg(feature = "bytes")]
 impl BytesFramed<(), ()> {
-    /// Creates a new [`BytesFramed`] that brigdes [`AsyncRead`]/[`AsyncWrite`]
+    /// Creates a new [`BytesFramed`] that bridges [`AsyncRead`]/[`AsyncWrite`]
     /// with [`Bytes`].
     ///
-    /// See also: [`ReaderStream`] and [`ReaderStream`].
+    /// See also: [`ReaderStream`] and [`StreamReader`].
     ///
+    /// [`Bytes`]: compio_buf::bytes::Bytes
     /// [`AsyncWrite`]: crate::AsyncWrite
     /// [`ReaderStream`]: https://docs.rs/tokio-util/latest/tokio_util/io/struct.ReaderStream.html
     /// [`StreamReader`]: https://docs.rs/tokio-util/latest/tokio_util/io/struct.StreamReader.html
