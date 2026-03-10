@@ -1,6 +1,10 @@
 use compio_buf::{BufResult, IntoInner, IoBuf, IoVectoredBuf};
 
-use crate::{AsyncWrite, AsyncWriteAt, IoResult};
+use crate::{
+    AsyncWrite, AsyncWriteAt, IoResult,
+    framed::{BytesFramed, Framed},
+    util::Splittable,
+};
 
 /// Shared code for write a scalar value into the underlying writer.
 macro_rules! write_scalar {
@@ -114,6 +118,26 @@ pub trait AsyncWriteExt: AsyncWrite {
     async fn write_vectored_all<T: IoVectoredBuf>(&mut self, mut buf: T) -> BufResult<(), T> {
         let len = buf.total_len();
         loop_write_all!(buf, len, needle, loop self.write_vectored(buf.slice(needle)));
+    }
+
+    /// Create a [`Framed`] writer with the given codec and framer.
+    /// The writer half is obtained by splitting `self`.
+    fn framed<T, C, F>(self, codec: C, framer: F) -> Framed<(), Self::WriteHalf, C, F, T, T>
+    where
+        Self: Splittable + Sized,
+    {
+        let writer = self.split().1;
+        Framed::new(codec, framer).with_writer(writer)
+    }
+
+    /// Convenience method to create a [`BytesFramed`] writer
+    /// out of a splittable write half.
+    fn bytes(self) -> BytesFramed<(), Self::WriteHalf>
+    where
+        Self: Splittable + Sized,
+    {
+        let writer = self.split().1;
+        BytesFramed::new_bytes().with_writer(writer)
     }
 
     write_scalar!(u8, to_be_bytes, to_le_bytes);

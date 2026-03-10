@@ -4,7 +4,11 @@ use std::{io, io::ErrorKind};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut, Uninit, t_alloc};
 
-use crate::{AsyncRead, AsyncReadAt, IoResult, util::Take};
+use crate::{
+    AsyncRead, AsyncReadAt, IoResult,
+    framed::{BytesFramed, Framed},
+    util::{Splittable, Take},
+};
 
 /// Shared code for read a scalar value from the underlying reader.
 macro_rules! read_scalar {
@@ -183,6 +187,26 @@ pub trait AsyncReadExt: AsyncRead {
     async fn read_vectored_exact<T: IoVectoredBufMut>(&mut self, mut buf: T) -> BufResult<(), T> {
         let len = buf.total_capacity();
         loop_read_exact!(buf, len, read, loop self.read_vectored(buf.slice_mut(read)));
+    }
+
+    /// Create a [`Framed`] reader with the given codec and framer.
+    /// The read half is obtained by splitting `self`.
+    fn framed<T, C, F>(self, codec: C, framer: F) -> Framed<Self::ReadHalf, (), C, F, T, T>
+    where
+        Self: Splittable + Sized,
+    {
+        let reader = self.split().0;
+        Framed::new(codec, framer).with_reader(reader)
+    }
+
+    /// Convenience method to create a [`BytesFramed`] reader
+    /// out of a splittable read half.
+    fn bytes(self) -> BytesFramed<Self::ReadHalf, ()>
+    where
+        Self: Splittable + Sized,
+    {
+        let reader = self.split().0;
+        BytesFramed::new_bytes().with_reader(reader)
     }
 
     /// Creates an adaptor which reads at most `limit` bytes from it.
