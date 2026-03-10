@@ -144,14 +144,14 @@ pub unsafe trait OpCode {
     ///
     /// # Safety
     ///
-    /// The params must from this operation.
+    /// The params must be the result coming from this operation.
     unsafe fn set_result(self: Pin<&mut Self>, _: &io::Result<usize>, _: &crate::Extra) {}
 
     /// Push a multishot result to the inner queue.
     ///
     /// # Safety
     ///
-    /// The params must from this operation.
+    /// The params must be the result coming from this operation.
     unsafe fn push_multishot(self: Pin<&mut Self>, _: io::Result<usize>, _: crate::Extra) {
         unreachable!("this operation is not multishot")
     }
