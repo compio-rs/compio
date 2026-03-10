@@ -151,6 +151,7 @@ impl<C, F> Framed<(), (), C, F, (), (), ()> {
     }
 }
 
+/// A type alias for a `Framed` with bytes as the input and output type.
 pub type BytesFramed<R, W> = Framed<R, W, BytesCodec, NoopFramer, Bytes, Bytes>;
 
 impl BytesFramed<(), ()> {
