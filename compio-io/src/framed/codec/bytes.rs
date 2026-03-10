@@ -17,7 +17,7 @@
 //! codec.encode(data.clone(), &mut buffer).unwrap();
 //!
 //! // Decoding
-//! let decoded = codec.decode(&buffer.as_slice()).unwrap();
+//! let decoded = codec.decode(&buffer.slice(..)).unwrap();
 //! assert_eq!(decoded, data);
 //! ```
 use std::io::{self, Write};
