@@ -539,6 +539,7 @@ impl Driver {
         let buffer_pool = buffer_pool.into_io_uring();
 
         let buffer_group = buffer_pool.buffer_group();
+        // FIXME: should we drop it directly if `into_inner` fails?
         unsafe {
             buffer_pool
                 .into_inner()
