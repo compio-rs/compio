@@ -109,7 +109,7 @@ fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult
 fn push_and_wait_multi<O: OpCode + 'static>(
     driver: &mut Proactor,
     op: O,
-) -> impl Iterator<Item = BufResult<usize, Extra>> + '_ {
+) -> impl Iterator<Item = BufResult<usize, (Extra, Option<O>)>> + '_ {
     let mut op = Some(op);
     let mut user_data = None;
     let mut finished = false;
@@ -121,9 +121,9 @@ fn push_and_wait_multi<O: OpCode + 'static>(
 
         if user_data.is_none() {
             match driver.push(op.take().expect("operation should be pushed once")) {
-                PushEntry::Ready(BufResult(res, _)) => {
+                PushEntry::Ready(BufResult(res, op)) => {
                     finished = true;
-                    return Some(BufResult(res, driver.default_extra()));
+                    return Some(BufResult(res, (driver.default_extra(), Some(op))));
                 }
                 PushEntry::Pending(k) => user_data = Some(k),
             }
@@ -131,15 +131,15 @@ fn push_and_wait_multi<O: OpCode + 'static>(
 
         loop {
             if let Some(res) = user_data.as_ref().and_then(|key| driver.pop_multishot(key)) {
-                return Some(res);
+                return Some(res.map_buffer(|extra| (extra, None)));
             }
 
             let key = user_data.take().expect("pending key should exist");
             match driver.pop_with_extra(key) {
                 PushEntry::Pending(k) => user_data = Some(k),
-                PushEntry::Ready((BufResult(res, _), extra)) => {
+                PushEntry::Ready((BufResult(res, op), extra)) => {
                     finished = true;
-                    return Some(BufResult(res, extra));
+                    return Some(BufResult(res, (extra, Some(op))));
                 }
             }
 
@@ -282,9 +282,16 @@ fn read_multi() {
 
     let op = ReadMultiAt::new(fd.clone(), 0, &pool, 1024).unwrap();
     let buffer = push_and_wait_multi(&mut driver, op)
-        .map(|res| res.take_buffer(&pool).map(|buf| buf.to_vec()))
-        .collect::<io::Result<Vec<_>>>()
-        .unwrap()
+        .map(|BufResult(res, (extra, op))| {
+            if let Some(op) = op {
+                (BufResult(res, op), extra).take_buffer(&pool)
+            } else {
+                BufResult(res, extra).take_buffer(&pool)
+            }
+            .map(|buf| buf.to_vec())
+            .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
@@ -323,10 +330,14 @@ fn recv_multi() {
     loop {
         let op = RecvMulti::new(stream.clone(), &pool, 0, 0).unwrap();
         let slice = push_and_wait_multi(&mut driver, op)
-            .map(|res| {
-                res.take_buffer(&pool)
-                    .map(|buf| buf.to_vec())
-                    .unwrap_or_default()
+            .map(|BufResult(res, (extra, op))| {
+                if let Some(op) = op {
+                    (BufResult(res, op), extra).take_buffer(&pool)
+                } else {
+                    BufResult(res, extra).take_buffer(&pool)
+                }
+                .map(|buf| buf.to_vec())
+                .unwrap_or_default()
             })
             .collect::<Vec<_>>()
             .into_iter()
@@ -364,10 +375,16 @@ fn accept_multi() {
         let mut i = 0;
         loop {
             let op = AcceptMulti::new(server.clone());
-            for BufResult(res, _) in push_and_wait_multi(&mut driver, op) {
-                let mut client = unsafe {
-                    use std::os::fd::FromRawFd;
-                    socket2::Socket::from_raw_fd(res.unwrap() as _)
+            for BufResult(res, (_, op)) in push_and_wait_multi(&mut driver, op) {
+                let mut client = if let Some(op) = op {
+                    use compio_buf::IntoInner;
+
+                    op.into_inner().0
+                } else {
+                    unsafe {
+                        use std::os::fd::FromRawFd;
+                        socket2::Socket::from_raw_fd(res.unwrap() as _)
+                    }
                 };
                 client
                     .write_all(format!("Hello, {}", i).as_bytes())
