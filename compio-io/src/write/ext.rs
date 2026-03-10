@@ -120,24 +120,25 @@ pub trait AsyncWriteExt: AsyncWrite {
         loop_write_all!(buf, len, needle, loop self.write_vectored(buf.slice(needle)));
     }
 
-    /// Create a [`Framed`] writer with the given codec and framer.
-    /// The writer half is obtained by splitting `self`.
-    fn framed<T, C, F>(self, codec: C, framer: F) -> Framed<(), Self::WriteHalf, C, F, T, T>
+    /// Create a [`Framed`] reader/writer with the given codec and framer.
+    fn framed<T, C, F>(
+        self,
+        codec: C,
+        framer: F,
+    ) -> Framed<Self::ReadHalf, Self::WriteHalf, C, F, T, T>
     where
         Self: Splittable + Sized,
     {
-        let writer = self.split().1;
-        Framed::new(codec, framer).with_writer(writer)
+        Framed::new(codec, framer).with_duplex(self)
     }
 
-    /// Convenience method to create a [`BytesFramed`] writer
-    /// out of a splittable write half.
-    fn bytes(self) -> BytesFramed<(), Self::WriteHalf>
+    /// Convenience method to create a [`BytesFramed`] reader/writer
+    /// out of a splittable.
+    fn bytes(self) -> BytesFramed<Self::ReadHalf, Self::WriteHalf>
     where
         Self: Splittable + Sized,
     {
-        let writer = self.split().1;
-        BytesFramed::new_bytes().with_writer(writer)
+        BytesFramed::new_bytes().with_duplex(self)
     }
 
     write_scalar!(u8, to_be_bytes, to_le_bytes);

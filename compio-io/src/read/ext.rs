@@ -189,24 +189,25 @@ pub trait AsyncReadExt: AsyncRead {
         loop_read_exact!(buf, len, read, loop self.read_vectored(buf.slice_mut(read)));
     }
 
-    /// Create a [`Framed`] reader with the given codec and framer.
-    /// The read half is obtained by splitting `self`.
-    fn framed<T, C, F>(self, codec: C, framer: F) -> Framed<Self::ReadHalf, (), C, F, T, T>
+    /// Create a [`Framed`] reader/writer with the given codec and framer.
+    fn framed<T, C, F>(
+        self,
+        codec: C,
+        framer: F,
+    ) -> Framed<Self::ReadHalf, Self::WriteHalf, C, F, T, T>
     where
         Self: Splittable + Sized,
     {
-        let reader = self.split().0;
-        Framed::new(codec, framer).with_reader(reader)
+        Framed::new(codec, framer).with_duplex(self)
     }
 
-    /// Convenience method to create a [`BytesFramed`] reader
-    /// out of a splittable read half.
-    fn bytes(self) -> BytesFramed<Self::ReadHalf, ()>
+    /// Convenience method to create a [`BytesFramed`] reader/writter
+    /// out of a splittable.
+    fn bytes(self) -> BytesFramed<Self::ReadHalf, Self::WriteHalf>
     where
         Self: Splittable + Sized,
     {
-        let reader = self.split().0;
-        BytesFramed::new_bytes().with_reader(reader)
+        BytesFramed::new_bytes().with_duplex(self)
     }
 
     /// Creates an adaptor which reads at most `limit` bytes from it.
