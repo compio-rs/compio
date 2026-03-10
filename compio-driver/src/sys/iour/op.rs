@@ -1247,13 +1247,13 @@ mod buf_ring {
         }
     }
 
-    struct MultishotProxy {
+    struct MultishotResult {
         result: io::Result<usize>,
         extra: Extra,
         buffer: Option<IoUringOwnedBuffer>,
     }
 
-    impl MultishotProxy {
+    impl MultishotResult {
         pub fn new(result: io::Result<usize>, extra: Extra, pool: &IoUringBufferPool) -> Self {
             let buffer = extra
                 .buffer_id()
@@ -1278,7 +1278,7 @@ mod buf_ring {
         pub struct ReadMultiAt<S> {
             #[pin]
             inner: ReadManagedAt<S>,
-            multishots: VecDeque<MultishotProxy>
+            multishots: VecDeque<MultishotResult>
         }
     }
 
@@ -1316,7 +1316,7 @@ mod buf_ring {
         ) {
             let this = self.project();
             this.multishots
-                .push_back(MultishotProxy::new(res, extra, &this.inner.pool));
+                .push_back(MultishotResult::new(res, extra, &this.inner.pool));
         }
 
         fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::sys::Extra>> {
@@ -1346,7 +1346,7 @@ mod buf_ring {
         pub struct ReadMulti<S> {
             #[pin]
             inner: ReadManaged<S>,
-            multishots: VecDeque<MultishotProxy>
+            multishots: VecDeque<MultishotResult>
         }
     }
 
@@ -1384,7 +1384,7 @@ mod buf_ring {
         ) {
             let this = self.project();
             this.multishots
-                .push_back(MultishotProxy::new(res, extra, &this.inner.pool));
+                .push_back(MultishotResult::new(res, extra, &this.inner.pool));
         }
 
         fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::sys::Extra>> {
@@ -1414,7 +1414,7 @@ mod buf_ring {
         pub struct RecvMulti<S> {
             #[pin]
             inner: RecvManaged<S>,
-            multishots: VecDeque<MultishotProxy>
+            multishots: VecDeque<MultishotResult>
         }
     }
 
@@ -1452,7 +1452,7 @@ mod buf_ring {
         ) {
             let this = self.project();
             this.multishots
-                .push_back(MultishotProxy::new(res, extra, &this.inner.pool));
+                .push_back(MultishotResult::new(res, extra, &this.inner.pool));
         }
 
         fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::sys::Extra>> {
