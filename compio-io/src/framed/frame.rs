@@ -136,6 +136,7 @@ impl<B: IoBufMut> Framer<B> for LengthDelimited {
         let lfl = self.length_field_len;
 
         // Write the length at the beginning
+        let len = len as u64;
         let len_bytes = if self.length_field_is_big_endian {
             &len.to_be_bytes()[Self::MAX_LFL - lfl..]
         } else {
