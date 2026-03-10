@@ -3,7 +3,7 @@
 use std::ffi::CString;
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use socket2::{SockAddr, SockAddrStorage, socklen_t};
+use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
 use super::{OpCode, stub_unimpl};
 pub use crate::sys::unix_op::*;
@@ -124,6 +124,26 @@ impl<S: AsFd> OpCode for ShutdownSocket<S> {}
 impl OpCode for CloseSocket {}
 
 impl<S: AsFd> OpCode for Accept<S> {}
+
+/// Accept multiple connections.
+pub struct Accept<S> {
+    fd: S,
+}
+
+impl<S> Accept<S> {
+    /// Create [`Accept`].
+    pub fn new(fd: S) -> Self {
+        Self { fd }
+    }
+}
+
+impl<S> IntoInner for Accept<S> {
+    type Inner = (Socket2, SockAddr);
+
+    fn into_inner(self) -> Self::Inner {
+        stub_unimpl()
+    }
+}
 
 impl<S: AsFd> OpCode for AcceptMulti<S> {}
 
