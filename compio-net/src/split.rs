@@ -37,19 +37,19 @@ where
     for<'a> &'a T: AsyncWrite,
 {
     async fn write<B: IoBuf>(&mut self, buf: B) -> BufResult<usize, B> {
-        self.0.write(buf).await
+        (self.0).write(buf).await
     }
 
     async fn write_vectored<B: IoVectoredBuf>(&mut self, buf: B) -> BufResult<usize, B> {
-        self.0.write_vectored(buf).await
+        (self.0).write_vectored(buf).await
     }
 
     async fn flush(&mut self) -> io::Result<()> {
-        self.0.flush().await
+        (self.0).flush().await
     }
 
     async fn shutdown(&mut self) -> io::Result<()> {
-        self.0.shutdown().await
+        (self.0).shutdown().await
     }
 }
 
