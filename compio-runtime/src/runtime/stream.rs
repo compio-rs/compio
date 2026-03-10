@@ -12,7 +12,7 @@ use crate::{ContextExt, Runtime};
 pin_project_lite::pin_project! {
     /// Returned [`Stream`] for [`Runtime::submit_multi`].
     ///
-    /// When this is dropped and operation haven't finished yet, it will try to
+    /// When this is dropped and the operation hasn't finished yet, it will try to
     /// cancel the operation.
     pub struct SubmitMulti<T: OpCode> {
         runtime: Runtime,
@@ -22,7 +22,7 @@ pin_project_lite::pin_project! {
     impl<T: OpCode> PinnedDrop for SubmitMulti<T> {
         fn drop(this: Pin<&mut Self>) {
             let this = this.project();
-            if let Some(State::Submitted { key, .. }) = this.state.take() {
+            if let Some(State::Submitted { key }) = this.state.take() {
                 this.runtime.cancel(key);
             }
         }
@@ -49,15 +49,15 @@ impl<T: OpCode> SubmitMulti<T> {
         }
     }
 
-    /// Tries to take the inner op from the stream.
+    /// Try to take the inner op from the stream.
     ///
     /// Returns `Ok(T)` if the stream:
     ///
-    /// - hasn't not been polled yet, or
-    /// - has finished and the op is returned by the driver
+    /// - has not been polled yet, or
+    /// - is finished and the op is returned by the driver
     ///
     /// Returns `Err(Self)` if it's still running.
-    pub fn take(mut self) -> Result<T, Self> {
+    pub fn try_take(mut self) -> Result<T, Self> {
         match self.state.take() {
             Some(State::Finished { op }) | Some(State::Idle { op }) => Ok(op),
             state => {
