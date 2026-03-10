@@ -132,15 +132,10 @@ op!(<T: IoVectoredBufMut, S: AsFd> RecvFromVectored(fd: S, buffer: T, flags: i32
 op!(<T: IoVectoredBuf, S: AsFd> SendToVectored(fd: S, buffer: T, addr: SockAddr, flags: i32));
 op!(<S: AsFd> FileStat(fd: S));
 op!(<S: AsFd> PathStat(dirfd: S, path: CString, follow_symlink: bool));
-#[cfg(linux_all)]
 op!(<T: IoBuf, S: AsFd> SendZc(fd: S, buffer: T, flags: i32));
-#[cfg(linux_all)]
 op!(<T: IoVectoredBuf, S: AsFd> SendVectoredZc(fd: S, buffer: T, flags: i32));
-#[cfg(linux_all)]
 op!(<T: IoBuf, S: AsFd> SendToZc(fd: S, buffer: T, addr: SockAddr, flags: i32));
-#[cfg(linux_all)]
 op!(<T: IoVectoredBuf, S: AsFd> SendToVectoredZc(fd: S, buffer: T, addr: SockAddr, flags: i32));
-#[cfg(linux_all)]
 op!(<T: IoVectoredBuf, C: IoBuf, S: AsFd> SendMsgZc(fd: S, buffer: T, control: C, addr: Option<SockAddr>, flags: i32));
 
 macro_rules! mop {

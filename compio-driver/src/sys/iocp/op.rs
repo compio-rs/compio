@@ -39,6 +39,10 @@ use windows_sys::{
     core::GUID,
 };
 
+pub use self::{
+    Send as SendZc, SendMsg as SendMsgZc, SendTo as SendToZc, SendToVectored as SendToVectoredZc,
+    SendVectored as SendVectoredZc,
+};
 use crate::{AsFd, AsRawFd, OpCode, OpType, RawFd, op::*, sys_slice::*, syscall};
 
 #[inline]
