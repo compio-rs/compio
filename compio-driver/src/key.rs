@@ -6,7 +6,6 @@ use std::{
     io,
     mem::{self, ManuallyDrop},
     ops::{Deref, DerefMut},
-    pin::Pin,
     task::Waker,
 };
 
@@ -43,11 +42,6 @@ impl<T: ?Sized> RawOp<T> {
 
     pub fn extra_mut(&mut self) -> &mut Extra {
         &mut self.extra
-    }
-
-    fn pinned_op(&mut self) -> Pin<&mut T> {
-        // SAFETY: inner is always pinned with ThinCell.
-        unsafe { Pin::new_unchecked(&mut self.op) }
     }
 
     #[cfg(io_uring)]
@@ -283,7 +277,7 @@ impl ErasedKey {
             let this = &mut *this;
             if this.extra.is_iour() {
                 unsafe {
-                    Pin::new_unchecked(&mut this.op).set_result(&res, &this.extra);
+                    this.op.set_result(&res, &this.extra);
                 }
             }
         }

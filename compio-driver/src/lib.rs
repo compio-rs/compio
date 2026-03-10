@@ -48,6 +48,9 @@ pub use sys::{Extra, *};
 mod cancel;
 pub use cancel::*;
 
+mod control;
+use control::*;
+
 use crate::{key::ErasedKey, op::OpCodeFlag};
 
 mod sys_slice;

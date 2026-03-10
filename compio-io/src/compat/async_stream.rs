@@ -1,7 +1,6 @@
 use std::{
     fmt::Debug,
     io::{self, BufRead},
-    marker::PhantomPinned,
     mem::MaybeUninit,
     pin::Pin,
     sync::Arc,
@@ -27,7 +26,6 @@ pin_project! {
         flush_waker: Option<Waker>,
         close_waker: Option<Waker>,
         #[pin]
-        _p: PhantomPinned,
     }
 }
 
@@ -54,7 +52,6 @@ impl<S> AsyncStream<S> {
             write_waker: None,
             flush_waker: None,
             close_waker: None,
-            _p: PhantomPinned,
         }
     }
 
@@ -87,7 +84,6 @@ pin_project! {
         read_uninit_waker: Option<Waker>,
         read_buf_waker: Option<Waker>,
         #[pin]
-        _p: PhantomPinned,
     }
 }
 
@@ -115,7 +111,6 @@ impl<S> AsyncReadStream<S> {
             read_waker: None,
             read_uninit_waker: None,
             read_buf_waker: None,
-            _p: PhantomPinned,
         }
     }
 
@@ -148,7 +143,6 @@ pin_project! {
         flush_waker: Option<Waker>,
         close_waker: Option<Waker>,
         #[pin]
-        _p: PhantomPinned,
     }
 }
 
@@ -177,7 +171,6 @@ impl<S> AsyncWriteStream<S> {
             write_waker: None,
             flush_waker: None,
             close_waker: None,
-            _p: PhantomPinned,
         }
     }
 

@@ -4,15 +4,16 @@
 //! The operation itself doesn't perform anything.
 //! You need to pass them to [`crate::Proactor`], and poll the driver.
 
-use std::{io, marker::PhantomPinned, mem::ManuallyDrop, net::Shutdown};
+use std::{io, mem::ManuallyDrop, net::Shutdown};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, SetLen};
-use pin_project_lite::pin_project;
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
+#[cfg(linux_all)]
+pub use crate::sys::op::Splice;
 pub use crate::sys::op::{
-    Accept, Recv, RecvFrom, RecvFromVectored, RecvMsg, RecvVectored, Send, SendMsg, SendTo,
-    SendToVectored, SendVectored,
+    Accept, Recv, RecvFrom, RecvFromVectored, RecvMsg, RecvVectored, Send, SendMsg, SendMsgZc,
+    SendTo, SendToVectored, SendToVectoredZc, SendToZc, SendVectored, SendVectoredZc, SendZc,
 };
 #[cfg(windows)]
 pub use crate::sys::op::{ConnectNamedPipe, DeviceIoControl};
@@ -26,8 +27,6 @@ pub use crate::sys::op::{
 pub use crate::sys::op::{
     ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvManaged, RecvMulti,
 };
-#[cfg(linux_all)]
-pub use crate::sys::op::{SendMsgZc, SendToVectoredZc, SendToZc, SendVectoredZc, SendZc, Splice};
 use crate::{Extra, OwnedFd, SharedFd, TakeBuffer, sys::aio::*};
 
 /// Trait to update the buffer length inside the [`BufResult`].
@@ -197,13 +196,10 @@ impl ResultTakeBuffer for BufResult<usize, Extra> {
     }
 }
 
-pin_project! {
-    /// Spawn a blocking function in the thread pool.
-    pub struct Asyncify<F, D> {
-        pub(crate) f: Option<F>,
-        pub(crate) data: Option<D>,
-        _p: PhantomPinned,
-    }
+/// Spawn a blocking function in the thread pool.
+pub struct Asyncify<F, D> {
+    pub(crate) f: Option<F>,
+    pub(crate) data: Option<D>,
 }
 
 impl<F, D> Asyncify<F, D> {
@@ -212,7 +208,6 @@ impl<F, D> Asyncify<F, D> {
         Self {
             f: Some(f),
             data: None,
-            _p: PhantomPinned,
         }
     }
 }
@@ -225,14 +220,11 @@ impl<F, D> IntoInner for Asyncify<F, D> {
     }
 }
 
-pin_project! {
-    /// Spawn a blocking function with a file descriptor in the thread pool.
-    pub struct AsyncifyFd<S, F, D> {
-        pub(crate) fd: SharedFd<S>,
-        pub(crate) f: Option<F>,
-        pub(crate) data: Option<D>,
-        _p: PhantomPinned,
-    }
+/// Spawn a blocking function with a file descriptor in the thread pool.
+pub struct AsyncifyFd<S, F, D> {
+    pub(crate) fd: SharedFd<S>,
+    pub(crate) f: Option<F>,
+    pub(crate) data: Option<D>,
 }
 
 impl<S, F, D> AsyncifyFd<S, F, D> {
@@ -242,7 +234,6 @@ impl<S, F, D> AsyncifyFd<S, F, D> {
             fd,
             f: Some(f),
             data: None,
-            _p: PhantomPinned,
         }
     }
 }
@@ -255,15 +246,12 @@ impl<S, F, D> IntoInner for AsyncifyFd<S, F, D> {
     }
 }
 
-pin_project! {
-   /// Spawn a blocking function with two file descriptors in the thread pool.
-    pub struct AsyncifyFd2<S1, S2, F, D> {
-        pub(crate) fd1: SharedFd<S1>,
-        pub(crate) fd2: SharedFd<S2>,
-        pub(crate) f: Option<F>,
-        pub(crate) data: Option<D>,
-        _p: PhantomPinned,
-    }
+/// Spawn a blocking function with two file descriptors in the thread pool.
+pub struct AsyncifyFd2<S1, S2, F, D> {
+    pub(crate) fd1: SharedFd<S1>,
+    pub(crate) fd2: SharedFd<S2>,
+    pub(crate) f: Option<F>,
+    pub(crate) data: Option<D>,
 }
 
 impl<S1, S2, F, D> AsyncifyFd2<S1, S2, F, D> {
@@ -274,7 +262,6 @@ impl<S1, S2, F, D> AsyncifyFd2<S1, S2, F, D> {
             fd2,
             f: Some(f),
             data: None,
-            _p: PhantomPinned,
         }
     }
 }
@@ -301,17 +288,13 @@ impl CloseFile {
     }
 }
 
-pin_project! {
-    /// Read a file at specified position into specified buffer.
-    #[derive(Debug)]
-    pub struct ReadAt<T: IoBufMut, S> {
-        pub(crate) fd: S,
-        pub(crate) offset: u64,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) aiocb: aiocb,
-        _p: PhantomPinned,
-    }
+/// Read a file at specified position into specified buffer.
+#[derive(Debug)]
+pub struct ReadAt<T: IoBufMut, S> {
+    pub(crate) fd: S,
+    pub(crate) offset: u64,
+    pub(crate) buffer: T,
+    pub(crate) aiocb: aiocb,
 }
 
 impl<T: IoBufMut, S> ReadAt<T, S> {
@@ -322,7 +305,6 @@ impl<T: IoBufMut, S> ReadAt<T, S> {
             offset,
             buffer,
             aiocb: new_aiocb(),
-            _p: PhantomPinned,
         }
     }
 }
@@ -335,17 +317,13 @@ impl<T: IoBufMut, S> IntoInner for ReadAt<T, S> {
     }
 }
 
-pin_project! {
-    /// Write a file at specified position from specified buffer.
-    #[derive(Debug)]
-    pub struct WriteAt<T: IoBuf, S> {
-        pub(crate) fd: S,
-        pub(crate) offset: u64,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) aiocb: aiocb,
-        _p: PhantomPinned,
-    }
+/// Write a file at specified position from specified buffer.
+#[derive(Debug)]
+pub struct WriteAt<T: IoBuf, S> {
+    pub(crate) fd: S,
+    pub(crate) offset: u64,
+    pub(crate) buffer: T,
+    pub(crate) aiocb: aiocb,
 }
 
 impl<T: IoBuf, S> WriteAt<T, S> {
@@ -356,7 +334,6 @@ impl<T: IoBuf, S> WriteAt<T, S> {
             offset,
             buffer,
             aiocb: new_aiocb(),
-            _p: PhantomPinned,
         }
     }
 }
@@ -369,24 +346,16 @@ impl<T: IoBuf, S> IntoInner for WriteAt<T, S> {
     }
 }
 
-pin_project! {
-    /// Read a file.
-    pub struct Read<T: IoBufMut, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        _p: PhantomPinned,
-    }
+/// Read a file.
+pub struct Read<T: IoBufMut, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
 }
 
 impl<T: IoBufMut, S> Read<T, S> {
     /// Create [`Read`].
     pub fn new(fd: S, buffer: T) -> Self {
-        Self {
-            fd,
-            buffer,
-            _p: PhantomPinned,
-        }
+        Self { fd, buffer }
     }
 }
 
@@ -402,17 +371,12 @@ impl<T: IoBufMut, S> IntoInner for Read<T, S> {
 pub struct Write<T: IoBuf, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
-    _p: PhantomPinned,
 }
 
 impl<T: IoBuf, S> Write<T, S> {
     /// Create [`Write`].
     pub fn new(fd: S, buffer: T) -> Self {
-        Self {
-            fd,
-            buffer,
-            _p: PhantomPinned,
-        }
+        Self { fd, buffer }
     }
 }
 
@@ -424,13 +388,11 @@ impl<T: IoBuf, S> IntoInner for Write<T, S> {
     }
 }
 
-pin_project! {
-    /// Sync data to the disk.
-    pub struct Sync<S> {
-        pub(crate) fd: S,
-        pub(crate) datasync: bool,
-        pub(crate) aiocb: aiocb,
-    }
+/// Sync data to the disk.
+pub struct Sync<S> {
+    pub(crate) fd: S,
+    pub(crate) datasync: bool,
+    pub(crate) aiocb: aiocb,
 }
 
 impl<S> Sync<S> {
@@ -491,11 +453,10 @@ pub(crate) mod managed {
     use std::io;
 
     use compio_buf::IntoInner;
-    use pin_project_lite::pin_project;
     use socket2::SockAddr;
 
     use super::{Read, ReadAt, Recv, RecvFrom};
-    use crate::{AsFd, BorrowedBuffer, BufferPool, FallbackOwnedBuffer, TakeBuffer};
+    use crate::{AsFd, BorrowedBuffer, BufferPool, Extra, FallbackOwnedBuffer, TakeBuffer};
 
     fn take_buffer(
         slice: FallbackOwnedBuffer,
@@ -512,12 +473,9 @@ pub(crate) mod managed {
         Ok(res)
     }
 
-    pin_project! {
-        /// Read a file at specified position into managed buffer.
-        pub struct ReadManagedAt<S> {
-            #[pin]
-            pub(crate) op: ReadAt<FallbackOwnedBuffer, S>,
-        }
+    /// Read a file at specified position into managed buffer.
+    pub struct ReadManagedAt<S> {
+        pub(crate) op: ReadAt<FallbackOwnedBuffer, S>,
     }
 
     impl<S> ReadManagedAt<S> {
@@ -545,12 +503,9 @@ pub(crate) mod managed {
         }
     }
 
-    pin_project! {
-        /// Read a file into managed buffer.
-        pub struct ReadManaged<S> {
-            #[pin]
-            pub(crate) op: Read<FallbackOwnedBuffer, S>,
-        }
+    /// Read a file into managed buffer.
+    pub struct ReadManaged<S> {
+        pub(crate) op: Read<FallbackOwnedBuffer, S>,
     }
 
     impl<S> ReadManaged<S> {
@@ -578,15 +533,12 @@ pub(crate) mod managed {
         }
     }
 
-    pin_project! {
-        /// Receive data from remote into managed buffer.
-        ///
-        /// It is only used for socket operations. If you want to read from a pipe,
-        /// use [`ReadManaged`].
-        pub struct RecvManaged<S> {
-            #[pin]
-            pub(crate) op: Recv<FallbackOwnedBuffer, S>,
-        }
+    /// Receive data from remote into managed buffer.
+    ///
+    /// It is only used for socket operations. If you want to read from a pipe,
+    /// use [`ReadManaged`].
+    pub struct RecvManaged<S> {
+        pub(crate) op: Recv<FallbackOwnedBuffer, S>,
     }
 
     impl<S> RecvManaged<S> {
@@ -614,12 +566,9 @@ pub(crate) mod managed {
         }
     }
 
-    pin_project! {
-        /// Receive data and source address into managed buffer.
-        pub struct RecvFromManaged<S: AsFd> {
-            #[pin]
-            pub(crate) op: RecvFrom<FallbackOwnedBuffer, S>,
-        }
+    /// Receive data and source address into managed buffer.
+    pub struct RecvFromManaged<S: AsFd> {
+        pub(crate) op: RecvFrom<FallbackOwnedBuffer, S>,
     }
 
     impl<S: AsFd> RecvFromManaged<S> {

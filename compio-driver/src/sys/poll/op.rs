@@ -3,9 +3,7 @@ use std::ptr::NonNull;
 use std::{
     ffi::CString,
     io,
-    marker::PhantomPinned,
     os::fd::{AsRawFd, FromRawFd, OwnedFd},
-    pin::Pin,
     task::Poll,
 };
 
@@ -14,10 +12,8 @@ use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectore
 use libc::{pread, preadv, pwrite, pwritev};
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "hurd"))]
 use libc::{pread64 as pread, preadv64 as preadv, pwrite64 as pwrite, pwritev64 as pwritev};
-use pin_project_lite::pin_project;
 use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
-#[cfg(linux_all)]
 pub use self::{
     Send as SendZc, SendMsg as SendMsgZc, SendTo as SendToZc, SendToVectored as SendToVectoredZc,
     SendVectored as SendVectoredZc,
@@ -26,110 +22,126 @@ use super::{AsFd, Decision, OpCode, OpType, syscall};
 pub use crate::sys::unix_op::*;
 use crate::{op::*, sys_slice::*};
 
-unsafe impl<
+unsafe impl<D, F> OpCode for Asyncify<F, D>
+where
     D: std::marker::Send + 'static,
     F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + 'static,
-> OpCode for Asyncify<F, D>
 {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        let f = this
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        let f = self
             .f
             .take()
             .expect("the operate method could only be called once");
         let BufResult(res, data) = f();
-        *this.data = Some(data);
+        self.data = Some(data);
         Poll::Ready(res)
     }
 }
 
-unsafe impl<
-    S,
+unsafe impl<S, D, F> OpCode for AsyncifyFd<S, F, D>
+where
     D: std::marker::Send + 'static,
     F: (FnOnce(&S) -> BufResult<usize, D>) + std::marker::Send + 'static,
-> OpCode for AsyncifyFd<S, F, D>
 {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        let f = this
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        let f = self
             .f
             .take()
             .expect("the operate method could only be called once");
-        let BufResult(res, data) = f(this.fd);
-        *this.data = Some(data);
+        let BufResult(res, data) = f(&self.fd);
+        self.data = Some(data);
         Poll::Ready(res)
     }
 }
 
-unsafe impl<
-    S1,
-    S2,
+unsafe impl<S1, S2, D, F> OpCode for AsyncifyFd2<S1, S2, F, D>
+where
     D: std::marker::Send + 'static,
     F: (FnOnce(&S1, &S2) -> BufResult<usize, D>) + std::marker::Send + 'static,
-> OpCode for AsyncifyFd2<S1, S2, F, D>
 {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        let f = this
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        let f = self
             .f
             .take()
             .expect("the operate method could only be called once");
-        let BufResult(res, data) = f(this.fd1, this.fd2);
-        *this.data = Some(data);
+        let BufResult(res, data) = f(&self.fd1, &self.fd2);
+        self.data = Some(data);
         Poll::Ready(res)
     }
 }
 
 unsafe impl<S: AsFd> OpCode for OpenFile<S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        let fd = self.as_mut().call()?;
-        *self.project().opened_fd = Some(unsafe { OwnedFd::from_raw_fd(fd as _) });
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        let fd = self.call(control)?;
+        self.opened_fd = Some(unsafe { OwnedFd::from_raw_fd(fd as _) });
         Poll::Ready(Ok(fd))
     }
 }
 
 unsafe impl OpCode for CloseFile {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(self.call())
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        Poll::Ready(self.call(control))
     }
 }
 
 unsafe impl<S: AsFd> OpCode for TruncateFile<S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         Poll::Ready(self.call())
     }
 }
 
-pin_project! {
-    /// Get metadata of an opened file.
-    pub struct FileStat<S> {
-        pub(crate) fd: S,
-        pub(crate) stat: Stat,
-    }
+/// Get metadata of an opened file.
+pub struct FileStat<S> {
+    pub(crate) fd: S,
+    pub(crate) stat: Stat,
 }
 
 impl<S> FileStat<S> {
@@ -143,30 +155,33 @@ impl<S> FileStat<S> {
 }
 
 unsafe impl<S: AsFd> OpCode for FileStat<S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        let this = self.project();
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         #[cfg(gnulinux)]
         {
             let mut s: libc::statx = unsafe { std::mem::zeroed() };
             static EMPTY_NAME: &[u8] = b"\0";
             syscall!(libc::statx(
-                this.fd.as_fd().as_raw_fd(),
+                self.fd.as_fd().as_raw_fd(),
                 EMPTY_NAME.as_ptr().cast(),
                 libc::AT_EMPTY_PATH,
                 statx_mask(),
                 &mut s
             ))?;
-            *this.stat = statx_to_stat(s);
+            self.stat = statx_to_stat(s);
             Poll::Ready(Ok(0))
         }
         #[cfg(not(gnulinux))]
         {
             Poll::Ready(Ok(
-                syscall!(libc::fstat(this.fd.as_fd().as_raw_fd(), this.stat))? as _,
+                syscall!(libc::fstat(self.fd.as_fd().as_raw_fd(), &raw mut self.stat))? as _,
             ))
         }
     }
@@ -180,14 +195,12 @@ impl<S> IntoInner for FileStat<S> {
     }
 }
 
-pin_project! {
-    /// Get metadata from path.
-    pub struct PathStat<S: AsFd> {
-        pub(crate) dirfd: S,
-        pub(crate) path: CString,
-        pub(crate) stat: Stat,
-        pub(crate) follow_symlink: bool,
-    }
+/// Get metadata from path.
+pub struct PathStat<S: AsFd> {
+    pub(crate) dirfd: S,
+    pub(crate) path: CString,
+    pub(crate) stat: Stat,
+    pub(crate) follow_symlink: bool,
 }
 
 impl<S: AsFd> PathStat<S> {
@@ -203,40 +216,46 @@ impl<S: AsFd> PathStat<S> {
 }
 
 unsafe impl<S: AsFd> OpCode for PathStat<S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        let this = self.project();
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         #[cfg(gnulinux)]
         let res = {
             let mut flags = libc::AT_EMPTY_PATH;
-            if !*this.follow_symlink {
+            if !self.follow_symlink {
                 flags |= libc::AT_SYMLINK_NOFOLLOW;
             }
             let mut s: libc::statx = unsafe { std::mem::zeroed() };
             let res = syscall!(libc::statx(
-                this.dirfd.as_fd().as_raw_fd(),
-                this.path.as_ptr(),
+                self.dirfd.as_fd().as_raw_fd(),
+                self.path.as_ptr(),
                 flags,
                 statx_mask(),
                 &mut s
             ))?;
-            *this.stat = statx_to_stat(s);
+            self.stat = statx_to_stat(s);
             res
         };
         // Some platforms don't support `AT_EMPTY_PATH`, so we have to use `fstat` when
         // the path is empty.
         #[cfg(not(gnulinux))]
-        let res = if this.path.is_empty() {
-            syscall!(libc::fstat(this.dirfd.as_fd().as_raw_fd(), this.stat))?
+        let res = if self.path.is_empty() {
+            syscall!(libc::fstat(
+                self.dirfd.as_fd().as_raw_fd(),
+                &raw mut self.stat
+            ))?
         } else {
             syscall!(libc::fstatat(
-                this.dirfd.as_fd().as_raw_fd(),
-                this.path.as_ptr(),
-                this.stat,
-                if !*this.follow_symlink {
+                self.dirfd.as_fd().as_raw_fd(),
+                self.path.as_ptr(),
+                &raw mut self.stat,
+                if !self.follow_symlink {
                     libc::AT_SYMLINK_NOFOLLOW
                 } else {
                     0
@@ -256,18 +275,21 @@ impl<S: AsFd> IntoInner for PathStat<S> {
 }
 
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         #[cfg(aio)]
         {
-            let this = self.project();
-            let slice = this.buffer.sys_slice_mut();
+            let slice = self.buffer.sys_slice_mut();
 
-            this.aiocb.aio_fildes = this.fd.as_fd().as_raw_fd();
-            this.aiocb.aio_offset = *this.offset as _;
-            this.aiocb.aio_buf = slice.ptr().cast();
-            this.aiocb.aio_nbytes = slice.len();
+            self.aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
+            self.aiocb.aio_offset = self.offset as _;
+            self.aiocb.aio_buf = slice.ptr().cast();
+            self.aiocb.aio_nbytes = slice.len();
 
-            Ok(Decision::aio(this.aiocb, libc::aio_read))
+            Ok(Decision::aio(&mut self.aiocb, libc::aio_read))
         }
         #[cfg(not(aio))]
         {
@@ -276,31 +298,34 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     }
 
     #[cfg(aio)]
-    fn op_type(self: Pin<&mut Self>) -> Option<crate::OpType> {
-        Some(OpType::Aio(NonNull::from(self.project().aiocb)))
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<crate::OpType> {
+        Some(OpType::Aio(NonNull::from(&mut self.aiocb)))
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();
         let offset = self.offset;
-        let slice = self.project().buffer.sys_slice_mut();
+        let slice = self.buffer.sys_slice_mut();
         syscall!(break pread(fd, slice.ptr() as _, slice.len() as _, offset as _,))
     }
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         #[cfg(freebsd)]
         {
-            let this = self.project();
-            *this.slices = this.buffer.sys_slices_mut();
+            self.slices = self.buffer.sys_slices_mut();
 
-            this.aiocb.aio_fildes = this.fd.as_fd().as_raw_fd();
-            this.aiocb.aio_offset = *this.offset as _;
-            this.aiocb.aio_buf = this.slices.as_mut_ptr().cast();
-            this.aiocb.aio_nbytes = this.slices.len();
+            self.aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
+            self.aiocb.aio_offset = self.offset as _;
+            self.aiocb.aio_buf = self.slices.as_mut_ptr().cast();
+            self.aiocb.aio_nbytes = self.slices.len();
 
-            Ok(Decision::aio(this.aiocb, libc::aio_readv))
+            Ok(Decision::aio(&mut self.aiocb, libc::aio_readv))
         }
         #[cfg(not(freebsd))]
         {
@@ -309,37 +334,39 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
     }
 
     #[cfg(freebsd)]
-    fn op_type(self: Pin<&mut Self>) -> Option<crate::OpType> {
-        Some(OpType::Aio(NonNull::from(self.project().aiocb)))
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<crate::OpType> {
+        Some(OpType::Aio(NonNull::from(&mut self.aiocb)))
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        *this.slices = this.buffer.sys_slices_mut();
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        self.slices = self.buffer.sys_slices_mut();
         syscall!(
             break preadv(
-                this.fd.as_fd().as_raw_fd(),
-                this.slices.as_ptr() as _,
-                this.slices.len() as _,
-                *this.offset as _,
+                self.fd.as_fd().as_raw_fd(),
+                self.slices.as_ptr() as _,
+                self.slices.len() as _,
+                self.offset as _,
             )
         )
     }
 }
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         #[cfg(aio)]
         {
-            let this = self.project();
-            let slice = this.buffer.as_ref().sys_slice();
+            let slice = self.buffer.sys_slice();
 
-            this.aiocb.aio_fildes = this.fd.as_fd().as_raw_fd();
-            this.aiocb.aio_offset = *this.offset as _;
-            this.aiocb.aio_buf = slice.ptr().cast();
-            this.aiocb.aio_nbytes = slice.len();
+            self.aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
+            self.aiocb.aio_offset = self.offset as _;
+            self.aiocb.aio_buf = slice.ptr().cast();
+            self.aiocb.aio_nbytes = slice.len();
 
-            Ok(Decision::aio(this.aiocb, libc::aio_write))
+            Ok(Decision::aio(&mut self.aiocb, libc::aio_write))
         }
         #[cfg(not(aio))]
         {
@@ -348,11 +375,11 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
     }
 
     #[cfg(aio)]
-    fn op_type(self: Pin<&mut Self>) -> Option<crate::OpType> {
-        Some(OpType::Aio(NonNull::from(self.project().aiocb)))
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<crate::OpType> {
+        Some(OpType::Aio(NonNull::from(&mut self.aiocb)))
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         let slice = self.buffer.as_init();
         syscall!(
             break pwrite(
@@ -366,18 +393,21 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         #[cfg(freebsd)]
         {
-            let this = self.project();
-            *this.slices = this.buffer.as_ref().sys_slices();
+            self.slices = self.buffer.sys_slices();
 
-            this.aiocb.aio_fildes = this.fd.as_fd().as_raw_fd();
-            this.aiocb.aio_offset = *this.offset as _;
-            this.aiocb.aio_buf = this.slices.as_ptr().cast_mut().cast();
-            this.aiocb.aio_nbytes = this.slices.len();
+            self.aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
+            self.aiocb.aio_offset = self.offset as _;
+            self.aiocb.aio_buf = self.slices.as_ptr().cast_mut().cast();
+            self.aiocb.aio_nbytes = self.slices.len();
 
-            Ok(Decision::aio(this.aiocb, libc::aio_writev))
+            Ok(Decision::aio(&mut self.aiocb, libc::aio_writev))
         }
         #[cfg(not(freebsd))]
         {
@@ -386,86 +416,100 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
     }
 
     #[cfg(freebsd)]
-    fn op_type(self: Pin<&mut Self>) -> Option<crate::OpType> {
-        Some(OpType::Aio(NonNull::from(self.project().aiocb)))
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<crate::OpType> {
+        Some(OpType::Aio(NonNull::from(&mut self.aiocb)))
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        *this.slices = this.buffer.as_ref().sys_slices();
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        self.slices = self.buffer.sys_slices();
         syscall!(
             break pwritev(
-                this.fd.as_fd().as_raw_fd(),
-                this.slices.as_ptr() as _,
-                this.slices.len() as _,
-                *this.offset as _,
+                self.fd.as_fd().as_raw_fd(),
+                self.slices.as_ptr() as _,
+                self.slices.len() as _,
+                self.offset as _,
             )
         )
     }
 }
 
 unsafe impl<S: AsFd> OpCode for crate::op::managed::ReadManagedAt<S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        self.project().op.pre_submit()
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
+        self.op.pre_submit(control)
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<crate::OpType> {
-        self.project().op.op_type()
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<crate::OpType> {
+        self.op.op_type(control)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        self.project().op.operate()
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        self.op.operate(control)
     }
 }
 
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::wait_readable(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();
-        let slice = self.project().buffer.sys_slice_mut();
+        let slice = self.buffer.sys_slice_mut();
         syscall!(break libc::read(fd, slice.ptr() as _, slice.len()))
     }
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::wait_readable(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        *this.slices = this.buffer.sys_slices_mut();
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        self.slices = self.buffer.sys_slices_mut();
         syscall!(
             break libc::readv(
-                this.fd.as_fd().as_raw_fd(),
-                this.slices.as_ptr() as _,
-                this.slices.len() as _
+                self.fd.as_fd().as_raw_fd(),
+                self.slices.as_ptr() as _,
+                self.slices.len() as _
             )
         )
     }
 }
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::wait_writable(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         let slice = self.buffer.as_init();
         syscall!(
             break libc::write(
@@ -478,43 +522,54 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::wait_writable(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        *this.slices = this.buffer.as_ref().sys_slices();
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        self.slices = self.buffer.sys_slices();
         syscall!(
             break libc::writev(
-                this.fd.as_fd().as_raw_fd(),
-                this.slices.as_ptr() as _,
-                this.slices.len() as _
+                self.fd.as_fd().as_raw_fd(),
+                self.slices.as_ptr() as _,
+                self.slices.len() as _
             )
         )
     }
 }
 
 unsafe impl<S: AsFd> OpCode for crate::op::managed::ReadManaged<S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        self.project().op.pre_submit()
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
+        self.op.pre_submit(control)
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<crate::OpType> {
-        self.project().op.op_type()
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<crate::OpType> {
+        self.op.op_type(control)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        self.project().op.operate()
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        self.op.operate(control)
     }
 }
 
 unsafe impl<S: AsFd> OpCode for Sync<S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         #[cfg(aio)]
         {
             unsafe extern "C" fn aio_fsync(aiocbp: *mut libc::aiocb) -> i32 {
@@ -524,16 +579,15 @@ unsafe impl<S: AsFd> OpCode for Sync<S> {
                 unsafe { libc::aio_fsync(libc::O_DSYNC, aiocbp) }
             }
 
-            let this = self.project();
-            this.aiocb.aio_fildes = this.fd.as_fd().as_raw_fd();
+            self.aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
 
-            let f = if *this.datasync {
+            let f = if self.datasync {
                 aio_fdatasync
             } else {
                 aio_fsync
             };
 
-            Ok(Decision::aio(this.aiocb, f))
+            Ok(Decision::aio(&mut self.aiocb, f))
         }
         #[cfg(not(aio))]
         {
@@ -542,11 +596,11 @@ unsafe impl<S: AsFd> OpCode for Sync<S> {
     }
 
     #[cfg(aio)]
-    fn op_type(self: Pin<&mut Self>) -> Option<crate::OpType> {
-        Some(OpType::Aio(NonNull::from(self.project().aiocb)))
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<crate::OpType> {
+        Some(OpType::Aio(NonNull::from(&mut self.aiocb)))
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         #[cfg(datasync)]
         {
             Poll::Ready(Ok(syscall!(if self.datasync {
@@ -563,57 +617,77 @@ unsafe impl<S: AsFd> OpCode for Sync<S> {
 }
 
 unsafe impl<S: AsFd> OpCode for Unlink<S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(self.call())
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        Poll::Ready(self.call(control))
     }
 }
 
 unsafe impl<S: AsFd> OpCode for CreateDir<S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(self.call())
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        Poll::Ready(self.call(control))
     }
 }
 
 unsafe impl<S1: AsFd, S2: AsFd> OpCode for Rename<S1, S2> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(self.call())
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        Poll::Ready(self.call(control))
     }
 }
 
 unsafe impl<S: AsFd> OpCode for Symlink<S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(self.call())
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        Poll::Ready(self.call(control))
     }
 }
 
 unsafe impl<S1: AsFd, S2: AsFd> OpCode for HardLink<S1, S2> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(self.call())
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        Poll::Ready(self.call(control))
     }
 }
 
 impl CreateSocket {
-    unsafe fn call(self: Pin<&mut Self>) -> io::Result<libc::c_int> {
+    unsafe fn call(&mut self, control: &mut ()) -> io::Result<libc::c_int> {
         #[allow(unused_mut)]
         let mut ty: i32 = self.socket_type;
         #[cfg(any(
@@ -668,45 +742,56 @@ impl CreateSocket {
             target_os = "cygwin",
         )))]
         socket.set_nonblocking(true)?;
-        *self.project().opened_fd = Some(socket);
+        self.opened_fd = Some(socket);
         Ok(fd)
     }
 }
 
 unsafe impl OpCode for CreateSocket {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(Ok(unsafe { self.call()? } as _))
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        Poll::Ready(Ok(unsafe { self.call(control)? } as _))
     }
 }
 
 unsafe impl<S: AsFd> OpCode for ShutdownSocket<S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(self.call())
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        Poll::Ready(self.call(control))
     }
 }
 
 unsafe impl OpCode for CloseSocket {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        Poll::Ready(self.call())
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        Poll::Ready(self.call(control))
     }
 }
 
 impl<S: AsFd> Accept<S> {
     // If the first call succeeds, there won't be another call.
-    unsafe fn call(self: Pin<&mut Self>) -> libc::c_int {
-        let this = self.project();
+    unsafe fn call(&mut self, control: &mut ()) -> libc::c_int {
         || -> io::Result<libc::c_int> {
             #[cfg(any(
                 target_os = "android",
@@ -721,13 +806,13 @@ impl<S: AsFd> Accept<S> {
             ))]
             {
                 let fd = syscall!(libc::accept4(
-                    this.fd.as_fd().as_raw_fd(),
-                    this.buffer as *mut _ as *mut _,
-                    this.addr_len,
+                    self.fd.as_fd().as_raw_fd(),
+                    &raw mut self.buffer as *mut _,
+                    &raw mut self.addr_len,
                     libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC,
                 ))?;
                 let socket = unsafe { Socket2::from_raw_fd(fd) };
-                *this.accepted_fd = Some(socket);
+                self.accepted_fd = Some(socket);
                 Ok(fd)
             }
             #[cfg(not(any(
@@ -743,14 +828,14 @@ impl<S: AsFd> Accept<S> {
             )))]
             {
                 let fd = syscall!(libc::accept(
-                    this.fd.as_fd().as_raw_fd(),
-                    this.buffer as *mut _ as *mut _,
-                    this.addr_len,
+                    self.fd.as_fd().as_raw_fd(),
+                    self.buffer as *mut _ as *mut _,
+                    self.addr_len,
                 ))?;
                 let socket = unsafe { Socket2::from_raw_fd(fd) };
                 socket.set_cloexec(true)?;
                 socket.set_nonblocking(true)?;
-                *this.accepted_fd = Some(socket);
+                self.accepted_fd = Some(socket);
                 Ok(fd)
             }
         }()
@@ -759,22 +844,30 @@ impl<S: AsFd> Accept<S> {
 }
 
 unsafe impl<S: AsFd> OpCode for Accept<S> {
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         let fd = self.fd.as_fd().as_raw_fd();
-        syscall!(self.as_mut().call(), wait_readable(fd))
+        syscall!(self.call(control), wait_readable(fd))
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        syscall!(break self.as_mut().call())
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        syscall!(break self.call(control))
     }
 }
 
 unsafe impl<S: AsFd> OpCode for Connect<S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         syscall!(
             libc::connect(
                 self.fd.as_fd().as_raw_fd(),
@@ -785,11 +878,11 @@ unsafe impl<S: AsFd> OpCode for Connect<S> {
         )
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         let mut err: libc::c_int = 0;
         let mut err_len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
 
@@ -811,32 +904,40 @@ unsafe impl<S: AsFd> OpCode for Connect<S> {
 }
 
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::wait_readable(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();
         let flags = self.flags;
-        let slice = self.project().buffer.sys_slice_mut();
+        let slice = self.buffer.sys_slice_mut();
         syscall!(break libc::recv(fd, slice.ptr() as _, slice.len(), flags))
     }
 }
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::wait_writable(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         let slice = self.buffer.as_init();
         syscall!(
             break libc::send(
@@ -850,53 +951,64 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
 }
 
 unsafe impl<S: AsFd> OpCode for crate::op::managed::RecvManaged<S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        self.project().op.pre_submit()
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
+        self.op.pre_submit(control)
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<crate::OpType> {
-        self.project().op.op_type()
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<crate::OpType> {
+        self.op.op_type(control)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        self.project().op.operate()
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        self.op.operate(control)
     }
 }
 
 unsafe impl<S: AsFd> OpCode for crate::op::managed::RecvFromManaged<S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
-        self.project().op.pre_submit()
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
+        self.op.pre_submit(control)
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
-        self.project().op.op_type()
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
+        self.op.op_type(control)
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        self.project().op.operate()
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        self.op.operate(control)
     }
 }
 
 impl<T: IoVectoredBufMut, S: AsFd> RecvVectored<T, S> {
-    unsafe fn call(self: Pin<&mut Self>) -> libc::ssize_t {
-        let this = self.project();
-        unsafe { libc::recvmsg(this.fd.as_fd().as_raw_fd(), this.msg, *this.flags) }
+    unsafe fn call(&mut self, control: &mut ()) -> libc::ssize_t {
+        unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &raw mut self.msg, self.flags) }
     }
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
-        self.as_mut().set_msg();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
+        self.set_msg(control);
         let fd = self.fd.as_fd().as_raw_fd();
-        syscall!(self.as_mut().call(), wait_readable(fd))
+        syscall!(self.call(control), wait_readable(fd))
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        syscall!(break self.as_mut().call())
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        syscall!(break self.call(control))
     }
 }
 
@@ -907,32 +1019,32 @@ impl<T: IoVectoredBuf, S: AsFd> SendVectored<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
-        self.as_mut().set_msg();
-        let fd = self.as_mut().project().fd.as_fd().as_raw_fd();
-        syscall!(self.as_mut().call(), wait_writable(fd))
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
+        self.set_msg(control);
+        let fd = self.fd.as_fd().as_raw_fd();
+        syscall!(self.call(control), wait_writable(fd))
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        syscall!(break self.call())
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        syscall!(break self.call(control))
     }
 }
 
-pin_project! {
-    /// Receive data and source address.
-    pub struct RecvFrom<T: IoBufMut, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) addr: SockAddrStorage,
-        pub(crate) addr_len: socklen_t,
-        pub(crate) flags: i32,
-        _p: PhantomPinned,
-    }
+/// Receive data and source address.
+pub struct RecvFrom<T: IoBufMut, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) addr: SockAddrStorage,
+    pub(crate) addr_len: socklen_t,
+    pub(crate) flags: i32,
 }
 
 impl<T: IoBufMut, S> RecvFrom<T, S> {
@@ -940,47 +1052,51 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
     pub fn new(fd: S, buffer: T, flags: i32) -> Self {
         let addr = SockAddrStorage::zeroed();
         let addr_len = addr.size_of();
+
         Self {
             fd,
             buffer,
             addr,
             addr_len,
             flags,
-            _p: PhantomPinned,
         }
     }
 }
 
 impl<T: IoBufMut, S: AsFd> RecvFrom<T, S> {
-    unsafe fn call(self: Pin<&mut Self>) -> libc::ssize_t {
+    unsafe fn call(&mut self, control: &mut ()) -> libc::ssize_t {
         let fd = self.fd.as_fd().as_raw_fd();
-        let this = self.project();
-        let slice = this.buffer.sys_slice_mut();
+        let slice = self.buffer.sys_slice_mut();
+
         unsafe {
             libc::recvfrom(
                 fd,
                 slice.ptr() as _,
                 slice.len(),
-                *this.flags,
-                this.addr as *mut _ as _,
-                this.addr_len,
+                self.flags,
+                self.addr as *mut _ as _,
+                self.addr_len,
             )
         }
     }
 }
 
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         let fd = self.fd.as_fd().as_raw_fd();
-        syscall!(self.as_mut().call(), wait_readable(fd))
+        syscall!(self.call(control), wait_readable(fd))
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        syscall!(break self.as_mut().call())
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        syscall!(break self.call(control))
     }
 }
 
@@ -992,18 +1108,14 @@ impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
     }
 }
 
-pin_project! {
-    /// Receive data and source address into vectored buffer.
-    pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) slices: Vec<SysSlice>,
-        pub(crate) addr: SockAddrStorage,
-        pub(crate) msg: libc::msghdr,
-        pub(crate) flags: i32,
-        _p: PhantomPinned,
-    }
+/// Receive data and source address into vectored buffer.
+pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) slices: Vec<SysSlice>,
+    pub(crate) addr: SockAddrStorage,
+    pub(crate) msg: libc::msghdr,
+    pub(crate) flags: i32,
 }
 
 impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
@@ -1016,40 +1128,41 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
             addr: SockAddrStorage::zeroed(),
             msg: unsafe { std::mem::zeroed() },
             flags,
-            _p: PhantomPinned,
         }
     }
 }
 
 impl<T: IoVectoredBufMut, S: AsFd> RecvFromVectored<T, S> {
-    fn set_msg(self: Pin<&mut Self>) {
-        let this = self.project();
-        *this.slices = this.buffer.sys_slices_mut();
-        this.msg.msg_name = this.addr as *mut _ as _;
-        this.msg.msg_namelen = this.addr.size_of() as _;
-        this.msg.msg_iov = this.slices.as_mut_ptr() as _;
-        this.msg.msg_iovlen = this.slices.len() as _;
+    fn set_msg(&mut self, control: &mut ()) {
+        self.slices = self.buffer.sys_slices_mut();
+        self.msg.msg_name = &raw mut self.addr as _;
+        self.msg.msg_namelen = self.addr.size_of() as _;
+        self.msg.msg_iov = self.slices.as_mut_ptr() as _;
+        self.msg.msg_iovlen = self.slices.len() as _;
     }
 
-    unsafe fn call(self: Pin<&mut Self>) -> libc::ssize_t {
-        let this = self.project();
-        unsafe { libc::recvmsg(this.fd.as_fd().as_raw_fd(), this.msg, *this.flags) }
+    unsafe fn call(&mut self, control: &mut ()) -> libc::ssize_t {
+        unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &raw mut self.msg, self.flags) }
     }
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
-        self.as_mut().set_msg();
-        let fd = self.as_mut().project().fd.as_fd().as_raw_fd();
-        syscall!(self.as_mut().call(), wait_readable(fd))
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
+        self.set_msg(control);
+        let fd = self.fd.as_fd().as_raw_fd();
+        syscall!(self.call(control), wait_readable(fd))
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        syscall!(break self.as_mut().call())
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        syscall!(break self.call(control))
     }
 }
 
@@ -1061,15 +1174,12 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
     }
 }
 
-pin_project! {
-    /// Send data to specified address.
-    pub struct SendTo<T: IoBuf, S> {
-        pub(crate) fd: S,
-        pub(crate) buffer: T,
-        pub(crate) addr: SockAddr,
-        flags: i32,
-        _p: PhantomPinned,
-    }
+/// Send data to specified address.
+pub struct SendTo<T: IoBuf, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) addr: SockAddr,
+    flags: i32,
 }
 
 impl<T: IoBuf, S> SendTo<T, S> {
@@ -1080,7 +1190,6 @@ impl<T: IoBuf, S> SendTo<T, S> {
             buffer,
             addr,
             flags,
-            _p: PhantomPinned,
         }
     }
 }
@@ -1102,15 +1211,19 @@ impl<T: IoBuf, S: AsFd> SendTo<T, S> {
 }
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         syscall!(self.call(), wait_writable(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         syscall!(break self.call())
     }
 }
@@ -1123,18 +1236,14 @@ impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
     }
 }
 
-pin_project! {
-    /// Send data to specified address from vectored buffer.
-    pub struct SendToVectored<T: IoVectoredBuf, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) addr: SockAddr,
-        pub(crate) slices: Vec<SysSlice>,
-        pub(crate) msg: libc::msghdr,
-        pub(crate) flags: i32,
-        _p: PhantomPinned,
-    }
+/// Send data to specified address from vectored buffer.
+pub struct SendToVectored<T: IoVectoredBuf, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) addr: SockAddr,
+    pub(crate) slices: Vec<SysSlice>,
+    pub(crate) msg: libc::msghdr,
+    pub(crate) flags: i32,
 }
 
 impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
@@ -1147,39 +1256,41 @@ impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
             slices: vec![],
             msg: unsafe { std::mem::zeroed() },
             flags,
-            _p: PhantomPinned,
         }
     }
 }
 
 impl<T: IoVectoredBuf, S: AsFd> SendToVectored<T, S> {
-    fn set_msg(self: Pin<&mut Self>) {
-        let this = self.project();
-        *this.slices = this.buffer.as_ref().sys_slices();
-        this.msg.msg_name = this.addr as *mut _ as _;
-        this.msg.msg_namelen = this.addr.len() as _;
-        this.msg.msg_iov = this.slices.as_mut_ptr() as _;
-        this.msg.msg_iovlen = this.slices.len() as _;
+    fn set_msg(&mut self, control: &mut ()) {
+        self.slices = self.buffer.sys_slices();
+        self.msg.msg_name = &raw mut self.addr as _;
+        self.msg.msg_namelen = self.addr.len() as _;
+        self.msg.msg_iov = self.slices.as_mut_ptr() as _;
+        self.msg.msg_iovlen = self.slices.len() as _;
     }
 
-    unsafe fn call(self: Pin<&mut Self>) -> libc::ssize_t {
+    unsafe fn call(&mut self, control: &mut ()) -> libc::ssize_t {
         unsafe { libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, self.flags) }
     }
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
-        self.as_mut().set_msg();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
+        self.set_msg(control);
         let fd = self.fd.as_fd().as_raw_fd();
-        syscall!(self.as_mut().call(), wait_writable(fd))
+        syscall!(self.call(control), wait_writable(fd))
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        syscall!(break self.as_mut().call())
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        syscall!(break self.call(control))
     }
 }
 
@@ -1192,70 +1303,85 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> RecvMsg<T, C, S> {
-    unsafe fn call(self: Pin<&mut Self>) -> libc::ssize_t {
-        let this = self.project();
-        unsafe { libc::recvmsg(this.fd.as_fd().as_raw_fd(), this.msg, *this.flags) }
+    unsafe fn call(&mut self, control: &mut ()) -> libc::ssize_t {
+        unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &raw mut self.msg, self.flags) }
     }
 }
 
 unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
-        self.as_mut().set_msg();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
+        self.set_msg(control);
         let fd = self.fd.as_fd().as_raw_fd();
-        syscall!(self.as_mut().call(), wait_readable(fd))
+        syscall!(self.call(control), wait_readable(fd))
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        syscall!(break self.as_mut().call())
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        syscall!(break self.call(control))
     }
 }
 
 impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> SendMsg<T, C, S> {
-    unsafe fn call(self: Pin<&mut Self>) -> libc::ssize_t {
+    unsafe fn call(&mut self, control: &mut ()) -> libc::ssize_t {
         unsafe { libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, self.flags) }
     }
 }
 
 unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
-    fn pre_submit(mut self: Pin<&mut Self>) -> io::Result<Decision> {
-        self.as_mut().set_msg();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
+        self.set_msg(control);
         let fd = self.fd.as_fd().as_raw_fd();
-        syscall!(self.as_mut().call(), wait_writable(fd))
+        syscall!(self.call(control), wait_writable(fd))
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(mut self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
-        syscall!(break self.as_mut().call())
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        syscall!(break self.call(control))
     }
 }
 
 unsafe impl<S: AsFd> OpCode for PollOnce<S> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::wait_for(
             self.fd.as_fd().as_raw_fd(),
             self.interest,
         ))
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(0))
     }
 }
 
 #[cfg(linux_all)]
 unsafe impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         use super::WaitArg;
 
         Ok(Decision::wait_for_many([
@@ -1264,14 +1390,14 @@ unsafe impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
         ]))
     }
 
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
         Some(OpType::multi_fd([
             self.fd_in.as_fd().as_raw_fd(),
             self.fd_out.as_fd().as_raw_fd(),
         ]))
     }
 
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         let mut offset_in = self.offset_in;
         let mut offset_out = self.offset_out;
         let offset_in_ptr = if offset_in < 0 {

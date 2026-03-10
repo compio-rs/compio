@@ -7,7 +7,6 @@ use std::{
     collections::{HashMap, VecDeque},
     io,
     num::NonZeroUsize,
-    pin::Pin,
     sync::Arc,
     task::{Poll, Wake, Waker},
     time::Duration,
@@ -50,19 +49,31 @@ impl From<WaitArg> for Track {
 /// `pre_submit` returns `Decision::Aio`, `op_type` must return
 /// `Some(OpType::Aio)` with the correct `aiocb` pointer.
 pub unsafe trait OpCode {
+    /// Type that contains self-references and other needed info during the
+    /// operation
+    type Control;
+
+    /// Constructs a `Control`
+    ///
+    /// # Safety
+    ///
+    /// Caller must guarantee that during the lifetime of the returned
+    /// `Control`, `Self` must be unmoved and valid.
+    unsafe fn init(&mut self) -> Self::Control;
+
     /// Perform the operation before submit, and return [`Decision`] to
     /// indicate whether submitting the operation to polling is required.
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision>;
+    fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<Decision>;
 
     /// Get the operation type when an event is occurred.
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, _: &mut Self::Control) -> Option<OpType> {
         None
     }
 
     /// Perform the operation after received corresponding
     /// event. If this operation is blocking, the return value should be
     /// [`Poll::Ready`].
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>>;
+    fn operate(&mut self, _: &mut Self::Control) -> Poll<io::Result<usize>>;
 }
 
 pub use OpCode as PollOpCode;

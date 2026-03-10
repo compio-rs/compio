@@ -5,7 +5,6 @@ use std::{
     io,
     marker::PhantomData,
     os::fd::FromRawFd,
-    pin::Pin,
     sync::Arc,
     task::{Poll, Wake, Waker},
     time::Duration,
@@ -38,6 +37,7 @@ use slab::Slab;
 
 use crate::{
     AsyncifyPool, BufferPool, DriverType, Entry, ProactorBuilder,
+    control::Material,
     key::{BorrowedKey, ErasedKey, RefExt},
     syscall,
 };
@@ -116,12 +116,24 @@ impl From<io_uring::squeue::Entry128> for OpEntry {
 /// The returned Entry from `create_entry` must be valid until the operation is
 /// completed.
 pub unsafe trait OpCode {
+    /// Type that contains self-references and other needed info during the
+    /// operation
+    type Control;
+
+    /// Constructs a `Control`
+    ///
+    /// # Safety
+    ///
+    /// Caller must guarantee that during the lifetime of the returned
+    /// `Control`, `Self` must be unmoved and valid.
+    unsafe fn init(&mut self) -> Self::Control;
+
     /// Create submission entry.
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry;
+    fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry;
 
     /// Create submission entry for fallback. This method will only be called if
     /// `create_entry` returns an entry with unsupported opcode.
-    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
+    fn create_entry_fallback(&mut self, _: &mut Self::Control) -> OpEntry {
         OpEntry::Blocking
     }
 
@@ -134,7 +146,7 @@ pub unsafe trait OpCode {
     ///
     /// [`create_entry`]: OpCode::create_entry
     /// [`create_entry_fallback`]: OpCode::create_entry_fallback
-    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+    fn call_blocking(&mut self, _: &mut Self::Control) -> io::Result<usize> {
         unreachable!("this operation is asynchronous")
     }
 
@@ -145,24 +157,92 @@ pub unsafe trait OpCode {
     /// # Safety
     ///
     /// The params must be the result coming from this operation.
-    unsafe fn set_result(self: Pin<&mut Self>, _: &io::Result<usize>, _: &crate::Extra) {}
+    unsafe fn set_result(
+        &mut self,
+        _: &mut Self::Control,
+        _: &io::Result<usize>,
+        _: &crate::Extra,
+    ) {
+    }
 
     /// Push a multishot result to the inner queue.
     ///
     /// # Safety
     ///
     /// The params must be the result coming from this operation.
-    unsafe fn push_multishot(self: Pin<&mut Self>, _: io::Result<usize>, _: crate::Extra) {
+    unsafe fn push_multishot(
+        &mut self,
+        _: &mut Self::Control,
+        _: io::Result<usize>,
+        _: crate::Extra,
+    ) {
         unreachable!("this operation is not multishot")
     }
 
     /// Pop a multishot result from the inner queue.
-    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::sys::Extra>> {
+    fn pop_multishot(
+        &mut self,
+        _: &mut Self::Control,
+    ) -> Option<BufResult<usize, crate::sys::Extra>> {
         unreachable!("this operation is not multishot")
     }
 }
 
 pub use OpCode as IourOpCode;
+
+pub trait Materialized {
+    /// See [`OpCode::create_entry`].
+    fn create_entry(&mut self) -> OpEntry;
+
+    /// See [`OpCode::create_entry_fallback`].
+    fn create_entry_fallback(&mut self) -> OpEntry;
+
+    /// See [`OpCode::call_blocking`].
+    fn call_blocking(&mut self) -> io::Result<usize>;
+
+    /// See [`OpCode::set_result`].
+    unsafe fn set_result(&mut self, _: &io::Result<usize>, _: &crate::Extra);
+
+    /// See [`OpCode::push_multishot`].
+    unsafe fn push_multishot(&mut self, _: io::Result<usize>, _: crate::Extra);
+
+    /// See [`OpCode::pop_multishot`].
+    fn pop_multishot(&mut self) -> Option<BufResult<usize, crate::sys::Extra>>;
+}
+
+pub use Materialized as IourMaterialized;
+
+impl<T: crate::OpCode> Materialized for Material<T> {
+    fn create_entry(&mut self) -> OpEntry {
+        let (op, control) = self.as_iour();
+        op.create_entry(control)
+    }
+
+    fn create_entry_fallback(&mut self) -> OpEntry {
+        let (op, control) = self.as_iour();
+        op.create_entry_fallback(control)
+    }
+
+    fn call_blocking(&mut self) -> io::Result<usize> {
+        let (op, control) = self.as_iour();
+        op.call_blocking(control)
+    }
+
+    unsafe fn set_result(&mut self, result: &io::Result<usize>, extra: &crate::Extra) {
+        let (op, control) = self.as_iour();
+        unsafe { op.set_result(control, result, extra) }
+    }
+
+    unsafe fn push_multishot(&mut self, result: io::Result<usize>, extra: crate::Extra) {
+        let (op, control) = self.as_iour();
+        unsafe { op.push_multishot(control, result, extra) }
+    }
+
+    fn pop_multishot(&mut self) -> Option<BufResult<usize, crate::sys::Extra>> {
+        let (op, control) = self.as_iour();
+        op.pop_multishot(control)
+    }
+}
 
 /// Low-level driver of io-uring.
 pub(crate) struct Driver {

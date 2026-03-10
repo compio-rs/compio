@@ -1,5 +1,4 @@
 use std::{
-    marker::PhantomPinned,
     ops::Deref,
     pin::Pin,
     sync::Arc,
@@ -50,7 +49,6 @@ pin_project! {
         reading: Reading,
         // This is a self-referential struct, so we need to prevent it from being `Unpin`.
         #[pin]
-        _p: PhantomPinned,
     }
 }
 
@@ -67,7 +65,6 @@ impl<S> CompatWebSocketStream<S> {
             flushing: Flushing::None,
             closing: Closing::None,
             reading: Reading::None,
-            _p: PhantomPinned,
         }
     }
 }

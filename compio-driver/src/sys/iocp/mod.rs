@@ -6,7 +6,6 @@ use std::{
         AsHandle, AsRawHandle, AsRawSocket, AsSocket, BorrowedHandle, BorrowedSocket, OwnedHandle,
         OwnedSocket,
     },
-    pin::Pin,
     sync::Arc,
     task::{Poll, Wake, Waker},
     time::Duration,
@@ -292,9 +291,21 @@ pub enum OpType {
 /// Implementors must ensure that the operation is safe to be polled
 /// according to the returned [`OpType`].
 pub unsafe trait OpCode {
+    /// Type that contains self-references and other needed info during the
+    /// operation
+    type Control;
+
+    /// Constructs a `Control`
+    ///
+    /// # Safety
+    ///
+    /// Caller must guarantee that during the lifetime of the returned
+    /// `Control`, `Self` must be unmoved and valid.
+    unsafe fn init(&mut self) -> Self::Control;
+
     /// Determines that the operation is really overlapped defined by Windows
     /// API. If not, the driver will try to operate it in another thread.
-    fn op_type(&self) -> OpType {
+    fn op_type(&self, control: &mut Self::Control) -> OpType {
         OpType::Overlapped
     }
 
@@ -311,7 +322,11 @@ pub unsafe trait OpCode {
     /// * `self` must be alive until the operation completes.
     /// * When [`OpCode::op_type`] returns [`OpType::Blocking`], this method is
     ///   called in another thread.
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>>;
+    unsafe fn operate(
+        &mut self,
+        control: &mut Self::Control,
+        optr: *mut OVERLAPPED,
+    ) -> Poll<io::Result<usize>>;
 
     /// Cancel the async IO operation.
     ///
@@ -320,8 +335,9 @@ pub unsafe trait OpCode {
     //
     // `optr` must not be dereferenced. It's only used as a marker to identify the
     // operation.
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
-        let _optr = optr; // ignore it
+    fn cancel(&mut self, control: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
+        _ = control;
+        _ = optr;
         Ok(())
     }
 }

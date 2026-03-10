@@ -1,9 +1,7 @@
 use std::{
     ffi::CString,
     io,
-    marker::PhantomPinned,
     os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd},
-    pin::Pin,
 };
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
@@ -11,81 +9,90 @@ use io_uring::{
     opcode,
     types::{Fd, FsyncFlags},
 };
-use pin_project_lite::pin_project;
 use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
 use super::OpCode;
 pub use crate::sys::unix_op::*;
 use crate::{Extra, OpEntry, op::*, sys_slice::*, syscall};
 
-unsafe impl<
+unsafe impl<D, F> OpCode for Asyncify<F, D>
+where
     D: std::marker::Send + 'static,
     F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + 'static,
-> OpCode for Asyncify<F, D>
 {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         OpEntry::Blocking
     }
 
-    fn call_blocking(self: Pin<&mut Self>) -> std::io::Result<usize> {
-        let this = self.project();
-        let f = this
+    fn call_blocking(&mut self, control: &mut Self::Control) -> std::io::Result<usize> {
+        let f = self
             .f
             .take()
             .expect("the operate method could only be called once");
         let BufResult(res, data) = f();
-        *this.data = Some(data);
+        self.data = Some(data);
         res
     }
 }
 
-unsafe impl<
-    S,
+unsafe impl<S, D, F> OpCode for AsyncifyFd<S, F, D>
+where
     D: std::marker::Send + 'static,
     F: (FnOnce(&S) -> BufResult<usize, D>) + std::marker::Send + 'static,
-> OpCode for AsyncifyFd<S, F, D>
 {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         OpEntry::Blocking
     }
 
-    fn call_blocking(self: Pin<&mut Self>) -> std::io::Result<usize> {
-        let this = self.project();
-        let f = this
+    fn call_blocking(&mut self, control: &mut Self::Control) -> std::io::Result<usize> {
+        let f = self
             .f
             .take()
             .expect("the operate method could only be called once");
-        let BufResult(res, data) = f(this.fd);
-        *this.data = Some(data);
+        let BufResult(res, data) = f(&self.fd);
+        self.data = Some(data);
         res
     }
 }
 
-unsafe impl<
-    S1,
-    S2,
+unsafe impl<S1, S2, D, F> OpCode for AsyncifyFd2<S1, S2, F, D>
+where
     D: std::marker::Send + 'static,
     F: (FnOnce(&S1, &S2) -> BufResult<usize, D>) + std::marker::Send + 'static,
-> OpCode for AsyncifyFd2<S1, S2, F, D>
 {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         OpEntry::Blocking
     }
 
-    fn call_blocking(self: Pin<&mut Self>) -> std::io::Result<usize> {
-        let this = self.project();
-        let f = this
+    fn call_blocking(&mut self, control: &mut Self::Control) -> std::io::Result<usize> {
+        let f = self
             .f
             .take()
             .expect("the operate method could only be called once");
-        let BufResult(res, data) = f(this.fd1, this.fd2);
-        *this.data = Some(data);
+        let BufResult(res, data) = f(&self.fd1, &self.fd2);
+        self.data = Some(data);
         res
     }
 }
 
 unsafe impl<S: AsFd> OpCode for OpenFile<S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::OpenAt::new(Fd(self.dirfd.as_fd().as_raw_fd()), self.path.as_ptr())
             .flags(self.flags | libc::O_CLOEXEC)
             .mode(self.mode)
@@ -93,49 +100,60 @@ unsafe impl<S: AsFd> OpCode for OpenFile<S> {
             .into()
     }
 
-    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
-        self.call()
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
+        self.call(control)
     }
 
-    unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, _: &Extra) {
+    unsafe fn set_result(
+        &mut self,
+        control: &mut Self::Control,
+        res: &io::Result<usize>,
+        _: &Extra,
+    ) {
         if let Ok(fd) = res {
             // SAFETY: fd is a valid fd returned from kernel
             let fd = unsafe { OwnedFd::from_raw_fd(*fd as _) };
-            *self.project().opened_fd = Some(fd);
+            self.opened_fd = Some(fd);
         }
     }
 }
 
 unsafe impl OpCode for CloseFile {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::Close::new(Fd(self.fd.as_fd().as_raw_fd()))
             .build()
             .into()
     }
 
-    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
-        self.call()
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
+        self.call(control)
     }
 }
 
 unsafe impl<S: AsFd> OpCode for TruncateFile<S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::Ftruncate::new(Fd(self.fd.as_fd().as_raw_fd()), self.size)
             .build()
             .into()
     }
 
-    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
         self.call()
     }
 }
 
-pin_project! {
-    /// Get metadata of an opened file.
-    pub struct FileStat<S> {
-        pub(crate) fd: S,
-        pub(crate) stat: Statx,
-    }
+/// Get metadata of an opened file.
+pub struct FileStat<S> {
+    pub(crate) fd: S,
+    pub(crate) stat: Statx,
 }
 
 impl<S> FileStat<S> {
@@ -149,13 +167,16 @@ impl<S> FileStat<S> {
 }
 
 unsafe impl<S: AsFd> OpCode for FileStat<S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let this = self.project();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         static EMPTY_NAME: &[u8] = b"\0";
         opcode::Statx::new(
-            Fd(this.fd.as_fd().as_fd().as_raw_fd()),
+            Fd(self.fd.as_fd().as_fd().as_raw_fd()),
             EMPTY_NAME.as_ptr().cast(),
-            this.stat as *mut _ as _,
+            &raw mut self.stat as _,
         )
         .flags(libc::AT_EMPTY_PATH)
         .mask(statx_mask())
@@ -164,25 +185,23 @@ unsafe impl<S: AsFd> OpCode for FileStat<S> {
     }
 
     #[cfg(gnulinux)]
-    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
-        let this = self.project();
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
         static EMPTY_NAME: &[u8] = b"\0";
         let res = syscall!(libc::statx(
-            this.fd.as_fd().as_raw_fd(),
+            self.fd.as_fd().as_raw_fd(),
             EMPTY_NAME.as_ptr().cast(),
             libc::AT_EMPTY_PATH,
             statx_mask(),
-            this.stat as *mut _ as _
+            &raw mut self.stat as _
         ))?;
         Ok(res as _)
     }
 
     #[cfg(not(gnulinux))]
-    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
-        let this = self.project();
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
         let mut stat = unsafe { std::mem::zeroed() };
-        let res = syscall!(libc::fstat(this.fd.as_fd().as_raw_fd(), &mut stat))?;
-        *this.stat = stat_to_statx(stat);
+        let res = syscall!(libc::fstat(self.fd.as_fd().as_raw_fd(), &mut stat))?;
+        self.stat = stat_to_statx(stat);
         Ok(res as _)
     }
 }
@@ -195,14 +214,12 @@ impl<S> IntoInner for FileStat<S> {
     }
 }
 
-pin_project! {
-    /// Get metadata from path.
-    pub struct PathStat<S: AsFd> {
-        pub(crate) dirfd: S,
-        pub(crate) path: CString,
-        pub(crate) stat: Statx,
-        pub(crate) follow_symlink: bool,
-    }
+/// Get metadata from path.
+pub struct PathStat<S: AsFd> {
+    pub(crate) dirfd: S,
+    pub(crate) path: CString,
+    pub(crate) stat: Statx,
+    pub(crate) follow_symlink: bool,
 }
 
 impl<S: AsFd> PathStat<S> {
@@ -218,16 +235,19 @@ impl<S: AsFd> PathStat<S> {
 }
 
 unsafe impl<S: AsFd> OpCode for PathStat<S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let this = self.project();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         let mut flags = libc::AT_EMPTY_PATH;
-        if !*this.follow_symlink {
+        if !self.follow_symlink {
             flags |= libc::AT_SYMLINK_NOFOLLOW;
         }
         opcode::Statx::new(
-            Fd(this.dirfd.as_fd().as_raw_fd()),
-            this.path.as_ptr(),
-            this.stat as *mut _ as _,
+            Fd(self.dirfd.as_fd().as_raw_fd()),
+            self.path.as_ptr(),
+            &raw mut self.stat as _,
         )
         .flags(flags)
         .mask(statx_mask())
@@ -236,37 +256,35 @@ unsafe impl<S: AsFd> OpCode for PathStat<S> {
     }
 
     #[cfg(gnulinux)]
-    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
-        let this = self.project();
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
         let mut flags = libc::AT_EMPTY_PATH;
-        if !*this.follow_symlink {
+        if !self.follow_symlink {
             flags |= libc::AT_SYMLINK_NOFOLLOW;
         }
         let res = syscall!(libc::statx(
-            this.dirfd.as_fd().as_raw_fd(),
-            this.path.as_ptr(),
+            self.dirfd.as_fd().as_raw_fd(),
+            self.path.as_ptr(),
             flags,
             statx_mask(),
-            this.stat
+            &raw mut self.stat
         ))?;
         Ok(res as _)
     }
 
     #[cfg(not(gnulinux))]
-    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
-        let this = self.project();
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
         let mut flags = libc::AT_EMPTY_PATH;
-        if !*this.follow_symlink {
+        if !self.follow_symlink {
             flags |= libc::AT_SYMLINK_NOFOLLOW;
         }
         let mut stat = unsafe { std::mem::zeroed() };
         let res = syscall!(libc::fstatat(
-            this.dirfd.as_fd().as_raw_fd(),
-            this.path.as_ptr(),
+            self.dirfd.as_fd().as_raw_fd(),
+            self.path.as_ptr(),
             &mut stat,
             flags
         ))?;
-        *this.stat = stat_to_statx(stat);
+        self.stat = stat_to_statx(stat);
         Ok(res as _)
     }
 }
@@ -280,38 +298,48 @@ impl<S: AsFd> IntoInner for PathStat<S> {
 }
 
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let this = self.project();
-        let fd = Fd(this.fd.as_fd().as_raw_fd());
-        let slice = this.buffer.sys_slice_mut();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        let fd = Fd(self.fd.as_fd().as_raw_fd());
+        let slice = self.buffer.sys_slice_mut();
         opcode::Read::new(
             fd,
             slice.ptr() as _,
             slice.len().try_into().unwrap_or(u32::MAX),
         )
-        .offset(*this.offset)
+        .offset(self.offset)
         .build()
         .into()
     }
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let this = self.project();
-        *this.slices = this.buffer.sys_slices_mut();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.slices = self.buffer.sys_slices_mut();
         opcode::Readv::new(
-            Fd(this.fd.as_fd().as_raw_fd()),
-            this.slices.as_ptr() as _,
-            this.slices.len().try_into().unwrap_or(u32::MAX),
+            Fd(self.fd.as_fd().as_raw_fd()),
+            self.slices.as_ptr() as _,
+            self.slices.len().try_into().unwrap_or(u32::MAX),
         )
-        .offset(*this.offset)
+        .offset(self.offset)
         .build()
         .into()
     }
 }
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         let slice = self.buffer.as_init();
         opcode::Write::new(
             Fd(self.fd.as_fd().as_raw_fd()),
@@ -325,24 +353,31 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let this = self.project();
-        *this.slices = this.buffer.as_ref().sys_slices();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.slices = self.buffer.sys_slices();
         opcode::Writev::new(
-            Fd(this.fd.as_fd().as_raw_fd()),
-            this.slices.as_ptr() as _,
-            this.slices.len().try_into().unwrap_or(u32::MAX),
+            Fd(self.fd.as_fd().as_raw_fd()),
+            self.slices.as_ptr() as _,
+            self.slices.len().try_into().unwrap_or(u32::MAX),
         )
-        .offset(*this.offset)
+        .offset(self.offset)
         .build()
         .into()
     }
 }
 
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         let fd = self.fd.as_fd().as_raw_fd();
-        let slice = self.project().buffer.sys_slice_mut();
+        let slice = self.buffer.sys_slice_mut();
         opcode::Read::new(
             Fd(fd),
             slice.ptr() as _,
@@ -354,13 +389,16 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let this = self.project();
-        *this.slices = this.buffer.sys_slices_mut();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.slices = self.buffer.sys_slices_mut();
         opcode::Readv::new(
-            Fd(this.fd.as_fd().as_raw_fd()),
-            this.slices.as_ptr() as _,
-            this.slices.len().try_into().unwrap_or(u32::MAX),
+            Fd(self.fd.as_fd().as_raw_fd()),
+            self.slices.as_ptr() as _,
+            self.slices.len().try_into().unwrap_or(u32::MAX),
         )
         .build()
         .into()
@@ -368,7 +406,11 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
 }
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         let slice = self.buffer.as_init();
         opcode::Write::new(
             Fd(self.fd.as_fd().as_raw_fd()),
@@ -381,13 +423,16 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let this = self.project();
-        *this.slices = this.buffer.as_ref().sys_slices();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.slices = self.buffer.sys_slices();
         opcode::Writev::new(
-            Fd(this.fd.as_fd().as_raw_fd()),
-            this.slices.as_ptr() as _,
-            this.slices.len().try_into().unwrap_or(u32::MAX),
+            Fd(self.fd.as_fd().as_raw_fd()),
+            self.slices.as_ptr() as _,
+            self.slices.len().try_into().unwrap_or(u32::MAX),
         )
         .build()
         .into()
@@ -395,7 +440,11 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
 }
 
 unsafe impl<S: AsFd> OpCode for Sync<S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::Fsync::new(Fd(self.fd.as_fd().as_raw_fd()))
             .flags(if self.datasync {
                 FsyncFlags::DATASYNC
@@ -408,33 +457,45 @@ unsafe impl<S: AsFd> OpCode for Sync<S> {
 }
 
 unsafe impl<S: AsFd> OpCode for Unlink<S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::UnlinkAt::new(Fd(self.dirfd.as_fd().as_raw_fd()), self.path.as_ptr())
             .flags(if self.dir { libc::AT_REMOVEDIR } else { 0 })
             .build()
             .into()
     }
 
-    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
-        self.call()
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
+        self.call(control)
     }
 }
 
 unsafe impl<S: AsFd> OpCode for CreateDir<S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::MkDirAt::new(Fd(self.dirfd.as_fd().as_raw_fd()), self.path.as_ptr())
             .mode(self.mode)
             .build()
             .into()
     }
 
-    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
-        self.call()
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
+        self.call(control)
     }
 }
 
 unsafe impl<S1: AsFd, S2: AsFd> OpCode for Rename<S1, S2> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::RenameAt::new(
             Fd(self.old_dirfd.as_fd().as_raw_fd()),
             self.old_path.as_ptr(),
@@ -445,13 +506,17 @@ unsafe impl<S1: AsFd, S2: AsFd> OpCode for Rename<S1, S2> {
         .into()
     }
 
-    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
-        self.call()
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
+        self.call(control)
     }
 }
 
 unsafe impl<S: AsFd> OpCode for Symlink<S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::SymlinkAt::new(
             Fd(self.dirfd.as_fd().as_raw_fd()),
             self.source.as_ptr(),
@@ -461,13 +526,17 @@ unsafe impl<S: AsFd> OpCode for Symlink<S> {
         .into()
     }
 
-    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
-        self.call()
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
+        self.call(control)
     }
 }
 
 unsafe impl<S1: AsFd, S2: AsFd> OpCode for HardLink<S1, S2> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::LinkAt::new(
             Fd(self.source_dirfd.as_fd().as_raw_fd()),
             self.source.as_ptr(),
@@ -478,13 +547,17 @@ unsafe impl<S1: AsFd, S2: AsFd> OpCode for HardLink<S1, S2> {
         .into()
     }
 
-    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
-        self.call()
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
+        self.call(control)
     }
 }
 
 unsafe impl OpCode for CreateSocket {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::Socket::new(
             self.domain,
             self.socket_type | libc::SOCK_CLOEXEC,
@@ -494,7 +567,7 @@ unsafe impl OpCode for CreateSocket {
         .into()
     }
 
-    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
         Ok(syscall!(libc::socket(
             self.domain,
             self.socket_type | libc::SOCK_CLOEXEC,
@@ -502,63 +575,88 @@ unsafe impl OpCode for CreateSocket {
         ))? as _)
     }
 
-    unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, _: &Extra) {
+    unsafe fn set_result(
+        &mut self,
+        control: &mut Self::Control,
+        res: &io::Result<usize>,
+        _: &Extra,
+    ) {
         if let Ok(fd) = res {
             // SAFETY: fd is a valid fd returned from kernel
             let fd = unsafe { Socket2::from_raw_fd(*fd as _) };
-            *self.project().opened_fd = Some(fd);
+            self.opened_fd = Some(fd);
         }
     }
 }
 
 unsafe impl<S: AsFd> OpCode for ShutdownSocket<S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::Shutdown::new(Fd(self.fd.as_fd().as_raw_fd()), self.how())
             .build()
             .into()
     }
 
-    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
-        self.call()
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
+        self.call(control)
     }
 }
 
 unsafe impl OpCode for CloseSocket {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::Close::new(Fd(self.fd.as_fd().as_raw_fd()))
             .build()
             .into()
     }
 
-    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
-        self.call()
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
+        self.call(control)
     }
 }
 
 unsafe impl<S: AsFd> OpCode for Accept<S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let this = self.project();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::Accept::new(
-            Fd(this.fd.as_fd().as_raw_fd()),
-            unsafe { this.buffer.view_as::<libc::sockaddr>() },
-            this.addr_len,
+            Fd(self.fd.as_fd().as_raw_fd()),
+            unsafe { self.buffer.view_as::<libc::sockaddr>() },
+            &raw mut self.addr_len,
         )
         .flags(libc::SOCK_CLOEXEC)
         .build()
         .into()
     }
 
-    unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, _: &Extra) {
+    unsafe fn set_result(
+        &mut self,
+        control: &mut Self::Control,
+        res: &io::Result<usize>,
+        _: &Extra,
+    ) {
         if let Ok(fd) = res {
             // SAFETY: fd is a valid fd returned from kernel
             let fd = unsafe { Socket2::from_raw_fd(*fd as _) };
-            *self.project().accepted_fd = Some(fd);
+            self.accepted_fd = Some(fd);
         }
     }
 }
 
 unsafe impl<S: AsFd> OpCode for Connect<S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::Connect::new(
             Fd(self.fd.as_fd().as_raw_fd()),
             self.addr.as_ptr().cast(),
@@ -570,10 +668,14 @@ unsafe impl<S: AsFd> OpCode for Connect<S> {
 }
 
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         let fd = self.fd.as_fd().as_raw_fd();
         let flags = self.flags;
-        let slice = self.project().buffer.sys_slice_mut();
+        let slice = self.buffer.sys_slice_mut();
         opcode::Recv::new(
             Fd(fd),
             slice.ptr() as _,
@@ -586,18 +688,25 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
-    fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
-        self.as_mut().set_msg();
-        let this = self.project();
-        opcode::RecvMsg::new(Fd(this.fd.as_fd().as_raw_fd()), this.msg)
-            .flags(*this.flags as _)
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.set_msg(control);
+        opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &raw mut self.msg)
+            .flags(self.flags as _)
             .build()
             .into()
     }
 }
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         let slice = self.buffer.as_init();
         opcode::Send::new(
             Fd(self.fd.as_fd().as_raw_fd()),
@@ -610,14 +719,10 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
     }
 }
 
-pin_project! {
-    /// Zerocopy [`Send`].
-    pub struct SendZc<T: IoBuf, S> {
-        #[pin]
-        pub(crate) op: Send<T, S>,
-        pub(crate) res: Option<BufResult<usize, crate::Extra>>,
-        _p: PhantomPinned,
-    }
+/// Zerocopy [`Send`].
+pub struct SendZc<T: IoBuf, S> {
+    pub(crate) op: Send<T, S>,
+    pub(crate) res: Option<BufResult<usize, crate::Extra>>,
 }
 
 impl<T: IoBuf, S> SendZc<T, S> {
@@ -626,35 +731,45 @@ impl<T: IoBuf, S> SendZc<T, S> {
         Self {
             op: Send::new(fd, buffer, flags),
             res: None,
-            _p: PhantomPinned,
         }
     }
 }
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for SendZc<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let this = self.project();
-        let slice = this.op.buffer.as_init();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        let slice = self.op.buffer.as_init();
         opcode::SendZc::new(
-            Fd(this.op.fd.as_fd().as_raw_fd()),
+            Fd(self.op.fd.as_fd().as_raw_fd()),
             slice.as_ptr(),
             slice.len().try_into().unwrap_or(u32::MAX),
         )
-        .flags(this.op.flags)
+        .flags(self.op.flags)
         .build()
         .into()
     }
 
-    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
-        self.project().op.create_entry()
+    fn create_entry_fallback(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.op.create_entry(control)
     }
 
-    unsafe fn push_multishot(self: Pin<&mut Self>, res: io::Result<usize>, extra: crate::Extra) {
-        self.project().res.replace(BufResult(res, extra));
+    unsafe fn push_multishot(
+        &mut self,
+        _: &mut Self::Control,
+        res: io::Result<usize>,
+        extra: crate::Extra,
+    ) {
+        self.res.replace(BufResult(res, extra));
     }
 
-    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
-        self.project().res.take()
+    fn pop_multishot(
+        &mut self,
+        control: &mut Self::Control,
+    ) -> Option<BufResult<usize, crate::Extra>> {
+        self.res.take()
     }
 }
 
@@ -667,24 +782,23 @@ impl<T: IoBuf, S> IntoInner for SendZc<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
-    fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
-        self.as_mut().set_msg();
-        let this = self.project();
-        opcode::SendMsg::new(Fd(this.fd.as_fd().as_raw_fd()), this.msg)
-            .flags(*this.flags as _)
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.set_msg(control);
+        opcode::SendMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &raw mut self.msg)
+            .flags(self.flags as _)
             .build()
             .into()
     }
 }
 
-pin_project! {
-    /// Zerocopy [`SendVectored`].
-    pub struct SendVectoredZc<T: IoVectoredBuf, S> {
-        #[pin]
-        pub(crate) op: SendVectored<T, S>,
-        pub(crate) res: Option<BufResult<usize, crate::Extra>>,
-        _p: PhantomPinned,
-    }
+/// Zerocopy [`SendVectored`].
+pub struct SendVectoredZc<T: IoVectoredBuf, S> {
+    pub(crate) op: SendVectored<T, S>,
+    pub(crate) res: Option<BufResult<usize, crate::Extra>>,
 }
 
 impl<T: IoVectoredBuf, S> SendVectoredZc<T, S> {
@@ -693,32 +807,41 @@ impl<T: IoVectoredBuf, S> SendVectoredZc<T, S> {
         Self {
             op: SendVectored::new(fd, buffer, flags),
             res: None,
-            _p: PhantomPinned,
         }
     }
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectoredZc<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let mut this = self.project();
-        this.op.as_mut().set_msg();
-        let op = this.op.project();
-        opcode::SendMsgZc::new(Fd(op.fd.as_fd().as_raw_fd()), op.msg)
-            .flags(*op.flags as _)
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.op.set_msg(control);
+        opcode::SendMsgZc::new(Fd(self.op.fd.as_fd().as_raw_fd()), &self.op.msg)
+            .flags(self.op.flags as _)
             .build()
             .into()
     }
 
-    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
-        self.project().op.create_entry()
+    fn create_entry_fallback(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.op.create_entry(control)
     }
 
-    unsafe fn push_multishot(self: Pin<&mut Self>, res: io::Result<usize>, extra: crate::Extra) {
-        self.project().res.replace(BufResult(res, extra));
+    unsafe fn push_multishot(
+        &mut self,
+        _: &mut Self::Control,
+        res: io::Result<usize>,
+        extra: crate::Extra,
+    ) {
+        self.res.replace(BufResult(res, extra));
     }
 
-    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
-        self.project().res.take()
+    fn pop_multishot(
+        &mut self,
+        control: &mut Self::Control,
+    ) -> Option<BufResult<usize, crate::Extra>> {
+        self.res.take()
     }
 }
 
@@ -735,7 +858,6 @@ struct RecvFromHeader<S> {
     pub(crate) addr: SockAddrStorage,
     pub(crate) msg: libc::msghdr,
     pub(crate) flags: i32,
-    _p: PhantomPinned,
 }
 
 impl<S> RecvFromHeader<S> {
@@ -745,7 +867,6 @@ impl<S> RecvFromHeader<S> {
             addr: SockAddrStorage::zeroed(),
             msg: unsafe { std::mem::zeroed() },
             flags,
-            _p: PhantomPinned,
         }
     }
 }
@@ -767,14 +888,11 @@ impl<S: AsFd> RecvFromHeader<S> {
     }
 }
 
-pin_project! {
-    /// Receive data and source address.
-    pub struct RecvFrom<T: IoBufMut, S> {
-        header: RecvFromHeader<S>,
-        #[pin]
-        buffer: T,
-        slice: Option<SysSlice>,
-    }
+/// Receive data and source address.
+pub struct RecvFrom<T: IoBufMut, S> {
+    header: RecvFromHeader<S>,
+    buffer: T,
+    slice: Option<SysSlice>,
 }
 
 impl<T: IoBufMut, S> RecvFrom<T, S> {
@@ -789,10 +907,13 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
 }
 
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let this = self.project();
-        let slice = this.slice.insert(this.buffer.sys_slice_mut());
-        this.header.create_entry(std::slice::from_mut(slice))
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        let slice = self.slice.insert(self.buffer.sys_slice_mut());
+        self.header.create_entry(std::slice::from_mut(slice))
     }
 }
 
@@ -805,14 +926,11 @@ impl<T: IoBufMut, S: AsFd> IntoInner for RecvFrom<T, S> {
     }
 }
 
-pin_project! {
-    /// Receive data and source address into vectored buffer.
-    pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
-        header: RecvFromHeader<S>,
-        #[pin]
-        buffer: T,
-        slice: Vec<SysSlice>,
-    }
+/// Receive data and source address into vectored buffer.
+pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
+    header: RecvFromHeader<S>,
+    buffer: T,
+    slice: Vec<SysSlice>,
 }
 
 impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
@@ -827,10 +945,13 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let this = self.project();
-        *this.slice = this.buffer.sys_slices_mut();
-        this.header.create_entry(this.slice)
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.slice = self.buffer.sys_slices_mut();
+        self.header.create_entry(&mut self.slice)
     }
 }
 
@@ -848,7 +969,6 @@ struct SendToHeader<S> {
     pub(crate) addr: SockAddr,
     pub(crate) msg: libc::msghdr,
     pub(crate) flags: i32,
-    _p: PhantomPinned,
 }
 
 impl<S> SendToHeader<S> {
@@ -858,7 +978,6 @@ impl<S> SendToHeader<S> {
             addr,
             msg: unsafe { std::mem::zeroed() },
             flags,
-            _p: PhantomPinned,
         }
     }
 }
@@ -872,14 +991,11 @@ impl<S: AsFd> SendToHeader<S> {
     }
 }
 
-pin_project! {
-    /// Send data to specified address.
-    pub struct SendTo<T: IoBuf, S> {
-        header: SendToHeader<S>,
-        #[pin]
-        buffer: T,
-        slice: Option<SysSlice>,
-    }
+/// Send data to specified address.
+pub struct SendTo<T: IoBuf, S> {
+    header: SendToHeader<S>,
+    buffer: T,
+    slice: Option<SysSlice>,
 }
 
 impl<T: IoBuf, S> SendTo<T, S> {
@@ -894,12 +1010,15 @@ impl<T: IoBuf, S> SendTo<T, S> {
 }
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let this = self.project();
-        let slice = this.slice.insert(this.buffer.as_ref().sys_slice());
-        this.header.set_msg(std::slice::from_mut(slice));
-        opcode::SendMsg::new(Fd(this.header.fd.as_fd().as_raw_fd()), &this.header.msg)
-            .flags(this.header.flags as _)
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        let slice = self.slice.insert(self.buffer.as_ref().sys_slice());
+        self.header.set_msg(std::slice::from_mut(slice));
+        opcode::SendMsg::new(Fd(self.header.fd.as_fd().as_raw_fd()), &self.header.msg)
+            .flags(self.header.flags as _)
             .build()
             .into()
     }
@@ -913,14 +1032,10 @@ impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
     }
 }
 
-pin_project! {
-    /// Zerocopy [`SendTo`].
-    pub struct SendToZc<T: IoBuf, S: AsFd> {
-        #[pin]
-        pub(crate) op: SendTo<T, S>,
-        pub(crate) res: Option<BufResult<usize, crate::Extra>>,
-        _p: PhantomPinned,
-    }
+/// Zerocopy [`SendTo`].
+pub struct SendToZc<T: IoBuf, S: AsFd> {
+    pub(crate) op: SendTo<T, S>,
+    pub(crate) res: Option<BufResult<usize, crate::Extra>>,
 }
 
 impl<T: IoBuf, S: AsFd> SendToZc<T, S> {
@@ -929,32 +1044,45 @@ impl<T: IoBuf, S: AsFd> SendToZc<T, S> {
         Self {
             op: SendTo::new(fd, buffer, addr, flags),
             res: None,
-            _p: PhantomPinned,
         }
     }
 }
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for SendToZc<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let this = self.project().op.project();
-        let slice = this.slice.insert(this.buffer.as_ref().sys_slice());
-        this.header.set_msg(std::slice::from_mut(slice));
-        opcode::SendMsgZc::new(Fd(this.header.fd.as_fd().as_raw_fd()), &this.header.msg)
-            .flags(this.header.flags as _)
-            .build()
-            .into()
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        let slice = self.op.slice.insert(self.op.buffer.sys_slice());
+        self.op.header.set_msg(std::slice::from_mut(slice));
+        opcode::SendMsgZc::new(
+            Fd(self.op.header.fd.as_fd().as_raw_fd()),
+            &self.op.header.msg,
+        )
+        .flags(self.op.header.flags as _)
+        .build()
+        .into()
     }
 
-    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
-        self.project().op.create_entry()
+    fn create_entry_fallback(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.op.create_entry(control)
     }
 
-    unsafe fn push_multishot(self: Pin<&mut Self>, res: io::Result<usize>, extra: crate::Extra) {
-        self.project().res.replace(BufResult(res, extra));
+    unsafe fn push_multishot(
+        &mut self,
+        _: &mut Self::Control,
+        res: io::Result<usize>,
+        extra: crate::Extra,
+    ) {
+        self.res.replace(BufResult(res, extra));
     }
 
-    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
-        self.project().res.take()
+    fn pop_multishot(
+        &mut self,
+        control: &mut Self::Control,
+    ) -> Option<BufResult<usize, crate::Extra>> {
+        self.res.take()
     }
 }
 
@@ -966,14 +1094,11 @@ impl<T: IoBuf, S: AsFd> IntoInner for SendToZc<T, S> {
     }
 }
 
-pin_project! {
-    /// Send data to specified address from vectored buffer.
-    pub struct SendToVectored<T: IoVectoredBuf, S> {
-        header: SendToHeader<S>,
-        #[pin]
-        buffer: T,
-        slice: Vec<SysSlice>,
-    }
+/// Send data to specified address from vectored buffer.
+pub struct SendToVectored<T: IoVectoredBuf, S> {
+    header: SendToHeader<S>,
+    buffer: T,
+    slice: Vec<SysSlice>,
 }
 
 impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
@@ -988,12 +1113,15 @@ impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let this = self.project();
-        *this.slice = this.buffer.as_ref().sys_slices();
-        this.header.set_msg(this.slice);
-        opcode::SendMsg::new(Fd(this.header.fd.as_fd().as_raw_fd()), &this.header.msg)
-            .flags(this.header.flags as _)
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.slice = self.buffer.sys_slices();
+        self.header.set_msg(&mut self.slice);
+        opcode::SendMsg::new(Fd(self.header.fd.as_fd().as_raw_fd()), &self.header.msg)
+            .flags(self.header.flags as _)
             .build()
             .into()
     }
@@ -1007,14 +1135,10 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
     }
 }
 
-pin_project! {
-    /// Zerocopy [`SendToVectored`].
-    pub struct SendToVectoredZc<T: IoVectoredBuf, S: AsFd> {
-        #[pin]
-        pub(crate) op: SendToVectored<T, S>,
-        pub(crate) res: Option<BufResult<usize, crate::Extra>>,
-        _p: PhantomPinned,
-    }
+/// Zerocopy [`SendToVectored`].
+pub struct SendToVectoredZc<T: IoVectoredBuf, S: AsFd> {
+    pub(crate) op: SendToVectored<T, S>,
+    pub(crate) res: Option<BufResult<usize, crate::Extra>>,
 }
 
 impl<T: IoVectoredBuf, S: AsFd> SendToVectoredZc<T, S> {
@@ -1023,32 +1147,45 @@ impl<T: IoVectoredBuf, S: AsFd> SendToVectoredZc<T, S> {
         Self {
             op: SendToVectored::new(fd, buffer, addr, flags),
             res: None,
-            _p: PhantomPinned,
         }
     }
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectoredZc<T, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let this = self.project().op.project();
-        *this.slice = this.buffer.as_ref().sys_slices();
-        this.header.set_msg(this.slice);
-        opcode::SendMsgZc::new(Fd(this.header.fd.as_fd().as_raw_fd()), &this.header.msg)
-            .flags(this.header.flags as _)
-            .build()
-            .into()
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.op.slice = self.op.buffer.sys_slices();
+        self.op.header.set_msg(&mut self.op.slice);
+        opcode::SendMsgZc::new(
+            Fd(self.op.header.fd.as_fd().as_raw_fd()),
+            &self.op.header.msg,
+        )
+        .flags(self.op.header.flags as _)
+        .build()
+        .into()
     }
 
-    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
-        self.project().op.create_entry()
+    fn create_entry_fallback(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.op.create_entry(control)
     }
 
-    unsafe fn push_multishot(self: Pin<&mut Self>, res: io::Result<usize>, extra: crate::Extra) {
-        self.project().res.replace(BufResult(res, extra));
+    unsafe fn push_multishot(
+        &mut self,
+        _: &mut Self::Control,
+        res: io::Result<usize>,
+        extra: crate::Extra,
+    ) {
+        self.res.replace(BufResult(res, extra));
     }
 
-    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
-        self.project().res.take()
+    fn pop_multishot(
+        &mut self,
+        control: &mut Self::Control,
+    ) -> Option<BufResult<usize, crate::Extra>> {
+        self.res.take()
     }
 }
 
@@ -1061,35 +1198,37 @@ impl<T: IoVectoredBuf, S: AsFd> IntoInner for SendToVectoredZc<T, S> {
 }
 
 unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
-    fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
-        self.as_mut().set_msg();
-        let this = self.project();
-        opcode::RecvMsg::new(Fd(this.fd.as_fd().as_raw_fd()), this.msg)
-            .flags(*this.flags as _)
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.set_msg(control);
+        opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &raw mut self.msg)
+            .flags(self.flags as _)
             .build()
             .into()
     }
 }
 
 unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
-    fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
-        self.as_mut().set_msg();
-        let this = self.project();
-        opcode::SendMsg::new(Fd(this.fd.as_fd().as_raw_fd()), this.msg)
-            .flags(*this.flags as _)
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.set_msg(control);
+        opcode::SendMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &raw mut self.msg)
+            .flags(self.flags as _)
             .build()
             .into()
     }
 }
 
-pin_project! {
-    /// Zerocopy [`SendMsg`].
-    pub struct SendMsgZc<T: IoVectoredBuf, C: IoBuf, S> {
-        #[pin]
-        pub(crate) op: SendMsg<T, C, S>,
-        pub(crate) res: Option<BufResult<usize, crate::Extra>>,
-        _p: PhantomPinned,
-    }
+/// Zerocopy [`SendMsg`].
+pub struct SendMsgZc<T: IoVectoredBuf, C: IoBuf, S> {
+    pub(crate) op: SendMsg<T, C, S>,
+    pub(crate) res: Option<BufResult<usize, crate::Extra>>,
 }
 
 impl<T: IoVectoredBuf, C: IoBuf, S> SendMsgZc<T, C, S> {
@@ -1098,32 +1237,41 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsgZc<T, C, S> {
         Self {
             op: SendMsg::new(fd, buffer, control, addr, flags),
             res: None,
-            _p: PhantomPinned,
         }
     }
 }
 
 unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsgZc<T, C, S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-        let mut this = self.project();
-        this.op.as_mut().set_msg();
-        let op = this.op.project();
-        opcode::SendMsgZc::new(Fd(op.fd.as_fd().as_raw_fd()), op.msg)
-            .flags(*op.flags as _)
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.op.set_msg(control);
+        opcode::SendMsgZc::new(Fd(self.op.fd.as_fd().as_raw_fd()), &self.op.msg)
+            .flags(self.op.flags as _)
             .build()
             .into()
     }
 
-    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
-        self.project().op.create_entry()
+    fn create_entry_fallback(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.op.create_entry(control)
     }
 
-    unsafe fn push_multishot(self: Pin<&mut Self>, res: io::Result<usize>, extra: crate::Extra) {
-        self.project().res.replace(BufResult(res, extra));
+    unsafe fn push_multishot(
+        &mut self,
+        _: &mut Self::Control,
+        res: io::Result<usize>,
+        extra: crate::Extra,
+    ) {
+        self.res.replace(BufResult(res, extra));
     }
 
-    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
-        self.project().res.take()
+    fn pop_multishot(
+        &mut self,
+        control: &mut Self::Control,
+    ) -> Option<BufResult<usize, crate::Extra>> {
+        self.res.take()
     }
 }
 impl<T: IoVectoredBuf, C: IoBuf, S> IntoInner for SendMsgZc<T, C, S> {
@@ -1135,7 +1283,11 @@ impl<T: IoVectoredBuf, C: IoBuf, S> IntoInner for SendMsgZc<T, C, S> {
 }
 
 unsafe impl<S: AsFd> OpCode for PollOnce<S> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         let flags = match self.interest {
             Interest::Readable => libc::POLLIN,
             Interest::Writable => libc::POLLOUT,
@@ -1147,7 +1299,11 @@ unsafe impl<S: AsFd> OpCode for PollOnce<S> {
 }
 
 unsafe impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
-    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::Splice::new(
             Fd(self.fd_in.as_fd().as_raw_fd()),
             self.offset_in,
@@ -1160,7 +1316,7 @@ unsafe impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
         .into()
     }
 
-    fn call_blocking(self: Pin<&mut Self>) -> io::Result<usize> {
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
         let mut offset_in = self.offset_in;
         let mut offset_out = self.offset_out;
         let offset_in_ptr = if offset_in < 0 {
@@ -1188,15 +1344,12 @@ mod buf_ring {
     use std::{
         collections::VecDeque,
         io,
-        marker::PhantomPinned,
         os::fd::{AsFd, AsRawFd},
-        pin::Pin,
         ptr,
     };
 
     use compio_buf::BufResult;
     use io_uring::{opcode, squeue::Flags, types::Fd};
-    use pin_project_lite::pin_project;
     use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
     use super::{Extra, OpCode};
@@ -1220,17 +1373,14 @@ mod buf_ring {
         Ok(res)
     }
 
-    pin_project! {
-        /// Read a file at specified position into specified buffer.
-        pub struct ReadManagedAt<S> {
-            pub(crate) fd: S,
-            pub(crate) offset: u64,
-            buffer_group: u16,
-            len: u32,
-            pool: IoUringBufferPool,
-            buffer: Option<IoUringOwnedBuffer>,
-            _p: PhantomPinned,
-        }
+    /// Read a file at specified position into specified buffer.
+    pub struct ReadManagedAt<S> {
+        pub(crate) fd: S,
+        pub(crate) offset: u64,
+        buffer_group: u16,
+        len: u32,
+        pool: IoUringBufferPool,
+        buffer: Option<IoUringOwnedBuffer>,
     }
 
     impl<S> ReadManagedAt<S> {
@@ -1247,13 +1397,16 @@ mod buf_ring {
                 })?,
                 pool: buffer_pool.clone(),
                 buffer: None,
-                _p: PhantomPinned,
             })
         }
     }
 
     unsafe impl<S: AsFd> OpCode for ReadManagedAt<S> {
-        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        type Control = ();
+
+        unsafe fn init(&mut self) -> Self::Control {}
+
+        fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
             let fd = Fd(self.fd.as_fd().as_raw_fd());
             let offset = self.offset;
             opcode::Read::new(fd, ptr::null_mut(), self.len)
@@ -1264,11 +1417,15 @@ mod buf_ring {
                 .into()
         }
 
-        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &Extra) {
+        unsafe fn set_result(
+            &mut self,
+            control: &mut Self::Control,
+            res: &io::Result<usize>,
+            extra: &Extra,
+        ) {
             if let Ok(buffer_id) = extra.buffer_id() {
-                let this = self.project();
-                this.buffer.replace(unsafe {
-                    this.pool.get_buffer(buffer_id, *res.as_ref().unwrap_or(&0))
+                self.buffer.replace(unsafe {
+                    self.pool.get_buffer(buffer_id, *res.as_ref().unwrap_or(&0))
                 });
             }
         }
@@ -1289,16 +1446,13 @@ mod buf_ring {
         }
     }
 
-    pin_project! {
-        /// Read a file.
-        pub struct ReadManaged<S> {
-            fd: S,
-            buffer_group: u16,
-            len: u32,
-            pool: IoUringBufferPool,
-            buffer: Option<IoUringOwnedBuffer>,
-            _p: PhantomPinned,
-        }
+    /// Read a file.
+    pub struct ReadManaged<S> {
+        fd: S,
+        buffer_group: u16,
+        len: u32,
+        pool: IoUringBufferPool,
+        buffer: Option<IoUringOwnedBuffer>,
     }
 
     impl<S> ReadManaged<S> {
@@ -1314,13 +1468,16 @@ mod buf_ring {
                 })?,
                 pool: buffer_pool.clone(),
                 buffer: None,
-                _p: PhantomPinned,
             })
         }
     }
 
     unsafe impl<S: AsFd> OpCode for ReadManaged<S> {
-        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        type Control = ();
+
+        unsafe fn init(&mut self) -> Self::Control {}
+
+        fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
             let fd = self.fd.as_fd().as_raw_fd();
             opcode::Read::new(Fd(fd), ptr::null_mut(), self.len)
                 .buf_group(self.buffer_group)
@@ -1330,11 +1487,15 @@ mod buf_ring {
                 .into()
         }
 
-        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &Extra) {
+        unsafe fn set_result(
+            &mut self,
+            control: &mut Self::Control,
+            res: &io::Result<usize>,
+            extra: &Extra,
+        ) {
             if let Ok(buffer_id) = extra.buffer_id() {
-                let this = self.project();
-                this.buffer.replace(unsafe {
-                    this.pool.get_buffer(buffer_id, *res.as_ref().unwrap_or(&0))
+                self.buffer.replace(unsafe {
+                    self.pool.get_buffer(buffer_id, *res.as_ref().unwrap_or(&0))
                 });
             }
         }
@@ -1355,17 +1516,14 @@ mod buf_ring {
         }
     }
 
-    pin_project! {
-        /// Receive data from remote.
-        pub struct RecvManaged<S> {
-            fd: S,
-            buffer_group: u16,
-            len: u32,
-            flags: i32,
-            pool: IoUringBufferPool,
-            buffer: Option<IoUringOwnedBuffer>,
-            _p: PhantomPinned,
-        }
+    /// Receive data from remote.
+    pub struct RecvManaged<S> {
+        fd: S,
+        buffer_group: u16,
+        len: u32,
+        flags: i32,
+        pool: IoUringBufferPool,
+        buffer: Option<IoUringOwnedBuffer>,
     }
 
     impl<S> RecvManaged<S> {
@@ -1382,13 +1540,16 @@ mod buf_ring {
                 flags,
                 pool: buffer_pool.clone(),
                 buffer: None,
-                _p: PhantomPinned,
             })
         }
     }
 
     unsafe impl<S: AsFd> OpCode for RecvManaged<S> {
-        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        type Control = ();
+
+        unsafe fn init(&mut self) -> Self::Control {}
+
+        fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
             let fd = self.fd.as_fd().as_raw_fd();
             opcode::Recv::new(Fd(fd), ptr::null_mut(), self.len)
                 .flags(self.flags)
@@ -1398,11 +1559,15 @@ mod buf_ring {
                 .into()
         }
 
-        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &Extra) {
+        unsafe fn set_result(
+            &mut self,
+            control: &mut Self::Control,
+            res: &io::Result<usize>,
+            extra: &Extra,
+        ) {
             if let Ok(buffer_id) = extra.buffer_id() {
-                let this = self.project();
-                this.buffer.replace(unsafe {
-                    this.pool.get_buffer(buffer_id, *res.as_ref().unwrap_or(&0))
+                self.buffer.replace(unsafe {
+                    self.pool.get_buffer(buffer_id, *res.as_ref().unwrap_or(&0))
                 });
             }
         }
@@ -1423,20 +1588,17 @@ mod buf_ring {
         }
     }
 
-    pin_project! {
-        /// Receive data and source address into managed buffer.
-        pub struct RecvFromManaged<S> {
-            fd: S,
-            buffer_group: u16,
-            flags: i32,
-            addr: SockAddrStorage,
-            addr_len: socklen_t,
-            iovec: libc::iovec,
-            msg: libc::msghdr,
-            pool: IoUringBufferPool,
-            buffer: Option<IoUringOwnedBuffer>,
-            _p: PhantomPinned,
-        }
+    /// Receive data and source address into managed buffer.
+    pub struct RecvFromManaged<S> {
+        fd: S,
+        buffer_group: u16,
+        flags: i32,
+        addr: SockAddrStorage,
+        addr_len: socklen_t,
+        iovec: libc::iovec,
+        msg: libc::msghdr,
+        pool: IoUringBufferPool,
+        buffer: Option<IoUringOwnedBuffer>,
     }
 
     impl<S> RecvFromManaged<S> {
@@ -1461,31 +1623,37 @@ mod buf_ring {
                 msg: unsafe { std::mem::zeroed() },
                 pool: buffer_pool.clone(),
                 buffer: None,
-                _p: PhantomPinned,
             })
         }
     }
 
     unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
-        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
-            let this = self.project();
-            this.msg.msg_name = this.addr as *mut _ as _;
-            this.msg.msg_namelen = *this.addr_len;
-            this.msg.msg_iov = this.iovec as *const _ as *mut _;
-            this.msg.msg_iovlen = 1;
-            opcode::RecvMsg::new(Fd(this.fd.as_fd().as_raw_fd()), this.msg)
-                .flags(*this.flags as _)
-                .buf_group(*this.buffer_group)
+        type Control = ();
+
+        unsafe fn init(&mut self) -> Self::Control {}
+
+        fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+            self.msg.msg_name = &raw mut self.addr as *mut _ as _;
+            self.msg.msg_namelen = self.addr_len;
+            self.msg.msg_iov = &raw mut self.iovec as *const _ as *mut _;
+            self.msg.msg_iovlen = 1;
+            opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &raw mut self.msg)
+                .flags(self.flags as _)
+                .buf_group(self.buffer_group)
                 .build()
                 .flags(Flags::BUFFER_SELECT)
                 .into()
         }
 
-        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &Extra) {
+        unsafe fn set_result(
+            &mut self,
+            control: &mut Self::Control,
+            res: &io::Result<usize>,
+            extra: &Extra,
+        ) {
             if let Ok(buffer_id) = extra.buffer_id() {
-                let this = self.project();
-                this.buffer.replace(unsafe {
-                    this.pool.get_buffer(buffer_id, *res.as_ref().unwrap_or(&0))
+                self.buffer.replace(unsafe {
+                    self.pool.get_buffer(buffer_id, *res.as_ref().unwrap_or(&0))
                 });
             }
         }
@@ -1544,13 +1712,10 @@ mod buf_ring {
         }
     }
 
-    pin_project! {
-        /// Read a file at specified position into multiple managed buffers.
-        pub struct ReadMultiAt<S> {
-            #[pin]
-            inner: ReadManagedAt<S>,
-            multishots: VecDeque<MultishotResult>
-        }
+    /// Read a file at specified position into multiple managed buffers.
+    pub struct ReadMultiAt<S> {
+        inner: ReadManagedAt<S>,
+        multishots: VecDeque<MultishotResult>,
     }
 
     impl<S> ReadMultiAt<S> {
@@ -1564,7 +1729,11 @@ mod buf_ring {
     }
 
     unsafe impl<S: AsFd> OpCode for ReadMultiAt<S> {
-        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        type Control = ();
+
+        unsafe fn init(&mut self) -> Self::Control {}
+
+        fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
             let fd = self.inner.fd.as_fd().as_raw_fd();
             opcode::ReadMulti::new(Fd(fd), self.inner.len, self.inner.buffer_group)
                 .offset(self.inner.offset)
@@ -1572,26 +1741,34 @@ mod buf_ring {
                 .into()
         }
 
-        fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
-            self.project().inner.create_entry()
+        fn create_entry_fallback(&mut self, control: &mut Self::Control) -> OpEntry {
+            self.inner.create_entry(control)
         }
 
-        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &crate::Extra) {
-            unsafe { self.project().inner.set_result(res, extra) }
+        unsafe fn set_result(
+            &mut self,
+            control: &mut Self::Control,
+            res: &io::Result<usize>,
+            extra: &crate::Extra,
+        ) {
+            unsafe { self.inner.set_result(control, res, extra) }
         }
 
         unsafe fn push_multishot(
-            self: Pin<&mut Self>,
+            &mut self,
+            _: &mut Self::Control,
             res: io::Result<usize>,
             extra: crate::Extra,
         ) {
-            let this = self.project();
-            this.multishots
-                .push_back(MultishotResult::new(res, extra, &this.inner.pool));
+            self.multishots
+                .push_back(MultishotResult::new(res, extra, &self.inner.pool));
         }
 
-        fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::sys::Extra>> {
-            self.project().multishots.pop_front().map(|mut proxy| {
+        fn pop_multishot(
+            &mut self,
+            _: &mut Self::Control,
+        ) -> Option<BufResult<usize, crate::sys::Extra>> {
+            self.multishots.pop_front().map(|mut proxy| {
                 proxy.leak();
                 BufResult(proxy.result, proxy.extra)
             })
@@ -1612,13 +1789,10 @@ mod buf_ring {
         }
     }
 
-    pin_project! {
-        /// Read a file into multiple managed buffers.
-        pub struct ReadMulti<S> {
-            #[pin]
-            inner: ReadManaged<S>,
-            multishots: VecDeque<MultishotResult>
-        }
+    /// Read a file into multiple managed buffers.
+    pub struct ReadMulti<S> {
+        inner: ReadManaged<S>,
+        multishots: VecDeque<MultishotResult>,
     }
 
     impl<S> ReadMulti<S> {
@@ -1632,7 +1806,11 @@ mod buf_ring {
     }
 
     unsafe impl<S: AsFd> OpCode for ReadMulti<S> {
-        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        type Control = ();
+
+        unsafe fn init(&mut self) -> Self::Control {}
+
+        fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
             let fd = self.inner.fd.as_fd().as_raw_fd();
             opcode::ReadMulti::new(Fd(fd), self.inner.len, self.inner.buffer_group)
                 .offset(u64::MAX)
@@ -1640,26 +1818,34 @@ mod buf_ring {
                 .into()
         }
 
-        fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
-            self.project().inner.create_entry()
+        fn create_entry_fallback(&mut self, control: &mut Self::Control) -> OpEntry {
+            self.inner.create_entry(control)
         }
 
-        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &crate::Extra) {
-            unsafe { self.project().inner.set_result(res, extra) }
+        unsafe fn set_result(
+            &mut self,
+            control: &mut Self::Control,
+            res: &io::Result<usize>,
+            extra: &crate::Extra,
+        ) {
+            unsafe { self.inner.set_result(control, res, extra) }
         }
 
         unsafe fn push_multishot(
-            self: Pin<&mut Self>,
+            &mut self,
+            _: &mut Self::Control,
             res: io::Result<usize>,
             extra: crate::Extra,
         ) {
-            let this = self.project();
-            this.multishots
-                .push_back(MultishotResult::new(res, extra, &this.inner.pool));
+            self.multishots
+                .push_back(MultishotResult::new(res, extra, &self.inner.pool));
         }
 
-        fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::sys::Extra>> {
-            self.project().multishots.pop_front().map(|mut proxy| {
+        fn pop_multishot(
+            &mut self,
+            _: &mut Self::Control,
+        ) -> Option<BufResult<usize, crate::sys::Extra>> {
+            self.multishots.pop_front().map(|mut proxy| {
                 proxy.leak();
                 BufResult(proxy.result, proxy.extra)
             })
@@ -1680,13 +1866,10 @@ mod buf_ring {
         }
     }
 
-    pin_project! {
-        /// Receive data from remote into multiple managed buffers.
-        pub struct RecvMulti<S> {
-            #[pin]
-            inner: RecvManaged<S>,
-            multishots: VecDeque<MultishotResult>
-        }
+    /// Receive data from remote into multiple managed buffers.
+    pub struct RecvMulti<S> {
+        inner: RecvManaged<S>,
+        multishots: VecDeque<MultishotResult>,
     }
 
     impl<S> RecvMulti<S> {
@@ -1700,7 +1883,11 @@ mod buf_ring {
     }
 
     unsafe impl<S: AsFd> OpCode for RecvMulti<S> {
-        fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        type Control = ();
+
+        unsafe fn init(&mut self) -> Self::Control {}
+
+        fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
             let fd = self.inner.fd.as_fd().as_raw_fd();
             opcode::RecvMulti::new(Fd(fd), self.inner.buffer_group)
                 .flags(self.inner.flags)
@@ -1708,26 +1895,34 @@ mod buf_ring {
                 .into()
         }
 
-        fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
-            self.project().inner.create_entry()
+        fn create_entry_fallback(&mut self, control: &mut Self::Control) -> OpEntry {
+            self.inner.create_entry(control)
         }
 
-        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &crate::Extra) {
-            unsafe { self.project().inner.set_result(res, extra) }
+        unsafe fn set_result(
+            &mut self,
+            control: &mut Self::Control,
+            res: &io::Result<usize>,
+            extra: &crate::Extra,
+        ) {
+            unsafe { self.inner.set_result(control, res, extra) }
         }
 
         unsafe fn push_multishot(
-            self: Pin<&mut Self>,
+            &mut self,
+            _: &mut Self::Control,
             res: io::Result<usize>,
             extra: crate::Extra,
         ) {
-            let this = self.project();
-            this.multishots
-                .push_back(MultishotResult::new(res, extra, &this.inner.pool));
+            self.multishots
+                .push_back(MultishotResult::new(res, extra, &self.inner.pool));
         }
 
-        fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::sys::Extra>> {
-            self.project().multishots.pop_front().map(|mut proxy| {
+        fn pop_multishot(
+            &mut self,
+            _: &mut Self::Control,
+        ) -> Option<BufResult<usize, crate::sys::Extra>> {
+            self.multishots.pop_front().map(|mut proxy| {
                 proxy.leak();
                 BufResult(proxy.result, proxy.extra)
             })

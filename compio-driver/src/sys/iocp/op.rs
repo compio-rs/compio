@@ -2,10 +2,8 @@
 use std::sync::OnceLock;
 use std::{
     io,
-    marker::PhantomPinned,
     net::Shutdown,
     os::windows::io::AsRawSocket,
-    pin::Pin,
     ptr::{null, null_mut, read_unaligned},
     task::Poll,
 };
@@ -13,7 +11,6 @@ use std::{
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
-use pin_project_lite::pin_project;
 use socket2::{SockAddr, SockAddrStorage};
 use windows_sys::{
     Win32::{
@@ -39,6 +36,10 @@ use windows_sys::{
     core::GUID,
 };
 
+pub use self::{
+    Send as SendZc, SendMsg as SendMsgZc, SendTo as SendToZc, SendToVectored as SendToVectoredZc,
+    SendVectored as SendVectoredZc,
+};
 use crate::{AsFd, AsRawFd, OpCode, OpType, RawFd, op::*, sys_slice::*, syscall};
 
 #[inline]
@@ -110,80 +111,90 @@ fn get_wsa_fn<F>(handle: RawFd, fguid: GUID) -> io::Result<Option<F>> {
     Ok(fptr)
 }
 
-unsafe impl<
+unsafe impl<D, F> OpCode for Asyncify<F, D>
+where
     D: std::marker::Send + 'static,
     F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + 'static,
-> OpCode for Asyncify<F, D>
 {
-    fn op_type(&self) -> OpType {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn op_type(&self, _: &mut Self::Control) -> OpType {
         OpType::Blocking
     }
 
-    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        let f = this
+    unsafe fn operate(&mut self, _: &mut (), _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let f = self
             .f
             .take()
             .expect("the operate method could only be called once");
         let BufResult(res, data) = f();
-        *this.data = Some(data);
+        self.data = Some(data);
         Poll::Ready(res)
     }
 }
 
-unsafe impl<
-    S,
+unsafe impl<S, D, F> OpCode for AsyncifyFd<S, F, D>
+where
     D: std::marker::Send + 'static,
     F: (FnOnce(&S) -> BufResult<usize, D>) + std::marker::Send + 'static,
-> OpCode for AsyncifyFd<S, F, D>
 {
-    fn op_type(&self) -> OpType {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn op_type(&self, _: &mut Self::Control) -> OpType {
         OpType::Blocking
     }
 
-    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(&mut self, _: &mut (), _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         // SAFETY: self won't be moved
-        let this = self.project();
-        let f = this
+        let f = self
             .f
             .take()
             .expect("the operate method could only be called once");
-        let BufResult(res, data) = f(this.fd);
-        *this.data = Some(data);
+        let BufResult(res, data) = f(&self.fd);
+        self.data = Some(data);
         Poll::Ready(res)
     }
 }
 
-unsafe impl<
-    S1,
-    S2,
+unsafe impl<S1, S2, D, F> OpCode for AsyncifyFd2<S1, S2, F, D>
+where
     D: std::marker::Send + 'static,
     F: (FnOnce(&S1, &S2) -> BufResult<usize, D>) + std::marker::Send + 'static,
-> OpCode for AsyncifyFd2<S1, S2, F, D>
 {
-    fn op_type(&self) -> OpType {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn op_type(&self, _: &mut Self::Control) -> OpType {
         OpType::Blocking
     }
 
-    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(&mut self, _: &mut (), _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         // SAFETY: self won't be moved
-        let this = self.project();
-        let f = this
+        let f = self
             .f
             .take()
             .expect("the operate method could only be called once");
-        let BufResult(res, data) = f(this.fd1, this.fd2);
-        *this.data = Some(data);
+        let BufResult(res, data) = f(&self.fd1, &self.fd2);
+        self.data = Some(data);
         Poll::Ready(res)
     }
 }
 
 unsafe impl OpCode for CloseFile {
-    fn op_type(&self) -> OpType {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn op_type(&self, _: &mut Self::Control) -> OpType {
         OpType::Blocking
     }
 
-    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(&mut self, _: &mut (), _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(
             syscall!(BOOL, CloseHandle(self.fd.as_fd().as_raw_fd()))? as _,
         ))
@@ -191,13 +202,16 @@ unsafe impl OpCode for CloseFile {
 }
 
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         if let Some(overlapped) = unsafe { optr.as_mut() } {
             overlapped.Anonymous.Anonymous.Offset = (self.offset & 0xFFFFFFFF) as _;
             overlapped.Anonymous.Anonymous.OffsetHigh = (self.offset >> 32) as _;
         }
         let fd = self.fd.as_fd().as_raw_fd();
-        let slice = self.project().buffer.sys_slice_mut();
         let mut transferred = 0;
         let res = unsafe {
             ReadFile(
@@ -211,13 +225,17 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
         win32_result(res, transferred)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         if let Some(overlapped) = unsafe { optr.as_mut() } {
             overlapped.Anonymous.Anonymous.Offset = (self.offset & 0xFFFFFFFF) as _;
             overlapped.Anonymous.Anonymous.OffsetHigh = (self.offset >> 32) as _;
@@ -236,31 +254,42 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
         win32_result(res, transferred)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
 
 unsafe impl<S: AsFd> OpCode for ReadManagedAt<S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        unsafe { self.project().op.operate(optr) }
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(
+        &mut self,
+        control: &mut Self::Control,
+        optr: *mut OVERLAPPED,
+    ) -> Poll<io::Result<usize>> {
+        unsafe { self.op.operate(control, optr) }
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
-        self.project().op.cancel(optr)
+    fn cancel(&mut self, control: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
+        self.op.cancel(control, optr)
     }
 }
 
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();
-        let slice = self.project().buffer.sys_slice_mut();
         let mut transferred = 0;
         let res = unsafe {
             ReadFile(
                 fd,
-                slice.ptr() as _,
-                slice.len() as _,
+                self.buf.ptr() as _,
+                self.buf.len() as _,
                 &mut transferred,
                 optr,
             )
@@ -268,13 +297,17 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
         win32_result(res, transferred)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let slice = self.buffer.as_init();
         let mut transferred = 0;
         let res = unsafe {
@@ -289,27 +322,31 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
         win32_result(res, transferred)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
 
 unsafe impl<S: AsFd> OpCode for ReadManaged<S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        unsafe { self.project().op.operate(optr) }
-    }
+    type Control = ();
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
-        self.project().op.cancel(optr)
-    }
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {}
+
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {}
 }
 
 unsafe impl<S: AsFd> OpCode for Sync<S> {
-    fn op_type(&self) -> OpType {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn op_type(&self, _: &mut Self::Control) -> OpType {
         OpType::Blocking
     }
 
-    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(&mut self, _: &mut (), _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(
             syscall!(BOOL, FlushFileBuffers(self.fd.as_fd().as_raw_fd()))? as _,
         ))
@@ -317,11 +354,15 @@ unsafe impl<S: AsFd> OpCode for Sync<S> {
 }
 
 unsafe impl<S: AsFd> OpCode for ShutdownSocket<S> {
-    fn op_type(&self) -> OpType {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn op_type(&self, _: &mut Self::Control) -> OpType {
         OpType::Blocking
     }
 
-    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(&mut self, _: &mut (), _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let how = match self.how {
             Shutdown::Write => SD_SEND,
             Shutdown::Read => SD_RECEIVE,
@@ -334,11 +375,15 @@ unsafe impl<S: AsFd> OpCode for ShutdownSocket<S> {
 }
 
 unsafe impl OpCode for CloseSocket {
-    fn op_type(&self) -> OpType {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn op_type(&self, _: &mut Self::Control) -> OpType {
         OpType::Blocking
     }
 
-    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(&mut self, _: &mut (), _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(
             syscall!(SOCKET, closesocket(self.fd.as_fd().as_raw_fd() as _))? as _,
         ))
@@ -351,15 +396,11 @@ static GET_ADDRS: OnceLock<LPFN_GETACCEPTEXSOCKADDRS> = OnceLock::new();
 const ACCEPT_ADDR_BUFFER_SIZE: usize = std::mem::size_of::<SOCKADDR_STORAGE>() + 16;
 const ACCEPT_BUFFER_SIZE: usize = ACCEPT_ADDR_BUFFER_SIZE * 2;
 
-pin_project! {
-    /// Accept a connection.
-    pub struct Accept<S> {
-        pub(crate) fd: S,
-        pub(crate) accept_fd: socket2::Socket,
-        #[pin]
-        pub(crate) buffer: [u8; ACCEPT_BUFFER_SIZE],
-        _p: PhantomPinned,
-    }
+/// Accept a connection.
+pub struct Accept<S> {
+    pub(crate) fd: S,
+    pub(crate) accept_fd: socket2::Socket,
+    pub(crate) buffer: [u8; ACCEPT_BUFFER_SIZE],
 }
 
 impl<S> Accept<S> {
@@ -369,7 +410,6 @@ impl<S> Accept<S> {
             fd,
             accept_fd,
             buffer: [0u8; ACCEPT_BUFFER_SIZE],
-            _p: PhantomPinned,
         }
     }
 }
@@ -432,19 +472,22 @@ impl<S: AsFd> Accept<S> {
 }
 
 unsafe impl<S: AsFd> OpCode for Accept<S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let accept_fn = ACCEPT_EX
             .get_or_try_init(|| get_wsa_fn(self.fd.as_fd().as_raw_fd(), WSAID_ACCEPTEX))?
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::Unsupported, "cannot retrieve AcceptEx")
             })?;
         let mut received = 0;
-        let this = self.project();
         let res = unsafe {
             accept_fn(
-                this.fd.as_fd().as_raw_fd() as _,
-                this.accept_fd.as_raw_socket() as _,
-                this.buffer.sys_slice_mut().ptr() as _,
+                self.fd.as_fd().as_raw_fd() as _,
+                self.accept_fd.as_raw_socket() as _,
+                self.buffer.sys_slice_mut().ptr() as _,
                 0,
                 ACCEPT_ADDR_BUFFER_SIZE as _,
                 ACCEPT_ADDR_BUFFER_SIZE as _,
@@ -455,7 +498,7 @@ unsafe impl<S: AsFd> OpCode for Accept<S> {
         win32_result(res, received)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
@@ -480,7 +523,11 @@ impl<S: AsFd> Connect<S> {
 }
 
 unsafe impl<S: AsFd> OpCode for Connect<S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let connect_fn = CONNECT_EX
             .get_or_try_init(|| get_wsa_fn(self.fd.as_fd().as_raw_fd(), WSAID_CONNECTEX))?
             .ok_or_else(|| {
@@ -501,24 +548,20 @@ unsafe impl<S: AsFd> OpCode for Connect<S> {
         win32_result(res, sent)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
 
-pin_project! {
-    /// Receive data from remote.
-    ///
-    /// It is only used for socket operations. If you want to read from a pipe, use
-    /// [`Read`].
-    pub struct Recv<T: IoBufMut, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) flags: i32,
-        pub(crate) slice: SysSlice,
-        _p: PhantomPinned,
-    }
+/// Receive data from remote.
+///
+/// It is only used for socket operations. If you want to read from a pipe, use
+/// [`Read`].
+pub struct Recv<T: IoBufMut, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) flags: i32,
+    pub(crate) slice: SysSlice,
 }
 
 impl<T: IoBufMut, S> Recv<T, S> {
@@ -529,7 +572,6 @@ impl<T: IoBufMut, S> Recv<T, S> {
             buffer,
             flags,
             slice: SysSlice::null(),
-            _p: PhantomPinned,
         }
     }
 }
@@ -543,16 +585,19 @@ impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
 }
 
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        let fd = this.fd.as_fd().as_raw_fd();
-        let mut flags = *this.flags as _;
-        *this.slice = this.buffer.sys_slice_mut();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let fd = self.fd.as_fd().as_raw_fd();
+        let mut flags = self.flags as _;
+        self.slice = self.buffer.sys_slice_mut();
         let mut received = 0;
         let res = unsafe {
             WSARecv(
                 fd as _,
-                (this.slice as *const SysSlice).cast(),
+                (self.slice as *const SysSlice).cast(),
                 1,
                 &mut received,
                 &mut flags,
@@ -563,41 +608,37 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
         winsock_result(res, received)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
 
 unsafe impl<S: AsFd> OpCode for RecvManaged<S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        unsafe { self.project().op.operate(optr) }
-    }
+    type Control = ();
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
-        self.project().op.cancel(optr)
-    }
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {}
+
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {}
 }
 
 unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        unsafe { self.project().op.operate(optr) }
-    }
+    type Control = ();
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
-        self.project().op.cancel(optr)
-    }
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {}
+
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {}
 }
 
-pin_project! {
-    /// Receive data from remote into vectored buffer.
-    pub struct RecvVectored<T: IoVectoredBufMut, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) flags: i32,
-        pub(crate) slices: Vec<SysSlice>,
-        _p: PhantomPinned,
-    }
+/// Receive data from remote into vectored buffer.
+pub struct RecvVectored<T: IoVectoredBufMut, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) flags: i32,
+    pub(crate) slices: Vec<SysSlice>,
 }
 
 impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
@@ -608,7 +649,6 @@ impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
             buffer,
             flags,
             slices: vec![],
-            _p: PhantomPinned,
         }
     }
 }
@@ -622,17 +662,20 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvVectored<T, S> {
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        let fd = this.fd.as_fd().as_raw_fd();
-        let mut flags = *this.flags as _;
-        *this.slices = this.buffer.sys_slices_mut();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let fd = self.fd.as_fd().as_raw_fd();
+        let mut flags = self.flags as _;
+        self.slices = self.buffer.sys_slices_mut();
         let mut received = 0;
         let res = unsafe {
             WSARecv(
                 fd as _,
-                this.slices.as_ptr() as _,
-                this.slices.len() as _,
+                self.slices.as_ptr() as _,
+                self.slices.len() as _,
                 &mut received,
                 &mut flags,
                 optr,
@@ -642,24 +685,20 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
         winsock_result(res, received)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
 
-pin_project! {
-    /// Send data to remote.
-    ///
-    /// It is only used for socket operations. If you want to write to a pipe, use
-    /// [`Write`].
-    pub struct Send<T: IoBuf, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) flags: i32,
-        pub(crate) slice: SysSlice,
-        _p: PhantomPinned,
-    }
+/// Send data to remote.
+///
+/// It is only used for socket operations. If you want to write to a pipe, use
+/// [`Write`].
+pub struct Send<T: IoBuf, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) flags: i32,
+    pub(crate) slice: SysSlice,
 }
 
 impl<T: IoBuf, S> Send<T, S> {
@@ -670,7 +709,6 @@ impl<T: IoBuf, S> Send<T, S> {
             buffer,
             flags,
             slice: SysSlice::null(),
-            _p: PhantomPinned,
         }
     }
 }
@@ -684,17 +722,20 @@ impl<T: IoBuf, S> IntoInner for Send<T, S> {
 }
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        *this.slice = this.buffer.as_ref().sys_slice();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        self.slice = self.buffer.as_ref().sys_slice();
         let mut sent = 0;
         let res = unsafe {
             WSASend(
-                this.fd.as_fd().as_raw_fd() as _,
-                (this.slice as *const SysSlice).cast(),
+                self.fd.as_fd().as_raw_fd() as _,
+                (self.slice as *const SysSlice).cast(),
                 1,
                 &mut sent,
-                *this.flags as _,
+                self.flags as _,
                 optr,
                 None,
             )
@@ -702,21 +743,17 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
         winsock_result(res, sent)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
 
-pin_project! {
-    /// Send data to remote from vectored buffer.
-    pub struct SendVectored<T: IoVectoredBuf, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) flags: i32,
-        pub(crate) slices: Vec<SysSlice>,
-        _p: PhantomPinned,
-    }
+/// Send data to remote from vectored buffer.
+pub struct SendVectored<T: IoVectoredBuf, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) flags: i32,
+    pub(crate) slices: Vec<SysSlice>,
 }
 
 impl<T: IoVectoredBuf, S> SendVectored<T, S> {
@@ -727,7 +764,6 @@ impl<T: IoVectoredBuf, S> SendVectored<T, S> {
             buffer,
             flags,
             slices: vec![],
-            _p: PhantomPinned,
         }
     }
 }
@@ -741,17 +777,20 @@ impl<T: IoVectoredBuf, S> IntoInner for SendVectored<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        *this.slices = this.buffer.as_ref().sys_slices();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        self.slices = self.buffer.as_ref().sys_slices();
         let mut sent = 0;
         let res = unsafe {
             WSASend(
-                this.fd.as_fd().as_raw_fd() as _,
-                this.slices.as_ptr() as _,
-                this.slices.len() as _,
+                self.fd.as_fd().as_raw_fd() as _,
+                self.slices.as_ptr() as _,
+                self.slices.len() as _,
                 &mut sent,
-                *this.flags as _,
+                self.flags as _,
                 optr,
                 None,
             )
@@ -759,23 +798,19 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
         winsock_result(res, sent)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
 
-pin_project! {
-    /// Receive data and source address.
-    pub struct RecvFrom<T: IoBufMut, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) addr: SockAddrStorage,
-        pub(crate) addr_len: socklen_t,
-        pub(crate) flags: i32,
-        pub(crate) slice: SysSlice,
-        _p: PhantomPinned,
-    }
+/// Receive data and source address.
+pub struct RecvFrom<T: IoBufMut, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) addr: SockAddrStorage,
+    pub(crate) addr_len: socklen_t,
+    pub(crate) flags: i32,
+    pub(crate) slice: SysSlice,
 }
 
 impl<T: IoBufMut, S> RecvFrom<T, S> {
@@ -790,7 +825,6 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
             addr_len,
             flags,
             slice: SysSlice::null(),
-            _p: PhantomPinned,
         }
     }
 }
@@ -804,21 +838,24 @@ impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
 }
 
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        let fd = this.fd.as_fd().as_raw_fd();
-        *this.slice = this.buffer.sys_slice_mut();
-        let mut flags = *this.flags as _;
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let fd = self.fd.as_fd().as_raw_fd();
+        self.slice = self.buffer.sys_slice_mut();
+        let mut flags = self.flags as _;
         let mut received = 0;
         let res = unsafe {
             WSARecvFrom(
                 fd as _,
-                (this.slice as *const SysSlice).cast(),
+                (self.slice as *const SysSlice).cast(),
                 1,
                 &mut received,
                 &mut flags,
-                this.addr as *mut _ as *mut SOCKADDR,
-                this.addr_len,
+                self.addr as *mut _ as *mut SOCKADDR,
+                self.addr_len,
                 optr,
                 None,
             )
@@ -826,23 +863,19 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
         winsock_result(res, received)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
 
-pin_project! {
-    /// Receive data and source address into vectored buffer.
-    pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) addr: SockAddrStorage,
-        pub(crate) addr_len: socklen_t,
-        pub(crate) flags: i32,
-        pub(crate) slices: Vec<SysSlice>,
-        _p: PhantomPinned,
-    }
+/// Receive data and source address into vectored buffer.
+pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) addr: SockAddrStorage,
+    pub(crate) addr_len: socklen_t,
+    pub(crate) flags: i32,
+    pub(crate) slices: Vec<SysSlice>,
 }
 
 impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
@@ -857,7 +890,6 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
             addr_len,
             flags,
             slices: vec![],
-            _p: PhantomPinned,
         }
     }
 }
@@ -871,21 +903,24 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        let fd = this.fd.as_fd().as_raw_fd();
-        *this.slices = this.buffer.sys_slices_mut();
-        let mut flags = *this.flags as _;
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let fd = self.fd.as_fd().as_raw_fd();
+        self.slices = self.buffer.sys_slices_mut();
+        let mut flags = self.flags as _;
         let mut received = 0;
         let res = unsafe {
             WSARecvFrom(
                 fd as _,
-                this.slices.as_ptr() as _,
-                this.slices.len() as _,
+                self.slices.as_ptr() as _,
+                self.slices.len() as _,
                 &mut received,
                 &mut flags,
-                this.addr as *mut _ as *mut SOCKADDR,
-                this.addr_len,
+                self.addr as *mut _ as *mut SOCKADDR,
+                self.addr_len,
                 optr,
                 None,
             )
@@ -893,22 +928,18 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
         winsock_result(res, received)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
 
-pin_project! {
-    /// Send data to specified address from buffer.
-    pub struct SendTo<T: IoBuf, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) addr: SockAddr,
-        pub(crate) flags: i32,
-        pub(crate) slice: SysSlice,
-        _p: PhantomPinned,
-    }
+/// Send data to specified address from buffer.
+pub struct SendTo<T: IoBuf, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) addr: SockAddr,
+    pub(crate) flags: i32,
+    pub(crate) slice: SysSlice,
 }
 
 impl<T: IoBuf, S> SendTo<T, S> {
@@ -920,7 +951,6 @@ impl<T: IoBuf, S> SendTo<T, S> {
             addr,
             flags,
             slice: SysSlice::null(),
-            _p: PhantomPinned,
         }
     }
 }
@@ -934,19 +964,22 @@ impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
 }
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        *this.slice = this.buffer.as_ref().sys_slice();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        self.slice = self.buffer.as_ref().sys_slice();
         let mut sent = 0;
         let res = unsafe {
             WSASendTo(
-                this.fd.as_fd().as_raw_fd() as _,
-                (this.slice as *const SysSlice).cast(),
+                self.fd.as_fd().as_raw_fd() as _,
+                (self.slice as *const SysSlice).cast(),
                 1,
                 &mut sent,
-                *this.flags as _,
-                this.addr.as_ptr().cast(),
-                this.addr.len(),
+                self.flags as _,
+                self.addr.as_ptr().cast(),
+                self.addr.len(),
                 optr,
                 None,
             )
@@ -954,22 +987,18 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
         winsock_result(res, sent)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
 
-pin_project! {
-    /// Send data to specified address from vectored buffer.
-    pub struct SendToVectored<T: IoVectoredBuf, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) addr: SockAddr,
-        pub(crate) flags: i32,
-        pub(crate) slices: Vec<SysSlice>,
-        _p: PhantomPinned,
-    }
+/// Send data to specified address from vectored buffer.
+pub struct SendToVectored<T: IoVectoredBuf, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) addr: SockAddr,
+    pub(crate) flags: i32,
+    pub(crate) slices: Vec<SysSlice>,
 }
 
 impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
@@ -981,7 +1010,6 @@ impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
             addr,
             flags,
             slices: vec![],
-            _p: PhantomPinned,
         }
     }
 }
@@ -995,19 +1023,22 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let this = self.project();
-        *this.slices = this.buffer.as_ref().sys_slices();
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        self.slices = self.buffer.as_ref().sys_slices();
         let mut sent = 0;
         let res = unsafe {
             WSASendTo(
-                this.fd.as_fd().as_raw_fd() as _,
-                this.slices.as_ptr() as _,
-                this.slices.len() as _,
+                self.fd.as_fd().as_raw_fd() as _,
+                self.slices.as_ptr() as _,
+                self.slices.len() as _,
                 &mut sent,
-                *this.flags as _,
-                this.addr.as_ptr().cast(),
-                this.addr.len(),
+                self.flags as _,
+                self.addr.as_ptr().cast(),
+                self.addr.len(),
                 optr,
                 None,
             )
@@ -1015,26 +1046,21 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
         winsock_result(res, sent)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
 
 static WSA_RECVMSG: OnceLock<LPFN_WSARECVMSG> = OnceLock::new();
 
-pin_project! {
-    /// Receive data and source address with ancillary data into vectored buffer.
-    pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
-        msg: WSAMSG,
-        addr: SockAddrStorage,
-        fd: S,
-        #[pin]
-        buffer: T,
-        #[pin]
-        control: C,
-        slices: Vec<SysSlice>,
-        _p: PhantomPinned,
-    }
+/// Receive data and source address with ancillary data into vectored buffer.
+pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
+    msg: WSAMSG,
+    addr: SockAddrStorage,
+    fd: S,
+    buffer: T,
+    control: C,
+    slices: Vec<SysSlice>,
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
@@ -1042,7 +1068,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
     ///
     /// # Panics
     ///
-    /// This function will panic if the control message buffer is misaligned.
+    /// self function will panic if the control message buffer is misaligned.
     pub fn new(fd: S, buffer: T, control: C, flags: i32) -> Self {
         assert!(
             control.buf_ptr().cast::<CMSGHDR>().is_aligned(),
@@ -1058,7 +1084,6 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
             buffer,
             control,
             slices: vec![],
-            _p: PhantomPinned,
         }
     }
 }
@@ -1077,27 +1102,29 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
 }
 
 unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let recvmsg_fn = WSA_RECVMSG
             .get_or_try_init(|| get_wsa_fn(self.fd.as_fd().as_raw_fd(), WSAID_WSARECVMSG))?
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::Unsupported, "cannot retrieve WSARecvMsg")
             })?;
 
-        let this = self.project();
-
-        *this.slices = this.buffer.sys_slices_mut();
-        this.msg.name = this.addr as *mut _ as _;
-        this.msg.namelen = this.addr.size_of() as _;
-        this.msg.lpBuffers = this.slices.as_mut_ptr() as _;
-        this.msg.dwBufferCount = this.slices.len() as _;
-        this.msg.Control = this.control.sys_slice_mut().into_inner();
+        self.slices = self.buffer.sys_slices_mut();
+        self.msg.name = self.addr as *mut _ as _;
+        self.msg.namelen = self.addr.size_of() as _;
+        self.msg.lpBuffers = self.slices.as_mut_ptr() as _;
+        self.msg.dwBufferCount = self.slices.len() as _;
+        self.msg.Control = self.control.sys_slice_mut().into_inner();
 
         let mut received = 0;
         let res = unsafe {
             recvmsg_fn(
-                this.fd.as_fd().as_raw_fd() as _,
-                this.msg,
+                self.fd.as_fd().as_raw_fd() as _,
+                self.msg,
                 &mut received,
                 optr,
                 None,
@@ -1106,26 +1133,21 @@ unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, 
         winsock_result(res, received)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
 
-pin_project! {
-    /// Send data to specified address accompanied by ancillary data from vectored
-    /// buffer.
-    pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
-        msg: WSAMSG,
-        fd: S,
-        #[pin]
-        buffer: T,
-        #[pin]
-        control: C,
-        addr: Option<SockAddr>,
-        slices: Vec<SysSlice>,
-        flags: i32,
-        _p: PhantomPinned,
-    }
+/// Send data to specified address accompanied by ancillary data from vectored
+/// buffer.
+pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
+    msg: WSAMSG,
+    fd: S,
+    buffer: T,
+    control: C,
+    addr: Option<SockAddr>,
+    slices: Vec<SysSlice>,
+    flags: i32,
 }
 
 impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
@@ -1133,7 +1155,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     ///
     /// # Panics
     ///
-    /// This function will panic if the control message buffer is misaligned.
+    /// self function will panic if the control message buffer is misaligned.
     pub fn new(fd: S, buffer: T, control: C, addr: Option<SockAddr>, flags: i32) -> Self {
         assert!(
             control.buf_ptr().cast::<CMSGHDR>().is_aligned(),
@@ -1147,7 +1169,6 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
             addr,
             slices: vec![],
             flags,
-            _p: PhantomPinned,
         }
     }
 }
@@ -1161,25 +1182,27 @@ impl<T: IoVectoredBuf, C: IoBuf, S> IntoInner for SendMsg<T, C, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let this = self.project();
+    type Control = ();
 
-        *this.slices = this.buffer.as_ref().sys_slices();
-        let control = this.control.as_ref().sys_slice();
-        *this.msg = match this.addr.as_ref() {
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        self.slices = self.buffer.as_ref().sys_slices();
+        let control = self.control.as_ref().sys_slice();
+        self.msg = match self.addr.as_ref() {
             Some(addr) => WSAMSG {
                 name: addr.as_ptr() as _,
                 namelen: addr.len() as _,
-                lpBuffers: this.slices.as_ptr() as _,
-                dwBufferCount: this.slices.len() as _,
+                lpBuffers: self.slices.as_ptr() as _,
+                dwBufferCount: self.slices.len() as _,
                 Control: control.into_inner(),
                 dwFlags: 0,
             },
             None => WSAMSG {
                 name: null_mut(),
                 namelen: 0,
-                lpBuffers: this.slices.as_ptr() as _,
-                dwBufferCount: this.slices.len() as _,
+                lpBuffers: self.slices.as_ptr() as _,
+                dwBufferCount: self.slices.len() as _,
                 Control: control.into_inner(),
                 dwFlags: 0,
             },
@@ -1188,9 +1211,9 @@ unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
         let mut sent = 0;
         let res = unsafe {
             WSASendMsg(
-                this.fd.as_fd().as_raw_fd() as _,
-                this.msg,
-                *this.flags as _,
+                self.fd.as_fd().as_raw_fd() as _,
+                self.msg,
+                self.flags as _,
                 &mut sent,
                 optr,
                 None,
@@ -1199,16 +1222,14 @@ unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
         winsock_result(res, sent)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
 
-pin_project! {
-    /// Connect to a named pipe.
-    pub struct ConnectNamedPipe<S> {
-        pub(crate) fd: S,
-    }
+/// Connect to a named pipe.
+pub struct ConnectNamedPipe<S> {
+    pub(crate) fd: S,
 }
 
 impl<S> ConnectNamedPipe<S> {
@@ -1219,27 +1240,26 @@ impl<S> ConnectNamedPipe<S> {
 }
 
 unsafe impl<S: AsFd> OpCode for ConnectNamedPipe<S> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let res = unsafe { ConnectNamedPipe(self.fd.as_fd().as_raw_fd() as _, optr) };
         win32_result(res, 0)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
 
-pin_project! {
-    /// Send a control code to a device.
-    pub struct DeviceIoControl<S, I: IoBuf, O: IoBufMut> {
-        pub(crate) fd: S,
-        pub(crate) ioctl_code: u32,
-        #[pin]
-        pub(crate) input_buffer: Option<I>,
-        #[pin]
-        pub(crate) output_buffer: Option<O>,
-        _p: PhantomPinned,
-    }
+/// Send a control code to a device.
+pub struct DeviceIoControl<S, I: IoBuf, O: IoBufMut> {
+    pub(crate) fd: S,
+    pub(crate) ioctl_code: u32,
+    pub(crate) input_buffer: Option<I>,
+    pub(crate) output_buffer: Option<O>,
 }
 
 impl<S, I: IoBuf, O: IoBufMut> DeviceIoControl<S, I, O> {
@@ -1250,7 +1270,6 @@ impl<S, I: IoBuf, O: IoBufMut> DeviceIoControl<S, I, O> {
             ioctl_code,
             input_buffer,
             output_buffer,
-            _p: PhantomPinned,
         }
     }
 }
@@ -1264,17 +1283,19 @@ impl<S, I: IoBuf, O: IoBufMut> IntoInner for DeviceIoControl<S, I, O> {
 }
 
 unsafe impl<S: AsFd, I: IoBuf, O: IoBufMut> OpCode for DeviceIoControl<S, I, O> {
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let mut this = self.project();
+    type Control = ();
 
-        let fd = this.fd.as_fd().as_raw_fd();
+    unsafe fn init(&mut self) -> Self::Control {}
 
-        let input = this
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let fd = self.fd.as_fd().as_raw_fd();
+
+        let input = self
             .input_buffer
             .as_ref()
             .as_pin_ref()
             .map_or(SysSlice::null(), |x| x.sys_slice());
-        let output = this
+        let output = self
             .output_buffer
             .as_mut()
             .as_pin_mut()
@@ -1284,7 +1305,7 @@ unsafe impl<S: AsFd, I: IoBuf, O: IoBufMut> OpCode for DeviceIoControl<S, I, O> 
         let res = unsafe {
             DeviceIoControl(
                 fd,
-                *this.ioctl_code,
+                self.ioctl_code,
                 input.ptr() as _,
                 input.len() as _,
                 output.ptr() as _,
@@ -1296,7 +1317,7 @@ unsafe impl<S: AsFd, I: IoBuf, O: IoBufMut> OpCode for DeviceIoControl<S, I, O> 
         win32_result(res, transferred)
     }
 
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
 }
