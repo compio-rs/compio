@@ -5,6 +5,10 @@ use std::ffi::CString;
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
+pub use self::{
+    Send as SendZc, SendMsg as SendMsgZc, SendTo as SendToZc, SendToVectored as SendToVectoredZc,
+    SendVectored as SendVectoredZc,
+};
 use super::{OpCode, stub_unimpl};
 pub use crate::sys::unix_op::*;
 use crate::{AsFd, op::*};
