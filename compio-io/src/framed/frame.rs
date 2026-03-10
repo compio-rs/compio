@@ -84,6 +84,9 @@ impl Default for LengthDelimited {
 }
 
 impl LengthDelimited {
+    /// Max allowed length of `len` field
+    const MAX_LFL: usize = 8;
+
     /// Creates a new `LengthDelimited` framer.
     pub fn new() -> Self {
         Self::default()
@@ -95,7 +98,16 @@ impl LengthDelimited {
     }
 
     /// Sets the length of the length field in bytes.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if `len_field_len` is too long (8 bytes is the maximum
+    /// allowed for now).
     pub fn set_length_field_len(mut self, len_field_len: usize) -> Self {
+        assert!(
+            len_field_len <= Self::MAX_LFL,
+            "Length field cannot take over 8 bytes"
+        );
         self.length_field_len = len_field_len;
         self
     }
@@ -121,15 +133,15 @@ impl<B: IoBufMut> Framer<B> for LengthDelimited {
         unsafe { buf.advance_to(len + self.length_field_len) };
 
         let slice = buf.as_mut_slice();
-        let lfl = self.length_field_len.min(8);
+        let lfl = self.length_field_len;
 
         // Write the length at the beginning
         let len_bytes = if self.length_field_is_big_endian {
-            &len.to_be_bytes()[(8 - lfl)..]
+            &len.to_be_bytes()[Self::MAX_LFL - lfl..]
         } else {
             &len.to_le_bytes()[..lfl]
         };
-        slice[0..self.length_field_len].copy_from_slice(&len_bytes[0..self.length_field_len]);
+        slice[..lfl].copy_from_slice(len_bytes);
     }
 
     fn extract(&mut self, buf: &Slice<B>) -> io::Result<Option<Frame>> {
@@ -138,11 +150,11 @@ impl<B: IoBufMut> Framer<B> for LengthDelimited {
         }
 
         let buf = buf.as_init();
-        let lfl = self.length_field_len.min(8);
-        let mut len_bytes = [0; _];
+        let lfl = self.length_field_len;
+        let mut len_bytes = [0; Self::MAX_LFL];
 
         let len = if self.length_field_is_big_endian {
-            len_bytes[(8 - lfl)..].copy_from_slice(&buf[..lfl]);
+            len_bytes[Self::MAX_LFL - lfl..].copy_from_slice(&buf[..lfl]);
             u64::from_be_bytes(len_bytes)
         } else {
             len_bytes[..lfl].copy_from_slice(&buf[..lfl]);
