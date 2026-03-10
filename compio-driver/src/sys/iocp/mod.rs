@@ -502,8 +502,6 @@ impl Driver {
     pub fn pop_multishot(&mut self, _: &ErasedKey) -> Option<BufResult<usize, crate::sys::Extra>> {
         None
     }
-
-    pub fn cleanup_multishot(&mut self, _: &ErasedKey) {}
 }
 
 impl AsRawFd for Driver {

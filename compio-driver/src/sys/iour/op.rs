@@ -16,7 +16,7 @@ use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
 use super::OpCode;
 pub use crate::sys::unix_op::*;
-use crate::{OpEntry, op::*, sys_slice::*, syscall};
+use crate::{Extra, OpEntry, op::*, sys_slice::*, syscall};
 
 unsafe impl<
     D: std::marker::Send + 'static,
@@ -97,10 +97,12 @@ unsafe impl<S: AsFd> OpCode for OpenFile<S> {
         self.call()
     }
 
-    unsafe fn set_result(self: Pin<&mut Self>, fd: usize) {
-        // SAFETY: fd is a valid fd returned from kernel
-        let fd = unsafe { OwnedFd::from_raw_fd(fd as _) };
-        *self.project().opened_fd = Some(fd);
+    unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, _: &Extra) {
+        if let Ok(fd) = res {
+            // SAFETY: fd is a valid fd returned from kernel
+            let fd = unsafe { OwnedFd::from_raw_fd(*fd as _) };
+            *self.project().opened_fd = Some(fd);
+        }
     }
 }
 
@@ -500,10 +502,12 @@ unsafe impl OpCode for CreateSocket {
         ))? as _)
     }
 
-    unsafe fn set_result(self: Pin<&mut Self>, fd: usize) {
-        // SAFETY: fd is a valid fd returned from kernel
-        let fd = unsafe { Socket2::from_raw_fd(fd as _) };
-        *self.project().opened_fd = Some(fd);
+    unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, _: &Extra) {
+        if let Ok(fd) = res {
+            // SAFETY: fd is a valid fd returned from kernel
+            let fd = unsafe { Socket2::from_raw_fd(*fd as _) };
+            *self.project().opened_fd = Some(fd);
+        }
     }
 }
 
@@ -544,10 +548,12 @@ unsafe impl<S: AsFd> OpCode for Accept<S> {
         .into()
     }
 
-    unsafe fn set_result(self: Pin<&mut Self>, fd: usize) {
-        // SAFETY: fd is a valid fd returned from kernel
-        let fd = unsafe { Socket2::from_raw_fd(fd as _) };
-        *self.project().accepted_fd = Some(fd);
+    unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, _: &Extra) {
+        if let Ok(fd) = res {
+            // SAFETY: fd is a valid fd returned from kernel
+            let fd = unsafe { Socket2::from_raw_fd(*fd as _) };
+            *self.project().accepted_fd = Some(fd);
+        }
     }
 }
 
@@ -909,6 +915,7 @@ unsafe impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
 
 mod buf_ring {
     use std::{
+        collections::VecDeque,
         io,
         marker::PhantomPinned,
         os::fd::{AsFd, AsRawFd},
@@ -916,12 +923,15 @@ mod buf_ring {
         ptr,
     };
 
+    use compio_buf::BufResult;
     use io_uring::{opcode, squeue::Flags, types::Fd};
     use pin_project_lite::pin_project;
     use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
-    use super::OpCode;
-    use crate::{BorrowedBuffer, BufferPool, OpEntry, TakeBuffer};
+    use super::{Extra, OpCode};
+    use crate::{
+        BorrowedBuffer, BufferPool, IoUringBufferPool, IoUringOwnedBuffer, OpEntry, TakeBuffer,
+    };
 
     pub(crate) fn take_buffer(
         buffer_pool: &BufferPool,
@@ -932,20 +942,24 @@ mod buf_ring {
         let buffer_pool = buffer_pool.as_io_uring();
         let result = result.inspect_err(|_| buffer_pool.reuse_buffer(buffer_id))?;
         // SAFETY: result is valid
-        let res = unsafe { buffer_pool.get_buffer(buffer_id, result) };
+        let buffer = unsafe { buffer_pool.get_buffer(buffer_id, result) };
+        let res = unsafe { buffer_pool.create_proxy(buffer, result) }?;
         #[cfg(fusion)]
-        let res = res.map(BorrowedBuffer::new_io_uring);
-        res
+        let res = BorrowedBuffer::new_io_uring(res);
+        Ok(res)
     }
 
-    /// Read a file at specified position into specified buffer.
-    #[derive(Debug)]
-    pub struct ReadManagedAt<S> {
-        pub(crate) fd: S,
-        pub(crate) offset: u64,
-        buffer_group: u16,
-        len: u32,
-        _p: PhantomPinned,
+    pin_project! {
+        /// Read a file at specified position into specified buffer.
+        pub struct ReadManagedAt<S> {
+            pub(crate) fd: S,
+            pub(crate) offset: u64,
+            buffer_group: u16,
+            len: u32,
+            pool: IoUringBufferPool,
+            buffer: Option<IoUringOwnedBuffer>,
+            _p: PhantomPinned,
+        }
     }
 
     impl<S> ReadManagedAt<S> {
@@ -960,6 +974,8 @@ mod buf_ring {
                 len: len.try_into().map_err(|_| {
                     io::Error::new(io::ErrorKind::InvalidInput, "required length too long")
                 })?,
+                pool: buffer_pool.clone(),
+                buffer: None,
                 _p: PhantomPinned,
             })
         }
@@ -976,6 +992,15 @@ mod buf_ring {
                 .flags(Flags::BUFFER_SELECT)
                 .into()
         }
+
+        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &Extra) {
+            if let Ok(buffer_id) = extra.buffer_id() {
+                let this = self.project();
+                this.buffer.replace(unsafe {
+                    this.pool.get_buffer(buffer_id, *res.as_ref().unwrap_or(&0))
+                });
+            }
+        }
     }
 
     impl<S> TakeBuffer for ReadManagedAt<S> {
@@ -983,21 +1008,26 @@ mod buf_ring {
         type BufferPool = BufferPool;
 
         fn take_buffer(
-            self,
+            mut self,
             buffer_pool: &Self::BufferPool,
             result: io::Result<usize>,
             buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
+            self.buffer.take().map(|buf| buf.leak());
             take_buffer(buffer_pool, result, buffer_id)
         }
     }
 
-    /// Read a file.
-    pub struct ReadManaged<S> {
-        fd: S,
-        buffer_group: u16,
-        len: u32,
-        _p: PhantomPinned,
+    pin_project! {
+        /// Read a file.
+        pub struct ReadManaged<S> {
+            fd: S,
+            buffer_group: u16,
+            len: u32,
+            pool: IoUringBufferPool,
+            buffer: Option<IoUringOwnedBuffer>,
+            _p: PhantomPinned,
+        }
     }
 
     impl<S> ReadManaged<S> {
@@ -1011,6 +1041,8 @@ mod buf_ring {
                 len: len.try_into().map_err(|_| {
                     io::Error::new(io::ErrorKind::InvalidInput, "required length too long")
                 })?,
+                pool: buffer_pool.clone(),
+                buffer: None,
                 _p: PhantomPinned,
             })
         }
@@ -1026,6 +1058,15 @@ mod buf_ring {
                 .flags(Flags::BUFFER_SELECT)
                 .into()
         }
+
+        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &Extra) {
+            if let Ok(buffer_id) = extra.buffer_id() {
+                let this = self.project();
+                this.buffer.replace(unsafe {
+                    this.pool.get_buffer(buffer_id, *res.as_ref().unwrap_or(&0))
+                });
+            }
+        }
     }
 
     impl<S> TakeBuffer for ReadManaged<S> {
@@ -1033,22 +1074,27 @@ mod buf_ring {
         type BufferPool = BufferPool;
 
         fn take_buffer(
-            self,
+            mut self,
             buffer_pool: &Self::BufferPool,
             result: io::Result<usize>,
             buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
+            self.buffer.take().map(|buf| buf.leak());
             take_buffer(buffer_pool, result, buffer_id)
         }
     }
 
-    /// Receive data from remote.
-    pub struct RecvManaged<S> {
-        fd: S,
-        buffer_group: u16,
-        len: u32,
-        flags: i32,
-        _p: PhantomPinned,
+    pin_project! {
+        /// Receive data from remote.
+        pub struct RecvManaged<S> {
+            fd: S,
+            buffer_group: u16,
+            len: u32,
+            flags: i32,
+            pool: IoUringBufferPool,
+            buffer: Option<IoUringOwnedBuffer>,
+            _p: PhantomPinned,
+        }
     }
 
     impl<S> RecvManaged<S> {
@@ -1063,6 +1109,8 @@ mod buf_ring {
                     io::Error::new(io::ErrorKind::InvalidInput, "required length too long")
                 })?,
                 flags,
+                pool: buffer_pool.clone(),
+                buffer: None,
                 _p: PhantomPinned,
             })
         }
@@ -1078,6 +1126,15 @@ mod buf_ring {
                 .flags(Flags::BUFFER_SELECT)
                 .into()
         }
+
+        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &Extra) {
+            if let Ok(buffer_id) = extra.buffer_id() {
+                let this = self.project();
+                this.buffer.replace(unsafe {
+                    this.pool.get_buffer(buffer_id, *res.as_ref().unwrap_or(&0))
+                });
+            }
+        }
     }
 
     impl<S> TakeBuffer for RecvManaged<S> {
@@ -1085,11 +1142,12 @@ mod buf_ring {
         type BufferPool = BufferPool;
 
         fn take_buffer(
-            self,
+            mut self,
             buffer_pool: &Self::BufferPool,
             result: io::Result<usize>,
             buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
+            self.buffer.take().map(|buf| buf.leak());
             take_buffer(buffer_pool, result, buffer_id)
         }
     }
@@ -1104,6 +1162,8 @@ mod buf_ring {
             addr_len: socklen_t,
             iovec: libc::iovec,
             msg: libc::msghdr,
+            pool: IoUringBufferPool,
+            buffer: Option<IoUringOwnedBuffer>,
             _p: PhantomPinned,
         }
     }
@@ -1128,6 +1188,8 @@ mod buf_ring {
                     iov_len: len as _,
                 },
                 msg: unsafe { std::mem::zeroed() },
+                pool: buffer_pool.clone(),
+                buffer: None,
                 _p: PhantomPinned,
             })
         }
@@ -1147,6 +1209,15 @@ mod buf_ring {
                 .flags(Flags::BUFFER_SELECT)
                 .into()
         }
+
+        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &Extra) {
+            if let Ok(buffer_id) = extra.buffer_id() {
+                let this = self.project();
+                this.buffer.replace(unsafe {
+                    this.pool.get_buffer(buffer_id, *res.as_ref().unwrap_or(&0))
+                });
+            }
+        }
     }
 
     impl<S> TakeBuffer for RecvFromManaged<S> {
@@ -1154,7 +1225,7 @@ mod buf_ring {
         type BufferPool = BufferPool;
 
         fn take_buffer(
-            self,
+            mut self,
             buffer_pool: &Self::BufferPool,
             result: io::Result<usize>,
             buffer_id: u16,
@@ -1165,10 +1236,40 @@ mod buf_ring {
             let addr =
                 (self.addr_len > 0).then(|| unsafe { SockAddr::new(self.addr, self.addr_len) });
             // SAFETY: result is valid
-            let buffer = unsafe { buffer_pool.get_buffer(buffer_id, result) }?;
+            let buffer = self
+                .buffer
+                .take()
+                .unwrap_or_else(|| unsafe { buffer_pool.get_buffer(buffer_id, result) });
+            let buffer = unsafe { buffer_pool.create_proxy(buffer, result) }?;
             #[cfg(fusion)]
             let buffer = BorrowedBuffer::new_io_uring(buffer);
             Ok((buffer, addr))
+        }
+    }
+
+    struct MultishotResult {
+        result: io::Result<usize>,
+        extra: Extra,
+        buffer: Option<IoUringOwnedBuffer>,
+    }
+
+    impl MultishotResult {
+        pub fn new(result: io::Result<usize>, extra: Extra, pool: &IoUringBufferPool) -> Self {
+            let buffer = extra
+                .buffer_id()
+                .map(|buffer_id| unsafe {
+                    pool.get_buffer(buffer_id, *result.as_ref().unwrap_or(&0))
+                })
+                .ok();
+            Self {
+                result,
+                extra,
+                buffer,
+            }
+        }
+
+        pub fn leak(&mut self) {
+            self.buffer.take().map(|buf| buf.leak());
         }
     }
 
@@ -1177,6 +1278,7 @@ mod buf_ring {
         pub struct ReadMultiAt<S> {
             #[pin]
             inner: ReadManagedAt<S>,
+            multishots: VecDeque<MultishotResult>
         }
     }
 
@@ -1185,6 +1287,7 @@ mod buf_ring {
         pub fn new(fd: S, offset: u64, buffer_pool: &BufferPool, len: usize) -> io::Result<Self> {
             Ok(Self {
                 inner: ReadManagedAt::new(fd, offset, buffer_pool, len)?,
+                multishots: VecDeque::new(),
             })
         }
     }
@@ -1201,6 +1304,27 @@ mod buf_ring {
         fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
             self.project().inner.create_entry()
         }
+
+        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &crate::Extra) {
+            unsafe { self.project().inner.set_result(res, extra) }
+        }
+
+        unsafe fn push_multishot(
+            self: Pin<&mut Self>,
+            res: io::Result<usize>,
+            extra: crate::Extra,
+        ) {
+            let this = self.project();
+            this.multishots
+                .push_back(MultishotResult::new(res, extra, &this.inner.pool));
+        }
+
+        fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::sys::Extra>> {
+            self.project().multishots.pop_front().map(|mut proxy| {
+                proxy.leak();
+                BufResult(proxy.result, proxy.extra)
+            })
+        }
     }
 
     impl<S> TakeBuffer for ReadMultiAt<S> {
@@ -1213,7 +1337,7 @@ mod buf_ring {
             result: io::Result<usize>,
             buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
-            take_buffer(buffer_pool, result, buffer_id)
+            self.inner.take_buffer(buffer_pool, result, buffer_id)
         }
     }
 
@@ -1222,6 +1346,7 @@ mod buf_ring {
         pub struct ReadMulti<S> {
             #[pin]
             inner: ReadManaged<S>,
+            multishots: VecDeque<MultishotResult>
         }
     }
 
@@ -1230,6 +1355,7 @@ mod buf_ring {
         pub fn new(fd: S, buffer_pool: &BufferPool, len: usize) -> io::Result<Self> {
             Ok(Self {
                 inner: ReadManaged::new(fd, buffer_pool, len)?,
+                multishots: VecDeque::new(),
             })
         }
     }
@@ -1246,6 +1372,27 @@ mod buf_ring {
         fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
             self.project().inner.create_entry()
         }
+
+        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &crate::Extra) {
+            unsafe { self.project().inner.set_result(res, extra) }
+        }
+
+        unsafe fn push_multishot(
+            self: Pin<&mut Self>,
+            res: io::Result<usize>,
+            extra: crate::Extra,
+        ) {
+            let this = self.project();
+            this.multishots
+                .push_back(MultishotResult::new(res, extra, &this.inner.pool));
+        }
+
+        fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::sys::Extra>> {
+            self.project().multishots.pop_front().map(|mut proxy| {
+                proxy.leak();
+                BufResult(proxy.result, proxy.extra)
+            })
+        }
     }
 
     impl<S> TakeBuffer for ReadMulti<S> {
@@ -1258,7 +1405,7 @@ mod buf_ring {
             result: io::Result<usize>,
             buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
-            take_buffer(buffer_pool, result, buffer_id)
+            self.inner.take_buffer(buffer_pool, result, buffer_id)
         }
     }
 
@@ -1267,6 +1414,7 @@ mod buf_ring {
         pub struct RecvMulti<S> {
             #[pin]
             inner: RecvManaged<S>,
+            multishots: VecDeque<MultishotResult>
         }
     }
 
@@ -1275,6 +1423,7 @@ mod buf_ring {
         pub fn new(fd: S, buffer_pool: &BufferPool, len: usize, flags: i32) -> io::Result<Self> {
             Ok(Self {
                 inner: RecvManaged::new(fd, buffer_pool, len, flags)?,
+                multishots: VecDeque::new(),
             })
         }
     }
@@ -1291,6 +1440,27 @@ mod buf_ring {
         fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
             self.project().inner.create_entry()
         }
+
+        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &crate::Extra) {
+            unsafe { self.project().inner.set_result(res, extra) }
+        }
+
+        unsafe fn push_multishot(
+            self: Pin<&mut Self>,
+            res: io::Result<usize>,
+            extra: crate::Extra,
+        ) {
+            let this = self.project();
+            this.multishots
+                .push_back(MultishotResult::new(res, extra, &this.inner.pool));
+        }
+
+        fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::sys::Extra>> {
+            self.project().multishots.pop_front().map(|mut proxy| {
+                proxy.leak();
+                BufResult(proxy.result, proxy.extra)
+            })
+        }
     }
 
     impl<S> TakeBuffer for RecvMulti<S> {
@@ -1303,7 +1473,7 @@ mod buf_ring {
             result: io::Result<usize>,
             buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
-            take_buffer(buffer_pool, result, buffer_id)
+            self.inner.take_buffer(buffer_pool, result, buffer_id)
         }
     }
 }

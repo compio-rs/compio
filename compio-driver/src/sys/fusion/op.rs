@@ -97,6 +97,26 @@ macro_rules! op {
             fn create_entry(self: std::pin::Pin<&mut Self>) -> OpEntry {
                 unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.create_entry()
             }
+
+            fn create_entry_fallback(self: std::pin::Pin<&mut Self>) -> OpEntry {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.create_entry_fallback()
+            }
+
+            fn call_blocking(self: std::pin::Pin<&mut Self>) -> std::io::Result<usize> {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.call_blocking()
+            }
+
+            unsafe fn set_result(self: std::pin::Pin<&mut Self>, result: &std::io::Result<usize>, extra: &crate::Extra) {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ).set_result(result, extra) }
+            }
+
+            unsafe fn push_multishot(self: std::pin::Pin<&mut Self>, result: std::io::Result<usize>, extra: crate::Extra) {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ).push_multishot(result, extra) }
+            }
+
+            fn pop_multishot(self: std::pin::Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.pop_multishot()
+            }
         }
     };
 }
@@ -201,6 +221,26 @@ macro_rules! mop {
         unsafe impl<$($ty: $trait),*> iour::OpCode for $name<$($ty),*> {
             fn create_entry(self: std::pin::Pin<&mut Self>) -> OpEntry {
                 unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.create_entry()
+            }
+
+            fn create_entry_fallback(self: std::pin::Pin<&mut Self>) -> OpEntry {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.create_entry_fallback()
+            }
+
+            fn call_blocking(self: std::pin::Pin<&mut Self>) -> std::io::Result<usize> {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.call_blocking()
+            }
+
+            unsafe fn set_result(self: std::pin::Pin<&mut Self>, result: &std::io::Result<usize>, extra: &crate::Extra) {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ).set_result(result, extra) }
+            }
+
+            unsafe fn push_multishot(self: std::pin::Pin<&mut Self>, result: std::io::Result<usize>, extra: crate::Extra) {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ).push_multishot(result, extra) }
+            }
+
+            fn pop_multishot(self: std::pin::Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.pop_multishot()
             }
         }
     };
