@@ -126,18 +126,18 @@ impl OpCode for CloseSocket {}
 impl<S: AsFd> OpCode for Accept<S> {}
 
 /// Accept multiple connections.
-pub struct Accept<S> {
+pub struct AcceptMulti<S> {
     fd: S,
 }
 
-impl<S> Accept<S> {
-    /// Create [`Accept`].
+impl<S> AcceptMulti<S> {
+    /// Create [`AcceptMulti`].
     pub fn new(fd: S) -> Self {
         Self { fd }
     }
 }
 
-impl<S> IntoInner for Accept<S> {
+impl<S> IntoInner for AcceptMulti<S> {
     type Inner = (Socket2, SockAddr);
 
     fn into_inner(self) -> Self::Inner {
