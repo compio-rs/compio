@@ -17,7 +17,6 @@ use libc::{pread64 as pread, preadv64 as preadv, pwrite64 as pwrite, pwritev64 a
 use pin_project_lite::pin_project;
 use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
-#[cfg(linux_all)]
 pub use self::{
     Send as SendZc, SendMsg as SendMsgZc, SendTo as SendToZc, SendToVectored as SendToVectoredZc,
     SendVectored as SendVectoredZc,
