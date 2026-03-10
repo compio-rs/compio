@@ -5,15 +5,12 @@
 
 use std::marker::PhantomData;
 
-use compio_buf::{IoBufMut, bytes::Bytes};
+use compio_buf::IoBufMut;
 use futures_util::FutureExt;
 
 use crate::{
     AsyncRead,
-    framed::{
-        codec::{Decoder, bytes::BytesCodec},
-        frame::NoopFramer,
-    },
+    framed::{codec::Decoder, frame::NoopFramer},
     util::Splittable,
 };
 
@@ -151,17 +148,40 @@ impl<C, F> Framed<(), (), C, F, (), (), ()> {
     }
 }
 
-/// A type alias for a `Framed` with bytes as the input and output type.
-pub type BytesFramed<R, W> = Framed<R, W, BytesCodec, NoopFramer, Bytes, Bytes>;
+/// [`Framed`] that brigdes io with [`Bytes`].
+///
+/// This is useful when you want to read/write raw bytes into/from [`Bytes`]
+/// without any additional framing or de/encoding.
+///
+/// See also: [`ReaderStream`] and [`ReaderStream`].
+///
+/// [`ReaderStream`]: https://docs.rs/tokio-util/latest/tokio_util/io/struct.ReaderStream.html
+/// [`StreamReader`]: https://docs.rs/tokio-util/latest/tokio_util/io/struct.StreamReader.html
+#[cfg(feature = "bytes")]
+pub type BytesFramed<R, W> = Framed<
+    R,
+    W,
+    codec::bytes::BytesCodec,
+    NoopFramer,
+    compio_buf::bytes::Bytes,
+    compio_buf::bytes::Bytes,
+>;
 
+#[cfg(feature = "bytes")]
 impl BytesFramed<(), ()> {
-    /// Creates a new `Framed` with the given I/O object, codec, and framer with
-    /// bytes as the input and output type.
+    /// Creates a new [`BytesFramed`] that brigdes [`AsyncRead`]/[`AsyncWrite`]
+    /// with [`Bytes`].
+    ///
+    /// See also: [`ReaderStream`] and [`ReaderStream`].
+    ///
+    /// [`AsyncWrite`]: crate::AsyncWrite
+    /// [`ReaderStream`]: https://docs.rs/tokio-util/latest/tokio_util/io/struct.ReaderStream.html
+    /// [`StreamReader`]: https://docs.rs/tokio-util/latest/tokio_util/io/struct.StreamReader.html
     pub fn new_bytes() -> Self {
         Framed {
             read_state: read::State::empty(),
             write_state: write::State::empty(),
-            codec: BytesCodec::new(),
+            codec: codec::bytes::BytesCodec::new(),
             framer: NoopFramer::new(),
             types: PhantomData,
         }

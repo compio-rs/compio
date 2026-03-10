@@ -1,11 +1,8 @@
 //! Traits and implementations for frame extraction and enclosing
 
-use std::io;
+use std::io::{self, Write};
 
-use compio_buf::{
-    IoBuf, IoBufMut, Slice,
-    bytes::{Buf, BufMut},
-};
+use compio_buf::{IoBuf, IoBufMut, Slice};
 
 /// An extracted frame
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,11 +123,12 @@ impl<B: IoBufMut> Framer<B> for LengthDelimited {
         let slice = buf.as_mut_slice();
 
         // Write the length at the beginning
-        if self.length_field_is_big_endian {
-            (&mut slice[0..self.length_field_len]).put_uint(len as _, self.length_field_len);
+        let len_bytes = if self.length_field_is_big_endian {
+            len.to_be_bytes()
         } else {
-            (&mut slice[0..self.length_field_len]).put_uint_le(len as _, self.length_field_len);
-        }
+            len.to_le_bytes()
+        };
+        slice[0..self.length_field_len].copy_from_slice(&len_bytes[0..self.length_field_len]);
     }
 
     fn extract(&mut self, buf: &Slice<B>) -> io::Result<Option<Frame>> {
@@ -138,15 +136,16 @@ impl<B: IoBufMut> Framer<B> for LengthDelimited {
             return Ok(None);
         }
 
-        let mut buf = buf.as_init();
+        let buf = buf.as_init();
+        let len_bytes = buf[..self.length_field_len].try_into().unwrap();
 
         let len = if self.length_field_is_big_endian {
-            buf.get_uint(self.length_field_len)
+            usize::from_be_bytes(len_bytes)
         } else {
-            buf.get_uint_le(self.length_field_len)
-        } as usize;
+            usize::from_le_bytes(len_bytes)
+        };
 
-        if buf.len() < len {
+        if buf.len() < self.length_field_len + len {
             return Ok(None);
         }
 
