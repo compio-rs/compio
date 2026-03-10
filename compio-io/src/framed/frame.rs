@@ -2,10 +2,7 @@
 
 use std::io;
 
-use compio_buf::{
-    IoBuf, IoBufMut, Slice,
-    bytes::{Buf, BufMut},
-};
+use compio_buf::{IoBuf, IoBufMut, Slice};
 
 /// An extracted frame
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,6 +84,9 @@ impl Default for LengthDelimited {
 }
 
 impl LengthDelimited {
+    /// Max allowed length of `len` field
+    const MAX_LFL: usize = 8;
+
     /// Creates a new `LengthDelimited` framer.
     pub fn new() -> Self {
         Self::default()
@@ -98,7 +98,16 @@ impl LengthDelimited {
     }
 
     /// Sets the length of the length field in bytes.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if `len_field_len` is too long (8 bytes is the maximum
+    /// allowed for now).
     pub fn set_length_field_len(mut self, len_field_len: usize) -> Self {
+        assert!(
+            len_field_len <= Self::MAX_LFL,
+            "Length field cannot take over 8 bytes"
+        );
         self.length_field_len = len_field_len;
         self
     }
@@ -124,13 +133,16 @@ impl<B: IoBufMut> Framer<B> for LengthDelimited {
         unsafe { buf.advance_to(len + self.length_field_len) };
 
         let slice = buf.as_mut_slice();
+        let lfl = self.length_field_len;
 
         // Write the length at the beginning
-        if self.length_field_is_big_endian {
-            (&mut slice[0..self.length_field_len]).put_uint(len as _, self.length_field_len);
+        let len = len as u64;
+        let len_bytes = if self.length_field_is_big_endian {
+            &len.to_be_bytes()[Self::MAX_LFL - lfl..]
         } else {
-            (&mut slice[0..self.length_field_len]).put_uint_le(len as _, self.length_field_len);
-        }
+            &len.to_le_bytes()[..lfl]
+        };
+        slice[..lfl].copy_from_slice(len_bytes);
     }
 
     fn extract(&mut self, buf: &Slice<B>) -> io::Result<Option<Frame>> {
@@ -138,15 +150,19 @@ impl<B: IoBufMut> Framer<B> for LengthDelimited {
             return Ok(None);
         }
 
-        let mut buf = buf.as_init();
+        let buf = buf.as_init();
+        let lfl = self.length_field_len;
+        let mut len_bytes = [0; Self::MAX_LFL];
 
         let len = if self.length_field_is_big_endian {
-            buf.get_uint(self.length_field_len)
+            len_bytes[Self::MAX_LFL - lfl..].copy_from_slice(&buf[..lfl]);
+            u64::from_be_bytes(len_bytes)
         } else {
-            buf.get_uint_le(self.length_field_len)
+            len_bytes[..lfl].copy_from_slice(&buf[..lfl]);
+            u64::from_le_bytes(len_bytes)
         } as usize;
 
-        if buf.len() < len {
+        if buf.len() < self.length_field_len + len {
             return Ok(None);
         }
 
