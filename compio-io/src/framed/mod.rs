@@ -151,7 +151,8 @@ impl<C, F> Framed<(), (), C, F, (), (), ()> {
     }
 }
 
-type BytesFramed<R, W> = Framed<R, W, BytesCodec, NoopFramer, Bytes, Bytes>;
+/// A type alias for a `Framed` with bytes as the input and output type.
+pub type BytesFramed<R, W> = Framed<R, W, BytesCodec, NoopFramer, Bytes, Bytes>;
 
 impl BytesFramed<(), ()> {
     /// Creates a new `Framed` with the given I/O object, codec, and framer with
