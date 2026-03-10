@@ -610,6 +610,62 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
     }
 }
 
+pin_project! {
+    /// Zerocopy [`Send`].
+    pub struct SendZc<T: IoBuf, S> {
+        #[pin]
+        pub(crate) op: Send<T, S>,
+        pub(crate) res: Option<BufResult<usize, crate::Extra>>,
+        _p: PhantomPinned,
+    }
+}
+
+impl<T: IoBuf, S> SendZc<T, S> {
+    /// Create [`SendZc`].
+    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+        Self {
+            op: Send::new(fd, buffer, flags),
+            res: None,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+unsafe impl<T: IoBuf, S: AsFd> OpCode for SendZc<T, S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let this = self.project();
+        let slice = this.op.buffer.as_init();
+        opcode::SendZc::new(
+            Fd(this.op.fd.as_fd().as_raw_fd()),
+            slice.as_ptr(),
+            slice.len().try_into().unwrap_or(u32::MAX),
+        )
+        .flags(this.op.flags)
+        .build()
+        .into()
+    }
+
+    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
+        self.project().op.create_entry()
+    }
+
+    unsafe fn push_multishot(self: Pin<&mut Self>, res: io::Result<usize>, extra: crate::Extra) {
+        self.project().res.replace(BufResult(res, extra));
+    }
+
+    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
+        self.project().res.take()
+    }
+}
+
+impl<T: IoBuf, S> IntoInner for SendZc<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.op.into_inner()
+    }
+}
+
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
     fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
         self.as_mut().set_msg();
@@ -618,6 +674,59 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
             .flags(*this.flags as _)
             .build()
             .into()
+    }
+}
+
+pin_project! {
+    /// Zerocopy [`SendVectored`].
+    pub struct SendVectoredZc<T: IoVectoredBuf, S> {
+        #[pin]
+        pub(crate) op: SendVectored<T, S>,
+        pub(crate) res: Option<BufResult<usize, crate::Extra>>,
+        _p: PhantomPinned,
+    }
+}
+
+impl<T: IoVectoredBuf, S> SendVectoredZc<T, S> {
+    /// Create [`SendVectoredZc`].
+    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+        Self {
+            op: SendVectored::new(fd, buffer, flags),
+            res: None,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectoredZc<T, S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let mut this = self.project();
+        this.op.as_mut().set_msg();
+        let op = this.op.project();
+        opcode::SendMsgZc::new(Fd(op.fd.as_fd().as_raw_fd()), op.msg)
+            .flags(*op.flags as _)
+            .build()
+            .into()
+    }
+
+    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
+        self.project().op.create_entry()
+    }
+
+    unsafe fn push_multishot(self: Pin<&mut Self>, res: io::Result<usize>, extra: crate::Extra) {
+        self.project().res.replace(BufResult(res, extra));
+    }
+
+    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
+        self.project().res.take()
+    }
+}
+
+impl<T: IoVectoredBuf, S> IntoInner for SendVectoredZc<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.op.into_inner()
     }
 }
 
@@ -755,15 +864,11 @@ impl<S> SendToHeader<S> {
 }
 
 impl<S: AsFd> SendToHeader<S> {
-    pub fn create_entry(&mut self, slices: &mut [SysSlice]) -> OpEntry {
+    pub fn set_msg(&mut self, slices: &mut [SysSlice]) {
         self.msg.msg_name = self.addr.as_ptr() as _;
         self.msg.msg_namelen = self.addr.len();
         self.msg.msg_iov = slices.as_mut_ptr() as _;
         self.msg.msg_iovlen = slices.len() as _;
-        opcode::SendMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &self.msg)
-            .flags(self.flags as _)
-            .build()
-            .into()
     }
 }
 
@@ -792,7 +897,11 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = self.project();
         let slice = this.slice.insert(this.buffer.as_ref().sys_slice());
-        this.header.create_entry(std::slice::from_mut(slice))
+        this.header.set_msg(std::slice::from_mut(slice));
+        opcode::SendMsg::new(Fd(this.header.fd.as_fd().as_raw_fd()), &this.header.msg)
+            .flags(this.header.flags as _)
+            .build()
+            .into()
     }
 }
 
@@ -801,6 +910,59 @@ impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
+    }
+}
+
+pin_project! {
+    /// Zerocopy [`SendTo`].
+    pub struct SendToZc<T: IoBuf, S: AsFd> {
+        #[pin]
+        pub(crate) op: SendTo<T, S>,
+        pub(crate) res: Option<BufResult<usize, crate::Extra>>,
+        _p: PhantomPinned,
+    }
+}
+
+impl<T: IoBuf, S: AsFd> SendToZc<T, S> {
+    /// Create [`SendToZc`].
+    pub fn new(fd: S, buffer: T, addr: SockAddr, flags: i32) -> Self {
+        Self {
+            op: SendTo::new(fd, buffer, addr, flags),
+            res: None,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+unsafe impl<T: IoBuf, S: AsFd> OpCode for SendToZc<T, S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let this = self.project().op.project();
+        let slice = this.slice.insert(this.buffer.as_ref().sys_slice());
+        this.header.set_msg(std::slice::from_mut(slice));
+        opcode::SendMsgZc::new(Fd(this.header.fd.as_fd().as_raw_fd()), &this.header.msg)
+            .flags(this.header.flags as _)
+            .build()
+            .into()
+    }
+
+    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
+        self.project().op.create_entry()
+    }
+
+    unsafe fn push_multishot(self: Pin<&mut Self>, res: io::Result<usize>, extra: crate::Extra) {
+        self.project().res.replace(BufResult(res, extra));
+    }
+
+    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
+        self.project().res.take()
+    }
+}
+
+impl<T: IoBuf, S: AsFd> IntoInner for SendToZc<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.op.into_inner()
     }
 }
 
@@ -829,7 +991,11 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = self.project();
         *this.slice = this.buffer.as_ref().sys_slices();
-        this.header.create_entry(this.slice)
+        this.header.set_msg(this.slice);
+        opcode::SendMsg::new(Fd(this.header.fd.as_fd().as_raw_fd()), &this.header.msg)
+            .flags(this.header.flags as _)
+            .build()
+            .into()
     }
 }
 
@@ -838,6 +1004,59 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
+    }
+}
+
+pin_project! {
+    /// Zerocopy [`SendToVectored`].
+    pub struct SendToVectoredZc<T: IoVectoredBuf, S: AsFd> {
+        #[pin]
+        pub(crate) op: SendToVectored<T, S>,
+        pub(crate) res: Option<BufResult<usize, crate::Extra>>,
+        _p: PhantomPinned,
+    }
+}
+
+impl<T: IoVectoredBuf, S: AsFd> SendToVectoredZc<T, S> {
+    /// Create [`SendToVectoredZc`].
+    pub fn new(fd: S, buffer: T, addr: SockAddr, flags: i32) -> Self {
+        Self {
+            op: SendToVectored::new(fd, buffer, addr, flags),
+            res: None,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectoredZc<T, S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let this = self.project().op.project();
+        *this.slice = this.buffer.as_ref().sys_slices();
+        this.header.set_msg(this.slice);
+        opcode::SendMsgZc::new(Fd(this.header.fd.as_fd().as_raw_fd()), &this.header.msg)
+            .flags(this.header.flags as _)
+            .build()
+            .into()
+    }
+
+    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
+        self.project().op.create_entry()
+    }
+
+    unsafe fn push_multishot(self: Pin<&mut Self>, res: io::Result<usize>, extra: crate::Extra) {
+        self.project().res.replace(BufResult(res, extra));
+    }
+
+    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
+        self.project().res.take()
+    }
+}
+
+impl<T: IoVectoredBuf, S: AsFd> IntoInner for SendToVectoredZc<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.op.into_inner()
     }
 }
 
@@ -860,6 +1079,58 @@ unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
             .flags(*this.flags as _)
             .build()
             .into()
+    }
+}
+
+pin_project! {
+    /// Zerocopy [`SendMsg`].
+    pub struct SendMsgZc<T: IoVectoredBuf, C: IoBuf, S> {
+        #[pin]
+        pub(crate) op: SendMsg<T, C, S>,
+        pub(crate) res: Option<BufResult<usize, crate::Extra>>,
+        _p: PhantomPinned,
+    }
+}
+
+impl<T: IoVectoredBuf, C: IoBuf, S> SendMsgZc<T, C, S> {
+    /// Create [`SendMsgZc`].
+    pub fn new(fd: S, buffer: T, control: C, addr: Option<SockAddr>, flags: i32) -> Self {
+        Self {
+            op: SendMsg::new(fd, buffer, control, addr, flags),
+            res: None,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsgZc<T, C, S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let mut this = self.project();
+        this.op.as_mut().set_msg();
+        let op = this.op.project();
+        opcode::SendMsgZc::new(Fd(op.fd.as_fd().as_raw_fd()), op.msg)
+            .flags(*op.flags as _)
+            .build()
+            .into()
+    }
+
+    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
+        self.project().op.create_entry()
+    }
+
+    unsafe fn push_multishot(self: Pin<&mut Self>, res: io::Result<usize>, extra: crate::Extra) {
+        self.project().res.replace(BufResult(res, extra));
+    }
+
+    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
+        self.project().res.take()
+    }
+}
+impl<T: IoVectoredBuf, C: IoBuf, S> IntoInner for SendMsgZc<T, C, S> {
+    type Inner = (T, C);
+
+    fn into_inner(self) -> Self::Inner {
+        self.op.into_inner()
     }
 }
 
