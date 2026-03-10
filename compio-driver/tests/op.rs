@@ -379,7 +379,7 @@ fn accept_multi() {
                 let mut client = if let Some(op) = op {
                     use compio_buf::IntoInner;
 
-                    op.into_inner().0
+                    op.into_inner()
                 } else {
                     unsafe {
                         use std::os::fd::FromRawFd;

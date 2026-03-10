@@ -627,10 +627,10 @@ unsafe impl<S: AsFd> OpCode for AcceptMulti<S> {
 }
 
 impl<S> IntoInner for AcceptMulti<S> {
-    type Inner = (Socket2, SockAddr);
+    type Inner = Socket2;
 
     fn into_inner(self) -> Self::Inner {
-        self.op.into_inner()
+        self.op.into_inner().0
     }
 }
 
