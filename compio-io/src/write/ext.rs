@@ -142,6 +142,15 @@ pub trait AsyncWriteExt: AsyncWrite {
         BytesFramed::new_bytes().with_duplex(self)
     }
 
+    #[cfg(feature = "bytes")]
+    /// Convenience method to create a [`BytesFramed`] sink
+    fn sink(self) -> BytesFramed<(), Self>
+    where
+        Self: Sized,
+    {
+        BytesFramed::new_bytes().with_writer(self)
+    }
+
     write_scalar!(u8, to_be_bytes, to_le_bytes);
     write_scalar!(u16, to_be_bytes, to_le_bytes);
     write_scalar!(u32, to_be_bytes, to_le_bytes);

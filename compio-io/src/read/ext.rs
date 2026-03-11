@@ -211,6 +211,15 @@ pub trait AsyncReadExt: AsyncRead {
         BytesFramed::new_bytes().with_duplex(self)
     }
 
+    #[cfg(feature = "bytes")]
+    /// Convenience method to create a [`BytesFramed`] stream
+    fn stream(self) -> BytesFramed<Self, ()>
+    where
+        Self: Sized,
+    {
+        BytesFramed::new_bytes().with_reader(self)
+    }
+
     /// Creates an adaptor which reads at most `limit` bytes from it.
     ///
     /// This function returns a new instance of `AsyncRead` which will read
