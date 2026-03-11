@@ -22,9 +22,9 @@ compio-runtime = { workspace = true }
 
 cfg-if = { workspace = true }
 either = "1.9.0"
+futures-util = { workspace = true }
 once_cell = { workspace = true }
 socket2 = { workspace = true }
-futures-util = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 widestring = { workspace = true }

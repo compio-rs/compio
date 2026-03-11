@@ -21,6 +21,8 @@ use compio_runtime::{Attacher, BorrowedBuffer, BufferPool, fd::PollFd};
 use futures_util::StreamExt;
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
+use crate::Incoming;
+
 #[derive(Debug, Clone)]
 pub struct Socket {
     pub(crate) socket: Attacher<Socket2>,
@@ -119,6 +121,10 @@ impl Socket {
         op.update_context()?;
         let (accept_sock, addr) = op.into_addr()?;
         Ok((Self::from_socket2(accept_sock)?, addr))
+    }
+
+    pub fn incoming(&self) -> Incoming<'_> {
+        Incoming::new(self)
     }
 
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
