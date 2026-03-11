@@ -282,7 +282,7 @@ fn read_multi() {
     let (r, w) = pipe2::pipe2(flags).unwrap();
 
     let op = Write::new(w, b"hello world");
-    let (_, _op) = push_and_wait(&mut driver, op).unwrap();
+    push_and_wait(&mut driver, op).unwrap();
 
     let pool = driver.create_buffer_pool(4, 1024).unwrap();
 
