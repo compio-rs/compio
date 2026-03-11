@@ -14,6 +14,7 @@
     html_favicon_url = "https://github.com/compio-rs/compio-logo/raw/refs/heads/master/generated/colored-bold.svg"
 )]
 
+mod incoming;
 mod opts;
 mod resolve;
 mod socket;
@@ -46,6 +47,7 @@ pub type CMsgBuilder<'a> = compio_io::ancillary::AncillaryBuilder<'a>;
 /// Providing functionalities to wait for readiness.
 #[deprecated(since = "0.12.0", note = "Use `compio::runtime::fd::PollFd` instead")]
 pub type PollFd<T> = compio_runtime::fd::PollFd<T>;
+pub(crate) use incoming::*;
 pub use opts::SocketOpts;
 pub use resolve::ToSocketAddrsAsync;
 pub(crate) use resolve::{each_addr, first_addr_buf, first_addr_buf_zerocopy};
