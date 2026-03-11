@@ -1,13 +1,21 @@
-use std::{future::Future, io, net::SocketAddr};
+use std::{
+    future::Future,
+    io,
+    net::SocketAddr,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite, util::Splittable};
 use compio_runtime::{BorrowedBuffer, BufferPool, fd::PollFd};
+use futures_util::{Stream, StreamExt};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::{
-    OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, SocketOpts, ToSocketAddrsAsync, WriteHalf,
+    Incoming, OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, SocketOpts, ToSocketAddrsAsync,
+    WriteHalf,
 };
 
 /// A TCP socket server, listening for connections.
@@ -120,6 +128,20 @@ impl TcpListener {
         Ok((stream, addr.as_socket().expect("should be SocketAddr")))
     }
 
+    /// Returns a stream of incoming connections to this listener.
+    pub fn incoming(&self) -> TcpIncoming<'_> {
+        self.incoming_with_options(&SocketOpts::default())
+    }
+
+    /// Returns a stream of incoming connections to this listener, and sets
+    /// options for each accepted connection.
+    pub fn incoming_with_options<'a>(&'a self, options: &SocketOpts) -> TcpIncoming<'a> {
+        TcpIncoming {
+            inner: self.inner.incoming(),
+            opts: *options,
+        }
+    }
+
     /// Returns the local address that this listener is bound to.
     ///
     /// This can be useful, for example, when binding to port 0 to
@@ -151,6 +173,27 @@ impl TcpListener {
 }
 
 impl_raw_fd!(TcpListener, socket2::Socket, inner, socket);
+
+/// A stream of incoming TCP connections.
+pub struct TcpIncoming<'a> {
+    inner: Incoming<'a>,
+    opts: SocketOpts,
+}
+
+impl Stream for TcpIncoming<'_> {
+    type Item = io::Result<TcpStream>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        this.inner.poll_next_unpin(cx).map(|res| {
+            res.map(|res| {
+                let socket = res?;
+                this.opts.setup_socket(&socket)?;
+                Ok(TcpStream { inner: socket })
+            })
+        })
+    }
+}
 
 /// A TCP stream between a local and a remote socket.
 ///
