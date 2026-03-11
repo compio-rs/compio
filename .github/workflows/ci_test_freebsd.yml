@@ -36,7 +36,7 @@ jobs:
           sync: rsync
           copyback: false
           prepare: |
-            pkg install -y curl pkgconf
+            pkg install -y curl pkgconf python311
             curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf > install.sh
             chmod +x install.sh
             ./install.sh -y --default-toolchain ${{ matrix.toolchain }} --profile minimal
