@@ -22,10 +22,6 @@ impl<'a> Incoming<'a> {
     pub fn new(listener: &'a Socket) -> Self {
         Self { listener, op: None }
     }
-
-    fn create_op(listener: &'a Socket) -> SubmitMulti<AcceptMulti<SharedFd<Socket2>>> {
-        compio_runtime::submit_multi(AcceptMulti::new(listener.to_shared_fd()))
-    }
 }
 
 impl Stream for Incoming<'_> {
@@ -38,9 +34,11 @@ impl Stream for Incoming<'_> {
                 let res = ready!(op.poll_next_unpin(cx));
                 if let Some(BufResult(res, _)) = res {
                     let socket = if op.is_terminated() && res.is_ok() {
-                        let old_op = std::mem::replace(op, Self::create_op(this.listener));
-                        old_op
-                            .try_take()
+                        let Some(op) = this.op.take() else {
+                            // SAFETY: op is guaranteed to be Some at this point.
+                            unsafe { std::hint::unreachable_unchecked() }
+                        };
+                        op.try_take()
                             .map_err(|_| ())
                             .expect("AcceptMulti has not completed")
                             .into_inner()
@@ -52,7 +50,9 @@ impl Stream for Incoming<'_> {
                     this.op = None;
                 }
             } else {
-                this.op = Some(Self::create_op(this.listener));
+                this.op = Some(compio_runtime::submit_multi(AcceptMulti::new(
+                    this.listener.to_shared_fd(),
+                )));
             }
         }
     }
