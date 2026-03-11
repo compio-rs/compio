@@ -1,5 +1,5 @@
 use std::{
-    io::{self, Write},
+    io::{self, Write as _},
     net::{TcpListener, TcpStream},
     time::Duration,
 };
@@ -7,15 +7,12 @@ use std::{
 use compio_buf::BufResult;
 use compio_driver::{
     AsRawFd, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
-    op::{
-        Asyncify, CloseFile, CloseSocket, ReadAt, ReadManagedAt, ReadMultiAt, RecvMulti,
-        ResultTakeBuffer,
-    },
+    op::{Asyncify, CloseFile, CloseSocket, ReadAt, ReadManagedAt, RecvMulti, ResultTakeBuffer},
 };
 mod pipe2;
 
 #[cfg(unix)]
-use compio_driver::op::AcceptMulti;
+use compio_driver::op::{AcceptMulti, ReadMulti, Write};
 
 #[cfg(unix)]
 #[test]
@@ -271,16 +268,25 @@ fn managed() {
 }
 
 #[test]
+#[cfg(unix)]
 fn read_multi() {
+    use nix::fcntl::OFlag;
+
     let mut driver = Proactor::new().unwrap();
 
-    let fd = open_file(&mut driver);
-    let fd = SharedFd::new(fd);
-    driver.attach(fd.as_raw_fd()).unwrap();
+    let mut flags = OFlag::O_CLOEXEC;
+    if driver.driver_type().is_polling() {
+        flags |= OFlag::O_NONBLOCK;
+    }
+
+    let (r, w) = pipe2::pipe2(flags).unwrap();
+
+    let op = Write::new(w, b"hello world");
+    let (_, _op) = push_and_wait(&mut driver, op).unwrap();
 
     let pool = driver.create_buffer_pool(4, 1024).unwrap();
 
-    let op = ReadMultiAt::new(fd.clone(), 0, &pool, 1024).unwrap();
+    let op = ReadMulti::new(r, &pool, 0).unwrap();
     let buffer = push_and_wait_multi(&mut driver, op)
         .map(|BufResult(res, (extra, op))| {
             if let Some(op) = op {
@@ -296,10 +302,7 @@ fn read_multi() {
         .flatten()
         .collect::<Vec<_>>();
 
-    println!("{}", std::str::from_utf8(&buffer).unwrap());
-
-    let op = CloseFile::new(fd.try_unwrap().unwrap());
-    push_and_wait(&mut driver, op).unwrap();
+    assert_eq!(buffer, b"hello world");
 }
 
 #[test]
