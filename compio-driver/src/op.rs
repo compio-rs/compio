@@ -16,14 +16,14 @@ pub use crate::sys::op::{
     Accept, Recv, RecvFrom, RecvFromVectored, RecvMsg, RecvVectored, Send, SendMsg, SendMsgZc,
     SendTo, SendToVectored, SendToVectoredZc, SendToZc, SendVectored, SendVectoredZc, SendZc,
 };
-#[cfg(windows)]
-pub use crate::sys::op::{ConnectNamedPipe, DeviceIoControl};
 #[cfg(unix)]
 pub use crate::sys::op::{
-    CreateDir, CreateSocket, CurrentDir, FileStat, HardLink, Interest, OpenFile, PathStat,
-    PollOnce, ReadVectored, ReadVectoredAt, Rename, Stat, Symlink, TruncateFile, Unlink,
+    AcceptMulti, CreateDir, CreateSocket, CurrentDir, FileStat, HardLink, Interest, OpenFile,
+    PathStat, PollOnce, ReadVectored, ReadVectoredAt, Rename, Stat, Symlink, TruncateFile, Unlink,
     WriteVectored, WriteVectoredAt,
 };
+#[cfg(windows)]
+pub use crate::sys::op::{ConnectNamedPipe, DeviceIoControl};
 #[cfg(io_uring)]
 pub use crate::sys::op::{
     ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvManaged, RecvMulti,
@@ -665,7 +665,9 @@ pub(crate) mod managed {
 }
 
 #[cfg(not(io_uring))]
-pub use managed::*;
+pub use managed::{
+    ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvManaged, RecvMulti,
+};
 
 bitflags::bitflags! {
     /// Flags for operations.

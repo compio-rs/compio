@@ -1,19 +1,21 @@
 use std::{
     io::{self, Write},
     net::{TcpListener, TcpStream},
-    ops::Deref,
     time::Duration,
 };
 
 use compio_buf::BufResult;
 use compio_driver::{
-    AsRawFd, BufferPool, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
+    AsRawFd, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
     op::{
         Asyncify, CloseFile, CloseSocket, ReadAt, ReadManagedAt, ReadMultiAt, RecvMulti,
         ResultTakeBuffer,
     },
 };
 mod pipe2;
+
+#[cfg(unix)]
+use compio_driver::op::AcceptMulti;
 
 #[cfg(unix)]
 #[test]
@@ -104,42 +106,46 @@ fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult
     }
 }
 
-fn push_and_wait_multi<O: OpCode + TakeBuffer<BufferPool = BufferPool> + 'static>(
+fn push_and_wait_multi<O: OpCode + 'static>(
     driver: &mut Proactor,
     op: O,
-    pool: &BufferPool,
-) -> Vec<u8>
-where
-    for<'a> O::Buffer<'a>: Deref<Target = [u8]>,
-{
-    match driver.push(op) {
-        PushEntry::Ready(res) => match (res, driver.default_extra()).take_buffer(pool) {
-            Ok(slice) => slice.to_vec(),
-            Err(_) => vec![],
-        },
-        PushEntry::Pending(mut user_data) => {
-            let mut buffer = vec![];
-            loop {
-                driver.poll(None).unwrap();
-                while let Some(res) = driver.pop_multishot(&user_data) {
-                    match res.take_buffer(pool) {
-                        Ok(slice) => buffer.extend_from_slice(&slice),
-                        Err(_) => break,
-                    }
+) -> impl Iterator<Item = BufResult<usize, (Extra, Option<O>)>> + '_ {
+    let mut op = Some(op);
+    let mut user_data = None;
+    let mut finished = false;
+
+    std::iter::from_fn(move || {
+        if finished {
+            return None;
+        }
+
+        if user_data.is_none() {
+            match driver.push(op.take().expect("operation should be pushed once")) {
+                PushEntry::Ready(BufResult(res, op)) => {
+                    finished = true;
+                    return Some(BufResult(res, (driver.default_extra(), Some(op))));
                 }
-                match driver.pop_with_extra(user_data) {
-                    PushEntry::Pending(k) => user_data = k,
-                    PushEntry::Ready(res) => {
-                        if let Ok(slice) = res.take_buffer(pool) {
-                            buffer.extend_from_slice(&slice)
-                        }
-                        break;
-                    }
+                PushEntry::Pending(k) => user_data = Some(k),
+            }
+        }
+
+        loop {
+            if let Some(res) = user_data.as_ref().and_then(|key| driver.pop_multishot(key)) {
+                return Some(res.map_buffer(|extra| (extra, None)));
+            }
+
+            let key = user_data.take().expect("pending key should exist");
+            match driver.pop_with_extra(key) {
+                PushEntry::Pending(k) => user_data = Some(k),
+                PushEntry::Ready((BufResult(res, op), extra)) => {
+                    finished = true;
+                    return Some(BufResult(res, (extra, Some(op))));
                 }
             }
-            buffer
+
+            driver.poll(None).unwrap();
         }
-    }
+    })
 }
 
 #[test]
@@ -275,7 +281,20 @@ fn read_multi() {
     let pool = driver.create_buffer_pool(4, 1024).unwrap();
 
     let op = ReadMultiAt::new(fd.clone(), 0, &pool, 1024).unwrap();
-    let buffer = push_and_wait_multi(&mut driver, op, &pool);
+    let buffer = push_and_wait_multi(&mut driver, op)
+        .map(|BufResult(res, (extra, op))| {
+            if let Some(op) = op {
+                (BufResult(res, op), extra).take_buffer(&pool)
+            } else {
+                BufResult(res, extra).take_buffer(&pool)
+            }
+            .map(|buf| buf.to_vec())
+            .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
 
     println!("{}", std::str::from_utf8(&buffer).unwrap());
 
@@ -310,7 +329,20 @@ fn recv_multi() {
     let mut buffer = vec![];
     loop {
         let op = RecvMulti::new(stream.clone(), &pool, 0, 0).unwrap();
-        let slice = push_and_wait_multi(&mut driver, op, &pool);
+        let slice = push_and_wait_multi(&mut driver, op)
+            .map(|BufResult(res, (extra, op))| {
+                if let Some(op) = op {
+                    (BufResult(res, op), extra).take_buffer(&pool)
+                } else {
+                    BufResult(res, extra).take_buffer(&pool)
+                }
+                .map(|buf| buf.to_vec())
+                .unwrap_or_default()
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
         if slice.is_empty() {
             break;
         }
@@ -321,6 +353,61 @@ fn recv_multi() {
     let stream = stream.try_unwrap().unwrap();
     let op = CloseSocket::new(stream.into());
     push_and_wait(&mut driver, op).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn accept_multi() {
+    let server = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = server.local_addr().unwrap();
+
+    let handle = std::thread::spawn(move || {
+        let mut driver = Proactor::new().unwrap();
+
+        let server = socket2::Socket::from(server);
+        if driver.driver_type().is_polling() {
+            server.set_nonblocking(true).unwrap();
+        }
+        let server = SharedFd::new(server);
+
+        driver.attach(server.as_raw_fd()).unwrap();
+
+        let mut i = 0;
+        loop {
+            let op = AcceptMulti::new(server.clone());
+            for BufResult(res, (_, op)) in push_and_wait_multi(&mut driver, op) {
+                let mut client = if let Some(op) = op {
+                    use compio_buf::IntoInner;
+
+                    op.into_inner()
+                } else {
+                    unsafe {
+                        use std::os::fd::FromRawFd;
+                        socket2::Socket::from_raw_fd(res.unwrap() as _)
+                    }
+                };
+                client
+                    .write_all(format!("Hello, {}", i).as_bytes())
+                    .unwrap();
+                client.shutdown(std::net::Shutdown::Both).unwrap();
+                i += 1;
+                if i >= 2 {
+                    return;
+                }
+            }
+        }
+    });
+    for i in 0..2 {
+        use std::io::Read;
+
+        let mut client = TcpStream::connect(addr).unwrap();
+        let mut s = String::new();
+        client.read_to_string(&mut s).unwrap();
+        assert_eq!(s, format!("Hello, {}", i));
+    }
+    if let Err(e) = handle.join() {
+        std::panic::resume_unwind(e)
+    }
 }
 
 #[test]

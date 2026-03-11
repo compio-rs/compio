@@ -3,7 +3,7 @@
 use std::ffi::CString;
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use socket2::{SockAddr, SockAddrStorage, socklen_t};
+use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
 pub use self::{
     Send as SendZc, SendMsg as SendMsgZc, SendTo as SendToZc, SendToVectored as SendToVectoredZc,
@@ -128,6 +128,28 @@ impl<S: AsFd> OpCode for ShutdownSocket<S> {}
 impl OpCode for CloseSocket {}
 
 impl<S: AsFd> OpCode for Accept<S> {}
+
+/// Accept multiple connections.
+pub struct AcceptMulti<S> {
+    fd: S,
+}
+
+impl<S> AcceptMulti<S> {
+    /// Create [`AcceptMulti`].
+    pub fn new(fd: S) -> Self {
+        Self { fd }
+    }
+}
+
+impl<S> IntoInner for AcceptMulti<S> {
+    type Inner = Socket2;
+
+    fn into_inner(self) -> Self::Inner {
+        stub_unimpl()
+    }
+}
+
+impl<S: AsFd> OpCode for AcceptMulti<S> {}
 
 impl<S: AsFd> OpCode for Connect<S> {}
 
