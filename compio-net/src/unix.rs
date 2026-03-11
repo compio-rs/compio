@@ -10,7 +10,7 @@ use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite, util::Splittable};
 use compio_runtime::{BorrowedBuffer, BufferPool, fd::PollFd};
-use futures_util::{Stream, StreamExt};
+use futures_util::{Stream, StreamExt, stream::FusedStream};
 use socket2::{SockAddr, Socket as Socket2, Type};
 
 use crate::{Incoming, OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, SocketOpts, WriteHalf};
@@ -160,6 +160,12 @@ impl Stream for UnixIncoming<'_> {
                 Ok(UnixStream { inner: socket })
             })
         })
+    }
+}
+
+impl FusedStream for UnixIncoming<'_> {
+    fn is_terminated(&self) -> bool {
+        self.inner.is_terminated()
     }
 }
 
