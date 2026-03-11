@@ -9,7 +9,7 @@ cfg_if::cfg_if! {
 }
 
 use std::{
-    future::Future,
+    future::{Future, Ready, ready},
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
 };
@@ -166,6 +166,37 @@ pub async fn first_addr_buf<T, B, F: Future<Output = BufResult<T, B>>>(
                 "could not operate on first address",
             )),
             buffer,
+        )
+    }
+}
+
+pub async fn first_addr_buf_zerocopy<B, F1, F2>(
+    addr: impl ToSocketAddrsAsync,
+    buffer: B,
+    f: impl FnOnce(SocketAddr, B) -> F1,
+) -> BufResult<usize, Either<Ready<B>, F2>>
+where
+    F1: Future<Output = BufResult<usize, F2>>,
+    F2: Future<Output = B>,
+{
+    fn ret<T, F>(fut: T) -> Either<Ready<T>, F> {
+        Either::Left(ready(fut))
+    }
+
+    let mut addrs = match addr.to_socket_addrs_async().await {
+        Ok(addrs) => addrs,
+        Err(e) => return BufResult(Err(e), ret(buffer)),
+    };
+    if let Some(addr) = addrs.next() {
+        let BufResult(res, fut) = f(addr, buffer).await;
+        BufResult(res, Either::Right(fut))
+    } else {
+        BufResult(
+            Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "could not operate on first address",
+            )),
+            ret(buffer),
         )
     }
 }

@@ -328,6 +328,30 @@ impl TcpStream {
 
         self.inner.send(buf, MSG_OOB).await
     }
+
+    /// Sends data using [zero-copy send](https://man7.org/linux/man-pages/man3/io_uring_prep_send_zc.3.html).
+    ///
+    /// If the underlying platform doesn't support zero-copy send, it will fall
+    /// back to normal send.
+    pub async fn send_zerocopy<T: IoBuf>(
+        &self,
+        buf: T,
+        flags: i32,
+    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+        self.inner.send_zerocopy(buf, flags).await
+    }
+
+    /// Sends vectorized data using [zero-copy send](https://man7.org/linux/man-pages/man3/io_uring_prep_send_zc.3.html).
+    ///
+    /// If the underlying platform doesn't support zero-copy send, it will fall
+    /// back to normal send.
+    pub async fn send_zerocopy_vectored<T: IoVectoredBuf>(
+        &self,
+        buf: T,
+        flags: i32,
+    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+        self.inner.send_zerocopy_vectored(buf, flags).await
+    }
 }
 
 impl AsyncRead for TcpStream {
@@ -405,12 +429,14 @@ impl AsyncWrite for TcpStream {
 impl AsyncWrite for &TcpStream {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        self.inner.send(buf, 0).await
+        let BufResult(res, fut) = self.send_zerocopy(buf, 0).await;
+        BufResult(res, fut.await)
     }
 
     #[inline]
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        self.inner.send_vectored(buf, 0).await
+        let BufResult(res, fut) = self.send_zerocopy_vectored(buf, 0).await;
+        BufResult(res, fut.await)
     }
 
     #[inline]

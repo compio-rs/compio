@@ -389,6 +389,76 @@ impl UdpSocket {
         .await
     }
 
+    /// Sends data on the socket to the given address with zero copy.
+    ///
+    /// Returns the result of send and a future that resolves to the
+    /// original buffer when the send is complete.
+    pub async fn send_to_zerocopy<A: ToSocketAddrsAsync, T: IoBuf>(
+        &self,
+        buffer: T,
+        addr: A,
+    ) -> BufResult<usize, impl Future<Output = T> + use<A, T>> {
+        super::first_addr_buf_zerocopy(addr, buffer, |addr, buffer| async move {
+            self.inner.send_to_zerocopy(buffer, &addr.into(), 0).await
+        })
+        .await
+    }
+
+    /// Sends vectored data on the socket to the given address with zero copy.
+    ///
+    /// Returns the result of send and a future that resolves to the
+    /// original buffer when the send is complete.
+    pub async fn send_to_zerocopy_vectored<A: ToSocketAddrsAsync, T: IoVectoredBuf>(
+        &self,
+        buffer: T,
+        addr: A,
+    ) -> BufResult<usize, impl Future<Output = T> + use<A, T>> {
+        super::first_addr_buf_zerocopy(addr, buffer, |addr, buffer| async move {
+            self.inner
+                .send_to_zerocopy_vectored(buffer, &addr.into(), 0)
+                .await
+        })
+        .await
+    }
+
+    /// Sends data with control message on the socket to the given address with
+    /// zero copy.
+    ///
+    /// Returns the result of send and a future that resolves to the
+    /// original buffer when the send is complete.
+    pub async fn send_msg_zerocopy<A: ToSocketAddrsAsync, T: IoBuf, C: IoBuf>(
+        &self,
+        buffer: T,
+        control: C,
+        addr: A,
+    ) -> BufResult<usize, impl Future<Output = (T, C)> + use<A, T, C>> {
+        super::first_addr_buf_zerocopy(addr, (buffer, control), |addr, (b, c)| async move {
+            self.inner
+                .send_msg_zerocopy(b, c, Some(&addr.into()), 0)
+                .await
+        })
+        .await
+    }
+
+    /// Sends vectored data with control message on the socket to the given
+    /// address with zero copy.
+    ///
+    /// Returns the result of send and a future that resolves to the
+    /// original buffer when the send is complete.
+    pub async fn send_msg_zerocopy_vectored<A: ToSocketAddrsAsync, T: IoVectoredBuf, C: IoBuf>(
+        &self,
+        buffer: T,
+        control: C,
+        addr: A,
+    ) -> BufResult<usize, impl Future<Output = (T, C)> + use<A, T, C>> {
+        super::first_addr_buf_zerocopy(addr, (buffer, control), |addr, (b, c)| async move {
+            self.inner
+                .send_msg_zerocopy_vectored(b, c, Some(&addr.into()), 0)
+                .await
+        })
+        .await
+    }
+
     /// Gets a socket option.
     ///
     /// # Safety

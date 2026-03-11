@@ -48,7 +48,7 @@ pub type CMsgBuilder<'a> = compio_io::ancillary::AncillaryBuilder<'a>;
 pub type PollFd<T> = compio_runtime::fd::PollFd<T>;
 pub use opts::SocketOpts;
 pub use resolve::ToSocketAddrsAsync;
-pub(crate) use resolve::{each_addr, first_addr_buf};
+pub(crate) use resolve::{each_addr, first_addr_buf, first_addr_buf_zerocopy};
 pub(crate) use socket::*;
 pub use split::*;
 pub use tcp::*;

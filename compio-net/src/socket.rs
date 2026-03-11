@@ -8,15 +8,17 @@ use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectore
 #[cfg(unix)]
 use compio_driver::op::CreateSocket;
 use compio_driver::{
-    AsRawFd, ToSharedFd, impl_raw_fd,
+    AsRawFd, OpCode, ToSharedFd, impl_raw_fd,
     op::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromManaged,
         RecvFromVectored, RecvManaged, RecvMsg, RecvResultExt, RecvVectored, ResultTakeBuffer,
-        Send, SendMsg, SendTo, SendToVectored, SendVectored, ShutdownSocket, VecBufResultExt,
+        Send, SendMsg, SendMsgZc, SendTo, SendToVectored, SendToVectoredZc, SendToZc, SendVectored,
+        SendVectoredZc, SendZc, ShutdownSocket, VecBufResultExt,
     },
     syscall,
 };
 use compio_runtime::{Attacher, BorrowedBuffer, BufferPool, fd::PollFd};
+use futures_util::StreamExt;
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
 #[derive(Debug, Clone)]
@@ -208,6 +210,22 @@ impl Socket {
         compio_runtime::submit(op).await.into_inner()
     }
 
+    pub async fn send_zerocopy<T: IoBuf>(
+        &self,
+        buf: T,
+        flags: i32,
+    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+        submit_zerocopy(SendZc::new(self.to_shared_fd(), buf, flags)).await
+    }
+
+    pub async fn send_zerocopy_vectored<T: IoVectoredBuf>(
+        &self,
+        buf: T,
+        flags: i32,
+    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+        submit_zerocopy(SendVectoredZc::new(self.to_shared_fd(), buf, flags)).await
+    }
+
     pub async fn recv_from<T: IoBufMut>(
         &self,
         buffer: T,
@@ -275,6 +293,26 @@ impl Socket {
         compio_runtime::submit(op).await.into_inner()
     }
 
+    pub async fn send_to_zerocopy<T: IoBuf>(
+        &self,
+        buffer: T,
+        addr: &SockAddr,
+        flags: i32,
+    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+        let op = SendToZc::new(self.to_shared_fd(), buffer, addr.clone(), flags);
+        submit_zerocopy(op).await
+    }
+
+    pub async fn send_to_zerocopy_vectored<T: IoVectoredBuf>(
+        &self,
+        buffer: T,
+        addr: &SockAddr,
+        flags: i32,
+    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+        let op = SendToVectoredZc::new(self.to_shared_fd(), buffer, addr.clone(), flags);
+        submit_zerocopy(op).await
+    }
+
     pub async fn send_msg<T: IoBuf, C: IoBuf>(
         &self,
         buffer: T,
@@ -297,6 +335,33 @@ impl Socket {
         let fd = self.to_shared_fd();
         let op = SendMsg::new(fd, buffer, control, addr.cloned(), flags);
         compio_runtime::submit(op).await.into_inner()
+    }
+
+    pub async fn send_msg_zerocopy<T: IoBuf, C: IoBuf>(
+        &self,
+        buffer: T,
+        control: C,
+        addr: Option<&SockAddr>,
+        flags: i32,
+    ) -> BufResult<usize, impl Future<Output = (T, C)> + use<T, C>> {
+        self.send_msg_zerocopy_vectored([buffer], control, addr, flags)
+            .await
+            .map_buffer(|fut| async move {
+                let ([buffer], control) = fut.await;
+                (buffer, control)
+            })
+    }
+
+    pub async fn send_msg_zerocopy_vectored<T: IoVectoredBuf, C: IoBuf>(
+        &self,
+        buffer: T,
+        control: C,
+        addr: Option<&SockAddr>,
+        flags: i32,
+    ) -> BufResult<usize, impl Future<Output = (T, C)> + use<T, C>> {
+        let fd = self.to_shared_fd();
+        let op = SendMsgZc::new(fd, buffer, control, addr.cloned(), flags);
+        submit_zerocopy(op).await
     }
 
     #[cfg(unix)]
@@ -377,3 +442,27 @@ impl Socket {
 }
 
 impl_raw_fd!(Socket, Socket2, socket, socket);
+
+async fn submit_zerocopy<T: OpCode + IntoInner + 'static>(
+    op: T,
+) -> BufResult<usize, impl Future<Output = T::Inner> + use<T>> {
+    let mut stream = compio_runtime::submit_multi(op);
+    let res = stream
+        .next()
+        .await
+        .expect("SubmitMulti should yield at least one item")
+        .0;
+
+    let fut = async move {
+        // we don't need 2nd CQE's result
+        _ = stream.next().await;
+
+        stream
+            .try_take()
+            .map_err(|_| ())
+            .expect("Cannot retrieve buffer")
+            .into_inner()
+    };
+
+    BufResult(res, fut)
+}
