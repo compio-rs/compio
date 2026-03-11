@@ -201,6 +201,7 @@ pub trait AsyncReadExt: AsyncRead {
         Framed::new(codec, framer).with_duplex(self)
     }
 
+    #[cfg(feature = "bytes")]
     /// Convenience method to create a [`BytesFramed`] reader/writter
     /// out of a splittable.
     fn bytes(self) -> BytesFramed<Self::ReadHalf, Self::WriteHalf>
