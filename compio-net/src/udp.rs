@@ -397,12 +397,9 @@ impl UdpSocket {
         &self,
         buffer: T,
         addr: A,
-        flags: i32,
     ) -> BufResult<usize, impl Future<Output = T> + use<A, T>> {
         super::first_addr_buf_zerocopy(addr, buffer, |addr, buffer| async move {
-            self.inner
-                .send_to_zerocopy(buffer, &addr.into(), flags)
-                .await
+            self.inner.send_to_zerocopy(buffer, &addr.into(), 0).await
         })
         .await
     }
@@ -415,11 +412,10 @@ impl UdpSocket {
         &self,
         buffer: T,
         addr: A,
-        flags: i32,
     ) -> BufResult<usize, impl Future<Output = T> + use<A, T>> {
         super::first_addr_buf_zerocopy(addr, buffer, |addr, buffer| async move {
             self.inner
-                .send_to_zerocopy_vectored(buffer, &addr.into(), flags)
+                .send_to_zerocopy_vectored(buffer, &addr.into(), 0)
                 .await
         })
         .await
@@ -435,11 +431,10 @@ impl UdpSocket {
         buffer: T,
         control: C,
         addr: A,
-        flags: i32,
     ) -> BufResult<usize, impl Future<Output = (T, C)> + use<A, T, C>> {
         super::first_addr_buf_zerocopy(addr, (buffer, control), |addr, (b, c)| async move {
             self.inner
-                .send_msg_zerocopy(b, c, Some(&addr.into()), flags)
+                .send_msg_zerocopy(b, c, Some(&addr.into()), 0)
                 .await
         })
         .await
@@ -455,11 +450,10 @@ impl UdpSocket {
         buffer: T,
         control: C,
         addr: A,
-        flags: i32,
     ) -> BufResult<usize, impl Future<Output = (T, C)> + use<A, T, C>> {
         super::first_addr_buf_zerocopy(addr, (buffer, control), |addr, (b, c)| async move {
             self.inner
-                .send_msg_zerocopy_vectored(b, c, Some(&addr.into()), flags)
+                .send_msg_zerocopy_vectored(b, c, Some(&addr.into()), 0)
                 .await
         })
         .await

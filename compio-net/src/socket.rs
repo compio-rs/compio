@@ -1,5 +1,5 @@
 use std::{
-    future::{Future, ready},
+    future::Future,
     io,
     mem::{ManuallyDrop, MaybeUninit},
 };
@@ -18,7 +18,7 @@ use compio_driver::{
     syscall,
 };
 use compio_runtime::{Attacher, BorrowedBuffer, BufferPool, fd::PollFd};
-use futures_util::{StreamExt, future::Either};
+use futures_util::StreamExt;
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
 #[derive(Debug, Clone)]
@@ -453,11 +453,6 @@ async fn submit_zerocopy<T: OpCode + IntoInner + 'static>(
         .expect("SubmitMulti should yield at least one item")
         .0;
 
-    match stream.try_take() {
-        Ok(op) => return BufResult(res, Either::Left(ready(op.into_inner()))),
-        Err(st) => stream = st,
-    }
-
     let fut = async move {
         // we don't need 2nd CQE's result
         _ = stream.next().await;
@@ -469,5 +464,5 @@ async fn submit_zerocopy<T: OpCode + IntoInner + 'static>(
             .into_inner()
     };
 
-    BufResult(res, Either::Right(fut))
+    BufResult(res, fut)
 }
