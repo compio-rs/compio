@@ -213,7 +213,7 @@ pub trait AsyncReadExt: AsyncRead {
 
     #[cfg(feature = "bytes")]
     /// Convenience method to create a [`BytesFramed`] stream
-    fn stream(self) -> BytesFramed<Self, ()>
+    fn read_only(self) -> BytesFramed<Self, ()>
     where
         Self: Sized,
     {

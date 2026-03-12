@@ -144,7 +144,7 @@ pub trait AsyncWriteExt: AsyncWrite {
 
     #[cfg(feature = "bytes")]
     /// Convenience method to create a [`BytesFramed`] sink
-    fn sink(self) -> BytesFramed<(), Self>
+    fn write_only(self) -> BytesFramed<(), Self>
     where
         Self: Sized,
     {
