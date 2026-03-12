@@ -13,6 +13,7 @@ async fn incoming_tcp() {
         while let Some(stream) = incoming.next().await {
             let mut stream = stream.unwrap();
             stream.write_all(format!("Hello, {}", i)).await.unwrap();
+            stream.read_exact([0u8; 8]).await.unwrap();
             stream.shutdown().await.unwrap();
             i += 1;
             if i >= 2 {
@@ -23,8 +24,9 @@ async fn incoming_tcp() {
 
     for i in 0..2 {
         let mut client = TcpStream::connect(&addr).await.unwrap();
-        let (_, text) = client.read_to_string(String::new()).await.unwrap();
-        assert_eq!(text, format!("Hello, {}", i));
+        let (_, text) = client.read_exact([0u8; 8]).await.unwrap();
+        assert_eq!(text, format!("Hello, {}", i).as_bytes());
+        client.write_all(text).await.unwrap();
     }
 
     task.await.resume_unwind();
@@ -45,6 +47,7 @@ async fn incoming_unix() {
         while let Some(stream) = incoming.next().await {
             let mut stream = stream.unwrap();
             stream.write_all(format!("Hello, {}", i)).await.unwrap();
+            stream.read_exact([0u8; 8]).await.unwrap();
             stream.shutdown().await.unwrap();
             i += 1;
             if i >= 2 {
@@ -55,8 +58,9 @@ async fn incoming_unix() {
 
     for i in 0..2 {
         let mut client = UnixStream::connect(&sock_path).await.unwrap();
-        let (_, text) = client.read_to_string(String::new()).await.unwrap();
-        assert_eq!(text, format!("Hello, {}", i));
+        let (_, text) = client.read_exact([0u8; 8]).await.unwrap();
+        assert_eq!(text, format!("Hello, {}", i).as_bytes());
+        client.write_all(text).await.unwrap();
     }
 
     task.await.resume_unwind();
