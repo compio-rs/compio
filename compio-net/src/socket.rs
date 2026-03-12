@@ -148,8 +148,12 @@ impl Socket {
 
     pub async fn shutdown(&self) -> io::Result<()> {
         let op = ShutdownSocket::new(self.to_shared_fd(), std::net::Shutdown::Write);
-        compio_runtime::submit(op).await.0?;
-        Ok(())
+        match compio_runtime::submit(op).await.0 {
+            Ok(_) => Ok(()),
+            // The socket is already closed, we can ignore this error.
+            Err(e) if e.kind() == io::ErrorKind::NotConnected => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     pub async fn recv<B: IoBufMut>(&self, buffer: B, flags: i32) -> BufResult<usize, B> {
