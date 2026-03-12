@@ -1,8 +1,7 @@
 use std::io::prelude::*;
 
 use compio_fs::{File, OpenOptions};
-use compio_io::{AsyncReadAtExt, AsyncReadExt, AsyncWriteAt, AsyncWriteAtExt};
-use futures_util::StreamExt;
+use compio_io::{AsyncReadAtExt, AsyncWriteAt, AsyncWriteAtExt};
 use tempfile::NamedTempFile;
 
 async fn setlen_run(file: &File, size: u64) {
