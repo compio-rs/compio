@@ -8,10 +8,12 @@ mod buf;
 #[macro_use]
 mod ext;
 mod managed;
+mod multi;
 
 pub use buf::*;
 pub use ext::*;
 pub use managed::*;
+pub use multi::*;
 
 use crate::util::{slice_to_buf, slice_to_uninit};
 
