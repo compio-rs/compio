@@ -51,7 +51,7 @@ async fn file_stream() {
 
     let file = File::open(tempfile.path()).await.unwrap();
     let cursor = std::io::Cursor::new(file);
-    let mut file = cursor.read_only();
+    let mut file = cursor.read_only().bytes();
     let mut s = String::new();
     while let Some(result) = file.next().await {
         let chunk = result.unwrap();
