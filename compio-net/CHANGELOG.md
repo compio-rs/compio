@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0](https://github.com/compio-rs/compio/compare/compio-net-v0.11.0...compio-net-v0.12.0) - 2026-03-13
+
+### Added
+
+- *(net)* incoming stream ([#759](https://github.com/compio-rs/compio/pull/759))
+- *(net)* zerocopy API ([#756](https://github.com/compio-rs/compio/pull/756))
+- *(driver)* [**breaking**] accept multi ([#747](https://github.com/compio-rs/compio/pull/747))
+- *(net)* add recv_from_managed ([#710](https://github.com/compio-rs/compio/pull/710))
+- *(runtime)* [**breaking**] remove event ([#707](https://github.com/compio-rs/compio/pull/707))
+
+### Changed
+
+- *(io,net)* move cmsg to io ancillary ([#730](https://github.com/compio-rs/compio/pull/730))
+- [**breaking**] move {Async,Poll}Fd to runtime ([#662](https://github.com/compio-rs/compio/pull/662))
+
+### Fixed
+
+- unused_features ([#739](https://github.com/compio-rs/compio/pull/739))
+- *(driver,net)* [**breaking**] to/from/msg have optional address ([#721](https://github.com/compio-rs/compio/pull/721))
+- *(driver,unix)* `set_result` for `OpenFile` & `CreateSocket` ([#701](https://github.com/compio-rs/compio/pull/701))
+
+### Other
+
+- remove "authors" field in metadata ([#711](https://github.com/compio-rs/compio/pull/711))
+- compio::runtime instead of compio_runtime ([#664](https://github.com/compio-rs/compio/pull/664))
+
 ## [0.11.0](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added
