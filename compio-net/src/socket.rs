@@ -34,7 +34,7 @@ cfg_if::cfg_if! {
         target_os = "cygwin"))] {
         pub(crate) use libc::MSG_NOSIGNAL;
     } else {
-        pub(crate) const MSG_NOSIGNAL: libc::c_int = 0x0;
+        pub(crate) const MSG_NOSIGNAL: std::ffi::c_int = 0x0;
     }
 }
 
