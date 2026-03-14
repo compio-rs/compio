@@ -28,7 +28,7 @@ mod wait;
 
 /// Extra data attached for IOCP.
 #[repr(C)]
-pub struct Extra {
+pub(in crate::sys) struct Extra {
     overlapped: Overlapped,
 }
 
@@ -358,7 +358,7 @@ impl Driver {
         &self.notify.port
     }
 
-    pub fn default_extra(&self) -> Extra {
+    pub(in crate::sys) fn default_extra(&self) -> Extra {
         Extra::new(self.port().as_raw_handle() as _)
     }
 
@@ -502,8 +502,6 @@ impl Driver {
     pub fn pop_multishot(&mut self, _: &ErasedKey) -> Option<BufResult<usize, crate::sys::Extra>> {
         None
     }
-
-    pub fn cleanup_multishot(&mut self, _: &ErasedKey) {}
 }
 
 impl AsRawFd for Driver {

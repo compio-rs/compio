@@ -1,8 +1,9 @@
 use std::{
+    collections::VecDeque,
     ffi::CString,
     io,
     marker::PhantomPinned,
-    os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd},
+    os::fd::{AsFd, AsRawFd, FromRawFd, IntoRawFd, OwnedFd},
     pin::Pin,
 };
 
@@ -16,7 +17,7 @@ use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
 use super::OpCode;
 pub use crate::sys::unix_op::*;
-use crate::{OpEntry, op::*, sys_slice::*, syscall};
+use crate::{Extra, OpEntry, op::*, sys_slice::*, syscall};
 
 unsafe impl<
     D: std::marker::Send + 'static,
@@ -97,10 +98,12 @@ unsafe impl<S: AsFd> OpCode for OpenFile<S> {
         self.call()
     }
 
-    unsafe fn set_result(self: Pin<&mut Self>, fd: usize) {
-        // SAFETY: fd is a valid fd returned from kernel
-        let fd = unsafe { OwnedFd::from_raw_fd(fd as _) };
-        *self.project().opened_fd = Some(fd);
+    unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, _: &Extra) {
+        if let Ok(fd) = res {
+            // SAFETY: fd is a valid fd returned from kernel
+            let fd = unsafe { OwnedFd::from_raw_fd(*fd as _) };
+            *self.project().opened_fd = Some(fd);
+        }
     }
 }
 
@@ -500,10 +503,12 @@ unsafe impl OpCode for CreateSocket {
         ))? as _)
     }
 
-    unsafe fn set_result(self: Pin<&mut Self>, fd: usize) {
-        // SAFETY: fd is a valid fd returned from kernel
-        let fd = unsafe { Socket2::from_raw_fd(fd as _) };
-        *self.project().opened_fd = Some(fd);
+    unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, _: &Extra) {
+        if let Ok(fd) = res {
+            // SAFETY: fd is a valid fd returned from kernel
+            let fd = unsafe { Socket2::from_raw_fd(*fd as _) };
+            *self.project().opened_fd = Some(fd);
+        }
     }
 }
 
@@ -544,10 +549,88 @@ unsafe impl<S: AsFd> OpCode for Accept<S> {
         .into()
     }
 
-    unsafe fn set_result(self: Pin<&mut Self>, fd: usize) {
-        // SAFETY: fd is a valid fd returned from kernel
-        let fd = unsafe { Socket2::from_raw_fd(fd as _) };
-        *self.project().accepted_fd = Some(fd);
+    unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, _: &Extra) {
+        if let Ok(fd) = res {
+            // SAFETY: fd is a valid fd returned from kernel
+            let fd = unsafe { Socket2::from_raw_fd(*fd as _) };
+            *self.project().accepted_fd = Some(fd);
+        }
+    }
+}
+
+struct AcceptMultishotResult {
+    res: io::Result<Socket2>,
+    extra: crate::Extra,
+}
+
+impl AcceptMultishotResult {
+    pub unsafe fn new(res: io::Result<usize>, extra: crate::Extra) -> Self {
+        Self {
+            res: res.map(|fd| unsafe { Socket2::from_raw_fd(fd as _) }),
+            extra,
+        }
+    }
+
+    pub fn into_result(self) -> BufResult<usize, crate::Extra> {
+        BufResult(self.res.map(|fd| fd.into_raw_fd() as _), self.extra)
+    }
+}
+
+pin_project! {
+    /// Accept multiple connections.
+    pub struct AcceptMulti<S> {
+        #[pin]
+        pub(crate) op: Accept<S>,
+        multishots: VecDeque<AcceptMultishotResult>
+    }
+}
+
+impl<S> AcceptMulti<S> {
+    /// Create [`AcceptMulti`].
+    pub fn new(fd: S) -> Self {
+        Self {
+            op: Accept::new(fd),
+            multishots: VecDeque::new(),
+        }
+    }
+}
+
+unsafe impl<S: AsFd> OpCode for AcceptMulti<S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let this = self.project();
+        opcode::AcceptMulti::new(Fd(this.op.fd.as_fd().as_raw_fd()))
+            .flags(libc::SOCK_CLOEXEC)
+            .build()
+            .into()
+    }
+
+    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
+        self.project().op.create_entry()
+    }
+
+    unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &crate::Extra) {
+        unsafe { self.project().op.set_result(res, extra) }
+    }
+
+    unsafe fn push_multishot(self: Pin<&mut Self>, res: io::Result<usize>, extra: crate::Extra) {
+        self.project()
+            .multishots
+            .push_back(unsafe { AcceptMultishotResult::new(res, extra) });
+    }
+
+    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::sys::Extra>> {
+        self.project()
+            .multishots
+            .pop_front()
+            .map(|res| res.into_result())
+    }
+}
+
+impl<S> IntoInner for AcceptMulti<S> {
+    type Inner = Socket2;
+
+    fn into_inner(self) -> Self::Inner {
+        self.op.into_inner().0
     }
 }
 
@@ -604,6 +687,62 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
     }
 }
 
+pin_project! {
+    /// Zerocopy [`Send`].
+    pub struct SendZc<T: IoBuf, S> {
+        #[pin]
+        pub(crate) op: Send<T, S>,
+        pub(crate) res: Option<BufResult<usize, crate::Extra>>,
+        _p: PhantomPinned,
+    }
+}
+
+impl<T: IoBuf, S> SendZc<T, S> {
+    /// Create [`SendZc`].
+    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+        Self {
+            op: Send::new(fd, buffer, flags),
+            res: None,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+unsafe impl<T: IoBuf, S: AsFd> OpCode for SendZc<T, S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let this = self.project();
+        let slice = this.op.buffer.as_init();
+        opcode::SendZc::new(
+            Fd(this.op.fd.as_fd().as_raw_fd()),
+            slice.as_ptr(),
+            slice.len().try_into().unwrap_or(u32::MAX),
+        )
+        .flags(this.op.flags)
+        .build()
+        .into()
+    }
+
+    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
+        self.project().op.create_entry()
+    }
+
+    unsafe fn push_multishot(self: Pin<&mut Self>, res: io::Result<usize>, extra: crate::Extra) {
+        self.project().res.replace(BufResult(res, extra));
+    }
+
+    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
+        self.project().res.take()
+    }
+}
+
+impl<T: IoBuf, S> IntoInner for SendZc<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.op.into_inner()
+    }
+}
+
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
     fn create_entry(mut self: Pin<&mut Self>) -> OpEntry {
         self.as_mut().set_msg();
@@ -612,6 +751,59 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
             .flags(*this.flags as _)
             .build()
             .into()
+    }
+}
+
+pin_project! {
+    /// Zerocopy [`SendVectored`].
+    pub struct SendVectoredZc<T: IoVectoredBuf, S> {
+        #[pin]
+        pub(crate) op: SendVectored<T, S>,
+        pub(crate) res: Option<BufResult<usize, crate::Extra>>,
+        _p: PhantomPinned,
+    }
+}
+
+impl<T: IoVectoredBuf, S> SendVectoredZc<T, S> {
+    /// Create [`SendVectoredZc`].
+    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+        Self {
+            op: SendVectored::new(fd, buffer, flags),
+            res: None,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectoredZc<T, S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let mut this = self.project();
+        this.op.as_mut().set_msg();
+        let op = this.op.project();
+        opcode::SendMsgZc::new(Fd(op.fd.as_fd().as_raw_fd()), op.msg)
+            .flags(*op.flags as _)
+            .build()
+            .into()
+    }
+
+    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
+        self.project().op.create_entry()
+    }
+
+    unsafe fn push_multishot(self: Pin<&mut Self>, res: io::Result<usize>, extra: crate::Extra) {
+        self.project().res.replace(BufResult(res, extra));
+    }
+
+    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
+        self.project().res.take()
+    }
+}
+
+impl<T: IoVectoredBuf, S> IntoInner for SendVectoredZc<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.op.into_inner()
     }
 }
 
@@ -749,15 +941,11 @@ impl<S> SendToHeader<S> {
 }
 
 impl<S: AsFd> SendToHeader<S> {
-    pub fn create_entry(&mut self, slices: &mut [SysSlice]) -> OpEntry {
+    pub fn set_msg(&mut self, slices: &mut [SysSlice]) {
         self.msg.msg_name = self.addr.as_ptr() as _;
         self.msg.msg_namelen = self.addr.len();
         self.msg.msg_iov = slices.as_mut_ptr() as _;
         self.msg.msg_iovlen = slices.len() as _;
-        opcode::SendMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &self.msg)
-            .flags(self.flags as _)
-            .build()
-            .into()
     }
 }
 
@@ -786,7 +974,11 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = self.project();
         let slice = this.slice.insert(this.buffer.as_ref().sys_slice());
-        this.header.create_entry(std::slice::from_mut(slice))
+        this.header.set_msg(std::slice::from_mut(slice));
+        opcode::SendMsg::new(Fd(this.header.fd.as_fd().as_raw_fd()), &this.header.msg)
+            .flags(this.header.flags as _)
+            .build()
+            .into()
     }
 }
 
@@ -795,6 +987,59 @@ impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
+    }
+}
+
+pin_project! {
+    /// Zerocopy [`SendTo`].
+    pub struct SendToZc<T: IoBuf, S: AsFd> {
+        #[pin]
+        pub(crate) op: SendTo<T, S>,
+        pub(crate) res: Option<BufResult<usize, crate::Extra>>,
+        _p: PhantomPinned,
+    }
+}
+
+impl<T: IoBuf, S: AsFd> SendToZc<T, S> {
+    /// Create [`SendToZc`].
+    pub fn new(fd: S, buffer: T, addr: SockAddr, flags: i32) -> Self {
+        Self {
+            op: SendTo::new(fd, buffer, addr, flags),
+            res: None,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+unsafe impl<T: IoBuf, S: AsFd> OpCode for SendToZc<T, S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let this = self.project().op.project();
+        let slice = this.slice.insert(this.buffer.as_ref().sys_slice());
+        this.header.set_msg(std::slice::from_mut(slice));
+        opcode::SendMsgZc::new(Fd(this.header.fd.as_fd().as_raw_fd()), &this.header.msg)
+            .flags(this.header.flags as _)
+            .build()
+            .into()
+    }
+
+    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
+        self.project().op.create_entry()
+    }
+
+    unsafe fn push_multishot(self: Pin<&mut Self>, res: io::Result<usize>, extra: crate::Extra) {
+        self.project().res.replace(BufResult(res, extra));
+    }
+
+    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
+        self.project().res.take()
+    }
+}
+
+impl<T: IoBuf, S: AsFd> IntoInner for SendToZc<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.op.into_inner()
     }
 }
 
@@ -823,7 +1068,11 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     fn create_entry(self: Pin<&mut Self>) -> OpEntry {
         let this = self.project();
         *this.slice = this.buffer.as_ref().sys_slices();
-        this.header.create_entry(this.slice)
+        this.header.set_msg(this.slice);
+        opcode::SendMsg::new(Fd(this.header.fd.as_fd().as_raw_fd()), &this.header.msg)
+            .flags(this.header.flags as _)
+            .build()
+            .into()
     }
 }
 
@@ -832,6 +1081,59 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
+    }
+}
+
+pin_project! {
+    /// Zerocopy [`SendToVectored`].
+    pub struct SendToVectoredZc<T: IoVectoredBuf, S: AsFd> {
+        #[pin]
+        pub(crate) op: SendToVectored<T, S>,
+        pub(crate) res: Option<BufResult<usize, crate::Extra>>,
+        _p: PhantomPinned,
+    }
+}
+
+impl<T: IoVectoredBuf, S: AsFd> SendToVectoredZc<T, S> {
+    /// Create [`SendToVectoredZc`].
+    pub fn new(fd: S, buffer: T, addr: SockAddr, flags: i32) -> Self {
+        Self {
+            op: SendToVectored::new(fd, buffer, addr, flags),
+            res: None,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectoredZc<T, S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let this = self.project().op.project();
+        *this.slice = this.buffer.as_ref().sys_slices();
+        this.header.set_msg(this.slice);
+        opcode::SendMsgZc::new(Fd(this.header.fd.as_fd().as_raw_fd()), &this.header.msg)
+            .flags(this.header.flags as _)
+            .build()
+            .into()
+    }
+
+    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
+        self.project().op.create_entry()
+    }
+
+    unsafe fn push_multishot(self: Pin<&mut Self>, res: io::Result<usize>, extra: crate::Extra) {
+        self.project().res.replace(BufResult(res, extra));
+    }
+
+    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
+        self.project().res.take()
+    }
+}
+
+impl<T: IoVectoredBuf, S: AsFd> IntoInner for SendToVectoredZc<T, S> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.op.into_inner()
     }
 }
 
@@ -854,6 +1156,58 @@ unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
             .flags(*this.flags as _)
             .build()
             .into()
+    }
+}
+
+pin_project! {
+    /// Zerocopy [`SendMsg`].
+    pub struct SendMsgZc<T: IoVectoredBuf, C: IoBuf, S> {
+        #[pin]
+        pub(crate) op: SendMsg<T, C, S>,
+        pub(crate) res: Option<BufResult<usize, crate::Extra>>,
+        _p: PhantomPinned,
+    }
+}
+
+impl<T: IoVectoredBuf, C: IoBuf, S> SendMsgZc<T, C, S> {
+    /// Create [`SendMsgZc`].
+    pub fn new(fd: S, buffer: T, control: C, addr: Option<SockAddr>, flags: i32) -> Self {
+        Self {
+            op: SendMsg::new(fd, buffer, control, addr, flags),
+            res: None,
+            _p: PhantomPinned,
+        }
+    }
+}
+
+unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsgZc<T, C, S> {
+    fn create_entry(self: Pin<&mut Self>) -> OpEntry {
+        let mut this = self.project();
+        this.op.as_mut().set_msg();
+        let op = this.op.project();
+        opcode::SendMsgZc::new(Fd(op.fd.as_fd().as_raw_fd()), op.msg)
+            .flags(*op.flags as _)
+            .build()
+            .into()
+    }
+
+    fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
+        self.project().op.create_entry()
+    }
+
+    unsafe fn push_multishot(self: Pin<&mut Self>, res: io::Result<usize>, extra: crate::Extra) {
+        self.project().res.replace(BufResult(res, extra));
+    }
+
+    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
+        self.project().res.take()
+    }
+}
+impl<T: IoVectoredBuf, C: IoBuf, S> IntoInner for SendMsgZc<T, C, S> {
+    type Inner = (T, C);
+
+    fn into_inner(self) -> Self::Inner {
+        self.op.into_inner()
     }
 }
 
@@ -909,6 +1263,7 @@ unsafe impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
 
 mod buf_ring {
     use std::{
+        collections::VecDeque,
         io,
         marker::PhantomPinned,
         os::fd::{AsFd, AsRawFd},
@@ -916,12 +1271,15 @@ mod buf_ring {
         ptr,
     };
 
+    use compio_buf::BufResult;
     use io_uring::{opcode, squeue::Flags, types::Fd};
     use pin_project_lite::pin_project;
     use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
-    use super::OpCode;
-    use crate::{BorrowedBuffer, BufferPool, OpEntry, TakeBuffer};
+    use super::{Extra, OpCode};
+    use crate::{
+        BorrowedBuffer, BufferPool, IoUringBufferPool, IoUringOwnedBuffer, OpEntry, TakeBuffer,
+    };
 
     pub(crate) fn take_buffer(
         buffer_pool: &BufferPool,
@@ -932,20 +1290,24 @@ mod buf_ring {
         let buffer_pool = buffer_pool.as_io_uring();
         let result = result.inspect_err(|_| buffer_pool.reuse_buffer(buffer_id))?;
         // SAFETY: result is valid
-        let res = unsafe { buffer_pool.get_buffer(buffer_id, result) };
+        let buffer = unsafe { buffer_pool.get_buffer(buffer_id, result) };
+        let res = unsafe { buffer_pool.create_proxy(buffer, result) }?;
         #[cfg(fusion)]
-        let res = res.map(BorrowedBuffer::new_io_uring);
-        res
+        let res = BorrowedBuffer::new_io_uring(res);
+        Ok(res)
     }
 
-    /// Read a file at specified position into specified buffer.
-    #[derive(Debug)]
-    pub struct ReadManagedAt<S> {
-        pub(crate) fd: S,
-        pub(crate) offset: u64,
-        buffer_group: u16,
-        len: u32,
-        _p: PhantomPinned,
+    pin_project! {
+        /// Read a file at specified position into specified buffer.
+        pub struct ReadManagedAt<S> {
+            pub(crate) fd: S,
+            pub(crate) offset: u64,
+            buffer_group: u16,
+            len: u32,
+            pool: IoUringBufferPool,
+            buffer: Option<IoUringOwnedBuffer>,
+            _p: PhantomPinned,
+        }
     }
 
     impl<S> ReadManagedAt<S> {
@@ -960,6 +1322,8 @@ mod buf_ring {
                 len: len.try_into().map_err(|_| {
                     io::Error::new(io::ErrorKind::InvalidInput, "required length too long")
                 })?,
+                pool: buffer_pool.clone(),
+                buffer: None,
                 _p: PhantomPinned,
             })
         }
@@ -976,6 +1340,15 @@ mod buf_ring {
                 .flags(Flags::BUFFER_SELECT)
                 .into()
         }
+
+        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &Extra) {
+            if let Ok(buffer_id) = extra.buffer_id() {
+                let this = self.project();
+                this.buffer.replace(unsafe {
+                    this.pool.get_buffer(buffer_id, *res.as_ref().unwrap_or(&0))
+                });
+            }
+        }
     }
 
     impl<S> TakeBuffer for ReadManagedAt<S> {
@@ -983,21 +1356,26 @@ mod buf_ring {
         type BufferPool = BufferPool;
 
         fn take_buffer(
-            self,
+            mut self,
             buffer_pool: &Self::BufferPool,
             result: io::Result<usize>,
             buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
+            self.buffer.take().map(|buf| buf.leak());
             take_buffer(buffer_pool, result, buffer_id)
         }
     }
 
-    /// Read a file.
-    pub struct ReadManaged<S> {
-        fd: S,
-        buffer_group: u16,
-        len: u32,
-        _p: PhantomPinned,
+    pin_project! {
+        /// Read a file.
+        pub struct ReadManaged<S> {
+            fd: S,
+            buffer_group: u16,
+            len: u32,
+            pool: IoUringBufferPool,
+            buffer: Option<IoUringOwnedBuffer>,
+            _p: PhantomPinned,
+        }
     }
 
     impl<S> ReadManaged<S> {
@@ -1011,6 +1389,8 @@ mod buf_ring {
                 len: len.try_into().map_err(|_| {
                     io::Error::new(io::ErrorKind::InvalidInput, "required length too long")
                 })?,
+                pool: buffer_pool.clone(),
+                buffer: None,
                 _p: PhantomPinned,
             })
         }
@@ -1026,6 +1406,15 @@ mod buf_ring {
                 .flags(Flags::BUFFER_SELECT)
                 .into()
         }
+
+        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &Extra) {
+            if let Ok(buffer_id) = extra.buffer_id() {
+                let this = self.project();
+                this.buffer.replace(unsafe {
+                    this.pool.get_buffer(buffer_id, *res.as_ref().unwrap_or(&0))
+                });
+            }
+        }
     }
 
     impl<S> TakeBuffer for ReadManaged<S> {
@@ -1033,22 +1422,27 @@ mod buf_ring {
         type BufferPool = BufferPool;
 
         fn take_buffer(
-            self,
+            mut self,
             buffer_pool: &Self::BufferPool,
             result: io::Result<usize>,
             buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
+            self.buffer.take().map(|buf| buf.leak());
             take_buffer(buffer_pool, result, buffer_id)
         }
     }
 
-    /// Receive data from remote.
-    pub struct RecvManaged<S> {
-        fd: S,
-        buffer_group: u16,
-        len: u32,
-        flags: i32,
-        _p: PhantomPinned,
+    pin_project! {
+        /// Receive data from remote.
+        pub struct RecvManaged<S> {
+            fd: S,
+            buffer_group: u16,
+            len: u32,
+            flags: i32,
+            pool: IoUringBufferPool,
+            buffer: Option<IoUringOwnedBuffer>,
+            _p: PhantomPinned,
+        }
     }
 
     impl<S> RecvManaged<S> {
@@ -1063,6 +1457,8 @@ mod buf_ring {
                     io::Error::new(io::ErrorKind::InvalidInput, "required length too long")
                 })?,
                 flags,
+                pool: buffer_pool.clone(),
+                buffer: None,
                 _p: PhantomPinned,
             })
         }
@@ -1078,6 +1474,15 @@ mod buf_ring {
                 .flags(Flags::BUFFER_SELECT)
                 .into()
         }
+
+        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &Extra) {
+            if let Ok(buffer_id) = extra.buffer_id() {
+                let this = self.project();
+                this.buffer.replace(unsafe {
+                    this.pool.get_buffer(buffer_id, *res.as_ref().unwrap_or(&0))
+                });
+            }
+        }
     }
 
     impl<S> TakeBuffer for RecvManaged<S> {
@@ -1085,11 +1490,12 @@ mod buf_ring {
         type BufferPool = BufferPool;
 
         fn take_buffer(
-            self,
+            mut self,
             buffer_pool: &Self::BufferPool,
             result: io::Result<usize>,
             buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
+            self.buffer.take().map(|buf| buf.leak());
             take_buffer(buffer_pool, result, buffer_id)
         }
     }
@@ -1104,6 +1510,8 @@ mod buf_ring {
             addr_len: socklen_t,
             iovec: libc::iovec,
             msg: libc::msghdr,
+            pool: IoUringBufferPool,
+            buffer: Option<IoUringOwnedBuffer>,
             _p: PhantomPinned,
         }
     }
@@ -1128,6 +1536,8 @@ mod buf_ring {
                     iov_len: len as _,
                 },
                 msg: unsafe { std::mem::zeroed() },
+                pool: buffer_pool.clone(),
+                buffer: None,
                 _p: PhantomPinned,
             })
         }
@@ -1147,6 +1557,15 @@ mod buf_ring {
                 .flags(Flags::BUFFER_SELECT)
                 .into()
         }
+
+        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &Extra) {
+            if let Ok(buffer_id) = extra.buffer_id() {
+                let this = self.project();
+                this.buffer.replace(unsafe {
+                    this.pool.get_buffer(buffer_id, *res.as_ref().unwrap_or(&0))
+                });
+            }
+        }
     }
 
     impl<S> TakeBuffer for RecvFromManaged<S> {
@@ -1154,7 +1573,7 @@ mod buf_ring {
         type BufferPool = BufferPool;
 
         fn take_buffer(
-            self,
+            mut self,
             buffer_pool: &Self::BufferPool,
             result: io::Result<usize>,
             buffer_id: u16,
@@ -1165,10 +1584,40 @@ mod buf_ring {
             let addr =
                 (self.addr_len > 0).then(|| unsafe { SockAddr::new(self.addr, self.addr_len) });
             // SAFETY: result is valid
-            let buffer = unsafe { buffer_pool.get_buffer(buffer_id, result) }?;
+            let buffer = self
+                .buffer
+                .take()
+                .unwrap_or_else(|| unsafe { buffer_pool.get_buffer(buffer_id, result) });
+            let buffer = unsafe { buffer_pool.create_proxy(buffer, result) }?;
             #[cfg(fusion)]
             let buffer = BorrowedBuffer::new_io_uring(buffer);
             Ok((buffer, addr))
+        }
+    }
+
+    struct MultishotResult {
+        result: io::Result<usize>,
+        extra: Extra,
+        buffer: Option<IoUringOwnedBuffer>,
+    }
+
+    impl MultishotResult {
+        pub fn new(result: io::Result<usize>, extra: Extra, pool: &IoUringBufferPool) -> Self {
+            let buffer = extra
+                .buffer_id()
+                .map(|buffer_id| unsafe {
+                    pool.get_buffer(buffer_id, *result.as_ref().unwrap_or(&0))
+                })
+                .ok();
+            Self {
+                result,
+                extra,
+                buffer,
+            }
+        }
+
+        pub fn leak(&mut self) {
+            self.buffer.take().map(|buf| buf.leak());
         }
     }
 
@@ -1177,6 +1626,7 @@ mod buf_ring {
         pub struct ReadMultiAt<S> {
             #[pin]
             inner: ReadManagedAt<S>,
+            multishots: VecDeque<MultishotResult>
         }
     }
 
@@ -1185,6 +1635,7 @@ mod buf_ring {
         pub fn new(fd: S, offset: u64, buffer_pool: &BufferPool, len: usize) -> io::Result<Self> {
             Ok(Self {
                 inner: ReadManagedAt::new(fd, offset, buffer_pool, len)?,
+                multishots: VecDeque::new(),
             })
         }
     }
@@ -1201,6 +1652,27 @@ mod buf_ring {
         fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
             self.project().inner.create_entry()
         }
+
+        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &crate::Extra) {
+            unsafe { self.project().inner.set_result(res, extra) }
+        }
+
+        unsafe fn push_multishot(
+            self: Pin<&mut Self>,
+            res: io::Result<usize>,
+            extra: crate::Extra,
+        ) {
+            let this = self.project();
+            this.multishots
+                .push_back(MultishotResult::new(res, extra, &this.inner.pool));
+        }
+
+        fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::sys::Extra>> {
+            self.project().multishots.pop_front().map(|mut proxy| {
+                proxy.leak();
+                BufResult(proxy.result, proxy.extra)
+            })
+        }
     }
 
     impl<S> TakeBuffer for ReadMultiAt<S> {
@@ -1213,7 +1685,7 @@ mod buf_ring {
             result: io::Result<usize>,
             buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
-            take_buffer(buffer_pool, result, buffer_id)
+            self.inner.take_buffer(buffer_pool, result, buffer_id)
         }
     }
 
@@ -1222,6 +1694,7 @@ mod buf_ring {
         pub struct ReadMulti<S> {
             #[pin]
             inner: ReadManaged<S>,
+            multishots: VecDeque<MultishotResult>
         }
     }
 
@@ -1230,6 +1703,7 @@ mod buf_ring {
         pub fn new(fd: S, buffer_pool: &BufferPool, len: usize) -> io::Result<Self> {
             Ok(Self {
                 inner: ReadManaged::new(fd, buffer_pool, len)?,
+                multishots: VecDeque::new(),
             })
         }
     }
@@ -1246,6 +1720,27 @@ mod buf_ring {
         fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
             self.project().inner.create_entry()
         }
+
+        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &crate::Extra) {
+            unsafe { self.project().inner.set_result(res, extra) }
+        }
+
+        unsafe fn push_multishot(
+            self: Pin<&mut Self>,
+            res: io::Result<usize>,
+            extra: crate::Extra,
+        ) {
+            let this = self.project();
+            this.multishots
+                .push_back(MultishotResult::new(res, extra, &this.inner.pool));
+        }
+
+        fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::sys::Extra>> {
+            self.project().multishots.pop_front().map(|mut proxy| {
+                proxy.leak();
+                BufResult(proxy.result, proxy.extra)
+            })
+        }
     }
 
     impl<S> TakeBuffer for ReadMulti<S> {
@@ -1258,7 +1753,7 @@ mod buf_ring {
             result: io::Result<usize>,
             buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
-            take_buffer(buffer_pool, result, buffer_id)
+            self.inner.take_buffer(buffer_pool, result, buffer_id)
         }
     }
 
@@ -1267,6 +1762,7 @@ mod buf_ring {
         pub struct RecvMulti<S> {
             #[pin]
             inner: RecvManaged<S>,
+            multishots: VecDeque<MultishotResult>
         }
     }
 
@@ -1275,6 +1771,7 @@ mod buf_ring {
         pub fn new(fd: S, buffer_pool: &BufferPool, len: usize, flags: i32) -> io::Result<Self> {
             Ok(Self {
                 inner: RecvManaged::new(fd, buffer_pool, len, flags)?,
+                multishots: VecDeque::new(),
             })
         }
     }
@@ -1291,6 +1788,27 @@ mod buf_ring {
         fn create_entry_fallback(self: Pin<&mut Self>) -> OpEntry {
             self.project().inner.create_entry()
         }
+
+        unsafe fn set_result(self: Pin<&mut Self>, res: &io::Result<usize>, extra: &crate::Extra) {
+            unsafe { self.project().inner.set_result(res, extra) }
+        }
+
+        unsafe fn push_multishot(
+            self: Pin<&mut Self>,
+            res: io::Result<usize>,
+            extra: crate::Extra,
+        ) {
+            let this = self.project();
+            this.multishots
+                .push_back(MultishotResult::new(res, extra, &this.inner.pool));
+        }
+
+        fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::sys::Extra>> {
+            self.project().multishots.pop_front().map(|mut proxy| {
+                proxy.leak();
+                BufResult(proxy.result, proxy.extra)
+            })
+        }
     }
 
     impl<S> TakeBuffer for RecvMulti<S> {
@@ -1303,7 +1821,7 @@ mod buf_ring {
             result: io::Result<usize>,
             buffer_id: u16,
         ) -> io::Result<Self::Buffer<'_>> {
-            take_buffer(buffer_pool, result, buffer_id)
+            self.inner.take_buffer(buffer_pool, result, buffer_id)
         }
     }
 }

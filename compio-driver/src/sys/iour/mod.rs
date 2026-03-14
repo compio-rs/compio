@@ -2,8 +2,8 @@
 #[allow(unused_imports)]
 pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::{
-    collections::{HashMap, VecDeque},
     io,
+    marker::PhantomData,
     os::fd::FromRawFd,
     pin::Pin,
     sync::Arc,
@@ -43,7 +43,7 @@ use crate::{
 };
 
 mod extra;
-pub use extra::Extra;
+pub(in crate::sys) use extra::Extra;
 pub(crate) mod op;
 pub(crate) use op::take_buffer;
 
@@ -138,14 +138,28 @@ pub unsafe trait OpCode {
         unreachable!("this operation is asynchronous")
     }
 
-    /// Set the result when it successfully completes.
+    /// Set the result when it completes.
     /// The operation stores the result and is responsible to release it if the
     /// operation is cancelled.
     ///
     /// # Safety
     ///
-    /// Users should not call it.
-    unsafe fn set_result(self: Pin<&mut Self>, _: usize) {}
+    /// The params must be the result coming from this operation.
+    unsafe fn set_result(self: Pin<&mut Self>, _: &io::Result<usize>, _: &crate::Extra) {}
+
+    /// Push a multishot result to the inner queue.
+    ///
+    /// # Safety
+    ///
+    /// The params must be the result coming from this operation.
+    unsafe fn push_multishot(self: Pin<&mut Self>, _: io::Result<usize>, _: crate::Extra) {
+        unreachable!("this operation is not multishot")
+    }
+
+    /// Pop a multishot result from the inner queue.
+    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::sys::Extra>> {
+        unreachable!("this operation is not multishot")
+    }
 }
 
 pub use OpCode as IourOpCode;
@@ -159,7 +173,7 @@ pub(crate) struct Driver {
     completed_rx: Receiver<Entry>,
     buffer_group_ids: Slab<()>,
     need_push_notifier: bool,
-    multishot_results: HashMap<ErasedKey, VecDeque<CEntry>>,
+    _p: PhantomData<ErasedKey>,
 }
 
 impl Driver {
@@ -208,7 +222,7 @@ impl Driver {
             pool: builder.create_or_get_thread_pool(),
             buffer_group_ids: Slab::new(),
             need_push_notifier: true,
-            multishot_results: HashMap::new(),
+            _p: PhantomData,
         })
     }
 
@@ -304,11 +318,15 @@ impl Driver {
                     let flags = entry.flags();
                     if more(flags) {
                         let key = unsafe { BorrowedKey::from_raw(key as _) };
-                        key.borrow().wake_by_ref();
-                        self.multishot_results
-                            .entry(key.clone())
-                            .or_default()
-                            .push_back(entry);
+                        let mut key = key.borrow();
+                        #[allow(clippy::useless_conversion)]
+                        let mut extra: crate::sys::Extra = Extra::new().into();
+                        extra.set_flags(entry.flags());
+                        unsafe {
+                            key.pinned_op()
+                                .push_multishot(create_result(entry.result()), extra);
+                        }
+                        key.wake_by_ref();
                     } else {
                         create_entry(entry).notify()
                     }
@@ -318,7 +336,7 @@ impl Driver {
         has_entry
     }
 
-    pub fn default_extra(&self) -> Extra {
+    pub(in crate::sys) fn default_extra(&self) -> Extra {
         Extra::new()
     }
 
@@ -345,7 +363,6 @@ impl Driver {
                 warn!("could not push AsyncCancel entry");
             }
         }
-        self.cleanup_multishot(&key);
     }
 
     fn push_raw_with_key(&mut self, entry: SEntry, key: ErasedKey) -> io::Result<()> {
@@ -522,7 +539,13 @@ impl Driver {
         let buffer_pool = buffer_pool.into_io_uring();
 
         let buffer_group = buffer_pool.buffer_group();
-        unsafe { buffer_pool.into_inner().release(&self.inner)? };
+        // FIXME: should we drop it directly if `into_inner` fails?
+        unsafe {
+            buffer_pool
+                .into_inner()
+                .expect("operations not completed")
+                .release(&self.inner)?
+        };
         self.buffer_group_ids.remove(buffer_group as _);
 
         Ok(())
@@ -532,17 +555,7 @@ impl Driver {
         &mut self,
         key: &ErasedKey,
     ) -> Option<BufResult<usize, crate::sys::Extra>> {
-        let queue = self.multishot_results.get_mut(key)?;
-        let entry = queue.pop_front()?;
-        let result = create_result(entry.result());
-        #[allow(clippy::useless_conversion)]
-        let mut extra: crate::sys::Extra = self.default_extra().into();
-        extra.set_flags(entry.flags());
-        Some(BufResult(result, extra))
-    }
-
-    pub fn cleanup_multishot(&mut self, key: &ErasedKey) {
-        self.multishot_results.remove(key);
+        key.borrow().pinned_op().pop_multishot()
     }
 }
 

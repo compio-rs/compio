@@ -25,6 +25,9 @@ use futures_util::FutureExt;
 mod future;
 pub use future::*;
 
+mod stream;
+pub use stream::*;
+
 #[cfg(feature = "time")]
 pub(crate) mod time;
 
@@ -284,6 +287,13 @@ impl Runtime {
         Submit::new(self.clone(), op)
     }
 
+    /// Submit a multishot operation to the runtime.
+    ///
+    /// You only need this when authoring your own [`OpCode`].
+    pub fn submit_multi<T: OpCode + 'static>(&self, op: T) -> SubmitMulti<T> {
+        SubmitMulti::new(self.clone(), op)
+    }
+
     pub(crate) fn cancel<T: OpCode>(&self, key: Key<T>) {
         self.driver.borrow_mut().cancel(key);
     }
@@ -308,8 +318,8 @@ impl Runtime {
     ) -> PushEntry<Key<T>, BufResult<usize, T>> {
         instrument!(compio_log::Level::DEBUG, "poll_task", ?key);
         let mut driver = self.driver.borrow_mut();
-        driver.pop(key).map_pending(|mut k| {
-            driver.update_waker(&mut k, waker);
+        driver.pop(key).map_pending(|k| {
+            driver.update_waker(&k, waker);
             k
         })
     }
@@ -321,10 +331,24 @@ impl Runtime {
     ) -> PushEntry<Key<T>, (BufResult<usize, T>, Extra)> {
         instrument!(compio_log::Level::DEBUG, "poll_task_with_extra", ?key);
         let mut driver = self.driver.borrow_mut();
-        driver.pop_with_extra(key).map_pending(|mut k| {
-            driver.update_waker(&mut k, waker);
+        driver.pop_with_extra(key).map_pending(|k| {
+            driver.update_waker(&k, waker);
             k
         })
+    }
+
+    pub(crate) fn poll_multishot<T: OpCode>(
+        &self,
+        waker: &Waker,
+        key: &Key<T>,
+    ) -> Option<BufResult<usize, Extra>> {
+        instrument!(compio_log::Level::DEBUG, "poll_multishot", ?key);
+        let mut driver = self.driver.borrow_mut();
+        if let Some(res) = driver.pop_multishot(key) {
+            return Some(res);
+        }
+        driver.update_waker(key, waker);
+        None
     }
 
     #[cfg(feature = "time")]
@@ -336,7 +360,7 @@ impl Runtime {
             Poll::Ready(())
         } else {
             debug!("pending");
-            timer_runtime.update_waker(key, cx.waker().clone());
+            timer_runtime.update_waker(key, cx.waker());
             Poll::Pending
         }
     }
@@ -595,10 +619,22 @@ pub fn spawn_blocking<T: Send + 'static>(
 /// ## Panics
 ///
 /// This method doesn't create runtime and will panic if it's not within a
-/// runtime. It tries to obtain the current runtime by
+/// runtime. It tries to obtain the current runtime with
 /// [`Runtime::with_current`].
 pub fn submit<T: OpCode + 'static>(op: T) -> Submit<T> {
     Runtime::with_current(|r| r.submit(op))
+}
+
+/// Submit a multishot operation to the current runtime, and return a stream for
+/// it.
+///
+/// ## Panics
+///
+/// This method doesn't create runtime and will panic if it's not within a
+/// runtime. It tries to obtain the current runtime with
+/// [`Runtime::with_current`].
+pub fn submit_multi<T: OpCode + 'static>(op: T) -> SubmitMulti<T> {
+    Runtime::with_current(|r| r.submit_multi(op))
 }
 
 /// Register file descriptors for fixed-file operations with the current

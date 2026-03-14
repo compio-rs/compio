@@ -97,6 +97,26 @@ macro_rules! op {
             fn create_entry(self: std::pin::Pin<&mut Self>) -> OpEntry {
                 unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.create_entry()
             }
+
+            fn create_entry_fallback(self: std::pin::Pin<&mut Self>) -> OpEntry {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.create_entry_fallback()
+            }
+
+            fn call_blocking(self: std::pin::Pin<&mut Self>) -> std::io::Result<usize> {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.call_blocking()
+            }
+
+            unsafe fn set_result(self: std::pin::Pin<&mut Self>, result: &std::io::Result<usize>, extra: &crate::Extra) {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ).set_result(result, extra) }
+            }
+
+            unsafe fn push_multishot(self: std::pin::Pin<&mut Self>, result: std::io::Result<usize>, extra: crate::Extra) {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ).push_multishot(result, extra) }
+            }
+
+            fn pop_multishot(self: std::pin::Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.pop_multishot()
+            }
         }
     };
 }
@@ -106,12 +126,18 @@ mod iour { pub use crate::sys::iour::{op::*, OpCode}; }
 #[rustfmt::skip]
 mod poll { pub use crate::sys::poll::{op::*, OpCode}; }
 
+op!(<S: AsFd> AcceptMulti(fd: S));
 op!(<T: IoBufMut, S: AsFd> RecvFrom(fd: S, buffer: T, flags: i32));
 op!(<T: IoBuf, S: AsFd> SendTo(fd: S, buffer: T, addr: SockAddr, flags: i32));
 op!(<T: IoVectoredBufMut, S: AsFd> RecvFromVectored(fd: S, buffer: T, flags: i32));
 op!(<T: IoVectoredBuf, S: AsFd> SendToVectored(fd: S, buffer: T, addr: SockAddr, flags: i32));
 op!(<S: AsFd> FileStat(fd: S));
 op!(<S: AsFd> PathStat(dirfd: S, path: CString, follow_symlink: bool));
+op!(<T: IoBuf, S: AsFd> SendZc(fd: S, buffer: T, flags: i32));
+op!(<T: IoVectoredBuf, S: AsFd> SendVectoredZc(fd: S, buffer: T, flags: i32));
+op!(<T: IoBuf, S: AsFd> SendToZc(fd: S, buffer: T, addr: SockAddr, flags: i32));
+op!(<T: IoVectoredBuf, S: AsFd> SendToVectoredZc(fd: S, buffer: T, addr: SockAddr, flags: i32));
+op!(<T: IoVectoredBuf, C: IoBuf, S: AsFd> SendMsgZc(fd: S, buffer: T, control: C, addr: Option<SockAddr>, flags: i32));
 
 macro_rules! mop {
     (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? ) with $pool:ident) => {
@@ -201,6 +227,26 @@ macro_rules! mop {
         unsafe impl<$($ty: $trait),*> iour::OpCode for $name<$($ty),*> {
             fn create_entry(self: std::pin::Pin<&mut Self>) -> OpEntry {
                 unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.create_entry()
+            }
+
+            fn create_entry_fallback(self: std::pin::Pin<&mut Self>) -> OpEntry {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.create_entry_fallback()
+            }
+
+            fn call_blocking(self: std::pin::Pin<&mut Self>) -> std::io::Result<usize> {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.call_blocking()
+            }
+
+            unsafe fn set_result(self: std::pin::Pin<&mut Self>, result: &std::io::Result<usize>, extra: &crate::Extra) {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ).set_result(result, extra) }
+            }
+
+            unsafe fn push_multishot(self: std::pin::Pin<&mut Self>, result: std::io::Result<usize>, extra: crate::Extra) {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ).push_multishot(result, extra) }
+            }
+
+            fn pop_multishot(self: std::pin::Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
+                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.pop_multishot()
             }
         }
     };

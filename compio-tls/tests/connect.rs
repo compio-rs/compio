@@ -1,19 +1,30 @@
+use std::io::ErrorKind;
+
 use compio_io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use compio_net::TcpStream;
 use compio_tls::TlsConnector;
 
 async fn connect(connector: TlsConnector) {
-    let stream = TcpStream::connect("compio.rs:443").await.unwrap();
-    let mut stream = connector.connect("compio.rs", stream).await.unwrap();
+    let stream = TcpStream::connect("sha256.badssl.com:443").await.unwrap();
+    let mut stream = connector
+        .connect("sha256.badssl.com", stream)
+        .await
+        .unwrap();
 
     stream
-        .write_all("GET / HTTP/1.1\r\nHost:compio.rs\r\nConnection: close\r\n\r\n")
+        .write_all("GET / HTTP/1.1\r\nHost: sha256.badssl.com\r\nConnection: close\r\n\r\n")
         .await
         .unwrap();
     stream.flush().await.unwrap();
     let (_, res) = stream.read_to_end(vec![]).await.unwrap();
     println!("{}", String::from_utf8_lossy(&res));
-    stream.shutdown().await.unwrap();
+    // seems like badssl will shutdown tcp before us
+    use ErrorKind::*;
+    match stream.shutdown().await {
+        Ok(_) => {}
+        Err(e) if matches!(e.kind(), NotConnected) => {}
+        res => res.expect("failed to shutdown"),
+    }
 }
 
 #[cfg(feature = "native-tls")]

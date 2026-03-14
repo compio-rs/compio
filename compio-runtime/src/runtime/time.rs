@@ -53,9 +53,11 @@ impl TimerRuntime {
     }
 
     /// Update the waker for a timer.
-    pub fn update_waker(&mut self, key: &TimerKey, waker: Waker) {
-        if let Some(w) = self.wheel.get_mut(key) {
-            *w = waker;
+    pub fn update_waker(&mut self, key: &TimerKey, waker: &Waker) {
+        if let Some(w) = self.wheel.get_mut(key)
+            && !waker.will_wake(w)
+        {
+            *w = waker.clone();
         }
     }
 

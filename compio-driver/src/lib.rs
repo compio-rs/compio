@@ -4,6 +4,7 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
+#![allow(unused_features)]
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![doc(
@@ -42,7 +43,7 @@ mod buffer_pool;
 pub use buffer_pool::*;
 
 mod sys;
-pub use sys::*;
+pub use sys::{Extra, *};
 
 mod cancel;
 pub use cancel::*;
@@ -121,7 +122,7 @@ impl Proactor {
 
     /// Get a default [`Extra`] for underlying driver.
     pub fn default_extra(&self) -> Extra {
-        self.driver.default_extra().into()
+        sys::default_extra(&self.driver)
     }
 
     /// The current driver type.
@@ -232,7 +233,6 @@ impl Proactor {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
             self.cancel.remove(&key);
-            self.driver.cleanup_multishot(&key);
             PushEntry::Ready(key.take_result())
         } else {
             PushEntry::Pending(key)
@@ -252,7 +252,6 @@ impl Proactor {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
             self.cancel.remove(&key);
-            self.driver.cleanup_multishot(&key);
             let extra = key.swap_extra(self.default_extra());
             let res = key.take_result();
             PushEntry::Ready((res, extra))
@@ -270,7 +269,7 @@ impl Proactor {
     }
 
     /// Update the waker of the specified op.
-    pub fn update_waker<T>(&mut self, op: &mut Key<T>, waker: &Waker) {
+    pub fn update_waker<T>(&mut self, op: &Key<T>, waker: &Waker) {
         op.set_waker(waker);
     }
 

@@ -62,6 +62,8 @@ jobs:
           - os: 'windows-latest'
             target: 'x86_64-pc-windows-msvc'
             features: 'native-tls,ring,py-dynamic-openssl'
+          - os: 'windows-11-arm'
+            target: 'aarch64-pc-windows-msvc'
           - os: 'macos-14'
           - os: 'macos-15'
           - os: 'macos-15'

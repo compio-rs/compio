@@ -8,7 +8,11 @@ use std::marker::PhantomData;
 use compio_buf::IoBufMut;
 use futures_util::FutureExt;
 
-use crate::{AsyncRead, framed::codec::Decoder, util::Splittable};
+use crate::{
+    AsyncRead,
+    framed::{codec::Decoder, frame::NoopFramer},
+    util::Splittable,
+};
 
 pub mod codec;
 pub mod frame;
@@ -139,6 +143,49 @@ impl<C, F> Framed<(), (), C, F, (), (), ()> {
             write_state: write::State::empty(),
             codec,
             framer,
+            types: PhantomData,
+        }
+    }
+}
+
+/// [`Framed`] that bridges [`AsyncRead`]/[`AsyncWrite`] with [`Bytes`].
+///
+/// This is useful when you want to read/write raw bytes into/from [`Bytes`]
+/// without any additional framing or de/encoding.
+///
+/// See also: [`ReaderStream`] and [`ReaderStream`].
+///
+/// [`Bytes`]: compio_buf::bytes::Bytes
+/// [`AsyncWrite`]: crate::AsyncWrite
+/// [`ReaderStream`]: https://docs.rs/tokio-util/latest/tokio_util/io/struct.ReaderStream.html
+/// [`StreamReader`]: https://docs.rs/tokio-util/latest/tokio_util/io/struct.StreamReader.html
+#[cfg(feature = "bytes")]
+pub type BytesFramed<R, W> = Framed<
+    R,
+    W,
+    codec::bytes::BytesCodec,
+    NoopFramer,
+    compio_buf::bytes::Bytes,
+    compio_buf::bytes::Bytes,
+>;
+
+#[cfg(feature = "bytes")]
+impl BytesFramed<(), ()> {
+    /// Creates a new [`BytesFramed`] that bridges [`AsyncRead`]/[`AsyncWrite`]
+    /// with [`Bytes`].
+    ///
+    /// See also: [`ReaderStream`] and [`StreamReader`].
+    ///
+    /// [`Bytes`]: compio_buf::bytes::Bytes
+    /// [`AsyncWrite`]: crate::AsyncWrite
+    /// [`ReaderStream`]: https://docs.rs/tokio-util/latest/tokio_util/io/struct.ReaderStream.html
+    /// [`StreamReader`]: https://docs.rs/tokio-util/latest/tokio_util/io/struct.StreamReader.html
+    pub fn new_bytes() -> Self {
+        Framed {
+            read_state: read::State::empty(),
+            write_state: write::State::empty(),
+            codec: codec::bytes::BytesCodec::new(),
+            framer: NoopFramer::new(),
             types: PhantomData,
         }
     }

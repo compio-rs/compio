@@ -22,6 +22,7 @@ compio-runtime = { workspace = true }
 
 cfg-if = { workspace = true }
 either = "1.9.0"
+futures-util = { workspace = true }
 once_cell = { workspace = true }
 socket2 = { workspace = true }
 
@@ -40,7 +41,6 @@ libc = { workspace = true }
 # Shared dev dependencies for all platforms
 [dev-dependencies]
 compio-macros = { workspace = true }
-futures-util = { workspace = true }
 tempfile = { workspace = true }
 
 [features]

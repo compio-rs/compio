@@ -548,9 +548,12 @@ impl<S> Accept<S> {
             _p: PhantomPinned,
         }
     }
+}
 
-    /// Get the remote address from the inner buffer.
-    pub fn into_addr(mut self) -> (Socket2, SockAddr) {
+impl<S> IntoInner for Accept<S> {
+    type Inner = (Socket2, SockAddr);
+
+    fn into_inner(mut self) -> Self::Inner {
         let socket = self.accepted_fd.take().expect("socket not accepted");
         (socket, unsafe { SockAddr::new(self.buffer, self.addr_len) })
     }

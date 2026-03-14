@@ -13,17 +13,17 @@ use socket2::{SockAddr, SockAddrStorage, socklen_t};
 #[cfg(linux_all)]
 pub use crate::sys::op::Splice;
 pub use crate::sys::op::{
-    Accept, Recv, RecvFrom, RecvFromVectored, RecvMsg, RecvVectored, Send, SendMsg, SendTo,
-    SendToVectored, SendVectored,
+    Accept, Recv, RecvFrom, RecvFromVectored, RecvMsg, RecvVectored, Send, SendMsg, SendMsgZc,
+    SendTo, SendToVectored, SendToVectoredZc, SendToZc, SendVectored, SendVectoredZc, SendZc,
+};
+#[cfg(unix)]
+pub use crate::sys::op::{
+    AcceptMulti, CreateDir, CreateSocket, CurrentDir, FileStat, HardLink, Interest, OpenFile,
+    PathStat, PollOnce, ReadVectored, ReadVectoredAt, Rename, Stat, Symlink, TruncateFile, Unlink,
+    WriteVectored, WriteVectoredAt,
 };
 #[cfg(windows)]
 pub use crate::sys::op::{ConnectNamedPipe, DeviceIoControl};
-#[cfg(unix)]
-pub use crate::sys::op::{
-    CreateDir, CreateSocket, CurrentDir, FileStat, HardLink, Interest, OpenFile, PathStat,
-    PollOnce, ReadVectored, ReadVectoredAt, Rename, Stat, Symlink, TruncateFile, Unlink,
-    WriteVectored, WriteVectoredAt,
-};
 #[cfg(io_uring)]
 pub use crate::sys::op::{
     ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvManaged, RecvMulti,
@@ -495,10 +495,10 @@ pub(crate) mod managed {
     use socket2::SockAddr;
 
     use super::{Read, ReadAt, Recv, RecvFrom};
-    use crate::{AsFd, BorrowedBuffer, BufferPool, OwnedBuffer, TakeBuffer};
+    use crate::{AsFd, BorrowedBuffer, BufferPool, FallbackOwnedBuffer, TakeBuffer};
 
     fn take_buffer(
-        slice: OwnedBuffer,
+        slice: FallbackOwnedBuffer,
         buffer_pool: &BufferPool,
         result: io::Result<usize>,
     ) -> io::Result<BorrowedBuffer<'_>> {
@@ -516,7 +516,7 @@ pub(crate) mod managed {
         /// Read a file at specified position into managed buffer.
         pub struct ReadManagedAt<S> {
             #[pin]
-            pub(crate) op: ReadAt<OwnedBuffer, S>,
+            pub(crate) op: ReadAt<FallbackOwnedBuffer, S>,
         }
     }
 
@@ -549,7 +549,7 @@ pub(crate) mod managed {
         /// Read a file into managed buffer.
         pub struct ReadManaged<S> {
             #[pin]
-            pub(crate) op: Read<OwnedBuffer, S>,
+            pub(crate) op: Read<FallbackOwnedBuffer, S>,
         }
     }
 
@@ -585,7 +585,7 @@ pub(crate) mod managed {
         /// use [`ReadManaged`].
         pub struct RecvManaged<S> {
             #[pin]
-            pub(crate) op: Recv<OwnedBuffer, S>,
+            pub(crate) op: Recv<FallbackOwnedBuffer, S>,
         }
     }
 
@@ -618,7 +618,7 @@ pub(crate) mod managed {
         /// Receive data and source address into managed buffer.
         pub struct RecvFromManaged<S: AsFd> {
             #[pin]
-            pub(crate) op: RecvFrom<OwnedBuffer, S>,
+            pub(crate) op: RecvFrom<FallbackOwnedBuffer, S>,
         }
     }
 
@@ -665,7 +665,9 @@ pub(crate) mod managed {
 }
 
 #[cfg(not(io_uring))]
-pub use managed::*;
+pub use managed::{
+    ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvManaged, RecvMulti,
+};
 
 bitflags::bitflags! {
     /// Flags for operations.
