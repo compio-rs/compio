@@ -13,7 +13,7 @@ async fn tcp_zerocopy() {
     let (mut rx, _) = task.await.unwrap();
 
     let buffer = Vec::from(b"hello world" as &[u8]);
-    let BufResult(res, fut) = tx.send_zerocopy(buffer, 0).await;
+    let BufResult(res, fut) = tx.send_zerocopy(buffer).await;
     assert_eq!(res.unwrap(), 11);
     let buffer = fut.await;
     assert_eq!(buffer, b"hello world");
@@ -38,7 +38,7 @@ async fn tcp_zerocopy_vectored() {
         Vec::from(b" " as &[u8]),
         Vec::from(b"world" as &[u8]),
     ];
-    let BufResult(res, fut) = tx.send_zerocopy_vectored(buffer, 0).await;
+    let BufResult(res, fut) = tx.send_zerocopy_vectored(buffer).await;
     assert_eq!(res.unwrap(), 11);
     let buffer = fut.await;
     assert_eq!(buffer[0], b"hello");

@@ -14,8 +14,8 @@ use futures_util::{Stream, StreamExt, stream::FusedStream};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::{
-    Incoming, OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, SocketOpts, ToSocketAddrsAsync,
-    WriteHalf,
+    Incoming, MSG_NOSIGNAL, OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, SocketOpts,
+    ToSocketAddrsAsync, WriteHalf,
 };
 
 /// A TCP socket server, listening for connections.
@@ -375,7 +375,7 @@ impl TcpStream {
         #[cfg(windows)]
         use windows_sys::Win32::Networking::WinSock::MSG_OOB;
 
-        self.inner.send(buf, MSG_OOB).await
+        self.inner.send(buf, MSG_OOB | MSG_NOSIGNAL).await
     }
 
     /// Sends data using [zero-copy send](https://man7.org/linux/man-pages/man3/io_uring_prep_send_zc.3.html).
@@ -385,9 +385,8 @@ impl TcpStream {
     pub async fn send_zerocopy<T: IoBuf>(
         &self,
         buf: T,
-        flags: i32,
     ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
-        self.inner.send_zerocopy(buf, flags).await
+        self.inner.send_zerocopy(buf, MSG_NOSIGNAL).await
     }
 
     /// Sends vectorized data using [zero-copy send](https://man7.org/linux/man-pages/man3/io_uring_prep_send_zc.3.html).
@@ -397,9 +396,8 @@ impl TcpStream {
     pub async fn send_zerocopy_vectored<T: IoVectoredBuf>(
         &self,
         buf: T,
-        flags: i32,
     ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
-        self.inner.send_zerocopy_vectored(buf, flags).await
+        self.inner.send_zerocopy_vectored(buf, MSG_NOSIGNAL).await
     }
 }
 
@@ -478,14 +476,12 @@ impl AsyncWrite for TcpStream {
 impl AsyncWrite for &TcpStream {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let BufResult(res, fut) = self.send_zerocopy(buf, 0).await;
-        BufResult(res, fut.await)
+        self.inner.send(buf, MSG_NOSIGNAL).await
     }
 
     #[inline]
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let BufResult(res, fut) = self.send_zerocopy_vectored(buf, 0).await;
-        BufResult(res, fut.await)
+        self.inner.send_vectored(buf, MSG_NOSIGNAL).await
     }
 
     #[inline]

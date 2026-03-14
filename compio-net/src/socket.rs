@@ -23,6 +23,21 @@ use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::Incoming;
 
+cfg_if::cfg_if! {
+    if #[cfg(any(
+        target_os = "linux", target_os = "android",
+        target_os = "hurd",
+        target_os = "dragonfly", target_os = "freebsd",
+        target_os = "openbsd", target_os = "netbsd",
+        target_os = "solaris", target_os = "illumos",
+        target_os = "haiku", target_os = "nto",
+        target_os = "cygwin"))] {
+        pub(crate) use libc::MSG_NOSIGNAL;
+    } else {
+        pub(crate) const MSG_NOSIGNAL: libc::c_int = 0x0;
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Socket {
     pub(crate) socket: Attacher<Socket2>,
