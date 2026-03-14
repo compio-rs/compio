@@ -372,7 +372,15 @@ impl FrozenKey {
     }
 
     pub fn into_inner(self) -> ErasedKey {
-        ManuallyDrop::into_inner(self.inner)
+        let mut this = ManuallyDrop::new(self);
+        unsafe { ManuallyDrop::take(&mut this.inner) }
+    }
+}
+
+impl Drop for FrozenKey {
+    fn drop(&mut self) {
+        // SAFETY: no other references; free the inner key to prevent leaks.
+        unsafe { ManuallyDrop::drop(&mut self.inner) }
     }
 }
 
@@ -393,7 +401,8 @@ impl BorrowedKey {
     }
 
     pub fn upgrade(self) -> ErasedKey {
-        ManuallyDrop::into_inner(self.0)
+        let mut this = ManuallyDrop::new(self);
+        unsafe { ManuallyDrop::take(&mut this.0) }
     }
 }
 
