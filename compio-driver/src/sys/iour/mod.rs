@@ -2,6 +2,7 @@
 #[allow(unused_imports)]
 pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::{
+    collections::HashSet,
     io,
     marker::PhantomData,
     os::fd::FromRawFd,
@@ -173,6 +174,8 @@ pub(crate) struct Driver {
     completed_rx: Receiver<Entry>,
     buffer_group_ids: Slab<()>,
     need_push_notifier: bool,
+    /// Keys leaked via `into_raw()` into io_uring user_data, freed on drop.
+    in_flight: HashSet<usize>,
     _p: PhantomData<ErasedKey>,
 }
 
@@ -222,6 +225,7 @@ impl Driver {
             pool: builder.create_or_get_thread_pool(),
             buffer_group_ids: Slab::new(),
             need_push_notifier: true,
+            in_flight: HashSet::new(),
             _p: PhantomData,
         })
     }
@@ -328,6 +332,7 @@ impl Driver {
                         }
                         key.wake_by_ref();
                     } else {
+                        self.in_flight.remove(&(key as usize));
                         create_entry(entry).notify()
                     }
                 }
@@ -366,8 +371,10 @@ impl Driver {
     }
 
     fn push_raw_with_key(&mut self, entry: SEntry, key: ErasedKey) -> io::Result<()> {
-        let entry = entry.user_data(key.as_raw() as _);
+        let user_data = key.as_raw();
+        let entry = entry.user_data(user_data as _);
         self.push_raw(entry)?; // if push failed, do not leak the key. Drop it upon return.
+        self.in_flight.insert(user_data);
         key.into_raw();
         Ok(())
     }
@@ -562,6 +569,28 @@ impl Driver {
 impl AsRawFd for Driver {
     fn as_raw_fd(&self) -> RawFd {
         self.inner.as_raw_fd()
+    }
+}
+
+impl Drop for Driver {
+    fn drop(&mut self) {
+        // Drain completed CQEs first to avoid double-free.
+        let mut cqueue = self.inner.completion();
+        cqueue.sync();
+        for entry in cqueue {
+            match entry.user_data() {
+                Self::CANCEL | Self::NOTIFY => {}
+                key => {
+                    self.in_flight.remove(&(key as usize));
+                    drop(unsafe { ErasedKey::from_raw(key as _) });
+                }
+            }
+        }
+
+        // Free remaining in-flight keys.
+        for user_data in self.in_flight.drain() {
+            drop(unsafe { ErasedKey::from_raw(user_data) });
+        }
     }
 }
 
