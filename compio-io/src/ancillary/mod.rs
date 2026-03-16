@@ -5,17 +5,27 @@
 //!
 //! # Types
 //!
-//! - [`AncillaryRef`]: A reference to a single ancillary data entry.
-//! - [`AncillaryIter`]: An iterator over a buffer of ancillary messages.
+//! - [`AncillaryBuf`]: A fixed-size, properly aligned stack buffer for
+//!   ancillary messages.
 //! - [`AncillaryBuilder`]: A builder for constructing ancillary messages into a
 //!   [`AncillaryBuf`].
-//! - [`AncillaryBuf`]: A fixed-size, properly aligned stack buffer for
-//!   ancillary data.
+//! - [`AncillaryIter`]: An iterator over a buffer of ancillary messages.
+//! - [`AncillaryRef`]: A reference to a single ancillary data entry.
+//! - [`AncillaryData`]: Trait for types that can be encoded/decoded as
+//!   ancillary data payloads.
+//! - [`BytemuckMarker`]: Marker trait to enable automatic [`AncillaryData`]
+//!   implementation (requires `bytemuck` feature).
+//! - [`CodecError`]: Error type for encoding/decoding operations.
+//!
+//! # Functions
+//!
+//! - [`ancillary_space`]: Helper function to calculate ancillary message size
+//!   for a type.
 //!
 //! # Example
 //!
 //! ```
-//! use compio_io::ancillary::{AncillaryBuf, AncillaryIter, ancillary_space};
+//! use compio_io::ancillary::{AncillaryBuf, AncillaryIter, CodecError, ancillary_space};
 //!
 //! const LEVEL: i32 = 1;
 //! const TYPE: i32 = 2;
@@ -23,18 +33,22 @@
 //! // Build a buffer containing two `u32` ancillary messages.
 //! let mut buf = AncillaryBuf::<{ ancillary_space::<u32>() * 2 }>::new();
 //! let mut builder = buf.builder();
-//! builder.try_push(LEVEL, TYPE, 42u32).unwrap();
-//! builder.try_push(LEVEL, TYPE, 43u32).unwrap();
-//! assert!(builder.try_push(LEVEL, TYPE, 44u32).is_none()); // buffer is full
+//! builder.push(LEVEL, TYPE, &42u32).unwrap();
+//! builder.push(LEVEL, TYPE, &43u32).unwrap();
+//! // Buffer is full, cannot add more messages.
+//! assert!(matches!(
+//!     builder.push(LEVEL, TYPE, &44u32),
+//!     Err(CodecError::BufferTooSmall)
+//! ));
 //!
-//! // Read it back.
+//! // Read back the messages.
 //! unsafe {
 //!     let mut iter = AncillaryIter::new(&buf);
 //!     let msg = iter.next().unwrap();
 //!     assert_eq!(msg.level(), LEVEL);
 //!     assert_eq!(msg.ty(), TYPE);
-//!     assert_eq!(*msg.data::<u32>(), 42u32);
-//!     assert_eq!(iter.next().unwrap().data::<u32>(), &43u32);
+//!     assert_eq!(msg.data::<u32>().unwrap(), 42u32);
+//!     assert_eq!(iter.next().unwrap().data::<u32>().unwrap(), 43u32);
 //!     assert!(iter.next().is_none());
 //! }
 //! ```
@@ -43,6 +57,7 @@ use std::{
     marker::PhantomData,
     mem::MaybeUninit,
     ops::{Deref, DerefMut},
+    ptr,
 };
 
 use compio_buf::{IoBuf, IoBufMut, SetLen};
@@ -58,6 +73,10 @@ cfg_if::cfg_if! {
         mod sys;
     }
 }
+#[cfg(feature = "bytemuck")]
+mod bytemuck_ext;
+#[cfg(feature = "bytemuck")]
+pub use bytemuck_ext::BytemuckMarker;
 
 /// Reference to an ancillary (control) message.
 pub struct AncillaryRef<'a>(sys::CMsgRef<'a>);
@@ -79,14 +98,9 @@ impl AncillaryRef<'_> {
         self.0.len() as _
     }
 
-    /// Returns a reference to the data of the control message.
-    ///
-    /// # Safety
-    ///
-    /// The data part must be properly aligned and contains an initialized
-    /// instance of `T`.
-    pub unsafe fn data<T>(&self) -> &T {
-        unsafe { self.0.data() }
+    /// Returns a copy of the data in the control message.
+    pub fn data<T: AncillaryData>(&self) -> Result<T, CodecError> {
+        self.0.decode_data()
     }
 }
 
@@ -142,25 +156,27 @@ impl<'a, const N: usize> AncillaryBuilder<'a, N> {
         Self { inner, buffer }
     }
 
-    /// Try to append a control message entry into the buffer. If the buffer
-    /// does not have enough space or is not properly aligned with the value
-    /// type, returns `None`.
-    pub fn try_push<T>(&mut self, level: i32, ty: i32, value: T) -> Option<()> {
-        if !self.inner.is_aligned::<T>() || !self.inner.is_space_enough::<T>() {
-            return None;
+    /// Append a control message into the buffer.
+    pub fn push<T: AncillaryData>(
+        &mut self,
+        level: i32,
+        ty: i32,
+        value: &T,
+    ) -> Result<(), CodecError> {
+        if !self.inner.is_space_enough(T::SIZE) {
+            return Err(CodecError::BufferTooSmall);
         }
 
-        // SAFETY: the buffer is zeroed and the pointer is valid and aligned
-        unsafe {
-            let mut cmsg = self.inner.current_mut()?;
-            cmsg.set_level(level);
-            cmsg.set_ty(ty);
-            self.buffer.len += cmsg.set_data(value);
+        // SAFETY: AncillaryBuf guarantees the buffer is zeroed and properly aligned,
+        // and we have checked the space.
+        let mut cmsg = unsafe { self.inner.current_mut() }.expect("sufficient space");
+        cmsg.set_level(level);
+        cmsg.set_ty(ty);
+        self.buffer.len += cmsg.encode_data(value)?;
 
-            self.inner.next();
-        }
+        unsafe { self.inner.next() };
 
-        Some(())
+        Ok(())
     }
 }
 
@@ -238,6 +254,73 @@ impl<const N: usize> DerefMut for AncillaryBuf<N> {
     }
 }
 
+// Deprecated compio_net::CMsgRef
+#[doc(hidden)]
+pub struct CMsgRef<'a>(sys::CMsgRef<'a>);
+
+impl CMsgRef<'_> {
+    pub fn level(&self) -> i32 {
+        self.0.level()
+    }
+
+    pub fn ty(&self) -> i32 {
+        self.0.ty()
+    }
+
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        self.0.len() as _
+    }
+
+    /// Returns a reference to the data of the control message.
+    ///
+    /// # Safety
+    ///
+    /// The data part must be properly aligned and contains an initialized
+    /// instance of `T`.
+    pub unsafe fn data<T>(&self) -> &T {
+        unsafe { self.0.data() }
+    }
+}
+
+// Deprecated compio_net::CMsgIter
+#[doc(hidden)]
+pub struct CMsgIter<'a> {
+    inner: sys::CMsgIter,
+    _p: PhantomData<&'a ()>,
+}
+
+impl<'a> CMsgIter<'a> {
+    /// Create [`CMsgIter`] with the given buffer.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the buffer is too short or not properly
+    /// aligned.
+    ///
+    /// # Safety
+    ///
+    /// The buffer should contain valid control messages.
+    pub unsafe fn new(buffer: &'a [u8]) -> Self {
+        Self {
+            inner: sys::CMsgIter::new(buffer.as_ptr(), buffer.len()),
+            _p: PhantomData,
+        }
+    }
+}
+
+impl<'a> Iterator for CMsgIter<'a> {
+    type Item = CMsgRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        unsafe {
+            let cmsg = self.inner.current();
+            self.inner.next();
+            cmsg.map(CMsgRef)
+        }
+    }
+}
+
 // Deprecated compio_net::CMsgBuilder
 #[doc(hidden)]
 pub struct CMsgBuilder<'a> {
@@ -261,7 +344,7 @@ impl<'a> CMsgBuilder<'a> {
     }
 
     pub fn try_push<T>(&mut self, level: i32, ty: i32, value: T) -> Option<()> {
-        if !self.inner.is_aligned::<T>() || !self.inner.is_space_enough::<T>() {
+        if !self.inner.is_aligned::<T>() || !self.inner.is_space_enough(std::mem::size_of::<T>()) {
             return None;
         }
 
@@ -282,16 +365,134 @@ impl<'a> CMsgBuilder<'a> {
 /// Returns the buffer size required to hold one ancillary message carrying a
 /// value of type `T`.
 ///
-/// This is the platform-appropriate equivalent of `CMSG_SPACE(sizeof(T))` on
-/// Unix or `WSA_CMSG_SPACE(sizeof(T))` on Windows, and can be used as a const
+/// This is the platform-appropriate equivalent of `CMSG_SPACE(T::SIZE)` on
+/// Unix or `WSA_CMSG_SPACE(T::SIZE)` on Windows, and can be used as a const
 /// generic argument for [`AncillaryBuf`].
-pub const fn ancillary_space<T>() -> usize {
+pub const fn ancillary_space<T: AncillaryData>() -> usize {
     #[cfg(unix)]
     // SAFETY: CMSG_SPACE is always safe
     unsafe {
-        libc::CMSG_SPACE(std::mem::size_of::<T>() as libc::c_uint) as usize
+        libc::CMSG_SPACE(T::SIZE as libc::c_uint) as usize
     }
 
     #[cfg(windows)]
-    sys::wsa_cmsg_space(std::mem::size_of::<T>())
+    sys::wsa_cmsg_space(T::SIZE)
+}
+
+/// Error that can occur when encoding or decoding ancillary data.
+#[derive(Debug)]
+pub enum CodecError {
+    /// The provided buffer is too small to hold the encoded data.
+    BufferTooSmall,
+    /// Another error occurred during encoding or decoding.
+    Other(Box<dyn std::error::Error + Send + Sync + 'static>),
+}
+
+/// Trait for types that can be encoded and decoded as ancillary data payloads.
+///
+/// This trait enables a type to be used as the data payload in control messages
+/// (ancillary data). Types implementing this trait can be passed to
+/// [`AncillaryBuilder::push`] and retrieved via [`AncillaryRef::data`].
+///
+/// # Built-in Implementations
+///
+/// This trait is implemented for the following platform-specific types:
+///
+/// - Unix: `libc::in_addr`, `libc::in_pktinfo`, `libc::in6_pktinfo`
+/// - Windows: `IN_PKTINFO`, `IN6_PKTINFO`
+///
+/// When the `bytemuck` feature is enabled, this trait is also automatically
+/// implemented for types that implement both [`bytemuck::NoUninit`] and
+/// [`BytemuckMarker`]:
+///
+/// - Primitive types: `()`, `bool`, `char`, `u8`, `u16`, `u32`, `u64`, `u128`,
+///   `usize`, `i8`, `i16`, `i32`, `i64`, `i128`, `isize`, `f32`, `f64`
+/// - Fixed-size arrays of the above types (up to size 512)
+///
+/// For custom types with the `bytemuck` feature enabled, you can implement
+/// [`BytemuckMarker`] to automatically get [`AncillaryData`] (see
+/// [`BytemuckMarker`] for details). Otherwise, you must manually implement this
+/// trait with custom encoding/decoding logic.
+///
+/// # Example
+///
+/// ```
+/// use std::mem::MaybeUninit;
+///
+/// use compio_io::ancillary::{AncillaryData, CodecError};
+///
+/// struct MyData {
+///     value: u32,
+/// }
+///
+/// impl AncillaryData for MyData {
+///     const SIZE: usize = std::mem::size_of::<u32>();
+///
+///     fn encode(&self, buffer: &mut [MaybeUninit<u8>]) -> Result<(), CodecError> {
+///         if buffer.len() < Self::SIZE {
+///             return Err(CodecError::BufferTooSmall);
+///         }
+///         let bytes = self.value.to_ne_bytes();
+///         for (i, &byte) in bytes.iter().enumerate() {
+///             buffer[i] = MaybeUninit::new(byte);
+///         }
+///         Ok(())
+///     }
+///
+///     fn decode(buffer: &[u8]) -> Result<Self, CodecError> {
+///         if buffer.len() < Self::SIZE {
+///             return Err(CodecError::BufferTooSmall);
+///         }
+///         let mut bytes = [0u8; 4];
+///         bytes.copy_from_slice(&buffer[..4]);
+///         Ok(MyData {
+///             value: u32::from_ne_bytes(bytes),
+///         })
+///     }
+/// }
+/// ```
+pub trait AncillaryData: Sized {
+    /// The size in bytes of the encoded representation.
+    ///
+    /// This defaults to `std::mem::size_of::<Self>()` but can be overridden
+    /// for types with custom encoding.
+    const SIZE: usize = std::mem::size_of::<Self>();
+
+    /// Encode this value into the provided buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodecError::BufferTooSmall`] if the buffer is too small to
+    /// hold the encoded data, or [`CodecError::Other`] for other encoding
+    /// errors.
+    fn encode(&self, buffer: &mut [MaybeUninit<u8>]) -> Result<(), CodecError>;
+
+    /// Decode a value from the provided buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodecError::BufferTooSmall`] if the buffer is too small,
+    /// or [`CodecError::Other`] for other decoding errors.
+    fn decode(buffer: &[u8]) -> Result<Self, CodecError>;
+}
+
+unsafe fn copy_to_bytes<T: AncillaryData>(
+    src: &T,
+    dest: &mut [MaybeUninit<u8>],
+) -> Result<(), CodecError> {
+    if dest.len() < T::SIZE {
+        return Err(CodecError::BufferTooSmall);
+    }
+    unsafe {
+        ptr::copy_nonoverlapping::<u8>(src as *const T as _, dest.as_mut_ptr() as _, T::SIZE);
+    }
+    Ok(())
+}
+
+unsafe fn copy_from_bytes<T: AncillaryData>(src: &[u8]) -> Result<T, CodecError> {
+    if src.len() < T::SIZE {
+        return Err(CodecError::BufferTooSmall);
+    }
+    let src_ptr = src.as_ptr() as *const T;
+    unsafe { Ok(ptr::read_unaligned(src_ptr)) }
 }

@@ -28,14 +28,14 @@ mod unix;
     since = "0.12.0",
     note = "use `compio_io::ancillary::AncillaryRef` instead"
 )]
-pub type CMsgRef<'a> = compio_io::ancillary::AncillaryRef<'a>;
+pub type CMsgRef<'a> = compio_io::ancillary::CMsgRef<'a>;
 
 /// An iterator for control messages.
 #[deprecated(
     since = "0.12.0",
     note = "use `compio_io::ancillary::AncillaryIter` instead"
 )]
-pub type CMsgIter<'a> = compio_io::ancillary::AncillaryIter<'a>;
+pub type CMsgIter<'a> = compio_io::ancillary::CMsgIter<'a>;
 
 /// Helper to construct control message.
 #[deprecated(

@@ -299,53 +299,59 @@ impl Socket {
                 match (cmsg.level(), cmsg.ty()) {
                     // ECN
                     #[cfg(unix)]
-                    (libc::IPPROTO_IP, libc::IP_TOS) => ecn_bits = *cmsg.data::<u8>(),
+                    (libc::IPPROTO_IP, libc::IP_TOS) => {
+                        ecn_bits = cmsg.data::<u8>().expect("cmsg data")
+                    }
                     #[cfg(all(unix, not(any(non_freebsd, solarish))))]
-                    (libc::IPPROTO_IP, libc::IP_RECVTOS) => ecn_bits = *cmsg.data::<u8>(),
+                    (libc::IPPROTO_IP, libc::IP_RECVTOS) => {
+                        ecn_bits = cmsg.data::<u8>().expect("cmsg data")
+                    }
                     #[cfg(unix)]
                     (libc::IPPROTO_IPV6, libc::IPV6_TCLASS) => {
                         // NOTE: It's OK to use `c_int` instead of `u8` on Apple systems
-                        ecn_bits = *cmsg.data::<libc::c_int>() as u8
+                        ecn_bits = cmsg.data::<libc::c_int>().expect("cmsg data") as u8
                     }
                     #[cfg(windows)]
                     (WinSock::IPPROTO_IP, WinSock::IP_ECN)
                     | (WinSock::IPPROTO_IPV6, WinSock::IPV6_ECN) => {
-                        ecn_bits = *cmsg.data::<i32>() as u8
+                        ecn_bits = cmsg.data::<i32>().expect("cmsg data") as u8
                     }
 
                     // pktinfo / destination address
                     #[cfg(linux_all)]
                     (libc::IPPROTO_IP, libc::IP_PKTINFO) => {
-                        let pktinfo = cmsg.data::<libc::in_pktinfo>();
+                        let pktinfo = cmsg.data::<libc::in_pktinfo>().expect("cmsg data");
                         local_ip = Some(IpAddr::from(pktinfo.ipi_addr.s_addr.to_ne_bytes()));
                     }
                     #[cfg(any(bsd, solarish, apple))]
                     (libc::IPPROTO_IP, libc::IP_RECVDSTADDR) => {
-                        let in_addr = cmsg.data::<libc::in_addr>();
+                        let in_addr = cmsg.data::<libc::in_addr>().expect("cmsg data");
                         local_ip = Some(IpAddr::from(in_addr.s_addr.to_ne_bytes()));
                     }
                     #[cfg(windows)]
                     (WinSock::IPPROTO_IP, WinSock::IP_PKTINFO) => {
-                        let pktinfo = cmsg.data::<WinSock::IN_PKTINFO>();
+                        let pktinfo = cmsg.data::<WinSock::IN_PKTINFO>().expect("cmsg data");
                         local_ip = Some(IpAddr::from(pktinfo.ipi_addr.S_un.S_addr.to_ne_bytes()));
                     }
                     #[cfg(unix)]
                     (libc::IPPROTO_IPV6, libc::IPV6_PKTINFO) => {
-                        let pktinfo = cmsg.data::<libc::in6_pktinfo>();
+                        let pktinfo = cmsg.data::<libc::in6_pktinfo>().expect("cmsg data");
                         local_ip = Some(IpAddr::from(pktinfo.ipi6_addr.s6_addr));
                     }
                     #[cfg(windows)]
                     (WinSock::IPPROTO_IPV6, WinSock::IPV6_PKTINFO) => {
-                        let pktinfo = cmsg.data::<WinSock::IN6_PKTINFO>();
+                        let pktinfo = cmsg.data::<WinSock::IN6_PKTINFO>().expect("cmsg data");
                         local_ip = Some(IpAddr::from(pktinfo.ipi6_addr.u.Byte));
                     }
 
                     // GRO
                     #[cfg(linux_all)]
-                    (libc::SOL_UDP, libc::UDP_GRO) => stride = *cmsg.data::<libc::c_int>() as usize,
+                    (libc::SOL_UDP, libc::UDP_GRO) => {
+                        stride = cmsg.data::<libc::c_int>().expect("cmsg data") as usize
+                    }
                     #[cfg(windows)]
                     (WinSock::IPPROTO_UDP, UDP_COALESCED_INFO) => {
-                        stride = *cmsg.data::<u32>() as usize
+                        stride = cmsg.data::<u32>().expect("cmsg data") as usize
                     }
 
                     _ => {}
@@ -373,16 +379,26 @@ impl Socket {
         // ECN
         if is_ipv4 {
             #[cfg(all(unix, not(any(freebsd, netbsd))))]
-            builder.try_push(libc::IPPROTO_IP, libc::IP_TOS, ecn as libc::c_int);
+            builder
+                .push(libc::IPPROTO_IP, libc::IP_TOS, &(ecn as libc::c_int))
+                .expect("cmsg push");
             #[cfg(freebsd)]
-            builder.try_push(libc::IPPROTO_IP, libc::IP_TOS, ecn as libc::c_uchar);
+            builder
+                .push(libc::IPPROTO_IP, libc::IP_TOS, &(ecn as libc::c_uchar))
+                .expect("cmsg push");
             #[cfg(windows)]
-            builder.try_push(WinSock::IPPROTO_IP, WinSock::IP_ECN, ecn as i32);
+            builder
+                .push(WinSock::IPPROTO_IP, WinSock::IP_ECN, &(ecn as i32))
+                .expect("cmsg push");
         } else {
             #[cfg(unix)]
-            builder.try_push(libc::IPPROTO_IPV6, libc::IPV6_TCLASS, ecn as libc::c_int);
+            builder
+                .push(libc::IPPROTO_IPV6, libc::IPV6_TCLASS, &(ecn as libc::c_int))
+                .expect("cmsg push");
             #[cfg(windows)]
-            builder.try_push(WinSock::IPPROTO_IPV6, WinSock::IPV6_ECN, ecn as i32);
+            builder
+                .push(WinSock::IPPROTO_IPV6, WinSock::IPV6_ECN, &(ecn as i32))
+                .expect("cmsg push");
         }
 
         // pktinfo / destination address
@@ -396,7 +412,9 @@ impl Socket {
                         ipi_spec_dst: libc::in_addr { s_addr: addr },
                         ipi_addr: libc::in_addr { s_addr: 0 },
                     };
-                    builder.try_push(libc::IPPROTO_IP, libc::IP_PKTINFO, pktinfo);
+                    builder
+                        .push(libc::IPPROTO_IP, libc::IP_PKTINFO, &pktinfo)
+                        .expect("push cmsg");
                 }
                 #[cfg(any(bsd, solarish, apple))]
                 {
@@ -407,7 +425,9 @@ impl Socket {
 
                     if encode_src_ip_v4 {
                         let addr = libc::in_addr { s_addr: addr };
-                        builder.try_push(libc::IPPROTO_IP, libc::IP_RECVDSTADDR, addr);
+                        builder
+                            .push(libc::IPPROTO_IP, libc::IP_RECVDSTADDR, &addr)
+                            .expect("push cmsg");
                     }
                 }
                 #[cfg(windows)]
@@ -418,7 +438,9 @@ impl Socket {
                         },
                         ipi_ifindex: 0,
                     };
-                    builder.try_push(WinSock::IPPROTO_IP, WinSock::IP_PKTINFO, pktinfo);
+                    builder
+                        .push(WinSock::IPPROTO_IP, WinSock::IP_PKTINFO, &pktinfo)
+                        .expect("push cmsg");
                 }
             }
             Some(IpAddr::V6(ip)) => {
@@ -430,7 +452,9 @@ impl Socket {
                             s6_addr: ip.octets(),
                         },
                     };
-                    builder.try_push(libc::IPPROTO_IPV6, libc::IPV6_PKTINFO, pktinfo);
+                    builder
+                        .push(libc::IPPROTO_IPV6, libc::IPV6_PKTINFO, &pktinfo)
+                        .expect("push cmsg");
                 }
                 #[cfg(windows)]
                 {
@@ -440,7 +464,9 @@ impl Socket {
                         },
                         ipi6_ifindex: 0,
                     };
-                    builder.try_push(WinSock::IPPROTO_IPV6, WinSock::IPV6_PKTINFO, pktinfo);
+                    builder
+                        .push(WinSock::IPPROTO_IPV6, WinSock::IPV6_PKTINFO, &pktinfo)
+                        .expect("push cmsg");
                 }
             }
             None => {}
@@ -451,13 +477,17 @@ impl Socket {
             && segment_size < transmit.size
         {
             #[cfg(linux_all)]
-            builder.try_push(libc::SOL_UDP, libc::UDP_SEGMENT, segment_size as u16);
+            builder
+                .push(libc::SOL_UDP, libc::UDP_SEGMENT, &(segment_size as u16))
+                .expect("push cmsg");
             #[cfg(windows)]
-            builder.try_push(
-                WinSock::IPPROTO_UDP,
-                WinSock::UDP_SEND_MSG_SIZE,
-                segment_size as u32,
-            );
+            builder
+                .push(
+                    WinSock::IPPROTO_UDP,
+                    WinSock::UDP_SEND_MSG_SIZE,
+                    &(segment_size as u32),
+                )
+                .expect("push cmsg");
             #[cfg(not(any(linux_all, windows)))]
             let _ = segment_size;
         }

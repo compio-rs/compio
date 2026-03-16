@@ -1,9 +1,14 @@
 use std::{
-    mem::{align_of, size_of},
+    mem::{MaybeUninit, align_of, size_of},
     ptr::null_mut,
+    slice,
 };
 
-use windows_sys::Win32::Networking::WinSock::{CMSGHDR, WSABUF, WSAMSG};
+use windows_sys::Win32::Networking::WinSock::{
+    self, CMSGHDR, IN_PKTINFO, IN6_PKTINFO, WSABUF, WSAMSG,
+};
+
+use super::{AncillaryData, CodecError, copy_from_bytes, copy_to_bytes};
 
 // Macros from https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/shared/ws2def.h
 #[inline]
@@ -74,6 +79,12 @@ impl CMsgRef<'_> {
         self.0.cmsg_len
     }
 
+    pub fn decode_data<T: AncillaryData>(&self) -> Result<T, CodecError> {
+        let data_ptr = unsafe { wsa_cmsg_data(self.0) } as *const u8;
+        let buffer = unsafe { slice::from_raw_parts(data_ptr, T::SIZE) };
+        T::decode(buffer)
+    }
+
     pub unsafe fn data<T>(&self) -> &T {
         unsafe {
             let data_ptr = wsa_cmsg_data(self.0);
@@ -91,6 +102,14 @@ impl CMsgMut<'_> {
 
     pub(crate) fn set_ty(&mut self, ty: i32) {
         self.0.cmsg_type = ty;
+    }
+
+    pub(crate) fn encode_data<T: AncillaryData>(&mut self, value: &T) -> Result<usize, CodecError> {
+        let data_ptr = unsafe { wsa_cmsg_data(self.0) } as *mut MaybeUninit<u8>;
+        let buffer = unsafe { slice::from_raw_parts_mut(data_ptr, T::SIZE) };
+        value.encode(buffer)?;
+        self.0.cmsg_len = wsa_cmsg_len(T::SIZE as _) as _;
+        Ok(wsa_cmsg_space(T::SIZE as _))
     }
 
     pub(crate) unsafe fn set_data<T>(&mut self, data: T) -> usize {
@@ -144,13 +163,59 @@ impl CMsgIter {
         self.msg.Control.buf.cast::<T>().is_aligned()
     }
 
-    pub(crate) fn is_space_enough<T>(&self) -> bool {
+    pub(crate) fn is_space_enough(&self, space: usize) -> bool {
         if !self.cmsg.is_null() {
-            let space = wsa_cmsg_space(size_of::<T>() as _);
+            let space = wsa_cmsg_space(space as _);
             let max = self.msg.Control.buf as usize + self.msg.Control.len as usize;
             self.cmsg as usize + space <= max
         } else {
             false
         }
+    }
+}
+
+impl AncillaryData for IN_PKTINFO {
+    fn encode(&self, buffer: &mut [MaybeUninit<u8>]) -> Result<(), CodecError> {
+        let mut pktinfo: IN_PKTINFO = unsafe { std::mem::zeroed() };
+        unsafe {
+            pktinfo.ipi_addr.S_un.S_addr = self.ipi_addr.S_un.S_addr;
+        }
+        pktinfo.ipi_ifindex = self.ipi_ifindex;
+        unsafe { copy_to_bytes(&pktinfo, buffer) }
+    }
+
+    fn decode(buffer: &[u8]) -> Result<Self, CodecError> {
+        let pktinfo: IN_PKTINFO = unsafe { copy_from_bytes(buffer) }?;
+        Ok(IN_PKTINFO {
+            ipi_addr: WinSock::IN_ADDR {
+                S_un: WinSock::IN_ADDR_0 {
+                    S_addr: unsafe { pktinfo.ipi_addr.S_un.S_addr },
+                },
+            },
+            ipi_ifindex: pktinfo.ipi_ifindex,
+        })
+    }
+}
+
+impl AncillaryData for IN6_PKTINFO {
+    fn encode(&self, buffer: &mut [MaybeUninit<u8>]) -> Result<(), CodecError> {
+        let mut pktinfo: IN6_PKTINFO = unsafe { std::mem::zeroed() };
+        unsafe {
+            pktinfo.ipi6_addr.u.Byte = self.ipi6_addr.u.Byte;
+        }
+        pktinfo.ipi6_ifindex = self.ipi6_ifindex;
+        unsafe { copy_to_bytes(&pktinfo, buffer) }
+    }
+
+    fn decode(buffer: &[u8]) -> Result<Self, CodecError> {
+        let pktinfo: IN6_PKTINFO = unsafe { copy_from_bytes(buffer) }?;
+        Ok(IN6_PKTINFO {
+            ipi6_addr: WinSock::IN6_ADDR {
+                u: WinSock::IN6_ADDR_0 {
+                    Byte: unsafe { pktinfo.ipi6_addr.u.Byte },
+                },
+            },
+            ipi6_ifindex: pktinfo.ipi6_ifindex,
+        })
     }
 }

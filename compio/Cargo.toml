@@ -118,6 +118,7 @@ memmap2 = ["compio-buf/memmap2"]
 criterion = ["compio-runtime?/criterion"]
 
 sync = ["compio-driver/sync", "compio-quic?/sync", "compio-io?/sync"]
+bytemuck = ["compio-io?/bytemuck"]
 
 enable_log = ["compio-log/enable_log"]
 
