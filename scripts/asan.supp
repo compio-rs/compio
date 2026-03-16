@@ -1,0 +1,23 @@
+# ASan/LSan suppression file for known leaks in compio.
+# See https://clang.llvm.org/docs/AddressSanitizer.html#suppressing-memory-leaks
+# Patterns are substring-matched against symbolized stack frames.
+
+# compio-driver: IoUringBufRing uses ManuallyDrop and requires explicit
+# release() with the io_uring fd. Leaks on drop without release.
+leak:io_uring_buf_ring
+
+# compio-driver: the "disable" #[should_panic] test exits before the
+# in-flight ThinCell<RawOp> can be reclaimed via completion.
+leak:ThinCell
+
+# compio-driver: buffer pool tests (create_buffer_pool, managed, read_multi, recv_multi)
+leak:create_buffer_pool
+
+# compio-net: tcp_connect tests leak small allocations through the runtime.
+leak:tcp_connect::
+
+# compio-quic: quinn/rustls internal state not fully cleaned up on drop.
+leak:compio_quic::
+
+# compio-ws: websocket test allocations leak through the runtime.
+leak:websocket::
