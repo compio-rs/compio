@@ -123,6 +123,7 @@ impl AncillaryData for libc::in_addr {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "android"))]
 impl AncillaryData for libc::in_pktinfo {
     fn encode(&self, buffer: &mut [MaybeUninit<u8>]) -> Result<(), CodecError> {
         let mut pktinfo: libc::in_pktinfo = unsafe { std::mem::zeroed() };
