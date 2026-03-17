@@ -9,15 +9,15 @@
 //!   `/tmp/flamegraph-h2-request.svg`)
 //! - `FLAMEGRAPH_FREQUENCY` — sampling frequency in Hz (default: 10000)
 
-#[cfg(not(unix))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn main() {
     eprintln!("flamegraph profiling is only supported on Unix");
 }
 
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod support;
 
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn main() {
     use bytes::Bytes;
     use compio_net::TcpListener;

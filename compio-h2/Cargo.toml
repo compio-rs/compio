@@ -41,7 +41,7 @@ criterion = { workspace = true, features = ["async_tokio"] }
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "net", "macros"] }
 h2 = { workspace = true }
 
-[target.'cfg(unix)'.dev-dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dev-dependencies]
 pprof = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]

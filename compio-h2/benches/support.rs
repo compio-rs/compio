@@ -1,7 +1,7 @@
 // Shared helpers for compio-h2 benchmarks, flamegraph binaries, and soak tests.
 #![allow(dead_code)]
 
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::{fs::File, io::Write};
 
 /// Read an environment variable or return a default value.
@@ -13,7 +13,7 @@ pub fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
 }
 
 /// Create a pprof profiler guard with configurable frequency.
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn profiler_guard() -> pprof::ProfilerGuard<'static> {
     let frequency: i32 = env_or("FLAMEGRAPH_FREQUENCY", 10_000);
     pprof::ProfilerGuardBuilder::default()
@@ -23,7 +23,7 @@ pub fn profiler_guard() -> pprof::ProfilerGuard<'static> {
 }
 
 /// Stop the profiler and write a flamegraph SVG to the given path.
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn write_flamegraph(guard: pprof::ProfilerGuard, title: &str, output_path: &str) {
     let report = guard.report().build().expect("failed to build report");
     let mut file = File::create(output_path).expect("failed to create flamegraph file");
