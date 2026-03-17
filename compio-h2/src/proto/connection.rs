@@ -95,6 +95,12 @@ pub(crate) async fn run_server_io<R: AsyncRead + 'static, W: AsyncWrite + 'stati
             s.encode_goaway(StreamId::ZERO, Reason::ProtocolError);
         }
         let _ = flush_write_buf(&state, &mut writer_io).await;
+        // Send FIN so the peer knows we're done writing.
+        let _ = writer_io.shutdown().await;
+        // Clear any unread data from the kernel receive buffer.  Without
+        // this, close() sees pending recv data and sends RST (per TCP spec),
+        // which discards the GOAWAY the peer hasn't read yet.
+        reader.clear_recv_buffer().await;
         return Err(H2Error::Protocol("invalid client preface".into()));
     }
 

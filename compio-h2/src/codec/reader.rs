@@ -204,6 +204,16 @@ impl<IO: AsyncRead> FrameReader<IO> {
         result.map_err(H2Error::from)?;
         Ok(buf)
     }
+
+    /// Read and discard any data sitting in the kernel receive buffer.
+    ///
+    /// A single bounded read clears leftover bytes so that `close()` on the
+    /// socket does not see unread data and send RST, which would discard
+    /// outbound frames (like GOAWAY) that the peer has not yet read.
+    pub async fn clear_recv_buffer(&mut self) {
+        let buf = vec![0u8; 4096];
+        let _ = self.io.read(buf).await;
+    }
 }
 
 #[cfg(test)]
@@ -583,5 +593,18 @@ mod tests {
             }
             _ => panic!("expected Data frame"),
         }
+    }
+
+    /// clear_recv_buffer discards pending data without blocking.
+    #[compio_macros::test]
+    async fn test_clear_recv_buffer_discards_data() {
+        let data = b"leftover bytes in kernel buffer";
+        let cursor = Cursor::new(data.to_vec());
+        let mut reader = FrameReader::new(cursor);
+        reader.clear_recv_buffer().await;
+        // After clearing, a subsequent read should return 0 (EOF).
+        let buf = vec![0u8; 64];
+        let BufResult(result, _) = reader.io.read(buf).await;
+        assert_eq!(result.unwrap(), 0);
     }
 }
