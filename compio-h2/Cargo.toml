@@ -38,9 +38,11 @@ compio-macros = { workspace = true }
 compio-runtime = { workspace = true, features = ["criterion", "time"] }
 compio-driver = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
-pprof = { workspace = true }
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "net", "macros"] }
 h2 = { workspace = true }
+
+[target.'cfg(unix)'.dev-dependencies]
+pprof = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 compio-driver = { workspace = true, features = ["io-uring"] }

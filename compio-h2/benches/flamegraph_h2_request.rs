@@ -9,12 +9,18 @@
 //!   `/tmp/flamegraph-h2-request.svg`)
 //! - `FLAMEGRAPH_FREQUENCY` — sampling frequency in Hz (default: 10000)
 
+#[cfg(not(unix))]
+fn main() {
+    eprintln!("flamegraph profiling is only supported on Unix");
+}
+
+#[cfg(unix)]
 mod support;
 
-use bytes::Bytes;
-use compio_net::TcpListener;
-
+#[cfg(unix)]
 fn main() {
+    use bytes::Bytes;
+    use compio_net::TcpListener;
     let duration_secs: u64 = support::env_or("FLAMEGRAPH_DURATION_SECS", 5);
     let output: String = support::env_or(
         "FLAMEGRAPH_OUTPUT",
