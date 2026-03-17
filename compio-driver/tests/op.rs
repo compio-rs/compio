@@ -432,3 +432,17 @@ fn read_len_over_u32() {
     let op = CloseFile::new(fd.try_unwrap().unwrap());
     push_and_wait(&mut driver, op).unwrap();
 }
+
+/// Dropping a Proactor with in-flight ops must not leak. Validated by ASan.
+#[test]
+fn drop_with_inflight_ops() {
+    let mut driver = Proactor::builder().build().unwrap();
+
+    let op = Asyncify::new(|| BufResult(Ok(0), ()));
+    match driver.push(op) {
+        PushEntry::Ready(_) => {}
+        PushEntry::Pending(_) => {}
+    }
+
+    drop(driver);
+}
