@@ -44,6 +44,10 @@ pub use compio_dispatcher as dispatcher;
 #[cfg(feature = "fs")]
 #[doc(inline)]
 pub use compio_fs as fs;
+#[cfg(feature = "h2")]
+#[cfg_attr(docsrs, doc(cfg(feature = "h2")))]
+#[doc(inline)]
+pub use compio_h2 as h2;
 #[cfg(feature = "io")]
 #[doc(inline)]
 pub use compio_io as io;

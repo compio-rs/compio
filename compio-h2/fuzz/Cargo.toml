@@ -1,0 +1,35 @@
+[package]
+name = "compio-h2-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+compio-h2 = { path = "..", default-features = false }
+bytes = "1"
+
+[[bin]]
+name = "fuzz_frame_decode"
+path = "fuzz_targets/fuzz_frame_decode.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_hpack_decode"
+path = "fuzz_targets/fuzz_hpack_decode.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_hpack_roundtrip"
+path = "fuzz_targets/fuzz_hpack_roundtrip.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_huffman_decode"
+path = "fuzz_targets/fuzz_huffman_decode.rs"
+doc = false

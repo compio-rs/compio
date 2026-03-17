@@ -1,0 +1,83 @@
+[package]
+name = "compio-h2"
+version = "0.1.0"
+edition = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "HTTP/2 protocol implementation for compio"
+categories = ["asynchronous", "network-programming", "web-programming"]
+keywords = ["async", "http2", "h2", "compio"]
+readme = "README.md"
+
+[dependencies]
+compio-net = { workspace = true }
+compio-io = { workspace = true }
+compio-buf = { workspace = true }
+compio-runtime = { workspace = true }
+http = { workspace = true }
+bytes = { workspace = true }
+flume = { workspace = true, default-features = false, features = ["async"] }
+pin-project-lite = { workspace = true }
+compio-log = { workspace = true }
+compio-tls = { workspace = true, optional = true }
+thiserror = { workspace = true }
+fnv = { workspace = true }
+
+[features]
+default = ["native-tls"]
+tls = ["dep:compio-tls"]
+native-tls = ["tls", "compio-tls/native-tls"]
+rustls = ["tls", "compio-tls/rustls"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dev-dependencies]
+compio-macros = { workspace = true }
+compio-runtime = { workspace = true, features = ["criterion", "time"] }
+compio-driver = { workspace = true }
+criterion = { workspace = true, features = ["async_tokio"] }
+pprof = { workspace = true }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "net", "macros"] }
+h2 = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+compio-driver = { workspace = true, features = ["io-uring"] }
+
+[[example]]
+name = "h2-server"
+path = "examples/h2-server.rs"
+
+[[example]]
+name = "h2-client"
+path = "examples/h2-client.rs"
+
+[[example]]
+name = "h2-client-tls"
+path = "examples/h2-client-tls.rs"
+required-features = ["native-tls"]
+
+[[example]]
+name = "h2-server-tls"
+path = "examples/h2-server-tls.rs"
+required-features = ["native-tls"]
+
+[[example]]
+name = "soak_h2"
+
+[[bench]]
+name = "codec"
+harness = false
+
+[[bench]]
+name = "rpc"
+harness = false
+
+[[bench]]
+name = "flamegraph_hpack"
+harness = false
+
+[[bench]]
+name = "flamegraph_h2_request"
+harness = false
