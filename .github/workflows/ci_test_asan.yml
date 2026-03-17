@@ -8,7 +8,7 @@ on:
       - '**/*.rs'
       - '**/Cargo.toml'
       - 'scripts/asan.sh'
-      - 'scripts/asan.supp'
+      - 'scripts/asan.toml'
       - '.github/workflows/ci_test_asan.yml'
   pull_request:
     branches:
@@ -17,7 +17,7 @@ on:
       - '**/*.rs'
       - '**/Cargo.toml'
       - 'scripts/asan.sh'
-      - 'scripts/asan.supp'
+      - 'scripts/asan.toml'
       - '.github/workflows/ci_test_asan.yml'
 
 concurrency:
@@ -35,4 +35,4 @@ jobs:
       - name: Setup nightly toolchain with rust-src
         run: rustup toolchain install nightly --component rust-src
       - name: Run ASan tests
-        run: ./scripts/asan.sh x86_64-unknown-linux-gnu
+        run: ./scripts/asan.sh --ci x86_64-unknown-linux-gnu
