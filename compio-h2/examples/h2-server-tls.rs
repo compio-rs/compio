@@ -19,8 +19,10 @@ use std::{
 };
 
 use bytes::{Bytes, BytesMut};
-use compio_h2::server;
-use compio_h2::tls::{self, TlsAcceptor};
+use compio_h2::{
+    server,
+    tls::{self, TlsAcceptor},
+};
 use compio_net::TcpListener;
 
 static REQUEST_COUNT: AtomicU64 = AtomicU64::new(0);

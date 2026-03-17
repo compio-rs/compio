@@ -713,7 +713,10 @@ async fn max_send_buffer_size_enforced() {
         // queue but 200 > max_send_buffer_size(100) → error.
         let result = ss.send_data(Bytes::from(vec![0u8; 200]), true).await;
 
-        assert!(result.is_err(), "200 bytes should exceed 100-byte send buffer limit");
+        assert!(
+            result.is_err(),
+            "200 bytes should exceed 100-byte send buffer limit"
+        );
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
             err_msg.contains("send buffer full"),

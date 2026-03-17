@@ -1,7 +1,6 @@
 //! HTTP/2 server API.
 
-use std::future::poll_fn;
-use std::task::Poll;
+use std::{future::poll_fn, task::Poll};
 
 use bytes::Bytes;
 use compio_io::{AsyncRead, AsyncWrite, util::Splittable};
@@ -112,13 +111,12 @@ impl ServerConnection {
         let stream_ids: Vec<StreamId> = s.streams.iter_ids().collect();
         for id in &stream_ids {
             if let Some(stream) = s.streams.get_mut(id)
-                && !stream.state.is_closed() {
-                    stream.state = stream.state.reset();
-                    stream
-                        .data_buf
-                        .push_back(Err(H2Error::connection(reason)));
-                    stream.recv_closed = true;
-                }
+                && !stream.state.is_closed()
+            {
+                stream.state = stream.state.reset();
+                stream.data_buf.push_back(Err(H2Error::connection(reason)));
+                stream.recv_closed = true;
+            }
         }
         s.going_away = true;
         s.wake_all_senders();

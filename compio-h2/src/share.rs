@@ -1,8 +1,7 @@
 //! Shared stream handles: [`SendStream`], [`RecvStream`], and
 //! [`RecvFlowControl`].
 
-use std::future::poll_fn;
-use std::task::Poll;
+use std::{future::poll_fn, task::Poll};
 
 use bytes::Bytes;
 
@@ -104,10 +103,8 @@ impl SendStream {
                         "stream is not in a sendable state".into(),
                     )));
                 }
-                let avail = std::cmp::min(
-                    s.conn_send_flow.available(),
-                    stream.send_flow.available(),
-                );
+                let avail =
+                    std::cmp::min(s.conn_send_flow.available(), stream.send_flow.available());
                 let grant = std::cmp::min(needed, avail);
                 if grant > 0 {
                     return Poll::Ready(Ok(grant));
@@ -145,10 +142,8 @@ impl SendStream {
                         "stream is not in a sendable state".into(),
                     )));
                 }
-                let avail = std::cmp::min(
-                    s.conn_send_flow.available(),
-                    stream.send_flow.available(),
-                );
+                let avail =
+                    std::cmp::min(s.conn_send_flow.available(), stream.send_flow.available());
                 if avail > 0 {
                     return Poll::Ready(Ok(avail));
                 }

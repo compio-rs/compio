@@ -428,10 +428,7 @@ fn generate_static_table_lookup(out_dir: &str) -> Result<(), Box<dyn std::error:
         let names = &by_length[len];
         if names.len() == 1 {
             let (idx, name) = names[0];
-            writeln!(
-                f,
-                "        {len} => if name == b\"{name}\" {{ {idx} }} else {{ return None }},",
-            )?;
+            writeln!(f, "        {len} if name == b\"{name}\" => {idx},",)?;
         } else {
             // Multiple names at this length — dispatch on first byte.
             let mut by_first: HashMap<u8, Vec<(usize, &str)>> = HashMap::new();
@@ -449,11 +446,7 @@ fn generate_static_table_lookup(out_dir: &str) -> Result<(), Box<dyn std::error:
                 let ch = *fb as char;
                 if group.len() == 1 {
                     let (idx, name) = group[0];
-                    writeln!(
-                        f,
-                        "            b'{ch}' => if name == b\"{name}\" {{ {idx} }} else {{ return \
-                         None }},"
-                    )?;
+                    writeln!(f, "            b'{ch}' if name == b\"{name}\" => {idx},")?;
                 } else {
                     write!(f, "            b'{ch}' => ")?;
                     for (i, &(idx, name)) in group.iter().enumerate() {

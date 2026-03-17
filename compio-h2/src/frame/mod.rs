@@ -166,22 +166,22 @@ impl Frame {
             | FRAME_TYPE_PRIORITY
             | FRAME_TYPE_RST_STREAM
             | FRAME_TYPE_PUSH_PROMISE
-            | FRAME_TYPE_CONTINUATION => {
-                if header.stream_id.is_zero() {
-                    return Err(FrameError::ProtocolError(format!(
-                        "frame type 0x{:x} requires non-zero stream ID",
-                        header.frame_type,
-                    )));
-                }
+            | FRAME_TYPE_CONTINUATION
+                if header.stream_id.is_zero() =>
+            {
+                return Err(FrameError::ProtocolError(format!(
+                    "frame type 0x{:x} requires non-zero stream ID",
+                    header.frame_type,
+                )));
             }
-            FRAME_TYPE_SETTINGS | FRAME_TYPE_PING | FRAME_TYPE_GOAWAY => {
-                if !header.stream_id.is_zero() {
-                    return Err(FrameError::ProtocolError(format!(
-                        "frame type 0x{:x} requires stream ID 0, got {}",
-                        header.frame_type,
-                        header.stream_id.value(),
-                    )));
-                }
+            FRAME_TYPE_SETTINGS | FRAME_TYPE_PING | FRAME_TYPE_GOAWAY
+                if !header.stream_id.is_zero() =>
+            {
+                return Err(FrameError::ProtocolError(format!(
+                    "frame type 0x{:x} requires stream ID 0, got {}",
+                    header.frame_type,
+                    header.stream_id.value(),
+                )));
             }
             // WINDOW_UPDATE: valid on both stream 0 and non-zero streams
             // Unknown frame types: no stream_id constraint (RFC 7540 §4.1)

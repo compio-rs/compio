@@ -9,8 +9,10 @@
 /// Defaults to port 8443 if neither argument nor env var is provided.
 use std::env;
 
-use compio_h2::client;
-use compio_h2::tls::{self, TlsConnector};
+use compio_h2::{
+    client,
+    tls::{self, TlsConnector},
+};
 use compio_net::TcpStream;
 
 #[compio_macros::main]

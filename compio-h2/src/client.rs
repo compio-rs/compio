@@ -1,7 +1,6 @@
 //! HTTP/2 client API.
 
-use std::future::poll_fn;
-use std::task::Poll;
+use std::{future::poll_fn, task::Poll};
 
 use bytes::Bytes;
 use compio_io::{AsyncRead, AsyncWrite, util::Splittable};
@@ -67,7 +66,13 @@ where
 {
     let (read_half, write_half) = io.split();
 
-    let state = new_shared_state(true, settings, ping_pong, initial_connection_window_size, extra);
+    let state = new_shared_state(
+        true,
+        settings,
+        ping_pong,
+        initial_connection_window_size,
+        extra,
+    );
 
     let send_request = SendRequest {
         state: state.clone(),
@@ -179,9 +184,7 @@ impl SendRequest {
                     stream
                         .recv_flow
                         .update_initial_window_size(new_size)
-                        .map_err(|_| {
-                            H2Error::connection(crate::error::Reason::FlowControlError)
-                        })?;
+                        .map_err(|_| H2Error::connection(crate::error::Reason::FlowControlError))?;
                 }
             }
         }

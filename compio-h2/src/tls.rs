@@ -9,12 +9,11 @@
 use std::io;
 
 use compio_io::{AsyncRead, AsyncWrite, util::split::Split};
-
-pub use compio_tls::{TlsAcceptor, TlsConnector, TlsStream};
 #[cfg(feature = "native-tls")]
 pub use compio_tls::native_tls;
 #[cfg(feature = "rustls")]
 pub use compio_tls::rustls;
+pub use compio_tls::{TlsAcceptor, TlsConnector, TlsStream};
 
 /// Perform a TLS client handshake with ALPN `h2` validation.
 ///
@@ -55,10 +54,7 @@ where
 ///
 /// ALPN validation is not enforced on the server side — the server advertises
 /// `h2` but the final protocol choice is made by the client.
-pub async fn accept<S>(
-    acceptor: &TlsAcceptor,
-    stream: S,
-) -> io::Result<Split<TlsStream<S>>>
+pub async fn accept<S>(acceptor: &TlsAcceptor, stream: S) -> io::Result<Split<TlsStream<S>>>
 where
     S: AsyncRead + AsyncWrite + Unpin + 'static,
     for<'a> &'a S: AsyncRead + AsyncWrite,

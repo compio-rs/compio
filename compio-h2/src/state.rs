@@ -3,8 +3,8 @@
 //! This replaces the channel-based command pattern with direct state machine
 //! access (like compio-quic). User operations (send_data, send_request, etc.)
 //! lock the state, encode frames into the write buffer, and wake the IO task.
-//! The IO task reads frames from TCP, processes them into the state, and flushes
-//! the write buffer.
+//! The IO task reads frames from TCP, processes them into the state, and
+//! flushes the write buffer.
 
 use std::{
     cell::RefCell,
@@ -20,9 +20,7 @@ use crate::{
     frame::{self, Frame, StreamId},
     hpack::{DecodedHeader, Decoder as HpackDecoder, Encoder as HpackEncoder},
     proto::{
-        flow_control::FlowControl,
-        ping_pong::PingPong,
-        settings::ConnSettings,
+        flow_control::FlowControl, ping_pong::PingPong, settings::ConnSettings,
         streams::StreamStore,
     },
 };
@@ -51,7 +49,8 @@ pub(crate) struct PendingSend {
     pub stream_id: StreamId,
     pub data: Bytes,
     pub end_stream: bool,
-    /// Waker to wake when this pending send is flushed (item removed from queue).
+    /// Waker to wake when this pending send is flushed (item removed from
+    /// queue).
     pub waker: Option<Waker>,
 }
 
@@ -283,8 +282,7 @@ impl ConnShared {
             .get(&stream_id)
             .map(|s| s.send_flow.available())
             .unwrap_or(0);
-        let sendable =
-            std::cmp::min(data_len, std::cmp::min(conn_avail, stream_avail)) as usize;
+        let sendable = std::cmp::min(data_len, std::cmp::min(conn_avail, stream_avail)) as usize;
 
         if !data.is_empty() && sendable == 0 {
             return Ok(false); // Flow control blocked
@@ -307,10 +305,9 @@ impl ConnShared {
             }
         }
 
-        if end_stream
-            && let Some(stream) = self.streams.get_mut(&stream_id) {
-                stream.state = stream.state.send_end_stream()?;
-            }
+        if end_stream && let Some(stream) = self.streams.get_mut(&stream_id) {
+            stream.state = stream.state.send_end_stream()?;
+        }
 
         // Write DATA frames to buffer
         let max_frame = self.settings.remote().max_frame_size as usize;
@@ -331,8 +328,7 @@ impl ConnShared {
                 if end_stream && is_last {
                     flags |= 0x1;
                 }
-                let header =
-                    frame::FrameHeader::new(0x0, flags, stream_id, chunk.len() as u32);
+                let header = frame::FrameHeader::new(0x0, flags, stream_id, chunk.len() as u32);
                 self.write_buf.extend_from_slice(&header.encode());
                 self.write_buf.extend_from_slice(chunk);
                 offset = end;
@@ -539,9 +535,10 @@ pub(crate) fn headers_to_header_map(decoded: &[DecodedHeader]) -> http::HeaderMa
             && let (Ok(name), Ok(value)) = (
                 http::header::HeaderName::from_bytes(&dh.name),
                 http::header::HeaderValue::from_bytes(&dh.value),
-            ) {
-                map.append(name, value);
-            }
+            )
+        {
+            map.append(name, value);
+        }
     }
     map
 }
@@ -555,9 +552,10 @@ pub(crate) fn has_no_pseudo_headers(decoded: &[DecodedHeader]) -> bool {
 pub(crate) fn parse_content_length(headers: &[DecodedHeader]) -> Option<u64> {
     for dh in headers {
         if dh.name.eq_ignore_ascii_case(b"content-length")
-            && let Ok(s) = std::str::from_utf8(&dh.value) {
-                return s.parse().ok();
-            }
+            && let Ok(s) = std::str::from_utf8(&dh.value)
+        {
+            return s.parse().ok();
+        }
     }
     None
 }

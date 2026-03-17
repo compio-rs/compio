@@ -307,9 +307,7 @@ impl StreamStore {
                 return true; // Keep open streams
             }
             // Keep closed streams that still have buffered data/trailers/headers
-            !s.data_buf.is_empty()
-                || s.trailers_buf.is_some()
-                || s.response_headers.is_some()
+            !s.data_buf.is_empty() || s.trailers_buf.is_some() || s.response_headers.is_some()
         });
     }
 
@@ -325,8 +323,8 @@ impl StreamStore {
             if stream.state.is_closed() {
                 continue;
             }
-            let threshold =
-                (stream.recv_flow.initial_window_size() / WINDOW_UPDATE_THRESHOLD_RATIO).max(1) as u32;
+            let threshold = (stream.recv_flow.initial_window_size() / WINDOW_UPDATE_THRESHOLD_RATIO)
+                .max(1) as u32;
             if stream.released >= threshold {
                 result.push((*id, stream.released));
             }
@@ -342,8 +340,8 @@ impl StreamStore {
         if let Some(stream) = self.streams.get_mut(stream_id) {
             let was = stream.released;
             stream.released += amount;
-            let threshold =
-                (stream.recv_flow.initial_window_size() / WINDOW_UPDATE_THRESHOLD_RATIO).max(1) as u32;
+            let threshold = (stream.recv_flow.initial_window_size() / WINDOW_UPDATE_THRESHOLD_RATIO)
+                .max(1) as u32;
             was < threshold && stream.released >= threshold
         } else {
             false
@@ -362,7 +360,6 @@ impl StreamStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     #[test]
     fn test_stream_state_transitions_client() {
