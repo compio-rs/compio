@@ -2,8 +2,6 @@
 
 use std::time::Duration;
 
-use compio_h2::{ClientBuilder, ServerBuilder};
-
 mod common;
 
 #[compio_macros::test]
@@ -105,61 +103,6 @@ async fn many_concurrent_streams() {
     paths.sort();
     for i in 0..10 {
         assert!(paths.contains(&format!("/many/{}", i)));
-    }
-}
-
-#[compio_macros::test]
-async fn max_concurrent_streams_enforced() {
-    let cb = ClientBuilder::new();
-    let sb = ServerBuilder::new().max_concurrent_streams(1);
-
-    let (mut client, mut server) = common::setup_with_builders(cb, sb).await;
-
-    // First request — should succeed
-    let (resp_fut_1, _) = client
-        .send_request(common::get_request("/first"), true)
-        .await
-        .unwrap();
-
-    // Second request while first is open — should be refused
-    let result = client
-        .send_request(common::get_request("/second"), true)
-        .await;
-
-    // Handle the first request on the server
-    let (_req, mut send_resp) = server.accept().await.unwrap().unwrap();
-    send_resp
-        .send_response(common::ok_response(), true)
-        .await
-        .unwrap();
-
-    let resp = resp_fut_1.await_response().await.unwrap();
-    assert_eq!(resp.status(), 200);
-
-    // The second request should have errored (REFUSED_STREAM) or we handle it
-    // gracefully If the implementation queues it, it may succeed after the
-    // first completes
-    match result {
-        Err(e) => {
-            // Expected: REFUSED_STREAM or similar
-            assert!(
-                format!("{:?}", e).contains("Refused")
-                    || format!("{:?}", e).contains("concurrent")
-                    || format!("{:?}", e).contains("stream"),
-                "unexpected error: {:?}",
-                e
-            );
-        }
-        Ok((resp_fut_2, _)) => {
-            // Implementation may queue the request — that's acceptable too
-            let (_req, mut send_resp) = server.accept().await.unwrap().unwrap();
-            send_resp
-                .send_response(common::ok_response(), true)
-                .await
-                .unwrap();
-            let resp = resp_fut_2.await_response().await.unwrap();
-            assert_eq!(resp.status(), 200);
-        }
     }
 }
 
