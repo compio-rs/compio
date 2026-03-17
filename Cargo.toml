@@ -76,7 +76,7 @@ synchrony = "0.1.4"
 thin-cell = "0.2.0"
 http = "1"
 fnv = "1"
-pprof = { version = "0.14", features = ["flamegraph"] }
+pprof = { version = "0.15", features = ["flamegraph"] }
 h2 = "0.4"
 
 [profile.bench]
