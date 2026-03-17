@@ -58,7 +58,7 @@ impl AsyncWrite for InMemoryPipe {
     }
 
     async fn flush(&mut self) -> io::Result<()> {
-        self.0.get_ref().lock().await.flush().await
+        compio_io::AsyncWrite::flush(&mut *self.0.get_ref().lock().await).await
     }
 
     async fn shutdown(&mut self) -> io::Result<()> {
