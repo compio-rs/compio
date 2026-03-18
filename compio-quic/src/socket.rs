@@ -327,7 +327,11 @@ impl Socket {
                     #[cfg(windows)]
                     (WinSock::IPPROTO_IP, WinSock::IP_PKTINFO) => {
                         let pktinfo = cmsg.data::<WinSock::IN_PKTINFO>()?;
-                        local_ip = Some(IpAddr::from(pktinfo.ipi_addr.S_un.S_addr.to_ne_bytes()));
+                        local_ip = Some(IpAddr::from(
+                            // SAFETY: S_addr is a valid representation of the union for IPv4
+                            // addresses
+                            unsafe { pktinfo.ipi_addr.S_un.S_addr }.to_ne_bytes(),
+                        ));
                     }
                     #[cfg(unix)]
                     (libc::IPPROTO_IPV6, libc::IPV6_PKTINFO) => {
@@ -337,7 +341,8 @@ impl Socket {
                     #[cfg(windows)]
                     (WinSock::IPPROTO_IPV6, WinSock::IPV6_PKTINFO) => {
                         let pktinfo = cmsg.data::<WinSock::IN6_PKTINFO>()?;
-                        local_ip = Some(IpAddr::from(pktinfo.ipi6_addr.u.Byte));
+                        // SAFETY: Byte is a valid representation of the union for IPv6 addresses
+                        local_ip = Some(IpAddr::from(unsafe { pktinfo.ipi6_addr.u.Byte }));
                     }
 
                     // GRO
