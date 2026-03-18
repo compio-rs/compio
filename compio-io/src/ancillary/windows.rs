@@ -81,7 +81,7 @@ impl CMsgRef<'_> {
 
     pub fn decode_data<T: AncillaryData>(&self) -> Result<T, CodecError> {
         let data_ptr = unsafe { wsa_cmsg_data(self.0) } as *const u8;
-        let buffer = unsafe { slice::from_raw_parts(data_ptr, T::SIZE) };
+        let buffer = unsafe { slice::from_raw_parts(data_ptr, self.len()) };
         T::decode(buffer)
     }
 

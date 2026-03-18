@@ -389,6 +389,51 @@ pub enum CodecError {
     Other(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
+impl CodecError {
+    /// Create a new [`CodecError::Other`] from any error type.
+    pub fn other(error: impl Into<Box<dyn std::error::Error + Send + Sync + 'static>>) -> Self {
+        Self::Other(error.into())
+    }
+
+    /// Attempt to downcast the error to a concrete type.
+    ///
+    /// Returns `Some(&T)` if the error is of type `T`, otherwise `None`.
+    pub fn downcast_ref<T: std::error::Error + 'static>(&self) -> Option<&T> {
+        match self {
+            Self::Other(e) => e.downcast_ref(),
+            _ => None,
+        }
+    }
+
+    /// Attempt to downcast the error to a concrete type.
+    ///
+    /// Returns `Some(&mut T)` if the error is of type `T`, otherwise `None`.
+    pub fn downcast_mut<T: std::error::Error + 'static>(&mut self) -> Option<&mut T> {
+        match self {
+            Self::Other(e) => e.downcast_mut(),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for CodecError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BufferTooSmall => write!(f, "buffer too small for encoding/decoding"),
+            Self::Other(e) => write!(f, "codec error: {}", e),
+        }
+    }
+}
+
+impl std::error::Error for CodecError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Other(e) => Some(e.as_ref()),
+            _ => None,
+        }
+    }
+}
+
 /// Trait for types that can be encoded and decoded as ancillary data payloads.
 ///
 /// This trait enables a type to be used as the data payload in control messages

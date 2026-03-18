@@ -16,7 +16,7 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, buf_try};
-use compio_io::ancillary::{AncillaryBuf, AncillaryIter};
+use compio_io::ancillary::{AncillaryBuf, AncillaryIter, CodecError};
 use compio_net::UdpSocket;
 use quinn_proto::{EcnCodepoint, Transmit};
 #[cfg(windows)]
@@ -290,74 +290,78 @@ impl Socket {
         #[allow(unused_mut)]
         let mut stride = len;
 
-        // SAFETY: `control` contains valid data
-        unsafe {
-            for cmsg in AncillaryIter::new(&control) {
+        let res = (|| {
+            // SAFETY: `control` contains valid data
+            for cmsg in unsafe { AncillaryIter::new(&control) } {
                 #[cfg(windows)]
                 const UDP_COALESCED_INFO: i32 = WinSock::UDP_COALESCED_INFO as i32;
 
                 match (cmsg.level(), cmsg.ty()) {
                     // ECN
                     #[cfg(unix)]
-                    (libc::IPPROTO_IP, libc::IP_TOS) => {
-                        ecn_bits = cmsg.data::<u8>().expect("cmsg data")
-                    }
+                    (libc::IPPROTO_IP, libc::IP_TOS) => ecn_bits = cmsg.data::<u8>()?,
                     #[cfg(all(unix, not(any(non_freebsd, solarish))))]
-                    (libc::IPPROTO_IP, libc::IP_RECVTOS) => {
-                        ecn_bits = cmsg.data::<u8>().expect("cmsg data")
-                    }
+                    (libc::IPPROTO_IP, libc::IP_RECVTOS) => ecn_bits = cmsg.data::<u8>()?,
                     #[cfg(unix)]
                     (libc::IPPROTO_IPV6, libc::IPV6_TCLASS) => {
                         // NOTE: It's OK to use `c_int` instead of `u8` on Apple systems
-                        ecn_bits = cmsg.data::<libc::c_int>().expect("cmsg data") as u8
+                        ecn_bits = cmsg.data::<libc::c_int>()? as u8
                     }
                     #[cfg(windows)]
                     (WinSock::IPPROTO_IP, WinSock::IP_ECN)
                     | (WinSock::IPPROTO_IPV6, WinSock::IPV6_ECN) => {
-                        ecn_bits = cmsg.data::<i32>().expect("cmsg data") as u8
+                        ecn_bits = cmsg.data::<i32>()? as u8
                     }
 
                     // pktinfo / destination address
                     #[cfg(linux_all)]
                     (libc::IPPROTO_IP, libc::IP_PKTINFO) => {
-                        let pktinfo = cmsg.data::<libc::in_pktinfo>().expect("cmsg data");
+                        let pktinfo = cmsg.data::<libc::in_pktinfo>()?;
                         local_ip = Some(IpAddr::from(pktinfo.ipi_addr.s_addr.to_ne_bytes()));
                     }
                     #[cfg(any(bsd, solarish, apple))]
                     (libc::IPPROTO_IP, libc::IP_RECVDSTADDR) => {
-                        let in_addr = cmsg.data::<libc::in_addr>().expect("cmsg data");
+                        let in_addr = cmsg.data::<libc::in_addr>()?;
                         local_ip = Some(IpAddr::from(in_addr.s_addr.to_ne_bytes()));
                     }
                     #[cfg(windows)]
                     (WinSock::IPPROTO_IP, WinSock::IP_PKTINFO) => {
-                        let pktinfo = cmsg.data::<WinSock::IN_PKTINFO>().expect("cmsg data");
+                        let pktinfo = cmsg.data::<WinSock::IN_PKTINFO>()?;
                         local_ip = Some(IpAddr::from(pktinfo.ipi_addr.S_un.S_addr.to_ne_bytes()));
                     }
                     #[cfg(unix)]
                     (libc::IPPROTO_IPV6, libc::IPV6_PKTINFO) => {
-                        let pktinfo = cmsg.data::<libc::in6_pktinfo>().expect("cmsg data");
+                        let pktinfo = cmsg.data::<libc::in6_pktinfo>()?;
                         local_ip = Some(IpAddr::from(pktinfo.ipi6_addr.s6_addr));
                     }
                     #[cfg(windows)]
                     (WinSock::IPPROTO_IPV6, WinSock::IPV6_PKTINFO) => {
-                        let pktinfo = cmsg.data::<WinSock::IN6_PKTINFO>().expect("cmsg data");
+                        let pktinfo = cmsg.data::<WinSock::IN6_PKTINFO>()?;
                         local_ip = Some(IpAddr::from(pktinfo.ipi6_addr.u.Byte));
                     }
 
                     // GRO
                     #[cfg(linux_all)]
-                    (libc::SOL_UDP, libc::UDP_GRO) => {
-                        stride = cmsg.data::<libc::c_int>().expect("cmsg data") as usize
-                    }
+                    (libc::SOL_UDP, libc::UDP_GRO) => stride = cmsg.data::<libc::c_int>()? as usize,
                     #[cfg(windows)]
                     (WinSock::IPPROTO_UDP, UDP_COALESCED_INFO) => {
-                        stride = cmsg.data::<u32>().expect("cmsg data") as usize
+                        stride = cmsg.data::<u32>()? as usize
                     }
 
                     _ => {}
                 }
             }
-        }
+            Ok::<(), CodecError>(())
+        })();
+        let ((), buffer) = buf_try!(BufResult(
+            res.map_err(|e| match e {
+                CodecError::BufferTooSmall => {
+                    io::Error::new(io::ErrorKind::InvalidData, "cmsg_len is too small")
+                }
+                CodecError::Other(e) => io::Error::other(e),
+            }),
+            buffer
+        ));
 
         let meta = RecvMeta {
             remote,
