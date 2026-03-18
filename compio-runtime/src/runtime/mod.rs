@@ -39,9 +39,6 @@ mod scheduler;
 mod opt_waker;
 pub use opt_waker::OptWaker;
 
-mod send_wrapper;
-use send_wrapper::SendWrapper;
-
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerKey, TimerRuntime};
 use crate::{BufResult, affinity::bind_to_cpu_set, runtime::scheduler::Scheduler};

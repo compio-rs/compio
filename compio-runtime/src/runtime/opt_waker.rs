@@ -7,7 +7,7 @@ use std::{
 };
 
 #[cfg(not(feature = "notify-always"))]
-use crate::runtime::send_wrapper::SendWrapper;
+use compio_send_wrapper::SendWrapper;
 
 /// An optimized waker that avoids unnecessary wake-ups on the same thread.
 pub struct OptWaker {
