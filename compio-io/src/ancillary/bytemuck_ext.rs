@@ -1,24 +1,25 @@
+//! Extension module for automatic [`AncillaryData`] implementation via
+//! bytemuck.
+//!
+//! See [`BitwiseAncillaryData`] for details.
+
 use std::mem::MaybeUninit;
+
+pub use bytemuck::{Pod, Zeroable};
 
 use super::{AncillaryData, CodecError, copy_from_bytes, copy_to_bytes};
 
 /// Marker trait to enable automatic `AncillaryData` implementation via
 /// bytemuck.
 ///
-/// Types that implement both [`bytemuck::NoUninit`] and this trait will
+/// Types that implement this trait (which requires [`bytemuck::Pod`]) will
 /// automatically implement [`AncillaryData`] using a simple byte-wise
 /// encoding/decoding.
-///
-/// # Safety
-///
-/// This trait should only be implemented for types where a simple byte-wise
-/// copy is a valid encoding/decoding strategy. The type must also implement
-/// `bytemuck::NoUninit` to ensure it has no uninitialized bytes.
 ///
 /// # Example
 ///
 /// ```
-/// use compio_io::ancillary::BytemuckMarker;
+/// use compio_io::ancillary::bytemuck_ext;
 ///
 /// #[derive(Clone, Copy)]
 /// #[repr(C)]
@@ -26,17 +27,15 @@ use super::{AncillaryData, CodecError, copy_from_bytes, copy_to_bytes};
 ///     value: u32,
 /// }
 ///
-/// unsafe impl bytemuck::NoUninit for MyType {}
-/// impl BytemuckMarker for MyType {}
+/// unsafe impl bytemuck_ext::Zeroable for MyType {}
+/// unsafe impl bytemuck_ext::Pod for MyType {}
+/// impl bytemuck_ext::BitwiseAncillaryData for MyType {}
 ///
 /// // Now MyType automatically implements AncillaryData
 /// ```
-pub trait BytemuckMarker {}
+pub trait BitwiseAncillaryData: Pod {}
 
-impl<T> AncillaryData for T
-where
-    T: bytemuck::NoUninit + BytemuckMarker,
-{
+impl<T: BitwiseAncillaryData> AncillaryData for T {
     fn encode(&self, buffer: &mut [MaybeUninit<u8>]) -> Result<(), CodecError> {
         unsafe { copy_to_bytes(self, buffer) }
     }
@@ -49,15 +48,13 @@ where
 macro_rules! impl_bytemuck_marker {
     ($($t:ty),* $(,)?) => {
         $(
-            impl BytemuckMarker for $t {}
+            impl BitwiseAncillaryData for $t {}
         )*
     };
 }
 
 impl_bytemuck_marker!(
     (),
-    bool,
-    char,
     u8,
     u16,
     u32,
@@ -77,7 +74,7 @@ impl_bytemuck_marker!(
 macro_rules! impl_bytemuck_marker_for_array {
     ($($N:expr),* $(,)?) => {
         $(
-            impl<T> BytemuckMarker for [T; $N] where T: BytemuckMarker {}
+            impl<T> BitwiseAncillaryData for [T; $N] where T: BitwiseAncillaryData {}
         )*
     };
 }

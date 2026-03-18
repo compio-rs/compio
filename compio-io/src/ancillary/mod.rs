@@ -13,14 +13,17 @@
 //! - [`AncillaryRef`]: A reference to a single ancillary data entry.
 //! - [`AncillaryData`]: Trait for types that can be encoded/decoded as
 //!   ancillary data payloads.
-//! - [`BytemuckMarker`]: Marker trait to enable automatic [`AncillaryData`]
-//!   implementation (requires `bytemuck` feature).
 //! - [`CodecError`]: Error type for encoding/decoding operations.
 //!
 //! # Functions
 //!
 //! - [`ancillary_space`]: Helper function to calculate ancillary message size
 //!   for a type.
+//!
+//! # Modules
+//!
+//! - [`bytemuck_ext`]: Extension module for automatic [`AncillaryData`]
+//!   implementation via bytemuck (requires `bytemuck` feature).
 //!
 //! # Example
 //!
@@ -74,9 +77,7 @@ cfg_if::cfg_if! {
     }
 }
 #[cfg(feature = "bytemuck")]
-mod bytemuck_ext;
-#[cfg(feature = "bytemuck")]
-pub use bytemuck_ext::BytemuckMarker;
+pub mod bytemuck_ext;
 
 /// Reference to an ancillary (control) message.
 pub struct AncillaryRef<'a>(sys::CMsgRef<'a>);
@@ -402,17 +403,16 @@ pub enum CodecError {
 /// - Windows: `IN_PKTINFO`, `IN6_PKTINFO`
 ///
 /// When the `bytemuck` feature is enabled, this trait is also automatically
-/// implemented for types that implement both [`bytemuck::NoUninit`] and
-/// [`BytemuckMarker`]:
+/// implemented for types that implement [`bytemuck_ext::BitwiseAncillaryData`]:
 ///
-/// - Primitive types: `()`, `bool`, `char`, `u8`, `u16`, `u32`, `u64`, `u128`,
-///   `usize`, `i8`, `i16`, `i32`, `i64`, `i128`, `isize`, `f32`, `f64`
+/// - Primitive types: `()`, `u8`, `u16`, `u32`, `u64`, `u128`, `usize`, `i8`,
+///   `i16`, `i32`, `i64`, `i128`, `isize`, `f32`, `f64`
 /// - Fixed-size arrays of the above types (up to size 512)
 ///
 /// For custom types with the `bytemuck` feature enabled, you can implement
-/// [`BytemuckMarker`] to automatically get [`AncillaryData`] (see
-/// [`BytemuckMarker`] for details). Otherwise, you must manually implement this
-/// trait with custom encoding/decoding logic.
+/// [`bytemuck_ext::BitwiseAncillaryData`] to automatically get
+/// [`AncillaryData`] (see [`bytemuck_ext`] for details). Otherwise, you must
+/// manually implement this trait with custom encoding/decoding logic.
 ///
 /// # Example
 ///

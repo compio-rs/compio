@@ -12,7 +12,7 @@ fn test_cmsg() {
     builder.push(1, 1, &u8::MAX).unwrap(); // 16 + 1 + 7 / 12 + 1 + 3
     builder.push(2, 2, &u32::MAX).unwrap(); // 16 + 4 + 4 / 12 + 4
     builder.push(3, 3, &i64::MIN).unwrap(); // 16 + 8 / 12 + 8
-    builder.push(4, 4, &true).unwrap(); // 16 + 1 + 7 / 12 + 1 + 3
+    builder.push(4, 4, &[0; 1]).unwrap(); // 16 + 1 + 7 / 12 + 1 + 3
     assert!(buf.buf_len() == 112 || buf.buf_len() == 80);
 
     unsafe {
@@ -40,8 +40,8 @@ fn test_cmsg() {
         );
         let cmsg = iter.next().unwrap();
         assert_eq!(
-            (cmsg.level(), cmsg.ty(), cmsg.data::<bool>().unwrap()),
-            (4, 4, true)
+            (cmsg.level(), cmsg.ty(), cmsg.data().unwrap()),
+            (4, 4, [0; 1])
         );
         assert!(iter.next().is_none());
     }
