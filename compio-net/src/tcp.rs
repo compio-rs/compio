@@ -475,17 +475,30 @@ impl AsyncWrite for TcpStream {
     }
 }
 
+/// Minimum payload size to use zero-copy send. Below this threshold, the
+/// kernel copy is cheaper than waiting for the zero-copy buffer-release CQE,
+/// which can be delayed by the peer's TCP delayed-ACK timer (~40ms).
+const ZEROCOPY_THRESHOLD: usize = 8 * 1024;
+
 impl AsyncWrite for &TcpStream {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let BufResult(res, fut) = self.send_zerocopy(buf, 0).await;
-        BufResult(res, fut.await)
+        if buf.buf_len() >= ZEROCOPY_THRESHOLD {
+            let BufResult(res, fut) = self.send_zerocopy(buf, 0).await;
+            BufResult(res, fut.await)
+        } else {
+            self.inner.send(buf, 0).await
+        }
     }
 
     #[inline]
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let BufResult(res, fut) = self.send_zerocopy_vectored(buf, 0).await;
-        BufResult(res, fut.await)
+        if buf.total_len() >= ZEROCOPY_THRESHOLD {
+            let BufResult(res, fut) = self.send_zerocopy_vectored(buf, 0).await;
+            BufResult(res, fut.await)
+        } else {
+            self.inner.send_vectored(buf, 0).await
+        }
     }
 
     #[inline]
