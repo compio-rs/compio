@@ -11,7 +11,7 @@ STREAMS="${H2LOAD_STREAMS:-100}"
 TIMEOUT="${H2_STARTUP_TIMEOUT:-10}"
 
 if ! command -v "$H2LOAD" &>/dev/null; then
-    echo "ERROR: $H2LOAD not found. Run: bash crates/compio-h2/scripts/conformance/install-nghttp2.sh"
+    echo "ERROR: $H2LOAD not found. Run: bash compio-h2/scripts/conformance/install-nghttp2.sh"
     exit 1
 fi
 

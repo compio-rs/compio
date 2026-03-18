@@ -8,7 +8,7 @@ H2SPEC="${H2SPEC:-h2spec}"
 TIMEOUT="${H2_STARTUP_TIMEOUT:-10}"
 
 if ! command -v "$H2SPEC" &>/dev/null; then
-    echo "ERROR: $H2SPEC not found. Run: bash crates/compio-h2/scripts/conformance/install-h2spec.sh"
+    echo "ERROR: $H2SPEC not found. Run: bash compio-h2/scripts/conformance/install-h2spec.sh"
     exit 1
 fi
 

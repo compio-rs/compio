@@ -51,7 +51,7 @@ bash compio-h2/scripts/conformance/run-h2load.sh
 ### Cargo Fuzz (Nightly)
 
 ```bash
-cd crates/compio-h2
+cd compio-h2
 cargo +nightly fuzz run fuzz_frame_decode -- -max_total_time=60
 cargo +nightly fuzz run fuzz_hpack_decode -- -max_total_time=60
 cargo +nightly fuzz run fuzz_frame_header -- -max_total_time=60
