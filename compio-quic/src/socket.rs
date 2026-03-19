@@ -378,36 +378,29 @@ impl Socket {
         BufResult(Ok(meta), buffer)
     }
 
-    pub async fn send<T: IoBuf>(&self, buffer: T, transmit: &Transmit) -> T {
+    fn construct_control_message(
+        &self,
+        transmit: &Transmit,
+    ) -> Result<AncillaryBuf<CMSG_LEN>, CodecError> {
         let is_ipv4 = transmit.destination.ip().to_canonical().is_ipv4();
         let ecn = transmit.ecn.map_or(0, |x| x as u8);
 
-        let mut control = AncillaryBuf::<CMSG_LEN>::new();
+        let mut control = AncillaryBuf::new();
         let mut builder = control.builder();
 
         // ECN
         if is_ipv4 {
             #[cfg(all(unix, not(any(freebsd, netbsd))))]
-            builder
-                .push(libc::IPPROTO_IP, libc::IP_TOS, &(ecn as libc::c_int))
-                .expect("cmsg push");
+            builder.push(libc::IPPROTO_IP, libc::IP_TOS, &(ecn as libc::c_int))?;
             #[cfg(freebsd)]
-            builder
-                .push(libc::IPPROTO_IP, libc::IP_TOS, &(ecn as libc::c_uchar))
-                .expect("cmsg push");
+            builder.push(libc::IPPROTO_IP, libc::IP_TOS, &(ecn as libc::c_uchar))?;
             #[cfg(windows)]
-            builder
-                .push(WinSock::IPPROTO_IP, WinSock::IP_ECN, &(ecn as i32))
-                .expect("cmsg push");
+            builder.push(WinSock::IPPROTO_IP, WinSock::IP_ECN, &(ecn as i32))?;
         } else {
             #[cfg(unix)]
-            builder
-                .push(libc::IPPROTO_IPV6, libc::IPV6_TCLASS, &(ecn as libc::c_int))
-                .expect("cmsg push");
+            builder.push(libc::IPPROTO_IPV6, libc::IPV6_TCLASS, &(ecn as libc::c_int))?;
             #[cfg(windows)]
-            builder
-                .push(WinSock::IPPROTO_IPV6, WinSock::IPV6_ECN, &(ecn as i32))
-                .expect("cmsg push");
+            builder.push(WinSock::IPPROTO_IPV6, WinSock::IPV6_ECN, &(ecn as i32))?;
         }
 
         // pktinfo / destination address
@@ -421,9 +414,7 @@ impl Socket {
                         ipi_spec_dst: libc::in_addr { s_addr: addr },
                         ipi_addr: libc::in_addr { s_addr: 0 },
                     };
-                    builder
-                        .push(libc::IPPROTO_IP, libc::IP_PKTINFO, &pktinfo)
-                        .expect("push cmsg");
+                    builder.push(libc::IPPROTO_IP, libc::IP_PKTINFO, &pktinfo)?;
                 }
                 #[cfg(any(bsd, solarish, apple))]
                 {
@@ -434,9 +425,7 @@ impl Socket {
 
                     if encode_src_ip_v4 {
                         let addr = libc::in_addr { s_addr: addr };
-                        builder
-                            .push(libc::IPPROTO_IP, libc::IP_RECVDSTADDR, &addr)
-                            .expect("push cmsg");
+                        builder.push(libc::IPPROTO_IP, libc::IP_RECVDSTADDR, &addr)?;
                     }
                 }
                 #[cfg(windows)]
@@ -447,9 +436,7 @@ impl Socket {
                         },
                         ipi_ifindex: 0,
                     };
-                    builder
-                        .push(WinSock::IPPROTO_IP, WinSock::IP_PKTINFO, &pktinfo)
-                        .expect("push cmsg");
+                    builder.push(WinSock::IPPROTO_IP, WinSock::IP_PKTINFO, &pktinfo)?;
                 }
             }
             Some(IpAddr::V6(ip)) => {
@@ -461,9 +448,7 @@ impl Socket {
                             s6_addr: ip.octets(),
                         },
                     };
-                    builder
-                        .push(libc::IPPROTO_IPV6, libc::IPV6_PKTINFO, &pktinfo)
-                        .expect("push cmsg");
+                    builder.push(libc::IPPROTO_IPV6, libc::IPV6_PKTINFO, &pktinfo)?;
                 }
                 #[cfg(windows)]
                 {
@@ -473,9 +458,7 @@ impl Socket {
                         },
                         ipi6_ifindex: 0,
                     };
-                    builder
-                        .push(WinSock::IPPROTO_IPV6, WinSock::IPV6_PKTINFO, &pktinfo)
-                        .expect("push cmsg");
+                    builder.push(WinSock::IPPROTO_IPV6, WinSock::IPV6_PKTINFO, &pktinfo)?;
                 }
             }
             None => {}
@@ -486,21 +469,24 @@ impl Socket {
             && segment_size < transmit.size
         {
             #[cfg(linux_all)]
-            builder
-                .push(libc::SOL_UDP, libc::UDP_SEGMENT, &(segment_size as u16))
-                .expect("push cmsg");
+            builder.push(libc::SOL_UDP, libc::UDP_SEGMENT, &(segment_size as u16))?;
             #[cfg(windows)]
-            builder
-                .push(
-                    WinSock::IPPROTO_UDP,
-                    WinSock::UDP_SEND_MSG_SIZE,
-                    &(segment_size as u32),
-                )
-                .expect("push cmsg");
+            builder.push(
+                WinSock::IPPROTO_UDP,
+                WinSock::UDP_SEND_MSG_SIZE,
+                &(segment_size as u32),
+            )?;
             #[cfg(not(any(linux_all, windows)))]
             let _ = segment_size;
         }
 
+        Ok(control)
+    }
+
+    pub async fn send<T: IoBuf>(&self, buffer: T, transmit: &Transmit) -> T {
+        let mut control = self
+            .construct_control_message(transmit)
+            .expect("CMSG_LEN should be large enough");
         let mut buffer = buffer.slice(0..transmit.size);
 
         loop {
