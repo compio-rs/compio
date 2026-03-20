@@ -28,6 +28,7 @@ compio-dispatcher = { workspace = true, optional = true }
 compio-log = { workspace = true }
 compio-tls = { workspace = true, optional = true }
 compio-process = { workspace = true, optional = true }
+compio-h2 = { workspace = true, optional = true }
 compio-quic = { workspace = true, optional = true }
 compio-ws = { workspace = true, optional = true }
 
@@ -82,15 +83,16 @@ signal = ["dep:compio-signal", "runtime"]
 time = ["compio-runtime/time", "runtime"]
 dispatcher = ["dep:compio-dispatcher", "runtime"]
 tls = ["dep:compio-tls"]
-native-tls = ["tls", "compio-tls/native-tls", "compio-ws?/native-tls"]
+native-tls = ["tls", "compio-tls/native-tls", "compio-ws?/native-tls", "compio-h2?/native-tls"]
 native-tls-vendored = [
     "compio-tls/native-tls-vendored",
     "compio-ws?/native-tls-vendored",
 ]
-rustls = ["tls", "compio-tls/rustls", "compio-ws?/rustls"]
+rustls = ["tls", "compio-tls/rustls", "compio-ws?/rustls", "compio-h2?/rustls"]
 ring = ["tls", "compio-tls/ring", "compio-quic?/ring", "compio-ws?/ring"]
 py-dynamic-openssl = ["tls", "compio-tls/py-dynamic-openssl"]
 process = ["dep:compio-process"]
+h2 = ["dep:compio-h2"]
 quic = ["dep:compio-quic"]
 h3 = ["quic", "compio-quic/h3"]
 ws = ["dep:compio-ws"]
@@ -105,6 +107,7 @@ all = [
     "native-tls",
     "rustls",
     "process",
+    "h2",
     "quic",
     "h3",
     "ws",

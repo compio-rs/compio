@@ -10,6 +10,7 @@ members = [
     "compio-macros",
     "compio-net",
     "compio-process",
+    "compio-h2",
     "compio-quic",
     "compio-runtime",
     "compio-signal",
@@ -36,6 +37,7 @@ compio-dispatcher = { path = "./compio-dispatcher", version = "0.10.0" }
 compio-log = { path = "./compio-log", version = "0.1.0" }
 compio-tls = { path = "./compio-tls", version = "0.9.0", default-features = false }
 compio-process = { path = "./compio-process", version = "0.8.0" }
+compio-h2 = { path = "./compio-h2", version = "0.1.0", default-features = false }
 compio-quic = { path = "./compio-quic", version = "0.7.0", default-features = false }
 compio-ws = { path = "./compio-ws", version = "0.3.0", default-features = false }
 
@@ -73,6 +75,10 @@ thiserror = "2.0.3"
 smallvec = "1.13.2"
 synchrony = "0.1.4"
 thin-cell = "0.2.0"
+http = "1"
+fnv = "1"
+pprof = { version = "0.15", features = ["flamegraph"] }
+h2 = "0.4"
 
 [profile.bench]
 debug = true

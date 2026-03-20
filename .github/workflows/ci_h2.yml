@@ -1,0 +1,51 @@
+name: H2Spec
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'compio-h2/**'
+      - '.github/workflows/ci_h2.yml'
+  pull_request:
+    branches:
+      - master
+    paths:
+      - 'compio-h2/**'
+      - '.github/workflows/ci_h2.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    name: Tests (${{ matrix.toolchain }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [nightly, stable]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust
+        run: rustup toolchain install ${{ matrix.toolchain }}
+      - name: Run tests
+        run: cargo +${{ matrix.toolchain }} test -p compio-h2
+
+  h2spec:
+    name: h2spec conformance
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust
+        run: rustup toolchain install stable
+      - name: Install h2spec
+        run: bash compio-h2/scripts/conformance/install-h2spec.sh
+      - name: Run h2spec
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          bash compio-h2/scripts/conformance/run-h2spec.sh
