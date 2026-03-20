@@ -5,8 +5,7 @@ use std::{io, io::ErrorKind};
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut, Uninit, t_alloc};
 
 use crate::{
-    AsyncRead, AsyncReadAt, IoResult,
-    framed::{BytesFramed, Framed},
+    AsyncRead, AsyncReadAt, IoResult, framed,
     util::{Splittable, Take},
 };
 
@@ -189,26 +188,27 @@ pub trait AsyncReadExt: AsyncRead {
         loop_read_exact!(buf, len, read, loop self.read_vectored(buf.slice_mut(read)));
     }
 
-    /// Create a [`Framed`] reader/writer with the given codec and framer.
+    /// Create a [`framed::Framed`] reader/writer with the given codec and
+    /// framer.
     fn framed<T, C, F>(
         self,
         codec: C,
         framer: F,
-    ) -> Framed<Self::ReadHalf, Self::WriteHalf, C, F, T, T>
+    ) -> framed::Framed<Self::ReadHalf, Self::WriteHalf, C, F, T, T>
     where
         Self: Splittable + Sized,
     {
-        Framed::new(codec, framer).with_duplex(self)
+        framed::Framed::new(codec, framer).with_duplex(self)
     }
 
-    /// Convenience method to create a [`BytesFramed`] reader/writter
+    /// Convenience method to create a [`framed::BytesFramed`] reader/writter
     /// out of a splittable.
     #[cfg(feature = "bytes")]
-    fn bytes(self) -> BytesFramed<Self::ReadHalf, Self::WriteHalf>
+    fn bytes(self) -> framed::BytesFramed<Self::ReadHalf, Self::WriteHalf>
     where
         Self: Splittable + Sized,
     {
-        BytesFramed::new_bytes().with_duplex(self)
+        framed::BytesFramed::new_bytes().with_duplex(self)
     }
 
     /// Create a [`Splittable`] that uses `Self` as [`ReadHalf`] and `()` as
