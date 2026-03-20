@@ -1,10 +1,6 @@
 use compio_buf::{BufResult, IntoInner, IoBuf, IoVectoredBuf};
 
-use crate::{
-    AsyncWrite, AsyncWriteAt, IoResult,
-    framed::{BytesFramed, Framed},
-    util::Splittable,
-};
+use crate::{AsyncWrite, AsyncWriteAt, IoResult, framed, util::Splittable};
 
 /// Shared code for write a scalar value into the underlying writer.
 macro_rules! write_scalar {
@@ -120,26 +116,27 @@ pub trait AsyncWriteExt: AsyncWrite {
         loop_write_all!(buf, len, needle, loop self.write_vectored(buf.slice(needle)));
     }
 
-    /// Create a [`Framed`] reader/writer with the given codec and framer.
+    /// Create a [`framed::Framed`] reader/writer with the given codec and
+    /// framer.
     fn framed<T, C, F>(
         self,
         codec: C,
         framer: F,
-    ) -> Framed<Self::ReadHalf, Self::WriteHalf, C, F, T, T>
+    ) -> framed::Framed<Self::ReadHalf, Self::WriteHalf, C, F, T, T>
     where
         Self: Splittable + Sized,
     {
-        Framed::new(codec, framer).with_duplex(self)
+        framed::Framed::new(codec, framer).with_duplex(self)
     }
 
-    /// Convenience method to create a [`BytesFramed`] reader/writer
+    /// Convenience method to create a [`framed::BytesFramed`] reader/writer
     /// out of a splittable.
     #[cfg(feature = "bytes")]
-    fn bytes(self) -> BytesFramed<Self::ReadHalf, Self::WriteHalf>
+    fn bytes(self) -> framed::BytesFramed<Self::ReadHalf, Self::WriteHalf>
     where
         Self: Splittable + Sized,
     {
-        BytesFramed::new_bytes().with_duplex(self)
+        framed::BytesFramed::new_bytes().with_duplex(self)
     }
 
     /// Create a [`Splittable`] that uses `Self` as [`WriteHalf`] and `()` as
