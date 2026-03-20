@@ -1,4 +1,4 @@
-use std::{io, panic::resume_unwind, process};
+use std::{io, process};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
@@ -6,14 +6,15 @@ use compio_driver::{
     op::{BufResultExt, Read, ReadManaged, ResultTakeBuffer, Write},
 };
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
-use compio_runtime::{BorrowedBuffer, BufferPool};
+use compio_runtime::{BorrowedBuffer, BufferPool, ResumeUnwind};
 
 use crate::{ChildStderr, ChildStdin, ChildStdout};
 
 pub async fn child_wait(mut child: process::Child) -> io::Result<process::ExitStatus> {
     compio_runtime::spawn_blocking(move || child.wait())
         .await
-        .unwrap_or_else(|e| resume_unwind(e))
+        .resume_unwind()
+        .expect("shouldn't be canceled")
 }
 
 impl AsyncRead for ChildStdout {

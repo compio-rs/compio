@@ -1,5 +1,6 @@
 use compio_io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use compio_net::{TcpListener, TcpStream, UnixListener, UnixStream};
+use compio_runtime::ResumeUnwind;
 use futures_util::StreamExt;
 
 #[compio_macros::test]
@@ -26,7 +27,7 @@ async fn incoming_tcp() {
         assert_eq!(text, format!("Hello, {}", i));
     }
 
-    task.await.unwrap_or_else(|e| std::panic::resume_unwind(e));
+    task.await.resume_unwind();
 }
 
 #[compio_macros::test]
@@ -58,5 +59,5 @@ async fn incoming_unix() {
         assert_eq!(text, format!("Hello, {}", i));
     }
 
-    task.await.unwrap_or_else(|e| std::panic::resume_unwind(e));
+    task.await.resume_unwind();
 }

@@ -1,10 +1,9 @@
-use std::panic::resume_unwind;
-
 use compio::{
     driver::{DriverType, ProactorBuilder},
     net::{TcpListener, TcpStream},
     runtime::Runtime,
 };
+use compio_runtime::ResumeUnwind;
 
 #[test]
 fn accept() {
@@ -22,7 +21,7 @@ fn accept() {
             socket
         });
         let cli = TcpStream::connect(&addr).await.unwrap();
-        let srv = task.await.unwrap_or_else(|e| resume_unwind(e));
+        let srv = task.await.resume_unwind().expect("shouldn't be canceled");
         assert_eq!(cli.local_addr().unwrap(), srv.peer_addr().unwrap());
     })
 }

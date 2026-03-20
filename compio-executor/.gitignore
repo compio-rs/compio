@@ -1,0 +1,17 @@
+/target
+/Cargo.lock
+/.cargo
+
+/.direnv
+/.envrc
+
+# Editor directories
+/.vscode
+/.zed
+.idea
+
+# Bacon config
+bacon.toml
+
+# Cross config
+Cross.toml

@@ -1,6 +1,5 @@
-use std::panic::resume_unwind;
-
 use compio_net::{TcpListener, TcpStream, ToSocketAddrsAsync};
+use compio_runtime::ResumeUnwind;
 
 async fn test_impl(addr: impl ToSocketAddrsAsync) {
     let listener = TcpListener::bind(addr).await.unwrap();
@@ -10,7 +9,7 @@ async fn test_impl(addr: impl ToSocketAddrsAsync) {
         socket
     });
     let cli = TcpStream::connect(&addr).await.unwrap();
-    let srv = task.await.unwrap_or_else(|e| resume_unwind(e));
+    let srv = task.await.resume_unwind().expect("shouldn't be canceled");
     assert_eq!(cli.local_addr().unwrap(), srv.peer_addr().unwrap());
 }
 

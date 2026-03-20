@@ -62,7 +62,7 @@ impl Stream for Incoming<'_> {
                     }
                     Err(e) => {
                         this.state = IncomingState::Idle;
-                        std::panic::resume_unwind(e)
+                        e.resume_unwind();
                     }
                 },
                 IncomingState::Accepting(op) => {

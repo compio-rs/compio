@@ -1,6 +1,7 @@
-use std::{io, os::windows::fs::MetadataExt, panic::resume_unwind, path::Path, time::SystemTime};
+use std::{io, os::windows::fs::MetadataExt, path::Path, time::SystemTime};
 
 use compio_driver::ToSharedFd;
+use compio_runtime::ResumeUnwind;
 
 use crate::File;
 
@@ -8,7 +9,8 @@ pub async fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
     let path = path.as_ref().to_path_buf();
     compio_runtime::spawn_blocking(move || std::fs::metadata(path))
         .await
-        .unwrap_or_else(|e| resume_unwind(e))
+        .resume_unwind()
+        .expect("shouldn't be canceled")
         .map(Metadata::from)
 }
 
@@ -16,7 +18,8 @@ pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
     let path = path.as_ref().to_path_buf();
     compio_runtime::spawn_blocking(move || std::fs::symlink_metadata(path))
         .await
-        .unwrap_or_else(|e| resume_unwind(e))
+        .resume_unwind()
+        .expect("shouldn't be canceled")
         .map(Metadata::from)
 }
 
@@ -65,7 +68,8 @@ pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::R
         }
     })
     .await
-    .unwrap_or_else(|e| resume_unwind(e))
+    .resume_unwind()
+    .expect("shouldn't be canceled")
 }
 
 #[derive(Clone)]
