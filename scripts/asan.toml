@@ -1,0 +1,60 @@
+# ASan/LSan suppression config for compio.
+# Organized by crate and test file. The asan.sh script extracts
+# per-crate patterns at runtime to avoid namespace collisions.
+#
+# Each [crate."tests/file.rs"] section lists leak patterns that are
+# only active when running that crate's tests.
+
+[compio-driver."tests/asyncify.rs"]
+# "disable" is #[should_panic], leaks in-flight ThinCell<RawOp> (64 B)
+patterns = []
+
+[compio-fs."tests/file.rs"]
+# timeout_read times out a pipe read, leaving in-flight Read op (264 B)
+patterns = ["file::timeout_read"]
+
+[compio-net."tests/tcp_connect.rs"]
+# Small runtime cleanup leaks (35 B / 2 allocs)
+patterns = [
+    "tcp_connect::ip_port_tuple_ref",
+    "tcp_connect::ip_str",
+]
+
+[compio-quic."tests/basic.rs"]
+# quinn-proto/rustls internal buffers not freed on Endpoint drop (1.36 MB)
+patterns = [
+    "basic::close_endpoint",
+    "basic::endpoint",
+    "basic::export_keying_material",
+    "basic::handshake_timeout",
+    "basic::read_after_close",
+    "basic::try_recv_datagram",
+    "basic::two_datagram_readers",
+    "basic::zero_rtt",
+]
+
+[compio-quic."tests/control.rs"]
+# Same quinn-proto/rustls leaks (649 KB)
+patterns = [
+    "control::ip_blocking",
+    "control::stream_id_flow_control",
+]
+
+[compio-quic."tests/echo.rs"]
+# Same quinn-proto/rustls leaks (2.67 MB)
+patterns = [
+    "echo::echo",
+    "echo::echo_dualstack",
+    "echo::echo_v4",
+    "echo::echo_v6",
+    "echo::stress_both_windows",
+    "echo::stress_receive_window",
+    "echo::stress_stream_receive_window",
+]
+
+[compio-ws."tests/websocket.rs"]
+# SyncStream buffers leaked via spawned tasks (794 KB)
+patterns = [
+    "websocket::test_close_handshake",
+    "websocket::test_ping_pong",
+]
