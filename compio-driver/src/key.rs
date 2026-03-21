@@ -11,7 +11,7 @@ use std::{
 };
 
 use compio_buf::BufResult;
-use thin_cell::{Ref, ThinCell};
+use thin_cell::unsync::{Ref, ThinCell};
 
 use crate::{Extra, OpCode, PushEntry};
 
@@ -48,6 +48,13 @@ impl<T: ?Sized> RawOp<T> {
     fn pinned_op(&mut self) -> Pin<&mut T> {
         // SAFETY: inner is always pinned with ThinCell.
         unsafe { Pin::new_unchecked(&mut self.op) }
+    }
+
+    #[cfg(io_uring)]
+    pub fn wake_by_ref(&mut self) {
+        if let PushEntry::Pending(Some(w)) = &self.result {
+            w.wake_by_ref();
+        }
     }
 }
 
@@ -272,11 +279,12 @@ impl ErasedKey {
     pub(crate) fn set_result(&self, res: io::Result<usize>) {
         let mut this = self.borrow();
         #[cfg(io_uring)]
-        if let Ok(res) = res
-            && this.extra.is_iour()
         {
-            unsafe {
-                Pin::new_unchecked(&mut this.op).set_result(res);
+            let this = &mut *this;
+            if this.extra.is_iour() {
+                unsafe {
+                    Pin::new_unchecked(&mut this.op).set_result(&res, &this.extra);
+                }
             }
         }
         if let PushEntry::Pending(Some(w)) =

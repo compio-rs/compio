@@ -24,7 +24,7 @@ flume = { workspace = true, default-features = false }
 futures-util = { workspace = true }
 socket2 = { workspace = true, features = ["all"] }
 pin-project-lite = { workspace = true }
-thin-cell = { version = "0.1.1" }
+thin-cell = { workspace = true }
 smallvec = { workspace = true, optional = true, features = ["union"] }
 synchrony = { workspace = true, features = ["waker_slot"] }
 bitflags = { version = "2.11.0" }

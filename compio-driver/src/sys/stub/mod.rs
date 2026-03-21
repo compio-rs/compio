@@ -15,13 +15,16 @@ compile_warning!("You have to choose at least one of these features: [\"io-uring
 pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::{
     io,
+    marker::PhantomData,
     task::{Poll, Waker},
     time::Duration,
 };
 
+use compio_buf::BufResult;
+
 use crate::{BufferPool, DriverType, ErasedKey, ProactorBuilder};
 
-pub struct Extra {}
+pub(in crate::sys) struct Extra {}
 
 impl Extra {
     pub fn new() -> Self {
@@ -43,11 +46,11 @@ fn stub_unimpl() -> ! {
 }
 
 #[derive(Debug)]
-pub(crate) struct Driver(());
+pub(crate) struct Driver(PhantomData<ErasedKey>);
 
 impl Driver {
     pub fn new(_: &ProactorBuilder) -> io::Result<Self> {
-        Ok(Self(()))
+        Ok(Self(PhantomData))
     }
 
     pub fn driver_type(&self) -> DriverType {
@@ -60,7 +63,7 @@ impl Driver {
 
     pub fn cancel(&mut self, _: ErasedKey) {}
 
-    pub fn default_extra(&self) -> Extra {
+    pub(in crate::sys) fn default_extra(&self) -> Extra {
         Extra::new()
     }
 
@@ -82,6 +85,10 @@ impl Driver {
 
     pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
         Ok(())
+    }
+
+    pub fn pop_multishot(&mut self, _: &ErasedKey) -> Option<BufResult<usize, crate::sys::Extra>> {
+        None
     }
 }
 

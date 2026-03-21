@@ -4,7 +4,10 @@ use std::{io, io::ErrorKind};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut, Uninit, t_alloc};
 
-use crate::{AsyncRead, AsyncReadAt, IoResult, util::Take};
+use crate::{
+    AsyncRead, AsyncReadAt, IoResult, framed,
+    util::{Splittable, Take},
+};
 
 /// Shared code for read a scalar value from the underlying reader.
 macro_rules! read_scalar {
@@ -185,6 +188,56 @@ pub trait AsyncReadExt: AsyncRead {
         loop_read_exact!(buf, len, read, loop self.read_vectored(buf.slice_mut(read)));
     }
 
+    /// Create a [`framed::Framed`] reader/writer with the given codec and
+    /// framer.
+    fn framed<T, C, F>(
+        self,
+        codec: C,
+        framer: F,
+    ) -> framed::Framed<Self::ReadHalf, Self::WriteHalf, C, F, T, T>
+    where
+        Self: Splittable + Sized,
+    {
+        framed::Framed::new(codec, framer).with_duplex(self)
+    }
+
+    /// Convenience method to create a [`framed::BytesFramed`] reader/writter
+    /// out of a splittable.
+    #[cfg(feature = "bytes")]
+    fn bytes(self) -> framed::BytesFramed<Self::ReadHalf, Self::WriteHalf>
+    where
+        Self: Splittable + Sized,
+    {
+        framed::BytesFramed::new_bytes().with_duplex(self)
+    }
+
+    /// Create a [`Splittable`] that uses `Self` as [`ReadHalf`] and `()` as
+    /// [`WriteHalf`].
+    ///
+    /// This is useful for creating framed sink with only a reader,
+    /// using the [`AsyncReadExt::framed`] or [`AsyncReadExt::bytes`]
+    /// method, which require a [`Splittable`] to work.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use compio_io::{AsyncReadExt, framed::BytesFramed};
+    ///
+    /// let mut file_bytes = file.read_only().bytes();
+    /// while let Some(Ok(bytes)) = file_bytes.next().await {
+    ///     // process bytes
+    /// }
+    /// ```
+    ///
+    /// [`ReadHalf`]: Splittable::ReadHalf
+    /// [`WriteHalf`]: Splittable::WriteHalf
+    fn read_only(self) -> ReadOnly<Self>
+    where
+        Self: Sized,
+    {
+        ReadOnly(self)
+    }
+
     /// Creates an adaptor which reads at most `limit` bytes from it.
     ///
     /// This function returns a new instance of `AsyncRead` which will read
@@ -287,3 +340,29 @@ pub trait AsyncReadAtExt: AsyncReadAt {
 }
 
 impl<A: AsyncReadAt + ?Sized> AsyncReadAtExt for A {}
+
+/// An adaptor which implements [`Splittable`] for any [`AsyncRead`], with the
+/// write half being `()`.
+///
+/// This can be used to create a framed stream with only a reader, using
+/// the [`AsyncReadExt::framed`] or [`AsyncReadExt::bytes`] method.
+pub struct ReadOnly<R>(pub R);
+
+impl<R: AsyncRead> AsyncRead for ReadOnly<R> {
+    async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
+        self.0.read(buf).await
+    }
+
+    async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
+        self.0.read_vectored(buf).await
+    }
+}
+
+impl<R> Splittable for ReadOnly<R> {
+    type ReadHalf = R;
+    type WriteHalf = ();
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        (self.0, ())
+    }
+}

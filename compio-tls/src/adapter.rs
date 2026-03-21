@@ -82,11 +82,14 @@ impl TlsConnector {
     /// example, a TCP connection to a remote server. That stream is then
     /// provided here to perform the client half of a connection to a
     /// TLS-powered server.
-    pub async fn connect<S: AsyncRead + AsyncWrite + 'static>(
+    pub async fn connect<S: AsyncRead + AsyncWrite + Unpin + 'static>(
         &self,
         domain: &str,
         stream: S,
-    ) -> io::Result<TlsStream<S>> {
+    ) -> io::Result<TlsStream<S>>
+    where
+        for<'a> &'a S: AsyncRead + AsyncWrite,
+    {
         match &self.0 {
             #[cfg(feature = "native-tls")]
             TlsConnectorInner::NativeTls(c) => {
@@ -97,7 +100,7 @@ impl TlsConnector {
                 let client = c
                     .connect(
                         domain.to_string().try_into().map_err(io::Error::other)?,
-                        AsyncStream::new(stream),
+                        Box::pin(AsyncStream::new(stream)),
                     )
                     .await?;
                 Ok(TlsStream::from(client))
@@ -172,10 +175,13 @@ impl TlsAcceptor {
     /// This is typically used after a new socket has been accepted from a
     /// `TcpListener`. That socket is then passed to this function to perform
     /// the server half of accepting a client connection.
-    pub async fn accept<S: AsyncRead + AsyncWrite + 'static>(
+    pub async fn accept<S: AsyncRead + AsyncWrite + Unpin + 'static>(
         &self,
         stream: S,
-    ) -> io::Result<TlsStream<S>> {
+    ) -> io::Result<TlsStream<S>>
+    where
+        for<'a> &'a S: AsyncRead + AsyncWrite,
+    {
         match &self.0 {
             #[cfg(feature = "native-tls")]
             TlsAcceptorInner::NativeTls(c) => {
@@ -183,7 +189,7 @@ impl TlsAcceptor {
             }
             #[cfg(feature = "rustls")]
             TlsAcceptorInner::Rustls(c) => {
-                let server = c.accept(AsyncStream::new(stream)).await?;
+                let server = c.accept(Box::pin(AsyncStream::new(stream))).await?;
                 Ok(TlsStream::from(server))
             }
             #[cfg(feature = "py-dynamic-openssl")]

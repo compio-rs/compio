@@ -2,10 +2,7 @@
 
 use std::io;
 
-use compio_buf::{
-    IoBuf, IoBufMut, Slice,
-    bytes::{Buf, BufMut},
-};
+use compio_buf::{IoBuf, IoBufMut, Slice};
 
 /// An extracted frame
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,6 +84,9 @@ impl Default for LengthDelimited {
 }
 
 impl LengthDelimited {
+    /// Max allowed length of `len` field
+    const MAX_LFL: usize = 8;
+
     /// Creates a new `LengthDelimited` framer.
     pub fn new() -> Self {
         Self::default()
@@ -98,7 +98,16 @@ impl LengthDelimited {
     }
 
     /// Sets the length of the length field in bytes.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if `len_field_len` is too long (8 bytes is the maximum
+    /// allowed for now).
     pub fn set_length_field_len(mut self, len_field_len: usize) -> Self {
+        assert!(
+            len_field_len <= Self::MAX_LFL,
+            "Length field cannot take over 8 bytes"
+        );
         self.length_field_len = len_field_len;
         self
     }
@@ -124,13 +133,16 @@ impl<B: IoBufMut> Framer<B> for LengthDelimited {
         unsafe { buf.advance_to(len + self.length_field_len) };
 
         let slice = buf.as_mut_slice();
+        let lfl = self.length_field_len;
 
         // Write the length at the beginning
-        if self.length_field_is_big_endian {
-            (&mut slice[0..self.length_field_len]).put_uint(len as _, self.length_field_len);
+        let len = len as u64;
+        let len_bytes = if self.length_field_is_big_endian {
+            &len.to_be_bytes()[Self::MAX_LFL - lfl..]
         } else {
-            (&mut slice[0..self.length_field_len]).put_uint_le(len as _, self.length_field_len);
-        }
+            &len.to_le_bytes()[..lfl]
+        };
+        slice[..lfl].copy_from_slice(len_bytes);
     }
 
     fn extract(&mut self, buf: &Slice<B>) -> io::Result<Option<Frame>> {
@@ -138,15 +150,19 @@ impl<B: IoBufMut> Framer<B> for LengthDelimited {
             return Ok(None);
         }
 
-        let mut buf = buf.as_init();
+        let buf = buf.as_init();
+        let lfl = self.length_field_len;
+        let mut len_bytes = [0; Self::MAX_LFL];
 
         let len = if self.length_field_is_big_endian {
-            buf.get_uint(self.length_field_len)
+            len_bytes[Self::MAX_LFL - lfl..].copy_from_slice(&buf[..lfl]);
+            u64::from_be_bytes(len_bytes)
         } else {
-            buf.get_uint_le(self.length_field_len)
+            len_bytes[..lfl].copy_from_slice(&buf[..lfl]);
+            u64::from_le_bytes(len_bytes)
         } as usize;
 
-        if buf.len() < len {
+        if buf.len() < self.length_field_len + len {
             return Ok(None);
         }
 
@@ -226,6 +242,50 @@ impl<B: IoBufMut> Framer<B> for AnyDelimited<'_> {
 /// Delimiter that uses newline characters (`\n`) as delimiters.
 pub type LineDelimited = CharDelimited<'\n'>;
 
+/// A framer that does nothing.
+///
+/// It simply reserves space in the buffer without adding any framing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NoopFramer {
+    max_size: usize,
+}
+
+impl Default for NoopFramer {
+    fn default() -> Self {
+        Self { max_size: 4096 }
+    }
+}
+
+impl NoopFramer {
+    /// Creates a new `NoopFramer` framer.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns the size of the capacity.
+    pub fn max_size(&self) -> usize {
+        self.max_size
+    }
+}
+
+impl<B: IoBufMut> Framer<B> for NoopFramer {
+    fn enclose(&mut self, _: &mut B) {}
+
+    fn extract(&mut self, buf: &Slice<B>) -> io::Result<Option<Frame>> {
+        if buf.is_empty() {
+            return Ok(None);
+        }
+
+        let len = if buf.len() < self.max_size {
+            buf.len()
+        } else {
+            self.max_size
+        };
+
+        Ok(Some(Frame::new(0, len, 0)))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use compio_buf::{IntoInner, IoBufMut};
@@ -244,6 +304,22 @@ mod tests {
         let frame = framer.extract(&buf).unwrap().unwrap();
         let buf = buf.into_inner();
         assert_eq!(frame, Frame::new(4, 5, 0));
+        let payload = frame.slice(buf);
+        assert_eq!(payload.as_init(), b"hello");
+    }
+
+    #[test]
+    fn test_noop_framer() {
+        let mut framer = NoopFramer::new();
+
+        let mut buf = Vec::from(b"hello");
+        framer.enclose(&mut buf);
+        assert_eq!(&buf.as_slice()[..5], b"hello");
+
+        let buf = buf.slice(..);
+        let frame = framer.extract(&buf).unwrap().unwrap();
+        let buf = buf.into_inner();
+        assert_eq!(frame, Frame::new(0, 5, 0));
         let payload = frame.slice(buf);
         assert_eq!(payload.as_init(), b"hello");
     }

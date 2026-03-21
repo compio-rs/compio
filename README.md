@@ -14,6 +14,7 @@
 [![Check](https://github.com/compio-rs/compio/actions/workflows/ci_check.yml/badge.svg)](https://github.com/compio-rs/compio/actions/workflows/ci_check.yml)
 [![Test](https://github.com/compio-rs/compio/actions/workflows/ci_test.yml/badge.svg)](https://github.com/compio-rs/compio/actions/workflows/ci_test.yml)
 [![Telegram](https://img.shields.io/badge/Telegram-compio--rs-blue?logo=telegram)](https://t.me/compio_rs)
+[![Discord](https://img.shields.io/discord/1429103613602435114?logo=discord&label=Discord)](https://discord.gg/bGG8EF9v)
 
 A thread-per-core Rust runtime with IOCP/io_uring/polling inspired by [monoio](https://github.com/bytedance/monoio).
 

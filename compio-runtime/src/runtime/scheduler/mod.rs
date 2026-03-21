@@ -8,13 +8,11 @@ use std::{
 };
 
 use async_task::{Runnable, Task};
+use compio_send_wrapper::SendWrapper;
 use crossbeam_queue::SegQueue;
 use slab::Slab;
 
-use crate::runtime::{
-    SendWrapper,
-    scheduler::{drop_hook::DropHook, local_queue::LocalQueue},
-};
+use crate::runtime::scheduler::{drop_hook::DropHook, local_queue::LocalQueue};
 
 mod drop_hook;
 mod local_queue;

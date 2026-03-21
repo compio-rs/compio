@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     io,
+    marker::PhantomData,
     os::windows::io::{
         AsHandle, AsRawHandle, AsRawSocket, AsSocket, BorrowedHandle, BorrowedSocket, OwnedHandle,
         OwnedSocket,
@@ -11,6 +12,7 @@ use std::{
     time::Duration,
 };
 
+use compio_buf::BufResult;
 use compio_log::{instrument, trace};
 use windows_sys::Win32::{
     Foundation::{ERROR_CANCELLED, HANDLE},
@@ -26,7 +28,7 @@ mod wait;
 
 /// Extra data attached for IOCP.
 #[repr(C)]
-pub struct Extra {
+pub(in crate::sys) struct Extra {
     overlapped: Overlapped,
 }
 
@@ -329,6 +331,7 @@ pub(crate) struct Driver {
     notify: Arc<Notify>,
     waits: HashMap<usize, wait::Wait>,
     pool: AsyncifyPool,
+    _local_marker: PhantomData<ErasedKey>,
 }
 
 impl Driver {
@@ -343,6 +346,7 @@ impl Driver {
             notify,
             waits: HashMap::default(),
             pool: builder.create_or_get_thread_pool(),
+            _local_marker: PhantomData,
         })
     }
 
@@ -354,7 +358,7 @@ impl Driver {
         &self.notify.port
     }
 
-    pub fn default_extra(&self) -> Extra {
+    pub(in crate::sys) fn default_extra(&self) -> Extra {
         Extra::new(self.port().as_raw_handle() as _)
     }
 
@@ -493,6 +497,10 @@ impl Driver {
     /// caller must make sure release the buffer pool with correct driver
     pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
         Ok(())
+    }
+
+    pub fn pop_multishot(&mut self, _: &ErasedKey) -> Option<BufResult<usize, crate::sys::Extra>> {
+        None
     }
 }
 

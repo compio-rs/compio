@@ -8,16 +8,20 @@ use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectore
 #[cfg(unix)]
 use compio_driver::op::CreateSocket;
 use compio_driver::{
-    AsRawFd, ToSharedFd, impl_raw_fd,
+    AsRawFd, OpCode, ToSharedFd, impl_raw_fd,
     op::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromManaged,
         RecvFromVectored, RecvManaged, RecvMsg, RecvResultExt, RecvVectored, ResultTakeBuffer,
-        Send, SendMsg, SendTo, SendToVectored, SendVectored, ShutdownSocket, VecBufResultExt,
+        Send, SendMsg, SendMsgZc, SendTo, SendToVectored, SendToVectoredZc, SendToZc, SendVectored,
+        SendVectoredZc, SendZc, ShutdownSocket, VecBufResultExt,
     },
     syscall,
 };
 use compio_runtime::{Attacher, BorrowedBuffer, BufferPool, fd::PollFd};
+use futures_util::StreamExt;
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
+
+use crate::Incoming;
 
 #[derive(Debug, Clone)]
 pub struct Socket {
@@ -95,7 +99,7 @@ impl Socket {
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         let op = Accept::new(self.to_shared_fd());
         let (_, op) = buf_try!(@try compio_runtime::submit(op).await);
-        let (accept_sock, addr) = op.into_addr();
+        let (accept_sock, addr) = op.into_inner();
         let accept_sock = Self::from_socket2(accept_sock)?;
         Ok((accept_sock, addr))
     }
@@ -117,6 +121,10 @@ impl Socket {
         op.update_context()?;
         let (accept_sock, addr) = op.into_addr()?;
         Ok((Self::from_socket2(accept_sock)?, addr))
+    }
+
+    pub fn incoming(&self) -> Incoming<'_> {
+        Incoming::new(self)
     }
 
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
@@ -182,7 +190,7 @@ impl Socket {
         buffer_pool: &'a BufferPool,
         len: usize,
         flags: i32,
-    ) -> io::Result<(BorrowedBuffer<'a>, SockAddr)> {
+    ) -> io::Result<(BorrowedBuffer<'a>, Option<SockAddr>)> {
         let fd = self.to_shared_fd();
         let buffer_pool = buffer_pool.try_inner()?;
         let op = RecvFromManaged::new(fd, buffer_pool, len, flags)?;
@@ -208,11 +216,27 @@ impl Socket {
         compio_runtime::submit(op).await.into_inner()
     }
 
+    pub async fn send_zerocopy<T: IoBuf>(
+        &self,
+        buf: T,
+        flags: i32,
+    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+        submit_zerocopy(SendZc::new(self.to_shared_fd(), buf, flags)).await
+    }
+
+    pub async fn send_zerocopy_vectored<T: IoVectoredBuf>(
+        &self,
+        buf: T,
+        flags: i32,
+    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+        submit_zerocopy(SendVectoredZc::new(self.to_shared_fd(), buf, flags)).await
+    }
+
     pub async fn recv_from<T: IoBufMut>(
         &self,
         buffer: T,
         flags: i32,
-    ) -> BufResult<(usize, SockAddr), T> {
+    ) -> BufResult<(usize, Option<SockAddr>), T> {
         let fd = self.to_shared_fd();
         let op = RecvFrom::new(fd, buffer, flags);
         let res = compio_runtime::submit(op).await.into_inner().map_addr();
@@ -223,7 +247,7 @@ impl Socket {
         &self,
         buffer: T,
         flags: i32,
-    ) -> BufResult<(usize, SockAddr), T> {
+    ) -> BufResult<(usize, Option<SockAddr>), T> {
         let fd = self.to_shared_fd();
         let op = RecvFromVectored::new(fd, buffer, flags);
         let res = compio_runtime::submit(op).await.into_inner().map_addr();
@@ -235,7 +259,7 @@ impl Socket {
         buffer: T,
         control: C,
         flags: i32,
-    ) -> BufResult<(usize, usize, SockAddr), (T, C)> {
+    ) -> BufResult<(usize, usize, Option<SockAddr>), (T, C)> {
         self.recv_msg_vectored([buffer], control, flags)
             .await
             .map_buffer(|([buffer], control)| (buffer, control))
@@ -246,7 +270,7 @@ impl Socket {
         buffer: T,
         control: C,
         flags: i32,
-    ) -> BufResult<(usize, usize, SockAddr), (T, C)> {
+    ) -> BufResult<(usize, usize, Option<SockAddr>), (T, C)> {
         let fd = self.to_shared_fd();
         let op = RecvMsg::new(fd, buffer, control, flags);
         let res = compio_runtime::submit(op).await.into_inner().map_addr();
@@ -275,11 +299,31 @@ impl Socket {
         compio_runtime::submit(op).await.into_inner()
     }
 
+    pub async fn send_to_zerocopy<T: IoBuf>(
+        &self,
+        buffer: T,
+        addr: &SockAddr,
+        flags: i32,
+    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+        let op = SendToZc::new(self.to_shared_fd(), buffer, addr.clone(), flags);
+        submit_zerocopy(op).await
+    }
+
+    pub async fn send_to_zerocopy_vectored<T: IoVectoredBuf>(
+        &self,
+        buffer: T,
+        addr: &SockAddr,
+        flags: i32,
+    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+        let op = SendToVectoredZc::new(self.to_shared_fd(), buffer, addr.clone(), flags);
+        submit_zerocopy(op).await
+    }
+
     pub async fn send_msg<T: IoBuf, C: IoBuf>(
         &self,
         buffer: T,
         control: C,
-        addr: &SockAddr,
+        addr: Option<&SockAddr>,
         flags: i32,
     ) -> BufResult<usize, (T, C)> {
         self.send_msg_vectored([buffer], control, addr, flags)
@@ -291,12 +335,39 @@ impl Socket {
         &self,
         buffer: T,
         control: C,
-        addr: &SockAddr,
+        addr: Option<&SockAddr>,
         flags: i32,
     ) -> BufResult<usize, (T, C)> {
         let fd = self.to_shared_fd();
-        let op = SendMsg::new(fd, buffer, control, addr.clone(), flags);
+        let op = SendMsg::new(fd, buffer, control, addr.cloned(), flags);
         compio_runtime::submit(op).await.into_inner()
+    }
+
+    pub async fn send_msg_zerocopy<T: IoBuf, C: IoBuf>(
+        &self,
+        buffer: T,
+        control: C,
+        addr: Option<&SockAddr>,
+        flags: i32,
+    ) -> BufResult<usize, impl Future<Output = (T, C)> + use<T, C>> {
+        self.send_msg_zerocopy_vectored([buffer], control, addr, flags)
+            .await
+            .map_buffer(|fut| async move {
+                let ([buffer], control) = fut.await;
+                (buffer, control)
+            })
+    }
+
+    pub async fn send_msg_zerocopy_vectored<T: IoVectoredBuf, C: IoBuf>(
+        &self,
+        buffer: T,
+        control: C,
+        addr: Option<&SockAddr>,
+        flags: i32,
+    ) -> BufResult<usize, impl Future<Output = (T, C)> + use<T, C>> {
+        let fd = self.to_shared_fd();
+        let op = SendMsgZc::new(fd, buffer, control, addr.cloned(), flags);
+        submit_zerocopy(op).await
     }
 
     #[cfg(unix)]
@@ -377,3 +448,27 @@ impl Socket {
 }
 
 impl_raw_fd!(Socket, Socket2, socket, socket);
+
+async fn submit_zerocopy<T: OpCode + IntoInner + 'static>(
+    op: T,
+) -> BufResult<usize, impl Future<Output = T::Inner> + use<T>> {
+    let mut stream = compio_runtime::submit_multi(op);
+    let res = stream
+        .next()
+        .await
+        .expect("SubmitMulti should yield at least one item")
+        .0;
+
+    let fut = async move {
+        // we don't need 2nd CQE's result
+        _ = stream.next().await;
+
+        stream
+            .try_take()
+            .map_err(|_| ())
+            .expect("Cannot retrieve buffer")
+            .into_inner()
+    };
+
+    BufResult(res, fut)
+}

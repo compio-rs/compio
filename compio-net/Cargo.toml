@@ -17,11 +17,12 @@ rustdoc-args = ["--cfg", "docsrs"]
 # Workspace dependencies
 compio-buf = { workspace = true }
 compio-driver = { workspace = true }
-compio-io = { workspace = true }
+compio-io = { workspace = true, features = ["ancillary"] }
 compio-runtime = { workspace = true }
 
 cfg-if = { workspace = true }
 either = "1.9.0"
+futures-util = { workspace = true }
 once_cell = { workspace = true }
 socket2 = { workspace = true }
 
@@ -40,8 +41,6 @@ libc = { workspace = true }
 # Shared dev dependencies for all platforms
 [dev-dependencies]
 compio-macros = { workspace = true }
-aligned-array = "1.0.1"
-futures-util = { workspace = true }
 tempfile = { workspace = true }
 
 [features]

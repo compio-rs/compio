@@ -17,6 +17,10 @@ use libc::{pread64 as pread, preadv64 as preadv, pwrite64 as pwrite, pwritev64 a
 use pin_project_lite::pin_project;
 use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
+pub use self::{
+    Send as SendZc, SendMsg as SendMsgZc, SendTo as SendToZc, SendToVectored as SendToVectoredZc,
+    SendVectored as SendVectoredZc,
+};
 use super::{AsFd, Decision, OpCode, OpType, syscall};
 pub use crate::sys::unix_op::*;
 use crate::{op::*, sys_slice::*};
@@ -768,6 +772,44 @@ unsafe impl<S: AsFd> OpCode for Accept<S> {
     }
 }
 
+pin_project! {
+    /// Accept multiple connections.
+    pub struct AcceptMulti<S> {
+        #[pin]
+        pub(crate) op: Accept<S>,
+    }
+}
+
+impl<S> AcceptMulti<S> {
+    /// Create [`AcceptMulti`].
+    pub fn new(fd: S) -> Self {
+        Self {
+            op: Accept::new(fd),
+        }
+    }
+}
+
+unsafe impl<S: AsFd> OpCode for AcceptMulti<S> {
+    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        self.project().op.pre_submit()
+    }
+
+    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+        self.project().op.op_type()
+    }
+
+    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        self.project().op.operate()
+    }
+}
+
+impl<S> IntoInner for AcceptMulti<S> {
+    type Inner = Socket2;
+
+    fn into_inner(self) -> Self::Inner {
+        self.op.into_inner().0
+    }
+}
 unsafe impl<S: AsFd> OpCode for Connect<S> {
     fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
         syscall!(
