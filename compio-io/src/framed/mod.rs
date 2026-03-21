@@ -8,11 +8,7 @@ use std::marker::PhantomData;
 use compio_buf::IoBufMut;
 use futures_util::FutureExt;
 
-use crate::{
-    AsyncRead,
-    framed::{codec::Decoder, frame::NoopFramer},
-    util::Splittable,
-};
+use crate::{AsyncRead, util::Splittable};
 
 pub mod codec;
 pub mod frame;
@@ -164,7 +160,7 @@ pub type BytesFramed<R, W> = Framed<
     R,
     W,
     codec::bytes::BytesCodec,
-    NoopFramer,
+    frame::NoopFramer,
     compio_buf::bytes::Bytes,
     compio_buf::bytes::Bytes,
 >;
@@ -185,7 +181,7 @@ impl BytesFramed<(), ()> {
             read_state: read::State::empty(),
             write_state: write::State::empty(),
             codec: codec::bytes::BytesCodec::new(),
-            framer: NoopFramer::new(),
+            framer: frame::NoopFramer::new(),
             types: PhantomData,
         }
     }
