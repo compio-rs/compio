@@ -20,7 +20,7 @@ compio-net = { workspace = true }
 compio-tls = { workspace = true, default-features = false }
 compio-log = { workspace = true }
 
-tungstenite = "0.28.0"
+tungstenite = "0.29.0"
 
 rustls-platform-verifier = { workspace = true, optional = true }
 rustls-native-certs = { workspace = true, optional = true }
