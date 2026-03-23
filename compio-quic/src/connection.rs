@@ -1014,7 +1014,7 @@ pub enum OpenStreamError {
     /// The connection was lost
     #[error("connection lost")]
     ConnectionLost(#[from] ConnectionError),
-    // The streams in the given direction are currently exhausted
+    /// The streams in the given direction are currently exhausted
     #[error("streams exhausted")]
     StreamsExhausted,
 }
