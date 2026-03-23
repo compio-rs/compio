@@ -85,12 +85,7 @@ impl TcpListener {
             let socket = Socket::new(sa.domain(), Type::STREAM, Some(Protocol::TCP)).await?;
             options.setup_socket(&socket)?;
             socket.socket.bind(&sa)?;
-            socket.listen(
-                options
-                    .get_backlog()
-                    .and_then(|v| v.try_into().ok())
-                    .unwrap_or(128),
-            )?;
+            socket.listen(options.get_backlog().unwrap_or(128))?;
             Ok(Self { inner: socket })
         })
         .await

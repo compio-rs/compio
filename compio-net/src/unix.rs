@@ -76,11 +76,7 @@ impl UnixListener {
 
         let socket = Socket::bind(addr, Type::STREAM, None).await?;
         opts.setup_socket(&socket)?;
-        socket.listen(
-            opts.get_backlog()
-                .and_then(|v| v.try_into().ok())
-                .unwrap_or(1024),
-        )?;
+        socket.listen(opts.get_backlog().unwrap_or(1024))?;
         Ok(UnixListener { inner: socket })
     }
 

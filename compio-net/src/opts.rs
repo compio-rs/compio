@@ -14,7 +14,7 @@ pub struct SocketOpts {
     reuse_address: Option<bool>,
     reuse_port: Option<bool>,
     nodelay: Option<bool>,
-    backlog: Option<usize>,
+    backlog: Option<i32>,
 }
 
 impl SocketOpts {
@@ -84,12 +84,12 @@ impl SocketOpts {
     /// Sets the backlog size for listening sockets.
     ///
     /// It is no-op for non-listening sockets.
-    pub fn backlog(mut self, backlog: usize) -> Self {
+    pub fn backlog(mut self, backlog: i32) -> Self {
         self.backlog = Some(backlog);
         self
     }
 
-    pub(crate) fn get_backlog(&self) -> Option<usize> {
+    pub(crate) fn get_backlog(&self) -> Option<i32> {
         self.backlog
     }
 
