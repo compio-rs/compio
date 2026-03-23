@@ -30,7 +30,7 @@ mod socket;
 
 #[cfg(rustls)]
 pub use builder::{ClientBuilder, ServerBuilder};
-pub use connection::{Connecting, Connection, ConnectionError};
+pub use connection::{Connecting, Connection, ConnectionError, OpenStreamError, SendDatagramError};
 pub use endpoint::Endpoint;
 pub use incoming::{Incoming, IncomingFuture};
 pub use recv_stream::{ReadError, ReadExactError, RecvStream};
