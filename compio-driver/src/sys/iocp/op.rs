@@ -3,7 +3,6 @@ use std::sync::OnceLock;
 use std::{
     io,
     marker::PhantomPinned,
-    net::Shutdown,
     os::windows::io::AsRawSocket,
     pin::Pin,
     ptr::{null, null_mut, read_unaligned},
@@ -24,11 +23,11 @@ use windows_sys::{
         },
         Networking::WinSock::{
             CMSGHDR, LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS, LPFN_WSARECVMSG,
-            SD_BOTH, SD_RECEIVE, SD_SEND, SIO_GET_EXTENSION_FUNCTION_POINTER,
-            SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, SOCKADDR, SOCKADDR_STORAGE,
-            SOL_SOCKET, WSAID_ACCEPTEX, WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS,
-            WSAID_WSARECVMSG, WSAIoctl, WSAMSG, WSARecv, WSARecvFrom, WSASend, WSASendMsg,
-            WSASendTo, closesocket, setsockopt, shutdown, socklen_t,
+            SIO_GET_EXTENSION_FUNCTION_POINTER, SO_UPDATE_ACCEPT_CONTEXT,
+            SO_UPDATE_CONNECT_CONTEXT, SOCKADDR, SOCKADDR_STORAGE, SOL_SOCKET, WSAID_ACCEPTEX,
+            WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS, WSAID_WSARECVMSG, WSAIoctl, WSAMSG,
+            WSARecv, WSARecvFrom, WSASend, WSASendMsg, WSASendTo, closesocket, setsockopt,
+            socklen_t,
         },
         Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile},
         System::{
@@ -316,23 +315,6 @@ unsafe impl<S: AsFd> OpCode for Sync<S> {
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(
             syscall!(BOOL, FlushFileBuffers(self.fd.as_fd().as_raw_fd()))? as _,
-        ))
-    }
-}
-
-unsafe impl<S: AsFd> OpCode for ShutdownSocket<S> {
-    fn op_type(&self) -> OpType {
-        OpType::Blocking
-    }
-
-    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let how = match self.how {
-            Shutdown::Write => SD_SEND,
-            Shutdown::Read => SD_RECEIVE,
-            Shutdown::Both => SD_BOTH,
-        };
-        Poll::Ready(Ok(
-            syscall!(SOCKET, shutdown(self.fd.as_fd().as_raw_fd() as _, how))? as _,
         ))
     }
 }

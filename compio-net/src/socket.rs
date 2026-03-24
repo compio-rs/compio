@@ -6,14 +6,14 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, buf_try};
 #[cfg(unix)]
-use compio_driver::op::CreateSocket;
+use compio_driver::op::{CreateSocket, ShutdownSocket};
 use compio_driver::{
     AsRawFd, OpCode, ToSharedFd, impl_raw_fd,
     op::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromManaged,
         RecvFromVectored, RecvManaged, RecvMsg, RecvResultExt, RecvVectored, ResultTakeBuffer,
         Send, SendMsg, SendMsgZc, SendTo, SendToVectored, SendToVectoredZc, SendToZc, SendVectored,
-        SendVectoredZc, SendZc, ShutdownSocket, VecBufResultExt,
+        SendVectoredZc, SendZc, VecBufResultExt,
     },
     syscall,
 };
@@ -53,12 +53,7 @@ impl Socket {
 
     #[cfg(windows)]
     pub async fn new(domain: Domain, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
-        use std::panic::resume_unwind;
-
-        let socket = compio_runtime::spawn_blocking(move || Socket2::new(domain, ty, protocol))
-            .await
-            .unwrap_or_else(|e| resume_unwind(e))?;
-        Self::from_socket2(socket)
+        Self::from_socket2(Socket2::new(domain, ty, protocol)?)
     }
 
     #[cfg(unix)]
@@ -106,16 +101,10 @@ impl Socket {
 
     #[cfg(windows)]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
-        use std::panic::resume_unwind;
-
         let domain = self.local_addr()?.domain();
-        // We should allow users sending this accepted socket to a new thread.
         let ty = self.socket.r#type()?;
         let protocol = self.socket.protocol()?;
-        let accept_sock =
-            compio_runtime::spawn_blocking(move || Socket2::new(domain, ty, protocol))
-                .await
-                .unwrap_or_else(|e| resume_unwind(e))?;
+        let accept_sock = Socket2::new(domain, ty, protocol)?;
         let op = Accept::new(self.to_shared_fd(), accept_sock);
         let (_, op) = buf_try!(@try compio_runtime::submit(op).await);
         op.update_context()?;
@@ -146,9 +135,16 @@ impl Socket {
         }
     }
 
+    #[cfg(unix)]
     pub async fn shutdown(&self) -> io::Result<()> {
         let op = ShutdownSocket::new(self.to_shared_fd(), std::net::Shutdown::Write);
         compio_runtime::submit(op).await.0?;
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    pub async fn shutdown(&self) -> io::Result<()> {
+        self.socket.shutdown(std::net::Shutdown::Write)?;
         Ok(())
     }
 

@@ -4,7 +4,7 @@
 //! The operation itself doesn't perform anything.
 //! You need to pass them to [`crate::Proactor`], and poll the driver.
 
-use std::{io, marker::PhantomPinned, mem::ManuallyDrop, net::Shutdown};
+use std::{io, marker::PhantomPinned, mem::ManuallyDrop};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, SetLen};
 use pin_project_lite::pin_project;
@@ -19,8 +19,8 @@ pub use crate::sys::op::{
 #[cfg(unix)]
 pub use crate::sys::op::{
     AcceptMulti, CreateDir, CreateSocket, CurrentDir, FileStat, HardLink, Interest, OpenFile,
-    PathStat, PollOnce, ReadVectored, ReadVectoredAt, Rename, Stat, Symlink, TruncateFile, Unlink,
-    WriteVectored, WriteVectoredAt,
+    PathStat, PollOnce, ReadVectored, ReadVectoredAt, Rename, ShutdownSocket, Stat, Symlink,
+    TruncateFile, Unlink, WriteVectored, WriteVectoredAt,
 };
 #[cfg(windows)]
 pub use crate::sys::op::{ConnectNamedPipe, DeviceIoControl};
@@ -443,19 +443,6 @@ impl<S> Sync<S> {
             datasync,
             aiocb: new_aiocb(),
         }
-    }
-}
-
-/// Shutdown a socket.
-pub struct ShutdownSocket<S> {
-    pub(crate) fd: S,
-    pub(crate) how: Shutdown,
-}
-
-impl<S> ShutdownSocket<S> {
-    /// Create [`ShutdownSocket`].
-    pub fn new(fd: S, how: Shutdown) -> Self {
-        Self { fd, how }
     }
 }
 
