@@ -67,7 +67,7 @@ fn win32_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     if res == 0 {
         winapi_result(transferred)
     } else {
-        Poll::Ready(Ok(transferred as _))
+        Poll::Pending
     }
 }
 
@@ -76,7 +76,7 @@ fn winsock_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     if res != 0 {
         winapi_result(transferred)
     } else {
-        Poll::Ready(Ok(transferred as _))
+        Poll::Pending
     }
 }
 

@@ -35,7 +35,7 @@ use windows_sys::Win32::{
         },
         SystemServices::ERROR_SEVERITY_ERROR,
         Threading::INFINITE,
-        WindowsProgramming::{FILE_SKIP_COMPLETION_PORT_ON_SUCCESS, FILE_SKIP_SET_EVENT_ON_HANDLE},
+        WindowsProgramming::FILE_SKIP_SET_EVENT_ON_HANDLE,
     },
 };
 
@@ -75,10 +75,7 @@ impl CompletionPort {
         )?;
         syscall!(
             BOOL,
-            SetFileCompletionNotificationModes(
-                fd,
-                (FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE) as _
-            )
+            SetFileCompletionNotificationModes(fd, FILE_SKIP_SET_EVENT_ON_HANDLE as _)
         )?;
         Ok(())
     }
