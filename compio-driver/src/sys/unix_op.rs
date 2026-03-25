@@ -880,6 +880,14 @@ impl<S> PollOnce<S> {
     }
 }
 
+impl<S> IntoInner for PollOnce<S> {
+    type Inner = S;
+
+    fn into_inner(self) -> Self::Inner {
+        self.fd
+    }
+}
+
 /// Splice data between two file descriptors.
 #[cfg(linux_all)]
 pub struct Splice<S1, S2> {
@@ -914,5 +922,14 @@ impl<S1, S2> Splice<S1, S2> {
             len,
             flags,
         }
+    }
+}
+
+#[cfg(linux_all)]
+impl<S1, S2> IntoInner for Splice<S1, S2> {
+    type Inner = (S1, S2);
+
+    fn into_inner(self) -> Self::Inner {
+        (self.fd_in, self.fd_out)
     }
 }
