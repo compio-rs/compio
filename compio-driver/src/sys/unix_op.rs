@@ -504,6 +504,19 @@ impl IntoInner for CreateSocket {
     }
 }
 
+/// Shutdown a socket.
+pub struct ShutdownSocket<S> {
+    pub(crate) fd: S,
+    pub(crate) how: Shutdown,
+}
+
+impl<S> ShutdownSocket<S> {
+    /// Create [`ShutdownSocket`].
+    pub fn new(fd: S, how: Shutdown) -> Self {
+        Self { fd, how }
+    }
+}
+
 impl<S: AsFd> ShutdownSocket<S> {
     pub(crate) fn how(&self) -> i32 {
         match self.how {
