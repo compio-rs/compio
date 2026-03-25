@@ -647,12 +647,7 @@ impl CreateSocket {
             target_os = "cygwin",
         )))]
         socket.set_cloexec(true)?;
-        #[cfg(any(
-            target_os = "ios",
-            target_os = "macos",
-            target_os = "tvos",
-            target_os = "watchos",
-        ))]
+        #[cfg(target_vendor = "apple")]
         socket.set_nosigpipe(true)?;
         #[cfg(not(any(
             target_os = "android",
