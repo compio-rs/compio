@@ -228,7 +228,7 @@ impl Runtime {
         })
     }
 
-    /// Spawns a new asynchronous task, returning a [`Task`] for it.
+    /// Spawns a new asynchronous task, returning a [`JoinHandle`] for it.
     ///
     /// Spawning a task enables the task to execute concurrently to other tasks.
     /// There is no guarantee that a spawned task will execute to completion.
@@ -574,7 +574,7 @@ impl RuntimeBuilder {
     }
 }
 
-/// Spawns a new asynchronous task, returning a [`Task`] for it.
+/// Spawns a new asynchronous task, returning a [`JoinHandle`] for it.
 ///
 /// Spawning a task enables the task to execute concurrently to other tasks.
 /// There is no guarantee that a spawned task will execute to completion.

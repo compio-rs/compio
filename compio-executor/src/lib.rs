@@ -49,6 +49,7 @@ pub(crate) type Panic = Box<dyn Any + Send + 'static>;
 /// Optionally, all [`Waker`]s generated from this executor can contain an extra
 /// data, parameterized as `E`.
 ///
+/// [`Waker`]: std::task::Waker
 /// [`Waker::wake`]: std::task::Waker::wake
 #[derive(Debug)]
 pub struct Executor<E = ()> {
@@ -178,6 +179,7 @@ impl Default for Executor {
 ///
 /// Dropping a [`JoinHandle`] will cancel the task. To run the task in the
 /// background, use [`JoinHandle::detach`].
+#[must_use = "Drop `JoinHandle` will cancel the task. Use `detach` to run it in background."]
 #[derive(Debug)]
 pub struct JoinHandle<T> {
     handle: Handle,
