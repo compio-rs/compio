@@ -3,7 +3,6 @@
 fn win32_event() {
     use std::{
         os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
-        panic::resume_unwind,
         pin::Pin,
         ptr::null,
         task::Poll,
@@ -48,6 +47,6 @@ fn win32_event() {
         });
 
         wait.await.0.unwrap();
-        task.await.unwrap_or_else(|e| resume_unwind(e));
+        task.await.unwrap();
     })
 }

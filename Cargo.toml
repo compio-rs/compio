@@ -12,6 +12,7 @@ members = [
     "compio-process",
     "compio-quic",
     "compio-runtime",
+    "compio-executor",
     "compio-signal",
     "compio-tls",
     "compio-ws",
@@ -27,6 +28,7 @@ repository = "https://github.com/compio-rs/compio"
 compio-buf = { path = "./compio-buf", version = "0.8.0" }
 compio-driver = { path = "./compio-driver", version = "0.11.1", default-features = false }
 compio-runtime = { path = "./compio-runtime", version = "0.11.0" }
+compio-executor = { path = "./compio-executor", version = "0.1.0" }
 compio-macros = { path = "./compio-macros", version = "0.1.2" }
 compio-fs = { path = "./compio-fs", version = "0.11.0" }
 compio-io = { path = "./compio-io", version = "0.9.0" }
@@ -74,6 +76,8 @@ thiserror = "2.0.3"
 smallvec = "1.13.2"
 synchrony = "0.1.4"
 thin-cell = "0.2.0"
+slotmap = "1.1.1"
+crossfire = "3.1.5"
 
 [profile.bench]
 debug = true

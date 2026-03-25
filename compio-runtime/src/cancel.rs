@@ -1,7 +1,6 @@
 use std::{
     cell::{Cell, RefCell},
     collections::HashSet,
-    future::poll_fn,
     mem,
     ops::DerefMut,
     pin::Pin,
@@ -119,8 +118,8 @@ impl CancelToken {
         return None;
 
         #[cfg(feature = "future-combinator")]
-        poll_fn(|cx| {
-            use crate::runtime::ContextExt;
+        std::future::poll_fn(|cx| {
+            use crate::ContextExt;
             Poll::Ready(cx.as_cancel().cloned())
         })
         .await

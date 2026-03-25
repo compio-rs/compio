@@ -15,12 +15,12 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 # Workspace dependencies
+compio-executor = { workspace = true }
 compio-driver = { workspace = true }
 compio-buf = { workspace = true }
 compio-log = { workspace = true }
 compio-io = { workspace = true, optional = true }
 
-async-task = "4.5.0"
 cfg-if = { workspace = true }
 criterion = { workspace = true, optional = true }
 compio-send-wrapper = { workspace = true }
@@ -57,7 +57,7 @@ time = []
 async-fd = ["dep:compio-io"]
 
 # Enable it to always notify the driver when a task schedules.
-notify-always = []
+notify-always = ["compio-executor/notify-always"]
 
 future-combinator = []
 current_thread_id = []

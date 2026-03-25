@@ -5,7 +5,6 @@ use std::{
         fd::AsFd,
         unix::prelude::{FileTypeExt, MetadataExt, PermissionsExt},
     },
-    panic::resume_unwind,
     path::Path,
     time::{Duration, SystemTime},
 };
@@ -15,6 +14,7 @@ use compio_driver::{
     ToSharedFd,
     op::{CurrentDir, PathStat, Stat},
 };
+use compio_runtime::ResumeUnwind;
 
 use crate::{File, path_string};
 
@@ -51,7 +51,8 @@ pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::R
     let path = path.as_ref().to_path_buf();
     compio_runtime::spawn_blocking(move || std::fs::set_permissions(path, perm))
         .await
-        .unwrap_or_else(|e| resume_unwind(e))
+        .resume_unwind()
+        .expect("shouldn't be canceled")
 }
 
 #[derive(Clone)]

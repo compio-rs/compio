@@ -1,6 +1,7 @@
-use std::{io, panic::resume_unwind, path::Path};
+use std::{io, path::Path};
 
 use compio_driver::ToSharedFd;
+use compio_runtime::ResumeUnwind;
 
 use crate::File;
 
@@ -8,14 +9,16 @@ pub async fn remove_file(path: impl AsRef<Path>) -> io::Result<()> {
     let path = path.as_ref().to_path_buf();
     compio_runtime::spawn_blocking(move || std::fs::remove_file(path))
         .await
-        .unwrap_or_else(|e| resume_unwind(e))
+        .resume_unwind()
+        .expect("shouldn't be canceled")
 }
 
 pub async fn remove_dir(path: impl AsRef<Path>) -> io::Result<()> {
     let path = path.as_ref().to_path_buf();
     compio_runtime::spawn_blocking(move || std::fs::remove_dir(path))
         .await
-        .unwrap_or_else(|e| resume_unwind(e))
+        .resume_unwind()
+        .expect("shouldn't be canceled")
 }
 
 pub async fn rename(from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<()> {
@@ -23,7 +26,8 @@ pub async fn rename(from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<
     let to = to.as_ref().to_path_buf();
     compio_runtime::spawn_blocking(move || std::fs::rename(from, to))
         .await
-        .unwrap_or_else(|e| resume_unwind(e))
+        .resume_unwind()
+        .expect("shouldn't be canceled")
 }
 
 pub async fn symlink_file(original: impl AsRef<Path>, link: impl AsRef<Path>) -> io::Result<()> {
@@ -31,7 +35,8 @@ pub async fn symlink_file(original: impl AsRef<Path>, link: impl AsRef<Path>) ->
     let link = link.as_ref().to_path_buf();
     compio_runtime::spawn_blocking(move || std::os::windows::fs::symlink_file(original, link))
         .await
-        .unwrap_or_else(|e| resume_unwind(e))
+        .resume_unwind()
+        .expect("shouldn't be canceled")
 }
 
 pub async fn symlink_dir(original: impl AsRef<Path>, link: impl AsRef<Path>) -> io::Result<()> {
@@ -39,7 +44,8 @@ pub async fn symlink_dir(original: impl AsRef<Path>, link: impl AsRef<Path>) -> 
     let link = link.as_ref().to_path_buf();
     compio_runtime::spawn_blocking(move || std::os::windows::fs::symlink_dir(original, link))
         .await
-        .unwrap_or_else(|e| resume_unwind(e))
+        .resume_unwind()
+        .expect("shouldn't be canceled")
 }
 
 pub async fn hard_link(original: impl AsRef<Path>, link: impl AsRef<Path>) -> io::Result<()> {
@@ -47,7 +53,8 @@ pub async fn hard_link(original: impl AsRef<Path>, link: impl AsRef<Path>) -> io
     let link = link.as_ref().to_path_buf();
     compio_runtime::spawn_blocking(move || std::fs::hard_link(original, link))
         .await
-        .unwrap_or_else(|e| resume_unwind(e))
+        .resume_unwind()
+        .expect("shouldn't be canceled")
 }
 
 pub struct DirBuilder;
@@ -61,7 +68,8 @@ impl DirBuilder {
         let path = path.to_path_buf();
         compio_runtime::spawn_blocking(move || std::fs::create_dir(path))
             .await
-            .unwrap_or_else(|e| resume_unwind(e))
+            .resume_unwind()
+            .expect("shouldn't be canceled")
     }
 
     #[cfg(dirfd)]

@@ -62,7 +62,9 @@ impl Stream for Incoming<'_> {
                     }
                     Err(e) => {
                         this.state = IncomingState::Idle;
-                        std::panic::resume_unwind(e)
+                        e.resume_unwind();
+                        // The background task was cancelled; terminate the stream.
+                        return Poll::Ready(None);
                     }
                 },
                 IncomingState::Accepting(op) => {

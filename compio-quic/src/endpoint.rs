@@ -362,7 +362,7 @@ impl EndpointRef {
             if idle {
                 worker.cancel().await;
             } else {
-                let _ = worker.await;
+                _ = worker.await;
             }
         }
 

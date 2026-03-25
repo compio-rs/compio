@@ -11,7 +11,7 @@ use compio_buf::BufResult;
 use compio_driver::{Extra, Key, OpCode, PushEntry};
 use futures_util::future::FusedFuture;
 
-use crate::{CancelToken, runtime::Runtime};
+use crate::{CancelToken, Runtime};
 
 pub(crate) trait ContextExt {
     fn as_cancel(&mut self) -> Option<&CancelToken> {

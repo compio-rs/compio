@@ -1,6 +1,7 @@
-use std::{io, os::windows::fs::OpenOptionsExt, panic::resume_unwind, path::Path};
+use std::{io, os::windows::fs::OpenOptionsExt, path::Path};
 
 use compio_driver::ToSharedFd;
+use compio_runtime::ResumeUnwind;
 use windows_sys::Win32::Storage::FileSystem::{
     FILE_FLAG_OVERLAPPED, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
 };
@@ -82,7 +83,8 @@ impl OpenOptions {
         let p = p.as_ref().to_path_buf();
         let file = compio_runtime::spawn_blocking(move || opt.open(p))
             .await
-            .unwrap_or_else(|e| resume_unwind(e))?;
+            .resume_unwind()
+            .expect("shouldn't be canceled")?;
         File::from_std(file)
     }
 

@@ -1,9 +1,7 @@
-use std::{
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    panic::resume_unwind,
-};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use compio_net::{TcpListener, TcpStream, ToSocketAddrsAsync};
+use compio_runtime::ResumeUnwind;
 
 async fn test_connect_ip_impl(
     target: impl ToSocketAddrsAsync,
@@ -20,7 +18,7 @@ async fn test_connect_ip_impl(
     });
 
     let mine = TcpStream::connect(&addr).await.unwrap();
-    let theirs = task.await.unwrap_or_else(|e| resume_unwind(e));
+    let theirs = task.await.resume_unwind().expect("shouldn't be canceled");
 
     assert_eq!(mine.local_addr().unwrap(), theirs.peer_addr().unwrap());
     assert_eq!(theirs.local_addr().unwrap(), mine.peer_addr().unwrap());
@@ -58,7 +56,7 @@ async fn test_bind_and_connect_ip_impl(
     });
 
     let mine = TcpStream::bind_and_connect(bind_addr, &addr).await.unwrap();
-    let theirs = task.await.unwrap_or_else(|e| resume_unwind(e));
+    let theirs = task.await.resume_unwind().expect("shouldn't be canceled");
 
     assert_eq!(mine.local_addr().unwrap(), theirs.peer_addr().unwrap());
     assert_eq!(theirs.local_addr().unwrap(), mine.peer_addr().unwrap());
