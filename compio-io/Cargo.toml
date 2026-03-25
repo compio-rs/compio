@@ -10,13 +10,25 @@ license = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-compio-buf = { workspace = true, features = ["arrayvec", "bytes"] }
+compio-buf = { workspace = true, features = ["arrayvec"] }
 futures-util = { workspace = true, features = ["sink"] }
 paste = { workspace = true }
+pin-project-lite = { workspace = true, optional = true }
 synchrony = { workspace = true, features = ["bilock"] }
+
+cfg-if = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
 serde = { version = "1.0.219", optional = true }
 serde_json = { version = "1.0.140", optional = true }
+bytemuck = { workspace = true, optional = true, features = ["min_const_generics"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true, optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, optional = true, features = [
+    "Win32_Networking_WinSock",
+] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
@@ -24,9 +36,11 @@ serde = { version = "1.0.219", features = ["derive"] }
 futures-executor = "0.3.30"
 
 [features]
-default = []
-compat = ["futures-util/io"]
+default = ["bytes"]
+compat = ["futures-util/io", "dep:pin-project-lite"]
 sync = []
+ancillary = ["dep:cfg-if", "dep:libc", "dep:windows-sys"]
+bytes = ["compio-buf/bytes"]
 
 # Codecs
 # Serde json codec
@@ -44,3 +58,7 @@ required-features = ["compat"]
 [[test]]
 name = "framed"
 required-features = ["codec-serde-json"]
+
+[[test]]
+name = "ancillary"
+required-features = ["ancillary"]

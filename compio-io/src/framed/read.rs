@@ -56,7 +56,7 @@ enum StateInner<Io, B> {
 impl<R, W, C, F, In, Out, B> Stream for Framed<R, W, C, F, In, Out, B>
 where
     R: AsyncRead + 'static,
-    C: Decoder<Out, B>,
+    C: codec::Decoder<Out, B>,
     F: Framer<B>,
     B: IoBufMut,
     Self: Unpin,

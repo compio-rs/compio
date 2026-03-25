@@ -1,7 +1,8 @@
 use std::io::prelude::*;
 
 use compio_fs::{File, OpenOptions};
-use compio_io::{AsyncReadAtExt, AsyncWriteAt, AsyncWriteAtExt};
+use compio_io::{AsyncReadAtExt, AsyncReadExt, AsyncWriteAt, AsyncWriteAtExt};
+use futures_util::StreamExt;
 use tempfile::NamedTempFile;
 
 async fn setlen_run(file: &File, size: u64) {
@@ -41,6 +42,22 @@ async fn metadata() {
 
     let std_meta = std::fs::metadata("Cargo.toml").unwrap();
     assert_eq!(size, std_meta.len());
+}
+
+#[compio_macros::test]
+async fn file_stream() {
+    let mut tempfile = tempfile();
+    tempfile.write_all(HELLO).unwrap();
+
+    let file = File::open(tempfile.path()).await.unwrap();
+    let cursor = std::io::Cursor::new(file);
+    let mut file = cursor.read_only().bytes();
+    let mut s = String::new();
+    while let Some(result) = file.next().await {
+        let chunk = result.unwrap();
+        s.push_str(str::from_utf8(&chunk).unwrap());
+    }
+    assert_eq!(s, String::from_utf8_lossy(HELLO));
 }
 
 const HELLO: &[u8] = b"hello world...";

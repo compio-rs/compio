@@ -15,6 +15,8 @@ use std::{
 };
 
 use compio_buf::{IntoInner, IoBuf, IoBufMut, SetLen, Slice};
+#[cfg(not(fusion))]
+pub use {BufferPool as FallbackBufferPool, OwnedBuffer as FallbackOwnedBuffer};
 
 struct BufferPoolInner {
     buffers: RefCell<VecDeque<Vec<u8>>>,

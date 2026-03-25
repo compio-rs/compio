@@ -34,6 +34,7 @@
             openssl
             pkg-config
             cargo-nextest
+            python315
             (rust-bin.selectLatestNightlyWith (
               toolchain:
               toolchain.default.override {

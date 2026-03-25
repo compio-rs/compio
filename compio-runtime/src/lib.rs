@@ -11,6 +11,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "current_thread_id", feature(current_thread_id))]
 #![cfg_attr(feature = "future-combinator", feature(context_ext, local_waker))]
+#![allow(unused_features)]
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![doc(
@@ -38,26 +39,3 @@ use compio_buf::BufResult;
 #[allow(hidden_glob_reexports, unused)]
 use runtime::RuntimeInner; // used to shadow glob export so that RuntimeInner is not exported
 pub use runtime::*;
-/// Macro that asserts a type *DOES NOT* implement some trait. Shamelessly
-/// copied from <https://users.rust-lang.org/t/a-macro-to-assert-that-a-type-does-not-implement-trait-bounds/31179>.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// assert_not_impl!(u8, From<u16>);
-/// ```
-macro_rules! assert_not_impl {
-    ($x:ty, $($t:path),+ $(,)*) => {
-        const _: fn() -> () = || {
-            struct Check<T: ?Sized>(T);
-            trait AmbiguousIfImpl<A> { fn some_item() { } }
-
-            impl<T: ?Sized> AmbiguousIfImpl<()> for Check<T> { }
-            impl<T: ?Sized $(+ $t)*> AmbiguousIfImpl<u8> for Check<T> { }
-
-            <Check::<$x> as AmbiguousIfImpl<_>>::some_item()
-        };
-    };
-}
-
-use assert_not_impl;

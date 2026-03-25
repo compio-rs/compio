@@ -3,7 +3,6 @@ use std::sync::OnceLock;
 use std::{
     io,
     marker::PhantomPinned,
-    net::Shutdown,
     os::windows::io::AsRawSocket,
     pin::Pin,
     ptr::{null, null_mut, read_unaligned},
@@ -24,11 +23,11 @@ use windows_sys::{
         },
         Networking::WinSock::{
             CMSGHDR, LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS, LPFN_WSARECVMSG,
-            SD_BOTH, SD_RECEIVE, SD_SEND, SIO_GET_EXTENSION_FUNCTION_POINTER,
-            SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, SOCKADDR, SOCKADDR_STORAGE,
-            SOL_SOCKET, WSAID_ACCEPTEX, WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS,
-            WSAID_WSARECVMSG, WSAIoctl, WSAMSG, WSARecv, WSARecvFrom, WSASend, WSASendMsg,
-            WSASendTo, closesocket, setsockopt, shutdown, socklen_t,
+            SIO_GET_EXTENSION_FUNCTION_POINTER, SO_UPDATE_ACCEPT_CONTEXT,
+            SO_UPDATE_CONNECT_CONTEXT, SOCKADDR, SOCKADDR_STORAGE, SOL_SOCKET, WSAID_ACCEPTEX,
+            WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS, WSAID_WSARECVMSG, WSAIoctl, WSAMSG,
+            WSARecv, WSARecvFrom, WSASend, WSASendMsg, WSASendTo, closesocket, setsockopt,
+            socklen_t,
         },
         Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile},
         System::{
@@ -39,6 +38,10 @@ use windows_sys::{
     core::GUID,
 };
 
+pub use self::{
+    Send as SendZc, SendMsg as SendMsgZc, SendTo as SendToZc, SendToVectored as SendToVectoredZc,
+    SendVectored as SendVectoredZc,
+};
 use crate::{AsFd, AsRawFd, OpCode, OpType, RawFd, op::*, sys_slice::*, syscall};
 
 #[inline]
@@ -312,23 +315,6 @@ unsafe impl<S: AsFd> OpCode for Sync<S> {
     unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         Poll::Ready(Ok(
             syscall!(BOOL, FlushFileBuffers(self.fd.as_fd().as_raw_fd()))? as _,
-        ))
-    }
-}
-
-unsafe impl<S: AsFd> OpCode for ShutdownSocket<S> {
-    fn op_type(&self) -> OpType {
-        OpType::Blocking
-    }
-
-    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let how = match self.how {
-            Shutdown::Write => SD_SEND,
-            Shutdown::Read => SD_RECEIVE,
-            Shutdown::Both => SD_BOTH,
-        };
-        Poll::Ready(Ok(
-            syscall!(SOCKET, shutdown(self.fd.as_fd().as_raw_fd() as _, how))? as _,
         ))
     }
 }
@@ -1121,7 +1107,7 @@ pin_project! {
         buffer: T,
         #[pin]
         control: C,
-        addr: SockAddr,
+        addr: Option<SockAddr>,
         slices: Vec<SysSlice>,
         flags: i32,
         _p: PhantomPinned,
@@ -1134,7 +1120,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     /// # Panics
     ///
     /// This function will panic if the control message buffer is misaligned.
-    pub fn new(fd: S, buffer: T, control: C, addr: SockAddr, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, control: C, addr: Option<SockAddr>, flags: i32) -> Self {
         assert!(
             control.buf_ptr().cast::<CMSGHDR>().is_aligned(),
             "misaligned control message buffer"
@@ -1166,13 +1152,23 @@ unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
 
         *this.slices = this.buffer.as_ref().sys_slices();
         let control = this.control.as_ref().sys_slice();
-        *this.msg = WSAMSG {
-            name: this.addr.as_ptr() as _,
-            namelen: this.addr.len(),
-            lpBuffers: this.slices.as_ptr() as _,
-            dwBufferCount: this.slices.len() as _,
-            Control: control.into_inner(),
-            dwFlags: 0,
+        *this.msg = match this.addr.as_ref() {
+            Some(addr) => WSAMSG {
+                name: addr.as_ptr() as _,
+                namelen: addr.len() as _,
+                lpBuffers: this.slices.as_ptr() as _,
+                dwBufferCount: this.slices.len() as _,
+                Control: control.into_inner(),
+                dwFlags: 0,
+            },
+            None => WSAMSG {
+                name: null_mut(),
+                namelen: 0,
+                lpBuffers: this.slices.as_ptr() as _,
+                dwBufferCount: this.slices.len() as _,
+                Control: control.into_inner(),
+                dwFlags: 0,
+            },
         };
 
         let mut sent = 0;

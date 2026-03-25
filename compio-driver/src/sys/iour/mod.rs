@@ -2,7 +2,9 @@
 #[allow(unused_imports)]
 pub use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::{
+    collections::HashSet,
     io,
+    marker::PhantomData,
     os::fd::FromRawFd,
     pin::Pin,
     sync::Arc,
@@ -10,6 +12,7 @@ use std::{
     time::Duration,
 };
 
+use compio_buf::BufResult;
 use compio_log::{instrument, trace, warn};
 cfg_if::cfg_if! {
     if #[cfg(feature = "io-uring-cqe32")] {
@@ -36,13 +39,14 @@ use slab::Slab;
 
 use crate::{
     AsyncifyPool, BufferPool, DriverType, Entry, ProactorBuilder,
-    key::{ErasedKey, RefExt},
+    key::{BorrowedKey, ErasedKey, RefExt},
     syscall,
 };
 
 mod extra;
-pub use extra::Extra;
+pub(in crate::sys) use extra::Extra;
 pub(crate) mod op;
+pub(crate) use op::take_buffer;
 
 pub(crate) fn is_op_supported(code: u8) -> bool {
     #[cfg(feature = "once_cell_try")]
@@ -135,14 +139,28 @@ pub unsafe trait OpCode {
         unreachable!("this operation is asynchronous")
     }
 
-    /// Set the result when it successfully completes.
+    /// Set the result when it completes.
     /// The operation stores the result and is responsible to release it if the
     /// operation is cancelled.
     ///
     /// # Safety
     ///
-    /// Users should not call it.
-    unsafe fn set_result(self: Pin<&mut Self>, _: usize) {}
+    /// The params must be the result coming from this operation.
+    unsafe fn set_result(self: Pin<&mut Self>, _: &io::Result<usize>, _: &crate::Extra) {}
+
+    /// Push a multishot result to the inner queue.
+    ///
+    /// # Safety
+    ///
+    /// The params must be the result coming from this operation.
+    unsafe fn push_multishot(self: Pin<&mut Self>, _: io::Result<usize>, _: crate::Extra) {
+        unreachable!("this operation is not multishot")
+    }
+
+    /// Pop a multishot result from the inner queue.
+    fn pop_multishot(self: Pin<&mut Self>) -> Option<BufResult<usize, crate::sys::Extra>> {
+        unreachable!("this operation is not multishot")
+    }
 }
 
 pub use OpCode as IourOpCode;
@@ -156,6 +174,9 @@ pub(crate) struct Driver {
     completed_rx: Receiver<Entry>,
     buffer_group_ids: Slab<()>,
     need_push_notifier: bool,
+    /// Keys leaked via `into_raw()` into io_uring user_data, freed on drop.
+    in_flight: HashSet<usize>,
+    _p: PhantomData<ErasedKey>,
 }
 
 impl Driver {
@@ -204,6 +225,8 @@ impl Driver {
             pool: builder.create_or_get_thread_pool(),
             buffer_group_ids: Slab::new(),
             need_push_notifier: true,
+            in_flight: HashSet::new(),
+            _p: PhantomData,
         })
     }
 
@@ -214,6 +237,16 @@ impl Driver {
     #[allow(dead_code)]
     pub fn as_iour(&self) -> Option<&Self> {
         Some(self)
+    }
+
+    pub fn register_files(&self, fds: &[RawFd]) -> io::Result<()> {
+        self.inner.submitter().register_files(fds)?;
+        Ok(())
+    }
+
+    pub fn unregister_files(&self) -> io::Result<()> {
+        self.inner.submitter().unregister_files()?;
+        Ok(())
     }
 
     pub fn register_personality(&self) -> io::Result<u16> {
@@ -285,13 +318,30 @@ impl Driver {
                     }
                     self.notifier.clear().expect("cannot clear notifier");
                 }
-                _ => create_entry(entry).notify(),
+                key => {
+                    let flags = entry.flags();
+                    if more(flags) {
+                        let key = unsafe { BorrowedKey::from_raw(key as _) };
+                        let mut key = key.borrow();
+                        #[allow(clippy::useless_conversion)]
+                        let mut extra: crate::sys::Extra = Extra::new().into();
+                        extra.set_flags(entry.flags());
+                        unsafe {
+                            key.pinned_op()
+                                .push_multishot(create_result(entry.result()), extra);
+                        }
+                        key.wake_by_ref();
+                    } else {
+                        self.in_flight.remove(&(key as usize));
+                        create_entry(entry).notify()
+                    }
+                }
             }
         }
         has_entry
     }
 
-    pub fn default_extra(&self) -> Extra {
+    pub(in crate::sys) fn default_extra(&self) -> Extra {
         Extra::new()
     }
 
@@ -321,8 +371,10 @@ impl Driver {
     }
 
     fn push_raw_with_key(&mut self, entry: SEntry, key: ErasedKey) -> io::Result<()> {
-        let entry = entry.user_data(key.as_raw() as _);
+        let user_data = key.as_raw();
+        let entry = entry.user_data(user_data as _);
         self.push_raw(entry)?; // if push failed, do not leak the key. Drop it upon return.
+        self.in_flight.insert(user_data);
         key.into_raw();
         Ok(())
     }
@@ -494,10 +546,23 @@ impl Driver {
         let buffer_pool = buffer_pool.into_io_uring();
 
         let buffer_group = buffer_pool.buffer_group();
-        unsafe { buffer_pool.into_inner().release(&self.inner)? };
+        // FIXME: should we drop it directly if `into_inner` fails?
+        unsafe {
+            buffer_pool
+                .into_inner()
+                .expect("operations not completed")
+                .release(&self.inner)?
+        };
         self.buffer_group_ids.remove(buffer_group as _);
 
         Ok(())
+    }
+
+    pub fn pop_multishot(
+        &mut self,
+        key: &ErasedKey,
+    ) -> Option<BufResult<usize, crate::sys::Extra>> {
+        key.borrow().pinned_op().pop_multishot()
     }
 }
 
@@ -507,9 +572,40 @@ impl AsRawFd for Driver {
     }
 }
 
+impl Drop for Driver {
+    fn drop(&mut self) {
+        // Drain completed CQEs first to avoid double-free.
+        let mut cqueue = self.inner.completion();
+        cqueue.sync();
+        for entry in cqueue {
+            match entry.user_data() {
+                Self::CANCEL | Self::NOTIFY => {}
+                key => {
+                    self.in_flight.remove(&(key as usize));
+                    drop(unsafe { ErasedKey::from_raw(key as _) });
+                }
+            }
+        }
+
+        // Free remaining in-flight keys.
+        for user_data in self.in_flight.drain() {
+            drop(unsafe { ErasedKey::from_raw(user_data) });
+        }
+    }
+}
+
 fn create_entry(cq_entry: CEntry) -> Entry {
     let result = cq_entry.result();
-    let result = if result < 0 {
+    let result = create_result(result);
+    let key = unsafe { ErasedKey::from_raw(cq_entry.user_data() as _) };
+    let mut entry = Entry::new(key, result);
+    entry.set_flags(cq_entry.flags());
+
+    entry
+}
+
+fn create_result(result: i32) -> io::Result<usize> {
+    if result < 0 {
         let result = if result == -libc::ECANCELED {
             libc::ETIMEDOUT
         } else {
@@ -518,12 +614,7 @@ fn create_entry(cq_entry: CEntry) -> Entry {
         Err(io::Error::from_raw_os_error(result))
     } else {
         Ok(result as _)
-    };
-    let key = unsafe { ErasedKey::from_raw(cq_entry.user_data() as _) };
-    let mut entry = Entry::new(key, result);
-    entry.set_flags(cq_entry.flags());
-
-    entry
+    }
 }
 
 fn timespec(duration: std::time::Duration) -> Timespec {

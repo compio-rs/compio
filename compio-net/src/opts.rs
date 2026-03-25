@@ -14,6 +14,7 @@ pub struct SocketOpts {
     reuse_address: Option<bool>,
     reuse_port: Option<bool>,
     nodelay: Option<bool>,
+    backlog: Option<i32>,
 }
 
 impl SocketOpts {
@@ -78,6 +79,18 @@ impl SocketOpts {
     pub fn nodelay(mut self, nodelay: bool) -> Self {
         self.nodelay = Some(nodelay);
         self
+    }
+
+    /// Sets the backlog size for listening sockets.
+    ///
+    /// It is no-op for non-listening sockets.
+    pub fn backlog(mut self, backlog: i32) -> Self {
+        self.backlog = Some(backlog);
+        self
+    }
+
+    pub(crate) fn get_backlog(&self) -> Option<i32> {
+        self.backlog
     }
 
     pub(crate) fn setup_socket(&self, socket: &Socket) -> std::io::Result<()> {

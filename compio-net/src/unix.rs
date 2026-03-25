@@ -1,4 +1,10 @@
-use std::{future::Future, io, path::Path};
+use std::{
+    future::Future,
+    io,
+    path::Path,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
@@ -8,9 +14,12 @@ use compio_io::{
     util::Splittable,
 };
 use compio_runtime::{BorrowedBuffer, BufferPool, fd::PollFd};
+use futures_util::{Stream, StreamExt, stream::FusedStream};
 use socket2::{SockAddr, Socket as Socket2, Type};
 
-use crate::{OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, SocketOpts, WriteHalf};
+use crate::{
+    Incoming, MSG_NOSIGNAL, OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, SocketOpts, WriteHalf,
+};
 
 /// A Unix socket server, listening for connections.
 ///
@@ -73,7 +82,7 @@ impl UnixListener {
 
         let socket = Socket::bind(addr, Type::STREAM, None).await?;
         opts.setup_socket(&socket)?;
-        socket.listen(1024)?;
+        socket.listen(opts.get_backlog().unwrap_or(1024))?;
         Ok(UnixListener { inner: socket })
     }
 
@@ -117,6 +126,20 @@ impl UnixListener {
         Ok((stream, addr))
     }
 
+    /// Returns a stream of incoming connections to this listener.
+    pub fn incoming(&self) -> UnixIncoming<'_> {
+        self.incoming_with_options(&SocketOpts::default())
+    }
+
+    /// Returns a stream of incoming connections to this listener, and sets
+    /// options for each accepted connection.
+    pub fn incoming_with_options<'a>(&'a self, options: &SocketOpts) -> UnixIncoming<'a> {
+        UnixIncoming {
+            inner: self.inner.incoming(),
+            opts: *options,
+        }
+    }
+
     /// Returns the local address that this listener is bound to.
     pub fn local_addr(&self) -> io::Result<SockAddr> {
         self.inner.local_addr()
@@ -124,6 +147,33 @@ impl UnixListener {
 }
 
 impl_raw_fd!(UnixListener, socket2::Socket, inner, socket);
+
+/// A stream of incoming Unix connections.
+pub struct UnixIncoming<'a> {
+    inner: Incoming<'a>,
+    opts: SocketOpts,
+}
+
+impl Stream for UnixIncoming<'_> {
+    type Item = io::Result<UnixStream>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        this.inner.poll_next_unpin(cx).map(|res| {
+            res.map(|res| {
+                let socket = res?;
+                this.opts.setup_socket(&socket)?;
+                Ok(UnixStream { inner: socket })
+            })
+        })
+    }
+}
+
+impl FusedStream for UnixIncoming<'_> {
+    fn is_terminated(&self) -> bool {
+        self.inner.is_terminated()
+    }
+}
 
 /// A Unix stream between two local sockets on Windows & WSL.
 ///
@@ -250,6 +300,28 @@ impl UnixStream {
     pub fn into_poll_fd(self) -> io::Result<PollFd<Socket2>> {
         self.inner.into_poll_fd()
     }
+
+    /// Sends data using [zero-copy send](https://man7.org/linux/man-pages/man3/io_uring_prep_send_zc.3.html).
+    ///
+    /// If the underlying platform doesn't support zero-copy send, it will fall
+    /// back to normal send.
+    pub async fn send_zerocopy<T: IoBuf>(
+        &self,
+        buf: T,
+    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+        self.inner.send_zerocopy(buf, MSG_NOSIGNAL).await
+    }
+
+    /// Sends vectorized data using [zero-copy send](https://man7.org/linux/man-pages/man3/io_uring_prep_send_zc.3.html).
+    ///
+    /// If the underlying platform doesn't support zero-copy send, it will fall
+    /// back to normal send.
+    pub async fn send_zerocopy_vectored<T: IoVectoredBuf>(
+        &self,
+        buf: T,
+    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+        self.inner.send_zerocopy_vectored(buf, MSG_NOSIGNAL).await
+    }
 }
 
 impl AsyncRead for UnixStream {
@@ -375,12 +447,12 @@ impl AsyncWrite for UnixStream {
 impl AsyncWrite for &UnixStream {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        self.inner.send(buf, 0).await
+        self.inner.send(buf, MSG_NOSIGNAL).await
     }
 
     #[inline]
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        self.inner.send_vectored(buf, 0).await
+        self.inner.send_vectored(buf, MSG_NOSIGNAL).await
     }
 
     #[inline]

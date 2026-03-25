@@ -3,6 +3,7 @@
 //! [`quinn-proto`]: https://docs.rs/quinn-proto
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![allow(unused_features)]
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![doc(
@@ -35,7 +36,7 @@ mod socket;
 
 #[cfg(rustls)]
 pub use builder::{ClientBuilder, ServerBuilder};
-pub use connection::{Connecting, Connection, ConnectionError};
+pub use connection::{Connecting, Connection, ConnectionError, OpenStreamError, SendDatagramError};
 pub use endpoint::{Endpoint, EndpointStats};
 pub use incoming::{Incoming, IncomingFuture};
 pub use recv_stream::{ReadError, ReadExactError, RecvStream, ResetError};

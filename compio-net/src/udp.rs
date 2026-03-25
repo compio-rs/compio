@@ -5,7 +5,7 @@ use compio_driver::impl_raw_fd;
 use compio_runtime::{BorrowedBuffer, BufferPool};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
-use crate::{Socket, SocketOpts, ToSocketAddrsAsync};
+use crate::{MSG_NOSIGNAL, Socket, SocketOpts, ToSocketAddrsAsync};
 
 /// A UDP socket.
 ///
@@ -232,28 +232,37 @@ impl UdpSocket {
         self.inner
             .recv_from_managed(buffer_pool, len, 0)
             .await
-            .map(|(buffer, addr)| (buffer, addr.as_socket().expect("should be SocketAddr")))
+            .map(|(buffer, addr)| {
+                let addr = addr
+                    .expect("should have addr")
+                    .as_socket()
+                    .expect("should be SocketAddr");
+                (buffer, addr)
+            })
     }
 
     /// Sends some data to the socket from the buffer, returning the original
     /// buffer and quantity of data sent.
     pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        self.inner.send(buffer, 0).await
+        self.inner.send(buffer, MSG_NOSIGNAL).await
     }
 
     /// Sends some data to the socket from the buffer, returning the original
     /// buffer and quantity of data sent.
     pub async fn send_vectored<T: IoVectoredBuf>(&self, buffer: T) -> BufResult<usize, T> {
-        self.inner.send_vectored(buffer, 0).await
+        self.inner.send_vectored(buffer, MSG_NOSIGNAL).await
     }
 
     /// Receives a single datagram message on the socket. On success, returns
     /// the number of bytes received and the origin.
     pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SocketAddr), T> {
-        self.inner
-            .recv_from(buffer, 0)
-            .await
-            .map_res(|(n, addr)| (n, addr.as_socket().expect("should be SocketAddr")))
+        self.inner.recv_from(buffer, 0).await.map_res(|(n, addr)| {
+            let addr = addr
+                .expect("should have addr")
+                .as_socket()
+                .expect("should be SocketAddr");
+            (n, addr)
+        })
     }
 
     /// Receives a single datagram message on the socket. On success, returns
@@ -265,7 +274,13 @@ impl UdpSocket {
         self.inner
             .recv_from_vectored(buffer, 0)
             .await
-            .map_res(|(n, addr)| (n, addr.as_socket().expect("should be SocketAddr")))
+            .map_res(|(n, addr)| {
+                let addr = addr
+                    .expect("should have addr")
+                    .as_socket()
+                    .expect("should be SocketAddr");
+                (n, addr)
+            })
     }
 
     /// Receives a single datagram message and ancillary data on the socket. On
@@ -278,7 +293,13 @@ impl UdpSocket {
         self.inner
             .recv_msg(buffer, control, 0)
             .await
-            .map_res(|(n, m, addr)| (n, m, addr.as_socket().expect("should be SocketAddr")))
+            .map_res(|(n, m, addr)| {
+                let addr = addr
+                    .expect("should have addr")
+                    .as_socket()
+                    .expect("should be SocketAddr");
+                (n, m, addr)
+            })
     }
 
     /// Receives a single datagram message and ancillary data on the socket. On
@@ -291,7 +312,13 @@ impl UdpSocket {
         self.inner
             .recv_msg_vectored(buffer, control, 0)
             .await
-            .map_res(|(n, m, addr)| (n, m, addr.as_socket().expect("should be SocketAddr")))
+            .map_res(|(n, m, addr)| {
+                let addr = addr
+                    .expect("should have addr")
+                    .as_socket()
+                    .expect("should be SocketAddr");
+                (n, m, addr)
+            })
     }
 
     /// Sends data on the socket to the given address. On success, returns the
@@ -302,7 +329,9 @@ impl UdpSocket {
         addr: impl ToSocketAddrsAsync,
     ) -> BufResult<usize, T> {
         super::first_addr_buf(addr, buffer, |addr, buffer| async move {
-            self.inner.send_to(buffer, &SockAddr::from(addr), 0).await
+            self.inner
+                .send_to(buffer, &SockAddr::from(addr), MSG_NOSIGNAL)
+                .await
         })
         .await
     }
@@ -316,7 +345,7 @@ impl UdpSocket {
     ) -> BufResult<usize, T> {
         super::first_addr_buf(addr, buffer, |addr, buffer| async move {
             self.inner
-                .send_to_vectored(buffer, &SockAddr::from(addr), 0)
+                .send_to_vectored(buffer, &SockAddr::from(addr), MSG_NOSIGNAL)
                 .await
         })
         .await
@@ -335,7 +364,7 @@ impl UdpSocket {
             (buffer, control),
             |addr, (buffer, control)| async move {
                 self.inner
-                    .send_msg(buffer, control, &SockAddr::from(addr), 0)
+                    .send_msg(buffer, control, Some(&SockAddr::from(addr)), MSG_NOSIGNAL)
                     .await
             },
         )
@@ -355,10 +384,104 @@ impl UdpSocket {
             (buffer, control),
             |addr, (buffer, control)| async move {
                 self.inner
-                    .send_msg_vectored(buffer, control, &SockAddr::from(addr), 0)
+                    .send_msg_vectored(buffer, control, Some(&SockAddr::from(addr)), MSG_NOSIGNAL)
                     .await
             },
         )
+        .await
+    }
+
+    /// Sends data on the socket with zero copy.
+    ///
+    /// Returns the result of send and a future that resolves to the
+    /// original buffer when the send is complete.
+    pub async fn send_zerocopy<T: IoBuf>(
+        &self,
+        buf: T,
+    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+        self.inner.send_zerocopy(buf, MSG_NOSIGNAL).await
+    }
+
+    /// Sends vectored data on the socket with zero copy.
+    ///
+    /// Returns the result of send and a future that resolves to the
+    /// original buffer when the send is complete.
+    pub async fn send_zerocopy_vectored<T: IoVectoredBuf>(
+        &self,
+        buf: T,
+    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+        self.inner.send_zerocopy_vectored(buf, MSG_NOSIGNAL).await
+    }
+
+    /// Sends data on the socket to the given address with zero copy.
+    ///
+    /// Returns the result of send and a future that resolves to the
+    /// original buffer when the send is complete.
+    pub async fn send_to_zerocopy<A: ToSocketAddrsAsync, T: IoBuf>(
+        &self,
+        buffer: T,
+        addr: A,
+    ) -> BufResult<usize, impl Future<Output = T> + use<A, T>> {
+        super::first_addr_buf_zerocopy(addr, buffer, |addr, buffer| async move {
+            self.inner
+                .send_to_zerocopy(buffer, &addr.into(), MSG_NOSIGNAL)
+                .await
+        })
+        .await
+    }
+
+    /// Sends vectored data on the socket to the given address with zero copy.
+    ///
+    /// Returns the result of send and a future that resolves to the
+    /// original buffer when the send is complete.
+    pub async fn send_to_zerocopy_vectored<A: ToSocketAddrsAsync, T: IoVectoredBuf>(
+        &self,
+        buffer: T,
+        addr: A,
+    ) -> BufResult<usize, impl Future<Output = T> + use<A, T>> {
+        super::first_addr_buf_zerocopy(addr, buffer, |addr, buffer| async move {
+            self.inner
+                .send_to_zerocopy_vectored(buffer, &addr.into(), MSG_NOSIGNAL)
+                .await
+        })
+        .await
+    }
+
+    /// Sends data with control message on the socket to the given address with
+    /// zero copy.
+    ///
+    /// Returns the result of send and a future that resolves to the
+    /// original buffer when the send is complete.
+    pub async fn send_msg_zerocopy<A: ToSocketAddrsAsync, T: IoBuf, C: IoBuf>(
+        &self,
+        buffer: T,
+        control: C,
+        addr: A,
+    ) -> BufResult<usize, impl Future<Output = (T, C)> + use<A, T, C>> {
+        super::first_addr_buf_zerocopy(addr, (buffer, control), |addr, (b, c)| async move {
+            self.inner
+                .send_msg_zerocopy(b, c, Some(&addr.into()), MSG_NOSIGNAL)
+                .await
+        })
+        .await
+    }
+
+    /// Sends vectored data with control message on the socket to the given
+    /// address with zero copy.
+    ///
+    /// Returns the result of send and a future that resolves to the
+    /// original buffer when the send is complete.
+    pub async fn send_msg_zerocopy_vectored<A: ToSocketAddrsAsync, T: IoVectoredBuf, C: IoBuf>(
+        &self,
+        buffer: T,
+        control: C,
+        addr: A,
+    ) -> BufResult<usize, impl Future<Output = (T, C)> + use<A, T, C>> {
+        super::first_addr_buf_zerocopy(addr, (buffer, control), |addr, (b, c)| async move {
+            self.inner
+                .send_msg_zerocopy_vectored(b, c, Some(&addr.into()), MSG_NOSIGNAL)
+                .await
+        })
         .await
     }
 

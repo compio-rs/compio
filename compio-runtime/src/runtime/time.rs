@@ -53,9 +53,11 @@ impl TimerRuntime {
     }
 
     /// Update the waker for a timer.
-    pub fn update_waker(&mut self, key: &TimerKey, waker: Waker) {
-        if let Some(w) = self.wheel.get_mut(key) {
-            *w = waker;
+    pub fn update_waker(&mut self, key: &TimerKey, waker: &Waker) {
+        if let Some(w) = self.wheel.get_mut(key)
+            && !waker.will_wake(w)
+        {
+            *w = waker.clone();
         }
     }
 
@@ -115,7 +117,8 @@ impl Drop for TimerFuture {
     }
 }
 
-crate::assert_not_impl!(TimerFuture, Send, Sync);
+compio_driver::assert_not_impl!(TimerFuture, Send);
+compio_driver::assert_not_impl!(TimerFuture, Sync);
 
 #[test]
 fn timer_min_timeout() {

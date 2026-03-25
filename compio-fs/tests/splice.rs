@@ -1,6 +1,9 @@
 #![cfg(linux_all)]
 
-use std::env::temp_dir;
+use std::{
+    ops::{Deref, DerefMut},
+    rc::Rc,
+};
 
 use compio_fs::{
     File,
@@ -10,25 +13,62 @@ use compio_io::{AsyncRead, AsyncReadExt, AsyncWriteAt, AsyncWriteExt};
 use compio_net::UnixStream;
 use compio_runtime::Runtime;
 use futures_util::future::join;
-use tempfile::NamedTempFile;
+use tempfile::{NamedTempFile, TempPath};
 
 const HELLO: &[u8] = b"hello world...";
 
-async fn uds(id: u8) -> (UnixStream, UnixStream) {
-    let path = temp_dir().join(format!("compio-{id}.sock"));
-    let listener = compio_net::UnixListener::bind(&path).await.unwrap();
-    let (a, b) = join(UnixStream::connect(&path), listener.accept()).await;
-    (a.unwrap(), b.unwrap().0)
+struct Guard {
+    stream: UnixStream,
+    _inner: Rc<TempPath>,
+}
+
+impl Deref for Guard {
+    type Target = UnixStream;
+
+    fn deref(&self) -> &Self::Target {
+        &self.stream
+    }
+}
+
+impl DerefMut for Guard {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.stream
+    }
+}
+
+async fn uds() -> (Guard, Guard) {
+    let path: Rc<_> = tempfile::Builder::new()
+        .prefix("compio-")
+        .suffix(".sock")
+        .tempfile()
+        .expect("failed to create random path for domain socket")
+        .into_temp_path()
+        .into();
+
+    _ = compio_fs::remove_file(&*path).await;
+
+    let listener = compio_net::UnixListener::bind(&*path).await.unwrap();
+    let (a, b) = join(UnixStream::connect(&*path), listener.accept()).await;
+    (
+        Guard {
+            stream: a.unwrap(),
+            _inner: path.clone(),
+        },
+        Guard {
+            stream: b.unwrap().0,
+            _inner: path,
+        },
+    )
 }
 
 #[compio_macros::test]
 async fn splice_uds_to_pipe() {
-    let (r, mut w) = uds(1).await;
+    let (r, mut w) = uds().await;
     w.write_all(HELLO).await.unwrap();
 
     let (mut rx, tx) = anonymous().unwrap();
 
-    let n = splice(&r, &tx, HELLO.len()).await.unwrap();
+    let n = splice(&*r, &tx, HELLO.len()).await.unwrap();
     assert_eq!(n, HELLO.len());
 
     drop(tx);
@@ -41,13 +81,13 @@ async fn splice_uds_to_pipe() {
 
 #[compio_macros::test]
 async fn splice_pipe_to_uds() {
-    let (mut r, w) = uds(2).await;
+    let (mut r, w) = uds().await;
     let (rx, mut tx) = anonymous().unwrap();
 
     tx.write_all(HELLO).await.unwrap();
     drop(tx);
 
-    let n = splice(&rx, &w, HELLO.len()).await.unwrap();
+    let n = splice(&rx, &*w, HELLO.len()).await.unwrap();
     assert_eq!(n, HELLO.len());
 
     let (len, contents) = r.read(Vec::with_capacity(HELLO.len() + 10)).await.unwrap();

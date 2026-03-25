@@ -663,6 +663,13 @@ impl Connection {
         Poll::Pending
     }
 
+    /// Try to receive an application datagram. Returns None if no datagram is
+    /// available.
+    pub fn try_recv_datagram(&self) -> Result<Option<Bytes>, ConnectionError> {
+        let mut state = self.0.try_state()?;
+        Ok(state.conn.datagrams().recv())
+    }
+
     /// Receive an application datagram.
     pub async fn recv_datagram(&self) -> Result<Bytes, ConnectionError> {
         future::poll_fn(|cx| self.poll_recv_datagram(cx)).await
@@ -1007,7 +1014,7 @@ pub enum OpenStreamError {
     /// The connection was lost
     #[error("connection lost")]
     ConnectionLost(#[from] ConnectionError),
-    // The streams in the given direction are currently exhausted
+    /// The streams in the given direction are currently exhausted
     #[error("streams exhausted")]
     StreamsExhausted,
 }

@@ -44,7 +44,7 @@ pub struct SyncStream<S> {
 
 impl<S> SyncStream<S> {
     // 64MiB max
-    const DEFAULT_MAX_BUFFER: usize = 64 * 1024 * 1024;
+    pub(crate) const DEFAULT_MAX_BUFFER: usize = 64 * 1024 * 1024;
 
     /// Creates a new `SyncStream` with default buffer sizes.
     ///
@@ -74,6 +74,23 @@ impl<S> SyncStream<S> {
         }
     }
 
+    pub(crate) fn with_limits2(
+        read_capacity: usize,
+        write_capacity: usize,
+        base_capacity: usize,
+        max_buffer_size: usize,
+        stream: S,
+    ) -> Self {
+        Self {
+            inner: stream,
+            read_buf: Buffer::with_capacity(read_capacity),
+            write_buf: Buffer::with_capacity(write_capacity),
+            eof: false,
+            base_capacity,
+            max_buffer_size,
+        }
+    }
+
     /// Returns a reference to the underlying stream.
     pub fn get_ref(&self) -> &S {
         &self.inner
@@ -95,8 +112,12 @@ impl<S> SyncStream<S> {
     }
 
     /// Returns the available bytes in the read buffer.
-    fn available_read(&self) -> &[u8] {
-        self.read_buf.buffer()
+    fn available_read(&self) -> io::Result<&[u8]> {
+        if self.read_buf.has_inner() {
+            Ok(self.read_buf.buffer())
+        } else {
+            Err(would_block("the read buffer is in use"))
+        }
     }
 
     /// Marks `amt` bytes as consumed from the read buffer.
@@ -158,7 +179,7 @@ impl<S> Read for SyncStream<S> {
 
 impl<S> BufRead for SyncStream<S> {
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
-        let available = self.available_read();
+        let available = self.available_read()?;
 
         if available.is_empty() && !self.eof {
             return Err(would_block("need to fill read buffer"));
@@ -179,6 +200,9 @@ impl<S> Write for SyncStream<S> {
     /// capacity. In the latter case, it may write partial data before
     /// returning `WouldBlock`.
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if !self.write_buf.has_inner() {
+            return Err(would_block("the write buffer is in use"));
+        }
         // Check if we should flush first
         if self.write_buf.need_flush() && !self.write_buf.is_empty() {
             return Err(would_block("need to flush write buffer"));

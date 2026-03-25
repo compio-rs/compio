@@ -105,6 +105,7 @@
 //! }
 //! ```
 
+#![allow(unused_features)]
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![doc(
@@ -128,6 +129,8 @@ use synchrony::unsync as sync;
 
 type PinBoxFuture<T> = Pin<Box<dyn Future<Output = T>>>;
 
+#[cfg(feature = "ancillary")]
+pub mod ancillary;
 mod buffer;
 pub mod framed;
 

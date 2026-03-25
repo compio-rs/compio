@@ -504,6 +504,19 @@ impl IntoInner for CreateSocket {
     }
 }
 
+/// Shutdown a socket.
+pub struct ShutdownSocket<S> {
+    pub(crate) fd: S,
+    pub(crate) how: Shutdown,
+}
+
+impl<S> ShutdownSocket<S> {
+    /// Create [`ShutdownSocket`].
+    pub fn new(fd: S, how: Shutdown) -> Self {
+        Self { fd, how }
+    }
+}
+
 impl<S: AsFd> ShutdownSocket<S> {
     pub(crate) fn how(&self) -> i32 {
         match self.how {
@@ -548,9 +561,12 @@ impl<S> Accept<S> {
             _p: PhantomPinned,
         }
     }
+}
 
-    /// Get the remote address from the inner buffer.
-    pub fn into_addr(mut self) -> (Socket2, SockAddr) {
+impl<S> IntoInner for Accept<S> {
+    type Inner = (Socket2, SockAddr);
+
+    fn into_inner(mut self) -> Self::Inner {
         let socket = self.accepted_fd.take().expect("socket not accepted");
         (socket, unsafe { SockAddr::new(self.buffer, self.addr_len) })
     }
@@ -784,7 +800,7 @@ pin_project! {
         pub(crate) buffer: T,
         #[pin]
         pub(crate) control: C,
-        pub(crate) addr: SockAddr,
+        pub(crate) addr: Option<SockAddr>,
         pub(crate) slices: Vec<SysSlice>,
         pub(crate) flags: i32,
         _p: PhantomPinned,
@@ -797,7 +813,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     /// # Panics
     ///
     /// This function will panic if the control message buffer is misaligned.
-    pub fn new(fd: S, buffer: T, control: C, addr: SockAddr, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, control: C, addr: Option<SockAddr>, flags: i32) -> Self {
         assert!(
             control.buf_ptr().cast::<libc::cmsghdr>().is_aligned(),
             "misaligned control message buffer"
@@ -817,8 +833,16 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     pub(crate) fn set_msg(self: Pin<&mut Self>) {
         let this = self.project();
         *this.slices = this.buffer.as_ref().sys_slices();
-        this.msg.msg_name = this.addr.as_ptr() as _;
-        this.msg.msg_namelen = this.addr.len();
+        match this.addr.as_ref() {
+            Some(addr) => {
+                this.msg.msg_name = addr.as_ptr() as _;
+                this.msg.msg_namelen = addr.len();
+            }
+            None => {
+                this.msg.msg_name = std::ptr::null_mut();
+                this.msg.msg_namelen = 0;
+            }
+        }
         this.msg.msg_iov = this.slices.as_ptr() as _;
         this.msg.msg_iovlen = this.slices.len() as _;
         this.msg.msg_control = this.control.buf_ptr() as _;

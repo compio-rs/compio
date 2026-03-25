@@ -1,26 +1,26 @@
 /// Extra data for RawOp.
-pub struct Extra {
+pub(in crate::sys) struct Extra {
     flags: u32,
     personality: Option<u16>,
 }
 
 impl Extra {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             flags: 0,
             personality: None,
         }
     }
 
-    pub(crate) fn set_personality(&mut self, personality: u16) {
+    pub fn set_personality(&mut self, personality: u16) {
         self.personality = Some(personality);
     }
 
-    pub(crate) fn get_personality(&self) -> Option<u16> {
+    pub fn get_personality(&self) -> Option<u16> {
         self.personality
     }
 
-    pub(crate) fn buffer_id(&self) -> Option<u16> {
+    pub fn buffer_id(&self) -> Option<u16> {
         io_uring::cqueue::buffer_select(self.flags)
     }
 }

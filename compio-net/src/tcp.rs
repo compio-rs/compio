@@ -1,4 +1,10 @@
-use std::{future::Future, io, net::SocketAddr};
+use std::{
+    future::Future,
+    io,
+    net::SocketAddr,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
@@ -8,10 +14,12 @@ use compio_io::{
     util::Splittable,
 };
 use compio_runtime::{BorrowedBuffer, BufferPool, fd::PollFd};
+use futures_util::{Stream, StreamExt, stream::FusedStream};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::{
-    OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, SocketOpts, ToSocketAddrsAsync, WriteHalf,
+    Incoming, MSG_NOSIGNAL, OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, SocketOpts,
+    ToSocketAddrsAsync, WriteHalf,
 };
 
 /// A TCP socket server, listening for connections.
@@ -81,7 +89,7 @@ impl TcpListener {
             let socket = Socket::new(sa.domain(), Type::STREAM, Some(Protocol::TCP)).await?;
             options.setup_socket(&socket)?;
             socket.socket.bind(&sa)?;
-            socket.listen(128)?;
+            socket.listen(options.get_backlog().unwrap_or(128))?;
             Ok(Self { inner: socket })
         })
         .await
@@ -124,6 +132,20 @@ impl TcpListener {
         Ok((stream, addr.as_socket().expect("should be SocketAddr")))
     }
 
+    /// Returns a stream of incoming connections to this listener.
+    pub fn incoming(&self) -> TcpIncoming<'_> {
+        self.incoming_with_options(&SocketOpts::default())
+    }
+
+    /// Returns a stream of incoming connections to this listener, and sets
+    /// options for each accepted connection.
+    pub fn incoming_with_options<'a>(&'a self, options: &SocketOpts) -> TcpIncoming<'a> {
+        TcpIncoming {
+            inner: self.inner.incoming(),
+            opts: *options,
+        }
+    }
+
     /// Returns the local address that this listener is bound to.
     ///
     /// This can be useful, for example, when binding to port 0 to
@@ -155,6 +177,33 @@ impl TcpListener {
 }
 
 impl_raw_fd!(TcpListener, socket2::Socket, inner, socket);
+
+/// A stream of incoming TCP connections.
+pub struct TcpIncoming<'a> {
+    inner: Incoming<'a>,
+    opts: SocketOpts,
+}
+
+impl Stream for TcpIncoming<'_> {
+    type Item = io::Result<TcpStream>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        this.inner.poll_next_unpin(cx).map(|res| {
+            res.map(|res| {
+                let socket = res?;
+                this.opts.setup_socket(&socket)?;
+                Ok(TcpStream { inner: socket })
+            })
+        })
+    }
+}
+
+impl FusedStream for TcpIncoming<'_> {
+    fn is_terminated(&self) -> bool {
+        self.inner.is_terminated()
+    }
+}
 
 /// A TCP stream between a local and a remote socket.
 ///
@@ -330,7 +379,29 @@ impl TcpStream {
         #[cfg(windows)]
         use windows_sys::Win32::Networking::WinSock::MSG_OOB;
 
-        self.inner.send(buf, MSG_OOB).await
+        self.inner.send(buf, MSG_OOB | MSG_NOSIGNAL).await
+    }
+
+    /// Sends data using [zero-copy send](https://man7.org/linux/man-pages/man3/io_uring_prep_send_zc.3.html).
+    ///
+    /// If the underlying platform doesn't support zero-copy send, it will fall
+    /// back to normal send.
+    pub async fn send_zerocopy<T: IoBuf>(
+        &self,
+        buf: T,
+    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+        self.inner.send_zerocopy(buf, MSG_NOSIGNAL).await
+    }
+
+    /// Sends vectorized data using [zero-copy send](https://man7.org/linux/man-pages/man3/io_uring_prep_send_zc.3.html).
+    ///
+    /// If the underlying platform doesn't support zero-copy send, it will fall
+    /// back to normal send.
+    pub async fn send_zerocopy_vectored<T: IoVectoredBuf>(
+        &self,
+        buf: T,
+    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+        self.inner.send_zerocopy_vectored(buf, MSG_NOSIGNAL).await
     }
 }
 
@@ -463,12 +534,12 @@ impl AsyncWrite for TcpStream {
 impl AsyncWrite for &TcpStream {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        self.inner.send(buf, 0).await
+        self.inner.send(buf, MSG_NOSIGNAL).await
     }
 
     #[inline]
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        self.inner.send_vectored(buf, 0).await
+        self.inner.send_vectored(buf, MSG_NOSIGNAL).await
     }
 
     #[inline]

@@ -1,6 +1,6 @@
 use compio_buf::{BufResult, IntoInner, IoBuf, IoVectoredBuf};
 
-use crate::{AsyncWrite, AsyncWriteAt, IoResult};
+use crate::{AsyncWrite, AsyncWriteAt, IoResult, framed, util::Splittable};
 
 /// Shared code for write a scalar value into the underlying writer.
 macro_rules! write_scalar {
@@ -116,6 +116,54 @@ pub trait AsyncWriteExt: AsyncWrite {
         loop_write_all!(buf, len, needle, loop self.write_vectored(buf.slice(needle)));
     }
 
+    /// Create a [`framed::Framed`] reader/writer with the given codec and
+    /// framer.
+    fn framed<T, C, F>(
+        self,
+        codec: C,
+        framer: F,
+    ) -> framed::Framed<Self::ReadHalf, Self::WriteHalf, C, F, T, T>
+    where
+        Self: Splittable + Sized,
+    {
+        framed::Framed::new(codec, framer).with_duplex(self)
+    }
+
+    /// Convenience method to create a [`framed::BytesFramed`] reader/writer
+    /// out of a splittable.
+    #[cfg(feature = "bytes")]
+    fn bytes(self) -> framed::BytesFramed<Self::ReadHalf, Self::WriteHalf>
+    where
+        Self: Splittable + Sized,
+    {
+        framed::BytesFramed::new_bytes().with_duplex(self)
+    }
+
+    /// Create a [`Splittable`] that uses `Self` as [`WriteHalf`] and `()` as
+    /// [`ReadHalf`].
+    ///
+    /// This is useful for creating framed sink with only a writer,
+    /// using the [`AsyncWriteExt::framed`] or [`AsyncWriteExt::bytes`]
+    /// method, which require a [`Splittable`] to work.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use compio_io::{AsyncWriteExt, framed::BytesFramed};
+    ///
+    /// let mut file_bytes = file.write_only().bytes();
+    /// file_bytes.send(Bytes::from("hello world")).await?;
+    /// ```
+    ///
+    /// [`ReadHalf`]: Splittable::ReadHalf
+    /// [`WriteHalf`]: Splittable::WriteHalf
+    fn write_only(self) -> WriteOnly<Self>
+    where
+        Self: Sized,
+    {
+        WriteOnly(self)
+    }
+
     write_scalar!(u8, to_be_bytes, to_le_bytes);
     write_scalar!(u16, to_be_bytes, to_le_bytes);
     write_scalar!(u32, to_be_bytes, to_le_bytes);
@@ -160,3 +208,33 @@ pub trait AsyncWriteAtExt: AsyncWriteAt {
 }
 
 impl<A: AsyncWriteAt + ?Sized> AsyncWriteAtExt for A {}
+
+/// An adaptor which implements [`Splittable`] for any [`AsyncWrite`], with the
+/// read half being `()`.
+///
+/// This can be used to create a framed sink with only a writer, using
+/// the [`AsyncWriteExt::framed`] or [`AsyncWriteExt::bytes`] method.
+pub struct WriteOnly<W>(pub W);
+
+impl<W: AsyncWrite> AsyncWrite for WriteOnly<W> {
+    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        self.0.write(buf).await
+    }
+
+    async fn flush(&mut self) -> IoResult<()> {
+        self.0.flush().await
+    }
+
+    async fn shutdown(&mut self) -> IoResult<()> {
+        self.0.shutdown().await
+    }
+}
+
+impl<W> Splittable for WriteOnly<W> {
+    type ReadHalf = ();
+    type WriteHalf = W;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        ((), self.0)
+    }
+}

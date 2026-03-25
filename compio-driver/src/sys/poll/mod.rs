@@ -13,6 +13,7 @@ use std::{
     time::Duration,
 };
 
+use compio_buf::BufResult;
 use compio_log::{instrument, trace};
 use flume::{Receiver, Sender};
 use polling::{Event, Events, Poller};
@@ -26,7 +27,7 @@ use crate::{
 };
 
 mod extra;
-pub use extra::Extra;
+pub(in crate::sys) use extra::Extra;
 pub(crate) mod op;
 
 struct Track {
@@ -318,7 +319,7 @@ impl Driver {
         DriverType::Poll
     }
 
-    pub fn default_extra(&self) -> Extra {
+    pub(in crate::sys) fn default_extra(&self) -> Extra {
         Extra::new()
     }
 
@@ -685,6 +686,10 @@ impl Driver {
     /// caller must make sure release the buffer pool with correct driver
     pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
         Ok(())
+    }
+
+    pub fn pop_multishot(&mut self, _: &ErasedKey) -> Option<BufResult<usize, crate::sys::Extra>> {
+        None
     }
 }
 

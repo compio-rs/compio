@@ -25,6 +25,9 @@ use futures_util::FutureExt;
 mod future;
 pub use future::*;
 
+mod stream;
+pub use stream::*;
+
 #[cfg(feature = "time")]
 pub(crate) mod time;
 
@@ -35,9 +38,6 @@ mod scheduler;
 
 mod opt_waker;
 pub use opt_waker::OptWaker;
-
-mod send_wrapper;
-use send_wrapper::SendWrapper;
 
 #[cfg(feature = "time")]
 use crate::runtime::time::{TimerFuture, TimerKey, TimerRuntime};
@@ -280,8 +280,15 @@ impl Runtime {
     /// Submit an operation to the runtime.
     ///
     /// You only need this when authoring your own [`OpCode`].
-    fn submit<T: OpCode + 'static>(&self, op: T) -> Submit<T> {
+    pub fn submit<T: OpCode + 'static>(&self, op: T) -> Submit<T> {
         Submit::new(self.clone(), op)
+    }
+
+    /// Submit a multishot operation to the runtime.
+    ///
+    /// You only need this when authoring your own [`OpCode`].
+    pub fn submit_multi<T: OpCode + 'static>(&self, op: T) -> SubmitMulti<T> {
+        SubmitMulti::new(self.clone(), op)
     }
 
     pub(crate) fn cancel<T: OpCode>(&self, key: Key<T>) {
@@ -308,23 +315,37 @@ impl Runtime {
     ) -> PushEntry<Key<T>, BufResult<usize, T>> {
         instrument!(compio_log::Level::DEBUG, "poll_task", ?key);
         let mut driver = self.driver.borrow_mut();
-        driver.pop(key).map_pending(|mut k| {
-            driver.update_waker(&mut k, waker);
+        driver.pop(key).map_pending(|k| {
+            driver.update_waker(&k, waker);
             k
         })
     }
 
     pub(crate) fn poll_task_with_extra<T: OpCode>(
         &self,
-        cx: &mut Context,
+        waker: &Waker,
         key: Key<T>,
     ) -> PushEntry<Key<T>, (BufResult<usize, T>, Extra)> {
         instrument!(compio_log::Level::DEBUG, "poll_task_with_extra", ?key);
         let mut driver = self.driver.borrow_mut();
-        driver.pop_with_extra(key).map_pending(|mut k| {
-            driver.update_waker(&mut k, cx.waker());
+        driver.pop_with_extra(key).map_pending(|k| {
+            driver.update_waker(&k, waker);
             k
         })
+    }
+
+    pub(crate) fn poll_multishot<T: OpCode>(
+        &self,
+        waker: &Waker,
+        key: &Key<T>,
+    ) -> Option<BufResult<usize, Extra>> {
+        instrument!(compio_log::Level::DEBUG, "poll_multishot", ?key);
+        let mut driver = self.driver.borrow_mut();
+        if let Some(res) = driver.pop_multishot(key) {
+            return Some(res);
+        }
+        driver.update_waker(key, waker);
+        None
     }
 
     #[cfg(feature = "time")]
@@ -336,7 +357,7 @@ impl Runtime {
             Poll::Ready(())
         } else {
             debug!("pending");
-            timer_runtime.update_waker(key, cx.waker().clone());
+            timer_runtime.update_waker(key, cx.waker());
             Poll::Pending
         }
     }
@@ -402,6 +423,26 @@ impl Runtime {
 
     pub(crate) fn id(&self) -> u64 {
         self.id
+    }
+
+    /// Register file descriptors for fixed-file operations.
+    ///
+    /// This is only supported on io-uring driver, and will return an
+    /// [`Unsupported`] io error on all other drivers.
+    ///
+    /// [`Unsupported`]: std::io::ErrorKind::Unsupported
+    pub fn register_files(&self, fds: &[RawFd]) -> io::Result<()> {
+        self.driver.borrow_mut().register_files(fds)
+    }
+
+    /// Unregister previously registered file descriptors.
+    ///
+    /// This is only supported on io-uring driver, and will return an
+    /// [`Unsupported`] io error on all other drivers.
+    ///
+    /// [`Unsupported`]: std::io::ErrorKind::Unsupported
+    pub fn unregister_files(&self) -> io::Result<()> {
+        self.driver.borrow_mut().unregister_files()
     }
 
     /// Register the personality for the runtime.
@@ -575,22 +616,54 @@ pub fn spawn_blocking<T: Send + 'static>(
 /// ## Panics
 ///
 /// This method doesn't create runtime and will panic if it's not within a
-/// runtime. It tries to obtain the current runtime by
+/// runtime. It tries to obtain the current runtime with
 /// [`Runtime::with_current`].
 pub fn submit<T: OpCode + 'static>(op: T) -> Submit<T> {
     Runtime::with_current(|r| r.submit(op))
 }
 
-/// Submit an operation to the current runtime, and return a future for it with
-/// flags.
+/// Submit a multishot operation to the current runtime, and return a stream for
+/// it.
+///
+/// ## Panics
+///
+/// This method doesn't create runtime and will panic if it's not within a
+/// runtime. It tries to obtain the current runtime with
+/// [`Runtime::with_current`].
+pub fn submit_multi<T: OpCode + 'static>(op: T) -> SubmitMulti<T> {
+    Runtime::with_current(|r| r.submit_multi(op))
+}
+
+/// Register file descriptors for fixed-file operations with the current
+/// runtime's io_uring instance.
+///
+/// This only works on `io_uring` driver. It will return an [`Unsupported`]
+/// error on other drivers.
 ///
 /// ## Panics
 ///
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::with_current`].
-#[deprecated(since = "0.11.0", note = "use `submit(op).with_extra()` instead")]
-pub fn submit_with_extra<T: OpCode + 'static>(op: T) -> Submit<T, Extra> {
-    Runtime::with_current(|r| r.submit(op).with_extra())
+///
+/// [`Unsupported`]: std::io::ErrorKind::Unsupported
+pub fn register_files(fds: &[RawFd]) -> io::Result<()> {
+    Runtime::with_current(|r| r.register_files(fds))
+}
+
+/// Unregister previously registered file descriptors from the current
+/// runtime's io_uring instance.
+///
+/// This only works on `io_uring` driver. It will return an [`Unsupported`]
+/// error on other drivers.
+///
+/// ## Panics
+///
+/// This method doesn't create runtime. It tries to obtain the current runtime
+/// by [`Runtime::with_current`].
+///
+/// [`Unsupported`]: std::io::ErrorKind::Unsupported
+pub fn unregister_files() -> io::Result<()> {
+    Runtime::with_current(|r| r.unregister_files())
 }
 
 #[cfg(feature = "time")]
