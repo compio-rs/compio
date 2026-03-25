@@ -31,6 +31,8 @@ windows-sys = { workspace = true, optional = true, features = [
 ] }
 
 [dev-dependencies]
+compio-net = { workspace = true }
+compio-runtime = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 serde = { version = "1.0.219", features = ["derive"] }
 futures-executor = "0.3.30"

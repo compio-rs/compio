@@ -8,7 +8,11 @@ use std::{
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::impl_raw_fd;
-use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite, util::Splittable};
+use compio_io::{
+    AsyncRead, AsyncReadManaged, AsyncWrite,
+    ancillary::{AsyncReadAncillary, AsyncWriteAncillary},
+    util::Splittable,
+};
 use compio_runtime::{BorrowedBuffer, BufferPool, fd::PollFd};
 use futures_util::{Stream, StreamExt, stream::FusedStream};
 use socket2::{SockAddr, Socket as Socket2, Type};
@@ -370,6 +374,52 @@ impl AsyncReadManaged for &UnixStream {
     }
 }
 
+impl AsyncReadAncillary for UnixStream {
+    #[inline]
+    async fn read_with_ancillary<T: IoBufMut, C: IoBufMut>(
+        &mut self,
+        buffer: T,
+        control: C,
+    ) -> BufResult<(usize, usize), (T, C)> {
+        (&*self).read_with_ancillary(buffer, control).await
+    }
+
+    #[inline]
+    async fn read_vectored_with_ancillary<T: IoVectoredBufMut, C: IoBufMut>(
+        &mut self,
+        buffer: T,
+        control: C,
+    ) -> BufResult<(usize, usize), (T, C)> {
+        (&*self).read_vectored_with_ancillary(buffer, control).await
+    }
+}
+
+impl AsyncReadAncillary for &UnixStream {
+    #[inline]
+    async fn read_with_ancillary<T: IoBufMut, C: IoBufMut>(
+        &mut self,
+        buffer: T,
+        control: C,
+    ) -> BufResult<(usize, usize), (T, C)> {
+        self.inner
+            .recv_msg(buffer, control, 0)
+            .await
+            .map_res(|(res, len, _addr)| (res, len))
+    }
+
+    #[inline]
+    async fn read_vectored_with_ancillary<T: IoVectoredBufMut, C: IoBufMut>(
+        &mut self,
+        buffer: T,
+        control: C,
+    ) -> BufResult<(usize, usize), (T, C)> {
+        self.inner
+            .recv_msg_vectored(buffer, control, 0)
+            .await
+            .map_res(|(res, len, _addr)| (res, len))
+    }
+}
+
 impl AsyncWrite for UnixStream {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
@@ -411,6 +461,48 @@ impl AsyncWrite for &UnixStream {
     #[inline]
     async fn shutdown(&mut self) -> io::Result<()> {
         self.inner.shutdown().await
+    }
+}
+
+impl AsyncWriteAncillary for UnixStream {
+    #[inline]
+    async fn write_with_ancillary<T: IoBuf, C: IoBuf>(
+        &mut self,
+        buffer: T,
+        control: C,
+    ) -> BufResult<usize, (T, C)> {
+        (&*self).write_with_ancillary(buffer, control).await
+    }
+
+    #[inline]
+    async fn write_vectored_with_ancillary<T: IoVectoredBuf, C: IoBuf>(
+        &mut self,
+        buffer: T,
+        control: C,
+    ) -> BufResult<usize, (T, C)> {
+        (&*self)
+            .write_vectored_with_ancillary(buffer, control)
+            .await
+    }
+}
+
+impl AsyncWriteAncillary for &UnixStream {
+    #[inline]
+    async fn write_with_ancillary<T: IoBuf, C: IoBuf>(
+        &mut self,
+        buffer: T,
+        control: C,
+    ) -> BufResult<usize, (T, C)> {
+        self.inner.send_msg(buffer, control, None, 0).await
+    }
+
+    #[inline]
+    async fn write_vectored_with_ancillary<T: IoVectoredBuf, C: IoBuf>(
+        &mut self,
+        buffer: T,
+        control: C,
+    ) -> BufResult<usize, (T, C)> {
+        self.inner.send_msg_vectored(buffer, control, None, 0).await
     }
 }
 

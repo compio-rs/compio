@@ -1122,7 +1122,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     /// This function will panic if the control message buffer is misaligned.
     pub fn new(fd: S, buffer: T, control: C, addr: Option<SockAddr>, flags: i32) -> Self {
         assert!(
-            control.buf_ptr().cast::<CMSGHDR>().is_aligned(),
+            control.buf_len() == 0 || control.buf_ptr().cast::<CMSGHDR>().is_aligned(),
             "misaligned control message buffer"
         );
         Self {
@@ -1151,7 +1151,11 @@ unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
         let this = self.project();
 
         *this.slices = this.buffer.as_ref().sys_slices();
-        let control = this.control.as_ref().sys_slice();
+        let control = if this.control.buf_len() == 0 {
+            SysSlice::null()
+        } else {
+            this.control.as_ref().sys_slice()
+        };
         *this.msg = match this.addr.as_ref() {
             Some(addr) => WSAMSG {
                 name: addr.as_ptr() as _,
