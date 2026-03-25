@@ -1,4 +1,4 @@
-use compio_io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use compio_io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use compio_net::{TcpListener, TcpStream, UnixListener, UnixStream};
 use compio_runtime::ResumeUnwind;
 use futures_util::StreamExt;
@@ -14,6 +14,7 @@ async fn incoming_tcp() {
             let mut stream = stream.unwrap();
             stream.write_all(format!("Hello, {}", i)).await.unwrap();
             stream.shutdown().await.unwrap();
+            stream.read_exact([0u8; 8]).await.unwrap();
             i += 1;
             if i >= 2 {
                 break;
@@ -23,8 +24,11 @@ async fn incoming_tcp() {
 
     for i in 0..2 {
         let mut client = TcpStream::connect(&addr).await.unwrap();
-        let (_, text) = client.read_to_string(String::new()).await.unwrap();
-        assert_eq!(text, format!("Hello, {}", i));
+        let (_, text) = client.read_exact([0u8; 8]).await.unwrap();
+        assert_eq!(text, format!("Hello, {}", i).as_bytes());
+        client.write_all(text).await.unwrap();
+        client.shutdown().await.unwrap();
+        client.read([0u8; 1]).await.unwrap();
     }
 
     task.await.resume_unwind();
@@ -46,6 +50,7 @@ async fn incoming_unix() {
             let mut stream = stream.unwrap();
             stream.write_all(format!("Hello, {}", i)).await.unwrap();
             stream.shutdown().await.unwrap();
+            stream.read_exact([0u8; 8]).await.unwrap();
             i += 1;
             if i >= 2 {
                 break;
@@ -55,8 +60,11 @@ async fn incoming_unix() {
 
     for i in 0..2 {
         let mut client = UnixStream::connect(&sock_path).await.unwrap();
-        let (_, text) = client.read_to_string(String::new()).await.unwrap();
-        assert_eq!(text, format!("Hello, {}", i));
+        let (_, text) = client.read_exact([0u8; 8]).await.unwrap();
+        assert_eq!(text, format!("Hello, {}", i).as_bytes());
+        client.write_all(text).await.unwrap();
+        client.shutdown().await.unwrap();
+        client.read([0u8; 1]).await.unwrap();
     }
 
     task.await.resume_unwind();
