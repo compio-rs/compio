@@ -1,7 +1,17 @@
 [package]
 name = "compio-executor"
 version = "0.1.0"
-edition = "2024"
+description = "Executor for compio"
+categories = ["asynchronous"]
+keywords = ["async", "executor"]
+readme = "README.md"
+edition = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 compio-log = { workspace = true }

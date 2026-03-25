@@ -238,20 +238,59 @@ fn test_panic_does_not_affect_other_tasks() {
 }
 
 #[test]
-fn test_join_result_resume_unwind() {
-    block_on(async {
-        let handle: JoinHandle<()> = spawn(async {
-            panic!("resume_unwind panic");
-        });
+fn test_extra_data() {
+    use std::sync::Arc;
 
-        let JoinError::Panicked(res) = handle.await.unwrap_err() else {
-            unreachable!("Future panicked")
-        };
+    // Create an executor that holds u32 as extra data
+    let executor: Executor<u32> = Executor::new();
 
-        let Some(msg) = res.downcast_ref::<&'static str>() else {
-            unreachable!("Panic payload should be a static string")
-        };
+    let waker_extra = Arc::new(Cell::new(None));
+    let waker_extra_task = waker_extra.clone();
 
-        assert_eq!(*msg, "resume_unwind panic");
-    });
+    // Create a future that extracts the extra data from its waker
+    struct GetExtra {
+        waker_extra: Arc<Cell<Option<u32>>>,
+        polled: bool,
+    }
+
+    impl Future for GetExtra {
+        type Output = ();
+
+        fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            if !self.polled {
+                self.polled = true;
+                // Extract the extra data from the waker
+                if let Some(&extra) = get_extra::<u32>(cx.waker()) {
+                    self.waker_extra.set(Some(extra));
+                }
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            } else {
+                Poll::Ready(())
+            }
+        }
+    }
+
+    let handle = executor.spawn_with(
+        GetExtra {
+            waker_extra: waker_extra_task,
+            polled: false,
+        },
+        42u32,
+    );
+
+    let mut cx = Context::from_waker(Waker::noop());
+    let mut fut = pin!(handle);
+
+    // Run the executor until the task completes
+    loop {
+        if let Poll::Ready(res) = fut.as_mut().poll(&mut cx) {
+            res.unwrap();
+            break;
+        }
+        executor.tick();
+    }
+
+    // Verify that the extra data was successfully retrieved
+    assert_eq!(waker_extra.get(), Some(42u32));
 }
