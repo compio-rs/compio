@@ -57,7 +57,7 @@ time = []
 async-fd = ["dep:compio-io"]
 
 # Enable it to always notify the driver when a task schedules.
-notify-always = []
+notify-always = ["compio-executor/notify-always"]
 
 future-combinator = []
 current_thread_id = []
