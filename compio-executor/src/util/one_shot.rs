@@ -53,7 +53,7 @@ struct Inner<T> {
     waker: UnsafeCell<MaybeUninit<Waker>>,
 }
 
-struct LockGaurd<'a> {
+struct LockGuard<'a> {
     inner: &'a AtomicU8,
     state: u8,
 }
@@ -103,7 +103,7 @@ impl<T> Inner<T> {
         }
     }
 
-    fn lock(&self) -> Option<LockGaurd<'_>> {
+    fn lock(&self) -> Option<LockGuard<'_>> {
         let curr = self.state.load(Acquire);
 
         if curr & VALUE_SET != 0 {
@@ -125,7 +125,7 @@ impl<T> Inner<T> {
 
     /// Lock without checking if currently it's closed
     #[inline(always)]
-    fn lock_anyway(&self, curr: Option<u8>) -> LockGaurd<'_> {
+    fn lock_anyway(&self, curr: Option<u8>) -> LockGuard<'_> {
         let mut curr = curr.unwrap_or_else(|| self.state.load(Relaxed));
 
         loop {
@@ -134,7 +134,7 @@ impl<T> Inner<T> {
                 .compare_exchange_weak(curr & !LOCKED, curr | LOCKED, Acquire, Relaxed)
             {
                 Ok(state) => {
-                    return LockGaurd {
+                    return LockGuard {
                         inner: &self.state,
                         state,
                     };
@@ -305,7 +305,7 @@ impl<T> Receiver<T> {
     }
 }
 
-impl Drop for LockGaurd<'_> {
+impl Drop for LockGuard<'_> {
     fn drop(&mut self) {
         self.inner.store(self.state & !LOCKED, Release);
     }

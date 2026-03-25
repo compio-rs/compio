@@ -203,7 +203,10 @@ impl<T> JoinHandle<T> {
     /// Detach the task to let it run in the background.
     pub fn detach(self) {
         let this = ManuallyDrop::new(self);
-        _ = unsafe { ptr::read(&this.rx) };
+        unsafe {
+            _ = ptr::read(&this.rx);
+            _ = ptr::read(&this.handle)
+        };
     }
 }
 

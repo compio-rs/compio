@@ -207,7 +207,7 @@ impl Handle {
     /// Enqueues the task for execution.
     ///
     /// Returns `true` if the task was enqueued successfully, or `false`
-    /// otherwise, due to either executor or the task being dropped.
+    /// otherwise, due to the executor being dropped.
     pub fn schedule(&self) -> bool {
         self.shared.upgrade().is_some_and(|q| q.schedule(self.id))
     }

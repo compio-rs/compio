@@ -61,8 +61,6 @@ impl<K: Key, V> SlotQueue<K, V> {
         let hot_head = self.hot_head();
         let cold_head = self.cold_head();
 
-        println!("{:?} {:?}", hot_head, cold_head);
-
         let inner = &mut unsafe { self.get_inner() };
 
         Self::clear_from(&mut inner.map, hot_head);
@@ -78,8 +76,6 @@ impl<K: Key, V> SlotQueue<K, V> {
 
     fn clear_from(map: &mut SlotMap<K, Item<K, V>>, mut head: Option<K>) {
         while let Some(h) = head {
-            println!("{:?}", h);
-
             let v = map.remove(h).expect("Invalid key");
             head = v.next
         }
