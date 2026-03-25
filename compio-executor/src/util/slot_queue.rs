@@ -1,5 +1,6 @@
 use std::{cell::UnsafeCell, fmt::Debug};
 
+use compio_log::instrument;
 use slotmap::{Key, SlotMap};
 
 /// A single-threaded dual queue for scheduling hot and cold items.
@@ -56,8 +57,11 @@ impl<K: Key, V> SlotQueue<K, V> {
 
     /// Clear the map.
     pub fn clear(&self) {
+        instrument!(compio_log::Level::DEBUG, "clear");
         let hot_head = self.hot_head();
         let cold_head = self.cold_head();
+
+        println!("{:?} {:?}", hot_head, cold_head);
 
         let inner = &mut unsafe { self.get_inner() };
 
@@ -69,11 +73,13 @@ impl<K: Key, V> SlotQueue<K, V> {
         inner.cold.head = None;
         inner.cold.tail = None;
 
-        assert!(inner.map.is_empty());
+        debug_assert!(inner.map.is_empty());
     }
 
     fn clear_from(map: &mut SlotMap<K, Item<K, V>>, mut head: Option<K>) {
         while let Some(h) = head {
+            println!("{:?}", h);
+
             let v = map.remove(h).expect("Invalid key");
             head = v.next
         }
@@ -154,7 +160,7 @@ impl<K: Key, V> SlotQueue<K, V> {
         let inner = unsafe { self.get_inner() };
         let is_hot = inner.map.get(key)?.is_hot;
         inner.unlink(key, is_hot);
-        inner.map.remove(key).map(|item| item.value)
+        Some(inner.map.remove(key).expect("should exist").value)
     }
 }
 
@@ -234,8 +240,12 @@ impl<K: Key, V> Inner<K, V> {
         };
         if item.is_hot {
             self.unlink(key, true);
+            self.link_tail(key, false);
+        } else {
+            // Already cold, unlink and re-link to move to tail
+            self.unlink(key, false);
+            self.link_tail(key, false);
         }
-        self.link_tail(key, false);
     }
 }
 
