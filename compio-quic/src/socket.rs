@@ -15,8 +15,8 @@ use std::{
     sync::atomic::Ordering,
 };
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetLen, buf_try};
-use compio_io::ancillary::{AncillaryBuf, AncillaryBuilder, AncillaryIter};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, buf_try};
+use compio_io::ancillary::{AncillaryBuf, AncillaryIter, CodecError};
 use compio_net::UdpSocket;
 use quinn_proto::{EcnCodepoint, Transmit};
 #[cfg(windows)]
@@ -290,68 +290,83 @@ impl Socket {
         #[allow(unused_mut)]
         let mut stride = len;
 
-        // SAFETY: `control` contains valid data
-        unsafe {
-            for cmsg in AncillaryIter::new(&control) {
+        let res = (|| {
+            // SAFETY: `control` contains valid data
+            for cmsg in unsafe { AncillaryIter::new(&control) } {
                 #[cfg(windows)]
                 const UDP_COALESCED_INFO: i32 = WinSock::UDP_COALESCED_INFO as i32;
 
                 match (cmsg.level(), cmsg.ty()) {
                     // ECN
                     #[cfg(unix)]
-                    (libc::IPPROTO_IP, libc::IP_TOS) => ecn_bits = *cmsg.data::<u8>(),
+                    (libc::IPPROTO_IP, libc::IP_TOS) => ecn_bits = cmsg.data::<u8>()?,
                     #[cfg(all(unix, not(any(non_freebsd, solarish))))]
-                    (libc::IPPROTO_IP, libc::IP_RECVTOS) => ecn_bits = *cmsg.data::<u8>(),
+                    (libc::IPPROTO_IP, libc::IP_RECVTOS) => ecn_bits = cmsg.data::<u8>()?,
                     #[cfg(unix)]
                     (libc::IPPROTO_IPV6, libc::IPV6_TCLASS) => {
                         // NOTE: It's OK to use `c_int` instead of `u8` on Apple systems
-                        ecn_bits = *cmsg.data::<libc::c_int>() as u8
+                        ecn_bits = cmsg.data::<libc::c_int>()? as u8
                     }
                     #[cfg(windows)]
                     (WinSock::IPPROTO_IP, WinSock::IP_ECN)
                     | (WinSock::IPPROTO_IPV6, WinSock::IPV6_ECN) => {
-                        ecn_bits = *cmsg.data::<i32>() as u8
+                        ecn_bits = cmsg.data::<i32>()? as u8
                     }
 
                     // pktinfo / destination address
                     #[cfg(linux_all)]
                     (libc::IPPROTO_IP, libc::IP_PKTINFO) => {
-                        let pktinfo = cmsg.data::<libc::in_pktinfo>();
+                        let pktinfo = cmsg.data::<libc::in_pktinfo>()?;
                         local_ip = Some(IpAddr::from(pktinfo.ipi_addr.s_addr.to_ne_bytes()));
                     }
                     #[cfg(any(bsd, solarish, apple))]
                     (libc::IPPROTO_IP, libc::IP_RECVDSTADDR) => {
-                        let in_addr = cmsg.data::<libc::in_addr>();
+                        let in_addr = cmsg.data::<libc::in_addr>()?;
                         local_ip = Some(IpAddr::from(in_addr.s_addr.to_ne_bytes()));
                     }
                     #[cfg(windows)]
                     (WinSock::IPPROTO_IP, WinSock::IP_PKTINFO) => {
-                        let pktinfo = cmsg.data::<WinSock::IN_PKTINFO>();
-                        local_ip = Some(IpAddr::from(pktinfo.ipi_addr.S_un.S_addr.to_ne_bytes()));
+                        let pktinfo = cmsg.data::<WinSock::IN_PKTINFO>()?;
+                        local_ip = Some(IpAddr::from(
+                            // SAFETY: S_addr is a valid representation of the union for IPv4
+                            // addresses
+                            unsafe { pktinfo.ipi_addr.S_un.S_addr }.to_ne_bytes(),
+                        ));
                     }
                     #[cfg(unix)]
                     (libc::IPPROTO_IPV6, libc::IPV6_PKTINFO) => {
-                        let pktinfo = cmsg.data::<libc::in6_pktinfo>();
+                        let pktinfo = cmsg.data::<libc::in6_pktinfo>()?;
                         local_ip = Some(IpAddr::from(pktinfo.ipi6_addr.s6_addr));
                     }
                     #[cfg(windows)]
                     (WinSock::IPPROTO_IPV6, WinSock::IPV6_PKTINFO) => {
-                        let pktinfo = cmsg.data::<WinSock::IN6_PKTINFO>();
-                        local_ip = Some(IpAddr::from(pktinfo.ipi6_addr.u.Byte));
+                        let pktinfo = cmsg.data::<WinSock::IN6_PKTINFO>()?;
+                        // SAFETY: Byte is a valid representation of the union for IPv6 addresses
+                        local_ip = Some(IpAddr::from(unsafe { pktinfo.ipi6_addr.u.Byte }));
                     }
 
                     // GRO
                     #[cfg(linux_all)]
-                    (libc::SOL_UDP, libc::UDP_GRO) => stride = *cmsg.data::<libc::c_int>() as usize,
+                    (libc::SOL_UDP, libc::UDP_GRO) => stride = cmsg.data::<libc::c_int>()? as usize,
                     #[cfg(windows)]
                     (WinSock::IPPROTO_UDP, UDP_COALESCED_INFO) => {
-                        stride = *cmsg.data::<u32>() as usize
+                        stride = cmsg.data::<u32>()? as usize
                     }
 
                     _ => {}
                 }
             }
-        }
+            Ok::<(), CodecError>(())
+        })();
+        let ((), buffer) = buf_try!(BufResult(
+            res.map_err(|e| match e {
+                CodecError::BufferTooSmall => {
+                    io::Error::new(io::ErrorKind::InvalidData, "cmsg_len is too small")
+                }
+                CodecError::Other(e) => io::Error::other(e),
+            }),
+            buffer
+        ));
 
         let meta = RecvMeta {
             remote,
@@ -363,26 +378,29 @@ impl Socket {
         BufResult(Ok(meta), buffer)
     }
 
-    pub async fn send<T: IoBuf>(&self, buffer: T, transmit: &Transmit) -> T {
+    fn construct_control_message(
+        &self,
+        transmit: &Transmit,
+    ) -> Result<AncillaryBuf<CMSG_LEN>, CodecError> {
         let is_ipv4 = transmit.destination.ip().to_canonical().is_ipv4();
         let ecn = transmit.ecn.map_or(0, |x| x as u8);
 
-        let mut control = AncillaryBuf::<CMSG_LEN>::new();
-        let mut builder = AncillaryBuilder::new(control.as_uninit());
+        let mut control = AncillaryBuf::new();
+        let mut builder = control.builder();
 
         // ECN
         if is_ipv4 {
             #[cfg(all(unix, not(any(freebsd, netbsd))))]
-            builder.try_push(libc::IPPROTO_IP, libc::IP_TOS, ecn as libc::c_int);
+            builder.push(libc::IPPROTO_IP, libc::IP_TOS, &(ecn as libc::c_int))?;
             #[cfg(freebsd)]
-            builder.try_push(libc::IPPROTO_IP, libc::IP_TOS, ecn as libc::c_uchar);
+            builder.push(libc::IPPROTO_IP, libc::IP_TOS, &(ecn as libc::c_uchar))?;
             #[cfg(windows)]
-            builder.try_push(WinSock::IPPROTO_IP, WinSock::IP_ECN, ecn as i32);
+            builder.push(WinSock::IPPROTO_IP, WinSock::IP_ECN, &(ecn as i32))?;
         } else {
             #[cfg(unix)]
-            builder.try_push(libc::IPPROTO_IPV6, libc::IPV6_TCLASS, ecn as libc::c_int);
+            builder.push(libc::IPPROTO_IPV6, libc::IPV6_TCLASS, &(ecn as libc::c_int))?;
             #[cfg(windows)]
-            builder.try_push(WinSock::IPPROTO_IPV6, WinSock::IPV6_ECN, ecn as i32);
+            builder.push(WinSock::IPPROTO_IPV6, WinSock::IPV6_ECN, &(ecn as i32))?;
         }
 
         // pktinfo / destination address
@@ -396,7 +414,7 @@ impl Socket {
                         ipi_spec_dst: libc::in_addr { s_addr: addr },
                         ipi_addr: libc::in_addr { s_addr: 0 },
                     };
-                    builder.try_push(libc::IPPROTO_IP, libc::IP_PKTINFO, pktinfo);
+                    builder.push(libc::IPPROTO_IP, libc::IP_PKTINFO, &pktinfo)?;
                 }
                 #[cfg(any(bsd, solarish, apple))]
                 {
@@ -407,7 +425,7 @@ impl Socket {
 
                     if encode_src_ip_v4 {
                         let addr = libc::in_addr { s_addr: addr };
-                        builder.try_push(libc::IPPROTO_IP, libc::IP_RECVDSTADDR, addr);
+                        builder.push(libc::IPPROTO_IP, libc::IP_RECVDSTADDR, &addr)?;
                     }
                 }
                 #[cfg(windows)]
@@ -418,7 +436,7 @@ impl Socket {
                         },
                         ipi_ifindex: 0,
                     };
-                    builder.try_push(WinSock::IPPROTO_IP, WinSock::IP_PKTINFO, pktinfo);
+                    builder.push(WinSock::IPPROTO_IP, WinSock::IP_PKTINFO, &pktinfo)?;
                 }
             }
             Some(IpAddr::V6(ip)) => {
@@ -430,7 +448,7 @@ impl Socket {
                             s6_addr: ip.octets(),
                         },
                     };
-                    builder.try_push(libc::IPPROTO_IPV6, libc::IPV6_PKTINFO, pktinfo);
+                    builder.push(libc::IPPROTO_IPV6, libc::IPV6_PKTINFO, &pktinfo)?;
                 }
                 #[cfg(windows)]
                 {
@@ -440,7 +458,7 @@ impl Socket {
                         },
                         ipi6_ifindex: 0,
                     };
-                    builder.try_push(WinSock::IPPROTO_IPV6, WinSock::IPV6_PKTINFO, pktinfo);
+                    builder.push(WinSock::IPPROTO_IPV6, WinSock::IPV6_PKTINFO, &pktinfo)?;
                 }
             }
             None => {}
@@ -451,21 +469,24 @@ impl Socket {
             && segment_size < transmit.size
         {
             #[cfg(linux_all)]
-            builder.try_push(libc::SOL_UDP, libc::UDP_SEGMENT, segment_size as u16);
+            builder.push(libc::SOL_UDP, libc::UDP_SEGMENT, &(segment_size as u16))?;
             #[cfg(windows)]
-            builder.try_push(
+            builder.push(
                 WinSock::IPPROTO_UDP,
                 WinSock::UDP_SEND_MSG_SIZE,
-                segment_size as u32,
-            );
+                &(segment_size as u32),
+            )?;
             #[cfg(not(any(linux_all, windows)))]
             let _ = segment_size;
         }
 
-        let len = builder.finish();
-        // SAFETY: AncillaryBuilder ensures the buffer is initialized within len
-        unsafe { control.set_len(len) };
+        Ok(control)
+    }
 
+    pub async fn send<T: IoBuf>(&self, buffer: T, transmit: &Transmit) -> T {
+        let mut control = self
+            .construct_control_message(transmit)
+            .expect("CMSG_LEN should be large enough");
         let mut buffer = buffer.slice(0..transmit.size);
 
         loop {

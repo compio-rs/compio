@@ -40,6 +40,7 @@ compio-quic = { path = "./compio-quic", version = "0.7.0", default-features = fa
 compio-ws = { path = "./compio-ws", version = "0.3.0", default-features = false }
 
 bytes = "1.7.1"
+bytemuck = "1.25.0"
 cfg_aliases = "0.2.1"
 cfg-if = "1.0.0"
 compio-send-wrapper = "0.7.0"

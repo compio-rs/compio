@@ -20,6 +20,7 @@ cfg-if = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
 serde = { version = "1.0.219", optional = true }
 serde_json = { version = "1.0.140", optional = true }
+bytemuck = { workspace = true, optional = true, features = ["min_const_generics"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true, optional = true }
@@ -30,7 +31,6 @@ windows-sys = { workspace = true, optional = true, features = [
 ] }
 
 [dev-dependencies]
-aligned-array = "1.0.1"
 tokio = { workspace = true, features = ["macros", "rt"] }
 serde = { version = "1.0.219", features = ["derive"] }
 futures-executor = "0.3.30"
@@ -58,3 +58,7 @@ required-features = ["compat"]
 [[test]]
 name = "framed"
 required-features = ["codec-serde-json"]
+
+[[test]]
+name = "ancillary"
+required-features = ["ancillary"]
