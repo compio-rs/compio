@@ -360,9 +360,10 @@ impl EndpointRef {
         };
         if let Some(worker) = worker {
             if idle {
-                worker.cancel();
+                worker.cancel().await;
+            } else {
+                _ = worker.await;
             }
-            let _ = worker.await;
         }
 
         let mut this = Some(self.into_inner());

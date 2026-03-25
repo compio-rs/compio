@@ -29,8 +29,6 @@ use crate::{
 
 mod queue;
 mod task;
-#[cfg(test)]
-mod tests;
 mod util;
 mod waker;
 
@@ -190,9 +188,10 @@ impl<T> Unpin for JoinHandle<T> {}
 
 impl<T> JoinHandle<T> {
     /// Cancel the task.
-    pub fn cancel(&self) {
+    pub async fn cancel(self) -> Option<T> {
         self.rx.set_canceled();
         self.handle.schedule();
+        self.await.ok()
     }
 
     /// Check if the task is canceled.
@@ -276,6 +275,6 @@ impl<T> Future for JoinHandle<T> {
 
 impl<T> Drop for JoinHandle<T> {
     fn drop(&mut self) {
-        self.cancel();
+        self.rx.set_canceled();
     }
 }

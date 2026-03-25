@@ -44,8 +44,7 @@ async fn ip_blocking() {
         .await
         .unwrap();
 
-    srv.cancel();
-    let _ = srv.await;
+    let _ = srv.cancel().await;
 }
 
 #[compio_macros::test]
