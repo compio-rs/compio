@@ -6,7 +6,6 @@ use std::sync::LazyLock;
 use std::sync::OnceLock;
 use std::{collections::HashMap, io, sync::Mutex};
 
-use compio_driver::syscall;
 #[cfg(not(feature = "lazy_cell"))]
 use once_cell::sync::Lazy as LazyLock;
 #[cfg(not(feature = "once_cell_try"))]
@@ -41,8 +40,11 @@ unsafe extern "system" fn ctrl_event_handler(ctrltype: u32) -> BOOL {
 static INIT: OnceLock<()> = OnceLock::new();
 
 fn init() -> io::Result<()> {
-    syscall!(BOOL, SetConsoleCtrlHandler(Some(ctrl_event_handler), 1))?;
-    Ok(())
+    if unsafe { SetConsoleCtrlHandler(Some(ctrl_event_handler), 1) } != 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
 }
 
 fn register(ctrltype: u32, e: &Event) -> usize {

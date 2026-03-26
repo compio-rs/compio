@@ -7,7 +7,7 @@
 //! ```rust,no_run
 //! use compio_signal::ctrl_c;
 //!
-//! # compio_runtime::Runtime::new().unwrap().block_on(async {
+//! # futures_executor::block_on(async {
 //! ctrl_c().await.unwrap();
 //! println!("ctrl-c received!");
 //! # })
