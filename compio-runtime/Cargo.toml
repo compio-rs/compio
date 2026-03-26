@@ -25,12 +25,8 @@ cfg-if = { workspace = true }
 criterion = { workspace = true, optional = true }
 compio-send-wrapper = { workspace = true }
 core_affinity = "0.8.3"
-crossbeam-queue = { workspace = true }
 futures-util = { workspace = true }
-once_cell = { workspace = true }
 scoped-tls = "1.0.1"
-slab = { workspace = true }
-socket2 = { workspace = true }
 pin-project-lite = { workspace = true }
 synchrony = { workspace = true, features = ["event"] }
 
