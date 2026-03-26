@@ -1,6 +1,6 @@
 [package]
 name = "compio-quic"
-version = "0.7.1"
+version = "0.7.2"
 description = "QUIC for compio"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net", "quic"]
