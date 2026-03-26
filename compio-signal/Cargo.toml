@@ -14,12 +14,12 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-once_cell = { workspace = true }
 slab = { workspace = true }
 synchrony = { workspace = true, features = ["async_flag"] }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
+once_cell = { workspace = true }
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_System_Console",
@@ -35,6 +35,5 @@ futures-executor = { workspace = true }
 
 [features]
 # Nightly features
-lazy_cell = []
 once_cell_try = []
-nightly = ["lazy_cell", "once_cell_try"]
+nightly = ["once_cell_try"]
