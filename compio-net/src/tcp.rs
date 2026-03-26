@@ -605,4 +605,13 @@ impl<'a> Splittable for &'a TcpStream {
     }
 }
 
+impl<'a> Splittable for &'a mut TcpStream {
+    type ReadHalf = ReadHalf<'a, TcpStream>;
+    type WriteHalf = WriteHalf<'a, TcpStream>;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        crate::split(self)
+    }
+}
+
 impl_raw_fd!(TcpStream, socket2::Socket, inner, socket);

@@ -287,4 +287,13 @@ impl Splittable for &File {
     }
 }
 
+impl Splittable for &mut File {
+    type ReadHalf = File;
+    type WriteHalf = File;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        (self.clone(), self.clone())
+    }
+}
+
 impl_raw_fd!(File, std::fs::File, inner, file);
