@@ -60,6 +60,9 @@ pub async fn copy_with_size<R: AsyncRead, W: AsyncWrite>(
         buf.clear();
     }
 
+    writer.flush().await?;
+    writer.shutdown().await?;
+
     Ok(total)
 }
 
