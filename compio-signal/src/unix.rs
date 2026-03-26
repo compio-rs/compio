@@ -41,7 +41,7 @@ impl Pipe {
 }
 
 unsafe extern "C" fn signal_handler(sig: i32) {
-    PIPE.send(sig).unwrap();
+    PIPE.send(sig).ok();
 }
 
 fn real_signal_handler(mut receiver: PipeReader) {

@@ -14,34 +14,22 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
+once_cell = { workspace = true }
+slab = { workspace = true }
+synchrony = { workspace = true, features = ["async_flag"] }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
 compio-driver = { workspace = true }
-once_cell = { workspace = true }
-slab = { workspace = true }
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_System_Console",
 ] }
 
-# Linux specific dependencies
-[target.'cfg(target_os = "linux")'.dependencies]
-compio-buf = { workspace = true }
-compio-driver = { workspace = true }
-compio-runtime = { workspace = true }
-
 # Unix specific dependencies
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
-
-[target.'cfg(all(unix, not(target_os = "linux")))'.dependencies]
-once_cell = { workspace = true }
 os_pipe = { workspace = true }
-slab = { workspace = true }
-
-[target.'cfg(not(target_os = "linux"))'.dependencies]
-synchrony = { workspace = true, features = ["async_flag"] }
 
 [dev-dependencies]
 compio-runtime = { workspace = true }
