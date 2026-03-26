@@ -131,6 +131,16 @@ impl AncillaryRef<'_> {
     pub fn data<T: AncillaryData>(&self) -> Result<T, CodecError> {
         self.0.decode_data()
     }
+
+    /// Returns a reference to the data of the control message.
+    ///
+    /// # Safety
+    ///
+    /// The data part must be properly aligned and contains an initialized
+    /// instance of `T`.
+    pub unsafe fn data_unchecked<T>(&self) -> &T {
+        unsafe { self.0.data() }
+    }
 }
 
 /// An iterator for ancillary (control) messages.
@@ -285,7 +295,7 @@ impl<const N: usize> DerefMut for AncillaryBuf<N> {
 
 // Deprecated compio_net::CMsgRef
 #[doc(hidden)]
-pub struct CMsgRef<'a>(sys::CMsgRef<'a>);
+pub struct CMsgRef<'a>(AncillaryRef<'a>);
 
 impl CMsgRef<'_> {
     pub fn level(&self) -> i32 {
@@ -308,15 +318,14 @@ impl CMsgRef<'_> {
     /// The data part must be properly aligned and contains an initialized
     /// instance of `T`.
     pub unsafe fn data<T>(&self) -> &T {
-        unsafe { self.0.data() }
+        unsafe { self.0.data_unchecked() }
     }
 }
 
 // Deprecated compio_net::CMsgIter
 #[doc(hidden)]
 pub struct CMsgIter<'a> {
-    inner: sys::CMsgIter,
-    _p: PhantomData<&'a ()>,
+    inner: AncillaryIter<'a>,
 }
 
 impl<'a> CMsgIter<'a> {
@@ -332,8 +341,7 @@ impl<'a> CMsgIter<'a> {
     /// The buffer should contain valid control messages.
     pub unsafe fn new(buffer: &'a [u8]) -> Self {
         Self {
-            inner: sys::CMsgIter::new(buffer.as_ptr(), buffer.len()),
-            _p: PhantomData,
+            inner: unsafe { AncillaryIter::new(buffer) },
         }
     }
 }
@@ -342,11 +350,7 @@ impl<'a> Iterator for CMsgIter<'a> {
     type Item = CMsgRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        unsafe {
-            let cmsg = self.inner.current();
-            self.inner.next();
-            cmsg.map(CMsgRef)
-        }
+        self.inner.next().map(CMsgRef)
     }
 }
 
