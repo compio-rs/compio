@@ -1,16 +1,12 @@
 //! Unix-specific types for signal handling.
 
-#[cfg(feature = "lazy_cell")]
-use std::sync::LazyLock;
 use std::{
     collections::HashMap,
     io::{self, Read, Write},
     ops::Deref,
-    sync::Mutex,
+    sync::{LazyLock, Mutex},
 };
 
-#[cfg(not(feature = "lazy_cell"))]
-use once_cell::sync::Lazy as LazyLock;
 use os_pipe::{PipeReader, PipeWriter};
 use slab::Slab;
 use synchrony::sync::async_flag::{AsyncFlag as Event, AsyncFlagHandle as EventHandle};

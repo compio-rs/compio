@@ -126,7 +126,6 @@ enable_log = ["compio-log/enable_log"]
 # Nightly features
 allocator_api = ["compio-buf/allocator_api", "compio-io?/allocator_api"]
 current_thread_id = ["compio-runtime?/current_thread_id"]
-lazy_cell = ["compio-signal?/lazy_cell"]
 linux_pidfd = ["compio-process?/linux_pidfd"]
 once_cell_try = [
     "compio-driver/once_cell_try",
@@ -146,7 +145,6 @@ future-combinator = ["compio-runtime?/future-combinator"]
 nightly = [
     "allocator_api",
     "current_thread_id",
-    "lazy_cell",
     "linux_pidfd",
     "once_cell_try",
     "proc_macro_diagnostic",

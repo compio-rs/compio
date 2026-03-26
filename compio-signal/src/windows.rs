@@ -1,13 +1,13 @@
 //! Windows-specific types for signal handling.
 
-#[cfg(feature = "lazy_cell")]
-use std::sync::LazyLock;
 #[cfg(feature = "once_cell_try")]
 use std::sync::OnceLock;
-use std::{collections::HashMap, io, sync::Mutex};
+use std::{
+    collections::HashMap,
+    io,
+    sync::{LazyLock, Mutex},
+};
 
-#[cfg(not(feature = "lazy_cell"))]
-use once_cell::sync::Lazy as LazyLock;
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 use slab::Slab;
