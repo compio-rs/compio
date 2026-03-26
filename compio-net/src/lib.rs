@@ -22,27 +22,6 @@ mod tcp;
 mod udp;
 mod unix;
 
-/// Reference to a control message.
-#[deprecated(
-    since = "0.12.0",
-    note = "use `compio_io::ancillary::AncillaryRef` instead"
-)]
-pub type CMsgRef<'a> = compio_io::ancillary::CMsgRef<'a>;
-
-/// An iterator for control messages.
-#[deprecated(
-    since = "0.12.0",
-    note = "use `compio_io::ancillary::AncillaryIter` instead"
-)]
-pub type CMsgIter<'a> = compio_io::ancillary::CMsgIter<'a>;
-
-/// Helper to construct control message.
-#[deprecated(
-    since = "0.12.0",
-    note = "use `compio_io::ancillary::AncillaryBuf::builder()` instead"
-)]
-pub type CMsgBuilder<'a> = compio_io::ancillary::CMsgBuilder<'a>;
-
 /// Providing functionalities to wait for readiness.
 #[deprecated(since = "0.12.0", note = "Use `compio::runtime::fd::PollFd` instead")]
 pub type PollFd<T> = compio_runtime::fd::PollFd<T>;

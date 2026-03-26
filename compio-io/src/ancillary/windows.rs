@@ -84,13 +84,6 @@ impl CMsgRef<'_> {
         let buffer = unsafe { slice::from_raw_parts(data_ptr, self.len()) };
         T::decode(buffer)
     }
-
-    pub unsafe fn data<T>(&self) -> &T {
-        unsafe {
-            let data_ptr = wsa_cmsg_data(self.0);
-            data_ptr.cast::<T>().as_ref().unwrap()
-        }
-    }
 }
 
 pub(crate) struct CMsgMut<'a>(&'a mut CMSGHDR);
@@ -110,15 +103,6 @@ impl CMsgMut<'_> {
         value.encode(buffer)?;
         self.0.cmsg_len = wsa_cmsg_len(T::SIZE as _) as _;
         Ok(wsa_cmsg_space(T::SIZE as _))
-    }
-
-    pub(crate) unsafe fn set_data<T>(&mut self, data: T) -> usize {
-        self.0.cmsg_len = wsa_cmsg_len(size_of::<T>() as _) as _;
-        unsafe {
-            let data_ptr = wsa_cmsg_data(self.0);
-            std::ptr::write(data_ptr.cast::<T>(), data);
-        }
-        wsa_cmsg_space(size_of::<T>() as _)
     }
 }
 
@@ -157,10 +141,6 @@ impl CMsgIter {
     pub(crate) unsafe fn current_mut<'a>(&self) -> Option<CMsgMut<'a>> {
         // SAFETY: cmsg is valid or null
         unsafe { self.cmsg.as_mut() }.map(CMsgMut)
-    }
-
-    pub(crate) fn is_aligned<T>(&self) -> bool {
-        self.msg.Control.buf.cast::<T>().is_aligned()
     }
 
     pub(crate) fn is_space_enough(&self, space: usize) -> bool {
