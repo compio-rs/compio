@@ -20,7 +20,6 @@ synchrony = { workspace = true, features = ["async_flag"] }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
-compio-driver = { workspace = true }
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_System_Console",
@@ -32,7 +31,7 @@ libc = { workspace = true }
 os_pipe = { workspace = true }
 
 [dev-dependencies]
-compio-runtime = { workspace = true }
+futures-executor = { workspace = true }
 
 [features]
 # Nightly features
