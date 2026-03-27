@@ -288,11 +288,7 @@ impl ErasedKey {
             }
             #[cfg(fusion)]
             unsafe {
-                if this.extra.is_iour() {
-                    crate::sys::iour::set_result(this.carrier.as_mut(), &res, &this.extra);
-                } else {
-                    crate::sys::poll::set_result(this.carrier.as_mut(), &res, &this.extra);
-                }
+                crate::sys::Carry::set_result(&mut this.carrier, &res, &this.extra);
             }
         }
         if let PushEntry::Pending(Some(w)) =

@@ -42,7 +42,7 @@ pub trait OpCode {
         &mut self,
         _: &mut Self::Control,
         _: &io::Result<usize>,
-        _: &crate::sys::Extra,
+        _: &crate::Extra,
     ) {
     }
 }

@@ -227,7 +227,7 @@ impl<T: crate::OpCode> Carry for Carrier<T> {
 
     unsafe fn set_result(&mut self, result: &io::Result<usize>, extra: &crate::Extra) {
         let (op, control) = self.as_iour();
-        unsafe { op.set_result(control, result, extra) }
+        unsafe { OpCode::set_result(op, control, result, extra) }
     }
 
     unsafe fn push_multishot(&mut self, result: io::Result<usize>, extra: crate::Extra) {

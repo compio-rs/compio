@@ -114,7 +114,7 @@ impl<T: crate::OpCode> Carry for Carrier<T> {
 
     unsafe fn set_result(&mut self, res: &io::Result<usize>, extra: &crate::Extra) {
         let (op, control) = self.as_poll();
-        unsafe { op.set_result(control, res, extra) }
+        unsafe { OpCode::set_result(op, control, res, extra) }
     }
 }
 
