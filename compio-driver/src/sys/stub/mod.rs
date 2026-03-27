@@ -37,11 +37,23 @@ pub trait OpCode {
     type Control;
 
     unsafe fn init(&mut self) -> Self::Control;
+
+    unsafe fn set_result(
+        &mut self,
+        _: &mut Self::Control,
+        _: &io::Result<usize>,
+        _: &crate::sys::Extra,
+    ) {
+    }
 }
 
-pub(crate) trait Carry {}
+pub(crate) trait Carry {
+    unsafe fn set_result(&mut self, _: &io::Result<usize>, _: &crate::Extra);
+}
 
-impl<T: OpCode> Carry for Carrier<T> {}
+impl<T: OpCode> Carry for Carrier<T> {
+    unsafe fn set_result(&mut self, _: &io::Result<usize>, _: &crate::Extra) {}
+}
 
 pub mod op;
 
