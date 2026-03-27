@@ -216,10 +216,30 @@ pub struct ReadVectoredAt<T: IoVectoredBufMut, S> {
     pub(crate) buffer: T,
 }
 
+pub struct ReadVectoredAtControl {
+    pub(crate) slices: Vec<SysSlice>,
+    #[allow(dead_code)]
+    pub(crate) aiocb: aiocb,
+}
+
 impl<T: IoVectoredBufMut, S> ReadVectoredAt<T, S> {
     /// Create [`ReadVectoredAt`].
     pub fn new(fd: S, offset: u64, buffer: T) -> Self {
         Self { fd, offset, buffer }
+    }
+
+    pub(crate) fn create_control(&mut self) -> ReadVectoredAtControl {
+        let slices = self.buffer.sys_slices_mut();
+        #[allow(unused_mut, clippy::let_unit_value)]
+        let mut aiocb = new_aiocb();
+        #[cfg(freebsd)]
+        {
+            aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
+            aiocb.aio_offset = self.offset as _;
+            aiocb.aio_buf = slices.as_ptr().cast_mut().cast();
+            aiocb.aio_nbytes = slices.len();
+        }
+        ReadVectoredAtControl { slices, aiocb }
     }
 }
 
@@ -236,20 +256,32 @@ pub struct WriteVectoredAt<T: IoVectoredBuf, S> {
     pub(crate) fd: S,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
+}
+
+pub struct WriteVectoredAtControl {
     pub(crate) slices: Vec<SysSlice>,
     #[allow(dead_code)]
     pub(crate) aiocb: aiocb,
 }
+
 impl<T: IoVectoredBuf, S> WriteVectoredAt<T, S> {
     /// Create [`WriteVectoredAt`]
     pub fn new(fd: S, offset: u64, buffer: T) -> Self {
-        Self {
-            fd,
-            offset,
-            buffer,
-            slices: vec![],
-            aiocb: new_aiocb(),
+        Self { fd, offset, buffer }
+    }
+
+    pub(crate) fn create_control(&mut self) -> WriteVectoredAtControl {
+        let slices = self.buffer.sys_slices();
+        #[allow(unused_mut, clippy::let_unit_value)]
+        let mut aiocb = new_aiocb();
+        #[cfg(freebsd)]
+        {
+            aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
+            aiocb.aio_offset = self.offset as _;
+            aiocb.aio_buf = slices.as_ptr().cast_mut().cast();
+            aiocb.aio_nbytes = slices.len();
         }
+        WriteVectoredAtControl { slices, aiocb }
     }
 }
 
@@ -265,17 +297,21 @@ impl<T: IoVectoredBuf, S> IntoInner for WriteVectoredAt<T, S> {
 pub struct ReadVectored<T: IoVectoredBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
+}
+
+pub struct ReadVectoredControl {
     pub(crate) slices: Vec<SysSlice>,
 }
 
 impl<T: IoVectoredBufMut, S> ReadVectored<T, S> {
     /// Create [`ReadVectored`].
     pub fn new(fd: S, buffer: T) -> Self {
-        Self {
-            fd,
-            buffer,
-            slices: vec![],
-        }
+        Self { fd, buffer }
+    }
+
+    pub(crate) fn create_control(&mut self) -> ReadVectoredControl {
+        let slices = self.buffer.sys_slices_mut();
+        ReadVectoredControl { slices }
     }
 }
 
@@ -291,17 +327,21 @@ impl<T: IoVectoredBufMut, S> IntoInner for ReadVectored<T, S> {
 pub struct WriteVectored<T: IoVectoredBuf, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
+}
+
+pub struct WriteVectoredControl {
     pub(crate) slices: Vec<SysSlice>,
 }
 
 impl<T: IoVectoredBuf, S> WriteVectored<T, S> {
     /// Create [`WriteVectored`].
     pub fn new(fd: S, buffer: T) -> Self {
-        Self {
-            fd,
-            buffer,
-            slices: vec![],
-        }
+        Self { fd, buffer }
+    }
+
+    pub(crate) fn create_control(&mut self) -> WriteVectoredControl {
+        let slices = self.buffer.sys_slices();
+        WriteVectoredControl { slices }
     }
 }
 

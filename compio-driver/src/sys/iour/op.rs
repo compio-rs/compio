@@ -317,17 +317,11 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     }
 }
 
-pub struct ReadVectoredControl {
-    slices: Vec<SysSlice>,
-}
-
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
-    type Control = ReadVectoredControl;
+    type Control = ReadVectoredAtControl;
 
     unsafe fn init(&mut self) -> Self::Control {
-        ReadVectoredControl {
-            slices: self.buffer.sys_slices_mut(),
-        }
+        self.create_control()
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
@@ -361,16 +355,17 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
-    type Control = ();
+    type Control = WriteVectoredAtControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.create_control()
+    }
 
-    fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
-        self.slices = self.buffer.sys_slices();
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::Writev::new(
             Fd(self.fd.as_fd().as_raw_fd()),
-            self.slices.as_ptr() as _,
-            self.slices.len().try_into().unwrap_or(u32::MAX),
+            control.slices.as_ptr() as _,
+            control.slices.len().try_into().unwrap_or(u32::MAX),
         )
         .offset(self.offset)
         .build()
@@ -397,16 +392,17 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
-    type Control = ();
+    type Control = ReadVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.create_control()
+    }
 
-    fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
-        self.slices = self.buffer.sys_slices_mut();
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::Readv::new(
             Fd(self.fd.as_fd().as_raw_fd()),
-            self.slices.as_ptr() as _,
-            self.slices.len().try_into().unwrap_or(u32::MAX),
+            control.slices.as_ptr() as _,
+            control.slices.len().try_into().unwrap_or(u32::MAX),
         )
         .build()
         .into()
@@ -431,16 +427,17 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
-    type Control = ();
+    type Control = WriteVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.create_control()
+    }
 
-    fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
-        self.slices = self.buffer.sys_slices();
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::Writev::new(
             Fd(self.fd.as_fd().as_raw_fd()),
-            self.slices.as_ptr() as _,
-            self.slices.len().try_into().unwrap_or(u32::MAX),
+            control.slices.as_ptr() as _,
+            control.slices.len().try_into().unwrap_or(u32::MAX),
         )
         .build()
         .into()

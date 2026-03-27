@@ -325,27 +325,11 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     }
 }
 
-pub struct ReadVectoredControl {
-    slices: Vec<SysSlice>,
-    #[allow(dead_code)]
-    aiocb: aiocb,
-}
-
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
-    type Control = ReadVectoredControl;
+    type Control = ReadVectoredAtControl;
 
     unsafe fn init(&mut self) -> Self::Control {
-        let slices = self.buffer.sys_slices_mut();
-        #[allow(unused_mut, clippy::let_unit_value)]
-        let mut aiocb = new_aiocb();
-        #[cfg(freebsd)]
-        {
-            aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
-            aiocb.aio_offset = self.offset as _;
-            aiocb.aio_buf = slices.as_ptr().cast_mut().cast();
-            aiocb.aio_nbytes = slices.len();
-        }
-        ReadVectoredControl { slices, aiocb }
+        self.create_control()
     }
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
@@ -428,27 +412,11 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
     }
 }
 
-pub struct WriteVectoredControl {
-    slices: Vec<SysSlice>,
-    #[allow(dead_code)]
-    aiocb: aiocb,
-}
-
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
-    type Control = WriteVectoredControl;
+    type Control = WriteVectoredAtControl;
 
     unsafe fn init(&mut self) -> Self::Control {
-        let slices = self.buffer.sys_slices();
-        #[allow(unused_mut, clippy::let_unit_value)]
-        let mut aiocb = new_aiocb();
-        #[cfg(freebsd)]
-        {
-            aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
-            aiocb.aio_offset = self.offset as _;
-            aiocb.aio_buf = slices.as_ptr().cast_mut().cast();
-            aiocb.aio_nbytes = slices.len();
-        }
-        WriteVectoredControl { slices, aiocb }
+        self.create_control()
     }
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
@@ -520,9 +488,11 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
-    type Control = ();
+    type Control = ReadVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.create_control()
+    }
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::wait_readable(self.fd.as_fd().as_raw_fd()))
@@ -532,13 +502,12 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(&mut self, _control: &mut Self::Control) -> Poll<io::Result<usize>> {
-        self.slices = self.buffer.sys_slices_mut();
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         syscall!(
             break libc::readv(
                 self.fd.as_fd().as_raw_fd(),
-                self.slices.as_ptr() as _,
-                self.slices.len() as _
+                control.slices.as_ptr() as _,
+                control.slices.len() as _
             )
         )
     }
@@ -570,9 +539,11 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
-    type Control = ();
+    type Control = WriteVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.create_control()
+    }
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::wait_writable(self.fd.as_fd().as_raw_fd()))
@@ -582,13 +553,12 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
         Some(OpType::fd(self.fd.as_fd().as_raw_fd()))
     }
 
-    fn operate(&mut self, _control: &mut Self::Control) -> Poll<io::Result<usize>> {
-        self.slices = self.buffer.sys_slices();
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         syscall!(
             break libc::writev(
                 self.fd.as_fd().as_raw_fd(),
-                self.slices.as_ptr() as _,
-                self.slices.len() as _
+                control.slices.as_ptr() as _,
+                control.slices.len() as _
             )
         )
     }
