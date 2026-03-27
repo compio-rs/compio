@@ -63,10 +63,12 @@ pub(crate) fn path_string(path: impl AsRef<std::path::Path>) -> io::Result<std::
 use compio_buf::{BufResult, IntoInner};
 use compio_driver::{SharedFd, op::AsyncifyFd};
 
-pub(crate) async fn spawn_blocking_with<T: 'static, R: Send + 'static>(
-    fd: SharedFd<T>,
-    f: impl FnOnce(&T) -> io::Result<R> + Send + 'static,
-) -> io::Result<R> {
+pub(crate) async fn spawn_blocking_with<T, R, F>(fd: SharedFd<T>, f: F) -> io::Result<R>
+where
+    T: Sync + 'static,
+    R: Send + 'static,
+    F: FnOnce(&T) -> io::Result<R> + Send + 'static,
+{
     let op = AsyncifyFd::new(fd, move |fd: &T| match f(fd) {
         Ok(res) => BufResult(Ok(0), Some(res)),
         Err(e) => BufResult(Err(e), None),
@@ -77,11 +79,17 @@ pub(crate) async fn spawn_blocking_with<T: 'static, R: Send + 'static>(
 }
 
 #[cfg(all(windows, dirfd))]
-pub(crate) async fn spawn_blocking_with2<T1: 'static, T2: 'static, R: Send + 'static>(
+pub(crate) async fn spawn_blocking_with2<T1, T2, R, F>(
     fd1: SharedFd<T1>,
     fd2: SharedFd<T2>,
-    f: impl FnOnce(&T1, &T2) -> io::Result<R> + Send + 'static,
-) -> io::Result<R> {
+    f: F,
+) -> io::Result<R>
+where
+    T1: Sync + 'static,
+    T2: Sync + 'static,
+    R: Send + 'static,
+    F: FnOnce(&T1, &T2) -> io::Result<R> + Send + 'static,
+{
     use compio_driver::op::AsyncifyFd2;
 
     let op = AsyncifyFd2::new(fd1, fd2, move |fd1: &T1, fd2: &T2| match f(fd1, fd2) {
