@@ -27,8 +27,7 @@ windows-sys = { workspace = true, features = [
 
 # Unix specific dependencies
 [target.'cfg(unix)'.dependencies]
-libc = { workspace = true }
-os_pipe = { workspace = true }
+nix = { workspace = true, features = ["signal"] }
 
 [dev-dependencies]
 futures-executor = { workspace = true }

@@ -39,6 +39,8 @@ pub async fn ctrl_c() -> std::io::Result<()> {
     }
     #[cfg(unix)]
     {
-        unix::signal(libc::SIGINT).await
+        use nix::sys::signal::Signal;
+
+        unix::signal(Signal::SIGINT as _).await
     }
 }
