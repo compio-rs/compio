@@ -10,7 +10,7 @@
 //! Under ordinary circumstances we would be happy to just use
 //! `Mutex<HashMap<c_int, _>>`. However, as we use it in the signal handler, we
 //! are severely limited in what we can or can't use. So we choose to implement
-//! kind of spin-look thing with atomics.
+//! kind of spin-lock thing with atomics.
 //!
 //! In the reader it is always simply locked and then unlocked, making sure it
 //! doesn't disappear while in use.
@@ -22,7 +22,7 @@
 //! generation trick to make sure that new signal locks another instance.
 //!
 //! The downside is, this is an active spin lock at the writer end. However, we
-//! assume than:
+//! assume that:
 //!
 //! * Signals are one time setup before we actually have threads. We just need
 //!   to make *sure* we are safe even if this is not true.
@@ -40,12 +40,13 @@
 //! wants to get inspired (but do make your own check through them anyway).
 
 use std::{
+    hint,
     marker::PhantomData,
     ops::Deref,
     process::abort,
     sync::{
         Mutex, MutexGuard, PoisonError,
-        atomic::{self, AtomicPtr, AtomicUsize, Ordering},
+        atomic::{AtomicPtr, AtomicUsize, Ordering},
     },
     thread,
 };
@@ -202,9 +203,7 @@ impl<T> HalfLock<T> {
                 if iter.is_multiple_of(YIELD_EVERY) {
                     thread::yield_now();
                 } else {
-                    // Replaced by hint::spin_loop, but we want to support older compiler
-                    #[allow(deprecated)]
-                    atomic::spin_loop_hint();
+                    hint::spin_loop();
                 }
             }
 

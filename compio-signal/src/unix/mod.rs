@@ -26,12 +26,13 @@ extern "C" fn signal_handler(sig: i32) {
 }
 
 fn register(sig: Signal, event: &Event) -> io::Result<usize> {
-    unsafe { signal::signal(sig, SigHandler::Handler(signal_handler)) }?;
     let handle = event.handle();
     let mut guard = HANDLER.write();
     let mut new = Slab::clone(&*guard);
     let key = new.insert((sig, handle));
     guard.store(new);
+    unsafe { signal::signal(sig, SigHandler::Handler(signal_handler)) }?;
+
     Ok(key)
 }
 
@@ -40,11 +41,12 @@ fn unregister(sig: Signal, key: usize) -> io::Result<()> {
     let mut new = Slab::clone(&*handler);
     new.remove(key);
     let need_uninit = new.iter().all(|(_, (s, _))| *s != sig);
-    handler.store(new);
 
     if need_uninit {
         unsafe { signal::signal(sig, SigHandler::SigDfl) }?;
     }
+
+    handler.store(new);
 
     Ok(())
 }
