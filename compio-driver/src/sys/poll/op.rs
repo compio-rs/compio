@@ -20,11 +20,7 @@ pub use self::{
 };
 use super::{AsFd, Decision, OpCode, OpType, syscall};
 pub use crate::sys::unix_op::*;
-use crate::{
-    aio::{aiocb, new_aiocb},
-    op::*,
-    sys_slice::*,
-};
+use crate::{op::*, sys::aio::*, sys_slice::*};
 
 unsafe impl<D, F> OpCode for Asyncify<F, D>
 where
@@ -278,13 +274,13 @@ impl<S: AsFd> IntoInner for PathStat<S> {
     }
 }
 
-pub struct ReadControl {
+pub struct ReadAtControl {
     #[allow(dead_code)]
     aiocb: aiocb,
 }
 
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
-    type Control = ReadControl;
+    type Control = ReadAtControl;
 
     unsafe fn init(&mut self) -> Self::Control {
         #[allow(unused_mut, clippy::let_unit_value)]
@@ -298,7 +294,7 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
             aiocb.aio_buf = slice.ptr().cast();
             aiocb.aio_nbytes = slice.len();
         }
-        ReadControl { aiocb }
+        ReadAtControl { aiocb }
     }
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
@@ -360,13 +356,13 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
     }
 }
 
-pub struct WriteControl {
+pub struct WriteAtControl {
     #[allow(dead_code)]
     aiocb: aiocb,
 }
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
-    type Control = WriteControl;
+    type Control = WriteAtControl;
 
     unsafe fn init(&mut self) -> Self::Control {
         #[allow(unused_mut, clippy::let_unit_value)]
@@ -380,7 +376,7 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
             aiocb.aio_buf = slice.ptr().cast();
             aiocb.aio_nbytes = slice.len();
         }
-        WriteControl { aiocb }
+        WriteAtControl { aiocb }
     }
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
@@ -448,7 +444,7 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
 }
 
 unsafe impl<S: AsFd> OpCode for crate::op::managed::ReadManagedAt<S> {
-    type Control = ReadControl;
+    type Control = ReadAtControl;
 
     unsafe fn init(&mut self) -> Self::Control {
         unsafe { self.op.init() }
