@@ -20,7 +20,11 @@ pub use self::{
 };
 use super::{AsFd, Decision, OpCode, OpType, syscall};
 pub use crate::sys::unix_op::*;
-use crate::{op::*, sys_slice::*};
+use crate::{
+    aio::{aiocb, new_aiocb},
+    op::*,
+    sys_slice::*,
+};
 
 unsafe impl<D, F> OpCode for Asyncify<F, D>
 where
@@ -274,22 +278,33 @@ impl<S: AsFd> IntoInner for PathStat<S> {
     }
 }
 
+pub struct ReadControl {
+    #[allow(dead_code)]
+    aiocb: aiocb,
+}
+
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
-    type Control = ();
+    type Control = ReadControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
-
-    fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
+    unsafe fn init(&mut self) -> Self::Control {
+        #[allow(unused_mut, clippy::let_unit_value)]
+        let mut aiocb = new_aiocb();
         #[cfg(aio)]
         {
             let slice = self.buffer.sys_slice_mut();
 
-            self.aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
-            self.aiocb.aio_offset = self.offset as _;
-            self.aiocb.aio_buf = slice.ptr().cast();
-            self.aiocb.aio_nbytes = slice.len();
+            aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
+            aiocb.aio_offset = self.offset as _;
+            aiocb.aio_buf = slice.ptr().cast();
+            aiocb.aio_nbytes = slice.len();
+        }
+        ReadControl { aiocb }
+    }
 
-            Ok(Decision::aio(&mut self.aiocb, libc::aio_read))
+    fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
+        #[cfg(aio)]
+        {
+            Ok(Decision::aio(&mut _control.aiocb, libc::aio_read))
         }
         #[cfg(not(aio))]
         {
@@ -298,8 +313,8 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     }
 
     #[cfg(aio)]
-    fn op_type(&mut self, _control: &mut Self::Control) -> Option<crate::OpType> {
-        Some(OpType::Aio(NonNull::from(&mut self.aiocb)))
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<crate::OpType> {
+        Some(OpType::Aio(NonNull::from(&mut control.aiocb)))
     }
 
     fn operate(&mut self, _control: &mut Self::Control) -> Poll<io::Result<usize>> {
@@ -310,22 +325,33 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     }
 }
 
-unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
-    type Control = ();
+pub struct ReadVectoredControl {
+    slices: Vec<SysSlice>,
+    #[allow(dead_code)]
+    aiocb: aiocb,
+}
 
-    unsafe fn init(&mut self) -> Self::Control {}
+unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
+    type Control = ReadVectoredControl;
+
+    unsafe fn init(&mut self) -> Self::Control {
+        let slices = self.buffer.sys_slices_mut();
+        #[allow(unused_mut, clippy::let_unit_value)]
+        let mut aiocb = new_aiocb();
+        #[cfg(freebsd)]
+        {
+            aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
+            aiocb.aio_offset = self.offset as _;
+            aiocb.aio_buf = slices.as_ptr().cast_mut().cast();
+            aiocb.aio_nbytes = slices.len();
+        }
+        ReadVectoredControl { slices, aiocb }
+    }
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         #[cfg(freebsd)]
         {
-            self.slices = self.buffer.sys_slices_mut();
-
-            self.aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
-            self.aiocb.aio_offset = self.offset as _;
-            self.aiocb.aio_buf = self.slices.as_mut_ptr().cast();
-            self.aiocb.aio_nbytes = self.slices.len();
-
-            Ok(Decision::aio(&mut self.aiocb, libc::aio_readv))
+            Ok(Decision::aio(&mut _control.aiocb, libc::aio_readv))
         }
         #[cfg(not(freebsd))]
         {
@@ -334,39 +360,49 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
     }
 
     #[cfg(freebsd)]
-    fn op_type(&mut self, _control: &mut Self::Control) -> Option<crate::OpType> {
-        Some(OpType::Aio(NonNull::from(&mut self.aiocb)))
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<crate::OpType> {
+        Some(OpType::Aio(NonNull::from(&mut control.aiocb)))
     }
 
-    fn operate(&mut self, _control: &mut Self::Control) -> Poll<io::Result<usize>> {
-        self.slices = self.buffer.sys_slices_mut();
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         syscall!(
             break preadv(
                 self.fd.as_fd().as_raw_fd(),
-                self.slices.as_ptr() as _,
-                self.slices.len() as _,
+                control.slices.as_ptr() as _,
+                control.slices.len() as _,
                 self.offset as _,
             )
         )
     }
 }
 
+pub struct WriteControl {
+    #[allow(dead_code)]
+    aiocb: aiocb,
+}
+
 unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
-    type Control = ();
+    type Control = WriteControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
-
-    fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
+    unsafe fn init(&mut self) -> Self::Control {
+        #[allow(unused_mut, clippy::let_unit_value)]
+        let mut aiocb = new_aiocb();
         #[cfg(aio)]
         {
             let slice = self.buffer.sys_slice();
 
-            self.aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
-            self.aiocb.aio_offset = self.offset as _;
-            self.aiocb.aio_buf = slice.ptr().cast();
-            self.aiocb.aio_nbytes = slice.len();
+            aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
+            aiocb.aio_offset = self.offset as _;
+            aiocb.aio_buf = slice.ptr().cast();
+            aiocb.aio_nbytes = slice.len();
+        }
+        WriteControl { aiocb }
+    }
 
-            Ok(Decision::aio(&mut self.aiocb, libc::aio_write))
+    fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
+        #[cfg(aio)]
+        {
+            Ok(Decision::aio(&mut _control.aiocb, libc::aio_write))
         }
         #[cfg(not(aio))]
         {
@@ -375,8 +411,8 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
     }
 
     #[cfg(aio)]
-    fn op_type(&mut self, _control: &mut Self::Control) -> Option<crate::OpType> {
-        Some(OpType::Aio(NonNull::from(&mut self.aiocb)))
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<crate::OpType> {
+        Some(OpType::Aio(NonNull::from(&mut control.aiocb)))
     }
 
     fn operate(&mut self, _control: &mut Self::Control) -> Poll<io::Result<usize>> {
@@ -392,22 +428,33 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
     }
 }
 
-unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
-    type Control = ();
+pub struct WriteVectoredControl {
+    slices: Vec<SysSlice>,
+    #[allow(dead_code)]
+    aiocb: aiocb,
+}
 
-    unsafe fn init(&mut self) -> Self::Control {}
+unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
+    type Control = WriteVectoredControl;
+
+    unsafe fn init(&mut self) -> Self::Control {
+        let slices = self.buffer.sys_slices();
+        #[allow(unused_mut, clippy::let_unit_value)]
+        let mut aiocb = new_aiocb();
+        #[cfg(freebsd)]
+        {
+            aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
+            aiocb.aio_offset = self.offset as _;
+            aiocb.aio_buf = slices.as_ptr().cast_mut().cast();
+            aiocb.aio_nbytes = slices.len();
+        }
+        WriteVectoredControl { slices, aiocb }
+    }
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         #[cfg(freebsd)]
         {
-            self.slices = self.buffer.sys_slices();
-
-            self.aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
-            self.aiocb.aio_offset = self.offset as _;
-            self.aiocb.aio_buf = self.slices.as_ptr().cast_mut().cast();
-            self.aiocb.aio_nbytes = self.slices.len();
-
-            Ok(Decision::aio(&mut self.aiocb, libc::aio_writev))
+            Ok(Decision::aio(&mut _control.aiocb, libc::aio_writev))
         }
         #[cfg(not(freebsd))]
         {
@@ -416,17 +463,16 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
     }
 
     #[cfg(freebsd)]
-    fn op_type(&mut self, _control: &mut Self::Control) -> Option<crate::OpType> {
-        Some(OpType::Aio(NonNull::from(&mut self.aiocb)))
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<crate::OpType> {
+        Some(OpType::Aio(NonNull::from(&mut control.aiocb)))
     }
 
-    fn operate(&mut self, _control: &mut Self::Control) -> Poll<io::Result<usize>> {
-        self.slices = self.buffer.sys_slices();
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         syscall!(
             break pwritev(
                 self.fd.as_fd().as_raw_fd(),
-                self.slices.as_ptr() as _,
-                self.slices.len() as _,
+                control.slices.as_ptr() as _,
+                control.slices.len() as _,
                 self.offset as _,
             )
         )
@@ -434,9 +480,11 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
 }
 
 unsafe impl<S: AsFd> OpCode for crate::op::managed::ReadManagedAt<S> {
-    type Control = ();
+    type Control = ReadControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        unsafe { self.op.init() }
+    }
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         self.op.pre_submit(control)
@@ -564,10 +612,23 @@ unsafe impl<S: AsFd> OpCode for crate::op::managed::ReadManaged<S> {
     }
 }
 
-unsafe impl<S: AsFd> OpCode for Sync<S> {
-    type Control = ();
+pub struct SyncControl {
+    #[allow(dead_code)]
+    aiocb: aiocb,
+}
 
-    unsafe fn init(&mut self) -> Self::Control {}
+unsafe impl<S: AsFd> OpCode for Sync<S> {
+    type Control = SyncControl;
+
+    unsafe fn init(&mut self) -> Self::Control {
+        #[allow(unused_mut, clippy::let_unit_value)]
+        let mut aiocb = new_aiocb();
+        #[cfg(aio)]
+        {
+            aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
+        }
+        SyncControl { aiocb }
+    }
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         #[cfg(aio)]
@@ -579,15 +640,13 @@ unsafe impl<S: AsFd> OpCode for Sync<S> {
                 unsafe { libc::aio_fsync(libc::O_DSYNC, aiocbp) }
             }
 
-            self.aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
-
             let f = if self.datasync {
                 aio_fdatasync
             } else {
                 aio_fsync
             };
 
-            Ok(Decision::aio(&mut self.aiocb, f))
+            Ok(Decision::aio(&mut _control.aiocb, f))
         }
         #[cfg(not(aio))]
         {
@@ -596,8 +655,8 @@ unsafe impl<S: AsFd> OpCode for Sync<S> {
     }
 
     #[cfg(aio)]
-    fn op_type(&mut self, _control: &mut Self::Control) -> Option<crate::OpType> {
-        Some(OpType::Aio(NonNull::from(&mut self.aiocb)))
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<crate::OpType> {
+        Some(OpType::Aio(NonNull::from(&mut control.aiocb)))
     }
 
     fn operate(&mut self, _control: &mut Self::Control) -> Poll<io::Result<usize>> {
@@ -898,6 +957,7 @@ impl<S> IntoInner for AcceptMulti<S> {
         self.op.into_inner().0
     }
 }
+
 unsafe impl<S: AsFd> OpCode for Connect<S> {
     type Control = ();
 
@@ -1023,18 +1083,19 @@ unsafe impl<S: AsFd> OpCode for crate::op::managed::RecvFromManaged<S> {
 }
 
 impl<T: IoVectoredBufMut, S: AsFd> RecvVectored<T, S> {
-    unsafe fn call(&mut self, _control: &mut ()) -> libc::ssize_t {
-        unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &raw mut self.msg, self.flags) }
+    unsafe fn call(&mut self, control: &mut RecvVectoredControl) -> libc::ssize_t {
+        unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &mut control.msg, self.flags) }
     }
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
-    type Control = ();
+    type Control = RecvVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.create_control()
+    }
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
-        self.set_msg(control);
         let fd = self.fd.as_fd().as_raw_fd();
         syscall!(self.call(control), wait_readable(fd))
     }
@@ -1049,18 +1110,19 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
 }
 
 impl<T: IoVectoredBuf, S: AsFd> SendVectored<T, S> {
-    unsafe fn call(&self, _control: &mut ()) -> libc::ssize_t {
-        unsafe { libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, self.flags) }
+    unsafe fn call(&self, control: &mut SendVectoredControl) -> libc::ssize_t {
+        unsafe { libc::sendmsg(self.fd.as_fd().as_raw_fd(), &control.msg, self.flags) }
     }
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
-    type Control = ();
+    type Control = SendVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.create_control()
+    }
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
-        self.set_msg(control);
         let fd = self.fd.as_fd().as_raw_fd();
         syscall!(self.call(control), wait_writable(fd))
     }
@@ -1339,18 +1401,19 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> RecvMsg<T, C, S> {
-    unsafe fn call(&mut self, _control: &mut ()) -> libc::ssize_t {
-        unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &raw mut self.msg, self.flags) }
+    unsafe fn call(&mut self, control: &mut RecvMsgControl) -> libc::ssize_t {
+        unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &mut control.msg, self.flags) }
     }
 }
 
 unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
-    type Control = ();
+    type Control = RecvMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.create_control()
+    }
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
-        self.set_msg(control);
         let fd = self.fd.as_fd().as_raw_fd();
         syscall!(self.call(control), wait_readable(fd))
     }
@@ -1362,21 +1425,31 @@ unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, 
     fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         syscall!(break self.call(control))
     }
+
+    unsafe fn set_result(
+        &mut self,
+        control: &mut Self::Control,
+        _: &io::Result<usize>,
+        _: &crate::Extra,
+    ) {
+        self.update_control(control);
+    }
 }
 
 impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> SendMsg<T, C, S> {
-    unsafe fn call(&mut self, _control: &mut ()) -> libc::ssize_t {
-        unsafe { libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, self.flags) }
+    unsafe fn call(&mut self, control: &mut SendMsgControl) -> libc::ssize_t {
+        unsafe { libc::sendmsg(self.fd.as_fd().as_raw_fd(), &control.msg, self.flags) }
     }
 }
 
 unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
-    type Control = ();
+    type Control = SendMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.create_control()
+    }
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
-        self.set_msg(control);
         let fd = self.fd.as_fd().as_raw_fd();
         syscall!(self.call(control), wait_writable(fd))
     }

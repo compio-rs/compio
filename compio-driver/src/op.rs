@@ -27,7 +27,7 @@ pub use crate::sys::op::{ConnectNamedPipe, DeviceIoControl};
 pub use crate::sys::op::{
     ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvManaged, RecvMulti,
 };
-use crate::{Extra, OwnedFd, SharedFd, TakeBuffer, sys::aio::*};
+use crate::{Extra, OwnedFd, SharedFd, TakeBuffer};
 
 /// Trait to update the buffer length inside the [`BufResult`].
 pub trait BufResultExt {
@@ -294,19 +294,12 @@ pub struct ReadAt<T: IoBufMut, S> {
     pub(crate) fd: S,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
-    #[allow(dead_code)]
-    pub(crate) aiocb: aiocb,
 }
 
 impl<T: IoBufMut, S> ReadAt<T, S> {
     /// Create [`ReadAt`].
     pub fn new(fd: S, offset: u64, buffer: T) -> Self {
-        Self {
-            fd,
-            offset,
-            buffer,
-            aiocb: new_aiocb(),
-        }
+        Self { fd, offset, buffer }
     }
 }
 
@@ -324,19 +317,12 @@ pub struct WriteAt<T: IoBuf, S> {
     pub(crate) fd: S,
     pub(crate) offset: u64,
     pub(crate) buffer: T,
-    #[allow(dead_code)]
-    pub(crate) aiocb: aiocb,
 }
 
 impl<T: IoBuf, S> WriteAt<T, S> {
     /// Create [`WriteAt`].
     pub fn new(fd: S, offset: u64, buffer: T) -> Self {
-        Self {
-            fd,
-            offset,
-            buffer,
-            aiocb: new_aiocb(),
-        }
+        Self { fd, offset, buffer }
     }
 }
 
@@ -391,11 +377,10 @@ impl<T: IoBuf, S> IntoInner for Write<T, S> {
 }
 
 /// Sync data to the disk.
-#[allow(dead_code)]
 pub struct Sync<S> {
     pub(crate) fd: S,
+    #[allow(dead_code)]
     pub(crate) datasync: bool,
-    pub(crate) aiocb: aiocb,
 }
 
 impl<S> Sync<S> {
@@ -403,11 +388,7 @@ impl<S> Sync<S> {
     ///
     /// If `datasync` is `true`, the file metadata may not be synchronized.
     pub fn new(fd: S, datasync: bool) -> Self {
-        Self {
-            fd,
-            datasync,
-            aiocb: new_aiocb(),
-        }
+        Self { fd, datasync }
     }
 }
 
