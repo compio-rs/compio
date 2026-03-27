@@ -227,7 +227,9 @@ impl<T: IoVectoredBufMut, S> ReadVectoredAt<T, S> {
     pub fn new(fd: S, offset: u64, buffer: T) -> Self {
         Self { fd, offset, buffer }
     }
+}
 
+impl<T: IoVectoredBufMut, S: AsFd> ReadVectoredAt<T, S> {
     pub(crate) fn create_control(&mut self) -> ReadVectoredAtControl {
         let slices = self.buffer.sys_slices_mut();
         #[allow(unused_mut, clippy::let_unit_value)]
@@ -269,7 +271,9 @@ impl<T: IoVectoredBuf, S> WriteVectoredAt<T, S> {
     pub fn new(fd: S, offset: u64, buffer: T) -> Self {
         Self { fd, offset, buffer }
     }
+}
 
+impl<T: IoVectoredBuf, S: AsFd> WriteVectoredAt<T, S> {
     pub(crate) fn create_control(&mut self) -> WriteVectoredAtControl {
         let slices = self.buffer.sys_slices();
         #[allow(unused_mut, clippy::let_unit_value)]
