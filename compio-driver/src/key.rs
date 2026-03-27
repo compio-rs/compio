@@ -282,8 +282,17 @@ impl ErasedKey {
         let mut this = self.borrow();
         {
             let this = &mut *this;
+            #[cfg(not(fusion))]
             unsafe {
                 this.carrier.set_result(&res, &this.extra);
+            }
+            #[cfg(fusion)]
+            unsafe {
+                if this.extra.is_iour() {
+                    crate::sys::iour::set_result(this.carrier.as_mut(), &res, &this.extra);
+                } else {
+                    crate::sys::poll::set_result(this.carrier.as_mut(), &res, &this.extra);
+                }
             }
         }
         if let PushEntry::Pending(Some(w)) =
