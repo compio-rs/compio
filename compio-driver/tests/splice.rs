@@ -18,7 +18,6 @@ mod splice_impl {
     use std::{
         io,
         os::fd::{AsFd, AsRawFd},
-        pin::Pin,
         task::{Poll, ready},
     };
 
@@ -46,21 +45,25 @@ mod splice_impl {
     }
 
     unsafe impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
-        fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision> {
+        type Control = ();
+
+        unsafe fn init(&mut self) -> Self::Control {}
+
+        fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<Decision> {
             Ok(Decision::wait_for_many([
                 WaitArg::readable(self.fd_in.as_fd().as_raw_fd()),
                 WaitArg::writable(self.fd_out.as_fd().as_raw_fd()),
             ]))
         }
 
-        fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+        fn op_type(&mut self, _: &mut Self::Control) -> Option<OpType> {
             Some(OpType::multi_fd([
                 self.fd_in.as_fd().as_raw_fd(),
                 self.fd_out.as_fd().as_raw_fd(),
             ]))
         }
 
-        fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>> {
+        fn operate(&mut self, _: &mut Self::Control) -> Poll<io::Result<usize>> {
             let mut buffer = vec![0u8; self.len];
             ready!(syscall!(
                 break libc::read(

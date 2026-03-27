@@ -58,13 +58,14 @@ macro_rules! op {
                 type Inner = <poll::$name<$($ty),*> as IntoInner>::Inner;
 
                 fn into_inner(mut self) -> Self::Inner {
+                    use [< $name Inner >]::*;
                     match self.inner {
-                        [< $name Inner >]::Uninit(..) => {
+                        Uninit(..) => {
                             self.inner.poll();
                             self.into_inner()
                         },
-                        [< $name Inner >]::Poll(op) => op.into_inner(),
-                        [< $name Inner >]::IoUring(op) => op.into_inner(),
+                        Poll(op) => op.into_inner(),
+                        IoUring(op) => op.into_inner(),
                     }
                 }
             }
@@ -75,47 +76,59 @@ macro_rules! op {
                     Self { inner: [< $name Inner >]::Uninit($($arg),*) }
                 }
             }
-        }
 
-        unsafe impl<$($ty: $trait),*> poll::OpCode for $name<$($ty),*> {
-            fn pre_submit(self: std::pin::Pin<&mut Self>) -> std::io::Result<crate::Decision> {
-                unsafe { self.map_unchecked_mut(|x| x.inner.poll() ) }.pre_submit()
+            unsafe impl<$($ty: $trait),*> poll::OpCode for $name<$($ty),*> {
+                type Control = <poll::$name<$($ty),*> as poll::OpCode>::Control;
+
+                unsafe fn init(&mut self) -> Self::Control {
+                    unsafe { poll::OpCode::init(self.inner.poll()) }
+                }
+
+                fn pre_submit(&mut self, control: &mut Self::Control) -> std::io::Result<crate::Decision> {
+                    self.inner.poll().pre_submit(control)
+                }
+
+                fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
+                    self.inner.poll().op_type(control)
+                }
+
+                fn operate(
+                    &mut self, control: &mut Self::Control,
+                ) -> std::task::Poll<std::io::Result<usize>> {
+                    self.inner.poll().operate(control)
+                }
             }
 
-            fn op_type(self: std::pin::Pin<&mut Self>) -> Option<OpType> {
-                unsafe { self.map_unchecked_mut(|x| x.inner.poll() ) }.op_type()
-            }
+            unsafe impl<$($ty: $trait),*> iour::OpCode for $name<$($ty),*> {
+                type Control = <iour::$name<$($ty),*> as iour::OpCode>::Control;
 
-            fn operate(
-                self: std::pin::Pin<&mut Self>,
-            ) -> std::task::Poll<std::io::Result<usize>> {
-                unsafe { self.map_unchecked_mut(|x| x.inner.poll() ) }.operate()
-            }
-        }
+                unsafe fn init(&mut self) -> Self::Control {
+                    unsafe { self.inner.iour().init() }
+                }
 
-        unsafe impl<$($ty: $trait),*> iour::OpCode for $name<$($ty),*> {
-            fn create_entry(self: std::pin::Pin<&mut Self>) -> OpEntry {
-                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.create_entry()
-            }
+                fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+                    self.inner.iour().create_entry(control)
+                }
 
-            fn create_entry_fallback(self: std::pin::Pin<&mut Self>) -> OpEntry {
-                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.create_entry_fallback()
-            }
+                fn create_entry_fallback(&mut self, control: &mut Self::Control) -> OpEntry {
+                    self.inner.iour().create_entry_fallback(control)
+                }
 
-            fn call_blocking(self: std::pin::Pin<&mut Self>) -> std::io::Result<usize> {
-                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.call_blocking()
-            }
+                fn call_blocking(&mut self, control: &mut Self::Control) -> std::io::Result<usize> {
+                    self.inner.iour().call_blocking(control)
+                }
 
-            unsafe fn set_result(self: std::pin::Pin<&mut Self>, result: &std::io::Result<usize>, extra: &crate::Extra) {
-                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ).set_result(result, extra) }
-            }
+                unsafe fn set_result(&mut self, control: &mut Self::Control, result: &std::io::Result<usize>, extra: &crate::Extra) {
+                    unsafe { self.inner.iour().set_result(control, result, extra) }
+                }
 
-            unsafe fn push_multishot(self: std::pin::Pin<&mut Self>, result: std::io::Result<usize>, extra: crate::Extra) {
-                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ).push_multishot(result, extra) }
-            }
+                unsafe fn push_multishot(&mut self, control: &mut Self::Control, result: std::io::Result<usize>, extra: crate::Extra) {
+                    unsafe { self.inner.iour().push_multishot(control, result, extra) }
+                }
 
-            fn pop_multishot(self: std::pin::Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
-                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.pop_multishot()
+                fn pop_multishot(&mut self, control: &mut Self::Control) -> Option<BufResult<usize, crate::Extra>> {
+                    self.inner.iour().pop_multishot(control)
+                }
             }
         }
     };
@@ -206,47 +219,59 @@ macro_rules! mop {
                     }
                 }
             }
-        }
 
-        unsafe impl<$($ty: $trait),*> poll::OpCode for $name<$($ty),*> {
-            fn pre_submit(self: std::pin::Pin<&mut Self>) -> std::io::Result<crate::Decision> {
-                unsafe { self.map_unchecked_mut(|x| x.inner.poll() ) }.pre_submit()
+            unsafe impl<$($ty: $trait),*> poll::OpCode for $name<$($ty),*> {
+                type Control = <crate::op::managed::$name<$($ty),*> as poll::OpCode>::Control;
+
+                unsafe fn init(&mut self) -> Self::Control {
+                    unsafe { self.inner.poll().init() }
+                }
+
+                fn pre_submit(&mut self, control: &mut Self::Control) -> std::io::Result<crate::Decision> {
+                    self.inner.poll().pre_submit(control)
+                }
+
+                fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
+                    self.inner.poll().op_type(control)
+                }
+
+                fn operate(
+                    &mut self, control: &mut Self::Control,
+                ) -> std::task::Poll<std::io::Result<usize>> {
+                    self.inner.poll().operate(control)
+                }
             }
 
-            fn op_type(self: std::pin::Pin<&mut Self>) -> Option<OpType> {
-                unsafe { self.map_unchecked_mut(|x| x.inner.poll() ) }.op_type()
-            }
+            unsafe impl<$($ty: $trait),*> iour::OpCode for $name<$($ty),*> {
+                type Control = <iour::$name<$($ty),*> as iour::OpCode>::Control;
 
-            fn operate(
-                self: std::pin::Pin<&mut Self>,
-            ) -> std::task::Poll<std::io::Result<usize>> {
-                unsafe { self.map_unchecked_mut(|x| x.inner.poll() ) }.operate()
-            }
-        }
+                unsafe fn init(&mut self) -> Self::Control {
+                    unsafe { self.inner.iour().init() }
+                }
 
-        unsafe impl<$($ty: $trait),*> iour::OpCode for $name<$($ty),*> {
-            fn create_entry(self: std::pin::Pin<&mut Self>) -> OpEntry {
-                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.create_entry()
-            }
+                fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+                    self.inner.iour().create_entry(control)
+                }
 
-            fn create_entry_fallback(self: std::pin::Pin<&mut Self>) -> OpEntry {
-                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.create_entry_fallback()
-            }
+                fn create_entry_fallback(&mut self, control: &mut Self::Control) -> OpEntry {
+                    self.inner.iour().create_entry_fallback(control)
+                }
 
-            fn call_blocking(self: std::pin::Pin<&mut Self>) -> std::io::Result<usize> {
-                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.call_blocking()
-            }
+                fn call_blocking(&mut self, control: &mut Self::Control) -> std::io::Result<usize> {
+                    self.inner.iour().call_blocking(control)
+                }
 
-            unsafe fn set_result(self: std::pin::Pin<&mut Self>, result: &std::io::Result<usize>, extra: &crate::Extra) {
-                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ).set_result(result, extra) }
-            }
+                unsafe fn set_result(&mut self, control: &mut Self::Control, result: &std::io::Result<usize>, extra: &crate::Extra) {
+                    unsafe { self.inner.iour().set_result(control, result, extra) }
+                }
 
-            unsafe fn push_multishot(self: std::pin::Pin<&mut Self>, result: std::io::Result<usize>, extra: crate::Extra) {
-                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ).push_multishot(result, extra) }
-            }
+                unsafe fn push_multishot(&mut self, control: &mut Self::Control, result: std::io::Result<usize>, extra: crate::Extra) {
+                    unsafe { self.inner.iour().push_multishot(control, result, extra) }
+                }
 
-            fn pop_multishot(self: std::pin::Pin<&mut Self>) -> Option<BufResult<usize, crate::Extra>> {
-                unsafe { self.map_unchecked_mut(|x| x.inner.iour() ) }.pop_multishot()
+                fn pop_multishot(&mut self, control: &mut Self::Control) -> Option<BufResult<usize, crate::Extra>> {
+                    self.inner.iour().pop_multishot(control)
+                }
             }
         }
     };

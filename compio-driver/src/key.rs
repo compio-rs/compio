@@ -6,21 +6,20 @@ use std::{
     io,
     mem::{self, ManuallyDrop},
     ops::{Deref, DerefMut},
-    pin::Pin,
     task::Waker,
 };
 
-use compio_buf::BufResult;
-use thin_cell::unsync::{Ref, ThinCell};
+use compio_buf::{BufResult, IntoInner};
+use thin_cell::unsync::{Inner, Ref, ThinCell};
 
-use crate::{Extra, OpCode, PushEntry};
+use crate::{Carry, DriverType, Extra, OpCode, PushEntry, control::Carrier};
 
 /// An operation with other needed information.
 ///
 /// You should not use `RawOp` directly. Instead, use [`Key`] to manage the
 /// reference-counted pointer to it.
 #[repr(C)]
-pub(crate) struct RawOp<T: ?Sized> {
+pub(crate) struct RawOp<M: ?Sized> {
     // Platform-specific extra data.
     //
     // - On Windows, it holds the `OVERLAPPED` buffer and a pointer to the driver.
@@ -33,21 +32,16 @@ pub(crate) struct RawOp<T: ?Sized> {
     // The cancelled flag indicates the op has been cancelled.
     cancelled: bool,
     result: PushEntry<Option<Waker>, io::Result<usize>>,
-    pub(crate) op: T,
+    pub(crate) carrier: M,
 }
 
-impl<T: ?Sized> RawOp<T> {
+impl<C: ?Sized> RawOp<C> {
     pub fn extra(&self) -> &Extra {
         &self.extra
     }
 
     pub fn extra_mut(&mut self) -> &mut Extra {
         &mut self.extra
-    }
-
-    fn pinned_op(&mut self) -> Pin<&mut T> {
-        // SAFETY: inner is always pinned with ThinCell.
-        unsafe { Pin::new_unchecked(&mut self.op) }
     }
 
     #[cfg(io_uring)]
@@ -59,7 +53,7 @@ impl<T: ?Sized> RawOp<T> {
 }
 
 #[cfg(windows)]
-impl<T: OpCode + ?Sized> RawOp<T> {
+impl<C: crate::Carry + ?Sized> RawOp<C> {
     /// Call [`OpCode::operate`] and assume that it is not an overlapped op,
     /// which means it never returns [`Poll::Pending`].
     ///
@@ -68,8 +62,7 @@ impl<T: OpCode + ?Sized> RawOp<T> {
         use std::task::Poll;
 
         let optr = self.extra_mut().optr();
-        let op = self.pinned_op();
-        let res = unsafe { op.operate(optr.cast()) };
+        let res = unsafe { self.carrier.operate(optr.cast()) };
         match res {
             Poll::Pending => unreachable!("this operation is not overlapped"),
             Poll::Ready(res) => res,
@@ -77,13 +70,13 @@ impl<T: OpCode + ?Sized> RawOp<T> {
     }
 }
 
-impl<T: ?Sized> Debug for RawOp<T> {
+impl<C: ?Sized> Debug for RawOp<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RawOp")
             .field("extra", &self.extra)
             .field("cancelled", &self.cancelled)
             .field("result", &self.result)
-            .field("op", &"<...>")
+            .field("Carrier", &"<...>")
             .finish()
     }
 }
@@ -120,7 +113,9 @@ impl<T> Key<T> {
     pub(crate) fn erase(self) -> ErasedKey {
         self.erased
     }
+}
 
+impl<T: OpCode> Key<T> {
     /// Take the inner result if it is completed.
     ///
     /// # Panics
@@ -135,8 +130,8 @@ impl<T> Key<T> {
 
 impl<T: OpCode + 'static> Key<T> {
     /// Create [`RawOp`] and get the [`Key`] to it.
-    pub(crate) fn new(op: T, extra: impl Into<Extra>) -> Self {
-        let erased = ErasedKey::new(op, extra.into());
+    pub(crate) fn new(op: T, extra: impl Into<Extra>, driver_ty: DriverType) -> Self {
+        let erased = ErasedKey::new(op, extra.into(), driver_ty);
 
         Self {
             erased,
@@ -171,7 +166,7 @@ impl<T> DerefMut for Key<T> {
 #[derive(Clone)]
 #[repr(transparent)]
 pub struct ErasedKey {
-    inner: ThinCell<RawOp<dyn OpCode>>,
+    inner: ThinCell<RawOp<dyn Carry>>,
 }
 
 impl PartialEq for ErasedKey {
@@ -199,16 +194,23 @@ impl std::borrow::Borrow<usize> for ErasedKey {
 
 impl ErasedKey {
     /// Create [`RawOp`] and get the [`ErasedKey`] to it.
-    pub(crate) fn new<T: OpCode + 'static>(op: T, extra: Extra) -> Self {
+    pub(crate) fn new<T: OpCode + 'static>(op: T, extra: Extra, driver_ty: DriverType) -> Self {
         let raw_op = RawOp {
             extra,
             cancelled: false,
             result: PushEntry::Pending(None),
-            op,
+            // SAFETY: carrier is initialized below
+            carrier: unsafe { Carrier::new_uninit(op) },
         };
-        // SAFETY: Unsize coersion from `RawOp<T>` to `RawOp<dyn OpCode>`
-        let inner = unsafe { ThinCell::new_unsize(raw_op, |p| p as _) };
-        Self { inner }
+        let mut inner = ThinCell::new(raw_op);
+        // SAFETY:
+        // - ThinCell is just created, there will be no shared owner or borrower
+        // - Carrier is being pinned by ThinCell, it will have a stable address until
+        //   move out
+        unsafe { inner.borrow_unchecked().carrier.init(driver_ty) };
+        Self {
+            inner: unsafe { inner.unsize(|p| p as *const Inner<RawOp<dyn Carry>>) },
+        }
     }
 
     /// Create from `user_data` pointer.
@@ -255,7 +257,7 @@ impl ErasedKey {
     }
 
     #[inline]
-    pub(crate) fn borrow(&self) -> Ref<'_, RawOp<dyn OpCode>> {
+    pub(crate) fn borrow(&self) -> Ref<'_, RawOp<dyn Carry>> {
         self.inner.borrow()
     }
 
@@ -283,7 +285,7 @@ impl ErasedKey {
             let this = &mut *this;
             if this.extra.is_iour() {
                 unsafe {
-                    Pin::new_unchecked(&mut this.op).set_result(&res, &this.extra);
+                    this.carrier.set_result(&res, &this.extra);
                 }
             }
         }
@@ -323,12 +325,12 @@ impl ErasedKey {
     ///
     /// Panics if the result is not ready or the `Key` is not unique (multiple
     /// references or borrowed).
-    unsafe fn take_result<T>(self) -> BufResult<usize, T> {
+    unsafe fn take_result<T: OpCode>(self) -> BufResult<usize, T> {
         // SAFETY: Caller guarantees that `T` is the actual concrete type.
-        let this = unsafe { self.inner.downcast_unchecked::<RawOp<T>>() };
+        let this = unsafe { self.inner.downcast_unchecked::<RawOp<Carrier<T>>>() };
         let op = this.try_unwrap().map_err(|_| ()).expect("Key not unique");
         let res = op.result.take_ready().expect("Result not ready");
-        BufResult(res, op.op)
+        BufResult(res, op.carrier.into_inner())
     }
 
     /// Unsafely freeze the `Key` by bypassing borrow flag of [`ThinCell`],
@@ -363,12 +365,8 @@ pub(crate) struct FrozenKey {
 }
 
 impl FrozenKey {
-    pub fn as_mut(&mut self) -> &mut RawOp<dyn OpCode> {
+    pub fn as_mut(&mut self) -> &mut RawOp<dyn Carry> {
         unsafe { self.inner.inner.borrow_unchecked() }
-    }
-
-    pub fn pinned_op(&mut self) -> Pin<&mut dyn OpCode> {
-        self.as_mut().pinned_op()
     }
 
     pub fn into_inner(self) -> ErasedKey {
@@ -405,29 +403,23 @@ impl Deref for BorrowedKey {
     }
 }
 
-pub trait RefExt {
-    fn pinned_op(&mut self) -> Pin<&mut dyn OpCode>;
-}
-
-impl RefExt for Ref<'_, RawOp<dyn OpCode>> {
-    fn pinned_op(&mut self) -> Pin<&mut dyn OpCode> {
-        self.deref_mut().pinned_op()
-    }
-}
-
 #[cfg(test)]
 mod test {
     use std::borrow::Borrow;
 
     use compio_buf::BufResult;
 
-    use crate::{Proactor, key::ErasedKey, op::Asyncify};
+    use crate::{DriverType, Proactor, key::ErasedKey, op::Asyncify};
 
     #[test]
     fn test_key_borrow() {
         let driver = Proactor::new().unwrap();
         let extra = driver.default_extra();
-        let key = ErasedKey::new(Asyncify::new(|| BufResult(Ok(0), [0u8])), extra);
+        let key = ErasedKey::new(
+            Asyncify::new(|| BufResult(Ok(0), [0u8])),
+            extra,
+            DriverType::Poll,
+        );
         assert_eq!(&key.as_raw(), Borrow::<usize>::borrow(&key));
     }
 }

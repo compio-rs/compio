@@ -1,7 +1,6 @@
 use std::{
     io,
     os::windows::{io::AsRawHandle, process::ExitStatusExt},
-    pin::Pin,
     process,
     task::Poll,
 };
@@ -29,11 +28,19 @@ impl WaitProcess {
 }
 
 unsafe impl OpCode for WaitProcess {
-    fn op_type(&self) -> OpType {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Event(self.child.as_raw_handle() as _)
     }
 
-    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(
+        &mut self,
+        _: &mut Self::Control,
+        _optr: *mut OVERLAPPED,
+    ) -> Poll<io::Result<usize>> {
         let mut code = 0;
         syscall!(
             BOOL,

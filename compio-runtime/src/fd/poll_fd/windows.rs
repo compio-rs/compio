@@ -2,7 +2,6 @@ use std::{
     io,
     ops::Deref,
     os::windows::io::{AsRawHandle, AsRawSocket, FromRawHandle, OwnedHandle, RawSocket},
-    pin::Pin,
     ptr::null,
     sync::atomic::{AtomicI32, AtomicUsize, Ordering},
     task::Poll,
@@ -198,11 +197,19 @@ impl<T> IntoInner for WaitWSAEvent<T> {
 }
 
 unsafe impl<T: AsFd> OpCode for WaitWSAEvent<T> {
-    fn op_type(&self) -> OpType {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Event(self.ev_object.as_raw_fd())
     }
 
-    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+    unsafe fn operate(
+        &mut self,
+        _: &mut Self::Control,
+        _optr: *mut OVERLAPPED,
+    ) -> Poll<io::Result<usize>> {
         let mut events: WSANETWORKEVENTS = unsafe { std::mem::zeroed() };
         syscall!(
             SOCKET,

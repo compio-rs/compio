@@ -34,6 +34,10 @@ enum FuseDriver {
     IoUring(iour::Driver),
 }
 
+pub(crate) trait Carry: iour::Carry + poll::Carry {}
+
+impl<C: iour::Carry + poll::Carry> Carry for C {}
+
 /// Low-level fusion driver.
 pub(crate) struct Driver {
     fuse: FuseDriver,
