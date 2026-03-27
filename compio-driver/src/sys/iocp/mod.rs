@@ -343,6 +343,21 @@ pub unsafe trait OpCode {
         _ = optr;
         Ok(())
     }
+
+    /// Set the result when it completes.
+    /// The operation stores the result and is responsible to release it if the
+    /// operation is cancelled.
+    ///
+    /// # Safety
+    ///
+    /// The params must be the result coming from this operation.
+    unsafe fn set_result(
+        &mut self,
+        _: &mut Self::Control,
+        _: &io::Result<usize>,
+        _: &crate::Extra,
+    ) {
+    }
 }
 
 pub(crate) trait Carry {
@@ -351,6 +366,8 @@ pub(crate) trait Carry {
     unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>>;
 
     fn cancel(&mut self, optr: *mut OVERLAPPED) -> io::Result<()>;
+
+    unsafe fn set_result(&mut self, _: &io::Result<usize>, _: &crate::Extra);
 }
 
 impl<T: OpCode> Carry for Carrier<T> {
@@ -367,6 +384,11 @@ impl<T: OpCode> Carry for Carrier<T> {
     fn cancel(&mut self, optr: *mut OVERLAPPED) -> io::Result<()> {
         let (op, control) = self.as_iocp_mut();
         op.cancel(control, optr)
+    }
+
+    unsafe fn set_result(&mut self, res: &io::Result<usize>, extra: &crate::Extra) {
+        let (op, control) = self.as_iocp_mut();
+        unsafe { op.set_result(control, res, extra) }
     }
 }
 

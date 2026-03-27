@@ -72,12 +72,28 @@ pub unsafe trait OpCode {
     /// event. If this operation is blocking, the return value should be
     /// [`Poll::Ready`].
     fn operate(&mut self, _: &mut Self::Control) -> Poll<io::Result<usize>>;
+
+    /// Set the result when it completes.
+    /// The operation stores the result and is responsible to release it if the
+    /// operation is cancelled.
+    ///
+    /// # Safety
+    ///
+    /// The params must be the result coming from this operation.
+    unsafe fn set_result(
+        &mut self,
+        _: &mut Self::Control,
+        _: &io::Result<usize>,
+        _: &crate::Extra,
+    ) {
+    }
 }
 
 pub(crate) trait Carry {
     fn pre_submit(&mut self) -> io::Result<Decision>;
     fn op_type(&mut self) -> Option<OpType>;
     fn operate(&mut self) -> Poll<io::Result<usize>>;
+    unsafe fn set_result(&mut self, _: &io::Result<usize>, _: &crate::Extra);
 }
 
 impl<T: crate::OpCode> Carry for Carrier<T> {
@@ -94,6 +110,11 @@ impl<T: crate::OpCode> Carry for Carrier<T> {
     fn operate(&mut self) -> Poll<io::Result<usize>> {
         let (op, control) = self.as_poll();
         op.operate(control)
+    }
+
+    unsafe fn set_result(&mut self, res: &io::Result<usize>, extra: &crate::Extra) {
+        let (op, control) = self.as_poll();
+        unsafe { op.set_result(control, res, extra) }
     }
 }
 

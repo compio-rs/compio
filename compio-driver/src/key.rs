@@ -280,13 +280,10 @@ impl ErasedKey {
     /// Complete the op and wake up the future if a waker is set.
     pub(crate) fn set_result(&self, res: io::Result<usize>) {
         let mut this = self.borrow();
-        #[cfg(io_uring)]
         {
             let this = &mut *this;
-            if this.extra.is_iour() {
-                unsafe {
-                    this.carrier.set_result(&res, &this.extra);
-                }
+            unsafe {
+                this.carrier.set_result(&res, &this.extra);
             }
         }
         if let PushEntry::Pending(Some(w)) =
