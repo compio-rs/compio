@@ -524,6 +524,15 @@ impl<'a> Splittable for &'a UnixStream {
     }
 }
 
+impl<'a> Splittable for &'a mut UnixStream {
+    type ReadHalf = ReadHalf<'a, UnixStream>;
+    type WriteHalf = WriteHalf<'a, UnixStream>;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        crate::split(self)
+    }
+}
+
 impl_raw_fd!(UnixStream, socket2::Socket, inner, socket);
 
 #[cfg(windows)]
