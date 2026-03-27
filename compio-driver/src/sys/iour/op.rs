@@ -318,16 +318,17 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
-    type Control = ();
+    type Control = ReadVectoredAtControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.create_control()
+    }
 
-    fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
-        self.slices = self.buffer.sys_slices_mut();
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::Readv::new(
             Fd(self.fd.as_fd().as_raw_fd()),
-            self.slices.as_ptr() as _,
-            self.slices.len().try_into().unwrap_or(u32::MAX),
+            control.slices.as_ptr() as _,
+            control.slices.len().try_into().unwrap_or(u32::MAX),
         )
         .offset(self.offset)
         .build()
@@ -354,16 +355,17 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
-    type Control = ();
+    type Control = WriteVectoredAtControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.create_control()
+    }
 
-    fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
-        self.slices = self.buffer.sys_slices();
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::Writev::new(
             Fd(self.fd.as_fd().as_raw_fd()),
-            self.slices.as_ptr() as _,
-            self.slices.len().try_into().unwrap_or(u32::MAX),
+            control.slices.as_ptr() as _,
+            control.slices.len().try_into().unwrap_or(u32::MAX),
         )
         .offset(self.offset)
         .build()
@@ -390,16 +392,17 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
-    type Control = ();
+    type Control = ReadVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.create_control()
+    }
 
-    fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
-        self.slices = self.buffer.sys_slices_mut();
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::Readv::new(
             Fd(self.fd.as_fd().as_raw_fd()),
-            self.slices.as_ptr() as _,
-            self.slices.len().try_into().unwrap_or(u32::MAX),
+            control.slices.as_ptr() as _,
+            control.slices.len().try_into().unwrap_or(u32::MAX),
         )
         .build()
         .into()
@@ -424,16 +427,17 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
-    type Control = ();
+    type Control = WriteVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.create_control()
+    }
 
-    fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
-        self.slices = self.buffer.sys_slices();
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::Writev::new(
             Fd(self.fd.as_fd().as_raw_fd()),
-            self.slices.as_ptr() as _,
-            self.slices.len().try_into().unwrap_or(u32::MAX),
+            control.slices.as_ptr() as _,
+            control.slices.len().try_into().unwrap_or(u32::MAX),
         )
         .build()
         .into()
@@ -776,13 +780,14 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
-    type Control = ();
+    type Control = RecvVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.create_control()
+    }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
-        self.set_msg(control);
-        opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &raw mut self.msg)
+        opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &mut control.msg)
             .flags(self.flags as _)
             .build()
             .into()
@@ -870,13 +875,14 @@ impl<T: IoBuf, S> IntoInner for SendZc<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
-    type Control = ();
+    type Control = SendVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.create_control()
+    }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
-        self.set_msg(control);
-        opcode::SendMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &raw mut self.msg)
+        opcode::SendMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &control.msg)
             .flags(self.flags as _)
             .build()
             .into()
@@ -900,13 +906,14 @@ impl<T: IoVectoredBuf, S> SendVectoredZc<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectoredZc<T, S> {
-    type Control = ();
+    type Control = SendVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.op.create_control()
+    }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
-        self.op.set_msg(control);
-        opcode::SendMsgZc::new(Fd(self.op.fd.as_fd().as_raw_fd()), &self.op.msg)
+        opcode::SendMsgZc::new(Fd(self.op.fd.as_fd().as_raw_fd()), &control.msg)
             .flags(self.op.flags as _)
             .build()
             .into()
@@ -1286,27 +1293,38 @@ impl<T: IoVectoredBuf, S: AsFd> IntoInner for SendToVectoredZc<T, S> {
 }
 
 unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
-    type Control = ();
+    type Control = RecvMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.create_control()
+    }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
-        self.set_msg(control);
-        opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &raw mut self.msg)
+        opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &mut control.msg)
             .flags(self.flags as _)
             .build()
             .into()
     }
+
+    unsafe fn set_result(
+        &mut self,
+        control: &mut Self::Control,
+        _: &io::Result<usize>,
+        _: &crate::Extra,
+    ) {
+        self.update_control(control);
+    }
 }
 
 unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
-    type Control = ();
+    type Control = SendMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.create_control()
+    }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
-        self.set_msg(control);
-        opcode::SendMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &raw mut self.msg)
+        opcode::SendMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &control.msg)
             .flags(self.flags as _)
             .build()
             .into()
@@ -1330,13 +1348,14 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsgZc<T, C, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsgZc<T, C, S> {
-    type Control = ();
+    type Control = SendMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.op.create_control()
+    }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
-        self.op.set_msg(control);
-        opcode::SendMsgZc::new(Fd(self.op.fd.as_fd().as_raw_fd()), &self.op.msg)
+        opcode::SendMsgZc::new(Fd(self.op.fd.as_fd().as_raw_fd()), &control.msg)
             .flags(self.op.flags as _)
             .build()
             .into()
@@ -1362,6 +1381,7 @@ unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsgZc<T, C, S> {
         self.res.take()
     }
 }
+
 impl<T: IoVectoredBuf, C: IoBuf, S> IntoInner for SendMsgZc<T, C, S> {
     type Inner = (T, C);
 
