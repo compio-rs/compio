@@ -3,7 +3,6 @@
 fn win32_event() {
     use std::{
         os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
-        pin::Pin,
         ptr::null,
         task::Poll,
     };
@@ -19,12 +18,17 @@ fn win32_event() {
     }
 
     unsafe impl OpCode for WaitEvent {
-        fn op_type(&self) -> OpType {
+        type Control = ();
+
+        unsafe fn init(&mut self) -> Self::Control {}
+
+        fn op_type(&self, _: &Self::Control) -> OpType {
             OpType::Event(self.event.as_raw_handle() as _)
         }
 
         unsafe fn operate(
-            self: Pin<&mut Self>,
+            &mut self,
+            _: &mut Self::Control,
             _optr: *mut OVERLAPPED,
         ) -> Poll<std::io::Result<usize>> {
             Poll::Ready(Ok(0))

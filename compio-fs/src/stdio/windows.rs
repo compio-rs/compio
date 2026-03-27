@@ -1,7 +1,6 @@
 use std::{
     io::{self, IsTerminal, Read, Write},
     os::windows::io::{AsRawHandle, BorrowedHandle, RawHandle},
-    pin::Pin,
     sync::OnceLock,
     task::Poll,
 };
@@ -30,18 +29,25 @@ impl<R: Read, B: IoBufMut> StdRead<R, B> {
 }
 
 unsafe impl<R: Read, B: IoBufMut> OpCode for StdRead<R, B> {
-    fn op_type(&self) -> OpType {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Blocking
     }
 
-    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let this = unsafe { self.get_unchecked_mut() };
-        let slice = this.buffer.as_uninit();
+    unsafe fn operate(
+        &mut self,
+        _: &mut Self::Control,
+        _optr: *mut OVERLAPPED,
+    ) -> Poll<io::Result<usize>> {
+        let slice = self.buffer.as_uninit();
         #[cfg(feature = "read_buf")]
         {
             let mut buf = io::BorrowedBuf::from(slice);
             let mut cursor = buf.unfilled();
-            this.reader.read_buf(cursor.reborrow())?;
+            self.reader.read_buf(cursor.reborrow())?;
             Poll::Ready(Ok(cursor.written()))
         }
         #[cfg(not(feature = "read_buf"))]
@@ -49,11 +55,11 @@ unsafe impl<R: Read, B: IoBufMut> OpCode for StdRead<R, B> {
             use std::mem::MaybeUninit;
 
             slice.fill(MaybeUninit::new(0));
-            this.reader
+            self.reader
                 .read(unsafe {
                     std::slice::from_raw_parts_mut(
-                        this.buffer.buf_mut_ptr() as _,
-                        this.buffer.buf_capacity(),
+                        self.buffer.buf_mut_ptr() as _,
+                        self.buffer.buf_capacity(),
                     )
                 })
                 .into()
@@ -81,14 +87,21 @@ impl<W: Write, B: IoBuf> StdWrite<W, B> {
 }
 
 unsafe impl<W: Write, B: IoBuf> OpCode for StdWrite<W, B> {
-    fn op_type(&self) -> OpType {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Blocking
     }
 
-    unsafe fn operate(self: Pin<&mut Self>, _optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let this = unsafe { self.get_unchecked_mut() };
-        let slice = this.buffer.as_init();
-        this.writer.write(slice).into()
+    unsafe fn operate(
+        &mut self,
+        _: &mut Self::Control,
+        _optr: *mut OVERLAPPED,
+    ) -> Poll<io::Result<usize>> {
+        let slice = self.buffer.as_init();
+        self.writer.write(slice).into()
     }
 }
 

@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-use std::pin::Pin;
-
 use compio_buf::{IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 
 #[cfg(unix)]
@@ -105,7 +103,7 @@ pub(crate) trait IoBufExt: IoBuf {
     /// Convert a pinned [`IoBuf`] into a [`SysSlice`].
     ///
     /// This will only include initialized memory.
-    fn sys_slice(self: Pin<&Self>) -> SysSlice {
+    fn sys_slice(&self) -> SysSlice {
         SysSlice::from_slice(self.as_init())
     }
 }
@@ -116,14 +114,8 @@ pub(crate) trait IoBufMutExt: IoBufMut {
     /// Convert a pinned [`IoBufMut`] into a [`SysSlice`].
     ///
     /// This will include uninitialized memory.
-    fn sys_slice_mut(self: Pin<&mut Self>) -> SysSlice {
-        // SAFETY:
-        // - we're not moving the buffer, and
-        // - creating a `SysSlice` is like calling `as_ptr`, as long as we're not
-        //   dereferencing it, it's safe. It's up to the consumer of `SysSlice` to
-        //   ensure the pointer is used safely.
-        let slice = unsafe { self.get_unchecked_mut() };
-        SysSlice::from_uninit(slice.as_uninit())
+    fn sys_slice_mut(&mut self) -> SysSlice {
+        SysSlice::from_uninit(self.as_uninit())
     }
 }
 
@@ -131,7 +123,7 @@ impl<T: IoBufMut + ?Sized> IoBufMutExt for T {}
 
 pub(crate) trait IoVectoredBufExt: IoVectoredBuf {
     /// Convert a pinned [`IoVectoredBuf`] into a vector of [`SysSlice`]s.
-    fn sys_slices(self: Pin<&Self>) -> Vec<SysSlice> {
+    fn sys_slices(&self) -> Vec<SysSlice> {
         self.iter_slice().map(SysSlice::from_slice).collect()
     }
 }
@@ -140,10 +132,8 @@ impl<T: IoVectoredBuf + ?Sized> IoVectoredBufExt for T {}
 
 pub(crate) trait IoVectoredBufMutExt: IoVectoredBufMut {
     /// Convert a pinned [`IoVectoredBufMut`] into a vector of [`SysSlice`]s.
-    fn sys_slices_mut(self: Pin<&mut Self>) -> Vec<SysSlice> {
-        // SAFETY: Similar to `IoBufMutExt::sys_slice`
-        let this = unsafe { self.get_unchecked_mut() };
-        this.iter_uninit_slice()
+    fn sys_slices_mut(&mut self) -> Vec<SysSlice> {
+        self.iter_uninit_slice()
             .map(SysSlice::from_uninit)
             .collect()
     }

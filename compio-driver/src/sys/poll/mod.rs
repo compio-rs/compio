@@ -7,7 +7,6 @@ use std::{
     collections::{HashMap, VecDeque},
     io,
     num::NonZeroUsize,
-    pin::Pin,
     sync::Arc,
     task::{Poll, Wake, Waker},
     time::Duration,
@@ -20,10 +19,8 @@ use polling::{Event, Events, Poller};
 use smallvec::SmallVec;
 
 use crate::{
-    AsyncifyPool, BufferPool, DriverType, Entry, ErasedKey, ProactorBuilder,
-    key::{BorrowedKey, RefExt},
-    op::Interest,
-    syscall,
+    AsyncifyPool, BufferPool, DriverType, Entry, ErasedKey, ProactorBuilder, control::Carrier,
+    key::BorrowedKey, sys::op::Interest, syscall,
 };
 
 mod extra;
@@ -50,19 +47,54 @@ impl From<WaitArg> for Track {
 /// `pre_submit` returns `Decision::Aio`, `op_type` must return
 /// `Some(OpType::Aio)` with the correct `aiocb` pointer.
 pub unsafe trait OpCode {
+    /// Type that contains self-references and other needed info during the
+    /// operation
+    type Control;
+
+    /// Constructs a `Control`
+    ///
+    /// # Safety
+    ///
+    /// Caller must guarantee that during the lifetime of the returned
+    /// `Control`, the address of `&mut self` must be stable and valid.
+    unsafe fn init(&mut self) -> Self::Control;
+
     /// Perform the operation before submit, and return [`Decision`] to
     /// indicate whether submitting the operation to polling is required.
-    fn pre_submit(self: Pin<&mut Self>) -> io::Result<Decision>;
+    fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<Decision>;
 
     /// Get the operation type when an event is occurred.
-    fn op_type(self: Pin<&mut Self>) -> Option<OpType> {
+    fn op_type(&mut self, _: &mut Self::Control) -> Option<OpType> {
         None
     }
 
     /// Perform the operation after received corresponding
     /// event. If this operation is blocking, the return value should be
     /// [`Poll::Ready`].
-    fn operate(self: Pin<&mut Self>) -> Poll<io::Result<usize>>;
+    fn operate(&mut self, _: &mut Self::Control) -> Poll<io::Result<usize>>;
+}
+
+pub(crate) trait Carry {
+    fn pre_submit(&mut self) -> io::Result<Decision>;
+    fn op_type(&mut self) -> Option<OpType>;
+    fn operate(&mut self) -> Poll<io::Result<usize>>;
+}
+
+impl<T: crate::OpCode> Carry for Carrier<T> {
+    fn pre_submit(&mut self) -> io::Result<Decision> {
+        let (op, control) = self.as_poll();
+        op.pre_submit(control)
+    }
+
+    fn op_type(&mut self) -> Option<OpType> {
+        let (op, control) = self.as_poll();
+        op.op_type(control)
+    }
+
+    fn operate(&mut self) -> Poll<io::Result<usize>> {
+        let (op, control) = self.as_poll();
+        op.operate(control)
+    }
 }
 
 pub use OpCode as PollOpCode;
@@ -428,7 +460,7 @@ impl Driver {
     }
 
     pub fn cancel(&mut self, key: ErasedKey) {
-        let op_type = key.borrow().pinned_op().op_type();
+        let op_type = key.borrow().carrier.op_type();
         match op_type {
             None => {}
             Some(OpType::Fd(fds)) => {
@@ -452,7 +484,7 @@ impl Driver {
 
     pub fn push(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?key);
-        match { key.borrow().pinned_op().pre_submit()? } {
+        match { key.borrow().carrier.pre_submit()? } {
             Decision::Wait(args) => {
                 key.borrow()
                     .extra_mut()
@@ -534,7 +566,7 @@ impl Driver {
         let mut key = unsafe { key.freeze() };
 
         let mut closure = move || {
-            let poll = key.pinned_op().operate();
+            let poll = key.as_mut().carrier.operate();
             let res = match poll {
                 Poll::Pending => unreachable!("this operation is not non-blocking"),
                 Poll::Ready(res) => res,
@@ -567,7 +599,7 @@ impl Driver {
             && op.extra_mut().as_poll_mut().handle_event(fd)
         {
             // Add brace here to force `Ref` drop within the scrutinee
-            match { op.pinned_op().operate() } {
+            match { op.carrier.operate() } {
                 // Submit all fd's back to the front of the queue
                 Poll::Pending => {
                     let extra = op.extra_mut().as_poll_mut();
@@ -612,7 +644,7 @@ impl Driver {
                 // SAFETY: user_data is promised to be valid.
                 let key = unsafe { BorrowedKey::from_raw(event.key) };
                 let mut op = key.borrow();
-                let op_type = op.pinned_op().op_type();
+                let op_type = op.carrier.op_type();
                 match op_type {
                     None => {
                         // On epoll, multiple event may be received even if it is registered as

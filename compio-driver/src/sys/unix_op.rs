@@ -1,10 +1,8 @@
 use std::{
     ffi::CString,
     io,
-    marker::PhantomPinned,
     net::Shutdown,
     os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd},
-    pin::Pin,
 };
 
 use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
@@ -26,7 +24,6 @@ use libc::{ftruncate as ftruncate64, off_t as off64_t};
     target_os = "hurd"
 ))]
 use libc::{ftruncate64, off64_t};
-use pin_project_lite::pin_project;
 use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
 use crate::{op::*, sys::aio::*, sys_slice::*, syscall};
@@ -47,15 +44,13 @@ impl AsFd for CurrentDir {
     }
 }
 
-pin_project! {
-    /// Open or create a file with flags and mode.
-    pub struct OpenFile<S: AsFd> {
-        pub(crate) dirfd: S,
-        pub(crate) path: CString,
-        pub(crate) flags: i32,
-        pub(crate) mode: libc::mode_t,
-        pub(crate) opened_fd: Option<OwnedFd>,
-    }
+/// Open or create a file with flags and mode.
+pub struct OpenFile<S: AsFd> {
+    pub(crate) dirfd: S,
+    pub(crate) path: CString,
+    pub(crate) flags: i32,
+    pub(crate) mode: libc::mode_t,
+    pub(crate) opened_fd: Option<OwnedFd>,
 }
 
 impl<S: AsFd> OpenFile<S> {
@@ -70,7 +65,7 @@ impl<S: AsFd> OpenFile<S> {
         }
     }
 
-    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+    pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
         Ok(syscall!(openat(
             self.dirfd.as_fd().as_raw_fd(),
             self.path.as_ptr(),
@@ -89,14 +84,14 @@ impl<S: AsFd> IntoInner for OpenFile<S> {
 }
 
 impl CloseFile {
-    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+    pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
         Ok(syscall!(libc::close(self.fd.as_fd().as_raw_fd()))? as _)
     }
 }
 
+/// Truncates or extends the underlying file, updating the size of file `S` to
+/// `size`.
 #[derive(Debug)]
-///  Truncates or extends the underlying file, updating the size of this file to
-/// become `size`.
 pub struct TruncateFile<S: AsFd> {
     pub(crate) fd: S,
     pub(crate) size: u64,
@@ -214,17 +209,14 @@ pub(crate) const fn stat_to_statx(stat: Stat) -> Statx {
     statx
 }
 
-pin_project! {
-    /// Read a file at specified position into vectored buffer.
-    pub struct ReadVectoredAt<T: IoVectoredBufMut, S> {
-        pub(crate) fd: S,
-        pub(crate) offset: u64,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) slices: Vec<SysSlice>,
-        pub(crate) aiocb: aiocb,
-        _p: PhantomPinned,
-    }
+/// Read a file at specified position into vectored buffer.
+pub struct ReadVectoredAt<T: IoVectoredBufMut, S> {
+    pub(crate) fd: S,
+    pub(crate) offset: u64,
+    pub(crate) buffer: T,
+    pub(crate) slices: Vec<SysSlice>,
+    #[allow(dead_code)]
+    pub(crate) aiocb: aiocb,
 }
 
 impl<T: IoVectoredBufMut, S> ReadVectoredAt<T, S> {
@@ -236,7 +228,6 @@ impl<T: IoVectoredBufMut, S> ReadVectoredAt<T, S> {
             buffer,
             slices: vec![],
             aiocb: new_aiocb(),
-            _p: PhantomPinned,
         }
     }
 }
@@ -249,17 +240,14 @@ impl<T: IoVectoredBufMut, S> IntoInner for ReadVectoredAt<T, S> {
     }
 }
 
-pin_project! {
-    /// Write a file at specified position from vectored buffer.
-    pub struct WriteVectoredAt<T: IoVectoredBuf, S> {
-        pub(crate) fd: S,
-        pub(crate) offset: u64,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) slices: Vec<SysSlice>,
-        pub(crate) aiocb: aiocb,
-        _p: PhantomPinned,
-    }
+/// Write a file at specified position from vectored buffer.
+pub struct WriteVectoredAt<T: IoVectoredBuf, S> {
+    pub(crate) fd: S,
+    pub(crate) offset: u64,
+    pub(crate) buffer: T,
+    pub(crate) slices: Vec<SysSlice>,
+    #[allow(dead_code)]
+    pub(crate) aiocb: aiocb,
 }
 impl<T: IoVectoredBuf, S> WriteVectoredAt<T, S> {
     /// Create [`WriteVectoredAt`]
@@ -270,7 +258,6 @@ impl<T: IoVectoredBuf, S> WriteVectoredAt<T, S> {
             buffer,
             slices: vec![],
             aiocb: new_aiocb(),
-            _p: PhantomPinned,
         }
     }
 }
@@ -283,15 +270,11 @@ impl<T: IoVectoredBuf, S> IntoInner for WriteVectoredAt<T, S> {
     }
 }
 
-pin_project! {
-    /// Receive a file into vectored buffer.
-    pub struct ReadVectored<T: IoVectoredBufMut, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) slices: Vec<SysSlice>,
-        _p: PhantomPinned,
-    }
+/// Receive a file into vectored buffer.
+pub struct ReadVectored<T: IoVectoredBufMut, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) slices: Vec<SysSlice>,
 }
 
 impl<T: IoVectoredBufMut, S> ReadVectored<T, S> {
@@ -301,7 +284,6 @@ impl<T: IoVectoredBufMut, S> ReadVectored<T, S> {
             fd,
             buffer,
             slices: vec![],
-            _p: PhantomPinned,
         }
     }
 }
@@ -314,15 +296,11 @@ impl<T: IoVectoredBufMut, S> IntoInner for ReadVectored<T, S> {
     }
 }
 
-pin_project! {
-    /// Send to a file from vectored buffer.
-    pub struct WriteVectored<T: IoVectoredBuf, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) slices: Vec<SysSlice>,
-        _p: PhantomPinned,
-    }
+/// Send to a file from vectored buffer.
+pub struct WriteVectored<T: IoVectoredBuf, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) slices: Vec<SysSlice>,
 }
 
 impl<T: IoVectoredBuf, S> WriteVectored<T, S> {
@@ -332,7 +310,6 @@ impl<T: IoVectoredBuf, S> WriteVectored<T, S> {
             fd,
             buffer,
             slices: vec![],
-            _p: PhantomPinned,
         }
     }
 }
@@ -358,7 +335,7 @@ impl<S: AsFd> Unlink<S> {
         Self { dirfd, path, dir }
     }
 
-    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+    pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
         Ok(syscall!(libc::unlinkat(
             self.dirfd.as_fd().as_raw_fd(),
             self.path.as_ptr(),
@@ -380,7 +357,7 @@ impl<S: AsFd> CreateDir<S> {
         Self { dirfd, path, mode }
     }
 
-    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+    pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
         Ok(syscall!(libc::mkdirat(
             self.dirfd.as_fd().as_raw_fd(),
             self.path.as_ptr(),
@@ -408,7 +385,7 @@ impl<S1: AsFd, S2: AsFd> Rename<S1, S2> {
         }
     }
 
-    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+    pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
         Ok(syscall!(libc::renameat(
             self.old_dirfd.as_fd().as_raw_fd(),
             self.old_path.as_ptr(),
@@ -435,7 +412,7 @@ impl<S: AsFd> Symlink<S> {
         }
     }
 
-    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+    pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
         Ok(syscall!(libc::symlinkat(
             self.source.as_ptr(),
             self.dirfd.as_fd().as_raw_fd(),
@@ -463,7 +440,7 @@ impl<S1: AsFd, S2: AsFd> HardLink<S1, S2> {
         }
     }
 
-    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+    pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
         Ok(syscall!(libc::linkat(
             self.source_dirfd.as_fd().as_raw_fd(),
             self.source.as_ptr(),
@@ -474,14 +451,12 @@ impl<S1: AsFd, S2: AsFd> HardLink<S1, S2> {
     }
 }
 
-pin_project! {
-    /// Create a socket.
-    pub struct CreateSocket {
-        pub(crate) domain: i32,
-        pub(crate) socket_type: i32,
-        pub(crate) protocol: i32,
-        pub(crate) opened_fd: Option<Socket2>,
-    }
+/// Create a socket.
+pub struct CreateSocket {
+    pub(crate) domain: i32,
+    pub(crate) socket_type: i32,
+    pub(crate) protocol: i32,
+    pub(crate) opened_fd: Option<Socket2>,
 }
 
 impl CreateSocket {
@@ -526,26 +501,23 @@ impl<S: AsFd> ShutdownSocket<S> {
         }
     }
 
-    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+    pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
         Ok(syscall!(libc::shutdown(self.fd.as_fd().as_raw_fd(), self.how()))? as _)
     }
 }
 
 impl CloseSocket {
-    pub(crate) fn call(self: Pin<&mut Self>) -> io::Result<usize> {
+    pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
         Ok(syscall!(libc::close(self.fd.as_fd().as_raw_fd()))? as _)
     }
 }
 
-pin_project! {
-    /// Accept a connection.
-    pub struct Accept<S> {
-        pub(crate) fd: S,
-        pub(crate) buffer: SockAddrStorage,
-        pub(crate) addr_len: socklen_t,
-        pub(crate) accepted_fd: Option<Socket2>,
-        _p: PhantomPinned,
-    }
+/// Accept a connection.
+pub struct Accept<S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: SockAddrStorage,
+    pub(crate) addr_len: socklen_t,
+    pub(crate) accepted_fd: Option<Socket2>,
 }
 
 impl<S> Accept<S> {
@@ -558,7 +530,6 @@ impl<S> Accept<S> {
             buffer,
             addr_len,
             accepted_fd: None,
-            _p: PhantomPinned,
         }
     }
 }
@@ -572,29 +543,20 @@ impl<S> IntoInner for Accept<S> {
     }
 }
 
-pin_project! {
-    /// Receive data from remote.
-    ///
-    /// It is only used for socket operations. If you want to read from a pipe, use
-    /// [`Read`].
-    pub struct Recv<T: IoBufMut, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) flags: i32,
-        _p: PhantomPinned,
-    }
+/// Receive data from remote.
+///
+/// It is only used for socket operations. If you want to read from a pipe, use
+/// [`Read`].
+pub struct Recv<T: IoBufMut, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) flags: i32,
 }
 
 impl<T: IoBufMut, S> Recv<T, S> {
     /// Create [`Recv`].
     pub fn new(fd: S, buffer: T, flags: i32) -> Self {
-        Self {
-            fd,
-            buffer,
-            flags,
-            _p: PhantomPinned,
-        }
+        Self { fd, buffer, flags }
     }
 }
 
@@ -606,29 +568,20 @@ impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
     }
 }
 
-pin_project! {
-    /// Send data to remote.
-    ///
-    /// It is only used for socket operations. If you want to write to a pipe, use
-    /// [`Write`].
-    pub struct Send<T: IoBuf, S> {
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) flags: i32,
-        _p: PhantomPinned,
-    }
+/// Send data to remote.
+///
+/// It is only used for socket operations. If you want to write to a pipe, use
+/// [`Write`].
+pub struct Send<T: IoBuf, S> {
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) flags: i32,
 }
 
 impl<T: IoBuf, S> Send<T, S> {
     /// Create [`Send`].
     pub fn new(fd: S, buffer: T, flags: i32) -> Self {
-        Self {
-            fd,
-            buffer,
-            flags,
-            _p: PhantomPinned,
-        }
+        Self { fd, buffer, flags }
     }
 }
 
@@ -640,17 +593,13 @@ impl<T: IoBuf, S> IntoInner for Send<T, S> {
     }
 }
 
-pin_project! {
-    /// Receive data from remote into vectored buffer.
-    pub struct RecvVectored<T: IoVectoredBufMut, S> {
-        pub(crate) msg: libc::msghdr,
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) slices: Vec<SysSlice>,
-        pub(crate) flags: i32,
-        _p: PhantomPinned,
-    }
+/// Receive data from remote into vectored buffer.
+pub struct RecvVectored<T: IoVectoredBufMut, S> {
+    pub(crate) msg: libc::msghdr,
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) slices: Vec<SysSlice>,
+    pub(crate) flags: i32,
 }
 
 impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
@@ -662,16 +611,13 @@ impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
             buffer,
             slices: vec![],
             flags,
-            _p: PhantomPinned,
         }
     }
 
-    pub(crate) fn set_msg(self: Pin<&mut Self>) {
-        let this = self.project();
-
-        *this.slices = this.buffer.sys_slices_mut();
-        this.msg.msg_iov = this.slices.as_mut_ptr() as _;
-        this.msg.msg_iovlen = this.slices.len() as _;
+    pub(crate) fn set_msg(&mut self, _: &mut ()) {
+        self.slices = self.buffer.sys_slices_mut();
+        self.msg.msg_iov = self.slices.as_mut_ptr() as _;
+        self.msg.msg_iovlen = self.slices.len() as _;
     }
 }
 
@@ -683,17 +629,13 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvVectored<T, S> {
     }
 }
 
-pin_project! {
-    /// Send data to remote from vectored buffer.
-    pub struct SendVectored<T: IoVectoredBuf, S> {
-        pub(crate) msg: libc::msghdr,
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) slices: Vec<SysSlice>,
-        pub(crate) flags: i32,
-        _p: PhantomPinned,
-    }
+/// Send data to remote from vectored buffer.
+pub struct SendVectored<T: IoVectoredBuf, S> {
+    pub(crate) msg: libc::msghdr,
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) slices: Vec<SysSlice>,
+    pub(crate) flags: i32,
 }
 
 impl<T: IoVectoredBuf, S> SendVectored<T, S> {
@@ -705,16 +647,13 @@ impl<T: IoVectoredBuf, S> SendVectored<T, S> {
             buffer,
             slices: vec![],
             flags,
-            _p: PhantomPinned,
         }
     }
 
-    pub(crate) fn set_msg(self: Pin<&mut Self>) {
-        let this = self.project();
-
-        *this.slices = this.buffer.as_ref().sys_slices();
-        this.msg.msg_iov = this.slices.as_mut_ptr() as _;
-        this.msg.msg_iovlen = this.slices.len() as _;
+    pub(crate) fn set_msg(&mut self, _: &mut ()) {
+        self.slices = self.buffer.sys_slices();
+        self.msg.msg_iov = self.slices.as_mut_ptr() as _;
+        self.msg.msg_iovlen = self.slices.len() as _;
     }
 }
 
@@ -726,19 +665,15 @@ impl<T: IoVectoredBuf, S> IntoInner for SendVectored<T, S> {
     }
 }
 
-pin_project! {
-    /// Receive data and source address with ancillary data into vectored buffer.
-    pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
-        pub(crate) msg: libc::msghdr,
-        pub(crate) addr: SockAddrStorage,
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        pub(crate) control: C,
-        pub(crate) slices: Vec<SysSlice>,
-        pub(crate) flags: i32,
-        _p: PhantomPinned,
-    }
+/// Receive data and source address with ancillary data into vectored buffer.
+pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
+    pub(crate) msg: libc::msghdr,
+    pub(crate) addr: SockAddrStorage,
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) control: C,
+    pub(crate) slices: Vec<SysSlice>,
+    pub(crate) flags: i32,
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
@@ -760,20 +695,18 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
             control,
             slices: vec![],
             flags,
-            _p: PhantomPinned,
         }
     }
 
-    pub(crate) fn set_msg(self: Pin<&mut Self>) {
-        let this = self.project();
-        *this.slices = this.buffer.sys_slices_mut();
+    pub(crate) fn set_msg(&mut self, _: &mut ()) {
+        self.slices = self.buffer.sys_slices_mut();
 
-        this.msg.msg_name = this.addr as *mut _ as _;
-        this.msg.msg_namelen = this.addr.size_of() as _;
-        this.msg.msg_iov = this.slices.as_mut_ptr() as _;
-        this.msg.msg_iovlen = this.slices.len() as _;
-        this.msg.msg_control = this.control.buf_mut_ptr() as _;
-        this.msg.msg_controllen = this.control.buf_capacity() as _;
+        self.msg.msg_name = &raw mut self.addr as _;
+        self.msg.msg_namelen = self.addr.size_of() as _;
+        self.msg.msg_iov = self.slices.as_mut_ptr() as _;
+        self.msg.msg_iovlen = self.slices.len() as _;
+        self.msg.msg_control = self.control.buf_mut_ptr() as _;
+        self.msg.msg_controllen = self.control.buf_capacity() as _;
     }
 }
 
@@ -790,21 +723,16 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
     }
 }
 
-pin_project! {
-    /// Send data to specified address accompanied by ancillary data from vectored
-    /// buffer.
-    pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
-        pub(crate) msg: libc::msghdr,
-        pub(crate) fd: S,
-        #[pin]
-        pub(crate) buffer: T,
-        #[pin]
-        pub(crate) control: C,
-        pub(crate) addr: Option<SockAddr>,
-        pub(crate) slices: Vec<SysSlice>,
-        pub(crate) flags: i32,
-        _p: PhantomPinned,
-    }
+/// Send data to specified address accompanied by ancillary data from vectored
+/// buffer.
+pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
+    pub(crate) msg: libc::msghdr,
+    pub(crate) fd: S,
+    pub(crate) buffer: T,
+    pub(crate) control: C,
+    pub(crate) addr: Option<SockAddr>,
+    pub(crate) slices: Vec<SysSlice>,
+    pub(crate) flags: i32,
 }
 
 impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
@@ -826,31 +754,25 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
             addr,
             slices: vec![],
             flags,
-            _p: PhantomPinned,
         }
     }
 
-    pub(crate) fn set_msg(self: Pin<&mut Self>) {
-        let this = self.project();
-        *this.slices = this.buffer.as_ref().sys_slices();
-        match this.addr.as_ref() {
+    pub(crate) fn set_msg(&mut self, _: &mut ()) {
+        self.slices = self.buffer.sys_slices();
+        match self.addr.as_ref() {
             Some(addr) => {
-                this.msg.msg_name = addr.as_ptr() as _;
-                this.msg.msg_namelen = addr.len();
+                self.msg.msg_name = addr.as_ptr() as _;
+                self.msg.msg_namelen = addr.len();
             }
             None => {
-                this.msg.msg_name = std::ptr::null_mut();
-                this.msg.msg_namelen = 0;
+                self.msg.msg_name = std::ptr::null_mut();
+                self.msg.msg_namelen = 0;
             }
         }
-        this.msg.msg_iov = this.slices.as_ptr() as _;
-        this.msg.msg_iovlen = this.slices.len() as _;
-        this.msg.msg_control = if this.control.buf_len() == 0 {
-            std::ptr::null_mut()
-        } else {
-            this.control.buf_ptr() as _
-        };
-        this.msg.msg_controllen = this.control.buf_len() as _;
+        self.msg.msg_iov = self.slices.as_ptr() as _;
+        self.msg.msg_iovlen = self.slices.len() as _;
+        self.msg.msg_control = self.control.buf_ptr() as _;
+        self.msg.msg_controllen = self.control.buf_len() as _;
     }
 }
 

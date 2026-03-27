@@ -48,6 +48,8 @@ pub use sys::{Extra, *};
 mod cancel;
 pub use cancel::*;
 
+mod control;
+
 use crate::{key::ErasedKey, op::OpCodeFlag};
 
 mod sys_slice;
@@ -207,7 +209,7 @@ impl Proactor {
         op: T,
         extra: Extra,
     ) -> PushEntry<Key<T>, BufResult<usize, T>> {
-        let key = Key::new(op, extra);
+        let key = Key::new(op, extra, self.driver_type());
         match self.driver.push(key.clone().erase()) {
             Poll::Pending => PushEntry::Pending(key),
             Poll::Ready(res) => {
@@ -229,7 +231,7 @@ impl Proactor {
     /// # Panics
     ///
     /// This function will panic if the [`Key`] is not unique.
-    pub fn pop<T>(&mut self, key: Key<T>) -> PushEntry<Key<T>, BufResult<usize, T>> {
+    pub fn pop<T: OpCode>(&mut self, key: Key<T>) -> PushEntry<Key<T>, BufResult<usize, T>> {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
             self.cancel.remove(&key);
@@ -245,7 +247,7 @@ impl Proactor {
     /// # Panics
     ///
     /// This function will panic if the [`Key`] is not unique.
-    pub fn pop_with_extra<T>(
+    pub fn pop_with_extra<T: OpCode>(
         &mut self,
         key: Key<T>,
     ) -> PushEntry<Key<T>, (BufResult<usize, T>, Extra)> {
@@ -263,7 +265,7 @@ impl Proactor {
     /// Get one completion entry for a multishot operation. If it returns
     /// [`None`], the user should call [`Proactor::pop_with_extra`] to get the
     /// final result of the operation.
-    pub fn pop_multishot<T>(&mut self, key: &Key<T>) -> Option<BufResult<usize, Extra>> {
+    pub fn pop_multishot<T: OpCode>(&mut self, key: &Key<T>) -> Option<BufResult<usize, Extra>> {
         instrument!(compio_log::Level::DEBUG, "pop_multishot", ?key);
         self.driver.pop_multishot(key)
     }

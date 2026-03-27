@@ -22,7 +22,7 @@ use std::{
 
 use compio_buf::BufResult;
 
-use crate::{BufferPool, DriverType, ErasedKey, ProactorBuilder};
+use crate::{BufferPool, DriverType, ErasedKey, ProactorBuilder, control::Carrier};
 
 pub(in crate::sys) struct Extra {}
 
@@ -33,7 +33,15 @@ impl Extra {
 }
 
 /// Operations.
-pub trait OpCode {}
+pub trait OpCode {
+    type Control;
+
+    unsafe fn init(&mut self) -> Self::Control;
+}
+
+pub(crate) trait Carry {}
+
+impl<T: OpCode> Carry for Carrier<T> {}
 
 pub mod op;
 

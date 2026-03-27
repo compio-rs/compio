@@ -6,7 +6,6 @@ use std::{
         AsHandle, AsRawHandle, AsRawSocket, AsSocket, BorrowedHandle, BorrowedSocket, OwnedHandle,
         OwnedSocket,
     },
-    pin::Pin,
     sync::Arc,
     task::{Poll, Wake, Waker},
     time::Duration,
@@ -19,7 +18,9 @@ use windows_sys::Win32::{
     System::IO::OVERLAPPED,
 };
 
-use crate::{AsyncifyPool, BufferPool, DriverType, Entry, ErasedKey, ProactorBuilder, key::RefExt};
+use crate::{
+    AsyncifyPool, BufferPool, DriverType, Entry, ErasedKey, ProactorBuilder, control::Carrier,
+};
 
 pub(crate) mod op;
 
@@ -292,9 +293,22 @@ pub enum OpType {
 /// Implementors must ensure that the operation is safe to be polled
 /// according to the returned [`OpType`].
 pub unsafe trait OpCode {
+    /// Type that contains self-references and other needed info during the
+    /// operation
+    type Control;
+
+    /// Constructs a `Control`
+    ///
+    /// # Safety
+    ///
+    /// Caller must guarantee that during the lifetime of the returned
+    /// `Control`, `Self` must be unmoved and valid.
+    unsafe fn init(&mut self) -> Self::Control;
+
     /// Determines that the operation is really overlapped defined by Windows
     /// API. If not, the driver will try to operate it in another thread.
-    fn op_type(&self) -> OpType {
+    fn op_type(&self, control: &Self::Control) -> OpType {
+        _ = control;
         OpType::Overlapped
     }
 
@@ -311,7 +325,11 @@ pub unsafe trait OpCode {
     /// * `self` must be alive until the operation completes.
     /// * When [`OpCode::op_type`] returns [`OpType::Blocking`], this method is
     ///   called in another thread.
-    unsafe fn operate(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>>;
+    unsafe fn operate(
+        &mut self,
+        control: &mut Self::Control,
+        optr: *mut OVERLAPPED,
+    ) -> Poll<io::Result<usize>>;
 
     /// Cancel the async IO operation.
     ///
@@ -320,9 +338,35 @@ pub unsafe trait OpCode {
     //
     // `optr` must not be dereferenced. It's only used as a marker to identify the
     // operation.
-    fn cancel(self: Pin<&mut Self>, optr: *mut OVERLAPPED) -> io::Result<()> {
-        let _optr = optr; // ignore it
+    fn cancel(&mut self, control: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
+        _ = control;
+        _ = optr;
         Ok(())
+    }
+}
+
+pub(crate) trait Carry {
+    fn op_type(&self) -> OpType;
+
+    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>>;
+
+    fn cancel(&mut self, optr: *mut OVERLAPPED) -> io::Result<()>;
+}
+
+impl<T: OpCode> Carry for Carrier<T> {
+    fn op_type(&self) -> OpType {
+        let (op, control) = self.as_iocp();
+        op.op_type(control)
+    }
+
+    unsafe fn operate(&mut self, optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let (op, control) = self.as_iocp_mut();
+        unsafe { op.operate(control, optr) }
+    }
+
+    fn cancel(&mut self, optr: *mut OVERLAPPED) -> io::Result<()> {
+        let (op, control) = self.as_iocp_mut();
+        op.cancel(control, optr)
     }
 }
 
@@ -379,7 +423,7 @@ impl Driver {
         }
         trace!("call OpCode::cancel");
         // It's OK to fail to cancel.
-        key.borrow().pinned_op().cancel(optr.cast()).ok();
+        key.borrow().carrier.cancel(optr.cast()).ok();
     }
 
     pub fn push(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
@@ -387,11 +431,10 @@ impl Driver {
         trace!("push RawOp");
         let mut op = key.borrow();
         let optr = op.extra_mut().optr();
-        let pinned = op.pinned_op();
-        let op_type = pinned.op_type();
+        let op_type = op.carrier.op_type();
         match op_type {
             OpType::Overlapped => unsafe {
-                let res = pinned.operate(optr.cast());
+                let res = op.carrier.operate(optr.cast());
                 drop(op);
                 if res.is_pending() {
                     key.into_raw();
