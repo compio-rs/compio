@@ -41,7 +41,7 @@ pub(crate) mod aio {
     }
 }
 
-#[cfg(not(aio))]
+#[cfg(all(not(aio), not(windows)))]
 pub(crate) mod aio {
     #[allow(non_camel_case_types)]
     pub type aiocb = ();
