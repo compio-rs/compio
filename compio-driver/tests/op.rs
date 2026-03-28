@@ -5,14 +5,12 @@ use std::{
 };
 
 use compio_buf::BufResult;
+#[cfg(unix)]
+use compio_driver::op::{AcceptMulti, Pipe, ReadMulti, Write};
 use compio_driver::{
     AsRawFd, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
     op::{Asyncify, CloseFile, CloseSocket, ReadAt, ReadManagedAt, RecvMulti, ResultTakeBuffer},
 };
-mod pipe2;
-
-#[cfg(unix)]
-use compio_driver::op::{AcceptMulti, ReadMulti, Write};
 
 #[cfg(unix)]
 #[test]
@@ -187,16 +185,13 @@ fn register_multiple() {
 #[test]
 #[cfg(unix)]
 fn cancel_token() {
-    use nix::fcntl::OFlag;
+    use compio_buf::IntoInner;
 
     let mut driver = Proactor::new().unwrap();
 
-    let mut flags = OFlag::O_CLOEXEC;
-    if driver.driver_type().is_polling() {
-        flags |= OFlag::O_NONBLOCK;
-    }
-
-    let (r, _w) = pipe2::pipe2(flags).unwrap();
+    let op = Pipe::new();
+    let (_, op) = push_and_wait(&mut driver, op).unwrap();
+    let (r, _w) = op.into_inner();
 
     let mut key = match driver.push(ReadAt::new(r, 0, Vec::with_capacity(1024))) {
         PushEntry::Pending(key) => key,
@@ -270,16 +265,13 @@ fn managed() {
 #[test]
 #[cfg(unix)]
 fn read_multi() {
-    use nix::fcntl::OFlag;
+    use compio_buf::IntoInner;
 
     let mut driver = Proactor::new().unwrap();
 
-    let mut flags = OFlag::O_CLOEXEC;
-    if driver.driver_type().is_polling() {
-        flags |= OFlag::O_NONBLOCK;
-    }
-
-    let (r, w) = pipe2::pipe2(flags).unwrap();
+    let op = Pipe::new();
+    let (_, op) = push_and_wait(&mut driver, op).unwrap();
+    let (r, w) = op.into_inner();
 
     let op = Write::new(w, b"hello world");
     push_and_wait(&mut driver, op).unwrap();

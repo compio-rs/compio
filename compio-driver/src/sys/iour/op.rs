@@ -1450,6 +1450,23 @@ unsafe impl<S: AsFd> OpCode for PollOnce<S> {
     }
 }
 
+unsafe impl OpCode for Pipe {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
+        opcode::Pipe::new(self.fds.as_mut_ptr().cast())
+            .flags(libc::O_CLOEXEC as _)
+            .build()
+            .into()
+    }
+
+    fn call_blocking(&mut self, _: &mut Self::Control) -> io::Result<usize> {
+        syscall!(libc::pipe2(self.fds.as_mut_ptr().cast(), libc::O_CLOEXEC)).map(|res| res as _)
+    }
+}
+
 unsafe impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
     type Control = ();
 

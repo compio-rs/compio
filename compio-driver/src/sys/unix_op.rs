@@ -891,6 +891,30 @@ impl<S> IntoInner for PollOnce<S> {
     }
 }
 
+/// Create a pipe.
+pub struct Pipe {
+    pub(crate) fds: [Option<OwnedFd>; 2],
+}
+
+impl Pipe {
+    /// Create [`Pipe`].
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self { fds: [None, None] }
+    }
+}
+
+impl IntoInner for Pipe {
+    type Inner = (OwnedFd, OwnedFd);
+
+    fn into_inner(self) -> Self::Inner {
+        let [read_fd, write_fd] = self.fds;
+        let read_fd = read_fd.expect("pipe not created");
+        let write_fd = write_fd.expect("pipe not created");
+        (read_fd, write_fd)
+    }
+}
+
 /// Splice data between two file descriptors.
 #[cfg(linux_all)]
 pub struct Splice<S1, S2> {

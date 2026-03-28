@@ -1,17 +1,16 @@
 #![cfg(unix)]
 
+use std::os::fd::OwnedFd;
+
 use compio_buf::{BufResult, IntoInner};
 #[cfg(linux_all)]
 use compio_driver::op::Splice;
 use compio_driver::{
     AsRawFd, OpCode, Proactor, PushEntry, SharedFd,
-    op::{Read, Write},
+    op::{Pipe, Read, Write},
 };
 #[cfg(linux_all)]
 use libc::SPLICE_F_NONBLOCK;
-use nix::fcntl::OFlag;
-mod pipe2;
-use pipe2::pipe2;
 
 #[cfg(not(linux_all))]
 mod splice_impl {
@@ -101,17 +100,18 @@ fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult
     }
 }
 
+fn pipe2(driver: &mut Proactor) -> (OwnedFd, OwnedFd) {
+    let op = Pipe::new();
+    let (_, op) = push_and_wait(driver, op).unwrap();
+    op.into_inner()
+}
+
 #[test]
 fn splice() {
     let mut driver = Proactor::new().unwrap();
 
-    let mut flags = OFlag::O_CLOEXEC;
-    if driver.driver_type().is_polling() {
-        flags |= OFlag::O_NONBLOCK;
-    }
-
-    let (rx, tx) = pipe2(flags).unwrap();
-    let (rx1, tx1) = pipe2(flags).unwrap();
+    let (rx, tx) = pipe2(&mut driver);
+    let (rx1, tx1) = pipe2(&mut driver);
     println!(
         "rx={}, tx={}, rx1={}, tx1={}",
         rx.as_raw_fd(),

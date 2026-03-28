@@ -440,6 +440,12 @@ impl<S: AsFd> OpCode for PollOnce<S> {
     unsafe fn init(&mut self) -> Self::Control {}
 }
 
+impl OpCode for Pipe {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+}
+
 impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
     type Control = ();
 
