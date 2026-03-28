@@ -165,20 +165,34 @@ impl Socket {
     }
 
     #[cfg(unix)]
-    pub async fn shutdown(&self) -> io::Result<()> {
+    async fn shutdown_impl(&self) -> io::Result<()> {
         let op = ShutdownSocket::new(self.to_shared_fd(), std::net::Shutdown::Write);
-        match compio_runtime::submit(op).await.0 {
-            Ok(_) => Ok(()),
-            // The socket is already closed, we can ignore this error.
-            Err(e) if e.kind() == io::ErrorKind::NotConnected => Ok(()),
-            Err(e) => Err(e),
-        }
+        compio_runtime::submit(op).await.0.map(|_| ())
     }
 
     #[cfg(windows)]
-    pub async fn shutdown(&self) -> io::Result<()> {
+    async fn shutdown_impl(&self) -> io::Result<()> {
         self.socket.shutdown(std::net::Shutdown::Write)?;
         Ok(())
+    }
+
+    pub async fn shutdown(&self) -> io::Result<()> {
+        match self.shutdown_impl().await {
+            Ok(_) => Ok(()),
+            // The socket is already closed, we can ignore this error.
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::NotConnected
+                        | io::ErrorKind::ConnectionAborted
+                        | io::ErrorKind::ConnectionReset
+                        | io::ErrorKind::ConnectionRefused
+                ) =>
+            {
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
 
     pub async fn recv<B: IoBufMut>(&self, buffer: B, flags: i32) -> BufResult<usize, B> {
