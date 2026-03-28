@@ -25,7 +25,7 @@ use compio_runtime::Submit;
 /// tempfile.write_all(HELLO).unwrap();
 ///
 /// let file = File::open(tempfile.path()).await.unwrap();
-/// let (mut rx, tx) = anonymous().unwrap();
+/// let (mut rx, tx) = anonymous().await.unwrap();
 ///
 /// let n = splice(&file, &tx, HELLO.len()).offset_in(0).await.unwrap();
 /// assert_eq!(n, HELLO.len());

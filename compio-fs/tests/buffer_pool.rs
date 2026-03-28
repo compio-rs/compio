@@ -31,7 +31,7 @@ async fn test_read_file() {
 #[cfg(unix)]
 #[compio_macros::test]
 async fn test_read_pipe() {
-    let (mut rx, mut tx) = pipe::anonymous().unwrap();
+    let (mut rx, mut tx) = pipe::anonymous().await.unwrap();
     tx.write_all(HELLO).await.unwrap();
 
     let buffer_pool = BufferPool::new(1, 15).unwrap();

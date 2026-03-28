@@ -124,7 +124,7 @@ async fn timeout_read() {
     use compio_io::AsyncReadExt;
     use compio_runtime::time::timeout;
 
-    let (mut rx, _) = anonymous().unwrap();
+    let (mut rx, _) = anonymous().await.unwrap();
 
     // Read a file with timeout.
     let _ = timeout(Duration::from_nanos(1), async move {

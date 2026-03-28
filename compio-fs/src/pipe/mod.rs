@@ -1,18 +1,13 @@
 //! Unix pipe types.
 
-use std::{
-    future::Future,
-    io,
-    os::fd::{FromRawFd, IntoRawFd},
-    path::Path,
-};
+use std::{future::Future, io, path::Path};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{
     AsRawFd, ToSharedFd, impl_raw_fd,
     op::{
-        BufResultExt, Read, ReadManaged, ReadVectored, ResultTakeBuffer, VecBufResultExt, Write,
-        WriteVectored,
+        BufResultExt, Pipe, Read, ReadManaged, ReadVectored, ResultTakeBuffer, VecBufResultExt,
+        Write, WriteVectored,
     },
     syscall,
 };
@@ -34,21 +29,20 @@ pub use splice::*;
 /// use compio_io::{AsyncReadExt, AsyncWriteExt};
 ///
 /// # compio_runtime::Runtime::new().unwrap().block_on(async {
-/// let (mut rx, mut tx) = anonymous().unwrap();
+/// let (mut rx, mut tx) = anonymous().await.unwrap();
 ///
 /// tx.write_all("Hello world!").await.unwrap();
 /// let (_, buf) = rx.read_exact(Vec::with_capacity(12)).await.unwrap();
 /// assert_eq!(&buf, b"Hello world!");
 /// # });
 /// ```
-pub fn anonymous() -> io::Result<(Receiver, Sender)> {
-    let (receiver, sender) = os_pipe::pipe()?;
-    let receiver = Receiver::from_file(File::from_std(unsafe {
-        std::fs::File::from_raw_fd(receiver.into_raw_fd())
-    })?)?;
-    let sender = Sender::from_file(File::from_std(unsafe {
-        std::fs::File::from_raw_fd(sender.into_raw_fd())
-    })?)?;
+pub async fn anonymous() -> io::Result<(Receiver, Sender)> {
+    let op = Pipe::new();
+    let BufResult(res, op) = compio_runtime::submit(op).await;
+    res?;
+    let (receiver, sender) = op.into_inner();
+    let receiver = Receiver::from_file(File::from_std(std::fs::File::from(receiver))?)?;
+    let sender = Sender::from_file(File::from_std(std::fs::File::from(sender))?)?;
     Ok((receiver, sender))
 }
 
