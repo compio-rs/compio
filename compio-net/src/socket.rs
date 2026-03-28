@@ -179,7 +179,7 @@ impl Socket {
     pub async fn shutdown(&self) -> io::Result<()> {
         match self.shutdown_impl().await {
             Ok(_) => Ok(()),
-            // The socket is already closed, we can ignore this error.
+            // The socket is not connected, so we can ignore this error.
             Err(e)
                 if matches!(
                     e.kind(),
