@@ -784,6 +784,43 @@ unsafe impl OpCode for CreateSocket {
     }
 }
 
+unsafe impl<S: AsFd> OpCode for Bind<S> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<Decision> {
+        Ok(Decision::Blocking)
+    }
+
+    fn operate(&mut self, _: &mut Self::Control) -> Poll<io::Result<usize>> {
+        Poll::Ready(
+            syscall!(libc::bind(
+                self.fd.as_fd().as_raw_fd(),
+                self.addr.as_ptr().cast(),
+                self.addr.len() as socklen_t
+            ))
+            .map(|res| res as _),
+        )
+    }
+}
+
+unsafe impl<S: AsFd> OpCode for Listen<S> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<Decision> {
+        Ok(Decision::Blocking)
+    }
+
+    fn operate(&mut self, _: &mut Self::Control) -> Poll<io::Result<usize>> {
+        Poll::Ready(
+            syscall!(libc::listen(self.fd.as_fd().as_raw_fd(), self.backlog)).map(|res| res as _),
+        )
+    }
+}
+
 unsafe impl<S: AsFd> OpCode for ShutdownSocket<S> {
     type Control = ();
 

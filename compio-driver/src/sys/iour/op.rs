@@ -597,6 +597,47 @@ unsafe impl OpCode for CreateSocket {
     }
 }
 
+unsafe impl<S: AsFd> OpCode for Bind<S> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
+        opcode::Bind::new(
+            Fd(self.fd.as_fd().as_raw_fd()),
+            self.addr.as_ptr().cast(),
+            self.addr.len(),
+        )
+        .build()
+        .into()
+    }
+
+    fn call_blocking(&mut self, _: &mut Self::Control) -> io::Result<usize> {
+        syscall!(libc::bind(
+            self.fd.as_fd().as_raw_fd(),
+            self.addr.as_ptr().cast(),
+            self.addr.len()
+        ))
+        .map(|res| res as _)
+    }
+}
+
+unsafe impl<S: AsFd> OpCode for Listen<S> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
+        opcode::Listen::new(Fd(self.fd.as_fd().as_raw_fd()), self.backlog)
+            .build()
+            .into()
+    }
+
+    fn call_blocking(&mut self, _: &mut Self::Control) -> io::Result<usize> {
+        syscall!(libc::listen(self.fd.as_fd().as_raw_fd(), self.backlog)).map(|res| res as _)
+    }
+}
+
 unsafe impl<S: AsFd> OpCode for ShutdownSocket<S> {
     type Control = ();
 

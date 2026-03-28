@@ -80,9 +80,10 @@ impl UnixListener {
             ));
         }
 
-        let socket = Socket::bind(addr, Type::STREAM, None).await?;
+        let socket = Socket::new(addr.domain(), Type::STREAM, None).await?;
         opts.setup_socket(&socket)?;
-        socket.listen(opts.get_backlog().unwrap_or(1024))?;
+        socket.bind(addr).await?;
+        socket.listen(opts.get_backlog().unwrap_or(1024)).await?;
         Ok(UnixListener { inner: socket })
     }
 

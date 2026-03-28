@@ -88,8 +88,8 @@ impl TcpListener {
             let sa = SockAddr::from(addr);
             let socket = Socket::new(sa.domain(), Type::STREAM, Some(Protocol::TCP)).await?;
             options.setup_socket(&socket)?;
-            socket.socket.bind(&sa)?;
-            socket.listen(options.get_backlog().unwrap_or(128))?;
+            socket.bind(&sa).await?;
+            socket.listen(options.get_backlog().unwrap_or(128)).await?;
             Ok(Self { inner: socket })
         })
         .await
@@ -246,7 +246,8 @@ impl TcpStream {
 
         super::each_addr(addr, |addr| async move {
             let addr2 = SockAddr::from(addr);
-            let socket = if cfg!(windows) {
+            let socket = Socket::new(addr2.domain(), Type::STREAM, Some(Protocol::TCP)).await?;
+            if cfg!(windows) {
                 let bind_addr = if addr.is_ipv4() {
                     SockAddr::from(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
                 } else if addr.is_ipv6() {
@@ -257,9 +258,7 @@ impl TcpStream {
                         "Unsupported address domain.",
                     ));
                 };
-                Socket::bind(&bind_addr, Type::STREAM, Some(Protocol::TCP)).await?
-            } else {
-                Socket::new(addr2.domain(), Type::STREAM, Some(Protocol::TCP)).await?
+                socket.bind(&bind_addr).await?;
             };
             options.setup_socket(&socket)?;
             socket.connect_async(&addr2).await?;
@@ -285,10 +284,10 @@ impl TcpStream {
     ) -> io::Result<Self> {
         super::each_addr(addr, |addr| async move {
             let addr = SockAddr::from(addr);
+            let socket = Socket::new(addr.domain(), Type::STREAM, Some(Protocol::TCP)).await?;
             let bind_addr = SockAddr::from(bind_addr);
-
-            let socket = Socket::bind(&bind_addr, Type::STREAM, Some(Protocol::TCP)).await?;
             options.setup_socket(&socket)?;
+            socket.bind(&bind_addr).await?;
             socket.connect_async(&addr).await?;
             Ok(Self { inner: socket })
         })

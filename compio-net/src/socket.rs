@@ -6,7 +6,7 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, buf_try};
 #[cfg(unix)]
-use compio_driver::op::{CreateSocket, ShutdownSocket};
+use compio_driver::op::{Bind, CreateSocket, Listen, ShutdownSocket};
 use compio_driver::{
     AsRawFd, OpCode, ToSharedFd, impl_raw_fd,
     op::{
@@ -83,14 +83,28 @@ impl Socket {
         Self::from_socket2(op.into_inner())
     }
 
-    pub async fn bind(addr: &SockAddr, ty: Type, protocol: Option<Protocol>) -> io::Result<Self> {
-        let socket = Self::new(addr.domain(), ty, protocol).await?;
-        socket.socket.bind(addr)?;
-        Ok(socket)
+    pub async fn bind(&self, addr: &SockAddr) -> io::Result<()> {
+        #[cfg(not(unix))]
+        self.socket.bind(addr)?;
+        #[cfg(unix)]
+        {
+            let op = Bind::new(self.to_shared_fd(), addr.clone());
+            compio_runtime::submit(op).await.0?;
+        }
+        Ok(())
     }
 
-    pub fn listen(&self, backlog: i32) -> io::Result<()> {
-        self.socket.listen(backlog)
+    pub async fn listen(&self, backlog: i32) -> io::Result<()> {
+        #[cfg(not(unix))]
+        {
+            self.socket.listen(backlog)
+        }
+        #[cfg(unix)]
+        {
+            let op = Listen::new(self.to_shared_fd(), backlog);
+            compio_runtime::submit(op).await.0?;
+            Ok(())
+        }
     }
 
     pub fn connect(&self, addr: &SockAddr) -> io::Result<()> {
