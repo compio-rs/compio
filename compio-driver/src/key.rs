@@ -10,6 +10,7 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner};
+use compio_send_wrapper::SendWrapper;
 use thin_cell::unsync::{Inner, Ref, ThinCell};
 
 use crate::{Carry, DriverType, Extra, OpCode, PushEntry, control::Carrier};
@@ -348,6 +349,7 @@ impl ErasedKey {
     pub(crate) unsafe fn freeze(self) -> FrozenKey {
         FrozenKey {
             inner: ManuallyDrop::new(self),
+            thread_id: SendWrapper::new(()),
         }
     }
 }
@@ -360,10 +362,11 @@ impl Debug for ErasedKey {
 
 /// A frozen view into a [`Key`].
 ///
-/// It's guaranteed to have the same layout as [`ErasedKey`].
-#[repr(transparent)]
+/// It's guaranteed to have [`ErasedKey`] as the first field.
+#[repr(C)]
 pub(crate) struct FrozenKey {
     inner: ManuallyDrop<ErasedKey>,
+    thread_id: SendWrapper<()>,
 }
 
 impl FrozenKey {
@@ -372,7 +375,16 @@ impl FrozenKey {
     }
 
     pub fn into_inner(self) -> ErasedKey {
-        ManuallyDrop::into_inner(self.inner)
+        let mut this = ManuallyDrop::new(self);
+        unsafe { ManuallyDrop::take(&mut this.inner) }
+    }
+}
+
+impl Drop for FrozenKey {
+    fn drop(&mut self) {
+        if self.thread_id.valid() {
+            unsafe { ManuallyDrop::drop(&mut self.inner) }
+        }
     }
 }
 
