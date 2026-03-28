@@ -257,9 +257,14 @@ fn managed() {
 
     let buffer = op.take_buffer(&pool, res, buffer_id).unwrap();
     println!("{}", std::str::from_utf8(&buffer).unwrap());
+    drop(buffer);
 
     let op = CloseFile::new(fd.try_unwrap().unwrap());
     push_and_wait(&mut driver, op).unwrap();
+
+    unsafe {
+        driver.release_buffer_pool(pool).unwrap();
+    }
 }
 
 #[test]
@@ -295,6 +300,10 @@ fn read_multi() {
         .collect::<Vec<_>>();
 
     assert_eq!(buffer, b"hello world");
+
+    unsafe {
+        driver.release_buffer_pool(pool).unwrap();
+    }
 }
 
 #[test]
@@ -348,6 +357,10 @@ fn recv_multi() {
     let stream = stream.try_unwrap().unwrap();
     let op = CloseSocket::new(stream.into());
     push_and_wait(&mut driver, op).unwrap();
+
+    unsafe {
+        driver.release_buffer_pool(pool).unwrap();
+    }
 }
 
 #[cfg(unix)]
