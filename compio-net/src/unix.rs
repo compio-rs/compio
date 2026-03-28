@@ -15,7 +15,7 @@ use compio_io::{
 };
 use compio_runtime::{BorrowedBuffer, BufferPool, fd::PollFd};
 use futures_util::{Stream, StreamExt, stream::FusedStream};
-use socket2::{SockAddr, Socket as Socket2, Type};
+use socket2::{Domain, SockAddr, Socket as Socket2, Type};
 
 use crate::{
     Incoming, MSG_NOSIGNAL, OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, SocketOpts, WriteHalf,
@@ -226,18 +226,13 @@ impl UnixStream {
                 "addr is not unix socket address",
             ));
         }
-
-        #[cfg(windows)]
-        let socket = {
-            let new_addr = empty_unix_socket();
-            Socket::bind(&new_addr, Type::STREAM, None).await?
-        };
-        #[cfg(unix)]
-        let socket = {
-            use socket2::Domain;
-            Socket::new(Domain::UNIX, Type::STREAM, None).await?
-        };
+        let socket = Socket::new(Domain::UNIX, Type::STREAM, None).await?;
         options.setup_socket(&socket)?;
+        #[cfg(windows)]
+        {
+            let new_addr = empty_unix_socket();
+            socket.bind(&new_addr).await?
+        }
         socket.connect_async(addr).await?;
         let unix_stream = UnixStream { inner: socket };
         Ok(unix_stream)
