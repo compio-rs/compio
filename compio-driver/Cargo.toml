@@ -18,6 +18,8 @@ rustdoc-args = ["--cfg", "docsrs"]
 compio-buf = { workspace = true }
 compio-log = { workspace = true }
 
+compio-send-wrapper = { workspace = true }
+
 # Utils
 cfg-if = { workspace = true }
 flume = { workspace = true, default-features = false }
