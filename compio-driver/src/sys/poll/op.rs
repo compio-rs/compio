@@ -1512,6 +1512,8 @@ unsafe impl OpCode for Pipe {
         }
         #[cfg(not(any(freebsd, solarish, linux_all)))]
         {
+            use nix::fcntl::{F_GETFD, F_GETFL, F_SETFD, F_SETFL, FdFlag, OFlag, fcntl};
+
             syscall!(libc::pipe(self.fds.as_mut_ptr().cast()))?;
             let Some(f1) = self.fds[0].as_ref() else {
                 unreachable!("pipe() succeeded but returned invalid fd")
@@ -1537,7 +1539,7 @@ unsafe impl OpCode for Pipe {
             set_nonblock(f1)?;
             set_nonblock(f2)?;
 
-            Ok(0)
+            Poll::Ready(Ok(0))
         }
     }
 }
