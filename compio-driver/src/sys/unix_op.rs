@@ -514,6 +514,32 @@ impl IntoInner for CreateSocket {
     }
 }
 
+/// Bind a socket to an address.
+pub struct Bind<S> {
+    pub(crate) fd: S,
+    pub(crate) addr: SockAddr,
+}
+
+impl<S> Bind<S> {
+    /// Create [`Bind`].
+    pub fn new(fd: S, addr: SockAddr) -> Self {
+        Self { fd, addr }
+    }
+}
+
+/// Listen for connections on a socket.
+pub struct Listen<S> {
+    pub(crate) fd: S,
+    pub(crate) backlog: i32,
+}
+
+impl<S> Listen<S> {
+    /// Create [`Listen`].
+    pub fn new(fd: S, backlog: i32) -> Self {
+        Self { fd, backlog }
+    }
+}
+
 /// Shutdown a socket.
 pub struct ShutdownSocket<S> {
     pub(crate) fd: S,

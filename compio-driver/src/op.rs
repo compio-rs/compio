@@ -17,9 +17,9 @@ pub use crate::sys::op::{
 };
 #[cfg(unix)]
 pub use crate::sys::op::{
-    AcceptMulti, CreateDir, CreateSocket, CurrentDir, FileStat, HardLink, Interest, OpenFile,
-    PathStat, PollOnce, ReadVectored, ReadVectoredAt, Rename, ShutdownSocket, Stat, Symlink,
-    TruncateFile, Unlink, WriteVectored, WriteVectoredAt,
+    AcceptMulti, Bind, CreateDir, CreateSocket, CurrentDir, FileStat, HardLink, Interest, Listen,
+    OpenFile, PathStat, PollOnce, ReadVectored, ReadVectoredAt, Rename, ShutdownSocket, Stat,
+    Symlink, TruncateFile, Unlink, WriteVectored, WriteVectoredAt,
 };
 #[cfg(windows)]
 pub use crate::sys::op::{ConnectNamedPipe, DeviceIoControl};

@@ -212,6 +212,18 @@ impl OpCode for CreateSocket {
     unsafe fn init(&mut self) -> Self::Control {}
 }
 
+impl<S: AsFd> OpCode for Bind<S> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+}
+
+impl<S: AsFd> OpCode for Listen<S> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+}
+
 impl<S: AsFd> OpCode for ShutdownSocket<S> {
     type Control = ();
 

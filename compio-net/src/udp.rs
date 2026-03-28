@@ -104,9 +104,10 @@ impl UdpSocket {
         opts: &SocketOpts,
     ) -> io::Result<Self> {
         super::each_addr(addr, |addr| async move {
-            let socket =
-                Socket::bind(&SockAddr::from(addr), Type::DGRAM, Some(Protocol::UDP)).await?;
+            let addr = SockAddr::from(addr);
+            let socket = Socket::new(addr.domain(), Type::DGRAM, Some(Protocol::UDP)).await?;
             opts.setup_socket(&socket)?;
+            socket.bind(&addr).await?;
             Ok(Self { inner: socket })
         })
         .await
