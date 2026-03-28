@@ -896,6 +896,9 @@ pub struct Pipe {
     pub(crate) fds: [Option<OwnedFd>; 2],
 }
 
+// Niche optimization.
+const _: () = assert!(std::mem::size_of::<Option<OwnedFd>>() == std::mem::size_of::<RawFd>());
+
 impl Pipe {
     /// Create [`Pipe`].
     #[allow(clippy::new_without_default)]
