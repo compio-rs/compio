@@ -18,7 +18,7 @@ pub use crate::sys::op::{
 #[cfg(unix)]
 pub use crate::sys::op::{
     AcceptMulti, Bind, CreateDir, CreateSocket, CurrentDir, FileStat, HardLink, Interest, Listen,
-    OpenFile, PathStat, PollOnce, ReadVectored, ReadVectoredAt, Rename, ShutdownSocket, Stat,
+    OpenFile, PathStat, Pipe, PollOnce, ReadVectored, ReadVectoredAt, Rename, ShutdownSocket, Stat,
     Symlink, TruncateFile, Unlink, WriteVectored, WriteVectoredAt,
 };
 #[cfg(windows)]

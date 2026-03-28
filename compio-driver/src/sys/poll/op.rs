@@ -1490,6 +1490,60 @@ unsafe impl<S: AsFd> OpCode for PollOnce<S> {
     }
 }
 
+unsafe impl OpCode for Pipe {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<Decision> {
+        Ok(Decision::Blocking)
+    }
+
+    fn operate(&mut self, _: &mut Self::Control) -> Poll<io::Result<usize>> {
+        #[cfg(any(freebsd, solarish, linux_all))]
+        {
+            Poll::Ready(
+                syscall!(libc::pipe2(
+                    self.fds.as_mut_ptr().cast(),
+                    libc::O_CLOEXEC | libc::O_NONBLOCK
+                ))
+                .map(|res| res as _),
+            )
+        }
+        #[cfg(not(any(freebsd, solarish, linux_all)))]
+        {
+            use nix::fcntl::{F_GETFD, F_GETFL, F_SETFD, F_SETFL, FdFlag, OFlag, fcntl};
+
+            syscall!(libc::pipe(self.fds.as_mut_ptr().cast()))?;
+            let Some(f1) = self.fds[0].as_ref() else {
+                unreachable!("pipe() succeeded but returned invalid fd")
+            };
+            let Some(f2) = self.fds[1].as_ref() else {
+                unreachable!("pipe() succeeded but returned invalid fd")
+            };
+
+            fn set_cloexec(fd: &OwnedFd) -> nix::Result<()> {
+                let flag = FdFlag::from_bits_retain(fcntl(fd, F_GETFD)?);
+                fcntl(fd, F_SETFD(flag | FdFlag::FD_CLOEXEC))?;
+                Ok(())
+            }
+
+            fn set_nonblock(fd: &OwnedFd) -> nix::Result<()> {
+                let flag = OFlag::from_bits_retain(fcntl(fd, F_GETFL)?);
+                fcntl(fd, F_SETFL(flag | OFlag::O_NONBLOCK))?;
+                Ok(())
+            }
+
+            set_cloexec(f1)?;
+            set_cloexec(f2)?;
+            set_nonblock(f1)?;
+            set_nonblock(f2)?;
+
+            Poll::Ready(Ok(0))
+        }
+    }
+}
+
 #[cfg(linux_all)]
 unsafe impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
     type Control = ();

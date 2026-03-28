@@ -66,7 +66,7 @@ async fn splice_uds_to_pipe() {
     let (r, mut w) = uds().await;
     w.write_all(HELLO).await.unwrap();
 
-    let (mut rx, tx) = anonymous().unwrap();
+    let (mut rx, tx) = anonymous().await.unwrap();
 
     let n = splice(&*r, &tx, HELLO.len()).await.unwrap();
     assert_eq!(n, HELLO.len());
@@ -82,7 +82,7 @@ async fn splice_uds_to_pipe() {
 #[compio_macros::test]
 async fn splice_pipe_to_uds() {
     let (mut r, w) = uds().await;
-    let (rx, mut tx) = anonymous().unwrap();
+    let (rx, mut tx) = anonymous().await.unwrap();
 
     tx.write_all(HELLO).await.unwrap();
     drop(tx);
@@ -117,7 +117,7 @@ async fn splice_file_to_pipe() {
 
     // Open file for reading and splice to pipe
     let file = File::open(temp_path).await.unwrap();
-    let (mut rx, tx) = anonymous().unwrap();
+    let (mut rx, tx) = anonymous().await.unwrap();
 
     let n = splice(&file, &tx, HELLO.len()).offset_in(0).await.unwrap();
     assert_eq!(n, HELLO.len());
@@ -134,8 +134,8 @@ async fn splice_file_to_pipe() {
 
 #[compio_macros::test]
 async fn splice_pipe_to_pipe() {
-    let (rx1, mut tx1) = anonymous().unwrap();
-    let (mut rx2, tx2) = anonymous().unwrap();
+    let (rx1, mut tx1) = anonymous().await.unwrap();
+    let (mut rx2, tx2) = anonymous().await.unwrap();
 
     tx1.write_all(HELLO).await.unwrap();
     drop(tx1);
