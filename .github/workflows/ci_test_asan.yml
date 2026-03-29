@@ -1,0 +1,41 @@
+name: TestASan
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '**/*.rs'
+      - '**/Cargo.toml'
+      - '.github/workflows/ci_test_asan.yml'
+  pull_request:
+    branches:
+      - master
+    paths:
+      - '**/*.rs'
+      - '**/Cargo.toml'
+      - '.github/workflows/ci_test_asan.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  RUST_BACKTRACE: 1
+
+jobs:
+  asan:
+    runs-on: ${{ matrix.setup.os }}
+    strategy:
+      matrix:
+        setup:
+          - os: 'ubuntu-22.04'
+            target: 'x86_64-unknown-linux-gnu'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup nightly toolchain with rust-src
+        run: rustup toolchain install nightly --component rust-src
+      - name: Run ASan tests
+        run: cargo +nightly test --features all,nightly,io-compat,sync -Zbuild-std --target ${{ matrix.setup.target }} --tests
+        env:
+          RUSTFLAGS: -Zsanitizer=address
