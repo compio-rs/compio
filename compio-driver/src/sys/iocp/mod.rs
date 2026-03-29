@@ -492,6 +492,7 @@ impl Driver {
 
         while let Err(e) = self.pool.dispatch(closure) {
             closure = e.0;
+            std::thread::yield_now();
         }
     }
 
