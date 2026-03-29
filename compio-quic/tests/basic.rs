@@ -42,6 +42,8 @@ async fn handshake_timeout() {
     }
     let dt = start.elapsed();
     assert!(dt > IDLE_TIMEOUT && dt < 2 * IDLE_TIMEOUT);
+
+    endpoint.shutdown().await.unwrap();
 }
 
 #[compio_macros::test]
@@ -68,6 +70,8 @@ async fn close_endpoint() {
             panic!("unexpected success");
         }
     }
+
+    endpoint.shutdown().await.unwrap();
 }
 
 async fn endpoint() -> Endpoint {
@@ -107,6 +111,8 @@ async fn read_after_close() {
             assert_eq!(buf, MSG);
         },
     );
+
+    endpoint.shutdown().await.unwrap();
 }
 
 #[compio_macros::test]
@@ -134,6 +140,11 @@ async fn export_keying_material() {
         .export_keying_material(&mut buf2, b"qaq", b"qwq")
         .unwrap();
     assert_eq!(buf1, buf2);
+
+    drop(conn1);
+    drop(conn2);
+
+    endpoint.shutdown().await.unwrap();
 }
 
 #[compio_macros::test]
@@ -219,6 +230,8 @@ async fn zero_rtt() {
             assert_eq!(buf, MSG1);
         },
     );
+
+    endpoint.shutdown().await.unwrap();
 }
 
 #[compio_macros::test]
@@ -263,6 +276,11 @@ async fn two_datagram_readers() {
 
     assert!(a == MSG1 || b == MSG1);
     assert!(a == MSG2 || b == MSG2);
+
+    drop(conn1);
+    drop(conn2);
+
+    endpoint.shutdown().await.unwrap();
 }
 
 #[compio_macros::test]
@@ -290,4 +308,9 @@ async fn try_recv_datagram() {
 
     assert_eq!(conn2.recv_datagram().await.unwrap(), MSG1);
     assert_eq!(conn2.try_recv_datagram().unwrap().unwrap(), MSG2);
+
+    drop(conn1);
+    drop(conn2);
+
+    endpoint.shutdown().await.unwrap();
 }
