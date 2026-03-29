@@ -98,10 +98,10 @@ async fn test_connect_impl<A: ToSocketAddrsAsync>(mapping: impl FnOnce(&TcpListe
 }
 
 macro_rules! test_connect {
-    ($(($(#[$($m:meta)*])? $ident:ident, $mapping:tt),)*) => {
+    ($(($(#[$m:meta])* $ident:ident, $mapping:tt),)*) => {
         $(
             #[compio_macros::test]
-            $(#[$($m)*])?
+            $(#[$m])*
             async fn $ident() {
                 #[allow(unused_parens)]
                 test_connect_impl($mapping).await;
