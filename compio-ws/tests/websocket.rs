@@ -98,9 +98,7 @@ async fn test_ping_pong() {
         let mut ws = accept_async(stream).await.unwrap();
 
         let msg = ws.read().await.unwrap();
-        if let Message::Ping(data) = msg {
-            ws.send(Message::Pong(data)).await.unwrap();
-        }
+        assert!(matches!(msg, Message::Ping(_)));
     })
     .detach();
 
@@ -141,6 +139,8 @@ async fn test_close_handshake() {
     let (mut ws, _) = client_async(&format!("ws://{}", addr), tcp).await.unwrap();
 
     ws.close(None).await.unwrap();
+    let msg = ws.read().await.unwrap();
+    assert!(msg.is_close());
 }
 
 #[compio_macros::test]
@@ -193,9 +193,7 @@ async fn compat_ping_pong() {
         let mut ws = std::pin::pin!(ws);
 
         let msg = ws.next().await.unwrap().unwrap();
-        if let Message::Ping(data) = msg {
-            ws.send(Message::Pong(data)).await.unwrap();
-        }
+        assert!(matches!(msg, Message::Ping(_)));
     })
     .detach();
 
