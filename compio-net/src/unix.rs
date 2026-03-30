@@ -546,8 +546,8 @@ impl UnixSocket {
     /// by the operating system at any given time. Connections are removed from
     /// the queue with [`UnixListener::accept`]. When the queue is full, the
     /// operating-system will start rejecting connections.
-    pub async fn listen(self, backlog: u32) -> io::Result<UnixListener> {
-        self.inner.listen(backlog as i32).await?;
+    pub async fn listen(self, backlog: i32) -> io::Result<UnixListener> {
+        self.inner.listen(backlog).await?;
         Ok(UnixListener { inner: self.inner })
     }
 
