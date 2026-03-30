@@ -125,11 +125,7 @@ where
         }
     })
     .await?;
-    if let Err(e) = s.get_mut().get_mut().shutdown().await
-        && e.kind() != io::ErrorKind::NotConnected
-    {
-        return Err(e);
-    }
+    s.get_mut().get_mut().shutdown().await?;
     match res {
         // If close_notify has been sent but the peer has not responded with
         // close_notify, we let the caller know by returning Err(WouldBlock).
