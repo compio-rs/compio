@@ -74,7 +74,7 @@ impl TcpListener {
         super::each_addr(addr, |addr| async move {
             let sa = SockAddr::from(addr);
             let socket = Socket::new(sa.domain(), Type::STREAM, Some(Protocol::TCP)).await?;
-            socket.socket.reuse_address()?;
+            socket.socket.set_reuse_address(true)?;
             socket.bind(&sa).await?;
             socket.listen(128).await?;
             Ok(Self { inner: socket })
@@ -841,7 +841,7 @@ impl TcpSocket {
 
     /// Gets the value for the `SO_BINDTODEVICE` option on this socket
     ///
-    /// This value gets the socket binded device's interface name.
+    /// Returns the interface name of the device to which this socket is bound.
     #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux",))]
     pub fn device(&self) -> io::Result<Option<Vec<u8>>> {
         self.inner.socket.device()
@@ -891,10 +891,10 @@ impl TcpSocket {
 
     /// Converts the socket into a `TcpListener`.
     ///
-    /// `backlog` defines the maximum number of pending connections are queued
-    /// by the operating system at any given time. Connection are removed from
+    /// `backlog` defines the maximum number of pending connections that are queued
+    /// by the operating system at any given time. Connections are removed from
     /// the queue with [`TcpListener::accept`]. When the queue is full, the
-    /// operating-system will start rejecting connections.
+    /// operating system will start rejecting connections.
     pub async fn listen(self, backlog: u32) -> io::Result<TcpListener> {
         self.inner.listen(backlog as i32).await?;
         Ok(TcpListener { inner: self.inner })

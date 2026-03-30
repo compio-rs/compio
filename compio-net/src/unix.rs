@@ -514,7 +514,7 @@ impl UnixSocket {
         Ok(UnixSocket { inner })
     }
 
-    /// Returns the local address that this listener is bound to.
+    /// Returns the local address that this socket is bound to.
     pub fn local_addr(&self) -> io::Result<SockAddr> {
         self.inner.local_addr()
     }
@@ -543,7 +543,7 @@ impl UnixSocket {
     /// Converts the socket into a `UnixListener`.
     ///
     /// `backlog` defines the maximum number of pending connections are queued
-    /// by the operating system at any given time. Connection are removed from
+    /// by the operating system at any given time. Connections are removed from
     /// the queue with [`UnixListener::accept`]. When the queue is full, the
     /// operating-system will start rejecting connections.
     pub async fn listen(self, backlog: u32) -> io::Result<UnixListener> {
