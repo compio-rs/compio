@@ -102,6 +102,9 @@ async fn run_echo(args: EchoArgs) {
             }
         }
     );
+
+    client.shutdown().await.unwrap();
+    server.shutdown().await.unwrap();
 }
 
 #[compio_macros::test]

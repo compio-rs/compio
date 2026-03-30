@@ -1,8 +1,9 @@
 use compio_quic::{ConnectionError, Endpoint, TransportConfig};
+use synchrony::unsync::async_flag::AsyncFlag;
 
 mod common;
 use common::{config_pair, subscribe};
-use futures_util::join;
+use futures_util::{FutureExt, join};
 
 #[compio_macros::test]
 async fn ip_blocking() {
@@ -19,9 +20,17 @@ async fn ip_blocking() {
     let client1_addr = client1.local_addr().unwrap();
     let client2 = Endpoint::client("127.0.0.1:0").await.unwrap();
 
+    let shutdown_flag = AsyncFlag::new();
+    let shutdown_handle = shutdown_flag.handle();
+
     let srv = compio_runtime::spawn(async move {
+        let wait_fut = shutdown_flag.wait().fuse();
+        let mut wait_fut = std::pin::pin!(wait_fut);
         loop {
-            let incoming = server.wait_incoming().await.unwrap();
+            let incoming = futures_util::select! {
+                 incoming = server.wait_incoming().fuse() => incoming.unwrap(),
+                 _ = wait_fut.as_mut() => break,
+            };
             if incoming.remote_address() == client1_addr {
                 incoming.refuse();
             } else if incoming.remote_address_validated() {
@@ -30,6 +39,7 @@ async fn ip_blocking() {
                 incoming.retry().unwrap();
             }
         }
+        server.shutdown().await.unwrap();
     });
 
     let e = client1
@@ -44,7 +54,12 @@ async fn ip_blocking() {
         .await
         .unwrap();
 
-    let _ = srv.cancel().await;
+    client2.shutdown().await.unwrap();
+    client1.shutdown().await.unwrap();
+
+    shutdown_handle.notify();
+
+    srv.await.unwrap();
 }
 
 #[compio_macros::test]
@@ -88,4 +103,9 @@ async fn stream_id_flow_control() {
             conn2.accept_uni().await.unwrap();
         }
     );
+
+    drop(conn1);
+    drop(conn2);
+
+    endpoint.shutdown().await.unwrap();
 }

@@ -289,6 +289,11 @@ impl ConnectionInner {
                 break;
             }
         }
+
+        // Break the reference cycle.
+        if let Some(worker) = self.state().worker.take() {
+            worker.detach();
+        }
     }
 }
 
