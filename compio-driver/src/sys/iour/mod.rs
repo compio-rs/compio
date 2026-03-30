@@ -374,18 +374,21 @@ impl Driver {
         }
     }
 
-    fn poll_blocking(&mut self) {
+    fn poll_blocking(&mut self) -> bool {
+        let mut has_entry = false;
         while let Ok(entry) = self.completed_rx.try_recv() {
             entry.notify();
+            has_entry = true;
         }
+        has_entry
     }
 
     fn poll_entries(&mut self) -> bool {
-        self.poll_blocking();
+        let mut has_entry = self.poll_blocking();
 
         let mut cqueue = self.inner.completion();
         cqueue.sync();
-        let has_entry = !cqueue.is_empty();
+        has_entry |= !cqueue.is_empty();
         for entry in cqueue {
             match entry.user_data() {
                 Self::CANCEL => {}
@@ -541,8 +544,6 @@ impl Driver {
         };
         while let Err(e) = self.pool.dispatch(closure) {
             closure = e.0;
-            // do something to avoid busy loop
-            self.poll_blocking();
             std::thread::yield_now();
         }
         self.poll_blocking();
