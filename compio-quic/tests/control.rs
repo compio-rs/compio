@@ -54,12 +54,12 @@ async fn ip_blocking() {
         .await
         .unwrap();
 
-    client2.shutdown().await.unwrap();
-    client1.shutdown().await.unwrap();
-
     shutdown_handle.notify();
 
     srv.await.unwrap();
+
+    client2.shutdown().await.unwrap();
+    client1.shutdown().await.unwrap();
 }
 
 #[compio_macros::test]
