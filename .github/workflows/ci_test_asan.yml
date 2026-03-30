@@ -36,6 +36,6 @@ jobs:
       - name: Setup nightly toolchain with rust-src
         run: rustup toolchain install nightly --component rust-src
       - name: Run ASan tests
-        run: cargo +nightly test --workspace --features all,nightly,io-compat,sync -Zbuild-std --target ${{ matrix.setup.target }}
+        run: cargo +nightly test --workspace --tests --lib --features all,nightly,io-compat,sync -Zbuild-std --target ${{ matrix.setup.target }}
         env:
           RUSTFLAGS: -Zsanitizer=address
