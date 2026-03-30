@@ -2,7 +2,7 @@ use std::{io, ops::Deref};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
-    AsFd, AsRawFd, BorrowedFd, RawFd, SharedFd, ToSharedFd,
+    AsFd, AsRawFd, BorrowedFd, BufferRef, RawFd, SharedFd, ToSharedFd,
     op::{BufResultExt, Read, ReadManaged, ResultTakeBuffer, Write},
 };
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite, util::Splittable};
@@ -12,7 +12,7 @@ use {
     compio_driver::op::{ReadVectored, WriteVectored},
 };
 
-use crate::{Attacher, BorrowedBuffer, BufferPool};
+use crate::{Attacher, Runtime};
 
 #[cfg(windows)]
 mod windows;
@@ -61,34 +61,22 @@ impl<T: AsFd + 'static> AsyncRead for AsyncFd<T> {
 }
 
 impl<T: AsFd + 'static> AsyncReadManaged for AsyncFd<T> {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
+    type Buffer = BufferRef;
 
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> io::Result<Self::Buffer<'a>> {
-        (&*self).read_managed(buffer_pool, len).await
+    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+        (&*self).read_managed(len).await
     }
 }
 
 impl<T: AsFd + 'static> AsyncReadManaged for &AsyncFd<T> {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
+    type Buffer = BufferRef;
 
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> io::Result<Self::Buffer<'a>> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+        let runtime = Runtime::current();
         let fd = self.to_shared_fd();
-        let buffer_pool = buffer_pool.try_inner()?;
-        let op = ReadManaged::new(fd, buffer_pool, len)?;
-        crate::submit(op)
-            .with_extra()
-            .await
-            .take_buffer(buffer_pool)
+        let op = ReadManaged::new(fd, &runtime.buffer_pool()?, len)?;
+        let res = runtime.submit(op).await;
+        unsafe { res.take_buffer() }
     }
 }
 

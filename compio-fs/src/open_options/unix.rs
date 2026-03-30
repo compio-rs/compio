@@ -1,10 +1,9 @@
 use std::{io, os::fd::AsFd, path::Path};
 
 use compio_buf::{IntoInner, buf_try};
-use compio_driver::{
-    ToSharedFd,
-    op::{CurrentDir, OpenFile},
-};
+#[cfg(dirfd)]
+use compio_driver::ToSharedFd;
+use compio_driver::op::{CurrentDir, OpenFile};
 
 use crate::{File, path_string};
 

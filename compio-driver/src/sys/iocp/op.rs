@@ -843,10 +843,11 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
 }
 
 impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
-    type Inner = (T, SockAddrStorage, socklen_t);
+    type Inner = (T, Option<SockAddr>);
 
     fn into_inner(self) -> Self::Inner {
-        (self.buffer, self.addr, self.addr_len)
+        let addr = (self.addr_len > 0).then(|| unsafe { SockAddr::new(self.addr, self.addr_len) });
+        (self.buffer, addr)
     }
 }
 
@@ -937,10 +938,11 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
 }
 
 impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
-    type Inner = (T, SockAddrStorage, socklen_t);
+    type Inner = (T, Option<SockAddr>);
 
     fn into_inner(self) -> Self::Inner {
-        (self.buffer, self.addr, self.addr_len)
+        let addr = (self.addr_len > 0).then(|| unsafe { SockAddr::new(self.addr, self.addr_len) });
+        (self.buffer, addr)
     }
 }
 
@@ -1162,15 +1164,12 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
-    type Inner = ((T, C), SockAddrStorage, socklen_t, usize);
+    type Inner = ((T, C), Option<SockAddr>, usize);
 
     fn into_inner(self) -> Self::Inner {
-        (
-            (self.buffer, self.control),
-            self.addr,
-            self.name_len,
-            self.control_len,
-        )
+        let addr = (self.name_len > 0).then(|| unsafe { SockAddr::new(self.addr, self.name_len) });
+
+        ((self.buffer, self.control), addr, self.control_len)
     }
 }
 

@@ -25,6 +25,7 @@ impl Extra {
     }
 }
 
+#[allow(dead_code)]
 #[cfg(not(fusion))]
 impl crate::sys::Extra {
     pub(crate) fn is_iour(&self) -> bool {

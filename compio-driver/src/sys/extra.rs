@@ -70,9 +70,10 @@ impl Extra {
     /// try to extract `buffer_id` returned by the kernel as a part of `flags`.
     /// If the id cannot be extracted from the flag, an [`InvalidInput`]
     /// [`io::Error`] will be returned. On other platforms, this will always
-    /// return `Ok(0)`.
+    /// return [`Unsupported`] error.
     ///
     /// [`InvalidInput`]: io::ErrorKind::InvalidInput
+    /// [`Unsupported`]: io::ErrorKind::Unsupported
     pub fn buffer_id(&self) -> io::Result<u16> {
         #[cfg(io_uring)]
         {
@@ -81,14 +82,18 @@ impl Extra {
                     .buffer_id()
                     .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "flags are invalid"))
             } else {
-                Ok(0)
+                Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "buffer_id is only supported on io_uring driver",
+                ))
             }
         }
         #[cfg(not(io_uring))]
         {
-            // On other platforms, buffer IDs are not supported nor used, so it's okay to
-            // return `Ok(0)`.
-            Ok(0)
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "buffer_id is only supported on io_uring driver",
+            ))
         }
     }
 }

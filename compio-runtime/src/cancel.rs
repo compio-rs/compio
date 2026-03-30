@@ -141,7 +141,7 @@ pub struct WaitFuture {
 impl WaitFuture {
     fn new(token: CancelToken) -> WaitFuture {
         WaitFuture {
-            listen: token.0.notify.listen(),
+            listen: token.listen(),
             token,
         }
     }

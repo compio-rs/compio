@@ -7,12 +7,13 @@ use std::ptr::null_mut;
 use std::{ffi::OsStr, io, os::windows::io::FromRawHandle, ptr::null};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
-use compio_driver::{AsRawFd, RawFd, ToSharedFd, impl_raw_fd, op::ConnectNamedPipe, syscall};
+use compio_driver::{
+    AsRawFd, BufferRef, RawFd, ToSharedFd, impl_raw_fd, op::ConnectNamedPipe, syscall,
+};
 use compio_io::{
     AsyncRead, AsyncReadAt, AsyncReadManaged, AsyncReadManagedAt, AsyncWrite, AsyncWriteAt,
     util::Splittable,
 };
-use compio_runtime::{BorrowedBuffer, BufferPool};
 use widestring::U16CString;
 use windows_sys::Win32::{
     Storage::FileSystem::{
@@ -205,29 +206,19 @@ impl AsyncRead for &NamedPipeServer {
 }
 
 impl AsyncReadManaged for NamedPipeServer {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
+    type Buffer = BufferRef;
 
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> io::Result<Self::Buffer<'a>> {
-        (&*self).read_managed(buffer_pool, len).await
+    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+        (&*self).read_managed(len).await
     }
 }
 
 impl AsyncReadManaged for &NamedPipeServer {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
+    type Buffer = BufferRef;
 
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> io::Result<Self::Buffer<'a>> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
         // The position is ignored.
-        self.handle.read_managed_at(buffer_pool, len, 0).await
+        self.handle.read_managed_at(len, 0).await
     }
 }
 
@@ -378,29 +369,19 @@ impl AsyncRead for &NamedPipeClient {
 }
 
 impl AsyncReadManaged for NamedPipeClient {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
+    type Buffer = BufferRef;
 
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> io::Result<Self::Buffer<'a>> {
-        (&*self).read_managed(buffer_pool, len).await
+    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+        (&*self).read_managed(len).await
     }
 }
 
 impl AsyncReadManaged for &NamedPipeClient {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
+    type Buffer = BufferRef;
 
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> io::Result<Self::Buffer<'a>> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
         // The position is ignored.
-        self.handle.read_managed_at(buffer_pool, len, 0).await
+        self.handle.read_managed_at(len, 0).await
     }
 }
 

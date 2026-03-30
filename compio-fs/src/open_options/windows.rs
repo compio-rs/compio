@@ -1,5 +1,6 @@
 use std::{io, os::windows::fs::OpenOptionsExt, path::Path};
 
+#[cfg(dirfd)]
 use compio_driver::ToSharedFd;
 use compio_runtime::ResumeUnwind;
 use windows_sys::Win32::Storage::FileSystem::{

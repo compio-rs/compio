@@ -10,13 +10,12 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner};
-use compio_driver::{
-    ToSharedFd,
-    op::{CurrentDir, PathStat, Stat},
-};
+#[cfg(dirfd)]
+use compio_driver::ToSharedFd;
+use compio_driver::op::{CurrentDir, PathStat, Stat};
 use compio_runtime::ResumeUnwind;
 
-use crate::{File, path_string};
+use crate::path_string;
 
 async fn metadata_impl(
     dir: impl AsFd + 'static,
@@ -38,12 +37,15 @@ pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
 }
 
 #[cfg(dirfd)]
-pub async fn metadata_at(dir: &File, path: impl AsRef<Path>) -> io::Result<Metadata> {
+pub async fn metadata_at(dir: &crate::File, path: impl AsRef<Path>) -> io::Result<Metadata> {
     metadata_impl(dir.to_shared_fd(), path, true).await
 }
 
 #[cfg(dirfd)]
-pub async fn symlink_metadata_at(dir: &File, path: impl AsRef<Path>) -> io::Result<Metadata> {
+pub async fn symlink_metadata_at(
+    dir: &crate::File,
+    path: impl AsRef<Path>,
+) -> io::Result<Metadata> {
     metadata_impl(dir.to_shared_fd(), path, false).await
 }
 

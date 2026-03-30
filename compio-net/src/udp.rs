@@ -1,8 +1,7 @@
 use std::{future::Future, io, net::SocketAddr};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_driver::impl_raw_fd;
-use compio_runtime::{BorrowedBuffer, BufferPool};
+use compio_driver::{BufferRef, impl_raw_fd};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::{MSG_NOSIGNAL, Socket, SocketOpts, ToSocketAddrsAsync};
@@ -211,31 +210,22 @@ impl UdpSocket {
         self.inner.recv_vectored(buffer, 0).await
     }
 
-    /// Read some bytes from this source with [`BufferPool`] and return
-    /// a [`BorrowedBuffer`].
+    /// Read some bytes from this source and return a [`BufferRef`].
     ///
-    /// If `len` == 0, will use [`BufferPool`] inner buffer size as the max len,
+    /// If `len` == 0, will use buffer pool's inner buffer size as the max len,
     /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
-    pub async fn recv_managed<'a>(
-        &self,
-        buffer_pool: &'a BufferPool,
-        len: usize,
-    ) -> io::Result<BorrowedBuffer<'a>> {
-        self.inner.recv_managed(buffer_pool, len, 0).await
+    pub async fn recv_managed(&self, len: usize) -> io::Result<BufferRef> {
+        self.inner.recv_managed(len, 0).await
     }
 
-    /// Read some bytes from this source with [`BufferPool`] and return
-    /// a [`BorrowedBuffer`] with the sender address.
+    /// Read some bytes from this source and the runtime's buffer pool and
+    /// return a [`BufferRef`] with the sender address.
     ///
-    /// If `len` == 0, will use [`BufferPool`] inner buffer size as the max len,
+    /// If `len` == 0, will use buffer pool's inner buffer size as the max len,
     /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
-    pub async fn recv_from_managed<'a>(
-        &self,
-        buffer_pool: &'a BufferPool,
-        len: usize,
-    ) -> io::Result<(BorrowedBuffer<'a>, SocketAddr)> {
+    pub async fn recv_from_managed(&self, len: usize) -> io::Result<(BufferRef, SocketAddr)> {
         self.inner
-            .recv_from_managed(buffer_pool, len, 0)
+            .recv_from_managed(len, 0)
             .await
             .map(|(buffer, addr)| {
                 let addr = addr

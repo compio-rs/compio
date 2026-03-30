@@ -7,13 +7,13 @@ use std::{
 };
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_driver::impl_raw_fd;
+use compio_driver::{BufferRef, impl_raw_fd};
 use compio_io::{
     AsyncRead, AsyncReadManaged, AsyncWrite,
     ancillary::{AsyncReadAncillary, AsyncWriteAncillary},
     util::Splittable,
 };
-use compio_runtime::{BorrowedBuffer, BufferPool, fd::PollFd};
+use compio_runtime::fd::PollFd;
 use futures_util::{Stream, StreamExt, stream::FusedStream};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
@@ -441,28 +441,18 @@ impl AsyncRead for &TcpStream {
 }
 
 impl AsyncReadManaged for TcpStream {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
+    type Buffer = BufferRef;
 
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> io::Result<Self::Buffer<'a>> {
-        (&*self).read_managed(buffer_pool, len).await
+    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+        (&*self).read_managed(len).await
     }
 }
 
 impl AsyncReadManaged for &TcpStream {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
+    type Buffer = BufferRef;
 
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> io::Result<Self::Buffer<'a>> {
-        self.inner.recv_managed(buffer_pool, len as _, 0).await
+    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+        self.inner.recv_managed(len as _, 0).await
     }
 }
 

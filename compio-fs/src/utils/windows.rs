@@ -1,8 +1,10 @@
 use std::{io, path::Path};
 
+#[cfg(dirfd)]
 use compio_driver::ToSharedFd;
 use compio_runtime::ResumeUnwind;
 
+#[cfg(dirfd)]
 use crate::File;
 
 pub async fn remove_file(path: impl AsRef<Path>) -> io::Result<()> {

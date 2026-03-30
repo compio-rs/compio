@@ -19,7 +19,7 @@ use polling::{Event, Events, Poller};
 use smallvec::SmallVec;
 
 use crate::{
-    AsyncifyPool, BufferPool, DriverType, Entry, ErasedKey, ProactorBuilder, control::Carrier,
+    AsyncifyPool, DriverType, Entry, ErasedKey, ProactorBuilder, control::Carrier,
     key::BorrowedKey, sys::op::Interest, syscall,
 };
 
@@ -714,31 +714,6 @@ impl Driver {
 
     pub fn waker(&self) -> Waker {
         Waker::from(self.notify.clone())
-    }
-
-    pub fn create_buffer_pool(
-        &mut self,
-        buffer_len: u16,
-        buffer_size: usize,
-    ) -> io::Result<BufferPool> {
-        #[cfg(fusion)]
-        {
-            Ok(BufferPool::new_poll(crate::FallbackBufferPool::new(
-                buffer_len,
-                buffer_size,
-            )))
-        }
-        #[cfg(not(fusion))]
-        {
-            Ok(BufferPool::new(buffer_len, buffer_size))
-        }
-    }
-
-    /// # Safety
-    ///
-    /// caller must make sure release the buffer pool with correct driver
-    pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
-        Ok(())
     }
 
     pub fn pop_multishot(&mut self, _: &ErasedKey) -> Option<BufResult<usize, crate::sys::Extra>> {

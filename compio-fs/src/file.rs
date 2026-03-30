@@ -4,11 +4,11 @@ use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 #[cfg(unix)]
 use compio_driver::op::FileStat;
 use compio_driver::{
-    ToSharedFd, impl_raw_fd,
-    op::{BufResultExt, CloseFile, ReadAt, ReadManagedAt, ResultTakeBuffer, Sync, WriteAt},
+    BufferRef, ResultTakeBuffer, ToSharedFd, impl_raw_fd,
+    op::{BufResultExt, CloseFile, ReadAt, ReadManagedAt, Sync, WriteAt},
 };
 use compio_io::{AsyncReadAt, AsyncReadManagedAt, AsyncWriteAt, util::Splittable};
-use compio_runtime::{Attacher, BorrowedBuffer, BufferPool};
+use compio_runtime::{Attacher, Runtime};
 #[cfg(all(unix, not(solarish)))]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
@@ -222,22 +222,17 @@ impl AsyncReadAt for File {
 }
 
 impl AsyncReadManagedAt for File {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
+    type Buffer = BufferRef;
 
-    async fn read_managed_at<'a>(
-        &self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-        pos: u64,
-    ) -> io::Result<Self::Buffer<'a>> {
+    async fn read_managed_at(&self, len: usize, pos: u64) -> io::Result<Self::Buffer> {
         let fd = self.inner.to_shared_fd();
-        let buffer_pool = buffer_pool.try_inner()?;
-        let op = ReadManagedAt::new(fd, pos, buffer_pool, len)?;
-        compio_runtime::submit(op)
-            .with_extra()
-            .await
-            .take_buffer(buffer_pool)
+        let res = Runtime::with_current(|rt| {
+            let buffer_pool = rt.buffer_pool()?;
+            let op = ReadManagedAt::new(fd, pos, &buffer_pool, len)?;
+            io::Result::Ok(rt.submit(op))
+        })?
+        .await;
+        unsafe { res.take_buffer() }
     }
 }
 

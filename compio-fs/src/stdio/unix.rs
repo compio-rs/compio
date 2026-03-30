@@ -1,9 +1,9 @@
 use std::io;
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_driver::{AsFd, AsRawFd, BorrowedFd, RawFd};
+use compio_driver::{AsFd, AsRawFd, BorrowedFd, BufferRef, RawFd};
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
-use compio_runtime::{BorrowedBuffer, BufferPool, fd::AsyncFd};
+use compio_runtime::fd::AsyncFd;
 
 #[cfg(doc)]
 use super::{stderr, stdin, stdout};
@@ -57,28 +57,18 @@ impl AsyncRead for &Stdin {
 }
 
 impl AsyncReadManaged for Stdin {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
+    type Buffer = BufferRef;
 
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> io::Result<Self::Buffer<'a>> {
-        (&*self).read_managed(buffer_pool, len).await
+    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+        (&*self).read_managed(len).await
     }
 }
 
 impl AsyncReadManaged for &Stdin {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
+    type Buffer = BufferRef;
 
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> io::Result<Self::Buffer<'a>> {
-        (&self.0).read_managed(buffer_pool, len).await
+    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+        (&self.0).read_managed(len).await
     }
 }
 

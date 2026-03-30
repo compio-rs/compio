@@ -4,20 +4,22 @@ use std::{
     mem::{ManuallyDrop, MaybeUninit},
 };
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, buf_try};
+use compio_buf::{
+    BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, SetLen, buf_try,
+};
 #[cfg(unix)]
 use compio_driver::op::{Bind, CreateSocket, Listen, ShutdownSocket};
 use compio_driver::{
-    AsRawFd, OpCode, ToSharedFd, impl_raw_fd,
+    AsRawFd, BufferRef, OpCode, ResultTakeBuffer, TakeBuffer, ToSharedFd, impl_raw_fd,
     op::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromManaged,
-        RecvFromVectored, RecvManaged, RecvMsg, RecvResultExt, RecvVectored, ResultTakeBuffer,
-        Send, SendMsg, SendMsgZc, SendTo, SendToVectored, SendToVectoredZc, SendToZc, SendVectored,
+        RecvFromVectored, RecvManaged, RecvMsg, RecvResultExt, RecvVectored, Send, SendMsg,
+        SendMsgZc, SendTo, SendToVectored, SendToVectoredZc, SendToZc, SendVectored,
         SendVectoredZc, SendZc, VecBufResultExt,
     },
     syscall,
 };
-use compio_runtime::{Attacher, BorrowedBuffer, BufferPool, fd::PollFd};
+use compio_runtime::{Attacher, Runtime, fd::PollFd};
 use futures_util::StreamExt;
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
@@ -213,34 +215,33 @@ impl Socket {
         unsafe { res.map_vec_advanced() }
     }
 
-    pub async fn recv_managed<'a>(
-        &self,
-        buffer_pool: &'a BufferPool,
-        len: usize,
-        flags: i32,
-    ) -> io::Result<BorrowedBuffer<'a>> {
+    pub async fn recv_managed(&self, len: usize, flags: i32) -> io::Result<BufferRef> {
         let fd = self.to_shared_fd();
-        let buffer_pool = buffer_pool.try_inner()?;
-        let op = RecvManaged::new(fd, buffer_pool, len, flags)?;
-        compio_runtime::submit(op)
-            .with_extra()
-            .await
-            .take_buffer(buffer_pool)
+        let res = Runtime::with_current(|rt| {
+            let buffer_pool = rt.buffer_pool()?;
+            let op = RecvManaged::new(fd, &buffer_pool, len, flags)?;
+            io::Result::Ok(rt.submit(op))
+        })?
+        .await;
+        unsafe { res.take_buffer() }
     }
 
-    pub async fn recv_from_managed<'a>(
+    pub async fn recv_from_managed(
         &self,
-        buffer_pool: &'a BufferPool,
         len: usize,
         flags: i32,
-    ) -> io::Result<(BorrowedBuffer<'a>, Option<SockAddr>)> {
+    ) -> io::Result<(BufferRef, Option<SockAddr>)> {
         let fd = self.to_shared_fd();
-        let buffer_pool = buffer_pool.try_inner()?;
-        let op = RecvFromManaged::new(fd, buffer_pool, len, flags)?;
-        compio_runtime::submit(op)
-            .with_extra()
-            .await
-            .take_buffer(buffer_pool)
+        let inner = Runtime::with_current(|rt| {
+            let buffer_pool = rt.buffer_pool()?;
+            let op = RecvFromManaged::new(fd, &buffer_pool, len, flags)?;
+            io::Result::Ok(rt.submit(op))
+        })?
+        .await;
+        let (len, op) = buf_try!(@try inner);
+        let (mut buf, addr) = op.take_buffer().expect("Buffer should be set");
+        unsafe { buf.advance_to(len) };
+        Ok((buf, addr))
     }
 
     pub async fn send<T: IoBuf>(&self, buffer: T, flags: i32) -> BufResult<usize, T> {

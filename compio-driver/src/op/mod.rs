@@ -6,8 +6,16 @@
 
 use std::{io, mem::ManuallyDrop};
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, SetLen};
-use socket2::{SockAddr, SockAddrStorage, socklen_t};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, SetLen, buf_try};
+use socket2::SockAddr;
+
+#[cfg(any(not(io_uring), fusion))]
+pub(crate) mod managed;
+
+#[cfg(not(io_uring))]
+pub use managed::{
+    ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvManaged, RecvMulti,
+};
 
 #[cfg(linux_all)]
 pub use crate::sys::op::Splice;
@@ -27,7 +35,64 @@ pub use crate::sys::op::{ConnectNamedPipe, DeviceIoControl};
 pub use crate::sys::op::{
     ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvManaged, RecvMulti,
 };
-use crate::{Extra, OwnedFd, SharedFd, TakeBuffer};
+use crate::{BufferRef, OwnedFd, SharedFd};
+
+/// Take buffer out of an operation.
+pub trait TakeBuffer {
+    /// Type of the buffer.
+    type Buffer;
+
+    /// Take buffer.
+    fn take_buffer(self) -> Option<Self::Buffer>;
+}
+
+impl<I> TakeBuffer for I
+where
+    I: IntoInner<Inner: IoBuf>,
+{
+    type Buffer = I::Inner;
+
+    fn take_buffer(self) -> Option<Self::Buffer> {
+        Some(self.into_inner())
+    }
+}
+
+/// Helper trait for taking buffer from a [`BufResult`].
+pub trait ResultTakeBuffer {
+    /// Type of the buffer.
+    type Buffer;
+
+    /// Call [`SetLen::advance_to`] if the result is [`Ok`] and return the
+    /// buffer as result.
+    ///
+    /// # Safety
+    ///
+    /// The result value must be a valid length to advance to.
+    unsafe fn take_buffer(self) -> io::Result<Self::Buffer>;
+}
+
+impl ResultTakeBuffer for BufResult<usize, BufferRef> {
+    type Buffer = BufferRef;
+
+    unsafe fn take_buffer(self) -> io::Result<BufferRef> {
+        let (len, mut buf) = buf_try!(@try self);
+        unsafe { buf.advance_to(len) };
+
+        Ok(buf)
+    }
+}
+
+impl<I: TakeBuffer<Buffer: IoBuf + SetLen>> ResultTakeBuffer for BufResult<usize, I> {
+    type Buffer = I::Buffer;
+
+    unsafe fn take_buffer(self) -> io::Result<I::Buffer> {
+        let (len, buf) = buf_try!(@try self);
+        let mut buf = buf.take_buffer().expect("Should have been set");
+        unsafe { buf.advance_to(len) };
+
+        Ok(buf)
+    }
+}
 
 /// Trait to update the buffer length inside the [`BufResult`].
 pub trait BufResultExt {
@@ -132,70 +197,29 @@ pub trait RecvResultExt {
     fn map_addr(self) -> Self::RecvResult;
 }
 
-impl<T> RecvResultExt for BufResult<usize, (T, SockAddrStorage, socklen_t)> {
+impl<T> RecvResultExt for BufResult<usize, (T, Option<SockAddr>)> {
     type RecvResult = BufResult<(usize, Option<SockAddr>), T>;
 
     fn map_addr(self) -> Self::RecvResult {
-        self.map_buffer(|(buffer, addr_buffer, addr_size)| (buffer, addr_buffer, addr_size, 0))
+        self.map_buffer(|(buffer, addr)| (buffer, addr, 0))
             .map_addr()
             .map_res(|(res, _, addr)| (res, addr))
     }
 }
 
-impl<T> RecvResultExt for BufResult<usize, (T, SockAddrStorage, socklen_t, usize)> {
+impl<T> RecvResultExt for BufResult<usize, (T, Option<SockAddr>, usize)> {
     type RecvResult = BufResult<(usize, usize, Option<SockAddr>), T>;
 
     fn map_addr(self) -> Self::RecvResult {
         self.map2(
-            |res, (buffer, addr_buffer, addr_size, len)| {
-                let addr =
-                    (addr_size > 0).then(|| unsafe { SockAddr::new(addr_buffer, addr_size) });
-                ((res, len, addr), buffer)
-            },
+            |res, (buffer, addr, len)| ((res, len, addr), buffer),
             |(buffer, ..)| buffer,
         )
     }
 }
 
 /// Helper trait for [`ReadManagedAt`] and [`RecvManaged`].
-pub trait ResultTakeBuffer {
-    /// The buffer pool of the op.
-    type BufferPool;
-    /// The buffer type of the op.
-    type Buffer<'a>;
-
-    /// Take the buffer from result.
-    fn take_buffer(self, pool: &Self::BufferPool) -> io::Result<Self::Buffer<'_>>;
-}
-
-impl<T: TakeBuffer> ResultTakeBuffer for (BufResult<usize, T>, Extra) {
-    type Buffer<'a> = T::Buffer<'a>;
-    type BufferPool = T::BufferPool;
-
-    fn take_buffer(self, pool: &Self::BufferPool) -> io::Result<Self::Buffer<'_>> {
-        let (BufResult(result, op), extra) = self;
-        op.take_buffer(pool, result, extra.buffer_id()?)
-    }
-}
-
-impl ResultTakeBuffer for BufResult<usize, Extra> {
-    type Buffer<'a> = crate::BorrowedBuffer<'a>;
-    type BufferPool = crate::BufferPool;
-
-    fn take_buffer(self, pool: &Self::BufferPool) -> io::Result<Self::Buffer<'_>> {
-        #[cfg(io_uring)]
-        {
-            let BufResult(result, extra) = self;
-            crate::sys::take_buffer(pool, result, extra.buffer_id()?)
-        }
-        #[cfg(not(io_uring))]
-        {
-            let _pool = pool;
-            unreachable!("take_buffer should not be called for non-io-uring ops")
-        }
-    }
-}
-
+///
 /// Spawn a blocking function in the thread pool.
 pub struct Asyncify<F, D> {
     pub(crate) f: Option<F>,
@@ -418,176 +442,6 @@ impl<S> Connect<S> {
         Self { fd, addr }
     }
 }
-
-#[cfg(any(not(io_uring), fusion))]
-pub(crate) mod managed {
-    use std::io;
-
-    use compio_buf::IntoInner;
-    use socket2::SockAddr;
-
-    use super::{Read, ReadAt, Recv, RecvFrom};
-    use crate::{AsFd, BorrowedBuffer, BufferPool, FallbackOwnedBuffer, TakeBuffer};
-
-    fn take_buffer(
-        slice: FallbackOwnedBuffer,
-        buffer_pool: &BufferPool,
-        result: io::Result<usize>,
-    ) -> io::Result<BorrowedBuffer<'_>> {
-        let result = result?;
-        #[cfg(fusion)]
-        let buffer_pool = buffer_pool.as_poll();
-        // SAFETY: result is valid
-        let res = unsafe { buffer_pool.create_proxy(slice, result) };
-        #[cfg(fusion)]
-        let res = BorrowedBuffer::new_poll(res);
-        Ok(res)
-    }
-
-    /// Read a file at specified position into managed buffer.
-    pub struct ReadManagedAt<S> {
-        pub(crate) op: ReadAt<FallbackOwnedBuffer, S>,
-    }
-
-    impl<S> ReadManagedAt<S> {
-        /// Create [`ReadManagedAt`].
-        pub fn new(fd: S, offset: u64, pool: &BufferPool, len: usize) -> io::Result<Self> {
-            #[cfg(fusion)]
-            let pool = pool.as_poll();
-            Ok(Self {
-                op: ReadAt::new(fd, offset, pool.get_buffer(len)?),
-            })
-        }
-    }
-
-    impl<S> TakeBuffer for ReadManagedAt<S> {
-        type Buffer<'a> = BorrowedBuffer<'a>;
-        type BufferPool = BufferPool;
-
-        fn take_buffer(
-            self,
-            buffer_pool: &BufferPool,
-            result: io::Result<usize>,
-            _: u16,
-        ) -> io::Result<BorrowedBuffer<'_>> {
-            take_buffer(self.op.into_inner(), buffer_pool, result)
-        }
-    }
-
-    /// Read a file into managed buffer.
-    pub struct ReadManaged<S> {
-        pub(crate) op: Read<FallbackOwnedBuffer, S>,
-    }
-
-    impl<S> ReadManaged<S> {
-        /// Create [`ReadManaged`].
-        pub fn new(fd: S, pool: &BufferPool, len: usize) -> io::Result<Self> {
-            #[cfg(fusion)]
-            let pool = pool.as_poll();
-            Ok(Self {
-                op: Read::new(fd, pool.get_buffer(len)?),
-            })
-        }
-    }
-
-    impl<S> TakeBuffer for ReadManaged<S> {
-        type Buffer<'a> = BorrowedBuffer<'a>;
-        type BufferPool = BufferPool;
-
-        fn take_buffer(
-            self,
-            buffer_pool: &Self::BufferPool,
-            result: io::Result<usize>,
-            _: u16,
-        ) -> io::Result<Self::Buffer<'_>> {
-            take_buffer(self.op.into_inner(), buffer_pool, result)
-        }
-    }
-
-    /// Receive data from remote into managed buffer.
-    ///
-    /// It is only used for socket operations. If you want to read from a pipe,
-    /// use [`ReadManaged`].
-    pub struct RecvManaged<S> {
-        pub(crate) op: Recv<FallbackOwnedBuffer, S>,
-    }
-
-    impl<S> RecvManaged<S> {
-        /// Create [`RecvManaged`].
-        pub fn new(fd: S, pool: &BufferPool, len: usize, flags: i32) -> io::Result<Self> {
-            #[cfg(fusion)]
-            let pool = pool.as_poll();
-            Ok(Self {
-                op: Recv::new(fd, pool.get_buffer(len)?, flags),
-            })
-        }
-    }
-
-    impl<S> TakeBuffer for RecvManaged<S> {
-        type Buffer<'a> = BorrowedBuffer<'a>;
-        type BufferPool = BufferPool;
-
-        fn take_buffer(
-            self,
-            buffer_pool: &Self::BufferPool,
-            result: io::Result<usize>,
-            _: u16,
-        ) -> io::Result<Self::Buffer<'_>> {
-            take_buffer(self.op.into_inner(), buffer_pool, result)
-        }
-    }
-
-    /// Receive data and source address into managed buffer.
-    pub struct RecvFromManaged<S: AsFd> {
-        pub(crate) op: RecvFrom<FallbackOwnedBuffer, S>,
-    }
-
-    impl<S: AsFd> RecvFromManaged<S> {
-        /// Create [`RecvFromManaged`].
-        pub fn new(fd: S, pool: &BufferPool, len: usize, flags: i32) -> io::Result<Self> {
-            #[cfg(fusion)]
-            let pool = pool.as_poll();
-            Ok(Self {
-                op: RecvFrom::new(fd, pool.get_buffer(len)?, flags),
-            })
-        }
-    }
-
-    impl<S: AsFd> TakeBuffer for RecvFromManaged<S> {
-        type Buffer<'a> = (BorrowedBuffer<'a>, Option<SockAddr>);
-        type BufferPool = BufferPool;
-
-        fn take_buffer(
-            self,
-            buffer_pool: &Self::BufferPool,
-            result: io::Result<usize>,
-            _: u16,
-        ) -> io::Result<Self::Buffer<'_>> {
-            let result = result?;
-            #[cfg(fusion)]
-            let buffer_pool = buffer_pool.as_poll();
-            let (slice, addr_buffer, addr_size) = self.op.into_inner();
-            let addr = (addr_size > 0).then(|| unsafe { SockAddr::new(addr_buffer, addr_size) });
-            // SAFETY: result is valid
-            let res = unsafe { buffer_pool.create_proxy(slice, result) };
-            #[cfg(fusion)]
-            let res = BorrowedBuffer::new_poll(res);
-            Ok((res, addr))
-        }
-    }
-
-    /// Read a file at specified position into multiple managed buffers.
-    pub type ReadMultiAt<S> = ReadManagedAt<S>;
-    /// Read a file into multiple managed buffers.
-    pub type ReadMulti<S> = ReadManaged<S>;
-    /// Receive data from remote into multiple managed buffers.
-    pub type RecvMulti<S> = RecvManaged<S>;
-}
-
-#[cfg(not(io_uring))]
-pub use managed::{
-    ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvManaged, RecvMulti,
-};
 
 bitflags::bitflags! {
     /// Flags for operations.

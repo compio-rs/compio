@@ -6,7 +6,6 @@ use compio_fs::pipe;
 use compio_io::AsyncReadManagedAt;
 #[cfg(unix)]
 use compio_io::{AsyncReadManaged, AsyncWriteExt};
-use compio_runtime::BufferPool;
 use tempfile::NamedTempFile;
 
 const HELLO: &[u8] = b"hello world...";
@@ -21,8 +20,7 @@ async fn test_read_file() {
     tempfile.write_all(HELLO).unwrap();
 
     let file = File::open(tempfile.path()).await.unwrap();
-    let buffer_pool = BufferPool::new(1, 15).unwrap();
-    let buf = file.read_managed_at(&buffer_pool, 0, 0).await.unwrap();
+    let buf = file.read_managed_at(0, 0).await.unwrap();
 
     assert_eq!(buf.len(), HELLO.len());
     assert_eq!(buf.as_ref(), HELLO);
@@ -34,8 +32,7 @@ async fn test_read_pipe() {
     let (mut rx, mut tx) = pipe::anonymous().await.unwrap();
     tx.write_all(HELLO).await.unwrap();
 
-    let buffer_pool = BufferPool::new(1, 15).unwrap();
-    let buf = rx.read_managed(&buffer_pool, 0).await.unwrap();
+    let buf = rx.read_managed(0).await.unwrap();
 
     assert_eq!(buf.len(), HELLO.len());
     assert_eq!(buf.as_ref(), HELLO);

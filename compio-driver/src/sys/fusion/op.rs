@@ -4,6 +4,7 @@ use compio_buf::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use socket2::SockAddr;
 
 use super::*;
+use crate::BufferRef;
 pub use crate::sys::unix_op::*;
 
 macro_rules! op {
@@ -154,9 +155,9 @@ op!(<T: IoVectoredBuf, C: IoBuf, S: AsFd> SendMsgZc(fd: S, buffer: T, control: C
 
 macro_rules! mop {
     (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? ) with $pool:ident) => {
-        mop!{ < $($ty: $trait),* > $name ( $( $arg: $arg_t ),* ) with $pool, buffer: crate::BorrowedBuffer<'a> }
+        mop!(<$($ty: $trait),*> $name( $($arg: $arg_t),* ) with $pool; crate::BufferRef);
     };
-    (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? ) with $pool:ident, buffer: $buffer:ty) => {
+    (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? ) with $pool:ident; $inner:ty) => {
         ::paste::paste!{
             enum [< $name Inner >] <$($ty: $trait),*> {
                 Poll(crate::op::managed::$name<$($ty),*>),
@@ -187,7 +188,7 @@ macro_rules! mop {
             impl<$($ty: $trait),*> $name <$($ty),*> {
                 #[doc = concat!("Create a new `", stringify!($name), "`.")]
                 pub fn new($($arg: $arg_t),*) -> std::io::Result<Self> {
-                    Ok(if $pool.is_io_uring() {
+                    Ok(if $pool.is_io_uring()? {
                         Self {
                             inner: [< $name Inner >]::IoUring(iour::$name::new($($arg),*)?),
                         }
@@ -199,23 +200,13 @@ macro_rules! mop {
                 }
             }
 
-            impl<$($ty: $trait),*> crate::TakeBuffer for $name<$($ty),*> {
-                type BufferPool = crate::BufferPool;
-                type Buffer<'a> = $buffer;
+            impl <$($ty: $trait),*> crate::TakeBuffer for $name <$($ty),*> {
+                type Buffer = $inner;
 
-                fn take_buffer(
-                    self,
-                    buffer_pool: &Self::BufferPool,
-                    result: io::Result<usize>,
-                    buffer_id: u16,
-                ) -> io::Result<Self::Buffer<'_>> {
+                fn take_buffer(self) -> Option<$inner> {
                     match self.inner {
-                        [< $name Inner >]::Poll(inner) => {
-                            Ok(inner.take_buffer(buffer_pool, result, buffer_id)?)
-                        }
-                        [< $name Inner >]::IoUring(inner) => {
-                            Ok(inner.take_buffer(buffer_pool, result, buffer_id)?)
-                        }
+                        [< $name Inner >]::IoUring(op) => op.take_buffer(),
+                        [< $name Inner >]::Poll(op) => op.take_buffer(),
                     }
                 }
             }
@@ -280,7 +271,7 @@ macro_rules! mop {
 mop!(<S: AsFd> ReadManagedAt(fd: S, offset: u64, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> ReadManaged(fd: S, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> RecvManaged(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool);
-mop!(<S: AsFd> RecvFromManaged(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool, buffer: (crate::BorrowedBuffer<'a>, Option<SockAddr>));
+mop!(<S: AsFd> RecvFromManaged(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool; (BufferRef, Option<SockAddr>));
 mop!(<S: AsFd> ReadMultiAt(fd: S, offset: u64, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> ReadMulti(fd: S, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> RecvMulti(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool);

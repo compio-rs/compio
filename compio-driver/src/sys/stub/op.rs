@@ -319,7 +319,7 @@ impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
 }
 
 impl<T: IoBufMut, S: AsFd> IntoInner for RecvFrom<T, S> {
-    type Inner = (T, SockAddrStorage, socklen_t);
+    type Inner = (T, Option<SockAddr>);
 
     fn into_inner(self) -> Self::Inner {
         stub_unimpl()
@@ -347,7 +347,7 @@ impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
 }
 
 impl<T: IoVectoredBufMut, S: AsFd> IntoInner for RecvFromVectored<T, S> {
-    type Inner = (T, SockAddrStorage, socklen_t);
+    type Inner = (T, Option<SockAddr>);
 
     fn into_inner(self) -> Self::Inner {
         stub_unimpl()

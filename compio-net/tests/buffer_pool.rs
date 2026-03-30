@@ -2,7 +2,6 @@ use std::net::Ipv6Addr;
 
 use compio_io::{AsyncReadManaged, AsyncWriteExt};
 use compio_net::{TcpListener, TcpStream, UdpSocket, UnixListener, UnixStream};
-use compio_runtime::BufferPool;
 
 #[compio_macros::test]
 async fn test_tcp_read_buffer_pool() {
@@ -15,17 +14,13 @@ async fn test_tcp_read_buffer_pool() {
     })
     .detach();
 
-    let buffer_pool = BufferPool::new(1, 4).unwrap();
     let mut stream = TcpStream::connect(addr).await.unwrap();
 
-    assert_eq!(
-        stream.read_managed(&buffer_pool, 0).await.unwrap().as_ref(),
-        b"test"
-    );
+    assert_eq!(stream.read_managed(0).await.unwrap().as_ref(), b"test");
 
     assert_eq!(
         stream
-            .read_managed(&buffer_pool, 0)
+            .read_managed(0)
             .await
             .map(|b| b.len())
             .unwrap_or_default(),
@@ -46,16 +41,7 @@ async fn test_udp_read_buffer_pool() {
     })
     .detach();
 
-    let buffer_pool = BufferPool::new(1, 4).unwrap();
-
-    assert_eq!(
-        connected
-            .recv_managed(&buffer_pool, 0)
-            .await
-            .unwrap()
-            .as_ref(),
-        b"test"
-    );
+    assert_eq!(connected.recv_managed(0).await.unwrap().as_ref(), b"test");
 }
 
 #[compio_macros::test]
@@ -70,8 +56,7 @@ async fn test_udp_recv_from_buffer_pool() {
     })
     .detach();
 
-    let buffer_pool = BufferPool::new(1, 4).unwrap();
-    let (buffer, addr) = listener.recv_from_managed(&buffer_pool, 0).await.unwrap();
+    let (buffer, addr) = listener.recv_from_managed(0).await.unwrap();
     assert_eq!(buffer.as_ref(), b"test");
     assert_eq!(addr, connected_addr);
 }
@@ -92,17 +77,13 @@ async fn test_uds_recv_buffer_pool() {
     })
     .detach();
 
-    let buffer_pool = BufferPool::new(1, 4).unwrap();
     let mut stream = UnixStream::connect(&sock_path).await.unwrap();
 
-    assert_eq!(
-        stream.read_managed(&buffer_pool, 0).await.unwrap().as_ref(),
-        b"test"
-    );
+    assert_eq!(stream.read_managed(0).await.unwrap().as_ref(), b"test");
 
     assert_eq!(
         stream
-            .read_managed(&buffer_pool, 0)
+            .read_managed(0)
             .await
             .map(|b| b.len())
             .unwrap_or_default(),

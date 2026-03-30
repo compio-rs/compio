@@ -7,12 +7,12 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
-    OpCode, OpType, ToSharedFd,
-    op::{BufResultExt, Read, ReadManaged, ResultTakeBuffer, Write},
+    BufferRef, OpCode, OpType, ResultTakeBuffer, ToSharedFd,
+    op::{BufResultExt, Read, ReadManaged, Write},
     syscall,
 };
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
-use compio_runtime::{BorrowedBuffer, BufferPool};
+use compio_runtime::Runtime;
 use windows_sys::Win32::System::{IO::OVERLAPPED, Threading::GetExitCodeProcess};
 
 use crate::{ChildStderr, ChildStdin, ChildStdout};
@@ -66,21 +66,17 @@ impl AsyncRead for ChildStdout {
 }
 
 impl AsyncReadManaged for ChildStdout {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
+    type Buffer = BufferRef;
 
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> io::Result<Self::Buffer<'a>> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
         let fd = self.to_shared_fd();
-        let buffer_pool = buffer_pool.try_inner()?;
-        let op = ReadManaged::new(fd, buffer_pool, len)?;
-        compio_runtime::submit(op)
-            .with_extra()
-            .await
-            .take_buffer(buffer_pool)
+        let res = Runtime::with_current(|rt| {
+            let buffer_pool = rt.buffer_pool()?;
+            let op = ReadManaged::new(fd, &buffer_pool, len)?;
+            io::Result::Ok(rt.submit(op))
+        })?
+        .await;
+        unsafe { res.take_buffer() }
     }
 }
 
@@ -94,21 +90,17 @@ impl AsyncRead for ChildStderr {
 }
 
 impl AsyncReadManaged for ChildStderr {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
+    type Buffer = BufferRef;
 
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> io::Result<Self::Buffer<'a>> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
         let fd = self.to_shared_fd();
-        let buffer_pool = buffer_pool.try_inner()?;
-        let op = ReadManaged::new(fd, buffer_pool, len)?;
-        compio_runtime::submit(op)
-            .with_extra()
-            .await
-            .take_buffer(buffer_pool)
+        let res = Runtime::with_current(|rt| {
+            let buffer_pool = rt.buffer_pool()?;
+            let op = ReadManaged::new(fd, &buffer_pool, len)?;
+            io::Result::Ok(rt.submit(op))
+        })?
+        .await;
+        unsafe { res.take_buffer() }
     }
 }
 

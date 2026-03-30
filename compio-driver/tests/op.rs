@@ -1,15 +1,16 @@
 use std::{
     io::{self, Write as _},
     net::{TcpListener, TcpStream},
+    num::NonZeroU16,
     time::Duration,
 };
 
-use compio_buf::BufResult;
+use compio_buf::{BufResult, SetLen};
 #[cfg(unix)]
 use compio_driver::op::{AcceptMulti, Pipe, ReadMulti, Write};
 use compio_driver::{
-    AsRawFd, Extra, OpCode, OwnedFd, Proactor, PushEntry, SharedFd, TakeBuffer,
-    op::{Asyncify, CloseFile, CloseSocket, ReadAt, ReadManagedAt, RecvMulti, ResultTakeBuffer},
+    AsRawFd, Extra, OpCode, OwnedFd, Proactor, PushEntry, ResultTakeBuffer, SharedFd, TakeBuffer,
+    op::{Asyncify, CloseFile, CloseSocket, ReadAt, ReadManagedAt, RecvMulti},
 };
 
 #[cfg(unix)]
@@ -70,22 +71,6 @@ fn open_file(driver: &mut Proactor) -> OwnedFd {
     );
     let (_, op) = push_and_wait(driver, op).unwrap();
     op.into_inner()
-}
-
-fn push_and_wait_extra<O: OpCode + 'static>(
-    driver: &mut Proactor,
-    op: O,
-) -> (BufResult<usize, O>, Option<Extra>) {
-    match driver.push(op) {
-        PushEntry::Ready(res) => (res, None),
-        PushEntry::Pending(mut user_data) => loop {
-            driver.poll(None).unwrap();
-            match driver.pop_with_extra(user_data) {
-                PushEntry::Pending(k) => user_data = k,
-                PushEntry::Ready((res, extra)) => break (res, Some(extra)),
-            }
-        },
-    }
 }
 
 fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult<usize, O> {
@@ -248,23 +233,17 @@ fn managed() {
     let fd = SharedFd::new(fd);
     driver.attach(fd.as_raw_fd()).unwrap();
 
-    let pool = driver.create_buffer_pool(4, 1024).unwrap();
+    let pool = driver.buffer_pool().unwrap();
 
     let op = ReadManagedAt::new(fd.clone(), 0, &pool, 1024).unwrap();
-    let (BufResult(res, op), extra) = push_and_wait_extra(&mut driver, op);
+    let res = push_and_wait(&mut driver, op);
 
-    let buffer_id = extra.unwrap().buffer_id().expect("Buffer ID missing");
-
-    let buffer = op.take_buffer(&pool, res, buffer_id).unwrap();
+    let buffer = unsafe { res.take_buffer() }.unwrap();
     println!("{}", std::str::from_utf8(&buffer).unwrap());
     drop(buffer);
 
     let op = CloseFile::new(fd.try_unwrap().unwrap());
     push_and_wait(&mut driver, op).unwrap();
-
-    unsafe {
-        driver.release_buffer_pool(pool).unwrap();
-    }
 }
 
 #[test]
@@ -274,6 +253,8 @@ fn read_multi() {
 
     let mut driver = Proactor::new().unwrap();
 
+    let pool = driver.buffer_pool().unwrap();
+
     let op = Pipe::new();
     let (_, op) = push_and_wait(&mut driver, op).unwrap();
     let (r, w) = op.into_inner();
@@ -281,34 +262,33 @@ fn read_multi() {
     let op = Write::new(w, b"hello world");
     push_and_wait(&mut driver, op).unwrap();
 
-    let pool = driver.create_buffer_pool(4, 1024).unwrap();
-
     let op = ReadMulti::new(r, &pool, 0).unwrap();
     let buffer = push_and_wait_multi(&mut driver, op)
-        .map(|BufResult(res, (extra, op))| {
-            if let Some(op) = op {
-                (BufResult(res, op), extra).take_buffer(&pool)
+        .try_fold(Vec::new(), |mut acc, BufResult(res, (extra, op))| {
+            let mut buf = if let Some(op) = op {
+                op.take_buffer()
             } else {
-                BufResult(res, extra).take_buffer(&pool)
-            }
-            .map(|buf| buf.to_vec())
-            .unwrap_or_default()
+                pool.take(extra.buffer_id()?)?
+            };
+            if let Some(ref mut buf) = buf {
+                unsafe { buf.advance_to(res?) }
+                acc.extend_from_slice(buf);
+            };
+            io::Result::Ok(acc)
         })
-        .collect::<Vec<_>>()
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
+        .unwrap();
 
     assert_eq!(buffer, b"hello world");
-
-    unsafe {
-        driver.release_buffer_pool(pool).unwrap();
-    }
 }
 
 #[test]
 fn recv_multi() {
-    let mut driver = Proactor::new().unwrap();
+    let mut driver = Proactor::builder()
+        .buffer_pool_size(NonZeroU16::new(16).unwrap())
+        .build()
+        .unwrap();
+
+    let pool = driver.buffer_pool().unwrap();
 
     let server = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = server.local_addr().unwrap();
@@ -328,25 +308,23 @@ fn recv_multi() {
 
     driver.attach(stream.as_raw_fd()).unwrap();
 
-    let pool = driver.create_buffer_pool(4, 1024).unwrap();
-
     let mut buffer = vec![];
     loop {
         let op = RecvMulti::new(stream.clone(), &pool, 0, 0).unwrap();
         let slice = push_and_wait_multi(&mut driver, op)
-            .map(|BufResult(res, (extra, op))| {
-                if let Some(op) = op {
-                    (BufResult(res, op), extra).take_buffer(&pool)
+            .try_fold(Vec::new(), |mut acc, BufResult(res, (extra, op))| {
+                let mut buf = if let Some(op) = op {
+                    op.take_buffer()
                 } else {
-                    BufResult(res, extra).take_buffer(&pool)
-                }
-                .map(|buf| buf.to_vec())
-                .unwrap_or_default()
+                    pool.take(extra.buffer_id()?)?
+                };
+                if let Some(ref mut buf) = buf {
+                    unsafe { buf.advance_to(res?) }
+                    acc.extend_from_slice(buf);
+                };
+                io::Result::Ok(acc)
             })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
+            .unwrap();
         if slice.is_empty() {
             break;
         }
@@ -357,10 +335,6 @@ fn recv_multi() {
     let stream = stream.try_unwrap().unwrap();
     let op = CloseSocket::new(stream.into());
     push_and_wait(&mut driver, op).unwrap();
-
-    unsafe {
-        driver.release_buffer_pool(pool).unwrap();
-    }
 }
 
 #[cfg(unix)]
