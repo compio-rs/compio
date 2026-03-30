@@ -1,6 +1,6 @@
 use std::net::Ipv6Addr;
 
-use compio_io::{AsyncReadManaged, AsyncWrite, AsyncWriteExt};
+use compio_io::{AsyncReadManaged, AsyncWriteExt};
 use compio_net::{TcpListener, TcpStream, UdpSocket, UnixListener, UnixStream};
 use compio_runtime::BufferPool;
 
@@ -86,23 +86,22 @@ async fn test_uds_recv_buffer_pool() {
 
     let listener = UnixListener::bind(&sock_path).await.unwrap();
 
-    let (mut client, (mut server, _)) =
-        futures_util::try_join!(UnixStream::connect(&sock_path), listener.accept()).unwrap();
-
-    client.write_all("test").await.unwrap();
+    compio_runtime::spawn(async move {
+        let mut stream = listener.accept().await.unwrap().0;
+        stream.write_all(b"test").await.unwrap();
+    })
+    .detach();
 
     let buffer_pool = BufferPool::new(1, 4).unwrap();
+    let mut stream = UnixStream::connect(&sock_path).await.unwrap();
 
     assert_eq!(
-        server.read_managed(&buffer_pool, 0).await.unwrap().as_ref(),
+        stream.read_managed(&buffer_pool, 0).await.unwrap().as_ref(),
         b"test"
     );
 
-    client.shutdown().await.unwrap();
-    client.close().await.unwrap();
-
     assert_eq!(
-        server
+        stream
             .read_managed(&buffer_pool, 0)
             .await
             .map(|b| b.len())
