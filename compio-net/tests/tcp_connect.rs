@@ -2,7 +2,7 @@
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
-use compio_net::{TcpListener, TcpStream, ToSocketAddrsAsync};
+use compio_net::{TcpListener, TcpSocket, TcpStream, ToSocketAddrsAsync};
 use compio_runtime::ResumeUnwind;
 
 async fn test_connect_ip_impl(
@@ -57,7 +57,13 @@ async fn test_bind_and_connect_ip_impl(
         socket
     });
 
-    let mine = TcpStream::bind_and_connect(bind_addr, &addr).await.unwrap();
+    let mine = if bind_addr.is_ipv4() {
+        TcpSocket::new_v4().await.unwrap()
+    } else {
+        TcpSocket::new_v6().await.unwrap()
+    };
+    mine.bind(bind_addr).await.unwrap();
+    let mine = mine.connect(addr).await.unwrap();
     let theirs = task.await.resume_unwind().expect("shouldn't be canceled");
 
     assert_eq!(mine.local_addr().unwrap(), theirs.peer_addr().unwrap());
