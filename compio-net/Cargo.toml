@@ -46,4 +46,5 @@ tempfile = { workspace = true }
 [features]
 # Nightly features
 once_cell_try = []
-nightly = ["once_cell_try"]
+sanitize = []
+nightly = ["once_cell_try", "sanitize"]

@@ -194,6 +194,7 @@ async fn compat_ping_pong() {
 
         let msg = ws.next().await.unwrap().unwrap();
         assert!(matches!(msg, Message::Ping(_)));
+        ws.close().await.unwrap();
     })
     .detach();
 
@@ -211,4 +212,7 @@ async fn compat_ping_pong() {
 
     let response = ws.next().await.unwrap().unwrap();
     assert_eq!(response, Message::Pong(ping_data.into()));
+
+    let response = ws.next().await.unwrap().unwrap();
+    assert!(response.is_close());
 }

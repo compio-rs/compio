@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "sanitize", feature(cfg_sanitize))]
+
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use compio_net::{TcpListener, TcpStream, ToSocketAddrsAsync};
@@ -96,9 +98,10 @@ async fn test_connect_impl<A: ToSocketAddrsAsync>(mapping: impl FnOnce(&TcpListe
 }
 
 macro_rules! test_connect {
-    ($(($ident:ident, $mapping:tt),)*) => {
+    ($(($(#[$m:meta])* $ident:ident, $mapping:tt),)*) => {
         $(
             #[compio_macros::test]
+            $(#[$m])*
             async fn $ident() {
                 #[allow(unused_parens)]
                 test_connect_impl($mapping).await;
@@ -111,7 +114,7 @@ test_connect! {
     (ip_string, (|listener: &TcpListener| {
         format!("127.0.0.1:{}", listener.local_addr().unwrap().port())
     })),
-    (ip_str, (|listener: &TcpListener| {
+    (#[cfg_attr(feature = "sanitize", cfg(not(sanitize = "address")))] ip_str, (|listener: &TcpListener| {
         let s = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
         let slice: &str = &*Box::leak(s.into_boxed_str());
         slice
@@ -120,7 +123,7 @@ test_connect! {
         let addr = listener.local_addr().unwrap();
         (addr.ip(), addr.port())
     })),
-    (ip_port_tuple_ref, (|listener: &TcpListener| {
+    (#[cfg_attr(feature = "sanitize", cfg(not(sanitize = "address")))] ip_port_tuple_ref, (|listener: &TcpListener| {
         let addr = listener.local_addr().unwrap();
         let tuple_ref: &(IpAddr, u16) = &*Box::leak(Box::new((addr.ip(), addr.port())));
         tuple_ref
