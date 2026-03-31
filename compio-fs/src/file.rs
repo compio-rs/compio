@@ -83,6 +83,14 @@ impl File {
 
     /// Close the file. If the returned future is dropped before polling, the
     /// file won't be closed.
+    ///
+    /// As [`File`] is clonable, users can call `close` on a clone, but the
+    /// future will never complete until all clones are dropped. Some
+    /// operations may keep a strong reference to the file, so the future
+    /// may never complete if there are pending operations.
+    ///
+    /// It's OK to drop the [`File`] directly without calling `close`, but the
+    /// file may not be closed immediately.
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         // Make sure that fd won't be dropped after `close` called.
         // Users may call this method and drop the future immediately. In that way

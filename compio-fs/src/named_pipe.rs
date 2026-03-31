@@ -183,6 +183,8 @@ impl NamedPipeServer {
 
     /// Close the server. If the returned future is dropped before polling, the
     /// server won't be closed.
+    ///
+    /// See [`File::close`] for more details.
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.handle.close()
     }
@@ -353,6 +355,8 @@ impl NamedPipeClient {
 
     /// Close the client. If the returned future is dropped before polling, the
     /// client won't be closed.
+    ///
+    /// See [`File::close`] for more details.
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.handle.close()
     }
