@@ -30,12 +30,41 @@ jobs:
       matrix:
         setup:
           - os: 'ubuntu-22.04'
+            features: 'io-compat,sync,ring,codec-serde-json'
+            target: 'x86_64-unknown-linux-gnu'
+          - os: 'ubuntu-22.04'
+            features: 'polling,io-compat,sync,ring,codec-serde-json'
+            target: 'x86_64-unknown-linux-gnu'
+          - os: 'ubuntu-22.04'
+            features: 'polling,io-compat,sync,ring,codec-serde-json'
+            no_default_features: true
             target: 'x86_64-unknown-linux-gnu'
     steps:
       - uses: actions/checkout@v4
       - name: Setup nightly toolchain with rust-src
         run: rustup toolchain install nightly --component rust-src
+      - name: Setup target
+        if: ${{ matrix.setup.target }}
+        run: rustup +nightly target install ${{ matrix.setup.target }}
       - name: Run ASan tests
-        run: cargo +nightly test --workspace --tests --lib --features all,nightly,io-compat,sync -Zbuild-std --target ${{ matrix.setup.target }}
+        run: |
+          set -ex
+
+          ARGS=("--features" "all,nightly")
+
+          # Add features if features is not empty
+          if [[ -n "${{ matrix.setup.features }}" ]]; then
+              ARGS+=("--features" "${{ matrix.setup.features }}")
+          fi
+          # Add no-default-features if no_default_features is true
+          if [[ -n "${{ matrix.setup.no_default_features }}" ]]; then
+              ARGS+=("--no-default-features")
+          fi
+          # Specify target if target is not empty
+          if [[ -n "${{ matrix.setup.target }}" ]]; then
+              ARGS+=("--target" "${{ matrix.setup.target }}")
+          fi
+
+          cargo +nightly test --workspace --tests --lib -Zbuild-std "${ARGS[@]}"
         env:
           RUSTFLAGS: -Zsanitizer=address
