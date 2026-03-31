@@ -54,15 +54,16 @@ pub struct UnixListener {
 
 impl UnixListener {
     /// Creates a new [`UnixListener`], which will be bound to the specified
-    /// file path. The file path cannot yet exist, and will be cleaned up
-    /// upon dropping [`UnixListener`].
+    /// file path. See [`UnixListener::bind_addr`] for more details.
     pub async fn bind(path: impl AsRef<Path>) -> io::Result<Self> {
         Self::bind_addr(&SockAddr::unix(path)?).await
     }
 
     /// Creates a new [`UnixListener`] with [`SockAddr`], which will be bound to
-    /// the specified file path. The file path cannot yet exist, and will be
-    /// cleaned up upon dropping [`UnixListener`].
+    /// the specified file path. The file path cannot yet exist.
+    ///
+    /// To configure the socket before binding, you can use the [`UnixSocket`]
+    /// type.
     pub async fn bind_addr(addr: &SockAddr) -> io::Result<Self> {
         if !addr.is_unix() {
             return Err(io::Error::new(
@@ -99,7 +100,7 @@ impl UnixListener {
     ///
     /// This function will yield once a new Unix domain socket connection
     /// is established. When established, the corresponding [`UnixStream`] and
-    /// will be returned.
+    /// the remote peer’s address will be returned.
     pub async fn accept(&self) -> io::Result<(UnixStream, SockAddr)> {
         let (socket, addr) = self.inner.accept().await?;
         let stream = UnixStream { inner: socket };
@@ -176,9 +177,8 @@ pub struct UnixStream {
 }
 
 impl UnixStream {
-    /// Opens a Unix connection to the specified file path. There must be a
-    /// [`UnixListener`] or equivalent listening on the corresponding Unix
-    /// domain socket to successfully connect and return a [`UnixStream`].
+    /// Opens a Unix connection to the specified file path. See
+    /// [`UnixStream::connect_addr`] for more details.
     pub async fn connect(path: impl AsRef<Path>) -> io::Result<Self> {
         Self::connect_addr(&SockAddr::unix(path)?).await
     }
@@ -186,6 +186,9 @@ impl UnixStream {
     /// Opens a Unix connection to the specified address. There must be a
     /// [`UnixListener`] or equivalent listening on the corresponding Unix
     /// domain socket to successfully connect and return a [`UnixStream`].
+    ///
+    /// To configure the socket before connecting, you can use the
+    /// [`UnixSocket`] type.
     pub async fn connect_addr(addr: &SockAddr) -> io::Result<Self> {
         if !addr.is_unix() {
             return Err(io::Error::new(

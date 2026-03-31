@@ -70,6 +70,9 @@ impl TcpListener {
     /// to this listener.
     ///
     /// It enables the `SO_REUSEADDR` option by default.
+    ///
+    /// To configure the socket before binding, you can use the [`TcpSocket`]
+    /// type.
     pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
         super::each_addr(addr, |addr| async move {
             let sa = SockAddr::from(addr);
@@ -224,6 +227,9 @@ pub struct TcpStream {
 
 impl TcpStream {
     /// Opens a TCP connection to a remote host.
+    ///
+    /// To configure the socket before connecting, you can use the [`TcpSocket`]
+    /// type.
     pub async fn connect(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
         use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6};
 
