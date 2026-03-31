@@ -44,8 +44,6 @@ jobs:
             features: 'polling,native-tls,ring'
             no_default_features: true
           - os: 'ubuntu-22.04'
-            features: 'codec-serde-json'
-          - os: 'ubuntu-22.04'
             features: 'native-tls,ring,py-dynamic-openssl'
           - os: 'windows-latest'
             target: 'x86_64-pc-windows-msvc'
