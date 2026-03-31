@@ -66,6 +66,7 @@ monoio = { version = "0.2.2", default-features = false, features = ["iouring"] }
 default = ["runtime", "io-uring"]
 io-uring = ["compio-driver/io-uring"]
 polling = ["compio-driver/polling"]
+
 io = ["dep:compio-io"]
 io-compat = [
     "io",
@@ -73,29 +74,48 @@ io-compat = [
     "compio-quic?/io-compat",
     "compio-ws?/io-compat",
 ]
-ancillary = ["compio-io/ancillary"]
+io-ancillary = ["io", "compio-io/ancillary"]
+io-codec-serde-json = ["io", "compio-io/codec-serde-json"]
 fs = ["dep:compio-fs", "runtime", "io"]
 fs-dir = ["fs", "compio-fs/dir"]
 net = ["dep:compio-net", "runtime", "io"]
 runtime = ["dep:compio-runtime"]
+async-fd = ["runtime", "compio-runtime/async-fd"]
 macros = ["dep:compio-macros", "runtime"]
 signal = ["dep:compio-signal", "runtime"]
 time = ["compio-runtime/time", "runtime"]
 dispatcher = ["dep:compio-dispatcher", "runtime"]
 tls = ["dep:compio-tls"]
 native-tls = ["tls", "compio-tls/native-tls", "compio-ws?/native-tls"]
-native-tls-vendored = [
-    "compio-tls/native-tls-vendored",
-    "compio-ws?/native-tls-vendored",
-]
 rustls = ["tls", "compio-tls/rustls", "compio-ws?/rustls"]
-ring = ["tls", "compio-tls/ring", "compio-quic?/ring", "compio-ws?/ring"]
-py-dynamic-openssl = ["tls", "compio-tls/py-dynamic-openssl"]
+rustls-platform-verifier = [
+    "rustls",
+    "compio-quic?/platform-verifier",
+    "compio-ws?/rustls-platform-verifier",
+]
+rustls-native-certs = [
+    "rustls",
+    "compio-quic?/native-certs",
+    "compio-ws?/rustls-native-certs",
+]
+webpki-roots = [
+    "rustls",
+    "compio-quic?/webpki-roots",
+    "compio-ws?/webpki-roots",
+]
 process = ["dep:compio-process"]
 quic = ["dep:compio-quic"]
 h3 = ["quic", "compio-quic/h3"]
 ws = ["dep:compio-ws"]
+
+# A full set of features, without implementation-specific ones.
 all = [
+    "io",
+    "io-ancillary",
+    "io-compat",
+    "io-codec-serde-json",
+    "runtime",
+    "async-fd",
     "fs",
     "fs-dir",
     "net",
@@ -105,22 +125,54 @@ all = [
     "dispatcher",
     "native-tls",
     "rustls",
+    "rustls-platform-verifier",
+    "rustls-native-certs",
+    "webpki-roots",
     "process",
     "quic",
     "h3",
     "ws",
 ]
 
+# Re-exports
 arrayvec = ["compio-buf/arrayvec"]
+smallvec = ["compio-buf/smallvec"]
 bumpalo = ["compio-buf/bumpalo"]
-bytes = ["compio-buf/bytes"]
+bytes = ["compio-buf/bytes", "compio-io?/bytes"]
 memmap2 = ["compio-buf/memmap2"]
 
+# Benches
 criterion = ["compio-runtime?/criterion"]
+real_blackbox = ["criterion", "criterion/real_blackbox"]
 
+# Synchronization primitives
 sync = ["compio-driver/sync", "compio-quic?/sync", "compio-io?/sync"]
+
+# Driver implementations
+io-uring-sqe128 = ["compio-driver/io-uring-sqe128"]
+io-uring-cqe32 = ["compio-driver/io-uring-cqe32"]
+iocp-global = ["compio-driver/iocp-global"]
+iocp-wait-packet = ["compio-driver/iocp-wait-packet"]
+
+# Runtime implementations
+notify-always = ["compio-runtime?/notify-always"]
+
+# Ancillary
 bytemuck = ["compio-io?/bytemuck"]
 
+# QUIC
+qlog = ["compio-quic?/qlog"]
+windows-gro = ["compio-quic?/windows-gro"]
+
+# TLS
+py-dynamic-openssl = ["tls", "compio-tls/py-dynamic-openssl"]
+ring = ["tls", "compio-tls/ring", "compio-quic?/ring", "compio-ws?/ring"]
+native-tls-vendored = [
+    "compio-tls/native-tls-vendored",
+    "compio-ws?/native-tls-vendored",
+]
+
+# Logging
 enable_log = ["compio-log/enable_log"]
 
 # Nightly features
@@ -153,8 +205,6 @@ nightly = [
     "windows_by_handle",
     "future-combinator",
 ]
-
-real_blackbox = ["criterion/real_blackbox"]
 
 [[example]]
 name = "basic"
