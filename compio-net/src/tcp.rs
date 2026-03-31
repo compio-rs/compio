@@ -310,7 +310,7 @@ impl TcpStream {
     ///
     /// As the socket is clonable, users can call `close` on a clone, but the
     /// future will never complete until all clones are dropped. Some
-    /// operations may keep a strong reference to the file, so the future
+    /// operations may keep a strong reference to the socket, so the future
     /// may never complete if there are pending operations.
     ///
     /// It's OK to drop the socket directly without calling `close`, but the
