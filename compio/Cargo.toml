@@ -162,7 +162,7 @@ required-features = ["macros", "fs"]
 
 [[example]]
 name = "named_pipe"
-required-features = ["macros"]
+required-features = ["macros", "fs"]
 
 [[example]]
 name = "net"
@@ -170,11 +170,11 @@ required-features = ["macros", "net"]
 
 [[example]]
 name = "unix"
-required-features = ["macros"]
+required-features = ["macros", "net"]
 
 [[example]]
 name = "resolve"
-required-features = ["macros"]
+required-features = ["macros", "net"]
 
 [[example]]
 name = "tick"
@@ -182,7 +182,7 @@ required-features = ["time", "signal", "macros"]
 
 [[example]]
 name = "dispatcher"
-required-features = ["macros", "dispatcher", "sync"]
+required-features = ["macros", "dispatcher", "sync", "net"]
 
 [[bench]]
 name = "fs"
