@@ -12,7 +12,7 @@ use compio_io::{
     AsyncRead, AsyncReadAt, AsyncReadManaged, AsyncReadManagedAt, AsyncWrite, AsyncWriteAt,
     util::Splittable,
 };
-use compio_runtime::{BorrowedBuffer, BufferPool, fd::AsyncFd};
+use compio_runtime::{BorrowedBuffer, BufferPool};
 use widestring::U16CString;
 use windows_sys::Win32::{
     Storage::FileSystem::{
@@ -91,7 +91,7 @@ use crate::{File, OpenOptions};
 /// [Windows named pipe]: https://docs.microsoft.com/en-us/windows/win32/ipc/named-pipes
 #[derive(Debug, Clone)]
 pub struct NamedPipeServer {
-    handle: AsyncFd<std::fs::File>,
+    handle: File,
 }
 
 impl NamedPipeServer {
@@ -180,6 +180,14 @@ impl NamedPipeServer {
         syscall!(BOOL, DisconnectNamedPipe(self.as_raw_fd() as _))?;
         Ok(())
     }
+
+    /// Close the server. If the returned future is dropped before polling, the
+    /// server won't be closed.
+    ///
+    /// See [`File::close`] for more details.
+    pub fn close(self) -> impl Future<Output = io::Result<()>> {
+        self.handle.close()
+    }
 }
 
 impl AsyncRead for NamedPipeServer {
@@ -192,7 +200,7 @@ impl AsyncRead for NamedPipeServer {
 impl AsyncRead for &NamedPipeServer {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
-        (&self.handle).read(buffer).await
+        self.handle.read_at(buffer, 0).await
     }
 }
 
@@ -219,7 +227,7 @@ impl AsyncReadManaged for &NamedPipeServer {
         len: usize,
     ) -> io::Result<Self::Buffer<'a>> {
         // The position is ignored.
-        (&self.handle).read_managed(buffer_pool, len).await
+        self.handle.read_managed_at(buffer_pool, len, 0).await
     }
 }
 
@@ -243,7 +251,7 @@ impl AsyncWrite for NamedPipeServer {
 impl AsyncWrite for &NamedPipeServer {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        (&self.handle).write(buffer).await
+        (&self.handle).write_at(buffer, 0).await
     }
 
     #[inline]
@@ -343,6 +351,14 @@ impl NamedPipeClient {
     pub fn info(&self) -> io::Result<PipeInfo> {
         // SAFETY: we're ensuring the lifetime of the named pipe.
         unsafe { named_pipe_info(self.as_raw_fd()) }
+    }
+
+    /// Close the client. If the returned future is dropped before polling, the
+    /// client won't be closed.
+    ///
+    /// See [`File::close`] for more details.
+    pub fn close(self) -> impl Future<Output = io::Result<()>> {
+        self.handle.close()
     }
 }
 
@@ -1065,7 +1081,7 @@ impl ServerOptions {
         )?;
 
         Ok(NamedPipeServer {
-            handle: AsyncFd::new(unsafe { std::fs::File::from_raw_handle(h as _) })?,
+            handle: File::from_std(unsafe { std::fs::File::from_raw_handle(h as _) })?,
         })
     }
 }

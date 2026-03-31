@@ -342,6 +342,8 @@ impl Sender {
 
     /// Close the pipe. If the returned future is dropped before polling, the
     /// pipe won't be closed.
+    ///
+    /// See [`File::close`] for more details.
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.file.close()
     }
@@ -477,6 +479,8 @@ impl Receiver {
 
     /// Close the pipe. If the returned future is dropped before polling, the
     /// pipe won't be closed.
+    ///
+    /// See [`File::close`] for more details.
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.file.close()
     }

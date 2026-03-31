@@ -136,6 +136,10 @@ impl UdpSocket {
 
     /// Close the socket. If the returned future is dropped before polling, the
     /// socket won't be closed.
+    ///
+    /// See [`TcpStream::close`] for more details.
+    ///
+    /// [`TcpStream::close`]: crate::tcp::TcpStream::close
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.inner.close()
     }

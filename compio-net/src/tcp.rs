@@ -104,6 +104,10 @@ impl TcpListener {
 
     /// Close the socket. If the returned future is dropped before polling, the
     /// socket won't be closed.
+    ///
+    /// See [`TcpStream::close`] for more details.
+    ///
+    /// [`TcpStream::close`]: crate::tcp::TcpStream::close
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.inner.close()
     }
@@ -303,6 +307,14 @@ impl TcpStream {
 
     /// Close the socket. If the returned future is dropped before polling, the
     /// socket won't be closed.
+    ///
+    /// As the socket is clonable, users can call `close` on a clone, but the
+    /// future will never complete until all clones are dropped. Some
+    /// operations may keep a strong reference to the socket, so the future
+    /// may never complete if there are pending operations.
+    ///
+    /// It's OK to drop the socket directly without calling `close`, but the
+    /// socket may not be closed immediately.
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         self.inner.close()
     }
