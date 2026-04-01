@@ -30,13 +30,13 @@ jobs:
       matrix:
         setup:
           - os: 'ubuntu-22.04'
-            features: 'io-compat,sync,ring,codec-serde-json'
+            features: 'sync,ring'
             target: 'x86_64-unknown-linux-gnu'
           - os: 'ubuntu-22.04'
-            features: 'polling,io-compat,sync,ring,codec-serde-json'
+            features: 'polling,sync,ring'
             target: 'x86_64-unknown-linux-gnu'
           - os: 'ubuntu-22.04'
-            features: 'polling,io-compat,sync,ring,codec-serde-json'
+            features: 'polling,sync,ring'
             no_default_features: true
             target: 'x86_64-unknown-linux-gnu'
     steps:

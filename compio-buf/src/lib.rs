@@ -26,6 +26,8 @@ pub use bumpalo;
 pub use bytes;
 #[cfg(feature = "memmap2")]
 pub use memmap2;
+#[cfg(feature = "smallvec")]
+pub use smallvec;
 
 mod io;
 pub use io::*;
