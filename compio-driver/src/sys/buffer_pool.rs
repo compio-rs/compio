@@ -2,18 +2,21 @@ use std::{
     cell::UnsafeCell,
     fmt::Debug,
     io,
-    mem::{ManuallyDrop, MaybeUninit},
+    mem::{self, MaybeUninit},
     ops::{Deref, DerefMut},
+    ptr::{self, NonNull},
     rc::{Rc, Weak},
     slice,
 };
 
 use compio_buf::{IoBuf, IoBufMut, SetLen};
 
-/// A buffer slot. It's always 2-pointer sized thanks to niche optimization.
-pub(crate) type Slot = Option<Box<[MaybeUninit<u8>]>>;
+/// A buffer pointer without length part.
+pub(crate) type BufPtr = NonNull<MaybeUninit<u8>>;
+/// A buffer slot. It's always 1-pointer sized thanks to niche optimization.
+pub(crate) type Slot = Option<BufPtr>;
 
-const _: () = assert!(size_of::<Slot>() == 2 * size_of::<usize>());
+const _: () = assert!(size_of::<Slot>() == size_of::<usize>());
 
 cfg_if::cfg_if! {
     if #[cfg(io_uring)] {
@@ -21,17 +24,19 @@ cfg_if::cfg_if! {
 
         unsafe fn create_buf_control(
             driver: &mut super::Driver,
-            bufs: &[Option<Box<[MaybeUninit<u8>]>>],
+            bufs: &[Slot],
+            buf_len: u32,
             flags: u16
         ) -> io::Result<BufControl> {
-            unsafe { BufControl::new(driver, bufs, flags) }
+            unsafe { BufControl::new(driver, bufs, buf_len, flags) }
         }
     } else {
         use fallback::BufControl;
 
         unsafe fn create_buf_control(
             _: &mut super::Driver,
-            bufs: &[Option<Box<[MaybeUninit<u8>]>>],
+            bufs: &[Slot],
+            _: u32,
             _: u16
         ) -> io::Result<BufControl> {
             Ok(BufControl::new(bufs))
@@ -56,12 +61,20 @@ pub(crate) struct BufferPoolRoot {
 /// A unique reference to a buffer within the buffer pool.
 ///
 /// Dropping this type will reset the buffer back to the pool instead of
-/// releasing buffer's memeory.
+/// releasing buffer's memory.
 pub struct BufferRef {
-    len: usize,
-    cap: usize,
+    /// Initialized length of the buffer, set with [`SetLen`]
+    len: u32,
+    /// User-set capacity, default to `full_cap`
+    cap: u32,
+    /// Full capacity of the buffer, used to release memory if driver (buffer
+    /// pool) is dropped
+    full_cap: u32,
+    /// Weak handle of the buffer pool
     shared: Weak<Shared>,
-    buffer: ManuallyDrop<Box<[MaybeUninit<u8>]>>,
+    /// Pointer of the buffer
+    ptr: BufPtr,
+    /// Buffer id (index within the Vec)
     buffer_id: u16,
 }
 
@@ -71,8 +84,14 @@ struct Shared {
 }
 
 struct Inner {
-    control: BufControl,
-    buffers: Vec<Slot>,
+    /// Control block corresponds to each driver
+    ctrl: BufControl,
+
+    /// Size of each buffer
+    size: u32,
+
+    /// Buffer pointers
+    bufs: Vec<Slot>,
 }
 
 impl BufferPoolRoot {
@@ -82,25 +101,64 @@ impl BufferPoolRoot {
         buffer_size: usize,
         flags: u16,
     ) -> io::Result<Self> {
+        let size: u32 = buffer_size.try_into().map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Buffer size too large. Should be able to fit into u32.",
+            )
+        })?;
         let buffers = (0..num_of_bufs.next_power_of_two())
-            .map(|_| Some(Box::new_uninit_slice(buffer_size)))
+            .map(|_| {
+                let ptr = Box::into_raw(Box::<[u8]>::new_uninit_slice(buffer_size)).cast();
+                // SAFETY: Creating NonNull from Box
+                Some(unsafe { NonNull::new_unchecked(ptr) })
+            })
             .collect::<Vec<_>>();
-        let control = unsafe { create_buf_control(driver, &buffers, flags) }?;
+        let control = unsafe { create_buf_control(driver, &buffers, size, flags) }?;
 
         Ok(Self {
             shared: Shared {
-                inner: Inner { control, buffers }.into(),
+                inner: Inner {
+                    ctrl: control,
+                    size,
+                    bufs: buffers,
+                }
+                .into(),
             }
             .into(),
         })
     }
 
+    /// Release the buffer pool and deallocate all buffers.
+    ///
+    /// If the buffer pool root is dropped without calling this function,
+    /// everything will be leaked and there will be no chance to recoever them
+    /// back, except those have been taken by [`BufferRef`], which will be
+    /// released when they're dropped.
+    ///
+    /// If the control block failed to release, this function will return an io
+    /// Error without deallocating buffers, and it's possible to retry.
+    ///
     /// # Safety
     ///
-    /// [`BufferPoolRoot`] must not be used after `release` is called. Only
-    /// thing that's safe to do afterwards is to drop it.
+    /// [`BufferPoolRoot`] must not be used after `release` is called and
+    /// returned successfully. Only thing that's safe to do afterwards is to
+    /// drop it.
     pub(crate) unsafe fn release(&mut self, driver: &mut crate::Driver) -> io::Result<()> {
-        unsafe { self.shared.with(|inner| inner.control.release(driver)) }
+        let (bufs, size) = unsafe {
+            self.shared.with(|inner| {
+                inner.ctrl.release(driver)?;
+                io::Result::Ok((mem::take(&mut inner.bufs), inner.size))
+            })
+        }?;
+
+        // Control is successfully released, now deallocate buffers
+        for ptr in bufs.into_iter().flatten() {
+            let ptr = ptr::slice_from_raw_parts_mut(ptr.as_ptr(), size as usize);
+            _ = unsafe { Box::from_raw(ptr) };
+        }
+
+        Ok(())
     }
 
     pub(crate) fn get_pool(&self) -> BufferPool {
@@ -131,27 +189,23 @@ impl Debug for BufferPool {
 impl Debug for Shared {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         struct Buf {
-            len: usize,
+            ptr: BufPtr,
         }
 
         impl Debug for Buf {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "Buf<{}>", self.len)
+                write!(f, "Buf<{:p}>", self.ptr)
             }
         }
 
         struct BuffersDebug<'a> {
-            buffers: &'a [Option<Box<[MaybeUninit<u8>]>>],
+            buffers: &'a [Slot],
         }
 
         impl Debug for BuffersDebug<'_> {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.debug_list()
-                    .entries(
-                        self.buffers
-                            .iter()
-                            .map(|buf| buf.as_ref().map(|b| Buf { len: b.len() })),
-                    )
+                    .entries(self.buffers.iter().map(|buf| buf.map(|ptr| Buf { ptr })))
                     .finish()
             }
         }
@@ -159,11 +213,11 @@ impl Debug for Shared {
         unsafe {
             self.with(|inner| {
                 let buffers = BuffersDebug {
-                    buffers: &inner.buffers,
+                    buffers: &inner.bufs,
                 };
                 f.debug_struct("Shared")
-                    .field("control", &inner.control)
-                    .field("size", &inner.buffers.len())
+                    .field("control", &inner.ctrl)
+                    .field("size", &inner.size)
                     .field("buffers", &buffers)
                     .finish()
             })
@@ -179,7 +233,7 @@ impl BufferPool {
     ///
     /// [`Unsupported`]: io::ErrorKind::Unsupported
     pub fn pop(&self) -> io::Result<BufferRef> {
-        let buffer_id = unsafe { self.with(|inner| inner.control.pop()) }??;
+        let buffer_id = unsafe { self.with(|inner| inner.ctrl.pop()) }??;
 
         Ok(self.take(buffer_id)?.expect("Buffer should be available"))
     }
@@ -189,15 +243,17 @@ impl BufferPool {
     /// Returns `None` if the buffer is not reset back yet or does not exist.
     pub fn take(&self, buffer_id: u16) -> io::Result<Option<BufferRef>> {
         let shared = self.shared()?;
-        let Some(buffer) = shared.take(buffer_id) else {
+        let Some(ptr) = shared.take(buffer_id) else {
             return Ok(None);
         };
+        let cap = shared.len();
 
         Ok(Some(BufferRef {
             len: 0,
-            cap: buffer.len(),
+            cap,
+            full_cap: cap,
             shared: Rc::downgrade(&shared),
-            buffer: ManuallyDrop::new(buffer),
+            ptr,
             buffer_id,
         }))
     }
@@ -234,13 +290,13 @@ impl BufferPool {
     /// Get the group id of this buffer pool.
     #[cfg(io_uring)]
     pub(crate) fn buffer_group(&self) -> io::Result<u16> {
-        unsafe { self.with(|i| i.control.buffer_group()) }
+        unsafe { self.with(|i| i.ctrl.buffer_group()) }
     }
 
     /// Test if the buffer pool is an io_uring one.
     #[cfg(fusion)]
     pub fn is_io_uring(&self) -> io::Result<bool> {
-        unsafe { self.with(|inner| inner.control.is_io_uring()) }
+        unsafe { self.with(|inner| inner.ctrl.is_io_uring()) }
     }
 }
 
@@ -256,17 +312,21 @@ impl Shared {
         f(unsafe { &mut *self.inner.get() })
     }
 
-    fn take(&self, buffer_id: u16) -> Option<Box<[MaybeUninit<u8>]>> {
-        unsafe { self.with(|inner| inner.buffers[buffer_id as usize].take()) }
+    fn take(&self, buffer_id: u16) -> Option<BufPtr> {
+        unsafe { self.with(|inner| inner.bufs[buffer_id as usize].take()) }
     }
 
-    fn reset(&self, buffer_id: u16, buffer: Box<[MaybeUninit<u8>]>) {
+    fn reset(&self, buffer_id: u16, ptr: BufPtr) {
         unsafe {
             self.with(|inner| {
-                inner.control.reset(buffer_id, &buffer);
-                inner.buffers[buffer_id as usize] = Some(buffer);
+                inner.ctrl.reset(buffer_id, ptr, inner.size);
+                inner.bufs[buffer_id as usize] = Some(ptr);
             })
         }
+    }
+
+    fn len(&self) -> u32 {
+        unsafe { self.with(|inner| inner.size) }
     }
 }
 
@@ -275,10 +335,6 @@ impl BufferRef {
     ///
     /// This will does nothing if `cap` is greater than underlying buffer's
     /// length.
-    ///
-    /// # Panic
-    ///
-    /// Panic if `cap <= self.len`
     pub fn with_capacity(mut self, cap: usize) -> Self {
         self.set_capacity(cap);
         self
@@ -292,7 +348,7 @@ impl BufferRef {
         if cap == 0 {
             return;
         }
-        self.cap = cap.min(self.buffer.len());
+        self.cap = (cap as u32).min(self.full_cap);
         self.len = self.len.min(self.cap);
     }
 }
@@ -302,14 +358,14 @@ impl Deref for BufferRef {
 
     fn deref(&self) -> &Self::Target {
         // SAFETY: `SetLen` guarantees the range is initialized
-        unsafe { slice::from_raw_parts(self.buffer.as_ptr().cast(), self.len) }
+        unsafe { slice::from_raw_parts(self.ptr.as_ptr().cast(), self.len as usize) }
     }
 }
 
 impl DerefMut for BufferRef {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: `SetLen` guarantees the range is initialized
-        unsafe { slice::from_raw_parts_mut(self.buffer.as_ptr() as _, self.len) }
+        unsafe { slice::from_raw_parts_mut(self.ptr.as_ptr() as _, self.len as usize) }
     }
 }
 
@@ -321,29 +377,35 @@ impl IoBuf for BufferRef {
 
 impl SetLen for BufferRef {
     unsafe fn set_len(&mut self, len: usize) {
-        self.len = len.min(self.cap);
+        debug_assert!(len <= u32::MAX as usize);
+        self.len = (len as u32).min(self.cap);
     }
 }
 
 impl IoBufMut for BufferRef {
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
-        &mut self.buffer[..self.cap]
+        // SAFETY: Cap is initialized as the buffer length, and setting it is
+        // is capped at full_cap, so it will never exceed buffer length. Pointer is
+        // not deallocated.
+        unsafe { slice::from_raw_parts_mut(self.ptr.as_ptr(), self.cap as usize) }
     }
 }
 
 impl Drop for BufferRef {
     fn drop(&mut self) {
-        // SAFETY: `drop` will only be called once
-        let buffer = unsafe { ManuallyDrop::take(&mut self.buffer) };
-        // If driver is dropped, release the buffer.
         if let Some(shared) = self.shared.upgrade() {
-            shared.reset(self.buffer_id, buffer);
+            // If the buffer pool is alive, set the pointer back
+            shared.reset(self.buffer_id, self.ptr);
+        } else {
+            // Otherwise, drop the buffer
+            let ptr = ptr::slice_from_raw_parts_mut(self.ptr.as_ptr(), self.full_cap as usize);
+            _ = unsafe { Box::from_raw(ptr) };
         }
     }
 }
 #[cfg(any(fusion, not(io_uring)))]
 pub(crate) mod fallback {
-    use std::{collections::VecDeque, io, mem::MaybeUninit};
+    use std::{collections::VecDeque, io};
 
     use super::*;
 
@@ -371,7 +433,7 @@ pub(crate) mod fallback {
                 .ok_or_else(|| io::Error::other("buffer ring has no available buffer"))
         }
 
-        pub unsafe fn reset(&mut self, buffer_id: u16, _: &[MaybeUninit<u8>]) {
+        pub unsafe fn reset(&mut self, buffer_id: u16, _: BufPtr, _: u32) {
             self.queue.push_back(buffer_id);
         }
     }

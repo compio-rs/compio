@@ -1,8 +1,8 @@
-use std::{io, mem::MaybeUninit};
+use std::io;
 
 use super::iour;
 use crate::sys::{
-    buffer_pool::{Slot, fallback},
+    buffer_pool::{BufPtr, Slot, fallback},
     fusion::FuseDriver,
 };
 
@@ -19,10 +19,15 @@ enum Inner {
 }
 
 impl BufControl {
-    pub unsafe fn new(driver: &mut super::Driver, bufs: &[Slot], flags: u16) -> io::Result<Self> {
+    pub unsafe fn new(
+        driver: &mut super::Driver,
+        bufs: &[Slot],
+        bufs_len: u32,
+        flags: u16,
+    ) -> io::Result<Self> {
         let inner = match &mut driver.fuse {
             FuseDriver::IoUring(driver) => {
-                let ctrl = unsafe { iour::BufControl::new(driver, bufs, flags) }?;
+                let ctrl = unsafe { iour::BufControl::new(driver, bufs, bufs_len, flags) }?;
                 Inner::IoUring(ctrl)
             }
             FuseDriver::Poll(_) => Inner::Fallback(fallback::BufControl::new(bufs)),
@@ -47,10 +52,10 @@ impl BufControl {
         }
     }
 
-    pub unsafe fn reset(&mut self, buffer_id: u16, buf: &[MaybeUninit<u8>]) {
+    pub unsafe fn reset(&mut self, buffer_id: u16, ptr: BufPtr, len: u32) {
         match &mut self.inner {
-            Inner::IoUring(buf_control) => unsafe { buf_control.reset(buffer_id, buf) },
-            Inner::Fallback(buf_control) => unsafe { buf_control.reset(buffer_id, buf) },
+            Inner::IoUring(buf_control) => unsafe { buf_control.reset(buffer_id, ptr, len) },
+            Inner::Fallback(buf_control) => unsafe { buf_control.reset(buffer_id, ptr, len) },
         }
     }
 

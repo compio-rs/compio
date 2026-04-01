@@ -1,6 +1,5 @@
 use std::{
     io,
-    mem::MaybeUninit,
     num::{NonZeroU16, NonZeroUsize},
     ptr::NonNull,
     slice,
@@ -11,7 +10,10 @@ use io_uring::types::BufRingEntry;
 use nix::sys::mman::{MapFlags, ProtFlags, mmap_anonymous, munmap};
 use synchrony::unsync::atomic::AtomicU16;
 
-use crate::{assert_not_impl, sys::buffer_pool::Slot};
+use crate::{
+    assert_not_impl,
+    sys::buffer_pool::{BufPtr, Slot},
+};
 
 #[derive(Debug)]
 pub struct BufControl {
@@ -36,7 +38,12 @@ impl BufControl {
     /// - be available throughout the lifetime of this control, and
     /// - not be used (read or write) until a `buffer_id` is returned from
     ///   kernel and the corresponding buffer is taken from `BufferPool`.
-    pub unsafe fn new(driver: &mut super::Driver, bufs: &[Slot], flags: u16) -> io::Result<Self> {
+    pub unsafe fn new(
+        driver: &mut super::Driver,
+        bufs: &[Slot],
+        bufs_len: u32,
+        flags: u16,
+    ) -> io::Result<Self> {
         debug_assert!(bufs.len().is_power_of_two());
 
         let len = NonZeroU16::new(bufs.len() as u16).expect("Empty buffers");
@@ -59,8 +66,9 @@ impl BufControl {
         }?;
 
         for (id, buf) in bufs.iter().enumerate() {
-            let buf = buf.as_deref().expect("Initialize with empty bufs");
-            unsafe { this.add_buffer(id as _, buf) };
+            let ptr = buf.expect("Cannot initialize with null bufs");
+            let id = id as u16;
+            unsafe { this.add_buffer(id, ptr, bufs_len, id) };
         }
         // SAFETY: Entries were initialized just now
         unsafe { this.commit(bufs.len() as _) };
@@ -86,9 +94,9 @@ impl BufControl {
     ///
     /// Caller must ensure that the buf is valid until the current ring is
     /// dropped.
-    pub unsafe fn reset(&mut self, buffer_id: u16, buf: &[MaybeUninit<u8>]) {
+    pub unsafe fn reset(&mut self, buffer_id: u16, ptr: BufPtr, len: u32) {
         // SAFETY: Guaranteed by the caller
-        unsafe { self.add_buffer(buffer_id, buf) };
+        unsafe { self.add_buffer(buffer_id, ptr, len, 0) };
         // SAFETY: We just added one buffer
         unsafe { self.commit(1) };
     }
@@ -129,13 +137,13 @@ impl BufControl {
     /// dropped.
     ///
     /// [`commit`]: Self::commit
-    unsafe fn add_buffer(&mut self, buffer_id: u16, buf: &[MaybeUninit<u8>]) {
-        let idx = self.tail().load(Ordering::Acquire) % self.len.get();
+    unsafe fn add_buffer(&mut self, buffer_id: u16, ptr: BufPtr, len: u32, offset: u16) {
+        let idx = (self.tail().load(Ordering::Acquire) + offset) % self.len.get();
 
         let entry = &mut self.as_slice_mut()[idx as usize];
 
-        entry.set_addr(buf.as_ptr() as _);
-        entry.set_len(buf.len() as _);
+        entry.set_addr(ptr.addr().get() as u64);
+        entry.set_len(len as _);
         entry.set_bid(buffer_id);
     }
 

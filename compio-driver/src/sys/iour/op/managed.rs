@@ -240,7 +240,8 @@ impl<S> TakeBuffer for RecvFromManaged<S> {
 
     fn take_buffer(self) -> Option<Self::Buffer> {
         let buf = self.buffer?;
-        let addr = (self.addr_len > 0).then(|| unsafe { SockAddr::new(self.addr, self.addr_len) });
+        let addr = (self.msg.msg_namelen > 0)
+            .then(|| unsafe { SockAddr::new(self.addr, self.msg.msg_namelen) });
         Some((buf, addr))
     }
 }
