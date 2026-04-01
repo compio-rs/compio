@@ -48,7 +48,7 @@ pub trait TakeBuffer {
 
 impl<I> TakeBuffer for I
 where
-    I: IntoInner<Inner: IoBuf>,
+    I: IntoInner<Inner = BufferRef>,
 {
     type Buffer = I::Inner;
 
@@ -68,29 +68,40 @@ pub trait ResultTakeBuffer {
     /// # Safety
     ///
     /// The result value must be a valid length to advance to.
-    unsafe fn take_buffer(self) -> io::Result<Self::Buffer>;
+    unsafe fn take_buffer(self) -> io::Result<Option<Self::Buffer>>;
 }
 
 impl ResultTakeBuffer for BufResult<usize, BufferRef> {
     type Buffer = BufferRef;
 
-    unsafe fn take_buffer(self) -> io::Result<BufferRef> {
+    unsafe fn take_buffer(self) -> io::Result<Option<BufferRef>> {
         let (len, mut buf) = buf_try!(@try self);
+        if len == 0 {
+            return Ok(None);
+        }
         unsafe { buf.advance_to(len) };
 
-        Ok(buf)
+        Ok(Some(buf))
     }
 }
 
 impl<I: TakeBuffer<Buffer: IoBuf + SetLen>> ResultTakeBuffer for BufResult<usize, I> {
     type Buffer = I::Buffer;
 
-    unsafe fn take_buffer(self) -> io::Result<I::Buffer> {
+    unsafe fn take_buffer(self) -> io::Result<Option<I::Buffer>> {
         let (len, buf) = buf_try!(@try self);
-        let mut buf = buf.take_buffer().expect("Should have been set");
+        // Kernel returns 0 for the operation, return Ok(None)
+        if len == 0 {
+            return Ok(None);
+        }
+        let Some(mut buf) = buf.take_buffer() else {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                format!("Read {len} bytes, but no buffer was selected by kernel"),
+            ));
+        };
         unsafe { buf.advance_to(len) };
-
-        Ok(buf)
+        Ok(Some(buf))
     }
 }
 
@@ -218,8 +229,6 @@ impl<T> RecvResultExt for BufResult<usize, (T, Option<SockAddr>, usize)> {
     }
 }
 
-/// Helper trait for [`ReadManagedAt`] and [`RecvManaged`].
-///
 /// Spawn a blocking function in the thread pool.
 pub struct Asyncify<F, D> {
     pub(crate) f: Option<F>,

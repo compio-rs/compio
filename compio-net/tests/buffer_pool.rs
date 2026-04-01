@@ -16,16 +16,13 @@ async fn test_tcp_read_buffer_pool() {
 
     let mut stream = TcpStream::connect(addr).await.unwrap();
 
-    assert_eq!(stream.read_managed(0).await.unwrap().as_ref(), b"test");
-
     assert_eq!(
-        stream
-            .read_managed(0)
-            .await
-            .map(|b| b.len())
-            .unwrap_or_default(),
-        0
+        stream.read_managed(0).await.unwrap().unwrap().as_ref(),
+        b"test"
     );
+    let res = stream.read_managed(0).await;
+    println!("{res:?}");
+    assert!(matches!(res, Ok(None)));
 }
 
 #[compio_macros::test]
@@ -41,7 +38,10 @@ async fn test_udp_read_buffer_pool() {
     })
     .detach();
 
-    assert_eq!(connected.recv_managed(0).await.unwrap().as_ref(), b"test");
+    assert_eq!(
+        connected.recv_managed(0).await.unwrap().unwrap().as_ref(),
+        b"test"
+    );
 }
 
 #[compio_macros::test]
@@ -56,7 +56,7 @@ async fn test_udp_recv_from_buffer_pool() {
     })
     .detach();
 
-    let (buffer, addr) = listener.recv_from_managed(0).await.unwrap();
+    let (buffer, addr) = listener.recv_from_managed(0).await.unwrap().unwrap();
     assert_eq!(buffer.as_ref(), b"test");
     assert_eq!(addr, connected_addr);
 }
@@ -79,14 +79,9 @@ async fn test_uds_recv_buffer_pool() {
 
     let mut stream = UnixStream::connect(&sock_path).await.unwrap();
 
-    assert_eq!(stream.read_managed(0).await.unwrap().as_ref(), b"test");
-
     assert_eq!(
-        stream
-            .read_managed(0)
-            .await
-            .map(|b| b.len())
-            .unwrap_or_default(),
-        0
+        stream.read_managed(0).await.unwrap().unwrap().as_ref(),
+        b"test"
     );
+    assert!(matches!(stream.read_managed(0).await, Ok(None)));
 }

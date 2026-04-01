@@ -59,7 +59,7 @@ impl AsyncRead for &Stdin {
 impl AsyncReadManaged for Stdin {
     type Buffer = BufferRef;
 
-    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         (&*self).read_managed(len).await
     }
 }
@@ -67,7 +67,7 @@ impl AsyncReadManaged for Stdin {
 impl AsyncReadManaged for &Stdin {
     type Buffer = BufferRef;
 
-    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         (&self.0).read_managed(len).await
     }
 }

@@ -443,7 +443,7 @@ impl AsyncRead for &TcpStream {
 impl AsyncReadManaged for TcpStream {
     type Buffer = BufferRef;
 
-    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         (&*self).read_managed(len).await
     }
 }
@@ -451,7 +451,7 @@ impl AsyncReadManaged for TcpStream {
 impl AsyncReadManaged for &TcpStream {
     type Buffer = BufferRef;
 
-    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         self.inner.recv_managed(len as _, 0).await
     }
 }

@@ -208,7 +208,7 @@ impl AsyncRead for &NamedPipeServer {
 impl AsyncReadManaged for NamedPipeServer {
     type Buffer = BufferRef;
 
-    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         (&*self).read_managed(len).await
     }
 }
@@ -216,7 +216,7 @@ impl AsyncReadManaged for NamedPipeServer {
 impl AsyncReadManaged for &NamedPipeServer {
     type Buffer = BufferRef;
 
-    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         // The position is ignored.
         self.handle.read_managed_at(len, 0).await
     }
@@ -371,7 +371,7 @@ impl AsyncRead for &NamedPipeClient {
 impl AsyncReadManaged for NamedPipeClient {
     type Buffer = BufferRef;
 
-    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         (&*self).read_managed(len).await
     }
 }
@@ -379,7 +379,7 @@ impl AsyncReadManaged for NamedPipeClient {
 impl AsyncReadManaged for &NamedPipeClient {
     type Buffer = BufferRef;
 
-    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         // The position is ignored.
         self.handle.read_managed_at(len, 0).await
     }

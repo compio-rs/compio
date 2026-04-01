@@ -238,7 +238,7 @@ fn managed() {
     let op = ReadManagedAt::new(fd.clone(), 0, &pool, 1024).unwrap();
     let res = push_and_wait(&mut driver, op);
 
-    let buffer = unsafe { res.take_buffer() }.unwrap();
+    let buffer = unsafe { res.take_buffer() }.unwrap().unwrap();
     println!("{}", std::str::from_utf8(&buffer).unwrap());
     drop(buffer);
 

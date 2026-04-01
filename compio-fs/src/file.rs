@@ -224,7 +224,7 @@ impl AsyncReadAt for File {
 impl AsyncReadManagedAt for File {
     type Buffer = BufferRef;
 
-    async fn read_managed_at(&self, len: usize, pos: u64) -> io::Result<Self::Buffer> {
+    async fn read_managed_at(&self, len: usize, pos: u64) -> io::Result<Option<Self::Buffer>> {
         let fd = self.inner.to_shared_fd();
         let res = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;

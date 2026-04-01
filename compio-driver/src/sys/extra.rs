@@ -10,7 +10,7 @@ pub struct Extra(pub(super) imp::Extra);
 
 impl Debug for Extra {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Extra").field("sys", &"<...>").finish()
+        Debug::fmt(&self.0, f)
     }
 }
 

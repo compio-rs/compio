@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    io,
+    fmt, io,
     marker::PhantomData,
     os::windows::io::{
         AsHandle, AsRawHandle, AsRawSocket, AsSocket, BorrowedHandle, BorrowedSocket, OwnedHandle,
@@ -27,6 +27,7 @@ mod wait;
 
 /// Extra data attached for IOCP.
 #[repr(C)]
+#[derive(Debug)]
 pub(in crate::sys) struct Extra {
     overlapped: Overlapped,
 }
@@ -593,6 +594,15 @@ pub struct Overlapped {
     pub base: OVERLAPPED,
     /// The unique ID of created driver.
     pub driver: RawFd,
+}
+
+impl fmt::Debug for Overlapped {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Overlapped")
+            .field("base", &"OVERLAPPED")
+            .field("driver", &self.driver)
+            .finish()
+    }
 }
 
 impl Overlapped {

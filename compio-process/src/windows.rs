@@ -68,7 +68,7 @@ impl AsyncRead for ChildStdout {
 impl AsyncReadManaged for ChildStdout {
     type Buffer = BufferRef;
 
-    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         let fd = self.to_shared_fd();
         let res = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
@@ -92,7 +92,7 @@ impl AsyncRead for ChildStderr {
 impl AsyncReadManaged for ChildStderr {
     type Buffer = BufferRef;
 
-    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         let fd = self.to_shared_fd();
         let res = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;

@@ -88,7 +88,8 @@ impl Debug for Runtime {
             .field("driver", &"...")
             .field("scheduler", &"...");
         #[cfg(feature = "time")]
-        s.field("timer_runtime", &"...").finish()
+        s.field("timer_runtime", &"...");
+        s.finish()
     }
 }
 

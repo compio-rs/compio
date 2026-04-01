@@ -137,7 +137,7 @@ impl Drop for Proactor {
         let BufferPoolState::Init(buffer_pool) = &mut self.buffer_pool else {
             return;
         };
-        assert!(buffer_pool.is_unique()); // Just in case. Shouldn't happen
+        debug_assert!(buffer_pool.is_unique()); // Just in case. Shouldn't happen
         _ = unsafe { buffer_pool.release(&mut self.driver) };
     }
 }

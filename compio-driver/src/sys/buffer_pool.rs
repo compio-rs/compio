@@ -62,6 +62,7 @@ pub(crate) struct BufferPoolRoot {
 ///
 /// Dropping this type will reset the buffer back to the pool instead of
 /// releasing buffer's memory.
+#[derive(Debug)]
 pub struct BufferRef {
     /// Initialized length of the buffer, set with [`SetLen`]
     len: u32,
@@ -132,7 +133,7 @@ impl BufferPoolRoot {
     /// Release the buffer pool and deallocate all buffers.
     ///
     /// If the buffer pool root is dropped without calling this function,
-    /// everything will be leaked and there will be no chance to recoever them
+    /// everything will be leaked and there will be no chance to recover them
     /// back, except those have been taken by [`BufferRef`], which will be
     /// released when they're dropped.
     ///
@@ -333,7 +334,7 @@ impl Shared {
 impl BufferRef {
     /// Set the capacity of this buffer.
     ///
-    /// This will does nothing if `cap` is greater than underlying buffer's
+    /// This does nothing if `cap` is greater than underlying buffer's
     /// length.
     pub fn with_capacity(mut self, cap: usize) -> Self {
         self.set_capacity(cap);
@@ -342,7 +343,7 @@ impl BufferRef {
 
     /// Set the capacity of this buffer.
     ///
-    /// This will does nothing if `cap` is greater than underlying buffer's
+    /// This does nothing if `cap` is greater than underlying buffer's
     /// length or equals 0.
     pub fn set_capacity(&mut self, cap: usize) {
         if cap == 0 {

@@ -215,7 +215,7 @@ impl Socket {
         unsafe { res.map_vec_advanced() }
     }
 
-    pub async fn recv_managed(&self, len: usize, flags: i32) -> io::Result<BufferRef> {
+    pub async fn recv_managed(&self, len: usize, flags: i32) -> io::Result<Option<BufferRef>> {
         let fd = self.to_shared_fd();
         let res = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
@@ -230,7 +230,7 @@ impl Socket {
         &self,
         len: usize,
         flags: i32,
-    ) -> io::Result<(BufferRef, Option<SockAddr>)> {
+    ) -> io::Result<Option<(BufferRef, Option<SockAddr>)>> {
         let fd = self.to_shared_fd();
         let inner = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
@@ -239,9 +239,18 @@ impl Socket {
         })?
         .await;
         let (len, op) = buf_try!(@try inner);
-        let (mut buf, addr) = op.take_buffer().expect("Buffer should be set");
+        // Kernel returns 0 for the operation, drop the buffer and return Ok(None)
+        if len == 0 {
+            return Ok(None);
+        }
+        let Some((mut buf, addr)) = op.take_buffer() else {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                format!("Read {len} bytes, but no buffer was selected by kernel"),
+            ));
+        };
         unsafe { buf.advance_to(len) };
-        Ok((buf, addr))
+        Ok(Some((buf, addr)))
     }
 
     pub async fn send<T: IoBuf>(&self, buffer: T, flags: i32) -> BufResult<usize, T> {

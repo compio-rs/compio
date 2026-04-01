@@ -1,4 +1,5 @@
 /// Extra data for RawOp.
+#[derive(Debug)]
 pub(in crate::sys) struct Extra {
     flags: u32,
     personality: Option<u16>,

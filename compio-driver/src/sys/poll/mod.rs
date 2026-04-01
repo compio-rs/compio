@@ -27,6 +27,7 @@ mod extra;
 pub(in crate::sys) use extra::Extra;
 pub(crate) mod op;
 
+#[derive(Debug)]
 struct Track {
     arg: WaitArg,
     ready: bool,

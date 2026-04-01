@@ -514,7 +514,7 @@ impl AsyncRead for &Receiver {
 impl AsyncReadManaged for Receiver {
     type Buffer = BufferRef;
 
-    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         (&*self).read_managed(len).await
     }
 }
@@ -522,7 +522,7 @@ impl AsyncReadManaged for Receiver {
 impl AsyncReadManaged for &Receiver {
     type Buffer = BufferRef;
 
-    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         let fd = self.to_shared_fd();
         let res = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;

@@ -214,7 +214,7 @@ impl UdpSocket {
     ///
     /// If `len` == 0, will use buffer pool's inner buffer size as the max len,
     /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
-    pub async fn recv_managed(&self, len: usize) -> io::Result<BufferRef> {
+    pub async fn recv_managed(&self, len: usize) -> io::Result<Option<BufferRef>> {
         self.inner.recv_managed(len, 0).await
     }
 
@@ -223,17 +223,22 @@ impl UdpSocket {
     ///
     /// If `len` == 0, will use buffer pool's inner buffer size as the max len,
     /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
-    pub async fn recv_from_managed(&self, len: usize) -> io::Result<(BufferRef, SocketAddr)> {
-        self.inner
-            .recv_from_managed(len, 0)
-            .await
-            .map(|(buffer, addr)| {
+    pub async fn recv_from_managed(
+        &self,
+        len: usize,
+    ) -> io::Result<Option<(BufferRef, SocketAddr)>> {
+        let res = self.inner.recv_from_managed(len, 0).await?;
+        let ret = match res {
+            Some((buffer, addr)) => {
                 let addr = addr
                     .expect("should have addr")
                     .as_socket()
                     .expect("should be SocketAddr");
-                (buffer, addr)
-            })
+                Some((buffer, addr))
+            }
+            None => None,
+        };
+        Ok(ret)
     }
 
     /// Sends some data to the socket from the buffer, returning the original

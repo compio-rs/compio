@@ -63,7 +63,7 @@ impl<T: AsFd + 'static> AsyncRead for AsyncFd<T> {
 impl<T: AsFd + 'static> AsyncReadManaged for AsyncFd<T> {
     type Buffer = BufferRef;
 
-    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         (&*self).read_managed(len).await
     }
 }
@@ -71,7 +71,7 @@ impl<T: AsFd + 'static> AsyncReadManaged for AsyncFd<T> {
 impl<T: AsFd + 'static> AsyncReadManaged for &AsyncFd<T> {
     type Buffer = BufferRef;
 
-    async fn read_managed(&mut self, len: usize) -> io::Result<Self::Buffer> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         let runtime = Runtime::current();
         let fd = self.to_shared_fd();
         let op = ReadManaged::new(fd, &runtime.buffer_pool()?, len)?;
