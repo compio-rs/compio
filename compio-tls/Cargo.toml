@@ -39,6 +39,7 @@ compio-macros = { workspace = true }
 rcgen = { workspace = true }
 rustls = { workspace = true, default-features = false, features = ["ring"] }
 rustls-native-certs = { workspace = true }
+tempfile = { workspace = true }
 
 futures-rustls = { workspace = true, default-features = false, features = [
     "ring",

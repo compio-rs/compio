@@ -32,7 +32,7 @@ async fn start_server() -> (SocketAddr, Certificate) {
         stream.write_all(res).await.unwrap();
         stream.flush().await.unwrap();
         stream.shutdown().await.unwrap();
-        stream.read(vec![]).await.unwrap();
+        stream.read(vec![0u8; 1]).await.unwrap();
     })
     .detach();
     (addr, cert)
@@ -83,30 +83,40 @@ async fn rtls() {
 #[cfg(feature = "py-dynamic-openssl")]
 #[compio_macros::test]
 async fn py_ossl() {
+    use std::io::Write;
+
     use compio_py_dynamic_openssl::pyo3;
-    use pyo3::{IntoPyObjectExt, types::IntoPyDict};
+    use pyo3::{
+        IntoPyObjectExt,
+        types::{IntoPyDict, PyDictMethods},
+    };
 
     let (addr, cert) = start_server().await;
+
+    let mut path = tempfile::NamedTempFile::new().unwrap();
+    path.write_all(cert.pem().as_bytes()).unwrap();
 
     pyo3::Python::initialize();
     let context = pyo3::Python::attach(|py| {
         let loaded = compio_py_dynamic_openssl::load_py(py).unwrap();
         assert!(loaded);
-        let module = py.import("ssl").unwrap();
-        let context = py
-            .eval(
-                c"ctx = ssl.create_default_context(); ctx.load_verify_locations(cafile=cert); ctx",
-                None,
-                Some(
-                    &[
-                        ("ssl", module.into_bound_py_any(py).unwrap()),
-                        ("cert", cert.pem().into_bound_py_any(py).unwrap()),
-                    ]
-                    .into_py_dict(py)
-                    .unwrap(),
-                ),
-            )
-            .unwrap();
+        let ssl = py.import("ssl").unwrap();
+        let locals = [
+            ("ssl", ssl.into_bound_py_any(py).unwrap()),
+            ("cert", path.path().into_bound_py_any(py).unwrap()),
+        ]
+        .into_py_dict(py)
+        .unwrap();
+        py.run(
+            cr#"
+ctx = ssl.create_default_context()
+ctx.load_verify_locations(cafile=cert)
+"#,
+            None,
+            Some(&locals),
+        )
+        .unwrap();
+        let context = locals.get_item("ctx").unwrap().unwrap();
         compio_py_dynamic_openssl::SSLContext::try_from(context).unwrap()
     });
     let connector = TlsConnector::from(context);
