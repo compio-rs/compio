@@ -61,6 +61,7 @@ once_cell = "1.18.0"
 paste = { package = "pastey", version = "0.2.1" }
 pin-project-lite = "0.2.16"
 rand = "0.10.0"
+rcgen = "0.14.1"
 rustls = { version = "0.23.1", default-features = false }
 rustls-platform-verifier = "0.6.0"
 rustls-native-certs = "0.8.0"

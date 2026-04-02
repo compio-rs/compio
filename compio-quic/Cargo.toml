@@ -58,7 +58,7 @@ criterion = { workspace = true, features = ["async_tokio"] }
 http = "1.1.0"
 quinn = "0.11.9"
 rand = { workspace = true }
-rcgen = "0.14.1"
+rcgen = { workspace = true }
 socket2 = { workspace = true, features = ["all"] }
 tokio = { workspace = true, features = ["macros", "rt"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
