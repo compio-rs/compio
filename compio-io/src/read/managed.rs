@@ -1,4 +1,6 @@
-use std::{io::Cursor, ops::Deref};
+use std::io::Cursor;
+
+use compio_buf::IoBuf;
 
 use crate::IoResult;
 
@@ -6,65 +8,54 @@ use crate::IoResult;
 ///
 /// Async read with buffer pool
 pub trait AsyncReadManaged {
-    /// Buffer pool type
-    type BufferPool;
     /// Filled buffer type
-    type Buffer<'a>;
+    type Buffer: IoBuf;
 
-    /// Read some bytes from this source with [`Self::BufferPool`] and return
-    /// a [`Self::Buffer`].
+    /// Read some bytes from this source and return a [`Self::Buffer`].
     ///
-    /// If `len` == 0, will use [`Self::BufferPool`] inner buffer size as the
-    /// max len, if `len` > 0, `min(len, inner buffer size)` will be the
-    /// read max len
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> IoResult<Self::Buffer<'a>>;
+    /// Returning `Ok(None)` is similar to `Ok(0)` for normal [`AsyncRead`].
+    ///
+    /// # Implementation Note
+    ///
+    /// - If `len` == 0, implementation should use buffer's size as `len`
+    /// - if `len` > 0, `min(len, buffer_size)` will be the max number of bytes
+    ///   to be read.
+    ///
+    /// [`AsyncRead`]: crate::AsyncRead
+    async fn read_managed(&mut self, len: usize) -> IoResult<Option<Self::Buffer>>;
 }
 
 /// # AsyncReadAtManaged
 ///
 /// Async read with buffer pool and position
 pub trait AsyncReadManagedAt {
-    /// Buffer pool type
-    type BufferPool;
     /// Filled buffer type
-    type Buffer<'a>;
+    type Buffer: IoBuf;
 
-    /// Read some bytes from this source at position with [`Self::BufferPool`]
-    /// and return a [`Self::Buffer`].
+    /// Read some bytes from this source at position and return a
+    /// [`Self::Buffer`].
     ///
-    /// If `len` == 0, will use [`Self::BufferPool`] inner buffer size as the
-    /// max len, if `len` > 0, `min(len, inner buffer size)` will be the
-    /// read max len
-    async fn read_managed_at<'a>(
-        &self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-        pos: u64,
-    ) -> IoResult<Self::Buffer<'a>>;
+    /// Returning `Ok(None)` is similar to `Ok(0)` for normal [`AsyncReadAt`].
+    ///
+    /// # Implementation Note
+    ///
+    /// - If `len` == 0, implementation should use buffer's size as `len`
+    /// - if `len` > 0, `min(len, buffer_size)` will be the max number of bytes
+    ///   to be read.
+    ///
+    /// [`AsyncReadAt`]: crate::AsyncReadAt
+    async fn read_managed_at(&self, len: usize, pos: u64) -> IoResult<Option<Self::Buffer>>;
 }
 
-impl<A: AsyncReadManagedAt> AsyncReadManaged for Cursor<A>
-where
-    for<'a> A::Buffer<'a>: Deref<Target = [u8]>,
-{
-    type Buffer<'a> = A::Buffer<'a>;
-    type BufferPool = A::BufferPool;
+impl<A: AsyncReadManagedAt> AsyncReadManaged for Cursor<A> {
+    type Buffer = A::Buffer;
 
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> IoResult<Self::Buffer<'a>> {
+    async fn read_managed(&mut self, len: usize) -> IoResult<Option<Self::Buffer>> {
         let pos = self.position();
-        let buf = self
-            .get_ref()
-            .read_managed_at(buffer_pool, len, pos)
-            .await?;
-        self.set_position(pos + buf.len() as u64);
-        Ok(buf)
+        let Some(buf) = self.get_ref().read_managed_at(len, pos).await? else {
+            return Ok(None);
+        };
+        self.set_position(pos + buf.buf_len() as u64);
+        Ok(Some(buf))
     }
 }

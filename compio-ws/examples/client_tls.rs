@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 use compio_tls::TlsConnector;
 use compio_ws::connect_async_tls_with_config;
 use tungstenite::Message;

@@ -3,10 +3,9 @@ use std::pin::Pin;
 use std::{borrow::Cow, io, mem::MaybeUninit};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
-use compio_io::{
-    AsyncRead, AsyncWrite,
-    compat::{AsyncStream, SyncStream},
-};
+#[cfg(feature = "rustls")]
+use compio_io::compat::AsyncStream;
+use compio_io::{AsyncRead, AsyncWrite, compat::SyncStream};
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]

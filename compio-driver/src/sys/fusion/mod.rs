@@ -13,12 +13,14 @@ use compio_log::warn;
 pub use iour::{IourOpCode, OpEntry};
 pub use poll::{Decision, OpType, PollOpCode};
 
-pub(crate) use super::iour::{is_op_supported, take_buffer};
+pub(crate) use super::iour::is_op_supported;
 use super::{iour, poll};
 pub use crate::driver_type::DriverType; // Re-export so current user won't be broken
 use crate::{BufferPool, ProactorBuilder, key::ErasedKey};
 
+mod buffer_pool;
 mod extra;
+pub(crate) use buffer_pool::BufControl;
 pub(in crate::sys) use extra::Extra;
 
 /// Fused [`OpCode`]
@@ -92,6 +94,15 @@ impl Driver {
         }
     }
 
+    #[allow(dead_code)]
+    pub fn as_iour_mut(&mut self) -> Option<&mut iour::Driver> {
+        if let FuseDriver::IoUring(driver) = &mut self.fuse {
+            Some(driver)
+        } else {
+            None
+        }
+    }
+
     pub fn driver_type(&self) -> DriverType {
         match &self.fuse {
             FuseDriver::Poll(driver) => driver.driver_type(),
@@ -138,29 +149,6 @@ impl Driver {
         match &self.fuse {
             FuseDriver::Poll(driver) => driver.waker(),
             FuseDriver::IoUring(driver) => driver.waker(),
-        }
-    }
-
-    pub fn create_buffer_pool(
-        &mut self,
-        buffer_len: u16,
-        buffer_size: usize,
-    ) -> io::Result<BufferPool> {
-        match &mut self.fuse {
-            FuseDriver::IoUring(driver) => Ok(driver.create_buffer_pool(buffer_len, buffer_size)?),
-            FuseDriver::Poll(driver) => Ok(driver.create_buffer_pool(buffer_len, buffer_size)?),
-        }
-    }
-
-    /// # Safety
-    ///
-    /// caller must make sure release the buffer pool with correct driver
-    pub unsafe fn release_buffer_pool(&mut self, buffer_pool: BufferPool) -> io::Result<()> {
-        unsafe {
-            match &mut self.fuse {
-                FuseDriver::Poll(driver) => driver.release_buffer_pool(buffer_pool),
-                FuseDriver::IoUring(driver) => driver.release_buffer_pool(buffer_pool),
-            }
         }
     }
 

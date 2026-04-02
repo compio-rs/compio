@@ -1,5 +1,6 @@
 use super::*;
 
+#[derive(Debug)]
 pub(in crate::sys) enum Extra {
     Poll(poll::Extra),
     IoUring(iour::Extra),

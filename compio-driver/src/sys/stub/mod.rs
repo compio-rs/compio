@@ -24,6 +24,7 @@ use compio_buf::BufResult;
 
 use crate::{BufferPool, DriverType, ErasedKey, ProactorBuilder, control::Carrier};
 
+#[derive(Debug)]
 pub(in crate::sys) struct Extra {}
 
 impl Extra {

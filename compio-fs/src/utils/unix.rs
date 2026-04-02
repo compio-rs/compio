@@ -1,11 +1,12 @@
 use std::{io, os::fd::AsFd, path::Path};
 
-use compio_driver::{
-    ToSharedFd,
-    op::{CreateDir, CurrentDir, HardLink, Rename, Symlink, Unlink},
-};
+#[cfg(dirfd)]
+use compio_driver::ToSharedFd;
+use compio_driver::op::{CreateDir, CurrentDir, HardLink, Rename, Symlink, Unlink};
 
-use crate::{File, path_string};
+#[cfg(dirfd)]
+use crate::File;
+use crate::path_string;
 
 async fn unlink(path: impl AsRef<Path>, dir: bool) -> io::Result<()> {
     let path = path_string(path)?;

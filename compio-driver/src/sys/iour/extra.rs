@@ -1,4 +1,5 @@
 /// Extra data for RawOp.
+#[derive(Debug)]
 pub(in crate::sys) struct Extra {
     flags: u32,
     personality: Option<u16>,
@@ -25,6 +26,7 @@ impl Extra {
     }
 }
 
+#[allow(dead_code)]
 #[cfg(not(fusion))]
 impl crate::sys::Extra {
     pub(crate) fn is_iour(&self) -> bool {

@@ -23,7 +23,6 @@
 
 mod affinity;
 mod attacher;
-mod buffer_pool;
 mod cancel;
 mod future;
 mod opt_waker;
@@ -34,7 +33,7 @@ pub mod fd;
 pub mod time;
 
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     collections::HashSet,
     fmt::Debug,
     future::Future,
@@ -47,6 +46,7 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner};
+pub use compio_driver::BufferPool;
 use compio_driver::{
     AsRawFd, Cancel, DriverType, Extra, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
     op::Asyncify,
@@ -58,13 +58,9 @@ use compio_log::{debug, instrument};
 use crate::affinity::bind_to_cpu_set;
 #[cfg(feature = "time")]
 use crate::time::{TimerFuture, TimerKey, TimerRuntime};
-pub use crate::{attacher::*, buffer_pool::*, cancel::CancelToken, future::*, opt_waker::OptWaker};
+pub use crate::{attacher::*, cancel::CancelToken, future::*, opt_waker::OptWaker};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
-
-thread_local! {
-    static RUNTIME_ID: Cell<u64> = const { Cell::new(0) };
-}
 
 #[cold]
 fn not_in_compio_runtime() -> ! {
@@ -77,14 +73,6 @@ pub struct RuntimeInner {
     driver: RefCell<Proactor>,
     #[cfg(feature = "time")]
     timer_runtime: RefCell<TimerRuntime>,
-    // Runtime id is used to check if the buffer pool is belonged to this runtime or not.
-    // Without this, if user enable `io-uring-buf-ring` feature then:
-    // 1. Create a buffer pool at runtime1
-    // 3. Create another runtime2, then use the exists buffer pool in runtime2, it may cause
-    // - io-uring report error if the buffer group id is not registered
-    // - buffer pool will return a wrong buffer which the buffer's data is uninit, that will cause
-    //   UB
-    id: u64,
 }
 
 /// The async runtime of compio.
@@ -101,7 +89,7 @@ impl Debug for Runtime {
             .field("scheduler", &"...");
         #[cfg(feature = "time")]
         s.field("timer_runtime", &"...");
-        s.field("id", &self.id).finish()
+        s.finish()
     }
 }
 
@@ -404,25 +392,12 @@ impl Runtime {
         self.timer_runtime.borrow_mut().wake();
     }
 
-    pub(crate) fn create_buffer_pool(
-        &self,
-        buffer_len: u16,
-        buffer_size: usize,
-    ) -> io::Result<compio_driver::BufferPool> {
-        self.driver
-            .borrow_mut()
-            .create_buffer_pool(buffer_len, buffer_size)
-    }
-
-    pub(crate) unsafe fn release_buffer_pool(
-        &self,
-        buffer_pool: compio_driver::BufferPool,
-    ) -> io::Result<()> {
-        unsafe { self.driver.borrow_mut().release_buffer_pool(buffer_pool) }
-    }
-
-    pub(crate) fn id(&self) -> u64 {
-        self.id
+    /// Get buffer pool of the runtime.
+    ///
+    /// This will lazily initialize the pool at the first time it's accessed,
+    /// and future access to the pool will be cheap and infallible.
+    pub fn buffer_pool(&self) -> io::Result<BufferPool> {
+        self.driver.borrow_mut().buffer_pool()
     }
 
     /// Register file descriptors for fixed-file operations.
@@ -554,8 +529,7 @@ impl RuntimeBuilder {
             thread_affinity,
             event_interval,
         } = self;
-        let id = RUNTIME_ID.get();
-        RUNTIME_ID.set(id + 1);
+
         if !thread_affinity.is_empty() {
             bind_to_cpu_set(thread_affinity);
         }
@@ -568,7 +542,6 @@ impl RuntimeBuilder {
             driver: RefCell::new(proactor_builder.build()?),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
-            id,
         };
         Ok(Runtime(Rc::new(inner)))
     }

@@ -4,15 +4,14 @@ use std::{future::Future, io, path::Path};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{
-    AsRawFd, ToSharedFd, impl_raw_fd,
+    AsRawFd, BufferRef, ResultTakeBuffer, ToSharedFd, impl_raw_fd,
     op::{
-        BufResultExt, Pipe, Read, ReadManaged, ReadVectored, ResultTakeBuffer, VecBufResultExt,
-        Write, WriteVectored,
+        BufResultExt, Pipe, Read, ReadManaged, ReadVectored, VecBufResultExt, Write, WriteVectored,
     },
     syscall,
 };
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
-use compio_runtime::{BorrowedBuffer, BufferPool};
+use compio_runtime::Runtime;
 
 use crate::File;
 
@@ -513,34 +512,25 @@ impl AsyncRead for &Receiver {
 }
 
 impl AsyncReadManaged for Receiver {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
+    type Buffer = BufferRef;
 
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> io::Result<Self::Buffer<'a>> {
-        (&*self).read_managed(buffer_pool, len).await
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
+        (&*self).read_managed(len).await
     }
 }
 
 impl AsyncReadManaged for &Receiver {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
+    type Buffer = BufferRef;
 
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> io::Result<Self::Buffer<'a>> {
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         let fd = self.to_shared_fd();
-        let buffer_pool = buffer_pool.try_inner()?;
-        let op = ReadManaged::new(fd, buffer_pool, len)?;
-        compio_runtime::submit(op)
-            .with_extra()
-            .await
-            .take_buffer(buffer_pool)
+        let res = Runtime::with_current(|rt| {
+            let buffer_pool = rt.buffer_pool()?;
+            let op = ReadManaged::new(fd, &buffer_pool, len)?;
+            io::Result::Ok(rt.submit(op))
+        })?
+        .await;
+        unsafe { res.take_buffer() }
     }
 }
 

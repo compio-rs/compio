@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    io,
+    fmt, io,
     marker::PhantomData,
     os::windows::io::{
         AsHandle, AsRawHandle, AsRawSocket, AsSocket, BorrowedHandle, BorrowedSocket, OwnedHandle,
@@ -18,9 +18,7 @@ use windows_sys::Win32::{
     System::IO::OVERLAPPED,
 };
 
-use crate::{
-    AsyncifyPool, BufferPool, DriverType, Entry, ErasedKey, ProactorBuilder, control::Carrier,
-};
+use crate::{AsyncifyPool, DriverType, Entry, ErasedKey, ProactorBuilder, control::Carrier};
 
 pub(crate) mod op;
 
@@ -29,6 +27,7 @@ mod wait;
 
 /// Extra data attached for IOCP.
 #[repr(C)]
+#[derive(Debug)]
 pub(in crate::sys) struct Extra {
     overlapped: Overlapped,
 }
@@ -550,21 +549,6 @@ impl Driver {
         Waker::from(self.notify.clone())
     }
 
-    pub fn create_buffer_pool(
-        &mut self,
-        buffer_len: u16,
-        buffer_size: usize,
-    ) -> io::Result<BufferPool> {
-        Ok(BufferPool::new(buffer_len, buffer_size))
-    }
-
-    /// # Safety
-    ///
-    /// caller must make sure release the buffer pool with correct driver
-    pub unsafe fn release_buffer_pool(&mut self, _: BufferPool) -> io::Result<()> {
-        Ok(())
-    }
-
     pub fn pop_multishot(&mut self, _: &ErasedKey) -> Option<BufResult<usize, crate::sys::Extra>> {
         None
     }
@@ -610,6 +594,15 @@ pub struct Overlapped {
     pub base: OVERLAPPED,
     /// The unique ID of created driver.
     pub driver: RawFd,
+}
+
+impl fmt::Debug for Overlapped {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Overlapped")
+            .field("base", &"OVERLAPPED")
+            .field("driver", &self.driver)
+            .finish()
+    }
 }
 
 impl Overlapped {

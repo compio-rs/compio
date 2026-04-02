@@ -16,6 +16,7 @@
 
 use std::{
     io,
+    num::NonZero,
     task::{Poll, Waker},
     time::Duration,
 };
@@ -32,15 +33,13 @@ mod asyncify;
 pub use asyncify::*;
 
 pub mod op;
+pub use op::{ResultTakeBuffer, TakeBuffer};
 
 mod fd;
 pub use fd::*;
 
 mod driver_type;
 pub use driver_type::*;
-
-mod buffer_pool;
-pub use buffer_pool::*;
 
 mod sys;
 pub use sys::{Extra, *};
@@ -99,6 +98,48 @@ impl<K, R> PushEntry<K, R> {
 pub struct Proactor {
     driver: Driver,
     cancel: CancelRegistry,
+    buffer_pool: BufferPoolState,
+}
+
+enum BufferPoolState {
+    Uninit {
+        num_of_bufs: u16,
+        buffer_len: usize,
+        flags: u16,
+    },
+    Init(BufferPoolRoot),
+}
+
+impl BufferPoolState {
+    fn get(&mut self, driver: &mut Driver) -> io::Result<BufferPool> {
+        loop {
+            match self {
+                BufferPoolState::Uninit {
+                    num_of_bufs,
+                    buffer_len,
+                    flags,
+                } => {
+                    *self = BufferPoolState::Init(BufferPoolRoot::new(
+                        driver,
+                        *num_of_bufs,
+                        *buffer_len,
+                        *flags,
+                    )?);
+                }
+                BufferPoolState::Init(root) => return Ok(root.get_pool()),
+            }
+        }
+    }
+}
+
+impl Drop for Proactor {
+    fn drop(&mut self) {
+        let BufferPoolState::Init(buffer_pool) = &mut self.buffer_pool else {
+            return;
+        };
+        debug_assert!(buffer_pool.is_unique()); // Just in case. Shouldn't happen
+        _ = unsafe { buffer_pool.release(&mut self.driver) };
+    }
 }
 
 assert_not_impl!(Proactor, Send);
@@ -119,6 +160,11 @@ impl Proactor {
         Ok(Self {
             driver: Driver::new(builder)?,
             cancel: CancelRegistry::new(),
+            buffer_pool: BufferPoolState::Uninit {
+                num_of_bufs: builder.buffer_pool_size,
+                buffer_len: builder.buffer_pool_buffer_len,
+                flags: builder.buffer_pool_flag,
+            },
         })
     }
 
@@ -280,30 +326,6 @@ impl Proactor {
         self.driver.waker()
     }
 
-    /// Create buffer pool with given `buffer_size` and `buffer_len`
-    ///
-    /// # Notes
-    ///
-    /// If `buffer_len` is not a power of 2, it will be rounded up with
-    /// [`u16::next_power_of_two`].
-    pub fn create_buffer_pool(
-        &mut self,
-        buffer_len: u16,
-        buffer_size: usize,
-    ) -> io::Result<BufferPool> {
-        self.driver.create_buffer_pool(buffer_len, buffer_size)
-    }
-
-    /// Release the buffer pool
-    ///
-    /// # Safety
-    ///
-    /// Caller must make sure to release the buffer pool with the correct
-    /// driver, i.e., the one they created the buffer pool with.
-    pub unsafe fn release_buffer_pool(&mut self, buffer_pool: BufferPool) -> io::Result<()> {
-        unsafe { self.driver.release_buffer_pool(buffer_pool) }
-    }
-
     /// Register file descriptors for fixed-file operations with io_uring.
     ///
     /// This only works on `io_uring` driver. It will return an [`Unsupported`]
@@ -406,6 +428,14 @@ impl Proactor {
         #[cfg(not(io_uring))]
         Err(unsupported(personality))
     }
+
+    /// Get the buffer pool of the driver.
+    ///
+    /// This will lazily initialize the pool at the first time it's accessed,
+    /// and future access to the pool will be cheap and infallible.
+    pub fn buffer_pool(&mut self) -> io::Result<BufferPool> {
+        self.buffer_pool.get(&mut self.driver)
+    }
 }
 
 impl AsRawFd for Proactor {
@@ -462,7 +492,6 @@ impl Entry {
     }
 
     #[cfg(io_uring)]
-    // this method only used by in io-uring driver
     pub(crate) fn set_flags(&mut self, flags: u32) {
         self.flags = flags;
     }
@@ -513,6 +542,9 @@ pub struct ProactorBuilder {
     eventfd: Option<RawFd>,
     driver_type: Option<DriverType>,
     op_flags: OpCodeFlag,
+    buffer_pool_size: u16,
+    buffer_pool_flag: u16,
+    buffer_pool_buffer_len: usize,
 }
 
 // SAFETY: `RawFd` is thread safe.
@@ -537,6 +569,9 @@ impl ProactorBuilder {
             eventfd: None,
             driver_type: None,
             op_flags: OpCodeFlag::empty(),
+            buffer_pool_size: 8,
+            buffer_pool_flag: 0,
+            buffer_pool_buffer_len: 8192,
         }
     }
 
@@ -670,6 +705,28 @@ impl ProactorBuilder {
     /// It is ignored if the fusion driver is disabled.
     pub fn driver_type(&mut self, t: DriverType) -> &mut Self {
         self.driver_type = Some(t);
+        self
+    }
+
+    /// Number of buffers in the buffer pool.
+    ///
+    /// `size` will be rounded up if it's not power of 2.
+    pub fn buffer_pool_size(&mut self, size: NonZero<u16>) -> &mut Self {
+        self.buffer_pool_size = size.get();
+        self
+    }
+
+    /// Flag to be used to initialize buffer pool.
+    ///
+    /// This is only supported on io-uring driver.
+    pub fn buffer_pool_flag(&mut self, flag: u16) -> &mut Self {
+        self.buffer_pool_flag = flag;
+        self
+    }
+
+    /// Length of each buffer pool's buffer.
+    pub fn buffer_pool_buffer_len(&mut self, size: usize) -> &mut Self {
+        self.buffer_pool_buffer_len = size;
         self
     }
 

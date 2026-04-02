@@ -7,11 +7,11 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
-    AsFd, AsRawFd, BorrowedFd, OpCode, OpType, RawFd, SharedFd,
-    op::{BufResultExt, Read as OpRead, ReadManaged, ResultTakeBuffer, Write as OpWrite},
+    AsFd, AsRawFd, BorrowedFd, BufferRef, OpCode, OpType, RawFd, ResultTakeBuffer, SharedFd,
+    op::{BufResultExt, Read as OpRead, ReadManaged, Write as OpWrite},
 };
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
-use compio_runtime::{BorrowedBuffer, BufferPool, Runtime};
+use compio_runtime::Runtime;
 use windows_sys::Win32::System::IO::OVERLAPPED;
 
 #[cfg(doc)]
@@ -168,40 +168,26 @@ impl AsyncRead for Stdin {
 }
 
 impl AsyncReadManaged for Stdin {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
+    type Buffer = BufferRef;
 
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> io::Result<Self::Buffer<'a>> {
-        (&*self).read_managed(buffer_pool, len).await
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
+        (&*self).read_managed(len).await
     }
 }
 
 impl AsyncReadManaged for &Stdin {
-    type Buffer<'a> = BorrowedBuffer<'a>;
-    type BufferPool = BufferPool;
+    type Buffer = BufferRef;
 
-    async fn read_managed<'a>(
-        &mut self,
-        buffer_pool: &'a Self::BufferPool,
-        len: usize,
-    ) -> io::Result<Self::Buffer<'a>> {
-        let buffer_pool = buffer_pool.try_inner()?;
+    async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
+        let runtime = Runtime::current();
+        let buffer_pool = runtime.buffer_pool()?;
         if self.isatty {
-            let buf = buffer_pool.get_buffer(len)?;
+            let buf = buffer_pool.pop()?;
             let op = StdRead::new(io::stdin(), buf);
-            let BufResult(res, buf) = compio_runtime::submit(op).await.into_inner();
-            let res = unsafe { buffer_pool.create_proxy(buf, res?) };
-            Ok(res)
+            unsafe { compio_runtime::submit(op).await.take_buffer() }
         } else {
-            let op = ReadManaged::new(self.fd.clone(), buffer_pool, len)?;
-            compio_runtime::submit(op)
-                .with_extra()
-                .await
-                .take_buffer(buffer_pool)
+            let op = ReadManaged::new(self.fd.clone(), &buffer_pool, len)?;
+            unsafe { compio_runtime::submit(op).await.take_buffer() }
         }
     }
 }

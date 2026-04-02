@@ -34,19 +34,19 @@ use io_uring::{
     opcode::{AsyncCancel, PollAdd},
     types::{Fd, SubmitArgs, Timespec},
 };
-use slab::Slab;
 
 use crate::{
-    AsyncifyPool, BufferPool, DriverType, Entry, ProactorBuilder,
+    AsyncifyPool, DriverType, Entry, ProactorBuilder,
     control::Carrier,
     key::{BorrowedKey, ErasedKey},
     syscall,
 };
 
+mod buffer_pool;
 mod extra;
+pub(in crate::sys) use buffer_pool::BufControl;
 pub(in crate::sys) use extra::Extra;
 pub(crate) mod op;
-pub(crate) use op::take_buffer;
 
 pub(crate) fn is_op_supported(code: u8) -> bool {
     #[cfg(feature = "once_cell_try")]
@@ -250,7 +250,6 @@ pub(crate) struct Driver {
     pool: AsyncifyPool,
     completed_tx: Sender<Entry>,
     completed_rx: Receiver<Entry>,
-    buffer_group_ids: Slab<()>,
     need_push_notifier: bool,
     /// Keys leaked via `into_raw()` into io_uring user_data, freed on drop.
     in_flight: HashSet<usize>,
@@ -301,7 +300,6 @@ impl Driver {
             completed_tx,
             completed_rx,
             pool: builder.create_or_get_thread_pool(),
-            buffer_group_ids: Slab::new(),
             need_push_notifier: true,
             in_flight: HashSet::new(),
             _p: PhantomData,
@@ -314,6 +312,11 @@ impl Driver {
 
     #[allow(dead_code)]
     pub fn as_iour(&self) -> Option<&Self> {
+        Some(self)
+    }
+
+    #[allow(dead_code)]
+    pub fn as_iour_mut(&mut self) -> Option<&mut Self> {
         Some(self)
     }
 
@@ -404,7 +407,6 @@ impl Driver {
                     if more(flags) {
                         let key = unsafe { BorrowedKey::from_raw(key as _) };
                         let mut key = key.borrow();
-                        #[allow(clippy::useless_conversion)]
                         let mut extra: crate::sys::Extra = Extra::new().into();
                         extra.set_flags(entry.flags());
                         unsafe {
@@ -576,61 +578,6 @@ impl Driver {
 
     pub fn waker(&self) -> Waker {
         self.notifier.waker()
-    }
-
-    pub fn create_buffer_pool(
-        &mut self,
-        buffer_len: u16,
-        buffer_size: usize,
-    ) -> io::Result<BufferPool> {
-        let buffer_group = self.buffer_group_ids.insert(());
-        if buffer_group > u16::MAX as usize {
-            self.buffer_group_ids.remove(buffer_group);
-
-            return Err(io::Error::new(
-                io::ErrorKind::OutOfMemory,
-                "too many buffer pool allocated",
-            ));
-        }
-
-        let buf_ring = io_uring_buf_ring::IoUringBufRing::new_with_flags(
-            &self.inner,
-            buffer_len,
-            buffer_group as _,
-            buffer_size,
-            0,
-        )?;
-
-        #[cfg(fusion)]
-        {
-            Ok(BufferPool::new_io_uring(crate::IoUringBufferPool::new(
-                buf_ring,
-            )))
-        }
-        #[cfg(not(fusion))]
-        {
-            Ok(BufferPool::new(buf_ring))
-        }
-    }
-
-    /// # Safety
-    ///
-    /// caller must make sure release the buffer pool with correct driver
-    pub unsafe fn release_buffer_pool(&mut self, buffer_pool: BufferPool) -> io::Result<()> {
-        #[cfg(fusion)]
-        let buffer_pool = buffer_pool.into_io_uring();
-
-        let buffer_group = buffer_pool.buffer_group();
-        // FIXME: should we drop it directly if `into_inner` fails?
-        unsafe {
-            buffer_pool
-                .into_inner()
-                .expect("operations not completed")
-                .release(&self.inner)?
-        };
-        self.buffer_group_ids.remove(buffer_group as _);
-
-        Ok(())
     }
 
     pub fn pop_multishot(

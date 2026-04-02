@@ -1,6 +1,7 @@
 use super::*;
 
 /// Extra data for RawOp.
+#[derive(Debug)]
 pub(in crate::sys) struct Extra {
     pub(super) track: Multi<Track>,
 }

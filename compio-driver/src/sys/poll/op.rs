@@ -1205,10 +1205,11 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
 }
 
 impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
-    type Inner = (T, SockAddrStorage, socklen_t);
+    type Inner = (T, Option<SockAddr>);
 
     fn into_inner(self) -> Self::Inner {
-        (self.buffer, self.addr, self.addr_len)
+        let addr = (self.addr_len > 0).then(|| unsafe { SockAddr::new(self.addr, self.addr_len) });
+        (self.buffer, addr)
     }
 }
 
@@ -1271,10 +1272,12 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
 }
 
 impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
-    type Inner = (T, SockAddrStorage, socklen_t);
+    type Inner = (T, Option<SockAddr>);
 
     fn into_inner(self) -> Self::Inner {
-        (self.buffer, self.addr, self.msg.msg_namelen)
+        let addr = (self.msg.msg_namelen > 0)
+            .then(|| unsafe { SockAddr::new(self.addr, self.msg.msg_namelen) });
+        (self.buffer, addr)
     }
 }
 

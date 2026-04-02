@@ -1,9 +1,8 @@
 use std::{fmt::Debug, io};
 
-use compio_io::{
-    AsyncRead, AsyncWrite,
-    compat::{AsyncStream, SyncStream},
-};
+#[cfg(feature = "rustls")]
+use compio_io::compat::AsyncStream;
+use compio_io::{AsyncRead, AsyncWrite, compat::SyncStream};
 
 use crate::TlsStream;
 

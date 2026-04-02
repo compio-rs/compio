@@ -23,8 +23,11 @@ cfg_if::cfg_if! {
 #[cfg(unix)]
 mod unix_op;
 
+mod buffer_pool;
 mod extra;
 
+pub(crate) use buffer_pool::BufferPoolRoot;
+pub use buffer_pool::{BufferPool, BufferRef};
 pub use extra::Extra;
 pub use imp::*;
 

@@ -282,15 +282,8 @@ impl ErasedKey {
     pub(crate) fn set_result(&self, res: io::Result<usize>) {
         let mut this = self.borrow();
         {
-            let this = &mut *this;
-            #[cfg(not(fusion))]
-            unsafe {
-                this.carrier.set_result(&res, &this.extra);
-            }
-            #[cfg(fusion)]
-            unsafe {
-                crate::sys::Carry::set_result(&mut this.carrier, &res, &this.extra);
-            }
+            let RawOp { extra, carrier, .. } = &mut *this;
+            unsafe { crate::sys::Carry::set_result(carrier, &res, extra) };
         }
         if let PushEntry::Pending(Some(w)) =
             std::mem::replace(&mut this.result, PushEntry::Ready(res))
