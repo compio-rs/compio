@@ -69,6 +69,8 @@ pub(crate) fn get_ext<E: ExtData>(waker: &Waker) -> Option<&E> {
 #[derive(Debug, Clone)]
 pub(crate) struct ExtWaker<'a, E> {
     waker: &'a Waker,
+    // `SendWrapper<&Ext>` will not panic when being dropped on other thread since references
+    // doesn't need drop
     ext: SendWrapper<&'a E>,
 }
 
@@ -124,7 +126,8 @@ impl<'a, E: ExtData> ExtWaker<'a, E> {
     }
 
     fn to_owned(&self) -> Option<OwnedExtWaker<E>> {
-        let ext = SendWrapper::new((*self.ext.get()?).to_owned());
+        let ext_data = self.ext.get().copied()?.to_owned();
+        let ext = ManuallyDrop::new(SendWrapper::new(ext_data));
         Some(OwnedExtWaker(Arc::new(Inner {
             waker: self.waker.clone(),
             ext,
@@ -136,7 +139,15 @@ struct OwnedExtWaker<E: ExtData>(Arc<Inner<E>>);
 
 struct Inner<E: ExtData> {
     waker: Waker,
-    ext: SendWrapper<E::OwnedExt>,
+    ext: ManuallyDrop<SendWrapper<E::OwnedExt>>,
+}
+
+impl<E: ExtData> Drop for Inner<E> {
+    fn drop(&mut self) {
+        if self.ext.valid() {
+            unsafe { ManuallyDrop::drop(&mut self.ext) };
+        }
+    }
 }
 
 impl<E: ExtData> OwnedExtWaker<E> {
