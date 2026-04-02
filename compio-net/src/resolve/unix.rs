@@ -13,5 +13,5 @@ pub async fn resolve_sock_addrs(
     compio_runtime::spawn_blocking(move || (host, port).to_socket_addrs())
         .await
         .resume_unwind()
-        .expect("shouldn't be canceled")
+        .expect("shouldn't be cancelled")
 }

@@ -76,7 +76,7 @@ impl<F: Future> Concrete<F> {
 
 impl<F: Future + 'static> Pollable for Concrete<F> {
     fn poll(mut self: Box<Self>) -> Option<Box<dyn Pollable>> {
-        if self.tx.is_canceled() {
+        if self.tx.is_cancelled() {
             return None;
         }
         let cx = &mut Context::from_waker(&self.waker);

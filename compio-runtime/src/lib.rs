@@ -561,7 +561,7 @@ impl RuntimeBuilder {
 /// });
 ///
 /// assert_eq!(
-///     task.await.resume_unwind().expect("shouldn't be canceled"),
+///     task.await.resume_unwind().expect("shouldn't be cancelled"),
 ///     42
 /// );
 /// # })

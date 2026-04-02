@@ -12,7 +12,7 @@ pub async fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
     compio_runtime::spawn_blocking(move || std::fs::metadata(path))
         .await
         .resume_unwind()
-        .expect("shouldn't be canceled")
+        .expect("shouldn't be cancelled")
         .map(Metadata::from)
 }
 
@@ -21,7 +21,7 @@ pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
     compio_runtime::spawn_blocking(move || std::fs::symlink_metadata(path))
         .await
         .resume_unwind()
-        .expect("shouldn't be canceled")
+        .expect("shouldn't be cancelled")
         .map(Metadata::from)
 }
 
@@ -71,7 +71,7 @@ pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::R
     })
     .await
     .resume_unwind()
-    .expect("shouldn't be canceled")
+    .expect("shouldn't be cancelled")
 }
 
 #[derive(Clone)]
