@@ -11,37 +11,26 @@ use compio_buf::BufResult;
 use compio_driver::{Extra, Key, OpCode, PushEntry};
 use futures_util::future::FusedFuture;
 
-use crate::{CancelToken, Runtime};
+use crate::{CancelToken, Ext, Runtime, waker::get_ext};
 
 pub(crate) trait ContextExt {
-    fn as_cancel(&mut self) -> Option<&CancelToken> {
-        None
-    }
-
-    fn as_extra(&mut self, default: impl FnOnce() -> Extra) -> Option<Extra> {
-        let _ = default;
-        None
-    }
+    fn as_cancel(&mut self) -> Option<&CancelToken>;
+    fn as_extra(&mut self, default: impl FnOnce() -> Extra) -> Option<Extra>;
 }
 
-#[cfg(not(feature = "future-combinator"))]
-impl ContextExt for Context<'_> {}
-
-#[cfg(feature = "future-combinator")]
 impl ContextExt for Context<'_> {
     fn as_cancel(&mut self) -> Option<&CancelToken> {
-        self.ext()
-            .downcast_ref::<crate::future::Ext>()?
-            .get_cancel()
+        get_ext::<Ext>(self.waker()).and_then(|x| x.get_cancel())
     }
 
     fn as_extra(&mut self, default: impl FnOnce() -> Extra) -> Option<Extra> {
-        let ext = self.ext().downcast_mut::<crate::future::Ext>()?;
+        let ext = get_ext::<Ext>(self.waker())?;
         let mut extra = default();
         ext.set_extra(&mut extra);
         Some(extra)
     }
 }
+
 pin_project_lite::pin_project! {
     /// Returned [`Future`] for [`Runtime::submit`].
     ///

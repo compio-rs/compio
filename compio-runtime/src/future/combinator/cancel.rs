@@ -1,13 +1,17 @@
 use std::{
     pin::Pin,
-    task::{Context, ContextBuilder, Poll},
+    task::{Context, Poll},
 };
 
 use futures_util::FutureExt;
 use pin_project_lite::pin_project;
 use synchrony::unsync::event::EventListener;
 
-use crate::{CancelToken, future::Ext};
+use crate::{
+    CancelToken,
+    future::Ext,
+    waker::{ExtWaker, with_ext},
+};
 
 pin_project! {
     /// A future with a [`CancelToken`] attached to it.
@@ -98,14 +102,10 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
 
-        if let Some(ext) = cx.ext().downcast_mut::<Ext>() {
-            ext.set_cancel(this.cancel);
-            this.future.poll(cx)
-        } else {
-            let mut ex = Ext::new().with_cancel(this.cancel);
-            let mut cx = ContextBuilder::from(cx).ext(&mut ex).build();
-            this.future.poll(&mut cx)
-        }
+        with_ext(cx.waker(), |waker, ext: &Ext| {
+            let ext = ext.with_cancel(&this.cancel);
+            ExtWaker::new(waker, &ext).poll(this.future)
+        })
     }
 }
 

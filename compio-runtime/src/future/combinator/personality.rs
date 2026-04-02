@@ -1,11 +1,14 @@
 use std::{
     pin::Pin,
-    task::{Context, ContextBuilder, Poll},
+    task::{Context, Poll},
 };
 
 use pin_project_lite::pin_project;
 
-use crate::future::Ext;
+use crate::{
+    future::Ext,
+    waker::{ExtWaker, with_ext},
+};
 
 pin_project! {
     /// A future with a personality attached to it.
@@ -31,13 +34,10 @@ impl<F: Future + ?Sized> Future for WithPersonality<F> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        if let Some(ext) = cx.ext().downcast_mut::<Ext>() {
-            ext.set_personality(*this.personality);
-            this.future.poll(cx)
-        } else {
-            let mut ex = Ext::new().with_personality(*this.personality);
-            let mut cx = ContextBuilder::from(cx).ext(&mut ex).build();
-            this.future.poll(&mut cx)
-        }
+
+        with_ext(cx.waker(), |waker, ext: &Ext| {
+            let ext = ext.with_personality(*this.personality);
+            ExtWaker::new(waker, &ext).poll(this.future)
+        })
     }
 }
