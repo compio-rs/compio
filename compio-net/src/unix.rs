@@ -242,8 +242,8 @@ impl UnixStream {
         Ok(unix_stream)
     }
 
-    #[cfg(unix)]
     /// Creates new UnixStream from a [`std::os::unix::net::UnixStream`].
+    #[cfg(unix)]
     pub fn from_std(stream: std::os::unix::net::UnixStream) -> io::Result<Self> {
         Ok(Self {
             inner: Socket::from_socket2(Socket2::from(stream))?,

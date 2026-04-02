@@ -1,17 +1,17 @@
-#![allow(unused_imports)]
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
-
+#![allow(unused_imports)]
 use std::{net::Ipv4Addr, time::Duration};
 
 use compio::{
     buf::*,
+    driver::{ErrorExt, ProactorBuilder},
     fs::File,
-    io::{AsyncReadAt, AsyncReadExt, AsyncWriteAt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
-    runtime::ResumeUnwind,
+    io::{AsyncRead, AsyncReadAt, AsyncReadExt, AsyncWriteAt, AsyncWriteExt},
+    net::{TcpListener, TcpStream, UnixStream},
+    runtime::{CancelToken, FutureExt, ResumeUnwind},
 };
-use compio_driver::ProactorBuilder;
 use tempfile::NamedTempFile;
+use tokio::io;
 
 #[compio_macros::test]
 #[cfg(feature = "sync")]
@@ -183,4 +183,131 @@ async fn poll_once(future: impl std::future::Future) {
         Poll::Ready(())
     })
     .await;
+}
+
+#[cfg(unix)]
+fn unix_pair() -> io::Result<(UnixStream, UnixStream)> {
+    let (a, b) = std::os::unix::net::UnixStream::pair()?;
+
+    Ok((UnixStream::from_std(a)?, UnixStream::from_std(b)?))
+}
+
+// TODO: We need to test for IOCP as well.
+#[cfg(unix)]
+#[compio_macros::test]
+async fn cancel_token_read() {
+    let cancel_token = CancelToken::new();
+
+    let (mut a, _b) = unix_pair().unwrap();
+
+    let token = cancel_token.clone();
+    let read_task = compio_runtime::spawn(async move {
+        let buf = Vec::with_capacity(1024);
+        a.read(buf).with_cancel(token).await
+    });
+
+    cancel_token.cancel();
+
+    read_task.await.unwrap().unwrap_err();
+}
+
+#[cfg(unix)]
+#[compio_macros::test]
+async fn cancel_token_multiple_operations() {
+    let cancel_token = CancelToken::new();
+
+    let (mut a, mut b) = unix_pair().unwrap();
+    let cancel_token_clone1 = cancel_token.clone();
+    let task1 = compio_runtime::spawn(async move {
+        let buf = Vec::with_capacity(1024);
+        a.read(buf).with_cancel(cancel_token_clone1).await
+    });
+
+    let cancel_token_clone2 = cancel_token.clone();
+    let task2 = compio_runtime::spawn(async move {
+        let buf = Vec::with_capacity(1024);
+        b.read(buf).with_cancel(cancel_token_clone2).await
+    });
+
+    cancel_token.cancel();
+
+    assert!(task1.await.unwrap().is_cancelled());
+    assert!(task2.await.unwrap().is_cancelled());
+}
+
+#[cfg(unix)]
+#[compio_macros::test]
+async fn cancel_token_already_cancelled() {
+    let cancel_token = CancelToken::new();
+    let cancel_token2 = cancel_token.clone();
+
+    cancel_token2.cancel();
+
+    let (mut stream, _b) = unix_pair().unwrap();
+
+    let cancel_token_clone = cancel_token.clone();
+    let read_task = compio_runtime::spawn(async move {
+        let buf = Vec::with_capacity(1024);
+        stream.read(buf).with_cancel(cancel_token_clone).await
+    });
+
+    assert!(read_task.await.unwrap().is_cancelled());
+}
+
+#[cfg(unix)]
+#[compio_macros::test]
+async fn cancel_token_successful_operation() {
+    let cancel_token = CancelToken::new();
+
+    let (mut receiver, mut sender) = unix_pair().unwrap();
+
+    let data = b"hello world";
+    sender.write_all(data).await.unwrap();
+
+    let buf = Vec::with_capacity(1024);
+    let (n, buf) = receiver
+        .read(buf)
+        .with_cancel(cancel_token.clone())
+        .await
+        .unwrap();
+
+    assert_eq!(&buf[..n], data);
+}
+
+#[compio_macros::test]
+async fn cancel_token_wait() {
+    let cancel_token = CancelToken::new();
+
+    let cancel_token_clone = cancel_token.clone();
+    let wait_task = compio_runtime::spawn(async move {
+        cancel_token_clone.wait().await;
+    });
+
+    cancel_token.cancel();
+
+    let _ = wait_task.await;
+}
+
+#[compio_macros::test]
+async fn cancel_token_is_cancelled() {
+    let cancel_token = CancelToken::new();
+
+    assert!(!cancel_token.is_cancelled());
+
+    let cancel_token_clone = cancel_token.clone();
+    cancel_token_clone.cancel();
+
+    assert!(cancel_token.is_cancelled());
+}
+
+#[compio_macros::test]
+async fn cancel_token_clone() {
+    let cancel_token = CancelToken::new();
+    let cloned_token = cancel_token.clone();
+    let cancel_token_for_cancel = cancel_token.clone();
+
+    cancel_token_for_cancel.cancel();
+
+    assert!(cancel_token.is_cancelled());
+    assert!(cloned_token.is_cancelled());
 }

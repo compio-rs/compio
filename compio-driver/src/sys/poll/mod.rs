@@ -694,11 +694,6 @@ impl Driver {
                                 trace!("op {} is not completed", key.as_raw());
                                 continue;
                             }
-                            libc::ECANCELED => {
-                                // Remove the aiocb from kqueue.
-                                unsafe { libc::aio_return(aiocbp.as_ptr()) };
-                                Err(io::Error::from_raw_os_error(libc::ETIMEDOUT))
-                            }
                             _ => {
                                 syscall!(libc::aio_return(aiocbp.as_ptr())).map(|res| res as usize)
                             }
@@ -741,7 +736,7 @@ impl Drop for Driver {
 
 impl Entry {
     pub(crate) fn new_cancelled(key: ErasedKey) -> Self {
-        Entry::new(key, Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)))
+        Entry::new(key, Err(io::Error::from_raw_os_error(libc::ECANCELED)))
     }
 }
 

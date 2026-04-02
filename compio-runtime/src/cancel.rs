@@ -12,7 +12,7 @@ use compio_driver::{Cancel, Key, OpCode};
 use futures_util::{FutureExt, ready};
 use synchrony::unsync::event::{Event, EventListener};
 
-use crate::Runtime;
+use crate::{ContextExt, Runtime};
 
 #[derive(Debug)]
 struct Inner {
@@ -31,17 +31,11 @@ struct Inner {
 /// cancelled, which can be useful for implementing timeouts or other
 /// cancellation-based logic.
 ///
-/// To associate a future with this cancel token, use the `with_cancel`
-/// combinator from the [`FutureExt`] trait, which requires nightly feature
-/// `future-combinator`.
-#[cfg_attr(
-    feature = "future-combinator",
-    doc = "\n\n [`FutureExt`]: crate::future::FutureExt"
-)]
-#[cfg_attr(
-    not(feature = "future-combinator"),
-    doc = "\n\n [`FutureExt`]: https://docs.rs/compio/latest/compio/runtime/future/trait.FutureExt.html"
-)]
+/// To associate a future with this cancel token, use the [`with_cancel`]
+/// combinator from the [`FutureExt`] trait.
+///
+/// [`with_cancel`]: crate::future::FutureExt::with_cancel
+/// [`FutureExt`]: crate::future::FutureExt
 #[derive(Clone, Debug)]
 pub struct CancelToken(Rc<Inner>);
 
@@ -55,6 +49,11 @@ impl Eq for CancelToken {}
 
 impl CancelToken {
     /// Create a new cancel token.
+    ///
+    /// # Panics
+    ///
+    /// [`CancelToken`] can only be created within compio runtime environment.
+    /// This will panic without a runtime.
     pub fn new() -> Self {
         Self(Rc::new(Inner {
             tokens: RefCell::new(HashSet::new()),
@@ -89,11 +88,12 @@ impl CancelToken {
     ///
     /// If the token has already been cancelled, the operation will be cancelled
     /// immediately. Usually this method should not be used directly, but rather
-    /// through the `with_cancel` combinator, which requires nightly feature
-    /// `future-combinator`.
+    /// through the [`with_cancel`] combinator.
     ///
     /// Multiple registrations of the same key does nothing, and the key will
     /// only be cancelled once.
+    ///
+    /// [`with_cancel`]: crate::FutureExt::with_cancel
     pub fn register<T: OpCode>(&self, key: &Key<T>) {
         if self.0.is_cancelled.get() {
             self.0.runtime.cancel(key.clone());
@@ -111,18 +111,9 @@ impl CancelToken {
     /// Try to get the current cancel token associated with the future.
     ///
     /// This is done by checking if the current context has a cancel token
-    /// associated with it. This will only work with nightly feature
-    /// `future-combinator` turned on; otherwise, `None` is always returned.
+    /// associated with it.
     pub async fn current() -> Option<Self> {
-        #[cfg(not(feature = "future-combinator"))]
-        return None;
-
-        #[cfg(feature = "future-combinator")]
-        std::future::poll_fn(|cx| {
-            use crate::ContextExt;
-            Poll::Ready(cx.as_cancel().cloned())
-        })
-        .await
+        std::future::poll_fn(|cx| Poll::Ready(cx.get_cancel().cloned())).await
     }
 }
 

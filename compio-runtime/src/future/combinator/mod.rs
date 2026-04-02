@@ -3,50 +3,53 @@
 mod cancel;
 mod personality;
 
+use std::borrow::Cow;
+
 pub use cancel::*;
 use compio_driver::Extra;
 pub use personality::*;
 
-use crate::CancelToken;
+use crate::{CancelToken, waker::ExtData};
 
 #[non_exhaustive]
-#[derive(Clone, Debug, Default)]
-pub(crate) struct Ext {
+#[derive(Debug, Default)]
+pub(crate) struct Ext<'a> {
     personality: Option<u16>,
-    cancel: Option<CancelToken>,
+    cancel: Option<Cow<'a, CancelToken>>,
 }
 
-impl Ext {
-    pub fn new() -> Self {
-        Self::default()
-    }
+impl<'a> ExtData for Ext<'a> {
+    type OwnedExt = Ext<'static>;
 
-    pub fn with_personality(self, personality: u16) -> Self {
-        Self {
-            personality: Some(personality),
-            ..self
+    fn to_owned(&self) -> Self::OwnedExt {
+        Ext {
+            personality: self.personality,
+            cancel: self.cancel.clone().map(Cow::into_owned).map(Cow::Owned),
         }
     }
 
-    pub fn set_personality(&mut self, personality: u16) {
-        self.personality = Some(personality);
+    fn from_owned(owned: &Self::OwnedExt) -> &Self {
+        owned
+    }
+}
+
+impl<'a> Ext<'a> {
+    pub fn with_personality(&self, personality: u16) -> Self {
+        Self {
+            personality: Some(personality),
+            cancel: self.cancel.clone(),
+        }
+    }
+
+    pub fn with_cancel(&self, token: &'a CancelToken) -> Self {
+        Self {
+            personality: self.personality,
+            cancel: Some(Cow::Borrowed(token)),
+        }
     }
 
     pub fn get_cancel(&self) -> Option<&CancelToken> {
-        self.cancel.as_ref()
-    }
-
-    pub fn with_cancel(mut self, token: &CancelToken) -> Self {
-        self.set_cancel(token);
-        self
-    }
-
-    pub fn set_cancel(&mut self, cancel: &CancelToken) {
-        // to avoid unnecessary clones
-        if self.cancel.as_ref().is_some_and(|c| c == cancel) {
-            return;
-        }
-        self.cancel = Some(cancel.clone());
+        self.cancel.as_deref()
     }
 
     pub fn set_extra(&self, extra: &mut Extra) -> bool {
@@ -60,8 +63,35 @@ impl Ext {
 }
 
 /// Extension trait for futures.
+///
+/// # Implementation
+///
+/// Extra data are passed down to runtime when the combinators are polled using
+/// a custom [`Waker`], and those data are single-threaded. This means
+/// - when [`Waker`]s are sent to other threads, the data will be lost.
+/// - when using a "sub-executor" like `FuturesUnordered`, which also creates
+///   its own waker, the data will be lost.
+///
+/// So try to keep the path from the wrapped future to runtime clean, something
+/// like this will generally work:
+///
+/// ```rust,ignore
+/// use std::vec::Vec;
+///
+/// use compio::runtime::{FutureExt, CancelToken};
+/// use compio::fs::File;
+///
+/// let file = File::open("/tmp/file");
+/// let cancel = CancelToken::new();
+/// file.read(Vec::with_capacity(1024)).with_cancel(cancel.clone()).await;
+/// ```
+///
+/// [`Waker`]: std::task::Waker
 pub trait FutureExt {
     /// Sets the personality for this future.
+    ///
+    /// This only takes effect on io-uring drivers and will be ignored on other
+    /// ones.
     fn with_personality(self, personality: u16) -> WithPersonality<Self>
     where
         Self: Sized,
@@ -70,6 +100,9 @@ pub trait FutureExt {
     }
 
     /// Sets the cancel token for this future.
+    ///
+    /// If multiple [`CancelToken`]s are set, the innermost one (the one being
+    /// polled last) will take precedence.
     fn with_cancel(self, token: CancelToken) -> WithCancel<Self>
     where
         Self: Sized,

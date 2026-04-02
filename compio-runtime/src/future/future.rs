@@ -4,44 +4,49 @@ use std::{
     future::Future,
     marker::PhantomData,
     pin::Pin,
-    task::{Context, Poll},
+    task::{Context, Poll, Waker},
 };
 
 use compio_buf::BufResult;
 use compio_driver::{Extra, Key, OpCode, PushEntry};
 use futures_util::future::FusedFuture;
 
-use crate::{CancelToken, Runtime};
+use crate::{
+    CancelToken, Ext, Runtime,
+    waker::{get_ext, get_waker},
+};
 
 pub(crate) trait ContextExt {
-    fn as_cancel(&mut self) -> Option<&CancelToken> {
-        None
-    }
+    /// Remove all wrapped [`ExtWaker`] and return the underlying waker.
+    ///
+    /// This is the same as calling [`Context::waker`] if the waker was never
+    /// wrapped.
+    fn get_waker(&self) -> &Waker;
 
-    fn as_extra(&mut self, default: impl FnOnce() -> Extra) -> Option<Extra> {
-        let _ = default;
-        None
-    }
+    /// Get the cancel token
+    fn get_cancel(&mut self) -> Option<&CancelToken>;
+
+    /// Set the ext data associated with the waker to an [`Extra`].
+    fn as_extra(&mut self, default: impl FnOnce() -> Extra) -> Option<Extra>;
 }
 
-#[cfg(not(feature = "future-combinator"))]
-impl ContextExt for Context<'_> {}
-
-#[cfg(feature = "future-combinator")]
 impl ContextExt for Context<'_> {
-    fn as_cancel(&mut self) -> Option<&CancelToken> {
-        self.ext()
-            .downcast_ref::<crate::future::Ext>()?
-            .get_cancel()
+    fn get_waker(&self) -> &Waker {
+        get_waker::<Ext>(self.waker())
+    }
+
+    fn get_cancel(&mut self) -> Option<&CancelToken> {
+        get_ext::<Ext>(self.waker()).and_then(|x| x.get_cancel())
     }
 
     fn as_extra(&mut self, default: impl FnOnce() -> Extra) -> Option<Extra> {
-        let ext = self.ext().downcast_mut::<crate::future::Ext>()?;
+        let ext = get_ext::<Ext>(self.waker())?;
         let mut extra = default();
         ext.set_extra(&mut extra);
         Some(extra)
     }
 }
+
 pin_project_lite::pin_project! {
     /// Returned [`Future`] for [`Runtime::submit`].
     ///
@@ -125,7 +130,7 @@ impl<T: OpCode + 'static> Future for Submit<T, ()> {
 
         loop {
             match this.state.take().expect("Cannot poll after ready") {
-                State::Submitted { key, .. } => match this.runtime.poll_task(cx.waker(), key) {
+                State::Submitted { key, .. } => match this.runtime.poll_task(cx.get_waker(), key) {
                     PushEntry::Pending(key) => {
                         *this.state = Some(State::submitted(key));
                         return Poll::Pending;
@@ -138,7 +143,7 @@ impl<T: OpCode + 'static> Future for Submit<T, ()> {
                         PushEntry::Pending(key) => {
                             // TODO: Should we register it only the first time or every time it's
                             // being polled?
-                            if let Some(cancel) = cx.as_cancel() {
+                            if let Some(cancel) = cx.get_cancel() {
                                 cancel.register(&key);
                             };
 
@@ -163,7 +168,7 @@ impl<T: OpCode + 'static> Future for Submit<T, Extra> {
         loop {
             match this.state.take().expect("Cannot poll after ready") {
                 State::Submitted { key, .. } => {
-                    match this.runtime.poll_task_with_extra(cx.waker(), key) {
+                    match this.runtime.poll_task_with_extra(cx.get_waker(), key) {
                         PushEntry::Pending(key) => {
                             *this.state = Some(State::submitted(key));
                             return Poll::Pending;
@@ -175,7 +180,7 @@ impl<T: OpCode + 'static> Future for Submit<T, Extra> {
                     let extra = cx.as_extra(|| this.runtime.default_extra());
                     match this.runtime.submit_raw(op, extra) {
                         PushEntry::Pending(key) => {
-                            if let Some(cancel) = cx.as_cancel() {
+                            if let Some(cancel) = cx.get_cancel() {
                                 cancel.register(&key);
                             }
 

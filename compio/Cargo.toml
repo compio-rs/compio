@@ -193,7 +193,6 @@ read_buf = [
 ]
 try_trait_v2 = ["compio-buf/try_trait_v2"]
 windows_by_handle = ["compio-fs?/windows_by_handle"]
-future-combinator = ["compio-runtime?/future-combinator"]
 nightly = [
     "allocator_api",
     "current_thread_id",
@@ -203,7 +202,6 @@ nightly = [
     "read_buf",
     "try_trait_v2",
     "windows_by_handle",
-    "future-combinator",
 ]
 
 [[example]]

@@ -10,7 +10,6 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "current_thread_id", feature(current_thread_id))]
-#![cfg_attr(feature = "future-combinator", feature(context_ext, local_waker))]
 #![allow(unused_features)]
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
@@ -25,7 +24,7 @@ mod affinity;
 mod attacher;
 mod cancel;
 mod future;
-mod opt_waker;
+mod waker;
 
 pub mod fd;
 
@@ -46,11 +45,11 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner};
-pub use compio_driver::BufferPool;
 use compio_driver::{
     AsRawFd, Cancel, DriverType, Extra, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
     op::Asyncify,
 };
+pub use compio_driver::{BufferPool, ErrorExt};
 use compio_executor::{Executor, ExecutorConfig};
 pub use compio_executor::{JoinHandle, ResumeUnwind, get_extra};
 use compio_log::{debug, instrument};
@@ -58,7 +57,7 @@ use compio_log::{debug, instrument};
 use crate::affinity::bind_to_cpu_set;
 #[cfg(feature = "time")]
 use crate::time::{TimerFuture, TimerKey, TimerRuntime};
-pub use crate::{attacher::*, cancel::CancelToken, future::*, opt_waker::OptWaker};
+pub use crate::{attacher::*, cancel::CancelToken, future::*, waker::OptWaker};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 
@@ -425,8 +424,8 @@ impl Runtime {
     /// This is only supported on io-uring driver, and will return an
     /// [`Unsupported`] io error on all other drivers.
     ///
-    /// The returned personality can be used with `FutureExt::with_personality`
-    /// if the `future-combinator` feature is turned on.
+    /// The returned personality can be used with
+    /// [`FutureExt::with_personality`].
     ///
     /// [`Unsupported`]: std::io::ErrorKind::Unsupported
     pub fn register_personality(&self) -> io::Result<u16> {

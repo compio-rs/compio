@@ -628,12 +628,7 @@ fn create_entry(cq_entry: CEntry) -> Entry {
 
 fn create_result(result: i32) -> io::Result<usize> {
     if result < 0 {
-        let result = if result == -libc::ECANCELED {
-            libc::ETIMEDOUT
-        } else {
-            -result
-        };
-        Err(io::Error::from_raw_os_error(result))
+        Err(io::Error::from_raw_os_error(-result))
     } else {
         Ok(result as _)
     }

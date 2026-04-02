@@ -81,7 +81,7 @@ impl<T: OpCode + 'static> Stream for SubmitMulti<T> {
                     let extra = cx.as_extra(|| this.runtime.default_extra());
                     match this.runtime.submit_raw(op, extra) {
                         PushEntry::Pending(key) => {
-                            if let Some(cancel) = cx.as_cancel() {
+                            if let Some(cancel) = cx.get_cancel() {
                                 cancel.register(&key);
                             }
 
@@ -97,13 +97,13 @@ impl<T: OpCode + 'static> Stream for SubmitMulti<T> {
                 }
 
                 State::Submitted { key, .. } => {
-                    if let Some(res) = this.runtime.poll_multishot(cx.waker(), &key) {
+                    if let Some(res) = this.runtime.poll_multishot(cx.get_waker(), &key) {
                         *this.state = Some(State::submitted(key));
 
                         return Poll::Ready(Some(res));
                     };
 
-                    match this.runtime.poll_task_with_extra(cx.waker(), key) {
+                    match this.runtime.poll_task_with_extra(cx.get_waker(), key) {
                         PushEntry::Pending(key) => {
                             *this.state = Some(State::submitted(key));
 

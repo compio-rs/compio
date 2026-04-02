@@ -735,3 +735,52 @@ impl ProactorBuilder {
         Proactor::with_builder(self)
     }
 }
+
+mod seal {
+    use std::io;
+
+    use compio_buf::BufResult;
+
+    pub(crate) trait Seal {}
+
+    impl Seal for io::Error {}
+    impl<T> Seal for io::Result<T> {}
+    impl<T, B> Seal for BufResult<T, B> {}
+}
+
+/// Extension trait for [`io::Error`] and results with it.
+#[allow(private_bounds)]
+pub trait ErrorExt: seal::Seal {
+    #[doc(hidden)]
+    fn as_io_error(&self) -> Option<&io::Error>;
+
+    /// Whether the error or result is cancelled.
+    fn is_cancelled(&self) -> bool {
+        #[cfg(unix)]
+        const CANCEL_ERROR: i32 = libc::ECANCELED;
+        #[cfg(windows)]
+        const CANCEL_ERROR: i32 = windows_sys::Win32::Foundation::ERROR_CANCELLED as _;
+
+        self.as_io_error()
+            .and_then(io::Error::raw_os_error)
+            .is_some_and(|e| e == CANCEL_ERROR)
+    }
+}
+
+impl ErrorExt for io::Error {
+    fn as_io_error(&self) -> Option<&io::Error> {
+        Some(self)
+    }
+}
+
+impl<T> ErrorExt for io::Result<T> {
+    fn as_io_error(&self) -> Option<&io::Error> {
+        self.as_ref().err()
+    }
+}
+
+impl<T, B> ErrorExt for BufResult<T, B> {
+    fn as_io_error(&self) -> Option<&io::Error> {
+        self.0.as_io_error()
+    }
+}
