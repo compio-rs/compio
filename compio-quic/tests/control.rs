@@ -48,7 +48,7 @@ async fn ip_blocking() {
         .await
         .unwrap_err();
     assert!(matches!(e, ConnectionError::ConnectionClosed(_)));
-    client2
+    let conn2 = client2
         .connect(server_addr, "localhost", Some(client_config))
         .unwrap()
         .await
@@ -57,6 +57,8 @@ async fn ip_blocking() {
     shutdown_handle.notify();
 
     srv.await.unwrap();
+
+    drop(conn2);
 
     client2.shutdown().await.unwrap();
     client1.shutdown().await.unwrap();
