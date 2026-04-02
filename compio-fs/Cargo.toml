@@ -21,6 +21,7 @@ compio-io = { workspace = true }
 compio-runtime = { workspace = true, features = ["async-fd"] }
 
 cfg-if = { workspace = true }
+futures-util = { workspace = true }
 pin-project-lite = { workspace = true }
 
 # Windows specific dependencies

@@ -3,9 +3,10 @@ use std::{io, ops::Deref};
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
 use compio_driver::{
     AsFd, AsRawFd, BorrowedFd, BufferRef, RawFd, SharedFd, ToSharedFd,
-    op::{BufResultExt, Read, ReadManaged, ResultTakeBuffer, Write},
+    op::{BufResultExt, Read, ReadManaged, ReadMulti, ResultTakeBuffer, Write},
 };
-use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite, util::Splittable};
+use compio_io::{AsyncRead, AsyncReadManaged, AsyncReadMulti, AsyncWrite, util::Splittable};
+use futures_util::{Stream, future::Either};
 #[cfg(unix)]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
@@ -60,6 +61,25 @@ impl<T: AsFd + 'static> AsyncRead for AsyncFd<T> {
     }
 }
 
+impl<T: AsFd + 'static> AsyncRead for &AsyncFd<T> {
+    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
+        let fd = self.inner.to_shared_fd();
+        let op = Read::new(fd, buf);
+        let res = crate::submit(op).await.into_inner();
+        unsafe { res.map_advanced() }
+    }
+
+    #[cfg(unix)]
+    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
+        use compio_driver::op::VecBufResultExt;
+
+        let fd = self.inner.to_shared_fd();
+        let op = ReadVectored::new(fd, buf);
+        let res = crate::submit(op).await.into_inner();
+        unsafe { res.map_vec_advanced() }
+    }
+}
+
 impl<T: AsFd + 'static> AsyncReadManaged for AsyncFd<T> {
     type Buffer = BufferRef;
 
@@ -80,23 +100,30 @@ impl<T: AsFd + 'static> AsyncReadManaged for &AsyncFd<T> {
     }
 }
 
-impl<T: AsFd + 'static> AsyncRead for &AsyncFd<T> {
-    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        let fd = self.inner.to_shared_fd();
-        let op = Read::new(fd, buf);
-        let res = crate::submit(op).await.into_inner();
-        unsafe { res.map_advanced() }
+impl<T: AsFd + 'static> AsyncReadMulti for AsyncFd<T> {
+    fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
+        let fd = self.to_shared_fd();
+        read_multi(fd, len)
     }
+}
 
-    #[cfg(unix)]
-    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
-        use compio_driver::op::VecBufResultExt;
-
-        let fd = self.inner.to_shared_fd();
-        let op = ReadVectored::new(fd, buf);
-        let res = crate::submit(op).await.into_inner();
-        unsafe { res.map_vec_advanced() }
+impl<T: AsFd + 'static> AsyncReadMulti for &AsyncFd<T> {
+    fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
+        let fd = self.to_shared_fd();
+        read_multi(fd, len)
     }
+}
+
+fn read_multi<T: AsFd + 'static>(
+    fd: SharedFd<T>,
+    len: usize,
+) -> impl Stream<Item = io::Result<BufferRef>> {
+    let runtime = Runtime::current();
+    let pool = runtime.buffer_pool();
+    pool.and_then(|pool| Ok((ReadMulti::new(fd, &pool, len)?, pool)))
+        .map(|(op, pool)| runtime.submit_multi(op).into_managed(pool))
+        .map(Either::Left)
+        .unwrap_or_else(|e| Either::Right(futures_util::stream::once(std::future::ready(Err(e)))))
 }
 
 impl<T: AsFd + 'static> AsyncWrite for AsyncFd<T> {

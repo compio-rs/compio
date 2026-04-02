@@ -10,8 +10,9 @@ use compio_driver::{
     AsFd, AsRawFd, BorrowedFd, BufferRef, OpCode, OpType, RawFd, ResultTakeBuffer, SharedFd,
     op::{BufResultExt, Read as OpRead, ReadManaged, Write as OpWrite},
 };
-use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
+use compio_io::{AsyncRead, AsyncReadManaged, AsyncReadMulti, AsyncWrite};
 use compio_runtime::Runtime;
+use futures_util::{Stream, StreamExt};
 use windows_sys::Win32::System::IO::OVERLAPPED;
 
 #[cfg(doc)]
@@ -189,6 +190,20 @@ impl AsyncReadManaged for &Stdin {
             let op = ReadManaged::new(self.fd.clone(), &buffer_pool, len)?;
             unsafe { compio_runtime::submit(op).await.take_buffer() }
         }
+    }
+}
+
+impl AsyncReadMulti for Stdin {
+    fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
+        futures_util::stream::once(self.read_managed(len))
+            .filter_map(|res| std::future::ready(res.transpose()))
+    }
+}
+
+impl AsyncReadMulti for &Stdin {
+    fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
+        futures_util::stream::once(self.read_managed(len))
+            .filter_map(|res| std::future::ready(res.transpose()))
     }
 }
 

@@ -2,8 +2,9 @@ use std::io;
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{AsFd, AsRawFd, BorrowedFd, BufferRef, RawFd};
-use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
+use compio_io::{AsyncRead, AsyncReadManaged, AsyncReadMulti, AsyncWrite};
 use compio_runtime::fd::AsyncFd;
+use futures_util::Stream;
 
 #[cfg(doc)]
 use super::{stderr, stdin, stdout};
@@ -69,6 +70,18 @@ impl AsyncReadManaged for &Stdin {
 
     async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         (&self.0).read_managed(len).await
+    }
+}
+
+impl AsyncReadMulti for Stdin {
+    fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
+        self.0.read_multi(len)
+    }
+}
+
+impl AsyncReadMulti for &Stdin {
+    fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
+        self.0.read_multi(len)
     }
 }
 
