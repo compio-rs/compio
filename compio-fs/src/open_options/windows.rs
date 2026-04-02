@@ -85,7 +85,7 @@ impl OpenOptions {
         let file = compio_runtime::spawn_blocking(move || opt.open(p))
             .await
             .resume_unwind()
-            .expect("shouldn't be canceled")?;
+            .expect("shouldn't be cancelled")?;
         File::from_std(file)
     }
 

@@ -2,7 +2,7 @@
 //!
 //! This is used for `JoinHandle` to send the result of a task back to the
 //! caller, and to allow the caller to close the task by manually adding
-//! `CANCELED` flag.
+//! `CANCELLED` flag.
 
 use std::{
     cell::UnsafeCell,
@@ -25,7 +25,7 @@ const CLOSED: u8 = 1 << 2;
 /// Does not affect the state or behavior of the channel. Used by JoinHandle to
 /// signal the task that the caller is no longer interested in the result, so it
 /// can stop doing unnecessary work.
-const CANCELED: u8 = 1 << 3;
+const CANCELLED: u8 = 1 << 3;
 /// The waker field is valid and should be woken when the value is set
 /// or the channel is closed.
 const WAKER_SET: u8 = 1 << 4;
@@ -87,7 +87,7 @@ impl<T> Debug for Inner<T> {
             .field("type", &std::any::type_name::<T>())
             .field("locked", &(state & LOCKED != 0))
             .field("closed", &(state & CLOSED != 0))
-            .field("canceled", &(state & CANCELED != 0))
+            .field("cancelled", &(state & CANCELLED != 0))
             .field("waker_set", &(state & WAKER_SET != 0))
             .field("value_set", &(state & VALUE_SET != 0))
             .finish()
@@ -280,20 +280,20 @@ impl<T> Sender<T> {
         }
     }
 
-    pub fn is_canceled(&self) -> bool {
-        unsafe { self.inner.as_ref() }.state.load(Relaxed) & CANCELED != 0
+    pub fn is_cancelled(&self) -> bool {
+        unsafe { self.inner.as_ref() }.state.load(Relaxed) & CANCELLED != 0
     }
 }
 
 impl<T> Receiver<T> {
-    pub fn set_canceled(&self) {
+    pub fn set_cancelled(&self) {
         unsafe { self.inner.as_ref() }
             .state
-            .fetch_or(CANCELED, Relaxed);
+            .fetch_or(CANCELLED, Relaxed);
     }
 
-    pub fn is_canceled(&self) -> bool {
-        unsafe { self.inner.as_ref() }.state.load(Relaxed) & CANCELED != 0
+    pub fn is_cancelled(&self) -> bool {
+        unsafe { self.inner.as_ref() }.state.load(Relaxed) & CANCELLED != 0
     }
 
     pub fn poll(&self, cx: &mut Context<'_>) -> Poll<Option<T>> {

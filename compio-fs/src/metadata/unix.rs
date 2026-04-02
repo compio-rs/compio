@@ -54,7 +54,7 @@ pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::R
     compio_runtime::spawn_blocking(move || std::fs::set_permissions(path, perm))
         .await
         .resume_unwind()
-        .expect("shouldn't be canceled")
+        .expect("shouldn't be cancelled")
 }
 
 #[derive(Clone)]

@@ -14,7 +14,7 @@ pub async fn child_wait(mut child: process::Child) -> io::Result<process::ExitSt
     compio_runtime::spawn_blocking(move || child.wait())
         .await
         .resume_unwind()
-        .expect("shouldn't be canceled")
+        .expect("shouldn't be cancelled")
 }
 
 impl AsyncRead for ChildStdout {
