@@ -20,7 +20,7 @@ pub(crate) trait ExtData: Default {
 /// Try to retrieve ext data from the waker and call the callback on it. If ext
 /// data can't be retrieved, intialize a dafault on stack and pass a reference
 /// of that to `f` instead.
-pub(crate) fn with_ext<'a, E, F, R>(waker: &'a Waker, f: F) -> R
+pub(crate) fn with_ext<E, F, R>(waker: &Waker, f: F) -> R
 where
     E: ExtData,
     F: FnOnce(&Waker, &E) -> R,
@@ -38,7 +38,7 @@ pub(crate) fn get_ext<E: ExtData>(waker: &Waker) -> Option<&E> {
         unsafe { ExtWaker::from_raw(waker.data()) }
             .ext
             .get()
-            .map(|&x| x)
+            .copied()
     } else if waker.vtable() == OwnedExtWaker::<E>::VTABLE {
         let owned = unsafe { OwnedExtWaker::<E>::from_raw(waker.data()) }
             .ext

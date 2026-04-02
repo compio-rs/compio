@@ -67,10 +67,10 @@ impl<'a> Ext<'a> {
 /// # Implementation
 ///
 /// Extra data are passed down to runtime when the combinators are polled using
-/// a custom rolled [`Waker`], and those data are single-threaded. This means
-/// - when [`Waker`] are sent to other threads, the data will lost.
+/// a custom [`Waker`], and those data are single-threaded. This means
+/// - when [`Waker`]s are sent to other threads, the data will be lost.
 /// - when using a "sub-executor" like `FuturesUnordered`, which also creates
-///   their own waker, data will lost.
+///   its own waker, the data will be lost.
 ///
 /// So try to keep the path from the wrapped future to runtime clean, something
 /// like this will generally work:

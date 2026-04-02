@@ -103,7 +103,7 @@ where
         let this = self.project();
 
         with_ext(cx.waker(), |waker, ext: &Ext| {
-            let ext = ext.with_cancel(&this.cancel);
+            let ext = ext.with_cancel(this.cancel);
             ExtWaker::new(waker, &ext).poll(this.future)
         })
     }

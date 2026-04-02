@@ -1,9 +1,9 @@
-use std::io;
 #[cfg(feature = "try_trait_v2")]
 use std::{
     convert::Infallible,
     ops::{ControlFlow, FromResidual, Residual, Try},
 };
+use std::{fmt::Debug, io};
 
 use crate::IntoInner;
 
@@ -95,6 +95,15 @@ impl<T, B> BufResult<T, B> {
     #[inline]
     pub fn into_parts(self) -> (io::Result<T>, B) {
         (self.0, self.1)
+    }
+}
+
+impl<T: Debug, B> BufResult<T, B> {
+    /// Returns the contained [`io::Error`] value, consuming the `self` value.
+    #[inline(always)]
+    #[track_caller]
+    pub fn unwrap_err(self) -> (io::Error, B) {
+        (self.0.unwrap_err(), self.1)
     }
 }
 

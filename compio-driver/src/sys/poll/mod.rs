@@ -658,7 +658,7 @@ impl Driver {
         self.events.clear();
         self.notify.poll.wait(&mut self.events, timeout)?;
         if self.events.is_empty() && timeout.is_some() {
-            return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
+            return Err(io::Error::from_raw_os_error(libc::ECANCELED));
         }
         self.with_events(|this, events| {
             for event in events.iter() {
@@ -697,7 +697,7 @@ impl Driver {
                             libc::ECANCELED => {
                                 // Remove the aiocb from kqueue.
                                 unsafe { libc::aio_return(aiocbp.as_ptr()) };
-                                Err(io::Error::from_raw_os_error(libc::ETIMEDOUT))
+                                Err(io::Error::from_raw_os_error(libc::ECANCELED))
                             }
                             _ => {
                                 syscall!(libc::aio_return(aiocbp.as_ptr())).map(|res| res as usize)
@@ -741,7 +741,7 @@ impl Drop for Driver {
 
 impl Entry {
     pub(crate) fn new_cancelled(key: ErasedKey) -> Self {
-        Entry::new(key, Err(io::Error::from_raw_os_error(libc::ETIMEDOUT)))
+        Entry::new(key, Err(io::Error::from_raw_os_error(libc::ECANCELED)))
     }
 }
 

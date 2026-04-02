@@ -12,7 +12,7 @@ use compio_driver::{Cancel, Key, OpCode};
 use futures_util::{FutureExt, ready};
 use synchrony::unsync::event::{Event, EventListener};
 
-use crate::Runtime;
+use crate::{ContextExt, Runtime};
 
 #[derive(Debug)]
 struct Inner {
@@ -50,7 +50,7 @@ impl Eq for CancelToken {}
 impl CancelToken {
     /// Create a new cancel token.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// [`CancelToken`] can only be created within compio runtime environment.
     /// This will panic without a runtime.
@@ -113,11 +113,7 @@ impl CancelToken {
     /// This is done by checking if the current context has a cancel token
     /// associated with it.
     pub async fn current() -> Option<Self> {
-        std::future::poll_fn(|cx| {
-            use crate::ContextExt;
-            Poll::Ready(cx.as_cancel().cloned())
-        })
-        .await
+        std::future::poll_fn(|cx| Poll::Ready(cx.get_cancel().cloned())).await
     }
 }
 

@@ -14,12 +14,12 @@ use futures_util::future::FusedFuture;
 use crate::{CancelToken, Ext, Runtime, waker::get_ext};
 
 pub(crate) trait ContextExt {
-    fn as_cancel(&mut self) -> Option<&CancelToken>;
+    fn get_cancel(&mut self) -> Option<&CancelToken>;
     fn as_extra(&mut self, default: impl FnOnce() -> Extra) -> Option<Extra>;
 }
 
 impl ContextExt for Context<'_> {
-    fn as_cancel(&mut self) -> Option<&CancelToken> {
+    fn get_cancel(&mut self) -> Option<&CancelToken> {
         get_ext::<Ext>(self.waker()).and_then(|x| x.get_cancel())
     }
 
@@ -127,7 +127,7 @@ impl<T: OpCode + 'static> Future for Submit<T, ()> {
                         PushEntry::Pending(key) => {
                             // TODO: Should we register it only the first time or every time it's
                             // being polled?
-                            if let Some(cancel) = cx.as_cancel() {
+                            if let Some(cancel) = cx.get_cancel() {
                                 cancel.register(&key);
                             };
 
@@ -164,7 +164,7 @@ impl<T: OpCode + 'static> Future for Submit<T, Extra> {
                     let extra = cx.as_extra(|| this.runtime.default_extra());
                     match this.runtime.submit_raw(op, extra) {
                         PushEntry::Pending(key) => {
-                            if let Some(cancel) = cx.as_cancel() {
+                            if let Some(cancel) = cx.get_cancel() {
                                 cancel.register(&key);
                             }
 

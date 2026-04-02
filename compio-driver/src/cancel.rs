@@ -26,12 +26,12 @@ impl CancelRegistry {
     }
 
     pub fn register<T>(&mut self, key: &Key<T>) -> Cancel {
-        let raw = key.as_raw();
-        if self.cancellers.contains(&raw) {
-            return Cancel(raw);
+        let raw_key = key.as_raw();
+        if self.cancellers.contains(&raw_key) {
+            return Cancel(raw_key);
         }
         self.cancellers.insert(key.clone().erase());
-        Cancel(raw)
+        Cancel(raw_key)
     }
 
     pub fn take(&mut self, token: Cancel) -> Option<ErasedKey> {

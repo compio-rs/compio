@@ -49,6 +49,7 @@ tokio = { workspace = true, features = [
     "net",
     "rt",
 ] }
+socket2 = { workspace = true, features = ["all"] }
 
 [target.'cfg(windows)'.dev-dependencies]
 widestring = { workspace = true }
