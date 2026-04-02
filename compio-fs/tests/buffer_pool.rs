@@ -45,6 +45,7 @@ async fn test_read_pipe() {
 async fn test_read_pipe_multi() {
     let (mut rx, mut tx) = pipe::anonymous().await.unwrap();
     tx.write_all(HELLO).await.unwrap();
+    tx.close().await.unwrap();
 
     let buffer = rx.read_multi(0).try_collect::<Vec<_>>().await.unwrap();
     assert_eq!(buffer.len(), 1);
