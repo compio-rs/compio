@@ -45,11 +45,11 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner};
-pub use compio_driver::BufferPool;
 use compio_driver::{
     AsRawFd, Cancel, DriverType, Extra, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
     op::Asyncify,
 };
+pub use compio_driver::{BufferPool, ErrorExt};
 use compio_executor::{Executor, ExecutorConfig};
 pub use compio_executor::{JoinHandle, ResumeUnwind, get_extra};
 use compio_log::{debug, instrument};

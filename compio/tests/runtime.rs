@@ -4,7 +4,7 @@ use std::{net::Ipv4Addr, time::Duration};
 
 use compio::{
     buf::*,
-    driver::ProactorBuilder,
+    driver::{ErrorExt, ProactorBuilder},
     fs::File,
     io::{AsyncRead, AsyncReadAt, AsyncReadExt, AsyncWriteAt, AsyncWriteExt},
     net::{TcpListener, TcpStream, UnixStream},
@@ -192,6 +192,7 @@ fn unix_pair() -> io::Result<(UnixStream, UnixStream)> {
     Ok((UnixStream::from_std(a)?, UnixStream::from_std(b)?))
 }
 
+// TODO: We need to test for IOCP as well.
 #[cfg(unix)]
 #[compio_macros::test]
 async fn cancel_token_read() {
@@ -230,8 +231,8 @@ async fn cancel_token_multiple_operations() {
 
     cancel_token.cancel();
 
-    assert!(task1.await.unwrap().is_err());
-    assert!(task2.await.unwrap().is_err());
+    assert!(task1.await.unwrap().is_cancelled());
+    assert!(task2.await.unwrap().is_cancelled());
 }
 
 #[cfg(unix)]
@@ -250,7 +251,7 @@ async fn cancel_token_already_cancelled() {
         stream.read(buf).with_cancel(cancel_token_clone).await
     });
 
-    read_task.await.unwrap().unwrap_err();
+    assert!(read_task.await.unwrap().is_cancelled());
 }
 
 #[cfg(unix)]

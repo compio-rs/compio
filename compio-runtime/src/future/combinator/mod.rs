@@ -101,7 +101,7 @@ pub trait FutureExt {
 
     /// Sets the cancel token for this future.
     ///
-    /// If multiple [`CancelToken`]s are set, the inner most one (the one be
+    /// If multiple [`CancelToken`]s are set, the innermost one (the one being
     /// polled last) will take precedence.
     fn with_cancel(self, token: CancelToken) -> WithCancel<Self>
     where

@@ -33,6 +33,18 @@ where
     }
 }
 
+/// Remove all [`ExtWaker`] wrapped around the waker and retrieve the underlying
+/// waker.
+pub(crate) fn get_waker<'a, E: ExtData + 'a>(waker: &'a Waker) -> &'a Waker {
+    if waker.vtable() == ExtWaker::<E>::VTABLE {
+        get_waker::<E>(unsafe { ExtWaker::<E>::from_raw(waker.data()) }.waker)
+    } else if waker.vtable() == OwnedExtWaker::<E>::VTABLE {
+        get_waker::<E>(&unsafe { OwnedExtWaker::<E>::from_raw(waker.data()) }.waker)
+    } else {
+        waker
+    }
+}
+
 pub(crate) fn get_ext<E: ExtData>(waker: &Waker) -> Option<&E> {
     if waker.vtable() == ExtWaker::<E>::VTABLE {
         unsafe { ExtWaker::from_raw(waker.data()) }

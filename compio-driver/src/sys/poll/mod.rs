@@ -658,7 +658,7 @@ impl Driver {
         self.events.clear();
         self.notify.poll.wait(&mut self.events, timeout)?;
         if self.events.is_empty() && timeout.is_some() {
-            return Err(io::Error::from_raw_os_error(libc::ECANCELED));
+            return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
         }
         self.with_events(|this, events| {
             for event in events.iter() {
@@ -693,11 +693,6 @@ impl Driver {
                             libc::EINPROGRESS => {
                                 trace!("op {} is not completed", key.as_raw());
                                 continue;
-                            }
-                            libc::ECANCELED => {
-                                // Remove the aiocb from kqueue.
-                                unsafe { libc::aio_return(aiocbp.as_ptr()) };
-                                Err(io::Error::from_raw_os_error(libc::ECANCELED))
                             }
                             _ => {
                                 syscall!(libc::aio_return(aiocbp.as_ptr())).map(|res| res as usize)
