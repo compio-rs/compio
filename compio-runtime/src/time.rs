@@ -79,7 +79,7 @@ impl Error for Elapsed {}
 ///
 /// If the future completes before the duration has elapsed, then the completed
 /// value is returned. Otherwise, an error is returned and the future is
-/// canceled.
+/// cancelled.
 pub async fn timeout<F: Future>(duration: Duration, future: F) -> Result<F::Output, Elapsed> {
     select! {
         res = future.fuse() => Ok(res),

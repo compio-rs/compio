@@ -20,7 +20,7 @@ async fn test_connect_ip_impl(
     });
 
     let mine = TcpStream::connect(&addr).await.unwrap();
-    let theirs = task.await.resume_unwind().expect("shouldn't be canceled");
+    let theirs = task.await.resume_unwind().expect("shouldn't be cancelled");
 
     assert_eq!(mine.local_addr().unwrap(), theirs.peer_addr().unwrap());
     assert_eq!(theirs.local_addr().unwrap(), mine.peer_addr().unwrap());
@@ -64,7 +64,7 @@ async fn test_bind_and_connect_ip_impl(
     };
     mine.bind(bind_addr).await.unwrap();
     let mine = mine.connect(addr).await.unwrap();
-    let theirs = task.await.resume_unwind().expect("shouldn't be canceled");
+    let theirs = task.await.resume_unwind().expect("shouldn't be cancelled");
 
     assert_eq!(mine.local_addr().unwrap(), theirs.peer_addr().unwrap());
     assert_eq!(theirs.local_addr().unwrap(), mine.peer_addr().unwrap());

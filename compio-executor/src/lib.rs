@@ -189,14 +189,14 @@ impl<T> Unpin for JoinHandle<T> {}
 impl<T> JoinHandle<T> {
     /// Cancel the task.
     pub async fn cancel(self) -> Option<T> {
-        self.rx.set_canceled();
+        self.rx.set_cancelled();
         self.handle.schedule();
         self.await.ok()
     }
 
-    /// Check if the task is canceled.
-    pub fn is_canceled(&self) -> bool {
-        self.rx.is_canceled()
+    /// Check if the task is cancelled.
+    pub fn is_cancelled(&self) -> bool {
+        self.rx.is_cancelled()
     }
 
     /// Detach the task to let it run in the background.
@@ -212,8 +212,8 @@ impl<T> JoinHandle<T> {
 /// Task failed to execute to completion.
 #[derive(Debug)]
 pub enum JoinError {
-    /// The task was canceled.
-    Canceled,
+    /// The task was cancelled.
+    Cancelled,
     /// The task panicked.
     Panicked(Panic),
 }
@@ -233,7 +233,7 @@ impl<T> ResumeUnwind for Result<T, JoinError> {
     fn resume_unwind(self) -> Self::Output {
         match self {
             Ok(res) => Some(res),
-            Err(JoinError::Canceled) => None,
+            Err(JoinError::Cancelled) => None,
             Err(JoinError::Panicked(e)) => resume_unwind(e),
         }
     }
@@ -263,18 +263,18 @@ impl<T> Future for JoinHandle<T> {
                 if self.handle.schedule() {
                     Poll::Pending
                 } else {
-                    Poll::Ready(Err(JoinError::Canceled))
+                    Poll::Ready(Err(JoinError::Cancelled))
                 }
             }
             Poll::Ready(Some(Ok(res))) => Poll::Ready(Ok(res)),
             Poll::Ready(Some(Err(err))) => Poll::Ready(Err(JoinError::Panicked(err))),
-            Poll::Ready(None) => Poll::Ready(Err(JoinError::Canceled)),
+            Poll::Ready(None) => Poll::Ready(Err(JoinError::Cancelled)),
         }
     }
 }
 
 impl<T> Drop for JoinHandle<T> {
     fn drop(&mut self) {
-        self.rx.set_canceled();
+        self.rx.set_cancelled();
     }
 }
