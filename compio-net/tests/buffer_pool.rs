@@ -2,7 +2,7 @@ use std::net::Ipv6Addr;
 
 use compio_io::{AsyncReadManaged, AsyncReadMulti, AsyncWriteExt};
 use compio_net::{TcpListener, TcpStream, UdpSocket, UnixListener, UnixStream};
-use futures_util::TryStreamExt;
+use futures_util::{StreamExt, TryStreamExt};
 
 #[compio_macros::test]
 async fn test_tcp_read_buffer_pool() {
@@ -118,13 +118,8 @@ async fn test_udp_recv_multi() {
     })
     .detach();
 
-    let buffer = connected
-        .recv_multi(0)
-        .try_collect::<Vec<_>>()
-        .await
-        .unwrap();
-    assert_eq!(buffer.len(), 1);
-    assert_eq!(&*buffer[0], b"test");
+    let buffer = connected.recv_multi(0).next().await.unwrap().unwrap();
+    assert_eq!(&*buffer, b"test");
 }
 
 #[compio_macros::test]

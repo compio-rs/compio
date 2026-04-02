@@ -3,15 +3,8 @@
 use std::{future::Future, io, path::Path};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_driver::{
-    AsRawFd, BufferRef, ResultTakeBuffer, ToSharedFd, impl_raw_fd,
-    op::{
-        BufResultExt, Pipe, Read, ReadManaged, ReadVectored, VecBufResultExt, Write, WriteVectored,
-    },
-    syscall,
-};
+use compio_driver::{AsRawFd, BufferRef, impl_raw_fd, op::Pipe, syscall};
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncReadMulti, AsyncWrite};
-use compio_runtime::Runtime;
 use futures_util::Stream;
 
 use crate::File;
@@ -377,11 +370,11 @@ impl AsyncWrite for Sender {
 
 impl AsyncWrite for &Sender {
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        self.file.inner.write(buffer).await
+        (&self.file.inner).write(buffer).await
     }
 
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        self.file.inner.write_vectored(buffer).await
+        (&self.file.inner).write_vectored(buffer).await
     }
 
     #[inline]
@@ -498,11 +491,11 @@ impl AsyncRead for Receiver {
 
 impl AsyncRead for &Receiver {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
-        self.file.inner.read(buffer).await
+        (&self.file.inner).read(buffer).await
     }
 
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buffer: V) -> BufResult<usize, V> {
-        self.file.inner.read_vectored(buffer).await
+        (&self.file.inner).read_vectored(buffer).await
     }
 }
 
@@ -518,7 +511,7 @@ impl AsyncReadManaged for &Receiver {
     type Buffer = BufferRef;
 
     async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
-        self.file.inner.read_managed(len).await
+        (&self.file.inner).read_managed(len).await
     }
 }
 

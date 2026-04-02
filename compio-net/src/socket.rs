@@ -13,8 +13,8 @@ use compio_driver::{
     AsRawFd, BufferRef, OpCode, ResultTakeBuffer, TakeBuffer, ToSharedFd, impl_raw_fd,
     op::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromManaged,
-        RecvFromVectored, RecvManaged, RecvMsg, RecvResultExt, RecvVectored, Send, SendMsg,
-        SendMsgZc, SendTo, SendToVectored, SendToVectoredZc, SendToZc, SendVectored,
+        RecvFromVectored, RecvManaged, RecvMsg, RecvMulti, RecvResultExt, RecvVectored, Send,
+        SendMsg, SendMsgZc, SendTo, SendToVectored, SendToVectoredZc, SendToZc, SendVectored,
         SendVectoredZc, SendZc, VecBufResultExt,
     },
     syscall,
@@ -230,7 +230,7 @@ impl Socket {
         let fd = self.to_shared_fd();
         Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
-            let op = RecvManaged::new(fd, &buffer_pool, len, flags)?;
+            let op = RecvMulti::new(fd, &buffer_pool, len, flags)?;
             io::Result::Ok(rt.submit_multi(op).into_managed(buffer_pool))
         })
         .map(Either::Left)

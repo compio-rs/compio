@@ -81,7 +81,7 @@ impl AsyncReadMulti for Stdin {
 
 impl AsyncReadMulti for &Stdin {
     fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
-        self.0.read_multi(len)
+        self.0.read_multi_shared(len)
     }
 }
 
