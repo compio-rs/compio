@@ -2,8 +2,6 @@ use std::{
     future::Future,
     io,
     mem::{ManuallyDrop, MaybeUninit},
-    pin::Pin,
-    task::{Context, Poll},
 };
 
 use compio_buf::{
@@ -12,7 +10,7 @@ use compio_buf::{
 #[cfg(unix)]
 use compio_driver::op::{Bind, CreateSocket, Listen, ShutdownSocket};
 use compio_driver::{
-    AsRawFd, BufferPool, BufferRef, OpCode, ResultTakeBuffer, TakeBuffer, ToSharedFd, impl_raw_fd,
+    AsRawFd, BufferRef, OpCode, ResultTakeBuffer, TakeBuffer, ToSharedFd, impl_raw_fd,
     op::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromManaged,
         RecvFromVectored, RecvManaged, RecvMsg, RecvResultExt, RecvVectored, Send, SendMsg,
@@ -21,8 +19,8 @@ use compio_driver::{
     },
     syscall,
 };
-use compio_runtime::{Attacher, Runtime, SubmitMulti, fd::PollFd};
-use futures_util::{Stream, StreamExt, future::Either, stream::FusedStream};
+use compio_runtime::{Attacher, Runtime, fd::PollFd};
+use futures_util::{Stream, StreamExt, future::Either};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::Incoming;
@@ -233,9 +231,9 @@ impl Socket {
         Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
             let op = RecvManaged::new(fd, &buffer_pool, len, flags)?;
-            io::Result::Ok((rt.submit_multi(op), buffer_pool))
+            io::Result::Ok(rt.submit_multi(op).into_managed(buffer_pool))
         })
-        .map(|(stream, buffer_pool)| Either::Left(ManagedMultiStream::new(stream, buffer_pool)))
+        .map(Either::Left)
         .unwrap_or_else(|e| Either::Right(futures_util::stream::once(std::future::ready(Err(e)))))
     }
 
@@ -537,53 +535,4 @@ async fn submit_zerocopy<T: OpCode + IntoInner + 'static>(
     };
 
     BufResult(res, fut)
-}
-
-struct ManagedMultiStream<T: OpCode> {
-    inner: Option<SubmitMulti<T>>,
-    buffer_pool: BufferPool,
-}
-
-impl<T: OpCode> ManagedMultiStream<T> {
-    pub fn new(stream: SubmitMulti<T>, buffer_pool: BufferPool) -> Self {
-        Self {
-            inner: Some(stream),
-            buffer_pool,
-        }
-    }
-}
-
-impl<T: OpCode + TakeBuffer<Buffer = BufferRef> + 'static> Stream for ManagedMultiStream<T> {
-    type Item = io::Result<BufferRef>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        if let Some(inner) = self.inner.as_mut() {
-            let (mut buffer, res) = match std::task::ready!(inner.poll_next_unpin(cx)) {
-                Some(BufResult(res, extra)) => {
-                    let buffer = if inner.is_terminated() {
-                        self.inner
-                            .take()
-                            .and_then(|s| s.try_take().ok())
-                            .and_then(|op| op.take_buffer())
-                    } else {
-                        self.buffer_pool.take(extra.buffer_id()?)?
-                    };
-                    (buffer, res)
-                }
-                None => (
-                    self.inner
-                        .take()
-                        .and_then(|s| s.try_take().ok())
-                        .and_then(|op| op.take_buffer()),
-                    Ok(0),
-                ),
-            };
-            if let Some(buf) = &mut buffer {
-                unsafe { buf.advance_to(res?) }
-            }
-            Poll::Ready(buffer.map(Ok))
-        } else {
-            Poll::Ready(None)
-        }
-    }
 }
