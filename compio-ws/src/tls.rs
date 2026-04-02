@@ -1,7 +1,7 @@
 //! TLS support for WebSocket connections (native-tls and rustls).
 
 use compio_io::{AsyncRead, AsyncWrite};
-use compio_net::{SocketOpts, TcpStream};
+use compio_net::TcpStream;
 use compio_tls::{MaybeTlsStream, TlsConnector};
 use tungstenite::{
     Error,
@@ -249,10 +249,10 @@ where
         .ok_or(Error::Url(tungstenite::error::UrlError::NoHostName))?;
     let port = port(&request)?;
 
-    let opts = SocketOpts::new().nodelay(config.disable_nagle);
-    let socket = TcpStream::connect_with_options((domain, port), &opts)
+    let socket = TcpStream::connect((domain, port))
         .await
         .map_err(Error::Io)?;
+    socket.set_nodelay(config.disable_nagle)?;
     client_async_tls_with_config(request, socket, connector, config).await
 }
 

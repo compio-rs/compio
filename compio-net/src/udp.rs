@@ -1,10 +1,14 @@
-use std::{future::Future, io, net::SocketAddr};
+use std::{
+    future::Future,
+    io,
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
+};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{BufferRef, impl_raw_fd};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
-use crate::{MSG_NOSIGNAL, Socket, SocketOpts, ToSocketAddrsAsync};
+use crate::{MSG_NOSIGNAL, Socket, ToSocketAddrsAsync};
 
 /// A UDP socket.
 ///
@@ -93,19 +97,9 @@ pub struct UdpSocket {
 impl UdpSocket {
     /// Creates a new UDP socket and attempt to bind it to the addr provided.
     pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
-        Self::bind_with_options(addr, &SocketOpts::default()).await
-    }
-
-    /// Creates a new UDP socket with [`SocketOpts`] and attempt to bind it to
-    /// the addr provided.
-    pub async fn bind_with_options(
-        addr: impl ToSocketAddrsAsync,
-        opts: &SocketOpts,
-    ) -> io::Result<Self> {
         super::each_addr(addr, |addr| async move {
             let addr = SockAddr::from(addr);
             let socket = Socket::new(addr.domain(), Type::DGRAM, Some(Protocol::UDP)).await?;
-            opts.setup_socket(&socket)?;
             socket.bind(&addr).await?;
             Ok(Self { inner: socket })
         })
@@ -483,6 +477,244 @@ impl UdpSocket {
                 .await
         })
         .await
+    }
+
+    /// Gets the value of the `SO_BROADCAST` option for this socket.
+    ///
+    /// For more information about this option, see [`set_broadcast`].
+    ///
+    /// [`set_broadcast`]: method@Self::set_broadcast
+    pub fn broadcast(&self) -> io::Result<bool> {
+        self.inner.socket.broadcast()
+    }
+
+    /// Sets the value of the `SO_BROADCAST` option for this socket.
+    ///
+    /// When enabled, this socket is allowed to send packets to a broadcast
+    /// address.
+    pub fn set_broadcast(&self, on: bool) -> io::Result<()> {
+        self.inner.socket.set_broadcast(on)
+    }
+
+    /// Gets the value of the `IP_MULTICAST_LOOP` option for this socket.
+    ///
+    /// For more information about this option, see [`set_multicast_loop_v4`].
+    ///
+    /// [`set_multicast_loop_v4`]: method@Self::set_multicast_loop_v4
+    pub fn multicast_loop_v4(&self) -> io::Result<bool> {
+        self.inner.socket.multicast_loop_v4()
+    }
+
+    /// Sets the value of the `IP_MULTICAST_LOOP` option for this socket.
+    ///
+    /// If enabled, multicast packets will be looped back to the local socket.
+    ///
+    /// # Note
+    ///
+    /// This may not have any effect on IPv6 sockets.
+    pub fn set_multicast_loop_v4(&self, on: bool) -> io::Result<()> {
+        self.inner.socket.set_multicast_loop_v4(on)
+    }
+
+    /// Gets the value of the `IP_MULTICAST_TTL` option for this socket.
+    ///
+    /// For more information about this option, see [`set_multicast_ttl_v4`].
+    ///
+    /// [`set_multicast_ttl_v4`]: method@Self::set_multicast_ttl_v4
+    pub fn multicast_ttl_v4(&self) -> io::Result<u32> {
+        self.inner.socket.multicast_ttl_v4()
+    }
+
+    /// Sets the value of the `IP_MULTICAST_TTL` option for this socket.
+    ///
+    /// Indicates the time-to-live value of outgoing multicast packets for
+    /// this socket. The default value is 1 which means that multicast packets
+    /// don't leave the local network unless explicitly requested.
+    ///
+    /// # Note
+    ///
+    /// This may not have any effect on IPv6 sockets.
+    pub fn set_multicast_ttl_v4(&self, ttl: u32) -> io::Result<()> {
+        self.inner.socket.set_multicast_ttl_v4(ttl)
+    }
+
+    /// Gets the value of the `IPV6_MULTICAST_LOOP` option for this socket.
+    ///
+    /// For more information about this option, see [`set_multicast_loop_v6`].
+    ///
+    /// [`set_multicast_loop_v6`]: method@Self::set_multicast_loop_v6
+    pub fn multicast_loop_v6(&self) -> io::Result<bool> {
+        self.inner.socket.multicast_loop_v6()
+    }
+
+    /// Sets the value of the `IPV6_MULTICAST_LOOP` option for this socket.
+    ///
+    /// Controls whether this socket sees the multicast packets it sends itself.
+    ///
+    /// # Note
+    ///
+    /// This may not have any effect on IPv4 sockets.
+    pub fn set_multicast_loop_v6(&self, on: bool) -> io::Result<()> {
+        self.inner.socket.set_multicast_loop_v6(on)
+    }
+
+    /// Gets the value of the `IPV6_TCLASS` option for this socket.
+    ///
+    /// For more information about this option, see [`set_tclass_v6`].
+    ///
+    /// [`set_tclass_v6`]: Self::set_tclass_v6
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "fuchsia",
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "cygwin",
+    ))]
+    pub fn tclass_v6(&self) -> io::Result<u32> {
+        self.inner.socket.tclass_v6()
+    }
+
+    /// Sets the value for the `IPV6_TCLASS` option on this socket.
+    ///
+    /// Specifies the traffic class field that is used in every packet
+    /// sent from this socket.
+    ///
+    /// # Note
+    ///
+    /// This may not have any effect on IPv4 sockets.
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "fuchsia",
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "cygwin",
+    ))]
+    pub fn set_tclass_v6(&self, tclass: u32) -> io::Result<()> {
+        self.inner.socket.set_tclass_v6(tclass)
+    }
+
+    /// Gets the value of the `IP_TTL` option for this socket.
+    ///
+    /// For more information about this option, see [`set_ttl_v4`].
+    ///
+    /// [`set_ttl_v4`]: method@Self::set_ttl_v4
+    pub fn ttl_v4(&self) -> io::Result<u32> {
+        self.inner.socket.ttl_v4()
+    }
+
+    /// Sets the value for the `IP_TTL` option on this socket.
+    ///
+    /// This value sets the time-to-live field that is used in every packet sent
+    /// from this socket.
+    pub fn set_ttl_v4(&self, ttl: u32) -> io::Result<()> {
+        self.inner.socket.set_ttl_v4(ttl)
+    }
+
+    /// Gets the value of the `IP_TOS` option for this socket.
+    ///
+    /// For more information about this option, see [`set_tos_v4`].
+    ///
+    /// [`set_tos_v4`]: Self::set_tos_v4
+    // https://docs.rs/socket2/0.6.1/src/socket2/socket.rs.html#1585
+    #[cfg(not(any(
+        target_os = "fuchsia",
+        target_os = "redox",
+        target_os = "solaris",
+        target_os = "illumos",
+        target_os = "haiku"
+    )))]
+    pub fn tos_v4(&self) -> io::Result<u32> {
+        self.inner.socket.tos_v4()
+    }
+
+    /// Sets the value for the `IP_TOS` option on this socket.
+    ///
+    /// This value sets the type-of-service field that is used in every packet
+    /// sent from this socket.
+    ///
+    /// # Note
+    ///
+    /// - This may not have any effect on IPv6 sockets.
+    #[cfg(not(any(
+        target_os = "fuchsia",
+        target_os = "redox",
+        target_os = "solaris",
+        target_os = "illumos",
+        target_os = "haiku"
+    )))]
+    pub fn set_tos_v4(&self, tos: u32) -> io::Result<()> {
+        self.inner.socket.set_tos_v4(tos)
+    }
+
+    /// Gets the value for the `SO_BINDTODEVICE` option on this socket
+    ///
+    /// This value gets the socket-bound device's interface name.
+    #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux",))]
+    pub fn device(&self) -> io::Result<Option<Vec<u8>>> {
+        self.inner.socket.device()
+    }
+
+    /// Sets the value for the `SO_BINDTODEVICE` option on this socket
+    ///
+    /// If a socket is bound to an interface, only packets received from that
+    /// particular interface are processed by the socket. Note that this only
+    /// works for some socket types, particularly `AF_INET` sockets.
+    ///
+    /// If `interface` is `None` or an empty string it removes the binding.
+    #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
+    pub fn bind_device(&self, interface: Option<&[u8]>) -> io::Result<()> {
+        self.inner.socket.bind_device(interface)
+    }
+
+    /// Executes an operation of the `IP_ADD_MEMBERSHIP` type.
+    ///
+    /// This function specifies a new multicast group for this socket to join.
+    /// The address must be a valid multicast address, and `interface` is the
+    /// address of the local interface with which the system should join the
+    /// multicast group. If it's equal to `INADDR_ANY` then an appropriate
+    /// interface is chosen by the system.
+    pub fn join_multicast_v4(&self, multiaddr: &Ipv4Addr, interface: &Ipv4Addr) -> io::Result<()> {
+        self.inner.socket.join_multicast_v4(multiaddr, interface)
+    }
+
+    /// Executes an operation of the `IPV6_ADD_MEMBERSHIP` type.
+    ///
+    /// This function specifies a new multicast group for this socket to join.
+    /// The address must be a valid multicast address, and `interface` is the
+    /// index of the interface to join/leave (or 0 to indicate any interface).
+    pub fn join_multicast_v6(&self, multiaddr: &Ipv6Addr, interface: u32) -> io::Result<()> {
+        self.inner.socket.join_multicast_v6(multiaddr, interface)
+    }
+
+    /// Executes an operation of the `IP_DROP_MEMBERSHIP` type.
+    ///
+    /// For more information about this option, see [`join_multicast_v4`].
+    ///
+    /// [`join_multicast_v4`]: method@Self::join_multicast_v4
+    pub fn leave_multicast_v4(&self, multiaddr: &Ipv4Addr, interface: &Ipv4Addr) -> io::Result<()> {
+        self.inner.socket.leave_multicast_v4(multiaddr, interface)
+    }
+
+    /// Executes an operation of the `IPV6_DROP_MEMBERSHIP` type.
+    ///
+    /// For more information about this option, see [`join_multicast_v6`].
+    ///
+    /// [`join_multicast_v6`]: method@Self::join_multicast_v6
+    pub fn leave_multicast_v6(&self, multiaddr: &Ipv6Addr, interface: u32) -> io::Result<()> {
+        self.inner.socket.leave_multicast_v6(multiaddr, interface)
+    }
+
+    /// Returns the value of the `SO_ERROR` option.
+    pub fn take_error(&self) -> io::Result<Option<io::Error>> {
+        self.inner.socket.take_error()
     }
 
     /// Gets a socket option.

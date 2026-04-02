@@ -17,9 +17,7 @@ use compio_runtime::fd::PollFd;
 use futures_util::{Stream, StreamExt, stream::FusedStream};
 use socket2::{Domain, SockAddr, Socket as Socket2, Type};
 
-use crate::{
-    Incoming, MSG_NOSIGNAL, OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, SocketOpts, WriteHalf,
-};
+use crate::{Incoming, MSG_NOSIGNAL, OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, WriteHalf};
 
 /// A Unix socket server, listening for connections.
 ///
@@ -56,23 +54,17 @@ pub struct UnixListener {
 
 impl UnixListener {
     /// Creates a new [`UnixListener`], which will be bound to the specified
-    /// file path. The file path cannot yet exist, and will be cleaned up
-    /// upon dropping [`UnixListener`].
+    /// file path. See [`UnixListener::bind_addr`] for more details.
     pub async fn bind(path: impl AsRef<Path>) -> io::Result<Self> {
         Self::bind_addr(&SockAddr::unix(path)?).await
     }
 
     /// Creates a new [`UnixListener`] with [`SockAddr`], which will be bound to
-    /// the specified file path. The file path cannot yet exist, and will be
-    /// cleaned up upon dropping [`UnixListener`].
+    /// the specified file path. The file path cannot yet exist.
+    ///
+    /// To configure the socket before binding, you can use the [`UnixSocket`]
+    /// type.
     pub async fn bind_addr(addr: &SockAddr) -> io::Result<Self> {
-        Self::bind_with_options(addr, &SocketOpts::default()).await
-    }
-
-    /// Creates a new [`UnixListener`] with [`SockAddr`] and [`SocketOpts`],
-    /// which will be bound to the specified file path. The file path cannot
-    /// yet exist, and will be cleaned up upon dropping [`UnixListener`].
-    pub async fn bind_with_options(addr: &SockAddr, opts: &SocketOpts) -> io::Result<Self> {
         if !addr.is_unix() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -81,9 +73,8 @@ impl UnixListener {
         }
 
         let socket = Socket::new(addr.domain(), Type::STREAM, None).await?;
-        opts.setup_socket(&socket)?;
         socket.bind(addr).await?;
-        socket.listen(opts.get_backlog().unwrap_or(1024)).await?;
+        socket.listen(1024).await?;
         Ok(UnixListener { inner: socket })
     }
 
@@ -109,45 +100,28 @@ impl UnixListener {
     ///
     /// This function will yield once a new Unix domain socket connection
     /// is established. When established, the corresponding [`UnixStream`] and
-    /// will be returned.
+    /// the remote peer’s address will be returned.
     pub async fn accept(&self) -> io::Result<(UnixStream, SockAddr)> {
         let (socket, addr) = self.inner.accept().await?;
         let stream = UnixStream { inner: socket };
         Ok((stream, addr))
     }
 
-    /// Accepts a new incoming connection from this listener, and sets options.
-    ///
-    /// This function will yield once a new Unix domain socket connection
-    /// is established. When established, the corresponding [`UnixStream`] and
-    /// will be returned.
-    pub async fn accept_with_options(
-        &self,
-        options: &SocketOpts,
-    ) -> io::Result<(UnixStream, SockAddr)> {
-        let (socket, addr) = self.inner.accept().await?;
-        options.setup_socket(&socket)?;
-        let stream = UnixStream { inner: socket };
-        Ok((stream, addr))
-    }
-
     /// Returns a stream of incoming connections to this listener.
     pub fn incoming(&self) -> UnixIncoming<'_> {
-        self.incoming_with_options(&SocketOpts::default())
-    }
-
-    /// Returns a stream of incoming connections to this listener, and sets
-    /// options for each accepted connection.
-    pub fn incoming_with_options<'a>(&'a self, options: &SocketOpts) -> UnixIncoming<'a> {
         UnixIncoming {
             inner: self.inner.incoming(),
-            opts: *options,
         }
     }
 
     /// Returns the local address that this listener is bound to.
     pub fn local_addr(&self) -> io::Result<SockAddr> {
         self.inner.local_addr()
+    }
+
+    /// Returns the value of the `SO_ERROR` option.
+    pub fn take_error(&self) -> io::Result<Option<io::Error>> {
+        self.inner.socket.take_error()
     }
 }
 
@@ -156,7 +130,6 @@ impl_raw_fd!(UnixListener, socket2::Socket, inner, socket);
 /// A stream of incoming Unix connections.
 pub struct UnixIncoming<'a> {
     inner: Incoming<'a>,
-    opts: SocketOpts,
 }
 
 impl Stream for UnixIncoming<'_> {
@@ -167,7 +140,6 @@ impl Stream for UnixIncoming<'_> {
         this.inner.poll_next_unpin(cx).map(|res| {
             res.map(|res| {
                 let socket = res?;
-                this.opts.setup_socket(&socket)?;
                 Ok(UnixStream { inner: socket })
             })
         })
@@ -205,9 +177,8 @@ pub struct UnixStream {
 }
 
 impl UnixStream {
-    /// Opens a Unix connection to the specified file path. There must be a
-    /// [`UnixListener`] or equivalent listening on the corresponding Unix
-    /// domain socket to successfully connect and return a [`UnixStream`].
+    /// Opens a Unix connection to the specified file path. See
+    /// [`UnixStream::connect_addr`] for more details.
     pub async fn connect(path: impl AsRef<Path>) -> io::Result<Self> {
         Self::connect_addr(&SockAddr::unix(path)?).await
     }
@@ -215,15 +186,10 @@ impl UnixStream {
     /// Opens a Unix connection to the specified address. There must be a
     /// [`UnixListener`] or equivalent listening on the corresponding Unix
     /// domain socket to successfully connect and return a [`UnixStream`].
+    ///
+    /// To configure the socket before connecting, you can use the
+    /// [`UnixSocket`] type.
     pub async fn connect_addr(addr: &SockAddr) -> io::Result<Self> {
-        Self::connect_with_options(addr, &SocketOpts::default()).await
-    }
-
-    /// Opens a Unix connection to the specified address with [`SocketOpts`].
-    /// There must be a [`UnixListener`] or equivalent listening on the
-    /// corresponding Unix domain socket to successfully connect and return
-    /// a [`UnixStream`].
-    pub async fn connect_with_options(addr: &SockAddr, options: &SocketOpts) -> io::Result<Self> {
         if !addr.is_unix() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -231,7 +197,6 @@ impl UnixStream {
             ));
         }
         let socket = Socket::new(Domain::UNIX, Type::STREAM, None).await?;
-        options.setup_socket(&socket)?;
         #[cfg(windows)]
         {
             let new_addr = empty_unix_socket();
@@ -274,6 +239,11 @@ impl UnixStream {
     /// Returns the socket path of the local half of this connection.
     pub fn local_addr(&self) -> io::Result<SockAddr> {
         self.inner.local_addr()
+    }
+
+    /// Returns the value of the `SO_ERROR` option.
+    pub fn take_error(&self) -> io::Result<Option<io::Error>> {
+        self.inner.socket.take_error()
     }
 
     /// Splits a [`UnixStream`] into a read half and a write half, which can be
@@ -528,6 +498,92 @@ impl<'a> Splittable for &'a mut UnixStream {
 }
 
 impl_raw_fd!(UnixStream, socket2::Socket, inner, socket);
+
+/// A Unix socket that has not yet been converted to a [`UnixStream`] or
+/// [`UnixListener`].
+#[derive(Debug)]
+pub struct UnixSocket {
+    inner: Socket,
+}
+
+impl UnixSocket {
+    /// Creates a new Unix stream socket.
+    pub async fn new_stream() -> io::Result<UnixSocket> {
+        UnixSocket::new(socket2::Type::STREAM).await
+    }
+
+    async fn new(ty: socket2::Type) -> io::Result<UnixSocket> {
+        let inner = Socket::new(socket2::Domain::UNIX, ty, None).await?;
+        Ok(UnixSocket { inner })
+    }
+
+    /// Returns the local address that this socket is bound to.
+    pub fn local_addr(&self) -> io::Result<SockAddr> {
+        self.inner.local_addr()
+    }
+
+    /// Returns the value of the `SO_ERROR` option.
+    pub fn take_error(&self) -> io::Result<Option<io::Error>> {
+        self.inner.socket.take_error()
+    }
+
+    /// Binds the socket to the given address.
+    pub async fn bind(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        self.bind_addr(&SockAddr::unix(path)?).await
+    }
+
+    /// Binds the socket to the given address.
+    pub async fn bind_addr(&self, addr: &SockAddr) -> io::Result<()> {
+        if !addr.is_unix() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "addr is not unix socket address",
+            ));
+        }
+        self.inner.bind(addr).await
+    }
+
+    /// Converts the socket into a `UnixListener`.
+    ///
+    /// `backlog` defines the maximum number of pending connections are queued
+    /// by the operating system at any given time. Connections are removed from
+    /// the queue with [`UnixListener::accept`]. When the queue is full, the
+    /// operating-system will start rejecting connections.
+    pub async fn listen(self, backlog: i32) -> io::Result<UnixListener> {
+        self.inner.listen(backlog).await?;
+        Ok(UnixListener { inner: self.inner })
+    }
+
+    /// Establishes a Unix connection with a peer at the specified socket
+    /// address.
+    ///
+    /// See [`UnixSocket::connect_addr`] for more details.
+    pub async fn connect(self, path: impl AsRef<Path>) -> io::Result<UnixStream> {
+        self.connect_addr(&SockAddr::unix(path)?).await
+    }
+
+    /// Establishes a Unix connection with a peer at the specified socket
+    /// address.
+    ///
+    /// The [`UnixSocket`] is consumed. Once the connection is established, a
+    /// connected [`UnixStream`] is returned. If the connection fails, the
+    /// encountered error is returned.
+    ///
+    /// On Windows, the socket should be bound to an empty address before
+    /// connecting.
+    pub async fn connect_addr(self, addr: &SockAddr) -> io::Result<UnixStream> {
+        if !addr.is_unix() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "addr is not unix socket address",
+            ));
+        }
+        self.inner.connect_async(addr).await?;
+        Ok(UnixStream { inner: self.inner })
+    }
+}
+
+impl_raw_fd!(UnixSocket, socket2::Socket, inner, socket);
 
 #[cfg(windows)]
 #[inline]

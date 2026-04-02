@@ -15,7 +15,6 @@
 )]
 
 mod incoming;
-mod opts;
 mod resolve;
 mod socket;
 pub(crate) mod split;
@@ -48,7 +47,6 @@ pub type CMsgBuilder<'a> = compio_io::ancillary::CMsgBuilder<'a>;
 #[deprecated(since = "0.12.0", note = "Use `compio::runtime::fd::PollFd` instead")]
 pub type PollFd<T> = compio_runtime::fd::PollFd<T>;
 pub(crate) use incoming::*;
-pub use opts::SocketOpts;
 pub use resolve::ToSocketAddrsAsync;
 pub(crate) use resolve::{each_addr, first_addr_buf, first_addr_buf_zerocopy};
 pub(crate) use socket::*;
