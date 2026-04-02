@@ -2,11 +2,12 @@ use std::{net::SocketAddr, sync::Arc};
 
 use compio_io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use compio_net::{TcpListener, TcpStream};
+use compio_runtime::JoinHandle;
 use compio_tls::{TlsAcceptor, TlsConnector};
 use rcgen::Certificate;
 use rustls::pki_types::pem::PemObject;
 
-async fn start_server() -> (SocketAddr, Certificate) {
+async fn start_server() -> (SocketAddr, Certificate, JoinHandle<()>) {
     let rcgen::CertifiedKey { cert, signing_key } =
         rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
 
@@ -25,7 +26,7 @@ async fn start_server() -> (SocketAddr, Certificate) {
 
     let listener = TcpListener::bind("localhost:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    compio_runtime::spawn(async move {
+    let server = compio_runtime::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
         let mut stream = acceptor.accept(stream).await.unwrap();
         let (_, res) = stream.read(Vec::with_capacity(12)).await.unwrap();
@@ -33,9 +34,8 @@ async fn start_server() -> (SocketAddr, Certificate) {
         stream.flush().await.unwrap();
         stream.shutdown().await.unwrap();
         stream.read(vec![0u8; 1]).await.unwrap();
-    })
-    .detach();
-    (addr, cert)
+    });
+    (addr, cert, server)
 }
 
 async fn connect(connector: TlsConnector, addr: SocketAddr) {
@@ -52,7 +52,7 @@ async fn connect(connector: TlsConnector, addr: SocketAddr) {
 #[cfg(feature = "native-tls")]
 #[compio_macros::test]
 async fn native() {
-    let (addr, cert) = start_server().await;
+    let (addr, cert, server) = start_server().await;
 
     let connector = TlsConnector::from(
         native_tls::TlsConnector::builder()
@@ -62,11 +62,12 @@ async fn native() {
     );
 
     connect(connector, addr).await;
+    server.await.unwrap();
 }
 
 #[compio_macros::test]
 async fn rtls() {
-    let (addr, cert) = start_server().await;
+    let (addr, cert, server) = start_server().await;
 
     let mut store = rustls::RootCertStore::empty();
     store.add(cert.der().clone()).unwrap();
@@ -78,6 +79,7 @@ async fn rtls() {
     ));
 
     connect(connector, addr).await;
+    server.await.unwrap();
 }
 
 #[cfg(feature = "py-dynamic-openssl")]
@@ -91,7 +93,7 @@ async fn py_ossl() {
         types::{IntoPyDict, PyDictMethods},
     };
 
-    let (addr, cert) = start_server().await;
+    let (addr, cert, server) = start_server().await;
 
     let mut path = tempfile::NamedTempFile::new().unwrap();
     path.write_all(cert.pem().as_bytes()).unwrap();
@@ -122,4 +124,5 @@ ctx.load_verify_locations(cafile=cert)
     let connector = TlsConnector::from(context);
 
     connect(connector, addr).await;
+    server.await.unwrap();
 }
