@@ -114,7 +114,7 @@ pub(crate) async fn shutdown<S>(s: &mut SslStream<SyncStream<S>>) -> io::Result<
 where
     S: AsyncRead + AsyncWrite,
 {
-    let res = drive(s, |s| match s.shutdown() {
+    drive(s, |s| match s.shutdown() {
         Ok(res) => DriveResult::Ready(Ok(res)),
         Err(e) => {
             if e.code() == ErrorCode::ZERO_RETURN {
@@ -126,14 +126,5 @@ where
     })
     .await?;
     s.get_mut().get_mut().shutdown().await?;
-    match res {
-        // If close_notify has been sent but the peer has not responded with
-        // close_notify, we let the caller know by returning Err(WouldBlock).
-        // This behavior is different from the others as a Python-only hack.
-        ShutdownResult::Sent => Err(io::Error::new(
-            io::ErrorKind::WouldBlock,
-            "close_notify sent",
-        )),
-        ShutdownResult::Received => Ok(()),
-    }
+    Ok(())
 }
