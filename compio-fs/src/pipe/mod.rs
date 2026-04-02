@@ -10,8 +10,9 @@ use compio_driver::{
     },
     syscall,
 };
-use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
+use compio_io::{AsyncRead, AsyncReadManaged, AsyncReadMulti, AsyncWrite};
 use compio_runtime::Runtime;
+use futures_util::Stream;
 
 use crate::File;
 
@@ -40,8 +41,12 @@ pub async fn anonymous() -> io::Result<(Receiver, Sender)> {
     let BufResult(res, op) = compio_runtime::submit(op).await;
     res?;
     let (receiver, sender) = op.into_inner();
-    let receiver = Receiver::from_file(File::from_std(std::fs::File::from(receiver))?)?;
-    let sender = Sender::from_file(File::from_std(std::fs::File::from(sender))?)?;
+    let receiver = Receiver {
+        file: File::from_std(std::fs::File::from(receiver))?,
+    };
+    let sender = Sender {
+        file: File::from_std(std::fs::File::from(sender))?,
+    };
     Ok((receiver, sender))
 }
 
@@ -372,15 +377,11 @@ impl AsyncWrite for Sender {
 
 impl AsyncWrite for &Sender {
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        let fd = self.to_shared_fd();
-        let op = Write::new(fd, buffer);
-        compio_runtime::submit(op).await.into_inner()
+        self.file.inner.write(buffer).await
     }
 
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        let fd = self.to_shared_fd();
-        let op = WriteVectored::new(fd, buffer);
-        compio_runtime::submit(op).await.into_inner()
+        self.file.inner.write_vectored(buffer).await
     }
 
     #[inline]
@@ -497,17 +498,11 @@ impl AsyncRead for Receiver {
 
 impl AsyncRead for &Receiver {
     async fn read<B: IoBufMut>(&mut self, buffer: B) -> BufResult<usize, B> {
-        let fd = self.to_shared_fd();
-        let op = Read::new(fd, buffer);
-        let res = compio_runtime::submit(op).await.into_inner();
-        unsafe { res.map_advanced() }
+        self.file.inner.read(buffer).await
     }
 
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buffer: V) -> BufResult<usize, V> {
-        let fd = self.to_shared_fd();
-        let op = ReadVectored::new(fd, buffer);
-        let res = compio_runtime::submit(op).await.into_inner();
-        unsafe { res.map_vec_advanced() }
+        self.file.inner.read_vectored(buffer).await
     }
 }
 
@@ -523,14 +518,19 @@ impl AsyncReadManaged for &Receiver {
     type Buffer = BufferRef;
 
     async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
-        let fd = self.to_shared_fd();
-        let res = Runtime::with_current(|rt| {
-            let buffer_pool = rt.buffer_pool()?;
-            let op = ReadManaged::new(fd, &buffer_pool, len)?;
-            io::Result::Ok(rt.submit(op))
-        })?
-        .await;
-        unsafe { res.take_buffer() }
+        self.file.inner.read_managed(len).await
+    }
+}
+
+impl AsyncReadMulti for Receiver {
+    fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
+        self.file.inner.read_multi(len)
+    }
+}
+
+impl AsyncReadMulti for &Receiver {
+    fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
+        self.file.inner.read_multi_shared(len)
     }
 }
 

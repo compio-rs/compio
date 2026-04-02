@@ -11,9 +11,9 @@ use compio_driver::{
     AsRawFd, BufferRef, RawFd, ToSharedFd, impl_raw_fd, op::ConnectNamedPipe, syscall,
 };
 use compio_io::{
-    AsyncRead, AsyncReadAt, AsyncReadManaged, AsyncReadManagedAt, AsyncWrite, AsyncWriteAt,
-    util::Splittable,
+    AsyncRead, AsyncReadAt, AsyncReadManaged, AsyncReadMulti, AsyncWrite, util::Splittable,
 };
+use futures_util::Stream;
 use widestring::U16CString;
 use windows_sys::Win32::{
     Storage::FileSystem::{
@@ -218,7 +218,19 @@ impl AsyncReadManaged for &NamedPipeServer {
 
     async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         // The position is ignored.
-        self.handle.read_managed_at(len, 0).await
+        (&self.handle.inner).read_managed(len).await
+    }
+}
+
+impl AsyncReadMulti for NamedPipeServer {
+    fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
+        self.handle.inner.read_multi(len)
+    }
+}
+
+impl AsyncReadMulti for &NamedPipeServer {
+    fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
+        self.handle.inner.read_multi_shared(len)
     }
 }
 
@@ -242,7 +254,7 @@ impl AsyncWrite for NamedPipeServer {
 impl AsyncWrite for &NamedPipeServer {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
-        (&self.handle).write_at(buffer, 0).await
+        (&self.handle.inner).write(buffer).await
     }
 
     #[inline]
@@ -381,7 +393,19 @@ impl AsyncReadManaged for &NamedPipeClient {
 
     async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
         // The position is ignored.
-        self.handle.read_managed_at(len, 0).await
+        (&self.handle.inner).read_managed(len).await
+    }
+}
+
+impl AsyncReadMulti for NamedPipeClient {
+    fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
+        self.handle.inner.read_multi(len)
+    }
+}
+
+impl AsyncReadMulti for &NamedPipeClient {
+    fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
+        self.handle.inner.read_multi_shared(len)
     }
 }
 
@@ -406,7 +430,7 @@ impl AsyncWrite for &NamedPipeClient {
     #[inline]
     async fn write<T: IoBuf>(&mut self, buffer: T) -> BufResult<usize, T> {
         // The position is ignored.
-        (&self.handle).write_at(buffer, 0).await
+        (&self.handle.inner).write(buffer).await
     }
 
     #[inline]

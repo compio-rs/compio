@@ -5,7 +5,9 @@ use compio_fs::File;
 use compio_fs::pipe;
 use compio_io::AsyncReadManagedAt;
 #[cfg(unix)]
-use compio_io::{AsyncReadManaged, AsyncWriteExt};
+use compio_io::{AsyncReadManaged, AsyncReadMulti, AsyncWriteExt};
+#[cfg(unix)]
+use futures_util::TryStreamExt;
 use tempfile::NamedTempFile;
 
 const HELLO: &[u8] = b"hello world...";
@@ -36,4 +38,15 @@ async fn test_read_pipe() {
 
     assert_eq!(buf.len(), HELLO.len());
     assert_eq!(buf.as_ref(), HELLO);
+}
+
+#[cfg(unix)]
+#[compio_macros::test]
+async fn test_read_pipe_multi() {
+    let (mut rx, mut tx) = pipe::anonymous().await.unwrap();
+    tx.write_all(HELLO).await.unwrap();
+
+    let buffer = rx.read_multi(0).try_collect::<Vec<_>>().await.unwrap();
+    assert_eq!(buffer.len(), 1);
+    assert_eq!(&*buffer[0], HELLO);
 }

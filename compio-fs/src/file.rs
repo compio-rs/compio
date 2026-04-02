@@ -8,7 +8,7 @@ use compio_driver::{
     op::{BufResultExt, CloseFile, ReadAt, ReadManagedAt, Sync, WriteAt},
 };
 use compio_io::{AsyncReadAt, AsyncReadManagedAt, AsyncWriteAt, util::Splittable};
-use compio_runtime::{Attacher, Runtime};
+use compio_runtime::{Runtime, fd::AsyncFd};
 #[cfg(all(unix, not(solarish)))]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
@@ -49,13 +49,13 @@ use crate::{Metadata, OpenOptions, Permissions};
 /// ```
 #[derive(Debug, Clone)]
 pub struct File {
-    inner: Attacher<std::fs::File>,
+    pub(crate) inner: AsyncFd<std::fs::File>,
 }
 
 impl File {
     pub(crate) fn from_std(file: std::fs::File) -> io::Result<Self> {
         Ok(Self {
-            inner: Attacher::new(file)?,
+            inner: AsyncFd::new(file)?,
         })
     }
 

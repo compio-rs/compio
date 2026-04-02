@@ -100,6 +100,16 @@ impl<T: AsFd + 'static> AsyncReadManaged for &AsyncFd<T> {
     }
 }
 
+impl<T: AsFd + 'static> AsyncFd<T> {
+    /// Identical to [`AsyncReadMulti::read_multi`] but without borrowing `self`
+    /// mutably.
+    #[doc(hidden)]
+    pub fn read_multi_shared(&self, len: usize) -> impl Stream<Item = io::Result<BufferRef>> {
+        let fd = self.to_shared_fd();
+        read_multi(fd, len)
+    }
+}
+
 impl<T: AsFd + 'static> AsyncReadMulti for AsyncFd<T> {
     fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
         let fd = self.to_shared_fd();
