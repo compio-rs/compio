@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  test_illumos:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -46,4 +46,4 @@ jobs:
 
             rustup component add clippy
 
-            cargo clippy --all-features --all-targets -- -Dwarnings
+            RUST_BACKTRACE=1 cargo clippy --all-features --all-targets -- -Dwarnings

@@ -22,9 +22,10 @@ concurrency:
 
 env:
   RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
 
 jobs:
-  asan:
+  test_asan:
     runs-on: ${{ matrix.setup.os }}
     strategy:
       matrix:
@@ -46,6 +47,7 @@ jobs:
       - name: Setup target
         if: ${{ matrix.setup.target }}
         run: rustup +nightly target install ${{ matrix.setup.target }}
+      - uses: taiki-e/install-action@nextest
       - name: Run ASan tests
         run: |
           set -ex
@@ -65,6 +67,14 @@ jobs:
               ARGS+=("--target" "${{ matrix.setup.target }}")
           fi
 
-          cargo +nightly test --workspace --tests --lib -Zbuild-std "${ARGS[@]}"
+          # stress tests takes too long with ASAN, filter them out
+          cargo +nightly nextest run \
+            --no-fail-fast \
+            --failure-output final \
+            -E 'not (test(stress))' \
+            --tests \
+            --lib \
+            -Zbuild-std \
+            "${ARGS[@]}"
         env:
           RUSTFLAGS: -Zsanitizer=address

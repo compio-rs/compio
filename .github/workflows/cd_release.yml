@@ -6,7 +6,6 @@ on:
       - master
 
 jobs:
-
   # Release unpublished packages.
   release-plz-release:
     name: Release-plz release

@@ -24,7 +24,7 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  test:
+  test_musl:
     runs-on: ubuntu-latest
     strategy:
       matrix:

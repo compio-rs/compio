@@ -22,6 +22,7 @@ concurrency:
 
 env:
   RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
 
 jobs:
   test:
@@ -73,6 +74,7 @@ jobs:
       - name: Setup target
         if: ${{ matrix.setup.target }}
         run: rustup +${{ matrix.toolchain }} target install ${{ matrix.setup.target }}
+      - uses: taiki-e/install-action@nextest
       - name: Test on ${{ matrix.setup.os }} ${{ matrix.toolchain }} ${{ matrix.setup.target }}
         shell: bash
         run: |
@@ -96,9 +98,10 @@ jobs:
           if [[ -n "${{ matrix.setup.target }}" ]]; then
               ARGS+=("--target" "${{ matrix.setup.target }}")
           fi
-          # Add doctest-xcompile if on windows and nightly
-          if [[ "${{ matrix.setup.os }}" == "windows-latest" && ${{ matrix.toolchain }} == "nightly" ]]; then
-              ARGS+=("-Z" "doctest-xcompile")
-          fi
 
-          cargo +${{ matrix.toolchain }} test --workspace "${ARGS[@]}"
+          cargo +${{ matrix.toolchain }} nextest run \
+            --no-fail-fast \
+            --failure-output final \
+            "${ARGS[@]}"
+
+          cargo +${{ matrix.toolchain }} test --workspace --doc "${ARGS[@]}"
