@@ -51,6 +51,7 @@ native-tls-vendored = ["native-tls/vendored"]
 py-dynamic-openssl = ["dep:compio-py-dynamic-openssl"]
 
 ring = ["rustls", "rustls/ring", "futures-rustls/ring"]
+aws-lc-rs = ["rustls", "rustls/aws_lc_rs", "futures-rustls/aws_lc_rs"]
 
 read_buf = ["compio-buf/read_buf", "compio-io/read_buf", "rustls?/read_buf"]
 nightly = ["read_buf"]

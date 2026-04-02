@@ -239,8 +239,13 @@ mod verifier {
                 rustls::crypto::CryptoProvider::get_default()
                     .map(|provider| provider.signature_verification_algorithms)
                     .unwrap_or_else(|| {
-                        #[cfg(feature = "ring")]
-                        use rustls::crypto::ring::default_provider;
+                        cfg_if::cfg_if! {
+                            if #[cfg(feature = "aws-lc-rs")] {
+                                use rustls::crypto::aws_lc_rs::default_provider;
+                            } else if #[cfg(feature = "ring")] {
+                                use rustls::crypto::ring::default_provider;
+                            }
+                        }
                         default_provider().signature_verification_algorithms
                     }),
             )

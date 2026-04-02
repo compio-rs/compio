@@ -30,6 +30,7 @@ h3 = { version = "0.0.8", optional = true }
 h3-datagram = { version = "0.0.2", optional = true }
 
 # Utils
+cfg-if = { workspace = true, optional = true }
 flume = { workspace = true, default-features = false, features = ["async"] }
 futures-util = { workspace = true }
 thiserror = { workspace = true }
@@ -71,7 +72,8 @@ native-certs = ["dep:rustls-native-certs"]
 webpki-roots = ["dep:webpki-roots"]
 qlog = ["quinn-proto/qlog"]
 h3 = ["dep:h3", "dep:h3-datagram"]
-ring = ["quinn-proto/rustls-ring"]
+ring = ["dep:cfg-if", "quinn-proto/rustls-ring"]
+aws-lc-rs = ["dep:cfg-if", "quinn-proto/rustls-aws-lc-rs"]
 windows-gro = []
 sync = []
 

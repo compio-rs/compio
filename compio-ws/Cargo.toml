@@ -46,6 +46,7 @@ rustls-platform-verifier = ["rustls", "dep:rustls-platform-verifier"]
 rustls-native-certs = ["rustls", "dep:rustls-native-certs"]
 webpki-roots = ["rustls", "dep:webpki-roots"]
 ring = ["compio-tls/ring"]
+aws-lc-rs = ["compio-tls/aws-lc-rs"]
 
 io-compat = ["dep:futures-util", "dep:pin-project-lite"]
 

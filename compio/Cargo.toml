@@ -167,6 +167,12 @@ windows-gro = ["compio-quic?/windows-gro"]
 # TLS
 py-dynamic-openssl = ["tls", "compio-tls/py-dynamic-openssl"]
 ring = ["tls", "compio-tls/ring", "compio-quic?/ring", "compio-ws?/ring"]
+aws-lc-rs = [
+    "tls",
+    "compio-tls/aws-lc-rs",
+    "compio-quic?/aws-lc-rs",
+    "compio-ws?/aws-lc-rs",
+]
 native-tls-vendored = [
     "compio-tls/native-tls-vendored",
     "compio-ws?/native-tls-vendored",
