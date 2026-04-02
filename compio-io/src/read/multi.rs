@@ -13,7 +13,7 @@ pub trait AsyncReadMulti: AsyncReadManaged {
     ///
     /// - If `len` == 0, implementation should use buffer's size as `len`
     /// - if `len` > 0, `min(len, buffer_size)` will be the max number of bytes
-    ///   to be read.
+    ///   to be read each time.
     fn read_multi(&mut self, len: usize) -> impl Stream<Item = IoResult<Self::Buffer>>;
 }
 
@@ -29,6 +29,6 @@ pub trait AsyncReadMultiAt: AsyncReadManagedAt {
     ///
     /// - If `len` == 0, implementation should use buffer's size as `len`
     /// - if `len` > 0, `min(len, buffer_size)` will be the max number of bytes
-    ///   to be read.
+    ///   to be read each time.
     fn read_multi_at(&self, len: usize, pos: u64) -> impl Stream<Item = IoResult<Self::Buffer>>;
 }
