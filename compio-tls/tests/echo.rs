@@ -1,29 +1,11 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::net::SocketAddr;
 
 use compio_io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use compio_net::{TcpListener, TcpStream};
 use compio_runtime::JoinHandle;
 use compio_tls::{TlsAcceptor, TlsConnector};
-use rcgen::Certificate;
-use rustls::pki_types::pem::PemObject;
 
-async fn start_server() -> (SocketAddr, Certificate, JoinHandle<()>) {
-    let rcgen::CertifiedKey { cert, signing_key } =
-        rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
-
-    let acceptor = TlsAcceptor::from(Arc::new(
-        rustls::ServerConfig::builder()
-            .with_no_client_auth()
-            .with_single_cert(
-                vec![cert.der().clone()],
-                rustls::pki_types::PrivateKeyDer::from_pem_slice(
-                    signing_key.serialize_pem().as_bytes(),
-                )
-                .unwrap(),
-            )
-            .unwrap(),
-    ));
-
+async fn start_server(acceptor: TlsAcceptor) -> (SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind("localhost:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let server = compio_runtime::spawn(async move {
@@ -35,7 +17,7 @@ async fn start_server() -> (SocketAddr, Certificate, JoinHandle<()>) {
         stream.shutdown().await.unwrap();
         stream.read(vec![0u8; 1]).await.unwrap();
     });
-    (addr, cert, server)
+    (addr, server)
 }
 
 async fn connect(connector: TlsConnector, addr: SocketAddr) {
@@ -52,7 +34,33 @@ async fn connect(connector: TlsConnector, addr: SocketAddr) {
 #[cfg(feature = "native-tls")]
 #[compio_macros::test]
 async fn native() {
-    let (addr, cert, server) = start_server().await;
+    // https://github.com/rustls/rcgen/issues/91
+
+    use rsa::pkcs8::EncodePrivateKey;
+
+    let mut rng = rand::rng();
+    let bits = 2048;
+    let private_key = rsa::RsaPrivateKey::new(&mut rng, bits).unwrap();
+    let private_key_der = private_key.to_pkcs8_der().unwrap();
+    let signing_key = rcgen::KeyPair::try_from(private_key_der.as_bytes()).unwrap();
+    let cert = rcgen::CertificateParams::new(["localhost".into()])
+        .unwrap()
+        .self_signed(&signing_key)
+        .unwrap();
+
+    let acceptor = TlsAcceptor::from(
+        native_tls::TlsAcceptor::builder(
+            native_tls::Identity::from_pkcs8(
+                cert.pem().as_bytes(),
+                signing_key.serialize_pem().as_bytes(),
+            )
+            .unwrap(),
+        )
+        .build()
+        .unwrap(),
+    );
+
+    let (addr, server) = start_server(acceptor).await;
 
     let connector = TlsConnector::from(
         native_tls::TlsConnector::builder()
@@ -65,9 +73,30 @@ async fn native() {
     server.await.unwrap();
 }
 
+#[cfg(feature = "rustls")]
 #[compio_macros::test]
 async fn rtls() {
-    let (addr, cert, server) = start_server().await;
+    use std::sync::Arc;
+
+    use rustls::pki_types::pem::PemObject;
+
+    let rcgen::CertifiedKey { cert, signing_key } =
+        rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+
+    let acceptor = TlsAcceptor::from(Arc::new(
+        rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(
+                vec![cert.der().clone()],
+                rustls::pki_types::PrivateKeyDer::from_pem_slice(
+                    signing_key.serialize_pem().as_bytes(),
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+    ));
+
+    let (addr, server) = start_server(acceptor).await;
 
     let mut store = rustls::RootCertStore::empty();
     store.add(cert.der().clone()).unwrap();
@@ -93,35 +122,50 @@ async fn py_ossl() {
         types::{IntoPyDict, PyDictMethods},
     };
 
-    let (addr, cert, server) = start_server().await;
+    let rcgen::CertifiedKey { cert, signing_key } =
+        rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
 
-    let mut path = tempfile::NamedTempFile::new().unwrap();
-    path.write_all(cert.pem().as_bytes()).unwrap();
+    let mut cert_path = tempfile::NamedTempFile::new().unwrap();
+    cert_path.write_all(cert.pem().as_bytes()).unwrap();
+
+    let mut key_path = tempfile::NamedTempFile::new().unwrap();
+    key_path
+        .write_all(signing_key.serialize_pem().as_bytes())
+        .unwrap();
 
     pyo3::Python::initialize();
-    let context = pyo3::Python::attach(|py| {
+    let (client_ctx, server_ctx) = pyo3::Python::attach(|py| {
         let loaded = compio_py_dynamic_openssl::load_py(py).unwrap();
         assert!(loaded);
         let ssl = py.import("ssl").unwrap();
         let locals = [
             ("ssl", ssl.into_bound_py_any(py).unwrap()),
-            ("cert", path.path().into_bound_py_any(py).unwrap()),
+            ("cert", cert_path.path().into_bound_py_any(py).unwrap()),
+            ("key", key_path.path().into_bound_py_any(py).unwrap()),
         ]
         .into_py_dict(py)
         .unwrap();
         py.run(
             cr#"
-ctx = ssl.create_default_context()
-ctx.load_verify_locations(cafile=cert)
+ctx_client = ssl.create_default_context()
+ctx_client.load_verify_locations(cafile=cert)
+ctx_server = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+ctx_server.load_cert_chain(certfile=cert, keyfile=key)
 "#,
             None,
             Some(&locals),
         )
         .unwrap();
-        let context = locals.get_item("ctx").unwrap().unwrap();
-        compio_py_dynamic_openssl::SSLContext::try_from(context).unwrap()
+        let client_ctx = locals.get_item("ctx_client").unwrap().unwrap();
+        let server_ctx = locals.get_item("ctx_server").unwrap().unwrap();
+        (
+            compio_py_dynamic_openssl::SSLContext::try_from(client_ctx).unwrap(),
+            compio_py_dynamic_openssl::SSLContext::try_from(server_ctx).unwrap(),
+        )
     });
-    let connector = TlsConnector::from(context);
+    let connector = TlsConnector::from(client_ctx);
+    let acceptor = TlsAcceptor::from(server_ctx);
+    let (addr, server) = start_server(acceptor).await;
 
     connect(connector, addr).await;
     server.await.unwrap();

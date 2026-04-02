@@ -36,7 +36,9 @@ compio-net = { workspace = true }
 compio-runtime = { workspace = true }
 compio-macros = { workspace = true }
 
+rand = "0.10.0"
 rcgen = { workspace = true }
+rsa = "0.10.0-rc.17"
 rustls = { workspace = true, default-features = false, features = ["ring"] }
 rustls-native-certs = { workspace = true }
 tempfile = { workspace = true }
@@ -56,7 +58,3 @@ ring = ["rustls", "rustls/ring", "futures-rustls/ring"]
 
 read_buf = ["compio-buf/read_buf", "compio-io/read_buf", "rustls?/read_buf"]
 nightly = ["read_buf"]
-
-[[test]]
-name = "echo"
-required-features = ["ring"]
