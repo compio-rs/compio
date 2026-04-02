@@ -22,7 +22,7 @@ use compio_driver::{
     syscall,
 };
 use compio_runtime::{Attacher, Runtime, SubmitMulti, fd::PollFd};
-use futures_util::{Stream, StreamExt, future::Either};
+use futures_util::{Stream, StreamExt, future::Either, stream::FusedStream};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::Incoming;
@@ -558,22 +558,30 @@ impl<T: OpCode + TakeBuffer<Buffer = BufferRef> + 'static> Stream for ManagedMul
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if let Some(inner) = self.inner.as_mut() {
-            match std::task::ready!(inner.poll_next_unpin(cx)) {
+            let (mut buffer, res) = match std::task::ready!(inner.poll_next_unpin(cx)) {
                 Some(BufResult(res, extra)) => {
-                    let mut buffer = self.buffer_pool.take(extra.buffer_id()?)?;
-                    if let Some(buf) = &mut buffer {
-                        unsafe { buf.advance_to(res?) }
-                    }
-                    Poll::Ready(buffer.map(Ok))
+                    let buffer = if inner.is_terminated() {
+                        self.inner
+                            .take()
+                            .and_then(|s| s.try_take().ok())
+                            .and_then(|op| op.take_buffer())
+                    } else {
+                        self.buffer_pool.take(extra.buffer_id()?)?
+                    };
+                    (buffer, res)
                 }
-                None => Poll::Ready(
+                None => (
                     self.inner
                         .take()
                         .and_then(|s| s.try_take().ok())
-                        .and_then(|op| op.take_buffer())
-                        .map(Ok),
+                        .and_then(|op| op.take_buffer()),
+                    Ok(0),
                 ),
+            };
+            if let Some(buf) = &mut buffer {
+                unsafe { buf.advance_to(res?) }
             }
+            Poll::Ready(buffer.map(Ok))
         } else {
             Poll::Ready(None)
         }
