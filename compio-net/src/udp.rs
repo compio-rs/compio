@@ -5,7 +5,10 @@ use std::{
 };
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_driver::{BufferRef, impl_raw_fd};
+use compio_driver::{
+    BufferRef, impl_raw_fd,
+    op::{RecvFromMultiResult, RecvMsgMultiResult},
+};
 use futures_util::Stream;
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
@@ -222,29 +225,6 @@ impl UdpSocket {
         self.inner.recv_multi(len, 0)
     }
 
-    /// Read some bytes from this source and the runtime's buffer pool and
-    /// return a [`BufferRef`] with the sender address.
-    ///
-    /// If `len` == 0, will use buffer pool's inner buffer size as the max len;
-    /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
-    pub async fn recv_from_managed(
-        &self,
-        len: usize,
-    ) -> io::Result<Option<(BufferRef, SocketAddr)>> {
-        let res = self.inner.recv_from_managed(len, 0).await?;
-        let ret = match res {
-            Some((buffer, addr)) => {
-                let addr = addr
-                    .expect("should have addr")
-                    .as_socket()
-                    .expect("should be SocketAddr");
-                Some((buffer, addr))
-            }
-            None => None,
-        };
-        Ok(ret)
-    }
-
     /// Sends some data to the socket from the buffer, returning the original
     /// buffer and quantity of data sent.
     pub async fn send<T: IoBuf>(&self, buffer: T) -> BufResult<usize, T> {
@@ -287,6 +267,35 @@ impl UdpSocket {
             })
     }
 
+    /// Read some bytes from this source and the runtime's buffer pool and
+    /// return a [`BufferRef`] with the sender address.
+    ///
+    /// If `len` == 0, will use buffer pool's inner buffer size as the max len;
+    /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
+    pub async fn recv_from_managed(
+        &self,
+        len: usize,
+    ) -> io::Result<Option<(BufferRef, SocketAddr)>> {
+        let res = self.inner.recv_from_managed(len, 0).await?;
+        let ret = match res {
+            Some((buffer, addr)) => {
+                let addr = addr
+                    .expect("should have addr")
+                    .as_socket()
+                    .expect("should be SocketAddr");
+                Some((buffer, addr))
+            }
+            None => None,
+        };
+        Ok(ret)
+    }
+
+    /// Read some bytes from this source and the runtime's buffer pool and
+    /// return a stream of [`RecvFromMultiResult`].
+    pub fn recv_from_multi(&self) -> impl Stream<Item = io::Result<RecvFromMultiResult>> {
+        self.inner.recv_from_multi(0)
+    }
+
     /// Receives a single datagram message and ancillary data on the socket. On
     /// success, returns the number of bytes received and the origin.
     pub async fn recv_msg<T: IoBufMut, C: IoBufMut>(
@@ -323,6 +332,40 @@ impl UdpSocket {
                     .expect("should be SocketAddr");
                 (n, m, addr)
             })
+    }
+
+    /// Receives a single datagram message on the socket from the runtime's
+    /// buffer pool, together with ancillary data. The ancillary data buffer is
+    /// provided by the caller.
+    ///
+    /// If `len` == 0, will use buffer pool's inner buffer size as the max len;
+    /// if `len` > 0, `min(len, inner buffer size)` will be the read max len
+    pub async fn recv_msg_managed<C: IoBufMut>(
+        &self,
+        len: usize,
+        control: C,
+    ) -> io::Result<Option<(BufferRef, C, SocketAddr)>> {
+        let res = self.inner.recv_msg_managed(len, control, 0).await?;
+        let ret = match res {
+            Some((buffer, control, addr)) => {
+                let addr = addr
+                    .expect("should have addr")
+                    .as_socket()
+                    .expect("should be SocketAddr");
+                Some((buffer, control, addr))
+            }
+            None => None,
+        };
+        Ok(ret)
+    }
+
+    /// Receives a single datagram message and ancillary data on the socket from
+    /// the runtime's buffer pool.
+    pub fn recv_msg_multi(
+        &self,
+        control_len: usize,
+    ) -> impl Stream<Item = io::Result<RecvMsgMultiResult>> {
+        self.inner.recv_msg_multi(control_len, 0)
     }
 
     /// Sends data on the socket to the given address. On success, returns the
