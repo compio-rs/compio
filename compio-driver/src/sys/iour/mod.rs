@@ -283,6 +283,10 @@ impl Driver {
         if builder.taskrun_flag {
             io_uring_builder.setup_taskrun_flag();
         }
+        if let Some(cqsize) = builder.cqsize {
+            io_uring_builder.setup_cqsize(cqsize);
+        }
+        io_uring_builder.dontfork();
 
         let inner = io_uring_builder.build(builder.capacity)?;
 

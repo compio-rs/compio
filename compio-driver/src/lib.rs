@@ -537,6 +537,7 @@ pub struct ProactorBuilder {
     capacity: u32,
     pool_builder: ThreadPoolBuilder,
     sqpoll_idle: Option<Duration>,
+    cqsize: Option<u32>,
     coop_taskrun: bool,
     taskrun_flag: bool,
     eventfd: Option<RawFd>,
@@ -564,6 +565,7 @@ impl ProactorBuilder {
             capacity: 1024,
             pool_builder: ThreadPoolBuilder::new(),
             sqpoll_idle: None,
+            cqsize: None,
             coop_taskrun: false,
             taskrun_flag: false,
             eventfd: None,
@@ -579,6 +581,13 @@ impl ProactorBuilder {
     /// exists. The default value is 1024.
     pub fn capacity(&mut self, capacity: u32) -> &mut Self {
         self.capacity = capacity;
+        self
+    }
+
+    /// Set the completion queue size of io-uring driver. The value should be
+    /// greater than `capacity`.
+    pub fn cqsize(&mut self, cqsize: u32) -> &mut Self {
+        self.cqsize = Some(cqsize);
         self
     }
 
