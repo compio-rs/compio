@@ -1380,7 +1380,7 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     unsafe fn init(&mut self) -> Self::Control {
         let mut slices = self.buffer.sys_slices();
         let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
-        msg.msg_name = &raw mut self.addr as _;
+        msg.msg_name = self.addr.as_ptr() as *mut _;
         msg.msg_namelen = self.addr.len() as _;
         msg.msg_iov = slices.as_mut_ptr() as _;
         msg.msg_iovlen = slices.len() as _;
