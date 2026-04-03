@@ -268,7 +268,13 @@ unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
             .into()
     }
 
-    unsafe fn set_result(&mut self, _: &mut Self::Control, _: &io::Result<usize>, extra: &Extra) {
+    unsafe fn set_result(
+        &mut self,
+        control: &mut Self::Control,
+        _: &io::Result<usize>,
+        extra: &Extra,
+    ) {
+        self.name_len = control.msg.msg_namelen;
         let Ok(buffer_id) = extra.buffer_id() else {
             return;
         };
