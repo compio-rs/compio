@@ -203,32 +203,30 @@ pub struct RecvFromManaged<S> {
     fd: S,
     flags: i32,
     addr: SockAddrStorage,
-    addr_len: socklen_t,
-    iovec: libc::iovec,
-    msg: libc::msghdr,
+    name_len: socklen_t,
+    buffer_len: usize,
     buffer_group: u16,
     buffer_pool: BufferPool,
     buffer: Option<BufferRef>,
 }
 
+pub struct RecvFromManagedControl {
+    msg: libc::msghdr,
+    #[allow(dead_code)]
+    iovec: Box<libc::iovec>,
+}
+
 impl<S> RecvFromManaged<S> {
     /// Create [`RecvFromManaged`].
     pub fn new(fd: S, buffer_pool: &BufferPool, len: usize, flags: i32) -> io::Result<Self> {
-        let len: u32 = len
-            .try_into()
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "required length too long"))?;
         let addr = SockAddrStorage::zeroed();
         Ok(Self {
             fd,
             buffer_group: buffer_pool.buffer_group()?,
             flags,
-            addr_len: addr.size_of() as _,
+            name_len: 0,
+            buffer_len: len,
             addr,
-            iovec: libc::iovec {
-                iov_base: ptr::null_mut(),
-                iov_len: len as _,
-            },
-            msg: unsafe { std::mem::zeroed() },
             buffer_pool: buffer_pool.clone(),
             buffer: None,
         })
@@ -240,23 +238,29 @@ impl<S> TakeBuffer for RecvFromManaged<S> {
 
     fn take_buffer(self) -> Option<Self::Buffer> {
         let buf = self.buffer?;
-        let addr = (self.msg.msg_namelen > 0)
-            .then(|| unsafe { SockAddr::new(self.addr, self.msg.msg_namelen) });
+        let addr = (self.name_len > 0).then(|| unsafe { SockAddr::new(self.addr, self.name_len) });
         Some((buf, addr))
     }
 }
 
 unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
-    type Control = ();
+    type Control = RecvFromManagedControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
+        let mut iovec = Box::new(libc::iovec {
+            iov_base: ptr::null_mut(),
+            iov_len: self.buffer_len,
+        });
+        msg.msg_name = &raw mut self.addr as _;
+        msg.msg_namelen = self.addr.size_of() as _;
+        msg.msg_iov = iovec.as_mut();
+        msg.msg_iovlen = 1;
+        RecvFromManagedControl { msg, iovec }
+    }
 
-    fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
-        self.msg.msg_name = &raw mut self.addr as _;
-        self.msg.msg_namelen = self.addr_len;
-        self.msg.msg_iov = &raw mut self.iovec;
-        self.msg.msg_iovlen = 1;
-        opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &raw mut self.msg)
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &raw mut control.msg)
             .flags(self.flags as _)
             .buf_group(self.buffer_group)
             .build()

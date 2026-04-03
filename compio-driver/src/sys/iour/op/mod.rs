@@ -1000,8 +1000,8 @@ impl<T: IoVectoredBuf, S> IntoInner for SendVectoredZc<T, S> {
 struct RecvFromHeader<S> {
     pub(crate) fd: S,
     pub(crate) addr: SockAddrStorage,
-    pub(crate) msg: libc::msghdr,
     pub(crate) flags: i32,
+    pub(crate) name_len: libc::socklen_t,
 }
 
 impl<S> RecvFromHeader<S> {
@@ -1009,27 +1009,36 @@ impl<S> RecvFromHeader<S> {
         Self {
             fd,
             addr: SockAddrStorage::zeroed(),
-            msg: unsafe { std::mem::zeroed() },
             flags,
+            name_len: 0,
         }
     }
 }
 
 impl<S: AsFd> RecvFromHeader<S> {
-    pub fn create_entry(&mut self, slices: &mut [SysSlice]) -> OpEntry {
-        self.msg.msg_name = &mut self.addr as *mut _ as _;
-        self.msg.msg_namelen = self.addr.size_of() as _;
-        self.msg.msg_iov = slices.as_mut_ptr() as _;
-        self.msg.msg_iovlen = slices.len() as _;
-        opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &mut self.msg)
+    pub fn create_control(&mut self, mut slices: Vec<SysSlice>) -> RecvMsgControl {
+        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
+        msg.msg_name = &mut self.addr as *mut _ as _;
+        msg.msg_namelen = self.addr.size_of() as _;
+        msg.msg_iov = slices.as_mut_ptr().cast();
+        msg.msg_iovlen = slices.len() as _;
+
+        RecvMsgControl { msg, slices }
+    }
+
+    pub fn create_entry(&mut self, control: &mut RecvMsgControl) -> OpEntry {
+        opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &mut control.msg)
             .flags(self.flags as _)
             .build()
             .into()
     }
 
+    pub fn set_result(&mut self, control: &mut RecvMsgControl) {
+        self.name_len = control.msg.msg_namelen;
+    }
+
     pub fn into_addr(self) -> Option<SockAddr> {
-        (self.msg.msg_namelen > 0)
-            .then(|| unsafe { SockAddr::new(self.addr, self.msg.msg_namelen) })
+        (self.name_len > 0).then(|| unsafe { SockAddr::new(self.addr, self.name_len) })
     }
 }
 
@@ -1037,7 +1046,6 @@ impl<S: AsFd> RecvFromHeader<S> {
 pub struct RecvFrom<T: IoBufMut, S> {
     header: RecvFromHeader<S>,
     buffer: T,
-    slice: Option<SysSlice>,
 }
 
 impl<T: IoBufMut, S> RecvFrom<T, S> {
@@ -1046,19 +1054,29 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
         Self {
             header: RecvFromHeader::new(fd, flags),
             buffer,
-            slice: None,
         }
     }
 }
 
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
-    type Control = ();
+    type Control = RecvMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.header
+            .create_control(vec![self.buffer.sys_slice_mut()])
+    }
 
-    fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
-        let slice = self.slice.insert(self.buffer.sys_slice_mut());
-        self.header.create_entry(std::slice::from_mut(slice))
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.header.create_entry(control)
+    }
+
+    unsafe fn set_result(
+        &mut self,
+        control: &mut Self::Control,
+        _: &io::Result<usize>,
+        _: &crate::Extra,
+    ) {
+        self.header.set_result(control);
     }
 }
 
@@ -1075,7 +1093,6 @@ impl<T: IoBufMut, S: AsFd> IntoInner for RecvFrom<T, S> {
 pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
     header: RecvFromHeader<S>,
     buffer: T,
-    slice: Vec<SysSlice>,
 }
 
 impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
@@ -1084,19 +1101,28 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
         Self {
             header: RecvFromHeader::new(fd, flags),
             buffer,
-            slice: vec![],
         }
     }
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
-    type Control = ();
+    type Control = RecvMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.header.create_control(self.buffer.sys_slices_mut())
+    }
 
-    fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
-        self.slice = self.buffer.sys_slices_mut();
-        self.header.create_entry(&mut self.slice)
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.header.create_entry(control)
+    }
+
+    unsafe fn set_result(
+        &mut self,
+        control: &mut Self::Control,
+        _: &io::Result<usize>,
+        _: &crate::Extra,
+    ) {
+        self.header.set_result(control);
     }
 }
 
@@ -1112,27 +1138,23 @@ impl<T: IoVectoredBufMut, S: AsFd> IntoInner for RecvFromVectored<T, S> {
 struct SendToHeader<S> {
     pub(crate) fd: S,
     pub(crate) addr: SockAddr,
-    pub(crate) msg: libc::msghdr,
     pub(crate) flags: i32,
 }
 
 impl<S> SendToHeader<S> {
     pub fn new(fd: S, addr: SockAddr, flags: i32) -> Self {
-        Self {
-            fd,
-            addr,
-            msg: unsafe { std::mem::zeroed() },
-            flags,
-        }
+        Self { fd, addr, flags }
     }
 }
 
 impl<S: AsFd> SendToHeader<S> {
-    pub fn set_msg(&mut self, slices: &mut [SysSlice]) {
-        self.msg.msg_name = self.addr.as_ptr() as _;
-        self.msg.msg_namelen = self.addr.len();
-        self.msg.msg_iov = slices.as_mut_ptr() as _;
-        self.msg.msg_iovlen = slices.len() as _;
+    pub fn create_control(&mut self, mut slices: Vec<SysSlice>) -> SendMsgControl {
+        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
+        msg.msg_name = self.addr.as_ptr() as _;
+        msg.msg_namelen = self.addr.len();
+        msg.msg_iov = slices.as_mut_ptr() as _;
+        msg.msg_iovlen = slices.len() as _;
+        SendMsgControl { msg, slices }
     }
 }
 
@@ -1140,7 +1162,6 @@ impl<S: AsFd> SendToHeader<S> {
 pub struct SendTo<T: IoBuf, S> {
     header: SendToHeader<S>,
     buffer: T,
-    slice: Option<SysSlice>,
 }
 
 impl<T: IoBuf, S> SendTo<T, S> {
@@ -1149,20 +1170,19 @@ impl<T: IoBuf, S> SendTo<T, S> {
         Self {
             header: SendToHeader::new(fd, addr, flags),
             buffer,
-            slice: None,
         }
     }
 }
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
-    type Control = ();
+    type Control = SendMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.header.create_control(vec![self.buffer.sys_slice()])
+    }
 
-    fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
-        let slice = self.slice.insert(self.buffer.sys_slice());
-        self.header.set_msg(std::slice::from_mut(slice));
-        opcode::SendMsg::new(Fd(self.header.fd.as_fd().as_raw_fd()), &self.header.msg)
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        opcode::SendMsg::new(Fd(self.header.fd.as_fd().as_raw_fd()), &control.msg)
             .flags(self.header.flags as _)
             .build()
             .into()
@@ -1194,20 +1214,17 @@ impl<T: IoBuf, S: AsFd> SendToZc<T, S> {
 }
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for SendToZc<T, S> {
-    type Control = ();
+    type Control = SendMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        unsafe { self.op.init() }
+    }
 
-    fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
-        let slice = self.op.slice.insert(self.op.buffer.sys_slice());
-        self.op.header.set_msg(std::slice::from_mut(slice));
-        opcode::SendMsgZc::new(
-            Fd(self.op.header.fd.as_fd().as_raw_fd()),
-            &self.op.header.msg,
-        )
-        .flags(self.op.header.flags as _)
-        .build()
-        .into()
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        opcode::SendMsgZc::new(Fd(self.op.header.fd.as_fd().as_raw_fd()), &control.msg)
+            .flags(self.op.header.flags as _)
+            .build()
+            .into()
     }
 
     fn create_entry_fallback(&mut self, control: &mut Self::Control) -> OpEntry {
@@ -1243,7 +1260,6 @@ impl<T: IoBuf, S: AsFd> IntoInner for SendToZc<T, S> {
 pub struct SendToVectored<T: IoVectoredBuf, S> {
     header: SendToHeader<S>,
     buffer: T,
-    slice: Vec<SysSlice>,
 }
 
 impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
@@ -1252,20 +1268,19 @@ impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
         Self {
             header: SendToHeader::new(fd, addr, flags),
             buffer,
-            slice: vec![],
         }
     }
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
-    type Control = ();
+    type Control = SendMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        self.header.create_control(self.buffer.sys_slices())
+    }
 
-    fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
-        self.slice = self.buffer.sys_slices();
-        self.header.set_msg(&mut self.slice);
-        opcode::SendMsg::new(Fd(self.header.fd.as_fd().as_raw_fd()), &self.header.msg)
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        opcode::SendMsg::new(Fd(self.header.fd.as_fd().as_raw_fd()), &control.msg)
             .flags(self.header.flags as _)
             .build()
             .into()
@@ -1297,20 +1312,17 @@ impl<T: IoVectoredBuf, S: AsFd> SendToVectoredZc<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectoredZc<T, S> {
-    type Control = ();
+    type Control = SendMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        unsafe { self.op.init() }
+    }
 
-    fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
-        self.op.slice = self.op.buffer.sys_slices();
-        self.op.header.set_msg(&mut self.op.slice);
-        opcode::SendMsgZc::new(
-            Fd(self.op.header.fd.as_fd().as_raw_fd()),
-            &self.op.header.msg,
-        )
-        .flags(self.op.header.flags as _)
-        .build()
-        .into()
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        opcode::SendMsgZc::new(Fd(self.op.header.fd.as_fd().as_raw_fd()), &control.msg)
+            .flags(self.op.header.flags as _)
+            .build()
+            .into()
     }
 
     fn create_entry_fallback(&mut self, control: &mut Self::Control) -> OpEntry {
