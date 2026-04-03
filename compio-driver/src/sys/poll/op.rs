@@ -1217,9 +1217,8 @@ impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
 pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
-    pub(crate) slices: Vec<SysSlice>,
     pub(crate) addr: SockAddrStorage,
-    pub(crate) msg: libc::msghdr,
+    pub(crate) name_len: socklen_t,
     pub(crate) flags: i32,
 }
 
@@ -1229,35 +1228,33 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
         Self {
             fd,
             buffer,
-            slices: vec![],
             addr: SockAddrStorage::zeroed(),
-            msg: unsafe { std::mem::zeroed() },
+            name_len: 0,
             flags,
         }
     }
 }
 
 impl<T: IoVectoredBufMut, S: AsFd> RecvFromVectored<T, S> {
-    fn set_msg(&mut self, _control: &mut ()) {
-        self.slices = self.buffer.sys_slices_mut();
-        self.msg.msg_name = &raw mut self.addr as _;
-        self.msg.msg_namelen = self.addr.size_of() as _;
-        self.msg.msg_iov = self.slices.as_mut_ptr() as _;
-        self.msg.msg_iovlen = self.slices.len() as _;
-    }
-
-    unsafe fn call(&mut self, _control: &mut ()) -> libc::ssize_t {
-        unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &raw mut self.msg, self.flags) }
+    unsafe fn call(&mut self, control: &mut SendMsgControl) -> libc::ssize_t {
+        unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &mut control.msg, self.flags) }
     }
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
-    type Control = ();
+    type Control = SendMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        let mut slices = self.buffer.sys_slices_mut();
+        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
+        msg.msg_name = &raw mut self.addr as _;
+        msg.msg_namelen = self.addr.size_of() as _;
+        msg.msg_iov = slices.as_mut_ptr() as _;
+        msg.msg_iovlen = slices.len() as _;
+        SendMsgControl { msg, slices }
+    }
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
-        self.set_msg(control);
         let fd = self.fd.as_fd().as_raw_fd();
         syscall!(self.call(control), wait_readable(fd))
     }
@@ -1269,14 +1266,22 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
     fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
         syscall!(break self.call(control))
     }
+
+    unsafe fn set_result(
+        &mut self,
+        control: &mut Self::Control,
+        _: &io::Result<usize>,
+        _: &crate::Extra,
+    ) {
+        self.name_len = control.msg.msg_namelen;
+    }
 }
 
 impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
     type Inner = (T, Option<SockAddr>);
 
     fn into_inner(self) -> Self::Inner {
-        let addr = (self.msg.msg_namelen > 0)
-            .then(|| unsafe { SockAddr::new(self.addr, self.msg.msg_namelen) });
+        let addr = (self.name_len > 0).then(|| unsafe { SockAddr::new(self.addr, self.name_len) });
         (self.buffer, addr)
     }
 }
@@ -1348,8 +1353,6 @@ pub struct SendToVectored<T: IoVectoredBuf, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) addr: SockAddr,
-    pub(crate) slices: Vec<SysSlice>,
-    pub(crate) msg: libc::msghdr,
     pub(crate) flags: i32,
 }
 
@@ -1360,34 +1363,31 @@ impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
             fd,
             buffer,
             addr,
-            slices: vec![],
-            msg: unsafe { std::mem::zeroed() },
             flags,
         }
     }
 }
 
 impl<T: IoVectoredBuf, S: AsFd> SendToVectored<T, S> {
-    fn set_msg(&mut self, _control: &mut ()) {
-        self.slices = self.buffer.sys_slices();
-        self.msg.msg_name = &raw mut self.addr as _;
-        self.msg.msg_namelen = self.addr.len() as _;
-        self.msg.msg_iov = self.slices.as_mut_ptr() as _;
-        self.msg.msg_iovlen = self.slices.len() as _;
-    }
-
-    unsafe fn call(&mut self, _control: &mut ()) -> libc::ssize_t {
-        unsafe { libc::sendmsg(self.fd.as_fd().as_raw_fd(), &self.msg, self.flags) }
+    unsafe fn call(&mut self, control: &mut SendMsgControl) -> libc::ssize_t {
+        unsafe { libc::sendmsg(self.fd.as_fd().as_raw_fd(), &control.msg, self.flags) }
     }
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
-    type Control = ();
+    type Control = SendMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self) -> Self::Control {
+        let mut slices = self.buffer.sys_slices();
+        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
+        msg.msg_name = &raw mut self.addr as _;
+        msg.msg_namelen = self.addr.len() as _;
+        msg.msg_iov = slices.as_mut_ptr() as _;
+        msg.msg_iovlen = slices.len() as _;
+        SendMsgControl { msg, slices }
+    }
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
-        self.set_msg(control);
         let fd = self.fd.as_fd().as_raw_fd();
         syscall!(self.call(control), wait_writable(fd))
     }
