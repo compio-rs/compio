@@ -286,7 +286,10 @@ impl<const N: usize> DerefMut for AncillaryBuf<N> {
 /// generic argument for [`AncillaryBuf`].
 pub const fn ancillary_space<T: AncillaryData>() -> usize {
     // SAFETY: CMSG_SPACE is always safe
-    unsafe { sys::CMSG_SPACE(T::SIZE as _) as usize }
+    #[allow(clippy::unnecessary_cast)]
+    unsafe {
+        sys::CMSG_SPACE(T::SIZE as _) as usize
+    }
 }
 
 /// Error that can occur when encoding or decoding ancillary data.

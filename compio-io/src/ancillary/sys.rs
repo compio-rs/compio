@@ -5,7 +5,9 @@ use libc::{CMSG_DATA, CMSG_LEN};
 #[cfg(unix)]
 pub use libc::{CMSG_SPACE, cmsghdr};
 #[cfg(windows)]
-use windows_sys::Win32::Networking::WinSock::{self, CMSGHDR as cmsghdr, IN_PKTINFO, IN6_PKTINFO};
+pub use windows_sys::Win32::Networking::WinSock::CMSGHDR as cmsghdr;
+#[cfg(windows)]
+use windows_sys::Win32::Networking::WinSock::{self, IN_PKTINFO, IN6_PKTINFO};
 
 use super::{AncillaryData, CodecError, copy_from_bytes, copy_to_bytes};
 
@@ -19,17 +21,20 @@ const fn CMSG_ALIGN(length: usize) -> usize {
 const WSA_CMSGDATA_OFFSET: usize = CMSG_ALIGN(size_of::<cmsghdr>());
 
 #[cfg(windows)]
+#[allow(non_snake_case)]
 unsafe fn CMSG_DATA(cmsg: *const cmsghdr) -> *mut u8 {
     unsafe { cmsg.offset(1) as *mut u8 }
 }
 
 #[cfg(windows)]
+#[allow(non_snake_case)]
 pub const unsafe fn CMSG_SPACE(length: usize) -> usize {
     WSA_CMSGDATA_OFFSET + CMSG_ALIGN(length)
 }
 
 #[cfg(windows)]
-const fn CMSG_LEN(length: usize) -> usize {
+#[allow(non_snake_case)]
+const unsafe fn CMSG_LEN(length: usize) -> usize {
     WSA_CMSGDATA_OFFSET + length
 }
 
@@ -121,6 +126,7 @@ impl CMsgIter {
 
     pub(crate) fn is_space_enough(&self, space: usize) -> bool {
         if let Some(offset) = self.offset {
+            #[allow(clippy::unnecessary_cast)]
             let space = unsafe { CMSG_SPACE(space as _) } as usize;
             offset + space <= self.len
         } else {
@@ -129,6 +135,7 @@ impl CMsgIter {
     }
 }
 
+#[cfg(unix)]
 impl AncillaryData for libc::in_addr {
     fn encode(&self, buffer: &mut [MaybeUninit<u8>]) -> Result<(), CodecError> {
         unsafe { copy_to_bytes(self, buffer) }
@@ -163,6 +170,7 @@ impl AncillaryData for libc::in_pktinfo {
     }
 }
 
+#[cfg(unix)]
 impl AncillaryData for libc::in6_pktinfo {
     fn encode(&self, buffer: &mut [MaybeUninit<u8>]) -> Result<(), CodecError> {
         let mut pktinfo: libc::in6_pktinfo = unsafe { std::mem::zeroed() };
