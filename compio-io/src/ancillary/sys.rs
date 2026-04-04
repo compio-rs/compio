@@ -1,7 +1,7 @@
 use std::{mem::MaybeUninit, slice};
 
 #[cfg(unix)]
-use libc::{CMSG_DATA, CMSG_LEN};
+use libc::{CMSG_DATA, CMSG_FIRSTHDR, CMSG_LEN, CMSG_NXTHDR, msghdr};
 #[cfg(unix)]
 pub use libc::{CMSG_SPACE, cmsghdr};
 #[cfg(windows)]
@@ -11,31 +11,79 @@ use windows_sys::Win32::Networking::WinSock::{self, IN_PKTINFO, IN6_PKTINFO};
 
 use super::{AncillaryData, CodecError, copy_from_bytes, copy_to_bytes};
 
-#[inline]
+#[cfg(windows)]
 #[allow(non_snake_case)]
-const fn CMSG_ALIGN(length: usize) -> usize {
-    (length + align_of::<cmsghdr>() - 1) & !(align_of::<cmsghdr>() - 1)
+mod windows_macros {
+    use windows_sys::Win32::Networking::WinSock::{CMSGHDR, WSABUF, WSAMSG};
+
+    const fn CMSG_ALIGN(length: usize) -> usize {
+        (length + align_of::<CMSGHDR>() - 1) & !(align_of::<CMSGHDR>() - 1)
+    }
+
+    const WSA_CMSGDATA_OFFSET: usize = CMSG_ALIGN(size_of::<CMSGHDR>());
+
+    pub unsafe fn CMSG_DATA(cmsg: *const CMSGHDR) -> *mut u8 {
+        unsafe { cmsg.offset(1) as *mut u8 }
+    }
+
+    pub const unsafe fn CMSG_SPACE(length: usize) -> usize {
+        WSA_CMSGDATA_OFFSET + CMSG_ALIGN(length)
+    }
+
+    pub const unsafe fn CMSG_LEN(length: usize) -> usize {
+        WSA_CMSGDATA_OFFSET + length
+    }
+
+    pub unsafe fn CMSG_FIRSTHDR(msg: *const WSAMSG) -> *mut CMSGHDR {
+        unsafe {
+            if (*msg).Control.len as usize >= size_of::<CMSGHDR>() {
+                (*msg).Control.buf as _
+            } else {
+                null_mut()
+            }
+        }
+    }
+
+    pub unsafe fn CMSG_NXTHDR(msg: *const WSAMSG, cmsg: *const CMSGHDR) -> *mut CMSGHDR {
+        unsafe {
+            if cmsg.is_null() {
+                CMSG_FIRSTHDR(msg)
+            } else {
+                let next = cmsg as usize + CMSG_ALIGN((*cmsg).cmsg_len);
+                if next + size_of::<CMSGHDR>()
+                    > (*msg).Control.buf as usize + (*msg).Control.len as usize
+                {
+                    null_mut()
+                } else {
+                    next as _
+                }
+            }
+        }
+    }
+
+    pub fn msghdr_from_raw(ptr: *const u8, len: usize) -> WSAMSG {
+        WSAMSG {
+            Control: WSABUF {
+                len: len as _,
+                buf: ptr as _,
+            },
+            ..unsafe { std::mem::zeroed() }
+        }
+    }
 }
 
 #[cfg(windows)]
-const WSA_CMSGDATA_OFFSET: usize = CMSG_ALIGN(size_of::<cmsghdr>());
-
+pub use windows_macros::CMSG_SPACE;
 #[cfg(windows)]
-#[allow(non_snake_case)]
-unsafe fn CMSG_DATA(cmsg: *const cmsghdr) -> *mut u8 {
-    unsafe { cmsg.offset(1) as *mut u8 }
-}
+use windows_macros::{CMSG_DATA, CMSG_FIRSTHDR, CMSG_LEN, CMSG_NXTHDR, msghdr_from_raw};
 
-#[cfg(windows)]
-#[allow(non_snake_case)]
-pub const unsafe fn CMSG_SPACE(length: usize) -> usize {
-    WSA_CMSGDATA_OFFSET + CMSG_ALIGN(length)
-}
-
-#[cfg(windows)]
-#[allow(non_snake_case)]
-const unsafe fn CMSG_LEN(length: usize) -> usize {
-    WSA_CMSGDATA_OFFSET + length
+#[cfg(unix)]
+fn msghdr_from_raw(ptr: *const u8, len: usize) -> msghdr {
+    msghdr {
+        msg_control: ptr as _,
+        msg_controllen: len as _,
+        ..unsafe { std::mem::zeroed() }
+    }
 }
 
 pub(crate) struct CMsgRef<'a>(&'a cmsghdr);
@@ -90,10 +138,13 @@ impl CMsgIter {
         assert!(len >= unsafe { CMSG_SPACE(0) as _ }, "buffer too short");
         assert!(ptr.cast::<cmsghdr>().is_aligned(), "misaligned buffer");
 
-        let offset = if len >= size_of::<cmsghdr>() {
-            Some(0)
-        } else {
+        let msg = msghdr_from_raw(ptr.cast_mut(), len);
+        let first_cmsg = unsafe { CMSG_FIRSTHDR(&msg) };
+
+        let offset = if first_cmsg.is_null() {
             None
+        } else {
+            Some(first_cmsg.addr() - ptr.addr())
         };
         Self { len, offset }
     }
@@ -106,14 +157,12 @@ impl CMsgIter {
 
     pub(crate) unsafe fn next(&mut self, ptr: *const u8) {
         if let Some(offset) = self.offset {
-            let cmsg = unsafe { ptr.add(offset).cast::<cmsghdr>().as_ref() };
-            if let Some(cmsg) = cmsg {
-                let offset = offset + CMSG_ALIGN(cmsg.cmsg_len as _);
-                if offset + size_of::<cmsghdr>() <= self.len {
-                    self.offset = Some(offset);
-                } else {
-                    self.offset = None;
-                }
+            let msg = msghdr_from_raw(ptr, self.len);
+            let next_cmsg = unsafe { CMSG_NXTHDR(&msg, ptr.add(offset).cast()) };
+            if next_cmsg.is_null() {
+                self.offset = None;
+            } else {
+                self.offset = Some(next_cmsg.addr() - ptr.addr());
             }
         }
     }
