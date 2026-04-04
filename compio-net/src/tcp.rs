@@ -10,7 +10,7 @@ use std::{
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{BufferRef, impl_raw_fd};
 use compio_io::{
-    AsyncRead, AsyncReadManaged, AsyncWrite,
+    AsyncRead, AsyncReadManaged, AsyncReadMulti, AsyncWrite,
     ancillary::{AsyncReadAncillary, AsyncWriteAncillary},
     util::Splittable,
 };
@@ -470,7 +470,19 @@ impl AsyncReadManaged for &TcpStream {
     type Buffer = BufferRef;
 
     async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
-        self.inner.recv_managed(len as _, 0).await
+        self.inner.recv_managed(len, 0).await
+    }
+}
+
+impl AsyncReadMulti for TcpStream {
+    fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
+        self.inner.recv_multi(len, 0)
+    }
+}
+
+impl AsyncReadMulti for &TcpStream {
+    fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
+        self.inner.recv_multi(len, 0)
     }
 }
 

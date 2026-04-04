@@ -3,9 +3,9 @@ use std::{
     task::{Context, Poll},
 };
 
-use compio_buf::BufResult;
-use compio_driver::{Extra, Key, OpCode, PushEntry};
-use futures_util::{Stream, stream::FusedStream};
+use compio_buf::{BufResult, SetLen};
+use compio_driver::{BufferPool, BufferRef, Extra, Key, OpCode, PushEntry, TakeBuffer};
+use futures_util::{Stream, StreamExt, stream::FusedStream};
 
 use crate::{ContextExt, Runtime};
 
@@ -130,5 +130,68 @@ impl<T: OpCode + 'static> Stream for SubmitMulti<T> {
 impl<T: OpCode + 'static> FusedStream for SubmitMulti<T> {
     fn is_terminated(&self) -> bool {
         matches!(self.state, None | Some(State::Finished { .. }))
+    }
+}
+
+impl<T: OpCode + TakeBuffer<Buffer = BufferRef> + 'static> SubmitMulti<T> {
+    /// Convert this stream into one that iterates the buffers from the results.
+    pub fn into_managed(self, buffer_pool: BufferPool) -> SubmitMultiManaged<T> {
+        SubmitMultiManaged::new(self, buffer_pool)
+    }
+}
+
+/// A wrapper around [`SubmitMulti`] that iterates the buffers from the results.
+pub struct SubmitMultiManaged<T: OpCode> {
+    inner: Option<SubmitMulti<T>>,
+    buffer_pool: BufferPool,
+}
+
+impl<T: OpCode> SubmitMultiManaged<T> {
+    fn new(stream: SubmitMulti<T>, buffer_pool: BufferPool) -> Self {
+        Self {
+            inner: Some(stream),
+            buffer_pool,
+        }
+    }
+}
+
+impl<T: OpCode + TakeBuffer<Buffer = BufferRef> + 'static> Stream for SubmitMultiManaged<T> {
+    type Item = std::io::Result<BufferRef>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if let Some(inner) = self.inner.as_mut() {
+            let (mut buffer, res) = match std::task::ready!(inner.poll_next_unpin(cx)) {
+                Some(BufResult(res, extra)) => {
+                    let buffer = if inner.is_terminated() {
+                        self.inner
+                            .take()
+                            .and_then(|s| s.try_take().ok())
+                            .and_then(|op| op.take_buffer())
+                    } else {
+                        self.buffer_pool.take(extra.buffer_id()?)?
+                    };
+                    (buffer, res)
+                }
+                None => (
+                    self.inner
+                        .take()
+                        .and_then(|s| s.try_take().ok())
+                        .and_then(|op| op.take_buffer()),
+                    Ok(0),
+                ),
+            };
+            if let Some(buf) = &mut buffer {
+                unsafe { buf.advance_to(res?) }
+            }
+            Poll::Ready(buffer.map(Ok))
+        } else {
+            Poll::Ready(None)
+        }
+    }
+}
+
+impl<T: OpCode + TakeBuffer<Buffer = BufferRef> + 'static> FusedStream for SubmitMultiManaged<T> {
+    fn is_terminated(&self) -> bool {
+        self.inner.as_ref().is_none_or(|s| s.is_terminated())
     }
 }

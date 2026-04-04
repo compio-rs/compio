@@ -13,14 +13,14 @@ use compio_driver::{
     AsRawFd, BufferRef, OpCode, ResultTakeBuffer, TakeBuffer, ToSharedFd, impl_raw_fd,
     op::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromManaged,
-        RecvFromVectored, RecvManaged, RecvMsg, RecvResultExt, RecvVectored, Send, SendMsg,
-        SendMsgZc, SendTo, SendToVectored, SendToVectoredZc, SendToZc, SendVectored,
+        RecvFromVectored, RecvManaged, RecvMsg, RecvMulti, RecvResultExt, RecvVectored, Send,
+        SendMsg, SendMsgZc, SendTo, SendToVectored, SendToVectoredZc, SendToZc, SendVectored,
         SendVectoredZc, SendZc, VecBufResultExt,
     },
     syscall,
 };
 use compio_runtime::{Attacher, Runtime, fd::PollFd};
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt, future::Either};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::Incoming;
@@ -224,6 +224,17 @@ impl Socket {
         })?
         .await;
         unsafe { res.take_buffer() }
+    }
+
+    pub fn recv_multi(&self, len: usize, flags: i32) -> impl Stream<Item = io::Result<BufferRef>> {
+        let fd = self.to_shared_fd();
+        Runtime::with_current(|rt| {
+            let buffer_pool = rt.buffer_pool()?;
+            let op = RecvMulti::new(fd, &buffer_pool, len, flags)?;
+            io::Result::Ok(rt.submit_multi(op).into_managed(buffer_pool))
+        })
+        .map(Either::Left)
+        .unwrap_or_else(|e| Either::Right(futures_util::stream::once(std::future::ready(Err(e)))))
     }
 
     pub async fn recv_from_managed(
