@@ -593,7 +593,9 @@ impl AsyncWriteAncillary for &TcpStream {
         buffer: T,
         control: C,
     ) -> BufResult<usize, (T, C)> {
-        self.inner.send_msg(buffer, control, None, 0).await
+        self.inner
+            .send_msg(buffer, control, None, MSG_NOSIGNAL)
+            .await
     }
 
     #[inline]
@@ -602,7 +604,9 @@ impl AsyncWriteAncillary for &TcpStream {
         buffer: T,
         control: C,
     ) -> BufResult<usize, (T, C)> {
-        self.inner.send_msg_vectored(buffer, control, None, 0).await
+        self.inner
+            .send_msg_vectored(buffer, control, None, MSG_NOSIGNAL)
+            .await
     }
 }
 
