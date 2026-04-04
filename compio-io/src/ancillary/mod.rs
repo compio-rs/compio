@@ -87,24 +87,14 @@ use std::{
 };
 
 use compio_buf::{IoBuf, IoBufMut, SetLen};
-#[cfg(windows)]
-use windows_sys::Win32::Networking::WinSock;
 
 mod io;
 
 pub use self::io::*;
 
-cfg_if::cfg_if! {
-    if #[cfg(windows)] {
-        #[path = "windows.rs"]
-        mod sys;
-    } else if #[cfg(unix)] {
-        #[path = "unix.rs"]
-        mod sys;
-    }
-}
 #[cfg(feature = "bytemuck")]
 pub mod bytemuck_ext;
+mod sys;
 
 /// Reference to an ancillary (control) message.
 pub struct AncillaryRef<'a>(sys::CMsgRef<'a>);
@@ -225,10 +215,7 @@ impl<'a, B: IoBufMut + ?Sized> AncillaryBuilder<'a, B> {
 pub struct AncillaryBuf<const N: usize> {
     inner: [u8; N],
     len: usize,
-    #[cfg(unix)]
-    _align: [libc::cmsghdr; 0],
-    #[cfg(windows)]
-    _align: [WinSock::CMSGHDR; 0],
+    _align: [sys::cmsghdr; 0],
 }
 
 impl<const N: usize> AncillaryBuf<N> {
@@ -298,14 +285,8 @@ impl<const N: usize> DerefMut for AncillaryBuf<N> {
 /// Unix or `WSA_CMSG_SPACE(T::SIZE)` on Windows, and can be used as a const
 /// generic argument for [`AncillaryBuf`].
 pub const fn ancillary_space<T: AncillaryData>() -> usize {
-    #[cfg(unix)]
     // SAFETY: CMSG_SPACE is always safe
-    unsafe {
-        libc::CMSG_SPACE(T::SIZE as libc::c_uint) as usize
-    }
-
-    #[cfg(windows)]
-    sys::wsa_cmsg_space(T::SIZE)
+    unsafe { sys::CMSG_SPACE(T::SIZE as _) as usize }
 }
 
 /// Error that can occur when encoding or decoding ancillary data.

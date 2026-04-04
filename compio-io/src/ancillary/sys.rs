@@ -1,23 +1,47 @@
 use std::{mem::MaybeUninit, slice};
 
-use libc::{CMSG_DATA, CMSG_LEN, CMSG_SPACE, c_int, cmsghdr};
+#[cfg(unix)]
+use libc::{CMSG_DATA, CMSG_LEN};
+#[cfg(unix)]
+pub use libc::{CMSG_SPACE, cmsghdr};
+#[cfg(windows)]
+use windows_sys::Win32::Networking::WinSock::{self, CMSGHDR as cmsghdr, IN_PKTINFO, IN6_PKTINFO};
 
 use super::{AncillaryData, CodecError, copy_from_bytes, copy_to_bytes};
 
 #[inline]
+#[allow(non_snake_case)]
 const fn CMSG_ALIGN(length: usize) -> usize {
     (length + align_of::<cmsghdr>() - 1) & !(align_of::<cmsghdr>() - 1)
+}
+
+#[cfg(windows)]
+const WSA_CMSGDATA_OFFSET: usize = CMSG_ALIGN(size_of::<cmsghdr>());
+
+#[cfg(windows)]
+unsafe fn CMSG_DATA(cmsg: *const cmsghdr) -> *mut u8 {
+    unsafe { cmsg.offset(1) as *mut u8 }
+}
+
+#[cfg(windows)]
+pub const unsafe fn CMSG_SPACE(length: usize) -> usize {
+    WSA_CMSGDATA_OFFSET + CMSG_ALIGN(length)
+}
+
+#[cfg(windows)]
+const fn CMSG_LEN(length: usize) -> usize {
+    WSA_CMSGDATA_OFFSET + length
 }
 
 pub(crate) struct CMsgRef<'a>(&'a cmsghdr);
 
 impl CMsgRef<'_> {
-    pub(crate) fn level(&self) -> c_int {
-        self.0.cmsg_level
+    pub(crate) fn level(&self) -> i32 {
+        self.0.cmsg_level as _
     }
 
-    pub(crate) fn ty(&self) -> c_int {
-        self.0.cmsg_type
+    pub(crate) fn ty(&self) -> i32 {
+        self.0.cmsg_type as _
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -34,12 +58,12 @@ impl CMsgRef<'_> {
 pub(crate) struct CMsgMut<'a>(&'a mut cmsghdr);
 
 impl CMsgMut<'_> {
-    pub(crate) fn set_level(&mut self, level: c_int) {
-        self.0.cmsg_level = level;
+    pub(crate) fn set_level(&mut self, level: i32) {
+        self.0.cmsg_level = level as _;
     }
 
-    pub(crate) fn set_ty(&mut self, ty: c_int) {
-        self.0.cmsg_type = ty;
+    pub(crate) fn set_ty(&mut self, ty: i32) {
+        self.0.cmsg_type = ty as _;
     }
 
     pub(crate) fn encode_data<T: AncillaryData>(&mut self, value: &T) -> Result<usize, CodecError> {
@@ -154,6 +178,54 @@ impl AncillaryData for libc::in6_pktinfo {
             ipi6_addr: libc::in6_addr {
                 s6_addr: pktinfo.ipi6_addr.s6_addr,
             },
+        })
+    }
+}
+
+#[cfg(windows)]
+impl AncillaryData for IN_PKTINFO {
+    fn encode(&self, buffer: &mut [MaybeUninit<u8>]) -> Result<(), CodecError> {
+        let mut pktinfo: IN_PKTINFO = unsafe { std::mem::zeroed() };
+        unsafe {
+            pktinfo.ipi_addr.S_un.S_addr = self.ipi_addr.S_un.S_addr;
+        }
+        pktinfo.ipi_ifindex = self.ipi_ifindex;
+        unsafe { copy_to_bytes(&pktinfo, buffer) }
+    }
+
+    fn decode(buffer: &[u8]) -> Result<Self, CodecError> {
+        let pktinfo: IN_PKTINFO = unsafe { copy_from_bytes(buffer) }?;
+        Ok(IN_PKTINFO {
+            ipi_addr: WinSock::IN_ADDR {
+                S_un: WinSock::IN_ADDR_0 {
+                    S_addr: unsafe { pktinfo.ipi_addr.S_un.S_addr },
+                },
+            },
+            ipi_ifindex: pktinfo.ipi_ifindex,
+        })
+    }
+}
+
+#[cfg(windows)]
+impl AncillaryData for IN6_PKTINFO {
+    fn encode(&self, buffer: &mut [MaybeUninit<u8>]) -> Result<(), CodecError> {
+        let mut pktinfo: IN6_PKTINFO = unsafe { std::mem::zeroed() };
+        unsafe {
+            pktinfo.ipi6_addr.u.Byte = self.ipi6_addr.u.Byte;
+        }
+        pktinfo.ipi6_ifindex = self.ipi6_ifindex;
+        unsafe { copy_to_bytes(&pktinfo, buffer) }
+    }
+
+    fn decode(buffer: &[u8]) -> Result<Self, CodecError> {
+        let pktinfo: IN6_PKTINFO = unsafe { copy_from_bytes(buffer) }?;
+        Ok(IN6_PKTINFO {
+            ipi6_addr: WinSock::IN6_ADDR {
+                u: WinSock::IN6_ADDR_0 {
+                    Byte: unsafe { pktinfo.ipi6_addr.u.Byte },
+                },
+            },
+            ipi6_ifindex: pktinfo.ipi6_ifindex,
         })
     }
 }
