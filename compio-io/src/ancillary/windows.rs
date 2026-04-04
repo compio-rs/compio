@@ -1,12 +1,9 @@
 use std::{
     mem::{MaybeUninit, align_of, size_of},
-    ptr::null_mut,
     slice,
 };
 
-use windows_sys::Win32::Networking::WinSock::{
-    self, CMSGHDR, IN_PKTINFO, IN6_PKTINFO, WSABUF, WSAMSG,
-};
+use windows_sys::Win32::Networking::WinSock::{self, CMSGHDR, IN_PKTINFO, IN6_PKTINFO};
 
 use super::{AncillaryData, CodecError, copy_from_bytes, copy_to_bytes};
 
@@ -16,38 +13,7 @@ const fn wsa_cmsghdr_align(length: usize) -> usize {
     (length + align_of::<CMSGHDR>() - 1) & !(align_of::<CMSGHDR>() - 1)
 }
 
-// WSA_CMSGDATA_ALIGN(sizeof(CMSGHDR))
-const WSA_CMSGDATA_OFFSET: usize =
-    (size_of::<CMSGHDR>() + align_of::<usize>() - 1) & !(align_of::<usize>() - 1);
-
-#[inline]
-unsafe fn wsa_cmsg_firsthdr(msg: *const WSAMSG) -> *mut CMSGHDR {
-    unsafe {
-        if (*msg).Control.len as usize >= size_of::<CMSGHDR>() {
-            (*msg).Control.buf as _
-        } else {
-            null_mut()
-        }
-    }
-}
-
-#[inline]
-unsafe fn wsa_cmsg_nxthdr(msg: *const WSAMSG, cmsg: *const CMSGHDR) -> *mut CMSGHDR {
-    unsafe {
-        if cmsg.is_null() {
-            wsa_cmsg_firsthdr(msg)
-        } else {
-            let next = cmsg as usize + wsa_cmsghdr_align((*cmsg).cmsg_len);
-            if next + size_of::<CMSGHDR>()
-                > (*msg).Control.buf as usize + (*msg).Control.len as usize
-            {
-                null_mut()
-            } else {
-                next as _
-            }
-        }
-    }
-}
+const WSA_CMSGDATA_OFFSET: usize = wsa_cmsghdr_align(size_of::<CMSGHDR>());
 
 #[inline]
 unsafe fn wsa_cmsg_data(cmsg: *const CMSGHDR) -> *mut u8 {
@@ -107,8 +73,8 @@ impl CMsgMut<'_> {
 }
 
 pub(crate) struct CMsgIter {
-    msg: WSAMSG,
-    cmsg: *mut CMSGHDR,
+    len: usize,
+    offset: Option<usize>,
 }
 
 impl CMsgIter {
@@ -116,38 +82,44 @@ impl CMsgIter {
         assert!(len >= wsa_cmsg_space(0) as _, "buffer too short");
         assert!(ptr.cast::<CMSGHDR>().is_aligned(), "misaligned buffer");
 
-        let mut msg: WSAMSG = unsafe { std::mem::zeroed() };
-        msg.Control = WSABUF {
-            len: len as _,
-            buf: ptr as _,
+        let offset = if len >= size_of::<CMSGHDR>() {
+            Some(0)
+        } else {
+            None
         };
-        // SAFETY: msg is initialized and valid
-        let cmsg = unsafe { wsa_cmsg_firsthdr(&msg) };
-        Self { msg, cmsg }
+        Self { len, offset }
     }
 
-    pub(crate) unsafe fn current<'a>(&self) -> Option<CMsgRef<'a>> {
-        // SAFETY: cmsg is valid or null
-        unsafe { self.cmsg.as_ref() }.map(CMsgRef)
+    pub(crate) unsafe fn current<'a>(&self, ptr: *const u8) -> Option<CMsgRef<'a>> {
+        self.offset
+            .and_then(|offset| unsafe { ptr.add(offset).cast::<CMSGHDR>().as_ref() })
+            .map(CMsgRef)
     }
 
-    pub(crate) unsafe fn next(&mut self) {
-        if !self.cmsg.is_null() {
-            // SAFETY: msg and cmsg are valid
-            self.cmsg = unsafe { wsa_cmsg_nxthdr(&self.msg, self.cmsg) };
+    pub(crate) unsafe fn next(&mut self, ptr: *const u8) {
+        if let Some(offset) = self.offset {
+            let cmsg = unsafe { ptr.add(offset).cast::<CMSGHDR>().as_ref() };
+            if let Some(cmsg) = cmsg {
+                let offset = offset + wsa_cmsghdr_align(cmsg.cmsg_len);
+                if offset + size_of::<CMSGHDR>() <= self.len {
+                    self.offset = Some(offset);
+                } else {
+                    self.offset = None;
+                }
+            }
         }
     }
 
-    pub(crate) unsafe fn current_mut<'a>(&self) -> Option<CMsgMut<'a>> {
-        // SAFETY: cmsg is valid or null
-        unsafe { self.cmsg.as_mut() }.map(CMsgMut)
+    pub(crate) unsafe fn current_mut<'a>(&self, ptr: *mut u8) -> Option<CMsgMut<'a>> {
+        self.offset
+            .and_then(|offset| unsafe { ptr.add(offset).cast::<CMSGHDR>().as_mut() })
+            .map(CMsgMut)
     }
 
     pub(crate) fn is_space_enough(&self, space: usize) -> bool {
-        if !self.cmsg.is_null() {
+        if let Some(offset) = self.offset {
             let space = wsa_cmsg_space(space as _);
-            let max = self.msg.Control.buf as usize + self.msg.Control.len as usize;
-            self.cmsg as usize + space <= max
+            offset + space <= self.len
         } else {
             false
         }

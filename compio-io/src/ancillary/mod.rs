@@ -81,7 +81,6 @@
 //! ```
 
 use std::{
-    marker::PhantomData,
     mem::MaybeUninit,
     ops::{Deref, DerefMut},
     ptr,
@@ -136,7 +135,7 @@ impl AncillaryRef<'_> {
 /// An iterator for ancillary (control) messages.
 pub struct AncillaryIter<'a> {
     inner: sys::CMsgIter,
-    _p: PhantomData<&'a ()>,
+    buffer: &'a [u8],
 }
 
 impl<'a> AncillaryIter<'a> {
@@ -153,7 +152,7 @@ impl<'a> AncillaryIter<'a> {
     pub unsafe fn new(buffer: &'a [u8]) -> Self {
         Self {
             inner: sys::CMsgIter::new(buffer.as_ptr(), buffer.len()),
-            _p: PhantomData,
+            buffer,
         }
     }
 }
@@ -163,8 +162,8 @@ impl<'a> Iterator for AncillaryIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         unsafe {
-            let cmsg = self.inner.current();
-            self.inner.next();
+            let cmsg = self.inner.current(self.buffer.as_ptr());
+            self.inner.next(self.buffer.as_ptr());
             cmsg.map(AncillaryRef)
         }
     }
@@ -179,6 +178,11 @@ pub struct AncillaryBuilder<'a, B: ?Sized> {
 impl<'a, B: IoBufMut + ?Sized> AncillaryBuilder<'a, B> {
     /// Create [`AncillaryBuilder`] with the given buffer. The buffer will be
     /// cleared on creation.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the buffer is too short or not properly
+    /// aligned.
     pub fn new(buffer: &'a mut B) -> Self {
         // SAFETY: always safe to make it empty.
         unsafe { buffer.set_len(0) };
@@ -199,14 +203,15 @@ impl<'a, B: IoBufMut + ?Sized> AncillaryBuilder<'a, B> {
 
         // SAFETY: AncillaryBuf guarantees the buffer is zeroed and properly aligned,
         // and we have checked the space.
-        let mut cmsg = unsafe { self.inner.current_mut() }.expect("sufficient space");
+        let mut cmsg = unsafe { self.inner.current_mut(self.buffer.buf_mut_ptr().cast()) }
+            .expect("sufficient space");
         cmsg.set_level(level);
         cmsg.set_ty(ty);
         unsafe {
             self.buffer.advance(cmsg.encode_data(value)?);
         }
 
-        unsafe { self.inner.next() };
+        unsafe { self.inner.next(self.buffer.buf_mut_ptr().cast()) };
 
         Ok(())
     }

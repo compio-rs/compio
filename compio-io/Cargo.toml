@@ -65,4 +65,4 @@ required-features = ["codec-serde-json"]
 
 [[test]]
 name = "ancillary"
-required-features = ["ancillary"]
+required-features = ["ancillary", "bytemuck"]
