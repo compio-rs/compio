@@ -14,6 +14,8 @@ use super::{AncillaryData, CodecError, copy_from_bytes, copy_to_bytes};
 #[cfg(windows)]
 #[allow(non_snake_case)]
 mod windows_macros {
+    use std::ptr::null_mut;
+
     use windows_sys::Win32::Networking::WinSock::{CMSGHDR, WSABUF, WSAMSG};
 
     const fn CMSG_ALIGN(length: usize) -> usize {
