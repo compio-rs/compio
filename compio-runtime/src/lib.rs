@@ -51,7 +51,7 @@ use compio_driver::{
 };
 pub use compio_driver::{BufferPool, ErrorExt};
 use compio_executor::{Executor, ExecutorConfig};
-pub use compio_executor::{JoinHandle, ResumeUnwind, get_extra};
+pub use compio_executor::{JoinHandle, ResumeUnwind};
 use compio_log::{debug, instrument};
 
 use crate::affinity::bind_to_cpu_set;

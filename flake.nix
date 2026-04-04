@@ -27,6 +27,7 @@
       {
         devShells.default = mkShell {
           buildInputs = [
+            gnuplot_qt
             go
             cmake
             glib

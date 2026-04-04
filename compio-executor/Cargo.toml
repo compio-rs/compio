@@ -17,7 +17,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 compio-log = { workspace = true }
 
 compio-send-wrapper = { workspace = true }
-crossfire = { workspace = true }
+crossbeam-queue = { workspace = true }
 slotmap = { workspace = true }
 
 [dev-dependencies]

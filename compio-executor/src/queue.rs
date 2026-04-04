@@ -1,219 +1,285 @@
-use std::{
-    fmt::Debug,
-    ops::Deref,
-    sync::{Arc, Weak},
-    task::Waker as StdWaker,
-};
+use std::{fmt::Debug, ptr::NonNull};
 
 use compio_send_wrapper::SendWrapper;
-use crossfire::{MTx, Rx, mpsc::Array};
 use slotmap::new_key_type;
 
-use crate::{
-    PanicResult,
-    task::Task,
-    util::{Receiver, SlotQueue, oneshot},
-    waker::Waker,
-};
+use crate::{Shared, task::Task, util::assert_not_impl};
 
 new_key_type! { pub struct TaskId; }
 
-/// A single-threaded task queue with support for cross-thread wake-ups.
+use std::cell::UnsafeCell;
+
+use compio_log::instrument;
+use slotmap::SlotMap;
+
+/// A single-threaded dual queue (hot and cold) for scheduling tasks.
 pub struct TaskQueue {
-    shared: Arc<Shared>,
-    _marker: std::marker::PhantomData<*const ()>,
+    inner: UnsafeCell<Inner>,
 }
 
-/// A thread-safe handle corresponds to a task.
-///
-/// This can be used to schedule the task from other threads, but it does not
-/// keep the executor alive. If the executor is dropped or the task is dropped,
-/// [`schedule`] will fail and return `false`.
-///
-/// [`schedule`]: Handle::schedule
-#[derive(Debug, Clone)]
-pub struct Handle {
-    id: TaskId,
-    shared: Weak<Shared>,
-}
-
-#[derive(Debug)]
-struct Shared {
-    waker: Option<StdWaker>,
-    local: SendWrapper<Local>,
-    sync_tx: MTx<Array<TaskId>>,
-}
-
-/// Local part of the shared state, which is not thread-safe and only accessed
-/// by the creating thread.
-#[derive(Debug)]
-struct Local {
-    queue: SlotQueue<TaskId, Task>,
-    sync_rx: Rx<Array<TaskId>>,
-}
-
-/// SlotQueue will not be accessed cross thread, and SendWrapper ensures Drop
-/// will only be called on the creating thread.
-unsafe impl Sync for Shared {}
-
-const _: () = {
-    const fn is_mt<T: Send + Sync>() {}
-
-    is_mt::<Shared>();
-};
-
-impl TaskQueue {
-    /// Create a new task queue.
-    pub fn new(waker: Option<StdWaker>, sync_size: usize, local_size: usize) -> Self {
-        let (sync_tx, sync_rx) = crossfire::mpsc::bounded_blocking(sync_size);
-        let local = Local {
-            queue: SlotQueue::new(local_size),
-            sync_rx,
-        };
-        let inner = Shared {
-            waker,
-            local: SendWrapper::new(local),
-            sync_tx,
-        };
-        Self {
-            shared: Arc::new(inner),
-            _marker: std::marker::PhantomData,
-        }
-    }
-
-    pub fn clear(&self) {
-        self.local().queue.clear();
-    }
-
-    pub fn has_hot(&self) -> bool {
-        self.local().hot_head().is_some()
-    }
-
-    /// Create a handle for a task.
-    pub fn handle(&self, id: TaskId) -> Handle {
-        Handle {
-            id,
-            shared: Arc::downgrade(&self.shared),
-        }
-    }
-
-    /// Create a waker for a task.
-    pub fn waker<E: Send + Sync>(&self, id: TaskId, extra: E) -> Waker<E> {
-        Waker::new(self.handle(id), extra)
-    }
-
-    /// Flush the sync queue to the local queue.
-    pub fn flush_sync(&self) {
-        let queue = self.local();
-        while let Ok(id) = queue.sync_rx.try_recv() {
-            queue.make_hot(id);
-        }
-    }
-
-    fn local(&self) -> &Local {
-        // SAFETY: TaskQueue is !Send and !Sync
-        unsafe { self.shared.local.get_unchecked() }
-    }
-
-    /// Iterate over the tasks in the queue.
-    pub fn iter(&self, cold_limit: u32) -> impl Iterator<Item = TaskId> {
-        let local = self.local();
-        local
-            .iter_hot()
-            .chain(local.iter_cold().take(cold_limit as _))
-    }
-
-    /// Push a future into the queue.
-    pub fn push<F: Future + 'static, E: Send + Sync>(
-        &self,
-        fut: F,
-        extra: E,
-    ) -> (TaskId, Receiver<PanicResult<F::Output>>) {
-        let (tx, rx) = oneshot();
-        let id = self.local().push_back_with(|id| {
-            let waker = self.waker(id, extra);
-            Task::new(fut, tx, waker.into_std())
-        });
-        (id, rx)
-    }
-
-    /// Run a task.
-    pub fn run(&self, id: TaskId) {
-        let queue = self.local();
-
-        let inner = match unsafe { queue.get(id) } {
-            Some(task) => task.take().expect("Inner was not reset"),
-            None => return,
-        };
-
-        queue.make_cold(id);
-        match inner.poll() {
-            Some(inner) => {
-                unsafe { queue.get(id) }
-                    .expect("Task removed during run")
-                    .reset(inner);
-            }
-            None => {
-                queue.remove(id);
-            }
-        }
-    }
-}
+assert_not_impl!(TaskQueue, Send);
+assert_not_impl!(TaskQueue, Sync);
 
 impl Debug for TaskQueue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TaskQueue")
-            .field("shared", &self.shared)
+        let inner = unsafe { self.get_inner() };
+        f.debug_struct("SlotQueue")
+            .field("map", &inner.map)
+            .field("hot", &inner.hot)
+            .field("cold", &inner.cold)
             .finish()
     }
 }
 
-impl Deref for Local {
-    type Target = SlotQueue<TaskId, Task>;
+#[derive(Debug)]
+struct Inner {
+    map: SlotMap<TaskId, Item>,
+    hot: List,
+    cold: List,
+}
 
-    fn deref(&self) -> &Self::Target {
-        &self.queue
+#[derive(Debug, Clone, Copy, Default)]
+struct List {
+    head: Option<TaskId>,
+    tail: Option<TaskId>,
+}
+
+#[derive(Debug)]
+struct Item {
+    prev: Option<TaskId>,
+    next: Option<TaskId>,
+    task: Option<Task>,
+    is_hot: bool,
+}
+
+#[derive(Debug)]
+pub struct Iter<'a> {
+    queue: &'a TaskQueue,
+    curr: Option<TaskId>,
+}
+
+type QueueMarker = bool;
+const HOT: QueueMarker = true;
+const COLD: QueueMarker = false;
+
+impl TaskQueue {
+    pub fn new(size: usize) -> Self {
+        Self {
+            inner: UnsafeCell::new(Inner::new(size)),
+        }
+    }
+
+    /// Clear the map.
+    ///
+    /// # Safety
+    ///
+    /// Must only be called by `Executor`.
+    pub unsafe fn clear(&self) {
+        instrument!(compio_log::Level::DEBUG, "clear");
+        let hot_head = self.hot_head();
+        let cold_head = self.cold_head();
+
+        let inner = unsafe { self.get_inner() };
+
+        Self::clear_from(&mut inner.map, hot_head);
+        Self::clear_from(&mut inner.map, cold_head);
+
+        inner.hot.head = None;
+        inner.hot.tail = None;
+        inner.cold.head = None;
+        inner.cold.tail = None;
+
+        debug_assert!(inner.map.is_empty());
+    }
+
+    pub fn has_hot(&self) -> bool {
+        self.hot_head().is_some()
+    }
+
+    pub fn take(&self, key: TaskId) -> Option<Task> {
+        unsafe { self.get_inner() }
+            .map
+            .get_mut(key)
+            .map(|item| item.task.take().expect("Task has already been taken"))
+    }
+
+    pub fn reset(&self, key: TaskId, task: Task) {
+        let place = unsafe { self.get_inner() }
+            .map
+            .get_mut(key)
+            .expect("Invalid key");
+        debug_assert!(place.task.is_none(), "Task was not taken");
+        place.task = Some(task);
+    }
+
+    pub fn insert<F: Future + 'static>(
+        &self,
+        shared: NonNull<Shared>,
+        tracker: SendWrapper<()>,
+        future: F,
+    ) -> Task {
+        let inner = unsafe { self.get_inner() };
+        let mut ret = None;
+        let key = inner.map.insert_with_key(|key| {
+            let [ptr, r] = Task::new::<F, 2>(key, shared, tracker, future);
+            ret = Some(r);
+            Item {
+                prev: None,
+                next: None,
+                task: Some(ptr),
+                is_hot: true,
+            }
+        });
+        inner.link_tail::<HOT>(key);
+        ret.take().expect("Task was not initialized")
+    }
+
+    pub fn make_hot(&self, key: TaskId) {
+        unsafe { self.get_inner() }.make_hot(key)
+    }
+
+    pub fn make_cold(&self, key: TaskId) {
+        unsafe { self.get_inner() }.make_cold(key)
+    }
+
+    pub fn next(&self, key: TaskId) -> Option<TaskId> {
+        let inner = unsafe { self.get_inner() };
+        inner.map.get(key).and_then(|item| item.next)
+    }
+
+    pub fn hot_head(&self) -> Option<TaskId> {
+        let inner = unsafe { self.get_inner() };
+        inner.hot.head
+    }
+
+    pub fn cold_head(&self) -> Option<TaskId> {
+        let inner = unsafe { self.get_inner() };
+        inner.cold.head
+    }
+
+    pub fn iter_hot(&self) -> Iter<'_> {
+        Iter {
+            queue: self,
+            curr: self.hot_head(),
+        }
+    }
+
+    pub fn remove(&self, key: TaskId) -> Option<Task> {
+        let inner = unsafe { self.get_inner() };
+        let is_hot = inner.map.get(key)?.is_hot;
+
+        if is_hot {
+            inner.unlink::<HOT>(key);
+        } else {
+            inner.unlink::<COLD>(key);
+        };
+
+        inner.map.remove(key)?.task
+    }
+
+    fn clear_from(map: &mut SlotMap<TaskId, Item>, mut head: Option<TaskId>) {
+        while let Some(h) = head {
+            let v = map.remove(h).expect("Invalid key");
+            unsafe { v.task.expect("Cannot clear map in running state").drop() };
+            head = v.next
+        }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that no concurrent access to the queue occurs
+    /// while this reference is active.
+    #[allow(clippy::mut_from_ref)]
+    unsafe fn get_inner(&self) -> &mut Inner {
+        // SAFETY: Caller must ensure no concurrent access to the queue.
+        unsafe { &mut *self.inner.get() }
     }
 }
 
-impl Shared {
-    /// Schedule a task for execution.
-    ///
-    /// Returns `true` if the task was scheduled successfully, or `false`
-    /// otherwise, due to the executor being dropped.
-    fn schedule(&self, id: TaskId) -> bool {
-        if let Some(local) = self.local.get() {
-            // piggyback multi-thread wake-ups
-            while let Ok(id) = local.sync_rx.try_recv() {
-                local.make_hot(id);
-            }
-            local.make_hot(id);
-            #[cfg(feature = "notify-always")]
-            if let Some(w) = self.waker.as_ref() {
-                w.wake_by_ref()
-            }
-            true
+impl Inner {
+    fn new(size: usize) -> Self {
+        Self {
+            map: SlotMap::with_capacity_and_key(size),
+            hot: List::default(),
+            cold: List::default(),
+        }
+    }
+
+    /// Link a task to the end of a queue
+    fn link_tail<const HOT: QueueMarker>(&mut self, key: TaskId) {
+        let list = if HOT { &mut self.hot } else { &mut self.cold };
+        let old_tail = list.tail;
+
+        list.tail = Some(key);
+        if list.head.is_none() {
+            list.head = Some(key);
+        }
+
+        let item = self.map.get_mut(key).expect("item exists");
+        item.prev = old_tail;
+        item.next = None;
+        item.is_hot = HOT;
+
+        if let Some(tail_key) = old_tail {
+            self.map.get_mut(tail_key).expect("tail exists").next = Some(key);
+        }
+    }
+
+    fn unlink<const HOT: QueueMarker>(&mut self, key: TaskId) {
+        let list = if HOT { &mut self.hot } else { &mut self.cold };
+
+        let (prev, next) = {
+            let item = self.map.get(key).expect("item exists");
+            debug_assert_eq!(item.is_hot, HOT);
+            (item.prev, item.next)
+        };
+
+        if list.head == Some(key) {
+            list.head = next;
+        }
+        if list.tail == Some(key) {
+            list.tail = prev;
+        }
+
+        if let Some(prev_key) = prev {
+            self.map.get_mut(prev_key).expect("prev exists").next = next;
+        }
+        if let Some(next_key) = next {
+            self.map.get_mut(next_key).expect("next exists").prev = prev;
+        }
+    }
+
+    fn make_hot(&mut self, key: TaskId) {
+        let Some(item) = self.map.get(key) else {
+            return;
+        };
+        if !item.is_hot {
+            self.unlink::<COLD>(key);
+            self.link_tail::<HOT>(key);
+        }
+    }
+
+    fn make_cold(&mut self, key: TaskId) {
+        let Some(item) = self.map.get(key) else {
+            return;
+        };
+        if item.is_hot {
+            self.unlink::<HOT>(key);
+            self.link_tail::<COLD>(key);
         } else {
-            let res = self.sync_tx.send(id).is_ok();
-            if let Some(w) = self.waker.as_ref() {
-                w.wake_by_ref()
-            }
-            res
+            // Already cold, unlink and re-link to move to tail
+            self.unlink::<COLD>(key);
+            self.link_tail::<HOT>(key);
         }
     }
 }
 
-impl Handle {
-    /// Enqueues the task for execution.
-    ///
-    /// Returns `true` if the task was enqueued successfully, or `false`
-    /// otherwise, due to the executor being dropped.
-    pub fn schedule(&self) -> bool {
-        self.shared.upgrade().is_some_and(|q| q.schedule(self.id))
-    }
+impl<'a> Iterator for Iter<'a> {
+    type Item = TaskId;
 
-    /// Check if the handle is at the same thread as the executor.
-    pub fn is_local(&self) -> bool {
-        self.shared.upgrade().is_some_and(|q| q.local.valid())
+    fn next(&mut self) -> Option<Self::Item> {
+        let curr = self.curr?;
+        self.curr = self.queue.next(curr);
+        Some(curr)
     }
 }
