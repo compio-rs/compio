@@ -1,8 +1,13 @@
 use std::{mem::MaybeUninit, slice};
 
-use libc::{CMSG_DATA, CMSG_FIRSTHDR, CMSG_LEN, CMSG_NXTHDR, CMSG_SPACE, c_int, cmsghdr, msghdr};
+use libc::{CMSG_DATA, CMSG_LEN, CMSG_SPACE, c_int, cmsghdr};
 
 use super::{AncillaryData, CodecError, copy_from_bytes, copy_to_bytes};
+
+#[inline]
+const fn CMSG_ALIGN(length: usize) -> usize {
+    (length + align_of::<cmsghdr>() - 1) & !(align_of::<cmsghdr>() - 1)
+}
 
 pub(crate) struct CMsgRef<'a>(&'a cmsghdr);
 
@@ -47,8 +52,8 @@ impl CMsgMut<'_> {
 }
 
 pub(crate) struct CMsgIter {
-    msg: msghdr,
-    cmsg: *mut cmsghdr,
+    len: usize,
+    offset: Option<usize>,
 }
 
 impl CMsgIter {
@@ -56,37 +61,44 @@ impl CMsgIter {
         assert!(len >= unsafe { CMSG_SPACE(0) as _ }, "buffer too short");
         assert!(ptr.cast::<cmsghdr>().is_aligned(), "misaligned buffer");
 
-        let mut msg: msghdr = unsafe { std::mem::zeroed() };
-        msg.msg_control = ptr as _;
-        msg.msg_controllen = len as _;
-        // SAFETY: msg is initialized and valid
-        let cmsg = unsafe { CMSG_FIRSTHDR(&msg) };
-        Self { msg, cmsg }
+        let offset = if len >= size_of::<cmsghdr>() {
+            Some(0)
+        } else {
+            None
+        };
+        Self { len, offset }
     }
 
-    pub(crate) unsafe fn current<'a>(&self) -> Option<CMsgRef<'a>> {
-        // SAFETY: cmsg is valid or null
-        unsafe { self.cmsg.as_ref() }.map(CMsgRef)
+    pub(crate) unsafe fn current<'a>(&self, ptr: *const u8) -> Option<CMsgRef<'a>> {
+        self.offset
+            .and_then(|offset| unsafe { ptr.add(offset).cast::<cmsghdr>().as_ref() })
+            .map(CMsgRef)
     }
 
-    pub(crate) unsafe fn next(&mut self) {
-        if !self.cmsg.is_null() {
-            // SAFETY: msg and cmsg are valid
-            self.cmsg = unsafe { CMSG_NXTHDR(&self.msg, self.cmsg) };
+    pub(crate) unsafe fn next(&mut self, ptr: *const u8) {
+        if let Some(offset) = self.offset {
+            let cmsg = unsafe { ptr.add(offset).cast::<cmsghdr>().as_ref() };
+            if let Some(cmsg) = cmsg {
+                let offset = offset + CMSG_ALIGN(cmsg.cmsg_len);
+                if offset + size_of::<cmsghdr>() <= self.len {
+                    self.offset = Some(offset);
+                } else {
+                    self.offset = None;
+                }
+            }
         }
     }
 
-    pub(crate) unsafe fn current_mut<'a>(&self) -> Option<CMsgMut<'a>> {
-        // SAFETY: cmsg is valid or null
-        unsafe { self.cmsg.as_mut() }.map(CMsgMut)
+    pub(crate) unsafe fn current_mut<'a>(&self, ptr: *mut u8) -> Option<CMsgMut<'a>> {
+        self.offset
+            .and_then(|offset| unsafe { ptr.add(offset).cast::<cmsghdr>().as_mut() })
+            .map(CMsgMut)
     }
 
     pub(crate) fn is_space_enough(&self, space: usize) -> bool {
-        if !self.cmsg.is_null() {
-            let space = unsafe { CMSG_SPACE(space as _) as usize };
-            #[allow(clippy::unnecessary_cast)]
-            let max = self.msg.msg_control as usize + self.msg.msg_controllen as usize;
-            self.cmsg as usize + space <= max
+        if let Some(offset) = self.offset {
+            let space = unsafe { CMSG_SPACE(space as _) } as usize;
+            offset + space <= self.len
         } else {
             false
         }
