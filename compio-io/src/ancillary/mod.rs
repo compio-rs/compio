@@ -176,7 +176,9 @@ impl<'a, B: IoBufMut + ?Sized> AncillaryBuilder<'a, B> {
     pub fn new(buffer: &'a mut B) -> Self {
         // SAFETY: always safe to make it empty.
         unsafe { buffer.set_len(0) };
-        let inner = sys::CMsgIter::new(buffer.buf_mut_ptr().cast(), buffer.buf_capacity());
+        let slice = buffer.as_uninit();
+        slice.fill(MaybeUninit::new(0));
+        let inner = sys::CMsgIter::new(slice.as_mut_ptr().cast(), slice.len());
         Self { inner, buffer }
     }
 
@@ -191,7 +193,7 @@ impl<'a, B: IoBufMut + ?Sized> AncillaryBuilder<'a, B> {
             return Err(CodecError::BufferTooSmall);
         }
 
-        // SAFETY: AncillaryBuf guarantees the buffer is zeroed and properly aligned,
+        // SAFETY: method `new` guarantees the buffer is zeroed and properly aligned,
         // and we have checked the space.
         let mut cmsg = unsafe { self.inner.current_mut(self.buffer.buf_mut_ptr().cast()) }
             .expect("sufficient space");
