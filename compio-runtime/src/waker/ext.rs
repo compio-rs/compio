@@ -3,6 +3,7 @@
 use std::{
     mem::ManuallyDrop,
     pin::Pin,
+    ptr,
     sync::Arc,
     task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
 };
@@ -36,9 +37,9 @@ where
 /// Remove all [`ExtWaker`] wrapped around the waker and retrieve the underlying
 /// waker.
 pub(crate) fn get_waker<'a, E: ExtData + 'a>(waker: &'a Waker) -> &'a Waker {
-    if waker.vtable() == ExtWaker::<E>::VTABLE {
+    if ExtWaker::<E>::is(waker) {
         get_waker::<E>(unsafe { ExtWaker::<E>::from_raw(waker.data()) }.waker)
-    } else if waker.vtable() == OwnedExtWaker::<E>::VTABLE {
+    } else if OwnedExtWaker::<E>::is(waker) {
         get_waker::<E>(&unsafe { OwnedExtWaker::<E>::from_raw(waker.data()) }.waker)
     } else {
         waker
@@ -46,12 +47,12 @@ pub(crate) fn get_waker<'a, E: ExtData + 'a>(waker: &'a Waker) -> &'a Waker {
 }
 
 pub(crate) fn get_ext<E: ExtData>(waker: &Waker) -> Option<&E> {
-    if waker.vtable() == ExtWaker::<E>::VTABLE {
+    if ExtWaker::<E>::is(waker) {
         unsafe { ExtWaker::from_raw(waker.data()) }
             .ext
             .get()
             .copied()
-    } else if waker.vtable() == OwnedExtWaker::<E>::VTABLE {
+    } else if OwnedExtWaker::<E>::is(waker) {
         let owned = unsafe { OwnedExtWaker::<E>::from_raw(waker.data()) }
             .ext
             .get()?;
@@ -77,6 +78,10 @@ pub(crate) struct ExtWaker<'a, E> {
 impl<'a, E: ExtData> ExtWaker<'a, E> {
     const VTABLE: &'static RawWakerVTable =
         &RawWakerVTable::new(Self::clone, Self::wake, Self::wake_by_ref, Self::drop);
+
+    pub(crate) fn is(waker: &Waker) -> bool {
+        ptr::eq(waker.vtable(), Self::VTABLE)
+    }
 
     pub fn new(waker: &'a Waker, ext: &'a E) -> Self {
         Self {
@@ -153,6 +158,10 @@ impl<E: ExtData> Drop for Inner<E> {
 impl<E: ExtData> OwnedExtWaker<E> {
     const VTABLE: &'static RawWakerVTable =
         &RawWakerVTable::new(Self::clone, Self::wake, Self::wake_by_ref, Self::drop);
+
+    pub(crate) fn is(waker: &Waker) -> bool {
+        ptr::eq(waker.vtable(), Self::VTABLE)
+    }
 
     unsafe fn clone(ptr: *const ()) -> RawWaker {
         unsafe { Arc::increment_strong_count(ptr.cast::<Inner<E>>()) };
