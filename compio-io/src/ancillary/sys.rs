@@ -81,11 +81,10 @@ use windows_macros::{CMSG_DATA, CMSG_FIRSTHDR, CMSG_LEN, CMSG_NXTHDR, msghdr_fro
 
 #[cfg(unix)]
 fn msghdr_from_raw(ptr: *const u8, len: usize) -> msghdr {
-    msghdr {
-        msg_control: ptr as _,
-        msg_controllen: len as _,
-        ..unsafe { std::mem::zeroed() }
-    }
+    let mut msg: msghdr = unsafe { std::mem::zeroed() };
+    msg.msg_control = ptr as _;
+    msg.msg_controllen = len as _;
+    msg
 }
 
 pub(crate) struct CMsgRef<'a>(&'a cmsghdr);
