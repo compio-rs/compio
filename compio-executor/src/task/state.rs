@@ -10,25 +10,25 @@ use std::{
 use compio_log::trace;
 
 /// Executor has scheduled the task to run, but it is not running.
-const SHCEDULED: usize = 1 << 1;
+const SHCEDULED: usize = 1 << 0;
 
 /// In the process of cloning and setting a waker to the task.
-const SETTING_WAKER: usize = 1 << 2;
+const SETTING_WAKER: usize = 1 << 1;
 
 /// A waker is set to the task.
-const HAS_WAKER: usize = 1 << 3;
+const HAS_WAKER: usize = 1 << 2;
 
 /// The task is completed, and `FutureState` has switched to `result`.
-const COMPLETED: usize = 1 << 4;
+const COMPLETED: usize = 1 << 3;
 
 /// The result is present.
-const HAS_RESULT: usize = 1 << 5;
+const HAS_RESULT: usize = 1 << 4;
 
 /// The task is cancelled because either the `JoinHandle` is dropped without
 /// detaching or the Exector is dropped.
-const CANCELLED: usize = 1 << 6;
+const CANCELLED: usize = 1 << 5;
 
-const RC_SHIFT: usize = 7;
+const RC_SHIFT: usize = 6;
 const RC_UNIT: usize = 1 << RC_SHIFT;
 const RC_MASK: usize = !(RC_UNIT - 1);
 

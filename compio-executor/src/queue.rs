@@ -269,7 +269,7 @@ impl Inner {
         } else {
             // Already cold, unlink and re-link to move to tail
             self.unlink::<COLD>(key);
-            self.link_tail::<HOT>(key);
+            self.link_tail::<COLD>(key);
         }
     }
 }

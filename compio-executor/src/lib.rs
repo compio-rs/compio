@@ -185,6 +185,13 @@ impl Executor {
     }
 }
 
+impl Drop for Executor {
+    fn drop(&mut self) {
+        self.clear();
+        unsafe { drop(Box::from_raw(self.ptr.as_ptr())) };
+    }
+}
+
 impl Default for Executor {
     fn default() -> Self {
         Self::new()
