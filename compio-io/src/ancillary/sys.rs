@@ -108,7 +108,7 @@ impl CMsgIter {
         if let Some(offset) = self.offset {
             let cmsg = unsafe { ptr.add(offset).cast::<cmsghdr>().as_ref() };
             if let Some(cmsg) = cmsg {
-                let offset = offset + CMSG_ALIGN(cmsg.cmsg_len);
+                let offset = offset + CMSG_ALIGN(cmsg.cmsg_len as _);
                 if offset + size_of::<cmsghdr>() <= self.len {
                     self.offset = Some(offset);
                 } else {
