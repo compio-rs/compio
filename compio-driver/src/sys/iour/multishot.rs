@@ -123,7 +123,7 @@ fn detect_recv_multishot() -> io::Result<()> {
     let mut ring = IoUring::new(4)?;
     let (mut tx, rx) = UnixStream::pair()?;
     let mut buffer = [0u8; 4];
-    let pool = unsafe {
+    let mut pool = unsafe {
         super::buffer_pool::BufControl::new_inner(
             ring.submitter(),
             &[Some(NonNull::new(buffer.as_mut_ptr().cast()).unwrap())],
@@ -136,6 +136,7 @@ fn detect_recv_multishot() -> io::Result<()> {
     ring.submit()?;
     tx.write_all(b"ping")?;
     check_result(&mut ring)?;
+    unsafe { pool.release_inner(ring.submitter())? };
     Ok(())
 }
 
@@ -146,7 +147,7 @@ fn detect_recvmsg_multishot() -> io::Result<()> {
     let mut ring = IoUring::new(4)?;
     let rx = UdpSocket::bind("127.0.0.1:0")?;
     let mut buffer = [0u8; const { RECVMSG_HEADER_SIZE + SOCKADDR_STORAGE_SIZE + 4 }];
-    let pool = unsafe {
+    let mut pool = unsafe {
         super::buffer_pool::BufControl::new_inner(
             ring.submitter(),
             &[Some(NonNull::new(buffer.as_mut_ptr().cast()).unwrap())],
@@ -163,5 +164,6 @@ fn detect_recvmsg_multishot() -> io::Result<()> {
     let tx = UdpSocket::bind("127.0.0.1:0")?;
     tx.send_to(b"ping", rx.local_addr()?)?;
     check_result(&mut ring)?;
+    unsafe { pool.release_inner(ring.submitter())? };
     Ok(())
 }
