@@ -44,6 +44,7 @@ use crate::{
 
 mod buffer_pool;
 mod extra;
+mod multishot;
 pub(in crate::sys) use buffer_pool::BufControl;
 pub(in crate::sys) use extra::Extra;
 pub(crate) mod op;
@@ -69,6 +70,14 @@ pub(crate) fn is_op_supported(code: u8) -> bool {
         })
         .map(|probe| probe.is_supported(code))
         .unwrap_or_default()
+}
+
+fn is_entry_supported<E: io_uring::squeue::EntryMarker>(entry: &E) -> bool {
+    match multishot::detect(entry) {
+        multishot::DetectResult::Supported => true,
+        multishot::DetectResult::NotSupported => false,
+        multishot::DetectResult::NotDetected(opcode) => is_op_supported(opcode),
+    }
 }
 
 /// The created entry of [`OpCode`].
@@ -500,7 +509,7 @@ impl Driver {
         loop {
             match op_entry {
                 OpEntry::Submission(entry) => {
-                    if is_op_supported(entry.get_opcode() as _) {
+                    if is_entry_supported(&entry) {
                         #[allow(clippy::useless_conversion)]
                         self.push_raw_with_key(entry.into(), key)?;
                     } else if !has_fallbacked {
@@ -517,7 +526,7 @@ impl Driver {
                 }
                 #[cfg(feature = "io-uring-sqe128")]
                 OpEntry::Submission128(entry) => {
-                    if is_op_supported(entry.get_opcode() as _) {
+                    if is_entry_supported(&entry) {
                         self.push_raw_with_key(entry, key)?;
                     } else if !has_fallbacked {
                         op_entry = key

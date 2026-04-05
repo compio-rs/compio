@@ -6,7 +6,7 @@ use std::{
     sync::atomic::Ordering,
 };
 
-use io_uring::types::BufRingEntry;
+use io_uring::{Submitter, types::BufRingEntry};
 use nix::sys::mman::{MapFlags, ProtFlags, mmap_anonymous, munmap};
 use synchrony::unsync::atomic::AtomicU16;
 
@@ -44,6 +44,15 @@ impl BufControl {
         bufs_len: u32,
         flags: u16,
     ) -> io::Result<Self> {
+        unsafe { Self::new_inner(driver.inner.submitter(), bufs, bufs_len, flags) }
+    }
+
+    pub(super) unsafe fn new_inner(
+        submitter: Submitter,
+        bufs: &[Slot],
+        bufs_len: u32,
+        flags: u16,
+    ) -> io::Result<Self> {
         debug_assert!(bufs.len().is_power_of_two());
 
         let len = NonZeroU16::new(bufs.len() as u16).expect("Empty buffers");
@@ -57,7 +66,7 @@ impl BufControl {
         let mut this = Self { ptr, len, size };
 
         unsafe {
-            driver.inner.submitter().register_buf_ring_with_flags(
+            submitter.register_buf_ring_with_flags(
                 ptr.addr().get() as u64,
                 len.get(),
                 Self::BUF_GROUP,
@@ -105,10 +114,11 @@ impl BufControl {
     ///
     /// `Self` cannot be used after `release` is being called.
     pub unsafe fn release(&mut self, driver: &mut super::Driver) -> io::Result<()> {
-        driver
-            .inner
-            .submitter()
-            .unregister_buf_ring(Self::BUF_GROUP)?;
+        unsafe { self.release_inner(driver.inner.submitter()) }
+    }
+
+    pub(super) unsafe fn release_inner(&mut self, submitter: Submitter) -> io::Result<()> {
+        submitter.unregister_buf_ring(Self::BUF_GROUP)?;
         unsafe { munmap(self.ptr.cast(), self.size.get()) }?;
 
         Ok(())
