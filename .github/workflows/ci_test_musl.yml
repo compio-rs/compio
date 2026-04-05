@@ -35,14 +35,22 @@ jobs:
           #   features: 'native-tls-vendored,ring,sync,polling'
     steps:
       - uses: actions/checkout@v4
-      - name: Setup cross-rs
-        uses: taiki-e/install-action@cross
+      - name: Setup Rust Toolchain
+        run: rustup toolchain install nightly
+      - name: Setup target
+        run: rustup +nightly target install ${{ matrix.setup.target }}
+      - uses: taiki-e/install-action@nextest
+      - name: Install musl
+        shell: bash
+        run: |
+          sudo apt-get -y install musl-dev musl-tools
       - name: Test for ${{ matrix.setup.target }}
         shell: bash
         run: |
           set -ex
 
           ARGS=("--features" "all")
+          ARGS+=("--features" "nightly")
 
           # Add features if features is not empty
           if [[ -n "${{ matrix.setup.features }}" ]]; then
@@ -53,4 +61,9 @@ jobs:
               ARGS+=("--target" "${{ matrix.setup.target }}")
           fi
 
-          cross test --workspace "${ARGS[@]}"
+          cargo +nightly nextest run \
+            --no-fail-fast \
+            --failure-output final \
+            "${ARGS[@]}"
+
+          cargo +nightly test --workspace --doc "${ARGS[@]}"
