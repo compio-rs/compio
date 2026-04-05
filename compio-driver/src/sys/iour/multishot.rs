@@ -90,14 +90,7 @@ static SUPPORT_RECV_MULTISHOT: LazyLock<bool> = LazyLock::new(|| detect_recv_mul
 static SUPPORT_RECVMSG_MULTISHOT: LazyLock<bool> =
     LazyLock::new(|| detect_recvmsg_multishot().is_ok());
 
-fn detect_accept_multishot() -> io::Result<()> {
-    let mut ring = IoUring::new(4)?;
-    let listener = TcpListener::bind("127.0.0.1:0")?;
-    let local_addr = listener.local_addr()?;
-    let op = AcceptMulti::new(Fd(listener.as_raw_fd())).build();
-    unsafe { ring.submission().push(&op).map_err(io::Error::other)? };
-    ring.submit()?;
-    let _client = TcpStream::connect(local_addr)?;
+fn check_result(ring: &mut IoUring) -> io::Result<i32> {
     let cqe = loop {
         if let Some(cqe) = ring.completion().next() {
             break cqe;
@@ -109,8 +102,21 @@ fn detect_accept_multishot() -> io::Result<()> {
     if res < 0 {
         Err(io::Error::from_raw_os_error(-res))
     } else {
-        syscall!(libc::close(res)).map(|_| ())
+        Ok(res)
     }
+}
+
+fn detect_accept_multishot() -> io::Result<()> {
+    let mut ring = IoUring::new(4)?;
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let local_addr = listener.local_addr()?;
+    let op = AcceptMulti::new(Fd(listener.as_raw_fd())).build();
+    unsafe { ring.submission().push(&op).map_err(io::Error::other)? };
+    ring.submit()?;
+    let _client = TcpStream::connect(local_addr)?;
+    let res = check_result(&mut ring)?;
+    syscall!(libc::close(res))?;
+    Ok(())
 }
 
 fn detect_recv_multishot() -> io::Result<()> {
@@ -129,19 +135,8 @@ fn detect_recv_multishot() -> io::Result<()> {
     unsafe { ring.submission().push(&op).map_err(io::Error::other)? };
     ring.submit()?;
     tx.write_all(b"ping")?;
-    let cqe = loop {
-        if let Some(cqe) = ring.completion().next() {
-            break cqe;
-        } else {
-            ring.submit_and_wait(1)?;
-        }
-    };
-    let res = cqe.result();
-    if res < 0 {
-        Err(io::Error::from_raw_os_error(-res))
-    } else {
-        Ok(())
-    }
+    check_result(&mut ring)?;
+    Ok(())
 }
 
 fn detect_recvmsg_multishot() -> io::Result<()> {
@@ -167,17 +162,6 @@ fn detect_recvmsg_multishot() -> io::Result<()> {
     ring.submit()?;
     let tx = UdpSocket::bind("127.0.0.1:0")?;
     tx.send_to(b"ping", rx.local_addr()?)?;
-    let cqe = loop {
-        if let Some(cqe) = ring.completion().next() {
-            break cqe;
-        } else {
-            ring.submit_and_wait(1)?;
-        }
-    };
-    let res = cqe.result();
-    if res < 0 {
-        Err(io::Error::from_raw_os_error(-res))
-    } else {
-        Ok(())
-    }
+    check_result(&mut ring)?;
+    Ok(())
 }
