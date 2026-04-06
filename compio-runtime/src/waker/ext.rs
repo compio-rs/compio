@@ -9,53 +9,43 @@ use std::{
 
 use compio_send_wrapper::SendWrapper;
 
-pub(crate) trait ExtData: Default {
-    type OwnedExt: 'static;
-
-    fn to_owned(&self) -> Self::OwnedExt;
-
-    fn from_owned(owned: &Self::OwnedExt) -> &Self;
-}
+use crate::Ext;
 
 /// Try to retrieve ext data from the waker and call the callback on it. If ext
-/// data can't be retrieved, intialize a dafault on stack and pass a reference
-/// of that to `f` instead.
-pub(crate) fn with_ext<E, F, R>(waker: &Waker, f: F) -> R
+/// data can't be retrieved, initialize a dafault on the stack and pass a
+/// reference of that to `f` instead.
+pub(crate) fn with_ext<F, R>(waker: &Waker, f: F) -> R
 where
-    E: ExtData,
-    F: FnOnce(&Waker, &E) -> R,
+    F: FnOnce(&Waker, &Ext) -> R,
 {
-    if let Some(ext) = get_ext::<E>(waker) {
-        ExtWaker::new(waker, ext).with(|waker| f(waker, ext))
+    if let Some(ext) = get_ext(waker) {
+        f(waker, ext)
     } else {
-        let ext = E::default();
-        ExtWaker::new(waker, &ext).with(|waker| f(waker, &ext))
+        let ext = Ext::default();
+        f(waker, &ext)
     }
 }
 
 /// Remove all [`ExtWaker`] wrapped around the waker and retrieve the underlying
 /// waker.
-pub(crate) fn get_waker<'a, E: ExtData + 'a>(waker: &'a Waker) -> &'a Waker {
-    if waker.vtable() == ExtWaker::<E>::VTABLE {
-        get_waker::<E>(unsafe { ExtWaker::<E>::from_raw(waker.data()) }.waker)
-    } else if waker.vtable() == OwnedExtWaker::<E>::VTABLE {
-        get_waker::<E>(&unsafe { OwnedExtWaker::<E>::from_raw(waker.data()) }.waker)
+pub(crate) fn get_waker(waker: &Waker) -> &Waker {
+    if waker.vtable() == ExtWaker::VTABLE {
+        get_waker(unsafe { ExtWaker::from_raw(waker.data()) }.waker)
+    } else if waker.vtable() == OwnedExtWaker::VTABLE {
+        get_waker(&unsafe { OwnedExtWaker::from_raw(waker.data()) }.waker)
     } else {
         waker
     }
 }
 
-pub(crate) fn get_ext<E: ExtData>(waker: &Waker) -> Option<&E> {
-    if waker.vtable() == ExtWaker::<E>::VTABLE {
+pub(crate) fn get_ext(waker: &Waker) -> Option<&Ext<'_>> {
+    if waker.vtable() == ExtWaker::VTABLE {
         unsafe { ExtWaker::from_raw(waker.data()) }
             .ext
             .get()
             .copied()
-    } else if waker.vtable() == OwnedExtWaker::<E>::VTABLE {
-        let owned = unsafe { OwnedExtWaker::<E>::from_raw(waker.data()) }
-            .ext
-            .get()?;
-        Some(E::from_owned(owned))
+    } else if waker.vtable() == OwnedExtWaker::VTABLE {
+        unsafe { OwnedExtWaker::from_raw(waker.data()) }.ext.get()
     } else {
         None
     }
@@ -67,18 +57,18 @@ pub(crate) fn get_ext<E: ExtData>(waker: &Waker) -> Option<&E> {
 /// into owned form and converted to [`OwnedExtWaker`]; otherwise, only the
 /// underlying waker is cloned and the data will be lost.
 #[derive(Debug, Clone)]
-pub(crate) struct ExtWaker<'a, E> {
+pub(crate) struct ExtWaker<'a, 'b> {
     waker: &'a Waker,
     // `SendWrapper<&Ext>` will not panic when being dropped on other thread since references
     // doesn't need drop
-    ext: SendWrapper<&'a E>,
+    ext: SendWrapper<&'a Ext<'b>>,
 }
 
-impl<'a, E: ExtData> ExtWaker<'a, E> {
+impl<'a, 'b> ExtWaker<'a, 'b> {
     const VTABLE: &'static RawWakerVTable =
         &RawWakerVTable::new(Self::clone, Self::wake, Self::wake_by_ref, Self::drop);
 
-    pub fn new(waker: &'a Waker, ext: &'a E) -> Self {
+    pub fn new(waker: &'a Waker, ext: &'a Ext<'b>) -> Self {
         Self {
             waker,
             ext: SendWrapper::new(ext),
@@ -97,7 +87,7 @@ impl<'a, E: ExtData> ExtWaker<'a, E> {
         f(&waker)
     }
 
-    unsafe fn from_raw<'b>(ptr: *const ()) -> &'b Self {
+    unsafe fn from_raw<'s>(ptr: *const ()) -> &'s Self {
         unsafe { &*ptr.cast::<Self>() }
     }
 
@@ -125,7 +115,7 @@ impl<'a, E: ExtData> ExtWaker<'a, E> {
         // `ExtWaker` only contains reference, no need to drop.
     }
 
-    fn to_owned(&self) -> Option<OwnedExtWaker<E>> {
+    fn to_owned(&self) -> Option<OwnedExtWaker> {
         let ext_data = self.ext.get().copied()?.to_owned();
         let ext = ManuallyDrop::new(SendWrapper::new(ext_data));
         Some(OwnedExtWaker(Arc::new(Inner {
@@ -135,14 +125,14 @@ impl<'a, E: ExtData> ExtWaker<'a, E> {
     }
 }
 
-struct OwnedExtWaker<E: ExtData>(Arc<Inner<E>>);
+struct OwnedExtWaker(Arc<Inner>);
 
-struct Inner<E: ExtData> {
+struct Inner {
     waker: Waker,
-    ext: ManuallyDrop<SendWrapper<E::OwnedExt>>,
+    ext: ManuallyDrop<SendWrapper<Ext<'static>>>,
 }
 
-impl<E: ExtData> Drop for Inner<E> {
+impl Drop for Inner {
     fn drop(&mut self) {
         if self.ext.valid() {
             unsafe { ManuallyDrop::drop(&mut self.ext) };
@@ -150,17 +140,17 @@ impl<E: ExtData> Drop for Inner<E> {
     }
 }
 
-impl<E: ExtData> OwnedExtWaker<E> {
+impl OwnedExtWaker {
     const VTABLE: &'static RawWakerVTable =
         &RawWakerVTable::new(Self::clone, Self::wake, Self::wake_by_ref, Self::drop);
 
     unsafe fn clone(ptr: *const ()) -> RawWaker {
-        unsafe { Arc::increment_strong_count(ptr.cast::<Inner<E>>()) };
+        unsafe { Arc::increment_strong_count(ptr.cast::<Inner>()) };
         RawWaker::new(ptr, Self::VTABLE)
     }
 
     unsafe fn wake(ptr: *const ()) {
-        unsafe { Arc::from_raw(ptr.cast::<Inner<E>>()) }
+        unsafe { Arc::from_raw(ptr.cast::<Inner>()) }
             .waker
             .wake_by_ref();
     }
@@ -170,18 +160,18 @@ impl<E: ExtData> OwnedExtWaker<E> {
     }
 
     unsafe fn drop(ptr: *const ()) {
-        _ = unsafe { Arc::from_raw(ptr.cast::<Inner<E>>()) };
+        _ = unsafe { Arc::from_raw(ptr.cast::<Inner>()) };
     }
 
-    unsafe fn from_raw<'b>(ptr: *const ()) -> &'b Inner<E> {
-        unsafe { &*ptr.cast::<Inner<E>>() }
+    unsafe fn from_raw<'b>(ptr: *const ()) -> &'b Inner {
+        unsafe { &*ptr.cast::<Inner>() }
     }
 
     fn into_std(self) -> Waker {
         unsafe {
             Waker::from_raw(RawWaker::new(
                 Arc::into_raw(self.0).cast::<()>(),
-                OwnedExtWaker::<E>::VTABLE,
+                OwnedExtWaker::VTABLE,
             ))
         }
     }

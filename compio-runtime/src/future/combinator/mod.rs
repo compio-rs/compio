@@ -9,7 +9,7 @@ pub use cancel::*;
 use compio_driver::Extra;
 pub use personality::*;
 
-use crate::{CancelToken, waker::ExtData};
+use crate::CancelToken;
 
 #[non_exhaustive]
 #[derive(Debug, Default)]
@@ -18,18 +18,15 @@ pub(crate) struct Ext<'a> {
     cancel: Option<Cow<'a, CancelToken>>,
 }
 
-impl<'a> ExtData for Ext<'a> {
-    type OwnedExt = Ext<'static>;
-
-    fn to_owned(&self) -> Self::OwnedExt {
+impl<'a> Ext<'a> {
+    pub fn to_owned(&self) -> Ext<'static> {
         Ext {
             personality: self.personality,
-            cancel: self.cancel.clone().map(Cow::into_owned).map(Cow::Owned),
+            cancel: self
+                .cancel
+                .as_ref()
+                .map(|x| Cow::Owned(x.clone().into_owned())),
         }
-    }
-
-    fn from_owned(owned: &Self::OwnedExt) -> &Self {
-        owned
     }
 }
 

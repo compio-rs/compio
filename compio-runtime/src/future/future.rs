@@ -12,7 +12,7 @@ use compio_driver::{Extra, Key, OpCode, PushEntry};
 use futures_util::future::FusedFuture;
 
 use crate::{
-    CancelToken, Ext, Runtime,
+    CancelToken, Runtime,
     waker::{get_ext, get_waker},
 };
 
@@ -32,15 +32,15 @@ pub(crate) trait ContextExt {
 
 impl ContextExt for Context<'_> {
     fn get_waker(&self) -> &Waker {
-        get_waker::<Ext>(self.waker())
+        get_waker(self.waker())
     }
 
     fn get_cancel(&mut self) -> Option<&CancelToken> {
-        get_ext::<Ext>(self.waker()).and_then(|x| x.get_cancel())
+        get_ext(self.waker())?.get_cancel()
     }
 
     fn as_extra(&mut self, default: impl FnOnce() -> Extra) -> Option<Extra> {
-        let ext = get_ext::<Ext>(self.waker())?;
+        let ext = get_ext(self.waker())?;
         let mut extra = default();
         ext.set_extra(&mut extra);
         Some(extra)
