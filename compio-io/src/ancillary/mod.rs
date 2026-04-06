@@ -81,31 +81,20 @@
 //! ```
 
 use std::{
-    marker::PhantomData,
     mem::MaybeUninit,
     ops::{Deref, DerefMut},
     ptr,
 };
 
 use compio_buf::{IoBuf, IoBufMut, SetLen};
-#[cfg(windows)]
-use windows_sys::Win32::Networking::WinSock;
 
 mod io;
 
 pub use self::io::*;
 
-cfg_if::cfg_if! {
-    if #[cfg(windows)] {
-        #[path = "windows.rs"]
-        mod sys;
-    } else if #[cfg(unix)] {
-        #[path = "unix.rs"]
-        mod sys;
-    }
-}
 #[cfg(feature = "bytemuck")]
 pub mod bytemuck_ext;
+mod sys;
 
 /// Reference to an ancillary (control) message.
 pub struct AncillaryRef<'a>(sys::CMsgRef<'a>);
@@ -136,7 +125,7 @@ impl AncillaryRef<'_> {
 /// An iterator for ancillary (control) messages.
 pub struct AncillaryIter<'a> {
     inner: sys::CMsgIter,
-    _p: PhantomData<&'a ()>,
+    buffer: &'a [u8],
 }
 
 impl<'a> AncillaryIter<'a> {
@@ -153,7 +142,7 @@ impl<'a> AncillaryIter<'a> {
     pub unsafe fn new(buffer: &'a [u8]) -> Self {
         Self {
             inner: sys::CMsgIter::new(buffer.as_ptr(), buffer.len()),
-            _p: PhantomData,
+            buffer,
         }
     }
 }
@@ -163,25 +152,33 @@ impl<'a> Iterator for AncillaryIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         unsafe {
-            let cmsg = self.inner.current();
-            self.inner.next();
+            let cmsg = self.inner.current(self.buffer.as_ptr());
+            self.inner.next(self.buffer.as_ptr());
             cmsg.map(AncillaryRef)
         }
     }
 }
 
 /// Helper to construct ancillary (control) messages.
-pub struct AncillaryBuilder<'a, const N: usize> {
+pub struct AncillaryBuilder<'a, B: ?Sized> {
     inner: sys::CMsgIter,
-    buffer: &'a mut AncillaryBuf<N>,
+    buffer: &'a mut B,
 }
 
-impl<'a, const N: usize> AncillaryBuilder<'a, N> {
-    fn new(buffer: &'a mut AncillaryBuf<N>) -> Self {
-        // TODO: optimize zeroing
-        buffer.as_uninit().fill(MaybeUninit::new(0));
-        buffer.len = 0;
-        let inner = sys::CMsgIter::new(buffer.as_ptr(), buffer.buf_capacity());
+impl<'a, B: IoBufMut + ?Sized> AncillaryBuilder<'a, B> {
+    /// Create [`AncillaryBuilder`] with the given buffer. The buffer will be
+    /// cleared on creation.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the buffer is too short or not properly
+    /// aligned.
+    pub fn new(buffer: &'a mut B) -> Self {
+        // SAFETY: always safe to make it empty.
+        unsafe { buffer.set_len(0) };
+        let slice = buffer.as_uninit();
+        slice.fill(MaybeUninit::new(0));
+        let inner = sys::CMsgIter::new(slice.as_mut_ptr().cast(), slice.len());
         Self { inner, buffer }
     }
 
@@ -196,14 +193,17 @@ impl<'a, const N: usize> AncillaryBuilder<'a, N> {
             return Err(CodecError::BufferTooSmall);
         }
 
-        // SAFETY: AncillaryBuf guarantees the buffer is zeroed and properly aligned,
+        // SAFETY: method `new` guarantees the buffer is zeroed and properly aligned,
         // and we have checked the space.
-        let mut cmsg = unsafe { self.inner.current_mut() }.expect("sufficient space");
+        let mut cmsg = unsafe { self.inner.current_mut(self.buffer.buf_mut_ptr().cast()) }
+            .expect("sufficient space");
         cmsg.set_level(level);
         cmsg.set_ty(ty);
-        self.buffer.len += cmsg.encode_data(value)?;
+        unsafe {
+            self.buffer.advance(cmsg.encode_data(value)?);
+        }
 
-        unsafe { self.inner.next() };
+        unsafe { self.inner.next(self.buffer.buf_mut_ptr().cast()) };
 
         Ok(())
     }
@@ -217,10 +217,7 @@ impl<'a, const N: usize> AncillaryBuilder<'a, N> {
 pub struct AncillaryBuf<const N: usize> {
     inner: [u8; N],
     len: usize,
-    #[cfg(unix)]
-    _align: [libc::cmsghdr; 0],
-    #[cfg(windows)]
-    _align: [WinSock::CMSGHDR; 0],
+    _align: [sys::cmsghdr; 0],
 }
 
 impl<const N: usize> AncillaryBuf<N> {
@@ -239,7 +236,7 @@ impl<const N: usize> AncillaryBuf<N> {
     /// # Panics
     ///
     /// This function will panic if this buffer is too short.
-    pub fn builder(&mut self) -> AncillaryBuilder<'_, N> {
+    pub fn builder(&mut self) -> AncillaryBuilder<'_, Self> {
         AncillaryBuilder::new(self)
     }
 }
@@ -283,114 +280,6 @@ impl<const N: usize> DerefMut for AncillaryBuf<N> {
     }
 }
 
-// Deprecated compio_net::CMsgRef
-#[doc(hidden)]
-pub struct CMsgRef<'a>(sys::CMsgRef<'a>);
-
-impl CMsgRef<'_> {
-    pub fn level(&self) -> i32 {
-        self.0.level()
-    }
-
-    pub fn ty(&self) -> i32 {
-        self.0.ty()
-    }
-
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
-        self.0.len() as _
-    }
-
-    /// Returns a reference to the data of the control message.
-    ///
-    /// # Safety
-    ///
-    /// The data part must be properly aligned and contains an initialized
-    /// instance of `T`.
-    pub unsafe fn data<T>(&self) -> &T {
-        unsafe { self.0.data() }
-    }
-}
-
-// Deprecated compio_net::CMsgIter
-#[doc(hidden)]
-pub struct CMsgIter<'a> {
-    inner: sys::CMsgIter,
-    _p: PhantomData<&'a ()>,
-}
-
-impl<'a> CMsgIter<'a> {
-    /// Create [`CMsgIter`] with the given buffer.
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if the buffer is too short or not properly
-    /// aligned.
-    ///
-    /// # Safety
-    ///
-    /// The buffer should contain valid control messages.
-    pub unsafe fn new(buffer: &'a [u8]) -> Self {
-        Self {
-            inner: sys::CMsgIter::new(buffer.as_ptr(), buffer.len()),
-            _p: PhantomData,
-        }
-    }
-}
-
-impl<'a> Iterator for CMsgIter<'a> {
-    type Item = CMsgRef<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        unsafe {
-            let cmsg = self.inner.current();
-            self.inner.next();
-            cmsg.map(CMsgRef)
-        }
-    }
-}
-
-// Deprecated compio_net::CMsgBuilder
-#[doc(hidden)]
-pub struct CMsgBuilder<'a> {
-    inner: sys::CMsgIter,
-    len: usize,
-    _p: PhantomData<&'a mut ()>,
-}
-
-impl<'a> CMsgBuilder<'a> {
-    pub fn new(buffer: &'a mut [MaybeUninit<u8>]) -> Self {
-        buffer.fill(MaybeUninit::new(0));
-        Self {
-            inner: sys::CMsgIter::new(buffer.as_ptr().cast(), buffer.len()),
-            len: 0,
-            _p: PhantomData,
-        }
-    }
-
-    pub fn finish(self) -> usize {
-        self.len
-    }
-
-    pub fn try_push<T>(&mut self, level: i32, ty: i32, value: T) -> Option<()> {
-        if !self.inner.is_aligned::<T>() || !self.inner.is_space_enough(std::mem::size_of::<T>()) {
-            return None;
-        }
-
-        // SAFETY: the buffer is zeroed and the pointer is valid and aligned
-        unsafe {
-            let mut cmsg = self.inner.current_mut()?;
-            cmsg.set_level(level);
-            cmsg.set_ty(ty);
-            self.len += cmsg.set_data(value);
-
-            self.inner.next();
-        }
-
-        Some(())
-    }
-}
-
 /// Returns the buffer size required to hold one ancillary message carrying a
 /// value of type `T`.
 ///
@@ -398,14 +287,11 @@ impl<'a> CMsgBuilder<'a> {
 /// Unix or `WSA_CMSG_SPACE(T::SIZE)` on Windows, and can be used as a const
 /// generic argument for [`AncillaryBuf`].
 pub const fn ancillary_space<T: AncillaryData>() -> usize {
-    #[cfg(unix)]
     // SAFETY: CMSG_SPACE is always safe
+    #[allow(clippy::unnecessary_cast)]
     unsafe {
-        libc::CMSG_SPACE(T::SIZE as libc::c_uint) as usize
+        sys::CMSG_SPACE(T::SIZE as _) as usize
     }
-
-    #[cfg(windows)]
-    sys::wsa_cmsg_space(T::SIZE)
 }
 
 /// Error that can occur when encoding or decoding ancillary data.
