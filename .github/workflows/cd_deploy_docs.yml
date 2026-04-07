@@ -30,7 +30,7 @@ jobs:
             artifact-name: docs-darwin
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Rust Toolchain
         run: |
@@ -65,7 +65,7 @@ jobs:
       contents: read
       deployments: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download Linux docs
         uses: actions/download-artifact@v4

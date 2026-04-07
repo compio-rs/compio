@@ -71,7 +71,7 @@ jobs:
           - os: 'macos-15'
             features: 'native-tls,ring,py-dynamic-openssl'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup Rust Toolchain
         run: rustup toolchain install ${{ matrix.toolchain }}
       - name: Setup target
