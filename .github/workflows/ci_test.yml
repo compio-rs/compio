@@ -46,6 +46,9 @@ jobs:
             no_default_features: true
           - os: 'ubuntu-22.04'
             features: 'native-tls,ring,py-dynamic-openssl'
+          - os: 'ubuntu-22.04'
+            target: 'x86_64-unknown-linux-musl'
+            features: 'native-tls-vendored,ring,sync,polling'
           - os: 'windows-latest'
             target: 'x86_64-pc-windows-msvc'
           - os: 'windows-latest'
@@ -75,6 +78,11 @@ jobs:
         if: ${{ matrix.setup.target }}
         run: rustup +${{ matrix.toolchain }} target install ${{ matrix.setup.target }}
       - uses: taiki-e/install-action@nextest
+      - name: Install musl
+        if: ${{ endsWith(matrix.setup.target, 'musl') }}
+        shell: bash
+        run: |
+          sudo apt-get -y install musl-dev musl-tools
       - name: Test on ${{ matrix.setup.os }} ${{ matrix.toolchain }} ${{ matrix.setup.target }}
         shell: bash
         run: |
