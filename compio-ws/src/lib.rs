@@ -27,7 +27,7 @@ use tungstenite::{
     Error as WsError, HandshakeError, Message, WebSocket,
     client::IntoClientRequest,
     handshake::server::{Callback, NoCallback},
-    protocol::{CloseFrame, WebSocketConfig},
+    protocol::{CloseFrame, Role, WebSocketConfig},
 };
 
 mod tls;
@@ -159,6 +159,41 @@ impl<S> WebSocketStream<S>
 where
     S: AsyncRead + AsyncWrite,
 {
+    /// Convert a raw socket into a [`WebSocketStream`] without performing a
+    /// handshake.
+    ///
+    /// `disable_nagle` will be ignored since the socket is already connected
+    /// and the user can set `nodelay` on the socket directly before calling
+    /// this function if needed.
+    pub async fn from_raw_socket(stream: S, role: Role, config: impl Into<Config>) -> Self {
+        let config = config.into();
+        let sync_stream =
+            SyncStream::with_limits(config.buffer_size_base, config.buffer_size_limit, stream);
+        WebSocketStream {
+            inner: WebSocket::from_raw_socket(sync_stream, role, config.websocket),
+        }
+    }
+
+    /// Convert a raw socket into a [`WebSocketStream`] without performing a
+    /// handshake.
+    ///
+    /// `disable_nagle` will be ignored since the socket is already connected
+    /// and the user can set `nodelay` on the socket directly before calling
+    /// this function if needed.
+    pub async fn from_partially_read(
+        stream: S,
+        part: Vec<u8>,
+        role: Role,
+        config: impl Into<Config>,
+    ) -> Self {
+        let config = config.into();
+        let sync_stream =
+            SyncStream::with_limits(config.buffer_size_base, config.buffer_size_limit, stream);
+        WebSocketStream {
+            inner: WebSocket::from_partially_read(sync_stream, part, role, config.websocket),
+        }
+    }
+
     /// Send a message on the WebSocket stream.
     pub async fn send(&mut self, message: Message) -> Result<(), WsError> {
         // Send the message - this buffers it
