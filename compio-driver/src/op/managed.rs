@@ -130,28 +130,18 @@ pub type ReadMulti<S> = ReadManaged<S>;
 /// Receive data from remote into multiple managed buffers.
 pub type RecvMulti<S> = RecvManaged<S>;
 
-/// Result of [`RecvFromMulti`] and [`RecvMsgMulti`].
-pub struct RecvMsgMultiResultImpl<C> {
+/// Result of [`RecvFromMulti`].
+pub struct RecvFromMultiResult {
     buffer: BufferRef,
-    control: C,
     addr: Option<SockAddr>,
 }
 
-impl RecvMsgMultiResultImpl<()> {
+impl RecvFromMultiResult {
     #[doc(hidden)]
     pub unsafe fn new(_: BufferRef) -> Self {
         unreachable!("should not be called directly")
     }
-}
 
-impl RecvMsgMultiResultImpl<BufferRef> {
-    #[doc(hidden)]
-    pub unsafe fn new(_: BufferRef, _: usize) -> Self {
-        unreachable!("should not be called directly")
-    }
-}
-
-impl<C> RecvMsgMultiResultImpl<C> {
     /// Get the payload data.
     pub fn data(&self) -> &[u8] {
         self.buffer.as_init()
@@ -163,25 +153,13 @@ impl<C> RecvMsgMultiResultImpl<C> {
     }
 }
 
-impl RecvMsgMultiResultImpl<BufferRef> {
-    /// Get the ancillary data.
-    pub fn ancillary(&self) -> &[u8] {
-        self.control.as_init()
-    }
-}
-
-impl<C> IntoInner for RecvMsgMultiResultImpl<C> {
+impl IntoInner for RecvFromMultiResult {
     type Inner = BufferRef;
 
     fn into_inner(self) -> Self::Inner {
         self.buffer
     }
 }
-
-/// Result of [`RecvFromMulti`].
-pub type RecvFromMultiResult = RecvMsgMultiResultImpl<()>;
-/// Result of [`RecvMsgMulti`].
-pub type RecvMsgMultiResult = RecvMsgMultiResultImpl<BufferRef>;
 
 /// Receive data and source address multi times into multiple managed buffers.
 pub struct RecvFromMulti<S: AsFd> {
@@ -205,11 +183,44 @@ impl<S: AsFd> TakeBuffer for RecvFromMulti<S> {
     fn take_buffer(self) -> Option<Self::Buffer> {
         let (mut buffer, addr) = self.op.take_buffer()?;
         unsafe { buffer.advance_to(self.len) };
-        Some(RecvFromMultiResult {
-            buffer,
-            control: (),
-            addr,
-        })
+        Some(RecvFromMultiResult { buffer, addr })
+    }
+}
+
+/// Result of [`RecvMsgMulti`].
+pub struct RecvMsgMultiResult {
+    buffer: BufferRef,
+    control: BufferRef,
+    addr: Option<SockAddr>,
+}
+
+impl RecvMsgMultiResult {
+    #[doc(hidden)]
+    pub unsafe fn new(_: BufferRef, _: usize) -> Self {
+        unreachable!("should not be called directly")
+    }
+
+    /// Get the payload data.
+    pub fn data(&self) -> &[u8] {
+        self.buffer.as_init()
+    }
+
+    /// Get the source address if applicable.
+    pub fn addr(&self) -> Option<SockAddr> {
+        self.addr.clone()
+    }
+
+    /// Get the ancillary data.
+    pub fn ancillary(&self) -> &[u8] {
+        self.control.as_init()
+    }
+}
+
+impl IntoInner for RecvMsgMultiResult {
+    type Inner = BufferRef;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
     }
 }
 

@@ -1,8 +1,7 @@
 use std::{
     collections::VecDeque,
     io,
-    marker::PhantomData,
-    mem::ManuallyDrop,
+    mem::{ManuallyDrop, size_of},
     os::fd::{AsFd, AsRawFd},
     ptr::{self, drop_in_place},
 };
@@ -608,43 +607,15 @@ struct io_uring_recvmsg_out {
     flags: u32,
 }
 
-/// Result of [`RecvFromMulti`] and [`RecvMsgMulti`].
-pub struct RecvMsgMultiResultImpl<C> {
+struct RecvMsgMultiResultInner {
     buffer: BufferRef,
     clen: usize,
-    _p: PhantomData<C>,
 }
 
 const NLEN: usize = size_of::<SockAddrStorage>();
 
-impl RecvMsgMultiResultImpl<()> {
-    /// Create [`RecvFromMultiResult`] from a buffer received from
-    /// [`RecvFromMulti`].
-    ///
-    /// # Safety
-    ///
-    /// The buffer must be received from [`RecvFromMulti`] or have the same
-    /// format as the buffer received from [`RecvFromMulti`].
-    pub unsafe fn new(buffer: BufferRef) -> Self {
-        unsafe { Self::new_impl(buffer, 0) }
-    }
-}
-
-impl RecvMsgMultiResultImpl<BufferRef> {
-    /// Create [`RecvMsgMultiResult`] from a buffer received from
-    /// [`RecvMsgMulti`].
-    ///
-    /// # Safety
-    ///
-    /// The buffer must be received from [`RecvMsgMulti`] or have the same
-    /// format as the buffer received from [`RecvMsgMulti`].
-    pub unsafe fn new(buffer: BufferRef, clen: usize) -> Self {
-        unsafe { Self::new_impl(buffer, clen) }
-    }
-}
-
-impl<C> RecvMsgMultiResultImpl<C> {
-    unsafe fn new_impl(buffer: BufferRef, clen: usize) -> Self {
+impl RecvMsgMultiResultInner {
+    unsafe fn new(buffer: BufferRef, clen: usize) -> Self {
         assert!(buffer.len() >= size_of::<io_uring_recvmsg_out>());
         let header = unsafe {
             buffer
@@ -656,11 +627,7 @@ impl<C> RecvMsgMultiResultImpl<C> {
         let total_len =
             size_of::<io_uring_recvmsg_out>() + NLEN + clen + header.payloadlen as usize;
         assert!(buffer.len() >= total_len);
-        Self {
-            buffer,
-            clen,
-            _p: PhantomData,
-        }
+        Self { buffer, clen }
     }
 
     fn header(&self) -> io_uring_recvmsg_out {
@@ -673,14 +640,12 @@ impl<C> RecvMsgMultiResultImpl<C> {
         }
     }
 
-    /// Get the payload data.
-    pub fn data(&self) -> &[u8] {
+    fn data(&self) -> &[u8] {
         let offset = size_of::<io_uring_recvmsg_out>() + NLEN + self.clen;
         &self.buffer.as_init()[offset..]
     }
 
-    /// Get the source address if applicable.
-    pub fn addr(&self) -> Option<SockAddr> {
+    fn addr(&self) -> Option<SockAddr> {
         let header = self.header();
         if header.namelen == 0 {
             None
@@ -697,29 +662,56 @@ impl<C> RecvMsgMultiResultImpl<C> {
             Some(unsafe { SockAddr::new(addr, header.namelen as _) })
         }
     }
-}
 
-impl RecvMsgMultiResultImpl<BufferRef> {
-    /// Get the ancillary data.
-    pub fn ancillary(&self) -> &[u8] {
+    fn ancillary(&self) -> &[u8] {
         let header = self.header();
         let offset = size_of::<io_uring_recvmsg_out>() + NLEN;
         &self.buffer.as_init()[offset..offset + header.controllen as usize]
     }
 }
 
-impl<C> IntoInner for RecvMsgMultiResultImpl<C> {
-    type Inner = BufferRef;
+/// Result of [`RecvMsgMulti`].
+pub struct RecvMsgMultiResult {
+    inner: RecvMsgMultiResultInner,
+}
 
-    fn into_inner(self) -> Self::Inner {
-        self.buffer
+impl RecvMsgMultiResult {
+    /// Create [`RecvMsgMultiResult`] from a buffer received from
+    /// [`RecvMsgMulti`].
+    ///
+    /// # Safety
+    ///
+    /// The buffer must be received from [`RecvMsgMulti`] or have the same
+    /// format as the buffer received from [`RecvMsgMulti`].
+    pub unsafe fn new(buffer: BufferRef, clen: usize) -> Self {
+        Self {
+            inner: unsafe { RecvMsgMultiResultInner::new(buffer, clen) },
+        }
+    }
+
+    /// Get the payload data.
+    pub fn data(&self) -> &[u8] {
+        self.inner.data()
+    }
+
+    /// Get the source address if applicable.
+    pub fn addr(&self) -> Option<SockAddr> {
+        self.inner.addr()
+    }
+
+    /// Get the ancillary data.
+    pub fn ancillary(&self) -> &[u8] {
+        self.inner.ancillary()
     }
 }
 
-/// Result of [`RecvFromMulti`].
-pub type RecvFromMultiResult = RecvMsgMultiResultImpl<()>;
-/// Result of [`RecvMsgMulti`].
-pub type RecvMsgMultiResult = RecvMsgMultiResultImpl<BufferRef>;
+impl IntoInner for RecvMsgMultiResult {
+    type Inner = BufferRef;
+
+    fn into_inner(self) -> Self::Inner {
+        self.inner.buffer
+    }
+}
 
 /// Receive data, ancillary data and source address multi times into multiple
 /// managed buffers.
@@ -830,6 +822,44 @@ unsafe impl<S: AsFd> OpCode for RecvMsgMulti<S> {
     }
 }
 
+/// Result of [`RecvFromMulti`].
+pub struct RecvFromMultiResult {
+    inner: RecvMsgMultiResultInner,
+}
+
+impl RecvFromMultiResult {
+    /// Create [`RecvFromMultiResult`] from a buffer received from
+    /// [`RecvFromMulti`].
+    ///
+    /// # Safety
+    ///
+    /// The buffer must be received from [`RecvFromMulti`] or have the same
+    /// format as the buffer received from [`RecvFromMulti`].
+    pub unsafe fn new(buffer: BufferRef) -> Self {
+        Self {
+            inner: unsafe { RecvMsgMultiResultInner::new(buffer, 0) },
+        }
+    }
+
+    /// Get the payload data.
+    pub fn data(&self) -> &[u8] {
+        self.inner.data()
+    }
+
+    /// Get the source address if applicable.
+    pub fn addr(&self) -> Option<SockAddr> {
+        self.inner.addr()
+    }
+}
+
+impl IntoInner for RecvFromMultiResult {
+    type Inner = BufferRef;
+
+    fn into_inner(self) -> Self::Inner {
+        self.inner.buffer
+    }
+}
+
 /// Receive data and source address multi times into multiple managed buffers.
 pub struct RecvFromMulti<S: AsFd> {
     op: RecvMsgMulti<S>,
@@ -888,10 +918,6 @@ impl<S: AsFd> TakeBuffer for RecvFromMulti<S> {
 
     fn take_buffer(self) -> Option<Self::Buffer> {
         let res = self.op.take_buffer()?;
-        Some(RecvFromMultiResult {
-            buffer: res.buffer,
-            clen: res.clen,
-            _p: PhantomData,
-        })
+        Some(RecvFromMultiResult { inner: res.inner })
     }
 }
