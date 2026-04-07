@@ -41,7 +41,7 @@ jobs:
             no_default_features: true
             target: 'x86_64-unknown-linux-gnu'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup nightly toolchain with rust-src
         run: rustup toolchain install nightly --component rust-src
       - name: Setup target
