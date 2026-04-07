@@ -31,6 +31,7 @@
             go
             cmake
             glib
+            gdb
             lldb
             openssl
             pkg-config
@@ -39,7 +40,10 @@
             (rust-bin.selectLatestNightlyWith (
               toolchain:
               toolchain.default.override {
-                extensions = [ "rust-src" ];
+                extensions = [
+                  "rust-src"
+                  "miri"
+                ];
                 targets = [
                   "x86_64-unknown-linux-gnu"
                   "x86_64-unknown-freebsd"

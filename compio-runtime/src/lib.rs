@@ -481,6 +481,8 @@ impl criterion::async_executor::AsyncExecutor for &Runtime {
 pub struct RuntimeBuilder {
     proactor_builder: ProactorBuilder,
     thread_affinity: HashSet<usize>,
+    sync_queue_size: usize,
+    local_queue_size: usize,
     event_interval: u32,
 }
 
@@ -496,6 +498,8 @@ impl RuntimeBuilder {
         Self {
             proactor_builder: ProactorBuilder::new(),
             event_interval: 61,
+            sync_queue_size: 64,
+            local_queue_size: 64,
             thread_affinity: HashSet::new(),
         }
     }
@@ -521,24 +525,48 @@ impl RuntimeBuilder {
         self
     }
 
+    /// The size of the sync queue, which is used to wake up tasks from other
+    /// threads (remote).
+    ///
+    /// This is fixed and will create backpressure in other remote threads when
+    /// full.
+    pub fn sync_queue_size(&mut self, val: usize) -> &mut Self {
+        self.sync_queue_size = val;
+        self
+    }
+
+    /// The size of the local queues, which is used to wake up tasks within the
+    /// same thread.
+    ///
+    /// This is dynamically resized to avoid blocking.
+    pub fn local_queue_size(&mut self, val: usize) -> &mut Self {
+        self.local_queue_size = val;
+        self
+    }
+
     /// Build [`Runtime`].
     pub fn build(&self) -> io::Result<Runtime> {
         let RuntimeBuilder {
             proactor_builder,
             thread_affinity,
+            sync_queue_size,
+            local_queue_size,
             event_interval,
         } = self;
 
         if !thread_affinity.is_empty() {
             bind_to_cpu_set(thread_affinity);
         }
-        let config = ExecutorConfig {
+        let driver = proactor_builder.build()?;
+        let executor = Executor::with_config(ExecutorConfig {
             max_interval: *event_interval,
-            ..Default::default()
-        };
+            sync_queue_size: *sync_queue_size,
+            local_queue_size: *local_queue_size,
+            waker: Some(driver.waker()),
+        });
         let inner = RuntimeInner {
-            executor: Executor::with_config(config),
-            driver: RefCell::new(proactor_builder.build()?),
+            executor,
+            driver: RefCell::new(driver),
             #[cfg(feature = "time")]
             timer_runtime: RefCell::new(TimerRuntime::new()),
         };
@@ -552,8 +580,9 @@ impl RuntimeBuilder {
 /// There is no guarantee that a spawned task will execute to completion.
 ///
 /// ```
-/// # use compio_runtime::ResumeUnwind;
 /// # compio_runtime::Runtime::new().unwrap().block_on(async {
+/// use compio_runtime::ResumeUnwind;
+///
 /// let task = compio_runtime::spawn(async {
 ///     println!("Hello from a spawned task!");
 ///     42

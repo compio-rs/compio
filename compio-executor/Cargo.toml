@@ -16,9 +16,13 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 compio-log = { workspace = true }
 
+cfg-if = { workspace = true }
 compio-send-wrapper = { workspace = true }
 crossbeam-queue = { workspace = true }
 slotmap = { workspace = true }
+
+[target.'cfg(loom)'.dependencies]
+loom = "0.7"
 
 [dev-dependencies]
 compio-log = { workspace = true, features = ["enable_log"] }
@@ -26,3 +30,6 @@ tracing-subscriber = "0.3.22"
 
 [features]
 notify-always = []
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }

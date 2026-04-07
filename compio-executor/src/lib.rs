@@ -25,6 +25,42 @@ use compio_send_wrapper::SendWrapper;
 use crossbeam_queue::ArrayQueue;
 pub use join_handle::{JoinError, JoinHandle, ResumeUnwind};
 
+cfg_if::cfg_if! {
+    if #[cfg(loom)] {
+        use loom::cell::UnsafeCell;
+        use loom::thread::yield_now;
+        use loom::sync::atomic::*;
+    } else {
+        use std::thread::yield_now;
+        use std::sync::atomic::*;
+
+        #[repr(transparent)]
+        struct UnsafeCell<T>(std::cell::UnsafeCell<T>);
+
+        impl<T> UnsafeCell<T> {
+            pub fn new(value: T) -> Self {
+                Self(std::cell::UnsafeCell::new(value))
+            }
+
+            #[inline(always)]
+            pub fn with_mut<F, R>(&self, f: F) -> R
+            where
+                F: FnOnce(*mut T) -> R,
+            {
+                f(self.0.get())
+            }
+
+            #[inline(always)]
+            pub fn with<F, R>(&self, f: F) -> R
+            where
+                F: FnOnce(*const T) -> R,
+            {
+                f(self.0.get())
+            }
+        }
+    }
+}
+
 pub(crate) type PanicResult<T> = Result<T, Panic>;
 pub(crate) type Panic = Box<dyn Any + Send + 'static>;
 
@@ -80,8 +116,8 @@ impl Default for ExecutorConfig {
     fn default() -> Self {
         Self {
             sync_queue_size: 64,
-            local_queue_size: 63,
-            max_interval: 32,
+            local_queue_size: 64,
+            max_interval: 61,
             waker: None,
         }
     }
@@ -93,16 +129,6 @@ pub(crate) struct Shared {
     queue: SendWrapper<TaskQueue>,
 }
 
-impl Shared {
-    pub fn new(config: &ExecutorConfig) -> Self {
-        Self {
-            waker: None,
-            sync: ArrayQueue::new(config.sync_queue_size),
-            queue: SendWrapper::new(TaskQueue::new(config.local_queue_size)),
-        }
-    }
-}
-
 impl Executor {
     /// Create a new executor.
     pub fn new() -> Self {
@@ -110,8 +136,12 @@ impl Executor {
     }
 
     /// Create a new executor with config.
-    pub fn with_config(config: ExecutorConfig) -> Self {
-        let ptr = Box::into_raw(Box::new(Shared::new(&config)));
+    pub fn with_config(mut config: ExecutorConfig) -> Self {
+        let ptr = Box::into_raw(Box::new(Shared {
+            waker: config.waker.take(),
+            sync: ArrayQueue::new(config.sync_queue_size),
+            queue: SendWrapper::new(TaskQueue::new(config.local_queue_size)),
+        }));
 
         Self {
             config,
@@ -152,7 +182,7 @@ impl Executor {
             let res = unsafe { task.run() };
             if res.is_ready() {
                 // SAFETY: We're removing it soon, so drop will only be called once.
-                unsafe { task.drop() };
+                unsafe { task.drop(false) };
                 queue.remove(id);
             } else {
                 queue.reset(id, task);

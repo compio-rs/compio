@@ -33,10 +33,10 @@ impl Task {
         drop(unsafe { Task::from_raw(ptr) });
     }
 
-    /// Get an std waker and run a closure on it.
+    /// Get a reference to [`Waker`] and run a closure on it.
     ///
     /// This will not increase the reference counter and is very cheap to call.
-    pub fn with_std<R, F: FnOnce(&Waker) -> R>(&self, f: F) -> R {
+    pub fn with_waker<R, F: FnOnce(&Waker) -> R>(&self, f: F) -> R {
         let raw = RawWaker::new(self.as_raw(), Self::VTABLE);
         f(&ManuallyDrop::new(unsafe { Waker::from_raw(raw) }))
     }

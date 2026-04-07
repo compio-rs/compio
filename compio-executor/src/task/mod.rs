@@ -1,10 +1,9 @@
 use std::{
     array,
-    cell::UnsafeCell,
     mem::{ManuallyDrop, MaybeUninit, offset_of},
     panic::{AssertUnwindSafe, catch_unwind},
     pin::Pin,
-    ptr::{self, NonNull},
+    ptr::{self, NonNull, drop_in_place},
     task::{Context, Poll, Waker, ready},
 };
 
@@ -12,12 +11,12 @@ use compio_log::{debug, instrument, trace};
 use compio_send_wrapper::SendWrapper;
 
 use crate::{
-    PanicResult, Shared,
+    PanicResult, Shared, UnsafeCell,
     queue::TaskId,
     task::{
         local::Local,
         remote::Remote,
-        state::{State, Strong},
+        state::{Snapshot, State, Strong},
     },
     util::transpose,
 };
@@ -40,31 +39,6 @@ struct TaskAlloc<F: Future> {
     future: UnsafeCell<FutureState<F>>,
 }
 
-struct TaskVtable {
-    offset: isize,
-    run: unsafe fn(*const (), &mut Context<'_>) -> Poll<()>,
-    take_result: unsafe fn(*const (), *mut ()),
-    drop: unsafe fn(*const (), bool),
-    dealloc: unsafe fn(NonNull<Header>),
-}
-
-impl<F: Future + 'static> TaskAlloc<F> {
-    const VTABLE: &'static TaskVtable = &TaskVtable {
-        offset: offset_of!(TaskAlloc<F>, future) as _,
-        run: FutureState::<F>::run,
-        take_result: FutureState::<F>::take_result,
-        drop: FutureState::<F>::drop,
-        dealloc: Self::dealloc,
-    };
-
-    unsafe fn dealloc(ptr: NonNull<Header>) {
-        // SAFETY: The caller guarantees that the pointer is valid and properly aligned
-        // for `TaskAlloc<F>`, and that no other reference to the allocation
-        // exists.
-        drop(unsafe { Box::from_raw(ptr.as_ptr().cast::<TaskAlloc<F>>()) });
-    }
-}
-
 struct Header {
     id: TaskId,
     state: State,
@@ -74,10 +48,92 @@ struct Header {
     waker: UnsafeCell<MaybeUninit<Waker>>,
 }
 
-impl Header {
-    pub(crate) fn future_ptr(&self) -> *const () {
-        let ptr = unsafe { (self as *const Header).byte_offset(self.vtable.offset) };
-        ptr as _
+union FutureState<F: Future> {
+    future: ManuallyDrop<F>,
+    result: ManuallyDrop<PanicResult<F::Output>>,
+}
+
+struct TaskVtable {
+    dealloc: unsafe fn(NonNull<Header>),
+    run_future: unsafe fn(NonNull<Header>, &mut Context<'_>) -> Poll<()>,
+    take_result: unsafe fn(NonNull<Header>, NonNull<()>),
+    drop_future: unsafe fn(NonNull<Header>, bool),
+}
+
+impl<F: Future + 'static> TaskAlloc<F> {
+    const FUT_OFFSET: usize = offset_of!(Self, future);
+    const VTABLE: &'static TaskVtable = &TaskVtable {
+        dealloc: Self::dealloc,
+        run_future: Self::run_future,
+        take_result: Self::take_result,
+        drop_future: Self::drop_future,
+    };
+
+    fn future_cell(header: NonNull<Header>) -> &'static UnsafeCell<FutureState<F>> {
+        unsafe {
+            &*header
+                .byte_add(Self::FUT_OFFSET)
+                .cast::<UnsafeCell<FutureState<F>>>()
+                .as_ptr()
+        }
+    }
+
+    unsafe fn run_future(header: NonNull<Header>, cx: &mut Context<'_>) -> Poll<()> {
+        let future_cell = Self::future_cell(header);
+
+        // SAFETY:
+        // - The caller guarantees that we're pinned
+        // - The caller guarantees that we're in the `future` state
+        let res = ready!(future_cell.with_mut(|fut_ptr| {
+            let fut = unsafe { Pin::new_unchecked(&mut *(*fut_ptr).future) };
+            transpose(catch_unwind(AssertUnwindSafe(|| fut.poll(cx))))
+        }));
+
+        // SAFETY: The caller guarantees that we're in the `future` state and are on the
+        // same thread as the future is created, so it's safe to drop the future
+        future_cell.with_mut(|fut_ptr| {
+            unsafe { drop_in_place(fut_ptr as *mut F) };
+            let new_state = FutureState {
+                result: ManuallyDrop::new(res),
+            };
+            unsafe { ptr::write(fut_ptr, new_state) };
+        });
+
+        Poll::Ready(())
+    }
+
+    unsafe fn take_result(header: NonNull<Header>, target: NonNull<()>) {
+        let future_cell = Self::future_cell(header);
+
+        // SAFETY:
+        // - The caller guarantees that we're in the `result` state and guarantees if
+        //   the result type is not multithread-safe, this is called on the same thread
+        //   as the future is created.
+        // - The caller guarantees that the target pointer is valid for writes and
+        //   properly aligned for `PanicResult<F::Output>`.
+        future_cell.with(|fut_ptr| {
+            let fut_ptr = fut_ptr as *const PanicResult<F::Output>;
+            unsafe { std::ptr::copy_nonoverlapping(fut_ptr, target.as_ptr().cast(), 1) };
+        });
+    }
+
+    unsafe fn drop_future(header: NonNull<Header>, has_result: bool) {
+        let future_cell = Self::future_cell(header);
+
+        future_cell.with_mut(|fut_ptr| {
+            if has_result {
+                unsafe { drop_in_place::<PanicResult<F::Output>>(fut_ptr as _) };
+            } else {
+                unsafe { drop_in_place::<F>(fut_ptr as _) };
+            }
+        });
+    }
+
+    unsafe fn dealloc(header: NonNull<Header>) {
+        // SAFETY: The caller guarantees that the pointer is valid and properly aligned
+        // for `TaskAlloc<F>`, and that no other reference to the allocation
+        // exists.
+        drop(unsafe { Box::from_raw(header.as_ptr().cast::<TaskAlloc<F>>()) });
     }
 }
 
@@ -128,11 +184,17 @@ impl Task {
         }
     }
 
-    pub fn cancel(&self) {
+    /// Cancel the task.
+    ///
+    /// If `drop_result` is true, the result will be dropped if it exists.
+    pub fn cancel(&self, drop_result: bool) {
         let header = self.header();
-        header.state.set_cancelled();
         self.schedule();
-        unsafe { ptr::write(header.shared.get(), ptr::null_mut::<Shared>()) };
+        let state = header.state.set_cancelled();
+        if drop_result && state.has_result() {
+            header.state.set_has_result::<Strong, false>();
+            unsafe { (header.vtable.drop_future)(self.0, true) }
+        }
     }
 
     /// # Safety
@@ -141,22 +203,25 @@ impl Task {
     /// in completed state.
     pub unsafe fn run(&self) -> Poll<()> {
         instrument!(compio_log::Level::TRACE, "Task::run", id = ?self.header().id);
-        self.with_std(|waker| {
-            let header = self.header();
-            let state = header.state.load::<Strong>();
-            if state.is_cancelled() {
-                debug!(?state, "Cancelled");
-                return Poll::Ready(());
-            }
 
+        let header = self.header();
+        let state = header.state.set_scheduled::<false>();
+        if state.is_cancelled() {
+            debug!(?state, "Cancelled");
+            return Poll::Ready(());
+        }
+
+        self.with_waker(|waker| {
             let ctx = &mut Context::from_waker(waker);
-            let res = unsafe { (header.vtable.run)(header.future_ptr(), ctx) };
+            let res = unsafe { (header.vtable.run_future)(self.0, ctx) };
             if res.is_ready() {
                 let state = header.state.set_finished_running();
                 debug!(?state, "Finished");
                 if state.has_waker() {
                     header.state.set_has_waker::<Strong, false>();
-                    unsafe { (*header.waker.get()).assume_init_read() }.wake();
+                    header
+                        .waker
+                        .with_mut(|ptr| unsafe { (*ptr).assume_init_read() }.wake());
                 }
             }
             trace!("Pending");
@@ -179,36 +244,53 @@ impl Task {
     // future, result and/or waker, but the memory will be deallocated when the
     // reference count reaches 0.
     //
+    // If `unset_shared` is true, this will also reset task's `Shared` pointer to
+    // null so that `Executor` can drop `Shared` safely.
+    //
     // # Safety
     //
     // Can only be called by the Executor once.
-    pub unsafe fn drop(&self) {
+    pub unsafe fn drop(&self, unset_shared: bool) {
         instrument!(compio_log::Level::TRACE, "Task::drop", id = ?self.header().id);
         let header = self.header();
         debug_assert!(
             header.tracker.valid(),
             "drop_future should only be called by Executor"
         );
-        let state = header.state.load::<Strong>();
+        let state = self.state();
 
-        // Don't drop the result here - it will be taken by JoinHandle or dropped in
-        // Task's Drop Only drop the future if the task hasn't completed yet
         if !state.is_completed() {
-            unsafe { (header.vtable.drop)(header.future_ptr(), false) };
+            // The task is finished without result, drop future
+            unsafe { (header.vtable.drop_future)(self.0, false) };
         }
 
-        // If someone else is setting the waker, they'll check the state afterwards and
+        // If `JoinHandle` is setting the waker, it'll check the state afterwards and
         // drop the waker. Otherwise, we drop the waker here if it exists.
         if state.has_waker() && !state.is_setting_waker() {
-            let waker = unsafe { &mut *header.waker.get() };
-            unsafe { MaybeUninit::assume_init_drop(waker) };
+            header
+                .waker
+                .with_mut(|ptr| unsafe { drop_in_place(ptr.cast::<Waker>()) });
         }
 
-        header.state.set_dropped();
+        let mut state = header.state.set_dropped();
+
+        if !unset_shared {
+            return;
+        }
+
         // SAFETY: We have set the cancelled bit in `set_dropped`, so concurrent access
-        // to the pointer will be stopped. Setting this is for same-thread access which
-        // will not check for cancel flag.
-        unsafe { ptr::write(header.shared.get(), ptr::null_mut::<Shared>()) };
+        // to the pointer will be stopped.
+        unsafe { header.shared.with_mut(|p| ptr::write(p, ptr::null_mut())) };
+
+        // Wait for scheduling to stop as they're accessing `Shared`.
+        while state.is_scheduling() {
+            crate::yield_now();
+            state = header.state.load::<Strong>();
+        }
+    }
+
+    pub fn state(&self) -> Snapshot {
+        self.header().state.load::<Strong>()
     }
 
     fn header(&self) -> &Header {
@@ -220,9 +302,9 @@ impl Task {
         if self.header().tracker.valid() {
             // SAFETY: We have checked that the tracker is valid, so this must be the same
             // thread as the task allocation is created on.
-            Ok(unsafe { Local::new(self.header()) })
+            Ok(unsafe { Local::new(self.0) })
         } else {
-            Err(Remote::new(self.header()))
+            Err(Remote::new(self.0))
         }
     }
 }
@@ -236,6 +318,7 @@ impl Drop for Task {
             return;
         };
 
+        println!("{state:?}");
         debug_assert!(state.is_completed() | state.is_cancelled());
         debug_assert!(!state.is_setting_waker());
         debug_assert!(!state.has_waker());
@@ -243,7 +326,7 @@ impl Drop for Task {
         // If the result is still present, drop it now
         // This happens when JoinHandle was dropped/detached without taking the result
         if state.has_result() {
-            unsafe { (header.vtable.drop)(header.future_ptr(), true) };
+            unsafe { (header.vtable.drop_future)(self.0, true) };
         }
 
         trace!("Task deallocated");
@@ -251,54 +334,6 @@ impl Drop for Task {
         // to the allocation exists and we can safely deallocate it; and deallocation is
         // thread-safe since we're not touching anything inside (dropping).
         unsafe { (header.vtable.dealloc)(self.0) }
-    }
-}
-
-union FutureState<F: Future> {
-    future: ManuallyDrop<F>,
-    result: ManuallyDrop<PanicResult<F::Output>>,
-}
-
-impl<F: Future + 'static> FutureState<F> {
-    unsafe fn run(ptr: *const (), cx: &mut Context<'_>) -> Poll<()> {
-        let this = unsafe { &mut *(ptr as *mut Self) };
-
-        // SAFETY:
-        // - The caller guarantees that we're pinned
-        // - The caller guarantees that we're in the `future` state
-        let fut = unsafe { Pin::new_unchecked(&mut *this.future) };
-        let res = ready!(transpose(catch_unwind(AssertUnwindSafe(|| fut.poll(cx)))));
-
-        // SAFETY: The caller guarantees that we're in the `future` state and are on the
-        // same thread as the future is created, so it's safe to drop the future
-        unsafe { ManuallyDrop::drop(&mut this.future) };
-        this.result = ManuallyDrop::new(res);
-
-        Poll::Ready(())
-    }
-
-    unsafe fn take_result(ptr: *const (), target: *mut ()) {
-        let this = unsafe { &mut *(ptr as *mut Self) };
-
-        let src = &raw const this.result;
-
-        // SAFETY:
-        // - The caller guarantees that we're in the `result` state and guarantees if
-        //   the result type is not multithread-safe, this is called on the same thread
-        //   as the future is created.
-        // - The caller guarantees that the target pointer is valid for writes and
-        //   properly aligned for `PanicResult<F::Output>`.
-        unsafe { std::ptr::copy_nonoverlapping(src, target.cast(), 1) };
-    }
-
-    unsafe fn drop(ptr: *const (), has_result: bool) {
-        let this = unsafe { &mut *(ptr as *mut Self) };
-
-        if has_result {
-            unsafe { ManuallyDrop::drop(&mut this.result) };
-        } else {
-            unsafe { ManuallyDrop::drop(&mut this.future) };
-        }
     }
 }
 
@@ -325,6 +360,4 @@ mod test {
     ///
     /// [`Executor`]: crate::Executor
     const _: () = assert!(!needs_drop::<TaskAlloc<NeedsDrop>>());
-
-    const _: () = assert!(offset_of!(TaskAlloc<NeedsDrop>, future) == size_of::<Header>());
 }

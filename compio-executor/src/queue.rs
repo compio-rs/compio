@@ -7,10 +7,10 @@ use crate::{Shared, task::Task, util::assert_not_impl};
 
 new_key_type! { pub struct TaskId; }
 
-use std::cell::UnsafeCell;
-
 use compio_log::instrument;
 use slotmap::SlotMap;
+
+use crate::UnsafeCell;
 
 /// A single-threaded dual queue (hot and cold) for scheduling tasks.
 pub struct TaskQueue {
@@ -22,12 +22,15 @@ assert_not_impl!(TaskQueue, Sync);
 
 impl Debug for TaskQueue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let inner = unsafe { self.get_inner() };
-        f.debug_struct("SlotQueue")
-            .field("map", &inner.map)
-            .field("hot", &inner.hot)
-            .field("cold", &inner.cold)
-            .finish()
+        unsafe {
+            self.with_inner(|inner| {
+                f.debug_struct("TaskQueue")
+                    .field("map", &inner.map)
+                    .field("hot", &inner.hot)
+                    .field("cold", &inner.cold)
+                    .finish()
+            })
+        }
     }
 }
 
@@ -79,17 +82,19 @@ impl TaskQueue {
         let hot_head = self.hot_head();
         let cold_head = self.cold_head();
 
-        let inner = unsafe { self.get_inner() };
+        unsafe {
+            self.with_inner(|inner| {
+                Self::clear_from(&mut inner.map, hot_head);
+                Self::clear_from(&mut inner.map, cold_head);
 
-        Self::clear_from(&mut inner.map, hot_head);
-        Self::clear_from(&mut inner.map, cold_head);
+                inner.hot.head = None;
+                inner.hot.tail = None;
+                inner.cold.head = None;
+                inner.cold.tail = None;
 
-        inner.hot.head = None;
-        inner.hot.tail = None;
-        inner.cold.head = None;
-        inner.cold.tail = None;
-
-        debug_assert!(inner.map.is_empty());
+                debug_assert!(inner.map.is_empty());
+            })
+        }
     }
 
     pub fn has_hot(&self) -> bool {
@@ -97,19 +102,24 @@ impl TaskQueue {
     }
 
     pub fn take(&self, key: TaskId) -> Option<Task> {
-        unsafe { self.get_inner() }
-            .map
-            .get_mut(key)
-            .map(|item| item.task.take().expect("Task has already been taken"))
+        unsafe {
+            self.with_inner(|inner| {
+                inner
+                    .map
+                    .get_mut(key)
+                    .map(|item| item.task.take().expect("Task has already been taken"))
+            })
+        }
     }
 
     pub fn reset(&self, key: TaskId, task: Task) {
-        let place = unsafe { self.get_inner() }
-            .map
-            .get_mut(key)
-            .expect("Invalid key");
-        debug_assert!(place.task.is_none(), "Task was not taken");
-        place.task = Some(task);
+        unsafe {
+            self.with_inner(|inner| {
+                let place = inner.map.get_mut(key).expect("Invalid key");
+                debug_assert!(place.task.is_none(), "Task was not taken");
+                place.task = Some(task);
+            })
+        }
     }
 
     pub fn insert<F: Future + 'static>(
@@ -118,43 +128,43 @@ impl TaskQueue {
         tracker: SendWrapper<()>,
         future: F,
     ) -> Task {
-        let inner = unsafe { self.get_inner() };
-        let mut ret = None;
-        let key = inner.map.insert_with_key(|key| {
-            let [ptr, r] = Task::new::<F, 2>(key, shared, tracker, future);
-            ret = Some(r);
-            Item {
-                prev: None,
-                next: None,
-                task: Some(ptr),
-                is_hot: true,
-            }
-        });
-        inner.link_tail::<HOT>(key);
-        ret.take().expect("Task was not initialized")
+        unsafe {
+            self.with_inner(|inner| {
+                let mut ret = None;
+                let key = inner.map.insert_with_key(|key| {
+                    let [ptr, r] = Task::new::<F, 2>(key, shared, tracker, future);
+                    ret = Some(r);
+                    Item {
+                        prev: None,
+                        next: None,
+                        task: Some(ptr),
+                        is_hot: true,
+                    }
+                });
+                inner.link_tail::<HOT>(key);
+                ret.take().expect("Task was not initialized")
+            })
+        }
     }
 
     pub fn make_hot(&self, key: TaskId) {
-        unsafe { self.get_inner() }.make_hot(key)
+        unsafe { self.with_inner(|inner| inner.make_hot(key)) }
     }
 
     pub fn make_cold(&self, key: TaskId) {
-        unsafe { self.get_inner() }.make_cold(key)
+        unsafe { self.with_inner(|inner| inner.make_cold(key)) }
     }
 
     pub fn next(&self, key: TaskId) -> Option<TaskId> {
-        let inner = unsafe { self.get_inner() };
-        inner.map.get(key).and_then(|item| item.next)
+        unsafe { self.with_inner(|inner| inner.map.get(key).and_then(|item| item.next)) }
     }
 
     pub fn hot_head(&self) -> Option<TaskId> {
-        let inner = unsafe { self.get_inner() };
-        inner.hot.head
+        unsafe { self.with_inner(|inner| inner.hot.head) }
     }
 
     pub fn cold_head(&self) -> Option<TaskId> {
-        let inner = unsafe { self.get_inner() };
-        inner.cold.head
+        unsafe { self.with_inner(|inner| inner.cold.head) }
     }
 
     pub fn iter_hot(&self) -> Iter<'_> {
@@ -165,23 +175,28 @@ impl TaskQueue {
     }
 
     pub fn remove(&self, key: TaskId) -> Option<Task> {
-        let inner = unsafe { self.get_inner() };
-        let is_hot = inner.map.get(key)?.is_hot;
+        unsafe {
+            self.with_inner(|inner| {
+                let is_hot = inner.map.get(key)?.is_hot;
 
-        if is_hot {
-            inner.unlink::<HOT>(key);
-        } else {
-            inner.unlink::<COLD>(key);
-        };
+                if is_hot {
+                    inner.unlink::<HOT>(key);
+                } else {
+                    inner.unlink::<COLD>(key);
+                };
 
-        inner.map.remove(key)?.task
+                inner.map.remove(key)?.task
+            })
+        }
     }
 
     fn clear_from(map: &mut SlotMap<TaskId, Item>, mut head: Option<TaskId>) {
         while let Some(h) = head {
-            let v = map.remove(h).expect("Invalid key");
-            unsafe { v.task.expect("Cannot clear map in running state").drop() };
-            head = v.next
+            let Some(item) = map.remove(h) else { continue };
+            if let Some(task) = item.task {
+                unsafe { task.drop(true) };
+            };
+            head = item.next
         }
     }
 
@@ -189,10 +204,10 @@ impl TaskQueue {
     ///
     /// The caller must ensure that no concurrent access to the queue occurs
     /// while this reference is active.
-    #[allow(clippy::mut_from_ref)]
-    unsafe fn get_inner(&self) -> &mut Inner {
+    #[inline(always)]
+    unsafe fn with_inner<R, F: FnOnce(&mut Inner) -> R>(&self, f: F) -> R {
         // SAFETY: Caller must ensure no concurrent access to the queue.
-        unsafe { &mut *self.inner.get() }
+        self.inner.with_mut(|inner| f(unsafe { &mut *inner }))
     }
 }
 

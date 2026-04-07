@@ -1,0 +1,67 @@
+name: Test Executor
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'compio-executor/**/*.rs'
+      - 'compio-executor/Cargo.toml'
+      - 'Cargo.toml'
+      - '.github/workflows/ci_test_executor.yml'
+  pull_request:
+    branches:
+      - master
+    paths:
+      - 'compio-executor/**/*.rs'
+      - 'compio-executor/Cargo.toml'
+      - 'Cargo.toml'
+      - '.github/workflows/ci_test_executor.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test_executor:
+    strategy:
+      matrix:
+        setup:
+          - os: 'ubuntu-24.04'
+          - os: 'ubuntu-24.04-arm'
+          - os: 'windows-latest'
+            target: 'x86_64-pc-windows-msvc'
+          - os: 'windows-latest'
+            target: 'x86_64-pc-windows-gnu'
+          - os: 'macos-14'
+          - os: 'macos-15'
+          - os: 'macos-15-intel'
+    runs-on: ${{ matrix.setup.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup Rust Toolchain
+        run: |
+            rustup toolchain install nightly -c miri -c rust-src
+            rustup override set nightly
+      - name: Setup target
+        if: ${{ matrix.setup.target }}
+        run: rustup target install ${{ matrix.setup.target }}
+      - uses: taiki-e/install-action@nextest
+      - name: Test loom on ${{ matrix.setup.os }} nightly ${{ matrix.setup.target }}
+        shell: bash
+        run: |
+          set -ex
+
+          RUSTFLAGS="--cfg loom" cargo nextest run \
+            --no-fail-fast \
+            --failure-output final \
+            --test loom \
+            -p compio-executor
+
+          cargo miri test \
+            --test executor \
+            -p compio-executor

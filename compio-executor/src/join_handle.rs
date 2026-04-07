@@ -38,9 +38,9 @@ impl<T> JoinHandle<T> {
         }
     }
 
-    /// Cancel the task.
+    /// Cancel the task and wait for the result, if any.
     pub async fn cancel(self) -> Option<T> {
-        self.task.cancel();
+        self.task.cancel(false);
         self.await.ok()
     }
 
@@ -103,6 +103,6 @@ impl<T> Future for JoinHandle<T> {
 
 impl<T> Drop for JoinHandle<T> {
     fn drop(&mut self) {
-        self.task.cancel();
+        self.task.cancel(true);
     }
 }
