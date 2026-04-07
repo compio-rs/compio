@@ -53,7 +53,7 @@ The name comes from "completion-based IO", and follows the non-existent conventi
 
 Tokio is a great generic-purpose async runtime. However, it is poll-based, and even uses [undocumented APIs](https://notgull.net/device-afd/) on Windows. We would like some new high-level APIs to perform IOCP/io_uring.
 
-`compio` isn't Tokio-based. This is mainly because `mio` does not expose any public APIs to control IOCP, and `tokio` won't expose APIs to control `mio` before `mio` reaches 1.0.
+`compio` isn't tokio-based. This is mainly because `tokio` doesn't expose APIs to control `mio`, and `mio` doesn't expose APIs to control IOCP.
 
 ### Monoio
 
