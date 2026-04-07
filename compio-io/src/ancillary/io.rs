@@ -2,6 +2,9 @@
 use std::alloc::Allocator;
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, t_alloc};
+use futures_util::Stream;
+
+use crate::{AsyncReadManaged, IoResult};
 
 /// Trait for asynchronous read with ancillary (control) data.
 /// Intended for connected stream sockets (TCP, Unix streams) where no source
@@ -127,4 +130,36 @@ impl<A: AsyncWriteAncillary + ?Sized, #[cfg(feature = "allocator_api")] Alloc: A
             .write_vectored_with_ancillary(buffer, control)
             .await
     }
+}
+
+/// Trait for asynchronous read with ancillary (control) data that returns
+/// managed buffers. Intended for connected stream sockets (TCP, Unix streams)
+/// where no source address is needed.
+pub trait AsyncReadAncillaryManaged: AsyncReadManaged {
+    /// Read data into a managed buffer with ancillary data.
+    ///
+    /// # Implementation Note
+    ///
+    /// - If `len` == 0, implementation should use buffer's size as `len`
+    /// - if `len` > 0, `min(len, buffer_size)` will be the max number of bytes
+    ///   to be read.
+    async fn read_managed_with_ancillary<C: IoBufMut>(
+        &mut self,
+        len: usize,
+        control: C,
+    ) -> IoResult<Option<(Self::Buffer, C)>>;
+}
+
+/// Trait for asynchronous read with ancillary (control) data that returns
+/// multiple managed buffers. Intended for connected stream sockets (TCP, Unix
+/// streams) where no source address is needed.
+pub trait AsyncReadAncillaryMulti {
+    /// A wrapped type for the payload data and the ancillary data.
+    type Return;
+
+    /// Read data and ancillary data into multiple managed buffers.
+    fn read_multi_with_ancillary<C: IoBufMut>(
+        &mut self,
+        control_len: usize,
+    ) -> impl Stream<Item = IoResult<Self::Return>>;
 }
