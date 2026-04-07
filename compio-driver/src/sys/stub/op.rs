@@ -475,3 +475,21 @@ impl<S: AsFd> OpCode for crate::op::managed::RecvFromManaged<S> {
 
     unsafe fn init(&mut self) -> Self::Control {}
 }
+
+impl<C: IoBufMut, S: AsFd> OpCode for crate::op::managed::RecvMsgManaged<C, S> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+}
+
+impl<S: AsFd> OpCode for crate::op::managed::RecvFromMulti<S> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+}
+
+impl<S: AsFd> OpCode for crate::op::managed::RecvMsgMulti<S> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+}

@@ -205,8 +205,8 @@ macro_rules! mop {
 
                 fn take_buffer(self) -> Option<$inner> {
                     match self.inner {
-                        [< $name Inner >]::IoUring(op) => op.take_buffer(),
-                        [< $name Inner >]::Poll(op) => op.take_buffer(),
+                        [< $name Inner >]::IoUring(op) => op.take_buffer().map(Into::into),
+                        [< $name Inner >]::Poll(op) => op.take_buffer().map(Into::into),
                     }
                 }
             }
@@ -272,6 +272,157 @@ mop!(<S: AsFd> ReadManagedAt(fd: S, offset: u64, pool: &BufferPool, len: usize) 
 mop!(<S: AsFd> ReadManaged(fd: S, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> RecvManaged(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool);
 mop!(<S: AsFd> RecvFromManaged(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool; (BufferRef, Option<SockAddr>));
+mop!(<C: IoBufMut, S: AsFd> RecvMsgManaged(fd: S, pool: &BufferPool, len: usize, control: C, flags: i32) with pool; ((BufferRef, C), Option<SockAddr>, usize));
 mop!(<S: AsFd> ReadMultiAt(fd: S, offset: u64, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> ReadMulti(fd: S, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> RecvMulti(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool);
+mop!(<S: AsFd> RecvFromMulti(fd: S, pool: &BufferPool, flags: i32) with pool; RecvFromMultiResult);
+mop!(<S: AsFd> RecvMsgMulti(fd: S, pool: &BufferPool, control_len: usize, flags: i32) with pool; RecvMsgMultiResult);
+
+enum RecvFromMultiResultInner {
+    Poll(crate::op::managed::RecvFromMultiResult),
+    IoUring(iour::RecvFromMultiResult),
+}
+
+/// Result of [`RecvFromMulti`].
+pub struct RecvFromMultiResult {
+    inner: RecvFromMultiResultInner,
+}
+
+impl From<crate::op::managed::RecvFromMultiResult> for RecvFromMultiResult {
+    fn from(result: crate::op::managed::RecvFromMultiResult) -> Self {
+        Self {
+            inner: RecvFromMultiResultInner::Poll(result),
+        }
+    }
+}
+
+impl From<iour::RecvFromMultiResult> for RecvFromMultiResult {
+    fn from(result: iour::RecvFromMultiResult) -> Self {
+        Self {
+            inner: RecvFromMultiResultInner::IoUring(result),
+        }
+    }
+}
+
+impl RecvFromMultiResult {
+    /// Create [`RecvFromMultiResult`] from a buffer received from
+    /// [`RecvFromMulti`]. It should be used for io-uring only.
+    ///
+    /// # Safety
+    ///
+    /// The buffer must be received from [`RecvFromMulti`] or have the same
+    /// format as the buffer received from [`RecvFromMulti`].
+    pub unsafe fn new(buffer: BufferRef) -> Self {
+        Self {
+            inner: RecvFromMultiResultInner::IoUring(unsafe {
+                iour::RecvFromMultiResult::new(buffer)
+            }),
+        }
+    }
+
+    /// Get the payload data.
+    pub fn data(&self) -> &[u8] {
+        match &self.inner {
+            RecvFromMultiResultInner::Poll(result) => result.data(),
+            RecvFromMultiResultInner::IoUring(result) => result.data(),
+        }
+    }
+
+    /// Get the source address if applicable.
+    pub fn addr(&self) -> Option<SockAddr> {
+        match &self.inner {
+            RecvFromMultiResultInner::Poll(result) => result.addr(),
+            RecvFromMultiResultInner::IoUring(result) => result.addr(),
+        }
+    }
+}
+
+impl IntoInner for RecvFromMultiResult {
+    type Inner = BufferRef;
+
+    fn into_inner(self) -> Self::Inner {
+        match self.inner {
+            RecvFromMultiResultInner::Poll(result) => result.into_inner(),
+            RecvFromMultiResultInner::IoUring(result) => result.into_inner(),
+        }
+    }
+}
+
+enum RecvMsgMultiResultInner {
+    Poll(crate::op::managed::RecvMsgMultiResult),
+    IoUring(iour::RecvMsgMultiResult),
+}
+
+/// Result of [`RecvMsgMulti`].
+pub struct RecvMsgMultiResult {
+    inner: RecvMsgMultiResultInner,
+}
+
+impl From<crate::op::managed::RecvMsgMultiResult> for RecvMsgMultiResult {
+    fn from(result: crate::op::managed::RecvMsgMultiResult) -> Self {
+        Self {
+            inner: RecvMsgMultiResultInner::Poll(result),
+        }
+    }
+}
+
+impl From<iour::RecvMsgMultiResult> for RecvMsgMultiResult {
+    fn from(result: iour::RecvMsgMultiResult) -> Self {
+        Self {
+            inner: RecvMsgMultiResultInner::IoUring(result),
+        }
+    }
+}
+
+impl RecvMsgMultiResult {
+    /// Create [`RecvMsgMultiResult`] from a buffer received from
+    /// [`RecvMsgMulti`]. It should be used for io-uring only.
+    ///
+    /// # Safety
+    ///
+    /// The buffer must be received from [`RecvMsgMulti`] or have the same
+    /// format as the buffer received from [`RecvMsgMulti`].
+    pub unsafe fn new(buffer: BufferRef, clen: usize) -> Self {
+        Self {
+            inner: RecvMsgMultiResultInner::IoUring(unsafe {
+                iour::RecvMsgMultiResult::new(buffer, clen)
+            }),
+        }
+    }
+
+    /// Get the payload data.
+    pub fn data(&self) -> &[u8] {
+        match &self.inner {
+            RecvMsgMultiResultInner::Poll(result) => result.data(),
+            RecvMsgMultiResultInner::IoUring(result) => result.data(),
+        }
+    }
+
+    /// Get the ancillary data.
+    pub fn ancillary(&self) -> &[u8] {
+        match &self.inner {
+            RecvMsgMultiResultInner::Poll(result) => result.ancillary(),
+            RecvMsgMultiResultInner::IoUring(result) => result.ancillary(),
+        }
+    }
+
+    /// Get the source address if applicable.
+    pub fn addr(&self) -> Option<SockAddr> {
+        match &self.inner {
+            RecvMsgMultiResultInner::Poll(result) => result.addr(),
+            RecvMsgMultiResultInner::IoUring(result) => result.addr(),
+        }
+    }
+}
+
+impl IntoInner for RecvMsgMultiResult {
+    type Inner = BufferRef;
+
+    fn into_inner(self) -> Self::Inner {
+        match self.inner {
+            RecvMsgMultiResultInner::Poll(result) => result.into_inner(),
+            RecvMsgMultiResultInner::IoUring(result) => result.into_inner(),
+        }
+    }
+}

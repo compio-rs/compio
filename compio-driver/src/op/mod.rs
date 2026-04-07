@@ -14,7 +14,8 @@ pub(crate) mod managed;
 
 #[cfg(not(io_uring))]
 pub use managed::{
-    ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvManaged, RecvMulti,
+    ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvFromMulti,
+    RecvFromMultiResult, RecvManaged, RecvMsgManaged, RecvMsgMulti, RecvMsgMultiResult, RecvMulti,
 };
 
 #[cfg(linux_all)]
@@ -33,7 +34,8 @@ pub use crate::sys::op::{
 pub use crate::sys::op::{ConnectNamedPipe, DeviceIoControl};
 #[cfg(io_uring)]
 pub use crate::sys::op::{
-    ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvManaged, RecvMulti,
+    ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvFromMulti,
+    RecvFromMultiResult, RecvManaged, RecvMsgManaged, RecvMsgMulti, RecvMsgMultiResult, RecvMulti,
 };
 use crate::{BufferRef, OwnedFd, SharedFd};
 

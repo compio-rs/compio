@@ -909,6 +909,37 @@ unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
     }
 }
 
+unsafe impl<S: AsFd> OpCode for RecvFromMulti<S> {
+    type Control = RecvFromControl;
+
+    unsafe fn init(&mut self) -> Self::Control {
+        unsafe { self.op.init() }
+    }
+
+    unsafe fn operate(
+        &mut self,
+        control: &mut Self::Control,
+        optr: *mut OVERLAPPED,
+    ) -> Poll<io::Result<usize>> {
+        unsafe { self.op.operate(control, optr) }
+    }
+
+    fn cancel(&mut self, control: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
+        self.op.cancel(control, optr)
+    }
+
+    unsafe fn set_result(
+        &mut self,
+        _: &mut Self::Control,
+        result: &io::Result<usize>,
+        _: &crate::Extra,
+    ) {
+        if let Ok(result) = result {
+            self.len = *result;
+        }
+    }
+}
+
 /// Receive data and source address into vectored buffer.
 pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
     pub(crate) fd: S,
@@ -1225,6 +1256,67 @@ unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, 
         self.flags = control.msg.dwFlags as i32;
         self.name_len = control.msg.namelen as socklen_t;
         self.control_len = control.msg.Control.len as _;
+    }
+}
+
+unsafe impl<C: IoBufMut, S: AsFd> OpCode for RecvMsgManaged<C, S> {
+    type Control = RecvMsgControl;
+
+    unsafe fn init(&mut self) -> Self::Control {
+        unsafe { self.op.init() }
+    }
+
+    unsafe fn operate(
+        &mut self,
+        control: &mut Self::Control,
+        optr: *mut OVERLAPPED,
+    ) -> Poll<io::Result<usize>> {
+        unsafe { self.op.operate(control, optr) }
+    }
+
+    fn cancel(&mut self, control: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
+        self.op.cancel(control, optr)
+    }
+
+    unsafe fn set_result(
+        &mut self,
+        control: &mut Self::Control,
+        res: &io::Result<usize>,
+        extra: &crate::Extra,
+    ) {
+        unsafe { self.op.set_result(control, res, extra) }
+    }
+}
+
+unsafe impl<S: AsFd> OpCode for RecvMsgMulti<S> {
+    type Control = RecvMsgControl;
+
+    unsafe fn init(&mut self) -> Self::Control {
+        unsafe { self.op.init() }
+    }
+
+    unsafe fn operate(
+        &mut self,
+        control: &mut Self::Control,
+        optr: *mut OVERLAPPED,
+    ) -> Poll<io::Result<usize>> {
+        unsafe { self.op.operate(control, optr) }
+    }
+
+    fn cancel(&mut self, control: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
+        self.op.cancel(control, optr)
+    }
+
+    unsafe fn set_result(
+        &mut self,
+        control: &mut Self::Control,
+        res: &io::Result<usize>,
+        extra: &crate::Extra,
+    ) {
+        unsafe { self.op.set_result(control, res, extra) };
+        if let Ok(res) = res {
+            self.len = *res;
+        }
     }
 }
 

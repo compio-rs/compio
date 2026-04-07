@@ -15,7 +15,8 @@ use socket2::{SockAddr, SockAddrStorage, Socket as Socket2};
 mod managed;
 
 pub use self::managed::{
-    ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvManaged, RecvMulti,
+    ReadManaged, ReadManagedAt, ReadMulti, ReadMultiAt, RecvFromManaged, RecvFromMulti,
+    RecvFromMultiResult, RecvManaged, RecvMsgManaged, RecvMsgMulti, RecvMsgMultiResult, RecvMulti,
 };
 use super::OpCode;
 pub use crate::sys::unix_op::*;
