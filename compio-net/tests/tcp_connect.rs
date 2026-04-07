@@ -120,7 +120,7 @@ test_connect! {
     (ip_string, (|listener: &TcpListener| {
         format!("127.0.0.1:{}", listener.local_addr().unwrap().port())
     })),
-    (#[cfg_attr(feature = "sanitize", ignore)] ip_str, (|listener: &TcpListener| {
+    (#[cfg_attr(feature = "sanitize", cfg_attr(sanitize = "address", ignore))] ip_str, (|listener: &TcpListener| {
         let s = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
         let slice: &str = &*Box::leak(s.into_boxed_str());
         slice
@@ -129,7 +129,7 @@ test_connect! {
         let addr = listener.local_addr().unwrap();
         (addr.ip(), addr.port())
     })),
-    (#[cfg_attr(feature = "sanitize", ignore)] ip_port_tuple_ref, (|listener: &TcpListener| {
+    (#[cfg_attr(feature = "sanitize", cfg_attr(sanitize = "address", ignore))] ip_port_tuple_ref, (|listener: &TcpListener| {
         let addr = listener.local_addr().unwrap();
         let tuple_ref: &(IpAddr, u16) = &*Box::leak(Box::new((addr.ip(), addr.port())));
         tuple_ref
