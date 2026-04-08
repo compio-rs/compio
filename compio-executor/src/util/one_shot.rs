@@ -242,6 +242,10 @@ impl<T> Inner<T> {
                 let current = unsafe { (*self.waker.get()).assume_init_ref() };
                 if current.will_wake(cx.waker()) {
                     return Poll::Pending;
+                } else {
+                    unsafe {
+                        (*self.waker.get()).assume_init_drop();
+                    }
                 }
             }
 
@@ -375,5 +379,46 @@ mod tests {
         })
         .join()
         .unwrap();
+    }
+
+    #[test]
+    fn waker_reclaim() {
+        use std::{sync::Arc, task::Wake};
+
+        struct Wrapper;
+
+        impl Wake for Wrapper {
+            fn wake(self: std::sync::Arc<Self>) {}
+        }
+
+        let (tx, rx) = oneshot();
+
+        let wrapper = Arc::new(Wrapper);
+        let waker = Waker::from(Arc::clone(&wrapper));
+        assert_eq!(Arc::strong_count(&wrapper), 2);
+
+        let mut cx = Context::from_waker(&waker);
+
+        let mut rx = pin!(rx);
+        let _ = unsafe { rx.as_mut().poll_local(&mut cx) };
+        drop(waker);
+        // Arc count stays at 2 because `poll_local` clones the waker which increments
+        // the count and we drop the waker thus decrementing it.
+        assert_eq!(Arc::strong_count(&wrapper), 2);
+
+        let waker = Waker::noop();
+        let mut cx = Context::from_waker(waker);
+
+        let _ = unsafe { rx.as_mut().poll_local(&mut cx) };
+
+        // Arc count must decrease here!
+        assert_eq!(Arc::strong_count(&wrapper), 1);
+
+        tx.send(1).unwrap();
+
+        assert_eq!(
+            unsafe { rx.as_mut().poll_local(&mut cx) },
+            Poll::Ready(Some(1))
+        );
     }
 }
