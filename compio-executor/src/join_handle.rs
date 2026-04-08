@@ -7,6 +7,8 @@ use std::{
     task::{Context, Poll},
 };
 
+use compio_log::instrument;
+
 use crate::{Panic, task::Task};
 
 /// A handle that awaits the result of a task.
@@ -103,6 +105,8 @@ impl<T> Future for JoinHandle<T> {
 
 impl<T> Drop for JoinHandle<T> {
     fn drop(&mut self) {
+        instrument!(compio_log::Level::TRACE, "JoinHandle::drop");
+
         self.task.cancel(true);
     }
 }

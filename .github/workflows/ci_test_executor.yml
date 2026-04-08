@@ -1,4 +1,4 @@
-name: Test Executor
+name: TestExecutor
 
 on:
   push:
@@ -53,15 +53,17 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - name: Test loom on ${{ matrix.setup.os }} nightly ${{ matrix.setup.target }}
         shell: bash
+        env:
+          LOOM_MAX_PREEMPTIONS: 4
         run: |
           set -ex
+
+          cargo miri test \
+            --test executor \
+            -p compio-executor
 
           RUSTFLAGS="--cfg loom" cargo nextest run \
             --no-fail-fast \
             --failure-output final \
             --test loom \
-            -p compio-executor
-
-          cargo miri test \
-            --test executor \
             -p compio-executor

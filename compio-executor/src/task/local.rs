@@ -2,6 +2,7 @@ use std::{
     marker::PhantomData,
     mem::MaybeUninit,
     ptr::NonNull,
+    sync::atomic::Ordering::*,
     task::{Context, Poll},
 };
 
@@ -13,7 +14,6 @@ use crate::{
         Header,
         state::{Snapshot, Strong, Weak},
     },
-    util::abort_on_panic,
 };
 
 /// A local view into the task allocation, which enables some optimizations.
@@ -37,15 +37,27 @@ impl<'a> Local<'a> {
     }
 
     pub fn schedule(&self) {
-        let Some(shared) = self.header().shared.with(|ptr| unsafe { (*ptr).as_ref() }) else {
+        instrument!(compio_log::Level::TRACE, "Local::schedule", id = ?self.header().id);
+
+        // Load shared pointer atomically - it may be null if cancelled
+        // `Relaxed` is fine here since we're on the same thread as `Executor`, there's
+        // no way to schedule as task while it's being dropped
+        let Some(shared) = (unsafe { self.header().shared.load(Relaxed).as_ref() }) else {
+            trace!("Executor dropped");
             return;
         };
+
+        trace!("Not dropped");
 
         // SAFETY: Type invariant
         let queue = unsafe { shared.queue.get_unchecked() };
         while let Some(id) = shared.sync.pop() {
+            trace!(?id, "Scheduling");
             queue.make_hot(id);
         }
+
+        trace!(id = ?self.header().id, "Scheduling self");
+
         queue.make_hot(self.header().id);
 
         if cfg!(feature = "notify-always")
@@ -56,17 +68,15 @@ impl<'a> Local<'a> {
     }
 
     pub unsafe fn poll<T>(&self, cx: &mut Context<'_>) -> Poll<Option<PanicResult<T>>> {
-        let state = self.state();
         instrument!(compio_log::Level::TRACE, "Local::poll", id = ?self.header().id);
+
+        let state = self.state();
         trace!(?state);
 
-        debug_assert!(
-            !state.is_completed() || state.has_result() || state.is_cancelled(),
-            "Should not poll after the result is taken"
-        );
+        debug_assert!(state.has_result() || !state.is_completed() || state.is_cancelled());
 
-        // Check if the task has completed with a result first
-        if state.is_completed() && state.has_result() {
+        // The task is completed, take the result
+        if state.has_result() {
             self.header().state.set_has_result::<Strong, false>();
 
             let mut res = MaybeUninit::<PanicResult<T>>::uninit();
@@ -76,7 +86,7 @@ impl<'a> Local<'a> {
             return Poll::Ready(Some(unsafe { res.assume_init() }));
         }
 
-        // Check cancellation - cancelled tasks without result return None
+        // The task is cancelled without result, return None
         if state.is_cancelled() {
             return Poll::Ready(None);
         }
@@ -84,14 +94,15 @@ impl<'a> Local<'a> {
         // Task is not completed yet, set up waker
         if !state.is_completed() {
             return self.header().waker.with_mut(|waker| {
+                crate::panic_guard!();
                 let waker = unsafe { &mut *waker };
                 if state.has_waker() {
                     if cx.waker().will_wake(unsafe { waker.assume_init_ref() }) {
                         return Poll::Pending;
                     }
-                    unsafe { MaybeUninit::assume_init_drop(waker) };
+                    unsafe { waker.assume_init_drop() };
                 }
-                waker.write(abort_on_panic(|| cx.waker().clone()));
+                waker.write(cx.waker().clone());
                 self.header().state.set_has_waker::<Weak, true>();
 
                 Poll::Pending

@@ -79,18 +79,22 @@ impl TaskQueue {
     /// Must only be called by `Executor`.
     pub unsafe fn clear(&self) {
         instrument!(compio_log::Level::DEBUG, "clear");
-        let hot_head = self.hot_head();
-        let cold_head = self.cold_head();
 
         unsafe {
             self.with_inner(|inner| {
-                Self::clear_from(&mut inner.map, hot_head);
-                Self::clear_from(&mut inner.map, cold_head);
+                if inner.map.is_empty() {
+                    return;
+                }
 
                 inner.hot.head = None;
                 inner.hot.tail = None;
                 inner.cold.head = None;
                 inner.cold.tail = None;
+
+                for task in inner.map.drain().filter_map(|(_, i)| i.task) {
+                    task.unset_shared();
+                    task.drop();
+                }
 
                 debug_assert!(inner.map.is_empty());
             })
@@ -155,16 +159,19 @@ impl TaskQueue {
         unsafe { self.with_inner(|inner| inner.make_cold(key)) }
     }
 
-    pub fn next(&self, key: TaskId) -> Option<TaskId> {
-        unsafe { self.with_inner(|inner| inner.map.get(key).and_then(|item| item.next)) }
+    pub fn next_hot(&self, key: TaskId) -> Option<TaskId> {
+        unsafe {
+            self.with_inner(|inner| {
+                inner.map.get(key).and_then(|item| {
+                    debug_assert!(item.is_hot);
+                    item.next
+                })
+            })
+        }
     }
 
     pub fn hot_head(&self) -> Option<TaskId> {
         unsafe { self.with_inner(|inner| inner.hot.head) }
-    }
-
-    pub fn cold_head(&self) -> Option<TaskId> {
-        unsafe { self.with_inner(|inner| inner.cold.head) }
     }
 
     pub fn iter_hot(&self) -> Iter<'_> {
@@ -187,16 +194,6 @@ impl TaskQueue {
 
                 inner.map.remove(key)?.task
             })
-        }
-    }
-
-    fn clear_from(map: &mut SlotMap<TaskId, Item>, mut head: Option<TaskId>) {
-        while let Some(h) = head {
-            let Some(item) = map.remove(h) else { continue };
-            if let Some(task) = item.task {
-                unsafe { task.drop(true) };
-            };
-            head = item.next
         }
     }
 
@@ -268,24 +265,24 @@ impl Inner {
         let Some(item) = self.map.get(key) else {
             return;
         };
-        if !item.is_hot {
-            self.unlink::<COLD>(key);
-            self.link_tail::<HOT>(key);
+
+        if item.is_hot {
+            return;
         }
+
+        self.unlink::<COLD>(key);
+        self.link_tail::<HOT>(key);
     }
 
     fn make_cold(&mut self, key: TaskId) {
         let Some(item) = self.map.get(key) else {
             return;
         };
-        if item.is_hot {
-            self.unlink::<HOT>(key);
-            self.link_tail::<COLD>(key);
-        } else {
-            // Already cold, unlink and re-link to move to tail
-            self.unlink::<COLD>(key);
-            self.link_tail::<COLD>(key);
-        }
+
+        debug_assert!(item.is_hot);
+
+        self.unlink::<HOT>(key);
+        self.link_tail::<COLD>(key);
     }
 }
 
@@ -294,7 +291,7 @@ impl<'a> Iterator for Iter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let curr = self.curr?;
-        self.curr = self.queue.next(curr);
+        self.curr = self.queue.next_hot(curr);
         Some(curr)
     }
 }

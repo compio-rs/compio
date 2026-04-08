@@ -22,11 +22,14 @@ crossbeam-queue = { workspace = true }
 slotmap = { workspace = true }
 
 [target.'cfg(loom)'.dependencies]
-loom = "0.7"
+loom = { version = "0.7", features = ["checkpoint"] }
 
 [dev-dependencies]
 compio-log = { workspace = true, features = ["enable_log"] }
-tracing-subscriber = "0.3.22"
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true, features = ["resource", "signal"] }
 
 [features]
 notify-always = []

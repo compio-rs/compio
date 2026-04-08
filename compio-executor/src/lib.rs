@@ -21,16 +21,20 @@ mod task;
 mod util;
 mod waker;
 
+use compio_log::{instrument, trace};
 use compio_send_wrapper::SendWrapper;
 use crossbeam_queue::ArrayQueue;
 pub use join_handle::{JoinError, JoinHandle, ResumeUnwind};
+use util::panic_guard;
 
 cfg_if::cfg_if! {
     if #[cfg(loom)] {
         use loom::cell::UnsafeCell;
+        use loom::hint;
         use loom::thread::yield_now;
         use loom::sync::atomic::*;
     } else {
+        use std::hint;
         use std::thread::yield_now;
         use std::sync::atomic::*;
 
@@ -182,7 +186,9 @@ impl Executor {
             let res = unsafe { task.run() };
             if res.is_ready() {
                 // SAFETY: We're removing it soon, so drop will only be called once.
-                unsafe { task.drop(false) };
+                // The shared pointer is kept valid until the Executor is dropped,
+                // to avoid use-after-free issues with concurrent wakers.
+                unsafe { task.drop() };
                 queue.remove(id);
             } else {
                 queue.reset(id, task);
@@ -193,12 +199,21 @@ impl Executor {
     }
 
     /// Check if there's still scheduled task that needs to be ran.
+    #[doc(hidden)]
     pub fn has_task(&self) -> bool {
         self.queue().hot_head().is_some()
     }
 
     /// Clear the executor, drop all tasks.
+    ///
+    /// This should be called only in context of the runtime, if any future may
+    /// use it. Any panic happened during dropping the future will cause the
+    /// process to abort. If this was not called before dropping, all tasks will
+    /// be leakded.
     pub fn clear(&self) {
+        instrument!(compio_log::Level::TRACE, "Executor::drop");
+        trace!("Dropping Executor");
+
         while self.shared().sync.pop().is_some() {}
         unsafe { self.queue().clear() };
     }

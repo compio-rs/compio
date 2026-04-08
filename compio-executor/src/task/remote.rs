@@ -1,9 +1,10 @@
 use std::{
     marker::PhantomData,
     mem::MaybeUninit,
+    ops::ControlFlow,
     ptr::NonNull,
+    sync::atomic::Ordering,
     task::{Context, Poll},
-    thread,
 };
 
 use compio_log::{instrument, trace};
@@ -14,7 +15,6 @@ use crate::{
         Header,
         state::{Snapshot, Strong},
     },
-    util::abort_on_panic,
 };
 
 /// A remote view into the task allocation, which is used when the [`Task`]
@@ -34,94 +34,141 @@ impl<'a> Remote<'a> {
     }
 
     pub fn schedule(&self) {
-        let state = self.header().state.set_scheduled::<true>();
+        instrument!(compio_log::Level::TRACE, "Remote::schedule", id = ?self.header().id);
+
+        let state = self.header().state.start_scheduling();
+
+        trace!(?state);
+
         if state.is_scheduled()
             || state.is_scheduling()
             || state.is_completed()
             || state.is_cancelled()
         {
+            self.header().state.finish_scheduling();
             return;
         }
-        self.header().state.set_scheduling::<true>();
 
-        // Check if shared pointer is still valid
-        let Some(shared) = self.header().shared.with(|ptr| unsafe { (*ptr).as_ref() }) else {
-            self.header().state.set_scheduling::<false>();
+        // Load shared pointer - it should always be valid since we keep it until
+        // Executor drops
+        let Some(shared) = (unsafe { self.header().shared.load(Ordering::Acquire).as_ref() })
+        else {
+            self.header().state.finish_scheduling();
             return;
         };
+
+        crate::panic_guard!();
 
         let mut notified = false;
         while shared.sync.push(self.header().id).is_err() {
             if !notified && let Some(ref waker) = shared.waker {
-                abort_on_panic(|| waker.wake_by_ref());
+                waker.wake_by_ref();
                 notified = true;
             } else if self.header().state.load::<Strong>().is_cancelled() {
+                self.header().state.finish_scheduling();
                 return;
             } else {
-                thread::yield_now()
+                crate::yield_now()
             }
         }
         if !notified && let Some(ref waker) = shared.waker {
-            abort_on_panic(|| waker.wake_by_ref());
+            waker.wake_by_ref();
         }
 
-        self.header().state.set_scheduling::<false>();
+        self.header().state.finish_scheduling();
     }
 
     pub unsafe fn poll<T>(&self, cx: &mut Context<'_>) -> Poll<Option<PanicResult<T>>> {
         instrument!(compio_log::Level::TRACE, "Remote::poll", id = ?self.header().id);
-        let state = self.state();
+        let mut state = self.state();
 
-        trace!(?state);
+        loop {
+            trace!(?state);
 
-        debug_assert!(
-            !state.is_completed() || state.has_result() || state.is_cancelled(),
-            "Should not poll after the result is taken"
-        );
+            debug_assert!(state.has_result() || !state.is_completed() || state.is_cancelled());
 
-        // Check if the task has completed with a result first
-        if state.is_completed() && state.has_result() {
-            self.header().state.set_has_result::<Strong, false>();
+            // The task is completed, take the result
+            if state.has_result() {
+                self.header().state.set_has_result::<Strong, false>();
 
-            let mut res = MaybeUninit::<PanicResult<T>>::uninit();
-            let target = NonNull::from_mut(&mut res).cast();
-            unsafe { (self.header().vtable.take_result)(self.ptr, target) };
+                let mut res = MaybeUninit::<PanicResult<T>>::uninit();
+                let target = NonNull::from_mut(&mut res).cast();
+                unsafe { (self.header().vtable.take_result)(self.ptr, target) };
 
-            return Poll::Ready(Some(unsafe { res.assume_init() }));
-        }
+                break Poll::Ready(Some(unsafe { res.assume_init() }));
+            }
 
-        // Check cancellation - cancelled tasks without result return None
-        if state.is_cancelled() {
-            return Poll::Ready(None);
-        }
+            // The task is cancelled without result, return None
+            if state.is_cancelled() {
+                break Poll::Ready(None);
+            }
 
-        // Task is not completed yet, set up waker
-        if !state.is_completed() {
-            return self.header().waker.with_mut(|waker| {
-                let waker = unsafe { &mut *waker };
+            // Task is not completed yet, set up waker
+            if !state.is_completed() {
+                if state.has_waker()
+                    && let Some(poll) = self.header().waker.with(|waker| {
+                        cx.waker()
+                            .will_wake(unsafe { (&*waker).assume_init_ref() })
+                            .then_some(Poll::Pending)
+                    })
+                {
+                    break poll;
+                };
 
-                if state.has_waker() {
-                    if cx.waker().will_wake(unsafe { waker.assume_init_ref() }) {
-                        return Poll::Pending;
+                let res = self.header().waker.with_mut(|ptr| {
+                    crate::panic_guard!();
+
+                    state = self.header().state.start_setting_waker();
+
+                    // The task was cancelled after last check
+                    if state.is_cancelled() {
+                        self.header().state.finish_setting_waker::<false>();
+
+                        return ControlFlow::Break(Poll::Ready(None));
                     }
 
-                    self.header().state.setting_waker::<true>();
+                    // SAFETY: We're in SETTING_WAKER state, Executor will not access the waker
+                    // until we're finished.
+                    let waker = unsafe { &mut *ptr };
 
-                    unsafe { MaybeUninit::assume_init_drop(waker) };
-                } else {
-                    self.header().state.setting_waker::<true>();
+                    if state.has_waker() {
+                        unsafe { waker.assume_init_drop() };
+                    }
+
+                    // Executor finished running after last check
+                    if state.is_completed() && state.has_result() {
+                        // It's waiting for us to stop. Finish setting waker here.
+                        self.header().state.finish_setting_waker::<false>();
+
+                        return ControlFlow::Continue(state);
+                    }
+
+                    // We're in the critical section, executor will wait for us to finish
+                    waker.write(cx.waker().clone());
+
+                    let state = self.header().state.finish_setting_waker::<true>();
+
+                    // Executor dropped the task during setting waker
+                    if state.is_cancelled() {
+                        // Executor has cancelled the task - there will be no more access to the
+                        // waker, so it's fine to just drop it here.
+                        unsafe { waker.assume_init_drop() };
+
+                        self.header().state.set_has_waker::<Strong, false>();
+
+                        ControlFlow::Break(Poll::Ready(None))
+                    } else {
+                        ControlFlow::Break(Poll::Pending)
+                    }
+                });
+                match res {
+                    // The task was completed during setting waker, loop again so that we can
+                    // retrieve the result
+                    ControlFlow::Continue(s) => state = s,
+                    ControlFlow::Break(poll) => break poll,
                 }
-
-                waker.write(abort_on_panic(|| cx.waker().clone()));
-
-                self.header().state.set_has_waker::<Strong, true>();
-
-                Poll::Pending
-            });
+            }
         }
-
-        // Task is completed but has no result (shouldn't happen)
-        Poll::Ready(None)
     }
 
     fn header(&self) -> &Header {

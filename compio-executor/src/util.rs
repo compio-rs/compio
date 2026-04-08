@@ -1,23 +1,32 @@
-use std::{process::abort, task::Poll, thread::panicking};
+use std::task::Poll;
 
-/// Calls a function and aborts if it panics.
+/// Create a guard that abort the process when the thread panicked before it's
+/// out of scope.
 ///
-/// This is useful in unsafe code where we can't recover from panics.
-#[inline(always)]
-pub(crate) fn abort_on_panic<T>(f: impl FnOnce() -> T) -> T {
-    struct AbortOnPanic;
+/// If loom is enabled, this does nothing.
+macro_rules! panic_guard {
+    () => {
+        let _b = {
+            pub(crate) struct AbortOnPanic(());
 
-    impl Drop for AbortOnPanic {
-        fn drop(&mut self) {
-            if panicking() {
-                abort()
+            impl Drop for AbortOnPanic {
+                #[cfg(loom)]
+                fn drop(&mut self) {}
+
+                #[cfg(not(loom))]
+                fn drop(&mut self) {
+                    if ::std::thread::panicking() {
+                        ::std::process::abort()
+                    }
+                }
             }
-        }
-    }
 
-    let _b = AbortOnPanic;
-    f()
+            AbortOnPanic(())
+        };
+    };
 }
+
+pub(crate) use panic_guard;
 
 #[inline(always)]
 pub(crate) fn transpose<T, E>(poll: Result<Poll<T>, E>) -> Poll<Result<T, E>> {
@@ -43,3 +52,43 @@ macro_rules! assert_not_impl {
 }
 
 pub(crate) use assert_not_impl;
+
+#[cfg(all(test, unix))]
+mod test {
+    use std::{
+        env::{current_exe, var_os},
+        os::unix::process::{CommandExt, ExitStatusExt},
+        process::{Command, Stdio},
+    };
+
+    use nix::sys::{
+        resource::{Resource, setrlimit},
+        signal::Signal,
+    };
+
+    #[test]
+    fn test_panic_guard() {
+        if var_os("COMPIO_TEST_ABORT").is_some() {
+            panic_guard!();
+            panic!("This should abort");
+        }
+
+        let exe = current_exe().unwrap();
+        let mut cmd = Command::new(exe);
+        cmd.arg("test_panic_guard")
+            .env("COMPIO_TEST_ABORT", "1")
+            .stderr(Stdio::piped())
+            .stdout(Stdio::piped());
+
+        unsafe {
+            cmd.pre_exec(|| {
+                // Disable core dump for aborted subprocess
+                setrlimit(Resource::RLIMIT_CORE, 0, 0).map_err(Into::into)
+            })
+        };
+
+        let status = cmd.status().unwrap();
+
+        assert_eq!(status.signal(), Some(Signal::SIGABRT as i32))
+    }
+}

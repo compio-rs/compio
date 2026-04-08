@@ -6,9 +6,17 @@ use std::{
 };
 
 use compio_executor::{Executor, JoinError, JoinHandle};
+use tracing_subscriber::EnvFilter;
 
 std::thread_local! {
     static EXE: Executor = Executor::new();
+}
+
+fn setup_log() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .try_init()
+        .ok();
 }
 
 fn spawn<F: Future + 'static>(f: F) -> JoinHandle<F::Output> {
@@ -50,6 +58,8 @@ async fn yield_now() {
 
 #[test]
 fn test_executor_runs_to_completion() {
+    setup_log();
+
     block_on(async {
         let values = std::rc::Rc::new(RefCell::new(Vec::new()));
 
@@ -89,6 +99,8 @@ fn test_executor_runs_to_completion() {
 
 #[test]
 fn test_cancel_before_poll_returns_canceled() {
+    setup_log();
+
     block_on(async {
         let hit = std::rc::Rc::new(Cell::new(false));
         let hit_task = hit.clone();
@@ -110,6 +122,8 @@ fn test_cancel_before_poll_returns_canceled() {
 
 #[test]
 fn test_cancel_during_execution_returns_canceled() {
+    setup_log();
+
     block_on(async {
         let entered = std::rc::Rc::new(Cell::new(false));
         let done = std::rc::Rc::new(Cell::new(false));
@@ -140,6 +154,8 @@ fn test_cancel_during_execution_returns_canceled() {
 
 #[test]
 fn test_join_handle_drop_cancels_task() {
+    setup_log();
+
     block_on(async {
         let completed = std::rc::Rc::new(Cell::new(false));
         let completed_task = completed.clone();
@@ -166,6 +182,8 @@ fn test_join_handle_drop_cancels_task() {
 
 #[test]
 fn test_detach_allows_task_to_continue() {
+    setup_log();
+
     block_on(async {
         let completed = std::rc::Rc::new(Cell::new(false));
         let completed_task = completed.clone();
@@ -192,6 +210,8 @@ fn test_detach_allows_task_to_continue() {
 
 #[test]
 fn test_panic_does_not_affect_other_tasks() {
+    setup_log();
+
     block_on(async {
         let run_count = std::rc::Rc::new(Cell::new(0));
         let run_count_task = run_count.clone();
@@ -218,6 +238,8 @@ fn test_panic_does_not_affect_other_tasks() {
 
 #[test]
 fn test_join_result_resume_unwind() {
+    setup_log();
+
     block_on(async {
         let handle: JoinHandle<()> = spawn(async {
             panic!("resume_unwind panic");

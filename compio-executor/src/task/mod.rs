@@ -1,9 +1,11 @@
 use std::{
     array,
+    fmt::Debug,
     mem::{ManuallyDrop, MaybeUninit, offset_of},
     panic::{AssertUnwindSafe, catch_unwind},
     pin::Pin,
     ptr::{self, NonNull, drop_in_place},
+    sync::atomic::Ordering::*,
     task::{Context, Poll, Waker, ready},
 };
 
@@ -11,14 +13,14 @@ use compio_log::{debug, instrument, trace};
 use compio_send_wrapper::SendWrapper;
 
 use crate::{
-    PanicResult, Shared, UnsafeCell,
+    AtomicPtr, PanicResult, Shared, UnsafeCell, hint,
     queue::TaskId,
     task::{
         local::Local,
         remote::Remote,
-        state::{Snapshot, State, Strong},
+        state::{State, Strong, Weak},
     },
-    util::transpose,
+    util::{panic_guard, transpose},
 };
 
 mod local;
@@ -26,9 +28,21 @@ mod remote;
 mod state;
 
 /// A reference counter pointer to the [`TaskAlloc`].
-#[derive(Debug)]
 #[repr(transparent)]
 pub(crate) struct Task(NonNull<Header>);
+
+impl Debug for Task {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let id = self.header().id;
+        let state = self.header().state.load::<Weak>();
+        let shared = self.header().shared.load(Relaxed);
+        f.debug_struct("Task")
+            .field("id", &id)
+            .field("state", &state)
+            .field("shared", &shared)
+            .finish()
+    }
+}
 
 /// Allocated part of a task, which contains the future, result and all
 /// necessary metadata. A pointer to `TaskAlloc` is always a valid pointer to a
@@ -44,7 +58,7 @@ struct Header {
     state: State,
     vtable: &'static TaskVtable,
     tracker: ManuallyDrop<SendWrapper<()>>,
-    shared: UnsafeCell<*const Shared>,
+    shared: AtomicPtr<Shared>,
     waker: UnsafeCell<MaybeUninit<Waker>>,
 }
 
@@ -92,6 +106,7 @@ impl<F: Future + 'static> TaskAlloc<F> {
         // SAFETY: The caller guarantees that we're in the `future` state and are on the
         // same thread as the future is created, so it's safe to drop the future
         future_cell.with_mut(|fut_ptr| {
+            panic_guard!();
             unsafe { drop_in_place(fut_ptr as *mut F) };
             let new_state = FutureState {
                 result: ManuallyDrop::new(res),
@@ -121,6 +136,8 @@ impl<F: Future + 'static> TaskAlloc<F> {
         let future_cell = Self::future_cell(header);
 
         future_cell.with_mut(|fut_ptr| {
+            crate::panic_guard!();
+
             if has_result {
                 unsafe { drop_in_place::<PanicResult<F::Output>>(fut_ptr as _) };
             } else {
@@ -150,7 +167,7 @@ impl Task {
                 state: State::new::<N>(),
                 vtable: TaskAlloc::<F>::VTABLE,
                 tracker: ManuallyDrop::new(tracker),
-                shared: UnsafeCell::new(shared.as_ptr()),
+                shared: AtomicPtr::new(shared.as_ptr()),
                 waker: UnsafeCell::new(MaybeUninit::uninit()),
             },
             future: UnsafeCell::new(FutureState {
@@ -189,6 +206,9 @@ impl Task {
     /// If `drop_result` is true, the result will be dropped if it exists.
     pub fn cancel(&self, drop_result: bool) {
         let header = self.header();
+
+        instrument!(compio_log::Level::TRACE,"Task::cancel", id = ?header.id, drop_result);
+
         self.schedule();
         let state = header.state.set_cancelled();
         if drop_result && state.has_result() {
@@ -202,10 +222,11 @@ impl Task {
     /// This function can only be called by `Executor` and the task must not be
     /// in completed state.
     pub unsafe fn run(&self) -> Poll<()> {
-        instrument!(compio_log::Level::TRACE, "Task::run", id = ?self.header().id);
-
         let header = self.header();
-        let state = header.state.set_scheduled::<false>();
+
+        instrument!(compio_log::Level::TRACE, "Task::run", id = ?header.id);
+
+        let state = header.state.unschedule();
         if state.is_cancelled() {
             debug!(?state, "Cancelled");
             return Poll::Ready(());
@@ -213,15 +234,25 @@ impl Task {
 
         self.with_waker(|waker| {
             let ctx = &mut Context::from_waker(waker);
+            trace!("Run future");
             let res = unsafe { (header.vtable.run_future)(self.0, ctx) };
             if res.is_ready() {
-                let state = header.state.set_finished_running();
-                debug!(?state, "Finished");
+                debug!("Ready");
+                let mut state = header.state.finish_running();
+
+                // JoinHandle is polling the state when we're running and has not finished
+                // cloning yet. It will stop as soon as they found out that we have
+                // finished running or when finished cloning, so it's fine to busy spin here for
+                // a short burst.
+                while state.is_setting_waker() {
+                    hint::spin_loop();
+                    state = header.state.load::<Strong>();
+                }
+
                 if state.has_waker() {
-                    header.state.set_has_waker::<Strong, false>();
                     header
                         .waker
-                        .with_mut(|ptr| unsafe { (*ptr).assume_init_read() }.wake());
+                        .with_mut(|ptr| unsafe { (*ptr).assume_init_ref() }.wake_by_ref());
                 }
             }
             trace!("Pending");
@@ -244,53 +275,59 @@ impl Task {
     // future, result and/or waker, but the memory will be deallocated when the
     // reference count reaches 0.
     //
-    // If `unset_shared` is true, this will also reset task's `Shared` pointer to
-    // null so that `Executor` can drop `Shared` safely.
+    // The shared pointer is kept valid until the Executor itself is dropped, to
+    // avoid use-after-free issues with concurrent wakers.
     //
     // # Safety
     //
     // Can only be called by the Executor once.
-    pub unsafe fn drop(&self, unset_shared: bool) {
+    pub unsafe fn drop(&self) {
         instrument!(compio_log::Level::TRACE, "Task::drop", id = ?self.header().id);
+
         let header = self.header();
         debug_assert!(
             header.tracker.valid(),
             "drop_future should only be called by Executor"
         );
-        let state = self.state();
+        let state = header.state.set_dropped();
 
         if !state.is_completed() {
-            // The task is finished without result, drop future
+            // The task has not completed yet, drop future
             unsafe { (header.vtable.drop_future)(self.0, false) };
         }
 
-        // If `JoinHandle` is setting the waker, it'll check the state afterwards and
-        // drop the waker. Otherwise, we drop the waker here if it exists.
+        // If `JoinHandle` is setting the waker remotely, it'll check the state
+        // afterwards and drop the waker. Otherwise, we drop the waker here if
+        // it exists.
         if state.has_waker() && !state.is_setting_waker() {
+            crate::panic_guard!();
+
             header
                 .waker
                 .with_mut(|ptr| unsafe { drop_in_place(ptr.cast::<Waker>()) });
         }
-
-        let mut state = header.state.set_dropped();
-
-        if !unset_shared {
-            return;
-        }
-
-        // SAFETY: We have set the cancelled bit in `set_dropped`, so concurrent access
-        // to the pointer will be stopped.
-        unsafe { header.shared.with_mut(|p| ptr::write(p, ptr::null_mut())) };
-
-        // Wait for scheduling to stop as they're accessing `Shared`.
-        while state.is_scheduling() {
-            crate::yield_now();
-            state = header.state.load::<Strong>();
-        }
     }
 
-    pub fn state(&self) -> Snapshot {
-        self.header().state.load::<Strong>()
+    /// Unset the shared pointer to prevent wakers from accessing it after
+    /// Executor drop. This must only be called by the Executor during its
+    /// drop.
+    pub(crate) fn unset_shared(&self) {
+        let header = self.header();
+
+        // Set shared pointer to null with Release ordering so concurrent schedulers see
+        // it
+        header.shared.store(ptr::null_mut(), Release);
+
+        // Wait for any ongoing scheduling to complete.
+        // We MUST do this to prevent use-after-free when we drop Shared.
+        // This is safe in Executor::drop context because:
+        // 1. All tasks have been cleared, so no new scheduling from task execution
+        // 2. Only external wakers (from other threads) might still be scheduling
+        // 3. Those wakers will see the null pointer and return early
+        // 4. We only need to wait for ones that already loaded the pointer
+        while header.state.load::<Strong>().is_scheduling() {
+            crate::hint::spin_loop();
+        }
     }
 
     fn header(&self) -> &Header {
@@ -300,10 +337,12 @@ impl Task {
     #[inline(always)]
     fn view(&self) -> Result<Local<'_>, Remote<'_>> {
         if self.header().tracker.valid() {
+            trace!("Local view");
             // SAFETY: We have checked that the tracker is valid, so this must be the same
             // thread as the task allocation is created on.
             Ok(unsafe { Local::new(self.0) })
         } else {
+            trace!("Remote view");
             Err(Remote::new(self.0))
         }
     }
@@ -318,7 +357,6 @@ impl Drop for Task {
             return;
         };
 
-        println!("{state:?}");
         debug_assert!(state.is_completed() | state.is_cancelled());
         debug_assert!(!state.is_setting_waker());
         debug_assert!(!state.has_waker());

@@ -62,6 +62,7 @@ impl Debug for Snapshot {
 
 pub(super) trait Consistency {
     const ACQUIRE: Ordering;
+    const ACQ_REL: Ordering;
     const RELEASE: Ordering;
 }
 
@@ -70,11 +71,13 @@ pub(super) struct Weak;
 
 impl Consistency for Strong {
     const ACQUIRE: Ordering = Acquire;
+    const ACQ_REL: Ordering = AcqRel;
     const RELEASE: Ordering = Release;
 }
 
 impl Consistency for Weak {
     const ACQUIRE: Ordering = Relaxed;
+    const ACQ_REL: Ordering = Relaxed;
     const RELEASE: Ordering = Relaxed;
 }
 
@@ -86,45 +89,9 @@ impl State {
         Self(crate::AtomicUsize::new((N * RC_UNIT) | INIT))
     }
 
-    pub(crate) fn set_scheduled<const SET: bool>(&self) -> Snapshot {
-        trace!(SET, "set_scheduled");
-
-        if SET {
-            Snapshot(self.0.fetch_or(SCHEDULED, AcqRel))
-        } else {
-            Snapshot(self.0.fetch_and(!SCHEDULED, AcqRel))
-        }
-    }
-
-    pub(crate) fn set_scheduling<const SET: bool>(&self) -> Snapshot {
-        trace!(SET, "set_scheduling");
-
-        if SET {
-            Snapshot(self.0.fetch_or(SCHEDULING, Release))
-        } else {
-            Snapshot(self.0.fetch_and(!SCHEDULING, Release))
-        }
-    }
-
-    pub(crate) fn set_cancelled(&self) -> Snapshot {
-        trace!("set_cancelled");
-
-        Snapshot(self.0.fetch_and(!NOT_CANCELLED, AcqRel))
-    }
-
-    pub(crate) fn set_finished_running(&self) -> Snapshot {
-        trace!("set_finished_running");
-        Snapshot(self.0.fetch_or(COMPLETED | HAS_RESULT, AcqRel))
-    }
-
-    pub(crate) fn set_dropped(&self) -> Snapshot {
-        trace!("set_dropped");
-
-        Snapshot(self.0.fetch_and(!HAS_WAKER & !NOT_CANCELLED, AcqRel))
-    }
-
     pub(crate) fn set_has_result<C: Consistency, const SET: bool>(&self) {
         trace!(SET, "set_has_result");
+
         if SET {
             self.0.fetch_or(HAS_RESULT, C::RELEASE);
         } else {
@@ -132,22 +99,71 @@ impl State {
         }
     }
 
-    pub(crate) fn setting_waker<const SET: bool>(&self) {
-        trace!(SET, "setting_waker");
+    pub(crate) fn set_has_waker<C: Consistency, const SET: bool>(&self) {
+        trace!(SET, "set_has_waker");
+
         if SET {
-            self.0.fetch_and(!NOT_SETTING_WAKER, Release);
+            self.0.fetch_or(HAS_WAKER, C::RELEASE);
         } else {
-            self.0.fetch_or(NOT_SETTING_WAKER, Release);
+            self.0.fetch_and(!HAS_WAKER, C::RELEASE);
         }
     }
 
-    pub(crate) fn set_has_waker<C: Consistency, const SET: bool>(&self) -> Snapshot {
-        trace!(SET, "set_has_waker");
-        if SET {
-            Snapshot(self.0.fetch_or(HAS_WAKER | NOT_SETTING_WAKER, C::RELEASE))
+    pub(crate) fn start_scheduling(&self) -> Snapshot {
+        trace!("start_scheduling");
+
+        Snapshot(self.0.fetch_or(SCHEDULED | SCHEDULING, Strong::ACQ_REL))
+    }
+
+    pub(crate) fn finish_scheduling(&self) {
+        trace!("finish_scheduling");
+
+        self.0.fetch_and(!SCHEDULING, Strong::RELEASE);
+    }
+
+    pub(crate) fn unschedule(&self) -> Snapshot {
+        trace!("unschedule");
+
+        Snapshot(self.0.fetch_and(!SCHEDULED, Strong::ACQ_REL))
+    }
+
+    pub(crate) fn set_cancelled(&self) -> Snapshot {
+        trace!("set_cancelled");
+
+        Snapshot(self.0.fetch_and(!NOT_CANCELLED, Strong::ACQ_REL))
+    }
+
+    pub(crate) fn finish_running(&self) -> Snapshot {
+        trace!("finish_running");
+
+        Snapshot(self.0.fetch_or(COMPLETED | HAS_RESULT, Strong::ACQ_REL))
+    }
+
+    pub(crate) fn start_setting_waker(&self) -> Snapshot {
+        trace!("start_setting_waker");
+
+        Snapshot(self.0.fetch_and(!NOT_SETTING_WAKER, Strong::ACQ_REL))
+    }
+
+    pub(crate) fn finish_setting_waker<const SUCCESS: bool>(&self) -> Snapshot {
+        trace!("finish_setting_waker");
+
+        let flag = if SUCCESS {
+            NOT_SETTING_WAKER | HAS_WAKER
         } else {
-            Snapshot(self.0.fetch_and(!HAS_WAKER, C::RELEASE))
-        }
+            NOT_SETTING_WAKER
+        };
+
+        Snapshot(self.0.fetch_or(flag, Strong::ACQ_REL))
+    }
+
+    /// Mark as no waker & cancelled
+    pub(crate) fn set_dropped(&self) -> Snapshot {
+        const FLAG: usize = !HAS_WAKER & !NOT_CANCELLED;
+
+        trace!("set_dropped");
+
+        Snapshot(self.0.fetch_and(FLAG, Strong::ACQ_REL))
     }
 
     /// Load the state with acquire ordering.
@@ -156,7 +172,7 @@ impl State {
     }
 
     pub(crate) fn inc(&self) -> Snapshot {
-        let old = Snapshot(self.0.fetch_add(RC_UNIT, Release));
+        let old = Snapshot(self.0.fetch_add(RC_UNIT, Strong::RELEASE));
         trace!(?old, "inc");
         if old.count() == RC_MAX {
             abort()
@@ -166,7 +182,7 @@ impl State {
 
     /// Decrease the reference count by one and return the old state.
     pub(crate) fn dec(&self) -> Snapshot {
-        let old = Snapshot(self.0.fetch_sub(RC_UNIT, AcqRel));
+        let old = Snapshot(self.0.fetch_sub(RC_UNIT, Strong::ACQ_REL));
         trace!(?old, "dec");
         debug_assert!(old.count() >= 1, "Reference count underflow");
         old
