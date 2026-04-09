@@ -11,26 +11,59 @@
     html_favicon_url = "https://github.com/compio-rs/compio-logo/raw/refs/heads/master/generated/colored-bold.svg"
 )]
 
-use std::{
-    any::Any,
-    fmt::Debug,
-    marker::PhantomData,
-    mem::ManuallyDrop,
-    panic::resume_unwind,
-    ptr,
-    task::{Context, Poll, Waker as StdWaker},
-};
+use std::{any::Any, fmt::Debug, ptr::NonNull, task::Waker};
 
-pub use crate::waker::get_extra;
-use crate::{
-    queue::{Handle, TaskQueue},
-    util::Receiver,
-};
+use crate::queue::{TaskId, TaskQueue};
 
+mod join_handle;
 mod queue;
 mod task;
 mod util;
 mod waker;
+
+use compio_log::{instrument, trace};
+use compio_send_wrapper::SendWrapper;
+use crossbeam_queue::ArrayQueue;
+pub use join_handle::{JoinError, JoinHandle, ResumeUnwind};
+use util::panic_guard;
+
+cfg_if::cfg_if! {
+    if #[cfg(loom)] {
+        use loom::cell::UnsafeCell;
+        use loom::hint;
+        use loom::thread::yield_now;
+        use loom::sync::atomic::*;
+    } else {
+        use std::hint;
+        use std::thread::yield_now;
+        use std::sync::atomic::*;
+
+        #[repr(transparent)]
+        struct UnsafeCell<T>(std::cell::UnsafeCell<T>);
+
+        impl<T> UnsafeCell<T> {
+            pub fn new(value: T) -> Self {
+                Self(std::cell::UnsafeCell::new(value))
+            }
+
+            #[inline(always)]
+            pub fn with_mut<F, R>(&self, f: F) -> R
+            where
+                F: FnOnce(*mut T) -> R,
+            {
+                f(self.0.get())
+            }
+
+            #[inline(always)]
+            pub fn with<F, R>(&self, f: F) -> R
+            where
+                F: FnOnce(*const T) -> R,
+            {
+                f(self.0.get())
+            }
+        }
+    }
+}
 
 pub(crate) type PanicResult<T> = Result<T, Panic>;
 pub(crate) type Panic = Box<dyn Any + Send + 'static>;
@@ -50,10 +83,9 @@ pub(crate) type Panic = Box<dyn Any + Send + 'static>;
 /// [`Waker`]: std::task::Waker
 /// [`Waker::wake`]: std::task::Waker::wake
 #[derive(Debug)]
-pub struct Executor<E = ()> {
-    queue: TaskQueue,
+pub struct Executor {
+    ptr: NonNull<Shared>,
     config: ExecutorConfig,
-    _marker: PhantomData<E>,
 }
 
 /// Configuration for [`Executor`].
@@ -64,45 +96,44 @@ pub struct ExecutorConfig {
     ///
     /// This is fixed and will create backpressure when full.
     pub sync_queue_size: usize,
+
     /// The size of the local queues, which hold tasks for same-thread
     /// execution.
     ///
     /// This is dynamically resized to avoid blocking.
     pub local_queue_size: usize,
-    /// The maximum number of tasks to run in each tick.
-    ///
-    /// This includes both hot and cold tasks.
+
+    /// The maximum number of hot tasks to run in each tick.
     pub max_interval: u32,
-    /// The maximum number of cold tasks to run in each tick.
-    ///
-    /// By default, each tick `max_interval - num_hot` number of cold tasks will
-    /// be ran. This limits the number of cold tasks can be ran even if
-    /// `max_interval` is not reached. This will be ignored if `max_interval` is
-    /// reached first.
-    pub max_cold_interval: u32,
+
     /// A waker to be waken when a task is scheduled from other thread.
     ///
-    /// This is useful for waking up drivers that switchs to kernel state when
+    /// This is useful for waking up drivers that switch to kernel state when
     /// idle.
     ///
     /// Enable `notify-always` feature to wake this waker on every schedule,
     /// even if the executor is already awake.
-    pub waker: Option<StdWaker>,
+    pub waker: Option<Waker>,
 }
 
 impl Default for ExecutorConfig {
     fn default() -> Self {
         Self {
             sync_queue_size: 64,
-            local_queue_size: 63,
-            max_interval: 32,
-            max_cold_interval: u32::MAX,
+            local_queue_size: 64,
+            max_interval: 61,
             waker: None,
         }
     }
 }
 
-impl<E> Executor<E> {
+pub(crate) struct Shared {
+    waker: Option<Waker>,
+    sync: ArrayQueue<TaskId>,
+    queue: SendWrapper<TaskQueue>,
+}
+
+impl Executor {
     /// Create a new executor.
     pub fn new() -> Self {
         Self::with_config(ExecutorConfig::default())
@@ -110,15 +141,27 @@ impl<E> Executor<E> {
 
     /// Create a new executor with config.
     pub fn with_config(mut config: ExecutorConfig) -> Self {
+        let ptr = Box::into_raw(Box::new(Shared {
+            waker: config.waker.take(),
+            sync: ArrayQueue::new(config.sync_queue_size),
+            queue: SendWrapper::new(TaskQueue::new(config.local_queue_size)),
+        }));
+
         Self {
-            queue: TaskQueue::new(
-                config.waker.take(),
-                config.sync_queue_size,
-                config.local_queue_size,
-            ),
             config,
-            _marker: PhantomData,
+            ptr: unsafe { NonNull::new_unchecked(ptr) },
         }
+    }
+
+    /// Spawn a future onto the executor.
+    pub fn spawn<F: Future + 'static>(&self, fut: F) -> JoinHandle<F::Output> {
+        let shared = self.shared();
+        let tracker = shared.queue.tracker();
+        // SAFETY: Executor cannot be sent to ther thread
+        let queue = unsafe { shared.queue.get_unchecked() };
+        let task = queue.insert(self.ptr, tracker, fut);
+
+        JoinHandle::new(task)
     }
 
     /// Retrieve all sync tasks, schedule those to the tail of `hot` queue
@@ -131,150 +174,71 @@ impl<E> Executor<E> {
     ///
     /// [`max_interval`]: ExecutorConfig::max_interval
     pub fn tick(&self) -> bool {
-        self.queue.flush_sync();
-        for id in self
-            .queue
-            .iter(self.config.max_cold_interval)
-            .take(self.config.max_interval as _)
-        {
-            self.queue.run(id);
+        let queue = self.queue();
+
+        while let Some(id) = self.shared().sync.pop() {
+            queue.make_hot(id);
         }
-        self.queue.has_hot()
+
+        for id in queue.iter_hot().take(self.config.max_interval as _) {
+            queue.make_cold(id);
+            let task = queue.take(id).expect("Task was not reset back");
+            let res = unsafe { task.run() };
+            if res.is_ready() {
+                // SAFETY: We're removing it soon, so drop will only be called once.
+                // The shared pointer is kept valid until the Executor is dropped,
+                // to avoid use-after-free issues with concurrent wakers.
+                unsafe { task.drop() };
+                queue.remove(id);
+            } else {
+                queue.reset(id, task);
+            }
+        }
+
+        queue.has_hot()
+    }
+
+    /// Check if there's still scheduled task that needs to be ran.
+    #[doc(hidden)]
+    pub fn has_task(&self) -> bool {
+        self.queue().hot_head().is_some()
     }
 
     /// Clear the executor, drop all tasks.
+    ///
+    /// This should be called only in context of the runtime, if any future may
+    /// use it. Any panic happened during dropping the future will cause the
+    /// process to abort. If this was not called before dropping, all tasks will
+    /// be leakded.
     pub fn clear(&self) {
-        self.queue.clear();
+        instrument!(compio_log::Level::TRACE, "Executor::drop");
+        trace!("Dropping Executor");
+
+        while self.shared().sync.pop().is_some() {}
+        unsafe { self.queue().clear() };
+    }
+
+    #[inline(always)]
+    fn shared(&self) -> &Shared {
+        unsafe { self.ptr.as_ref() }
+    }
+
+    #[inline(always)]
+    fn queue(&self) -> &TaskQueue {
+        // SAFETY: Executor is single threaded
+        unsafe { self.shared().queue.get_unchecked() }
     }
 }
 
-impl<E: Send + Sync> Executor<E> {
-    /// Spawn a future onto the executor.
-    pub fn spawn_with<F: Future + 'static>(&self, fut: F, extra: E) -> JoinHandle<F::Output> {
-        let (id, rx) = self.queue.push(fut, extra);
-
-        JoinHandle {
-            handle: self.queue.handle(id),
-            rx,
-        }
-    }
-}
-
-impl<E: Default + Send + Sync> Executor<E> {
-    /// Spawn a future onto the executor.
-    pub fn spawn<F: Future + 'static>(&self, fut: F) -> JoinHandle<F::Output> {
-        self.spawn_with(fut, E::default())
+impl Drop for Executor {
+    fn drop(&mut self) {
+        self.clear();
+        unsafe { drop(Box::from_raw(self.ptr.as_ptr())) };
     }
 }
 
 impl Default for Executor {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// A handle that awaits the result of a task.
-///
-/// Dropping a [`JoinHandle`] will cancel the task. To run the task in the
-/// background, use [`JoinHandle::detach`].
-#[must_use = "Drop `JoinHandle` will cancel the task. Use `detach` to run it in background."]
-#[derive(Debug)]
-pub struct JoinHandle<T> {
-    handle: Handle,
-    rx: Receiver<PanicResult<T>>,
-}
-
-impl<T> Unpin for JoinHandle<T> {}
-
-impl<T> JoinHandle<T> {
-    /// Cancel the task.
-    pub async fn cancel(self) -> Option<T> {
-        self.rx.set_cancelled();
-        self.handle.schedule();
-        self.await.ok()
-    }
-
-    /// Check if the task is cancelled.
-    pub fn is_cancelled(&self) -> bool {
-        self.rx.is_cancelled()
-    }
-
-    /// Detach the task to let it run in the background.
-    pub fn detach(self) {
-        let this = ManuallyDrop::new(self);
-        unsafe {
-            _ = ptr::read(&this.rx);
-            _ = ptr::read(&this.handle)
-        };
-    }
-}
-
-/// Task failed to execute to completion.
-#[derive(Debug)]
-pub enum JoinError {
-    /// The task was cancelled.
-    Cancelled,
-    /// The task panicked.
-    Panicked(Panic),
-}
-
-/// Trait to resume unwind from a [`JoinError`].
-pub trait ResumeUnwind {
-    /// The output type.
-    type Output;
-
-    /// Resume the panic if the task panicked.
-    fn resume_unwind(self) -> Self::Output;
-}
-
-impl<T> ResumeUnwind for Result<T, JoinError> {
-    type Output = Option<T>;
-
-    fn resume_unwind(self) -> Self::Output {
-        match self {
-            Ok(res) => Some(res),
-            Err(JoinError::Cancelled) => None,
-            Err(JoinError::Panicked(e)) => resume_unwind(e),
-        }
-    }
-}
-
-impl JoinError {
-    /// Resume unwind if the task panicked, otherwise do nothing.
-    pub fn resume_unwind(self) {
-        if let JoinError::Panicked(e) = self {
-            resume_unwind(e)
-        }
-    }
-}
-
-impl<T> Future for JoinHandle<T> {
-    type Output = Result<T, JoinError>;
-
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let is_local = self.handle.is_local();
-        let res = if is_local {
-            unsafe { self.rx.poll_local(cx) }
-        } else {
-            self.rx.poll(cx)
-        };
-        match res {
-            Poll::Pending => {
-                if self.handle.schedule() {
-                    Poll::Pending
-                } else {
-                    Poll::Ready(Err(JoinError::Cancelled))
-                }
-            }
-            Poll::Ready(Some(Ok(res))) => Poll::Ready(Ok(res)),
-            Poll::Ready(Some(Err(err))) => Poll::Ready(Err(JoinError::Panicked(err))),
-            Poll::Ready(None) => Poll::Ready(Err(JoinError::Cancelled)),
-        }
-    }
-}
-
-impl<T> Drop for JoinHandle<T> {
-    fn drop(&mut self) {
-        self.rx.set_cancelled();
     }
 }
