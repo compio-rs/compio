@@ -68,7 +68,7 @@ impl<S> AsyncStream<S> {
         self.inner.get_mut()
     }
 
-    /// Consumes the `SyncStream`, returning the underlying stream.
+    /// Consumes the `AsyncStream`, returning the underlying stream.
     pub fn into_inner(self) -> S {
         self.inner.into_inner()
     }

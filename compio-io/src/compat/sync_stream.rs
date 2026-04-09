@@ -102,8 +102,31 @@ impl<S> SyncStream<S> {
     }
 
     /// Consumes the `SyncStream`, returning the underlying stream.
+    ///
+    /// Any buffered data is discarded. Use [`into_parts`](Self::into_parts)
+    /// if you need to preserve unread data.
     pub fn into_inner(self) -> S {
         self.inner
+    }
+
+    /// Consumes the `SyncStream`, returning the underlying stream and any
+    /// unread buffered data.
+    ///
+    /// If the read buffer is currently lent to an IO operation, the returned
+    /// `Vec` will be empty.
+    pub fn into_parts(mut self) -> (S, Vec<u8>) {
+        let remaining = if self.read_buf.has_inner() {
+            let slice = self.read_buf.take_inner();
+            let begin = slice.begin();
+            let mut vec = slice.into_inner();
+            if begin > 0 {
+                vec.drain(..begin);
+            }
+            vec
+        } else {
+            Vec::new()
+        };
+        (self.inner, remaining)
     }
 
     /// Returns `true` if the stream has reached EOF.

@@ -1,6 +1,6 @@
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 
-use compio_io::compat::{AsyncReadStream, AsyncWriteStream};
+use compio_io::compat::{AsyncReadStream, AsyncWriteStream, SyncStream};
 use futures_executor::block_on;
 use futures_util::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
@@ -86,4 +86,18 @@ fn async_compat_flush_fail() {
         let err = stream.flush().await.unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::WriteZero);
     })
+}
+
+#[test]
+fn sync_stream_into_parts_keeps_unread_buffer() {
+    let mut stream = SyncStream::new(Cursor::new(b"hello".to_vec()));
+    let mut buf = [0; 2];
+
+    Read::read(&mut stream, &mut buf).unwrap_err();
+    futures_executor::block_on(stream.fill_read_buf()).unwrap();
+    assert_eq!(Read::read(&mut stream, &mut buf).unwrap(), 2);
+    assert_eq!(&buf, b"he");
+
+    let (_, remaining) = stream.into_parts();
+    assert_eq!(remaining, b"llo");
 }
