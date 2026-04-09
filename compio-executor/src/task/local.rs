@@ -68,8 +68,6 @@ impl<'a> Local<'a> {
     }
 
     pub unsafe fn poll<T>(&self, cx: &mut Context<'_>) -> Poll<Option<PanicResult<T>>> {
-        instrument!(compio_log::Level::TRACE, "Local::poll", id = ?self.header().id);
-
         let state = self.state();
         trace!(?state);
 

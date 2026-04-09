@@ -13,7 +13,7 @@ use compio_log::{debug, instrument, trace};
 use compio_send_wrapper::SendWrapper;
 
 use crate::{
-    AtomicPtr, PanicResult, Shared, UnsafeCell, hint,
+    AtomicPtr, PanicResult, Shared, UnsafeCell,
     queue::TaskId,
     task::{
         local::Local,
@@ -237,25 +237,24 @@ impl Task {
             trace!("Run future");
             let res = unsafe { (header.vtable.run_future)(self.0, ctx) };
             if res.is_ready() {
-                debug!("Ready");
-                let mut state = header.state.finish_running();
+                debug!("Task finished");
+                let state = header.state.finish_running();
 
-                // JoinHandle is polling the state when we're running and has not finished
-                // cloning yet. It will stop as soon as they found out that we have
-                // finished running or when finished cloning, so it's fine to busy spin here for
-                // a short burst.
-                while state.is_setting_waker() {
-                    hint::spin_loop();
-                    state = header.state.load::<Strong>();
-                }
+                trace!(?state, "Try to wake up JoinHandle");
 
-                if state.has_waker() {
+                // JoinHandle will not set another waker after this check since we have set the
+                // state to completed before with Release order: they will either observe it and
+                // get the result, or not observe it and enter SETTING_WAKER critical section.
+                if state.has_waker() && !state.is_setting_waker() {
+                    trace!("Waking up JoinHandle");
                     header
                         .waker
                         .with_mut(|ptr| unsafe { (*ptr).assume_init_ref() }.wake_by_ref());
                 }
+            } else {
+                trace!("Pending");
             }
-            trace!("Pending");
+
             res
         })
     }
@@ -265,8 +264,14 @@ impl Task {
     /// This function can only be called by `JoinHandle`.
     pub unsafe fn poll<T>(&self, cx: &mut Context<'_>) -> Poll<Option<PanicResult<T>>> {
         match self.view() {
-            Ok(local) => unsafe { local.poll(cx) },
-            Err(remote) => unsafe { remote.poll(cx) },
+            Ok(local) => unsafe {
+                instrument!(compio_log::Level::TRACE, "Task::poll", id = ?self.header().id, remote = false);
+                local.poll(cx)
+            },
+            Err(remote) => unsafe {
+                instrument!(compio_log::Level::TRACE, "Task::poll", id = ?self.header().id, remote = true);
+                remote.poll(cx)
+            },
         }
     }
 
@@ -275,8 +280,8 @@ impl Task {
     // future, result and/or waker, but the memory will be deallocated when the
     // reference count reaches 0.
     //
-    // The shared pointer is kept valid until the Executor itself is dropped, to
-    // avoid use-after-free issues with concurrent wakers.
+    // The shared pointer is also set to null to prevent any further scheduling or
+    // waker setting.
     //
     // # Safety
     //
@@ -287,11 +292,14 @@ impl Task {
         let header = self.header();
         debug_assert!(
             header.tracker.valid(),
-            "drop_future should only be called by Executor"
+            "drop should only be called by Executor"
         );
         let state = header.state.set_dropped();
 
+        header.shared.store(ptr::null_mut(), Release);
+
         if !state.is_completed() {
+            trace!("Dropping future");
             // The task has not completed yet, drop future
             unsafe { (header.vtable.drop_future)(self.0, false) };
         }
@@ -300,23 +308,21 @@ impl Task {
         // afterwards and drop the waker. Otherwise, we drop the waker here if
         // it exists.
         if state.has_waker() && !state.is_setting_waker() {
+            trace!("Dropping waker");
             crate::panic_guard!();
 
             header
                 .waker
                 .with_mut(|ptr| unsafe { drop_in_place(ptr.cast::<Waker>()) });
         }
+
+        trace!("Completed");
     }
 
-    /// Unset the shared pointer to prevent wakers from accessing it after
-    /// Executor drop. This must only be called by the Executor during its
-    /// drop.
-    pub(crate) fn unset_shared(&self) {
+    /// Wait for wakers to finish scheduling, if any. This is necessary for
+    /// `Executor` to drop `Shared` since scheduling requires it.
+    pub(crate) fn wait_for_scheduling(&self) {
         let header = self.header();
-
-        // Set shared pointer to null with Release ordering so concurrent schedulers see
-        // it
-        header.shared.store(ptr::null_mut(), Release);
 
         // Wait for any ongoing scheduling to complete.
         // We MUST do this to prevent use-after-free when we drop Shared.
@@ -337,12 +343,10 @@ impl Task {
     #[inline(always)]
     fn view(&self) -> Result<Local<'_>, Remote<'_>> {
         if self.header().tracker.valid() {
-            trace!("Local view");
             // SAFETY: We have checked that the tracker is valid, so this must be the same
             // thread as the task allocation is created on.
             Ok(unsafe { Local::new(self.0) })
         } else {
-            trace!("Remote view");
             Err(Remote::new(self.0))
         }
     }
@@ -352,19 +356,31 @@ impl Drop for Task {
     fn drop(&mut self) {
         let header = self.header();
         let state = header.state.dec();
-        trace!(old = ?state, "Task dropped");
+        trace!(?state, "Task dropped");
         if state.count() > 1 {
             return;
         };
 
+        crate::panic_guard!();
+
         debug_assert!(state.is_completed() | state.is_cancelled());
         debug_assert!(!state.is_setting_waker());
-        debug_assert!(!state.has_waker());
 
         // If the result is still present, drop it now
         // This happens when JoinHandle was dropped/detached without taking the result
         if state.has_result() {
             unsafe { (header.vtable.drop_future)(self.0, true) };
+        }
+
+        // If the waker is still present, drop it now
+        // This happens when the Task is dropped when JoinHandle was setting waker
+        // remotely.
+        if state.has_waker() {
+            trace!("Dropping waker");
+
+            header
+                .waker
+                .with_mut(|ptr| unsafe { drop_in_place(ptr.cast::<Waker>()) });
         }
 
         trace!("Task deallocated");

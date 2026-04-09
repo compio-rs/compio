@@ -1,7 +1,6 @@
 use std::{
     marker::PhantomData,
     mem::MaybeUninit,
-    ops::ControlFlow,
     ptr::NonNull,
     sync::atomic::Ordering,
     task::{Context, Poll},
@@ -79,16 +78,16 @@ impl<'a> Remote<'a> {
     }
 
     pub unsafe fn poll<T>(&self, cx: &mut Context<'_>) -> Poll<Option<PanicResult<T>>> {
-        instrument!(compio_log::Level::TRACE, "Remote::poll", id = ?self.header().id);
         let mut state = self.state();
 
         loop {
             trace!(?state);
 
-            debug_assert!(state.has_result() || !state.is_completed() || state.is_cancelled());
+            debug_assert!(state.has_result() || state.is_cancelled() || !state.is_completed());
 
             // The task is completed, take the result
             if state.has_result() {
+                trace!("Has result");
                 self.header().state.set_has_result::<Strong, false>();
 
                 let mut res = MaybeUninit::<PanicResult<T>>::uninit();
@@ -96,78 +95,54 @@ impl<'a> Remote<'a> {
                 unsafe { (self.header().vtable.take_result)(self.ptr, target) };
 
                 break Poll::Ready(Some(unsafe { res.assume_init() }));
-            }
-
-            // The task is cancelled without result, return None
-            if state.is_cancelled() {
+            } else if state.is_cancelled() {
+                trace!("Task cancelled");
+                // The task is cancelled without result, return None
                 break Poll::Ready(None);
             }
 
-            // Task is not completed yet, set up waker
-            if !state.is_completed() {
-                if state.has_waker()
-                    && let Some(poll) = self.header().waker.with(|waker| {
-                        cx.waker()
-                            .will_wake(unsafe { (&*waker).assume_init_ref() })
-                            .then_some(Poll::Pending)
-                    })
-                {
-                    break poll;
-                };
+            state = self.header().state.start_setting_waker();
 
-                let res = self.header().waker.with_mut(|ptr| {
-                    crate::panic_guard!();
+            if state.has_result() {
+                // It's waiting for us to stop. Finish setting waker here.
+                debug_assert!(state.is_completed());
+                state = self.header().state.finish_setting_waker::<false>();
 
-                    state = self.header().state.start_setting_waker();
+                continue;
+            } else if state.is_cancelled() {
+                // The task was cancelled after last check
+                self.header().state.finish_setting_waker::<false>();
 
-                    // The task was cancelled after last check
-                    if state.is_cancelled() {
-                        self.header().state.finish_setting_waker::<false>();
-
-                        return ControlFlow::Break(Poll::Ready(None));
-                    }
-
-                    // SAFETY: We're in SETTING_WAKER state, Executor will not access the waker
-                    // until we're finished.
-                    let waker = unsafe { &mut *ptr };
-
-                    if state.has_waker() {
-                        unsafe { waker.assume_init_drop() };
-                    }
-
-                    // Executor finished running after last check
-                    if state.is_completed() && state.has_result() {
-                        // It's waiting for us to stop. Finish setting waker here.
-                        self.header().state.finish_setting_waker::<false>();
-
-                        return ControlFlow::Continue(state);
-                    }
-
-                    // We're in the critical section, executor will wait for us to finish
-                    waker.write(cx.waker().clone());
-
-                    let state = self.header().state.finish_setting_waker::<true>();
-
-                    // Executor dropped the task during setting waker
-                    if state.is_cancelled() {
-                        // Executor has cancelled the task - there will be no more access to the
-                        // waker, so it's fine to just drop it here.
-                        unsafe { waker.assume_init_drop() };
-
-                        self.header().state.set_has_waker::<Strong, false>();
-
-                        ControlFlow::Break(Poll::Ready(None))
-                    } else {
-                        ControlFlow::Break(Poll::Pending)
-                    }
-                });
-                match res {
-                    // The task was completed during setting waker, loop again so that we can
-                    // retrieve the result
-                    ControlFlow::Continue(s) => state = s,
-                    ControlFlow::Break(poll) => break poll,
-                }
+                break Poll::Ready(None);
+            } else if state.has_waker()
+                && self
+                    .header()
+                    .waker
+                    .with(|waker| cx.waker().will_wake(unsafe { (&*waker).assume_init_ref() }))
+            {
+                // Waker is already up-to-date, leave it in place.
+                self.header().state.finish_setting_waker::<true>();
+                break Poll::Pending;
             }
+
+            self.header().waker.with_mut(|ptr| {
+                crate::panic_guard!();
+
+                // SAFETY: We're in SETTING_WAKER state, Executor will not access the waker
+                // until we're finished.
+                let waker = unsafe { &mut *ptr };
+
+                if state.has_waker() {
+                    unsafe { waker.assume_init_drop() };
+                }
+
+                // We're in the critical section, executor will wait for us to finish
+                waker.write(cx.waker().clone());
+            });
+
+            self.header().state.finish_setting_waker::<true>();
+
+            break Poll::Pending;
         }
     }
 
@@ -176,6 +151,7 @@ impl<'a> Remote<'a> {
     }
 
     fn state(&self) -> Snapshot {
+        trace!("Load state");
         self.header().state.load::<Strong>()
     }
 }

@@ -1,4 +1,6 @@
 use std::{
+    error::Error,
+    fmt::Display,
     marker::PhantomData,
     mem::ManuallyDrop,
     panic::resume_unwind,
@@ -7,7 +9,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use compio_log::instrument;
+use compio_log::{instrument, trace};
 
 use crate::{Panic, task::Task};
 
@@ -19,7 +21,7 @@ use crate::{Panic, task::Task};
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct JoinHandle<T> {
-    task: Task,
+    task: Option<Task>,
     _marker: PhantomData<T>,
 }
 
@@ -35,14 +37,14 @@ impl<T> Unpin for JoinHandle<T> {}
 impl<T> JoinHandle<T> {
     pub(crate) fn new(task: Task) -> Self {
         Self {
-            task,
+            task: Some(task),
             _marker: PhantomData,
         }
     }
 
     /// Cancel the task and wait for the result, if any.
     pub async fn cancel(self) -> Option<T> {
-        self.task.cancel(false);
+        self.task.as_ref()?.cancel(false);
         self.await.ok()
     }
 
@@ -91,14 +93,35 @@ impl JoinError {
     }
 }
 
+impl Display for JoinError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JoinError::Cancelled => write!(f, "Task was cancelled"),
+            JoinError::Panicked(_) => write!(f, "Task has panicked"),
+        }
+    }
+}
+
+impl Error for JoinError {}
+
 impl<T> Future for JoinHandle<T> {
     type Output = Result<T, JoinError>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        unsafe { self.task.poll(cx) }.map(|res| match res {
-            Some(Ok(res)) => Ok(res),
-            Some(Err(e)) => Err(JoinError::Panicked(e)),
-            None => Err(JoinError::Cancelled),
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        instrument!(compio_log::Level::TRACE, "JoinHandle::poll");
+
+        let task = self.task.as_ref().expect("Cannot poll after completion");
+
+        unsafe { task.poll(cx) }.map(|res| {
+            trace!("Poll ready");
+
+            self.task = None;
+
+            match res {
+                Some(Ok(res)) => Ok(res),
+                Some(Err(e)) => Err(JoinError::Panicked(e)),
+                None => Err(JoinError::Cancelled),
+            }
         })
     }
 }
@@ -107,6 +130,8 @@ impl<T> Drop for JoinHandle<T> {
     fn drop(&mut self) {
         instrument!(compio_log::Level::TRACE, "JoinHandle::drop");
 
-        self.task.cancel(true);
+        if let Some(task) = self.task.as_ref() {
+            task.cancel(true);
+        }
     }
 }

@@ -53,17 +53,19 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - name: Test loom on ${{ matrix.setup.os }} nightly ${{ matrix.setup.target }}
         shell: bash
-        env:
-          LOOM_MAX_PREEMPTIONS: 4
         run: |
           set -ex
 
           cargo miri test \
-            --test executor \
-            -p compio-executor
+            -p compio-executor \
+            --test executor
 
-          RUSTFLAGS="--cfg loom" cargo nextest run \
-            --no-fail-fast \
-            --failure-output final \
+          RUSTFLAGS="--cfg loom" \
+          LOOM_LOCATION=1 \
+          LOOM_LOG=info,compio_executor=trace \
+          cargo nextest run \
+            -p compio-executor \
+            --features enable_log \
             --test loom \
-            -p compio-executor
+            --no-fail-fast \
+            --failure-output final

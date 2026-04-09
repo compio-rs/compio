@@ -1,12 +1,13 @@
 #![cfg(loom)]
 
 use std::{
-    future::Future,
+    future::{Future, ready},
     pin::Pin,
     task::{Context, Poll, Waker},
 };
 
 use compio_executor::Executor;
+use compio_log::info;
 use loom::thread;
 
 fn block_on<F: Future + 'static>(exe: &Executor, f: F) -> F::Output {
@@ -102,5 +103,32 @@ fn test_cross_thread_wake() {
 
         let handle = exe.spawn(CrossThreadWake(false));
         block_on(&exe, handle).unwrap();
+    });
+}
+
+#[test]
+fn test_join_while_complete() {
+    loom::model(|| {
+        let exe = Executor::new();
+
+        let handle = exe.spawn(ready(0));
+
+        let thread1 = thread::spawn(move || {
+            let cx = &mut Context::from_waker(Waker::noop());
+            let mut f = std::pin::pin!(handle);
+            loop {
+                info!("Poll from thread 1");
+                if let Poll::Ready(res) = f.as_mut().poll(cx) {
+                    return res;
+                }
+                thread::yield_now();
+            }
+        });
+
+        while exe.tick() {
+            thread::yield_now();
+        }
+
+        let _ = thread1.join().unwrap();
     });
 }
