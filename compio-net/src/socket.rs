@@ -12,10 +12,11 @@ use compio_driver::op::{Bind, CreateSocket, Listen, ShutdownSocket};
 use compio_driver::{
     AsRawFd, BufferRef, OpCode, ResultTakeBuffer, TakeBuffer, ToSharedFd, impl_raw_fd,
     op::{
-        Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromManaged,
-        RecvFromVectored, RecvManaged, RecvMsg, RecvMulti, RecvResultExt, RecvVectored, Send,
-        SendMsg, SendMsgZc, SendTo, SendToVectored, SendToVectoredZc, SendToZc, SendVectored,
-        SendVectoredZc, SendZc, VecBufResultExt,
+        Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromManaged, RecvFromMulti,
+        RecvFromMultiResult, RecvFromVectored, RecvManaged, RecvMsg, RecvMsgManaged, RecvMsgMulti,
+        RecvMsgMultiResult, RecvMulti, RecvResultExt, RecvVectored, Send, SendMsg, SendMsgZc,
+        SendTo, SendToVectored, SendToVectoredZc, SendToZc, SendVectored, SendVectoredZc, SendZc,
+        VecBufResultExt,
     },
     syscall,
 };
@@ -237,33 +238,6 @@ impl Socket {
         .unwrap_or_else(|e| Either::Right(futures_util::stream::once(std::future::ready(Err(e)))))
     }
 
-    pub async fn recv_from_managed(
-        &self,
-        len: usize,
-        flags: i32,
-    ) -> io::Result<Option<(BufferRef, Option<SockAddr>)>> {
-        let fd = self.to_shared_fd();
-        let inner = Runtime::with_current(|rt| {
-            let buffer_pool = rt.buffer_pool()?;
-            let op = RecvFromManaged::new(fd, &buffer_pool, len, flags)?;
-            io::Result::Ok(rt.submit(op))
-        })?
-        .await;
-        let (len, op) = buf_try!(@try inner);
-        // Kernel returns 0 for the operation, drop the buffer and return Ok(None)
-        if len == 0 {
-            return Ok(None);
-        }
-        let Some((mut buf, addr)) = op.take_buffer() else {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                format!("Read {len} bytes, but no buffer was selected by kernel"),
-            ));
-        };
-        unsafe { buf.advance_to(len) };
-        Ok(Some((buf, addr)))
-    }
-
     pub async fn send<T: IoBuf>(&self, buffer: T, flags: i32) -> BufResult<usize, T> {
         let fd = self.to_shared_fd();
         let op = Send::new(fd, buffer, flags);
@@ -318,6 +292,47 @@ impl Socket {
         unsafe { res.map_vec_advanced() }
     }
 
+    pub async fn recv_from_managed(
+        &self,
+        len: usize,
+        flags: i32,
+    ) -> io::Result<Option<(BufferRef, Option<SockAddr>)>> {
+        let fd = self.to_shared_fd();
+        let inner = Runtime::with_current(|rt| {
+            let buffer_pool = rt.buffer_pool()?;
+            let op = RecvFromManaged::new(fd, &buffer_pool, len, flags)?;
+            io::Result::Ok(rt.submit(op))
+        })?
+        .await;
+        let (len, op) = buf_try!(@try inner);
+        // Kernel returns 0 for the operation, drop the buffer and return Ok(None)
+        if len == 0 {
+            return Ok(None);
+        }
+        let Some((mut buf, addr)) = op.take_buffer() else {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                format!("Read {len} bytes, but no buffer was selected by kernel"),
+            ));
+        };
+        unsafe { buf.advance_to(len) };
+        Ok(Some((buf, addr)))
+    }
+
+    pub fn recv_from_multi(
+        &self,
+        flags: i32,
+    ) -> impl Stream<Item = io::Result<RecvFromMultiResult>> {
+        let fd = self.to_shared_fd();
+        Runtime::with_current(|rt| {
+            let buffer_pool = rt.buffer_pool()?;
+            let op = RecvFromMulti::new(fd, &buffer_pool, flags)?;
+            io::Result::Ok(rt.submit_multi(op).into_managed(buffer_pool))
+        })
+        .map(Either::Left)
+        .unwrap_or_else(|e| Either::Right(futures_util::stream::once(std::future::ready(Err(e)))))
+    }
+
     pub async fn recv_msg<T: IoBufMut, C: IoBufMut>(
         &self,
         buffer: T,
@@ -339,6 +354,53 @@ impl Socket {
         let op = RecvMsg::new(fd, buffer, control, flags);
         let res = compio_runtime::submit(op).await.into_inner().map_addr();
         unsafe { res.map_vec_advanced() }
+    }
+
+    pub async fn recv_msg_managed<C: IoBufMut>(
+        &self,
+        len: usize,
+        control: C,
+        flags: i32,
+    ) -> io::Result<Option<(BufferRef, C, Option<SockAddr>)>> {
+        let fd = self.to_shared_fd();
+        let inner = Runtime::with_current(|rt| {
+            let buffer_pool = rt.buffer_pool()?;
+            let op = RecvMsgManaged::new(fd, &buffer_pool, len, control, flags)?;
+            io::Result::Ok(rt.submit(op))
+        })?
+        .await;
+        let (len, op) = buf_try!(@try inner);
+        // Kernel returns 0 for the operation, drop the buffer and return Ok(None)
+        if len == 0 {
+            return Ok(None);
+        }
+        let Some(((mut buf, mut control), addr, control_len)) = op.take_buffer() else {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                format!("Read {len} bytes, but no buffer was selected by kernel"),
+            ));
+        };
+        unsafe { buf.advance_to(len) };
+        unsafe { control.advance_to(control_len) };
+        Ok(Some((buf, control, addr)))
+    }
+
+    pub fn recv_msg_multi(
+        &self,
+        control_len: usize,
+        flags: i32,
+    ) -> impl Stream<Item = io::Result<RecvMsgMultiResult>> {
+        let fd = self.to_shared_fd();
+        Runtime::with_current(|rt| {
+            let buffer_pool = rt.buffer_pool()?;
+            let op = RecvMsgMulti::new(fd, &buffer_pool, control_len, flags)?;
+            io::Result::Ok(
+                rt.submit_multi(op)
+                    .into_managed_with(buffer_pool, control_len),
+            )
+        })
+        .map(Either::Left)
+        .unwrap_or_else(|e| Either::Right(futures_util::stream::once(std::future::ready(Err(e)))))
     }
 
     pub async fn send_to<T: IoBuf>(

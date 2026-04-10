@@ -22,7 +22,6 @@ async fn test_tcp_read_buffer_pool() {
         b"test"
     );
     let res = stream.read_managed(0).await;
-    println!("{res:?}");
     assert!(matches!(res, Ok(None)));
 }
 
@@ -58,6 +57,27 @@ async fn test_udp_recv_from_buffer_pool() {
     .detach();
 
     let (buffer, addr) = listener.recv_from_managed(0).await.unwrap().unwrap();
+    assert_eq!(buffer.as_ref(), b"test");
+    assert_eq!(addr, connected_addr);
+}
+
+#[compio_macros::test]
+async fn test_udp_recv_msg_buffer_pool() {
+    let listener = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
+    let listener_addr = listener.local_addr().unwrap();
+    let connected = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
+    let connected_addr = connected.local_addr().unwrap();
+
+    compio_runtime::spawn(async move {
+        connected.send_to(b"test", listener_addr).await.unwrap();
+    })
+    .detach();
+
+    let (buffer, _, addr) = listener
+        .recv_msg_managed(0, Vec::with_capacity(64))
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(buffer.as_ref(), b"test");
     assert_eq!(addr, connected_addr);
 }
@@ -120,6 +140,40 @@ async fn test_udp_recv_multi() {
 
     let buffer = connected.recv_multi(0).next().await.unwrap().unwrap();
     assert_eq!(&*buffer, b"test");
+}
+
+#[compio_macros::test]
+async fn test_udp_recv_from_multi() {
+    let listener = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
+    let server_addr = listener.local_addr().unwrap();
+    let connected = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = connected.local_addr().unwrap();
+
+    compio_runtime::spawn(async move {
+        listener.send_to(b"test", addr).await.unwrap();
+    })
+    .detach();
+
+    let result = connected.recv_from_multi().next().await.unwrap().unwrap();
+    assert_eq!(result.data(), b"test");
+    assert_eq!(result.addr().and_then(|a| a.as_socket()), Some(server_addr));
+}
+
+#[compio_macros::test]
+async fn test_udp_recv_msg_multi() {
+    let listener = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
+    let server_addr = listener.local_addr().unwrap();
+    let connected = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = connected.local_addr().unwrap();
+
+    compio_runtime::spawn(async move {
+        listener.send_to(b"test", addr).await.unwrap();
+    })
+    .detach();
+
+    let result = connected.recv_msg_multi(64).next().await.unwrap().unwrap();
+    assert_eq!(result.data(), b"test");
+    assert_eq!(result.addr().and_then(|a| a.as_socket()), Some(server_addr));
 }
 
 #[compio_macros::test]
