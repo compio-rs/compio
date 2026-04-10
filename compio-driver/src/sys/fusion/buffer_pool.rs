@@ -1,14 +1,14 @@
 use std::io;
 
 use super::iour;
-use crate::sys::{
-    buffer_pool::{BufPtr, Slot, fallback},
-    fusion::FuseDriver,
+use crate::{
+    buffer_pool::{BufPtr, Slot},
+    sys::{buffer_pool::fallback, fusion::FuseDriver},
 };
 
 #[repr(transparent)]
 #[derive(Debug)]
-pub struct BufControl {
+pub(in crate::sys) struct BufControl {
     inner: Inner,
 }
 

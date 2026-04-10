@@ -64,6 +64,9 @@ crossbeam-queue = { workspace = true }
 libc = { workspace = true }
 nix = { workspace = true, features = ["fs"] }
 
+[dev-dependencies]
+nix = { workspace = true, features = ["mman"] }
+
 [build-dependencies]
 cfg_aliases = { workspace = true }
 
@@ -88,3 +91,6 @@ iocp-wait-packet = []
 once_cell_try = []
 proc_macro_diagnostic = ["dep:compile_warning"]
 nightly = ["once_cell_try", "proc_macro_diagnostic"]
+
+[[test]]
+name = "buffer_pool"

@@ -20,14 +20,12 @@ cfg_if::cfg_if! {
     }
 }
 
+mod buffer_pool;
+mod extra;
 #[cfg(unix)]
 mod unix_op;
 
-mod buffer_pool;
-mod extra;
-
-pub(crate) use buffer_pool::BufferPoolRoot;
-pub use buffer_pool::{BufferPool, BufferRef};
+pub(crate) use buffer_pool::BufControl;
 pub use extra::Extra;
 pub use imp::*;
 
