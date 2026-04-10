@@ -20,7 +20,7 @@ use crate::{BufferPool, ProactorBuilder, key::ErasedKey};
 
 mod buffer_pool;
 mod extra;
-pub(crate) use buffer_pool::BufControl;
+pub(in crate::sys) use buffer_pool::BufControl;
 pub(in crate::sys) use extra::Extra;
 
 /// Fused [`OpCode`]

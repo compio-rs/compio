@@ -24,6 +24,7 @@ use std::{
 use compio_buf::BufResult;
 use compio_log::instrument;
 
+mod control;
 mod macros;
 
 mod key;
@@ -47,9 +48,14 @@ pub use sys::{Extra, *};
 mod cancel;
 pub use cancel::*;
 
-mod control;
+mod buffer_pool;
+pub use buffer_pool::{BoxAllocator, BufferAllocator, BufferPool, BufferRef};
 
-use crate::{key::ErasedKey, op::OpCodeFlag};
+use crate::{
+    buffer_pool::{BufferAlloc, BufferPoolRoot},
+    key::ErasedKey,
+    op::OpCodeFlag,
+};
 
 mod sys_slice;
 
@@ -103,6 +109,7 @@ pub struct Proactor {
 
 enum BufferPoolState {
     Uninit {
+        allocator: BufferAlloc,
         num_of_bufs: u16,
         buffer_len: usize,
         flags: u16,
@@ -115,12 +122,14 @@ impl BufferPoolState {
         loop {
             match self {
                 BufferPoolState::Uninit {
+                    allocator,
                     num_of_bufs,
                     buffer_len,
                     flags,
                 } => {
                     *self = BufferPoolState::Init(BufferPoolRoot::new(
                         driver,
+                        *allocator,
                         *num_of_bufs,
                         *buffer_len,
                         *flags,
@@ -161,6 +170,7 @@ impl Proactor {
             driver: Driver::new(builder)?,
             cancel: CancelRegistry::new(),
             buffer_pool: BufferPoolState::Uninit {
+                allocator: builder.buffer_pool_allocator,
                 num_of_bufs: builder.buffer_pool_size,
                 buffer_len: builder.buffer_pool_buffer_len,
                 flags: builder.buffer_pool_flag,
@@ -546,6 +556,7 @@ pub struct ProactorBuilder {
     buffer_pool_size: u16,
     buffer_pool_flag: u16,
     buffer_pool_buffer_len: usize,
+    buffer_pool_allocator: BufferAlloc,
 }
 
 // SAFETY: `RawFd` is thread safe.
@@ -574,6 +585,7 @@ impl ProactorBuilder {
             buffer_pool_size: 8,
             buffer_pool_flag: 0,
             buffer_pool_buffer_len: 8192,
+            buffer_pool_allocator: BufferAlloc::new::<BoxAllocator>(),
         }
     }
 
@@ -693,7 +705,8 @@ impl ProactorBuilder {
     /// Support for io-uring opcodes varies by kernel version. Setting this
     /// will force the driver to check for support of the specified opcodes, and
     /// when any of them are not supported:
-    /// - Fallback to `polling` driver if `fusion` driver is enabled,
+    ///
+    /// - Fallback to `polling` driver if it is enabled, or
     /// - Return an [`Unsupported`] error when building the proactor otherwise.
     ///
     /// # Notes
@@ -720,6 +733,8 @@ impl ProactorBuilder {
     /// Number of buffers in the buffer pool.
     ///
     /// `size` will be rounded up if it's not power of 2.
+    ///
+    /// Default to be `8`.
     pub fn buffer_pool_size(&mut self, size: NonZero<u16>) -> &mut Self {
         self.buffer_pool_size = size.get();
         self
@@ -728,14 +743,39 @@ impl ProactorBuilder {
     /// Flag to be used to initialize buffer pool.
     ///
     /// This is only supported on io-uring driver.
+    ///
+    /// Default to be `0`.
     pub fn buffer_pool_flag(&mut self, flag: u16) -> &mut Self {
         self.buffer_pool_flag = flag;
         self
     }
 
     /// Length of each buffer pool's buffer.
+    ///
+    /// Default to be `8192`.
     pub fn buffer_pool_buffer_len(&mut self, size: usize) -> &mut Self {
         self.buffer_pool_buffer_len = size;
+        self
+    }
+
+    /// Set the allocator for buffer pool.
+    ///
+    /// This is different from the std's unstable `Allocator` trait: it's purely
+    /// static and doesn't take an instance at all. This means implementation
+    /// should be global (e.g., `Global`, `malloc` or `mmap`).
+    ///
+    /// Default to [`BoxAllocator`].
+    ///
+    /// # Note
+    ///
+    /// Default allocator performs [very poor] when using managed i/o on Zen 3,
+    /// possibly due to [a bug related to FSRM]. If you observe such a problem,
+    /// try swap the allocator to a mmap-based one may solve it.
+    ///
+    /// [very poor]: https://github.com/compio-rs/compio/issues/472
+    /// [a bug related to FSRM]: https://bugs.launchpad.net/ubuntu/+source/glibc/+bug/2030515
+    pub fn buffer_pool_allocator<A: BufferAllocator>(&mut self) -> &mut Self {
+        self.buffer_pool_allocator = BufferAlloc::new::<A>();
         self
     }
 

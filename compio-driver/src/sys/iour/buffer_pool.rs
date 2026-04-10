@@ -12,11 +12,11 @@ use synchrony::unsync::atomic::AtomicU16;
 
 use crate::{
     assert_not_impl,
-    sys::buffer_pool::{BufPtr, Slot},
+    buffer_pool::{BufPtr, Slot},
 };
 
 #[derive(Debug)]
-pub struct BufControl {
+pub(in crate::sys) struct BufControl {
     /// Pointer to the mmap-ed entry memory
     ptr: NonNull<BufRingEntry>,
     /// Number of entries
