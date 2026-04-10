@@ -25,6 +25,7 @@ use compio_buf::BufResult;
 use compio_log::instrument;
 
 mod macros;
+mod panic;
 
 mod key;
 pub use key::Key;
@@ -49,7 +50,7 @@ pub use cancel::*;
 
 mod control;
 
-use crate::{key::ErasedKey, op::OpCodeFlag};
+use crate::{key::ErasedKey, op::OpCodeFlag, panic::resume_unwind_io};
 
 mod sys_slice;
 
@@ -202,7 +203,8 @@ impl Proactor {
         }
         self.cancel.remove(&key);
         if key.is_unique() && key.has_result() {
-            Some(key.take_result())
+            let (res, buf) = key.take_result().into_parts();
+            Some(BufResult(resume_unwind_io(res), buf))
         } else {
             self.driver.cancel(key.erase());
             None
@@ -276,12 +278,14 @@ impl Proactor {
     ///
     /// # Panics
     ///
-    /// This function will panic if the [`Key`] is not unique.
+    /// This function will panic if the [`Key`] is not unique or if the
+    /// operation is blocking and it panicked in the thread pool.
     pub fn pop<T: OpCode>(&mut self, key: Key<T>) -> PushEntry<Key<T>, BufResult<usize, T>> {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
             self.cancel.remove(&key);
-            PushEntry::Ready(key.take_result())
+            let (res, buf) = key.take_result().into_parts();
+            PushEntry::Ready(BufResult(resume_unwind_io(res), buf))
         } else {
             PushEntry::Pending(key)
         }
@@ -292,7 +296,8 @@ impl Proactor {
     ///
     /// # Panics
     ///
-    /// This function will panic if the [`Key`] is not unique.
+    /// This function will panic if the [`Key`] is not unique or if the
+    /// operation is blocking and it panicked in the thread pool.
     pub fn pop_with_extra<T: OpCode>(
         &mut self,
         key: Key<T>,
@@ -301,8 +306,8 @@ impl Proactor {
         if key.has_result() {
             self.cancel.remove(&key);
             let extra = key.swap_extra(self.default_extra());
-            let res = key.take_result();
-            PushEntry::Ready((res, extra))
+            let (res, buf) = key.take_result().into_parts();
+            PushEntry::Ready((BufResult(resume_unwind_io(res), buf), extra))
         } else {
             PushEntry::Pending(key)
         }

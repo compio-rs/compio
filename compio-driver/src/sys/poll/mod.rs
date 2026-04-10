@@ -7,6 +7,7 @@ use std::{
     collections::{HashMap, VecDeque},
     io,
     num::NonZeroUsize,
+    panic::AssertUnwindSafe,
     sync::Arc,
     task::{Poll, Wake, Waker},
     time::Duration,
@@ -20,7 +21,7 @@ use smallvec::SmallVec;
 
 use crate::{
     AsyncifyPool, DriverType, Entry, ErasedKey, ProactorBuilder, control::Carrier,
-    key::BorrowedKey, sys::op::Interest, syscall,
+    key::BorrowedKey, panic::catch_unwind_io, sys::op::Interest, syscall,
 };
 
 mod extra;
@@ -588,11 +589,11 @@ impl Driver {
         let mut key = unsafe { key.freeze() };
 
         let mut closure = move || {
-            let poll = key.as_mut().carrier.operate();
-            let res = match poll {
+            let operate = || match key.as_mut().carrier.operate() {
                 Poll::Pending => unreachable!("this operation is not non-blocking"),
                 Poll::Ready(res) => res,
             };
+            let res = catch_unwind_io(AssertUnwindSafe(operate));
             let _ = completed.send(Entry::new(key.into_inner(), res));
             waker.wake();
         };
