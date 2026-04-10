@@ -1,3 +1,8 @@
+use std::{
+    panic::{AssertUnwindSafe, catch_unwind},
+    time::Duration,
+};
+
 use compio_buf::BufResult;
 use compio_driver::{Key, OpCode, Proactor, PushEntry, op::Asyncify};
 
@@ -12,12 +17,33 @@ fn take_key<T: OpCode, R>(res: PushEntry<Key<T>, R>) -> Key<T> {
 
 fn wait_for<T: OpCode>(driver: &mut Proactor, mut key: Key<T>) -> BufResult<usize, T> {
     loop {
-        driver.poll(None).unwrap();
+        _ = driver.poll(Some(Duration::from_millis(1)));
         match driver.pop(key) {
             PushEntry::Pending(k) => key = k,
             PushEntry::Ready(res) => break res,
         }
     }
+}
+
+#[test]
+fn panic() {
+    let mut driver = Proactor::builder().thread_pool_limit(1).build().unwrap();
+
+    // make panicking less noisy
+    std::panic::set_hook(Box::new(|_| {}));
+
+    let a = take_key(driver.push(Asyncify::new(|| -> BufResult<usize, ()> {
+        panic!("this should not blow up driver's thread pool");
+    })));
+    let b = take_key(driver.push(Asyncify::new(|| BufResult(Ok(1), ()))));
+
+    let res_b = wait_for(&mut driver, b);
+    let res_a = catch_unwind(AssertUnwindSafe(|| wait_for(&mut driver, a)));
+
+    _ = std::panic::take_hook(); // restore to default hook
+
+    assert!(res_b.0.is_ok_and(|res| res == 1));
+    assert!(res_a.is_err());
 }
 
 #[test]
