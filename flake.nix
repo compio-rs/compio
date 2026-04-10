@@ -34,9 +34,10 @@
             gdb
             lldb
             openssl
+            python315
             pkg-config
             cargo-nextest
-            python315
+            cargo-flamegraph
             (rust-bin.selectLatestNightlyWith (
               toolchain:
               toolchain.default.override {

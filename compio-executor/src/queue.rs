@@ -7,7 +7,7 @@ use crate::{Shared, task::Task, util::assert_not_impl};
 
 new_key_type! { pub struct TaskId; }
 
-use compio_log::instrument;
+use compio_log::{instrument, trace};
 use slotmap::SlotMap;
 
 use crate::UnsafeCell;
@@ -78,11 +78,14 @@ impl TaskQueue {
     ///
     /// Must only be called by `Executor`.
     pub unsafe fn clear(&self) {
-        instrument!(compio_log::Level::DEBUG, "clear");
+        instrument!(compio_log::Level::DEBUG, "TaskQueue::clear");
+
+        trace!("Clearing");
 
         unsafe {
             self.with_inner(|inner| {
                 if inner.map.is_empty() {
+                    trace!("Map empty, return");
                     return;
                 }
 
@@ -92,8 +95,10 @@ impl TaskQueue {
                 inner.cold.tail = None;
 
                 for task in inner.map.drain().filter_map(|(_, i)| i.task) {
-                    task.unset_shared();
+                    trace!(?task, "Dropping task");
+
                     task.drop();
+                    task.wait_for_scheduling();
                 }
 
                 debug_assert!(inner.map.is_empty());

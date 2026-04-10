@@ -47,7 +47,7 @@ impl Debug for State {
 
 impl Debug for Snapshot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("State")
+        f.debug_struct("Snapshot")
             .field("count", &self.count())
             .field("scheduling", &self.is_scheduling())
             .field("scheduled", &self.is_scheduled())
@@ -146,7 +146,7 @@ impl State {
     }
 
     pub(crate) fn finish_setting_waker<const SUCCESS: bool>(&self) -> Snapshot {
-        trace!("finish_setting_waker");
+        trace!(SUCCESS, "finish_setting_waker");
 
         let flag = if SUCCESS {
             NOT_SETTING_WAKER | HAS_WAKER
@@ -172,20 +172,20 @@ impl State {
     }
 
     pub(crate) fn inc(&self) -> Snapshot {
-        let old = Snapshot(self.0.fetch_add(RC_UNIT, Strong::RELEASE));
-        trace!(?old, "inc");
-        if old.count() == RC_MAX {
+        let state = Snapshot(self.0.fetch_add(RC_UNIT, Strong::RELEASE));
+        trace!(?state, "inc");
+        if state.count() == RC_MAX {
             abort()
         }
-        old
+        state
     }
 
     /// Decrease the reference count by one and return the old state.
     pub(crate) fn dec(&self) -> Snapshot {
-        let old = Snapshot(self.0.fetch_sub(RC_UNIT, Strong::ACQ_REL));
-        trace!(?old, "dec");
-        debug_assert!(old.count() >= 1, "Reference count underflow");
-        old
+        let state = Snapshot(self.0.fetch_sub(RC_UNIT, Strong::ACQ_REL));
+        trace!(?state, "dec");
+        debug_assert!(state.count() >= 1, "Reference count underflow");
+        state
     }
 }
 

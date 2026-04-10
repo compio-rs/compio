@@ -25,7 +25,6 @@ slotmap = { workspace = true }
 loom = { version = "0.7", features = ["checkpoint"] }
 
 [dev-dependencies]
-compio-log = { workspace = true, features = ["enable_log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [target.'cfg(unix)'.dev-dependencies]
@@ -33,6 +32,7 @@ nix = { workspace = true, features = ["resource", "signal"] }
 
 [features]
 notify-always = []
+enable_log = ["compio-log/enable_log"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
