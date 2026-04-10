@@ -359,8 +359,8 @@ impl UdpSocket {
         Ok(ret)
     }
 
-    /// Receives a single datagram message and ancillary data on the socket from
-    /// the runtime's buffer pool.
+    /// Receives multiple single datagram messages and ancillary data on the
+    /// socket from the runtime's buffer pool.
     pub fn recv_msg_multi(
         &self,
         control_len: usize,
