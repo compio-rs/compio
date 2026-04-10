@@ -1,12 +1,12 @@
 use std::{
     collections::VecDeque,
     io,
-    mem::ManuallyDrop,
+    mem::{ManuallyDrop, size_of},
     os::fd::{AsFd, AsRawFd},
     ptr::{self, drop_in_place},
 };
 
-use compio_buf::BufResult;
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetLen};
 use io_uring::{opcode, squeue::Flags, types::Fd};
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
@@ -287,6 +287,59 @@ unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
     }
 }
 
+/// Receive data into managed buffer, and ancillary data into control buffer.
+pub struct RecvMsgManaged<C: IoBufMut, S: AsFd> {
+    op: RecvFromManaged<S>,
+    control: C,
+    control_len: usize,
+}
+
+impl<C: IoBufMut, S: AsFd> RecvMsgManaged<C, S> {
+    /// Create [`RecvMsgManaged`].
+    pub fn new(fd: S, pool: &BufferPool, len: usize, control: C, flags: i32) -> io::Result<Self> {
+        Ok(Self {
+            op: RecvFromManaged::new(fd, pool, len, flags)?,
+            control,
+            control_len: 0,
+        })
+    }
+}
+
+unsafe impl<C: IoBufMut, S: AsFd> OpCode for RecvMsgManaged<C, S> {
+    type Control = RecvFromManagedControl;
+
+    unsafe fn init(&mut self) -> Self::Control {
+        let mut control = unsafe { self.op.init() };
+        let slice = self.control.as_uninit();
+        control.msg.msg_control = slice.as_mut_ptr() as _;
+        control.msg.msg_controllen = slice.len() as _;
+        control
+    }
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.op.create_entry(control)
+    }
+
+    unsafe fn set_result(
+        &mut self,
+        control: &mut Self::Control,
+        result: &io::Result<usize>,
+        extra: &Extra,
+    ) {
+        unsafe { self.op.set_result(control, result, extra) };
+        self.control_len = control.msg.msg_controllen as _;
+    }
+}
+
+impl<C: IoBufMut, S: AsFd> TakeBuffer for RecvMsgManaged<C, S> {
+    type Buffer = ((BufferRef, C), Option<SockAddr>, usize);
+
+    fn take_buffer(self) -> Option<Self::Buffer> {
+        let (buffer, addr) = self.op.take_buffer()?;
+        Some(((buffer, self.control), addr, self.control_len))
+    }
+}
+
 struct BufferGuard {
     pool: BufferPool,
     buffer_id: u16,
@@ -541,5 +594,330 @@ impl<S> TakeBuffer for RecvMulti<S> {
 
     fn take_buffer(self) -> Option<BufferRef> {
         self.inner.take_buffer()
+    }
+}
+
+#[derive(Debug)]
+#[repr(C)]
+#[allow(non_camel_case_types)]
+struct io_uring_recvmsg_out {
+    namelen: u32,
+    controllen: u32,
+    payloadlen: u32,
+    flags: u32,
+}
+
+struct RecvMsgMultiResultInner {
+    buffer: BufferRef,
+    clen: usize,
+}
+
+const NLEN: usize = size_of::<SockAddrStorage>();
+
+impl RecvMsgMultiResultInner {
+    unsafe fn new(buffer: BufferRef, clen: usize) -> Self {
+        assert!(buffer.len() >= size_of::<io_uring_recvmsg_out>());
+        let header = unsafe {
+            buffer
+                .as_init()
+                .as_ptr()
+                .cast::<io_uring_recvmsg_out>()
+                .read_unaligned()
+        };
+        let total_len =
+            size_of::<io_uring_recvmsg_out>() + NLEN + clen + header.payloadlen as usize;
+        assert!(buffer.len() >= total_len);
+        Self { buffer, clen }
+    }
+
+    fn header(&self) -> io_uring_recvmsg_out {
+        // SAFETY: we provide enough capacity for the header
+        unsafe {
+            self.buffer
+                .as_ptr()
+                .cast::<io_uring_recvmsg_out>()
+                .read_unaligned()
+        }
+    }
+
+    fn data(&self) -> &[u8] {
+        let offset = size_of::<io_uring_recvmsg_out>() + NLEN + self.clen;
+        &self.buffer.as_init()[offset..]
+    }
+
+    fn addr(&self) -> Option<SockAddr> {
+        let header = self.header();
+        if header.namelen == 0 {
+            None
+        } else {
+            let offset = size_of::<io_uring_recvmsg_out>();
+            let mut addr = SockAddrStorage::zeroed();
+            unsafe {
+                ptr::copy_nonoverlapping(
+                    self.buffer.as_ptr().add(offset),
+                    &raw mut addr as *mut u8,
+                    header.namelen as usize,
+                );
+            }
+            Some(unsafe { SockAddr::new(addr, header.namelen as _) })
+        }
+    }
+
+    fn ancillary(&self) -> &[u8] {
+        let header = self.header();
+        let offset = size_of::<io_uring_recvmsg_out>() + NLEN;
+        &self.buffer.as_init()[offset..offset + header.controllen as usize]
+    }
+}
+
+/// Result of [`RecvMsgMulti`].
+pub struct RecvMsgMultiResult {
+    inner: RecvMsgMultiResultInner,
+}
+
+impl RecvMsgMultiResult {
+    /// Create [`RecvMsgMultiResult`] from a buffer received from
+    /// [`RecvMsgMulti`].
+    ///
+    /// # Safety
+    ///
+    /// The buffer must be received from [`RecvMsgMulti`] or have the same
+    /// format as the buffer received from [`RecvMsgMulti`].
+    pub unsafe fn new(buffer: BufferRef, clen: usize) -> Self {
+        Self {
+            inner: unsafe { RecvMsgMultiResultInner::new(buffer, clen) },
+        }
+    }
+
+    /// Get the payload data.
+    pub fn data(&self) -> &[u8] {
+        self.inner.data()
+    }
+
+    /// Get the source address if applicable.
+    pub fn addr(&self) -> Option<SockAddr> {
+        self.inner.addr()
+    }
+
+    /// Get the ancillary data.
+    pub fn ancillary(&self) -> &[u8] {
+        self.inner.ancillary()
+    }
+}
+
+impl IntoInner for RecvMsgMultiResult {
+    type Inner = BufferRef;
+
+    fn into_inner(self) -> Self::Inner {
+        self.inner.buffer
+    }
+}
+
+/// Receive data, ancillary data and source address multi times into multiple
+/// managed buffers.
+pub struct RecvMsgMulti<S: AsFd> {
+    fd: S,
+    flags: i32,
+    control_len: usize,
+    buffer_group: u16,
+    buffer_pool: BufferPool,
+    buffer: Option<BufferRef>,
+    multishots: VecDeque<MultishotResult>,
+    len: usize,
+}
+
+pub struct RecvMsgMultiControl {
+    msg: libc::msghdr,
+}
+
+impl<S: AsFd> RecvMsgMulti<S> {
+    /// Create [`RecvMsgMulti`].
+    pub fn new(
+        fd: S,
+        buffer_pool: &BufferPool,
+        control_len: usize,
+        flags: i32,
+    ) -> io::Result<Self> {
+        Ok(Self {
+            fd,
+            buffer_group: buffer_pool.buffer_group()?,
+            flags,
+            control_len,
+            buffer_pool: buffer_pool.clone(),
+            buffer: None,
+            multishots: VecDeque::new(),
+            len: 0,
+        })
+    }
+}
+
+impl<S: AsFd> TakeBuffer for RecvMsgMulti<S> {
+    type Buffer = RecvMsgMultiResult;
+
+    fn take_buffer(self) -> Option<Self::Buffer> {
+        let mut buffer = self.buffer?;
+        unsafe { buffer.advance_to(self.len) };
+        Some(unsafe { RecvMsgMultiResult::new(buffer, self.control_len) })
+    }
+}
+
+unsafe impl<S: AsFd> OpCode for RecvMsgMulti<S> {
+    type Control = RecvMsgMultiControl;
+
+    unsafe fn init(&mut self) -> Self::Control {
+        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
+        msg.msg_namelen = NLEN as _;
+        msg.msg_controllen = self.control_len as _;
+        RecvMsgMultiControl { msg }
+    }
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        opcode::RecvMsgMulti::new(
+            Fd(self.fd.as_fd().as_raw_fd()),
+            &raw mut control.msg,
+            self.buffer_group,
+        )
+        .flags(self.flags as _)
+        .build()
+        .into()
+    }
+
+    unsafe fn push_multishot(
+        &mut self,
+        _: &mut Self::Control,
+        res: io::Result<usize>,
+        extra: crate::Extra,
+    ) {
+        self.multishots
+            .push_back(MultishotResult::new(res, extra, &self.buffer_pool));
+    }
+
+    fn pop_multishot(
+        &mut self,
+        _: &mut Self::Control,
+    ) -> Option<BufResult<usize, crate::sys::Extra>> {
+        self.multishots
+            .pop_front()
+            .map(MultishotResult::into_result)
+    }
+
+    unsafe fn set_result(
+        &mut self,
+        _: &mut Self::Control,
+        result: &io::Result<usize>,
+        extra: &Extra,
+    ) {
+        let Ok(buffer_id) = extra.buffer_id() else {
+            return;
+        };
+        let buffer = self
+            .buffer_pool
+            .take(buffer_id)
+            .expect("Driver should be alive")
+            .expect("Buffer should not be in use");
+        self.buffer.replace(buffer);
+        if let Ok(result) = result {
+            self.len = *result;
+        }
+    }
+}
+
+/// Result of [`RecvFromMulti`].
+pub struct RecvFromMultiResult {
+    inner: RecvMsgMultiResultInner,
+}
+
+impl RecvFromMultiResult {
+    /// Create [`RecvFromMultiResult`] from a buffer received from
+    /// [`RecvFromMulti`].
+    ///
+    /// # Safety
+    ///
+    /// The buffer must be received from [`RecvFromMulti`] or have the same
+    /// format as the buffer received from [`RecvFromMulti`].
+    pub unsafe fn new(buffer: BufferRef) -> Self {
+        Self {
+            inner: unsafe { RecvMsgMultiResultInner::new(buffer, 0) },
+        }
+    }
+
+    /// Get the payload data.
+    pub fn data(&self) -> &[u8] {
+        self.inner.data()
+    }
+
+    /// Get the source address if applicable.
+    pub fn addr(&self) -> Option<SockAddr> {
+        self.inner.addr()
+    }
+}
+
+impl IntoInner for RecvFromMultiResult {
+    type Inner = BufferRef;
+
+    fn into_inner(self) -> Self::Inner {
+        self.inner.buffer
+    }
+}
+
+/// Receive data and source address multi times into multiple managed buffers.
+pub struct RecvFromMulti<S: AsFd> {
+    op: RecvMsgMulti<S>,
+}
+
+impl<S: AsFd> RecvFromMulti<S> {
+    /// Create [`RecvFromMulti`].
+    pub fn new(fd: S, pool: &BufferPool, flags: i32) -> io::Result<Self> {
+        Ok(Self {
+            op: RecvMsgMulti::new(fd, pool, 0, flags)?,
+        })
+    }
+}
+
+unsafe impl<S: AsFd> OpCode for RecvFromMulti<S> {
+    type Control = RecvMsgMultiControl;
+
+    unsafe fn init(&mut self) -> Self::Control {
+        unsafe { self.op.init() }
+    }
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.op.create_entry(control)
+    }
+
+    unsafe fn push_multishot(
+        &mut self,
+        control: &mut Self::Control,
+        result: io::Result<usize>,
+        extra: crate::Extra,
+    ) {
+        unsafe {
+            self.op.push_multishot(control, result, extra);
+        }
+    }
+
+    fn pop_multishot(
+        &mut self,
+        control: &mut Self::Control,
+    ) -> Option<BufResult<usize, crate::sys::Extra>> {
+        self.op.pop_multishot(control)
+    }
+
+    unsafe fn set_result(
+        &mut self,
+        control: &mut Self::Control,
+        result: &io::Result<usize>,
+        extra: &Extra,
+    ) {
+        unsafe { self.op.set_result(control, result, extra) };
+    }
+}
+
+impl<S: AsFd> TakeBuffer for RecvFromMulti<S> {
+    type Buffer = RecvFromMultiResult;
+
+    fn take_buffer(self) -> Option<Self::Buffer> {
+        let res = self.op.take_buffer()?;
+        Some(RecvFromMultiResult { inner: res.inner })
     }
 }

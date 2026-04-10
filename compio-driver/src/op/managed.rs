@@ -1,10 +1,13 @@
 use std::io;
 
-use compio_buf::IntoInner;
+use compio_buf::{IntoInner, IoBuf, IoBufMut, SetLen};
 use socket2::SockAddr;
 
 use super::{Read, ReadAt, Recv, RecvFrom};
-use crate::{AsFd, BufferPool, BufferRef, op::TakeBuffer};
+use crate::{
+    AsFd, BufferPool, BufferRef,
+    op::{RecvMsg, TakeBuffer},
+};
 
 /// Read a file at specified position into managed buffer.
 pub struct ReadManagedAt<S> {
@@ -97,9 +100,158 @@ impl<S: AsFd> TakeBuffer for RecvFromManaged<S> {
     }
 }
 
+/// Receive data into managed buffer, and ancillary data into control buffer.
+pub struct RecvMsgManaged<C: IoBufMut, S: AsFd> {
+    pub(crate) op: RecvMsg<[BufferRef; 1], C, S>,
+}
+
+impl<C: IoBufMut, S: AsFd> RecvMsgManaged<C, S> {
+    /// Create [`RecvMsgManaged`].
+    pub fn new(fd: S, pool: &BufferPool, len: usize, control: C, flags: i32) -> io::Result<Self> {
+        Ok(Self {
+            op: RecvMsg::new(fd, [pool.pop()?.with_capacity(len)], control, flags),
+        })
+    }
+}
+
+impl<C: IoBufMut, S: AsFd> TakeBuffer for RecvMsgManaged<C, S> {
+    type Buffer = ((BufferRef, C), Option<SockAddr>, usize);
+
+    fn take_buffer(self) -> Option<Self::Buffer> {
+        let (([buf], control), addr, len) = self.op.into_inner();
+        Some(((buf, control), addr, len))
+    }
+}
+
 /// Read a file at specified position into multiple managed buffers.
 pub type ReadMultiAt<S> = ReadManagedAt<S>;
 /// Read a file into multiple managed buffers.
 pub type ReadMulti<S> = ReadManaged<S>;
 /// Receive data from remote into multiple managed buffers.
 pub type RecvMulti<S> = RecvManaged<S>;
+
+/// Result of [`RecvFromMulti`].
+pub struct RecvFromMultiResult {
+    buffer: BufferRef,
+    addr: Option<SockAddr>,
+}
+
+impl RecvFromMultiResult {
+    #[doc(hidden)]
+    pub unsafe fn new(_: BufferRef) -> Self {
+        unreachable!("should not be called directly")
+    }
+
+    /// Get the payload data.
+    pub fn data(&self) -> &[u8] {
+        self.buffer.as_init()
+    }
+
+    /// Get the source address if applicable.
+    pub fn addr(&self) -> Option<SockAddr> {
+        self.addr.clone()
+    }
+}
+
+impl IntoInner for RecvFromMultiResult {
+    type Inner = BufferRef;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+/// Receive data and source address multi times into multiple managed buffers.
+pub struct RecvFromMulti<S: AsFd> {
+    pub(crate) op: RecvFromManaged<S>,
+    pub(crate) len: usize,
+}
+
+impl<S: AsFd> RecvFromMulti<S> {
+    /// Create [`RecvFromMulti`].
+    pub fn new(fd: S, pool: &BufferPool, flags: i32) -> io::Result<Self> {
+        Ok(Self {
+            op: RecvFromManaged::new(fd, pool, 0, flags)?,
+            len: 0,
+        })
+    }
+}
+
+impl<S: AsFd> TakeBuffer for RecvFromMulti<S> {
+    type Buffer = RecvFromMultiResult;
+
+    fn take_buffer(self) -> Option<Self::Buffer> {
+        let (mut buffer, addr) = self.op.take_buffer()?;
+        unsafe { buffer.advance_to(self.len) };
+        Some(RecvFromMultiResult { buffer, addr })
+    }
+}
+
+/// Result of [`RecvMsgMulti`].
+pub struct RecvMsgMultiResult {
+    buffer: BufferRef,
+    control: BufferRef,
+    addr: Option<SockAddr>,
+}
+
+impl RecvMsgMultiResult {
+    #[doc(hidden)]
+    pub unsafe fn new(_: BufferRef, _: usize) -> Self {
+        unreachable!("should not be called directly")
+    }
+
+    /// Get the payload data.
+    pub fn data(&self) -> &[u8] {
+        self.buffer.as_init()
+    }
+
+    /// Get the source address if applicable.
+    pub fn addr(&self) -> Option<SockAddr> {
+        self.addr.clone()
+    }
+
+    /// Get the ancillary data.
+    pub fn ancillary(&self) -> &[u8] {
+        self.control.as_init()
+    }
+}
+
+impl IntoInner for RecvMsgMultiResult {
+    type Inner = BufferRef;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+/// Receive data, ancillary data and source address multi times into multiple
+/// managed buffers.
+pub struct RecvMsgMulti<S: AsFd> {
+    pub(crate) op: RecvMsgManaged<BufferRef, S>,
+    pub(crate) len: usize,
+}
+
+impl<S: AsFd> RecvMsgMulti<S> {
+    /// Create [`RecvMsgMulti`].
+    pub fn new(fd: S, pool: &BufferPool, control_len: usize, flags: i32) -> io::Result<Self> {
+        Ok(Self {
+            op: RecvMsgManaged::new(fd, pool, 0, pool.pop()?.with_capacity(control_len), flags)?,
+            len: 0,
+        })
+    }
+}
+
+impl<S: AsFd> TakeBuffer for RecvMsgMulti<S> {
+    type Buffer = RecvMsgMultiResult;
+
+    fn take_buffer(self) -> Option<Self::Buffer> {
+        let ((mut buffer, mut control), addr, control_len) = self.op.take_buffer()?;
+        unsafe { buffer.advance_to(self.len) };
+        unsafe { control.advance_to(control_len) };
+        Some(RecvMsgMultiResult {
+            buffer,
+            control,
+            addr,
+        })
+    }
+}

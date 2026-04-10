@@ -1070,24 +1070,6 @@ unsafe impl<S: AsFd> OpCode for crate::op::managed::RecvManaged<S> {
     }
 }
 
-unsafe impl<S: AsFd> OpCode for crate::op::managed::RecvFromManaged<S> {
-    type Control = ();
-
-    unsafe fn init(&mut self) -> Self::Control {}
-
-    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
-        self.op.pre_submit(control)
-    }
-
-    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
-        self.op.op_type(control)
-    }
-
-    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
-        self.op.operate(control)
-    }
-}
-
 impl<T: IoVectoredBufMut, S: AsFd> RecvVectored<T, S> {
     unsafe fn call(&mut self, control: &mut RecvVectoredControl) -> libc::ssize_t {
         unsafe { libc::recvmsg(self.fd.as_fd().as_raw_fd(), &mut control.msg, self.flags) }
@@ -1210,6 +1192,53 @@ impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
     fn into_inner(self) -> Self::Inner {
         let addr = (self.addr_len > 0).then(|| unsafe { SockAddr::new(self.addr, self.addr_len) });
         (self.buffer, addr)
+    }
+}
+
+unsafe impl<S: AsFd> OpCode for crate::op::managed::RecvFromManaged<S> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
+        self.op.pre_submit(control)
+    }
+
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
+        self.op.op_type(control)
+    }
+
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        self.op.operate(control)
+    }
+}
+
+unsafe impl<S: AsFd> OpCode for crate::op::managed::RecvFromMulti<S> {
+    type Control = ();
+
+    unsafe fn init(&mut self) -> Self::Control {}
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
+        self.op.pre_submit(control)
+    }
+
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
+        self.op.op_type(control)
+    }
+
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        self.op.operate(control)
+    }
+
+    unsafe fn set_result(
+        &mut self,
+        _: &mut Self::Control,
+        result: &io::Result<usize>,
+        _: &crate::Extra,
+    ) {
+        if let Ok(result) = result {
+            self.len = *result;
+        }
     }
 }
 
@@ -1442,6 +1471,67 @@ unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, 
         _: &crate::Extra,
     ) {
         self.update_control(control);
+    }
+}
+
+unsafe impl<C: IoBufMut, S: AsFd> OpCode for crate::op::managed::RecvMsgManaged<C, S> {
+    type Control = RecvMsgControl;
+
+    unsafe fn init(&mut self) -> Self::Control {
+        unsafe { self.op.init() }
+    }
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
+        self.op.pre_submit(control)
+    }
+
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
+        self.op.op_type(control)
+    }
+
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        self.op.operate(control)
+    }
+
+    unsafe fn set_result(
+        &mut self,
+        control: &mut Self::Control,
+        result: &io::Result<usize>,
+        extra: &crate::Extra,
+    ) {
+        unsafe { self.op.set_result(control, result, extra) }
+    }
+}
+
+unsafe impl<S: AsFd> OpCode for crate::op::managed::RecvMsgMulti<S> {
+    type Control = RecvMsgControl;
+
+    unsafe fn init(&mut self) -> Self::Control {
+        unsafe { self.op.init() }
+    }
+
+    fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
+        self.op.pre_submit(control)
+    }
+
+    fn op_type(&mut self, control: &mut Self::Control) -> Option<OpType> {
+        self.op.op_type(control)
+    }
+
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        self.op.operate(control)
+    }
+
+    unsafe fn set_result(
+        &mut self,
+        control: &mut Self::Control,
+        result: &io::Result<usize>,
+        extra: &crate::Extra,
+    ) {
+        unsafe { self.op.set_result(control, result, extra) };
+        if let Ok(result) = result {
+            self.len = *result;
+        }
     }
 }
 
