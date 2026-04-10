@@ -6,6 +6,7 @@ use std::{
     io,
     marker::PhantomData,
     os::fd::FromRawFd,
+    panic::AssertUnwindSafe,
     sync::Arc,
     task::{Poll, Wake, Waker},
     time::Duration,
@@ -39,6 +40,7 @@ use crate::{
     AsyncifyPool, DriverType, Entry, ProactorBuilder,
     control::Carrier,
     key::{BorrowedKey, ErasedKey},
+    panic::catch_unwind_io,
     syscall,
 };
 
@@ -544,7 +546,7 @@ impl Driver {
         // SAFETY: we're submitting into the driver, so it's safe to freeze here.
         let mut key = unsafe { key.freeze() };
         let mut closure = move || {
-            let res = key.as_mut().carrier.call_blocking();
+            let res = catch_unwind_io(AssertUnwindSafe(|| key.as_mut().carrier.call_blocking()));
             let _ = completed.send(Entry::new(key.into_inner(), res));
             waker.wake();
         };

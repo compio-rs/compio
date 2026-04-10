@@ -60,14 +60,17 @@ impl<C: crate::Carry + ?Sized> RawOp<C> {
     ///
     /// [`Poll::Pending`]: std::task::Poll::Pending
     pub fn operate_blocking(&mut self) -> io::Result<usize> {
-        use std::task::Poll;
+        use std::{panic::AssertUnwindSafe, task::Poll};
+
+        use crate::panic::catch_unwind_io;
 
         let optr = self.extra_mut().optr();
-        let res = unsafe { self.carrier.operate(optr.cast()) };
-        match res {
-            Poll::Pending => unreachable!("this operation is not overlapped"),
-            Poll::Ready(res) => res,
-        }
+        catch_unwind_io(AssertUnwindSafe(|| unsafe {
+            match self.carrier.operate(optr.cast()) {
+                Poll::Pending => unreachable!("this operation is not overlapped"),
+                Poll::Ready(res) => res,
+            }
+        }))
     }
 }
 

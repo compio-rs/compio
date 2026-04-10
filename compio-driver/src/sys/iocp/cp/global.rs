@@ -103,6 +103,7 @@ impl Port {
         self.global_port.attach(fd)
     }
 
+    #[allow(dead_code)]
     pub fn post(&self, res: io::Result<usize>, optr: *mut Overlapped) -> io::Result<()> {
         self.port.post(res, optr)
     }
