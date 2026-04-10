@@ -197,7 +197,6 @@ impl<T: OpCode + TakeBuffer<Buffer = B> + 'static, B: HandleBufferRef> Stream
         if let Some(inner) = self.inner.as_mut() {
             let buffer = match std::task::ready!(inner.poll_next_unpin(cx)) {
                 Some(BufResult(res, extra)) => {
-                    let res = res?;
                     if inner.is_terminated() {
                         let mut b = self
                             .inner
@@ -205,16 +204,19 @@ impl<T: OpCode + TakeBuffer<Buffer = B> + 'static, B: HandleBufferRef> Stream
                             .and_then(|s| s.try_take().ok())
                             .and_then(|op| op.take_buffer());
                         if let Some(ref mut b) = b {
-                            unsafe { b.advance_to(res) }
+                            unsafe { b.advance_to(res?) }
                         }
                         b
                     } else {
-                        self.buffer_pool
-                            .take(extra.buffer_id()?)?
-                            .map(|mut b| unsafe {
-                                SetLen::advance_to(&mut b, res);
-                                B::from_buffer_ref(b, self.param)
-                            })
+                        let b = self.buffer_pool.take(extra.buffer_id()?)?;
+                        if let Some(mut b) = b {
+                            unsafe {
+                                SetLen::advance_to(&mut b, res?);
+                                Some(B::from_buffer_ref(b, self.param))
+                            }
+                        } else {
+                            None
+                        }
                     }
                 }
                 None => self
