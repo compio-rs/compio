@@ -83,15 +83,25 @@ pub enum OpEntry {
 }
 
 impl OpEntry {
-    fn personality(self, personality: Option<u16>) -> Self {
-        let Some(personality) = personality else {
+    pub(crate) fn with_extra(self, extra: &crate::Extra) -> Self {
+        let Some(extra) = extra.try_as_iour() else {
             return self;
         };
-
         match self {
-            Self::Submission(entry) => Self::Submission(entry.personality(personality)),
+            Self::Submission(mut entry) => Self::Submission({
+                if let Some(personality) = extra.get_personality() {
+                    entry = entry.personality(personality);
+                }
+                // Set the union of two flags - it will not remove previous flags set by the Op
+                entry.flags(extra.get_sqe_flags())
+            }),
             #[cfg(feature = "io-uring-sqe128")]
-            Self::Submission128(entry) => Self::Submission128(entry.personality(personality)),
+            Self::Submission128(mut entry) => Self::Submission128({
+                if let Some(personality) = extra.get_personality() {
+                    entry = entry.personality(personality);
+                }
+                entry.flags(extra.get_sqe_flags())
+            }),
             Self::Blocking => Self::Blocking,
         }
     }
@@ -493,22 +503,17 @@ impl Driver {
 
     pub fn push(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?key);
-        let personality = key.borrow().extra().as_iour().get_personality();
-        let mut op_entry = key.borrow().carrier.create_entry().personality(personality);
+        let mut op_entry = key.borrow().create_entry::<false>();
         let mut has_fallbacked = false;
-        trace!(?personality, "push Key");
         loop {
+            trace!(fallback = has_fallbacked, "push entry");
             match op_entry {
                 OpEntry::Submission(entry) => {
                     if is_op_supported(entry.get_opcode() as _) {
                         #[allow(clippy::useless_conversion)]
                         self.push_raw_with_key(entry.into(), key)?;
                     } else if !has_fallbacked {
-                        op_entry = key
-                            .borrow()
-                            .carrier
-                            .create_entry_fallback()
-                            .personality(personality);
+                        op_entry = key.borrow().create_entry::<true>();
                         has_fallbacked = true;
                         continue;
                     } else {
@@ -520,11 +525,7 @@ impl Driver {
                     if is_op_supported(entry.get_opcode() as _) {
                         self.push_raw_with_key(entry, key)?;
                     } else if !has_fallbacked {
-                        op_entry = key
-                            .borrow()
-                            .carrier
-                            .create_entry_fallback()
-                            .personality(personality);
+                        op_entry = key.borrow().create_entry::<true>();
                         has_fallbacked = true;
                         continue;
                     } else {

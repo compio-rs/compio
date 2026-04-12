@@ -53,6 +53,17 @@ impl<C: ?Sized> RawOp<C> {
     }
 }
 
+#[cfg(io_uring)]
+impl<C: crate::Carry + ?Sized> RawOp<C> {
+    pub fn create_entry<const FALLBACK: bool>(&mut self) -> crate::OpEntry {
+        if FALLBACK {
+            self.carrier.create_entry_fallback().with_extra(&self.extra)
+        } else {
+            self.carrier.create_entry().with_extra(&self.extra)
+        }
+    }
+}
+
 #[cfg(windows)]
 impl<C: crate::Carry + ?Sized> RawOp<C> {
     /// Call [`OpCode::operate`] and assume that it is not an overlapped op,
