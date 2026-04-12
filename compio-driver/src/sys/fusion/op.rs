@@ -81,8 +81,8 @@ macro_rules! op {
             unsafe impl<$($ty: $trait),*> poll::OpCode for $name<$($ty),*> {
                 type Control = <poll::$name<$($ty),*> as poll::OpCode>::Control;
 
-                unsafe fn init(&mut self) -> Self::Control {
-                    unsafe { poll::OpCode::init(self.inner.poll()) }
+                unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+                    unsafe { poll::OpCode::init(self.inner.poll(), ctrl) }
                 }
 
                 fn pre_submit(&mut self, control: &mut Self::Control) -> std::io::Result<crate::Decision> {
@@ -103,8 +103,8 @@ macro_rules! op {
             unsafe impl<$($ty: $trait),*> iour::OpCode for $name<$($ty),*> {
                 type Control = <iour::$name<$($ty),*> as iour::OpCode>::Control;
 
-                unsafe fn init(&mut self) -> Self::Control {
-                    unsafe { self.inner.iour().init() }
+                unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+                    unsafe { self.inner.iour().init(ctrl) }
                 }
 
                 fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
@@ -214,8 +214,8 @@ macro_rules! mop {
             unsafe impl<$($ty: $trait),*> poll::OpCode for $name<$($ty),*> {
                 type Control = <crate::op::managed::$name<$($ty),*> as poll::OpCode>::Control;
 
-                unsafe fn init(&mut self) -> Self::Control {
-                    unsafe { self.inner.poll().init() }
+                unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+                    unsafe { self.inner.poll().init(ctrl) }
                 }
 
                 fn pre_submit(&mut self, control: &mut Self::Control) -> std::io::Result<crate::Decision> {
@@ -236,8 +236,8 @@ macro_rules! mop {
             unsafe impl<$($ty: $trait),*> iour::OpCode for $name<$($ty),*> {
                 type Control = <iour::$name<$($ty),*> as iour::OpCode>::Control;
 
-                unsafe fn init(&mut self) -> Self::Control {
-                    unsafe { self.inner.iour().init() }
+                unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+                    unsafe { self.inner.iour().init(ctrl) }
                 }
 
                 fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {

@@ -24,6 +24,7 @@ use libc::{ftruncate as ftruncate64, off_t as off64_t};
     target_os = "hurd"
 ))]
 use libc::{ftruncate64, off64_t};
+use smallvec::SmallVec;
 use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
 
 use crate::{op::*, sys::aio::*, sys_slice::*, syscall};
@@ -222,6 +223,15 @@ pub struct ReadVectoredAtControl {
     pub(crate) aiocb: aiocb,
 }
 
+impl Default for ReadVectoredAtControl {
+    fn default() -> Self {
+        Self {
+            slices: Vec::new(),
+            aiocb: new_aiocb(),
+        }
+    }
+}
+
 impl<T: IoVectoredBufMut, S> ReadVectoredAt<T, S> {
     /// Create [`ReadVectoredAt`].
     pub fn new(fd: S, offset: u64, buffer: T) -> Self {
@@ -230,18 +240,15 @@ impl<T: IoVectoredBufMut, S> ReadVectoredAt<T, S> {
 }
 
 impl<T: IoVectoredBufMut, S: AsFd> ReadVectoredAt<T, S> {
-    pub(crate) fn create_control(&mut self) -> ReadVectoredAtControl {
-        let slices = self.buffer.sys_slices_mut();
-        #[allow(unused_mut, clippy::let_unit_value)]
-        let mut aiocb = new_aiocb();
+    pub(crate) fn create_control(&mut self, ctrl: &mut ReadVectoredAtControl) {
+        ctrl.slices = self.buffer.sys_slices_mut();
         #[cfg(freebsd)]
         {
-            aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
-            aiocb.aio_offset = self.offset as _;
-            aiocb.aio_buf = slices.as_ptr().cast_mut().cast();
-            aiocb.aio_nbytes = slices.len();
+            ctrl.aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
+            ctrl.aiocb.aio_offset = self.offset as _;
+            ctrl.aiocb.aio_buf = ctrl.slices.as_ptr().cast_mut().cast();
+            ctrl.aiocb.aio_nbytes = ctrl.slices.len();
         }
-        ReadVectoredAtControl { slices, aiocb }
     }
 }
 
@@ -266,26 +273,32 @@ pub struct WriteVectoredAtControl {
     pub(crate) aiocb: aiocb,
 }
 
+impl Default for WriteVectoredAtControl {
+    fn default() -> Self {
+        Self {
+            slices: Vec::new(),
+            aiocb: new_aiocb(),
+        }
+    }
+}
+
 impl<T: IoVectoredBuf, S> WriteVectoredAt<T, S> {
-    /// Create [`WriteVectoredAt`]
+    /// Create [`WriteVectoredAt`].
     pub fn new(fd: S, offset: u64, buffer: T) -> Self {
         Self { fd, offset, buffer }
     }
 }
 
 impl<T: IoVectoredBuf, S: AsFd> WriteVectoredAt<T, S> {
-    pub(crate) fn create_control(&mut self) -> WriteVectoredAtControl {
-        let slices = self.buffer.sys_slices();
-        #[allow(unused_mut, clippy::let_unit_value)]
-        let mut aiocb = new_aiocb();
+    pub(crate) fn create_control(&mut self, ctrl: &mut WriteVectoredAtControl) {
+        ctrl.slices = self.buffer.sys_slices();
         #[cfg(freebsd)]
         {
-            aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
-            aiocb.aio_offset = self.offset as _;
-            aiocb.aio_buf = slices.as_ptr().cast_mut().cast();
-            aiocb.aio_nbytes = slices.len();
+            ctrl.aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
+            ctrl.aiocb.aio_offset = self.offset as _;
+            ctrl.aiocb.aio_buf = ctrl.slices.as_ptr().cast_mut().cast();
+            ctrl.aiocb.aio_nbytes = ctrl.slices.len();
         }
-        WriteVectoredAtControl { slices, aiocb }
     }
 }
 
@@ -303,6 +316,7 @@ pub struct ReadVectored<T: IoVectoredBufMut, S> {
     pub(crate) buffer: T,
 }
 
+#[derive(Default)]
 pub struct ReadVectoredControl {
     pub(crate) slices: Vec<SysSlice>,
 }
@@ -313,9 +327,8 @@ impl<T: IoVectoredBufMut, S> ReadVectored<T, S> {
         Self { fd, buffer }
     }
 
-    pub(crate) fn create_control(&mut self) -> ReadVectoredControl {
-        let slices = self.buffer.sys_slices_mut();
-        ReadVectoredControl { slices }
+    pub(crate) fn create_control(&mut self, ctrl: &mut ReadVectoredControl) {
+        ctrl.slices = self.buffer.sys_slices_mut();
     }
 }
 
@@ -333,6 +346,7 @@ pub struct WriteVectored<T: IoVectoredBuf, S> {
     pub(crate) buffer: T,
 }
 
+#[derive(Default)]
 pub struct WriteVectoredControl {
     pub(crate) slices: Vec<SysSlice>,
 }
@@ -343,9 +357,8 @@ impl<T: IoVectoredBuf, S> WriteVectored<T, S> {
         Self { fd, buffer }
     }
 
-    pub(crate) fn create_control(&mut self) -> WriteVectoredControl {
-        let slices = self.buffer.sys_slices();
-        WriteVectoredControl { slices }
+    pub(crate) fn create_control(&mut self, ctrl: &mut WriteVectoredControl) {
+        ctrl.slices = self.buffer.sys_slices();
     }
 }
 
@@ -667,18 +680,25 @@ pub struct RecvVectoredControl {
     pub(crate) slices: Vec<SysSlice>,
 }
 
+impl Default for RecvVectoredControl {
+    fn default() -> Self {
+        Self {
+            msg: unsafe { std::mem::zeroed() },
+            slices: Vec::new(),
+        }
+    }
+}
+
 impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
     /// Create [`RecvVectored`].
     pub fn new(fd: S, buffer: T, flags: i32) -> Self {
         Self { fd, buffer, flags }
     }
 
-    pub(crate) fn create_control(&mut self) -> RecvVectoredControl {
-        let mut slices = self.buffer.sys_slices_mut();
-        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
-        msg.msg_iov = slices.as_mut_ptr() as _;
-        msg.msg_iovlen = slices.len() as _;
-        RecvVectoredControl { msg, slices }
+    pub(crate) fn create_control(&mut self, ctrl: &mut RecvVectoredControl) {
+        ctrl.slices = self.buffer.sys_slices_mut();
+        ctrl.msg.msg_iov = ctrl.slices.as_mut_ptr() as _;
+        ctrl.msg.msg_iovlen = ctrl.slices.len() as _;
     }
 }
 
@@ -703,18 +723,25 @@ pub struct SendVectoredControl {
     pub(crate) slices: Vec<SysSlice>,
 }
 
+impl Default for SendVectoredControl {
+    fn default() -> Self {
+        Self {
+            msg: unsafe { std::mem::zeroed() },
+            slices: Vec::new(),
+        }
+    }
+}
+
 impl<T: IoVectoredBuf, S> SendVectored<T, S> {
     /// Create [`SendVectored`].
     pub fn new(fd: S, buffer: T, flags: i32) -> Self {
         Self { fd, buffer, flags }
     }
 
-    pub(crate) fn create_control(&mut self) -> SendVectoredControl {
-        let slices = self.buffer.sys_slices();
-        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
-        msg.msg_iov = slices.as_ptr() as _;
-        msg.msg_iovlen = slices.len() as _;
-        SendVectoredControl { msg, slices }
+    pub(crate) fn create_control(&mut self, ctrl: &mut SendVectoredControl) {
+        ctrl.slices = self.buffer.sys_slices();
+        ctrl.msg.msg_iov = ctrl.slices.as_ptr() as _;
+        ctrl.msg.msg_iovlen = ctrl.slices.len() as _;
     }
 }
 
@@ -740,7 +767,16 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
 pub struct RecvMsgControl {
     pub(crate) msg: libc::msghdr,
     #[allow(dead_code)]
-    pub(crate) slices: Vec<SysSlice>,
+    pub(crate) slices: SmallVec<[SysSlice; 1]>,
+}
+
+impl Default for RecvMsgControl {
+    fn default() -> Self {
+        Self {
+            msg: unsafe { std::mem::zeroed() },
+            slices: SmallVec::new(),
+        }
+    }
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
@@ -765,16 +801,14 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
         }
     }
 
-    pub(crate) fn create_control(&mut self) -> RecvMsgControl {
-        let mut slices = self.buffer.sys_slices_mut();
-        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
-        msg.msg_name = &raw mut self.addr as _;
-        msg.msg_namelen = self.addr.size_of() as _;
-        msg.msg_iov = slices.as_mut_ptr() as _;
-        msg.msg_iovlen = slices.len() as _;
-        msg.msg_control = self.control.buf_mut_ptr() as _;
-        msg.msg_controllen = self.control.buf_capacity() as _;
-        RecvMsgControl { msg, slices }
+    pub(crate) fn create_control(&mut self, ctrl: &mut RecvMsgControl) {
+        ctrl.slices = SmallVec::from_vec(self.buffer.sys_slices_mut());
+        ctrl.msg.msg_name = &raw mut self.addr as _;
+        ctrl.msg.msg_namelen = self.addr.size_of() as _;
+        ctrl.msg.msg_iov = ctrl.slices.as_mut_ptr() as _;
+        ctrl.msg.msg_iovlen = ctrl.slices.len() as _;
+        ctrl.msg.msg_control = self.control.buf_mut_ptr() as _;
+        ctrl.msg.msg_controllen = self.control.buf_capacity() as _;
     }
 
     pub(crate) fn update_control(&mut self, control: &RecvMsgControl) {
@@ -805,7 +839,16 @@ pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
 pub struct SendMsgControl {
     pub(crate) msg: libc::msghdr,
     #[allow(dead_code)]
-    pub(crate) slices: Vec<SysSlice>,
+    pub(crate) slices: SmallVec<[SysSlice; 1]>,
+}
+
+impl Default for SendMsgControl {
+    fn default() -> Self {
+        Self {
+            msg: unsafe { std::mem::zeroed() },
+            slices: SmallVec::new(),
+        }
+    }
 }
 
 impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
@@ -828,24 +871,22 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
         }
     }
 
-    pub(crate) fn create_control(&mut self) -> SendMsgControl {
-        let slices = self.buffer.sys_slices();
-        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
+    pub(crate) fn create_control(&mut self, ctrl: &mut SendMsgControl) {
+        ctrl.slices = self.buffer.sys_slices().into();
         match self.addr.as_ref() {
             Some(addr) => {
-                msg.msg_name = addr.as_ptr() as _;
-                msg.msg_namelen = addr.len();
+                ctrl.msg.msg_name = addr.as_ptr() as _;
+                ctrl.msg.msg_namelen = addr.len();
             }
             None => {
-                msg.msg_name = std::ptr::null_mut();
-                msg.msg_namelen = 0;
+                ctrl.msg.msg_name = std::ptr::null_mut();
+                ctrl.msg.msg_namelen = 0;
             }
         }
-        msg.msg_iov = slices.as_ptr() as _;
-        msg.msg_iovlen = slices.len() as _;
-        msg.msg_control = self.control.buf_ptr() as _;
-        msg.msg_controllen = self.control.buf_len() as _;
-        SendMsgControl { msg, slices }
+        ctrl.msg.msg_iov = ctrl.slices.as_ptr() as _;
+        ctrl.msg.msg_iovlen = ctrl.slices.len() as _;
+        ctrl.msg.msg_control = self.control.buf_ptr() as _;
+        ctrl.msg.msg_controllen = self.control.buf_len() as _;
     }
 }
 

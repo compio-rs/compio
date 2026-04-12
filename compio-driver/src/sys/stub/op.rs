@@ -20,7 +20,7 @@ impl<
 {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S, D, F> OpCode for AsyncifyFd<S, F, D>
@@ -31,7 +31,7 @@ where
 {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S1, S2, D, F> OpCode for AsyncifyFd2<S1, S2, F, D>
@@ -43,25 +43,25 @@ where
 {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for OpenFile<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl OpCode for CloseFile {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for TruncateFile<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 /// Get metadata of an opened file.
@@ -79,7 +79,7 @@ impl<S> FileStat<S> {
 impl<S: AsFd> OpCode for FileStat<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S> IntoInner for FileStat<S> {
@@ -111,7 +111,7 @@ impl<S: AsFd> PathStat<S> {
 impl<S: AsFd> OpCode for PathStat<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> IntoInner for PathStat<S> {
@@ -125,121 +125,121 @@ impl<S: AsFd> IntoInner for PathStat<S> {
 impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for Sync<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for Unlink<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for CreateDir<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S1: AsFd, S2: AsFd> OpCode for Rename<S1, S2> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for Symlink<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S1: AsFd, S2: AsFd> OpCode for HardLink<S1, S2> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl OpCode for CreateSocket {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for Bind<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for Listen<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for ShutdownSocket<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl OpCode for CloseSocket {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for Accept<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 /// Accept multiple connections.
@@ -265,37 +265,37 @@ impl<S> IntoInner for AcceptMulti<S> {
 impl<S: AsFd> OpCode for AcceptMulti<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for Connect<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 /// Receive data and source address.
@@ -315,7 +315,7 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
 impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<T: IoBufMut, S: AsFd> IntoInner for RecvFrom<T, S> {
@@ -343,7 +343,7 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
 impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<T: IoVectoredBufMut, S: AsFd> IntoInner for RecvFromVectored<T, S> {
@@ -377,7 +377,7 @@ impl<T: IoBuf, S> SendTo<T, S> {
 impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
@@ -411,7 +411,7 @@ impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
 impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
@@ -425,71 +425,71 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
 impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for PollOnce<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl OpCode for Pipe {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for crate::op::managed::ReadManagedAt<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for crate::op::managed::ReadManaged<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for crate::op::managed::RecvManaged<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for crate::op::managed::RecvFromManaged<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<C: IoBufMut, S: AsFd> OpCode for crate::op::managed::RecvMsgManaged<C, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for crate::op::managed::RecvFromMulti<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for crate::op::managed::RecvMsgMulti<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }

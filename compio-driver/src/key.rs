@@ -200,15 +200,14 @@ impl ErasedKey {
             extra,
             cancelled: false,
             result: PushEntry::Pending(None),
-            // SAFETY: carrier is initialized below
-            carrier: unsafe { Carrier::new_uninit(op) },
+            carrier: Carrier::new(op, driver_ty),
         };
         let mut inner = ThinCell::new(raw_op);
         // SAFETY:
         // - ThinCell is just created, there will be no shared owner or borrower
         // - Carrier is being pinned by ThinCell, it will have a stable address until
         //   move out
-        unsafe { inner.borrow_unchecked().carrier.init(driver_ty) };
+        unsafe { inner.borrow_unchecked().carrier.init() };
         Self {
             inner: unsafe { inner.unsize(|p| p as *const Inner<RawOp<dyn Carry>>) },
         }

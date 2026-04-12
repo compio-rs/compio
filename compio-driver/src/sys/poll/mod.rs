@@ -50,15 +50,15 @@ impl From<WaitArg> for Track {
 pub unsafe trait OpCode {
     /// Type that contains self-references and other needed info during the
     /// operation
-    type Control;
+    type Control: Default;
 
-    /// Constructs a `Control`
+    /// Initialize the control
     ///
     /// # Safety
     ///
-    /// Caller must guarantee that during the lifetime of the returned
-    /// `Control`, the address of `&mut self` must be stable and valid.
-    unsafe fn init(&mut self) -> Self::Control;
+    /// Caller must guarantee that during the lifetime of `ctrl`, `Self` is
+    /// unmoved and valid.
+    unsafe fn init(&mut self, ctrl: &mut Self::Control);
 
     /// Perform the operation before submit, and return [`Decision`] to
     /// indicate whether submitting the operation to polling is required.

@@ -30,7 +30,7 @@ impl WaitProcess {
 unsafe impl OpCode for WaitProcess {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Event(self.child.as_raw_handle() as _)

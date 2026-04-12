@@ -46,7 +46,7 @@ mod splice_impl {
     unsafe impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
         type Control = ();
 
-        unsafe fn init(&mut self) -> Self::Control {}
+        unsafe fn init(&mut self, _: &mut Self::Control) {}
 
         fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<Decision> {
             Ok(Decision::wait_for_many([

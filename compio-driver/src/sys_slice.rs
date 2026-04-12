@@ -48,13 +48,19 @@ mod sys {
 /// To construct a `SysSlice`, use the extension traits. It can only be
 /// constructed either from:
 /// - a null ptr + 0 length with [`SysSlice::null()`]
-/// - a pinned `IoBuf` (for initialized memory)
-/// - a pinned `IoBufMut` (for uninitialized memory)
+/// - a `IoBuf` (for initialized memory)
+/// - a `IoBufMut` (for uninitialized memory)
 ///
 /// [`IoSlice`]: std::io::IoSlice
 /// [`IoSliceMut`]: std::io::IoSliceMut
 #[repr(transparent)]
 pub(crate) struct SysSlice(sys::Inner);
+
+impl Default for SysSlice {
+    fn default() -> Self {
+        Self::null()
+    }
+}
 
 impl SysSlice {
     pub fn null() -> Self {

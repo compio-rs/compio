@@ -117,7 +117,7 @@ where
 {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Blocking
@@ -142,7 +142,7 @@ where
 {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Blocking
@@ -169,7 +169,7 @@ where
 {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Blocking
@@ -190,7 +190,7 @@ where
 unsafe impl OpCode for CloseFile {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Blocking
@@ -206,7 +206,7 @@ unsafe impl OpCode for CloseFile {
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         if let Some(overlapped) = unsafe { optr.as_mut() } {
@@ -236,7 +236,7 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
 unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         if let Some(overlapped) = unsafe { optr.as_mut() } {
@@ -265,7 +265,7 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
 unsafe impl<S: AsFd> OpCode for ReadManagedAt<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     unsafe fn operate(
         &mut self,
@@ -283,7 +283,7 @@ unsafe impl<S: AsFd> OpCode for ReadManagedAt<S> {
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();
@@ -309,7 +309,7 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
 unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let slice = self.buffer.as_init();
@@ -334,7 +334,7 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
 unsafe impl<S: AsFd> OpCode for ReadManaged<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     unsafe fn operate(
         &mut self,
@@ -352,7 +352,7 @@ unsafe impl<S: AsFd> OpCode for ReadManaged<S> {
 unsafe impl<S: AsFd> OpCode for Sync<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Blocking
@@ -368,7 +368,7 @@ unsafe impl<S: AsFd> OpCode for Sync<S> {
 unsafe impl OpCode for CloseSocket {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Blocking
@@ -465,7 +465,7 @@ impl<S: AsFd> Accept<S> {
 unsafe impl<S: AsFd> OpCode for Accept<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let accept_fn = ACCEPT_EX
@@ -516,7 +516,7 @@ impl<S: AsFd> Connect<S> {
 unsafe impl<S: AsFd> OpCode for Connect<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let connect_fn = CONNECT_EX
@@ -554,6 +554,7 @@ pub struct Recv<T: IoBufMut, S> {
     pub(crate) flags: i32,
 }
 
+#[derive(Default)]
 pub struct RecvControl {
     pub(crate) slice: SysSlice,
 }
@@ -576,10 +577,8 @@ impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
     type Control = RecvControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        RecvControl {
-            slice: self.buffer.sys_slice_mut(),
-        }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        ctrl.slice = self.buffer.sys_slice_mut();
     }
 
     unsafe fn operate(
@@ -612,8 +611,8 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
 unsafe impl<S: AsFd> OpCode for RecvManaged<S> {
     type Control = RecvControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        unsafe { self.op.init() }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        unsafe { self.op.init(ctrl) }
     }
 
     unsafe fn operate(
@@ -636,6 +635,7 @@ pub struct RecvVectored<T: IoVectoredBufMut, S> {
     pub(crate) flags: i32,
 }
 
+#[derive(Default)]
 pub struct RecvVectoredControl {
     pub(crate) slices: Vec<SysSlice>,
 }
@@ -658,10 +658,8 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvVectored<T, S> {
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
     type Control = RecvVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        RecvVectoredControl {
-            slices: self.buffer.sys_slices_mut(),
-        }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        ctrl.slices = self.buffer.sys_slices_mut();
     }
 
     unsafe fn operate(
@@ -701,6 +699,7 @@ pub struct Send<T: IoBuf, S> {
     pub(crate) flags: i32,
 }
 
+#[derive(Default)]
 pub struct SendControl {
     pub(crate) slice: SysSlice,
 }
@@ -723,10 +722,8 @@ impl<T: IoBuf, S> IntoInner for Send<T, S> {
 unsafe impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
     type Control = SendControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        SendControl {
-            slice: self.buffer.sys_slice(),
-        }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        ctrl.slice = self.buffer.sys_slice();
     }
 
     unsafe fn operate(
@@ -761,6 +758,7 @@ pub struct SendVectored<T: IoVectoredBuf, S> {
     pub(crate) flags: i32,
 }
 
+#[derive(Default)]
 pub struct SendVectoredControl {
     pub(crate) slices: Vec<SysSlice>,
 }
@@ -783,10 +781,8 @@ impl<T: IoVectoredBuf, S> IntoInner for SendVectored<T, S> {
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
     type Control = SendVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        SendVectoredControl {
-            slices: self.buffer.sys_slices(),
-        }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        ctrl.slices = self.buffer.sys_slices();
     }
 
     unsafe fn operate(
@@ -823,6 +819,7 @@ pub struct RecvFrom<T: IoBufMut, S> {
     pub(crate) flags: i32,
 }
 
+#[derive(Default)]
 pub struct RecvFromControl {
     pub(crate) slice: SysSlice,
 }
@@ -854,10 +851,8 @@ impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
     type Control = RecvFromControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        RecvFromControl {
-            slice: self.buffer.sys_slice_mut(),
-        }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        ctrl.slice = self.buffer.sys_slice_mut();
     }
 
     unsafe fn operate(
@@ -892,8 +887,8 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
 unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
     type Control = RecvFromControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        unsafe { self.op.init() }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        unsafe { self.op.init(ctrl) }
     }
 
     unsafe fn operate(
@@ -912,8 +907,8 @@ unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
 unsafe impl<S: AsFd> OpCode for RecvFromMulti<S> {
     type Control = RecvFromControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        unsafe { self.op.init() }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        unsafe { self.op.init(ctrl) }
     }
 
     unsafe fn operate(
@@ -949,6 +944,7 @@ pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
     pub(crate) flags: i32,
 }
 
+#[derive(Default)]
 pub struct RecvFromVectoredControl {
     pub(crate) slices: Vec<SysSlice>,
 }
@@ -980,10 +976,8 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvFromVectored<T, S> {
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
     type Control = RecvFromVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        RecvFromVectoredControl {
-            slices: self.buffer.sys_slices_mut(),
-        }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        ctrl.slices = self.buffer.sys_slices_mut();
     }
 
     unsafe fn operate(
@@ -1023,6 +1017,7 @@ pub struct SendTo<T: IoBuf, S> {
     pub(crate) flags: i32,
 }
 
+#[derive(Default)]
 pub struct SendToControl {
     pub(crate) slice: SysSlice,
 }
@@ -1050,10 +1045,8 @@ impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
 unsafe impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
     type Control = SendToControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        SendToControl {
-            slice: self.buffer.sys_slice(),
-        }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        ctrl.slice = self.buffer.sys_slice();
     }
 
     unsafe fn operate(
@@ -1091,6 +1084,7 @@ pub struct SendToVectored<T: IoVectoredBuf, S> {
     pub(crate) flags: i32,
 }
 
+#[derive(Default)]
 pub struct SendToVectoredControl {
     pub(crate) slices: Vec<SysSlice>,
 }
@@ -1118,10 +1112,8 @@ impl<T: IoVectoredBuf, S> IntoInner for SendToVectored<T, S> {
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     type Control = SendToVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        SendToVectoredControl {
-            slices: self.buffer.sys_slices(),
-        }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        ctrl.slices = self.buffer.sys_slices();
     }
 
     unsafe fn operate(
@@ -1164,6 +1156,7 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
     control_len: usize,
 }
 
+#[derive(Default)]
 pub struct RecvMsgControl {
     msg: WSAMSG,
     #[allow(dead_code)]
@@ -1207,16 +1200,14 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
 unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
     type Control = RecvMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        let mut slices = self.buffer.sys_slices_mut();
-        let mut msg: WSAMSG = unsafe { std::mem::zeroed() };
-        msg.dwFlags = self.flags as _;
-        msg.name = &raw mut self.addr as _;
-        msg.namelen = self.addr.size_of() as _;
-        msg.lpBuffers = slices.as_mut_ptr() as _;
-        msg.dwBufferCount = slices.len() as _;
-        msg.Control = self.control.sys_slice_mut().into_inner();
-        RecvMsgControl { msg, slices }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        ctrl.slices = self.buffer.sys_slices_mut();
+        ctrl.msg.dwFlags = self.flags as _;
+        ctrl.msg.name = &raw mut self.addr as _;
+        ctrl.msg.namelen = self.addr.size_of() as _;
+        ctrl.msg.lpBuffers = ctrl.slices.as_mut_ptr() as _;
+        ctrl.msg.dwBufferCount = ctrl.slices.len() as _;
+        ctrl.msg.Control = self.control.sys_slice_mut().into_inner();
     }
 
     unsafe fn operate(
@@ -1262,8 +1253,8 @@ unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, 
 unsafe impl<C: IoBufMut, S: AsFd> OpCode for RecvMsgManaged<C, S> {
     type Control = RecvMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        unsafe { self.op.init() }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        unsafe { self.op.init(ctrl) }
     }
 
     unsafe fn operate(
@@ -1291,8 +1282,8 @@ unsafe impl<C: IoBufMut, S: AsFd> OpCode for RecvMsgManaged<C, S> {
 unsafe impl<S: AsFd> OpCode for RecvMsgMulti<S> {
     type Control = RecvMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        unsafe { self.op.init() }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        unsafe { self.op.init(ctrl) }
     }
 
     unsafe fn operate(
@@ -1330,6 +1321,7 @@ pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
     flags: i32,
 }
 
+#[derive(Default)]
 pub struct SendMsgControl {
     msg: WSAMSG,
     #[allow(dead_code)]
@@ -1368,22 +1360,21 @@ impl<T: IoVectoredBuf, C: IoBuf, S> IntoInner for SendMsg<T, C, S> {
 unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
     type Control = SendMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        let slices = self.buffer.sys_slices();
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        ctrl.slices = self.buffer.sys_slices();
         let control = if self.control.buf_len() == 0 {
             SysSlice::null()
         } else {
             self.control.sys_slice()
         };
-        let mut msg: WSAMSG = unsafe { std::mem::zeroed() };
-        msg.lpBuffers = slices.as_ptr() as _;
-        msg.dwBufferCount = slices.len() as _;
-        msg.Control = control.into_inner();
+
+        ctrl.msg.lpBuffers = ctrl.slices.as_ptr() as _;
+        ctrl.msg.dwBufferCount = ctrl.slices.len() as _;
+        ctrl.msg.Control = control.into_inner();
         if let Some(addr) = &self.addr {
-            msg.name = addr.as_ptr() as _;
-            msg.namelen = addr.len() as _;
+            ctrl.msg.name = addr.as_ptr() as _;
+            ctrl.msg.namelen = addr.len() as _;
         }
-        SendMsgControl { msg, slices }
     }
 
     unsafe fn operate(
@@ -1425,7 +1416,7 @@ impl<S> ConnectNamedPipe<S> {
 unsafe impl<S: AsFd> OpCode for ConnectNamedPipe<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let res = unsafe { ConnectNamedPipe(self.fd.as_fd().as_raw_fd() as _, optr) };
@@ -1468,7 +1459,7 @@ impl<S, I: IoBuf, O: IoBufMut> IntoInner for DeviceIoControl<S, I, O> {
 unsafe impl<S: AsFd, I: IoBuf, O: IoBufMut> OpCode for DeviceIoControl<S, I, O> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();

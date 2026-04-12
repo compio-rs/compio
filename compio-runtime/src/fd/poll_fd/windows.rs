@@ -199,7 +199,7 @@ impl<T> IntoInner for WaitWSAEvent<T> {
 unsafe impl<T: AsFd> OpCode for WaitWSAEvent<T> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Event(self.ev_object.as_raw_fd())

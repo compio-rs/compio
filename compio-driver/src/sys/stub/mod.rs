@@ -35,9 +35,9 @@ impl Extra {
 
 /// Operations.
 pub trait OpCode {
-    type Control;
+    type Control: Default;
 
-    unsafe fn init(&mut self) -> Self::Control;
+    unsafe fn init(&mut self, ctrl: &mut Self::Control);
 
     unsafe fn set_result(
         &mut self,

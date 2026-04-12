@@ -294,15 +294,15 @@ pub enum OpType {
 pub unsafe trait OpCode {
     /// Type that contains self-references and other needed info during the
     /// operation
-    type Control;
+    type Control: Default;
 
-    /// Constructs a `Control`
+    /// Initialize the control
     ///
     /// # Safety
     ///
-    /// Caller must guarantee that during the lifetime of the returned
-    /// `Control`, `Self` must be unmoved and valid.
-    unsafe fn init(&mut self) -> Self::Control;
+    /// Caller must guarantee that during the lifetime of `ctrl`, `Self` is
+    /// unmoved and valid.
+    unsafe fn init(&mut self, ctrl: &mut Self::Control);
 
     /// Determines that the operation is really overlapped defined by Windows
     /// API. If not, the driver will try to operate it in another thread.
