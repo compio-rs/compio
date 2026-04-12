@@ -96,4 +96,36 @@ impl Extra {
             ))
         }
     }
+
+    /// Checks whether the underlying socket has more data to be read.
+    ///
+    /// # Behaviour
+    ///
+    /// This method must be used only on the flags for any of the `receive`
+    /// variants supported by `IO_URING`.
+    /// The driver will try to check whether the `IORING_CQE_F_SOCK_NONEMPTY`
+    /// flag was set by the kernel for the CQE. On other platforms, this will
+    /// always return the [`Unsupported`] error.
+    ///
+    /// [`Unsupported`]: io::ErrorKind::Unsupported
+    pub fn sock_nonempty(&self) -> io::Result<bool> {
+        #[cfg(io_uring)]
+        {
+            if let Some(extra) = self.try_as_iour() {
+                Ok(extra.sock_nonempty())
+            } else {
+                Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "IORING_CQE_F_SOCK_NONEMPTY flag is available only on the io_uring driver",
+                ))
+            }
+        }
+        #[cfg(not(io_uring))]
+        {
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "IORING_CQE_F_SOCK_NONEMPTY flag is available only on the io_uring driver",
+            ))
+        }
+    }
 }

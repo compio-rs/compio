@@ -24,6 +24,10 @@ impl Extra {
     pub fn buffer_id(&self) -> Option<u16> {
         io_uring::cqueue::buffer_select(self.flags)
     }
+
+    pub fn sock_nonempty(&self) -> bool {
+        io_uring::cqueue::sock_nonempty(self.flags)
+    }
 }
 
 #[allow(dead_code)]
