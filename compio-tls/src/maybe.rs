@@ -1,13 +1,13 @@
 use std::{borrow::Cow, io};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
-use compio_io::{AsyncRead, AsyncWrite};
+use compio_io::{AsyncRead, AsyncWrite, util::Splittable};
 
 use crate::TlsStream;
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-enum MaybeTlsStreamInner<S> {
+enum MaybeTlsStreamInner<S: Splittable> {
     /// Plain, unencrypted stream
     Plain(S),
     /// TLS-encrypted stream
@@ -16,9 +16,9 @@ enum MaybeTlsStreamInner<S> {
 
 /// Stream that can be either plain TCP or TLS-encrypted
 #[derive(Debug)]
-pub struct MaybeTlsStream<S>(MaybeTlsStreamInner<S>);
+pub struct MaybeTlsStream<S: Splittable>(MaybeTlsStreamInner<S>);
 
-impl<S> MaybeTlsStream<S> {
+impl<S: Splittable> MaybeTlsStream<S> {
     /// Create an unencrypted stream.
     pub fn new_plain(stream: S) -> Self {
         Self(MaybeTlsStreamInner::Plain(stream))
@@ -43,10 +43,10 @@ impl<S> MaybeTlsStream<S> {
     }
 }
 
-impl<S> AsyncRead for MaybeTlsStream<S>
+impl<S: Splittable + AsyncRead + AsyncWrite + 'static> AsyncRead for MaybeTlsStream<S>
 where
-    S: AsyncRead + AsyncWrite + Unpin + 'static,
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         match &mut self.0 {
@@ -56,10 +56,10 @@ where
     }
 }
 
-impl<S> AsyncWrite for MaybeTlsStream<S>
+impl<S: Splittable + AsyncRead + AsyncWrite + 'static> AsyncWrite for MaybeTlsStream<S>
 where
-    S: AsyncRead + AsyncWrite + Unpin + 'static,
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     async fn write<B: IoBuf>(&mut self, buf: B) -> BufResult<usize, B> {
         match &mut self.0 {

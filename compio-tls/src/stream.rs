@@ -5,11 +5,11 @@ use std::{borrow::Cow, io, mem::MaybeUninit};
 use compio_buf::{BufResult, IoBuf, IoBufMut};
 #[cfg(feature = "rustls")]
 use compio_io::compat::AsyncStream;
-use compio_io::{AsyncRead, AsyncWrite, compat::SyncStream};
+use compio_io::{AsyncRead, AsyncWrite, compat::SyncStream, util::Splittable};
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-enum TlsStreamInner<S> {
+enum TlsStreamInner<S: Splittable> {
     #[cfg(feature = "native-tls")]
     NativeTls(native_tls::TlsStream<SyncStream<S>>),
     #[cfg(feature = "rustls")]
@@ -24,7 +24,7 @@ enum TlsStreamInner<S> {
     None(std::convert::Infallible, std::marker::PhantomData<S>),
 }
 
-impl<S> TlsStreamInner<S> {
+impl<S: Splittable> TlsStreamInner<S> {
     pub fn negotiated_alpn(&self) -> Option<Cow<'_, [u8]>> {
         match self {
             #[cfg(feature = "native-tls")]
@@ -51,9 +51,9 @@ impl<S> TlsStreamInner<S> {
 /// data. Bytes read from a `TlsStream` are decrypted from `S` and bytes written
 /// to a `TlsStream` are encrypted when passing through to `S`.
 #[derive(Debug)]
-pub struct TlsStream<S>(TlsStreamInner<S>);
+pub struct TlsStream<S: Splittable>(TlsStreamInner<S>);
 
-impl<S> TlsStream<S> {
+impl<S: Splittable> TlsStream<S> {
     /// Returns the negotiated ALPN protocol.
     pub fn negotiated_alpn(&self) -> Option<Cow<'_, [u8]>> {
         self.0.negotiated_alpn()
@@ -62,7 +62,7 @@ impl<S> TlsStream<S> {
 
 #[cfg(feature = "native-tls")]
 #[doc(hidden)]
-impl<S> From<native_tls::TlsStream<SyncStream<S>>> for TlsStream<S> {
+impl<S: Splittable> From<native_tls::TlsStream<SyncStream<S>>> for TlsStream<S> {
     fn from(value: native_tls::TlsStream<SyncStream<S>>) -> Self {
         Self(TlsStreamInner::NativeTls(value))
     }
@@ -70,7 +70,9 @@ impl<S> From<native_tls::TlsStream<SyncStream<S>>> for TlsStream<S> {
 
 #[cfg(feature = "rustls")]
 #[doc(hidden)]
-impl<S> From<futures_rustls::client::TlsStream<Pin<Box<AsyncStream<S>>>>> for TlsStream<S> {
+impl<S: Splittable> From<futures_rustls::client::TlsStream<Pin<Box<AsyncStream<S>>>>>
+    for TlsStream<S>
+{
     fn from(value: futures_rustls::client::TlsStream<Pin<Box<AsyncStream<S>>>>) -> Self {
         Self(TlsStreamInner::Rustls(futures_rustls::TlsStream::Client(
             value,
@@ -80,7 +82,9 @@ impl<S> From<futures_rustls::client::TlsStream<Pin<Box<AsyncStream<S>>>>> for Tl
 
 #[cfg(feature = "rustls")]
 #[doc(hidden)]
-impl<S> From<futures_rustls::server::TlsStream<Pin<Box<AsyncStream<S>>>>> for TlsStream<S> {
+impl<S: Splittable> From<futures_rustls::server::TlsStream<Pin<Box<AsyncStream<S>>>>>
+    for TlsStream<S>
+{
     fn from(value: futures_rustls::server::TlsStream<Pin<Box<AsyncStream<S>>>>) -> Self {
         Self(TlsStreamInner::Rustls(futures_rustls::TlsStream::Server(
             value,
@@ -90,7 +94,9 @@ impl<S> From<futures_rustls::server::TlsStream<Pin<Box<AsyncStream<S>>>>> for Tl
 
 #[cfg(feature = "py-dynamic-openssl")]
 #[doc(hidden)]
-impl<S> From<compio_py_dynamic_openssl::ssl::SslStream<SyncStream<S>>> for TlsStream<S> {
+impl<S: Splittable> From<compio_py_dynamic_openssl::ssl::SslStream<SyncStream<S>>>
+    for TlsStream<S>
+{
     fn from(value: compio_py_dynamic_openssl::ssl::SslStream<SyncStream<S>>) -> Self {
         Self(TlsStreamInner::PyDynamicOpenSsl(value))
     }
@@ -125,9 +131,10 @@ where
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> AsyncRead for TlsStream<S>
+impl<S: AsyncRead + AsyncWrite + Splittable + 'static> AsyncRead for TlsStream<S>
 where
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
         let slice = buf.as_uninit();
@@ -192,9 +199,10 @@ async fn flush_impl(s: &mut native_tls::TlsStream<SyncStream<impl AsyncWrite>>) 
     Ok(())
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> AsyncWrite for TlsStream<S>
+impl<S: AsyncRead + AsyncWrite + Splittable + 'static> AsyncWrite for TlsStream<S>
 where
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         let slice = buf.as_init();
