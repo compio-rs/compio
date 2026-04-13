@@ -2,6 +2,8 @@ use std::{
     future::Future,
     io,
     mem::{ManuallyDrop, MaybeUninit},
+    ops::Deref,
+    sync::atomic::Ordering,
 };
 
 use compio_buf::{
@@ -10,7 +12,7 @@ use compio_buf::{
 #[cfg(unix)]
 use compio_driver::op::{Bind, CreateSocket, Listen, ShutdownSocket};
 use compio_driver::{
-    AsRawFd, BufferRef, OpCode, ResultTakeBuffer, TakeBuffer, ToSharedFd, impl_raw_fd,
+    AsRawFd, BufferRef, OpCode, RawFd, ResultTakeBuffer, TakeBuffer, ToSharedFd,
     op::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFrom, RecvFromManaged, RecvFromMulti,
         RecvFromMultiResult, RecvFromVectored, RecvManaged, RecvMsg, RecvMsgManaged, RecvMsgMulti,
@@ -23,6 +25,10 @@ use compio_driver::{
 use compio_runtime::{Attacher, Runtime, fd::PollFd};
 use futures_util::{Stream, StreamExt, future::Either};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
+#[cfg(feature = "sync")]
+use synchrony::sync::atomic::AtomicI8;
+#[cfg(not(feature = "sync"))]
+use synchrony::unsync::atomic::AtomicI8;
 
 use crate::Incoming;
 
@@ -41,15 +47,79 @@ cfg_if::cfg_if! {
     }
 }
 
+// We are not on the IO_URING driver and hence retrieving socket state is
+// not supported.
+const UNSUPPORTED: i8 = -1;
+
+// The socket was empty after the receive operation.
+const EMPTY: i8 = 0;
+
+// The socket was not-empty after the last receive operation and has more
+// data to be read.
+const NON_EMPTY: i8 = 1;
+
+#[derive(Debug)]
+struct SocketState {
+    state: AtomicI8,
+}
+
+impl Default for SocketState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SocketState {
+    fn new() -> Self {
+        Self {
+            state: AtomicI8::new(-1),
+        }
+    }
+
+    fn get(&self) -> Option<bool> {
+        match self.load(Ordering::Relaxed) {
+            UNSUPPORTED => None,
+            EMPTY => Some(false),
+            NON_EMPTY => Some(true),
+            _ => unreachable!(),
+        }
+    }
+
+    fn set(&self, extra: &compio_driver::Extra) {
+        if let Ok(n) = extra.sock_nonempty() {
+            self.store(n as i8, Ordering::Relaxed);
+        }
+    }
+}
+
+impl Clone for SocketState {
+    fn clone(&self) -> Self {
+        let current = self.state.load(Ordering::Relaxed);
+        Self {
+            state: AtomicI8::new(current),
+        }
+    }
+}
+
+impl Deref for SocketState {
+    type Target = AtomicI8;
+
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Socket {
     pub(crate) socket: Attacher<Socket2>,
+    state: SocketState,
 }
 
 impl Socket {
     pub fn from_socket2(socket: Socket2) -> io::Result<Self> {
         Ok(Self {
             socket: Attacher::new(socket)?,
+            state: SocketState::new(),
         })
     }
 
@@ -198,10 +268,22 @@ impl Socket {
         }
     }
 
+    /// This method signifies whether the socket was non-empty after the last
+    /// receive operation.
+    ///
+    /// # Behavior
+    ///
+    /// It returns `Some(..)` only on the IO_URING driver and `None` on others.
+    pub fn sock_nonempty(&self) -> Option<bool> {
+        self.state.get()
+    }
+
     pub async fn recv<B: IoBufMut>(&self, buffer: B, flags: i32) -> BufResult<usize, B> {
         let fd = self.to_shared_fd();
         let op = Recv::new(fd, buffer, flags);
-        let res = compio_runtime::submit(op).await.into_inner();
+        let (res, extra) = compio_runtime::submit(op).with_extra().await;
+        self.state.set(&extra);
+        let res = res.into_inner();
         unsafe { res.map_advanced() }
     }
 
@@ -212,18 +294,23 @@ impl Socket {
     ) -> BufResult<usize, V> {
         let fd = self.to_shared_fd();
         let op = RecvVectored::new(fd, buffer, flags);
-        let res = compio_runtime::submit(op).await.into_inner();
+        let (res, extra) = compio_runtime::submit(op).with_extra().await;
+        self.state.set(&extra);
+        let res = res.into_inner();
         unsafe { res.map_vec_advanced() }
     }
 
     pub async fn recv_managed(&self, len: usize, flags: i32) -> io::Result<Option<BufferRef>> {
         let fd = self.to_shared_fd();
-        let res = Runtime::with_current(|rt| {
+        let (res, extra) = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
             let op = RecvManaged::new(fd, &buffer_pool, len, flags)?;
-            io::Result::Ok(rt.submit(op))
+            io::Result::Ok(rt.submit(op).with_extra())
         })?
         .await;
+
+        self.state.set(&extra);
+
         unsafe { res.take_buffer() }
     }
 
@@ -277,7 +364,9 @@ impl Socket {
     ) -> BufResult<(usize, Option<SockAddr>), T> {
         let fd = self.to_shared_fd();
         let op = RecvFrom::new(fd, buffer, flags);
-        let res = compio_runtime::submit(op).await.into_inner().map_addr();
+        let (res, extra) = compio_runtime::submit(op).with_extra().await;
+        self.state.set(&extra);
+        let res = res.into_inner().map_addr();
         unsafe { res.map_advanced() }
     }
 
@@ -288,7 +377,9 @@ impl Socket {
     ) -> BufResult<(usize, Option<SockAddr>), T> {
         let fd = self.to_shared_fd();
         let op = RecvFromVectored::new(fd, buffer, flags);
-        let res = compio_runtime::submit(op).await.into_inner().map_addr();
+        let (res, extra) = compio_runtime::submit(op).with_extra().await;
+        self.state.set(&extra);
+        let res = res.into_inner().map_addr();
         unsafe { res.map_vec_advanced() }
     }
 
@@ -298,12 +389,13 @@ impl Socket {
         flags: i32,
     ) -> io::Result<Option<(BufferRef, Option<SockAddr>)>> {
         let fd = self.to_shared_fd();
-        let inner = Runtime::with_current(|rt| {
+        let (inner, extra) = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
             let op = RecvFromManaged::new(fd, &buffer_pool, len, flags)?;
-            io::Result::Ok(rt.submit(op))
+            io::Result::Ok(rt.submit(op).with_extra())
         })?
         .await;
+        self.state.set(&extra);
         let (len, op) = buf_try!(@try inner);
         // Kernel returns 0 for the operation, drop the buffer and return Ok(None)
         if len == 0 {
@@ -352,7 +444,9 @@ impl Socket {
     ) -> BufResult<(usize, usize, Option<SockAddr>), (T, C)> {
         let fd = self.to_shared_fd();
         let op = RecvMsg::new(fd, buffer, control, flags);
-        let res = compio_runtime::submit(op).await.into_inner().map_addr();
+        let (res, extra) = compio_runtime::submit(op).with_extra().await;
+        self.state.set(&extra);
+        let res = res.into_inner().map_addr();
         unsafe { res.map_vec_advanced() }
     }
 
@@ -363,12 +457,13 @@ impl Socket {
         flags: i32,
     ) -> io::Result<Option<(BufferRef, C, Option<SockAddr>)>> {
         let fd = self.to_shared_fd();
-        let inner = Runtime::with_current(|rt| {
+        let (inner, extra) = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
             let op = RecvMsgManaged::new(fd, &buffer_pool, len, control, flags)?;
-            io::Result::Ok(rt.submit(op))
+            io::Result::Ok(rt.submit(op).with_extra())
         })?
         .await;
+        self.state.set(&extra);
         let (len, op) = buf_try!(@try inner);
         // Kernel returns 0 for the operation, drop the buffer and return Ok(None)
         if len == 0 {
@@ -573,7 +668,58 @@ impl Socket {
     }
 }
 
-impl_raw_fd!(Socket, Socket2, socket, socket);
+impl AsRawFd for Socket {
+    fn as_raw_fd(&self) -> RawFd {
+        self.socket.as_raw_fd()
+    }
+}
+
+#[cfg(unix)]
+impl std::os::fd::AsFd for Socket {
+    fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
+        self.socket.as_fd()
+    }
+}
+
+#[cfg(unix)]
+impl std::os::fd::FromRawFd for Socket {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
+        Self {
+            socket: unsafe { std::os::fd::FromRawFd::from_raw_fd(fd) },
+            state: SocketState::new(),
+        }
+    }
+}
+
+impl compio_driver::ToSharedFd<Socket2> for Socket {
+    fn to_shared_fd(&self) -> compio_driver::SharedFd<Socket2> {
+        self.socket.to_shared_fd()
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::FromRawSocket for Socket {
+    unsafe fn from_raw_socket(sock: std::os::windows::io::RawSocket) -> Self {
+        Self {
+            socket: unsafe { std::os::windows::io::FromRawSocket::from_raw_socket(sock) },
+            state: SocketState::new(),
+        }
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::AsSocket for Socket {
+    fn as_socket(&self) -> std::os::windows::io::BorrowedSocket<'_> {
+        self.socket.as_socket()
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::AsRawSocket for Socket {
+    fn as_raw_socket(&self) -> std::os::windows::io::RawSocket {
+        self.socket.as_raw_socket()
+    }
+}
 
 async fn submit_zerocopy<T: OpCode + IntoInner + 'static>(
     op: T,
