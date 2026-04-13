@@ -83,6 +83,7 @@ impl CompletionPort {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn post(&self, res: io::Result<usize>, optr: *mut Overlapped) -> io::Result<()> {
         if let Some(overlapped) = unsafe { optr.as_mut() } {
             match &res {

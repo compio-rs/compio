@@ -76,7 +76,7 @@ fn worker(
         counter.fetch_add(1, Ordering::AcqRel);
         let _guard = CounterGuard(counter);
         while let Ok(f) = receiver.recv_timeout(timeout) {
-            f.run();
+            f.run()
         }
     }
 }

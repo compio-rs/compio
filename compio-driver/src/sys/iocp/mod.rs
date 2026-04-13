@@ -13,6 +13,7 @@ use std::{
 
 use compio_buf::BufResult;
 use compio_log::{instrument, trace};
+use flume::{Receiver, Sender};
 use windows_sys::Win32::{
     Foundation::{ERROR_CANCELLED, HANDLE},
     System::IO::OVERLAPPED,
@@ -23,7 +24,10 @@ use crate::{AsyncifyPool, DriverType, Entry, ErasedKey, ProactorBuilder, control
 pub(crate) mod op;
 
 mod cp;
+mod fd;
 mod wait;
+
+pub use fd::*;
 
 /// Extra data attached for IOCP.
 #[repr(C)]
@@ -51,224 +55,6 @@ impl Extra {
 impl super::Extra {
     pub(crate) fn optr(&mut self) -> *mut Overlapped {
         &mut self.0.overlapped as _
-    }
-}
-
-/// On windows, handle and socket are in the same size.
-/// Both of them could be attached to an IOCP.
-/// Therefore, both could be seen as fd.
-pub type RawFd = HANDLE;
-
-/// Extracts raw fds.
-pub trait AsRawFd {
-    /// Extracts the raw fd.
-    fn as_raw_fd(&self) -> RawFd;
-}
-
-/// Owned handle or socket on Windows.
-#[derive(Debug)]
-pub enum OwnedFd {
-    /// Win32 handle.
-    File(OwnedHandle),
-    /// Windows socket handle.
-    Socket(OwnedSocket),
-}
-
-impl AsRawFd for OwnedFd {
-    fn as_raw_fd(&self) -> RawFd {
-        match self {
-            Self::File(fd) => fd.as_raw_handle() as _,
-            Self::Socket(s) => s.as_raw_socket() as _,
-        }
-    }
-}
-
-impl AsRawFd for RawFd {
-    fn as_raw_fd(&self) -> RawFd {
-        *self
-    }
-}
-
-impl AsRawFd for std::fs::File {
-    fn as_raw_fd(&self) -> RawFd {
-        self.as_raw_handle() as _
-    }
-}
-
-impl AsRawFd for OwnedHandle {
-    fn as_raw_fd(&self) -> RawFd {
-        self.as_raw_handle() as _
-    }
-}
-
-impl AsRawFd for socket2::Socket {
-    fn as_raw_fd(&self) -> RawFd {
-        self.as_raw_socket() as _
-    }
-}
-
-impl AsRawFd for OwnedSocket {
-    fn as_raw_fd(&self) -> RawFd {
-        self.as_raw_socket() as _
-    }
-}
-
-impl AsRawFd for std::process::ChildStdin {
-    fn as_raw_fd(&self) -> RawFd {
-        self.as_raw_handle() as _
-    }
-}
-
-impl AsRawFd for std::process::ChildStdout {
-    fn as_raw_fd(&self) -> RawFd {
-        self.as_raw_handle() as _
-    }
-}
-
-impl AsRawFd for std::process::ChildStderr {
-    fn as_raw_fd(&self) -> RawFd {
-        self.as_raw_handle() as _
-    }
-}
-
-impl From<OwnedHandle> for OwnedFd {
-    fn from(value: OwnedHandle) -> Self {
-        Self::File(value)
-    }
-}
-
-impl From<std::fs::File> for OwnedFd {
-    fn from(value: std::fs::File) -> Self {
-        Self::File(OwnedHandle::from(value))
-    }
-}
-
-impl From<std::process::ChildStdin> for OwnedFd {
-    fn from(value: std::process::ChildStdin) -> Self {
-        Self::File(OwnedHandle::from(value))
-    }
-}
-
-impl From<std::process::ChildStdout> for OwnedFd {
-    fn from(value: std::process::ChildStdout) -> Self {
-        Self::File(OwnedHandle::from(value))
-    }
-}
-
-impl From<std::process::ChildStderr> for OwnedFd {
-    fn from(value: std::process::ChildStderr) -> Self {
-        Self::File(OwnedHandle::from(value))
-    }
-}
-
-impl From<OwnedSocket> for OwnedFd {
-    fn from(value: OwnedSocket) -> Self {
-        Self::Socket(value)
-    }
-}
-
-impl From<socket2::Socket> for OwnedFd {
-    fn from(value: socket2::Socket) -> Self {
-        Self::Socket(OwnedSocket::from(value))
-    }
-}
-
-/// Borrowed handle or socket on Windows.
-#[derive(Debug)]
-pub enum BorrowedFd<'a> {
-    /// Win32 handle.
-    File(BorrowedHandle<'a>),
-    /// Windows socket handle.
-    Socket(BorrowedSocket<'a>),
-}
-
-impl AsRawFd for BorrowedFd<'_> {
-    fn as_raw_fd(&self) -> RawFd {
-        match self {
-            Self::File(fd) => fd.as_raw_handle() as RawFd,
-            Self::Socket(s) => s.as_raw_socket() as RawFd,
-        }
-    }
-}
-
-impl<'a> From<BorrowedHandle<'a>> for BorrowedFd<'a> {
-    fn from(value: BorrowedHandle<'a>) -> Self {
-        Self::File(value)
-    }
-}
-
-impl<'a> From<BorrowedSocket<'a>> for BorrowedFd<'a> {
-    fn from(value: BorrowedSocket<'a>) -> Self {
-        Self::Socket(value)
-    }
-}
-
-/// Extracts fds.
-pub trait AsFd {
-    /// Extracts the borrowed fd.
-    fn as_fd(&self) -> BorrowedFd<'_>;
-}
-
-impl AsFd for OwnedFd {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        match self {
-            Self::File(fd) => fd.as_fd(),
-            Self::Socket(s) => s.as_fd(),
-        }
-    }
-}
-
-impl AsFd for std::fs::File {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.as_handle().into()
-    }
-}
-
-impl AsFd for OwnedHandle {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.as_handle().into()
-    }
-}
-
-impl AsFd for BorrowedHandle<'_> {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        (*self).into()
-    }
-}
-
-impl AsFd for socket2::Socket {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.as_socket().into()
-    }
-}
-
-impl AsFd for OwnedSocket {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.as_socket().into()
-    }
-}
-
-impl AsFd for BorrowedSocket<'_> {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        (*self).into()
-    }
-}
-
-impl AsFd for std::process::ChildStdin {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.as_handle().into()
-    }
-}
-
-impl AsFd for std::process::ChildStdout {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.as_handle().into()
-    }
-}
-
-impl AsFd for std::process::ChildStderr {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.as_handle().into()
     }
 }
 
@@ -396,6 +182,8 @@ pub(crate) struct Driver {
     notify: Arc<Notify>,
     waits: HashMap<usize, wait::Wait>,
     pool: AsyncifyPool,
+    completed_tx: Sender<Entry>,
+    completed_rx: Receiver<Entry>,
     _local_marker: PhantomData<ErasedKey>,
 }
 
@@ -407,8 +195,12 @@ impl Driver {
         let driver = port.as_raw_handle() as _;
         let overlapped = Overlapped::new(driver);
         let notify = Arc::new(Notify::new(port, overlapped));
+        let (completed_tx, completed_rx) = flume::unbounded();
+
         Ok(Self {
             notify,
+            completed_tx,
+            completed_rx,
             waits: HashMap::default(),
             pool: builder.create_or_get_thread_pool(),
             _local_marker: PhantomData,
@@ -478,15 +270,16 @@ impl Driver {
 
     fn push_blocking(&mut self, key: ErasedKey) {
         let notify = self.notify.clone();
+        let tx = self.completed_tx.clone();
+
         // SAFETY: we're submitting into the driver, so it's safe to freeze here.
         let mut key = unsafe { key.freeze() };
 
         let mut closure = move || {
-            let op = key.as_mut();
-            let res = op.operate_blocking();
-            let optr = op.extra_mut().optr();
-            // key will be unfronzen in `create_entry` when the result is ready
-            notify.port.post(res, optr).ok();
+            let res = key.as_mut().operate_blocking();
+            let entry = Entry::new(key.into_inner(), res);
+            _ = tx.send(entry);
+            notify.wake();
         };
 
         while let Err(e) = self.pool.dispatch(closure) {
@@ -500,7 +293,6 @@ impl Driver {
         waits: &mut HashMap<usize, wait::Wait>,
         entry: cp::RawEntry,
     ) -> Option<Entry> {
-        // Ignore existing entries
         if entry.overlapped.cast_const() == notify {
             return None;
         }
@@ -536,9 +328,17 @@ impl Driver {
 
         let notify = &self.notify.overlapped as *const Overlapped;
 
-        for e in self.notify.port.poll(timeout)? {
-            if let Some(e) = Self::create_entry(notify, &mut self.waits, e) {
-                e.notify()
+        let mut has_entry = false;
+        while let Ok(entry) = self.completed_rx.try_recv() {
+            entry.notify();
+            has_entry = true;
+        }
+
+        if !has_entry {
+            for e in self.notify.port.poll(timeout)? {
+                if let Some(e) = Self::create_entry(notify, &mut self.waits, e) {
+                    e.notify()
+                }
             }
         }
 
