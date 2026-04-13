@@ -116,6 +116,10 @@ impl TcpListener {
     }
 
     /// Returns a stream of incoming connections to this listener.
+    ///
+    /// ## Platform specific
+    /// * io-uring: an old kernel may not support multishot operations, in which
+    ///   case this method will return an error in the first item of the stream.
     pub fn incoming(&self) -> TcpIncoming<'_> {
         TcpIncoming {
             inner: self.inner.incoming(),
@@ -476,12 +480,18 @@ impl AsyncReadManaged for &TcpStream {
     }
 }
 
+/// ## Platform specific
+/// * io-uring: an old kernel may not support multishot operations, in which
+///   case this method will return an error in the first item of the stream.
 impl AsyncReadMulti for TcpStream {
     fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
         self.inner.recv_multi(len, 0)
     }
 }
 
+/// ## Platform specific
+/// * io-uring: an old kernel may not support multishot operations, in which
+///   case this method will return an error in the first item of the stream.
 impl AsyncReadMulti for &TcpStream {
     fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
         self.inner.recv_multi(len, 0)
@@ -559,6 +569,9 @@ impl AsyncReadAncillaryManaged for &TcpStream {
     }
 }
 
+/// ## Platform specific
+/// * io-uring: an old kernel may not support multishot operations, in which
+///   case this method will return an error in the first item of the stream.
 impl AsyncReadAncillaryMulti for TcpStream {
     type Return = RecvMsgMultiResult;
 
@@ -571,6 +584,9 @@ impl AsyncReadAncillaryMulti for TcpStream {
     }
 }
 
+/// ## Platform specific
+/// * io-uring: an old kernel may not support multishot operations, in which
+///   case this method will return an error in the first item of the stream.
 impl AsyncReadAncillaryMulti for &TcpStream {
     type Return = RecvMsgMultiResult;
 
