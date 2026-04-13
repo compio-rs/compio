@@ -354,6 +354,31 @@ impl<S> SyncStream<S> {
 }
 
 impl<S> SyncStreamReadHalf<S> {
+    /// Returns a reference to the underlying stream.
+    pub fn get_ref(&self) -> &S {
+        &self.inner
+    }
+
+    /// Returns a mutable reference to the underlying stream.
+    pub fn get_mut(&mut self) -> &mut S {
+        &mut self.inner
+    }
+
+    /// Consumes the `SyncStreamReadHalf`, returning the underlying stream.
+    pub fn into_inner(self) -> S {
+        self.inner
+    }
+
+    /// Consumes the `SyncStream`, returning the underlying stream and any
+    /// unread buffered data.
+    ///
+    /// If the read buffer is currently lent to an IO operation, the returned
+    /// `Vec` will be empty.
+    pub fn into_parts(self) -> (S, Vec<u8>) {
+        let remaining = self.read_buf.into_inner();
+        (self.inner, remaining)
+    }
+
     /// Returns `true` if the stream has reached EOF.
     pub fn is_eof(&self) -> bool {
         self.read_buf.is_eof()
@@ -366,6 +391,21 @@ impl<S> SyncStreamReadHalf<S> {
 }
 
 impl<S> SyncStreamWriteHalf<S> {
+    /// Returns a reference to the underlying stream.
+    pub fn get_ref(&self) -> &S {
+        &self.inner
+    }
+
+    /// Returns a mutable reference to the underlying stream.
+    pub fn get_mut(&mut self) -> &mut S {
+        &mut self.inner
+    }
+
+    /// Consumes the `SyncStreamWriteHalf`, returning the underlying stream.
+    pub fn into_inner(self) -> S {
+        self.inner
+    }
+
     /// Returns `true` if there is pending data in the write buffer that needs
     /// to be flushed.
     pub fn has_pending_write(&self) -> bool {
