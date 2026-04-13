@@ -221,6 +221,10 @@ impl UdpSocket {
     /// If `len` == 0, will use buffer pool's inner buffer size as the max len
     /// of each buffer; if `len` > 0, `min(len, inner buffer size)` will be
     /// the read max len of each buffer.
+    ///
+    /// ## Platform specific
+    /// * io-uring: an old kernel may not support multishot operations, in which
+    ///   case this method will return an error in the first item of the stream.
     pub fn recv_multi(&self, len: usize) -> impl Stream<Item = io::Result<BufferRef>> {
         self.inner.recv_multi(len, 0)
     }
@@ -292,6 +296,10 @@ impl UdpSocket {
 
     /// Read some bytes from this source and the runtime's buffer pool and
     /// return a stream of [`RecvFromMultiResult`].
+    ///
+    /// ## Platform specific
+    /// * io-uring: an old kernel may not support multishot operations, in which
+    ///   case this method will return an error in the first item of the stream.
     pub fn recv_from_multi(&self) -> impl Stream<Item = io::Result<RecvFromMultiResult>> {
         self.inner.recv_from_multi(0)
     }
@@ -361,6 +369,10 @@ impl UdpSocket {
 
     /// Receives multiple single datagram messages and ancillary data on the
     /// socket from the runtime's buffer pool.
+    ///
+    /// ## Platform specific
+    /// * io-uring: an old kernel may not support multishot operations, in which
+    ///   case this method will return an error in the first item of the stream.
     pub fn recv_msg_multi(
         &self,
         control_len: usize,
