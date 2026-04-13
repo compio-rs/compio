@@ -63,7 +63,7 @@ pin-project-lite = "0.2.16"
 rand = "0.10.0"
 rcgen = "0.14.1"
 rustls = { version = "0.23.1", default-features = false }
-rustls-platform-verifier = "0.6.0"
+rustls-platform-verifier = "0.7.0"
 rustls-native-certs = "0.8.0"
 slab = "0.4.9"
 socket2 = "0.6.0"
