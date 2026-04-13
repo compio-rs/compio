@@ -427,7 +427,7 @@ impl AsyncReadAncillaryMulti for UnixStream {
     type Return = RecvMsgMultiResult;
 
     #[inline]
-    fn read_multi_with_ancillary<C: IoBufMut>(
+    fn read_multi_with_ancillary(
         &mut self,
         control_len: usize,
     ) -> impl Stream<Item = io::Result<Self::Return>> {
@@ -439,7 +439,7 @@ impl AsyncReadAncillaryMulti for &UnixStream {
     type Return = RecvMsgMultiResult;
 
     #[inline]
-    fn read_multi_with_ancillary<C: IoBufMut>(
+    fn read_multi_with_ancillary(
         &mut self,
         control_len: usize,
     ) -> impl Stream<Item = io::Result<Self::Return>> {
