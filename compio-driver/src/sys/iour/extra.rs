@@ -1,14 +1,18 @@
+use io_uring::squeue::Flags;
+
 /// Extra data for RawOp.
 #[derive(Debug)]
 pub(in crate::sys) struct Extra {
-    flags: u32,
+    sqe_flags: Flags,
+    cqe_flags: u32,
     personality: Option<u16>,
 }
 
 impl Extra {
     pub fn new() -> Self {
         Self {
-            flags: 0,
+            sqe_flags: Flags::empty(),
+            cqe_flags: 0,
             personality: None,
         }
     }
@@ -17,16 +21,36 @@ impl Extra {
         self.personality = Some(personality);
     }
 
+    pub fn set_link(&mut self) {
+        self.sqe_flags |= Flags::IO_LINK;
+    }
+
+    pub fn set_hardlink(&mut self) {
+        self.sqe_flags |= Flags::IO_HARDLINK;
+    }
+
+    pub fn set_drain(&mut self) {
+        self.sqe_flags |= Flags::IO_DRAIN;
+    }
+
     pub fn get_personality(&self) -> Option<u16> {
         self.personality
     }
 
+    pub fn get_sqe_flags(&self) -> Flags {
+        self.sqe_flags
+    }
+
     pub fn buffer_id(&self) -> Option<u16> {
-        io_uring::cqueue::buffer_select(self.flags)
+        io_uring::cqueue::buffer_select(self.cqe_flags)
     }
 
     pub fn sock_nonempty(&self) -> bool {
-        io_uring::cqueue::sock_nonempty(self.flags)
+        io_uring::cqueue::sock_nonempty(self.cqe_flags)
+    }
+
+    pub fn is_notification(&self) -> bool {
+        io_uring::cqueue::notif(self.cqe_flags)
     }
 }
 
@@ -60,7 +84,7 @@ impl crate::sys::Extra {
 
     pub(crate) fn set_flags(&mut self, flag: u32) {
         if let Some(extra) = self.try_as_iour_mut() {
-            extra.flags = flag;
+            extra.cqe_flags = flag;
         }
     }
 }
