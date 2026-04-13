@@ -511,7 +511,7 @@ impl<S: crate::AsyncWrite> SyncStreamWriteHalf<S> {
     }
 }
 
-impl<S: crate::AsyncRead + crate::AsyncWrite + Splittable> Splittable for SyncStream<S> {
+impl<S: Splittable> Splittable for SyncStream<S> {
     type ReadHalf = SyncStreamReadHalf<S::ReadHalf>;
     type WriteHalf = SyncStreamWriteHalf<S::WriteHalf>;
 
