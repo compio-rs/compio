@@ -158,7 +158,7 @@ pub trait AsyncReadAncillaryMulti {
     type Return;
 
     /// Read data and ancillary data into multiple managed buffers.
-    fn read_multi_with_ancillary<C: IoBufMut>(
+    fn read_multi_with_ancillary(
         &mut self,
         control_len: usize,
     ) -> impl Stream<Item = IoResult<Self::Return>>;

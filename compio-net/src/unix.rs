@@ -7,10 +7,12 @@ use std::{
 };
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_driver::{BufferRef, impl_raw_fd};
+use compio_driver::{BufferRef, impl_raw_fd, op::RecvMsgMultiResult};
 use compio_io::{
     AsyncRead, AsyncReadManaged, AsyncReadMulti, AsyncWrite,
-    ancillary::{AsyncReadAncillary, AsyncWriteAncillary},
+    ancillary::{
+        AsyncReadAncillary, AsyncReadAncillaryManaged, AsyncReadAncillaryMulti, AsyncWriteAncillary,
+    },
     util::Splittable,
 };
 use compio_runtime::fd::PollFd;
@@ -393,6 +395,55 @@ impl AsyncReadAncillary for &UnixStream {
             .recv_msg_vectored(buffer, control, 0)
             .await
             .map_res(|(res, len, _addr)| (res, len))
+    }
+}
+
+impl AsyncReadAncillaryManaged for UnixStream {
+    #[inline]
+    async fn read_managed_with_ancillary<C: IoBufMut>(
+        &mut self,
+        len: usize,
+        control: C,
+    ) -> io::Result<Option<(Self::Buffer, C)>> {
+        (&*self).read_managed_with_ancillary(len, control).await
+    }
+}
+
+impl AsyncReadAncillaryManaged for &UnixStream {
+    #[inline]
+    async fn read_managed_with_ancillary<C: IoBufMut>(
+        &mut self,
+        len: usize,
+        control: C,
+    ) -> io::Result<Option<(Self::Buffer, C)>> {
+        self.inner
+            .recv_msg_managed(len, control, 0)
+            .await
+            .map(|res| res.map(|(res, len, _addr)| (res, len)))
+    }
+}
+
+impl AsyncReadAncillaryMulti for UnixStream {
+    type Return = RecvMsgMultiResult;
+
+    #[inline]
+    fn read_multi_with_ancillary(
+        &mut self,
+        control_len: usize,
+    ) -> impl Stream<Item = io::Result<Self::Return>> {
+        self.inner.recv_msg_multi(control_len, 0)
+    }
+}
+
+impl AsyncReadAncillaryMulti for &UnixStream {
+    type Return = RecvMsgMultiResult;
+
+    #[inline]
+    fn read_multi_with_ancillary(
+        &mut self,
+        control_len: usize,
+    ) -> impl Stream<Item = io::Result<Self::Return>> {
+        self.inner.recv_msg_multi(control_len, 0)
     }
 }
 
