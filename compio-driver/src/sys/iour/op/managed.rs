@@ -42,7 +42,7 @@ impl<S> ReadManagedAt<S> {
 unsafe impl<S: AsFd> OpCode for ReadManagedAt<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let fd = Fd(self.fd.as_fd().as_raw_fd());
@@ -103,7 +103,7 @@ impl<S> ReadManaged<S> {
 unsafe impl<S: AsFd> OpCode for ReadManaged<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let fd = self.fd.as_fd().as_raw_fd();
@@ -165,7 +165,7 @@ impl<S> RecvManaged<S> {
 unsafe impl<S: AsFd> OpCode for RecvManaged<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let fd = self.fd.as_fd().as_raw_fd();
@@ -213,7 +213,16 @@ pub struct RecvFromManaged<S> {
 pub struct RecvFromManagedControl {
     msg: libc::msghdr,
     #[allow(dead_code)]
-    iovec: Box<libc::iovec>,
+    iovec: libc::iovec,
+}
+
+impl Default for RecvFromManagedControl {
+    fn default() -> Self {
+        Self {
+            msg: unsafe { std::mem::zeroed() },
+            iovec: unsafe { std::mem::zeroed() },
+        }
+    }
 }
 
 impl<S> RecvFromManaged<S> {
@@ -246,17 +255,12 @@ impl<S> TakeBuffer for RecvFromManaged<S> {
 unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
     type Control = RecvFromManagedControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
-        let mut iovec = Box::new(libc::iovec {
-            iov_base: ptr::null_mut(),
-            iov_len: self.buffer_len,
-        });
-        msg.msg_name = &raw mut self.addr as _;
-        msg.msg_namelen = self.addr.size_of() as _;
-        msg.msg_iov = iovec.as_mut();
-        msg.msg_iovlen = 1;
-        RecvFromManagedControl { msg, iovec }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        ctrl.iovec.iov_len = self.buffer_len;
+        ctrl.msg.msg_name = &raw mut self.addr as _;
+        ctrl.msg.msg_namelen = self.addr.size_of() as _;
+        ctrl.msg.msg_iov = &raw mut ctrl.iovec;
+        ctrl.msg.msg_iovlen = 1;
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
@@ -308,12 +312,11 @@ impl<C: IoBufMut, S: AsFd> RecvMsgManaged<C, S> {
 unsafe impl<C: IoBufMut, S: AsFd> OpCode for RecvMsgManaged<C, S> {
     type Control = RecvFromManagedControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        let mut control = unsafe { self.op.init() };
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        unsafe { self.op.init(ctrl) };
         let slice = self.control.as_uninit();
-        control.msg.msg_control = slice.as_mut_ptr() as _;
-        control.msg.msg_controllen = slice.len() as _;
-        control
+        ctrl.msg.msg_control = slice.as_mut_ptr() as _;
+        ctrl.msg.msg_controllen = slice.len() as _;
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
@@ -406,7 +409,7 @@ impl<S> ReadMultiAt<S> {
 unsafe impl<S: AsFd> OpCode for ReadMultiAt<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let fd = self.inner.fd.as_fd().as_raw_fd();
@@ -476,7 +479,7 @@ impl<S> ReadMulti<S> {
 unsafe impl<S: AsFd> OpCode for ReadMulti<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let fd = self.inner.fd.as_fd().as_raw_fd();
@@ -546,7 +549,7 @@ impl<S> RecvMulti<S> {
 unsafe impl<S: AsFd> OpCode for RecvMulti<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let fd = self.inner.fd.as_fd().as_raw_fd();
@@ -730,6 +733,14 @@ pub struct RecvMsgMultiControl {
     msg: libc::msghdr,
 }
 
+impl Default for RecvMsgMultiControl {
+    fn default() -> Self {
+        Self {
+            msg: unsafe { std::mem::zeroed() },
+        }
+    }
+}
+
 impl<S: AsFd> RecvMsgMulti<S> {
     /// Create [`RecvMsgMulti`].
     pub fn new(
@@ -764,11 +775,9 @@ impl<S: AsFd> TakeBuffer for RecvMsgMulti<S> {
 unsafe impl<S: AsFd> OpCode for RecvMsgMulti<S> {
     type Control = RecvMsgMultiControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
-        msg.msg_namelen = NLEN as _;
-        msg.msg_controllen = self.control_len as _;
-        RecvMsgMultiControl { msg }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        ctrl.msg.msg_namelen = NLEN as _;
+        ctrl.msg.msg_controllen = self.control_len as _;
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
@@ -877,8 +886,8 @@ impl<S: AsFd> RecvFromMulti<S> {
 unsafe impl<S: AsFd> OpCode for RecvFromMulti<S> {
     type Control = RecvMsgMultiControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        unsafe { self.op.init() }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        unsafe { self.op.init(ctrl) }
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {

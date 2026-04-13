@@ -32,7 +32,7 @@ impl<R: Read, B: IoBufMut> StdRead<R, B> {
 unsafe impl<R: Read, B: IoBufMut> OpCode for StdRead<R, B> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Blocking
@@ -90,7 +90,7 @@ impl<W: Write, B: IoBuf> StdWrite<W, B> {
 unsafe impl<W: Write, B: IoBuf> OpCode for StdWrite<W, B> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Blocking

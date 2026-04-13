@@ -29,7 +29,7 @@ where
 {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -54,7 +54,7 @@ where
 {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -80,7 +80,7 @@ where
 {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -100,7 +100,7 @@ where
 unsafe impl<S: AsFd> OpCode for OpenFile<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -116,7 +116,7 @@ unsafe impl<S: AsFd> OpCode for OpenFile<S> {
 unsafe impl OpCode for CloseFile {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -130,7 +130,7 @@ unsafe impl OpCode for CloseFile {
 unsafe impl<S: AsFd> OpCode for TruncateFile<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -160,7 +160,7 @@ impl<S> FileStat<S> {
 unsafe impl<S: AsFd> OpCode for FileStat<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -221,7 +221,7 @@ impl<S: AsFd> PathStat<S> {
 unsafe impl<S: AsFd> OpCode for PathStat<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -282,31 +282,36 @@ pub struct ReadAtControl {
     aiocb: aiocb,
 }
 
+impl Default for ReadAtControl {
+    fn default() -> Self {
+        Self { aiocb: new_aiocb() }
+    }
+}
+
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     type Control = ReadAtControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        #[allow(unused_mut, clippy::let_unit_value)]
-        let mut aiocb = new_aiocb();
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        _ = ctrl;
         #[cfg(aio)]
         {
             let slice = self.buffer.sys_slice_mut();
 
-            aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
-            aiocb.aio_offset = self.offset as _;
-            aiocb.aio_buf = slice.ptr().cast();
-            aiocb.aio_nbytes = slice.len();
+            ctrl.aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
+            ctrl.aiocb.aio_offset = self.offset as _;
+            ctrl.aiocb.aio_buf = slice.ptr().cast();
+            ctrl.aiocb.aio_nbytes = slice.len();
         }
-        ReadAtControl { aiocb }
     }
 
-    fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
+    fn pre_submit(&mut self, ctrl: &mut Self::Control) -> io::Result<Decision> {
         #[cfg(aio)]
         {
-            Ok(Decision::aio(&mut _control.aiocb, libc::aio_read))
+            Ok(Decision::aio(&mut ctrl.aiocb, libc::aio_read))
         }
         #[cfg(not(aio))]
         {
+            _ = ctrl;
             Ok(Decision::Blocking)
         }
     }
@@ -327,17 +332,18 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
     type Control = ReadVectoredAtControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        self.create_control()
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        self.create_control(ctrl)
     }
 
-    fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
+    fn pre_submit(&mut self, ctrl: &mut Self::Control) -> io::Result<Decision> {
         #[cfg(freebsd)]
         {
-            Ok(Decision::aio(&mut _control.aiocb, libc::aio_readv))
+            Ok(Decision::aio(&mut ctrl.aiocb, libc::aio_readv))
         }
         #[cfg(not(freebsd))]
         {
+            _ = ctrl;
             Ok(Decision::Blocking)
         }
     }
@@ -364,31 +370,36 @@ pub struct WriteAtControl {
     aiocb: aiocb,
 }
 
+impl Default for WriteAtControl {
+    fn default() -> Self {
+        Self { aiocb: new_aiocb() }
+    }
+}
+
 unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
     type Control = WriteAtControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        #[allow(unused_mut, clippy::let_unit_value)]
-        let mut aiocb = new_aiocb();
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        _ = ctrl;
         #[cfg(aio)]
         {
-            let slice = self.buffer.sys_slice();
+            let slice = self.buffer.as_init();
 
-            aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
-            aiocb.aio_offset = self.offset as _;
-            aiocb.aio_buf = slice.ptr().cast();
-            aiocb.aio_nbytes = slice.len();
+            ctrl.aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
+            ctrl.aiocb.aio_offset = self.offset as _;
+            ctrl.aiocb.aio_buf = slice.as_ptr() as _;
+            ctrl.aiocb.aio_nbytes = slice.len();
         }
-        WriteAtControl { aiocb }
     }
 
-    fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
+    fn pre_submit(&mut self, ctrl: &mut Self::Control) -> io::Result<Decision> {
         #[cfg(aio)]
         {
-            Ok(Decision::aio(&mut _control.aiocb, libc::aio_write))
+            Ok(Decision::aio(&mut ctrl.aiocb, libc::aio_write))
         }
         #[cfg(not(aio))]
         {
+            _ = ctrl;
             Ok(Decision::Blocking)
         }
     }
@@ -414,17 +425,18 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
     type Control = WriteVectoredAtControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        self.create_control()
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        self.create_control(ctrl)
     }
 
-    fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
+    fn pre_submit(&mut self, ctrl: &mut Self::Control) -> io::Result<Decision> {
         #[cfg(freebsd)]
         {
-            Ok(Decision::aio(&mut _control.aiocb, libc::aio_writev))
+            Ok(Decision::aio(&mut ctrl.aiocb, libc::aio_writev))
         }
         #[cfg(not(freebsd))]
         {
+            _ = ctrl;
             Ok(Decision::Blocking)
         }
     }
@@ -449,8 +461,8 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
 unsafe impl<S: AsFd> OpCode for crate::op::managed::ReadManagedAt<S> {
     type Control = ReadAtControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        unsafe { self.op.init() }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        unsafe { self.op.init(ctrl) }
     }
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
@@ -469,7 +481,7 @@ unsafe impl<S: AsFd> OpCode for crate::op::managed::ReadManagedAt<S> {
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::wait_readable(self.fd.as_fd().as_raw_fd()))
@@ -489,8 +501,8 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
     type Control = ReadVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        self.create_control()
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        self.create_control(ctrl)
     }
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
@@ -515,7 +527,7 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
 unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::wait_writable(self.fd.as_fd().as_raw_fd()))
@@ -540,8 +552,8 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
     type Control = WriteVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        self.create_control()
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        self.create_control(ctrl)
     }
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
@@ -566,7 +578,7 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
 unsafe impl<S: AsFd> OpCode for crate::op::managed::ReadManaged<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         self.op.pre_submit(control)
@@ -586,20 +598,24 @@ pub struct SyncControl {
     aiocb: aiocb,
 }
 
+impl Default for SyncControl {
+    fn default() -> Self {
+        Self { aiocb: new_aiocb() }
+    }
+}
+
 unsafe impl<S: AsFd> OpCode for Sync<S> {
     type Control = SyncControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        #[allow(unused_mut, clippy::let_unit_value)]
-        let mut aiocb = new_aiocb();
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        _ = ctrl;
         #[cfg(aio)]
         {
-            aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
+            ctrl.aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
         }
-        SyncControl { aiocb }
     }
 
-    fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
+    fn pre_submit(&mut self, ctrl: &mut Self::Control) -> io::Result<Decision> {
         #[cfg(aio)]
         {
             unsafe extern "C" fn aio_fsync(aiocbp: *mut libc::aiocb) -> i32 {
@@ -615,10 +631,11 @@ unsafe impl<S: AsFd> OpCode for Sync<S> {
                 aio_fsync
             };
 
-            Ok(Decision::aio(&mut _control.aiocb, f))
+            Ok(Decision::aio(&mut ctrl.aiocb, f))
         }
         #[cfg(not(aio))]
         {
+            _ = ctrl;
             Ok(Decision::Blocking)
         }
     }
@@ -647,7 +664,7 @@ unsafe impl<S: AsFd> OpCode for Sync<S> {
 unsafe impl<S: AsFd> OpCode for Unlink<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -661,7 +678,7 @@ unsafe impl<S: AsFd> OpCode for Unlink<S> {
 unsafe impl<S: AsFd> OpCode for CreateDir<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -675,7 +692,7 @@ unsafe impl<S: AsFd> OpCode for CreateDir<S> {
 unsafe impl<S1: AsFd, S2: AsFd> OpCode for Rename<S1, S2> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -689,7 +706,7 @@ unsafe impl<S1: AsFd, S2: AsFd> OpCode for Rename<S1, S2> {
 unsafe impl<S: AsFd> OpCode for Symlink<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -703,7 +720,7 @@ unsafe impl<S: AsFd> OpCode for Symlink<S> {
 unsafe impl<S1: AsFd, S2: AsFd> OpCode for HardLink<S1, S2> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -773,7 +790,7 @@ impl CreateSocket {
 unsafe impl OpCode for CreateSocket {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -787,7 +804,7 @@ unsafe impl OpCode for CreateSocket {
 unsafe impl<S: AsFd> OpCode for Bind<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -808,7 +825,7 @@ unsafe impl<S: AsFd> OpCode for Bind<S> {
 unsafe impl<S: AsFd> OpCode for Listen<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -824,7 +841,7 @@ unsafe impl<S: AsFd> OpCode for Listen<S> {
 unsafe impl<S: AsFd> OpCode for ShutdownSocket<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -838,7 +855,7 @@ unsafe impl<S: AsFd> OpCode for ShutdownSocket<S> {
 unsafe impl OpCode for CloseSocket {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -906,7 +923,7 @@ impl<S: AsFd> Accept<S> {
 unsafe impl<S: AsFd> OpCode for Accept<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         let fd = self.fd.as_fd().as_raw_fd();
@@ -939,8 +956,8 @@ impl<S> AcceptMulti<S> {
 unsafe impl<S: AsFd> OpCode for AcceptMulti<S> {
     type Control = <Accept<S> as OpCode>::Control;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        unsafe { self.op.init() }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        unsafe { self.op.init(ctrl) }
     }
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
@@ -967,7 +984,7 @@ impl<S> IntoInner for AcceptMulti<S> {
 unsafe impl<S: AsFd> OpCode for Connect<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         syscall!(
@@ -1008,7 +1025,7 @@ unsafe impl<S: AsFd> OpCode for Connect<S> {
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::wait_readable(self.fd.as_fd().as_raw_fd()))
@@ -1029,7 +1046,7 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
 unsafe impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::wait_writable(self.fd.as_fd().as_raw_fd()))
@@ -1055,7 +1072,7 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
 unsafe impl<S: AsFd> OpCode for crate::op::managed::RecvManaged<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         self.op.pre_submit(control)
@@ -1079,8 +1096,8 @@ impl<T: IoVectoredBufMut, S: AsFd> RecvVectored<T, S> {
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
     type Control = RecvVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        self.create_control()
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        self.create_control(ctrl)
     }
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
@@ -1106,8 +1123,8 @@ impl<T: IoVectoredBuf, S: AsFd> SendVectored<T, S> {
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
     type Control = SendVectoredControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        self.create_control()
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        self.create_control(ctrl)
     }
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
@@ -1170,7 +1187,7 @@ impl<T: IoBufMut, S: AsFd> RecvFrom<T, S> {
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         let fd = self.fd.as_fd().as_raw_fd();
@@ -1198,7 +1215,7 @@ impl<T: IoBufMut, S> IntoInner for RecvFrom<T, S> {
 unsafe impl<S: AsFd> OpCode for crate::op::managed::RecvFromManaged<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         self.op.pre_submit(control)
@@ -1216,7 +1233,7 @@ unsafe impl<S: AsFd> OpCode for crate::op::managed::RecvFromManaged<S> {
 unsafe impl<S: AsFd> OpCode for crate::op::managed::RecvFromMulti<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         self.op.pre_submit(control)
@@ -1273,14 +1290,12 @@ impl<T: IoVectoredBufMut, S: AsFd> RecvFromVectored<T, S> {
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
     type Control = SendMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        let mut slices = self.buffer.sys_slices_mut();
-        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
-        msg.msg_name = &raw mut self.addr as _;
-        msg.msg_namelen = self.addr.size_of() as _;
-        msg.msg_iov = slices.as_mut_ptr() as _;
-        msg.msg_iovlen = slices.len() as _;
-        SendMsgControl { msg, slices }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        ctrl.slices = self.buffer.sys_slices_mut().into();
+        ctrl.msg.msg_name = &raw mut self.addr as _;
+        ctrl.msg.msg_namelen = self.addr.size_of() as _;
+        ctrl.msg.msg_iov = ctrl.slices.as_mut_ptr() as _;
+        ctrl.msg.msg_iovlen = ctrl.slices.len() as _;
     }
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
@@ -1354,7 +1369,7 @@ impl<T: IoBuf, S: AsFd> SendTo<T, S> {
 unsafe impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         syscall!(self.call(), wait_writable(self.fd.as_fd().as_raw_fd()))
@@ -1406,14 +1421,12 @@ impl<T: IoVectoredBuf, S: AsFd> SendToVectored<T, S> {
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     type Control = SendMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        let mut slices = self.buffer.sys_slices();
-        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
-        msg.msg_name = self.addr.as_ptr() as *mut _;
-        msg.msg_namelen = self.addr.len() as _;
-        msg.msg_iov = slices.as_mut_ptr() as _;
-        msg.msg_iovlen = slices.len() as _;
-        SendMsgControl { msg, slices }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        ctrl.slices = self.buffer.sys_slices().into();
+        ctrl.msg.msg_name = self.addr.as_ptr() as _;
+        ctrl.msg.msg_namelen = self.addr.len() as _;
+        ctrl.msg.msg_iov = ctrl.slices.as_ptr() as _;
+        ctrl.msg.msg_iovlen = ctrl.slices.len() as _;
     }
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
@@ -1447,8 +1460,8 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> RecvMsg<T, C, S> {
 unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
     type Control = RecvMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        self.create_control()
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        self.create_control(ctrl)
     }
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
@@ -1477,8 +1490,8 @@ unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, 
 unsafe impl<C: IoBufMut, S: AsFd> OpCode for crate::op::managed::RecvMsgManaged<C, S> {
     type Control = RecvMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        unsafe { self.op.init() }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        unsafe { self.op.init(ctrl) }
     }
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
@@ -1506,8 +1519,8 @@ unsafe impl<C: IoBufMut, S: AsFd> OpCode for crate::op::managed::RecvMsgManaged<
 unsafe impl<S: AsFd> OpCode for crate::op::managed::RecvMsgMulti<S> {
     type Control = RecvMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        unsafe { self.op.init() }
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        unsafe { self.op.init(ctrl) }
     }
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
@@ -1544,8 +1557,8 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> SendMsg<T, C, S> {
 unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
     type Control = SendMsgControl;
 
-    unsafe fn init(&mut self) -> Self::Control {
-        self.create_control()
+    unsafe fn init(&mut self, ctrl: &mut Self::Control) {
+        self.create_control(ctrl)
     }
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
@@ -1565,7 +1578,7 @@ unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
 unsafe impl<S: AsFd> OpCode for PollOnce<S> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::wait_for(
@@ -1586,7 +1599,7 @@ unsafe impl<S: AsFd> OpCode for PollOnce<S> {
 unsafe impl OpCode for Pipe {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -1641,7 +1654,7 @@ unsafe impl OpCode for Pipe {
 unsafe impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
     type Control = ();
 
-    unsafe fn init(&mut self) -> Self::Control {}
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _control: &mut Self::Control) -> io::Result<Decision> {
         use super::WaitArg;

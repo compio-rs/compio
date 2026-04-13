@@ -1,10 +1,5 @@
 #![allow(dead_code)]
 
-use std::{
-    mem::{ManuallyDrop, MaybeUninit},
-    ptr,
-};
-
 use compio_buf::IntoInner;
 
 use crate::{DriverType, OpCode};
@@ -52,7 +47,8 @@ impl<T: OpCode> ControlInner<T> {
 ///
 /// [`ErasedKey`]: crate::key::ErasedKey
 pub(crate) struct Carrier<T: OpCode + ?Sized> {
-    control: MaybeUninit<ControlInner<T>>,
+    control: ControlInner<T>,
+    driver_ty: DriverType,
     op: T,
 }
 
@@ -60,28 +56,24 @@ impl<T: OpCode> IntoInner for Carrier<T> {
     type Inner = T;
 
     fn into_inner(self) -> Self::Inner {
-        let mut this = ManuallyDrop::new(self);
-        unsafe {
-            // SAFETY: `new_uninit` ensures that the type is initialized
-            MaybeUninit::assume_init_drop(&mut this.control);
-            // SAFETY: `self` is warpped in ManuallyDrop and is not used after here
-            ptr::read(&this.op)
-        }
+        self.op
     }
 }
 
 impl<T: OpCode> Carrier<T> {
-    /// Create a new Carrier with given OpCode.
-    ///
-    /// # Safety
-    ///
-    /// Returned [`Carrier`] must be [`initialized`] before converting to `dyn
-    /// Carry` or calling any of the `as_` getters.
-    ///
-    /// [`initialized`]: Self::init
-    pub unsafe fn new_uninit(op: T) -> Self {
+    /// Create a new Carrier with given OpCode and driver type.
+    pub fn new(op: T, driver_ty: DriverType) -> Self {
+        #[cfg(fusion)]
+        let control = match driver_ty {
+            DriverType::IoUring => ControlInner::IoUring(Default::default()),
+            DriverType::Poll => ControlInner::Poll(Default::default()),
+            _ => unreachable!("Cannot be IOCP"),
+        };
+        #[cfg(not(fusion))]
+        let control = T::Control::default();
         Self {
-            control: MaybeUninit::uninit(),
+            control,
+            driver_ty,
             op,
         }
     }
@@ -92,77 +84,45 @@ impl<T: OpCode> Carrier<T> {
     ///
     /// `self` must have stable address until control is no longer used, include
     /// all function calls via `dyn Carry` and `as_` getters.
-    pub unsafe fn init(&mut self, driver_ty: DriverType) {
+    pub unsafe fn init(&mut self) {
         #[cfg(fusion)]
-        {
-            let control = match driver_ty {
-                DriverType::Poll => ControlInner::Poll(unsafe { PollOpCode::init(&mut self.op) }),
-                DriverType::IoUring => {
-                    ControlInner::IoUring(unsafe { IourOpCode::init(&mut self.op) })
-                }
-                DriverType::IOCP => unreachable!("Cannot be windows"),
+        unsafe {
+            match self.driver_ty {
+                DriverType::Poll => PollOpCode::init(&mut self.op, self.control.poll()),
+                DriverType::IoUring => IourOpCode::init(&mut self.op, self.control.iour()),
+                _ => unreachable!("Cannot be IOCP"),
             };
-
-            self.control.write(control);
         }
 
         #[cfg(not(fusion))]
-        {
-            _ = driver_ty;
-
-            let control = unsafe { OpCode::init(&mut self.op) };
-            self.control.write(control);
+        unsafe {
+            OpCode::init(&mut self.op, &mut self.control)
         }
     }
 
     #[cfg(io_uring)]
     pub fn as_iour(&mut self) -> (&mut T, &mut <T as IourOpCode>::Control) {
-        // SAFETY: `new_uninit` ensures that the type is initialized
-        let control = unsafe { self.control.assume_init_mut() };
         #[cfg(fusion)]
-        {
-            (&mut self.op, control.iour())
-        }
+        return (&mut self.op, self.control.iour());
         #[cfg(not(fusion))]
-        {
-            (&mut self.op, control)
-        }
+        (&mut self.op, &mut self.control)
     }
 
     #[cfg(polling)]
     pub fn as_poll(&mut self) -> (&mut T, &mut <T as PollOpCode>::Control) {
-        // SAFETY: `new_uninit` ensures that the type is initialized
-        let control = unsafe { self.control.assume_init_mut() };
         #[cfg(fusion)]
-        {
-            (&mut self.op, control.poll())
-        }
+        return (&mut self.op, self.control.poll());
         #[cfg(not(fusion))]
-        {
-            (&mut self.op, control)
-        }
+        (&mut self.op, &mut self.control)
     }
 
     #[cfg(windows)]
     pub fn as_iocp(&self) -> (&T, &<T as OpCode>::Control) {
-        // SAFETY: `new_uninit` ensures that the type is initialized
-        let control = unsafe { self.control.assume_init_ref() };
-
-        (&self.op, control)
+        (&self.op, &self.control)
     }
 
     #[cfg(windows)]
     pub fn as_iocp_mut(&mut self) -> (&mut T, &mut <T as OpCode>::Control) {
-        // SAFETY: `new_uninit` ensures that the type is initialized
-        let control = unsafe { self.control.assume_init_mut() };
-
-        (&mut self.op, control)
-    }
-}
-
-impl<T: OpCode + ?Sized> Drop for Carrier<T> {
-    fn drop(&mut self) {
-        // SAFETY: `new_uninit` ensures that the type is initialized
-        unsafe { MaybeUninit::assume_init_drop(&mut self.control) };
+        (&mut self.op, &mut self.control)
     }
 }

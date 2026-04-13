@@ -20,7 +20,7 @@ fn win32_event() {
     unsafe impl OpCode for WaitEvent {
         type Control = ();
 
-        unsafe fn init(&mut self) -> Self::Control {}
+        unsafe fn init(&mut self, _: &mut Self::Control) {}
 
         fn op_type(&self, _: &Self::Control) -> OpType {
             OpType::Event(self.event.as_raw_handle() as _)

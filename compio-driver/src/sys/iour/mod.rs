@@ -129,15 +129,15 @@ impl From<io_uring::squeue::Entry128> for OpEntry {
 pub unsafe trait OpCode {
     /// Type that contains self-references and other needed info during the
     /// operation
-    type Control;
+    type Control: Default;
 
-    /// Constructs a `Control`
+    /// Initialize the control
     ///
     /// # Safety
     ///
-    /// Caller must guarantee that during the lifetime of the returned
-    /// `Control`, `Self` must be unmoved and valid.
-    unsafe fn init(&mut self) -> Self::Control;
+    /// Caller must guarantee that during the lifetime of `ctrl`, `Self` is
+    /// unmoved and valid.
+    unsafe fn init(&mut self, ctrl: &mut Self::Control);
 
     /// Create submission entry.
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry;
