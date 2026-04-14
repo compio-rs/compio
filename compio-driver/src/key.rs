@@ -6,12 +6,13 @@ use std::{
     io,
     mem::{self, ManuallyDrop},
     ops::{Deref, DerefMut},
+    ptr,
     task::Waker,
 };
 
 use compio_buf::{BufResult, IntoInner};
 use compio_send_wrapper::SendWrapper;
-use thin_cell::unsync::{Inner, Ref, ThinCell};
+use thin_cell::unsync::{Inner, Ref, ThinCell, Weak};
 
 use crate::{Carry, DriverType, Extra, OpCode, PushEntry, control::Carrier};
 
@@ -103,7 +104,23 @@ pub struct Key<T> {
     _p: std::marker::PhantomData<T>,
 }
 
-impl<T> Unpin for Key<T> {}
+/// A type-erased reference-counted pointer to an operation.
+///
+/// Internally, it uses [`ThinCell`] to manage the reference count and borrowing
+/// state. It provides methods to manipulate the underlying operation, such as
+/// setting results, checking completion status, and cancelling the operation.
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct ErasedKey {
+    inner: ThinCell<RawOp<dyn Carry>>,
+}
+
+/// A weak reference of [`ErasedKey`].
+#[derive(Clone)]
+#[repr(transparent)]
+pub(crate) struct WeakKey {
+    inner: Weak<RawOp<dyn Carry>>,
+}
 
 impl<T> Clone for Key<T> {
     fn clone(&self) -> Self {
@@ -173,17 +190,6 @@ impl<T> DerefMut for Key<T> {
     }
 }
 
-/// A type-erased reference-counted pointer to an operation.
-///
-/// Internally, it uses [`ThinCell`] to manage the reference count and borrowing
-/// state. It provides methods to manipulate the underlying operation, such as
-/// setting results, checking completion status, and cancelling the operation.
-#[derive(Clone)]
-#[repr(transparent)]
-pub struct ErasedKey {
-    inner: ThinCell<RawOp<dyn Carry>>,
-}
-
 impl PartialEq for ErasedKey {
     fn eq(&self, other: &Self) -> bool {
         self.inner.ptr_eq(&other.inner)
@@ -199,13 +205,6 @@ impl Hash for ErasedKey {
 }
 
 impl Unpin for ErasedKey {}
-
-impl std::borrow::Borrow<usize> for ErasedKey {
-    fn borrow(&self) -> &usize {
-        // SAFETY: `ThinCell` guarantees to be the same as a thin pointer (one `usize`)
-        unsafe { std::mem::transmute(&self.inner) }
-    }
-}
 
 impl ErasedKey {
     /// Create [`RawOp`] and get the [`ErasedKey`] to it.
@@ -255,6 +254,18 @@ impl ErasedKey {
     #[cfg(windows)]
     pub(crate) fn into_optr(self) -> *mut crate::sys::Overlapped {
         unsafe { self.inner.leak().cast::<usize>().add(2).cast() }
+    }
+
+    /// Get a weak reference to the allocation.
+    ///
+    /// It will not prevent dropping [`RawOp`] or cause panic when calling
+    /// [`take_result`], and can be upgrade back when needed.
+    ///
+    /// [`take_result`]: Self::take_result
+    pub(crate) fn downgrade(&self) -> WeakKey {
+        WeakKey {
+            inner: self.inner.downgrade(),
+        }
     }
 
     /// Get the pointer as `user_data`.
@@ -366,6 +377,42 @@ impl Debug for ErasedKey {
     }
 }
 
+impl WeakKey {
+    pub(crate) fn upgrade(&self) -> Option<ErasedKey> {
+        Some(ErasedKey {
+            inner: self.inner.upgrade()?,
+        })
+    }
+
+    pub(crate) fn as_ptr(&self) -> *const () {
+        self.inner.as_ptr()
+    }
+}
+
+impl PartialEq for WeakKey {
+    fn eq(&self, other: &Self) -> bool {
+        ptr::eq(self.inner.as_ptr(), other.inner.as_ptr())
+    }
+}
+
+impl Eq for WeakKey {}
+
+impl Hash for WeakKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (self.inner.as_ptr() as usize).hash(state)
+    }
+}
+
+impl Debug for WeakKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(upgraded) = self.inner.upgrade() {
+            Debug::fmt(&upgraded, f)
+        } else {
+            write!(f, "(Dropped)")
+        }
+    }
+}
+
 /// A frozen view into a [`Key`].
 ///
 /// It's guaranteed to have [`ErasedKey`] as the first field.
@@ -420,26 +467,5 @@ impl Deref for BorrowedKey {
 
     fn deref(&self) -> &Self::Target {
         &self.0
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::borrow::Borrow;
-
-    use compio_buf::BufResult;
-
-    use crate::{DriverType, Proactor, key::ErasedKey, op::Asyncify};
-
-    #[test]
-    fn test_key_borrow() {
-        let driver = Proactor::new().unwrap();
-        let extra = driver.default_extra();
-        let key = ErasedKey::new(
-            Asyncify::new(|| BufResult(Ok(0), [0u8])),
-            extra,
-            DriverType::Poll,
-        );
-        assert_eq!(&key.as_raw(), Borrow::<usize>::borrow(&key));
     }
 }
