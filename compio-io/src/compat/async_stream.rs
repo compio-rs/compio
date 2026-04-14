@@ -103,7 +103,7 @@ impl<S> AsyncReadStream<S> {
             cap,
             0,
             cap,
-            SyncStream::<S>::DEFAULT_MAX_BUFFER,
+            super::DEFAULT_MAX_BUFFER,
             stream,
         ))
     }
@@ -164,7 +164,7 @@ impl<S> AsyncWriteStream<S> {
             0,
             cap,
             cap,
-            SyncStream::<S>::DEFAULT_MAX_BUFFER,
+            super::DEFAULT_MAX_BUFFER,
             stream,
         ))
     }
