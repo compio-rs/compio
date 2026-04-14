@@ -1,10 +1,7 @@
 use std::{borrow::Cow, io, mem::MaybeUninit, pin::Pin};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
-use compio_io::{
-    AsyncRead, AsyncWrite,
-    compat::{AsyncStream, SyncStream},
-};
+use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream};
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
@@ -14,7 +11,7 @@ enum TlsStreamInner<S> {
     #[cfg(feature = "rustls")]
     Rustls(futures_rustls::TlsStream<Pin<Box<AsyncStream<S>>>>),
     #[cfg(feature = "py-dynamic-openssl")]
-    PyDynamicOpenSsl(compio_py_dynamic_openssl::ssl::SslStream<SyncStream<S>>),
+    PyDynamicOpenSsl(crate::py_ossl::TlsStream<Pin<Box<AsyncStream<S>>>>),
     #[cfg(not(any(
         feature = "native-tls",
         feature = "rustls",
@@ -34,7 +31,7 @@ where
             #[cfg(feature = "rustls")]
             Self::Rustls(s) => s.get_ref().1.alpn_protocol().map(Cow::from),
             #[cfg(feature = "py-dynamic-openssl")]
-            Self::PyDynamicOpenSsl(s) => crate::py_ossl::negotiated_alpn(s),
+            Self::PyDynamicOpenSsl(s) => s.negotiated_alpn().map(Cow::from),
             #[cfg(not(any(
                 feature = "native-tls",
                 feature = "rustls",
@@ -95,8 +92,8 @@ impl<S> From<futures_rustls::server::TlsStream<Pin<Box<AsyncStream<S>>>>> for Tl
 
 #[cfg(feature = "py-dynamic-openssl")]
 #[doc(hidden)]
-impl<S> From<compio_py_dynamic_openssl::ssl::SslStream<SyncStream<S>>> for TlsStream<S> {
-    fn from(value: compio_py_dynamic_openssl::ssl::SslStream<SyncStream<S>>) -> Self {
+impl<S> From<crate::py_ossl::TlsStream<Pin<Box<AsyncStream<S>>>>> for TlsStream<S> {
+    fn from(value: crate::py_ossl::TlsStream<Pin<Box<AsyncStream<S>>>>) -> Self {
         Self(TlsStreamInner::PyDynamicOpenSsl(value))
     }
 }
@@ -138,13 +135,15 @@ where
                 BufResult(res, buf)
             }
             #[cfg(feature = "py-dynamic-openssl")]
-            TlsStreamInner::PyDynamicOpenSsl(s) => match crate::py_ossl::read(s, slice).await {
-                Ok(res) => {
-                    unsafe { buf.advance_to(res) };
-                    BufResult(Ok(res), buf)
+            TlsStreamInner::PyDynamicOpenSsl(s) => {
+                match futures_util::AsyncReadExt::read(s, slice).await {
+                    Ok(res) => {
+                        unsafe { buf.advance_to(res) };
+                        BufResult(Ok(res), buf)
+                    }
+                    Err(e) => BufResult(Err(e), buf),
                 }
-                Err(e) => BufResult(Err(e), buf),
-            },
+            }
             #[cfg(not(any(
                 feature = "native-tls",
                 feature = "rustls",
@@ -174,7 +173,7 @@ where
             }
             #[cfg(feature = "py-dynamic-openssl")]
             TlsStreamInner::PyDynamicOpenSsl(s) => {
-                let res = crate::py_ossl::write(s, slice).await;
+                let res = futures_util::AsyncWriteExt::write(s, slice).await;
                 BufResult(res, buf)
             }
             #[cfg(not(any(
@@ -193,7 +192,7 @@ where
             #[cfg(feature = "rustls")]
             TlsStreamInner::Rustls(s) => futures_util::AsyncWriteExt::flush(s).await,
             #[cfg(feature = "py-dynamic-openssl")]
-            TlsStreamInner::PyDynamicOpenSsl(s) => s.get_mut().flush_write_buf().await.map(|_| ()),
+            TlsStreamInner::PyDynamicOpenSsl(s) => futures_util::AsyncWriteExt::flush(s).await,
             #[cfg(not(any(
                 feature = "native-tls",
                 feature = "rustls",
@@ -221,7 +220,7 @@ where
             #[cfg(feature = "rustls")]
             TlsStreamInner::Rustls(s) => futures_util::AsyncWriteExt::close(s).await,
             #[cfg(feature = "py-dynamic-openssl")]
-            TlsStreamInner::PyDynamicOpenSsl(s) => crate::py_ossl::shutdown(s).await,
+            TlsStreamInner::PyDynamicOpenSsl(s) => futures_util::AsyncWriteExt::close(s).await,
             #[cfg(not(any(
                 feature = "native-tls",
                 feature = "rustls",

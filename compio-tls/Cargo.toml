@@ -53,7 +53,7 @@ all = ["native-tls", "rustls"]
 rustls = ["dep:rustls", "dep:futures-rustls", "dep:futures-util"]
 native-tls = ["dep:native-tls", "dep:futures-util"]
 native-tls-vendored = ["native-tls/vendored"]
-py-dynamic-openssl = ["dep:compio-py-dynamic-openssl"]
+py-dynamic-openssl = ["dep:compio-py-dynamic-openssl", "dep:futures-util"]
 
 ring = ["rustls", "rustls/ring", "futures-rustls/ring"]
 

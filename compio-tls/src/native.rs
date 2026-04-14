@@ -11,10 +11,8 @@ use std::{
 };
 
 use futures_util::{AsyncRead, AsyncWrite};
+use native_tls::{Error, HandshakeError, MidHandshakeTlsStream};
 
-use crate::native_tls::{Error, HandshakeError, MidHandshakeTlsStream};
-
-/// An intermediate wrapper for the inner stream `S`.
 #[derive(Debug)]
 pub struct AllowStd<S> {
     inner: S,
@@ -22,34 +20,21 @@ pub struct AllowStd<S> {
 }
 
 impl<S> AllowStd<S> {
-    /// Returns a shared reference to the inner stream.
     pub fn get_ref(&self) -> &S {
         &self.inner
     }
 
-    /// Returns a mutable reference to the inner stream.
     pub fn get_mut(&mut self) -> &mut S {
         &mut self.inner
     }
 }
 
-/// A wrapper around an underlying raw stream which implements the TLS or SSL
-/// protocol.
-///
-/// A `TlsStream<S>` represents a handshake that has been completed successfully
-/// and both the server and the client are ready for receiving and sending
-/// data. Bytes read from a `TlsStream` are decrypted from `S` and bytes written
-/// to a `TlsStream` are encrypted when passing through to `S`.
 #[derive(Debug)]
 pub struct TlsStream<S>(native_tls::TlsStream<AllowStd<S>>);
 
-/// A wrapper around a `native_tls::TlsConnector`, providing an async `connect`
-/// method.
 #[derive(Clone)]
 pub struct TlsConnector(native_tls::TlsConnector);
 
-/// A wrapper around a `native_tls::TlsAcceptor`, providing an async `accept`
-/// method.
 #[derive(Clone)]
 pub struct TlsAcceptor(native_tls::TlsAcceptor);
 
@@ -140,12 +125,10 @@ impl<S> TlsStream<S> {
         }
     }
 
-    /// Returns a shared reference to the inner stream.
     pub fn get_ref(&self) -> &native_tls::TlsStream<AllowStd<S>> {
         &self.0
     }
 
-    /// Returns a mutable reference to the inner stream.
     pub fn get_mut(&mut self) -> &mut native_tls::TlsStream<AllowStd<S>> {
         &mut self.0
     }
@@ -247,18 +230,6 @@ where
 }
 
 impl TlsConnector {
-    /// Connects the provided stream with this connector, assuming the provided
-    /// domain.
-    ///
-    /// This function will internally call `TlsConnector::connect` to connect
-    /// the stream and returns a future representing the resolution of the
-    /// connection operation. The returned future will resolve to either
-    /// `TlsStream<S>` or `Error` depending if it's successful or not.
-    ///
-    /// This is typically used for clients who have already established, for
-    /// example, a TCP connection to a remote server. That stream is then
-    /// provided here to perform the client half of a connection to a
-    /// TLS-powered server.
     pub async fn connect<S>(&self, domain: &str, stream: S) -> Result<TlsStream<S>, Error>
     where
         S: AsyncRead + AsyncWrite + Unpin,
@@ -280,16 +251,6 @@ impl From<native_tls::TlsConnector> for TlsConnector {
 }
 
 impl TlsAcceptor {
-    /// Accepts a new client connection with the provided stream.
-    ///
-    /// This function will internally call `TlsAcceptor::accept` to connect
-    /// the stream and returns a future representing the resolution of the
-    /// connection operation. The returned future will resolve to either
-    /// `TlsStream<S>` or `Error` depending if it's successful or not.
-    ///
-    /// This is typically used after a new socket has been accepted from a
-    /// `TcpListener`. That socket is then passed to this function to perform
-    /// the server half of accepting a client connection.
     pub async fn accept<S>(&self, stream: S) -> Result<TlsStream<S>, Error>
     where
         S: AsyncRead + AsyncWrite + Unpin,
