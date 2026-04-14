@@ -14,19 +14,21 @@ use compio_py_dynamic_openssl::{
 };
 use futures_util::{AsyncRead, AsyncWrite};
 
+use super::openssl_workaround::OpensslInner;
+
 #[derive(Debug)]
 pub struct AllowStd<S> {
-    inner: S,
+    inner: OpensslInner<S>,
     context: *mut (),
 }
 
 impl<S> AllowStd<S> {
     pub fn get_ref(&self) -> &S {
-        &self.inner
+        self.inner.get_ref()
     }
 
     pub fn get_mut(&mut self) -> &mut S {
-        &mut self.inner
+        self.inner.get_mut()
     }
 }
 
@@ -76,7 +78,7 @@ where
 {
     fn with_context<F, R>(&mut self, f: F) -> io::Result<R>
     where
-        F: FnOnce(&mut Context<'_>, Pin<&mut S>) -> Poll<io::Result<R>>,
+        F: FnOnce(&mut Context<'_>, Pin<&mut OpensslInner<S>>) -> Poll<io::Result<R>>,
     {
         unsafe {
             assert!(!self.context.is_null());
@@ -225,7 +227,7 @@ where
     ) -> Poll<io::Result<StartedHandshake<S>>> {
         let inner = self.0.take().expect("future polled after completion");
         let stream = AllowStd {
-            inner: inner.stream,
+            inner: OpensslInner::new(inner.stream),
             context: ctx as *mut _ as *mut (),
         };
 
