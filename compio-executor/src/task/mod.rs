@@ -74,7 +74,7 @@ struct TaskVtable {
     drop_future: unsafe fn(NonNull<Header>, bool),
 }
 
-impl<F: Future + 'static> TaskAlloc<F> {
+impl<F: Future> TaskAlloc<F> {
     const FUT_OFFSET: usize = offset_of!(Self, future);
     const VTABLE: &'static TaskVtable = &TaskVtable {
         dealloc: Self::dealloc,
@@ -83,9 +83,9 @@ impl<F: Future + 'static> TaskAlloc<F> {
         drop_future: Self::drop_future,
     };
 
-    fn future_cell(header: NonNull<Header>) -> &'static UnsafeCell<FutureState<F>> {
+    fn future_cell(header: NonNull<Header>) -> *const UnsafeCell<FutureState<F>> {
         unsafe {
-            &*header
+            header
                 .byte_add(Self::FUT_OFFSET)
                 .cast::<UnsafeCell<FutureState<F>>>()
                 .as_ptr()
@@ -93,7 +93,7 @@ impl<F: Future + 'static> TaskAlloc<F> {
     }
 
     unsafe fn run_future(header: NonNull<Header>, cx: &mut Context<'_>) -> Poll<()> {
-        let future_cell = Self::future_cell(header);
+        let future_cell = unsafe { &*Self::future_cell(header) };
 
         // SAFETY:
         // - The caller guarantees that we're pinned
@@ -118,7 +118,7 @@ impl<F: Future + 'static> TaskAlloc<F> {
     }
 
     unsafe fn take_result(header: NonNull<Header>, target: NonNull<()>) {
-        let future_cell = Self::future_cell(header);
+        let future_cell = unsafe { &*Self::future_cell(header) };
 
         // SAFETY:
         // - The caller guarantees that we're in the `result` state and guarantees if
@@ -133,7 +133,7 @@ impl<F: Future + 'static> TaskAlloc<F> {
     }
 
     unsafe fn drop_future(header: NonNull<Header>, has_result: bool) {
-        let future_cell = Self::future_cell(header);
+        let future_cell = unsafe { &*Self::future_cell(header) };
 
         future_cell.with_mut(|fut_ptr| {
             crate::panic_guard!();
@@ -155,7 +155,7 @@ impl<F: Future + 'static> TaskAlloc<F> {
 }
 
 impl Task {
-    pub fn new<F: Future + 'static, const N: usize>(
+    pub unsafe fn new<F: Future, const N: usize>(
         id: TaskId,
         shared: NonNull<Shared>,
         tracker: SendWrapper<()>,

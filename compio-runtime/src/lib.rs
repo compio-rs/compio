@@ -223,6 +223,22 @@ impl Runtime {
         self.0.executor.spawn(future)
     }
 
+    /// Spawns a new asynchronous task, potentially non-`'static`, returning a
+    /// [`JoinHandle`] for it.
+    ///
+    /// Spawning a task enables the task to execute concurrently to other tasks.
+    /// There is no guarantee that a spawned task will execute to completion.
+    ///
+    /// # Safety
+    ///
+    /// The future's borrowed variables must be valid until the future is
+    /// completed or dropped by the runtime. Dropping the [`JoinHandle`]
+    /// returned does not guarantee the future will be dropped, and the future
+    /// may still be running or polled by the runtime afterwards.
+    pub unsafe fn spawn_unchecked<F: Future>(&self, future: F) -> JoinHandle<F::Output> {
+        unsafe { self.0.executor.spawn_unchecked(future) }
+    }
+
     /// Spawns a blocking task in a new thread, and wait for it.
     ///
     /// The task will not be cancelled even if the future is dropped.

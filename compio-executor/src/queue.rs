@@ -131,7 +131,7 @@ impl TaskQueue {
         }
     }
 
-    pub fn insert<F: Future + 'static>(
+    pub unsafe fn insert<F: Future>(
         &self,
         shared: NonNull<Shared>,
         tracker: SendWrapper<()>,

@@ -155,11 +155,27 @@ impl Executor {
 
     /// Spawn a future onto the executor.
     pub fn spawn<F: Future + 'static>(&self, fut: F) -> JoinHandle<F::Output> {
+        // SAFETY: F is 'static
+        unsafe { self.spawn_unchecked(fut) }
+    }
+
+    /// Spawn a non-`'static` future onto the executor.
+    ///
+    /// # Safety
+    ///
+    /// This function is VERY unsafe since the the future will not be droppped
+    /// until it's completed or the `JoinHandle` is dropped and the executor
+    /// drops the future the next time it polls the task in [`tick`]. The best
+    /// way to ensure the safety is by forcing `F` to outlive the executor
+    /// itself.
+    ///
+    /// [`tick`]: Self::tick
+    pub unsafe fn spawn_unchecked<F: Future>(&self, fut: F) -> JoinHandle<F::Output> {
         let shared = self.shared();
         let tracker = shared.queue.tracker();
         // SAFETY: Executor cannot be sent to ther thread
         let queue = unsafe { shared.queue.get_unchecked() };
-        let task = queue.insert(self.ptr, tracker, fut);
+        let task = unsafe { queue.insert(self.ptr, tracker, fut) };
 
         JoinHandle::new(task)
     }
