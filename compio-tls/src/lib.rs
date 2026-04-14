@@ -27,6 +27,9 @@ pub use adapter::*;
 pub use maybe::*;
 pub use stream::*;
 
+#[cfg(feature = "native-tls")]
+mod native;
+
 #[cfg(feature = "rustls")]
 mod rtls;
 #[cfg(feature = "rustls")]

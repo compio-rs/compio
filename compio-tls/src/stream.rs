@@ -1,17 +1,16 @@
-#[cfg(feature = "rustls")]
-use std::pin::Pin;
-use std::{borrow::Cow, io, mem::MaybeUninit};
+use std::{borrow::Cow, io, mem::MaybeUninit, pin::Pin};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut};
-#[cfg(feature = "rustls")]
-use compio_io::compat::AsyncStream;
-use compio_io::{AsyncRead, AsyncWrite, compat::SyncStream};
+use compio_io::{
+    AsyncRead, AsyncWrite,
+    compat::{AsyncStream, SyncStream},
+};
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 enum TlsStreamInner<S> {
     #[cfg(feature = "native-tls")]
-    NativeTls(native_tls::TlsStream<SyncStream<S>>),
+    NativeTls(crate::native::TlsStream<Pin<Box<AsyncStream<S>>>>),
     #[cfg(feature = "rustls")]
     Rustls(futures_rustls::TlsStream<Pin<Box<AsyncStream<S>>>>),
     #[cfg(feature = "py-dynamic-openssl")]
@@ -24,7 +23,10 @@ enum TlsStreamInner<S> {
     None(std::convert::Infallible, std::marker::PhantomData<S>),
 }
 
-impl<S> TlsStreamInner<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + 'static> TlsStreamInner<S>
+where
+    for<'a> &'a S: AsyncRead + AsyncWrite,
+{
     pub fn negotiated_alpn(&self) -> Option<Cow<'_, [u8]>> {
         match self {
             #[cfg(feature = "native-tls")]
@@ -53,7 +55,10 @@ impl<S> TlsStreamInner<S> {
 #[derive(Debug)]
 pub struct TlsStream<S>(TlsStreamInner<S>);
 
-impl<S> TlsStream<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + 'static> TlsStream<S>
+where
+    for<'a> &'a S: AsyncRead + AsyncWrite,
+{
     /// Returns the negotiated ALPN protocol.
     pub fn negotiated_alpn(&self) -> Option<Cow<'_, [u8]>> {
         self.0.negotiated_alpn()
@@ -62,8 +67,8 @@ impl<S> TlsStream<S> {
 
 #[cfg(feature = "native-tls")]
 #[doc(hidden)]
-impl<S> From<native_tls::TlsStream<SyncStream<S>>> for TlsStream<S> {
-    fn from(value: native_tls::TlsStream<SyncStream<S>>) -> Self {
+impl<S> From<crate::native::TlsStream<Pin<Box<AsyncStream<S>>>>> for TlsStream<S> {
+    fn from(value: crate::native::TlsStream<Pin<Box<AsyncStream<S>>>>) -> Self {
         Self(TlsStreamInner::NativeTls(value))
     }
 }
@@ -96,35 +101,6 @@ impl<S> From<compio_py_dynamic_openssl::ssl::SslStream<SyncStream<S>>> for TlsSt
     }
 }
 
-#[cfg(feature = "native-tls")]
-#[inline]
-async fn drive<S, F, T>(s: &mut native_tls::TlsStream<SyncStream<S>>, mut f: F) -> io::Result<T>
-where
-    S: AsyncRead + AsyncWrite,
-    F: FnMut(&mut native_tls::TlsStream<SyncStream<S>>) -> io::Result<T>,
-{
-    loop {
-        match f(s) {
-            Ok(res) => {
-                let s = s.get_mut();
-                if s.has_pending_write() {
-                    s.flush_write_buf().await?;
-                }
-                break Ok(res);
-            }
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                let s = s.get_mut();
-                if s.has_pending_write() {
-                    s.flush_write_buf().await?;
-                } else {
-                    s.fill_read_buf().await?;
-                }
-            }
-            Err(e) => break Err(e),
-        }
-    }
-}
-
 impl<S: AsyncRead + AsyncWrite + Unpin + 'static> AsyncRead for TlsStream<S>
 where
     for<'a> &'a S: AsyncRead + AsyncWrite,
@@ -137,13 +113,15 @@ where
             unsafe { std::slice::from_raw_parts_mut::<u8>(slice.as_mut_ptr().cast(), slice.len()) };
         match &mut self.0 {
             #[cfg(feature = "native-tls")]
-            TlsStreamInner::NativeTls(s) => match drive(s, |s| io::Read::read(s, slice)).await {
-                Ok(res) => {
-                    unsafe { buf.advance_to(res) };
-                    BufResult(Ok(res), buf)
+            TlsStreamInner::NativeTls(s) => {
+                match futures_util::AsyncReadExt::read(s, slice).await {
+                    Ok(res) => {
+                        unsafe { buf.advance_to(res) };
+                        BufResult(Ok(res), buf)
+                    }
+                    res => BufResult(res, buf),
                 }
-                res => BufResult(res, buf),
-            },
+            }
             #[cfg(feature = "rustls")]
             TlsStreamInner::Rustls(s) => {
                 let res = futures_util::AsyncReadExt::read(s, slice).await;
@@ -177,21 +155,6 @@ where
     }
 }
 
-#[cfg(feature = "native-tls")]
-async fn flush_impl(s: &mut native_tls::TlsStream<SyncStream<impl AsyncWrite>>) -> io::Result<()> {
-    loop {
-        match io::Write::flush(s) {
-            Ok(()) => break,
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                s.get_mut().flush_write_buf().await?;
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    s.get_mut().flush_write_buf().await?;
-    Ok(())
-}
-
 impl<S: AsyncRead + AsyncWrite + Unpin + 'static> AsyncWrite for TlsStream<S>
 where
     for<'a> &'a S: AsyncRead + AsyncWrite,
@@ -201,7 +164,7 @@ where
         match &mut self.0 {
             #[cfg(feature = "native-tls")]
             TlsStreamInner::NativeTls(s) => {
-                let res = drive(s, |s| io::Write::write(s, slice)).await;
+                let res = futures_util::AsyncWriteExt::write(s, slice).await;
                 BufResult(res, buf)
             }
             #[cfg(feature = "rustls")]
@@ -226,7 +189,7 @@ where
     async fn flush(&mut self) -> io::Result<()> {
         match &mut self.0 {
             #[cfg(feature = "native-tls")]
-            TlsStreamInner::NativeTls(s) => flush_impl(s).await,
+            TlsStreamInner::NativeTls(s) => futures_util::AsyncWriteExt::flush(s).await,
             #[cfg(feature = "rustls")]
             TlsStreamInner::Rustls(s) => futures_util::AsyncWriteExt::flush(s).await,
             #[cfg(feature = "py-dynamic-openssl")]
@@ -252,8 +215,8 @@ where
                 // and wait for the peer to respond with close_notify on any
                 // subsequent calls. Here we just let such behavior propagate,
                 // and suggest the users to call shutdown() at most once.
-                drive(s, |s| s.shutdown()).await?;
-                s.get_mut().get_mut().shutdown().await
+                futures_util::AsyncWriteExt::close(s).await?;
+                futures_util::AsyncWriteExt::close(s.get_mut().get_mut().get_mut()).await
             }
             #[cfg(feature = "rustls")]
             TlsStreamInner::Rustls(s) => futures_util::AsyncWriteExt::close(s).await,

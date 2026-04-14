@@ -33,7 +33,13 @@ impl<S> MaybeTlsStream<S> {
     pub fn is_tls(&self) -> bool {
         matches!(self.0, MaybeTlsStreamInner::Tls(_))
     }
+}
 
+impl<S> MaybeTlsStream<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
+    for<'a> &'a S: AsyncRead + AsyncWrite,
+{
     /// Returns the negotiated ALPN protocol.
     pub fn negotiated_alpn(&self) -> Option<Cow<'_, [u8]>> {
         match &self.0 {
