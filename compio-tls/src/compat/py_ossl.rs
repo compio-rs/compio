@@ -4,7 +4,6 @@ use std::{
     io::{self, Read, Write},
     marker::Unpin,
     pin::Pin,
-    ptr::null_mut,
     task::{Context, Poll},
 };
 
@@ -14,23 +13,7 @@ use compio_py_dynamic_openssl::{
 };
 use futures_util::{AsyncRead, AsyncWrite};
 
-use super::openssl_workaround::OpensslInner;
-
-#[derive(Debug)]
-pub struct AllowStd<S> {
-    inner: OpensslInner<S>,
-    context: *mut (),
-}
-
-impl<S> AllowStd<S> {
-    pub fn get_ref(&self) -> &S {
-        self.inner.get_ref()
-    }
-
-    pub fn get_mut(&mut self) -> &mut S {
-        self.inner.get_mut()
-    }
-}
+use super::common::AllowStd;
 
 #[derive(Debug)]
 pub struct TlsStream<S>(SslStream<AllowStd<S>>);
@@ -64,52 +47,7 @@ where
     AllowStd<S>: Read + Write,
 {
     fn drop(&mut self) {
-        (self.0).0.get_mut().context = null_mut();
-    }
-}
-
-// *mut () context is neither Send nor Sync
-unsafe impl<S: Send> Send for AllowStd<S> {}
-unsafe impl<S: Sync> Sync for AllowStd<S> {}
-
-impl<S> AllowStd<S>
-where
-    S: Unpin,
-{
-    fn with_context<F, R>(&mut self, f: F) -> io::Result<R>
-    where
-        F: FnOnce(&mut Context<'_>, Pin<&mut OpensslInner<S>>) -> Poll<io::Result<R>>,
-    {
-        unsafe {
-            assert!(!self.context.is_null());
-            let waker = &mut *(self.context as *mut _);
-            match f(waker, Pin::new(&mut self.inner)) {
-                Poll::Ready(r) => r,
-                Poll::Pending => Err(io::Error::from(io::ErrorKind::WouldBlock)),
-            }
-        }
-    }
-}
-
-impl<S> Read for AllowStd<S>
-where
-    S: AsyncRead + Unpin,
-{
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.with_context(|ctx, stream| stream.poll_read(ctx, buf))
-    }
-}
-
-impl<S> Write for AllowStd<S>
-where
-    S: AsyncWrite + Unpin,
-{
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.with_context(|ctx, stream| stream.poll_write(ctx, buf))
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.with_context(|ctx, stream| stream.poll_flush(ctx))
+        (self.0).0.get_mut().clear_context();
     }
 }
 
@@ -119,7 +57,7 @@ impl<S> TlsStream<S> {
         F: FnOnce(&mut SslStream<AllowStd<S>>) -> io::Result<R>,
         AllowStd<S>: Read + Write,
     {
-        self.0.get_mut().context = ctx as *mut _ as *mut ();
+        self.0.get_mut().set_context(ctx);
         let g = Guard(self);
         match f(&mut (g.0).0) {
             Ok(v) => Poll::Ready(Ok(v)),
@@ -226,19 +164,16 @@ where
         ctx: &mut Context<'_>,
     ) -> Poll<io::Result<StartedHandshake<S>>> {
         let inner = self.0.take().expect("future polled after completion");
-        let stream = AllowStd {
-            inner: OpensslInner::new(inner.stream),
-            context: ctx as *mut _ as *mut (),
-        };
+        let stream = AllowStd::new(inner.stream, ctx);
 
         match (inner.f)(stream) {
             Ok(mut s) => {
-                s.get_mut().context = null_mut();
+                s.get_mut().clear_context();
                 Poll::Ready(Ok(StartedHandshake::Done(TlsStream(s))))
             }
             Err(HandshakeError::SetupFailure(e)) => Poll::Ready(Err(io::Error::other(e))),
             Err(HandshakeError::WouldBlock(mut s)) => {
-                s.get_mut().context = null_mut();
+                s.get_mut().clear_context();
                 Poll::Ready(Ok(StartedHandshake::Mid(s)))
             }
             Err(HandshakeError::Failure(e)) => Poll::Ready(Err(io::Error::other(e.into_error()))),
@@ -295,15 +230,15 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Future for MidHandshake<S> {
         let mut_self = self.get_mut();
         let mut s = mut_self.0.take().expect("future polled after completion");
 
-        s.get_mut().context = cx as *mut _ as *mut ();
+        s.get_mut().set_context(cx);
         match s.handshake() {
             Ok(mut s) => {
-                s.get_mut().context = null_mut();
+                s.get_mut().clear_context();
                 Poll::Ready(Ok(TlsStream(s)))
             }
             Err(HandshakeError::SetupFailure(e)) => Poll::Ready(Err(io::Error::other(e))),
             Err(HandshakeError::WouldBlock(mut s)) => {
-                s.get_mut().context = null_mut();
+                s.get_mut().clear_context();
                 mut_self.0 = Some(s);
                 Poll::Pending
             }
