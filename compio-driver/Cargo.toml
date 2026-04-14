@@ -25,7 +25,7 @@ cfg-if = { workspace = true }
 flume = { workspace = true, default-features = false }
 futures-util = { workspace = true }
 socket2 = { workspace = true, features = ["all"] }
-thin-cell = { workspace = true }
+thin-cell = { workspace = true, features = ["weak"] }
 synchrony = { workspace = true, features = ["waker_slot"] }
 bitflags = { version = "2.11.0" }
 paste = { workspace = true }

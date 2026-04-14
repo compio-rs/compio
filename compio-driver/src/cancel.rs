@@ -1,44 +1,24 @@
-use std::collections::HashSet;
-
-use crate::{Key, OpCode, key::ErasedKey};
-
-pub(crate) struct CancelRegistry {
-    cancellers: HashSet<ErasedKey>,
-}
+use crate::{
+    Key, OpCode,
+    key::{ErasedKey, WeakKey},
+};
 
 /// A type-erased cancel token.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct Cancel(usize);
+pub struct Cancel(WeakKey);
 
 impl Cancel {
     /// Check if this cancel token cancels the given key.
     pub fn cancels<T: OpCode>(&self, key: &Key<T>) -> bool {
-        self.0 == key.as_raw()
-    }
-}
-
-impl CancelRegistry {
-    pub fn new() -> Self {
-        Self {
-            cancellers: HashSet::new(),
-        }
+        self.0.as_ptr() as usize == key.as_raw()
     }
 
-    pub fn register<T>(&mut self, key: &Key<T>) -> Cancel {
-        let raw_key = key.as_raw();
-        if self.cancellers.contains(&raw_key) {
-            return Cancel(raw_key);
-        }
-        self.cancellers.insert(key.clone().erase());
-        Cancel(raw_key)
+    pub(crate) fn new<T: OpCode>(key: &Key<T>) -> Self {
+        Self(key.downgrade())
     }
 
-    pub fn take(&mut self, token: Cancel) -> Option<ErasedKey> {
-        self.cancellers.take(&token.0)
-    }
-
-    pub fn remove(&mut self, key: &ErasedKey) -> bool {
-        self.cancellers.remove(key)
+    pub(crate) fn upgrade(&self) -> Option<ErasedKey> {
+        self.0.upgrade()
     }
 }

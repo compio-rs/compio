@@ -187,7 +187,11 @@ fn cancel_token() {
     };
 
     let token = driver.register_cancel(&key);
+    let token2 = token.clone();
+    let token3 = token.clone();
+
     assert!(driver.cancel_token(token));
+    assert!(!driver.cancel_token(token2));
 
     let res = loop {
         driver.poll(None).unwrap();
@@ -197,7 +201,8 @@ fn cancel_token() {
         }
     };
 
-    assert!(res.0.is_err())
+    assert!(res.0.is_err());
+    assert!(!driver.cancel_token(token3));
 }
 
 #[test]
