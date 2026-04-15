@@ -19,7 +19,7 @@ pin_project! {
         #[pin]
         inner: S,
         written: bool,
-        handshaked: bool,
+        handshaken: bool,
     }
 }
 
@@ -28,7 +28,7 @@ impl<S> OpensslInner<S> {
         Self {
             inner,
             written: false,
-            handshaked: false,
+            handshaken: false,
         }
     }
 
@@ -49,7 +49,7 @@ impl<S: AsyncRead + AsyncWrite> AsyncRead for OpensslInner<S> {
     ) -> Poll<io::Result<usize>> {
         loop {
             let this = self.as_mut().project();
-            if !*this.handshaked && *this.written {
+            if !*this.handshaken && *this.written {
                 match this.inner.poll_flush(cx) {
                     Poll::Pending => break Poll::Pending,
                     Poll::Ready(Ok(())) => {
@@ -79,7 +79,7 @@ impl<S: AsyncWrite> AsyncWrite for OpensslInner<S> {
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        if self.handshaked {
+        if self.handshaken {
             self.project().inner.poll_flush(cx)
         } else {
             Poll::Ready(Ok(()))
@@ -122,7 +122,7 @@ impl<S> AllowStd<S> {
     }
 
     pub fn finish_handshake(&mut self) {
-        self.inner.handshaked = true;
+        self.inner.handshaken = true;
     }
 }
 
