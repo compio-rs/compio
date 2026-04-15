@@ -29,6 +29,7 @@ thin-cell = { workspace = true, features = ["weak"] }
 synchrony = { workspace = true, features = ["waker_slot"] }
 bitflags = { version = "2.11.0" }
 paste = { workspace = true }
+mod_use = "0.2.3"
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
