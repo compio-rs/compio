@@ -123,7 +123,7 @@ where
             AllowStd<S>,
         ) -> Result<native_tls::TlsStream<AllowStd<S>>, HandshakeError<AllowStd<S>>>
         + Unpin,
-    S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
+    S: AsyncRead + AsyncWrite + Unpin,
 {
     let start = StartedHandshakeFuture(Some(StartedHandshakeFutureInner { f, stream }));
 
@@ -174,7 +174,7 @@ where
 impl TlsConnector {
     pub async fn connect<S>(&self, domain: &str, stream: S) -> io::Result<TlsStream<S>>
     where
-        S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
+        S: AsyncRead + AsyncWrite + Unpin,
     {
         handshake(move |s| self.0.connect(domain, s), stream).await
     }
@@ -195,7 +195,7 @@ impl From<native_tls::TlsConnector> for TlsConnector {
 impl TlsAcceptor {
     pub async fn accept<S>(&self, stream: S) -> io::Result<TlsStream<S>>
     where
-        S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
+        S: AsyncRead + AsyncWrite + Unpin,
     {
         handshake(move |s| self.0.accept(s), stream).await
     }
@@ -213,7 +213,7 @@ impl From<native_tls::TlsAcceptor> for TlsAcceptor {
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug> Future for MidHandshake<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin> Future for MidHandshake<S> {
     type Output = Result<TlsStream<S>, Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
