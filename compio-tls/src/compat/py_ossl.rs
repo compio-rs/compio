@@ -11,7 +11,7 @@ use compio_py_dynamic_openssl::{
     SSLContext,
     ssl::{ErrorCode, HandshakeError, MidHandshakeSslStream, SslStream},
 };
-use futures_util::{AsyncRead, AsyncWrite};
+use futures_util::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
 use super::common::AllowStd;
 
@@ -147,7 +147,12 @@ where
     match start.await {
         Err(e) => Err(e),
         Ok(StartedHandshake::Done(s)) => Ok(s),
-        Ok(StartedHandshake::Mid(s)) => MidHandshake(Some(s)).await,
+        Ok(StartedHandshake::Mid(s)) => {
+            let mut stream = MidHandshake(Some(s)).await?;
+            stream.get_mut().get_mut().finish_handshake();
+            stream.flush().await?;
+            Ok(stream)
+        }
     }
 }
 

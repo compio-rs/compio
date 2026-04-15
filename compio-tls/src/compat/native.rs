@@ -9,7 +9,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures_util::{AsyncRead, AsyncWrite};
+use futures_util::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use native_tls::{Error, HandshakeError, MidHandshakeTlsStream};
 
 use super::common::AllowStd;
@@ -117,20 +117,25 @@ where
     }
 }
 
-async fn handshake<F, S>(f: F, stream: S) -> Result<TlsStream<S>, Error>
+async fn handshake<F, S>(f: F, stream: S) -> io::Result<TlsStream<S>>
 where
     F: FnOnce(
             AllowStd<S>,
         ) -> Result<native_tls::TlsStream<AllowStd<S>>, HandshakeError<AllowStd<S>>>
         + Unpin,
-    S: AsyncRead + AsyncWrite + Unpin,
+    S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
 {
     let start = StartedHandshakeFuture(Some(StartedHandshakeFutureInner { f, stream }));
 
     match start.await {
-        Err(e) => Err(e),
+        Err(e) => Err(io::Error::other(e)),
         Ok(StartedHandshake::Done(s)) => Ok(s),
-        Ok(StartedHandshake::Mid(s)) => MidHandshake(Some(s)).await,
+        Ok(StartedHandshake::Mid(s)) => {
+            let mut stream = MidHandshake(Some(s)).await.map_err(io::Error::other)?;
+            stream.get_mut().get_mut().finish_handshake();
+            stream.flush().await?;
+            Ok(stream)
+        }
     }
 }
 
@@ -167,9 +172,9 @@ where
 }
 
 impl TlsConnector {
-    pub async fn connect<S>(&self, domain: &str, stream: S) -> Result<TlsStream<S>, Error>
+    pub async fn connect<S>(&self, domain: &str, stream: S) -> io::Result<TlsStream<S>>
     where
-        S: AsyncRead + AsyncWrite + Unpin,
+        S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
     {
         handshake(move |s| self.0.connect(domain, s), stream).await
     }
@@ -188,9 +193,9 @@ impl From<native_tls::TlsConnector> for TlsConnector {
 }
 
 impl TlsAcceptor {
-    pub async fn accept<S>(&self, stream: S) -> Result<TlsStream<S>, Error>
+    pub async fn accept<S>(&self, stream: S) -> io::Result<TlsStream<S>>
     where
-        S: AsyncRead + AsyncWrite + Unpin,
+        S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug,
     {
         handshake(move |s| self.0.accept(s), stream).await
     }
@@ -208,7 +213,7 @@ impl From<native_tls::TlsAcceptor> for TlsAcceptor {
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin> Future for MidHandshake<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug> Future for MidHandshake<S> {
     type Output = Result<TlsStream<S>, Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {

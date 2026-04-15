@@ -79,7 +79,7 @@ impl TlsConnector {
     /// example, a TCP connection to a remote server. That stream is then
     /// provided here to perform the client half of a connection to a
     /// TLS-powered server.
-    pub async fn connect<S: AsyncRead + AsyncWrite + Unpin + 'static>(
+    pub async fn connect<S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug + 'static>(
         &self,
         domain: &str,
         stream: S,
@@ -92,8 +92,7 @@ impl TlsConnector {
             TlsConnectorInner::NativeTls(c) => {
                 let client = c
                     .connect(domain, Box::pin(AsyncStream::new(stream)))
-                    .await
-                    .map_err(io::Error::other)?;
+                    .await?;
                 Ok(TlsStream::from(client))
             }
             #[cfg(feature = "rustls")]
@@ -179,7 +178,7 @@ impl TlsAcceptor {
     /// This is typically used after a new socket has been accepted from a
     /// `TcpListener`. That socket is then passed to this function to perform
     /// the server half of accepting a client connection.
-    pub async fn accept<S: AsyncRead + AsyncWrite + Unpin + 'static>(
+    pub async fn accept<S: AsyncRead + AsyncWrite + Unpin + std::fmt::Debug + 'static>(
         &self,
         stream: S,
     ) -> io::Result<TlsStream<S>>
@@ -189,10 +188,7 @@ impl TlsAcceptor {
         match &self.0 {
             #[cfg(feature = "native-tls")]
             TlsAcceptorInner::NativeTls(c) => {
-                let server = c
-                    .accept(Box::pin(AsyncStream::new(stream)))
-                    .await
-                    .map_err(io::Error::other)?;
+                let server = c.accept(Box::pin(AsyncStream::new(stream))).await?;
                 Ok(TlsStream::from(server))
             }
             #[cfg(feature = "rustls")]

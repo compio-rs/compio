@@ -1,5 +1,8 @@
-//! Workarounds for OpenSSL, which doesn't expect the underlying stream to
-//! return `Poll::Pending` from `poll_flush`.
+//! Workarounds for native-tls like streams.
+//!
+//! * If it is handshaking, `poll_read` will flush the write buffer before
+//!   reading, and `poll_flush` will do nothing.
+//! * After handshaking, it behaves like a normal stream.
 
 use std::{
     io::{self, Read, Write},
@@ -15,7 +18,8 @@ pin_project! {
     struct OpensslInner<S> {
         #[pin]
         inner: S,
-        written: Option<usize>,
+        written: bool,
+        handshaked: bool,
     }
 }
 
@@ -23,7 +27,8 @@ impl<S> OpensslInner<S> {
     pub fn new(inner: S) -> Self {
         Self {
             inner,
-            written: None,
+            written: false,
+            handshaked: false,
         }
     }
 
@@ -36,13 +41,26 @@ impl<S> OpensslInner<S> {
     }
 }
 
-impl<S: AsyncRead> AsyncRead for OpensslInner<S> {
+impl<S: AsyncRead + AsyncWrite> AsyncRead for OpensslInner<S> {
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        self.project().inner.poll_read(cx, buf)
+        loop {
+            let this = self.as_mut().project();
+            if !*this.handshaked && *this.written {
+                match this.inner.poll_flush(cx) {
+                    Poll::Pending => break Poll::Pending,
+                    Poll::Ready(Ok(())) => {
+                        *this.written = false;
+                    }
+                    Poll::Ready(Err(e)) => break Poll::Ready(Err(e)),
+                }
+            } else {
+                break this.inner.poll_read(cx, buf);
+            }
+        }
     }
 }
 
@@ -52,33 +70,20 @@ impl<S: AsyncWrite> AsyncWrite for OpensslInner<S> {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        loop {
-            let this = self.as_mut().project();
-            match *this.written {
-                None => match this.inner.poll_write(cx, buf) {
-                    Poll::Ready(Ok(n)) => {
-                        *this.written = Some(n);
-                    }
-                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
-                    Poll::Pending => return Poll::Pending,
-                },
-                Some(n) => match this.inner.poll_flush(cx) {
-                    Poll::Ready(Ok(())) => {
-                        *this.written = None;
-                        return Poll::Ready(Ok(n));
-                    }
-                    Poll::Ready(Err(e)) => {
-                        *this.written = None;
-                        return Poll::Ready(Err(e));
-                    }
-                    Poll::Pending => return Poll::Pending,
-                },
-            }
+        let this = self.as_mut().project();
+        let res = this.inner.poll_write(cx, buf);
+        if let Poll::Ready(Ok(_)) = &res {
+            *this.written = true;
         }
+        res
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Poll::Ready(Ok(()))
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        if self.handshaked {
+            self.project().inner.poll_flush(cx)
+        } else {
+            Poll::Ready(Ok(()))
+        }
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
@@ -115,6 +120,10 @@ impl<S> AllowStd<S> {
     pub fn clear_context(&mut self) {
         self.context = std::ptr::null_mut();
     }
+
+    pub fn finish_handshake(&mut self) {
+        self.inner.handshaked = true;
+    }
 }
 
 // *mut () context is neither Send nor Sync
@@ -142,7 +151,7 @@ where
 
 impl<S> Read for AllowStd<S>
 where
-    S: AsyncRead + Unpin,
+    S: AsyncRead + AsyncWrite + Unpin,
 {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.with_context(|ctx, stream| stream.poll_read(ctx, buf))
