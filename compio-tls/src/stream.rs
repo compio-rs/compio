@@ -24,7 +24,10 @@ enum TlsStreamInner<S: Splittable> {
         feature = "rustls",
         feature = "py-dynamic-openssl",
     )))]
-    None(std::convert::Infallible, std::marker::PhantomData<S>),
+    None(
+        std::convert::Infallible,
+        std::marker::PhantomData<Pin<Box<AsyncStream<S>>>>,
+    ),
 }
 
 impl<S: Splittable + 'static> TlsStreamInner<S>
