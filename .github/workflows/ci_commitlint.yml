@@ -1,7 +1,9 @@
 name: Lint Commit Messages
 on:
-  - pull_request
-  - push
+  merge_group:
+    types: [checks_requested]
+  pull_request:
+  push:
 
 permissions:
   contents: read

@@ -1,6 +1,8 @@
 name: Check (Minimal Versions)
 
 on:
+  merge_group:
+    types: [checks_requested]
   push:
     branches:
       - master
