@@ -27,11 +27,12 @@ pub use adapter::*;
 pub use maybe::*;
 pub use stream::*;
 
+#[cfg(any(feature = "native-tls", feature = "py-dynamic-openssl"))]
+mod compat;
+#[cfg(any(feature = "native-tls", feature = "py-dynamic-openssl"))]
+pub(crate) use compat::*;
+
 #[cfg(feature = "rustls")]
 mod rtls;
 #[cfg(feature = "rustls")]
 pub use rtls::*;
-
-#[cfg(feature = "py-dynamic-openssl")]
-#[doc(hidden)]
-mod py_ossl;

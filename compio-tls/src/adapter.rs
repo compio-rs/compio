@@ -1,19 +1,17 @@
 use std::{fmt::Debug, io};
 
-#[cfg(feature = "rustls")]
-use compio_io::compat::AsyncStream;
-use compio_io::{AsyncRead, AsyncWrite, compat::SyncStream};
+use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream};
 
 use crate::TlsStream;
 
 #[derive(Clone)]
 enum TlsConnectorInner {
     #[cfg(feature = "native-tls")]
-    NativeTls(native_tls::TlsConnector),
+    NativeTls(crate::native::TlsConnector),
     #[cfg(feature = "rustls")]
     Rustls(futures_rustls::TlsConnector),
     #[cfg(feature = "py-dynamic-openssl")]
-    PyDynamicOpenSsl(compio_py_dynamic_openssl::SSLContext),
+    PyDynamicOpenSsl(crate::py_ossl::TlsConnector),
     #[cfg(not(any(
         feature = "native-tls",
         feature = "rustls",
@@ -49,7 +47,7 @@ pub struct TlsConnector(TlsConnectorInner);
 #[cfg(feature = "native-tls")]
 impl From<native_tls::TlsConnector> for TlsConnector {
     fn from(value: native_tls::TlsConnector) -> Self {
-        Self(TlsConnectorInner::NativeTls(value))
+        Self(TlsConnectorInner::NativeTls(value.into()))
     }
 }
 
@@ -64,7 +62,7 @@ impl From<std::sync::Arc<rustls::ClientConfig>> for TlsConnector {
 #[doc(hidden)]
 impl From<compio_py_dynamic_openssl::SSLContext> for TlsConnector {
     fn from(value: compio_py_dynamic_openssl::SSLContext) -> Self {
-        Self(TlsConnectorInner::PyDynamicOpenSsl(value))
+        Self(TlsConnectorInner::PyDynamicOpenSsl(value.into()))
     }
 }
 
@@ -92,7 +90,10 @@ impl TlsConnector {
         match &self.0 {
             #[cfg(feature = "native-tls")]
             TlsConnectorInner::NativeTls(c) => {
-                handshake_native_tls(c.connect(domain, SyncStream::new(stream))).await
+                let client = c
+                    .connect(domain, Box::pin(AsyncStream::new(stream)))
+                    .await?;
+                Ok(TlsStream::from(client))
             }
             #[cfg(feature = "rustls")]
             TlsConnectorInner::Rustls(c) => {
@@ -106,7 +107,10 @@ impl TlsConnector {
             }
             #[cfg(feature = "py-dynamic-openssl")]
             TlsConnectorInner::PyDynamicOpenSsl(c) => {
-                crate::py_ossl::handshake(c.connect(domain, SyncStream::new(stream))).await
+                let client = c
+                    .connect(domain, Box::pin(AsyncStream::new(stream)))
+                    .await?;
+                Ok(TlsStream::from(client))
             }
             #[cfg(not(any(
                 feature = "native-tls",
@@ -121,11 +125,11 @@ impl TlsConnector {
 #[derive(Clone)]
 enum TlsAcceptorInner {
     #[cfg(feature = "native-tls")]
-    NativeTls(native_tls::TlsAcceptor),
+    NativeTls(crate::native::TlsAcceptor),
     #[cfg(feature = "rustls")]
     Rustls(futures_rustls::TlsAcceptor),
     #[cfg(feature = "py-dynamic-openssl")]
-    PyDynamicOpenSsl(compio_py_dynamic_openssl::SSLContext),
+    PyDynamicOpenSsl(crate::py_ossl::TlsAcceptor),
     #[cfg(not(any(
         feature = "native-tls",
         feature = "rustls",
@@ -145,7 +149,7 @@ pub struct TlsAcceptor(TlsAcceptorInner);
 #[cfg(feature = "native-tls")]
 impl From<native_tls::TlsAcceptor> for TlsAcceptor {
     fn from(value: native_tls::TlsAcceptor) -> Self {
-        Self(TlsAcceptorInner::NativeTls(value))
+        Self(TlsAcceptorInner::NativeTls(value.into()))
     }
 }
 
@@ -159,7 +163,7 @@ impl From<std::sync::Arc<rustls::ServerConfig>> for TlsAcceptor {
 #[cfg(feature = "py-dynamic-openssl")]
 impl From<compio_py_dynamic_openssl::SSLContext> for TlsAcceptor {
     fn from(value: compio_py_dynamic_openssl::SSLContext) -> Self {
-        Self(TlsAcceptorInner::PyDynamicOpenSsl(value))
+        Self(TlsAcceptorInner::PyDynamicOpenSsl(value.into()))
     }
 }
 
@@ -184,7 +188,8 @@ impl TlsAcceptor {
         match &self.0 {
             #[cfg(feature = "native-tls")]
             TlsAcceptorInner::NativeTls(c) => {
-                handshake_native_tls(c.accept(SyncStream::new(stream))).await
+                let server = c.accept(Box::pin(AsyncStream::new(stream))).await?;
+                Ok(TlsStream::from(server))
             }
             #[cfg(feature = "rustls")]
             TlsAcceptorInner::Rustls(c) => {
@@ -193,7 +198,8 @@ impl TlsAcceptor {
             }
             #[cfg(feature = "py-dynamic-openssl")]
             TlsAcceptorInner::PyDynamicOpenSsl(a) => {
-                crate::py_ossl::handshake(a.accept(SyncStream::new(stream))).await
+                let server = a.accept(Box::pin(AsyncStream::new(stream))).await?;
+                Ok(TlsStream::from(server))
             }
             #[cfg(not(any(
                 feature = "native-tls",
@@ -201,40 +207,6 @@ impl TlsAcceptor {
                 feature = "py-dynamic-openssl"
             )))]
             TlsAcceptorInner::None(f) => match *f {},
-        }
-    }
-}
-
-#[cfg(feature = "native-tls")]
-async fn handshake_native_tls<S: AsyncRead + AsyncWrite>(
-    mut res: Result<
-        native_tls::TlsStream<SyncStream<S>>,
-        native_tls::HandshakeError<SyncStream<S>>,
-    >,
-) -> io::Result<TlsStream<S>> {
-    use native_tls::HandshakeError;
-
-    loop {
-        match res {
-            Ok(mut s) => {
-                let inner = s.get_mut();
-                if inner.has_pending_write() {
-                    inner.flush_write_buf().await?;
-                }
-                return Ok(TlsStream::from(s));
-            }
-            Err(e) => match e {
-                HandshakeError::Failure(e) => return Err(io::Error::other(e)),
-                HandshakeError::WouldBlock(mut mid_stream) => {
-                    let s = mid_stream.get_mut();
-                    if s.has_pending_write() {
-                        s.flush_write_buf().await?;
-                    } else {
-                        s.fill_read_buf().await?;
-                    }
-                    res = mid_stream.handshake();
-                }
-            },
         }
     }
 }
