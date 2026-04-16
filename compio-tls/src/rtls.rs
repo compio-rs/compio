@@ -20,7 +20,7 @@ pub struct LazyConfigAcceptor<S: Splittable>(
     futures_rustls::LazyConfigAcceptor<Pin<Box<AsyncStream<S>>>>,
 );
 
-impl<S: AsyncRead + AsyncWrite + Splittable + 'static> LazyConfigAcceptor<S>
+impl<S: Splittable + 'static> LazyConfigAcceptor<S>
 where
     S::ReadHalf: AsyncRead + Unpin,
     S::WriteHalf: AsyncWrite + Unpin,
@@ -34,7 +34,7 @@ where
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Splittable + 'static> Future for LazyConfigAcceptor<S>
+impl<S: Splittable + 'static> Future for LazyConfigAcceptor<S>
 where
     S::ReadHalf: AsyncRead + Unpin,
     S::WriteHalf: AsyncWrite + Unpin,
@@ -50,7 +50,7 @@ where
 /// the [`ClientHello`] message.
 pub struct StartHandshake<S: Splittable>(futures_rustls::StartHandshake<Pin<Box<AsyncStream<S>>>>);
 
-impl<S: AsyncRead + AsyncWrite + Splittable + 'static> StartHandshake<S>
+impl<S: Splittable + 'static> StartHandshake<S>
 where
     S::ReadHalf: AsyncRead + Unpin,
     S::WriteHalf: AsyncWrite + Unpin,
