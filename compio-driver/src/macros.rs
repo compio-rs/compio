@@ -156,3 +156,142 @@ macro_rules! assert_not_impl {
         };
     };
 }
+
+#[cfg(fusion)]
+macro_rules! fuse_op {
+    (
+        $(<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? ));* $(;)?
+    ) => {
+        #[allow(unused_imports)]
+        use crate::{IourOpCode, PollOpCode, OpEntry, OpType, sys::prelude::*};
+
+        ::paste::paste! {
+            $(
+                enum [< $name Inner >] <$($ty: $trait),*> {
+                    Uninit($($arg_t),*),
+                    Poll(poll::$name<$($ty),*>),
+                    IoUring(iour::$name<$($ty),*>),
+                }
+
+                impl<$($ty: $trait),*> [< $name Inner >]<$($ty),*> {
+                    fn poll(&mut self) -> &mut poll::$name<$($ty),*> {
+                        match self {
+                            Self::Uninit(..) => {
+                                unsafe {
+                                    let Self::Uninit($($arg),*) = std::ptr::read(self) else {
+                                        ::std::hint::unreachable_unchecked()
+                                    };
+                                    std::ptr::write(self, Self::Poll(poll::$name::new($($arg),*)));
+                                }
+                                self.poll()
+                            },
+                            Self::Poll(op) => op,
+                            Self::IoUring(_) => unreachable!("Current driver is not `polling`"),
+                        }
+                    }
+
+                    fn iour(&mut self) -> &mut iour::$name<$($ty),*> {
+                        match self {
+                            Self::Uninit(..) => {
+                                unsafe {
+                                    let Self::Uninit($($arg),*) = std::ptr::read(self) else {
+                                        ::std::hint::unreachable_unchecked()
+                                    };
+                                    std::ptr::write(self, Self::IoUring(iour::$name::new($($arg),*)));
+                                }
+                                self.iour()
+                            },
+                            Self::IoUring(op) => op,
+                            Self::Poll(_) => unreachable!("Current driver is not `io-uring`"),
+                        }
+                    }
+                }
+
+                #[doc = concat!("A fused `", stringify!($name), "` operation")]
+                pub struct $name <$($ty: $trait),*> {
+                    inner: [< $name Inner >] <$($ty),*>
+                }
+
+                impl<$($ty: $trait),*> IntoInner for $name <$($ty),*> {
+                    type Inner = <poll::$name<$($ty),*> as IntoInner>::Inner;
+
+                    fn into_inner(mut self) -> Self::Inner {
+                        use [< $name Inner >]::*;
+                        match self.inner {
+                            Uninit(..) => {
+                                self.inner.poll();
+                                self.into_inner()
+                            },
+                            Poll(op) => op.into_inner(),
+                            IoUring(op) => op.into_inner(),
+                        }
+                    }
+                }
+
+                impl<$($ty: $trait),*> $name <$($ty),*> {
+                    #[doc = concat!("Create a new `", stringify!($name), "`.")]
+                    pub fn new($($arg: $arg_t),*) -> Self {
+                        Self { inner: [< $name Inner >]::Uninit($($arg),*) }
+                    }
+                }
+
+                unsafe impl<$($ty: $trait),*> PollOpCode for $name<$($ty),*> {
+                    type Control = <poll::$name<$($ty),*> as PollOpCode>::Control;
+
+                    unsafe fn init(&mut self, ctrl: &mut <Self as PollOpCode>::Control) {
+                        unsafe { PollOpCode::init(self.inner.poll(), ctrl) }
+                    }
+
+                    fn pre_submit(&mut self, control: &mut <Self as PollOpCode>::Control) -> std::io::Result<crate::Decision> {
+                        self.inner.poll().pre_submit(control)
+                    }
+
+                    fn op_type(&mut self, control: &mut <Self as PollOpCode>::Control) -> Option<OpType> {
+                        self.inner.poll().op_type(control)
+                    }
+
+                    fn operate(
+                        &mut self, control: &mut <Self as PollOpCode>::Control,
+                    ) -> std::task::Poll<std::io::Result<usize>> {
+                        self.inner.poll().operate(control)
+                    }
+                }
+
+                unsafe impl<$($ty: $trait),*> IourOpCode for $name<$($ty),*> {
+                    type Control = <iour::$name<$($ty),*> as IourOpCode>::Control;
+
+                    unsafe fn init(&mut self, ctrl: &mut <Self as IourOpCode>::Control) {
+                        unsafe { self.inner.iour().init(ctrl) }
+                    }
+
+                    fn create_entry(&mut self, control: &mut <Self as IourOpCode>::Control) -> OpEntry {
+                        self.inner.iour().create_entry(control)
+                    }
+
+                    fn create_entry_fallback(&mut self, control: &mut <Self as IourOpCode>::Control) -> OpEntry {
+                        self.inner.iour().create_entry_fallback(control)
+                    }
+
+                    fn call_blocking(&mut self, control: &mut <Self as IourOpCode>::Control) -> std::io::Result<usize> {
+                        self.inner.iour().call_blocking(control)
+                    }
+
+                    unsafe fn set_result(&mut self, control: &mut <Self as IourOpCode>::Control, result: &std::io::Result<usize>, extra: &crate::Extra) {
+                        unsafe { self.inner.iour().set_result(control, result, extra) }
+                    }
+
+                    unsafe fn push_multishot(&mut self, control: &mut <Self as IourOpCode>::Control, result: std::io::Result<usize>, extra: crate::Extra) {
+                        unsafe { self.inner.iour().push_multishot(control, result, extra) }
+                    }
+
+                    fn pop_multishot(&mut self, control: &mut <Self as IourOpCode>::Control) -> Option<BufResult<usize, crate::Extra>> {
+                        self.inner.iour().pop_multishot(control)
+                    }
+                }
+            )*
+        }
+    };
+}
+
+#[cfg(fusion)]
+pub(crate) use fuse_op;

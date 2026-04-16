@@ -34,9 +34,6 @@ pub use key::Key;
 mod asyncify;
 pub use asyncify::*;
 
-pub mod op;
-pub use op::{ResultTakeBuffer, TakeBuffer};
-
 mod fd;
 pub use fd::*;
 
@@ -44,7 +41,11 @@ mod driver_type;
 pub use driver_type::*;
 
 mod sys;
-pub use sys::{Extra, *};
+pub use sys::{
+    Extra,
+    op::{self, ResultTakeBuffer, TakeBuffer},
+    *,
+};
 
 mod cancel;
 pub use cancel::*;
@@ -55,11 +56,9 @@ pub use buffer_pool::{BoxAllocator, BufferAllocator, BufferPool, BufferRef};
 use crate::{
     buffer_pool::{BufferAlloc, BufferPoolRoot},
     key::ErasedKey,
-    op::OpCodeFlag,
     panic::resume_unwind_io,
+    sys::op::OpCodeFlag,
 };
-
-mod sys_slice;
 
 /// The return type of [`Proactor::push`].
 #[derive(Debug)]
@@ -180,7 +179,7 @@ impl Proactor {
 
     /// Get a default [`Extra`] for underlying driver.
     pub fn default_extra(&self) -> Extra {
-        sys::default_extra(&self.driver)
+        Extra::new(&self.driver)
     }
 
     /// The current driver type.
