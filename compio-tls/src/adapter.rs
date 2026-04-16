@@ -179,10 +179,7 @@ impl TlsAcceptor {
     /// This is typically used after a new socket has been accepted from a
     /// `TcpListener`. That socket is then passed to this function to perform
     /// the server half of accepting a client connection.
-    pub async fn accept<S: Splittable + 'static>(
-        &self,
-        stream: S,
-    ) -> io::Result<TlsStream<S>>
+    pub async fn accept<S: Splittable + 'static>(&self, stream: S) -> io::Result<TlsStream<S>>
     where
         S::ReadHalf: AsyncRead + Unpin,
         S::WriteHalf: AsyncWrite + Unpin,
