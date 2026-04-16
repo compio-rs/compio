@@ -22,12 +22,12 @@
 
 use std::{
     pin::Pin,
-    task::{Context, Poll},
+    task::{Context, Poll, ready},
 };
 
 use compio_buf::IntoInner;
 use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream, util::Splittable};
-use futures_util::{AsyncWriteExt, Sink, SinkExt, Stream, StreamExt, stream::FusedStream};
+use futures_util::{Sink, SinkExt, Stream, StreamExt, stream::FusedStream};
 use pin_project_lite::pin_project;
 use tungstenite::{
     Error as WsError, Message,
@@ -161,6 +161,7 @@ pin_project! {
     pub struct WebSocketStream<S> {
         #[pin]
         inner: async_tungstenite::WebSocketStream<S>,
+        next_item: Option<Option<Result<Message, WsError>>>,
     }
 }
 
@@ -190,14 +191,10 @@ where
     pub async fn from_raw_socket(stream: S, role: Role, config: impl Into<Config>) -> Self {
         let config = config.into();
 
-        WebSocketStream {
-            inner: async_tungstenite::WebSocketStream::from_raw_socket(
-                stream,
-                role,
-                config.websocket,
-            )
-            .await,
-        }
+        Self::from_inner(
+            async_tungstenite::WebSocketStream::from_raw_socket(stream, role, config.websocket)
+                .await,
+        )
     }
 
     /// Convert a raw socket into a [`WebSocketStream`] without performing a
@@ -214,43 +211,44 @@ where
     ) -> Self {
         let config = config.into();
 
-        WebSocketStream {
-            inner: async_tungstenite::WebSocketStream::from_partially_read(
+        Self::from_inner(
+            async_tungstenite::WebSocketStream::from_partially_read(
                 stream,
                 part,
                 role,
                 config.websocket,
             )
             .await,
+        )
+    }
+
+    fn from_inner(inner: async_tungstenite::WebSocketStream<S>) -> Self {
+        WebSocketStream {
+            inner,
+            next_item: None,
         }
     }
 
     /// Send a message on the WebSocket stream.
     pub async fn send(&mut self, message: Message) -> Result<(), WsError> {
-        self.inner.send(message).await
+        SinkExt::send(self, message).await
     }
 
     /// Read a message from the WebSocket stream.
     pub async fn read(&mut self) -> Result<Message, WsError> {
-        let msg = self
-            .inner
-            .next()
+        self.next()
             .await
-            .unwrap_or_else(|| Err(WsError::ConnectionClosed))?;
-        self.flush().await?;
-        Ok(msg)
+            .unwrap_or_else(|| Err(WsError::ConnectionClosed))
     }
 
     /// Flush the WebSocket stream.
     pub async fn flush(&mut self) -> Result<(), WsError> {
-        self.inner.flush().await?;
-        self.inner.get_mut().flush().await?;
-        Ok(())
+        SinkExt::flush(self).await
     }
 
     /// Close the WebSocket connection.
     pub async fn close(&mut self, close_frame: Option<CloseFrame>) -> Result<(), WsError> {
-        self.inner.close(close_frame).await
+        self.send(Message::Close(close_frame)).await
     }
 }
 
@@ -276,8 +274,10 @@ where
         self.project().inner.start_send(item)
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.project().inner.poll_flush(cx)
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        ready!(self.as_mut().project().inner.poll_flush(cx))?;
+        ready!(Pin::new(self.project().inner.get_mut().get_mut()).poll_flush(cx))?;
+        Poll::Ready(Ok(()))
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -292,7 +292,17 @@ where
     type Item = Result<Message, WsError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.project().inner.poll_next(cx)
+        let mut this = self.project();
+        loop {
+            if this.next_item.is_some() {
+                ready!(this.inner.as_mut().poll_flush(cx))?;
+                ready!(Pin::new(this.inner.get_mut().get_mut()).poll_flush(cx))?;
+                break Poll::Ready(this.next_item.take().expect("next_item should be Some"));
+            } else {
+                let item = ready!(this.inner.as_mut().poll_next(cx));
+                *this.next_item = Some(item);
+            }
+        }
     }
 }
 
@@ -373,7 +383,7 @@ where
         config.websocket,
     )
     .await?;
-    Ok(WebSocketStream { inner })
+    Ok(WebSocketStream::from_inner(inner))
 }
 
 /// Creates a WebSocket handshake from a request and a stream.
@@ -441,5 +451,5 @@ where
     let config = config.into();
     let (inner, response) =
         async_tungstenite::client_async_with_config(request, stream, config.websocket).await?;
-    Ok((WebSocketStream { inner }, response))
+    Ok((WebSocketStream::from_inner(inner), response))
 }

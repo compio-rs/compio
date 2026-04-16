@@ -190,7 +190,6 @@ async fn compat_ping_pong() {
         let mut ws = accept_async(stream).await.unwrap();
 
         let msg = ws.next().await.unwrap().unwrap();
-        ws.flush().await.unwrap();
         assert!(matches!(msg, Message::Ping(_)));
         SinkExt::close(&mut ws).await.unwrap();
     })
