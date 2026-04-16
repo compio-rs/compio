@@ -1,6 +1,8 @@
 name: TestExecutor
 
 on:
+  merge_group:
+    types: [checks_requested]
   push:
     branches:
       - master
@@ -39,7 +41,6 @@ jobs:
             target: 'x86_64-pc-windows-gnu'
           - os: 'macos-14'
           - os: 'macos-15'
-          - os: 'macos-15-intel'
     runs-on: ${{ matrix.setup.os }}
     steps:
       - uses: actions/checkout@v6

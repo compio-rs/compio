@@ -1,6 +1,8 @@
 name: Test
 
 on:
+  merge_group:
+    types: [checks_requested]
   push:
     branches:
       - master
@@ -32,6 +34,7 @@ jobs:
         toolchain: ['nightly', 'beta', 'stable']
         setup:
           - os: 'ubuntu-22.04'
+          - os: 'ubuntu-22.04-arm'
           - os: 'ubuntu-22.04'
             features: 'sync'
           - os: 'ubuntu-22.04'

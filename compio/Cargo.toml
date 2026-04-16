@@ -146,7 +146,7 @@ criterion = ["compio-runtime?/criterion"]
 real_blackbox = ["criterion", "criterion/real_blackbox"]
 
 # Synchronization primitives
-sync = ["compio-driver/sync", "compio-quic?/sync", "compio-io?/sync"]
+sync = ["compio-driver/sync", "compio-quic?/sync", "compio-io?/sync", "compio-net/sync"]
 
 # Driver implementations
 io-uring-sqe128 = ["compio-driver/io-uring-sqe128"]

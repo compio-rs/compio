@@ -2,12 +2,12 @@
 /Cargo.lock
 /.cargo
 
-/.direnv
-/.envrc
+.direnv
+.envrc
 
 # Editor directories
-/.vscode
-/.zed
+.vscode
+.zed
 .idea
 
 # Bacon config

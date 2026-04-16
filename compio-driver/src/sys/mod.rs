@@ -1,54 +1,58 @@
-cfg_if::cfg_if! {
-    if #[cfg(windows)] {
-        mod iocp;
-        use iocp as imp;
-    } else if #[cfg(fusion)] {
-        mod fusion;
-        mod poll;
-        mod iour;
-
-        use fusion as imp;
-    } else if #[cfg(io_uring)] {
-        mod iour;
-        use iour as imp;
-    } else if #[cfg(all(target_os = "linux", not(feature = "polling")))] {
-        mod stub;
-        use stub as imp;
-    } else if #[cfg(unix)] {
-        mod poll;
-        use poll as imp;
-    }
-}
-
 mod buffer_pool;
+mod driver;
 mod extra;
-#[cfg(unix)]
-mod unix_op;
+mod pal;
+mod sys_slice;
 
-pub(crate) use buffer_pool::BufControl;
+// Publicly visible items
+pub mod op;
+pub use driver::*;
 pub use extra::Extra;
-pub use imp::*;
+#[cfg(windows)]
+pub use pal::Overlapped;
+pub use pal::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 
-pub(crate) fn default_extra(driver: &Driver) -> Extra {
-    driver.default_extra().into()
-}
+// Crate-internal items
+#[allow(unused_imports)]
+pub(crate) use self::buffer_pool::BufControl;
+#[allow(unused_imports)]
+#[cfg(io_uring)]
+pub(crate) use self::pal::is_op_supported;
 
-#[cfg(aio)]
-pub(crate) mod aio {
-    pub use libc::aiocb;
+/// Internal prelude module that includes all necessary utils for sys module
+#[allow(unused_imports)]
+mod prelude {
+    pub(crate) use std::{
+        collections::VecDeque,
+        ffi::CString,
+        io,
+        marker::PhantomData,
+        mem::ManuallyDrop,
+        ptr::{NonNull, null, null_mut, read_unaligned},
+        task::{Poll, Wake, Waker},
+        time::Duration,
+    };
 
-    pub fn new_aiocb() -> aiocb {
-        unsafe { std::mem::zeroed() }
+    #[cfg(any(windows, io_uring))]
+    cfg_if! {
+        if #[cfg(feature = "once_cell_try")] {
+            pub(crate) use std::sync::OnceLock;
+        } else {
+            pub(crate) use once_cell::sync::OnceCell as OnceLock;
+        }
     }
+
+    pub(crate) use cfg_if::cfg_if;
+    pub(crate) use compio_buf::*;
+    pub(crate) use compio_log::*;
+    pub(crate) use mod_use::mod_use;
+    pub(crate) use socket2::{SockAddr, SockAddrStorage, Socket as Socket2, socklen_t};
+
+    pub(crate) use crate::{
+        BufferPool, BufferRef, DriverType, ProactorBuilder, SharedFd, ToSharedFd,
+        control::Carrier,
+        key::ErasedKey,
+        sys::{extra::Extra, pal::*, sys_slice::*},
+        syscall,
+    };
 }
-
-#[cfg(all(not(aio), not(windows)))]
-pub(crate) mod aio {
-    #[allow(non_camel_case_types)]
-    pub type aiocb = ();
-
-    pub fn new_aiocb() -> aiocb {}
-}
-
-crate::assert_not_impl!(Driver, Send);
-crate::assert_not_impl!(Driver, Sync);

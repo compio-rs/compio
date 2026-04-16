@@ -25,6 +25,7 @@ either = "1.9.0"
 futures-util = { workspace = true }
 once_cell = { workspace = true }
 socket2 = { workspace = true }
+synchrony = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 widestring = { workspace = true }
@@ -48,3 +49,4 @@ tempfile = { workspace = true }
 once_cell_try = []
 sanitize = []
 nightly = ["once_cell_try", "sanitize"]
+sync = []

@@ -34,9 +34,6 @@ pub use key::Key;
 mod asyncify;
 pub use asyncify::*;
 
-pub mod op;
-pub use op::{ResultTakeBuffer, TakeBuffer};
-
 mod fd;
 pub use fd::*;
 
@@ -44,7 +41,11 @@ mod driver_type;
 pub use driver_type::*;
 
 mod sys;
-pub use sys::{Extra, *};
+pub use sys::{
+    Extra,
+    op::{self, ResultTakeBuffer, TakeBuffer},
+    *,
+};
 
 mod cancel;
 pub use cancel::*;
@@ -55,11 +56,9 @@ pub use buffer_pool::{BoxAllocator, BufferAllocator, BufferPool, BufferRef};
 use crate::{
     buffer_pool::{BufferAlloc, BufferPoolRoot},
     key::ErasedKey,
-    op::OpCodeFlag,
     panic::resume_unwind_io,
+    sys::op::OpCodeFlag,
 };
-
-mod sys_slice;
 
 /// The return type of [`Proactor::push`].
 #[derive(Debug)]
@@ -105,7 +104,6 @@ impl<K, R> PushEntry<K, R> {
 /// It owns the operations to keep the driver safe.
 pub struct Proactor {
     driver: Driver,
-    cancel: CancelRegistry,
     buffer_pool: BufferPoolState,
 }
 
@@ -170,7 +168,6 @@ impl Proactor {
     fn with_builder(builder: &ProactorBuilder) -> io::Result<Self> {
         Ok(Self {
             driver: Driver::new(builder)?,
-            cancel: CancelRegistry::new(),
             buffer_pool: BufferPoolState::Uninit {
                 allocator: builder.buffer_pool_allocator,
                 num_of_bufs: builder.buffer_pool_size,
@@ -182,7 +179,7 @@ impl Proactor {
 
     /// Get a default [`Extra`] for underlying driver.
     pub fn default_extra(&self) -> Extra {
-        sys::default_extra(&self.driver)
+        Extra::new(&self.driver)
     }
 
     /// The current driver type.
@@ -212,7 +209,6 @@ impl Proactor {
         if key.set_cancelled() {
             return None;
         }
-        self.cancel.remove(&key);
         if key.is_unique() && key.has_result() {
             let (res, buf) = key.take_result().into_parts();
             Some(BufResult(resume_unwind_io(res), buf))
@@ -230,7 +226,9 @@ impl Proactor {
     /// but just don't return from [`Proactor::pop`]. This will do nothing if
     /// the operation has already been completed or cancelled before.
     pub fn cancel_token(&mut self, token: Cancel) -> bool {
-        let Some(key) = self.cancel.take(token) else {
+        instrument!(compio_log::Level::DEBUG, "cancel_token", ?token);
+
+        let Some(key) = token.upgrade() else {
             return false;
         };
         if key.set_cancelled() || key.has_result() {
@@ -246,10 +244,10 @@ impl Proactor {
     /// This acts like a weak reference to the [`Key`], but can only be used to
     /// cancel the operation with [`Proactor::cancel_token`]. Extra copy of
     /// [`Key`] may cause [`Proactor::pop`] to panic while keys registered
-    /// as [`Cancel`] will be properly handled. So this is useful in cases
-    /// where you're not sure if the operation will be cancelled.
+    /// as [`Cancel`] will not. So this is useful in cases where you're not sure
+    /// if the operation will be cancelled.
     pub fn register_cancel<T: OpCode>(&mut self, key: &Key<T>) -> Cancel {
-        self.cancel.register(key)
+        Cancel::new(key)
     }
 
     /// Push an operation into the driver, and return the unique key [`Key`],
@@ -294,7 +292,6 @@ impl Proactor {
     pub fn pop<T: OpCode>(&mut self, key: Key<T>) -> PushEntry<Key<T>, BufResult<usize, T>> {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
-            self.cancel.remove(&key);
             let (res, buf) = key.take_result().into_parts();
             PushEntry::Ready(BufResult(resume_unwind_io(res), buf))
         } else {
@@ -315,7 +312,6 @@ impl Proactor {
     ) -> PushEntry<Key<T>, (BufResult<usize, T>, Extra)> {
         instrument!(compio_log::Level::DEBUG, "pop", ?key);
         if key.has_result() {
-            self.cancel.remove(&key);
             let extra = key.swap_extra(self.default_extra());
             let (res, buf) = key.take_result().into_parts();
             PushEntry::Ready((BufResult(resume_unwind_io(res), buf), extra))
