@@ -68,12 +68,7 @@ io-uring = ["compio-driver/io-uring"]
 polling = ["compio-driver/polling"]
 
 io = ["dep:compio-io"]
-io-compat = [
-    "io",
-    "compio-io/compat",
-    "compio-quic?/io-compat",
-    "compio-ws?/io-compat",
-]
+io-compat = ["io", "compio-io/compat", "compio-quic?/io-compat"]
 io-ancillary = ["io", "compio-io/ancillary"]
 io-codec-serde-json = ["io", "compio-io/codec-serde-json"]
 fs = ["dep:compio-fs", "runtime", "io"]
@@ -146,7 +141,12 @@ criterion = ["compio-runtime?/criterion"]
 real_blackbox = ["criterion", "criterion/real_blackbox"]
 
 # Synchronization primitives
-sync = ["compio-driver/sync", "compio-quic?/sync", "compio-io?/sync", "compio-net/sync"]
+sync = [
+    "compio-driver/sync",
+    "compio-quic?/sync",
+    "compio-io?/sync",
+    "compio-net/sync",
+]
 
 # Driver implementations
 io-uring-sqe128 = ["compio-driver/io-uring-sqe128"]

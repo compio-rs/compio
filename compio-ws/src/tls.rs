@@ -10,7 +10,7 @@ use tungstenite::{
     stream::Mode,
 };
 
-use crate::{Config, WebSocketStream, client_async_with_config};
+use crate::{Config, WebSocketStream, client_async_with_config_compat};
 
 mod encryption {
     #[cfg(feature = "native-tls")]
@@ -205,7 +205,7 @@ where
     let mode = uri_mode(request.uri())?;
 
     let stream = wrap_stream(stream, domain, connector, mode).await?;
-    client_async_with_config(request, stream, config).await
+    client_async_with_config_compat(request, stream, config).await
 }
 
 /// Type alias for a connected stream.

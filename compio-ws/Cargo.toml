@@ -21,13 +21,14 @@ compio-tls = { workspace = true, default-features = false }
 compio-log = { workspace = true }
 
 tungstenite = "0.29.0"
+async-tungstenite = "0.34.0"
 
 rustls-platform-verifier = { workspace = true, optional = true }
 rustls-native-certs = { workspace = true, optional = true }
 webpki-roots = { workspace = true, optional = true }
 
-futures-util = { workspace = true, optional = true, features = ["sink"] }
-pin-project-lite = { workspace = true, optional = true }
+futures-util = { workspace = true, features = ["sink"] }
+pin-project-lite = { workspace = true }
 
 [dev-dependencies]
 compio-macros = { workspace = true }
@@ -46,9 +47,3 @@ rustls-platform-verifier = ["rustls", "dep:rustls-platform-verifier"]
 rustls-native-certs = ["rustls", "dep:rustls-native-certs"]
 webpki-roots = ["rustls", "dep:webpki-roots"]
 ring = ["compio-tls/ring"]
-
-io-compat = ["dep:futures-util", "dep:pin-project-lite"]
-
-[[example]]
-name = "ws_split"
-required-features = ["io-compat"]
