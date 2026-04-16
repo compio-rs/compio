@@ -7,7 +7,7 @@ use std::{
 };
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf};
-use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream};
+use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream, util::Splittable};
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
@@ -26,9 +26,10 @@ enum TlsStreamInner<S: Splittable> {
     None(std::convert::Infallible, std::marker::PhantomData<S>),
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> TlsStreamInner<S>
+impl<S: Splittable + 'static> TlsStreamInner<S>
 where
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     pub fn negotiated_alpn(&self) -> Option<Cow<'_, [u8]>> {
         match self {
@@ -58,9 +59,10 @@ where
 #[derive(Debug)]
 pub struct TlsStream<S: Splittable>(TlsStreamInner<S>);
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> TlsStream<S>
+impl<S: Splittable + 'static> TlsStream<S>
 where
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     /// Returns the negotiated ALPN protocol.
     pub fn negotiated_alpn(&self) -> Option<Cow<'_, [u8]>> {
@@ -70,7 +72,7 @@ where
 
 #[cfg(feature = "native-tls")]
 #[doc(hidden)]
-impl<S> From<crate::native::TlsStream<Pin<Box<AsyncStream<S>>>>> for TlsStream<S> {
+impl<S: Splittable> From<crate::native::TlsStream<Pin<Box<AsyncStream<S>>>>> for TlsStream<S> {
     fn from(value: crate::native::TlsStream<Pin<Box<AsyncStream<S>>>>) -> Self {
         Self(TlsStreamInner::NativeTls(value))
     }
@@ -102,15 +104,16 @@ impl<S: Splittable> From<futures_rustls::server::TlsStream<Pin<Box<AsyncStream<S
 
 #[cfg(feature = "py-dynamic-openssl")]
 #[doc(hidden)]
-impl<S> From<crate::py_ossl::TlsStream<Pin<Box<AsyncStream<S>>>>> for TlsStream<S> {
+impl<S: Splittable> From<crate::py_ossl::TlsStream<Pin<Box<AsyncStream<S>>>>> for TlsStream<S> {
     fn from(value: crate::py_ossl::TlsStream<Pin<Box<AsyncStream<S>>>>) -> Self {
         Self(TlsStreamInner::PyDynamicOpenSsl(value))
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> futures_util::AsyncRead for TlsStream<S>
+impl<S: Splittable + 'static> futures_util::AsyncRead for TlsStream<S>
 where
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -134,7 +137,7 @@ where
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Splittable + 'static> AsyncRead for TlsStream<S>
+impl<S: Splittable + 'static> AsyncRead for TlsStream<S>
 where
     S::ReadHalf: AsyncRead + Unpin,
     S::WriteHalf: AsyncWrite + Unpin,
@@ -160,9 +163,10 @@ where
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> futures_util::AsyncWrite for TlsStream<S>
+impl<S: Splittable + 'static> futures_util::AsyncWrite for TlsStream<S>
 where
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     fn poll_write(
         self: Pin<&mut Self>,
@@ -241,9 +245,10 @@ where
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> AsyncWrite for TlsStream<S>
+impl<S: Splittable + 'static> AsyncWrite for TlsStream<S>
 where
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         let slice = buf.as_init();

@@ -1,6 +1,6 @@
 use std::{fmt::Debug, io};
 
-use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream};
+use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream, util::Splittable};
 
 use crate::TlsStream;
 
