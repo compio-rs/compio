@@ -94,7 +94,7 @@ pin_project! {
     /// requirements on the inner stream.
     pub struct AsyncReadStream<S> {
         #[pin]
-        inner: SyncStream<S>,
+        inner: SyncStreamReadHalf<S>,
         read_future: Option<PinBoxFuture<io::Result<usize>>>,
         read_waker: Option<Waker>,
         read_uninit_waker: Option<Waker>,
@@ -112,16 +112,14 @@ impl<S> AsyncReadStream<S> {
 
     /// Create [`AsyncReadStream`] with the stream and buffer size.
     pub fn with_capacity(cap: usize, stream: S) -> Self {
-        Self::new_impl(SyncStream::with_limits2(
-            cap,
-            0,
+        Self::new_impl(SyncStreamReadHalf::with_limits(
             cap,
             super::DEFAULT_MAX_BUFFER,
             stream,
         ))
     }
 
-    fn new_impl(inner: SyncStream<S>) -> Self {
+    fn new_impl(inner: SyncStreamReadHalf<S>) -> Self {
         Self {
             inner,
             read_future: None,
@@ -154,7 +152,7 @@ pin_project! {
     /// It doesn't support read operations, making looser requirements on the inner stream.
     pub struct AsyncWriteStream<S> {
         #[pin]
-        inner: SyncStream<S>,
+        inner: SyncStreamWriteHalf<S>,
         write_future: Option<PinBoxFuture<io::Result<usize>>>,
         shutdown_future: Option<PinBoxFuture<io::Result<()>>>,
         write_waker: Option<Waker>,
@@ -173,16 +171,14 @@ impl<S> AsyncWriteStream<S> {
 
     /// Create [`AsyncWriteStream`] with the stream and buffer size.
     pub fn with_capacity(cap: usize, stream: S) -> Self {
-        Self::new_impl(SyncStream::with_limits2(
-            0,
-            cap,
+        Self::new_impl(SyncStreamWriteHalf::with_limits(
             cap,
             super::DEFAULT_MAX_BUFFER,
             stream,
         ))
     }
 
-    fn new_impl(inner: SyncStream<S>) -> Self {
+    fn new_impl(inner: SyncStreamWriteHalf<S>) -> Self {
         Self {
             inner,
             write_future: None,
@@ -614,6 +610,32 @@ impl<S: AsyncWrite + Unpin + 'static> futures_util::AsyncWrite for AsyncWriteStr
 impl<S: Splittable> Debug for AsyncStream<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AsyncStream").finish_non_exhaustive()
+    }
+}
+
+impl<S: Splittable> Splittable for AsyncStream<S> {
+    type ReadHalf = AsyncReadStream<S::ReadHalf>;
+    type WriteHalf = AsyncWriteStream<S::WriteHalf>;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        let read_half = AsyncReadStream {
+            inner: self.read_inner,
+            read_future: self.read_future,
+            read_waker: self.read_waker,
+            read_uninit_waker: self.read_uninit_waker,
+            read_buf_waker: self.read_buf_waker,
+            _p: PhantomPinned,
+        };
+        let write_half = AsyncWriteStream {
+            inner: self.write_inner,
+            write_future: self.write_future,
+            shutdown_future: self.shutdown_future,
+            write_waker: self.write_waker,
+            flush_waker: self.flush_waker,
+            close_waker: self.close_waker,
+            _p: PhantomPinned,
+        };
+        (read_half, write_half)
     }
 }
 
