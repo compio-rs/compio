@@ -12,22 +12,16 @@ use socket2::Socket as Socket2;
 
 use crate::Socket;
 
-#[allow(clippy::large_enum_variant)]
-enum IncomingState {
-    Idle,
-    Accepting(Submit<Accept<SharedFd<Socket2>>>),
-}
-
 pub struct Incoming<'a> {
     listener: &'a Socket,
-    state: IncomingState,
+    state: Option<Submit<Accept<SharedFd<Socket2>>>>,
 }
 
 impl<'a> Incoming<'a> {
     pub fn new(listener: &'a Socket) -> Self {
         Self {
             listener,
-            state: IncomingState::Idle,
+            state: None,
         }
     }
 }
@@ -39,26 +33,26 @@ impl Stream for Incoming<'_> {
         let this = self.get_mut();
         loop {
             match &mut this.state {
-                IncomingState::Idle => {
+                None => {
                     let domain = this.listener.local_addr().map(|addr| addr.domain())?;
                     let ty = this.listener.socket.r#type()?;
                     let protocol = this.listener.socket.protocol()?;
                     let socket = Socket2::new(domain, ty, protocol)?;
                     let op =
                         compio_runtime::submit(Accept::new(this.listener.to_shared_fd(), socket));
-                    this.state = IncomingState::Accepting(op);
+                    this.state = Some(op);
                 }
-                IncomingState::Accepting(op) => {
+                Some(op) => {
                     let BufResult(res, op) = ready!(op.poll_unpin(cx));
                     match res {
                         Ok(_) => {
-                            this.state = IncomingState::Idle;
+                            this.state = None;
                             op.update_context()?;
                             let (accept_sock, _) = op.into_addr()?;
                             return Poll::Ready(Some(Ok(Socket::from_socket2(accept_sock)?)));
                         }
                         Err(e) => {
-                            this.state = IncomingState::Idle;
+                            this.state = None;
                             return Poll::Ready(Some(Err(e)));
                         }
                     }
