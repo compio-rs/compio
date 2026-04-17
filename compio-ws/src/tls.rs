@@ -1,8 +1,8 @@
 //! TLS support for WebSocket connections (native-tls and rustls).
 
-use compio_io::{AsyncRead, AsyncWrite, util::Splittable};
+use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream, util::Splittable};
 use compio_net::TcpStream;
-use compio_tls::{MaybeTlsStream, TlsConnector};
+use compio_tls::{MaybeTlsStream, TlsConnector, TlsStream};
 use tungstenite::{
     Error,
     client::{IntoClientRequest, uri_mode},
@@ -10,7 +10,7 @@ use tungstenite::{
     stream::Mode,
 };
 
-use crate::{Config, WebSocketStream, client_async_with_config_compat};
+use crate::{Config, IntoMaybeTlsStream, WebSocketStream, client_async_with_config};
 
 mod encryption {
     #[cfg(feature = "native-tls")]
@@ -111,19 +111,28 @@ mod encryption {
     }
 }
 
+impl<S: Splittable> IntoMaybeTlsStream<S> for TlsStream<S> {
+    fn into_maybe_tls_stream(self, _: usize, _: usize) -> MaybeTlsStream<S> {
+        MaybeTlsStream::new_tls(self)
+    }
+}
+
 async fn wrap_stream<S>(
     socket: S,
     domain: &str,
     connector: Option<TlsConnector>,
     mode: Mode,
+    cap: usize,
+    max_buffer_size: usize,
 ) -> Result<MaybeTlsStream<S>, Error>
 where
     S: Splittable + 'static,
     S::ReadHalf: AsyncRead + Unpin,
     S::WriteHalf: AsyncWrite + Unpin,
 {
+    let socket = AsyncStream::with_limits(cap, max_buffer_size, socket);
     match mode {
-        Mode::Plain => Ok(MaybeTlsStream::new_plain(socket)),
+        Mode::Plain => Ok(MaybeTlsStream::new_plain_compat(socket)),
         Mode::Tls => {
             let stream = {
                 let connector = if let Some(connector) = connector {
@@ -162,7 +171,10 @@ where
                     }
                 };
 
-                connector.connect(domain, socket).await.map_err(Error::Io)?
+                connector
+                    .connect_compat(domain, socket)
+                    .await
+                    .map_err(Error::Io)?
             };
             Ok(MaybeTlsStream::new_tls(stream))
         }
@@ -174,7 +186,7 @@ where
 pub async fn client_async_tls<R, S>(
     request: R,
     stream: S,
-) -> Result<(WebSocketStream<MaybeTlsStream<S>>, Response), Error>
+) -> Result<(WebSocketStream<S>, Response), Error>
 where
     R: IntoClientRequest,
     S: Splittable + 'static,
@@ -191,7 +203,7 @@ pub async fn client_async_tls_with_config<R, S>(
     stream: S,
     connector: Option<TlsConnector>,
     config: impl Into<Config>,
-) -> Result<(WebSocketStream<MaybeTlsStream<S>>, Response), Error>
+) -> Result<(WebSocketStream<S>, Response), Error>
 where
     R: IntoClientRequest,
     S: Splittable + 'static,
@@ -204,17 +216,22 @@ where
 
     let mode = uri_mode(request.uri())?;
 
-    let stream = wrap_stream(stream, domain, connector, mode).await?;
-    client_async_with_config_compat(request, stream, config).await
+    let config = config.into();
+
+    let stream = wrap_stream(
+        stream,
+        domain,
+        connector,
+        mode,
+        config.buffer_size_base,
+        config.buffer_size_limit,
+    )
+    .await?;
+    client_async_with_config(request, stream, config).await
 }
 
-/// Type alias for a connected stream.
-type ConnectStream = MaybeTlsStream<TcpStream>;
-
 /// Connect to a given URL.
-pub async fn connect_async<R>(
-    request: R,
-) -> Result<(WebSocketStream<ConnectStream>, Response), Error>
+pub async fn connect_async<R>(request: R) -> Result<(WebSocketStream<TcpStream>, Response), Error>
 where
     R: IntoClientRequest,
 {
@@ -225,7 +242,7 @@ where
 pub async fn connect_async_with_config<R>(
     request: R,
     config: impl Into<Config>,
-) -> Result<(WebSocketStream<ConnectStream>, Response), Error>
+) -> Result<(WebSocketStream<TcpStream>, Response), Error>
 where
     R: IntoClientRequest,
 {
@@ -238,7 +255,7 @@ pub async fn connect_async_tls_with_config<R>(
     request: R,
     config: impl Into<Config>,
     connector: Option<TlsConnector>,
-) -> Result<(WebSocketStream<ConnectStream>, Response), Error>
+) -> Result<(WebSocketStream<TcpStream>, Response), Error>
 where
     R: IntoClientRequest,
 {

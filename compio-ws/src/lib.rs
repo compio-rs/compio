@@ -10,7 +10,7 @@
 //! [`tungstenite`]: https://docs.rs/tungstenite
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![allow(unused_features)]
+#![allow(private_bounds)]
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![doc(
@@ -27,6 +27,7 @@ use std::{
 
 use compio_buf::IntoInner;
 use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream, util::Splittable};
+use compio_tls::MaybeTlsStream;
 use futures_util::{Sink, SinkExt, Stream, StreamExt, stream::FusedStream};
 use pin_project_lite::pin_project;
 use tungstenite::{
@@ -155,30 +156,53 @@ impl From<Option<WebSocketConfig>> for Config {
     }
 }
 
+trait IntoMaybeTlsStream<S>
+where
+    S: Splittable,
+{
+    fn into_maybe_tls_stream(self, capacity: usize, max_buffer_size: usize) -> MaybeTlsStream<S>;
+}
+
+impl<S: Splittable> IntoMaybeTlsStream<S> for S {
+    fn into_maybe_tls_stream(self, capacity: usize, max_buffer_size: usize) -> MaybeTlsStream<S> {
+        MaybeTlsStream::new_plain_compat(AsyncStream::with_limits(capacity, max_buffer_size, self))
+    }
+}
+
+impl<S: Splittable> IntoMaybeTlsStream<S> for AsyncStream<S> {
+    fn into_maybe_tls_stream(self, _: usize, _: usize) -> MaybeTlsStream<S> {
+        MaybeTlsStream::new_plain_compat(self)
+    }
+}
+
+impl<S: Splittable> IntoMaybeTlsStream<S> for MaybeTlsStream<S> {
+    fn into_maybe_tls_stream(self, _: usize, _: usize) -> MaybeTlsStream<S> {
+        self
+    }
+}
+
 pin_project! {
     /// A WebSocket stream that works with compio.
     #[derive(Debug)]
-    pub struct WebSocketStream<S> {
+    pub struct WebSocketStream<S: Splittable> {
         #[pin]
-        inner: async_tungstenite::WebSocketStream<S>,
+        inner: async_tungstenite::WebSocketStream<MaybeTlsStream<S>>,
         next_item: Option<Option<Result<Message, WsError>>>,
     }
 }
 
-/// A WebSocket stream with a plain underlying stream.
-pub type WebSocketStreamPlain<S> = WebSocketStream<Pin<Box<AsyncStream<S>>>>;
-
-impl<S> WebSocketStream<S>
+impl<S: Splittable + 'static> WebSocketStream<S>
 where
-    S: futures_util::AsyncRead + futures_util::AsyncWrite + Unpin,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     /// Get a reference to the underlying stream.
-    pub fn get_ref(&self) -> &S {
+    pub fn get_ref(&self) -> &MaybeTlsStream<S> {
         self.inner.get_ref()
     }
 
     /// Get a mutable reference to the underlying stream.
-    pub fn get_mut(&mut self) -> &mut S {
+    pub fn get_mut(&mut self) -> &mut MaybeTlsStream<S> {
         self.inner.get_mut()
     }
 
@@ -188,12 +212,20 @@ where
     /// `disable_nagle` will be ignored since the socket is already connected
     /// and the user can set `nodelay` on the socket directly before calling
     /// this function if needed.
-    pub async fn from_raw_socket(stream: S, role: Role, config: impl Into<Config>) -> Self {
+    pub async fn from_raw_socket<T: IntoMaybeTlsStream<S>>(
+        stream: T,
+        role: Role,
+        config: impl Into<Config>,
+    ) -> Self {
         let config = config.into();
 
         Self::from_inner(
-            async_tungstenite::WebSocketStream::from_raw_socket(stream, role, config.websocket)
-                .await,
+            async_tungstenite::WebSocketStream::from_raw_socket(
+                stream.into_maybe_tls_stream(config.buffer_size_base, config.buffer_size_limit),
+                role,
+                config.websocket,
+            )
+            .await,
         )
     }
 
@@ -203,8 +235,8 @@ where
     /// `disable_nagle` will be ignored since the socket is already connected
     /// and the user can set `nodelay` on the socket directly before calling
     /// this function if needed.
-    pub async fn from_partially_read(
-        stream: S,
+    pub async fn from_partially_read<T: IntoMaybeTlsStream<S>>(
+        stream: T,
         part: Vec<u8>,
         role: Role,
         config: impl Into<Config>,
@@ -213,7 +245,7 @@ where
 
         Self::from_inner(
             async_tungstenite::WebSocketStream::from_partially_read(
-                stream,
+                stream.into_maybe_tls_stream(config.buffer_size_base, config.buffer_size_limit),
                 part,
                 role,
                 config.websocket,
@@ -222,7 +254,7 @@ where
         )
     }
 
-    fn from_inner(inner: async_tungstenite::WebSocketStream<S>) -> Self {
+    fn from_inner(inner: async_tungstenite::WebSocketStream<MaybeTlsStream<S>>) -> Self {
         WebSocketStream {
             inner,
             next_item: None,
@@ -252,17 +284,18 @@ where
     }
 }
 
-impl<S> IntoInner for WebSocketStream<S> {
-    type Inner = S;
+impl<S: Splittable> IntoInner for WebSocketStream<S> {
+    type Inner = MaybeTlsStream<S>;
 
     fn into_inner(self) -> Self::Inner {
         self.inner.into_inner()
     }
 }
 
-impl<S> Sink<Message> for WebSocketStream<S>
+impl<S: Splittable + 'static> Sink<Message> for WebSocketStream<S>
 where
-    S: futures_util::AsyncRead + futures_util::AsyncWrite + Unpin,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     type Error = WsError;
 
@@ -276,7 +309,10 @@ where
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         ready!(self.as_mut().project().inner.poll_flush(cx))?;
-        ready!(Pin::new(self.project().inner.get_mut().get_mut()).poll_flush(cx))?;
+        ready!(futures_util::AsyncWrite::poll_flush(
+            Pin::new(self.project().inner.get_mut().get_mut()),
+            cx
+        ))?;
         Poll::Ready(Ok(()))
     }
 
@@ -285,9 +321,10 @@ where
     }
 }
 
-impl<S> Stream for WebSocketStream<S>
+impl<S: Splittable + 'static> Stream for WebSocketStream<S>
 where
-    S: futures_util::AsyncRead + futures_util::AsyncWrite + Unpin,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     type Item = Result<Message, WsError>;
 
@@ -296,7 +333,10 @@ where
         loop {
             if this.next_item.is_some() {
                 ready!(this.inner.as_mut().poll_flush(cx))?;
-                ready!(Pin::new(this.inner.get_mut().get_mut()).poll_flush(cx))?;
+                ready!(futures_util::AsyncWrite::poll_flush(
+                    Pin::new(this.inner.get_mut().get_mut()),
+                    cx
+                ))?;
                 break Poll::Ready(this.next_item.take().expect("next_item should be Some"));
             } else {
                 let item = ready!(this.inner.as_mut().poll_next(cx));
@@ -306,9 +346,10 @@ where
     }
 }
 
-impl<S> FusedStream for WebSocketStream<S>
+impl<S: Splittable + 'static> FusedStream for WebSocketStream<S>
 where
-    S: futures_util::AsyncRead + futures_util::AsyncWrite + Unpin,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     fn is_terminated(&self) -> bool {
         self.inner.is_terminated()
@@ -325,38 +366,42 @@ where
 /// This is typically used after a socket has been accepted from a
 /// `TcpListener`. That socket is then passed to this function to perform
 /// the server half of accepting a client's websocket connection.
-pub async fn accept_async<S>(stream: S) -> Result<WebSocketStreamPlain<S>, WsError>
+pub async fn accept_async<S, T>(stream: T) -> Result<WebSocketStream<S>, WsError>
 where
     S: Splittable + 'static,
     <S as Splittable>::ReadHalf: AsyncRead + Unpin,
     <S as Splittable>::WriteHalf: AsyncWrite + Unpin,
+    T: IntoMaybeTlsStream<S>,
 {
     accept_hdr_async(stream, NoCallback).await
 }
 
 /// Similar to [`accept_async()`] but user can specify a [`Config`].
-pub async fn accept_async_with_config<S>(
-    stream: S,
+pub async fn accept_async_with_config<S, T>(
+    stream: T,
     config: impl Into<Config>,
-) -> Result<WebSocketStreamPlain<S>, WsError>
+) -> Result<WebSocketStream<S>, WsError>
 where
     S: Splittable + 'static,
     <S as Splittable>::ReadHalf: AsyncRead + Unpin,
     <S as Splittable>::WriteHalf: AsyncWrite + Unpin,
+    T: IntoMaybeTlsStream<S>,
 {
     accept_hdr_with_config_async(stream, NoCallback, config).await
 }
+
 /// Accepts a new WebSocket connection with the provided stream.
 ///
 /// This function does the same as [`accept_async()`] but accepts an extra
 /// callback for header processing. The callback receives headers of the
 /// incoming requests and is able to add extra headers to the reply.
-pub async fn accept_hdr_async<S, C>(
-    stream: S,
+pub async fn accept_hdr_async<S, T, C>(
+    stream: T,
     callback: C,
-) -> Result<WebSocketStreamPlain<S>, WsError>
+) -> Result<WebSocketStream<S>, WsError>
 where
     S: Splittable + 'static,
+    T: IntoMaybeTlsStream<S>,
     C: Callback + Unpin,
     <S as Splittable>::ReadHalf: AsyncRead + Unpin,
     <S as Splittable>::WriteHalf: AsyncWrite + Unpin,
@@ -365,20 +410,21 @@ where
 }
 
 /// Similar to [`accept_hdr_async()`] but user can specify a [`Config`].
-pub async fn accept_hdr_with_config_async<S, C>(
-    stream: S,
+pub async fn accept_hdr_with_config_async<S, T, C>(
+    stream: T,
     callback: C,
     config: impl Into<Config>,
-) -> Result<WebSocketStreamPlain<S>, WsError>
+) -> Result<WebSocketStream<S>, WsError>
 where
     S: Splittable + 'static,
+    T: IntoMaybeTlsStream<S>,
     C: Callback + Unpin,
     <S as Splittable>::ReadHalf: AsyncRead + Unpin,
     <S as Splittable>::WriteHalf: AsyncWrite + Unpin,
 {
     let config = config.into();
     let inner = async_tungstenite::accept_hdr_async_with_config(
-        Box::pin(AsyncStream::new(stream)),
+        stream.into_maybe_tls_stream(config.buffer_size_base, config.buffer_size_limit),
         callback,
         config.websocket,
     )
@@ -399,57 +445,39 @@ where
 ///
 /// This is typically used for clients who have already established, for
 /// example, a TCP connection to the remote server.
-pub async fn client_async<R, S>(
+pub async fn client_async<R, S, T>(
     request: R,
-    stream: S,
-) -> Result<
-    (
-        WebSocketStreamPlain<S>,
-        tungstenite::handshake::client::Response,
-    ),
-    WsError,
->
+    stream: T,
+) -> Result<(WebSocketStream<S>, tungstenite::handshake::client::Response), WsError>
 where
     R: IntoClientRequest + Unpin,
     S: Splittable + 'static,
     <S as Splittable>::ReadHalf: AsyncRead + Unpin,
     <S as Splittable>::WriteHalf: AsyncWrite + Unpin,
+    T: IntoMaybeTlsStream<S>,
 {
     client_async_with_config(request, stream, None).await
 }
 
 /// Similar to [`client_async()`] but user can specify a [`Config`].
-pub async fn client_async_with_config<R, S>(
+pub async fn client_async_with_config<R, S, T>(
     request: R,
-    stream: S,
+    stream: T,
     config: impl Into<Config>,
-) -> Result<
-    (
-        WebSocketStreamPlain<S>,
-        tungstenite::handshake::client::Response,
-    ),
-    WsError,
->
+) -> Result<(WebSocketStream<S>, tungstenite::handshake::client::Response), WsError>
 where
     R: IntoClientRequest + Unpin,
     S: Splittable + 'static,
     <S as Splittable>::ReadHalf: AsyncRead + Unpin,
     <S as Splittable>::WriteHalf: AsyncWrite + Unpin,
-{
-    client_async_with_config_compat(request, Box::pin(AsyncStream::new(stream)), config).await
-}
-
-pub(crate) async fn client_async_with_config_compat<R, S>(
-    request: R,
-    stream: S,
-    config: impl Into<Config>,
-) -> Result<(WebSocketStream<S>, tungstenite::handshake::client::Response), WsError>
-where
-    R: IntoClientRequest + Unpin,
-    S: futures_util::AsyncRead + futures_util::AsyncWrite + Unpin,
+    T: IntoMaybeTlsStream<S>,
 {
     let config = config.into();
-    let (inner, response) =
-        async_tungstenite::client_async_with_config(request, stream, config.websocket).await?;
+    let (inner, response) = async_tungstenite::client_async_with_config(
+        request,
+        stream.into_maybe_tls_stream(config.buffer_size_base, config.buffer_size_limit),
+        config.websocket,
+    )
+    .await?;
     Ok((WebSocketStream::from_inner(inner), response))
 }
