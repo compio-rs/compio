@@ -8,7 +8,6 @@ use std::{
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf};
 use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream, util::Splittable};
-use futures_util::io::{ReadHalf, WriteHalf};
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
@@ -257,106 +256,6 @@ where
 }
 
 impl<S: Splittable + 'static> AsyncWrite for TlsStream<S>
-where
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
-{
-    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let slice = buf.as_init();
-        let res = futures_util::AsyncWriteExt::write(self, slice).await;
-        BufResult(res, buf)
-    }
-
-    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let slices = buf.iter_slice().map(io::IoSlice::new).collect::<Vec<_>>();
-        let res = futures_util::AsyncWriteExt::write_vectored(self, &slices).await;
-        BufResult(res, buf)
-    }
-
-    async fn flush(&mut self) -> io::Result<()> {
-        futures_util::AsyncWriteExt::flush(self).await
-    }
-
-    async fn shutdown(&mut self) -> io::Result<()> {
-        futures_util::AsyncWriteExt::close(self).await
-    }
-}
-
-/// The readable half of [`TlsStream`].
-pub struct TlsStreamReadHalf<S: Splittable>(ReadHalf<TlsStream<S>>);
-
-/// The writable half of [`TlsStream`].
-pub struct TlsStreamWriteHalf<S: Splittable>(WriteHalf<TlsStream<S>>);
-
-impl<S: Splittable + 'static> Splittable for TlsStream<S>
-where
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
-{
-    type ReadHalf = TlsStreamReadHalf<S>;
-    type WriteHalf = TlsStreamWriteHalf<S>;
-
-    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
-        let (r, w) = futures_util::AsyncReadExt::split(self);
-        (TlsStreamReadHalf(r), TlsStreamWriteHalf(w))
-    }
-}
-
-impl<S: Splittable + 'static> futures_util::AsyncRead for TlsStreamReadHalf<S>
-where
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
-{
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.get_mut().0).poll_read(cx, buf)
-    }
-}
-
-impl<S: Splittable + 'static> AsyncRead for TlsStreamReadHalf<S>
-where
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
-{
-    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        read_futures(self, buf).await
-    }
-}
-
-impl<S: Splittable + 'static> futures_util::AsyncWrite for TlsStreamWriteHalf<S>
-where
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
-{
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.get_mut().0).poll_write(cx, buf)
-    }
-
-    fn poll_write_vectored(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        bufs: &[io::IoSlice<'_>],
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.get_mut().0).poll_write_vectored(cx, bufs)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().0).poll_flush(cx)
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().0).poll_close(cx)
-    }
-}
-
-impl<S: Splittable + 'static> AsyncWrite for TlsStreamWriteHalf<S>
 where
     S::ReadHalf: AsyncRead + Unpin,
     S::WriteHalf: AsyncWrite + Unpin,
