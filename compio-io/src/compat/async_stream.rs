@@ -47,25 +47,20 @@ impl<S: Splittable> AsyncStream<S> {
             _p: PhantomPinned,
         }
     }
-}
 
-impl<S> AsyncStream<S>
-where
-    S: Splittable<ReadHalf = S, WriteHalf = S>,
-{
     /// Get the reference of the inner stream.
-    pub fn get_ref(&self) -> &S {
-        self.read_inner.get_ref()
+    pub fn get_ref(&self) -> (&S::ReadHalf, &S::WriteHalf) {
+        (self.read_inner.get_ref(), self.write_inner.get_ref())
     }
 
     /// Returns a mutable reference to the underlying stream.
-    pub fn get_mut(&mut self) -> &mut S {
-        self.read_inner.get_mut()
+    pub fn get_mut(&mut self) -> (&mut S::ReadHalf, &mut S::WriteHalf) {
+        (self.read_inner.get_mut(), self.write_inner.get_mut())
     }
 
     /// Consumes the `AsyncStream`, returning the underlying stream.
-    pub fn into_inner(self) -> S {
-        self.read_inner.into_inner()
+    pub fn into_inner(self) -> (S::ReadHalf, S::WriteHalf) {
+        (self.read_inner.into_inner(), self.write_inner.into_inner())
     }
 }
 
