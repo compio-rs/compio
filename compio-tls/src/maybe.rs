@@ -1,7 +1,6 @@
 use std::{
     borrow::Cow,
     io,
-    mem::MaybeUninit,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -9,7 +8,7 @@ use std::{
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf};
 use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream, util::Splittable};
 
-use crate::TlsStream;
+use crate::{TlsStream, read_futures};
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
@@ -78,24 +77,8 @@ where
     S::ReadHalf: AsyncRead + Unpin,
     S::WriteHalf: AsyncWrite + Unpin,
 {
-    async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
-        let slice = buf.as_uninit();
-        slice.fill(MaybeUninit::new(0));
-        // SAFETY: The memory has been initialized
-        let slice =
-            unsafe { std::slice::from_raw_parts_mut::<u8>(slice.as_mut_ptr().cast(), slice.len()) };
-        let res = futures_util::AsyncReadExt::read(self, slice).await;
-        let res = match res {
-            Ok(len) => {
-                unsafe { buf.advance_to(len) };
-                Ok(len)
-            }
-            // TLS streams may return UnexpectedEof when the connection is closed.
-            // https://docs.rs/rustls/latest/rustls/manual/_03_howto/index.html#unexpected-eof
-            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => Ok(0),
-            _ => res,
-        };
-        BufResult(res, buf)
+    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
+        read_futures(self, buf).await
     }
 }
 
