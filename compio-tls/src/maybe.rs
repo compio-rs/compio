@@ -18,7 +18,7 @@ enum MaybeTlsStreamInner<S: Splittable> {
     Tls(TlsStream<S>),
 }
 
-/// Stream that can be either plain TCP or TLS-encrypted, with ibility for
+/// Stream that can be either plain TCP or TLS-encrypted, with compatibility for
 /// [`futures_util`].
 #[derive(Debug)]
 pub struct MaybeTlsStream<S: Splittable>(MaybeTlsStreamInner<S>);
