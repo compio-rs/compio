@@ -118,7 +118,7 @@ async fn wrap_stream<S>(
     mode: Mode,
 ) -> Result<MaybeTlsStream<S>, Error>
 where
-    S: AsyncRead + AsyncWrite + Splittable + 'static,
+    S: Splittable + 'static,
     S::ReadHalf: AsyncRead + Unpin,
     S::WriteHalf: AsyncWrite + Unpin,
 {
@@ -177,7 +177,7 @@ pub async fn client_async_tls<R, S>(
 ) -> Result<(WebSocketStream<MaybeTlsStream<S>>, Response), Error>
 where
     R: IntoClientRequest,
-    S: AsyncRead + AsyncWrite + Splittable + 'static,
+    S: Splittable + 'static,
     S::ReadHalf: AsyncRead + Unpin,
     S::WriteHalf: AsyncWrite + Unpin,
 {
@@ -194,7 +194,7 @@ pub async fn client_async_tls_with_config<R, S>(
 ) -> Result<(WebSocketStream<MaybeTlsStream<S>>, Response), Error>
 where
     R: IntoClientRequest,
-    S: AsyncRead + AsyncWrite + Splittable + 'static,
+    S: Splittable + 'static,
     S::ReadHalf: AsyncRead + Unpin,
     S::WriteHalf: AsyncWrite + Unpin,
 {
