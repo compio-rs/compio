@@ -1,5 +1,6 @@
 use std::os::windows::io::AsRawSocket;
 
+use rustix::net::RecvFlags;
 use windows_sys::Win32::{
     Networking::WinSock::{
         LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS, LPFN_WSARECVMSG,
@@ -11,10 +12,7 @@ use windows_sys::Win32::{
     System::IO::OVERLAPPED,
 };
 
-use crate::{
-    OpCode, OpType,
-    sys::{op::*, prelude::*},
-};
+use crate::{OpCode, OpType, sys::op::*};
 
 static ACCEPT_EX: OnceLock<LPFN_ACCEPTEX> = OnceLock::new();
 static GET_ADDRS: OnceLock<LPFN_GETACCEPTEXSOCKADDRS> = OnceLock::new();
@@ -24,8 +22,6 @@ const ACCEPT_BUFFER_SIZE: usize = ACCEPT_ADDR_BUFFER_SIZE * 2;
 
 unsafe impl OpCode for CloseSocket {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Blocking
@@ -116,8 +112,6 @@ impl<S: AsFd> Accept<S> {
 unsafe impl<S: AsFd> OpCode for Accept<S> {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let accept_fn = ACCEPT_EX
             .get_or_try_init(|| get_wsa_fn(self.fd.as_fd().as_raw_fd(), WSAID_ACCEPTEX))?
@@ -167,8 +161,6 @@ impl<S: AsFd> Connect<S> {
 unsafe impl<S: AsFd> OpCode for Connect<S> {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let connect_fn = CONNECT_EX
             .get_or_try_init(|| get_wsa_fn(self.fd.as_fd().as_raw_fd(), WSAID_CONNECTEX))?
@@ -216,7 +208,7 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
         optr: *mut OVERLAPPED,
     ) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();
-        let mut flags = self.flags as _;
+        let mut flags = self.flags.bits() as _;
         let mut received = 0;
         let res = unsafe {
             WSARecv(
@@ -256,7 +248,7 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
         optr: *mut OVERLAPPED,
     ) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();
-        let mut flags = self.flags as _;
+        let mut flags = self.flags.bits() as _;
         let mut received = 0;
         let res = unsafe {
             WSARecv(
@@ -302,7 +294,7 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
                 (&raw const control.slice).cast(),
                 1,
                 &mut sent,
-                self.flags as _,
+                self.flags.bits() as _,
                 optr,
                 None,
             )
@@ -340,7 +332,7 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
                 control.slices.as_ptr() as _,
                 control.slices.len() as _,
                 &mut sent,
-                self.flags as _,
+                self.flags.bits() as _,
                 optr,
                 None,
             )
@@ -372,7 +364,7 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
         optr: *mut OVERLAPPED,
     ) -> Poll<io::Result<usize>> {
         let fd = self.header.fd.as_fd().as_raw_fd();
-        let mut flags = self.header.flags as _;
+        let mut flags = self.header.flags.bits() as _;
         let mut received = 0;
         let res = unsafe {
             WSARecvFrom(
@@ -382,7 +374,7 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
                 &mut received,
                 &mut flags,
                 &raw mut self.header.addr as *mut SOCKADDR,
-                &raw mut self.header.name_len,
+                &raw mut self.header.addr_len,
                 optr,
                 None,
             )
@@ -414,7 +406,7 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
         optr: *mut OVERLAPPED,
     ) -> Poll<io::Result<usize>> {
         let fd = self.header.fd.as_fd().as_raw_fd();
-        let mut flags = self.header.flags as _;
+        let mut flags = self.header.flags.bits() as _;
         let mut received = 0;
         let res = unsafe {
             WSARecvFrom(
@@ -424,7 +416,7 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
                 &mut received,
                 &mut flags,
                 &raw mut self.header.addr as *mut SOCKADDR,
-                &raw mut self.header.name_len,
+                &raw mut self.header.addr_len,
                 optr,
                 None,
             )
@@ -462,7 +454,7 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
                 (&raw const control.slice).cast(),
                 1,
                 &mut sent,
-                self.header.flags as _,
+                self.header.flags.bits() as _,
                 self.header.addr.as_ptr().cast(),
                 self.header.addr.len(),
                 optr,
@@ -502,7 +494,7 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
                 control.slices.as_ptr() as _,
                 control.slices.len() as _,
                 &mut sent,
-                self.header.flags as _,
+                self.header.flags.bits() as _,
                 self.header.addr.as_ptr().cast(),
                 self.header.addr.len(),
                 optr,
@@ -532,9 +524,9 @@ unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, 
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
         ctrl.slices = self.buffer.sys_slices_mut();
-        ctrl.msg.dwFlags = self.flags as _;
-        ctrl.msg.name = &raw mut self.addr as _;
-        ctrl.msg.namelen = self.addr.size_of() as _;
+        ctrl.msg.dwFlags = self.header.flags.bits() as _;
+        ctrl.msg.name = &raw mut self.header.addr as _;
+        ctrl.msg.namelen = self.header.addr.size_of() as _;
         ctrl.msg.lpBuffers = ctrl.slices.as_mut_ptr() as _;
         ctrl.msg.dwBufferCount = ctrl.slices.len() as _;
         ctrl.msg.Control = self.control.sys_slice_mut().into_inner();
@@ -546,7 +538,7 @@ unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, 
         optr: *mut OVERLAPPED,
     ) -> Poll<io::Result<usize>> {
         let recvmsg_fn = WSA_RECVMSG
-            .get_or_try_init(|| get_wsa_fn(self.fd.as_fd().as_raw_fd(), WSAID_WSARECVMSG))?
+            .get_or_try_init(|| get_wsa_fn(self.header.fd.as_fd().as_raw_fd(), WSAID_WSARECVMSG))?
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::Unsupported, "cannot retrieve WSARecvMsg")
             })?;
@@ -554,7 +546,7 @@ unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, 
         let mut received = 0;
         let res = unsafe {
             recvmsg_fn(
-                self.fd.as_fd().as_raw_fd() as _,
+                self.header.fd.as_fd().as_raw_fd() as _,
                 &raw mut control.msg,
                 &mut received,
                 optr,
@@ -565,7 +557,7 @@ unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, 
     }
 
     fn cancel(&mut self, _: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
-        cancel(self.fd.as_fd().as_raw_fd(), optr)
+        cancel(self.header.fd.as_fd().as_raw_fd(), optr)
     }
 
     unsafe fn set_result(
@@ -574,8 +566,8 @@ unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, 
         _: &io::Result<usize>,
         _: &crate::Extra,
     ) {
-        self.flags = control.msg.dwFlags as i32;
-        self.name_len = control.msg.namelen as socklen_t;
+        self.header.flags = RecvFlags::from_bits_retain(control.msg.dwFlags);
+        self.header.addr_len = control.msg.namelen as socklen_t;
         self.control_len = control.msg.Control.len as _;
     }
 }
@@ -618,7 +610,7 @@ unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
             WSASendMsg(
                 self.fd.as_fd().as_raw_fd() as _,
                 &raw mut control.msg,
-                self.flags as _,
+                self.flags.bits() as _,
                 &mut sent,
                 optr,
                 None,

@@ -2,7 +2,7 @@ use std::{io, os::fd::AsFd, path::Path};
 
 #[cfg(dirfd)]
 use compio_driver::ToSharedFd;
-use compio_driver::op::{CreateDir, CurrentDir, HardLink, Rename, Symlink, Unlink};
+use compio_driver::op::{CreateDir, CurrentDir, HardLink, Mode, Rename, Symlink, Unlink};
 
 #[cfg(dirfd)]
 use crate::File;
@@ -48,16 +48,18 @@ pub async fn hard_link(original: impl AsRef<Path>, link: impl AsRef<Path>) -> io
 }
 
 pub struct DirBuilder {
-    mode: u32,
+    mode: Mode,
 }
 
 impl DirBuilder {
     pub fn new() -> Self {
-        Self { mode: 0o777 }
+        Self {
+            mode: Mode::from_bits_retain(0o777),
+        }
     }
 
     pub fn mode(&mut self, mode: u32) {
-        self.mode = mode;
+        self.mode = Mode::from_bits_retain(mode as _);
     }
 
     async fn create_impl(&self, dir: impl AsFd + 'static, path: &Path) -> io::Result<()> {

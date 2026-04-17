@@ -1,3 +1,5 @@
+use rustix::event::{EventfdFlags, eventfd};
+
 use super::*;
 
 #[derive(Debug)]
@@ -8,37 +10,33 @@ pub(super) struct Notifier {
 impl Notifier {
     /// Create a new notifier.
     pub fn new() -> io::Result<Self> {
-        let fd = syscall!(libc::eventfd(0, libc::EFD_CLOEXEC | libc::EFD_NONBLOCK))?;
-        let fd = unsafe { OwnedFd::from_raw_fd(fd) };
+        let fd = eventfd(0, EventfdFlags::CLOEXEC | EventfdFlags::NONBLOCK)?;
+
         Ok(Self {
             notify: Arc::new(Notify::new(fd)),
         })
     }
 
     pub fn clear(&self) -> io::Result<()> {
-        loop {
-            let mut buffer = [0u64];
-            let res = syscall!(libc::read(
-                self.as_raw_fd(),
-                buffer.as_mut_ptr().cast(),
-                std::mem::size_of::<u64>()
-            ));
-            match res {
-                Ok(len) => {
-                    debug_assert_eq!(len, std::mem::size_of::<u64>() as _);
-                    break Ok(());
-                }
-                // Clear the next time:)
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => break Ok(()),
-                // Just like read_exact
-                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-                Err(e) => break Err(e),
-            }
-        }
+        const LEN: usize = std::mem::size_of::<u64>();
+
+        let mut buffer = [0u8; LEN];
+
+        let res = poll_io(|| rustix::io::read(self, &mut buffer))?;
+
+        debug_assert!(matches!(res, Poll::Pending | Poll::Ready(LEN)));
+
+        Ok(())
     }
 
     pub fn waker(&self) -> Waker {
         Waker::from(self.notify.clone())
+    }
+}
+
+impl AsFd for Notifier {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.notify.fd.as_fd()
     }
 }
 
@@ -61,12 +59,8 @@ impl Notify {
 
     /// Notify the inner driver.
     pub fn notify(&self) -> io::Result<()> {
-        let data = 1u64;
-        syscall!(libc::write(
-            self.fd.as_raw_fd(),
-            &data as *const _ as *const _,
-            std::mem::size_of::<u64>(),
-        ))?;
+        rustix::io::write(&self.fd, &u64::to_be_bytes(1))?;
+
         Ok(())
     }
 }

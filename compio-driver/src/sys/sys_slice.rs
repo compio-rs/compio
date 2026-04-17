@@ -1,5 +1,10 @@
 #![allow(dead_code)]
 
+use std::{
+    io::{IoSlice, IoSliceMut},
+    slice,
+};
+
 use compio_buf::{IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 
 cfg_if::cfg_if! {
@@ -131,3 +136,13 @@ pub(crate) trait IoVectoredBufMutExt: IoVectoredBufMut {
 }
 
 impl<T: IoVectoredBufMut + ?Sized> IoVectoredBufMutExt for T {}
+
+pub fn io_slice(slices: &[SysSlice]) -> &[IoSlice<'_>] {
+    // SAFETY: SysSlice is defined exactly the same as IoSlice
+    unsafe { slice::from_raw_parts(slices.as_ptr().cast(), slices.len()) }
+}
+
+pub fn io_slice_mut(slices: &mut [SysSlice]) -> &mut [IoSliceMut<'_>] {
+    // SAFETY: SysSlice is defined exactly the same as IoSliceMut
+    unsafe { slice::from_raw_parts_mut(slices.as_mut_ptr().cast(), slices.len()) }
+}

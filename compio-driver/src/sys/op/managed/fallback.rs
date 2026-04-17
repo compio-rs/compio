@@ -1,6 +1,7 @@
 use std::io;
 
 use compio_buf::{IntoInner, IoBuf, IoBufMut, SetLen};
+use rustix::net::RecvFlags;
 use socket2::SockAddr;
 
 use crate::{
@@ -63,7 +64,7 @@ pub struct RecvManaged<S> {
 
 impl<S> RecvManaged<S> {
     /// Create [`RecvManaged`].
-    pub fn new(fd: S, pool: &BufferPool, len: usize, flags: i32) -> io::Result<Self> {
+    pub fn new(fd: S, pool: &BufferPool, len: usize, flags: RecvFlags) -> io::Result<Self> {
         Ok(Self {
             op: Recv::new(fd, pool.pop()?.with_capacity(len), flags),
         })
@@ -85,7 +86,7 @@ pub struct RecvFromManaged<S: AsFd> {
 
 impl<S: AsFd> RecvFromManaged<S> {
     /// Create [`RecvFromManaged`].
-    pub fn new(fd: S, pool: &BufferPool, len: usize, flags: i32) -> io::Result<Self> {
+    pub fn new(fd: S, pool: &BufferPool, len: usize, flags: RecvFlags) -> io::Result<Self> {
         Ok(Self {
             op: RecvFrom::new(fd, pool.pop()?.with_capacity(len), flags),
         })
@@ -107,7 +108,13 @@ pub struct RecvMsgManaged<C: IoBufMut, S: AsFd> {
 
 impl<C: IoBufMut, S: AsFd> RecvMsgManaged<C, S> {
     /// Create [`RecvMsgManaged`].
-    pub fn new(fd: S, pool: &BufferPool, len: usize, control: C, flags: i32) -> io::Result<Self> {
+    pub fn new(
+        fd: S,
+        pool: &BufferPool,
+        len: usize,
+        control: C,
+        flags: RecvFlags,
+    ) -> io::Result<Self> {
         Ok(Self {
             op: RecvMsg::new(fd, [pool.pop()?.with_capacity(len)], control, flags),
         })
@@ -169,7 +176,7 @@ pub struct RecvFromMulti<S: AsFd> {
 
 impl<S: AsFd> RecvFromMulti<S> {
     /// Create [`RecvFromMulti`].
-    pub fn new(fd: S, pool: &BufferPool, flags: i32) -> io::Result<Self> {
+    pub fn new(fd: S, pool: &BufferPool, flags: RecvFlags) -> io::Result<Self> {
         Ok(Self {
             op: RecvFromManaged::new(fd, pool, 0, flags)?,
             len: 0,
@@ -233,7 +240,7 @@ pub struct RecvMsgMulti<S: AsFd> {
 
 impl<S: AsFd> RecvMsgMulti<S> {
     /// Create [`RecvMsgMulti`].
-    pub fn new(fd: S, pool: &BufferPool, control_len: usize, flags: i32) -> io::Result<Self> {
+    pub fn new(fd: S, pool: &BufferPool, control_len: usize, flags: RecvFlags) -> io::Result<Self> {
         Ok(Self {
             op: RecvMsgManaged::new(fd, pool, 0, pool.pop()?.with_capacity(control_len), flags)?,
             len: 0,

@@ -54,7 +54,7 @@ pub struct Splice<S1, S2> {
     pub(crate) fd_out: S2,
     pub(crate) offset_out: i64,
     pub(crate) len: usize,
-    pub(crate) flags: u32,
+    pub(crate) flags: rustix::pipe::SpliceFlags,
 }
 
 #[cfg(linux_all)]
@@ -70,7 +70,7 @@ impl<S1, S2> Splice<S1, S2> {
         fd_out: S2,
         offset_out: i64,
         len: usize,
-        flags: u32,
+        flags: rustix::pipe::SpliceFlags,
     ) -> Self {
         Self {
             fd_in,
@@ -80,6 +80,25 @@ impl<S1, S2> Splice<S1, S2> {
             len,
             flags,
         }
+    }
+
+    pub(crate) fn call(&self, _: &mut ()) -> io::Result<usize>
+    where
+        S1: AsFd,
+        S2: AsFd,
+    {
+        let off_in = self.offset_in;
+        let off_out = self.offset_out;
+
+        rustix::pipe::splice(
+            &self.fd_in,
+            (off_in >= 0).then_some(&mut (off_in as u64)),
+            &self.fd_out,
+            (off_out >= 0).then_some(&mut (off_out as u64)),
+            self.len,
+            self.flags,
+        )
+        .map_err(Into::into)
     }
 }
 

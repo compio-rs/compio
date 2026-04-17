@@ -1,11 +1,15 @@
 //! Unix pipe types.
 
-use std::{future::Future, io, path::Path};
+use std::{future::Future, io, os::fd::AsFd, path::Path};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_driver::{AsRawFd, BufferRef, impl_raw_fd, op::Pipe, syscall};
+use compio_driver::{
+    BufferRef, impl_raw_fd,
+    op::{OFlags, Pipe},
+};
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncReadMulti, AsyncWrite};
 use futures_util::Stream;
+use rustix::fs::{fcntl_getfl, fcntl_setfl};
 
 use crate::File;
 
@@ -537,13 +541,12 @@ async fn is_fifo(file: &File) -> io::Result<bool> {
 }
 
 /// Sets file's flags with O_NONBLOCK by fcntl.
-fn set_nonblocking(file: &impl AsRawFd) -> io::Result<()> {
+fn set_nonblocking(file: &impl AsFd) -> io::Result<()> {
     if compio_runtime::Runtime::with_current(|r| r.driver_type()).is_polling() {
-        let fd = file.as_raw_fd();
-        let current_flags = syscall!(libc::fcntl(fd, libc::F_GETFL))?;
-        let flags = current_flags | libc::O_NONBLOCK;
+        let current_flags = fcntl_getfl(file)?;
+        let flags = current_flags | OFlags::NONBLOCK;
         if flags != current_flags {
-            syscall!(libc::fcntl(fd, libc::F_SETFL, flags))?;
+            fcntl_setfl(file, flags)?;
         }
     }
     Ok(())

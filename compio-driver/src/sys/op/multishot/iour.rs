@@ -1,9 +1,6 @@
 use io_uring::{opcode, types::Fd};
 
-use crate::{
-    IourOpCode as OpCode, OpEntry,
-    sys::{op::*, prelude::*},
-};
+use crate::{IourOpCode as OpCode, OpEntry, sys::op::*};
 
 /// Accept multiple connections.
 pub struct AcceptMulti<S> {

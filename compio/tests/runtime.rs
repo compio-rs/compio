@@ -189,6 +189,9 @@ async fn poll_once(future: impl std::future::Future) {
 fn unix_pair() -> io::Result<(UnixStream, UnixStream)> {
     let (a, b) = std::os::unix::net::UnixStream::pair()?;
 
+    a.set_nonblocking(true)?;
+    b.set_nonblocking(true)?;
+
     Ok((UnixStream::from_std(a)?, UnixStream::from_std(b)?))
 }
 

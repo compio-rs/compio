@@ -1,15 +1,12 @@
 use io_uring::{opcode, types::Fd};
 
-use crate::{
-    IourOpCode as OpCode, OpEntry,
-    sys::{op::*, prelude::*},
-};
+use crate::{IourOpCode as OpCode, OpEntry, sys::op::*};
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
-    type Control = ReadVectoredAtControl;
+    type Control = VectoredControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
-        self.create_control(ctrl)
+        ctrl.slices = self.buffer.sys_slices();
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
@@ -27,8 +24,6 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
 unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let slice = self.buffer.as_init();
         opcode::Write::new(
@@ -43,10 +38,10 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
-    type Control = WriteVectoredAtControl;
+    type Control = VectoredControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
-        self.create_control(ctrl)
+        ctrl.slices = self.buffer.sys_slices();
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
@@ -64,8 +59,6 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectoredAt<T, S> {
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let fd = self.fd.as_fd().as_raw_fd();
         let slice = self.buffer.sys_slice_mut();
@@ -82,8 +75,6 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let fd = Fd(self.fd.as_fd().as_raw_fd());
         let slice = self.buffer.sys_slice_mut();
@@ -99,10 +90,10 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
 }
 
 unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
-    type Control = ReadVectoredControl;
+    type Control = VectoredControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
-        self.create_control(ctrl)
+        ctrl.slices = self.buffer.sys_slices();
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
@@ -119,8 +110,6 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
 unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let slice = self.buffer.as_init();
         opcode::Write::new(
@@ -134,10 +123,10 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
 }
 
 unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
-    type Control = WriteVectoredControl;
+    type Control = VectoredControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
-        self.create_control(ctrl)
+        ctrl.slices = self.buffer.sys_slices();
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
@@ -154,8 +143,6 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
 unsafe impl<S: AsFd> OpCode for PollOnce<S> {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let flags = match self.interest {
             Interest::Readable => libc::POLLIN,
@@ -170,8 +157,6 @@ unsafe impl<S: AsFd> OpCode for PollOnce<S> {
 unsafe impl OpCode for Pipe {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         opcode::Pipe::new(self.fds.as_mut_ptr().cast())
             .flags(libc::O_CLOEXEC as _)
@@ -180,6 +165,6 @@ unsafe impl OpCode for Pipe {
     }
 
     fn call_blocking(&mut self, _: &mut Self::Control) -> io::Result<usize> {
-        syscall!(libc::pipe2(self.fds.as_mut_ptr().cast(), libc::O_CLOEXEC)).map(|res| res as _)
+        self.call()
     }
 }

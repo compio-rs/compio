@@ -8,8 +8,6 @@ where
 {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
         OpEntry::Blocking
     }
@@ -32,8 +30,6 @@ where
     F: (FnOnce(&S) -> BufResult<usize, D>) + std::marker::Send + 'static,
 {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
         OpEntry::Blocking
@@ -58,8 +54,6 @@ where
     F: (FnOnce(&S1, &S2) -> BufResult<usize, D>) + std::marker::Send + 'static,
 {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
         OpEntry::Blocking

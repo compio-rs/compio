@@ -3,14 +3,10 @@
 use std::os::fd::OwnedFd;
 
 use compio_buf::{BufResult, IntoInner};
-#[cfg(linux_all)]
-use compio_driver::op::Splice;
 use compio_driver::{
     AsRawFd, OpCode, Proactor, PushEntry, SharedFd,
     op::{Pipe, Read, Write},
 };
-#[cfg(linux_all)]
-use libc::SPLICE_F_NONBLOCK;
 
 #[cfg(not(linux_all))]
 mod splice_impl {
@@ -22,25 +18,14 @@ mod splice_impl {
 
     use compio_driver::{Decision, OpCode, OpType, WaitArg, syscall};
 
-    pub const SPLICE_F_NONBLOCK: u32 = 0;
-
     pub struct Splice<S1, S2> {
         pub(crate) fd_in: S1,
         pub(crate) fd_out: S2,
         pub(crate) len: usize,
     }
 
-    impl<S1, S2> Splice<S1, S2> {
-        pub fn new(
-            fd_in: S1,
-            _offset_in: i64,
-            fd_out: S2,
-            _offset_out: i64,
-            len: usize,
-            _flags: u32,
-        ) -> Self {
-            Self { fd_in, fd_out, len }
-        }
+    pub fn splice<S1, S2>(fd_in: S1, fd_out: S2, len: usize) -> Splice<S1, S2> {
+        Splice { fd_in, fd_out, len }
     }
 
     unsafe impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
@@ -72,20 +57,23 @@ mod splice_impl {
                 )
             ))?;
             // Cannot return pending here because the data has been read already.
-            Poll::Ready(
-                syscall!(libc::write(
-                    self.fd_out.as_fd().as_raw_fd(),
-                    buffer.as_ptr().cast(),
-                    buffer.len()
-                ))
-                .map(|n| n as usize),
-            )
+            Poll::Ready(syscall!(libc::write(
+                self.fd_out.as_fd().as_raw_fd(),
+                buffer.as_ptr().cast(),
+                buffer.len()
+            )))
         }
     }
 }
 
-#[cfg(not(linux_all))]
-use splice_impl::{SPLICE_F_NONBLOCK, Splice};
+#[cfg(linux_all)]
+mod splice_impl {
+    use compio_driver::op::{Splice, SpliceFlags};
+
+    pub fn splice<S1, S2>(fd_in: S1, fd_out: S2, len: usize) -> Splice<S1, S2> {
+        Splice::new(fd_in, -1, fd_out, -1, len, SpliceFlags::NONBLOCK)
+    }
+}
 
 fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult<usize, O> {
     match driver.push(op) {
@@ -122,14 +110,7 @@ fn splice() {
 
     let write_op = Write::new(SharedFd::new(tx), b"hello world");
     let read_op = Read::new(SharedFd::new(rx1), Vec::with_capacity(11));
-    let splice_op = Splice::new(
-        SharedFd::new(rx),
-        -1,
-        SharedFd::new(tx1),
-        -1,
-        11,
-        SPLICE_F_NONBLOCK,
-    );
+    let splice_op = splice_impl::splice(SharedFd::new(rx), SharedFd::new(tx1), 11);
 
     push_and_wait(&mut driver, write_op).unwrap();
     push_and_wait(&mut driver, splice_op).unwrap();
