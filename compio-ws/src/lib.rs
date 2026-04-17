@@ -27,7 +27,7 @@ use std::{
 
 use compio_buf::IntoInner;
 use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream, util::Splittable};
-use compio_tls::MaybeTlsStream;
+use compio_tls::{MaybeTlsStream, TlsStream};
 use futures_util::{Sink, SinkExt, Stream, StreamExt, stream::FusedStream};
 use pin_project_lite::pin_project;
 use tungstenite::{
@@ -37,7 +37,9 @@ use tungstenite::{
     protocol::{CloseFrame, Role, WebSocketConfig},
 };
 
+#[cfg(feature = "tls")]
 mod tls;
+#[cfg(feature = "tls")]
 pub use tls::*;
 pub use tungstenite;
 
@@ -178,6 +180,12 @@ impl<S: Splittable> IntoMaybeTlsStream<S> for AsyncStream<S> {
 impl<S: Splittable> IntoMaybeTlsStream<S> for MaybeTlsStream<S> {
     fn into_maybe_tls_stream(self, _: usize, _: usize) -> MaybeTlsStream<S> {
         self
+    }
+}
+
+impl<S: Splittable> IntoMaybeTlsStream<S> for TlsStream<S> {
+    fn into_maybe_tls_stream(self, _: usize, _: usize) -> MaybeTlsStream<S> {
+        MaybeTlsStream::new_tls(self)
     }
 }
 

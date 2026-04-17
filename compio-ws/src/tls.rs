@@ -2,7 +2,7 @@
 
 use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream, util::Splittable};
 use compio_net::TcpStream;
-use compio_tls::{MaybeTlsStream, TlsConnector, TlsStream};
+use compio_tls::{MaybeTlsStream, TlsConnector};
 use tungstenite::{
     Error,
     client::{IntoClientRequest, uri_mode},
@@ -10,7 +10,7 @@ use tungstenite::{
     stream::Mode,
 };
 
-use crate::{Config, IntoMaybeTlsStream, WebSocketStream, client_async_with_config};
+use crate::{Config, WebSocketStream, client_async_with_config};
 
 mod encryption {
     #[cfg(feature = "native-tls")]
@@ -108,12 +108,6 @@ mod encryption {
                 Ok(TlsConnector::from(config))
             }
         }
-    }
-}
-
-impl<S: Splittable> IntoMaybeTlsStream<S> for TlsStream<S> {
-    fn into_maybe_tls_stream(self, _: usize, _: usize) -> MaybeTlsStream<S> {
-        MaybeTlsStream::new_tls(self)
     }
 }
 

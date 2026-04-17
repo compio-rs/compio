@@ -16,7 +16,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 compio-buf = { workspace = true }
 compio-io = { workspace = true, features = ["compat"] }
-compio-net = { workspace = true }
+compio-net = { workspace = true, optional = true }
 compio-tls = { workspace = true, default-features = false }
 compio-log = { workspace = true }
 
@@ -33,6 +33,7 @@ pin-project-lite = { workspace = true }
 [dev-dependencies]
 compio-macros = { workspace = true }
 compio-runtime = { workspace = true }
+compio-net = { workspace = true }
 
 futures-channel = { workspace = true }
 rustls-pemfile = "2.0"
@@ -40,10 +41,19 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [features]
 default = []
-native-tls = ["compio-tls/native-tls", "tungstenite/native-tls"]
-native-tls-vendored = ["compio-tls/native-tls-vendored"]
-rustls = ["compio-tls/rustls", "tungstenite/__rustls-tls"]
+tls = ["dep:compio-net"]
+native-tls = ["tls", "compio-tls/native-tls", "tungstenite/native-tls"]
+native-tls-vendored = ["native-tls", "compio-tls/native-tls-vendored"]
+rustls = ["tls", "compio-tls/rustls", "tungstenite/__rustls-tls"]
 rustls-platform-verifier = ["rustls", "dep:rustls-platform-verifier"]
 rustls-native-certs = ["rustls", "dep:rustls-native-certs"]
 webpki-roots = ["rustls", "dep:webpki-roots"]
-ring = ["compio-tls/ring"]
+ring = ["rustls", "compio-tls/ring"]
+
+[[example]]
+name = "client_tls"
+required-features = ["tls"]
+
+[[example]]
+name = "echo_server_tls"
+required-features = ["tls"]
