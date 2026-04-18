@@ -286,10 +286,11 @@ impl<S: AsyncRead + Unpin + 'static> AsyncReadStream<S> {
             this.read_uninit_waker.as_ref(),
             this.read_buf_waker.as_ref(),
         ]);
-        let waker = arr.as_waker();
-        let cx = &mut Context::from_waker(&waker);
-        let res = poll_future!(this.read_future, cx, inner.fill_read_buf());
-        Poll::Ready(res)
+        arr.with(|waker| {
+            let cx = &mut Context::from_waker(waker);
+            let res = poll_future!(this.read_future, cx, inner.fill_read_buf());
+            Poll::Ready(res)
+        })
     }
 }
 
@@ -387,10 +388,11 @@ impl<S: AsyncWrite + Unpin + 'static> AsyncWriteStream<S> {
             this.flush_waker.as_ref(),
             this.close_waker.as_ref(),
         ]);
-        let waker = arr.as_waker();
-        let cx = &mut Context::from_waker(&waker);
-        let res = poll_future!(this.write_future, cx, inner.flush_write_buf());
-        Poll::Ready(res)
+        arr.with(|waker| {
+            let cx = &mut Context::from_waker(waker);
+            let res = poll_future!(this.write_future, cx, inner.flush_write_buf());
+            Poll::Ready(res)
+        })
     }
 
     fn poll_close_impl(self: Pin<&mut Self>) -> Poll<io::Result<()>> {
@@ -404,10 +406,11 @@ impl<S: AsyncWrite + Unpin + 'static> AsyncWriteStream<S> {
             this.flush_waker.as_ref(),
             this.close_waker.as_ref(),
         ]);
-        let waker = arr.as_waker();
-        let cx = &mut Context::from_waker(&waker);
-        let res = poll_future!(this.shutdown_future, cx, inner.get_mut().shutdown());
-        Poll::Ready(res)
+        arr.with(|waker| {
+            let cx = &mut Context::from_waker(waker);
+            let res = poll_future!(this.shutdown_future, cx, inner.get_mut().shutdown());
+            Poll::Ready(res)
+        })
     }
 }
 

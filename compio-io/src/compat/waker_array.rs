@@ -14,13 +14,12 @@ impl<'a, const N: usize> WakerArrayRef<'a, N> {
         Self(wakers)
     }
 
-    pub fn as_waker(&self) -> Waker {
-        unsafe {
-            Waker::from_raw(RawWaker::new(
-                self as *const Self as *const (),
-                Self::VTABLE,
-            ))
-        }
+    pub fn with<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&Waker) -> R,
+    {
+        let waker = unsafe { Waker::new(self as *const Self as *const (), Self::VTABLE) };
+        f(&waker)
     }
 
     fn wake_impl(&self) {
