@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0](https://github.com/compio-rs/compio/compare/compio-runtime-v0.11.0...compio-runtime-v0.12.0) - 2026-04-18
+
+### Added
+
+- *(net)* multi & managed for recvfrom & recvmsg ([#838](https://github.com/compio-rs/compio/pull/838))
+- *(runtime,fs,net)* high-level multishot ([#830](https://github.com/compio-rs/compio/pull/830))
+- *(runtime)* [**breaking**] waker-based future combinator ([#825](https://github.com/compio-rs/compio/pull/825))
+- [**breaking**] compio-executor ([#790](https://github.com/compio-rs/compio/pull/790))
+- *(runtime)* use published send-wrapper ([#778](https://github.com/compio-rs/compio/pull/778))
+- *(runtime)* `submit_multi` ([#743](https://github.com/compio-rs/compio/pull/743))
+- *(driver)* make stub & iocp driver non-send and test ([#728](https://github.com/compio-rs/compio/pull/728))
+- *(driver)* make Runtime::submit public ([#722](https://github.com/compio-rs/compio/pull/722))
+- *(driver)* add register_files/unregister_files for io_uring fixed-file ops ([#718](https://github.com/compio-rs/compio/pull/718))
+- *(runtime)* [**breaking**] remove event ([#707](https://github.com/compio-rs/compio/pull/707))
+- *(runtime)* cancel & future combinator ([#665](https://github.com/compio-rs/compio/pull/665))
+
+### Changed
+
+- *(driver)* require Default for Control ([#859](https://github.com/compio-rs/compio/pull/859))
+- *(executor)* [**breaking**] v3 ([#840](https://github.com/compio-rs/compio/pull/840))
+- [**breaking**] rename all "canceled" to "cancelled" ([#826](https://github.com/compio-rs/compio/pull/826))
+- [**breaking**] buffer pool & managed IO ([#820](https://github.com/compio-rs/compio/pull/820))
+- *(driver)* get rid of pin ([#758](https://github.com/compio-rs/compio/pull/758))
+- *(driver)* [**breaking**] make update_waker take &Key ([#742](https://github.com/compio-rs/compio/pull/742))
+- *(runtime)* make `poll_task_with_extra` consistent ([#736](https://github.com/compio-rs/compio/pull/736))
+- [**breaking**] move {Async,Poll}Fd to runtime ([#662](https://github.com/compio-rs/compio/pull/662))
+
+### Fixed
+
+- *(runtime)* remove generic for ext waker ([#839](https://github.com/compio-rs/compio/pull/839))
+- *(runtime)* cleanup dependencies ([#793](https://github.com/compio-rs/compio/pull/793))
+- unused_features ([#739](https://github.com/compio-rs/compio/pull/739))
+- *(runtime)* cfg-if not available without event ([#706](https://github.com/compio-rs/compio/pull/706))
+
+### Other
+
+- remove "authors" field in metadata ([#711](https://github.com/compio-rs/compio/pull/711))
+- fix deprecation note ([#666](https://github.com/compio-rs/compio/pull/666))
+
 ## [0.11.0](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added

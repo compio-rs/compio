@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0](https://github.com/compio-rs/compio/compare/compio-v0.18.0...compio-v0.19.0) - 2026-04-18
+
+### Added
+
+- *(net, driver, buf)* support socket state ([#861](https://github.com/compio-rs/compio/pull/861))
+- *(runtime)* [**breaking**] waker-based future combinator ([#825](https://github.com/compio-rs/compio/pull/825))
+- organize features ([#822](https://github.com/compio-rs/compio/pull/822))
+- *(io)* add traits for reading/writing with ancillary data ([#717](https://github.com/compio-rs/compio/pull/717))
+- [**breaking**] compio-executor ([#790](https://github.com/compio-rs/compio/pull/790))
+- *(io)* fix ancillary API to avoid UB ([#737](https://github.com/compio-rs/compio/pull/737))
+- *(ws)* futures compat ([#713](https://github.com/compio-rs/compio/pull/713))
+- *(tls)* support py-dynamic-openssl ([#700](https://github.com/compio-rs/compio/pull/700))
+- *(runtime)* [**breaking**] remove event ([#707](https://github.com/compio-rs/compio/pull/707))
+- *(fs)* dirfd support ([#703](https://github.com/compio-rs/compio/pull/703))
+- *(driver,unix)* [**breaking**] support dirfd relative fs ops ([#699](https://github.com/compio-rs/compio/pull/699))
+- *(buf)* add support for memmap2 ([#684](https://github.com/compio-rs/compio/pull/684))
+
+### Changed
+
+- [**breaking**] use rustix ([#876](https://github.com/compio-rs/compio/pull/876))
+- [**breaking**] rename all "canceled" to "cancelled" ([#826](https://github.com/compio-rs/compio/pull/826))
+- [**breaking**] buffer pool & managed IO ([#820](https://github.com/compio-rs/compio/pull/820))
+
+### Fixed
+
+- *(signal)* remove "lazy_cell" as a nightly feature ([#798](https://github.com/compio-rs/compio/pull/798))
+- unused_features ([#739](https://github.com/compio-rs/compio/pull/739))
+- *(driver,unix)* `set_result` for `OpenFile` & `CreateSocket` ([#701](https://github.com/compio-rs/compio/pull/701))
+- *(driver)* statx on musl ([#669](https://github.com/compio-rs/compio/pull/669))
+- *(driver)* the fusion driver with polling variant ([#670](https://github.com/compio-rs/compio/pull/670))
+
+### Other
+
+- update README on why not tokio ([#846](https://github.com/compio-rs/compio/pull/846))
+- add discord badge ([#733](https://github.com/compio-rs/compio/pull/733))
+- remove "authors" field in metadata ([#711](https://github.com/compio-rs/compio/pull/711))
+- make event and time inline ([#688](https://github.com/compio-rs/compio/pull/688))
+- *(deps)* update rand requirement from 0.9.0 to 0.10.0 ([#671](https://github.com/compio-rs/compio/pull/671))
+
 ## [0.18.0](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added
