@@ -1,4 +1,4 @@
-name: TestIllumos
+name: Check Illumos
 
 on:
   merge_group:
@@ -9,29 +9,32 @@ on:
     paths:
       - '**/*.rs'
       - '**/Cargo.toml'
-      - '.github/workflows/ci_test_illumos.yml'
+      - '.github/workflows/check_illumos.yml'
   pull_request:
     branches:
       - master
     paths:
       - '**/*.rs'
       - '**/Cargo.toml'
-      - '.github/workflows/ci_test_illumos.yml'
+      - '.github/workflows/check_illumos.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
+env:
+  RUST_BACKTRACE: 1
+
 jobs:
-  test_illumos:
+  check_illumos:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         toolchain: ['nightly']
     steps:
       - uses: actions/checkout@v6
-      - name: Test in Illumos
-        id: test
+      - name: Check in Illumos
+        id: check
         uses: vmactions/omnios-vm@v1
         with:
           usesh: true
@@ -48,4 +51,4 @@ jobs:
 
             rustup component add clippy
 
-            RUST_BACKTRACE=1 cargo clippy --all-features --all-targets -- -Dwarnings
+            cargo clippy --all-features --all-targets -- -Dwarnings

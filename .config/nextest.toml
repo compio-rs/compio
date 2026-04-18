@@ -1,0 +1,16 @@
+[profile.default]
+failure-output = "final"
+slow-timeout = { period = "20s", terminate-after = 6 }
+
+[profile.ci]
+fail-fast = false
+failure-output = "final"
+slow-timeout = { period = "120s", terminate-after = 5 }
+
+[profile.asan]
+inherits = "ci"
+default-filter = "not (test(stress))"
+
+[profile.loom]
+inherits = "ci"
+default-filter = "binary(loom)"

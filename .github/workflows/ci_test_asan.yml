@@ -70,13 +70,6 @@ jobs:
           fi
 
           # stress tests takes too long with ASAN, filter them out
-          cargo +nightly nextest run \
-            --no-fail-fast \
-            --failure-output final \
-            -E 'not (test(stress))' \
-            --tests \
-            --lib \
-            -Zbuild-std \
-            "${ARGS[@]}"
+          cargo +nightly nextest run --profile asan -Zbuild-std "${ARGS[@]}"
         env:
           RUSTFLAGS: -Zsanitizer=address
