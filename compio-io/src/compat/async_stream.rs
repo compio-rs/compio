@@ -4,12 +4,12 @@ use std::{
     marker::PhantomPinned,
     mem::MaybeUninit,
     pin::Pin,
-    sync::Arc,
-    task::{Context, Poll, Wake, Waker, ready},
+    task::{Context, Poll, Waker, ready},
 };
 
 use pin_project_lite::pin_project;
 
+use super::waker_array::WakerArrayRef;
 use crate::{
     AsyncRead, AsyncWrite, PinBoxFuture,
     compat::{SyncStream, SyncStreamReadHalf, SyncStreamWriteHalf},
@@ -281,12 +281,12 @@ impl<S: AsyncRead + Unpin + 'static> AsyncReadStream<S> {
         // - The future won't live longer than the stream.
         // - The stream is `Unpin`.
         let inner = unsafe { extend_lifetime_mut(this.inner.get_mut()) };
-        let arr = WakerArray([
-            this.read_waker.as_ref().cloned(),
-            this.read_uninit_waker.as_ref().cloned(),
-            this.read_buf_waker.as_ref().cloned(),
+        let arr = WakerArrayRef::new([
+            this.read_waker.as_ref(),
+            this.read_uninit_waker.as_ref(),
+            this.read_buf_waker.as_ref(),
         ]);
-        let waker = Waker::from(Arc::new(arr));
+        let waker = arr.as_waker();
         let cx = &mut Context::from_waker(&waker);
         let res = poll_future!(this.read_future, cx, inner.fill_read_buf());
         Poll::Ready(res)
@@ -382,12 +382,12 @@ impl<S: AsyncWrite + Unpin + 'static> AsyncWriteStream<S> {
         // - The future won't live longer than the stream.
         // - The stream is `Unpin`.
         let inner = unsafe { extend_lifetime_mut(this.inner.get_mut()) };
-        let arr = WakerArray([
-            this.write_waker.as_ref().cloned(),
-            this.flush_waker.as_ref().cloned(),
-            this.close_waker.as_ref().cloned(),
+        let arr = WakerArrayRef::new([
+            this.write_waker.as_ref(),
+            this.flush_waker.as_ref(),
+            this.close_waker.as_ref(),
         ]);
-        let waker = Waker::from(Arc::new(arr));
+        let waker = arr.as_waker();
         let cx = &mut Context::from_waker(&waker);
         let res = poll_future!(this.write_future, cx, inner.flush_write_buf());
         Poll::Ready(res)
@@ -399,12 +399,12 @@ impl<S: AsyncWrite + Unpin + 'static> AsyncWriteStream<S> {
         // - The future won't live longer than the stream.
         // - The stream is `Unpin`.
         let inner = unsafe { extend_lifetime_mut(this.inner.get_mut()) };
-        let arr = WakerArray([
-            this.write_waker.as_ref().cloned(),
-            this.flush_waker.as_ref().cloned(),
-            this.close_waker.as_ref().cloned(),
+        let arr = WakerArrayRef::new([
+            this.write_waker.as_ref(),
+            this.flush_waker.as_ref(),
+            this.close_waker.as_ref(),
         ]);
-        let waker = Waker::from(Arc::new(arr));
+        let waker = arr.as_waker();
         let cx = &mut Context::from_waker(&waker);
         let res = poll_future!(this.shutdown_future, cx, inner.get_mut().shutdown());
         Poll::Ready(res)
@@ -470,18 +470,6 @@ impl<S: Splittable> Splittable for AsyncStream<S> {
 
     fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
         (self.read_inner, self.write_inner)
-    }
-}
-
-struct WakerArray<const N: usize>([Option<Waker>; N]);
-
-impl<const N: usize> Wake for WakerArray<N> {
-    fn wake(self: Arc<Self>) {
-        self.0.iter().for_each(|w| {
-            if let Some(w) = w {
-                w.wake_by_ref()
-            }
-        });
     }
 }
 

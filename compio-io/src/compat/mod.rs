@@ -5,3 +5,5 @@ pub use sync_stream::*;
 
 mod async_stream;
 pub use async_stream::*;
+
+mod waker_array;
