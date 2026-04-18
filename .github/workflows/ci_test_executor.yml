@@ -46,8 +46,8 @@ jobs:
       - uses: actions/checkout@v6
       - name: Setup Rust Toolchain
         run: |
-            rustup toolchain install nightly -c miri -c rust-src
-            rustup override set nightly
+          rustup toolchain install nightly -c miri -c rust-src
+          rustup override set nightly
       - name: Setup target
         if: ${{ matrix.setup.target }}
         run: rustup target install ${{ matrix.setup.target }}
@@ -65,8 +65,6 @@ jobs:
           LOOM_LOCATION=1 \
           LOOM_LOG=info,compio_executor=trace \
           cargo nextest run \
-            -p compio-executor \
+            --profile loom \
             --features enable_log \
-            --test loom \
-            --no-fail-fast \
-            --failure-output final
+            -p compio-executor
