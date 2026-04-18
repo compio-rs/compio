@@ -34,7 +34,6 @@ windows-sys = { workspace = true, features = [
     "Win32_System_Pipes",
     "Win32_System_SystemServices",
 ] }
-
 cap-primitives = { version = "4.0.0", optional = true }
 
 # Windows specific dev dependencies
@@ -44,6 +43,7 @@ windows-sys = { workspace = true, features = ["Win32_Security_Authorization"] }
 # Unix specific dependencies
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
+rustix = { workspace = true, features = ["stdio", "fs"] }
 
 [build-dependencies]
 cfg_aliases = { workspace = true }

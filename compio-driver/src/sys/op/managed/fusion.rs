@@ -1,4 +1,5 @@
 use compio_buf::*;
+use rustix::net::RecvFlags;
 use socket2::SockAddr;
 
 use super::{fallback, iour};
@@ -121,14 +122,14 @@ macro_rules! mop {
 
 mop!(<S: AsFd> ReadManagedAt(fd: S, offset: u64, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> ReadManaged(fd: S, pool: &BufferPool, len: usize) with pool);
-mop!(<S: AsFd> RecvManaged(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool);
-mop!(<S: AsFd> RecvFromManaged(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool; (BufferRef, Option<SockAddr>));
-mop!(<C: IoBufMut, S: AsFd> RecvMsgManaged(fd: S, pool: &BufferPool, len: usize, control: C, flags: i32) with pool; ((BufferRef, C), Option<SockAddr>, usize));
+mop!(<S: AsFd> RecvManaged(fd: S, pool: &BufferPool, len: usize, flags: RecvFlags) with pool);
+mop!(<S: AsFd> RecvFromManaged(fd: S, pool: &BufferPool, len: usize, flags: RecvFlags) with pool; (BufferRef, Option<SockAddr>));
+mop!(<C: IoBufMut, S: AsFd> RecvMsgManaged(fd: S, pool: &BufferPool, len: usize, control: C, flags: RecvFlags) with pool; ((BufferRef, C), Option<SockAddr>, usize));
 mop!(<S: AsFd> ReadMultiAt(fd: S, offset: u64, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> ReadMulti(fd: S, pool: &BufferPool, len: usize) with pool);
-mop!(<S: AsFd> RecvMulti(fd: S, pool: &BufferPool, len: usize, flags: i32) with pool);
-mop!(<S: AsFd> RecvFromMulti(fd: S, pool: &BufferPool, flags: i32) with pool; RecvFromMultiResult);
-mop!(<S: AsFd> RecvMsgMulti(fd: S, pool: &BufferPool, control_len: usize, flags: i32) with pool; RecvMsgMultiResult);
+mop!(<S: AsFd> RecvMulti(fd: S, pool: &BufferPool, len: usize, flags: RecvFlags) with pool);
+mop!(<S: AsFd> RecvFromMulti(fd: S, pool: &BufferPool, flags: RecvFlags) with pool; RecvFromMultiResult);
+mop!(<S: AsFd> RecvMsgMulti(fd: S, pool: &BufferPool, control_len: usize, flags: RecvFlags) with pool; RecvMsgMultiResult);
 
 enum RecvFromMultiResultInner {
     Poll(fallback::RecvFromMultiResult),

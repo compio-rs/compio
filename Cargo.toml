@@ -79,6 +79,7 @@ synchrony = "0.1.7"
 thin-cell = "0.2.1"
 slotmap = "1.1.1"
 crossfire = "3.1.5"
+rustix = "1.1.4"
 
 [profile.bench]
 debug = true

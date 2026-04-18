@@ -30,6 +30,7 @@ synchrony = { workspace = true, features = ["waker_slot"] }
 bitflags = { version = "2.11.0" }
 paste = { workspace = true }
 mod_use = "0.2.3"
+rustix = { workspace = true, features = ["net"] }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
@@ -53,16 +54,17 @@ compile_warning = { version = "0.1.0", optional = true }
 io-uring = { version = "0.7.0", optional = true }
 once_cell = { workspace = true, optional = true }
 polling = { version = "3.3.0", optional = true }
+rustix = { workspace = true, features = ["linux_5_11"] }
 
 # Other platform dependencies
-[target.'cfg(all(not(target_os = "linux"), unix))'.dependencies]
+[target.'cfg(all(unix, not(target_os = "linux")))'.dependencies]
 polling = "3.3.0"
 
 [target.'cfg(unix)'.dependencies]
 smallvec = { workspace = true, features = ["union"] }
 crossbeam-queue = { workspace = true }
 libc = { workspace = true }
-nix = { workspace = true, features = ["fs"] }
+rustix = { workspace = true, features = ["fs", "pipe"] }
 
 [dev-dependencies]
 nix = { workspace = true, features = ["mman"] }
@@ -73,7 +75,8 @@ cfg_aliases = { workspace = true }
 [features]
 default = ["io-uring"]
 io-uring = [
-    "nix/mman",
+    "rustix/mm",
+    "rustix/event",
     "dep:io-uring",
     "dep:once_cell",
 ]

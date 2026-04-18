@@ -1,7 +1,4 @@
-use crate::{
-    Decision, OpType, PollOpCode as OpCode,
-    sys::{op::*, prelude::*},
-};
+use crate::{Decision, OpType, PollOpCode as OpCode, sys::op::*};
 
 /// Accept multiple connections.
 pub struct AcceptMulti<S> {

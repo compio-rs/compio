@@ -3,7 +3,8 @@ use std::{io, os::fd::AsFd, path::Path};
 use compio_buf::{IntoInner, buf_try};
 #[cfg(dirfd)]
 use compio_driver::ToSharedFd;
-use compio_driver::op::{CurrentDir, OpenFile};
+use compio_driver::op::{CurrentDir, Mode, OFlags, OpenFile};
+use rustix::io::{Errno, Result};
 
 use crate::{File, path_string};
 
@@ -14,8 +15,8 @@ pub struct OpenOptions {
     truncate: bool,
     create: bool,
     create_new: bool,
-    custom_flags: i32,
-    mode: libc::mode_t,
+    custom_flags: OFlags,
+    mode: Mode,
 }
 
 impl OpenOptions {
@@ -26,8 +27,8 @@ impl OpenOptions {
             truncate: false,
             create: false,
             create_new: false,
-            custom_flags: 0,
-            mode: 0o666,
+            custom_flags: OFlags::empty(),
+            mode: Mode::from_bits_retain(0o666),
         }
     }
 
@@ -52,41 +53,41 @@ impl OpenOptions {
     }
 
     pub fn custom_flags(&mut self, flags: i32) {
-        self.custom_flags = flags;
+        self.custom_flags = OFlags::from_bits_retain(flags as _).difference(OFlags::ACCMODE);
     }
 
     pub fn mode(&mut self, mode: u32) {
-        self.mode = mode as libc::mode_t;
+        self.mode = Mode::from_bits_retain(mode as _);
     }
 
-    fn get_access_mode(&self) -> io::Result<libc::c_int> {
+    fn get_access_mode(&self) -> Result<OFlags> {
         match (self.read, self.write) {
-            (true, false) => Ok(libc::O_RDONLY),
-            (false, true) => Ok(libc::O_WRONLY),
-            (true, true) => Ok(libc::O_RDWR),
-            (false, false) => Err(io::Error::from_raw_os_error(libc::EINVAL)),
+            (true, false) => Ok(OFlags::RDONLY),
+            (false, true) => Ok(OFlags::WRONLY),
+            (true, true) => Ok(OFlags::RDWR),
+            (false, false) => Err(Errno::INVAL),
         }
     }
 
-    fn get_creation_mode(&self) -> io::Result<libc::c_int> {
+    fn get_creation_mode(&self) -> Result<OFlags> {
         if !self.write && (self.truncate || self.create || self.create_new) {
-            return Err(io::Error::from_raw_os_error(libc::EINVAL));
+            return Err(Errno::INVAL);
         }
 
         Ok(match (self.create, self.truncate, self.create_new) {
-            (false, false, false) => 0,
-            (true, false, false) => libc::O_CREAT,
-            (false, true, false) => libc::O_TRUNC,
-            (true, true, false) => libc::O_CREAT | libc::O_TRUNC,
-            (_, _, true) => libc::O_CREAT | libc::O_EXCL,
+            (false, false, false) => OFlags::empty(),
+            (true, false, false) => OFlags::CREATE,
+            (false, true, false) => OFlags::TRUNC,
+            (true, true, false) => OFlags::CREATE | OFlags::TRUNC,
+            (_, _, true) => OFlags::CREATE | OFlags::EXCL,
         })
     }
 
     async fn open_impl(&self, dir: impl AsFd + 'static, p: impl AsRef<Path>) -> io::Result<File> {
-        let flags = libc::O_CLOEXEC
+        let flags = OFlags::CLOEXEC
             | self.get_access_mode()?
             | self.get_creation_mode()?
-            | (self.custom_flags & !libc::O_ACCMODE);
+            | self.custom_flags;
         let p = path_string(p)?;
         let op = OpenFile::new(dir, p, flags, self.mode);
         let (_, op) = buf_try!(@try compio_runtime::submit(op).await);

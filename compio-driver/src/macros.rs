@@ -51,7 +51,7 @@ macro_rules! syscall {
         if res == -1 {
             Err(::std::io::Error::last_os_error())
         } else {
-            Ok(res)
+            Ok(res as usize)
         }
     }};
 }

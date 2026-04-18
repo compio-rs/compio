@@ -1,13 +1,13 @@
 use std::{
     io,
-    num::{NonZeroU16, NonZeroUsize},
-    ptr::NonNull,
+    num::NonZeroU16,
+    ptr::{NonNull, null_mut},
     slice,
     sync::atomic::Ordering,
 };
 
 use io_uring::types::BufRingEntry;
-use nix::sys::mman::{MapFlags, ProtFlags, mmap_anonymous, munmap};
+use rustix::mm::{MapFlags, ProtFlags, mmap_anonymous, munmap};
 use synchrony::unsync::atomic::AtomicU16;
 
 use crate::{
@@ -22,7 +22,7 @@ pub(in crate::sys) struct BufControl {
     /// Number of entries
     len: NonZeroU16,
     /// Total size of the mmap
-    size: NonZeroUsize,
+    size: usize,
 }
 
 assert_not_impl!(BufControl, Send);
@@ -49,12 +49,13 @@ impl BufControl {
         let driver = driver.as_iour_mut().expect("Should be iour");
 
         let len = NonZeroU16::new(bufs.len() as u16).expect("Empty buffers");
-        let size = NonZeroUsize::new(len.get() as usize * size_of::<BufRingEntry>())
-            .expect("Shouldn't overflow");
+        let size = len.get() as usize * size_of::<BufRingEntry>();
 
-        let prot = ProtFlags::PROT_READ | ProtFlags::PROT_WRITE;
-        let mflags = MapFlags::MAP_PRIVATE;
-        let ptr = unsafe { mmap_anonymous(None, size, prot, mflags) }?.cast::<BufRingEntry>();
+        let prot = ProtFlags::READ | ProtFlags::WRITE;
+        let mflags = MapFlags::PRIVATE;
+        let ptr = NonNull::new(unsafe { mmap_anonymous(null_mut(), size, prot, mflags) }?)
+            .expect("mmap failed")
+            .cast::<BufRingEntry>();
 
         let mut this = Self { ptr, len, size };
 
@@ -113,7 +114,7 @@ impl BufControl {
             .inner()
             .submitter()
             .unregister_buf_ring(Self::BUF_GROUP)?;
-        unsafe { munmap(self.ptr.cast(), self.size.get()) }?;
+        unsafe { munmap(self.ptr.cast().as_ptr(), self.size) }?;
 
         Ok(())
     }

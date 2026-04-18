@@ -33,7 +33,7 @@ pub unsafe trait OpCode {
     ///
     /// Caller must guarantee that during the lifetime of `ctrl`, `Self` is
     /// unmoved and valid.
-    unsafe fn init(&mut self, ctrl: &mut Self::Control);
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     /// Create submission entry.
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry;

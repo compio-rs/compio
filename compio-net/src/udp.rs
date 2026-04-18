@@ -7,7 +7,7 @@ use std::{
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{
     BufferRef, impl_raw_fd,
-    op::{RecvFromMultiResult, RecvMsgMultiResult},
+    op::{RecvFlags, RecvFromMultiResult, RecvMsgMultiResult},
 };
 use futures_util::Stream;
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
@@ -210,13 +210,13 @@ impl UdpSocket {
     /// Receives a packet of data from the socket into the buffer, returning the
     /// original buffer and quantity of data received.
     pub async fn recv<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        self.inner.recv(buffer, 0).await
+        self.inner.recv(buffer, RecvFlags::empty()).await
     }
 
     /// Receives a packet of data from the socket into the buffer, returning the
     /// original buffer and quantity of data received.
     pub async fn recv_vectored<T: IoVectoredBufMut>(&self, buffer: T) -> BufResult<usize, T> {
-        self.inner.recv_vectored(buffer, 0).await
+        self.inner.recv_vectored(buffer, RecvFlags::empty()).await
     }
 
     /// Read some bytes from this source and return a [`BufferRef`].
@@ -224,7 +224,7 @@ impl UdpSocket {
     /// If `len` == 0, will use buffer pool's inner buffer size as the max len;
     /// if `len` > 0, `min(len, inner buffer size)` will be the read max len.
     pub async fn recv_managed(&self, len: usize) -> io::Result<Option<BufferRef>> {
-        self.inner.recv_managed(len, 0).await
+        self.inner.recv_managed(len, RecvFlags::empty()).await
     }
 
     /// Read some bytes from this source and return a stream of [`BufferRef`]s.
@@ -237,7 +237,7 @@ impl UdpSocket {
     /// * io-uring: an old kernel may not support multishot operations, in which
     ///   case this method will return an error in the first item of the stream.
     pub fn recv_multi(&self, len: usize) -> impl Stream<Item = io::Result<BufferRef>> {
-        self.inner.recv_multi(len, 0)
+        self.inner.recv_multi(len, RecvFlags::empty())
     }
 
     /// Sends some data to the socket from the buffer, returning the original
@@ -255,13 +255,16 @@ impl UdpSocket {
     /// Receives a single datagram message on the socket. On success, returns
     /// the number of bytes received and the origin.
     pub async fn recv_from<T: IoBufMut>(&self, buffer: T) -> BufResult<(usize, SocketAddr), T> {
-        self.inner.recv_from(buffer, 0).await.map_res(|(n, addr)| {
-            let addr = addr
-                .expect("should have addr")
-                .as_socket()
-                .expect("should be SocketAddr");
-            (n, addr)
-        })
+        self.inner
+            .recv_from(buffer, RecvFlags::empty())
+            .await
+            .map_res(|(n, addr)| {
+                let addr = addr
+                    .expect("should have addr")
+                    .as_socket()
+                    .expect("should be SocketAddr");
+                (n, addr)
+            })
     }
 
     /// Receives a single datagram message on the socket. On success, returns
@@ -271,7 +274,7 @@ impl UdpSocket {
         buffer: T,
     ) -> BufResult<(usize, SocketAddr), T> {
         self.inner
-            .recv_from_vectored(buffer, 0)
+            .recv_from_vectored(buffer, RecvFlags::empty())
             .await
             .map_res(|(n, addr)| {
                 let addr = addr
@@ -291,7 +294,10 @@ impl UdpSocket {
         &self,
         len: usize,
     ) -> io::Result<Option<(BufferRef, SocketAddr)>> {
-        let res = self.inner.recv_from_managed(len, 0).await?;
+        let res = self
+            .inner
+            .recv_from_managed(len, RecvFlags::empty())
+            .await?;
         let ret = match res {
             Some((buffer, addr)) => {
                 let addr = addr
@@ -312,7 +318,7 @@ impl UdpSocket {
     /// * io-uring: an old kernel may not support multishot operations, in which
     ///   case this method will return an error in the first item of the stream.
     pub fn recv_from_multi(&self) -> impl Stream<Item = io::Result<RecvFromMultiResult>> {
-        self.inner.recv_from_multi(0)
+        self.inner.recv_from_multi(RecvFlags::empty())
     }
 
     /// Receives a single datagram message and ancillary data on the socket. On
@@ -323,7 +329,7 @@ impl UdpSocket {
         control: C,
     ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
         self.inner
-            .recv_msg(buffer, control, 0)
+            .recv_msg(buffer, control, RecvFlags::empty())
             .await
             .map_res(|(n, m, addr)| {
                 let addr = addr
@@ -342,7 +348,7 @@ impl UdpSocket {
         control: C,
     ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
         self.inner
-            .recv_msg_vectored(buffer, control, 0)
+            .recv_msg_vectored(buffer, control, RecvFlags::empty())
             .await
             .map_res(|(n, m, addr)| {
                 let addr = addr
@@ -364,7 +370,10 @@ impl UdpSocket {
         len: usize,
         control: C,
     ) -> io::Result<Option<(BufferRef, C, SocketAddr)>> {
-        let res = self.inner.recv_msg_managed(len, control, 0).await?;
+        let res = self
+            .inner
+            .recv_msg_managed(len, control, RecvFlags::empty())
+            .await?;
         let ret = match res {
             Some((buffer, control, addr)) => {
                 let addr = addr
@@ -388,7 +397,7 @@ impl UdpSocket {
         &self,
         control_len: usize,
     ) -> impl Stream<Item = io::Result<RecvMsgMultiResult>> {
-        self.inner.recv_msg_multi(control_len, 0)
+        self.inner.recv_msg_multi(control_len, RecvFlags::empty())
     }
 
     /// Sends data on the socket to the given address. On success, returns the

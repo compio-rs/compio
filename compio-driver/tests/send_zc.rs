@@ -8,6 +8,7 @@ use std::{
 
 use compio_buf::BufResult;
 use compio_driver::{Proactor, PushEntry, SharedFd, op::SendZc};
+use rustix::net::SendFlags;
 
 #[test]
 fn send_zc() {
@@ -33,7 +34,7 @@ fn send_zc() {
     driver.attach(stream.as_raw_fd()).unwrap();
 
     let buffer: &'static [u8; 12] = b"Hello world!";
-    let op = SendZc::new(stream.clone(), buffer, 0);
+    let op = SendZc::new(stream.clone(), buffer, SendFlags::empty());
     let res = match driver.push(op) {
         PushEntry::Ready(BufResult(res, _)) => res.unwrap(),
         PushEntry::Pending(mut key) => {

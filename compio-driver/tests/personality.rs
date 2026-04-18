@@ -2,7 +2,7 @@
 
 use compio_buf::{BufResult, IntoInner};
 use compio_driver::{
-    op::{CurrentDir, ReadAt},
+    op::{CurrentDir, Mode, OFlags, ReadAt},
     *,
 };
 
@@ -37,8 +37,8 @@ fn open_file(driver: &mut Proactor, personality: u16) -> OwnedFd {
     let op = OpenFile::new(
         CurrentDir,
         CString::new("Cargo.toml").unwrap(),
-        libc::O_CLOEXEC | libc::O_RDONLY,
-        0o666,
+        OFlags::CLOEXEC | OFlags::RDONLY,
+        Mode::from_bits_retain(0o666),
     );
     let (_, op) = push_and_wait(driver, op, personality).unwrap();
     op.into_inner()

@@ -4,16 +4,16 @@ fn main() {
     cfg_aliases! {
         // Feature
         aio: { any(freebsd, solarish) },
-        datasync: { any(
-            target_os = "android",
-            target_os = "freebsd",
-            target_os = "fuchsia",
-            target_os = "illumos",
-            target_os = "linux",
-            target_os = "netbsd"
-        ) },
+        datasync: { all(unix, not(apple)) },
 
         // Platform
+        apple : { any(
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "visionos",
+            target_os = "watchos"
+        ) },
         linux_all: { any(target_os = "linux", target_os = "android") },
         gnulinux: { all(target_os = "linux", target_env = "gnu") },
         freebsd: { target_os = "freebsd" },

@@ -5,12 +5,19 @@ use compio_driver::{AsFd, AsRawFd, BorrowedFd, BufferRef, RawFd};
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncReadMulti, AsyncWrite};
 use compio_runtime::fd::AsyncFd;
 use futures_util::Stream;
+use rustix::stdio::{raw_stderr, raw_stdin, raw_stdout};
 
 #[cfg(doc)]
 use super::{stderr, stdin, stdout};
 
 #[derive(Debug)]
 struct StaticFd(RawFd);
+
+impl StaticFd {
+    const STDERR: Self = Self(raw_stderr());
+    const STDIN: Self = Self(raw_stdin());
+    const STDOUT: Self = Self(raw_stdout());
+}
 
 impl AsFd for StaticFd {
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -33,7 +40,7 @@ pub struct Stdin(AsyncFd<StaticFd>);
 impl Stdin {
     pub(crate) fn new() -> Self {
         // SAFETY: no need to attach on unix
-        Self(unsafe { AsyncFd::new_unchecked(StaticFd(libc::STDIN_FILENO)) })
+        Self(unsafe { AsyncFd::new_unchecked(StaticFd::STDIN) })
     }
 }
 
@@ -100,7 +107,7 @@ pub struct Stdout(AsyncFd<StaticFd>);
 impl Stdout {
     pub(crate) fn new() -> Self {
         // SAFETY: no need to attach on unix
-        Self(unsafe { AsyncFd::new_unchecked(StaticFd(libc::STDOUT_FILENO)) })
+        Self(unsafe { AsyncFd::new_unchecked(StaticFd::STDOUT) })
     }
 }
 
@@ -137,7 +144,7 @@ pub struct Stderr(AsyncFd<StaticFd>);
 impl Stderr {
     pub(crate) fn new() -> Self {
         // SAFETY: no need to attach on unix
-        Self(unsafe { AsyncFd::new_unchecked(StaticFd(libc::STDERR_FILENO)) })
+        Self(unsafe { AsyncFd::new_unchecked(StaticFd::STDERR) })
     }
 }
 

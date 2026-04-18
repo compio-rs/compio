@@ -1,5 +1,3 @@
-use mod_use::mod_use;
-
 #[cfg(unix)]
 mod_use![unix];
 
@@ -14,6 +12,8 @@ mod_use![poll];
 
 #[cfg(stub)]
 mod_use![stub];
+
+use rustix::net::{RecvFlags, SendFlags};
 
 use crate::sys::prelude::*;
 
@@ -36,20 +36,20 @@ pub struct CloseSocket {
 pub struct Send<T: IoBuf, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
-    pub(crate) flags: i32,
+    pub(crate) flags: SendFlags,
 }
 
 /// Send data to remote from vectored buffer.
 pub struct SendVectored<T: IoVectoredBuf, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
-    pub(crate) flags: i32,
+    pub(crate) flags: SendFlags,
 }
 
 pub(crate) struct SendToHeader<S> {
     pub(crate) fd: S,
     pub(crate) addr: SockAddr,
-    pub(crate) flags: i32,
+    pub(crate) flags: SendFlags,
 }
 
 /// Send data to specified address.
@@ -71,7 +71,7 @@ pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
     pub(crate) buffer: T,
     pub(crate) control: C,
     pub(crate) addr: Option<SockAddr>,
-    pub(crate) flags: i32,
+    pub(crate) flags: SendFlags,
 }
 
 /// Receive data from remote.
@@ -82,21 +82,21 @@ pub struct SendMsg<T: IoVectoredBuf, C: IoBuf, S> {
 pub struct Recv<T: IoBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
-    pub(crate) flags: i32,
+    pub(crate) flags: RecvFlags,
 }
 
 /// Receive data from remote into vectored buffer.
 pub struct RecvVectored<T: IoVectoredBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
-    pub(crate) flags: i32,
+    pub(crate) flags: RecvFlags,
 }
 
 pub(crate) struct RecvFromHeader<S> {
     pub(crate) fd: S,
+    pub(crate) flags: RecvFlags,
     pub(crate) addr: SockAddrStorage,
-    pub(crate) flags: i32,
-    pub(crate) name_len: socklen_t,
+    pub(crate) addr_len: socklen_t,
 }
 
 /// Receive data and source address.
@@ -114,12 +114,9 @@ pub struct RecvFromVectored<T: IoVectoredBufMut, S> {
 /// Receive data and source address with ancillary data into vectored
 /// buffer.
 pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
-    pub(crate) addr: SockAddrStorage,
-    pub(crate) fd: S,
+    pub(crate) header: RecvFromHeader<S>,
     pub(crate) buffer: T,
     pub(crate) control: C,
-    pub(crate) flags: i32,
-    pub(crate) name_len: socklen_t,
     pub(crate) control_len: usize,
 }
 
@@ -141,7 +138,7 @@ impl CloseSocket {
 
 impl<T: IoBuf, S> Send<T, S> {
     /// Create [`Send`].
-    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, flags: SendFlags) -> Self {
         Self { fd, buffer, flags }
     }
 }
@@ -156,7 +153,7 @@ impl<T: IoBuf, S> IntoInner for Send<T, S> {
 
 impl<T: IoVectoredBuf, S> SendVectored<T, S> {
     /// Create [`SendVectored`].
-    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, flags: SendFlags) -> Self {
         Self { fd, buffer, flags }
     }
 }
@@ -170,14 +167,14 @@ impl<T: IoVectoredBuf, S> IntoInner for SendVectored<T, S> {
 }
 
 impl<S> SendToHeader<S> {
-    pub fn new(fd: S, addr: SockAddr, flags: i32) -> Self {
+    pub fn new(fd: S, addr: SockAddr, flags: SendFlags) -> Self {
         Self { fd, addr, flags }
     }
 }
 
 impl<T: IoBuf, S> SendTo<T, S> {
     /// Create [`SendTo`].
-    pub fn new(fd: S, buffer: T, addr: SockAddr, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, addr: SockAddr, flags: SendFlags) -> Self {
         Self {
             header: SendToHeader::new(fd, addr, flags),
             buffer,
@@ -195,7 +192,7 @@ impl<T: IoBuf, S> IntoInner for SendTo<T, S> {
 
 impl<T: IoVectoredBuf, S> SendToVectored<T, S> {
     /// Create [`SendToVectored`].
-    pub fn new(fd: S, buffer: T, addr: SockAddr, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, addr: SockAddr, flags: SendFlags) -> Self {
         Self {
             header: SendToHeader::new(fd, addr, flags),
             buffer,
@@ -217,7 +214,7 @@ impl<T: IoVectoredBuf, C: IoBuf, S> SendMsg<T, C, S> {
     /// # Panics
     ///
     /// This function will panic if the control message buffer is misaligned.
-    pub fn new(fd: S, buffer: T, control: C, addr: Option<SockAddr>, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, control: C, addr: Option<SockAddr>, flags: SendFlags) -> Self {
         assert!(
             control.buf_len() == 0 || control.buf_ptr().cast::<CmsgHeader>().is_aligned(),
             "misaligned control message buffer"
@@ -247,18 +244,15 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
     ///
     /// This function will panic if the control message buffer is
     /// misaligned.
-    pub fn new(fd: S, buffer: T, control: C, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, control: C, flags: RecvFlags) -> Self {
         assert!(
             control.buf_ptr().cast::<CmsgHeader>().is_aligned(),
             "misaligned control message buffer"
         );
         Self {
-            addr: SockAddrStorage::zeroed(),
-            fd,
+            header: RecvFromHeader::new(fd, flags),
             buffer,
             control,
-            flags,
-            name_len: 0,
             control_len: 0,
         }
     }
@@ -268,14 +262,17 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
     type Inner = ((T, C), Option<SockAddr>, usize);
 
     fn into_inner(self) -> Self::Inner {
-        let addr = (self.name_len > 0).then(|| unsafe { SockAddr::new(self.addr, self.name_len) });
-        ((self.buffer, self.control), addr, self.control_len)
+        (
+            (self.buffer, self.control),
+            self.header.into_addr(),
+            self.control_len,
+        )
     }
 }
 
 impl<T: IoBufMut, S> Recv<T, S> {
     /// Create [`Recv`].
-    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, flags: RecvFlags) -> Self {
         Self { fd, buffer, flags }
     }
 }
@@ -290,7 +287,7 @@ impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
 
 impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
     /// Create [`RecvVectored`].
-    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, flags: RecvFlags) -> Self {
         Self { fd, buffer, flags }
     }
 }
@@ -304,25 +301,25 @@ impl<T: IoVectoredBufMut, S> IntoInner for RecvVectored<T, S> {
 }
 
 impl<S> RecvFromHeader<S> {
-    pub fn new(fd: S, flags: i32) -> Self {
+    pub fn new(fd: S, flags: RecvFlags) -> Self {
         let addr = SockAddrStorage::zeroed();
         let name_len = addr.size_of();
         Self {
             fd,
             addr,
             flags,
-            name_len,
+            addr_len: name_len,
         }
     }
 
     pub fn into_addr(self) -> Option<SockAddr> {
-        (self.name_len > 0).then(|| unsafe { SockAddr::new(self.addr, self.name_len) })
+        (self.addr_len > 0).then(|| unsafe { SockAddr::new(self.addr, self.addr_len) })
     }
 }
 
 impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
     /// Create [`RecvFromVectored`].
-    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, flags: RecvFlags) -> Self {
         Self {
             header: RecvFromHeader::new(fd, flags),
             buffer,
@@ -341,7 +338,7 @@ impl<T: IoVectoredBufMut, S: AsFd> IntoInner for RecvFromVectored<T, S> {
 
 impl<T: IoBufMut, S> RecvFrom<T, S> {
     /// Create [`RecvFrom`].
-    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, flags: RecvFlags) -> Self {
         Self {
             header: RecvFromHeader::new(fd, flags),
             buffer,

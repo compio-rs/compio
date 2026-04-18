@@ -110,9 +110,6 @@ jobs:
               ARGS+=("--target" "${{ matrix.setup.target }}")
           fi
 
-          cargo +${{ matrix.toolchain }} nextest run \
-            --no-fail-fast \
-            --failure-output final \
-            "${ARGS[@]}"
+          cargo +${{ matrix.toolchain }} nextest run --profile ci "${ARGS[@]}"
 
           cargo +${{ matrix.toolchain }} test --workspace --doc "${ARGS[@]}"

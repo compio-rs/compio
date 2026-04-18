@@ -7,11 +7,12 @@ use std::{
 
 use compio_buf::{BufResult, SetLen};
 #[cfg(unix)]
-use compio_driver::op::{AcceptMulti, Pipe, ReadMulti, Write};
+use compio_driver::op::{AcceptMulti, Mode, OFlags, Pipe, ReadMulti, Write};
 use compio_driver::{
     AsRawFd, Extra, OpCode, OwnedFd, Proactor, PushEntry, ResultTakeBuffer, SharedFd, TakeBuffer,
     op::{Asyncify, CloseFile, CloseSocket, ReadAt, ReadManagedAt, RecvMulti},
 };
+use rustix::net::RecvFlags;
 
 #[cfg(unix)]
 #[test]
@@ -66,8 +67,8 @@ fn open_file(driver: &mut Proactor) -> OwnedFd {
     let op = OpenFile::new(
         CurrentDir,
         CString::new("Cargo.toml").unwrap(),
-        libc::O_CLOEXEC | libc::O_RDONLY,
-        0o666,
+        OFlags::CLOEXEC | OFlags::RDONLY,
+        Mode::from_bits_retain(0o666),
     );
     let (_, op) = push_and_wait(driver, op).unwrap();
     op.into_inner()
@@ -315,7 +316,7 @@ fn recv_multi() {
 
     let mut buffer = vec![];
     loop {
-        let op = RecvMulti::new(stream.clone(), &pool, 0, 0).unwrap();
+        let op = RecvMulti::new(stream.clone(), &pool, 0, RecvFlags::empty()).unwrap();
         let slice = push_and_wait_multi(&mut driver, op)
             .try_fold(Vec::new(), |mut acc, BufResult(res, (extra, op))| {
                 let mut buf = if let Some(op) = op {
