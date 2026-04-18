@@ -7,11 +7,11 @@ use std::{
 };
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf};
-use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream};
+use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream, util::Splittable};
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-enum TlsStreamInner<S> {
+enum TlsStreamInner<S: Splittable> {
     #[cfg(feature = "native-tls")]
     NativeTls(crate::native::TlsStream<Pin<Box<AsyncStream<S>>>>),
     #[cfg(feature = "rustls")]
@@ -23,12 +23,16 @@ enum TlsStreamInner<S> {
         feature = "rustls",
         feature = "py-dynamic-openssl",
     )))]
-    None(std::convert::Infallible, std::marker::PhantomData<S>),
+    None(
+        std::convert::Infallible,
+        std::marker::PhantomData<Pin<Box<AsyncStream<S>>>>,
+    ),
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> TlsStreamInner<S>
+impl<S: Splittable + 'static> TlsStreamInner<S>
 where
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     pub fn negotiated_alpn(&self) -> Option<Cow<'_, [u8]>> {
         match self {
@@ -56,11 +60,12 @@ where
 /// data. Bytes read from a `TlsStream` are decrypted from `S` and bytes written
 /// to a `TlsStream` are encrypted when passing through to `S`.
 #[derive(Debug)]
-pub struct TlsStream<S>(TlsStreamInner<S>);
+pub struct TlsStream<S: Splittable>(TlsStreamInner<S>);
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> TlsStream<S>
+impl<S: Splittable + 'static> TlsStream<S>
 where
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     /// Returns the negotiated ALPN protocol.
     pub fn negotiated_alpn(&self) -> Option<Cow<'_, [u8]>> {
@@ -70,7 +75,7 @@ where
 
 #[cfg(feature = "native-tls")]
 #[doc(hidden)]
-impl<S> From<crate::native::TlsStream<Pin<Box<AsyncStream<S>>>>> for TlsStream<S> {
+impl<S: Splittable> From<crate::native::TlsStream<Pin<Box<AsyncStream<S>>>>> for TlsStream<S> {
     fn from(value: crate::native::TlsStream<Pin<Box<AsyncStream<S>>>>) -> Self {
         Self(TlsStreamInner::NativeTls(value))
     }
@@ -78,7 +83,9 @@ impl<S> From<crate::native::TlsStream<Pin<Box<AsyncStream<S>>>>> for TlsStream<S
 
 #[cfg(feature = "rustls")]
 #[doc(hidden)]
-impl<S> From<futures_rustls::client::TlsStream<Pin<Box<AsyncStream<S>>>>> for TlsStream<S> {
+impl<S: Splittable> From<futures_rustls::client::TlsStream<Pin<Box<AsyncStream<S>>>>>
+    for TlsStream<S>
+{
     fn from(value: futures_rustls::client::TlsStream<Pin<Box<AsyncStream<S>>>>) -> Self {
         Self(TlsStreamInner::Rustls(futures_rustls::TlsStream::Client(
             value,
@@ -88,7 +95,9 @@ impl<S> From<futures_rustls::client::TlsStream<Pin<Box<AsyncStream<S>>>>> for Tl
 
 #[cfg(feature = "rustls")]
 #[doc(hidden)]
-impl<S> From<futures_rustls::server::TlsStream<Pin<Box<AsyncStream<S>>>>> for TlsStream<S> {
+impl<S: Splittable> From<futures_rustls::server::TlsStream<Pin<Box<AsyncStream<S>>>>>
+    for TlsStream<S>
+{
     fn from(value: futures_rustls::server::TlsStream<Pin<Box<AsyncStream<S>>>>) -> Self {
         Self(TlsStreamInner::Rustls(futures_rustls::TlsStream::Server(
             value,
@@ -98,15 +107,16 @@ impl<S> From<futures_rustls::server::TlsStream<Pin<Box<AsyncStream<S>>>>> for Tl
 
 #[cfg(feature = "py-dynamic-openssl")]
 #[doc(hidden)]
-impl<S> From<crate::py_ossl::TlsStream<Pin<Box<AsyncStream<S>>>>> for TlsStream<S> {
+impl<S: Splittable> From<crate::py_ossl::TlsStream<Pin<Box<AsyncStream<S>>>>> for TlsStream<S> {
     fn from(value: crate::py_ossl::TlsStream<Pin<Box<AsyncStream<S>>>>) -> Self {
         Self(TlsStreamInner::PyDynamicOpenSsl(value))
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> futures_util::AsyncRead for TlsStream<S>
+impl<S: Splittable + 'static> futures_util::AsyncRead for TlsStream<S>
 where
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -130,34 +140,43 @@ where
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> AsyncRead for TlsStream<S>
+pub(crate) async fn read_futures<S: futures_util::AsyncRead + Unpin, B: IoBufMut>(
+    s: &mut S,
+    mut buf: B,
+) -> BufResult<usize, B> {
+    let slice = buf.as_uninit();
+    slice.fill(MaybeUninit::new(0));
+    // SAFETY: The memory has been initialized
+    let slice =
+        unsafe { std::slice::from_raw_parts_mut::<u8>(slice.as_mut_ptr().cast(), slice.len()) };
+    let res = futures_util::AsyncReadExt::read(s, slice).await;
+    let res = match res {
+        Ok(len) => {
+            unsafe { buf.advance_to(len) };
+            Ok(len)
+        }
+        // TLS streams may return UnexpectedEof when the connection is closed.
+        // https://docs.rs/rustls/latest/rustls/manual/_03_howto/index.html#unexpected-eof
+        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => Ok(0),
+        _ => res,
+    };
+    BufResult(res, buf)
+}
+
+impl<S: Splittable + 'static> AsyncRead for TlsStream<S>
 where
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
-    async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
-        let slice = buf.as_uninit();
-        slice.fill(MaybeUninit::new(0));
-        // SAFETY: The memory has been initialized
-        let slice =
-            unsafe { std::slice::from_raw_parts_mut::<u8>(slice.as_mut_ptr().cast(), slice.len()) };
-        let res = futures_util::AsyncReadExt::read(self, slice).await;
-        let res = match res {
-            Ok(len) => {
-                unsafe { buf.advance_to(len) };
-                Ok(len)
-            }
-            // TLS streams may return UnexpectedEof when the connection is closed.
-            // https://docs.rs/rustls/latest/rustls/manual/_03_howto/index.html#unexpected-eof
-            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => Ok(0),
-            _ => res,
-        };
-        BufResult(res, buf)
+    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
+        read_futures(self, buf).await
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> futures_util::AsyncWrite for TlsStream<S>
+impl<S: Splittable + 'static> futures_util::AsyncWrite for TlsStream<S>
 where
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     fn poll_write(
         self: Pin<&mut Self>,
@@ -236,9 +255,10 @@ where
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> AsyncWrite for TlsStream<S>
+impl<S: Splittable + 'static> AsyncWrite for TlsStream<S>
 where
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         let slice = buf.as_init();

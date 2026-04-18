@@ -294,20 +294,6 @@ impl<S> SyncStream<S> {
         }
     }
 
-    pub(crate) fn with_limits2(
-        read_capacity: usize,
-        write_capacity: usize,
-        base_capacity: usize,
-        max_buffer_size: usize,
-        stream: S,
-    ) -> Self {
-        Self {
-            inner: stream,
-            read_buf: SyncReadBuf::new(read_capacity, base_capacity, max_buffer_size),
-            write_buf: SyncWriteBuf::new(write_capacity, base_capacity, max_buffer_size),
-        }
-    }
-
     /// Returns a reference to the underlying stream.
     pub fn get_ref(&self) -> &S {
         &self.inner
@@ -354,6 +340,13 @@ impl<S> SyncStream<S> {
 }
 
 impl<S> SyncStreamReadHalf<S> {
+    pub(crate) fn with_limits(base_capacity: usize, max_buffer_size: usize, stream: S) -> Self {
+        Self {
+            inner: stream,
+            read_buf: SyncReadBuf::new(base_capacity, base_capacity, max_buffer_size),
+        }
+    }
+
     /// Returns a reference to the underlying stream.
     pub fn get_ref(&self) -> &S {
         &self.inner
@@ -391,6 +384,13 @@ impl<S> SyncStreamReadHalf<S> {
 }
 
 impl<S> SyncStreamWriteHalf<S> {
+    pub(crate) fn with_limits(base_capacity: usize, max_buffer_size: usize, stream: S) -> Self {
+        Self {
+            inner: stream,
+            write_buf: SyncWriteBuf::new(base_capacity, base_capacity, max_buffer_size),
+        }
+    }
+
     /// Returns a reference to the underlying stream.
     pub fn get_ref(&self) -> &S {
         &self.inner

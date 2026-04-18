@@ -29,7 +29,7 @@ futures-rustls = { workspace = true, default-features = false, optional = true, 
     "logging",
     "tls12",
 ] }
-futures-util = { workspace = true, optional = true }
+futures-util = { workspace = true }
 pin-project-lite = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -51,14 +51,10 @@ futures-rustls = { workspace = true, default-features = false, features = [
 [features]
 default = ["native-tls"]
 all = ["native-tls", "rustls"]
-rustls = ["dep:rustls", "dep:futures-rustls", "dep:futures-util"]
-native-tls = ["dep:native-tls", "dep:futures-util", "dep:pin-project-lite"]
+rustls = ["dep:rustls", "dep:futures-rustls"]
+native-tls = ["dep:native-tls", "dep:pin-project-lite"]
 native-tls-vendored = ["native-tls/vendored"]
-py-dynamic-openssl = [
-    "dep:compio-py-dynamic-openssl",
-    "dep:futures-util",
-    "dep:pin-project-lite",
-]
+py-dynamic-openssl = ["dep:compio-py-dynamic-openssl", "dep:pin-project-lite"]
 
 ring = ["rustls", "rustls/ring", "futures-rustls/ring"]
 

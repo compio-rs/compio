@@ -5,7 +5,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream};
+use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream, util::Splittable};
 use futures_util::FutureExt;
 use rustls::{
     ServerConfig, ServerConnection,
@@ -16,11 +16,14 @@ use crate::TlsStream;
 
 /// A lazy TLS acceptor that performs the initial handshake and allows access to
 /// the [`ClientHello`] message before completing the handshake.
-pub struct LazyConfigAcceptor<S>(futures_rustls::LazyConfigAcceptor<Pin<Box<AsyncStream<S>>>>);
+pub struct LazyConfigAcceptor<S: Splittable>(
+    futures_rustls::LazyConfigAcceptor<Pin<Box<AsyncStream<S>>>>,
+);
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> LazyConfigAcceptor<S>
+impl<S: Splittable + 'static> LazyConfigAcceptor<S>
 where
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     /// Create a new [`LazyConfigAcceptor`] with the given acceptor and stream.
     pub fn new(acceptor: Acceptor, s: S) -> Self {
@@ -31,9 +34,10 @@ where
     }
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> Future for LazyConfigAcceptor<S>
+impl<S: Splittable + 'static> Future for LazyConfigAcceptor<S>
 where
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     type Output = Result<StartHandshake<S>, io::Error>;
 
@@ -44,11 +48,12 @@ where
 
 /// A TLS acceptor that has completed the initial handshake and allows access to
 /// the [`ClientHello`] message.
-pub struct StartHandshake<S>(futures_rustls::StartHandshake<Pin<Box<AsyncStream<S>>>>);
+pub struct StartHandshake<S: Splittable>(futures_rustls::StartHandshake<Pin<Box<AsyncStream<S>>>>);
 
-impl<S: AsyncRead + AsyncWrite + Unpin + 'static> StartHandshake<S>
+impl<S: Splittable + 'static> StartHandshake<S>
 where
-    for<'a> &'a S: AsyncRead + AsyncWrite,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
 {
     /// Get the [`ClientHello`] message from the initial handshake.
     pub fn client_hello(&self) -> ClientHello<'_> {

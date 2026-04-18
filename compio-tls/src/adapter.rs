@@ -1,6 +1,6 @@
 use std::{fmt::Debug, io};
 
-use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream};
+use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream, util::Splittable};
 
 use crate::TlsStream;
 
@@ -79,13 +79,14 @@ impl TlsConnector {
     /// example, a TCP connection to a remote server. That stream is then
     /// provided here to perform the client half of a connection to a
     /// TLS-powered server.
-    pub async fn connect<S: AsyncRead + AsyncWrite + Unpin + 'static>(
+    pub async fn connect<S: Splittable + 'static>(
         &self,
         domain: &str,
         stream: S,
     ) -> io::Result<TlsStream<S>>
     where
-        for<'a> &'a S: AsyncRead + AsyncWrite,
+        S::ReadHalf: AsyncRead + Unpin,
+        S::WriteHalf: AsyncWrite + Unpin,
     {
         match &self.0 {
             #[cfg(feature = "native-tls")]
@@ -178,12 +179,10 @@ impl TlsAcceptor {
     /// This is typically used after a new socket has been accepted from a
     /// `TcpListener`. That socket is then passed to this function to perform
     /// the server half of accepting a client connection.
-    pub async fn accept<S: AsyncRead + AsyncWrite + Unpin + 'static>(
-        &self,
-        stream: S,
-    ) -> io::Result<TlsStream<S>>
+    pub async fn accept<S: Splittable + 'static>(&self, stream: S) -> io::Result<TlsStream<S>>
     where
-        for<'a> &'a S: AsyncRead + AsyncWrite,
+        S::ReadHalf: AsyncRead + Unpin,
+        S::WriteHalf: AsyncWrite + Unpin,
     {
         match &self.0 {
             #[cfg(feature = "native-tls")]
