@@ -1,14 +1,8 @@
 use super::fallback::*;
-use crate::{
-    Decision, OpType, PollOpCode as OpCode,
-    op::RecvMsgControl,
-    sys::{op::ReadAtControl, prelude::*},
-};
+use crate::{Decision, OpType, PollOpCode as OpCode, op::RecvMsgControl, sys::prelude::*};
 
 unsafe impl<S: AsFd> OpCode for ReadManaged<S> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         self.op.pre_submit(control)
@@ -24,7 +18,7 @@ unsafe impl<S: AsFd> OpCode for ReadManaged<S> {
 }
 
 unsafe impl<S: AsFd> OpCode for ReadManagedAt<S> {
-    type Control = ReadAtControl;
+    type Control = AioControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
         unsafe { self.op.init(ctrl) }
@@ -46,8 +40,6 @@ unsafe impl<S: AsFd> OpCode for ReadManagedAt<S> {
 unsafe impl<S: AsFd> OpCode for RecvManaged<S> {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         self.op.pre_submit(control)
     }
@@ -64,8 +56,6 @@ unsafe impl<S: AsFd> OpCode for RecvManaged<S> {
 unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         self.op.pre_submit(control)
     }
@@ -81,8 +71,6 @@ unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
 
 unsafe impl<S: AsFd> OpCode for RecvFromMulti<S> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, control: &mut Self::Control) -> io::Result<Decision> {
         self.op.pre_submit(control)

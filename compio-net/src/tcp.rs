@@ -8,7 +8,10 @@ use std::{
 };
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_driver::{BufferRef, impl_raw_fd, op::RecvMsgMultiResult};
+use compio_driver::{
+    BufferRef, impl_raw_fd,
+    op::{RecvFlags, RecvMsgMultiResult, SendFlags},
+};
 use compio_io::{
     AsyncRead, AsyncReadManaged, AsyncReadMulti, AsyncWrite,
     ancillary::{
@@ -414,7 +417,12 @@ impl TcpStream {
         #[cfg(windows)]
         use windows_sys::Win32::Networking::WinSock::MSG_OOB;
 
-        self.inner.send(buf, MSG_OOB | MSG_NOSIGNAL).await
+        self.inner
+            .send(
+                buf,
+                SendFlags::from_bits_retain(MSG_OOB as _) | MSG_NOSIGNAL,
+            )
+            .await
     }
 
     /// Sends data using [zero-copy send](https://man7.org/linux/man-pages/man3/io_uring_prep_send_zc.3.html).
@@ -466,12 +474,12 @@ impl AsyncRead for TcpStream {
 impl AsyncRead for &TcpStream {
     #[inline]
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        self.inner.recv(buf, 0).await
+        self.inner.recv(buf, RecvFlags::empty()).await
     }
 
     #[inline]
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
-        self.inner.recv_vectored(buf, 0).await
+        self.inner.recv_vectored(buf, RecvFlags::empty()).await
     }
 }
 
@@ -487,7 +495,7 @@ impl AsyncReadManaged for &TcpStream {
     type Buffer = BufferRef;
 
     async fn read_managed(&mut self, len: usize) -> io::Result<Option<Self::Buffer>> {
-        self.inner.recv_managed(len, 0).await
+        self.inner.recv_managed(len, RecvFlags::empty()).await
     }
 }
 
@@ -496,7 +504,7 @@ impl AsyncReadManaged for &TcpStream {
 ///   case this method will return an error in the first item of the stream.
 impl AsyncReadMulti for TcpStream {
     fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
-        self.inner.recv_multi(len, 0)
+        self.inner.recv_multi(len, RecvFlags::empty())
     }
 }
 
@@ -505,7 +513,7 @@ impl AsyncReadMulti for TcpStream {
 ///   case this method will return an error in the first item of the stream.
 impl AsyncReadMulti for &TcpStream {
     fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
-        self.inner.recv_multi(len, 0)
+        self.inner.recv_multi(len, RecvFlags::empty())
     }
 }
 
@@ -537,7 +545,7 @@ impl AsyncReadAncillary for &TcpStream {
         control: C,
     ) -> BufResult<(usize, usize), (T, C)> {
         self.inner
-            .recv_msg(buffer, control, 0)
+            .recv_msg(buffer, control, RecvFlags::empty())
             .await
             .map_res(|(res, len, _addr)| (res, len))
     }
@@ -549,7 +557,7 @@ impl AsyncReadAncillary for &TcpStream {
         control: C,
     ) -> BufResult<(usize, usize), (T, C)> {
         self.inner
-            .recv_msg_vectored(buffer, control, 0)
+            .recv_msg_vectored(buffer, control, RecvFlags::empty())
             .await
             .map_res(|(res, len, _addr)| (res, len))
     }
@@ -574,7 +582,7 @@ impl AsyncReadAncillaryManaged for &TcpStream {
         control: C,
     ) -> io::Result<Option<(Self::Buffer, C)>> {
         self.inner
-            .recv_msg_managed(len, control, 0)
+            .recv_msg_managed(len, control, RecvFlags::empty())
             .await
             .map(|res| res.map(|(res, len, _addr)| (res, len)))
     }
@@ -591,7 +599,7 @@ impl AsyncReadAncillaryMulti for TcpStream {
         &mut self,
         control_len: usize,
     ) -> impl Stream<Item = io::Result<Self::Return>> {
-        self.inner.recv_msg_multi(control_len, 0)
+        self.inner.recv_msg_multi(control_len, RecvFlags::empty())
     }
 }
 
@@ -606,7 +614,7 @@ impl AsyncReadAncillaryMulti for &TcpStream {
         &mut self,
         control_len: usize,
     ) -> impl Stream<Item = io::Result<Self::Return>> {
-        self.inner.recv_msg_multi(control_len, 0)
+        self.inner.recv_msg_multi(control_len, RecvFlags::empty())
     }
 }
 

@@ -41,11 +41,7 @@ mod driver_type;
 pub use driver_type::*;
 
 mod sys;
-pub use sys::{
-    Extra,
-    op::{self, ResultTakeBuffer, TakeBuffer},
-    *,
-};
+pub use sys::{op, *};
 
 mod cancel;
 pub use cancel::*;

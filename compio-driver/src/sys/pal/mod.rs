@@ -1,11 +1,19 @@
-//! Platform-specific utils & implementations used for other modules in sys.
+//! Platform-specific and driver-specific utils & implementations used for other
+//! modules in sys.
 
-cfg_if::cfg_if! {
-    if #[cfg(unix)] {
-        mod unix;
-        pub use self::unix::*;
-    } else if #[cfg(windows)] {
-        mod windows;
-        pub use self::windows::*;
-    }
-}
+use crate::sys::prelude::*;
+
+#[cfg(unix)]
+mod_use![unix];
+
+#[cfg(windows)]
+mod_use![windows];
+
+#[cfg(polling)]
+mod_use![poll];
+
+#[cfg(io_uring)]
+mod_use![iour];
+
+#[cfg(stub)]
+mod_use![stub];

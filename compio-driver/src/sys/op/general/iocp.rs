@@ -6,15 +6,10 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{
-    OpCode,
-    sys::{op::*, prelude::*},
-};
+use crate::{OpCode, sys::op::*};
 
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         if let Some(overlapped) = unsafe { optr.as_mut() } {
@@ -44,8 +39,6 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
 unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         if let Some(overlapped) = unsafe { optr.as_mut() } {
             overlapped.Anonymous.Anonymous.Offset = (self.offset & 0xFFFFFFFF) as _;
@@ -73,8 +66,6 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for WriteAt<T, S> {
 unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();
         let mut transferred = 0;
@@ -98,8 +89,6 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
 
 unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let slice = self.buffer.as_init();
@@ -135,8 +124,6 @@ impl<S> ConnectNamedPipe<S> {
 
 unsafe impl<S: AsFd> OpCode for ConnectNamedPipe<S> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let res = unsafe { ConnectNamedPipe(self.fd.as_fd().as_raw_fd() as _, optr) };
@@ -179,8 +166,6 @@ impl<S, I: IoBuf, O: IoBufMut> IntoInner for DeviceIoControl<S, I, O> {
 
 unsafe impl<S: AsFd, I: IoBuf, O: IoBufMut> OpCode for DeviceIoControl<S, I, O> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
         let fd = self.fd.as_fd().as_raw_fd();

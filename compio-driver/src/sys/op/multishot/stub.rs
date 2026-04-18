@@ -22,6 +22,4 @@ impl<S> IntoInner for AcceptMulti<S> {
 
 impl<S: AsFd> OpCode for AcceptMulti<S> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }

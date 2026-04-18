@@ -1,9 +1,6 @@
 use windows_sys::Win32::System::IO::OVERLAPPED;
 
-use crate::{
-    OpCode, OpType,
-    sys::{op::*, prelude::*},
-};
+use crate::{OpCode, OpType, sys::op::*};
 
 unsafe impl<D, F> OpCode for Asyncify<F, D>
 where
@@ -11,8 +8,6 @@ where
     F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + 'static,
 {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Blocking
@@ -36,8 +31,6 @@ where
     F: (FnOnce(&S) -> BufResult<usize, D>) + std::marker::Send + 'static,
 {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Blocking
@@ -63,8 +56,6 @@ where
     F: (FnOnce(&S1, &S2) -> BufResult<usize, D>) + std::marker::Send + 'static,
 {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn op_type(&self, _: &Self::Control) -> OpType {
         OpType::Blocking

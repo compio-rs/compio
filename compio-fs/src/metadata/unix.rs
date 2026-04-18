@@ -1,5 +1,6 @@
 pub use std::fs::Permissions;
 use std::{
+    hash::Hash,
     io,
     os::{
         fd::AsFd,
@@ -14,6 +15,7 @@ use compio_buf::{BufResult, IntoInner};
 use compio_driver::ToSharedFd;
 use compio_driver::op::{CurrentDir, PathStat, Stat};
 use compio_runtime::ResumeUnwind;
+use rustix::fs::FileType as FileTypeInner;
 
 use crate::path_string;
 
@@ -67,7 +69,7 @@ impl Metadata {
     }
 
     pub fn file_type(&self) -> FileType {
-        FileType(self.0.st_mode as _)
+        FileType(FileTypeInner::from_raw_mode(self.0.st_mode as _))
     }
 
     pub fn is_dir(&self) -> bool {
@@ -185,45 +187,43 @@ impl MetadataExt for Metadata {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-pub struct FileType(pub(crate) libc::mode_t);
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct FileType(pub(crate) FileTypeInner);
+
+impl Hash for FileType {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.as_raw_mode().hash(state);
+    }
+}
 
 impl FileType {
     pub fn is_dir(&self) -> bool {
-        self.is(libc::S_IFDIR)
+        self.0.is_dir()
     }
 
     pub fn is_file(&self) -> bool {
-        self.is(libc::S_IFREG)
+        self.0.is_file()
     }
 
     pub fn is_symlink(&self) -> bool {
-        self.is(libc::S_IFLNK)
-    }
-
-    fn is(&self, mode: libc::mode_t) -> bool {
-        self.masked() == mode
-    }
-
-    fn masked(&self) -> libc::mode_t {
-        self.0 & libc::S_IFMT
+        self.0.is_symlink()
     }
 }
 
 impl FileTypeExt for FileType {
     fn is_block_device(&self) -> bool {
-        self.is(libc::S_IFBLK)
+        self.0.is_block_device()
     }
 
     fn is_char_device(&self) -> bool {
-        self.is(libc::S_IFCHR)
+        self.0.is_char_device()
     }
 
     fn is_fifo(&self) -> bool {
-        self.is(libc::S_IFIFO)
+        self.0.is_fifo()
     }
 
     fn is_socket(&self) -> bool {
-        self.is(libc::S_IFSOCK)
+        self.0.is_socket()
     }
 }

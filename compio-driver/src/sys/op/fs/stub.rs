@@ -5,62 +5,42 @@ use crate::{
 
 impl<S: AsFd> OpCode for Sync<S> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for Unlink<S> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for CreateDir<S> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S1: AsFd, S2: AsFd> OpCode for Rename<S1, S2> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for Symlink<S> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S1: AsFd, S2: AsFd> OpCode for HardLink<S1, S2> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for OpenFile<S> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl OpCode for CloseFile {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> OpCode for TruncateFile<S> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S1: AsFd, S2: AsFd> OpCode for Splice<S1, S2> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 /// Get metadata of an opened file.
@@ -77,8 +57,6 @@ impl<S> FileStat<S> {
 
 impl<S: AsFd> OpCode for FileStat<S> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S> IntoInner for FileStat<S> {
@@ -109,8 +87,6 @@ impl<S: AsFd> PathStat<S> {
 
 impl<S: AsFd> OpCode for PathStat<S> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 }
 
 impl<S: AsFd> IntoInner for PathStat<S> {

@@ -18,6 +18,10 @@ use crate::syscall;
 
 mod_use::mod_use![fd];
 
+pub mod reexport {
+    pub use super::Overlapped;
+}
+
 /// The overlapped struct we actually used for IOCP.
 #[repr(C)]
 pub struct Overlapped {

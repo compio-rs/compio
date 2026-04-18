@@ -18,17 +18,6 @@ use crate::{
     sys::{extra::PollExtra, prelude::*},
 };
 
-/// Meta of AIO operations.
-#[cfg(aio)]
-#[derive(Debug, Clone, Copy)]
-#[doc(hidden)]
-pub struct AioControl {
-    /// Pointer of the control block.
-    pub aiocbp: NonNull<libc::aiocb>,
-    /// The aio_* submit function.
-    pub submit: unsafe extern "C" fn(*mut libc::aiocb) -> i32,
-}
-
 #[derive(Debug, Default)]
 struct FdQueue {
     read_queue: VecDeque<ErasedKey>,
@@ -330,7 +319,7 @@ impl Driver {
                 Poll::Pending
             }
             #[cfg(aio)]
-            Decision::Aio(AioControl { mut aiocbp, submit }) => {
+            Decision::Aio(AioArg { mut aiocbp, submit }) => {
                 let aiocb = unsafe { aiocbp.as_mut() };
                 let user_data = key.as_raw();
                 #[cfg(freebsd)]
@@ -491,9 +480,7 @@ impl Driver {
                                 trace!("op {} is not completed", key.as_raw());
                                 continue;
                             }
-                            _ => {
-                                syscall!(libc::aio_return(aiocbp.as_ptr())).map(|res| res as usize)
-                            }
+                            _ => syscall!(libc::aio_return(aiocbp.as_ptr())),
                         };
                         let key = unsafe { ErasedKey::from_raw(event.key) };
                         Entry::new(key, res).notify()

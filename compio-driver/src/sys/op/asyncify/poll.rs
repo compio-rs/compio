@@ -1,8 +1,4 @@
-use crate::{
-    PollOpCode as OpCode,
-    op::*,
-    sys::{driver::*, prelude::*},
-};
+use crate::{PollOpCode as OpCode, op::*, sys::driver::*};
 
 unsafe impl<D, F> OpCode for Asyncify<F, D>
 where
@@ -10,8 +6,6 @@ where
     F: (FnOnce() -> BufResult<usize, D>) + std::marker::Send + 'static,
 {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
@@ -36,8 +30,6 @@ where
 {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)
     }
@@ -61,8 +53,6 @@ where
     F: (FnOnce(&S1, &S2) -> BufResult<usize, D>) + std::marker::Send + 'static,
 {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<Decision> {
         Ok(Decision::Blocking)

@@ -34,7 +34,6 @@ use crate::{
     AsyncifyPool, DriverType, Entry, ProactorBuilder,
     key::{BorrowedKey, ErasedKey},
     panic::catch_unwind_io,
-    syscall,
 };
 
 /// Low-level driver of io-uring.

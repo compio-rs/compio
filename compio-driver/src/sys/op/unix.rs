@@ -1,19 +1,21 @@
 //! OpCodes shared by both iour & polling driver
 
-use crate::{op::*, sys::prelude::*};
+use rustix::fs::*;
+
+use crate::op::*;
 
 /// Open or create a file with flags and mode.
 pub struct OpenFile<S: AsFd> {
     pub(crate) dirfd: S,
     pub(crate) path: CString,
-    pub(crate) flags: i32,
-    pub(crate) mode: libc::mode_t,
+    pub(crate) flags: OFlags,
+    pub(crate) mode: Mode,
     pub(crate) opened_fd: Option<OwnedFd>,
 }
 
 impl<S: AsFd> OpenFile<S> {
     /// Create [`OpenFile`].
-    pub fn new(dirfd: S, path: CString, flags: i32, mode: libc::mode_t) -> Self {
+    pub fn new(dirfd: S, path: CString, flags: OFlags, mode: Mode) -> Self {
         Self {
             dirfd,
             path,
@@ -24,12 +26,13 @@ impl<S: AsFd> OpenFile<S> {
     }
 
     pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
-        Ok(syscall!(openat(
-            self.dirfd.as_fd().as_raw_fd(),
-            self.path.as_ptr(),
-            self.flags | libc::O_CLOEXEC,
-            self.mode as libc::c_int
-        ))? as _)
+        self.opened_fd = Some(openat(
+            self.dirfd.as_fd(),
+            &self.path,
+            self.flags | OFlags::CLOEXEC,
+            self.mode,
+        )?);
+        Ok(0)
     }
 }
 
@@ -43,7 +46,8 @@ impl<S: AsFd> IntoInner for OpenFile<S> {
 
 impl CloseFile {
     pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
-        Ok(syscall!(libc::close(self.fd.as_fd().as_raw_fd()))? as _)
+        unsafe { ManuallyDrop::drop(&mut self.fd) };
+        Ok(0)
     }
 }
 
@@ -62,12 +66,15 @@ impl<S: AsFd> TruncateFile<S> {
     }
 
     pub(crate) fn call(&self) -> io::Result<usize> {
-        let size: off64_t = self
-            .size
-            .try_into()
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-        crate::syscall!(ftruncate64(self.fd.as_fd().as_raw_fd(), size)).map(|v| v as _)
+        ftruncate(self.fd.as_fd(), self.size)?;
+        Ok(0)
     }
+}
+
+#[doc(hidden)]
+#[derive(Default)]
+pub struct VectoredControl {
+    pub(crate) slices: Vec<SysSlice>,
 }
 
 /// Read a file at specified position into vectored buffer.
@@ -77,39 +84,10 @@ pub struct ReadVectoredAt<T: IoVectoredBufMut, S> {
     pub(crate) buffer: T,
 }
 
-#[doc(hidden)]
-pub struct ReadVectoredAtControl {
-    pub(crate) slices: Vec<SysSlice>,
-    #[allow(dead_code)]
-    pub(crate) aiocb: Aiocb,
-}
-
-impl Default for ReadVectoredAtControl {
-    fn default() -> Self {
-        Self {
-            slices: Vec::new(),
-            aiocb: new_aiocb(),
-        }
-    }
-}
-
 impl<T: IoVectoredBufMut, S> ReadVectoredAt<T, S> {
     /// Create [`ReadVectoredAt`].
     pub fn new(fd: S, offset: u64, buffer: T) -> Self {
         Self { fd, offset, buffer }
-    }
-}
-
-impl<T: IoVectoredBufMut, S: AsFd> ReadVectoredAt<T, S> {
-    pub(crate) fn create_control(&mut self, ctrl: &mut ReadVectoredAtControl) {
-        ctrl.slices = self.buffer.sys_slices_mut();
-        #[cfg(freebsd)]
-        {
-            ctrl.aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
-            ctrl.aiocb.aio_offset = self.offset as _;
-            ctrl.aiocb.aio_buf = ctrl.slices.as_ptr().cast_mut().cast();
-            ctrl.aiocb.aio_nbytes = ctrl.slices.len();
-        }
     }
 }
 
@@ -128,39 +106,10 @@ pub struct WriteVectoredAt<T: IoVectoredBuf, S> {
     pub(crate) buffer: T,
 }
 
-#[doc(hidden)]
-pub struct WriteVectoredAtControl {
-    pub(crate) slices: Vec<SysSlice>,
-    #[allow(dead_code)]
-    pub(crate) aiocb: Aiocb,
-}
-
-impl Default for WriteVectoredAtControl {
-    fn default() -> Self {
-        Self {
-            slices: Vec::new(),
-            aiocb: new_aiocb(),
-        }
-    }
-}
-
 impl<T: IoVectoredBuf, S> WriteVectoredAt<T, S> {
     /// Create [`WriteVectoredAt`].
     pub fn new(fd: S, offset: u64, buffer: T) -> Self {
         Self { fd, offset, buffer }
-    }
-}
-
-impl<T: IoVectoredBuf, S: AsFd> WriteVectoredAt<T, S> {
-    pub(crate) fn create_control(&mut self, ctrl: &mut WriteVectoredAtControl) {
-        ctrl.slices = self.buffer.sys_slices();
-        #[cfg(freebsd)]
-        {
-            ctrl.aiocb.aio_fildes = self.fd.as_fd().as_raw_fd();
-            ctrl.aiocb.aio_offset = self.offset as _;
-            ctrl.aiocb.aio_buf = ctrl.slices.as_ptr().cast_mut().cast();
-            ctrl.aiocb.aio_nbytes = ctrl.slices.len();
-        }
     }
 }
 
@@ -178,20 +127,10 @@ pub struct ReadVectored<T: IoVectoredBufMut, S> {
     pub(crate) buffer: T,
 }
 
-#[derive(Default)]
-#[doc(hidden)]
-pub struct ReadVectoredControl {
-    pub(crate) slices: Vec<SysSlice>,
-}
-
 impl<T: IoVectoredBufMut, S> ReadVectored<T, S> {
     /// Create [`ReadVectored`].
     pub fn new(fd: S, buffer: T) -> Self {
         Self { fd, buffer }
-    }
-
-    pub(crate) fn create_control(&mut self, ctrl: &mut ReadVectoredControl) {
-        ctrl.slices = self.buffer.sys_slices_mut();
     }
 }
 
@@ -209,20 +148,10 @@ pub struct WriteVectored<T: IoVectoredBuf, S> {
     pub(crate) buffer: T,
 }
 
-#[derive(Default)]
-#[doc(hidden)]
-pub struct WriteVectoredControl {
-    pub(crate) slices: Vec<SysSlice>,
-}
-
 impl<T: IoVectoredBuf, S> WriteVectored<T, S> {
     /// Create [`WriteVectored`].
     pub fn new(fd: S, buffer: T) -> Self {
         Self { fd, buffer }
-    }
-
-    pub(crate) fn create_control(&mut self, ctrl: &mut WriteVectoredControl) {
-        ctrl.slices = self.buffer.sys_slices();
     }
 }
 
@@ -248,11 +177,15 @@ impl<S: AsFd> Unlink<S> {
     }
 
     pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
-        Ok(syscall!(libc::unlinkat(
-            self.dirfd.as_fd().as_raw_fd(),
-            self.path.as_ptr(),
-            if self.dir { libc::AT_REMOVEDIR } else { 0 }
-        ))? as _)
+        let flags = if self.dir {
+            AtFlags::REMOVEDIR
+        } else {
+            AtFlags::empty()
+        };
+
+        unlinkat(self.dirfd.as_fd(), &self.path, flags)?;
+
+        Ok(0)
     }
 }
 
@@ -260,21 +193,19 @@ impl<S: AsFd> Unlink<S> {
 pub struct CreateDir<S: AsFd> {
     pub(crate) dirfd: S,
     pub(crate) path: CString,
-    pub(crate) mode: libc::mode_t,
+    pub(crate) mode: Mode,
 }
 
 impl<S: AsFd> CreateDir<S> {
     /// Create [`CreateDir`].
-    pub fn new(dirfd: S, path: CString, mode: libc::mode_t) -> Self {
+    pub fn new(dirfd: S, path: CString, mode: Mode) -> Self {
         Self { dirfd, path, mode }
     }
 
     pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
-        Ok(syscall!(libc::mkdirat(
-            self.dirfd.as_fd().as_raw_fd(),
-            self.path.as_ptr(),
-            self.mode
-        ))? as _)
+        mkdirat(self.dirfd.as_fd(), &self.path, self.mode)?;
+
+        Ok(0)
     }
 }
 
@@ -298,12 +229,14 @@ impl<S1: AsFd, S2: AsFd> Rename<S1, S2> {
     }
 
     pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
-        Ok(syscall!(libc::renameat(
-            self.old_dirfd.as_fd().as_raw_fd(),
-            self.old_path.as_ptr(),
-            self.new_dirfd.as_fd().as_raw_fd(),
-            self.new_path.as_ptr()
-        ))? as _)
+        renameat(
+            self.old_dirfd.as_fd(),
+            &self.old_path,
+            self.new_dirfd.as_fd(),
+            &self.new_path,
+        )?;
+
+        Ok(0)
     }
 }
 
@@ -325,11 +258,9 @@ impl<S: AsFd> Symlink<S> {
     }
 
     pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
-        Ok(syscall!(libc::symlinkat(
-            self.source.as_ptr(),
-            self.dirfd.as_fd().as_raw_fd(),
-            self.target.as_ptr()
-        ))? as _)
+        symlinkat(&self.source, self.dirfd.as_fd(), &self.target)?;
+
+        Ok(0)
     }
 }
 
@@ -353,13 +284,14 @@ impl<S1: AsFd, S2: AsFd> HardLink<S1, S2> {
     }
 
     pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
-        Ok(syscall!(libc::linkat(
-            self.source_dirfd.as_fd().as_raw_fd(),
-            self.source.as_ptr(),
-            self.target_dirfd.as_fd().as_raw_fd(),
-            self.target.as_ptr(),
-            0
-        ))? as _)
+        linkat(
+            self.source_dirfd.as_fd(),
+            &self.source,
+            self.target_dirfd.as_fd(),
+            &self.target,
+            AtFlags::empty(),
+        )?;
+        Ok(0)
     }
 }
 
@@ -397,6 +329,11 @@ impl Pipe {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self { fds: [None, None] }
+    }
+
+    pub(crate) fn call(&mut self) -> io::Result<usize> {
+        self.fds = mk_pipe()?;
+        Ok(0)
     }
 }
 

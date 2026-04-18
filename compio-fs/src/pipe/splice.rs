@@ -8,7 +8,10 @@ use std::{
     task::{Context, Poll, ready},
 };
 
-use compio_driver::{SharedFd, ToSharedFd, op::Splice as SpliceOp};
+use compio_driver::{
+    SharedFd, ToSharedFd,
+    op::{Splice as SpliceOp, SpliceFlags},
+};
 use compio_runtime::Submit;
 
 /// Splice data between two file descriptors without copying through userspace.
@@ -48,7 +51,7 @@ pub fn splice<I: AsFd + 'static, O: AsFd + 'static>(
         len,
         offset_in: -1,
         offset_out: -1,
-        flags: 0,
+        flags: SpliceFlags::empty(),
     }
 }
 
@@ -59,7 +62,7 @@ pub struct Splice<I, O> {
     len: usize,
     offset_in: i64,
     offset_out: i64,
-    flags: u32,
+    flags: SpliceFlags,
 }
 
 impl<I, O> Splice<I, O> {
@@ -77,7 +80,7 @@ impl<I, O> Splice<I, O> {
 
     /// Set splice flags.
     pub fn flags(mut self, flags: u32) -> Self {
-        self.flags = flags;
+        self.flags = SpliceFlags::from_bits_retain(flags);
         self
     }
 }

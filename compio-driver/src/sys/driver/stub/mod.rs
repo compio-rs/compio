@@ -16,7 +16,7 @@ use crate::sys::{extra::StubExtra, prelude::*};
 pub trait OpCode {
     type Control: Default;
 
-    unsafe fn init(&mut self, ctrl: &mut Self::Control);
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     unsafe fn set_result(
         &mut self,

@@ -1,6 +1,7 @@
 use io_uring::{opcode, types::Fd};
+use rustix::net::SendFlags;
 
-use crate::{IourOpCode as OpCode, OpEntry, op::*, sys::prelude::*};
+use crate::{IourOpCode as OpCode, OpEntry, op::*};
 
 /// Zerocopy [`Send`].
 pub struct SendZc<T: IoBuf, S> {
@@ -34,7 +35,7 @@ pub struct SendMsgZc<T: IoVectoredBuf, C: IoBuf, S> {
 
 impl<T: IoBuf, S> SendZc<T, S> {
     /// Create [`SendZc`].
-    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, flags: SendFlags) -> Self {
         Self {
             op: Send::new(fd, buffer, flags),
             res: None,
@@ -53,8 +54,6 @@ impl<T: IoBuf, S> IntoInner for SendZc<T, S> {
 unsafe impl<T: IoBuf, S: AsFd> OpCode for SendZc<T, S> {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
         let slice = self.op.buffer.as_init();
         opcode::SendZc::new(
@@ -62,7 +61,7 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for SendZc<T, S> {
             slice.as_ptr(),
             slice.len().try_into().unwrap_or(u32::MAX),
         )
-        .flags(self.op.flags)
+        .flags(self.op.flags.bits() as _)
         .build()
         .into()
     }
@@ -90,7 +89,7 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for SendZc<T, S> {
 
 impl<T: IoBuf, S: AsFd> SendToZc<T, S> {
     /// Create [`SendToZc`].
-    pub fn new(fd: S, buffer: T, addr: SockAddr, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, addr: SockAddr, flags: SendFlags) -> Self {
         Self {
             op: SendTo::new(fd, buffer, addr, flags),
             res: None,
@@ -115,7 +114,7 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for SendToZc<T, S> {
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::SendMsgZc::new(Fd(self.op.header.fd.as_fd().as_raw_fd()), &control.msg)
-            .flags(self.op.header.flags as _)
+            .flags(self.op.header.flags.bits() as _)
             .build()
             .into()
     }
@@ -143,7 +142,7 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for SendToZc<T, S> {
 
 impl<T: IoVectoredBuf, S> SendVectoredZc<T, S> {
     /// Create [`SendVectoredZc`].
-    pub fn new(fd: S, buffer: T, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, flags: SendFlags) -> Self {
         Self {
             op: SendVectored::new(fd, buffer, flags),
             res: None,
@@ -163,12 +162,12 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectoredZc<T, S> {
     type Control = SendVectoredControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
-        self.op.create_control(ctrl)
+        self.op.init_control(ctrl)
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::SendMsgZc::new(Fd(self.op.fd.as_fd().as_raw_fd()), &control.msg)
-            .flags(self.op.flags as _)
+            .flags(self.op.flags.bits() as _)
             .build()
             .into()
     }
@@ -196,7 +195,7 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectoredZc<T, S> {
 
 impl<T: IoVectoredBuf, S: AsFd> SendToVectoredZc<T, S> {
     /// Create [`SendToVectoredZc`].
-    pub fn new(fd: S, buffer: T, addr: SockAddr, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, addr: SockAddr, flags: SendFlags) -> Self {
         Self {
             op: SendToVectored::new(fd, buffer, addr, flags),
             res: None,
@@ -221,7 +220,7 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectoredZc<T, S> {
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::SendMsgZc::new(Fd(self.op.header.fd.as_fd().as_raw_fd()), &control.msg)
-            .flags(self.op.header.flags as _)
+            .flags(self.op.header.flags.bits() as _)
             .build()
             .into()
     }
@@ -249,7 +248,7 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectoredZc<T, S> {
 
 impl<T: IoVectoredBuf, C: IoBuf, S> SendMsgZc<T, C, S> {
     /// Create [`SendMsgZc`].
-    pub fn new(fd: S, buffer: T, control: C, addr: Option<SockAddr>, flags: i32) -> Self {
+    pub fn new(fd: S, buffer: T, control: C, addr: Option<SockAddr>, flags: SendFlags) -> Self {
         Self {
             op: SendMsg::new(fd, buffer, control, addr, flags),
             res: None,
@@ -269,12 +268,12 @@ unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsgZc<T, C, S> {
     type Control = SendMsgControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
-        self.op.create_control(ctrl)
+        self.op.init_control(ctrl)
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::SendMsgZc::new(Fd(self.op.fd.as_fd().as_raw_fd()), &control.msg)
-            .flags(self.op.flags as _)
+            .flags(self.op.flags.bits() as _)
             .build()
             .into()
     }

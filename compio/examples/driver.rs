@@ -34,13 +34,13 @@ fn open_file(driver: &mut Proactor) -> OwnedFd {
 fn open_file(driver: &mut Proactor) -> OwnedFd {
     use std::ffi::CString;
 
-    use compio_driver::op::{CurrentDir, OpenFile};
+    use compio_driver::op::{CurrentDir, Mode, OFlags, OpenFile};
 
     let op = OpenFile::new(
         CurrentDir,
         CString::new("Cargo.toml").unwrap(),
-        libc::O_CLOEXEC | libc::O_RDONLY,
-        0o666,
+        OFlags::CLOEXEC | OFlags::RDONLY,
+        Mode::from_bits_retain(0o666),
     );
     let (_, op) = push_and_wait(driver, op);
     op.into_inner()

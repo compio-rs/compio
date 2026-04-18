@@ -16,7 +16,7 @@ pub unsafe trait OpCode {
     ///
     /// Caller must guarantee that during the lifetime of `ctrl`, `Self` is
     /// unmoved and valid.
-    unsafe fn init(&mut self, ctrl: &mut Self::Control);
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     /// Determines that the operation is really overlapped defined by
     /// Windows API. If not, the driver will try to operate it in

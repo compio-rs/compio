@@ -1,14 +1,9 @@
 use windows_sys::Win32::System::IO::OVERLAPPED;
 
-use crate::{
-    OpCode,
-    sys::{op::*, prelude::*},
-};
+use crate::{OpCode, sys::op::*};
 
 unsafe impl<S: AsFd> OpCode for ReadManagedAt<S> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     unsafe fn operate(
         &mut self,
@@ -25,8 +20,6 @@ unsafe impl<S: AsFd> OpCode for ReadManagedAt<S> {
 
 unsafe impl<S: AsFd> OpCode for ReadManaged<S> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     unsafe fn operate(
         &mut self,

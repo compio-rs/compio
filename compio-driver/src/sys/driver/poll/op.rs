@@ -13,6 +13,7 @@ pub enum OpType {
 }
 
 /// Result of [`OpCode::pre_submit`].
+#[derive(Debug)]
 #[non_exhaustive]
 pub enum Decision {
     /// Instant operation, no need to submit
@@ -23,7 +24,7 @@ pub enum Decision {
     Blocking,
     /// AIO operation, needs to be spawned to the kernel.
     #[cfg(aio)]
-    Aio(super::AioControl),
+    Aio(AioArg),
 }
 
 /// Meta of polling operations.
@@ -54,7 +55,7 @@ pub unsafe trait OpCode {
     ///
     /// Caller must guarantee that during the lifetime of `ctrl`, `Self` is
     /// unmoved and valid.
-    unsafe fn init(&mut self, ctrl: &mut Self::Control);
+    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     /// Perform the operation before submit, and return [`Decision`] to
     /// indicate whether submitting the operation to polling is required.
@@ -155,7 +156,7 @@ impl Decision {
         cb: &mut libc::aiocb,
         submit: unsafe extern "C" fn(*mut libc::aiocb) -> i32,
     ) -> Self {
-        Self::Aio(super::AioControl {
+        Self::Aio(AioArg {
             aiocbp: NonNull::from(cb),
             submit,
         })

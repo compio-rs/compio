@@ -8,6 +8,7 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetLen};
 use io_uring::{opcode, squeue::Flags, types::Fd};
+use rustix::net::RecvFlags;
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
 use crate::{BufferPool, BufferRef, Extra, IourOpCode as OpCode, OpEntry, op::TakeBuffer};
@@ -40,8 +41,6 @@ impl<S> ReadManagedAt<S> {
 
 unsafe impl<S: AsFd> OpCode for ReadManagedAt<S> {
     type Control = ();
-
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
 
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let fd = Fd(self.fd.as_fd().as_raw_fd());
@@ -102,8 +101,6 @@ impl<S> ReadManaged<S> {
 unsafe impl<S: AsFd> OpCode for ReadManaged<S> {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let fd = self.fd.as_fd().as_raw_fd();
         opcode::Read::new(Fd(fd), ptr::null_mut(), self.len)
@@ -139,7 +136,7 @@ impl<S> TakeBuffer for ReadManaged<S> {
 pub struct RecvManaged<S> {
     fd: S,
     len: u32,
-    flags: i32,
+    flags: RecvFlags,
     buffer_group: u16,
     buffer_pool: BufferPool,
     buffer: Option<BufferRef>,
@@ -147,7 +144,7 @@ pub struct RecvManaged<S> {
 
 impl<S> RecvManaged<S> {
     /// Create [`RecvManaged`].
-    pub fn new(fd: S, buffer_pool: &BufferPool, len: usize, flags: i32) -> io::Result<Self> {
+    pub fn new(fd: S, buffer_pool: &BufferPool, len: usize, flags: RecvFlags) -> io::Result<Self> {
         Ok(Self {
             fd,
             buffer_group: buffer_pool.buffer_group()?,
@@ -164,12 +161,10 @@ impl<S> RecvManaged<S> {
 unsafe impl<S: AsFd> OpCode for RecvManaged<S> {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let fd = self.fd.as_fd().as_raw_fd();
         opcode::Recv::new(Fd(fd), ptr::null_mut(), self.len)
-            .flags(self.flags)
+            .flags(self.flags.bits() as _)
             .buf_group(self.buffer_group)
             .build()
             .flags(Flags::BUFFER_SELECT)
@@ -200,7 +195,7 @@ impl<S> TakeBuffer for RecvManaged<S> {
 /// Receive data and source address into managed buffer.
 pub struct RecvFromManaged<S> {
     fd: S,
-    flags: i32,
+    flags: RecvFlags,
     addr: SockAddrStorage,
     name_len: socklen_t,
     buffer_len: usize,
@@ -227,7 +222,7 @@ impl Default for RecvFromManagedControl {
 
 impl<S> RecvFromManaged<S> {
     /// Create [`RecvFromManaged`].
-    pub fn new(fd: S, buffer_pool: &BufferPool, len: usize, flags: i32) -> io::Result<Self> {
+    pub fn new(fd: S, buffer_pool: &BufferPool, len: usize, flags: RecvFlags) -> io::Result<Self> {
         let addr = SockAddrStorage::zeroed();
         Ok(Self {
             fd,
@@ -265,7 +260,7 @@ unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
         opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &raw mut control.msg)
-            .flags(self.flags as _)
+            .flags(self.flags.bits() as _)
             .buf_group(self.buffer_group)
             .build()
             .flags(Flags::BUFFER_SELECT)
@@ -300,7 +295,13 @@ pub struct RecvMsgManaged<C: IoBufMut, S: AsFd> {
 
 impl<C: IoBufMut, S: AsFd> RecvMsgManaged<C, S> {
     /// Create [`RecvMsgManaged`].
-    pub fn new(fd: S, pool: &BufferPool, len: usize, control: C, flags: i32) -> io::Result<Self> {
+    pub fn new(
+        fd: S,
+        pool: &BufferPool,
+        len: usize,
+        control: C,
+        flags: RecvFlags,
+    ) -> io::Result<Self> {
         Ok(Self {
             op: RecvFromManaged::new(fd, pool, len, flags)?,
             control,
@@ -409,8 +410,6 @@ impl<S> ReadMultiAt<S> {
 unsafe impl<S: AsFd> OpCode for ReadMultiAt<S> {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let fd = self.inner.fd.as_fd().as_raw_fd();
         opcode::ReadMulti::new(Fd(fd), self.inner.len, self.inner.buffer_group)
@@ -479,8 +478,6 @@ impl<S> ReadMulti<S> {
 unsafe impl<S: AsFd> OpCode for ReadMulti<S> {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let fd = self.inner.fd.as_fd().as_raw_fd();
         opcode::ReadMulti::new(Fd(fd), self.inner.len, self.inner.buffer_group)
@@ -538,7 +535,7 @@ pub struct RecvMulti<S> {
 
 impl<S> RecvMulti<S> {
     /// Create [`RecvMulti`].
-    pub fn new(fd: S, buffer_pool: &BufferPool, len: usize, flags: i32) -> io::Result<Self> {
+    pub fn new(fd: S, buffer_pool: &BufferPool, len: usize, flags: RecvFlags) -> io::Result<Self> {
         Ok(Self {
             inner: RecvManaged::new(fd, buffer_pool, len, flags)?,
             multishots: VecDeque::new(),
@@ -549,12 +546,10 @@ impl<S> RecvMulti<S> {
 unsafe impl<S: AsFd> OpCode for RecvMulti<S> {
     type Control = ();
 
-    unsafe fn init(&mut self, _: &mut Self::Control) {}
-
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let fd = self.inner.fd.as_fd().as_raw_fd();
         opcode::RecvMulti::new(Fd(fd), self.inner.buffer_group)
-            .flags(self.inner.flags)
+            .flags(self.inner.flags.bits() as _)
             .build()
             .into()
     }
@@ -720,7 +715,7 @@ impl IntoInner for RecvMsgMultiResult {
 /// managed buffers.
 pub struct RecvMsgMulti<S: AsFd> {
     fd: S,
-    flags: i32,
+    flags: RecvFlags,
     control_len: usize,
     buffer_group: u16,
     buffer_pool: BufferPool,
@@ -748,7 +743,7 @@ impl<S: AsFd> RecvMsgMulti<S> {
         fd: S,
         buffer_pool: &BufferPool,
         control_len: usize,
-        flags: i32,
+        flags: RecvFlags,
     ) -> io::Result<Self> {
         Ok(Self {
             fd,
@@ -787,7 +782,7 @@ unsafe impl<S: AsFd> OpCode for RecvMsgMulti<S> {
             &raw mut control.msg,
             self.buffer_group,
         )
-        .flags(self.flags as _)
+        .flags(self.flags.bits() as _)
         .build()
         .into()
     }
@@ -877,7 +872,7 @@ pub struct RecvFromMulti<S: AsFd> {
 
 impl<S: AsFd> RecvFromMulti<S> {
     /// Create [`RecvFromMulti`].
-    pub fn new(fd: S, pool: &BufferPool, flags: i32) -> io::Result<Self> {
+    pub fn new(fd: S, pool: &BufferPool, flags: RecvFlags) -> io::Result<Self> {
         Ok(Self {
             op: RecvMsgMulti::new(fd, pool, 0, flags)?,
         })
