@@ -37,9 +37,9 @@ use tungstenite::{
     protocol::{CloseFrame, Role, WebSocketConfig},
 };
 
-#[cfg(feature = "tls")]
+#[cfg(feature = "connect")]
 mod tls;
-#[cfg(feature = "tls")]
+#[cfg(feature = "connect")]
 pub use tls::*;
 pub use tungstenite;
 
