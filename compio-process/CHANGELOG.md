@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0](https://github.com/compio-rs/compio/compare/compio-process-v0.8.0...compio-process-v0.9.0) - 2026-04-18
+
+### Added
+
+- [**breaking**] compio-executor ([#790](https://github.com/compio-rs/compio/pull/790))
+
+### Changed
+
+- *(driver)* require Default for Control ([#859](https://github.com/compio-rs/compio/pull/859))
+- [**breaking**] rename all "canceled" to "cancelled" ([#826](https://github.com/compio-rs/compio/pull/826))
+- [**breaking**] buffer pool & managed IO ([#820](https://github.com/compio-rs/compio/pull/820))
+- *(driver)* get rid of pin ([#758](https://github.com/compio-rs/compio/pull/758))
+
+### Fixed
+
+- unused_features ([#739](https://github.com/compio-rs/compio/pull/739))
+
+### Other
+
+- remove "authors" field in metadata ([#711](https://github.com/compio-rs/compio/pull/711))
+
 ## [0.8.0](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added
