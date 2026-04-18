@@ -10,7 +10,7 @@
 //! [`tungstenite`]: https://docs.rs/tungstenite
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![allow(private_bounds)]
+#![allow(unused_features)]
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![doc(
@@ -158,10 +158,27 @@ impl From<Option<WebSocketConfig>> for Config {
     }
 }
 
-trait IntoMaybeTlsStream<S>
+mod private {
+    use super::*;
+
+    pub trait Sealed<S>
+    where
+        S: Splittable,
+    {
+    }
+
+    impl<S: Splittable> Sealed<S> for S {}
+    impl<S: Splittable> Sealed<S> for AsyncStream<S> {}
+    impl<S: Splittable> Sealed<S> for MaybeTlsStream<S> {}
+    impl<S: Splittable> Sealed<S> for TlsStream<S> {}
+}
+
+/// Create [`MaybeTlsStream`] with capacity and buffer size limit.
+pub trait IntoMaybeTlsStream<S>: private::Sealed<S>
 where
     S: Splittable,
 {
+    /// Create [`MaybeTlsStream`] with capacity and buffer size limit.
     fn into_maybe_tls_stream(self, capacity: usize, max_buffer_size: usize) -> MaybeTlsStream<S>;
 }
 
