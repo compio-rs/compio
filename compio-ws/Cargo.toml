@@ -16,22 +16,24 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 compio-buf = { workspace = true }
 compio-io = { workspace = true, features = ["compat"] }
-compio-net = { workspace = true }
+compio-net = { workspace = true, optional = true }
 compio-tls = { workspace = true, default-features = false }
 compio-log = { workspace = true }
 
 tungstenite = "0.29.0"
+async-tungstenite = "0.34.0"
 
 rustls-platform-verifier = { workspace = true, optional = true }
 rustls-native-certs = { workspace = true, optional = true }
 webpki-roots = { workspace = true, optional = true }
 
-futures-util = { workspace = true, optional = true, features = ["sink"] }
-pin-project-lite = { workspace = true, optional = true }
+futures-util = { workspace = true, features = ["sink"] }
+pin-project-lite = { workspace = true }
 
 [dev-dependencies]
 compio-macros = { workspace = true }
 compio-runtime = { workspace = true }
+compio-net = { workspace = true }
 
 futures-channel = { workspace = true }
 rustls-pemfile = "2.0"
@@ -39,16 +41,19 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [features]
 default = []
-native-tls = ["compio-tls/native-tls", "tungstenite/native-tls"]
-native-tls-vendored = ["compio-tls/native-tls-vendored"]
-rustls = ["compio-tls/rustls", "tungstenite/__rustls-tls"]
+connect = ["dep:compio-net"]
+native-tls = ["connect", "compio-tls/native-tls", "tungstenite/native-tls"]
+native-tls-vendored = ["native-tls", "compio-tls/native-tls-vendored"]
+rustls = ["connect", "compio-tls/rustls", "tungstenite/__rustls-tls"]
 rustls-platform-verifier = ["rustls", "dep:rustls-platform-verifier"]
 rustls-native-certs = ["rustls", "dep:rustls-native-certs"]
 webpki-roots = ["rustls", "dep:webpki-roots"]
-ring = ["compio-tls/ring"]
-
-io-compat = ["dep:futures-util", "dep:pin-project-lite"]
+ring = ["rustls", "compio-tls/ring"]
 
 [[example]]
-name = "ws_split"
-required-features = ["io-compat"]
+name = "client_tls"
+required-features = ["connect"]
+
+[[example]]
+name = "echo_server_tls"
+required-features = ["connect"]

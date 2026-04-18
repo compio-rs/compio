@@ -88,12 +88,24 @@ impl TlsConnector {
         S::ReadHalf: AsyncRead + Unpin,
         S::WriteHalf: AsyncWrite + Unpin,
     {
+        self.connect_compat(domain, AsyncStream::new(stream)).await
+    }
+
+    /// Similar to `connect` but accepts an [`AsyncStream`] instead of a raw
+    /// stream. Users are free to adjust the inner buffer sizes and limits.
+    pub async fn connect_compat<S: Splittable + 'static>(
+        &self,
+        domain: &str,
+        stream: AsyncStream<S>,
+    ) -> io::Result<TlsStream<S>>
+    where
+        S::ReadHalf: AsyncRead + Unpin,
+        S::WriteHalf: AsyncWrite + Unpin,
+    {
         match &self.0 {
             #[cfg(feature = "native-tls")]
             TlsConnectorInner::NativeTls(c) => {
-                let client = c
-                    .connect(domain, Box::pin(AsyncStream::new(stream)))
-                    .await?;
+                let client = c.connect(domain, Box::pin(stream)).await?;
                 Ok(TlsStream::from(client))
             }
             #[cfg(feature = "rustls")]
@@ -101,16 +113,14 @@ impl TlsConnector {
                 let client = c
                     .connect(
                         domain.to_string().try_into().map_err(io::Error::other)?,
-                        Box::pin(AsyncStream::new(stream)),
+                        Box::pin(stream),
                     )
                     .await?;
                 Ok(TlsStream::from(client))
             }
             #[cfg(feature = "py-dynamic-openssl")]
             TlsConnectorInner::PyDynamicOpenSsl(c) => {
-                let client = c
-                    .connect(domain, Box::pin(AsyncStream::new(stream)))
-                    .await?;
+                let client = c.connect(domain, Box::pin(stream)).await?;
                 Ok(TlsStream::from(client))
             }
             #[cfg(not(any(
@@ -184,20 +194,33 @@ impl TlsAcceptor {
         S::ReadHalf: AsyncRead + Unpin,
         S::WriteHalf: AsyncWrite + Unpin,
     {
+        self.accept_compat(AsyncStream::new(stream)).await
+    }
+
+    /// Similar to `accept` but accepts an [`AsyncStream`] instead of a raw
+    /// stream. Users are free to adjust the inner buffer sizes and limits.
+    pub async fn accept_compat<S: Splittable + 'static>(
+        &self,
+        stream: AsyncStream<S>,
+    ) -> io::Result<TlsStream<S>>
+    where
+        S::ReadHalf: AsyncRead + Unpin,
+        S::WriteHalf: AsyncWrite + Unpin,
+    {
         match &self.0 {
             #[cfg(feature = "native-tls")]
             TlsAcceptorInner::NativeTls(c) => {
-                let server = c.accept(Box::pin(AsyncStream::new(stream))).await?;
+                let server = c.accept(Box::pin(stream)).await?;
                 Ok(TlsStream::from(server))
             }
             #[cfg(feature = "rustls")]
             TlsAcceptorInner::Rustls(c) => {
-                let server = c.accept(Box::pin(AsyncStream::new(stream))).await?;
+                let server = c.accept(Box::pin(stream)).await?;
                 Ok(TlsStream::from(server))
             }
             #[cfg(feature = "py-dynamic-openssl")]
             TlsAcceptorInner::PyDynamicOpenSsl(a) => {
-                let server = a.accept(Box::pin(AsyncStream::new(stream))).await?;
+                let server = a.accept(Box::pin(stream)).await?;
                 Ok(TlsStream::from(server))
             }
             #[cfg(not(any(

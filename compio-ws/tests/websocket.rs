@@ -176,7 +176,6 @@ async fn test_multiple_messages() {
 }
 
 #[compio_macros::test]
-#[cfg(feature = "io-compat")]
 async fn compat_ping_pong() {
     use futures_util::{SinkExt, StreamExt};
 
@@ -188,22 +187,18 @@ async fn compat_ping_pong() {
         tx.send(addr).unwrap();
 
         let (stream, _) = listener.accept().await.unwrap();
-        let ws = accept_async(stream).await.unwrap();
-        let ws = ws.into_compat();
-        let mut ws = std::pin::pin!(ws);
+        let mut ws = accept_async(stream).await.unwrap();
 
         let msg = ws.next().await.unwrap().unwrap();
         assert!(matches!(msg, Message::Ping(_)));
-        ws.close().await.unwrap();
+        SinkExt::close(&mut ws).await.unwrap();
     })
     .detach();
 
     let addr = rx.await.unwrap();
 
     let tcp = TcpStream::connect(&addr).await.unwrap();
-    let (ws, _) = client_async(&format!("ws://{}", addr), tcp).await.unwrap();
-    let ws = ws.into_compat();
-    let mut ws = std::pin::pin!(ws);
+    let (mut ws, _) = client_async(&format!("ws://{}", addr), tcp).await.unwrap();
 
     let ping_data = vec![42];
     ws.send(Message::Ping(ping_data.clone().into()))
