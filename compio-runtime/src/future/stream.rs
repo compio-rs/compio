@@ -203,15 +203,17 @@ impl<T: OpCode + TakeBuffer<Buffer = B> + 'static, B: HandleBufferRef> Stream
                             .take()
                             .and_then(|s| s.try_take().ok())
                             .and_then(|op| op.take_buffer());
+                        let res = res?;
                         if let Some(ref mut b) = b {
-                            unsafe { b.advance_to(res?) }
+                            unsafe { b.advance_to(res) }
                         }
                         b
                     } else {
                         let b = self.buffer_pool.take(extra.buffer_id()?)?;
+                        let res = res?;
                         if let Some(mut b) = b {
                             unsafe {
-                                SetLen::advance_to(&mut b, res?);
+                                SetLen::advance_to(&mut b, res);
                                 Some(B::from_buffer_ref(b, self.param))
                             }
                         } else {
