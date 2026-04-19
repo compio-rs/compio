@@ -30,6 +30,11 @@ impl<S: Splittable> MaybeTlsStream<S> {
         ))))
     }
 
+    /// Create an unencrypted stream from [`AsyncStream`].
+    pub fn new_plain_compat(stream: AsyncStream<S>) -> Self {
+        Self(MaybeTlsStreamInner::Plain(Box::pin(stream)))
+    }
+
     /// Create a TLS-encrypted stream.
     pub fn new_tls(stream: TlsStream<S>) -> Self {
         Self(MaybeTlsStreamInner::Tls(stream))

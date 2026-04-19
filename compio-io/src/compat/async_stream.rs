@@ -39,6 +39,12 @@ impl<S: Splittable> AsyncStream<S> {
         Self::new_impl(SyncStream::with_capacity(cap, stream))
     }
 
+    /// Create [`AsyncStream`] with the stream, buffer capacity and max buffer
+    /// size.
+    pub fn with_limits(cap: usize, max_buffer_size: usize, stream: S) -> Self {
+        Self::new_impl(SyncStream::with_limits(cap, max_buffer_size, stream))
+    }
+
     fn new_impl(inner: SyncStream<S>) -> Self {
         let (read_inner, write_inner) = inner.split();
         Self {

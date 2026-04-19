@@ -1,5 +1,5 @@
 use compio_net::{TcpListener, TcpStream};
-use compio_ws::{CompatWebSocketStream, WebSocketStream, accept_async, client_async};
+use compio_ws::{WebSocketStream, accept_async, client_async};
 use futures_util::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},
@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ws = accept_async(stream).await.unwrap();
     println!("Accepted");
 
-    let (w, r) = ws.into_compat().split();
+    let (w, r) = ws.split();
 
     let w_h = compio_runtime::spawn(server_send_task(w));
     let r_h = compio_runtime::spawn(server_recv_task(r));
@@ -57,8 +57,8 @@ async fn run_client() -> WebSocketStream<TcpStream> {
 }
 
 async fn server_recv_task(
-    mut ws: SplitStream<CompatWebSocketStream<TcpStream>>,
-) -> SplitStream<CompatWebSocketStream<TcpStream>> {
+    mut ws: SplitStream<WebSocketStream<TcpStream>>,
+) -> SplitStream<WebSocketStream<TcpStream>> {
     let mut n = 0;
     loop {
         ws.next().await.unwrap().unwrap();
@@ -73,8 +73,8 @@ async fn server_recv_task(
 }
 
 async fn server_send_task(
-    mut ws: SplitSink<CompatWebSocketStream<TcpStream>, Message>,
-) -> SplitSink<CompatWebSocketStream<TcpStream>, Message> {
+    mut ws: SplitSink<WebSocketStream<TcpStream>, Message>,
+) -> SplitSink<WebSocketStream<TcpStream>, Message> {
     let data = vec![0; MSG_LEN];
     for _ in 0..N {
         ws.send(Message::Binary(data.clone().into())).await.unwrap();
