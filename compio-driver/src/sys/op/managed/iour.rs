@@ -550,6 +550,7 @@ unsafe impl<S: AsFd> OpCode for RecvMulti<S> {
         let fd = self.inner.fd.as_fd().as_raw_fd();
         opcode::RecvMulti::new(Fd(fd), self.inner.buffer_group)
             .flags(self.inner.flags.bits() as _)
+            .len(self.inner.len)
             .build()
             .into()
     }
