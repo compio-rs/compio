@@ -806,7 +806,7 @@ pub trait ErrorExt: seal::Seal {
         #[cfg(unix)]
         const CANCEL_ERROR: i32 = libc::ECANCELED;
         #[cfg(windows)]
-        const CANCEL_ERROR: i32 = windows_sys::Win32::Foundation::ERROR_CANCELLED as _;
+        const CANCEL_ERROR: i32 = windows_sys::Win32::Foundation::ERROR_OPERATION_ABORTED as _;
 
         self.as_io_error()
             .and_then(io::Error::raw_os_error)
