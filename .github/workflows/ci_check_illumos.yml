@@ -9,21 +9,18 @@ on:
     paths:
       - '**/*.rs'
       - '**/Cargo.toml'
-      - '.github/workflows/check_illumos.yml'
+      - '.github/workflows/ci_check_illumos.yml'
   pull_request:
     branches:
       - master
     paths:
       - '**/*.rs'
       - '**/Cargo.toml'
-      - '.github/workflows/check_illumos.yml'
+      - '.github/workflows/ci_check_illumos.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
-
-env:
-  RUST_BACKTRACE: 1
 
 jobs:
   check_illumos:
