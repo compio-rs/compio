@@ -2,6 +2,8 @@
 #![allow(unused_imports)]
 use std::{net::Ipv4Addr, time::Duration};
 
+#[cfg(windows)]
+use compio::fs::named_pipe::{ClientOptions, NamedPipeClient, NamedPipeServer, ServerOptions};
 use compio::{
     buf::*,
     driver::{ErrorExt, ProactorBuilder},
@@ -163,7 +165,6 @@ async fn wake_cross_thread() {
 }
 
 #[compio_macros::test]
-#[cfg(unix)]
 async fn cancel_open_file() {
     let fut = compio_fs::File::open("Cargo.toml");
     poll_once(fut).await;
@@ -186,7 +187,7 @@ async fn poll_once(future: impl std::future::Future) {
 }
 
 #[cfg(unix)]
-fn unix_pair() -> io::Result<(UnixStream, UnixStream)> {
+async fn pipe_pair() -> io::Result<(UnixStream, UnixStream)> {
     let (a, b) = std::os::unix::net::UnixStream::pair()?;
 
     a.set_nonblocking(true)?;
@@ -195,13 +196,31 @@ fn unix_pair() -> io::Result<(UnixStream, UnixStream)> {
     Ok((UnixStream::from_std(a)?, UnixStream::from_std(b)?))
 }
 
-// TODO: We need to test for IOCP as well.
-#[cfg(unix)]
+#[cfg(windows)]
+async fn pipe_pair() -> io::Result<(NamedPipeClient, NamedPipeServer)> {
+    use rand::{Rng, rng};
+
+    let mut rng = rng();
+    let idx = rng.next_u32();
+    let pipe_name = format!(r"\\.\pipe\compio-test-pipe-pair-{}", idx);
+
+    let server = ServerOptions::new()
+        .access_outbound(true)
+        .access_inbound(true)
+        .create(&pipe_name)
+        .unwrap();
+    let client = ClientOptions::new().open(&pipe_name).await.unwrap();
+
+    server.connect().await.unwrap();
+
+    Ok((client, server))
+}
+
 #[compio_macros::test]
 async fn cancel_token_read() {
     let cancel_token = CancelToken::new();
 
-    let (mut a, _b) = unix_pair().unwrap();
+    let (mut a, _b) = pipe_pair().await.unwrap();
 
     let token = cancel_token.clone();
     let read_task = compio_runtime::spawn(async move {
@@ -214,12 +233,11 @@ async fn cancel_token_read() {
     read_task.await.unwrap().unwrap_err();
 }
 
-#[cfg(unix)]
 #[compio_macros::test]
 async fn cancel_token_multiple_operations() {
     let cancel_token = CancelToken::new();
 
-    let (mut a, mut b) = unix_pair().unwrap();
+    let (mut a, mut b) = pipe_pair().await.unwrap();
     let cancel_token_clone1 = cancel_token.clone();
     let task1 = compio_runtime::spawn(async move {
         let buf = Vec::with_capacity(1024);
@@ -238,7 +256,6 @@ async fn cancel_token_multiple_operations() {
     assert!(task2.await.unwrap().is_cancelled());
 }
 
-#[cfg(unix)]
 #[compio_macros::test]
 async fn cancel_token_already_cancelled() {
     let cancel_token = CancelToken::new();
@@ -246,7 +263,7 @@ async fn cancel_token_already_cancelled() {
 
     cancel_token2.cancel();
 
-    let (mut stream, _b) = unix_pair().unwrap();
+    let (mut stream, _b) = pipe_pair().await.unwrap();
 
     let cancel_token_clone = cancel_token.clone();
     let read_task = compio_runtime::spawn(async move {
@@ -257,12 +274,11 @@ async fn cancel_token_already_cancelled() {
     assert!(read_task.await.unwrap().is_cancelled());
 }
 
-#[cfg(unix)]
 #[compio_macros::test]
 async fn cancel_token_successful_operation() {
     let cancel_token = CancelToken::new();
 
-    let (mut receiver, mut sender) = unix_pair().unwrap();
+    let (mut receiver, mut sender) = pipe_pair().await.unwrap();
 
     let data = b"hello world";
     sender.write_all(data).await.unwrap();

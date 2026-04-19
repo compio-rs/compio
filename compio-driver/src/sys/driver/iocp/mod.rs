@@ -4,7 +4,7 @@ use std::{
 };
 
 use flume::{Receiver, Sender};
-use windows_sys::Win32::{Foundation::ERROR_CANCELLED, System::IO::OVERLAPPED};
+use windows_sys::Win32::{Foundation::ERROR_OPERATION_ABORTED, System::IO::OVERLAPPED};
 
 use crate::{
     AsyncifyPool, DriverType, Entry, ErasedKey, ProactorBuilder,
@@ -163,7 +163,7 @@ impl Driver {
         let entry = if w.is_cancelled() {
             Entry::new(
                 entry.into_key(),
-                Err(io::Error::from_raw_os_error(ERROR_CANCELLED as _)),
+                Err(io::Error::from_raw_os_error(ERROR_OPERATION_ABORTED as _)),
             )
         } else if entry.result.is_err() {
             entry
