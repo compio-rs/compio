@@ -29,8 +29,18 @@ This crate provides TLS/SSL support for compio networking types. It offers both 
 
 ## Usage
 
+### For application
+
 Use `compio` directly with `tls` feature and your chosen backend:
 
 ```bash
 cargo add compio --features tls,rustls # or native-tls
+```
+
+### For library
+
+If you are writing libraries that want to support completion-based async IO with TLS support, you can depend on this crate directly:
+
+```bash
+cargo add compio-tls # native-tls by default
 ```

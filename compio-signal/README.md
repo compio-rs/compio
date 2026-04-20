@@ -20,6 +20,8 @@ This crate provides async signal handling capabilities for compio applications. 
 
 ## Usage
 
+### For `compio`
+
 Use `compio` directly with `signal` feature enabled:
 
 ```bash
@@ -34,4 +36,18 @@ use compio::signal::ctrl_c;
 println!("Waiting for ctrl-c");
 let mut sigint = ctrl_c().await?;
 println!("ctrl-c received!");
+```
+
+### For other async runtimes
+
+`compio-signal` is runtime agnostic. You can depend on this crate directly:
+
+```bash
+compio add compio-signal
+```
+
+Then you can use it in your application:
+
+```rust
+use compio_signal::ctrl_c;
 ```
