@@ -1,0 +1,26 @@
+name: Auto Label Issues and PRs
+
+on:
+  issues:
+    types: [opened, reopened, edited]
+  pull_request_target:
+    types: [opened, reopened, edited]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  auto-label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
+
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const { run } = require("./.github/scripts/auto-label.cjs");
+            await run({ github, context, core });

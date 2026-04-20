@@ -27,6 +27,7 @@
       {
         devShells.default = mkShell {
           buildInputs = [
+            nodejs
             gnuplot_qt
             go
             cmake
