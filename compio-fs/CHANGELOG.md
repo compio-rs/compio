@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0](https://github.com/compio-rs/compio/compare/compio-fs-v0.11.0...compio-fs-v0.12.0) - 2026-04-20
+
+### Added
+
+- *(runtime,fs,net)* high-level multishot ([#830](https://github.com/compio-rs/compio/pull/830))
+- *(driver,fs,unix)* async anonymous pipe ([#807](https://github.com/compio-rs/compio/pull/807))
+- *(io)* copy-bidirectional ([#800](https://github.com/compio-rs/compio/pull/800))
+- [**breaking**] compio-executor ([#790](https://github.com/compio-rs/compio/pull/790))
+- *(io)* allow create a stream out of AsyncRead for BytesFramed ([#767](https://github.com/compio-rs/compio/pull/767))
+- *(tls,fs)* fix tests ([#757](https://github.com/compio-rs/compio/pull/757))
+- *(fs)* dirfd support ([#703](https://github.com/compio-rs/compio/pull/703))
+- *(driver,unix)* [**breaking**] support dirfd relative fs ops ([#699](https://github.com/compio-rs/compio/pull/699))
+
+### Changed
+
+- [**breaking**] use rustix ([#876](https://github.com/compio-rs/compio/pull/876))
+- *(driver)* require Default for Control ([#859](https://github.com/compio-rs/compio/pull/859))
+- [**breaking**] rename all "canceled" to "cancelled" ([#826](https://github.com/compio-rs/compio/pull/826))
+- [**breaking**] buffer pool & managed IO ([#820](https://github.com/compio-rs/compio/pull/820))
+- *(driver)* get rid of pin ([#758](https://github.com/compio-rs/compio/pull/758))
+- [**breaking**] move {Async,Poll}Fd to runtime ([#662](https://github.com/compio-rs/compio/pull/662))
+
+### Fixed
+
+- *(driver,fs)* add Sync on fds of AsyncifyFd* ([#805](https://github.com/compio-rs/compio/pull/805))
+- unused_features ([#739](https://github.com/compio-rs/compio/pull/739))
+- *(driver,unix)* `set_result` for `OpenFile` & `CreateSocket` ([#701](https://github.com/compio-rs/compio/pull/701))
+
+### Other
+
+- *(fs,net)* comments on `close` ([#821](https://github.com/compio-rs/compio/pull/821))
+- remove "authors" field in metadata ([#711](https://github.com/compio-rs/compio/pull/711))
+- compio::runtime instead of compio_runtime ([#664](https://github.com/compio-rs/compio/pull/664))
+
 ## [0.11.0](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added

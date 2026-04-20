@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0](https://github.com/compio-rs/compio/compare/compio-dispatcher-v0.10.0...compio-dispatcher-v0.11.0) - 2026-04-20
+
+### Added
+
+- *(signal,dispatcher)* [**breaking**] remove signalfd ([#794](https://github.com/compio-rs/compio/pull/794))
+- *(dispatcher)* block standard POSIX signals on worker threads ([#672](https://github.com/compio-rs/compio/pull/672))
+
+### Fixed
+
+- unused_features ([#739](https://github.com/compio-rs/compio/pull/739))
+
+### Other
+
+- remove "authors" field in metadata ([#711](https://github.com/compio-rs/compio/pull/711))
+
 ## [0.10.0](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added
