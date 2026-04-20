@@ -8,3 +8,6 @@ commit_parsers = [
     { message = "^security", group = "security" },
     { message = "^.*", group = "other" },
 ]
+
+[workspace]
+git_tag_enable = false
