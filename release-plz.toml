@@ -11,3 +11,8 @@ commit_parsers = [
 
 [workspace]
 git_tag_enable = false
+
+[[package]]
+name = "compio"
+git_tag_enable = true
+git_tag_name = "v{{ version }}"
