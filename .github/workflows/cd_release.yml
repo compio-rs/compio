@@ -10,8 +10,7 @@ jobs:
   release-plz-release:
     name: Release-plz release
     runs-on: ubuntu-latest
-    # Buggy currently
-    if: false
+    if: ${{ github.repository_owner == 'compio-rs' }}
     permissions:
       contents: write
     steps:
