@@ -377,7 +377,7 @@ pub trait IoBufMut: IoBuf + SetLen {
     /// Only the uninitialized tail (`buf_len()..buf_capacity()`) is
     /// zero-initialized.
     fn ensure_init(&mut self) -> &mut [u8] {
-        let len = self.buf_len();
+        let len = (*self).buf_len();
         let slice = self.as_uninit();
         slice[len..].fill(MaybeUninit::new(0));
         unsafe { slice.assume_init_mut() }
