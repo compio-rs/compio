@@ -43,9 +43,9 @@ unsafe impl<R: Read, B: IoBufMut> OpCode for StdRead<R, B> {
         _: &mut Self::Control,
         _optr: *mut OVERLAPPED,
     ) -> Poll<io::Result<usize>> {
-        let slice = self.buffer.as_uninit();
         #[cfg(feature = "read_buf")]
         {
+            let slice = self.buffer.as_uninit();
             let mut buf = io::BorrowedBuf::from(slice);
             let mut cursor = buf.unfilled();
             self.reader.read_buf(cursor.reborrow())?;
@@ -53,17 +53,8 @@ unsafe impl<R: Read, B: IoBufMut> OpCode for StdRead<R, B> {
         }
         #[cfg(not(feature = "read_buf"))]
         {
-            use std::mem::MaybeUninit;
-
-            slice.fill(MaybeUninit::new(0));
-            self.reader
-                .read(unsafe {
-                    std::slice::from_raw_parts_mut(
-                        self.buffer.buf_mut_ptr() as _,
-                        self.buffer.buf_capacity(),
-                    )
-                })
-                .into()
+            let slice = self.buffer.ensure_init();
+            self.reader.read(slice).into()
         }
     }
 }

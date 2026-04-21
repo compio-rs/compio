@@ -1,7 +1,6 @@
 use std::{
     borrow::Cow,
     io,
-    mem::MaybeUninit,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -144,11 +143,7 @@ pub(crate) async fn read_futures<S: futures_util::AsyncRead + Unpin, B: IoBufMut
     s: &mut S,
     mut buf: B,
 ) -> BufResult<usize, B> {
-    let slice = buf.as_uninit();
-    slice.fill(MaybeUninit::new(0));
-    // SAFETY: The memory has been initialized
-    let slice =
-        unsafe { std::slice::from_raw_parts_mut::<u8>(slice.as_mut_ptr().cast(), slice.len()) };
+    let slice = buf.ensure_init();
     let res = futures_util::AsyncReadExt::read(s, slice).await;
     let res = match res {
         Ok(len) => {

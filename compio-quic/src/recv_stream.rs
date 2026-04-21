@@ -4,7 +4,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use compio_buf::{BufResult, IoBufMut, bytes::Bytes};
+use compio_buf::{BufResult, IntoInner, IoBufMut, bytes::Bytes};
 use compio_io::AsyncRead;
 use futures_util::future::poll_fn;
 use quinn_proto::{Chunk, Chunks, ClosedStream, ReadableError, StreamId, VarInt};
@@ -372,15 +372,14 @@ impl RecvStream {
         {
             return BufResult(Err(io::Error::new(io::ErrorKind::OutOfMemory, e)), buf);
         }
-        let slice = &mut buf.as_uninit()[..len];
-        slice.fill(MaybeUninit::new(0));
+        let mut buf = buf.slice(..len);
+        let slice = &mut buf.ensure_init();
         for (offset, bytes) in chunks {
             let offset = (offset - start) as usize;
             let buf_len = bytes.len();
-            slice[offset..offset + buf_len].copy_from_slice(unsafe {
-                std::slice::from_raw_parts(bytes.as_ptr().cast(), buf_len)
-            });
+            slice[offset..offset + buf_len].copy_from_slice(&bytes);
         }
+        let mut buf = buf.into_inner();
         unsafe { buf.advance_to(len) }
         BufResult(Ok(len), buf)
     }

@@ -371,6 +371,13 @@ pub trait IoBufMut: IoBuf + SetLen {
     /// and uninitialized bytes.
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>];
 
+    /// Initialize all bytes in the buffer and return them.
+    fn ensure_init(&mut self) -> &mut [u8] {
+        let slice = self.as_uninit();
+        slice.fill(MaybeUninit::new(0));
+        unsafe { slice.assume_init_mut() }
+    }
+
     /// Total capacity of the buffer, including both initialized and
     /// uninitialized bytes.
     fn buf_capacity(&mut self) -> usize {
