@@ -833,14 +833,11 @@ impl SetLen for std::io::BorrowedBuf<'static> {
     unsafe fn set_len(&mut self, len: usize) {
         debug_assert!(self.capacity() >= len);
 
-        let old_len = self.len();
-        if len > old_len {
-            // SAFETY: `len` range is initialized guaranteed by invariant of `set_len`
-            #[allow(unused_unsafe)]
-            unsafe {
-                self.clear().unfilled().advance(len - old_len)
-            };
-        }
+        // SAFETY: `len` range is initialized guaranteed by invariant of `set_len`
+        #[allow(unused_unsafe)]
+        unsafe {
+            self.clear().unfilled().advance(len)
+        };
     }
 }
 
