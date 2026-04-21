@@ -372,9 +372,14 @@ pub trait IoBufMut: IoBuf + SetLen {
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>];
 
     /// Initialize all bytes in the buffer and return them.
+    ///
+    /// Bytes in the already-initialized prefix (`0..buf_len()`) are preserved.
+    /// Only the uninitialized tail (`buf_len()..buf_capacity()`) is
+    /// zero-initialized.
     fn ensure_init(&mut self) -> &mut [u8] {
+        let len = self.buf_len();
         let slice = self.as_uninit();
-        slice.fill(MaybeUninit::new(0));
+        slice[len..].fill(MaybeUninit::new(0));
         unsafe { slice.assume_init_mut() }
     }
 

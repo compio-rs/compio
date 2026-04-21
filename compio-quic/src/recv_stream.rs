@@ -373,7 +373,7 @@ impl RecvStream {
             return BufResult(Err(io::Error::new(io::ErrorKind::OutOfMemory, e)), buf);
         }
         let mut buf = buf.slice(..len);
-        let slice = &mut buf.ensure_init();
+        let slice = buf.ensure_init();
         for (offset, bytes) in chunks {
             let offset = (offset - start) as usize;
             let buf_len = bytes.len();
