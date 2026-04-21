@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- *(buf)* add `ensure_init` for convenience ([#884](https://github.com/compio-rs/compio/pull/884))
 - *(runtime)* [**breaking**] waker-based future combinator ([#825](https://github.com/compio-rs/compio/pull/825))
 - organize features ([#822](https://github.com/compio-rs/compio/pull/822))
 - *(buf)* add into_parts for BufResult ([#712](https://github.com/compio-rs/compio/pull/712))
