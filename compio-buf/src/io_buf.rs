@@ -371,6 +371,18 @@ pub trait IoBufMut: IoBuf + SetLen {
     /// and uninitialized bytes.
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>];
 
+    /// Initialize all bytes in the buffer and return them.
+    ///
+    /// Bytes in the already-initialized prefix (`0..buf_len()`) are preserved.
+    /// Only the uninitialized tail (`buf_len()..buf_capacity()`) is
+    /// zero-initialized.
+    fn ensure_init(&mut self) -> &mut [u8] {
+        let len = (*self).buf_len();
+        let slice = self.as_uninit();
+        slice[len..].fill(MaybeUninit::new(0));
+        unsafe { slice.assume_init_mut() }
+    }
+
     /// Total capacity of the buffer, including both initialized and
     /// uninitialized bytes.
     fn buf_capacity(&mut self) -> usize {
@@ -826,14 +838,11 @@ impl SetLen for std::io::BorrowedBuf<'static> {
     unsafe fn set_len(&mut self, len: usize) {
         debug_assert!(self.capacity() >= len);
 
-        let old_len = self.len();
-        if len > old_len {
-            // SAFETY: `len` range is initialized guaranteed by invariant of `set_len`
-            #[allow(unused_unsafe)]
-            unsafe {
-                self.clear().unfilled().advance(len - old_len)
-            };
-        }
+        // SAFETY: `len` range is initialized guaranteed by invariant of `set_len`
+        #[allow(unused_unsafe)]
+        unsafe {
+            self.clear().unfilled().advance(len)
+        };
     }
 }
 

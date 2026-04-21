@@ -58,5 +58,5 @@ py-dynamic-openssl = ["dep:compio-py-dynamic-openssl", "dep:pin-project-lite"]
 
 ring = ["rustls", "rustls/ring", "futures-rustls/ring"]
 
-read_buf = ["compio-buf/read_buf", "compio-io/read_buf", "rustls?/read_buf"]
+read_buf = ["compio-buf/read_buf", "compio-io/read_buf"]
 nightly = ["read_buf"]

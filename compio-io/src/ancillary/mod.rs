@@ -176,9 +176,8 @@ impl<'a, B: IoBufMut + ?Sized> AncillaryBuilder<'a, B> {
     pub fn new(buffer: &'a mut B) -> Self {
         // SAFETY: always safe to make it empty.
         unsafe { buffer.set_len(0) };
-        let slice = buffer.as_uninit();
-        slice.fill(MaybeUninit::new(0));
-        let inner = sys::CMsgIter::new(slice.as_mut_ptr().cast(), slice.len());
+        let slice = buffer.ensure_init();
+        let inner = sys::CMsgIter::new(slice.as_ptr(), slice.len());
         Self { inner, buffer }
     }
 
