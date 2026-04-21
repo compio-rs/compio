@@ -1,6 +1,6 @@
 [package]
 name = "compio-buf"
-version = "0.8.2"
+version = "0.8.2-rc.1"
 description = "Buffer trait for completion based async IO"
 categories = ["asynchronous"]
 keywords = ["async"]
