@@ -1,6 +1,6 @@
 [package]
 name = "compio-dispatcher"
-version = "0.11.0"
+version = "0.11.0-rc.1"
 description = "Multithreading dispatcher for compio"
 categories = ["asynchronous"]
 keywords = ["async", "runtime"]
