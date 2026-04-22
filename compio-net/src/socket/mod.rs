@@ -9,6 +9,8 @@ use std::{
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, SetLen, buf_try,
 };
+#[cfg(windows)]
+use compio_driver::op::Disconnect;
 #[cfg(unix)]
 use compio_driver::op::{Bind, CreateSocket, Listen, ShutdownSocket};
 use compio_driver::{
@@ -152,6 +154,12 @@ impl Socket {
         #[cfg(windows)]
         _op.update_context()?;
         Ok(())
+    }
+
+    #[cfg(windows)]
+    pub async fn disconnect(&self) -> io::Result<()> {
+        let op = Disconnect::new(self.to_shared_fd());
+        compio_runtime::submit(op).await.0.map(|_| ())
     }
 
     #[cfg(unix)]

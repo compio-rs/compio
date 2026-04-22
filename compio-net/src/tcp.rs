@@ -343,6 +343,14 @@ impl TcpStream {
         self.inner.into_poll_fd()
     }
 
+    /// Close the connection of the socket, and reuse it to create a new
+    /// connection.
+    #[cfg(windows)]
+    pub async fn disconnect(self) -> io::Result<TcpSocket> {
+        self.inner.disconnect().await?;
+        Ok(TcpSocket { inner: self.inner })
+    }
+
     /// Gets the value of the `TCP_NODELAY` option on this socket.
     ///
     /// For more information about this option, see

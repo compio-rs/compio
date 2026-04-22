@@ -1,11 +1,11 @@
 use rustix::net::RecvFlags;
 use windows_sys::Win32::{
     Networking::WinSock::{
-        LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS, LPFN_WSARECVMSG,
-        SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, SOCKADDR, SOCKADDR_STORAGE,
-        SOL_SOCKET, WSAID_ACCEPTEX, WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS, WSAID_WSARECVMSG,
-        WSAMSG, WSARecv, WSARecvFrom, WSASend, WSASendMsg, WSASendTo, closesocket, setsockopt,
-        socklen_t,
+        LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_DISCONNECTEX, LPFN_GETACCEPTEXSOCKADDRS,
+        LPFN_WSARECVMSG, SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, SOCKADDR,
+        SOCKADDR_STORAGE, SOL_SOCKET, TF_REUSE_SOCKET, WSAID_ACCEPTEX, WSAID_CONNECTEX,
+        WSAID_DISCONNECTEX, WSAID_GETACCEPTEXSOCKADDRS, WSAID_WSARECVMSG, WSAMSG, WSARecv,
+        WSARecvFrom, WSASend, WSASendMsg, WSASendTo, closesocket, setsockopt, socklen_t,
     },
     System::IO::OVERLAPPED,
 };
@@ -185,7 +185,38 @@ unsafe impl<S: AsFd> OpCode for Connect<S> {
     }
 }
 
-/// Receive data from remote.
+/// Disconnect a connected socket and reuse it for another connection.
+pub struct Disconnect<S> {
+    pub(crate) fd: S,
+}
+
+impl<S> Disconnect<S> {
+    /// Create [`Disconnect`].
+    pub fn new(fd: S) -> Self {
+        Self { fd }
+    }
+}
+
+static DISCONNECT_EX: OnceLock<LPFN_DISCONNECTEX> = OnceLock::new();
+
+unsafe impl<S: AsFd> OpCode for Disconnect<S> {
+    type Control = ();
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let disconnect_fn = DISCONNECT_EX
+            .get_or_try_init(|| get_wsa_fn(self.fd.as_fd().as_raw_fd(), WSAID_DISCONNECTEX))?
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::Unsupported, "cannot retrieve DisconnectEx")
+            })?;
+        let res =
+            unsafe { disconnect_fn(self.fd.as_fd().as_raw_fd() as _, optr, TF_REUSE_SOCKET, 0) };
+        win32_result(res, 0)
+    }
+
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd.as_fd().as_raw_fd(), optr)
+    }
+}
 
 #[derive(Default)]
 #[doc(hidden)]

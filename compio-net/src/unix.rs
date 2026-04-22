@@ -297,6 +297,14 @@ impl UnixStream {
         self.inner.into_poll_fd()
     }
 
+    /// Close the connection of the socket, and reuse it to create a new
+    /// connection.
+    #[cfg(windows)]
+    pub async fn disconnect(self) -> io::Result<UnixSocket> {
+        self.inner.disconnect().await?;
+        Ok(UnixSocket { inner: self.inner })
+    }
+
     /// Signifies whether the underlying socket was non-empty after the last
     /// receive operation.
     ///
