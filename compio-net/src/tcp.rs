@@ -343,7 +343,9 @@ impl TcpStream {
     }
 
     /// Close the connection of the socket, and reuse it to create a new
-    /// connection.
+    /// connection. This method is useful when the socket is created by
+    /// [`TcpListener::accept`], and will be reused in
+    /// [`TcpListener::accept_with`] to accept a new connection.
     #[cfg(windows)]
     pub async fn disconnect(self) -> io::Result<TcpSocket> {
         self.inner.disconnect().await?;
@@ -1009,6 +1011,8 @@ impl TcpSocket {
     /// The [`TcpSocket`] is consumed. Once the connection is established, a
     /// connected [`TcpStream`] is returned. If the connection fails, the
     /// encountered error is returned.
+    ///
+    /// On Windows, the socket should be bound to an address before connecting.
     pub async fn connect(self, addr: SocketAddr) -> io::Result<TcpStream> {
         self.inner.connect_async(&addr.into()).await?;
         Ok(TcpStream { inner: self.inner })

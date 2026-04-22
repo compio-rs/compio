@@ -294,7 +294,9 @@ impl UnixStream {
     }
 
     /// Close the connection of the socket, and reuse it to create a new
-    /// connection.
+    /// connection. This method is useful when the socket is created by
+    /// [`UnixListener::accept`], and will be reused in
+    /// [`UnixListener::accept_with`] to accept a new connection.
     #[cfg(windows)]
     pub async fn disconnect(self) -> io::Result<UnixSocket> {
         self.inner.disconnect().await?;
