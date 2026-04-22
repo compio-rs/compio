@@ -112,6 +112,15 @@ impl UnixListener {
         Ok((stream, addr))
     }
 
+    /// Accepts a new incoming connection from this listener using the provided
+    /// socket.
+    #[cfg(windows)]
+    pub async fn accept_with(&self, sock: UnixSocket) -> io::Result<(UnixStream, SockAddr)> {
+        let (socket, addr) = self.inner.accept_with(sock.inner).await?;
+        let stream = UnixStream { inner: socket };
+        Ok((stream, addr))
+    }
+
     /// Returns a stream of incoming connections to this listener.
     ///
     /// ## Platform specific

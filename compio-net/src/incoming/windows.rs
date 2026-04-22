@@ -14,7 +14,7 @@ use crate::Socket;
 
 pub struct Incoming<'a> {
     listener: &'a Socket,
-    state: Option<Submit<Accept<SharedFd<Socket2>>>>,
+    state: Option<Submit<Accept<SharedFd<Socket2>, Socket2>>>,
 }
 
 impl<'a> Incoming<'a> {
