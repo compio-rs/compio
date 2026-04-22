@@ -5,24 +5,13 @@ use std::task::Poll;
 ///
 /// If loom is enabled, this does nothing.
 macro_rules! panic_guard {
-    () => {
-        let _b = {
-            pub(crate) struct AbortOnPanic(());
-
-            impl Drop for AbortOnPanic {
-                #[cfg(loom)]
-                fn drop(&mut self) {}
-
-                #[cfg(not(loom))]
-                fn drop(&mut self) {
-                    if ::std::thread::panicking() {
-                        ::std::process::abort()
-                    }
-                }
-            }
-
-            AbortOnPanic(())
-        };
+    ($f:expr) => {
+        if cfg!(loom) {
+            $f()
+        } else {
+            ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| $f()))
+                .unwrap_or_else(|_| ::std::process::abort())
+        }
     };
 }
 
@@ -69,8 +58,9 @@ mod test {
     #[test]
     fn test_panic_guard() {
         if var_os("COMPIO_TEST_ABORT").is_some() {
-            panic_guard!();
-            panic!("This should abort");
+            panic_guard!(|| {
+                panic!("This should abort");
+            })
         }
 
         let exe = current_exe().unwrap();

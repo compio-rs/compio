@@ -106,12 +106,13 @@ impl<F: Future + 'static> TaskAlloc<F> {
         // SAFETY: The caller guarantees that we're in the `future` state and are on the
         // same thread as the future is created, so it's safe to drop the future
         future_cell.with_mut(|fut_ptr| {
-            panic_guard!();
-            unsafe { drop_in_place(fut_ptr as *mut F) };
-            let new_state = FutureState {
-                result: ManuallyDrop::new(res),
-            };
-            unsafe { ptr::write(fut_ptr, new_state) };
+            panic_guard!(|| {
+                unsafe { drop_in_place(fut_ptr as *mut F) };
+                let new_state = FutureState {
+                    result: ManuallyDrop::new(res),
+                };
+                unsafe { ptr::write(fut_ptr, new_state) };
+            })
         });
 
         Poll::Ready(())
@@ -136,13 +137,13 @@ impl<F: Future + 'static> TaskAlloc<F> {
         let future_cell = Self::future_cell(header);
 
         future_cell.with_mut(|fut_ptr| {
-            crate::panic_guard!();
-
-            if has_result {
-                unsafe { drop_in_place::<PanicResult<F::Output>>(fut_ptr as _) };
-            } else {
-                unsafe { drop_in_place::<F>(fut_ptr as _) };
-            }
+            crate::panic_guard!(|| {
+                if has_result {
+                    unsafe { drop_in_place::<PanicResult<F::Output>>(fut_ptr as _) };
+                } else {
+                    unsafe { drop_in_place::<F>(fut_ptr as _) };
+                }
+            })
         });
     }
 
@@ -309,11 +310,11 @@ impl Task {
         // it exists.
         if state.has_waker() && !state.is_setting_waker() {
             trace!("Dropping waker");
-            crate::panic_guard!();
-
-            header
-                .waker
-                .with_mut(|ptr| unsafe { drop_in_place(ptr.cast::<Waker>()) });
+            crate::panic_guard!(|| {
+                header
+                    .waker
+                    .with_mut(|ptr| unsafe { drop_in_place(ptr.cast::<Waker>()) });
+            })
         }
 
         trace!("Completed");
@@ -361,33 +362,33 @@ impl Drop for Task {
             return;
         };
 
-        crate::panic_guard!();
+        crate::panic_guard!(|| {
+            debug_assert!(state.is_completed() | state.is_cancelled());
+            debug_assert!(!state.is_setting_waker());
 
-        debug_assert!(state.is_completed() | state.is_cancelled());
-        debug_assert!(!state.is_setting_waker());
+            // If the result is still present, drop it now
+            // This happens when JoinHandle was dropped/detached without taking the result
+            if state.has_result() {
+                unsafe { (header.vtable.drop_future)(self.0, true) };
+            }
 
-        // If the result is still present, drop it now
-        // This happens when JoinHandle was dropped/detached without taking the result
-        if state.has_result() {
-            unsafe { (header.vtable.drop_future)(self.0, true) };
-        }
+            // If the waker is still present, drop it now
+            // This happens when the Task is dropped when JoinHandle was setting waker
+            // remotely.
+            if state.has_waker() {
+                trace!("Dropping waker");
 
-        // If the waker is still present, drop it now
-        // This happens when the Task is dropped when JoinHandle was setting waker
-        // remotely.
-        if state.has_waker() {
-            trace!("Dropping waker");
+                header
+                    .waker
+                    .with_mut(|ptr| unsafe { drop_in_place(ptr.cast::<Waker>()) });
+            }
 
-            header
-                .waker
-                .with_mut(|ptr| unsafe { drop_in_place(ptr.cast::<Waker>()) });
-        }
-
-        trace!("Task deallocated");
-        // SAFETY: We have checked that the reference count is 0, so no other reference
-        // to the allocation exists and we can safely deallocate it; and deallocation is
-        // thread-safe since we're not touching anything inside (dropping).
-        unsafe { (header.vtable.dealloc)(self.0) }
+            trace!("Task deallocated");
+            // SAFETY: We have checked that the reference count is 0, so no other reference
+            // to the allocation exists and we can safely deallocate it; and deallocation is
+            // thread-safe since we're not touching anything inside (dropping).
+            unsafe { (header.vtable.dealloc)(self.0) }
+        });
     }
 }
 

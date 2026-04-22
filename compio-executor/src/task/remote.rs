@@ -56,25 +56,25 @@ impl<'a> Remote<'a> {
             return;
         };
 
-        crate::panic_guard!();
-
-        let mut notified = false;
-        while shared.sync.push(self.header().id).is_err() {
+        crate::panic_guard!(|| {
+            let mut notified = false;
+            while shared.sync.push(self.header().id).is_err() {
+                if !notified && let Some(ref waker) = shared.waker {
+                    waker.wake_by_ref();
+                    notified = true;
+                } else if self.header().state.load::<Strong>().is_cancelled() {
+                    self.header().state.finish_scheduling();
+                    return;
+                } else {
+                    crate::yield_now()
+                }
+            }
             if !notified && let Some(ref waker) = shared.waker {
                 waker.wake_by_ref();
-                notified = true;
-            } else if self.header().state.load::<Strong>().is_cancelled() {
-                self.header().state.finish_scheduling();
-                return;
-            } else {
-                crate::yield_now()
             }
-        }
-        if !notified && let Some(ref waker) = shared.waker {
-            waker.wake_by_ref();
-        }
 
-        self.header().state.finish_scheduling();
+            self.header().state.finish_scheduling();
+        })
     }
 
     pub unsafe fn poll<T>(&self, cx: &mut Context<'_>) -> Poll<Option<PanicResult<T>>> {
@@ -126,18 +126,18 @@ impl<'a> Remote<'a> {
             }
 
             self.header().waker.with_mut(|ptr| {
-                crate::panic_guard!();
+                crate::panic_guard!(|| {
+                    // SAFETY: We're in SETTING_WAKER state, Executor will not access the waker
+                    // until we're finished.
+                    let waker = unsafe { &mut *ptr };
 
-                // SAFETY: We're in SETTING_WAKER state, Executor will not access the waker
-                // until we're finished.
-                let waker = unsafe { &mut *ptr };
+                    if state.has_waker() {
+                        unsafe { waker.assume_init_drop() };
+                    }
 
-                if state.has_waker() {
-                    unsafe { waker.assume_init_drop() };
-                }
-
-                // We're in the critical section, executor will wait for us to finish
-                waker.write(cx.waker().clone());
+                    // We're in the critical section, executor will wait for us to finish
+                    waker.write(cx.waker().clone());
+                })
             });
 
             self.header().state.finish_setting_waker::<true>();

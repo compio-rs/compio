@@ -92,18 +92,19 @@ impl<'a> Local<'a> {
         // Task is not completed yet, set up waker
         if !state.is_completed() {
             return self.header().waker.with_mut(|waker| {
-                crate::panic_guard!();
-                let waker = unsafe { &mut *waker };
-                if state.has_waker() {
-                    if cx.waker().will_wake(unsafe { waker.assume_init_ref() }) {
-                        return Poll::Pending;
+                crate::panic_guard!(|| {
+                    let waker = unsafe { &mut *waker };
+                    if state.has_waker() {
+                        if cx.waker().will_wake(unsafe { waker.assume_init_ref() }) {
+                            return Poll::Pending;
+                        }
+                        unsafe { waker.assume_init_drop() };
                     }
-                    unsafe { waker.assume_init_drop() };
-                }
-                waker.write(cx.waker().clone());
-                self.header().state.set_has_waker::<Weak, true>();
+                    waker.write(cx.waker().clone());
+                    self.header().state.set_has_waker::<Weak, true>();
 
-                Poll::Pending
+                    Poll::Pending
+                })
             });
         }
 
