@@ -1,5 +1,3 @@
-use std::os::windows::io::AsRawSocket;
-
 use rustix::net::RecvFlags;
 use windows_sys::Win32::{
     Networking::WinSock::{
@@ -35,15 +33,15 @@ unsafe impl OpCode for CloseSocket {
 }
 
 /// Accept a connection.
-pub struct Accept<S> {
+pub struct Accept<S, SA> {
     pub(crate) fd: S,
-    pub(crate) accept_fd: socket2::Socket,
+    pub(crate) accept_fd: SA,
     pub(crate) buffer: [u8; ACCEPT_BUFFER_SIZE],
 }
 
-impl<S> Accept<S> {
+impl<S, SA> Accept<S, SA> {
     /// Create [`Accept`]. `accept_fd` should not be bound.
-    pub fn new(fd: S, accept_fd: socket2::Socket) -> Self {
+    pub fn new(fd: S, accept_fd: SA) -> Self {
         Self {
             fd,
             accept_fd,
@@ -52,14 +50,14 @@ impl<S> Accept<S> {
     }
 }
 
-impl<S: AsFd> Accept<S> {
+impl<S: AsFd, SA: AsFd> Accept<S, SA> {
     /// Update accept context.
     pub fn update_context(&self) -> io::Result<()> {
         let fd = self.fd.as_fd().as_raw_fd();
         syscall!(
             SOCKET,
             setsockopt(
-                self.accept_fd.as_raw_socket() as _,
+                self.accept_fd.as_fd().as_raw_fd() as _,
                 SOL_SOCKET,
                 SO_UPDATE_ACCEPT_CONTEXT,
                 &fd as *const _ as _,
@@ -70,7 +68,7 @@ impl<S: AsFd> Accept<S> {
     }
 
     /// Get the remote address from the inner buffer.
-    pub fn into_addr(self) -> io::Result<(socket2::Socket, SockAddr)> {
+    pub fn into_addr(self) -> io::Result<(SA, SockAddr)> {
         let get_addrs_fn = GET_ADDRS
             .get_or_try_init(|| {
                 get_wsa_fn(self.fd.as_fd().as_raw_fd(), WSAID_GETACCEPTEXSOCKADDRS)
@@ -109,7 +107,7 @@ impl<S: AsFd> Accept<S> {
     }
 }
 
-unsafe impl<S: AsFd> OpCode for Accept<S> {
+unsafe impl<S: AsFd, SA: AsFd> OpCode for Accept<S, SA> {
     type Control = ();
 
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
@@ -122,7 +120,7 @@ unsafe impl<S: AsFd> OpCode for Accept<S> {
         let res = unsafe {
             accept_fn(
                 self.fd.as_fd().as_raw_fd() as _,
-                self.accept_fd.as_raw_socket() as _,
+                self.accept_fd.as_fd().as_raw_fd() as _,
                 self.buffer.sys_slice_mut().ptr() as _,
                 0,
                 ACCEPT_ADDR_BUFFER_SIZE as _,

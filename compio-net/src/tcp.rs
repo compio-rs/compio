@@ -119,6 +119,15 @@ impl TcpListener {
         Ok((stream, addr.as_socket().expect("should be SocketAddr")))
     }
 
+    /// Accepts a new incoming connection from this listener using the provided
+    /// socket.
+    #[cfg(windows)]
+    pub async fn accept_with(&self, sock: TcpSocket) -> io::Result<(TcpStream, SocketAddr)> {
+        let (socket, addr) = self.inner.accept_with(sock.inner).await?;
+        let stream = TcpStream { inner: socket };
+        Ok((stream, addr.as_socket().expect("should be SocketAddr")))
+    }
+
     /// Returns a stream of incoming connections to this listener.
     ///
     /// ## Platform specific
