@@ -1,6 +1,7 @@
 use std::ffi::c_int;
 
-use io_uring::{opcode, types::Fd};
+use io_uring::{opcode, squeue::Entry, types::Fd};
+use linux_raw_sys::io_uring::io_uring_sqe;
 
 use crate::{IourOpCode as OpCode, OpEntry, sys::op::*};
 
@@ -238,14 +239,18 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
         let fd = self.fd.as_fd().as_raw_fd();
         let slice = self.buffer.sys_slice_mut();
 
-        opcode::Recv::new(
+        let mut entry = opcode::Recv::new(
             Fd(fd),
             slice.ptr() as _,
             slice.len().try_into().unwrap_or(u32::MAX),
         )
         .flags(self.flags.bits() as _)
-        .build()
-        .into()
+        .build();
+        let raw_entry = &mut entry as *mut Entry as *mut io_uring_sqe;
+        unsafe {
+            (*raw_entry).ioprio |= self.ioprio;
+        };
+        entry.into()
     }
 
     fn call_blocking(&mut self, _: &mut Self::Control) -> io::Result<usize> {
@@ -261,10 +266,14 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
-        opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &mut control.msg)
+        let mut entry = opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &mut control.msg)
             .flags(self.flags.bits() as _)
-            .build()
-            .into()
+            .build();
+        let raw_entry = &mut entry as *mut Entry as *mut io_uring_sqe;
+        unsafe {
+            (*raw_entry).ioprio |= self.ioprio;
+        };
+        entry.into()
     }
 
     fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
@@ -286,10 +295,14 @@ impl<S: AsFd> RecvFromHeader<S> {
     }
 
     pub fn create_entry(&mut self, control: &mut RecvMsgControl) -> OpEntry {
-        opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &mut control.msg)
+        let mut entry = opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &mut control.msg)
             .flags(self.flags.bits() as _)
-            .build()
-            .into()
+            .build();
+        let raw_entry = &mut entry as *mut Entry as *mut io_uring_sqe;
+        unsafe {
+            (*raw_entry).ioprio |= self.ioprio;
+        };
+        entry.into()
     }
 
     pub fn set_result(&mut self, control: &mut RecvMsgControl) {
@@ -357,10 +370,15 @@ unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, 
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
-        opcode::RecvMsg::new(Fd(self.header.fd.as_fd().as_raw_fd()), &mut control.msg)
-            .flags(self.header.flags.bits() as _)
-            .build()
-            .into()
+        let mut entry =
+            opcode::RecvMsg::new(Fd(self.header.fd.as_fd().as_raw_fd()), &mut control.msg)
+                .flags(self.header.flags.bits() as _)
+                .build();
+        let raw_entry = &mut entry as *mut Entry as *mut io_uring_sqe;
+        unsafe {
+            (*raw_entry).ioprio = self.ioprio;
+        };
+        entry.into()
     }
 
     unsafe fn set_result(

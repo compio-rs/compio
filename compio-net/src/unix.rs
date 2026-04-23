@@ -295,6 +295,18 @@ impl UnixStream {
         self.inner.sock_nonempty()
     }
 
+    /// This method can be used to set the `IORING_RECVSEND_POLL_FIRST` flag on
+    /// the `SQE` on the `IO_URING` driver before initiating a receive operation
+    /// if the socket state as retrieved in the previous receive operation was
+    /// empty.
+    ///
+    /// # Behaviour
+    ///
+    /// The state is not reset automatically.
+    pub fn recvsend_poll_first(&self, flag: bool) {
+        self.inner.recvsend_poll_first(flag);
+    }
+
     /// Sends data using [zero-copy send](https://man7.org/linux/man-pages/man3/io_uring_prep_send_zc.3.html).
     ///
     /// If the underlying platform doesn't support zero-copy send, it will fall

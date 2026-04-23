@@ -7,7 +7,12 @@ use std::{
 };
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetLen};
-use io_uring::{opcode, squeue::Flags, types::Fd};
+use io_uring::{
+    opcode,
+    squeue::{Entry, Flags},
+    types::Fd,
+};
+use linux_raw_sys::io_uring::io_uring_sqe;
 use rustix::net::RecvFlags;
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
@@ -140,6 +145,7 @@ pub struct RecvManaged<S> {
     buffer_group: u16,
     buffer_pool: BufferPool,
     buffer: Option<BufferRef>,
+    ioprio: u16,
 }
 
 impl<S> RecvManaged<S> {
@@ -154,7 +160,17 @@ impl<S> RecvManaged<S> {
             flags,
             buffer_pool: buffer_pool.clone(),
             buffer: None,
+            ioprio: 0,
         })
+    }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    pub fn recvsend_poll_first(&mut self, flag: bool) {
+        // `IORING_RECVSEND_POLL_FIRST` equals to `1` with type `u32`. Therefore, we
+        // cast the boolean directly into u16 rather than checking if the flag
+        // is set and then casting the constant to u16.
+        self.ioprio |= flag as u16;
     }
 }
 
@@ -163,12 +179,16 @@ unsafe impl<S: AsFd> OpCode for RecvManaged<S> {
 
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let fd = self.fd.as_fd().as_raw_fd();
-        opcode::Recv::new(Fd(fd), ptr::null_mut(), self.len)
+        let mut entry = opcode::Recv::new(Fd(fd), ptr::null_mut(), self.len)
             .flags(self.flags.bits() as _)
             .buf_group(self.buffer_group)
             .build()
-            .flags(Flags::BUFFER_SELECT)
-            .into()
+            .flags(Flags::BUFFER_SELECT);
+        let raw_entry = &mut entry as *mut Entry as *mut io_uring_sqe;
+        unsafe {
+            (*raw_entry).ioprio |= self.ioprio;
+        }
+        entry.into()
     }
 
     unsafe fn set_result(&mut self, _: &mut Self::Control, _: &io::Result<usize>, extra: &Extra) {
@@ -202,6 +222,7 @@ pub struct RecvFromManaged<S> {
     buffer_group: u16,
     buffer_pool: BufferPool,
     buffer: Option<BufferRef>,
+    ioprio: u16,
 }
 
 #[doc(hidden)]
@@ -233,7 +254,17 @@ impl<S> RecvFromManaged<S> {
             addr,
             buffer_pool: buffer_pool.clone(),
             buffer: None,
+            ioprio: 0,
         })
+    }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    pub fn recvsend_poll_first(&mut self, flag: bool) {
+        // `IORING_RECVSEND_POLL_FIRST` equals to `1` with type `u32`. Therefore, we
+        // cast the boolean directly into u16 rather than checking if the flag
+        // is set and then casting the constant to u16.
+        self.ioprio |= flag as u16;
     }
 }
 
@@ -259,12 +290,16 @@ unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
-        opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &raw mut control.msg)
+        let mut entry = opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &raw mut control.msg)
             .flags(self.flags.bits() as _)
             .buf_group(self.buffer_group)
             .build()
-            .flags(Flags::BUFFER_SELECT)
-            .into()
+            .flags(Flags::BUFFER_SELECT);
+        let raw_entry = &mut entry as *mut Entry as *mut io_uring_sqe;
+        unsafe {
+            (*raw_entry).ioprio |= self.ioprio;
+        }
+        entry.into()
     }
 
     unsafe fn set_result(
@@ -307,6 +342,15 @@ impl<C: IoBufMut, S: AsFd> RecvMsgManaged<C, S> {
             control,
             control_len: 0,
         })
+    }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    pub fn recvsend_poll_first(&mut self, flag: bool) {
+        // `IORING_RECVSEND_POLL_FIRST` equals to `1` with type `u32`. Therefore, we
+        // cast the boolean directly into u16 rather than checking if the flag
+        // is set and then casting the constant to u16.
+        self.op.ioprio |= flag as u16;
     }
 }
 

@@ -83,6 +83,7 @@ pub struct Recv<T: IoBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) flags: RecvFlags,
+    pub(crate) ioprio: u16,
 }
 
 /// Receive data from remote into vectored buffer.
@@ -90,6 +91,7 @@ pub struct RecvVectored<T: IoVectoredBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) flags: RecvFlags,
+    pub(crate) ioprio: u16,
 }
 
 pub(crate) struct RecvFromHeader<S> {
@@ -97,6 +99,7 @@ pub(crate) struct RecvFromHeader<S> {
     pub(crate) flags: RecvFlags,
     pub(crate) addr: SockAddrStorage,
     pub(crate) addr_len: socklen_t,
+    pub(crate) ioprio: u16,
 }
 
 /// Receive data and source address.
@@ -118,6 +121,7 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
     pub(crate) buffer: T,
     pub(crate) control: C,
     pub(crate) control_len: usize,
+    pub(crate) ioprio: u16,
 }
 
 impl<S> Connect<S> {
@@ -254,7 +258,17 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
             buffer,
             control,
             control_len: 0,
+            ioprio: 0,
         }
+    }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    pub fn recvsend_poll_first(&mut self, flag: bool) {
+        // `IORING_RECVSEND_POLL_FIRST` equals to `1` with type `u32`. Therefore, we
+        // cast the boolean directly into u16 rather than checking if the flag
+        // is set and then casting the constant to u16.
+        self.ioprio |= flag as u16;
     }
 }
 
@@ -273,7 +287,21 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
 impl<T: IoBufMut, S> Recv<T, S> {
     /// Create [`Recv`].
     pub fn new(fd: S, buffer: T, flags: RecvFlags) -> Self {
-        Self { fd, buffer, flags }
+        Self {
+            fd,
+            buffer,
+            flags,
+            ioprio: 0,
+        }
+    }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    pub fn recvsend_poll_first(&mut self, flag: bool) {
+        // `IORING_RECVSEND_POLL_FIRST` equals to `1` with type `u32`. Therefore, we
+        // cast the boolean directly into u16 rather than checking if the flag
+        // is set and then casting the constant to u16.
+        self.ioprio |= flag as u16;
     }
 }
 
@@ -288,7 +316,21 @@ impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
 impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
     /// Create [`RecvVectored`].
     pub fn new(fd: S, buffer: T, flags: RecvFlags) -> Self {
-        Self { fd, buffer, flags }
+        Self {
+            fd,
+            buffer,
+            flags,
+            ioprio: 0,
+        }
+    }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    pub fn recvsend_poll_first(&mut self, flag: bool) {
+        // `IORING_RECVSEND_POLL_FIRST` equals to `1` with type `u32`. Therefore, we
+        // cast the boolean directly into u16 rather than checking if the flag
+        // is set and then casting the constant to u16.
+        self.ioprio |= flag as u16;
     }
 }
 
@@ -309,6 +351,7 @@ impl<S> RecvFromHeader<S> {
             addr,
             flags,
             addr_len: name_len,
+            ioprio: 0,
         }
     }
 
@@ -324,6 +367,15 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
             header: RecvFromHeader::new(fd, flags),
             buffer,
         }
+    }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    pub fn recvsend_poll_first(&mut self, flag: bool) {
+        // `IORING_RECVSEND_POLL_FIRST` equals to `1` with type `u32`. Therefore, we
+        // cast the boolean directly into u16 rather than checking if the flag
+        // is set and then casting the constant to u16.
+        self.header.ioprio |= flag as u16;
     }
 }
 
@@ -343,6 +395,15 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
             header: RecvFromHeader::new(fd, flags),
             buffer,
         }
+    }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    pub fn recvsend_poll_first(&mut self, flag: bool) {
+        // `IORING_RECVSEND_POLL_FIRST` equals to `1` with type `u32`. Therefore, we
+        // cast the boolean directly into u16 rather than checking if the flag
+        // is set and then casting the constant to u16.
+        self.header.ioprio |= flag as u16;
     }
 }
 
