@@ -1,6 +1,6 @@
 [package]
 name = "compio-io"
-version = "0.9.0"
+version = "0.10.0-rc.1"
 description = "IO traits for completion based async IO"
 categories = ["asynchronous"]
 keywords = ["async", "io"]
@@ -33,8 +33,6 @@ windows-sys = { workspace = true, optional = true, features = [
 ] }
 
 [dev-dependencies]
-compio-net = { workspace = true }
-compio-runtime = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 serde = { version = "1.0.219", features = ["derive"] }
 futures-executor = { workspace = true }

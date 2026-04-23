@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.8.2-rc.1 - 2026-04-20
+
+### Added
+
+- *(buf)* add `ensure_init` for convenience ([#884](https://github.com/compio-rs/compio/pull/884))
+- *(runtime)* [**breaking**] waker-based future combinator ([#825](https://github.com/compio-rs/compio/pull/825))
+- organize features ([#822](https://github.com/compio-rs/compio/pull/822))
+- *(buf)* add into_parts for BufResult ([#712](https://github.com/compio-rs/compio/pull/712))
+- *(buf)* add support for memmap2 ([#684](https://github.com/compio-rs/compio/pull/684))
+
+### Fixed
+
+- unused_features ([#739](https://github.com/compio-rs/compio/pull/739))
+
+### Other
+
+- remove cross-rs ([#841](https://github.com/compio-rs/compio/pull/841))
+- remove "authors" field in metadata ([#711](https://github.com/compio-rs/compio/pull/711))
+
 ## [0.8.0](https://github.com/compio-rs/compio/compare/v0.17.0...v0.18.0) - 2026-01-28
 
 ### Added

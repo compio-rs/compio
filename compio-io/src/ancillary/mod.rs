@@ -29,56 +29,6 @@
 //!
 //! - [`bytemuck_ext`]: Extension module for automatic [`AncillaryData`]
 //!   implementation via bytemuck (requires `bytemuck` feature).
-//!
-//! # Example
-//!
-//! Send and receive a file descriptor over a Unix socket pair using
-//! `SCM_RIGHTS`:
-//!
-//! ```
-//! # #[cfg(unix)] {
-//! use std::os::unix::io::RawFd;
-//!
-//! use compio_io::ancillary::*;
-//! use compio_net::UnixStream;
-//!
-//! const BUF_SIZE: usize = ancillary_space::<RawFd>();
-//!
-//! # compio_runtime::Runtime::new().unwrap().block_on(async {
-//! // Create a socket pair.
-//! let (std_a, std_b) = std::os::unix::net::UnixStream::pair().unwrap();
-//! let mut a = UnixStream::from_std(std_a).unwrap();
-//! let mut b = UnixStream::from_std(std_b).unwrap();
-//!
-//! // Pass fd 0 (stdin) as ancillary data via SCM_RIGHTS.
-//! let mut ctrl_send = AncillaryBuf::<BUF_SIZE>::new();
-//! let mut builder = ctrl_send.builder();
-//! builder
-//!     .push(libc::SOL_SOCKET, libc::SCM_RIGHTS, &(0 as RawFd))
-//!     .unwrap();
-//!
-//! // Send the payload together with the ancillary data.
-//! a.write_with_ancillary(b"hello", ctrl_send).await.0.unwrap();
-//!
-//! // Receive on the other end.
-//! let payload = Vec::with_capacity(5);
-//! let ctrl_recv = AncillaryBuf::<BUF_SIZE>::new();
-//! let ((_, ctrl_len), (payload, ctrl_recv)) =
-//!     b.read_with_ancillary(payload, ctrl_recv).await.unwrap();
-//!
-//! assert_eq!(&payload[..], b"hello");
-//!
-//! // Parse the received ancillary messages.
-//! let mut iter = unsafe { AncillaryIter::new(&ctrl_recv[..ctrl_len]) };
-//! let msg = iter.next().unwrap();
-//! assert_eq!(msg.level(), libc::SOL_SOCKET);
-//! assert_eq!(msg.ty(), libc::SCM_RIGHTS);
-//! // The kernel duplicates the fd, so the received value may differ.
-//! let _received_fd = unsafe { msg.data::<RawFd>() };
-//! assert!(iter.next().is_none());
-//! # });
-//! # }
-//! ```
 
 use std::{
     mem::MaybeUninit,
