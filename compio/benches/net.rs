@@ -11,8 +11,8 @@ use monoio_wrap::MonoioRuntime;
 criterion_group!(net, echo);
 criterion_main!(net);
 
-const BUFFER_SIZE: usize = 4096;
-const BUFFER_COUNT: usize = 1024;
+const BUFFER_SIZE: usize = 4096 * 128;
+const BUFFER_COUNT: usize = 1024 / 128;
 
 async fn echo_tokio_impl<T, R>(mut tx: T, mut rx: R, content: &[u8; BUFFER_SIZE])
 where
