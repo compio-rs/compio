@@ -11,8 +11,8 @@ use monoio_wrap::MonoioRuntime;
 criterion_group!(net, echo);
 criterion_main!(net);
 
-const BUFFER_SIZE: usize = 4096;
-const BUFFER_COUNT: usize = 1024;
+const BUFFER_SIZE: usize = 524288;
+const BUFFER_COUNT: usize = 8;
 
 async fn echo_tokio_impl<T, R>(mut tx: T, mut rx: R, content: &[u8; BUFFER_SIZE])
 where
@@ -258,7 +258,7 @@ fn echo_compio_unix(b: &mut Bencher, content: Rc<[u8; BUFFER_SIZE]>) {
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
 fn echo_monoio_unix(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
-    use monoio::net::{UnixListener, UnixStream};
+    use monoio::net::{ListenerOpts, UnixListener, UnixStream};
 
     let runtime = MonoioRuntime::new();
     b.to_async(&runtime).iter_custom(|iter| {
@@ -269,7 +269,11 @@ fn echo_monoio_unix(b: &mut Bencher, content: &[u8; BUFFER_SIZE]) {
                 .tempdir()
                 .unwrap();
             let sock_path = dir.path().join("connect.sock");
-            let listener = UnixListener::bind(&sock_path).unwrap();
+            let listener = UnixListener::bind_with_config(
+                &sock_path,
+                &ListenerOpts::default().reuse_addr(false).reuse_port(false),
+            )
+            .unwrap();
 
             let start = Instant::now();
             for _i in 0..iter {
