@@ -83,6 +83,7 @@ pub struct Recv<T: IoBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) flags: RecvFlags,
+    poll_first: bool,
 }
 
 /// Receive data from remote into vectored buffer.
@@ -90,6 +91,7 @@ pub struct RecvVectored<T: IoVectoredBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) flags: RecvFlags,
+    poll_first: bool,
 }
 
 pub(crate) struct RecvFromHeader<S> {
@@ -97,6 +99,7 @@ pub(crate) struct RecvFromHeader<S> {
     pub(crate) flags: RecvFlags,
     pub(crate) addr: SockAddrStorage,
     pub(crate) addr_len: socklen_t,
+    poll_first: bool,
 }
 
 /// Receive data and source address.
@@ -118,6 +121,7 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
     pub(crate) buffer: T,
     pub(crate) control: C,
     pub(crate) control_len: usize,
+    poll_first: bool,
 }
 
 impl<S> Connect<S> {
@@ -254,7 +258,14 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
             buffer,
             control,
             control_len: 0,
+            poll_first: false,
         }
+    }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    pub fn poll_first(&mut self) {
+        self.poll_first = true;
     }
 }
 
@@ -273,7 +284,18 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
 impl<T: IoBufMut, S> Recv<T, S> {
     /// Create [`Recv`].
     pub fn new(fd: S, buffer: T, flags: RecvFlags) -> Self {
-        Self { fd, buffer, flags }
+        Self {
+            fd,
+            buffer,
+            flags,
+            poll_first: false,
+        }
+    }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    pub fn poll_first(&mut self) {
+        self.poll_first = true;
     }
 }
 
@@ -288,7 +310,18 @@ impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
 impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
     /// Create [`RecvVectored`].
     pub fn new(fd: S, buffer: T, flags: RecvFlags) -> Self {
-        Self { fd, buffer, flags }
+        Self {
+            fd,
+            buffer,
+            flags,
+            poll_first: false,
+        }
+    }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    pub fn poll_first(&mut self) {
+        self.poll_first = true;
     }
 }
 
@@ -309,6 +342,7 @@ impl<S> RecvFromHeader<S> {
             addr,
             flags,
             addr_len: name_len,
+            poll_first: false,
         }
     }
 
@@ -324,6 +358,12 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
             header: RecvFromHeader::new(fd, flags),
             buffer,
         }
+    }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    pub fn poll_first(&mut self) {
+        self.header.poll_first = true;
     }
 }
 
@@ -343,6 +383,12 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
             header: RecvFromHeader::new(fd, flags),
             buffer,
         }
+    }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    pub fn poll_first(&mut self) {
+        self.header.poll_first = true;
     }
 }
 
