@@ -38,6 +38,7 @@ jobs:
           sync: rsync
           copyback: false
           prepare: |
+            pkg update
             pkg install -y curl pkgconf python3 perl5 gmake
             curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf > install.sh
             chmod +x install.sh
