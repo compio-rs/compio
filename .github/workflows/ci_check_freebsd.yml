@@ -38,7 +38,11 @@ jobs:
           sync: rsync
           copyback: false
           prepare: |
-            pkg update
+            export ASSUME_ALWAYS_YES=yes
+            export IGNORE_OSVERSION=yes
+            pkg bootstrap -f
+            pkg update -f
+            pkg upgrade -y
             pkg install -y curl pkgconf python3 perl5 gmake
             curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf > install.sh
             chmod +x install.sh
