@@ -1,5 +1,3 @@
-use std::os::fd::AsRawFd;
-
 use compio_buf::BufResult;
 use compio_io::{AsyncRead, AsyncReadExt, AsyncZeroCopyVectoredWrite, AsyncZeroCopyWrite};
 use compio_net::{TcpListener, TcpStream, UdpSocket};
@@ -84,7 +82,10 @@ async fn tcp_owned_write_half_zerocopy_all() {
     let recv_handle = compio_runtime::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         // Set tiny recv buffer to create backpressure
-        set_sock_buf(stream.as_raw_fd(), 4096, 4096);
+        #[cfg(unix)]
+        {
+            set_sock_buf(&stream, 4096, 4096);
+        }
         let mut received = Vec::new();
 
         let mut buf = Vec::with_capacity(1024);
@@ -102,7 +103,10 @@ async fn tcp_owned_write_half_zerocopy_all() {
 
     let stream = TcpStream::connect(addr).await.unwrap();
     // Tiny send buffer forces partial sends
-    set_sock_buf(stream.as_raw_fd(), 4096, 4096);
+    #[cfg(unix)]
+    {
+        set_sock_buf(&stream, 4096, 4096);
+    }
 
     let (reader, mut writer) = stream.into_split();
 
@@ -155,7 +159,10 @@ async fn tcp_owned_write_half_zerocopy_vectored_all() {
     let recv_handle = compio_runtime::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         // Set tiny recv buffer to create backpressure
-        set_sock_buf(stream.as_raw_fd(), 4096, 4096);
+        #[cfg(unix)]
+        {
+            set_sock_buf(&stream, 4096, 4096);
+        }
         let mut received = Vec::new();
 
         let mut buf = Vec::with_capacity(1024);
@@ -173,7 +180,10 @@ async fn tcp_owned_write_half_zerocopy_vectored_all() {
 
     let stream = TcpStream::connect(addr).await.unwrap();
     // Tiny send buffer forces partial sends
-    set_sock_buf(stream.as_raw_fd(), 4096, 4096);
+    #[cfg(unix)]
+    {
+        set_sock_buf(&stream, 4096, 4096);
+    }
 
     let (reader, mut writer) = stream.into_split();
 
@@ -236,7 +246,10 @@ async fn udp_zerocopy_vectored() {
 }
 
 // Helper utility to set the socket buffer size
-fn set_sock_buf(fd: i32, send: usize, recv: usize) {
+#[cfg(unix)]
+fn set_sock_buf(stream: &TcpStream, send: usize, recv: usize) {
+    use std::os::fd::AsRawFd;
+    let fd = stream.as_raw_fd();
     unsafe {
         let v = send as libc::c_int;
         libc::setsockopt(
