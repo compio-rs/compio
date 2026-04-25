@@ -2,6 +2,8 @@ use std::{
     future::Future,
     io,
     mem::{ManuallyDrop, MaybeUninit},
+    pin::Pin,
+    task::{Context, Poll},
 };
 
 use compio_buf::{
@@ -10,7 +12,7 @@ use compio_buf::{
 #[cfg(unix)]
 use compio_driver::op::{Bind, CreateSocket, Listen, ShutdownSocket};
 use compio_driver::{
-    AsRawFd, BufferRef, OpCode, RawFd, ResultTakeBuffer, TakeBuffer, ToSharedFd,
+    AsRawFd, BufferRef, OpCode, RawFd, ResultTakeBuffer, SharedFd, TakeBuffer, ToSharedFd,
     op::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFlags, RecvFrom, RecvFromManaged,
         RecvFromMulti, RecvFromMultiResult, RecvFromVectored, RecvManaged, RecvMsg, RecvMsgManaged,
@@ -20,8 +22,9 @@ use compio_driver::{
     },
     syscall,
 };
-use compio_runtime::{Attacher, Runtime, fd::PollFd};
+use compio_runtime::{Attacher, Runtime, SubmitMulti, fd::PollFd};
 use futures_util::{Stream, StreamExt, future::Either};
+use pin_project_lite::pin_project;
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 use sys::SocketState;
 
@@ -38,8 +41,11 @@ cfg_if::cfg_if! {
         target_os = "cygwin"))] {
         pub(crate) const MSG_NOSIGNAL: SendFlags =
             SendFlags::from_bits_retain(libc::MSG_NOSIGNAL as _);
+        pub(crate) const MSG_WAITALL: SendFlags =
+            SendFlags::from_bits_retain(libc::MSG_WAITALL as _);
     } else {
         pub(crate) const MSG_NOSIGNAL: SendFlags = SendFlags::empty();
+        pub(crate) const MSG_WAITALL: SendFlags = SendFlags::empty();
     }
 }
 
@@ -311,7 +317,7 @@ impl Socket {
         &self,
         buf: T,
         flags: SendFlags,
-    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+    ) -> BufResult<usize, ZerocopyBufferFuture<SendZc<T, SharedFd<Socket2>>>> {
         submit_zerocopy(SendZc::new(self.to_shared_fd(), buf, flags)).await
     }
 
@@ -319,7 +325,7 @@ impl Socket {
         &self,
         buf: T,
         flags: SendFlags,
-    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+    ) -> BufResult<usize, ZerocopyBufferFuture<SendVectoredZc<T, SharedFd<Socket2>>>> {
         submit_zerocopy(SendVectoredZc::new(self.to_shared_fd(), buf, flags)).await
     }
 
@@ -491,7 +497,7 @@ impl Socket {
         buffer: T,
         addr: &SockAddr,
         flags: SendFlags,
-    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+    ) -> BufResult<usize, ZerocopyBufferFuture<SendToZc<T, SharedFd<Socket2>>>> {
         let op = SendToZc::new(self.to_shared_fd(), buffer, addr.clone(), flags);
         submit_zerocopy(op).await
     }
@@ -501,7 +507,7 @@ impl Socket {
         buffer: T,
         addr: &SockAddr,
         flags: SendFlags,
-    ) -> BufResult<usize, impl Future<Output = T> + use<T>> {
+    ) -> BufResult<usize, ZerocopyBufferFuture<SendToVectoredZc<T, SharedFd<Socket2>>>> {
         let op = SendToVectoredZc::new(self.to_shared_fd(), buffer, addr.clone(), flags);
         submit_zerocopy(op).await
     }
@@ -551,7 +557,7 @@ impl Socket {
         control: C,
         addr: Option<&SockAddr>,
         flags: SendFlags,
-    ) -> BufResult<usize, impl Future<Output = (T, C)> + use<T, C>> {
+    ) -> BufResult<usize, ZerocopyBufferFuture<SendMsgZc<T, C, SharedFd<Socket2>>>> {
         let fd = self.to_shared_fd();
         let op = SendMsgZc::new(fd, buffer, control, addr.cloned(), flags);
         submit_zerocopy(op).await
@@ -687,9 +693,45 @@ impl std::os::windows::io::AsRawSocket for Socket {
     }
 }
 
+pin_project! {
+    pub struct ZerocopyBufferFuture<T: OpCode>
+    {
+        stream: Option<SubmitMulti<T>>,
+    }
+}
+
+impl<T: OpCode + IntoInner + 'static> ZerocopyBufferFuture<T> {
+    pub(crate) fn new(stream: SubmitMulti<T>) -> Self {
+        Self {
+            stream: Some(stream),
+        }
+    }
+}
+
+impl<T: OpCode + IntoInner + 'static> Future for ZerocopyBufferFuture<T> {
+    type Output = T::Inner;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let stream = this.stream.as_mut().expect("stream should be Some");
+
+        let _ = futures_util::ready!(stream.poll_next_unpin(cx));
+
+        let stream = this.stream.take().expect("stream should be Some");
+
+        Poll::Ready(
+            stream
+                .try_take()
+                .map_err(|_| ())
+                .expect("Cannot retrieve buffer")
+                .into_inner(),
+        )
+    }
+}
+
 async fn submit_zerocopy<T: OpCode + IntoInner + 'static>(
     op: T,
-) -> BufResult<usize, impl Future<Output = T::Inner> + use<T>> {
+) -> BufResult<usize, ZerocopyBufferFuture<T>> {
     let mut stream = compio_runtime::submit_multi(op);
     let res = stream
         .next()
@@ -697,16 +739,7 @@ async fn submit_zerocopy<T: OpCode + IntoInner + 'static>(
         .expect("SubmitMulti should yield at least one item")
         .0;
 
-    let fut = async move {
-        // we don't need 2nd CQE's result
-        _ = stream.next().await;
-
-        stream
-            .try_take()
-            .map_err(|_| ())
-            .expect("Cannot retrieve buffer")
-            .into_inner()
-    };
+    let fut = ZerocopyBufferFuture::new(stream);
 
     BufResult(res, fut)
 }

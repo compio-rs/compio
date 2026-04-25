@@ -9,11 +9,12 @@ use std::{
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::{
-    BufferRef, impl_raw_fd,
-    op::{RecvFlags, RecvMsgMultiResult, SendFlags},
+    BufferRef, SharedFd, impl_raw_fd,
+    op::{RecvFlags, RecvMsgMultiResult, SendFlags, SendVectoredZc, SendZc},
 };
 use compio_io::{
-    AsyncRead, AsyncReadManaged, AsyncReadMulti, AsyncWrite,
+    AsyncRead, AsyncReadManaged, AsyncReadMulti, AsyncWrite, AsyncZeroCopyVectoredWrite,
+    AsyncZeroCopyWrite,
     ancillary::{
         AsyncReadAncillary, AsyncReadAncillaryManaged, AsyncReadAncillaryMulti, AsyncWriteAncillary,
     },
@@ -24,8 +25,8 @@ use futures_util::{Stream, StreamExt, stream::FusedStream};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::{
-    Incoming, MSG_NOSIGNAL, OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, ToSocketAddrsAsync,
-    WriteHalf,
+    Incoming, MSG_NOSIGNAL, MSG_WAITALL, OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket,
+    ToSocketAddrsAsync, WriteHalf, ZerocopyBufferFuture,
 };
 
 /// A TCP socket server, listening for connections.
@@ -705,6 +706,50 @@ impl AsyncWriteAncillary for &TcpStream {
         self.inner
             .send_msg_vectored(buffer, control, None, MSG_NOSIGNAL)
             .await
+    }
+}
+
+impl AsyncZeroCopyWrite for TcpStream {
+    type BufferReadyFuture<T: IoBuf> = ZerocopyBufferFuture<SendZc<T, SharedFd<Socket2>>>;
+
+    async fn write_zerocopy<T: IoBuf>(
+        &mut self,
+        buf: T,
+    ) -> BufResult<usize, <Self as AsyncZeroCopyWrite>::BufferReadyFuture<T>> {
+        self.inner.send_zerocopy(buf, MSG_NOSIGNAL).await
+    }
+
+    async fn write_zerocopy_all<T: IoBuf>(
+        &mut self,
+        buf: T,
+    ) -> BufResult<(), Self::BufferReadyFuture<T>> {
+        let res = self.inner
+            .send_zerocopy(buf, MSG_NOSIGNAL | MSG_WAITALL)
+            .await;
+        BufResult(res.0.map(|_| ()), res.1)
+    }
+}
+
+impl AsyncZeroCopyVectoredWrite for TcpStream {
+    type BufferReadyFuture<T: IoVectoredBuf> =
+        ZerocopyBufferFuture<SendVectoredZc<T, SharedFd<Socket2>>>;
+
+    async fn write_zerocopy_vectored<T: IoVectoredBuf>(
+        &mut self,
+        buf: T,
+    ) -> BufResult<usize, Self::BufferReadyFuture<T>> {
+        self.inner.send_zerocopy_vectored(buf, MSG_NOSIGNAL).await
+    }
+
+    async fn write_zerocopy_vectored_all<T: IoVectoredBuf>(
+        &mut self,
+        buf: T,
+    ) -> BufResult<(), Self::BufferReadyFuture<T>> {
+        let res = self
+            .inner
+            .send_zerocopy_vectored(buf, MSG_NOSIGNAL | MSG_WAITALL)
+            .await;
+        BufResult(res.0.map(|_| ()), res.1)
     }
 }
 

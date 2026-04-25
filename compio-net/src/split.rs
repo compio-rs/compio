@@ -2,7 +2,7 @@ use std::{error::Error, fmt, io};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::AsRawFd;
-use compio_io::{AsyncRead, AsyncWrite};
+use compio_io::{AsyncRead, AsyncWrite, AsyncZeroCopyVectoredWrite, AsyncZeroCopyWrite};
 
 pub(crate) fn split<T>(stream: &T) -> (ReadHalf<'_, T>, WriteHalf<'_, T>)
 where
@@ -114,6 +114,48 @@ where
 
     async fn shutdown(&mut self) -> io::Result<()> {
         (&self.0).shutdown().await
+    }
+}
+
+impl<T> AsyncZeroCopyWrite for OwnedWriteHalf<T>
+where
+    T: AsyncZeroCopyWrite,
+{
+    type BufferReadyFuture<B: IoBuf> = T::BufferReadyFuture<B>;
+
+    async fn write_zerocopy<B: IoBuf>(
+        &mut self,
+        buf: B,
+    ) -> BufResult<usize, Self::BufferReadyFuture<B>> {
+        (&mut self.0).write_zerocopy(buf).await
+    }
+
+    async fn write_zerocopy_all<B: IoBuf>(
+        &mut self,
+        buf: B,
+    ) -> BufResult<(), Self::BufferReadyFuture<B>> {
+        (&mut self.0).write_zerocopy_all(buf).await
+    }
+}
+
+impl<T> AsyncZeroCopyVectoredWrite for OwnedWriteHalf<T>
+where
+    T: AsyncZeroCopyVectoredWrite,
+{
+    type BufferReadyFuture<B: IoVectoredBuf> = T::BufferReadyFuture<B>;
+
+    async fn write_zerocopy_vectored<B: IoVectoredBuf>(
+        &mut self,
+        buf: B,
+    ) -> BufResult<usize, Self::BufferReadyFuture<B>> {
+        (&mut self.0).write_zerocopy_vectored(buf).await
+    }
+
+    async fn write_zerocopy_vectored_all<B: IoVectoredBuf>(
+        &mut self,
+        buf: B,
+    ) -> BufResult<(), Self::BufferReadyFuture<B>> {
+        (&mut self.0).write_zerocopy_vectored_all(buf).await
     }
 }
 
