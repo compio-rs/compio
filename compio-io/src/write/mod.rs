@@ -324,15 +324,16 @@ pub trait AsyncZeroCopyWrite {
     type BufferReadyFuture<T: IoBuf>: Future<Output = T>;
 
     /// Write some bytes from buffer into this source using the underlying
-    /// zero-copy mechanism. It returns a result of the underlying write operation
-    /// and a future that will be resolved when the buffer is safe to be reused.
+    /// zero-copy mechanism. It returns a result of the underlying write
+    /// operation and a future that will be resolved when the buffer is safe
+    /// to be reused.
     fn write_zerocopy<T: IoBuf>(
         &mut self,
         buf: T,
     ) -> impl Future<Output = BufResult<usize, Self::BufferReadyFuture<T>>>;
 
-    /// Like `write_zerocopy`, except that it tries to write the entire contents of the buffer into
-    /// this source.
+    /// Like `write_zerocopy`, except that it tries to write the entire contents
+    /// of the buffer into this source.
     fn write_zerocopy_all<T: IoBuf>(
         &mut self,
         buf: T,
@@ -407,15 +408,16 @@ pub trait AsyncZeroCopyVectoredWrite {
     type BufferReadyFuture<T: IoVectoredBuf>: Future<Output = T>;
 
     /// Write some bytes from buffer into this source using the underlying
-    /// zero-copy mechanism. It returns a result of the underlying write operation
-    /// and a future that will be resolved when the buffer is safe to be reused.
+    /// zero-copy mechanism. It returns a result of the underlying write
+    /// operation and a future that will be resolved when the buffer is safe
+    /// to be reused.
     fn write_zerocopy_vectored<T: IoVectoredBuf>(
         &mut self,
         buf: T,
     ) -> impl Future<Output = BufResult<usize, Self::BufferReadyFuture<T>>>;
 
-    /// Like `write_zerocopy_vectored`, except that it tries to write the entire contents of the buffer into
-    /// this source.
+    /// Like `write_zerocopy_vectored`, except that it tries to write the entire
+    /// contents of the buffer into this source.
     fn write_zerocopy_vectored_all<T: IoVectoredBuf>(
         &mut self,
         buf: T,

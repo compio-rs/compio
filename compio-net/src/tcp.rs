@@ -723,7 +723,8 @@ impl AsyncZeroCopyWrite for TcpStream {
         &mut self,
         buf: T,
     ) -> BufResult<(), Self::BufferReadyFuture<T>> {
-        let res = self.inner
+        let res = self
+            .inner
             .send_zerocopy(buf, MSG_NOSIGNAL | MSG_WAITALL)
             .await;
         BufResult(res.0.map(|_| ()), res.1)
