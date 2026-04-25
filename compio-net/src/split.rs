@@ -127,14 +127,14 @@ where
         &mut self,
         buf: B,
     ) -> BufResult<usize, Self::BufferReadyFuture<B>> {
-        (&mut self.0).write_zerocopy(buf).await
+        self.0.write_zerocopy(buf).await
     }
 
     async fn write_zerocopy_all<B: IoBuf>(
         &mut self,
         buf: B,
     ) -> BufResult<(), Self::BufferReadyFuture<B>> {
-        (&mut self.0).write_zerocopy_all(buf).await
+        self.0.write_zerocopy_all(buf).await
     }
 }
 
@@ -148,14 +148,14 @@ where
         &mut self,
         buf: B,
     ) -> BufResult<usize, Self::BufferReadyFuture<B>> {
-        (&mut self.0).write_zerocopy_vectored(buf).await
+        self.0.write_zerocopy_vectored(buf).await
     }
 
     async fn write_zerocopy_vectored_all<B: IoVectoredBuf>(
         &mut self,
         buf: B,
     ) -> BufResult<(), Self::BufferReadyFuture<B>> {
-        (&mut self.0).write_zerocopy_vectored_all(buf).await
+        self.0.write_zerocopy_vectored_all(buf).await
     }
 }
 

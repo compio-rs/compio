@@ -1,6 +1,6 @@
 use std::os::fd::AsRawFd;
 
-use compio_buf::{BufResult, IoVectoredBuf};
+use compio_buf::BufResult;
 use compio_io::{AsyncRead, AsyncReadExt, AsyncZeroCopyVectoredWrite, AsyncZeroCopyWrite};
 use compio_net::{TcpListener, TcpStream, UdpSocket};
 
@@ -84,7 +84,7 @@ async fn tcp_owned_write_half_zerocopy_all() {
     let recv_handle = compio_runtime::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         // Set tiny recv buffer to create backpressure
-        set_sock_buf(stream.as_raw_fd() as i32, 4096, 4096);
+        set_sock_buf(stream.as_raw_fd(), 4096, 4096);
         let mut received = Vec::new();
 
         let mut buf = Vec::with_capacity(1024);
@@ -138,7 +138,7 @@ async fn tcp_owned_write_half_zerocopy_vectored() {
         Vec::from(b" " as &[u8]),
         Vec::from(b"world" as &[u8]),
     ];
-    let BufResult(res, fut) = tx_write.write_zerocopy_vectored(buffer).await;
+    let BufResult(res, _) = tx_write.write_zerocopy_vectored(buffer).await;
     assert_eq!(res.unwrap(), 11);
 
     let buf = Vec::with_capacity(11);
@@ -155,7 +155,7 @@ async fn tcp_owned_write_half_zerocopy_vectored_all() {
     let recv_handle = compio_runtime::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         // Set tiny recv buffer to create backpressure
-        set_sock_buf(stream.as_raw_fd() as i32, 4096, 4096);
+        set_sock_buf(stream.as_raw_fd(), 4096, 4096);
         let mut received = Vec::new();
 
         let mut buf = Vec::with_capacity(1024);
@@ -179,10 +179,10 @@ async fn tcp_owned_write_half_zerocopy_vectored_all() {
 
     // Send 256KB of data
     let data: Vec<u8> = (0u8..=255).cycle().take(1 << 18).collect(); // 256 KB
-    let data_vector: Vec<Vec<u8>> = data.chunks(4096).map(|chunk| Vec::from(chunk)).collect(); // 4096 bytes per chunk
+    let data_vector: Vec<Vec<u8>> = data.chunks(4096).map(Vec::from).collect(); // 4096 bytes per chunk
     let BufResult(res, fut) = writer.write_zerocopy_vectored_all(data_vector).await;
     res.unwrap();
-    let buffer = fut.await;
+    let _ = fut.await;
 
     // Signal EOF
     drop(writer);
