@@ -1,6 +1,6 @@
 #[cfg(feature = "allocator_api")]
 use std::alloc::Allocator;
-use std::io::Cursor;
+use std::{future, io::Cursor};
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoVectoredBuf, buf_try, t_alloc};
 
@@ -313,5 +313,98 @@ impl<A: AsyncWriteAt> AsyncWrite for Cursor<A> {
 
     async fn shutdown(&mut self) -> IoResult<()> {
         Ok(())
+    }
+}
+
+/// # AsyncZeroCopyWrite
+///
+/// Async zerocopy write with ownership of a buffer.
+pub trait AsyncWriteZerocopy {
+    /// The future that will be resolved when the buffer is safe to be reused.
+    type BufferReadyFuture<T: IoBuf>: Future<Output = T>;
+    /// The future that will be resolved when the vectored buffer is safe to be
+    /// reused.
+    type VectoredBufferReadyFuture<T: IoVectoredBuf>: Future<Output = T>;
+
+    /// Write some bytes from buffer into this source using the underlying
+    /// zero-copy mechanism. It returns a result of the underlying write
+    /// operation and a future that will be resolved when the buffer is safe
+    /// to be reused.
+    fn write_zerocopy<T: IoBuf>(
+        &mut self,
+        buf: T,
+    ) -> impl Future<Output = BufResult<usize, Self::BufferReadyFuture<T>>>;
+
+    /// Like `write_zerocopy`, except that it writes from a buffer implements
+    /// [`IoVectoredBuf`] into the source.
+    fn write_zerocopy_vectored<T: IoVectoredBuf>(
+        &mut self,
+        buf: T,
+    ) -> impl Future<Output = BufResult<usize, Self::VectoredBufferReadyFuture<T>>>;
+}
+
+impl<A: AsyncWriteZerocopy + ?Sized> AsyncWriteZerocopy for &mut A {
+    type BufferReadyFuture<T: IoBuf> = A::BufferReadyFuture<T>;
+    type VectoredBufferReadyFuture<T: IoVectoredBuf> = A::VectoredBufferReadyFuture<T>;
+
+    fn write_zerocopy<T: IoBuf>(
+        &mut self,
+        buf: T,
+    ) -> impl Future<Output = BufResult<usize, Self::BufferReadyFuture<T>>> {
+        (**self).write_zerocopy(buf)
+    }
+
+    fn write_zerocopy_vectored<T: IoVectoredBuf>(
+        &mut self,
+        buf: T,
+    ) -> impl Future<Output = BufResult<usize, Self::VectoredBufferReadyFuture<T>>> {
+        (**self).write_zerocopy_vectored(buf)
+    }
+}
+
+impl<W: AsyncWriteZerocopy + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator>
+    AsyncWriteZerocopy for t_alloc!(Box, W, A)
+{
+    type BufferReadyFuture<T: IoBuf> = W::BufferReadyFuture<T>;
+    type VectoredBufferReadyFuture<T: IoVectoredBuf> = W::VectoredBufferReadyFuture<T>;
+
+    fn write_zerocopy<T: IoBuf>(
+        &mut self,
+        buf: T,
+    ) -> impl Future<Output = BufResult<usize, Self::BufferReadyFuture<T>>> {
+        (**self).write_zerocopy(buf)
+    }
+
+    fn write_zerocopy_vectored<T: IoVectoredBuf>(
+        &mut self,
+        buf: T,
+    ) -> impl Future<Output = BufResult<usize, Self::VectoredBufferReadyFuture<T>>> {
+        (**self).write_zerocopy_vectored(buf)
+    }
+}
+
+impl<#[cfg(feature = "allocator_api")] A: Allocator> AsyncWriteZerocopy for t_alloc!(Vec, u8, A) {
+    type BufferReadyFuture<T: IoBuf> = future::Ready<T>;
+    type VectoredBufferReadyFuture<T: IoVectoredBuf> = future::Ready<T>;
+
+    async fn write_zerocopy<T: IoBuf>(
+        &mut self,
+        buf: T,
+    ) -> BufResult<usize, Self::BufferReadyFuture<T>> {
+        let slice = buf.as_init();
+        self.extend_from_slice(slice);
+        BufResult(Ok(slice.len()), future::ready(buf))
+    }
+
+    async fn write_zerocopy_vectored<T: IoVectoredBuf>(
+        &mut self,
+        buf: T,
+    ) -> BufResult<usize, Self::VectoredBufferReadyFuture<T>> {
+        let len = buf.iter_slice().map(|b| b.buf_len()).sum();
+        self.reserve(len - self.len());
+        for slice in buf.iter_slice() {
+            self.extend_from_slice(slice);
+        }
+        BufResult(Ok(len), future::ready(buf))
     }
 }

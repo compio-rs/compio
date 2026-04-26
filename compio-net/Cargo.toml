@@ -31,6 +31,7 @@ futures-util = { workspace = true }
 once_cell = { workspace = true }
 socket2 = { workspace = true }
 synchrony = { workspace = true }
+pin-project-lite = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 widestring = { workspace = true }

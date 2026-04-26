@@ -23,6 +23,6 @@ fn main() {
         polling: { all(unix, any(not(target_os = "linux"), feature = "polling")) },
         io_uring: { all(target_os = "linux", feature = "io-uring") },
         fusion: { all(target_os = "linux", feature = "io-uring", feature = "polling") },
-        stub: { all(target_os = "linux", not(feature = "io_uring"), not(feature = "polling")) }
+        stub: { all(target_os = "linux", not(feature = "io-uring"), not(feature = "polling")) }
     }
 }

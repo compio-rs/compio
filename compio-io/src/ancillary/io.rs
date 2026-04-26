@@ -132,6 +132,81 @@ impl<A: AsyncWriteAncillary + ?Sized, #[cfg(feature = "allocator_api")] Alloc: A
     }
 }
 
+/// Trait for zerocopy asynchronous write with ancillary (control) data.
+/// Intended for connected stream sockets (TCP, Unix streams) where no
+/// destination address is needed.
+pub trait AsyncWriteAncillaryZerocopy {
+    /// The future that will be resolved when the buffer is safe to be reused.
+    type BufferReadyFuture<T: IoBuf, C: IoBuf>: Future<Output = (T, C)>;
+    /// The future that will be resolved when the vectored buffer is safe to be
+    /// reused.
+    type VectoredBufferReadyFuture<T: IoVectoredBuf, C: IoBuf>: Future<Output = (T, C)>;
+
+    /// Write some bytes from buffer into this source using the underlying
+    /// zero-copy mechanism. It returns a result of the underlying write
+    /// operation and a future that will be resolved when the buffer is safe
+    /// to be reused.
+    fn write_zerocopy_with_ancillary<T: IoBuf, C: IoBuf>(
+        &mut self,
+        buf: T,
+        control: C,
+    ) -> impl Future<Output = BufResult<usize, Self::BufferReadyFuture<T, C>>>;
+
+    /// Like `write_zerocopy_with_ancillary`, except that it writes from a
+    /// buffer implements [`IoVectoredBuf`] into the source.
+    fn write_zerocopy_vectored_with_ancillary<T: IoVectoredBuf, C: IoBuf>(
+        &mut self,
+        buf: T,
+        control: C,
+    ) -> impl Future<Output = BufResult<usize, Self::VectoredBufferReadyFuture<T, C>>>;
+}
+
+impl<A: AsyncWriteAncillaryZerocopy + ?Sized> AsyncWriteAncillaryZerocopy for &mut A {
+    type BufferReadyFuture<T: IoBuf, C: IoBuf> = A::BufferReadyFuture<T, C>;
+    type VectoredBufferReadyFuture<T: IoVectoredBuf, C: IoBuf> = A::VectoredBufferReadyFuture<T, C>;
+
+    #[inline]
+    fn write_zerocopy_with_ancillary<T: IoBuf, C: IoBuf>(
+        &mut self,
+        buf: T,
+        control: C,
+    ) -> impl Future<Output = BufResult<usize, Self::BufferReadyFuture<T, C>>> {
+        (**self).write_zerocopy_with_ancillary(buf, control)
+    }
+
+    #[inline]
+    fn write_zerocopy_vectored_with_ancillary<T: IoVectoredBuf, C: IoBuf>(
+        &mut self,
+        buf: T,
+        control: C,
+    ) -> impl Future<Output = BufResult<usize, Self::VectoredBufferReadyFuture<T, C>>> {
+        (**self).write_zerocopy_vectored_with_ancillary(buf, control)
+    }
+}
+
+impl<A: AsyncWriteAncillaryZerocopy + ?Sized, #[cfg(feature = "allocator_api")] Alloc: Allocator>
+    AsyncWriteAncillaryZerocopy for t_alloc!(Box, A, Alloc)
+{
+    type BufferReadyFuture<T: IoBuf, C: IoBuf> = A::BufferReadyFuture<T, C>;
+    type VectoredBufferReadyFuture<T: IoVectoredBuf, C: IoBuf> = A::VectoredBufferReadyFuture<T, C>;
+
+    fn write_zerocopy_with_ancillary<T: IoBuf, C: IoBuf>(
+        &mut self,
+        buf: T,
+        control: C,
+    ) -> impl Future<Output = BufResult<usize, Self::BufferReadyFuture<T, C>>> {
+        (**self).write_zerocopy_with_ancillary(buf, control)
+    }
+
+    fn write_zerocopy_vectored_with_ancillary<T: IoVectoredBuf, C: IoBuf>(
+        &mut self,
+        buf: T,
+        control: C,
+    ) -> impl Future<Output = BufResult<usize, Self::VectoredBufferReadyFuture<T, C>>> {
+        (**self).write_zerocopy_vectored_with_ancillary(buf, control)
+    }
+}
+
 /// Trait for asynchronous read with ancillary (control) data that returns
 /// managed buffers. Intended for connected stream sockets (TCP, Unix streams)
 /// where no source address is needed.
