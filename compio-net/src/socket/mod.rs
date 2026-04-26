@@ -24,6 +24,7 @@ use compio_driver::{
 };
 use compio_runtime::{Attacher, Runtime, SubmitMulti, fd::PollFd};
 use futures_util::{Stream, StreamExt, future::Either};
+use pin_project_lite::pin_project;
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 use sys::SocketState;
 
@@ -538,13 +539,12 @@ impl Socket {
         control: C,
         addr: Option<&SockAddr>,
         flags: SendFlags,
-    ) -> BufResult<usize, impl Future<Output = (T, C)> + use<T, C>> {
-        self.send_msg_zerocopy_vectored([buffer], control, addr, flags)
-            .await
-            .map_buffer(|fut| async move {
-                let ([buffer], control) = fut.await;
-                (buffer, control)
-            })
+    ) -> BufResult<usize, Extract<Zerocopy<SendMsgZc<[T; 1], C, SharedFd<Socket2>>>, T, C>> {
+        let BufResult(res, fut) = self
+            .send_msg_zerocopy_vectored([buffer], control, addr, flags)
+            .await;
+
+        BufResult(res, Extract::new(fut))
     }
 
     pub async fn send_msg_zerocopy_vectored<T: IoVectoredBuf, C: IoBuf>(
@@ -723,9 +723,48 @@ impl<T: OpCode + IntoInner + 'static> Future for Zerocopy<T> {
     }
 }
 
-async fn submit_zerocopy<T: OpCode + IntoInner + 'static>(
-    op: T,
-) -> BufResult<usize, Zerocopy<T>> {
+pin_project! {
+    pub struct Extract<F, T, C>
+    where
+        F: Future<Output = ([T; 1], C)>,
+        T: IoBuf,
+        C: IoBuf,
+    {
+        #[pin]
+        future: F,
+    }
+}
+
+impl<F, T, C> Extract<F, T, C>
+where
+    F: Future<Output = ([T; 1], C)>,
+    T: IoBuf,
+    C: IoBuf,
+{
+    pub fn new(future: F) -> Self {
+        Self { future }
+    }
+}
+
+impl<F, T, C> Future for Extract<F, T, C>
+where
+    F: Future<Output = ([T; 1], C)>,
+    T: IoBuf,
+    C: IoBuf,
+{
+    type Output = (T, C);
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+
+        match this.future.poll(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(([buf], control)) => Poll::Ready((buf, control)),
+        }
+    }
+}
+
+async fn submit_zerocopy<T: OpCode + IntoInner + 'static>(op: T) -> BufResult<usize, Zerocopy<T>> {
     let mut stream = compio_runtime::submit_multi(op);
     let res = stream
         .next()

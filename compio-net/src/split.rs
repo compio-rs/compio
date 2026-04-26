@@ -2,7 +2,9 @@ use std::{error::Error, fmt, io};
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_driver::AsRawFd;
-use compio_io::{AsyncRead, AsyncWrite, AsyncWriteZerocopy};
+use compio_io::{
+    AsyncRead, AsyncWrite, AsyncWriteZerocopy, ancillary::AsyncWriteAncillaryZerocopy,
+};
 
 pub(crate) fn split<T>(stream: &T) -> (ReadHalf<'_, T>, WriteHalf<'_, T>)
 where
@@ -136,6 +138,32 @@ where
         buf: B,
     ) -> BufResult<usize, Self::VectoredBufferReadyFuture<B>> {
         self.0.write_zerocopy_vectored(buf).await
+    }
+}
+
+impl<T> AsyncWriteAncillaryZerocopy for OwnedWriteHalf<T>
+where
+    T: AsyncWriteAncillaryZerocopy,
+{
+    type BufferReadyFuture<B: IoBuf, C: IoBuf> = T::BufferReadyFuture<B, C>;
+    type VectoredBufferReadyFuture<B: IoVectoredBuf, C: IoBuf> = T::VectoredBufferReadyFuture<B, C>;
+
+    async fn write_with_ancillery_zerocopy<B: IoBuf, C: IoBuf>(
+        &mut self,
+        buf: B,
+        control: C,
+    ) -> BufResult<usize, Self::BufferReadyFuture<B, C>> {
+        self.0.write_with_ancillery_zerocopy(buf, control).await
+    }
+
+    async fn write_vectored_with_ancillery_zerocopy<B: IoVectoredBuf, C: IoBuf>(
+        &mut self,
+        buf: B,
+        control: C,
+    ) -> BufResult<usize, Self::VectoredBufferReadyFuture<B, C>> {
+        self.0
+            .write_vectored_with_ancillery_zerocopy(buf, control)
+            .await
     }
 }
 

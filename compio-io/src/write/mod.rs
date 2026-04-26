@@ -322,7 +322,8 @@ impl<A: AsyncWriteAt> AsyncWrite for Cursor<A> {
 pub trait AsyncWriteZerocopy {
     /// The future that will be resolved when the buffer is safe to be reused.
     type BufferReadyFuture<T: IoBuf>: Future<Output = T>;
-    /// The future that will be resolved when the vectored buffer is safe to be reused.
+    /// The future that will be resolved when the vectored buffer is safe to be
+    /// reused.
     type VectoredBufferReadyFuture<T: IoVectoredBuf>: Future<Output = T>;
 
     /// Write some bytes from buffer into this source using the underlying
