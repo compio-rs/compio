@@ -755,7 +755,7 @@ impl AsyncWriteAncillaryZerocopy for TcpStream {
     type VectoredBufferReadyFuture<T: IoVectoredBuf, C: IoBuf> =
         Zerocopy<SendMsgZc<T, C, SharedFd<Socket2>>>;
 
-    async fn write_with_ancillery_zerocopy<T: IoBuf, C: IoBuf>(
+    async fn write_with_ancillary_zerocopy<T: IoBuf, C: IoBuf>(
         &mut self,
         buf: T,
         control: C,
@@ -765,7 +765,34 @@ impl AsyncWriteAncillaryZerocopy for TcpStream {
             .await
     }
 
-    async fn write_vectored_with_ancillery_zerocopy<T: IoVectoredBuf, C: IoBuf>(
+    async fn write_vectored_with_ancillary_zerocopy<T: IoVectoredBuf, C: IoBuf>(
+        &mut self,
+        buf: T,
+        control: C,
+    ) -> BufResult<usize, Self::VectoredBufferReadyFuture<T, C>> {
+        self.inner
+            .send_msg_zerocopy_vectored(buf, control, None, MSG_NOSIGNAL)
+            .await
+    }
+}
+
+impl AsyncWriteAncillaryZerocopy for &TcpStream {
+    type BufferReadyFuture<T: IoBuf, C: IoBuf> =
+        Extract<Zerocopy<SendMsgZc<[T; 1], C, SharedFd<Socket2>>>, T, C>;
+    type VectoredBufferReadyFuture<T: IoVectoredBuf, C: IoBuf> =
+        Zerocopy<SendMsgZc<T, C, SharedFd<Socket2>>>;
+
+    async fn write_with_ancillary_zerocopy<T: IoBuf, C: IoBuf>(
+        &mut self,
+        buf: T,
+        control: C,
+    ) -> BufResult<usize, Self::BufferReadyFuture<T, C>> {
+        self.inner
+            .send_msg_zerocopy(buf, control, None, MSG_NOSIGNAL)
+            .await
+    }
+
+    async fn write_vectored_with_ancillary_zerocopy<T: IoVectoredBuf, C: IoBuf>(
         &mut self,
         buf: T,
         control: C,

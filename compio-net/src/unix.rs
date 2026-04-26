@@ -571,7 +571,7 @@ impl AsyncWriteAncillaryZerocopy for UnixStream {
     type VectoredBufferReadyFuture<T: IoVectoredBuf, C: IoBuf> =
         Zerocopy<SendMsgZc<T, C, SharedFd<Socket2>>>;
 
-    async fn write_with_ancillery_zerocopy<T: IoBuf, C: IoBuf>(
+    async fn write_with_ancillary_zerocopy<T: IoBuf, C: IoBuf>(
         &mut self,
         buf: T,
         control: C,
@@ -581,7 +581,7 @@ impl AsyncWriteAncillaryZerocopy for UnixStream {
             .await
     }
 
-    async fn write_vectored_with_ancillery_zerocopy<T: IoVectoredBuf, C: IoBuf>(
+    async fn write_vectored_with_ancillary_zerocopy<T: IoVectoredBuf, C: IoBuf>(
         &mut self,
         buf: T,
         control: C,
@@ -598,7 +598,7 @@ impl AsyncWriteAncillaryZerocopy for &UnixStream {
     type VectoredBufferReadyFuture<T: IoVectoredBuf, C: IoBuf> =
         Zerocopy<SendMsgZc<T, C, SharedFd<Socket2>>>;
 
-    async fn write_with_ancillery_zerocopy<T: IoBuf, C: IoBuf>(
+    async fn write_with_ancillary_zerocopy<T: IoBuf, C: IoBuf>(
         &mut self,
         buf: T,
         control: C,
@@ -608,7 +608,7 @@ impl AsyncWriteAncillaryZerocopy for &UnixStream {
             .await
     }
 
-    async fn write_vectored_with_ancillery_zerocopy<T: IoVectoredBuf, C: IoBuf>(
+    async fn write_vectored_with_ancillary_zerocopy<T: IoVectoredBuf, C: IoBuf>(
         &mut self,
         buf: T,
         control: C,
