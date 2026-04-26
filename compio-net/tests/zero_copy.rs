@@ -9,11 +9,11 @@ async fn tcp_zerocopy() {
 
     let task = compio_runtime::spawn(async move { listener.accept().await.unwrap() });
 
-    let tx = TcpStream::connect(&addr).await.unwrap();
+    let mut tx = TcpStream::connect(&addr).await.unwrap();
     let (mut rx, _) = task.await.unwrap();
 
     let buffer = Vec::from(b"hello world" as &[u8]);
-    let BufResult(res, fut) = tx.send_zerocopy(buffer).await;
+    let BufResult(res, fut) = tx.write_zerocopy(buffer).await;
     assert_eq!(res.unwrap(), 11);
     let buffer = fut.await;
     assert_eq!(buffer, b"hello world");
@@ -30,7 +30,7 @@ async fn tcp_zerocopy_vectored() {
 
     let task = compio_runtime::spawn(async move { listener.accept().await.unwrap() });
 
-    let tx = TcpStream::connect(&addr).await.unwrap();
+    let mut tx = TcpStream::connect(&addr).await.unwrap();
     let (mut rx, _) = task.await.unwrap();
 
     let buffer = [
@@ -38,7 +38,7 @@ async fn tcp_zerocopy_vectored() {
         Vec::from(b" " as &[u8]),
         Vec::from(b"world" as &[u8]),
     ];
-    let BufResult(res, fut) = tx.send_zerocopy_vectored(buffer).await;
+    let BufResult(res, fut) = tx.write_zerocopy_vectored(buffer).await;
     assert_eq!(res.unwrap(), 11);
     let buffer = fut.await;
     assert_eq!(buffer[0], b"hello");

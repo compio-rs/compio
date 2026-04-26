@@ -146,15 +146,15 @@ pub trait AsyncWriteAncillaryZerocopy {
     /// zero-copy mechanism. It returns a result of the underlying write
     /// operation and a future that will be resolved when the buffer is safe
     /// to be reused.
-    fn write_with_ancillary_zerocopy<T: IoBuf, C: IoBuf>(
+    fn write_zerocopy_with_ancillary<T: IoBuf, C: IoBuf>(
         &mut self,
         buf: T,
         control: C,
     ) -> impl Future<Output = BufResult<usize, Self::BufferReadyFuture<T, C>>>;
 
-    /// Like `write_with_ancillary_zerocopy`, except that it writes from a
+    /// Like `write_zerocopy_with_ancillary`, except that it writes from a
     /// buffer implements [`IoVectoredBuf`] into the source.
-    fn write_vectored_with_ancillary_zerocopy<T: IoVectoredBuf, C: IoBuf>(
+    fn write_zerocopy_vectored_with_ancillary<T: IoVectoredBuf, C: IoBuf>(
         &mut self,
         buf: T,
         control: C,
@@ -166,21 +166,21 @@ impl<A: AsyncWriteAncillaryZerocopy + ?Sized> AsyncWriteAncillaryZerocopy for &m
     type VectoredBufferReadyFuture<T: IoVectoredBuf, C: IoBuf> = A::VectoredBufferReadyFuture<T, C>;
 
     #[inline]
-    fn write_with_ancillary_zerocopy<T: IoBuf, C: IoBuf>(
+    fn write_zerocopy_with_ancillary<T: IoBuf, C: IoBuf>(
         &mut self,
         buf: T,
         control: C,
     ) -> impl Future<Output = BufResult<usize, Self::BufferReadyFuture<T, C>>> {
-        (**self).write_with_ancillary_zerocopy(buf, control)
+        (**self).write_zerocopy_with_ancillary(buf, control)
     }
 
     #[inline]
-    fn write_vectored_with_ancillary_zerocopy<T: IoVectoredBuf, C: IoBuf>(
+    fn write_zerocopy_vectored_with_ancillary<T: IoVectoredBuf, C: IoBuf>(
         &mut self,
         buf: T,
         control: C,
     ) -> impl Future<Output = BufResult<usize, Self::VectoredBufferReadyFuture<T, C>>> {
-        (**self).write_vectored_with_ancillary_zerocopy(buf, control)
+        (**self).write_zerocopy_vectored_with_ancillary(buf, control)
     }
 }
 
@@ -190,20 +190,20 @@ impl<A: AsyncWriteAncillaryZerocopy + ?Sized, #[cfg(feature = "allocator_api")] 
     type BufferReadyFuture<T: IoBuf, C: IoBuf> = A::BufferReadyFuture<T, C>;
     type VectoredBufferReadyFuture<T: IoVectoredBuf, C: IoBuf> = A::VectoredBufferReadyFuture<T, C>;
 
-    fn write_with_ancillary_zerocopy<T: IoBuf, C: IoBuf>(
+    fn write_zerocopy_with_ancillary<T: IoBuf, C: IoBuf>(
         &mut self,
         buf: T,
         control: C,
     ) -> impl Future<Output = BufResult<usize, Self::BufferReadyFuture<T, C>>> {
-        (**self).write_with_ancillary_zerocopy(buf, control)
+        (**self).write_zerocopy_with_ancillary(buf, control)
     }
 
-    fn write_vectored_with_ancillary_zerocopy<T: IoVectoredBuf, C: IoBuf>(
+    fn write_zerocopy_vectored_with_ancillary<T: IoVectoredBuf, C: IoBuf>(
         &mut self,
         buf: T,
         control: C,
     ) -> impl Future<Output = BufResult<usize, Self::VectoredBufferReadyFuture<T, C>>> {
-        (**self).write_vectored_with_ancillary_zerocopy(buf, control)
+        (**self).write_zerocopy_vectored_with_ancillary(buf, control)
     }
 }
 

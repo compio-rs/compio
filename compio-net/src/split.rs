@@ -148,21 +148,21 @@ where
     type BufferReadyFuture<B: IoBuf, C: IoBuf> = T::BufferReadyFuture<B, C>;
     type VectoredBufferReadyFuture<B: IoVectoredBuf, C: IoBuf> = T::VectoredBufferReadyFuture<B, C>;
 
-    async fn write_with_ancillary_zerocopy<B: IoBuf, C: IoBuf>(
+    async fn write_zerocopy_with_ancillary<B: IoBuf, C: IoBuf>(
         &mut self,
         buf: B,
         control: C,
     ) -> BufResult<usize, Self::BufferReadyFuture<B, C>> {
-        self.0.write_with_ancillary_zerocopy(buf, control).await
+        self.0.write_zerocopy_with_ancillary(buf, control).await
     }
 
-    async fn write_vectored_with_ancillary_zerocopy<B: IoVectoredBuf, C: IoBuf>(
+    async fn write_zerocopy_vectored_with_ancillary<B: IoVectoredBuf, C: IoBuf>(
         &mut self,
         buf: B,
         control: C,
     ) -> BufResult<usize, Self::VectoredBufferReadyFuture<B, C>> {
         self.0
-            .write_vectored_with_ancillary_zerocopy(buf, control)
+            .write_zerocopy_vectored_with_ancillary(buf, control)
             .await
     }
 }
