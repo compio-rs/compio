@@ -118,6 +118,15 @@ impl TcpListener {
         Ok((stream, addr.as_socket().expect("should be SocketAddr")))
     }
 
+    /// Accepts a new incoming connection from this listener using the provided
+    /// socket.
+    #[cfg(windows)]
+    pub async fn accept_with(&self, sock: TcpSocket) -> io::Result<(TcpStream, SocketAddr)> {
+        let (socket, addr) = self.inner.accept_with(sock.inner).await?;
+        let stream = TcpStream { inner: socket };
+        Ok((stream, addr.as_socket().expect("should be SocketAddr")))
+    }
+
     /// Returns a stream of incoming connections to this listener.
     ///
     /// ## Platform specific
@@ -331,6 +340,16 @@ impl TcpStream {
     /// Create [`PollFd`] from inner socket.
     pub fn into_poll_fd(self) -> io::Result<PollFd<Socket2>> {
         self.inner.into_poll_fd()
+    }
+
+    /// Close the connection of the socket, and reuse it to create a new
+    /// connection. This method is useful when the socket is created by
+    /// [`TcpListener::accept`], and will be reused in
+    /// [`TcpListener::accept_with`] to accept a new connection.
+    #[cfg(windows)]
+    pub async fn disconnect(self) -> io::Result<TcpSocket> {
+        self.inner.disconnect().await?;
+        Ok(TcpSocket { inner: self.inner })
     }
 
     /// Gets the value of the `TCP_NODELAY` option on this socket.
@@ -992,6 +1011,8 @@ impl TcpSocket {
     /// The [`TcpSocket`] is consumed. Once the connection is established, a
     /// connected [`TcpStream`] is returned. If the connection fails, the
     /// encountered error is returned.
+    ///
+    /// On Windows, the socket should be bound to an address before connecting.
     pub async fn connect(self, addr: SocketAddr) -> io::Result<TcpStream> {
         self.inner.connect_async(&addr.into()).await?;
         Ok(TcpStream { inner: self.inner })

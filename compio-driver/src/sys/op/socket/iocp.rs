@@ -1,13 +1,11 @@
-use std::os::windows::io::AsRawSocket;
-
 use rustix::net::RecvFlags;
 use windows_sys::Win32::{
     Networking::WinSock::{
-        LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_GETACCEPTEXSOCKADDRS, LPFN_WSARECVMSG,
-        SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, SOCKADDR, SOCKADDR_STORAGE,
-        SOL_SOCKET, WSAID_ACCEPTEX, WSAID_CONNECTEX, WSAID_GETACCEPTEXSOCKADDRS, WSAID_WSARECVMSG,
-        WSAMSG, WSARecv, WSARecvFrom, WSASend, WSASendMsg, WSASendTo, closesocket, setsockopt,
-        socklen_t,
+        LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_DISCONNECTEX, LPFN_GETACCEPTEXSOCKADDRS,
+        LPFN_WSARECVMSG, SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, SOCKADDR,
+        SOCKADDR_STORAGE, SOL_SOCKET, TF_REUSE_SOCKET, WSAID_ACCEPTEX, WSAID_CONNECTEX,
+        WSAID_DISCONNECTEX, WSAID_GETACCEPTEXSOCKADDRS, WSAID_WSARECVMSG, WSAMSG, WSARecv,
+        WSARecvFrom, WSASend, WSASendMsg, WSASendTo, closesocket, setsockopt, socklen_t,
     },
     System::IO::OVERLAPPED,
 };
@@ -35,15 +33,15 @@ unsafe impl OpCode for CloseSocket {
 }
 
 /// Accept a connection.
-pub struct Accept<S> {
+pub struct Accept<S, SA> {
     pub(crate) fd: S,
-    pub(crate) accept_fd: socket2::Socket,
+    pub(crate) accept_fd: SA,
     pub(crate) buffer: [u8; ACCEPT_BUFFER_SIZE],
 }
 
-impl<S> Accept<S> {
+impl<S, SA> Accept<S, SA> {
     /// Create [`Accept`]. `accept_fd` should not be bound.
-    pub fn new(fd: S, accept_fd: socket2::Socket) -> Self {
+    pub fn new(fd: S, accept_fd: SA) -> Self {
         Self {
             fd,
             accept_fd,
@@ -52,14 +50,14 @@ impl<S> Accept<S> {
     }
 }
 
-impl<S: AsFd> Accept<S> {
+impl<S: AsFd, SA: AsFd> Accept<S, SA> {
     /// Update accept context.
     pub fn update_context(&self) -> io::Result<()> {
         let fd = self.fd.as_fd().as_raw_fd();
         syscall!(
             SOCKET,
             setsockopt(
-                self.accept_fd.as_raw_socket() as _,
+                self.accept_fd.as_fd().as_raw_fd() as _,
                 SOL_SOCKET,
                 SO_UPDATE_ACCEPT_CONTEXT,
                 &fd as *const _ as _,
@@ -70,7 +68,7 @@ impl<S: AsFd> Accept<S> {
     }
 
     /// Get the remote address from the inner buffer.
-    pub fn into_addr(self) -> io::Result<(socket2::Socket, SockAddr)> {
+    pub fn into_addr(self) -> io::Result<(SA, SockAddr)> {
         let get_addrs_fn = GET_ADDRS
             .get_or_try_init(|| {
                 get_wsa_fn(self.fd.as_fd().as_raw_fd(), WSAID_GETACCEPTEXSOCKADDRS)
@@ -109,7 +107,7 @@ impl<S: AsFd> Accept<S> {
     }
 }
 
-unsafe impl<S: AsFd> OpCode for Accept<S> {
+unsafe impl<S: AsFd, SA: AsFd> OpCode for Accept<S, SA> {
     type Control = ();
 
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
@@ -122,7 +120,7 @@ unsafe impl<S: AsFd> OpCode for Accept<S> {
         let res = unsafe {
             accept_fn(
                 self.fd.as_fd().as_raw_fd() as _,
-                self.accept_fd.as_raw_socket() as _,
+                self.accept_fd.as_fd().as_raw_fd() as _,
                 self.buffer.sys_slice_mut().ptr() as _,
                 0,
                 ACCEPT_ADDR_BUFFER_SIZE as _,
@@ -187,7 +185,38 @@ unsafe impl<S: AsFd> OpCode for Connect<S> {
     }
 }
 
-/// Receive data from remote.
+/// Disconnect a connected socket and reuse it for another connection.
+pub struct Disconnect<S> {
+    pub(crate) fd: S,
+}
+
+impl<S> Disconnect<S> {
+    /// Create [`Disconnect`].
+    pub fn new(fd: S) -> Self {
+        Self { fd }
+    }
+}
+
+static DISCONNECT_EX: OnceLock<LPFN_DISCONNECTEX> = OnceLock::new();
+
+unsafe impl<S: AsFd> OpCode for Disconnect<S> {
+    type Control = ();
+
+    unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
+        let disconnect_fn = DISCONNECT_EX
+            .get_or_try_init(|| get_wsa_fn(self.fd.as_fd().as_raw_fd(), WSAID_DISCONNECTEX))?
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::Unsupported, "cannot retrieve DisconnectEx")
+            })?;
+        let res =
+            unsafe { disconnect_fn(self.fd.as_fd().as_raw_fd() as _, optr, TF_REUSE_SOCKET, 0) };
+        win32_result(res, 0)
+    }
+
+    fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
+        cancel(self.fd.as_fd().as_raw_fd(), optr)
+    }
+}
 
 #[derive(Default)]
 #[doc(hidden)]
