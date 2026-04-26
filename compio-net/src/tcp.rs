@@ -13,8 +13,7 @@ use compio_driver::{
     op::{RecvFlags, RecvMsgMultiResult, SendFlags, SendVectoredZc, SendZc},
 };
 use compio_io::{
-    AsyncRead, AsyncReadManaged, AsyncReadMulti, AsyncWrite, AsyncZeroCopyVectoredWrite,
-    AsyncZeroCopyWrite,
+    AsyncRead, AsyncReadManaged, AsyncReadMulti, AsyncWrite, AsyncWriteZerocopy,
     ancillary::{
         AsyncReadAncillary, AsyncReadAncillaryManaged, AsyncReadAncillaryMulti, AsyncWriteAncillary,
     },
@@ -25,7 +24,7 @@ use futures_util::{Stream, StreamExt, stream::FusedStream};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::{
-    Incoming, MSG_NOSIGNAL, MSG_WAITALL, OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket,
+    Incoming, MSG_NOSIGNAL, OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket,
     ToSocketAddrsAsync, WriteHalf, ZerocopyBufferFuture,
 };
 
@@ -709,48 +708,23 @@ impl AsyncWriteAncillary for &TcpStream {
     }
 }
 
-impl AsyncZeroCopyWrite for TcpStream {
+impl AsyncWriteZerocopy for TcpStream {
     type BufferReadyFuture<T: IoBuf> = ZerocopyBufferFuture<SendZc<T, SharedFd<Socket2>>>;
+    type VectoredBufferReadyFuture<T: IoVectoredBuf> =
+        ZerocopyBufferFuture<SendVectoredZc<T, SharedFd<Socket2>>>;
 
     async fn write_zerocopy<T: IoBuf>(
         &mut self,
         buf: T,
-    ) -> BufResult<usize, <Self as AsyncZeroCopyWrite>::BufferReadyFuture<T>> {
+    ) -> BufResult<usize, Self::BufferReadyFuture<T>> {
         self.inner.send_zerocopy(buf, MSG_NOSIGNAL).await
     }
-
-    async fn write_zerocopy_all<T: IoBuf>(
-        &mut self,
-        buf: T,
-    ) -> BufResult<(), Self::BufferReadyFuture<T>> {
-        let res = self
-            .inner
-            .send_zerocopy(buf, MSG_NOSIGNAL | MSG_WAITALL)
-            .await;
-        BufResult(res.0.map(|_| ()), res.1)
-    }
-}
-
-impl AsyncZeroCopyVectoredWrite for TcpStream {
-    type BufferReadyFuture<T: IoVectoredBuf> =
-        ZerocopyBufferFuture<SendVectoredZc<T, SharedFd<Socket2>>>;
 
     async fn write_zerocopy_vectored<T: IoVectoredBuf>(
         &mut self,
         buf: T,
-    ) -> BufResult<usize, Self::BufferReadyFuture<T>> {
+    ) -> BufResult<usize, Self::VectoredBufferReadyFuture<T>> {
         self.inner.send_zerocopy_vectored(buf, MSG_NOSIGNAL).await
-    }
-
-    async fn write_zerocopy_vectored_all<T: IoVectoredBuf>(
-        &mut self,
-        buf: T,
-    ) -> BufResult<(), Self::BufferReadyFuture<T>> {
-        let res = self
-            .inner
-            .send_zerocopy_vectored(buf, MSG_NOSIGNAL | MSG_WAITALL)
-            .await;
-        BufResult(res.0.map(|_| ()), res.1)
     }
 }
 

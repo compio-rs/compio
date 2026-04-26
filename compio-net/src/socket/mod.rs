@@ -24,7 +24,6 @@ use compio_driver::{
 };
 use compio_runtime::{Attacher, Runtime, SubmitMulti, fd::PollFd};
 use futures_util::{Stream, StreamExt, future::Either};
-use pin_project_lite::pin_project;
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 use sys::SocketState;
 
@@ -41,11 +40,8 @@ cfg_if::cfg_if! {
         target_os = "cygwin"))] {
         pub(crate) const MSG_NOSIGNAL: SendFlags =
             SendFlags::from_bits_retain(libc::MSG_NOSIGNAL as _);
-        pub(crate) const MSG_WAITALL: SendFlags =
-            SendFlags::from_bits_retain(libc::MSG_WAITALL as _);
     } else {
         pub(crate) const MSG_NOSIGNAL: SendFlags = SendFlags::empty();
-        pub(crate) const MSG_WAITALL: SendFlags = SendFlags::empty();
     }
 }
 
@@ -693,11 +689,8 @@ impl std::os::windows::io::AsRawSocket for Socket {
     }
 }
 
-pin_project! {
-    pub struct ZerocopyBufferFuture<T: OpCode>
-    {
-        stream: Option<SubmitMulti<T>>,
-    }
+pub struct ZerocopyBufferFuture<T: OpCode> {
+    stream: Option<SubmitMulti<T>>,
 }
 
 impl<T: OpCode + IntoInner + 'static> ZerocopyBufferFuture<T> {
@@ -712,7 +705,8 @@ impl<T: OpCode + IntoInner + 'static> Future for ZerocopyBufferFuture<T> {
     type Output = T::Inner;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.project();
+        let this = self.get_mut();
+
         let stream = this.stream.as_mut().expect("stream should be Some");
 
         let _ = futures_util::ready!(stream.poll_next_unpin(cx));
