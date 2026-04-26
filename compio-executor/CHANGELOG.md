@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-rc.2](https://github.com/compio-rs/compio/compare/compio-executor-v0.1.0-rc.1...compio-executor-v0.1.0-rc.2) - 2026-04-26
+
+### Other
+
+- updated the following local packages: compio-log
+
 ## 0.1.0-rc.1 - 2026-04-20
 
 ### Added

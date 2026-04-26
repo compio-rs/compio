@@ -26,20 +26,20 @@ repository = "https://github.com/compio-rs/compio"
 
 [workspace.dependencies]
 compio-buf = { path = "./compio-buf", version = "0.8.2-rc.1" }
-compio-driver = { path = "./compio-driver", version = "0.12.0-rc.1", default-features = false }
-compio-runtime = { path = "./compio-runtime", version = "0.12.0-rc.1" }
-compio-executor = { path = "./compio-executor", version = "0.1.0-rc.1" }
-compio-macros = { path = "./compio-macros", version = "0.1.2" }
-compio-fs = { path = "./compio-fs", version = "0.12.0-rc.1" }
+compio-driver = { path = "./compio-driver", version = "0.12.0-rc.2", default-features = false }
+compio-runtime = { path = "./compio-runtime", version = "0.12.0-rc.2" }
+compio-executor = { path = "./compio-executor", version = "0.1.0-rc.2" }
+compio-macros = { path = "./compio-macros", version = "0.2.0" }
+compio-fs = { path = "./compio-fs", version = "0.12.0-rc.2" }
 compio-io = { path = "./compio-io", version = "0.10.0-rc.1" }
-compio-net = { path = "./compio-net", version = "0.12.0-rc.1" }
-compio-signal = { path = "./compio-signal", version = "0.10.0-rc.1" }
-compio-dispatcher = { path = "./compio-dispatcher", version = "0.11.0-rc.1" }
-compio-log = { path = "./compio-log", version = "0.1.0" }
-compio-tls = { path = "./compio-tls", version = "0.10.0-rc.1", default-features = false }
-compio-process = { path = "./compio-process", version = "0.9.0-rc.1" }
-compio-quic = { path = "./compio-quic", version = "0.8.0-rc.1", default-features = false }
-compio-ws = { path = "./compio-ws", version = "0.4.0-rc.1", default-features = false }
+compio-net = { path = "./compio-net", version = "0.12.0-rc.2" }
+compio-signal = { path = "./compio-signal", version = "0.10.0-rc.2" }
+compio-dispatcher = { path = "./compio-dispatcher", version = "0.11.0-rc.2" }
+compio-log = { path = "./compio-log", version = "0.2.0" }
+compio-tls = { path = "./compio-tls", version = "0.10.0-rc.2", default-features = false }
+compio-process = { path = "./compio-process", version = "0.9.1" }
+compio-quic = { path = "./compio-quic", version = "0.8.0-rc.2", default-features = false }
+compio-ws = { path = "./compio-ws", version = "0.4.0-rc.2", default-features = false }
 
 bytes = "1.7.1"
 bytemuck = "1.25.0"
