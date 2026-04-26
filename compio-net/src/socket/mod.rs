@@ -741,7 +741,7 @@ where
     T: IoBuf,
     C: IoBuf,
 {
-    pub fn new(future: F) -> Self {
+    pub(crate) fn new(future: F) -> Self {
         Self { future }
     }
 }
