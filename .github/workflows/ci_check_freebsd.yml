@@ -34,6 +34,8 @@ jobs:
         id: check
         uses: vmactions/freebsd-vm@v1
         with:
+          # https://github.com/freebsd/pkg/issues/2653
+          release: "14.3"
           usesh: true
           sync: rsync
           copyback: false
