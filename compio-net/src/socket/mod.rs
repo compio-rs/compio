@@ -62,6 +62,13 @@ cfg_if::cfg_if! {
                 }
 
                 pub(super) fn set(&self, _: &compio_driver::Extra) {}
+
+                pub(super) fn get_poll_first(&self) -> bool {
+                    false
+                }
+
+                pub(super) fn set_poll_first(&self, _: bool) {}
+
             }
         }
     }
@@ -236,9 +243,23 @@ impl Socket {
         self.state.get()
     }
 
+    /// This method can be used to set the `IORING_RECVSEND_POLL_FIRST` flag on
+    /// the `SQE` on the `IO_URING` driver before initiating a receive operation
+    /// if the socket state as retrieved in the previous receive operation was
+    /// empty.
+    ///
+    /// # Behaviour
+    ///
+    /// The state is not reset automatically.
+    pub fn recvsend_poll_first(&self, flag: bool) {
+        self.state.set_poll_first(flag);
+    }
+
     pub async fn recv<B: IoBufMut>(&self, buffer: B, flags: RecvFlags) -> BufResult<usize, B> {
         let fd = self.to_shared_fd();
-        let op = Recv::new(fd, buffer, flags);
+        let poll_first = self.state.get_poll_first();
+        let mut op = Recv::new(fd, buffer, flags);
+        op.recvsend_poll_first(poll_first);
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
         self.state.set(&extra);
         let res = res.into_inner();
@@ -251,7 +272,9 @@ impl Socket {
         flags: RecvFlags,
     ) -> BufResult<usize, V> {
         let fd = self.to_shared_fd();
-        let op = RecvVectored::new(fd, buffer, flags);
+        let poll_first = self.state.get_poll_first();
+        let mut op = RecvVectored::new(fd, buffer, flags);
+        op.recvsend_poll_first(poll_first);
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
         self.state.set(&extra);
         let res = res.into_inner();
@@ -264,9 +287,11 @@ impl Socket {
         flags: RecvFlags,
     ) -> io::Result<Option<BufferRef>> {
         let fd = self.to_shared_fd();
+        let poll_first = self.state.get_poll_first();
         let (res, extra) = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
-            let op = RecvManaged::new(fd, &buffer_pool, len, flags)?;
+            let mut op = RecvManaged::new(fd, &buffer_pool, len, flags)?;
+            op.recvsend_poll_first(poll_first);
             io::Result::Ok(rt.submit(op).with_extra())
         })?
         .await;
@@ -329,7 +354,9 @@ impl Socket {
         flags: RecvFlags,
     ) -> BufResult<(usize, Option<SockAddr>), T> {
         let fd = self.to_shared_fd();
-        let op = RecvFrom::new(fd, buffer, flags);
+        let poll_first = self.state.get_poll_first();
+        let mut op = RecvFrom::new(fd, buffer, flags);
+        op.recvsend_poll_first(poll_first);
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
         self.state.set(&extra);
         let res = res.into_inner().map_addr();
@@ -342,7 +369,9 @@ impl Socket {
         flags: RecvFlags,
     ) -> BufResult<(usize, Option<SockAddr>), T> {
         let fd = self.to_shared_fd();
-        let op = RecvFromVectored::new(fd, buffer, flags);
+        let poll_first = self.state.get_poll_first();
+        let mut op = RecvFromVectored::new(fd, buffer, flags);
+        op.recvsend_poll_first(poll_first);
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
         self.state.set(&extra);
         let res = res.into_inner().map_addr();
@@ -355,9 +384,11 @@ impl Socket {
         flags: RecvFlags,
     ) -> io::Result<Option<(BufferRef, Option<SockAddr>)>> {
         let fd = self.to_shared_fd();
+        let poll_first = self.state.get_poll_first();
         let (inner, extra) = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
-            let op = RecvFromManaged::new(fd, &buffer_pool, len, flags)?;
+            let mut op = RecvFromManaged::new(fd, &buffer_pool, len, flags)?;
+            op.recvsend_poll_first(poll_first);
             io::Result::Ok(rt.submit(op).with_extra())
         })?
         .await;
@@ -409,7 +440,9 @@ impl Socket {
         flags: RecvFlags,
     ) -> BufResult<(usize, usize, Option<SockAddr>), (T, C)> {
         let fd = self.to_shared_fd();
-        let op = RecvMsg::new(fd, buffer, control, flags);
+        let poll_first = self.state.get_poll_first();
+        let mut op = RecvMsg::new(fd, buffer, control, flags);
+        op.recvsend_poll_first(poll_first);
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
         self.state.set(&extra);
         let res = res.into_inner().map_addr();
@@ -423,9 +456,11 @@ impl Socket {
         flags: RecvFlags,
     ) -> io::Result<Option<(BufferRef, C, Option<SockAddr>)>> {
         let fd = self.to_shared_fd();
+        let poll_first = self.state.get_poll_first();
         let (inner, extra) = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
-            let op = RecvMsgManaged::new(fd, &buffer_pool, len, control, flags)?;
+            let mut op = RecvMsgManaged::new(fd, &buffer_pool, len, control, flags)?;
+            op.recvsend_poll_first(poll_first);
             io::Result::Ok(rt.submit(op).with_extra())
         })?
         .await;

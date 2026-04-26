@@ -69,6 +69,11 @@ impl<S> RecvManaged<S> {
             op: Recv::new(fd, pool.pop()?.with_capacity(len), flags),
         })
     }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    // This method has been added here for the sake of API compatibility.
+    pub fn recvsend_poll_first(&mut self, _: bool) {}
 }
 
 impl<S> TakeBuffer for RecvManaged<S> {
@@ -91,6 +96,11 @@ impl<S: AsFd> RecvFromManaged<S> {
             op: RecvFrom::new(fd, pool.pop()?.with_capacity(len), flags),
         })
     }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    // This method has been added here for the sake of API compatibility.
+    pub fn recvsend_poll_first(&mut self, _: bool) {}
 }
 
 impl<S: AsFd> TakeBuffer for RecvFromManaged<S> {
@@ -119,6 +129,11 @@ impl<C: IoBufMut, S: AsFd> RecvMsgManaged<C, S> {
             op: RecvMsg::new(fd, [pool.pop()?.with_capacity(len)], control, flags),
         })
     }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    // This method has been added here for the sake of API compatibility.
+    pub fn recvsend_poll_first(&mut self, _: bool) {}
 }
 
 impl<C: IoBufMut, S: AsFd> TakeBuffer for RecvMsgManaged<C, S> {

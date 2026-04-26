@@ -457,6 +457,18 @@ impl TcpStream {
     pub fn sock_nonempty(&self) -> Option<bool> {
         self.inner.sock_nonempty()
     }
+
+    /// This method can be used to set the `IORING_RECVSEND_POLL_FIRST` flag on
+    /// the `SQE` on the `IO_URING` driver before initiating a receive operation
+    /// if the socket state as retrieved in the previous receive operation was
+    /// empty.
+    ///
+    /// # Behaviour
+    ///
+    /// The state is not reset automatically.
+    pub fn recvsend_poll_first(&self, flag: bool) {
+        self.inner.recvsend_poll_first(flag);
+    }
 }
 
 impl AsyncRead for TcpStream {
