@@ -25,7 +25,7 @@ use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::{
     Incoming, MSG_NOSIGNAL, OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket,
-    ToSocketAddrsAsync, WriteHalf, ZerocopyBufferFuture,
+    ToSocketAddrsAsync, WriteHalf, Zerocopy,
 };
 
 /// A TCP socket server, listening for connections.
@@ -709,9 +709,9 @@ impl AsyncWriteAncillary for &TcpStream {
 }
 
 impl AsyncWriteZerocopy for TcpStream {
-    type BufferReadyFuture<T: IoBuf> = ZerocopyBufferFuture<SendZc<T, SharedFd<Socket2>>>;
+    type BufferReadyFuture<T: IoBuf> = Zerocopy<SendZc<T, SharedFd<Socket2>>>;
     type VectoredBufferReadyFuture<T: IoVectoredBuf> =
-        ZerocopyBufferFuture<SendVectoredZc<T, SharedFd<Socket2>>>;
+        Zerocopy<SendVectoredZc<T, SharedFd<Socket2>>>;
 
     async fn write_zerocopy<T: IoBuf>(
         &mut self,

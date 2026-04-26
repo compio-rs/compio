@@ -313,7 +313,7 @@ impl Socket {
         &self,
         buf: T,
         flags: SendFlags,
-    ) -> BufResult<usize, ZerocopyBufferFuture<SendZc<T, SharedFd<Socket2>>>> {
+    ) -> BufResult<usize, Zerocopy<SendZc<T, SharedFd<Socket2>>>> {
         submit_zerocopy(SendZc::new(self.to_shared_fd(), buf, flags)).await
     }
 
@@ -321,7 +321,7 @@ impl Socket {
         &self,
         buf: T,
         flags: SendFlags,
-    ) -> BufResult<usize, ZerocopyBufferFuture<SendVectoredZc<T, SharedFd<Socket2>>>> {
+    ) -> BufResult<usize, Zerocopy<SendVectoredZc<T, SharedFd<Socket2>>>> {
         submit_zerocopy(SendVectoredZc::new(self.to_shared_fd(), buf, flags)).await
     }
 
@@ -493,7 +493,7 @@ impl Socket {
         buffer: T,
         addr: &SockAddr,
         flags: SendFlags,
-    ) -> BufResult<usize, ZerocopyBufferFuture<SendToZc<T, SharedFd<Socket2>>>> {
+    ) -> BufResult<usize, Zerocopy<SendToZc<T, SharedFd<Socket2>>>> {
         let op = SendToZc::new(self.to_shared_fd(), buffer, addr.clone(), flags);
         submit_zerocopy(op).await
     }
@@ -503,7 +503,7 @@ impl Socket {
         buffer: T,
         addr: &SockAddr,
         flags: SendFlags,
-    ) -> BufResult<usize, ZerocopyBufferFuture<SendToVectoredZc<T, SharedFd<Socket2>>>> {
+    ) -> BufResult<usize, Zerocopy<SendToVectoredZc<T, SharedFd<Socket2>>>> {
         let op = SendToVectoredZc::new(self.to_shared_fd(), buffer, addr.clone(), flags);
         submit_zerocopy(op).await
     }
@@ -553,7 +553,7 @@ impl Socket {
         control: C,
         addr: Option<&SockAddr>,
         flags: SendFlags,
-    ) -> BufResult<usize, ZerocopyBufferFuture<SendMsgZc<T, C, SharedFd<Socket2>>>> {
+    ) -> BufResult<usize, Zerocopy<SendMsgZc<T, C, SharedFd<Socket2>>>> {
         let fd = self.to_shared_fd();
         let op = SendMsgZc::new(fd, buffer, control, addr.cloned(), flags);
         submit_zerocopy(op).await
@@ -689,11 +689,11 @@ impl std::os::windows::io::AsRawSocket for Socket {
     }
 }
 
-pub struct ZerocopyBufferFuture<T: OpCode> {
+pub struct Zerocopy<T: OpCode> {
     stream: Option<SubmitMulti<T>>,
 }
 
-impl<T: OpCode + IntoInner + 'static> ZerocopyBufferFuture<T> {
+impl<T: OpCode + IntoInner + 'static> Zerocopy<T> {
     pub(crate) fn new(stream: SubmitMulti<T>) -> Self {
         Self {
             stream: Some(stream),
@@ -701,7 +701,7 @@ impl<T: OpCode + IntoInner + 'static> ZerocopyBufferFuture<T> {
     }
 }
 
-impl<T: OpCode + IntoInner + 'static> Future for ZerocopyBufferFuture<T> {
+impl<T: OpCode + IntoInner + 'static> Future for Zerocopy<T> {
     type Output = T::Inner;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -725,7 +725,7 @@ impl<T: OpCode + IntoInner + 'static> Future for ZerocopyBufferFuture<T> {
 
 async fn submit_zerocopy<T: OpCode + IntoInner + 'static>(
     op: T,
-) -> BufResult<usize, ZerocopyBufferFuture<T>> {
+) -> BufResult<usize, Zerocopy<T>> {
     let mut stream = compio_runtime::submit_multi(op);
     let res = stream
         .next()
@@ -733,7 +733,7 @@ async fn submit_zerocopy<T: OpCode + IntoInner + 'static>(
         .expect("SubmitMulti should yield at least one item")
         .0;
 
-    let fut = ZerocopyBufferFuture::new(stream);
+    let fut = Zerocopy::new(stream);
 
     BufResult(res, fut)
 }
