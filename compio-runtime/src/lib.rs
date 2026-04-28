@@ -54,9 +54,9 @@ use compio_executor::{Executor, ExecutorConfig};
 pub use compio_executor::{JoinHandle, ResumeUnwind};
 use compio_log::{debug, instrument};
 
-use crate::affinity::bind_to_cpu_set;
 #[cfg(feature = "time")]
 use crate::time::{TimerFuture, TimerKey, TimerRuntime};
+use crate::{affinity::bind_to_cpu_set, waker::ExtWaker};
 pub use crate::{attacher::*, cancel::CancelToken, future::*, waker::OptWaker};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
@@ -197,10 +197,11 @@ impl Runtime {
         self.enter(|| {
             let opt_waker = self.opt_waker();
             let waker = Waker::from(opt_waker.clone());
-            let mut context = Context::from_waker(&waker);
+            let ext = Ext::default();
+            let ext_waker = ExtWaker::new(&waker, &ext);
             let mut future = std::pin::pin!(future);
             loop {
-                if let Poll::Ready(result) = future.as_mut().poll(&mut context) {
+                if let Poll::Ready(result) = ext_waker.poll(future.as_mut()) {
                     self.run();
                     return result;
                 }

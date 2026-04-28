@@ -1,13 +1,13 @@
 use std::time::Duration;
 
-use compio::{signal::ctrl_c, time::interval};
+use compio::{runtime::FutureExt as _, signal::ctrl_c, time::interval};
 use futures_util::{FutureExt, select};
 
 #[compio::main]
 async fn main() {
     let mut interval = interval(Duration::from_secs(2));
     loop {
-        let ctrlc = ctrl_c();
+        let ctrlc = ctrl_c().with_notify_always(true);
         let ctrlc = std::pin::pin!(ctrlc);
         select! {
             res = ctrlc.fuse() => {

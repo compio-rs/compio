@@ -87,6 +87,14 @@ impl<'a, 'b> ExtWaker<'a, 'b> {
         f(&waker)
     }
 
+    fn should_notify(&self) -> bool {
+        if let Some(ext) = self.ext.get() {
+            ext.should_notify_always()
+        } else {
+            true
+        }
+    }
+
     unsafe fn from_raw<'s>(ptr: *const ()) -> &'s Self {
         unsafe { &*ptr.cast::<Self>() }
     }
@@ -108,7 +116,10 @@ impl<'a, 'b> ExtWaker<'a, 'b> {
     }
 
     unsafe fn wake_by_ref(ptr: *const ()) {
-        unsafe { Self::from_raw(ptr) }.waker.wake_by_ref();
+        let this = unsafe { Self::from_raw(ptr) };
+        if this.should_notify() {
+            this.waker.wake_by_ref();
+        }
     }
 
     unsafe fn drop(_: *const ()) {
@@ -132,6 +143,22 @@ struct Inner {
     ext: ManuallyDrop<SendWrapper<Ext<'static>>>,
 }
 
+impl Inner {
+    fn should_notify(&self) -> bool {
+        if let Some(ext) = self.ext.get() {
+            ext.should_notify_always()
+        } else {
+            true
+        }
+    }
+
+    fn wake_by_ref(&self) {
+        if self.should_notify() {
+            self.waker.wake_by_ref();
+        }
+    }
+}
+
 impl Drop for Inner {
     fn drop(&mut self) {
         if self.ext.valid() {
@@ -150,13 +177,11 @@ impl OwnedExtWaker {
     }
 
     unsafe fn wake(ptr: *const ()) {
-        unsafe { Arc::from_raw(ptr.cast::<Inner>()) }
-            .waker
-            .wake_by_ref();
+        unsafe { Arc::from_raw(ptr.cast::<Inner>()) }.wake_by_ref();
     }
 
     unsafe fn wake_by_ref(ptr: *const ()) {
-        unsafe { Self::from_raw(ptr) }.waker.wake_by_ref();
+        unsafe { Self::from_raw(ptr) }.wake_by_ref();
     }
 
     unsafe fn drop(ptr: *const ()) {

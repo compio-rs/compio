@@ -1,12 +1,17 @@
 //! Future combinators.
 
 mod cancel;
+mod notify_always;
 mod personality;
 
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    sync::atomic::{AtomicI8, Ordering},
+};
 
 pub use cancel::*;
 use compio_driver::Extra;
+pub use notify_always::*;
 pub use personality::*;
 
 use crate::CancelToken;
@@ -16,7 +21,12 @@ use crate::CancelToken;
 pub(crate) struct Ext<'a> {
     personality: Option<u16>,
     cancel: Option<Cow<'a, CancelToken>>,
+    notify_always: AtomicI8,
 }
+
+const NOTIFY_UNSET: i8 = 0;
+const NOTIFY_FALSE: i8 = -1;
+const NOTIFY_TRUE: i8 = 1;
 
 impl<'a> Ext<'a> {
     pub fn to_owned(&self) -> Ext<'static> {
@@ -26,6 +36,7 @@ impl<'a> Ext<'a> {
                 .cancel
                 .as_ref()
                 .map(|x| Cow::Owned(x.clone().into_owned())),
+            notify_always: AtomicI8::new(self.notify_always.load(Ordering::Acquire)),
         }
     }
 }
@@ -35,6 +46,7 @@ impl<'a> Ext<'a> {
         Self {
             personality: Some(personality),
             cancel: self.cancel.clone(),
+            notify_always: AtomicI8::new(self.notify_always.load(Ordering::Acquire)),
         }
     }
 
@@ -42,6 +54,7 @@ impl<'a> Ext<'a> {
         Self {
             personality: self.personality,
             cancel: Some(Cow::Borrowed(token)),
+            notify_always: AtomicI8::new(self.notify_always.load(Ordering::Acquire)),
         }
     }
 
@@ -56,6 +69,21 @@ impl<'a> Ext<'a> {
             changed = true;
         }
         changed
+    }
+
+    pub fn set_notify_always(&self, notify: bool) {
+        self.notify_always
+            .compare_exchange(
+                NOTIFY_UNSET,
+                if notify { NOTIFY_TRUE } else { NOTIFY_FALSE },
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .ok();
+    }
+
+    pub fn should_notify_always(&self) -> bool {
+        self.notify_always.load(Ordering::Acquire) == NOTIFY_TRUE
     }
 }
 
@@ -105,6 +133,15 @@ pub trait FutureExt {
         Self: Sized,
     {
         WithCancel::new(self, token)
+    }
+
+    /// Sets the notify-always flag for this future, which will make the runtime
+    /// always notify the waker even if it is on the same thread.
+    fn with_notify_always(self, notify: bool) -> WithNotifyAlways<Self>
+    where
+        Self: Sized,
+    {
+        WithNotifyAlways::new(self, notify)
     }
 }
 
