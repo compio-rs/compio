@@ -69,7 +69,7 @@ impl Driver {
         let mut io_uring_builder = IoUring::builder();
         if let Some(sqpoll_idle) = builder.sqpoll_idle {
             io_uring_builder.setup_sqpoll(sqpoll_idle.as_millis() as _);
-            if let Some(cpu) = builder.sqpoll_cpu_affinity {
+            if let Some(cpu) = builder.sqpoll_cpu {
                 io_uring_builder.setup_sqpoll_cpu(cpu);
             }
         }

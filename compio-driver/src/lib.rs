@@ -545,7 +545,7 @@ pub struct ProactorBuilder {
     capacity: u32,
     pool_builder: ThreadPoolBuilder,
     sqpoll_idle: Option<Duration>,
-    sqpoll_cpu_affinity: Option<u32>,
+    sqpoll_cpu: Option<u32>,
     cqsize: Option<u32>,
     coop_taskrun: bool,
     taskrun_flag: bool,
@@ -575,7 +575,7 @@ impl ProactorBuilder {
             capacity: 1024,
             pool_builder: ThreadPoolBuilder::new(),
             sqpoll_idle: None,
-            sqpoll_cpu_affinity: None,
+            sqpoll_cpu: None,
             cqsize: None,
             coop_taskrun: false,
             taskrun_flag: false,
@@ -673,8 +673,8 @@ impl ProactorBuilder {
     /// - Only effective when the `io-uring` feature is enabled
     /// - `cpu` must be less than the number of cpus in the system, otherwise it
     ///   will return an error when building the proactor.
-    pub fn sqpoll_cpu_affinity(&mut self, cpu: u32) -> &mut Self {
-        self.sqpoll_cpu_affinity = Some(cpu);
+    pub fn sqpoll_cpu(&mut self, cpu: u32) -> &mut Self {
+        self.sqpoll_cpu = Some(cpu);
         self
     }
 
