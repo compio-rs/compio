@@ -133,6 +133,13 @@ impl<F: Future + 'static> TaskAlloc<F> {
     }
 
     unsafe fn drop_future(header: NonNull<Header>, has_result: bool) {
+        // The future/result types are unwind-unsafe (ManuallyDrop, union).
+        // Dropping them during an existing panic could trigger a second panic,
+        // which would be UB. Instead, leak the contents during unwinding.
+        if ::std::thread::panicking() {
+            return;
+        }
+
         let future_cell = Self::future_cell(header);
 
         future_cell.with_mut(|fut_ptr| {
@@ -298,6 +305,13 @@ impl Task {
 
         header.shared.store(ptr::null_mut(), Release);
 
+        // Dropping the future/result and waker during unwinding on unwind-unsafe
+        // types could trigger a second panic. Skip content drops if already panicking.
+        if ::std::thread::panicking() {
+            trace!("Skipping content drops during panic");
+            return;
+        }
+
         if !state.is_completed() {
             trace!("Dropping future");
             // The task has not completed yet, drop future
@@ -360,6 +374,16 @@ impl Drop for Task {
         if state.count() > 1 {
             return;
         };
+
+        // The future/result and waker types are unwind-unsafe (ManuallyDrop in
+        // union, MaybeUninit). Dropping them during an existing panic could
+        // trigger a second panic, which would be UB. Skip content drops but
+        // still deallocate the memory since dealloc does not run destructors
+        // on the inner types.
+        if ::std::thread::panicking() {
+            unsafe { (header.vtable.dealloc)(self.0) }
+            return;
+        }
 
         crate::panic_guard!();
 
