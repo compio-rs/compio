@@ -205,7 +205,9 @@ impl Driver {
                     if !more(flags) {
                         self.need_push_notifier = true;
                     }
-                    self.notifier.clear().expect("cannot clear notifier");
+                    if let Err(_e) = self.notifier.clear() {
+                        error!("failed to clear notifier: {_e}");
+                    }
                 }
                 key => {
                     let flags = entry.flags();
@@ -348,10 +350,14 @@ impl Driver {
         self.poll_blocking();
     }
 
-    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+    pub fn poll(&mut self, mut timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
         // Anyway we need to submit once, no matter if there are entries in squeue.
         trace!("start polling");
+
+        if self.poll_entries() {
+            timeout = Some(Duration::ZERO);
+        }
 
         if self.need_push_notifier {
             #[allow(clippy::useless_conversion)]
@@ -365,10 +371,8 @@ impl Driver {
             self.need_push_notifier = false;
         }
 
-        if !self.poll_entries() {
-            self.submit_auto(timeout)?;
-            self.poll_entries();
-        }
+        self.submit_auto(timeout)?;
+        self.poll_entries();
 
         Ok(())
     }
