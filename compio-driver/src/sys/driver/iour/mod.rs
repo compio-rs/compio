@@ -190,11 +190,14 @@ impl Driver {
         has_entry
     }
 
-    fn poll_entries(&mut self) -> bool {
+    fn poll_entries(&mut self, hot_path: bool) -> bool {
         let mut cqueue = self.inner.completion();
         cqueue.sync();
         let has_entry = !cqueue.is_empty();
-        self.notifier.set_awake(true);
+        // TODO: likely hint
+        if hot_path {
+            self.notifier.set_awake(true);
+        }
         for entry in cqueue {
             match entry.user_data() {
                 Self::CANCEL => {}
@@ -226,7 +229,9 @@ impl Driver {
                 }
             }
         }
-        self.notifier.set_awake(false);
+        if hot_path {
+            self.notifier.set_awake(false);
+        }
         has_entry
     }
 
@@ -287,7 +292,12 @@ impl Driver {
                             ) => {}
                         Err(e) => return Err(e),
                     }
-                    self.poll_entries();
+                    // If the CQEs are consumed here, we should make the driver aware of it. We
+                    // should not mask `awake` here, otherwise the driver may wait for the next
+                    // event indefinitely.
+                    //
+                    // Anyway it is not a hot path, so we can afford an extra `write` syscall here.
+                    self.poll_entries(false);
                 }
             }
         }
@@ -369,7 +379,7 @@ impl Driver {
         }
 
         self.submit_auto(timeout)?;
-        self.poll_entries();
+        self.poll_entries(true);
 
         Ok(())
     }
