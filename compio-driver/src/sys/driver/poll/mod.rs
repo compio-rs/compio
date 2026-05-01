@@ -2,10 +2,7 @@ use std::{
     collections::{HashMap, VecDeque},
     num::NonZeroUsize,
     panic::AssertUnwindSafe,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::Arc,
 };
 
 use flume::{Receiver, Sender};
@@ -18,7 +15,7 @@ use crate::{
     AsyncifyPool, Entry,
     key::BorrowedKey,
     panic::catch_unwind_io,
-    sys::{extra::PollExtra, prelude::*},
+    sys::{driver::AwakeFlag, extra::PollExtra, prelude::*},
 };
 
 #[derive(Debug, Default)]
@@ -534,19 +531,19 @@ impl Entry {
 /// A notify handle to the inner driver.
 pub(crate) struct Notify {
     poll: Poller,
-    awake: AtomicBool,
+    awake: AwakeFlag,
 }
 
 impl Notify {
     fn new(poll: Poller) -> Self {
         Self {
             poll,
-            awake: AtomicBool::new(false),
+            awake: AwakeFlag::new(),
         }
     }
 
     fn set_awake(&self, awake: bool) {
-        self.awake.store(awake, Ordering::Release);
+        self.awake.set(awake);
     }
 }
 
@@ -556,7 +553,7 @@ impl Wake for Notify {
     }
 
     fn wake_by_ref(self: &Arc<Self>) {
-        if !self.awake.swap(true, Ordering::AcqRel) {
+        if !self.awake.wake() {
             self.poll.notify().ok();
         }
     }

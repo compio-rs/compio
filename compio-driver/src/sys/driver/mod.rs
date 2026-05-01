@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 cfg_if::cfg_if! {
     if #[cfg(windows)] {
         mod iocp;
@@ -21,3 +23,20 @@ cfg_if::cfg_if! {
 
 crate::assert_not_impl!(Driver, Send);
 crate::assert_not_impl!(Driver, Sync);
+
+#[derive(Debug)]
+struct AwakeFlag(AtomicBool);
+
+impl AwakeFlag {
+    pub fn new() -> Self {
+        Self(AtomicBool::new(false))
+    }
+
+    pub fn set(&self, awake: bool) {
+        self.0.store(awake, Ordering::SeqCst);
+    }
+
+    pub fn wake(&self) -> bool {
+        self.0.swap(true, Ordering::SeqCst)
+    }
+}
