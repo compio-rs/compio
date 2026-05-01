@@ -60,9 +60,7 @@ impl<'a> Local<'a> {
 
         queue.make_hot(self.header().id);
 
-        if cfg!(feature = "notify-always")
-            && let Some(ref waker) = shared.waker
-        {
+        if let Some(ref waker) = shared.waker {
             waker.wake_by_ref()
         }
     }

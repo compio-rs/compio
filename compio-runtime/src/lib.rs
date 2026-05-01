@@ -185,9 +185,6 @@ impl Runtime {
     }
 
     /// Low level API to control the runtime.
-    ///
-    /// Create an optimized waker that only notifies the runtime when woken
-    /// from another thread, or when `notify-always` is enabled.
     pub fn opt_waker(&self) -> Arc<OptWaker> {
         OptWaker::new(self.waker())
     }

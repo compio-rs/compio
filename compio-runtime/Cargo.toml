@@ -52,9 +52,6 @@ synchrony = { workspace = true, features = ["async_flag"] }
 time = []
 async-fd = ["dep:compio-io"]
 
-# Enable it to always notify the driver when a task schedules.
-notify-always = ["compio-executor/notify-always"]
-
 current_thread_id = []
 nightly = ["current_thread_id"]
 
