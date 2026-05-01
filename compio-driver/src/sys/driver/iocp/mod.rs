@@ -1,5 +1,11 @@
 use std::{
-    collections::HashMap, marker::PhantomData, os::windows::io::AsRawHandle, sync::Arc,
+    collections::HashMap,
+    marker::PhantomData,
+    os::windows::io::AsRawHandle,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 
@@ -182,16 +188,20 @@ impl Driver {
         let notify = &self.notify.overlapped as *const Overlapped;
 
         let mut has_entry = false;
+        self.notify.set_awake(true);
         while let Ok(entry) = self.completed_rx.try_recv() {
             entry.notify();
             has_entry = true;
         }
+        self.notify.set_awake(false);
 
         if !has_entry {
             for e in self.notify.port.poll(timeout)? {
+                self.notify.set_awake(true);
                 if let Some(e) = Self::create_entry(notify, &mut self.waits, e) {
                     e.notify()
                 }
+                self.notify.set_awake(false);
             }
         }
 
@@ -217,16 +227,20 @@ impl AsRawFd for Driver {
 pub(crate) struct Notify {
     port: cp::Port,
     overlapped: Overlapped,
+    awake: AtomicBool,
 }
 
 impl Notify {
     fn new(port: cp::Port, overlapped: Overlapped) -> Self {
-        Self { port, overlapped }
+        Self {
+            port,
+            overlapped,
+            awake: AtomicBool::new(false),
+        }
     }
 
-    /// Notify the inner driver.
-    pub fn notify(&self) -> io::Result<()> {
-        self.port.post_raw(&self.overlapped)
+    fn set_awake(&self, awake: bool) {
+        self.awake.store(awake, Ordering::Release);
     }
 }
 
@@ -236,6 +250,8 @@ impl Wake for Notify {
     }
 
     fn wake_by_ref(self: &Arc<Self>) {
-        self.notify().ok();
+        if !self.awake.swap(true, Ordering::AcqRel) {
+            self.port.post_raw(&self.overlapped).ok();
+        }
     }
 }
