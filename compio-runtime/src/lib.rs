@@ -39,7 +39,6 @@ use std::{
     io,
     ops::Deref,
     rc::Rc,
-    sync::Arc,
     task::{Context, Poll, Waker},
     time::Duration,
 };
@@ -57,7 +56,7 @@ use compio_log::{debug, instrument};
 use crate::affinity::bind_to_cpu_set;
 #[cfg(feature = "time")]
 use crate::time::{TimerFuture, TimerKey, TimerRuntime};
-pub use crate::{attacher::*, cancel::CancelToken, future::*, waker::OptWaker};
+pub use crate::{attacher::*, cancel::CancelToken, future::*};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
 
@@ -184,16 +183,10 @@ impl Runtime {
         self.driver.borrow().waker()
     }
 
-    /// Low level API to control the runtime.
-    pub fn opt_waker(&self) -> Arc<OptWaker> {
-        OptWaker::new(self.waker())
-    }
-
     /// Block on the future till it completes.
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
         self.enter(|| {
-            let opt_waker = self.opt_waker();
-            let waker = Waker::from(opt_waker.clone());
+            let waker = self.waker();
             let mut context = Context::from_waker(&waker);
             let mut future = std::pin::pin!(future);
             loop {
@@ -202,7 +195,7 @@ impl Runtime {
                     return result;
                 }
                 // We always want to reset the waker here.
-                let remaining_tasks = self.run() | opt_waker.reset();
+                let remaining_tasks = self.run();
                 if remaining_tasks {
                     self.poll_with(Some(Duration::ZERO));
                 } else {
