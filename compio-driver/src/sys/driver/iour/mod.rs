@@ -183,20 +183,20 @@ impl Driver {
 
     fn poll_blocking(&mut self) -> bool {
         let mut has_entry = false;
+        self.notifier.set_awake(true);
         while let Ok(entry) = self.completed_rx.try_recv() {
             entry.notify();
             has_entry = true;
         }
+        self.notifier.set_awake(false);
         has_entry
     }
 
     fn poll_entries(&mut self) -> bool {
-        self.notifier.set_awake(true);
-        let mut has_entry = self.poll_blocking();
-
         let mut cqueue = self.inner.completion();
         cqueue.sync();
-        has_entry |= !cqueue.is_empty();
+        let has_entry = !cqueue.is_empty();
+        self.notifier.set_awake(true);
         for entry in cqueue {
             match entry.user_data() {
                 Self::CANCEL => {}
@@ -280,7 +280,6 @@ impl Driver {
                 }
                 Err(_) => {
                     drop(squeue);
-                    self.poll_entries();
                     match self.submit_auto(Some(Duration::ZERO)) {
                         Ok(()) => {}
                         Err(e)
@@ -290,6 +289,7 @@ impl Driver {
                             ) => {}
                         Err(e) => return Err(e),
                     }
+                    self.poll_entries();
                 }
             }
         }
@@ -350,14 +350,14 @@ impl Driver {
         self.poll_blocking();
     }
 
-    pub fn poll(&mut self, mut timeout: Option<Duration>) -> io::Result<()> {
+    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
-        // Anyway we need to submit once, no matter if there are entries in squeue.
-        trace!("start polling");
 
-        if self.poll_entries() {
-            timeout = Some(Duration::ZERO);
+        if self.poll_blocking() {
+            return Ok(());
         }
+
+        trace!("start polling");
 
         if self.need_push_notifier {
             #[allow(clippy::useless_conversion)]
