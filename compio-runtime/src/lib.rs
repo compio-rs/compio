@@ -194,7 +194,6 @@ impl Runtime {
                     self.run();
                     return result;
                 }
-                // We always want to reset the waker here.
                 let remaining_tasks = self.run();
                 if remaining_tasks {
                     self.poll_with(Some(Duration::ZERO));
