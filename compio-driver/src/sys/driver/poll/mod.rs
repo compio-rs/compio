@@ -2,7 +2,10 @@ use std::{
     collections::{HashMap, VecDeque},
     num::NonZeroUsize,
     panic::AssertUnwindSafe,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use flume::{Receiver, Sender};
@@ -172,8 +175,10 @@ impl Driver {
         F: FnOnce(&mut Self, &mut Events) -> R,
     {
         let mut events = std::mem::take(&mut self.events);
+        self.notify.set_awake(true);
         let res = f(self, &mut events);
         self.events = events;
+        self.notify.set_awake(false);
         res
     }
 
@@ -391,10 +396,12 @@ impl Driver {
 
     fn poll_completed(&mut self) -> bool {
         let mut ret = false;
+        self.notify.set_awake(true);
         while let Ok(entry) = self.completed_rx.try_recv() {
             entry.notify();
             ret = true;
         }
+        self.notify.set_awake(false);
         ret
     }
 
@@ -527,16 +534,19 @@ impl Entry {
 /// A notify handle to the inner driver.
 pub(crate) struct Notify {
     poll: Poller,
+    awake: AtomicBool,
 }
 
 impl Notify {
     fn new(poll: Poller) -> Self {
-        Self { poll }
+        Self {
+            poll,
+            awake: AtomicBool::new(false),
+        }
     }
 
-    /// Notify the inner driver.
-    pub fn notify(&self) -> io::Result<()> {
-        self.poll.notify()
+    fn set_awake(&self, awake: bool) {
+        self.awake.store(awake, Ordering::Release);
     }
 }
 
@@ -546,6 +556,8 @@ impl Wake for Notify {
     }
 
     fn wake_by_ref(self: &Arc<Self>) {
-        self.notify().ok();
+        if !self.awake.swap(true, Ordering::AcqRel) {
+            self.poll.notify().ok();
+        }
     }
 }
