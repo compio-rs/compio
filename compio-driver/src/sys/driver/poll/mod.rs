@@ -444,6 +444,7 @@ impl Driver {
             return Ok(());
         }
         self.events.clear();
+        self.notify.set_awake(false);
         self.notify.poll.wait(&mut self.events, timeout)?;
         if self.events.is_empty() && timeout.is_some() {
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
