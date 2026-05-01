@@ -1,8 +1,7 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use rustix::event::{EventfdFlags, eventfd};
 
 use super::*;
+use crate::sys::driver::AwakeFlag;
 
 #[derive(Debug)]
 pub(super) struct Notifier {
@@ -56,19 +55,19 @@ impl AsRawFd for Notifier {
 #[derive(Debug)]
 pub(super) struct Notify {
     fd: OwnedFd,
-    awake: AtomicBool,
+    awake: AwakeFlag,
 }
 
 impl Notify {
     pub fn new(fd: OwnedFd) -> Self {
         Self {
             fd,
-            awake: AtomicBool::new(false),
+            awake: AwakeFlag::new(),
         }
     }
 
     pub fn set_awake(&self, awake: bool) {
-        self.awake.store(awake, Ordering::Release);
+        self.awake.set(awake);
     }
 }
 
@@ -78,7 +77,7 @@ impl Wake for Notify {
     }
 
     fn wake_by_ref(self: &Arc<Self>) {
-        if !self.awake.swap(true, Ordering::AcqRel) {
+        if !self.awake.wake() {
             rustix::io::write(&self.fd, &u64::to_be_bytes(1)).ok();
         }
     }

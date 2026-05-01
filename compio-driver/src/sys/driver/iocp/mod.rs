@@ -1,11 +1,5 @@
 use std::{
-    collections::HashMap,
-    marker::PhantomData,
-    os::windows::io::AsRawHandle,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    collections::HashMap, marker::PhantomData, os::windows::io::AsRawHandle, sync::Arc,
     time::Duration,
 };
 
@@ -15,7 +9,7 @@ use windows_sys::Win32::{Foundation::ERROR_OPERATION_ABORTED, System::IO::OVERLA
 use crate::{
     AsyncifyPool, DriverType, Entry, ErasedKey, ProactorBuilder,
     control::Carrier,
-    sys::{extra::IocpExtra, prelude::*},
+    sys::{driver::AwakeFlag, extra::IocpExtra, prelude::*},
 };
 
 mod cp;
@@ -227,7 +221,7 @@ impl AsRawFd for Driver {
 pub(crate) struct Notify {
     port: cp::Port,
     overlapped: Overlapped,
-    awake: AtomicBool,
+    awake: AwakeFlag,
 }
 
 impl Notify {
@@ -235,12 +229,12 @@ impl Notify {
         Self {
             port,
             overlapped,
-            awake: AtomicBool::new(false),
+            awake: AwakeFlag::new(),
         }
     }
 
     fn set_awake(&self, awake: bool) {
-        self.awake.store(awake, Ordering::Release);
+        self.awake.set(awake);
     }
 }
 
@@ -250,7 +244,7 @@ impl Wake for Notify {
     }
 
     fn wake_by_ref(self: &Arc<Self>) {
-        if !self.awake.swap(true, Ordering::AcqRel) {
+        if !self.awake.wake() {
             self.port.post_raw(&self.overlapped).ok();
         }
     }
