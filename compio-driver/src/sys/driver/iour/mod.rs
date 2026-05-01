@@ -197,6 +197,7 @@ impl Driver {
     }
 
     fn poll_entries(&mut self) -> bool {
+        self.notifier.set_awake(true);
         let mut has_entry = self.poll_blocking();
 
         let mut cqueue = self.inner.completion();
@@ -231,6 +232,7 @@ impl Driver {
                 }
             }
         }
+        self.notifier.set_awake(false);
         has_entry
     }
 
