@@ -110,9 +110,6 @@ pub struct ExecutorConfig {
     ///
     /// This is useful for waking up drivers that switch to kernel state when
     /// idle.
-    ///
-    /// Enable `notify-always` feature to wake this waker on every schedule,
-    /// even if the executor is already awake.
     pub waker: Option<Waker>,
 }
 

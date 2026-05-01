@@ -31,7 +31,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 nix = { workspace = true, features = ["resource", "signal"] }
 
 [features]
-notify-always = []
 enable_log = ["compio-log/enable_log"]
 
 [lints.rust]
