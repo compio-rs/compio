@@ -183,12 +183,10 @@ impl Driver {
 
     fn poll_blocking(&mut self) -> bool {
         let mut has_entry = false;
-        self.notifier.set_awake(true);
         while let Ok(entry) = self.completed_rx.try_recv() {
             entry.notify();
             has_entry = true;
         }
-        self.notifier.set_awake(false);
         has_entry
     }
 
@@ -347,7 +345,6 @@ impl Driver {
             closure = e.0;
             std::thread::yield_now();
         }
-        self.poll_blocking();
     }
 
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {

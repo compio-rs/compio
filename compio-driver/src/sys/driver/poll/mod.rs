@@ -393,12 +393,10 @@ impl Driver {
 
     fn poll_completed(&mut self) -> bool {
         let mut ret = false;
-        self.notify.set_awake(true);
         while let Ok(entry) = self.completed_rx.try_recv() {
             entry.notify();
             ret = true;
         }
-        self.notify.set_awake(false);
         ret
     }
 

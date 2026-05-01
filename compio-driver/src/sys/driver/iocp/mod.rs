@@ -182,12 +182,10 @@ impl Driver {
         let notify = &self.notify.overlapped as *const Overlapped;
 
         let mut has_entry = false;
-        self.notify.set_awake(true);
         while let Ok(entry) = self.completed_rx.try_recv() {
             entry.notify();
             has_entry = true;
         }
-        self.notify.set_awake(false);
 
         if !has_entry {
             for e in self.notify.port.poll(timeout)? {
