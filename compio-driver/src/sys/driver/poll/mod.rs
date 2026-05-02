@@ -444,9 +444,11 @@ impl Driver {
             return Ok(());
         }
         self.events.clear();
-        self.notify.set_awake(false);
         self.notify.poll.wait(&mut self.events, timeout)?;
         if self.events.is_empty() && timeout.is_some() {
+            // No events received, but returned. We need to reset the awake flag to allow
+            // next notify to work.
+            self.notify.set_awake(false);
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
         }
         self.with_events(|this, events| {
