@@ -852,16 +852,16 @@ unsafe impl<S: AsFd> OpCode for RecvMsgMultiFallback<S> {
         self.op.create_entry(control)
     }
 
-    unsafe fn push_multishot(
+    unsafe fn set_result(
         &mut self,
         control: &mut Self::Control,
-        result: io::Result<usize>,
-        extra: crate::Extra,
+        result: &io::Result<usize>,
+        extra: &crate::Extra,
     ) {
         if let Ok(len) = result {
-            self.len = len;
+            self.len = *len;
         }
-        unsafe { self.op.set_result(control, &result, &extra) };
+        unsafe { self.op.set_result(control, result, extra) };
     }
 }
 
