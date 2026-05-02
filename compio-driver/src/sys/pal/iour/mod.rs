@@ -62,7 +62,7 @@ fn kernel_version() -> Option<KernelVersion> {
     })
 }
 
-pub fn is_kernel_newer_than(v: impl Into<KernelVersion>) -> bool {
+pub fn is_kernel_at_least(v: impl Into<KernelVersion>) -> bool {
     kernel_version()
         .map(|kv| kv >= v.into())
         .unwrap_or_default()

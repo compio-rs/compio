@@ -13,7 +13,7 @@ use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
 use crate::{
     BufferPool, BufferRef, Extra, IourOpCode as OpCode, OpEntry, op::TakeBuffer,
-    sys::pal::is_kernel_newer_than,
+    sys::pal::is_kernel_at_least,
 };
 
 /// Read a file at specified position into specified buffer.
@@ -550,7 +550,7 @@ unsafe impl<S: AsFd> OpCode for RecvMulti<S> {
     type Control = ();
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
-        if is_kernel_newer_than((6, 0, 0)) {
+        if is_kernel_at_least((6, 0, 0)) {
             let fd = self.inner.fd.as_fd().as_raw_fd();
             opcode::RecvMulti::new(Fd(fd), self.inner.buffer_group)
                 .flags(self.inner.flags.bits() as _)
@@ -965,7 +965,7 @@ pub struct RecvMsgMulti<S: AsFd> {
 impl<S: AsFd> RecvMsgMulti<S> {
     /// Create [`RecvMsgMulti`].
     pub fn new(fd: S, pool: &BufferPool, control_len: usize, flags: RecvFlags) -> io::Result<Self> {
-        let inner = if is_kernel_newer_than((6, 0, 0)) {
+        let inner = if is_kernel_at_least((6, 0, 0)) {
             RecvMsgMultiInner::Impl(RecvMsgMultiImpl::new(fd, pool, control_len, flags)?)
         } else {
             RecvMsgMultiInner::Fallback(RecvMsgMultiFallback::new(fd, pool, control_len, flags)?)
