@@ -79,7 +79,13 @@ cfg_aliases = { workspace = true }
 
 [features]
 default = ["io-uring"]
-io-uring = ["rustix/mm", "rustix/event", "dep:io-uring", "dep:once_cell"]
+io-uring = [
+    "rustix/mm",
+    "rustix/event",
+    "rustix/system",
+    "dep:io-uring",
+    "dep:once_cell",
+]
 polling = ["dep:polling"]
 
 sync = []

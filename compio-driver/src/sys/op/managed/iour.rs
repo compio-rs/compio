@@ -11,7 +11,10 @@ use io_uring::{opcode, squeue::Flags, types::Fd};
 use rustix::net::RecvFlags;
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
-use crate::{BufferPool, BufferRef, Extra, IourOpCode as OpCode, OpEntry, op::TakeBuffer};
+use crate::{
+    BufferPool, BufferRef, Extra, IourOpCode as OpCode, OpEntry, op::TakeBuffer,
+    sys::pal::is_kernel_newer_than,
+};
 
 /// Read a file at specified position into specified buffer.
 pub struct ReadManagedAt<S> {
@@ -546,13 +549,17 @@ impl<S> RecvMulti<S> {
 unsafe impl<S: AsFd> OpCode for RecvMulti<S> {
     type Control = ();
 
-    fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
-        let fd = self.inner.fd.as_fd().as_raw_fd();
-        opcode::RecvMulti::new(Fd(fd), self.inner.buffer_group)
-            .flags(self.inner.flags.bits() as _)
-            .len(self.inner.len)
-            .build()
-            .into()
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        if is_kernel_newer_than((6, 0, 0)) {
+            let fd = self.inner.fd.as_fd().as_raw_fd();
+            opcode::RecvMulti::new(Fd(fd), self.inner.buffer_group)
+                .flags(self.inner.flags.bits() as _)
+                .len(self.inner.len)
+                .build()
+                .into()
+        } else {
+            self.create_entry_fallback(control)
+        }
     }
 
     fn create_entry_fallback(&mut self, control: &mut Self::Control) -> OpEntry {
@@ -606,14 +613,14 @@ struct io_uring_recvmsg_out {
     flags: u32,
 }
 
-struct RecvMsgMultiResultInner {
+struct RecvMsgMultiResultImpl {
     buffer: BufferRef,
     clen: usize,
 }
 
 const NLEN: usize = size_of::<SockAddrStorage>();
 
-impl RecvMsgMultiResultInner {
+impl RecvMsgMultiResultImpl {
     unsafe fn new(buffer: BufferRef, clen: usize) -> Self {
         assert!(buffer.len() >= size_of::<io_uring_recvmsg_out>());
         let header = unsafe {
@@ -669,52 +676,15 @@ impl RecvMsgMultiResultInner {
     }
 }
 
-/// Result of [`RecvMsgMulti`].
-pub struct RecvMsgMultiResult {
-    inner: RecvMsgMultiResultInner,
-}
-
-impl RecvMsgMultiResult {
-    /// Create [`RecvMsgMultiResult`] from a buffer received from
-    /// [`RecvMsgMulti`].
-    ///
-    /// # Safety
-    ///
-    /// The buffer must be received from [`RecvMsgMulti`] or have the same
-    /// format as the buffer received from [`RecvMsgMulti`].
-    pub unsafe fn new(buffer: BufferRef, clen: usize) -> Self {
-        Self {
-            inner: unsafe { RecvMsgMultiResultInner::new(buffer, clen) },
-        }
-    }
-
-    /// Get the payload data.
-    pub fn data(&self) -> &[u8] {
-        self.inner.data()
-    }
-
-    /// Get the source address if applicable.
-    pub fn addr(&self) -> Option<SockAddr> {
-        self.inner.addr()
-    }
-
-    /// Get the ancillary data.
-    pub fn ancillary(&self) -> &[u8] {
-        self.inner.ancillary()
-    }
-}
-
-impl IntoInner for RecvMsgMultiResult {
+impl IntoInner for RecvMsgMultiResultImpl {
     type Inner = BufferRef;
 
     fn into_inner(self) -> Self::Inner {
-        self.inner.buffer
+        self.buffer
     }
 }
 
-/// Receive data, ancillary data and source address multi times into multiple
-/// managed buffers.
-pub struct RecvMsgMulti<S: AsFd> {
+struct RecvMsgMultiImpl<S: AsFd> {
     fd: S,
     flags: RecvFlags,
     control_len: usize,
@@ -725,21 +695,7 @@ pub struct RecvMsgMulti<S: AsFd> {
     len: usize,
 }
 
-#[doc(hidden)]
-pub struct RecvMsgMultiControl {
-    msg: libc::msghdr,
-}
-
-impl Default for RecvMsgMultiControl {
-    fn default() -> Self {
-        Self {
-            msg: unsafe { std::mem::zeroed() },
-        }
-    }
-}
-
-impl<S: AsFd> RecvMsgMulti<S> {
-    /// Create [`RecvMsgMulti`].
+impl<S: AsFd> RecvMsgMultiImpl<S> {
     pub fn new(
         fd: S,
         buffer_pool: &BufferPool,
@@ -759,18 +715,18 @@ impl<S: AsFd> RecvMsgMulti<S> {
     }
 }
 
-impl<S: AsFd> TakeBuffer for RecvMsgMulti<S> {
-    type Buffer = RecvMsgMultiResult;
+impl<S: AsFd> TakeBuffer for RecvMsgMultiImpl<S> {
+    type Buffer = RecvMsgMultiResultImpl;
 
     fn take_buffer(self) -> Option<Self::Buffer> {
         let mut buffer = self.buffer?;
         unsafe { buffer.advance_to(self.len) };
-        Some(unsafe { RecvMsgMultiResult::new(buffer, self.control_len) })
+        Some(unsafe { RecvMsgMultiResultImpl::new(buffer, self.control_len) })
     }
 }
 
-unsafe impl<S: AsFd> OpCode for RecvMsgMulti<S> {
-    type Control = RecvMsgMultiControl;
+unsafe impl<S: AsFd> OpCode for RecvMsgMultiImpl<S> {
+    type Control = RecvFromManagedControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
         ctrl.msg.msg_namelen = NLEN as _;
@@ -828,6 +784,266 @@ unsafe impl<S: AsFd> OpCode for RecvMsgMulti<S> {
     }
 }
 
+struct RecvMsgMultiResultFallback {
+    buffer: BufferRef,
+    control: BufferRef,
+    addr: Option<SockAddr>,
+}
+
+impl RecvMsgMultiResultFallback {
+    fn data(&self) -> &[u8] {
+        self.buffer.as_init()
+    }
+
+    fn addr(&self) -> Option<SockAddr> {
+        self.addr.clone()
+    }
+
+    fn ancillary(&self) -> &[u8] {
+        self.control.as_init()
+    }
+}
+
+impl IntoInner for RecvMsgMultiResultFallback {
+    type Inner = BufferRef;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+struct RecvMsgMultiFallback<S: AsFd> {
+    op: RecvMsgManaged<BufferRef, S>,
+    len: usize,
+}
+
+impl<S: AsFd> RecvMsgMultiFallback<S> {
+    pub fn new(fd: S, pool: &BufferPool, control_len: usize, flags: RecvFlags) -> io::Result<Self> {
+        Ok(Self {
+            op: RecvMsgManaged::new(fd, pool, 0, pool.pop()?.with_capacity(control_len), flags)?,
+            len: 0,
+        })
+    }
+}
+
+impl<S: AsFd> TakeBuffer for RecvMsgMultiFallback<S> {
+    type Buffer = RecvMsgMultiResultFallback;
+
+    fn take_buffer(self) -> Option<Self::Buffer> {
+        let ((mut buffer, mut control), addr, control_len) = self.op.take_buffer()?;
+        unsafe { buffer.advance_to(self.len) };
+        unsafe { control.advance_to(control_len) };
+        Some(RecvMsgMultiResultFallback {
+            buffer,
+            control,
+            addr,
+        })
+    }
+}
+
+unsafe impl<S: AsFd> OpCode for RecvMsgMultiFallback<S> {
+    type Control = RecvFromManagedControl;
+
+    unsafe fn init(&mut self, control: &mut Self::Control) {
+        unsafe { self.op.init(control) }
+    }
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        self.op.create_entry(control)
+    }
+
+    unsafe fn push_multishot(
+        &mut self,
+        control: &mut Self::Control,
+        result: io::Result<usize>,
+        extra: crate::Extra,
+    ) {
+        if let Ok(len) = result {
+            self.len = len;
+        }
+        unsafe { self.op.set_result(control, &result, &extra) };
+    }
+}
+
+enum RecvMsgMultiResultInner {
+    Impl(RecvMsgMultiResultImpl),
+    Fallback(RecvMsgMultiResultFallback),
+}
+
+impl RecvMsgMultiResultInner {
+    unsafe fn new(buffer: BufferRef, clen: usize) -> Self {
+        Self::Impl(unsafe { RecvMsgMultiResultImpl::new(buffer, clen) })
+    }
+
+    fn data(&self) -> &[u8] {
+        match self {
+            Self::Impl(inner) => inner.data(),
+            Self::Fallback(inner) => inner.data(),
+        }
+    }
+
+    fn addr(&self) -> Option<SockAddr> {
+        match self {
+            Self::Impl(inner) => inner.addr(),
+            Self::Fallback(inner) => inner.addr(),
+        }
+    }
+
+    fn ancillary(&self) -> &[u8] {
+        match self {
+            Self::Impl(inner) => inner.ancillary(),
+            Self::Fallback(inner) => inner.ancillary(),
+        }
+    }
+}
+
+impl IntoInner for RecvMsgMultiResultInner {
+    type Inner = BufferRef;
+
+    fn into_inner(self) -> Self::Inner {
+        match self {
+            Self::Impl(inner) => inner.into_inner(),
+            Self::Fallback(inner) => inner.into_inner(),
+        }
+    }
+}
+
+/// Result of [`RecvMsgMulti`].
+pub struct RecvMsgMultiResult {
+    inner: RecvMsgMultiResultInner,
+}
+
+impl RecvMsgMultiResult {
+    /// Create [`RecvMsgMultiResult`] from a buffer received from
+    /// [`RecvMsgMulti`].
+    ///
+    /// # Safety
+    ///
+    /// The buffer must be received from [`RecvMsgMulti`] or have the same
+    /// format as the buffer received from [`RecvMsgMulti`].
+    pub unsafe fn new(buffer: BufferRef, clen: usize) -> Self {
+        Self {
+            inner: unsafe { RecvMsgMultiResultInner::new(buffer, clen) },
+        }
+    }
+
+    /// Get the payload data.
+    pub fn data(&self) -> &[u8] {
+        self.inner.data()
+    }
+
+    /// Get the source address if applicable.
+    pub fn addr(&self) -> Option<SockAddr> {
+        self.inner.addr()
+    }
+
+    /// Get the ancillary data.
+    pub fn ancillary(&self) -> &[u8] {
+        self.inner.ancillary()
+    }
+}
+
+impl IntoInner for RecvMsgMultiResult {
+    type Inner = BufferRef;
+
+    fn into_inner(self) -> Self::Inner {
+        self.inner.into_inner()
+    }
+}
+
+enum RecvMsgMultiInner<S: AsFd> {
+    Impl(RecvMsgMultiImpl<S>),
+    Fallback(RecvMsgMultiFallback<S>),
+}
+
+/// Receive data, ancillary data and source address multi times into
+/// multiple managed buffers.
+pub struct RecvMsgMulti<S: AsFd> {
+    inner: RecvMsgMultiInner<S>,
+}
+
+impl<S: AsFd> RecvMsgMulti<S> {
+    /// Create [`RecvMsgMulti`].
+    pub fn new(fd: S, pool: &BufferPool, control_len: usize, flags: RecvFlags) -> io::Result<Self> {
+        let inner = if is_kernel_newer_than((6, 0, 0)) {
+            RecvMsgMultiInner::Impl(RecvMsgMultiImpl::new(fd, pool, control_len, flags)?)
+        } else {
+            RecvMsgMultiInner::Fallback(RecvMsgMultiFallback::new(fd, pool, control_len, flags)?)
+        };
+        Ok(Self { inner })
+    }
+}
+
+impl<S: AsFd> TakeBuffer for RecvMsgMulti<S> {
+    type Buffer = RecvMsgMultiResult;
+
+    fn take_buffer(self) -> Option<Self::Buffer> {
+        let res = match self.inner {
+            RecvMsgMultiInner::Impl(inner) => RecvMsgMultiResultInner::Impl(inner.take_buffer()?),
+            RecvMsgMultiInner::Fallback(inner) => {
+                RecvMsgMultiResultInner::Fallback(inner.take_buffer()?)
+            }
+        };
+        Some(RecvMsgMultiResult { inner: res })
+    }
+}
+
+unsafe impl<S: AsFd> OpCode for RecvMsgMulti<S> {
+    type Control = RecvFromManagedControl;
+
+    unsafe fn init(&mut self, control: &mut Self::Control) {
+        match &mut self.inner {
+            RecvMsgMultiInner::Impl(inner) => unsafe { inner.init(control) },
+            RecvMsgMultiInner::Fallback(inner) => unsafe { inner.init(control) },
+        }
+    }
+
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        match &mut self.inner {
+            RecvMsgMultiInner::Impl(inner) => inner.create_entry(control),
+            RecvMsgMultiInner::Fallback(inner) => inner.create_entry(control),
+        }
+    }
+
+    unsafe fn push_multishot(
+        &mut self,
+        control: &mut Self::Control,
+        result: io::Result<usize>,
+        extra: crate::Extra,
+    ) {
+        unsafe {
+            match &mut self.inner {
+                RecvMsgMultiInner::Impl(inner) => inner.push_multishot(control, result, extra),
+                RecvMsgMultiInner::Fallback(inner) => inner.push_multishot(control, result, extra),
+            }
+        }
+    }
+
+    fn pop_multishot(
+        &mut self,
+        control: &mut Self::Control,
+    ) -> Option<BufResult<usize, crate::sys::Extra>> {
+        match &mut self.inner {
+            RecvMsgMultiInner::Impl(inner) => inner.pop_multishot(control),
+            RecvMsgMultiInner::Fallback(inner) => inner.pop_multishot(control),
+        }
+    }
+
+    unsafe fn set_result(
+        &mut self,
+        control: &mut Self::Control,
+        result: &io::Result<usize>,
+        extra: &Extra,
+    ) {
+        unsafe {
+            match &mut self.inner {
+                RecvMsgMultiInner::Impl(inner) => inner.set_result(control, result, extra),
+                RecvMsgMultiInner::Fallback(inner) => inner.set_result(control, result, extra),
+            }
+        }
+    }
+}
+
 /// Result of [`RecvFromMulti`].
 pub struct RecvFromMultiResult {
     inner: RecvMsgMultiResultInner,
@@ -862,7 +1078,7 @@ impl IntoInner for RecvFromMultiResult {
     type Inner = BufferRef;
 
     fn into_inner(self) -> Self::Inner {
-        self.inner.buffer
+        self.inner.into_inner()
     }
 }
 
@@ -881,7 +1097,7 @@ impl<S: AsFd> RecvFromMulti<S> {
 }
 
 unsafe impl<S: AsFd> OpCode for RecvFromMulti<S> {
-    type Control = RecvMsgMultiControl;
+    type Control = RecvFromManagedControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
         unsafe { self.op.init(ctrl) }
