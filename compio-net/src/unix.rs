@@ -116,6 +116,15 @@ impl UnixListener {
         Ok((stream, addr))
     }
 
+    /// Accepts a new incoming connection from this listener using the provided
+    /// socket.
+    #[cfg(windows)]
+    pub async fn accept_with(&self, sock: UnixSocket) -> io::Result<(UnixStream, SockAddr)> {
+        let (socket, addr) = self.inner.accept_with(sock.inner).await?;
+        let stream = UnixStream { inner: socket };
+        Ok((stream, addr))
+    }
+
     /// Returns a stream of incoming connections to this listener.
     ///
     /// ## Platform specific
@@ -286,6 +295,16 @@ impl UnixStream {
     /// Create [`PollFd`] from inner socket.
     pub fn into_poll_fd(self) -> io::Result<PollFd<Socket2>> {
         self.inner.into_poll_fd()
+    }
+
+    /// Close the connection of the socket, and reuse it to create a new
+    /// connection. This method is useful when the socket is created by
+    /// [`UnixListener::accept`], and will be reused in
+    /// [`UnixListener::accept_with`] to accept a new connection.
+    #[cfg(windows)]
+    pub async fn disconnect(self) -> io::Result<UnixSocket> {
+        self.inner.disconnect().await?;
+        Ok(UnixSocket { inner: self.inner })
     }
 
     /// Signifies whether the underlying socket was non-empty after the last

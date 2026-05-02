@@ -9,10 +9,13 @@ use std::{
 use compio_buf::{
     BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, SetLen, buf_try,
 };
+#[cfg(windows)]
+use compio_driver::op::Disconnect;
 #[cfg(unix)]
 use compio_driver::op::{Bind, CreateSocket, Listen, ShutdownSocket};
 use compio_driver::{
-    AsRawFd, BufferRef, OpCode, RawFd, ResultTakeBuffer, SharedFd, TakeBuffer, ToSharedFd,
+    AsFd, AsRawFd, BorrowedFd, BufferRef, OpCode, RawFd, ResultTakeBuffer, SharedFd, TakeBuffer,
+    ToSharedFd,
     op::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFlags, RecvFrom, RecvFromManaged,
         RecvFromMulti, RecvFromMultiResult, RecvFromVectored, RecvManaged, RecvMsg, RecvMsgManaged,
@@ -153,6 +156,12 @@ impl Socket {
         Ok(())
     }
 
+    #[cfg(windows)]
+    pub async fn disconnect(&self) -> io::Result<()> {
+        let op = Disconnect::new(self.to_shared_fd());
+        compio_runtime::submit(op).await.0.map(|_| ())
+    }
+
     #[cfg(unix)]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         let op = Accept::new(self.to_shared_fd());
@@ -168,11 +177,16 @@ impl Socket {
         let ty = self.socket.r#type()?;
         let protocol = self.socket.protocol()?;
         let accept_sock = Socket2::new(domain, ty, protocol)?;
+        self.accept_with(Self::from_socket2(accept_sock)?).await
+    }
+
+    #[cfg(windows)]
+    pub async fn accept_with(&self, accept_sock: Self) -> io::Result<(Self, SockAddr)> {
         let op = Accept::new(self.to_shared_fd(), accept_sock);
         let (_, op) = buf_try!(@try compio_runtime::submit(op).await);
         op.update_context()?;
         let (accept_sock, addr) = op.into_addr()?;
-        Ok((Self::from_socket2(accept_sock)?, addr))
+        Ok((accept_sock, addr))
     }
 
     pub fn incoming(&self) -> Incoming<'_> {
@@ -642,9 +656,8 @@ impl AsRawFd for Socket {
     }
 }
 
-#[cfg(unix)]
-impl std::os::fd::AsFd for Socket {
-    fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
+impl AsFd for Socket {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         self.socket.as_fd()
     }
 }
