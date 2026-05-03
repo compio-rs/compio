@@ -126,10 +126,6 @@ impl UnixListener {
     }
 
     /// Returns a stream of incoming connections to this listener.
-    ///
-    /// ## Platform specific
-    /// * io-uring: an old kernel may not support multishot operations, in which
-    ///   case this method will return an error in the first item of the stream.
     pub fn incoming(&self) -> UnixIncoming<'_> {
         UnixIncoming {
             inner: self.inner.incoming(),
@@ -359,18 +355,12 @@ impl AsyncReadManaged for &UnixStream {
     }
 }
 
-/// ## Platform specific
-/// * io-uring: an old kernel may not support multishot operations, in which
-///   case this method will return an error in the first item of the stream.
 impl AsyncReadMulti for UnixStream {
     fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
         self.inner.recv_multi(len, RecvFlags::empty())
     }
 }
 
-/// ## Platform specific
-/// * io-uring: an old kernel may not support multishot operations, in which
-///   case this method will return an error in the first item of the stream.
 impl AsyncReadMulti for &UnixStream {
     fn read_multi(&mut self, len: usize) -> impl Stream<Item = io::Result<Self::Buffer>> {
         self.inner.recv_multi(len, RecvFlags::empty())
@@ -448,9 +438,6 @@ impl AsyncReadAncillaryManaged for &UnixStream {
     }
 }
 
-/// ## Platform specific
-/// * io-uring: an old kernel may not support multishot operations, in which
-///   case this method will return an error in the first item of the stream.
 impl AsyncReadAncillaryMulti for UnixStream {
     type Return = RecvMsgMultiResult;
 
@@ -463,9 +450,6 @@ impl AsyncReadAncillaryMulti for UnixStream {
     }
 }
 
-/// ## Platform specific
-/// * io-uring: an old kernel may not support multishot operations, in which
-///   case this method will return an error in the first item of the stream.
 impl AsyncReadAncillaryMulti for &UnixStream {
     type Return = RecvMsgMultiResult;
 

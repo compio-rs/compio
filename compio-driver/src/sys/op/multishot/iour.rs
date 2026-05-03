@@ -43,11 +43,15 @@ unsafe impl<S: AsFd> OpCode for AcceptMulti<S> {
         unsafe { self.op.init(ctrl) }
     }
 
-    fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
-        opcode::AcceptMulti::new(Fd(self.op.fd.as_fd().as_raw_fd()))
-            .flags(libc::SOCK_CLOEXEC)
-            .build()
-            .into()
+    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
+        if is_kernel_at_least((5, 19)) {
+            opcode::AcceptMulti::new(Fd(self.op.fd.as_fd().as_raw_fd()))
+                .flags(libc::SOCK_CLOEXEC)
+                .build()
+                .into()
+        } else {
+            self.create_entry_fallback(control)
+        }
     }
 
     fn create_entry_fallback(&mut self, control: &mut Self::Control) -> OpEntry {
