@@ -440,17 +440,6 @@ impl TcpStream {
             )
             .await
     }
-
-    /// Signifies whether the underlying socket was non-empty after the last
-    /// receive operation.
-    ///
-    /// # Behaviour
-    ///
-    /// Returns `Some(..)` only on the IO_URING driver and `None` on other
-    /// drivers.
-    pub fn sock_nonempty(&self) -> Option<bool> {
-        self.inner.sock_nonempty()
-    }
 }
 
 impl AsyncRead for TcpStream {

@@ -238,14 +238,15 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
         let fd = self.fd.as_fd().as_raw_fd();
         let slice = self.buffer.sys_slice_mut();
 
-        opcode::Recv::new(
+        let entry = opcode::Recv::new(
             Fd(fd),
             slice.ptr() as _,
             slice.len().try_into().unwrap_or(u32::MAX),
         )
         .flags(self.flags.bits() as _)
-        .build()
-        .into()
+        .build();
+        let entry = set_poll_first(entry, self.poll_first);
+        entry.into()
     }
 
     fn call_blocking(&mut self, _: &mut Self::Control) -> io::Result<usize> {
@@ -261,10 +262,11 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
-        opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &mut control.msg)
+        let entry = opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &mut control.msg)
             .flags(self.flags.bits() as _)
-            .build()
-            .into()
+            .build();
+        let entry = set_poll_first(entry, self.poll_first);
+        entry.into()
     }
 
     fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
@@ -286,10 +288,11 @@ impl<S: AsFd> RecvFromHeader<S> {
     }
 
     pub fn create_entry(&mut self, control: &mut RecvMsgControl) -> OpEntry {
-        opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &mut control.msg)
+        let entry = opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &mut control.msg)
             .flags(self.flags.bits() as _)
-            .build()
-            .into()
+            .build();
+        let entry = set_poll_first(entry, self.poll_first);
+        entry.into()
     }
 
     pub fn set_result(&mut self, control: &mut RecvMsgControl) {
@@ -357,10 +360,11 @@ unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, 
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
-        opcode::RecvMsg::new(Fd(self.header.fd.as_fd().as_raw_fd()), &mut control.msg)
+        let entry = opcode::RecvMsg::new(Fd(self.header.fd.as_fd().as_raw_fd()), &mut control.msg)
             .flags(self.header.flags.bits() as _)
-            .build()
-            .into()
+            .build();
+        let entry = set_poll_first(entry, self.poll_first);
+        entry.into()
     }
 
     unsafe fn set_result(

@@ -243,19 +243,12 @@ impl Socket {
         }
     }
 
-    /// This method signifies whether the socket was non-empty after the last
-    /// receive operation.
-    ///
-    /// # Behavior
-    ///
-    /// It returns `Some(..)` only on the IO_URING driver and `None` on others.
-    pub fn sock_nonempty(&self) -> Option<bool> {
-        self.state.get()
-    }
-
     pub async fn recv<B: IoBufMut>(&self, buffer: B, flags: RecvFlags) -> BufResult<usize, B> {
         let fd = self.to_shared_fd();
-        let op = Recv::new(fd, buffer, flags);
+        let mut op = Recv::new(fd, buffer, flags);
+        if self.state.get() == Some(false) {
+            op.poll_first();
+        }
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
         self.state.set(&extra);
         let res = res.into_inner();
@@ -268,7 +261,10 @@ impl Socket {
         flags: RecvFlags,
     ) -> BufResult<usize, V> {
         let fd = self.to_shared_fd();
-        let op = RecvVectored::new(fd, buffer, flags);
+        let mut op = RecvVectored::new(fd, buffer, flags);
+        if self.state.get() == Some(false) {
+            op.poll_first();
+        }
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
         self.state.set(&extra);
         let res = res.into_inner();
@@ -283,7 +279,10 @@ impl Socket {
         let fd = self.to_shared_fd();
         let (res, extra) = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
-            let op = RecvManaged::new(fd, &buffer_pool, len, flags)?;
+            let mut op = RecvManaged::new(fd, &buffer_pool, len, flags)?;
+            if self.state.get() == Some(false) {
+                op.poll_first();
+            }
             io::Result::Ok(rt.submit(op).with_extra())
         })?
         .await;
@@ -346,7 +345,10 @@ impl Socket {
         flags: RecvFlags,
     ) -> BufResult<(usize, Option<SockAddr>), T> {
         let fd = self.to_shared_fd();
-        let op = RecvFrom::new(fd, buffer, flags);
+        let mut op = RecvFrom::new(fd, buffer, flags);
+        if self.state.get() == Some(false) {
+            op.poll_first();
+        }
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
         self.state.set(&extra);
         let res = res.into_inner().map_addr();
@@ -359,7 +361,10 @@ impl Socket {
         flags: RecvFlags,
     ) -> BufResult<(usize, Option<SockAddr>), T> {
         let fd = self.to_shared_fd();
-        let op = RecvFromVectored::new(fd, buffer, flags);
+        let mut op = RecvFromVectored::new(fd, buffer, flags);
+        if self.state.get() == Some(false) {
+            op.poll_first();
+        }
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
         self.state.set(&extra);
         let res = res.into_inner().map_addr();
@@ -374,7 +379,10 @@ impl Socket {
         let fd = self.to_shared_fd();
         let (inner, extra) = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
-            let op = RecvFromManaged::new(fd, &buffer_pool, len, flags)?;
+            let mut op = RecvFromManaged::new(fd, &buffer_pool, len, flags)?;
+            if self.state.get() == Some(false) {
+                op.poll_first();
+            }
             io::Result::Ok(rt.submit(op).with_extra())
         })?
         .await;
@@ -426,7 +434,10 @@ impl Socket {
         flags: RecvFlags,
     ) -> BufResult<(usize, usize, Option<SockAddr>), (T, C)> {
         let fd = self.to_shared_fd();
-        let op = RecvMsg::new(fd, buffer, control, flags);
+        let mut op = RecvMsg::new(fd, buffer, control, flags);
+        if self.state.get() == Some(false) {
+            op.poll_first();
+        }
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
         self.state.set(&extra);
         let res = res.into_inner().map_addr();
@@ -442,7 +453,10 @@ impl Socket {
         let fd = self.to_shared_fd();
         let (inner, extra) = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
-            let op = RecvMsgManaged::new(fd, &buffer_pool, len, control, flags)?;
+            let mut op = RecvMsgManaged::new(fd, &buffer_pool, len, control, flags)?;
+            if self.state.get() == Some(false) {
+                op.poll_first();
+            }
             io::Result::Ok(rt.submit(op).with_extra())
         })?
         .await;

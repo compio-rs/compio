@@ -12,8 +12,9 @@ use rustix::net::RecvFlags;
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
 use crate::{
-    BufferPool, BufferRef, Extra, IourOpCode as OpCode, OpEntry, op::TakeBuffer,
-    sys::pal::is_kernel_at_least,
+    BufferPool, BufferRef, Extra, IourOpCode as OpCode, OpEntry,
+    op::TakeBuffer,
+    sys::pal::{is_kernel_at_least, set_poll_first},
 };
 
 /// Read a file at specified position into specified buffer.
@@ -143,6 +144,7 @@ pub struct RecvManaged<S> {
     buffer_group: u16,
     buffer_pool: BufferPool,
     buffer: Option<BufferRef>,
+    poll_first: bool,
 }
 
 impl<S> RecvManaged<S> {
@@ -157,7 +159,14 @@ impl<S> RecvManaged<S> {
             flags,
             buffer_pool: buffer_pool.clone(),
             buffer: None,
+            poll_first: false,
         })
+    }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    pub fn poll_first(&mut self) {
+        self.poll_first = true;
     }
 }
 
@@ -166,12 +175,13 @@ unsafe impl<S: AsFd> OpCode for RecvManaged<S> {
 
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
         let fd = self.fd.as_fd().as_raw_fd();
-        opcode::Recv::new(Fd(fd), ptr::null_mut(), self.len)
+        let entry = opcode::Recv::new(Fd(fd), ptr::null_mut(), self.len)
             .flags(self.flags.bits() as _)
             .buf_group(self.buffer_group)
             .build()
-            .flags(Flags::BUFFER_SELECT)
-            .into()
+            .flags(Flags::BUFFER_SELECT);
+        let entry = set_poll_first(entry, self.poll_first);
+        entry.into()
     }
 
     unsafe fn set_result(&mut self, _: &mut Self::Control, _: &io::Result<usize>, extra: &Extra) {
@@ -205,6 +215,7 @@ pub struct RecvFromManaged<S> {
     buffer_group: u16,
     buffer_pool: BufferPool,
     buffer: Option<BufferRef>,
+    poll_first: bool,
 }
 
 #[doc(hidden)]
@@ -236,7 +247,14 @@ impl<S> RecvFromManaged<S> {
             addr,
             buffer_pool: buffer_pool.clone(),
             buffer: None,
+            poll_first: false,
         })
+    }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    pub fn poll_first(&mut self) {
+        self.poll_first = true;
     }
 }
 
@@ -262,12 +280,13 @@ unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
-        opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &raw mut control.msg)
+        let entry = opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &raw mut control.msg)
             .flags(self.flags.bits() as _)
             .buf_group(self.buffer_group)
             .build()
-            .flags(Flags::BUFFER_SELECT)
-            .into()
+            .flags(Flags::BUFFER_SELECT);
+        let entry = set_poll_first(entry, self.poll_first);
+        entry.into()
     }
 
     unsafe fn set_result(
@@ -310,6 +329,12 @@ impl<C: IoBufMut, S: AsFd> RecvMsgManaged<C, S> {
             control,
             control_len: 0,
         })
+    }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    pub fn poll_first(&mut self) {
+        self.op.poll_first();
     }
 }
 
