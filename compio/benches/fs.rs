@@ -24,7 +24,7 @@ const FILE_SIZE: u64 = 1024;
 
 fn read_std(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
     let file = std::fs::File::open(path).unwrap();
-    let mut buffer = [0u8; BUFFER_SIZE];
+    let mut buffer = vec![0u8; BUFFER_SIZE];
     b.iter(|| {
         for &offset in *offsets {
             #[cfg(windows)]
@@ -49,7 +49,7 @@ fn read_tokio(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
     b.to_async(&runtime).iter_custom(|iter| async move {
         let mut file = tokio::fs::File::open(path).await.unwrap();
 
-        let mut buffer = [0u8; BUFFER_SIZE];
+        let mut buffer = vec![0u8; BUFFER_SIZE];
         let start = Instant::now();
         for _i in 0..iter {
             for &offset in *offsets {
@@ -66,7 +66,7 @@ fn read_compio(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
     b.to_async(&runtime).iter_custom(|iter| async move {
         let file = compio::fs::File::open(path).await.unwrap();
 
-        let mut buffer = Box::new([0u8; BUFFER_SIZE]);
+        let mut buffer = vec![0u8; BUFFER_SIZE];
         let start = Instant::now();
         for _i in 0..iter {
             for &offset in *offsets {
@@ -83,7 +83,7 @@ fn read_monoio(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
     b.to_async(&runtime).iter_custom(|iter| async move {
         let file = monoio::fs::File::open(path).await.unwrap();
 
-        let mut buffer = Box::new([0u8; BUFFER_SIZE]);
+        let mut buffer = vec![0u8; BUFFER_SIZE];
         let start = Instant::now();
         for _i in 0..iter {
             for &offset in *offsets {
@@ -99,7 +99,7 @@ fn read_monoio(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
 fn read_all_std(b: &mut Bencher, (path, len): &(&Path, u64)) {
     let mut file = std::fs::File::open(path).unwrap();
     b.iter_custom(|iter| {
-        let mut buffer = [0u8; BUFFER_SIZE];
+        let mut buffer = vec![0u8; BUFFER_SIZE];
         let start = Instant::now();
         for _i in 0..iter {
             let mut read_len = 0;
@@ -120,7 +120,7 @@ fn read_all_tokio(b: &mut Bencher, (path, len): &(&Path, u64)) {
         .unwrap();
     b.to_async(&runtime).iter_custom(|iter| async move {
         let mut file = tokio::fs::File::open(path).await.unwrap();
-        let mut buffer = [0u8; BUFFER_SIZE];
+        let mut buffer = vec![0u8; BUFFER_SIZE];
 
         let start = Instant::now();
         for _i in 0..iter {
@@ -139,7 +139,7 @@ fn read_all_compio(b: &mut Bencher, (path, len): &(&Path, u64)) {
     let runtime = compio::runtime::Runtime::new().unwrap();
     b.to_async(&runtime).iter_custom(|iter| async move {
         let file = compio::fs::File::open(path).await.unwrap();
-        let mut buffer = Box::new([0u8; BUFFER_SIZE]);
+        let mut buffer = vec![0u8; BUFFER_SIZE];
 
         let start = Instant::now();
         for _i in 0..iter {
@@ -159,7 +159,7 @@ fn read_all_monoio(b: &mut Bencher, (path, len): &(&Path, u64)) {
     let runtime = MonoioRuntime::new();
     b.to_async(&runtime).iter_custom(|iter| async move {
         let file = monoio::fs::File::open(path).await.unwrap();
-        let mut buffer = Box::new([0u8; BUFFER_SIZE]);
+        let mut buffer = vec![0u8; BUFFER_SIZE];
 
         let start = Instant::now();
         for _i in 0..iter {
@@ -179,7 +179,7 @@ fn read(c: &mut Criterion) {
 
     let mut file = NamedTempFile::new().unwrap();
     for _i in 0..FILE_SIZE {
-        let mut buffer = [0u8; BUFFER_SIZE];
+        let mut buffer = vec![0u8; BUFFER_SIZE];
         rng.fill_bytes(&mut buffer);
         file.write_all(&buffer).unwrap();
     }
@@ -418,14 +418,14 @@ fn write(c: &mut Criterion) {
 
     let mut file = NamedTempFile::new().unwrap();
     for _i in 0..FILE_SIZE {
-        let mut buffer = [0u8; BUFFER_SIZE];
+        let mut buffer = vec![0u8; BUFFER_SIZE];
         rng.fill_bytes(&mut buffer);
         file.write_all(&buffer).unwrap();
     }
     file.flush().unwrap();
     let path = file.into_temp_path();
 
-    let mut single_content = [0u8; BUFFER_SIZE];
+    let mut single_content = vec![0u8; BUFFER_SIZE];
     rng.fill_bytes(&mut single_content);
 
     let mut offsets = vec![];
@@ -436,7 +436,7 @@ fn write(c: &mut Criterion) {
 
     let mut content = vec![];
     for _i in 0..WRITE_FILE_SIZE {
-        let mut buffer = [0u8; BUFFER_SIZE];
+        let mut buffer = vec![0u8; BUFFER_SIZE];
         rng.fill_bytes(&mut buffer);
         content.extend_from_slice(&buffer);
     }
