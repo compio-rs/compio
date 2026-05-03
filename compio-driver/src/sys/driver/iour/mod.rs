@@ -190,12 +190,14 @@ impl Driver {
         has_entry
     }
 
-    fn poll_entries(&mut self) -> bool {
-        let mut has_entry = self.poll_blocking();
-
+    fn poll_entries(&mut self, hot_path: bool) -> bool {
         let mut cqueue = self.inner.completion();
         cqueue.sync();
-        has_entry |= !cqueue.is_empty();
+        let has_entry = !cqueue.is_empty();
+        // TODO: likely hint
+        if hot_path {
+            self.notifier.set_awake(true);
+        }
         for entry in cqueue {
             match entry.user_data() {
                 Self::CANCEL => {}
@@ -204,7 +206,9 @@ impl Driver {
                     if !more(flags) {
                         self.need_push_notifier = true;
                     }
-                    self.notifier.clear().expect("cannot clear notifier");
+                    if let Err(_e) = self.notifier.clear() {
+                        error!("failed to clear notifier: {_e}");
+                    }
                 }
                 key => {
                     let flags = entry.flags();
@@ -224,6 +228,9 @@ impl Driver {
                     }
                 }
             }
+        }
+        if hot_path {
+            self.notifier.set_awake(false);
         }
         has_entry
     }
@@ -276,7 +283,6 @@ impl Driver {
                 }
                 Err(_) => {
                     drop(squeue);
-                    self.poll_entries();
                     match self.submit_auto(Some(Duration::ZERO)) {
                         Ok(()) => {}
                         Err(e)
@@ -286,6 +292,12 @@ impl Driver {
                             ) => {}
                         Err(e) => return Err(e),
                     }
+                    // If the CQEs are consumed here, we should make the driver aware of it. We
+                    // should not mask `awake` here, otherwise the driver may wait for the next
+                    // event indefinitely.
+                    //
+                    // Anyway it is not a hot path, so we can afford an extra `write` syscall here.
+                    self.poll_entries(false);
                 }
             }
         }
@@ -343,12 +355,15 @@ impl Driver {
             closure = e.0;
             std::thread::yield_now();
         }
-        self.poll_blocking();
     }
 
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
-        // Anyway we need to submit once, no matter if there are entries in squeue.
+
+        if self.poll_blocking() {
+            return Ok(());
+        }
+
         trace!("start polling");
 
         if self.need_push_notifier {
@@ -363,10 +378,8 @@ impl Driver {
             self.need_push_notifier = false;
         }
 
-        if !self.poll_entries() {
-            self.submit_auto(timeout)?;
-            self.poll_entries();
-        }
+        self.submit_auto(timeout)?;
+        self.poll_entries(true);
 
         Ok(())
     }

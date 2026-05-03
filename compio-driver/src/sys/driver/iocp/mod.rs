@@ -9,7 +9,7 @@ use windows_sys::Win32::{Foundation::ERROR_OPERATION_ABORTED, System::IO::OVERLA
 use crate::{
     AsyncifyPool, DriverType, Entry, ErasedKey, ProactorBuilder,
     control::Carrier,
-    sys::{extra::IocpExtra, prelude::*},
+    sys::{driver::AwakeFlag, extra::IocpExtra, prelude::*},
 };
 
 mod cp;
@@ -189,9 +189,11 @@ impl Driver {
 
         if !has_entry {
             for e in self.notify.port.poll(timeout)? {
+                self.notify.set_awake(true);
                 if let Some(e) = Self::create_entry(notify, &mut self.waits, e) {
                     e.notify()
                 }
+                self.notify.set_awake(false);
             }
         }
 
@@ -217,16 +219,20 @@ impl AsRawFd for Driver {
 pub(crate) struct Notify {
     port: cp::Port,
     overlapped: Overlapped,
+    awake: AwakeFlag,
 }
 
 impl Notify {
     fn new(port: cp::Port, overlapped: Overlapped) -> Self {
-        Self { port, overlapped }
+        Self {
+            port,
+            overlapped,
+            awake: AwakeFlag::new(),
+        }
     }
 
-    /// Notify the inner driver.
-    pub fn notify(&self) -> io::Result<()> {
-        self.port.post_raw(&self.overlapped)
+    fn set_awake(&self, awake: bool) {
+        self.awake.set(awake);
     }
 }
 
@@ -236,6 +242,8 @@ impl Wake for Notify {
     }
 
     fn wake_by_ref(self: &Arc<Self>) {
-        self.notify().ok();
+        if !self.awake.wake() {
+            self.port.post_raw(&self.overlapped).ok();
+        }
     }
 }

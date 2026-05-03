@@ -15,7 +15,7 @@ use crate::{
     AsyncifyPool, Entry,
     key::BorrowedKey,
     panic::catch_unwind_io,
-    sys::{extra::PollExtra, prelude::*},
+    sys::{driver::AwakeFlag, extra::PollExtra, prelude::*},
 };
 
 #[derive(Debug, Default)]
@@ -172,8 +172,10 @@ impl Driver {
         F: FnOnce(&mut Self, &mut Events) -> R,
     {
         let mut events = std::mem::take(&mut self.events);
+        self.notify.set_awake(true);
         let res = f(self, &mut events);
         self.events = events;
+        self.notify.set_awake(false);
         res
     }
 
@@ -444,6 +446,9 @@ impl Driver {
         self.events.clear();
         self.notify.poll.wait(&mut self.events, timeout)?;
         if self.events.is_empty() && timeout.is_some() {
+            // No events received, but returned. We need to reset the awake flag to allow
+            // next notify to work.
+            self.notify.set_awake(false);
             return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
         }
         self.with_events(|this, events| {
@@ -527,16 +532,19 @@ impl Entry {
 /// A notify handle to the inner driver.
 pub(crate) struct Notify {
     poll: Poller,
+    awake: AwakeFlag,
 }
 
 impl Notify {
     fn new(poll: Poller) -> Self {
-        Self { poll }
+        Self {
+            poll,
+            awake: AwakeFlag::new(),
+        }
     }
 
-    /// Notify the inner driver.
-    pub fn notify(&self) -> io::Result<()> {
-        self.poll.notify()
+    fn set_awake(&self, awake: bool) {
+        self.awake.set(awake);
     }
 }
 
@@ -546,6 +554,8 @@ impl Wake for Notify {
     }
 
     fn wake_by_ref(self: &Arc<Self>) {
-        self.notify().ok();
+        if !self.awake.wake() {
+            self.poll.notify().ok();
+        }
     }
 }

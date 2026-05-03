@@ -1,6 +1,7 @@
 use rustix::event::{EventfdFlags, eventfd};
 
 use super::*;
+use crate::sys::driver::AwakeFlag;
 
 #[derive(Debug)]
 pub(super) struct Notifier {
@@ -29,6 +30,10 @@ impl Notifier {
         Ok(())
     }
 
+    pub fn set_awake(&self, awake: bool) {
+        self.notify.set_awake(awake);
+    }
+
     pub fn waker(&self) -> Waker {
         Waker::from(self.notify.clone())
     }
@@ -50,18 +55,19 @@ impl AsRawFd for Notifier {
 #[derive(Debug)]
 pub(super) struct Notify {
     fd: OwnedFd,
+    awake: AwakeFlag,
 }
 
 impl Notify {
     pub fn new(fd: OwnedFd) -> Self {
-        Self { fd }
+        Self {
+            fd,
+            awake: AwakeFlag::new(),
+        }
     }
 
-    /// Notify the inner driver.
-    pub fn notify(&self) -> io::Result<()> {
-        rustix::io::write(&self.fd, &u64::to_be_bytes(1))?;
-
-        Ok(())
+    pub fn set_awake(&self, awake: bool) {
+        self.awake.set(awake);
     }
 }
 
@@ -71,6 +77,8 @@ impl Wake for Notify {
     }
 
     fn wake_by_ref(self: &Arc<Self>) {
-        self.notify().ok();
+        if !self.awake.wake() {
+            rustix::io::write(&self.fd, &u64::to_be_bytes(1)).ok();
+        }
     }
 }

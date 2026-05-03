@@ -161,9 +161,6 @@ io-uring-cqe32 = ["compio-driver/io-uring-cqe32"]
 iocp-global = ["compio-driver/iocp-global"]
 iocp-wait-packet = ["compio-driver/iocp-wait-packet"]
 
-# Runtime implementations
-notify-always = ["compio-runtime?/notify-always"]
-
 # Ancillary
 bytemuck = ["compio-io?/bytemuck"]
 
