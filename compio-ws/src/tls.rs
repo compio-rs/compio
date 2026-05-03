@@ -57,11 +57,11 @@ mod encryption {
                     .into());
                 }
 
-                let total_number = certs.len();
-                let (number_added, number_ignored) = root_store.add_parsable_certificates(certs);
+                let _total_number = certs.len();
+                let (_number_added, _number_ignored) = root_store.add_parsable_certificates(certs);
                 compio_log::debug!(
-                    "Added {number_added}/{total_number} native root certificates (ignored \
-                     {number_ignored})"
+                    "Added {_number_added}/{_total_number} native root certificates (ignored \
+                     {_number_ignored})"
                 );
             }
             #[cfg(feature = "webpki-roots")]
