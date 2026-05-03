@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1](https://github.com/compio-rs/compio/compare/compio-process-v0.9.0...compio-process-v0.9.1) - 2026-05-03
+
+### Other
+
+- add more targets for docs.rs ([#896](https://github.com/compio-rs/compio/pull/896))
+
 ## 0.9.0-rc.1 - 2026-04-20
 
 ### Added
