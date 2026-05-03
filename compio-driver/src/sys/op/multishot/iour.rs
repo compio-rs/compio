@@ -44,7 +44,7 @@ unsafe impl<S: AsFd> OpCode for AcceptMulti<S> {
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
-        if is_kernel_at_least((5, 19, 0)) {
+        if is_kernel_at_least((5, 19)) {
             opcode::AcceptMulti::new(Fd(self.op.fd.as_fd().as_raw_fd()))
                 .flags(libc::SOCK_CLOEXEC)
                 .build()
