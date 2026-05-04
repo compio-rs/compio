@@ -386,7 +386,7 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
     }
 }
 
-impl<T: IoBufMut, S: AsFd> PollFirst for RecvFrom<T, S> {
+impl<T: IoBufMut, S> PollFirst for RecvFrom<T, S> {
     fn poll_first(&mut self) {
         self.header.poll_first = true;
     }
