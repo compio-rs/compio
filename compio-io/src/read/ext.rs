@@ -304,7 +304,7 @@ pub trait AsyncReadAtExt: AsyncReadAt {
 
     /// Read all bytes as [`String`] until EOF in this source, placing them into
     /// `buffer`.
-    async fn read_to_string_at(&mut self, buf: String, pos: u64) -> BufResult<usize, String> {
+    async fn read_to_string_at(&self, buf: String, pos: u64) -> BufResult<usize, String> {
         let BufResult(res, buf) = self.read_to_end_at(buf.into_bytes(), pos).await;
         after_read_to_string(res, buf)
     }
