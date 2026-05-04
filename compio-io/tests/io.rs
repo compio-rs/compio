@@ -461,7 +461,7 @@ fn read_to_string_at() {
     block_on(async {
         let mut src = vec![1, 1];
         src.extend_from_slice("test".as_bytes());
-        let mut src = ReadOneAt(src);
+        let src = ReadOneAt(src);
 
         let (len, buf) = src.read_to_string_at(String::new(), 2).await.unwrap();
         assert_eq!(len, 4);
