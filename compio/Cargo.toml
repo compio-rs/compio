@@ -247,7 +247,8 @@ required-features = ["fs"]
 [[bench]]
 name = "net"
 harness = false
-required-features = ["net"]
+# Windows also benchmarks named pipes, which require fs features, so we include those as well.
+required-features = ["fs", "net"]
 
 [[test]]
 name = "runtime"
