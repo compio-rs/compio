@@ -1,6 +1,6 @@
 use compio_driver::{Extra, PollFirst};
 
-#[derive(Debug)]
+#[derive(Debug, Default, Clone)]
 pub(super) struct SocketState;
 
 impl SocketState {
