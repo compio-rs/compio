@@ -438,18 +438,26 @@ impl Driver {
         self.renew(fd, renew_event)
     }
 
-    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+    pub fn poll(&mut self, mut timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
-        if self.poll_completed() {
-            return Ok(());
+        let has_completed = !self.completed_rx.is_empty();
+        if has_completed {
+            timeout = Some(Duration::ZERO);
         }
+        // We need to poll the poller first to make sure it handles the internal notify
+        // event (if any).
         self.events.clear();
         self.notify.poll.wait(&mut self.events, timeout)?;
-        if self.events.is_empty() && timeout.is_some() {
-            // No events received, but returned. We need to reset the awake flag to allow
-            // next notify to work.
-            self.notify.set_awake(false);
-            return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
+        self.notify.set_awake(false);
+        if self.events.is_empty() {
+            if self.poll_completed() {
+                return Ok(());
+            }
+            if timeout.is_some() {
+                return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
+            }
+        } else if has_completed {
+            self.poll_completed();
         }
         self.with_events(|this, events| {
             for event in events.iter() {
