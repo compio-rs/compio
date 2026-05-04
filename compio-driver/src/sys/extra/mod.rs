@@ -101,8 +101,7 @@ impl Extra {
         ///
         /// # Behaviour
         ///
-        /// This method must be used only on the flags for any of the `receive`
-        /// variants supported by `IO_URING`. The driver will try to check whether
+        /// This method must be used only on `IO_URING`. The driver will try to check whether
         /// the `IORING_CQE_F_SOCK_NONEMPTY` flag was set by the kernel for the CQE.
         /// On other platforms, this will always return the [`Unsupported`] error.
         ///
