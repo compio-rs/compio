@@ -3,6 +3,7 @@ use compio_driver::{Extra, PollFirst};
 #[derive(Debug, Default, Clone)]
 pub(super) struct SocketState;
 
+#[allow(dead_code)]
 impl SocketState {
     pub(super) fn new() -> Self {
         SocketState
