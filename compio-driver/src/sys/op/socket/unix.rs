@@ -299,6 +299,7 @@ pub struct Accept<S> {
     pub(crate) buffer: SockAddrStorage,
     pub(crate) addr_len: socklen_t,
     pub(crate) accepted_fd: Option<Socket2>,
+    pub(crate) poll_first: bool,
 }
 
 impl<S> Accept<S> {
@@ -311,7 +312,14 @@ impl<S> Accept<S> {
             buffer,
             addr_len,
             accepted_fd: None,
+            poll_first: false,
         }
+    }
+
+    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
+    /// of the SQE on the IO_URING driver.
+    pub fn poll_first(&mut self) {
+        self.poll_first = true;
     }
 }
 

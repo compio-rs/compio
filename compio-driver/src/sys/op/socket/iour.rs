@@ -94,14 +94,15 @@ unsafe impl<S: AsFd> OpCode for Accept<S> {
     type Control = ();
 
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
-        opcode::Accept::new(
+        let entry = opcode::Accept::new(
             Fd(self.fd.as_fd().as_raw_fd()),
             unsafe { self.buffer.view_as::<libc::sockaddr>() },
             &raw mut self.addr_len,
         )
         .flags(libc::SOCK_CLOEXEC)
-        .build()
-        .into()
+        .build();
+        let entry = set_poll_first(entry, self.poll_first);
+        entry.into()
     }
 
     unsafe fn set_result(&mut self, _: &mut Self::Control, res: &io::Result<usize>, _: &Extra) {

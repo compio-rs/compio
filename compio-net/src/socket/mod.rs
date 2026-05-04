@@ -152,7 +152,7 @@ impl Socket {
 
     #[cfg(unix)]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
-        let op = Accept::new(self.to_shared_fd());
+        let mut op = Accept::new(self.to_shared_fd());
         if self.state.accept_nonempty() == Some(false) {
             op.poll_first();
         }
