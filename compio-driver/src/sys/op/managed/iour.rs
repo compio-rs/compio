@@ -12,7 +12,7 @@ use rustix::net::RecvFlags;
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
 use crate::{
-    BufferPool, BufferRef, Extra, IourOpCode as OpCode, OpEntry,
+    BufferPool, BufferRef, Extra, IourOpCode as OpCode, OpEntry, PollFirst,
     op::TakeBuffer,
     sys::pal::{is_kernel_at_least, set_poll_first},
 };
@@ -162,10 +162,10 @@ impl<S> RecvManaged<S> {
             poll_first: false,
         })
     }
+}
 
-    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
-    /// of the SQE on the IO_URING driver.
-    pub fn poll_first(&mut self) {
+impl<S> PollFirst for RecvManaged<S> {
+    fn poll_first(&mut self) {
         self.poll_first = true;
     }
 }
@@ -250,10 +250,10 @@ impl<S> RecvFromManaged<S> {
             poll_first: false,
         })
     }
+}
 
-    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
-    /// of the SQE on the IO_URING driver.
-    pub fn poll_first(&mut self) {
+impl<S> PollFirst for RecvFromManaged<S> {
+    fn poll_first(&mut self) {
         self.poll_first = true;
     }
 }
@@ -330,10 +330,10 @@ impl<C: IoBufMut, S: AsFd> RecvMsgManaged<C, S> {
             control_len: 0,
         })
     }
+}
 
-    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
-    /// of the SQE on the IO_URING driver.
-    pub fn poll_first(&mut self) {
+impl<C: IoBufMut, S: AsFd> PollFirst for RecvMsgManaged<C, S> {
+    fn poll_first(&mut self) {
         self.op.poll_first();
     }
 }

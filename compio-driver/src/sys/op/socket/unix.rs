@@ -9,7 +9,7 @@ use rustix::{
     },
 };
 
-use crate::sys::op::*;
+use crate::{PollFirst, sys::op::*};
 
 impl<S: AsFd> Accept<S> {
     pub(crate) fn call(&mut self) -> io::Result<usize> {
@@ -315,10 +315,10 @@ impl<S> Accept<S> {
             poll_first: false,
         }
     }
+}
 
-    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
-    /// of the SQE on the IO_URING driver.
-    pub fn poll_first(&mut self) {
+impl<S> PollFirst for Accept<S> {
+    fn poll_first(&mut self) {
         self.poll_first = true;
     }
 }

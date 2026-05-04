@@ -3,7 +3,9 @@ use rustix::net::RecvFlags;
 use socket2::SockAddr;
 
 use super::{fallback, iour};
-use crate::{BufferPool, BufferRef, IourOpCode, OpEntry, OpType, PollOpCode, sys::pal::*};
+use crate::{
+    BufferPool, BufferRef, IourOpCode, OpEntry, OpType, PollFirst, PollOpCode, sys::pal::*,
+};
 
 macro_rules! mop {
     (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? ) with $pool:ident) => {
@@ -131,10 +133,8 @@ mop!(<S: AsFd> RecvMulti(fd: S, pool: &BufferPool, len: usize, flags: RecvFlags)
 mop!(<S: AsFd> RecvFromMulti(fd: S, pool: &BufferPool, flags: RecvFlags) with pool; RecvFromMultiResult);
 mop!(<S: AsFd> RecvMsgMulti(fd: S, pool: &BufferPool, control_len: usize, flags: RecvFlags) with pool; RecvMsgMultiResult);
 
-impl<S: AsFd> RecvManaged<S> {
-    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
-    /// of the SQE on the IO_URING driver.
-    pub fn poll_first(&mut self) {
+impl<S: AsFd> PollFirst for RecvManaged<S> {
+    fn poll_first(&mut self) {
         match self.inner {
             RecvManagedInner::Poll(ref mut i) => i.poll_first(),
             RecvManagedInner::IoUring(ref mut i) => i.poll_first(),
@@ -142,10 +142,8 @@ impl<S: AsFd> RecvManaged<S> {
     }
 }
 
-impl<S: AsFd> RecvFromManaged<S> {
-    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
-    /// of the SQE on the IO_URING driver.
-    pub fn poll_first(&mut self) {
+impl<S: AsFd> PollFirst for RecvFromManaged<S> {
+    fn poll_first(&mut self) {
         match self.inner {
             RecvFromManagedInner::Poll(ref mut i) => i.poll_first(),
             RecvFromManagedInner::IoUring(ref mut i) => i.poll_first(),
@@ -153,10 +151,8 @@ impl<S: AsFd> RecvFromManaged<S> {
     }
 }
 
-impl<C: IoBufMut, S: AsFd> RecvMsgManaged<C, S> {
-    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
-    /// of the SQE on the IO_URING driver.
-    pub fn poll_first(&mut self) {
+impl<C: IoBufMut, S: AsFd> PollFirst for RecvMsgManaged<C, S> {
+    fn poll_first(&mut self) {
         match self.inner {
             RecvMsgManagedInner::Poll(ref mut i) => i.poll_first(),
             RecvMsgManagedInner::IoUring(ref mut i) => i.poll_first(),

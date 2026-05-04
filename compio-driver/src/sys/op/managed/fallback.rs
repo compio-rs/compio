@@ -5,7 +5,7 @@ use rustix::net::RecvFlags;
 use socket2::SockAddr;
 
 use crate::{
-    AsFd, BufferPool, BufferRef,
+    AsFd, BufferPool, BufferRef, PollFirst,
     op::{RecvMsg, TakeBuffer},
     sys::op::{Read, ReadAt, Recv, RecvFrom},
 };
@@ -69,11 +69,12 @@ impl<S> RecvManaged<S> {
             op: Recv::new(fd, pool.pop()?.with_capacity(len), flags),
         })
     }
+}
 
-    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
-    /// of the SQE on the IO_URING driver.
-    // This method has been added here for the sake of API compatibility.
-    pub fn poll_first(&mut self) {}
+impl<S> PollFirst for RecvManaged<S> {
+    fn poll_first(&mut self) {
+        self.op.poll_first();
+    }
 }
 
 impl<S> TakeBuffer for RecvManaged<S> {
@@ -96,11 +97,12 @@ impl<S: AsFd> RecvFromManaged<S> {
             op: RecvFrom::new(fd, pool.pop()?.with_capacity(len), flags),
         })
     }
+}
 
-    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
-    /// of the SQE on the IO_URING driver.
-    // This method has been added here for the sake of API compatibility.
-    pub fn poll_first(&mut self) {}
+impl<S: AsFd> PollFirst for RecvFromManaged<S> {
+    fn poll_first(&mut self) {
+        self.op.poll_first();
+    }
 }
 
 impl<S: AsFd> TakeBuffer for RecvFromManaged<S> {
@@ -129,11 +131,12 @@ impl<C: IoBufMut, S: AsFd> RecvMsgManaged<C, S> {
             op: RecvMsg::new(fd, [pool.pop()?.with_capacity(len)], control, flags),
         })
     }
+}
 
-    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
-    /// of the SQE on the IO_URING driver.
-    // This method has been added here for the sake of API compatibility.
-    pub fn poll_first(&mut self) {}
+impl<C: IoBufMut, S: AsFd> PollFirst for RecvMsgManaged<C, S> {
+    fn poll_first(&mut self) {
+        self.op.poll_first();
+    }
 }
 
 impl<C: IoBufMut, S: AsFd> TakeBuffer for RecvMsgManaged<C, S> {

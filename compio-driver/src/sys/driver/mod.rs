@@ -29,6 +29,14 @@ cfg_select! {
 crate::assert_not_impl!(Driver, Send);
 crate::assert_not_impl!(Driver, Sync);
 
+/// An operation that can be optimized by making use of the "poll-first"
+/// feature.
+pub trait PollFirst {
+    /// Poll first before syscall. This is only meaningful for io-uring. It sets
+    /// `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio` of the SQE.
+    fn poll_first(&mut self);
+}
+
 const IDLE: u8 = 0b00;
 const NOTIFIED: u8 = 0b01;
 const AWAKE: u8 = 0b10;

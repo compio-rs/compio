@@ -1,3 +1,5 @@
+use compio_driver::{Extra, PollFirst};
+
 #[derive(Debug)]
 pub(super) struct SocketState;
 
@@ -6,15 +8,11 @@ impl SocketState {
         SocketState
     }
 
-    pub(super) fn recv_nonempty(&self) -> Option<bool> {
-        None
-    }
+    pub(super) fn set_recv(&self, _: &Extra) {}
 
-    pub(super) fn set_recv(&self, _: &compio_driver::Extra) {}
+    pub(super) fn set_recv_op(&self, _: &mut impl PollFirst) {}
 
-    pub(super) fn accept_nonempty(&self) -> Option<bool> {
-        None
-    }
+    pub(super) fn set_accept(&self, _: &Extra) {}
 
-    pub(super) fn set_accept(&self, _: &compio_driver::Extra) {}
+    pub(super) fn set_accept_op(&self, _: &mut impl PollFirst) {}
 }

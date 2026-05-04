@@ -1,6 +1,6 @@
 use std::sync::atomic::Ordering;
 
-use compio_driver::Extra;
+use compio_driver::{Extra, PollFirst};
 #[cfg(feature = "sync")]
 use synchrony::sync::atomic::AtomicU8;
 #[cfg(not(feature = "sync"))]
@@ -50,8 +50,10 @@ impl SocketState {
             .ok();
     }
 
-    pub(super) fn recv_nonempty(&self) -> Option<bool> {
-        self.get_bit(RECV_OFFSET)
+    fn set_op(&self, offset: usize, op: &mut impl PollFirst) {
+        if self.get_bit(offset) == Some(false) {
+            op.poll_first();
+        }
     }
 
     pub(super) fn set_recv(&self, extra: &Extra) {
@@ -60,14 +62,18 @@ impl SocketState {
         }
     }
 
-    pub(super) fn accept_nonempty(&self) -> Option<bool> {
-        self.get_bit(ACCEPT_OFFSET)
+    pub(super) fn set_recv_op(&self, op: &mut impl PollFirst) {
+        self.set_op(RECV_OFFSET, op);
     }
 
     pub(super) fn set_accept(&self, extra: &Extra) {
         if let Ok(n) = extra.sock_nonempty() {
             self.set_bit(ACCEPT_OFFSET, n);
         }
+    }
+
+    pub(super) fn set_accept_op(&self, op: &mut impl PollFirst) {
+        self.set_op(ACCEPT_OFFSET, op);
     }
 }
 
