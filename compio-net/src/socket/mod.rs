@@ -56,22 +56,8 @@ cfg_select! {
         mod sys;
     }
     _ => {
-        mod sys {
-            #[derive(Default, Clone, Debug)]
-            pub(super) struct SocketState;
-
-            impl SocketState {
-                pub(super) fn new() -> Self {
-                    SocketState
-                }
-
-                pub(super) fn get(&self) -> Option<bool> {
-                    None
-                }
-
-                pub(super) fn set(&self, _: &compio_driver::Extra) {}
-            }
-        }
+        #[path = "stub.rs"]
+        mod sys;
     }
 }
 
@@ -167,7 +153,12 @@ impl Socket {
     #[cfg(unix)]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
         let op = Accept::new(self.to_shared_fd());
-        let (_, op) = buf_try!(@try compio_runtime::submit(op).await);
+        if self.state.accept_nonempty() == Some(false) {
+            op.poll_first();
+        }
+        let (BufResult(res, op), extra) = compio_runtime::submit(op).with_extra().await;
+        res?;
+        self.state.set_accept(&extra);
         let (accept_sock, addr) = op.into_inner();
         let accept_sock = Self::from_socket2(accept_sock)?;
         Ok((accept_sock, addr))
@@ -237,11 +228,11 @@ impl Socket {
     pub async fn recv<B: IoBufMut>(&self, buffer: B, flags: RecvFlags) -> BufResult<usize, B> {
         let fd = self.to_shared_fd();
         let mut op = Recv::new(fd, buffer, flags);
-        if self.state.get() == Some(false) {
+        if self.state.recv_nonempty() == Some(false) {
             op.poll_first();
         }
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
-        self.state.set(&extra);
+        self.state.set_recv(&extra);
         let res = res.into_inner();
         unsafe { res.map_advanced() }
     }
@@ -253,11 +244,11 @@ impl Socket {
     ) -> BufResult<usize, V> {
         let fd = self.to_shared_fd();
         let mut op = RecvVectored::new(fd, buffer, flags);
-        if self.state.get() == Some(false) {
+        if self.state.recv_nonempty() == Some(false) {
             op.poll_first();
         }
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
-        self.state.set(&extra);
+        self.state.set_recv(&extra);
         let res = res.into_inner();
         unsafe { res.map_vec_advanced() }
     }
@@ -271,14 +262,14 @@ impl Socket {
         let (res, extra) = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
             let mut op = RecvManaged::new(fd, &buffer_pool, len, flags)?;
-            if self.state.get() == Some(false) {
+            if self.state.recv_nonempty() == Some(false) {
                 op.poll_first();
             }
             io::Result::Ok(rt.submit(op).with_extra())
         })?
         .await;
 
-        self.state.set(&extra);
+        self.state.set_recv(&extra);
 
         unsafe { res.take_buffer() }
     }
@@ -337,11 +328,11 @@ impl Socket {
     ) -> BufResult<(usize, Option<SockAddr>), T> {
         let fd = self.to_shared_fd();
         let mut op = RecvFrom::new(fd, buffer, flags);
-        if self.state.get() == Some(false) {
+        if self.state.recv_nonempty() == Some(false) {
             op.poll_first();
         }
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
-        self.state.set(&extra);
+        self.state.set_recv(&extra);
         let res = res.into_inner().map_addr();
         unsafe { res.map_advanced() }
     }
@@ -353,11 +344,11 @@ impl Socket {
     ) -> BufResult<(usize, Option<SockAddr>), T> {
         let fd = self.to_shared_fd();
         let mut op = RecvFromVectored::new(fd, buffer, flags);
-        if self.state.get() == Some(false) {
+        if self.state.recv_nonempty() == Some(false) {
             op.poll_first();
         }
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
-        self.state.set(&extra);
+        self.state.set_recv(&extra);
         let res = res.into_inner().map_addr();
         unsafe { res.map_vec_advanced() }
     }
@@ -371,13 +362,13 @@ impl Socket {
         let (inner, extra) = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
             let mut op = RecvFromManaged::new(fd, &buffer_pool, len, flags)?;
-            if self.state.get() == Some(false) {
+            if self.state.recv_nonempty() == Some(false) {
                 op.poll_first();
             }
             io::Result::Ok(rt.submit(op).with_extra())
         })?
         .await;
-        self.state.set(&extra);
+        self.state.set_recv(&extra);
         let (len, op) = buf_try!(@try inner);
         // Kernel returns 0 for the operation, drop the buffer and return Ok(None)
         if len == 0 {
@@ -426,11 +417,11 @@ impl Socket {
     ) -> BufResult<(usize, usize, Option<SockAddr>), (T, C)> {
         let fd = self.to_shared_fd();
         let mut op = RecvMsg::new(fd, buffer, control, flags);
-        if self.state.get() == Some(false) {
+        if self.state.recv_nonempty() == Some(false) {
             op.poll_first();
         }
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
-        self.state.set(&extra);
+        self.state.set_recv(&extra);
         let res = res.into_inner().map_addr();
         unsafe { res.map_vec_advanced() }
     }
@@ -445,13 +436,13 @@ impl Socket {
         let (inner, extra) = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
             let mut op = RecvMsgManaged::new(fd, &buffer_pool, len, control, flags)?;
-            if self.state.get() == Some(false) {
+            if self.state.recv_nonempty() == Some(false) {
                 op.poll_first();
             }
             io::Result::Ok(rt.submit(op).with_extra())
         })?
         .await;
-        self.state.set(&extra);
+        self.state.set_recv(&extra);
         let (len, op) = buf_try!(@try inner);
         // Kernel returns 0 for the operation, drop the buffer and return Ok(None)
         if len == 0 {
