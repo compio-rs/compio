@@ -19,7 +19,9 @@ pin_project_lite::pin_project! {
     /// When this is dropped and the operation hasn't finished yet, it will try to
     /// cancel the operation.
     pub struct SubmitMulti<T: OpCode> {
-        runtime: Runtime,
+        // No runtime handle stored here — see `Submit` in `future.rs` for the
+        // explanation of why storing any `Rc<RuntimeInner>` (strong or weak)
+        // from inside a task forms a cycle that leaks the io_uring fd.
         state: Option<State<T>>,
     }
 
@@ -27,7 +29,7 @@ pin_project_lite::pin_project! {
         fn drop(this: Pin<&mut Self>) {
             let this = this.project();
             if let Some(State::Submitted { key }) = this.state.take() {
-                this.runtime.cancel(key);
+                let _ = Runtime::try_with_current(|rt| rt.cancel(key));
             }
         }
     }
@@ -46,9 +48,8 @@ impl<T: OpCode> State<T> {
 }
 
 impl<T: OpCode> SubmitMulti<T> {
-    pub(crate) fn new(runtime: Runtime, op: T) -> Self {
+    pub(crate) fn new(op: T) -> Self {
         SubmitMulti {
-            runtime,
             state: Some(State::Idle { op }),
         }
     }
@@ -78,12 +79,13 @@ impl<T: OpCode + 'static> Stream for SubmitMulti<T> {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
+        let runtime = Runtime::current();
 
         loop {
             match this.state.take().expect("State error, this is a bug") {
                 State::Idle { op } => {
-                    let extra = cx.as_extra(|| this.runtime.default_extra());
-                    match this.runtime.submit_raw(op, extra) {
+                    let extra = cx.as_extra(|| runtime.default_extra());
+                    match runtime.submit_raw(op, extra) {
                         PushEntry::Pending(key) => {
                             if let Some(cancel) = cx.get_cancel() {
                                 cancel.register(&key);
@@ -93,7 +95,7 @@ impl<T: OpCode + 'static> Stream for SubmitMulti<T> {
                         }
                         PushEntry::Ready(BufResult(res, op)) => {
                             *this.state = Some(State::Finished { op });
-                            let extra = this.runtime.default_extra();
+                            let extra = runtime.default_extra();
 
                             return Poll::Ready(Some(BufResult(res, extra)));
                         }
@@ -101,13 +103,13 @@ impl<T: OpCode + 'static> Stream for SubmitMulti<T> {
                 }
 
                 State::Submitted { key, .. } => {
-                    if let Some(res) = this.runtime.poll_multishot(cx.get_waker(), &key) {
+                    if let Some(res) = runtime.poll_multishot(cx.get_waker(), &key) {
                         *this.state = Some(State::submitted(key));
 
                         return Poll::Ready(Some(res));
                     };
 
-                    match this.runtime.poll_task_with_extra(cx.get_waker(), key) {
+                    match runtime.poll_task_with_extra(cx.get_waker(), key) {
                         PushEntry::Pending(key) => {
                             *this.state = Some(State::submitted(key));
 

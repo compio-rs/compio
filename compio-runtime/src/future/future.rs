@@ -59,15 +59,25 @@ pin_project_lite::pin_project! {
     ///
     /// [`.with_extra()`]: Submit::with_extra
     pub struct Submit<T: OpCode, E = ()> {
-        runtime: Runtime,
+        // No runtime handle stored here — the runtime is obtained on demand
+        // via the thread-local (`Runtime::current` / `try_with_current`).
+        // Storing any form of `Rc<RuntimeInner>` (strong or weak) from inside
+        // a task — which lives inside the executor — creates a reference cycle
+        // that prevents `executor.clear()` from running on runtime drop,
+        // leaking the io_uring fd and every fd owned by in-flight ops.
         state: Option<State<T, E>>,
     }
 
     impl<T: OpCode, E> PinnedDrop for Submit<T, E> {
         fn drop(this: Pin<&mut Self>) {
             let this = this.project();
+            // `try_with_current` no-ops if called outside a runtime context.
+            // That happens when `executor.clear()` drops tasks; it runs inside
+            // `Runtime::enter`, so the thread-local IS set and the cancel goes
+            // through. If somehow called after the runtime is fully gone, the
+            // io_uring fd is already closed — no need to cancel.
             if let Some(State::Submitted { key, .. }) = this.state.take() {
-                this.runtime.cancel(key);
+                let _ = Runtime::try_with_current(|rt| rt.cancel(key));
             }
         }
     }
@@ -89,9 +99,8 @@ impl<T: OpCode, E> State<T, E> {
 }
 
 impl<T: OpCode> Submit<T, ()> {
-    pub(crate) fn new(runtime: Runtime, op: T) -> Self {
+    pub(crate) fn new(op: T) -> Self {
         Submit {
-            runtime,
             state: Some(State::Idle { op }),
         }
     }
@@ -101,12 +110,8 @@ impl<T: OpCode> Submit<T, ()> {
     /// This is useful if you need to access extra information provided by the
     /// runtime upon completion of the operation.
     pub fn with_extra(mut self) -> Submit<T, Extra> {
-        let runtime = self.runtime.clone();
         let Some(state) = self.state.take() else {
-            return Submit {
-                runtime,
-                state: None,
-            };
+            return Submit { state: None };
         };
         let state = match state {
             State::Submitted { key, .. } => State::Submitted {
@@ -115,10 +120,7 @@ impl<T: OpCode> Submit<T, ()> {
             },
             State::Idle { op } => State::Idle { op },
         };
-        Submit {
-            runtime,
-            state: Some(state),
-        }
+        Submit { state: Some(state) }
     }
 }
 
@@ -127,10 +129,11 @@ impl<T: OpCode + 'static> Future for Submit<T, ()> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
+        let runtime = Runtime::current();
 
         loop {
             match this.state.take().expect("Cannot poll after ready") {
-                State::Submitted { key, .. } => match this.runtime.poll_task(cx.get_waker(), key) {
+                State::Submitted { key, .. } => match runtime.poll_task(cx.get_waker(), key) {
                     PushEntry::Pending(key) => {
                         *this.state = Some(State::submitted(key));
                         return Poll::Pending;
@@ -138,8 +141,8 @@ impl<T: OpCode + 'static> Future for Submit<T, ()> {
                     PushEntry::Ready(res) => return Poll::Ready(res),
                 },
                 State::Idle { op } => {
-                    let extra = cx.as_extra(|| this.runtime.default_extra());
-                    match this.runtime.submit_raw(op, extra) {
+                    let extra = cx.as_extra(|| runtime.default_extra());
+                    match runtime.submit_raw(op, extra) {
                         PushEntry::Pending(key) => {
                             // TODO: Should we register it only the first time or every time it's
                             // being polled?
@@ -164,11 +167,12 @@ impl<T: OpCode + 'static> Future for Submit<T, Extra> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
+        let runtime = Runtime::current();
 
         loop {
             match this.state.take().expect("Cannot poll after ready") {
                 State::Submitted { key, .. } => {
-                    match this.runtime.poll_task_with_extra(cx.get_waker(), key) {
+                    match runtime.poll_task_with_extra(cx.get_waker(), key) {
                         PushEntry::Pending(key) => {
                             *this.state = Some(State::submitted(key));
                             return Poll::Pending;
@@ -177,8 +181,8 @@ impl<T: OpCode + 'static> Future for Submit<T, Extra> {
                     }
                 }
                 State::Idle { op } => {
-                    let extra = cx.as_extra(|| this.runtime.default_extra());
-                    match this.runtime.submit_raw(op, extra) {
+                    let extra = cx.as_extra(|| runtime.default_extra());
+                    match runtime.submit_raw(op, extra) {
                         PushEntry::Pending(key) => {
                             if let Some(cancel) = cx.get_cancel() {
                                 cancel.register(&key);
@@ -187,7 +191,7 @@ impl<T: OpCode + 'static> Future for Submit<T, Extra> {
                             *this.state = Some(State::submitted(key))
                         }
                         PushEntry::Ready(res) => {
-                            return Poll::Ready((res, this.runtime.default_extra()));
+                            return Poll::Ready((res, runtime.default_extra()));
                         }
                     }
                 }

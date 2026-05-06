@@ -268,14 +268,14 @@ impl Runtime {
     ///
     /// You only need this when authoring your own [`OpCode`].
     pub fn submit<T: OpCode + 'static>(&self, op: T) -> Submit<T> {
-        Submit::new(self.clone(), op)
+        Submit::new(op)
     }
 
     /// Submit a multishot operation to the runtime.
     ///
     /// You only need this when authoring your own [`OpCode`].
     pub fn submit_multi<T: OpCode + 'static>(&self, op: T) -> SubmitMulti<T> {
-        SubmitMulti::new(self.clone(), op)
+        SubmitMulti::new(op)
     }
 
     pub(crate) fn cancel<T: OpCode>(&self, key: Key<T>) {
@@ -445,7 +445,11 @@ impl Runtime {
 
 impl Drop for Runtime {
     fn drop(&mut self) {
-        // this is not the last runtime reference, no need to clear
+        // Only the last owner clears the executor. With no stored
+        // `Rc<RuntimeInner>` inside tasks (Submit/SubmitMulti/CancelToken all
+        // use the thread-local now), `strong_count` is 1 whenever the
+        // user-facing `Runtime` drops. The guard still protects against the
+        // edge case of a user explicitly cloning `Runtime` via `current()`.
         if Rc::strong_count(&self.0) > 1 {
             return;
         }

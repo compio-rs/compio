@@ -18,7 +18,12 @@ use crate::{ContextExt, Runtime};
 struct Inner {
     tokens: RefCell<HashSet<Cancel>>,
     is_cancelled: Cell<bool>,
-    runtime: Runtime,
+    // No runtime handle stored here. Every method that needs the runtime
+    // obtains it on demand via the thread-local (`Runtime::try_with_current`).
+    // Storing a strong `Rc<RuntimeInner>` (or even a `Weak`) was the root of
+    // the reference cycle: task → CancelToken → Rc<RuntimeInner> → executor →
+    // task.  Using the thread-local avoids the cycle entirely with no atomic
+    // overhead.
     notify: Event,
 }
 
@@ -58,7 +63,6 @@ impl CancelToken {
         Self(Rc::new(Inner {
             tokens: RefCell::new(HashSet::new()),
             is_cancelled: Cell::new(false),
-            runtime: Runtime::current(),
             notify: Event::new(),
         }))
     }
@@ -74,9 +78,13 @@ impl CancelToken {
             return;
         }
         let tokens = mem::take(self.0.tokens.borrow_mut().deref_mut());
-        for t in tokens {
-            self.0.runtime.cancel_token(t);
-        }
+        // If the runtime is no longer active, the io_uring fd is already
+        // closed and all pending ops have been cancelled by the kernel.
+        let _ = Runtime::try_with_current(move |rt| {
+            for t in tokens {
+                rt.cancel_token(t);
+            }
+        });
     }
 
     /// Check if this token has been cancelled.
@@ -95,12 +103,16 @@ impl CancelToken {
     ///
     /// [`with_cancel`]: crate::FutureExt::with_cancel
     pub fn register<T: OpCode>(&self, key: &Key<T>) {
-        if self.0.is_cancelled.get() {
-            self.0.runtime.cancel(key.clone());
-        } else {
-            let token = self.0.runtime.register_cancel(key);
-            self.0.tokens.borrow_mut().insert(token);
-        }
+        // If no runtime is active (rare: the op's task should have been
+        // dropped first), there is nothing to register against.
+        let _ = Runtime::try_with_current(|rt| {
+            if self.0.is_cancelled.get() {
+                rt.cancel(key.clone());
+            } else {
+                let token = rt.register_cancel(key);
+                self.0.tokens.borrow_mut().insert(token);
+            }
+        });
     }
 
     /// Wait until this token is cancelled.
