@@ -186,14 +186,16 @@ impl Driver {
             entry.notify();
             has_entry = true;
         }
+        if self.notify.reset() {
+            has_entry = true;
+        }
 
         if !has_entry {
             for e in self.notify.port.poll(timeout)? {
-                self.notify.set_awake(true);
                 if let Some(e) = Self::create_entry(notify, &mut self.waits, e) {
+                    self.notify.set_awake();
                     e.notify()
                 }
-                self.notify.set_awake(false);
             }
         }
 
@@ -231,8 +233,12 @@ impl Notify {
         }
     }
 
-    fn set_awake(&self, awake: bool) {
-        self.awake.set(awake);
+    fn set_awake(&self) {
+        self.awake.set();
+    }
+
+    fn reset(&self) -> bool {
+        self.awake.reset()
     }
 }
 

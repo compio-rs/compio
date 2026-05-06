@@ -149,12 +149,12 @@ impl Driver {
     }
 
     // Auto means that it choose to wait or not automatically.
-    fn submit_auto(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+    fn submit_auto(&mut self, timeout: Option<Duration>, need_wait: bool) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "submit_auto", ?timeout);
 
         // when taskrun is true, there are completed cqes wait to handle, no need to
         // block the submit
-        let want_sqe = if self.inner.submission().taskrun() {
+        let want_sqe = if !need_wait || self.inner.submission().taskrun() {
             0
         } else {
             1
@@ -196,14 +196,10 @@ impl Driver {
         has_entry
     }
 
-    fn poll_entries(&mut self, hot_path: bool) -> bool {
+    fn poll_entries(&mut self) -> bool {
         let mut cqueue = self.inner.completion();
         cqueue.sync();
         let has_entry = !cqueue.is_empty();
-        // TODO: likely hint
-        if hot_path {
-            self.notifier.set_awake(true);
-        }
         for entry in cqueue {
             match entry.user_data() {
                 Self::CANCEL => {}
@@ -234,9 +230,6 @@ impl Driver {
                     }
                 }
             }
-        }
-        if hot_path {
-            self.notifier.set_awake(false);
         }
         has_entry
     }
@@ -289,7 +282,7 @@ impl Driver {
                 }
                 Err(_) => {
                     drop(squeue);
-                    match self.submit_auto(Some(Duration::ZERO)) {
+                    match self.submit_auto(Some(Duration::ZERO), true) {
                         Ok(()) => {}
                         Err(e)
                             if matches!(
@@ -303,7 +296,7 @@ impl Driver {
                     // event indefinitely.
                     //
                     // Anyway it is not a hot path, so we can afford an extra `write` syscall here.
-                    self.poll_entries(false);
+                    self.poll_entries();
                 }
             }
         }
@@ -372,6 +365,8 @@ impl Driver {
 
         trace!("start polling");
 
+        let need_wait = !self.notifier.reset();
+
         if self.need_push_notifier {
             #[allow(clippy::useless_conversion)]
             self.push_raw(
@@ -384,8 +379,10 @@ impl Driver {
             self.need_push_notifier = false;
         }
 
-        self.submit_auto(timeout)?;
-        self.poll_entries(true);
+        self.submit_auto(timeout, need_wait)?;
+
+        self.notifier.set_awake();
+        self.poll_entries();
 
         Ok(())
     }

@@ -172,10 +172,8 @@ impl Driver {
         F: FnOnce(&mut Self, &mut Events) -> R,
     {
         let mut events = std::mem::take(&mut self.events);
-        self.notify.set_awake(true);
         let res = f(self, &mut events);
         self.events = events;
-        self.notify.set_awake(false);
         res
     }
 
@@ -440,20 +438,22 @@ impl Driver {
 
     pub fn poll(&mut self, mut timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
+        let timeout_is_some = timeout.is_some();
         let has_completed = !self.completed_rx.is_empty();
-        if has_completed {
+        let need_wait = !self.notify.reset();
+        if !need_wait || has_completed {
             timeout = Some(Duration::ZERO);
         }
         // We need to poll the poller first to make sure it handles the internal notify
         // event (if any).
         self.events.clear();
         self.notify.poll.wait(&mut self.events, timeout)?;
-        self.notify.set_awake(false);
+        self.notify.set_awake();
         if self.events.is_empty() {
             if self.poll_completed() {
                 return Ok(());
             }
-            if timeout.is_some() {
+            if timeout_is_some {
                 return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
             }
         } else if has_completed {
@@ -551,8 +551,12 @@ impl Notify {
         }
     }
 
-    fn set_awake(&self, awake: bool) {
-        self.awake.set(awake);
+    fn set_awake(&self) {
+        self.awake.set();
+    }
+
+    fn reset(&self) -> bool {
+        self.awake.reset()
     }
 }
 

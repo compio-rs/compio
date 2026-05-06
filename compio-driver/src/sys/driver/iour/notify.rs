@@ -30,8 +30,12 @@ impl Notifier {
         Ok(())
     }
 
-    pub fn set_awake(&self, awake: bool) {
-        self.notify.set_awake(awake);
+    pub fn set_awake(&self) {
+        self.notify.set_awake();
+    }
+
+    pub fn reset(&self) -> bool {
+        self.notify.reset()
     }
 
     pub fn waker(&self) -> Waker {
@@ -66,8 +70,12 @@ impl Notify {
         }
     }
 
-    pub fn set_awake(&self, awake: bool) {
-        self.awake.set(awake);
+    pub fn set_awake(&self) {
+        self.awake.set();
+    }
+
+    pub fn reset(&self) -> bool {
+        self.awake.reset()
     }
 }
 
