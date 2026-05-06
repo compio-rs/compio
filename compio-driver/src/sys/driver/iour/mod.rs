@@ -73,6 +73,12 @@ impl Driver {
                 io_uring_builder.setup_sqpoll_cpu(cpu);
             }
         }
+        if builder.single_issuer {
+            io_uring_builder.setup_single_issuer();
+            if builder.defer_taskrun {
+                io_uring_builder.setup_defer_taskrun();
+            }
+        }
         if builder.coop_taskrun {
             io_uring_builder.setup_coop_taskrun();
         }

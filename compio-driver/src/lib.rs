@@ -547,8 +547,10 @@ pub struct ProactorBuilder {
     sqpoll_idle: Option<Duration>,
     sqpoll_cpu: Option<u32>,
     cqsize: Option<u32>,
+    single_issuer: bool,
     coop_taskrun: bool,
     taskrun_flag: bool,
+    defer_taskrun: bool,
     eventfd: Option<RawFd>,
     driver_type: Option<DriverType>,
     op_flags: OpCodeFlag,
@@ -577,8 +579,10 @@ impl ProactorBuilder {
             sqpoll_idle: None,
             sqpoll_cpu: None,
             cqsize: None,
+            single_issuer: false,
             coop_taskrun: false,
             taskrun_flag: false,
+            defer_taskrun: false,
             eventfd: None,
             driver_type: None,
             op_flags: OpCodeFlag::empty(),
@@ -678,6 +682,17 @@ impl ProactorBuilder {
         self
     }
 
+    /// Set the `io-uring` single issuer hint.
+    ///
+    /// # Notes
+    ///
+    /// - Available since Linux Kernel 6.0.
+    /// - Only effective when the `io-uring` feature is enabled
+    pub fn single_issuer(&mut self, enable: bool) -> &mut Self {
+        self.single_issuer = enable;
+        self
+    }
+
     /// Optimize performance for most cases, especially compio is a single
     /// thread runtime.
     ///
@@ -703,6 +718,22 @@ impl ProactorBuilder {
     /// - Only effective when the `io-uring` feature is enabled
     pub fn taskrun_flag(&mut self, enable: bool) -> &mut Self {
         self.taskrun_flag = enable;
+        self
+    }
+
+    /// Defer io-uring task work until the driver enters the kernel to wait for
+    /// completions.
+    ///
+    /// This is only applied when [`single_issuer`](Self::single_issuer) is
+    /// enabled. The kernel requires `IORING_SETUP_SINGLE_ISSUER` for
+    /// `IORING_SETUP_DEFER_TASKRUN`.
+    ///
+    /// # Notes
+    ///
+    /// - Available since Linux Kernel 6.1.
+    /// - Only effective when the `io-uring` feature is enabled
+    pub fn defer_taskrun(&mut self, enable: bool) -> &mut Self {
+        self.defer_taskrun = enable;
         self
     }
 
