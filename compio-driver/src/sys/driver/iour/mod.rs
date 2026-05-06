@@ -173,7 +173,7 @@ impl Driver {
         trace!("submit result: {res:?}");
         match res {
             Ok(_) => {
-                if self.inner.completion().is_empty() {
+                if want_sqe > 0 && self.inner.completion().is_empty() {
                     Err(io::ErrorKind::TimedOut.into())
                 } else {
                     Ok(())
@@ -197,8 +197,7 @@ impl Driver {
     }
 
     fn poll_entries(&mut self) -> bool {
-        let mut cqueue = self.inner.completion();
-        cqueue.sync();
+        let cqueue = self.inner.completion();
         let has_entry = !cqueue.is_empty();
         for entry in cqueue {
             match entry.user_data() {
