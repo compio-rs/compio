@@ -44,10 +44,9 @@ impl SocketState {
     fn set_bit(&self, offset: usize, value: bool) {
         let bits = if value { NON_EMPTY } else { EMPTY } << offset;
         self.state
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |state| {
-                Some((state & !(0b11 << offset)) | bits)
-            })
-            .ok();
+            .update(Ordering::Relaxed, Ordering::Relaxed, |state| {
+                (state & !(0b11 << offset)) | bits
+            });
     }
 
     fn set_op(&self, offset: usize, op: &mut impl PollFirst) {
