@@ -1,11 +1,14 @@
 use std::{
+    cell::Cell,
     future::Future,
     pin::Pin,
+    rc::Rc,
     sync::Arc,
     task::{Context, Poll},
     thread::{self, ThreadId},
 };
 
+use compio_runtime::CancelToken;
 use futures_util::task::AtomicWaker;
 
 struct DropWatcher {
@@ -87,4 +90,34 @@ fn test_wake_from_another_thread_after_runtime_drop() {
     })
     .join()
     .unwrap();
+}
+
+#[test]
+fn test_task_dropped_when_runtime_drops() {
+    struct DropFlag(Rc<Cell<bool>>);
+    impl Drop for DropFlag {
+        fn drop(&mut self) {
+            self.0.set(true);
+        }
+    }
+
+    let flag = Rc::new(Cell::new(false));
+    let flag2 = flag.clone();
+
+    let rt = compio_runtime::Runtime::new().unwrap();
+    rt.block_on(async move {
+        compio_runtime::spawn(async move {
+            let _guard = DropFlag(flag2);
+
+            // `CancelToken` contains a strong reference to the driver, but should not
+            // prevent the task from being dropped when the runtime is dropped.
+            let _token = CancelToken::new();
+
+            compio_runtime::time::sleep(std::time::Duration::from_secs(3600)).await;
+        })
+        .detach();
+    });
+    drop(rt);
+
+    assert!(flag.get(), "spawned task was not dropped: Rc cycle?");
 }

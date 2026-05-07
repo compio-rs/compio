@@ -1,6 +1,7 @@
 use std::{
     cell::{Cell, RefCell},
     collections::HashSet,
+    fmt::Debug,
     mem,
     ops::DerefMut,
     pin::Pin,
@@ -8,18 +9,28 @@ use std::{
     task::{Context, Poll},
 };
 
-use compio_driver::{Cancel, Key, OpCode};
+use compio_driver::{Cancel, Key, OpCode, Proactor};
 use futures_util::{FutureExt, ready};
 use synchrony::unsync::event::{Event, EventListener};
 
 use crate::{ContextExt, Runtime};
 
-#[derive(Debug)]
 struct Inner {
     tokens: RefCell<HashSet<Cancel>>,
     is_cancelled: Cell<bool>,
-    runtime: Runtime,
+    driver: Rc<RefCell<Proactor>>,
     notify: Event,
+}
+
+impl Debug for Inner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Inner")
+            .field("tokens", &self.tokens)
+            .field("is_cancelled", &self.is_cancelled)
+            .field("driver", &"...")
+            .field("notify", &self.notify)
+            .finish()
+    }
 }
 
 /// A token that can be used to cancel multiple operations at once.
@@ -58,7 +69,7 @@ impl CancelToken {
         Self(Rc::new(Inner {
             tokens: RefCell::new(HashSet::new()),
             is_cancelled: Cell::new(false),
-            runtime: Runtime::current(),
+            driver: Runtime::current_driver(),
             notify: Event::new(),
         }))
     }
@@ -75,7 +86,7 @@ impl CancelToken {
         }
         let tokens = mem::take(self.0.tokens.borrow_mut().deref_mut());
         for t in tokens {
-            self.0.runtime.cancel_token(t);
+            self.0.driver.borrow_mut().cancel_token(t);
         }
     }
 
@@ -96,9 +107,9 @@ impl CancelToken {
     /// [`with_cancel`]: crate::FutureExt::with_cancel
     pub fn register<T: OpCode>(&self, key: &Key<T>) {
         if self.0.is_cancelled.get() {
-            self.0.runtime.cancel(key.clone());
+            self.0.driver.borrow_mut().cancel(key.clone());
         } else {
-            let token = self.0.runtime.register_cancel(key);
+            let token = self.0.driver.borrow_mut().register_cancel(key);
             self.0.tokens.borrow_mut().insert(token);
         }
     }

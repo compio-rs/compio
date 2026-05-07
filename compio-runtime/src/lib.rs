@@ -37,17 +37,13 @@ use std::{
     fmt::Debug,
     future::Future,
     io,
-    ops::Deref,
     rc::Rc,
     task::{Context, Poll, Waker},
     time::Duration,
 };
 
 use compio_buf::{BufResult, IntoInner};
-use compio_driver::{
-    AsRawFd, Cancel, DriverType, Extra, Key, OpCode, Proactor, ProactorBuilder, PushEntry, RawFd,
-    op::Asyncify,
-};
+use compio_driver::{AsRawFd, DriverType, OpCode, Proactor, ProactorBuilder, RawFd, op::Asyncify};
 pub use compio_driver::{BufferPool, ErrorExt};
 use compio_executor::{Executor, ExecutorConfig};
 pub use compio_executor::{JoinHandle, ResumeUnwind};
@@ -55,7 +51,7 @@ use compio_log::{debug, instrument};
 
 use crate::affinity::bind_to_cpu_set;
 #[cfg(feature = "time")]
-use crate::time::{TimerFuture, TimerKey, TimerRuntime};
+use crate::time::TimerRuntime;
 pub use crate::{attacher::*, cancel::CancelToken, future::*};
 
 scoped_tls::scoped_thread_local!(static CURRENT_RUNTIME: Runtime);
@@ -65,37 +61,25 @@ fn not_in_compio_runtime() -> ! {
     panic!("not in a compio runtime")
 }
 
-/// Inner structure of [`Runtime`].
-pub struct RuntimeInner {
-    executor: Executor,
-    driver: RefCell<Proactor>,
-    #[cfg(feature = "time")]
-    timer_runtime: RefCell<TimerRuntime>,
-}
-
 /// The async runtime of compio.
 ///
 /// It is a thread-local runtime, meaning it cannot be sent to other threads.
 #[derive(Clone)]
-pub struct Runtime(Rc<RuntimeInner>);
+pub struct Runtime {
+    executor: Rc<Executor>,
+    driver: Rc<RefCell<Proactor>>,
+    #[cfg(feature = "time")]
+    timer_runtime: Rc<RefCell<TimerRuntime>>,
+}
 
 impl Debug for Runtime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut s = f.debug_struct("Runtime");
-        s.field("executor", &self.0.executor)
-            .field("driver", &"...")
-            .field("scheduler", &"...");
+        s.field("executor", &self.executor);
+        s.field("driver", &"...");
         #[cfg(feature = "time")]
         s.field("timer_runtime", &"...");
         s.finish()
-    }
-}
-
-impl Deref for Runtime {
-    type Target = RuntimeInner;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }
 
@@ -161,6 +145,23 @@ impl Runtime {
         }
     }
 
+    pub(crate) fn current_driver() -> Rc<RefCell<Proactor>> {
+        if CURRENT_RUNTIME.is_set() {
+            CURRENT_RUNTIME.with(|r| r.driver.clone())
+        } else {
+            not_in_compio_runtime()
+        }
+    }
+
+    #[cfg(feature = "time")]
+    pub(crate) fn current_timer_runtime() -> Rc<RefCell<TimerRuntime>> {
+        if CURRENT_RUNTIME.is_set() {
+            CURRENT_RUNTIME.with(|r| r.timer_runtime.clone())
+        } else {
+            not_in_compio_runtime()
+        }
+    }
+
     /// Set this runtime as current runtime, and perform a function in the
     /// current scope.
     pub fn enter<T, F: FnOnce() -> T>(&self, f: F) -> T {
@@ -209,7 +210,7 @@ impl Runtime {
     /// Spawning a task enables the task to execute concurrently to other tasks.
     /// There is no guarantee that a spawned task will execute to completion.
     pub fn spawn<F: Future + 'static>(&self, future: F) -> JoinHandle<F::Output> {
-        self.0.executor.spawn(future)
+        self.executor.spawn(future)
     }
 
     /// Spawns a blocking task in a new thread, and wait for it.
@@ -237,34 +238,18 @@ impl Runtime {
         self.driver.borrow_mut().attach(fd)
     }
 
-    fn submit_raw<T: OpCode + 'static>(
-        &self,
-        op: T,
-        extra: Option<Extra>,
-    ) -> PushEntry<Key<T>, BufResult<usize, T>> {
-        let mut this = self.driver.borrow_mut();
-        match extra {
-            Some(e) => this.push_with_extra(op, e),
-            None => this.push(op),
-        }
-    }
-
-    fn default_extra(&self) -> Extra {
-        self.driver.borrow().default_extra()
-    }
-
     /// Submit an operation to the runtime.
     ///
     /// You only need this when authoring your own [`OpCode`].
     pub fn submit<T: OpCode + 'static>(&self, op: T) -> Submit<T> {
-        Submit::new(self.clone(), op)
+        Submit::new(self.driver.clone(), op)
     }
 
     /// Submit a multishot operation to the runtime.
     ///
     /// You only need this when authoring your own [`OpCode`].
     pub fn submit_multi<T: OpCode + 'static>(&self, op: T) -> SubmitMulti<T> {
-        SubmitMulti::new(self.clone(), op)
+        SubmitMulti::new(self.driver.clone(), op)
     }
 
     /// Flush the driver and return whether the driver has been notified.
@@ -272,77 +257,6 @@ impl Runtime {
     /// See [`Proactor::flush`] for more details.
     pub fn flush(&self) -> bool {
         self.driver.borrow_mut().flush()
-    }
-
-    pub(crate) fn cancel<T: OpCode>(&self, key: Key<T>) {
-        self.driver.borrow_mut().cancel(key);
-    }
-
-    pub(crate) fn register_cancel<T: OpCode>(&self, key: &Key<T>) -> Cancel {
-        self.driver.borrow_mut().register_cancel(key)
-    }
-
-    pub(crate) fn cancel_token(&self, token: Cancel) -> bool {
-        self.driver.borrow_mut().cancel_token(token)
-    }
-
-    #[cfg(feature = "time")]
-    pub(crate) fn cancel_timer(&self, key: &TimerKey) {
-        self.timer_runtime.borrow_mut().cancel(key);
-    }
-
-    pub(crate) fn poll_task<T: OpCode>(
-        &self,
-        waker: &Waker,
-        key: Key<T>,
-    ) -> PushEntry<Key<T>, BufResult<usize, T>> {
-        instrument!(compio_log::Level::DEBUG, "poll_task", ?key);
-        let mut driver = self.driver.borrow_mut();
-        driver.pop(key).map_pending(|k| {
-            driver.update_waker(&k, waker);
-            k
-        })
-    }
-
-    pub(crate) fn poll_task_with_extra<T: OpCode>(
-        &self,
-        waker: &Waker,
-        key: Key<T>,
-    ) -> PushEntry<Key<T>, (BufResult<usize, T>, Extra)> {
-        instrument!(compio_log::Level::DEBUG, "poll_task_with_extra", ?key);
-        let mut driver = self.driver.borrow_mut();
-        driver.pop_with_extra(key).map_pending(|k| {
-            driver.update_waker(&k, waker);
-            k
-        })
-    }
-
-    pub(crate) fn poll_multishot<T: OpCode>(
-        &self,
-        waker: &Waker,
-        key: &Key<T>,
-    ) -> Option<BufResult<usize, Extra>> {
-        instrument!(compio_log::Level::DEBUG, "poll_multishot", ?key);
-        let mut driver = self.driver.borrow_mut();
-        if let Some(res) = driver.pop_multishot(key) {
-            return Some(res);
-        }
-        driver.update_waker(key, waker);
-        None
-    }
-
-    #[cfg(feature = "time")]
-    pub(crate) fn poll_timer(&self, cx: &mut Context, key: &TimerKey) -> Poll<()> {
-        instrument!(compio_log::Level::DEBUG, "poll_timer", ?cx, ?key);
-        let mut timer_runtime = self.timer_runtime.borrow_mut();
-        if timer_runtime.is_completed(key) {
-            debug!("ready");
-            Poll::Ready(())
-        } else {
-            debug!("pending");
-            timer_runtime.update_waker(key, cx.waker());
-            Poll::Pending
-        }
     }
 
     /// Low level API to control the runtime.
@@ -442,7 +356,7 @@ impl Runtime {
 impl Drop for Runtime {
     fn drop(&mut self) {
         // this is not the last runtime reference, no need to clear
-        if Rc::strong_count(&self.0) > 1 {
+        if Rc::strong_count(&self.executor) > 1 {
             return;
         }
 
@@ -560,13 +474,12 @@ impl RuntimeBuilder {
             local_queue_size: *local_queue_size,
             waker: Some(driver.waker()),
         });
-        let inner = RuntimeInner {
-            executor,
-            driver: RefCell::new(driver),
+        Ok(Runtime {
+            executor: Rc::new(executor),
+            driver: Rc::new(RefCell::new(driver)),
             #[cfg(feature = "time")]
-            timer_runtime: RefCell::new(TimerRuntime::new()),
-        };
-        Ok(Runtime(Rc::new(inner)))
+            timer_runtime: Rc::new(RefCell::new(TimerRuntime::new())),
+        })
     }
 }
 
@@ -666,12 +579,4 @@ pub fn register_files(fds: &[RawFd]) -> io::Result<()> {
 /// [`Unsupported`]: std::io::ErrorKind::Unsupported
 pub fn unregister_files() -> io::Result<()> {
     Runtime::with_current(|r| r.unregister_files())
-}
-
-#[cfg(feature = "time")]
-pub(crate) async fn create_timer(instant: std::time::Instant) {
-    let key = Runtime::with_current(|r| r.timer_runtime.borrow_mut().insert(instant));
-    if let Some(key) = key {
-        TimerFuture::new(key).await
-    }
 }
