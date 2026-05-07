@@ -1,5 +1,6 @@
 use std::{
     fmt::Debug,
+    future::ready,
     io,
     marker::PhantomPinned,
     mem::MaybeUninit,
@@ -415,7 +416,7 @@ impl<S: AsyncWrite + Unpin + 'static> AsyncWriteStream<S> {
         arr.with(|waker| {
             let cx = &mut Context::from_waker(waker);
             let res = poll_future!(this.shutdown_future, cx, inner.get_mut().shutdown());
-            Poll::Ready(res)
+            Poll::Ready(res.inspect(|_| *this.shutdown_future = Some(Box::pin(ready(Ok(()))))))
         })
     }
 }
