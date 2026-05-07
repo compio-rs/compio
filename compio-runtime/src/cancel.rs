@@ -69,7 +69,7 @@ impl CancelToken {
         Self(Rc::new(Inner {
             tokens: RefCell::new(HashSet::new()),
             is_cancelled: Cell::new(false),
-            driver: Runtime::current_driver(),
+            driver: Runtime::with_current(|r| r.driver.clone()),
             notify: Event::new(),
         }))
     }

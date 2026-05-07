@@ -1,7 +1,6 @@
 //! Utilities for tracking time.
 
 use std::{
-    cell::RefCell,
     collections::BTreeMap,
     error::Error,
     fmt::Display,
@@ -9,7 +8,6 @@ use std::{
     marker::PhantomData,
     mem::replace,
     pin::Pin,
-    rc::Rc,
     task::{Context, Poll, Waker},
     time::{Duration, Instant},
 };
@@ -67,10 +65,9 @@ pub async fn sleep_until(deadline: Instant) {
 }
 
 async fn create_timer(instant: std::time::Instant) {
-    let timer_runtime = Runtime::current_timer_runtime();
-    let key = timer_runtime.borrow_mut().insert(instant);
+    let key = Runtime::with_current(|r| r.timer_runtime.borrow_mut().insert(instant));
     if let Some(key) = key {
-        TimerFuture::new(timer_runtime, key).await;
+        TimerFuture::new(key).await;
     }
 }
 
@@ -344,14 +341,11 @@ impl TimerRuntime {
     }
 }
 
-pub(crate) struct TimerFuture {
-    runtime: Rc<RefCell<TimerRuntime>>,
-    key: TimerKey,
-}
+pub(crate) struct TimerFuture(TimerKey);
 
 impl TimerFuture {
-    pub fn new(runtime: Rc<RefCell<TimerRuntime>>, key: TimerKey) -> Self {
-        Self { runtime, key }
+    pub fn new(key: TimerKey) -> Self {
+        Self(key)
     }
 }
 
@@ -359,13 +353,13 @@ impl Future for TimerFuture {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.runtime.borrow_mut().poll_timer(cx, &self.key)
+        Runtime::with_current(|r| r.timer_runtime.borrow_mut().poll_timer(cx, &self.0))
     }
 }
 
 impl Drop for TimerFuture {
     fn drop(&mut self) {
-        self.runtime.borrow_mut().cancel(&self.key);
+        Runtime::with_current(|r| r.timer_runtime.borrow_mut().cancel(&self.0));
     }
 }
 

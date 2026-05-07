@@ -145,23 +145,6 @@ impl Runtime {
         }
     }
 
-    pub(crate) fn current_driver() -> Rc<RefCell<Proactor>> {
-        if CURRENT_RUNTIME.is_set() {
-            CURRENT_RUNTIME.with(|r| r.driver.clone())
-        } else {
-            not_in_compio_runtime()
-        }
-    }
-
-    #[cfg(feature = "time")]
-    pub(crate) fn current_timer_runtime() -> Rc<RefCell<TimerRuntime>> {
-        if CURRENT_RUNTIME.is_set() {
-            CURRENT_RUNTIME.with(|r| r.timer_runtime.clone())
-        } else {
-            not_in_compio_runtime()
-        }
-    }
-
     /// Set this runtime as current runtime, and perform a function in the
     /// current scope.
     pub fn enter<T, F: FnOnce() -> T>(&self, f: F) -> T {
