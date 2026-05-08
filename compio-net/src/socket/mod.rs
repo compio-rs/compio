@@ -226,20 +226,9 @@ impl Socket {
 
     pub async fn shutdown(&self) -> io::Result<()> {
         match self.shutdown_impl().await {
-            Ok(_) => Ok(()),
             // The socket is not connected, so we can ignore this error.
-            Err(e)
-                if matches!(
-                    e.kind(),
-                    io::ErrorKind::NotConnected
-                        | io::ErrorKind::ConnectionAborted
-                        | io::ErrorKind::ConnectionReset
-                        | io::ErrorKind::ConnectionRefused
-                ) =>
-            {
-                Ok(())
-            }
-            Err(e) => Err(e),
+            Err(e) if e.kind() == io::ErrorKind::NotConnected => Ok(()),
+            res => res,
         }
     }
 
