@@ -1,6 +1,5 @@
 use std::{
     fmt::Debug,
-    future::ready,
     io,
     marker::PhantomPinned,
     mem::MaybeUninit,
@@ -142,6 +141,7 @@ pin_project! {
         write_waker: Option<Waker>,
         flush_waker: Option<Waker>,
         close_waker: Option<Waker>,
+        closed: bool,
         #[pin]
         _p: PhantomPinned,
     }
@@ -170,6 +170,7 @@ impl<S> AsyncWriteStream<S> {
             write_waker: None,
             flush_waker: None,
             close_waker: None,
+            closed: false,
             _p: PhantomPinned,
         }
     }
@@ -403,6 +404,9 @@ impl<S: AsyncWrite + Unpin + 'static> AsyncWriteStream<S> {
     }
 
     fn poll_close_impl(self: Pin<&mut Self>) -> Poll<io::Result<()>> {
+        if self.closed {
+            return Poll::Ready(Ok(()));
+        }
         let this = self.project();
         // SAFETY:
         // - The future won't live longer than the stream.
@@ -416,7 +420,7 @@ impl<S: AsyncWrite + Unpin + 'static> AsyncWriteStream<S> {
         arr.with(|waker| {
             let cx = &mut Context::from_waker(waker);
             let res = poll_future!(this.shutdown_future, cx, inner.get_mut().shutdown());
-            Poll::Ready(res.inspect(|_| *this.shutdown_future = Some(Box::pin(ready(Ok(()))))))
+            Poll::Ready(res.inspect(|_| *this.closed = true))
         })
     }
 }
