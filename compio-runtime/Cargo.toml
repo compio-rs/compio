@@ -56,7 +56,9 @@ async-fd = ["dep:compio-io"]
 notify-always = ["compio-executor/notify-always"]
 
 current_thread_id = []
-nightly = ["current_thread_id"]
+
+sanitize = []
+nightly = ["current_thread_id", "sanitize"]
 
 [[test]]
 name = "custom_loop"
