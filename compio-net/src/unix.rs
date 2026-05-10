@@ -23,10 +23,7 @@ use compio_runtime::fd::PollFd;
 use futures_util::{Stream, StreamExt, stream::FusedStream};
 use socket2::{Domain, SockAddr, Socket as Socket2, Type};
 
-use crate::{
-    Extract, Incoming, MSG_NOSIGNAL, OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket, WriteHalf,
-    Zerocopy,
-};
+use crate::{Extract, Incoming, MSG_NOSIGNAL, ReadHalf, Socket, WriteHalf, Zerocopy};
 
 /// A Unix socket server, listening for connections.
 ///
@@ -279,8 +276,8 @@ impl UnixStream {
     ///
     /// Unlike [`split`](UnixStream::split), the owned halves can be moved to
     /// separate tasks, however this comes at the cost of a heap allocation.
-    pub fn into_split(self) -> (OwnedReadHalf<Self>, OwnedWriteHalf<Self>) {
-        crate::into_split(self)
+    pub fn into_split(self) -> (Self, Self) {
+        (self.clone(), self)
     }
 
     /// Create [`PollFd`] from inner socket.
@@ -685,11 +682,11 @@ impl AsyncWriteAncillary for &UnixStream {
 }
 
 impl Splittable for UnixStream {
-    type ReadHalf = OwnedReadHalf<Self>;
-    type WriteHalf = OwnedWriteHalf<Self>;
+    type ReadHalf = Self;
+    type WriteHalf = Self;
 
     fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
-        crate::into_split(self)
+        self.into_split()
     }
 }
 
