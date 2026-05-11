@@ -6,9 +6,9 @@ use compio_io::{
     AsyncRead, AsyncWrite, AsyncWriteZerocopy, ancillary::AsyncWriteAncillaryZerocopy,
 };
 
-pub(crate) fn split<T>(stream: &T) -> (ReadHalf<'_, T>, WriteHalf<'_, T>)
+pub(crate) fn split<'a, T>(stream: &'a T) -> (ReadHalf<'a, T>, WriteHalf<'a, T>)
 where
-    for<'a> &'a T: AsyncRead + AsyncWrite,
+    &'a T: AsyncRead + AsyncWrite,
 {
     (ReadHalf(stream), WriteHalf(stream))
 }
@@ -17,9 +17,9 @@ where
 #[derive(Debug)]
 pub struct ReadHalf<'a, T>(&'a T);
 
-impl<T> AsyncRead for ReadHalf<'_, T>
+impl<'a, T> AsyncRead for ReadHalf<'a, T>
 where
-    for<'a> &'a T: AsyncRead,
+    &'a T: AsyncRead,
 {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         self.0.read(buf).await
@@ -34,9 +34,9 @@ where
 #[derive(Debug)]
 pub struct WriteHalf<'a, T>(&'a T);
 
-impl<T> AsyncWrite for WriteHalf<'_, T>
+impl<'a, T> AsyncWrite for WriteHalf<'a, T>
 where
-    for<'a> &'a T: AsyncWrite,
+    &'a T: AsyncWrite,
 {
     async fn write<B: IoBuf>(&mut self, buf: B) -> BufResult<usize, B> {
         (self.0).write(buf).await
