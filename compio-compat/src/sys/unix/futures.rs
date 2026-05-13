@@ -6,6 +6,7 @@ use futures_util::FutureExt;
 
 use crate::{Adapter, sys::unix::UnixAdapter};
 
+/// Adapter for general runtime. It is driven by `async-io`.
 pub struct FuturesAdapter(Async<UnixAdapter>);
 
 impl Adapter for FuturesAdapter {

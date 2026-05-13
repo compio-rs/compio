@@ -5,6 +5,7 @@ use tokio::io::{Interest, unix::AsyncFd};
 
 use crate::{Adapter, sys::unix::UnixAdapter};
 
+/// Adapter for `tokio` runtime.
 pub struct TokioAdapter(AsyncFd<UnixAdapter>);
 
 impl Adapter for TokioAdapter {

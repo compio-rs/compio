@@ -64,7 +64,8 @@ impl WindowsAdapter {
 }
 
 macro_rules! impl_adapter {
-    ($name:ident) => {
+    ($(#[$($attr:meta)*])? $name:ident) => {
+        $(#[$($attr)*])?
         pub struct $name(WindowsAdapter);
 
         impl Adapter for $name {
@@ -92,7 +93,13 @@ macro_rules! impl_adapter {
 }
 
 #[cfg(feature = "tokio")]
-impl_adapter!(TokioAdapter);
+impl_adapter! {
+    /// Adapter for `tokio` runtime.
+    TokioAdapter
+}
 
 #[cfg(feature = "futures")]
-impl_adapter!(FuturesAdapter);
+impl_adapter! {
+    /// Adapter for general runtime.
+    FuturesAdapter
+}
