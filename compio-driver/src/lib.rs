@@ -272,6 +272,22 @@ impl Proactor {
         }
     }
 
+    /// Flush the pushed operations to the kernel. If is roughly equivalent to
+    /// calling [`poll`](Proactor::poll) with `Some(Duration::ZERO)` on
+    /// io-uring, but is only needed if you're waiting the driver fd with an
+    /// external event loop.
+    ///
+    /// The return value indicates if the driver is in notified state, which
+    /// means the driver is already notified by the user and should not be
+    /// waited infinitely.
+    ///
+    /// This method resets the internal notified state, so that the waker to the
+    /// driver will wake up the driver fd through syscalls after this method is
+    /// called.
+    pub fn flush(&mut self) -> bool {
+        self.driver.flush()
+    }
+
     /// Poll the driver and get completed entries.
     /// You need to call [`Proactor::pop`] to get the pushed
     /// operations.

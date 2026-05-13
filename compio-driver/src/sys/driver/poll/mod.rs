@@ -389,6 +389,10 @@ impl Driver {
         }
     }
 
+    pub fn flush(&mut self) -> bool {
+        self.notify.reset()
+    }
+
     fn poll_completed(&mut self) -> bool {
         let mut ret = false;
         while let Ok(entry) = self.completed_rx.try_recv() {
@@ -501,6 +505,7 @@ impl Driver {
                 }
             }
 
+            this.notify.set_awake();
             Ok(())
         })
     }

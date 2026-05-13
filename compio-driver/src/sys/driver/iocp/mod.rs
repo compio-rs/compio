@@ -141,6 +141,10 @@ impl Driver {
         }
     }
 
+    pub fn flush(&mut self) -> bool {
+        self.notify.reset()
+    }
+
     fn create_entry(
         notify: *const Overlapped,
         waits: &mut HashMap<usize, wait::Wait>,

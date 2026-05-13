@@ -355,6 +355,12 @@ impl Driver {
         }
     }
 
+    pub fn flush(&mut self) -> bool {
+        let succeed = self.submit_auto(Some(Duration::ZERO), false).is_ok();
+        // If submission failed, return true to let the driver wake up immediately.
+        !succeed | self.notifier.reset()
+    }
+
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
 
@@ -382,6 +388,7 @@ impl Driver {
 
         self.notifier.set_awake();
         self.poll_entries();
+        self.notifier.set_awake();
 
         Ok(())
     }
