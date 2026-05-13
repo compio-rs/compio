@@ -35,6 +35,7 @@ compio-tls = { workspace = true, optional = true }
 compio-process = { workspace = true, optional = true }
 compio-quic = { workspace = true, optional = true }
 compio-ws = { workspace = true, optional = true }
+compio-compat = { workspace = true, optional = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
@@ -44,6 +45,7 @@ compio-macros = { workspace = true }
 
 criterion = { workspace = true, features = ["async_tokio"] }
 futures-channel = { workspace = true }
+futures-executor = { workspace = true }
 futures-util = { workspace = true }
 rand = { workspace = true }
 tempfile = { workspace = true }
@@ -175,6 +177,11 @@ native-tls-vendored = [
     "compio-tls/native-tls-vendored",
     "compio-ws?/native-tls-vendored",
 ]
+
+# Runtime compatibility layers
+compat = ["dep:compio-compat"]
+compat-tokio = ["compio-compat/tokio"]
+compat-futures = ["compio-compat/futures"]
 
 # Logging
 enable_log = ["compio-log/enable_log"]
