@@ -1,4 +1,4 @@
-//! Runtime-compatibility layer for compio.
+//! Runtime-compatibility layers for compio.
 //!
 //! This crate provides a compatibility layer for compio's runtime, allowing it
 //! to be used with different underlying event loop implementations, e.g.,
@@ -80,7 +80,7 @@ impl<A: Adapter> RuntimeCompat<A> {
     }
 }
 
-impl<A: sys::Adapter> Deref for RuntimeCompat<A> {
+impl<A: Adapter> Deref for RuntimeCompat<A> {
     type Target = Runtime;
 
     fn deref(&self) -> &Self::Target {
