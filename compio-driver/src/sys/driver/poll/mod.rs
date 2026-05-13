@@ -15,7 +15,7 @@ use crate::{
     AsyncifyPool, Entry,
     key::BorrowedKey,
     panic::catch_unwind_io,
-    sys::{extra::PollExtra, prelude::*},
+    sys::{driver::AwakeFlag, extra::PollExtra, prelude::*},
 };
 
 #[derive(Debug, Default)]
@@ -436,15 +436,28 @@ impl Driver {
         self.renew(fd, renew_event)
     }
 
-    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+    pub fn poll(&mut self, mut timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
-        if self.poll_completed() {
-            return Ok(());
+        let timeout_is_some = timeout.is_some();
+        let has_completed = !self.completed_rx.is_empty();
+        let need_wait = !self.notify.reset();
+        if !need_wait || has_completed {
+            timeout = Some(Duration::ZERO);
         }
+        // We need to poll the poller first to make sure it handles the internal notify
+        // event (if any).
         self.events.clear();
         self.notify.poll.wait(&mut self.events, timeout)?;
-        if self.events.is_empty() && timeout.is_some() {
-            return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
+        self.notify.set_awake();
+        if self.events.is_empty() {
+            if self.poll_completed() {
+                return Ok(());
+            }
+            if timeout_is_some {
+                return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
+            }
+        } else if has_completed {
+            self.poll_completed();
         }
         self.with_events(|this, events| {
             for event in events.iter() {
@@ -527,16 +540,23 @@ impl Entry {
 /// A notify handle to the inner driver.
 pub(crate) struct Notify {
     poll: Poller,
+    awake: AwakeFlag,
 }
 
 impl Notify {
     fn new(poll: Poller) -> Self {
-        Self { poll }
+        Self {
+            poll,
+            awake: AwakeFlag::new(),
+        }
     }
 
-    /// Notify the inner driver.
-    pub fn notify(&self) -> io::Result<()> {
-        self.poll.notify()
+    fn set_awake(&self) {
+        self.awake.set();
+    }
+
+    fn reset(&self) -> bool {
+        self.awake.reset()
     }
 }
 
@@ -546,6 +566,8 @@ impl Wake for Notify {
     }
 
     fn wake_by_ref(self: &Arc<Self>) {
-        self.notify().ok();
+        if !self.awake.wake() {
+            self.poll.notify().ok();
+        }
     }
 }

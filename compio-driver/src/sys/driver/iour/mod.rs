@@ -149,12 +149,12 @@ impl Driver {
     }
 
     // Auto means that it choose to wait or not automatically.
-    fn submit_auto(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+    fn submit_auto(&mut self, timeout: Option<Duration>, need_wait: bool) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "submit_auto", ?timeout);
 
         // when taskrun is true, there are completed cqes wait to handle, no need to
         // block the submit
-        let want_sqe = if self.inner.submission().taskrun() {
+        let want_sqe = if !need_wait || self.inner.submission().taskrun() {
             0
         } else {
             1
@@ -173,7 +173,7 @@ impl Driver {
         trace!("submit result: {res:?}");
         match res {
             Ok(_) => {
-                if self.inner.completion().is_empty() {
+                if want_sqe > 0 && self.inner.completion().is_empty() {
                     Err(io::ErrorKind::TimedOut.into())
                 } else {
                     Ok(())
@@ -197,11 +197,8 @@ impl Driver {
     }
 
     fn poll_entries(&mut self) -> bool {
-        let mut has_entry = self.poll_blocking();
-
-        let mut cqueue = self.inner.completion();
-        cqueue.sync();
-        has_entry |= !cqueue.is_empty();
+        let cqueue = self.inner.completion();
+        let has_entry = !cqueue.is_empty();
         for entry in cqueue {
             match entry.user_data() {
                 Self::CANCEL => {}
@@ -210,7 +207,9 @@ impl Driver {
                     if !more(flags) {
                         self.need_push_notifier = true;
                     }
-                    self.notifier.clear().expect("cannot clear notifier");
+                    if let Err(_e) = self.notifier.clear() {
+                        error!("failed to clear notifier: {_e}");
+                    }
                 }
                 key => {
                     let flags = entry.flags();
@@ -282,8 +281,7 @@ impl Driver {
                 }
                 Err(_) => {
                     drop(squeue);
-                    self.poll_entries();
-                    match self.submit_auto(Some(Duration::ZERO)) {
+                    match self.submit_auto(Some(Duration::ZERO), true) {
                         Ok(()) => {}
                         Err(e)
                             if matches!(
@@ -292,6 +290,12 @@ impl Driver {
                             ) => {}
                         Err(e) => return Err(e),
                     }
+                    // If the CQEs are consumed here, we should make the driver aware of it. We
+                    // should not mask `awake` here, otherwise the driver may wait for the next
+                    // event indefinitely.
+                    //
+                    // Anyway it is not a hot path, so we can afford an extra `write` syscall here.
+                    self.poll_entries();
                 }
             }
         }
@@ -349,13 +353,18 @@ impl Driver {
             closure = e.0;
             std::thread::yield_now();
         }
-        self.poll_blocking();
     }
 
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "poll", ?timeout);
-        // Anyway we need to submit once, no matter if there are entries in squeue.
+
+        if self.poll_blocking() {
+            return Ok(());
+        }
+
         trace!("start polling");
+
+        let need_wait = !self.notifier.reset();
 
         if self.need_push_notifier {
             #[allow(clippy::useless_conversion)]
@@ -369,10 +378,10 @@ impl Driver {
             self.need_push_notifier = false;
         }
 
-        if !self.poll_entries() {
-            self.submit_auto(timeout)?;
-            self.poll_entries();
-        }
+        self.submit_auto(timeout, need_wait)?;
+
+        self.notifier.set_awake();
+        self.poll_entries();
 
         Ok(())
     }

@@ -106,13 +106,10 @@ pub struct ExecutorConfig {
     /// The maximum number of hot tasks to run in each tick.
     pub max_interval: u32,
 
-    /// A waker to be waken when a task is scheduled from other thread.
+    /// A waker to be woken when a task is scheduled.
     ///
     /// This is useful for waking up drivers that switch to kernel state when
     /// idle.
-    ///
-    /// Enable `notify-always` feature to wake this waker on every schedule,
-    /// even if the executor is already awake.
     pub waker: Option<Waker>,
 }
 
