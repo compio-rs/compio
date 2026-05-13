@@ -173,6 +173,8 @@ impl Driver {
     {
         let mut events = std::mem::take(&mut self.events);
         let res = f(self, &mut events);
+        // Clear the notification state to avoid empty loops.
+        self.notify.set_awake();
         self.events = events;
         res
     }
@@ -505,7 +507,6 @@ impl Driver {
                 }
             }
 
-            this.notify.set_awake();
             Ok(())
         })
     }
