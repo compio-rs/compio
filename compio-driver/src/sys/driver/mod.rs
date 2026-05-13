@@ -36,10 +36,10 @@ impl AwakeFlag {
         Self(AtomicU8::new(IDLE))
     }
 
-    /// Set the awake flag. It is true before the driver sleeps, and false after
-    /// it wakes up.
+    /// Mark the driver as awake by overwriting the flag byte with `AWAKE`.
+    /// This intentionally clears any previously set `NOTIFIED` flag.
     pub fn set(&self) {
-        self.0.fetch_or(AWAKE, Ordering::AcqRel);
+        self.0.store(AWAKE, Ordering::Release);
     }
 
     /// Reset the flags. Returns true if it was notified.

@@ -267,6 +267,13 @@ impl Runtime {
         SubmitMulti::new(self.clone(), op)
     }
 
+    /// Flush the driver and return whether the driver has been notified.
+    ///
+    /// See [`Proactor::flush`] for more details.
+    pub fn flush(&self) -> bool {
+        self.driver.borrow_mut().flush()
+    }
+
     pub(crate) fn cancel<T: OpCode>(&self, key: Key<T>) {
         self.driver.borrow_mut().cancel(key);
     }

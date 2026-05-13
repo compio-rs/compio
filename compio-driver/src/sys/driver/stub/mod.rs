@@ -61,6 +61,10 @@ impl Driver {
         Poll::Ready(Err(stub_error()))
     }
 
+    pub fn flush(&mut self) -> bool {
+        false
+    }
+
     pub fn poll(&mut self, _: Option<Duration>) -> io::Result<()> {
         Ok(())
     }

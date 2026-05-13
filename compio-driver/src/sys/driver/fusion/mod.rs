@@ -101,6 +101,13 @@ impl Driver {
         }
     }
 
+    pub fn flush(&mut self) -> bool {
+        match &mut self.fuse {
+            FuseDriver::Poll(driver) => driver.flush(),
+            FuseDriver::IoUring(driver) => driver.flush(),
+        }
+    }
+
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         match &mut self.fuse {
             FuseDriver::Poll(driver) => driver.poll(timeout),

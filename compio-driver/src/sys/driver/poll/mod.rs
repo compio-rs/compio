@@ -173,6 +173,8 @@ impl Driver {
     {
         let mut events = std::mem::take(&mut self.events);
         let res = f(self, &mut events);
+        // Clear the notification state to avoid empty loops.
+        self.notify.set_awake();
         self.events = events;
         res
     }
@@ -387,6 +389,10 @@ impl Driver {
             closure = e.0;
             std::thread::yield_now();
         }
+    }
+
+    pub fn flush(&mut self) -> bool {
+        self.notify.reset()
     }
 
     fn poll_completed(&mut self) -> bool {
