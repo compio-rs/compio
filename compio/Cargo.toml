@@ -180,8 +180,9 @@ native-tls-vendored = [
 
 # Runtime compatibility layers
 compat = ["dep:compio-compat"]
-compat-tokio = ["compio-compat/tokio"]
-compat-futures = ["compio-compat/futures"]
+compat-tokio = ["compat", "compio-compat/tokio"]
+compat-futures = ["compat", "compio-compat/futures"]
+compat-all = ["compat-tokio", "compat-futures"]
 
 # Logging
 enable_log = ["compio-log/enable_log"]
