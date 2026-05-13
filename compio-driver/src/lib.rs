@@ -272,9 +272,9 @@ impl Proactor {
         }
     }
 
-    /// Flush the pushed operations to the kernel. If is roughly equivalent to
+    /// Flush the pushed operations to the kernel. It is roughly equivalent to
     /// calling [`poll`](Proactor::poll) with `Some(Duration::ZERO)` on
-    /// io-uring, but is only needed if you're waiting the driver fd with an
+    /// io-uring, but is only needed if you're waiting on the driver fd with an
     /// external event loop.
     ///
     /// The return value indicates if the driver is in notified state, which
