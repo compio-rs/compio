@@ -1,6 +1,7 @@
 use std::{
     error::Error,
     fmt::Display,
+    io,
     marker::PhantomData,
     mem::ManuallyDrop,
     panic::resume_unwind,
@@ -103,6 +104,15 @@ impl Display for JoinError {
 }
 
 impl Error for JoinError {}
+
+impl From<JoinError> for io::Error {
+    fn from(e: JoinError) -> Self {
+        match e {
+            JoinError::Cancelled => io::Error::other("Task was cancelled"),
+            JoinError::Panicked(_) => io::Error::other("Task has panicked"),
+        }
+    }
+}
 
 impl<T> Future for JoinHandle<T> {
     type Output = Result<T, JoinError>;
