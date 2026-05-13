@@ -23,7 +23,7 @@ impl WindowsAdapter {
     }
 
     async fn wait(&self, timeout: Option<Duration>) -> io::Result<()> {
-        let (sender, receiver) = oneshot::async_channel::<io::Result<()>>();
+        let (sender, receiver) = futures_channel::oneshot::channel::<io::Result<()>>();
         let event = unsafe { CreateEventW(std::ptr::null(), 0, 0, std::ptr::null()) };
         if event.is_null() {
             return Err(io::Error::last_os_error());

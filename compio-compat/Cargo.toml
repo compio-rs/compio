@@ -19,7 +19,7 @@ mod_use = { workspace = true }
 [target.'cfg(windows)'.dependencies]
 compio-driver = { workspace = true }
 
-oneshot = { version = "0.2.1", features = ["async"] }
+futures-channel = { workspace = true }
 windows-sys = { workspace = true, features = ["Win32_System_Threading"] }
 windows-threading = "0.2.1"
 
