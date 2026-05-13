@@ -323,7 +323,7 @@ impl TcpStream {
     /// used to read and write the stream concurrently.
     ///
     /// Unlike [`split`](TcpStream::split), the owned halves can be moved to
-    /// separate tasks, however this comes at the cost of a heap allocation.
+    /// separate tasks.
     pub fn into_split(self) -> (Self, Self) {
         (self.clone(), self)
     }
