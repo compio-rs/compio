@@ -198,6 +198,7 @@ impl Driver {
                 }
             }
         }
+        self.notify.set_awake();
 
         Ok(())
     }
