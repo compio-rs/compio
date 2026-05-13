@@ -39,18 +39,18 @@ impl AwakeFlag {
     /// Set the awake flag. It is true before the driver sleeps, and false after
     /// it wakes up.
     pub fn set(&self) {
-        self.0.fetch_or(AWAKE, Ordering::SeqCst);
+        self.0.fetch_or(AWAKE, Ordering::AcqRel);
     }
 
     /// Reset the flags. Returns true if it was notified.
     pub fn reset(&self) -> bool {
-        (self.0.swap(IDLE, Ordering::SeqCst) & NOTIFIED) != 0
+        (self.0.swap(IDLE, Ordering::AcqRel) & NOTIFIED) != 0
     }
 
     /// Set the notified flag. Returns true if the awake flag is set or the
     /// notified flag is set. If the awake flag is not set, the driver needs
     /// to be notified through a syscall.
     pub fn wake(&self) -> bool {
-        self.0.fetch_or(NOTIFIED, Ordering::SeqCst) != 0
+        self.0.fetch_or(NOTIFIED, Ordering::AcqRel) != 0
     }
 }
