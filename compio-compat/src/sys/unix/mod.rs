@@ -52,7 +52,15 @@ impl UnixAdapter {
     fn clear(&self) -> io::Result<()> {
         if let Some(efd) = &self.efd {
             let mut buf = [0u8; 8];
-            rustix::io::read(efd, &mut buf)?;
+            match rustix::io::read(efd, &mut buf) {
+                Ok(_) => {}
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                    ) => {}
+                Err(e) => return Err(io::Error::from(e)),
+            }
         }
         Ok(())
     }
