@@ -53,6 +53,8 @@ async fn compio_server() {
         let (_, buffer) = stream.read_exact(buffer).await.unwrap();
         stream.write_all(buffer).await.unwrap();
         stream.shutdown().await.unwrap();
+        // It's a good practice to read after shutdown to ensure that FIN is sent and
+        // received properly, especially when using compio.
         stream.read([0u8]).await.unwrap();
         stream.close().await.unwrap();
     });
