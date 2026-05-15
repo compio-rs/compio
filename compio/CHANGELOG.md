@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0-rc.2](https://github.com/compio-rs/compio/compare/v0.19.0-rc.1...v0.19.0-rc.2) - 2026-05-15
+
+### Added
+
+- *(compat)* runtime compatibility layers ([#920](https://github.com/compio-rs/compio/pull/920))
+- *(driver,executor,runtime)* [**breaking**] remove notify-always ([#902](https://github.com/compio-rs/compio/pull/902))
+
+### Fixed
+
+- *(bench)* avoid testing allocations ([#905](https://github.com/compio-rs/compio/pull/905))
+- *(bench)* monoio unix listener ([#890](https://github.com/compio-rs/compio/pull/890))
+
+### Other
+
+- add more targets for docs.rs ([#896](https://github.com/compio-rs/compio/pull/896))
+
 ## [0.19.0-rc.1](https://github.com/compio-rs/compio/compare/v0.18.0...v0.19.0-rc.1) - 2026-04-20
 
 ### Added
