@@ -1,0 +1,57 @@
+[package]
+name = "compio-compat"
+version = "0.1.0-rc.1"
+description = "Compatibility layer for compio to work with various async runtimes."
+categories = ["asynchronous", "filesystem", "network-programming"]
+keywords = ["async", "fs", "iocp", "io-uring", "net"]
+readme = "README.md"
+edition = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+compio-runtime = { workspace = true }
+compio-log = { workspace = true }
+
+cfg-if = { workspace = true }
+mod_use = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+compio-driver = { workspace = true }
+
+futures-channel = { workspace = true }
+windows-sys = { workspace = true, features = ["Win32_System_Threading"] }
+windows-threading = "0.2.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { workspace = true, features = ["event", "io_uring"] }
+
+[target.'cfg(unix)'.dependencies]
+tokio = { workspace = true, optional = true, features = ["net", "time"] }
+
+async-io = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
+
+[dev-dependencies]
+compio-fs = { workspace = true }
+compio-net = { workspace = true }
+compio-io = { workspace = true }
+
+tokio = { workspace = true, features = [
+    "rt",
+    "macros",
+    "fs",
+    "net",
+    "io-util",
+] }
+futures-executor = { workspace = true }
+
+futures-util = { workspace = true }
+
+[features]
+tokio = ["dep:tokio"]
+futures = ["dep:async-io", "dep:futures-util"]
+
+[[test]]
+name = "net"
+required-features = ["tokio"]

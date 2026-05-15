@@ -1,7 +1,7 @@
 use std::{
     io::{Read, Seek, SeekFrom, Write},
     path::Path,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use compio_buf::{IntoInner, IoBuf};
@@ -15,6 +15,11 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 mod monoio_wrap;
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
 use monoio_wrap::MonoioRuntime;
+
+#[cfg(feature = "compat")]
+mod compat;
+#[cfg(feature = "compat")]
+use compat::*;
 
 criterion_group!(fs, read, write);
 criterion_main!(fs);
@@ -61,20 +66,37 @@ fn read_tokio(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
     })
 }
 
+async fn read_compio_impl(iter: u64, path: &Path, offsets: &[u64]) -> Duration {
+    let file = compio::fs::File::open(path).await.unwrap();
+
+    let mut buffer = vec![0u8; BUFFER_SIZE];
+    let start = Instant::now();
+    for _i in 0..iter {
+        for &offset in offsets {
+            (_, buffer) = file.read_at(buffer, offset).await.unwrap();
+        }
+    }
+    start.elapsed()
+}
+
 fn read_compio(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
     let runtime = compio::runtime::Runtime::new().unwrap();
-    b.to_async(&runtime).iter_custom(|iter| async move {
-        let file = compio::fs::File::open(path).await.unwrap();
+    b.to_async(&runtime)
+        .iter_custom(|iter| read_compio_impl(iter, path, offsets))
+}
 
-        let mut buffer = vec![0u8; BUFFER_SIZE];
-        let start = Instant::now();
-        for _i in 0..iter {
-            for &offset in *offsets {
-                (_, buffer) = file.read_at(buffer, offset).await.unwrap();
-            }
-        }
-        start.elapsed()
-    })
+#[cfg(feature = "compat-tokio")]
+fn read_compio_in_tokio(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
+    let runtime = CompioInTokio::default();
+    b.to_async(&runtime)
+        .iter_custom(|iter| read_compio_impl(iter, path, offsets))
+}
+
+#[cfg(feature = "compat-futures")]
+fn read_compio_in_futures(b: &mut Bencher, (path, offsets): &(&Path, &[u64])) {
+    let runtime = CompioInFutures::default();
+    b.to_async(&runtime)
+        .iter_custom(|iter| read_compio_impl(iter, path, offsets))
 }
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
@@ -135,23 +157,40 @@ fn read_all_tokio(b: &mut Bencher, (path, len): &(&Path, u64)) {
     })
 }
 
+async fn read_all_compio_impl(iter: u64, path: &Path, len: u64) -> Duration {
+    let file = compio::fs::File::open(path).await.unwrap();
+    let mut buffer = vec![0u8; BUFFER_SIZE];
+
+    let start = Instant::now();
+    for _i in 0..iter {
+        let mut read_len = 0;
+        while read_len < len {
+            let read;
+            (read, buffer) = file.read_at(buffer, read_len).await.unwrap();
+            read_len += read as u64;
+        }
+    }
+    start.elapsed()
+}
+
 fn read_all_compio(b: &mut Bencher, (path, len): &(&Path, u64)) {
     let runtime = compio::runtime::Runtime::new().unwrap();
-    b.to_async(&runtime).iter_custom(|iter| async move {
-        let file = compio::fs::File::open(path).await.unwrap();
-        let mut buffer = vec![0u8; BUFFER_SIZE];
+    b.to_async(&runtime)
+        .iter_custom(|iter| read_all_compio_impl(iter, path, *len))
+}
 
-        let start = Instant::now();
-        for _i in 0..iter {
-            let mut read_len = 0;
-            while read_len < *len {
-                let read;
-                (read, buffer) = file.read_at(buffer, read_len).await.unwrap();
-                read_len += read as u64;
-            }
-        }
-        start.elapsed()
-    })
+#[cfg(feature = "compat-tokio")]
+fn read_all_compio_in_tokio(b: &mut Bencher, (path, len): &(&Path, u64)) {
+    let runtime = CompioInTokio::default();
+    b.to_async(&runtime)
+        .iter_custom(|iter| read_all_compio_impl(iter, path, *len))
+}
+
+#[cfg(feature = "compat-futures")]
+fn read_all_compio_in_futures(b: &mut Bencher, (path, len): &(&Path, u64)) {
+    let runtime = CompioInFutures::default();
+    b.to_async(&runtime)
+        .iter_custom(|iter| read_all_compio_impl(iter, path, *len))
 }
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
@@ -197,6 +236,18 @@ fn read(c: &mut Criterion) {
     group.bench_with_input::<_, _, (&Path, &[u64])>("std", &(&path, &offsets), read_std);
     group.bench_with_input::<_, _, (&Path, &[u64])>("tokio", &(&path, &offsets), read_tokio);
     group.bench_with_input::<_, _, (&Path, &[u64])>("compio", &(&path, &offsets), read_compio);
+    #[cfg(feature = "compat-tokio")]
+    group.bench_with_input::<_, _, (&Path, &[u64])>(
+        "compio-in-tokio",
+        &(&path, &offsets),
+        read_compio_in_tokio,
+    );
+    #[cfg(feature = "compat-futures")]
+    group.bench_with_input::<_, _, (&Path, &[u64])>(
+        "compio-in-futures",
+        &(&path, &offsets),
+        read_compio_in_futures,
+    );
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     group.bench_with_input::<_, _, (&Path, &[u64])>("monoio", &(&path, &offsets), read_monoio);
 
@@ -210,6 +261,18 @@ fn read(c: &mut Criterion) {
     group.bench_with_input::<_, _, (&Path, u64)>("std", &(&path, TOTAL_SIZE), read_all_std);
     group.bench_with_input::<_, _, (&Path, u64)>("tokio", &(&path, TOTAL_SIZE), read_all_tokio);
     group.bench_with_input::<_, _, (&Path, u64)>("compio", &(&path, TOTAL_SIZE), read_all_compio);
+    #[cfg(feature = "compat-tokio")]
+    group.bench_with_input::<_, _, (&Path, u64)>(
+        "compio-in-tokio",
+        &(&path, TOTAL_SIZE),
+        read_all_compio_in_tokio,
+    );
+    #[cfg(feature = "compat-futures")]
+    group.bench_with_input::<_, _, (&Path, u64)>(
+        "compio-in-futures",
+        &(&path, TOTAL_SIZE),
+        read_all_compio_in_futures,
+    );
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     group.bench_with_input::<_, _, (&Path, u64)>("monoio", &(&path, TOTAL_SIZE), read_all_monoio);
 
@@ -257,27 +320,48 @@ fn write_tokio(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64], &[u8]
     })
 }
 
+async fn write_compio_impl(
+    iter: u64,
+    path: &Path,
+    offsets: &[u64],
+    mut content: Vec<u8>,
+) -> Duration {
+    let mut file = compio::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .await
+        .unwrap();
+
+    let start = Instant::now();
+    for _i in 0..iter {
+        for &offset in offsets {
+            (_, content) = file.write_at(content, offset).await.unwrap();
+        }
+    }
+    start.elapsed()
+}
+
 fn write_compio(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64], &[u8])) {
     let runtime = compio::runtime::Runtime::new().unwrap();
     let content = content.to_vec();
-    b.to_async(&runtime).iter_custom(|iter| {
-        let mut content = content.clone();
-        async move {
-            let mut file = compio::fs::OpenOptions::new()
-                .write(true)
-                .open(path)
-                .await
-                .unwrap();
+    b.to_async(&runtime)
+        .iter_custom(|iter| write_compio_impl(iter, path, offsets, content.clone()))
+}
 
-            let start = Instant::now();
-            for _i in 0..iter {
-                for &offset in *offsets {
-                    (_, content) = file.write_at(content, offset).await.unwrap();
-                }
-            }
-            start.elapsed()
-        }
-    })
+#[cfg(feature = "compat-tokio")]
+fn write_compio_in_tokio(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64], &[u8])) {
+    let runtime = CompioInTokio::default();
+    let content = content.to_vec();
+    b.to_async(&runtime)
+        .iter_custom(|iter| write_compio_impl(iter, path, offsets, content.clone()))
+}
+
+#[cfg(feature = "compat-futures")]
+fn write_compio_in_futures(b: &mut Bencher, (path, offsets, content): &(&Path, &[u64], &[u8])) {
+    let runtime = CompioInFutures::default();
+    let content = content.to_vec();
+    b.to_async(&runtime)
+        .iter_custom(|iter| write_compio_impl(iter, path, offsets, content.clone()))
 }
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
@@ -346,36 +430,51 @@ fn write_all_tokio(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
     })
 }
 
+async fn write_all_compio_impl(iter: u64, path: &Path, mut content: Vec<u8>) -> Duration {
+    let mut file = compio::fs::File::create(path).await.unwrap();
+
+    let start = Instant::now();
+    for _i in 0..iter {
+        let mut write_len = 0;
+        let total_len = content.len();
+        while write_len < total_len as u64 {
+            let (write, slice) = file
+                .write_at(
+                    content.slice(
+                        write_len as usize..(write_len as usize + BUFFER_SIZE).min(total_len),
+                    ),
+                    write_len,
+                )
+                .await
+                .unwrap();
+            write_len += write as u64;
+            content = slice.into_inner();
+        }
+    }
+    start.elapsed()
+}
+
 fn write_all_compio(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
     let runtime = compio::runtime::Runtime::new().unwrap();
     let content = content.to_vec();
-    b.to_async(&runtime).iter_custom(|iter| {
-        let mut content = content.clone();
-        async move {
-            let mut file = compio::fs::File::create(path).await.unwrap();
+    b.to_async(&runtime)
+        .iter_custom(|iter| write_all_compio_impl(iter, path, content.clone()))
+}
 
-            let start = Instant::now();
-            for _i in 0..iter {
-                let mut write_len = 0;
-                let total_len = content.len();
-                while write_len < total_len as u64 {
-                    let (write, slice) = file
-                        .write_at(
-                            content.slice(
-                                write_len as usize
-                                    ..(write_len as usize + BUFFER_SIZE).min(total_len),
-                            ),
-                            write_len,
-                        )
-                        .await
-                        .unwrap();
-                    write_len += write as u64;
-                    content = slice.into_inner();
-                }
-            }
-            start.elapsed()
-        }
-    })
+#[cfg(feature = "compat-tokio")]
+fn write_all_compio_in_tokio(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
+    let runtime = CompioInTokio::default();
+    let content = content.to_vec();
+    b.to_async(&runtime)
+        .iter_custom(|iter| write_all_compio_impl(iter, path, content.clone()))
+}
+
+#[cfg(feature = "compat-futures")]
+fn write_all_compio_in_futures(b: &mut Bencher, (path, content): &(&Path, &[u8])) {
+    let runtime = CompioInFutures::default();
+    let content = content.to_vec();
+    b.to_async(&runtime)
+        .iter_custom(|iter| write_all_compio_impl(iter, path, content.clone()))
 }
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
@@ -458,6 +557,18 @@ fn write(c: &mut Criterion) {
         &(&path, &offsets, &single_content),
         write_compio,
     );
+    #[cfg(feature = "compat-tokio")]
+    group.bench_with_input::<_, _, (&Path, &[u64], &[u8])>(
+        "compio-in-tokio",
+        &(&path, &offsets, &single_content),
+        write_compio_in_tokio,
+    );
+    #[cfg(feature = "compat-futures")]
+    group.bench_with_input::<_, _, (&Path, &[u64], &[u8])>(
+        "compio-in-futures",
+        &(&path, &offsets, &single_content),
+        write_compio_in_futures,
+    );
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     group.bench_with_input::<_, _, (&Path, &[u64], &[u8])>(
         "monoio",
@@ -473,6 +584,18 @@ fn write(c: &mut Criterion) {
     group.bench_with_input::<_, _, (&Path, &[u8])>("std", &(&path, &content), write_all_std);
     group.bench_with_input::<_, _, (&Path, &[u8])>("tokio", &(&path, &content), write_all_tokio);
     group.bench_with_input::<_, _, (&Path, &[u8])>("compio", &(&path, &content), write_all_compio);
+    #[cfg(feature = "compat-tokio")]
+    group.bench_with_input::<_, _, (&Path, &[u8])>(
+        "compio-in-tokio",
+        &(&path, &content),
+        write_all_compio_in_tokio,
+    );
+    #[cfg(feature = "compat-futures")]
+    group.bench_with_input::<_, _, (&Path, &[u8])>(
+        "compio-in-futures",
+        &(&path, &content),
+        write_all_compio_in_futures,
+    );
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     group.bench_with_input::<_, _, (&Path, &[u8])>("monoio", &(&path, &content), write_all_monoio);
 

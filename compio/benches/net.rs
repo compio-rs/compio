@@ -1,4 +1,7 @@
-use std::{net::Ipv4Addr, time::Instant};
+use std::{
+    net::Ipv4Addr,
+    time::{Duration, Instant},
+};
 
 use criterion::{Bencher, Criterion, Throughput, criterion_group, criterion_main};
 use rand::{Rng, rng};
@@ -7,6 +10,11 @@ use rand::{Rng, rng};
 mod monoio_wrap;
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
 use monoio_wrap::MonoioRuntime;
+
+#[cfg(feature = "compat")]
+mod compat;
+#[cfg(feature = "compat")]
+use compat::*;
 
 criterion_group!(net, echo);
 criterion_main!(net);
@@ -134,29 +142,43 @@ fn echo_tokio_tcp(b: &mut Bencher, content: &[u8]) {
     })
 }
 
-fn echo_compio_tcp(b: &mut Bencher, content: Vec<u8>) {
+async fn echo_compio_tcp_impl(iter: u64, mut content: Vec<u8>) -> Duration {
     use compio::net::{TcpListener, TcpStream};
 
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let mut client_buffer = vec![0u8; BUFFER_SIZE];
+    let mut server_buffer = vec![0u8; BUFFER_SIZE];
+
+    let start = Instant::now();
+    for _i in 0..iter {
+        let (tx, (rx, _)) =
+            futures_util::try_join!(TcpStream::connect(addr), listener.accept()).unwrap();
+        (content, client_buffer, server_buffer) =
+            echo_compio_impl(tx, rx, content, client_buffer, server_buffer).await;
+    }
+    start.elapsed()
+}
+
+fn echo_compio_tcp(b: &mut Bencher, content: Vec<u8>) {
     let runtime = compio::runtime::Runtime::new().unwrap();
-    b.to_async(&runtime).iter_custom(|iter| {
-        let mut content = content.clone();
-        async move {
-            let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
-            let addr = listener.local_addr().unwrap();
+    b.to_async(&runtime)
+        .iter_custom(|iter| echo_compio_tcp_impl(iter, content.clone()))
+}
 
-            let mut client_buffer = vec![0u8; BUFFER_SIZE];
-            let mut server_buffer = vec![0u8; BUFFER_SIZE];
+#[cfg(feature = "compat-tokio")]
+fn echo_compio_in_tokio_tcp(b: &mut Bencher, content: Vec<u8>) {
+    let runtime = CompioInTokio::default();
+    b.to_async(&runtime)
+        .iter_custom(|iter| echo_compio_tcp_impl(iter, content.clone()))
+}
 
-            let start = Instant::now();
-            for _i in 0..iter {
-                let (tx, (rx, _)) =
-                    futures_util::try_join!(TcpStream::connect(addr), listener.accept()).unwrap();
-                (content, client_buffer, server_buffer) =
-                    echo_compio_impl(tx, rx, content, client_buffer, server_buffer).await;
-            }
-            start.elapsed()
-        }
-    })
+#[cfg(feature = "compat-futures")]
+fn echo_compio_in_futures_tcp(b: &mut Bencher, content: Vec<u8>) {
+    let runtime = CompioInFutures::default();
+    b.to_async(&runtime)
+        .iter_custom(|iter| echo_compio_tcp_impl(iter, content.clone()))
 }
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
@@ -268,34 +290,47 @@ fn echo_tokio_unix(b: &mut Bencher, content: &[u8]) {
     })
 }
 
-fn echo_compio_unix(b: &mut Bencher, content: Vec<u8>) {
+async fn echo_compio_unix_impl(iter: u64, mut content: Vec<u8>) -> Duration {
     use compio::net::{UnixListener, UnixStream};
 
+    let dir = tempfile::Builder::new()
+        .prefix("compio-uds")
+        .tempdir()
+        .unwrap();
+    let sock_path = dir.path().join("connect.sock");
+    let listener = UnixListener::bind(&sock_path).await.unwrap();
+
+    let mut client_buffer = vec![0u8; BUFFER_SIZE];
+    let mut server_buffer = vec![0u8; BUFFER_SIZE];
+
+    let start = Instant::now();
+    for _i in 0..iter {
+        let (tx, (rx, _)) =
+            futures_util::try_join!(UnixStream::connect(&sock_path), listener.accept()).unwrap();
+        (content, client_buffer, server_buffer) =
+            echo_compio_impl(tx, rx, content, client_buffer, server_buffer).await;
+    }
+    start.elapsed()
+}
+
+fn echo_compio_unix(b: &mut Bencher, content: Vec<u8>) {
     let runtime = compio::runtime::Runtime::new().unwrap();
-    b.to_async(&runtime).iter_custom(|iter| {
-        let mut content = content.clone();
-        async move {
-            let dir = tempfile::Builder::new()
-                .prefix("compio-uds")
-                .tempdir()
-                .unwrap();
-            let sock_path = dir.path().join("connect.sock");
-            let listener = UnixListener::bind(&sock_path).await.unwrap();
+    b.to_async(&runtime)
+        .iter_custom(|iter| echo_compio_unix_impl(iter, content.clone()))
+}
 
-            let mut client_buffer = vec![0u8; BUFFER_SIZE];
-            let mut server_buffer = vec![0u8; BUFFER_SIZE];
+#[cfg(feature = "compat-tokio")]
+fn echo_compio_in_tokio_unix(b: &mut Bencher, content: Vec<u8>) {
+    let runtime = CompioInTokio::default();
+    b.to_async(&runtime)
+        .iter_custom(|iter| echo_compio_unix_impl(iter, content.clone()))
+}
 
-            let start = Instant::now();
-            for _i in 0..iter {
-                let (tx, (rx, _)) =
-                    futures_util::try_join!(UnixStream::connect(&sock_path), listener.accept())
-                        .unwrap();
-                (content, client_buffer, server_buffer) =
-                    echo_compio_impl(tx, rx, content, client_buffer, server_buffer).await;
-            }
-            start.elapsed()
-        }
-    })
+#[cfg(feature = "compat-futures")]
+fn echo_compio_in_futures_unix(b: &mut Bencher, content: Vec<u8>) {
+    let runtime = CompioInFutures::default();
+    b.to_async(&runtime)
+        .iter_custom(|iter| echo_compio_unix_impl(iter, content.clone()))
 }
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
@@ -344,6 +379,14 @@ fn echo(c: &mut Criterion) {
 
     group.bench_function("tokio-tcp", |b| echo_tokio_tcp(b, &content));
     group.bench_function("compio-tcp", |b| echo_compio_tcp(b, content.clone()));
+    #[cfg(feature = "compat-tokio")]
+    group.bench_function("compio-in-tokio-tcp", |b| {
+        echo_compio_in_tokio_tcp(b, content.clone())
+    });
+    #[cfg(feature = "compat-futures")]
+    group.bench_function("compio-in-futures-tcp", |b| {
+        echo_compio_in_futures_tcp(b, content.clone())
+    });
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     group.bench_function("monoio-tcp", |b| echo_monoio_tcp(b, content.clone()));
 
@@ -357,6 +400,14 @@ fn echo(c: &mut Criterion) {
     #[cfg(unix)]
     group.bench_function("tokio-unix", |b| echo_tokio_unix(b, &content));
     group.bench_function("compio-unix", |b| echo_compio_unix(b, content.clone()));
+    #[cfg(feature = "compat-tokio")]
+    group.bench_function("compio-in-tokio-unix", |b| {
+        echo_compio_in_tokio_unix(b, content.clone())
+    });
+    #[cfg(feature = "compat-futures")]
+    group.bench_function("compio-in-futures-unix", |b| {
+        echo_compio_in_futures_unix(b, content.clone())
+    });
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     group.bench_function("monoio-unix", |b| echo_monoio_unix(b, content.clone()));
 
