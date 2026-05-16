@@ -32,6 +32,8 @@ async fn connect(connector: TlsConnector, addr: SocketAddr) {
 }
 
 #[cfg(feature = "native-tls")]
+#[allow(deprecated)] // On iOS, `from_pkcs8` is not implemented.
+#[cfg_attr(target_os = "ios", ignore)]
 #[compio_macros::test]
 async fn native() {
     // https://github.com/rustls/rcgen/issues/91
