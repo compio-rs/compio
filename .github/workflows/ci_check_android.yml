@@ -38,7 +38,9 @@ jobs:
           rustup default nightly
           rustup target add ${{ matrix.target }}
           rustup component add clippy
-      - uses: taiki-e/install-action@cargo-ndk
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
       - name: Check clippy
         shell: bash
         run: |
