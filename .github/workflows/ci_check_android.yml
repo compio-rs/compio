@@ -1,0 +1,44 @@
+name: Check Android
+
+on:
+  merge_group:
+    types: [checks_requested]
+  push:
+    branches:
+      - master
+    paths:
+      - '**/*.rs'
+      - '**/Cargo.toml'
+      - '.github/workflows/ci_check_android.yml'
+  pull_request:
+    branches:
+      - master
+    paths:
+      - '**/*.rs'
+      - '**/Cargo.toml'
+      - '.github/workflows/ci_check_android.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  check_android:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - aarch64-linux-android
+          - armv7-linux-androideabi
+          - x86_64-linux-android
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup Rust Toolchain
+        run: |
+          rustup default nightly
+          rustup target add ${{ matrix.target }}
+          rustup component add clippy
+      - name: Check clippy
+        shell: bash
+        run: |
+          cargo clippy --target ${{ matrix.target }} --all-features --all-targets -- -Dwarnings
