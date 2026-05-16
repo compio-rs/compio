@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.12.0-rc.2 - 2026-05-15
+
+### Added
+
+- *(compat)* runtime compatibility layers ([#920](https://github.com/compio-rs/compio/pull/920))
+- *(driver)* method to flush the operations ([#919](https://github.com/compio-rs/compio/pull/919))
+- *(driver,executor,runtime)* [**breaking**] remove notify-always ([#902](https://github.com/compio-rs/compio/pull/902))
+- *(driver)* add support for single issuer and deferred task run in ProactorBuilder ([#908](https://github.com/compio-rs/compio/pull/908))
+- *(driver, net)* support recv_send_poll_first ([#894](https://github.com/compio-rs/compio/pull/894))
+- *(driver,iour)* detect kernel version & fallback ([#903](https://github.com/compio-rs/compio/pull/903))
+- *(driver,net)* [**breaking**] reuse socket on Windows ([#887](https://github.com/compio-rs/compio/pull/887))
+- *(driver)* add `sqpoll_cpu` in ProactorBuilder ([#900](https://github.com/compio-rs/compio/pull/900))
+- *(io,net)* async zerocopy write traits ([#898](https://github.com/compio-rs/compio/pull/898))
+
+### Fixed
+
+- *(driver)* compile on android ([#916](https://github.com/compio-rs/compio/pull/916))
+
+### Other
+
+- add more targets for docs.rs ([#896](https://github.com/compio-rs/compio/pull/896))
+
 ## 0.12.0-rc.1 - 2026-04-20
 
 ### Added

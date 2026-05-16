@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.1.0-rc.2 - 2026-05-15
+
+### Added
+
+- *(driver,executor,runtime)* [**breaking**] remove notify-always ([#902](https://github.com/compio-rs/compio/pull/902))
+- *(executor)* implement `std::io::Error` conversion for `JoinError` ([#918](https://github.com/compio-rs/compio/pull/918))
+
+### Fixed
+
+- *(executor)* avoid abort on drop ([#901](https://github.com/compio-rs/compio/pull/901))
+
 ## 0.1.0-rc.1 - 2026-04-20
 
 ### Added
