@@ -45,4 +45,4 @@ jobs:
         shell: bash
         run: |
           source <(cargo ndk-env --target ${{ matrix.target }})
-          cargo clippy --target ${{ matrix.target }} --all-features --all-targets -- -Dwarnings
+          cargo clippy --target ${{ matrix.target }} --features all,nightly,sync,ring,native-tls-vendored,compat-all --all-targets -- -Dwarnings
