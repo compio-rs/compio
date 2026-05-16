@@ -9,7 +9,7 @@ unsafe impl SocketAddrArg for SockAddrArg<'_> {
         &self,
         f: impl FnOnce(*const SocketAddrOpaque, SocketAddrLen) -> R,
     ) -> R {
-        f(self.0.as_ptr().cast(), self.0.len())
+        f(self.0.as_ptr().cast(), self.0.len() as _)
     }
 }
 
