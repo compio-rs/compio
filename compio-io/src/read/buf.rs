@@ -1,4 +1,5 @@
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, buf_try};
+use futures_util::FutureExt;
 
 use crate::{AsyncRead, AsyncWrite, IoResult, buffer::Buffer, util::DEFAULT_BUF_SIZE};
 /// # AsyncBufRead
@@ -100,10 +101,10 @@ impl<R: AsyncRead> AsyncBufRead for BufReader<R> {
         }
 
         if buf.need_fill() {
-            buf.with(|b| async move {
+            buf.with(|b| {
                 let len = b.buf_len();
                 let b = b.slice(len..);
-                reader.read(b).await.into_inner()
+                reader.read(b).map(IntoInner::into_inner)
             })
             .await?;
         }
