@@ -219,6 +219,8 @@ impl Runtime {
         &self,
         f: impl (FnOnce() -> T) + Send + 'static,
     ) -> JoinHandle<T> {
+        use futures_util::FutureExt;
+
         let op = Asyncify::new(move || {
             // TODO: Refactor blocking pool and handle panic within worker and propagate it
             // back
@@ -226,7 +228,7 @@ impl Runtime {
             BufResult(Ok(0), res)
         });
         let submit = self.submit(op);
-        self.spawn(async move { submit.await.1.into_inner() })
+        self.spawn(submit.map(|res| res.1.into_inner()))
     }
 
     /// Attach a raw file descriptor/handle/socket to the runtime.
