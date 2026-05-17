@@ -25,8 +25,7 @@ use futures_util::{Stream, StreamExt, stream::FusedStream};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::{
-    Extract, Incoming, MSG_NOSIGNAL, OwnedReadHalf, OwnedWriteHalf, ReadHalf, Socket,
-    ToSocketAddrsAsync, WriteHalf, Zerocopy,
+    Extract, Incoming, MSG_NOSIGNAL, ReadHalf, Socket, ToSocketAddrsAsync, WriteHalf, Zerocopy,
 };
 
 /// A TCP socket server, listening for connections.
@@ -324,9 +323,9 @@ impl TcpStream {
     /// used to read and write the stream concurrently.
     ///
     /// Unlike [`split`](TcpStream::split), the owned halves can be moved to
-    /// separate tasks, however this comes at the cost of a heap allocation.
-    pub fn into_split(self) -> (OwnedReadHalf<Self>, OwnedWriteHalf<Self>) {
-        crate::into_split(self)
+    /// separate tasks.
+    pub fn into_split(self) -> (Self, Self) {
+        (self.clone(), self)
     }
 
     /// Create [`PollFd`] from inner socket.
@@ -774,11 +773,11 @@ impl AsyncWriteAncillaryZerocopy for &TcpStream {
 }
 
 impl Splittable for TcpStream {
-    type ReadHalf = OwnedReadHalf<Self>;
-    type WriteHalf = OwnedWriteHalf<Self>;
+    type ReadHalf = Self;
+    type WriteHalf = Self;
 
     fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
-        crate::into_split(self)
+        self.into_split()
     }
 }
 

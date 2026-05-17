@@ -34,32 +34,6 @@ async fn tcp_split() {
 }
 
 #[compio_macros::test]
-async fn tcp_unsplit() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-
-    let handle = compio_runtime::spawn_blocking(move || {
-        drop(listener.accept().unwrap());
-        drop(listener.accept().unwrap());
-    });
-
-    let stream1 = TcpStream::connect(&addr).await.unwrap();
-    let (read1, write1) = stream1.into_split();
-
-    let stream2 = TcpStream::connect(&addr).await.unwrap();
-    let (_, write2) = stream2.into_split();
-
-    let read1 = match read1.reunite(write2) {
-        Ok(_) => panic!("Reunite should not succeed"),
-        Err(err) => err.0,
-    };
-
-    read1.reunite(write1).expect("Reunite should succeed");
-
-    handle.await.resume_unwind();
-}
-
-#[compio_macros::test]
 async fn unix_split() {
     let dir = tempfile::Builder::new()
         .prefix("compio-uds-split-tests")
