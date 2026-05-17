@@ -11,6 +11,7 @@ use tungstenite::Message;
 // openssl req -x509 -newkey rsa:2048 -keyout localhost.key -out localhost.crt
 // -days 365 -nodes -subj "/CN=localhost"
 #[cfg(feature = "native-tls")]
+#[allow(deprecated)] // On iOS, `from_pkcs8` is not implemented.
 async fn create_tls_acceptor() -> Result<TlsAcceptor, Box<dyn std::error::Error>> {
     use compio_tls::native_tls;
 
