@@ -147,7 +147,7 @@ where
                                 }
                                 #[cfg(not(feature = "rustls"))]
                                 {
-                                    return Err(_e);
+                                    return Err(e);
                                 }
                             }
                         }
