@@ -5,6 +5,8 @@
     html_favicon_url = "https://github.com/compio-rs/compio-logo/raw/refs/heads/master/generated/colored-bold.svg"
 )]
 
+#[doc(hidden)]
+pub use tracing as __tracing;
 #[cfg_attr(not(feature = "enable_log"), doc(hidden))]
 pub use tracing::*;
 
@@ -25,6 +27,14 @@ macro_rules! instrument {
 #[cfg(not(feature = "enable_log"))]
 #[macro_export]
 macro_rules! instrument {
-    ($lvl:expr, $name:expr, $($fields:tt)*) => {};
-    ($lvl:expr, $name:expr) => {};
+    ($lvl:expr, $name:expr, $($fields:tt)*) => {
+        if false {
+            let _guard = $crate::span!(target:module_path!(), $lvl, $name, $($fields)*).entered();
+        }
+    };
+    ($lvl:expr, $name:expr) => {
+        if false {
+            let _guard = $crate::span!(target:module_path!(), $lvl, $name).entered();
+        }
+    };
 }
