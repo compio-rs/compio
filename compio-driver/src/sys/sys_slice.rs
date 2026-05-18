@@ -7,8 +7,8 @@ use std::{
 
 use compio_buf::{IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 
-cfg_if::cfg_if! {
-    if #[cfg(unix)] {
+cfg_select! {
+    unix => {
         use std::mem::MaybeUninit;
         use libc::iovec as Inner;
 
@@ -18,7 +18,8 @@ cfg_if::cfg_if! {
                 iov_len: len,
             }
         }
-    } else if #[cfg(windows)] {
+    }
+    windows => {
         use std::mem::MaybeUninit;
         use windows_sys::Win32::Networking::WinSock::WSABUF as Inner;
 
@@ -28,7 +29,8 @@ cfg_if::cfg_if! {
                 buf: ptr as _,
             }
         }
-    } else {
+    }
+    _ => {
         type Inner = ();
 
         fn new(_: *mut MaybeUninit<u8>, _: usize) -> Inner {

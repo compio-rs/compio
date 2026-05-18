@@ -20,8 +20,8 @@ pub struct AioControl<B = ()> {
 }
 
 impl AioControl {
-    cfg_if! {
-        if #[cfg(aio)] {
+    cfg_select! {
+        aio => {
             pub fn init_fd<Fd: AsFd>(&mut self, fd: Fd) {
                 self.aiocb.aio_fildes = fd.as_fd().as_raw_fd();
             }
@@ -71,7 +71,8 @@ impl AioControl {
 
                 Ok(Decision::aio(&mut self.aiocb, f))
             }
-        } else {
+        }
+        _ =>  {
             pub fn init_fd<Fd: AsFd>(&mut self, _: Fd) {}
 
             pub fn init<Fd: AsFd, B: IoBuf>(&mut self, _: Fd, _: &B, _: u64) {}
@@ -98,8 +99,8 @@ impl AioControl {
 }
 
 impl AioControl<VectoredControl> {
-    cfg_if! {
-        if #[cfg(freebsd)] {
+    cfg_select! {
+        freebsd => {
             pub fn op_type(&mut self) -> Option<OpType> {
                 Some(OpType::Aio(NonNull::from_mut(&mut self.aiocb)))
             }
@@ -111,7 +112,8 @@ impl AioControl<VectoredControl> {
             pub fn decide_write(&mut self) -> io::Result<Decision> {
                 Ok(Decision::aio(&mut self.aiocb, libc::aio_writev))
             }
-        } else {
+        }
+        _ =>  {
             pub fn op_type(&mut self) -> Option<OpType> {
                 None
             }
@@ -129,13 +131,14 @@ impl AioControl<VectoredControl> {
     pub fn init_vec<Fd: AsFd, B: IoVectoredBuf>(&mut self, fd: Fd, buf: &B, offset: u64) {
         self.base.slices = buf.sys_slices();
 
-        cfg_if! {
-            if #[cfg(freebsd)] {
+        cfg_select! {
+            freebsd => {
                 self.aiocb.aio_fildes = fd.as_fd().as_raw_fd();
                 self.aiocb.aio_offset = offset as _;
                 self.aiocb.aio_buf = self.base.slices.as_ptr().cast_mut().cast();
                 self.aiocb.aio_nbytes = self.base.slices.len();
-            } else {
+            }
+            _ => {
                 _ = (fd, offset);
             }
         }
@@ -149,15 +152,16 @@ impl AioControl<VectoredControl> {
     ) {
         self.base.slices = buf.sys_slices_mut();
 
-        cfg_if! {
-            if #[cfg(freebsd)] {
+        cfg_select! {
+             freebsd => {
                 self.aiocb.aio_fildes = fd.as_fd().as_raw_fd();
                 self.aiocb.aio_offset = offset as _;
                 self.aiocb.aio_buf = self.base.slices.as_ptr().cast_mut().cast();
                 self.aiocb.aio_nbytes = self.base.slices.len();
-            } else {
-                _ = (fd, offset);
             }
+             _ => {
+                _ = (fd, offset);
+             }
         }
     }
 }

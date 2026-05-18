@@ -35,15 +35,15 @@ mod prelude {
     };
 
     #[cfg(any(windows, io_uring))]
-    cfg_if! {
-        if #[cfg(feature = "once_cell_try")] {
+    cfg_select! {
+        feature = "once_cell_try" => {
             pub(super) use std::sync::OnceLock;
-        } else {
+        }
+        _ => {
             pub(super) use once_cell::sync::OnceCell as OnceLock;
         }
     }
 
-    pub(super) use cfg_if::cfg_if;
     pub(super) use compio_buf::*;
     pub(super) use compio_log::*;
     pub(super) use mod_use::mod_use;

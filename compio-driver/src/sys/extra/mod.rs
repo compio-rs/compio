@@ -1,22 +1,27 @@
-cfg_if::cfg_if! {
-    if #[cfg(windows)] {
+cfg_select! {
+    windows => {
         mod iocp;
         use iocp as sys;
-    } else if #[cfg(fusion)] {
+    }
+    fusion => {
         mod fusion;
         mod poll;
         mod iour;
         use fusion as sys;
-    } else if #[cfg(io_uring)] {
+    }
+    io_uring => {
         mod iour;
         use iour as sys;
-    } else if #[cfg(polling)] {
+    }
+    polling => {
         mod poll;
         use poll as sys;
-    } else if #[cfg(stub)] {
+    }
+    stub => {
         mod stub;
         use stub as sys;
     }
+    _ => {}
 }
 
 use std::{fmt::Debug, io};

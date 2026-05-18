@@ -3,12 +3,14 @@ use std::{io, ops::Deref, time::Duration};
 use compio_runtime::Runtime;
 use mod_use::mod_use;
 
-cfg_if::cfg_if! {
-    if #[cfg(windows)] {
+cfg_select! {
+    windows => {
         mod_use![windows];
-    } else if #[cfg(unix)] {
+    }
+    unix => {
         mod_use![unix];
-    } else {
+    }
+    _ => {
         compile_error!("Unsupported platform");
     }
 }

@@ -4,14 +4,17 @@ use compio_buf::IntoInner;
 
 use crate::{DriverType, OpCode};
 
-cfg_if::cfg_if! {
-    if #[cfg(fusion)] {
+cfg_select! {
+    fusion => {
         use crate::{PollOpCode, IourOpCode};
-    } else if #[cfg(io_uring)] {
+    }
+    io_uring => {
         use crate::OpCode as IourOpCode;
-    } else if #[cfg(polling)]{
+    }
+    polling => {
         use crate::OpCode as PollOpCode;
     }
+    _ => {}
 }
 
 #[cfg(not(fusion))]

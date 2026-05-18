@@ -15,14 +15,16 @@
     html_favicon_url = "https://github.com/compio-rs/compio-logo/raw/refs/heads/master/generated/colored-bold.svg"
 )]
 
-cfg_if::cfg_if! {
-    if #[cfg(windows)] {
+cfg_select! {
+    windows => {
         #[path = "windows.rs"]
         mod sys;
-    } else if #[cfg(target_os = "linux")] {
+    }
+    target_os = "linux" => {
         #[path = "linux.rs"]
         mod sys;
-    } else {
+    }
+    _ => {
         #[path = "unix.rs"]
         mod sys;
     }

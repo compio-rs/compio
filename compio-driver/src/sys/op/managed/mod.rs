@@ -1,21 +1,26 @@
 use crate::sys::prelude::*;
 
-cfg_if::cfg_if! {
-    if #[cfg(fusion)] {
+cfg_select! {
+    fusion => {
         mod iour;
         mod poll;
         mod fallback;
         mod_use![fusion];
-    } else if #[cfg(io_uring)] {
+    }
+    io_uring => {
         mod_use![iour];
-    } else if #[cfg(polling)] {
+    }
+    polling => {
         mod poll;
         mod_use![fallback];
-    } else if #[cfg(stub)] {
+    }
+    stub => {
         mod stub;
         mod_use![fallback];
-    } else if #[cfg(windows)] {
+    }
+    windows => {
         mod iocp;
         mod_use![fallback];
     }
+    _ => {}
 }

@@ -6,18 +6,20 @@ use crate::sys::{extra::IourExtra, prelude::*};
 
 mod_use![op, notify];
 
-cfg_if! {
-    if #[cfg(feature = "io-uring-cqe32")] {
+cfg_select! {
+    feature = "io-uring-cqe32" => {
         use io_uring::cqueue::Entry32 as CEntry;
-    } else {
+    }
+    _ => {
         use io_uring::cqueue::Entry as CEntry;
     }
 }
 
-cfg_if! {
-    if #[cfg(feature = "io-uring-sqe128")] {
+cfg_select! {
+    feature = "io-uring-sqe128" => {
         use io_uring::squeue::Entry128 as SEntry;
-    } else {
+    }
+    _ => {
         use io_uring::squeue::Entry as SEntry;
     }
 }

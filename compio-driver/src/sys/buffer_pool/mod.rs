@@ -2,16 +2,18 @@ use std::{fmt::Debug, io};
 
 use crate::buffer_pool::*;
 
-cfg_if::cfg_if! {
-    if #[cfg(fusion)] {
+cfg_select! {
+    fusion => {
         mod fusion;
         mod iour;
         mod fallback;
         use fusion as imp;
-    } else if #[cfg(io_uring)] {
+    }
+    io_uring => {
         mod iour;
         use iour as imp;
-    } else {
+    }
+    _ => {
         mod fallback;
         use fallback as imp;
     }

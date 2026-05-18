@@ -1,24 +1,29 @@
 use std::sync::atomic::{AtomicU8, Ordering};
 
-cfg_if::cfg_if! {
-    if #[cfg(windows)] {
+cfg_select! {
+    windows => {
         mod iocp;
         pub use iocp::*;
-    } else if #[cfg(fusion)] {
+    }
+    fusion => {
         mod fusion;
         mod poll;
         mod iour;
         pub use fusion::*;
-    } else if #[cfg(io_uring)] {
+    }
+    io_uring => {
         mod iour;
         pub use iour::*;
-    } else if #[cfg(stub)] {
+    }
+    stub => {
         mod stub;
         pub use stub::*;
-    } else if #[cfg(unix)] {
+    }
+    unix => {
         mod poll;
         pub use poll::*;
     }
+    _ => {}
 }
 
 crate::assert_not_impl!(Driver, Send);

@@ -1,11 +1,13 @@
-cfg_if::cfg_if! {
-    if #[cfg(windows)] {
+cfg_select! {
+    windows => {
         mod windows;
         pub use windows::*;
-    } else if #[cfg(unix)] {
+    }
+    unix => {
         mod unix;
         pub use unix::*;
     }
+    _ => {}
 }
 
 /// Constructs a handle to the standard input of the current process.
