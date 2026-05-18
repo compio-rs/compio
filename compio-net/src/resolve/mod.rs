@@ -1,11 +1,13 @@
-cfg_if::cfg_if! {
-    if #[cfg(windows)] {
+cfg_select! {
+    windows => {
         #[path = "windows.rs"]
         mod sys;
-    } else if #[cfg(unix)] {
+    }
+    unix => {
         #[path = "unix.rs"]
         mod sys;
     }
+    _ => {}
 }
 
 use std::{

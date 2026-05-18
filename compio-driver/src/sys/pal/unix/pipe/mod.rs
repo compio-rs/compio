@@ -1,9 +1,10 @@
 use super::*;
 
-cfg_if! {
-    if #[cfg(apple)] {
+cfg_select! {
+    apple => {
         mod_use![apple];
-    } else {
+    }
+    _ => {
         use rustix::{net::*, pipe::{PipeFlags, pipe_with}};
 
         pub const SOCKET_FLAG: SocketFlags = SocketFlags::NONBLOCK.union(SocketFlags::CLOEXEC);

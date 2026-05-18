@@ -21,7 +21,6 @@ compio-buf = { workspace = true }
 compio-log = { workspace = true }
 compio-io = { workspace = true, optional = true }
 
-cfg-if = { workspace = true }
 criterion = { workspace = true, optional = true }
 compio-send-wrapper = { workspace = true }
 core_affinity = "0.8.3"

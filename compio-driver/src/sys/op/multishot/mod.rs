@@ -1,16 +1,21 @@
-use crate::sys::prelude::*;
+#[allow(unused_imports)]
+use crate::sys::prelude::mod_use;
 
-cfg_if! {
-    if #[cfg(fusion)] {
+cfg_select! {
+    fusion => {
         mod iour;
         mod poll;
 
         crate::macros::fuse_op!(<S: AsFd> AcceptMulti(fd: S));
-    } else if #[cfg(io_uring)] {
+    }
+    io_uring => {
         mod_use![iour];
-    } else if #[cfg(polling)] {
+    }
+    polling => {
         mod_use![poll];
-    } else if #[cfg(stub)] {
+    }
+    stub => {
         mod_use![stub];
     }
+    _ => {}
 }

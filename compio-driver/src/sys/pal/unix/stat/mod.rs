@@ -1,9 +1,10 @@
 use super::*;
 
-cfg_if! {
-    if #[cfg(linux_all)] {
+cfg_select! {
+     linux_all => {
         mod_use![linux];
-    } else {
+    }
+    _ => {
         pub fn stat<Fd: AsFd>(dirfd: Fd, path: &CStr, follow_symlink: bool) -> io::Result<Stat> {
             use rustix::fs::{fstat, statat};
 

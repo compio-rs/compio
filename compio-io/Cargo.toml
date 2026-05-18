@@ -16,7 +16,6 @@ paste = { workspace = true }
 pin-project-lite = { workspace = true, optional = true }
 synchrony = { workspace = true, features = ["bilock"] }
 
-cfg-if = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
 serde = { version = "1.0.219", optional = true }
 serde_json = { version = "1.0.140", optional = true }
@@ -41,7 +40,7 @@ futures-executor = { workspace = true }
 default = ["bytes"]
 compat = ["futures-util/io", "dep:pin-project-lite"]
 sync = []
-ancillary = ["dep:cfg-if", "dep:libc", "dep:windows-sys"]
+ancillary = ["dep:libc", "dep:windows-sys"]
 bytes = ["compio-buf/bytes"]
 
 # Codecs

@@ -14,10 +14,11 @@ use std::{
 
 use crate::{AsFd, AsRawFd, BorrowedFd, RawFd};
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "sync")] {
+cfg_select! {
+    feature = "sync" => {
         use synchrony::sync;
-    } else {
+    }
+    _ => {
         use synchrony::unsync as sync;
     }
 }

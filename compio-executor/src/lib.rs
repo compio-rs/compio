@@ -27,13 +27,14 @@ use crossbeam_queue::ArrayQueue;
 pub use join_handle::{JoinError, JoinHandle, ResumeUnwind};
 use util::panic_guard;
 
-cfg_if::cfg_if! {
-    if #[cfg(loom)] {
+cfg_select! {
+    loom => {
         use loom::cell::UnsafeCell;
         use loom::hint;
         use loom::thread::yield_now;
         use loom::sync::atomic::*;
-    } else {
+    }
+    _ => {
         use std::hint;
         use std::thread::yield_now;
         use std::sync::atomic::*;

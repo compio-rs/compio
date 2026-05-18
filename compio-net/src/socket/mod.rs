@@ -33,27 +33,29 @@ use sys::SocketState;
 
 use crate::Incoming;
 
-cfg_if::cfg_if! {
-    if #[cfg(any(
+cfg_select! {
+    any(
         target_os = "linux", target_os = "android",
         target_os = "hurd",
         target_os = "dragonfly", target_os = "freebsd",
         target_os = "openbsd", target_os = "netbsd",
         target_os = "solaris", target_os = "illumos",
         target_os = "haiku", target_os = "nto",
-        target_os = "cygwin"))] {
+        target_os = "cygwin") => {
         pub(crate) const MSG_NOSIGNAL: SendFlags =
             SendFlags::from_bits_retain(libc::MSG_NOSIGNAL as _);
-    } else {
+    }
+    _ => {
         pub(crate) const MSG_NOSIGNAL: SendFlags = SendFlags::empty();
     }
 }
 
-cfg_if::cfg_if! {
-    if #[cfg(target_os = "linux")] {
+cfg_select! {
+    target_os = "linux" => {
         #[path = "linux.rs"]
         mod sys;
-    } else {
+    }
+    _ => {
         mod sys {
             #[derive(Default, Clone, Debug)]
             pub(super) struct SocketState;

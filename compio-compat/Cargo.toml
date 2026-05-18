@@ -13,7 +13,6 @@ repository = { workspace = true }
 compio-runtime = { workspace = true }
 compio-log = { workspace = true }
 
-cfg-if = { workspace = true }
 mod_use = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]

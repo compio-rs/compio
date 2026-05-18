@@ -1,17 +1,22 @@
-cfg_if::cfg_if! {
-    if #[cfg(windows)] {
+cfg_select! {
+    windows => {
         mod iocp;
-    } else if #[cfg(fusion)] {
+    }
+    fusion => {
         mod iour;
         mod poll;
         mod_use![fusion];
-    } else if #[cfg(io_uring)] {
+    }
+    io_uring => {
         mod_use![iour];
-    } else if #[cfg(polling)] {
+    }
+    polling => {
         mod_use![poll];
-    } else if #[cfg(stub)] {
+    }
+    stub => {
         mod_use![stub];
     }
+    _ => {}
 }
 
 use crate::sys::prelude::*;

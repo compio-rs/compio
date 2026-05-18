@@ -41,11 +41,12 @@ use windows_sys::Win32::{
 
 use crate::{Overlapped, RawFd, syscall};
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "iocp-global")] {
+cfg_select! {
+    feature = "iocp-global" => {
         mod global;
         pub use global::*;
-    } else {
+    }
+    _ => {
         mod multi;
         pub use multi::*;
     }
