@@ -1,32 +1,4 @@
 #[macro_export]
-macro_rules! debug {
-    ($($args:tt)*) => {
-        $crate::event!($crate::Level::DEBUG, $($args)*);
-    };
-}
-
-#[macro_export]
-macro_rules! debug_span {
-    ($($args:tt)*) => {
-        $crate::span!($crate::Level::DEBUG, $($args)*)
-    };
-}
-
-#[macro_export]
-macro_rules! error {
-    ($($args:tt)*) => {
-        $crate::event!($crate::Level::ERROR, $($args)*);
-    };
-}
-
-#[macro_export]
-macro_rules! error_span {
-    ($($args:tt)*) => {
-        $crate::span!($crate::Level::ERROR, $($args)*)
-    };
-}
-
-#[macro_export]
 macro_rules! event {
     ($($args:tt)*) => {
         if false {
@@ -36,16 +8,47 @@ macro_rules! event {
 }
 
 #[macro_export]
-macro_rules! info {
+macro_rules! error {
     ($($args:tt)*) => {
-        $crate::event!($crate::Level::INFO, $($args)*);
+        if false {
+            $crate::__tracing::error!($($args)*);
+        }
     };
 }
 
 #[macro_export]
-macro_rules! info_span {
+macro_rules! warn {
     ($($args:tt)*) => {
-        $crate::span!($crate::Level::INFO, $($args)*)
+        if false {
+            $crate::__tracing::warn!($($args)*);
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! info {
+    ($($args:tt)*) => {
+        if false {
+            $crate::__tracing::info!($($args)*);
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! debug {
+    ($($args:tt)*) => {
+        if false {
+            $crate::__tracing::debug!($($args)*);
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! trace {
+    ($($args:tt)*) => {
+        if false {
+            $crate::__tracing::trace!($($args)*);
+        }
     };
 }
 
@@ -61,29 +64,56 @@ macro_rules! span {
 }
 
 #[macro_export]
-macro_rules! trace {
+macro_rules! error_span {
     ($($args:tt)*) => {
-        $crate::event!($crate::Level::TRACE, $($args)*);
-    };
-}
-
-#[macro_export]
-macro_rules! trace_span {
-    ($($args:tt)*) => {
-        $crate::span!($crate::Level::TRACE, $($args)*)
-    };
-}
-
-#[macro_export]
-macro_rules! warn {
-    ($($args:tt)*) => {
-        $crate::event!($crate::Level::WARN, $($args)*);
+        if false {
+            $crate::__tracing::error_span!($($args)*)
+        } else {
+            $crate::Span::none()
+        }
     };
 }
 
 #[macro_export]
 macro_rules! warn_span {
     ($($args:tt)*) => {
-        $crate::span!($crate::Level::WARN, $($args)*)
+        if false {
+            $crate::__tracing::warn_span!($($args)*)
+        } else {
+            $crate::Span::none()
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! info_span {
+    ($($args:tt)*) => {
+        if false {
+            $crate::__tracing::info_span!($($args)*)
+        } else {
+            $crate::Span::none()
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! debug_span {
+    ($($args:tt)*) => {
+        if false {
+            $crate::__tracing::debug_span!($($args)*)
+        } else {
+            $crate::Span::none()
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! trace_span {
+    ($($args:tt)*) => {
+        if false {
+            $crate::__tracing::trace_span!($($args)*)
+        } else {
+            $crate::Span::none()
+        }
     };
 }
