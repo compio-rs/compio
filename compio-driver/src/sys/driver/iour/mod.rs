@@ -207,8 +207,8 @@ impl Driver {
                     if !more(flags) {
                         self.need_push_notifier = true;
                     }
-                    if let Err(_e) = self.notifier.clear() {
-                        error!("failed to clear notifier: {_e}");
+                    if let Err(e) = self.notifier.clear() {
+                        error!("failed to clear notifier: {e:?}");
                     }
                 }
                 key => {

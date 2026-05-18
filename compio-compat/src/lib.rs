@@ -71,8 +71,8 @@ impl<A: Adapter> RuntimeCompat<A> {
                 Err(e) => panic!("failed to wait for driver: {e:?}"),
             }
 
-            if let Err(_e) = self.runtime.clear() {
-                error!("failed to clear notifier: {_e:?}");
+            if let Err(e) = self.runtime.clear() {
+                error!("failed to clear notifier: {e:?}");
             }
 
             self.runtime.poll_with(Some(Duration::ZERO));

@@ -57,11 +57,11 @@ mod encryption {
                     .into());
                 }
 
-                let _total_number = certs.len();
-                let (_number_added, _number_ignored) = root_store.add_parsable_certificates(certs);
+                let total_number = certs.len();
+                let (number_added, number_ignored) = root_store.add_parsable_certificates(certs);
                 compio_log::debug!(
-                    "Added {_number_added}/{_total_number} native root certificates (ignored \
-                     {_number_ignored})"
+                    "Added {number_added}/{total_number} native root certificates (ignored \
+                     {number_ignored})"
                 );
             }
             #[cfg(feature = "webpki-roots")]
@@ -94,8 +94,8 @@ mod encryption {
             {
                 let config = match config_with_platform_verifier() {
                     Ok(config_builder) => config_builder,
-                    Err(_e) => {
-                        compio_log::warn!("Error creating platform verifier: {_e}");
+                    Err(e) => {
+                        compio_log::warn!("Error creating platform verifier: {e:?}");
                         config_with_certs()?
                     }
                 };
@@ -136,11 +136,10 @@ where
                     {
                         match encryption::native_tls::new_connector() {
                             Ok(c) => c,
-                            Err(_e) => {
+                            Err(e) => {
                                 compio_log::warn!(
                                     "Falling back to rustls TLS connector due to native-tls \
-                                     error: {}",
-                                    _e
+                                     error: {e:?}",
                                 );
                                 #[cfg(feature = "rustls")]
                                 {

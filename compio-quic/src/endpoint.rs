@@ -433,9 +433,8 @@ impl Endpoint {
         let worker = compio_runtime::spawn({
             let inner = inner.clone();
             async move {
-                #[allow(unused)]
                 if let Err(e) = inner.run().await {
-                    error!("I/O error: {}", e);
+                    error!("I/O error: {:?}", e);
                 }
             }
             .in_current_span()
