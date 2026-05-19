@@ -39,3 +39,12 @@ async fn main() {
     println!("Hello from compio!");
 }
 ```
+
+You can customize the runtime through params:
+
+```rust
+#[compio::main(event_interval = 4, with_proactor(capacity = 16))]
+async fn main() {
+    println!("Hello from compio!");
+}
+```

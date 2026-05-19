@@ -50,3 +50,24 @@ fn retrieve_runtime_mod() -> proc_macro2::TokenStream {
         },
     }
 }
+
+fn retrieve_driver_mod() -> proc_macro2::TokenStream {
+    match crate_name("compio-driver") {
+        Ok(FoundCrate::Itself) => quote!(crate),
+        Ok(FoundCrate::Name(name)) => {
+            let ident = Ident::new(&name, Span::call_site());
+            quote!(::#ident)
+        }
+        Err(_) => match crate_name("compio") {
+            Ok(FoundCrate::Itself) => quote!(crate::driver),
+            Ok(FoundCrate::Name(name)) => {
+                let ident = Ident::new(&name, Span::call_site());
+                quote!(::#ident::driver)
+            }
+            Err(_) => {
+                let ident = Ident::new("compio_driver", Span::call_site());
+                quote!(::#ident)
+            }
+        },
+    }
+}

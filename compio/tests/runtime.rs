@@ -6,7 +6,7 @@ use std::{net::Ipv4Addr, time::Duration};
 use compio::fs::named_pipe::{ClientOptions, NamedPipeClient, NamedPipeServer, ServerOptions};
 use compio::{
     buf::*,
-    driver::{ErrorExt, ProactorBuilder},
+    driver::ErrorExt,
     fs::File,
     io::{AsyncRead, AsyncReadAt, AsyncReadExt, AsyncWriteAt, AsyncWriteExt},
     net::{TcpListener, TcpStream, UnixStream},
@@ -98,24 +98,16 @@ async fn drop_on_complete() {
     drop(file);
 }
 
-#[test]
-fn too_many_submissions() {
-    let mut proactor_builder = ProactorBuilder::new();
-    proactor_builder.capacity(1).thread_pool_limit(1);
-    compio_runtime::Runtime::builder()
-        .with_proactor(proactor_builder)
-        .build()
-        .unwrap()
-        .block_on(async move {
-            let tempfile = tempfile();
-            let mut file = File::create(tempfile.path()).await.unwrap();
-            for _ in 0..600 {
-                poll_once(async {
-                    file.write_at("hello world", 0).await.0.unwrap();
-                })
-                .await;
-            }
+#[compio_macros::test(with_proactor(capacity = 1, thread_pool_limit = 1))]
+async fn too_many_submissions() {
+    let tempfile = tempfile();
+    let mut file = File::create(tempfile.path()).await.unwrap();
+    for _ in 0..600 {
+        poll_once(async {
+            file.write_at("hello world", 0).await.0.unwrap();
         })
+        .await;
+    }
 }
 
 #[cfg(feature = "allocator_api")]
