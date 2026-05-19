@@ -75,10 +75,7 @@ impl Parse for RawAttr {
                         {
                             crate_name = Some(s.parse::<TokenStream>()?);
                         } else {
-                            return Err(syn::Error::new_spanned(
-                                &nv.value,
-                                "expected a string literal for `crate`",
-                            ));
+                            crate_name = Some(nv.value.into_token_stream());
                         }
                     } else {
                         let name = nv.path.require_ident()?.clone();
