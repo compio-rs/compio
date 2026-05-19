@@ -9,8 +9,6 @@ mod item_fn;
 
 mod main_fn;
 
-mod test_fn;
-
 use proc_macro::TokenStream;
 use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Ident, Span};
@@ -27,8 +25,9 @@ pub fn main(args: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn test(args: TokenStream, item: TokenStream) -> TokenStream {
-    parse_macro_input!(item as test_fn::CompioTest)
+    parse_macro_input!(item as main_fn::CompioMain)
         .with_args(parse_macro_input!(args as item_fn::RawAttr))
+        .with_test(true)
         .into_token_stream()
         .into()
 }

@@ -11,6 +11,11 @@ impl CompioMain {
         self.0.set_args(args);
         self
     }
+
+    pub fn with_test(mut self, test: bool) -> Self {
+        self.0.set_test(test);
+        self
+    }
 }
 
 impl Parse for CompioMain {

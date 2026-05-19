@@ -112,6 +112,7 @@ pub(crate) struct RawBodyItemFn {
     pub vis: Visibility,
     pub sig: Signature,
     pub body: TokenStream,
+    pub test: bool,
 }
 
 impl RawBodyItemFn {
@@ -122,6 +123,7 @@ impl RawBodyItemFn {
             vis,
             sig,
             body,
+            test: false,
         }
     }
 
@@ -129,7 +131,14 @@ impl RawBodyItemFn {
         self.args = args;
     }
 
+    pub fn set_test(&mut self, test: bool) {
+        self.test = test;
+    }
+
     pub fn emit_fn_to_tokens(&self, tokens: &mut TokenStream) {
+        if self.test {
+            tokens.append_all(quote!(#[test]));
+        }
         tokens.append_all(
             self.attrs
                 .iter()
