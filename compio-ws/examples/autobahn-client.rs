@@ -66,8 +66,8 @@ async fn main() {
         if let Err(e) = run_test(case).await {
             match e {
                 Error::ConnectionClosed | Error::Protocol(_) | Error::Utf8(_) => (),
-                _err => {
-                    error!("Testcase failed: {_err}");
+                err => {
+                    error!("Testcase failed: {err}");
                 }
             }
         }

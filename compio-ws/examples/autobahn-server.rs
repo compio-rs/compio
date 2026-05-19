@@ -11,8 +11,8 @@ async fn accept_connection(peer: SocketAddr, stream: TcpStream) {
     if let Err(e) = handle_connection(peer, stream).await {
         match e {
             Error::ConnectionClosed | Error::Protocol(_) | Error::Utf8(_) => (),
-            _err => {
-                error!("Error processing connection: {_err}");
+            err => {
+                error!("Error processing connection: {err}");
             }
         }
     }
@@ -68,8 +68,8 @@ async fn main() {
                 info!("Peer address: {addr}");
                 compio_runtime::spawn(accept_connection(addr, stream)).detach();
             }
-            Err(_e) => {
-                error!("Error accepting connection: {_e}");
+            Err(e) => {
+                error!("Error accepting connection: {e}");
             }
         }
     }

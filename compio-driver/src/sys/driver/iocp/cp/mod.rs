@@ -158,7 +158,7 @@ impl CompletionPort {
                 && overlapped.driver != current_driver
             {
                 // Repost the entry to correct port.
-                if let Err(_e) = syscall!(
+                if let Err(e) = syscall!(
                     BOOL,
                     PostQueuedCompletionStatus(
                         overlapped.driver as _,
@@ -173,7 +173,7 @@ impl CompletionPort {
                         entry.lpCompletionKey,
                         entry.lpOverlapped,
                         overlapped.driver,
-                        _e
+                        e
                     );
                 }
                 return None;

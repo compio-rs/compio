@@ -51,7 +51,7 @@ fn iocp_start() -> io::Result<()> {
                 // Any thin pointer is OK because we don't use the type of opcode.
                 let overlapped_ptr: *mut Overlapped = entry.lpOverlapped.cast();
                 let overlapped = unsafe { &*overlapped_ptr };
-                if let Err(_e) = syscall!(
+                if let Err(e) = syscall!(
                     BOOL,
                     PostQueuedCompletionStatus(
                         overlapped.driver as _,
@@ -66,7 +66,7 @@ fn iocp_start() -> io::Result<()> {
                         entry.lpCompletionKey,
                         entry.lpOverlapped,
                         overlapped.driver,
-                        _e
+                        e
                     );
                 }
             }
