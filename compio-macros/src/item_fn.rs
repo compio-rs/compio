@@ -73,7 +73,7 @@ impl Parse for RawAttr {
                             lit: Lit::Str(s), ..
                         }) = &nv.value
                         {
-                            crate_name = Some(s.parse::<TokenStream>().unwrap());
+                            crate_name = Some(s.parse::<TokenStream>()?);
                         } else {
                             return Err(syn::Error::new_spanned(
                                 &nv.value,
