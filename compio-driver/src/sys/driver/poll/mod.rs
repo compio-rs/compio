@@ -132,6 +132,8 @@ pub(crate) struct Driver {
 }
 
 impl Driver {
+    const WAKER_PIPE_KEY: usize = usize::MAX - 1;
+
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
         instrument!(compio_log::Level::TRACE, "new", ?builder);
         trace!("new poll driver");
@@ -142,7 +144,7 @@ impl Driver {
             Events::new()
         };
         let poll = Poller::new()?;
-        let notify = Arc::new(Notify::new(poll));
+        let notify = Arc::new(Notify::new(poll)?);
         let (completed_tx, completed_rx) = flume::unbounded();
 
         Ok(Self {
@@ -450,10 +452,9 @@ impl Driver {
         if !need_wait || has_completed {
             timeout = Some(Duration::ZERO);
         }
-        // We need to poll the poller first to make sure it handles the internal notify
-        // event (if any).
         self.events.clear();
         self.notify.poll.wait(&mut self.events, timeout)?;
+        self.notify.drain_and_reregister();
         self.notify.set_awake();
         if self.events.is_empty() {
             if self.poll_completed() {
@@ -467,6 +468,9 @@ impl Driver {
         }
         self.with_events(|this, events| {
             for event in events.iter() {
+                if event.key == Self::WAKER_PIPE_KEY {
+                    continue;
+                }
                 trace!("receive {} for {:?}", event.key, event);
                 // SAFETY: user_data is promised to be valid.
                 let key = unsafe { BorrowedKey::from_raw(event.key) };
@@ -528,6 +532,7 @@ impl AsRawFd for Driver {
 
 impl Drop for Driver {
     fn drop(&mut self) {
+        self.poller().delete(self.notify.pipe_read.as_fd()).ok();
         for fd in self.registry.keys() {
             unsafe {
                 let fd = BorrowedFd::borrow_raw(*fd);
@@ -544,17 +549,73 @@ impl Entry {
 }
 
 /// A notify handle to the inner driver.
+///
+/// Uses a self-pipe registered with the [`Poller`] instead of
+/// [`Poller::notify()`] to wake the driver. This bypasses the polling
+/// crate's internal notification deduplication, which can suppress
+/// wakeups on kqueue backends (macOS).
 pub(crate) struct Notify {
     poll: Poller,
     awake: AwakeFlag,
+    pipe_read: OwnedFd,
+    pipe_write: OwnedFd,
+}
+
+impl std::fmt::Debug for Notify {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Notify")
+            .field("poll", &self.poll)
+            .field("awake", &self.awake)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Notify {
-    fn new(poll: Poller) -> Self {
-        Self {
+    fn new(poll: Poller) -> io::Result<Self> {
+        let (pipe_read, pipe_write) = Self::create_pipe()?;
+        unsafe {
+            poll.add(
+                pipe_read.as_raw_fd(),
+                Event::readable(Driver::WAKER_PIPE_KEY),
+            )?;
+        }
+        Ok(Self {
             poll,
             awake: AwakeFlag::new(),
-        }
+            pipe_read,
+            pipe_write,
+        })
+    }
+
+    #[cfg(not(any(apple, target_os = "aix", target_os = "espidf",
+        target_os = "haiku", target_os = "horizon", target_os = "nto")))]
+    fn create_pipe() -> io::Result<(OwnedFd, OwnedFd)> {
+        use rustix::pipe::{PipeFlags, pipe_with};
+        Ok(pipe_with(PipeFlags::NONBLOCK | PipeFlags::CLOEXEC)?)
+    }
+
+    #[cfg(any(apple, target_os = "aix", target_os = "espidf",
+        target_os = "haiku", target_os = "horizon", target_os = "nto"))]
+    fn create_pipe() -> io::Result<(OwnedFd, OwnedFd)> {
+        use rustix::fs::{OFlags, fcntl_getfl, fcntl_setfl};
+        use rustix::io::{FdFlags, fcntl_getfd, fcntl_setfd};
+        let (r, w) = rustix::pipe::pipe()?;
+        fcntl_setfd(&r, fcntl_getfd(&r)? | FdFlags::CLOEXEC)?;
+        fcntl_setfd(&w, fcntl_getfd(&w)? | FdFlags::CLOEXEC)?;
+        fcntl_setfl(&r, fcntl_getfl(&r)? | OFlags::NONBLOCK)?;
+        fcntl_setfl(&w, fcntl_getfl(&w)? | OFlags::NONBLOCK)?;
+        Ok((r, w))
+    }
+
+    fn drain_and_reregister(&self) {
+        let mut buf = [0u8; 64];
+        while rustix::io::read(&self.pipe_read, &mut buf).is_ok() {}
+        self.poll
+            .modify(
+                self.pipe_read.as_fd(),
+                Event::readable(Driver::WAKER_PIPE_KEY),
+            )
+            .ok();
     }
 
     fn set_awake(&self) {
@@ -573,7 +634,7 @@ impl Wake for Notify {
 
     fn wake_by_ref(self: &Arc<Self>) {
         if !self.awake.wake() {
-            self.poll.notify().ok();
+            rustix::io::write(&self.pipe_write, &[1u8]).ok();
         }
     }
 }
