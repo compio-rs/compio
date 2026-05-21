@@ -351,8 +351,12 @@ impl Shared {
     fn reset(&self, buffer_id: u16, ptr: BufPtr) {
         unsafe {
             self.with(|inner| {
-                inner.bufs[buffer_id as usize] = Some(ptr);
-                inner.ctrl.reset(buffer_id, ptr, inner.size);
+                if let Some(slot) = inner.bufs.get_mut(buffer_id as usize) {
+                    *slot = Some(ptr);
+                    inner.ctrl.reset(buffer_id, ptr, inner.size);
+                } else {
+                    (inner.alloc.deallocate)(ptr, inner.size);
+                }
             })
         }
     }
