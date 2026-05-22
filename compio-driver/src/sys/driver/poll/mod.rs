@@ -450,13 +450,13 @@ impl Driver {
         if !need_wait || has_completed {
             timeout = Some(Duration::ZERO);
         }
-        // We need to poll the poller first to make sure it handles the internal notify
-        // event (if any).
         self.events.clear();
         self.notify.poll.wait(&mut self.events, timeout)?;
-        self.notify.set_awake();
+        // polling's Events::is_empty() filters NOTIFY_KEY events, so a
+        // Poller::notify() wakeup looks like an empty return.
+        let was_notified = self.notify.set_awake();
         if self.events.is_empty() {
-            if self.poll_completed() {
+            if was_notified | self.poll_completed() {
                 return Ok(());
             }
             if timeout_is_some {
@@ -544,6 +544,7 @@ impl Entry {
 }
 
 /// A notify handle to the inner driver.
+#[derive(Debug)]
 pub(crate) struct Notify {
     poll: Poller,
     awake: AwakeFlag,
@@ -557,8 +558,8 @@ impl Notify {
         }
     }
 
-    fn set_awake(&self) {
-        self.awake.set();
+    fn set_awake(&self) -> bool {
+        self.awake.set()
     }
 
     fn reset(&self) -> bool {

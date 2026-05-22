@@ -37,6 +37,9 @@ windows-sys = { workspace = true, features = ["Win32_System_IO"] }
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 
+[dev-dependencies]
+flume = { workspace = true, features = ["async"] }
+
 [target.'cfg(windows)'.dev-dependencies]
 windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
 
@@ -65,4 +68,8 @@ name = "event"
 
 [[test]]
 name = "drop"
+required-features = ["time"]
+
+[[test]]
+name = "waker"
 required-features = ["time"]

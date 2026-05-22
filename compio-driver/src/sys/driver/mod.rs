@@ -43,8 +43,9 @@ impl AwakeFlag {
 
     /// Mark the driver as awake by overwriting the flag byte with `AWAKE`.
     /// This intentionally clears any previously set `NOTIFIED` flag.
-    pub fn set(&self) {
-        self.0.store(AWAKE, Ordering::Release);
+    /// Returns true if the `NOTIFIED` flag was set.
+    pub fn set(&self) -> bool {
+        (self.0.swap(AWAKE, Ordering::AcqRel) & NOTIFIED) != 0
     }
 
     /// Reset the flags. Returns true if it was notified.
