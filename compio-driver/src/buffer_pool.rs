@@ -351,6 +351,7 @@ impl Shared {
     fn reset(&self, buffer_id: u16, ptr: BufPtr) {
         unsafe {
             self.with(|inner| {
+                // This method might be called after `BufferPoolRoot::release`.
                 if let Some(slot) = inner.bufs.get_mut(buffer_id as usize) {
                     *slot = Some(ptr);
                     inner.ctrl.reset(buffer_id, ptr, inner.size);
