@@ -3,6 +3,8 @@ use std::time::Duration;
 use compio::io::{AsyncRead, AsyncWrite};
 use compio::net::{TcpListener, TcpStream, UnixListener, UnixStream};
 use compio_runtime::ResumeUnwind;
+#[cfg(feature = "async-fd")]
+use compio_runtime::fd::AsyncFd;
 
 #[test]
 fn tcp_roundtrip() {
@@ -530,6 +532,150 @@ fn tcp_interleaved_with_cancel() {
             .unwrap();
 
         compio_runtime::time::timeout(Duration::from_secs(5), client)
+            .await
+            .expect("client timed out")
+            .resume_unwind()
+            .unwrap();
+    });
+}
+
+// ---------------------------------------------------------------------------
+// AsyncFd path (what omq actually uses)
+//
+// omq wraps TcpStream in AsyncFd<TcpStream> for reads. AsyncFd's AsyncRead
+// impl submits a generic `Read` op whose pre_submit() ALWAYS returns
+// Decision::Wait (never tries the syscall eagerly). This means every read
+// goes through kqueue, even when data is already available. The TcpStream-
+// based tests above use `Recv` ops that try recv() immediately, bypassing
+// kqueue when data is buffered.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "async-fd")]
+async fn asyncfd_read_exact(fd: &AsyncFd<std::net::TcpStream>, n: usize) -> Vec<u8> {
+    let mut out = vec![0u8; n];
+    let mut pos = 0;
+    while pos < n {
+        let buf = vec![0u8; n - pos];
+        let compio::BufResult(res, buf) = AsyncRead::read(&mut &*fd, buf).await;
+        let got = res.expect("read failed");
+        assert!(got > 0, "unexpected EOF after {pos}/{n} bytes");
+        out[pos..pos + got].copy_from_slice(&buf[..got]);
+        pos += got;
+    }
+    out
+}
+
+#[cfg(feature = "async-fd")]
+async fn asyncfd_write_all(fd: &AsyncFd<std::net::TcpStream>, data: Vec<u8>) {
+    let n = data.len();
+    let compio::BufResult(res, _) = AsyncWrite::write(&mut &*fd, data).await;
+    assert_eq!(res.expect("write failed"), n);
+}
+
+/// Helper: establish a TCP connection pair, return both sides as AsyncFd.
+/// Uses compio's async listener for connection setup, then wraps raw fds.
+#[cfg(feature = "async-fd")]
+async fn asyncfd_tcp_pair() -> (
+    AsyncFd<std::net::TcpStream>,
+    AsyncFd<std::net::TcpStream>,
+) {
+    use std::os::fd::{AsRawFd, FromRawFd};
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let accept = compio_runtime::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        stream
+    });
+
+    let client_stream = TcpStream::connect(addr).await.unwrap();
+    let server_stream = accept.await.unwrap();
+
+    let server_raw = server_stream.as_raw_fd();
+    let client_raw = client_stream.as_raw_fd();
+    std::mem::forget(server_stream);
+    std::mem::forget(client_stream);
+
+    let server_std = unsafe { std::net::TcpStream::from_raw_fd(server_raw) };
+    let client_std = unsafe { std::net::TcpStream::from_raw_fd(client_raw) };
+
+    let server_fd = AsyncFd::new(server_std).unwrap();
+    let client_fd = AsyncFd::new(client_std).unwrap();
+    (server_fd, client_fd)
+}
+
+/// Same as tcp_interleaved_5_rounds but using AsyncFd (omq's path).
+/// AsyncFd's Read op always goes through kqueue (never tries recv eagerly).
+#[cfg(feature = "async-fd")]
+#[test]
+fn asyncfd_interleaved_5_rounds() {
+    let rt = compio_runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let (server_fd, client_fd) = asyncfd_tcp_pair().await;
+
+        let server = compio_runtime::spawn(async move {
+            for round in 0u32..5 {
+                asyncfd_write_all(&server_fd, make_payload(b'S', round, 64)).await;
+                let got = asyncfd_read_exact(&server_fd, 64).await;
+                assert_eq!(got[0], b'C', "server round {round}");
+            }
+        });
+
+        let client = compio_runtime::spawn(async move {
+            for round in 0u32..5 {
+                asyncfd_write_all(&client_fd, make_payload(b'C', round, 64)).await;
+                let got = asyncfd_read_exact(&client_fd, 64).await;
+                assert_eq!(got[0], b'S', "client round {round}");
+            }
+        });
+
+        compio_runtime::time::timeout(Duration::from_secs(2), server)
+            .await
+            .expect("server timed out")
+            .resume_unwind()
+            .unwrap();
+
+        compio_runtime::time::timeout(Duration::from_secs(2), client)
+            .await
+            .expect("client timed out")
+            .resume_unwind()
+            .unwrap();
+    });
+}
+
+/// AsyncFd variant with ZMTP-like varying sizes.
+#[cfg(feature = "async-fd")]
+#[test]
+fn asyncfd_interleaved_zmtp_null() {
+    let rt = compio_runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let (server_fd, client_fd) = asyncfd_tcp_pair().await;
+        let sizes: &[usize] = &[64, 32, 8];
+
+        let server = compio_runtime::spawn(async move {
+            for (round, &size) in sizes.iter().enumerate() {
+                asyncfd_write_all(&server_fd, make_payload(b'S', round as u32, size)).await;
+                let got = asyncfd_read_exact(&server_fd, size).await;
+                assert_eq!(got[0], b'C', "server round {round}");
+            }
+        });
+
+        let client = compio_runtime::spawn(async move {
+            for (round, &size) in sizes.iter().enumerate() {
+                asyncfd_write_all(&client_fd, make_payload(b'C', round as u32, size)).await;
+                let got = asyncfd_read_exact(&client_fd, size).await;
+                assert_eq!(got[0], b'S', "client round {round}");
+            }
+        });
+
+        compio_runtime::time::timeout(Duration::from_secs(2), server)
+            .await
+            .expect("server timed out")
+            .resume_unwind()
+            .unwrap();
+
+        compio_runtime::time::timeout(Duration::from_secs(2), client)
             .await
             .expect("client timed out")
             .resume_unwind()
