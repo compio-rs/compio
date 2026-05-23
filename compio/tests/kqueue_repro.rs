@@ -770,6 +770,67 @@ fn same_fd_write_tcpstream_read_asyncfd() {
     });
 }
 
+/// Cancel-and-resubmit with AsyncFd (Read op, never eager).
+/// The writer sends data, but the reader cancels reads via short timeouts.
+/// After cancel, the Read op's pre_submit returns Decision::Wait (never tries
+/// the syscall). If kqueue doesn't detect already-buffered data after
+/// delete+re-add, the read hangs forever.
+#[cfg(feature = "async-fd")]
+#[test]
+fn asyncfd_read_cancel_resubmit() {
+    use std::os::fd::{AsRawFd, FromRawFd};
+
+    let rt = compio_runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let writer = compio_runtime::spawn(async move {
+            let stream = TcpStream::connect(addr).await.unwrap();
+            for round in 0u32..3 {
+                compio_runtime::time::sleep(Duration::from_millis(50)).await;
+                tcp_write_all(&stream, make_payload(b'W', round, 64)).await;
+            }
+        });
+
+        let reader = compio_runtime::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let read_fd = unsafe {
+                AsyncFd::new_unchecked(std::net::TcpStream::from_raw_fd(
+                    stream.as_raw_fd(),
+                ))
+            };
+            for round in 0u32..3 {
+                let data = loop {
+                    match compio_runtime::time::timeout(
+                        Duration::from_millis(5),
+                        asyncfd_read_exact(&read_fd, 64),
+                    )
+                    .await
+                    {
+                        Ok(data) => break data,
+                        Err(_) => continue,
+                    }
+                };
+                assert_eq!(data[0], b'W', "round {round}");
+            }
+            std::mem::forget(read_fd);
+        });
+
+        compio_runtime::time::timeout(Duration::from_secs(5), writer)
+            .await
+            .expect("writer timed out")
+            .resume_unwind()
+            .unwrap();
+
+        compio_runtime::time::timeout(Duration::from_secs(5), reader)
+            .await
+            .expect("reader timed out")
+            .resume_unwind()
+            .unwrap();
+    });
+}
+
 /// AsyncFd variant with ZMTP-like varying sizes.
 #[cfg(feature = "async-fd")]
 #[test]
