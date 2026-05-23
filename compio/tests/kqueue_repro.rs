@@ -707,6 +707,69 @@ fn split_write_tcpstream_read_asyncfd() {
     });
 }
 
+/// Same as split_write_tcpstream_read_asyncfd but using the SAME raw fd
+/// (no dup). This matches omq's SharedFd clone pattern where both the
+/// TcpStream writer and AsyncFd reader reference the same fd number.
+#[cfg(feature = "async-fd")]
+#[test]
+fn same_fd_write_tcpstream_read_asyncfd() {
+    use std::os::fd::{AsRawFd, FromRawFd};
+
+    let rt = compio_runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let accept = compio_runtime::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            stream
+        });
+        let client_write = TcpStream::connect(addr).await.unwrap();
+        let server_write = accept.await.unwrap();
+
+        let server_read = unsafe {
+            AsyncFd::new_unchecked(std::net::TcpStream::from_raw_fd(
+                server_write.as_raw_fd(),
+            ))
+        };
+        let client_read = unsafe {
+            AsyncFd::new_unchecked(std::net::TcpStream::from_raw_fd(
+                client_write.as_raw_fd(),
+            ))
+        };
+
+        let server = compio_runtime::spawn(async move {
+            for round in 0u32..5 {
+                tcp_write_all(&server_write, make_payload(b'S', round, 64)).await;
+                let got = asyncfd_read_exact(&server_read, 64).await;
+                assert_eq!(got[0], b'C', "server round {round}");
+            }
+            std::mem::forget(server_read);
+        });
+
+        let client = compio_runtime::spawn(async move {
+            for round in 0u32..5 {
+                tcp_write_all(&client_write, make_payload(b'C', round, 64)).await;
+                let got = asyncfd_read_exact(&client_read, 64).await;
+                assert_eq!(got[0], b'S', "client round {round}");
+            }
+            std::mem::forget(client_read);
+        });
+
+        compio_runtime::time::timeout(Duration::from_secs(2), server)
+            .await
+            .expect("server timed out")
+            .resume_unwind()
+            .unwrap();
+
+        compio_runtime::time::timeout(Duration::from_secs(2), client)
+            .await
+            .expect("client timed out")
+            .resume_unwind()
+            .unwrap();
+    });
+}
+
 /// AsyncFd variant with ZMTP-like varying sizes.
 #[cfg(feature = "async-fd")]
 #[test]
