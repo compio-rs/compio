@@ -66,7 +66,9 @@ pin_project_lite::pin_project! {
     impl<T: OpCode, E> PinnedDrop for Submit<T, E> {
         fn drop(this: Pin<&mut Self>) {
             let this = this.project();
-            if let Some(State::Submitted { key, .. }) = this.state.take() {
+            if let Some(State::Submitted { key, .. }) = this.state.take()
+                && !key.has_result()
+            {
                 this.runtime.cancel(key);
             }
         }

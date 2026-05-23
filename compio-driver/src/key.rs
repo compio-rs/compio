@@ -293,7 +293,7 @@ impl ErasedKey {
     }
 
     /// Whether the op is completed.
-    pub(crate) fn has_result(&self) -> bool {
+    pub fn has_result(&self) -> bool {
         self.borrow().result.is_ready()
     }
 

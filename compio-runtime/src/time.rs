@@ -12,7 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures_util::{FutureExt, select};
+use futures_util::{FutureExt, select_biased};
 
 use crate::Runtime;
 
@@ -81,7 +81,7 @@ impl Error for Elapsed {}
 /// value is returned. Otherwise, an error is returned and the future is
 /// cancelled.
 pub async fn timeout<F: Future>(duration: Duration, future: F) -> Result<F::Output, Elapsed> {
-    select! {
+    select_biased! {
         res = future.fuse() => Ok(res),
         _ = sleep(duration).fuse() => Err(Elapsed(())),
     }
