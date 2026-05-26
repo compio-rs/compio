@@ -1,106 +1,58 @@
-use proc_macro2::TokenStream;
+use std::{collections::HashMap, ops::Deref};
+
+use darling::{FromMeta, util::parse_expr::parse_str_literal};
+use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, TokenStreamExt, quote};
-use syn::{
-    Attribute, Expr, ExprLit, Ident, Lit, Meta, Path, Signature, Token, Visibility, parse::Parse,
-    punctuated::Punctuated,
-};
+use syn::{Attribute, Expr, Ident, Meta, Path, Signature, Visibility, spanned::Spanned};
 
 use crate::{retrieve_driver_mod, retrieve_runtime_mod};
 
-struct MetaPunctuated(Punctuated<Meta, Token![,]>);
+fn parse_str_literal_optional(meta: &Meta) -> darling::Result<Option<Expr>> {
+    Ok(Some(parse_str_literal(meta)?))
+}
 
-impl Parse for MetaPunctuated {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        Ok(Self(Punctuated::parse_terminated(input)?))
+#[derive(Debug)]
+struct KeepPathSpan<T> {
+    span: Span,
+    value: T,
+}
+
+impl<T: Default> Default for KeepPathSpan<T> {
+    fn default() -> Self {
+        Self {
+            span: Span::call_site(),
+            value: T::default(),
+        }
     }
 }
 
-pub(crate) struct BuilderMethod {
-    pub name: Ident,
-    pub value: Expr,
-}
-
-#[derive(Default)]
-pub(crate) struct RawAttr {
-    pub runtime_methods: Vec<BuilderMethod>,
-    pub proactor_methods: Vec<BuilderMethod>,
-    pub crate_name: Option<TokenStream>,
-    pub with_proactor_call: Option<Path>,
-}
-
-impl Parse for RawAttr {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let items = Punctuated::<Meta, Token![,]>::parse_terminated(input)?;
-
-        let mut runtime_methods = Vec::new();
-        let mut proactor_methods = Vec::new();
-        let mut crate_name = None;
-        let mut with_proactor_call = None;
-
-        for meta in items {
-            match meta {
-                Meta::List(list) => {
-                    if list.path.is_ident("with_proactor") {
-                        if !list.tokens.is_empty() {
-                            let inner_items = syn::parse2::<MetaPunctuated>(list.tokens)?.0;
-                            for inner_meta in inner_items {
-                                if let Meta::NameValue(nv) = inner_meta {
-                                    let name = nv.path.require_ident()?.clone();
-                                    proactor_methods.push(BuilderMethod {
-                                        name,
-                                        value: nv.value,
-                                    });
-                                } else {
-                                    return Err(syn::Error::new_spanned(
-                                        inner_meta,
-                                        "expected `name = value` inside `with_proactor`",
-                                    ));
-                                }
-                            }
-                            with_proactor_call = Some(list.path.clone());
-                        }
-                    } else {
-                        return Err(syn::Error::new_spanned(
-                            list.path,
-                            "unknown key; use `name = value` for parameters or \
-                             `with_proactor(...)` for proactor config",
-                        ));
-                    }
-                }
-                Meta::NameValue(nv) => {
-                    if nv.path.is_ident("crate") {
-                        if let Expr::Lit(ExprLit {
-                            lit: Lit::Str(s), ..
-                        }) = &nv.value
-                        {
-                            crate_name = Some(s.parse::<TokenStream>()?);
-                        } else {
-                            crate_name = Some(nv.value.into_token_stream());
-                        }
-                    } else {
-                        let name = nv.path.require_ident()?.clone();
-                        runtime_methods.push(BuilderMethod {
-                            name,
-                            value: nv.value,
-                        });
-                    }
-                }
-                Meta::Path(path) => {
-                    return Err(syn::Error::new_spanned(
-                        path,
-                        "expected `name = value` or `with_proactor(...)`",
-                    ));
-                }
-            }
-        }
-
+impl<T: FromMeta> FromMeta for KeepPathSpan<T> {
+    fn from_meta(meta: &Meta) -> darling::Result<Self> {
+        let path = meta.path();
         Ok(Self {
-            runtime_methods,
-            proactor_methods,
-            crate_name,
-            with_proactor_call,
+            span: path.span(),
+            value: T::from_meta(meta)?,
         })
     }
+}
+
+impl<T> Deref for KeepPathSpan<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+#[derive(Default, FromMeta)]
+#[darling(derive_syn_parse)]
+pub struct RawAttr {
+    #[darling(default, with = parse_str_literal_optional, rename = "crate")]
+    crate_name: Option<Expr>,
+    #[darling(default, flatten)]
+    runtime_methods: HashMap<Path, Expr>,
+    #[darling(default)]
+    with_proactor: KeepPathSpan<HashMap<Path, Expr>>,
 }
 
 pub(crate) struct RawBodyItemFn {
@@ -148,18 +100,12 @@ impl RawBodyItemFn {
 
     fn gen_runtime_block(&self) -> TokenStream {
         let runtime_mod = match &self.args.crate_name {
-            Some(c) => {
-                let c = c.clone();
-                quote!(#c::runtime)
-            }
+            Some(c) => quote!(#c::runtime),
             None => retrieve_runtime_mod(),
         };
 
         let driver_mod = match &self.args.crate_name {
-            Some(c) => {
-                let c = c.clone();
-                quote!(#c::driver)
-            }
+            Some(c) => quote!(#c::driver),
             None => retrieve_driver_mod(),
         };
 
@@ -169,33 +115,25 @@ impl RawBodyItemFn {
             #runtime_mod::Runtime::builder()
         };
 
-        for method in &self.args.runtime_methods {
-            let name = &method.name;
-            let value = &method.value;
+        for (name, value) in &self.args.runtime_methods {
             builder = quote! {
                 #builder.#name(#value)
             };
         }
 
-        if !self.args.proactor_methods.is_empty() {
+        if !self.args.with_proactor.is_empty() {
             let mut proactor_stmts: Vec<TokenStream> = Vec::new();
             proactor_stmts.push(quote! {
                 let mut __compio_proactor_builder = #driver_mod::Proactor::builder();
             });
-            for method in &self.args.proactor_methods {
-                let name = &method.name;
-                let value = &method.value;
+            for (name, value) in self.args.with_proactor.iter() {
                 proactor_stmts.push(quote! {
                     __compio_proactor_builder.#name(#value);
                 });
             }
-            // Preserve the original token for the `with_proactor` call to make the language
-            // server work better.
-            let with_proactor_call = if let Some(path) = &self.args.with_proactor_call {
-                quote!(#path)
-            } else {
-                quote!(with_proactor)
-            };
+
+            let with_proactor_call = Ident::new("with_proactor", self.args.with_proactor.span);
+
             builder = quote! {
                 #builder.#with_proactor_call({
                     #(#proactor_stmts)*
