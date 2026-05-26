@@ -1,18 +1,21 @@
 //! Future for submitting operations to the runtime.
 
 use std::{
+    cell::RefCell,
     future::Future,
     marker::PhantomData,
     pin::Pin,
+    rc::Rc,
     task::{Context, Poll, Waker},
 };
 
 use compio_buf::BufResult;
-use compio_driver::{Extra, Key, OpCode, PushEntry};
+use compio_driver::{Extra, Key, OpCode, Proactor, PushEntry};
 use futures_util::future::FusedFuture;
 
 use crate::{
-    CancelToken, Runtime,
+    CancelToken,
+    future::{poll_task, poll_task_with_extra, submit_raw},
     waker::{get_ext, get_waker},
 };
 
@@ -59,7 +62,7 @@ pin_project_lite::pin_project! {
     ///
     /// [`.with_extra()`]: Submit::with_extra
     pub struct Submit<T: OpCode, E = ()> {
-        runtime: Runtime,
+        driver: Rc<RefCell<Proactor>>,
         state: Option<State<T, E>>,
     }
 
@@ -67,11 +70,10 @@ pin_project_lite::pin_project! {
         fn drop(this: Pin<&mut Self>) {
             let this = this.project();
             if let Some(State::Submitted { key, .. }) = this.state.take() {
-                this.runtime.cancel(key);
+                this.driver.borrow_mut().cancel(key);
             }
         }
     }
-
 }
 
 enum State<T: OpCode, E> {
@@ -89,9 +91,9 @@ impl<T: OpCode, E> State<T, E> {
 }
 
 impl<T: OpCode> Submit<T, ()> {
-    pub(crate) fn new(runtime: Runtime, op: T) -> Self {
+    pub(crate) fn new(driver: Rc<RefCell<Proactor>>, op: T) -> Self {
         Submit {
-            runtime,
+            driver,
             state: Some(State::Idle { op }),
         }
     }
@@ -101,10 +103,10 @@ impl<T: OpCode> Submit<T, ()> {
     /// This is useful if you need to access extra information provided by the
     /// runtime upon completion of the operation.
     pub fn with_extra(mut self) -> Submit<T, Extra> {
-        let runtime = self.runtime.clone();
+        let driver = self.driver.clone();
         let Some(state) = self.state.take() else {
             return Submit {
-                runtime,
+                driver,
                 state: None,
             };
         };
@@ -116,7 +118,7 @@ impl<T: OpCode> Submit<T, ()> {
             State::Idle { op } => State::Idle { op },
         };
         Submit {
-            runtime,
+            driver,
             state: Some(state),
         }
     }
@@ -130,16 +132,20 @@ impl<T: OpCode + 'static> Future for Submit<T, ()> {
 
         loop {
             match this.state.take().expect("Cannot poll after ready") {
-                State::Submitted { key, .. } => match this.runtime.poll_task(cx.get_waker(), key) {
-                    PushEntry::Pending(key) => {
-                        *this.state = Some(State::submitted(key));
-                        return Poll::Pending;
+                State::Submitted { key, .. } => {
+                    let entry = poll_task(&mut this.driver.borrow_mut(), cx.get_waker(), key);
+                    match entry {
+                        PushEntry::Pending(key) => {
+                            *this.state = Some(State::submitted(key));
+                            return Poll::Pending;
+                        }
+                        PushEntry::Ready(res) => return Poll::Ready(res),
                     }
-                    PushEntry::Ready(res) => return Poll::Ready(res),
-                },
+                }
                 State::Idle { op } => {
-                    let extra = cx.as_extra(|| this.runtime.default_extra());
-                    match this.runtime.submit_raw(op, extra) {
+                    let extra = cx.as_extra(|| this.driver.borrow().default_extra());
+                    let entry = submit_raw(&mut this.driver.borrow_mut(), op, extra);
+                    match entry {
                         PushEntry::Pending(key) => {
                             // TODO: Should we register it only the first time or every time it's
                             // being polled?
@@ -168,7 +174,9 @@ impl<T: OpCode + 'static> Future for Submit<T, Extra> {
         loop {
             match this.state.take().expect("Cannot poll after ready") {
                 State::Submitted { key, .. } => {
-                    match this.runtime.poll_task_with_extra(cx.get_waker(), key) {
+                    let entry =
+                        poll_task_with_extra(&mut this.driver.borrow_mut(), cx.get_waker(), key);
+                    match entry {
                         PushEntry::Pending(key) => {
                             *this.state = Some(State::submitted(key));
                             return Poll::Pending;
@@ -177,8 +185,9 @@ impl<T: OpCode + 'static> Future for Submit<T, Extra> {
                     }
                 }
                 State::Idle { op } => {
-                    let extra = cx.as_extra(|| this.runtime.default_extra());
-                    match this.runtime.submit_raw(op, extra) {
+                    let extra = cx.as_extra(|| this.driver.borrow().default_extra());
+                    let entry = submit_raw(&mut this.driver.borrow_mut(), op, extra);
+                    match entry {
                         PushEntry::Pending(key) => {
                             if let Some(cancel) = cx.get_cancel() {
                                 cancel.register(&key);
@@ -187,7 +196,7 @@ impl<T: OpCode + 'static> Future for Submit<T, Extra> {
                             *this.state = Some(State::submitted(key))
                         }
                         PushEntry::Ready(res) => {
-                            return Poll::Ready((res, this.runtime.default_extra()));
+                            return Poll::Ready((res, this.driver.borrow().default_extra()));
                         }
                     }
                 }

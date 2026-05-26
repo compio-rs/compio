@@ -12,6 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use compio_log::{debug, instrument};
 use futures_util::{FutureExt, select};
 
 use crate::Runtime;
@@ -60,7 +61,14 @@ pub async fn sleep(duration: Duration) {
 /// # })
 /// ```
 pub async fn sleep_until(deadline: Instant) {
-    crate::create_timer(deadline).await
+    create_timer(deadline).await
+}
+
+async fn create_timer(instant: std::time::Instant) {
+    let key = Runtime::with_current(|r| r.timer_runtime.borrow_mut().insert(instant));
+    if let Some(key) = key {
+        TimerFuture::new(key).await;
+    }
 }
 
 /// Error returned by [`timeout`] or [`timeout_at`].
@@ -319,6 +327,18 @@ impl TimerRuntime {
             w.wake();
         }
     }
+
+    pub fn poll_timer(&mut self, cx: &mut Context<'_>, key: &TimerKey) -> Poll<()> {
+        instrument!(compio_log::Level::DEBUG, "poll_timer", ?cx, ?key);
+        if self.is_completed(key) {
+            debug!("ready");
+            Poll::Ready(())
+        } else {
+            debug!("pending");
+            self.update_waker(key, cx.waker());
+            Poll::Pending
+        }
+    }
 }
 
 pub(crate) struct TimerFuture(TimerKey);
@@ -333,13 +353,13 @@ impl Future for TimerFuture {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Runtime::with_current(|r| r.poll_timer(cx, &self.0))
+        Runtime::with_current(|r| r.timer_runtime.borrow_mut().poll_timer(cx, &self.0))
     }
 }
 
 impl Drop for TimerFuture {
     fn drop(&mut self) {
-        Runtime::with_current(|r| r.cancel_timer(&self.0));
+        Runtime::with_current(|r| r.timer_runtime.borrow_mut().cancel(&self.0));
     }
 }
 

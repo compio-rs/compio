@@ -1,17 +1,22 @@
 use std::{
+    cell::RefCell,
     marker::PhantomData,
     pin::Pin,
+    rc::Rc,
     task::{Context, Poll},
 };
 
 use compio_buf::{BufResult, SetLen};
 use compio_driver::{
-    BufferPool, BufferRef, Extra, Key, OpCode, PushEntry, TakeBuffer,
+    BufferPool, BufferRef, Extra, Key, OpCode, Proactor, PushEntry, TakeBuffer,
     op::{RecvFromMultiResult, RecvMsgMultiResult},
 };
 use futures_util::{Stream, StreamExt, stream::FusedStream};
 
-use crate::{ContextExt, Runtime};
+use crate::{
+    ContextExt,
+    future::{poll_multishot, poll_task_with_extra, submit_raw},
+};
 
 pin_project_lite::pin_project! {
     /// Returned [`Stream`] for [`Runtime::submit_multi`].
@@ -19,7 +24,7 @@ pin_project_lite::pin_project! {
     /// When this is dropped and the operation hasn't finished yet, it will try to
     /// cancel the operation.
     pub struct SubmitMulti<T: OpCode> {
-        runtime: Runtime,
+        driver: Rc<RefCell<Proactor>>,
         state: Option<State<T>>,
     }
 
@@ -27,7 +32,7 @@ pin_project_lite::pin_project! {
         fn drop(this: Pin<&mut Self>) {
             let this = this.project();
             if let Some(State::Submitted { key }) = this.state.take() {
-                this.runtime.cancel(key);
+                this.driver.borrow_mut().cancel(key);
             }
         }
     }
@@ -46,9 +51,9 @@ impl<T: OpCode> State<T> {
 }
 
 impl<T: OpCode> SubmitMulti<T> {
-    pub(crate) fn new(runtime: Runtime, op: T) -> Self {
+    pub(crate) fn new(driver: Rc<RefCell<Proactor>>, op: T) -> Self {
         SubmitMulti {
-            runtime,
+            driver,
             state: Some(State::Idle { op }),
         }
     }
@@ -82,8 +87,9 @@ impl<T: OpCode + 'static> Stream for SubmitMulti<T> {
         loop {
             match this.state.take().expect("State error, this is a bug") {
                 State::Idle { op } => {
-                    let extra = cx.as_extra(|| this.runtime.default_extra());
-                    match this.runtime.submit_raw(op, extra) {
+                    let extra = cx.as_extra(|| this.driver.borrow().default_extra());
+                    let entry = submit_raw(&mut this.driver.borrow_mut(), op, extra);
+                    match entry {
                         PushEntry::Pending(key) => {
                             if let Some(cancel) = cx.get_cancel() {
                                 cancel.register(&key);
@@ -93,7 +99,7 @@ impl<T: OpCode + 'static> Stream for SubmitMulti<T> {
                         }
                         PushEntry::Ready(BufResult(res, op)) => {
                             *this.state = Some(State::Finished { op });
-                            let extra = this.runtime.default_extra();
+                            let extra = this.driver.borrow().default_extra();
 
                             return Poll::Ready(Some(BufResult(res, extra)));
                         }
@@ -101,13 +107,17 @@ impl<T: OpCode + 'static> Stream for SubmitMulti<T> {
                 }
 
                 State::Submitted { key, .. } => {
-                    if let Some(res) = this.runtime.poll_multishot(cx.get_waker(), &key) {
+                    if let Some(res) =
+                        poll_multishot(&mut this.driver.borrow_mut(), cx.get_waker(), &key)
+                    {
                         *this.state = Some(State::submitted(key));
 
                         return Poll::Ready(Some(res));
                     };
 
-                    match this.runtime.poll_task_with_extra(cx.get_waker(), key) {
+                    let entry =
+                        poll_task_with_extra(&mut this.driver.borrow_mut(), cx.get_waker(), key);
+                    match entry {
                         PushEntry::Pending(key) => {
                             *this.state = Some(State::submitted(key));
 
