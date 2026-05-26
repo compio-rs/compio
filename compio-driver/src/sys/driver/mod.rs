@@ -31,6 +31,14 @@ crate::assert_not_impl!(Driver, Sync);
 
 /// An operation that can be optimized by making use of the "poll-first"
 /// feature.
+///
+/// By setting this, `io_uring` will assume the socket is currently empty and
+/// attempting to receive data will be unsuccessful. For this case, `io_uring`
+/// will arm internal poll and trigger a receive of the data when the socket has
+/// data to be read. This initial receive attempt can be wasteful for the case
+/// where the socket is expected to be empty, setting this flag will bypass the
+/// initial receive attempt and go straight to arming poll. If poll does
+/// indicate that data is ready to be received, the operation will proceed.
 pub trait PollFirst {
     /// Poll first before syscall. This is only meaningful for io-uring. It sets
     /// `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio` of the SQE.
