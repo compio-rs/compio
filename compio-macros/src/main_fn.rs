@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::ToTokens;
-use syn::{Attribute, Signature, Visibility, parse::Parse};
+use syn::{ItemFn, parse::Parse};
 
 use crate::item_fn::{RawAttr, RawBodyItemFn};
 
@@ -20,20 +20,17 @@ impl CompioMain {
 
 impl Parse for CompioMain {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let attrs = input.call(Attribute::parse_outer)?;
-        let vis: Visibility = input.parse()?;
-        let mut sig: Signature = input.parse()?;
-        let body: TokenStream = input.parse()?;
+        let mut item_fn = input.parse::<ItemFn>()?;
 
-        if sig.asyncness.is_none() {
+        if item_fn.sig.asyncness.is_none() {
             return Err(syn::Error::new_spanned(
-                sig.ident,
+                item_fn.sig.ident,
                 "the `async` keyword is missing from the function declaration",
             ));
         };
 
-        sig.asyncness.take();
-        Ok(Self(RawBodyItemFn::new(attrs, vis, sig, body)))
+        item_fn.sig.asyncness.take();
+        Ok(Self(RawBodyItemFn::new(item_fn)))
     }
 }
 

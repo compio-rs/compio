@@ -3,7 +3,7 @@ use std::{collections::HashMap, ops::Deref};
 use darling::{FromMeta, util::parse_expr::parse_str_literal};
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, TokenStreamExt, quote};
-use syn::{Attribute, Expr, Ident, Meta, Path, Signature, Visibility, spanned::Spanned};
+use syn::{Expr, Ident, ItemFn, Meta, Path, spanned::Spanned};
 
 use crate::{retrieve_driver_mod, retrieve_runtime_mod};
 
@@ -56,22 +56,16 @@ pub struct RawAttr {
 }
 
 pub(crate) struct RawBodyItemFn {
-    pub attrs: Vec<Attribute>,
     pub args: RawAttr,
-    pub vis: Visibility,
-    pub sig: Signature,
-    pub body: TokenStream,
+    pub item_fn: ItemFn,
     pub test: bool,
 }
 
 impl RawBodyItemFn {
-    pub fn new(attrs: Vec<Attribute>, vis: Visibility, sig: Signature, body: TokenStream) -> Self {
+    pub fn new(item_fn: ItemFn) -> Self {
         Self {
-            attrs,
             args: RawAttr::default(),
-            vis,
-            sig,
-            body,
+            item_fn,
             test: false,
         }
     }
@@ -88,13 +82,9 @@ impl RawBodyItemFn {
         if self.test {
             tokens.append_all(quote!(#[test]));
         }
-        tokens.append_all(
-            self.attrs
-                .iter()
-                .filter(|a| matches!(a.style, syn::AttrStyle::Outer)),
-        );
-        self.vis.to_tokens(tokens);
-        self.sig.to_tokens(tokens);
+        tokens.append_all(self.item_fn.attrs.iter());
+        self.item_fn.vis.to_tokens(tokens);
+        self.item_fn.sig.to_tokens(tokens);
         tokens.append_all(self.gen_runtime_block());
     }
 
@@ -108,8 +98,6 @@ impl RawBodyItemFn {
             Some(c) => quote!(#c::driver),
             None => retrieve_driver_mod(),
         };
-
-        let block = &self.body;
 
         let mut builder = quote! {
             #runtime_mod::Runtime::builder()
@@ -142,6 +130,7 @@ impl RawBodyItemFn {
             };
         }
 
+        let block = &self.item_fn.block;
         quote!({
             #builder.build().expect("cannot create runtime").block_on(async move #block)
         })
