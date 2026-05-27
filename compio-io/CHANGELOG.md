@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0-rc.3](https://github.com/compio-rs/compio/compare/compio-io-v0.10.0-rc.2...compio-io-v0.10.0-rc.3) - 2026-05-27
+
+### Changed
+
+- replace `cfg_if` with `cfg_select` ([#925](https://github.com/compio-rs/compio/pull/925))
+- use FutureExt if possible ([#923](https://github.com/compio-rs/compio/pull/923))
+
 ## 0.10.0-rc.2 - 2026-05-15
 
 ### Added

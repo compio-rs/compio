@@ -1,6 +1,6 @@
 [package]
 name = "compio-process"
-version = "0.9.1-rc.1"
+version = "0.9.1-rc.2"
 description = "Processes for compio"
 categories = ["asynchronous"]
 keywords = ["async", "process"]

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0-rc.3](https://github.com/compio-rs/compio/compare/compio-ws-v0.4.0-rc.2...compio-ws-v0.4.0-rc.3) - 2026-05-27
+
+### Added
+
+- *(log)* reduce unused warnings ([#924](https://github.com/compio-rs/compio/pull/924))
+
+### Other
+
+- check android & ios ([#922](https://github.com/compio-rs/compio/pull/922))
+
 ## 0.4.0-rc.2 - 2026-05-15
 
 ### Fixed
