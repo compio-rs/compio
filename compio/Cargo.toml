@@ -261,4 +261,8 @@ required-features = ["fs", "net", "macros"]
 
 [[test]]
 name = "accept"
-required-features = ["net"]
+required-features = ["net", "macros"]
+
+[[test]]
+name = "macros"
+required-features = ["macros"]
