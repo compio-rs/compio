@@ -57,7 +57,11 @@ pub fn is_kernel_at_least(v: impl Into<KernelVersion>) -> bool {
 }
 
 pub(crate) fn set_poll_first(mut entry: Entry, flag: bool) -> Entry {
-    if flag && is_kernel_at_least((5, 19)) {
+    let version = match entry.get_opcode() as u8 {
+        io_uring::opcode::Accept::CODE => (6, 10),
+        _ => (5, 19),
+    };
+    if flag && is_kernel_at_least(version) {
         let sqe = &raw mut entry as *mut io_uring_sqe;
         unsafe {
             (*sqe).ioprio |= IORING_RECVSEND_POLL_FIRST as u16;

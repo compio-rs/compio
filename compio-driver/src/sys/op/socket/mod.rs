@@ -15,7 +15,7 @@ mod_use![stub];
 
 use rustix::net::{RecvFlags, SendFlags};
 
-use crate::sys::prelude::*;
+use crate::{PollFirst, sys::prelude::*};
 
 /// Connect to a remote address.
 pub struct Connect<S> {
@@ -261,10 +261,10 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
             poll_first: false,
         }
     }
+}
 
-    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
-    /// of the SQE on the IO_URING driver.
-    pub fn poll_first(&mut self) {
+impl<T: IoVectoredBufMut, C: IoBufMut, S> PollFirst for RecvMsg<T, C, S> {
+    fn poll_first(&mut self) {
         self.poll_first = true;
     }
 }
@@ -291,10 +291,10 @@ impl<T: IoBufMut, S> Recv<T, S> {
             poll_first: false,
         }
     }
+}
 
-    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
-    /// of the SQE on the IO_URING driver.
-    pub fn poll_first(&mut self) {
+impl<T: IoBufMut, S> PollFirst for Recv<T, S> {
+    fn poll_first(&mut self) {
         self.poll_first = true;
     }
 }
@@ -317,10 +317,10 @@ impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
             poll_first: false,
         }
     }
+}
 
-    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
-    /// of the SQE on the IO_URING driver.
-    pub fn poll_first(&mut self) {
+impl<T: IoVectoredBufMut, S> PollFirst for RecvVectored<T, S> {
+    fn poll_first(&mut self) {
         self.poll_first = true;
     }
 }
@@ -359,10 +359,10 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
             buffer,
         }
     }
+}
 
-    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
-    /// of the SQE on the IO_URING driver.
-    pub fn poll_first(&mut self) {
+impl<T: IoVectoredBufMut, S> PollFirst for RecvFromVectored<T, S> {
+    fn poll_first(&mut self) {
         self.header.poll_first = true;
     }
 }
@@ -384,10 +384,10 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
             buffer,
         }
     }
+}
 
-    /// This method sets the `IORING_RECVSEND_POLL_FIRST` flag in the `ioprio`
-    /// of the SQE on the IO_URING driver.
-    pub fn poll_first(&mut self) {
+impl<T: IoBufMut, S> PollFirst for RecvFrom<T, S> {
+    fn poll_first(&mut self) {
         self.header.poll_first = true;
     }
 }

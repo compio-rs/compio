@@ -9,7 +9,7 @@ use rustix::{
     },
 };
 
-use crate::sys::op::*;
+use crate::{PollFirst, sys::op::*};
 
 impl<S: AsFd> Accept<S> {
     pub(crate) fn call(&mut self) -> io::Result<usize> {
@@ -299,6 +299,7 @@ pub struct Accept<S> {
     pub(crate) buffer: SockAddrStorage,
     pub(crate) addr_len: socklen_t,
     pub(crate) accepted_fd: Option<Socket2>,
+    pub(crate) poll_first: bool,
 }
 
 impl<S> Accept<S> {
@@ -311,7 +312,14 @@ impl<S> Accept<S> {
             buffer,
             addr_len,
             accepted_fd: None,
+            poll_first: false,
         }
+    }
+}
+
+impl<S> PollFirst for Accept<S> {
+    fn poll_first(&mut self) {
+        self.poll_first = true;
     }
 }
 
