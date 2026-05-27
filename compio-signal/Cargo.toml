@@ -1,6 +1,6 @@
 [package]
 name = "compio-signal"
-version = "0.10.0-rc.3"
+version = "0.10.0"
 description = "Signal handling for compio"
 categories = ["asynchronous"]
 keywords = ["async", "signal"]

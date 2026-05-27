@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.9.1-rc.2](https://github.com/compio-rs/compio/compare/compio-process-v0.9.1-rc.1...compio-process-v0.9.1-rc.2) - 2026-05-27
+## 0.9.1 - 2026-05-27
 
 ### Changed
 
