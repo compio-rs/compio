@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.2.0 - 2026-05-27
+
+### Added
+
+- *(macros)* builder params ([#926](https://github.com/compio-rs/compio/pull/926))
+
+### Other
+
+- release ([#885](https://github.com/compio-rs/compio/pull/885))
+- remove "authors" field in metadata ([#711](https://github.com/compio-rs/compio/pull/711))
+- release ([#646](https://github.com/compio-rs/compio/pull/646))
+
 ## 0.1.2
 
 ### Added

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.12.0 - 2026-05-27
+
+### Added
+
+- *(driver,net)* [**breaking**] more nonempty ([#906](https://github.com/compio-rs/compio/pull/906))
+- *(log)* reduce unused warnings ([#924](https://github.com/compio-rs/compio/pull/924))
+
+### Changed
+
+- replace `cfg_if` with `cfg_select` ([#925](https://github.com/compio-rs/compio/pull/925))
+
+### Fixed
+
+- *(driver)* bounds-check buffer_id in Shared::reset ([#927](https://github.com/compio-rs/compio/pull/927))
+
+### Other
+
+- check android & ios ([#922](https://github.com/compio-rs/compio/pull/922))
+
 ## 0.12.0-rc.2 - 2026-05-15
 
 ### Added
