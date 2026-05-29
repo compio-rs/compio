@@ -40,8 +40,9 @@ use compio_buf::{IoBuf, IoBufMut, SetLen};
 
 mod io;
 
-pub use self::io::*;
 pub use rustix::net::ReturnFlags;
+
+pub use self::io::*;
 
 #[cfg(feature = "bytemuck")]
 pub mod bytemuck_ext;

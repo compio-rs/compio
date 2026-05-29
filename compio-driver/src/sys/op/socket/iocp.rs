@@ -1,4 +1,3 @@
-use rustix::net::RecvFlags;
 use windows_sys::Win32::{
     Networking::WinSock::{
         LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_DISCONNECTEX, LPFN_GETACCEPTEXSOCKADDRS,
