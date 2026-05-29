@@ -201,7 +201,7 @@ impl<T: OpCode, B: HandleBufferRef + 'static> SubmitMultiManaged<T, B> {
 impl<T: OpCode + TakeBuffer<Buffer = B> + 'static, B: HandleBufferRef> Stream
     for SubmitMultiManaged<T, B>
 {
-    type Item = std::io::Result<B>;
+    type Item = std::io::Result<Option<B>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if let Some(inner) = self.inner.as_mut() {
@@ -237,7 +237,7 @@ impl<T: OpCode + TakeBuffer<Buffer = B> + 'static, B: HandleBufferRef> Stream
                     .and_then(|s| s.try_take().ok())
                     .and_then(|op| op.take_buffer()),
             };
-            Poll::Ready(buffer.map(Ok))
+            Poll::Ready(Some(Ok(buffer)))
         } else {
             Poll::Ready(None)
         }
@@ -269,6 +269,8 @@ pub trait HandleBufferRef: private::Sealed {
     unsafe fn from_buffer_ref(buffer: BufferRef, param: Self::Param) -> Self;
 
     unsafe fn advance_to(&mut self, len: usize);
+
+    fn is_empty(&self) -> bool;
 }
 
 impl HandleBufferRef for BufferRef {
@@ -281,6 +283,12 @@ impl HandleBufferRef for BufferRef {
     unsafe fn advance_to(&mut self, len: usize) {
         unsafe { SetLen::advance_to(self, len) }
     }
+
+    fn is_empty(&self) -> bool {
+        // A fallback buffer pool takes the buffer before the operation, so it
+        // can return an empty buffer when EOF is reached.
+        <[u8]>::is_empty(self)
+    }
 }
 
 impl HandleBufferRef for RecvFromMultiResult {
@@ -291,6 +299,10 @@ impl HandleBufferRef for RecvFromMultiResult {
     }
 
     unsafe fn advance_to(&mut self, _: usize) {}
+
+    fn is_empty(&self) -> bool {
+        false
+    }
 }
 
 impl HandleBufferRef for RecvMsgMultiResult {
@@ -301,4 +313,61 @@ impl HandleBufferRef for RecvMsgMultiResult {
     }
 
     unsafe fn advance_to(&mut self, _: usize) {}
+
+    fn is_empty(&self) -> bool {
+        false
+    }
+}
+
+/// A wrapper around [`SubmitMultiManaged`] that submits the operation
+/// automatically till the stream is finished.
+pub struct SubmitMultiStream<F, T: OpCode, B = BufferRef>
+where
+    B: HandleBufferRef + 'static,
+{
+    create_op: F,
+    op: Option<SubmitMultiManaged<T, B>>,
+}
+
+impl<F, T: OpCode, B: HandleBufferRef + 'static> SubmitMultiStream<F, T, B> {
+    /// Create a new [`SubmitMultiStream`] with a closure that creates the
+    /// operation.
+    pub fn new(create_op: F) -> Self {
+        Self {
+            create_op,
+            op: None,
+        }
+    }
+}
+
+impl<
+    F: (Fn() -> std::io::Result<SubmitMultiManaged<T, B>>) + Unpin,
+    T: OpCode + TakeBuffer<Buffer = B> + 'static,
+    B: HandleBufferRef,
+> Stream for SubmitMultiStream<F, T, B>
+{
+    type Item = std::io::Result<B>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        loop {
+            match &mut self.op {
+                Some(op) => match std::task::ready!(Pin::new(op).poll_next(cx)) {
+                    Some(Ok(Some(buffer))) => {
+                        if buffer.is_empty() {
+                            break Poll::Ready(None);
+                        } else {
+                            break Poll::Ready(Some(Ok(buffer)));
+                        }
+                    }
+                    Some(Ok(None)) => break Poll::Ready(None),
+                    Some(Err(e)) => break Poll::Ready(Some(Err(e))),
+                    None => self.op = None,
+                },
+                None => match (self.create_op)() {
+                    Ok(op) => self.op = Some(op),
+                    Err(e) => break Poll::Ready(Some(Err(e))),
+                },
+            }
+        }
+    }
 }
