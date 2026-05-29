@@ -49,6 +49,7 @@ async fn shutdown() -> std::io::Result<()> {
     Ok(())
 }
 
+#[cfg_attr(windows, ignore = "UDS support on Windows is incomplete")]
 #[compio_macros::test]
 async fn read_with_ancillary_flags() -> std::io::Result<()> {
     const MSG: &[u8] = b"hello";

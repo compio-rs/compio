@@ -384,18 +384,18 @@ impl Socket {
         .unwrap_or_else(|e| Either::Right(futures_util::stream::once(std::future::ready(Err(e)))))
     }
 
-    pub async fn recv_msg_with_flags<T: IoBufMut, C: IoBufMut>(
+    pub async fn recv_msg<T: IoBufMut, C: IoBufMut>(
         &self,
         buffer: T,
         control: C,
         flags: RecvFlags,
     ) -> BufResult<(usize, usize, Option<SockAddr>, ReturnFlags), (T, C)> {
-        self.recv_msg_vectored_with_flags([buffer], control, flags)
+        self.recv_msg_vectored([buffer], control, flags)
             .await
             .map_buffer(|([buffer], control)| (buffer, control))
     }
 
-    pub async fn recv_msg_vectored_with_flags<T: IoVectoredBufMut, C: IoBufMut>(
+    pub async fn recv_msg_vectored<T: IoVectoredBufMut, C: IoBufMut>(
         &self,
         buffer: T,
         control: C,
@@ -406,9 +406,12 @@ impl Socket {
         self.state.set_recv_op(&mut op);
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
         self.state.set_recv(&extra);
-        let flags = res.1.return_flags();
-        let res = res.into_inner().map_addr();
-        unsafe { res.map_vec_advanced() }.map_res(|(res, len, addr)| (res, len, addr, flags))
+        let res = res.into_inner().map2(
+            |res, (buffer, addr, control_len, flags)| ((res, control_len, (addr, flags)), buffer),
+            |(buffer, ..)| buffer,
+        );
+        unsafe { res.map_vec_advanced() }
+            .map_res(|(res, control_len, (addr, flags))| (res, control_len, addr, flags))
     }
 
     pub async fn recv_msg_managed<C: IoBufMut>(

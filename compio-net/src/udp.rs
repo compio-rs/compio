@@ -304,28 +304,15 @@ impl UdpSocket {
     }
 
     /// Receives a single datagram message and ancillary data on the socket. On
-    /// success, returns the number of bytes received, control length and the
-    /// origin.
-    pub async fn recv_msg<T: IoBufMut, C: IoBufMut>(
-        &self,
-        buffer: T,
-        control: C,
-    ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
-        self.recv_msg_with_flags(buffer, control)
-            .await
-            .map_res(|(n, m, addr, _flags)| (n, m, addr))
-    }
-
-    /// Receives a single datagram message and ancillary data on the socket. On
     /// success, returns the number of bytes received, control length, the
     /// origin and `recvmsg` flags.
-    pub async fn recv_msg_with_flags<T: IoBufMut, C: IoBufMut>(
+    pub async fn recv_msg<T: IoBufMut, C: IoBufMut>(
         &self,
         buffer: T,
         control: C,
     ) -> BufResult<(usize, usize, SocketAddr, ReturnFlags), (T, C)> {
         self.inner
-            .recv_msg_with_flags(buffer, control, RecvFlags::empty())
+            .recv_msg(buffer, control, RecvFlags::empty())
             .await
             .map_res(|(n, m, addr, flags)| {
                 let addr = addr
@@ -337,28 +324,15 @@ impl UdpSocket {
     }
 
     /// Receives a single datagram message and ancillary data on the socket. On
-    /// success, returns the number of bytes received, control length and the
-    /// origin.
-    pub async fn recv_msg_vectored<T: IoVectoredBufMut, C: IoBufMut>(
-        &self,
-        buffer: T,
-        control: C,
-    ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
-        self.recv_msg_vectored_with_flags(buffer, control)
-            .await
-            .map_res(|(n, m, addr, _flags)| (n, m, addr))
-    }
-
-    /// Receives a single datagram message and ancillary data on the socket. On
     /// success, returns the number of bytes received, control length, the
     /// origin and `recvmsg` flags.
-    pub async fn recv_msg_vectored_with_flags<T: IoVectoredBufMut, C: IoBufMut>(
+    pub async fn recv_msg_vectored<T: IoVectoredBufMut, C: IoBufMut>(
         &self,
         buffer: T,
         control: C,
     ) -> BufResult<(usize, usize, SocketAddr, ReturnFlags), (T, C)> {
         self.inner
-            .recv_msg_vectored_with_flags(buffer, control, RecvFlags::empty())
+            .recv_msg_vectored(buffer, control, RecvFlags::empty())
             .await
             .map_res(|(n, m, addr, flags)| {
                 let addr = addr

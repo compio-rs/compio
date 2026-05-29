@@ -94,7 +94,7 @@ async fn send_recv_vectored() {
 }
 
 #[compio_macros::test]
-async fn recv_msg_with_flags() {
+async fn recv_msg_flags() {
     const MSG: &str = "foo bar baz";
 
     let passive = UdpSocket::bind("127.0.0.1:0").await.unwrap();
@@ -106,7 +106,7 @@ async fn recv_msg_with_flags() {
     active.send_to(MSG, passive_addr).await.0.unwrap();
 
     let ((n, control_len, addr, flags), (buffer, _control)) = passive
-        .recv_msg_with_flags(Vec::with_capacity(20), AncillaryBuf::<64>::new())
+        .recv_msg(Vec::with_capacity(20), AncillaryBuf::<64>::new())
         .await
         .unwrap();
     assert_eq!(MSG.as_bytes(), &buffer);
@@ -118,7 +118,7 @@ async fn recv_msg_with_flags() {
     active.send_to(MSG, passive_addr).await.0.unwrap();
 
     let ((n, control_len, addr, flags), (buffer, _control)) = passive
-        .recv_msg_vectored_with_flags(
+        .recv_msg_vectored(
             ([0; 4], (Vec::with_capacity(20),)),
             AncillaryBuf::<64>::new(),
         )
@@ -130,22 +130,11 @@ async fn recv_msg_with_flags() {
     assert_eq!(control_len, 0);
     assert_eq!(addr, active_addr);
     assert_eq!(flags, ReturnFlags::empty());
-
-    active.send_to(MSG, passive_addr).await.0.unwrap();
-
-    let ((n, control_len, addr), (buffer, _control)) = passive
-        .recv_msg(Vec::with_capacity(20), AncillaryBuf::<64>::new())
-        .await
-        .unwrap();
-    assert_eq!(MSG.as_bytes(), &buffer);
-    assert_eq!(n, MSG.len());
-    assert_eq!(control_len, 0);
-    assert_eq!(addr, active_addr);
 }
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 #[compio_macros::test]
-async fn recv_msg_with_flags_truncated_datagram() {
+async fn recv_msg_flags_truncated_datagram() {
     const MSG: &[u8] = b"foo bar baz";
 
     let passive = UdpSocket::bind("127.0.0.1:0").await.unwrap();
@@ -157,7 +146,7 @@ async fn recv_msg_with_flags_truncated_datagram() {
     active.send_to(MSG, passive_addr).await.0.unwrap();
 
     let ((_n, _control_len, addr, flags), (buffer, _control)) = passive
-        .recv_msg_with_flags(Vec::with_capacity(3), AncillaryBuf::<64>::new())
+        .recv_msg(Vec::with_capacity(3), AncillaryBuf::<64>::new())
         .await
         .unwrap();
     assert_eq!(&MSG[..buffer.len()], buffer.as_slice());

@@ -264,10 +264,6 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
         }
     }
 
-    /// Get flags returned by `recvmsg`.
-    pub fn return_flags(&self) -> ReturnFlags {
-        self.return_flags
-    }
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S> PollFirst for RecvMsg<T, C, S> {
@@ -277,13 +273,14 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> PollFirst for RecvMsg<T, C, S> {
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
-    type Inner = ((T, C), Option<SockAddr>, usize);
+    type Inner = ((T, C), Option<SockAddr>, usize, ReturnFlags);
 
     fn into_inner(self) -> Self::Inner {
         (
             (self.buffer, self.control),
             self.header.into_addr(),
             self.control_len,
+            self.return_flags,
         )
     }
 }

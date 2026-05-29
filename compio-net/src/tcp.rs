@@ -521,7 +521,7 @@ impl AsyncReadAncillary for &TcpStream {
         control: C,
     ) -> BufResult<(usize, usize, ReturnFlags), (T, C)> {
         self.inner
-            .recv_msg_with_flags(buffer, control, RecvFlags::empty())
+            .recv_msg(buffer, control, RecvFlags::empty())
             .await
             .map_res(|(res, len, _addr, flags)| (res, len, flags))
     }
@@ -533,7 +533,7 @@ impl AsyncReadAncillary for &TcpStream {
         control: C,
     ) -> BufResult<(usize, usize, ReturnFlags), (T, C)> {
         self.inner
-            .recv_msg_vectored_with_flags(buffer, control, RecvFlags::empty())
+            .recv_msg_vectored(buffer, control, RecvFlags::empty())
             .await
             .map_res(|(res, len, _addr, flags)| (res, len, flags))
     }

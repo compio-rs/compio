@@ -143,7 +143,7 @@ impl<C: IoBufMut, S: AsFd> TakeBuffer for RecvMsgManaged<C, S> {
     type Buffer = ((BufferRef, C), Option<SockAddr>, usize);
 
     fn take_buffer(self) -> Option<Self::Buffer> {
-        let (([buf], control), addr, len) = self.op.into_inner();
+        let (([buf], control), addr, len, _flags) = self.op.into_inner();
         Some(((buf, control), addr, len))
     }
 }
