@@ -595,7 +595,7 @@ unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, 
         _: &io::Result<usize>,
         _: &crate::Extra,
     ) {
-        self.header.flags = RecvFlags::from_bits_retain(control.msg.dwFlags);
+        self.return_flags = ReturnFlags::from_bits_retain(control.msg.dwFlags);
         self.header.addr_len = control.msg.namelen as socklen_t;
         self.control_len = control.msg.Control.len as _;
     }

@@ -16,7 +16,7 @@ use compio_io::{
     AsyncRead, AsyncReadManaged, AsyncReadMulti, AsyncWrite, AsyncWriteZerocopy,
     ancillary::{
         AsyncReadAncillary, AsyncReadAncillaryManaged, AsyncReadAncillaryMulti,
-        AsyncWriteAncillary, AsyncWriteAncillaryZerocopy,
+        AsyncWriteAncillary, AsyncWriteAncillaryZerocopy, ReturnFlags,
     },
     util::Splittable,
 };
@@ -499,7 +499,7 @@ impl AsyncReadAncillary for TcpStream {
         &mut self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, usize), (T, C)> {
+    ) -> BufResult<(usize, usize, ReturnFlags), (T, C)> {
         (&*self).read_with_ancillary(buffer, control).await
     }
 
@@ -508,7 +508,7 @@ impl AsyncReadAncillary for TcpStream {
         &mut self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, usize), (T, C)> {
+    ) -> BufResult<(usize, usize, ReturnFlags), (T, C)> {
         (&*self).read_vectored_with_ancillary(buffer, control).await
     }
 }
@@ -519,11 +519,11 @@ impl AsyncReadAncillary for &TcpStream {
         &mut self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, usize), (T, C)> {
+    ) -> BufResult<(usize, usize, ReturnFlags), (T, C)> {
         self.inner
-            .recv_msg(buffer, control, RecvFlags::empty())
+            .recv_msg_with_flags(buffer, control, RecvFlags::empty())
             .await
-            .map_res(|(res, len, _addr)| (res, len))
+            .map_res(|(res, len, _addr, flags)| (res, len, flags))
     }
 
     #[inline]
@@ -531,11 +531,11 @@ impl AsyncReadAncillary for &TcpStream {
         &mut self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, usize), (T, C)> {
+    ) -> BufResult<(usize, usize, ReturnFlags), (T, C)> {
         self.inner
-            .recv_msg_vectored(buffer, control, RecvFlags::empty())
+            .recv_msg_vectored_with_flags(buffer, control, RecvFlags::empty())
             .await
-            .map_res(|(res, len, _addr)| (res, len))
+            .map_res(|(res, len, _addr, flags)| (res, len, flags))
     }
 }
 

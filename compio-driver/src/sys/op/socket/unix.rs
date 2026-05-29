@@ -461,5 +461,6 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
     pub(crate) fn update_control(&mut self, control: &RecvMsgControl) {
         self.header.addr_len = control.msg.msg_namelen as _;
         self.control_len = control.msg.msg_controllen as _;
+        self.return_flags = ReturnFlags::from_bits_retain(control.msg.msg_flags as _);
     }
 }

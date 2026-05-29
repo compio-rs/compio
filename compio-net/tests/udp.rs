@@ -1,3 +1,4 @@
+use compio_io::ancillary::{AncillaryBuf, ReturnFlags};
 use compio_net::UdpSocket;
 
 #[compio_macros::test]
@@ -90,4 +91,76 @@ async fn send_recv_vectored() {
     assert_eq!(MSG2, buffer.1.0.as_slice());
     assert_eq!(active.local_addr().unwrap(), active_addr);
     assert_eq!(active.peer_addr().unwrap(), passive_addr);
+}
+
+#[compio_macros::test]
+async fn recv_msg_with_flags() {
+    const MSG: &str = "foo bar baz";
+
+    let passive = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let passive_addr = passive.local_addr().unwrap();
+
+    let active = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let active_addr = active.local_addr().unwrap();
+
+    active.send_to(MSG, passive_addr).await.0.unwrap();
+
+    let ((n, control_len, addr, flags), (buffer, _control)) = passive
+        .recv_msg_with_flags(Vec::with_capacity(20), AncillaryBuf::<64>::new())
+        .await
+        .unwrap();
+    assert_eq!(MSG.as_bytes(), &buffer);
+    assert_eq!(n, MSG.len());
+    assert_eq!(control_len, 0);
+    assert_eq!(addr, active_addr);
+    assert_eq!(flags, ReturnFlags::empty());
+
+    active.send_to(MSG, passive_addr).await.0.unwrap();
+
+    let ((n, control_len, addr, flags), (buffer, _control)) = passive
+        .recv_msg_vectored_with_flags(
+            ([0; 4], (Vec::with_capacity(20),)),
+            AncillaryBuf::<64>::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(&buffer.0, &MSG.as_bytes()[..4]);
+    assert_eq!(buffer.1.0.as_slice(), &MSG.as_bytes()[4..]);
+    assert_eq!(n, MSG.len());
+    assert_eq!(control_len, 0);
+    assert_eq!(addr, active_addr);
+    assert_eq!(flags, ReturnFlags::empty());
+
+    active.send_to(MSG, passive_addr).await.0.unwrap();
+
+    let ((n, control_len, addr), (buffer, _control)) = passive
+        .recv_msg(Vec::with_capacity(20), AncillaryBuf::<64>::new())
+        .await
+        .unwrap();
+    assert_eq!(MSG.as_bytes(), &buffer);
+    assert_eq!(n, MSG.len());
+    assert_eq!(control_len, 0);
+    assert_eq!(addr, active_addr);
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+#[compio_macros::test]
+async fn recv_msg_with_flags_truncated_datagram() {
+    const MSG: &[u8] = b"foo bar baz";
+
+    let passive = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let passive_addr = passive.local_addr().unwrap();
+
+    let active = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let active_addr = active.local_addr().unwrap();
+
+    active.send_to(MSG, passive_addr).await.0.unwrap();
+
+    let ((_n, _control_len, addr, flags), (buffer, _control)) = passive
+        .recv_msg_with_flags(Vec::with_capacity(3), AncillaryBuf::<64>::new())
+        .await
+        .unwrap();
+    assert_eq!(&MSG[..buffer.len()], buffer.as_slice());
+    assert_eq!(addr, active_addr);
+    assert!(flags.contains(ReturnFlags::TRUNC));
 }

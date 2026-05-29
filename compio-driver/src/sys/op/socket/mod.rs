@@ -13,7 +13,7 @@ mod_use![poll];
 #[cfg(stub)]
 mod_use![stub];
 
-use rustix::net::{RecvFlags, SendFlags};
+use rustix::net::{RecvFlags, ReturnFlags, SendFlags};
 
 use crate::{PollFirst, sys::prelude::*};
 
@@ -121,6 +121,7 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
     pub(crate) buffer: T,
     pub(crate) control: C,
     pub(crate) control_len: usize,
+    pub(crate) return_flags: ReturnFlags,
     poll_first: bool,
 }
 
@@ -258,8 +259,14 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
             buffer,
             control,
             control_len: 0,
+            return_flags: ReturnFlags::empty(),
             poll_first: false,
         }
+    }
+
+    /// Get flags returned by `recvmsg`.
+    pub fn return_flags(&self) -> ReturnFlags {
+        self.return_flags
     }
 }
 

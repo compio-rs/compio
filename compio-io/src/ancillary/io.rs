@@ -3,6 +3,7 @@ use std::alloc::Allocator;
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, t_alloc};
 use futures_util::Stream;
+use rustix::net::ReturnFlags;
 
 use crate::{AsyncReadManaged, IoResult};
 
@@ -10,19 +11,21 @@ use crate::{AsyncReadManaged, IoResult};
 /// Intended for connected stream sockets (TCP, Unix streams) where no source
 /// address is needed.
 pub trait AsyncReadAncillary {
-    /// Read data with ancillary data into an owned buffer.
+    /// Read data with ancillary data into an owned buffer, returning bytes
+    /// read, control length, and `recvmsg` flags.
     async fn read_with_ancillary<T: IoBufMut, C: IoBufMut>(
         &mut self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, usize), (T, C)>;
+    ) -> BufResult<(usize, usize, ReturnFlags), (T, C)>;
 
-    /// Read data with ancillary data into a vectored buffer.
+    /// Read data with ancillary data into a vectored buffer, returning bytes
+    /// read, control length, and `recvmsg` flags.
     async fn read_vectored_with_ancillary<T: IoVectoredBufMut, C: IoBufMut>(
         &mut self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, usize), (T, C)>;
+    ) -> BufResult<(usize, usize, ReturnFlags), (T, C)>;
 }
 
 impl<A: AsyncReadAncillary + ?Sized> AsyncReadAncillary for &mut A {
@@ -31,7 +34,7 @@ impl<A: AsyncReadAncillary + ?Sized> AsyncReadAncillary for &mut A {
         &mut self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, usize), (T, C)> {
+    ) -> BufResult<(usize, usize, ReturnFlags), (T, C)> {
         (**self).read_with_ancillary(buffer, control).await
     }
 
@@ -40,7 +43,7 @@ impl<A: AsyncReadAncillary + ?Sized> AsyncReadAncillary for &mut A {
         &mut self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, usize), (T, C)> {
+    ) -> BufResult<(usize, usize, ReturnFlags), (T, C)> {
         (**self).read_vectored_with_ancillary(buffer, control).await
     }
 }
@@ -53,7 +56,7 @@ impl<A: AsyncReadAncillary + ?Sized, #[cfg(feature = "allocator_api")] Alloc: Al
         &mut self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, usize), (T, C)> {
+    ) -> BufResult<(usize, usize, ReturnFlags), (T, C)> {
         (**self).read_with_ancillary(buffer, control).await
     }
 
@@ -62,7 +65,7 @@ impl<A: AsyncReadAncillary + ?Sized, #[cfg(feature = "allocator_api")] Alloc: Al
         &mut self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, usize), (T, C)> {
+    ) -> BufResult<(usize, usize, ReturnFlags), (T, C)> {
         (**self).read_vectored_with_ancillary(buffer, control).await
     }
 }
