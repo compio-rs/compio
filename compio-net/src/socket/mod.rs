@@ -25,8 +25,8 @@ use compio_driver::{
     },
     syscall,
 };
-use compio_runtime::{Attacher, Runtime, SubmitMulti, fd::PollFd};
-use futures_util::{Stream, StreamExt, future::Either};
+use compio_runtime::{Attacher, Runtime, SubmitMulti, SubmitMultiStream, fd::PollFd};
+use futures_util::{Stream, StreamExt};
 use pin_project_lite::pin_project;
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 use sys::SocketState;
@@ -272,13 +272,12 @@ impl Socket {
         flags: RecvFlags,
     ) -> impl Stream<Item = io::Result<BufferRef>> {
         let fd = self.to_shared_fd();
-        Runtime::with_current(|rt| {
+        let rt = Runtime::current();
+        SubmitMultiStream::new(move || {
             let buffer_pool = rt.buffer_pool()?;
-            let op = RecvMulti::new(fd, &buffer_pool, len, flags)?;
-            io::Result::Ok(rt.submit_multi(op).into_managed(buffer_pool))
+            let op = RecvMulti::new(fd.clone(), &buffer_pool, len, flags)?;
+            Ok(rt.submit_multi(op).into_managed(buffer_pool))
         })
-        .map(Either::Left)
-        .unwrap_or_else(|e| Either::Right(futures_util::stream::once(std::future::ready(Err(e)))))
     }
 
     pub async fn send<T: IoBuf>(&self, buffer: T, flags: SendFlags) -> BufResult<usize, T> {
@@ -375,13 +374,12 @@ impl Socket {
         flags: RecvFlags,
     ) -> impl Stream<Item = io::Result<RecvFromMultiResult>> {
         let fd = self.to_shared_fd();
-        Runtime::with_current(|rt| {
+        let rt = Runtime::current();
+        SubmitMultiStream::new(move || {
             let buffer_pool = rt.buffer_pool()?;
-            let op = RecvFromMulti::new(fd, &buffer_pool, flags)?;
-            io::Result::Ok(rt.submit_multi(op).into_managed(buffer_pool))
+            let op = RecvFromMulti::new(fd.clone(), &buffer_pool, flags)?;
+            Ok(rt.submit_multi(op).into_managed(buffer_pool))
         })
-        .map(Either::Left)
-        .unwrap_or_else(|e| Either::Right(futures_util::stream::once(std::future::ready(Err(e)))))
     }
 
     pub async fn recv_msg<T: IoBufMut, C: IoBufMut>(
@@ -447,16 +445,15 @@ impl Socket {
         flags: RecvFlags,
     ) -> impl Stream<Item = io::Result<RecvMsgMultiResult>> {
         let fd = self.to_shared_fd();
-        Runtime::with_current(|rt| {
+        let rt = Runtime::current();
+        SubmitMultiStream::new(move || {
             let buffer_pool = rt.buffer_pool()?;
-            let op = RecvMsgMulti::new(fd, &buffer_pool, control_len, flags)?;
+            let op = RecvMsgMulti::new(fd.clone(), &buffer_pool, control_len, flags)?;
             io::Result::Ok(
                 rt.submit_multi(op)
                     .into_managed_with(buffer_pool, control_len),
             )
         })
-        .map(Either::Left)
-        .unwrap_or_else(|e| Either::Right(futures_util::stream::once(std::future::ready(Err(e)))))
     }
 
     pub async fn send_to<T: IoBuf>(

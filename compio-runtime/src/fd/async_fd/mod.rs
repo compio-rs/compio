@@ -6,14 +6,14 @@ use compio_driver::{
     op::{BufResultExt, Read, ReadManaged, ReadMulti, ResultTakeBuffer, Write},
 };
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncReadMulti, AsyncWrite, util::Splittable};
-use futures_util::{Stream, future::Either};
+use futures_util::Stream;
 #[cfg(unix)]
 use {
     compio_buf::{IoVectoredBuf, IoVectoredBufMut},
     compio_driver::op::{ReadVectored, WriteVectored},
 };
 
-use crate::{Attacher, Runtime};
+use crate::{Attacher, Runtime, SubmitMultiStream};
 
 #[cfg(windows)]
 mod windows;
@@ -129,11 +129,11 @@ fn read_multi<T: AsFd + 'static>(
     len: usize,
 ) -> impl Stream<Item = io::Result<BufferRef>> {
     let runtime = Runtime::current();
-    let pool = runtime.buffer_pool();
-    pool.and_then(|pool| Ok((ReadMulti::new(fd, &pool, len)?, pool)))
-        .map(|(op, pool)| runtime.submit_multi(op).into_managed(pool))
-        .map(Either::Left)
-        .unwrap_or_else(|e| Either::Right(futures_util::stream::once(std::future::ready(Err(e)))))
+    SubmitMultiStream::new(move || {
+        let pool = runtime.buffer_pool()?;
+        let op = ReadMulti::new(fd.clone(), &pool, len)?;
+        Ok(runtime.submit_multi(op).into_managed(pool))
+    })
 }
 
 impl<T: AsFd + 'static> AsyncWrite for AsyncFd<T> {
