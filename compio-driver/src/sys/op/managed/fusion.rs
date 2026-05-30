@@ -1,5 +1,5 @@
 use compio_buf::*;
-use rustix::net::RecvFlags;
+use rustix::net::{RecvFlags, ReturnFlags};
 use socket2::SockAddr;
 
 use super::{fallback, iour};
@@ -293,6 +293,14 @@ impl RecvMsgMultiResult {
         match &self.inner {
             RecvMsgMultiResultInner::Poll(result) => result.addr(),
             RecvMsgMultiResultInner::IoUring(result) => result.addr(),
+        }
+    }
+
+    /// Get flags returned by `recvmsg`.
+    pub fn flags(&self) -> ReturnFlags {
+        match &self.inner {
+            RecvMsgMultiResultInner::Poll(result) => result.flags(),
+            RecvMsgMultiResultInner::IoUring(result) => result.flags(),
         }
     }
 }

@@ -8,7 +8,7 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetLen};
 use io_uring::{opcode, squeue::Flags, types::Fd};
-use rustix::net::RecvFlags;
+use rustix::net::{RecvFlags, ReturnFlags};
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
 use crate::{
@@ -313,6 +313,7 @@ pub struct RecvMsgManaged<C: IoBufMut, S: AsFd> {
     op: RecvFromManaged<S>,
     control: C,
     control_len: usize,
+    return_flags: ReturnFlags,
 }
 
 impl<C: IoBufMut, S: AsFd> RecvMsgManaged<C, S> {
@@ -328,6 +329,7 @@ impl<C: IoBufMut, S: AsFd> RecvMsgManaged<C, S> {
             op: RecvFromManaged::new(fd, pool, len, flags)?,
             control,
             control_len: 0,
+            return_flags: ReturnFlags::empty(),
         })
     }
 }
@@ -360,6 +362,7 @@ unsafe impl<C: IoBufMut, S: AsFd> OpCode for RecvMsgManaged<C, S> {
     ) {
         unsafe { self.op.set_result(control, result, extra) };
         self.control_len = control.msg.msg_controllen as _;
+        self.return_flags = ReturnFlags::from_bits_retain(control.msg.msg_flags as _);
     }
 }
 
@@ -699,6 +702,10 @@ impl RecvMsgMultiResultImpl {
         let offset = size_of::<io_uring_recvmsg_out>() + NLEN;
         &self.buffer.as_init()[offset..offset + header.controllen as usize]
     }
+
+    fn flags(&self) -> ReturnFlags {
+        ReturnFlags::from_bits_retain(self.header().flags as _)
+    }
 }
 
 impl IntoInner for RecvMsgMultiResultImpl {
@@ -813,6 +820,7 @@ struct RecvMsgMultiResultFallback {
     buffer: BufferRef,
     control: BufferRef,
     addr: Option<SockAddr>,
+    return_flags: ReturnFlags,
 }
 
 impl RecvMsgMultiResultFallback {
@@ -826,6 +834,10 @@ impl RecvMsgMultiResultFallback {
 
     fn ancillary(&self) -> &[u8] {
         self.control.as_init()
+    }
+
+    fn flags(&self) -> ReturnFlags {
+        self.return_flags
     }
 }
 
@@ -855,13 +867,20 @@ impl<S: AsFd> TakeBuffer for RecvMsgMultiFallback<S> {
     type Buffer = RecvMsgMultiResultFallback;
 
     fn take_buffer(self) -> Option<Self::Buffer> {
-        let ((mut buffer, mut control), addr, control_len) = self.op.take_buffer()?;
+        let RecvMsgManaged {
+            op,
+            mut control,
+            control_len,
+            return_flags,
+        } = self.op;
+        let (mut buffer, addr) = op.take_buffer()?;
         unsafe { buffer.advance_to(self.len) };
         unsafe { control.advance_to(control_len) };
         Some(RecvMsgMultiResultFallback {
             buffer,
             control,
             addr,
+            return_flags,
         })
     }
 }
@@ -920,6 +939,13 @@ impl RecvMsgMultiResultInner {
             Self::Fallback(inner) => inner.ancillary(),
         }
     }
+
+    fn flags(&self) -> ReturnFlags {
+        match self {
+            Self::Impl(inner) => inner.flags(),
+            Self::Fallback(inner) => inner.flags(),
+        }
+    }
 }
 
 impl IntoInner for RecvMsgMultiResultInner {
@@ -965,6 +991,11 @@ impl RecvMsgMultiResult {
     /// Get the ancillary data.
     pub fn ancillary(&self) -> &[u8] {
         self.inner.ancillary()
+    }
+
+    /// Get flags returned by `recvmsg`.
+    pub fn flags(&self) -> ReturnFlags {
+        self.inner.flags()
     }
 }
 

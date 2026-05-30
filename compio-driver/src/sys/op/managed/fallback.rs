@@ -1,7 +1,7 @@
 use std::io;
 
 use compio_buf::{IntoInner, IoBuf, IoBufMut, SetLen};
-use rustix::net::RecvFlags;
+use rustix::net::{RecvFlags, ReturnFlags};
 use socket2::SockAddr;
 
 use crate::{
@@ -217,6 +217,7 @@ pub struct RecvMsgMultiResult {
     buffer: BufferRef,
     control: BufferRef,
     addr: Option<SockAddr>,
+    return_flags: ReturnFlags,
 }
 
 impl RecvMsgMultiResult {
@@ -238,6 +239,11 @@ impl RecvMsgMultiResult {
     /// Get the ancillary data.
     pub fn ancillary(&self) -> &[u8] {
         self.control.as_init()
+    }
+
+    /// Get flags returned by `recvmsg`.
+    pub fn flags(&self) -> ReturnFlags {
+        self.return_flags
     }
 }
 
@@ -270,13 +276,15 @@ impl<S: AsFd> TakeBuffer for RecvMsgMulti<S> {
     type Buffer = RecvMsgMultiResult;
 
     fn take_buffer(self) -> Option<Self::Buffer> {
-        let ((mut buffer, mut control), addr, control_len) = self.op.take_buffer()?;
+        let (([mut buffer], mut control), addr, control_len, return_flags) =
+            self.op.op.into_inner();
         unsafe { buffer.advance_to(self.len) };
         unsafe { control.advance_to(control_len) };
         Some(RecvMsgMultiResult {
             buffer,
             control,
             addr,
+            return_flags,
         })
     }
 }

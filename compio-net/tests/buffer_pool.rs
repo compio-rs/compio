@@ -1,6 +1,6 @@
 use std::net::Ipv6Addr;
 
-use compio_io::{AsyncReadManaged, AsyncReadMulti, AsyncWriteExt};
+use compio_io::{AsyncReadManaged, AsyncReadMulti, AsyncWriteExt, ancillary::ReturnFlags};
 use compio_net::{TcpListener, TcpStream, UdpSocket, UnixListener, UnixStream};
 use futures_util::{StreamExt, TryStreamExt};
 
@@ -174,6 +174,25 @@ async fn test_udp_recv_msg_multi() {
     let result = connected.recv_msg_multi(64).next().await.unwrap().unwrap();
     assert_eq!(result.data(), b"test");
     assert_eq!(result.addr().and_then(|a| a.as_socket()), Some(server_addr));
+    assert_eq!(result.flags(), ReturnFlags::empty());
+}
+
+#[cfg(target_os = "linux")]
+#[compio_macros::test(with_proactor(buffer_pool_buffer_len = 256))]
+async fn test_udp_recv_msg_multi_truncated_datagram() {
+    let listener = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
+    let server_addr = listener.local_addr().unwrap();
+    let connected = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = connected.local_addr().unwrap();
+
+    compio_runtime::spawn(async move {
+        listener.send_to(vec![0; 1024], addr).await.unwrap();
+    })
+    .detach();
+
+    let result = connected.recv_msg_multi(64).next().await.unwrap().unwrap();
+    assert_eq!(result.addr().and_then(|a| a.as_socket()), Some(server_addr));
+    assert!(result.flags().contains(ReturnFlags::TRUNC));
 }
 
 #[compio_macros::test]
