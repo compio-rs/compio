@@ -1,6 +1,9 @@
 use std::net::Ipv6Addr;
 
-use compio_io::{AsyncReadManaged, AsyncReadMulti, AsyncWriteExt, ancillary::ReturnFlags};
+use compio_io::{
+    AsyncReadManaged, AsyncReadMulti, AsyncWriteExt,
+    ancillary::{AncillaryBuf, AsyncReadAncillaryManaged, ReturnFlags},
+};
 use compio_net::{TcpListener, TcpStream, UdpSocket, UnixListener, UnixStream};
 use futures_util::{StreamExt, TryStreamExt};
 
@@ -23,6 +26,28 @@ async fn test_tcp_read_buffer_pool() {
     );
     let res = stream.read_managed(0).await;
     assert!(matches!(res, Ok(None)));
+}
+
+#[compio_macros::test]
+async fn test_tcp_read_managed_with_ancillary() {
+    let listener = TcpListener::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    compio_runtime::spawn(async move {
+        let mut stream = listener.accept().await.unwrap().0;
+        stream.write_all(b"test").await.unwrap();
+    })
+    .detach();
+
+    let mut stream = TcpStream::connect(addr).await.unwrap();
+
+    let (buffer, _control, flags) = stream
+        .read_managed_with_ancillary(0, AncillaryBuf::<64>::new())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(buffer.as_ref(), b"test");
+    assert_eq!(flags, ReturnFlags::empty());
 }
 
 #[compio_macros::test]
@@ -73,13 +98,14 @@ async fn test_udp_recv_msg_buffer_pool() {
     })
     .detach();
 
-    let (buffer, _, addr) = listener
+    let (buffer, _, addr, flags) = listener
         .recv_msg_managed(0, Vec::with_capacity(64))
         .await
         .unwrap()
         .unwrap();
     assert_eq!(buffer.as_ref(), b"test");
     assert_eq!(addr, connected_addr);
+    assert_eq!(flags, ReturnFlags::empty());
 }
 
 #[compio_macros::test]
@@ -105,6 +131,34 @@ async fn test_uds_recv_buffer_pool() {
         b"test"
     );
     assert!(matches!(stream.read_managed(0).await, Ok(None)));
+}
+
+#[cfg_attr(windows, ignore = "UDS support on Windows is incomplete")]
+#[compio_macros::test]
+async fn test_uds_read_managed_with_ancillary() {
+    let dir = tempfile::Builder::new()
+        .prefix("compio-uds-anc-buf")
+        .tempdir()
+        .unwrap();
+    let sock_path = dir.path().join("connect.sock");
+
+    let listener = UnixListener::bind(&sock_path).await.unwrap();
+
+    compio_runtime::spawn(async move {
+        let mut stream = listener.accept().await.unwrap().0;
+        stream.write_all(b"test").await.unwrap();
+    })
+    .detach();
+
+    let mut stream = UnixStream::connect(&sock_path).await.unwrap();
+
+    let (buffer, _control, flags) = stream
+        .read_managed_with_ancillary(0, AncillaryBuf::<64>::new())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(buffer.as_ref(), b"test");
+    assert_eq!(flags, ReturnFlags::empty());
 }
 
 #[compio_macros::test]

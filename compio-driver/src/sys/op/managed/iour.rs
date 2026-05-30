@@ -367,11 +367,11 @@ unsafe impl<C: IoBufMut, S: AsFd> OpCode for RecvMsgManaged<C, S> {
 }
 
 impl<C: IoBufMut, S: AsFd> TakeBuffer for RecvMsgManaged<C, S> {
-    type Buffer = ((BufferRef, C), Option<SockAddr>, usize);
+    type Buffer = ((BufferRef, C), Option<SockAddr>, usize, ReturnFlags);
 
     fn take_buffer(self) -> Option<Self::Buffer> {
         let (buffer, addr) = self.op.take_buffer()?;
-        Some(((buffer, self.control), addr, self.control_len))
+        Some(((buffer, self.control), addr, self.control_len, self.return_flags))
     }
 }
 
@@ -867,13 +867,7 @@ impl<S: AsFd> TakeBuffer for RecvMsgMultiFallback<S> {
     type Buffer = RecvMsgMultiResultFallback;
 
     fn take_buffer(self) -> Option<Self::Buffer> {
-        let RecvMsgManaged {
-            op,
-            mut control,
-            control_len,
-            return_flags,
-        } = self.op;
-        let (mut buffer, addr) = op.take_buffer()?;
+        let ((mut buffer, mut control), addr, control_len, return_flags) = self.op.take_buffer()?;
         unsafe { buffer.advance_to(self.len) };
         unsafe { control.advance_to(control_len) };
         Some(RecvMsgMultiResultFallback {

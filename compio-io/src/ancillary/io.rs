@@ -225,7 +225,7 @@ pub trait AsyncReadAncillaryManaged: AsyncReadManaged {
         &mut self,
         len: usize,
         control: C,
-    ) -> IoResult<Option<(Self::Buffer, C)>>;
+    ) -> IoResult<Option<(Self::Buffer, C, ReturnFlags)>>;
 }
 
 /// Trait for asynchronous read with ancillary (control) data that returns

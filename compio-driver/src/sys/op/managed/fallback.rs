@@ -140,11 +140,11 @@ impl<C: IoBufMut, S: AsFd> PollFirst for RecvMsgManaged<C, S> {
 }
 
 impl<C: IoBufMut, S: AsFd> TakeBuffer for RecvMsgManaged<C, S> {
-    type Buffer = ((BufferRef, C), Option<SockAddr>, usize);
+    type Buffer = ((BufferRef, C), Option<SockAddr>, usize, ReturnFlags);
 
     fn take_buffer(self) -> Option<Self::Buffer> {
-        let (([buf], control), addr, len, _flags) = self.op.into_inner();
-        Some(((buf, control), addr, len))
+        let (([buf], control), addr, len, flags) = self.op.into_inner();
+        Some(((buf, control), addr, len, flags))
     }
 }
 
@@ -276,8 +276,7 @@ impl<S: AsFd> TakeBuffer for RecvMsgMulti<S> {
     type Buffer = RecvMsgMultiResult;
 
     fn take_buffer(self) -> Option<Self::Buffer> {
-        let (([mut buffer], mut control), addr, control_len, return_flags) =
-            self.op.op.into_inner();
+        let ((mut buffer, mut control), addr, control_len, return_flags) = self.op.take_buffer()?;
         unsafe { buffer.advance_to(self.len) };
         unsafe { control.advance_to(control_len) };
         Some(RecvMsgMultiResult {

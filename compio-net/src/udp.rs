@@ -353,18 +353,18 @@ impl UdpSocket {
         &self,
         len: usize,
         control: C,
-    ) -> io::Result<Option<(BufferRef, C, SocketAddr)>> {
+    ) -> io::Result<Option<(BufferRef, C, SocketAddr, ReturnFlags)>> {
         let res = self
             .inner
             .recv_msg_managed(len, control, RecvFlags::empty())
             .await?;
         let ret = match res {
-            Some((buffer, control, addr)) => {
+            Some((buffer, control, addr, flags)) => {
                 let addr = addr
                     .expect("should have addr")
                     .as_socket()
                     .expect("should be SocketAddr");
-                Some((buffer, control, addr))
+                Some((buffer, control, addr, flags))
             }
             None => None,
         };

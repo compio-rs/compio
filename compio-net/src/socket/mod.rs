@@ -419,7 +419,7 @@ impl Socket {
         len: usize,
         control: C,
         flags: RecvFlags,
-    ) -> io::Result<Option<(BufferRef, C, Option<SockAddr>)>> {
+    ) -> io::Result<Option<(BufferRef, C, Option<SockAddr>, ReturnFlags)>> {
         let fd = self.to_shared_fd();
         let (inner, extra) = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
@@ -434,7 +434,7 @@ impl Socket {
         if len == 0 {
             return Ok(None);
         }
-        let Some(((mut buf, mut control), addr, control_len)) = op.take_buffer() else {
+        let Some(((mut buf, mut control), addr, control_len, flags)) = op.take_buffer() else {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 format!("Read {len} bytes, but no buffer was selected by kernel"),
@@ -442,7 +442,7 @@ impl Socket {
         };
         unsafe { buf.advance_to(len) };
         unsafe { control.advance_to(control_len) };
-        Ok(Some((buf, control, addr)))
+        Ok(Some((buf, control, addr, flags)))
     }
 
     pub fn recv_msg_multi(

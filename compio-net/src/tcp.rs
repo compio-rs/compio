@@ -545,7 +545,7 @@ impl AsyncReadAncillaryManaged for TcpStream {
         &mut self,
         len: usize,
         control: C,
-    ) -> io::Result<Option<(Self::Buffer, C)>> {
+    ) -> io::Result<Option<(Self::Buffer, C, ReturnFlags)>> {
         (&*self).read_managed_with_ancillary(len, control).await
     }
 }
@@ -556,11 +556,11 @@ impl AsyncReadAncillaryManaged for &TcpStream {
         &mut self,
         len: usize,
         control: C,
-    ) -> io::Result<Option<(Self::Buffer, C)>> {
+    ) -> io::Result<Option<(Self::Buffer, C, ReturnFlags)>> {
         self.inner
             .recv_msg_managed(len, control, RecvFlags::empty())
             .await
-            .map(|res| res.map(|(res, len, _addr)| (res, len)))
+            .map(|res| res.map(|(res, len, _addr, flags)| (res, len, flags)))
     }
 }
 
