@@ -15,7 +15,7 @@ use compio_io::{
     AsyncRead, AsyncReadManaged, AsyncReadMulti, AsyncWrite, AsyncWriteZerocopy,
     ancillary::{
         AsyncReadAncillary, AsyncReadAncillaryManaged, AsyncReadAncillaryMulti,
-        AsyncWriteAncillary, AsyncWriteAncillaryZerocopy,
+        AsyncWriteAncillary, AsyncWriteAncillaryZerocopy, ReturnFlags,
     },
     util::Splittable,
 };
@@ -359,7 +359,7 @@ impl AsyncReadAncillary for UnixStream {
         &mut self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, usize), (T, C)> {
+    ) -> BufResult<(usize, usize, ReturnFlags), (T, C)> {
         (&*self).read_with_ancillary(buffer, control).await
     }
 
@@ -368,7 +368,7 @@ impl AsyncReadAncillary for UnixStream {
         &mut self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, usize), (T, C)> {
+    ) -> BufResult<(usize, usize, ReturnFlags), (T, C)> {
         (&*self).read_vectored_with_ancillary(buffer, control).await
     }
 }
@@ -379,11 +379,11 @@ impl AsyncReadAncillary for &UnixStream {
         &mut self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, usize), (T, C)> {
+    ) -> BufResult<(usize, usize, ReturnFlags), (T, C)> {
         self.inner
             .recv_msg(buffer, control, RecvFlags::empty())
             .await
-            .map_res(|(res, len, _addr)| (res, len))
+            .map_res(|(res, len, _addr, flags)| (res, len, flags))
     }
 
     #[inline]
@@ -391,11 +391,11 @@ impl AsyncReadAncillary for &UnixStream {
         &mut self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, usize), (T, C)> {
+    ) -> BufResult<(usize, usize, ReturnFlags), (T, C)> {
         self.inner
             .recv_msg_vectored(buffer, control, RecvFlags::empty())
             .await
-            .map_res(|(res, len, _addr)| (res, len))
+            .map_res(|(res, len, _addr, flags)| (res, len, flags))
     }
 }
 
@@ -405,7 +405,7 @@ impl AsyncReadAncillaryManaged for UnixStream {
         &mut self,
         len: usize,
         control: C,
-    ) -> io::Result<Option<(Self::Buffer, C)>> {
+    ) -> io::Result<Option<(Self::Buffer, C, ReturnFlags)>> {
         (&*self).read_managed_with_ancillary(len, control).await
     }
 }
@@ -416,11 +416,11 @@ impl AsyncReadAncillaryManaged for &UnixStream {
         &mut self,
         len: usize,
         control: C,
-    ) -> io::Result<Option<(Self::Buffer, C)>> {
+    ) -> io::Result<Option<(Self::Buffer, C, ReturnFlags)>> {
         self.inner
             .recv_msg_managed(len, control, RecvFlags::empty())
             .await
-            .map(|res| res.map(|(res, len, _addr)| (res, len)))
+            .map(|res| res.map(|(res, len, _addr, flags)| (res, len, flags)))
     }
 }
 
@@ -619,7 +619,7 @@ impl AsyncWriteAncillaryZerocopy for &UnixStream {
 /// // Receive on the other end.
 /// let payload = Vec::with_capacity(5);
 /// let ctrl_recv = AncillaryBuf::<BUF_SIZE>::new();
-/// let ((_, ctrl_len), (payload, ctrl_recv)) =
+/// let ((_, ctrl_len, _flags), (payload, ctrl_recv)) =
 ///     b.read_with_ancillary(payload, ctrl_recv).await.unwrap();
 ///
 /// assert_eq!(&payload[..], b"hello");

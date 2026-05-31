@@ -19,9 +19,9 @@ use compio_driver::{
     op::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFlags, RecvFrom, RecvFromManaged,
         RecvFromMulti, RecvFromMultiResult, RecvFromVectored, RecvManaged, RecvMsg, RecvMsgManaged,
-        RecvMsgMulti, RecvMsgMultiResult, RecvMulti, RecvResultExt, RecvVectored, Send, SendFlags,
-        SendMsg, SendMsgZc, SendTo, SendToVectored, SendToVectoredZc, SendToZc, SendVectored,
-        SendVectoredZc, SendZc, VecBufResultExt,
+        RecvMsgMulti, RecvMsgMultiResult, RecvMulti, RecvResultExt, RecvVectored, ReturnFlags,
+        Send, SendFlags, SendMsg, SendMsgZc, SendTo, SendToVectored, SendToVectoredZc, SendToZc,
+        SendVectored, SendVectoredZc, SendZc, VecBufResultExt,
     },
     syscall,
 };
@@ -387,7 +387,7 @@ impl Socket {
         buffer: T,
         control: C,
         flags: RecvFlags,
-    ) -> BufResult<(usize, usize, Option<SockAddr>), (T, C)> {
+    ) -> BufResult<(usize, usize, Option<SockAddr>, ReturnFlags), (T, C)> {
         self.recv_msg_vectored([buffer], control, flags)
             .await
             .map_buffer(|([buffer], control)| (buffer, control))
@@ -398,7 +398,7 @@ impl Socket {
         buffer: T,
         control: C,
         flags: RecvFlags,
-    ) -> BufResult<(usize, usize, Option<SockAddr>), (T, C)> {
+    ) -> BufResult<(usize, usize, Option<SockAddr>, ReturnFlags), (T, C)> {
         let fd = self.to_shared_fd();
         let mut op = RecvMsg::new(fd, buffer, control, flags);
         self.state.set_recv_op(&mut op);
@@ -413,7 +413,7 @@ impl Socket {
         len: usize,
         control: C,
         flags: RecvFlags,
-    ) -> io::Result<Option<(BufferRef, C, Option<SockAddr>)>> {
+    ) -> io::Result<Option<(BufferRef, C, Option<SockAddr>, ReturnFlags)>> {
         let fd = self.to_shared_fd();
         let (inner, extra) = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
@@ -428,7 +428,7 @@ impl Socket {
         if len == 0 {
             return Ok(None);
         }
-        let Some(((mut buf, mut control), addr, control_len)) = op.take_buffer() else {
+        let Some(((mut buf, mut control), addr, control_len, flags)) = op.take_buffer() else {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 format!("Read {len} bytes, but no buffer was selected by kernel"),
@@ -436,7 +436,7 @@ impl Socket {
         };
         unsafe { buf.advance_to(len) };
         unsafe { control.advance_to(control_len) };
-        Ok(Some((buf, control, addr)))
+        Ok(Some((buf, control, addr, flags)))
     }
 
     pub fn recv_msg_multi(

@@ -13,7 +13,7 @@ mod_use![poll];
 #[cfg(stub)]
 mod_use![stub];
 
-use rustix::net::{RecvFlags, SendFlags};
+use rustix::net::{RecvFlags, ReturnFlags, SendFlags};
 
 use crate::{PollFirst, sys::prelude::*};
 
@@ -121,6 +121,7 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
     pub(crate) buffer: T,
     pub(crate) control: C,
     pub(crate) control_len: usize,
+    pub(crate) return_flags: ReturnFlags,
     poll_first: bool,
 }
 
@@ -258,6 +259,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
             buffer,
             control,
             control_len: 0,
+            return_flags: ReturnFlags::empty(),
             poll_first: false,
         }
     }
@@ -270,13 +272,14 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> PollFirst for RecvMsg<T, C, S> {
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
-    type Inner = ((T, C), Option<SockAddr>, usize);
+    type Inner = ((T, C), Option<SockAddr>, usize, ReturnFlags);
 
     fn into_inner(self) -> Self::Inner {
         (
             (self.buffer, self.control),
             self.header.into_addr(),
             self.control_len,
+            self.return_flags,
         )
     }
 }

@@ -2,6 +2,10 @@
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
+use compio_io::{
+    AsyncWriteExt,
+    ancillary::{AncillaryBuf, AsyncReadAncillary, ReturnFlags},
+};
 use compio_net::{TcpListener, TcpSocket, TcpStream, ToSocketAddrsAsync};
 use compio_runtime::ResumeUnwind;
 
@@ -143,4 +147,29 @@ test_connect! {
 #[compio_macros::test]
 async fn connect_invalid_dst() {
     assert!(TcpStream::connect("127.0.0.0:0").await.is_err());
+}
+
+#[cfg_attr(windows, ignore)]
+#[compio_macros::test]
+async fn read_with_ancillary_flags() {
+    const MSG: &[u8] = b"test";
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    compio_runtime::spawn(async move {
+        let mut stream = listener.accept().await.unwrap().0;
+        stream.write_all(MSG).await.unwrap();
+    })
+    .detach();
+
+    let mut stream = TcpStream::connect(addr).await.unwrap();
+    let ((n, control_len, flags), (buffer, _control)) = stream
+        .read_with_ancillary(Vec::with_capacity(8), AncillaryBuf::<64>::new())
+        .await
+        .unwrap();
+    assert_eq!(buffer.as_slice(), MSG);
+    assert_eq!(n, MSG.len());
+    assert_eq!(control_len, 0);
+    assert_eq!(flags, ReturnFlags::empty());
 }

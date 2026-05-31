@@ -1,5 +1,7 @@
 //! Extension traits
 
+use rustix::net::ReturnFlags;
+
 use crate::sys::prelude::*;
 
 /// Take buffer out of an operation.
@@ -164,6 +166,38 @@ impl<T: SetLen + IoVectoredBuf, C: SetLen + IoBuf, O> VecBufResultExt
     }
 }
 
+impl<T: SetLen + IoBuf, C: SetLen + IoBuf, O1, O2> BufResultExt
+    for BufResult<(usize, usize, O1, O2), (T, C)>
+{
+    unsafe fn map_advanced(self) -> Self {
+        self.map(
+            |(init_buffer, init_control, obj1, obj2), (mut buffer, mut control)| {
+                unsafe {
+                    buffer.advance_to(init_buffer);
+                    control.advance_to(init_control);
+                }
+                ((init_buffer, init_control, obj1, obj2), (buffer, control))
+            },
+        )
+    }
+}
+
+impl<T: SetLen + IoVectoredBuf, C: SetLen + IoBuf, O1, O2> VecBufResultExt
+    for BufResult<(usize, usize, O1, O2), (T, C)>
+{
+    unsafe fn map_vec_advanced(self) -> Self {
+        self.map(
+            |(init_buffer, init_control, obj1, obj2), (mut buffer, mut control)| {
+                unsafe {
+                    buffer.advance_vec_to(init_buffer);
+                    control.advance_to(init_control);
+                }
+                ((init_buffer, init_control, obj1, obj2), (buffer, control))
+            },
+        )
+    }
+}
+
 /// Helper trait for [`RecvFrom`], [`RecvFromVectored`] and [`RecvMsg`].
 ///
 /// [`RecvFrom`]: crate::op::RecvFrom
@@ -193,6 +227,17 @@ impl<T> RecvResultExt for BufResult<usize, (T, Option<SockAddr>, usize)> {
     fn map_addr(self) -> Self::RecvResult {
         self.map2(
             |res, (buffer, addr, len)| ((res, len, addr), buffer),
+            |(buffer, ..)| buffer,
+        )
+    }
+}
+
+impl<T> RecvResultExt for BufResult<usize, (T, Option<SockAddr>, usize, ReturnFlags)> {
+    type RecvResult = BufResult<(usize, usize, Option<SockAddr>, ReturnFlags), T>;
+
+    fn map_addr(self) -> Self::RecvResult {
+        self.map2(
+            |res, (buffer, addr, len, flags)| ((res, len, addr, flags), buffer),
             |(buffer, ..)| buffer,
         )
     }

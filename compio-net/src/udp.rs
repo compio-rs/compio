@@ -9,6 +9,7 @@ use compio_driver::{
     BufferRef, impl_raw_fd,
     op::{RecvFlags, RecvFromMultiResult, RecvMsgMultiResult},
 };
+use compio_io::ancillary::ReturnFlags;
 use futures_util::Stream;
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
@@ -303,40 +304,42 @@ impl UdpSocket {
     }
 
     /// Receives a single datagram message and ancillary data on the socket. On
-    /// success, returns the number of bytes received and the origin.
+    /// success, returns the number of bytes received, control length, the
+    /// origin and `recvmsg` flags.
     pub async fn recv_msg<T: IoBufMut, C: IoBufMut>(
         &self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
+    ) -> BufResult<(usize, usize, SocketAddr, ReturnFlags), (T, C)> {
         self.inner
             .recv_msg(buffer, control, RecvFlags::empty())
             .await
-            .map_res(|(n, m, addr)| {
+            .map_res(|(n, m, addr, flags)| {
                 let addr = addr
                     .expect("should have addr")
                     .as_socket()
                     .expect("should be SocketAddr");
-                (n, m, addr)
+                (n, m, addr, flags)
             })
     }
 
     /// Receives a single datagram message and ancillary data on the socket. On
-    /// success, returns the number of bytes received and the origin.
+    /// success, returns the number of bytes received, control length, the
+    /// origin and `recvmsg` flags.
     pub async fn recv_msg_vectored<T: IoVectoredBufMut, C: IoBufMut>(
         &self,
         buffer: T,
         control: C,
-    ) -> BufResult<(usize, usize, SocketAddr), (T, C)> {
+    ) -> BufResult<(usize, usize, SocketAddr, ReturnFlags), (T, C)> {
         self.inner
             .recv_msg_vectored(buffer, control, RecvFlags::empty())
             .await
-            .map_res(|(n, m, addr)| {
+            .map_res(|(n, m, addr, flags)| {
                 let addr = addr
                     .expect("should have addr")
                     .as_socket()
                     .expect("should be SocketAddr");
-                (n, m, addr)
+                (n, m, addr, flags)
             })
     }
 
@@ -350,18 +353,18 @@ impl UdpSocket {
         &self,
         len: usize,
         control: C,
-    ) -> io::Result<Option<(BufferRef, C, SocketAddr)>> {
+    ) -> io::Result<Option<(BufferRef, C, SocketAddr, ReturnFlags)>> {
         let res = self
             .inner
             .recv_msg_managed(len, control, RecvFlags::empty())
             .await?;
         let ret = match res {
-            Some((buffer, control, addr)) => {
+            Some((buffer, control, addr, flags)) => {
                 let addr = addr
                     .expect("should have addr")
                     .as_socket()
                     .expect("should be SocketAddr");
-                Some((buffer, control, addr))
+                Some((buffer, control, addr, flags))
             }
             None => None,
         };

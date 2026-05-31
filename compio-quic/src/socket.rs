@@ -283,7 +283,7 @@ impl Socket {
         let control = AncillaryBuf::<CMSG_LEN>::new();
 
         let BufResult(res, (buffer, control)) = self.inner.recv_msg(buffer, control).await;
-        let ((len, _, remote), buffer) = buf_try!(res, buffer);
+        let ((len, _, remote, _flags), buffer) = buf_try!(res, buffer);
 
         let mut ecn_bits = 0u8;
         let mut local_ip = None;

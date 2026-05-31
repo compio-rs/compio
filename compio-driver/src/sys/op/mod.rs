@@ -27,4 +27,4 @@ cfg_select! {
     _ => {}
 }
 
-pub use rustix::net::{RecvFlags, SendFlags};
+pub use rustix::net::{RecvFlags, ReturnFlags, SendFlags};
