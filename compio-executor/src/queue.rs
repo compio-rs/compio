@@ -237,8 +237,10 @@ impl Inner {
         item.next = None;
         item.is_hot = HOT;
 
-        if let Some(tail_key) = old_tail {
-            self.map.get_mut(tail_key).expect("tail exists").next = Some(key);
+        if let Some(tail_key) = old_tail
+            && let Some(tail_item) = self.map.get_mut(tail_key)
+        {
+            tail_item.next = Some(key);
         }
     }
 
@@ -258,11 +260,15 @@ impl Inner {
             list.tail = prev;
         }
 
-        if let Some(prev_key) = prev {
-            self.map.get_mut(prev_key).expect("prev exists").next = next;
+        if let Some(prev_key) = prev
+            && let Some(prev_item) = self.map.get_mut(prev_key)
+        {
+            prev_item.next = next;
         }
-        if let Some(next_key) = next {
-            self.map.get_mut(next_key).expect("next exists").prev = prev;
+        if let Some(next_key) = next
+            && let Some(next_item) = self.map.get_mut(next_key)
+        {
+            next_item.prev = prev;
         }
     }
 
