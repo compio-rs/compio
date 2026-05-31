@@ -263,7 +263,6 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
             poll_first: false,
         }
     }
-
 }
 
 impl<T: IoVectoredBufMut, C: IoBufMut, S> PollFirst for RecvMsg<T, C, S> {
