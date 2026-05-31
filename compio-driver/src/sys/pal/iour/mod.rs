@@ -2,7 +2,7 @@
 use std::sync::OnceLock;
 
 use io_uring::squeue::Entry;
-use linux_raw_sys::io_uring::{IORING_RECVSEND_POLL_FIRST, io_uring_sqe};
+use linux_raw_sys::io_uring::{IORING_ACCEPT_POLL_FIRST, IORING_RECVSEND_POLL_FIRST, io_uring_sqe};
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 
@@ -57,14 +57,14 @@ pub fn is_kernel_at_least(v: impl Into<KernelVersion>) -> bool {
 }
 
 pub(crate) fn set_poll_first(mut entry: Entry, flag: bool) -> Entry {
-    let version = match entry.get_opcode() as u8 {
-        io_uring::opcode::Accept::CODE => (6, 10),
-        _ => (5, 19),
+    let (ioprio, version) = match entry.get_opcode() as u8 {
+        io_uring::opcode::Accept::CODE => (IORING_ACCEPT_POLL_FIRST, (6, 10)),
+        _ => (IORING_RECVSEND_POLL_FIRST, (5, 19)),
     };
     if flag && is_kernel_at_least(version) {
         let sqe = &raw mut entry as *mut io_uring_sqe;
         unsafe {
-            (*sqe).ioprio |= IORING_RECVSEND_POLL_FIRST as u16;
+            (*sqe).ioprio |= ioprio as u16;
         }
     }
     entry
