@@ -24,8 +24,9 @@ use compio_log::*;
 use windows_sys::Win32::{
     Foundation::{
         ERROR_BAD_COMMAND, ERROR_BROKEN_PIPE, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE,
-        ERROR_NETNAME_DELETED, ERROR_NO_DATA, ERROR_PIPE_CONNECTED, ERROR_PIPE_NOT_CONNECTED,
-        FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS, RtlNtStatusToDosError, STATUS_SUCCESS,
+        ERROR_MORE_DATA, ERROR_NETNAME_DELETED, ERROR_NO_DATA, ERROR_PIPE_CONNECTED,
+        ERROR_PIPE_NOT_CONNECTED, FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS,
+        RtlNtStatusToDosError, STATUS_SUCCESS,
     },
     Storage::FileSystem::SetFileCompletionNotificationModes,
     System::{
@@ -193,7 +194,8 @@ impl CompletionPort {
                     | ERROR_BROKEN_PIPE
                     | ERROR_PIPE_CONNECTED
                     | ERROR_PIPE_NOT_CONNECTED
-                    | ERROR_NO_DATA => Ok(0),
+                    | ERROR_NO_DATA
+                    | ERROR_MORE_DATA => Ok(0),
                     _ => Err(io::Error::from_raw_os_error(error as _)),
                 }
             };

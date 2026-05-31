@@ -5,8 +5,8 @@ use windows_sys::{
     Win32::{
         Foundation::{
             ERROR_BROKEN_PIPE, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_IO_PENDING,
-            ERROR_NETNAME_DELETED, ERROR_NO_DATA, ERROR_NOT_FOUND, ERROR_PIPE_CONNECTED,
-            ERROR_PIPE_NOT_CONNECTED, GetLastError,
+            ERROR_MORE_DATA, ERROR_NETNAME_DELETED, ERROR_NO_DATA, ERROR_NOT_FOUND,
+            ERROR_PIPE_CONNECTED, ERROR_PIPE_NOT_CONNECTED, GetLastError,
         },
         Networking::WinSock::{SIO_GET_EXTENSION_FUNCTION_POINTER, WSAIoctl},
         System::IO::{CancelIoEx, OVERLAPPED},
@@ -65,7 +65,8 @@ pub fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
         | ERROR_BROKEN_PIPE
         | ERROR_PIPE_CONNECTED
         | ERROR_PIPE_NOT_CONNECTED
-        | ERROR_NO_DATA => Poll::Ready(Ok(transferred as _)),
+        | ERROR_NO_DATA
+        | ERROR_MORE_DATA => Poll::Ready(Ok(transferred as _)),
         _ => Poll::Ready(Err(io::Error::from_raw_os_error(error as _))),
     }
 }

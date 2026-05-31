@@ -232,7 +232,6 @@ async fn test_udp_recv_msg_multi() {
     assert_eq!(result.flags(), ReturnFlags::empty());
 }
 
-#[cfg(target_os = "linux")]
 #[compio_macros::test(with_proactor(buffer_pool_buffer_len = 256))]
 async fn test_udp_recv_msg_multi_truncated_datagram() {
     let listener = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
