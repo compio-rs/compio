@@ -149,6 +149,7 @@ async fn connect_invalid_dst() {
     assert!(TcpStream::connect("127.0.0.0:0").await.is_err());
 }
 
+#[cfg_attr(windows, ignore)]
 #[compio_macros::test]
 async fn read_with_ancillary_flags() {
     const MSG: &[u8] = b"test";

@@ -406,12 +406,8 @@ impl Socket {
         self.state.set_recv_op(&mut op);
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
         self.state.set_recv(&extra);
-        let res = res.into_inner().map2(
-            |res, (buffer, addr, control_len, flags)| ((res, control_len, (addr, flags)), buffer),
-            |(buffer, ..)| buffer,
-        );
+        let res = res.into_inner().map_addr();
         unsafe { res.map_vec_advanced() }
-            .map_res(|(res, control_len, (addr, flags))| (res, control_len, addr, flags))
     }
 
     pub async fn recv_msg_managed<C: IoBufMut>(

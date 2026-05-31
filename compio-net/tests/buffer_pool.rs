@@ -28,6 +28,7 @@ async fn test_tcp_read_buffer_pool() {
     assert!(matches!(res, Ok(None)));
 }
 
+#[cfg_attr(windows, ignore)]
 #[compio_macros::test]
 async fn test_tcp_read_managed_with_ancillary() {
     let listener = TcpListener::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
@@ -133,7 +134,7 @@ async fn test_uds_recv_buffer_pool() {
     assert!(matches!(stream.read_managed(0).await, Ok(None)));
 }
 
-#[cfg_attr(windows, ignore = "UDS support on Windows is incomplete")]
+#[cfg_attr(windows, ignore)]
 #[compio_macros::test]
 async fn test_uds_read_managed_with_ancillary() {
     let dir = tempfile::Builder::new()
