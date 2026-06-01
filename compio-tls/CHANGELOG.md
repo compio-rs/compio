@@ -7,12 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.10.1](https://github.com/compio-rs/compio/compare/compio-tls-v0.10.0...compio-tls-v0.10.1) - 2026-06-01
-
-### Other
-
-- updated the following local packages: compio-runtime, compio-net
-
 ## 0.10.0 - 2026-05-27
 
 ### Other

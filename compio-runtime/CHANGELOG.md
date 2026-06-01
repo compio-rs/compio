@@ -7,13 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.12.1](https://github.com/compio-rs/compio/compare/compio-runtime-v0.12.0...compio-runtime-v0.12.1) - 2026-06-01
-
-### Other
-
-- updated the following local packages: compio-driver, compio-executor
-
 ## 0.12.0 - 2026-05-27
+
+### Added
+
+- *(runtime)* [**breaking**] auto loop multishot ([#934](https://github.com/compio-rs/compio/pull/934))
 
 ### Changed
 
