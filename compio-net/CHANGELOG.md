@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - *(driver,net)* [**breaking**] more nonempty ([#906](https://github.com/compio-rs/compio/pull/906))
 - *(net)* [**breaking**] remove owned halves ([#915](https://github.com/compio-rs/compio/pull/915))
+- *(io,net)* [**breaking**] expose recvmsg return flags ([#935](https://github.com/compio-rs/compio/pull/935))
 
 ### Changed
 

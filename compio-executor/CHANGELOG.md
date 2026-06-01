@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/compio-rs/compio/compare/compio-executor-v0.1.0...compio-executor-v0.1.1) - 2026-06-01
+
+### Fixed
+
+- *(executor)* reduce panic on drop ([#937](https://github.com/compio-rs/compio/pull/937))
+
 ## 0.1.0 - 2026-05-27
 
 ### Changed

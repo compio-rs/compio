@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## 0.12.0 - 2026-05-27
 
+### Added
+
+- *(runtime)* [**breaking**] auto loop multishot ([#934](https://github.com/compio-rs/compio/pull/934))
+
 ### Changed
 
 - replace `cfg_if` with `cfg_select` ([#925](https://github.com/compio-rs/compio/pull/925))

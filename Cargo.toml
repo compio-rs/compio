@@ -27,9 +27,9 @@ repository = "https://github.com/compio-rs/compio"
 
 [workspace.dependencies]
 compio-buf = { path = "./compio-buf", version = "0.8.2" }
-compio-driver = { path = "./compio-driver", version = "0.12.0", default-features = false }
+compio-driver = { path = "./compio-driver", version = "0.12.1", default-features = false }
 compio-runtime = { path = "./compio-runtime", version = "0.12.0" }
-compio-executor = { path = "./compio-executor", version = "0.1.0" }
+compio-executor = { path = "./compio-executor", version = "0.1.1" }
 compio-macros = { path = "./compio-macros", version = "0.2.0" }
 compio-fs = { path = "./compio-fs", version = "0.12.0" }
 compio-io = { path = "./compio-io", version = "0.10.0" }
