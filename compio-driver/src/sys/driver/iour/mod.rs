@@ -1,5 +1,6 @@
 use std::{
-    collections::HashSet, marker::PhantomData, panic::AssertUnwindSafe, sync::Arc, time::Duration,
+    collections::HashSet, marker::PhantomData, mem::ManuallyDrop, panic::AssertUnwindSafe,
+    sync::Arc, time::Duration,
 };
 
 use crate::sys::{extra::IourExtra, prelude::*};
@@ -40,7 +41,11 @@ use crate::{
 
 /// Low-level driver of io-uring.
 pub(crate) struct Driver {
-    inner: IoUring<SEntry, CEntry>,
+    // Wrapped in `ManuallyDrop` so that `Drop` can close the ring *before*
+    // releasing the in-flight keys. Closing the io_uring fd makes the kernel
+    // wait for or cancel any in-flight ops, which guarantees the kernel is no
+    // longer reading from or writing to the buffers owned by those keys.
+    inner: ManuallyDrop<IoUring<SEntry, CEntry>>,
     notifier: Notifier,
     pool: AsyncifyPool,
     completed_tx: Sender<Entry>,
@@ -103,7 +108,7 @@ impl Driver {
         let (completed_tx, completed_rx) = flume::unbounded();
 
         Ok(Self {
-            inner,
+            inner: ManuallyDrop::new(inner),
             notifier,
             completed_tx,
             completed_rx,
@@ -428,7 +433,17 @@ impl Drop for Driver {
             }
         }
 
-        // Free remaining in-flight keys.
+        // Close the io_uring ring *before* freeing the remaining in-flight
+        // keys. Closing the ring fd makes the kernel wait for in-flight ops to
+        // finish or be cancelled, so it will no longer read from or write to
+        // the buffers owned by those keys. Without this, the kernel could
+        // touch a freed (and potentially recycled) heap allocation, which
+        // corrupts the glibc heap and typically surfaces as
+        // `malloc_consolidate(): unaligned fastbin chunk detected` /
+        // `corrupted double-linked list` during thread shutdown.
+        unsafe { ManuallyDrop::drop(&mut self.inner) };
+
+        // Free remaining in-flight keys. Safe now that the kernel is done.
         for user_data in self.in_flight.drain() {
             drop(unsafe { ErasedKey::from_raw(user_data) });
         }
