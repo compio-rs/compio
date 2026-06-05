@@ -4,16 +4,21 @@ use std::{
     task::{RawWaker, RawWakerVTable, Wake, Waker},
 };
 
+/// A reference to an array of wakers, which can be used to create a waker that
+/// wakes all of them.
 pub struct WakerArrayRef<'a, const N: usize>([Option<&'a Waker>; N]);
 
 impl<'a, const N: usize> WakerArrayRef<'a, N> {
     const VTABLE: &'static RawWakerVTable =
         &RawWakerVTable::new(Self::clone, Self::wake, Self::wake_by_ref, Self::drop);
 
+    /// Creates a new [`WakerArrayRef`] from an array of optional waker
+    /// references.
     pub fn new(wakers: [Option<&'a Waker>; N]) -> Self {
         Self(wakers)
     }
 
+    /// Creates a temporary waker that wakes all wakers in the array when woken.
     pub fn with<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&Waker) -> R,

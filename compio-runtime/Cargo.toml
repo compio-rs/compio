@@ -31,6 +31,7 @@ synchrony = { workspace = true, features = ["event"] }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
+compio-io = { workspace = true, features = ["compat"] }
 windows-sys = { workspace = true, features = ["Win32_System_IO"] }
 
 # Unix specific dependencies
