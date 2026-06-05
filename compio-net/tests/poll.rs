@@ -53,17 +53,12 @@ async fn poll_connect() {
     };
 
     tx.set_nonblocking(true).unwrap();
-    let tx = PollFd::new(tx).unwrap();
+    let mut tx = PollFd::new(tx).unwrap();
 
     let send_task = async {
-        loop {
-            match tx.send(b"Hello world!") {
-                Ok(res) => break res,
-                Err(e) if is_would_block(&e) => {}
-                Err(e) => panic!("{e:?}"),
-            }
-            tx.write_ready().await.unwrap();
-        }
+        futures_util::AsyncWriteExt::write(&mut tx, b"Hello world!")
+            .await
+            .unwrap()
     };
 
     let mut buffer = Vec::with_capacity(12);
