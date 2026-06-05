@@ -7,7 +7,7 @@ use std::{
     os::windows::io::{AsRawHandle, AsRawSocket, FromRawHandle, OwnedHandle, RawSocket},
     pin::Pin,
     ptr::null,
-    sync::atomic::{AtomicI32, AtomicUsize, Ordering},
+    sync::atomic::Ordering,
     task::{Context, Poll, Waker},
 };
 
@@ -16,6 +16,7 @@ use compio_driver::{
     AsFd, AsRawFd, BorrowedFd, OpCode, OpType, RawFd, SharedFd, ToSharedFd, syscall,
 };
 use compio_io::compat::WakerArrayRef;
+use synchrony::unsync::atomic::{AtomicI32, AtomicUsize};
 use windows_sys::Win32::{
     Networking::WinSock::{
         FD_ACCEPT, FD_CONNECT, FD_MAX_EVENTS, FD_READ, FD_WRITE, WSAEnumNetworkEvents,
