@@ -81,19 +81,52 @@ impl<T: AsFd + 'static> PollFd<T> {
     pub fn poll_write_ready(&self, cx: &mut Context) -> Poll<io::Result<()>> {
         self.0.poll_write_ready(cx)
     }
-}
 
-impl<T: AsFd + 'static> PollFd<T>
-where
-    for<'a> &'a T: std::io::Read,
-{
-    /// Poll for read readiness and read data.
-    pub fn poll_read(&self, cx: &mut Context, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+    /// Poll for accept readiness and call the provided function.
+    pub fn poll_accept_with<R>(
+        &self,
+        cx: &mut Context,
+        mut f: impl FnMut(&T) -> io::Result<R>,
+    ) -> Poll<io::Result<R>> {
         loop {
-            match std::io::Read::read(&mut &*self.0, buf) {
-                Ok(n) => break Poll::Ready(Ok(n)),
+            match f(&self.0) {
+                Ok(result) => break Poll::Ready(Ok(result)),
+                Err(e) if is_would_block(&e) => {
+                    std::task::ready!(self.poll_accept_ready(cx))?;
+                }
+                Err(e) => break Poll::Ready(Err(e)),
+            }
+        }
+    }
+
+    /// Poll for connect readiness and call the provided function.
+    pub fn poll_read_with<R>(
+        &self,
+        cx: &mut Context,
+        mut f: impl FnMut(&T) -> io::Result<R>,
+    ) -> Poll<io::Result<R>> {
+        loop {
+            match f(&self.0) {
+                Ok(result) => break Poll::Ready(Ok(result)),
                 Err(e) if is_would_block(&e) => {
                     std::task::ready!(self.poll_read_ready(cx))?;
+                }
+                Err(e) => break Poll::Ready(Err(e)),
+            }
+        }
+    }
+
+    /// Poll for write readiness and call the provided function.
+    pub fn poll_write_with<R>(
+        &self,
+        cx: &mut Context,
+        mut f: impl FnMut(&T) -> io::Result<R>,
+    ) -> Poll<io::Result<R>> {
+        loop {
+            match f(&self.0) {
+                Ok(result) => break Poll::Ready(Ok(result)),
+                Err(e) if is_would_block(&e) => {
+                    std::task::ready!(self.poll_write_ready(cx))?;
                 }
                 Err(e) => break Poll::Ready(Err(e)),
             }
@@ -103,19 +136,31 @@ where
 
 impl<T: AsFd + 'static> PollFd<T>
 where
+    for<'a> &'a T: std::io::Read,
+{
+    /// Poll for read readiness and read data.
+    pub fn poll_read(&self, cx: &mut Context, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+        self.poll_read_with(cx, |fd| std::io::Read::read(&mut &*fd, buf))
+    }
+
+    /// Poll for read readiness and read data into an uninitialized buffer.
+    #[cfg(feature = "read_buf")]
+    pub fn poll_read_buf(
+        &self,
+        cx: &mut Context,
+        mut buf: std::io::BorrowedCursor,
+    ) -> Poll<io::Result<()>> {
+        self.poll_read_with(cx, |fd| std::io::Read::read_buf(&mut &*fd, buf.reborrow()))
+    }
+}
+
+impl<T: AsFd + 'static> PollFd<T>
+where
     for<'a> &'a T: std::io::Write,
 {
     /// Poll for write readiness and write data.
     pub fn poll_write(&self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
-        loop {
-            match std::io::Write::write(&mut &*self.0, buf) {
-                Ok(n) => break Poll::Ready(Ok(n)),
-                Err(e) if is_would_block(&e) => {
-                    std::task::ready!(self.poll_write_ready(cx))?;
-                }
-                Err(e) => break Poll::Ready(Err(e)),
-            }
-        }
+        self.poll_write_with(cx, |fd| std::io::Write::write(&mut &*fd, buf))
     }
 }
 

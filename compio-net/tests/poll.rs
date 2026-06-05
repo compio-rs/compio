@@ -28,28 +28,22 @@ async fn poll_connect() {
     let addr = listener.local_addr().unwrap();
     let listener = PollFd::new(listener).unwrap();
     let accept_task = async {
-        loop {
-            listener.accept_ready().await.unwrap();
-            match listener.accept() {
-                Ok(res) => break res,
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
-                Err(e) => panic!("{e:?}"),
-            }
-        }
+        std::future::poll_fn(|cx| listener.poll_accept_with(cx, |listener| listener.accept()))
+            .await
+            .unwrap()
     };
 
     let client = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
     client.set_nonblocking(true).unwrap();
     let client = PollFd::new(client).unwrap();
-    let res = client.connect(&addr);
-    let tx = if let Err(e) = res {
-        assert!(is_would_block(&e));
-        let (tx, _) = accept_task.await;
-        tx
-    } else {
-        let ((tx, _), res) = futures_util::join!(accept_task, client.connect_ready());
-        res.unwrap();
-        tx
+    let tx = match client.connect(&addr) {
+        Ok(_) => accept_task.await.0,
+        Err(e) if is_would_block(&e) => {
+            let ((tx, _), res) = futures_util::join!(accept_task, client.connect_ready());
+            res.unwrap();
+            tx
+        }
+        Err(e) => panic!("connect failed: {e}"),
     };
 
     tx.set_nonblocking(true).unwrap();
@@ -63,17 +57,15 @@ async fn poll_connect() {
 
     let mut buffer = Vec::with_capacity(12);
     let recv_task = async {
-        loop {
-            match client.recv(buffer.spare_capacity_mut()) {
-                Ok(res) => {
-                    unsafe { buffer.set_len(res) };
-                    break res;
-                }
-                Err(e) if is_would_block(&e) => {}
-                Err(e) => panic!("{e:?}"),
-            }
-            client.read_ready().await.unwrap();
-        }
+        std::future::poll_fn(|cx| {
+            client.poll_read_with(cx, |client| {
+                let n = client.recv(buffer.spare_capacity_mut())?;
+                unsafe { buffer.set_len(n) };
+                Ok(n)
+            })
+        })
+        .await
+        .unwrap()
     };
 
     let (write, read) = futures_util::join!(send_task, recv_task);

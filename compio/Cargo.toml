@@ -200,6 +200,7 @@ proc_macro_diagnostic = ["compio-driver/proc_macro_diagnostic"]
 read_buf = [
     "compio-buf/read_buf",
     "compio-io?/read_buf",
+    "compio-runtime?/read_buf",
     "compio-tls?/read_buf",
     "compio-fs?/read_buf",
 ]

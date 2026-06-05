@@ -53,9 +53,9 @@ time = []
 async-fd = ["dep:compio-io"]
 
 current_thread_id = []
-
 sanitize = []
-nightly = ["current_thread_id", "sanitize"]
+read_buf = []
+nightly = ["current_thread_id", "read_buf", "sanitize"]
 
 [[test]]
 name = "custom_loop"
