@@ -99,7 +99,7 @@ impl<T: AsFd + 'static> PollFd<T> {
         }
     }
 
-    /// Poll for connect readiness and call the provided function.
+    /// Poll for read readiness and call the provided function.
     pub fn poll_read_with<R>(
         &self,
         cx: &mut Context,
