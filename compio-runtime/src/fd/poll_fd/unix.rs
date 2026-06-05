@@ -40,28 +40,6 @@ impl<T: AsFd> PollFd<T> {
 }
 
 impl<T: AsFd + 'static> PollFd<T> {
-    pub async fn accept_ready(&self) -> io::Result<()> {
-        self.read_ready().await
-    }
-
-    pub async fn connect_ready(&self) -> io::Result<()> {
-        self.write_ready().await
-    }
-
-    pub async fn read_ready(&self) -> io::Result<()> {
-        let op = PollOnce::new(self.to_shared_fd(), Interest::Readable);
-        let BufResult(res, _) = crate::submit(op).await;
-        res?;
-        Ok(())
-    }
-
-    pub async fn write_ready(&self) -> io::Result<()> {
-        let op = PollOnce::new(self.to_shared_fd(), Interest::Writable);
-        let BufResult(res, _) = crate::submit(op).await;
-        res?;
-        Ok(())
-    }
-
     pub fn poll_read_ready(&self, cx: &mut Context) -> Poll<io::Result<()>> {
         let mut read_submit = self.read_submit.borrow_mut();
         loop {

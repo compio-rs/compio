@@ -13,6 +13,7 @@ cfg_select! {
 #[cfg(windows)]
 use std::os::windows::io::{AsRawSocket, RawSocket};
 use std::{
+    future::poll_fn,
     io,
     ops::Deref,
     pin::Pin,
@@ -44,22 +45,22 @@ impl<T: AsFd + 'static> PollFd<T> {
     /// Wait for accept readiness, before calling `accept`, or after `accept`
     /// returns `WouldBlock`.
     pub async fn accept_ready(&self) -> io::Result<()> {
-        self.0.accept_ready().await
+        poll_fn(|cx| self.poll_accept_ready(cx)).await
     }
 
     /// Wait for connect readiness.
     pub async fn connect_ready(&self) -> io::Result<()> {
-        self.0.connect_ready().await
+        poll_fn(|cx| self.poll_connect_ready(cx)).await
     }
 
     /// Wait for read readiness.
     pub async fn read_ready(&self) -> io::Result<()> {
-        self.0.read_ready().await
+        poll_fn(|cx| self.poll_read_ready(cx)).await
     }
 
     /// Wait for write readiness.
     pub async fn write_ready(&self) -> io::Result<()> {
-        self.0.write_ready().await
+        poll_fn(|cx| self.poll_write_ready(cx)).await
     }
 
     /// Poll for accept readiness.

@@ -1,7 +1,6 @@
 use std::{
     cell::RefCell,
     fmt::Debug,
-    future::poll_fn,
     io,
     ops::Deref,
     os::windows::io::{AsRawHandle, AsRawSocket, FromRawHandle, OwnedHandle, RawSocket},
@@ -60,22 +59,6 @@ impl<T: AsFd> PollFd<T> {
 }
 
 impl<T: AsFd + 'static> PollFd<T> {
-    pub async fn accept_ready(&self) -> io::Result<()> {
-        poll_fn(|cx| self.poll_accept_ready(cx)).await
-    }
-
-    pub async fn connect_ready(&self) -> io::Result<()> {
-        poll_fn(|cx| self.poll_connect_ready(cx)).await
-    }
-
-    pub async fn read_ready(&self) -> io::Result<()> {
-        poll_fn(|cx| self.poll_read_ready(cx)).await
-    }
-
-    pub async fn write_ready(&self) -> io::Result<()> {
-        poll_fn(|cx| self.poll_write_ready(cx)).await
-    }
-
     fn poll_ready(&self, event: u32) -> Poll<io::Result<()>> {
         let mut submit = self.submit.borrow_mut();
         loop {
