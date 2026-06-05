@@ -77,7 +77,7 @@ impl<T: AsFd + 'static> PollFd<T> {
 
     fn poll_ready(&self, event: u32) -> Poll<io::Result<()>> {
         let mut submit = self.submit.borrow_mut();
-        let res = loop {
+        loop {
             match submit.as_mut() {
                 None => {
                     let op = self.event.create_op(self.to_shared_fd(), event)?;
@@ -99,6 +99,7 @@ impl<T: AsFd + 'static> PollFd<T> {
                             submit.take();
                             let events = op.into_inner();
                             let event = event as i32;
+                            self.event.clear_event(&self.inner, events.lNetworkEvents)?;
                             if (events.lNetworkEvents & event) != 0 {
                                 let err = events.iErrorCode[event.ilog2() as usize];
                                 if err == 0 {
@@ -113,11 +114,7 @@ impl<T: AsFd + 'static> PollFd<T> {
                     }
                 }
             }
-        };
-        if !res.is_pending() {
-            self.event.clear_event(event);
         }
-        res
     }
 
     pub fn poll_accept_ready(&self, cx: &mut Context) -> Poll<io::Result<()>> {
@@ -226,12 +223,29 @@ impl WSAEvent {
         Ok(WaitWSAEvent::new(socket, ev_object))
     }
 
-    pub fn clear_event(&self, event: u32) {
-        let event = event as i32;
+    fn clear_event_inner(&self, event: i32) {
         let index = event.ilog2() as usize;
         if self.ev_record[index].fetch_sub(1, Ordering::Relaxed) == 1 {
             self.events.fetch_add(!event, Ordering::Relaxed);
         }
+    }
+
+    pub fn clear_event<T: AsFd>(&self, socket: &T, events: i32) -> io::Result<()> {
+        for i in 0..FD_MAX_EVENTS {
+            let event = 1 << i;
+            if (events & event) != 0 {
+                self.clear_event_inner(event);
+            }
+        }
+        syscall!(
+            SOCKET,
+            WSAEventSelect(
+                socket.as_fd().as_raw_fd() as _,
+                self.ev_object.as_raw_handle() as _,
+                events
+            )
+        )?;
+        Ok(())
     }
 }
 
@@ -274,16 +288,6 @@ unsafe impl<T: AsFd> OpCode for WaitWSAEvent<T> {
             )
         )?;
         Poll::Ready(Ok(0))
-        // let res = if (events.lNetworkEvents & self.event) != 0 {
-        //     events.iErrorCode[self.event.ilog2() as usize]
-        // } else {
-        //     ERROR_IO_PENDING as _
-        // };
-        // if res == 0 {
-        //     Poll::Ready(Ok(0))
-        // } else {
-        //     Poll::Ready(Err(io::Error::from_raw_os_error(res)))
-        // }
     }
 }
 
