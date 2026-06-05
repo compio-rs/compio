@@ -36,15 +36,15 @@ async fn poll_connect() {
     let client = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
     client.set_nonblocking(true).unwrap();
     let client = PollFd::new(client).unwrap();
-    let tx = match client.connect(&addr) {
-        Ok(_) => accept_task.await.0,
-        Err(e) if is_would_block(&e) => {
-            let ((tx, _), res) = futures_util::join!(accept_task, client.connect_ready());
-            res.unwrap();
-            tx
+    let connect_task = async {
+        match client.connect(&addr) {
+            Ok(_) => Ok(()),
+            Err(e) if is_would_block(&e) => client.connect_ready().await,
+            Err(e) => Err(e),
         }
-        Err(e) => panic!("connect failed: {e}"),
     };
+    let ((tx, _), res) = futures_util::join!(accept_task, connect_task);
+    res.unwrap();
 
     tx.set_nonblocking(true).unwrap();
     let mut tx = PollFd::new(tx).unwrap();
