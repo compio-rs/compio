@@ -12,7 +12,12 @@ cfg_select! {
 
 #[cfg(windows)]
 use std::os::windows::io::{AsRawSocket, RawSocket};
-use std::{io, ops::Deref};
+use std::{
+    io,
+    ops::Deref,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use compio_buf::IntoInner;
 use compio_driver::{AsFd, AsRawFd, BorrowedFd, RawFd, SharedFd, ToSharedFd};
@@ -56,6 +61,26 @@ impl<T: AsFd + 'static> PollFd<T> {
     pub async fn write_ready(&self) -> io::Result<()> {
         self.0.write_ready().await
     }
+
+    /// Poll for accept readiness.
+    pub fn poll_accept_ready(&self, cx: &mut Context) -> Poll<io::Result<()>> {
+        self.0.poll_accept_ready(cx)
+    }
+
+    /// Poll for connect readiness.
+    pub fn poll_connect_ready(&self, cx: &mut Context) -> Poll<io::Result<()>> {
+        self.0.poll_connect_ready(cx)
+    }
+
+    /// Poll for read readiness.
+    pub fn poll_read_ready(&self, cx: &mut Context) -> Poll<io::Result<()>> {
+        self.0.poll_read_ready(cx)
+    }
+
+    /// Poll for write readiness.
+    pub fn poll_write_ready(&self, cx: &mut Context) -> Poll<io::Result<()>> {
+        self.0.poll_write_ready(cx)
+    }
 }
 
 impl<T: AsFd> IntoInner for PollFd<T> {
@@ -96,5 +121,66 @@ impl<T: AsFd> Deref for PollFd<T> {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+fn is_would_block(e: &io::Error) -> bool {
+    #[cfg(unix)]
+    {
+        e.kind() == io::ErrorKind::WouldBlock || e.raw_os_error() == Some(libc::EINPROGRESS)
+    }
+    #[cfg(not(unix))]
+    {
+        e.kind() == io::ErrorKind::WouldBlock
+    }
+}
+
+impl<T: AsFd + 'static> futures_util::AsyncRead for PollFd<T>
+where
+    for<'a> &'a T: std::io::Read,
+{
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        loop {
+            match std::io::Read::read(&mut &*self.0, buf) {
+                Ok(n) => break Poll::Ready(Ok(n)),
+                Err(e) if is_would_block(&e) => {
+                    std::task::ready!(self.poll_read_ready(cx))?;
+                }
+                Err(e) => break Poll::Ready(Err(e)),
+            }
+        }
+    }
+}
+
+impl<T: AsFd + 'static> futures_util::AsyncWrite for PollFd<T>
+where
+    for<'a> &'a T: std::io::Write,
+{
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        loop {
+            match std::io::Write::write(&mut &*self.0, buf) {
+                Ok(n) => break Poll::Ready(Ok(n)),
+                Err(e) if is_would_block(&e) => {
+                    std::task::ready!(self.poll_write_ready(cx))?;
+                }
+                Err(e) => break Poll::Ready(Err(e)),
+            }
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
     }
 }
