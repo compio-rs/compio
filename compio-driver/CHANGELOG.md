@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.12.1](https://github.com/compio-rs/compio/compare/compio-driver-v0.12.0...compio-driver-v0.12.1) - 2026-06-01
+## 0.12.2 - 2026-06-05
+
+### Fixed
+
+- close ring instance before dropping in_flight data ([#943](https://github.com/compio-rs/compio/pull/943))
+
+## 0.12.1 - 2026-06-01
 
 ### Fixed
 
