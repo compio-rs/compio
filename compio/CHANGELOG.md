@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.1](https://github.com/compio-rs/compio/compare/v0.19.0...v0.19.1) - 2026-06-10
+
+### Other
+
+- updated the following local packages: compio-driver, compio-io, compio-runtime, compio-runtime, compio-net, compio-compat, compio-dispatcher, compio-fs, compio-process, compio-quic, compio-tls, compio-ws
+
 ## [0.19.0](https://github.com/compio-rs/compio/compare/v0.19.0-rc.2...v0.19.0) - 2026-05-27
 
 ### Added

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.3](https://github.com/compio-rs/compio/compare/compio-driver-v0.12.2...compio-driver-v0.12.3) - 2026-06-10
+
+### Fixed
+
+- drop linux_5_11 requirement ([#947](https://github.com/compio-rs/compio/pull/947))
+
 ## 0.12.2 - 2026-06-05
 
 ### Fixed
