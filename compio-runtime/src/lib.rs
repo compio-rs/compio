@@ -10,6 +10,7 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "current_thread_id", feature(current_thread_id))]
+#![cfg_attr(feature = "read_buf", feature(read_buf, core_io_borrowed_buf))]
 #![allow(unused_features)]
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
