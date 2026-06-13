@@ -173,11 +173,12 @@ fn test_cross_thread_wake() {
     });
 }
 
-/// Regression test for <https://github.com/compio-rs/compio/issues/948>.
+/// Model-based loom test for <https://github.com/compio-rs/compio/issues/948>.
 ///
-/// Models `Remote::schedule` with two concurrent cross-thread wakers and
-/// an executor that can interleave. Loom exhaustively checks that no
-/// interleaving strands the task (SCHEDULED=1 with an empty queue).
+/// This validates the scheduling *state machine model* below; it does not
+/// directly exercise `compio_executor`'s `Remote::schedule` implementation.
+/// Loom exhaustively checks that no interleaving strands the task (SCHEDULED=1
+/// with an empty queue).
 ///
 /// Uses a direct model of the scheduling state machine rather than the
 /// full `Executor` to keep the state space tractable for loom (~48s).
