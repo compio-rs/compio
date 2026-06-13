@@ -39,11 +39,7 @@ impl<'a> Remote<'a> {
 
         trace!(?state);
 
-        if state.is_scheduled()
-            || state.is_scheduling()
-            || state.is_completed()
-            || state.is_cancelled()
-        {
+        if state.is_scheduled() || state.is_completed() || state.is_cancelled() {
             self.header().state.finish_scheduling();
             return;
         }
