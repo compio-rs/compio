@@ -158,7 +158,7 @@ impl Runtime {
     ///
     /// The return value indicates whether there are still tasks in the queue.
     pub fn run(&self) -> bool {
-        self.executor.tick()
+        self.enter(|| self.executor.tick())
     }
 
     /// Low level API to control the runtime.

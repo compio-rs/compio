@@ -6,6 +6,7 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
     thread::{self, ThreadId},
+    time::Duration,
 };
 
 use compio_runtime::CancelToken;
@@ -120,4 +121,34 @@ fn test_task_dropped_when_runtime_drops() {
     drop(rt);
 
     assert!(flag.get(), "spawned task was not dropped: Rc cycle?");
+}
+
+#[test]
+fn test_run_enters_runtime_context() {
+    let rt = compio_runtime::Runtime::new().unwrap();
+    let waker = Arc::new(AtomicWaker::new());
+    let waker2 = waker.clone();
+
+    rt.block_on(async {
+        compio_runtime::spawn(async move {
+            let timer = compio_runtime::time::sleep(Duration::from_secs(3600));
+            futures_util::pin_mut!(timer);
+
+            std::future::poll_fn(|cx| {
+                let _ = timer.as_mut().poll(cx);
+                waker2.register(cx.waker());
+                Poll::<()>::Pending
+            })
+            .await;
+        })
+        .detach();
+
+        compio_runtime::spawn(async {}).await.unwrap();
+    });
+
+    waker.take().unwrap().wake();
+
+    // Must not panic: run() should set CURRENT_RUNTIME so that
+    // TimerFuture::poll (and TimerFuture::drop) can find the runtime.
+    rt.run();
 }
