@@ -106,6 +106,73 @@ fn test_cross_thread_wake() {
     });
 }
 
+/// Regression test for <https://github.com/compio-rs/compio/issues/948>.
+///
+/// Exercises the real `Executor` / `Remote::schedule` path with two
+/// concurrent cross-thread wakes. A message-pump task parks after each
+/// wake; loom exhaustively checks that no interleaving strands the task
+/// (W2's wake lost because W1 is still inside `finish_scheduling`).
+#[test]
+fn test_no_lost_cross_thread_wake() {
+    use std::{
+        cell::{Cell, RefCell},
+        future::poll_fn,
+        rc::Rc,
+    };
+
+    loom::model(|| {
+        let exe = Executor::new();
+        let polls = Rc::new(Cell::new(0));
+        let waker = Rc::new(RefCell::new(None));
+
+        let handle = exe.spawn({
+            let (polls, waker) = (polls.clone(), waker.clone());
+            poll_fn(move |cx| {
+                let n = polls.get() + 1;
+                polls.set(n);
+                *waker.borrow_mut() = Some(cx.waker().clone());
+                if n >= 3 {
+                    Poll::Ready(())
+                } else {
+                    Poll::Pending
+                }
+            })
+        });
+
+        exe.tick();
+        assert_eq!(polls.get(), 1, "spawned task did not run on first tick");
+
+        let w1: Waker = waker.borrow().clone().unwrap();
+        let t1 = thread::spawn(move || w1.wake());
+
+        loop {
+            exe.tick();
+            if polls.get() >= 2 {
+                break;
+            }
+            thread::yield_now();
+        }
+
+        let w2: Waker = waker.borrow().clone().unwrap();
+        let t2 = thread::spawn(move || w2.wake());
+        t2.join().unwrap();
+        t1.join().unwrap();
+
+        for _ in 0..4 {
+            exe.tick();
+        }
+
+        assert_eq!(
+            polls.get(),
+            3,
+            "lost wake: both wake() calls returned, yet the task was never re-polled (parked \
+             forever with a message pending)",
+        );
+
+        drop(handle);
+    });
+}
+
 #[test]
 fn test_join_while_complete() {
     loom::model(|| {
