@@ -171,7 +171,7 @@ impl IoBuf for bytes::BytesMut {
 }
 
 #[cfg(feature = "read_buf")]
-impl IoBuf for std::io::BorrowedBuf<'static> {
+impl IoBuf for std::io::BorrowedBuf<'static, u8> {
     fn as_init(&self) -> &[u8] {
         self.filled()
     }
@@ -652,7 +652,7 @@ impl IoBufMut for bytes::BytesMut {
 }
 
 #[cfg(feature = "read_buf")]
-impl IoBufMut for std::io::BorrowedBuf<'static> {
+impl IoBufMut for std::io::BorrowedBuf<'static, u8> {
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         let total_cap = self.capacity();
 
@@ -834,7 +834,7 @@ impl SetLen for bytes::BytesMut {
 }
 
 #[cfg(feature = "read_buf")]
-impl SetLen for std::io::BorrowedBuf<'static> {
+impl SetLen for std::io::BorrowedBuf<'static, u8> {
     unsafe fn set_len(&mut self, len: usize) {
         debug_assert!(self.capacity() >= len);
 
