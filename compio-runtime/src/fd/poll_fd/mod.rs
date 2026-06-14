@@ -149,7 +149,7 @@ where
     pub fn poll_read_buf(
         &self,
         cx: &mut Context,
-        mut buf: std::io::BorrowedCursor,
+        mut buf: std::io::BorrowedCursor<u8>,
     ) -> Poll<io::Result<()>> {
         self.poll_read_with(cx, |fd| std::io::Read::read_buf(&mut &*fd, buf.reborrow()))
     }
