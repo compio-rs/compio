@@ -102,7 +102,7 @@ impl SyncReadBuf {
     }
 
     #[cfg(feature = "read_buf")]
-    pub fn read_buf(&mut self, mut buf: io::BorrowedCursor<'_>) -> io::Result<()> {
+    pub fn read_buf(&mut self, mut buf: io::BorrowedCursor<'_, u8>) -> io::Result<()> {
         let mut slice = self.fill_buf()?;
         let old_written = buf.written();
         slice.read_buf(buf.reborrow())?;
@@ -423,7 +423,7 @@ impl<S> Read for SyncStream<S> {
     }
 
     #[cfg(feature = "read_buf")]
-    fn read_buf(&mut self, buf: io::BorrowedCursor<'_>) -> io::Result<()> {
+    fn read_buf(&mut self, buf: io::BorrowedCursor<'_, u8>) -> io::Result<()> {
         self.read_buf.read_buf(buf)
     }
 }
@@ -444,7 +444,7 @@ impl<S> Read for SyncStreamReadHalf<S> {
     }
 
     #[cfg(feature = "read_buf")]
-    fn read_buf(&mut self, buf: io::BorrowedCursor<'_>) -> io::Result<()> {
+    fn read_buf(&mut self, buf: io::BorrowedCursor<'_, u8>) -> io::Result<()> {
         self.read_buf.read_buf(buf)
     }
 }
