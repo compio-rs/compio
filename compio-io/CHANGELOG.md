@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.10.1 - 2026-06-14
+
+### Added
+
+- *(runtime)* poll-based API for PollFd ([#944](https://github.com/compio-rs/compio/pull/944))
+- *(buf,io)* sync with latest read-buf API ([#950](https://github.com/compio-rs/compio/pull/950))
+
+### Other
+
+- release ([#940](https://github.com/compio-rs/compio/pull/940))
+
 ## 0.10.0 - 2026-05-27
 
 ### Added

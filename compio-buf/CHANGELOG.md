@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.8.3 - 2026-06-14
+
+### Added
+
+- *(buf,io)* sync with latest read-buf API ([#950](https://github.com/compio-rs/compio/pull/950))
+
 ## 0.8.2 - 2026-05-27
 
 ## 0.8.2-rc.1 - 2026-04-20
