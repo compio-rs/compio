@@ -31,6 +31,7 @@ synchrony = { workspace = true, features = ["event"] }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
+compio-io = { workspace = true, features = ["compat"] }
 windows-sys = { workspace = true, features = ["Win32_System_IO"] }
 
 # Unix specific dependencies
@@ -52,9 +53,9 @@ time = []
 async-fd = ["dep:compio-io"]
 
 current_thread_id = []
-
 sanitize = []
-nightly = ["current_thread_id", "sanitize"]
+read_buf = []
+nightly = ["current_thread_id", "read_buf", "sanitize"]
 
 [[test]]
 name = "custom_loop"

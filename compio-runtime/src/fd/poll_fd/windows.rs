@@ -1,18 +1,22 @@
 use std::{
+    cell::RefCell,
+    fmt::Debug,
     io,
     ops::Deref,
     os::windows::io::{AsRawHandle, AsRawSocket, FromRawHandle, OwnedHandle, RawSocket},
+    pin::Pin,
     ptr::null,
-    sync::atomic::{AtomicI32, AtomicUsize, Ordering},
-    task::Poll,
+    sync::atomic::Ordering,
+    task::{Context, Poll, Waker},
 };
 
 use compio_buf::{BufResult, IntoInner};
 use compio_driver::{
     AsFd, AsRawFd, BorrowedFd, OpCode, OpType, RawFd, SharedFd, ToSharedFd, syscall,
 };
+use compio_io::compat::WakerArrayRef;
+use synchrony::unsync::atomic::{AtomicI32, AtomicUsize};
 use windows_sys::Win32::{
-    Foundation::ERROR_IO_PENDING,
     Networking::WinSock::{
         FD_ACCEPT, FD_CONNECT, FD_MAX_EVENTS, FD_READ, FD_WRITE, WSAEnumNetworkEvents,
         WSAEventSelect, WSANETWORKEVENTS,
@@ -20,10 +24,24 @@ use windows_sys::Win32::{
     System::{IO::OVERLAPPED, Threading::CreateEventW},
 };
 
-#[derive(Debug)]
+use crate::Submit;
+
 pub struct PollFd<T: AsFd> {
     inner: SharedFd<T>,
     event: WSAEvent,
+    submit: RefCell<Option<Submit<WaitWSAEvent<T>>>>,
+    accept_waker: RefCell<Option<Waker>>,
+    connect_waker: RefCell<Option<Waker>>,
+    read_waker: RefCell<Option<Waker>>,
+    write_waker: RefCell<Option<Waker>>,
+}
+
+impl<T: AsFd + Debug> Debug for PollFd<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PollFd")
+            .field("inner", &self.inner)
+            .finish()
+    }
 }
 
 impl<T: AsFd> PollFd<T> {
@@ -31,25 +49,76 @@ impl<T: AsFd> PollFd<T> {
         Ok(Self {
             inner,
             event: WSAEvent::new()?,
+            submit: RefCell::new(None),
+            accept_waker: RefCell::new(None),
+            connect_waker: RefCell::new(None),
+            read_waker: RefCell::new(None),
+            write_waker: RefCell::new(None),
         })
     }
 }
 
 impl<T: AsFd + 'static> PollFd<T> {
-    pub async fn accept_ready(&self) -> io::Result<()> {
-        self.event.wait(self.to_shared_fd(), FD_ACCEPT).await
+    fn poll_ready(&self, event: u32) -> Poll<io::Result<()>> {
+        let mut submit = self.submit.borrow_mut();
+        loop {
+            match submit.as_mut() {
+                None => {
+                    let op = self.event.create_op(self.to_shared_fd(), event)?;
+                    *submit = Some(crate::submit(op));
+                }
+                Some(f) => {
+                    let accept_waker = self.accept_waker.borrow();
+                    let connect_waker = self.connect_waker.borrow();
+                    let read_waker = self.read_waker.borrow();
+                    let write_waker = self.write_waker.borrow();
+                    let waker = WakerArrayRef::new([
+                        accept_waker.as_ref(),
+                        connect_waker.as_ref(),
+                        read_waker.as_ref(),
+                        write_waker.as_ref(),
+                    ]);
+                    match waker.with(|waker| Pin::new(f).poll(&mut Context::from_waker(waker))) {
+                        Poll::Ready(BufResult(Ok(_), op)) => {
+                            submit.take();
+                            let events = op.into_inner();
+                            let event = event as i32;
+                            self.event.clear_event(&self.inner, events.lNetworkEvents)?;
+                            if (events.lNetworkEvents & event) != 0 {
+                                let err = events.iErrorCode[event.ilog2() as usize];
+                                if err == 0 {
+                                    break Poll::Ready(Ok(()));
+                                } else {
+                                    break Poll::Ready(Err(io::Error::from_raw_os_error(err)));
+                                }
+                            }
+                        }
+                        Poll::Ready(BufResult(Err(e), _)) => break Poll::Ready(Err(e)),
+                        Poll::Pending => break Poll::Pending,
+                    }
+                }
+            }
+        }
     }
 
-    pub async fn connect_ready(&self) -> io::Result<()> {
-        self.event.wait(self.to_shared_fd(), FD_CONNECT).await
+    pub fn poll_accept_ready(&self, cx: &mut Context) -> Poll<io::Result<()>> {
+        self.accept_waker.borrow_mut().replace(cx.waker().clone());
+        self.poll_ready(FD_ACCEPT)
     }
 
-    pub async fn read_ready(&self) -> io::Result<()> {
-        self.event.wait(self.to_shared_fd(), FD_READ).await
+    pub fn poll_connect_ready(&self, cx: &mut Context) -> Poll<io::Result<()>> {
+        self.connect_waker.borrow_mut().replace(cx.waker().clone());
+        self.poll_ready(FD_CONNECT)
     }
 
-    pub async fn write_ready(&self) -> io::Result<()> {
-        self.event.wait(self.to_shared_fd(), FD_WRITE).await
+    pub fn poll_read_ready(&self, cx: &mut Context) -> Poll<io::Result<()>> {
+        self.read_waker.borrow_mut().replace(cx.waker().clone());
+        self.poll_ready(FD_READ)
+    }
+
+    pub fn poll_write_ready(&self, cx: &mut Context) -> Poll<io::Result<()>> {
+        self.write_waker.borrow_mut().replace(cx.waker().clone());
+        self.poll_ready(FD_WRITE)
     }
 }
 
@@ -94,7 +163,7 @@ impl<T: AsFd> Deref for PollFd<T> {
 }
 
 #[derive(Debug)]
-pub struct WSAEvent {
+struct WSAEvent {
     ev_object: SharedFd<OwnedHandle>,
     ev_record: [AtomicUsize; FD_MAX_EVENTS as usize],
     events: AtomicI32,
@@ -113,29 +182,13 @@ impl WSAEvent {
         })
     }
 
-    pub async fn wait<T: AsFd + 'static>(
+    pub fn create_op<T: AsFd + 'static>(
         &self,
-        mut socket: SharedFd<T>,
+        socket: SharedFd<T>,
         event: u32,
-    ) -> io::Result<()> {
-        struct EventGuard<'a> {
-            wsa_event: &'a WSAEvent,
-            event: i32,
-        }
-
-        impl Drop for EventGuard<'_> {
-            fn drop(&mut self) {
-                let index = self.event.ilog2() as usize;
-                if self.wsa_event.ev_record[index].fetch_sub(1, Ordering::Relaxed) == 1 {
-                    self.wsa_event
-                        .events
-                        .fetch_add(!self.event, Ordering::Relaxed);
-                }
-            }
-        }
-
+    ) -> io::Result<WaitWSAEvent<T>> {
         let event = event as i32;
-        let mut ev_object = self.ev_object.clone();
+        let ev_object = self.ev_object.clone();
 
         let index = event.ilog2() as usize;
         let events = if self.ev_record[index].fetch_add(1, Ordering::Relaxed) == 0 {
@@ -151,48 +204,48 @@ impl WSAEvent {
                 events
             )
         )?;
-        let _guard = EventGuard {
-            wsa_event: self,
-            event,
-        };
-        loop {
-            let op = WaitWSAEvent::new(socket, ev_object, event);
-            let BufResult(res, op) = crate::submit(op).await;
-            WaitWSAEvent {
-                socket,
-                ev_object,
-                ..
-            } = op;
-            match res {
-                Ok(_) => break Ok(()),
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
-                Err(e) => break Err(e),
+        Ok(WaitWSAEvent::new(socket, ev_object))
+    }
+
+    fn clear_event_inner(&self, event: i32) {
+        let index = event.ilog2() as usize;
+        if self.ev_record[index].fetch_sub(1, Ordering::Relaxed) == 1 {
+            self.events.fetch_add(!event, Ordering::Relaxed);
+        }
+    }
+
+    pub fn clear_event<T: AsFd>(&self, socket: &T, events: i32) -> io::Result<()> {
+        for i in 0..FD_MAX_EVENTS {
+            let event = 1 << i;
+            if (events & event) != 0 {
+                self.clear_event_inner(event);
             }
         }
+        syscall!(
+            SOCKET,
+            WSAEventSelect(
+                socket.as_fd().as_raw_fd() as _,
+                self.ev_object.as_raw_handle() as _,
+                events
+            )
+        )?;
+        Ok(())
     }
 }
 
 struct WaitWSAEvent<T> {
     socket: SharedFd<T>,
     ev_object: SharedFd<OwnedHandle>,
-    event: i32,
+    events: WSANETWORKEVENTS,
 }
 
 impl<T> WaitWSAEvent<T> {
-    pub fn new(socket: SharedFd<T>, ev_object: SharedFd<OwnedHandle>, event: i32) -> Self {
+    pub fn new(socket: SharedFd<T>, ev_object: SharedFd<OwnedHandle>) -> Self {
         Self {
             socket,
             ev_object,
-            event,
+            events: unsafe { std::mem::zeroed() },
         }
-    }
-}
-
-impl<T> IntoInner for WaitWSAEvent<T> {
-    type Inner = SharedFd<OwnedHandle>;
-
-    fn into_inner(self) -> Self::Inner {
-        self.ev_object
     }
 }
 
@@ -210,24 +263,22 @@ unsafe impl<T: AsFd> OpCode for WaitWSAEvent<T> {
         _: &mut Self::Control,
         _optr: *mut OVERLAPPED,
     ) -> Poll<io::Result<usize>> {
-        let mut events: WSANETWORKEVENTS = unsafe { std::mem::zeroed() };
         syscall!(
             SOCKET,
             WSAEnumNetworkEvents(
                 self.socket.as_fd().as_raw_fd() as _,
                 self.ev_object.as_raw_handle() as _,
-                &mut events
+                &mut self.events
             )
         )?;
-        let res = if (events.lNetworkEvents & self.event) != 0 {
-            events.iErrorCode[self.event.ilog2() as usize]
-        } else {
-            ERROR_IO_PENDING as _
-        };
-        if res == 0 {
-            Poll::Ready(Ok(0))
-        } else {
-            Poll::Ready(Err(io::Error::from_raw_os_error(res)))
-        }
+        Poll::Ready(Ok(0))
+    }
+}
+
+impl<T: AsFd> IntoInner for WaitWSAEvent<T> {
+    type Inner = WSANETWORKEVENTS;
+
+    fn into_inner(self) -> Self::Inner {
+        self.events
     }
 }

@@ -7,3 +7,4 @@ mod async_stream;
 pub use async_stream::*;
 
 mod waker_array;
+pub use waker_array::*;
