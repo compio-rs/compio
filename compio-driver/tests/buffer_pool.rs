@@ -231,3 +231,125 @@ fn create_buffer_pool_independent() {
     // Buffers from different pools may have the same address (reallocation),
     // but within the same pool they must be distinct
 }
+
+#[cfg(any(not(target_os = "linux"), feature = "polling"))]
+#[test]
+fn extra_buffer_pool_released_after_last_pool_drop() {
+    use std::{
+        mem::MaybeUninit,
+        ptr::NonNull,
+        sync::atomic::{AtomicUsize, Ordering},
+        time::Duration,
+    };
+
+    use compio_driver::{BoxAllocator, BufferAllocator};
+
+    static DEALLOCS: AtomicUsize = AtomicUsize::new(0);
+
+    struct CountingAllocator;
+
+    impl BufferAllocator for CountingAllocator {
+        fn allocate(len: u32) -> NonNull<MaybeUninit<u8>> {
+            BoxAllocator::allocate(len)
+        }
+
+        unsafe fn deallocate(ptr: NonNull<MaybeUninit<u8>>, len: u32) {
+            DEALLOCS.fetch_add(1, Ordering::SeqCst);
+            unsafe { BoxAllocator::deallocate(ptr, len) };
+        }
+    }
+
+    DEALLOCS.store(0, Ordering::SeqCst);
+
+    let mut driver = build_proactor(1, 4096);
+    let pool = driver
+        .create_buffer_pool::<CountingAllocator>(2, 1024, 0)
+        .unwrap();
+
+    drop(pool);
+    assert_eq!(DEALLOCS.load(Ordering::SeqCst), 0);
+
+    _ = driver.poll(Some(Duration::ZERO));
+    assert_eq!(DEALLOCS.load(Ordering::SeqCst), 2);
+}
+
+#[cfg(any(not(target_os = "linux"), feature = "polling"))]
+#[test]
+fn extra_buffer_pool_waits_for_live_buffer_ref() {
+    use std::{
+        mem::MaybeUninit,
+        ptr::NonNull,
+        sync::atomic::{AtomicUsize, Ordering},
+        time::Duration,
+    };
+
+    use compio_driver::{BoxAllocator, BufferAllocator};
+
+    static DEALLOCS: AtomicUsize = AtomicUsize::new(0);
+
+    struct CountingAllocator;
+
+    impl BufferAllocator for CountingAllocator {
+        fn allocate(len: u32) -> NonNull<MaybeUninit<u8>> {
+            BoxAllocator::allocate(len)
+        }
+
+        unsafe fn deallocate(ptr: NonNull<MaybeUninit<u8>>, len: u32) {
+            DEALLOCS.fetch_add(1, Ordering::SeqCst);
+            unsafe { BoxAllocator::deallocate(ptr, len) };
+        }
+    }
+
+    DEALLOCS.store(0, Ordering::SeqCst);
+
+    let mut driver = build_proactor(1, 4096);
+    let pool = driver
+        .create_buffer_pool::<CountingAllocator>(1, 1024, 0)
+        .unwrap();
+    let buf = pool.pop().unwrap();
+
+    drop(pool);
+    _ = driver.poll(Some(Duration::ZERO));
+    assert_eq!(DEALLOCS.load(Ordering::SeqCst), 0);
+
+    drop(buf);
+    _ = driver.poll(Some(Duration::ZERO));
+    assert_eq!(DEALLOCS.load(Ordering::SeqCst), 1);
+}
+
+#[cfg(io_uring)]
+#[test]
+fn create_buffer_pool_iouring_multiple_groups() {
+    use compio_buf::IoBuf;
+    use compio_driver::{BoxAllocator, DriverType};
+
+    let mut driver = ProactorBuilder::new()
+        .driver_type(DriverType::IoUring)
+        .build()
+        .unwrap();
+    if !driver.driver_type().is_iouring() {
+        return;
+    }
+
+    let file = std::fs::File::open("Cargo.toml").unwrap();
+    let fd = SharedFd::new(file);
+    driver.attach(fd.as_raw_fd()).unwrap();
+
+    let pool_a = driver
+        .create_buffer_pool::<BoxAllocator>(2, 128, 0)
+        .unwrap();
+    let pool_b = driver
+        .create_buffer_pool::<BoxAllocator>(2, 256, 0)
+        .unwrap();
+
+    let op = ReadManagedAt::new(fd.clone(), 0, &pool_a, 32).unwrap();
+    let res = push_and_wait(&mut driver, op);
+    let buffer = unsafe { res.take_buffer() }.unwrap().unwrap();
+    assert!(buffer.as_init().starts_with(b"[package]"));
+    drop(buffer);
+
+    let op = ReadManagedAt::new(fd, 0, &pool_b, 32).unwrap();
+    let res = push_and_wait(&mut driver, op);
+    let buffer = unsafe { res.take_buffer() }.unwrap().unwrap();
+    assert!(buffer.as_init().starts_with(b"[package]"));
+}
