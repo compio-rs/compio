@@ -168,3 +168,66 @@ fn buffer_pool_recycle() {
     drop(pool);
     drop(buf);
 }
+
+#[cfg(any(not(target_os = "linux"), feature = "polling"))]
+#[test]
+fn create_buffer_pool_multiple() {
+    use compio_buf::IoBufMut;
+    use compio_driver::BoxAllocator;
+
+    let mut driver = build_proactor(2, 4096);
+
+    // Default pool
+    let pool = driver.buffer_pool().unwrap();
+
+    // Second pool
+    let pool2 = driver
+        .create_buffer_pool::<BoxAllocator>(2, 4096, 0)
+        .unwrap();
+
+    // Default pool still works
+    let _buf = pool.pop().unwrap();
+
+    // Second pool also works
+    let _buf2 = pool2.pop().unwrap();
+
+    // Third pool with different size
+    let pool3 = driver
+        .create_buffer_pool::<BoxAllocator>(4, 1024, 0)
+        .unwrap();
+    let mut buf3 = pool3.pop().unwrap();
+    assert_eq!(buf3.as_uninit().len(), 1024);
+}
+
+#[cfg(any(not(target_os = "linux"), feature = "polling"))]
+#[test]
+fn create_buffer_pool_independent() {
+    use compio_buf::IoBufMut;
+    use compio_driver::BoxAllocator;
+
+    let mut driver = build_proactor(2, 4096);
+
+    let pool_a = driver
+        .create_buffer_pool::<BoxAllocator>(2, 4096, 0)
+        .unwrap();
+    let pool_b = driver
+        .create_buffer_pool::<BoxAllocator>(2, 4096, 0)
+        .unwrap();
+
+    // Each pool has its own buffers
+    let mut buf_a1 = pool_a.pop().unwrap();
+    let mut buf_a2 = pool_a.pop().unwrap();
+    let mut buf_b1 = pool_b.pop().unwrap();
+    let mut buf_b2 = pool_b.pop().unwrap();
+
+    // Verify all pointers are distinct
+    let p_a1 = buf_a1.as_uninit().as_ptr();
+    let p_a2 = buf_a2.as_uninit().as_ptr();
+    let p_b1 = buf_b1.as_uninit().as_ptr();
+    let p_b2 = buf_b2.as_uninit().as_ptr();
+
+    assert_ne!(p_a1, p_a2);
+    assert_ne!(p_b1, p_b2);
+    // Buffers from different pools may have the same address (reallocation),
+    // but within the same pool they must be distinct
+}

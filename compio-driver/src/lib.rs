@@ -101,6 +101,7 @@ impl<K, R> PushEntry<K, R> {
 pub struct Proactor {
     driver: Driver,
     buffer_pool: BufferPoolState,
+    extra_pools: Vec<BufferPoolRoot>,
 }
 
 enum BufferPoolState {
@@ -139,11 +140,12 @@ impl BufferPoolState {
 
 impl Drop for Proactor {
     fn drop(&mut self) {
-        let BufferPoolState::Init(buffer_pool) = &mut self.buffer_pool else {
-            return;
-        };
-        debug_assert!(buffer_pool.is_unique()); // Just in case. Shouldn't happen
-        _ = unsafe { buffer_pool.release(&mut self.driver) };
+        if let BufferPoolState::Init(buffer_pool) = &mut self.buffer_pool {
+            _ = unsafe { buffer_pool.release(&mut self.driver) };
+        }
+        for pool in &mut self.extra_pools {
+            _ = unsafe { pool.release(&mut self.driver) };
+        }
     }
 }
 
@@ -170,6 +172,7 @@ impl Proactor {
                 buffer_len: builder.buffer_pool_buffer_len,
                 flags: builder.buffer_pool_flag,
             },
+            extra_pools: Vec::new(),
         })
     }
 
@@ -459,6 +462,27 @@ impl Proactor {
     /// and future access to the pool will be cheap and infallible.
     pub fn buffer_pool(&mut self) -> io::Result<BufferPool> {
         self.buffer_pool.get(&mut self.driver)
+    }
+
+    /// Create a new buffer pool independently.
+    ///
+    /// Unlike [`buffer_pool`](Self::buffer_pool) which lazily initializes a
+    /// single pool configured via [`ProactorBuilder`], this method allows
+    /// creating additional pools at runtime with custom parameters.
+    ///
+    /// The pool will be released when this `Proactor` is dropped.
+    pub fn create_buffer_pool<A: BufferAllocator>(
+        &mut self,
+        num_of_bufs: u16,
+        buffer_size: usize,
+        flags: u16,
+    ) -> io::Result<BufferPool> {
+        let alloc = BufferAlloc::new::<A>();
+        let root =
+            BufferPoolRoot::new(&mut self.driver, alloc, num_of_bufs, buffer_size, flags)?;
+        let pool = root.get_pool();
+        self.extra_pools.push(root);
+        Ok(pool)
     }
 }
 

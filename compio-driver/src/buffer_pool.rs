@@ -193,10 +193,6 @@ impl BufferPoolRoot {
             shared: Rc::downgrade(&self.shared),
         }
     }
-
-    pub(crate) fn is_unique(&self) -> bool {
-        Rc::strong_count(&self.shared) == 1
-    }
 }
 
 impl Debug for BufferPool {
