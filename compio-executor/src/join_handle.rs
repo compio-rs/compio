@@ -53,6 +53,15 @@ impl<T> JoinHandle<T> {
     pub fn detach(self) {
         unsafe { ptr::drop_in_place(&raw mut ManuallyDrop::new(self).task) };
     }
+
+    /// Returns true if this JoinHandle has been finalized, either because
+    /// it's been completed or canceled.
+    pub fn is_finished(&self) -> bool {
+        match &self.task {
+            Some(task) => task.is_finished(),
+            None => true,
+        }
+    }
 }
 
 /// Task failed to execute to completion.
