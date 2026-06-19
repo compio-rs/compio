@@ -54,6 +54,9 @@ pub(crate) struct Driver {
     /// Set `IORING_ENTER_NO_IOWAIT` on blocking waits so an idle ring is not
     /// charged as iowait. Disabled when SQPOLL is in use, and flipped off
     /// permanently after the first `EINVAL` on kernels older than 6.15.
+    ///
+    /// See io_uring_enter(2):
+    /// <https://man7.org/linux/man-pages/man2/io_uring_enter.2.html>
     no_iowait: bool,
     /// Keys leaked via `into_raw()` into io_uring user_data, freed on drop.
     in_flight: HashSet<usize>,
@@ -172,23 +175,28 @@ impl Driver {
             1
         };
 
-        // About to block: opt out of iowait accounting (see the `no_iowait`
-        // field). Flush first so a submit error is mapped below like any other;
-        // only the wait-only enter returning EINVAL means the kernel lacks the
-        // flag, so only that disables it permanently.
-        let res = if self.no_iowait && want_sqe > 0 {
+        // Only a wait that can actually sleep is charged as iowait; a zero
+        // timeout (the drain calls from `push_raw`/`flush`) returns immediately,
+        // so it keeps the combined path and pays no extra syscall.
+        //
+        // On the sleeping path, opt out of iowait accounting (see `no_iowait`):
+        // flush first so a submit error is mapped below like any other; only the
+        // wait-only enter returning EINVAL means the kernel lacks the flag, so
+        // only that disables it permanently.
+        let can_block = want_sqe > 0 && timeout != Some(Duration::ZERO);
+        let res = if self.no_iowait && can_block {
             match self.inner.submit() {
-                Ok(_) => match self.wait_no_iowait(want_sqe, timeout) {
+                Ok(_) => match self.submit_no_iowait(want_sqe, timeout) {
                     Err(e) if e.raw_os_error() == Some(libc::EINVAL) => {
                         self.no_iowait = false;
-                        self.submit_blocking(want_sqe, timeout)
+                        self.submit_and_wait(want_sqe, timeout)
                     }
                     other => other,
                 },
                 Err(e) => Err(e),
             }
         } else {
-            self.submit_blocking(want_sqe, timeout)
+            self.submit_and_wait(want_sqe, timeout)
         };
         trace!("submit result: {res:?}");
         match res {
@@ -208,7 +216,7 @@ impl Driver {
     }
 
     /// The original submit+wait, used when `NO_IOWAIT` is unavailable.
-    fn submit_blocking(&self, want_sqe: usize, timeout: Option<Duration>) -> io::Result<usize> {
+    fn submit_and_wait(&self, want_sqe: usize, timeout: Option<Duration>) -> io::Result<usize> {
         if let Some(duration) = timeout {
             let timespec = timespec(duration);
             let args = SubmitArgs::new().timespec(&timespec);
@@ -222,7 +230,7 @@ impl Driver {
     /// charged as iowait (see the `no_iowait` field). SQEs must already be
     /// flushed: this issues a wait-only `enter` with `to_submit = 0`, one extra
     /// syscall paid only on the path where the ring is about to sleep anyway.
-    fn wait_no_iowait(&self, want_sqe: usize, timeout: Option<Duration>) -> io::Result<usize> {
+    fn submit_no_iowait(&self, want_sqe: usize, timeout: Option<Duration>) -> io::Result<usize> {
         let submitter = self.inner.submitter();
         if let Some(duration) = timeout {
             let timespec = timespec(duration);
