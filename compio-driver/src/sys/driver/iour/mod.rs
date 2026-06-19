@@ -27,7 +27,7 @@ cfg_select! {
 
 use flume::{Receiver, Sender};
 use io_uring::{
-    IoUring,
+    EnterFlags, IoUring,
     cqueue::more,
     opcode::{AsyncCancel, PollAdd},
     types::{Fd, SubmitArgs, Timespec},
@@ -51,6 +51,10 @@ pub(crate) struct Driver {
     completed_tx: Sender<Entry>,
     completed_rx: Receiver<Entry>,
     need_push_notifier: bool,
+    /// Set `IORING_ENTER_NO_IOWAIT` on blocking waits so an idle ring is not
+    /// charged as iowait. Disabled when SQPOLL is in use, and flipped off
+    /// permanently after the first `EINVAL` on kernels older than 6.15.
+    no_iowait: bool,
     /// Keys leaked via `into_raw()` into io_uring user_data, freed on drop.
     in_flight: HashSet<usize>,
     _p: PhantomData<ErasedKey>,
@@ -114,6 +118,7 @@ impl Driver {
             completed_rx,
             pool: builder.create_or_get_thread_pool(),
             need_push_notifier: true,
+            no_iowait: builder.sqpoll_idle.is_none(),
             in_flight: HashSet::new(),
             _p: PhantomData,
         })
@@ -167,15 +172,23 @@ impl Driver {
             1
         };
 
-        let res = {
-            // Last part of submission queue, wait till timeout.
-            if let Some(duration) = timeout {
-                let timespec = timespec(duration);
-                let args = SubmitArgs::new().timespec(&timespec);
-                self.inner.submitter().submit_with_args(want_sqe, &args)
-            } else {
-                self.inner.submit_and_wait(want_sqe)
+        // About to block: opt out of iowait accounting (see the `no_iowait`
+        // field). Flush first so a submit error is mapped below like any other;
+        // only the wait-only enter returning EINVAL means the kernel lacks the
+        // flag, so only that disables it permanently.
+        let res = if self.no_iowait && want_sqe > 0 {
+            match self.inner.submit() {
+                Ok(_) => match self.wait_no_iowait(want_sqe, timeout) {
+                    Err(e) if e.raw_os_error() == Some(libc::EINVAL) => {
+                        self.no_iowait = false;
+                        self.submit_blocking(want_sqe, timeout)
+                    }
+                    other => other,
+                },
+                Err(e) => Err(e),
             }
+        } else {
+            self.submit_blocking(want_sqe, timeout)
         };
         trace!("submit result: {res:?}");
         match res {
@@ -191,6 +204,37 @@ impl Driver {
                 Some(libc::EBUSY) | Some(libc::EAGAIN) => Err(io::ErrorKind::Interrupted.into()),
                 _ => Err(e),
             },
+        }
+    }
+
+    /// The original submit+wait, used when `NO_IOWAIT` is unavailable.
+    fn submit_blocking(&self, want_sqe: usize, timeout: Option<Duration>) -> io::Result<usize> {
+        if let Some(duration) = timeout {
+            let timespec = timespec(duration);
+            let args = SubmitArgs::new().timespec(&timespec);
+            self.inner.submitter().submit_with_args(want_sqe, &args)
+        } else {
+            self.inner.submit_and_wait(want_sqe)
+        }
+    }
+
+    /// Wait on completions with `IORING_ENTER_NO_IOWAIT` so the wait is not
+    /// charged as iowait (see the `no_iowait` field). SQEs must already be
+    /// flushed: this issues a wait-only `enter` with `to_submit = 0`, one extra
+    /// syscall paid only on the path where the ring is about to sleep anyway.
+    fn wait_no_iowait(&self, want_sqe: usize, timeout: Option<Duration>) -> io::Result<usize> {
+        let submitter = self.inner.submitter();
+        if let Some(duration) = timeout {
+            let timespec = timespec(duration);
+            let args = SubmitArgs::new().timespec(&timespec);
+            let flags = EnterFlags::EXT_ARG | EnterFlags::GETEVENTS | EnterFlags::NO_IOWAIT;
+            // SAFETY: `args` outlives the call and `to_submit` is 0, so the kernel
+            // reads no submission entries and only the timeout arg we pass.
+            unsafe { submitter.enter(0, want_sqe as u32, flags.bits(), Some(&args)) }
+        } else {
+            let flags = EnterFlags::GETEVENTS | EnterFlags::NO_IOWAIT;
+            // SAFETY: `to_submit` is 0 and no arg payload is referenced.
+            unsafe { submitter.enter::<libc::sigset_t>(0, want_sqe as u32, flags.bits(), None) }
         }
     }
 
