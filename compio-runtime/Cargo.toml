@@ -23,7 +23,6 @@ compio-io = { workspace = true, optional = true }
 
 criterion = { workspace = true, optional = true }
 compio-send-wrapper = { workspace = true }
-core_affinity = "0.8.3"
 futures-util = { workspace = true, features = ["io"] }
 scoped-tls = "1.0.1"
 pin-project-lite = { workspace = true }
