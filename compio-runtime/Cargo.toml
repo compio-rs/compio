@@ -23,7 +23,6 @@ compio-io = { workspace = true, optional = true }
 
 criterion = { workspace = true, optional = true }
 compio-send-wrapper = { workspace = true }
-core_affinity = "0.8.3"
 futures-util = { workspace = true, features = ["io"] }
 scoped-tls = "1.0.1"
 pin-project-lite = { workspace = true }
@@ -32,7 +31,10 @@ synchrony = { workspace = true, features = ["event"] }
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
 compio-io = { workspace = true, features = ["compat"] }
-windows-sys = { workspace = true, features = ["Win32_System_IO"] }
+windows-sys = { workspace = true, features = [
+    "Win32_System_IO",
+    "Win32_System_Threading",
+] }
 
 # Unix specific dependencies
 [target.'cfg(unix)'.dependencies]
