@@ -315,8 +315,6 @@ fn set_affinity(cpus: impl Iterator<Item = usize>) {
     }
 }
 
-// ===== Other platforms (iOS, illumos/Solaris, ...) =====
-
 // These platforms do not expose an API to query or pin a thread to a CPU set,
 // so affinity is a no-op: `available_cpus` returns `None` and `bind_to_cpu_set`
 // bails out before `set_affinity` is ever reached.
