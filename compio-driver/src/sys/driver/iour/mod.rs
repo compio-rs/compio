@@ -39,6 +39,23 @@ use crate::{
     panic::catch_unwind_io,
 };
 
+bitflags::bitflags! {
+    /// Mutable driver state tracked as a small bit set.
+    #[derive(Clone, Copy)]
+    struct DriverFlags: u8 {
+        /// The multishot notifier `PollAdd` is no longer armed and must be
+        /// re-pushed before the next wait.
+        const NEED_PUSH_NOTIFIER = 1 << 0;
+        /// Set `IORING_ENTER_NO_IOWAIT` on blocking waits so an idle ring is not
+        /// charged as iowait. Cleared when SQPOLL is in use, and cleared
+        /// permanently after the first `EINVAL` on kernels older than 6.15.
+        ///
+        /// See io_uring_enter(2):
+        /// <https://man7.org/linux/man-pages/man2/io_uring_enter.2.html>
+        const NO_IOWAIT = 1 << 1;
+    }
+}
+
 /// Low-level driver of io-uring.
 pub(crate) struct Driver {
     // Wrapped in `ManuallyDrop` so that `Drop` can close the ring *before*
@@ -50,14 +67,7 @@ pub(crate) struct Driver {
     pool: AsyncifyPool,
     completed_tx: Sender<Entry>,
     completed_rx: Receiver<Entry>,
-    need_push_notifier: bool,
-    /// Set `IORING_ENTER_NO_IOWAIT` on blocking waits so an idle ring is not
-    /// charged as iowait. Disabled when SQPOLL is in use, and flipped off
-    /// permanently after the first `EINVAL` on kernels older than 6.15.
-    ///
-    /// See io_uring_enter(2):
-    /// <https://man7.org/linux/man-pages/man2/io_uring_enter.2.html>
-    no_iowait: bool,
+    flags: DriverFlags,
     /// Keys leaked via `into_raw()` into io_uring user_data, freed on drop.
     in_flight: HashSet<usize>,
     _p: PhantomData<ErasedKey>,
@@ -114,14 +124,18 @@ impl Driver {
 
         let (completed_tx, completed_rx) = flume::unbounded();
 
+        // NO_IOWAIT is meaningless under SQPOLL: the polling thread, not an
+        // `enter` wait, drives submission, so there is no CQE wait to mark.
+        let mut flags = DriverFlags::NEED_PUSH_NOTIFIER;
+        flags.set(DriverFlags::NO_IOWAIT, builder.sqpoll_idle.is_none());
+
         Ok(Self {
             inner: ManuallyDrop::new(inner),
             notifier,
             completed_tx,
             completed_rx,
             pool: builder.create_or_get_thread_pool(),
-            need_push_notifier: true,
-            no_iowait: builder.sqpoll_idle.is_none(),
+            flags,
             in_flight: HashSet::new(),
             _p: PhantomData,
         })
@@ -179,16 +193,17 @@ impl Driver {
         // timeout (the drain calls from `push_raw`/`flush`) returns immediately,
         // so it keeps the combined path and pays no extra syscall.
         //
-        // On the sleeping path, opt out of iowait accounting (see `no_iowait`):
+        // On the sleeping path, opt out of iowait accounting (see
+        // `DriverFlags::NO_IOWAIT`):
         // flush first so a submit error is mapped below like any other; only the
         // wait-only enter returning EINVAL means the kernel lacks the flag, so
         // only that disables it permanently.
         let can_block = want_sqe > 0 && timeout != Some(Duration::ZERO);
-        let res = if self.no_iowait && can_block {
+        let res = if self.flags.contains(DriverFlags::NO_IOWAIT) && can_block {
             match self.inner.submit() {
                 Ok(_) => match self.submit_no_iowait(want_sqe, timeout) {
                     Err(e) if e.raw_os_error() == Some(libc::EINVAL) => {
-                        self.no_iowait = false;
+                        self.flags.remove(DriverFlags::NO_IOWAIT);
                         self.submit_and_wait(want_sqe, timeout)
                     }
                     other => other,
@@ -227,7 +242,7 @@ impl Driver {
     }
 
     /// Wait on completions with `IORING_ENTER_NO_IOWAIT` so the wait is not
-    /// charged as iowait (see the `no_iowait` field). SQEs must already be
+    /// charged as iowait (see `DriverFlags::NO_IOWAIT`). SQEs must already be
     /// flushed: this issues a wait-only `enter` with `to_submit = 0`, one extra
     /// syscall paid only on the path where the ring is about to sleep anyway.
     fn submit_no_iowait(&self, want_sqe: usize, timeout: Option<Duration>) -> io::Result<usize> {
@@ -264,7 +279,7 @@ impl Driver {
                 Self::NOTIFY => {
                     let flags = entry.flags();
                     if !more(flags) {
-                        self.need_push_notifier = true;
+                        self.flags.insert(DriverFlags::NEED_PUSH_NOTIFIER);
                     }
                     if let Err(e) = self.notifier.clear() {
                         error!("failed to clear notifier: {e:?}");
@@ -431,7 +446,7 @@ impl Driver {
 
         let need_wait = !self.notifier.reset();
 
-        if self.need_push_notifier {
+        if self.flags.contains(DriverFlags::NEED_PUSH_NOTIFIER) {
             #[allow(clippy::useless_conversion)]
             self.push_raw(
                 PollAdd::new(Fd(self.notifier.as_raw_fd()), libc::POLLIN as _)
@@ -440,7 +455,7 @@ impl Driver {
                     .user_data(Self::NOTIFY)
                     .into(),
             )?;
-            self.need_push_notifier = false;
+            self.flags.remove(DriverFlags::NEED_PUSH_NOTIFIER);
         }
 
         self.submit_auto(timeout, need_wait)?;
