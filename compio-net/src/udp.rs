@@ -10,6 +10,7 @@ use compio_driver::{
     op::{RecvFlags, RecvFromMultiResult, RecvMsgMultiResult},
 };
 use compio_io::ancillary::ReturnFlags;
+use compio_runtime::Runtime;
 use futures_util::Stream;
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
@@ -127,6 +128,10 @@ impl UdpSocket {
 
     /// Creates new UdpSocket from a std::net::UdpSocket.
     pub fn from_std(socket: std::net::UdpSocket) -> io::Result<Self> {
+        if Runtime::with_current(|r| r.driver_type().is_polling()) {
+            socket.set_nonblocking(true)?;
+        }
+
         Ok(Self {
             inner: Socket::from_socket2(Socket2::from(socket))?,
         })

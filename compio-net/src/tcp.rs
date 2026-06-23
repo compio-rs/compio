@@ -20,7 +20,7 @@ use compio_io::{
     },
     util::Splittable,
 };
-use compio_runtime::fd::PollFd;
+use compio_runtime::{Runtime, fd::PollFd};
 use futures_util::{Stream, StreamExt, stream::FusedStream};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
@@ -92,6 +92,10 @@ impl TcpListener {
 
     /// Creates new TcpListener from a [`std::net::TcpListener`].
     pub fn from_std(stream: std::net::TcpListener) -> io::Result<Self> {
+        if Runtime::with_current(|r| r.driver_type().is_polling()) {
+            stream.set_nonblocking(true)?;
+        }
+
         Ok(Self {
             inner: Socket::from_socket2(Socket2::from(stream))?,
         })
@@ -271,6 +275,10 @@ impl TcpStream {
 
     /// Creates new TcpStream from a [`std::net::TcpStream`].
     pub fn from_std(stream: std::net::TcpStream) -> io::Result<Self> {
+        if Runtime::with_current(|r| r.driver_type().is_polling()) {
+            stream.set_nonblocking(true)?;
+        }
+
         Ok(Self {
             inner: Socket::from_socket2(Socket2::from(stream))?,
         })
@@ -1079,6 +1087,10 @@ impl TcpSocket {
     /// function is typically used together with crates such as [`socket2`] to
     /// configure socket options that are not available on [`TcpSocket`].
     pub fn from_std_stream(stream: std::net::TcpStream) -> io::Result<TcpSocket> {
+        if Runtime::with_current(|r| r.driver_type().is_polling()) {
+            stream.set_nonblocking(true)?;
+        }
+
         Ok(Self {
             inner: Socket::from_socket2(Socket2::from(stream))?,
         })
