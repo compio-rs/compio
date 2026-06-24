@@ -462,7 +462,15 @@ fn create_entry(cq_entry: CEntry) -> Entry {
 
 fn create_result(result: i32) -> io::Result<usize> {
     if result < 0 {
-        Err(io::Error::from_raw_os_error(-result))
+        // ENOBUFS indicates the io_uring buffer pool has no available buffer.
+        if -result == libc::ENOBUFS {
+            Err(io::Error::new(
+                io::ErrorKind::ResourceBusy,
+                "buffer ring has no available buffer",
+            ))
+        } else {
+            Err(io::Error::from_raw_os_error(-result))
+        }
     } else {
         Ok(result as _)
     }

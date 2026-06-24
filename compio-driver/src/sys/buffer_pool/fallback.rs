@@ -22,9 +22,12 @@ impl BufControl {
     }
 
     pub fn pop(&mut self) -> io::Result<u16> {
-        self.queue
-            .pop_front()
-            .ok_or_else(|| io::Error::other("buffer ring has no available buffer"))
+        self.queue.pop_front().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::ResourceBusy,
+                "buffer ring has no available buffer",
+            )
+        })
     }
 
     pub unsafe fn reset(&mut self, buffer_id: u16, _: BufPtr, _: u32) {
