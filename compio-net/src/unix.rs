@@ -19,6 +19,8 @@ use compio_io::{
     },
     util::Splittable,
 };
+#[cfg(unix)]
+use compio_runtime::Runtime;
 use compio_runtime::fd::PollFd;
 use futures_util::{Stream, StreamExt, stream::FusedStream};
 use socket2::{Domain, SockAddr, Socket as Socket2, Type};
@@ -87,6 +89,10 @@ impl UnixListener {
     #[cfg(unix)]
     /// Creates new UnixListener from a [`std::os::unix::net::UnixListener`].
     pub fn from_std(stream: std::os::unix::net::UnixListener) -> io::Result<Self> {
+        if Runtime::with_current(|r| r.driver_type().is_polling()) {
+            stream.set_nonblocking(true)?;
+        }
+
         Ok(Self {
             inner: Socket::from_socket2(Socket2::from(stream))?,
         })
@@ -225,6 +231,10 @@ impl UnixStream {
     /// Creates new UnixStream from a [`std::os::unix::net::UnixStream`].
     #[cfg(unix)]
     pub fn from_std(stream: std::os::unix::net::UnixStream) -> io::Result<Self> {
+        if Runtime::with_current(|r| r.driver_type().is_polling()) {
+            stream.set_nonblocking(true)?;
+        }
+
         Ok(Self {
             inner: Socket::from_socket2(Socket2::from(stream))?,
         })
