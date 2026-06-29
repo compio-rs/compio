@@ -333,6 +333,13 @@ impl Task {
         trace!("Completed");
     }
 
+    /// Returns true if this Task has been finalized, either because it's been
+    /// completed or canceled.
+    pub(crate) fn is_finished(&self) -> bool {
+        let state = self.header().state.load::<Strong>();
+        state.is_completed() || state.is_cancelled()
+    }
+
     /// Wait for wakers to finish scheduling, if any. This is necessary for
     /// `Executor` to drop `Shared` since scheduling requires it.
     pub(crate) fn wait_for_scheduling(&self) {
