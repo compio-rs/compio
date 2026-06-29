@@ -195,16 +195,14 @@ impl Driver {
 
         // Only a wait that can actually sleep is charged as iowait; a zero
         // timeout (the drain calls from `push_raw`/`flush`) returns immediately,
-        // so it keeps the combined path and pays no extra syscall.
+        // so it keeps the plain combined path.
         //
         // On the sleeping path, opt out of iowait accounting (see
-        // `DriverFlags::NO_IOWAIT`): flush the SQ with `submit()` first, then
-        // issue a wait-only `enter` carrying NO_IOWAIT.
+        // `DriverFlags::NO_IOWAIT`) by carrying NO_IOWAIT on the same
+        // submit-and-wait `enter`.
         let can_block = want_sqe > 0 && timeout != Some(Duration::ZERO);
         let res = if self.flags.contains(DriverFlags::NO_IOWAIT) && can_block {
-            self.inner
-                .submit()
-                .and_then(|_| self.submit_no_iowait(want_sqe, timeout))
+            self.submit_and_wait_no_iowait(want_sqe, timeout)
         } else {
             self.submit_and_wait(want_sqe, timeout)
         };
@@ -237,23 +235,33 @@ impl Driver {
         }
     }
 
-    /// Wait on completions with `IORING_ENTER_NO_IOWAIT` so the wait is not
-    /// charged as iowait (see `DriverFlags::NO_IOWAIT`). SQEs must already be
-    /// flushed: this issues a wait-only `enter` with `to_submit = 0`, one extra
-    /// syscall paid only on the path where the ring is about to sleep anyway.
-    fn submit_no_iowait(&self, want_sqe: usize, timeout: Option<Duration>) -> io::Result<usize> {
+    /// Submit the pending SQEs and wait on completions in a single `enter`
+    /// carrying `IORING_ENTER_NO_IOWAIT` so the wait is not charged as iowait
+    /// (see `DriverFlags::NO_IOWAIT`). The crate's `submit_*` helpers cannot add
+    /// custom `EnterFlags`, so this drops to the raw `enter` with
+    /// `to_submit = sq_len()` instead of the combined `submit_and_wait`.
+    fn submit_and_wait_no_iowait(
+        &mut self,
+        want_sqe: usize,
+        timeout: Option<Duration>,
+    ) -> io::Result<usize> {
+        // Publish the SQ tail and read how many staged SQEs to submit this call.
+        let to_submit = self.inner.submission().len() as u32;
         let submitter = self.inner.submitter();
         if let Some(duration) = timeout {
             let timespec = timespec(duration);
             let args = SubmitArgs::new().timespec(&timespec);
             let flags = EnterFlags::EXT_ARG | EnterFlags::GETEVENTS | EnterFlags::NO_IOWAIT;
-            // SAFETY: `args` outlives the call and `to_submit` is 0, so the kernel
-            // reads no submission entries and only the timeout arg we pass.
-            unsafe { submitter.enter(0, want_sqe as u32, flags.bits(), Some(&args)) }
+            // SAFETY: `args` outlives the call; the SQ is synced and holds
+            // `to_submit` valid SQEs.
+            unsafe { submitter.enter(to_submit, want_sqe as u32, flags.bits(), Some(&args)) }
         } else {
             let flags = EnterFlags::GETEVENTS | EnterFlags::NO_IOWAIT;
-            // SAFETY: `to_submit` is 0 and no arg payload is referenced.
-            unsafe { submitter.enter::<libc::sigset_t>(0, want_sqe as u32, flags.bits(), None) }
+            // SAFETY: the SQ is synced and holds `to_submit` valid SQEs; no arg
+            // payload is referenced.
+            unsafe {
+                submitter.enter::<libc::sigset_t>(to_submit, want_sqe as u32, flags.bits(), None)
+            }
         }
     }
 
