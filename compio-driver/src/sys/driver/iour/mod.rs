@@ -47,8 +47,8 @@ bitflags::bitflags! {
         /// re-pushed before the next wait.
         const NEED_PUSH_NOTIFIER = 1 << 0;
         /// Set `IORING_ENTER_NO_IOWAIT` on blocking waits so an idle ring is not
-        /// charged as iowait. Cleared when SQPOLL is in use, and cleared
-        /// permanently after the first `EINVAL` on kernels older than 6.15.
+        /// charged as iowait. Enabled only when SQPOLL is unused and the kernel
+        /// reports `IORING_FEAT_NO_IOWAIT` (since 6.15).
         ///
         /// See io_uring_enter(2):
         /// <https://man7.org/linux/man-pages/man2/io_uring_enter.2.html>
@@ -124,10 +124,14 @@ impl Driver {
 
         let (completed_tx, completed_rx) = flume::unbounded();
 
-        // NO_IOWAIT is meaningless under SQPOLL: the polling thread, not an
-        // `enter` wait, drives submission, so there is no CQE wait to mark.
+        // NO_IOWAIT needs kernel 6.15+ (the IORING_FEAT_NO_IOWAIT feature bit)
+        // and is meaningless under SQPOLL: the polling thread, not an `enter`
+        // wait, drives submission, so there is no CQE wait to mark.
         let mut flags = DriverFlags::NEED_PUSH_NOTIFIER;
-        flags.set(DriverFlags::NO_IOWAIT, builder.sqpoll_idle.is_none());
+        flags.set(
+            DriverFlags::NO_IOWAIT,
+            builder.sqpoll_idle.is_none() && inner.params().is_feature_no_iowait(),
+        );
 
         Ok(Self {
             inner: ManuallyDrop::new(inner),
@@ -194,22 +198,13 @@ impl Driver {
         // so it keeps the combined path and pays no extra syscall.
         //
         // On the sleeping path, opt out of iowait accounting (see
-        // `DriverFlags::NO_IOWAIT`):
-        // flush first so a submit error is mapped below like any other; only the
-        // wait-only enter returning EINVAL means the kernel lacks the flag, so
-        // only that disables it permanently.
+        // `DriverFlags::NO_IOWAIT`): flush the SQ with `submit()` first, then
+        // issue a wait-only `enter` carrying NO_IOWAIT.
         let can_block = want_sqe > 0 && timeout != Some(Duration::ZERO);
         let res = if self.flags.contains(DriverFlags::NO_IOWAIT) && can_block {
-            match self.inner.submit() {
-                Ok(_) => match self.submit_no_iowait(want_sqe, timeout) {
-                    Err(e) if e.raw_os_error() == Some(libc::EINVAL) => {
-                        self.flags.remove(DriverFlags::NO_IOWAIT);
-                        self.submit_and_wait(want_sqe, timeout)
-                    }
-                    other => other,
-                },
-                Err(e) => Err(e),
-            }
+            self.inner
+                .submit()
+                .and_then(|_| self.submit_no_iowait(want_sqe, timeout))
         } else {
             self.submit_and_wait(want_sqe, timeout)
         };
@@ -230,7 +225,8 @@ impl Driver {
         }
     }
 
-    /// The original submit+wait, used when `NO_IOWAIT` is unavailable.
+    /// The combined submit+wait. Used for zero-timeout drains and when
+    /// `NO_IOWAIT` is unavailable.
     fn submit_and_wait(&self, want_sqe: usize, timeout: Option<Duration>) -> io::Result<usize> {
         if let Some(duration) = timeout {
             let timespec = timespec(duration);
