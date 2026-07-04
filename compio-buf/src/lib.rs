@@ -19,14 +19,19 @@
 )]
 
 #[cfg(feature = "arrayvec")]
+#[doc(no_inline)]
 pub use arrayvec;
 #[cfg(feature = "bumpalo")]
+#[doc(no_inline)]
 pub use bumpalo;
 #[cfg(feature = "bytes")]
+#[doc(no_inline)]
 pub use bytes;
 #[cfg(feature = "memmap2")]
+#[doc(no_inline)]
 pub use memmap2;
 #[cfg(feature = "smallvec")]
+#[doc(no_inline)]
 pub use smallvec;
 
 mod io;

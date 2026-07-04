@@ -31,14 +31,19 @@
 )]
 
 #[doc(no_inline)]
+#[doc(no_inline)]
 pub use buf::BufResult;
 #[cfg(feature = "arrayvec")]
+#[doc(no_inline)]
 pub use buf::arrayvec;
 #[cfg(feature = "bumpalo")]
+#[doc(no_inline)]
 pub use buf::bumpalo;
 #[cfg(feature = "bytes")]
+#[doc(no_inline)]
 pub use buf::bytes;
 #[cfg(feature = "smallvec")]
+#[doc(no_inline)]
 pub use buf::smallvec;
 #[cfg(feature = "compat")]
 pub use compio_compat as compat;
@@ -78,8 +83,10 @@ pub use compio_ws as ws;
 #[doc(inline)]
 pub use runtime::time;
 #[cfg(feature = "native-tls")]
+#[doc(no_inline)]
 pub use tls::native_tls;
 #[cfg(feature = "rustls")]
+#[doc(no_inline)]
 pub use tls::rustls;
 #[doc(inline)]
 pub use {compio_buf as buf, compio_driver as driver};

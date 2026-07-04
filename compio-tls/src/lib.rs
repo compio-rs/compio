@@ -13,10 +13,13 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[cfg(feature = "py-dynamic-openssl")]
+#[doc(no_inline)]
 pub use compio_py_dynamic_openssl as py_dynamic_openssl;
 #[cfg(feature = "native-tls")]
+#[doc(no_inline)]
 pub use native_tls;
 #[cfg(feature = "rustls")]
+#[doc(no_inline)]
 pub use rustls;
 
 mod adapter;
