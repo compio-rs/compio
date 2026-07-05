@@ -23,6 +23,7 @@ We adhere to [Rust Code of Conduct](https://www.rust-lang.org/policies/code-of-c
 ### Develop Guide
 
 - Use nightly toolchain to develop and run `rustup update` regularly. Compio does use nightly features, behind feature gate; so, when testing with `--all-features` flag, only nightly toolchain would work.
+- Building with `--all-features` may require system-level dependencies beyond the Rust toolchain. All dependencies are defined in the `devShell` specified in the repository's `flake.nix`, allowing you to set up the environment using `nix develop`.
 
 ### Style Guide
 
