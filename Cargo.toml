@@ -27,13 +27,13 @@ repository = "https://github.com/compio-rs/compio"
 
 [workspace.dependencies]
 compio-buf = { path = "./compio-buf", version = "0.8.3" }
-compio-driver = { path = "./compio-driver", version = "0.12.3", default-features = false }
-compio-runtime = { path = "./compio-runtime", version = "0.12.2" }
-compio-executor = { path = "./compio-executor", version = "0.1.2" }
+compio-driver = { path = "./compio-driver", version = "0.12.4", default-features = false }
+compio-runtime = { path = "./compio-runtime", version = "0.12.3" }
+compio-executor = { path = "./compio-executor", version = "0.1.3" }
 compio-macros = { path = "./compio-macros", version = "0.2.0" }
 compio-fs = { path = "./compio-fs", version = "0.12.0" }
 compio-io = { path = "./compio-io", version = "0.10.1" }
-compio-net = { path = "./compio-net", version = "0.12.1" }
+compio-net = { path = "./compio-net", version = "0.12.2" }
 compio-signal = { path = "./compio-signal", version = "0.10.0" }
 compio-dispatcher = { path = "./compio-dispatcher", version = "0.11.0" }
 compio-log = { path = "./compio-log", version = "0.2.0" }
