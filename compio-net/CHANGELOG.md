@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.12.2 - 2026-07-06
+
+### Added
+
+- *(runtime)* improve cancellation for multishot streams ([#962](https://github.com/compio-rs/compio/pull/962))
+
+### Fixed
+
+- *(net)* avoid potential hang in runtime thread on blocking socket operations ([#960](https://github.com/compio-rs/compio/pull/960))
+
 ## 0.12.1 - 2026-06-14
 
 ### Added

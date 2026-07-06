@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.12.3 - 2026-07-06
+
+### Added
+
+- *(runtime)* improve cancellation for multishot streams ([#962](https://github.com/compio-rs/compio/pull/962))
+
+### Fixed
+
+- *(runtime)* correct sched affinity mask on multi cores ([#956](https://github.com/compio-rs/compio/pull/956))
+
 ## 0.12.2 - 2026-06-15
 
 ### Fixed

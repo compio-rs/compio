@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.12.4 - 2026-07-06
+
+### Fixed
+
+- *(driver,iour)* set IORING_ENTER_NO_IOWAIT on CQE wait ([#957](https://github.com/compio-rs/compio/pull/957))
+- *(driver)* unify buffer pool error to ResourceBusy across backends ([#961](https://github.com/compio-rs/compio/pull/961))
+
 ## 0.12.3 - 2026-06-14
 
 ### Fixed
