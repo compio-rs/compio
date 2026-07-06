@@ -37,7 +37,7 @@ pub const fn statx_to_stat(statx: Statx) -> Stat {
     stat.st_atime_nsec = statx.stx_atime.tv_nsec as _;
     stat.st_mtime = statx.stx_mtime.tv_sec as _;
     stat.st_mtime_nsec = statx.stx_mtime.tv_nsec as _;
-    stat.st_ctime = statx.stx_btime.tv_sec as _;
-    stat.st_ctime_nsec = statx.stx_btime.tv_nsec as _;
+    stat.st_ctime = statx.stx_ctime.tv_sec as _;
+    stat.st_ctime_nsec = statx.stx_ctime.tv_nsec as _;
     stat
 }
