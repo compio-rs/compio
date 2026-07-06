@@ -14,7 +14,7 @@ use compio_driver::{
 use futures_util::{Stream, StreamExt, stream::FusedStream};
 
 use crate::{
-    ContextExt,
+    CancelToken, ContextExt,
     future::{poll_multishot, poll_task_with_extra, submit_raw},
 };
 
@@ -363,6 +363,9 @@ impl<
                     Some(Err(e)) => break Poll::Ready(Some(Err(e))),
                     None => self.op = None,
                 },
+                None if cx.get_cancel().is_some_and(CancelToken::is_cancelled) => {
+                    break Poll::Ready(None);
+                }
                 None => match (self.create_op)() {
                     Ok(op) => self.op = Some(op),
                     Err(e) => break Poll::Ready(Some(Err(e))),

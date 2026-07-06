@@ -47,6 +47,7 @@ libc = { workspace = true }
 # Shared dev dependencies for all platforms
 [dev-dependencies]
 compio-macros = { workspace = true }
+compio-runtime = { workspace = true, features = ["time"] }
 tempfile = { workspace = true }
 
 [features]

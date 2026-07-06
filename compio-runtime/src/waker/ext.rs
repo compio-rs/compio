@@ -8,6 +8,7 @@ use std::{
 };
 
 use compio_send_wrapper::SendWrapper;
+use futures_util::Stream;
 
 use crate::Ext;
 
@@ -77,6 +78,10 @@ impl<'a, 'b> ExtWaker<'a, 'b> {
 
     pub fn poll<F: Future + ?Sized>(&self, fut: Pin<&mut F>) -> Poll<F::Output> {
         self.with(|waker| fut.poll(&mut Context::from_waker(waker)))
+    }
+
+    pub fn poll_next<F: Stream + ?Sized>(&self, fut: Pin<&mut F>) -> Poll<Option<F::Item>> {
+        self.with(|waker| fut.poll_next(&mut Context::from_waker(waker)))
     }
 
     fn with<F, R>(&self, f: F) -> R

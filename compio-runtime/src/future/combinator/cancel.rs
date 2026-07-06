@@ -3,7 +3,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures_util::FutureExt;
+use futures_util::{FutureExt, Stream, StreamExt};
 use pin_project_lite::pin_project;
 use synchrony::unsync::event::EventListener;
 
@@ -123,5 +123,38 @@ where
         }
 
         this.future.poll_unpin(cx).map(Ok)
+    }
+}
+
+impl<F: ?Sized> Stream for WithCancel<F>
+where
+    F: Stream,
+{
+    type Item = F::Item;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.project();
+
+        with_ext(cx.waker(), |waker, ext: &Ext| {
+            let ext = ext.with_cancel(this.cancel);
+            ExtWaker::new(waker, &ext).poll_next(this.future)
+        })
+    }
+}
+
+impl<F: ?Sized> Stream for WithCancelFailFast<F>
+where
+    F: Stream,
+{
+    type Item = Result<F::Item, Cancelled>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut this = self.project();
+
+        if this.listen.poll_unpin(cx).is_ready() {
+            return Poll::Ready(Some(Err(Cancelled)));
+        }
+
+        this.future.poll_next_unpin(cx).map(|item| item.map(Ok))
     }
 }
