@@ -18,6 +18,12 @@ fn main() {
         gnulinux: { all(target_os = "linux", target_env = "gnu") },
         freebsd: { target_os = "freebsd" },
         solarish: { any(target_os = "illumos", target_os = "solaris") },
+        // Platforms whose `struct stat` carries the birth time in `st_birthtime`.
+        noctime: { any(
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_vendor = "apple"
+        ) },
 
         // Driver
         polling: { all(unix, any(not(target_os = "linux"), feature = "polling")) },

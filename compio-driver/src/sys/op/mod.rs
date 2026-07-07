@@ -14,7 +14,7 @@ cfg_select! {
     unix => {
         mod_use![unix];
 
-        pub use crate::sys::pal::{CurrentDir, Interest};
+        pub use crate::sys::pal::{CurrentDir, FileAttr, Interest};
         pub use rustix::fs::{Mode, OFlags, Stat};
     }
     _ => {}

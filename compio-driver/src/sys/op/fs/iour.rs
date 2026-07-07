@@ -95,10 +95,10 @@ unsafe impl<S: AsFd> OpCode for FileStat<S> {
 }
 
 impl<S> IntoInner for FileStat<S> {
-    type Inner = Stat;
+    type Inner = FileAttr;
 
     fn into_inner(self) -> Self::Inner {
-        statx_to_stat(self.stat)
+        statx_to_attr(self.stat)
     }
 }
 
@@ -149,10 +149,10 @@ unsafe impl<S: AsFd> OpCode for PathStat<S> {
 }
 
 impl<S: AsFd> IntoInner for PathStat<S> {
-    type Inner = Stat;
+    type Inner = FileAttr;
 
     fn into_inner(self) -> Self::Inner {
-        statx_to_stat(self.stat)
+        statx_to_attr(self.stat)
     }
 }
 

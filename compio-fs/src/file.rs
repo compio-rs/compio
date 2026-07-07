@@ -144,7 +144,7 @@ impl File {
     pub async fn metadata(&self) -> io::Result<Metadata> {
         let op = FileStat::new(self.to_shared_fd());
         let BufResult(res, op) = compio_runtime::submit(op).await;
-        res.map(|_| Metadata::from_stat(op.into_inner()))
+        res.map(|_| Metadata::from_attr(op.into_inner()))
     }
 
     /// Changes the permissions on the underlying file.

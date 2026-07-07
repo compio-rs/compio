@@ -5,14 +5,14 @@ use crate::{Decision, PollOpCode as OpCode, sys::op::*};
 /// Get metadata of an opened file.
 pub struct FileStat<S> {
     pub(crate) fd: S,
-    pub(crate) stat: Stat,
+    pub(crate) stat: FileAttr,
 }
 
 /// Get metadata from path.
 pub struct PathStat<S: AsFd> {
     pub(crate) dirfd: S,
     pub(crate) path: CString,
-    pub(crate) stat: Stat,
+    pub(crate) stat: FileAttr,
     pub(crate) follow_symlink: bool,
 }
 
@@ -153,7 +153,7 @@ impl<S> FileStat<S> {
 }
 
 impl<S> IntoInner for FileStat<S> {
-    type Inner = Stat;
+    type Inner = FileAttr;
 
     fn into_inner(self) -> Self::Inner {
         self.stat
@@ -187,7 +187,7 @@ impl<S: AsFd> PathStat<S> {
 }
 
 impl<S: AsFd> IntoInner for PathStat<S> {
-    type Inner = Stat;
+    type Inner = FileAttr;
 
     fn into_inner(self) -> Self::Inner {
         self.stat
