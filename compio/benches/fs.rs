@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use compio_buf::{IntoInner, IoBuf};
+use compio_buf::{IntoInner, IoBufExt};
 use compio_io::{AsyncReadAt, AsyncWriteAt};
 use criterion::{Bencher, Criterion, Throughput, criterion_group, criterion_main};
 use rand::{Rng, RngExt, rng};

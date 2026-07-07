@@ -2,7 +2,7 @@
 
 use std::io;
 
-use compio_buf::{IoBuf, IoBufMut, Slice};
+use compio_buf::{IoBuf, IoBufExt, IoBufMut, IoBufMutExt, SetLenExt, Slice};
 
 /// An extracted frame
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,8 +50,8 @@ pub trait Framer<B: IoBufMut> {
     ///
     /// All initialized bytes in `buf` (`buf[0..buf.buf_len()]`) are valid and
     /// required to be enclosed. All modifications should happen in-place; one
-    /// can use [`IoBufMut::reserve`], [`IoBufMut::copy_within`] or a temporary
-    /// buffer if prepending data is necessary.
+    /// can use [`IoBufMut::reserve`], [`IoBufMutExt::copy_within`] or a
+    /// temporary buffer if prepending data is necessary.
     ///
     /// [`slice::copy_within`]: https://doc.rust-lang.org/std/primitive.slice.html#method.copy_within
     fn enclose(&mut self, buf: &mut B);
@@ -288,7 +288,7 @@ impl<B: IoBufMut> Framer<B> for NoopFramer {
 
 #[cfg(test)]
 mod tests {
-    use compio_buf::{IntoInner, IoBufMut};
+    use compio_buf::IntoInner;
 
     use super::*;
 
@@ -329,7 +329,7 @@ mod tests {
         let mut framer = CharDelimited::<'ℝ'>::new();
 
         let mut buf = Vec::new();
-        IoBufMut::extend_from_slice(&mut buf, b"hello").unwrap();
+        IoBufMutExt::extend_from_slice(&mut buf, b"hello").unwrap();
         framer.enclose(&mut buf);
         assert_eq!(buf.as_slice(), "helloℝ".as_init());
 

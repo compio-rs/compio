@@ -56,7 +56,10 @@ mod prelude {
         sys::{
             extra::Extra,
             pal::{self, *},
-            sys_slice::*,
+            sys_slice::{
+                IoBufExt as _, IoBufMutExt as _, IoVectoredBufExt, IoVectoredBufMutExt, SysSlice,
+                io_slice, io_slice_mut,
+            },
         },
         syscall,
     };

@@ -6,7 +6,7 @@
 //! # Examples
 //!
 //! ```
-//! use compio_buf::{IoBuf, bytes::Bytes};
+//! use compio_buf::{IoBufExt, bytes::Bytes};
 //! use compio_io::framed::codec::{Decoder, Encoder, bytes::BytesCodec};
 //!
 //! let mut codec = BytesCodec::new();
@@ -22,7 +22,7 @@
 //! ```
 use std::io::{self, Write};
 
-use compio_buf::{IoBuf, IoBufMut, Slice, bytes::Bytes};
+use compio_buf::{IoBuf, IoBufMut, IoBufMutExt, Slice, bytes::Bytes};
 
 use crate::framed::codec::{Decoder, Encoder};
 

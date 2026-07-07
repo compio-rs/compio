@@ -1,6 +1,6 @@
 use std::mem::MaybeUninit;
 
-use compio_buf::IoBufMut;
+use compio_buf::{IoBufMut, SetLenExt};
 
 #[inline]
 pub(crate) fn slice_to_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> usize {

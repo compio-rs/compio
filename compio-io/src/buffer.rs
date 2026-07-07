@@ -7,7 +7,9 @@ use std::{
     future::Future,
 };
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, ReserveError, Slice};
+use compio_buf::{
+    BufResult, IntoInner, IoBuf, IoBufExt, IoBufMut, IoBufMutExt, ReserveError, SetLenExt, Slice,
+};
 
 use crate::{AsyncWrite, IoResult, util::MISSING_BUF};
 

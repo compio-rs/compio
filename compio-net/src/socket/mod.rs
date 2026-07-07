@@ -7,7 +7,7 @@ use std::{
 };
 
 use compio_buf::{
-    BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, SetLen, buf_try,
+    BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, SetLenExt, buf_try,
 };
 #[cfg(windows)]
 use compio_driver::op::Disconnect;

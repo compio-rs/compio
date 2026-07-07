@@ -1,4 +1,6 @@
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, buf_try};
+use compio_buf::{
+    BufResult, IntoInner, IoBuf, IoBufExt, IoBufMut, IoVectoredBuf, IoVectoredBufMut, buf_try,
+};
 use futures_util::FutureExt;
 
 use crate::{AsyncRead, AsyncWrite, IoResult, buffer::Buffer, util::DEFAULT_BUF_SIZE};

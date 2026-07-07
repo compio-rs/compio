@@ -1,6 +1,6 @@
 use std::{iter, mem::MaybeUninit};
 
-use crate::{IntoInner, IoBuf, IoBufMut, SetLen, VectoredSlice, t_alloc};
+use crate::{IntoInner, IoBuf, IoBufMut, IoBufMutExt, SetLen, VectoredSlice, t_alloc};
 
 /// A trait for vectored buffers.
 ///

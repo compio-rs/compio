@@ -1,6 +1,6 @@
 use std::io;
 
-use compio_buf::{IntoInner, IoBuf, IoBufMut, SetLen};
+use compio_buf::{IntoInner, IoBuf, IoBufMut, SetLenExt};
 use rustix::net::{RecvFlags, ReturnFlags};
 use socket2::SockAddr;
 
