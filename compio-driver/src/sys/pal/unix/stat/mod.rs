@@ -26,12 +26,12 @@ impl FileAttr {
     }
 }
 
-#[cfg(noctime)]
+#[cfg(st_birthtime)]
 fn stat_created(stat: &Stat) -> Option<(i64, i64)> {
     Some((stat.st_birthtime as _, stat.st_birthtime_nsec as _))
 }
 
-#[cfg(not(noctime))]
+#[cfg(not(st_birthtime))]
 fn stat_created(_stat: &Stat) -> Option<(i64, i64)> {
     // On Linux `struct stat` has no birth time; it is obtained from `statx`.
     None

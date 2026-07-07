@@ -19,7 +19,7 @@ fn main() {
         freebsd: { target_os = "freebsd" },
         solarish: { any(target_os = "illumos", target_os = "solaris") },
         // Platforms whose `struct stat` carries the birth time in `st_birthtime`.
-        noctime: { any(
+        st_birthtime: { any(
             target_os = "freebsd",
             target_os = "openbsd",
             target_vendor = "apple"

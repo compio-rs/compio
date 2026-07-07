@@ -49,8 +49,8 @@ async fn metadata() {
     {
         use std::os::unix::fs::MetadataExt;
 
-        assert_eq!(std_meta.ctime(), MetadataExt::ctime(&meta));
-        assert_eq!(std_meta.ctime_nsec(), MetadataExt::ctime_nsec(&meta));
+        assert_eq!(std_meta.ctime(), meta.ctime());
+        assert_eq!(std_meta.ctime_nsec(), meta.ctime_nsec());
 
         if let Ok(std_created) = std_meta.created() {
             assert_eq!(std_created, meta.created().unwrap());
