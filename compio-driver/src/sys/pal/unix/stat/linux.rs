@@ -17,8 +17,27 @@ pub fn statx<Fd: AsFd>(dirfd: Fd, path: &CStr, follow_symlink: bool) -> io::Resu
 }
 
 #[allow(dead_code)]
-pub fn stat<Fd: AsFd>(dirfd: Fd, path: &CStr, follow_symlink: bool) -> io::Result<Stat> {
-    statx(dirfd, path, follow_symlink).map(statx_to_stat)
+pub fn stat<Fd: AsFd>(dirfd: Fd, path: &CStr, follow_symlink: bool) -> io::Result<FileAttr> {
+    statx(dirfd, path, follow_symlink).map(statx_to_attr)
+}
+
+/// Convert a [`Statx`] into a [`FileAttr`], carrying the birth time separately
+/// from the [`Stat`] (which on Linux has no birth-time field).
+pub fn statx_to_attr(statx: Statx) -> FileAttr {
+    FileAttr {
+        stat: statx_to_stat(statx),
+        created: statx_created(&statx),
+    }
+}
+
+/// Extract the birth (creation) time from a [`Statx`], if the kernel/filesystem
+/// reported it.
+fn statx_created(statx: &Statx) -> Option<(i64, i64)> {
+    if statx.stx_mask & StatxFlags::BTIME.bits() != 0 {
+        Some((statx.stx_btime.tv_sec as _, statx.stx_btime.tv_nsec as _))
+    } else {
+        None
+    }
 }
 
 pub const fn statx_to_stat(statx: Statx) -> Stat {
@@ -37,7 +56,9 @@ pub const fn statx_to_stat(statx: Statx) -> Stat {
     stat.st_atime_nsec = statx.stx_atime.tv_nsec as _;
     stat.st_mtime = statx.stx_mtime.tv_sec as _;
     stat.st_mtime_nsec = statx.stx_mtime.tv_nsec as _;
-    stat.st_ctime = statx.stx_btime.tv_sec as _;
-    stat.st_ctime_nsec = statx.stx_btime.tv_nsec as _;
+    // `st_ctime` is the inode change time, not the birth time. The birth time
+    // is carried separately in `FileAttr::created`.
+    stat.st_ctime = statx.stx_ctime.tv_sec as _;
+    stat.st_ctime_nsec = statx.stx_ctime.tv_nsec as _;
     stat
 }

@@ -9,7 +9,7 @@ mod sys;
 use std::{io, path::Path, time::SystemTime};
 
 #[cfg(unix)]
-use compio_driver::op::Stat;
+use compio_driver::op::{FileAttr, Stat};
 
 /// Given a path, query the file system to get information about a file,
 /// directory, etc.
@@ -96,12 +96,15 @@ impl Metadata {
         self.0.accessed()
     }
 
-    /// Returns the creation time listed in this metadata.
+    /// Returns the creation (birth) time listed in this metadata.
     ///
     /// ## Platform specific
     /// * Windows: The returned value corresponds to the `ftCreationTime` field.
-    /// * Unix: The returned value corresponds to `st_ctime` or `st_birthtime`
-    ///   of
+    /// * Linux: The returned value corresponds to the `stx_btime` field of
+    ///   `statx`. Returns an error if the filesystem does not report a birth
+    ///   time.
+    /// * Other Unix (BSD/Apple): The returned value corresponds to the
+    ///   `st_birthtime` field of
     #[cfg_attr(all(unix, not(gnulinux)), doc = "[`libc::stat`](struct@libc::stat).")]
     #[cfg_attr(gnulinux, doc = "[`libc::stat64`](struct@libc::stat64).")]
     #[cfg_attr(
@@ -171,6 +174,11 @@ impl Metadata {
     #[cfg_attr(gnulinux, doc = "[`libc::stat64`](struct@libc::stat64).")]
     pub fn from_stat(stat: Stat) -> Self {
         Self(sys::Metadata::from_stat(stat))
+    }
+
+    /// Create from [`FileAttr`].
+    pub(crate) fn from_attr(attr: FileAttr) -> Self {
+        Self(sys::Metadata::from_attr(attr))
     }
 }
 

@@ -13,7 +13,7 @@ use std::{
 use compio_buf::{BufResult, IntoInner};
 #[cfg(dirfd)]
 use compio_driver::ToSharedFd;
-use compio_driver::op::{CurrentDir, PathStat, Stat};
+use compio_driver::op::{CurrentDir, FileAttr, PathStat, Stat};
 use compio_runtime::ResumeUnwind;
 use rustix::fs::FileType as FileTypeInner;
 
@@ -27,7 +27,7 @@ async fn metadata_impl(
     let path = path_string(path)?;
     let op = PathStat::new(dir, path, follow_symlink);
     let BufResult(res, op) = compio_runtime::submit(op).await;
-    res.map(|_| Metadata::from_stat(op.into_inner()))
+    res.map(|_| Metadata::from_attr(op.into_inner()))
 }
 
 pub async fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
@@ -60,16 +60,25 @@ pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::R
 }
 
 #[derive(Clone)]
-pub struct Metadata(pub(crate) Stat);
+pub struct Metadata(pub(crate) FileAttr);
 
 impl Metadata {
     /// Create from [`Stat`].
+    ///
+    /// The birth (creation) time is only recovered from platforms that store it
+    /// in `struct stat` (BSD/Apple); on Linux it is unavailable through a plain
+    /// [`Stat`] and [`created`](Self::created) will return an error.
     pub fn from_stat(stat: Stat) -> Self {
-        Self(stat)
+        Self(FileAttr::from_stat(stat))
+    }
+
+    /// Create from [`FileAttr`].
+    pub(crate) fn from_attr(attr: FileAttr) -> Self {
+        Self(attr)
     }
 
     pub fn file_type(&self) -> FileType {
-        FileType(FileTypeInner::from_raw_mode(self.0.st_mode as _))
+        FileType(FileTypeInner::from_raw_mode(self.0.stat.st_mode as _))
     }
 
     pub fn is_dir(&self) -> bool {
@@ -86,104 +95,101 @@ impl Metadata {
 
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u64 {
-        self.0.st_size as _
+        self.0.stat.st_size as _
     }
 
     pub fn permissions(&self) -> Permissions {
-        Permissions::from_mode(self.0.st_mode as _)
+        Permissions::from_mode(self.0.stat.st_mode as _)
     }
 
     pub fn modified(&self) -> io::Result<SystemTime> {
         Ok(SystemTime::UNIX_EPOCH
-            + Duration::from_secs(self.0.st_mtime as _)
-            + Duration::from_nanos(self.0.st_mtime_nsec as _))
+            + Duration::from_secs(self.0.stat.st_mtime as _)
+            + Duration::from_nanos(self.0.stat.st_mtime_nsec as _))
     }
 
     pub fn accessed(&self) -> io::Result<SystemTime> {
         Ok(SystemTime::UNIX_EPOCH
-            + Duration::from_secs(self.0.st_atime as _)
-            + Duration::from_nanos(self.0.st_atime_nsec as _))
+            + Duration::from_secs(self.0.stat.st_atime as _)
+            + Duration::from_nanos(self.0.stat.st_atime_nsec as _))
     }
 
-    #[cfg(not(noctime))]
     pub fn created(&self) -> io::Result<SystemTime> {
-        // We've assigned btime field to ctime.
-        Ok(SystemTime::UNIX_EPOCH
-            + Duration::from_secs(self.0.st_ctime as _)
-            + Duration::from_nanos(self.0.st_ctime_nsec as _))
-    }
-
-    #[cfg(noctime)]
-    pub fn created(&self) -> io::Result<SystemTime> {
-        Ok(SystemTime::UNIX_EPOCH
-            + Duration::from_secs(self.0.st_birthtime as _)
-            + Duration::from_nanos(self.0.st_birthtime_nsec as _))
+        match self.0.created {
+            Some((secs, nsecs)) => Ok(SystemTime::UNIX_EPOCH
+                + Duration::from_secs(secs as _)
+                + Duration::from_nanos(nsecs as _)),
+            None => Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "creation time is not available for the filesystem",
+            )),
+        }
     }
 }
 
 impl MetadataExt for Metadata {
     fn dev(&self) -> u64 {
-        self.0.st_dev as _
+        self.0.stat.st_dev as _
     }
 
     fn ino(&self) -> u64 {
-        self.0.st_ino as _
+        self.0.stat.st_ino as _
     }
 
     fn mode(&self) -> u32 {
-        self.0.st_mode as _
+        self.0.stat.st_mode as _
     }
 
     fn nlink(&self) -> u64 {
-        self.0.st_nlink as _
+        self.0.stat.st_nlink as _
     }
 
     fn uid(&self) -> u32 {
-        self.0.st_uid as _
+        self.0.stat.st_uid as _
     }
 
     fn gid(&self) -> u32 {
-        self.0.st_gid as _
+        self.0.stat.st_gid as _
     }
 
     fn rdev(&self) -> u64 {
-        self.0.st_rdev as _
+        self.0.stat.st_rdev as _
     }
 
     fn size(&self) -> u64 {
-        self.0.st_size as _
+        self.0.stat.st_size as _
     }
 
     fn atime(&self) -> i64 {
-        self.0.st_atime as _
+        self.0.stat.st_atime as _
     }
 
     fn atime_nsec(&self) -> i64 {
-        self.0.st_atime_nsec as _
+        self.0.stat.st_atime_nsec as _
     }
 
     fn mtime(&self) -> i64 {
-        self.0.st_mtime as _
+        self.0.stat.st_mtime as _
     }
 
     fn mtime_nsec(&self) -> i64 {
-        self.0.st_mtime_nsec as _
+        self.0.stat.st_mtime_nsec as _
     }
 
     fn ctime(&self) -> i64 {
-        self.0.st_ctime as _
+        self.0.stat.st_ctime as _
     }
 
     fn ctime_nsec(&self) -> i64 {
-        self.0.st_ctime_nsec as _
+        self.0.stat.st_ctime_nsec as _
     }
 
     fn blksize(&self) -> u64 {
-        self.0.st_blksize as _
+        self.0.stat.st_blksize as _
     }
 
     fn blocks(&self) -> u64 {
-        self.0.st_blocks as _
+        self.0.stat.st_blocks as _
     }
 }
 

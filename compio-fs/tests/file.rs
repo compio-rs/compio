@@ -42,6 +42,20 @@ async fn metadata() {
 
     let std_meta = std::fs::metadata("Cargo.toml").unwrap();
     assert_eq!(size, std_meta.len());
+
+    // `created()` must report the birth time and `ctime()` the inode change
+    // time, matching std's semantics.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+
+        assert_eq!(std_meta.ctime(), meta.ctime());
+        assert_eq!(std_meta.ctime_nsec(), meta.ctime_nsec());
+
+        if let Ok(std_created) = std_meta.created() {
+            assert_eq!(std_created, meta.created().unwrap());
+        }
+    }
 }
 
 #[compio_macros::test]
