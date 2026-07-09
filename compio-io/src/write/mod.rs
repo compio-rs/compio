@@ -2,7 +2,7 @@
 use std::alloc::Allocator;
 use std::{future, io::Cursor};
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoVectoredBuf, buf_try, t_alloc};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufExt, IoVectoredBuf, buf_try, t_alloc};
 
 use crate::IoResult;
 
@@ -30,7 +30,7 @@ pub trait AsyncWrite {
     /// contents are written. If guaranteed full write is desired, it is
     /// recommended to use [`AsyncWriteExt::write_vectored_all`] instead.
     ///
-    /// [`buf_len`]: IoBuf::buf_len
+    /// [`buf_len`]: IoBufExt::buf_len
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         loop_write_vectored!(buf, iter, self.write(iter))
     }

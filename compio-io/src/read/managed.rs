@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use compio_buf::IoBuf;
+use compio_buf::{IoBuf, IoBufExt};
 
 use crate::IoResult;
 

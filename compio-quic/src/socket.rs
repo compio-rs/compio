@@ -15,7 +15,7 @@ use std::{
     sync::atomic::Ordering,
 };
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, buf_try};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufExt, IoBufMut, buf_try};
 use compio_io::ancillary::{AncillaryBuf, AncillaryIter, CodecError};
 use compio_net::UdpSocket;
 use quinn_proto::{EcnCodepoint, Transmit};

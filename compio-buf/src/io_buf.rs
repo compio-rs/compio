@@ -12,7 +12,13 @@ use crate::*;
 pub trait IoBuf: 'static {
     /// Get the slice of initialized bytes.
     fn as_init(&self) -> &[u8];
+}
 
+/// A static assertion that [`IoBuf`] is dyn-compatible (object-safe).
+const _: [&dyn IoBuf; 0] = [];
+
+/// Extension trait for immutable buffers.
+pub trait IoBufExt: IoBuf {
     /// Length of initialized bytes in the buffer.
     fn buf_len(&self) -> usize {
         self.as_init().len()
@@ -36,7 +42,7 @@ pub trait IoBuf: 'static {
     /// # Examples
     ///
     /// ```
-    /// use compio_buf::IoBuf;
+    /// use compio_buf::{IoBuf, IoBufExt};
     ///
     /// let buf = b"hello world";
     /// assert_eq!(buf.slice(6..).as_init(), b"world");
@@ -89,6 +95,8 @@ pub trait IoBuf: 'static {
         ReaderRef::new(self)
     }
 }
+
+impl<B: IoBuf + ?Sized> IoBufExt for B {}
 
 impl<B: IoBuf + ?Sized> IoBuf for &'static B {
     fn as_init(&self) -> &[u8] {
@@ -371,6 +379,47 @@ pub trait IoBufMut: IoBuf + SetLen {
     /// and uninitialized bytes.
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>];
 
+    /// Reserve additional capacity for the buffer.
+    ///
+    /// By default, this checks if the spare capacity is enough to fit in
+    /// `len`-bytes. If it does, returns `Ok(())`, and otherwise returns
+    /// [`Err(ReserveError::NotSupported)`]. Types that support dynamic
+    /// resizing (like `Vec<u8>`) will override this method to actually
+    /// reserve capacity. The return value indicates whether the reservation
+    /// succeeded. See [`ReserveError`] for details.
+    ///
+    /// Notice that this may move the memory of the buffer, so it's UB to
+    /// call this after the buffer is being pinned.
+    ///
+    /// [`Err(ReserveError::NotSupported)`]: ReserveError::NotSupported
+    fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {
+        let init = (*self).buf_len();
+        if len <= self.buf_capacity() - init {
+            return Ok(());
+        }
+        Err(ReserveError::NotSupported)
+    }
+
+    /// Reserve exactly `len` additional capacity for the buffer.
+    ///
+    /// By default this falls back to [`IoBufMut::reserve`]. Types that support
+    /// dynamic resizing (like `Vec<u8>`) will override this method to
+    /// actually reserve capacity. The return value indicates whether the
+    /// exact reservation succeeded. See [`ReserveExactError`] for details.
+    ///
+    /// Notice that this may move the memory of the buffer, so it's UB to
+    /// call this after the buffer is being pinned.
+    fn reserve_exact(&mut self, len: usize) -> Result<(), ReserveExactError> {
+        self.reserve(len)?;
+        Ok(())
+    }
+}
+
+/// A static assertion that [`IoBufMut`] is dyn-compatible (object-safe).
+const _: [&dyn IoBufMut; 0] = [];
+
+/// Extension trait for mutable buffers.
+pub trait IoBufMutExt: IoBufMut {
     /// Initialize all bytes in the buffer and return them.
     ///
     /// Bytes in the already-initialized prefix (`0..buf_len()`) are preserved.
@@ -452,41 +501,6 @@ pub trait IoBufMut: IoBuf + SetLen {
         self.as_uninit().copy_within(src, dest);
     }
 
-    /// Reserve additional capacity for the buffer.
-    ///
-    /// By default, this checks if the spare capacity is enough to fit in
-    /// `len`-bytes. If it does, returns `Ok(())`, and otherwise returns
-    /// [`Err(ReserveError::NotSupported)`]. Types that support dynamic
-    /// resizing (like `Vec<u8>`) will override this method to actually
-    /// reserve capacity. The return value indicates whether the reservation
-    /// succeeded. See [`ReserveError`] for details.
-    ///
-    /// Notice that this may move the memory of the buffer, so it's UB to
-    /// call this after the buffer is being pinned.
-    ///
-    /// [`Err(ReserveError::NotSupported)`]: ReserveError::NotSupported
-    fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {
-        let init = (*self).buf_len();
-        if len <= self.buf_capacity() - init {
-            return Ok(());
-        }
-        Err(ReserveError::NotSupported)
-    }
-
-    /// Reserve exactly `len` additional capacity for the buffer.
-    ///
-    /// By default this falls back to [`IoBufMut::reserve`]. Types that support
-    /// dynamic resizing (like `Vec<u8>`) will override this method to
-    /// actually reserve capacity. The return value indicates whether the
-    /// exact reservation succeeded. See [`ReserveExactError`] for details.
-    ///
-    /// Notice that this may move the memory of the buffer, so it's UB to
-    /// call this after the buffer is being pinned.
-    fn reserve_exact(&mut self, len: usize) -> Result<(), ReserveExactError> {
-        self.reserve(len)?;
-        Ok(())
-    }
-
     /// Returns an [`Uninit`], which is a [`Slice`] that only exposes
     /// uninitialized bytes.
     ///
@@ -498,7 +512,7 @@ pub trait IoBufMut: IoBuf + SetLen {
     /// # Examples
     ///
     /// ```
-    /// use compio_buf::{IoBuf, IoBufMut};
+    /// use compio_buf::{IoBuf, IoBufMut, IoBufMutExt};
     ///
     /// let mut buf = Vec::from(b"hello world");
     /// buf.reserve_exact(10);
@@ -536,6 +550,8 @@ pub trait IoBufMut: IoBuf + SetLen {
         len == cap
     }
 }
+
+impl<B: IoBufMut + ?Sized> IoBufMutExt for B {}
 
 impl<B: IoBufMut + ?Sized> IoBufMut for &'static mut B {
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
@@ -733,7 +749,13 @@ pub trait SetLen {
     /// * `len` must be less or equal than `as_uninit().len()`.
     /// * The bytes in the range `[buf_len(), len)` must be initialized.
     unsafe fn set_len(&mut self, len: usize);
+}
 
+/// A static assertion that [`SetLen`] is dyn-compatible (object-safe).
+const _: [&dyn SetLen; 0] = [];
+
+/// Extension trait for `set_len` like methods.
+pub trait SetLenExt: SetLen {
     /// Advance the buffer length by `len`.
     ///
     /// # Safety
@@ -793,6 +815,8 @@ pub trait SetLen {
         unsafe { self.set_len(0) };
     }
 }
+
+impl<B: SetLen + ?Sized> SetLenExt for B {}
 
 impl<B: SetLen + ?Sized> SetLen for &'static mut B {
     unsafe fn set_len(&mut self, len: usize) {
@@ -931,7 +955,7 @@ unsafe fn default_set_len<'a, B: IoBufMut>(
 
 #[cfg(test)]
 mod test {
-    use crate::IoBufMut;
+    use crate::{IoBufMut, IoBufMutExt};
 
     #[test]
     fn test_vec_reserve() {
@@ -1008,11 +1032,11 @@ mod test {
     #[test]
     fn test_extend() {
         let mut buf = Vec::from(b"hello");
-        IoBufMut::extend_from_slice(&mut buf, b" world").unwrap();
+        IoBufMutExt::extend_from_slice(&mut buf, b" world").unwrap();
         assert_eq!(buf.as_slice(), b"hello world");
 
         let mut buf = [];
-        let res = IoBufMut::extend_from_slice(&mut buf, b" ");
+        let res = IoBufMutExt::extend_from_slice(&mut buf, b" ");
         assert!(res.is_err_and(|x| x.is_not_supported()));
     }
 }

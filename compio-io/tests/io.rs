@@ -1,7 +1,8 @@
 use std::io::Cursor;
 
 use compio_buf::{
-    BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, arrayvec::ArrayVec,
+    BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut, SetLenExt,
+    arrayvec::ArrayVec,
 };
 use compio_io::{
     AsyncBufRead, AsyncRead, AsyncReadAt, AsyncReadAtExt, AsyncReadExt, AsyncWrite, AsyncWriteAt,

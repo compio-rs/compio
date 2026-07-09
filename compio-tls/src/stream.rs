@@ -5,7 +5,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf};
+use compio_buf::{BufResult, IoBuf, IoBufMut, IoBufMutExt, IoVectoredBuf, SetLenExt};
 use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream, util::Splittable};
 
 #[derive(Debug)]

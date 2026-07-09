@@ -3,7 +3,7 @@ use std::{
     task::{Context, Poll, ready},
 };
 
-use compio_buf::{BufResult, IntoInner, IoBufMut};
+use compio_buf::{BufResult, IntoInner, IoBufExt, IoBufMut};
 use futures_util::Stream;
 
 use super::*;

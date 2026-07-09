@@ -1,5 +1,6 @@
 use std::{net::Shutdown, num::NonZeroU32};
 
+use compio_buf::{IoBufExt, IoBufMutExt};
 use rustix::{
     io::close,
     net::{

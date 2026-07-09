@@ -1,6 +1,6 @@
 use std::mem::MaybeUninit;
 
-use compio_buf::{IoBuf, IoBufMut, SetLen};
+use compio_buf::{IoBuf, IoBufExt, IoBufMut, SetLen};
 use compio_io::ancillary::{AncillaryBuf, AncillaryBuilder, AncillaryIter};
 
 fn build_cmsg<B: IoBufMut + ?Sized>(mut builder: AncillaryBuilder<B>) {

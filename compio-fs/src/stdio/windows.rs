@@ -53,6 +53,8 @@ unsafe impl<R: Read, B: IoBufMut> OpCode for StdRead<R, B> {
         }
         #[cfg(not(feature = "read_buf"))]
         {
+            use compio_buf::IoBufMutExt;
+
             let slice = self.buffer.ensure_init();
             self.reader.read(slice).into()
         }

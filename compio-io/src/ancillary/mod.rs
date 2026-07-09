@@ -36,7 +36,7 @@ use std::{
     ptr,
 };
 
-use compio_buf::{IoBuf, IoBufMut, SetLen};
+use compio_buf::{IoBuf, IoBufMut, IoBufMutExt, SetLen, SetLenExt};
 
 mod io;
 

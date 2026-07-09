@@ -3,7 +3,7 @@ use std::{
     task::{Poll, ready},
 };
 
-use compio_buf::{BufResult, IoBufMut};
+use compio_buf::{BufResult, IoBufMut, SetLenExt};
 use futures_util::{FutureExt, Sink};
 
 use crate::{

@@ -3,7 +3,7 @@ use std::{
     mem::MaybeUninit,
 };
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut};
+use compio_buf::{BufResult, IntoInner, IoBufExt, IoBufMut, IoBufMutExt};
 
 use crate::{
     buffer::Buffer,

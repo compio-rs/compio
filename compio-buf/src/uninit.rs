@@ -4,7 +4,7 @@ use crate::*;
 
 /// A [`Slice`] that only exposes uninitialized bytes.
 ///
-/// [`Uninit`] can be created with [`IoBufMut::uninit`].
+/// [`Uninit`] can be created with [`IoBufMutExt::uninit`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Uninit<T>(Slice<T>);
 

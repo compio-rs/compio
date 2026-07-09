@@ -2,7 +2,9 @@
 use std::alloc::Allocator;
 use std::{io, io::ErrorKind};
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, IoVectoredBufMut, Uninit, t_alloc};
+use compio_buf::{
+    BufResult, IntoInner, IoBufExt, IoBufMut, IoBufMutExt, IoVectoredBufMut, Uninit, t_alloc,
+};
 
 use crate::{
     AsyncRead, AsyncReadAt, IoResult, framed,

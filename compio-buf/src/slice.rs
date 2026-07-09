@@ -11,14 +11,14 @@ use crate::*;
 /// This type is useful for performing io-uring read and write operations using
 /// a subset of a buffer.
 ///
-/// Slices are created using [`IoBuf::slice`].
+/// Slices are created using [`IoBufExt::slice`].
 ///
 /// # Examples
 ///
 /// Creating a slice
 ///
 /// ```
-/// use compio_buf::IoBuf;
+/// use compio_buf::IoBufExt;
 ///
 /// let buf = b"hello world";
 /// let slice = buf.slice(..5);

@@ -29,7 +29,7 @@ pub trait ResultTakeBuffer {
     /// Type of the buffer.
     type Buffer;
 
-    /// Call [`SetLen::advance_to`] if the result is [`Ok`] and return the
+    /// Call [`SetLenExt::advance_to`] if the result is [`Ok`] and return the
     /// buffer as result.
     ///
     /// # Safety
@@ -74,7 +74,7 @@ impl<I: TakeBuffer<Buffer: IoBuf + SetLen>> ResultTakeBuffer for BufResult<usize
 
 /// Trait to update the buffer length inside the [`BufResult`].
 pub trait BufResultExt {
-    /// Call [`SetLen::advance_to`] if the result is [`Ok`].
+    /// Call [`SetLenExt::advance_to`] if the result is [`Ok`].
     ///
     /// # Safety
     ///
@@ -84,7 +84,7 @@ pub trait BufResultExt {
 
 /// Trait to update the buffer length inside the [`BufResult`].
 pub trait VecBufResultExt {
-    /// Call [`SetLen::advance_vec_to`] if the result is [`Ok`].
+    /// Call [`SetLenExt::advance_vec_to`] if the result is [`Ok`].
     ///
     /// # Safety
     ///

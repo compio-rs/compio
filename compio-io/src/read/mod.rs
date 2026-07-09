@@ -2,7 +2,9 @@
 use std::alloc::Allocator;
 use std::{io::Cursor, rc::Rc, sync::Arc};
 
-use compio_buf::{BufResult, IntoInner, IoBufMut, IoVectoredBufMut, buf_try, t_alloc};
+use compio_buf::{
+    BufResult, IntoInner, IoBufMut, IoBufMutExt, IoVectoredBufMut, SetLenExt, buf_try, t_alloc,
+};
 
 mod buf;
 #[macro_use]

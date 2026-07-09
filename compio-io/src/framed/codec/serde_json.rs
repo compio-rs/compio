@@ -6,7 +6,7 @@
 //! # Examples
 //!
 //! ```
-//! use compio_buf::IoBuf;
+//! use compio_buf::IoBufExt;
 //! use compio_io::framed::codec::{Decoder, Encoder, serde_json::SerdeJsonCodec};
 //! use serde::{Deserialize, Serialize};
 //!
@@ -38,7 +38,7 @@
 
 use std::io;
 
-use compio_buf::{IoBuf, IoBufMut, Slice};
+use compio_buf::{IoBuf, IoBufMut, IoBufMutExt, Slice};
 use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
@@ -119,6 +119,7 @@ impl<T: DeserializeOwned, B: IoBuf> Decoder<T, B> for SerdeJsonCodec {
 
 #[test]
 fn test_serde_json_codec() {
+    use compio_buf::IoBufExt;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

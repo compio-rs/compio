@@ -6,7 +6,7 @@ use std::{
     ptr::{self, drop_in_place},
 };
 
-use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetLen};
+use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetLenExt};
 use io_uring::{opcode, squeue::Flags, types::Fd};
 use rustix::net::{RecvFlags, ReturnFlags};
 use socket2::{SockAddr, SockAddrStorage, socklen_t};

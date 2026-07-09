@@ -6,7 +6,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use compio_buf::{BufResult, SetLen};
+use compio_buf::{BufResult, SetLenExt};
 use compio_driver::{
     BufferPool, BufferRef, Extra, Key, OpCode, Proactor, PushEntry, TakeBuffer,
     op::{RecvFromMultiResult, RecvMsgMultiResult},
@@ -223,7 +223,7 @@ impl<T: OpCode + TakeBuffer<Buffer = B> + 'static, B: HandleBufferRef> Stream
                         let res = res?;
                         if let Some(mut b) = b {
                             unsafe {
-                                SetLen::advance_to(&mut b, res);
+                                SetLenExt::advance_to(&mut b, res);
                                 Some(B::from_buffer_ref(b, self.param))
                             }
                         } else {
@@ -281,7 +281,7 @@ impl HandleBufferRef for BufferRef {
     }
 
     unsafe fn advance_to(&mut self, len: usize) {
-        unsafe { SetLen::advance_to(self, len) }
+        unsafe { SetLenExt::advance_to(self, len) }
     }
 
     fn is_empty(&self) -> bool {

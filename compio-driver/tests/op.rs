@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use compio_buf::{BufResult, SetLen};
+use compio_buf::{BufResult, SetLenExt};
 #[cfg(unix)]
 use compio_driver::op::{AcceptMulti, Mode, OFlags, Pipe, ReadMulti, Write};
 use compio_driver::{

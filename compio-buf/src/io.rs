@@ -1,10 +1,10 @@
 use std::{io, marker::PhantomData};
 
-use crate::{IntoInner, IoBuf, IoBufMut, Slice};
+use crate::{IntoInner, IoBuf, IoBufExt, IoBufMut, IoBufMutExt, Slice};
 
 /// Adapts an [`IoBuf`] to implement the [`std::io::Read`] trait.
 ///
-/// This can be constructed with [`IoBuf::into_reader`]
+/// This can be constructed with [`IoBufExt::into_reader`]
 pub struct Reader<B>(Slice<B>);
 
 impl<B> Reader<B> {
@@ -62,7 +62,7 @@ impl<B> IntoInner for Reader<B> {
 
 /// Adapts a reference to [`IoBuf`] to [`std::io::Read`] trait.
 ///
-/// This can be constructed with [`IoBuf::as_reader`].
+/// This can be constructed with [`IoBufExt::as_reader`].
 pub struct ReaderRef<'a, B: ?Sized>(&'a [u8], PhantomData<&'a B>);
 
 impl<'a, B: ?Sized> ReaderRef<'a, B> {
@@ -85,7 +85,7 @@ impl<B: IoBuf> io::Read for ReaderRef<'_, B> {
 
 /// Adapts an [`IoBufMut`] to implement the [`std::io::Write`] trait.
 ///
-/// This can be constructed with [`IoBufMut::into_writer`]
+/// This can be constructed with [`IoBufMutExt::into_writer`]
 pub struct Writer<B>(B);
 
 impl<B> Writer<B> {
@@ -128,7 +128,7 @@ impl<B> IntoInner for Writer<B> {
 
 /// Adapts a mutable reference to [`IoBufMut`] to [`std::io::Write`] trait.
 ///
-/// This can be constructed with [`IoBufMut::as_writer`].
+/// This can be constructed with [`IoBufMutExt::as_writer`].
 pub struct WriterRef<'a, B: ?Sized>(&'a mut B);
 
 impl<'a, B: ?Sized> WriterRef<'a, B> {

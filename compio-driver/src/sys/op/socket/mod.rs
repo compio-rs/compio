@@ -13,6 +13,7 @@ mod_use![poll];
 #[cfg(stub)]
 mod_use![stub];
 
+use compio_buf::IoBufExt;
 use rustix::net::{RecvFlags, ReturnFlags, SendFlags};
 
 use crate::{PollFirst, sys::prelude::*};
