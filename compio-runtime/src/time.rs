@@ -100,7 +100,23 @@ pub async fn timeout<F: Future>(duration: Duration, future: F) -> Result<F::Outp
 /// If the future completes before the instant is reached, then the completed
 /// value is returned. Otherwise, an error is returned.
 pub async fn timeout_at<F: Future>(deadline: Instant, future: F) -> Result<F::Output, Elapsed> {
-    timeout(deadline - Instant::now(), future).await
+    match deadline.checked_duration_since(Instant::now()) {
+        Some(duration) => timeout(duration, future).await,
+        None => Err(Elapsed(())),
+    }
+}
+
+fn next_interval_deadline(start: Instant, period: Duration, now: Instant) -> Instant {
+    if now < start {
+        return start;
+    }
+
+    let elapsed = now.duration_since(start);
+    let remainder = elapsed.as_nanos() % period.as_nanos();
+    let remainder = Duration::from_nanos(u64::try_from(remainder).unwrap_or(u64::MAX));
+    let wait = period.saturating_sub(remainder);
+
+    now.checked_add(wait).unwrap_or(now)
 }
 
 /// Interval returned by [`interval`] and [`interval_at`]
@@ -133,11 +149,7 @@ impl Interval {
             self.first_ticked = true;
             self.start
         } else {
-            let now = Instant::now();
-            let next = now + self.period
-                - Duration::from_nanos(
-                    ((now - self.start).as_nanos() % self.period.as_nanos()) as _,
-                );
+            let next = next_interval_deadline(self.start, self.period, Instant::now());
             sleep_until(next).await;
             next
         }
@@ -377,4 +389,46 @@ fn timer_min_timeout() {
     let min_timeout = runtime.min_timeout().unwrap().as_secs_f32();
 
     assert!(min_timeout < 1.);
+}
+
+#[test]
+fn timeout_at_elapsed_deadline_returns_elapsed() {
+    let runtime = Runtime::new().unwrap();
+    runtime.block_on(async {
+        let deadline = Instant::now()
+            .checked_sub(Duration::from_millis(1))
+            .unwrap_or_else(Instant::now);
+        let result = timeout_at(deadline, futures_util::future::pending::<()>()).await;
+        assert_eq!(result, Err(Elapsed(())));
+    });
+}
+
+#[test]
+fn next_interval_deadline_uses_next_period_boundary() {
+    let start = Instant::now();
+    let period = Duration::from_millis(100);
+    let now = start + Duration::from_millis(250);
+
+    let next = next_interval_deadline(start, period, now);
+
+    assert_eq!(next.duration_since(start), Duration::from_millis(300));
+}
+
+#[test]
+fn next_interval_deadline_returns_start_before_first_deadline() {
+    let now = Instant::now();
+    let start = now + Duration::from_millis(50);
+
+    assert_eq!(
+        next_interval_deadline(start, Duration::from_millis(10), now),
+        start
+    );
+}
+
+#[test]
+fn next_interval_deadline_does_not_panic_for_large_period() {
+    let start = Instant::now();
+    let now = start + Duration::from_millis(1);
+
+    let _ = next_interval_deadline(start, Duration::MAX, now);
 }
