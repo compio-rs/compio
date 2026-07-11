@@ -447,6 +447,14 @@ impl TcpStream {
             )
             .await
     }
+
+    /// Peeks at data from this socket without consuming it
+    ///
+    /// ## Platform-specific
+    /// * Windows: this method may work, but is not ensured by Microsoft.
+    pub async fn peek<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+        self.inner.recv(buffer, RecvFlags::PEEK).await
+    }
 }
 
 impl AsyncRead for TcpStream {
