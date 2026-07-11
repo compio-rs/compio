@@ -449,11 +449,6 @@ impl TcpStream {
     }
 
     /// Peeks at data from this socket without consuming it.
-    ///
-    /// This is similar to [`recv_from`], but does not remove the data from the
-    /// socket, allowing it to be read again.
-    ///
-    /// [`recv_from`]: TcpStream::recv_from
     pub async fn peek<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
         #[cfg(unix)]
         use libc::MSG_PEEK;
