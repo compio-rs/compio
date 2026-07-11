@@ -33,7 +33,7 @@ async fn incoming_tcp() {
         assert_eq!(text, format!("Hello, {}", i).as_bytes());
         client.write_all(text).await.unwrap();
         client.shutdown().await.unwrap();
-        client.read([0u8; 1]).await.unwrap();
+        client.read([0u8; 1]).await.unwrap(); 
     }
 
     task.await.resume_unwind();
