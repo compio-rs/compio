@@ -27,6 +27,8 @@ async fn incoming_tcp() {
 
     for i in 0..2 {
         let mut client = TcpStream::connect(&addr).await.unwrap();
+        let (_, text) = client.peek([0u8; 8]).await.unwrap();
+        assert_eq!(text, format!("Hello, {}", i).as_bytes());
         let (_, text) = client.read_exact([0u8; 8]).await.unwrap();
         assert_eq!(text, format!("Hello, {}", i).as_bytes());
         client.write_all(text).await.unwrap();
