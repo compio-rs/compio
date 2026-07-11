@@ -447,6 +447,25 @@ impl TcpStream {
             )
             .await
     }
+
+    /// Peeks at data from this socket without consuming it.
+    ///
+    /// This is similar to [`recv_from`], but does not remove the data from the
+    /// socket, allowing it to be read again.
+    ///
+    /// [`recv_from`]: TcpStream::recv_from
+    pub async fn peek<T: IoBufMut>(&self, buffer: T) -> BufResult<usize, T> {
+        #[cfg(unix)]
+        use libc::MSG_PEEK;
+        #[cfg(windows)]
+        use windows_sys::Win32::Networking::WinSock::MSG_PEEK;
+
+        let result: BufResult<(usize, Option<SockAddr>), T> = self
+            .inner
+            .recv_from(buffer, RecvFlags::from_bits_retain(MSG_PEEK as _))
+            .await;
+        result.map_res(|(len, _)| len)
+    }
 }
 
 impl AsyncRead for TcpStream {
