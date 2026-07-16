@@ -128,7 +128,32 @@ impl Default for ExecutorConfig {
 pub(crate) struct Shared {
     waker: Option<Waker>,
     sync: ArrayQueue<TaskId>,
+    pending: AtomicUsize,
     queue: SendWrapper<TaskQueue>,
+}
+
+impl Shared {
+    /// Drain all pending cross-thread wakes into the local hot `queue`.
+    ///
+    /// Skips the expensive [`ArrayQueue::pop`] entirely when nothing has been
+    /// pushed, using a single relaxed-ish load of [`Shared::pending`] instead
+    /// of crossbeam's `SeqCst` empty check.
+    #[inline]
+    pub(crate) fn drain_sync(&self, queue: &TaskQueue) {
+        if self.pending.load(Ordering::Acquire) == 0 {
+            return;
+        }
+
+        let mut drained: usize = 0;
+        while let Some(id) = self.sync.pop() {
+            queue.make_hot(id);
+            drained += 1;
+        }
+
+        if drained != 0 {
+            self.pending.fetch_sub(drained, Ordering::Release);
+        }
+    }
 }
 
 impl Executor {
@@ -142,6 +167,7 @@ impl Executor {
         let ptr = Box::into_raw(Box::new(Shared {
             waker: config.waker.take(),
             sync: ArrayQueue::new(config.sync_queue_size),
+            pending: AtomicUsize::new(0),
             queue: SendWrapper::new(TaskQueue::new(config.local_queue_size)),
         }));
 
@@ -174,9 +200,7 @@ impl Executor {
     pub fn tick(&self) -> bool {
         let queue = self.queue();
 
-        while let Some(id) = self.shared().sync.pop() {
-            queue.make_hot(id);
-        }
+        self.shared().drain_sync(queue);
 
         for id in queue.iter_hot().take(self.config.max_interval as _) {
             queue.make_cold(id);
