@@ -1,3 +1,5 @@
+#![allow(semicolon_in_expressions_from_macros)]
+
 use cfg_aliases::cfg_aliases;
 
 fn main() {
