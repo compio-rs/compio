@@ -51,10 +51,10 @@ impl<'a> Local<'a> {
 
         // SAFETY: Type invariant
         let queue = unsafe { shared.queue.get_unchecked() };
-        while let Some(id) = shared.sync.pop() {
-            trace!(?id, "Scheduling");
-            queue.make_hot(id);
-        }
+        // Piggyback any pending cross-thread wakes. The fast-path guard inside
+        // avoids touching the sync queue at all when none are pending, which
+        // is the common case for single-threaded workloads.
+        shared.drain_sync(queue);
 
         trace!(id = ?self.header().id, "Scheduling self");
 
