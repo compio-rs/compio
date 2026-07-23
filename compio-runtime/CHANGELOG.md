@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.4](https://github.com/compio-rs/compio/compare/compio-runtime-v0.12.3...compio-runtime-v0.12.4) - 2026-07-23
+
+### Added
+
+- *(buf)* make `IoBuf`, `SetLen`, and `IoBufMut` dyn-compatible ([#969](https://github.com/compio-rs/compio/pull/969))
+
 ## 0.12.3 - 2026-07-06
 
 ### Added

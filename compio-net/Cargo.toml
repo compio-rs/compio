@@ -1,6 +1,6 @@
 [package]
 name = "compio-net"
-version = "0.12.2"
+version = "0.12.3"
 description = "Networking IO for compio"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
