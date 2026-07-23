@@ -295,6 +295,25 @@ impl Runtime {
         self.driver.borrow_mut().buffer_pool()
     }
 
+    /// Create a new buffer pool independently.
+    ///
+    /// Unlike [`buffer_pool`](Self::buffer_pool) which provides the default
+    /// pool, this allows creating additional buffer pools at runtime with
+    /// custom allocators and parameters.
+    ///
+    /// The pool will be released when the `Runtime`'s inner `Proactor` is
+    /// dropped.
+    pub fn create_buffer_pool<A: compio_driver::BufferAllocator>(
+        &self,
+        num_of_bufs: u16,
+        buffer_size: usize,
+        flags: u16,
+    ) -> io::Result<BufferPool> {
+        self.driver
+            .borrow_mut()
+            .create_buffer_pool::<A>(num_of_bufs, buffer_size, flags)
+    }
+
     /// Register file descriptors for fixed-file operations.
     ///
     /// This is only supported on io-uring driver, and will return an
@@ -565,4 +584,18 @@ pub fn register_files(fds: &[RawFd]) -> io::Result<()> {
 /// [`Unsupported`]: std::io::ErrorKind::Unsupported
 pub fn unregister_files() -> io::Result<()> {
     Runtime::with_current(|r| r.unregister_files())
+}
+
+/// Create a new buffer pool for the current runtime.
+///
+/// ## Panics
+///
+/// This method doesn't create runtime. It tries to obtain the current runtime
+/// by [`Runtime::with_current`].
+pub fn create_buffer_pool<A: compio_driver::BufferAllocator>(
+    num_of_bufs: u16,
+    buffer_size: usize,
+    flags: u16,
+) -> io::Result<BufferPool> {
+    Runtime::with_current(|r| r.create_buffer_pool::<A>(num_of_bufs, buffer_size, flags))
 }
