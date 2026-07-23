@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/compio-rs/compio/compare/compio-executor-v0.1.3...compio-executor-v0.1.4) - 2026-07-23
+
+### Other
+
+- *(executor)* skip empty sync-queue drain with a pending counter ([#976](https://github.com/compio-rs/compio/pull/976))
+
 ## 0.1.3 - 2026-07-06
 
 ### Added
