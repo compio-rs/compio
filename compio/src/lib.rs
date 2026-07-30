@@ -18,6 +18,40 @@
 //! println!("{}", buffer);
 //! # })
 //! ```
+//!
+//! ## Linux `io_uring` tuning
+//!
+//! [`runtime::Runtime`] is thread-local and cannot be sent between threads. Create a
+//! runtime inside each worker thread when using Compio's thread-per-core model. For
+//! dispatching work across runtime threads, use the
+//! [`dispatcher`](https://docs.rs/compio-dispatcher) crate.
+//!
+//! On Linux, applications that enable Compio's `io-uring` driver can opt in to kernel
+//! features that reduce task-work overhead. These settings are workload-dependent, so
+//! benchmark them in the deployment environment rather than treating them as universal
+//! defaults:
+//!
+//! ```rust
+//! use compio::driver::ProactorBuilder;
+//! use compio::runtime::RuntimeBuilder;
+//!
+//! let mut proactor = ProactorBuilder::new();
+//! proactor
+//!     // Available on Linux 6.0 and later.
+//!     .single_issuer(true)
+//!     // Available on Linux 5.19 and later.
+//!     .coop_taskrun(true)
+//!     .taskrun_flag(true);
+//!
+//! let runtime = RuntimeBuilder::new()
+//!     .with_proactor(proactor)
+//!     .build()
+//!     .unwrap();
+//! ```
+//!
+//! These options are effective only with the `io-uring` feature. `taskrun_flag` should
+//! be used with `coop_taskrun`; `defer_taskrun` is a separate Linux 6.1+ option that
+//! requires `single_issuer`.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(unused_features)]
