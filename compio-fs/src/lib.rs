@@ -63,6 +63,23 @@ pub(crate) fn path_string(path: impl AsRef<std::path::Path>) -> io::Result<std::
 use compio_buf::{BufResult, IntoInner};
 use compio_driver::{SharedFd, op::AsyncifyFd};
 
+/// Run `f` on the blocking pool, reporting it to the console under `name`.
+///
+/// The tasks compio spawns itself are named, since their location points into
+/// compio rather than into the code that asked for the work.
+#[allow(dead_code)] // Only some platforms have blocking fallbacks.
+pub(crate) async fn spawn_blocking_named<T: Send + 'static>(
+    name: &'static str,
+    f: impl (FnOnce() -> T) + Send + 'static,
+) -> T {
+    use compio_runtime::{ResumeUnwind, SpawnMeta};
+
+    compio_runtime::spawn_blocking_at(f, SpawnMeta::capture().named(name))
+        .await
+        .resume_unwind()
+        .expect("shouldn't be cancelled")
+}
+
 pub(crate) async fn spawn_blocking_with<T, R, F>(fd: SharedFd<T>, f: F) -> io::Result<R>
 where
     T: Sync + 'static,
