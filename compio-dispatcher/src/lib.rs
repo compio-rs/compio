@@ -88,6 +88,7 @@ pub struct Dispatcher {
 
 impl Dispatcher {
     /// Create the dispatcher with specified number of threads.
+    #[track_caller]
     pub(crate) fn new_impl(builder: DispatcherBuilder) -> io::Result<Self> {
         let DispatcherBuilder {
             nthreads,
@@ -100,6 +101,9 @@ impl Dispatcher {
         proactor_builder.force_reuse_thread_pool();
         let pool = proactor_builder.create_or_get_thread_pool();
         let (sender, receiver) = unbounded::<Spawning>();
+        // Captured out here, since `#[track_caller]` does not reach into the
+        // closures the threads run, and every worker belongs to this call.
+        let meta = SpawnMeta::capture().named("dispatcher::worker");
 
         let threads = (0..nthreads)
             .map({
@@ -130,18 +134,21 @@ impl Dispatcher {
                             .thread_affinity(cpus)
                             .build()
                             .expect("cannot create compio runtime")
-                            .block_on(async move {
-                                while let Ok(Spawning { task: f, meta }) =
-                                    receiver.recv_async().await
-                                {
-                                    let task = Runtime::with_current(|rt| f.spawn(rt, meta));
-                                    if concurrent {
-                                        task.detach()
-                                    } else {
-                                        task.await.ok();
+                            .block_on_at(
+                                async move {
+                                    while let Ok(Spawning { task: f, meta }) =
+                                        receiver.recv_async().await
+                                    {
+                                        let task = Runtime::with_current(|rt| f.spawn(rt, meta));
+                                        if concurrent {
+                                            task.detach()
+                                        } else {
+                                            task.await.ok();
+                                        }
                                     }
-                                }
-                            });
+                                },
+                                meta,
+                            );
                     })
                 }
             })
@@ -155,6 +162,7 @@ impl Dispatcher {
     }
 
     /// Create the dispatcher with default config.
+    #[track_caller]
     pub fn new() -> io::Result<Self> {
         Self::builder().build()
     }
@@ -316,6 +324,7 @@ impl DispatcherBuilder {
     }
 
     /// Build the [`Dispatcher`].
+    #[track_caller]
     pub fn build(self) -> io::Result<Dispatcher> {
         Dispatcher::new_impl(self)
     }
