@@ -18,7 +18,7 @@ use compio_log::{Instrument, error};
 #[cfg(rustls)]
 use compio_net::ToSocketAddrsAsync;
 use compio_net::UdpSocket;
-use compio_runtime::JoinHandle;
+use compio_runtime::{JoinHandle, SpawnMeta};
 use flume::{Receiver, Sender, unbounded};
 use futures_util::{FutureExt, StreamExt, future, select, task::AtomicWaker};
 use quinn_proto::{
@@ -229,9 +229,15 @@ impl EndpointInner {
 
     fn respond(&self, buf: Vec<u8>, transmit: Transmit) {
         let socket = self.socket.clone();
-        compio_runtime::spawn(async move {
-            socket.send(buf, &transmit).await;
-        })
+        // Name the task: the caller of this is compio rather than user code, so
+        // its location alone does not say what the task is.
+        let meta = SpawnMeta::capture().named("quic::respond");
+        compio_runtime::spawn_at(
+            async move {
+                socket.send(buf, &transmit).await;
+            },
+            meta,
+        )
         .detach();
     }
 
@@ -430,15 +436,20 @@ impl Endpoint {
             config,
             server_config,
         )?));
-        let worker = compio_runtime::spawn({
-            let inner = inner.clone();
-            async move {
-                if let Err(e) = inner.run().await {
-                    error!("I/O error: {:?}", e);
+        // See the note in `respond` on why this task is named.
+        let meta = SpawnMeta::capture().named("quic::endpoint");
+        let worker = compio_runtime::spawn_at(
+            {
+                let inner = inner.clone();
+                async move {
+                    if let Err(e) = inner.run().await {
+                        error!("I/O error: {:?}", e);
+                    }
                 }
-            }
-            .in_current_span()
-        });
+                .in_current_span()
+            },
+            meta,
+        );
         inner.state.lock().worker = Some(worker);
         Ok(Self {
             inner,
