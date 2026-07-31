@@ -54,6 +54,13 @@ jobs:
             no_default_features: true
           - os: 'ubuntu-22.04'
             features: 'native-tls,ring,py-dynamic-openssl'
+            # `console` is deliberately not part of `all`, so it needs a setup of
+            # its own to be built and tested at all.
+          - os: 'ubuntu-22.04'
+            features: 'console'
+          - os: 'windows-latest'
+            target: 'x86_64-pc-windows-msvc'
+            features: 'console'
           - os: 'ubuntu-22.04'
             target: 'x86_64-unknown-linux-musl'
             features: 'native-tls-vendored,ring,sync,polling'
