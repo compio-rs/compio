@@ -47,7 +47,7 @@ use compio_buf::{BufResult, IntoInner};
 use compio_driver::{AsRawFd, DriverType, OpCode, Proactor, ProactorBuilder, RawFd, op::Asyncify};
 pub use compio_driver::{BufferPool, ErrorExt};
 use compio_executor::{Executor, ExecutorConfig};
-pub use compio_executor::{JoinHandle, ResumeUnwind};
+pub use compio_executor::{JoinHandle, ResumeUnwind, SpawnMeta, console};
 use compio_log::{debug, instrument};
 
 use crate::affinity::bind_to_cpu_set;
@@ -169,7 +169,9 @@ impl Runtime {
     }
 
     /// Block on the future till it completes.
+    #[track_caller]
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        let future = console::instrument_block_on(SpawnMeta::capture(), future);
         self.enter(|| {
             let waker = self.waker();
             let mut context = Context::from_waker(&waker);
@@ -193,16 +195,50 @@ impl Runtime {
     ///
     /// Spawning a task enables the task to execute concurrently to other tasks.
     /// There is no guarantee that a spawned task will execute to completion.
+    #[track_caller]
     pub fn spawn<F: Future + 'static>(&self, future: F) -> JoinHandle<F::Output> {
-        self.executor.spawn(future)
+        self.spawn_at(future, SpawnMeta::capture())
+    }
+
+    /// Spawns a new asynchronous task, attributing it to `meta` instead of to
+    /// the caller.
+    ///
+    /// This is what wrappers around [`spawn`] want, so that [`tokio-console`]
+    /// blames their own caller instead of themselves. [`SpawnMeta`] is only
+    /// interesting to it, and is a zero-sized no-op without the `console`
+    /// feature.
+    ///
+    /// [`spawn`]: Self::spawn
+    /// [`tokio-console`]: crate::console
+    pub fn spawn_at<F: Future + 'static>(
+        &self,
+        future: F,
+        meta: SpawnMeta,
+    ) -> JoinHandle<F::Output> {
+        self.executor.spawn_at(future, meta)
     }
 
     /// Spawns a blocking task in a new thread, and wait for it.
     ///
     /// The task will not be cancelled even if the future is dropped.
+    #[track_caller]
     pub fn spawn_blocking<T: Send + 'static>(
         &self,
         f: impl (FnOnce() -> T) + Send + 'static,
+    ) -> JoinHandle<T> {
+        self.spawn_blocking_at(f, SpawnMeta::capture())
+    }
+
+    /// Spawns a blocking task in a new thread, attributing it to `meta` instead
+    /// of to the caller.
+    ///
+    /// See [`spawn_at`] for what `meta` is good for.
+    ///
+    /// [`spawn_at`]: Self::spawn_at
+    pub fn spawn_blocking_at<T: Send + 'static>(
+        &self,
+        f: impl (FnOnce() -> T) + Send + 'static,
+        meta: SpawnMeta,
     ) -> JoinHandle<T> {
         use futures_util::FutureExt;
 
@@ -213,7 +249,7 @@ impl Runtime {
             BufResult(Ok(0), res)
         });
         let submit = self.submit(op);
-        self.spawn(submit.map(|res| res.1.into_inner()))
+        self.spawn_at(submit.map(|res| res.1.into_inner()), meta)
     }
 
     /// Attach a raw file descriptor/handle/socket to the runtime.
@@ -494,8 +530,25 @@ impl RuntimeBuilder {
 ///
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::with_current`].
+#[track_caller]
 pub fn spawn<F: Future + 'static>(future: F) -> JoinHandle<F::Output> {
-    Runtime::with_current(|r| r.spawn(future))
+    // Capture outside of the closure: `#[track_caller]` does not reach into it,
+    // so inlining this would attribute every task to the line above.
+    let meta = SpawnMeta::capture();
+    spawn_at(future, meta)
+}
+
+/// Spawns a new asynchronous task, attributing it to `meta` instead of to the
+/// caller.
+///
+/// See [`Runtime::spawn_at`] for what `meta` is good for.
+///
+/// ## Panics
+///
+/// This method doesn't create runtime. It tries to obtain the current runtime
+/// by [`Runtime::with_current`].
+pub fn spawn_at<F: Future + 'static>(future: F, meta: SpawnMeta) -> JoinHandle<F::Output> {
+    Runtime::with_current(|r| r.spawn_at(future, meta))
 }
 
 /// Spawns a blocking task in a new thread, and wait for it.
@@ -506,10 +559,29 @@ pub fn spawn<F: Future + 'static>(future: F) -> JoinHandle<F::Output> {
 ///
 /// This method doesn't create runtime. It tries to obtain the current runtime
 /// by [`Runtime::with_current`].
+#[track_caller]
 pub fn spawn_blocking<T: Send + 'static>(
     f: impl (FnOnce() -> T) + Send + 'static,
 ) -> JoinHandle<T> {
-    Runtime::with_current(|r| r.spawn_blocking(f))
+    // See the note in `spawn` on why this is not inlined below.
+    let meta = SpawnMeta::capture();
+    spawn_blocking_at(f, meta)
+}
+
+/// Spawns a blocking task in a new thread, attributing it to `meta` instead of
+/// to the caller.
+///
+/// See [`Runtime::spawn_at`] for what `meta` is good for.
+///
+/// ## Panics
+///
+/// This method doesn't create runtime. It tries to obtain the current runtime
+/// by [`Runtime::with_current`].
+pub fn spawn_blocking_at<T: Send + 'static>(
+    f: impl (FnOnce() -> T) + Send + 'static,
+    meta: SpawnMeta,
+) -> JoinHandle<T> {
+    Runtime::with_current(|r| r.spawn_blocking_at(f, meta))
 }
 
 /// Submit an operation to the current runtime, and return a future for it.
