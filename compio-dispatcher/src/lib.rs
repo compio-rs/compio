@@ -183,9 +183,10 @@ impl Dispatcher {
     {
         let (concrete, rx) = Concrete::new(f);
 
+        let meta = SpawnMeta::capture().named("dispatch");
         match self.sender.send(Spawning {
             task: Box::new(concrete),
-            meta: SpawnMeta::capture(),
+            meta,
         }) {
             Ok(_) => Ok(rx),
             Err(err) => {
