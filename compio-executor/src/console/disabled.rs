@@ -21,6 +21,12 @@ impl SpawnMeta {
         Self
     }
 
+    /// Name the task, which the console displays in a column of its own.
+    #[inline(always)]
+    pub fn named(self, _name: &'static str) -> Self {
+        self
+    }
+
     /// Do not report the task to the console at all.
     #[inline(always)]
     pub fn untracked() -> Self {
