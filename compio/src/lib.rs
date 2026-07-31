@@ -74,6 +74,8 @@ pub use compio_tls as tls;
 #[cfg(feature = "ws")]
 #[doc(inline)]
 pub use compio_ws as ws;
+#[cfg(feature = "console")]
+pub use console_subscriber;
 #[cfg(feature = "time")]
 #[doc(inline)]
 pub use runtime::time;
