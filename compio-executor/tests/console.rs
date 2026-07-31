@@ -11,7 +11,7 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-use compio_executor::Executor;
+use compio_executor::{Executor, SpawnMeta, console};
 use tracing::{
     Event, Metadata, Subscriber,
     field::{Field, Visit},
@@ -207,7 +207,7 @@ fn untyped(field: &Field, value: &dyn std::fmt::Debug) -> ! {
 }
 
 fn block_on<F: Future>(exe: &Executor, fut: F) -> F::Output {
-    let fut = compio_executor::console::instrument_block_on(fut);
+    let fut = console::instrument_block_on(fut);
     let cx = &mut Context::from_waker(Waker::noop());
     let mut fut = pin!(fut);
     loop {
@@ -282,6 +282,49 @@ fn blocked_on_future_is_reported_as_a_task() {
     assert!(tasks[0].polls >= 2 && tasks[1].polls >= 2);
     assert_eq!(tasks[0].live_wakers(), 0);
     assert_eq!(tasks[1].live_wakers(), 0);
+}
+
+#[test]
+fn blocking_closure_is_reported_as_a_blocking_task() {
+    let recorder = Recorder::default();
+    let _guard = recorder.install();
+
+    let line = line!() + 1;
+    let f = console::instrument_blocking(SpawnMeta::capture(), {
+        let recorder = recorder.clone();
+        // The console counts one poll per entry of the span and measures the
+        // busy time of the task as the time it stays entered, so the closure
+        // must run while it is.
+        move || recorder.tasks()[0].polls
+    });
+
+    let task = &recorder.tasks()[0];
+    assert_eq!(
+        task.kind, "blocking",
+        "the console skips its future lints for this kind"
+    );
+    assert_eq!(task.file, file!());
+    assert_eq!(task.line, line as u64, "the caller is reported");
+    assert_eq!(task.polls, 0, "the task shows up as soon as it is queued");
+
+    assert_eq!(f(), 1, "the closure runs while the span is entered");
+    let task = &recorder.tasks()[0];
+    assert_eq!(task.exits, 1, "and the span is left afterwards");
+    assert!(task.waker_ops.is_empty(), "a closure has no waker");
+}
+
+#[test]
+fn untracked_task_is_not_reported() {
+    let recorder = Recorder::default();
+    let _guard = recorder.install();
+    let exe = Executor::new();
+
+    let handle = exe.spawn_at(yield_now(), SpawnMeta::untracked());
+    block_on(&exe, handle).unwrap();
+
+    let tasks = recorder.tasks();
+    assert_eq!(tasks.len(), 1, "only the `block_on` task: {tasks:?}");
+    assert_eq!(tasks[0].kind, "block_on");
 }
 
 #[test]

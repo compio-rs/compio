@@ -21,6 +21,30 @@ use super::WakerOp;
 /// `runtime.spawn`, but the target is displayed, so make it a useful one.
 const TARGET: &str = "compio::task";
 
+/// What a task span reports the task as being.
+///
+/// The console considers a task whose kind is not [`Self::Task`] to not be
+/// driven by a future, and skips the lints that only make sense for one: the
+/// self-wake ratio, the lost waker, the never-yielded and the large future
+/// ones.
+#[derive(Debug, Clone, Copy)]
+enum TaskKind {
+    Task,
+    Blocking,
+    BlockOn,
+}
+
+impl TaskKind {
+    /// The `kind` value of the span, as expected by the console.
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Task => "task",
+            Self::Blocking => "blocking",
+            Self::BlockOn => "block_on",
+        }
+    }
+}
+
 /// Id displayed by the console in its `ID` column.
 ///
 /// This is deliberately *not* the executor's [`TaskId`], which is a slot index
@@ -46,20 +70,15 @@ std::thread_local! {
     };
 }
 
-fn spawn_span(kind: &'static str, size: usize, loc: &'static Location<'static>) -> Span {
-    fn build(
-        kind: &'static str,
-        size: usize,
-        loc: &'static Location<'static>,
-        thread: &str,
-    ) -> Span {
+fn spawn_span(kind: TaskKind, size: usize, loc: &'static Location<'static>) -> Span {
+    fn build(kind: TaskKind, size: usize, loc: &'static Location<'static>, thread: &str) -> Span {
         tracing::trace_span!(
             target: TARGET,
             // The console attributes polls of a task to the innermost task span
             // that is entered, so task spans must never be nested.
             parent: None,
             "runtime.spawn",
-            kind = kind,
+            kind = kind.as_str(),
             task.id = next_task_id(),
             size.bytes = size,
             thread = thread,
@@ -85,17 +104,47 @@ fn waker_op(id: u64, op: WakerOp) {
 
 /// Metadata of a spawned task, reported to the console.
 ///
-/// The disabled variant of this is zero-sized, so nothing here may be
-/// load-bearing outside of the console.
+/// `None` for a task that is not reported at all. The disabled variant of this
+/// is zero-sized, so nothing here may be load-bearing outside of the console.
 #[derive(Debug, Clone, Copy)]
-pub struct SpawnMeta(&'static Location<'static>);
+pub struct SpawnMeta(Option<Reported>);
+
+/// What is reported about a task, for the tasks that are reported at all.
+#[derive(Debug, Clone, Copy)]
+struct Reported {
+    loc: &'static Location<'static>,
+}
 
 impl SpawnMeta {
     /// Capture the location of the caller.
     #[inline]
     #[track_caller]
     pub fn capture() -> Self {
-        Self(Location::caller())
+        Self(Some(Reported {
+            loc: Location::caller(),
+        }))
+    }
+
+    /// Do not report the task to the console at all.
+    ///
+    /// This is for tasks that only wrap work reported by something else, like
+    /// the future waiting for a blocking closure: reporting both would count
+    /// the same work twice, and hide the interesting one behind a wrapper that
+    /// is idle the whole time.
+    #[inline]
+    pub fn untracked() -> Self {
+        Self(None)
+    }
+
+    /// The span of the task, or a disabled span if it is not to be reported.
+    ///
+    /// Entering a disabled span and asking for its id are both no-ops, so
+    /// nothing downstream has to know about the difference.
+    fn span(self, kind: TaskKind, size: usize) -> Span {
+        match self.0 {
+            Some(it) => spawn_span(kind, size, it.loc),
+            None => Span::none(),
+        }
     }
 }
 
@@ -109,7 +158,7 @@ pub(crate) struct TaskSpan(Span);
 
 impl TaskSpan {
     pub(crate) fn new<F>(meta: SpawnMeta) -> Self {
-        Self(spawn_span("task", mem::size_of::<F>(), meta.0))
+        Self(meta.span(TaskKind::Task, mem::size_of::<F>()))
     }
 
     /// Enter the task span. The console measures the time the span is entered
@@ -234,11 +283,27 @@ impl<F: Future> Future for BlockOn<F> {
     }
 }
 
+/// Instrument a closure about to be handed to the blocking pool, so that it
+/// shows up as a blocking task in the console.
+///
+/// The span is created here rather than on the pool thread, so that the task
+/// shows up as soon as it is queued and the wait for a worker is reported as
+/// idle time. It is entered around the closure itself, so that the time spent
+/// in it is reported as busy time.
+pub fn instrument_blocking<T, F: FnOnce() -> T>(meta: SpawnMeta, f: F) -> impl FnOnce() -> T {
+    let span = meta.span(TaskKind::Blocking, mem::size_of::<F>());
+
+    move || {
+        let _entered = span.enter();
+        f()
+    }
+}
+
 /// Instrument a future blocked on by the runtime, so that it shows up as a
 /// task in the console.
 #[track_caller]
 pub fn instrument_block_on<F: Future>(fut: F) -> impl Future<Output = F::Output> {
-    let span = spawn_span("block_on", mem::size_of::<F>(), Location::caller());
+    let span = SpawnMeta::capture().span(TaskKind::BlockOn, mem::size_of::<F>());
     let id = span.id().map(|id| id.into_u64());
 
     BlockOn {

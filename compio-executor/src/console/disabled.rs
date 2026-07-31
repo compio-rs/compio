@@ -14,6 +14,12 @@ impl SpawnMeta {
     pub fn capture() -> Self {
         Self
     }
+
+    /// Do not report the task to the console at all.
+    #[inline(always)]
+    pub fn untracked() -> Self {
+        Self
+    }
 }
 
 /// The guard returned by [`TaskSpan::enter`].
@@ -50,6 +56,15 @@ impl TaskSpan {
 
     #[inline(always)]
     pub(crate) fn waker_op(&self, _op: super::WakerOp) {}
+}
+
+/// Instrument a closure about to be handed to the blocking pool, so that it
+/// shows up as a blocking task in the console.
+///
+/// This is a no-op unless the `console` feature is enabled.
+#[inline(always)]
+pub fn instrument_blocking<T, F: FnOnce() -> T>(_meta: SpawnMeta, f: F) -> impl FnOnce() -> T {
+    f
 }
 
 /// Instrument a future blocked on by the runtime, so that it shows up as a
