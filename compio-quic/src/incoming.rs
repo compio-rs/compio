@@ -29,6 +29,7 @@ impl Incoming {
 
     /// Attempt to accept this incoming connection (an error may still
     /// occur).
+    #[track_caller]
     pub fn accept(mut self) -> Result<Connecting, ConnectionError> {
         let inner = self.0.take().unwrap();
         Ok(inner.endpoint.accept(inner.incoming, None)?)

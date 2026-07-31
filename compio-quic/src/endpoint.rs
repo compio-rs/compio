@@ -125,6 +125,7 @@ impl EndpointState {
         }
     }
 
+    #[track_caller]
     fn new_connection(
         &mut self,
         handle: ConnectionHandle,
@@ -194,6 +195,7 @@ impl EndpointInner {
         })
     }
 
+    #[track_caller]
     fn connect(
         &self,
         remote: SocketAddr,
@@ -241,6 +243,7 @@ impl EndpointInner {
         .detach();
     }
 
+    #[track_caller]
     pub(crate) fn accept(
         &self,
         incoming: quinn_proto::Incoming,
@@ -436,7 +439,9 @@ impl Endpoint {
             config,
             server_config,
         )?));
-        // See the note in `respond` on why this task is named.
+        // See the note in `respond` on why this task is named. The location
+        // cannot be the user's: `client`, `server` and `bind` all reach us from
+        // an `async fn`, which `#[track_caller]` does not propagate through.
         let meta = SpawnMeta::capture().named("quic::endpoint");
         let worker = compio_runtime::spawn_at(
             {
@@ -498,6 +503,7 @@ impl Endpoint {
     }
 
     /// Connect to a remote endpoint.
+    #[track_caller]
     pub fn connect(
         &self,
         remote: SocketAddr,
