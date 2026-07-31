@@ -20,14 +20,19 @@ use std::{
 };
 
 use compio_driver::{AsyncifyPool, DispatchError, Dispatchable, ProactorBuilder};
-use compio_runtime::{JoinHandle as CompioJoinHandle, Runtime};
+use compio_runtime::{JoinHandle as CompioJoinHandle, Runtime, SpawnMeta};
 use flume::{Sender, unbounded};
 use futures_channel::oneshot;
 
-type Spawning = Box<dyn Spawnable + Send>;
+/// A closure to spawn, and the [`SpawnMeta`] of the `dispatch` call it came
+/// from.
+struct Spawning {
+    task: Box<dyn Spawnable + Send>,
+    meta: SpawnMeta,
+}
 
 trait Spawnable {
-    fn spawn(self: Box<Self>, handle: &Runtime) -> CompioJoinHandle<()>;
+    fn spawn(self: Box<Self>, handle: &Runtime, meta: SpawnMeta) -> CompioJoinHandle<()>;
 }
 
 /// Concrete type for the closure we're sending to worker threads
@@ -49,12 +54,15 @@ where
     Fut: Future<Output = R>,
     R: Send + 'static,
 {
-    fn spawn(self: Box<Self>, handle: &Runtime) -> CompioJoinHandle<()> {
+    fn spawn(self: Box<Self>, handle: &Runtime, meta: SpawnMeta) -> CompioJoinHandle<()> {
         let Concrete { callback, func } = *self;
-        handle.spawn(async move {
-            let res = func().await;
-            callback.send(res).ok();
-        })
+        handle.spawn_at(
+            async move {
+                let res = func().await;
+                callback.send(res).ok();
+            },
+            meta,
+        )
     }
 }
 
@@ -123,8 +131,10 @@ impl Dispatcher {
                             .build()
                             .expect("cannot create compio runtime")
                             .block_on(async move {
-                                while let Ok(f) = receiver.recv_async().await {
-                                    let task = Runtime::with_current(|rt| f.spawn(rt));
+                                while let Ok(Spawning { task: f, meta }) =
+                                    receiver.recv_async().await
+                                {
+                                    let task = Runtime::with_current(|rt| f.spawn(rt, meta));
                                     if concurrent {
                                         task.detach()
                                     } else {
@@ -164,6 +174,7 @@ impl Dispatcher {
     ///
     /// If all threads have panicked, this method will return an error with the
     /// sent closure.
+    #[track_caller]
     pub fn dispatch<Fn, Fut, R>(&self, f: Fn) -> Result<oneshot::Receiver<R>, DispatchError<Fn>>
     where
         Fn: (FnOnce() -> Fut) + Send + 'static,
@@ -172,12 +183,15 @@ impl Dispatcher {
     {
         let (concrete, rx) = Concrete::new(f);
 
-        match self.sender.send(Box::new(concrete)) {
+        match self.sender.send(Spawning {
+            task: Box::new(concrete),
+            meta: SpawnMeta::capture(),
+        }) {
             Ok(_) => Ok(rx),
             Err(err) => {
                 // SAFETY: We know the dispatchable we sent has type `Concrete<Fn, R>`
                 let recovered =
-                    unsafe { Box::from_raw(Box::into_raw(err.0) as *mut Concrete<Fn, R>) };
+                    unsafe { Box::from_raw(Box::into_raw(err.0.task) as *mut Concrete<Fn, R>) };
                 Err(DispatchError(recovered.func))
             }
         }
