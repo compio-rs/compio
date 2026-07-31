@@ -90,6 +90,6 @@ pub fn instrument_blocking<T, F: FnOnce() -> T>(_meta: SpawnMeta, f: F) -> impl 
 /// Plumbing for `compio-runtime`, not covered by this crate's semver.
 #[doc(hidden)]
 #[inline(always)]
-pub fn instrument_block_on<F: Future>(fut: F) -> impl Future<Output = F::Output> {
+pub fn instrument_block_on<F: Future>(_meta: SpawnMeta, fut: F) -> impl Future<Output = F::Output> {
     fut
 }

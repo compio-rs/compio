@@ -219,8 +219,9 @@ fn untyped(field: &Field, value: &dyn std::fmt::Debug) -> ! {
     );
 }
 
+#[track_caller]
 fn block_on<F: Future>(exe: &Executor, fut: F) -> F::Output {
-    let fut = console::instrument_block_on(fut);
+    let fut = console::instrument_block_on(SpawnMeta::capture(), fut);
     let cx = &mut Context::from_waker(Waker::noop());
     let mut fut = pin!(fut);
     loop {
@@ -366,6 +367,39 @@ fn untracked_task_is_not_reported() {
     let tasks = recorder.tasks();
     assert_eq!(tasks.len(), 1, "only the `block_on` task: {tasks:?}");
     assert_eq!(tasks[0].kind, "block_on");
+}
+
+#[test]
+fn untracked_blocked_on_future_is_not_reported() {
+    let recorder = Recorder::default();
+    let _guard = recorder.install();
+    let exe = Executor::new();
+
+    // The runtime blocks on futures of its own, which it leaves unreported.
+    // Such a task has no id, so it is polled with the waker it was given
+    // rather than a shim reporting the operations on it.
+    let handle = exe.spawn(yield_now());
+    let fut = console::instrument_block_on(SpawnMeta::untracked(), handle);
+    let cx = &mut Context::from_waker(Waker::noop());
+    let mut fut = pin!(fut);
+    loop {
+        if let Poll::Ready(res) = fut.as_mut().poll(cx) {
+            res.unwrap();
+            break;
+        }
+        exe.tick();
+    }
+
+    let tasks = recorder.tasks();
+    assert_eq!(tasks.len(), 1, "only the spawned task: {tasks:?}");
+    assert_eq!(tasks[0].kind, "task");
+    assert_eq!(
+        tasks[0].live_wakers(),
+        0,
+        "an unreported task wraps no waker of its own, so the ones of the task it polls still \
+         balance out: {:?}",
+        tasks[0].waker_ops
+    );
 }
 
 #[test]

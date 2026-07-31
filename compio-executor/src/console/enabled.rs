@@ -316,9 +316,8 @@ pub fn instrument_blocking<T, F: FnOnce() -> T>(meta: SpawnMeta, f: F) -> impl F
 ///
 /// Plumbing for `compio-runtime`, not covered by this crate's semver.
 #[doc(hidden)]
-#[track_caller]
-pub fn instrument_block_on<F: Future>(fut: F) -> impl Future<Output = F::Output> {
-    let span = SpawnMeta::capture().span(TaskKind::BlockOn, mem::size_of::<F>());
+pub fn instrument_block_on<F: Future>(meta: SpawnMeta, fut: F) -> impl Future<Output = F::Output> {
+    let span = meta.span(TaskKind::BlockOn, mem::size_of::<F>());
     let id = span.id().map(|id| id.into_u64());
 
     BlockOn {
