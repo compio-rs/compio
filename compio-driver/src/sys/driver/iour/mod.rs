@@ -237,8 +237,8 @@ impl Driver {
 
     /// Submit the pending SQEs and wait on completions in a single `enter`
     /// carrying `IORING_ENTER_NO_IOWAIT` so the wait is not charged as iowait
-    /// (see `DriverFlags::NO_IOWAIT`). The crate's `submit_*` helpers cannot add
-    /// custom `EnterFlags`, so this drops to the raw `enter` with
+    /// (see `DriverFlags::NO_IOWAIT`). The crate's `submit_*` helpers cannot
+    /// add custom `EnterFlags`, so this drops to the raw `enter` with
     /// `to_submit = sq_len()` instead of the combined `submit_and_wait`.
     fn submit_and_wait_no_iowait(
         &mut self,
