@@ -57,3 +57,15 @@ impl TaskSpan {
     #[inline(always)]
     pub(crate) fn waker_op(&self, _op: super::WakerOp) {}
 }
+
+/// Instrument a future blocked on by the runtime, so that it shows up as a
+/// task in the console.
+///
+/// This is a no-op unless the `console` feature is enabled.
+///
+/// Plumbing for `compio-runtime`, not covered by this crate's semver.
+#[doc(hidden)]
+#[inline(always)]
+pub fn instrument_block_on<F: Future>(fut: F) -> impl Future<Output = F::Output> {
+    fut
+}

@@ -5,7 +5,12 @@
 use std::{
     mem,
     panic::Location,
-    sync::atomic::{AtomicU64, Ordering},
+    pin::Pin,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    task::{Context, Poll, Wake, Waker},
 };
 
 use tracing::Span;
@@ -120,5 +125,110 @@ impl TaskSpan {
         if let Some(id) = self.0.id() {
             waker_op(id.into_u64(), op);
         }
+    }
+}
+
+/// A [`Waker`] that reports its operations to the console, on behalf of a task
+/// that is not owned by the executor.
+///
+/// The console derives the number of live wakers of a task from the clone and
+/// drop events, and cloning a [`Waker`] made of an [`Arc`] only bumps its
+/// refcount, which no hook of ours observes. The shim therefore reports the
+/// allocation rather than the handles to it: a `waker.clone` when it is made
+/// and a `waker.drop` when the last handle to it is gone. The console shows one
+/// live waker for as long as the task holds any, instead of how many.
+struct ShimWaker {
+    inner: Waker,
+    id: u64,
+}
+
+impl ShimWaker {
+    fn waker(inner: Waker, id: u64) -> Waker {
+        let this = Arc::new(Self { inner, id });
+        // The shim is a live waker of the task, and its drop reports a
+        // `waker.drop`, so report the matching `waker.clone` here.
+        this.report(WakerOp::Clone);
+        Waker::from(this)
+    }
+
+    #[inline]
+    fn report(&self, op: WakerOp) {
+        waker_op(self.id, op);
+    }
+}
+
+impl Wake for ShimWaker {
+    /// Report the wake as a [`WakerOp::WakeByRef`] even though this one
+    /// consumes a handle: the console counts a [`WakerOp::Wake`] as a drop too,
+    /// since [`Waker::wake`] does not run the [`Drop`] implementation — but the
+    /// [`Arc`] taken here does, once it is the last handle, and the drop would
+    /// be reported twice.
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.report(WakerOp::WakeByRef);
+        self.inner.wake_by_ref();
+    }
+}
+
+impl Drop for ShimWaker {
+    fn drop(&mut self) {
+        self.report(WakerOp::Drop);
+    }
+}
+
+/// A future instrumented as a `block_on` task, returned by
+/// [`instrument_block_on`].
+struct BlockOn<F> {
+    span: Span,
+    id: Option<u64>,
+    /// The waker given to us by the runtime and the shim wrapping it, cached to
+    /// avoid rebuilding the shim on every poll.
+    waker: Option<(Waker, Waker)>,
+    fut: F,
+}
+
+impl<F: Future> Future for BlockOn<F> {
+    type Output = F::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: we never move out of `fut`, and all other fields are `Unpin`.
+        let this = unsafe { self.get_unchecked_mut() };
+        let fut = unsafe { Pin::new_unchecked(&mut this.fut) };
+
+        let _entered = this.span.enter();
+
+        let Some(id) = this.id else {
+            return fut.poll(cx);
+        };
+
+        if !matches!(&this.waker, Some((given, _)) if given.will_wake(cx.waker())) {
+            let given = cx.waker().clone();
+            let shim = ShimWaker::waker(given.clone(), id);
+            this.waker = Some((given, shim));
+        }
+
+        let shim = &this.waker.as_ref().expect("waker was just set").1;
+        fut.poll(&mut Context::from_waker(shim))
+    }
+}
+
+/// Instrument a future blocked on by the runtime, so that it shows up as a
+/// task in the console.
+///
+/// Plumbing for `compio-runtime`, not covered by this crate's semver.
+#[doc(hidden)]
+#[track_caller]
+pub fn instrument_block_on<F: Future>(fut: F) -> impl Future<Output = F::Output> {
+    let span = spawn_span("block_on", mem::size_of::<F>(), Location::caller());
+    let id = span.id().map(|id| id.into_u64());
+
+    BlockOn {
+        span,
+        id,
+        waker: None,
+        fut,
     }
 }
