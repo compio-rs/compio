@@ -23,6 +23,8 @@ use tracing::{
 struct Task {
     kind: String,
     id: u64,
+    /// The console displays this in a column of its own, when present.
+    name: Option<String>,
     size: u64,
     /// Label telling the executors of a thread-per-core application apart,
     /// which the console displays among the fields of the task.
@@ -158,6 +160,7 @@ impl Visit for TaskVisitor<'_> {
     fn record_str(&mut self, field: &Field, value: &str) {
         match field.name() {
             "kind" => self.0.kind = value.to_owned(),
+            "task.name" => self.0.name = Some(value.to_owned()),
             "thread" => self.0.thread = value.to_owned(),
             "loc.file" => self.0.file = value.to_owned(),
             _ => {}
@@ -311,6 +314,33 @@ fn blocking_closure_is_reported_as_a_blocking_task() {
     let task = &recorder.tasks()[0];
     assert_eq!(task.exits, 1, "and the span is left afterwards");
     assert!(task.waker_ops.is_empty(), "a closure has no waker");
+}
+
+#[test]
+fn task_can_be_named() {
+    let recorder = Recorder::default();
+    let _guard = recorder.install();
+    let exe = Executor::new();
+
+    let handle = exe.spawn_at(yield_now(), SpawnMeta::capture().named("named"));
+    block_on(&exe, handle).unwrap();
+
+    assert_eq!(recorder.spawned().name.as_deref(), Some("named"));
+}
+
+#[test]
+fn unnamed_task_has_no_name() {
+    let recorder = Recorder::default();
+    let _guard = recorder.install();
+    let exe = Executor::new();
+
+    block_on(&exe, exe.spawn(yield_now())).unwrap();
+
+    assert_eq!(
+        recorder.spawned().name,
+        None,
+        "the console leaves the column empty rather than showing a placeholder"
+    );
 }
 
 #[test]

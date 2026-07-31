@@ -56,11 +56,16 @@
 //! * A blocking task has no waker operations, since it is a closure rather than
 //!   a future. The console knows this from its `kind` and does not report a
 //!   lost waker for it.
+//! * A task spawned by an `async fn` is attributed to that function rather than
+//!   to its caller, since [`#[track_caller]`][async-track-caller] is a no-op on
+//!   `async fn`s and [`SpawnMeta`] therefore cannot be forwarded through them.
+//!   The ones compio spawns itself are named to make up for it.
 //! * The resources tab stays empty: timers and in-flight operations are not
 //!   instrumented yet.
 //!
 //! [`tokio-console`]: https://github.com/tokio-rs/console
 //! [`tracing`]: https://docs.rs/tracing
+//! [async-track-caller]: https://github.com/rust-lang/rust/issues/110011
 
 #[cfg(not(feature = "console"))]
 mod disabled;

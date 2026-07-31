@@ -70,8 +70,19 @@ std::thread_local! {
     };
 }
 
-fn spawn_span(kind: TaskKind, size: usize, loc: &'static Location<'static>) -> Span {
-    fn build(kind: TaskKind, size: usize, loc: &'static Location<'static>, thread: &str) -> Span {
+fn spawn_span(
+    kind: TaskKind,
+    size: usize,
+    loc: &'static Location<'static>,
+    name: Option<&'static str>,
+) -> Span {
+    fn build(
+        kind: TaskKind,
+        size: usize,
+        loc: &'static Location<'static>,
+        name: Option<&'static str>,
+        thread: &str,
+    ) -> Span {
         tracing::trace_span!(
             target: TARGET,
             // The console attributes polls of a task to the innermost task span
@@ -80,6 +91,9 @@ fn spawn_span(kind: TaskKind, size: usize, loc: &'static Location<'static>) -> S
             "runtime.spawn",
             kind = kind.as_str(),
             task.id = next_task_id(),
+            // The console gives this field a column of its own, and leaves it
+            // empty for the tasks that do not have it.
+            task.name = name,
             size.bytes = size,
             thread = thread,
             loc.file = loc.file(),
@@ -92,8 +106,8 @@ fn spawn_span(kind: TaskKind, size: usize, loc: &'static Location<'static>) -> S
     // spawned from another destructor still runs after. Report it unlabelled
     // rather than panicking on the way out.
     THREAD
-        .try_with(|thread| build(kind, size, loc, thread.as_str()))
-        .unwrap_or_else(|_| build(kind, size, loc, ""))
+        .try_with(|thread| build(kind, size, loc, name, thread.as_str()))
+        .unwrap_or_else(|_| build(kind, size, loc, name, ""))
 }
 
 fn waker_op(id: u64, op: WakerOp) {
@@ -113,6 +127,7 @@ pub struct SpawnMeta(Option<Reported>);
 #[derive(Debug, Clone, Copy)]
 struct Reported {
     loc: &'static Location<'static>,
+    name: Option<&'static str>,
 }
 
 impl SpawnMeta {
@@ -122,6 +137,19 @@ impl SpawnMeta {
     pub fn capture() -> Self {
         Self(Some(Reported {
             loc: Location::caller(),
+            name: None,
+        }))
+    }
+
+    /// Name the task, which the console displays in a column of its own.
+    ///
+    /// This is worth doing for the tasks a user did not spawn themselves, since
+    /// the location of those points into compio rather than into their code.
+    #[inline]
+    pub fn named(self, name: &'static str) -> Self {
+        Self(self.0.map(|it| Reported {
+            name: Some(name),
+            ..it
         }))
     }
 
@@ -142,7 +170,7 @@ impl SpawnMeta {
     /// nothing downstream has to know about the difference.
     fn span(self, kind: TaskKind, size: usize) -> Span {
         match self.0 {
-            Some(it) => spawn_span(kind, size, it.loc),
+            Some(it) => spawn_span(kind, size, it.loc, it.name),
             None => Span::none(),
         }
     }
