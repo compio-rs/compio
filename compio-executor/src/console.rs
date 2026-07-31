@@ -49,6 +49,10 @@
 //! * The blocking pool is part of the driver rather than the executor, so a
 //!   task spawned by `spawn_blocking` is reported as an ordinary task waiting
 //!   for an operation, and the time spent in the closure counts as idle.
+//! * A `block_on` nested inside a task — a runtime built within another one —
+//!   reports the two as separate tasks, but both of their spans are entered on
+//!   the same stack. The console attributes the polls to the inner one for as
+//!   long as that is the case.
 //! * The resources tab stays empty: timers and in-flight operations are not
 //!   instrumented yet.
 //!
@@ -61,13 +65,13 @@ mod disabled;
 mod enabled;
 
 #[cfg(not(feature = "console"))]
-pub use disabled::SpawnMeta;
-#[cfg(not(feature = "console"))]
 pub(crate) use disabled::TaskSpan;
-#[cfg(feature = "console")]
-pub use enabled::SpawnMeta;
+#[cfg(not(feature = "console"))]
+pub use disabled::{SpawnMeta, instrument_block_on};
 #[cfg(feature = "console")]
 pub(crate) use enabled::TaskSpan;
+#[cfg(feature = "console")]
+pub use enabled::{SpawnMeta, instrument_block_on};
 
 /// An operation on a task's waker, reported as a `runtime::waker` event.
 ///

@@ -5,7 +5,12 @@
 use std::{
     mem,
     panic::Location,
-    sync::atomic::{AtomicU64, Ordering},
+    pin::Pin,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
 };
 
 use tracing::Span;
@@ -120,5 +125,126 @@ impl TaskSpan {
         if let Some(id) = self.0.id() {
             waker_op(id.into_u64(), op);
         }
+    }
+}
+
+/// A [`Waker`] that reports its operations to the console, on behalf of a task
+/// that is not owned by the executor.
+struct ShimWaker {
+    inner: Waker,
+    id: u64,
+}
+
+impl ShimWaker {
+    const VTABLE: &'static RawWakerVTable = &RawWakerVTable::new(
+        Self::clone_waker,
+        Self::wake,
+        Self::wake_by_ref,
+        Self::drop_waker,
+    );
+
+    fn waker(inner: Waker, id: u64) -> Waker {
+        let this = Arc::new(Self { inner, id });
+        // The shim is a live waker of the task, and dropping it reports a
+        // `waker.drop`, so report the matching `waker.clone` here.
+        this.report(WakerOp::Clone);
+        let raw = RawWaker::new(Arc::into_raw(this).cast(), Self::VTABLE);
+        // SAFETY: the vtable operates on `Arc<ShimWaker>` pointers, which is
+        // what we just leaked.
+        unsafe { Waker::from_raw(raw) }
+    }
+
+    /// # Safety
+    ///
+    /// `ptr` must come from [`Arc::into_raw`] of a live `Arc<ShimWaker>`.
+    unsafe fn borrow(ptr: *const ()) -> &'static Self {
+        unsafe { &*ptr.cast::<Self>() }
+    }
+
+    /// # Safety
+    ///
+    /// `ptr` must come from [`Arc::into_raw`] of a live `Arc<ShimWaker>`, and
+    /// the caller must give up its ownership of it.
+    unsafe fn own(ptr: *const ()) -> Arc<Self> {
+        unsafe { Arc::from_raw(ptr.cast::<Self>()) }
+    }
+
+    unsafe fn clone_waker(ptr: *const ()) -> RawWaker {
+        unsafe { Self::borrow(ptr) }.report(WakerOp::Clone);
+        unsafe { Arc::increment_strong_count(ptr.cast::<Self>()) };
+        RawWaker::new(ptr, Self::VTABLE)
+    }
+
+    unsafe fn wake(ptr: *const ()) {
+        let this = unsafe { Self::own(ptr) };
+        this.report(WakerOp::Wake);
+        this.inner.wake_by_ref();
+    }
+
+    unsafe fn wake_by_ref(ptr: *const ()) {
+        let this = unsafe { Self::borrow(ptr) };
+        this.report(WakerOp::WakeByRef);
+        this.inner.wake_by_ref();
+    }
+
+    unsafe fn drop_waker(ptr: *const ()) {
+        let this = unsafe { Self::own(ptr) };
+        this.report(WakerOp::Drop);
+    }
+
+    #[inline]
+    fn report(&self, op: WakerOp) {
+        waker_op(self.id, op);
+    }
+}
+
+/// A future instrumented as a `block_on` task, returned by
+/// [`instrument_block_on`].
+struct BlockOn<F> {
+    span: Span,
+    id: Option<u64>,
+    /// The waker given to us by the runtime and the shim wrapping it, cached to
+    /// avoid rebuilding the shim on every poll.
+    waker: Option<(Waker, Waker)>,
+    fut: F,
+}
+
+impl<F: Future> Future for BlockOn<F> {
+    type Output = F::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: we never move out of `fut`, and all other fields are `Unpin`.
+        let this = unsafe { self.get_unchecked_mut() };
+        let fut = unsafe { Pin::new_unchecked(&mut this.fut) };
+
+        let _entered = this.span.enter();
+
+        let Some(id) = this.id else {
+            return fut.poll(cx);
+        };
+
+        if !matches!(&this.waker, Some((given, _)) if given.will_wake(cx.waker())) {
+            let given = cx.waker().clone();
+            let shim = ShimWaker::waker(given.clone(), id);
+            this.waker = Some((given, shim));
+        }
+
+        let shim = &this.waker.as_ref().expect("waker was just set").1;
+        fut.poll(&mut Context::from_waker(shim))
+    }
+}
+
+/// Instrument a future blocked on by the runtime, so that it shows up as a
+/// task in the console.
+#[track_caller]
+pub fn instrument_block_on<F: Future>(fut: F) -> impl Future<Output = F::Output> {
+    let span = spawn_span("block_on", mem::size_of::<F>(), Location::caller());
+    let id = span.id().map(|id| id.into_u64());
+
+    BlockOn {
+        span,
+        id,
+        waker: None,
+        fut,
     }
 }
