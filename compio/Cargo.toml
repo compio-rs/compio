@@ -191,7 +191,12 @@ compat-all = ["compat-tokio", "compat-futures"]
 enable_log = ["compio-log/enable_log"]
 
 # Instrumentation for `tokio-console`. See `compio::runtime::console`.
-console = ["dep:console-subscriber", "compio-runtime/console", "runtime"]
+console = [
+    "dep:console-subscriber",
+    "compio-runtime/console",
+    "compio-dispatcher?/console",
+    "runtime",
+]
 
 # Nightly features
 allocator_api = ["compio-buf/allocator_api", "compio-io?/allocator_api"]
