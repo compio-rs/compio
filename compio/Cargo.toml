@@ -44,6 +44,7 @@ compio-buf = { workspace = true, features = ["bumpalo"] }
 compio-runtime = { workspace = true, features = ["criterion"] }
 compio-macros = { workspace = true }
 
+console-subscriber = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 futures-channel = { workspace = true }
 futures-executor = { workspace = true }
@@ -256,6 +257,10 @@ required-features = ["time", "signal", "macros"]
 [[example]]
 name = "dispatcher"
 required-features = ["macros", "dispatcher", "sync", "net"]
+
+[[example]]
+name = "console"
+required-features = ["console", "time", "net", "dispatcher", "sync"]
 
 [[bench]]
 name = "fs"
