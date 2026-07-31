@@ -53,4 +53,7 @@ impl TaskSpan {
     pub(crate) fn enter(&self) -> EnterGuard<'_> {
         Entered(PhantomData)
     }
+
+    #[inline(always)]
+    pub(crate) fn waker_op(&self, _op: super::WakerOp) {}
 }

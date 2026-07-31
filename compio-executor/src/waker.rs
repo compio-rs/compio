@@ -3,7 +3,7 @@ use std::{
     task::{RawWaker, RawWakerVTable, Waker},
 };
 
-use crate::task::Task;
+use crate::{console::WakerOp, task::Task};
 
 impl Task {
     const VTABLE: &'static RawWakerVTable = {
@@ -17,19 +17,23 @@ impl Task {
 
     #[inline(always)]
     unsafe fn clone_waker(ptr: *const ()) -> RawWaker {
+        unsafe { Task::record_waker_op(ptr, WakerOp::Clone) };
         unsafe { Task::increment_count(ptr) };
         RawWaker::new(ptr, Self::VTABLE)
     }
 
     unsafe fn wake(ptr: *const ()) {
+        unsafe { Task::record_waker_op(ptr, WakerOp::Wake) };
         unsafe { Task::from_raw(ptr) }.schedule();
     }
 
     unsafe fn wake_by_ref(ptr: *const ()) {
+        unsafe { Task::record_waker_op(ptr, WakerOp::WakeByRef) };
         ManuallyDrop::new(unsafe { Task::from_raw(ptr) }).schedule();
     }
 
     unsafe fn drop_waker(ptr: *const ()) {
+        unsafe { Task::record_waker_op(ptr, WakerOp::Drop) };
         drop(unsafe { Task::from_raw(ptr) });
     }
 

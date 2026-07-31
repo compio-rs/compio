@@ -14,7 +14,7 @@ use compio_send_wrapper::SendWrapper;
 
 use crate::{
     AtomicPtr, PanicResult, Shared, UnsafeCell,
-    console::{SpawnMeta, TaskSpan},
+    console::{SpawnMeta, TaskSpan, WakerOp},
     queue::TaskId,
     task::{
         local::Local,
@@ -209,6 +209,20 @@ impl Task {
 
     pub unsafe fn increment_count(ptr: *const ()) {
         unsafe { &*(ptr as *const Header) }.state.inc();
+    }
+
+    /// Record a waker operation of this task for [`tokio-console`].
+    ///
+    /// This is a no-op unless the `console` feature is enabled.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must point to a live task allocation.
+    ///
+    /// [`tokio-console`]: crate::console
+    #[inline(always)]
+    pub(crate) unsafe fn record_waker_op(ptr: *const (), op: WakerOp) {
+        unsafe { &*(ptr as *const Header) }.span.waker_op(op);
     }
 
     pub fn schedule(&self) {

@@ -9,7 +9,9 @@
 //!
 //! * every task gets a `runtime.spawn` span, entered while the task is polled,
 //!   so that the console can compute poll counts, busy/idle/scheduled times and
-//!   the poll time histogram.
+//!   the poll time histogram;
+//! * every waker operation emits a `runtime::waker` event, so that the console
+//!   can compute waker counts and detect self-wakes and lost wakers.
 //!
 //! When the feature is disabled, all of this compiles down to nothing: the
 //! types in this module become zero-sized and every method an empty inlined
@@ -42,6 +44,14 @@
 //! * The console's data model has one runtime per process, while compio is
 //!   thread-per-core and has one executor per thread. The tasks of all of them
 //!   are listed together; the `thread` field tells them apart.
+//! * The subscriber has to be the global default, which
+//!   `console_subscriber::init` makes it. A span carries the subscriber it was
+//!   created with, but an event goes to whichever one is current on the thread
+//!   emitting it, so a thread-local subscriber misses the waker operations
+//!   other threads perform. Wakers cross threads routinely — that is what
+//!   waking a task from another executor is — and the clone and drop counts of
+//!   one that does no longer balance, leaving the console to report a lost
+//!   waker that is not lost.
 //! * The blocking pool is part of the driver rather than the executor, so a
 //!   task spawned by `spawn_blocking` is reported as an ordinary task waiting
 //!   for an operation, and the time spent in the closure counts as idle.
@@ -67,3 +77,32 @@ cfg_select! {
 
 pub use imp::SpawnMeta;
 pub(crate) use imp::TaskSpan;
+
+/// An operation on a task's waker, reported as a `runtime::waker` event.
+///
+/// Note that [`Waker::wake`](std::task::Waker::wake) does not call the `drop`
+/// implementation, so the console counts [`Self::Wake`] as both a wake and a
+/// drop. Emitting an additional [`Self::Drop`] for it would make the live waker
+/// count (clones - drops) go negative.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WakerOp {
+    Clone,
+    Drop,
+    Wake,
+    WakeByRef,
+}
+
+impl WakerOp {
+    /// The `op` value of the event, as expected by the console.
+    ///
+    /// Only the enabled variant reports anything, so only it reads this.
+    #[cfg(feature = "console")]
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Clone => "waker.clone",
+            Self::Drop => "waker.drop",
+            Self::Wake => "waker.wake",
+            Self::WakeByRef => "waker.wake_by_ref",
+        }
+    }
+}
