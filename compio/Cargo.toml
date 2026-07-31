@@ -256,6 +256,10 @@ required-features = ["time", "signal", "macros"]
 name = "dispatcher"
 required-features = ["macros", "dispatcher", "sync", "net"]
 
+[[example]]
+name = "console"
+required-features = ["console", "time", "net", "dispatcher", "sync"]
+
 [[bench]]
 name = "fs"
 harness = false

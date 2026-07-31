@@ -43,6 +43,43 @@ async fn main() {
 
 It's also possible to use the low-level driver (the proactor, without async executor) manually. See [`driver` example](./compio/examples/driver.rs).
 
+## Observability
+
+The `console` feature makes the runtime emit the [`tracing`] spans and events that [`tokio-console`] consumes, so compio applications can be inspected with it:
+
+```bash
+cargo add compio --features console
+```
+
+```toml
+# .cargo/config.toml
+#
+# `console-subscriber` refuses to run unless the runtime is known to be
+# instrumented; this is the escape hatch it provides for runtimes other than
+# tokio.
+[build]
+rustflags = ["--cfg", "console_without_tokio_unstable"]
+```
+
+```rust
+compio::console_subscriber::init();
+compio::runtime::Runtime::new().unwrap().block_on(async {
+    // ...
+});
+```
+
+Then run `tokio-console` to watch tasks, poll times and waker activity. The [`console` module docs](https://docs.rs/compio-runtime/latest/compio_runtime/console/) describe what is reported and what is not.
+
+The [`console` example](./compio/examples/console.rs) runs an echo server on a dispatcher, so that the console shows the tasks of a thread-per-core application spread over its worker threads, next to tasks that are wrong in the ways it warns about. It passes the cfg on the command line instead:
+
+```bash
+RUSTFLAGS="--cfg console_without_tokio_unstable" \
+    cargo run --example console --features console,time,net,dispatcher,sync
+```
+
+[`tracing`]: https://docs.rs/tracing
+[`tokio-console`]: https://github.com/tokio-rs/console
+
 ## Why the name?
 
 The name comes from "completion-based IO", and follows the non-existent convention that an async runtime should be named with a suffix "io".

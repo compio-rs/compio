@@ -18,6 +18,20 @@
 //! println!("{}", buffer);
 //! # })
 //! ```
+//!
+//! ## Observability
+//! The `console` feature instruments the runtime for [`tokio-console`] and
+//! re-exports [`console_subscriber`], so that an application observing compio
+//! does not have to keep a version of it in step with this one.
+//!
+//! See [`runtime::console`] for the setup it takes, and for what is reported
+//! and what is not.
+//!
+//! [`tokio-console`]: https://github.com/tokio-rs/console
+//! [`console_subscriber`]: https://docs.rs/console-subscriber
+// The module is only there with the `runtime` feature, so the link is spelled
+// out rather than resolved, like the two above.
+//! [`runtime::console`]: https://docs.rs/compio-runtime/latest/compio_runtime/console/
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(unused_features)]
