@@ -393,6 +393,7 @@ pub struct Connecting(Shared<ConnectionInner>);
 impl Connecting {
     conn_fn!();
 
+    #[track_caller]
     pub(crate) fn new(
         handle: ConnectionHandle,
         conn: quinn_proto::Connection,
@@ -405,6 +406,9 @@ impl Connecting {
         ));
         // Name the task: the caller of this is compio rather than user code, so
         // its location alone does not say what the task is.
+        // Unlike the endpoint's worker, this one can be attributed to the user:
+        // every path here is a plain `fn`, so the caller reaches us and the
+        // console tells a connection they made apart from one they accepted.
         let meta = SpawnMeta::capture().named("quic::connection");
         let worker = compio_runtime::spawn_at(
             {
