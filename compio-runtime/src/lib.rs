@@ -171,7 +171,16 @@ impl Runtime {
     /// Block on the future till it completes.
     #[track_caller]
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
-        let future = console::instrument_block_on(SpawnMeta::capture(), future);
+        self.block_on_at(future, SpawnMeta::capture())
+    }
+
+    /// Block on the future till it completes, attributing the task it shows up
+    /// as in the console to the given [`SpawnMeta`].
+    ///
+    /// This is for the runtimes compio blocks on itself, whose location points
+    /// into compio rather than into the code of whoever set them running.
+    pub fn block_on_at<F: Future>(&self, future: F, meta: SpawnMeta) -> F::Output {
+        let future = console::instrument_block_on(meta, future);
         self.enter(|| {
             let waker = self.waker();
             let mut context = Context::from_waker(&waker);
