@@ -10,6 +10,8 @@ use std::{
 
 use tracing::Span;
 
+use super::WakerOp;
+
 /// Target of the task spans. The console accepts any target for spans named
 /// `runtime.spawn`, but the target is displayed, so make it a useful one.
 const TARGET: &str = "compio::task";
@@ -70,6 +72,12 @@ fn spawn_span(kind: &'static str, size: usize, loc: &'static Location<'static>) 
         .unwrap_or_else(|_| build(kind, size, loc, ""))
 }
 
+fn waker_op(id: u64, op: WakerOp) {
+    // `task.id` of a waker event is the *span* id of the task, which is how the
+    // console looks the task up.
+    tracing::trace!(target: "runtime::waker", op = op.as_str(), task.id = id);
+}
+
 /// Metadata of a spawned task, reported to the console.
 ///
 /// The disabled variant of this is zero-sized, so nothing here may be
@@ -104,5 +112,13 @@ impl TaskSpan {
     #[inline]
     pub(crate) fn enter(&self) -> EnterGuard<'_> {
         self.0.enter()
+    }
+
+    /// Record a waker operation on this task.
+    #[inline]
+    pub(crate) fn waker_op(&self, op: WakerOp) {
+        if let Some(id) = self.0.id() {
+            waker_op(id.into_u64(), op);
+        }
     }
 }

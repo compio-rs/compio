@@ -9,7 +9,9 @@
 //!
 //! * every task gets a `runtime.spawn` span, entered while the task is polled,
 //!   so that the console can compute poll counts, busy/idle/scheduled times and
-//!   the poll time histogram.
+//!   the poll time histogram;
+//! * every waker operation emits a `runtime::waker` event, so that the console
+//!   can compute waker counts and detect self-wakes and lost wakers.
 //!
 //! When the feature is disabled, all of this compiles down to nothing: the
 //! types in this module become zero-sized and every method an empty inlined
@@ -66,3 +68,32 @@ pub(crate) use disabled::TaskSpan;
 pub use enabled::SpawnMeta;
 #[cfg(feature = "console")]
 pub(crate) use enabled::TaskSpan;
+
+/// An operation on a task's waker, reported as a `runtime::waker` event.
+///
+/// Note that [`Waker::wake`](std::task::Waker::wake) does not call the `drop`
+/// implementation, so the console counts [`Self::Wake`] as both a wake and a
+/// drop. Emitting an additional [`Self::Drop`] for it would make the live waker
+/// count (clones - drops) go negative.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WakerOp {
+    Clone,
+    Drop,
+    Wake,
+    WakeByRef,
+}
+
+impl WakerOp {
+    /// The `op` value of the event, as expected by the console.
+    ///
+    /// Only the enabled variant reports anything, so only it reads this.
+    #[cfg(feature = "console")]
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Clone => "waker.clone",
+            Self::Drop => "waker.drop",
+            Self::Wake => "waker.wake",
+            Self::WakeByRef => "waker.wake_by_ref",
+        }
+    }
+}
