@@ -209,8 +209,9 @@ fn untyped(field: &Field, value: &dyn std::fmt::Debug) -> ! {
     );
 }
 
+#[track_caller]
 fn block_on<F: Future>(exe: &Executor, fut: F) -> F::Output {
-    let fut = console::instrument_block_on(fut);
+    let fut = console::instrument_block_on(SpawnMeta::capture(), fut);
     let cx = &mut Context::from_waker(Waker::noop());
     let mut fut = pin!(fut);
     loop {

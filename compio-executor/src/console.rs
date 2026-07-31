@@ -152,7 +152,7 @@ mod parity {
     fn the_wrappers_pass_their_argument_through() {
         assert_eq!(instrument_blocking(SpawnMeta::untracked(), || 1u8)(), 1);
 
-        let fut = instrument_block_on(std::future::ready(1u8));
+        let fut = instrument_block_on(SpawnMeta::untracked(), std::future::ready(1u8));
         let _: &dyn Future<Output = u8> = &fut;
     }
 }
