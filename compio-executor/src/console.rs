@@ -118,3 +118,46 @@ impl WakerOp {
         }
     }
 }
+/// Assertions that the two variants above present the same surface.
+///
+/// Only one of them is ever compiled, and the one compiled by default is the
+/// one nearly every build uses: a difference between the two shows up as a
+/// build failure for whoever turns the feature on, long after the code that
+/// assumed the other shape was written.
+///
+/// Coercing each item to a function pointer pins its whole signature, and
+/// naming [`EnterGuard`] with a lifetime pins the shape of the guard: the
+/// enabled one borrows the span, so a disabled one that owns itself, and would
+/// let code outlive the span it is timing, does not have a lifetime to name.
+#[cfg(test)]
+mod parity {
+    use std::{fmt::Debug, future::Future};
+
+    use super::{imp::EnterGuard, *};
+
+    const _: fn() -> SpawnMeta = SpawnMeta::capture;
+    const _: fn(SpawnMeta, &'static str) -> SpawnMeta = SpawnMeta::named;
+    const _: fn() -> SpawnMeta = SpawnMeta::untracked;
+
+    const _: fn(SpawnMeta) -> TaskSpan = TaskSpan::new::<()>;
+    const _: for<'a> fn(&'a TaskSpan) -> EnterGuard<'a> = TaskSpan::enter;
+    const _: fn(&TaskSpan, WakerOp) = TaskSpan::waker_op;
+
+    /// [`SpawnMeta`] is copied out of a spawn call rather than moved, and
+    /// reaches the dispatcher's threads through its channel.
+    const fn meta<T: Copy + Send + Sync + Unpin + Debug + 'static>() {}
+    const _: () = meta::<SpawnMeta>();
+
+    /// [`TaskSpan`] sits in the task header, which threads share.
+    const fn span<T: Send + Sync + Debug>() {}
+    const _: () = span::<TaskSpan>();
+
+    /// The wrappers return `impl Trait`, so pin them by use instead.
+    #[test]
+    fn the_wrappers_pass_their_argument_through() {
+        assert_eq!(instrument_blocking(SpawnMeta::untracked(), || 1u8)(), 1);
+
+        let fut = instrument_block_on(std::future::ready(1u8));
+        let _: &dyn Future<Output = u8> = &fut;
+    }
+}
