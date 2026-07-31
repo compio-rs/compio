@@ -242,6 +242,9 @@ impl Runtime {
     ) -> JoinHandle<T> {
         use futures_util::FutureExt;
 
+        // The closure is what the console reports as the blocking task, so the
+        // future waiting for it below is not reported at all.
+        let f = console::instrument_blocking(meta, f);
         let op = Asyncify::new(move || {
             // TODO: Refactor blocking pool and handle panic within worker and propagate it
             // back
@@ -249,7 +252,7 @@ impl Runtime {
             BufResult(Ok(0), res)
         });
         let submit = self.submit(op);
-        self.spawn_at(submit.map(|res| res.1.into_inner()), meta)
+        self.spawn_at(submit.map(|res| res.1.into_inner()), SpawnMeta::untracked())
     }
 
     /// Attach a raw file descriptor/handle/socket to the runtime.
