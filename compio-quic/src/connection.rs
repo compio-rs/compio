@@ -9,7 +9,7 @@ use std::{
 
 use compio_buf::bytes::Bytes;
 use compio_log::Instrument;
-use compio_runtime::JoinHandle;
+use compio_runtime::{JoinHandle, SpawnMeta};
 use flume::{Receiver, Sender};
 use futures_util::{
     FutureExt, StreamExt,
@@ -403,10 +403,16 @@ impl Connecting {
         let inner = Shared::new(ConnectionInner::new(
             handle, conn, socket, events_tx, events_rx,
         ));
-        let worker = compio_runtime::spawn({
-            let inner = inner.clone();
-            async move { inner.run().await }.in_current_span()
-        });
+        // Name the task: the caller of this is compio rather than user code, so
+        // its location alone does not say what the task is.
+        let meta = SpawnMeta::capture().named("quic::connection");
+        let worker = compio_runtime::spawn_at(
+            {
+                let inner = inner.clone();
+                async move { inner.run().await }.in_current_span()
+            },
+            meta,
+        );
         inner.state().worker = Some(worker);
         Self(inner)
     }
