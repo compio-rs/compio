@@ -40,6 +40,10 @@ windows-sys = { workspace = true, features = [
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 
+[dev-dependencies]
+flume = { workspace = true, features = ["async"] }
+oneshot = { version = "0.2.1", features = ["async", "std"] }
+
 [target.'cfg(windows)'.dev-dependencies]
 windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
 
