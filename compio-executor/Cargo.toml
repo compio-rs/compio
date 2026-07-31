@@ -28,6 +28,7 @@ loom = { version = "0.7", features = ["checkpoint"] }
 
 [dev-dependencies]
 criterion = { workspace = true }
+tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [target.'cfg(unix)'.dev-dependencies]
