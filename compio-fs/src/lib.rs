@@ -46,7 +46,7 @@ pub mod pipe;
 #[deprecated(since = "0.12.0", note = "Use `compio::runtime::fd::AsyncFd` instead")]
 pub type AsyncFd<T> = compio_runtime::fd::AsyncFd<T>;
 
-use std::io;
+use std::{future::Future, io};
 
 #[cfg(unix)]
 pub(crate) fn path_string(path: impl AsRef<std::path::Path>) -> io::Result<std::ffi::CString> {
@@ -62,6 +62,32 @@ pub(crate) fn path_string(path: impl AsRef<std::path::Path>) -> io::Result<std::
 
 use compio_buf::{BufResult, IntoInner};
 use compio_driver::{SharedFd, op::AsyncifyFd};
+
+/// Run `f` on the blocking pool, reporting it to the console under `name`.
+///
+/// The tasks compio spawns itself are named, since their location points into
+/// compio rather than into the code that asked for the work. It still tells
+/// which fallback is running, so this is a plain `fn`: `#[track_caller]` is a
+/// no-op on an `async fn`, and every fallback would report this line instead
+/// of its own.
+#[allow(dead_code)] // Only some platforms have blocking fallbacks.
+#[track_caller]
+pub(crate) fn spawn_blocking_named<T: Send + 'static>(
+    name: &'static str,
+    f: impl (FnOnce() -> T) + Send + 'static,
+) -> impl Future<Output = T> {
+    use compio_runtime::{ResumeUnwind, SpawnMeta};
+
+    // Captured before the future, which is where the caller is lost.
+    let meta = SpawnMeta::capture().named(name);
+
+    async move {
+        compio_runtime::spawn_blocking_at(f, meta)
+            .await
+            .resume_unwind()
+            .expect("shouldn't be cancelled")
+    }
+}
 
 pub(crate) async fn spawn_blocking_with<T, R, F>(fd: SharedFd<T>, f: F) -> io::Result<R>
 where

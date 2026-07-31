@@ -2,12 +2,11 @@ use std::{io, os::windows::fs::OpenOptionsExt, path::Path};
 
 #[cfg(dirfd)]
 use compio_driver::ToSharedFd;
-use compio_runtime::ResumeUnwind;
 use windows_sys::Win32::Storage::FileSystem::{
     FILE_FLAG_OVERLAPPED, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
 };
 
-use crate::File;
+use crate::{File, spawn_blocking_named};
 
 #[derive(Clone, Debug)]
 pub struct OpenOptions {
@@ -82,10 +81,7 @@ impl OpenOptions {
     pub async fn open(&self, p: impl AsRef<Path>) -> io::Result<File> {
         let opt = std::fs::OpenOptions::from(self);
         let p = p.as_ref().to_path_buf();
-        let file = compio_runtime::spawn_blocking(move || opt.open(p))
-            .await
-            .resume_unwind()
-            .expect("shouldn't be cancelled")?;
+        let file = spawn_blocking_named("fs::open", move || opt.open(p)).await?;
         File::from_std(file)
     }
 
