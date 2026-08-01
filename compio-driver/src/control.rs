@@ -6,7 +6,7 @@ use crate::{DriverType, OpCode};
 
 cfg_select! {
     fusion => {
-        use crate::{PollOpCode, IourOpCode};
+        use crate::{IourOpCode, PollOpCode};
     }
     io_uring => {
         use crate::OpCode as IourOpCode;

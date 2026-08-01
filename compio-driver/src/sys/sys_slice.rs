@@ -10,6 +10,7 @@ use compio_buf::{IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 cfg_select! {
     unix => {
         use std::mem::MaybeUninit;
+
         use libc::iovec as Inner;
 
         fn new(ptr: *mut MaybeUninit<u8>, len: usize) -> Inner {
@@ -21,6 +22,7 @@ cfg_select! {
     }
     windows => {
         use std::mem::MaybeUninit;
+
         use windows_sys::Win32::Networking::WinSock::WSABUF as Inner;
 
         fn new(ptr: *mut MaybeUninit<u8>, len: usize) -> Inner {
