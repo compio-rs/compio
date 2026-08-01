@@ -29,15 +29,10 @@ use util::panic_guard;
 
 cfg_select! {
     loom => {
-        use loom::cell::UnsafeCell;
-        use loom::hint;
-        use loom::thread::yield_now;
-        use loom::sync::atomic::*;
+        use loom::{cell::UnsafeCell, hint, sync::atomic::*, thread::yield_now};
     }
     _ => {
-        use std::hint;
-        use std::thread::yield_now;
-        use std::sync::atomic::*;
+        use std::{hint, sync::atomic::*, thread::yield_now};
 
         #[repr(transparent)]
         struct UnsafeCell<T>(std::cell::UnsafeCell<T>);
