@@ -13,7 +13,7 @@ use std::{
 };
 
 use compio_log::{debug, instrument};
-use futures_util::{FutureExt, select};
+use pin_project_lite::pin_project;
 
 use crate::Runtime;
 
@@ -38,8 +38,8 @@ use crate::Runtime;
 /// println!("100 ms have elapsed");
 /// # })
 /// ```
-pub async fn sleep(duration: Duration) {
-    sleep_until(Instant::now() + duration).await
+pub fn sleep(duration: Duration) -> Sleep {
+    Sleep::new(Instant::now() + duration)
 }
 
 /// Waits until `deadline` is reached.
@@ -60,15 +60,8 @@ pub async fn sleep(duration: Duration) {
 /// println!("100 ms have elapsed");
 /// # })
 /// ```
-pub async fn sleep_until(deadline: Instant) {
-    create_timer(deadline).await
-}
-
-async fn create_timer(instant: std::time::Instant) {
-    let key = Runtime::with_current(|r| r.timer_runtime.borrow_mut().insert(instant));
-    if let Some(key) = key {
-        TimerFuture::new(key).await;
-    }
+pub fn sleep_until(deadline: Instant) -> Sleep {
+    Sleep::new(deadline)
 }
 
 /// Error returned by [`timeout`] or [`timeout_at`].
@@ -88,19 +81,53 @@ impl Error for Elapsed {}
 /// If the future completes before the duration has elapsed, then the completed
 /// value is returned. Otherwise, an error is returned and the future is
 /// cancelled.
-pub async fn timeout<F: Future>(duration: Duration, future: F) -> Result<F::Output, Elapsed> {
-    select! {
-        res = future.fuse() => Ok(res),
-        _ = sleep(duration).fuse() => Err(Elapsed(())),
-    }
+pub fn timeout<F: Future>(duration: Duration, future: F) -> Timeout<F> {
+    Timeout::new(Instant::now() + duration, future)
 }
 
 /// Require a [`Future`] to complete before the specified instant in time.
 ///
 /// If the future completes before the instant is reached, then the completed
 /// value is returned. Otherwise, an error is returned.
-pub async fn timeout_at<F: Future>(deadline: Instant, future: F) -> Result<F::Output, Elapsed> {
-    timeout(deadline - Instant::now(), future).await
+pub fn timeout_at<F: Future>(deadline: Instant, future: F) -> Timeout<F> {
+    Timeout::new(deadline, future)
+}
+
+pin_project! {
+    /// Future returned by [`timeout`](timeout) and [`timeout_at`](timeout_at).
+    #[must_use = "Futures do nothing unless polled."]
+    #[derive(Debug)]
+    pub struct Timeout<F> {
+        #[pin]
+        fut: F,
+        sleep: Sleep,
+    }
+}
+
+impl<F: Future> Timeout<F> {
+    fn new(instant: Instant, fut: F) -> Self {
+        Self {
+            fut,
+            sleep: Sleep::new(instant),
+        }
+    }
+}
+
+impl<F: Future> Future for Timeout<F> {
+    type Output = Result<F::Output, Elapsed>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let me = self.project();
+
+        if let Poll::Ready(out) = me.fut.poll(cx) {
+            return Poll::Ready(Ok(out));
+        }
+
+        match Pin::new(me.sleep).poll(cx) {
+            Poll::Ready(()) => Poll::Ready(Err(Elapsed(()))),
+            Poll::Pending => Poll::Pending,
+        }
+    }
 }
 
 /// Interval returned by [`interval`] and [`interval_at`]
@@ -341,11 +368,36 @@ impl TimerRuntime {
     }
 }
 
+/// Future returned by [`sleep`](sleep) and [`sleep_until`](sleep_until).
+#[must_use = "Futures do nothing unless polled."]
+#[derive(Debug)]
+pub struct Sleep(Option<TimerFuture>);
+
+impl Sleep {
+    #[inline]
+    fn new(instant: Instant) -> Self {
+        Sleep(TimerFuture::try_new(instant))
+    }
+}
+
+impl Future for Sleep {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Some(timer) = self.0.as_mut() {
+            Pin::new(timer).poll(cx)
+        } else {
+            Poll::Ready(())
+        }
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct TimerFuture(TimerKey);
 
 impl TimerFuture {
-    pub fn new(key: TimerKey) -> Self {
-        Self(key)
+    pub fn try_new(instant: Instant) -> Option<Self> {
+        Runtime::with_current(|r| r.timer_runtime.borrow_mut().insert(instant)).map(Self)
     }
 }
 
