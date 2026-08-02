@@ -2,6 +2,7 @@ use std::{
     io::{self, IoSlice},
     net::{Ipv4Addr, SocketAddrV4},
     pin::Pin,
+    time::Duration,
 };
 
 use compio_runtime::fd::PollFd;
@@ -109,6 +110,62 @@ async fn poll_write_vectored() {
 
     assert_eq!(read, 12);
     assert_eq!(buffer, b"Hello world!");
+}
+
+#[compio_macros::test]
+async fn poll_close_half_closes() {
+    let (mut tx, rx) = connected_pair();
+
+    futures_util::AsyncWriteExt::write_all(&mut tx, b"Hello world!")
+        .await
+        .unwrap();
+    futures_util::AsyncWriteExt::close(&mut tx).await.unwrap();
+
+    // The peer must see EOF while `tx` is still alive, so this cannot be the
+    // FIN that the kernel sends when the descriptor is dropped.
+    let mut buffer = Vec::with_capacity(32);
+    let read_to_eof = async {
+        let mut total = 0;
+        loop {
+            let read = std::future::poll_fn(|cx| {
+                rx.poll_read_with(cx, |rx| {
+                    let n = rx.recv(&mut buffer.spare_capacity_mut()[total..])?;
+                    unsafe { buffer.set_len(total + n) };
+                    Ok(n)
+                })
+            })
+            .await
+            .unwrap();
+            if read == 0 {
+                break;
+            }
+            total += read;
+        }
+    };
+    compio_runtime::time::timeout(Duration::from_secs(10), read_to_eof)
+        .await
+        .expect("closing the write half did not make the peer observe EOF");
+
+    assert_eq!(buffer, b"Hello world!");
+    drop(tx);
+}
+
+#[cfg(unix)]
+#[compio_macros::test]
+async fn poll_close_ignores_sources_without_a_write_half() {
+    use std::os::fd::{FromRawFd, OwnedFd};
+
+    // A pipe has no write half to shut down, so closing it must still succeed.
+    let mut fds = [0; 2];
+    let rc = unsafe { libc::pipe(fds.as_mut_ptr()) };
+    assert_eq!(rc, 0, "{}", io::Error::last_os_error());
+    let [reader, writer] = fds;
+    let reader = unsafe { OwnedFd::from_raw_fd(reader) };
+    let writer = unsafe { OwnedFd::from_raw_fd(writer) };
+
+    PollFd::new(writer).unwrap().shutdown_write().unwrap();
+
+    drop(reader);
 }
 
 fn connected_pair() -> (PollFd<Socket>, PollFd<Socket>) {

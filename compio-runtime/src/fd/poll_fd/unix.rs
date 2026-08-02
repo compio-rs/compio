@@ -122,3 +122,8 @@ impl<T: AsFd> Deref for PollFd<T> {
         &self.inner
     }
 }
+
+pub fn shutdown_write(fd: BorrowedFd<'_>) -> io::Result<()> {
+    compio_driver::syscall!(libc::shutdown(fd.as_raw_fd(), libc::SHUT_WR))?;
+    Ok(())
+}

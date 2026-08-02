@@ -282,3 +282,10 @@ impl<T: AsFd> IntoInner for WaitWSAEvent<T> {
         self.events
     }
 }
+
+pub fn shutdown_write(fd: BorrowedFd<'_>) -> io::Result<()> {
+    use windows_sys::Win32::Networking::WinSock::{SD_SEND, shutdown};
+
+    syscall!(SOCKET, shutdown(fd.as_raw_fd() as _, SD_SEND as _))?;
+    Ok(())
+}
