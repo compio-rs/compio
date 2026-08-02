@@ -163,6 +163,26 @@ where
     pub fn poll_write(&self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
         self.poll_write_with(cx, |fd| std::io::Write::write(&mut &*fd, buf))
     }
+
+    /// Poll for write readiness and write data from a slice of buffers.
+    ///
+    /// Whether this is more efficient than [`poll_write`] depends on the
+    /// source: it is a single `writev` for sockets and files, while other
+    /// sources may fall back to writing the first non-empty buffer.
+    ///
+    /// [`poll_write`]: Self::poll_write
+    pub fn poll_write_vectored(
+        &self,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        self.poll_write_with(cx, |fd| std::io::Write::write_vectored(&mut &*fd, bufs))
+    }
+
+    /// Poll for write readiness and flush the source.
+    pub fn poll_flush(&self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.poll_write_with(cx, |fd| std::io::Write::flush(&mut &*fd))
+    }
 }
 
 impl<T: AsFd> IntoInner for PollFd<T> {
@@ -255,8 +275,16 @@ where
         (*self).poll_write(cx, buf)
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Poll::Ready(Ok(()))
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        (*self).poll_write_vectored(cx, bufs)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        (*self).poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
@@ -276,8 +304,16 @@ where
         (*self).poll_write(cx, buf)
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Poll::Ready(Ok(()))
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        (*self).poll_write_vectored(cx, bufs)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        (*self).poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
