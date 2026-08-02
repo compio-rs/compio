@@ -1,6 +1,7 @@
 use std::{
-    io,
+    io::{self, IoSlice},
     net::{Ipv4Addr, SocketAddrV4},
+    pin::Pin,
 };
 
 use compio_runtime::fd::PollFd;
@@ -72,4 +73,56 @@ async fn poll_connect() {
     assert_eq!(write, 12);
     assert_eq!(read, 12);
     assert_eq!(buffer, b"Hello world!");
+}
+
+#[compio_macros::test]
+async fn poll_write_vectored() {
+    let (mut tx, rx) = connected_pair();
+
+    // Exercise the `AsyncWrite` impl rather than the inherent method: the trait's
+    // default only writes the first non-empty buffer.
+    let bufs = [
+        IoSlice::new(b"Hello"),
+        IoSlice::new(b" "),
+        IoSlice::new(b"world!"),
+    ];
+    let written = std::future::poll_fn(|cx| {
+        futures_util::AsyncWrite::poll_write_vectored(Pin::new(&mut tx), cx, &bufs)
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        written, 12,
+        "expected a single writev covering every buffer"
+    );
+
+    let mut buffer = Vec::with_capacity(12);
+    let read = std::future::poll_fn(|cx| {
+        rx.poll_read_with(cx, |rx| {
+            let n = rx.recv(buffer.spare_capacity_mut())?;
+            unsafe { buffer.set_len(n) };
+            Ok(n)
+        })
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(read, 12);
+    assert_eq!(buffer, b"Hello world!");
+}
+
+fn connected_pair() -> (PollFd<Socket>, PollFd<Socket>) {
+    let listener = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
+    listener
+        .bind(&SockAddr::from(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)))
+        .unwrap();
+    listener.listen(1).unwrap();
+
+    let client = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
+    client.connect(&listener.local_addr().unwrap()).unwrap();
+    let (server, _) = listener.accept().unwrap();
+
+    client.set_nonblocking(true).unwrap();
+    server.set_nonblocking(true).unwrap();
+    (PollFd::new(client).unwrap(), PollFd::new(server).unwrap())
 }
