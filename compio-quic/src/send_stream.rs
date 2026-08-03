@@ -537,7 +537,7 @@ pub(crate) mod h3_impl {
         ) -> Poll<Result<usize, StreamErrorIncoming>> {
             // This signifies a bug in implementation
             debug_assert!(
-                self.buf.is_some(),
+                self.buf.is_none(),
                 "poll_send called while send stream is not ready"
             );
 
