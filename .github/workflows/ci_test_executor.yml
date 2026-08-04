@@ -31,6 +31,7 @@ env:
 jobs:
   test_executor:
     strategy:
+      fail-fast: false
       matrix:
         setup:
           - os: 'ubuntu-24.04'
