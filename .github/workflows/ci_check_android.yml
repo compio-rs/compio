@@ -26,6 +26,7 @@ jobs:
   check_android:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         target:
           - aarch64-linux-android
