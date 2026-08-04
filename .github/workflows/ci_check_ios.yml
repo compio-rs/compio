@@ -26,6 +26,7 @@ jobs:
   check_ios:
     runs-on: macos-latest
     strategy:
+      fail-fast: false
       matrix:
         target:
           - aarch64-apple-ios

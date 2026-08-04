@@ -30,6 +30,7 @@ jobs:
   test_asan:
     runs-on: ${{ matrix.setup.os }}
     strategy:
+      fail-fast: false
       matrix:
         setup:
           - os: 'ubuntu-22.04'
