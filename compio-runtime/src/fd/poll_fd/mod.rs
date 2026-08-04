@@ -163,6 +163,44 @@ where
     pub fn poll_write(&self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
         self.poll_write_with(cx, |fd| std::io::Write::write(&mut &*fd, buf))
     }
+
+    /// Poll for write readiness and write data from a slice of buffers.
+    ///
+    /// Whether this is more efficient than [`poll_write`] depends on the
+    /// source: it is a single `writev` for sockets and files, while other
+    /// sources may fall back to writing the first non-empty buffer.
+    ///
+    /// [`poll_write`]: Self::poll_write
+    pub fn poll_write_vectored(
+        &self,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        self.poll_write_with(cx, |fd| std::io::Write::write_vectored(&mut &*fd, bufs))
+    }
+
+    /// Poll for write readiness and flush the source.
+    pub fn poll_flush(&self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.poll_write_with(cx, |fd| std::io::Write::flush(&mut &*fd))
+    }
+}
+
+impl<T: AsFd> PollFd<T> {
+    /// Shut down the write half, so the peer of a connected socket observes the
+    /// end of the stream while this side can still read.
+    ///
+    /// Sources that cannot be half-closed report success and are left as they
+    /// are, since there is no write half to shut down. Shutting down twice is
+    /// successful as well.
+    ///
+    /// Like the `shutdown` methods in `std`, this does not flush the source.
+    fn shutdown_write(&self) -> io::Result<()> {
+        match sys::shutdown_write(self.0.as_fd()) {
+            // Not a socket, or a socket that never reached a connected state.
+            Err(e) if is_not_a_connected_socket(&e) => Ok(()),
+            result => result,
+        }
+    }
 }
 
 impl<T: AsFd> IntoInner for PollFd<T> {
@@ -217,6 +255,24 @@ fn is_would_block(e: &io::Error) -> bool {
     }
 }
 
+/// Whether the error says that the source is not a socket, or is a socket that
+/// never reached a connected state.
+fn is_not_a_connected_socket(e: &io::Error) -> bool {
+    cfg_select! {
+        unix => {
+            matches!(
+                e.raw_os_error(),
+                Some(libc::ENOTSOCK) | Some(libc::ENOTCONN)
+            )
+        }
+        windows => {
+            use windows_sys::Win32::Networking::WinSock::{WSAENOTCONN, WSAENOTSOCK};
+
+            matches!(e.raw_os_error(), Some(WSAENOTSOCK) | Some(WSAENOTCONN))
+        }
+    }
+}
+
 impl<T: AsFd + 'static> futures_util::AsyncRead for &PollFd<T>
 where
     for<'a> &'a T: std::io::Read,
@@ -255,12 +311,22 @@ where
         (*self).poll_write(cx, buf)
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Poll::Ready(Ok(()))
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        (*self).poll_write_vectored(cx, bufs)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        (*self).poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Poll::Ready(Ok(()))
+        // Deliberately not flushing: the write readiness registration is shared
+        // with any pending write, so flushing here would steal its waker.
+        Poll::Ready(self.shutdown_write())
     }
 }
 
@@ -276,11 +342,21 @@ where
         (*self).poll_write(cx, buf)
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Poll::Ready(Ok(()))
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        (*self).poll_write_vectored(cx, bufs)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        (*self).poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Poll::Ready(Ok(()))
+        // Deliberately not flushing: the write readiness registration is shared
+        // with any pending write, so flushing here would steal its waker.
+        Poll::Ready(self.shutdown_write())
     }
 }

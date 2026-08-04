@@ -282,3 +282,17 @@ impl<T: AsFd> IntoInner for WaitWSAEvent<T> {
         self.events
     }
 }
+
+pub fn shutdown_write(fd: BorrowedFd<'_>) -> io::Result<()> {
+    use windows_sys::Win32::Networking::WinSock::{SD_SEND, shutdown};
+
+    match fd {
+        // Only sockets have a write half, and `shutdown` would need Winsock to
+        // be initialized just to tell us that a handle is not a socket.
+        BorrowedFd::File(_) => Ok(()),
+        BorrowedFd::Socket(socket) => {
+            syscall!(SOCKET, shutdown(socket.as_raw_socket() as _, SD_SEND as _))?;
+            Ok(())
+        }
+    }
+}
