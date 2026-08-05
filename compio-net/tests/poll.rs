@@ -187,9 +187,7 @@ async fn poll_concurrent_read_write_readiness() {
             match peer.recv(buffer.spare_capacity_mut()) {
                 Ok(0) => panic!("unexpected EOF while draining"),
                 Ok(n) => {
-                    unsafe { buffer.set_len(n) };
                     drained += n;
-                    buffer.clear();
                 }
                 Err(e) if is_would_block(&e) => break,
                 Err(e) => panic!("failed to drain peer: {e}"),
@@ -200,10 +198,13 @@ async fn poll_concurrent_read_write_readiness() {
         write_done_rx.await.unwrap();
     };
 
-    let (read, write, ()) = futures_util::join!(read_task, write_task, peer_task);
+    let (read, write, ()) = compio_runtime::time::timeout(Duration::from_secs(10), async {
+        futures_util::join!(read_task, write_task, peer_task)
+    })
+    .await
+    .expect("poll readiness tasks did not complete in time");
     read.unwrap();
     write.unwrap();
-}
 
 #[compio_macros::test]
 async fn poll_flush_reaches_the_source() {
