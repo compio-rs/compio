@@ -205,6 +205,7 @@ async fn poll_concurrent_read_write_readiness() {
     .expect("poll readiness tasks did not complete in time");
     read.unwrap();
     write.unwrap();
+}
 
 #[compio_macros::test]
 async fn poll_flush_reaches_the_source() {
