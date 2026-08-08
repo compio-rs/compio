@@ -51,6 +51,9 @@ futures-util = { workspace = true }
 tokio = ["dep:tokio"]
 futures = ["dep:async-io", "dep:futures-util"]
 
+# Instrumentation for `tokio-console`. See `compio_runtime::console`.
+console = ["compio-runtime/console"]
+
 [[test]]
 name = "net"
 required-features = ["tokio"]

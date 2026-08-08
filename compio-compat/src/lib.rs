@@ -22,7 +22,7 @@ use std::{
 };
 
 use compio_log::error;
-use compio_runtime::Runtime;
+use compio_runtime::{Runtime, SpawnMeta, console};
 use mod_use::mod_use;
 
 mod_use![sys];
@@ -41,7 +41,21 @@ impl<A: Adapter> RuntimeCompat<A> {
     }
 
     /// Executes the given future on the runtime, driving it to completion.
-    pub async fn execute<F: Future>(&self, f: F) -> F::Output {
+    ///
+    /// This is a plain `fn` so that the console can report the caller:
+    /// `#[track_caller]` is a no-op on an `async fn`.
+    #[track_caller]
+    pub fn execute<F: Future>(&self, f: F) -> impl Future<Output = F::Output> {
+        // The console has no kind of its own for this, and reports it the way
+        // it reports a future the runtime blocks on, so the name is what tells
+        // the two apart. Captured before the future, which is where the caller
+        // is lost.
+        let f = console::instrument_execute(SpawnMeta::capture().named("execute"), f);
+
+        self.drive(f)
+    }
+
+    async fn drive<F: Future>(&self, f: F) -> F::Output {
         let waker = self.runtime.waker();
         let mut context = Context::from_waker(&waker);
         let mut future = std::pin::pin!(f);
