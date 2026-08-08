@@ -65,7 +65,10 @@
 //! * A task spawned by an `async fn` is attributed to that function rather than
 //!   to its caller, since [`#[track_caller]`][async-track-caller] is a no-op on
 //!   `async fn`s and [`SpawnMeta`] therefore cannot be forwarded through them.
-//!   The ones compio spawns itself are named to make up for it.
+//!   The ones compio spawns itself are named to make up for it. A crate willing
+//!   to build on nightly can lift this for its own `async fn`s with the
+//!   `async_fn_track_caller` feature, which attributes them to the `.await` of
+//!   the future they return.
 //! * The resources tab stays empty: timers and in-flight operations are not
 //!   instrumented yet.
 //! * A task's span is closed even when the thread is unwinding, or the console

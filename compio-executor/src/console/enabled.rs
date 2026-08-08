@@ -23,10 +23,11 @@ const TARGET: &str = "compio::task";
 
 /// What a task span reports the task as being.
 ///
-/// The console considers a task whose kind is not [`Self::Task`] to not be
-/// driven by a future, and skips the lints that only make sense for one: the
-/// self-wake ratio, the lost waker, the never-yielded and the large future
-/// ones.
+/// The console knows [`Self::Blocking`] and [`Self::BlockOn`] by name as the
+/// kinds it does not drive itself, and skips the lints that only make sense
+/// for a task it does: the self-wake ratio, the lost waker, the never-yielded
+/// and the large future ones. It treats every other kind, including one it
+/// does not know, as a task of its own.
 #[derive(Debug, Clone, Copy)]
 enum TaskKind {
     Task,
