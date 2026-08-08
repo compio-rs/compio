@@ -3,7 +3,7 @@ use std::{fmt::Debug, ptr::NonNull};
 use compio_send_wrapper::SendWrapper;
 use slotmap::new_key_type;
 
-use crate::{Shared, task::Task, util::assert_not_impl};
+use crate::{Shared, console::SpawnMeta, task::Task, util::assert_not_impl};
 
 new_key_type! { pub struct TaskId; }
 
@@ -136,12 +136,13 @@ impl TaskQueue {
         shared: NonNull<Shared>,
         tracker: SendWrapper<()>,
         future: F,
+        meta: SpawnMeta,
     ) -> Task {
         unsafe {
             self.with_inner(|inner| {
                 let mut ret = None;
                 let key = inner.map.insert_with_key(|key| {
-                    let [ptr, r] = Task::new::<F, 2>(key, shared, tracker, future);
+                    let [ptr, r] = Task::new::<F, 2>(key, shared, tracker, future, meta);
                     ret = Some(r);
                     Item {
                         prev: None,
