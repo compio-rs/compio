@@ -14,6 +14,7 @@ use compio_send_wrapper::SendWrapper;
 
 use crate::{
     AtomicPtr, PanicResult, Shared, UnsafeCell,
+    console::{SpawnMeta, TaskSpan, WakerOp},
     queue::TaskId,
     task::{
         local::Local,
@@ -60,6 +61,8 @@ struct Header {
     tracker: ManuallyDrop<SendWrapper<()>>,
     shared: AtomicPtr<Shared>,
     waker: UnsafeCell<MaybeUninit<Waker>>,
+    /// Zero-sized unless the `console` feature is enabled.
+    span: TaskSpan,
 }
 
 union FutureState<F: Future> {
@@ -154,6 +157,11 @@ impl<F: Future + 'static> TaskAlloc<F> {
     }
 
     unsafe fn dealloc(header: NonNull<Header>) {
+        // Unlike `drop_future`, this runs during a panic as well: the header
+        // holds the task's span, and leaking it would leave the task running in
+        // the console forever. The subscriber is then reentered while
+        // unwinding, so a panic inside it aborts rather than unwinds.
+        //
         // SAFETY: The caller guarantees that the pointer is valid and properly aligned
         // for `TaskAlloc<F>`, and that no other reference to the allocation
         // exists.
@@ -167,6 +175,7 @@ impl Task {
         shared: NonNull<Shared>,
         tracker: SendWrapper<()>,
         future: F,
+        meta: SpawnMeta,
     ) -> [Task; N] {
         let alloc = Box::new(TaskAlloc {
             header: Header {
@@ -176,6 +185,7 @@ impl Task {
                 tracker: ManuallyDrop::new(tracker),
                 shared: AtomicPtr::new(shared.as_ptr()),
                 waker: UnsafeCell::new(MaybeUninit::uninit()),
+                span: TaskSpan::new::<F>(meta),
             },
             future: UnsafeCell::new(FutureState {
                 future: ManuallyDrop::new(future),
@@ -199,6 +209,20 @@ impl Task {
 
     pub unsafe fn increment_count(ptr: *const ()) {
         unsafe { &*(ptr as *const Header) }.state.inc();
+    }
+
+    /// Record a waker operation of this task for [`tokio-console`].
+    ///
+    /// This is a no-op unless the `console` feature is enabled.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must point to a live task allocation.
+    ///
+    /// [`tokio-console`]: crate::console
+    #[inline(always)]
+    pub(crate) unsafe fn record_waker_op(ptr: *const (), op: WakerOp) {
+        unsafe { &*(ptr as *const Header) }.span.waker_op(op);
     }
 
     pub fn schedule(&self) {
@@ -238,6 +262,10 @@ impl Task {
             debug!(?state, "Cancelled");
             return Poll::Ready(());
         }
+
+        // The console counts one poll of the task per entry of its span, and
+        // measures the time it stays entered as the busy time of the task.
+        let _entered = header.span.enter();
 
         self.with_waker(|waker| {
             let ctx = &mut Context::from_waker(waker);
@@ -385,8 +413,10 @@ impl Drop for Task {
         // The future/result and waker types are unwind-unsafe (ManuallyDrop in
         // union, MaybeUninit). Dropping them during an existing panic could
         // trigger a second panic, which would be UB. Skip content drops but
-        // still deallocate the memory since dealloc does not run destructors
-        // on the inner types.
+        // still deallocate the memory, since dealloc does not run destructors
+        // on the inner types. (It does run the one of the task span of the
+        // `console` feature, which is wanted: the console would otherwise show
+        // the task as running forever.)
         if ::std::thread::panicking() {
             unsafe { (header.vtable.dealloc)(self.0) }
             return;
@@ -440,9 +470,14 @@ mod test {
         }
     }
 
-    /// All dropping is handled manually by [`Executor`]. The memory is
+    /// All dropping is handled manually by [`Executor`], and the memory is
     /// deallocated by [`Task`].
     ///
+    /// The `console` feature is the one exception: it puts a `tracing` span in
+    /// the header, which is dropped along with the allocation by
+    /// [`TaskAlloc::dealloc`]. Asserting the difference rather than skipping
+    /// the assertion keeps it meaningful in both configurations.
+    ///
     /// [`Executor`]: crate::Executor
-    const _: () = assert!(!needs_drop::<TaskAlloc<NeedsDrop>>());
+    const _: () = assert!(needs_drop::<TaskAlloc<NeedsDrop>>() == cfg!(feature = "console"));
 }

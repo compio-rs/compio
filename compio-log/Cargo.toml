@@ -9,7 +9,7 @@ license = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-tracing = { version = "0.1", default-features = false }
+tracing = { workspace = true }
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true }

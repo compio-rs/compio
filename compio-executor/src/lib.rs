@@ -15,6 +15,7 @@ use std::{any::Any, fmt::Debug, ptr::NonNull, task::Waker};
 
 use crate::queue::{TaskId, TaskQueue};
 
+pub mod console;
 mod join_handle;
 mod queue;
 mod task;
@@ -23,6 +24,7 @@ mod waker;
 
 use compio_log::{instrument, trace};
 use compio_send_wrapper::SendWrapper;
+pub use console::SpawnMeta;
 use crossbeam_queue::ArrayQueue;
 pub use join_handle::{JoinError, JoinHandle, ResumeUnwind};
 use util::panic_guard;
@@ -173,12 +175,25 @@ impl Executor {
     }
 
     /// Spawn a future onto the executor.
+    #[track_caller]
     pub fn spawn<F: Future + 'static>(&self, fut: F) -> JoinHandle<F::Output> {
+        self.spawn_at(fut, SpawnMeta::capture())
+    }
+
+    /// Spawn a future onto the executor, attributing it to `meta`.
+    ///
+    /// This is only useful for wrappers around [`spawn`] that want
+    /// [`tokio-console`] to blame their own caller instead of themselves;
+    /// [`SpawnMeta`] is a zero-sized no-op without the `console` feature.
+    ///
+    /// [`spawn`]: Self::spawn
+    /// [`tokio-console`]: crate::console
+    pub fn spawn_at<F: Future + 'static>(&self, fut: F, meta: SpawnMeta) -> JoinHandle<F::Output> {
         let shared = self.shared();
         let tracker = shared.queue.tracker();
         // SAFETY: Executor cannot be sent to ther thread
         let queue = unsafe { shared.queue.get_unchecked() };
-        let task = queue.insert(self.ptr, tracker, fut);
+        let task = queue.insert(self.ptr, tracker, fut, meta);
 
         JoinHandle::new(task)
     }
