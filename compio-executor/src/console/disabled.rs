@@ -93,3 +93,15 @@ pub fn instrument_blocking<T, F: FnOnce() -> T>(_meta: SpawnMeta, f: F) -> impl 
 pub fn instrument_block_on<F: Future>(_meta: SpawnMeta, fut: F) -> impl Future<Output = F::Output> {
     fut
 }
+
+/// Instrument a future executed by a compatibility layer, so that it shows up
+/// as a task in the console.
+///
+/// This is a no-op unless the `console` feature is enabled.
+///
+/// Plumbing for `compio-compat`, not covered by this crate's semver.
+#[doc(hidden)]
+#[inline(always)]
+pub fn instrument_execute<F: Future>(_meta: SpawnMeta, fut: F) -> impl Future<Output = F::Output> {
+    fut
+}

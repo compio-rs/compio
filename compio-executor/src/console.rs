@@ -91,7 +91,7 @@ cfg_select! {
 }
 
 pub(crate) use imp::TaskSpan;
-pub use imp::{SpawnMeta, instrument_block_on, instrument_blocking};
+pub use imp::{SpawnMeta, instrument_block_on, instrument_blocking, instrument_execute};
 
 /// An operation on a task's waker, reported as a `runtime::waker` event.
 ///
@@ -161,6 +161,9 @@ mod parity {
         assert_eq!(instrument_blocking(SpawnMeta::untracked(), || 1u8)(), 1);
 
         let fut = instrument_block_on(SpawnMeta::untracked(), std::future::ready(1u8));
+        let _: &dyn Future<Output = u8> = &fut;
+
+        let fut = instrument_execute(SpawnMeta::untracked(), std::future::ready(1u8));
         let _: &dyn Future<Output = u8> = &fut;
     }
 }

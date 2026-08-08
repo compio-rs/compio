@@ -312,6 +312,20 @@ pub fn instrument_blocking<T, F: FnOnce() -> T>(meta: SpawnMeta, f: F) -> impl F
     }
 }
 
+/// Instrument a future executed by a compatibility layer, so that it shows up
+/// as a task in the console.
+///
+/// `compio-compat` executes a future the way the runtime blocks on one, only
+/// driven by a foreign event loop instead of by a loop of its own, so report
+/// it as the same kind of task: the console has none that fits it better, and
+/// would take a kind of its own for one it drives itself.
+///
+/// Plumbing for `compio-compat`, not covered by this crate's semver.
+#[doc(hidden)]
+pub fn instrument_execute<F: Future>(meta: SpawnMeta, fut: F) -> impl Future<Output = F::Output> {
+    instrument_block_on(meta, fut)
+}
+
 /// Instrument a future blocked on by the runtime, so that it shows up as a
 /// task in the console.
 ///

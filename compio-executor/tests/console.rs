@@ -219,9 +219,9 @@ fn untyped(field: &Field, value: &dyn std::fmt::Debug) -> ! {
     );
 }
 
-#[track_caller]
-fn block_on<F: Future>(exe: &Executor, fut: F) -> F::Output {
-    let fut = console::instrument_block_on(SpawnMeta::capture(), fut);
+/// Poll an instrumented future to completion, ticking the executor whenever it
+/// has nothing to do, the way a runtime drives the future it was handed.
+fn drive<F: Future>(exe: &Executor, fut: F) -> F::Output {
     let cx = &mut Context::from_waker(Waker::noop());
     let mut fut = pin!(fut);
     loop {
@@ -230,6 +230,18 @@ fn block_on<F: Future>(exe: &Executor, fut: F) -> F::Output {
         }
         exe.tick();
     }
+}
+
+#[track_caller]
+fn block_on<F: Future>(exe: &Executor, fut: F) -> F::Output {
+    drive(exe, console::instrument_block_on(SpawnMeta::capture(), fut))
+}
+
+/// Drive a future the way `compio-compat` does: from a foreign event loop,
+/// rather than from one of the runtime's own.
+#[track_caller]
+fn execute<F: Future>(exe: &Executor, fut: F) -> F::Output {
+    drive(exe, console::instrument_execute(SpawnMeta::capture(), fut))
 }
 
 async fn yield_now() {
@@ -329,6 +341,29 @@ fn blocking_closure_is_reported_as_a_blocking_task() {
 }
 
 #[test]
+fn executed_future_is_reported_the_way_a_blocked_on_one_is() {
+    let recorder = Recorder::default();
+    let _guard = recorder.install();
+    let exe = Executor::new();
+
+    execute(&exe, async {
+        exe.spawn(yield_now()).await.unwrap();
+    });
+
+    // Whoever executes the future has to name it to tell it apart from one the
+    // runtime blocks on; the console has no kind of its own for it.
+    let tasks = recorder.tasks();
+    assert_eq!(tasks.len(), 2);
+    assert_eq!(tasks[0].kind, "block_on");
+    assert_eq!(tasks[0].name, None);
+    assert_eq!(tasks[0].file, file!(), "the metadata it was given is used");
+    assert_eq!(tasks[1].kind, "task");
+    assert!(tasks[0].polls >= 2 && tasks[1].polls >= 2);
+    assert_eq!(tasks[0].live_wakers(), 0);
+    assert_eq!(tasks[1].live_wakers(), 0);
+}
+
+#[test]
 fn task_can_be_named() {
     let recorder = Recorder::default();
     let _guard = recorder.install();
@@ -380,15 +415,7 @@ fn untracked_blocked_on_future_is_not_reported() {
     // rather than a shim reporting the operations on it.
     let handle = exe.spawn(yield_now());
     let fut = console::instrument_block_on(SpawnMeta::untracked(), handle);
-    let cx = &mut Context::from_waker(Waker::noop());
-    let mut fut = pin!(fut);
-    loop {
-        if let Poll::Ready(res) = fut.as_mut().poll(cx) {
-            res.unwrap();
-            break;
-        }
-        exe.tick();
-    }
+    drive(&exe, fut).unwrap();
 
     let tasks = recorder.tasks();
     assert_eq!(tasks.len(), 1, "only the spawned task: {tasks:?}");
