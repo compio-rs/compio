@@ -49,7 +49,7 @@ impl Handler<Call<Read, usize>> for Counter {
     }
 }
 
-#[compio::main]
+#[compio_macros::main]
 async fn main() -> io::Result<()> {
     let cluster = Cluster::new()?;
     let (counter, handle) = cluster.spawn(|| Counter, 0).await.unwrap();

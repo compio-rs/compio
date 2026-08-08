@@ -50,7 +50,7 @@ impl Handler<Call<Read, usize>> for Worker {
     }
 }
 
-#[compio::main]
+#[compio_macros::main]
 async fn main() -> io::Result<()> {
     let cluster = Cluster::new()?;
     let (first, first_handle) = cluster.spawn(|| Worker, ()).await.unwrap();

@@ -82,7 +82,7 @@ impl Handler<Call<Read, usize>> for Worker {
     }
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn balances_casts_and_calls_round_robin() {
     let cluster = cluster();
     let first_observed = Arc::new(AtomicUsize::new(0));
@@ -187,7 +187,7 @@ impl Handler<Work> for BlockedWorker {
     }
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn skips_full_members_without_allocating_a_backlog() {
     let cluster = cluster();
     let (entered_tx, entered_rx) = mpsc::channel();

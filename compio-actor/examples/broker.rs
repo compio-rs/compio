@@ -87,7 +87,7 @@ impl Handler<Call<Read, usize>> for Gauge {
     }
 }
 
-#[compio::main]
+#[compio_macros::main]
 async fn main() -> io::Result<()> {
     let cluster = Cluster::new()?;
     let (counter, counter_handle) = cluster.spawn(|| Counter, ()).await.unwrap();

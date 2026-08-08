@@ -7,7 +7,7 @@ use std::{
 #[derive(Clone)]
 pub(crate) enum Name {
     Static(&'static str),
-    Owned(Arc<String>),
+    Owned(Arc<str>),
 }
 
 impl Name {
@@ -21,9 +21,7 @@ impl Name {
     pub(crate) fn into_cow(self) -> Cow<'static, str> {
         match self {
             Self::Static(name) => Cow::Borrowed(name),
-            Self::Owned(name) => {
-                Cow::Owned(Arc::try_unwrap(name).unwrap_or_else(|name| name.as_ref().clone()))
-            }
+            Self::Owned(name) => Cow::Owned(name.as_ref().to_owned()),
         }
     }
 }
@@ -32,7 +30,7 @@ impl From<Cow<'static, str>> for Name {
     fn from(name: Cow<'static, str>) -> Self {
         match name {
             Cow::Borrowed(name) => Self::Static(name),
-            Cow::Owned(name) => Self::Owned(Arc::new(name)),
+            Cow::Owned(name) => Self::Owned(Arc::from(name)),
         }
     }
 }

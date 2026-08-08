@@ -19,4 +19,5 @@ pin-project-lite = { workspace = true }
 scoped-tls = { workspace = true }
 
 [dev-dependencies]
-compio = { workspace = true, features = ["macros"] }
+compio-macros = { workspace = true }
+compio-runtime = { workspace = true }

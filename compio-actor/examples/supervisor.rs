@@ -69,7 +69,7 @@ impl Handler<Call<Events, Vec<&'static str>>> for Parent {
     }
 }
 
-#[compio::main]
+#[compio_macros::main]
 async fn main() -> io::Result<()> {
     let cluster = Cluster::new()?;
     let (parent, parent_handle) = cluster.spawn(|| Parent, ()).await.unwrap();

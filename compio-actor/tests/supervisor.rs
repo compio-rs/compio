@@ -42,7 +42,7 @@ impl Handler<Stop> for Child {
     async fn handle(
         &self,
         myself: &Mailbox<Self>,
-        Stop: Stop,
+        _stop: Stop,
         _state: &mut Self::State,
     ) -> Result<(), Self::Error> {
         myself.stop();
@@ -127,7 +127,7 @@ impl Handler<Call<Events, Vec<ObservedEvent>>> for Parent {
     }
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn reports_child_start_termination_and_failure() {
     let cluster = cluster();
     let (parent, parent_handle) = cluster.spawn(|| Parent, ()).await.unwrap();
@@ -169,7 +169,7 @@ async fn reports_child_start_termination_and_failure() {
     cluster.join().await.unwrap();
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn stopping_a_supervisor_does_not_stop_its_children() {
     let cluster = cluster();
     let (parent, parent_handle) = cluster.spawn(|| Parent, ()).await.unwrap();
@@ -219,7 +219,7 @@ impl Handler<SupervisionEvent<Child>> for StoppingParent {
     }
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn a_supervisor_can_control_a_child_from_its_event() {
     let cluster = cluster();
     let (parent, parent_handle) = cluster.spawn(|| StoppingParent, ()).await.unwrap();
@@ -312,7 +312,7 @@ impl Handler<Call<WaitForReplacement, ActorExit<&'static str>>> for RestartingPa
     }
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn a_supervisor_can_respawn_a_failed_named_actor() {
     let cluster = cluster();
     let (parent, parent_handle) = cluster.spawn(|| RestartingParent, ()).await.unwrap();

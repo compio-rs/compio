@@ -217,7 +217,7 @@ impl Handler<Finish> for Gauge {
     }
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn handles_multiple_types_and_brokers_erase_actor_types() {
     let cluster = cluster();
     let counter_observed = Arc::new(AtomicUsize::new(0));
@@ -277,7 +277,7 @@ async fn handles_multiple_types_and_brokers_erase_actor_types() {
     cluster.join().await.unwrap();
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn mailbox_and_broker_can_call_an_actor() {
     let cluster = cluster();
     let observed = Arc::new(AtomicUsize::new(0));
@@ -359,7 +359,7 @@ impl Handler<Queued> for Gate {
     }
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn stop_bypasses_a_full_erased_mailbox_and_broker_recovers_messages() {
     let cluster = cluster();
     let (entered_tx, entered_rx) = mpsc::channel();
@@ -428,7 +428,7 @@ impl Handler<Fail> for Fails {
     }
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn reports_handler_failure_across_the_cluster() {
     let cluster = cluster();
     let post_stop_called = Arc::new(AtomicBool::new(false));
@@ -495,7 +495,7 @@ impl Actor for PostStartFails {
     }
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn post_start_failure_runs_stop_hooks_and_preserves_the_first_error() {
     let cluster = cluster();
     let lifecycle = Arc::new(Mutex::new(Vec::new()));
@@ -537,7 +537,7 @@ impl Actor for StartFails {
     }
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn reports_start_failure_from_the_worker() {
     let cluster = cluster();
     let result = cluster.spawn(|| StartFails, ()).await;
@@ -545,7 +545,7 @@ async fn reports_start_failure_from_the_worker() {
     cluster.join().await.unwrap();
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn named_actors_can_be_looked_up_and_names_are_released_on_exit() {
     let cluster = cluster();
     let name = String::from("primary-gauge");
@@ -605,7 +605,7 @@ async fn named_actors_can_be_looked_up_and_names_are_released_on_exit() {
     cluster.join().await.unwrap();
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn failed_named_actor_start_releases_its_name() {
     let cluster = cluster();
     let result = cluster.spawn(|| StartFails, ()).with_name("fails").await;
@@ -614,7 +614,7 @@ async fn failed_named_actor_start_releases_its_name() {
     cluster.join().await.unwrap();
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn dropped_spawn_builder_does_not_start_or_reserve_an_actor() {
     let cluster = cluster();
     let spawn = cluster
@@ -656,7 +656,7 @@ impl Actor for SlowStart {
     }
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn named_actor_is_hidden_until_startup_succeeds() {
     let cluster = Arc::new(cluster());
     let lookup_cluster = cluster.clone();

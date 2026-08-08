@@ -1,4 +1,18 @@
+<div align="center">
+    <a href='https://compio.rs'>
+        <img height="150" src="https://github.com/compio-rs/compio-logo/raw/refs/heads/master/generated/colored-with-text.svg">
+    </a>
+</div>
+
+---
+
 # compio-actor
+
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/compio-rs/compio/blob/master/LICENSE)
+[![crates.io](https://img.shields.io/crates/v/compio-actor)](https://crates.io/crates/compio-actor)
+[![docs.rs](https://img.shields.io/badge/docs.rs-compio--actor-latest)](https://docs.rs/compio-actor)
+[![Check](https://github.com/compio-rs/compio/actions/workflows/ci_check.yml/badge.svg)](https://github.com/compio-rs/compio/actions/workflows/ci_check.yml)
+[![Test](https://github.com/compio-rs/compio/actions/workflows/ci_test.yml/badge.svg)](https://github.com/compio-rs/compio/actions/workflows/ci_test.yml)
 
 An actor framework built for [Compio](https://compio-rs). It lets you keep state and asynchronous behavior together while the framework takes care of running each actor on a single worker.
 
@@ -31,12 +45,21 @@ An actor becomes a supervisor by implementing `Handler<SupervisionEvent<Child>>`
 
 The child's registered name is released before its terminal event is delivered. A supervisor can therefore use `Cluster::current()` to spawn a replacement under the same name. Supervision events are best-effort casts: they are dropped if the supervisor's mailbox is full or closed.
 
-## Example
+## Usage
 
-```rust
+Enable Compio's `actor` and `macros` features:
+
+```toml
+[dependencies]
+compio = { version = "0.19", features = ["actor", "macros"] }
+```
+
+The following actor handles casts, calls, and graceful shutdown:
+
+```rust,ignore
 use std::{convert::Infallible, io};
 
-use compio_actor::{Actor, ActorExit, Broker, Call, Cluster, Handler, Mailbox};
+use compio::actor::{Actor, ActorExit, Broker, Call, Cluster, Handler, Mailbox};
 
 struct Counter;
 
@@ -81,7 +104,7 @@ impl Handler<Stop> for Counter {
     async fn handle(
         &self,
         myself: &Mailbox<Self>,
-        Stop: Stop,
+        _stop: Stop,
         state: &mut usize,
     ) -> Result<(), Infallible> {
         assert_eq!(*state, 5);
