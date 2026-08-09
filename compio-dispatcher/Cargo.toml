@@ -29,6 +29,7 @@ compio-macros = { workspace = true }
 compio-signal = { workspace = true }
 
 futures-util = { workspace = true }
+tracing = { workspace = true }
 
 [features]
 # Instrumentation for `tokio-console`. See `compio_runtime::console`.
