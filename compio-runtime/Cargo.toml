@@ -54,6 +54,8 @@ synchrony = { workspace = true, features = ["async_flag"] }
 [features]
 time = []
 async-fd = ["dep:compio-io"]
+# Instrumentation for `tokio-console`. See the `console` module.
+console = ["compio-executor/console"]
 
 current_thread_id = []
 sanitize = []
