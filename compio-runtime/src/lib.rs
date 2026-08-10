@@ -38,6 +38,7 @@ use std::{
     fmt::Debug,
     future::Future,
     io,
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
     task::{Context, Poll, Waker},
     time::Duration,
@@ -181,23 +182,35 @@ impl Runtime {
     /// into compio rather than into the code of whoever set them running.
     pub fn block_on_at<F: Future>(&self, future: F, meta: SpawnMeta) -> F::Output {
         let future = console::instrument_block_on(meta, future);
-        self.enter(|| {
-            let waker = self.waker();
-            let mut context = Context::from_waker(&waker);
-            let mut future = std::pin::pin!(future);
-            loop {
-                if let Poll::Ready(result) = future.as_mut().poll(&mut context) {
-                    self.run();
-                    return result;
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            self.enter(|| {
+                let waker = self.waker();
+                let mut context = Context::from_waker(&waker);
+                let mut future = std::pin::pin!(future);
+                loop {
+                    if let Poll::Ready(result) = future.as_mut().poll(&mut context) {
+                        self.run();
+                        return result;
+                    }
+                    let remaining_tasks = self.run();
+                    if remaining_tasks {
+                        self.poll_with(Some(Duration::ZERO));
+                    } else {
+                        self.poll();
+                    }
                 }
-                let remaining_tasks = self.run();
-                if remaining_tasks {
-                    self.poll_with(Some(Duration::ZERO));
-                } else {
-                    self.poll();
-                }
+            })
+        }));
+
+        match result {
+            Ok(output) => output,
+            Err(payload) => {
+                // Pending tasks must be cleared after the active unwind has
+                // ended so their futures can be dropped safely.
+                self.enter(|| self.executor.clear());
+                resume_unwind(payload)
             }
-        })
+        }
     }
 
     /// Spawns a new asynchronous task, returning a [`JoinHandle`] for it.

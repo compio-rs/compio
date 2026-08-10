@@ -72,3 +72,8 @@ name = "event"
 [[test]]
 name = "drop"
 required-features = ["time"]
+
+
+[[test]]
+name = "panic"
+required-features = ["time"]
