@@ -59,7 +59,7 @@ fn next_task_id() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
-std::thread_local! {
+thread_local! {
     /// Label of the current thread, to tell the tasks of the executors of a
     /// thread-per-core application apart.
     static THREAD: String = {

@@ -47,7 +47,7 @@ use compio_buf::{BufResult, IntoInner};
 use compio_driver::{AsRawFd, DriverType, OpCode, Proactor, ProactorBuilder, RawFd, op::Asyncify};
 pub use compio_driver::{BufferPool, ErrorExt};
 use compio_executor::{Executor, ExecutorConfig};
-pub use compio_executor::{JoinHandle, ResumeUnwind, SpawnMeta, console};
+pub use compio_executor::{JoinError, JoinHandle, ResumeUnwind, SpawnMeta, console};
 use compio_log::{debug, instrument};
 
 use crate::affinity::bind_to_cpu_set;
