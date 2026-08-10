@@ -40,6 +40,9 @@ pub use buf::bumpalo;
 pub use buf::bytes;
 #[cfg(feature = "smallvec")]
 pub use buf::smallvec;
+#[cfg(feature = "actor")]
+#[doc(inline)]
+pub use compio_actor as actor;
 #[cfg(feature = "compat")]
 pub use compio_compat as compat;
 #[cfg(feature = "dispatcher")]

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "compio",
+    "compio-actor",
     "compio-buf",
     "compio-dispatcher",
     "compio-driver",
@@ -26,6 +27,8 @@ license = "MIT"
 repository = "https://github.com/compio-rs/compio"
 
 [workspace.dependencies]
+compio = { path = "./compio", version = "0.19.1" }
+compio-actor = { path = "./compio-actor", version = "0.1.0" }
 compio-buf = { path = "./compio-buf", version = "0.8.3" }
 compio-driver = { path = "./compio-driver", version = "0.12.4", default-features = false }
 compio-runtime = { path = "./compio-runtime", version = "0.12.3" }
@@ -68,6 +71,7 @@ rcgen = "0.14.1"
 rustls = { version = "0.23.1", default-features = false }
 rustls-platform-verifier = "0.7.0"
 rustls-native-certs = "0.8.0"
+scoped-tls = "1.0.1"
 slab = "0.4.9"
 socket2 = "0.6.0"
 tempfile = "3.8.1"
