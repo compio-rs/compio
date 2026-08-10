@@ -210,14 +210,14 @@ impl WSAEvent {
     fn clear_event_inner(&self, event: i32) {
         let index = event.ilog2() as usize;
         if self.ev_record[index].fetch_sub(1, Ordering::Relaxed) == 1 {
-            self.events.fetch_add(!event, Ordering::Relaxed);
+            self.events.fetch_and(!event, Ordering::Relaxed);
         }
     }
 
-    pub fn clear_event<T: AsFd>(&self, socket: &T, events: i32) -> io::Result<()> {
+    pub fn clear_event<T: AsFd>(&self, socket: &T, occurred: i32) -> io::Result<()> {
         for i in 0..FD_MAX_EVENTS {
             let event = 1 << i;
-            if (events & event) != 0 {
+            if (occurred & event) != 0 {
                 self.clear_event_inner(event);
             }
         }
@@ -226,7 +226,11 @@ impl WSAEvent {
             WSAEventSelect(
                 socket.as_fd().as_raw_fd() as _,
                 self.ev_object.as_raw_handle() as _,
-                events
+                // Re-register the interests that are still active. Passing the
+                // just-occurred events here would disable every other event,
+                // so a concurrent read/write on the same socket would never
+                // become ready again.
+                self.events.load(Ordering::Relaxed)
             )
         )?;
         Ok(())
