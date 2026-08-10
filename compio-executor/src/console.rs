@@ -65,10 +65,16 @@
 //! * A task spawned by an `async fn` is attributed to that function rather than
 //!   to its caller, since [`#[track_caller]`][async-track-caller] is a no-op on
 //!   `async fn`s and [`SpawnMeta`] therefore cannot be forwarded through them.
-//!   The ones compio spawns itself are named to make up for it. A crate willing
-//!   to build on nightly can lift this for its own `async fn`s with the
-//!   `async_fn_track_caller` feature, which attributes them to the `.await` of
-//!   the future they return.
+//!   A function that wants the caller instead can be a plain `fn` returning a
+//!   future, capturing the [`SpawnMeta`] before the `async` block it returns —
+//!   at the cost of an opaque return type, and of running whatever precedes the
+//!   block when it is called rather than when it is first polled. The ones
+//!   compio spawns itself are named either way.
+//!
+//!   Nightly's `async_fn_track_caller` is not a substitute: it reports the
+//!   caller of `poll`, which is the `.await` when a future is awaited directly,
+//!   but a line inside `join!`, `select!` or whichever combinator drives it
+//!   otherwise.
 //! * The resources tab stays empty: timers and in-flight operations are not
 //!   instrumented yet.
 //! * A task's span is closed even when the thread is unwinding, or the console
