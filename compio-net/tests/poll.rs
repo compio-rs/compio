@@ -117,6 +117,97 @@ async fn poll_write_vectored() {
 }
 
 #[compio_macros::test]
+async fn poll_concurrent_read_write_readiness() {
+    let (peer, server) = connected_sockets();
+    // Keep the buffers small so the server's send buffer can be filled
+    // quickly. FD_WRITE must not become ready until the peer drains it.
+    server.set_send_buffer_size(4 * 1024).unwrap();
+    peer.set_recv_buffer_size(4 * 1024).unwrap();
+    let queued = fill_send_buffer(&server);
+    assert!(queued > 0, "expected the server send buffer to fill up");
+
+    let poll_fd = PollFd::new(server).unwrap();
+
+    let (read_started_tx, read_started_rx) = futures_channel::oneshot::channel();
+    let (write_started_tx, write_started_rx) = futures_channel::oneshot::channel();
+    let (read_done_tx, read_done_rx) = futures_channel::oneshot::channel();
+    let (write_done_tx, write_done_rx) = futures_channel::oneshot::channel();
+
+    let mut read_started_tx = Some(read_started_tx);
+    let mut write_started_tx = Some(write_started_tx);
+
+    let read_task = async {
+        let res = std::future::poll_fn(|cx| {
+            let res = poll_fd.poll_read_ready(cx);
+            if let Some(tx) = read_started_tx.take() {
+                assert!(
+                    res.is_pending(),
+                    "read readiness should be pending before the peer sends data"
+                );
+                let _ = tx.send(());
+            }
+            res
+        })
+        .await;
+        let _ = read_done_tx.send(());
+        res
+    };
+
+    let write_task = async {
+        let res = std::future::poll_fn(|cx| {
+            let res = poll_fd.poll_write_ready(cx);
+            if let Some(tx) = write_started_tx.take() {
+                assert!(
+                    res.is_pending(),
+                    "write readiness should be pending before the peer drains the send buffer"
+                );
+                let _ = tx.send(());
+            }
+            res
+        })
+        .await;
+        let _ = write_done_tx.send(());
+        res
+    };
+
+    let peer_task = async {
+        read_started_rx.await.unwrap();
+        write_started_rx.await.unwrap();
+
+        // Trigger FD_READ first. The buggy Windows implementation lost the
+        // still-pending FD_WRITE registration while clearing this event.
+        peer.send(b"trigger").unwrap();
+        read_done_rx.await.unwrap();
+
+        // Drain the queued data so the server send buffer gains space and
+        // FD_WRITE should fire.
+        let mut buffer = Vec::with_capacity(1024);
+        let mut drained = 0;
+        loop {
+            match peer.recv(buffer.spare_capacity_mut()) {
+                Ok(0) => panic!("unexpected EOF while draining"),
+                Ok(n) => {
+                    drained += n;
+                }
+                Err(e) if is_would_block(&e) => break,
+                Err(e) => panic!("failed to drain peer: {e}"),
+            }
+        }
+        assert!(drained > 0, "peer received no queued data");
+
+        write_done_rx.await.unwrap();
+    };
+
+    let (read, write, ()) = compio_runtime::time::timeout(Duration::from_secs(10), async {
+        futures_util::join!(read_task, write_task, peer_task)
+    })
+    .await
+    .expect("poll readiness tasks did not complete in time");
+    read.unwrap();
+    write.unwrap();
+}
+
+#[compio_macros::test]
 async fn poll_flush_reaches_the_source() {
     let (client, server) = connected_sockets();
     let mut tx = PollFd::new(FlushCounter {
@@ -240,4 +331,16 @@ fn connected_sockets() -> (Socket, Socket) {
     client.set_nonblocking(true).unwrap();
     server.set_nonblocking(true).unwrap();
     (client, server)
+}
+
+fn fill_send_buffer(socket: &Socket) -> usize {
+    let chunk = vec![0u8; 8 * 1024];
+    let mut total = 0;
+    loop {
+        match socket.send(&chunk) {
+            Ok(n) => total += n,
+            Err(e) if is_would_block(&e) => return total,
+            Err(e) => panic!("failed to fill send buffer: {e}"),
+        }
+    }
 }
