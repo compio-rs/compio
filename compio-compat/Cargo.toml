@@ -44,12 +44,16 @@ tokio = { workspace = true, features = [
     "io-util",
 ] }
 futures-executor = { workspace = true }
+tracing = { workspace = true }
 
 futures-util = { workspace = true }
 
 [features]
 tokio = ["dep:tokio"]
 futures = ["dep:async-io", "dep:futures-util"]
+
+# Instrumentation for `tokio-console`. See `compio_runtime::console`.
+console = ["compio-runtime/console"]
 
 [[test]]
 name = "net"

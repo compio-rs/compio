@@ -2,27 +2,25 @@ use std::{io, os::windows::fs::MetadataExt, path::Path, time::SystemTime};
 
 #[cfg(dirfd)]
 use compio_driver::ToSharedFd;
-use compio_runtime::ResumeUnwind;
 
 #[cfg(dirfd)]
 use crate::File;
+use crate::spawn_blocking_named;
 
 pub async fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
     let path = path.as_ref().to_path_buf();
-    compio_runtime::spawn_blocking(move || std::fs::metadata(path))
+    spawn_blocking_named("fs::metadata", move || std::fs::metadata(path))
         .await
-        .resume_unwind()
-        .expect("shouldn't be cancelled")
         .map(Metadata::from)
 }
 
 pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
     let path = path.as_ref().to_path_buf();
-    compio_runtime::spawn_blocking(move || std::fs::symlink_metadata(path))
-        .await
-        .resume_unwind()
-        .expect("shouldn't be cancelled")
-        .map(Metadata::from)
+    spawn_blocking_named("fs::symlink_metadata", move || {
+        std::fs::symlink_metadata(path)
+    })
+    .await
+    .map(Metadata::from)
 }
 
 #[cfg(dirfd)]
@@ -59,7 +57,7 @@ pub async fn symlink_metadata_at(dir: &File, path: impl AsRef<Path>) -> io::Resu
 
 pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::Result<()> {
     let path = path.as_ref().to_path_buf();
-    compio_runtime::spawn_blocking(move || {
+    spawn_blocking_named("fs::set_permissions", move || {
         // Reduce syscalls at best effort.
         if let Some(p) = perm.original {
             std::fs::set_permissions(&path, p)
@@ -70,8 +68,6 @@ pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::R
         }
     })
     .await
-    .resume_unwind()
-    .expect("shouldn't be cancelled")
 }
 
 #[derive(Clone)]
