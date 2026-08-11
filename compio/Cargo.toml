@@ -44,6 +44,7 @@ compio-buf = { workspace = true, features = ["bumpalo"] }
 compio-runtime = { workspace = true, features = ["criterion"] }
 compio-macros = { workspace = true }
 
+console-subscriber = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 futures-channel = { workspace = true }
 futures-executor = { workspace = true }
@@ -190,6 +191,15 @@ compat-all = ["compat-tokio", "compat-futures"]
 # Logging
 enable_log = ["compio-log/enable_log"]
 
+# Instrumentation for `tokio-console`. See `compio::runtime::console`.
+console = [
+    "compio-runtime/console",
+    "compio-dispatcher?/console",
+    "compio-quic?/console",
+    "compio-compat?/console",
+    "runtime",
+]
+
 # Nightly features
 allocator_api = ["compio-buf/allocator_api", "compio-io?/allocator_api"]
 current_thread_id = ["compio-runtime?/current_thread_id"]
@@ -247,6 +257,10 @@ required-features = ["time", "signal", "macros"]
 [[example]]
 name = "dispatcher"
 required-features = ["macros", "dispatcher", "sync", "net"]
+
+[[example]]
+name = "console"
+required-features = ["console", "time", "net", "dispatcher", "sync"]
 
 [[bench]]
 name = "fs"
