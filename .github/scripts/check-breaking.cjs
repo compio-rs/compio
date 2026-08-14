@@ -4,20 +4,10 @@ const path = require("node:path");
 
 const COMMENT_MARKER = "<!-- cargo-semver-checks: breaking-change -->";
 const LABEL = "breaking change";
+const MAX_REPORT_LENGTH = 50_000;
+const REMOVED_PACKAGE_REPORT = "Package removed from the current workspace.";
 
-const CHECKABLE_TARGET_KINDS = new Set([
-  "lib",
-  "rlib",
-  "dylib",
-  "cdylib",
-  "staticlib",
-]);
-
-function hasCheckableTarget(targets = []) {
-  return targets.some(({ kind = [] }) =>
-    kind.some((targetKind) => CHECKABLE_TARGET_KINDS.has(targetKind)),
-  );
-}
+const CHECKED_PACKAGES = new Set(["compio", "compio-driver"]);
 
 function stableFeatureNames(features) {
   const unstable = new Set();
@@ -55,7 +45,7 @@ function workspacePackages(metadata) {
   const members = new Set(metadata.workspace_members);
   return metadata.packages
     .filter(
-      ({ id, targets }) => members.has(id) && hasCheckableTarget(targets),
+      ({ id, name }) => members.has(id) && CHECKED_PACKAGES.has(name),
     )
     .map(({ features = {}, name }) => ({
       name,
@@ -124,10 +114,17 @@ async function checkPackage({
   }
 
   if (result.exitCode === 0) {
-    return false;
+    return null;
   }
   if (result.exitCode === 100) {
-    return true;
+    const output = [result.stdout, result.stderr]
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .join("\n");
+    return [
+      `$ cargo ${args.join(" ")}`,
+      output || "cargo-semver-checks reported a breaking public API change.",
+    ].join("\n");
   }
   throw new Error(
     `cargo-semver-checks could not check ${packageName} (exit code ${result.exitCode}).`,
@@ -166,31 +163,40 @@ async function check({
       baselinePackages,
     );
     const breaking = [...removed];
+    const reports = new Map(
+      removed.map((name) => [name, REMOVED_PACKAGE_REPORT]),
+    );
 
     if (removed.length > 0) {
       core.info(`Removed workspace crates: ${removed.join(", ")}`);
     }
 
     for (const { name, stableFeatures } of common) {
-      if (
-        await checkPackage({
-          baselineRev,
-          core,
-          exec,
-          packageName: name,
-          stableFeatures,
-        })
-      ) {
+      const packageReport = await checkPackage({
+        baselineRev,
+        core,
+        exec,
+        packageName: name,
+        stableFeatures,
+      });
+      if (packageReport !== null) {
         breaking.push(name);
+        reports.set(name, packageReport);
       }
     }
 
     breaking.sort();
+    const report = breaking
+      .map((name) => `[${name}]\n${reports.get(name)}`)
+      .join("\n\n");
     core.setOutput("breaking", breaking.length > 0);
     core.setOutput("crates", breaking.join("\n"));
     if (reportPath) {
       fs.mkdirSync(path.dirname(reportPath), { recursive: true });
-      fs.writeFileSync(reportPath, `${JSON.stringify({ crates: breaking })}\n`);
+      fs.writeFileSync(
+        reportPath,
+        `${JSON.stringify({ crates: breaking, report })}\n`,
+      );
     }
     return breaking;
   } finally {
@@ -204,7 +210,22 @@ async function check({
   }
 }
 
-function buildReportBody({ crates, runUrl }) {
+function escapeHtml(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function formatDiagnostics(diagnostics) {
+  const escaped = escapeHtml(diagnostics.trim());
+  const suffix = "\n\n... report truncated to fit the GitHub comment limit.";
+  return escaped.length <= MAX_REPORT_LENGTH
+    ? escaped
+    : `${escaped.slice(0, MAX_REPORT_LENGTH - suffix.length)}${suffix}`;
+}
+
+function buildReportBody({ crates, diagnostics }) {
   const crateList = crates.map((name) => `- \`${name}\``).join("\n");
   return `${COMMENT_MARKER}
 ### Breaking API change detected
@@ -215,7 +236,11 @@ ${crateList}
 
 Add \`!\` before the colon in the PR title, for example \`feat!: ...\` or \`feat(runtime)!: ...\`. In the PR description, explain the affected API, the impact on users, and the migration path.
 
-See the [workflow run](${runUrl}) for the full diagnostics.`;
+<details>
+<summary>cargo-semver-checks report</summary>
+
+<pre><code>${formatDiagnostics(diagnostics)}</code></pre>
+</details>`;
 }
 
 function readReport(reportPath) {
@@ -224,10 +249,10 @@ function readReport(reportPath) {
 
 async function report({
   crates,
+  diagnostics,
   github,
   context,
   issueNumber = context.issue?.number,
-  runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
 }) {
   if (crates.length === 0) {
     throw new Error("At least one breaking crate is required.");
@@ -235,25 +260,11 @@ async function report({
   if (!issueNumber) {
     throw new Error("A pull request number is required.");
   }
-
-  const body = buildReportBody({ crates, runUrl });
-
-  try {
-    await github.rest.issues.getLabel({
-      ...context.repo,
-      name: LABEL,
-    });
-  } catch (error) {
-    if (error.status !== 404) {
-      throw error;
-    }
-    await github.rest.issues.createLabel({
-      ...context.repo,
-      name: LABEL,
-      color: "b60205",
-      description: "Introduces a breaking public API change",
-    });
+  if (typeof diagnostics !== "string" || !diagnostics.trim()) {
+    throw new Error("Breaking change diagnostics are required.");
   }
+
+  const body = buildReportBody({ crates, diagnostics });
 
   await github.rest.issues.addLabels({
     ...context.repo,
@@ -287,7 +298,7 @@ async function report({
 }
 
 async function reportFromFile({ core, reportPath, ...options }) {
-  const { crates } = readReport(reportPath);
+  const { crates, report: diagnostics } = readReport(reportPath);
   if (!Array.isArray(crates)) {
     throw new Error("The breaking change report has no crate list.");
   }
@@ -295,8 +306,11 @@ async function reportFromFile({ core, reportPath, ...options }) {
     core.info("No breaking public API changes detected.");
     return false;
   }
+  if (typeof diagnostics !== "string" || !diagnostics.trim()) {
+    throw new Error("The breaking change report has no diagnostics.");
+  }
 
-  await report({ crates, ...options });
+  await report({ crates, diagnostics, ...options });
   return true;
 }
 

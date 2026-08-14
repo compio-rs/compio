@@ -10,11 +10,10 @@ function metadata(packages) {
   const entries = packages.map((package) =>
     typeof package === "string" ? { name: package, features: {} } : package,
   );
-  const records = entries.map(({ features, name, targets }) => ({
+  const records = entries.map(({ features, name }) => ({
     features,
     id: `${name} 0.1.0`,
     name,
-    targets: targets ?? [{ crate_types: ["lib"], kind: ["lib"] }],
   }));
   return {
     packages: records,
@@ -37,7 +36,13 @@ function mockCore() {
   };
 }
 
-function mockExec({ baseline, current, semverArgs = [], statuses = {} }) {
+function mockExec({
+  baseline,
+  current,
+  outputs = {},
+  semverArgs = [],
+  statuses = {},
+}) {
   let metadataCall = 0;
   return {
     async exec() {
@@ -55,18 +60,19 @@ function mockExec({ baseline, current, semverArgs = [], statuses = {} }) {
       return {
         exitCode: statuses[packageName] ?? 0,
         stderr: "",
-        stdout: "",
+        stdout: outputs[packageName] ?? "",
       };
     },
   };
 }
 
-test("reports incompatible and removed workspace crates", async () => {
+test("reports incompatible and removed checked crates", async () => {
   const core = mockCore();
   const exec = mockExec({
-    baseline: ["compio", "compio-fs", "compio-runtime"],
-    current: ["compio", "compio-net", "compio-runtime"],
-    statuses: { "compio-runtime": 100 },
+    baseline: ["compio", "compio-driver", "compio-fs"],
+    current: ["compio", "compio-net"],
+    statuses: { compio: 100 },
+    outputs: { compio: "compio compatibility report" },
   });
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "compio-semver-test-"));
   const reportPath = path.join(tempDir, "report.json");
@@ -78,14 +84,17 @@ test("reports incompatible and removed workspace crates", async () => {
       reportPath,
     });
 
-    assert.deepEqual(breaking, ["compio-fs", "compio-runtime"]);
+    assert.deepEqual(breaking, ["compio", "compio-driver"]);
     assert.deepEqual(core.outputs, {
       breaking: true,
-      crates: "compio-fs\ncompio-runtime",
+      crates: "compio\ncompio-driver",
     });
-    assert.deepEqual(JSON.parse(fs.readFileSync(reportPath, "utf8")), {
-      crates: ["compio-fs", "compio-runtime"],
-    });
+    const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+    assert.deepEqual(report.crates, ["compio", "compio-driver"]);
+    assert.match(report.report, /\[compio\]/);
+    assert.match(report.report, /compio compatibility report/);
+    assert.match(report.report, /\[compio-driver\]/);
+    assert.match(report.report, /removed from the current workspace/);
   } finally {
     fs.rmSync(tempDir, { force: true, recursive: true });
   }
@@ -94,8 +103,8 @@ test("reports incompatible and removed workspace crates", async () => {
 test("reports a compatible workspace", async () => {
   const core = mockCore();
   const exec = mockExec({
-    baseline: ["compio", "compio-runtime"],
-    current: ["compio", "compio-runtime"],
+    baseline: ["compio", "compio-driver", "compio-runtime"],
+    current: ["compio", "compio-driver", "compio-runtime"],
   });
 
   const breaking = await check({ baselineRev: "base", core, exec });
@@ -104,17 +113,10 @@ test("reports a compatible workspace", async () => {
   assert.deepEqual(core.outputs, { breaking: false, crates: "" });
 });
 
-test("skips crates without checkable library targets", async () => {
+test("checks only compio and compio-driver", async () => {
   const core = mockCore();
   const semverArgs = [];
-  const packages = [
-    "compio",
-    {
-      features: {},
-      name: "compio-macros",
-      targets: [{ crate_types: ["proc-macro"], kind: ["proc-macro"] }],
-    },
-  ];
+  const packages = ["compio", "compio-driver", "compio-macros", "compio-net"];
   const exec = mockExec({
     baseline: packages,
     current: packages,
@@ -125,7 +127,7 @@ test("skips crates without checkable library targets", async () => {
 
   assert.deepEqual(
     semverArgs.map((args) => args[args.indexOf("--package") + 1]),
-    ["compio"],
+    ["compio", "compio-driver"],
   );
 });
 
@@ -142,7 +144,7 @@ test("checks one package with stable features only", async () => {
         "nightly-all": ["nightly"],
         read_buf: [],
       },
-      name: "compio-buf",
+      name: "compio-driver",
     },
   ];
   const exec = mockExec({
@@ -158,7 +160,7 @@ test("checks one package with stable features only", async () => {
       "semver-checks",
       "check-release",
       "--package",
-      "compio-buf",
+      "compio-driver",
       "--baseline-rev",
       "base",
       "--release-type",
@@ -186,18 +188,12 @@ test("fails when cargo-semver-checks cannot complete", async () => {
 
 test("labels the PR and lists each breaking crate", async () => {
   const calls = [];
-  const missingLabel = new Error("missing label");
-  missingLabel.status = 404;
   const github = {
     paginate: async () => [],
     rest: {
       issues: {
         addLabels: async (args) => calls.push(["addLabels", args]),
         createComment: async (args) => calls.push(["createComment", args]),
-        createLabel: async (args) => calls.push(["createLabel", args]),
-        getLabel: async () => {
-          throw missingLabel;
-        },
         listComments: async () => {},
       },
     },
@@ -212,7 +208,11 @@ test("labels the PR and lists each breaking crate", async () => {
   const reportPath = path.join(tempDir, "report.json");
   fs.writeFileSync(
     reportPath,
-    JSON.stringify({ crates: ["compio-runtime", "compio-net"] }),
+    JSON.stringify({
+      crates: ["compio-runtime", "compio-net"],
+      report:
+        "[compio-runtime]\n<breaking> runtime API\n\n[compio-net]\nremoved API",
+    }),
   );
   try {
     assert.equal(
@@ -222,7 +222,6 @@ test("labels the PR and lists each breaking crate", async () => {
         context,
         issueNumber: 42,
         reportPath,
-        runUrl: "https://github.com/compio-rs/compio/actions/runs/123",
       }),
       true,
     );
@@ -235,6 +234,13 @@ test("labels the PR and lists each breaking crate", async () => {
   assert.match(comment.body, /- `compio-net`/);
   assert.match(comment.body, /`feat!: \.\.\.`/);
   assert.match(comment.body, /migration path/);
-  assert.ok(calls.some(([name]) => name === "createLabel"));
+  assert.match(comment.body, /<details>/);
+  assert.match(comment.body, /<summary>cargo-semver-checks report<\/summary>/);
+  assert.match(comment.body, /<pre><code>/);
+  assert.match(comment.body, /&lt;breaking&gt; runtime API/);
+  assert.match(comment.body, /<\/code><\/pre>/);
+  assert.doesNotMatch(comment.body, /workflow run|actions\/runs/);
   assert.ok(calls.some(([name]) => name === "addLabels"));
+  assert.ok(!calls.some(([name]) => name === "getLabel"));
+  assert.ok(!calls.some(([name]) => name === "createLabel"));
 });
