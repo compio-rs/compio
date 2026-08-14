@@ -736,7 +736,7 @@ where
 impl IoBufMut for memmap2::MmapMut {
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         // Safety: &mut [u8] is valid &mut [MaybeUninit<u8>]
-        unsafe { std::mem::transmute(self.as_mut_slice()) }
+        unsafe { std::mem::transmute(self.as_mut()) }
     }
 }
 
@@ -1013,10 +1013,19 @@ mod test {
         file.write_all(data).unwrap();
         file.flush().unwrap();
         file.seek(SeekFrom::Start(0)).unwrap();
-        let mmap = unsafe { MmapOptions::new().map(&file).unwrap() };
+        {
+            let mmap = unsafe { MmapOptions::new().map(&file).unwrap() };
 
-        let uninit_slice = mmap.as_init();
-        assert_eq!(uninit_slice, data);
+            let init_slice = mmap.as_init();
+            assert_eq!(init_slice, data);
+        }
+
+        {
+            let mut mmap = unsafe { MmapOptions::new().map_mut(&file).unwrap() };
+
+            let init_slice = mmap.as_mut_slice();
+            assert_eq!(init_slice, data);
+        }
 
         remove_file(path).unwrap();
     }
