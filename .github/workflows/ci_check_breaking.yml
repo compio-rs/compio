@@ -1,0 +1,42 @@
+name: Check Breaking Changes
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check-breaking:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup Rust Toolchain
+        run: rustup default stable
+      - uses: taiki-e/install-action@cargo-semver-checks
+      - name: Check Public API Compatibility
+        id: semver
+        uses: actions/github-script@v8
+        env:
+          BASELINE_REV: ${{ github.event.pull_request.base.sha }}
+          BREAKING_REPORT_PATH: ${{ runner.temp }}/breaking-change/report.json
+          CARGO_INCREMENTAL: 0
+        with:
+          script: |
+            const { check } = require("./.github/scripts/check-breaking.cjs");
+            await check({ core, exec });
+      - name: Save Breaking Change Report
+        uses: actions/upload-artifact@v7
+        with:
+          name: breaking-change-report
+          path: ${{ runner.temp }}/breaking-change/report.json
+          if-no-files-found: error
+          retention-days: 1
+
