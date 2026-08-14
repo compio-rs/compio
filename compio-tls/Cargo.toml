@@ -14,9 +14,6 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-compio-buf = { workspace = true }
-compio-io = { workspace = true, features = ["compat"] }
-
 native-tls = { workspace = true, optional = true, features = ["alpn"] }
 rustls = { workspace = true, default-features = false, optional = true, features = [
     "logging",
@@ -29,11 +26,11 @@ futures-rustls = { workspace = true, default-features = false, optional = true, 
     "logging",
     "tls12",
 ] }
-futures-util = { workspace = true }
+futures-util = { workspace = true, features = ["io"] }
 pin-project-lite = { workspace = true, optional = true }
 
 [dev-dependencies]
-compio-net = { workspace = true }
+compio-driver = { workspace = true, features = ["polling"] }
 compio-runtime = { workspace = true }
 compio-macros = { workspace = true }
 
@@ -58,5 +55,5 @@ py-dynamic-openssl = ["dep:compio-py-dynamic-openssl", "dep:pin-project-lite"]
 
 ring = ["rustls", "rustls/ring", "futures-rustls/ring"]
 
-read_buf = ["compio-buf/read_buf", "compio-io/read_buf"]
-nightly = ["read_buf"]
+# Kept empty while the workspace-level `compio/read_buf` feature forwards it.
+read_buf = []

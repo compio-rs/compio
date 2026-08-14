@@ -1,34 +1,46 @@
-use std::net::SocketAddr;
+use std::{
+    future::poll_fn,
+    net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
+};
 
-use compio_io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use compio_net::{TcpListener, TcpStream};
-use compio_runtime::JoinHandle;
+use compio_runtime::{JoinHandle, fd::PollFd};
 use compio_tls::{TlsAcceptor, TlsConnector};
+use futures_util::{AsyncReadExt, AsyncWriteExt};
 
 async fn start_server(acceptor: TlsAcceptor) -> (SocketAddr, JoinHandle<()>) {
-    let listener = TcpListener::bind("localhost:0").await.unwrap();
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
     let addr = listener.local_addr().unwrap();
+    let listener = PollFd::new(listener).unwrap();
     let server = compio_runtime::spawn(async move {
-        let (stream, _) = listener.accept().await.unwrap();
+        let (stream, _) = poll_fn(|cx| listener.poll_accept_with(cx, |inner| inner.accept()))
+            .await
+            .unwrap();
+        stream.set_nonblocking(true).unwrap();
+        let stream = PollFd::new(stream).unwrap();
         let mut stream = acceptor.accept(stream).await.unwrap();
-        let (_, res) = stream.read(Vec::with_capacity(12)).await.unwrap();
-        stream.write_all(res).await.unwrap();
+        let mut res = [0; 12];
+        stream.read_exact(&mut res).await.unwrap();
+        stream.write_all(&res).await.unwrap();
         stream.flush().await.unwrap();
-        stream.shutdown().await.unwrap();
-        stream.read(vec![0u8; 1]).await.unwrap();
+        stream.close().await.unwrap();
+        assert_eq!(stream.read(&mut [0]).await.unwrap(), 0);
     });
     (addr, server)
 }
 
 async fn connect(connector: TlsConnector, addr: SocketAddr) {
-    let stream = TcpStream::connect(addr).await.unwrap();
+    let stream = TcpStream::connect(addr).unwrap();
+    stream.set_nonblocking(true).unwrap();
+    let stream = PollFd::new(stream).unwrap();
     let mut stream = connector.connect("localhost", stream).await.unwrap();
 
-    stream.write_all("Hello world!").await.unwrap();
+    stream.write_all(b"Hello world!").await.unwrap();
     stream.flush().await.unwrap();
-    let (_, res) = stream.read_to_end(vec![]).await.unwrap();
+    let mut res = vec![];
+    stream.read_to_end(&mut res).await.unwrap();
     assert_eq!(res, b"Hello world!");
-    stream.shutdown().await.unwrap()
+    stream.close().await.unwrap()
 }
 
 #[cfg(feature = "native-tls")]
