@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2](https://github.com/compio-rs/compio/compare/compio-quic-v0.8.1...compio-quic-v0.8.2) - 2026-08-14
+
+### Added
+
+- name spawned QUIC tasks ([#1004](https://github.com/compio-rs/compio/pull/1004))
+
+### Fixed
+
+- fix `semicolon_in_expressions_from_macros` ([#977](https://github.com/compio-rs/compio/pull/977))
+
+### Other
+
+- bump `cfg_aliases` ([#980](https://github.com/compio-rs/compio/pull/980))
+
 ## 0.8.0 - 2026-05-27
 
 ### Added

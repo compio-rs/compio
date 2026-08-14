@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/compio-rs/compio/compare/compio-compat-v0.1.0...compio-compat-v0.1.1) - 2026-08-14
+
+### Added
+
+- name spawned compatibility tasks ([#1004](https://github.com/compio-rs/compio/pull/1004))
+
 ## 0.1.0 - 2026-05-27
 
 ### Added

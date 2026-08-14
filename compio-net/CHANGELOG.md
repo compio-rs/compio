@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.5](https://github.com/compio-rs/compio/compare/compio-net-v0.12.4...compio-net-v0.12.5) - 2026-08-14
+
+### Added
+
+- name spawned networking tasks ([#1004](https://github.com/compio-rs/compio/pull/1004))
+
+### Fixed
+
+- fix `semicolon_in_expressions_from_macros` ([#977](https://github.com/compio-rs/compio/pull/977))
+
+### Other
+
+- bump `cfg_aliases` ([#980](https://github.com/compio-rs/compio/pull/980))
+- format `cfg_select!` bodies ([#990](https://github.com/compio-rs/compio/pull/990))
+
 ## 0.12.2 - 2026-07-06
 
 ### Added

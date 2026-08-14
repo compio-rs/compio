@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.6](https://github.com/compio-rs/compio/compare/compio-runtime-v0.12.5...compio-runtime-v0.12.6) - 2026-08-14
+
+### Added
+
+- *(runtime)* forward console instrumentation ([#1001](https://github.com/compio-rs/compio/pull/1001))
+- *(actor)* add actor support ([#1000](https://github.com/compio-rs/compio/pull/1000))
+- name tasks spawned by the runtime ([#1004](https://github.com/compio-rs/compio/pull/1004))
+
+### Changed
+
+- *(runtime)* refactor the timer implementation ([#995](https://github.com/compio-rs/compio/pull/995))
+
+### Fixed
+
+- *(runtime, executor)* re-export `JoinError` ([#1005](https://github.com/compio-rs/compio/pull/1005))
+
 ## 0.12.3 - 2026-07-06
 
 ### Added
