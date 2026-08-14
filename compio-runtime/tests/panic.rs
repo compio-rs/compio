@@ -20,6 +20,12 @@ fn panic_spawn() {
     })
 }
 
+#[test]
+fn timer_construction_does_not_require_runtime() {
+    let timer = sleep(Duration::ZERO);
+    compio_runtime::Runtime::new().unwrap().block_on(timer);
+}
+
 struct DropGuard(Rc<Cell<bool>>);
 
 impl Drop for DropGuard {

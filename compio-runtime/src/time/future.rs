@@ -6,7 +6,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-
 use crate::{
     Runtime,
     time::{TimerRuntime, runtime::TimerKey, sleep_until},
@@ -52,7 +51,6 @@ impl Drop for TimerFuture {
 
 compio_driver::assert_not_impl!(TimerFuture, Send);
 compio_driver::assert_not_impl!(TimerFuture, Sync);
-
 
 /// Interval returned by [`interval`] and [`interval_at`]
 ///
