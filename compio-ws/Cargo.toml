@@ -33,7 +33,6 @@ pin-project-lite = { workspace = true }
 socket2 = { workspace = true }
 
 [dev-dependencies]
-compio-driver = { workspace = true, features = ["polling"] }
 compio-macros = { workspace = true }
 
 futures-channel = { workspace = true }
