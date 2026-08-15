@@ -1,3 +1,5 @@
+#[cfg(feature = "read_buf")]
+use std::mem::MaybeUninit;
 use std::{
     cell::RefCell,
     fmt::Debug,
@@ -9,8 +11,6 @@ use std::{
     sync::atomic::Ordering,
     task::{Context, Poll, Waker},
 };
-#[cfg(feature = "read_buf")]
-use std::mem::MaybeUninit;
 
 use compio_buf::{BufResult, IntoInner};
 use compio_driver::{

@@ -297,14 +297,23 @@ impl<T: AsFd> Deref for PollFd<T> {
 fn is_would_block(e: &io::Error) -> bool {
     cfg_select! {
         unix => {
-            matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted) || e.raw_os_error() == Some(libc::EINPROGRESS)
+            matches!(
+                e.kind(),
+                io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+            ) || e.raw_os_error() == Some(libc::EINPROGRESS)
         }
         windows => {
             use windows_sys::Win32::Networking::WinSock::WSAEINPROGRESS;
-            matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted) || e.raw_os_error() == Some(WSAEINPROGRESS)
+            matches!(
+                e.kind(),
+                io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+            ) || e.raw_os_error() == Some(WSAEINPROGRESS)
         }
         _ => {
-            matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted)
+            matches!(
+                e.kind(),
+                io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+            )
         }
     }
 }
@@ -315,16 +324,12 @@ fn is_connect_pending(e: &io::Error) -> bool {
     }
 
     cfg_select! {
-        unix => {
-            e.raw_os_error() == Some(libc::EALREADY)
-        }
+        unix => e.raw_os_error() == Some(libc::EALREADY),
         windows => {
             use windows_sys::Win32::Networking::WinSock::WSAEALREADY;
             e.raw_os_error() == Some(WSAEALREADY)
         }
-        _ => {
-            false
-        }
+        _ => false,
     }
 }
 

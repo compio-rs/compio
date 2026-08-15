@@ -1,3 +1,5 @@
+#[cfg(feature = "read_buf")]
+use std::mem::MaybeUninit;
 use std::{
     cell::RefCell,
     fmt::Debug,
@@ -6,8 +8,6 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-#[cfg(feature = "read_buf")]
-use std::mem::MaybeUninit;
 
 use compio_buf::{BufResult, IntoInner};
 use compio_driver::{
