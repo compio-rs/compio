@@ -41,6 +41,7 @@ windows-sys = { workspace = true, features = [
 # Unix specific dependencies
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
+rustix = { workspace = true }
 
 [target.'cfg(windows)'.dev-dependencies]
 windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }

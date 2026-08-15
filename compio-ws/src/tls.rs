@@ -1,7 +1,5 @@
 //! TLS support for WebSocket connections (native-tls and rustls).
 
-use std::io::{Read, Write};
-
 use compio_driver::AsFd;
 use compio_net::TcpStream;
 use compio_runtime::fd::PollFd;
@@ -123,7 +121,6 @@ async fn wrap_stream<S>(
 ) -> Result<MaybeTlsStream<PollFd<S>>, Error>
 where
     S: AsFd + 'static,
-    for<'a> &'a S: Read + Write,
 {
     match mode {
         Mode::Plain => Ok(MaybeTlsStream::new_plain(socket)),
@@ -180,7 +177,6 @@ pub async fn client_async_tls<R, S>(
 where
     R: IntoClientRequest,
     S: AsFd + 'static,
-    for<'a> &'a S: Read + Write,
 {
     client_async_tls_with_config(request, stream, None, None).await
 }
@@ -196,7 +192,6 @@ pub async fn client_async_tls_with_config<R, S>(
 where
     R: IntoClientRequest,
     S: AsFd + 'static,
-    for<'a> &'a S: Read + Write,
 {
     let request: Request = request.into_client_request()?;
 

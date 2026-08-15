@@ -9,6 +9,8 @@ use std::{
     sync::atomic::Ordering,
     task::{Context, Poll, Waker},
 };
+#[cfg(feature = "read_buf")]
+use std::mem::MaybeUninit;
 
 use compio_buf::{BufResult, IntoInner};
 use compio_driver::{
@@ -57,6 +59,27 @@ impl<T: AsFd> PollFd<T> {
             write_waker: RefCell::new(None),
         })
     }
+}
+
+pub fn read(fd: BorrowedFd<'_>, buf: &mut [u8]) -> io::Result<usize> {
+    with_socket(fd, |socket| io::Read::read(&mut &*socket, buf))
+}
+
+#[cfg(feature = "read_buf")]
+pub fn read_uninit(fd: BorrowedFd<'_>, buf: &mut [MaybeUninit<u8>]) -> io::Result<usize> {
+    with_socket(fd, |socket| socket.recv(buf))
+}
+
+pub fn readv(fd: BorrowedFd<'_>, bufs: &mut [io::IoSliceMut<'_>]) -> io::Result<usize> {
+    with_socket(fd, |socket| io::Read::read_vectored(&mut &*socket, bufs))
+}
+
+pub fn write(fd: BorrowedFd<'_>, buf: &[u8]) -> io::Result<usize> {
+    with_socket(fd, |socket| socket.send(buf))
+}
+
+pub fn writev(fd: BorrowedFd<'_>, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
+    with_socket(fd, |socket| socket.send_vectored(bufs))
 }
 
 impl<T: AsFd + 'static> PollFd<T> {

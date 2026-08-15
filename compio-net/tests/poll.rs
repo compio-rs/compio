@@ -1,12 +1,10 @@
 use std::{
-    cell::Cell,
     io::{self, IoSlice},
     net::{Ipv4Addr, SocketAddrV4},
     pin::Pin,
     time::Duration,
 };
 
-use compio_driver::{AsFd, BorrowedFd};
 use compio_runtime::fd::PollFd;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 
@@ -208,29 +206,6 @@ async fn poll_concurrent_read_write_readiness() {
 }
 
 #[compio_macros::test]
-async fn poll_flush_reaches_the_source() {
-    let (client, server) = connected_sockets();
-    let mut tx = PollFd::new(FlushCounter {
-        socket: client,
-        flushes: Cell::new(0),
-    })
-    .unwrap();
-
-    futures_util::AsyncWriteExt::write_all(&mut tx, b"Hello world!")
-        .await
-        .unwrap();
-    futures_util::AsyncWriteExt::flush(&mut tx).await.unwrap();
-    assert_eq!(tx.flushes.get(), 1, "flushing must reach the source");
-
-    // Closing only shuts down the write half, since flushing would steal the
-    // waker of a pending write.
-    futures_util::AsyncWriteExt::close(&mut tx).await.unwrap();
-    assert_eq!(tx.flushes.get(), 1, "closing must not flush the source");
-
-    drop(server);
-}
-
-#[compio_macros::test]
 async fn poll_close_half_closes() {
     let (mut tx, rx) = connected_pair();
 
@@ -273,6 +248,7 @@ async fn poll_close_half_closes() {
     drop(tx);
 }
 
+#[cfg(unix)]
 #[compio_macros::test]
 async fn poll_close_ignores_sources_without_a_write_half() {
     // A file has no write half to shut down, so closing it must still succeed.
@@ -284,6 +260,7 @@ async fn poll_close_ignores_sources_without_a_write_half() {
     futures_util::AsyncWriteExt::close(&mut file).await.unwrap();
 }
 
+#[cfg(unix)]
 #[compio_macros::test]
 async fn poll_socket_operations_reject_files() {
     let file = PollFd::new(tempfile::tempfile().unwrap()).unwrap();
@@ -291,34 +268,6 @@ async fn poll_socket_operations_reject_files() {
 
     assert!(file.accept().await.is_err());
     assert!(file.connect(&addr).await.is_err());
-}
-
-/// A socket that counts how often it is flushed, since flushing a socket is a
-/// no-op that cannot be observed on the peer.
-struct FlushCounter {
-    socket: Socket,
-    flushes: Cell<usize>,
-}
-
-impl AsFd for FlushCounter {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.socket.as_fd()
-    }
-}
-
-impl io::Write for &FlushCounter {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        io::Write::write(&mut &self.socket, buf)
-    }
-
-    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> io::Result<usize> {
-        io::Write::write_vectored(&mut &self.socket, bufs)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.flushes.set(self.flushes.get() + 1);
-        io::Write::flush(&mut &self.socket)
-    }
 }
 
 fn connected_pair() -> (PollFd<Socket>, PollFd<Socket>) {

@@ -21,7 +21,6 @@
 )]
 
 use std::{
-    io::{Read, Write},
     pin::Pin,
     task::{Context, Poll, ready},
 };
@@ -165,10 +164,7 @@ pin_project! {
     }
 }
 
-impl<S: AsFd + 'static> WebSocketStream<S>
-where
-    for<'a> &'a S: Read + Write,
-{
+impl<S: AsFd + 'static> WebSocketStream<S> {
     /// Get a reference to the underlying stream.
     pub fn get_ref(&self) -> &MaybePollStream<S> {
         self.inner.get_ref()
@@ -265,10 +261,7 @@ impl<S: AsFd> IntoInner for WebSocketStream<S> {
     }
 }
 
-impl<S: AsFd + 'static> Sink<Message> for WebSocketStream<S>
-where
-    for<'a> &'a S: Read + Write,
-{
+impl<S: AsFd + 'static> Sink<Message> for WebSocketStream<S> {
     type Error = WsError;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), WsError>> {
@@ -293,10 +286,7 @@ where
     }
 }
 
-impl<S: AsFd + 'static> Stream for WebSocketStream<S>
-where
-    for<'a> &'a S: Read + Write,
-{
+impl<S: AsFd + 'static> Stream for WebSocketStream<S> {
     type Item = Result<Message, WsError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -317,10 +307,7 @@ where
     }
 }
 
-impl<S: AsFd + 'static> FusedStream for WebSocketStream<S>
-where
-    for<'a> &'a S: Read + Write,
-{
+impl<S: AsFd + 'static> FusedStream for WebSocketStream<S> {
     fn is_terminated(&self) -> bool {
         self.inner.is_terminated()
     }
@@ -339,7 +326,6 @@ where
 pub async fn accept_async<S, T>(stream: T) -> Result<WebSocketStream<S>, WsError>
 where
     S: AsFd + 'static,
-    for<'a> &'a S: Read + Write,
     T: IntoMaybeTlsStream<S>,
 {
     accept_hdr_async(stream, NoCallback).await
@@ -352,7 +338,6 @@ pub async fn accept_async_with_config<S, T>(
 ) -> Result<WebSocketStream<S>, WsError>
 where
     S: AsFd + 'static,
-    for<'a> &'a S: Read + Write,
     T: IntoMaybeTlsStream<S>,
 {
     accept_hdr_with_config_async(stream, NoCallback, config).await
@@ -369,7 +354,6 @@ pub async fn accept_hdr_async<S, T, C>(
 ) -> Result<WebSocketStream<S>, WsError>
 where
     S: AsFd + 'static,
-    for<'a> &'a S: Read + Write,
     T: IntoMaybeTlsStream<S>,
     C: Callback + Unpin,
 {
@@ -384,7 +368,6 @@ pub async fn accept_hdr_with_config_async<S, T, C>(
 ) -> Result<WebSocketStream<S>, WsError>
 where
     S: AsFd + 'static,
-    for<'a> &'a S: Read + Write,
     T: IntoMaybeTlsStream<S>,
     C: Callback + Unpin,
 {
@@ -418,7 +401,6 @@ pub async fn client_async<R, S, T>(
 where
     R: IntoClientRequest + Unpin,
     S: AsFd + 'static,
-    for<'a> &'a S: Read + Write,
     T: IntoMaybeTlsStream<S>,
 {
     client_async_with_config(request, stream, None).await
@@ -433,7 +415,6 @@ pub async fn client_async_with_config<R, S, T>(
 where
     R: IntoClientRequest + Unpin,
     S: AsFd + 'static,
-    for<'a> &'a S: Read + Write,
     T: IntoMaybeTlsStream<S>,
 {
     let config = config.into();

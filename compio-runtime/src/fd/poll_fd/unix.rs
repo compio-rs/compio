@@ -6,6 +6,8 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
+#[cfg(feature = "read_buf")]
+use std::mem::MaybeUninit;
 
 use compio_buf::{BufResult, IntoInner};
 use compio_driver::{
@@ -38,6 +40,29 @@ impl<T: AsFd> PollFd<T> {
             write_submit: RefCell::new(None),
         })
     }
+}
+
+pub fn read(fd: BorrowedFd<'_>, buf: &mut [u8]) -> io::Result<usize> {
+    rustix::io::read(fd, buf).map_err(Into::into)
+}
+
+#[cfg(feature = "read_buf")]
+pub fn read_uninit(fd: BorrowedFd<'_>, buf: &mut [MaybeUninit<u8>]) -> io::Result<usize> {
+    rustix::io::read(fd, buf)
+        .map(|(initialized, _)| initialized.len())
+        .map_err(Into::into)
+}
+
+pub fn readv(fd: BorrowedFd<'_>, bufs: &mut [io::IoSliceMut<'_>]) -> io::Result<usize> {
+    rustix::io::readv(fd, bufs).map_err(Into::into)
+}
+
+pub fn write(fd: BorrowedFd<'_>, buf: &[u8]) -> io::Result<usize> {
+    rustix::io::write(fd, buf).map_err(Into::into)
+}
+
+pub fn writev(fd: BorrowedFd<'_>, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
+    rustix::io::writev(fd, bufs).map_err(Into::into)
 }
 
 impl<T: AsFd + 'static> PollFd<T> {

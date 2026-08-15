@@ -176,13 +176,19 @@ impl<T: AsFd + 'static> PollFd<T> {
     }
 }
 
-impl<T: AsFd + 'static> PollFd<T>
-where
-    for<'a> &'a T: std::io::Read,
-{
+impl<T: AsFd + 'static> PollFd<T> {
     /// Poll for read readiness and read data.
     pub fn poll_read(&self, cx: &mut Context, buf: &mut [u8]) -> Poll<io::Result<usize>> {
-        self.poll_read_with(cx, |fd| std::io::Read::read(&mut &*fd, buf))
+        self.poll_read_with(cx, |fd| sys::read(fd.as_fd(), buf))
+    }
+
+    /// Poll for read readiness and read data into a slice of buffers.
+    pub fn poll_read_vectored(
+        &self,
+        cx: &mut Context<'_>,
+        bufs: &mut [io::IoSliceMut<'_>],
+    ) -> Poll<io::Result<usize>> {
+        self.poll_read_with(cx, |fd| sys::readv(fd.as_fd(), bufs))
     }
 
     /// Poll for read readiness and read data into an uninitialized buffer.
@@ -190,19 +196,21 @@ where
     pub fn poll_read_buf(
         &self,
         cx: &mut Context,
-        mut buf: std::io::BorrowedCursor<u8>,
+        mut buf: std::io::BorrowedCursor<'_, u8>,
     ) -> Poll<io::Result<()>> {
-        self.poll_read_with(cx, |fd| std::io::Read::read_buf(&mut &*fd, buf.reborrow()))
+        self.poll_read_with(cx, |fd| {
+            // SAFETY: platform reads only initialize the bytes they report.
+            let read = sys::read_uninit(fd.as_fd(), unsafe { buf.as_mut() })?;
+            unsafe { buf.advance(read) };
+            Ok(())
+        })
     }
 }
 
-impl<T: AsFd + 'static> PollFd<T>
-where
-    for<'a> &'a T: std::io::Write,
-{
+impl<T: AsFd + 'static> PollFd<T> {
     /// Poll for write readiness and write data.
     pub fn poll_write(&self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
-        self.poll_write_with(cx, |fd| std::io::Write::write(&mut &*fd, buf))
+        self.poll_write_with(cx, |fd| sys::write(fd.as_fd(), buf))
     }
 
     /// Poll for write readiness and write data from a slice of buffers.
@@ -217,12 +225,14 @@ where
         cx: &mut Context<'_>,
         bufs: &[io::IoSlice<'_>],
     ) -> Poll<io::Result<usize>> {
-        self.poll_write_with(cx, |fd| std::io::Write::write_vectored(&mut &*fd, bufs))
+        self.poll_write_with(cx, |fd| sys::writev(fd.as_fd(), bufs))
     }
 
-    /// Poll for write readiness and flush the source.
-    pub fn poll_flush(&self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.poll_write_with(cx, |fd| std::io::Write::flush(&mut &*fd))
+    /// Flush pending writes.
+    ///
+    /// [`PollFd`] does not buffer writes, so this is a no-op.
+    pub fn poll_flush(&self, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
     }
 }
 
@@ -237,7 +247,7 @@ impl<T: AsFd> PollFd<T> {
     /// Like the `shutdown` methods in `std`, this does not flush the source.
     fn shutdown_write(&self) -> io::Result<()> {
         match self.with_socket(|socket| socket.shutdown(Shutdown::Write)) {
-            Err(e) if e.kind() == io::ErrorKind::NotConnected => Ok(()),
+            Err(e) if is_not_a_connected_socket(&e) => Ok(()),
             result => result,
         }
     }
@@ -287,14 +297,14 @@ impl<T: AsFd> Deref for PollFd<T> {
 fn is_would_block(e: &io::Error) -> bool {
     cfg_select! {
         unix => {
-            e.kind() == io::ErrorKind::WouldBlock || e.raw_os_error() == Some(libc::EINPROGRESS)
+            matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted) || e.raw_os_error() == Some(libc::EINPROGRESS)
         }
         windows => {
             use windows_sys::Win32::Networking::WinSock::WSAEINPROGRESS;
-            e.kind() == io::ErrorKind::WouldBlock || e.raw_os_error() == Some(WSAEINPROGRESS)
+            matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted) || e.raw_os_error() == Some(WSAEINPROGRESS)
         }
         _ => {
-            e.kind() == io::ErrorKind::WouldBlock
+            matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted)
         }
     }
 }
@@ -318,10 +328,23 @@ fn is_connect_pending(e: &io::Error) -> bool {
     }
 }
 
-impl<T: AsFd + 'static> futures_util::AsyncRead for &PollFd<T>
-where
-    for<'a> &'a T: std::io::Read,
-{
+fn is_not_a_connected_socket(e: &io::Error) -> bool {
+    cfg_select! {
+        unix => {
+            matches!(
+                e.raw_os_error(),
+                Some(libc::ENOTSOCK) | Some(libc::ENOTCONN)
+            )
+        }
+        windows => {
+            use windows_sys::Win32::Networking::WinSock::{WSAENOTCONN, WSAENOTSOCK};
+
+            matches!(e.raw_os_error(), Some(WSAENOTSOCK) | Some(WSAENOTCONN))
+        }
+    }
+}
+
+impl<T: AsFd + 'static> futures_util::AsyncRead for &PollFd<T> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -329,12 +352,17 @@ where
     ) -> Poll<io::Result<usize>> {
         (*self).poll_read(cx, buf)
     }
+
+    fn poll_read_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &mut [io::IoSliceMut<'_>],
+    ) -> Poll<io::Result<usize>> {
+        (*self).poll_read_vectored(cx, bufs)
+    }
 }
 
-impl<T: AsFd + 'static> futures_util::AsyncRead for PollFd<T>
-where
-    for<'a> &'a T: std::io::Read,
-{
+impl<T: AsFd + 'static> futures_util::AsyncRead for PollFd<T> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -342,12 +370,17 @@ where
     ) -> Poll<io::Result<usize>> {
         (*self).poll_read(cx, buf)
     }
+
+    fn poll_read_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &mut [io::IoSliceMut<'_>],
+    ) -> Poll<io::Result<usize>> {
+        (*self).poll_read_vectored(cx, bufs)
+    }
 }
 
-impl<T: AsFd + 'static> futures_util::AsyncWrite for &PollFd<T>
-where
-    for<'a> &'a T: std::io::Write,
-{
+impl<T: AsFd + 'static> futures_util::AsyncWrite for &PollFd<T> {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -369,16 +402,11 @@ where
     }
 
     fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        // Deliberately not flushing: the write readiness registration is shared
-        // with any pending write, so flushing here would steal its waker.
         Poll::Ready(self.shutdown_write())
     }
 }
 
-impl<T: AsFd + 'static> futures_util::AsyncWrite for PollFd<T>
-where
-    for<'a> &'a T: std::io::Write,
-{
+impl<T: AsFd + 'static> futures_util::AsyncWrite for PollFd<T> {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -400,8 +428,6 @@ where
     }
 
     fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        // Deliberately not flushing: the write readiness registration is shared
-        // with any pending write, so flushing here would steal its waker.
         Poll::Ready(self.shutdown_write())
     }
 }
