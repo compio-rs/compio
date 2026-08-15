@@ -15,8 +15,9 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 compio-buf = { workspace = true }
-compio-io = { workspace = true, features = ["compat"] }
+compio-driver = { workspace = true }
 compio-net = { workspace = true, optional = true }
+compio-runtime = { workspace = true }
 compio-tls = { workspace = true, default-features = false }
 compio-log = { workspace = true }
 
@@ -29,10 +30,11 @@ webpki-roots = { workspace = true, optional = true }
 
 futures-util = { workspace = true, features = ["sink"] }
 pin-project-lite = { workspace = true }
+socket2 = { workspace = true }
 
 [dev-dependencies]
+compio-driver = { workspace = true, features = ["polling"] }
 compio-macros = { workspace = true }
-compio-runtime = { workspace = true }
 compio-net = { workspace = true }
 
 futures-channel = { workspace = true }

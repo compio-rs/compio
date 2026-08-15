@@ -1,8 +1,12 @@
 //! TLS support for WebSocket connections (native-tls and rustls).
 
-use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream, util::Splittable};
+use std::io::{Read, Write};
+
+use compio_driver::AsFd;
 use compio_net::TcpStream;
+use compio_runtime::fd::PollFd;
 use compio_tls::{MaybeTlsStream, TlsConnector};
+use socket2::Socket;
 use tungstenite::{
     Error,
     client::{IntoClientRequest, uri_mode},
@@ -112,21 +116,17 @@ mod encryption {
 }
 
 async fn wrap_stream<S>(
-    socket: S,
+    socket: PollFd<S>,
     domain: &str,
     connector: Option<TlsConnector>,
     mode: Mode,
-    cap: usize,
-    max_buffer_size: usize,
-) -> Result<MaybeTlsStream<S>, Error>
+) -> Result<MaybeTlsStream<PollFd<S>>, Error>
 where
-    S: Splittable + 'static,
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
+    S: AsFd + 'static,
+    for<'a> &'a S: Read + Write,
 {
-    let socket = AsyncStream::with_limits(cap, max_buffer_size, socket);
     match mode {
-        Mode::Plain => Ok(MaybeTlsStream::new_plain_compat(socket)),
+        Mode::Plain => Ok(MaybeTlsStream::new_plain(socket)),
         Mode::Tls => {
             let stream = {
                 let connector = if let Some(connector) = connector {
@@ -164,10 +164,7 @@ where
                     }
                 };
 
-                connector
-                    .connect_compat(domain, socket)
-                    .await
-                    .map_err(Error::Io)?
+                connector.connect(domain, socket).await.map_err(Error::Io)?
             };
             Ok(MaybeTlsStream::new_tls(stream))
         }
@@ -178,13 +175,12 @@ where
 /// upgrading the stream to TLS if required.
 pub async fn client_async_tls<R, S>(
     request: R,
-    stream: S,
+    stream: PollFd<S>,
 ) -> Result<(WebSocketStream<S>, Response), Error>
 where
     R: IntoClientRequest,
-    S: Splittable + 'static,
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
+    S: AsFd + 'static,
+    for<'a> &'a S: Read + Write,
 {
     client_async_tls_with_config(request, stream, None, None).await
 }
@@ -193,15 +189,14 @@ where
 /// configuration, and an optional connector.
 pub async fn client_async_tls_with_config<R, S>(
     request: R,
-    stream: S,
+    stream: PollFd<S>,
     connector: Option<TlsConnector>,
     config: impl Into<Config>,
 ) -> Result<(WebSocketStream<S>, Response), Error>
 where
     R: IntoClientRequest,
-    S: Splittable + 'static,
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
+    S: AsFd + 'static,
+    for<'a> &'a S: Read + Write,
 {
     let request: Request = request.into_client_request()?;
 
@@ -211,20 +206,12 @@ where
 
     let config = config.into();
 
-    let stream = wrap_stream(
-        stream,
-        domain,
-        connector,
-        mode,
-        config.buffer_size_base,
-        config.buffer_size_limit,
-    )
-    .await?;
+    let stream = wrap_stream(stream, domain, connector, mode).await?;
     client_async_with_config(request, stream, config).await
 }
 
 /// Connect to a given URL.
-pub async fn connect_async<R>(request: R) -> Result<(WebSocketStream<TcpStream>, Response), Error>
+pub async fn connect_async<R>(request: R) -> Result<(WebSocketStream<Socket>, Response), Error>
 where
     R: IntoClientRequest,
 {
@@ -235,7 +222,7 @@ where
 pub async fn connect_async_with_config<R>(
     request: R,
     config: impl Into<Config>,
-) -> Result<(WebSocketStream<TcpStream>, Response), Error>
+) -> Result<(WebSocketStream<Socket>, Response), Error>
 where
     R: IntoClientRequest,
 {
@@ -248,7 +235,7 @@ pub async fn connect_async_tls_with_config<R>(
     request: R,
     config: impl Into<Config>,
     connector: Option<TlsConnector>,
-) -> Result<(WebSocketStream<TcpStream>, Response), Error>
+) -> Result<(WebSocketStream<Socket>, Response), Error>
 where
     R: IntoClientRequest,
 {
@@ -266,6 +253,7 @@ where
         .await
         .map_err(Error::Io)?;
     socket.set_nodelay(config.disable_nagle)?;
+    let socket = socket.into_poll_fd()?;
     client_async_tls_with_config(request, socket, connector, config).await
 }
 
