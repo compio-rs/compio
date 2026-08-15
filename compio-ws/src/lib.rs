@@ -21,16 +21,19 @@
 )]
 
 use std::{
+    io,
     pin::Pin,
     task::{Context, Poll, ready},
 };
 
 use compio_buf::IntoInner;
 use compio_driver::AsFd;
+use compio_net::{TcpStream, UnixStream};
 use compio_runtime::fd::PollFd;
 use compio_tls::{MaybeTlsStream, TlsStream};
 use futures_util::{Sink, SinkExt, Stream, StreamExt, stream::FusedStream};
 use pin_project_lite::pin_project;
+use socket2::Socket;
 use tungstenite::{
     Error as WsError, Message,
     client::IntoClientRequest,
@@ -125,6 +128,8 @@ mod private {
     impl<S: AsFd> Sealed<S> for PollFd<S> {}
     impl<S: AsFd> Sealed<S> for MaybePollStream<S> {}
     impl<S: AsFd> Sealed<S> for TlsStream<PollFd<S>> {}
+    impl Sealed<Socket> for TcpStream {}
+    impl Sealed<Socket> for UnixStream {}
 }
 
 /// Convert a stream into a [`MaybeTlsStream`].
@@ -133,24 +138,36 @@ where
     S: AsFd,
 {
     /// Convert this stream into a [`MaybeTlsStream`].
-    fn into_maybe_tls_stream(self) -> MaybePollStream<S>;
+    fn into_maybe_tls_stream(self) -> io::Result<MaybePollStream<S>>;
 }
 
 impl<S: AsFd> IntoMaybeTlsStream<S> for PollFd<S> {
-    fn into_maybe_tls_stream(self) -> MaybePollStream<S> {
-        MaybeTlsStream::new_plain(self)
+    fn into_maybe_tls_stream(self) -> io::Result<MaybePollStream<S>> {
+        Ok(MaybeTlsStream::new_plain(self))
     }
 }
 
 impl<S: AsFd> IntoMaybeTlsStream<S> for MaybePollStream<S> {
-    fn into_maybe_tls_stream(self) -> MaybePollStream<S> {
-        self
+    fn into_maybe_tls_stream(self) -> io::Result<MaybePollStream<S>> {
+        Ok(self)
     }
 }
 
 impl<S: AsFd> IntoMaybeTlsStream<S> for TlsStream<PollFd<S>> {
-    fn into_maybe_tls_stream(self) -> MaybePollStream<S> {
-        MaybeTlsStream::new_tls(self)
+    fn into_maybe_tls_stream(self) -> io::Result<MaybePollStream<S>> {
+        Ok(MaybeTlsStream::new_tls(self))
+    }
+}
+
+impl IntoMaybeTlsStream<Socket> for TcpStream {
+    fn into_maybe_tls_stream(self) -> io::Result<MaybePollStream<Socket>> {
+        Ok(MaybeTlsStream::new_plain(self.into_poll_fd()?))
+    }
+}
+
+impl IntoMaybeTlsStream<Socket> for UnixStream {
+    fn into_maybe_tls_stream(self) -> io::Result<MaybePollStream<Socket>> {
+        Ok(MaybeTlsStream::new_plain(self.into_poll_fd()?))
     }
 }
 
@@ -185,17 +202,17 @@ impl<S: AsFd + 'static> WebSocketStream<S> {
         stream: T,
         role: Role,
         config: impl Into<Config>,
-    ) -> Self {
+    ) -> io::Result<Self> {
         let config = config.into();
 
-        Self::from_inner(
+        Ok(Self::from_inner(
             async_tungstenite::WebSocketStream::from_raw_socket(
-                stream.into_maybe_tls_stream(),
+                stream.into_maybe_tls_stream()?,
                 role,
                 config.websocket,
             )
             .await,
-        )
+        ))
     }
 
     /// Convert a raw socket into a [`WebSocketStream`] without performing a
@@ -209,18 +226,18 @@ impl<S: AsFd + 'static> WebSocketStream<S> {
         part: Vec<u8>,
         role: Role,
         config: impl Into<Config>,
-    ) -> Self {
+    ) -> io::Result<Self> {
         let config = config.into();
 
-        Self::from_inner(
+        Ok(Self::from_inner(
             async_tungstenite::WebSocketStream::from_partially_read(
-                stream.into_maybe_tls_stream(),
+                stream.into_maybe_tls_stream()?,
                 part,
                 role,
                 config.websocket,
             )
             .await,
-        )
+        ))
     }
 
     fn from_inner(inner: async_tungstenite::WebSocketStream<MaybePollStream<S>>) -> Self {
@@ -373,7 +390,7 @@ where
 {
     let config = config.into();
     let inner = async_tungstenite::accept_hdr_async_with_config(
-        stream.into_maybe_tls_stream(),
+        stream.into_maybe_tls_stream()?,
         callback,
         config.websocket,
     )
@@ -420,7 +437,7 @@ where
     let config = config.into();
     let (inner, response) = async_tungstenite::client_async_with_config(
         request,
-        stream.into_maybe_tls_stream(),
+        stream.into_maybe_tls_stream()?,
         config.websocket,
     )
     .await?;

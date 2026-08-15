@@ -16,7 +16,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 compio-buf = { workspace = true }
 compio-driver = { workspace = true }
-compio-net = { workspace = true, optional = true }
+compio-net = { workspace = true }
 compio-runtime = { workspace = true }
 compio-tls = { workspace = true, default-features = false }
 compio-log = { workspace = true }
@@ -35,7 +35,6 @@ socket2 = { workspace = true }
 [dev-dependencies]
 compio-driver = { workspace = true, features = ["polling"] }
 compio-macros = { workspace = true }
-compio-net = { workspace = true }
 
 futures-channel = { workspace = true }
 rustls-pemfile = "2.0"
@@ -43,7 +42,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [features]
 default = []
-connect = ["dep:compio-net"]
+connect = []
 native-tls = ["connect", "compio-tls/native-tls", "tungstenite/native-tls"]
 native-tls-vendored = ["native-tls", "compio-tls/native-tls-vendored"]
 rustls = ["connect", "compio-tls/rustls", "tungstenite/__rustls-tls"]

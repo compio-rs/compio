@@ -62,5 +62,3 @@ If you are writing libraries that want to support completion-based async WebSock
 ```bash
 cargo add compio-ws
 ```
-
-`compio-ws` is runtime agnostic only when `connect` feature is disabled.
