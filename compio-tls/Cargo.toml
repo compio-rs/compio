@@ -39,6 +39,7 @@ rcgen = { workspace = true }
 rsa = "0.10.0-rc.17"
 rustls = { workspace = true, default-features = false, features = ["ring"] }
 rustls-native-certs = { workspace = true }
+socket2 = { workspace = true }
 tempfile = { workspace = true }
 
 futures-rustls = { workspace = true, default-features = false, features = [

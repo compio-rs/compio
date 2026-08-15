@@ -1,11 +1,9 @@
-use std::{
-    future::poll_fn,
-    net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
-};
+use std::net::{Ipv4Addr, SocketAddr, TcpListener};
 
 use compio_runtime::{JoinHandle, fd::PollFd};
 use compio_tls::{TlsAcceptor, TlsConnector};
 use futures_util::{AsyncReadExt, AsyncWriteExt};
+use socket2::{Domain, Protocol, Socket, Type};
 
 async fn start_server(acceptor: TlsAcceptor) -> (SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
@@ -13,11 +11,7 @@ async fn start_server(acceptor: TlsAcceptor) -> (SocketAddr, JoinHandle<()>) {
     let addr = listener.local_addr().unwrap();
     let listener = PollFd::new(listener).unwrap();
     let server = compio_runtime::spawn(async move {
-        let (stream, _) = poll_fn(|cx| listener.poll_accept_with(cx, |inner| inner.accept()))
-            .await
-            .unwrap();
-        stream.set_nonblocking(true).unwrap();
-        let stream = PollFd::new(stream).unwrap();
+        let (stream, _) = listener.accept().await.unwrap();
         let mut stream = acceptor.accept(stream).await.unwrap();
         let mut res = [0; 12];
         stream.read_exact(&mut res).await.unwrap();
@@ -30,9 +24,9 @@ async fn start_server(acceptor: TlsAcceptor) -> (SocketAddr, JoinHandle<()>) {
 }
 
 async fn connect(connector: TlsConnector, addr: SocketAddr) {
-    let stream = TcpStream::connect(addr).unwrap();
-    stream.set_nonblocking(true).unwrap();
+    let stream = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
     let stream = PollFd::new(stream).unwrap();
+    stream.connect(&addr.into()).await.unwrap();
     let mut stream = connector.connect("localhost", stream).await.unwrap();
 
     stream.write_all(b"Hello world!").await.unwrap();

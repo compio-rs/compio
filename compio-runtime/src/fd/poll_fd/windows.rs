@@ -15,6 +15,7 @@ use compio_driver::{
     AsFd, AsRawFd, BorrowedFd, OpCode, OpType, RawFd, SharedFd, ToSharedFd, syscall,
 };
 use compio_io::compat::WakerArrayRef;
+use socket2::{SockRef, Socket};
 use synchrony::unsync::atomic::{AtomicI32, AtomicUsize};
 use windows_sys::Win32::{
     Networking::WinSock::{
@@ -287,16 +288,14 @@ impl<T: AsFd> IntoInner for WaitWSAEvent<T> {
     }
 }
 
-pub fn shutdown_write(fd: BorrowedFd<'_>) -> io::Result<()> {
-    use windows_sys::Win32::Networking::WinSock::{SD_SEND, shutdown};
+pub fn with_socket<R>(
+    fd: BorrowedFd<'_>,
+    f: impl FnOnce(&Socket) -> io::Result<R>,
+) -> io::Result<R> {
+    use windows_sys::Win32::Networking::WinSock::WSAENOTSOCK;
 
     match fd {
-        // Only sockets have a write half, and `shutdown` would need Winsock to
-        // be initialized just to tell us that a handle is not a socket.
-        BorrowedFd::File(_) => Ok(()),
-        BorrowedFd::Socket(socket) => {
-            syscall!(SOCKET, shutdown(socket.as_raw_socket() as _, SD_SEND as _))?;
-            Ok(())
-        }
+        BorrowedFd::File(_) => Err(io::Error::from_raw_os_error(WSAENOTSOCK)),
+        BorrowedFd::Socket(socket) => f(&SockRef::from(&socket)),
     }
 }

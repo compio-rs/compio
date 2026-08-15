@@ -15,6 +15,7 @@ use std::os::windows::io::{AsRawSocket, RawSocket};
 use std::{
     future::poll_fn,
     io,
+    net::Shutdown,
     ops::Deref,
     pin::Pin,
     task::{Context, Poll},
@@ -22,12 +23,20 @@ use std::{
 
 use compio_buf::IntoInner;
 use compio_driver::{AsFd, AsRawFd, BorrowedFd, RawFd, SharedFd, ToSharedFd};
+use socket2::{SockAddr, Socket};
 
 /// Providing functionalities to wait for readiness.
+///
+/// ## Platform specific
+/// * Windows: only supports sockets.
 #[derive(Debug)]
 pub struct PollFd<T: AsFd>(sys::PollFd<T>);
 
 impl<T: AsFd> PollFd<T> {
+    fn with_socket<R>(&self, f: impl FnOnce(&Socket) -> io::Result<R>) -> io::Result<R> {
+        sys::with_socket(self.0.as_fd(), f)
+    }
+
     /// Create [`PollFd`] without attaching the source.
     ///
     /// Ready-based sources does not need to be attached.
@@ -37,11 +46,43 @@ impl<T: AsFd> PollFd<T> {
 
     /// Create [`PollFd`] from a shared file descriptor.
     pub fn from_shared_fd(inner: SharedFd<T>) -> io::Result<Self> {
+        sys::with_socket(inner.as_fd(), |socket| socket.set_nonblocking(true))?;
         Ok(Self(sys::PollFd::new(inner)?))
     }
 }
 
 impl<T: AsFd + 'static> PollFd<T> {
+    /// Accept a connection from this socket.
+    pub async fn accept(&self) -> io::Result<(PollFd<Socket>, SockAddr)> {
+        poll_fn(|cx| self.poll_accept(cx)).await
+    }
+
+    /// Poll to accept a connection from this socket.
+    pub fn poll_accept(
+        &self,
+        cx: &mut Context<'_>,
+    ) -> Poll<io::Result<(PollFd<Socket>, SockAddr)>> {
+        self.poll_accept_with(cx, |source| {
+            let (socket, addr) = sys::with_socket(source.as_fd(), Socket::accept)?;
+            Ok((PollFd::new(socket)?, addr))
+        })
+    }
+
+    /// Connect this socket to the specified address.
+    pub async fn connect(&self, addr: &SockAddr) -> io::Result<()> {
+        match self.with_socket(|socket| socket.connect(addr)) {
+            Ok(()) => return Ok(()),
+            Err(e) if is_connect_pending(&e) => {}
+            Err(e) => return Err(e),
+        }
+
+        self.connect_ready().await?;
+        self.with_socket(|socket| match socket.take_error()? {
+            Some(e) => Err(e),
+            None => Ok(()),
+        })
+    }
+
     /// Wait for accept readiness, before calling `accept`, or after `accept`
     /// returns `WouldBlock`.
     pub async fn accept_ready(&self) -> io::Result<()> {
@@ -195,9 +236,8 @@ impl<T: AsFd> PollFd<T> {
     ///
     /// Like the `shutdown` methods in `std`, this does not flush the source.
     fn shutdown_write(&self) -> io::Result<()> {
-        match sys::shutdown_write(self.0.as_fd()) {
-            // Not a socket, or a socket that never reached a connected state.
-            Err(e) if is_not_a_connected_socket(&e) => Ok(()),
+        match self.with_socket(|socket| socket.shutdown(Shutdown::Write)) {
+            Err(e) if e.kind() == io::ErrorKind::NotConnected => Ok(()),
             result => result,
         }
     }
@@ -245,30 +285,35 @@ impl<T: AsFd> Deref for PollFd<T> {
 }
 
 fn is_would_block(e: &io::Error) -> bool {
-    #[cfg(unix)]
-    {
-        e.kind() == io::ErrorKind::WouldBlock || e.raw_os_error() == Some(libc::EINPROGRESS)
-    }
-    #[cfg(not(unix))]
-    {
-        e.kind() == io::ErrorKind::WouldBlock
+    cfg_select! {
+        unix => {
+            e.kind() == io::ErrorKind::WouldBlock || e.raw_os_error() == Some(libc::EINPROGRESS)
+        }
+        windows => {
+            use windows_sys::Win32::Networking::WinSock::WSAEINPROGRESS;
+            e.kind() == io::ErrorKind::WouldBlock || e.raw_os_error() == Some(WSAEINPROGRESS)
+        }
+        _ => {
+            e.kind() == io::ErrorKind::WouldBlock
+        }
     }
 }
 
-/// Whether the error says that the source is not a socket, or is a socket that
-/// never reached a connected state.
-fn is_not_a_connected_socket(e: &io::Error) -> bool {
+fn is_connect_pending(e: &io::Error) -> bool {
+    if is_would_block(e) {
+        return true;
+    }
+
     cfg_select! {
         unix => {
-            matches!(
-                e.raw_os_error(),
-                Some(libc::ENOTSOCK) | Some(libc::ENOTCONN)
-            )
+            e.raw_os_error() == Some(libc::EALREADY)
         }
         windows => {
-            use windows_sys::Win32::Networking::WinSock::{WSAENOTCONN, WSAENOTSOCK};
-
-            matches!(e.raw_os_error(), Some(WSAENOTSOCK) | Some(WSAENOTCONN))
+            use windows_sys::Win32::Networking::WinSock::WSAEALREADY;
+            e.raw_os_error() == Some(WSAEALREADY)
+        }
+        _ => {
+            false
         }
     }
 }

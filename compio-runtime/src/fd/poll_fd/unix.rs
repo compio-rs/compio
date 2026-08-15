@@ -12,6 +12,7 @@ use compio_driver::{
     AsFd, AsRawFd, BorrowedFd, RawFd, SharedFd, ToSharedFd,
     op::{Interest, PollOnce},
 };
+use socket2::{SockRef, Socket};
 
 use crate::Submit;
 
@@ -123,7 +124,9 @@ impl<T: AsFd> Deref for PollFd<T> {
     }
 }
 
-pub fn shutdown_write(fd: BorrowedFd<'_>) -> io::Result<()> {
-    compio_driver::syscall!(libc::shutdown(fd.as_raw_fd(), libc::SHUT_WR))?;
-    Ok(())
+pub fn with_socket<R>(
+    fd: BorrowedFd<'_>,
+    f: impl FnOnce(&Socket) -> io::Result<R>,
+) -> io::Result<R> {
+    f(&SockRef::from(&fd))
 }

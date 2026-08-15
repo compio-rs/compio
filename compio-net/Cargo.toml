@@ -46,6 +46,7 @@ libc = { workspace = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
+compio-driver = { workspace = true, features = ["polling"] }
 compio-macros = { workspace = true }
 compio-runtime = { workspace = true, features = ["time"] }
 futures-channel = { workspace = true }

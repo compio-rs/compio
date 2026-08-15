@@ -24,34 +24,18 @@ fn is_would_block(e: &io::Error) -> bool {
 #[compio_macros::test]
 async fn poll_connect() {
     let listener = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
-    listener.set_nonblocking(true).unwrap();
     listener
         .bind(&SockAddr::from(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)))
         .unwrap();
     listener.listen(4).unwrap();
     let addr = listener.local_addr().unwrap();
     let listener = PollFd::new(listener).unwrap();
-    let accept_task = async {
-        std::future::poll_fn(|cx| listener.poll_accept_with(cx, |listener| listener.accept()))
-            .await
-            .unwrap()
-    };
+    let accept_task = listener.accept();
 
     let client = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
-    client.set_nonblocking(true).unwrap();
     let client = PollFd::new(client).unwrap();
-    let connect_task = async {
-        match client.connect(&addr) {
-            Ok(_) => Ok(()),
-            Err(e) if is_would_block(&e) => client.connect_ready().await,
-            Err(e) => Err(e),
-        }
-    };
-    let ((tx, _), res) = futures_util::join!(accept_task, connect_task);
-    res.unwrap();
-
-    tx.set_nonblocking(true).unwrap();
-    let mut tx = PollFd::new(tx).unwrap();
+    let connect_task = client.connect(&addr);
+    let ((mut tx, _), _) = futures_util::try_join!(accept_task, connect_task).unwrap();
 
     let send_task = async {
         futures_util::AsyncWriteExt::write(&mut tx, b"Hello world!")
@@ -76,6 +60,22 @@ async fn poll_connect() {
     assert_eq!(write, 12);
     assert_eq!(read, 12);
     assert_eq!(buffer, b"Hello world!");
+}
+
+#[compio_macros::test]
+async fn poll_connect_refused() {
+    let listener = std::net::TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let addr = SockAddr::from(listener.local_addr().unwrap());
+    drop(listener);
+
+    let client = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
+    let client = PollFd::new(client).unwrap();
+    let err = compio_runtime::time::timeout(Duration::from_secs(10), client.connect(&addr))
+        .await
+        .expect("connecting to a closed port timed out")
+        .unwrap_err();
+
+    assert_eq!(err.kind(), io::ErrorKind::ConnectionRefused);
 }
 
 #[compio_macros::test]
@@ -282,6 +282,15 @@ async fn poll_close_ignores_sources_without_a_write_half() {
         .await
         .unwrap();
     futures_util::AsyncWriteExt::close(&mut file).await.unwrap();
+}
+
+#[compio_macros::test]
+async fn poll_socket_operations_reject_files() {
+    let file = PollFd::new(tempfile::tempfile().unwrap()).unwrap();
+    let addr = SockAddr::from(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1));
+
+    assert!(file.accept().await.is_err());
+    assert!(file.connect(&addr).await.is_err());
 }
 
 /// A socket that counts how often it is flushed, since flushing a socket is a
