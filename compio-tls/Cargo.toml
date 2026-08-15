@@ -54,6 +54,3 @@ native-tls-vendored = ["native-tls/vendored"]
 py-dynamic-openssl = ["dep:compio-py-dynamic-openssl", "dep:pin-project-lite"]
 
 ring = ["rustls", "rustls/ring", "futures-rustls/ring"]
-
-# Kept empty while the workspace-level `compio/read_buf` feature forwards it.
-read_buf = []
