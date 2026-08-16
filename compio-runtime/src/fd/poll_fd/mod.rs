@@ -33,8 +33,8 @@ use socket2::{SockAddr, Socket};
 pub struct PollFd<T: AsFd>(sys::PollFd<T>);
 
 impl<T: AsFd> PollFd<T> {
-    fn with_socket<R>(&self, f: impl FnOnce(&Socket) -> io::Result<R>) -> io::Result<R> {
-        sys::with_socket(self.0.as_fd(), f)
+    fn run_socket_op<R>(&self, f: impl FnOnce(&Socket) -> io::Result<R>) -> io::Result<R> {
+        sys::run_socket_op(self.0.as_fd(), f)
     }
 
     /// Create [`PollFd`] without attaching the source.
@@ -46,7 +46,7 @@ impl<T: AsFd> PollFd<T> {
 
     /// Create [`PollFd`] from a shared file descriptor.
     pub fn from_shared_fd(inner: SharedFd<T>) -> io::Result<Self> {
-        sys::with_socket(inner.as_fd(), |socket| socket.set_nonblocking(true))?;
+        sys::run_socket_op(inner.as_fd(), |socket| socket.set_nonblocking(true))?;
         Ok(Self(sys::PollFd::new(inner)?))
     }
 }
@@ -63,21 +63,21 @@ impl<T: AsFd + 'static> PollFd<T> {
         cx: &mut Context<'_>,
     ) -> Poll<io::Result<(PollFd<Socket>, SockAddr)>> {
         self.poll_accept_with(cx, |source| {
-            let (socket, addr) = sys::with_socket(source.as_fd(), Socket::accept)?;
+            let (socket, addr) = sys::run_socket_op(source.as_fd(), Socket::accept)?;
             Ok((PollFd::new(socket)?, addr))
         })
     }
 
     /// Connect this socket to the specified address.
     pub async fn connect(&self, addr: &SockAddr) -> io::Result<()> {
-        match self.with_socket(|socket| socket.connect(addr)) {
+        match self.run_socket_op(|socket| socket.connect(addr)) {
             Ok(()) => return Ok(()),
             Err(e) if is_connect_pending(&e) => {}
             Err(e) => return Err(e),
         }
 
         self.connect_ready().await?;
-        self.with_socket(|socket| match socket.take_error()? {
+        self.run_socket_op(|socket| match socket.take_error()? {
             Some(e) => Err(e),
             None => Ok(()),
         })
@@ -246,7 +246,7 @@ impl<T: AsFd> PollFd<T> {
     ///
     /// Like the `shutdown` methods in `std`, this does not flush the source.
     fn shutdown_write(&self) -> io::Result<()> {
-        match self.with_socket(|socket| socket.shutdown(Shutdown::Write)) {
+        match self.run_socket_op(|socket| socket.shutdown(Shutdown::Write)) {
             Err(e) if is_not_a_connected_socket(&e) => Ok(()),
             result => result,
         }

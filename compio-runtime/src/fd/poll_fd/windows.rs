@@ -62,24 +62,24 @@ impl<T: AsFd> PollFd<T> {
 }
 
 pub fn read(fd: BorrowedFd<'_>, buf: &mut [u8]) -> io::Result<usize> {
-    with_socket(fd, |socket| io::Read::read(&mut &*socket, buf))
+    run_socket_op(fd, |socket| io::Read::read(&mut &*socket, buf))
 }
 
 #[cfg(feature = "read_buf")]
 pub fn read_uninit(fd: BorrowedFd<'_>, buf: &mut [MaybeUninit<u8>]) -> io::Result<usize> {
-    with_socket(fd, |socket| socket.recv(buf))
+    run_socket_op(fd, |socket| socket.recv(buf))
 }
 
 pub fn readv(fd: BorrowedFd<'_>, bufs: &mut [io::IoSliceMut<'_>]) -> io::Result<usize> {
-    with_socket(fd, |socket| io::Read::read_vectored(&mut &*socket, bufs))
+    run_socket_op(fd, |socket| io::Read::read_vectored(&mut &*socket, bufs))
 }
 
 pub fn write(fd: BorrowedFd<'_>, buf: &[u8]) -> io::Result<usize> {
-    with_socket(fd, |socket| socket.send(buf))
+    run_socket_op(fd, |socket| socket.send(buf))
 }
 
 pub fn writev(fd: BorrowedFd<'_>, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
-    with_socket(fd, |socket| socket.send_vectored(bufs))
+    run_socket_op(fd, |socket| socket.send_vectored(bufs))
 }
 
 impl<T: AsFd + 'static> PollFd<T> {
@@ -311,7 +311,7 @@ impl<T: AsFd> IntoInner for WaitWSAEvent<T> {
     }
 }
 
-pub fn with_socket<R>(
+pub fn run_socket_op<R>(
     fd: BorrowedFd<'_>,
     f: impl FnOnce(&Socket) -> io::Result<R>,
 ) -> io::Result<R> {

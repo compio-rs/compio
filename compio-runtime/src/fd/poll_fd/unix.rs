@@ -149,7 +149,7 @@ impl<T: AsFd> Deref for PollFd<T> {
     }
 }
 
-pub fn with_socket<R>(
+pub fn run_socket_op<R>(
     fd: BorrowedFd<'_>,
     f: impl FnOnce(&Socket) -> io::Result<R>,
 ) -> io::Result<R> {
