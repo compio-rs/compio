@@ -29,8 +29,6 @@ This crate provides WebSocket client and server support for compio applications,
 
 ## Usage
 
-### For application
-
 Use `compio` directly with `ws-connect` feature enabled:
 
 ```bash
@@ -53,12 +51,4 @@ let (mut ws_stream, _) = connect_async("wss://echo.websocket.org").await?;
 // Send and receive messages
 ws_stream.send(Message::text("Hello WebSocket!")).await?;
 let msg = ws_stream.next().await.unwrap()?;
-```
-
-### For library
-
-If you are writing libraries that want to support completion-based async WebSocket, you can depend on this crate directly:
-
-```bash
-cargo add compio-ws
 ```
