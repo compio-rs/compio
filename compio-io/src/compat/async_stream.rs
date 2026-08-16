@@ -1,5 +1,6 @@
 use std::{
     fmt::Debug,
+    future::Future,
     io,
     marker::PhantomPinned,
     mem::MaybeUninit,
@@ -8,6 +9,7 @@ use std::{
 };
 
 use pin_project_lite::pin_project;
+use smallbox::{SmallBox, smallbox, space::S64};
 
 use super::waker_array::WakerArrayRef;
 use crate::{
@@ -15,6 +17,8 @@ use crate::{
     compat::{SyncStream, SyncStreamReadHalf, SyncStreamWriteHalf},
     util::{DEFAULT_BUF_SIZE, Splittable},
 };
+
+type InlineWriteFuture = SmallBox<dyn Future<Output = io::Result<usize>>, S64>;
 
 pin_project! {
     /// A stream wrapper for [`futures_util::io`] traits.
@@ -136,7 +140,8 @@ pin_project! {
     pub struct AsyncWriteStream<S> {
         #[pin]
         inner: SyncStreamWriteHalf<S>,
-        write_future: Option<PinBoxFuture<io::Result<usize>>>,
+        #[pin]
+        write_future: Option<InlineWriteFuture>,
         shutdown_future: Option<PinBoxFuture<io::Result<()>>>,
         write_waker: Option<Waker>,
         flush_waker: Option<Waker>,
@@ -204,6 +209,23 @@ macro_rules! poll_future {
                 return Poll::Pending;
             }
             Poll::Ready(res) => res,
+        }
+    }};
+}
+
+macro_rules! poll_inline_future {
+    ($f:expr, $cx:expr, $e:expr) => {{
+        let mut future_slot = $f;
+        if future_slot.as_ref().get_ref().is_none() {
+            let future: InlineWriteFuture = smallbox!($e);
+            future_slot.as_mut().set(Some(future));
+        }
+        match future_slot.as_mut().as_pin_mut().unwrap().poll($cx) {
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(res) => {
+                future_slot.set(None);
+                res
+            }
         }
     }};
 }
@@ -398,7 +420,7 @@ impl<S: AsyncWrite + Unpin + 'static> AsyncWriteStream<S> {
         ]);
         arr.with(|waker| {
             let cx = &mut Context::from_waker(waker);
-            let res = poll_future!(this.write_future, cx, inner.flush_write_buf());
+            let res = poll_inline_future!(this.write_future, cx, inner.flush_write_buf());
             Poll::Ready(res)
         })
     }
@@ -489,10 +511,27 @@ impl<S: Splittable> Splittable for AsyncStream<S> {
 
 #[cfg(test)]
 mod test {
+    use std::{future, hint, io};
+
     use futures_executor::block_on;
     use futures_util::AsyncWriteExt;
+    use smallbox::smallbox;
 
-    use super::AsyncWriteStream;
+    use super::{AsyncWriteStream, InlineWriteFuture};
+
+    #[test]
+    fn write_future_uses_inline_storage_with_heap_fallback() {
+        let inline: InlineWriteFuture = smallbox!(async { Ok::<usize, io::Error>(0) });
+        assert!(!inline.is_heap());
+
+        let oversized: InlineWriteFuture = smallbox!(async {
+            let storage = [0u8; 1_024];
+            future::pending::<()>().await;
+            hint::black_box(storage);
+            Ok::<usize, io::Error>(0)
+        });
+        assert!(oversized.is_heap());
+    }
 
     #[test]
     fn close() {

@@ -14,6 +14,7 @@ compio-buf = { workspace = true, features = ["arrayvec"] }
 futures-util = { workspace = true, features = ["sink"] }
 paste = { workspace = true }
 pin-project-lite = { workspace = true, optional = true }
+smallbox = { workspace = true, optional = true }
 rustix = { workspace = true, features = ["net"], optional = true }
 synchrony = { workspace = true, features = ["bilock"] }
 
@@ -39,7 +40,7 @@ futures-executor = { workspace = true }
 
 [features]
 default = ["bytes"]
-compat = ["futures-util/io", "dep:pin-project-lite"]
+compat = ["futures-util/io", "dep:pin-project-lite", "dep:smallbox"]
 sync = []
 ancillary = ["dep:libc", "dep:rustix", "dep:windows-sys"]
 bytes = ["compio-buf/bytes"]
