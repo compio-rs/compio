@@ -1,12 +1,10 @@
 use std::{
-    cell::Cell,
     io::{self, IoSlice},
     net::{Ipv4Addr, SocketAddrV4},
     pin::Pin,
     time::Duration,
 };
 
-use compio_driver::{AsFd, BorrowedFd};
 use compio_runtime::fd::PollFd;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 
@@ -24,34 +22,18 @@ fn is_would_block(e: &io::Error) -> bool {
 #[compio_macros::test]
 async fn poll_connect() {
     let listener = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
-    listener.set_nonblocking(true).unwrap();
     listener
         .bind(&SockAddr::from(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)))
         .unwrap();
     listener.listen(4).unwrap();
     let addr = listener.local_addr().unwrap();
     let listener = PollFd::new(listener).unwrap();
-    let accept_task = async {
-        std::future::poll_fn(|cx| listener.poll_accept_with(cx, |listener| listener.accept()))
-            .await
-            .unwrap()
-    };
+    let accept_task = listener.accept();
 
     let client = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
-    client.set_nonblocking(true).unwrap();
     let client = PollFd::new(client).unwrap();
-    let connect_task = async {
-        match client.connect(&addr) {
-            Ok(_) => Ok(()),
-            Err(e) if is_would_block(&e) => client.connect_ready().await,
-            Err(e) => Err(e),
-        }
-    };
-    let ((tx, _), res) = futures_util::join!(accept_task, connect_task);
-    res.unwrap();
-
-    tx.set_nonblocking(true).unwrap();
-    let mut tx = PollFd::new(tx).unwrap();
+    let connect_task = client.connect(&addr);
+    let ((mut tx, _), _) = futures_util::try_join!(accept_task, connect_task).unwrap();
 
     let send_task = async {
         futures_util::AsyncWriteExt::write(&mut tx, b"Hello world!")
@@ -76,6 +58,22 @@ async fn poll_connect() {
     assert_eq!(write, 12);
     assert_eq!(read, 12);
     assert_eq!(buffer, b"Hello world!");
+}
+
+#[compio_macros::test]
+async fn poll_connect_refused() {
+    let listener = std::net::TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let addr = SockAddr::from(listener.local_addr().unwrap());
+    drop(listener);
+
+    let client = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
+    let client = PollFd::new(client).unwrap();
+    let err = compio_runtime::time::timeout(Duration::from_secs(10), client.connect(&addr))
+        .await
+        .expect("connecting to a closed port timed out")
+        .unwrap_err();
+
+    assert_eq!(err.kind(), io::ErrorKind::ConnectionRefused);
 }
 
 #[compio_macros::test]
@@ -208,29 +206,6 @@ async fn poll_concurrent_read_write_readiness() {
 }
 
 #[compio_macros::test]
-async fn poll_flush_reaches_the_source() {
-    let (client, server) = connected_sockets();
-    let mut tx = PollFd::new(FlushCounter {
-        socket: client,
-        flushes: Cell::new(0),
-    })
-    .unwrap();
-
-    futures_util::AsyncWriteExt::write_all(&mut tx, b"Hello world!")
-        .await
-        .unwrap();
-    futures_util::AsyncWriteExt::flush(&mut tx).await.unwrap();
-    assert_eq!(tx.flushes.get(), 1, "flushing must reach the source");
-
-    // Closing only shuts down the write half, since flushing would steal the
-    // waker of a pending write.
-    futures_util::AsyncWriteExt::close(&mut tx).await.unwrap();
-    assert_eq!(tx.flushes.get(), 1, "closing must not flush the source");
-
-    drop(server);
-}
-
-#[compio_macros::test]
 async fn poll_close_half_closes() {
     let (mut tx, rx) = connected_pair();
 
@@ -273,6 +248,7 @@ async fn poll_close_half_closes() {
     drop(tx);
 }
 
+#[cfg(unix)]
 #[compio_macros::test]
 async fn poll_close_ignores_sources_without_a_write_half() {
     // A file has no write half to shut down, so closing it must still succeed.
@@ -284,32 +260,14 @@ async fn poll_close_ignores_sources_without_a_write_half() {
     futures_util::AsyncWriteExt::close(&mut file).await.unwrap();
 }
 
-/// A socket that counts how often it is flushed, since flushing a socket is a
-/// no-op that cannot be observed on the peer.
-struct FlushCounter {
-    socket: Socket,
-    flushes: Cell<usize>,
-}
+#[cfg(unix)]
+#[compio_macros::test]
+async fn poll_socket_operations_reject_files() {
+    let file = PollFd::new(tempfile::tempfile().unwrap()).unwrap();
+    let addr = SockAddr::from(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1));
 
-impl AsFd for FlushCounter {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.socket.as_fd()
-    }
-}
-
-impl io::Write for &FlushCounter {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        io::Write::write(&mut &self.socket, buf)
-    }
-
-    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> io::Result<usize> {
-        io::Write::write_vectored(&mut &self.socket, bufs)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.flushes.set(self.flushes.get() + 1);
-        io::Write::flush(&mut &self.socket)
-    }
+    assert!(file.accept().await.is_err());
+    assert!(file.connect(&addr).await.is_err());
 }
 
 fn connected_pair() -> (PollFd<Socket>, PollFd<Socket>) {

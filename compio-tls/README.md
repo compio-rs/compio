@@ -25,7 +25,7 @@ This crate provides TLS/SSL support for compio networking types. It offers both 
   - `native-tls`: Platform-specific TLS (SChannel on Windows, Secure Transport on macOS, OpenSSL on Linux)
   - `rustls`: Pure Rust TLS implementation
 - ALPN (Application-Layer Protocol Negotiation) support
-- Integration with compio's completion-based IO model
+- Integration with futures-based async IO traits
 
 ## Usage
 
@@ -39,7 +39,7 @@ cargo add compio --features tls,rustls # or native-tls
 
 ### For library
 
-If you are writing libraries that want to support completion-based async IO with TLS support, you can depend on this crate directly:
+If you are writing libraries that want to support futures-based async IO with TLS support, you can depend on this crate directly:
 
 ```bash
 cargo add compio-tls # native-tls by default

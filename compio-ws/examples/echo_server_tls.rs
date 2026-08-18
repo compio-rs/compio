@@ -98,7 +98,7 @@ async fn handle_client_tls(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Perform TLS handshake
     println!("Performing TLS handshake...");
-    let tls_stream = acceptor.accept(stream).await?;
+    let tls_stream = acceptor.accept(stream.into_poll_fd()?).await?;
     println!("TLS handshake completed");
 
     // Perform WebSocket handshake

@@ -26,6 +26,7 @@ compio-send-wrapper = { workspace = true }
 futures-util = { workspace = true, features = ["io"] }
 scoped-tls = { workspace = true }
 pin-project-lite = { workspace = true }
+socket2 = { workspace = true }
 synchrony = { workspace = true, features = ["event"] }
 
 # Windows specific dependencies
@@ -40,6 +41,7 @@ windows-sys = { workspace = true, features = [
 # Unix specific dependencies
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
+rustix = { workspace = true }
 
 [target.'cfg(windows)'.dev-dependencies]
 windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }

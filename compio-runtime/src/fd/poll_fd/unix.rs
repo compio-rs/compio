@@ -1,3 +1,5 @@
+#[cfg(feature = "read_buf")]
+use std::mem::MaybeUninit;
 use std::{
     cell::RefCell,
     fmt::Debug,
@@ -12,6 +14,7 @@ use compio_driver::{
     AsFd, AsRawFd, BorrowedFd, RawFd, SharedFd, ToSharedFd,
     op::{Interest, PollOnce},
 };
+use socket2::{SockRef, Socket};
 
 use crate::Submit;
 
@@ -37,6 +40,29 @@ impl<T: AsFd> PollFd<T> {
             write_submit: RefCell::new(None),
         })
     }
+}
+
+pub fn read(fd: BorrowedFd<'_>, buf: &mut [u8]) -> io::Result<usize> {
+    rustix::io::read(fd, buf).map_err(Into::into)
+}
+
+#[cfg(feature = "read_buf")]
+pub fn read_uninit(fd: BorrowedFd<'_>, buf: &mut [MaybeUninit<u8>]) -> io::Result<usize> {
+    rustix::io::read(fd, buf)
+        .map(|(initialized, _)| initialized.len())
+        .map_err(Into::into)
+}
+
+pub fn readv(fd: BorrowedFd<'_>, bufs: &mut [io::IoSliceMut<'_>]) -> io::Result<usize> {
+    rustix::io::readv(fd, bufs).map_err(Into::into)
+}
+
+pub fn write(fd: BorrowedFd<'_>, buf: &[u8]) -> io::Result<usize> {
+    rustix::io::write(fd, buf).map_err(Into::into)
+}
+
+pub fn writev(fd: BorrowedFd<'_>, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
+    rustix::io::writev(fd, bufs).map_err(Into::into)
 }
 
 impl<T: AsFd + 'static> PollFd<T> {
@@ -123,7 +149,9 @@ impl<T: AsFd> Deref for PollFd<T> {
     }
 }
 
-pub fn shutdown_write(fd: BorrowedFd<'_>) -> io::Result<()> {
-    compio_driver::syscall!(libc::shutdown(fd.as_raw_fd(), libc::SHUT_WR))?;
-    Ok(())
+pub fn run_socket_op<R>(
+    fd: BorrowedFd<'_>,
+    f: impl FnOnce(&Socket) -> io::Result<R>,
+) -> io::Result<R> {
+    f(&SockRef::from(&fd))
 }

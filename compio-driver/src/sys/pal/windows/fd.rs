@@ -221,3 +221,21 @@ impl AsFd for std::process::ChildStderr {
         self.as_handle().into()
     }
 }
+
+impl AsFd for std::net::TcpListener {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.as_socket().into()
+    }
+}
+
+impl AsFd for std::net::TcpStream {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.as_socket().into()
+    }
+}
+
+impl AsFd for std::net::UdpSocket {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.as_socket().into()
+    }
+}

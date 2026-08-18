@@ -5,34 +5,25 @@ use std::{
     task::{Context, Poll},
 };
 
-use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf};
-use compio_io::{AsyncRead, AsyncWrite, compat::AsyncStream, util::Splittable};
+use futures_util::{AsyncRead, AsyncWrite};
 
-use crate::{TlsStream, read_futures};
+use crate::TlsStream;
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-enum MaybeTlsStreamInner<S: Splittable> {
-    Plain(Pin<Box<AsyncStream<S>>>),
+enum MaybeTlsStreamInner<S> {
+    Plain(S),
     Tls(TlsStream<S>),
 }
 
-/// Stream that can be either plain TCP or TLS-encrypted, with compatibility for
-/// [`futures_util`].
+/// A futures-based stream that can be either plain TCP or TLS-encrypted.
 #[derive(Debug)]
-pub struct MaybeTlsStream<S: Splittable>(MaybeTlsStreamInner<S>);
+pub struct MaybeTlsStream<S>(MaybeTlsStreamInner<S>);
 
-impl<S: Splittable> MaybeTlsStream<S> {
+impl<S> MaybeTlsStream<S> {
     /// Create an unencrypted stream.
     pub fn new_plain(stream: S) -> Self {
-        Self(MaybeTlsStreamInner::Plain(Box::pin(AsyncStream::new(
-            stream,
-        ))))
-    }
-
-    /// Create an unencrypted stream from [`AsyncStream`].
-    pub fn new_plain_compat(stream: AsyncStream<S>) -> Self {
-        Self(MaybeTlsStreamInner::Plain(Box::pin(stream)))
+        Self(MaybeTlsStreamInner::Plain(stream))
     }
 
     /// Create a TLS-encrypted stream.
@@ -46,10 +37,9 @@ impl<S: Splittable> MaybeTlsStream<S> {
     }
 }
 
-impl<S: Splittable + 'static> MaybeTlsStream<S>
+impl<S> MaybeTlsStream<S>
 where
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
+    S: AsyncRead + AsyncWrite + Unpin,
 {
     /// Returns the negotiated ALPN protocol.
     pub fn negotiated_alpn(&self) -> Option<Cow<'_, [u8]>> {
@@ -60,10 +50,9 @@ where
     }
 }
 
-impl<S: Splittable + 'static> futures_util::AsyncRead for MaybeTlsStream<S>
+impl<S> AsyncRead for MaybeTlsStream<S>
 where
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
+    S: AsyncRead + AsyncWrite + Unpin,
 {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -77,20 +66,9 @@ where
     }
 }
 
-impl<S: Splittable + 'static> AsyncRead for MaybeTlsStream<S>
+impl<S> AsyncWrite for MaybeTlsStream<S>
 where
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
-{
-    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        read_futures(self, buf).await
-    }
-}
-
-impl<S: Splittable + 'static> futures_util::AsyncWrite for MaybeTlsStream<S>
-where
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
+    S: AsyncRead + AsyncWrite + Unpin,
 {
     fn poll_write(
         self: Pin<&mut Self>,
@@ -126,31 +104,5 @@ where
             MaybeTlsStreamInner::Plain(stream) => Pin::new(stream).poll_close(cx),
             MaybeTlsStreamInner::Tls(stream) => Pin::new(stream).poll_close(cx),
         }
-    }
-}
-
-impl<S: Splittable + 'static> AsyncWrite for MaybeTlsStream<S>
-where
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
-{
-    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let slice = buf.as_init();
-        let res = futures_util::AsyncWriteExt::write(self, slice).await;
-        BufResult(res, buf)
-    }
-
-    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let slices = buf.iter_slice().map(io::IoSlice::new).collect::<Vec<_>>();
-        let res = futures_util::AsyncWriteExt::write_vectored(self, &slices).await;
-        BufResult(res, buf)
-    }
-
-    async fn flush(&mut self) -> io::Result<()> {
-        futures_util::AsyncWriteExt::flush(self).await
-    }
-
-    async fn shutdown(&mut self) -> io::Result<()> {
-        futures_util::AsyncWriteExt::close(self).await
     }
 }
