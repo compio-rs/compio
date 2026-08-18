@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/compio-rs/compio/compare/compio-executor-v0.1.3...compio-executor-v0.1.4) - 2026-08-14
+
+### Added
+
+- instrument tasks for `tokio-console` ([#987](https://github.com/compio-rs/compio/pull/987))
+- name spawned tasks ([#1004](https://github.com/compio-rs/compio/pull/1004))
+
+### Changed
+
+- skip empty sync-queue drains with a pending counter ([#976](https://github.com/compio-rs/compio/pull/976))
+
+### Fixed
+
+- *(runtime, executor)* re-export `JoinError` ([#1005](https://github.com/compio-rs/compio/pull/1005))
+
+### Other
+
+- format `cfg_select!` bodies ([#990](https://github.com/compio-rs/compio/pull/990))
+
 ## 0.1.3 - 2026-07-06
 
 ### Added

@@ -1,21 +1,32 @@
 //! Utilities for tracking time.
 
 use std::{
-    collections::BTreeMap,
     error::Error,
     fmt::Display,
     future::Future,
-    marker::PhantomData,
-    mem::replace,
-    pin::Pin,
-    task::{Context, Poll, Waker},
     time::{Duration, Instant},
 };
 
-use compio_log::{debug, instrument};
 use futures_util::{FutureExt, select};
 
-use crate::Runtime;
+mod runtime;
+pub(crate) use runtime::TimerRuntime;
+
+mod future;
+pub use future::Interval;
+use future::TimerFuture;
+
+/// Error returned by [`timeout`] or [`timeout_at`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Elapsed(());
+
+impl Display for Elapsed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("deadline has elapsed")
+    }
+}
+
+impl Error for Elapsed {}
 
 /// Waits until `duration` has elapsed.
 ///
@@ -61,27 +72,10 @@ pub async fn sleep(duration: Duration) {
 /// # })
 /// ```
 pub async fn sleep_until(deadline: Instant) {
-    create_timer(deadline).await
-}
-
-async fn create_timer(instant: std::time::Instant) {
-    let key = Runtime::with_current(|r| r.timer_runtime.borrow_mut().insert(instant));
-    if let Some(key) = key {
-        TimerFuture::new(key).await;
+    if let Some(timer) = TimerFuture::try_new(deadline) {
+        timer.await;
     }
 }
-
-/// Error returned by [`timeout`] or [`timeout_at`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Elapsed(());
-
-impl Display for Elapsed {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("deadline has elapsed")
-    }
-}
-
-impl Error for Elapsed {}
 
 /// Require a [`Future`] to complete before the specified duration has elapsed.
 ///
@@ -101,47 +95,6 @@ pub async fn timeout<F: Future>(duration: Duration, future: F) -> Result<F::Outp
 /// value is returned. Otherwise, an error is returned.
 pub async fn timeout_at<F: Future>(deadline: Instant, future: F) -> Result<F::Output, Elapsed> {
     timeout(deadline - Instant::now(), future).await
-}
-
-/// Interval returned by [`interval`] and [`interval_at`]
-///
-/// This type allows you to wait on a sequence of instants with a certain
-/// duration between each instant. Unlike calling [`sleep`] in a loop, this lets
-/// you count the time spent between the calls to [`sleep`] as well.
-#[derive(Debug)]
-pub struct Interval {
-    first_ticked: bool,
-    start: Instant,
-    period: Duration,
-}
-
-impl Interval {
-    pub(crate) fn new(start: Instant, period: Duration) -> Self {
-        Self {
-            first_ticked: false,
-            start,
-            period,
-        }
-    }
-
-    /// Completes when the next instant in the interval has been reached.
-    ///
-    /// See [`interval`] and [`interval_at`].
-    pub async fn tick(&mut self) -> Instant {
-        if !self.first_ticked {
-            sleep_until(self.start).await;
-            self.first_ticked = true;
-            self.start
-        } else {
-            let now = Instant::now();
-            let next = now + self.period
-                - Duration::from_nanos(
-                    ((now - self.start).as_nanos() % self.period.as_nanos()) as _,
-                );
-            sleep_until(next).await;
-            next
-        }
-    }
 }
 
 /// Creates new [`Interval`] that yields with interval of `period`. The first
@@ -243,128 +196,6 @@ pub fn interval_at(start: Instant, period: Duration) -> Interval {
     assert!(period > Duration::ZERO, "`period` must be non-zero.");
     Interval::new(start, period)
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct TimerKey {
-    deadline: Instant,
-    key: u64,
-    _local_marker: PhantomData<*const ()>,
-}
-
-pub(crate) struct TimerRuntime {
-    key: u64,
-    wheel: BTreeMap<TimerKey, Waker>,
-}
-
-impl TimerRuntime {
-    pub fn new() -> Self {
-        Self {
-            key: 0,
-            wheel: BTreeMap::default(),
-        }
-    }
-
-    /// Return true if the timer has completed.
-    pub fn is_completed(&self, key: &TimerKey) -> bool {
-        !self.wheel.contains_key(key)
-    }
-
-    /// Insert a new timer. If the deadline is in the past, return `None`.
-    pub fn insert(&mut self, deadline: Instant) -> Option<TimerKey> {
-        if deadline <= Instant::now() {
-            return None;
-        }
-        let key = TimerKey {
-            deadline,
-            key: self.key,
-            _local_marker: PhantomData,
-        };
-        self.wheel.insert(key, Waker::noop().clone());
-
-        self.key += 1;
-
-        Some(key)
-    }
-
-    /// Update the waker for a timer.
-    pub fn update_waker(&mut self, key: &TimerKey, waker: &Waker) {
-        if let Some(w) = self.wheel.get_mut(key)
-            && !waker.will_wake(w)
-        {
-            *w = waker.clone();
-        }
-    }
-
-    /// Cancel a timer.
-    pub fn cancel(&mut self, key: &TimerKey) {
-        self.wheel.remove(key);
-    }
-
-    /// Get the minimum timeout duration for the next poll.
-    pub fn min_timeout(&self) -> Option<Duration> {
-        self.wheel.first_key_value().map(|(key, _)| {
-            let now = Instant::now();
-            key.deadline.saturating_duration_since(now)
-        })
-    }
-
-    /// Wake all the timer futures that have reached their deadline.
-    pub fn wake(&mut self) {
-        if self.wheel.is_empty() {
-            return;
-        }
-
-        let now = Instant::now();
-
-        let pending = self.wheel.split_off(&TimerKey {
-            deadline: now,
-            key: u64::MAX,
-            _local_marker: PhantomData,
-        });
-
-        let expired = replace(&mut self.wheel, pending);
-        for (_, w) in expired {
-            w.wake();
-        }
-    }
-
-    pub fn poll_timer(&mut self, cx: &mut Context<'_>, key: &TimerKey) -> Poll<()> {
-        instrument!(compio_log::Level::DEBUG, "poll_timer", ?cx, ?key);
-        if self.is_completed(key) {
-            debug!("ready");
-            Poll::Ready(())
-        } else {
-            debug!("pending");
-            self.update_waker(key, cx.waker());
-            Poll::Pending
-        }
-    }
-}
-
-pub(crate) struct TimerFuture(TimerKey);
-
-impl TimerFuture {
-    pub fn new(key: TimerKey) -> Self {
-        Self(key)
-    }
-}
-
-impl Future for TimerFuture {
-    type Output = ();
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Runtime::with_current(|r| r.timer_runtime.borrow_mut().poll_timer(cx, &self.0))
-    }
-}
-
-impl Drop for TimerFuture {
-    fn drop(&mut self) {
-        Runtime::with_current(|r| r.timer_runtime.borrow_mut().cancel(&self.0));
-    }
-}
-
-compio_driver::assert_not_impl!(TimerFuture, Send);
-compio_driver::assert_not_impl!(TimerFuture, Sync);
 
 #[test]
 fn timer_min_timeout() {

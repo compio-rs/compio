@@ -1,6 +1,6 @@
 [package]
 name = "compio-runtime"
-version = "0.12.5"
+version = "0.12.6"
 description = "High-level runtime for compio"
 categories = ["asynchronous"]
 keywords = ["async", "runtime"]
@@ -24,7 +24,7 @@ compio-io = { workspace = true, optional = true }
 criterion = { workspace = true, optional = true }
 compio-send-wrapper = { workspace = true }
 futures-util = { workspace = true, features = ["io"] }
-scoped-tls = "1.0.1"
+scoped-tls = { workspace = true }
 pin-project-lite = { workspace = true }
 synchrony = { workspace = true, features = ["event"] }
 
@@ -54,6 +54,8 @@ synchrony = { workspace = true, features = ["async_flag"] }
 [features]
 time = []
 async-fd = ["dep:compio-io"]
+# Instrumentation for `tokio-console`. See the `console` module.
+console = ["compio-executor/console"]
 
 current_thread_id = []
 sanitize = []
@@ -69,4 +71,9 @@ name = "event"
 
 [[test]]
 name = "drop"
+required-features = ["time"]
+
+
+[[test]]
+name = "panic"
 required-features = ["time"]

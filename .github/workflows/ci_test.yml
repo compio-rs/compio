@@ -30,31 +30,41 @@ jobs:
   test:
     runs-on: ${{ matrix.setup.os }}
     strategy:
+      fail-fast: false
       matrix:
         toolchain: ['nightly', 'beta', 'stable']
         setup:
-          - os: 'ubuntu-22.04'
-          - os: 'ubuntu-22.04-arm'
-          - os: 'ubuntu-22.04'
+          - os: 'ubuntu-24.04'
+          - os: 'ubuntu-24.04-arm'
+          - os: 'ubuntu-24.04'
             features: 'sync'
-          - os: 'ubuntu-22.04'
+          - os: 'ubuntu-24.04'
             features: 'compat-all'
-          - os: 'ubuntu-22.04'
+          - os: 'ubuntu-24.04'
             features: 'polling,ring,compat-all'
             no_default_features: true
-          - os: 'ubuntu-22.04'
+          - os: 'ubuntu-24.04'
             features: 'polling' # fusion
-          - os: 'ubuntu-22.04'
+          - os: 'ubuntu-24.04'
             features: 'io-uring-sqe128,io-uring-cqe32'
-          - os: 'ubuntu-22.04'
+          - os: 'ubuntu-24.04'
             features: 'polling,ring'
             no_default_features: true
-          - os: 'ubuntu-22.04'
+          - os: 'ubuntu-24.04'
             features: 'polling,native-tls,ring'
             no_default_features: true
-          - os: 'ubuntu-22.04'
+          - os: 'ubuntu-24.04'
             features: 'native-tls,ring,py-dynamic-openssl'
-          - os: 'ubuntu-22.04'
+          # Neither `console` nor `compat` is part of `all`, so they need a
+          # setup of their own to hold any test at all. The two go together:
+          # the compatibility layer instruments the future it executes, and
+          # only a build with both covers that.
+          - os: 'ubuntu-24.04'
+            features: 'console,compat-all'
+          - os: 'windows-latest'
+            target: 'x86_64-pc-windows-msvc'
+            features: 'console,compat-all'
+          - os: 'ubuntu-24.04'
             target: 'x86_64-unknown-linux-musl'
             features: 'native-tls-vendored,ring,sync,polling'
           - os: 'windows-latest'

@@ -6,12 +6,15 @@ use compio_driver::{
     op::{BufResultExt, Read, ReadManaged, Write},
 };
 use compio_io::{AsyncRead, AsyncReadManaged, AsyncWrite};
-use compio_runtime::{ResumeUnwind, Runtime};
+use compio_runtime::{ResumeUnwind, Runtime, SpawnMeta};
 
 use crate::{ChildStderr, ChildStdin, ChildStdout};
 
 pub async fn child_wait(mut child: process::Child) -> io::Result<process::ExitStatus> {
-    compio_runtime::spawn_blocking(move || child.wait())
+    // Name the task: its location points here rather than into the code that
+    // waited for the child, since this is an `async fn`.
+    let meta = SpawnMeta::capture().named("process::wait");
+    compio_runtime::spawn_blocking_at(move || child.wait(), meta)
         .await
         .resume_unwind()
         .expect("shouldn't be cancelled")

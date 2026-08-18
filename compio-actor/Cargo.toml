@@ -1,0 +1,23 @@
+[package]
+name = "compio-actor"
+version = "0.1.0"
+description = "Actors for Compio"
+categories = ["asynchronous", "concurrency"]
+keywords = ["actor", "async", "compio"]
+readme = "README.md"
+edition = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+compio-dispatcher = { workspace = true }
+
+flume = { workspace = true, features = ["async"] }
+futures-channel = { workspace = true }
+futures-util = { workspace = true }
+pin-project-lite = { workspace = true }
+scoped-tls = { workspace = true }
+
+[dev-dependencies]
+compio-macros = { workspace = true }
+compio-runtime = { workspace = true }

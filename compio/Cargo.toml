@@ -1,6 +1,6 @@
 [package]
 name = "compio"
-version = "0.19.1"
+version = "0.19.2"
 description = "Completion based async runtime"
 categories = ["asynchronous", "filesystem", "network-programming"]
 keywords = ["async", "fs", "iocp", "io-uring", "net"]
@@ -36,6 +36,7 @@ compio-process = { workspace = true, optional = true }
 compio-quic = { workspace = true, optional = true }
 compio-ws = { workspace = true, optional = true }
 compio-compat = { workspace = true, optional = true }
+compio-actor = { workspace = true, optional = true }
 
 # Shared dev dependencies for all platforms
 [dev-dependencies]
@@ -43,6 +44,7 @@ compio-buf = { workspace = true, features = ["bumpalo"] }
 compio-runtime = { workspace = true, features = ["criterion"] }
 compio-macros = { workspace = true }
 
+console-subscriber = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 futures-channel = { workspace = true }
 futures-executor = { workspace = true }
@@ -74,6 +76,7 @@ default = ["runtime", "io-uring"]
 io-uring = ["compio-driver/io-uring"]
 polling = ["compio-driver/polling"]
 
+actor = ["dep:compio-actor"]
 io = ["dep:compio-io"]
 io-compat = ["io", "compio-io/compat", "compio-quic?/io-compat"]
 io-ancillary = ["io", "compio-io/ancillary"]
@@ -113,6 +116,7 @@ ws-connect = ["ws", "compio-ws/connect"]
 
 # A full set of features, without implementation-specific ones.
 all = [
+    "actor",
     "io",
     "io-ancillary",
     "io-compat",
@@ -187,6 +191,15 @@ compat-all = ["compat-tokio", "compat-futures"]
 # Logging
 enable_log = ["compio-log/enable_log"]
 
+# Instrumentation for `tokio-console`. See `compio::runtime::console`.
+console = [
+    "compio-runtime/console",
+    "compio-dispatcher?/console",
+    "compio-quic?/console",
+    "compio-compat?/console",
+    "runtime",
+]
+
 # Nightly features
 allocator_api = ["compio-buf/allocator_api", "compio-io?/allocator_api"]
 current_thread_id = ["compio-runtime?/current_thread_id"]
@@ -244,6 +257,10 @@ required-features = ["time", "signal", "macros"]
 [[example]]
 name = "dispatcher"
 required-features = ["macros", "dispatcher", "sync", "net"]
+
+[[example]]
+name = "console"
+required-features = ["console", "time", "net", "dispatcher", "sync"]
 
 [[bench]]
 name = "fs"

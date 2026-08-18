@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.5](https://github.com/compio-rs/compio/compare/compio-driver-v0.12.4...compio-driver-v0.12.5) - 2026-08-14
+
+### Fixed
+
+- fix `semicolon_in_expressions_from_macros` ([#977](https://github.com/compio-rs/compio/pull/977))
+
+### Other
+
+- bump `cfg_aliases` ([#980](https://github.com/compio-rs/compio/pull/980))
+- rewrap an io_uring documentation comment ([#986](https://github.com/compio-rs/compio/pull/986))
+- format `cfg_select!` bodies ([#990](https://github.com/compio-rs/compio/pull/990))
+
 ## 0.12.4 - 2026-07-06
 
 ### Fixed

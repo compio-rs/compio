@@ -31,6 +31,7 @@ env:
 jobs:
   test_executor:
     strategy:
+      fail-fast: false
       matrix:
         setup:
           - os: 'ubuntu-24.04'
@@ -60,6 +61,12 @@ jobs:
           cargo miri test \
             -p compio-executor \
             --test executor
+
+          cargo miri test \
+            -p compio-executor \
+            --features console \
+            --test executor \
+            --test console
 
           RUSTFLAGS="--cfg loom" \
           LOOM_LOCATION=1 \

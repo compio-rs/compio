@@ -14,7 +14,6 @@ use compio_buf::{BufResult, IntoInner};
 #[cfg(dirfd)]
 use compio_driver::ToSharedFd;
 use compio_driver::op::{CurrentDir, PathStat, Stat};
-use compio_runtime::ResumeUnwind;
 use rustix::fs::FileType as FileTypeInner;
 
 use crate::path_string;
@@ -53,10 +52,10 @@ pub async fn symlink_metadata_at(
 
 pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::Result<()> {
     let path = path.as_ref().to_path_buf();
-    compio_runtime::spawn_blocking(move || std::fs::set_permissions(path, perm))
-        .await
-        .resume_unwind()
-        .expect("shouldn't be cancelled")
+    crate::spawn_blocking_named("fs::set_permissions", move || {
+        std::fs::set_permissions(path, perm)
+    })
+    .await
 }
 
 #[derive(Clone)]

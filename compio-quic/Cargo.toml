@@ -1,6 +1,6 @@
 [package]
 name = "compio-quic"
-version = "0.8.1"
+version = "0.8.2"
 description = "QUIC for compio"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net", "quic"]
@@ -66,10 +66,13 @@ rand = { workspace = true }
 rcgen = { workspace = true }
 socket2 = { workspace = true, features = ["all"] }
 tokio = { workspace = true, features = ["macros", "rt"] }
+tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [features]
 default = ["ring"]
+# Instrumentation for `tokio-console`. See `compio_runtime::console`.
+console = ["compio-runtime/console"]
 io-compat = ["futures-util/io"]
 platform-verifier = ["dep:rustls-platform-verifier"]
 native-certs = ["dep:rustls-native-certs"]

@@ -20,14 +20,19 @@ use std::{
 };
 
 use compio_driver::{AsyncifyPool, DispatchError, Dispatchable, ProactorBuilder};
-use compio_runtime::{JoinHandle as CompioJoinHandle, Runtime};
+use compio_runtime::{JoinHandle as CompioJoinHandle, Runtime, SpawnMeta};
 use flume::{Sender, unbounded};
 use futures_channel::oneshot;
 
-type Spawning = Box<dyn Spawnable + Send>;
+/// A closure to spawn, and the [`SpawnMeta`] of the `dispatch` call it came
+/// from.
+struct Spawning {
+    task: Box<dyn Spawnable + Send>,
+    meta: SpawnMeta,
+}
 
 trait Spawnable {
-    fn spawn(self: Box<Self>, handle: &Runtime) -> CompioJoinHandle<()>;
+    fn spawn(self: Box<Self>, handle: &Runtime, meta: SpawnMeta) -> CompioJoinHandle<()>;
 }
 
 /// Concrete type for the closure we're sending to worker threads
@@ -49,12 +54,15 @@ where
     Fut: Future<Output = R>,
     R: Send + 'static,
 {
-    fn spawn(self: Box<Self>, handle: &Runtime) -> CompioJoinHandle<()> {
+    fn spawn(self: Box<Self>, handle: &Runtime, meta: SpawnMeta) -> CompioJoinHandle<()> {
         let Concrete { callback, func } = *self;
-        handle.spawn(async move {
-            let res = func().await;
-            callback.send(res).ok();
-        })
+        handle.spawn_at(
+            async move {
+                let res = func().await;
+                callback.send(res).ok();
+            },
+            meta,
+        )
     }
 }
 
@@ -80,6 +88,7 @@ pub struct Dispatcher {
 
 impl Dispatcher {
     /// Create the dispatcher with specified number of threads.
+    #[track_caller]
     pub(crate) fn new_impl(builder: DispatcherBuilder) -> io::Result<Self> {
         let DispatcherBuilder {
             nthreads,
@@ -92,6 +101,9 @@ impl Dispatcher {
         proactor_builder.force_reuse_thread_pool();
         let pool = proactor_builder.create_or_get_thread_pool();
         let (sender, receiver) = unbounded::<Spawning>();
+        // Captured out here, since `#[track_caller]` does not reach into the
+        // closures the threads run, and every worker belongs to this call.
+        let meta = SpawnMeta::capture().named("dispatcher::worker");
 
         let threads = (0..nthreads)
             .map({
@@ -122,16 +134,21 @@ impl Dispatcher {
                             .thread_affinity(cpus)
                             .build()
                             .expect("cannot create compio runtime")
-                            .block_on(async move {
-                                while let Ok(f) = receiver.recv_async().await {
-                                    let task = Runtime::with_current(|rt| f.spawn(rt));
-                                    if concurrent {
-                                        task.detach()
-                                    } else {
-                                        task.await.ok();
+                            .block_on_at(
+                                async move {
+                                    while let Ok(Spawning { task: f, meta }) =
+                                        receiver.recv_async().await
+                                    {
+                                        let task = Runtime::with_current(|rt| f.spawn(rt, meta));
+                                        if concurrent {
+                                            task.detach()
+                                        } else {
+                                            task.await.ok();
+                                        }
                                     }
-                                }
-                            });
+                                },
+                                meta,
+                            );
                     })
                 }
             })
@@ -145,6 +162,7 @@ impl Dispatcher {
     }
 
     /// Create the dispatcher with default config.
+    #[track_caller]
     pub fn new() -> io::Result<Self> {
         Self::builder().build()
     }
@@ -164,6 +182,7 @@ impl Dispatcher {
     ///
     /// If all threads have panicked, this method will return an error with the
     /// sent closure.
+    #[track_caller]
     pub fn dispatch<Fn, Fut, R>(&self, f: Fn) -> Result<oneshot::Receiver<R>, DispatchError<Fn>>
     where
         Fn: (FnOnce() -> Fut) + Send + 'static,
@@ -172,12 +191,16 @@ impl Dispatcher {
     {
         let (concrete, rx) = Concrete::new(f);
 
-        match self.sender.send(Box::new(concrete)) {
+        let meta = SpawnMeta::capture().named("dispatch");
+        match self.sender.send(Spawning {
+            task: Box::new(concrete),
+            meta,
+        }) {
             Ok(_) => Ok(rx),
             Err(err) => {
                 // SAFETY: We know the dispatchable we sent has type `Concrete<Fn, R>`
                 let recovered =
-                    unsafe { Box::from_raw(Box::into_raw(err.0) as *mut Concrete<Fn, R>) };
+                    unsafe { Box::from_raw(Box::into_raw(err.0.task) as *mut Concrete<Fn, R>) };
                 Err(DispatchError(recovered.func))
             }
         }
@@ -301,6 +324,7 @@ impl DispatcherBuilder {
     }
 
     /// Build the [`Dispatcher`].
+    #[track_caller]
     pub fn build(self) -> io::Result<Dispatcher> {
         Dispatcher::new_impl(self)
     }

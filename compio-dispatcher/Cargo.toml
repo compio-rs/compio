@@ -1,6 +1,6 @@
 [package]
 name = "compio-dispatcher"
-version = "0.11.0"
+version = "0.11.1"
 description = "Multithreading dispatcher for compio"
 categories = ["asynchronous"]
 keywords = ["async", "runtime"]
@@ -29,6 +29,11 @@ compio-macros = { workspace = true }
 compio-signal = { workspace = true }
 
 futures-util = { workspace = true }
+tracing = { workspace = true }
+
+[features]
+# Instrumentation for `tokio-console`. See `compio_runtime::console`.
+console = ["compio-runtime/console"]
 
 [[test]]
 name = "listener"

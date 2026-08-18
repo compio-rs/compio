@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.2](https://github.com/compio-rs/compio/compare/v0.19.1...v0.19.2) - 2026-08-14
+
+### Added
+
+- *(actor)* add actor support ([#1000](https://github.com/compio-rs/compio/pull/1000))
+- forward the console feature and document observability ([#1006](https://github.com/compio-rs/compio/pull/1006))
+
+### Fixed
+
+- *(docs)* fix the Discord link ([#985](https://github.com/compio-rs/compio/pull/985))
+
+### Other
+
+- update changed local package dependencies
+
 ## [0.19.1](https://github.com/compio-rs/compio/compare/v0.19.0...v0.19.1) - 2026-06-14
 
 ### Added

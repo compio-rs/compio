@@ -1,7 +1,7 @@
 use std::{
     collections::VecDeque,
     fmt::Debug,
-    future::poll_fn,
+    future::{Future, poll_fn},
     io,
     mem::ManuallyDrop,
     net::{SocketAddr, SocketAddrV6},
@@ -18,7 +18,7 @@ use compio_log::{Instrument, error};
 #[cfg(rustls)]
 use compio_net::ToSocketAddrsAsync;
 use compio_net::UdpSocket;
-use compio_runtime::JoinHandle;
+use compio_runtime::{JoinHandle, SpawnMeta};
 use flume::{Receiver, Sender, unbounded};
 use futures_util::{FutureExt, StreamExt, future, select, task::AtomicWaker};
 use quinn_proto::{
@@ -125,6 +125,7 @@ impl EndpointState {
         }
     }
 
+    #[track_caller]
     fn new_connection(
         &mut self,
         handle: ConnectionHandle,
@@ -194,6 +195,7 @@ impl EndpointInner {
         })
     }
 
+    #[track_caller]
     fn connect(
         &self,
         remote: SocketAddr,
@@ -229,12 +231,19 @@ impl EndpointInner {
 
     fn respond(&self, buf: Vec<u8>, transmit: Transmit) {
         let socket = self.socket.clone();
-        compio_runtime::spawn(async move {
-            socket.send(buf, &transmit).await;
-        })
+        // Name the task: the caller of this is compio rather than user code, so
+        // its location alone does not say what the task is.
+        let meta = SpawnMeta::capture().named("quic::respond");
+        compio_runtime::spawn_at(
+            async move {
+                socket.send(buf, &transmit).await;
+            },
+            meta,
+        )
         .detach();
     }
 
+    #[track_caller]
     pub(crate) fn accept(
         &self,
         incoming: quinn_proto::Incoming,
@@ -409,6 +418,17 @@ impl Deref for EndpointRef {
     }
 }
 
+/// The metadata of an endpoint's worker task, captured on behalf of whoever
+/// creates the endpoint.
+///
+/// `#[track_caller]` carries that caller through the constructors, which are
+/// plain `fn`s returning a future for the purpose: it does not propagate
+/// through an `async fn`.
+#[track_caller]
+pub(crate) fn worker_meta() -> SpawnMeta {
+    SpawnMeta::capture().named("quic::endpoint")
+}
+
 /// A QUIC endpoint.
 #[derive(Debug, Clone)]
 pub struct Endpoint {
@@ -419,26 +439,50 @@ pub struct Endpoint {
 
 impl Endpoint {
     /// Create a QUIC endpoint.
+    #[track_caller]
     pub fn new(
         socket: UdpSocket,
         config: EndpointConfig,
         server_config: Option<ServerConfig>,
         default_client_config: Option<ClientConfig>,
     ) -> io::Result<Self> {
+        Self::new_at(
+            socket,
+            config,
+            server_config,
+            default_client_config,
+            worker_meta(),
+        )
+    }
+
+    pub(crate) fn new_at(
+        socket: UdpSocket,
+        config: EndpointConfig,
+        server_config: Option<ServerConfig>,
+        default_client_config: Option<ClientConfig>,
+        meta: SpawnMeta,
+    ) -> io::Result<Self> {
         let inner = EndpointRef(Shared::new(EndpointInner::new(
             socket,
             config,
             server_config,
         )?));
-        let worker = compio_runtime::spawn({
-            let inner = inner.clone();
-            async move {
-                if let Err(e) = inner.run().await {
-                    error!("I/O error: {:?}", e);
+        // See the note in `respond` on why this task is named. Its metadata is
+        // taken rather than captured here, since the constructors that reach us
+        // return a future, and whoever called one is long gone by the time it
+        // is polled.
+        let worker = compio_runtime::spawn_at(
+            {
+                let inner = inner.clone();
+                async move {
+                    if let Err(e) = inner.run().await {
+                        error!("I/O error: {:?}", e);
+                    }
                 }
-            }
-            .in_current_span()
-        });
+                .in_current_span()
+            },
+            meta,
+        );
         inner.state.lock().worker = Some(worker);
         Ok(Self {
             inner,
@@ -461,10 +505,19 @@ impl Endpoint {
     ///
     /// IPv4 client is never dual-stack.
     #[cfg(rustls)]
-    pub async fn client(addr: impl ToSocketAddrsAsync) -> io::Result<Endpoint> {
+    #[track_caller]
+    pub fn client(addr: impl ToSocketAddrsAsync) -> impl Future<Output = io::Result<Endpoint>> {
+        Self::client_at(addr, worker_meta())
+    }
+
+    #[cfg(rustls)]
+    pub(crate) async fn client_at(
+        addr: impl ToSocketAddrsAsync,
+        meta: SpawnMeta,
+    ) -> io::Result<Endpoint> {
         // TODO: try to enable dual-stack on all platforms, notably Windows
         let socket = UdpSocket::bind(addr).await?;
-        Self::new(socket, EndpointConfig::default(), None, None)
+        Self::new_at(socket, EndpointConfig::default(), None, None, meta)
     }
 
     /// Helper to construct an endpoint for use with both incoming and outgoing
@@ -476,9 +529,22 @@ impl Endpoint {
     /// should bind an address that matches the family they wish to
     /// communicate within.
     #[cfg(rustls)]
-    pub async fn server(addr: impl ToSocketAddrsAsync, config: ServerConfig) -> io::Result<Self> {
+    #[track_caller]
+    pub fn server(
+        addr: impl ToSocketAddrsAsync,
+        config: ServerConfig,
+    ) -> impl Future<Output = io::Result<Self>> {
+        Self::server_at(addr, config, worker_meta())
+    }
+
+    #[cfg(rustls)]
+    pub(crate) async fn server_at(
+        addr: impl ToSocketAddrsAsync,
+        config: ServerConfig,
+        meta: SpawnMeta,
+    ) -> io::Result<Self> {
         let socket = UdpSocket::bind(addr).await?;
-        Self::new(socket, EndpointConfig::default(), Some(config), None)
+        Self::new_at(socket, EndpointConfig::default(), Some(config), None, meta)
     }
 
     /// Returns relevant stats from this Endpoint
@@ -487,6 +553,7 @@ impl Endpoint {
     }
 
     /// Connect to a remote endpoint.
+    #[track_caller]
     pub fn connect(
         &self,
         remote: SocketAddr,

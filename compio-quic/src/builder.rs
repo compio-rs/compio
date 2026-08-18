@@ -1,4 +1,4 @@
-use std::{io, sync::Arc};
+use std::{future::Future, io, sync::Arc};
 
 use compio_net::ToSocketAddrsAsync;
 use quinn_proto::{
@@ -6,7 +6,7 @@ use quinn_proto::{
     crypto::rustls::{QuicClientConfig, QuicServerConfig},
 };
 
-use crate::Endpoint;
+use crate::{Endpoint, endpoint};
 
 /// Helper to construct an [`Endpoint`] for use with outgoing connections only.
 ///
@@ -155,10 +155,14 @@ impl ClientBuilder<rustls::ClientConfig> {
     /// Create a new [`Endpoint`].
     ///
     /// See [`Endpoint::client`] for more information.
-    pub async fn bind(self, addr: impl ToSocketAddrsAsync) -> io::Result<Endpoint> {
-        let mut endpoint = Endpoint::client(addr).await?;
-        endpoint.default_client_config = Some(self.build());
-        Ok(endpoint)
+    #[track_caller]
+    pub fn bind(self, addr: impl ToSocketAddrsAsync) -> impl Future<Output = io::Result<Endpoint>> {
+        let meta = endpoint::worker_meta();
+        async move {
+            let mut endpoint = Endpoint::client_at(addr, meta).await?;
+            endpoint.default_client_config = Some(self.build());
+            Ok(endpoint)
+        }
     }
 }
 
@@ -217,8 +221,9 @@ impl ServerBuilder<rustls::ServerConfig> {
     /// Create a new [`Endpoint`].
     ///
     /// See [`Endpoint::server`] for more information.
-    pub async fn bind(self, addr: impl ToSocketAddrsAsync) -> io::Result<Endpoint> {
-        Endpoint::server(addr, self.build()).await
+    #[track_caller]
+    pub fn bind(self, addr: impl ToSocketAddrsAsync) -> impl Future<Output = io::Result<Endpoint>> {
+        Endpoint::server_at(addr, self.build(), endpoint::worker_meta())
     }
 }
 
