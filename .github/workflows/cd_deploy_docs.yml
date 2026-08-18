@@ -61,6 +61,7 @@ jobs:
   deploy:
     needs: build-docs
     runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == 'compio-rs' }}
     permissions:
       contents: read
       deployments: write
