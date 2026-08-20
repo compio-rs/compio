@@ -1,0 +1,45 @@
+[package]
+name = "compio-term"
+version = "0.1.0"
+description = "Completion-based terminal support for Compio"
+readme = "README.md"
+edition = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc", "aarch64-apple-darwin"]
+
+[dependencies]
+compio-buf = { workspace = true }
+compio-driver = { workspace = true }
+compio-fs = { workspace = true }
+compio-io = { workspace = true }
+compio-log = { workspace = true }
+compio-runtime = { workspace = true }
+compio-signal = { workspace = true }
+
+crossterm = { workspace = true, features = ["bracketed-paste", "events", "windows"] }
+futures-core = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["fs", "process", "termios"] }
+compio-runtime = { workspace = true, features = ["time"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+  "Win32_Foundation",
+  "Win32_System_Console",
+  "Win32_System_IO",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+compio-macros = { workspace = true }
+futures-util = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+compio-driver = { workspace = true, features = ["io-uring"] }

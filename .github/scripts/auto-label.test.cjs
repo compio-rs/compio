@@ -36,6 +36,13 @@ test("supports multiple workspace crates in scope", () => {
   );
 });
 
+test("maps actor and terminal workspace crates", () => {
+  assert.deepEqual(
+    collectConventionalLabels("feat(compio-actor,compio-term): add crates"),
+    ["enhancement", "package: actor", "package: term"],
+  );
+});
+
 test("matches issue keywords when title is not conventional", () => {
   assert.deepEqual(
     collectIssueKeywordLabels("RFC: Feature request for better perf in runtime"),
