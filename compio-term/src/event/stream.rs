@@ -2,7 +2,7 @@ use std::{
     io,
     pin::Pin,
     sync::atomic::{AtomicBool, Ordering},
-    task::{Context, Poll},
+    task::{Context, Poll, ready},
 };
 
 use futures_core::Stream;
@@ -49,14 +49,13 @@ impl Stream for EventStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         loop {
-            match Pin::new(&mut self.source).poll_next(cx) {
-                Poll::Ready(Some(Ok(InternalEvent::Event(event)))) => {
+            match ready!(Pin::new(&mut self.source).poll_next(cx)) {
+                Some(Ok(InternalEvent::Event(event))) => {
                     return Poll::Ready(Some(Ok(event)));
                 }
-                Poll::Ready(Some(Ok(InternalEvent::Ignored))) => {}
-                Poll::Ready(Some(Err(error))) => return Poll::Ready(Some(Err(error))),
-                Poll::Ready(None) => return Poll::Ready(None),
-                Poll::Pending => return Poll::Pending,
+                Some(Ok(InternalEvent::Ignored)) => {}
+                Some(Err(error)) => return Poll::Ready(Some(Err(error))),
+                None => return Poll::Ready(None),
             }
         }
     }

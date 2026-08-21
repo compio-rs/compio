@@ -2,28 +2,69 @@ use std::{fmt, io, mem};
 
 use compio_buf::{BufResult, IntoInner, IoBufExt};
 use compio_io::AsyncWrite;
+use crossterm::Command;
 
-use crate::Command;
+mod multi;
 
-/// Adds terminal commands to an asynchronous command queue.
-///
-/// Queuing only renders the command into the queue's memory buffer. Call
-/// [`CommandQueue::flush`] to write the complete batch to its asynchronous
-/// writer.
-pub trait QueueableCommand {
-    /// Adds a command to the queue without writing to the underlying writer.
+pub use multi::Commands;
+
+/// Starts an asynchronous command queue for a writer.
+pub trait Queueable: AsyncWrite {
+    /// Creates a queue that borrows this writer and adds `command` to it.
+    ///
+    /// No bytes are written until [`CommandQueue::flush`] is awaited.
+    fn queue(&mut self, command: impl Command) -> io::Result<CommandQueue<&mut Self>>;
+
+    /// Adds an ordered batch of commands without writing to the underlying
+    /// writer.
+    ///
+    /// If any command cannot render its ANSI representation, this method
+    /// removes every byte added by this call. Commands that were already queued
+    /// remain intact.
+    fn queue_many(&mut self, command: impl Commands) -> io::Result<CommandQueue<&mut Self>>;
+}
+
+impl<W> CommandQueue<W> {
+    /// Adds a command without writing to the underlying writer.
     ///
     /// If the command cannot render its ANSI representation, this method
     /// removes any bytes that the failed command added. Commands that were
     /// already queued remain intact.
-    fn queue(&mut self, command: impl Command) -> io::Result<&mut Self>;
+    pub fn queue(&mut self, command: impl Command) -> io::Result<&mut Self> {
+        self.append(|writer| command.write_ansi(writer))
+    }
+
+    /// Adds an ordered batch of commands without writing to the underlying
+    /// writer.
+    ///
+    /// If any command cannot render its ANSI representation, this method
+    /// removes every byte added by this call. Commands that were already queued
+    /// remain intact.
+    pub fn queue_many(&mut self, commands: impl Commands) -> io::Result<&mut Self> {
+        self.append(|writer| commands.write_ansi(writer))
+    }
+}
+
+impl<W: AsyncWrite + ?Sized> Queueable for W {
+    fn queue(&mut self, command: impl Command) -> io::Result<CommandQueue<&mut Self>> {
+        let mut queue = CommandQueue::new(self);
+        queue.queue(command)?;
+        Ok(queue)
+    }
+
+    fn queue_many(&mut self, command: impl Commands) -> io::Result<CommandQueue<&mut Self>> {
+        let mut queue = CommandQueue::new(self);
+        queue.queue_many(command)?;
+        Ok(queue)
+    }
 }
 
 /// A buffered queue of terminal commands for a Compio asynchronous writer.
 ///
-/// Commands are encoded with [`Command::write_ansi`] and written in one ordered
-/// batch when [`flush`](Self::flush) is awaited. The writer can be Compio's
-/// standard output handle or any other type that implements
+/// Commands are encoded with
+/// [`Command::write_ansi`](crate::Command::write_ansi) and written in one
+/// ordered batch when [`flush`](Self::flush) is awaited. The writer can be
+/// Compio's standard output handle or any other type that implements
 /// [`compio_io::AsyncWrite`].
 ///
 /// Call [`flush`](Self::flush) before this value is dropped. Dropping it
@@ -34,12 +75,13 @@ pub trait QueueableCommand {
 /// ```no_run
 /// use std::io;
 ///
-/// use compio_term::{CommandQueue, QueueableCommand, cursor::MoveTo, style::Print};
+/// use compio_term::{Queueable, cursor::MoveTo, style::Print};
 ///
 /// #[compio_macros::main]
 /// async fn main() -> io::Result<()> {
-///     let mut output = CommandQueue::stdout();
-///     output.queue(MoveTo(0, 0))?.queue(Print("ready\r\n"))?;
+///     let mut stdout = compio_fs::stdout();
+///     let mut output = stdout.queue(MoveTo(0, 0))?;
+///     output.queue_many((Print("ready"), Print("\r\n")))?;
 ///     output.flush().await
 /// }
 /// ```
@@ -79,12 +121,33 @@ impl<W> CommandQueue<W> {
     pub fn is_empty(&self) -> bool {
         self.buffered_len() == 0
     }
+
+    fn append(
+        &mut self,
+        write: impl FnOnce(&mut AnsiBuffer<'_>) -> fmt::Result,
+    ) -> io::Result<&mut Self> {
+        let original_len = self.buffer.len();
+        if write(&mut AnsiBuffer(&mut self.buffer)).is_err() {
+            self.buffer.truncate(original_len);
+            return Err(io::Error::other(
+                "terminal command failed to render its ANSI representation",
+            ));
+        }
+        Ok(self)
+    }
 }
 
 impl CommandQueue<compio_fs::Stdout> {
     /// Creates an empty command queue that writes to standard output.
     pub fn stdout() -> Self {
         Self::new(compio_fs::stdout())
+    }
+}
+
+impl CommandQueue<compio_fs::Stderr> {
+    /// Creates an empty command queue that writes to standard error.
+    pub fn stderr() -> Self {
+        Self::new(compio_fs::stderr())
     }
 }
 
@@ -128,22 +191,6 @@ impl<W: AsyncWrite> CommandQueue<W> {
     }
 }
 
-impl<W> QueueableCommand for CommandQueue<W> {
-    fn queue(&mut self, command: impl Command) -> io::Result<&mut Self> {
-        let original_len = self.buffer.len();
-        if command
-            .write_ansi(&mut AnsiBuffer(&mut self.buffer))
-            .is_err()
-        {
-            self.buffer.truncate(original_len);
-            return Err(io::Error::other(
-                "terminal command failed to render its ANSI representation",
-            ));
-        }
-        Ok(self)
-    }
-}
-
 struct AnsiBuffer<'a>(&'a mut Vec<u8>);
 
 impl fmt::Write for AnsiBuffer<'_> {
@@ -161,7 +208,7 @@ mod tests {
     use compio_io::AsyncWrite;
     use futures_util::FutureExt;
 
-    use super::{CommandQueue, QueueableCommand};
+    use super::CommandQueue;
     use crate::{Command, cursor::MoveTo, style::Print};
 
     #[test]

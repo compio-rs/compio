@@ -40,6 +40,3 @@ windows-sys = { workspace = true, features = [
 [dev-dependencies]
 compio-macros = { workspace = true }
 futures-util = { workspace = true }
-
-[target.'cfg(target_os = "linux")'.dev-dependencies]
-compio-driver = { workspace = true, features = ["io-uring"] }

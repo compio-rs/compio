@@ -8,7 +8,8 @@
 //!
 //! Crossterm's cursor, style, terminal, and terminal detection modules are
 //! re-exported unchanged. Crossterm's synchronous command execution traits and
-//! macros are replaced by [`CommandQueue`] and [`QueueableCommand`].
+//! macros are replaced by [`CommandQueue`], [`Commands`], and
+//! [`Queueable`].
 //!
 //! [`io::AsyncWrite`]: compio_io::AsyncWrite
 
@@ -22,7 +23,7 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 mod command;
 pub mod event;
 
-pub use command::{CommandQueue, QueueableCommand};
+pub use command::{CommandQueue, Commands, Queueable};
 pub use crossterm::{Command, cursor, style, terminal, tty};
 
 /// A guard that keeps the terminal in raw mode until it is dropped.
