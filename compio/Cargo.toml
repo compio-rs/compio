@@ -29,6 +29,7 @@ compio-fs = { workspace = true, optional = true }
 compio-io = { workspace = true, optional = true }
 compio-net = { workspace = true, optional = true }
 compio-signal = { workspace = true, optional = true }
+compio-term = { workspace = true, optional = true }
 compio-dispatcher = { workspace = true, optional = true }
 compio-log = { workspace = true }
 compio-tls = { workspace = true, optional = true }
@@ -88,6 +89,7 @@ runtime = ["dep:compio-runtime"]
 async-fd = ["runtime", "compio-runtime/async-fd"]
 macros = ["dep:compio-macros", "runtime"]
 signal = ["dep:compio-signal", "runtime"]
+term = ["dep:compio-term", "runtime"]
 time = ["compio-runtime/time", "runtime"]
 dispatcher = ["dep:compio-dispatcher", "runtime"]
 tls = ["dep:compio-tls"]
@@ -129,6 +131,7 @@ all = [
     "time",
     "macros",
     "signal",
+    "term",
     "dispatcher",
     "native-tls",
     "rustls",

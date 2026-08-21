@@ -9,6 +9,7 @@ const TYPE_LABELS = {
 };
 
 const SCOPE_LABELS = {
+  actor: "package: actor",
   buf: "package: buf",
   dispatch: "package: dispatcher",
   dispatcher: "package: dispatcher",
@@ -31,6 +32,7 @@ const SCOPE_LABELS = {
   rt: "package: runtime",
   runtime: "package: runtime",
   signal: "package: signal",
+  term: "package: term",
   tls: "package: tls",
   uring: "driver: io-uring",
   websocket: "package: ws",

@@ -84,6 +84,9 @@ pub use compio_runtime as runtime;
 #[cfg(feature = "signal")]
 #[doc(inline)]
 pub use compio_signal as signal;
+#[cfg(feature = "term")]
+#[doc(inline)]
+pub use compio_term as term;
 #[cfg(feature = "tls")]
 #[doc(inline)]
 pub use compio_tls as tls;

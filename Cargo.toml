@@ -15,6 +15,7 @@ members = [
     "compio-runtime",
     "compio-executor",
     "compio-signal",
+    "compio-term",
     "compio-tls",
     "compio-ws",
     "compio-compat",
@@ -38,6 +39,7 @@ compio-fs = { path = "./compio-fs", version = "0.12.0" }
 compio-io = { path = "./compio-io", version = "0.10.1" }
 compio-net = { path = "./compio-net", version = "0.12.2" }
 compio-signal = { path = "./compio-signal", version = "0.10.0" }
+compio-term = { path = "./compio-term", version = "0.1.0" }
 compio-dispatcher = { path = "./compio-dispatcher", version = "0.11.0" }
 compio-log = { path = "./compio-log", version = "0.2.0" }
 compio-tls = { path = "./compio-tls", version = "0.10.0", default-features = false }
@@ -54,8 +56,10 @@ compio-send-wrapper = "0.7.1"
 console-subscriber = "0.5.0"
 criterion = "0.8.0"
 crossbeam-queue = "0.3.8"
+crossterm = { version = "0.29.0", default-features = false }
 flume = { version = "0.12.0", default-features = false }
 futures-channel = "0.3.29"
+futures-core = "0.3.31"
 futures-executor = "0.3.30"
 futures-rustls = { version = "0.26.0", default-features = false }
 futures-util = "0.3.29"
