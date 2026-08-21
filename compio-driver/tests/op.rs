@@ -418,16 +418,44 @@ fn read_len_over_u32() {
     push_and_wait(&mut driver, op).unwrap();
 }
 
-/// Dropping a Proactor with in-flight ops must not leak. Validated by ASan.
+/// Dropping a Proactor with in-flight ops must release them on the drivers that
+/// cancel on drop (io_uring, poll), and must leak them on IOCP, which cannot
+/// cancel on drop
 #[test]
 fn drop_with_inflight_ops() {
-    let mut driver = Proactor::builder().build().unwrap();
+    use std::net::UdpSocket;
 
-    let op = Asyncify::new(|| BufResult(Ok(0), ()));
-    match driver.push(op) {
-        PushEntry::Ready(_) => {}
-        PushEntry::Pending(_) => {}
+    use compio_driver::op::Recv;
+
+    let mut driver = Proactor::new().unwrap();
+
+    // Nobody sends to this socket, so the recv op stays in-flight.
+    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+    if driver.driver_type().is_polling() {
+        socket.set_nonblocking(true).unwrap();
     }
+    let socket = SharedFd::new(socket);
+    driver.attach(socket.as_raw_fd()).unwrap();
+
+    let op = Recv::new(socket.clone(), Vec::with_capacity(1024), RecvFlags::empty());
+    let PushEntry::Pending(_) = driver.push(op) else {
+        panic!("recv on an idle socket should be pending")
+    };
 
     drop(driver);
+
+    if cfg!(windows) {
+        // IOCP is a real proactor: dropping the port does not cancel a submitted
+        // op, so the kernel may still write into its buffer. Releasing the key or
+        // the fd would be a use-after-free, so the op is leaked on purpose.
+        assert!(
+            socket.try_unwrap().is_err(),
+            "IOCP must not release in-flight ops"
+        );
+    } else {
+        // io_uring closes the ring on drop, which makes the kernel cancel the op,
+        // and the poll driver owns its keys outright. Both must then release the
+        // op along with the fd clone it owned.
+        assert!(socket.try_unwrap().is_ok(), "in-flight op leaked on drop");
+    }
 }
