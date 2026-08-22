@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1](https://github.com/compio-rs/compio/compare/compio-quic-v0.8.0...compio-quic-v0.8.1) - 2026-08-22
+
+### Added
+
+- name the tasks the crates spawn ([#1004](https://github.com/compio-rs/compio/pull/1004))
+- *(buf)* make `IoBuf`, `SetLen`, and `IoBufMut` dyn-compatible ([#969](https://github.com/compio-rs/compio/pull/969))
+
+### Fixed
+
+- *(quic)* inverted assert in SendStreamUnframed ([#992](https://github.com/compio-rs/compio/pull/992))
+- semicolon_in_expressions_from_macros ([#977](https://github.com/compio-rs/compio/pull/977))
+
+### Other
+
+- bump cfg_aliases ([#980](https://github.com/compio-rs/compio/pull/980))
+
 ## 0.8.0 - 2026-05-27
 
 ### Added
