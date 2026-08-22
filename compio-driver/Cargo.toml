@@ -60,6 +60,7 @@ once_cell = { workspace = true, optional = true }
 polling = { version = "3.3.0", optional = true }
 rustix = { workspace = true }
 linux-raw-sys = { version = "0.12.1", optional = true }
+slotmap = { workspace = true, optional = true }
 
 # Other platform dependencies
 [target.'cfg(all(unix, not(target_os = "linux")))'.dependencies]
@@ -86,6 +87,7 @@ io-uring = [
     "linux-raw-sys/io_uring",
     "dep:io-uring",
     "dep:once_cell",
+    "dep:slotmap",
 ]
 polling = ["dep:polling"]
 
