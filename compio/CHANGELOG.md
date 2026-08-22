@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0](https://github.com/compio-rs/compio/compare/v0.19.1...v0.20.0) - 2026-08-22
+
+### Added
+
+- *(term)* init ([#1017](https://github.com/compio-rs/compio/pull/1017))
+- *(runtime,tls,ws)* [**breaking**] use PollFd in TLS ([#1012](https://github.com/compio-rs/compio/pull/1012))
+- forward the console feature, document observing compio ([#1006](https://github.com/compio-rs/compio/pull/1006))
+- *(actor)* init ([#1000](https://github.com/compio-rs/compio/pull/1000))
+- *(buf)* make `IoBuf`, `SetLen`, and `IoBufMut` dyn-compatible ([#969](https://github.com/compio-rs/compio/pull/969))
+
+### Other
+
+- fix discrod link ([#985](https://github.com/compio-rs/compio/pull/985))
+
 ## [0.19.1](https://github.com/compio-rs/compio/compare/v0.19.0...v0.19.1) - 2026-06-14
 
 ### Added

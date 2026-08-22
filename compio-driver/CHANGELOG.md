@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0](https://github.com/compio-rs/compio/compare/compio-driver-v0.12.4...compio-driver-v0.13.0) - 2026-08-22
+
+### Added
+
+- *(runtime,tls,ws)* [**breaking**] use PollFd in TLS ([#1012](https://github.com/compio-rs/compio/pull/1012))
+- *(buf)* make `IoBuf`, `SetLen`, and `IoBufMut` dyn-compatible ([#969](https://github.com/compio-rs/compio/pull/969))
+
+### Fixed
+
+- semicolon_in_expressions_from_macros ([#977](https://github.com/compio-rs/compio/pull/977))
+- *(compio-fs)* populate ctime correctly ([#968](https://github.com/compio-rs/compio/pull/968))
+
+### Other
+
+- *(driver)* assert what a dropped Proactor does with in-flight ops ([#1018](https://github.com/compio-rs/compio/pull/1018))
+- format the cfg_select! bodies ([#990](https://github.com/compio-rs/compio/pull/990))
+- *(driver,iour)* rewrap a doc comment past the comment width ([#986](https://github.com/compio-rs/compio/pull/986))
+- bump cfg_aliases ([#980](https://github.com/compio-rs/compio/pull/980))
+
 ## 0.12.4 - 2026-07-06
 
 ### Fixed

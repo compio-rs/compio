@@ -1,6 +1,6 @@
 [package]
 name = "compio-executor"
-version = "0.1.3"
+version = "0.1.4"
 description = "Executor for compio"
 categories = ["asynchronous"]
 keywords = ["async", "executor"]
