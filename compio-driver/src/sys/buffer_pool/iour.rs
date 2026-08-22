@@ -23,14 +23,14 @@ pub(in crate::sys) struct BufControl {
     len: NonZeroU16,
     /// Total size of the mmap
     size: usize,
+    /// Buffer group registered in io_uring.
+    buffer_group: u16,
 }
 
 assert_not_impl!(BufControl, Send);
 assert_not_impl!(BufControl, Sync);
 
 impl BufControl {
-    const BUF_GROUP: u16 = 1;
-
     /// # Safety
     ///
     /// Caller must ensure the buffers will:
@@ -43,6 +43,7 @@ impl BufControl {
         bufs: &[Slot],
         bufs_len: u32,
         flags: u16,
+        buffer_group: u16,
     ) -> io::Result<Self> {
         debug_assert!(bufs.len().is_power_of_two());
 
@@ -57,13 +58,18 @@ impl BufControl {
             .expect("mmap failed")
             .cast::<BufRingEntry>();
 
-        let mut this = Self { ptr, len, size };
+        let mut this = Self {
+            ptr,
+            len,
+            size,
+            buffer_group,
+        };
 
         unsafe {
             driver.inner().submitter().register_buf_ring_with_flags(
                 ptr.addr().get() as u64,
                 len.get(),
-                Self::BUF_GROUP,
+                buffer_group,
                 flags,
             )
         }?;
@@ -88,7 +94,7 @@ impl BufControl {
 
     /// Get the buffer group id
     pub const fn buffer_group(&self) -> u16 {
-        Self::BUF_GROUP
+        self.buffer_group
     }
 
     /// Reset the buffer and make it available to the kernel
@@ -113,7 +119,7 @@ impl BufControl {
         driver
             .inner()
             .submitter()
-            .unregister_buf_ring(Self::BUF_GROUP)?;
+            .unregister_buf_ring(self.buffer_group)?;
         unsafe { munmap(self.ptr.cast().as_ptr(), self.size) }?;
 
         Ok(())
