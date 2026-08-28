@@ -18,3 +18,9 @@ async fn main_with_runtime_args() {}
 
 #[compio::test(crate = compio_alias, event_interval = 8, with_proactor(driver_type = DriverType::Poll))]
 async fn main_with_multiple_args() {}
+
+/// The `console` argument, which is compiled but never run: it installs a
+/// process-wide subscriber, which is why `#[compio::test]` rejects it, and
+/// running one here would install it in a binary full of tests.
+#[compio::main(console, event_interval = 8)]
+async fn main_with_console() {}
