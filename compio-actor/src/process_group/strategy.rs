@@ -12,7 +12,7 @@ impl Strategy {
     pub(super) fn select(&self, cursor: &mut usize, members: NonZeroUsize) -> usize {
         match self {
             Self::RoundRobin => {
-                let selected = *cursor % members.get();
+                let selected = *cursor % members;
                 *cursor = cursor.wrapping_add(1);
                 selected
             }

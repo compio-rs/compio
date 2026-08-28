@@ -143,7 +143,7 @@ impl BufControl {
     ///
     /// [`commit`]: Self::commit
     unsafe fn add_buffer(&mut self, buffer_id: u16, ptr: BufPtr, len: u32, offset: u16) {
-        let idx = (self.tail().load(Ordering::Acquire) + offset) % self.len.get();
+        let idx = (self.tail().load(Ordering::Acquire) + offset) % self.len;
 
         let entry = &mut self.as_slice_mut()[idx as usize];
 
