@@ -35,7 +35,8 @@ impl Stream for Incoming<'_> {
                 if let Some(BufResult(res, _)) = res {
                     let socket = if op.is_terminated() && res.is_ok() {
                         let Some(op) = this.op.take() else {
-                            // SAFETY: op is guaranteed to be Some at this point.
+                            // SAFETY: op is guaranteed to be Some at this
+                            // point.
                             unsafe { std::hint::unreachable_unchecked() }
                         };
                         op.try_take()

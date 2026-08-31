@@ -30,7 +30,8 @@ macro_rules! echo_server_impl {
             while let Ok((mut send, mut recv)) = conn.accept_bi().await {
                 $spawn!(async move {
                     loop {
-                        // These are 32 buffers, for reading approximately 32kB at once
+                        // These are 32 buffers, for reading approximately 32kB at
+                        // once
                         let mut bufs: [Bytes; 32] = std::array::from_fn(|_| Bytes::new());
 
                         if let Ok(Some(n)) = recv.read_chunks(&mut bufs).await {

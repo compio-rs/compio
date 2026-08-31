@@ -155,7 +155,8 @@ impl<T: OpCode> Key<T> {
     /// Panics if the result is not ready or the `Key` is not unique (multiple
     /// references or borrowed).
     pub(crate) fn take_result(self) -> BufResult<usize, T> {
-        // SAFETY: `Key` invariant guarantees that `T` is the actual concrete type.
+        // SAFETY: `Key` invariant guarantees that `T` is the actual concrete
+        // type.
         unsafe { self.erased.take_result::<T>() }
     }
 }
@@ -218,8 +219,8 @@ impl ErasedKey {
         let mut inner = ThinCell::new(raw_op);
         // SAFETY:
         // - ThinCell is just created, there will be no shared owner or borrower
-        // - Carrier is being pinned by ThinCell, it will have a stable address until
-        //   move out
+        // - Carrier is being pinned by ThinCell, it will have a stable address
+        //   until move out
         unsafe { inner.borrow_unchecked().carrier.init() };
         Self {
             inner: unsafe { inner.unsize(|p| p as *const Inner<RawOp<dyn Carry>>) },

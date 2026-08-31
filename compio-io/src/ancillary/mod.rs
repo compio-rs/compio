@@ -144,8 +144,8 @@ impl<'a, B: IoBufMut + ?Sized> AncillaryBuilder<'a, B> {
             return Err(CodecError::BufferTooSmall);
         }
 
-        // SAFETY: method `new` guarantees the buffer is zeroed and properly aligned,
-        // and we have checked the space.
+        // SAFETY: method `new` guarantees the buffer is zeroed and properly
+        // aligned, and we have checked the space.
         let mut cmsg = unsafe { self.inner.current_mut(self.buffer.buf_mut_ptr().cast()) }
             .expect("sufficient space");
         cmsg.set_level(level);

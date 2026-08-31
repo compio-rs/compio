@@ -93,8 +93,8 @@ impl File {
     /// file may not be closed immediately.
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         // Make sure that fd won't be dropped after `close` called.
-        // Users may call this method and drop the future immediately. In that way
-        // `close` should be cancelled.
+        // Users may call this method and drop the future immediately. In that
+        // way `close` should be cancelled.
         let this = ManuallyDrop::new(self);
         async move {
             let fd = ManuallyDrop::into_inner(this)

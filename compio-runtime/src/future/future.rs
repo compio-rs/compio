@@ -147,7 +147,8 @@ impl<T: OpCode + 'static> Future for Submit<T, ()> {
                     let entry = submit_raw(&mut this.driver.borrow_mut(), op, extra);
                     match entry {
                         PushEntry::Pending(key) => {
-                            // TODO: Should we register it only the first time or every time it's
+                            // TODO: Should we register it only the first time
+                            // or every time it's
                             // being polled?
                             if let Some(cancel) = cx.get_cancel() {
                                 cancel.register(&key);

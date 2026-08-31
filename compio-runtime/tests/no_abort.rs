@@ -12,8 +12,8 @@ fn simple_drop() {
         let handle = compio_runtime::spawn(async {
             sleep(Duration::from_millis(100)).await;
         });
-        // Register the waker for handle here to make sure that when the task gets
-        // dropped, `has_waker` check returns true
+        // Register the waker for handle here to make sure that when the task
+        // gets dropped, `has_waker` check returns true
         compio_runtime::spawn(handle).detach();
         sleep(Duration::from_millis(100)).await;
         panic!("Main future panics");

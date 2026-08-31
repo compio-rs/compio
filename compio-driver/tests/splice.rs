@@ -56,7 +56,8 @@ mod splice_impl {
                     buffer.len()
                 )
             ))?;
-            // Cannot return pending here because the data has been read already.
+            // Cannot return pending here because the data has been read
+            // already.
             Poll::Ready(syscall!(libc::write(
                 self.fd_out.as_fd().as_raw_fd(),
                 buffer.as_ptr().cast(),

@@ -471,7 +471,8 @@ pub trait IoBufMutExt: IoBufMut {
 
         unsafe {
             // SAFETY:
-            // - we have reserved enough capacity so the ptr and len stays in one allocation
+            // - we have reserved enough capacity so the ptr and len stays in
+            //   one allocation
             // - src is valid for len bytes
             // - ptr is valid for len bytes
             // - &mut self guarantees that src cannot overlap with dst
@@ -622,7 +623,8 @@ impl IoBufMut for [u8] {
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         let ptr = self.as_mut_ptr() as *mut MaybeUninit<u8>;
         let len = self.len();
-        // SAFETY: slice is fully initialized, so treating it as MaybeUninit is safe
+        // SAFETY: slice is fully initialized, so treating it as MaybeUninit is
+        // safe
         unsafe { std::slice::from_raw_parts_mut(ptr, len) }
     }
 }
@@ -630,7 +632,8 @@ impl IoBufMut for [u8] {
 impl<const N: usize> IoBufMut for [u8; N] {
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         let ptr = self.as_mut_ptr() as *mut MaybeUninit<u8>;
-        // SAFETY: array is fully initialized, so treating it as MaybeUninit is safe
+        // SAFETY: array is fully initialized, so treating it as MaybeUninit is
+        // safe
         unsafe { std::slice::from_raw_parts_mut(ptr, N) }
     }
 }
@@ -640,7 +643,8 @@ impl IoBufMut for bytes::BytesMut {
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         let ptr = self.as_mut_ptr() as *mut MaybeUninit<u8>;
         let cap = self.capacity();
-        // SAFETY: BytesMut guarantees that the pointer is valid for `capacity` bytes
+        // SAFETY: BytesMut guarantees that the pointer is valid for `capacity`
+        // bytes
         unsafe { std::slice::from_raw_parts_mut(ptr, cap) }
     }
 
@@ -672,8 +676,9 @@ impl IoBufMut for std::io::BorrowedBuf<'static, u8> {
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         let total_cap = self.capacity();
 
-        // SAFETY: We reconstruct the full buffer from the filled portion pointer.
-        // BorrowedBuf guarantees that the underlying buffer has capacity bytes.
+        // SAFETY: We reconstruct the full buffer from the filled portion
+        // pointer. BorrowedBuf guarantees that the underlying buffer
+        // has capacity bytes.
         unsafe {
             let filled_ptr = self.filled().as_ptr() as *mut MaybeUninit<u8>;
             std::slice::from_raw_parts_mut(filled_ptr, total_cap)
@@ -698,7 +703,8 @@ where
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         let ptr = self.as_mut_ptr() as *mut MaybeUninit<u8>;
         let cap = self.capacity();
-        // SAFETY: SmallVec guarantees that the pointer is valid for `capacity` bytes
+        // SAFETY: SmallVec guarantees that the pointer is valid for `capacity`
+        // bytes
         unsafe { std::slice::from_raw_parts_mut(ptr, cap) }
     }
 
@@ -862,7 +868,8 @@ impl SetLen for std::io::BorrowedBuf<'static, u8> {
     unsafe fn set_len(&mut self, len: usize) {
         debug_assert!(self.capacity() >= len);
 
-        // SAFETY: `len` range is initialized guaranteed by invariant of `set_len`
+        // SAFETY: `len` range is initialized guaranteed by invariant of
+        // `set_len`
         #[allow(unused_unsafe)]
         unsafe {
             self.clear().unfilled().advance(len)

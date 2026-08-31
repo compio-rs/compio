@@ -91,7 +91,8 @@ mod encryption {
         }
 
         pub fn new_connector() -> Result<TlsConnector, Error> {
-            // Create TLS connector with platform verifier when feature is enabled
+            // Create TLS connector with platform verifier when feature is
+            // enabled
             #[cfg(feature = "rustls-platform-verifier")]
             {
                 let config = match config_with_platform_verifier() {
@@ -237,7 +238,8 @@ where
     let config = config.into();
     let request: Request = request.into_client_request()?;
 
-    // We don't check if it's an IPv6 address because `std` handles it internally.
+    // We don't check if it's an IPv6 address because `std` handles it
+    // internally.
     let domain = request
         .uri()
         .host()
@@ -272,12 +274,12 @@ fn domain(request: &Request) -> Result<&str, Error> {
         .uri()
         .host()
         .map(|host| {
-            // If host is an IPv6 address, it might be surrounded by brackets. These
-            // brackets are *not* part of a valid IP, so they must be stripped
-            // out.
+            // If host is an IPv6 address, it might be surrounded by brackets.
+            // These brackets are *not* part of a valid IP, so they
+            // must be stripped out.
             //
-            // The URI from the request is guaranteed to be valid, so we don't need a
-            // separate check for the closing bracket.
+            // The URI from the request is guaranteed to be valid, so we don't
+            // need a separate check for the closing bracket.
 
             if host.starts_with('[') && host.ends_with(']') {
                 &host[1..host.len() - 1]

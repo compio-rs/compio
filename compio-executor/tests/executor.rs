@@ -216,8 +216,9 @@ fn test_panic_does_not_affect_other_tasks() {
         let run_count = std::rc::Rc::new(Cell::new(0));
         let run_count_task = run_count.clone();
 
-        // This task will panic. We detach it so we aren't waiting on it specifically,
-        // but we want to make sure the executor keeps ticking.
+        // This task will panic. We detach it so we aren't waiting on it
+        // specifically, but we want to make sure the executor keeps
+        // ticking.
         spawn(async {
             panic!("intentional panic");
         })

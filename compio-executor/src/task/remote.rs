@@ -44,8 +44,8 @@ impl<'a> Remote<'a> {
             return;
         }
 
-        // Load shared pointer - it should always be valid since we keep it until
-        // Executor drops
+        // Load shared pointer - it should always be valid since we keep it
+        // until Executor drops
         let Some(shared) = (unsafe { self.header().shared.load(Ordering::Acquire).as_ref() })
         else {
             self.header().state.finish_scheduling();
@@ -131,15 +131,16 @@ impl<'a> Remote<'a> {
             self.header().waker.with_mut(|ptr| {
                 crate::panic_guard!();
 
-                // SAFETY: We're in SETTING_WAKER state, Executor will not access the waker
-                // until we're finished.
+                // SAFETY: We're in SETTING_WAKER state, Executor will not
+                // access the waker until we're finished.
                 let waker = unsafe { &mut *ptr };
 
                 if state.has_waker() {
                     unsafe { waker.assume_init_drop() };
                 }
 
-                // We're in the critical section, executor will wait for us to finish
+                // We're in the critical section, executor will wait for us to
+                // finish
                 waker.write(cx.waker().clone());
             });
 

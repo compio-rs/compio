@@ -186,9 +186,10 @@ impl RawBodyItemFn {
 
         // Resolved rather than spelled out, so that a renamed dependency works.
         // The manifest is all this can read, and it reads every dependency
-        // table: a `console-subscriber` that is there but not linked -- dev-only
-        // for a build that is not a test, or optional and off -- is found here
-        // and left to rustc, which is the one that knows.
+        // table: a `console-subscriber` that is there but not linked --
+        // dev-only for a build that is not a test, or optional and off
+        // -- is found here and left to rustc, which is the one that
+        // knows.
         match retrieve_console_subscriber_mod() {
             Some(console_mod) => quote!(#console_mod::init();),
             None => syn::Error::new(

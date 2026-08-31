@@ -35,8 +35,8 @@ pub fn bind_to_cpu_set(cpus: &HashSet<usize>) {
 fn available_cpus() -> Option<HashSet<usize>> {
     use std::mem;
 
-    // SAFETY: `cpu_set_t` is a plain bitset; `sched_getaffinity` fills it with the
-    // CPUs the current thread (pid 0) is allowed to run on.
+    // SAFETY: `cpu_set_t` is a plain bitset; `sched_getaffinity` fills it with
+    // the CPUs the current thread (pid 0) is allowed to run on.
     let set = unsafe {
         let mut set: libc::cpu_set_t = mem::zeroed();
         if libc::sched_getaffinity(0, mem::size_of::<libc::cpu_set_t>(), &mut set) != 0 {
@@ -68,9 +68,9 @@ fn available_cpus() -> Option<HashSet<usize>> {
 fn set_affinity(cpus: impl Iterator<Item = usize>) {
     use std::{io, mem};
 
-    // SAFETY: `cpu_set_t` is a plain bitset, `CPU_SET` only flips bits in it, and
-    // `sched_setaffinity` is given a valid pointer with a matching size for the
-    // current thread (pid 0).
+    // SAFETY: `cpu_set_t` is a plain bitset, `CPU_SET` only flips bits in it,
+    // and `sched_setaffinity` is given a valid pointer with a matching size
+    // for the current thread (pid 0).
     let res = unsafe {
         let mut set: libc::cpu_set_t = mem::zeroed();
         for cpu in cpus {
@@ -91,8 +91,9 @@ fn set_affinity(cpus: impl Iterator<Item = usize>) {
 fn available_cpus() -> Option<HashSet<usize>> {
     use std::mem;
 
-    // SAFETY: `cpuset_t` is a plain bitset; `cpuset_getaffinity` fills it with the
-    // CPUs the current thread (`CPU_WHICH_TID` with id -1) is allowed to run on.
+    // SAFETY: `cpuset_t` is a plain bitset; `cpuset_getaffinity` fills it with
+    // the CPUs the current thread (`CPU_WHICH_TID` with id -1) is allowed
+    // to run on.
     let set = unsafe {
         let mut set: libc::cpuset_t = mem::zeroed();
         let res = libc::cpuset_getaffinity(
@@ -120,9 +121,9 @@ fn available_cpus() -> Option<HashSet<usize>> {
 fn set_affinity(cpus: impl Iterator<Item = usize>) {
     use std::{io, mem};
 
-    // SAFETY: `cpuset_t` is a plain bitset, `CPU_SET` only flips bits in it, and
-    // `cpuset_setaffinity` is given a valid pointer with a matching size for the
-    // current thread (`CPU_WHICH_TID` with id -1).
+    // SAFETY: `cpuset_t` is a plain bitset, `CPU_SET` only flips bits in it,
+    // and `cpuset_setaffinity` is given a valid pointer with a matching
+    // size for the current thread (`CPU_WHICH_TID` with id -1).
     let res = unsafe {
         let mut set: libc::cpuset_t = mem::zeroed();
         for cpu in cpus {
@@ -165,10 +166,11 @@ fn available_cpus() -> Option<HashSet<usize>> {
             return None;
         }
 
-        // `_cpuset_isset` returns >0 when the CPU is in the set, 0 when it isn't,
-        // and <0 once the index is past the set's capacity.
-        // `cpuid_t` is a public-only-within-libc alias of `c_ulong`, so cast to the
-        // underlying type (which unifies with the parameter) rather than naming it.
+        // `_cpuset_isset` returns >0 when the CPU is in the set, 0 when it
+        // isn't, and <0 once the index is past the set's capacity.
+        // `cpuid_t` is a public-only-within-libc alias of `c_ulong`, so cast to
+        // the underlying type (which unifies with the parameter) rather
+        // than naming it.
         let bits = libc::_cpuset_size(set) * 8;
         let cpus = (0..bits)
             .filter(|&i| libc::_cpuset_isset(i as libc::c_ulong, set) > 0)
@@ -182,9 +184,9 @@ fn available_cpus() -> Option<HashSet<usize>> {
 fn set_affinity(cpus: impl Iterator<Item = usize>) {
     use std::io;
 
-    // SAFETY: `_cpuset_create` returns an owned set freed with `_cpuset_destroy`;
-    // `_cpuset_set` flips bits in it and `pthread_setaffinity_np` applies it to the
-    // current thread.
+    // SAFETY: `_cpuset_create` returns an owned set freed with
+    // `_cpuset_destroy`; `_cpuset_set` flips bits in it and
+    // `pthread_setaffinity_np` applies it to the current thread.
     let res = unsafe {
         let set = libc::_cpuset_create();
         if set.is_null() {
@@ -214,14 +216,14 @@ fn available_cpus() -> Option<HashSet<usize>> {
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessAffinityMask};
 
     // `GetProcessAffinityMask` is `KAFFINITY`-based, so it only reports the
-    // process's primary processor group (at most 64 logical processors). CPUs that
-    // live in other groups on machines with more than 64 CPUs are not represented;
-    // see the note in `set_affinity`.
+    // process's primary processor group (at most 64 logical processors). CPUs
+    // that live in other groups on machines with more than 64 CPUs are not
+    // represented; see the note in `set_affinity`.
     let mut process_mask: usize = 0;
     let mut system_mask: usize = 0;
 
-    // SAFETY: `GetCurrentProcess` returns a pseudo-handle for the current process
-    // and both masks are valid out-pointers.
+    // SAFETY: `GetCurrentProcess` returns a pseudo-handle for the current
+    // process and both masks are valid out-pointers.
     let res =
         unsafe { GetProcessAffinityMask(GetCurrentProcess(), &mut process_mask, &mut system_mask) };
     if res == 0 {
@@ -241,13 +243,14 @@ fn set_affinity(cpus: impl Iterator<Item = usize>) {
 
     use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadAffinityMask};
 
-    // `SetThreadAffinityMask` (like `GetProcessAffinityMask`) is `KAFFINITY`-based,
-    // so it can only address CPUs within a single processor group — at most 64
-    // logical processors. Machines with more than 64 CPUs split them across
-    // multiple groups, which would require the processor-group APIs
-    // (`SetThreadGroupAffinity` / `SetThreadSelectedCpuSetMasks`, the latter
-    // Windows 11+ only) plus a cross-group CPU numbering scheme. We intentionally
-    // keep the simple single-group behavior and skip CPUs outside the 64-bit mask.
+    // `SetThreadAffinityMask` (like `GetProcessAffinityMask`) is
+    // `KAFFINITY`-based, so it can only address CPUs within a single
+    // processor group — at most 64 logical processors. Machines with more
+    // than 64 CPUs split them across multiple groups, which would require
+    // the processor-group APIs (`SetThreadGroupAffinity` /
+    // `SetThreadSelectedCpuSetMasks`, the latter Windows 11+ only) plus a
+    // cross-group CPU numbering scheme. We intentionally keep the simple
+    // single-group behavior and skip CPUs outside the 64-bit mask.
     let bits = usize::BITS as usize;
     let mut mask: usize = 0;
     for cpu in cpus {
@@ -274,17 +277,17 @@ fn set_affinity(cpus: impl Iterator<Item = usize>) {
 
 #[cfg(target_os = "macos")]
 fn available_cpus() -> Option<HashSet<usize>> {
-    // macOS only exposes affinity *hints* rather than real pinning, so treat any
-    // CPU index below the logical CPU count as valid.
+    // macOS only exposes affinity *hints* rather than real pinning, so treat
+    // any CPU index below the logical CPU count as valid.
     let n = std::thread::available_parallelism().ok()?.get();
     Some((0..n).collect())
 }
 
 #[cfg(target_os = "macos")]
 fn set_affinity(cpus: impl Iterator<Item = usize>) {
-    // macOS cannot pin a thread to a *set* of CPUs; `THREAD_AFFINITY_POLICY` only
-    // assigns a single affinity tag used as a cache-locality hint. Use one of the
-    // requested CPUs as the tag (best effort).
+    // macOS cannot pin a thread to a *set* of CPUs; `THREAD_AFFINITY_POLICY`
+    // only assigns a single affinity tag used as a cache-locality hint. Use
+    // one of the requested CPUs as the tag (best effort).
     let mut cpus = cpus;
     let Some(tag) = cpus.next() else {
         return;
@@ -298,8 +301,8 @@ fn set_affinity(cpus: impl Iterator<Item = usize>) {
         affinity_tag: tag as libc::integer_t,
     };
 
-    // SAFETY: `pthread_mach_thread_np` returns the current thread's Mach port (a
-    // borrow that needs no deallocation), and `thread_policy_set` reads
+    // SAFETY: `pthread_mach_thread_np` returns the current thread's Mach port
+    // (a borrow that needs no deallocation), and `thread_policy_set` reads
     // `THREAD_AFFINITY_POLICY_COUNT` integers from `info`.
     let res = unsafe {
         libc::thread_policy_set(
@@ -417,10 +420,10 @@ mod tests {
         bind_to_cpu_set(&want);
 
         let want_mask = want.iter().fold(0usize, |m, &c| m | (1usize << c));
-        // Read back the current thread's affinity: `SetThreadAffinityMask` returns
-        // the *previous* mask, so re-applying the active value reports it.
-        // SAFETY: pseudo-handle for the current thread; the mask is the subset we
-        // just bound to.
+        // Read back the current thread's affinity: `SetThreadAffinityMask`
+        // returns the *previous* mask, so re-applying the active value
+        // reports it. SAFETY: pseudo-handle for the current thread; the
+        // mask is the subset we just bound to.
         let active = unsafe { SetThreadAffinityMask(GetCurrentThread(), want_mask) };
         assert_eq!(active, want_mask);
     }
@@ -440,8 +443,9 @@ mod tests {
 
     #[test]
     fn bind_runs_cleanly() {
-        // macOS only exposes an affinity *hint* (and not at all on Apple Silicon),
-        // so we can only assert that binding runs without panicking.
+        // macOS only exposes an affinity *hint* (and not at all on Apple
+        // Silicon), so we can only assert that binding runs without
+        // panicking.
         let available = available_cpus().unwrap();
         let want: HashSet<usize> = available.into_iter().take(2).collect();
         bind_to_cpu_set(&want);

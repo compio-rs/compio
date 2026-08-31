@@ -83,8 +83,9 @@ impl Driver {
         if let Some(w) = self.waits.get_mut(&key.as_raw())
             && w.cancel().is_ok()
         {
-            // The pack has been cancelled successfully, which means no packet will be post
-            // to IOCP. Need not set the result because `create_entry` handles it.
+            // The pack has been cancelled successfully, which means no packet
+            // will be post to IOCP. Need not set the result because
+            // `create_entry` handles it.
             self.port().post_raw(optr).ok();
         }
         trace!("call OpCode::cancel");
@@ -125,7 +126,8 @@ impl Driver {
         let notify = self.notify.clone();
         let tx = self.completed_tx.clone();
 
-        // SAFETY: we're submitting into the driver, so it's safe to freeze here.
+        // SAFETY: we're submitting into the driver, so it's safe to freeze
+        // here.
         let mut key = unsafe { key.freeze() };
 
         let mut closure = move || {
