@@ -304,7 +304,8 @@ impl Socket {
                     (libc::IPPROTO_IP, libc::IP_RECVTOS) => ecn_bits = cmsg.data::<u8>()?,
                     #[cfg(unix)]
                     (libc::IPPROTO_IPV6, libc::IPV6_TCLASS) => {
-                        // NOTE: It's OK to use `c_int` instead of `u8` on Apple systems
+                        // NOTE: It's OK to use `c_int` instead of `u8` on Apple
+                        // systems
                         ecn_bits = cmsg.data::<libc::c_int>()? as u8
                     }
                     #[cfg(windows)]
@@ -341,7 +342,8 @@ impl Socket {
                     #[cfg(windows)]
                     (WinSock::IPPROTO_IPV6, WinSock::IPV6_PKTINFO) => {
                         let pktinfo = cmsg.data::<WinSock::IN6_PKTINFO>()?;
-                        // SAFETY: Byte is a valid representation of the union for IPv6 addresses
+                        // SAFETY: Byte is a valid representation of the union
+                        // for IPv6 addresses
                         local_ip = Some(IpAddr::from(unsafe { pktinfo.ipi6_addr.u.Byte }));
                     }
 

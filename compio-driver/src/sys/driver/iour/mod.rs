@@ -185,8 +185,8 @@ impl Driver {
     fn submit_auto(&mut self, timeout: Option<Duration>, need_wait: bool) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "submit_auto", ?timeout);
 
-        // when taskrun is true, there are completed cqes wait to handle, no need to
-        // block the submit
+        // when taskrun is true, there are completed cqes wait to handle, no
+        // need to block the submit
         let want_sqe = if !need_wait || self.inner.submission().taskrun() {
             0
         } else {
@@ -194,8 +194,8 @@ impl Driver {
         };
 
         // Only a wait that can actually sleep is charged as iowait; a zero
-        // timeout (the drain calls from `push_raw`/`flush`) returns immediately,
-        // so it keeps the plain combined path.
+        // timeout (the drain calls from `push_raw`/`flush`) returns
+        // immediately, so it keeps the plain combined path.
         //
         // On the sleeping path, opt out of iowait accounting (see
         // `DriverFlags::NO_IOWAIT`) by carrying NO_IOWAIT on the same
@@ -245,7 +245,8 @@ impl Driver {
         want_sqe: usize,
         timeout: Option<Duration>,
     ) -> io::Result<usize> {
-        // Publish the SQ tail and read how many staged SQEs to submit this call.
+        // Publish the SQ tail and read how many staged SQEs to submit this
+        // call.
         let to_submit = self.inner.submission().len() as u32;
         let submitter = self.inner.submitter();
         if let Some(duration) = timeout {
@@ -368,11 +369,13 @@ impl Driver {
                             ) => {}
                         Err(e) => return Err(e),
                     }
-                    // If the CQEs are consumed here, we should make the driver aware of it. We
-                    // should not mask `awake` here, otherwise the driver may wait for the next
+                    // If the CQEs are consumed here, we should make the driver
+                    // aware of it. We should not mask
+                    // `awake` here, otherwise the driver may wait for the next
                     // event indefinitely.
                     //
-                    // Anyway it is not a hot path, so we can afford an extra `write` syscall here.
+                    // Anyway it is not a hot path, so we can afford an extra
+                    // `write` syscall here.
                     self.poll_entries();
                 }
             }
@@ -420,7 +423,8 @@ impl Driver {
     fn push_blocking(&mut self, key: ErasedKey) {
         let waker = self.waker();
         let completed = self.completed_tx.clone();
-        // SAFETY: we're submitting into the driver, so it's safe to freeze here.
+        // SAFETY: we're submitting into the driver, so it's safe to freeze
+        // here.
         let mut key = unsafe { key.freeze() };
         let mut closure = move || {
             let res = catch_unwind_io(AssertUnwindSafe(|| key.as_mut().carrier.call_blocking()));
@@ -435,7 +439,8 @@ impl Driver {
 
     pub fn flush(&mut self) -> bool {
         let succeed = self.submit_auto(Some(Duration::ZERO), false).is_ok();
-        // If submission failed, return true to let the driver wake up immediately.
+        // If submission failed, return true to let the driver wake up
+        // immediately.
         !succeed | self.notifier.reset()
     }
 

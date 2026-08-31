@@ -372,7 +372,8 @@ impl Driver {
     fn push_blocking(&mut self, key: ErasedKey) {
         let waker = self.waker();
         let completed = self.completed_tx.clone();
-        // SAFETY: we're submitting into the driver, so it's safe to freeze here.
+        // SAFETY: we're submitting into the driver, so it's safe to freeze
+        // here.
         let mut key = unsafe { key.freeze() };
 
         let mut closure = move || {
@@ -450,8 +451,8 @@ impl Driver {
         if !need_wait || has_completed {
             timeout = Some(Duration::ZERO);
         }
-        // We need to poll the poller first to make sure it handles the internal notify
-        // event (if any).
+        // We need to poll the poller first to make sure it handles the internal
+        // notify event (if any).
         self.events.clear();
         self.notify.poll.wait(&mut self.events, timeout)?;
         self.notify.set_awake();
@@ -474,8 +475,9 @@ impl Driver {
                 let op_type = op.carrier.op_type();
                 match op_type {
                     None => {
-                        // On epoll, multiple event may be received even if it is registered as
-                        // one-shot. It is safe to ignore it.
+                        // On epoll, multiple event may be received even if it
+                        // is registered as one-shot. It
+                        // is safe to ignore it.
                         trace!("op {} is completed", event.key);
                     }
                     Some(OpType::Fd(_)) => {

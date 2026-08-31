@@ -268,8 +268,8 @@ impl Runtime {
         // future waiting for it below is not reported at all.
         let f = console::instrument_blocking(meta, f);
         let op = Asyncify::new(move || {
-            // TODO: Refactor blocking pool and handle panic within worker and propagate it
-            // back
+            // TODO: Refactor blocking pool and handle panic within worker and
+            // propagate it back
             let res = f();
             BufResult(Ok(0), res)
         });

@@ -109,8 +109,9 @@ fn test_task_dropped_when_runtime_drops() {
         compio_runtime::spawn(async move {
             let _guard = DropFlag(flag2);
 
-            // `CancelToken` contains a strong reference to the driver, but should not
-            // prevent the task from being dropped when the runtime is dropped.
+            // `CancelToken` contains a strong reference to the driver, but
+            // should not prevent the task from being dropped when
+            // the runtime is dropped.
             let _token = CancelToken::new();
 
             compio_runtime::time::sleep(std::time::Duration::from_secs(3600)).await;

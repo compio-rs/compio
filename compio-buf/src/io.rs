@@ -77,8 +77,8 @@ impl<'a, B: ?Sized> ReaderRef<'a, B> {
 
 impl<B: IoBuf> io::Read for ReaderRef<'_, B> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        // implementation of Read for &[u8] will update the reference to point after
-        // the read bytes, so we can just delegate to it.
+        // implementation of Read for &[u8] will update the reference to point
+        // after the read bytes, so we can just delegate to it.
         self.0.read(buf)
     }
 }

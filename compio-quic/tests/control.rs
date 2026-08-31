@@ -88,8 +88,8 @@ async fn stream_id_flow_control() {
         async { endpoint.wait_incoming().await.unwrap().await.unwrap() },
     );
 
-    // If `open_uni_wait` doesn't get unblocked when the previous stream is dropped,
-    // this will time out.
+    // If `open_uni_wait` doesn't get unblocked when the previous stream is
+    // dropped, this will time out.
     join!(
         async {
             conn1.open_uni_wait().await.unwrap();

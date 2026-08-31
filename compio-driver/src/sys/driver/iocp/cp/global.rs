@@ -48,7 +48,8 @@ fn iocp_start() -> io::Result<()> {
             unsafe { entries.set_len(len) };
 
             for entry in entries.drain(..) {
-                // Any thin pointer is OK because we don't use the type of opcode.
+                // Any thin pointer is OK because we don't use the type of
+                // opcode.
                 let overlapped_ptr: *mut Overlapped = entry.lpOverlapped.cast();
                 let overlapped = unsafe { &*overlapped_ptr };
                 if let Err(e) = syscall!(

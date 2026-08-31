@@ -97,8 +97,8 @@ fn parse_key(record: KEY_EVENT_RECORD) -> Option<WindowsKeyEvent> {
     let modifiers = modifiers(record.dwControlKeyState);
     let state = key_state(record.dwControlKeyState);
     let virtual_key = record.wVirtualKeyCode;
-    // The KEY_EVENT_RECORD layout makes UnicodeChar the active union field for W
-    // APIs.
+    // The KEY_EVENT_RECORD layout makes UnicodeChar the active union field for
+    // W APIs.
     let utf16 = unsafe { record.uChar.UnicodeChar };
 
     let alt_code = virtual_key == VK_MENU && record.bKeyDown == 0 && utf16 != 0;

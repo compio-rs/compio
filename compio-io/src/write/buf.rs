@@ -64,8 +64,8 @@ impl<W: AsyncWrite> BufWriter<W> {
 
 impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
     async fn write<T: IoBuf>(&mut self, mut buf: T) -> BufResult<usize, T> {
-        // The previous flush may error because disk full. We need to make the buffer
-        // all-done before writing new data to it.
+        // The previous flush may error because disk full. We need to make the
+        // buffer all-done before writing new data to it.
         (_, buf) = buf_try!(self.flush_if_needed().await, buf);
 
         let written = self

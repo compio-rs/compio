@@ -35,7 +35,8 @@ impl AsyncRead for Repeat {
 
         let len = slice.len();
         slice.fill(MaybeUninit::new(self.0));
-        // SAFETY: we just initialized exactly `len` bytes in `buf` from index 0.
+        // SAFETY: we just initialized exactly `len` bytes in `buf` from index
+        // 0.
         unsafe { buf.advance(len) };
 
         BufResult(Ok(len), buf)

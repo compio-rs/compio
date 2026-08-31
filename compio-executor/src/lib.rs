@@ -217,8 +217,9 @@ impl Executor {
             let task = queue.take(id).expect("Task was not reset back");
             let res = unsafe { task.run() };
             if res.is_ready() {
-                // SAFETY: We're removing it soon, so drop will only be called once.
-                // The shared pointer is kept valid until the Executor is dropped,
+                // SAFETY: We're removing it soon, so drop will only be called
+                // once. The shared pointer is kept valid until
+                // the Executor is dropped,
                 // to avoid use-after-free issues with concurrent wakers.
                 unsafe { task.drop() };
                 queue.remove(id);

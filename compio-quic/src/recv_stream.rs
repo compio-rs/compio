@@ -122,8 +122,9 @@ impl RecvStream {
             match state.conn.recv_stream(self.stream).received_reset() {
                 Err(_) => Poll::Ready(Ok(None)),
                 Ok(Some(error_code)) => {
-                    // Stream state has just now been freed, so the connection may need to issue new
-                    // stream ID flow control credit
+                    // Stream state has just now been freed, so the connection
+                    // may need to issue new stream ID flow
+                    // control credit
                     state.wake();
                     Poll::Ready(Ok(Some(error_code)))
                 }
@@ -131,10 +132,13 @@ impl RecvStream {
                     if let Some(e) = &state.error {
                         return Poll::Ready(Err(e.clone().into()));
                     }
-                    // Resets always notify readers, since a reset is an immediate read error. We
-                    // could introduce a dedicated channel to reduce the risk of spurious wakeups,
-                    // but that increased complexity is probably not justified, as an application
-                    // that is expecting a reset is not likely to receive large amounts of data.
+                    // Resets always notify readers, since a reset is an
+                    // immediate read error. We
+                    // could introduce a dedicated channel to reduce the risk of
+                    // spurious wakeups, but that increased
+                    // complexity is probably not justified, as an application
+                    // that is expecting a reset is not likely to receive large
+                    // amounts of data.
                     state.readable.insert(self.stream, cx.waker().clone());
                     Poll::Pending
                 }
@@ -170,9 +174,9 @@ impl RecvStream {
             return Poll::Ready(Err(ReadError::ZeroRttRejected));
         }
 
-        // If we stored an error during a previous call, return it now. This can happen
-        // if a `read_fn` both wants to return data and also returns an error in
-        // its final stream status.
+        // If we stored an error during a previous call, return it now. This can
+        // happen if a `read_fn` both wants to return data and also
+        // returns an error in its final stream status.
         let status = match self.reset {
             Some(code) => ReadStatus::Failed(None, Reset(code)),
             None => {
@@ -321,7 +325,8 @@ impl RecvStream {
                 let mut read = 0;
                 loop {
                     if read >= bufs.len() {
-                        // We know `read > 0` because `bufs` cannot be empty here
+                        // We know `read > 0` because `bufs` cannot be empty
+                        // here
                         return ReadStatus::Readable(read);
                     }
 

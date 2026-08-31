@@ -80,8 +80,8 @@ async fn poll_connect_refused() {
 async fn poll_write_vectored() {
     let (mut tx, rx) = connected_pair();
 
-    // Exercise the `AsyncWrite` impl rather than the inherent method: the trait's
-    // default only writes the first non-empty buffer.
+    // Exercise the `AsyncWrite` impl rather than the inherent method: the
+    // trait's default only writes the first non-empty buffer.
     let bufs = [
         IoSlice::new(b"Hello"),
         IoSlice::new(b" "),
