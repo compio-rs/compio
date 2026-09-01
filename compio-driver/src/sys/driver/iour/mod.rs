@@ -496,21 +496,8 @@ impl AsRawFd for Driver {
 
 impl Drop for Driver {
     fn drop(&mut self) {
-        // Drain completed CQEs first to avoid double-free.
-        let mut cqueue = self.inner.completion();
-        cqueue.sync();
-        for entry in cqueue {
-            match entry.user_data() {
-                Self::CANCEL | Self::NOTIFY => {}
-                key => {
-                    self.in_flight.remove(&(key as usize));
-                    drop(unsafe { ErasedKey::from_raw(key as _) });
-                }
-            }
-        }
-
-        // Close the io_uring ring *before* freeing the remaining in-flight
-        // keys. Closing the ring fd makes the kernel wait for in-flight ops to
+        // Close the io_uring ring *before* freeing the in-flight keys.
+        // Closing the ring fd makes the kernel wait for in-flight ops to
         // finish or be cancelled, so it will no longer read from or write to
         // the buffers owned by those keys. Without this, the kernel could
         // touch a freed (and potentially recycled) heap allocation, which
@@ -519,7 +506,10 @@ impl Drop for Driver {
         // `corrupted double-linked list` during thread shutdown.
         unsafe { ManuallyDrop::drop(&mut self.inner) };
 
-        // Free remaining in-flight keys. Safe now that the kernel is done.
+        // `in_flight` holds one reference per submitted op: `push_raw_with_key`
+        // leaks it, and `poll_entries` takes it back when it hands the op to
+        // its future. Whatever is left here is ours to free, and the kernel is
+        // done with it.
         for user_data in self.in_flight.drain() {
             drop(unsafe { ErasedKey::from_raw(user_data) });
         }
