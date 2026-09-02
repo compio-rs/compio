@@ -1,6 +1,5 @@
 use std::{
-    collections::HashSet, marker::PhantomData, mem::ManuallyDrop, panic::AssertUnwindSafe,
-    sync::Arc, time::Duration,
+    marker::PhantomData, mem::ManuallyDrop, panic::AssertUnwindSafe, sync::Arc, time::Duration,
 };
 
 use crate::sys::{extra::IourExtra, prelude::*};
@@ -32,6 +31,7 @@ use io_uring::{
     opcode::{AsyncCancel, PollAdd},
     types::{Fd, SubmitArgs, Timespec},
 };
+use slotmap::{DefaultKey, SlotMap};
 
 use crate::{
     AsyncifyPool, DriverType, Entry, ProactorBuilder,
@@ -69,7 +69,7 @@ pub(crate) struct Driver {
     completed_rx: Receiver<Entry>,
     flags: DriverFlags,
     /// Keys leaked via `into_raw()` into io_uring user_data, freed on drop.
-    in_flight: HashSet<usize>,
+    in_flight: SlotMap<DefaultKey, usize>,
     _p: PhantomData<ErasedKey>,
 }
 
@@ -140,7 +140,7 @@ impl Driver {
             completed_rx,
             pool: builder.create_or_get_thread_pool(),
             flags,
-            in_flight: HashSet::new(),
+            in_flight: SlotMap::new(),
             _p: PhantomData,
         })
     }
@@ -303,8 +303,9 @@ impl Driver {
                         }
                         key.wake_by_ref();
                     } else {
-                        self.in_flight.remove(&(key as usize));
-                        create_entry(entry).notify()
+                        let entry = create_entry(entry);
+                        Self::remove_in_flight(&mut self.in_flight, &entry.key);
+                        entry.notify()
                     }
                 }
             }
@@ -345,7 +346,9 @@ impl Driver {
         let user_data = key.as_raw();
         let entry = entry.user_data(user_data as _);
         self.push_raw(entry)?; // if push failed, do not leak the key. Drop it upon return.
-        self.in_flight.insert(user_data);
+
+        let slot = self.in_flight.insert(user_data);
+        key.borrow().extra_mut().as_iour_mut().set_in_flight(slot);
         key.into_raw();
         Ok(())
     }
@@ -486,6 +489,16 @@ impl Driver {
     ) -> Option<BufResult<usize, crate::sys::Extra>> {
         key.borrow().carrier.pop_multishot()
     }
+
+    /// Take an op out of the `in_flight` map. The slot lives in the op's
+    /// extra, and is only set while the op is in flight.
+    fn remove_in_flight(in_flight: &mut SlotMap<DefaultKey, usize>, key: &ErasedKey) {
+        let Some(slot) = key.borrow().extra_mut().as_iour_mut().take_in_flight() else {
+            return;
+        };
+        let removed = in_flight.remove(slot);
+        debug_assert_eq!(removed, Some(key.as_raw()));
+    }
 }
 
 impl AsRawFd for Driver {
@@ -510,7 +523,7 @@ impl Drop for Driver {
         // leaks it, and `poll_entries` takes it back when it hands the op to
         // its future. Whatever is left here is ours to free, and the kernel is
         // done with it.
-        for user_data in self.in_flight.drain() {
+        for (_, user_data) in self.in_flight.drain() {
             drop(unsafe { ErasedKey::from_raw(user_data) });
         }
     }
