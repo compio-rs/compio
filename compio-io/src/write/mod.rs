@@ -92,7 +92,7 @@ impl<#[cfg(feature = "allocator_api")] A: Allocator> AsyncWrite for t_alloc!(Vec
 
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         let len = buf.iter_slice().map(|b| b.buf_len()).sum();
-        self.reserve(len - self.len());
+        self.reserve(len);
         for buf in buf.iter_slice() {
             self.extend_from_slice(buf);
         }
@@ -267,9 +267,9 @@ impl<#[cfg(feature = "allocator_api")] A: Allocator> AsyncWriteAt for t_alloc!(V
         pos: u64,
     ) -> BufResult<usize, T> {
         let mut pos = pos as usize;
-        let len = buf.iter_slice().map(|b| b.buf_len()).sum();
+        let len: usize = buf.iter_slice().map(|b| b.buf_len()).sum();
         if pos <= self.len() {
-            self.reserve(len - (self.len() - pos));
+            self.reserve(len.saturating_sub(self.len() - pos));
         } else {
             self.reserve(pos - self.len() + len);
             self.resize(pos, 0);
@@ -401,7 +401,7 @@ impl<#[cfg(feature = "allocator_api")] A: Allocator> AsyncWriteZerocopy for t_al
         buf: T,
     ) -> BufResult<usize, Self::VectoredBufferReadyFuture<T>> {
         let len = buf.iter_slice().map(|b| b.buf_len()).sum();
-        self.reserve(len - self.len());
+        self.reserve(len);
         for slice in buf.iter_slice() {
             self.extend_from_slice(slice);
         }
