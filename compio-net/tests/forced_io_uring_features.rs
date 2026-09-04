@@ -7,8 +7,8 @@ use futures_util::StreamExt;
 
 #[compio_macros::test(with_proactor(buffer_pool_buffer_len = 256))]
 async fn test_forced_multishot_recvmsg() {
-    // Only run when explicitly requested on enterprise kernels with backported features
-    // (e.g. RHEL 9 / CentOS Stream 9 running on Linux 5.14).
+    // Only run when explicitly requested on enterprise kernels with backported
+    // features (e.g. RHEL 9 / CentOS Stream 9 running on Linux 5.14).
     if std::env::var_os("COMPIO_TEST_BACKPORTED_IO_URING").is_none() {
         return;
     }
