@@ -40,8 +40,8 @@ impl<'a> Local<'a> {
         instrument!(compio_log::Level::TRACE, "Local::schedule", id = ?self.header().id);
 
         // Load shared pointer atomically - it may be null if cancelled
-        // `Relaxed` is fine here since we're on the same thread as `Executor`, there's
-        // no way to schedule as task while it's being dropped
+        // `Relaxed` is fine here since we're on the same thread as `Executor`,
+        // there's no way to schedule as task while it's being dropped
         let Some(shared) = (unsafe { self.header().shared.load(Relaxed).as_ref() }) else {
             trace!("Executor dropped");
             return;

@@ -192,8 +192,8 @@ impl Socket {
 
     pub fn close(self) -> impl Future<Output = io::Result<()>> {
         // Make sure that self won't be dropped after `close` called.
-        // Users may call this method and drop the future immediately. In that way the
-        // `close` should be cancelled.
+        // Users may call this method and drop the future immediately. In that
+        // way the `close` should be cancelled.
         let this = ManuallyDrop::new(self);
         async move {
             let fd = ManuallyDrop::into_inner(this)
@@ -361,7 +361,8 @@ impl Socket {
         .await;
         self.state.set_recv(&extra);
         let (len, op) = buf_try!(@try inner);
-        // Kernel returns 0 for the operation, drop the buffer and return Ok(None)
+        // Kernel returns 0 for the operation, drop the buffer and return
+        // Ok(None)
         if len == 0 {
             return Ok(None);
         }
@@ -430,7 +431,8 @@ impl Socket {
         .await;
         self.state.set_recv(&extra);
         let (len, op) = buf_try!(@try inner);
-        // Kernel returns 0 for the operation, drop the buffer and return Ok(None)
+        // Kernel returns 0 for the operation, drop the buffer and return
+        // Ok(None)
         if len == 0 {
             return Ok(None);
         }

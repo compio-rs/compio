@@ -43,7 +43,8 @@ async fn shutdown() -> std::io::Result<()> {
 
     // Shut down the client
     client.shutdown().await?;
-    // Read from the server should return 0 to indicate the channel has been closed.
+    // Read from the server should return 0 to indicate the channel has been
+    // closed.
     let n = server.read(Vec::with_capacity(1)).await.0?;
     assert_eq!(n, 0);
     Ok(())

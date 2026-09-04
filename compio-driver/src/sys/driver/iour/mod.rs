@@ -1,6 +1,5 @@
 use std::{
-    collections::HashSet, marker::PhantomData, mem::ManuallyDrop, panic::AssertUnwindSafe,
-    sync::Arc, time::Duration,
+    marker::PhantomData, mem::ManuallyDrop, panic::AssertUnwindSafe, sync::Arc, time::Duration,
 };
 
 use crate::sys::{extra::IourExtra, prelude::*};
@@ -32,6 +31,7 @@ use io_uring::{
     opcode::{AsyncCancel, PollAdd},
     types::{Fd, SubmitArgs, Timespec},
 };
+use slotmap::{DefaultKey, SlotMap};
 
 use crate::{
     AsyncifyPool, DriverType, Entry, ProactorBuilder,
@@ -69,7 +69,7 @@ pub(crate) struct Driver {
     completed_rx: Receiver<Entry>,
     flags: DriverFlags,
     /// Keys leaked via `into_raw()` into io_uring user_data, freed on drop.
-    in_flight: HashSet<usize>,
+    in_flight: SlotMap<DefaultKey, usize>,
     _p: PhantomData<ErasedKey>,
 }
 
@@ -140,7 +140,7 @@ impl Driver {
             completed_rx,
             pool: builder.create_or_get_thread_pool(),
             flags,
-            in_flight: HashSet::new(),
+            in_flight: SlotMap::new(),
             _p: PhantomData,
         })
     }
@@ -185,8 +185,8 @@ impl Driver {
     fn submit_auto(&mut self, timeout: Option<Duration>, need_wait: bool) -> io::Result<()> {
         instrument!(compio_log::Level::TRACE, "submit_auto", ?timeout);
 
-        // when taskrun is true, there are completed cqes wait to handle, no need to
-        // block the submit
+        // when taskrun is true, there are completed cqes wait to handle, no
+        // need to block the submit
         let want_sqe = if !need_wait || self.inner.submission().taskrun() {
             0
         } else {
@@ -194,8 +194,8 @@ impl Driver {
         };
 
         // Only a wait that can actually sleep is charged as iowait; a zero
-        // timeout (the drain calls from `push_raw`/`flush`) returns immediately,
-        // so it keeps the plain combined path.
+        // timeout (the drain calls from `push_raw`/`flush`) returns
+        // immediately, so it keeps the plain combined path.
         //
         // On the sleeping path, opt out of iowait accounting (see
         // `DriverFlags::NO_IOWAIT`) by carrying NO_IOWAIT on the same
@@ -245,7 +245,8 @@ impl Driver {
         want_sqe: usize,
         timeout: Option<Duration>,
     ) -> io::Result<usize> {
-        // Publish the SQ tail and read how many staged SQEs to submit this call.
+        // Publish the SQ tail and read how many staged SQEs to submit this
+        // call.
         let to_submit = self.inner.submission().len() as u32;
         let submitter = self.inner.submitter();
         if let Some(duration) = timeout {
@@ -302,8 +303,9 @@ impl Driver {
                         }
                         key.wake_by_ref();
                     } else {
-                        self.in_flight.remove(&(key as usize));
-                        create_entry(entry).notify()
+                        let entry = create_entry(entry);
+                        Self::remove_in_flight(&mut self.in_flight, &entry.key);
+                        entry.notify()
                     }
                 }
             }
@@ -344,7 +346,9 @@ impl Driver {
         let user_data = key.as_raw();
         let entry = entry.user_data(user_data as _);
         self.push_raw(entry)?; // if push failed, do not leak the key. Drop it upon return.
-        self.in_flight.insert(user_data);
+
+        let slot = self.in_flight.insert(user_data);
+        key.borrow().extra_mut().as_iour_mut().set_in_flight(slot);
         key.into_raw();
         Ok(())
     }
@@ -368,11 +372,13 @@ impl Driver {
                             ) => {}
                         Err(e) => return Err(e),
                     }
-                    // If the CQEs are consumed here, we should make the driver aware of it. We
-                    // should not mask `awake` here, otherwise the driver may wait for the next
+                    // If the CQEs are consumed here, we should make the driver
+                    // aware of it. We should not mask
+                    // `awake` here, otherwise the driver may wait for the next
                     // event indefinitely.
                     //
-                    // Anyway it is not a hot path, so we can afford an extra `write` syscall here.
+                    // Anyway it is not a hot path, so we can afford an extra
+                    // `write` syscall here.
                     self.poll_entries();
                 }
             }
@@ -420,7 +426,8 @@ impl Driver {
     fn push_blocking(&mut self, key: ErasedKey) {
         let waker = self.waker();
         let completed = self.completed_tx.clone();
-        // SAFETY: we're submitting into the driver, so it's safe to freeze here.
+        // SAFETY: we're submitting into the driver, so it's safe to freeze
+        // here.
         let mut key = unsafe { key.freeze() };
         let mut closure = move || {
             let res = catch_unwind_io(AssertUnwindSafe(|| key.as_mut().carrier.call_blocking()));
@@ -435,7 +442,8 @@ impl Driver {
 
     pub fn flush(&mut self) -> bool {
         let succeed = self.submit_auto(Some(Duration::ZERO), false).is_ok();
-        // If submission failed, return true to let the driver wake up immediately.
+        // If submission failed, return true to let the driver wake up
+        // immediately.
         !succeed | self.notifier.reset()
     }
 
@@ -481,6 +489,16 @@ impl Driver {
     ) -> Option<BufResult<usize, crate::sys::Extra>> {
         key.borrow().carrier.pop_multishot()
     }
+
+    /// Take an op out of the `in_flight` map. The slot lives in the op's
+    /// extra, and is only set while the op is in flight.
+    fn remove_in_flight(in_flight: &mut SlotMap<DefaultKey, usize>, key: &ErasedKey) {
+        let Some(slot) = key.borrow().extra_mut().as_iour_mut().take_in_flight() else {
+            return;
+        };
+        let removed = in_flight.remove(slot);
+        debug_assert_eq!(removed, Some(key.as_raw()));
+    }
 }
 
 impl AsRawFd for Driver {
@@ -491,21 +509,8 @@ impl AsRawFd for Driver {
 
 impl Drop for Driver {
     fn drop(&mut self) {
-        // Drain completed CQEs first to avoid double-free.
-        let mut cqueue = self.inner.completion();
-        cqueue.sync();
-        for entry in cqueue {
-            match entry.user_data() {
-                Self::CANCEL | Self::NOTIFY => {}
-                key => {
-                    self.in_flight.remove(&(key as usize));
-                    drop(unsafe { ErasedKey::from_raw(key as _) });
-                }
-            }
-        }
-
-        // Close the io_uring ring *before* freeing the remaining in-flight
-        // keys. Closing the ring fd makes the kernel wait for in-flight ops to
+        // Close the io_uring ring *before* freeing the in-flight keys.
+        // Closing the ring fd makes the kernel wait for in-flight ops to
         // finish or be cancelled, so it will no longer read from or write to
         // the buffers owned by those keys. Without this, the kernel could
         // touch a freed (and potentially recycled) heap allocation, which
@@ -514,8 +519,11 @@ impl Drop for Driver {
         // `corrupted double-linked list` during thread shutdown.
         unsafe { ManuallyDrop::drop(&mut self.inner) };
 
-        // Free remaining in-flight keys. Safe now that the kernel is done.
-        for user_data in self.in_flight.drain() {
+        // `in_flight` holds one reference per submitted op: `push_raw_with_key`
+        // leaks it, and `poll_entries` takes it back when it hands the op to
+        // its future. Whatever is left here is ours to free, and the kernel is
+        // done with it.
+        for (_, user_data) in self.in_flight.drain() {
             drop(unsafe { ErasedKey::from_raw(user_data) });
         }
     }

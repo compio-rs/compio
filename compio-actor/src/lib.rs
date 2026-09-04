@@ -1,3 +1,4 @@
+//! An actor framework built for Compio.
 #![doc = include_str!("../README.md")]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![warn(missing_docs)]

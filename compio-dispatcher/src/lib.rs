@@ -198,7 +198,8 @@ impl Dispatcher {
         }) {
             Ok(_) => Ok(rx),
             Err(err) => {
-                // SAFETY: We know the dispatchable we sent has type `Concrete<Fn, R>`
+                // SAFETY: We know the dispatchable we sent has type
+                // `Concrete<Fn, R>`
                 let recovered =
                     unsafe { Box::from_raw(Box::into_raw(err.0.task) as *mut Concrete<Fn, R>) };
                 Err(DispatchError(recovered.func))

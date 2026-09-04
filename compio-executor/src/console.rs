@@ -42,11 +42,35 @@
 //! });
 //! ```
 //!
+//! The install has to happen before the `block_on`, not within it, or the task
+//! running the body is missing from the console — see the limitation below.
+//! `#[compio::main]` therefore installs the subscriber itself when asked to:
+//!
+//! ```ignore
+//! #[compio::main(console)]
+//! async fn main() {
+//!     // ...
+//! }
+//! ```
+//!
 //! # Limitations
 //!
 //! * The console's data model has one runtime per process, while compio is
 //!   thread-per-core and has one executor per thread. The tasks of all of them
 //!   are listed together; the `thread` field tells them apart.
+//! * A subscriber installed inside `block_on` never sees the task it runs in.
+//!   The `runtime.spawn` span of a task is created when the task is -- for the
+//!   `block_on` kind, on the way in -- and a span created while no subscriber
+//!   is installed stays disabled for its whole life. The console then lists
+//!   everything spawned afterwards and nothing else, which reads as healthy
+//!   rather than as incomplete. Installing it inside the body of
+//!   `#[compio::main]` is exactly this case, since that body *is* the future
+//!   handed to `block_on`; `#[compio::main(console)]` installs it around the
+//!   `block_on` instead, and a binary building its runtime itself installs it
+//!   before `block_on` is called.
+//! * `#[compio::test(console)]` is rejected rather than supported: a test
+//!   binary runs more than one test, and the subscriber is a process-wide
+//!   default that only the first of them could set.
 //! * The subscriber has to be the global default, which
 //!   `console_subscriber::init` makes it. A span carries the subscriber it was
 //!   created with, but an event goes to whichever one is current on the thread

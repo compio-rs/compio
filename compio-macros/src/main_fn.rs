@@ -2,18 +2,13 @@ use proc_macro2::TokenStream;
 use quote::ToTokens;
 use syn::{ItemFn, parse::Parse};
 
-use crate::item_fn::{RawAttr, RawBodyItemFn};
+use crate::item_fn::{Attr, RawBodyItemFn};
 
 pub(crate) struct CompioMain(pub RawBodyItemFn);
 
 impl CompioMain {
-    pub fn with_args(mut self, args: RawAttr) -> Self {
+    pub fn with_args<const TEST: bool>(mut self, args: Attr<TEST>) -> Self {
         self.0.set_args(args);
-        self
-    }
-
-    pub fn with_test(mut self, test: bool) -> Self {
-        self.0.set_test(test);
         self
     }
 }

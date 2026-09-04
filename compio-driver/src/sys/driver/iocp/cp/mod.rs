@@ -136,8 +136,8 @@ impl CompletionPort {
         Ok(recv_count as _)
     }
 
-    // If current_driver is specified, any entry that doesn't belong the driver will
-    // be reposted. The driver id will be used as IOCP handle.
+    // If current_driver is specified, any entry that doesn't belong the driver
+    // will be reposted. The driver id will be used as IOCP handle.
     pub fn poll(
         &self,
         timeout: Option<Duration>,

@@ -422,8 +422,8 @@ impl SetLen for BufferRef {
 impl IoBufMut for BufferRef {
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         // SAFETY: Cap is initialized as the buffer length, and setting it is
-        // is capped at full_cap, so it will never exceed buffer length. Pointer is
-        // not deallocated.
+        // is capped at full_cap, so it will never exceed buffer length. Pointer
+        // is not deallocated.
         unsafe { slice::from_raw_parts_mut(self.ptr.as_ptr(), self.cap as usize) }
     }
 }

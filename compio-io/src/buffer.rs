@@ -50,8 +50,9 @@ impl Buffer<Vec<u8>> {
             let remaining = buf_len - pos;
             buf.copy_within(pos..buf_len, 0);
 
-            // SAFETY: We're setting the length to the amount of data we just moved.
-            // The data from 0..remaining is initialized (just moved from read_pos..buf_len)
+            // SAFETY: We're setting the length to the amount of data we just
+            // moved. The data from 0..remaining is initialized
+            // (just moved from read_pos..buf_len)
             unsafe {
                 buf.set_len(remaining);
             }

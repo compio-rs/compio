@@ -446,17 +446,18 @@ fn drop_with_inflight_ops() {
     drop(driver);
 
     if cfg!(windows) {
-        // IOCP is a real proactor: dropping the port does not cancel a submitted
-        // op, so the kernel may still write into its buffer. Releasing the key or
-        // the fd would be a use-after-free, so the op is leaked on purpose.
+        // IOCP is a real proactor: dropping the port does not cancel a
+        // submitted op, so the kernel may still write into its buffer.
+        // Releasing the key or the fd would be a use-after-free, so the
+        // op is leaked on purpose.
         assert!(
             socket.try_unwrap().is_err(),
             "IOCP must not release in-flight ops"
         );
     } else {
-        // io_uring closes the ring on drop, which makes the kernel cancel the op,
-        // and the poll driver owns its keys outright. Both must then release the
-        // op along with the fd clone it owned.
+        // io_uring closes the ring on drop, which makes the kernel cancel the
+        // op, and the poll driver owns its keys outright. Both must
+        // then release the op along with the fd clone it owned.
         assert!(socket.try_unwrap().is_ok(), "in-flight op leaked on drop");
     }
 }
@@ -476,5 +477,43 @@ fn recv_msg_multi_selection() {
     assert!(
         op.is_ok(),
         "Forced MULTISHOT_RECVMSG must choose Impl branch successfully"
+    );
+}
+/// A multishot op stays registered across completions, so the completion queue
+/// can hold several CQEs with the same key when the Proactor is dropped.
+/// Dropping the driver must still release the op once, no matter how many of
+/// those CQEs are queued.
+#[cfg(io_uring)]
+#[test]
+fn drop_with_pending_multishot_cqes() {
+    let mut driver = Proactor::new().unwrap();
+    if driver.driver_type().is_polling() {
+        return; // the polling driver has no completion queue
+    }
+
+    let server = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = server.local_addr().unwrap();
+    // Connect before submitting, so both accepts succeed inside the submit
+    // below instead of waiting on the kernel to notice the connections.
+    let _clients = [
+        TcpStream::connect(addr).unwrap(),
+        TcpStream::connect(addr).unwrap(),
+    ];
+    let server = SharedFd::new(socket2::Socket::from(server));
+
+    let PushEntry::Pending(_key) = driver.push(AcceptMulti::new(server.clone())) else {
+        panic!("a multishot accept is never ready on push")
+    };
+    // Submit without reaping. Both accepts post a CQE carrying `more`, and
+    // nothing consumes them.
+    driver.flush();
+
+    drop(driver);
+
+    // `_key` still holds the op, so the driver released its own reference and
+    // only that one.
+    assert!(
+        server.try_unwrap().is_err(),
+        "the driver released a multishot key more than once"
     );
 }

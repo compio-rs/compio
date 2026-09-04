@@ -460,8 +460,8 @@ impl<S: AsyncWrite + Unpin + 'static> futures_util::AsyncWrite for AsyncWriteStr
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         replace_waker(self.as_mut().project().close_waker, cx.waker());
-        // Avoid shutdown on flush because the inner buffer might be passed to the
-        // driver.
+        // Avoid shutdown on flush because the inner buffer might be passed to
+        // the driver.
         if self.write_future.is_some() || self.inner.has_pending_write() {
             debug_assert!(self.shutdown_future.is_none());
             ready!(self.as_mut().poll_flush_impl())?;

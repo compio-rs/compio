@@ -63,7 +63,8 @@ impl Wait {
     }
 
     pub fn cancel(&mut self) -> io::Result<()> {
-        // Try to cancel it, but don't know whether it is successfully cancelled.
+        // Try to cancel it, but don't know whether it is successfully
+        // cancelled.
         unsafe {
             SetThreadpoolWait(self.wait, null_mut(), null());
         }

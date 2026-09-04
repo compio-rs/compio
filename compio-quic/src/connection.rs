@@ -259,7 +259,8 @@ impl ConnectionInner {
                             waker.wake()
                         }
                         if state.conn.side().is_client() && !state.conn.accepted_0rtt() {
-                            // Wake up rejected 0-RTT streams so they can fail immediately with
+                            // Wake up rejected 0-RTT streams so they can fail
+                            // immediately with
                             // `ZeroRttRejected` errors.
                             wake_all_streams(&mut state.writable);
                             wake_all_streams(&mut state.readable);
