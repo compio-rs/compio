@@ -6,6 +6,8 @@ use linux_raw_sys::io_uring::{IORING_ACCEPT_POLL_FIRST, IORING_RECVSEND_POLL_FIR
 #[cfg(not(feature = "once_cell_try"))]
 use once_cell::sync::OnceCell as OnceLock;
 
+use crate::{IoUringFeatures, is_feature_supported};
+
 pub fn is_op_supported(code: u8) -> bool {
     static PROBE: OnceLock<io_uring::Probe> = OnceLock::new();
 
@@ -57,11 +59,16 @@ pub fn is_kernel_at_least(v: impl Into<KernelVersion>) -> bool {
 }
 
 pub(crate) fn set_poll_first(mut entry: Entry, flag: bool) -> Entry {
-    let (ioprio, version) = match entry.get_opcode() as u8 {
-        io_uring::opcode::Accept::CODE => (IORING_ACCEPT_POLL_FIRST, (6, 10)),
-        _ => (IORING_RECVSEND_POLL_FIRST, (5, 19)),
+    let (ioprio, feat) = match entry.get_opcode() as u8 {
+        io_uring::opcode::Accept::CODE => {
+            (IORING_ACCEPT_POLL_FIRST, IoUringFeatures::ACCEPT_POLL_FIRST)
+        }
+        _ => (
+            IORING_RECVSEND_POLL_FIRST,
+            IoUringFeatures::RECVSEND_POLL_FIRST,
+        ),
     };
-    if flag && is_kernel_at_least(version) {
+    if flag && is_feature_supported(feat) {
         let sqe = &raw mut entry as *mut io_uring_sqe;
         unsafe {
             (*sqe).ioprio |= ioprio as u16;

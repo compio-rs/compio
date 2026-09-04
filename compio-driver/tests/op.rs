@@ -9,8 +9,9 @@ use compio_buf::{BufResult, SetLenExt};
 #[cfg(unix)]
 use compio_driver::op::{AcceptMulti, Mode, OFlags, Pipe, ReadMulti, Write};
 use compio_driver::{
-    AsRawFd, Extra, OpCode, OwnedFd, Proactor, PushEntry, ResultTakeBuffer, SharedFd, TakeBuffer,
-    op::{Asyncify, CloseFile, CloseSocket, ReadAt, ReadManagedAt, RecvMulti},
+    AsRawFd, Extra, IoUringFeatures, OpCode, OwnedFd, Proactor, PushEntry, ResultTakeBuffer,
+    SharedFd, TakeBuffer, force_io_uring_features,
+    op::{Asyncify, CloseFile, CloseSocket, ReadAt, ReadManagedAt, RecvMsgMulti, RecvMulti},
 };
 use rustix::net::RecvFlags;
 
@@ -458,4 +459,22 @@ fn drop_with_inflight_ops() {
         // op along with the fd clone it owned.
         assert!(socket.try_unwrap().is_ok(), "in-flight op leaked on drop");
     }
+}
+
+#[test]
+fn recv_msg_multi_selection() {
+    let mut driver = Proactor::builder()
+        .buffer_pool_size(NonZeroU16::new(16).unwrap())
+        .build()
+        .unwrap();
+
+    let pool = driver.buffer_pool().unwrap();
+    let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None).unwrap();
+
+    force_io_uring_features(IoUringFeatures::MULTISHOT_RECVMSG);
+    let op = RecvMsgMulti::new(socket, &pool, 64, RecvFlags::empty());
+    assert!(
+        op.is_ok(),
+        "Forced MULTISHOT_RECVMSG must choose Impl branch successfully"
+    );
 }

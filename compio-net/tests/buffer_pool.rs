@@ -1,5 +1,6 @@
 use std::net::Ipv6Addr;
 
+use compio_driver::{IoUringFeatures, force_io_uring_features};
 use compio_io::{
     AsyncReadManaged, AsyncReadMulti, AsyncWriteExt,
     ancillary::{AncillaryBuf, AsyncReadAncillaryManaged, ReturnFlags},
@@ -199,6 +200,7 @@ async fn test_udp_recv_multi() {
 
 #[compio_macros::test]
 async fn test_udp_recv_from_multi() {
+    force_io_uring_features(IoUringFeatures::MULTISHOT_RECVMSG);
     let listener = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
     let server_addr = listener.local_addr().unwrap();
     let connected = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
@@ -216,6 +218,7 @@ async fn test_udp_recv_from_multi() {
 
 #[compio_macros::test]
 async fn test_udp_recv_msg_multi() {
+    force_io_uring_features(IoUringFeatures::MULTISHOT_RECVMSG);
     let listener = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
     let server_addr = listener.local_addr().unwrap();
     let connected = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
@@ -234,6 +237,7 @@ async fn test_udp_recv_msg_multi() {
 
 #[compio_macros::test(with_proactor(buffer_pool_buffer_len = 256))]
 async fn test_udp_recv_msg_multi_truncated_datagram() {
+    force_io_uring_features(IoUringFeatures::MULTISHOT_RECVMSG);
     let listener = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
     let server_addr = listener.local_addr().unwrap();
     let connected = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
