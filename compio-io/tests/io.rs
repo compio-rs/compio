@@ -6,7 +6,7 @@ use compio_buf::{
 };
 use compio_io::{
     AsyncBufRead, AsyncRead, AsyncReadAt, AsyncReadAtExt, AsyncReadExt, AsyncWrite, AsyncWriteAt,
-    AsyncWriteAtExt, AsyncWriteExt, BufReader, BufWriter, split,
+    AsyncWriteAtExt, AsyncWriteExt, AsyncWriteZerocopy, BufReader, BufWriter, split,
 };
 use futures_executor::block_on;
 
@@ -163,6 +163,33 @@ fn writev() {
         assert_eq!(len, 6);
         assert_eq!(dst.len(), 6);
         assert_eq!(dst, [1, 1, 4, 5, 1, 4]);
+
+        let mut dst = vec![7u8; 100];
+        let (len, _) = dst
+            .write_vectored([vec![1, 1, 4], vec![5, 1, 4]])
+            .await
+            .unwrap();
+
+        assert_eq!(len, 6);
+        assert_eq!(dst.len(), 106);
+        assert_eq!(&dst[..100], [7; 100]);
+        assert_eq!(&dst[100..], [1, 1, 4, 5, 1, 4]);
+    })
+}
+
+#[test]
+fn writev_zerocopy_vec() {
+    block_on(async {
+        let mut dst = vec![7u8; 100];
+        let BufResult(len, ready) = dst
+            .write_zerocopy_vectored([vec![1, 1, 4], vec![5, 1, 4]])
+            .await;
+
+        assert_eq!(len.unwrap(), 6);
+        assert_eq!(dst.len(), 106);
+        assert_eq!(&dst[..100], [7; 100]);
+        assert_eq!(&dst[100..], [1, 1, 4, 5, 1, 4]);
+        let _bufs = ready.await;
     })
 }
 
@@ -221,6 +248,18 @@ fn writev_at() {
         assert_eq!(len, 6);
         assert_eq!(dst.len(), 8);
         assert_eq!(dst, [0, 0, 1, 1, 4, 5, 1, 4]);
+
+        let mut dst = vec![7u8; 100];
+        let (len, _) = dst
+            .write_vectored_at([vec![1, 1, 4], vec![5, 1, 4]], 50)
+            .await
+            .unwrap();
+
+        assert_eq!(len, 6);
+        assert_eq!(dst.len(), 100);
+        assert_eq!(&dst[..50], [7; 50]);
+        assert_eq!(&dst[50..56], [1, 1, 4, 5, 1, 4]);
+        assert_eq!(&dst[56..], [7; 44]);
     })
 }
 
