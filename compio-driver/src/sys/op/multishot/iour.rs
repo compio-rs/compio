@@ -1,6 +1,8 @@
 use io_uring::{opcode, types::Fd};
 
-use crate::{IourOpCode as OpCode, OpEntry, sys::op::*};
+use crate::{
+    IoUringFeatures, IourOpCode as OpCode, OpEntry, is_feature_supported, sys::op::*,
+};
 
 /// Accept multiple connections.
 pub struct AcceptMulti<S> {
@@ -44,7 +46,7 @@ unsafe impl<S: AsFd> OpCode for AcceptMulti<S> {
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
-        if is_kernel_at_least((5, 19)) {
+        if is_feature_supported(IoUringFeatures::MULTISHOT_ACCEPT) {
             opcode::AcceptMulti::new(Fd(self.op.fd.as_fd().as_raw_fd()))
                 .flags(libc::SOCK_CLOEXEC)
                 .build()
