@@ -34,10 +34,6 @@ jobs:
         os: [ubuntu-24.04, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v6
-      - name: Setup Rust Toolchain
-        run: |
-          rustup default nightly
-          rustup component add clippy
       - uses: taiki-e/install-action@cargo-no-dev-deps
       - name: Check clippy
         shell: bash

@@ -29,6 +29,8 @@ env:
 jobs:
   test:
     runs-on: ${{ matrix.setup.os }}
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.toolchain != 'nightly' && matrix.toolchain || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -90,11 +92,9 @@ jobs:
             features: 'native-tls,ring,py-dynamic-openssl,compat-all'
     steps:
       - uses: actions/checkout@v6
-      - name: Setup Rust Toolchain
-        run: rustup toolchain install ${{ matrix.toolchain }}
       - name: Setup target
         if: ${{ matrix.setup.target }}
-        run: rustup +${{ matrix.toolchain }} target install ${{ matrix.setup.target }}
+        run: rustup target install ${{ matrix.setup.target }}
       - uses: taiki-e/install-action@nextest
       - name: Install musl
         if: ${{ endsWith(matrix.setup.target, 'musl') }}
@@ -125,6 +125,6 @@ jobs:
               ARGS+=("--target" "${{ matrix.setup.target }}")
           fi
 
-          cargo +${{ matrix.toolchain }} nextest run --profile ci "${ARGS[@]}"
+          cargo nextest run --profile ci "${ARGS[@]}"
 
-          cargo +${{ matrix.toolchain }} test --workspace --doc "${ARGS[@]}"
+          cargo test --workspace --doc "${ARGS[@]}"

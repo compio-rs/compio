@@ -11,6 +11,8 @@ concurrency:
 jobs:
   check-breaking:
     runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: stable
     permissions:
       contents: read
     steps:
@@ -18,8 +20,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Setup Rust Toolchain
-        run: rustup default stable
       - uses: taiki-e/install-action@cargo-semver-checks
       - name: Check Public API Compatibility
         id: semver
@@ -39,4 +39,3 @@ jobs:
           path: ${{ runner.temp }}/breaking-change/report.json
           if-no-files-found: error
           retention-days: 1
-
