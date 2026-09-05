@@ -379,7 +379,9 @@ impl Driver {
                     //
                     // Anyway it is not a hot path, so we can afford an extra
                     // `write` syscall here.
-                    self.poll_entries();
+                    if self.poll_entries() {
+                        self.notifier.waker().wake();
+                    }
                 }
             }
         }
