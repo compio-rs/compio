@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/compio-rs/compio/compare/compio-executor-v0.1.3...compio-executor-v0.1.4) - 2026-09-05
+
+### Added
+
+- *(macros)* install the console subscriber before `block_on` ([#1020](https://github.com/compio-rs/compio/pull/1020))
+- name the tasks the crates spawn ([#1004](https://github.com/compio-rs/compio/pull/1004))
+- *(executor)* instrument tasks for tokio-console ([#987](https://github.com/compio-rs/compio/pull/987))
+
+### Fixed
+
+- *(runtime,executor)* re-export JoinError ([#1005](https://github.com/compio-rs/compio/pull/1005))
+
+### Other
+
+- *(fmt)* apply new nightly rustfmt ([#1023](https://github.com/compio-rs/compio/pull/1023))
+- format the cfg_select! bodies ([#990](https://github.com/compio-rs/compio/pull/990))
+- *(executor)* skip empty sync-queue drain with a pending counter ([#976](https://github.com/compio-rs/compio/pull/976))
+
 ## 0.1.3 - 2026-07-06
 
 ### Added

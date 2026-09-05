@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2](https://github.com/compio-rs/compio/compare/compio-io-v0.10.1...compio-io-v0.10.2) - 2026-09-05
+
+### Added
+
+- *(buf)* make `IoBuf`, `SetLen`, and `IoBufMut` dyn-compatible ([#969](https://github.com/compio-rs/compio/pull/969))
+
+### Fixed
+
+- *(io)* correct Vec reserve amount in vectored writes ([#1034](https://github.com/compio-rs/compio/pull/1034))
+
+### Other
+
+- *(fmt)* apply new nightly rustfmt ([#1023](https://github.com/compio-rs/compio/pull/1023))
+
 ## 0.10.1 - 2026-06-14
 
 ### Added
