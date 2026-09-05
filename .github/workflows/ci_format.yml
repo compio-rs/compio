@@ -7,6 +7,7 @@ on:
     branches:
       - master
     paths:
+      - 'rust-toolchain.toml'
       - 'rustfmt.toml'
       - '**/Cargo.toml'
       - '**/*.rs'
@@ -15,6 +16,7 @@ on:
     branches:
       - master
     paths:
+      - 'rust-toolchain.toml'
       - 'rustfmt.toml'
       - '**/*.rs'
       - '.github/workflows/ci_format.yml'
@@ -27,9 +29,5 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
-      - name: Setup Rust Toolchain
-        run: |
-          rustup default nightly
-          rustup component add rustfmt
       - name: Check Format
         run: cargo fmt --all -- --check

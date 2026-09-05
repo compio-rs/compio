@@ -9,6 +9,7 @@ on:
     paths:
       - '**/*.rs'
       - '**/Cargo.toml'
+      - 'rust-toolchain.toml'
       - '.github/workflows/ci_test_asan.yml'
   pull_request:
     branches:
@@ -16,6 +17,7 @@ on:
     paths:
       - '**/*.rs'
       - '**/Cargo.toml'
+      - 'rust-toolchain.toml'
       - '.github/workflows/ci_test_asan.yml'
 
 concurrency:
@@ -45,11 +47,11 @@ jobs:
             target: 'x86_64-unknown-linux-gnu'
     steps:
       - uses: actions/checkout@v6
-      - name: Setup nightly toolchain with rust-src
-        run: rustup toolchain install nightly --component rust-src
+      - name: Setup rust-src
+        run: rustup component add rust-src
       - name: Setup target
         if: ${{ matrix.setup.target }}
-        run: rustup +nightly target install ${{ matrix.setup.target }}
+        run: rustup target install ${{ matrix.setup.target }}
       - uses: taiki-e/install-action@nextest
       - name: Run ASan tests
         run: |
@@ -71,6 +73,6 @@ jobs:
           fi
 
           # stress tests takes too long with ASAN, filter them out
-          cargo +nightly nextest run --profile asan -Zbuild-std "${ARGS[@]}"
+          cargo nextest run --profile asan -Zbuild-std "${ARGS[@]}"
         env:
           RUSTFLAGS: -Zsanitizer=address
