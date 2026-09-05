@@ -9,6 +9,7 @@ on:
     paths:
       - '**/*.rs'
       - '**/Cargo.toml'
+      - 'rust-toolchain.toml'
       - '.github/workflows/ci_check_android.yml'
   pull_request:
     branches:
@@ -16,6 +17,7 @@ on:
     paths:
       - '**/*.rs'
       - '**/Cargo.toml'
+      - 'rust-toolchain.toml'
       - '.github/workflows/ci_check_android.yml'
 
 concurrency:

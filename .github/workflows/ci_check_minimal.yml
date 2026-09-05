@@ -9,6 +9,7 @@ on:
     paths:
       - '**/Cargo.toml'
       - '**/*.rs'
+      - 'rust-toolchain.toml'
       - '.github/workflows/ci_check_minimal.yml'
   pull_request:
     branches:
@@ -16,6 +17,7 @@ on:
     paths:
       - '**/Cargo.toml'
       - '**/*.rs'
+      - 'rust-toolchain.toml'
       - '.github/workflows/ci_check_minimal.yml'
 
 concurrency:

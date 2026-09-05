@@ -10,6 +10,7 @@ on:
       - 'compio-executor/**/*.rs'
       - 'compio-executor/Cargo.toml'
       - 'Cargo.toml'
+      - 'rust-toolchain.toml'
       - '.github/workflows/ci_test_executor.yml'
   pull_request:
     branches:
@@ -18,6 +19,7 @@ on:
       - 'compio-executor/**/*.rs'
       - 'compio-executor/Cargo.toml'
       - 'Cargo.toml'
+      - 'rust-toolchain.toml'
       - '.github/workflows/ci_test_executor.yml'
 
 concurrency:
