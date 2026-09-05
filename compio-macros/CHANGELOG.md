@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/compio-rs/compio/compare/compio-macros-v0.2.0...compio-macros-v0.2.1) - 2026-09-05
+
+### Added
+
+- *(macros)* install the console subscriber before `block_on` ([#1020](https://github.com/compio-rs/compio/pull/1020))
+
+### Other
+
+- *(fmt)* apply new nightly rustfmt ([#1023](https://github.com/compio-rs/compio/pull/1023))
+- *(deps)* update syn requirement from 2.0.38 to 3.0.3 ([#981](https://github.com/compio-rs/compio/pull/981))
+
 ## 0.2.0 - 2026-05-27
 
 ### Added

@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0](https://github.com/compio-rs/compio/compare/compio-runtime-v0.12.3...compio-runtime-v0.13.0) - 2026-09-05
+
+### Added
+
+- *(rt)* multi stream submission factory ([#1016](https://github.com/compio-rs/compio/pull/1016))
+- *(runtime,tls,ws)* [**breaking**] use PollFd in TLS ([#1012](https://github.com/compio-rs/compio/pull/1012))
+- *(actor)* init ([#1000](https://github.com/compio-rs/compio/pull/1000))
+- *(runtime)* forward the console instrumentation ([#1001](https://github.com/compio-rs/compio/pull/1001))
+- *(runtime)* [**breaking**] complete AsyncWrite for PollFd ([#993](https://github.com/compio-rs/compio/pull/993))
+- *(buf)* make `IoBuf`, `SetLen`, and `IoBufMut` dyn-compatible ([#969](https://github.com/compio-rs/compio/pull/969))
+
+### Changed
+
+- *(runtime)* timer ([#995](https://github.com/compio-rs/compio/pull/995))
+
+### Fixed
+
+- *(runtime)* invalid param for PollFd on Windows ([#999](https://github.com/compio-rs/compio/pull/999))
+- *(runtime,executor)* re-export JoinError ([#1005](https://github.com/compio-rs/compio/pull/1005))
+- *(runtime)* eager timers, add `Sleep`, `Timeout` ([#991](https://github.com/compio-rs/compio/pull/991))
+
+### Other
+
+- *(fmt)* apply new nightly rustfmt ([#1023](https://github.com/compio-rs/compio/pull/1023))
+
 ## 0.12.3 - 2026-07-06
 
 ### Added
