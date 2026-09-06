@@ -819,7 +819,7 @@ unsafe impl<S: AsFd> OpCode for RecvMsgMultiImpl<S> {
 
 struct RecvMsgMultiResultFallback {
     buffer: BufferRef,
-    control: BufferRef,
+    control: Vec<u8>,
     addr: Option<SockAddr>,
     return_flags: ReturnFlags,
 }
@@ -851,14 +851,14 @@ impl IntoInner for RecvMsgMultiResultFallback {
 }
 
 struct RecvMsgMultiFallback<S: AsFd> {
-    op: RecvMsgManaged<BufferRef, S>,
+    op: RecvMsgManaged<Vec<u8>, S>,
     len: usize,
 }
 
 impl<S: AsFd> RecvMsgMultiFallback<S> {
     pub fn new(fd: S, pool: &BufferPool, control_len: usize, flags: RecvFlags) -> io::Result<Self> {
         Ok(Self {
-            op: RecvMsgManaged::new(fd, pool, 0, pool.pop()?.with_capacity(control_len), flags)?,
+            op: RecvMsgManaged::new(fd, pool, 0, Vec::with_capacity(control_len), flags)?,
             len: 0,
         })
     }
