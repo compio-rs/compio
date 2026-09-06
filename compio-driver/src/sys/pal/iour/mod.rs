@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use std::{io, os::fd::AsRawFd, sync::LazyLock};
 
 use io_uring::{
-    squeue::{Entry, Entry128},
+    squeue::{Entry, Entry128, Flags},
     types::Fd,
 };
 use linux_raw_sys::io_uring::{
@@ -156,7 +156,7 @@ fn is_accept_ioprio_supported(ioprio: u16) -> bool {
 }
 
 fn is_recv_ioprio_supported(ioprio: u16) -> bool {
-    fn is_supported(ioprio: u16) -> io::Result<bool> {
+    fn is_supported(ioprio: u16, pool: bool) -> io::Result<bool> {
         let (server, client) = rustix::net::socketpair(
             AddressFamily::UNIX,
             SocketType::STREAM,
@@ -173,6 +173,9 @@ fn is_recv_ioprio_supported(ioprio: u16) -> bool {
             buffer.len() as _,
         )
         .build();
+        if pool {
+            entry = entry.flags(Flags::BUFFER_SELECT);
+        }
         let sqe = &raw mut entry as *mut io_uring_sqe;
         unsafe {
             (*sqe).ioprio |= ioprio;
@@ -186,17 +189,20 @@ fn is_recv_ioprio_supported(ioprio: u16) -> bool {
             .completion()
             .next()
             .ok_or_else(|| io::Error::other("No completion event received"))?;
-        Ok(cqe.result() >= 0)
+        let res = cqe.result();
+        Ok(res >= 0 || res == -libc::ENOBUFS)
     }
 
     static PROBE: [(u16, LazyLock<bool>); 2] = [
         (
             IORING_RECVSEND_POLL_FIRST as u16,
-            LazyLock::new(|| is_supported(IORING_RECVSEND_POLL_FIRST as u16).unwrap_or_default()),
+            LazyLock::new(|| {
+                is_supported(IORING_RECVSEND_POLL_FIRST as u16, false).unwrap_or_default()
+            }),
         ),
         (
             IORING_RECV_MULTISHOT as u16,
-            LazyLock::new(|| is_supported(IORING_RECV_MULTISHOT as u16).unwrap_or_default()),
+            LazyLock::new(|| is_supported(IORING_RECV_MULTISHOT as u16, true).unwrap_or_default()),
         ),
     ];
 
@@ -210,7 +216,7 @@ fn is_recv_ioprio_supported(ioprio: u16) -> bool {
 }
 
 fn is_recvmsg_ioprio_supported(ioprio: u16) -> bool {
-    fn is_supported(ioprio: u16) -> io::Result<bool> {
+    fn is_supported(ioprio: u16, pool: bool) -> io::Result<bool> {
         let (server, client) = rustix::net::socketpair(
             AddressFamily::UNIX,
             SocketType::STREAM,
@@ -220,17 +226,14 @@ fn is_recvmsg_ioprio_supported(ioprio: u16) -> bool {
 
         let mut ring = io_uring::IoUring::new(2)?;
 
-        let mut buffer = [0u8; 1];
-        let mut addr: libc::sockaddr_storage = unsafe { std::mem::zeroed() };
         let mut msghdr: libc::msghdr = unsafe { std::mem::zeroed() };
-        let mut iov: libc::iovec = unsafe { std::mem::zeroed() };
-        iov.iov_base = buffer.as_mut_ptr() as *mut _;
-        iov.iov_len = buffer.len();
-        msghdr.msg_iov = &mut iov;
-        msghdr.msg_name = &mut addr as *mut _ as *mut _;
-        msghdr.msg_namelen = std::mem::size_of_val(&addr) as _;
+        msghdr.msg_namelen = std::mem::size_of::<libc::sockaddr_storage>() as _;
+        msghdr.msg_controllen = 64;
 
         let mut entry = io_uring::opcode::RecvMsg::new(Fd(server.as_raw_fd()), &mut msghdr).build();
+        if pool {
+            entry = entry.flags(Flags::BUFFER_SELECT);
+        }
         let sqe = &raw mut entry as *mut io_uring_sqe;
         unsafe {
             (*sqe).ioprio |= ioprio;
@@ -244,17 +247,20 @@ fn is_recvmsg_ioprio_supported(ioprio: u16) -> bool {
             .completion()
             .next()
             .ok_or_else(|| io::Error::other("No completion event received"))?;
-        Ok(cqe.result() >= 0)
+        let res = cqe.result();
+        Ok(res >= 0 || res == -libc::ENOBUFS)
     }
 
     static PROBE: [(u16, LazyLock<bool>); 2] = [
         (
             IORING_RECVSEND_POLL_FIRST as u16,
-            LazyLock::new(|| is_supported(IORING_RECVSEND_POLL_FIRST as u16).unwrap_or_default()),
+            LazyLock::new(|| {
+                is_supported(IORING_RECVSEND_POLL_FIRST as u16, false).unwrap_or_default()
+            }),
         ),
         (
             IORING_RECV_MULTISHOT as u16,
-            LazyLock::new(|| is_supported(IORING_RECV_MULTISHOT as u16).unwrap_or_default()),
+            LazyLock::new(|| is_supported(IORING_RECV_MULTISHOT as u16, true).unwrap_or_default()),
         ),
     ];
 
