@@ -5,9 +5,7 @@ use compio_buf::{IoBufMut, SetLenExt};
 #[inline]
 pub(crate) fn slice_to_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> usize {
     let len = src.len().min(dst.len());
-    unsafe {
-        std::ptr::copy_nonoverlapping(src.as_ptr() as _, dst.as_mut_ptr(), len);
-    }
+    dst[..len].write_copy_of_slice(&src[..len]);
     len
 }
 
