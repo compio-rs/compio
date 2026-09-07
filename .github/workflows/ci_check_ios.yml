@@ -9,6 +9,7 @@ on:
     paths:
       - '**/*.rs'
       - '**/Cargo.toml'
+      - 'rust-toolchain.toml'
       - '.github/workflows/ci_check_ios.yml'
   pull_request:
     branches:
@@ -16,6 +17,7 @@ on:
     paths:
       - '**/*.rs'
       - '**/Cargo.toml'
+      - 'rust-toolchain.toml'
       - '.github/workflows/ci_check_ios.yml'
 
 concurrency:
@@ -33,11 +35,8 @@ jobs:
           - aarch64-apple-ios-macabi
     steps:
       - uses: actions/checkout@v6
-      - name: Setup Rust Toolchain
-        run: |
-          rustup default nightly
-          rustup target add ${{ matrix.target }}
-          rustup component add clippy
+      - name: Setup target
+        run: rustup target add ${{ matrix.target }}
       - name: Check clippy
         shell: bash
         run: |

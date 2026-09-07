@@ -9,6 +9,7 @@ on:
     paths:
       - '**/*.rs'
       - '**/Cargo.toml'
+      - 'rust-toolchain.toml'
       - '.github/workflows/ci_check_freebsd.yml'
   pull_request:
     branches:
@@ -16,6 +17,7 @@ on:
     paths:
       - '**/*.rs'
       - '**/Cargo.toml'
+      - 'rust-toolchain.toml'
       - '.github/workflows/ci_check_freebsd.yml'
 
 concurrency:
@@ -25,10 +27,6 @@ concurrency:
 jobs:
   check_freebsd:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        toolchain: ['nightly']
     steps:
       - uses: actions/checkout@v6
       - name: Check in FreeBSD
@@ -49,11 +47,9 @@ jobs:
             pkg install -y curl pkgconf python3 perl5 gmake
             curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf > install.sh
             chmod +x install.sh
-            ./install.sh -y --default-toolchain ${{ matrix.toolchain }} --profile minimal
+            ./install.sh -y --profile minimal
           run: |
             . "$HOME/.cargo/env"
             set -ex
-
-            rustup component add clippy
 
             cargo clippy --all-features --all-targets -- -Dwarnings

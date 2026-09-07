@@ -168,6 +168,34 @@ fn register_multiple() {
     // Don't async close because the reading operations may have not completed.
 }
 
+#[cfg(io_uring)]
+#[test]
+fn poll_full_submission_queue() {
+    const CAPACITY: u32 = 8;
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let result = (|| {
+            let mut driver = Proactor::builder()
+                .capacity(CAPACITY)
+                .driver_type(compio_driver::DriverType::IoUring)
+                .build()?;
+            let fd = SharedFd::new(std::fs::File::open("/dev/null")?);
+
+            let _keys = (0..CAPACITY * 3)
+                .map(|_| driver.push(Write::new(fd.clone(), "114514")))
+                .collect::<Vec<_>>();
+
+            driver.poll(None)
+        })();
+        tx.send(result).unwrap();
+    });
+
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("poll blocked with a full submission queue")
+        .unwrap();
+}
+
 #[test]
 #[cfg(unix)]
 fn cancel_token() {

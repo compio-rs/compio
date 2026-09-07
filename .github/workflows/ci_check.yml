@@ -9,6 +9,7 @@ on:
     paths:
       - '**/Cargo.toml'
       - '**/*.rs'
+      - 'rust-toolchain.toml'
       - '.github/workflows/ci_check.yml'
   pull_request:
     branches:
@@ -16,6 +17,7 @@ on:
     paths:
       - '**/Cargo.toml'
       - '**/*.rs'
+      - 'rust-toolchain.toml'
       - '.github/workflows/ci_check.yml'
 
 concurrency:
@@ -34,10 +36,6 @@ jobs:
         os: [ubuntu-24.04, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v6
-      - name: Setup Rust Toolchain
-        run: |
-          rustup default nightly
-          rustup component add clippy
       - name: Check clippy
         shell: bash
         run: |
@@ -50,9 +48,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
-      - name: Setup Rust Toolchain
-        run: |
-          rustup default nightly
       - name: Check
         shell: bash
         # We only make sure that the stub driver compiles.
