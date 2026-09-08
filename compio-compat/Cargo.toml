@@ -20,7 +20,7 @@ compio-driver = { workspace = true }
 
 futures-channel = { workspace = true }
 windows-sys = { workspace = true, features = ["Win32_System_Threading"] }
-windows-threading = "0.2.1"
+windows-threading = "0.100.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rustix = { workspace = true, features = ["event", "io_uring"] }
