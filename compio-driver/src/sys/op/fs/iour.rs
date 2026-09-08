@@ -41,6 +41,46 @@ unsafe impl OpCode for CloseFile {
     }
 }
 
+unsafe impl<T: IoBufMut> OpCode for GetXattr<T> {
+    type Control = ();
+
+    fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
+        let slice = self.buffer.sys_slice_mut();
+        opcode::GetXattr::new(
+            self.name.as_ptr(),
+            slice.ptr().cast(),
+            self.path.as_ptr(),
+            slice.len().try_into().unwrap_or(u32::MAX),
+        )
+        .build()
+        .into()
+    }
+
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
+        self.call(control)
+    }
+}
+
+unsafe impl<S: AsFd, T: IoBufMut> OpCode for FGetXattr<S, T> {
+    type Control = ();
+
+    fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
+        let slice = self.buffer.sys_slice_mut();
+        opcode::FGetXattr::new(
+            Fd(self.fd.as_fd().as_raw_fd()),
+            self.name.as_ptr(),
+            slice.ptr().cast(),
+            slice.len().try_into().unwrap_or(u32::MAX),
+        )
+        .build()
+        .into()
+    }
+
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
+        self.call(control)
+    }
+}
+
 unsafe impl<S: AsFd> OpCode for TruncateFile<S> {
     type Control = ();
 

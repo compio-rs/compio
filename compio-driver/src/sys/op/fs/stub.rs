@@ -35,6 +35,14 @@ impl OpCode for CloseFile {
     type Control = ();
 }
 
+impl<T: IoBufMut> OpCode for GetXattr<T> {
+    type Control = ();
+}
+
+impl<S: AsFd, T: IoBufMut> OpCode for FGetXattr<S, T> {
+    type Control = ();
+}
+
 impl<S: AsFd> OpCode for TruncateFile<S> {
     type Control = ();
 }

@@ -35,6 +35,96 @@ impl CloseFile {
     }
 }
 
+/// Read an extended attribute from a path, following the final symbolic link.
+///
+/// The result is the number of bytes written, or the required size when the
+/// buffer has zero capacity. This operation does not update the buffer's
+/// initialized length.
+///
+/// Uses native io-uring when supported; otherwise the syscall runs on the
+/// driver's blocking pool.
+#[cfg(linux_all)]
+pub struct GetXattr<T: IoBufMut> {
+    pub(crate) path: CString,
+    pub(crate) name: CString,
+    pub(crate) buffer: T,
+}
+
+#[cfg(linux_all)]
+impl<T: IoBufMut> GetXattr<T> {
+    /// Create [`GetXattr`], retaining the path, name, and buffer until completion.
+    pub fn new(path: CString, name: CString, buffer: T) -> Self {
+        Self { path, name, buffer }
+    }
+
+    pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
+        let slice = self.buffer.sys_slice_mut();
+        // SAFETY: both C strings are owned by this operation and remain valid.
+        // The exclusively borrowed buffer exposes its entire writable capacity,
+        // including uninitialized bytes. A size query writes no bytes.
+        syscall!(libc::getxattr(
+            self.path.as_ptr(),
+            self.name.as_ptr(),
+            slice.ptr().cast(),
+            slice.len(),
+        ))
+    }
+}
+
+#[cfg(linux_all)]
+impl<T: IoBufMut> IntoInner for GetXattr<T> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
+/// Read an extended attribute from an open file using `fgetxattr` semantics.
+///
+/// The result is the number of bytes written, or the required size when the
+/// buffer has zero capacity. This operation does not update the buffer's
+/// initialized length.
+///
+/// Uses native io-uring when supported; otherwise the syscall runs on the
+/// driver's blocking pool.
+#[cfg(linux_all)]
+pub struct FGetXattr<S: AsFd, T: IoBufMut> {
+    pub(crate) fd: S,
+    pub(crate) name: CString,
+    pub(crate) buffer: T,
+}
+
+#[cfg(linux_all)]
+impl<S: AsFd, T: IoBufMut> FGetXattr<S, T> {
+    /// Create [`FGetXattr`], retaining the fd, name, and buffer until completion.
+    pub fn new(fd: S, name: CString, buffer: T) -> Self {
+        Self { fd, name, buffer }
+    }
+
+    pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
+        let slice = self.buffer.sys_slice_mut();
+        // SAFETY: the fd and C string are retained by this operation. The
+        // exclusively borrowed buffer exposes its entire writable capacity,
+        // including uninitialized bytes. A size query writes no bytes.
+        syscall!(libc::fgetxattr(
+            self.fd.as_fd().as_raw_fd(),
+            self.name.as_ptr(),
+            slice.ptr().cast(),
+            slice.len(),
+        ))
+    }
+}
+
+#[cfg(linux_all)]
+impl<S: AsFd, T: IoBufMut> IntoInner for FGetXattr<S, T> {
+    type Inner = T;
+
+    fn into_inner(self) -> Self::Inner {
+        self.buffer
+    }
+}
+
 /// Sync data to the disk.
 pub struct Sync<S> {
     pub(crate) fd: S,
