@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/compio-rs/compio/compare/compio-compat-v0.1.0...compio-compat-v0.1.1) - 2026-09-10
+
+### Added
+
+- name the tasks the crates spawn ([#1004](https://github.com/compio-rs/compio/pull/1004))
+
+### Other
+
+- *(deps)* update windows-threading requirement ([#1043](https://github.com/compio-rs/compio/pull/1043))
+- *(fmt)* apply new nightly rustfmt ([#1023](https://github.com/compio-rs/compio/pull/1023))
+
 ## 0.1.0 - 2026-05-27
 
 ### Added
