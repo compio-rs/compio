@@ -130,6 +130,32 @@ unsafe impl OpCode for CloseFile {
     }
 }
 
+#[cfg(linux_all)]
+unsafe impl<T: IoBufMut> OpCode for GetXattr<T> {
+    type Control = ();
+
+    fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<Decision> {
+        Ok(Decision::Blocking)
+    }
+
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        Poll::Ready(self.call(control))
+    }
+}
+
+#[cfg(linux_all)]
+unsafe impl<S: AsFd, T: IoBufMut> OpCode for FGetXattr<S, T> {
+    type Control = ();
+
+    fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<Decision> {
+        Ok(Decision::Blocking)
+    }
+
+    fn operate(&mut self, control: &mut Self::Control) -> Poll<io::Result<usize>> {
+        Poll::Ready(self.call(control))
+    }
+}
+
 unsafe impl<S: AsFd> OpCode for TruncateFile<S> {
     type Control = ();
 

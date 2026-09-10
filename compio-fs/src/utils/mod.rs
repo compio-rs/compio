@@ -80,6 +80,56 @@ pub async fn read<P: AsRef<Path>>(path: P) -> io::Result<Vec<u8>> {
     Ok(buffer)
 }
 
+/// Reads an extended attribute from a path, following the final symbolic link.
+///
+/// This has `getxattr` semantics, not `lgetxattr` semantics. To read from an
+/// already open file without resolving its pathname again, use
+/// [`File::get_xattr`].
+///
+/// The value is written from the start of `buffer`, using its full capacity.
+/// On success, the result is the value's length and the buffer's initialized
+/// length advances to at least that length. With zero capacity, only the
+/// required length is returned and the buffer remains empty. The attribute
+/// may change between a sizing query and a subsequent read.
+///
+/// A missing attribute returns `ENODATA`; insufficient nonzero capacity returns
+/// `ERANGE`. Other OS errors are preserved. A path or name containing a NUL
+/// byte returns [`io::ErrorKind::InvalidInput`]. Errors return the original
+/// buffer without advancing its initialized length.
+///
+/// The submitted operation owns the path, name, and buffer until completion,
+/// even if this future is dropped. Cancellation does not return the buffer to
+/// the caller.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub async fn get_xattr<T: compio_buf::IoBufMut>(
+    path: impl AsRef<Path>,
+    name: impl AsRef<std::ffi::OsStr>,
+    buffer: T,
+) -> BufResult<usize, T> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+
+    use compio_buf::{IntoInner, IoBufMutExt};
+    use compio_driver::op::{BufResultExt, GetXattr};
+
+    let (path, buffer) = buf_try!(crate::path_string(path), buffer);
+    let (name, mut buffer) = buf_try!(
+        CString::new(name.as_ref().as_bytes()).map_err(io::Error::from),
+        buffer
+    );
+    let query_size = buffer.buf_capacity() == 0;
+    let op = GetXattr::new(path, name, buffer);
+    let res = compio_runtime::submit(op).await.into_inner();
+    if query_size {
+        res
+    } else {
+        // SAFETY: A successful nonzero-capacity getxattr initializes exactly
+        // the returned byte count, bounded by the supplied buffer
+        // capacity. Size-only queries are excluded because they do not
+        // write bytes.
+        unsafe { res.map_advanced() }
+    }
+}
+
 /// A builder used to create directories in various manners.
 pub struct DirBuilder {
     inner: sys::DirBuilder,

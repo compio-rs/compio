@@ -36,6 +36,10 @@ bitflags::bitflags! {
         const Shutdown = 1 << 15;
         /// Detect `PollAdd` OpCode
         const PollAdd = 1 << 16;
+        /// Detect `GetXattr` OpCode
+        const GetXattr = 1 << 17;
+        /// Detect `FGetXattr` OpCode
+        const FGetXattr = 1 << 18;
     }
 }
 
@@ -81,6 +85,8 @@ impl OpCodeFlag {
             OpCodeFlag::Splice => Splice::CODE,
             OpCodeFlag::Shutdown => Shutdown::CODE,
             OpCodeFlag::PollAdd => PollAdd::CODE,
+            OpCodeFlag::GetXattr => GetXattr::CODE,
+            OpCodeFlag::FGetXattr => FGetXattr::CODE,
             unknown => unreachable!("Unknown OpCodeFlag specified: {unknown:?}"),
         })
     }
