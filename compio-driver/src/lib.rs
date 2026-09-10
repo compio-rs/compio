@@ -49,6 +49,9 @@ pub use cancel::*;
 mod buffer_pool;
 pub use buffer_pool::{BoxAllocator, BufferAllocator, BufferPool, BufferRef};
 
+mod features;
+pub use features::*;
+
 use crate::{
     buffer_pool::{BufferAlloc, BufferPoolRoot},
     key::ErasedKey,

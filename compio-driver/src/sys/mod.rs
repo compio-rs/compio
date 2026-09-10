@@ -1,7 +1,7 @@
 mod buffer_pool;
 mod driver;
 mod extra;
-mod pal;
+pub(crate) mod pal;
 mod sys_slice;
 
 // Publicly visible items
