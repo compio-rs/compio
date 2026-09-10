@@ -1,6 +1,6 @@
 [package]
 name = "compio-compat"
-version = "0.1.0"
+version = "0.1.1"
 description = "Compatibility layer for compio to work with various async runtimes."
 categories = ["asynchronous", "filesystem", "network-programming"]
 keywords = ["async", "fs", "iocp", "io-uring", "net"]
