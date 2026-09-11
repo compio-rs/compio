@@ -34,14 +34,15 @@ impl BufControl {
         bufs: &[Slot],
         buf_len: u32,
         flags: u16,
+        buffer_group: u16,
     ) -> io::Result<BufControl> {
         #[cfg(io_uring)]
-        let inner = unsafe { imp::BufControl::new(driver, bufs, buf_len, flags)? };
+        let inner = unsafe { imp::BufControl::new(driver, bufs, buf_len, flags, buffer_group)? };
 
         #[cfg(not(io_uring))]
         let inner = fallback::BufControl::new(bufs);
 
-        _ = (driver, buf_len, flags);
+        _ = (driver, buf_len, flags, buffer_group);
 
         Ok(Self(inner))
     }
