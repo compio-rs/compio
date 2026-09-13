@@ -59,21 +59,9 @@ impl<'a> Remote<'a> {
         // `fetch_sub` can never underflow.
         shared.pending.fetch_add(1, Ordering::Release);
 
-        let mut notified = false;
-        while shared.sync.push(self.header().id).is_err() {
-            if !notified && let Some(ref waker) = shared.waker {
-                waker.wake_by_ref();
-                notified = true;
-            } else if self.header().state.load::<Strong>().is_cancelled() {
-                // Bailing out without pushing: release the reservation.
-                shared.pending.fetch_sub(1, Ordering::Release);
-                self.header().state.finish_scheduling();
-                return;
-            } else {
-                crate::yield_now()
-            }
-        }
-        if !notified && let Some(ref waker) = shared.waker {
+        // The queue is unbounded, so this never blocks.
+        shared.sync.push(self.header().id);
+        if let Some(ref waker) = shared.waker {
             waker.wake_by_ref();
         }
 

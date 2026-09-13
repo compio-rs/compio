@@ -482,11 +482,9 @@ impl RuntimeBuilder {
         self
     }
 
-    /// The size of the sync queue, which is used to wake up tasks from other
-    /// threads (remote).
-    ///
-    /// This is fixed and will create backpressure in other remote threads when
-    /// full.
+    /// The sync queue is unbounded and no longer has a fixed size, so this
+    /// setting is ignored.
+    #[deprecated(note = "sync queue is unbounded, this setting is ignored")]
     pub fn sync_queue_size(&mut self, val: usize) -> &mut Self {
         self.sync_queue_size = val;
         self
@@ -517,6 +515,7 @@ impl RuntimeBuilder {
         let driver = proactor_builder.build()?;
         let executor = Executor::with_config(ExecutorConfig {
             max_interval: *event_interval,
+            #[allow(deprecated)]
             sync_queue_size: *sync_queue_size,
             local_queue_size: *local_queue_size,
             waker: Some(driver.waker()),
