@@ -21,9 +21,11 @@ impl BufControl {
         bufs: &[Slot],
         bufs_len: u32,
         flags: u16,
+        buffer_group: u16,
     ) -> io::Result<Self> {
         let inner = if driver.as_iour().is_some() {
-            let ctrl = unsafe { iour::BufControl::new(driver, bufs, bufs_len, flags) }?;
+            let ctrl =
+                unsafe { iour::BufControl::new(driver, bufs, bufs_len, flags, buffer_group) }?;
             Inner::IoUring(ctrl)
         } else {
             Inner::Fallback(fallback::BufControl::new(bufs))
