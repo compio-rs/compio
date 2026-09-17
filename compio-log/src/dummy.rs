@@ -1,12 +1,12 @@
-use tracing::{Span, instrument::Instrumented};
+use tracing::Span;
 
 pub trait Instrument: Sized {
-    fn instrument(self, span: Span) -> Instrumented<Self> {
-        tracing::Instrument::instrument(self, span)
+    fn instrument(self, _span: Span) -> Self {
+        self
     }
 
-    fn in_current_span(self) -> Instrumented<Self> {
-        self.instrument(Span::none())
+    fn in_current_span(self) -> Self {
+        self
     }
 }
 
