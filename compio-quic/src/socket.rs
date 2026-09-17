@@ -17,7 +17,7 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufExt, IoBufMut, buf_try};
 use compio_io::ancillary::{AncillaryBuf, AncillaryIter, CodecError};
-use compio_net::UdpSocket;
+use compio_net::{UdpSocket, offload};
 use quinn_proto::{EcnCodepoint, Transmit};
 #[cfg(windows)]
 use windows_sys::Win32::Networking::WinSock;
@@ -56,28 +56,6 @@ pub(crate) struct RecvMeta {
 }
 
 const CMSG_LEN: usize = 128;
-
-#[cfg(linux_all)]
-#[inline]
-fn max_gso_segments(socket: &UdpSocket) -> io::Result<usize> {
-    unsafe {
-        socket.get_socket_option::<libc::c_int>(libc::SOL_UDP, libc::UDP_SEGMENT)?;
-    }
-    Ok(32)
-}
-#[cfg(windows)]
-#[inline]
-fn max_gso_segments(socket: &UdpSocket) -> io::Result<usize> {
-    unsafe {
-        socket.get_socket_option::<i32>(WinSock::IPPROTO_UDP, WinSock::UDP_SEND_MSG_SIZE)?;
-    }
-    Ok(512)
-}
-#[cfg(not(any(linux_all, windows)))]
-#[inline]
-fn max_gso_segments(_socket: &UdpSocket) -> io::Result<usize> {
-    Err(io::Error::from(io::ErrorKind::Unsupported))
-}
 
 #[inline]
 fn error_is_unsupported(e: &io::Error) -> bool {
@@ -221,24 +199,14 @@ impl Socket {
         }
 
         // GRO
-        #[allow(unused_mut)]
-        let mut max_gro_segments = 1;
-        #[cfg(linux_all)]
-        if set_socket_option!(socket, libc::SOL_UDP, libc::UDP_GRO, &1) {
-            max_gro_segments = 64;
-        }
-        #[cfg(all(windows, feature = "windows-gro"))]
-        if set_socket_option!(
-            socket,
-            WinSock::IPPROTO_UDP,
-            WinSock::UDP_RECV_MAX_COALESCED_SIZE,
-            &(u16::MAX as u32),
-        ) {
-            max_gro_segments = 64;
-        }
+        let max_gro_segments = match socket.set_gro(true) {
+            Ok(()) => 64,
+            Err(e) if error_is_unsupported(&e) => 1,
+            Err(e) => return Err(e),
+        };
 
         // GSO
-        let max_gso_segments = max_gso_segments(&socket).unwrap_or(1);
+        let max_gso_segments = socket.max_gso_segments();
 
         #[cfg(freebsd)]
         let encode_src_ip_v4 =
@@ -287,15 +255,11 @@ impl Socket {
 
         let mut ecn_bits = 0u8;
         let mut local_ip = None;
-        #[allow(unused_mut)]
         let mut stride = len;
 
         let res = (|| {
             // SAFETY: `control` contains valid data
             for cmsg in unsafe { AncillaryIter::new(&control) } {
-                #[cfg(windows)]
-                const UDP_COALESCED_INFO: i32 = WinSock::UDP_COALESCED_INFO as i32;
-
                 match (cmsg.level(), cmsg.ty()) {
                     // ECN
                     #[cfg(unix)]
@@ -347,16 +311,13 @@ impl Socket {
                         local_ip = Some(IpAddr::from(unsafe { pktinfo.ipi6_addr.u.Byte }));
                     }
 
-                    // GRO
-                    #[cfg(linux_all)]
-                    (libc::SOL_UDP, libc::UDP_GRO) => stride = cmsg.data::<libc::c_int>()? as usize,
-                    #[cfg(windows)]
-                    (WinSock::IPPROTO_UDP, UDP_COALESCED_INFO) => {
-                        stride = cmsg.data::<u32>()? as usize
-                    }
-
                     _ => {}
                 }
+            }
+            // GRO
+            // SAFETY: `control` is exactly the buffer `recv_msg` filled.
+            if let Some(gro_stride) = unsafe { offload::segment_size(&control) }? {
+                stride = gro_stride;
             }
             Ok::<(), CodecError>(())
         })();
@@ -470,16 +431,7 @@ impl Socket {
         if let Some(segment_size) = transmit.segment_size
             && segment_size < transmit.size
         {
-            #[cfg(linux_all)]
-            builder.push(libc::SOL_UDP, libc::UDP_SEGMENT, &(segment_size as u16))?;
-            #[cfg(windows)]
-            builder.push(
-                WinSock::IPPROTO_UDP,
-                WinSock::UDP_SEND_MSG_SIZE,
-                &(segment_size as u32),
-            )?;
-            #[cfg(not(any(linux_all, windows)))]
-            let _ = segment_size;
+            offload::push_segment_size(&mut builder, segment_size as u16)?;
         }
 
         Ok(control)

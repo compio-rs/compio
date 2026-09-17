@@ -173,9 +173,11 @@ iocp-wait-packet = ["compio-driver/iocp-wait-packet"]
 # Ancillary
 bytemuck = ["compio-io?/bytemuck"]
 
+# Net
+windows-gro = ["compio-net?/windows-gro", "compio-quic?/windows-gro"]
+
 # QUIC
 qlog = ["compio-quic?/qlog"]
-windows-gro = ["compio-quic?/windows-gro"]
 
 # TLS
 py-dynamic-openssl = ["tls", "compio-tls/py-dynamic-openssl"]
