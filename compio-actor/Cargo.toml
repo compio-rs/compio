@@ -1,6 +1,6 @@
 [package]
 name = "compio-actor"
-version = "0.1.0"
+version = "0.1.1"
 description = "Actors for Compio"
 categories = ["asynchronous", "concurrency"]
 keywords = ["actor", "async", "compio"]
