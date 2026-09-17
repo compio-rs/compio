@@ -25,16 +25,16 @@ mod waker;
 use compio_log::{instrument, trace};
 use compio_send_wrapper::SendWrapper;
 pub use console::SpawnMeta;
-use crossbeam_queue::ArrayQueue;
+use crossbeam_queue::SegQueue;
 pub use join_handle::{JoinError, JoinHandle, ResumeUnwind};
 use util::panic_guard;
 
 cfg_select! {
     loom => {
-        use loom::{cell::UnsafeCell, hint, sync::atomic::*, thread::yield_now};
+        use loom::{cell::UnsafeCell, hint, sync::atomic::*};
     }
     _ => {
-        use std::{hint, sync::atomic::*, thread::yield_now};
+        use std::{hint, sync::atomic::*};
 
         #[repr(transparent)]
         struct UnsafeCell<T>(std::cell::UnsafeCell<T>);
@@ -89,10 +89,8 @@ pub struct Executor {
 /// Configuration for [`Executor`].
 #[derive(Debug, Clone)]
 pub struct ExecutorConfig {
-    /// The size of the sync queue, which holds task id's for cross-thread
-    /// wakes.
-    ///
-    /// This is fixed and will create backpressure when full.
+    /// The sync queue is unbounded, so this field is ignored.
+    #[deprecated(note = "sync queue is unbounded, this field is ignored")]
     pub sync_queue_size: usize,
 
     /// The size of the local queues, which hold tasks for same-thread
@@ -114,6 +112,7 @@ pub struct ExecutorConfig {
 impl Default for ExecutorConfig {
     fn default() -> Self {
         Self {
+            #[allow(deprecated)]
             sync_queue_size: 64,
             local_queue_size: 64,
             max_interval: 61,
@@ -124,7 +123,7 @@ impl Default for ExecutorConfig {
 
 pub(crate) struct Shared {
     waker: Option<Waker>,
-    sync: ArrayQueue<TaskId>,
+    sync: SegQueue<TaskId>,
     pending: AtomicUsize,
     queue: SendWrapper<TaskQueue>,
 }
@@ -132,7 +131,7 @@ pub(crate) struct Shared {
 impl Shared {
     /// Drain all pending cross-thread wakes into the local hot `queue`.
     ///
-    /// Skips the expensive [`ArrayQueue::pop`] entirely when nothing has been
+    /// Skips the expensive [`SegQueue::pop`] entirely when nothing has been
     /// pushed, using a single relaxed-ish load of [`Shared::pending`] instead
     /// of crossbeam's `SeqCst` empty check.
     #[inline]
@@ -163,7 +162,7 @@ impl Executor {
     pub fn with_config(mut config: ExecutorConfig) -> Self {
         let ptr = Box::into_raw(Box::new(Shared {
             waker: config.waker.take(),
-            sync: ArrayQueue::new(config.sync_queue_size),
+            sync: SegQueue::new(),
             pending: AtomicUsize::new(0),
             queue: SendWrapper::new(TaskQueue::new(config.local_queue_size)),
         }));
