@@ -89,10 +89,6 @@ pub struct Executor {
 /// Configuration for [`Executor`].
 #[derive(Debug, Clone)]
 pub struct ExecutorConfig {
-    /// The sync queue is unbounded, so this field is ignored.
-    #[deprecated(note = "sync queue is unbounded, this field is ignored")]
-    pub sync_queue_size: usize,
-
     /// The size of the local queues, which hold tasks for same-thread
     /// execution.
     ///
@@ -112,8 +108,6 @@ pub struct ExecutorConfig {
 impl Default for ExecutorConfig {
     fn default() -> Self {
         Self {
-            #[allow(deprecated)]
-            sync_queue_size: 64,
             local_queue_size: 64,
             max_interval: 61,
             waker: None,
