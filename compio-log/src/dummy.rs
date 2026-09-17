@@ -1,3 +1,17 @@
+use tracing::{Span, instrument::Instrumented};
+
+pub trait Instrument: Sized {
+    fn instrument(self, span: Span) -> Instrumented<Self> {
+        tracing::Instrument::instrument(self, span)
+    }
+
+    fn in_current_span(self) -> Instrumented<Self> {
+        self.instrument(Span::none())
+    }
+}
+
+impl<T> Instrument for T {}
+
 #[macro_export]
 macro_rules! event {
     ($($args:tt)*) => {
