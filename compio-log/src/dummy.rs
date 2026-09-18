@@ -1,3 +1,17 @@
+use tracing::Span;
+
+pub trait Instrument: Sized {
+    fn instrument(self, _span: Span) -> Self {
+        self
+    }
+
+    fn in_current_span(self) -> Self {
+        self
+    }
+}
+
+impl<T> Instrument for T {}
+
 #[macro_export]
 macro_rules! event {
     ($($args:tt)*) => {

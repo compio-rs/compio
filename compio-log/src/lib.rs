@@ -12,6 +12,8 @@ pub use tracing::*;
 
 #[cfg(not(feature = "enable_log"))]
 pub mod dummy;
+#[cfg(not(feature = "enable_log"))]
+pub use dummy::Instrument;
 
 #[cfg(feature = "enable_log")]
 #[macro_export]
