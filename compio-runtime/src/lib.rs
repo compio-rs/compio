@@ -438,7 +438,6 @@ impl criterion::async_executor::AsyncExecutor for &Runtime {
 pub struct RuntimeBuilder {
     proactor_builder: ProactorBuilder,
     thread_affinity: HashSet<usize>,
-    sync_queue_size: usize,
     local_queue_size: usize,
     event_interval: u32,
 }
@@ -455,7 +454,6 @@ impl RuntimeBuilder {
         Self {
             proactor_builder: ProactorBuilder::new(),
             event_interval: 61,
-            sync_queue_size: 64,
             local_queue_size: 64,
             thread_affinity: HashSet::new(),
         }
@@ -482,14 +480,6 @@ impl RuntimeBuilder {
         self
     }
 
-    /// The sync queue is unbounded and no longer has a fixed size, so this
-    /// setting is ignored.
-    #[deprecated(note = "sync queue is unbounded, this setting is ignored")]
-    pub fn sync_queue_size(&mut self, val: usize) -> &mut Self {
-        self.sync_queue_size = val;
-        self
-    }
-
     /// The size of the local queues, which is used to wake up tasks within the
     /// same thread.
     ///
@@ -504,7 +494,6 @@ impl RuntimeBuilder {
         let RuntimeBuilder {
             proactor_builder,
             thread_affinity,
-            sync_queue_size,
             local_queue_size,
             event_interval,
         } = self;
@@ -515,8 +504,6 @@ impl RuntimeBuilder {
         let driver = proactor_builder.build()?;
         let executor = Executor::with_config(ExecutorConfig {
             max_interval: *event_interval,
-            #[allow(deprecated)]
-            sync_queue_size: *sync_queue_size,
             local_queue_size: *local_queue_size,
             waker: Some(driver.waker()),
         });
