@@ -16,7 +16,7 @@
 
 QUIC protocol implementation for compio.
 
-This crate provides QUIC (Quick UDP Internet Connections) support for compio, built on top of quinn-proto. QUIC is a modern transport protocol that provides features like multiplexing, built-in encryption, and improved connection migration, making it ideal for applications like HTTP/3.
+This crate provides QUIC ([RFC9000](https://datatracker.ietf.org/doc/html/rfc9000)) support for compio, built on top of quinn-proto. QUIC is a modern transport protocol that provides features like multiplexing, built-in encryption, and improved connection migration, making it ideal for applications like HTTP/3 ([RFC9114](https://datatracker.ietf.org/doc/html/rfc9114)).
 
 ## Features
 
