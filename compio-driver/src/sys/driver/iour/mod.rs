@@ -395,7 +395,7 @@ impl Driver {
             trace!(fallback = has_fallbacked, "push entry");
             match op_entry {
                 OpEntry::Submission(entry) => {
-                    if is_op_supported(entry.get_opcode() as _) {
+                    if is_op_supported(&entry) {
                         #[allow(clippy::useless_conversion)]
                         self.push_raw_with_key(entry.into(), key)?;
                     } else if !has_fallbacked {
@@ -408,7 +408,7 @@ impl Driver {
                 }
                 #[cfg(feature = "io-uring-sqe128")]
                 OpEntry::Submission128(entry) => {
-                    if is_op_supported(entry.get_opcode() as _) {
+                    if is_op_supported(&entry) {
                         self.push_raw_with_key(entry, key)?;
                     } else if !has_fallbacked {
                         op_entry = key.borrow().create_entry::<true>();
