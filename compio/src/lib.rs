@@ -4,19 +4,29 @@
 //! This crate is inspired by [monoio](https://github.com/bytedance/monoio/).
 //!
 //! ## Quick start
+//!
+//! Add `compio` as dependency:
+//!
+//! ```bash
+//! cargo add compio --features macros,fs
+//! ```
+//!
+//! Then use the high level APIs provided to perform filesystem & network IO:
+//!
 //! ```rust
-//! # compio::runtime::Runtime::new().unwrap().block_on(async {
 //! use compio::{fs::File, io::AsyncReadAtExt};
 //!
-//! let file = File::open("Cargo.toml").await.unwrap();
-//! let (read, buffer) = file
-//!     .read_to_end_at(Vec::with_capacity(1024), 0)
-//!     .await
-//!     .unwrap();
-//! assert_eq!(read, buffer.len());
-//! let buffer = String::from_utf8(buffer).unwrap();
-//! println!("{}", buffer);
-//! # })
+//! #[compio::main]
+//! async fn main() {
+//!     let file = File::open("Cargo.toml").await.unwrap();
+//!     let (read, buffer) = file
+//!         .read_to_end_at(Vec::with_capacity(1024), 0)
+//!         .await
+//!         .unwrap();
+//!     assert_eq!(read, buffer.len());
+//!     let buffer = String::from_utf8(buffer).unwrap();
+//!     println!("{}", buffer);
+//! }
 //! ```
 //!
 //! ## Observability
