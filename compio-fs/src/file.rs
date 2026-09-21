@@ -30,22 +30,29 @@ use crate::{Metadata, OpenOptions, Permissions};
 /// [`std::io::Cursor`].
 ///
 /// # Examples
-/// ```ignore
-/// use compio::fs::File;
-/// use compio::buf::BufResult;
+/// ```no_run
+/// // Most users depend on the `compio` crate rather than on the sub-crates
+/// // directly. In that case, import these as `compio::fs::File`,
+/// // `compio::buf::BufResult` and `compio::io::AsyncReadExt` instead.
 /// use std::io::Cursor;
 ///
+/// use compio_buf::BufResult;
+/// use compio_fs::File;
+/// use compio_io::AsyncReadExt;
+///
+/// # compio_runtime::Runtime::new().unwrap().block_on(async {
 /// let file = File::open("foo.txt").await?;
-/// let cursor = Cursor::new(file);
+/// let mut cursor = Cursor::new(file);
 ///
 /// let int = cursor.read_u32().await?;
 /// let float = cursor.read_f32().await?;
 ///
-/// let mut string = String::new();
+/// let string = String::new();
 /// let BufResult(result, string) = cursor.read_to_string(string).await;
 ///
-/// let mut buf = vec![0; 1024];
+/// let buf = vec![0; 1024];
 /// let BufResult(result, buf) = cursor.read_exact(buf).await;
+/// # std::io::Result::Ok(()) });
 /// ```
 #[derive(Debug, Clone)]
 pub struct File {
