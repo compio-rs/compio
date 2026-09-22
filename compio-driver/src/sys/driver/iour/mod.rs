@@ -7,7 +7,12 @@ use std::{
     time::Duration,
 };
 
-use crate::sys::{extra::IourExtra, prelude::*};
+use smallvec::SmallVec;
+
+use crate::sys::{
+    extra::{IourExtra, Linked},
+    prelude::*,
+};
 
 mod_use![op, notify];
 
@@ -77,8 +82,9 @@ pub(crate) struct Driver {
     in_flight: SlotMap<DefaultKey, usize>,
     // Weak references keep cancellation addresses from being recycled without
     // preventing completed operations from being extracted by their futures.
-    cancellations: HashMap<usize, WeakKey>,
+    cancellations: HashMap<usize, (WeakKey, bool)>,
     pending_cancels: VecDeque<usize>,
+    deferred_cancels: HashMap<DefaultKey, WeakKey>,
     _p: PhantomData<ErasedKey>,
 }
 
@@ -151,6 +157,7 @@ impl Driver {
             in_flight: SlotMap::new(),
             cancellations: HashMap::new(),
             pending_cancels: VecDeque::new(),
+            deferred_cancels: HashMap::new(),
             _p: PhantomData,
         })
     }
@@ -288,6 +295,7 @@ impl Driver {
     fn poll_entries(&mut self) -> bool {
         let cqueue = self.inner.completion();
         let has_entry = !cqueue.is_empty();
+        let mut cancellations: SmallVec<[ErasedKey; LINKED_BATCH_INLINE]> = SmallVec::new();
         for entry in cqueue {
             match entry.user_data() {
                 Self::NOTIFY => {
@@ -304,7 +312,15 @@ impl Driver {
                 // its completion from the target operation's own completion.
                 // Clear the tag bit to recover the target's cancellation key.
                 tag if tag & 1 != 0 => {
-                    self.cancellations.remove(&((tag & !1) as usize));
+                    let cancelled = self.cancellations.remove(&((tag & !1) as usize));
+                    if entry.result() == -libc::ENOENT
+                        && let Some((key, true)) = cancelled
+                        && let Some(key) = key.upgrade()
+                    {
+                        // The predecessor completed, but its successor may
+                        // not yet have reached the kernel's cancellation
+                        cancellations.push(key);
+                    }
                 }
                 key => {
                     let flags = entry.flags();
@@ -320,11 +336,21 @@ impl Driver {
                         key.wake_by_ref();
                     } else {
                         let entry = create_entry(entry);
-                        Self::remove_in_flight(&mut self.in_flight, &entry.key);
+                        if let Some(slot) = Self::remove_in_flight(&mut self.in_flight, &entry.key)
+                            && let Some(key) = self
+                                .deferred_cancels
+                                .remove(&slot)
+                                .and_then(|key| key.upgrade())
+                        {
+                            cancellations.push(key);
+                        }
                         entry.notify()
                     }
                 }
             }
+        }
+        for key in cancellations {
+            self.cancel(key);
         }
         has_entry
     }
@@ -342,11 +368,23 @@ impl Driver {
         if key.has_result() {
             return;
         }
+        let linked = key.borrow().extra().as_iour().linked;
+        if let Some(Linked::After(previous)) = linked
+            && self.in_flight.contains_key(previous)
+        {
+            // Hard-linked successors are not necessarily visible to
+            // AsyncCancel yet. Submit their cancellation only after the
+            // predecessor's CQE, even if cancellation tokens arrive in
+            // arbitrary order.
+            self.deferred_cancels.insert(previous, key.downgrade());
+            return;
+        }
         let address = key.as_raw();
         if self.cancellations.contains_key(&address) {
             return;
         }
-        self.cancellations.insert(address, key.downgrade());
+        self.cancellations
+            .insert(address, (key.downgrade(), linked.is_some()));
         self.pending_cancels.push_back(address);
     }
 
@@ -363,7 +401,7 @@ impl Driver {
             .min(self.inner.submission().capacity());
         for _ in 0..limit {
             let address = *self.pending_cancels.front().unwrap();
-            let key = self.cancellations[&address].upgrade();
+            let key = self.cancellations[&address].0.upgrade();
             if key.as_ref().is_none_or(|key| key.has_result()) {
                 self.pending_cancels.pop_front();
                 self.cancellations.remove(&address);
@@ -429,6 +467,79 @@ impl Driver {
                 }
             }
         }
+    }
+
+    /// Validate and publish an entire linked group without splitting it across
+    /// kernel submissions, including when older operations fill the SQ.
+    pub(crate) fn push_linked<const N: usize>(
+        &mut self,
+        keys: [ErasedKey; N],
+        hardlinks: [bool; N],
+    ) -> io::Result<()> {
+        if N > self.inner.submission().capacity() {
+            return Err(unsupported_linked());
+        }
+        let mut entries: SmallVec<[SEntry; LINKED_BATCH_INLINE]> = SmallVec::with_capacity(N);
+        for (i, key) in keys.iter().enumerate() {
+            let mut entry: SEntry = match key.borrow().create_entry::<false>() {
+                #[allow(clippy::useless_conversion)]
+                OpEntry::Submission(entry) => entry.into(),
+                #[cfg(feature = "io-uring-sqe128")]
+                OpEntry::Submission128(entry) => entry,
+                OpEntry::Blocking => return Err(unsupported_linked()),
+            };
+            if !is_op_supported(entry.get_opcode() as _) {
+                return Err(unsupported_linked());
+            }
+            if i + 1 < N {
+                entry = entry.flags(link_flags(hardlinks[i]));
+            }
+            entries.push(entry.user_data(key.as_raw() as _));
+        }
+
+        while {
+            let queue = self.inner.submission();
+            queue.capacity() - queue.len() < N
+        } {
+            match self.submit_auto(Some(Duration::ZERO), false) {
+                Ok(()) => {}
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        io::ErrorKind::TimedOut | io::ErrorKind::Interrupted
+                    ) => {}
+                Err(e) => return Err(e),
+            }
+            if self.poll_entries() {
+                self.notifier.waker().wake();
+            }
+        }
+
+        // Do all allocation and bookkeeping before publishing, since SQPOLL
+        // can start executing immediately. Only the kernel can free SQ slots
+        // while we hold the driver, so the capacity check remains valid.
+        self.in_flight.reserve(N);
+        let slots = std::array::from_fn::<_, N, _>(|i| self.in_flight.insert(keys[i].as_raw()));
+        for (i, key) in keys.iter().enumerate() {
+            let mut key = key.borrow();
+            let extra = key.extra_mut().as_iour_mut();
+            extra.set_in_flight(slots[i]);
+            extra.linked = Some(if i == 0 {
+                Linked::Head
+            } else {
+                Linked::After(slots[i - 1])
+            });
+        }
+        // SAFETY: the keys retain every operation's parameters. The queue
+        // publishes its tail only after the entire group has been written.
+        unsafe { self.inner.submission().push_multiple(&entries) }
+            .expect("reserved space for the whole linked group");
+        // No allocation or fallible work after publication. The driver alone
+        // reclaims these references when processing CQEs or shutting down.
+        for key in keys {
+            key.into_raw();
+        }
+        Ok(())
     }
 
     pub fn push(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
@@ -543,12 +654,17 @@ impl Driver {
 
     /// Take an op out of the `in_flight` map. The slot lives in the op's
     /// extra, and is only set while the op is in flight.
-    fn remove_in_flight(in_flight: &mut SlotMap<DefaultKey, usize>, key: &ErasedKey) {
-        let Some(slot) = key.borrow().extra_mut().as_iour_mut().take_in_flight() else {
-            return;
-        };
+    fn remove_in_flight(
+        in_flight: &mut SlotMap<DefaultKey, usize>,
+        key: &ErasedKey,
+    ) -> Option<DefaultKey> {
+        let mut op = key.borrow();
+        let extra = op.extra_mut().as_iour_mut();
+        let slot = extra.take_in_flight()?;
+        extra.linked = None;
         let removed = in_flight.remove(slot);
         debug_assert_eq!(removed, Some(key.as_raw()));
+        Some(slot)
     }
 }
 
@@ -606,8 +722,27 @@ fn create_result(result: i32) -> io::Result<usize> {
     }
 }
 
+fn unsupported_linked() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::Unsupported,
+        "linked submission is not supported for this driver, opcode or queue capacity",
+    )
+}
+
+fn link_flags(hardlink: bool) -> io_uring::squeue::Flags {
+    if hardlink {
+        io_uring::squeue::Flags::IO_HARDLINK
+    } else {
+        io_uring::squeue::Flags::IO_LINK
+    }
+}
+
 fn timespec(duration: std::time::Duration) -> Timespec {
     Timespec::new()
         .sec(duration.as_secs())
         .nsec(duration.subsec_nanos())
 }
+
+/// Inline capacity for the linked-batch staging buffers, sized for eight
+/// fill/drain splice pairs (16 members) without heap allocation.
+const LINKED_BATCH_INLINE: usize = 16;

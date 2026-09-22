@@ -1,6 +1,14 @@
 use io_uring::squeue::Flags;
 use slotmap::DefaultKey;
 
+/// This operation's position in a linked chain: the head, or the in-flight
+/// slot of its predecessor.
+#[derive(Debug, Clone, Copy)]
+pub(in crate::sys) enum Linked {
+    Head,
+    After(DefaultKey),
+}
+
 /// Extra data for RawOp.
 #[derive(Debug)]
 pub(in crate::sys) struct Extra {
@@ -10,6 +18,7 @@ pub(in crate::sys) struct Extra {
     /// Slot of this op inside the `in_flight` map of the `io_uring` driver,
     /// set while the op is in flight.
     in_flight: Option<DefaultKey>,
+    pub linked: Option<Linked>,
 }
 
 pub(in crate::sys) use Extra as IourExtra;
@@ -21,6 +30,7 @@ impl Extra {
             cqe_flags: 0,
             personality: None,
             in_flight: None,
+            linked: None,
         }
     }
 
