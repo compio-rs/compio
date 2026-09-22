@@ -527,3 +527,38 @@ fn drop_with_pending_multishot_cqes() {
         "the driver released a multishot key more than once"
     );
 }
+
+#[cfg(io_uring)]
+#[test]
+fn full_queue_cancellations_keep_external_pollers_awake() {
+    use std::os::{fd::OwnedFd, unix::net::UnixStream};
+
+    use compio_driver::op::Read;
+
+    let mut driver = Proactor::builder().capacity(16).build().unwrap();
+    let (input, _writer) = UnixStream::pair().unwrap();
+    let input = SharedFd::new(OwnedFd::from(input));
+    let keys = std::array::from_fn::<_, 16, _>(|_| {
+        match driver.push(Read::new(input.clone(), vec![0; 1])) {
+            PushEntry::Pending(key) => key,
+            PushEntry::Ready(_) => panic!("empty stream must remain pending"),
+        }
+    });
+    for key in &keys {
+        let token = driver.register_cancel(key);
+        assert!(driver.cancel_token(token));
+    }
+    // The first flush submits the full SQ of reads. An external event loop
+    // must not wait for those reads before the queued cancels can be staged.
+    assert!(driver.flush());
+    for mut key in keys {
+        let result = loop {
+            match driver.pop(key) {
+                PushEntry::Ready(result) => break result,
+                PushEntry::Pending(pending) => key = pending,
+            }
+            driver.poll(Some(Duration::from_secs(2))).unwrap();
+        };
+        assert_eq!(result.0.unwrap_err().raw_os_error(), Some(libc::ECANCELED));
+    }
+}

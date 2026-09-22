@@ -1,5 +1,10 @@
 use std::{
-    marker::PhantomData, mem::ManuallyDrop, panic::AssertUnwindSafe, sync::Arc, time::Duration,
+    collections::{HashMap, VecDeque},
+    marker::PhantomData,
+    mem::ManuallyDrop,
+    panic::AssertUnwindSafe,
+    sync::Arc,
+    time::Duration,
 };
 
 use crate::sys::{extra::IourExtra, prelude::*};
@@ -35,7 +40,7 @@ use slotmap::{DefaultKey, SlotMap};
 
 use crate::{
     AsyncifyPool, DriverType, Entry, ProactorBuilder,
-    key::{BorrowedKey, ErasedKey},
+    key::{BorrowedKey, ErasedKey, WeakKey},
     panic::catch_unwind_io,
 };
 
@@ -70,11 +75,14 @@ pub(crate) struct Driver {
     flags: DriverFlags,
     /// Keys leaked via `into_raw()` into io_uring user_data, freed on drop.
     in_flight: SlotMap<DefaultKey, usize>,
+    // Weak references keep cancellation addresses from being recycled without
+    // preventing completed operations from being extracted by their futures.
+    cancellations: HashMap<usize, WeakKey>,
+    pending_cancels: VecDeque<usize>,
     _p: PhantomData<ErasedKey>,
 }
 
 impl Driver {
-    const CANCEL: u64 = u64::MAX;
     const NOTIFY: u64 = u64::MAX - 1;
 
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
@@ -141,6 +149,8 @@ impl Driver {
             pool: builder.create_or_get_thread_pool(),
             flags,
             in_flight: SlotMap::new(),
+            cancellations: HashMap::new(),
+            pending_cancels: VecDeque::new(),
             _p: PhantomData,
         })
     }
@@ -280,7 +290,6 @@ impl Driver {
         let has_entry = !cqueue.is_empty();
         for entry in cqueue {
             match entry.user_data() {
-                Self::CANCEL => {}
                 Self::NOTIFY => {
                     let flags = entry.flags();
                     if !more(flags) {
@@ -289,6 +298,13 @@ impl Driver {
                     if let Err(e) = self.notifier.clear() {
                         error!("failed to clear notifier: {e:?}");
                     }
+                }
+                // Operation addresses are aligned, so their low bit is zero.
+                // We set that bit in AsyncCancel's user_data to distinguish
+                // its completion from the target operation's own completion.
+                // Clear the tag bit to recover the target's cancellation key.
+                tag if tag & 1 != 0 => {
+                    self.cancellations.remove(&((tag & !1) as usize));
                 }
                 key => {
                     let flags = entry.flags();
@@ -323,22 +339,50 @@ impl Driver {
 
     pub fn cancel(&mut self, key: ErasedKey) {
         instrument!(compio_log::Level::TRACE, "cancel", ?key);
-        trace!("cancel RawOp");
-        unsafe {
-            #[allow(clippy::useless_conversion)]
-            if self
-                .inner
-                .submission()
-                .push(
-                    &AsyncCancel::new(key.as_raw() as _)
-                        .build()
-                        .user_data(Self::CANCEL)
-                        .into(),
-                )
-                .is_err()
-            {
-                warn!("could not push AsyncCancel entry");
+        if key.has_result() {
+            return;
+        }
+        let address = key.as_raw();
+        if self.cancellations.contains_key(&address) {
+            return;
+        }
+        self.cancellations.insert(address, key.downgrade());
+        self.pending_cancels.push_back(address);
+    }
+
+    /// Stage at most one SQ's worth of cancellation work without submitting,
+    /// polling, or waiting. In particular, dropping a future never flushes a
+    /// full queue or recursively dispatches cancellation retries.
+    fn stage_cancellations(&mut self) {
+        if self.pending_cancels.is_empty() {
+            return;
+        }
+        let limit = self
+            .pending_cancels
+            .len()
+            .min(self.inner.submission().capacity());
+        for _ in 0..limit {
+            let address = *self.pending_cancels.front().unwrap();
+            let key = self.cancellations[&address].upgrade();
+            if key.as_ref().is_none_or(|key| key.has_result()) {
+                self.pending_cancels.pop_front();
+                self.cancellations.remove(&address);
+                continue;
             }
+            // Key allocations are pointer-aligned. The weak reference remains
+            // until the cancellation CQE, preventing address reuse meanwhile.
+            debug_assert_eq!(address & 1, 0);
+            #[allow(clippy::useless_conversion)]
+            let entry = AsyncCancel::new(address as _)
+                .build()
+                .user_data((address as u64) | 1)
+                .into();
+            // SAFETY: AsyncCancel has no buffers; its target address remains
+            // reserved by the weak reference in `cancellations`.
+            if unsafe { self.inner.submission().push(&entry) }.is_err() {
+                break;
+            }
+            self.pending_cancels.pop_front();
         }
     }
 
@@ -443,10 +487,11 @@ impl Driver {
     }
 
     pub fn flush(&mut self) -> bool {
+        self.stage_cancellations();
         let succeed = self.submit_auto(Some(Duration::ZERO), false).is_ok();
         // If submission failed, return true to let the driver wake up
         // immediately.
-        !succeed | self.notifier.reset()
+        !succeed | self.notifier.reset() | !self.pending_cancels.is_empty()
     }
 
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
@@ -472,7 +517,11 @@ impl Driver {
             self.flags.remove(DriverFlags::NEED_PUSH_NOTIFIER);
         }
 
-        self.submit_auto(timeout, need_wait)?;
+        self.stage_cancellations();
+        // A full SQ may have prevented staging a cancellation needed to wake
+        // the very operation we would wait for. Flush once without waiting;
+        // the next driver pass can stage it after the kernel consumes the SQ.
+        self.submit_auto(timeout, need_wait && self.pending_cancels.is_empty())?;
 
         self.notifier.set_awake();
         self.poll_entries();
