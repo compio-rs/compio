@@ -212,6 +212,12 @@ impl Executor {
         self.shared().drain_sync(queue);
 
         for id in queue.iter_hot().take(self.config.max_interval as _) {
+            // A nested `tick` (a task's poll driving the same executor) may
+            // have already taken this task off the hot list and processed it;
+            // skip instead of asserting or polling it a second time.
+            if !queue.is_hot(id) {
+                continue;
+            }
             queue.make_cold(id);
             let task = queue.take(id).expect("Task was not reset back");
             let res = unsafe { task.run() };

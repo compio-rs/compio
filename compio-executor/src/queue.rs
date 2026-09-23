@@ -165,12 +165,32 @@ impl TaskQueue {
         unsafe { self.with_inner(|inner| inner.make_cold(key)) }
     }
 
+    /// Whether `key` currently sits on the hot queue.
+    pub fn is_hot(&self, key: TaskId) -> bool {
+        unsafe { self.with_inner(|inner| inner.map.get(key).is_some_and(|item| item.is_hot)) }
+    }
+
+    /// Returns the hot successor of `key`, or the current hot head when
+    /// `key` is no longer hot.
+    ///
+    /// The iterator over the hot queue holds a cursor across `tick`'s task
+    /// processing, but a task's poll may re-enter `tick` (nested driving,
+    /// e.g. a synchronous harvest inside a thread-per-core runtime) and
+    /// reshuffle the list, moving the cursor's target off the hot queue
+    /// (`make_cold` also clears its `next`). The old
+    /// `debug_assert!(item.is_hot)` panicked on debug builds in that case,
+    /// and `item.next` (already `None`) silently truncated the iteration on
+    /// release builds. Restarting from the current hot head keeps the walk
+    /// alive; tasks the nested tick already processed are simply skipped.
     pub fn next_hot(&self, key: TaskId) -> Option<TaskId> {
         unsafe {
             self.with_inner(|inner| {
                 inner.map.get(key).and_then(|item| {
-                    debug_assert!(item.is_hot);
-                    item.next
+                    if item.is_hot {
+                        item.next
+                    } else {
+                        inner.hot.head
+                    }
                 })
             })
         }

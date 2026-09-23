@@ -257,3 +257,59 @@ fn test_join_result_resume_unwind() {
         assert_eq!(*msg, "resume_unwind panic");
     });
 }
+/// Regression: `tick` used to walk the hot queue with a lazily prefetching
+/// iterator. A task re-entering `tick` from inside its poll (nested driving,
+/// e.g. a synchronous harvest on a thread-per-core runtime) could transition
+/// the prefetched task from hot to cold, tripping `debug_assert!(item.is_hot)`
+/// in `next_hot` on debug builds and silently truncating the iteration on
+/// release builds.
+#[test]
+fn test_tick_is_reentrant_safe() {
+    use std::{
+        future::Future,
+        pin::Pin,
+        rc::Rc,
+        task::{Context, Poll},
+    };
+
+    let exe = Rc::new(Executor::new());
+
+    // Task A re-enters the executor from within its poll while B is still
+    // queued: the nested tick transitions B (pending) from hot to cold, which
+    // is exactly the stale state the old prefetched cursor dereferenced on
+    // its next step.
+    struct Reenter(Rc<Executor>);
+
+    impl Future for Reenter {
+        type Output = ();
+
+        fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<()> {
+            self.0.tick();
+            Poll::Ready(())
+        }
+    }
+
+    // Task B never completes: the nested tick moves it to the cold queue and
+    // resets it there.
+    struct Never;
+
+    impl Future for Never {
+        type Output = ();
+
+        fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<()> {
+            Poll::Pending
+        }
+    }
+
+    // A first so it holds the hot head and B is the prefetched successor.
+    exe.spawn(Reenter(Rc::clone(&exe))).detach();
+    exe.spawn(Never).detach();
+
+    // With the regression this panics on debug builds via
+    // `debug_assert!(item.is_hot)` in `next_hot`.
+    let still_hot = exe.tick();
+
+    // A completed and the inner tick drained the queue behind it; B rests in
+    // the cold queue, so no hot work remains.
+    assert!(!still_hot);
+}
