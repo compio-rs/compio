@@ -61,13 +61,11 @@ tokio = { workspace = true, features = [
 ] }
 
 [target.'cfg(windows)'.dev-dependencies]
-widestring = { workspace = true }
 windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
 
 # Unix specific dev dependencies
 [target.'cfg(unix)'.dev-dependencies]
 nix = { workspace = true, features = ["fs"] }
-libc = { workspace = true }
 
 [target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dev-dependencies]
 monoio = { version = "0.2.2", default-features = false, features = ["iouring"] }
