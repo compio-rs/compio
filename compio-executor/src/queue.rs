@@ -165,17 +165,6 @@ impl TaskQueue {
         unsafe { self.with_inner(|inner| inner.make_cold(key)) }
     }
 
-    pub fn next_hot(&self, key: TaskId) -> Option<TaskId> {
-        unsafe {
-            self.with_inner(|inner| {
-                inner.map.get(key).and_then(|item| {
-                    debug_assert!(item.is_hot);
-                    item.next
-                })
-            })
-        }
-    }
-
     pub fn hot_head(&self) -> Option<TaskId> {
         unsafe { self.with_inner(|inner| inner.hot.head) }
     }
@@ -303,7 +292,28 @@ impl<'a> Iterator for Iter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let curr = self.curr?;
-        self.curr = self.queue.next_hot(curr);
-        Some(curr)
+        unsafe {
+            self.queue.with_inner(|inner| {
+                // If `curr` is still hot, yield it and advance to its
+                // successor.
+                if let Some(item) = inner.map.get(curr)
+                    && item.is_hot
+                {
+                    self.curr = item.next;
+                    return Some(curr);
+                }
+
+                // If `curr` is no longer hot (e.g. processed by a nested tick,
+                // completed, or cancelled), resume directly from the current
+                // hot head.
+                if let Some(head) = inner.hot.head {
+                    self.curr = inner.map.get(head).and_then(|item| item.next);
+                    Some(head)
+                } else {
+                    self.curr = None;
+                    None
+                }
+            })
+        }
     }
 }
