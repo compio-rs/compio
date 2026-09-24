@@ -8,13 +8,13 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufMut, SetLenExt};
 use io_uring::{opcode, squeue::Flags, types::Fd};
+use linux_raw_sys::io_uring::IORING_RECV_MULTISHOT;
 use rustix::net::{RecvFlags, ReturnFlags};
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
 use crate::{
-    BufferPool, BufferRef, Extra, IourOpCode as OpCode, OpEntry, PollFirst,
-    op::TakeBuffer,
-    sys::pal::{is_kernel_at_least, set_poll_first},
+    BufferPool, BufferRef, Extra, IourOpCode as OpCode, OpEntry, PollFirst, is_op_supported,
+    op::TakeBuffer, sys::pal::set_poll_first,
 };
 
 /// Read a file at specified position into specified buffer.
@@ -371,7 +371,12 @@ impl<C: IoBufMut, S: AsFd> TakeBuffer for RecvMsgManaged<C, S> {
 
     fn take_buffer(self) -> Option<Self::Buffer> {
         let (buffer, addr) = self.op.take_buffer()?;
-        Some(((buffer, self.control), addr, self.control_len, self.return_flags))
+        Some((
+            (buffer, self.control),
+            addr,
+            self.control_len,
+            self.return_flags,
+        ))
     }
 }
 
@@ -577,17 +582,13 @@ impl<S> RecvMulti<S> {
 unsafe impl<S: AsFd> OpCode for RecvMulti<S> {
     type Control = ();
 
-    fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
-        if is_kernel_at_least((6, 0)) {
-            let fd = self.inner.fd.as_fd().as_raw_fd();
-            opcode::RecvMulti::new(Fd(fd), self.inner.buffer_group)
-                .flags(self.inner.flags.bits() as _)
-                .len(self.inner.len)
-                .build()
-                .into()
-        } else {
-            self.create_entry_fallback(control)
-        }
+    fn create_entry(&mut self, _control: &mut Self::Control) -> OpEntry {
+        let fd = self.inner.fd.as_fd().as_raw_fd();
+        opcode::RecvMulti::new(Fd(fd), self.inner.buffer_group)
+            .flags(self.inner.flags.bits() as _)
+            .len(self.inner.len)
+            .build()
+            .into()
     }
 
     fn create_entry_fallback(&mut self, control: &mut Self::Control) -> OpEntry {
@@ -818,7 +819,7 @@ unsafe impl<S: AsFd> OpCode for RecvMsgMultiImpl<S> {
 
 struct RecvMsgMultiResultFallback {
     buffer: BufferRef,
-    control: BufferRef,
+    control: Vec<u8>,
     addr: Option<SockAddr>,
     return_flags: ReturnFlags,
 }
@@ -850,14 +851,14 @@ impl IntoInner for RecvMsgMultiResultFallback {
 }
 
 struct RecvMsgMultiFallback<S: AsFd> {
-    op: RecvMsgManaged<BufferRef, S>,
+    op: RecvMsgManaged<Vec<u8>, S>,
     len: usize,
 }
 
 impl<S: AsFd> RecvMsgMultiFallback<S> {
     pub fn new(fd: S, pool: &BufferPool, control_len: usize, flags: RecvFlags) -> io::Result<Self> {
         Ok(Self {
-            op: RecvMsgManaged::new(fd, pool, 0, pool.pop()?.with_capacity(control_len), flags)?,
+            op: RecvMsgManaged::new(fd, pool, 0, Vec::with_capacity(control_len), flags)?,
             len: 0,
         })
     }
@@ -1015,7 +1016,7 @@ pub struct RecvMsgMulti<S: AsFd> {
 impl<S: AsFd> RecvMsgMulti<S> {
     /// Create [`RecvMsgMulti`].
     pub fn new(fd: S, pool: &BufferPool, control_len: usize, flags: RecvFlags) -> io::Result<Self> {
-        let inner = if is_kernel_at_least((6, 0)) {
+        let inner = if is_op_supported((opcode::RecvMsgMulti::CODE, IORING_RECV_MULTISHOT as u16)) {
             RecvMsgMultiInner::Impl(RecvMsgMultiImpl::new(fd, pool, control_len, flags)?)
         } else {
             RecvMsgMultiInner::Fallback(RecvMsgMultiFallback::new(fd, pool, control_len, flags)?)
