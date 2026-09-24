@@ -68,7 +68,6 @@ polling = "3.3.0"
 
 [target.'cfg(unix)'.dependencies]
 smallvec = { workspace = true, features = ["union"] }
-crossbeam-queue = { workspace = true }
 libc = { workspace = true }
 rustix = { workspace = true, features = ["fs", "pipe"] }
 
