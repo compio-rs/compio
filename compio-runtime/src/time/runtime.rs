@@ -1,6 +1,5 @@
 use std::{
     collections::BTreeMap,
-    mem,
     task::{Context, Poll, Waker},
     time::{Duration, Instant},
 };
@@ -88,13 +87,12 @@ impl TimerRuntime {
         }
 
         let now = Instant::now();
-
-        let pending = self.wheel.split_off(&TimerKey {
+        let due = ..=TimerKey {
             deadline: now,
             generation: u64::MAX,
-        });
+        };
 
-        let expired = mem::replace(&mut self.wheel, pending);
+        let expired = self.wheel.extract_if(due, |_, _| true);
         for (_, w) in expired {
             if let Some(w) = w {
                 w.wake();
