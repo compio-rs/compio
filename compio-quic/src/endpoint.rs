@@ -60,6 +60,11 @@ pub struct EndpointStats {
 
 impl EndpointState {
     fn handle_data(&mut self, meta: RecvMeta, buf: &[u8], respond_fn: impl Fn(Vec<u8>, Transmit)) {
+        // Empty UDP datagrams are not valid QUIC packets. Calling
+        // `chunks(0)` would panic with "chunk size must be non-zero".
+        if meta.len == 0 {
+            return;
+        }
         let now = Instant::now();
         for data in buf[..meta.len]
             .chunks(meta.stride.min(meta.len))
