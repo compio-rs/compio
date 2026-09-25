@@ -60,6 +60,11 @@ pub struct EndpointStats {
 
 impl EndpointState {
     fn handle_data(&mut self, meta: RecvMeta, buf: &[u8], respond_fn: impl Fn(Vec<u8>, Transmit)) {
+        // `chunks(0)` panics ("chunk size must be non-zero") when an empty UDP
+        // datagram arrives (meta.len == 0). Skip — nothing to handle (#1069).
+        if meta.len == 0 {
+            return;
+        }
         let now = Instant::now();
         for data in buf[..meta.len]
             .chunks(meta.stride.min(meta.len))
