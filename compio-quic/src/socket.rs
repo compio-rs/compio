@@ -176,12 +176,14 @@ impl Socket {
         }
 
         // disable fragmentation
+        // `may_fragment` is true when we could NOT set a don't-fragment / PMTUD option
+        // (matches quinn-udp). `set_socket_option!` returns true on success, so invert.
         #[allow(unused_mut)]
         let mut may_fragment = false;
         if is_ipv4 {
             #[cfg(linux_all)]
             {
-                may_fragment |= set_socket_option!(
+                may_fragment |= !set_socket_option!(
                     socket,
                     libc::IPPROTO_IP,
                     libc::IP_MTU_DISCOVER,
@@ -190,18 +192,18 @@ impl Socket {
             }
             #[cfg(any(aix, freebsd, apple))]
             {
-                may_fragment |= set_socket_option!(socket, libc::IPPROTO_IP, libc::IP_DONTFRAG, &1);
+                may_fragment |= !set_socket_option!(socket, libc::IPPROTO_IP, libc::IP_DONTFRAG, &1);
             }
             #[cfg(windows)]
             {
                 may_fragment |=
-                    set_socket_option!(socket, WinSock::IPPROTO_IP, WinSock::IP_DONTFRAGMENT, &1);
+                    !set_socket_option!(socket, WinSock::IPPROTO_IP, WinSock::IP_DONTFRAGMENT, &1);
             }
         }
         if is_ipv6 {
             #[cfg(linux_all)]
             {
-                may_fragment |= set_socket_option!(
+                may_fragment |= !set_socket_option!(
                     socket,
                     libc::IPPROTO_IPV6,
                     libc::IPV6_MTU_DISCOVER,
@@ -211,12 +213,12 @@ impl Socket {
             #[cfg(unix)]
             {
                 may_fragment |=
-                    set_socket_option!(socket, libc::IPPROTO_IPV6, libc::IPV6_DONTFRAG, &1);
+                    !set_socket_option!(socket, libc::IPPROTO_IPV6, libc::IPV6_DONTFRAG, &1);
             }
             #[cfg(windows)]
             {
                 may_fragment |=
-                    set_socket_option!(socket, WinSock::IPPROTO_IPV6, WinSock::IPV6_DONTFRAG, &1);
+                    !set_socket_option!(socket, WinSock::IPPROTO_IPV6, WinSock::IPV6_DONTFRAG, &1);
             }
         }
 
