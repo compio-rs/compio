@@ -102,16 +102,21 @@ fn error_is_unsupported(e: &io::Error) -> bool {
 
 macro_rules! set_socket_option {
     ($socket:expr, $level:expr, $name:expr, $value:expr $(,)?) => {
-        match unsafe { $socket.set_socket_option($level, $name, $value) } {
+        check_socket_option!(stringify!($name), unsafe {
+            $socket.set_socket_option($level, $name, $value)
+        })
+    };
+}
+
+/// Evaluates to `true` if the option was set, `false` if it is unsupported,
+/// and returns any other error.
+macro_rules! check_socket_option {
+    ($name:expr, $res:expr $(,)?) => {
+        match $res.map_err(io::Error::from) {
             Ok(()) => true,
             Err(e) if error_is_unsupported(&e) => false,
             Err(e) => {
-                compio_log::warn!(
-                    level = stringify!($level),
-                    name = stringify!($name),
-                    "failed to set socket option: {}",
-                    e
-                );
+                compio_log::warn!(name = $name, "failed to set socket option: {}", e);
                 return Err(e);
             }
         }
@@ -132,28 +137,28 @@ pub(crate) struct Socket {
 impl Socket {
     pub fn new(socket: UdpSocket) -> io::Result<Self> {
         let is_ipv6 = socket.local_addr()?.is_ipv6();
-        #[cfg(unix)]
-        let only_v6 = unsafe {
-            is_ipv6
-                && socket.get_socket_option::<libc::c_int>(libc::IPPROTO_IPV6, libc::IPV6_V6ONLY)?
-                    != 0
-        };
-        #[cfg(windows)]
-        let only_v6 = unsafe {
-            is_ipv6
-                && socket.get_socket_option::<u8>(WinSock::IPPROTO_IPV6, WinSock::IPV6_V6ONLY)? != 0
-        };
+        let only_v6 = is_ipv6 && socket2::SockRef::from(&socket).only_v6()?;
         let is_ipv4 = socket.local_addr()?.is_ipv4() || !only_v6;
 
         // ECN
         if is_ipv4 {
-            #[cfg(all(unix, not(any(non_freebsd, solarish))))]
+            #[cfg(any(linux_all, freebsd, apple))]
+            check_socket_option!(
+                "IP_RECVTOS",
+                rustix::net::sockopt::set_ip_recvtos(&socket, true)
+            );
+            #[cfg(all(unix, not(any(linux_all, bsd, solarish, apple))))]
             set_socket_option!(socket, libc::IPPROTO_IP, libc::IP_RECVTOS, &1);
             #[cfg(windows)]
             set_socket_option!(socket, WinSock::IPPROTO_IP, WinSock::IP_RECVECN, &1);
         }
         if is_ipv6 {
-            #[cfg(unix)]
+            #[cfg(any(linux_all, bsd))]
+            check_socket_option!(
+                "IPV6_RECVTCLASS",
+                rustix::net::sockopt::set_ipv6_recvtclass(&socket, true)
+            );
+            #[cfg(all(unix, not(any(linux_all, bsd))))]
             set_socket_option!(socket, libc::IPPROTO_IPV6, libc::IPV6_RECVTCLASS, &1);
             #[cfg(windows)]
             set_socket_option!(socket, WinSock::IPPROTO_IPV6, WinSock::IPV6_RECVECN, &1);
@@ -181,11 +186,10 @@ impl Socket {
         if is_ipv4 {
             #[cfg(linux_all)]
             {
-                may_fragment |= set_socket_option!(
-                    socket,
-                    libc::IPPROTO_IP,
-                    libc::IP_MTU_DISCOVER,
-                    &libc::IP_PMTUDISC_PROBE,
+                use rustix::net::sockopt::{Ipv4PathMtuDiscovery, set_ip_mtu_discover};
+                may_fragment |= check_socket_option!(
+                    "IP_MTU_DISCOVER",
+                    set_ip_mtu_discover(&socket, Ipv4PathMtuDiscovery::PROBE),
                 );
             }
             #[cfg(any(aix, freebsd, apple))]
@@ -201,11 +205,10 @@ impl Socket {
         if is_ipv6 {
             #[cfg(linux_all)]
             {
-                may_fragment |= set_socket_option!(
-                    socket,
-                    libc::IPPROTO_IPV6,
-                    libc::IPV6_MTU_DISCOVER,
-                    &libc::IPV6_PMTUDISC_PROBE,
+                use rustix::net::sockopt::{Ipv6PathMtuDiscovery, set_ipv6_mtu_discover};
+                may_fragment |= check_socket_option!(
+                    "IPV6_MTU_DISCOVER",
+                    set_ipv6_mtu_discover(&socket, Ipv6PathMtuDiscovery::PROBE),
                 );
             }
             #[cfg(unix)]
