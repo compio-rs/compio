@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.5.0-beta.1 - 2026-09-27
+
+### Added
+
+- *(runtime,tls,ws)* [**breaking**] use PollFd in TLS ([#1012](https://github.com/compio-rs/compio/pull/1012))
+
+### Other
+
+- *(fmt)* apply new nightly rustfmt ([#1023](https://github.com/compio-rs/compio/pull/1023))
+- *(deps)* update tungstenite requirement ([#975](https://github.com/compio-rs/compio/pull/975))
+
 ## 0.4.0 - 2026-05-27
 
 ### Added

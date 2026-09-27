@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.2.0-beta.1 - 2026-09-27
+
+### Added
+
+- *(macros)* install the console subscriber before `block_on` ([#1020](https://github.com/compio-rs/compio/pull/1020))
+- name the tasks the crates spawn ([#1004](https://github.com/compio-rs/compio/pull/1004))
+- *(executor)* instrument tasks for tokio-console ([#987](https://github.com/compio-rs/compio/pull/987))
+
+### Changed
+
+- *(executor,runtime)* [**breaking**] remove deprecated sync_queue_size ([#1048](https://github.com/compio-rs/compio/pull/1048))
+
+### Fixed
+
+- *(executor)* prevent Waker from blocking ([#1044](https://github.com/compio-rs/compio/pull/1044)) ([#1045](https://github.com/compio-rs/compio/pull/1045))
+- *(runtime,executor)* re-export JoinError ([#1005](https://github.com/compio-rs/compio/pull/1005))
+
+### Other
+
+- *(fmt)* apply new nightly rustfmt ([#1023](https://github.com/compio-rs/compio/pull/1023))
+- format the cfg_select! bodies ([#990](https://github.com/compio-rs/compio/pull/990))
+- *(executor)* skip empty sync-queue drain with a pending counter ([#976](https://github.com/compio-rs/compio/pull/976))
+
 ## 0.1.3 - 2026-07-06
 
 ### Added

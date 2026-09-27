@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.11.0-beta.1 - 2026-09-27
+
+### Added
+
+- *(runtime,tls,ws)* [**breaking**] use PollFd in TLS ([#1012](https://github.com/compio-rs/compio/pull/1012))
+- *(buf)* make `IoBuf`, `SetLen`, and `IoBufMut` dyn-compatible ([#969](https://github.com/compio-rs/compio/pull/969))
+
+### Changed
+
+- cleanup dependencies ([#1066](https://github.com/compio-rs/compio/pull/1066))
+
 ## 0.10.0 - 2026-05-27
 
 ### Other

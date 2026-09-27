@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.3.0-beta.1 - 2026-09-27
+
+### Added
+
+- *(executor)* instrument tasks for tokio-console ([#987](https://github.com/compio-rs/compio/pull/987))
+
+### Fixed
+
+- *(log)* no span when logging is disabled ([#1047](https://github.com/compio-rs/compio/pull/1047))
+
 ## 0.2.0 - 2026-05-27
 
 ### Added

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.13.0-beta.1 - 2026-09-27
+
+### Added
+
+- *(driver,fs)* add async xattr reads  ([#1041](https://github.com/compio-rs/compio/pull/1041))
+- name the tasks the crates spawn ([#1004](https://github.com/compio-rs/compio/pull/1004))
+- *(buf)* make `IoBuf`, `SetLen`, and `IoBufMut` dyn-compatible ([#969](https://github.com/compio-rs/compio/pull/969))
+
+### Fixed
+
+- semicolon_in_expressions_from_macros ([#977](https://github.com/compio-rs/compio/pull/977))
+- *(compio-fs)* populate ctime correctly ([#968](https://github.com/compio-rs/compio/pull/968))
+
+### Other
+
+- *(fs)* make the File example code compile ([#1054](https://github.com/compio-rs/compio/pull/1054))
+- *(fmt)* apply new nightly rustfmt ([#1023](https://github.com/compio-rs/compio/pull/1023))
+- bump cfg_aliases ([#980](https://github.com/compio-rs/compio/pull/980))
+
 ## 0.12.0 - 2026-05-27
 
 ### Changed
