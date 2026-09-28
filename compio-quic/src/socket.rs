@@ -176,8 +176,9 @@ impl Socket {
         }
 
         // disable fragmentation
-        // `may_fragment` is true when we could NOT set a don't-fragment / PMTUD option
-        // (matches quinn-udp). `set_socket_option!` returns true on success, so invert.
+        // `may_fragment` is true when we could NOT set a don't-fragment / PMTUD
+        // option (matches quinn-udp). `set_socket_option!` returns true
+        // on success, so invert.
         #[allow(unused_mut)]
         let mut may_fragment = false;
         if is_ipv4 {
@@ -192,7 +193,8 @@ impl Socket {
             }
             #[cfg(any(aix, freebsd, apple))]
             {
-                may_fragment |= !set_socket_option!(socket, libc::IPPROTO_IP, libc::IP_DONTFRAG, &1);
+                may_fragment |=
+                    !set_socket_option!(socket, libc::IPPROTO_IP, libc::IP_DONTFRAG, &1);
             }
             #[cfg(windows)]
             {
