@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.13.0-beta.1 - 2026-09-27
+
+### Added
+
+- *(rt)* multi stream submission factory ([#1016](https://github.com/compio-rs/compio/pull/1016))
+- *(runtime,tls,ws)* [**breaking**] use PollFd in TLS ([#1012](https://github.com/compio-rs/compio/pull/1012))
+- *(actor)* init ([#1000](https://github.com/compio-rs/compio/pull/1000))
+- *(runtime)* forward the console instrumentation ([#1001](https://github.com/compio-rs/compio/pull/1001))
+- *(runtime)* [**breaking**] complete AsyncWrite for PollFd ([#993](https://github.com/compio-rs/compio/pull/993))
+- *(buf)* make `IoBuf`, `SetLen`, and `IoBufMut` dyn-compatible ([#969](https://github.com/compio-rs/compio/pull/969))
+
+### Changed
+
+- *(executor,runtime)* [**breaking**] remove deprecated sync_queue_size ([#1048](https://github.com/compio-rs/compio/pull/1048))
+- *(runtime)* timer ([#995](https://github.com/compio-rs/compio/pull/995))
+
+### Fixed
+
+- *(executor)* prevent Waker from blocking ([#1044](https://github.com/compio-rs/compio/pull/1044)) ([#1045](https://github.com/compio-rs/compio/pull/1045))
+- *(runtime)* invalid param for PollFd on Windows ([#999](https://github.com/compio-rs/compio/pull/999))
+- *(runtime,executor)* re-export JoinError ([#1005](https://github.com/compio-rs/compio/pull/1005))
+- *(runtime)* eager timers, add `Sleep`, `Timeout` ([#991](https://github.com/compio-rs/compio/pull/991))
+
+### Other
+
+- *(runtime)* drain due timers with extract_if instead of split_off ([#1072](https://github.com/compio-rs/compio/pull/1072))
+- *(fmt)* apply new nightly rustfmt ([#1023](https://github.com/compio-rs/compio/pull/1023))
+
 ## 0.12.3 - 2026-07-06
 
 ### Added

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.12.0-beta.1 - 2026-09-27
+
+### Added
+
+- *(dispatcher)* attribute and name its tasks ([#1002](https://github.com/compio-rs/compio/pull/1002))
+
+### Changed
+
+- cleanup dependencies ([#1066](https://github.com/compio-rs/compio/pull/1066))
+
+### Other
+
+- *(fmt)* apply new nightly rustfmt ([#1023](https://github.com/compio-rs/compio/pull/1023))
+
 ## 0.11.0 - 2026-05-27
 
 ### Other
