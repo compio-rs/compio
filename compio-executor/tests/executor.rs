@@ -257,3 +257,35 @@ fn test_join_result_resume_unwind() {
         assert_eq!(*msg, "resume_unwind panic");
     });
 }
+
+#[test]
+fn test_num_alive_tasks() {
+    setup_log();
+
+    let exe = Executor::new();
+    assert_eq!(exe.num_alive_tasks(), 0);
+
+    // A task is alive as soon as it is spawned, before it ever runs.
+    let finishes = exe.spawn(async {});
+    let pending = exe.spawn(std::future::pending::<()>());
+    let cancelled = exe.spawn(std::future::pending::<()>());
+    assert_eq!(exe.num_alive_tasks(), 3);
+
+    // The finished task is gone, the ones waiting to be woken still count.
+    exe.tick();
+    assert!(finishes.is_finished());
+    assert_eq!(exe.num_alive_tasks(), 2);
+
+    // Detaching does not change the count, the task keeps running.
+    pending.detach();
+    assert_eq!(exe.num_alive_tasks(), 2);
+
+    // Dropping the handle cancels the task; it is removed when the
+    // executor processes the cancellation.
+    drop(cancelled);
+    exe.tick();
+    assert_eq!(exe.num_alive_tasks(), 1);
+
+    exe.clear();
+    assert_eq!(exe.num_alive_tasks(), 0);
+}

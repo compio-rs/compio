@@ -110,6 +110,11 @@ impl TaskQueue {
         self.hot_head().is_some()
     }
 
+    /// Number of tasks in the queue, hot and cold.
+    pub fn len(&self) -> usize {
+        unsafe { self.with_inner(|inner| inner.map.len()) }
+    }
+
     pub fn take(&self, key: TaskId) -> Option<Task> {
         unsafe {
             self.with_inner(|inner| {
