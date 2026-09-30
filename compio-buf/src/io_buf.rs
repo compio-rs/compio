@@ -462,25 +462,14 @@ pub trait IoBufMutExt: IoBufMut {
     ///
     /// Notice that this may move the memory of the buffer, so it's UB to
     /// call this after the buffer is being pinned.
-    // FIXME: Change to `slice::write_copy_of_slice` when stabilized
     fn extend_from_slice(&mut self, src: &[u8]) -> Result<(), ReserveError> {
         let len = src.len();
         let init = (*self).buf_len();
         self.reserve(len)?;
-        let ptr = self.buf_mut_ptr().wrapping_add(init);
+        self.as_uninit()[init..init + len].write_copy_of_slice(src);
 
-        unsafe {
-            // SAFETY:
-            // - we have reserved enough capacity so the ptr and len stays in
-            //   one allocation
-            // - src is valid for len bytes
-            // - ptr is valid for len bytes
-            // - &mut self guarantees that src cannot overlap with dst
-            std::ptr::copy_nonoverlapping(src.as_ptr() as _, ptr, len);
-
-            // SAFETY: the bytes in range [init, init + len) are initialized now
-            self.advance_to(init + len);
-        }
+        // SAFETY: the bytes in range [init, init + len) are initialized now
+        unsafe { self.advance_to(init + len) };
 
         Ok(())
     }

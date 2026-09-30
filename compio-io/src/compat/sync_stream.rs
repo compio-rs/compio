@@ -76,9 +76,7 @@ impl SyncReadBuf {
         let available = self.fill_buf()?;
 
         let to_read = available.len().min(buf.len());
-        buf[..to_read].copy_from_slice(unsafe {
-            std::slice::from_raw_parts(available.as_ptr().cast(), to_read)
-        });
+        buf[..to_read].write_copy_of_slice(&available[..to_read]);
         self.consume(to_read);
 
         Ok(to_read)
