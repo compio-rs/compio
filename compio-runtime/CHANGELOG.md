@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0-beta.2](https://github.com/compio-rs/compio/compare/compio-runtime-v0.13.0-beta.1...compio-runtime-v0.13.0-beta.2) - 2026-09-30
+
+### Added
+
+- *(runtime)* add num_alive_tasks methods ([#1077](https://github.com/compio-rs/compio/pull/1077))
+
 ## 0.13.0-beta.1 - 2026-09-27
 
 ### Added
