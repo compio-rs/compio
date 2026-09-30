@@ -15,8 +15,11 @@
 )]
 
 use std::{
+    cell::RefCell,
+    collections::{HashMap, VecDeque},
     io,
     num::NonZero,
+    rc::Rc,
     task::{Poll, Waker},
     time::Duration,
 };
@@ -101,6 +104,10 @@ impl<K, R> PushEntry<K, R> {
 pub struct Proactor {
     driver: Driver,
     buffer_pool: BufferPoolState,
+    extra_pools: HashMap<u16, BufferPoolRoot>,
+    pending_extra_pool_releases: Rc<RefCell<VecDeque<u16>>>,
+    free_extra_bgids: VecDeque<u16>,
+    next_extra_bgid: u16,
 }
 
 enum BufferPoolState {
@@ -114,6 +121,8 @@ enum BufferPoolState {
 }
 
 impl BufferPoolState {
+    const DEFAULT_BUFFER_GROUP: u16 = 1;
+
     fn get(&mut self, driver: &mut Driver) -> io::Result<BufferPool> {
         loop {
             match self {
@@ -129,6 +138,8 @@ impl BufferPoolState {
                         *num_of_bufs,
                         *buffer_len,
                         *flags,
+                        Self::DEFAULT_BUFFER_GROUP,
+                        None,
                     )?);
                 }
                 BufferPoolState::Init(root) => return Ok(root.get_pool()),
@@ -139,11 +150,12 @@ impl BufferPoolState {
 
 impl Drop for Proactor {
     fn drop(&mut self) {
-        let BufferPoolState::Init(buffer_pool) = &mut self.buffer_pool else {
-            return;
-        };
-        debug_assert!(buffer_pool.is_unique()); // Just in case. Shouldn't happen
-        _ = unsafe { buffer_pool.release(&mut self.driver) };
+        if let BufferPoolState::Init(buffer_pool) = &mut self.buffer_pool {
+            _ = unsafe { buffer_pool.release(&mut self.driver) };
+        }
+        for (_, mut pool) in self.extra_pools.drain() {
+            _ = unsafe { pool.release(&mut self.driver) };
+        }
     }
 }
 
@@ -170,7 +182,43 @@ impl Proactor {
                 buffer_len: builder.buffer_pool_buffer_len,
                 flags: builder.buffer_pool_flag,
             },
+            extra_pools: HashMap::new(),
+            pending_extra_pool_releases: Rc::default(),
+            free_extra_bgids: VecDeque::new(),
+            next_extra_bgid: BufferPoolState::DEFAULT_BUFFER_GROUP + 1,
         })
+    }
+
+    fn alloc_extra_bgid(&mut self) -> io::Result<u16> {
+        if let Some(buffer_group) = self.free_extra_bgids.pop_front() {
+            return Ok(buffer_group);
+        }
+
+        let buffer_group = self.next_extra_bgid;
+        self.next_extra_bgid = buffer_group
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("no buffer group id available"))?;
+
+        Ok(buffer_group)
+    }
+
+    fn release_extra_bgid(&mut self, buffer_group: u16) {
+        self.free_extra_bgids.push_back(buffer_group);
+    }
+
+    fn release_unused_extra_pools(&mut self) -> io::Result<()> {
+        while let Some(buffer_group) = { self.pending_extra_pool_releases.borrow_mut().pop_front() }
+        {
+            let Some(mut root) = self.extra_pools.remove(&buffer_group) else {
+                continue;
+            };
+
+            unsafe { root.release(&mut self.driver)? };
+
+            self.release_extra_bgid(buffer_group)
+        }
+
+        Ok(())
     }
 
     /// Get a default [`Extra`] for underlying driver.
@@ -292,6 +340,7 @@ impl Proactor {
     /// You need to call [`Proactor::pop`] to get the pushed
     /// operations.
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+        self.release_unused_extra_pools()?;
         self.driver.poll(timeout)
     }
 
@@ -459,6 +508,45 @@ impl Proactor {
     /// and future access to the pool will be cheap and infallible.
     pub fn buffer_pool(&mut self) -> io::Result<BufferPool> {
         self.buffer_pool.get(&mut self.driver)
+    }
+
+    /// Create a new buffer pool independently.
+    ///
+    /// Unlike [`buffer_pool`](Self::buffer_pool) which lazily initializes a
+    /// single pool configured via [`ProactorBuilder`], this method allows
+    /// creating additional pools at runtime with custom parameters.
+    ///
+    /// The pool will be released when this `Proactor` is dropped.
+    pub fn create_buffer_pool<A: BufferAllocator>(
+        &mut self,
+        num_of_bufs: u16,
+        buffer_size: usize,
+        flags: u16,
+    ) -> io::Result<BufferPool> {
+        self.release_unused_extra_pools()?;
+        let alloc = BufferAlloc::new::<A>();
+        let buffer_group = self.alloc_extra_bgid()?;
+        let release_queue = Rc::downgrade(&self.pending_extra_pool_releases);
+        let root = match BufferPoolRoot::new(
+            &mut self.driver,
+            alloc,
+            num_of_bufs,
+            buffer_size,
+            flags,
+            buffer_group,
+            Some(release_queue),
+        ) {
+            Ok(root) => root,
+            Err(err) => {
+                self.release_extra_bgid(buffer_group);
+                return Err(err);
+            }
+        };
+
+        let pool = root.get_pool();
+        self.extra_pools.insert(buffer_group, root);
+
+        Ok(pool)
     }
 }
 

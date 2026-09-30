@@ -1,5 +1,6 @@
 use std::{
-    cell::UnsafeCell,
+    cell::{RefCell, UnsafeCell},
+    collections::VecDeque,
     fmt::Debug,
     io,
     mem::{self, MaybeUninit},
@@ -123,6 +124,15 @@ struct Inner {
 
     /// Buffer pointers
     bufs: Vec<Slot>,
+
+    /// Queue used by extra buffer pools to ask the proactor to release them.
+    release_queue: Option<ReleaseQueue>,
+}
+
+#[derive(Debug)]
+struct ReleaseQueue {
+    buffer_group: u16,
+    queue: Weak<RefCell<VecDeque<u16>>>,
 }
 
 impl BufferPoolRoot {
@@ -132,6 +142,8 @@ impl BufferPoolRoot {
         num_of_bufs: u16,
         buffer_size: usize,
         flags: u16,
+        buffer_group: u16,
+        release_queue: Option<Weak<RefCell<VecDeque<u16>>>>,
     ) -> io::Result<Self> {
         let size: u32 = buffer_size.try_into().map_err(|_| {
             io::Error::new(
@@ -142,7 +154,11 @@ impl BufferPoolRoot {
         let bufs = (0..num_of_bufs.next_power_of_two())
             .map(|_| Some((alloc.allocate)(size)))
             .collect::<Vec<_>>();
-        let ctrl = unsafe { BufControl::new(driver, &bufs, size, flags) }?;
+        let ctrl = unsafe { BufControl::new(driver, &bufs, size, flags, buffer_group) }?;
+        let release_queue = release_queue.map(|queue| ReleaseQueue {
+            buffer_group,
+            queue,
+        });
 
         Ok(Self {
             shared: Shared {
@@ -151,6 +167,7 @@ impl BufferPoolRoot {
                     ctrl,
                     size,
                     bufs,
+                    release_queue,
                 }
                 .into(),
             }
@@ -192,10 +209,6 @@ impl BufferPoolRoot {
         BufferPool {
             shared: Rc::downgrade(&self.shared),
         }
-    }
-
-    pub(crate) fn is_unique(&self) -> bool {
-        Rc::strong_count(&self.shared) == 1
     }
 }
 
@@ -365,6 +378,24 @@ impl Shared {
     fn len(&self) -> u32 {
         unsafe { self.with(|inner| inner.size) }
     }
+
+    fn queue_release_if_unused(self: &Rc<Self>) {
+        if Rc::weak_count(self) != 1 {
+            return;
+        }
+
+        unsafe {
+            self.with(|inner| {
+                let Some(release_queue) = &inner.release_queue else {
+                    return;
+                };
+
+                if let Some(queue) = release_queue.queue.upgrade() {
+                    queue.borrow_mut().push_back(release_queue.buffer_group);
+                }
+            })
+        }
+    }
 }
 
 impl BufferRef {
@@ -433,8 +464,17 @@ impl Drop for BufferRef {
         if let Some(shared) = self.shared.upgrade() {
             // If the buffer pool is alive, set the pointer back
             shared.reset(self.buffer_id, self.ptr);
+            shared.queue_release_if_unused();
         } else {
             unsafe { (self.alloc.deallocate)(self.ptr, self.full_cap) }
+        }
+    }
+}
+
+impl Drop for BufferPool {
+    fn drop(&mut self) {
+        if let Some(shared) = self.shared.upgrade() {
+            shared.queue_release_if_unused();
         }
     }
 }
