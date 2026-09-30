@@ -1,6 +1,6 @@
 [package]
 name = "compio-term"
-version = "0.1.0"
+version = "0.1.1"
 description = "Completion-based terminal support for Compio"
 readme = "README.md"
 edition = { workspace = true }
