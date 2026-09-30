@@ -80,7 +80,7 @@ webpki-roots = ["dep:webpki-roots"]
 qlog = ["quinn-proto/qlog"]
 h3 = ["dep:h3", "dep:h3-datagram"]
 ring = ["quinn-proto/rustls-ring"]
-windows-gro = []
+windows-gro = ["compio-net/windows-gro"]
 sync = []
 
 [[example]]

@@ -22,7 +22,7 @@ targets = [
 # Workspace dependencies
 compio-buf = { workspace = true }
 compio-driver = { workspace = true }
-compio-io = { workspace = true, features = ["ancillary"] }
+compio-io = { workspace = true, features = ["ancillary", "bytemuck"] }
 compio-runtime = { workspace = true }
 
 either = "1.9.0"
@@ -57,3 +57,5 @@ once_cell_try = []
 sanitize = []
 nightly = ["once_cell_try", "sanitize"]
 sync = []
+# `UdpSocket::set_gro`'s Windows implementation; unverified, not covered by CI
+windows-gro = []
