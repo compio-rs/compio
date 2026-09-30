@@ -128,6 +128,7 @@
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
 #![cfg_attr(feature = "read_buf", feature(read_buf, core_io_borrowed_buf))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![allow(stable_features)]
 
 use std::{future::Future, pin::Pin};
 
