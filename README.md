@@ -43,6 +43,10 @@ async fn main() {
 
 It's also possible to use the low-level driver (the proactor, without async executor) manually. See [`driver` example](./compio/examples/driver.rs).
 
+## Rust version
+
+Compio doesn't have a minimum supported Rust version (MSRV). It isn't on a stable release rhythm yet, so any release may start using features from the latest stable Rust, and you should expect to need a recent stable toolchain. We might set an MSRV once compio reaches 1.0.
+
 ## Observability
 
 The `console` feature makes the runtime emit the [`tracing`] spans and events that [`tokio-console`] consumes, so compio applications can be inspected with it:
