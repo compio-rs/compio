@@ -39,6 +39,7 @@ flume = { workspace = true, default-features = false, features = ["async"] }
 futures-util = { workspace = true }
 thiserror = { workspace = true }
 rustc-hash = "2.0.0"
+socket2 = { workspace = true }
 synchrony = { workspace = true }
 
 # Windows specific dependencies
