@@ -258,9 +258,18 @@ impl Runtime {
         self.executor.num_alive_tasks()
     }
 
-    /// Spawns a blocking task in a new thread, and wait for it.
+    /// Spawns a blocking task in the driver's thread pool, returning a handle
+    /// for it.
     ///
-    /// The task will not be cancelled even if the future is dropped.
+    /// This thread pool is limited, and is also used by the driver for
+    /// operations that don't have native asynchronous support. See
+    /// [`ProactorBuilder::thread_pool_limit`]. If all the threads are busy
+    /// when the task is submitted, the runtime thread blocks until one is
+    /// available.
+    ///
+    /// The task can be cancelled by dropping the returned [`JoinHandle`], but
+    /// the execution won't be interrupted if already started. In that case,
+    /// it runs to completion and the result is discarded.
     #[track_caller]
     pub fn spawn_blocking<T: Send + 'static>(
         &self,
@@ -269,8 +278,8 @@ impl Runtime {
         self.spawn_blocking_at(f, SpawnMeta::capture())
     }
 
-    /// Spawns a blocking task in a new thread, attributing it to `meta` instead
-    /// of to the caller.
+    /// Spawns a blocking task in the driver's thread pool, attributing it to
+    /// `meta` instead of to the caller. See [`spawn_blocking`] for details.
     ///
     /// See [`spawn_at`] for what `meta` is good for.
     ///
