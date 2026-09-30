@@ -240,6 +240,24 @@ impl Runtime {
         self.executor.spawn_at(future, meta)
     }
 
+    /// Returns the number of alive tasks in the runtime.
+    ///
+    /// This counts the tasks created by [`spawn`] and [`spawn_blocking`] that
+    /// have not finished yet, whether they are scheduled to run or waiting to
+    /// be woken. The future passed to [`block_on`] is not a task and is not
+    /// counted.
+    ///
+    /// A finished or cancelled task stops being counted once the runtime has
+    /// run it for the last time, which may be later than the moment its
+    /// [`JoinHandle`] reports it.
+    ///
+    /// [`spawn`]: Self::spawn
+    /// [`spawn_blocking`]: Self::spawn_blocking
+    /// [`block_on`]: Self::block_on
+    pub fn num_alive_tasks(&self) -> usize {
+        self.executor.num_alive_tasks()
+    }
+
     /// Spawns a blocking task in a new thread, and wait for it.
     ///
     /// The task will not be cancelled even if the future is dropped.

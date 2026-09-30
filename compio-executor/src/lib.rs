@@ -230,6 +230,17 @@ impl Executor {
         self.queue().hot_head().is_some()
     }
 
+    /// Returns the number of alive tasks in the executor.
+    ///
+    /// A task is alive from the moment it is spawned until the [`tick`] where
+    /// it completes or where its cancellation is processed. It does not
+    /// matter whether the task is scheduled to run or waiting to be woken.
+    ///
+    /// [`tick`]: Self::tick
+    pub fn num_alive_tasks(&self) -> usize {
+        self.queue().len()
+    }
+
     /// Clear the executor, drop all tasks.
     ///
     /// This should be called only in context of the runtime, if any future may
