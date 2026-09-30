@@ -225,10 +225,10 @@ impl Runtime {
     /// Spawns a new asynchronous task, attributing it to `meta` instead of to
     /// the caller.
     ///
-    /// This is what wrappers around [`spawn`] want, so that [`tokio-console`]
-    /// blames their own caller instead of themselves. [`SpawnMeta`] is only
-    /// interesting to it, and is a zero-sized no-op without the `console`
-    /// feature.
+    /// Wrappers around [`spawn`] can use `meta` to track the original
+    /// caller, so that [`tokio-console`] blames that caller instead of the
+    /// wrapper. [`SpawnMeta`] only matters to the console, and is a
+    /// zero-sized no-op without the `console` feature.
     ///
     /// [`spawn`]: Self::spawn
     /// [`tokio-console`]: crate::console
