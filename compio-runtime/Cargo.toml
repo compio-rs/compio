@@ -43,6 +43,9 @@ windows-sys = { workspace = true, features = [
 libc = { workspace = true }
 rustix = { workspace = true }
 
+[target.'cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))'.dependencies]
+rustix = { workspace = true, features = ["thread"] }
+
 [dev-dependencies]
 flume = { workspace = true, features = ["async"] }
 oneshot = { version = "0.2.1", features = ["async", "std"] }

@@ -31,118 +31,24 @@ pub fn bind_to_cpu_set(cpus: &HashSet<usize>) {
 // `taskset`, a cgroup/cpuset, or a job object), `bind_to_cpu_set` can only ever
 // bind to a subset of that mask — requested CPUs outside it are dropped by the
 // intersection.
-#[cfg(any(target_os = "linux", target_os = "android"))]
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
 fn available_cpus() -> Option<HashSet<usize>> {
-    use std::mem;
+    use rustix::thread::{CpuSet, sched_getaffinity};
 
-    // SAFETY: `cpu_set_t` is a plain bitset; `sched_getaffinity` fills it with
-    // the CPUs the current thread (pid 0) is allowed to run on.
-    let set = unsafe {
-        let mut set: libc::cpu_set_t = mem::zeroed();
-        if libc::sched_getaffinity(0, mem::size_of::<libc::cpu_set_t>(), &mut set) != 0 {
-            return None;
-        }
-        set
-    };
-
-    // SAFETY: `CPU_ISSET` only reads bits from the initialized `set`.
-    let cpu_set_size = {
-        #[cfg(target_os = "linux")]
-        {
-            libc::CPU_SETSIZE as usize
-        }
-        #[cfg(target_os = "android")]
-        {
-            libc::CPU_SETSIZE
-        }
-    };
-
-    Some(
-        (0..cpu_set_size)
-            .filter(|&i| unsafe { libc::CPU_ISSET(i, &set) })
-            .collect(),
-    )
+    let set = sched_getaffinity(None).ok()?;
+    Some((0..CpuSet::MAX_CPU).filter(|&i| set.is_set(i)).collect())
 }
 
-#[cfg(any(target_os = "linux", target_os = "android"))]
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
 fn set_affinity(cpus: impl Iterator<Item = usize>) {
-    use std::{io, mem};
+    use rustix::thread::{CpuSet, sched_setaffinity};
 
-    // SAFETY: `cpu_set_t` is a plain bitset, `CPU_SET` only flips bits in it,
-    // and `sched_setaffinity` is given a valid pointer with a matching size
-    // for the current thread (pid 0).
-    let res = unsafe {
-        let mut set: libc::cpu_set_t = mem::zeroed();
-        for cpu in cpus {
-            libc::CPU_SET(cpu, &mut set);
-        }
-        libc::sched_setaffinity(0, mem::size_of::<libc::cpu_set_t>(), &set)
-    };
-
-    if res != 0 {
-        warn!(
-            "cannot set CPU affinity for current thread: {}",
-            io::Error::last_os_error()
-        );
+    let mut set = CpuSet::new();
+    for cpu in cpus {
+        set.set(cpu);
     }
-}
-
-#[cfg(target_os = "freebsd")]
-fn available_cpus() -> Option<HashSet<usize>> {
-    use std::mem;
-
-    // SAFETY: `cpuset_t` is a plain bitset; `cpuset_getaffinity` fills it with
-    // the CPUs the current thread (`CPU_WHICH_TID` with id -1) is allowed
-    // to run on.
-    let set = unsafe {
-        let mut set: libc::cpuset_t = mem::zeroed();
-        let res = libc::cpuset_getaffinity(
-            libc::CPU_LEVEL_WHICH,
-            libc::CPU_WHICH_TID,
-            -1,
-            mem::size_of::<libc::cpuset_t>(),
-            &mut set,
-        );
-        if res != 0 {
-            return None;
-        }
-        set
-    };
-
-    // SAFETY: `CPU_ISSET` only reads bits from the initialized `set`.
-    Some(
-        (0..libc::CPU_SETSIZE as usize)
-            .filter(|&i| unsafe { libc::CPU_ISSET(i, &set) })
-            .collect(),
-    )
-}
-
-#[cfg(target_os = "freebsd")]
-fn set_affinity(cpus: impl Iterator<Item = usize>) {
-    use std::{io, mem};
-
-    // SAFETY: `cpuset_t` is a plain bitset, `CPU_SET` only flips bits in it,
-    // and `cpuset_setaffinity` is given a valid pointer with a matching
-    // size for the current thread (`CPU_WHICH_TID` with id -1).
-    let res = unsafe {
-        let mut set: libc::cpuset_t = mem::zeroed();
-        for cpu in cpus {
-            libc::CPU_SET(cpu, &mut set);
-        }
-        libc::cpuset_setaffinity(
-            libc::CPU_LEVEL_WHICH,
-            libc::CPU_WHICH_TID,
-            -1,
-            mem::size_of::<libc::cpuset_t>(),
-            &set,
-        )
-    };
-
-    if res != 0 {
-        warn!(
-            "cannot set CPU affinity for current thread: {}",
-            io::Error::last_os_error()
-        );
+    if let Err(e) = sched_setaffinity(None, &set) {
+        warn!("cannot set CPU affinity for current thread: {e}");
     }
 }
 
