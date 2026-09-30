@@ -1,4 +1,5 @@
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
+#![allow(stable_features)]
 #![allow(unused_imports)]
 use std::{net::Ipv4Addr, time::Duration};
 
