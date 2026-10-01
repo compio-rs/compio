@@ -54,6 +54,7 @@ jobs:
         run: |
           rustup component add miri rust-src
           cargo miri setup --target ${{ matrix.target }}
+          cargo update -p rustix --precise 1.1.4
       - uses: taiki-e/install-action@nextest
       - name: Test miri on ${{ matrix.target }}
         shell: bash
