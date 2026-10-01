@@ -42,6 +42,7 @@ unsafe fn check_cmsg(buf: &[u8]) {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "https://github.com/compio-rs/compio/issues/1074")]
 fn test_cmsg() {
     let mut buf = AncillaryBuf::<128>::new();
     let builder = buf.builder();
@@ -55,6 +56,7 @@ fn test_cmsg() {
 // Test a custom DST buffer. It checks the compatibility for the previous
 // `CMsgBuilder`.
 #[test]
+#[cfg_attr(miri, ignore = "https://github.com/compio-rs/compio/issues/1074")]
 fn test_custom_buffer_cmsg() {
     struct MaybeUninitBuffer<T: ?Sized> {
         len: usize,
