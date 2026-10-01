@@ -23,7 +23,7 @@ targets = [
 compio-buf = { workspace = true }
 compio-driver = { workspace = true }
 compio-io = { workspace = true, features = ["ancillary"] }
-compio-runtime = { workspace = true }
+compio-runtime = { workspace = true, features = ["async-fd"] }
 
 either = "1.9.0"
 futures-util = { workspace = true }

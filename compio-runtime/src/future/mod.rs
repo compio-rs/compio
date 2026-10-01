@@ -55,8 +55,10 @@ fn submit_raw<T: OpCode + 'static>(
 mod combinator;
 #[allow(clippy::module_inception)]
 mod future;
+mod linked;
 mod stream;
 
 pub use combinator::*;
 pub use future::*;
+pub use linked::*;
 pub use stream::*;
