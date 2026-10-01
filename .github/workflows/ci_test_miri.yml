@@ -1,0 +1,69 @@
+name: TestMiri
+
+on:
+  merge_group:
+    types: [checks_requested]
+  push:
+    branches:
+      - master
+    paths:
+      - 'compio-buf/**/*.rs'
+      - 'compio-buf/Cargo.toml'
+      - 'compio-io/**/*.rs'
+      - 'compio-io/Cargo.toml'
+      - 'Cargo.toml'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/ci_test_miri.yml'
+  pull_request:
+    branches:
+      - master
+    paths:
+      - 'compio-buf/**/*.rs'
+      - 'compio-buf/Cargo.toml'
+      - 'compio-io/**/*.rs'
+      - 'compio-io/Cargo.toml'
+      - 'Cargo.toml'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/ci_test_miri.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test_miri:
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - 'x86_64-unknown-linux-gnu'
+          - 'i686-unknown-linux-gnu'
+          - 's390x-unknown-linux-gnu'
+          - 'x86_64-pc-windows-msvc'
+          - 'aarch64-apple-darwin'
+    runs-on: ubuntu-24.04
+    env:
+      MIRIFLAGS: -Zmiri-strict-provenance
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup miri and rust-src
+        run: |
+          rustup component add miri rust-src
+          cargo miri setup --target ${{ matrix.target }}
+          cargo update -p rustix --precise 1.1.4
+      - uses: taiki-e/install-action@nextest
+      - name: Test miri on ${{ matrix.target }}
+        shell: bash
+        run: |
+          set -ex
+
+          cargo miri nextest run \
+            --profile ci \
+            --target ${{ matrix.target }} \
+            --all-features \
+            -p compio-buf \
+            -p compio-io
