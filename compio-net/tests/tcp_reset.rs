@@ -1,40 +1,32 @@
 //! A peer that resets the connection (RST) must be reported as an error, not as
 //! a clean EOF (`Ok(0)`).
 
-use std::{
-    io::{ErrorKind, Write},
-    net::{SocketAddr, TcpStream as StdTcpStream},
-    time::Duration,
-};
+use std::{io::ErrorKind, net::SocketAddr, time::Duration};
 
-use compio_io::{AsyncRead, AsyncReadExt};
-use compio_net::TcpListener;
-use socket2::SockRef;
+use compio_io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use compio_net::{TcpListener, TcpStream};
+use compio_runtime::{ResumeUnwind, spawn};
 
 const MSG: &[u8] = b"compio";
 
 /// Connect to `addr`, send [`MSG`], then abort the connection with an RST.
-fn reset_peer(addr: SocketAddr, delay: Duration) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(move || {
-        let mut stream = StdTcpStream::connect(addr).unwrap();
-        stream.write_all(MSG).unwrap();
-        stream.flush().unwrap();
-        // Give the peer time to receive `MSG` and start waiting for more, so
-        // that the RST completes a pending read instead of an idle socket.
-        std::thread::sleep(delay);
-        // A zero linger makes `closesocket` send an RST instead of a FIN.
-        SockRef::from(&stream)
-            .set_linger(Some(Duration::ZERO))
-            .unwrap();
-        drop(stream);
-    })
+async fn reset_peer(addr: SocketAddr) {
+    let mut stream = TcpStream::connect(addr).await.unwrap();
+    stream.write_all(MSG).await.unwrap();
+    stream.flush().await.unwrap();
+    // Give the peer time to receive `MSG` and start waiting for more, so that
+    // the RST completes a pending read instead of an idle socket.
+    compio_runtime::time::sleep(Duration::from_millis(200)).await;
+    // A zero linger makes `closesocket` send an RST instead of a FIN.
+    stream.set_zero_linger().unwrap();
+    stream.close().await.unwrap();
 }
 
 #[compio_macros::test]
 async fn tcp_read_after_reset() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let peer = reset_peer(addr, Duration::from_millis(200));
+    let peer = spawn(reset_peer(addr));
 
     let mut stream = listener.accept().await.unwrap().0;
 
@@ -48,5 +40,5 @@ async fn tcp_read_after_reset() {
     let err = res.expect_err("a reset connection must not be reported as EOF");
     assert_eq!(err.kind(), ErrorKind::ConnectionReset, "{err:?}");
 
-    peer.join().unwrap();
+    peer.await.resume_unwind().expect("shouldn't be cancelled");
 }
