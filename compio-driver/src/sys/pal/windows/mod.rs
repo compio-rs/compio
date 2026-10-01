@@ -8,7 +8,9 @@ use windows_sys::{
             ERROR_MORE_DATA, ERROR_NETNAME_DELETED, ERROR_NO_DATA, ERROR_NOT_FOUND,
             ERROR_PIPE_CONNECTED, ERROR_PIPE_NOT_CONNECTED, GetLastError,
         },
-        Networking::WinSock::{SIO_GET_EXTENSION_FUNCTION_POINTER, WSAIoctl},
+        Networking::WinSock::{
+            SIO_GET_EXTENSION_FUNCTION_POINTER, WSAECONNRESET, WSAGetLastError, WSAIoctl,
+        },
         System::IO::{CancelIoEx, OVERLAPPED},
     },
     core::GUID,
@@ -53,28 +55,44 @@ impl Overlapped {
 unsafe impl Send for Overlapped {}
 unsafe impl Sync for Overlapped {}
 
+/// Translate a Win32 error code to the error code reported by the equivalent
+/// Winsock call.
 #[inline]
-pub fn winapi_result(transferred: u32) -> Poll<io::Result<usize>> {
-    let error = unsafe { GetLastError() };
+fn win32_to_wsa(error: u32) -> u32 {
+    match error {
+        ERROR_NETNAME_DELETED => WSAECONNRESET as _,
+        _ => error,
+    }
+}
+
+#[inline]
+fn winapi_poll_result(transferred: u32, error: u32) -> Poll<io::Result<usize>> {
     assert_ne!(error, 0);
     match error {
         ERROR_IO_PENDING => Poll::Pending,
         ERROR_IO_INCOMPLETE
-        | ERROR_NETNAME_DELETED
         | ERROR_HANDLE_EOF
         | ERROR_BROKEN_PIPE
         | ERROR_PIPE_CONNECTED
         | ERROR_PIPE_NOT_CONNECTED
         | ERROR_NO_DATA
         | ERROR_MORE_DATA => Poll::Ready(Ok(transferred as _)),
-        _ => Poll::Ready(Err(io::Error::from_raw_os_error(error as _))),
+        _ => Poll::Ready(Err(io::Error::from_raw_os_error(win32_to_wsa(error) as _))),
+    }
+}
+
+#[inline]
+pub fn winapi_result(transferred: u32, error: u32) -> io::Result<usize> {
+    match winapi_poll_result(transferred, error) {
+        Poll::Ready(res) => res,
+        Poll::Pending => Err(io::Error::from_raw_os_error(ERROR_IO_PENDING as _)),
     }
 }
 
 #[inline]
 pub fn win32_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     if res == 0 {
-        winapi_result(transferred)
+        winapi_poll_result(transferred, unsafe { GetLastError() })
     } else {
         Poll::Ready(Ok(transferred as _))
     }
@@ -83,7 +101,7 @@ pub fn win32_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
 #[inline]
 pub fn winsock_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     if res != 0 {
-        winapi_result(transferred)
+        winapi_poll_result(transferred, unsafe { WSAGetLastError() as _ })
     } else {
         Poll::Ready(Ok(transferred as _))
     }
