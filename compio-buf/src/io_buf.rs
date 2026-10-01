@@ -986,6 +986,7 @@ mod test {
 
     #[test]
     #[cfg(feature = "memmap2")]
+    #[cfg_attr(miri, ignore = "Miri does not support mmap")]
     fn tests_memmap2() {
         use std::{
             fs::{OpenOptions, remove_file},
