@@ -44,8 +44,9 @@ use io_uring::{
 use slotmap::{DefaultKey, SlotMap};
 
 use crate::{
-    AsyncifyPool, DriverType, Entry, ProactorBuilder,
+    AsyncifyPool, DriverType, Entry, Link, ProactorBuilder,
     key::{BorrowedKey, ErasedKey, WeakKey},
+    linked::LINKED_BATCH_INLINE,
     panic::catch_unwind_io,
 };
 
@@ -471,16 +472,16 @@ impl Driver {
 
     /// Validate and publish an entire linked group without splitting it across
     /// kernel submissions, including when older operations fill the SQ.
-    pub(crate) fn push_linked<const N: usize>(
+    pub(crate) fn push_linked(
         &mut self,
-        keys: [ErasedKey; N],
-        hardlinks: [bool; N],
+        keys: &mut SmallVec<[(ErasedKey, Link); LINKED_BATCH_INLINE]>,
     ) -> io::Result<()> {
-        if N > self.inner.submission().capacity() {
+        let count = keys.len();
+        if count > self.inner.submission().capacity() {
             return Err(unsupported_linked());
         }
-        let mut entries: SmallVec<[SEntry; LINKED_BATCH_INLINE]> = SmallVec::with_capacity(N);
-        for (i, key) in keys.iter().enumerate() {
+        let mut entries: SmallVec<[SEntry; LINKED_BATCH_INLINE]> = SmallVec::with_capacity(count);
+        for (i, (key, link)) in keys.iter().enumerate() {
             let mut entry: SEntry = match key.borrow().create_entry::<false>() {
                 #[allow(clippy::useless_conversion)]
                 OpEntry::Submission(entry) => entry.into(),
@@ -491,15 +492,15 @@ impl Driver {
             if !is_op_supported(entry.get_opcode() as _) {
                 return Err(unsupported_linked());
             }
-            if i + 1 < N {
-                entry = entry.flags(link_flags(hardlinks[i]));
+            if i + 1 < count {
+                entry = entry.flags(link_flags(*link));
             }
             entries.push(entry.user_data(key.as_raw() as _));
         }
 
         while {
             let queue = self.inner.submission();
-            queue.capacity() - queue.len() < N
+            queue.capacity() - queue.len() < count
         } {
             match self.submit_auto(Some(Duration::ZERO), false) {
                 Ok(()) => {}
@@ -518,17 +519,18 @@ impl Driver {
         // Do all allocation and bookkeeping before publishing, since SQPOLL
         // can start executing immediately. Only the kernel can free SQ slots
         // while we hold the driver, so the capacity check remains valid.
-        self.in_flight.reserve(N);
-        let slots = std::array::from_fn::<_, N, _>(|i| self.in_flight.insert(keys[i].as_raw()));
-        for (i, key) in keys.iter().enumerate() {
+        self.in_flight.reserve(count);
+        let mut previous = None;
+        for (key, _) in keys.iter() {
+            let slot = self.in_flight.insert(key.as_raw());
             let mut key = key.borrow();
             let extra = key.extra_mut().as_iour_mut();
-            extra.set_in_flight(slots[i]);
-            extra.linked = Some(if i == 0 {
-                Linked::Head
-            } else {
-                Linked::After(slots[i - 1])
+            extra.set_in_flight(slot);
+            extra.linked = Some(match previous {
+                None => Linked::Head,
+                Some(previous) => Linked::After(previous),
             });
+            previous = Some(slot);
         }
         // SAFETY: the keys retain every operation's parameters. The queue
         // publishes its tail only after the entire group has been written.
@@ -536,7 +538,7 @@ impl Driver {
             .expect("reserved space for the whole linked group");
         // No allocation or fallible work after publication. The driver alone
         // reclaims these references when processing CQEs or shutting down.
-        for key in keys {
+        for (key, _) in keys.drain(..) {
             key.into_raw();
         }
         Ok(())
@@ -729,11 +731,10 @@ fn unsupported_linked() -> io::Error {
     )
 }
 
-fn link_flags(hardlink: bool) -> io_uring::squeue::Flags {
-    if hardlink {
-        io_uring::squeue::Flags::IO_HARDLINK
-    } else {
-        io_uring::squeue::Flags::IO_LINK
+fn link_flags(link: Link) -> io_uring::squeue::Flags {
+    match link {
+        Link::Hard => io_uring::squeue::Flags::IO_HARDLINK,
+        Link::Soft => io_uring::squeue::Flags::IO_LINK,
     }
 }
 
@@ -742,7 +743,3 @@ fn timespec(duration: std::time::Duration) -> Timespec {
         .sec(duration.as_secs())
         .nsec(duration.subsec_nanos())
 }
-
-/// Inline capacity for the linked-batch staging buffers, sized for eight
-/// fill/drain splice pairs (16 members) without heap allocation.
-const LINKED_BATCH_INLINE: usize = 16;

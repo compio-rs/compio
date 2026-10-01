@@ -46,7 +46,7 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner};
 use compio_driver::{AsRawFd, DriverType, OpCode, Proactor, ProactorBuilder, RawFd, op::Asyncify};
-pub use compio_driver::{BufferPool, ErrorExt};
+pub use compio_driver::{BufferPool, ErrorExt, HBranch, HLeaf, HNil, Link, hlist, hlist_pat};
 use compio_executor::{Executor, ExecutorConfig};
 pub use compio_executor::{JoinError, JoinHandle, ResumeUnwind, SpawnMeta, console};
 use compio_log::{debug, instrument};
@@ -299,22 +299,30 @@ impl Runtime {
         SubmitMulti::new(self.driver.clone(), op)
     }
 
-    /// Submit single-shot operations as one linked io_uring chain.
+    /// Submit a heterogeneous list of single-shot operations as one linked
+    /// io_uring chain.
     ///
-    /// All operations must have the same type. For each member except the
-    /// last, `hardlinks[i]` selects a hard link (`true`) or soft link (`false`)
-    /// to the next operation. Soft links cancel the remaining chain when an
-    /// operation fails or completes short; hard links allow it to continue.
-    /// The last member is unlinked and `hardlinks[N - 1]` is ignored.
+    /// Each member of `ops` is an `(operation, link)` pair. For each member
+    /// except the last, the [`Link`] selects how that operation links to the
+    /// next one: [`Link::Soft`] cancels the remaining chain if the operation
+    /// fails or completes short, while [`Link::Hard`] lets the chain continue.
+    /// The last member is unlinked and its link is ignored.
+    ///
+    /// Members may have different operation types, and both the length and
+    /// every member type are part of the list's type: the shape is checked at
+    /// compile time, with no downcasts, boxed operations or runtime type
+    /// checks. An empty [`HNil`] list is accepted and completes with [`HNil`].
     ///
     /// On the first poll, the driver validates the entire chain and publishes
     /// it together, without splitting it across submissions. This is not a
     /// transaction: completed I/O is not rolled back if a later member fails.
     ///
-    /// The future returns all results and operations in submission order,
-    /// only after every member completes. Errors from cancelled members are
-    /// included. Dropping the future requests cancellation of all pending
-    /// members, retaining their resources until the kernel finishes with them.
+    /// The future returns all results and operations in submission order, as
+    /// a balanced tree of [`HBranch`] nodes and [`HLeaf<BufResult>`](HLeaf)
+    /// members, only after every member completes.
+    /// Errors from cancelled members are included. Dropping the future
+    /// requests cancellation of all pending members, retaining their resources
+    /// until the kernel finishes with them.
     ///
     /// # Supported operations
     ///
@@ -325,14 +333,45 @@ impl Runtime {
     /// On a non-io_uring backend, or if the chain is unsupported, every result
     /// is [`io::ErrorKind::Unsupported`] and every operation is returned
     /// without being submitted. Other submission errors are likewise returned
-    /// for every member. There is no blocking fallback. An empty chain
-    /// completes with an empty array.
-    pub fn submit_linked<T: OpCode + 'static, const N: usize>(
-        &self,
-        ops: [T; N],
-        hardlinks: [bool; N],
-    ) -> SubmitLinked<T, N> {
-        SubmitLinked::new(self.driver.clone(), ops, hardlinks)
+    /// for every member. There is no blocking fallback.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[cfg(unix)] {
+    /// use std::{io, os::unix::net::UnixStream};
+    ///
+    /// use compio_buf::{BufResult, IntoInner};
+    /// use compio_driver::{
+    ///     SharedFd,
+    ///     op::{Interest, PollOnce, Write},
+    /// };
+    /// use compio_runtime::{Link, Runtime, hlist, hlist_pat};
+    ///
+    /// let runtime = Runtime::new().unwrap();
+    /// let is_iouring = runtime.driver_type().is_iouring();
+    /// let (stream, _peer) = UnixStream::pair().unwrap();
+    /// let fd = SharedFd::new(stream);
+    /// runtime.block_on(async {
+    ///     let results = compio_runtime::submit_linked(hlist![
+    ///         (PollOnce::new(fd.clone(), Interest::Writable), Link::Soft),
+    ///         (Write::new(fd, b"linked".to_vec()), Link::Hard),
+    ///     ])
+    ///     .await;
+    ///     let hlist_pat![BufResult(ready, _), BufResult(written, write)] = results;
+    ///     if is_iouring {
+    ///         ready.unwrap();
+    ///         assert_eq!(written.unwrap(), 6);
+    ///     } else {
+    ///         assert_eq!(ready.unwrap_err().kind(), io::ErrorKind::Unsupported);
+    ///         assert_eq!(written.unwrap_err().kind(), io::ErrorKind::Unsupported);
+    ///     }
+    ///     assert_eq!(write.into_inner(), b"linked");
+    /// });
+    /// # }
+    /// ```
+    pub fn submit_linked<L: LinkedSubmit>(&self, ops: L) -> SubmitLinked<L> {
+        SubmitLinked::new(self.driver.clone(), ops)
     }
 
     /// Flush the driver and return whether the driver has been notified.
@@ -667,21 +706,22 @@ pub fn submit_multi<T: OpCode + 'static>(op: T) -> SubmitMulti<T> {
     Runtime::with_current(|r| r.submit_multi(op))
 }
 
-/// Submit single-shot operations as one linked chain on the current runtime.
+/// Submit a heterogeneous list of single-shot operations as one linked chain
+/// on the current runtime.
 ///
-/// See [`Runtime::submit_linked`] for link semantics, supported operations,
-/// submission errors, and cancellation behavior.
+/// Each member of `ops` is an `(operation, link)` pair, and the list's length
+/// and every operation type are checked at compile time, with no runtime type
+/// checks. Link values may be chosen at runtime. See [`Runtime::submit_linked`]
+/// for link semantics, supported operations, submission errors, and
+/// cancellation behavior.
 ///
 /// # Panics
 ///
 /// Panics if called without a current compio runtime. Use
 /// [`Runtime::submit_linked`] to construct the future outside a runtime
 /// context.
-pub fn submit_linked<T: OpCode + 'static, const N: usize>(
-    ops: [T; N],
-    hardlinks: [bool; N],
-) -> SubmitLinked<T, N> {
-    Runtime::with_current(|r| r.submit_linked(ops, hardlinks))
+pub fn submit_linked<L: LinkedSubmit>(ops: L) -> SubmitLinked<L> {
+    Runtime::with_current(|r| r.submit_linked(ops))
 }
 
 /// Register file descriptors for fixed-file operations with the current
