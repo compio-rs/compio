@@ -196,12 +196,15 @@ impl Driver {
             has_entry = true;
         }
 
-        if !has_entry {
-            for e in self.notify.port.poll(timeout)? {
-                if let Some(e) = Self::create_entry(notify, &mut self.waits, e) {
-                    self.notify.set_awake();
-                    e.notify()
-                }
+        let timeout = if has_entry {
+            Some(Duration::ZERO)
+        } else {
+            timeout
+        };
+        for e in self.notify.port.poll(timeout)? {
+            if let Some(e) = Self::create_entry(notify, &mut self.waits, e) {
+                self.notify.set_awake();
+                e.notify()
             }
         }
         self.notify.set_awake();
@@ -258,5 +261,28 @@ impl Wake for Notify {
         if !self.awake.wake() {
             self.port.post_raw(&self.overlapped).ok();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn poll_after_wake_drains_the_completion_port() {
+        let mut driver = Driver::new(&ProactorBuilder::default()).unwrap();
+        driver.notify.clone().wake();
+
+        driver.poll(Some(Duration::ZERO)).unwrap();
+
+        assert_eq!(
+            driver
+                .notify
+                .port
+                .poll(Some(Duration::ZERO))
+                .unwrap()
+                .count(),
+            0
+        );
     }
 }
