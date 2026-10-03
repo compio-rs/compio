@@ -4,7 +4,10 @@ use std::{
 };
 
 use flume::{Receiver, Sender};
-use windows_sys::Win32::{Foundation::ERROR_OPERATION_ABORTED, System::IO::OVERLAPPED};
+use windows_sys::Win32::{
+    Foundation::{ERROR_OPERATION_ABORTED, WAIT_TIMEOUT},
+    System::IO::OVERLAPPED,
+};
 
 use crate::{
     AsyncifyPool, DriverType, Entry, ErasedKey, ProactorBuilder,
@@ -196,13 +199,22 @@ impl Driver {
             has_entry = true;
         }
 
-        if !has_entry {
-            for e in self.notify.port.poll(timeout)? {
-                if let Some(e) = Self::create_entry(notify, &mut self.waits, e) {
-                    self.notify.set_awake();
-                    e.notify()
+        let timeout = if has_entry {
+            Some(Duration::ZERO)
+        } else {
+            timeout
+        };
+        match self.notify.port.poll(timeout) {
+            Ok(entries) => {
+                for e in entries {
+                    if let Some(e) = Self::create_entry(notify, &mut self.waits, e) {
+                        self.notify.set_awake();
+                        e.notify()
+                    }
                 }
             }
+            Err(e) if has_entry && e.raw_os_error() == Some(WAIT_TIMEOUT as _) => {}
+            Err(e) => return Err(e),
         }
         self.notify.set_awake();
 
@@ -258,5 +270,44 @@ impl Wake for Notify {
         if !self.awake.wake() {
             self.port.post_raw(&self.overlapped).ok();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn poll_without_work_preserves_timeout() {
+        let mut driver = Driver::new(&ProactorBuilder::default()).unwrap();
+
+        for timeout in [Duration::ZERO, Duration::from_millis(1)] {
+            let error = driver.poll(Some(timeout)).unwrap_err();
+
+            assert_eq!(error.raw_os_error(), Some(WAIT_TIMEOUT as _));
+        }
+    }
+
+    #[test]
+    fn poll_after_wake_without_queued_entries_succeeds() {
+        let mut driver = Driver::new(&ProactorBuilder::default()).unwrap();
+        driver.notify.set_awake();
+        driver.notify.clone().wake();
+
+        driver.poll(None).unwrap();
+    }
+
+    #[test]
+    fn poll_after_wake_drains_the_completion_port() {
+        let mut driver = Driver::new(&ProactorBuilder::default()).unwrap();
+        driver.notify.clone().wake();
+
+        driver.poll(Some(Duration::ZERO)).unwrap();
+
+        let Err(error) = driver.notify.port.poll(Some(Duration::ZERO)) else {
+            panic!("completion port should be empty after polling");
+        };
+
+        assert_eq!(error.raw_os_error(), Some(WAIT_TIMEOUT as _));
     }
 }
