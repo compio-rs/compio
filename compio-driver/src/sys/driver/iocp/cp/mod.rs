@@ -26,7 +26,7 @@ use windows_sys::Win32::{
         ERROR_BAD_COMMAND, ERROR_BROKEN_PIPE, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE,
         ERROR_MORE_DATA, ERROR_NETNAME_DELETED, ERROR_NO_DATA, ERROR_PIPE_CONNECTED,
         ERROR_PIPE_NOT_CONNECTED, FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS,
-        RtlNtStatusToDosError, STATUS_SUCCESS, WAIT_TIMEOUT,
+        RtlNtStatusToDosError, STATUS_SUCCESS,
     },
     Storage::FileSystem::SetFileCompletionNotificationModes,
     System::{
@@ -146,13 +146,7 @@ impl CompletionPort {
         let mut entries = Vec::with_capacity(Self::DEFAULT_CAPACITY);
         let len = match self.poll_raw(timeout, entries.spare_capacity_mut()) {
             Ok(len) => len,
-            Err(e)
-                if e.raw_os_error() == Some(ERROR_NETNAME_DELETED as _)
-                    || (timeout == Some(Duration::ZERO)
-                        && e.raw_os_error() == Some(WAIT_TIMEOUT as _)) =>
-            {
-                0
-            }
+            Err(e) if e.raw_os_error() == Some(ERROR_NETNAME_DELETED as _) => 0,
             Err(e) => return Err(e),
         };
 
@@ -241,9 +235,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn zero_timeout_without_entries_is_not_an_error() {
+    fn zero_timeout_without_entries_reports_timeout() {
         let port = CompletionPort::new().unwrap();
 
-        assert_eq!(port.poll(Some(Duration::ZERO), None).unwrap().count(), 0);
+        let Err(error) = port.poll(Some(Duration::ZERO), None) else {
+            panic!("empty completion port should time out");
+        };
+
+        assert_eq!(
+            error.raw_os_error(),
+            Some(windows_sys::Win32::Foundation::WAIT_TIMEOUT as _)
+        );
     }
 }
