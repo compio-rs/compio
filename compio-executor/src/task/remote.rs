@@ -52,7 +52,7 @@ impl<'a> Remote<'a> {
             return;
         };
 
-        crate::panic_guard!();
+        crate::panic_guard!(skip_if_unwinding);
 
         // Reserve a pending slot *before* pushing so the consumer's fast-path
         // counter is always an upper bound on the queued items and its
