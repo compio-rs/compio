@@ -3,6 +3,7 @@
 use std::{
     mem::ManuallyDrop,
     pin::Pin,
+    ptr,
     sync::Arc,
     task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
 };
@@ -30,9 +31,9 @@ where
 /// Remove all [`ExtWaker`] wrapped around the waker and retrieve the underlying
 /// waker.
 pub(crate) fn get_waker(waker: &Waker) -> &Waker {
-    if waker.vtable() == ExtWaker::VTABLE {
+    if ptr::eq(waker.vtable(), &EXT_WAKER_VTABLE) {
         get_waker(unsafe { ExtWaker::from_raw(waker.data()) }.waker)
-    } else if waker.vtable() == OwnedExtWaker::VTABLE {
+    } else if ptr::eq(waker.vtable(), &OWNED_EXT_WAKER_VTABLE) {
         get_waker(&unsafe { OwnedExtWaker::from_raw(waker.data()) }.waker)
     } else {
         waker
@@ -40,12 +41,12 @@ pub(crate) fn get_waker(waker: &Waker) -> &Waker {
 }
 
 pub(crate) fn get_ext(waker: &Waker) -> Option<&Ext<'_>> {
-    if waker.vtable() == ExtWaker::VTABLE {
+    if ptr::eq(waker.vtable(), &EXT_WAKER_VTABLE) {
         unsafe { ExtWaker::from_raw(waker.data()) }
             .ext
             .get()
             .copied()
-    } else if waker.vtable() == OwnedExtWaker::VTABLE {
+    } else if ptr::eq(waker.vtable(), &OWNED_EXT_WAKER_VTABLE) {
         unsafe { OwnedExtWaker::from_raw(waker.data()) }.ext.get()
     } else {
         None
@@ -65,10 +66,22 @@ pub(crate) struct ExtWaker<'a, 'b> {
     ext: SendWrapper<&'a Ext<'b>>,
 }
 
-impl<'a, 'b> ExtWaker<'a, 'b> {
-    const VTABLE: &'static RawWakerVTable =
-        &RawWakerVTable::new(Self::clone, Self::wake, Self::wake_by_ref, Self::drop);
+// `static` guarantees the uniqueness of vtable in memory
+static EXT_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
+    ExtWaker::clone,
+    ExtWaker::wake,
+    ExtWaker::wake_by_ref,
+    ExtWaker::drop,
+);
 
+static OWNED_EXT_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
+    OwnedExtWaker::clone,
+    OwnedExtWaker::wake,
+    OwnedExtWaker::wake_by_ref,
+    OwnedExtWaker::drop,
+);
+
+impl<'a, 'b> ExtWaker<'a, 'b> {
     pub fn new(waker: &'a Waker, ext: &'a Ext<'b>) -> Self {
         Self {
             waker,
@@ -88,7 +101,7 @@ impl<'a, 'b> ExtWaker<'a, 'b> {
     where
         F: FnOnce(&Waker) -> R,
     {
-        let waker = unsafe { Waker::new(self as *const _ as *const (), Self::VTABLE) };
+        let waker = unsafe { Waker::new(self as *const _ as *const (), &EXT_WAKER_VTABLE) };
         f(&waker)
     }
 
@@ -146,12 +159,9 @@ impl Drop for Inner {
 }
 
 impl OwnedExtWaker {
-    const VTABLE: &'static RawWakerVTable =
-        &RawWakerVTable::new(Self::clone, Self::wake, Self::wake_by_ref, Self::drop);
-
     unsafe fn clone(ptr: *const ()) -> RawWaker {
         unsafe { Arc::increment_strong_count(ptr.cast::<Inner>()) };
-        RawWaker::new(ptr, Self::VTABLE)
+        RawWaker::new(ptr, &OWNED_EXT_WAKER_VTABLE)
     }
 
     unsafe fn wake(ptr: *const ()) {
@@ -176,7 +186,7 @@ impl OwnedExtWaker {
         unsafe {
             Waker::from_raw(RawWaker::new(
                 Arc::into_raw(self.0).cast::<()>(),
-                OwnedExtWaker::VTABLE,
+                &OWNED_EXT_WAKER_VTABLE,
             ))
         }
     }
