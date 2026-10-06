@@ -148,6 +148,37 @@ async fn timeout_read() {
     .unwrap_err();
 }
 
+#[cfg(target_os = "linux")]
+#[compio_macros::test]
+async fn async_fd_file_position() {
+    use compio_driver::DriverType;
+    use compio_io::{AsyncWrite, AsyncWriteExt};
+    use compio_runtime::{Runtime, fd::AsyncFd};
+
+    if Runtime::with_current(|r| r.driver_type()) != DriverType::IoUring {
+        return;
+    }
+
+    let mut tempfile = tempfile();
+    tempfile.write_all(b"abcdefgh").unwrap();
+
+    let mut fd = AsyncFd::new(std::fs::File::open(tempfile.path()).unwrap()).unwrap();
+    let ((), first) = fd.read_exact(Vec::with_capacity(2)).await.unwrap();
+    let ((), second) = fd.read_exact(Vec::with_capacity(2)).await.unwrap();
+    assert_eq!(first, b"ab");
+    assert_eq!(second, b"cd");
+
+    let tempfile = self::tempfile();
+    let mut fd = AsyncFd::new(std::fs::File::create(tempfile.path()).unwrap()).unwrap();
+    fd.write_all("first line\n").await.unwrap();
+    fd.write_all("second\n").await.unwrap();
+    fd.write_vectored(["third", "\n"]).await.unwrap();
+    assert_eq!(
+        std::fs::read(tempfile.path()).unwrap(),
+        b"first line\nsecond\nthird\n"
+    );
+}
+
 #[compio_macros::test]
 async fn drop_open() {
     let tempfile = tempfile();
