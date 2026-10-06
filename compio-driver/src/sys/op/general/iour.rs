@@ -67,6 +67,7 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
             slice.ptr() as _,
             slice.len().try_into().unwrap_or(u32::MAX),
         )
+        .offset(u64::MAX)
         .build()
         .into()
     }
@@ -102,6 +103,7 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
             control.slices.as_ptr() as _,
             control.slices.len().try_into().unwrap_or(u32::MAX),
         )
+        .offset(u64::MAX)
         .build()
         .into()
     }
@@ -117,6 +119,7 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Write<T, S> {
             slice.as_ptr(),
             slice.len().try_into().unwrap_or(u32::MAX),
         )
+        .offset(u64::MAX)
         .build()
         .into()
     }
@@ -135,6 +138,7 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for WriteVectored<T, S> {
             control.slices.as_ptr() as _,
             control.slices.len().try_into().unwrap_or(u32::MAX),
         )
+        .offset(u64::MAX)
         .build()
         .into()
     }
