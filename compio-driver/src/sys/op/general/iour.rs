@@ -6,7 +6,7 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectoredAt<T, S> {
     type Control = VectoredControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
-        ctrl.slices = self.buffer.sys_slices();
+        ctrl.slices = self.buffer.sys_slices_mut();
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
@@ -94,7 +94,7 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
     type Control = VectoredControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
-        ctrl.slices = self.buffer.sys_slices();
+        ctrl.slices = self.buffer.sys_slices_mut();
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {

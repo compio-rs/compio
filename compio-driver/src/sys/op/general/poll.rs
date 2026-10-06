@@ -104,7 +104,7 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for ReadVectored<T, S> {
     type Control = VectoredControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
-        ctrl.slices = self.buffer.sys_slices();
+        ctrl.slices = self.buffer.sys_slices_mut();
     }
 
     fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<Decision> {
