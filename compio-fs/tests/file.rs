@@ -159,22 +159,22 @@ async fn async_fd_file_position() {
         return;
     }
 
-    let mut tempfile = tempfile();
-    tempfile.write_all(b"abcdefgh").unwrap();
+    let mut input = tempfile();
+    input.write_all(b"abcdefgh").unwrap();
 
-    let mut fd = AsyncFd::new(std::fs::File::open(tempfile.path()).unwrap()).unwrap();
+    let mut fd = AsyncFd::new(std::fs::File::open(input.path()).unwrap()).unwrap();
     let ((), first) = fd.read_exact(Vec::with_capacity(2)).await.unwrap();
     let ((), second) = fd.read_exact(Vec::with_capacity(2)).await.unwrap();
     assert_eq!(first, b"ab");
     assert_eq!(second, b"cd");
 
-    let tempfile = self::tempfile();
-    let mut fd = AsyncFd::new(std::fs::File::create(tempfile.path()).unwrap()).unwrap();
+    let output = tempfile();
+    let mut fd = AsyncFd::new(std::fs::File::create(output.path()).unwrap()).unwrap();
     fd.write_all("first line\n").await.unwrap();
     fd.write_all("second\n").await.unwrap();
     fd.write_vectored(["third", "\n"]).await.unwrap();
     assert_eq!(
-        std::fs::read(tempfile.path()).unwrap(),
+        std::fs::read(output.path()).unwrap(),
         b"first line\nsecond\nthird\n"
     );
 }
