@@ -53,6 +53,13 @@ bitflags::bitflags! {
         /// See io_uring_enter(2):
         /// <https://man7.org/linux/man-pages/man2/io_uring_enter.2.html>
         const NO_IOWAIT = 1 << 1;
+        /// The ring was set up with `IORING_SETUP_DEFER_TASKRUN`. Its deferred
+        /// task work, and so its completions, only run on an `enter` that
+        /// carries `IORING_ENTER_GETEVENTS`, so every submit sets it.
+        ///
+        /// See io_uring_setup(2):
+        /// <https://man7.org/linux/man-pages/man2/io_uring_setup.2.html>
+        const DEFER_TASKRUN = 1 << 2;
     }
 }
 
@@ -132,6 +139,10 @@ impl Driver {
             DriverFlags::NO_IOWAIT,
             builder.sqpoll_idle.is_none() && inner.params().is_feature_no_iowait(),
         );
+        flags.set(
+            DriverFlags::DEFER_TASKRUN,
+            builder.single_issuer && builder.defer_taskrun,
+        );
 
         Ok(Self {
             inner: ManuallyDrop::new(inner),
@@ -195,14 +206,17 @@ impl Driver {
 
         // Only a wait that can actually sleep is charged as iowait; a zero
         // timeout (the drain calls from `push_raw`/`flush`) returns
-        // immediately, so it keeps the plain combined path.
+        // immediately, so it doesn't carry NO_IOWAIT.
         //
         // On the sleeping path, opt out of iowait accounting (see
         // `DriverFlags::NO_IOWAIT`) by carrying NO_IOWAIT on the same
-        // submit-and-wait `enter`.
+        // submit-and-wait `enter`. A DEFER_TASKRUN ring takes the raw `enter`
+        // on every submit, because the crate's helpers leave out GETEVENTS
+        // when nothing is waited for (see `DriverFlags::DEFER_TASKRUN`).
         let can_block = want_sqe > 0 && timeout != Some(Duration::ZERO);
-        let res = if self.flags.contains(DriverFlags::NO_IOWAIT) && can_block {
-            self.submit_and_wait_no_iowait(want_sqe, timeout)
+        let no_iowait = self.flags.contains(DriverFlags::NO_IOWAIT) && can_block;
+        let res = if no_iowait || self.flags.contains(DriverFlags::DEFER_TASKRUN) {
+            self.submit_and_get_events(want_sqe, timeout, no_iowait)
         } else {
             self.submit_and_wait(want_sqe, timeout)
         };
@@ -224,7 +238,7 @@ impl Driver {
     }
 
     /// The combined submit+wait. Used for zero-timeout drains and when
-    /// `NO_IOWAIT` is unavailable.
+    /// `NO_IOWAIT` is unavailable, unless the ring defers task work.
     fn submit_and_wait(&self, want_sqe: usize, timeout: Option<Duration>) -> io::Result<usize> {
         if let Some(duration) = timeout {
             let timespec = timespec(duration);
@@ -235,29 +249,33 @@ impl Driver {
         }
     }
 
-    /// Submit the pending SQEs and wait on completions in a single `enter`
-    /// carrying `IORING_ENTER_NO_IOWAIT` so the wait is not charged as iowait
-    /// (see `DriverFlags::NO_IOWAIT`). The crate's `submit_*` helpers cannot
-    /// add custom `EnterFlags`, so this drops to the raw `enter` with
+    /// Submit the pending SQEs and reap completions in a single `enter` that
+    /// always carries `IORING_ENTER_GETEVENTS`, which a `DEFER_TASKRUN` ring
+    /// needs to post completions, plus `IORING_ENTER_NO_IOWAIT` if `no_iowait`
+    /// is set so the wait is not charged as iowait (see
+    /// `DriverFlags::NO_IOWAIT`). The crate's `submit_*` helpers cannot add
+    /// custom `EnterFlags`, so this drops to the raw `enter` with
     /// `to_submit = sq_len()` instead of the combined `submit_and_wait`.
-    fn submit_and_wait_no_iowait(
+    fn submit_and_get_events(
         &mut self,
         want_sqe: usize,
         timeout: Option<Duration>,
+        no_iowait: bool,
     ) -> io::Result<usize> {
         // Publish the SQ tail and read how many staged SQEs to submit this
         // call.
         let to_submit = self.inner.submission().len() as u32;
         let submitter = self.inner.submitter();
+        let mut flags = EnterFlags::GETEVENTS;
+        flags.set(EnterFlags::NO_IOWAIT, no_iowait);
         if let Some(duration) = timeout {
             let timespec = timespec(duration);
             let args = SubmitArgs::new().timespec(&timespec);
-            let flags = EnterFlags::EXT_ARG | EnterFlags::GETEVENTS | EnterFlags::NO_IOWAIT;
+            let flags = flags | EnterFlags::EXT_ARG;
             // SAFETY: `args` outlives the call; the SQ is synced and holds
             // `to_submit` valid SQEs.
             unsafe { submitter.enter(to_submit, want_sqe as u32, flags.bits(), Some(&args)) }
         } else {
-            let flags = EnterFlags::GETEVENTS | EnterFlags::NO_IOWAIT;
             // SAFETY: the SQ is synced and holds `to_submit` valid SQEs; no arg
             // payload is referenced.
             unsafe {
