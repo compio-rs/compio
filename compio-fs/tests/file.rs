@@ -179,6 +179,40 @@ async fn async_fd_file_position() {
     );
 }
 
+#[cfg(unix)]
+#[compio_macros::test]
+async fn read_vectored_at_into_capacity() {
+    use compio_io::AsyncReadAt;
+
+    let mut input = tempfile();
+    input.write_all(b"abcdefgh").unwrap();
+
+    let file = File::open(input.path()).await.unwrap();
+    let (n, bufs) = file
+        .read_vectored_at([Vec::with_capacity(2), Vec::with_capacity(2)], 2)
+        .await
+        .unwrap();
+    assert_eq!(n, 4);
+    assert_eq!(bufs, [b"cd", b"ef"]);
+}
+
+#[cfg(unix)]
+#[compio_macros::test]
+async fn pipe_read_vectored_into_capacity() {
+    use compio_fs::pipe::anonymous;
+    use compio_io::{AsyncRead, AsyncWriteExt};
+
+    let (mut rx, mut tx) = anonymous().await.unwrap();
+    tx.write_all("abcd").await.unwrap();
+
+    let (n, bufs) = rx
+        .read_vectored([Vec::with_capacity(2), Vec::with_capacity(2)])
+        .await
+        .unwrap();
+    assert_eq!(n, 4);
+    assert_eq!(bufs, [b"ab", b"cd"]);
+}
+
 #[compio_macros::test]
 async fn drop_open() {
     let tempfile = tempfile();
