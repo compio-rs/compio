@@ -1,9 +1,6 @@
 use futures_util::future::join;
 
-use crate::{
-    AsyncRead, AsyncWrite, AsyncWriteExt, IoResult,
-    util::{DEFAULT_BUF_SIZE, Splittable},
-};
+use crate::{AsyncRead, AsyncWrite, AsyncWriteExt, IoResult, util::Splittable};
 
 /// Asynchronously copies the entire contents of a reader into a writer.
 ///
@@ -16,14 +13,32 @@ use crate::{
 ///
 /// This is an asynchronous version of [`std::io::copy`][std].
 ///
-/// A heap-allocated copy buffer with 8 KiB is created to take data from the
-/// reader to the writer.
-pub async fn copy<R: AsyncRead, W: AsyncWrite>(reader: &mut R, writer: &mut W) -> IoResult<u64> {
-    copy_with_size(reader, writer, DEFAULT_BUF_SIZE).await
+/// On Linux with io_uring, unbuffered descriptor-backed streams can copy via
+/// a kernel pipe without moving payload data through userspace. Other readers
+/// and writers (including buffered and transforming adapters, file cursors,
+/// and seekable `AsyncFd` handles) use an 8 KiB heap-allocated buffer.
+/// Unsupported splice operations fall back to buffered copying without
+/// discarding bytes already read.
+///
+/// The splice path preserves the kernel's default capacity for its private
+/// pipe and batches eight fill/drain pairs without changing descriptor blocking
+/// flags. Individual splice requests may be reduced to leave accounting
+/// headroom in a destination socket's send buffer, without resizing the pipe
+/// or changing socket options. [`copy_with_size`] controls transfer sizing,
+/// while [`copy_buffered`] opts out of kernel-assisted copying.
+///
+/// At EOF the writer is flushed and shut down. Like buffered copying, this
+/// operation is not cancellation-safe: bytes read but not yet written can be
+/// lost when the future is dropped.
+pub async fn copy<R: AsyncRead + ?Sized, W: AsyncWrite + ?Sized>(
+    reader: &mut R,
+    writer: &mut W,
+) -> IoResult<u64> {
+    reader.copy_to(writer, None).await
 }
 
 /// Asynchronously copies the entire contents of a reader into a writer with
-/// specified buffer sizes.
+/// a specified transfer size.
 ///
 /// This function returns a future that will continuously read data from
 /// `reader` and then write it into `writer` in a streaming fashion until
@@ -33,7 +48,44 @@ pub async fn copy<R: AsyncRead, W: AsyncWrite>(reader: &mut R, writer: &mut W) -
 /// `writer` is returned.
 ///
 /// This is an asynchronous version of [`std::io::copy`][std].
-pub async fn copy_with_size<R: AsyncRead, W: AsyncWrite>(
+///
+/// Like [`copy`], this allows kernel-assisted copying. `buf_size` sets the
+/// userspace buffer size on the buffered path, or the requested pipe capacity
+/// and maximum bytes per splice operation on the Linux io_uring path.
+/// A destination socket's send-buffer budget may lower this maximum without
+/// changing the requested pipe capacity.
+/// Linux may round pipe capacity upward; if the requested capacity cannot be
+/// obtained, copying falls back to a userspace buffer of `buf_size` bytes.
+/// Sizes below the kernel's default pipe capacity stay on the buffered path:
+/// small-pipe splicing is slower than an equally sized userspace buffer.
+///
+/// When kernel-assisted copying is unavailable or a splice operation is
+/// unsupported, this automatically falls back to buffered copying with
+/// `buf_size` bytes, preserving any bytes already read into the kernel pipe.
+/// Use [`copy_buffered`] to force userspace copying without attempting the
+/// kernel-assisted path.
+pub async fn copy_with_size<R: AsyncRead + ?Sized, W: AsyncWrite + ?Sized>(
+    reader: &mut R,
+    writer: &mut W,
+    buf_size: usize,
+) -> IoResult<u64> {
+    reader.copy_to(writer, Some(buf_size)).await
+}
+
+/// Asynchronously copies a reader into a writer using a userspace buffer.
+///
+/// This always uses a heap-allocated buffer of `buf_size` bytes, even when the
+/// endpoints support kernel-assisted copying. At EOF the writer is flushed and
+/// shut down, and the total number of copied bytes is returned.
+///
+/// This is also the buffered fallback used by [`copy`] and [`copy_with_size`]
+/// when kernel-assisted copying is unavailable or unsupported. [`copy`] uses
+/// an 8 KiB buffer; [`copy_with_size`] uses its requested `buf_size`. Calling
+/// this function directly skips the kernel-assisted path entirely.
+///
+/// Like [`copy`], this operation is not cancellation-safe: bytes already read
+/// but not yet written can be lost when the future is dropped.
+pub async fn copy_buffered<R: AsyncRead + ?Sized, W: AsyncWrite + ?Sized>(
     reader: &mut R,
     writer: &mut W,
     buf_size: usize,
@@ -91,7 +143,8 @@ where
 /// writer with specified buffer sizes.
 ///
 /// This function is like `copy_bidirectional`, but allows you to specify the
-/// buffer sizes for each direction of copying.
+/// transfer size for each direction. Each direction uses [`copy_with_size`],
+/// including kernel-assisted copying when eligible.
 pub async fn copy_bidirectional_with_sizes<A, B>(
     reader: A,
     writer: B,
