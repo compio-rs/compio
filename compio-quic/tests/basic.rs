@@ -5,6 +5,7 @@ use std::{
 };
 
 use compio_io::AsyncWriteExt;
+use compio_net::UdpSocket;
 use compio_quic::{ClientBuilder, ConnectionError, Endpoint, TransportConfig};
 use futures_util::join;
 
@@ -313,4 +314,42 @@ async fn try_recv_datagram() {
     drop(conn2);
 
     endpoint.shutdown().await.unwrap();
+}
+
+/// Regression test for #1069: an empty UDP datagram must not panic the
+/// endpoint worker (`chunk size must be non-zero`).
+#[compio_macros::test]
+async fn empty_udp_packet_does_not_panic() {
+    let _guard = subscribe();
+
+    let (server_config, client_config) = config_pair(None);
+    let server = Endpoint::server("127.0.0.1:0", server_config)
+        .await
+        .unwrap();
+    let server_addr = server.local_addr().unwrap();
+
+    // Send an empty UDP datagram to the QUIC endpoint.
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    socket.send_to([], server_addr).await.unwrap();
+
+    // Give the endpoint worker a moment to process the datagram, then
+    // verify it is still healthy by completing a normal handshake.
+    compio_runtime::time::sleep(Duration::from_millis(50)).await;
+
+    let client = Endpoint::client("127.0.0.1:0").await.unwrap();
+    let (server_conn, client_conn) = join!(
+        async { server.wait_incoming().await.unwrap().await.unwrap() },
+        async {
+            client
+                .connect(server_addr, "localhost", Some(client_config))
+                .unwrap()
+                .await
+                .unwrap()
+        },
+    );
+
+    drop(server_conn);
+    drop(client_conn);
+    client.shutdown().await.unwrap();
+    server.shutdown().await.unwrap();
 }
