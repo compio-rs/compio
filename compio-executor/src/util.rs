@@ -2,12 +2,16 @@ use std::task::Poll;
 
 /// Create a guard that abort the process when the thread panicked before it's
 /// out of scope.
+/// If the guard is created during unwinding, it does nothing.
 ///
 /// If loom is enabled, this does nothing.
 macro_rules! panic_guard {
     () => {
         let _b = {
-            pub(crate) struct AbortOnPanic(());
+            pub(crate) struct AbortOnPanic {
+                #[cfg_attr(loom, allow(dead_code))]
+                already_panicking: bool,
+            }
 
             impl Drop for AbortOnPanic {
                 #[cfg(loom)]
@@ -15,13 +19,15 @@ macro_rules! panic_guard {
 
                 #[cfg(not(loom))]
                 fn drop(&mut self) {
-                    if ::std::thread::panicking() {
+                    if !self.already_panicking && ::std::thread::panicking() {
                         ::std::process::abort()
                     }
                 }
             }
 
-            AbortOnPanic(())
+            AbortOnPanic {
+                already_panicking: ::std::thread::panicking(),
+            }
         };
     };
 }
@@ -52,6 +58,28 @@ macro_rules! assert_not_impl {
 }
 
 pub(crate) use assert_not_impl;
+
+#[cfg(all(test, not(loom)))]
+mod test_unwinding {
+    use std::panic::catch_unwind;
+
+    struct GuardInDrop;
+
+    impl Drop for GuardInDrop {
+        fn drop(&mut self) {
+            panic_guard!();
+        }
+    }
+
+    #[test]
+    fn guard_created_while_unwinding_does_not_abort() {
+        let res = catch_unwind(|| {
+            let _g = GuardInDrop;
+            panic!("panic before the guard is created");
+        });
+        assert!(res.is_err());
+    }
+}
 
 #[cfg(all(test, unix))]
 mod test {
