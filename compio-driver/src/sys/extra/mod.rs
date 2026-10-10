@@ -185,6 +185,7 @@ macro_rules! iour_only {
                 {$(let _ = $arg;)*}
             }
 
+            #[allow(clippy::empty_docs)]
             #[doc = concat!("Call [`set_", stringify!($val), "`] and return the modified `Extra`.")]
             #[doc = ""]
             #[doc = concat!("[`set_", stringify!($val), "`]: Self::set_", stringify!($val))]
