@@ -229,3 +229,22 @@ fn ntstatus_from_win32(x: i32) -> NTSTATUS {
         ((x) & 0x0000FFFF) | (FACILITY_NTWIN32 << 16) as NTSTATUS | ERROR_SEVERITY_ERROR as NTSTATUS
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_timeout_without_entries_reports_timeout() {
+        let port = CompletionPort::new().unwrap();
+
+        let Err(error) = port.poll(Some(Duration::ZERO), None) else {
+            panic!("empty completion port should time out");
+        };
+
+        assert_eq!(
+            error.raw_os_error(),
+            Some(windows_sys::Win32::Foundation::WAIT_TIMEOUT as _)
+        );
+    }
+}
