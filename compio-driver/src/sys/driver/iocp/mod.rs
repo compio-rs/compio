@@ -4,10 +4,7 @@ use std::{
 };
 
 use flume::{Receiver, Sender};
-use windows_sys::Win32::{
-    Foundation::{ERROR_OPERATION_ABORTED, WAIT_TIMEOUT},
-    System::IO::OVERLAPPED,
-};
+use windows_sys::Win32::{Foundation::ERROR_OPERATION_ABORTED, System::IO::OVERLAPPED};
 
 use crate::{
     AsyncifyPool, DriverType, Entry, ErasedKey, ProactorBuilder,
@@ -204,21 +201,17 @@ impl Driver {
         } else {
             timeout
         };
-        match self.notify.port.poll(timeout) {
-            Ok(entries) => {
-                for e in entries {
-                    if let Some(e) = Self::create_entry(notify, &mut self.waits, e) {
-                        self.notify.set_awake();
-                        e.notify()
-                    }
+        let result = self.notify.port.poll(timeout).map(|entries| {
+            for e in entries {
+                if let Some(e) = Self::create_entry(notify, &mut self.waits, e) {
+                    self.notify.set_awake();
+                    e.notify()
                 }
             }
-            Err(e) if has_entry && e.raw_os_error() == Some(WAIT_TIMEOUT as _) => {}
-            Err(e) => return Err(e),
-        }
+        });
         self.notify.set_awake();
 
-        Ok(())
+        result
     }
 
     pub fn waker(&self) -> Waker {
@@ -275,6 +268,8 @@ impl Wake for Notify {
 
 #[cfg(test)]
 mod tests {
+    use windows_sys::Win32::Foundation::WAIT_TIMEOUT;
+
     use super::*;
 
     #[test]
@@ -289,12 +284,19 @@ mod tests {
     }
 
     #[test]
-    fn poll_after_wake_without_queued_entries_succeeds() {
+    fn poll_after_wake_without_queued_entries_preserves_timeout() {
         let mut driver = Driver::new(&ProactorBuilder::default()).unwrap();
         driver.notify.set_awake();
         driver.notify.clone().wake();
 
-        driver.poll(None).unwrap();
+        let error = driver.poll(None).unwrap_err();
+
+        assert_eq!(error.raw_os_error(), Some(WAIT_TIMEOUT as _));
+        driver.notify.clone().wake();
+        let Err(error) = driver.notify.port.poll(Some(Duration::ZERO)) else {
+            panic!("awake driver should not queue another wake packet");
+        };
+        assert_eq!(error.raw_os_error(), Some(WAIT_TIMEOUT as _));
     }
 
     #[test]
