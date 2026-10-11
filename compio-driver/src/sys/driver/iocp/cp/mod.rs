@@ -23,9 +23,7 @@ use std::{
 use compio_log::*;
 use windows_sys::Win32::{
     Foundation::{
-        ERROR_BAD_COMMAND, ERROR_BROKEN_PIPE, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE,
-        ERROR_MORE_DATA, ERROR_NETNAME_DELETED, ERROR_NO_DATA, ERROR_PIPE_CONNECTED,
-        ERROR_PIPE_NOT_CONNECTED, FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS,
+        ERROR_BAD_COMMAND, ERROR_NETNAME_DELETED, FACILITY_NTWIN32, INVALID_HANDLE_VALUE, NTSTATUS,
         RtlNtStatusToDosError, STATUS_SUCCESS,
     },
     Storage::FileSystem::SetFileCompletionNotificationModes,
@@ -40,7 +38,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{Overlapped, RawFd, syscall};
+use crate::{Overlapped, RawFd, sys::pal::winapi_result, syscall};
 
 cfg_select! {
     feature = "iocp-global" => {
@@ -186,18 +184,7 @@ impl CompletionPort {
             let res = if status >= 0 {
                 Ok(overlapped.base.InternalHigh)
             } else {
-                let error = unsafe { RtlNtStatusToDosError(status) };
-                match error {
-                    ERROR_IO_INCOMPLETE
-                    | ERROR_NETNAME_DELETED
-                    | ERROR_HANDLE_EOF
-                    | ERROR_BROKEN_PIPE
-                    | ERROR_PIPE_CONNECTED
-                    | ERROR_PIPE_NOT_CONNECTED
-                    | ERROR_NO_DATA
-                    | ERROR_MORE_DATA => Ok(0),
-                    _ => Err(io::Error::from_raw_os_error(error as _)),
-                }
+                winapi_result(0, unsafe { RtlNtStatusToDosError(status) })
             };
             Some(RawEntry::new(overlapped_ptr, res))
         }))
