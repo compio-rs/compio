@@ -196,17 +196,26 @@ impl Driver {
             has_entry = true;
         }
 
-        if !has_entry {
-            for e in self.notify.port.poll(timeout)? {
+        let timeout = if has_entry {
+            Some(Duration::ZERO)
+        } else {
+            timeout
+        };
+        let result = self.notify.port.poll(timeout).map(|entries| {
+            for e in entries {
                 if let Some(e) = Self::create_entry(notify, &mut self.waits, e) {
                     self.notify.set_awake();
                     e.notify()
                 }
             }
-        }
+        });
         self.notify.set_awake();
 
-        Ok(())
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) if has_entry && e.kind() == io::ErrorKind::TimedOut => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     pub fn waker(&self) -> Waker {
