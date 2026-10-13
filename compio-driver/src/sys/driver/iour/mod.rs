@@ -31,7 +31,6 @@ use io_uring::{
     opcode::{AsyncCancel, PollAdd},
     types::{Fd, SubmitArgs, Timespec},
 };
-use slotmap::{DefaultKey, SlotMap};
 
 use crate::{
     AsyncifyPool, DriverType, Entry, ProactorBuilder,
@@ -68,8 +67,6 @@ pub(crate) struct Driver {
     completed_tx: Sender<Entry>,
     completed_rx: Receiver<Entry>,
     flags: DriverFlags,
-    /// Keys leaked via `into_raw()` into io_uring user_data, freed on drop.
-    in_flight: SlotMap<DefaultKey, usize>,
     _p: PhantomData<ErasedKey>,
 }
 
@@ -140,7 +137,6 @@ impl Driver {
             completed_rx,
             pool: builder.create_or_get_thread_pool(),
             flags,
-            in_flight: SlotMap::new(),
             _p: PhantomData,
         })
     }
@@ -304,7 +300,6 @@ impl Driver {
                         key.wake_by_ref();
                     } else {
                         let entry = create_entry(entry);
-                        Self::remove_in_flight(&mut self.in_flight, &entry.key);
                         entry.notify()
                     }
                 }
@@ -347,8 +342,6 @@ impl Driver {
         let entry = entry.user_data(user_data as _);
         self.push_raw(entry)?; // if push failed, do not leak the key. Drop it upon return.
 
-        let slot = self.in_flight.insert(user_data);
-        key.borrow().extra_mut().as_iour_mut().set_in_flight(slot);
         key.into_raw();
         Ok(())
     }
@@ -491,43 +484,11 @@ impl Driver {
     ) -> Option<BufResult<usize, crate::sys::Extra>> {
         key.borrow().carrier.pop_multishot()
     }
-
-    /// Take an op out of the `in_flight` map. The slot lives in the op's
-    /// extra, and is only set while the op is in flight.
-    fn remove_in_flight(in_flight: &mut SlotMap<DefaultKey, usize>, key: &ErasedKey) {
-        let Some(slot) = key.borrow().extra_mut().as_iour_mut().take_in_flight() else {
-            return;
-        };
-        let removed = in_flight.remove(slot);
-        debug_assert_eq!(removed, Some(key.as_raw()));
-    }
 }
 
 impl AsRawFd for Driver {
     fn as_raw_fd(&self) -> RawFd {
         self.inner.as_raw_fd()
-    }
-}
-
-impl Drop for Driver {
-    fn drop(&mut self) {
-        // Close the io_uring ring *before* freeing the in-flight keys.
-        // Closing the ring fd makes the kernel wait for in-flight ops to
-        // finish or be cancelled, so it will no longer read from or write to
-        // the buffers owned by those keys. Without this, the kernel could
-        // touch a freed (and potentially recycled) heap allocation, which
-        // corrupts the glibc heap and typically surfaces as
-        // `malloc_consolidate(): unaligned fastbin chunk detected` /
-        // `corrupted double-linked list` during thread shutdown.
-        unsafe { ManuallyDrop::drop(&mut self.inner) };
-
-        // `in_flight` holds one reference per submitted op: `push_raw_with_key`
-        // leaks it, and `poll_entries` takes it back when it hands the op to
-        // its future. Whatever is left here is ours to free, and the kernel is
-        // done with it.
-        for (_, user_data) in self.in_flight.drain() {
-            drop(unsafe { ErasedKey::from_raw(user_data) });
-        }
     }
 }
 
