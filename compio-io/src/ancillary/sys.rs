@@ -109,7 +109,7 @@ impl CMsgRef<'_> {
     }
 }
 
-pub(crate) struct CMsgMut<'a>(&'a mut cmsghdr);
+pub(crate) struct CMsgMut<'a>(&'a mut cmsghdr, &'a mut [MaybeUninit<u8>]);
 
 impl CMsgMut<'_> {
     pub(crate) fn set_level(&mut self, level: i32) {
@@ -121,10 +121,9 @@ impl CMsgMut<'_> {
     }
 
     pub(crate) fn encode_data<T: AncillaryData>(&mut self, value: &T) -> Result<usize, CodecError> {
+        debug_assert_eq!(self.1.len(), T::SIZE);
         self.0.cmsg_len = unsafe { CMSG_LEN(T::SIZE as _) } as _;
-        let data_ptr = unsafe { CMSG_DATA(self.0) } as *mut MaybeUninit<u8>;
-        let buffer = unsafe { slice::from_raw_parts_mut(data_ptr, T::SIZE) };
-        value.encode(buffer)?;
+        value.encode(self.1)?;
         Ok(unsafe { CMSG_SPACE(T::SIZE as _) } as _)
     }
 }
@@ -168,10 +167,17 @@ impl CMsgIter {
         }
     }
 
-    pub(crate) unsafe fn current_mut<'a>(&self, ptr: *mut u8) -> Option<CMsgMut<'a>> {
-        self.offset
-            .and_then(|offset| unsafe { ptr.add(offset).cast::<cmsghdr>().as_mut() })
-            .map(CMsgMut)
+    pub(crate) unsafe fn current_mut<'a, T: AncillaryData>(
+        &self,
+        ptr: *mut u8,
+    ) -> Option<CMsgMut<'a>> {
+        let offset = self.offset?;
+        let header = unsafe { ptr.add(offset).cast::<cmsghdr>().as_mut() }?;
+        let data_ptr = unsafe { CMSG_DATA(header) };
+        // Retrieve the offset of the data pointer again to make miri happy.
+        let data_offset = unsafe { data_ptr.offset_from(ptr) };
+        let buffer = unsafe { slice::from_raw_parts_mut(ptr.offset(data_offset).cast(), T::SIZE) };
+        Some(CMsgMut(header, buffer))
     }
 
     pub(crate) fn is_space_enough(&self, space: usize) -> bool {
