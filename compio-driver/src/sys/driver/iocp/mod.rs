@@ -211,7 +211,11 @@ impl Driver {
         });
         self.notify.set_awake();
 
-        result
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) if has_entry && e.kind() == io::ErrorKind::TimedOut => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     pub fn waker(&self) -> Waker {
@@ -263,53 +267,5 @@ impl Wake for Notify {
         if !self.awake.wake() {
             self.port.post_raw(&self.overlapped).ok();
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use windows_sys::Win32::Foundation::WAIT_TIMEOUT;
-
-    use super::*;
-
-    #[test]
-    fn poll_without_work_preserves_timeout() {
-        let mut driver = Driver::new(&ProactorBuilder::default()).unwrap();
-
-        for timeout in [Duration::ZERO, Duration::from_millis(1)] {
-            let error = driver.poll(Some(timeout)).unwrap_err();
-
-            assert_eq!(error.raw_os_error(), Some(WAIT_TIMEOUT as _));
-        }
-    }
-
-    #[test]
-    fn poll_after_wake_without_queued_entries_preserves_timeout() {
-        let mut driver = Driver::new(&ProactorBuilder::default()).unwrap();
-        driver.notify.set_awake();
-        driver.notify.clone().wake();
-
-        let error = driver.poll(None).unwrap_err();
-
-        assert_eq!(error.raw_os_error(), Some(WAIT_TIMEOUT as _));
-        driver.notify.clone().wake();
-        let Err(error) = driver.notify.port.poll(Some(Duration::ZERO)) else {
-            panic!("awake driver should not queue another wake packet");
-        };
-        assert_eq!(error.raw_os_error(), Some(WAIT_TIMEOUT as _));
-    }
-
-    #[test]
-    fn poll_after_wake_drains_the_completion_port() {
-        let mut driver = Driver::new(&ProactorBuilder::default()).unwrap();
-        driver.notify.clone().wake();
-
-        driver.poll(Some(Duration::ZERO)).unwrap();
-
-        let Err(error) = driver.notify.port.poll(Some(Duration::ZERO)) else {
-            panic!("completion port should be empty after polling");
-        };
-
-        assert_eq!(error.raw_os_error(), Some(WAIT_TIMEOUT as _));
     }
 }

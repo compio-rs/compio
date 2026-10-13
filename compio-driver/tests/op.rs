@@ -78,9 +78,7 @@ fn push_and_wait<O: OpCode + 'static>(driver: &mut Proactor, op: O) -> BufResult
     match driver.push(op) {
         PushEntry::Ready(res) => res,
         PushEntry::Pending(mut user_data) => loop {
-            if let Err(error) = driver.poll(None) {
-                assert_eq!(error.kind(), io::ErrorKind::TimedOut);
-            }
+            driver.poll(None).unwrap();
             match driver.pop(user_data) {
                 PushEntry::Pending(k) => user_data = k,
                 PushEntry::Ready(res) => break res,
@@ -126,9 +124,7 @@ fn push_and_wait_multi<O: OpCode + 'static>(
                 }
             }
 
-            if let Err(error) = driver.poll(None) {
-                assert_eq!(error.kind(), io::ErrorKind::TimedOut);
-            }
+            driver.poll(None).unwrap();
         }
     })
 }
