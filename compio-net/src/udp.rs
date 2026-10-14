@@ -809,6 +809,41 @@ impl UdpSocket {
     ) -> io::Result<()> {
         unsafe { self.inner.set_socket_option(level, name, value) }
     }
+
+    /// Enables or disables UDP GRO (Generic Receive Offload) on this socket.
+    ///
+    /// When enabled, the kernel may coalesce several back-to-back datagrams
+    /// from the same peer into a single buffer returned by [`recv_msg`] (and
+    /// its vectored/managed/multi variants), reporting the size of one
+    /// individual datagram as ancillary data. Use [`offload::segment_size`]
+    /// on the returned control buffer to recover it and split the datagrams
+    /// apart.
+    ///
+    /// ## Platform-specific
+    /// * Only Linux/Android and, with the `windows-gro` feature, Windows are
+    ///   supported (that feature is unverified - see its documentation).
+    ///   Elsewhere this returns an `Unsupported` error and the socket is left
+    ///   unchanged.
+    ///
+    /// [`recv_msg`]: UdpSocket::recv_msg
+    /// [`offload::segment_size`]: crate::offload::segment_size
+    pub fn set_gro(&self, enable: bool) -> io::Result<()> {
+        crate::offload::set_gro(&self.inner, enable)
+    }
+
+    /// Returns the maximum number of GSO (Generic Segmentation Offload)
+    /// segments the kernel accepts in a single [`send_msg`] call on this
+    /// socket, or `1` if GSO is unavailable.
+    ///
+    /// Attach a segment size with [`offload::push_segment_size`] as
+    /// ancillary data on a [`send_msg`] call to have the kernel split the
+    /// buffer into datagrams of that size, up to this many segments.
+    ///
+    /// [`send_msg`]: UdpSocket::send_msg
+    /// [`offload::push_segment_size`]: crate::offload::push_segment_size
+    pub fn max_gso_segments(&self) -> usize {
+        crate::offload::max_gso_segments(&self.inner)
+    }
 }
 
 impl_raw_fd!(UdpSocket, socket2::Socket, inner, socket);
