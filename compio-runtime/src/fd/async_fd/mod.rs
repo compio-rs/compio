@@ -21,6 +21,21 @@ mod windows;
 #[cfg(unix)]
 mod unix;
 
+#[cfg(target_os = "linux")]
+fn is_copy_stream(fd: &impl AsFd) -> bool {
+    use rustix::fs::{FileType, fstat};
+
+    // AsyncFd's seekable-file offsets differ between backends. Do not bypass
+    // those existing semantics with splice's current-position IO.
+    match fstat(fd).map(|stat| FileType::from_raw_mode(stat.st_mode)) {
+        Ok(FileType::Fifo) => true,
+        Ok(FileType::Socket) => {
+            rustix::net::sockopt::socket_type(fd) == Ok(rustix::net::SocketType::STREAM)
+        }
+        _ => false,
+    }
+}
+
 /// Providing implementations for [`AsyncRead`] and [`AsyncWrite`].
 #[derive(Debug)]
 pub struct AsyncFd<T: AsFd> {
@@ -59,6 +74,15 @@ impl<T: AsFd + 'static> AsyncRead for AsyncFd<T> {
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
         (&*self).read_vectored(buf).await
     }
+
+    #[cfg(target_os = "linux")]
+    async fn copy_to<W: AsyncWrite + ?Sized>(
+        &mut self,
+        writer: &mut W,
+        buf_size: Option<usize>,
+    ) -> io::Result<u64> {
+        (&*self).copy_to(writer, buf_size).await
+    }
 }
 
 impl<T: AsFd + 'static> AsyncRead for &AsyncFd<T> {
@@ -77,6 +101,16 @@ impl<T: AsFd + 'static> AsyncRead for &AsyncFd<T> {
         let op = ReadVectored::new(fd, buf);
         let res = crate::submit(op).await.into_inner();
         unsafe { res.map_vec_advanced() }
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn copy_to<W: AsyncWrite + ?Sized>(
+        &mut self,
+        writer: &mut W,
+        buf_size: Option<usize>,
+    ) -> io::Result<u64> {
+        let fd = self.to_shared_fd();
+        super::copy_splice(self, writer, fd, buf_size).await
     }
 }
 
@@ -157,6 +191,11 @@ impl<T: AsFd + 'static> AsyncWrite for AsyncFd<T> {
     async fn shutdown(&mut self) -> io::Result<()> {
         (&*self).shutdown().await
     }
+
+    #[cfg(target_os = "linux")]
+    fn copy_fd(&self) -> Option<impl AsFd + 'static> {
+        is_copy_stream(self).then(|| self.to_shared_fd())
+    }
 }
 
 impl<T: AsFd + 'static> AsyncWrite for &AsyncFd<T> {
@@ -179,6 +218,11 @@ impl<T: AsFd + 'static> AsyncWrite for &AsyncFd<T> {
 
     async fn shutdown(&mut self) -> io::Result<()> {
         Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    fn copy_fd(&self) -> Option<impl AsFd + 'static> {
+        is_copy_stream(self).then(|| self.to_shared_fd())
     }
 }
 

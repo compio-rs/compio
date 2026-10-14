@@ -7,6 +7,8 @@ use std::{
 };
 
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
+#[cfg(target_os = "linux")]
+use compio_driver::ToSharedFd;
 use compio_driver::{
     BufferRef, SharedFd, impl_raw_fd,
     op::{RecvFlags, RecvMsgMultiResult, SendMsgZc, SendVectoredZc, SendZc},
@@ -321,6 +323,17 @@ impl AsyncRead for UnixStream {
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
         (&*self).read_vectored(buf).await
     }
+
+    #[cfg(target_os = "linux")]
+    #[inline]
+    async fn copy_to<W: AsyncWrite + ?Sized>(
+        &mut self,
+        writer: &mut W,
+        buf_size: Option<usize>,
+    ) -> io::Result<u64> {
+        let fd = self.to_shared_fd();
+        compio_runtime::fd::copy_splice(self, writer, fd, buf_size).await
+    }
 }
 
 impl AsyncRead for &UnixStream {
@@ -332,6 +345,17 @@ impl AsyncRead for &UnixStream {
     #[inline]
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
         self.inner.recv_vectored(buf, RecvFlags::empty()).await
+    }
+
+    #[cfg(target_os = "linux")]
+    #[inline]
+    async fn copy_to<W: AsyncWrite + ?Sized>(
+        &mut self,
+        writer: &mut W,
+        buf_size: Option<usize>,
+    ) -> io::Result<u64> {
+        let fd = (**self).to_shared_fd();
+        compio_runtime::fd::copy_splice(self, writer, fd, buf_size).await
     }
 }
 
@@ -478,6 +502,12 @@ impl AsyncWrite for UnixStream {
     async fn shutdown(&mut self) -> io::Result<()> {
         (&*self).shutdown().await
     }
+
+    #[cfg(target_os = "linux")]
+    #[inline]
+    fn copy_fd(&self) -> Option<impl std::os::fd::AsFd + 'static> {
+        Some(self.to_shared_fd())
+    }
 }
 
 impl AsyncWrite for &UnixStream {
@@ -499,6 +529,12 @@ impl AsyncWrite for &UnixStream {
     #[inline]
     async fn shutdown(&mut self) -> io::Result<()> {
         self.inner.shutdown().await
+    }
+
+    #[cfg(target_os = "linux")]
+    #[inline]
+    fn copy_fd(&self) -> Option<impl std::os::fd::AsFd + 'static> {
+        Some((**self).to_shared_fd())
     }
 }
 

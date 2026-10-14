@@ -52,6 +52,15 @@ impl AsyncRead for Stdin {
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
         (&*self).read_vectored(buf).await
     }
+
+    #[cfg(target_os = "linux")]
+    async fn copy_to<W: AsyncWrite + ?Sized>(
+        &mut self,
+        writer: &mut W,
+        buf_size: Option<usize>,
+    ) -> io::Result<u64> {
+        (&*self).copy_to(writer, buf_size).await
+    }
 }
 
 impl AsyncRead for &Stdin {
@@ -61,6 +70,15 @@ impl AsyncRead for &Stdin {
 
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
         (&self.0).read_vectored(buf).await
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn copy_to<W: AsyncWrite + ?Sized>(
+        &mut self,
+        writer: &mut W,
+        buf_size: Option<usize>,
+    ) -> io::Result<u64> {
+        (&self.0).copy_to(writer, buf_size).await
     }
 }
 
@@ -127,6 +145,11 @@ impl AsyncWrite for Stdout {
     async fn shutdown(&mut self) -> io::Result<()> {
         self.0.shutdown().await
     }
+
+    #[cfg(target_os = "linux")]
+    fn copy_fd(&self) -> Option<impl AsFd + 'static> {
+        self.0.copy_fd()
+    }
 }
 
 impl AsRawFd for Stdout {
@@ -163,6 +186,11 @@ impl AsyncWrite for Stderr {
 
     async fn shutdown(&mut self) -> io::Result<()> {
         self.0.shutdown().await
+    }
+
+    #[cfg(target_os = "linux")]
+    fn copy_fd(&self) -> Option<impl AsFd + 'static> {
+        self.0.copy_fd()
     }
 }
 
