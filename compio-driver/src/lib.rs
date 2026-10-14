@@ -31,6 +31,9 @@ mod panic;
 mod key;
 pub use key::Key;
 
+mod linked;
+pub use linked::{HBranch, HLeaf, HNil, Link, LinkedKeys, LinkedOps};
+
 mod asyncify;
 pub use asyncify::*;
 
@@ -270,6 +273,72 @@ impl Proactor {
                 PushEntry::Ready(key.take_result())
             }
         }
+    }
+
+    /// Submit a heterogeneous list as one linked io_uring chain.
+    ///
+    /// Each list member is `(operation, link_to_next)`. Operations may have
+    /// different types; the returned list retains each concrete [`Key`] type
+    /// and its link. The final link is ignored. Use [`hlist!`] to construct
+    /// the list and [`hlist_pat!`] to destructure its keys.
+    ///
+    /// Operations must produce native, single-shot entries. Multishot
+    /// operations and operations setting their own link or skip-completion
+    /// flags are not supported.
+    ///
+    /// The complete chain is published together, without splitting it across
+    /// submissions. This does not make execution transactional: completed I/O
+    /// is not rolled back when a later member fails.
+    ///
+    /// Returns [`io::ErrorKind::Unsupported`] on non-io_uring backends, for
+    /// unsupported native entries, or if the chain exceeds the submission
+    /// queue's capacity. No blocking fallback is used. On rejection, no member
+    /// is submitted and the original list of operations and links is returned.
+    /// An empty [`HNil`] succeeds without submitting anything on any backend.
+    pub fn push_linked<L: LinkedOps>(&mut self, ops: L) -> Result<L::Keys, (io::Error, L)> {
+        self.push_linked_with_extra(ops, Self::default_extra)
+    }
+
+    /// Submit a heterogeneous chain with extra data supplied for each member.
+    ///
+    /// `extras` is called in submission order, once per operation on an
+    /// io_uring backend. See [`Self::push_linked`] for the submission contract.
+    pub fn push_linked_with_extra<L: LinkedOps>(
+        &mut self,
+        ops: L,
+        mut extras: impl FnMut(&Proactor) -> Extra,
+    ) -> Result<L::Keys, (io::Error, L)> {
+        if L::LEN == 0 {
+            return Ok(ops.into_keys(&mut || extras(self), &mut |_, _| unreachable!()));
+        }
+        #[cfg(io_uring)]
+        if self.driver_type().is_iouring() {
+            let mut entries = smallvec::SmallVec::<
+                [(ErasedKey, Link); linked::LINKED_BATCH_INLINE],
+            >::with_capacity(L::LEN);
+            let keys = ops.into_keys(&mut || extras(self), &mut |key, link| {
+                entries.push((key, link));
+            });
+            return match self
+                .driver
+                .as_iour_mut()
+                .expect("io_uring driver")
+                .push_linked(&mut entries)
+            {
+                Ok(()) => Ok(keys),
+                Err(error) => {
+                    for (key, _) in entries.drain(..) {
+                        let member_error = error
+                            .raw_os_error()
+                            .map_or_else(|| error.kind().into(), io::Error::from_raw_os_error);
+                        key.set_result(Err(member_error));
+                    }
+                    let ops = keys.into_ops();
+                    Err((error, ops))
+                }
+            };
+        }
+        Err((io::ErrorKind::Unsupported.into(), ops))
     }
 
     /// Flush the pushed operations to the kernel. It is roughly equivalent to
