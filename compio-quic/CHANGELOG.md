@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0-beta.2](https://github.com/compio-rs/compio/compare/compio-quic-v0.9.0-beta.1...compio-quic-v0.9.0-beta.2) - 2026-09-30
+
+### Other
+
+- updated the following local packages: compio-runtime, compio-dispatcher, compio-fs, compio-net
+
 ## 0.9.0-beta.1 - 2026-09-27
 
 ### Added
