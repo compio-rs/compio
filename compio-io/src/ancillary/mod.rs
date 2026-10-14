@@ -146,8 +146,11 @@ impl<'a, B: IoBufMut + ?Sized> AncillaryBuilder<'a, B> {
 
         // SAFETY: method `new` guarantees the buffer is zeroed and properly
         // aligned, and we have checked the space.
-        let mut cmsg = unsafe { self.inner.current_mut(self.buffer.buf_mut_ptr().cast()) }
-            .expect("sufficient space");
+        let mut cmsg = unsafe {
+            self.inner
+                .current_mut::<T>(self.buffer.buf_mut_ptr().cast())
+        }
+        .expect("sufficient space");
         cmsg.set_level(level);
         cmsg.set_ty(ty);
         unsafe {
