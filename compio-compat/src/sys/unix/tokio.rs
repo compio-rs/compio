@@ -10,10 +10,9 @@ pub struct TokioAdapter(AsyncFd<UnixAdapter>);
 
 impl Adapter for TokioAdapter {
     fn new(runtime: Runtime) -> io::Result<Self> {
-        Ok(Self(AsyncFd::with_interest(
-            UnixAdapter::new(runtime)?,
-            Interest::READABLE,
-        )?))
+        Ok(Self(unsafe {
+            AsyncFd::register_with_interest(UnixAdapter::new(runtime)?, Interest::READABLE)?
+        }))
     }
 
     async fn wait(&self, timeout: Option<Duration>) -> io::Result<()> {
