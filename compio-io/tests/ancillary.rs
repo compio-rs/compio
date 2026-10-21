@@ -42,7 +42,10 @@ unsafe fn check_cmsg(buf: &[u8]) {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "https://github.com/compio-rs/compio/issues/1074")]
+#[cfg_attr(
+    all(miri, target_vendor = "apple"),
+    ignore = "libc's Apple CMSG_NXTHDR does an int-to-pointer cast, rejected by strict provenance"
+)]
 fn test_cmsg() {
     let mut buf = AncillaryBuf::<128>::new();
     let builder = buf.builder();
@@ -56,7 +59,10 @@ fn test_cmsg() {
 // Test a custom DST buffer. It checks the compatibility for the previous
 // `CMsgBuilder`.
 #[test]
-#[cfg_attr(miri, ignore = "https://github.com/compio-rs/compio/issues/1074")]
+#[cfg_attr(
+    all(miri, target_vendor = "apple"),
+    ignore = "libc's Apple CMSG_NXTHDR does an int-to-pointer cast, rejected by strict provenance"
+)]
 fn test_custom_buffer_cmsg() {
     struct MaybeUninitBuffer<T: ?Sized> {
         len: usize,
