@@ -51,13 +51,15 @@ mod windows_macros {
             if cmsg.is_null() {
                 CMSG_FIRSTHDR(msg)
             } else {
-                let next = cmsg as usize + CMSG_ALIGN((*cmsg).cmsg_len);
-                if next + size_of::<CMSGHDR>()
-                    > (*msg).Control.buf as usize + (*msg).Control.len as usize
-                {
+                let next = cmsg
+                    .cast::<u8>()
+                    .wrapping_add(CMSG_ALIGN((*cmsg).cmsg_len))
+                    .cast::<CMSGHDR>();
+                let end = (*msg).Control.buf.addr() + (*msg).Control.len as usize;
+                if next.addr() + size_of::<CMSGHDR>() > end {
                     null_mut()
                 } else {
-                    next as _
+                    next.cast_mut()
                 }
             }
         }
