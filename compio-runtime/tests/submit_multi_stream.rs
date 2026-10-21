@@ -34,7 +34,7 @@ where
 
 #[test]
 fn accepts_custom_factory() {
-    let mut stream = Box::pin(SubmitMultiStream::new(CustomFactory));
+    let mut stream = std::pin::pin!(SubmitMultiStream::new(CustomFactory));
 
     let error = poll_error(stream.as_mut());
 
@@ -45,7 +45,7 @@ fn accepts_custom_factory() {
 fn accepts_closure_factory() {
     let factory =
         || -> io::Result<SubmitMultiManaged<Op>> { Err(io::Error::other("closure factory error")) };
-    let mut stream = Box::pin(SubmitMultiStream::new(factory));
+    let mut stream = std::pin::pin!(SubmitMultiStream::new(factory));
 
     let error = poll_error(stream.as_mut());
 
