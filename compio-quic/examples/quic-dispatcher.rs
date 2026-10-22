@@ -59,7 +59,7 @@ async fn main() {
     for _i in 0..CLIENT_NUM {
         let incoming = endpoint.wait_incoming().await.unwrap();
         let handle = dispatcher
-            .dispatch(move || async move {
+            .dispatch(async move || {
                 let conn = incoming.await.unwrap();
                 let mut recv = conn.accept_uni().await.unwrap();
                 let (_, buf) = recv.read_to_end(vec![]).await.unwrap();

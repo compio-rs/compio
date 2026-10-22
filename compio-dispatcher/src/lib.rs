@@ -12,7 +12,6 @@
 
 use std::{
     collections::HashSet,
-    future::Future,
     io,
     num::NonZeroUsize,
     panic::resume_unwind,
@@ -48,10 +47,9 @@ impl<F, R> Concrete<F, R> {
     }
 }
 
-impl<F, Fut, R> Spawnable for Concrete<F, R>
+impl<F, R> Spawnable for Concrete<F, R>
 where
-    F: FnOnce() -> Fut + Send + 'static,
-    Fut: Future<Output = R>,
+    F: AsyncFnOnce() -> R + Send + 'static,
     R: Send + 'static,
 {
     fn spawn(self: Box<Self>, handle: &Runtime, meta: SpawnMeta) -> CompioJoinHandle<()> {
@@ -183,10 +181,9 @@ impl Dispatcher {
     /// If all threads have panicked, this method will return an error with the
     /// sent closure.
     #[track_caller]
-    pub fn dispatch<Fn, Fut, R>(&self, f: Fn) -> Result<oneshot::Receiver<R>, DispatchError<Fn>>
+    pub fn dispatch<F, R>(&self, f: F) -> Result<oneshot::Receiver<R>, DispatchError<F>>
     where
-        Fn: (FnOnce() -> Fut) + Send + 'static,
-        Fut: Future<Output = R> + 'static,
+        F: AsyncFnOnce() -> R + Send + 'static,
         R: Send + 'static,
     {
         let (concrete, rx) = Concrete::new(f);
@@ -199,9 +196,9 @@ impl Dispatcher {
             Ok(_) => Ok(rx),
             Err(err) => {
                 // SAFETY: We know the dispatchable we sent has type
-                // `Concrete<Fn, R>`
+                // `Concrete<F, R>`
                 let recovered =
-                    unsafe { Box::from_raw(Box::into_raw(err.0.task) as *mut Concrete<Fn, R>) };
+                    unsafe { Box::from_raw(Box::into_raw(err.0.task) as *mut Concrete<F, R>) };
                 Err(DispatchError(recovered.func))
             }
         }

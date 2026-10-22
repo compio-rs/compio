@@ -29,7 +29,7 @@ async fn listener_dispatch() {
     for _i in 0..CLIENT_NUM {
         let (mut srv, _) = listener.accept().await.unwrap();
         let handle = dispatcher
-            .dispatch(move || async move {
+            .dispatch(async move || {
                 let (_, buf) = srv.read_exact(ArrayVec::<u8, 12>::new()).await.unwrap();
                 assert_eq!(buf.as_slice(), b"Hello world!");
             })
