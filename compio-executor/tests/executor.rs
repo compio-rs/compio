@@ -124,32 +124,13 @@ fn test_cancel_before_poll_returns_canceled() {
 fn test_cancel_during_execution_returns_canceled() {
     setup_log();
 
-    block_on(async {
-        let entered = std::rc::Rc::new(Cell::new(false));
-        let done = std::rc::Rc::new(Cell::new(false));
+    let handle = spawn(std::future::pending::<()>());
 
-        let entered_task = entered.clone();
-        let done_task = done.clone();
+    // Poll the task once before cancelling it.
+    EXE.with(|exe| exe.tick());
+    assert!(!handle.is_finished());
 
-        let handle = spawn(async move {
-            entered_task.set(true);
-            yield_now().await;
-            done_task.set(true);
-            42usize
-        });
-
-        while !entered.get() {
-            yield_now().await;
-        }
-
-        let res = handle.cancel().await;
-
-        assert!(res.is_none());
-        assert!(
-            !done.get(),
-            "future should be dropped after cancellation before completing"
-        );
-    });
+    assert!(block_on(handle.cancel()).is_none());
 }
 
 #[test]
