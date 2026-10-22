@@ -35,7 +35,7 @@ async fn main() {
     for _i in 0..CLIENT_NUM {
         let (mut srv, _) = listener.accept().await.unwrap();
         let handle = dispatcher
-            .dispatch(move || async move {
+            .dispatch(async move || {
                 let BufResult(res, buf) = srv.read(Vec::with_capacity(20)).await;
                 res.unwrap();
                 println!("{}", std::str::from_utf8(&buf).unwrap());

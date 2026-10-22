@@ -145,7 +145,7 @@ async fn server() {
         // the worker still runs the closure.
         drop(
             dispatcher
-                .dispatch(move || async move {
+                .dispatch(async move || {
                     let BufResult(read, buf) = stream.read(Vec::with_capacity(32)).await;
                     read.unwrap();
                     stream.write_all(buf).await.unwrap();

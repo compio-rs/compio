@@ -32,10 +32,10 @@ Example:
 use compio::dispatcher::Dispatcher;
 
 let dispatcher = Dispatcher::builder().worker_threads(4).build().unwrap();
-let result = dispatcher.dispatch(|| async {
+let result = dispatcher.dispatch(async || {
     // Your async work here
     42
 }).await;
 ```
 
-Notice that you're dispatching a `Send` closure that returns `Future` to the other threads. The `Future` returned by the closure does not need to be `Send`, which is convenient since lots of the operations are single-thread and not `Send` in `compio`.
+Notice that you're dispatching a `Send` async closure to the other threads. The `Future` returned by the closure does not need to be `Send`, which is convenient since lots of the operations are single-thread and not `Send` in `compio`.
