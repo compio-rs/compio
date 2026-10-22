@@ -68,9 +68,9 @@ fn main() {
 /// these report the `block_on` below as their location, and only the thread
 /// column tells them apart.
 #[track_caller]
-fn spawn_runtime<F: Future<Output = ()> + 'static>(
+fn spawn_runtime(
     name: &'static str,
-    f: fn() -> F,
+    f: impl AsyncFnOnce() + Send + 'static,
 ) -> thread::JoinHandle<()> {
     let meta = SpawnMeta::capture();
     thread::Builder::new()

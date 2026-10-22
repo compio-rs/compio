@@ -103,7 +103,7 @@ pub struct UdpSocket {
 impl UdpSocket {
     /// Creates a new UDP socket and attempt to bind it to the addr provided.
     pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
-        super::each_addr(addr, |addr| async move {
+        super::each_addr(addr, async |addr| {
             let addr = SockAddr::from(addr);
             let socket = Socket::new(addr.domain(), Type::DGRAM, Some(Protocol::UDP)).await?;
             socket.bind(&addr).await?;
@@ -120,10 +120,7 @@ impl UdpSocket {
     /// that there is a remote server listening on the port, rather, such an
     /// error would only be detected after the first send.
     pub async fn connect(&self, addr: impl ToSocketAddrsAsync) -> io::Result<()> {
-        super::each_addr(addr, |addr| async move {
-            self.inner.connect(&SockAddr::from(addr))
-        })
-        .await
+        super::each_addr(addr, async |addr| self.inner.connect(&SockAddr::from(addr))).await
     }
 
     /// Creates new UdpSocket from a std::net::UdpSocket.
@@ -392,7 +389,7 @@ impl UdpSocket {
         buffer: T,
         addr: impl ToSocketAddrsAsync,
     ) -> BufResult<usize, T> {
-        super::first_addr_buf(addr, buffer, |addr, buffer| async move {
+        super::first_addr_buf(addr, buffer, async |addr, buffer| {
             self.inner
                 .send_to(buffer, &SockAddr::from(addr), MSG_NOSIGNAL)
                 .await
@@ -407,7 +404,7 @@ impl UdpSocket {
         buffer: T,
         addr: impl ToSocketAddrsAsync,
     ) -> BufResult<usize, T> {
-        super::first_addr_buf(addr, buffer, |addr, buffer| async move {
+        super::first_addr_buf(addr, buffer, async |addr, buffer| {
             self.inner
                 .send_to_vectored(buffer, &SockAddr::from(addr), MSG_NOSIGNAL)
                 .await
@@ -423,15 +420,11 @@ impl UdpSocket {
         control: C,
         addr: impl ToSocketAddrsAsync,
     ) -> BufResult<usize, (T, C)> {
-        super::first_addr_buf(
-            addr,
-            (buffer, control),
-            |addr, (buffer, control)| async move {
-                self.inner
-                    .send_msg(buffer, control, Some(&SockAddr::from(addr)), MSG_NOSIGNAL)
-                    .await
-            },
-        )
+        super::first_addr_buf(addr, (buffer, control), async |addr, (buffer, control)| {
+            self.inner
+                .send_msg(buffer, control, Some(&SockAddr::from(addr)), MSG_NOSIGNAL)
+                .await
+        })
         .await
     }
 
@@ -443,15 +436,11 @@ impl UdpSocket {
         control: C,
         addr: impl ToSocketAddrsAsync,
     ) -> BufResult<usize, (T, C)> {
-        super::first_addr_buf(
-            addr,
-            (buffer, control),
-            |addr, (buffer, control)| async move {
-                self.inner
-                    .send_msg_vectored(buffer, control, Some(&SockAddr::from(addr)), MSG_NOSIGNAL)
-                    .await
-            },
-        )
+        super::first_addr_buf(addr, (buffer, control), async |addr, (buffer, control)| {
+            self.inner
+                .send_msg_vectored(buffer, control, Some(&SockAddr::from(addr)), MSG_NOSIGNAL)
+                .await
+        })
         .await
     }
 
@@ -486,7 +475,7 @@ impl UdpSocket {
         buffer: T,
         addr: A,
     ) -> BufResult<usize, impl Future<Output = T> + use<A, T>> {
-        super::first_addr_buf_zerocopy(addr, buffer, |addr, buffer| async move {
+        super::first_addr_buf_zerocopy(addr, buffer, async |addr, buffer| {
             self.inner
                 .send_to_zerocopy(buffer, &addr.into(), MSG_NOSIGNAL)
                 .await
@@ -503,7 +492,7 @@ impl UdpSocket {
         buffer: T,
         addr: A,
     ) -> BufResult<usize, impl Future<Output = T> + use<A, T>> {
-        super::first_addr_buf_zerocopy(addr, buffer, |addr, buffer| async move {
+        super::first_addr_buf_zerocopy(addr, buffer, async |addr, buffer| {
             self.inner
                 .send_to_zerocopy_vectored(buffer, &addr.into(), MSG_NOSIGNAL)
                 .await
@@ -522,7 +511,7 @@ impl UdpSocket {
         control: C,
         addr: A,
     ) -> BufResult<usize, impl Future<Output = (T, C)> + use<A, T, C>> {
-        super::first_addr_buf_zerocopy(addr, (buffer, control), |addr, (b, c)| async move {
+        super::first_addr_buf_zerocopy(addr, (buffer, control), async |addr, (b, c)| {
             self.inner
                 .send_msg_zerocopy(b, c, Some(&addr.into()), MSG_NOSIGNAL)
                 .await
@@ -541,7 +530,7 @@ impl UdpSocket {
         control: C,
         addr: A,
     ) -> BufResult<usize, impl Future<Output = (T, C)> + use<A, T, C>> {
-        super::first_addr_buf_zerocopy(addr, (buffer, control), |addr, (b, c)| async move {
+        super::first_addr_buf_zerocopy(addr, (buffer, control), async |addr, (b, c)| {
             self.inner
                 .send_msg_zerocopy_vectored(b, c, Some(&addr.into()), MSG_NOSIGNAL)
                 .await

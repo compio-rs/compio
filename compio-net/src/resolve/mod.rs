@@ -132,9 +132,9 @@ impl<T: ToSocketAddrsAsync + ?Sized> ToSocketAddrsAsync for &T {
     }
 }
 
-pub async fn each_addr<T, F: Future<Output = io::Result<T>>>(
+pub async fn each_addr<T>(
     addr: impl ToSocketAddrsAsync,
-    f: impl Fn(SocketAddr) -> F,
+    f: impl AsyncFn(SocketAddr) -> io::Result<T>,
 ) -> io::Result<T> {
     let addrs = addr.to_socket_addrs_async().await?;
     let mut last_err = None;
@@ -152,10 +152,10 @@ pub async fn each_addr<T, F: Future<Output = io::Result<T>>>(
     }))
 }
 
-pub async fn first_addr_buf<T, B, F: Future<Output = BufResult<T, B>>>(
+pub async fn first_addr_buf<T, B>(
     addr: impl ToSocketAddrsAsync,
     buffer: B,
-    f: impl FnOnce(SocketAddr, B) -> F,
+    f: impl AsyncFnOnce(SocketAddr, B) -> BufResult<T, B>,
 ) -> BufResult<T, B> {
     let (mut addrs, buffer) = buf_try!(addr.to_socket_addrs_async().await, buffer);
     if let Some(addr) = addrs.next() {
@@ -172,14 +172,13 @@ pub async fn first_addr_buf<T, B, F: Future<Output = BufResult<T, B>>>(
     }
 }
 
-pub async fn first_addr_buf_zerocopy<B, F1, F2>(
+pub async fn first_addr_buf_zerocopy<B, F>(
     addr: impl ToSocketAddrsAsync,
     buffer: B,
-    f: impl FnOnce(SocketAddr, B) -> F1,
-) -> BufResult<usize, Either<Ready<B>, F2>>
+    f: impl AsyncFnOnce(SocketAddr, B) -> BufResult<usize, F>,
+) -> BufResult<usize, Either<Ready<B>, F>>
 where
-    F1: Future<Output = BufResult<usize, F2>>,
-    F2: Future<Output = B>,
+    F: Future<Output = B>,
 {
     fn ret<T, F>(fut: T) -> Either<Ready<T>, F> {
         Either::Left(ready(fut))
