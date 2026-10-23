@@ -76,27 +76,26 @@ impl TaskQueue {
 
         trace!("Clearing");
 
-        unsafe {
-            self.with_inner(|inner| {
-                if inner.map.is_empty() {
-                    trace!("Map empty, return");
-                    return;
-                }
+        loop {
+            let tasks: Vec<Task> = unsafe {
+                self.with_inner(|inner| {
+                    inner.hot = List::default();
+                    inner.cold = List::default();
+                    inner.map.drain().filter_map(|(_, i)| i.task).collect()
+                })
+            };
 
-                inner.hot.head = None;
-                inner.hot.tail = None;
-                inner.cold.head = None;
-                inner.cold.tail = None;
+            if tasks.is_empty() {
+                trace!("Map empty, return");
+                return;
+            }
 
-                for task in inner.map.drain().filter_map(|(_, i)| i.task) {
-                    trace!(?task, "Dropping task");
+            for task in tasks {
+                trace!(?task, "Dropping task");
 
-                    task.drop();
-                    task.wait_for_scheduling();
-                }
-
-                debug_assert!(inner.map.is_empty());
-            })
+                unsafe { task.drop() };
+                task.wait_for_scheduling();
+            }
         }
     }
 

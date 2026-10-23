@@ -270,3 +270,46 @@ fn test_num_alive_tasks() {
     exe.clear();
     assert_eq!(exe.num_alive_tasks(), 0);
 }
+
+#[test]
+fn test_clear_with_join_handle_in_task() {
+    setup_log();
+
+    let exe = std::rc::Rc::new(Executor::new());
+    let inner = exe.clone();
+    exe.spawn(async move {
+        let _ = inner.spawn(std::future::pending::<()>()).await;
+    })
+    .detach();
+    exe.tick();
+    assert_eq!(exe.num_alive_tasks(), 2);
+
+    exe.clear();
+    assert_eq!(exe.num_alive_tasks(), 0);
+}
+
+#[test]
+fn test_clear_with_spawn_on_drop() {
+    setup_log();
+
+    struct SpawnOnDrop(std::rc::Rc<Executor>);
+
+    impl Drop for SpawnOnDrop {
+        fn drop(&mut self) {
+            self.0.spawn(std::future::pending::<()>()).detach();
+        }
+    }
+
+    let exe = std::rc::Rc::new(Executor::new());
+    let guard = SpawnOnDrop(exe.clone());
+    exe.spawn(async move {
+        let _guard = guard;
+        std::future::pending::<()>().await;
+    })
+    .detach();
+    exe.tick();
+    assert_eq!(exe.num_alive_tasks(), 1);
+
+    exe.clear();
+    assert_eq!(exe.num_alive_tasks(), 0);
+}
