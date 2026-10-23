@@ -205,10 +205,18 @@ impl Executor {
 
         self.shared().drain_sync(queue);
 
-        for id in queue.iter_hot().take(self.config.max_interval as _) {
+        for _ in 0..self.config.max_interval {
+            let Some(id) = queue.hot_head() else {
+                return false;
+            };
+
             queue.make_cold(id);
+
             let task = queue.take(id).expect("Task was not reset back");
+            // SAFETY: Only the owning executor polls this task. Completed
+            // tasks are removed from the queue before they can be run again.
             let res = unsafe { task.run() };
+
             if res.is_ready() {
                 // SAFETY: We're removing it soon, so drop will only be called
                 // once. The shared pointer is kept valid until
@@ -227,7 +235,7 @@ impl Executor {
     /// Check if there's still scheduled task that needs to be ran.
     #[doc(hidden)]
     pub fn has_task(&self) -> bool {
-        self.queue().hot_head().is_some()
+        self.queue().has_hot()
     }
 
     /// Returns the number of alive tasks in the executor.

@@ -55,12 +55,6 @@ struct Item {
     is_hot: bool,
 }
 
-#[derive(Debug)]
-pub struct Iter<'a> {
-    queue: &'a TaskQueue,
-    curr: Option<TaskId>,
-}
-
 type QueueMarker = bool;
 const HOT: QueueMarker = true;
 const COLD: QueueMarker = false;
@@ -170,26 +164,8 @@ impl TaskQueue {
         unsafe { self.with_inner(|inner| inner.make_cold(key)) }
     }
 
-    pub fn next_hot(&self, key: TaskId) -> Option<TaskId> {
-        unsafe {
-            self.with_inner(|inner| {
-                inner.map.get(key).and_then(|item| {
-                    debug_assert!(item.is_hot);
-                    item.next
-                })
-            })
-        }
-    }
-
     pub fn hot_head(&self) -> Option<TaskId> {
         unsafe { self.with_inner(|inner| inner.hot.head) }
-    }
-
-    pub fn iter_hot(&self) -> Iter<'_> {
-        Iter {
-            queue: self,
-            curr: self.hot_head(),
-        }
     }
 
     pub fn remove(&self, key: TaskId) -> Option<Task> {
@@ -300,15 +276,5 @@ impl Inner {
 
         self.unlink::<HOT>(key);
         self.link_tail::<COLD>(key);
-    }
-}
-
-impl<'a> Iterator for Iter<'a> {
-    type Item = TaskId;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let curr = self.curr?;
-        self.curr = self.queue.next_hot(curr);
-        Some(curr)
     }
 }
