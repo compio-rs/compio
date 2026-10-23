@@ -766,3 +766,18 @@ fn buf_writer_fill_buf_does_not_implicitly_flush_buffer() {
         assert_eq!(inner.flush_count, 0);
     })
 }
+
+#[test]
+fn copy_with_size_zero_returns_empty_input_immediately() {
+    use compio_io::util::copy_with_size;
+
+    block_on(async {
+        let mut reader = b"input".as_slice();
+        let mut writer = Vec::new();
+        assert_eq!(
+            copy_with_size(&mut reader, &mut writer, 0).await.unwrap(),
+            0
+        );
+        assert!(writer.is_empty());
+    })
+}

@@ -370,6 +370,11 @@ impl AsyncWrite for Sender {
     async fn shutdown(&mut self) -> io::Result<()> {
         (&*self).shutdown().await
     }
+
+    #[cfg(target_os = "linux")]
+    fn copy_fd(&self) -> Option<impl AsFd + 'static> {
+        self.file.inner.copy_fd()
+    }
 }
 
 impl AsyncWrite for &Sender {
@@ -389,6 +394,11 @@ impl AsyncWrite for &Sender {
     #[inline]
     async fn shutdown(&mut self) -> io::Result<()> {
         Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    fn copy_fd(&self) -> Option<impl AsFd + 'static> {
+        self.file.inner.copy_fd()
     }
 }
 
@@ -491,6 +501,15 @@ impl AsyncRead for Receiver {
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
         (&*self).read_vectored(buf).await
     }
+
+    #[cfg(target_os = "linux")]
+    async fn copy_to<W: AsyncWrite + ?Sized>(
+        &mut self,
+        writer: &mut W,
+        buf_size: Option<usize>,
+    ) -> io::Result<u64> {
+        (&*self).copy_to(writer, buf_size).await
+    }
 }
 
 impl AsyncRead for &Receiver {
@@ -500,6 +519,15 @@ impl AsyncRead for &Receiver {
 
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buffer: V) -> BufResult<usize, V> {
         (&self.file.inner).read_vectored(buffer).await
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn copy_to<W: AsyncWrite + ?Sized>(
+        &mut self,
+        writer: &mut W,
+        buf_size: Option<usize>,
+    ) -> io::Result<u64> {
+        (&self.file.inner).copy_to(writer, buf_size).await
     }
 }
 
