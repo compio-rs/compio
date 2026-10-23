@@ -15,6 +15,7 @@
 )]
 
 mod incoming;
+pub mod offload;
 mod resolve;
 mod socket;
 pub(crate) mod split;
