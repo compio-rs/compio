@@ -42,7 +42,6 @@ jobs:
             target: 'x86_64-pc-windows-msvc'
           - os: 'windows-latest'
             target: 'x86_64-pc-windows-gnu'
-          - os: 'macos-14'
           - os: 'macos-15'
     runs-on: ${{ matrix.setup.os }}
     steps:
