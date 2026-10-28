@@ -61,8 +61,8 @@ pub(crate) fn get_ext(waker: &Waker) -> Option<&Ext<'_>> {
 #[derive(Debug, Clone)]
 pub(crate) struct ExtWaker<'a, 'b> {
     waker: &'a Waker,
-    // `SendWrapper<&Ext>` will not panic when being dropped on other thread since references
-    // doesn't need drop
+    // `SendWrapper<&Ext>` will not panic when being dropped on other thread
+    // since references doesn't need drop
     ext: SendWrapper<&'a Ext<'b>>,
 }
 

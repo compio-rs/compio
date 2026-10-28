@@ -350,8 +350,8 @@ impl<S: AsyncRead + Unpin + 'static> futures_util::AsyncBufRead for AsyncReadStr
             poll_future_would_block!(
                 cx,
                 this.read_buf_waker,
-                // SAFETY: The buffer won't be accessed after the future is ready, and the future
-                // won't live longer than the stream.
+                // SAFETY: The buffer won't be accessed after the future is
+                // ready, and the future won't live longer than the stream.
                 io::BufRead::fill_buf(this.inner.get_mut()).map(|s| unsafe { extend_lifetime(s) }),
                 self.as_mut().poll_read_impl()
             )

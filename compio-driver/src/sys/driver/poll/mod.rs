@@ -348,10 +348,10 @@ impl Driver {
                         Poll::Pending
                     }
                     // FreeBSD:
-                    //   * EOPNOTSUPP: It's on a filesystem without AIO support. Just fallback to
-                    //     blocking IO.
-                    //   * EAGAIN: The process-wide queue is full. No safe way to remove the (maybe)
-                    //     dead entries.
+                    //   * EOPNOTSUPP: It's on a filesystem without AIO support.
+                    //     Just fallback to blocking IO.
+                    //   * EAGAIN: The process-wide queue is full. No safe way
+                    //     to remove the (maybe) dead entries.
                     // Solarish:
                     //   * EAGAIN: Allocation failed.
                     Err(e)
@@ -493,10 +493,11 @@ impl Driver {
                         drop(op);
                         let err = unsafe { libc::aio_error(aiocbp.as_ptr()) };
                         let res = match err {
-                            // If the user_data is reused but the previously registered event still
-                            // emits (for example, HUP in epoll; however it is impossible now
-                            // because we only use AIO on FreeBSD), we'd better ignore the current
-                            // one and wait for the real event.
+                            // If the user_data is reused but the previously
+                            // registered event still emits (for example, HUP in
+                            // epoll; however it is impossible now because we
+                            // only use AIO on FreeBSD), we'd better ignore the
+                            // current one and wait for the real event.
                             libc::EINPROGRESS => {
                                 trace!("op {} is not completed", key.as_raw());
                                 continue;

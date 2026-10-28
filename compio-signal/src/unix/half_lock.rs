@@ -113,7 +113,8 @@ pub(crate) struct HalfLock<T> {
     _t: PhantomData<T>,
     // The actual data as a pointer.
     data: AtomicPtr<T>,
-    // The generation of the data. Influences which slot of the lock counter we use.
+    // The generation of the data. Influences which slot of the lock counter we
+    // use.
     generation: AtomicUsize,
     // How many active locks are there?
     lock: [AtomicUsize; 2],
