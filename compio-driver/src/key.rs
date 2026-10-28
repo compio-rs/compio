@@ -24,12 +24,14 @@ use crate::{Carry, DriverType, Extra, OpCode, PushEntry, control::Carrier};
 pub(crate) struct RawOp<M: ?Sized> {
     // Platform-specific extra data.
     //
-    // - On Windows, it holds the `OVERLAPPED` buffer and a pointer to the driver.
+    // - On Windows, it holds the `OVERLAPPED` buffer and a pointer to the
+    //   driver.
     // - On Linux with `io_uring`, it holds the flags returned by kernel.
     // - On other platforms, it stores tracker for multi-fd `OpCode`s.
     //
-    // Extra MUST be the first field to guarantee the layout for casting on windows. An invariant
-    // on IOCP driver is that `RawOp` pointer is the same as `OVERLAPPED` pointer.
+    // Extra MUST be the first field to guarantee the layout for casting on
+    // windows. An invariant on IOCP driver is that `RawOp` pointer is the same
+    // as `OVERLAPPED` pointer.
     extra: Extra,
     // The cancelled flag indicates the op has been cancelled.
     cancelled: bool,

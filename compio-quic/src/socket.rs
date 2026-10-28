@@ -323,8 +323,8 @@ impl Socket {
                     (WinSock::IPPROTO_IP, WinSock::IP_PKTINFO) => {
                         let pktinfo = cmsg.data::<WinSock::IN_PKTINFO>()?;
                         local_ip = Some(IpAddr::from(
-                            // SAFETY: S_addr is a valid representation of the union for IPv4
-                            // addresses
+                            // SAFETY: S_addr is a valid representation of the
+                            // union for IPv4 addresses
                             unsafe { pktinfo.ipi_addr.S_un.S_addr }.to_ne_bytes(),
                         ));
                     }
