@@ -18,6 +18,7 @@ rustix = { workspace = true, features = ["net"], optional = true }
 synchrony = { workspace = true, features = ["bilock"] }
 
 thiserror = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
 serde = { version = "1.0.219", optional = true }
 serde_json = { version = "1.0.140", optional = true }
 bytemuck = { workspace = true, optional = true, features = [
@@ -33,13 +34,15 @@ windows-sys = { workspace = true, optional = true, features = [
 ] }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt"] }
+tokio = { workspace = true, features = ["io-util", "macros", "rt"] }
 serde = { version = "1.0.219", features = ["derive"] }
 futures-executor = { workspace = true }
 
 [features]
 default = ["bytes"]
 compat = ["futures-util/io", "dep:pin-project-lite"]
+# `tokio::io` traits on the `compat` adapters
+tokio = ["compat", "dep:tokio"]
 sync = []
 ancillary = ["dep:libc", "dep:rustix", "dep:windows-sys"]
 bytes = ["compio-buf/bytes"]
@@ -56,6 +59,10 @@ nightly = ["allocator_api", "read_buf"]
 [[test]]
 name = "compat"
 required-features = ["compat"]
+
+[[test]]
+name = "tokio"
+required-features = ["tokio"]
 
 [[test]]
 name = "framed"

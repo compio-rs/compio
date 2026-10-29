@@ -45,12 +45,17 @@ compio-buf = { workspace = true, features = ["bumpalo"] }
 compio-runtime = { workspace = true, features = ["criterion"] }
 compio-macros = { workspace = true }
 
+bytes = { workspace = true }
 console-subscriber = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 futures-channel = { workspace = true }
 futures-executor = { workspace = true }
 futures-util = { workspace = true }
+h2 = { workspace = true }
+http = { workspace = true }
 rand = { workspace = true }
+rcgen = { workspace = true }
+rustls = { workspace = true, features = ["ring"] }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = [
     "fs",
@@ -78,6 +83,8 @@ polling = ["compio-driver/polling"]
 actor = ["dep:compio-actor"]
 io = ["dep:compio-io"]
 io-compat = ["io", "compio-io/compat", "compio-quic?/io-compat"]
+# `tokio::io` traits on the `io-compat` adapters and the TLS streams
+io-compat-tokio = ["io-compat", "compio-io/tokio", "compio-tls?/tokio"]
 io-ancillary = ["io", "compio-io/ancillary"]
 io-codec-serde-json = ["io", "compio-io/codec-serde-json"]
 fs = ["dep:compio-fs", "runtime", "io"]
@@ -120,6 +127,7 @@ all = [
     "io",
     "io-ancillary",
     "io-compat",
+    "io-compat-tokio",
     "io-codec-serde-json",
     "runtime",
     "async-fd",
@@ -276,6 +284,10 @@ required-features = ["fs", "net"]
 [[test]]
 name = "runtime"
 required-features = ["fs", "net", "macros"]
+
+[[test]]
+name = "h2"
+required-features = ["net", "macros", "io-compat-tokio", "ring"]
 
 [[test]]
 name = "accept"

@@ -63,6 +63,8 @@ futures-core = "0.3.31"
 futures-executor = "0.3.30"
 futures-rustls = { version = "0.26.0", default-features = false }
 futures-util = "0.3.29"
+h2 = "0.4.20"
+http = "1.4.0"
 libc = "0.2.175"
 mod_use = "0.2.3"
 native-tls = "0.2.13"

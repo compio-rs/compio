@@ -28,6 +28,7 @@ futures-rustls = { workspace = true, default-features = false, optional = true, 
 ] }
 futures-util = { workspace = true, features = ["io"] }
 pin-project-lite = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 compio-runtime = { workspace = true }
@@ -53,3 +54,6 @@ native-tls-vendored = ["native-tls/vendored"]
 py-dynamic-openssl = ["dep:compio-py-dynamic-openssl", "dep:pin-project-lite"]
 
 ring = ["rustls", "rustls/ring", "futures-rustls/ring"]
+
+# `tokio::io` traits on the TLS streams
+tokio = ["dep:tokio"]

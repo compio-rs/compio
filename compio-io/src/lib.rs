@@ -38,7 +38,8 @@
 //! - [`compat::SyncStream`]: Adapts async IO to std blocking io (requires
 //!   `compat` feature)
 //! - [`compat::AsyncStream`]: Adapts async IO to [`futures_util::io`] traits
-//!   (requires `compat` feature)
+//!   (requires `compat` feature), and to `tokio::io` traits (requires `tokio`
+//!   feature)
 //!
 //! [`IoBufMut`]: compio_buf::IoBufMut
 //! [`IoBuf`]: compio_buf::IoBuf
