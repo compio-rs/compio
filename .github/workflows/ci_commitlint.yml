@@ -1,19 +1,21 @@
 name: Lint Commit Messages
 on:
-  merge_group:
-    types: [checks_requested]
   pull_request:
-  push:
+    types: [opened, edited, reopened, synchronize]
 
 permissions:
   contents: read
-  pull-requests: read
 
 jobs:
   commitlint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: wagoid/commitlint-github-action@v6
-        with:
-          configFile: .commitlintrc.json
+      - name: Install Commitlint
+        run: |
+          npm install -D @commitlint/cli @commitlint/config-conventional
+      - name: Lint pull request title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "$PR_TITLE" | npx commitlint --config .commitlintrc.json
