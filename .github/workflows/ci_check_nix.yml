@@ -1,0 +1,33 @@
+name: Check Nix
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/workflows/ci_check_nix.yml"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/workflows/ci_check_nix.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: cachix/install-nix-action@v31
+      - name: Check flake
+        run: nix flake check
