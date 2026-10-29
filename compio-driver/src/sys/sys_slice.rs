@@ -122,8 +122,8 @@ pub(crate) trait IoBufMutExt: IoBufMut {
 impl<T: IoBufMut + ?Sized> IoBufMutExt for T {}
 
 pub(crate) trait IoVectoredBufExt: IoVectoredBuf {
-    /// Convert a pinned [`IoVectoredBuf`] into a vector of [`SysSlice`]s.
-    fn sys_slices(&self) -> Vec<SysSlice> {
+    /// Collect the [`SysSlice`]s of a pinned [`IoVectoredBuf`].
+    fn sys_slices<C: FromIterator<SysSlice>>(&self) -> C {
         self.iter_slice().map(SysSlice::from_slice).collect()
     }
 }
@@ -131,8 +131,8 @@ pub(crate) trait IoVectoredBufExt: IoVectoredBuf {
 impl<T: IoVectoredBuf + ?Sized> IoVectoredBufExt for T {}
 
 pub(crate) trait IoVectoredBufMutExt: IoVectoredBufMut {
-    /// Convert a pinned [`IoVectoredBufMut`] into a vector of [`SysSlice`]s.
-    fn sys_slices_mut(&mut self) -> Vec<SysSlice> {
+    /// Collect the [`SysSlice`]s of a pinned [`IoVectoredBufMut`].
+    fn sys_slices_mut<C: FromIterator<SysSlice>>(&mut self) -> C {
         self.iter_uninit_slice()
             .map(SysSlice::from_uninit)
             .collect()

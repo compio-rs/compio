@@ -194,7 +194,7 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
     type Control = RecvMsgControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
-        ctrl.slices = self.buffer.sys_slices_mut().into();
+        ctrl.slices = self.buffer.sys_slices_mut();
         ctrl.msg.msg_name = &raw mut self.header.addr as _;
         ctrl.msg.msg_namelen = self.header.addr.size_of() as _;
         ctrl.msg.msg_iov = ctrl.slices.as_mut_ptr() as _;
@@ -234,7 +234,7 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     type Control = SendMsgControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
-        ctrl.slices = self.buffer.sys_slices().into();
+        ctrl.slices = self.buffer.sys_slices();
         ctrl.msg.msg_name = self.header.addr.as_ptr() as _;
         ctrl.msg.msg_namelen = self.header.addr.len() as _;
         ctrl.msg.msg_iov = ctrl.slices.as_ptr() as _;

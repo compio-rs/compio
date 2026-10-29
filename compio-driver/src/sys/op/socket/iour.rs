@@ -198,7 +198,7 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     type Control = SendMsgControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
-        self.header.create_control(ctrl, self.buffer.sys_slices())
+        self.header.create_control(ctrl, self.buffer.sys_slices::<Multi<_>>())
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
@@ -332,7 +332,7 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
         self.header
-            .create_control(ctrl, self.buffer.sys_slices_mut())
+            .create_control(ctrl, self.buffer.sys_slices_mut::<Multi<_>>())
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
