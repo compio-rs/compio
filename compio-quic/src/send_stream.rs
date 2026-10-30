@@ -140,10 +140,7 @@ impl SendStream {
 
     /// Polls for the stream to be stopped or read to completion; see
     /// [`stopped()`](Self::stopped).
-    pub fn poll_stopped(
-        &mut self,
-        cx: &mut Context,
-    ) -> Poll<Result<Option<VarInt>, StoppedError>> {
+    pub fn poll_stopped(&mut self, cx: &mut Context) -> Poll<Result<Option<VarInt>, StoppedError>> {
         let mut state = self.conn.state();
         if self.is_0rtt && !state.check_0rtt() {
             return Poll::Ready(Err(StoppedError::ZeroRttRejected));
