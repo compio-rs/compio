@@ -1,4 +1,4 @@
-#[cfg(feature = "read_buf")]
+#[cfg(any(feature = "read_buf", feature = "tokio"))]
 use std::mem::MaybeUninit;
 use std::{
     cell::RefCell,
@@ -65,7 +65,7 @@ pub fn read(fd: BorrowedFd<'_>, buf: &mut [u8]) -> io::Result<usize> {
     run_socket_op(fd, |socket| io::Read::read(&mut &*socket, buf))
 }
 
-#[cfg(feature = "read_buf")]
+#[cfg(any(feature = "read_buf", feature = "tokio"))]
 pub fn read_uninit(fd: BorrowedFd<'_>, buf: &mut [MaybeUninit<u8>]) -> io::Result<usize> {
     run_socket_op(fd, |socket| socket.recv(buf))
 }

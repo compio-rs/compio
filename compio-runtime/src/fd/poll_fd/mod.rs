@@ -436,3 +436,109 @@ impl<T: AsFd + 'static> futures_util::AsyncWrite for PollFd<T> {
         Poll::Ready(self.shutdown_write())
     }
 }
+
+#[cfg(feature = "tokio")]
+impl<T: AsFd + 'static> PollFd<T> {
+    /// Poll for read readiness and read into the unfilled part of `buf`,
+    /// without initializing it first.
+    fn poll_read_unfilled(
+        &self,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let read = std::task::ready!(self.poll_read_with(cx, |fd| {
+            // SAFETY: platform reads never de-initialize the bytes they are
+            // given.
+            sys::read_uninit(fd.as_fd(), unsafe { buf.unfilled_mut() })
+        }))?;
+        // SAFETY: platform reads initialize the first `read` bytes they are
+        // given.
+        unsafe { buf.assume_init(read) };
+        buf.advance(read);
+        Poll::Ready(Ok(()))
+    }
+}
+
+#[cfg(feature = "tokio")]
+impl<T: AsFd + 'static> tokio::io::AsyncRead for &PollFd<T> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        (*self).poll_read_unfilled(cx, buf)
+    }
+}
+
+#[cfg(feature = "tokio")]
+impl<T: AsFd + 'static> tokio::io::AsyncRead for PollFd<T> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        (*self).poll_read_unfilled(cx, buf)
+    }
+}
+
+#[cfg(feature = "tokio")]
+impl<T: AsFd + 'static> tokio::io::AsyncWrite for &PollFd<T> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        (*self).poll_write(cx, buf)
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        (*self).poll_write_vectored(cx, bufs)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        true
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        (*self).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(self.shutdown_write())
+    }
+}
+
+#[cfg(feature = "tokio")]
+impl<T: AsFd + 'static> tokio::io::AsyncWrite for PollFd<T> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        (*self).poll_write(cx, buf)
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        (*self).poll_write_vectored(cx, bufs)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        true
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        (*self).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(self.shutdown_write())
+    }
+}

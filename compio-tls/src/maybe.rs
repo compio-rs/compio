@@ -35,6 +35,16 @@ impl<S> MaybeTlsStream<S> {
     pub fn is_tls(&self) -> bool {
         matches!(self.0, MaybeTlsStreamInner::Tls(_))
     }
+
+    /// Whether `poll_write_vectored` takes all the buffers at once; unknown,
+    /// so no, for a plain stream.
+    #[cfg(feature = "tokio")]
+    pub(crate) fn writes_vectored(&self) -> bool {
+        match &self.0 {
+            MaybeTlsStreamInner::Plain(_) => false,
+            MaybeTlsStreamInner::Tls(s) => s.writes_vectored(),
+        }
+    }
 }
 
 impl<S> MaybeTlsStream<S>
