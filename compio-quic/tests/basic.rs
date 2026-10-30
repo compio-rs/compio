@@ -117,6 +117,42 @@ async fn read_after_close() {
 }
 
 #[compio_macros::test]
+async fn close_after_poll_stopped_loses_nothing() {
+    let _guard = subscribe();
+
+    let endpoint = endpoint().await;
+
+    // Larger than what one flight can carry, so data is still unacknowledged
+    // when `finish` returns.
+    let msg: Vec<u8> = (0..=255u8).cycle().take(4 << 20).collect();
+
+    join!(
+        async {
+            let conn = endpoint.wait_incoming().await.unwrap().await.unwrap();
+            let mut s = conn.open_uni().unwrap();
+            s.write_all(msg.clone()).await.unwrap();
+            s.finish().unwrap();
+            let stopped = std::future::poll_fn(|cx| s.poll_stopped(cx)).await;
+            assert!(matches!(stopped, Ok(None)), "{stopped:?}");
+            conn.close(0u32.into(), b"done");
+        },
+        async {
+            let conn = endpoint
+                .connect(endpoint.local_addr().unwrap(), "localhost", None)
+                .unwrap()
+                .await
+                .unwrap();
+            let mut recv = conn.accept_uni().await.unwrap();
+            let (_, buf) = recv.read_to_end(vec![]).await.unwrap();
+            assert_eq!(buf.len(), msg.len());
+            assert!(buf == msg);
+        },
+    );
+
+    endpoint.shutdown().await.unwrap();
+}
+
+#[compio_macros::test]
 async fn export_keying_material() {
     let _guard = subscribe();
 
