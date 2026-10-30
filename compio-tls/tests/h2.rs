@@ -1,25 +1,19 @@
-//! `h2`, written against `tokio::io`, over compio TCP and TLS streams.
+//! `h2`, written against `tokio::io`, over `PollFd` sockets and TLS streams.
 
-use std::{net::SocketAddr, pin::Pin, sync::Arc};
+use std::{
+    net::{Ipv4Addr, SocketAddr, TcpListener},
+    sync::Arc,
+};
 
 use bytes::Bytes;
-use compio::{
-    io::compat::AsyncStream,
-    net::{TcpListener, TcpStream},
-    tls::{TlsAcceptor, TlsConnector},
-};
+use compio_runtime::fd::PollFd;
+use compio_tls::{TlsAcceptor, TlsConnector};
 use rustls::{
     ClientConfig, RootCertStore, ServerConfig,
     crypto::ring::default_provider,
     pki_types::{CertificateDer, PrivateKeyDer},
 };
-
-/// A compio TCP stream with `tokio::io` traits; `h2` wants it `Unpin`.
-type Io = Pin<Box<AsyncStream<TcpStream>>>;
-
-fn io(stream: TcpStream) -> Io {
-    Box::pin(AsyncStream::new(stream))
-}
+use socket2::{Domain, Protocol, Socket, Type};
 
 /// The response body: larger than the initial flow-control windows (64 KiB)
 /// and the read buffers, so it goes in many frames and the client must grant
@@ -49,7 +43,7 @@ where
     T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
 {
     let (mut client, connection) = h2::client::handshake(stream).await.unwrap();
-    compio::runtime::spawn(async move { connection.await.unwrap() }).detach();
+    compio_runtime::spawn(async move { connection.await.unwrap() }).detach();
     let request = http::Request::get("https://localhost/").body(()).unwrap();
     let (response, _) = client.send_request(request, true).unwrap();
     let response = response.await.unwrap();
@@ -64,26 +58,33 @@ where
     received.into()
 }
 
-async fn listen() -> (TcpListener, SocketAddr) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+fn listen() -> (PollFd<TcpListener>, SocketAddr) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
     let addr = listener.local_addr().unwrap();
-    (listener, addr)
+    (PollFd::new(listener).unwrap(), addr)
 }
 
-#[compio::test]
+async fn connect(addr: SocketAddr) -> PollFd<Socket> {
+    let stream = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
+    let stream = PollFd::new(stream).unwrap();
+    stream.connect(&addr.into()).await.unwrap();
+    stream
+}
+
+#[compio_macros::test]
 async fn h2_over_tcp() {
-    let (listener, addr) = listen().await;
-    compio::runtime::spawn(async move {
+    let (listener, addr) = listen();
+    compio_runtime::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
-        serve(io(stream)).await;
+        serve(stream).await;
     })
     .detach();
 
-    let stream = TcpStream::connect(addr).await.unwrap();
-    assert_eq!(ask(io(stream)).await, body());
+    assert_eq!(ask(connect(addr).await).await, body());
 }
 
-#[compio::test]
+#[compio_macros::test]
 async fn h2_over_tls() {
     let key = rcgen::KeyPair::generate().unwrap();
     let cert = rcgen::CertificateParams::new(["localhost".into()])
@@ -113,15 +114,17 @@ async fn h2_over_tls() {
     client.alpn_protocols = vec![b"h2".to_vec()];
     let connector = TlsConnector::from(Arc::new(client));
 
-    let (listener, addr) = listen().await;
-    compio::runtime::spawn(async move {
+    let (listener, addr) = listen();
+    compio_runtime::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
-        serve(acceptor.accept(io(stream)).await.unwrap()).await;
+        serve(acceptor.accept(stream).await.unwrap()).await;
     })
     .detach();
 
-    let stream = TcpStream::connect(addr).await.unwrap();
-    let stream = connector.connect("localhost", io(stream)).await.unwrap();
+    let stream = connector
+        .connect("localhost", connect(addr).await)
+        .await
+        .unwrap();
     assert_eq!(stream.negotiated_alpn().as_deref(), Some(&b"h2"[..]));
     assert_eq!(ask(stream).await, body());
 }

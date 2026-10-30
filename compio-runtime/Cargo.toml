@@ -28,6 +28,7 @@ scoped-tls = { workspace = true }
 pin-project-lite = { workspace = true }
 socket2 = { workspace = true }
 synchrony = { workspace = true, features = ["event"] }
+tokio = { workspace = true, optional = true }
 
 # Windows specific dependencies
 [target.'cfg(windows)'.dependencies]
@@ -63,6 +64,8 @@ synchrony = { workspace = true, features = ["async_flag"] }
 [features]
 time = []
 async-fd = ["dep:compio-io"]
+# `tokio::io` traits on `PollFd`
+tokio = ["dep:tokio"]
 # Instrumentation for `tokio-console`. See the `console` module.
 console = ["compio-executor/console"]
 

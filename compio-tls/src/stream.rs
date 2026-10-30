@@ -51,13 +51,9 @@ impl<S> TlsStream<S> {
     /// Whether `poll_write_vectored` takes all the buffers at once, not only
     /// the first: rustls copies them all into its own buffer.
     pub(crate) fn writes_vectored(&self) -> bool {
-        #[cfg(feature = "rustls")]
-        {
-            matches!(self.0, TlsStreamInner::Rustls(_))
-        }
-        #[cfg(not(feature = "rustls"))]
-        {
-            false
+        cfg_select! {
+            feature = "rustls" => matches!(self.0, TlsStreamInner::Rustls(_)),
+            _ => false,
         }
     }
 }

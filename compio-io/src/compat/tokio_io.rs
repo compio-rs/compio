@@ -17,15 +17,18 @@ use crate::{
 };
 
 /// Reads into the unfilled part of `buf` without initializing it first.
-fn read_uninit(
+///
+/// # Safety
+///
+/// `read` must not de-initialize any byte of the slice it is given, and when
+/// it returns `Ok(n)`, it must have initialized the first `n` bytes of it.
+unsafe fn read_uninit(
     buf: &mut ReadBuf<'_>,
     read: impl FnOnce(&mut [std::mem::MaybeUninit<u8>]) -> Poll<io::Result<usize>>,
 ) -> Poll<io::Result<()>> {
-    // SAFETY: `read` is `poll_read_uninit`, which only copies initialized
-    // bytes into the slice, so it never de-initializes any of it.
+    // SAFETY: the caller guarantees `read` does not de-initialize the slice.
     let n = ready!(read(unsafe { buf.unfilled_mut() }))?;
-    // SAFETY: `poll_read_uninit` returns how many bytes it copied to the
-    // start of the slice, all initialized now.
+    // SAFETY: the caller guarantees `read` initialized the first `n` bytes.
     unsafe { buf.assume_init(n) };
     buf.advance(n);
     Poll::Ready(Ok(()))
@@ -37,7 +40,9 @@ impl<S: AsyncRead + Unpin + 'static> tokio::io::AsyncRead for AsyncReadStream<S>
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        read_uninit(buf, |unfilled| self.poll_read_uninit(cx, unfilled))
+        // SAFETY: `poll_read_uninit` only copies initialized bytes into the
+        // slice, and returns how many it copied to its start.
+        unsafe { read_uninit(buf, |unfilled| self.poll_read_uninit(cx, unfilled)) }
     }
 }
 
@@ -78,7 +83,9 @@ where
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        read_uninit(buf, |unfilled| self.poll_read_uninit(cx, unfilled))
+        // SAFETY: `poll_read_uninit` only copies initialized bytes into the
+        // slice, and returns how many it copied to its start.
+        unsafe { read_uninit(buf, |unfilled| self.poll_read_uninit(cx, unfilled)) }
     }
 }
 
