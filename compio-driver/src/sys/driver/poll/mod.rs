@@ -483,7 +483,7 @@ impl Driver {
                     Some(OpType::Fd(_)) => {
                         // FIXME: This should not happen
                         let Some(fd) = op.extra().as_poll().next_fd() else {
-                            return Ok(());
+                            continue;
                         };
                         drop(op);
                         this.poll_one(event, fd)?;
