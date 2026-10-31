@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0-beta.2](https://github.com/compio-rs/compio/compare/compio-net-v0.13.0-beta.1...compio-net-v0.13.0-beta.2) - 2026-10-31
+
+### Added
+
+- *(dispatcher)* take AsyncFnOnce in dispatch ([#1115](https://github.com/compio-rs/compio/pull/1115))
+
+### Fixed
+
+- *(driver,iocp)* translate ERROR_NETNAME_DELETED to WSAECONNRESET ([#1092](https://github.com/compio-rs/compio/pull/1092))
+
 ## 0.13.0-beta.1 - 2026-09-27
 
 ### Added

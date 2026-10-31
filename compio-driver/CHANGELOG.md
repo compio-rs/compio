@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0-beta.2](https://github.com/compio-rs/compio/compare/compio-driver-v0.13.0-beta.1...compio-driver-v0.13.0-beta.2) - 2026-10-31
+
+### Fixed
+
+- *(driver, polling)* stall in kqueue polling driver ([#1121](https://github.com/compio-rs/compio/pull/1121))
+- *(driver,iocp)* translate ERROR_NETNAME_DELETED to WSAECONNRESET ([#1092](https://github.com/compio-rs/compio/pull/1092))
+- *(driver)* poll IOCP after wake-up ([#1093](https://github.com/compio-rs/compio/pull/1093))
+- *(driver, iour)* Bump io-uring dependency to 0.7.15 ([#1101](https://github.com/compio-rs/compio/pull/1101))
+- *(driver)* readv buffers into their spare capacity ([#1097](https://github.com/compio-rs/compio/pull/1097))
+- *(driver,iour)* use the file position for non-positional IO ([#1096](https://github.com/compio-rs/compio/pull/1096))
+
+### Other
+
+- *(driver)* collect single-slice msghdr iovecs inline ([#1123](https://github.com/compio-rs/compio/pull/1123))
+- *(deps)* bump rust-toolchain ([#1117](https://github.com/compio-rs/compio/pull/1117))
+- *(deps)* bump rust-toolchain ([#1098](https://github.com/compio-rs/compio/pull/1098))
+
 ## 0.13.0-beta.1 - 2026-09-27
 
 ### Added

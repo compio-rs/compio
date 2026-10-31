@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0-beta.2](https://github.com/compio-rs/compio/compare/compio-runtime-v0.13.0-beta.1...compio-runtime-v0.13.0-beta.2) - 2026-10-31
+
+### Added
+
+- *(runtime)* add num_alive_tasks methods ([#1077](https://github.com/compio-rs/compio/pull/1077))
+
+### Changed
+
+- *(runtime)* use rustix CpuSet for CPU affinity ([#1083](https://github.com/compio-rs/compio/pull/1083))
+
+### Fixed
+
+- *(runtime)* identify ExtWaker by static vtable address ([#1094](https://github.com/compio-rs/compio/pull/1094))
+
+### Other
+
+- *(deps)* bump rust-toolchain ([#1117](https://github.com/compio-rs/compio/pull/1117))
+- *(deps)* bump rust-toolchain ([#1108](https://github.com/compio-rs/compio/pull/1108))
+- *(runtime)* clarify what spawn_at's meta is for ([#1086](https://github.com/compio-rs/compio/pull/1086))
+- *(runtime)* fix spawn_blocking docs ([#1087](https://github.com/compio-rs/compio/pull/1087))
+- *(compio-runtime)* assert no livelock on remote wakeup ([#989](https://github.com/compio-rs/compio/pull/989))
+
 ## 0.13.0-beta.1 - 2026-09-27
 
 ### Added

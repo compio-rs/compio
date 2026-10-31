@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0-beta.2](https://github.com/compio-rs/compio/compare/compio-fs-v0.13.0-beta.1...compio-fs-v0.13.0-beta.2) - 2026-10-31
+
+### Fixed
+
+- *(driver)* readv buffers into their spare capacity ([#1097](https://github.com/compio-rs/compio/pull/1097))
+- *(driver,iour)* use the file position for non-positional IO ([#1096](https://github.com/compio-rs/compio/pull/1096))
+
 ## 0.13.0-beta.1 - 2026-09-27
 
 ### Added
