@@ -135,24 +135,27 @@ impl SendStream {
     /// know when the peer has read a stream to completion may introduce
     /// more latency than using an application-level response of some sort.
     pub async fn stopped(&mut self) -> Result<Option<VarInt>, StoppedError> {
-        poll_fn(|cx| {
-            let mut state = self.conn.state();
-            if self.is_0rtt && !state.check_0rtt() {
-                return Poll::Ready(Err(StoppedError::ZeroRttRejected));
-            }
-            match state.conn.send_stream(self.stream).stopped() {
-                Err(_) => Poll::Ready(Ok(None)),
-                Ok(Some(error_code)) => Poll::Ready(Ok(Some(error_code))),
-                Ok(None) => {
-                    if let Some(e) = &state.error {
-                        return Poll::Ready(Err(e.clone().into()));
-                    }
-                    state.stopped.insert(self.stream, cx.waker().clone());
-                    Poll::Pending
+        poll_fn(|cx| self.poll_stopped(cx)).await
+    }
+
+    /// Polls for the stream to be stopped or read to completion; see
+    /// [`stopped()`](Self::stopped).
+    pub fn poll_stopped(&mut self, cx: &mut Context) -> Poll<Result<Option<VarInt>, StoppedError>> {
+        let mut state = self.conn.state();
+        if self.is_0rtt && !state.check_0rtt() {
+            return Poll::Ready(Err(StoppedError::ZeroRttRejected));
+        }
+        match state.conn.send_stream(self.stream).stopped() {
+            Err(_) => Poll::Ready(Ok(None)),
+            Ok(Some(error_code)) => Poll::Ready(Ok(Some(error_code))),
+            Ok(None) => {
+                if let Some(e) = &state.error {
+                    return Poll::Ready(Err(e.clone().into()));
                 }
+                state.stopped.insert(self.stream, cx.waker().clone());
+                Poll::Pending
             }
-        })
-        .await
+        }
     }
 
     fn execute_poll_write<F, R>(&mut self, cx: &mut Context, f: F) -> Poll<Result<R, WriteError>>
@@ -478,6 +481,15 @@ pub(crate) mod h3_impl {
                 inner: super::SendStream::new(conn, stream, is_0rtt),
                 buf: None,
             }
+        }
+
+        /// Polls for the stream to be stopped or read to completion; see
+        /// [`SendStream::stopped()`](super::SendStream::stopped).
+        pub fn poll_stopped(
+            &mut self,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<Option<VarInt>, StoppedError>> {
+            self.inner.poll_stopped(cx)
         }
     }
 
