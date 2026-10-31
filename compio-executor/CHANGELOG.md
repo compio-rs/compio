@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-beta.2](https://github.com/compio-rs/compio/compare/compio-executor-v0.2.0-beta.1...compio-executor-v0.2.0-beta.2) - 2026-10-31
+
+### Added
+
+- *(runtime)* add num_alive_tasks methods ([#1077](https://github.com/compio-rs/compio/pull/1077))
+
+### Fixed
+
+- *(executor)* drop tasks outside the queue borrow in clear ([#1113](https://github.com/compio-rs/compio/pull/1113))
+- *(executor)* use the tick budget for newly woken tasks ([#1116](https://github.com/compio-rs/compio/pull/1116))
+- *(executor)* no abort in Remote::schedule while unwinding ([#1095](https://github.com/compio-rs/compio/pull/1095))
+
 ## 0.2.0-beta.1 - 2026-09-27
 
 ### Added

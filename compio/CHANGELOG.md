@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0-beta.2](https://github.com/compio-rs/compio/compare/v0.20.0-beta.1...v0.20.0-beta.2) - 2026-10-31
+
+### Added
+
+- *(dispatcher)* take AsyncFnOnce in dispatch ([#1115](https://github.com/compio-rs/compio/pull/1115))
+
+### Other
+
+- state that there is no MSRV guarantee ([#1081](https://github.com/compio-rs/compio/pull/1081))
+- *(deps)* bump rust-toolchain from nightly-2026-09-22 to nightly-2026-09-29 ([#1078](https://github.com/compio-rs/compio/pull/1078))
+
 ## [0.20.0-beta.1](https://github.com/compio-rs/compio/compare/v0.19.1...v0.20.0-beta.1) - 2026-09-27
 
 ### Added

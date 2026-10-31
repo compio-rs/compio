@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0-beta.2](https://github.com/compio-rs/compio/compare/compio-quic-v0.9.0-beta.1...compio-quic-v0.9.0-beta.2) - 2026-10-31
+
+### Added
+
+- *(quic)* add SendStream::poll_stopped ([#1125](https://github.com/compio-rs/compio/pull/1125))
+- *(dispatcher)* take AsyncFnOnce in dispatch ([#1115](https://github.com/compio-rs/compio/pull/1115))
+
+### Changed
+
+- *(quic)* read IPV6_V6ONLY through socket2 ([#1084](https://github.com/compio-rs/compio/pull/1084))
+
+### Fixed
+
+- *(quic)* invert may_fragment polarity ([#1071](https://github.com/compio-rs/compio/pull/1071))
+- *(quic)* ignore empty UDP datagrams in endpoint ([#1070](https://github.com/compio-rs/compio/pull/1070))
+
+### Other
+
+- *(deps)* bump rust-toolchain ([#1117](https://github.com/compio-rs/compio/pull/1117))
+
 ## 0.9.0-beta.1 - 2026-09-27
 
 ### Added
