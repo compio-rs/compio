@@ -92,7 +92,7 @@ pub unsafe trait OpCode {
         &mut self,
         _: &mut Self::Control,
     ) -> Option<BufResult<usize, crate::sys::Extra>> {
-        unreachable!("this operation is not multishot")
+        None
     }
 }
 
