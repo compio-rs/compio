@@ -42,6 +42,19 @@ pub trait AsyncWrite {
     /// Initiates or attempts to shut down this writer, returning success when
     /// the I/O connection has completely shut down.
     async fn shutdown(&mut self) -> IoResult<()>;
+
+    /// Opt in to descriptor-based copying on Linux.
+    ///
+    /// The returned handle must own the descriptor for the duration of an
+    /// in-flight operation, including after cancellation. Writing directly to
+    /// it must have the same byte-stream and position semantics as `write`.
+    /// Buffered, positional, and transforming writers should retain the
+    /// default implementation, which disables this optimization.
+    #[cfg(target_os = "linux")]
+    #[doc(hidden)]
+    fn copy_fd(&self) -> Option<impl std::os::fd::AsFd + 'static> {
+        None::<std::os::fd::OwnedFd>
+    }
 }
 
 impl<A: AsyncWrite + ?Sized> AsyncWrite for &mut A {
@@ -59,6 +72,11 @@ impl<A: AsyncWrite + ?Sized> AsyncWrite for &mut A {
 
     async fn shutdown(&mut self) -> IoResult<()> {
         (**self).shutdown().await
+    }
+
+    #[cfg(target_os = "linux")]
+    fn copy_fd(&self) -> Option<impl std::os::fd::AsFd + 'static> {
+        (**self).copy_fd()
     }
 }
 
@@ -79,6 +97,11 @@ impl<W: AsyncWrite + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator> Asy
 
     async fn shutdown(&mut self) -> IoResult<()> {
         (**self).shutdown().await
+    }
+
+    #[cfg(target_os = "linux")]
+    fn copy_fd(&self) -> Option<impl std::os::fd::AsFd + 'static> {
+        (**self).copy_fd()
     }
 }
 

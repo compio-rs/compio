@@ -25,6 +25,14 @@ where
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
         self.0.read_vectored(buf).await
     }
+
+    async fn copy_to<W: AsyncWrite + ?Sized>(
+        &mut self,
+        writer: &mut W,
+        buf_size: Option<usize>,
+    ) -> io::Result<u64> {
+        self.0.copy_to(writer, buf_size).await
+    }
 }
 
 impl<T> Deref for ReadHalf<'_, T> {
@@ -57,6 +65,11 @@ where
 
     async fn shutdown(&mut self) -> io::Result<()> {
         (self.0).shutdown().await
+    }
+
+    #[cfg(target_os = "linux")]
+    fn copy_fd(&self) -> Option<impl std::os::fd::AsFd + 'static> {
+        self.0.copy_fd()
     }
 }
 
