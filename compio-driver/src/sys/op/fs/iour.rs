@@ -15,12 +15,15 @@ unsafe impl<S: AsFd> OpCode for OpenFile<S> {
     }
 
     fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
-        self.call(control)
+        self.call(control)?;
+        // See `CreateSocket::call_blocking`.
+        let fd = self.opened_fd.take().expect("file not opened");
+        Ok(fd.into_raw_fd() as _)
     }
 
     unsafe fn set_result(&mut self, _: &mut Self::Control, res: &io::Result<usize>, _: &Extra) {
         if let Ok(fd) = res {
-            // SAFETY: fd is a valid fd returned from kernel
+            // SAFETY: fd is a valid fd returned from kernel or `call_blocking`
             let fd = unsafe { OwnedFd::from_raw_fd(*fd as _) };
             self.opened_fd = Some(fd);
         }
