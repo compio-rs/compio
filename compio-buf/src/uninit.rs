@@ -43,9 +43,11 @@ impl<T: IoBuf> IoBuf for Uninit<T> {
 }
 
 impl<T: IoBufMut> IoBufMut for Uninit<T> {
-    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+    unsafe fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         let len = (*self).buf_len();
-        &mut self.0.as_uninit()[len..]
+        // SAFETY: The initialized prefix `..len` is sliced off.
+        let slice = unsafe { self.0.as_uninit() };
+        &mut slice[len..]
     }
 
     fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {

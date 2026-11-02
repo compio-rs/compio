@@ -84,7 +84,7 @@ fn test_custom_buffer_cmsg() {
     impl<T: AsRef<[MaybeUninit<u8>]> + AsMut<[MaybeUninit<u8>]> + ?Sized + 'static> IoBufMut
         for MaybeUninitBuffer<T>
     {
-        fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        unsafe fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
             self.inner.as_mut()
         }
     }

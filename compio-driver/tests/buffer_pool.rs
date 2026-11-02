@@ -72,7 +72,7 @@ fn buffer_pool_pop_and_use() {
     let mut buf = pool.pop().unwrap();
 
     let data = b"hello compio";
-    let uninit = buf.as_uninit();
+    let uninit = unsafe { buf.as_uninit() };
     uninit[..data.len()]
         .copy_from_slice(unsafe { std::slice::from_raw_parts(data.as_ptr().cast(), data.len()) });
     unsafe { buf.set_len(data.len()) };
@@ -95,8 +95,8 @@ fn buffer_pool_multiple_buffers() {
     let mut buf1 = pool.pop().unwrap();
     let mut buf2 = pool.pop().unwrap();
 
-    let p1 = buf1.as_uninit().as_ptr();
-    let p2 = buf2.as_uninit().as_ptr();
+    let p1 = unsafe { buf1.as_uninit() }.as_ptr();
+    let p2 = unsafe { buf2.as_uninit() }.as_ptr();
     assert_ne!(p1, p2);
 
     drop(buf1);
@@ -149,7 +149,7 @@ fn buffer_pool_buffer_capacity() {
     let pool = driver.buffer_pool().unwrap();
 
     let mut buf = pool.pop().unwrap().with_capacity(128);
-    assert_eq!(buf.as_uninit().len(), 128);
+    assert_eq!(unsafe { buf.as_uninit() }.len(), 128);
 }
 
 #[cfg(any(not(target_os = "linux"), feature = "polling"))]

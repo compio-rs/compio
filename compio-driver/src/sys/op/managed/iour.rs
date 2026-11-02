@@ -345,7 +345,8 @@ unsafe impl<C: IoBufMut, S: AsFd> OpCode for RecvMsgManaged<C, S> {
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
         unsafe { self.op.init(ctrl) };
-        let slice = self.control.as_uninit();
+        // SAFETY: The kernel writes control messages.
+        let slice = unsafe { self.control.as_uninit() };
         ctrl.msg.msg_control = slice.as_mut_ptr() as _;
         ctrl.msg.msg_controllen = slice.len() as _;
     }
@@ -371,7 +372,12 @@ impl<C: IoBufMut, S: AsFd> TakeBuffer for RecvMsgManaged<C, S> {
 
     fn take_buffer(self) -> Option<Self::Buffer> {
         let (buffer, addr) = self.op.take_buffer()?;
-        Some(((buffer, self.control), addr, self.control_len, self.return_flags))
+        Some((
+            (buffer, self.control),
+            addr,
+            self.control_len,
+            self.return_flags,
+        ))
     }
 }
 
@@ -383,8 +389,8 @@ struct BufferGuard {
 impl BufferGuard {
     pub fn leak(self) {
         let mut this = ManuallyDrop::new(self);
-        // SAFETY: we're taking ownership of self, so this function will be executed
-        // at most once
+        // SAFETY: we're taking ownership of self, so this function will be
+        // executed at most once
         unsafe { drop_in_place(&raw mut this.pool) }
     }
 }

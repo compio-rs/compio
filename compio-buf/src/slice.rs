@@ -183,9 +183,11 @@ impl<T: IoBuf> IoBuf for Slice<T> {
 }
 
 impl<T: IoBufMut> IoBufMut for Slice<T> {
-    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+    unsafe fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         let range = self.range();
-        let bytes = self.buffer.as_uninit();
+        // SAFETY: Every byte in the initialized part of this range is also part
+        // of the underlying buffer's initialized bytes.
+        let bytes = unsafe { self.buffer.as_uninit() };
         &mut bytes[range]
     }
 
@@ -304,13 +306,17 @@ impl<T: SetLen> SetLen for VectoredSlice<T> {
 }
 
 impl<T: IoVectoredBufMut> IoVectoredBufMut for VectoredSlice<T> {
-    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+    unsafe fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
         let mut offset = self.offset;
-        self.buf.iter_uninit_slice().skip(self.idx).map(move |buf| {
-            let ret = &mut buf[offset..];
-            offset = 0;
-            ret
-        })
+        // SAFETY: No initialized byte of the underlying buffers can be
+        // de-initialized through this iterator.
+        unsafe { self.buf.iter_uninit_slice() }
+            .skip(self.idx)
+            .map(move |buf| {
+                let ret = &mut buf[offset..];
+                offset = 0;
+                ret
+            })
     }
 }
 

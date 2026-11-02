@@ -127,22 +127,24 @@ impl LengthDelimited {
 impl<B: IoBufMut> Framer<B> for LengthDelimited {
     fn enclose(&mut self, buf: &mut B) {
         let len = (*buf).buf_len();
-
-        buf.reserve(self.length_field_len).expect("Reserve failed");
-        buf.copy_within(0..len, self.length_field_len); // Shift existing data
-        unsafe { buf.advance_to(len + self.length_field_len) };
-
-        let slice = buf.as_mut_slice();
         let lfl = self.length_field_len;
 
+        buf.reserve(lfl).expect("Reserve failed");
+        // SAFETY: The source range `0..len` is fully initialized.
+        unsafe { buf.copy_within(0..len, lfl) }; // Shift existing data
+
         // Write the length at the beginning
-        let len = len as u64;
+        let len_u64 = len as u64;
         let len_bytes = if self.length_field_is_big_endian {
-            &len.to_be_bytes()[Self::MAX_LFL - lfl..]
+            &len_u64.to_be_bytes()[Self::MAX_LFL - lfl..]
         } else {
-            &len.to_le_bytes()[..lfl]
+            &len_u64.to_le_bytes()[..lfl]
         };
-        slice[..lfl].copy_from_slice(len_bytes);
+        // SAFETY: Only the reserved head `0..lfl` is written.
+        (unsafe { buf.as_uninit() })[..lfl].write_copy_of_slice(len_bytes);
+
+        // SAFETY: Both the header and the shifted data are initialized now.
+        unsafe { buf.advance_to(len + lfl) };
     }
 
     fn extract(&mut self, buf: &Slice<B>) -> io::Result<Option<Frame>> {

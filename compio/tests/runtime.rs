@@ -59,8 +59,8 @@ async fn drop_on_complete() {
     }
 
     impl IoBufMut for MyBuf {
-        fn as_uninit(&mut self) -> &mut [std::mem::MaybeUninit<u8>] {
-            self.data.as_uninit()
+        unsafe fn as_uninit(&mut self) -> &mut [std::mem::MaybeUninit<u8>] {
+            unsafe { self.data.as_uninit() }
         }
     }
 

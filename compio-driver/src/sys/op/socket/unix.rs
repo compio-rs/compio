@@ -100,7 +100,12 @@ impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> SendMsg<T, C, S> {
 
 impl<T: IoBufMut, S: AsFd> Recv<T, S> {
     pub(crate) fn call(&mut self) -> io::Result<usize> {
-        let (_, len) = recv(self.fd.as_fd(), self.buffer.as_uninit(), self.flags)?;
+        // SAFETY: The kernel only writes initialized bytes.
+        let (_, len) = recv(
+            self.fd.as_fd(),
+            unsafe { self.buffer.as_uninit() },
+            self.flags,
+        )?;
 
         Ok(len)
     }
@@ -128,7 +133,12 @@ impl<S: AsFd> RecvFromHeader<S> {
 
 impl<T: IoBufMut, S: AsFd> RecvFrom<T, S> {
     pub(crate) fn call(&mut self) -> io::Result<usize> {
-        let (_, len, addr) = recvfrom(&self.header.fd, self.buffer.as_uninit(), self.header.flags)?;
+        // SAFETY: The kernel only writes initialized bytes.
+        let (_, len, addr) = recvfrom(
+            &self.header.fd,
+            unsafe { self.buffer.as_uninit() },
+            self.header.flags,
+        )?;
 
         self.header.set_addr(addr);
 
