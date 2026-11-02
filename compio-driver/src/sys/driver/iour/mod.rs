@@ -1,5 +1,8 @@
 use std::{
-    marker::PhantomData, mem::ManuallyDrop, panic::AssertUnwindSafe, sync::Arc, time::Duration,
+    marker::PhantomData,
+    panic::AssertUnwindSafe,
+    sync::Arc,
+    time::{Duration, Instant},
 };
 
 use crate::sys::{extra::IourExtra, prelude::*};
@@ -28,8 +31,8 @@ use flume::{Receiver, Sender};
 use io_uring::{
     EnterFlags, IoUring,
     cqueue::more,
-    opcode::{AsyncCancel, PollAdd},
-    types::{Fd, SubmitArgs, Timespec},
+    opcode::{AsyncCancel, AsyncCancel2, PollAdd},
+    types::{CancelBuilder, Fd, SubmitArgs, Timespec},
 };
 use slotmap::{DefaultKey, SlotMap};
 
@@ -37,6 +40,7 @@ use crate::{
     AsyncifyPool, DriverType, Entry, ProactorBuilder,
     key::{BorrowedKey, ErasedKey},
     panic::catch_unwind_io,
+    sys::pal::is_kernel_at_least,
 };
 
 bitflags::bitflags! {
@@ -58,19 +62,24 @@ bitflags::bitflags! {
 
 /// Low-level driver of io-uring.
 pub(crate) struct Driver {
-    // Wrapped in `ManuallyDrop` so that `Drop` can close the ring *before*
-    // releasing the in-flight keys. Closing the io_uring fd makes the kernel
-    // wait for or cancel any in-flight ops, which guarantees the kernel is no
-    // longer reading from or writing to the buffers owned by those keys.
-    inner: ManuallyDrop<IoUring<SEntry, CEntry>>,
+    inner: IoUring<SEntry, CEntry>,
     notifier: Notifier,
     pool: AsyncifyPool,
     completed_tx: Sender<Entry>,
     completed_rx: Receiver<Entry>,
     flags: DriverFlags,
-    /// Keys leaked via `into_raw()` into io_uring user_data, freed on drop.
+    /// Keys leaked via `into_raw()` into io_uring user_data.
     in_flight: SlotMap<DefaultKey, usize>,
     _p: PhantomData<ErasedKey>,
+}
+
+/// How [`Driver::drain_completions`] should treat completed operations.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CompletionMode {
+    /// Hand completions to their futures.
+    Poll,
+    /// Release completions without waking anything during driver shutdown.
+    Drop,
 }
 
 impl Driver {
@@ -134,7 +143,7 @@ impl Driver {
         );
 
         Ok(Self {
-            inner: ManuallyDrop::new(inner),
+            inner,
             notifier,
             completed_tx,
             completed_rx,
@@ -276,36 +285,56 @@ impl Driver {
     }
 
     fn poll_entries(&mut self) -> bool {
+        self.drain_completions(CompletionMode::Poll)
+    }
+
+    /// Drain the completion queue.
+    ///
+    /// `Poll` hands completed entries to their futures. `Drop` releases them
+    /// without waking anything, because the kernel has confirmed it is done
+    /// with them.
+    fn drain_completions(&mut self, mode: CompletionMode) -> bool {
         let cqueue = self.inner.completion();
         let has_entry = !cqueue.is_empty();
         for entry in cqueue {
-            match entry.user_data() {
+            let user_data = entry.user_data();
+            match user_data {
                 Self::CANCEL => {}
                 Self::NOTIFY => {
-                    let flags = entry.flags();
-                    if !more(flags) {
-                        self.flags.insert(DriverFlags::NEED_PUSH_NOTIFIER);
-                    }
-                    if let Err(e) = self.notifier.clear() {
-                        error!("failed to clear notifier: {e:?}");
+                    if mode == CompletionMode::Poll {
+                        let flags = entry.flags();
+                        if !more(flags) {
+                            self.flags.insert(DriverFlags::NEED_PUSH_NOTIFIER);
+                        }
+                        if let Err(e) = self.notifier.clear() {
+                            error!("failed to clear notifier: {e:?}");
+                        }
                     }
                 }
-                key => {
+                _ => {
                     let flags = entry.flags();
                     if more(flags) {
-                        let key = unsafe { BorrowedKey::from_raw(key as _) };
+                        let key = unsafe { BorrowedKey::from_raw(user_data as _) };
                         let mut key = key.borrow();
                         let mut extra: crate::sys::Extra = IourExtra::new().into();
-                        extra.set_flags(entry.flags());
+                        extra.set_flags(flags);
                         unsafe {
                             key.carrier
                                 .push_multishot(create_result(entry.result()), extra);
                         }
-                        key.wake_by_ref();
+                        if mode == CompletionMode::Poll {
+                            key.wake_by_ref();
+                        }
                     } else {
                         let entry = create_entry(entry);
-                        Self::remove_in_flight(&mut self.in_flight, &entry.key);
-                        entry.notify()
+                        let owned = Self::remove_in_flight(&mut self.in_flight, &entry.key);
+                        match mode {
+                            CompletionMode::Poll => entry.notify(),
+                            CompletionMode::Drop => {
+                                assert!(owned, "terminal CQE for an op not in flight");
+                                drop(entry.into_key())
+                            }
+                        }
                     }
                 }
             }
@@ -494,12 +523,72 @@ impl Driver {
 
     /// Take an op out of the `in_flight` map. The slot lives in the op's
     /// extra, and is only set while the op is in flight.
-    fn remove_in_flight(in_flight: &mut SlotMap<DefaultKey, usize>, key: &ErasedKey) {
+    ///
+    /// Returns whether the driver still owned the leaked key reference.
+    fn remove_in_flight(in_flight: &mut SlotMap<DefaultKey, usize>, key: &ErasedKey) -> bool {
         let Some(slot) = key.borrow().extra_mut().as_iour_mut().take_in_flight() else {
-            return;
+            return false;
         };
         let removed = in_flight.remove(slot);
         debug_assert_eq!(removed, Some(key.as_raw()));
+        removed.is_some()
+    }
+
+    /// Reap completions without waking any future.
+    fn reap_completed_for_drop(&mut self) {
+        self.drain_completions(CompletionMode::Drop);
+    }
+
+    /// Ask the kernel to cancel everything still in flight.
+    fn cancel_in_flight(&mut self) {
+        if self.in_flight.is_empty() {
+            return;
+        }
+
+        if is_kernel_at_least((5, 19)) {
+            // One request cancels every matching request.
+            let entry = AsyncCancel2::new(CancelBuilder::any())
+                .build()
+                .user_data(Self::CANCEL);
+            #[allow(clippy::useless_conversion)]
+            if let Err(e) = self.push_cancel_entry(entry.into()) {
+                warn!("could not push AsyncCancel2 entry: {e:?}");
+            }
+        } else {
+            // Before 5.19 only per-user_data cancellation is available.
+            let user_data: Vec<_> = self.in_flight.values().copied().collect();
+            for user_data in user_data {
+                let entry = AsyncCancel::new(user_data as _)
+                    .build()
+                    .user_data(Self::CANCEL);
+                #[allow(clippy::useless_conversion)]
+                if let Err(e) = self.push_cancel_entry(entry.into()) {
+                    warn!("could not push AsyncCancel entry: {e:?}");
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Push a cancellation entry.
+    fn push_cancel_entry(&mut self, entry: SEntry) -> io::Result<()> {
+        let mut squeue = self.inner.submission();
+        if unsafe { squeue.push(&entry) }.is_err() {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "submission queue is full",
+            ));
+        }
+        squeue.sync();
+        Ok(())
+    }
+
+    /// Wait until at least one completion arrives or `timeout` expires.
+    fn wait_for_completion(&mut self, timeout: Duration) -> io::Result<()> {
+        let timespec = timespec(timeout);
+        let args = SubmitArgs::new().timespec(&timespec);
+        self.inner.submitter().submit_with_args(1, &args)?;
+        Ok(())
     }
 }
 
@@ -511,22 +600,55 @@ impl AsRawFd for Driver {
 
 impl Drop for Driver {
     fn drop(&mut self) {
-        // Close the io_uring ring *before* freeing the in-flight keys.
-        // Closing the ring fd makes the kernel wait for in-flight ops to
-        // finish or be cancelled, so it will no longer read from or write to
-        // the buffers owned by those keys. Without this, the kernel could
-        // touch a freed (and potentially recycled) heap allocation, which
-        // corrupts the glibc heap and typically surfaces as
-        // `malloc_consolidate(): unaligned fastbin chunk detected` /
-        // `corrupted double-linked list` during thread shutdown.
-        unsafe { ManuallyDrop::drop(&mut self.inner) };
+        /// How long `Drop` waits for the kernel to cancel or finish in-flight
+        /// requests and reports their completions.
+        const DROP_TIMEOUT: Duration = Duration::from_secs(1);
 
-        // `in_flight` holds one reference per submitted op: `push_raw_with_key`
-        // leaks it, and `poll_entries` takes it back when it hands the op to
-        // its future. Whatever is left here is ours to free, and the kernel is
-        // done with it.
-        for (_, user_data) in self.in_flight.drain() {
-            drop(unsafe { ErasedKey::from_raw(user_data) });
+        let deadline = Instant::now() + DROP_TIMEOUT;
+
+        // Reap whatever the kernel has already finished. This is the common
+        // case when the ring is idle but some completions were not consumed.
+        self.reap_completed_for_drop();
+
+        if !self.in_flight.is_empty() {
+            self.cancel_in_flight();
+
+            loop {
+                self.reap_completed_for_drop();
+                if self.in_flight.is_empty() {
+                    break;
+                }
+
+                let now = Instant::now();
+                if now >= deadline {
+                    break;
+                }
+
+                match self.wait_for_completion(deadline - now) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                    Err(e) => {
+                        // `ETIME` means no completion arrived in time; any
+                        // other error means we cannot wait any longer either.
+                        if e.raw_os_error() != Some(libc::ETIME) {
+                            warn!("failed to wait for completions on drop: {e:?}");
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // A completion may have raced with the deadline check.
+            self.reap_completed_for_drop();
+        }
+
+        if !self.in_flight.is_empty() {
+            warn!(
+                "leaking {} in-flight io_uring op(s) on driver drop; the kernel did not finish \
+                 them within {:?}",
+                self.in_flight.len(),
+                DROP_TIMEOUT
+            );
         }
     }
 }
