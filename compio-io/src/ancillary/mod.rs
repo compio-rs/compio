@@ -215,8 +215,8 @@ impl<const N: usize> SetLen for AncillaryBuf<N> {
 }
 
 impl<const N: usize> IoBufMut for AncillaryBuf<N> {
-    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
-        self.inner.as_uninit()
+    unsafe fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        unsafe { std::slice::from_raw_parts_mut(self.inner.as_mut_ptr().cast(), N) }
     }
 }
 

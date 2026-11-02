@@ -377,7 +377,13 @@ mod smallvec_err {
 pub trait IoBufMut: IoBuf + SetLen {
     /// Get the full mutable slice of the buffer, including both initialized
     /// and uninitialized bytes.
-    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>];
+    ///
+    /// # Safety
+    ///
+    /// The caller must not de-initialize any byte that belongs to the
+    /// initialized bytes returned by [`IoBuf::as_init`]. For most buffers this
+    /// means that all bytes in `0..buf_len()` must stay initialized.
+    unsafe fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>];
 
     /// Reserve additional capacity for the buffer.
     ///
@@ -427,20 +433,24 @@ pub trait IoBufMutExt: IoBufMut {
     /// zero-initialized.
     fn ensure_init(&mut self) -> &mut [u8] {
         let len = (*self).buf_len();
-        let slice = self.as_uninit();
+        // SAFETY: Only the uninitialized tail starting at `len` is written, so
+        // every initialized byte is preserved.
+        let slice = unsafe { self.as_uninit() };
         slice[len..].fill(MaybeUninit::new(0));
+        // SAFETY: The initialized prefix is untouched and the tail has just
+        // been initialized above.
         unsafe { slice.assume_init_mut() }
     }
 
     /// Total capacity of the buffer, including both initialized and
     /// uninitialized bytes.
     fn buf_capacity(&mut self) -> usize {
-        self.as_uninit().len()
+        unsafe { self.as_uninit() }.len()
     }
 
     /// Get the raw mutable pointer to the buffer.
     fn buf_mut_ptr(&mut self) -> *mut MaybeUninit<u8> {
-        self.as_uninit().as_mut_ptr()
+        unsafe { self.as_uninit() }.as_mut_ptr()
     }
 
     /// Get the mutable slice of initialized bytes. The content is the same as
@@ -466,7 +476,10 @@ pub trait IoBufMutExt: IoBufMut {
         let len = src.len();
         let init = (*self).buf_len();
         self.reserve(len)?;
-        self.as_uninit()[init..init + len].write_copy_of_slice(src);
+        // SAFETY: Only the uninitialized bytes in `init..init + len` are
+        // written, and `reserve` guarantees that this range is within the
+        // capacity.
+        (unsafe { self.as_uninit() })[init..init + len].write_copy_of_slice(src);
 
         // SAFETY: the bytes in range [init, init + len) are initialized now
         unsafe { self.advance_to(init + len) };
@@ -478,17 +491,23 @@ pub trait IoBufMutExt: IoBufMut {
     /// another location in the same buffer. This will count in both initialized
     /// and uninitialized bytes.
     ///
+    /// # Safety
+    ///
+    /// The caller must ensure that no initialized byte is overwritten with an
+    /// uninitialized byte, i.e. the initialized bytes returned by
+    /// [`IoBuf::as_init`] must stay initialized after the copy.
+    ///
     /// # Panics
     ///
     /// This method will panic if the source or destination range is out of
     /// bounds.
     ///
     /// [`slice::copy_within`]: https://doc.rust-lang.org/std/primitive.slice.html#method.copy_within
-    fn copy_within<R>(&mut self, src: R, dest: usize)
+    unsafe fn copy_within<R>(&mut self, src: R, dest: usize)
     where
         R: RangeBounds<usize>,
     {
-        self.as_uninit().copy_within(src, dest);
+        unsafe { self.as_uninit() }.copy_within(src, dest);
     }
 
     /// Returns an [`Uninit`], which is a [`Slice`] that only exposes
@@ -544,8 +563,8 @@ pub trait IoBufMutExt: IoBufMut {
 impl<B: IoBufMut + ?Sized> IoBufMutExt for B {}
 
 impl<B: IoBufMut + ?Sized> IoBufMut for &'static mut B {
-    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
-        (**self).as_uninit()
+    unsafe fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        unsafe { (**self).as_uninit() }
     }
 
     fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {
@@ -560,8 +579,8 @@ impl<B: IoBufMut + ?Sized> IoBufMut for &'static mut B {
 impl<B: IoBufMut + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut
     for t_alloc!(Box, B, A)
 {
-    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
-        (**self).as_uninit()
+    unsafe fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        unsafe { (**self).as_uninit() }
     }
 
     fn reserve(&mut self, len: usize) -> Result<(), ReserveError> {
@@ -574,7 +593,7 @@ impl<B: IoBufMut + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator + 'sta
 }
 
 impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut for t_alloc!(Vec, u8, A) {
-    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+    unsafe fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         let ptr = self.as_mut_ptr() as *mut MaybeUninit<u8>;
         let cap = self.capacity();
         // SAFETY: Vec guarantees that the pointer is valid for `capacity` bytes
@@ -609,7 +628,7 @@ impl<#[cfg(feature = "allocator_api")] A: Allocator + 'static> IoBufMut for t_al
 }
 
 impl IoBufMut for [u8] {
-    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+    unsafe fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         let ptr = self.as_mut_ptr() as *mut MaybeUninit<u8>;
         let len = self.len();
         // SAFETY: slice is fully initialized, so treating it as MaybeUninit is
@@ -619,7 +638,7 @@ impl IoBufMut for [u8] {
 }
 
 impl<const N: usize> IoBufMut for [u8; N] {
-    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+    unsafe fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         let ptr = self.as_mut_ptr() as *mut MaybeUninit<u8>;
         // SAFETY: array is fully initialized, so treating it as MaybeUninit is
         // safe
@@ -629,7 +648,7 @@ impl<const N: usize> IoBufMut for [u8; N] {
 
 #[cfg(feature = "bytes")]
 impl IoBufMut for bytes::BytesMut {
-    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+    unsafe fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         let ptr = self.as_mut_ptr() as *mut MaybeUninit<u8>;
         let cap = self.capacity();
         // SAFETY: BytesMut guarantees that the pointer is valid for `capacity`
@@ -662,7 +681,7 @@ impl IoBufMut for bytes::BytesMut {
 
 #[cfg(feature = "read_buf")]
 impl IoBufMut for std::io::BorrowedBuf<'static, u8> {
-    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+    unsafe fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         let total_cap = self.capacity();
 
         // SAFETY: We reconstruct the full buffer from the filled portion
@@ -677,7 +696,7 @@ impl IoBufMut for std::io::BorrowedBuf<'static, u8> {
 
 #[cfg(feature = "arrayvec")]
 impl<const N: usize> IoBufMut for arrayvec::ArrayVec<u8, N> {
-    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+    unsafe fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         let ptr = self.as_mut_ptr() as *mut MaybeUninit<u8>;
         // SAFETY: ArrayVec guarantees that the pointer is valid for N bytes
         unsafe { std::slice::from_raw_parts_mut(ptr, N) }
@@ -689,7 +708,7 @@ impl<const N: usize> IoBufMut for smallvec::SmallVec<[u8; N]>
 where
     [u8; N]: smallvec::Array<Item = u8>,
 {
-    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+    unsafe fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         let ptr = self.as_mut_ptr() as *mut MaybeUninit<u8>;
         let cap = self.capacity();
         // SAFETY: SmallVec guarantees that the pointer is valid for `capacity`
@@ -729,7 +748,7 @@ where
 
 #[cfg(feature = "memmap2")]
 impl IoBufMut for memmap2::MmapMut {
-    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+    unsafe fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         // Safety: &mut [u8] is valid &mut [MaybeUninit<u8>]
         unsafe { std::mem::transmute(self.as_mut()) }
     }
@@ -741,7 +760,8 @@ pub trait SetLen {
     ///
     /// # Safety
     ///
-    /// * `len` must be less or equal than `as_uninit().len()`.
+    /// * `len` must be less or equal than the length of the slice returned by
+    ///   [`IoBufMut::as_uninit`].
     /// * The bytes in the range `[buf_len(), len)` must be initialized.
     unsafe fn set_len(&mut self, len: usize);
 }
@@ -771,7 +791,8 @@ pub trait SetLenExt: SetLen {
     ///
     /// # Safety
     ///
-    /// * `len` must be less or equal than `as_uninit().len()`.
+    /// * `len` must be less or equal than the length of the slice returned by
+    ///   [`IoBufMut::as_uninit`].
     /// * The bytes in the range `[buf_len(), len)` must be initialized.
     unsafe fn advance_to(&mut self, len: usize)
     where

@@ -143,11 +143,19 @@ impl IoVectoredBuf for () {
 /// A trait for mutable vectored buffers.
 pub trait IoVectoredBufMut: IoVectoredBuf + SetLen {
     /// An iterator of maybe uninitialized slice of the buffers.
-    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]>;
+    ///
+    /// # Safety
+    ///
+    /// The caller must not de-initialize any byte that belongs to the
+    /// initialized slices returned by [`IoVectoredBuf::iter_slice`].
+    unsafe fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]>;
 
     /// The total capacity of all buffers.
     fn total_capacity(&mut self) -> usize {
-        self.iter_uninit_slice().map(|buf| buf.len()).sum()
+        // SAFETY: Only the lengths of the slices are read.
+        unsafe { self.iter_uninit_slice() }
+            .map(|buf| buf.len())
+            .sum()
     }
 
     /// Get an owned view of the vectored buffer.
@@ -184,7 +192,9 @@ pub trait IoVectoredBufMut: IoVectoredBuf + SetLen {
         let mut offset = begin;
         let mut idx = 0;
 
-        for b in self.iter_uninit_slice() {
+        // SAFETY: The iterator is only used to read the lengths of the
+        // buffers.
+        for b in unsafe { self.iter_uninit_slice() } {
             let len = b.len();
             if len > offset {
                 break;
@@ -198,29 +208,29 @@ pub trait IoVectoredBufMut: IoVectoredBuf + SetLen {
 }
 
 impl<T: IoBufMut> IoVectoredBufMut for &'static mut [T] {
-    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
-        self.iter_mut().map(|buf| buf.as_uninit())
+    unsafe fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+        self.iter_mut().map(|buf| unsafe { buf.as_uninit() })
     }
 }
 
 impl<T: IoBufMut, const N: usize> IoVectoredBufMut for [T; N] {
-    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
-        self.iter_mut().map(|buf| buf.as_uninit())
+    unsafe fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+        self.iter_mut().map(|buf| unsafe { buf.as_uninit() })
     }
 }
 
 impl<T: IoBufMut, #[cfg(feature = "allocator_api")] A: std::alloc::Allocator + 'static>
     IoVectoredBufMut for t_alloc!(Vec, T, A)
 {
-    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
-        self.iter_mut().map(|buf| buf.as_uninit())
+    unsafe fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+        self.iter_mut().map(|buf| unsafe { buf.as_uninit() })
     }
 }
 
 #[cfg(feature = "arrayvec")]
 impl<T: IoBufMut, const N: usize> IoVectoredBufMut for arrayvec::ArrayVec<T, N> {
-    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
-        self.iter_mut().map(|buf| buf.as_uninit())
+    unsafe fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+        self.iter_mut().map(|buf| unsafe { buf.as_uninit() })
     }
 }
 
@@ -229,26 +239,26 @@ impl<T: IoBufMut, const N: usize> IoVectoredBufMut for smallvec::SmallVec<[T; N]
 where
     [T; N]: smallvec::Array<Item = T>,
 {
-    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
-        self.iter_mut().map(|buf| buf.as_uninit())
+    unsafe fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+        self.iter_mut().map(|buf| unsafe { buf.as_uninit() })
     }
 }
 
 impl<T: IoBufMut, Rest: IoVectoredBufMut> IoVectoredBufMut for (T, Rest) {
-    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+    unsafe fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
         let (h, t) = self;
-        iter::once(h.as_uninit()).chain(t.iter_uninit_slice())
+        unsafe { iter::once(h.as_uninit()).chain(t.iter_uninit_slice()) }
     }
 }
 
 impl<T: IoBufMut> IoVectoredBufMut for (T,) {
-    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
-        iter::once(self.0.as_uninit())
+    unsafe fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+        iter::once(unsafe { self.0.as_uninit() })
     }
 }
 
 impl IoVectoredBufMut for () {
-    fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
+    unsafe fn iter_uninit_slice(&mut self) -> impl Iterator<Item = &mut [MaybeUninit<u8>]> {
         iter::empty()
     }
 }
@@ -350,10 +360,52 @@ impl<T: IoVectoredBuf + SetLen> SetLen for VectoredBufIter<T> {
 }
 
 impl<T: IoVectoredBufMut> IoBufMut for VectoredBufIter<T> {
-    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
-        self.buf
-            .iter_uninit_slice()
-            .nth(self.index)
-            .expect("`index` should not exceed `len`")
+    unsafe fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
+        let filled = self.filled;
+        // SAFETY: The initialized prefix `..filled` of the current buffer is
+        // sliced off below.
+        let curr = unsafe {
+            self.buf
+                .iter_uninit_slice()
+                .nth(self.index)
+                .expect("`index` should not exceed `len`")
+        };
+        &mut curr[filled..]
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::mem::MaybeUninit;
+
+    use crate::{IntoInner, IoBuf, IoBufMut, IoVectoredBuf, SetLen};
+
+    #[test]
+    fn vectored_buf_iter_uninit_skips_filled() {
+        let bufs = [Vec::with_capacity(8), Vec::with_capacity(8)];
+        let mut iter = bufs.owned_iter().unwrap();
+
+        // SAFETY: `iter` has not been advanced, so all of its capacity is
+        // exposed, and `0..3` is within it.
+        unsafe {
+            let slice = iter.as_uninit();
+            assert_eq!(slice.len(), 8);
+            slice[..3].fill(MaybeUninit::new(7));
+            // SAFETY: The range `0..3` has just been initialized.
+            iter.set_len(3);
+        }
+
+        // The filled prefix is not exposed by `as_init`.
+        assert!(iter.as_init().is_empty());
+
+        // SAFETY: The remaining tail is still uninitialized, and the filled
+        // prefix is excluded.
+        let tail = unsafe { iter.as_uninit() };
+        assert_eq!(tail.len(), 5);
+        tail[..2].fill(MaybeUninit::new(9));
+
+        let bufs = iter.into_inner();
+        assert_eq!(bufs[0].as_init(), &[7, 7, 7]);
+        assert_eq!(bufs[1].as_init(), &[]);
     }
 }

@@ -31,7 +31,8 @@ impl AsyncRead for Repeat {
         &mut self,
         mut buf: B,
     ) -> compio_buf::BufResult<usize, B> {
-        let slice = buf.as_uninit();
+        // SAFETY: The whole slice is filled with initialized values below.
+        let slice = unsafe { buf.as_uninit() };
 
         let len = slice.len();
         slice.fill(MaybeUninit::new(self.0));
@@ -44,7 +45,8 @@ impl AsyncRead for Repeat {
 
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, mut buf: V) -> BufResult<usize, V> {
         let mut len: usize = 0;
-        for slice in buf.iter_uninit_slice() {
+        // SAFETY: The loop fills every slice with initialized values.
+        for slice in unsafe { buf.iter_uninit_slice() } {
             len = len
                 .checked_add(slice.len())
                 .expect("total vectored buffer length overflow");

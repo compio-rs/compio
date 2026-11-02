@@ -530,7 +530,8 @@ impl From<ResetError> for io::Error {
 
 impl AsyncRead for RecvStream {
     async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
-        let res = poll_fn(|cx| self.poll_read_uninit(cx, buf.as_uninit()))
+        // SAFETY: Quinn only writes initialized bytes into the buffer.
+        let res = poll_fn(|cx| self.poll_read_uninit(cx, unsafe { buf.as_uninit() }))
             .await
             .inspect(|&n| unsafe { buf.advance_to(n) })
             .map_err(Into::into);

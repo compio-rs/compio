@@ -19,7 +19,13 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for ReadAt<T, S> {
 
     fn operate(&mut self, _: &mut Self::Control) -> Poll<io::Result<usize>> {
         poll_io(|| {
-            pread(self.fd.as_fd(), self.buffer.as_uninit(), self.offset).map(|(init, _)| init.len())
+            // SAFETY: The kernel only writes initialized bytes.
+            pread(
+                self.fd.as_fd(),
+                unsafe { self.buffer.as_uninit() },
+                self.offset,
+            )
+            .map(|(init, _)| init.len())
         })
     }
 }
@@ -96,7 +102,10 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Read<T, S> {
     }
 
     fn operate(&mut self, _: &mut Self::Control) -> Poll<io::Result<usize>> {
-        poll_io(|| read(self.fd.as_fd(), self.buffer.as_uninit()).map(|(init, _)| init.len()))
+        poll_io(|| {
+            // SAFETY: The kernel only writes initialized bytes.
+            read(self.fd.as_fd(), unsafe { self.buffer.as_uninit() }).map(|(init, _)| init.len())
+        })
     }
 }
 

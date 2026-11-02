@@ -48,7 +48,8 @@ impl Buffer<Vec<u8>> {
             // Within the buffer, still has remaining data, move those to front
             let buf_len = buf.len();
             let remaining = buf_len - pos;
-            buf.copy_within(pos..buf_len, 0);
+            // SAFETY: The source range `pos..buf_len` is fully initialized.
+            unsafe { buf.copy_within(pos..buf_len, 0) };
 
             // SAFETY: We're setting the length to the amount of data we just
             // moved. The data from 0..remaining is initialized
